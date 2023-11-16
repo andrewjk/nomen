@@ -1,0 +1,26 @@
+{
+  "name": "lang",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "check": "tsc -p tsconfig-check.json --noEmit",
+    "test": "uvu -r tsm tests",
+    "test:cover": "c8 uvu -r tsm tests"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@trivago/prettier-plugin-sort-imports": "^4.2.1",
+    "@types/node": "^20.8.10",
+    "c8": "^8.0.1",
+    "prettier": "^3.0.3",
+    "tsm": "^2.3.0",
+    "tsup": "^7.2.0",
+    "typescript": "^5.2.2",
+    "uvu": "^0.5.6"
+  }
+}
