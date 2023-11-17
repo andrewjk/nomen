@@ -1,4 +1,4 @@
 export default interface ParseNode {
-  nodetype: string;
+  node_type: string;
   children: ParseNode[];
 }

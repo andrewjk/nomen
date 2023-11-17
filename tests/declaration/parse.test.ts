@@ -1,6 +1,7 @@
 import { suite } from "uvu";
 import assert from "uvu/assert";
 import parse from "../../src/parse";
+import type DeclarationNode from "../../src/types/DeclarationNode";
 
 const test = suite("Declaration parse");
 
@@ -9,20 +10,15 @@ test("const with value", () => {
 const x = 5
 `;
   const result = parse(input);
-  const expected = {
-    nodetype: "root",
-    children: [
-      {
-        nodetype: "decl",
-        declaration: "const",
-        name: "x",
-        value: "5",
-        type: "int",
-        children: [],
-      },
-    ],
+  const expected: DeclarationNode = {
+    node_type: "dec",
+    declaration: "const",
+    name: "x",
+    value: "5",
+    type: "int",
+    children: [],
   };
-  assert.equal(result.root, expected);
+  assert.equal(result.root.children[0], expected);
 });
 
 test("const with type", () => {
@@ -30,62 +26,47 @@ test("const with type", () => {
 const x: int
 `;
   const result = parse(input);
-  const expected = {
-    nodetype: "root",
-    children: [
-      {
-        nodetype: "decl",
-        declaration: "const",
-        name: "x",
-        value: "",
-        type: "int",
-        children: [],
-      },
-    ],
+  const expected: DeclarationNode = {
+    node_type: "dec",
+    declaration: "const",
+    name: "x",
+    value: "",
+    type: "int",
+    children: [],
   };
-  assert.equal(result.root, expected);
+  assert.equal(result.root.children[0], expected);
 });
 
-test("let with value", () => {
+test("var with value", () => {
   const input = `
-let x = 5
+var x = 5
 `;
   const result = parse(input);
-  const expected = {
-    nodetype: "root",
-    children: [
-      {
-        nodetype: "decl",
-        declaration: "let",
-        name: "x",
-        value: "5",
-        type: "int",
-        children: [],
-      },
-    ],
+  const expected: DeclarationNode = {
+    node_type: "dec",
+    declaration: "var",
+    name: "x",
+    value: "5",
+    type: "int",
+    children: [],
   };
-  assert.equal(result.root, expected);
+  assert.equal(result.root.children[0], expected);
 });
 
-test("let with type", () => {
+test("var with type", () => {
   const input = `
-let x: int
+var x: int
 `;
   const result = parse(input);
-  const expected = {
-    nodetype: "root",
-    children: [
-      {
-        nodetype: "decl",
-        declaration: "let",
-        name: "x",
-        value: "",
-        type: "int",
-        children: [],
-      },
-    ],
+  const expected: DeclarationNode = {
+    node_type: "dec",
+    declaration: "var",
+    name: "x",
+    value: "",
+    type: "int",
+    children: [],
   };
-  assert.equal(result.root, expected);
+  assert.equal(result.root.children[0], expected);
 });
 
 test.run();

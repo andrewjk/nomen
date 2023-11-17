@@ -8,12 +8,12 @@ const test = suite("Declaration build");
 test("const with value", () => {
   const input = `
 const x = 5
-printf()
 `;
   const parsed = parse(input);
   const result = build(parsed.root.children[0]);
   const expected = `
-  int x = 5;`;
+  int x = 5;
+`;
   assert.equal(result.code.trim(), expected.trim());
 });
 
@@ -24,7 +24,32 @@ const x: int
   const parsed = parse(input);
   const result = build(parsed.root.children[0]);
   const expected = `
-  int x;`;
+  int x;
+`;
+  assert.equal(result.code.trim(), expected.trim());
+});
+
+test("var with value", () => {
+  const input = `
+var x = 5
+`;
+  const parsed = parse(input);
+  const result = build(parsed.root.children[0]);
+  const expected = `
+  int x = 5;
+`;
+  assert.equal(result.code.trim(), expected.trim());
+});
+
+test("var with type", () => {
+  const input = `
+var x: int
+`;
+  const parsed = parse(input);
+  const result = build(parsed.root.children[0]);
+  const expected = `
+  int x;
+`;
   assert.equal(result.code.trim(), expected.trim());
 });
 
