@@ -1,83 +1,77 @@
 import Token from "./types/Token";
 
-enum CharType {
-  AlphaNumeric,
-  Symbol,
-  Space,
-}
+const compoundSymbols = ["&&", "||", "==", ">=", "<="];
 
 export default function tokenize(input: string): Token[] {
   let tokens: Token[] = [];
   let start = 0;
-  let charType = CharType.Space;
+
+  // Am I being too fancy here?
+  const compoundSymbolStarts = compoundSymbols.map((s) => s[0]);
 
   for (let i = 0; i < input.length; i++) {
-    let char = input[i];
-
-    // If the char type has changed, add a token
-    // Skip whitespace though, it doesn't interest us
-    // TODO: Unless it's a newline
-    const newCharType = is_alpha_numeric_char(input, i)
-      ? CharType.AlphaNumeric
-      : is_whitespace_char(input, i)
-      ? CharType.Space
-      : CharType.Symbol;
-    if (i > start && newCharType !== charType) {
-      const value = input.substring(start, i);
-      if (charType != CharType.Space) {
+    if (!is_alpha_numeric_char(input, i)) {
+      // Add the previous word
+      if (i > start) {
+        const value = input.substring(start, i);
         tokens.push({ value, i: start });
       }
-      start = i;
-    }
-    charType = newCharType;
 
-    // Just pull strings and comments into tokens
-    if (char === '"') {
-      // It's a string -- process until the next quote
-      for (let j = i + 1; j < input.length; j++) {
-        if (input[j] === '"' && input[j - 1] !== "\\") {
-          const value = input.substring(i, j + 1);
-          tokens.push({ value, i });
-          i = j;
-          start = i + 1;
-          break;
-        }
-      }
-    } else if (char === "/") {
-      if (i < input.length - 2 && input[i + 1] === "/") {
-        // It's a one-line comment -- process until the newline
-        for (let j = i + 1; j < input.length; j++) {
-          if (input[j] === "\n") {
-            const value = input.substring(i, j);
-            tokens.push({ value, i });
-            i = j;
-            start = i + 1;
-            break;
-          }
-        }
-      } else if (i < input.length - 2 && input[i + 1] === "*") {
-        // It's a multi-line comment -- process until the close, handling nested comments
-        let depth = 0;
-        for (let j = i + 1; j < input.length; j++) {
-          if (
-            input[j] === "/" &&
-            j < input.length - 2 &&
-            input[j + 1] === "*"
-          ) {
-            depth += 1;
-          } else if (input[j] === "/" && input[j - 1] === "*") {
-            if (depth > 0) {
-              depth -= 1;
-            } else {
-              let value = input.substring(i, j + 1);
-              tokens.push({ value, i });
+      // Add the current symbol (and potentially a little more)
+      if (!is_whitespace(input[i])) {
+        let value = input[i];
+        if (value === '"') {
+          // It's a string -- process until the next quote
+          for (let j = i + 1; j < input.length; j++) {
+            if (input[j] === '"' && input[j - 1] !== "\\") {
+              value = input.substring(i, j + 1);
               i = j;
-              start = i + 1;
               break;
             }
           }
+        } else if (value === "/" && i < input.length - 2) {
+          if (input[i + 1] === "/") {
+            // It's a one-line comment -- process until the newline
+            for (let j = i + 1; j < input.length; j++) {
+              if (input[j] === "\n") {
+                value = input.substring(i, j);
+                i = j;
+                break;
+              }
+            }
+          } else if (input[i + 1] === "*") {
+            // It's a multi-line comment -- process until the close, handling nested comments
+            let depth = 0;
+            for (let j = i + 1; j < input.length; j++) {
+              if (
+                input[j] === "/" &&
+                j < input.length - 2 &&
+                input[j + 1] === "*"
+              ) {
+                depth += 1;
+              } else if (input[j] === "/" && input[j - 1] === "*") {
+                if (depth > 0) {
+                  depth -= 1;
+                } else {
+                  value = input.substring(i, j + 1);
+                  i = j;
+                  break;
+                }
+              }
+            }
+          }
+        } else if (
+          compoundSymbolStarts.includes(value) &&
+          i < input.length - 2 &&
+          compoundSymbols.includes(value + input[i + 1])
+        ) {
+          // It's a compound symbol
+          value = value + input[i + 1];
+          i += 1;
         }
+        tokens.push({ value, i: start });
       }
+      start = i + 1;
     }
   }
 
