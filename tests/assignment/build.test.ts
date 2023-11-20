@@ -1,29 +1,22 @@
 import { suite } from "uvu";
 import assert from "uvu/assert";
-import parse from "../../src/parse";
 import build from "../../src/build";
+import parse from "../../src/parse";
+import tokenize from "../../src/tokenize";
 
 const test = suite("Assignment build");
 
 test("assignment to var", () => {
   const input = `
-const x = 5
+var x: int
+x = 5
 `;
-  const parsed = parse(input);
-  const result = build(parsed.root.children[0]);
+  const tokens = tokenize(input);
+  const parsed = parse(tokens);
+  const result = build(parsed.root.children[1]);
   const expected = `
-  int x = 5;`;
-  assert.equal(result.code.trim(), expected.trim());
-});
-
-test("const with type", () => {
-  const input = `
-const x: int
+  x = 5;
 `;
-  const parsed = parse(input);
-  const result = build(parsed.root.children[0]);
-  const expected = `
-  int x;`;
   assert.equal(result.code.trim(), expected.trim());
 });
 

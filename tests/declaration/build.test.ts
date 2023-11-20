@@ -1,7 +1,8 @@
 import { suite } from "uvu";
 import assert from "uvu/assert";
-import parse from "../../src/parse";
 import build from "../../src/build";
+import parse from "../../src/parse";
+import tokenize from "../../src/tokenize";
 
 const test = suite("Declaration build");
 
@@ -9,7 +10,8 @@ test("const with value", () => {
   const input = `
 const x = 5
 `;
-  const parsed = parse(input);
+  const tokens = tokenize(input);
+  const parsed = parse(tokens);
   const result = build(parsed.root.children[0]);
   const expected = `
   int x = 5;
@@ -21,7 +23,8 @@ test("const with type", () => {
   const input = `
 const x: int
 `;
-  const parsed = parse(input);
+  const tokens = tokenize(input);
+  const parsed = parse(tokens);
   const result = build(parsed.root.children[0]);
   const expected = `
   int x;
@@ -33,7 +36,8 @@ test("var with value", () => {
   const input = `
 var x = 5
 `;
-  const parsed = parse(input);
+  const tokens = tokenize(input);
+  const parsed = parse(tokens);
   const result = build(parsed.root.children[0]);
   const expected = `
   int x = 5;
@@ -45,7 +49,8 @@ test("var with type", () => {
   const input = `
 var x: int
 `;
-  const parsed = parse(input);
+  const tokens = tokenize(input);
+  const parsed = parse(tokens);
   const result = build(parsed.root.children[0]);
   const expected = `
   int x;

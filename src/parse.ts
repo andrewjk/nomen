@@ -4,11 +4,7 @@ import type DeclarationNode from "./types/DeclarationNode";
 import type AssignmentNode from "./types/AssignmentNode";
 import type ParseError from "./types/ParseError";
 import type ParseValue from "./types/ParseValue";
-
-interface Token {
-  value: string;
-  i: number;
-}
+import type Token from "./types/Token";
 
 interface ParseStatus {
   // The current node
@@ -23,7 +19,7 @@ interface ParseStatus {
   errors: ParseError[];
 }
 
-export default function parse(input: string): ParseResult {
+export default function parse(tokens: Token[]): ParseResult {
   const root: ParseNode = {
     node_type: "root",
     children: [],
@@ -37,8 +33,6 @@ export default function parse(input: string): ParseResult {
     errors: [],
   };
 
-  const tokens = tokenize(input);
-
   for (status.i; status.i < tokens.length; status.i++) {
     parse_block(tokens, status);
   }
@@ -48,33 +42,6 @@ export default function parse(input: string): ParseResult {
     root,
     errors: status.errors,
   };
-}
-
-function tokenize(input: string): Token[] {
-  let tokens: Token[] = [];
-  let start = 0;
-
-  for (let i = 0; i < input.length; i++) {
-    if (!is_alpha_numeric_char(input, i)) {
-      if (i > start) {
-        const value = input.substring(start, i);
-        tokens.push({
-          value,
-          i: i - value.length,
-        });
-      }
-      if (!is_whitespace(input[i])) {
-        const value = input[i];
-        tokens.push({
-          value,
-          i: i - value.length,
-        });
-      }
-      start = i + 1;
-    }
-  }
-
-  return tokens;
 }
 
 function parse_block(tokens: Token[], status: ParseStatus) {
@@ -298,29 +265,4 @@ function type_from_value(value: string): string {
   } else {
     return "?";
   }
-}
-
-function is_alpha_numeric(input: string) {
-  for (let i = 0; i < input.length; i++) {
-    if (!is_alpha_numeric_char(input, i)) {
-      return false;
-    }
-  }
-  return true;
-}
-
-function is_alpha_numeric_char(input: string, i: number) {
-  let code = input.charCodeAt(i);
-  return (
-    // 0-9
-    (code > 47 && code < 58) ||
-    // A-Z
-    (code > 64 && code < 91) ||
-    // a-z
-    (code > 96 && code < 123)
-  );
-}
-
-function is_whitespace(text: string) {
-  return text === " " || text === "\t" || text === "\r" || text === "\n";
 }

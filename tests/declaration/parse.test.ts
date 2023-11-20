@@ -1,6 +1,7 @@
 import { suite } from "uvu";
 import assert from "uvu/assert";
 import parse from "../../src/parse";
+import tokenize from "../../src/tokenize";
 import type DeclarationNode from "../../src/types/DeclarationNode";
 
 const test = suite("Declaration parse");
@@ -9,7 +10,8 @@ test("const with value", () => {
   const input = `
 const x = 5
 `;
-  const result = parse(input);
+  const tokens = tokenize(input);
+  const result = parse(tokens);
   const expected: DeclarationNode = {
     node_type: "dec",
     declaration: "const",
@@ -25,7 +27,8 @@ test("const with type", () => {
   const input = `
 const x: int
 `;
-  const result = parse(input);
+  const tokens = tokenize(input);
+  const result = parse(tokens);
   const expected: DeclarationNode = {
     node_type: "dec",
     declaration: "const",
@@ -41,7 +44,8 @@ test("var with value", () => {
   const input = `
 var x = 5
 `;
-  const result = parse(input);
+  const tokens = tokenize(input);
+  const result = parse(tokens);
   const expected: DeclarationNode = {
     node_type: "dec",
     declaration: "var",
@@ -57,7 +61,8 @@ test("var with type", () => {
   const input = `
 var x: int
 `;
-  const result = parse(input);
+  const tokens = tokenize(input);
+  const result = parse(tokens);
   const expected: DeclarationNode = {
     node_type: "dec",
     declaration: "var",
