@@ -14,7 +14,7 @@ x = 5
   const tokens = tokenize(input);
   const result = parse(tokens);
   const expected: AssignmentNode = {
-    node_type: "ass",
+    node_type: "assign",
     left_value: "x",
     right_value: "5",
     children: [],

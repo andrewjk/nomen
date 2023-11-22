@@ -1,7 +1,7 @@
-import ParseNode from "./ParseNode";
+import type ParseNode from "./ParseNode";
 
 export default interface DeclarationNode extends ParseNode {
-  node_type: "dec";
+  node_type: "decl";
   declaration: "const" | "var";
   name: string;
   value: string;

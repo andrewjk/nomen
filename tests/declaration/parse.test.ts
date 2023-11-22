@@ -13,7 +13,7 @@ const x = 5
   const tokens = tokenize(input);
   const result = parse(tokens);
   const expected: DeclarationNode = {
-    node_type: "dec",
+    node_type: "decl",
     declaration: "const",
     name: "x",
     value: "5",
@@ -30,7 +30,7 @@ const x: int
   const tokens = tokenize(input);
   const result = parse(tokens);
   const expected: DeclarationNode = {
-    node_type: "dec",
+    node_type: "decl",
     declaration: "const",
     name: "x",
     value: "",
@@ -47,7 +47,7 @@ var x = 5
   const tokens = tokenize(input);
   const result = parse(tokens);
   const expected: DeclarationNode = {
-    node_type: "dec",
+    node_type: "decl",
     declaration: "var",
     name: "x",
     value: "5",
@@ -64,7 +64,7 @@ var x: int
   const tokens = tokenize(input);
   const result = parse(tokens);
   const expected: DeclarationNode = {
-    node_type: "dec",
+    node_type: "decl",
     declaration: "var",
     name: "x",
     value: "",
