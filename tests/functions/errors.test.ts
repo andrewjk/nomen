@@ -59,6 +59,18 @@ func add(a: int = z0) {}
   );
 });
 
+test("no param type or default value", () => {
+  const input = `
+func add(a) {}
+`;
+  const tokens = tokenize(input);
+  const result = parse(tokens);
+  assert.equal(result.ok, false);
+  assert.equal(result.errors.length, 1);
+  assert.equal(result.errors[0].i, 10);
+  assert.equal(result.errors[0].message, "Expected type or default value");
+});
+
 test("unknown return value type", () => {
   const input = `
 func add() -> what {

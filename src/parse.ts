@@ -10,10 +10,12 @@ import type ReturnNode from "./types/ReturnNode";
 import type Token from "./types/Token";
 
 interface ParseStatus {
-  // The current node
-  stack: ParseNode[];
+  // The tokens
+  tokens: Token[];
   // The current token index
   i: number;
+  // The current node
+  stack: ParseNode[];
   // Values (variables, params, etc) in scope
   values: ParseValue[];
   // Types in scope
@@ -29,16 +31,15 @@ export default function parse(tokens: Token[]): ParseResult {
   };
 
   const status: ParseStatus = {
-    stack: [root],
+    tokens,
     i: 0,
+    stack: [root],
     values: [],
     types: ["int", "string"],
     errors: [],
   };
 
-  for (status.i; status.i < tokens.length; status.i++) {
-    parse_block(tokens, status);
-  }
+  parse_block(status);
 
   return {
     ok: !status.errors.length,
@@ -47,35 +48,41 @@ export default function parse(tokens: Token[]): ParseResult {
   };
 }
 
-function parse_block(tokens: Token[], status: ParseStatus) {
-  for (status.i; status.i < tokens.length; status.i++) {
+function parse_block(status: ParseStatus) {
+  while (true) {
+    const value = peek_current(status);
+    if (!value) {
+      break;
+    }
+
     // First check for a keyword (var, if, switch, etc), then check for a following operator (=, +, etc)
-    const value = tokens[status.i].value;
     switch (value) {
       case "const":
       case "var": {
-        parse_declaration(value, tokens, status);
+        parse_declaration(value, status);
         break;
       }
       case "func": {
-        parse_function(tokens, status);
+        parse_function(status);
         break;
       }
       case "return": {
-        parse_return(tokens, status);
+        parse_return(status);
         break;
       }
       case "}": {
         return;
       }
       default: {
-        if (status.i < tokens.length - 1) {
-          const nextValue = tokens[status.i + 1].value;
-          switch (nextValue) {
-            case "=": {
-              parse_assignment(tokens, status);
-              break;
-            }
+        const next_value = peek_next(status);
+        switch (next_value) {
+          case "=": {
+            parse_assignment(status);
+            break;
+          }
+          default: {
+            // TODO: ??
+            break;
           }
         }
       }
@@ -85,11 +92,7 @@ function parse_block(tokens: Token[], status: ParseStatus) {
 
 // DECLARATION
 
-function parse_declaration(
-  declaration: "const" | "var",
-  tokens: Token[],
-  status: ParseStatus,
-) {
+function parse_declaration(declaration: "const" | "var", status: ParseStatus) {
   const decl: DeclarationNode = {
     node_type: "decl",
     declaration,
@@ -100,13 +103,33 @@ function parse_declaration(
   };
   status.stack.at(-1)!.children.push(decl);
 
-  // Advance past the keyword
-  status.i += 1;
+  accept(declaration, status);
 
-  // Parse the declaration
-  parse_declaration_name(decl, tokens, status);
-  parse_declaration_type(decl, tokens, status);
-  parse_declaration_value(decl, tokens, status);
+  // Declaration name
+  decl.name = consume(status);
+
+  // Declaration type
+  if (accept(":", status)) {
+    decl.type = consume(status);
+    if (!check_type_exists(decl.type, status)) {
+      decl.type = "?";
+    }
+  }
+
+  // Declaration value
+  if (accept("=", status)) {
+    decl.value = consume(status);
+    check_type_and_value_match(decl.type, decl.value, status);
+    decl.type = decl.type || type_from_value(decl.value);
+  }
+
+  // Check type or value has been set
+  if (!decl.type && !decl.value) {
+    status.errors.push({
+      message: `Expected type or default value`,
+      i: status.tokens[status.i - 1].i,
+    });
+  }
 
   // Add a new value to the stack
   status.values.push({
@@ -114,62 +137,11 @@ function parse_declaration(
     name: decl.name,
     type: decl.type,
   });
-
-  // HACK: Decrement for the loop
-  status.i -= 1;
-}
-
-function parse_declaration_name(
-  decl: DeclarationNode,
-  tokens: Token[],
-  status: ParseStatus,
-) {
-  if (status.i < tokens.length) {
-    decl.name = tokens[status.i].value;
-    status.i += 1;
-  }
-}
-
-function parse_declaration_type(
-  decl: DeclarationNode,
-  tokens: Token[],
-  status: ParseStatus,
-) {
-  if (status.i < tokens.length) {
-    if (tokens[status.i].value == ":") {
-      status.i += 1;
-      if (status.i < tokens.length) {
-        decl.type = tokens[status.i].value;
-        if (!check_type_exists(decl.type, tokens, status)) {
-          decl.type = "?";
-        }
-        status.i += 1;
-      }
-    }
-  }
-}
-
-function parse_declaration_value(
-  decl: DeclarationNode,
-  tokens: Token[],
-  status: ParseStatus,
-) {
-  if (status.i < tokens.length) {
-    if (tokens[status.i].value == "=") {
-      status.i += 1;
-      if (status.i < tokens.length) {
-        decl.value = tokens[status.i].value;
-        check_type_and_value_match(decl.type, decl.value, status, tokens);
-        decl.type = decl.type || type_from_value(decl.value);
-        status.i += 1;
-      }
-    }
-  }
 }
 
 // ASSIGNMENT
 
-function parse_assignment(tokens: Token[], status: ParseStatus) {
+function parse_assignment(status: ParseStatus) {
   const assign: AssignmentNode = {
     node_type: "assign",
     left_value: "",
@@ -178,72 +150,44 @@ function parse_assignment(tokens: Token[], status: ParseStatus) {
   };
   status.stack.at(-1)!.children.push(assign);
 
-  parse_assignment_left_value(assign, tokens, status);
+  assign.left_value = consume(status);
 
-  // Advance past the equals sign
-  status.i += 1;
-
-  parse_assignment_right_value(assign, tokens, status);
-
-  // HACK: Decrement for the loop
-  status.i -= 1;
-}
-
-function parse_assignment_left_value(
-  assign: AssignmentNode,
-  tokens: Token[],
-  status: ParseStatus,
-) {
-  if (status.i < tokens.length) {
-    assign.left_value = tokens[status.i].value;
-
-    // Make sure the left value exists and can be assigned to
-    const value = status.values.find((v) => v.name === assign.left_value);
-    if (!value) {
-      status.errors.push({
-        i: tokens[status.i].i,
-        message: `Unknown variable: ${assign.left_value}`,
-      });
-    } else if (value.declaration === "const") {
-      status.errors.push({
-        i: tokens[status.i].i,
-        message: `Assignment to const: ${assign.left_value}`,
-      });
-    }
-
-    status.i += 1;
+  // Make sure the left value exists and can be assigned to
+  const lvalue = status.values.find((v) => v.name === assign.left_value);
+  if (!lvalue) {
+    status.errors.push({
+      i: status.tokens[status.i - 1].i,
+      message: `Unknown variable: ${assign.left_value}`,
+    });
+  } else if (lvalue.declaration === "const") {
+    status.errors.push({
+      i: status.tokens[status.i - 1].i,
+      message: `Assignment to const: ${assign.left_value}`,
+    });
   }
-}
 
-function parse_assignment_right_value(
-  assign: AssignmentNode,
-  tokens: Token[],
-  status: ParseStatus,
-) {
-  if (status.i < tokens.length) {
-    assign.right_value = tokens[status.i].value;
+  expect("=", status);
 
-    // Make sure the types of the left and right values match
-    // Make sure the type and value match
-    const value = status.values.find((v) => v.name === assign.left_value);
-    const inferredType = type_from_value(assign.right_value);
-    if (value && value.type !== inferredType) {
-      status.errors.push({
-        i: tokens[status.i].i,
-        message:
-          inferredType === "?"
-            ? `Type mismatch -- unknown value type: ${assign.right_value}`
-            : `Type mismatch: ${inferredType} cannot be assigned to ${value.type} variable`,
-      });
-    }
+  assign.right_value = consume(status);
 
-    status.i += 1;
+  // Make sure the types of the left and right values match
+  // Make sure the type and value match
+  const rvalue = status.values.find((v) => v.name === assign.left_value);
+  const inferredType = type_from_value(assign.right_value);
+  if (rvalue && rvalue.type !== inferredType) {
+    status.errors.push({
+      i: status.tokens[status.i - 1].i,
+      message:
+        inferredType === "?"
+          ? `Type mismatch -- unknown value type: ${assign.right_value}`
+          : `Type mismatch: ${inferredType} cannot be assigned to ${rvalue.type} variable`,
+    });
   }
 }
 
 // FUNCTIONS
 
-function parse_function(tokens: Token[], status: ParseStatus) {
+function parse_function(status: ParseStatus) {
   const func: FunctionNode = {
     node_type: "func",
     name: "",
@@ -255,84 +199,38 @@ function parse_function(tokens: Token[], status: ParseStatus) {
   status.stack.at(-1)!.children.push(func);
   status.stack.push(func);
 
-  // Advance past the keyword
-  status.i += 1;
+  accept("func", status);
+  func.name = consume(status);
 
-  // Parse the function
-  parse_function_name(func, tokens, status);
-
-  if (tokens[status.i].value === "(") {
-    // Advance past the opening paren
-    status.i += 1;
-
-    if (tokens[status.i].value !== ")") {
-      parse_parameter(func, tokens, status);
+  if (expect("(", status)) {
+    if (peek_current(status) !== ")") {
+      parse_parameter(func, status);
     }
-
-    if (tokens[status.i].value === ")") {
-      // Advance past the closing paren
-      status.i += 1;
-
-      parse_function_return_type(func, tokens, status);
-      if (tokens[status.i].value === "{") {
-        // TODO:
-        status.i += 1;
-        parse_block(tokens, status);
-
-        if (tokens[status.i].value === "}") {
+    if (expect(")", status)) {
+      if (accept("->", status)) {
+        func.return_type = consume(status);
+        if (!check_type_exists(func.return_type, status)) {
+          func.return_type = "?";
+        }
+      }
+      if (expect("{", status)) {
+        parse_block(status);
+        if (expect("}", status)) {
           if (func.return_type && !func.has_return) {
             status.errors.push({
-              i: tokens[status.i].i,
+              i: status.tokens[status.i - 1].i,
               message: `Missing return`,
             });
           }
-          status.i += 1;
-        } else {
-          status.errors.push({
-            i: tokens[status.i].i,
-            message: `Expected '}'`,
-          });
         }
-      } else {
-        status.errors.push({
-          i: tokens[status.i].i,
-          message: `Expected '{'`,
-        });
       }
-    } else {
-      status.errors.push({
-        i: tokens[status.i].i,
-        message: `Expected ')'`,
-      });
     }
-  } else {
-    status.errors.push({
-      i: tokens[status.i].i,
-      message: `Expected '('`,
-    });
   }
 
-  // HACK: Decrement for the loop
-  status.i -= 1;
   status.stack.pop();
 }
 
-function parse_function_name(
-  func: FunctionNode,
-  tokens: Token[],
-  status: ParseStatus,
-) {
-  if (status.i < tokens.length) {
-    func.name = tokens[status.i].value;
-    status.i += 1;
-  }
-}
-
-function parse_parameter(
-  func: FunctionNode,
-  tokens: Token[],
-  status: ParseStatus,
-) {
+function parse_parameter(func: FunctionNode, status: ParseStatus) {
   const param: ParameterNode = {
     node_type: "param",
     name: "",
@@ -342,91 +240,41 @@ function parse_parameter(
   };
   func.params.push(param);
 
-  parse_parameter_name(param, tokens, status);
-  parse_parameter_type(param, tokens, status);
-  parse_parameter_value(param, tokens, status);
+  // Parameter name
+  param.name = consume(status);
 
-  if (status.i < tokens.length && tokens[status.i].value === ",") {
-    status.i += 1;
-    parse_parameter(func, tokens, status);
-  }
-}
-
-function parse_parameter_name(
-  param: ParameterNode,
-  tokens: Token[],
-  status: ParseStatus,
-) {
-  if (status.i < tokens.length) {
-    param.name = tokens[status.i].value;
-    status.i += 1;
-  }
-}
-
-function parse_parameter_type(
-  param: ParameterNode,
-  tokens: Token[],
-  status: ParseStatus,
-) {
-  if (status.i < tokens.length) {
-    if (tokens[status.i].value == ":") {
-      status.i += 1;
-      if (status.i < tokens.length) {
-        param.type = tokens[status.i].value;
-        if (!check_type_exists(param.type, tokens, status)) {
-          param.type = "?";
-        }
-        status.i += 1;
-      }
+  // Parameter type
+  if (accept(":", status)) {
+    param.type = consume(status);
+    if (!check_type_exists(param.type, status)) {
+      param.type = "?";
     }
   }
-}
 
-function parse_parameter_value(
-  param: ParameterNode,
-  tokens: Token[],
-  status: ParseStatus,
-) {
-  if (status.i < tokens.length) {
-    if (tokens[status.i].value == "=") {
-      status.i += 1;
-      if (status.i < tokens.length) {
-        param.default_value = tokens[status.i].value;
-        check_type_and_value_match(
-          param.type,
-          param.default_value,
-          status,
-          tokens,
-        );
-        param.type = param.type || type_from_value(param.default_value);
-        status.i += 1;
-      }
-    }
+  // Parameter value
+  if (accept("=", status)) {
+    param.default_value = consume(status);
+    check_type_and_value_match(param.type, param.default_value, status);
+    param.type = param.type || type_from_value(param.default_value);
   }
-}
 
-function parse_function_return_type(
-  func: FunctionNode,
-  tokens: Token[],
-  status: ParseStatus,
-) {
-  if (status.i < tokens.length) {
-    if (tokens[status.i].value == "->") {
-      status.i += 1;
-      if (status.i < tokens.length) {
-        func.return_type = tokens[status.i].value;
-        if (!check_type_exists(func.return_type, tokens, status)) {
-          func.return_type = "?";
-        }
-        status.i += 1;
-      }
-    }
+  // Check type or value has been set
+  if (!param.type && !param.default_value) {
+    status.errors.push({
+      message: `Expected type or default value`,
+      i: status.tokens[status.i - 1].i,
+    });
+  }
+
+  // Next parameter
+  if (accept(",", status)) {
+    parse_parameter(func, status);
   }
 }
 
 // RETURN
 
-function parse_return(tokens: Token[], status: ParseStatus) {
+function parse_return(status: ParseStatus) {
   const ret: ReturnNode = {
     node_type: "ret",
     value: "",
@@ -437,38 +285,77 @@ function parse_return(tokens: Token[], status: ParseStatus) {
 
   // Go up the stack looking for our function
   const func = find_parent_of_type("func", status) as FunctionNode;
-  if (!func) {
+  if (func) {
+    func.has_return = true;
+  } else {
     status.errors.push({
       message: "Return outside function",
-      i: tokens[status.i].i,
+      i: status.tokens[status.i].i,
     });
   }
-  func.has_return = true;
 
-  // Advance past the keyword
-  status.i += 1;
-
-  // Parse the function
-  parse_return_value(func, ret, tokens, status);
-
-  // HACK: Decrement for the loop
-  status.i -= 1;
+  accept("return", status);
+  ret.value = consume(status);
+  if (func.return_type && func.return_type !== "?") {
+    check_type_and_value_match(func.return_type, ret.value, status);
+  }
+  ret.type = type_from_value(ret.value);
 }
 
-function parse_return_value(
-  func: FunctionNode,
-  ret: ReturnNode,
-  tokens: Token[],
-  status: ParseStatus,
-) {
-  if (status.i < tokens.length) {
-    ret.value = tokens[status.i].value;
-    if (func.return_type && func.return_type !== "?") {
-      check_type_and_value_match(func.return_type, ret.value, status, tokens);
-    }
-    ret.type = type_from_value(ret.value);
+// PROCESSING
+
+function peek_current(status: ParseStatus): string | undefined {
+  return status.tokens[status.i]?.value;
+}
+
+function peek_next(status: ParseStatus): string | undefined {
+  return status.tokens[status.i + 1]?.value;
+}
+
+function consume(status: ParseStatus): string {
+  if (status.i < status.tokens.length) {
+    const result = status.tokens[status.i].value;
     status.i += 1;
+    return result;
+  } else {
+    const last = status.tokens.at(-1);
+    status.errors.push({
+      message: "Expected token",
+      i: last ? last.i + last.value.length : 0,
+    });
+    return "";
   }
+}
+
+function accept(value: string, status: ParseStatus): boolean {
+  if (status.i < status.tokens.length) {
+    if (status.tokens[status.i].value == value) {
+      status.i += 1;
+      return true;
+    }
+  }
+  return false;
+}
+
+function expect(value: string, status: ParseStatus): boolean {
+  if (status.i < status.tokens.length) {
+    if (status.tokens[status.i].value == value) {
+      status.i += 1;
+      return true;
+    } else {
+      status.errors.push({
+        message: `Expected ${value}`,
+        i: status.tokens[status.i].i,
+      });
+    }
+  } else {
+    const last = status.tokens.at(-1);
+    status.errors.push({
+      message: "Expected token",
+      i: last ? last.i + last.value.length : 0,
+    });
+  }
+  return false;
 }
 
 // UTILS
@@ -483,14 +370,10 @@ function type_from_value(value: string): string {
   }
 }
 
-function check_type_exists(
-  type: string,
-  tokens: Token[],
-  status: ParseStatus,
-): boolean {
+function check_type_exists(type: string, status: ParseStatus): boolean {
   if (!status.types.includes(type)) {
     status.errors.push({
-      i: tokens[status.i].i,
+      i: status.tokens[status.i - 1].i,
       message: `Unknown type: ${type}`,
     });
     return false;
@@ -502,14 +385,13 @@ function check_type_and_value_match(
   type: string,
   value: string,
   status: ParseStatus,
-  tokens: Token[],
 ) {
   const inferredType = type_from_value(value);
   if (type) {
     // TODO: thorough checking
     if (type !== inferredType) {
       status.errors.push({
-        i: tokens[status.i].i,
+        i: status.tokens[status.i - 1].i,
         message:
           inferredType === "?"
             ? `Type mismatch -- unknown value type: ${value}`
@@ -519,7 +401,7 @@ function check_type_and_value_match(
   } else {
     if (inferredType === "?") {
       status.errors.push({
-        i: tokens[status.i].i,
+        i: status.tokens[status.i - 1].i,
         message: `Unknown value type: ${value}`,
       });
     }

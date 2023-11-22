@@ -59,4 +59,16 @@ const x: int = z0
   );
 });
 
+test("no type or default value", () => {
+  const input = `
+const x
+`;
+  const tokens = tokenize(input);
+  const result = parse(tokens);
+  assert.equal(result.ok, false);
+  assert.equal(result.errors.length, 1);
+  assert.equal(result.errors[0].i, 7);
+  assert.equal(result.errors[0].message, "Expected type or default value");
+});
+
 test.run();
