@@ -7,7 +7,9 @@ import type ParseNode from "./types/ParseNode";
 import type ParseResult from "./types/ParseResult";
 import type ParseValue from "./types/ParseValue";
 import type ReturnNode from "./types/ReturnNode";
+import type StructNode from "./types/StructNode";
 import type Token from "./types/Token";
+import type TraitNode from "./types/TraitNode";
 
 interface ParseStatus {
   // The tokens
@@ -55,11 +57,25 @@ function parse_block(status: ParseStatus) {
       break;
     }
 
+    // Ignore comments
+    if (value.startsWith("//") || value.startsWith("/*")) {
+      consume(status);
+      continue;
+    }
+
     // First check for a keyword (var, if, switch, etc), then check for a following operator (=, +, etc)
     switch (value) {
       case "const":
       case "var": {
         parse_declaration(value, status);
+        break;
+      }
+      case "struct": {
+        parse_struct(status);
+        break;
+      }
+      case "trait": {
+        parse_trait(status);
         break;
       }
       case "func": {
@@ -82,6 +98,7 @@ function parse_block(status: ParseStatus) {
           }
           default: {
             // TODO: ??
+            consume(status);
             break;
           }
         }
@@ -101,22 +118,36 @@ function parse_declaration(declaration: "const" | "var", status: ParseStatus) {
     type: "",
     children: [],
   };
-  status.stack.at(-1)!.children.push(decl);
+  const parent = status.stack.at(-1)!;
+  switch (parent.node_type) {
+    case "root":
+    case "func": {
+      parent.children.push(decl);
+      break;
+    }
+    case "trait":
+    case "struct": {
+      (parent as StructNode).fields.push(decl);
+      break;
+    }
+    default: {
+      status.errors.push({
+        message: "Declaration cannot appear here",
+        i: status.tokens[status.i].i,
+      });
+      consume(status);
+      return;
+    }
+  }
 
   accept(declaration, status);
-
-  // Declaration name
   decl.name = consume(status);
-
-  // Declaration type
   if (accept(":", status)) {
     decl.type = consume(status);
     if (!check_type_exists(decl.type, status)) {
       decl.type = "?";
     }
   }
-
-  // Declaration value
   if (accept("=", status)) {
     decl.value = consume(status);
     check_type_and_value_match(decl.type, decl.value, status);
@@ -139,6 +170,91 @@ function parse_declaration(declaration: "const" | "var", status: ParseStatus) {
   });
 }
 
+// STRUCT
+
+function parse_struct(status: ParseStatus) {
+  const struct: StructNode = {
+    node_type: "struct",
+    name: "",
+    traits: [],
+    fields: [],
+    functions: [],
+    children: [],
+  };
+  const parent = status.stack.at(-1)!;
+  switch (parent.node_type) {
+    case "root":
+    case "func": {
+      parent.children.push(struct);
+      break;
+    }
+    default: {
+      status.errors.push({
+        message: "Struct cannot appear here",
+        i: status.tokens[status.i].i,
+      });
+      consume(status);
+      return;
+    }
+  }
+
+  status.stack.push(struct);
+
+  accept("struct", status);
+  struct.name = consume(status);
+  if (accept(":", status)) {
+    struct.traits.push(consume(status));
+    while (accept(",", status)) {
+      struct.traits.push(consume(status));
+    }
+  }
+  if (expect("{", status)) {
+    parse_block(status);
+    expect("}", status);
+  }
+
+  status.stack.pop();
+}
+
+// TRAIT
+
+function parse_trait(status: ParseStatus) {
+  const struct: TraitNode = {
+    node_type: "trait",
+    name: "",
+    fields: [],
+    functions: [],
+    children: [],
+  };
+  const parent = status.stack.at(-1)!;
+  switch (parent.node_type) {
+    case "root":
+    case "func": {
+      parent.children.push(struct);
+      break;
+    }
+    default: {
+      status.errors.push({
+        message: "Trait cannot appear here",
+        i: status.tokens[status.i].i,
+      });
+      consume(status);
+      return;
+    }
+  }
+
+  status.stack.push(struct);
+
+  accept("trait", status);
+  struct.name = consume(status);
+  if (expect("{", status)) {
+    parse_block(status);
+    expect("}", status);
+  }
+
+  status.stack.pop();
+}
+
 // ASSIGNMENT
 
 function parse_assignment(status: ParseStatus) {
@@ -148,7 +264,22 @@ function parse_assignment(status: ParseStatus) {
     right_value: "",
     children: [],
   };
-  status.stack.at(-1)!.children.push(assign);
+  const parent = status.stack.at(-1)!;
+  switch (parent.node_type) {
+    case "root":
+    case "func": {
+      parent.children.push(assign);
+      break;
+    }
+    default: {
+      status.errors.push({
+        message: "Assignment cannot appear here",
+        i: status.tokens[status.i].i,
+      });
+      consume(status);
+      return;
+    }
+  }
 
   assign.left_value = consume(status);
 
@@ -196,7 +327,28 @@ function parse_function(status: ParseStatus) {
     has_return: false,
     children: [],
   };
-  status.stack.at(-1)!.children.push(func);
+  const parent = status.stack.at(-1)!;
+  switch (parent.node_type) {
+    case "root":
+    case "func": {
+      parent.children.push(func);
+      break;
+    }
+    case "trait":
+    case "struct": {
+      (parent as StructNode).functions.push(func);
+      break;
+    }
+    default: {
+      status.errors.push({
+        message: "Function cannot appear here",
+        i: status.tokens[status.i].i,
+      });
+      consume(status);
+      return;
+    }
+  }
+
   status.stack.push(func);
 
   accept("func", status);
@@ -213,7 +365,11 @@ function parse_function(status: ParseStatus) {
           func.return_type = "?";
         }
       }
-      if (expect("{", status)) {
+      // Traits don't need a body, everything else does
+      if (
+        (parent.node_type === "trait" && accept("{", status)) ||
+        expect("{", status)
+      ) {
         parse_block(status);
         if (expect("}", status)) {
           if (func.return_type && !func.has_return) {
