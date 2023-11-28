@@ -42,10 +42,10 @@ typedef struct Person {
   char* name;
   int age;
 } Person;
-Person Person__init() {
+Person Person__init(char* name) {
   Person p;
   p._vt = &_Person_traits;
-  p.name = "";
+  p.name = name;
   p.age = 0;
   return p;
 }

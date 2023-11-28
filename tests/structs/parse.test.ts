@@ -3,6 +3,8 @@ import assert from "uvu/assert";
 import parse from "../../src/parse";
 import tokenize from "../../src/tokenize";
 import type StructNode from "../../src/types/StructNode";
+import type ValueNode from "../../src/types/ValueNode";
+import trim_test_data from "../trim_test_data";
 
 const test = suite("Struct parse");
 
@@ -19,8 +21,12 @@ struct Person {}
     fields: [],
     functions: [],
     children: [],
+    i: 0,
   };
-  assert.equal(result.root.children[0], expected);
+  assert.equal(
+    trim_test_data(result.root.children[0]),
+    trim_test_data(expected),
+  );
 });
 
 test("struct with fields", () => {
@@ -41,23 +47,34 @@ struct Person {
         node_type: "decl",
         declaration: "var",
         name: "name",
-        value: "",
         type: "string",
         children: [],
+        i: 0,
       },
       {
         node_type: "decl",
         declaration: "var",
         name: "age",
-        value: "0",
+        value: {
+          node_type: "value",
+          value: "0",
+          type: "int",
+          children: [],
+          i: 0,
+        } as ValueNode,
         type: "int",
         children: [],
+        i: 0,
       },
     ],
     functions: [],
     children: [],
+    i: 0,
   };
-  assert.equal(result.root.children[0], expected);
+  assert.equal(
+    trim_test_data(result.root.children[0]),
+    trim_test_data(expected),
+  );
 });
 
 test("struct with functions", () => {
@@ -81,11 +98,16 @@ struct Person {
         return_type: "",
         has_return: false,
         children: [],
+        i: 0,
       },
     ],
     children: [],
+    i: 0,
   };
-  assert.equal(result.root.children[0], expected);
+  assert.equal(
+    trim_test_data(result.root.children[0]),
+    trim_test_data(expected),
+  );
 });
 
 test.run();

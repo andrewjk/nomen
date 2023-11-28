@@ -50,6 +50,7 @@ y = "string?!"
   assert.equal(result.errors[0].message, "Unknown variable: y");
 });
 
+// TODO: This should be fine, as long as it's done once only?
 test("assignment to const", () => {
   const input = `
 const x: int

@@ -2,9 +2,11 @@ import { suite } from "uvu";
 import assert from "uvu/assert";
 import parse from "../../src/parse";
 import tokenize from "../../src/tokenize";
-import DeclarationNode from "../../src/types/DeclarationNode";
+import type DeclarationNode from "../../src/types/DeclarationNode";
 import type FunctionNode from "../../src/types/FunctionNode";
-import ReturnNode from "../../src/types/ReturnNode";
+import type ReturnNode from "../../src/types/ReturnNode";
+import type ValueNode from "../../src/types/ValueNode";
+import trim_test_data from "../trim_test_data";
 
 const test = suite("Function parse");
 
@@ -21,9 +23,14 @@ func add() {}
     return_type: "",
     has_return: false,
     children: [],
+    i: 0,
   };
-  assert.equal(result.root.children[0], expected);
+  assert.equal(
+    trim_test_data(result.root.children[0]),
+    trim_test_data(expected),
+  );
 });
+``;
 
 test("function with params", () => {
   const input = `
@@ -41,6 +48,7 @@ func add(a: int, b: int) {}
         type: "int",
         default_value: "",
         children: [],
+        i: 0,
       },
       {
         node_type: "param",
@@ -48,13 +56,18 @@ func add(a: int, b: int) {}
         type: "int",
         default_value: "",
         children: [],
+        i: 0,
       },
     ],
     return_type: "",
     has_return: false,
     children: [],
+    i: 0,
   };
-  assert.equal(result.root.children[0], expected);
+  assert.equal(
+    trim_test_data(result.root.children[0]),
+    trim_test_data(expected),
+  );
 });
 
 test("function with params with default value", () => {
@@ -73,6 +86,7 @@ func add(a: int, b = 5) {}
         type: "int",
         default_value: "",
         children: [],
+        i: 0,
       },
       {
         node_type: "param",
@@ -80,13 +94,18 @@ func add(a: int, b = 5) {}
         type: "int",
         default_value: "5",
         children: [],
+        i: 0,
       },
     ],
     return_type: "",
     has_return: false,
     children: [],
+    i: 0,
   };
-  assert.equal(result.root.children[0], expected);
+  assert.equal(
+    trim_test_data(result.root.children[0]),
+    trim_test_data(expected),
+  );
 });
 
 test("function with return type", () => {
@@ -102,8 +121,12 @@ func add() -> int {}
     return_type: "int",
     has_return: false,
     children: [],
+    i: 0,
   };
-  assert.equal(result.root.children[0], expected);
+  assert.equal(
+    trim_test_data(result.root.children[0]),
+    trim_test_data(expected),
+  );
 });
 
 test("function with body", () => {
@@ -118,9 +141,16 @@ func add() {
     node_type: "decl",
     declaration: "var",
     name: "x",
-    value: "5",
+    value: {
+      node_type: "value",
+      value: "5",
+      type: "int",
+      children: [],
+      i: 0,
+    } as ValueNode,
     type: "int",
     children: [],
+    i: 0,
   };
   const expected: FunctionNode = {
     node_type: "func",
@@ -129,8 +159,12 @@ func add() {
     return_type: "",
     has_return: false,
     children: [decl],
+    i: 0,
   };
-  assert.equal(result.root.children[0], expected);
+  assert.equal(
+    trim_test_data(result.root.children[0]),
+    trim_test_data(expected),
+  );
 });
 
 test("function with return value", () => {
@@ -146,6 +180,7 @@ func add() -> int {
     value: "5",
     type: "int",
     children: [],
+    i: 0,
   };
   const expected: FunctionNode = {
     node_type: "func",
@@ -154,8 +189,12 @@ func add() -> int {
     return_type: "int",
     has_return: true,
     children: [ret],
+    i: 0,
   };
-  assert.equal(result.root.children[0], expected);
+  assert.equal(
+    trim_test_data(result.root.children[0]),
+    trim_test_data(expected),
+  );
 });
 
 test("function followed by function", () => {
@@ -173,6 +212,7 @@ func subtract() {}
     return_type: "",
     has_return: false,
     children: [],
+    i: 0,
   };
   const subtractFunction: FunctionNode = {
     node_type: "func",
@@ -181,9 +221,16 @@ func subtract() {}
     return_type: "",
     has_return: false,
     children: [],
+    i: 0,
   };
-  assert.equal(result.root.children[0], addFunction);
-  assert.equal(result.root.children[1], subtractFunction);
+  assert.equal(
+    trim_test_data(result.root.children[0]),
+    trim_test_data(addFunction),
+  );
+  assert.equal(
+    trim_test_data(result.root.children[1]),
+    trim_test_data(subtractFunction),
+  );
 });
 
 test.run();

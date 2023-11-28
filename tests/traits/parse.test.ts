@@ -3,9 +3,11 @@ import assert from "uvu/assert";
 import parse from "../../src/parse";
 import tokenize from "../../src/tokenize";
 import type ParseNode from "../../src/types/ParseNode";
-import ReturnNode from "../../src/types/ReturnNode";
+import type ReturnNode from "../../src/types/ReturnNode";
 import type StructNode from "../../src/types/StructNode";
 import type TraitNode from "../../src/types/TraitNode";
+import type ValueNode from "../../src/types/ValueNode";
+import trim_test_data from "../trim_test_data";
 
 const test = suite("Trait parse");
 
@@ -23,6 +25,7 @@ struct Frank: Person {}
     fields: [],
     functions: [],
     children: [],
+    i: 0,
   };
   const struct: StructNode = {
     node_type: "struct",
@@ -31,12 +34,14 @@ struct Frank: Person {}
     fields: [],
     functions: [],
     children: [],
+    i: 0,
   };
   const expected: ParseNode = {
     node_type: "root",
     children: [trait, struct],
+    i: 0,
   };
-  assert.equal(result.root, expected);
+  assert.equal(trim_test_data(result.root), trim_test_data(expected));
 });
 
 test("trait with fields", () => {
@@ -60,21 +65,29 @@ struct Frank: Person {
         node_type: "decl",
         declaration: "var",
         name: "name",
-        value: "",
         type: "string",
         children: [],
+        i: 0,
       },
       {
         node_type: "decl",
         declaration: "var",
         name: "age",
-        value: "0",
+        value: {
+          node_type: "value",
+          value: "0",
+          type: "int",
+          children: [],
+          i: 0,
+        } as ValueNode,
         type: "int",
         children: [],
+        i: 0,
       },
     ],
     functions: [],
     children: [],
+    i: 0,
   };
   const struct: StructNode = {
     node_type: "struct",
@@ -85,19 +98,28 @@ struct Frank: Person {
         node_type: "decl",
         declaration: "var",
         name: "name",
-        value: '"Frank"',
+        value: {
+          node_type: "value",
+          value: '"Frank"',
+          type: "string",
+          children: [],
+          i: 0,
+        } as ValueNode,
         type: "string",
         children: [],
+        i: 0,
       },
     ],
     functions: [],
     children: [],
+    i: 0,
   };
   const expected: ParseNode = {
     node_type: "root",
     children: [trait, struct],
+    i: 0,
   };
-  assert.equal(result.root, expected);
+  assert.equal(trim_test_data(result.root), trim_test_data(expected));
 });
 
 test("trait with functions", () => {
@@ -126,9 +148,11 @@ struct Frank: Person {
         return_type: "string",
         has_return: false,
         children: [],
+        i: 0,
       },
     ],
     children: [],
+    i: 0,
   };
   const struct: StructNode = {
     node_type: "struct",
@@ -148,17 +172,21 @@ struct Frank: Person {
             value: '"hi"',
             type: "string",
             children: [],
+            i: 0,
           } as ReturnNode,
         ],
+        i: 0,
       },
     ],
     children: [],
+    i: 0,
   };
   const expected: ParseNode = {
     node_type: "root",
     children: [trait, struct],
+    i: 0,
   };
-  assert.equal(result.root, expected);
+  assert.equal(trim_test_data(result.root), trim_test_data(expected));
 });
 
 test("trait with implemented functions", () => {
@@ -187,9 +215,11 @@ struct Frank: Person {
         return_type: "",
         has_return: false,
         children: [],
+        i: 0,
       },
     ],
     children: [],
+    i: 0,
   };
   const struct: StructNode = {
     node_type: "struct",
@@ -209,17 +239,21 @@ struct Frank: Person {
             value: '"hi"',
             type: "string",
             children: [],
+            i: 0,
           } as ReturnNode,
         ],
+        i: 0,
       },
     ],
     children: [],
+    i: 0,
   };
   const expected: ParseNode = {
     node_type: "root",
     children: [trait, struct],
+    i: 0,
   };
-  assert.equal(result.root, expected);
+  assert.equal(trim_test_data(result.root), trim_test_data(expected));
 });
 
 test.run();

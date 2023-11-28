@@ -130,4 +130,5 @@ func add() -> int {}
   assert.equal(result.errors[0].i, 20);
   assert.equal(result.errors[0].message, "Missing return");
 });
+
 test.run();
