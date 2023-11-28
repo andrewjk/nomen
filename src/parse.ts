@@ -3,6 +3,7 @@ import type AssignmentNode from "./types/AssignmentNode";
 import type DeclarationNode from "./types/DeclarationNode";
 import type FieldAccessNode from "./types/FieldAccessNode";
 import type FunctionNode from "./types/FunctionNode";
+import type InvocationNode from "./types/InvocationNode";
 import type ParameterNode from "./types/ParameterNode";
 import type ParseError from "./types/ParseError";
 import type ParseNode from "./types/ParseNode";
@@ -29,6 +30,7 @@ interface ParseStatus {
   // TODO: Scope these!
   structs: StructNode[];
   traits: TraitNode[];
+  functions: FunctionNode[];
   // Errors that have been encountered
   errors: ParseError[];
 }
@@ -48,6 +50,7 @@ export default function parse(tokens: Token[]): ParseResult {
     types: ["int", "string"],
     structs: [],
     traits: [],
+    functions: [],
     errors: [],
   };
 
@@ -132,6 +135,24 @@ function parse_statement_start(status: ParseStatus) {
           i: node.i,
         };
         node = access;
+        break;
+      }
+      case "(": {
+        accept("(", status);
+        const invoke: InvocationNode = {
+          node_type: "invoke",
+          name: (node as ValueNode).value,
+          params: [],
+          type: "",
+          children: [],
+          i: node.i,
+        };
+        if (peek_current(status) !== ")") {
+          parse_invocation_parameter(invoke, status);
+        }
+        expect(")", status);
+        check_invocation_node(invoke, status);
+        node = invoke;
         break;
       }
       case "=": {
@@ -436,13 +457,14 @@ function parse_function(status: ParseStatus) {
   }
 
   status.stack.push(func);
+  status.functions.push(func);
 
   accept("func", status);
   func.name = consume(status);
 
   if (expect("(", status)) {
     if (peek_current(status) !== ")") {
-      parse_parameter(func, status);
+      parse_function_parameter(func, status);
     }
     if (expect(")", status)) {
       if (accept("->", status)) {
@@ -472,7 +494,7 @@ function parse_function(status: ParseStatus) {
   status.stack.pop();
 }
 
-function parse_parameter(func: FunctionNode, status: ParseStatus) {
+function parse_function_parameter(func: FunctionNode, status: ParseStatus) {
   const param: ParameterNode = {
     node_type: "param",
     name: "",
@@ -516,7 +538,122 @@ function parse_parameter(func: FunctionNode, status: ParseStatus) {
 
   // Next parameter
   if (accept(",", status)) {
-    parse_parameter(func, status);
+    parse_function_parameter(func, status);
+  }
+}
+
+// INVOCATION
+/*
+function parse_invocation(name: string, status: ParseStatus) {
+  const invoke: InvocationNode = {
+    node_type: "invoke",
+    name: "",
+    params: [],
+    type: "",
+    children: [],
+    i: status.tokens[status.i].i,
+  };
+  const parent = status.stack.at(-1)!;
+  switch (parent.node_type) {
+    case "root":
+    case "func": {
+      parent.children.push(invoke);
+      break;
+    }
+    default: {
+      status.errors.push({
+        message: "Function invocation cannot appear here",
+        i: invoke.i,
+      });
+      consume(status);
+      return;
+    }
+  }
+
+  status.stack.push(invoke);
+
+
+  if (expect("(", status)) {
+    if (peek_current(status) !== ")") {
+      parse_function_parameter(func, status);
+    }
+    if (expect(")", status)) {
+      if (accept("->", status)) {
+        func.return_type = consume(status);
+        if (!check_type_exists(func.return_type, status)) {
+          func.return_type = "?";
+        }
+      }
+      // Traits don't need a body, everything else does
+      if (
+        (parent.node_type === "trait" && accept("{", status)) ||
+        expect("{", status)
+      ) {
+        parse_statement(status);
+        if (expect("}", status)) {
+          if (func.return_type && !func.has_return) {
+            status.errors.push({
+              i: status.tokens[status.i - 1].i,
+              message: `Missing return`,
+            });
+          }
+        }
+      }
+    }
+  }
+
+  status.stack.pop();
+}
+*/
+function parse_invocation_parameter(
+  invoke: InvocationNode,
+  status: ParseStatus,
+) {
+  const param = parse_expression(status);
+  invoke.params.push(param);
+
+  // Next parameter
+  if (accept(",", status)) {
+    parse_invocation_parameter(invoke, status);
+  }
+}
+
+function check_invocation_node(invoke: InvocationNode, status: ParseStatus) {
+  const func = status.functions.find((f) => f.name === invoke.name);
+  if (!func) {
+    status.errors.push({
+      message: `Function not found: ${invoke.name}`,
+      i: invoke.i,
+    });
+  } else if (invoke.params.length > func.params.length) {
+    status.errors.push({
+      message: `Too many parameters for function: ${invoke.name}`,
+      i: invoke.i,
+    });
+  } else if (invoke.params.length < func.params.length) {
+    status.errors.push({
+      message: `Parameters missing for function: ${invoke.name}`,
+      i: invoke.i,
+    });
+  } else {
+    invoke.params.forEach((param, i) => {
+      const paramType = func.params[i].type;
+      const valueType = type_from_value_node(param, status);
+      if (valueType === "?") {
+        status.errors.push({
+          message: `Type mismatch -- unknown value type: ${value_from_value_node(
+            param,
+            status,
+          )} cannot be used for ${paramType} parameter`,
+          i: param.i,
+        });
+      } else if (valueType !== paramType) {
+        status.errors.push({
+          message: `Type mismatch: ${valueType} cannot be used for ${paramType} parameter`,
+          i: param.i,
+        });
+      }
+    });
   }
 }
 

@@ -3,6 +3,7 @@ import type AssignmentNode from "./types/AssignmentNode";
 import type BuildResult from "./types/BuildResult";
 import type DeclarationNode from "./types/DeclarationNode";
 import type FunctionNode from "./types/FunctionNode";
+import InvocationNode from "./types/InvocationNode";
 import type ParameterNode from "./types/ParameterNode";
 import type ParseNode from "./types/ParseNode";
 import type ReturnNode from "./types/ReturnNode";
@@ -58,6 +59,10 @@ function build_node(node: ParseNode, status: BuildStatus) {
     }
     case "func": {
       build_function_node(node as FunctionNode, status);
+      break;
+    }
+    case "invoke": {
+      build_invocation_node(node as InvocationNode, status);
       break;
     }
     case "access": {
@@ -296,6 +301,17 @@ function build_parameter_node(node: ParameterNode, status: BuildStatus) {
     status.code += " ";
   }
   status.code += node.name;
+}
+
+function build_invocation_node(node: InvocationNode, status: BuildStatus) {
+  status.code += `${node.name}(`;
+  for (let i = 0; i < node.params.length; i++) {
+    if (i > 0) {
+      status.code += ", ";
+    }
+    build_node(node.params[i], status);
+  }
+  status.code += ");\n";
 }
 
 function build_access_node(node: AccessNode, status: BuildStatus) {
