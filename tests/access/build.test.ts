@@ -82,4 +82,65 @@ p.address.line = "1 main st"
   assert.equal(result.code.trim(), expected.trim());
 });
 
+test("getting function", () => {
+  const input = `
+struct Person {
+  func age() -> int {}
+}
+var p: Person
+var x = p.age()
+`;
+  const tokens = tokenize(input);
+  const parsed = parse(tokens);
+  const result = build(parsed.root.children[2]);
+  const expected = `
+  int x = p.age();
+`;
+  assert.equal(result.code.trim(), expected.trim());
+});
+
+test("getting function after field", () => {
+  const input = `
+struct Address {
+  func line() -> string {
+    return "123 main st"
+  }
+}
+struct Person {
+  var age: int
+  var address: Address
+}
+var p: Person
+var x = p.address.line()
+`;
+  const tokens = tokenize(input);
+  const parsed = parse(tokens);
+  const result = build(parsed.root.children[3]);
+  const expected = `
+  char* x = p.address.line();
+`;
+  assert.equal(result.code.trim(), expected.trim());
+});
+
+test("getting field after function", () => {
+  const input = `
+struct Address {
+  var line: string
+}
+struct Person {
+  var age: int
+  func address() -> Address {}
+}
+var p: Person
+var x = p.address().line
+`;
+  const tokens = tokenize(input);
+  const parsed = parse(tokens);
+  const result = build(parsed.root.children[3]);
+  const expected = `
+  char* x = p.address().line;
+`;
+  assert.equal(result.code.trim(), expected.trim());
+});
+
 test.run();

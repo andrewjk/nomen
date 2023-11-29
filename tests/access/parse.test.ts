@@ -6,6 +6,7 @@ import type AccessNode from "../../src/types/AccessNode";
 import type AssignmentNode from "../../src/types/AssignmentNode";
 import type DeclarationNode from "../../src/types/DeclarationNode";
 import type FieldAccessNode from "../../src/types/FieldAccessNode";
+import type InvocationNode from "../../src/types/InvocationNode";
 import type ValueNode from "../../src/types/ValueNode";
 import trim_test_data from "../trim_test_data";
 
@@ -214,6 +215,172 @@ p.address.line = "1 main st"
       children: [],
       i: 0,
     } as ValueNode,
+    children: [],
+    i: 0,
+  };
+  assert.equal(
+    trim_test_data(result.root.children[3]),
+    trim_test_data(expected),
+  );
+});
+
+test("getting function", () => {
+  const input = `
+struct Person {
+  func age() -> int {}
+}
+var p: Person
+var x = p.age()
+`;
+  const tokens = tokenize(input);
+  const result = parse(tokens);
+  const expected: DeclarationNode = {
+    node_type: "decl",
+    declaration: "var",
+    name: "x",
+    value: {
+      node_type: "access",
+      source: {
+        node_type: "value",
+        value: "p",
+        type: "Person",
+        children: [],
+        i: 0,
+      } as ValueNode,
+      access: {
+        node_type: "invoke",
+        name: "age",
+        params: [],
+        type: "int",
+        children: [],
+        i: 0,
+      } as InvocationNode,
+      children: [],
+      i: 0,
+    } as AccessNode,
+    type: "int",
+    children: [],
+    i: 0,
+  };
+  assert.equal(
+    trim_test_data(result.root.children[2]),
+    trim_test_data(expected),
+  );
+});
+
+test("getting function after field", () => {
+  const input = `
+struct Address {
+  func line() -> string {
+    return "123 main st"
+  }
+}
+struct Person {
+  var age: int
+  var address: Address
+}
+var p: Person
+var x = p.address.line()
+`;
+  const tokens = tokenize(input);
+  const result = parse(tokens);
+  const expected: DeclarationNode = {
+    node_type: "decl",
+    declaration: "var",
+    name: "x",
+    value: {
+      node_type: "access",
+      source: {
+        node_type: "access",
+        source: {
+          node_type: "value",
+          value: "p",
+          type: "Person",
+          children: [],
+          i: 0,
+        } as ValueNode,
+        access: {
+          node_type: "field",
+          name: "address",
+          type: "Address",
+          children: [],
+          i: 0,
+        } as FieldAccessNode,
+        children: [],
+        i: 0,
+      } as AccessNode,
+      access: {
+        node_type: "invoke",
+        name: "line",
+        params: [],
+        type: "string",
+        children: [],
+        i: 0,
+      } as InvocationNode,
+      children: [],
+      i: 0,
+    } as AccessNode,
+    type: "string",
+    children: [],
+    i: 0,
+  };
+  assert.equal(
+    trim_test_data(result.root.children[3]),
+    trim_test_data(expected),
+  );
+});
+
+test("getting field after function", () => {
+  const input = `
+struct Address {
+  var line: string
+}
+struct Person {
+  var age: int
+  func address() -> Address {}
+}
+var p: Person
+var x = p.address().line
+`;
+  const tokens = tokenize(input);
+  const result = parse(tokens);
+  const expected: DeclarationNode = {
+    node_type: "decl",
+    declaration: "var",
+    name: "x",
+    value: {
+      node_type: "access",
+      source: {
+        node_type: "access",
+        source: {
+          node_type: "value",
+          value: "p",
+          type: "Person",
+          children: [],
+          i: 0,
+        } as ValueNode,
+        access: {
+          node_type: "invoke",
+          name: "address",
+          params: [],
+          type: "Address",
+          children: [],
+          i: 0,
+        } as InvocationNode,
+        children: [],
+        i: 0,
+      } as AccessNode,
+      access: {
+        node_type: "field",
+        name: "line",
+        type: "string",
+        children: [],
+        i: 0,
+      } as FieldAccessNode,
+      children: [],
+      i: 0,
+    } as AccessNode,
+    type: "string",
     children: [],
     i: 0,
   };

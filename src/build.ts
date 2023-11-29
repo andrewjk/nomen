@@ -3,7 +3,7 @@ import type AssignmentNode from "./types/AssignmentNode";
 import type BuildResult from "./types/BuildResult";
 import type DeclarationNode from "./types/DeclarationNode";
 import type FunctionNode from "./types/FunctionNode";
-import InvocationNode from "./types/InvocationNode";
+import type InvocationNode from "./types/InvocationNode";
 import type ParameterNode from "./types/ParameterNode";
 import type ParseNode from "./types/ParseNode";
 import type ReturnNode from "./types/ReturnNode";
@@ -281,15 +281,13 @@ function build_function_node(node: FunctionNode, status: BuildStatus) {
     }
     build_parameter_node(node.params[i], status);
   }
-  status.code += `) {
-`;
+  status.code += `) {\n`;
   status.indent += 1;
   for (let child of node.children) {
     build_node(child, status);
   }
   status.indent -= 1;
-  status.code += `${indent(status)}}
-`;
+  status.code += `${indent(status)}}\n`;
 }
 
 function build_parameter_node(node: ParameterNode, status: BuildStatus) {
@@ -316,7 +314,25 @@ function build_invocation_node(node: InvocationNode, status: BuildStatus) {
 
 function build_access_node(node: AccessNode, status: BuildStatus) {
   build_node(node.source, status);
-  status.code += `.${node.access.name}`;
+  status.code += ".";
+  switch (node.access.node_type) {
+    case "field": {
+      status.code += node.access.name;
+      break;
+    }
+    case "invoke": {
+      const invoke = node.access as InvocationNode;
+      status.code += `${invoke.name}(`;
+      for (let i = 0; i < invoke.params.length; i++) {
+        if (i > 0) {
+          status.code += ", ";
+        }
+        build_node(invoke.params[i], status);
+      }
+      status.code += ")";
+      break;
+    }
+  }
 }
 
 function build_return_node(node: ReturnNode, status: BuildStatus) {

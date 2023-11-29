@@ -151,6 +151,11 @@ function parse_statement_start(status: ParseStatus) {
           parse_invocation_parameter(invoke, status);
         }
         expect(")", status);
+        // HACK:
+        const func = status.functions.find((f) => f.name === invoke.name);
+        if (func) {
+          invoke.type = func.return_type;
+        }
         check_invocation_node(invoke, status);
         node = invoke;
         break;
@@ -543,68 +548,7 @@ function parse_function_parameter(func: FunctionNode, status: ParseStatus) {
 }
 
 // INVOCATION
-/*
-function parse_invocation(name: string, status: ParseStatus) {
-  const invoke: InvocationNode = {
-    node_type: "invoke",
-    name: "",
-    params: [],
-    type: "",
-    children: [],
-    i: status.tokens[status.i].i,
-  };
-  const parent = status.stack.at(-1)!;
-  switch (parent.node_type) {
-    case "root":
-    case "func": {
-      parent.children.push(invoke);
-      break;
-    }
-    default: {
-      status.errors.push({
-        message: "Function invocation cannot appear here",
-        i: invoke.i,
-      });
-      consume(status);
-      return;
-    }
-  }
 
-  status.stack.push(invoke);
-
-
-  if (expect("(", status)) {
-    if (peek_current(status) !== ")") {
-      parse_function_parameter(func, status);
-    }
-    if (expect(")", status)) {
-      if (accept("->", status)) {
-        func.return_type = consume(status);
-        if (!check_type_exists(func.return_type, status)) {
-          func.return_type = "?";
-        }
-      }
-      // Traits don't need a body, everything else does
-      if (
-        (parent.node_type === "trait" && accept("{", status)) ||
-        expect("{", status)
-      ) {
-        parse_statement(status);
-        if (expect("}", status)) {
-          if (func.return_type && !func.has_return) {
-            status.errors.push({
-              i: status.tokens[status.i - 1].i,
-              message: `Missing return`,
-            });
-          }
-        }
-      }
-    }
-  }
-
-  status.stack.pop();
-}
-*/
 function parse_invocation_parameter(
   invoke: InvocationNode,
   status: ParseStatus,
@@ -695,18 +639,42 @@ function parse_return(status: ParseStatus) {
 
 // ACCESS
 
-function parse_access(status: ParseStatus): FieldAccessNode {
+function parse_access(status: ParseStatus): FieldAccessNode | InvocationNode {
   const i = status.tokens[status.i].i;
   const name = consume(status);
   const type = type_from_value(name, status);
-  const field: FieldAccessNode = {
-    node_type: "field",
-    name,
-    type,
-    children: [],
-    i,
-  };
-  return field;
+
+  if (peek_current(status) === "(") {
+    accept("(", status);
+    const invoke: InvocationNode = {
+      node_type: "invoke",
+      name,
+      params: [],
+      type,
+      children: [],
+      i,
+    };
+    if (peek_current(status) !== ")") {
+      parse_invocation_parameter(invoke, status);
+    }
+    expect(")", status);
+    // HACK:
+    const func = status.functions.find((f) => f.name === invoke.name);
+    if (func) {
+      invoke.type = func.return_type;
+    }
+    check_invocation_node(invoke, status);
+    return invoke;
+  } else {
+    const field: FieldAccessNode = {
+      node_type: "field",
+      name,
+      type,
+      children: [],
+      i,
+    };
+    return field;
+  }
 }
 
 // PROCESSING
@@ -790,6 +758,9 @@ function type_from_value_node(node: ParseNode, status: ParseStatus): string {
     }
     case "field": {
       return (node as FieldAccessNode).type;
+    }
+    case "invoke": {
+      return (node as InvocationNode).type;
     }
   }
   return "?";
