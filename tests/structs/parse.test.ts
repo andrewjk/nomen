@@ -19,7 +19,16 @@ struct Person {}
     name: "Person",
     traits: [],
     fields: [],
-    functions: [],
+    functions: [
+      {
+        node_type: "func",
+        name: "init",
+        params: [],
+        return_type: "Person",
+        children: [],
+        i: 0,
+      },
+    ],
     children: [],
     i: 0,
   };
@@ -67,7 +76,25 @@ struct Person {
         i: 0,
       },
     ],
-    functions: [],
+    functions: [
+      {
+        node_type: "func",
+        name: "init",
+        params: [
+          {
+            node_type: "param",
+            name: "name",
+            type: "string",
+            default_value: undefined,
+            children: [],
+            i: 0,
+          },
+        ],
+        return_type: "Person",
+        children: [],
+        i: 0,
+      },
+    ],
     children: [],
     i: 0,
   };
@@ -93,10 +120,17 @@ struct Person {
     functions: [
       {
         node_type: "func",
+        name: "init",
+        params: [],
+        return_type: "Person",
+        children: [],
+        i: 0,
+      },
+      {
+        node_type: "func",
         name: "greet",
         params: [],
         return_type: "",
-        has_return: false,
         children: [],
         i: 0,
       },

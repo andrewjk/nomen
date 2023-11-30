@@ -5,4 +5,6 @@ export default interface InvocationNode extends ParseNode {
   name: string;
   params: ParseNode[];
   type: string;
+  // HACK: This should probably be on AccessNode
+  static?: boolean;
 }

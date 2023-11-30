@@ -130,7 +130,7 @@ function parse_statement_start(status: ParseStatus) {
         const access: AccessNode = {
           node_type: "access",
           source: node,
-          access: parse_access(status),
+          access: parse_access(value, type, status),
           children: [],
           i: node.i,
         };
@@ -141,9 +141,9 @@ function parse_statement_start(status: ParseStatus) {
         accept("(", status);
         const invoke: InvocationNode = {
           node_type: "invoke",
-          name: (node as ValueNode).value,
+          name: value,
           params: [],
-          type: "",
+          type,
           children: [],
           i: node.i,
         };
@@ -151,11 +151,6 @@ function parse_statement_start(status: ParseStatus) {
           parse_invocation_parameter(invoke, status);
         }
         expect(")", status);
-        // HACK:
-        const func = status.functions.find((f) => f.name === invoke.name);
-        if (func) {
-          invoke.type = func.return_type;
-        }
         check_invocation_node(invoke, status);
         node = invoke;
         break;
@@ -201,8 +196,8 @@ function parse_statement_start(status: ParseStatus) {
  */
 function parse_expression(status: ParseStatus): ParseNode {
   const i = status.tokens[status.i].i;
-  const value = consume(status);
-  const type = type_from_value(value, status);
+  let value = consume(status);
+  let type = type_from_value(value, status);
   let node: ParseNode = {
     node_type: "value",
     value,
@@ -219,11 +214,44 @@ function parse_expression(status: ParseStatus): ParseNode {
         const access: AccessNode = {
           node_type: "access",
           source: node,
-          access: parse_access(status),
+          access: parse_access(value, type, status),
           children: [],
           i: node.i,
         };
         node = access;
+        // TODO: This should be a type prop on AccessNode
+        switch (access.access.node_type) {
+          case "field": {
+            value = (access.access as FieldAccessNode).name;
+            type = (access.access as FieldAccessNode).type;
+            break;
+          }
+          case "invoke": {
+            value = (access.access as InvocationNode).name;
+            type = (access.access as InvocationNode).type;
+            break;
+          }
+        }
+        break;
+      }
+      case "(": {
+        accept("(", status);
+        const invoke: InvocationNode = {
+          node_type: "invoke",
+          name: value,
+          params: [],
+          type,
+          children: [],
+          i,
+        };
+        if (peek_current(status) !== ")") {
+          parse_invocation_parameter(invoke, status);
+        }
+        expect(")", status);
+        check_invocation_node(invoke, status);
+        node = invoke;
+        value = invoke.name;
+        type = invoke.type;
         break;
       }
       default: {
@@ -328,6 +356,27 @@ function parse_struct(status: ParseStatus) {
     expect("}", status);
   }
 
+  // Add the init function to the struct
+  struct.functions.unshift({
+    node_type: "func",
+    name: "init",
+    params: struct.fields
+      .filter((f) => !f.value)
+      .map((f) => {
+        return {
+          node_type: "param",
+          name: f.name,
+          type: f.type,
+          default_value: f.value,
+          children: [],
+          i: 0,
+        } as ParameterNode;
+      }),
+    return_type: struct.name,
+    children: [],
+    i: 0,
+  } as FunctionNode);
+
   status.stack.pop();
 
   status.types.push(struct.name);
@@ -349,6 +398,13 @@ function parse_struct(status: ParseStatus) {
       break;
     }
   }
+
+  // Add a new value to the stack
+  status.values.push({
+    declaration: "struct",
+    name: struct.name,
+    type: struct.name,
+  });
 }
 
 // TRAIT
@@ -435,7 +491,6 @@ function parse_function(status: ParseStatus) {
     name: "",
     params: [],
     return_type: "",
-    has_return: false,
     children: [],
     i: status.tokens[status.i].i,
   };
@@ -504,7 +559,6 @@ function parse_function_parameter(func: FunctionNode, status: ParseStatus) {
     node_type: "param",
     name: "",
     type: "",
-    default_value: "",
     children: [],
     i: status.tokens[status.i].i,
   };
@@ -564,6 +618,18 @@ function parse_invocation_parameter(
 
 function check_invocation_node(invoke: InvocationNode, status: ParseStatus) {
   const func = status.functions.find((f) => f.name === invoke.name);
+  check_invocation_function(invoke, status, func);
+}
+
+function check_invocation_function(
+  invoke: InvocationNode,
+  status: ParseStatus,
+  func?: FunctionNode,
+) {
+  // HACK:
+  if (func) {
+    invoke.type = func.return_type;
+  }
   if (!func) {
     status.errors.push({
       message: `Function not found: ${invoke.name}`,
@@ -639,7 +705,11 @@ function parse_return(status: ParseStatus) {
 
 // ACCESS
 
-function parse_access(status: ParseStatus): FieldAccessNode | InvocationNode {
+function parse_access(
+  source_name: string,
+  source_type: string,
+  status: ParseStatus,
+): FieldAccessNode | InvocationNode {
   const i = status.tokens[status.i].i;
   const name = consume(status);
   const type = type_from_value(name, status);
@@ -654,16 +724,16 @@ function parse_access(status: ParseStatus): FieldAccessNode | InvocationNode {
       children: [],
       i,
     };
+    // HACK:
+    if (invoke.name === "init") {
+      invoke.type = source_name;
+      invoke.static = true;
+    }
     if (peek_current(status) !== ")") {
       parse_invocation_parameter(invoke, status);
     }
     expect(")", status);
-    // HACK:
-    const func = status.functions.find((f) => f.name === invoke.name);
-    if (func) {
-      invoke.type = func.return_type;
-    }
-    check_invocation_node(invoke, status);
+    check_access_invocation_node(source_type, invoke, status);
     return invoke;
   } else {
     const field: FieldAccessNode = {
@@ -675,6 +745,16 @@ function parse_access(status: ParseStatus): FieldAccessNode | InvocationNode {
     };
     return field;
   }
+}
+
+function check_access_invocation_node(
+  source_type: string,
+  invoke: InvocationNode,
+  status: ParseStatus,
+) {
+  const struct = status.structs.find((s) => s.name === source_type);
+  const func = struct?.functions.find((f) => f.name === invoke.name);
+  check_invocation_function(invoke, status, func);
 }
 
 // PROCESSING

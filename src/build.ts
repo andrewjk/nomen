@@ -202,6 +202,12 @@ ${indent(status)}${objectName}._vt = &_${node.name}_traits;
   // Build the struct's functions
   // TODO: Default functions from traits
   for (var func of node.functions) {
+    if (func.name === "init") {
+      // We create the constructor elsewhere
+      // We may need to do this here later on, if we allow custom init methods
+      continue;
+    }
+
     // Define the function
     // HACK: Need to map names to types
     // TODO: Make Access and Invocation nodes a Target/Function thing rather than being in a series
@@ -314,14 +320,15 @@ function build_invocation_node(node: InvocationNode, status: BuildStatus) {
 
 function build_access_node(node: AccessNode, status: BuildStatus) {
   build_node(node.source, status);
-  status.code += ".";
   switch (node.access.node_type) {
     case "field": {
+      status.code += ".";
       status.code += node.access.name;
       break;
     }
     case "invoke": {
       const invoke = node.access as InvocationNode;
+      status.code += invoke.static ? "_" : ".";
       status.code += `${invoke.name}(`;
       for (let i = 0; i < invoke.params.length; i++) {
         if (i > 0) {

@@ -32,7 +32,16 @@ struct Frank: Person {}
     name: "Frank",
     traits: ["Person"],
     fields: [],
-    functions: [],
+    functions: [
+      {
+        node_type: "func",
+        name: "init",
+        params: [],
+        return_type: "Frank",
+        children: [],
+        i: 0,
+      },
+    ],
     children: [],
     i: 0,
   };
@@ -110,7 +119,16 @@ struct Frank: Person {
         i: 0,
       },
     ],
-    functions: [],
+    functions: [
+      {
+        node_type: "func",
+        name: "init",
+        params: [],
+        return_type: "Frank",
+        children: [],
+        i: 0,
+      },
+    ],
     children: [],
     i: 0,
   };
@@ -146,7 +164,6 @@ struct Frank: Person {
         name: "greet",
         params: [],
         return_type: "string",
-        has_return: false,
         children: [],
         i: 0,
       },
@@ -160,6 +177,14 @@ struct Frank: Person {
     traits: ["Person"],
     fields: [],
     functions: [
+      {
+        node_type: "func",
+        name: "init",
+        params: [],
+        return_type: "Frank",
+        children: [],
+        i: 0,
+      },
       {
         node_type: "func",
         name: "greet",
@@ -213,7 +238,6 @@ struct Frank: Person {
         name: "greet",
         params: [],
         return_type: "",
-        has_return: false,
         children: [],
         i: 0,
       },
@@ -227,6 +251,14 @@ struct Frank: Person {
     traits: ["Person"],
     fields: [],
     functions: [
+      {
+        node_type: "func",
+        name: "init",
+        params: [],
+        return_type: "Frank",
+        children: [],
+        i: 0,
+      },
       {
         node_type: "func",
         name: "greet",
