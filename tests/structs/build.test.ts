@@ -14,10 +14,11 @@ struct Person {}
   const parsed = parse(tokens);
   const result = build(parsed.root.children[0]);
   const expected = `
+// Person:
 typedef struct Person {
   void *_vt;
 } Person;
-Person Person__init() {
+Person Person_init() {
   Person p;
   p._vt = &_Person_traits;
   return p;
@@ -37,12 +38,13 @@ struct Person {
   const parsed = parse(tokens);
   const result = build(parsed.root.children[0]);
   const expected = `
+// Person:
 typedef struct Person {
   void *_vt;
   char* name;
   int age;
 } Person;
-Person Person__init(char* name) {
+Person Person_init(char* name) {
   Person p;
   p._vt = &_Person_traits;
   p.name = name;
@@ -63,15 +65,16 @@ struct Person {
   const parsed = parse(tokens);
   const result = build(parsed.root.children[0]);
   const expected = `
+// Person:
 typedef struct Person {
   void *_vt;
 } Person;
-Person Person__init() {
+Person Person_init() {
   Person p;
   p._vt = &_Person_traits;
   return p;
 }
-void Person_greet() {
+void Person_greet(struct Person this) {
 }
 `;
   assert.equal(result.code.trim(), expected.trim());

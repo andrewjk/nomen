@@ -117,17 +117,40 @@ function processFile(filename: string, config: Config) {
   console.log("Processing", filename);
 
   // TODO: Automatic encoding
-  const input = fs.readFileSync(filename, "utf8");
+  let input = fs.readFileSync(filename, "utf8");
+
+  // HACK:
+  input = input.replace(/Console.Write\(dog(.+?)\)/g, 'printf("%s", dog$1)');
+  input = input.replace(/Console.Write\("(.+?)"\)/g, 'printf("$1")');
+  input = input.replace(/Console.Write\((.+?)\)/g, 'printf("%d", $1)');
+
+  //console.log(input);
 
   const tokens = tokenize(input);
   console.log("Tokenized");
   const parsed = parse(tokens);
+
+  parsed.errors = parsed.errors.filter(
+    (f) => f.message !== "Function not found: printf",
+  );
+  parsed.ok = !parsed.errors.length;
+
   if (parsed.ok) {
     console.log("Parsed");
   } else {
-    console.log("ERRORS");
+    console.log("\nERRORS\n======");
     for (let error of parsed.errors) {
-      console.log(error.i + ": " + error.message);
+      //const line = (input.slice(0, error.i).match(/\n/g) || "").length + 1;
+      let slice = input.slice(0, error.i);
+      let line = 1;
+      let lastLineIndex = 0;
+      for (let i = 0; i < slice.length; i++) {
+        if (input[i] === "\n") {
+          line += 1;
+          lastLineIndex = i;
+        }
+      }
+      console.log(`${line},${error.i - lastLineIndex - 1}: ${error.message}`);
     }
     return;
   }
@@ -144,8 +167,9 @@ function processFile(filename: string, config: Config) {
   }
   */
 
-  const outfile = path.join(path.dirname(filename), "output.txt");
-
-  fs.writeFileSync(outfile, result.code);
-  console.log("Created", outfile);
+  const headerfile = path.join(path.dirname(filename), "main.h");
+  const codefile = path.join(path.dirname(filename), "main.c");
+  fs.writeFileSync(headerfile, result.headers);
+  fs.writeFileSync(codefile, result.code);
+  console.log("Created", codefile);
 }
