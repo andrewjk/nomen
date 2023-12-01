@@ -3,7 +3,6 @@ import assert from "uvu/assert";
 import parse from "../../src/parse";
 import tokenize from "../../src/tokenize";
 import type AccessNode from "../../src/types/AccessNode";
-import type ConstructionNode from "../../src/types/ConstructionNode";
 import type DeclarationNode from "../../src/types/DeclarationNode";
 import type InvocationNode from "../../src/types/InvocationNode";
 import type ValueNode from "../../src/types/ValueNode";

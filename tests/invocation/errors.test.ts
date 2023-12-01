@@ -57,7 +57,6 @@ greet("andrew")
   const tokens = tokenize(input);
   const result = parse(tokens);
   assert.equal(result.ok, false);
-  console.log(result.errors);
   assert.equal(result.errors.length, 1);
   assert.equal(result.errors[0].i, 31);
   assert.equal(

@@ -1,14 +1,18 @@
 import type AccessNode from "./types/AccessNode";
+import type ArrayValuesNode from "./types/ArrayValuesNode";
 import type AssignmentNode from "./types/AssignmentNode";
 import type DeclarationNode from "./types/DeclarationNode";
 import type FieldAccessNode from "./types/FieldAccessNode";
+import type ForNode from "./types/ForNode";
 import type FunctionNode from "./types/FunctionNode";
 import type InvocationNode from "./types/InvocationNode";
+import type OperationNode from "./types/OperationNode";
 import type ParameterNode from "./types/ParameterNode";
 import type ParseError from "./types/ParseError";
 import type ParseNode from "./types/ParseNode";
 import type ParseResult from "./types/ParseResult";
 import type ParseValue from "./types/ParseValue";
+import type RangeNode from "./types/RangeNode";
 import type ReturnNode from "./types/ReturnNode";
 import type StructNode from "./types/StructNode";
 import type Token from "./types/Token";
@@ -95,6 +99,10 @@ function parse_statement(status: ParseStatus) {
         parse_function(status);
         break;
       }
+      case "for": {
+        parse_for(status);
+        break;
+      }
       case "return": {
         parse_return(status);
         break;
@@ -172,7 +180,8 @@ function parse_statement_start(status: ParseStatus) {
         const parent = status.stack.at(-1)!;
         switch (parent.node_type) {
           case "root":
-          case "func": {
+          case "func":
+          case "for": {
             parent.children.push(node);
             break;
           }
@@ -195,16 +204,33 @@ function parse_statement_start(status: ParseStatus) {
  * initial value of a declaration or as a parameter value in a function call
  */
 function parse_expression(status: ParseStatus): ParseNode {
+  // First check for an array of values
   const i = status.tokens[status.i].i;
   let value = consume(status);
   let type = type_from_value(value, status);
-  let node: ParseNode = {
-    node_type: "value",
-    value,
-    type,
-    children: [],
-    i,
-  } as ValueNode;
+  let node: ParseNode;
+  if (value === "[") {
+    node = {
+      node_type: "array",
+      values: [],
+      type: "",
+      children: [],
+      i,
+    } as ArrayValuesNode;
+    if (peek_current(status) !== "]") {
+      parse_array_value(node as ArrayValuesNode, status);
+    }
+    expect("]", status);
+    check_array_values_node(node as ArrayValuesNode, status);
+  } else {
+    node = {
+      node_type: "value",
+      value,
+      type,
+      children: [],
+      i,
+    } as ValueNode;
+  }
 
   while (true) {
     const next_value = peek_current(status);
@@ -254,6 +280,41 @@ function parse_expression(status: ParseStatus): ParseNode {
         type = invoke.type;
         break;
       }
+      case "+":
+      case "-": {
+        consume(status);
+        const op: OperationNode = {
+          node_type: "op",
+          op: next_value,
+          left_value: node,
+          // TODO: Proper order of operations
+          right_value: parse_expression(status),
+          type: "",
+          children: [],
+          i,
+        };
+        check_operation_node(op, status);
+        node = op;
+        //value = op.name;
+        //type = op.type;
+        break;
+      }
+      case "..":
+      case ".=": {
+        consume(status);
+        const range: RangeNode = {
+          node_type: "range",
+          left_value: node,
+          right_value: parse_expression(status),
+          inclusive: next_value === ".=",
+          children: [],
+          i,
+        };
+        node = range;
+        //value = op.name;
+        //type = op.type;
+        break;
+      }
       default: {
         return node;
       }
@@ -298,6 +359,12 @@ function parse_declaration(declaration: "const" | "var", status: ParseStatus) {
   decl.name = consume(status);
   if (accept(":", status)) {
     decl.type = consume(status);
+    // HACK: Need to be fancier about this -- with a type node?
+    if (peek_current(status) === "[") {
+      while (!decl.type.endsWith("]")) {
+        decl.type += consume(status);
+      }
+    }
     if (!check_type_exists(decl.type, status)) {
       decl.type = "?";
     }
@@ -601,6 +668,54 @@ function parse_function_parameter(func: FunctionNode, status: ParseStatus) {
   }
 }
 
+// FOR LOOP
+
+function parse_for(status: ParseStatus) {
+  const forloop: ForNode = {
+    node_type: "for",
+    children: [],
+    i: status.tokens[status.i].i,
+  };
+  const parent = status.stack.at(-1)!;
+  switch (parent.node_type) {
+    case "root":
+    case "func": {
+      parent.children.push(forloop);
+      break;
+    }
+    default: {
+      status.errors.push({
+        message: "For cannot appear here",
+        i: forloop.i,
+      });
+      consume(status);
+      return;
+    }
+  }
+
+  status.stack.push(forloop);
+
+  accept("for", status);
+  forloop.item = {
+    node_type: "value",
+    value: consume(status),
+    // TODO:
+    type: "int",
+    children: [],
+    i: status.tokens[status.i].i,
+  } as ValueNode;
+  // TODO: index option?
+  if (expect("in", status)) {
+    forloop.list = parse_expression(status);
+    if (expect("{", status)) {
+      parse_statement(status);
+      expect("}", status);
+    }
+  }
+
+  status.stack.pop();
+}
+
 // INVOCATION
 
 function parse_invocation_parameter(
@@ -757,6 +872,53 @@ function check_access_invocation_node(
   check_invocation_function(invoke, status, func);
 }
 
+// OPERATIONS
+
+function check_operation_node(op: OperationNode, status: ParseStatus) {
+  // TODO: Check compatibility of types
+  // TODO: Get the type from both sides
+  if (op.left_value) {
+    const leftType = type_from_value_node(op.left_value, status);
+    op.type = leftType;
+  }
+}
+
+// ARRAY
+
+function parse_array_value(array: ArrayValuesNode, status: ParseStatus) {
+  // Get this value
+  const value = parse_expression(status);
+  array.values.push(value);
+
+  // Maybe get another value
+  if (accept(",", status)) {
+    parse_array_value(array, status);
+  }
+}
+
+function check_array_values_node(array: ArrayValuesNode, status: ParseStatus) {
+  for (let value of array.values) {
+    const type = type_from_value_node(value, status);
+    const arrayType = type + `[${array.values.length}]`;
+    if (!array.type) {
+      array.type = arrayType;
+    } else if (array.type !== arrayType) {
+      // It might have a trait
+      // TOOD: Check this in more places
+      const struct = status.structs.find((f) => f.name === type);
+      const maybeTrait = array.type.replace(/\[.*\]/, "");
+      if (struct?.traits.includes(maybeTrait)) {
+        continue;
+      }
+      /*
+      status.errors.push({
+        message: `Invalid type: ${type} (expected ${array.type})`,
+        i: value.i,
+      });*/
+    }
+  }
+}
+
 // PROCESSING
 
 function peek_current(status: ParseStatus): string | undefined {
@@ -836,11 +998,17 @@ function type_from_value_node(node: ParseNode, status: ParseStatus): string {
     case "access": {
       return type_from_value_node((node as AccessNode).access, status);
     }
+    case "array": {
+      return (node as ArrayValuesNode).type;
+    }
     case "field": {
       return (node as FieldAccessNode).type;
     }
     case "invoke": {
       return (node as InvocationNode).type;
+    }
+    case "op": {
+      return (node as OperationNode).type;
     }
   }
   return "?";
@@ -862,6 +1030,8 @@ function value_from_value_node(node: ParseNode, status: ParseStatus): string {
 }
 
 function check_type_exists(type: string, status: ParseStatus): boolean {
+  // Remove array brackets
+  type = type.replace(/\[.*\]/, "");
   if (!status.types.includes(type)) {
     status.errors.push({
       i: status.tokens[status.i - 1].i,
@@ -879,8 +1049,18 @@ function check_type_and_value_match(
   status: ParseStatus,
 ) {
   if (target_type) {
+    // HACK: Remove array length
+    target_type = target_type.replace(/\[.*\]/, "");
+    expression_type = expression_type.replace(/\[.*\]/, "");
     // TODO: thorough checking
     if (target_type !== expression_type) {
+      // It might be a struct with a matching trait
+      // TOOD: Check this in more places
+      const struct = status.structs.find((f) => f.name === expression_type);
+      if (struct?.traits.includes(target_type)) {
+        return;
+      }
+
       status.errors.push({
         i: status.tokens[status.i - 1].i,
         message:

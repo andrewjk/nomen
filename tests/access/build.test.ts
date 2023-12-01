@@ -94,7 +94,7 @@ var x = p.age()
   const parsed = parse(tokens);
   const result = build(parsed.root.children[2]);
   const expected = `
-  int x = p.age();
+  int x = Person_age(p);
 `;
   assert.equal(result.code.trim(), expected.trim());
 });
@@ -117,7 +117,7 @@ var x = p.address.line()
   const parsed = parse(tokens);
   const result = build(parsed.root.children[3]);
   const expected = `
-  char* x = p.address.line();
+  char* x = Address_line(p.address);
 `;
   assert.equal(result.code.trim(), expected.trim());
 });
@@ -138,7 +138,7 @@ var x = p.address().line
   const parsed = parse(tokens);
   const result = build(parsed.root.children[3]);
   const expected = `
-  char* x = p.address().line;
+  char* x = Person_address(p).line;
 `;
   assert.equal(result.code.trim(), expected.trim());
 });

@@ -1,13 +1,10 @@
 import Token from "./types/Token";
 
-const compoundSymbols = ["&&", "||", "==", ">=", "<=", "->", "=>"];
+const compoundSymbols = ["&&", "||", "==", ">=", "<=", "->", "=>", "..", ".="];
 
 export default function tokenize(input: string): Token[] {
   let tokens: Token[] = [];
   let start = 0;
-
-  // Am I being too fancy here?
-  const compoundSymbolStarts = compoundSymbols.map((s) => s[0]);
 
   for (let i = 0; i < input.length; i++) {
     if (!is_alpha_numeric_char(input, i)) {
@@ -61,7 +58,6 @@ export default function tokenize(input: string): Token[] {
             }
           }
         } else if (
-          compoundSymbolStarts.includes(value) &&
           i < input.length - 2 &&
           compoundSymbols.includes(value + input[i + 1])
         ) {

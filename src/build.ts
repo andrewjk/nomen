@@ -342,6 +342,48 @@ function build_access_node(node: AccessNode, status: BuildStatus) {
   }
 }
 
+function build_operation_node(node: OperationNode, status: BuildStatus) {
+  if (node.left_value) {
+    build_node(node.left_value, status);
+  }
+  status.code += ` ${node.op} `;
+  if (node.right_value) {
+    build_node(node.right_value, status);
+  }
+}
+
+function build_for_node(node: ForNode, status: BuildStatus) {
+  if (node.item && node.list && node.list.node_type == "range") {
+    // HACK: Only want to do this if the item hasn't been declared previously?
+    status.code += `${indent(status)}int `;
+    build_node(node.item, status);
+    status.code += "; for (";
+    build_node(node.item, status);
+    status.code += " = ";
+    const range = node.list as RangeNode;
+    if (range.left_value) {
+      build_node(range.left_value, status);
+    }
+    status.code += "; ";
+    build_node(node.item, status);
+    status.code += range.inclusive ? " <= " : " < ";
+    if (range.right_value) {
+      build_node(range.right_value, status);
+    }
+    status.code += "; ";
+    build_node(node.item, status);
+    status.code += "++) {\n";
+
+    status.indent += 1;
+    for (let child of node.children) {
+      build_node(child, status);
+    }
+    status.indent -= 1;
+
+    status.code += `${indent(status)}}\n`;
+  }
+}
+
 function build_return_node(node: ReturnNode, status: BuildStatus) {
   status.code += `${indent(status)}return ${node.value};\n`;
 }
@@ -350,6 +392,15 @@ function build_value_node(node: ValueNode, status: BuildStatus) {
   // TODO:
   //const value = node.type === "string" ? `"${node.value}"` : node.value;
   status.code += node.value;
+}
+
+function build_array_values_node(node: ArrayValuesNode, status: BuildStatus) {
+  status.code += `{`;
+  node.values.forEach((value, i) => {
+    if (i > 0) status.code += ", ";
+    build_node(value, status);
+  });
+  status.code += `}`;
 }
 
 // UTILS
@@ -366,4 +417,28 @@ function indent(status: BuildStatus) {
 
 function c_type(type: string): string {
   return type.replace("string", "char*");
+}
+
+function type_from_value_node(node: ParseNode): string {
+  switch (node.node_type) {
+    case "access": {
+      return type_from_value_node((node as AccessNode).access);
+    }
+    case "value": {
+      return (node as ValueNode).type;
+    }
+    case "array": {
+      return (node as ArrayValuesNode).type;
+    }
+    case "field": {
+      return (node as FieldAccessNode).type;
+    }
+    case "invoke": {
+      return (node as InvocationNode).type;
+    }
+    case "op": {
+      return (node as OperationNode).type;
+    }
+  }
+  return "?";
 }

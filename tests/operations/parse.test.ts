@@ -1,0 +1,149 @@
+import { suite } from "uvu";
+import assert from "uvu/assert";
+import parse from "../../src/parse";
+import tokenize from "../../src/tokenize";
+import type DeclarationNode from "../../src/types/DeclarationNode";
+import type OperationNode from "../../src/types/OperationNode";
+import type ValueNode from "../../src/types/ValueNode";
+import trim_test_data from "../trim_test_data";
+
+const test = suite("Operation parse");
+
+test("addition", () => {
+  const input = `
+var x = 1 + 2
+`;
+  const tokens = tokenize(input);
+  const result = parse(tokens);
+  const expected: DeclarationNode = {
+    node_type: "decl",
+    declaration: "var",
+    name: "x",
+    value: {
+      node_type: "op",
+      op: "+",
+      left_value: {
+        node_type: "value",
+        value: "1",
+        type: "int",
+        children: [],
+        i: 0,
+      } as ValueNode,
+      right_value: {
+        node_type: "value",
+        value: "2",
+        type: "int",
+        children: [],
+        i: 0,
+      } as ValueNode,
+      type: "int",
+      children: [],
+      i: 0,
+    } as OperationNode,
+    type: "int",
+    children: [],
+    i: 0,
+  };
+  assert.equal(
+    trim_test_data(result.root.children[0]),
+    trim_test_data(expected),
+  );
+});
+
+test("subtraction", () => {
+  const input = `
+var x = 1 - 2
+`;
+  const tokens = tokenize(input);
+  const result = parse(tokens);
+  const expected: DeclarationNode = {
+    node_type: "decl",
+    declaration: "var",
+    name: "x",
+    value: {
+      node_type: "op",
+      op: "-",
+      left_value: {
+        node_type: "value",
+        value: "1",
+        type: "int",
+        children: [],
+        i: 0,
+      } as ValueNode,
+      right_value: {
+        node_type: "value",
+        value: "2",
+        type: "int",
+        children: [],
+        i: 0,
+      } as ValueNode,
+      type: "int",
+      children: [],
+      i: 0,
+    } as OperationNode,
+    type: "int",
+    children: [],
+    i: 0,
+  };
+  assert.equal(
+    trim_test_data(result.root.children[0]),
+    trim_test_data(expected),
+  );
+});
+
+test("series", () => {
+  const input = `
+var x = 1 + 2 - 3
+`;
+  const tokens = tokenize(input);
+  const result = parse(tokens);
+  const expected: DeclarationNode = {
+    node_type: "decl",
+    declaration: "var",
+    name: "x",
+    value: {
+      node_type: "op",
+      op: "+",
+      left_value: {
+        node_type: "value",
+        value: "1",
+        type: "int",
+        children: [],
+        i: 0,
+      } as ValueNode,
+      right_value: {
+        node_type: "op",
+        op: "-",
+        left_value: {
+          node_type: "value",
+          value: "2",
+          type: "int",
+          children: [],
+          i: 0,
+        } as ValueNode,
+        right_value: {
+          node_type: "value",
+          value: "3",
+          type: "int",
+          children: [],
+          i: 0,
+        } as ValueNode,
+        type: "int",
+        children: [],
+        i: 0,
+      } as OperationNode,
+      type: "int",
+      children: [],
+      i: 0,
+    } as OperationNode,
+    type: "int",
+    children: [],
+    i: 0,
+  };
+  assert.equal(
+    trim_test_data(result.root.children[0]),
+    trim_test_data(expected),
+  );
+});
+
+test.run();
