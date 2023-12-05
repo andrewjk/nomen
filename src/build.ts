@@ -1,9 +1,10 @@
+import type AccessFieldNode from "./types/AccessFieldNode";
+import type AccessInvocationNode from "./types/AccessInvocationNode";
 import type AccessNode from "./types/AccessNode";
 import type ArrayValuesNode from "./types/ArrayValuesNode";
 import type AssignmentNode from "./types/AssignmentNode";
 import type BuildResult from "./types/BuildResult";
 import type DeclarationNode from "./types/DeclarationNode";
-import type FieldAccessNode from "./types/FieldAccessNode";
 import type ForNode from "./types/ForNode";
 import type FunctionNode from "./types/FunctionNode";
 import type InvocationNode from "./types/InvocationNode";
@@ -18,6 +19,7 @@ import type ValueNode from "./types/ValueNode";
 
 interface BuildStatus {
   root: ParseNode;
+  traits: TraitNode[];
   headers: string;
   code: string;
   indent: number;
@@ -26,10 +28,17 @@ interface BuildStatus {
 export default function build(root: ParseNode): BuildResult {
   let status: BuildStatus = {
     root,
+    traits: [],
     headers: "",
     code: "",
     indent: 0,
   };
+
+  // Collect the traits
+  // TODO: Handle traits declared in functions??
+  status.traits = root.children.filter(
+    (c) => c.node_type === "trait",
+  ) as TraitNode[];
 
   build_node(root, status);
 
@@ -108,6 +117,23 @@ function build_root_node(node: ParseNode, status: BuildStatus) {
 
 `;
 
+  // Build the function to retrieve the correct trait function from the vtables
+  status.headers +=
+    "void **_get_trait_func(void **obj, int trait_index, int func_index);\n\n";
+
+  status.code +=
+    "void **_get_trait_func(void **obj, int trait_index, int func_index) {";
+
+  // Get the array of the trait's functions, then the function itself
+  // HACK: This is two array checks -- maybe better as one?
+  // _vt is at the start of each object so we can just use it like it's located at the object's address
+  status.indent += 1;
+  status.code += `
+${indent(status)}void **trait = *(obj + trait_index);
+${indent(status)}return *(trait + func_index);
+}\n\n`;
+  status.indent -= 1;
+
   for (let child of node.children) {
     build_node(child, status);
   }
@@ -115,17 +141,50 @@ function build_root_node(node: ParseNode, status: BuildStatus) {
 
 function build_declaration_node(node: DeclarationNode, status: BuildStatus) {
   // HACK: Move the array part of a declaration after the variable name if applicable
-  let parts = node.type.match(/([^\[\]]+)(\[.*\])*/);
-  let type = (parts && parts[1]) || node.type;
-  status.code += `${indent(status)}${c_type(type)} ${node.name}`;
-  if (parts && parts[2]) {
-    status.code += parts[2];
+  const parts = node.type.match(/([^\[\]]+)(\[.*\])*/);
+  const type = (parts && parts[1]) || node.type;
+
+  // HACK: Do array types properly
+  const is_array = parts && !!parts[2];
+  // If it's an array of traits, make it contain pointers
+  if (
+    is_array &&
+    !!status.traits.find((t) => t.name === type) &&
+    node.value &&
+    node.value.node_type === "array"
+  ) {
+    const arrayValues = node.value as ArrayValuesNode;
+    // Support GCC by defining vars first
+    const variables = [];
+    let i = 1;
+    for (let value of arrayValues.values) {
+      // TODO: Better naming
+      const var_name = "_x" + i;
+      // HACK:
+      status.code += `${indent(status)}${type_from_value_node(
+        value,
+      )} ${var_name} = `;
+      build_node(value, status);
+      status.code += ";\n";
+      i += 1;
+      variables.push(var_name);
+    }
+
+    // Then build the array
+    status.code += `${indent(status)}void *${node.name}${
+      parts[2]
+    } = {${variables.map((v) => `&${v}`).join(", ")}};\n`;
+  } else {
+    status.code += `${indent(status)}${c_type(type)} ${node.name}`;
+    if (parts && parts[2]) {
+      status.code += parts[2];
+    }
+    if (node.value) {
+      status.code += " = ";
+      build_node(node.value, status);
+    }
+    status.code += ";\n";
   }
-  if (node.value) {
-    status.code += " = ";
-    build_node(node.value, status);
-  }
-  status.code += ";\n";
 }
 
 function build_assignment_node(node: AssignmentNode, status: BuildStatus) {
@@ -152,16 +211,14 @@ function build_struct_node(node: StructNode, status: BuildStatus) {
   status.indent += 1;
   status.code += `${indent(status)}void *_vt;\n`;
   // Fields from the struct
-  for (var field of node.fields) {
+  for (let field of node.fields) {
     status.code += `${indent(status)}${c_type(field.type)} ${field.name};\n`;
   }
   // Default fields from traits
-  for (var traitName of node.traits) {
-    const trait = status.root.children.find(
-      (n) => n.node_type === "trait" && (n as TraitNode).name === traitName,
-    ) as TraitNode;
+  for (let traitName of node.traits) {
+    const trait = status.traits.find((n) => n.name === traitName) as TraitNode;
     if (trait) {
-      for (var field of trait.fields.filter(
+      for (let field of trait.fields.filter(
         (f) => !node.fields.find((nf) => nf.name === f.name),
       )) {
         status.code += `${indent(status)}${c_type(field.type)} ${
@@ -190,7 +247,7 @@ ${indent(status)}${objectName}._vt = &_${node.name}_traits;
 `;
   //status.code += ` *${objectName} = malloc(sizeof(${node.name}));`
   // Fields from the struct
-  for (var field of node.fields) {
+  for (let field of node.fields) {
     status.code += `${indent(status)}${objectName}.${field.name} = `;
     if (field.value) {
       build_node(field.value, status);
@@ -200,12 +257,10 @@ ${indent(status)}${objectName}._vt = &_${node.name}_traits;
     status.code += ";\n";
   }
   // Default fields from traits
-  for (var traitName of node.traits) {
-    const trait = status.root.children.find(
-      (n) => n.node_type === "trait" && (n as TraitNode).name === traitName,
-    ) as TraitNode;
+  for (let traitName of node.traits) {
+    const trait = status.traits.find((n) => n.name === traitName) as TraitNode;
     if (trait) {
-      for (var field of trait.fields.filter(
+      for (let field of trait.fields.filter(
         (f) => !node.fields.find((nf) => nf.name === f.name),
       )) {
         // TODO: Set the value properly
@@ -229,13 +284,9 @@ ${indent(status)}${objectName}._vt = &_${node.name}_traits;
 }
 
 function build_struct_traits(node: StructNode, status: BuildStatus) {
-  const traits = status.root.children.filter(
-    (n) => n.node_type === "trait",
-  ) as TraitNode[];
-
   // Build the vtable that points to the struct's traits' methods by index
   // TODO: Support default trait methods
-  for (var trait of node.traits) {
+  for (let trait of node.traits) {
     // E.g. int* _Dog_Animal_vtable_[4];
     status.code += `${indent(status)}void *_${node.name}_${trait}_funcs[${
       node.traits.length
@@ -243,11 +294,16 @@ function build_struct_traits(node: StructNode, status: BuildStatus) {
     status.indent += 1;
     status.code += node.traits
       .map((t) => {
-        const trait = status.root.children.find(
-          (n) => n.node_type === "trait" && (n as TraitNode).name === t,
-        ) as TraitNode;
+        const trait = status.traits.find((n) => n.name === t) as TraitNode;
         return trait.functions
-          .map((f, fi) => `${indent(status)}[${fi}] = ${node.name}_${f.name}`)
+          .map(
+            (f, fi) =>
+              `${indent(status)}[${fi}] = ${
+                !!node.functions.find((tf) => tf.name === f.name)
+                  ? node.name
+                  : trait.name
+              }_${f.name}`,
+          )
           .join(",\n");
       })
       .join(",\n");
@@ -257,7 +313,7 @@ function build_struct_traits(node: StructNode, status: BuildStatus) {
     // Build the vtable that points to the above table by index
     // E.g. int* _Dog_vtable_[40];
     status.code += `${indent(status)}void *_${node.name}_traits[${
-      traits.length
+      status.traits.length
     }] = {\n`;
     status.indent += 1;
     status.code += node.traits
@@ -273,7 +329,7 @@ function build_struct_traits(node: StructNode, status: BuildStatus) {
 function build_struct_functions(node: StructNode, status: BuildStatus) {
   // Build the struct's functions
   // TODO: Default functions from traits
-  for (var func of node.functions) {
+  for (let func of node.functions) {
     if (func.name === "init") {
       // We create the constructor elsewhere
       // We may need to do this here later on, if we allow custom init methods
@@ -284,8 +340,8 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
     // HACK: Need to map names to types
     status.headers += `${c_type(func.return_type || "void")} ${node.name}_${
       func.name
-    }(struct ${node.name}${func.params.length ? ", " : ""}${func.params
-      .map((p) => build_parameter_node(p, status, false))
+    }(struct ${node.name} this${func.params.length ? ", " : ""}${func.params
+      .map((p) => build_parameter_node(p, status))
       .join(", ")});\n`;
 
     // Declare the function
@@ -307,7 +363,49 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 }
 
 function build_trait_node(node: TraitNode, status: BuildStatus) {
-  // Hmm
+  // We only need to build a trait node if there are default functions
+  if (!node.functions.find((f) => f.children.length)) {
+    return;
+  }
+
+  status.headers += `// ${node.name}:\n`;
+  status.code += `// ${node.name}:\n`;
+
+  // Declare the trait as a struct
+  status.headers += `struct ${node.name};\n`;
+  status.code += `${indent(status)}typedef struct ${node.name} {} ${
+    node.name
+  };\n`;
+
+  // Build the trait's default functions
+  for (let func of node.functions) {
+    // Define the function
+    // HACK: Need to map names to types
+    status.headers += `${c_type(func.return_type || "void")} ${node.name}_${
+      func.name
+    }(struct ${node.name} this${func.params.length ? ", " : ""}${func.params
+      .map((p) => build_parameter_node(p, status))
+      .join(", ")});\n`;
+
+    // Declare the function
+    // HACK: Need to map names to types
+    status.code += `${indent(status)}${c_type(func.return_type || "void")} ${
+      node.name
+    }_${func.name}(struct ${node.name} this${
+      func.params.length ? ", " : ""
+    }${func.params
+      .map((p) => build_parameter_node(p, status))
+      .join(", ")}) {\n`;
+    status.indent += 1;
+    for (let child of func.children) {
+      build_node(child, status);
+    }
+    status.indent -= 1;
+    status.code += `${indent(status)}}\n`;
+  }
+
+  status.headers += "\n";
+  status.code += "\n";
 }
 
 function build_function_node(node: FunctionNode, status: BuildStatus) {
@@ -351,7 +449,7 @@ function build_parameter_node(
 }
 
 function build_invocation_node(node: InvocationNode, status: BuildStatus) {
-  status.code += `${node.name}(`;
+  status.code += `${indent(status)}${node.name}(`;
   for (let i = 0; i < node.params.length; i++) {
     if (i > 0) {
       status.code += ", ";
@@ -363,27 +461,44 @@ function build_invocation_node(node: InvocationNode, status: BuildStatus) {
 
 function build_access_node(node: AccessNode, status: BuildStatus) {
   switch (node.access.node_type) {
-    case "field": {
+    case "accfld": {
       build_node(node.source, status);
       status.code += `.${node.access.name}`;
       break;
     }
-    case "invoke": {
+    case "accinv": {
       // Convert the access function into a C function that takes the struct as an argument
-      const invoke = node.access as InvocationNode;
-      status.code += type_from_value_node(node.source);
-      //status.code += invoke.static ? "_" : ".";
-      status.code += `_${invoke.name}(`;
-      if (!invoke.static) {
+      const invoke = node.access as AccessInvocationNode;
+      const type = type_from_value_node(node.source);
+
+      // PERF
+      const trait = status.traits.find((t) => t.name === type);
+      if (trait) {
+        const func = trait.functions.find((f) => f.name == invoke.name)!;
+        // TODO: Cast to the correct function definition
+        // TODO: Use the correct variable name
+        // TODO: Pass parameters
+        const cast = "(char *(*)())";
+        status.code += `(${cast} * _get_trait_func(`;
         build_node(node.source, status);
-      }
-      for (let i = 0; i < invoke.params.length; i++) {
-        if (!invoke.static || i > 0) {
-          status.code += ", ";
+        status.code += `, ${status.traits.indexOf(
+          trait,
+        )}, ${trait.functions.indexOf(func)}))()`;
+      } else {
+        status.code += `${indent(status)}${type_from_value_node(node.source)}`;
+        //status.code += invoke.static ? "_" : ".";
+        status.code += `_${invoke.name}(`;
+        if (!invoke.static) {
+          build_node(node.source, status);
         }
-        build_node(invoke.params[i], status);
+        for (let i = 0; i < invoke.params.length; i++) {
+          if (!invoke.static || i > 0) {
+            status.code += ", ";
+          }
+          build_node(invoke.params[i], status);
+        }
+        status.code += ")";
       }
-      status.code += ")";
       break;
     }
   }
@@ -400,35 +515,57 @@ function build_operation_node(node: OperationNode, status: BuildStatus) {
 }
 
 function build_for_node(node: ForNode, status: BuildStatus) {
-  if (node.item && node.list && node.list.node_type == "range") {
-    // HACK: Only want to do this if the item hasn't been declared previously?
-    status.code += `${indent(status)}int `;
-    build_node(node.item, status);
-    status.code += "; for (";
-    build_node(node.item, status);
-    status.code += " = ";
-    const range = node.list as RangeNode;
-    if (range.left_value) {
-      build_node(range.left_value, status);
+  if (node.item && node.list) {
+    if (node.list.node_type == "range") {
+      // HACK: Only want to do this if the item hasn't been declared previously?
+      status.code += `${indent(status)}int `;
+      build_node(node.item, status);
+      status.code += "; for (";
+      build_node(node.item, status);
+      status.code += " = ";
+      const range = node.list as RangeNode;
+      if (range.left_value) {
+        build_node(range.left_value, status);
+      }
+      status.code += "; ";
+      build_node(node.item, status);
+      status.code += range.inclusive ? " <= " : " < ";
+      if (range.right_value) {
+        build_node(range.right_value, status);
+      }
+      status.code += "; ";
+      build_node(node.item, status);
+      status.code += "++) {\n";
+    } else if (!!status.traits.find((t) => t.name === node.item!.type)) {
+      // TODO: Handle this.Index
+      // TODO: Array length
+      status.code += `${indent(status)}for (int i = 0; i < 3; i++) {\n`;
+      status.code += `${indent(status)}void **${node.item!.value} = *(`;
+      build_node(node.list!, status);
+      status.code += " + i);\n";
+    } else {
+      // TODO: Handle this.Index
+      // TODO: Array length
+      // HACK: Only want to do this if the item hasn't been declared previously?
+      status.code += `${indent(status)}int `;
+      build_node(node.item, status);
+      status.code += "; for (";
+      build_node(node.item, status);
+      status.code += " = 0; ";
+      build_node(node.item, status);
+      status.code += " < ?; ";
+      build_node(node.item, status);
+      status.code += "++) {\n";
     }
-    status.code += "; ";
-    build_node(node.item, status);
-    status.code += range.inclusive ? " <= " : " < ";
-    if (range.right_value) {
-      build_node(range.right_value, status);
-    }
-    status.code += "; ";
-    build_node(node.item, status);
-    status.code += "++) {\n";
-
-    status.indent += 1;
-    for (let child of node.children) {
-      build_node(child, status);
-    }
-    status.indent -= 1;
-
-    status.code += `${indent(status)}}\n`;
   }
+
+  status.indent += 1;
+  for (let child of node.children) {
+    build_node(child, status);
+  }
+  status.indent -= 1;
+
+  status.code += `${indent(status)}}\n`;
 }
 
 function build_return_node(node: ReturnNode, status: BuildStatus) {
@@ -477,11 +614,14 @@ function type_from_value_node(node: ParseNode): string {
     case "array": {
       return (node as ArrayValuesNode).type;
     }
-    case "field": {
-      return (node as FieldAccessNode).type;
-    }
     case "invoke": {
       return (node as InvocationNode).type;
+    }
+    case "accfld": {
+      return (node as AccessFieldNode).type;
+    }
+    case "accinv": {
+      return (node as AccessInvocationNode).type;
     }
     case "op": {
       return (node as OperationNode).type;

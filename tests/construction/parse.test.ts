@@ -2,9 +2,9 @@ import { suite } from "uvu";
 import assert from "uvu/assert";
 import parse from "../../src/parse";
 import tokenize from "../../src/tokenize";
+import type AccessInvocationNode from "../../src/types/AccessInvocationNode";
 import type AccessNode from "../../src/types/AccessNode";
 import type DeclarationNode from "../../src/types/DeclarationNode";
-import type InvocationNode from "../../src/types/InvocationNode";
 import type ValueNode from "../../src/types/ValueNode";
 import trim_test_data from "../trim_test_data";
 
@@ -30,14 +30,14 @@ var x = Person.init()
         type: "Person",
       } as ValueNode,
       access: {
-        node_type: "invoke",
+        node_type: "accinv",
         name: "init",
         params: [],
         type: "Person",
         static: true,
         children: [],
         i: 0,
-      } as InvocationNode,
+      } as AccessInvocationNode,
       children: [],
       i: 0,
     } as AccessNode,
@@ -73,7 +73,7 @@ var x = Person.init("Andrew")
         type: "Person",
       } as ValueNode,
       access: {
-        node_type: "invoke",
+        node_type: "accinv",
         name: "init",
         params: [
           {
@@ -88,7 +88,7 @@ var x = Person.init("Andrew")
         static: true,
         children: [],
         i: 0,
-      } as InvocationNode,
+      } as AccessInvocationNode,
       children: [],
       i: 0,
     } as AccessNode,
@@ -124,14 +124,14 @@ var x = Person.init()
         type: "Person",
       } as ValueNode,
       access: {
-        node_type: "invoke",
+        node_type: "accinv",
         name: "init",
         params: [],
         type: "Person",
         static: true,
         children: [],
         i: 0,
-      } as InvocationNode,
+      } as AccessInvocationNode,
       children: [],
       i: 0,
     } as AccessNode,

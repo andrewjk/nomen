@@ -24,6 +24,11 @@ struct Frank: Person {}
   const parsed = parse(tokens);
   const result = build(parsed.root);
   const expected = `
+void **_get_trait_func(void **obj, int trait_index, int func_index) {
+  void **trait = *(obj + trait_index);
+  return *(trait + func_index);
+}
+
 // Frank:
 void *_Frank_Person_funcs[1] = {
 
@@ -58,6 +63,11 @@ struct Frank: Person {
   const parsed = parse(tokens);
   const result = build(parsed.root);
   const expected = `
+void **_get_trait_func(void **obj, int trait_index, int func_index) {
+  void **trait = *(obj + trait_index);
+  return *(trait + func_index);
+}
+
 // Frank:
 void *_Frank_Person_funcs[1] = {
 
@@ -97,6 +107,16 @@ struct Frank: Person {
   const parsed = parse(tokens);
   const result = build(parsed.root);
   const expected = `
+void **_get_trait_func(void **obj, int trait_index, int func_index) {
+  void **trait = *(obj + trait_index);
+  return *(trait + func_index);
+}
+
+// Person:
+typedef struct Person {} Person;
+void Person_greet(struct Person this) {
+}
+
 // Frank:
 void *_Frank_Person_funcs[1] = {
   [0] = Frank_greet
@@ -137,6 +157,17 @@ struct Frank: Person {
   const parsed = parse(tokens);
   const result = build(parsed.root);
   const expected = `
+void **_get_trait_func(void **obj, int trait_index, int func_index) {
+  void **trait = *(obj + trait_index);
+  return *(trait + func_index);
+}
+
+// Person:
+typedef struct Person {} Person;
+void Person_greet(struct Person this) {
+  return "hi";
+}
+
 // Frank:
 void *_Frank_Person_funcs[1] = {
   [0] = Frank_greet

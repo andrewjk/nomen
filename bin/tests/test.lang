@@ -25,14 +25,11 @@ struct Cat: Animal {
 
 struct Lizard: Animal {
 	var name = "Lizard"
-
-	// Remove this when default function bodies are working
-	func speak() -> string {
-		return "hiss"
-	}
 }
 
 func main() {
+	Console.Write("\n")
+
 	// Test a simple range
 	for i in 0..5 {
 		Console.Write("hello, world! ")

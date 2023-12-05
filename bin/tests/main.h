@@ -1,15 +1,20 @@
-// Dog ===
+void **_get_trait_func(void **obj, int trait_index, int func_index);
 
-struct Dog;struct Dog Dog_init();
-char* Dog_speak(struct Dog);
+// Animal:
+struct Animal;
+char* Animal_speak(struct Animal this);
 
-// Cat ===
+// Dog:
+struct Dog;
+struct Dog Dog_init();
+char* Dog_speak(struct Dog this);
 
-struct Cat;struct Cat Cat_init();
-char* Cat_speak(struct Cat);
+// Cat:
+struct Cat;
+struct Cat Cat_init();
+char* Cat_speak(struct Cat this);
 
-// Lizard ===
-
-struct Lizard;struct Lizard Lizard_init();
-char* Lizard_speak(struct Lizard);
+// Lizard:
+struct Lizard;
+struct Lizard Lizard_init();
 

@@ -1,8 +1,9 @@
+import type AccessFieldNode from "./types/AccessFieldNode";
+import type AccessInvocationNode from "./types/AccessInvocationNode";
 import type AccessNode from "./types/AccessNode";
 import type ArrayValuesNode from "./types/ArrayValuesNode";
 import type AssignmentNode from "./types/AssignmentNode";
 import type DeclarationNode from "./types/DeclarationNode";
-import type FieldAccessNode from "./types/FieldAccessNode";
 import type ForNode from "./types/ForNode";
 import type FunctionNode from "./types/FunctionNode";
 import type InvocationNode from "./types/InvocationNode";
@@ -26,12 +27,11 @@ interface ParseStatus {
   i: number;
   // The current node
   stack: ParseNode[];
-  // Values (variables, params, etc) in scope
-  values: ParseValue[];
-  // Types in scope
+  // TODO: Scope these properly
+  // Types (values, structs and traits) in scope
   types: string[];
-  // Structs and traits
-  // TODO: Scope these!
+  // Values (vars, params etc), structs, traits and functions in scope
+  values: ParseValue[];
   structs: StructNode[];
   traits: TraitNode[];
   functions: FunctionNode[];
@@ -100,7 +100,7 @@ function parse_statement(status: ParseStatus) {
         break;
       }
       case "for": {
-        parse_for(status);
+        parse_for_loop(status);
         break;
       }
       case "return": {
@@ -247,14 +247,14 @@ function parse_expression(status: ParseStatus): ParseNode {
         node = access;
         // TODO: This should be a type prop on AccessNode
         switch (access.access.node_type) {
-          case "field": {
-            value = (access.access as FieldAccessNode).name;
-            type = (access.access as FieldAccessNode).type;
+          case "accfld": {
+            value = (access.access as AccessFieldNode).name;
+            type = (access.access as AccessFieldNode).type;
             break;
           }
-          case "invoke": {
-            value = (access.access as InvocationNode).name;
-            type = (access.access as InvocationNode).type;
+          case "accinv": {
+            value = (access.access as AccessInvocationNode).name;
+            type = (access.access as AccessInvocationNode).type;
             break;
           }
         }
@@ -670,8 +670,8 @@ function parse_function_parameter(func: FunctionNode, status: ParseStatus) {
 
 // FOR LOOP
 
-function parse_for(status: ParseStatus) {
-  const forloop: ForNode = {
+function parse_for_loop(status: ParseStatus) {
+  const for_loop: ForNode = {
     node_type: "for",
     children: [],
     i: status.tokens[status.i].i,
@@ -680,33 +680,42 @@ function parse_for(status: ParseStatus) {
   switch (parent.node_type) {
     case "root":
     case "func": {
-      parent.children.push(forloop);
+      parent.children.push(for_loop);
       break;
     }
     default: {
       status.errors.push({
         message: "For cannot appear here",
-        i: forloop.i,
+        i: for_loop.i,
       });
       consume(status);
       return;
     }
   }
 
-  status.stack.push(forloop);
+  status.stack.push(for_loop);
 
   accept("for", status);
-  forloop.item = {
+  for_loop.item = {
     node_type: "value",
     value: consume(status),
-    // TODO:
-    type: "int",
+    type: "",
     children: [],
     i: status.tokens[status.i].i,
   } as ValueNode;
   // TODO: index option?
   if (expect("in", status)) {
-    forloop.list = parse_expression(status);
+    for_loop.list = parse_expression(status);
+    // HACK: handle array types properly
+    for_loop.item.type = type_from_value_node(for_loop.list, status).replace(
+      /\[.*\]/,
+      "",
+    );
+    status.values.push({
+      declaration: "var",
+      name: for_loop.item.value,
+      type: for_loop.item.type,
+    });
     if (expect("{", status)) {
       parse_statement(status);
       expect("}", status);
@@ -719,7 +728,7 @@ function parse_for(status: ParseStatus) {
 // INVOCATION
 
 function parse_invocation_parameter(
-  invoke: InvocationNode,
+  invoke: InvocationNode | AccessInvocationNode,
   status: ParseStatus,
 ) {
   const param = parse_expression(status);
@@ -737,7 +746,7 @@ function check_invocation_node(invoke: InvocationNode, status: ParseStatus) {
 }
 
 function check_invocation_function(
-  invoke: InvocationNode,
+  invoke: InvocationNode | AccessInvocationNode,
   status: ParseStatus,
   func?: FunctionNode,
 ) {
@@ -824,15 +833,15 @@ function parse_access(
   source_name: string,
   source_type: string,
   status: ParseStatus,
-): FieldAccessNode | InvocationNode {
+): AccessFieldNode | AccessInvocationNode {
   const i = status.tokens[status.i].i;
   const name = consume(status);
   const type = type_from_value(name, status);
 
   if (peek_current(status) === "(") {
     accept("(", status);
-    const invoke: InvocationNode = {
-      node_type: "invoke",
+    const invoke: AccessInvocationNode = {
+      node_type: "accinv",
       name,
       params: [],
       type,
@@ -851,8 +860,8 @@ function parse_access(
     check_access_invocation_node(source_type, invoke, status);
     return invoke;
   } else {
-    const field: FieldAccessNode = {
-      node_type: "field",
+    const field: AccessFieldNode = {
+      node_type: "accfld",
       name,
       type,
       children: [],
@@ -864,11 +873,15 @@ function parse_access(
 
 function check_access_invocation_node(
   source_type: string,
-  invoke: InvocationNode,
+  invoke: AccessInvocationNode,
   status: ParseStatus,
 ) {
   const struct = status.structs.find((s) => s.name === source_type);
-  const func = struct?.functions.find((f) => f.name === invoke.name);
+  let func = struct?.functions.find((f) => f.name === invoke.name);
+  if (!func) {
+    const trait = status.traits.find((s) => s.name === source_type);
+    func = trait?.functions.find((f) => f.name === invoke.name);
+  }
   check_invocation_function(invoke, status, func);
 }
 
@@ -1001,14 +1014,22 @@ function type_from_value_node(node: ParseNode, status: ParseStatus): string {
     case "array": {
       return (node as ArrayValuesNode).type;
     }
-    case "field": {
-      return (node as FieldAccessNode).type;
-    }
     case "invoke": {
       return (node as InvocationNode).type;
     }
+    case "accfld": {
+      return (node as AccessFieldNode).type;
+    }
+    case "accinv": {
+      return (node as AccessInvocationNode).type;
+    }
     case "op": {
       return (node as OperationNode).type;
+    }
+    case "range": {
+      return (
+        type_from_value_node((node as RangeNode).left_value!, status) + "[]"
+      );
     }
   }
   return "?";
@@ -1022,8 +1043,8 @@ function value_from_value_node(node: ParseNode, status: ParseStatus): string {
     case "access": {
       return value_from_value_node((node as AccessNode).access, status);
     }
-    case "field": {
-      return (node as FieldAccessNode).name;
+    case "accfld": {
+      return (node as AccessFieldNode).name;
     }
   }
   return "?";

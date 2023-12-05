@@ -1,18 +1,26 @@
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "main.h"
 
-// Dog ===
+void **_get_trait_func(void **obj, int trait_index, int func_index) {
+  void **trait = *(obj + trait_index);
+  return *(trait + func_index);
+}
 
+// Animal:
+typedef struct Animal {} Animal;
+char* Animal_speak(struct Animal this) {
+  return "...";
+}
+
+// Dog:
 void *_Dog_Animal_funcs[1] = {
   [0] = Dog_speak
 };
 void *_Dog_traits[1] = {
   [0] = _Dog_Animal_funcs
 };
-
 typedef struct Dog {
   void *_vt;
   char* name;
@@ -27,15 +35,13 @@ char* Dog_speak(struct Dog this) {
   return "woof";
 }
 
-// Cat ===
-
+// Cat:
 void *_Cat_Animal_funcs[1] = {
   [0] = Cat_speak
 };
 void *_Cat_traits[1] = {
   [0] = _Cat_Animal_funcs
 };
-
 typedef struct Cat {
   void *_vt;
   char* name;
@@ -50,15 +56,13 @@ char* Cat_speak(struct Cat this) {
   return "meow";
 }
 
-// Lizard ===
-
+// Lizard:
 void *_Lizard_Animal_funcs[1] = {
-  [0] = Lizard_speak
+  [0] = Animal_speak
 };
 void *_Lizard_traits[1] = {
   [0] = _Lizard_Animal_funcs
 };
-
 typedef struct Lizard {
   void *_vt;
   char* name;
@@ -69,20 +73,27 @@ Lizard Lizard_init() {
   l.name = "Lizard";
   return l;
 }
-char* Lizard_speak(struct Lizard this) {
-  return "hiss";
-}
 
 int main() {
+  printf("\n");
   int i; for (i = 0; i < 5; i++) {
-printf("hello, world! ");
-printf("%d", i + 1);
-printf("\n");
+    printf("hello, world! ");
+    printf("%d", i + 1);
+    printf("\n");
   }
-printf("\n");
-  Dog dog = Dog_init();
-printf("%s", dog.name);
-printf(": ");
-printf("%s", Dog_speak(dog));
-printf("\n");
+  printf("\n");
+  Dog dog =   Dog_init();
+  printf("%s", dog.name);
+  printf(": ");
+  printf("%s",   Dog_speak(dog));
+  printf("\n");
+  Dog _x1 =   Dog_init();
+  Cat _x2 =   Cat_init();
+  Lizard _x3 =   Lizard_init();
+  void *animals[] = {&_x1, &_x2, &_x3};
+  for (int i = 0; i < 3; i++) {
+  void **a = *(animals + i);
+    printf("%s", ((char *(*)()) * _get_trait_func(a, 0, 0))());
+    printf("\n");
+  }
 }

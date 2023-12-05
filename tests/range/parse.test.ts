@@ -39,7 +39,7 @@ var x = 1..2
       children: [],
       i: 0,
     } as RangeNode,
-    type: "?",
+    type: "int[]",
     children: [],
     i: 0,
   };
@@ -79,7 +79,7 @@ var x = 1.=2
       children: [],
       i: 0,
     } as RangeNode,
-    type: "?",
+    type: "int[]",
     children: [],
     i: 0,
   };
