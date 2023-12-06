@@ -38,6 +38,7 @@ for x in y {
     children: [],
     i: 0,
   };
+  assert.equal(result.errors, []);
   assert.equal(
     trim_test_data(result.root.children[1]),
     trim_test_data(expected),
@@ -82,6 +83,7 @@ for x in 0..5 {}
     children: [],
     i: 0,
   };
+  assert.equal(result.errors, []);
   assert.equal(
     trim_test_data(result.root.children[0]),
     trim_test_data(expected),

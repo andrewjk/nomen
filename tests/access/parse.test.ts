@@ -49,6 +49,7 @@ var x = p.age
     children: [],
     i: 0,
   };
+  assert.equal(result.errors, []);
   assert.equal(
     trim_test_data(result.root.children[2]),
     trim_test_data(expected),
@@ -108,6 +109,7 @@ var x = p.address.line
     children: [],
     i: 0,
   };
+  assert.equal(result.errors, []);
   assert.equal(
     trim_test_data(result.root.children[3]),
     trim_test_data(expected),
@@ -155,6 +157,7 @@ p.age = 20
     children: [],
     i: 0,
   };
+  assert.equal(result.errors, []);
   assert.equal(
     trim_test_data(result.root.children[2]),
     trim_test_data(expected),
@@ -218,6 +221,7 @@ p.address.line = "1 main st"
     children: [],
     i: 0,
   };
+  assert.equal(result.errors, []);
   assert.equal(
     trim_test_data(result.root.children[3]),
     trim_test_data(expected),
@@ -227,7 +231,9 @@ p.address.line = "1 main st"
 test("getting function", () => {
   const input = `
 struct Person {
-  func age() -> int {}
+  func age() -> int {
+    return 20
+  }
 }
 var p: Person
 var x = p.age()
@@ -262,6 +268,7 @@ var x = p.age()
     children: [],
     i: 0,
   };
+  assert.equal(result.errors, []);
   assert.equal(
     trim_test_data(result.root.children[2]),
     trim_test_data(expected),
@@ -324,6 +331,7 @@ var x = p.address.line()
     children: [],
     i: 0,
   };
+  assert.equal(result.errors, []);
   assert.equal(
     trim_test_data(result.root.children[3]),
     trim_test_data(expected),
@@ -337,13 +345,16 @@ struct Address {
 }
 struct Person {
   var age: int
-  func address() -> Address {}
+  func address() -> Address {
+    return Address.init("123 main st")
+  }
 }
 var p: Person
 var x = p.address().line
 `;
   const tokens = tokenize(input);
   const result = parse(tokens);
+  console.log(JSON.stringify(result.root, null, 2));
   const expected: DeclarationNode = {
     node_type: "decl",
     declaration: "var",
@@ -384,6 +395,7 @@ var x = p.address().line
     children: [],
     i: 0,
   };
+  assert.equal(result.errors, []);
   assert.equal(
     trim_test_data(result.root.children[3]),
     trim_test_data(expected),

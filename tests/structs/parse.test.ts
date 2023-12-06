@@ -32,6 +32,7 @@ struct Person {}
     children: [],
     i: 0,
   };
+  assert.equal(result.errors, []);
   assert.equal(
     trim_test_data(result.root.children[0]),
     trim_test_data(expected),
@@ -98,6 +99,7 @@ struct Person {
     children: [],
     i: 0,
   };
+  assert.equal(result.errors, []);
   assert.equal(
     trim_test_data(result.root.children[0]),
     trim_test_data(expected),
@@ -139,6 +141,7 @@ struct Person {
     children: [],
     i: 0,
   };
+  assert.equal(result.errors, []);
   assert.equal(
     trim_test_data(result.root.children[0]),
     trim_test_data(expected),

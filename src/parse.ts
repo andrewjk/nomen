@@ -530,8 +530,8 @@ function check_assignment_node(assign: AssignmentNode, status: ParseStatus) {
     });
   } else if (lvalue.declaration === "const") {
     status.errors.push({
-      i: assign.left_value!.i,
       message: `Assignment to const: ${lvalueName}`,
+      i: assign.left_value!.i,
     });
   }
 
@@ -541,11 +541,11 @@ function check_assignment_node(assign: AssignmentNode, status: ParseStatus) {
   const inferredType = type_from_value_node(assign.right_value!, status);
   if (lvalue && lvalue.type !== inferredType) {
     status.errors.push({
-      i: assign.right_value!.i,
       message:
         inferredType === "?"
           ? `Type mismatch -- unknown value type: ${rvalueName}`
           : `Type mismatch: ${inferredType} cannot be assigned to ${lvalue.type} variable`,
+      i: assign.right_value!.i,
     });
   }
 }
@@ -610,8 +610,8 @@ function parse_function(status: ParseStatus) {
         if (expect("}", status)) {
           if (func.return_type && !func.has_return) {
             status.errors.push({
-              i: status.tokens[status.i - 1].i,
               message: `Missing return`,
+              i: status.tokens[status.i - 1].i,
             });
           }
         }
@@ -1056,8 +1056,8 @@ function check_type_exists(type: string, status: ParseStatus): boolean {
   type = type.replace(/\[.*\]/, "");
   if (!status.types.includes(type)) {
     status.errors.push({
-      i: status.tokens[status.i - 1].i,
       message: `Unknown type: ${type}`,
+      i: status.tokens[status.i - 1].i,
     });
     return false;
   }
@@ -1084,18 +1084,18 @@ function check_type_and_value_match(
       }
 
       status.errors.push({
-        i: status.tokens[status.i - 1].i,
         message:
           expression_type === "?"
             ? `Type mismatch -- unknown value type: ${value}`
             : `Type mismatch: ${expression_type} cannot be assigned to ${target_type} variable`,
+        i: status.tokens[status.i - 1].i,
       });
     }
   } else {
     if (expression_type === "?") {
       status.errors.push({
-        i: status.tokens[status.i - 1].i,
         message: `Unknown value type: ${value}`,
+        i: status.tokens[status.i - 1].i,
       });
     }
   }

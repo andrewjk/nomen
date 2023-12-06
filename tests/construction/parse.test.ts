@@ -45,7 +45,8 @@ var x = Person.init()
     children: [],
     i: 0,
   };
-  assert.ok(result.ok, JSON.stringify(result.errors, null, 2));
+  assert.equal(result.errors, []);
+  assert.equal(result.errors, []);
   assert.equal(
     trim_test_data(result.root.children[1]),
     trim_test_data(expected),
@@ -96,7 +97,7 @@ var x = Person.init("Andrew")
     children: [],
     i: 0,
   };
-  assert.ok(result.ok, JSON.stringify(result.errors, null, 2));
+  assert.equal(result.errors, []);
   assert.equal(
     trim_test_data(result.root.children[1]),
     trim_test_data(expected),
@@ -139,7 +140,7 @@ var x = Person.init()
     children: [],
     i: 0,
   };
-  assert.ok(result.ok, JSON.stringify(result.errors, null, 2));
+  assert.equal(result.errors, []);
   assert.equal(
     trim_test_data(result.root.children[1]),
     trim_test_data(expected),

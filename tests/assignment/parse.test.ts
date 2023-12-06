@@ -34,6 +34,7 @@ x = 5
     children: [],
     i: 0,
   };
+  assert.equal(result.errors, []);
   assert.equal(
     trim_test_data(result.root.children[1]),
     trim_test_data(expected),

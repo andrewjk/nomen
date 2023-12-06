@@ -25,6 +25,7 @@ func add() {}
     children: [],
     i: 0,
   };
+  assert.equal(result.errors, []);
   assert.equal(
     trim_test_data(result.root.children[0]),
     trim_test_data(expected),
@@ -62,6 +63,7 @@ func add(a: int, b: int) {}
     children: [],
     i: 0,
   };
+  assert.equal(result.errors, []);
   assert.equal(
     trim_test_data(result.root.children[0]),
     trim_test_data(expected),
@@ -99,6 +101,7 @@ func add(a: int, b = 5) {}
     children: [],
     i: 0,
   };
+  assert.equal(result.errors, []);
   assert.equal(
     trim_test_data(result.root.children[0]),
     trim_test_data(expected),
@@ -107,7 +110,9 @@ func add(a: int, b = 5) {}
 
 test("function with return type", () => {
   const input = `
-func add() -> int {}
+func add() -> int {
+  return 1
+}
 `;
   const tokens = tokenize(input);
   const result = parse(tokens);
@@ -135,6 +140,7 @@ func add() -> int {}
     has_return: true,
     i: 0,
   };
+  assert.equal(result.errors, []);
   assert.equal(
     trim_test_data(result.root.children[0]),
     trim_test_data(expected),
@@ -173,6 +179,7 @@ func add() {
     children: [decl],
     i: 0,
   };
+  assert.equal(result.errors, []);
   assert.equal(
     trim_test_data(result.root.children[0]),
     trim_test_data(expected),
@@ -210,6 +217,7 @@ func add() -> int {
     children: [ret],
     i: 0,
   };
+  assert.equal(result.errors, []);
   assert.equal(
     trim_test_data(result.root.children[0]),
     trim_test_data(expected),
@@ -242,10 +250,12 @@ func subtract() {}
     children: [],
     i: 0,
   };
+  assert.equal(result.errors, []);
   assert.equal(
     trim_test_data(result.root.children[0]),
     trim_test_data(addFunction),
   );
+  assert.equal(result.errors, []);
   assert.equal(
     trim_test_data(result.root.children[1]),
     trim_test_data(subtractFunction),

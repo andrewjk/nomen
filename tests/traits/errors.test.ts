@@ -2,6 +2,7 @@ import { suite } from "uvu";
 import assert from "uvu/assert";
 import parse from "../../src/parse";
 import tokenize from "../../src/tokenize";
+import type ParseError from "../../src/types/ParseError";
 
 const test = suite("Trait errors");
 
@@ -9,12 +10,15 @@ test("invalid syntax", () => {
   const input = `
 trait Person People {}
 `;
+  const expected: ParseError[] = [
+    {
+      message: "Expected {",
+      i: 14,
+    },
+  ];
   const tokens = tokenize(input);
   const result = parse(tokens);
-  assert.equal(result.ok, false);
-  assert.equal(result.errors.length, 1);
-  assert.equal(result.errors[0].i, 14);
-  assert.equal(result.errors[0].message, "Expected {");
+  assert.equal(result.errors, expected);
 });
 
 test("child trait", () => {
@@ -23,12 +27,15 @@ trait Person {
   trait People {}
 }
 `;
+  const expected: ParseError[] = [
+    {
+      message: "Trait cannot appear here",
+      i: 18,
+    },
+  ];
   const tokens = tokenize(input);
   const result = parse(tokens);
-  assert.equal(result.ok, false);
-  assert.equal(result.errors.length, 1);
-  assert.equal(result.errors[0].i, 18);
-  assert.equal(result.errors[0].message, "Trait cannot appear here");
+  assert.equal(result.errors, expected);
 });
 
 test("child assignment", () => {
@@ -38,12 +45,15 @@ trait Person {
   x = 5
 }
 `;
+  const expected: ParseError[] = [
+    {
+      message: "Assignment cannot appear here",
+      i: 31,
+    },
+  ];
   const tokens = tokenize(input);
   const result = parse(tokens);
-  assert.equal(result.ok, false);
-  assert.equal(result.errors.length, 1);
-  assert.equal(result.errors[0].i, 31);
-  assert.equal(result.errors[0].message, "Assignment cannot appear here");
+  assert.equal(result.errors, expected);
 });
 
 // TODO: non-existent traits, non-matching traits etc

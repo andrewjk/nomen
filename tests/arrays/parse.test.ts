@@ -23,6 +23,7 @@ const x: int[]
     children: [],
     i: 0,
   };
+  assert.equal(result.errors, []);
   assert.equal(
     trim_test_data(result.root.children[0]),
     trim_test_data(expected),
@@ -72,6 +73,7 @@ var x = [1, 2, 3]
     children: [],
     i: 0,
   };
+  assert.equal(result.errors, []);
   assert.equal(
     trim_test_data(result.root.children[0]),
     trim_test_data(expected),

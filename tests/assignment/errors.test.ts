@@ -2,6 +2,7 @@ import { suite } from "uvu";
 import assert from "uvu/assert";
 import parse from "../../src/parse";
 import tokenize from "../../src/tokenize";
+import type ParseError from "../../src/types/ParseError";
 
 const test = suite("Assignment errors");
 
@@ -10,15 +11,15 @@ test("type mismatch", () => {
 var x: int
 x = "string?!"
 `;
+  const expected: ParseError[] = [
+    {
+      message: "Type mismatch: string cannot be assigned to int variable",
+      i: 16,
+    },
+  ];
   const tokens = tokenize(input);
   const result = parse(tokens);
-  assert.equal(result.ok, false);
-  assert.equal(result.errors.length, 1);
-  assert.equal(result.errors[0].i, 16);
-  assert.equal(
-    result.errors[0].message,
-    "Type mismatch: string cannot be assigned to int variable",
-  );
+  assert.equal(result.errors, expected);
 });
 
 test("type mismatch -- unknown value type", () => {
@@ -26,15 +27,15 @@ test("type mismatch -- unknown value type", () => {
 var x: int
 x = z0
 `;
+  const expected: ParseError[] = [
+    {
+      message: "Type mismatch -- unknown value type: z0",
+      i: 16,
+    },
+  ];
   const tokens = tokenize(input);
   const result = parse(tokens);
-  assert.equal(result.ok, false);
-  assert.equal(result.errors.length, 1);
-  assert.equal(result.errors[0].i, 16);
-  assert.equal(
-    result.errors[0].message,
-    "Type mismatch -- unknown value type: z0",
-  );
+  assert.equal(result.errors, expected);
 });
 
 test("unknown variable", () => {
@@ -42,12 +43,15 @@ test("unknown variable", () => {
 var x: int
 y = "string?!"
 `;
+  const expected: ParseError[] = [
+    {
+      message: "Unknown variable: y",
+      i: 12,
+    },
+  ];
   const tokens = tokenize(input);
   const result = parse(tokens);
-  assert.equal(result.ok, false);
-  assert.equal(result.errors.length, 1);
-  assert.equal(result.errors[0].i, 12);
-  assert.equal(result.errors[0].message, "Unknown variable: y");
+  assert.equal(result.errors, expected);
 });
 
 // TODO: This should be fine, as long as it's done once only?
@@ -56,12 +60,15 @@ test("assignment to const", () => {
 const x: int
 x = 5
 `;
+  const expected: ParseError[] = [
+    {
+      message: "Assignment to const: x",
+      i: 14,
+    },
+  ];
   const tokens = tokenize(input);
   const result = parse(tokens);
-  assert.equal(result.ok, false);
-  assert.equal(result.errors.length, 1);
-  assert.equal(result.errors[0].i, 14);
-  assert.equal(result.errors[0].message, "Assignment to const: x");
+  assert.equal(result.errors, expected);
 });
 
 test.run();
