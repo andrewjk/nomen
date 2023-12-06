@@ -795,9 +795,11 @@ function check_invocation_function(
 // RETURN
 
 function parse_return(status: ParseStatus) {
+  accept("return", status);
+
   const ret: ReturnNode = {
     node_type: "ret",
-    value: "",
+    value: parse_expression(status),
     type: "",
     children: [],
     i: status.tokens[status.i].i,
@@ -815,17 +817,15 @@ function parse_return(status: ParseStatus) {
     });
   }
 
-  accept("return", status);
-  ret.value = consume(status);
   if (func.return_type && func.return_type !== "?") {
     check_type_and_value_match(
       func.return_type,
-      type_from_value(ret.value, status),
-      ret.value,
+      type_from_value_node(ret.value, status),
+      value_from_value_node(ret.value, status),
       status,
     );
   }
-  ret.type = type_from_value(ret.value, status);
+  ret.type = type_from_value_node(ret.value, status);
 }
 
 // ACCESS

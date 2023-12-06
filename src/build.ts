@@ -534,7 +534,9 @@ function build_for_node(node: ForNode, status: BuildStatus) {
 }
 
 function build_return_node(node: ReturnNode, status: BuildStatus) {
-  status.code += `return ${node.value};\n`;
+  status.code += `return `;
+  build_node(node.value, status);
+  status.code += `;\n`;
 }
 
 function build_value_node(node: ValueNode, status: BuildStatus) {

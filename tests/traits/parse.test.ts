@@ -195,7 +195,13 @@ struct Frank: Person {
         children: [
           {
             node_type: "ret",
-            value: '"hi"',
+            value: {
+              node_type: "value",
+              value: '"hi"',
+              type: "string",
+              children: [],
+              i: 0,
+            } as ValueNode,
             type: "string",
             children: [],
             i: 0,
@@ -271,7 +277,13 @@ struct Frank: Person {
         children: [
           {
             node_type: "ret",
-            value: '"hi"',
+            value: {
+              node_type: "value",
+              value: '"hi"',
+              type: "string",
+              children: [],
+              i: 0,
+            } as ValueNode,
             type: "string",
             children: [],
             i: 0,

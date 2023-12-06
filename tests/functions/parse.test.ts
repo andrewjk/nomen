@@ -117,7 +117,22 @@ func add() -> int {}
     params: [],
     return_type: "int",
     has_body: true,
-    children: [],
+    children: [
+      {
+        node_type: "ret",
+        value: {
+          node_type: "value",
+          value: "1",
+          type: "int",
+          children: [],
+          i: 0,
+        } as ValueNode,
+        type: "int",
+        children: [],
+        i: 0,
+      } as ReturnNode,
+    ],
+    has_return: true,
     i: 0,
   };
   assert.equal(
@@ -174,7 +189,13 @@ func add() -> int {
   const result = parse(tokens);
   const ret: ReturnNode = {
     node_type: "ret",
-    value: "5",
+    value: {
+      node_type: "value",
+      value: "5",
+      type: "int",
+      children: [],
+      i: 0,
+    } as ValueNode,
     type: "int",
     children: [],
     i: 0,
