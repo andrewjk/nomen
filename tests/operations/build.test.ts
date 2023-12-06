@@ -14,7 +14,7 @@ var x = 1 + 2
   const parsed = parse(tokens);
   const result = build(parsed.root.children[0]);
   const expected = `
-  int x = 1 + 2;
+int x = 1 + 2;
 `;
   assert.equal(result.code.trim(), expected.trim());
 });
@@ -27,7 +27,7 @@ var x = 1 - 2
   const parsed = parse(tokens);
   const result = build(parsed.root.children[0]);
   const expected = `
-  int x = 1 - 2;
+int x = 1 - 2;
 `;
   assert.equal(result.code.trim(), expected.trim());
 });
@@ -40,7 +40,7 @@ var x = 1 + 2 - 3
   const parsed = parse(tokens);
   const result = build(parsed.root.children[0]);
   const expected = `
-  int x = 1 + 2 - 3;
+int x = 1 + 2 - 3;
 `;
   assert.equal(result.code.trim(), expected.trim());
 });

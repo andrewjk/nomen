@@ -15,7 +15,7 @@ x = 5
   const parsed = parse(tokens);
   const result = build(parsed.root.children[1]);
   const expected = `
-  x = 5;
+x = 5;
 `;
   assert.equal(result.code.trim(), expected.trim());
 });

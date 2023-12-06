@@ -14,7 +14,7 @@ const x = 5
   const parsed = parse(tokens);
   const result = build(parsed.root.children[0]);
   const expected = `
-  int x = 5;
+int x = 5;
 `;
   assert.equal(result.code.trim(), expected.trim());
 });
@@ -27,7 +27,7 @@ const x: int
   const parsed = parse(tokens);
   const result = build(parsed.root.children[0]);
   const expected = `
-  int x;
+int x;
 `;
   assert.equal(result.code.trim(), expected.trim());
 });
@@ -40,7 +40,7 @@ var x = 5
   const parsed = parse(tokens);
   const result = build(parsed.root.children[0]);
   const expected = `
-  int x = 5;
+int x = 5;
 `;
   assert.equal(result.code.trim(), expected.trim());
 });
@@ -53,7 +53,7 @@ var x: int
   const parsed = parse(tokens);
   const result = build(parsed.root.children[0]);
   const expected = `
-  int x;
+int x;
 `;
   assert.equal(result.code.trim(), expected.trim());
 });

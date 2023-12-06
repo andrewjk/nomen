@@ -14,7 +14,8 @@ func add() {}
   const parsed = parse(tokens);
   const result = build(parsed.root.children[0]);
   const expected = `
-void add() {
+void add()
+{
 }
 `;
   assert.equal(result.code.trim(), expected.trim());
@@ -28,7 +29,8 @@ func add(a: int, b: int) {}
   const parsed = parse(tokens);
   const result = build(parsed.root.children[0]);
   const expected = `
-void add(int a, int b) {
+void add(int a, int b)
+{
 }
 `;
   assert.equal(result.code.trim(), expected.trim());
@@ -42,7 +44,8 @@ func add(a: int, b = 5) {}
   const parsed = parse(tokens);
   const result = build(parsed.root.children[0]);
   const expected = `
-void add(int a, int b) {
+void add(int a, int b)
+{
 }
 `;
   assert.equal(result.code.trim(), expected.trim());
@@ -56,7 +59,8 @@ func add() -> int {}
   const parsed = parse(tokens);
   const result = build(parsed.root.children[0]);
   const expected = `
-void add() {
+void add()
+{
 }
 `;
   assert.equal(result.code.trim(), expected.trim());
@@ -72,8 +76,9 @@ func add() {
   const parsed = parse(tokens);
   const result = build(parsed.root.children[0]);
   const expected = `
-void add() {
-  int x = 5;
+void add()
+{
+int x = 5;
 }
 `;
   assert.equal(result.code.trim(), expected.trim());
@@ -89,8 +94,9 @@ func add() -> int {
   const parsed = parse(tokens);
   const result = build(parsed.root.children[0]);
   const expected = `
-void add() {
-  return 5;
+void add()
+{
+return 5;
 }
 `;
   assert.equal(result.code.trim(), expected.trim());

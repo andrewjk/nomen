@@ -16,7 +16,7 @@ var x = Person.init()
   const parsed = parse(tokens);
   const result = build(parsed.root.children[1]);
   const expected = `
-  Person x = Person_init();
+Person x = Person_init();
 `;
   assert.equal(result.code.trim(), expected.trim());
 });
@@ -32,7 +32,7 @@ var x = Person.init("Andrew")
   const parsed = parse(tokens);
   const result = build(parsed.root.children[1]);
   const expected = `
-  Person x = Person_init("Andrew");
+Person x = Person_init("Andrew");
 `;
   assert.equal(result.code.trim(), expected.trim());
 });

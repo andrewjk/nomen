@@ -18,7 +18,7 @@ var x = p.age
   const parsed = parse(tokens);
   const result = build(parsed.root.children[2]);
   const expected = `
-  int x = p.age;
+int x = p.age;
 `;
   assert.equal(result.code.trim(), expected.trim());
 });
@@ -39,7 +39,7 @@ var x = p.address.line
   const parsed = parse(tokens);
   const result = build(parsed.root.children[3]);
   const expected = `
-  char* x = p.address.line;
+char* x = p.address.line;
 `;
   assert.equal(result.code.trim(), expected.trim());
 });
@@ -56,7 +56,7 @@ p.age = 20
   const parsed = parse(tokens);
   const result = build(parsed.root.children[2]);
   const expected = `
-  p.age = 20;
+p.age = 20;
 `;
   assert.equal(result.code.trim(), expected.trim());
 });
@@ -77,7 +77,7 @@ p.address.line = "1 main st"
   const parsed = parse(tokens);
   const result = build(parsed.root.children[3]);
   const expected = `
-  p.address.line = "1 main st";
+p.address.line = "1 main st";
 `;
   assert.equal(result.code.trim(), expected.trim());
 });
@@ -94,7 +94,7 @@ var x = p.age()
   const parsed = parse(tokens);
   const result = build(parsed.root.children[2]);
   const expected = `
-  int x = Person_age(p);
+int x = Person_age(p);
 `;
   assert.equal(result.code.trim(), expected.trim());
 });
@@ -117,7 +117,7 @@ var x = p.address.line()
   const parsed = parse(tokens);
   const result = build(parsed.root.children[3]);
   const expected = `
-  char* x = Address_line(p.address);
+char* x = Address_line(p.address);
 `;
   assert.equal(result.code.trim(), expected.trim());
 });
@@ -138,7 +138,7 @@ var x = p.address().line
   const parsed = parse(tokens);
   const result = build(parsed.root.children[3]);
   const expected = `
-  char* x = Person_address(p).line;
+char* x = Person_address(p).line;
 `;
   assert.equal(result.code.trim(), expected.trim());
 });

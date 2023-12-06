@@ -15,7 +15,7 @@ greet()
   const parsed = parse(tokens);
   const result = build(parsed.root.children[1]);
   const expected = `
-  greet();
+greet();
 `;
   assert.equal(result.code.trim(), expected.trim());
 });
@@ -29,7 +29,7 @@ greet("Andrew", "Manager")
   const parsed = parse(tokens);
   const result = build(parsed.root.children[1]);
   const expected = `
-  greet("Andrew", "Manager");
+greet("Andrew", "Manager");
 `;
   assert.equal(result.code.trim(), expected.trim());
 });

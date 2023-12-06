@@ -24,25 +24,24 @@ struct Frank: Person {}
   const parsed = parse(tokens);
   const result = build(parsed.root);
   const expected = `
-void **_get_trait_func(void **obj, int trait_index, int func_index) {
-  void **trait = *(obj + trait_index);
-  return *(trait + func_index);
+void **_get_trait_func(void **obj, int trait_index, int func_index)
+{
+void **trait = *(obj + trait_index);
+return *(trait + func_index);
 }
 
 // Frank:
-void *_Frank_Person_funcs[1] = {
-
-};
-void *_Frank_traits[1] = {
-  [0] = _Frank_Person_funcs
-};
-typedef struct Frank {
-  void *_vt;
+void *_Frank_Person_funcs[] = {};
+void *_Frank_traits[] = {_Frank_Person_funcs};
+typedef struct Frank
+{
+void *_vt;
 } Frank;
-Frank Frank_init() {
-  Frank f;
-  f._vt = &_Frank_traits;
-  return f;
+Frank Frank_init()
+{
+Frank f;
+f._vt = &_Frank_traits;
+return f;
 }
 `;
   assert.equal(trimCode(result.code), expected.trim());
@@ -63,29 +62,28 @@ struct Frank: Person {
   const parsed = parse(tokens);
   const result = build(parsed.root);
   const expected = `
-void **_get_trait_func(void **obj, int trait_index, int func_index) {
-  void **trait = *(obj + trait_index);
-  return *(trait + func_index);
+void **_get_trait_func(void **obj, int trait_index, int func_index)
+{
+void **trait = *(obj + trait_index);
+return *(trait + func_index);
 }
 
 // Frank:
-void *_Frank_Person_funcs[1] = {
-
-};
-void *_Frank_traits[1] = {
-  [0] = _Frank_Person_funcs
-};
-typedef struct Frank {
-  void *_vt;
-  char* name;
-  int age;
+void *_Frank_Person_funcs[] = {};
+void *_Frank_traits[] = {_Frank_Person_funcs};
+typedef struct Frank
+{
+void *_vt;
+char* name;
+int age;
 } Frank;
-Frank Frank_init() {
-  Frank f;
-  f._vt = &_Frank_traits;
-  f.name = "Frank";
-  f.age = 0;
-  return f;
+Frank Frank_init()
+{
+Frank f;
+f._vt = &_Frank_traits;
+f.name = "Frank";
+f.age = 0;
+return f;
 }
 `;
   assert.equal(trimCode(result.code), expected.trim());
@@ -107,33 +105,36 @@ struct Frank: Person {
   const parsed = parse(tokens);
   const result = build(parsed.root);
   const expected = `
-void **_get_trait_func(void **obj, int trait_index, int func_index) {
-  void **trait = *(obj + trait_index);
-  return *(trait + func_index);
+void **_get_trait_func(void **obj, int trait_index, int func_index)
+{
+void **trait = *(obj + trait_index);
+return *(trait + func_index);
 }
 
 // Person:
-typedef struct Person {} Person;
-void Person_greet(struct Person this) {
+typedef struct Person
+{
+} Person;
+void Person_greet(struct Person this)
+{
 }
 
 // Frank:
-void *_Frank_Person_funcs[1] = {
-  [0] = Frank_greet
-};
-void *_Frank_traits[1] = {
-  [0] = _Frank_Person_funcs
-};
-typedef struct Frank {
-  void *_vt;
+void *_Frank_Person_funcs[] = {Frank_greet};
+void *_Frank_traits[] = {_Frank_Person_funcs};
+typedef struct Frank
+{
+void *_vt;
 } Frank;
-Frank Frank_init() {
-  Frank f;
-  f._vt = &_Frank_traits;
-  return f;
+Frank Frank_init()
+{
+Frank f;
+f._vt = &_Frank_traits;
+return f;
 }
-char* Frank_greet(struct Frank this) {
-  return "hi";
+char* Frank_greet(struct Frank this)
+{
+return "hi";
 }
 `;
   assert.equal(trimCode(result.code), expected.trim());
@@ -157,34 +158,37 @@ struct Frank: Person {
   const parsed = parse(tokens);
   const result = build(parsed.root);
   const expected = `
-void **_get_trait_func(void **obj, int trait_index, int func_index) {
-  void **trait = *(obj + trait_index);
-  return *(trait + func_index);
+void **_get_trait_func(void **obj, int trait_index, int func_index)
+{
+void **trait = *(obj + trait_index);
+return *(trait + func_index);
 }
 
 // Person:
-typedef struct Person {} Person;
-void Person_greet(struct Person this) {
-  return "hi";
+typedef struct Person
+{
+} Person;
+void Person_greet(struct Person this)
+{
+return "hi";
 }
 
 // Frank:
-void *_Frank_Person_funcs[1] = {
-  [0] = Frank_greet
-};
-void *_Frank_traits[1] = {
-  [0] = _Frank_Person_funcs
-};
-typedef struct Frank {
-  void *_vt;
+void *_Frank_Person_funcs[] = {Frank_greet};
+void *_Frank_traits[] = {_Frank_Person_funcs};
+typedef struct Frank
+{
+void *_vt;
 } Frank;
-Frank Frank_init() {
-  Frank f;
-  f._vt = &_Frank_traits;
-  return f;
+Frank Frank_init()
+{
+Frank f;
+f._vt = &_Frank_traits;
+return f;
 }
-char* Frank_greet(struct Frank this) {
-  return "hi";
+char* Frank_greet(struct Frank this)
+{
+return "hi";
 }
 `;
   assert.equal(trimCode(result.code), expected.trim());

@@ -15,7 +15,9 @@ for x in y {}
   const parsed = parse(tokens);
   const result = build(parsed.root.children[1]);
   const expected = `
-int x; for (x = 0; x < 3; x++) {
+int x;
+for (x = 0; x < 3; x++)
+{
 }
 `;
   assert.equal(result.code.trim(), expected.trim());
@@ -29,7 +31,9 @@ for x in 0..5 {}
   const parsed = parse(tokens);
   const result = build(parsed.root.children[0]);
   const expected = `
-int x; for (x = 0; x < 5; x++) {
+int x;
+for (x = 0; x < 5; x++)
+{
 }
 `;
   assert.equal(result.code.trim(), expected.trim());
@@ -43,7 +47,7 @@ var x = 1 + 2 - 3
   const parsed = parse(tokens);
   const result = build(parsed.root.children[0]);
   const expected = `
-  int x = 1 + 2 - 3;
+int x = 1 + 2 - 3;
 `;
   assert.equal(result.code.trim(), expected.trim());
 });

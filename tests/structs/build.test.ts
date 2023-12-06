@@ -15,13 +15,15 @@ struct Person {}
   const result = build(parsed.root.children[0]);
   const expected = `
 // Person:
-typedef struct Person {
-  void *_vt;
+typedef struct Person
+{
+void *_vt;
 } Person;
-Person Person_init() {
-  Person p;
-  p._vt = &_Person_traits;
-  return p;
+Person Person_init()
+{
+Person p;
+p._vt = &_Person_traits;
+return p;
 }
 `;
   assert.equal(result.code.trim(), expected.trim());
@@ -39,17 +41,19 @@ struct Person {
   const result = build(parsed.root.children[0]);
   const expected = `
 // Person:
-typedef struct Person {
-  void *_vt;
-  char* name;
-  int age;
+typedef struct Person
+{
+void *_vt;
+char* name;
+int age;
 } Person;
-Person Person_init(char* name) {
-  Person p;
-  p._vt = &_Person_traits;
-  p.name = name;
-  p.age = 0;
-  return p;
+Person Person_init(char* name)
+{
+Person p;
+p._vt = &_Person_traits;
+p.name = name;
+p.age = 0;
+return p;
 }
 `;
   assert.equal(result.code.trim(), expected.trim());
@@ -66,15 +70,18 @@ struct Person {
   const result = build(parsed.root.children[0]);
   const expected = `
 // Person:
-typedef struct Person {
-  void *_vt;
+typedef struct Person
+{
+void *_vt;
 } Person;
-Person Person_init() {
-  Person p;
-  p._vt = &_Person_traits;
-  return p;
+Person Person_init()
+{
+Person p;
+p._vt = &_Person_traits;
+return p;
 }
-void Person_greet(struct Person this) {
+void Person_greet(struct Person this)
+{
 }
 `;
   assert.equal(result.code.trim(), expected.trim());

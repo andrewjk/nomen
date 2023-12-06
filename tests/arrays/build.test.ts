@@ -14,7 +14,7 @@ const x: int[]
   const parsed = parse(tokens);
   const result = build(parsed.root.children[0]);
   const expected = `
-  int x[];
+int x[];
 `;
   assert.equal(result.code.trim(), expected.trim());
 });
@@ -27,7 +27,7 @@ var x = [1, 2, 3]
   const parsed = parse(tokens);
   const result = build(parsed.root.children[0]);
   const expected = `
-  int x[3] = {1, 2, 3};
+int x[3] = {1, 2, 3};
 `;
   assert.equal(result.code.trim(), expected.trim());
 });
