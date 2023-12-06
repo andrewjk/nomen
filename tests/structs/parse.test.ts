@@ -131,6 +131,7 @@ struct Person {
         name: "greet",
         params: [],
         return_type: "",
+        has_body: true,
         children: [],
         i: 0,
       },

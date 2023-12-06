@@ -605,6 +605,7 @@ function parse_function(status: ParseStatus) {
         (parent.node_type === "trait" && accept("{", status)) ||
         expect("{", status)
       ) {
+        func.has_body = true;
         parse_statement(status);
         if (expect("}", status)) {
           if (func.return_type && !func.has_return) {

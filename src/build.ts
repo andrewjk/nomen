@@ -339,7 +339,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 
 function build_trait_node(node: TraitNode, status: BuildStatus) {
   // We only need to build a trait node if there are default functions
-  if (!node.functions.find((f) => f.children.length)) {
+  if (!node.functions.find((f) => f.has_body)) {
     return;
   }
 

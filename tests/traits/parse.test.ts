@@ -190,6 +190,7 @@ struct Frank: Person {
         name: "greet",
         params: [],
         return_type: "string",
+        has_body: true,
         has_return: true,
         children: [
           {
@@ -238,6 +239,7 @@ struct Frank: Person {
         name: "greet",
         params: [],
         return_type: "",
+        has_body: true,
         children: [],
         i: 0,
       },
@@ -264,6 +266,7 @@ struct Frank: Person {
         name: "greet",
         params: [],
         return_type: "string",
+        has_body: true,
         has_return: true,
         children: [
           {

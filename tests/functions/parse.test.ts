@@ -21,6 +21,7 @@ func add() {}
     name: "add",
     params: [],
     return_type: "",
+    has_body: true,
     children: [],
     i: 0,
   };
@@ -57,6 +58,7 @@ func add(a: int, b: int) {}
       },
     ],
     return_type: "",
+    has_body: true,
     children: [],
     i: 0,
   };
@@ -93,6 +95,7 @@ func add(a: int, b = 5) {}
       },
     ],
     return_type: "",
+    has_body: true,
     children: [],
     i: 0,
   };
@@ -113,6 +116,7 @@ func add() -> int {}
     name: "add",
     params: [],
     return_type: "int",
+    has_body: true,
     children: [],
     i: 0,
   };
@@ -150,6 +154,7 @@ func add() {
     name: "add",
     params: [],
     return_type: "",
+    has_body: true,
     children: [decl],
     i: 0,
   };
@@ -179,6 +184,7 @@ func add() -> int {
     name: "add",
     params: [],
     return_type: "int",
+    has_body: true,
     has_return: true,
     children: [ret],
     i: 0,
@@ -202,6 +208,7 @@ func subtract() {}
     name: "add",
     params: [],
     return_type: "",
+    has_body: true,
     children: [],
     i: 0,
   };
@@ -210,6 +217,7 @@ func subtract() {}
     name: "subtract",
     params: [],
     return_type: "",
+    has_body: true,
     children: [],
     i: 0,
   };

@@ -6,6 +6,7 @@ export default interface FunctionNode extends ParseNode {
   name: string;
   params: ParameterNode[];
   return_type: string;
+  has_body?: boolean;
   // TODO: Check all branches
   has_return?: boolean;
 }
