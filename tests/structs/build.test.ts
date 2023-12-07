@@ -1,6 +1,7 @@
 import { suite } from "uvu";
 import assert from "uvu/assert";
 import build from "../../src/build";
+import check from "../../src/check";
 import parse from "../../src/parse";
 import tokenize from "../../src/tokenize";
 
@@ -12,6 +13,7 @@ struct Person {}
 `;
   const tokens = tokenize(input);
   const parsed = parse(tokens);
+  const checked = check(parsed.root);
   const result = build(parsed.root.children[0]);
   const expected = `
 // Person:
@@ -26,6 +28,7 @@ p._vt = &_Person_traits;
 return p;
 }
 `;
+  assert.equal(parsed.errors.concat(checked.errors), []);
   assert.equal(result.code.trim(), expected.trim());
 });
 
@@ -38,6 +41,7 @@ struct Person {
 `;
   const tokens = tokenize(input);
   const parsed = parse(tokens);
+  const checked = check(parsed.root);
   const result = build(parsed.root.children[0]);
   const expected = `
 // Person:
@@ -56,6 +60,7 @@ p.age = 0;
 return p;
 }
 `;
+  assert.equal(parsed.errors.concat(checked.errors), []);
   assert.equal(result.code.trim(), expected.trim());
 });
 
@@ -67,6 +72,7 @@ struct Person {
 `;
   const tokens = tokenize(input);
   const parsed = parse(tokens);
+  const checked = check(parsed.root);
   const result = build(parsed.root.children[0]);
   const expected = `
 // Person:
@@ -84,6 +90,7 @@ void Person_greet(struct Person this)
 {
 }
 `;
+  assert.equal(parsed.errors.concat(checked.errors), []);
   assert.equal(result.code.trim(), expected.trim());
 });
 

@@ -1,8 +1,9 @@
 import { suite } from "uvu";
 import assert from "uvu/assert";
+import check from "../../src/check";
 import parse from "../../src/parse";
 import tokenize from "../../src/tokenize";
-import type ParseError from "../../src/types/ParseError";
+import type CompileError from "../../src/types/CompileError";
 
 const test = suite("Struct errors");
 
@@ -10,15 +11,16 @@ test("invalid syntax", () => {
   const input = `
 struct Person People {}
 `;
-  const expected: ParseError[] = [
+  const expected: CompileError[] = [
     {
       message: "Expected {",
-      i: 15,
+      start: 15,
     },
   ];
   const tokens = tokenize(input);
-  const result = parse(tokens);
-  assert.equal(result.errors, expected);
+  const parsed = parse(tokens);
+  const checked = check(parsed.root);
+  assert.equal(parsed.errors.concat(checked.errors), expected);
 });
 
 test("child struct", () => {
@@ -27,15 +29,16 @@ struct Person {
   struct People {}
 }
 `;
-  const expected: ParseError[] = [
+  const expected: CompileError[] = [
     {
       message: "Struct cannot appear here",
-      i: 19,
+      start: 19,
     },
   ];
   const tokens = tokenize(input);
-  const result = parse(tokens);
-  assert.equal(result.errors, expected);
+  const parsed = parse(tokens);
+  const checked = check(parsed.root);
+  assert.equal(parsed.errors.concat(checked.errors), expected);
 });
 
 test("child assignment", () => {
@@ -45,15 +48,16 @@ struct Person {
   x = 5
 }
 `;
-  const expected: ParseError[] = [
+  const expected: CompileError[] = [
     {
       message: "Assignment cannot appear here",
-      i: 32,
+      start: 32,
     },
   ];
   const tokens = tokenize(input);
-  const result = parse(tokens);
-  assert.equal(result.errors, expected);
+  const parsed = parse(tokens);
+  const checked = check(parsed.root);
+  assert.equal(parsed.errors.concat(checked.errors), expected);
 });
 
 test.run();

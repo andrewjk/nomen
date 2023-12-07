@@ -1,5 +1,6 @@
 import { suite } from "uvu";
 import assert from "uvu/assert";
+import check from "../../src/check";
 import parse from "../../src/parse";
 import tokenize from "../../src/tokenize";
 import type InvocationNode from "../../src/types/InvocationNode";
@@ -14,7 +15,8 @@ func greet() {}
 greet()
 `;
   const tokens = tokenize(input);
-  const result = parse(tokens);
+  const parsed = parse(tokens);
+  const checked = check(parsed.root);
   const expected: InvocationNode = {
     node_type: "invoke",
     name: "greet",
@@ -23,9 +25,9 @@ greet()
     children: [],
     i: 0,
   };
-  assert.equal(result.errors, []);
+  assert.equal(parsed.errors.concat(checked.errors), []);
   assert.equal(
-    trim_test_data(result.root.children[1]),
+    trim_test_data(parsed.root.children[1]),
     trim_test_data(expected),
   );
 });
@@ -36,7 +38,8 @@ func greet(name: string, position: string) {}
 greet("Andrew", "Manager")
 `;
   const tokens = tokenize(input);
-  const result = parse(tokens);
+  const parsed = parse(tokens);
+  const checked = check(parsed.root);
   const expected: InvocationNode = {
     node_type: "invoke",
     name: "greet",
@@ -60,9 +63,9 @@ greet("Andrew", "Manager")
     children: [],
     i: 0,
   };
-  assert.equal(result.errors, []);
+  assert.equal(parsed.errors.concat(checked.errors), []);
   assert.equal(
-    trim_test_data(result.root.children[1]),
+    trim_test_data(parsed.root.children[1]),
     trim_test_data(expected),
   );
 });

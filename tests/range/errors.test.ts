@@ -5,18 +5,16 @@ import parse from "../../src/parse";
 import tokenize from "../../src/tokenize";
 import type CompileError from "../../src/types/CompileError";
 
-const test = suite("For errors");
+const test = suite("Range errors");
 
-test("string list", () => {
+test("type mismatch", () => {
   const input = `
-for x in "hi" {
-  // ...
-}
+var x = 1.."b"
 `;
   const expected: CompileError[] = [
     {
-      message: "For loop list must be an array, not string",
-      start: 10,
+      message: "Invalid type in range: string (expected int)",
+      start: 12,
     },
   ];
   const tokens = tokenize(input);

@@ -5,35 +5,33 @@ import check from "../../src/check";
 import parse from "../../src/parse";
 import tokenize from "../../src/tokenize";
 
-const test = suite("Invocation build");
+const test = suite("Range build");
 
-test("function without params", () => {
+test("exclusive", () => {
   const input = `
-func greet() {}
-greet()
+var x = 1..4
 `;
   const tokens = tokenize(input);
   const parsed = parse(tokens);
   const checked = check(parsed.root);
-  const result = build(parsed.root.children[1]);
+  const result = build(parsed.root.children[0]);
   const expected = `
-greet();
+int x[] = {1, 2, 3};
 `;
   assert.equal(parsed.errors.concat(checked.errors), []);
   assert.equal(result.code.trim(), expected.trim());
 });
 
-test("function with params", () => {
+test("inclusive", () => {
   const input = `
-func greet(name: string, position: string) {}
-greet("Andrew", "Manager")
+var x = 1.=4
 `;
   const tokens = tokenize(input);
   const parsed = parse(tokens);
   const checked = check(parsed.root);
-  const result = build(parsed.root.children[1]);
+  const result = build(parsed.root.children[0]);
   const expected = `
-greet("Andrew", "Manager");
+int x[] = {1, 2, 3, 4};
 `;
   assert.equal(parsed.errors.concat(checked.errors), []);
   assert.equal(result.code.trim(), expected.trim());

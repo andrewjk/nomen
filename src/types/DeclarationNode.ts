@@ -4,6 +4,8 @@ export default interface DeclarationNode extends ParseNode {
   node_type: "decl";
   declaration: "const" | "var";
   name: string;
-  value?: ParseNode;
   type: string;
+  value?: ParseNode;
+  name_start?: number;
+  type_start?: number;
 }

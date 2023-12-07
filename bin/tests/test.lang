@@ -1,31 +1,3 @@
-// TODO: Move these below Main
-trait Animal {
-	var name: string
-	
-	func speak() -> string {
-		return "..."
-	}
-}
-
-struct Dog: Animal {
-	var name = "Dog"
-
-	func speak() -> string {
-		return "woof"
-	}
-}
-
-struct Cat: Animal {
-	var name = "Cat"
-
-	func speak() -> string {
-		return "meow"
-	}
-}
-
-struct Lizard: Animal {
-	var name = "Lizard"
-}
 
 func main() {
 	Console.Write("\n")
@@ -55,4 +27,32 @@ func main() {
 		Console.Write(a.speak())
 		Console.Write("\n")
 	}
+}
+
+trait Animal {
+	var name: string
+	
+	func speak() -> string {
+		return "..."
+	}
+}
+
+struct Dog: Animal {
+	var name = "Dog"
+
+	func speak() -> string {
+		return "woof"
+	}
+}
+
+struct Cat: Animal {
+	var name = "Cat"
+
+	func speak() -> string {
+		return "meow"
+	}
+}
+
+struct Lizard: Animal {
+	var name = "Lizard"
 }

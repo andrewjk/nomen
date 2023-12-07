@@ -1,8 +1,9 @@
 import { suite } from "uvu";
 import assert from "uvu/assert";
+import check from "../../src/check";
 import parse from "../../src/parse";
 import tokenize from "../../src/tokenize";
-import type ParseError from "../../src/types/ParseError";
+import type CompileError from "../../src/types/CompileError";
 
 const test = suite("Assignment errors");
 
@@ -11,15 +12,16 @@ test("type mismatch", () => {
 var x: int
 x = "string?!"
 `;
-  const expected: ParseError[] = [
+  const expected: CompileError[] = [
     {
       message: "Type mismatch: string cannot be assigned to int variable",
-      i: 16,
+      start: 16,
     },
   ];
   const tokens = tokenize(input);
-  const result = parse(tokens);
-  assert.equal(result.errors, expected);
+  const parsed = parse(tokens);
+  const checked = check(parsed.root);
+  assert.equal(parsed.errors.concat(checked.errors), expected);
 });
 
 test("type mismatch -- unknown value type", () => {
@@ -27,15 +29,16 @@ test("type mismatch -- unknown value type", () => {
 var x: int
 x = z0
 `;
-  const expected: ParseError[] = [
+  const expected: CompileError[] = [
     {
       message: "Type mismatch -- unknown value type: z0",
-      i: 16,
+      start: 16,
     },
   ];
   const tokens = tokenize(input);
-  const result = parse(tokens);
-  assert.equal(result.errors, expected);
+  const parsed = parse(tokens);
+  const checked = check(parsed.root);
+  assert.equal(parsed.errors.concat(checked.errors), expected);
 });
 
 test("unknown variable", () => {
@@ -43,15 +46,16 @@ test("unknown variable", () => {
 var x: int
 y = "string?!"
 `;
-  const expected: ParseError[] = [
+  const expected: CompileError[] = [
     {
       message: "Unknown variable: y",
-      i: 12,
+      start: 12,
     },
   ];
   const tokens = tokenize(input);
-  const result = parse(tokens);
-  assert.equal(result.errors, expected);
+  const parsed = parse(tokens);
+  const checked = check(parsed.root);
+  assert.equal(parsed.errors.concat(checked.errors), expected);
 });
 
 // TODO: This should be fine, as long as it's done once only?
@@ -60,15 +64,16 @@ test("assignment to const", () => {
 const x: int
 x = 5
 `;
-  const expected: ParseError[] = [
+  const expected: CompileError[] = [
     {
       message: "Assignment to const: x",
-      i: 14,
+      start: 14,
     },
   ];
   const tokens = tokenize(input);
-  const result = parse(tokens);
-  assert.equal(result.errors, expected);
+  const parsed = parse(tokens);
+  const checked = check(parsed.root);
+  assert.equal(parsed.errors.concat(checked.errors), expected);
 });
 
 test.run();

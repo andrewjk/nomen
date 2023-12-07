@@ -1,6 +1,7 @@
 import { suite } from "uvu";
 import assert from "uvu/assert";
 import build from "../../src/build";
+import check from "../../src/check";
 import parse from "../../src/parse";
 import tokenize from "../../src/tokenize";
 
@@ -16,10 +17,12 @@ var x = p.age
 `;
   const tokens = tokenize(input);
   const parsed = parse(tokens);
+  const checked = check(parsed.root);
   const result = build(parsed.root.children[2]);
   const expected = `
 int x = p.age;
 `;
+  assert.equal(parsed.errors.concat(checked.errors), []);
   assert.equal(result.code.trim(), expected.trim());
 });
 
@@ -37,10 +40,12 @@ var x = p.address.line
 `;
   const tokens = tokenize(input);
   const parsed = parse(tokens);
+  const checked = check(parsed.root);
   const result = build(parsed.root.children[3]);
   const expected = `
 char* x = p.address.line;
 `;
+  assert.equal(parsed.errors.concat(checked.errors), []);
   assert.equal(result.code.trim(), expected.trim());
 });
 
@@ -54,10 +59,12 @@ p.age = 20
 `;
   const tokens = tokenize(input);
   const parsed = parse(tokens);
+  const checked = check(parsed.root);
   const result = build(parsed.root.children[2]);
   const expected = `
 p.age = 20;
 `;
+  assert.equal(parsed.errors.concat(checked.errors), []);
   assert.equal(result.code.trim(), expected.trim());
 });
 
@@ -75,27 +82,33 @@ p.address.line = "1 main st"
 `;
   const tokens = tokenize(input);
   const parsed = parse(tokens);
+  const checked = check(parsed.root);
   const result = build(parsed.root.children[3]);
   const expected = `
 p.address.line = "1 main st";
 `;
+  assert.equal(parsed.errors.concat(checked.errors), []);
   assert.equal(result.code.trim(), expected.trim());
 });
 
 test("getting function", () => {
   const input = `
 struct Person {
-  func age() -> int {}
+  func age() -> int {
+    return 20
+  }
 }
 var p: Person
 var x = p.age()
 `;
   const tokens = tokenize(input);
   const parsed = parse(tokens);
+  const checked = check(parsed.root);
   const result = build(parsed.root.children[2]);
   const expected = `
 int x = Person_age(p);
 `;
+  assert.equal(parsed.errors.concat(checked.errors), []);
   assert.equal(result.code.trim(), expected.trim());
 });
 
@@ -115,10 +128,12 @@ var x = p.address.line()
 `;
   const tokens = tokenize(input);
   const parsed = parse(tokens);
+  const checked = check(parsed.root);
   const result = build(parsed.root.children[3]);
   const expected = `
 char* x = Address_line(p.address);
 `;
+  assert.equal(parsed.errors.concat(checked.errors), []);
   assert.equal(result.code.trim(), expected.trim());
 });
 
@@ -129,17 +144,21 @@ struct Address {
 }
 struct Person {
   var age: int
-  func address() -> Address {}
+  func address() -> Address {
+    return Address.init("123 main st")
+  }
 }
 var p: Person
 var x = p.address().line
 `;
   const tokens = tokenize(input);
   const parsed = parse(tokens);
+  const checked = check(parsed.root);
   const result = build(parsed.root.children[3]);
   const expected = `
 char* x = Person_address(p).line;
 `;
+  assert.equal(parsed.errors.concat(checked.errors), []);
   assert.equal(result.code.trim(), expected.trim());
 });
 

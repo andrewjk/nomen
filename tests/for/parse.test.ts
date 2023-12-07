@@ -1,8 +1,8 @@
 import { suite } from "uvu";
 import assert from "uvu/assert";
+import check from "../../src/check";
 import parse from "../../src/parse";
 import tokenize from "../../src/tokenize";
-import type DeclarationNode from "../../src/types/DeclarationNode";
 import type ForNode from "../../src/types/ForNode";
 import type RangeNode from "../../src/types/RangeNode";
 import type ValueNode from "../../src/types/ValueNode";
@@ -18,7 +18,8 @@ for x in y {
 }
 `;
   const tokens = tokenize(input);
-  const result = parse(tokens);
+  const parsed = parse(tokens);
+  const checked = check(parsed.root);
   const expected: ForNode = {
     node_type: "for",
     item: {
@@ -38,9 +39,9 @@ for x in y {
     children: [],
     i: 0,
   };
-  assert.equal(result.errors, []);
+  assert.equal(parsed.errors.concat(checked.errors), []);
   assert.equal(
-    trim_test_data(result.root.children[1]),
+    trim_test_data(parsed.root.children[1]),
     trim_test_data(expected),
   );
 });
@@ -50,7 +51,8 @@ test("with range", () => {
 for x in 0..5 {}
 `;
   const tokens = tokenize(input);
-  const result = parse(tokens);
+  const parsed = parse(tokens);
+  const checked = check(parsed.root);
   const expected: ForNode = {
     node_type: "for",
     item: {
@@ -83,9 +85,9 @@ for x in 0..5 {}
     children: [],
     i: 0,
   };
-  assert.equal(result.errors, []);
+  assert.equal(parsed.errors.concat(checked.errors), []);
   assert.equal(
-    trim_test_data(result.root.children[0]),
+    trim_test_data(parsed.root.children[0]),
     trim_test_data(expected),
   );
 });

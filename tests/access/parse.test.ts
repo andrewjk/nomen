@@ -1,5 +1,6 @@
 import { suite } from "uvu";
 import assert from "uvu/assert";
+import check from "../../src/check";
 import parse from "../../src/parse";
 import tokenize from "../../src/tokenize";
 import type AccessFieldNode from "../../src/types/AccessFieldNode";
@@ -21,7 +22,8 @@ var p: Person
 var x = p.age
 `;
   const tokens = tokenize(input);
-  const result = parse(tokens);
+  const parsed = parse(tokens);
+  const checked = check(parsed.root);
   const expected: DeclarationNode = {
     node_type: "decl",
     declaration: "var",
@@ -49,9 +51,9 @@ var x = p.age
     children: [],
     i: 0,
   };
-  assert.equal(result.errors, []);
+  assert.equal(parsed.errors.concat(checked.errors), []);
   assert.equal(
-    trim_test_data(result.root.children[2]),
+    trim_test_data(parsed.root.children[2]),
     trim_test_data(expected),
   );
 });
@@ -69,7 +71,8 @@ var p: Person
 var x = p.address.line
 `;
   const tokens = tokenize(input);
-  const result = parse(tokens);
+  const parsed = parse(tokens);
+  const checked = check(parsed.root);
   const expected: DeclarationNode = {
     node_type: "decl",
     declaration: "var",
@@ -109,9 +112,9 @@ var x = p.address.line
     children: [],
     i: 0,
   };
-  assert.equal(result.errors, []);
+  assert.equal(parsed.errors.concat(checked.errors), []);
   assert.equal(
-    trim_test_data(result.root.children[3]),
+    trim_test_data(parsed.root.children[3]),
     trim_test_data(expected),
   );
 });
@@ -125,7 +128,8 @@ var p: Person
 p.age = 20
 `;
   const tokens = tokenize(input);
-  const result = parse(tokens);
+  const parsed = parse(tokens);
+  const checked = check(parsed.root);
   const expected: AssignmentNode = {
     node_type: "assign",
     left_value: {
@@ -157,9 +161,9 @@ p.age = 20
     children: [],
     i: 0,
   };
-  assert.equal(result.errors, []);
+  assert.equal(parsed.errors.concat(checked.errors), []);
   assert.equal(
-    trim_test_data(result.root.children[2]),
+    trim_test_data(parsed.root.children[2]),
     trim_test_data(expected),
   );
 });
@@ -177,7 +181,8 @@ var p: Person
 p.address.line = "1 main st"
 `;
   const tokens = tokenize(input);
-  const result = parse(tokens);
+  const parsed = parse(tokens);
+  const checked = check(parsed.root);
   const expected: AssignmentNode = {
     node_type: "assign",
     left_value: {
@@ -221,9 +226,9 @@ p.address.line = "1 main st"
     children: [],
     i: 0,
   };
-  assert.equal(result.errors, []);
+  assert.equal(parsed.errors.concat(checked.errors), []);
   assert.equal(
-    trim_test_data(result.root.children[3]),
+    trim_test_data(parsed.root.children[3]),
     trim_test_data(expected),
   );
 });
@@ -239,7 +244,8 @@ var p: Person
 var x = p.age()
 `;
   const tokens = tokenize(input);
-  const result = parse(tokens);
+  const parsed = parse(tokens);
+  const checked = check(parsed.root);
   const expected: DeclarationNode = {
     node_type: "decl",
     declaration: "var",
@@ -268,9 +274,9 @@ var x = p.age()
     children: [],
     i: 0,
   };
-  assert.equal(result.errors, []);
+  assert.equal(parsed.errors.concat(checked.errors), []);
   assert.equal(
-    trim_test_data(result.root.children[2]),
+    trim_test_data(parsed.root.children[2]),
     trim_test_data(expected),
   );
 });
@@ -290,7 +296,8 @@ var p: Person
 var x = p.address.line()
 `;
   const tokens = tokenize(input);
-  const result = parse(tokens);
+  const parsed = parse(tokens);
+  const checked = check(parsed.root);
   const expected: DeclarationNode = {
     node_type: "decl",
     declaration: "var",
@@ -331,9 +338,9 @@ var x = p.address.line()
     children: [],
     i: 0,
   };
-  assert.equal(result.errors, []);
+  assert.equal(parsed.errors.concat(checked.errors), []);
   assert.equal(
-    trim_test_data(result.root.children[3]),
+    trim_test_data(parsed.root.children[3]),
     trim_test_data(expected),
   );
 });
@@ -353,8 +360,8 @@ var p: Person
 var x = p.address().line
 `;
   const tokens = tokenize(input);
-  const result = parse(tokens);
-  console.log(JSON.stringify(result.root, null, 2));
+  const parsed = parse(tokens);
+  const checked = check(parsed.root);
   const expected: DeclarationNode = {
     node_type: "decl",
     declaration: "var",
@@ -395,9 +402,9 @@ var x = p.address().line
     children: [],
     i: 0,
   };
-  assert.equal(result.errors, []);
+  assert.equal(parsed.errors.concat(checked.errors), []);
   assert.equal(
-    trim_test_data(result.root.children[3]),
+    trim_test_data(parsed.root.children[3]),
     trim_test_data(expected),
   );
 });

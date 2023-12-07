@@ -1,5 +1,6 @@
 import { suite } from "uvu";
 import assert from "uvu/assert";
+import check from "../../src/check";
 import parse from "../../src/parse";
 import tokenize from "../../src/tokenize";
 import type ParseNode from "../../src/types/ParseNode";
@@ -18,7 +19,8 @@ trait Person {}
 struct Frank: Person {}
 `;
   const tokens = tokenize(input);
-  const result = parse(tokens);
+  const parsed = parse(tokens);
+  const checked = check(parsed.root);
   const trait: TraitNode = {
     node_type: "trait",
     name: "Person",
@@ -50,7 +52,52 @@ struct Frank: Person {}
     children: [trait, struct],
     i: 0,
   };
-  assert.equal(trim_test_data(result.root), trim_test_data(expected));
+  assert.equal(parsed.errors.concat(checked.errors), []);
+  assert.equal(trim_test_data(parsed.root), trim_test_data(expected));
+});
+
+test("trait after struct", () => {
+  const input = `
+struct Frank: Person {}
+
+trait Person {}
+`;
+  const tokens = tokenize(input);
+  const parsed = parse(tokens);
+  const checked = check(parsed.root);
+  const trait: TraitNode = {
+    node_type: "trait",
+    name: "Person",
+    fields: [],
+    functions: [],
+    children: [],
+    i: 0,
+  };
+  const struct: StructNode = {
+    node_type: "struct",
+    name: "Frank",
+    traits: ["Person"],
+    fields: [],
+    functions: [
+      {
+        node_type: "func",
+        name: "init",
+        params: [],
+        return_type: "Frank",
+        children: [],
+        i: 0,
+      },
+    ],
+    children: [],
+    i: 0,
+  };
+  const expected: ParseNode = {
+    node_type: "root",
+    children: [struct, trait],
+    i: 0,
+  };
+  assert.equal(parsed.errors.concat(checked.errors), []);
+  assert.equal(trim_test_data(parsed.root), trim_test_data(expected));
 });
 
 test("trait with fields", () => {
@@ -65,7 +112,8 @@ struct Frank: Person {
 }
 `;
   const tokens = tokenize(input);
-  const result = parse(tokens);
+  const parsed = parse(tokens);
+  const checked = check(parsed.root);
   const trait: TraitNode = {
     node_type: "trait",
     name: "Person",
@@ -137,7 +185,8 @@ struct Frank: Person {
     children: [trait, struct],
     i: 0,
   };
-  assert.equal(trim_test_data(result.root), trim_test_data(expected));
+  assert.equal(parsed.errors.concat(checked.errors), []);
+  assert.equal(trim_test_data(parsed.root), trim_test_data(expected));
 });
 
 test("trait with functions", () => {
@@ -153,7 +202,8 @@ struct Frank: Person {
 }
 `;
   const tokens = tokenize(input);
-  const result = parse(tokens);
+  const parsed = parse(tokens);
+  const checked = check(parsed.root);
   const trait: TraitNode = {
     node_type: "trait",
     name: "Person",
@@ -218,55 +268,28 @@ struct Frank: Person {
     children: [trait, struct],
     i: 0,
   };
-  assert.equal(trim_test_data(result.root), trim_test_data(expected));
+  assert.equal(parsed.errors.concat(checked.errors), []);
+  assert.equal(trim_test_data(parsed.root), trim_test_data(expected));
 });
 
 test("trait with implemented functions", () => {
   const input = `
 trait Person {
-  func greet() {}
-}
-
-struct Frank: Person {
   func greet() -> string {
     return "hi"
   }
 }
+
+struct Frank: Person {}
 `;
   const tokens = tokenize(input);
-  const result = parse(tokens);
+  const parsed = parse(tokens);
+  const checked = check(parsed.root);
   const trait: TraitNode = {
     node_type: "trait",
     name: "Person",
     fields: [],
     functions: [
-      {
-        node_type: "func",
-        name: "greet",
-        params: [],
-        return_type: "",
-        has_body: true,
-        children: [],
-        i: 0,
-      },
-    ],
-    children: [],
-    i: 0,
-  };
-  const struct: StructNode = {
-    node_type: "struct",
-    name: "Frank",
-    traits: ["Person"],
-    fields: [],
-    functions: [
-      {
-        node_type: "func",
-        name: "init",
-        params: [],
-        return_type: "Frank",
-        children: [],
-        i: 0,
-      },
       {
         node_type: "func",
         name: "greet",
@@ -295,12 +318,31 @@ struct Frank: Person {
     children: [],
     i: 0,
   };
+  const struct: StructNode = {
+    node_type: "struct",
+    name: "Frank",
+    traits: ["Person"],
+    fields: [],
+    functions: [
+      {
+        node_type: "func",
+        name: "init",
+        params: [],
+        return_type: "Frank",
+        children: [],
+        i: 0,
+      },
+    ],
+    children: [],
+    i: 0,
+  };
   const expected: ParseNode = {
     node_type: "root",
     children: [trait, struct],
     i: 0,
   };
-  assert.equal(trim_test_data(result.root), trim_test_data(expected));
+  assert.equal(parsed.errors.concat(checked.errors), []);
+  assert.equal(trim_test_data(parsed.root), trim_test_data(expected));
 });
 
 test.run();

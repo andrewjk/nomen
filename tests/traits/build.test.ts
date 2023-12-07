@@ -1,6 +1,7 @@
 import { suite } from "uvu";
 import assert from "uvu/assert";
 import build from "../../src/build";
+import check from "../../src/check";
 import parse from "../../src/parse";
 import tokenize from "../../src/tokenize";
 
@@ -22,6 +23,7 @@ struct Frank: Person {}
 `;
   const tokens = tokenize(input);
   const parsed = parse(tokens);
+  const checked = check(parsed.root);
   const result = build(parsed.root);
   const expected = `
 void **_get_trait_func(void **obj, int trait_index, int func_index)
@@ -44,6 +46,7 @@ f._vt = &_Frank_traits;
 return f;
 }
 `;
+  assert.equal(parsed.errors.concat(checked.errors), []);
   assert.equal(trimCode(result.code), expected.trim());
 });
 
@@ -60,6 +63,7 @@ struct Frank: Person {
 `;
   const tokens = tokenize(input);
   const parsed = parse(tokens);
+  const checked = check(parsed.root);
   const result = build(parsed.root);
   const expected = `
 void **_get_trait_func(void **obj, int trait_index, int func_index)
@@ -86,6 +90,7 @@ f.age = 0;
 return f;
 }
 `;
+  assert.equal(parsed.errors.concat(checked.errors), []);
   assert.equal(trimCode(result.code), expected.trim());
 });
 
@@ -103,6 +108,7 @@ struct Frank: Person {
 `;
   const tokens = tokenize(input);
   const parsed = parse(tokens);
+  const checked = check(parsed.root);
   const result = build(parsed.root);
   const expected = `
 void **_get_trait_func(void **obj, int trait_index, int func_index)
@@ -137,6 +143,7 @@ char* Frank_greet(struct Frank this)
 return "hi";
 }
 `;
+  assert.equal(parsed.errors.concat(checked.errors), []);
   assert.equal(trimCode(result.code), expected.trim());
 });
 
@@ -156,6 +163,7 @@ struct Frank: Person {
 `;
   const tokens = tokenize(input);
   const parsed = parse(tokens);
+  const checked = check(parsed.root);
   const result = build(parsed.root);
   const expected = `
 void **_get_trait_func(void **obj, int trait_index, int func_index)
@@ -191,6 +199,7 @@ char* Frank_greet(struct Frank this)
 return "hi";
 }
 `;
+  assert.equal(parsed.errors.concat(checked.errors), []);
   assert.equal(trimCode(result.code), expected.trim());
 });
 

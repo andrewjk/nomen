@@ -1,5 +1,6 @@
 import { suite } from "uvu";
 import assert from "uvu/assert";
+import check from "../../src/check";
 import parse from "../../src/parse";
 import tokenize from "../../src/tokenize";
 import type StructNode from "../../src/types/StructNode";
@@ -13,7 +14,8 @@ test("struct", () => {
 struct Person {}
 `;
   const tokens = tokenize(input);
-  const result = parse(tokens);
+  const parsed = parse(tokens);
+  const checked = check(parsed.root);
   const expected: StructNode = {
     node_type: "struct",
     name: "Person",
@@ -32,9 +34,9 @@ struct Person {}
     children: [],
     i: 0,
   };
-  assert.equal(result.errors, []);
+  assert.equal(parsed.errors.concat(checked.errors), []);
   assert.equal(
-    trim_test_data(result.root.children[0]),
+    trim_test_data(parsed.root.children[0]),
     trim_test_data(expected),
   );
 });
@@ -47,7 +49,8 @@ struct Person {
 }
 `;
   const tokens = tokenize(input);
-  const result = parse(tokens);
+  const parsed = parse(tokens);
+  const checked = check(parsed.root);
   const expected: StructNode = {
     node_type: "struct",
     name: "Person",
@@ -99,9 +102,9 @@ struct Person {
     children: [],
     i: 0,
   };
-  assert.equal(result.errors, []);
+  assert.equal(parsed.errors.concat(checked.errors), []);
   assert.equal(
-    trim_test_data(result.root.children[0]),
+    trim_test_data(parsed.root.children[0]),
     trim_test_data(expected),
   );
 });
@@ -113,7 +116,8 @@ struct Person {
 }
 `;
   const tokens = tokenize(input);
-  const result = parse(tokens);
+  const parsed = parse(tokens);
+  const checked = check(parsed.root);
   const expected: StructNode = {
     node_type: "struct",
     name: "Person",
@@ -141,9 +145,9 @@ struct Person {
     children: [],
     i: 0,
   };
-  assert.equal(result.errors, []);
+  assert.equal(parsed.errors.concat(checked.errors), []);
   assert.equal(
-    trim_test_data(result.root.children[0]),
+    trim_test_data(parsed.root.children[0]),
     trim_test_data(expected),
   );
 });

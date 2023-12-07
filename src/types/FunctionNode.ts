@@ -9,4 +9,5 @@ export default interface FunctionNode extends ParseNode {
   has_body?: boolean;
   // TODO: Check all branches
   has_return?: boolean;
+  return_type_start?: number;
 }

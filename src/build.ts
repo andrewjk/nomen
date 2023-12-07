@@ -41,7 +41,6 @@ export default function build(root: ParseNode): BuildResult {
   build_node(root, status);
 
   return {
-    ok: true,
     headers: status.headers,
     code: status.code,
   };
@@ -101,6 +100,10 @@ function build_node(node: ParseNode, status: BuildStatus) {
       build_array_values_node(node as ArrayValuesNode, status);
       break;
     }
+    case "range": {
+      build_range_node(node as RangeNode, status);
+      break;
+    }
     default: {
       throw Error("Invalid node: " + node.node_type);
     }
@@ -130,8 +133,23 @@ void **trait = *(obj + trait_index);
 return *(trait + func_index);
 }\n\n`;
 
+  // Build traits, then structs, then functions
   for (let child of node.children) {
-    build_node(child, status);
+    if (child.node_type === "trait") {
+      build_trait_node(child as TraitNode, status);
+    }
+  }
+
+  for (let child of node.children) {
+    if (child.node_type === "struct") {
+      build_struct_node(child as StructNode, status);
+    }
+  }
+
+  for (let child of node.children) {
+    if (child.node_type === "func") {
+      build_function_node(child as FunctionNode, status);
+    }
   }
 }
 
@@ -452,9 +470,7 @@ function build_access_node(node: AccessNode, status: BuildStatus) {
           trait,
         )}, ${trait.functions.indexOf(func)}))()`;
       } else {
-        status.code += `${type_from_value_node(node.source)}`;
-        //status.code += invoke.static ? "_" : ".";
-        status.code += `_${invoke.name}(`;
+        status.code += `${type}_${invoke.name}(`;
         if (!invoke.static) {
           build_node(node.source, status);
         }
@@ -552,6 +568,16 @@ function build_array_values_node(node: ArrayValuesNode, status: BuildStatus) {
     build_node(value, status);
   });
   status.code += `}`;
+}
+
+function build_range_node(node: RangeNode, status: BuildStatus) {
+  // HACK:
+  const start = parseInt((node.left_value as ValueNode).value);
+  const end =
+    parseInt((node.right_value as ValueNode).value) + (node.inclusive ? 1 : 0);
+  status.code += `{${[...Array(end - start).keys()]
+    .map((value) => start + value)
+    .join(", ")}}`;
 }
 
 // UTILS

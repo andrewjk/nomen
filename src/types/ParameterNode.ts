@@ -5,4 +5,6 @@ export default interface ParameterNode extends ParseNode {
   name: string;
   type: string;
   default_value?: string;
+  type_start?: number;
+  default_value_start?: number;
 }

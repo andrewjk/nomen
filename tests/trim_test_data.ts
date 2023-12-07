@@ -17,8 +17,8 @@ function trim_any(node: any) {
       if (!node.children.length) {
         delete node.children;
       }
-    } else if (key === "i") {
-      delete node.i;
+    } else if (key === "i" || key.endsWith("_start")) {
+      delete node[key];
     } else if (typeof value === "object") {
       trim_any(value);
     }

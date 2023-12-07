@@ -4,6 +4,7 @@ import fs from "fs";
 import path from "path";
 import yargs from "yargs";
 import build from "../../src/build";
+import check from "../../src/check";
 import parse from "../../src/parse";
 import tokenize from "../../src/tokenize";
 import Config from "./types/Config";
@@ -136,19 +137,20 @@ function processFile(filename: string, config: Config) {
   const tokens = tokenize(input);
   console.log("Tokenized");
   const parsed = parse(tokens);
+  console.log("Parsed");
+  const checked = check(parsed.root);
+  console.log("Checked");
 
-  parsed.errors = parsed.errors.filter(
-    (f) => f.message !== "Function not found: printf",
-  );
-  parsed.ok = !parsed.errors.length;
+  let errors = parsed.errors
+    .concat(checked.errors)
+    .filter((f) => f.message !== "Function not found: printf");
+  const ok = !errors.length;
 
-  if (parsed.ok) {
-    console.log("Parsed");
-  } else {
+  if (!ok) {
     console.log("\nERRORS\n======");
-    for (let error of parsed.errors) {
+    for (let error of errors) {
       //const line = (input.slice(0, error.i).match(/\n/g) || "").length + 1;
-      let slice = input.slice(0, error.i);
+      let slice = input.slice(0, error.start);
       let line = 1;
       let lastLineIndex = 0;
       for (let i = 0; i < slice.length; i++) {
@@ -157,7 +159,9 @@ function processFile(filename: string, config: Config) {
           lastLineIndex = i;
         }
       }
-      console.log(`${line},${error.i - lastLineIndex - 1}: ${error.message}`);
+      console.log(
+        `${line},${error.start - lastLineIndex - 1}: ${error.message}`,
+      );
     }
     return;
   }

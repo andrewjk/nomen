@@ -1,6 +1,7 @@
 import { suite } from "uvu";
 import assert from "uvu/assert";
 import build from "../../src/build";
+import check from "../../src/check";
 import parse from "../../src/parse";
 import tokenize from "../../src/tokenize";
 
@@ -12,12 +13,14 @@ func add() {}
 `;
   const tokens = tokenize(input);
   const parsed = parse(tokens);
+  const checked = check(parsed.root);
   const result = build(parsed.root.children[0]);
   const expected = `
 void add()
 {
 }
 `;
+  assert.equal(parsed.errors.concat(checked.errors), []);
   assert.equal(result.code.trim(), expected.trim());
 });
 
@@ -27,12 +30,14 @@ func add(a: int, b: int) {}
 `;
   const tokens = tokenize(input);
   const parsed = parse(tokens);
+  const checked = check(parsed.root);
   const result = build(parsed.root.children[0]);
   const expected = `
 void add(int a, int b)
 {
 }
 `;
+  assert.equal(parsed.errors.concat(checked.errors), []);
   assert.equal(result.code.trim(), expected.trim());
 });
 
@@ -42,27 +47,34 @@ func add(a: int, b = 5) {}
 `;
   const tokens = tokenize(input);
   const parsed = parse(tokens);
+  const checked = check(parsed.root);
   const result = build(parsed.root.children[0]);
   const expected = `
 void add(int a, int b)
 {
 }
 `;
+  assert.equal(parsed.errors.concat(checked.errors), []);
   assert.equal(result.code.trim(), expected.trim());
 });
 
 test("function with return type", () => {
   const input = `
-func add() -> int {}
+func add() -> int {
+  return 5
+}
 `;
   const tokens = tokenize(input);
   const parsed = parse(tokens);
+  const checked = check(parsed.root);
   const result = build(parsed.root.children[0]);
   const expected = `
 void add()
 {
+return 5;
 }
 `;
+  assert.equal(parsed.errors.concat(checked.errors), []);
   assert.equal(result.code.trim(), expected.trim());
 });
 
@@ -74,6 +86,7 @@ func add() {
 `;
   const tokens = tokenize(input);
   const parsed = parse(tokens);
+  const checked = check(parsed.root);
   const result = build(parsed.root.children[0]);
   const expected = `
 void add()
@@ -81,6 +94,7 @@ void add()
 int x = 5;
 }
 `;
+  assert.equal(parsed.errors.concat(checked.errors), []);
   assert.equal(result.code.trim(), expected.trim());
 });
 
@@ -92,6 +106,7 @@ func add() -> int {
 `;
   const tokens = tokenize(input);
   const parsed = parse(tokens);
+  const checked = check(parsed.root);
   const result = build(parsed.root.children[0]);
   const expected = `
 void add()
@@ -99,6 +114,7 @@ void add()
 return 5;
 }
 `;
+  assert.equal(parsed.errors.concat(checked.errors), []);
   assert.equal(result.code.trim(), expected.trim());
 });
 
@@ -111,6 +127,7 @@ func subtract() {}
 `;
   const tokens = tokenize(input);
   const parsed = parse(tokens);
+  const checked = check(parsed.root);
   const result = build(parsed.root.children[0]);
   const expected = `
 void add() {
@@ -121,6 +138,7 @@ void subtract() {
 
 }
 `;
+  assert.equal(parsed.errors.concat(checked.errors), []);
   assert.equal(result.code.trim(), expected.trim());
 });
 */

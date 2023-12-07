@@ -1,5 +1,6 @@
 import { suite } from "uvu";
 import assert from "uvu/assert";
+import check from "../../src/check";
 import parse from "../../src/parse";
 import tokenize from "../../src/tokenize";
 import type AssignmentNode from "../../src/types/AssignmentNode";
@@ -14,7 +15,8 @@ var x: int
 x = 5
 `;
   const tokens = tokenize(input);
-  const result = parse(tokens);
+  const parsed = parse(tokens);
+  const checked = check(parsed.root);
   const expected: AssignmentNode = {
     node_type: "assign",
     left_value: {
@@ -34,9 +36,9 @@ x = 5
     children: [],
     i: 0,
   };
-  assert.equal(result.errors, []);
+  assert.equal(parsed.errors.concat(checked.errors), []);
   assert.equal(
-    trim_test_data(result.root.children[1]),
+    trim_test_data(parsed.root.children[1]),
     trim_test_data(expected),
   );
 });
