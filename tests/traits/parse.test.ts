@@ -1,8 +1,6 @@
 import { suite } from "uvu";
 import assert from "uvu/assert";
-import check from "../../src/check";
 import parse from "../../src/parse";
-import tokenize from "../../src/tokenize";
 import type ParseNode from "../../src/types/ParseNode";
 import type ReturnNode from "../../src/types/ReturnNode";
 import type StructNode from "../../src/types/StructNode";
@@ -18,9 +16,7 @@ trait Person {}
 
 struct Frank: Person {}
 `;
-  const tokens = tokenize(input);
-  const parsed = parse(tokens);
-  const checked = check(parsed.root);
+  const parsed = parse(input);
   const trait: TraitNode = {
     node_type: "trait",
     name: "Person",
@@ -52,7 +48,7 @@ struct Frank: Person {}
     children: [trait, struct],
     i: 0,
   };
-  assert.equal(parsed.errors.concat(checked.errors), []);
+  assert.equal(parsed.errors, []);
   assert.equal(trim_test_data(parsed.root), trim_test_data(expected));
 });
 
@@ -62,9 +58,7 @@ struct Frank: Person {}
 
 trait Person {}
 `;
-  const tokens = tokenize(input);
-  const parsed = parse(tokens);
-  const checked = check(parsed.root);
+  const parsed = parse(input);
   const trait: TraitNode = {
     node_type: "trait",
     name: "Person",
@@ -96,7 +90,7 @@ trait Person {}
     children: [struct, trait],
     i: 0,
   };
-  assert.equal(parsed.errors.concat(checked.errors), []);
+  assert.equal(parsed.errors, []);
   assert.equal(trim_test_data(parsed.root), trim_test_data(expected));
 });
 
@@ -111,9 +105,7 @@ struct Frank: Person {
   var name = "Frank"
 }
 `;
-  const tokens = tokenize(input);
-  const parsed = parse(tokens);
-  const checked = check(parsed.root);
+  const parsed = parse(input);
   const trait: TraitNode = {
     node_type: "trait",
     name: "Person",
@@ -185,7 +177,7 @@ struct Frank: Person {
     children: [trait, struct],
     i: 0,
   };
-  assert.equal(parsed.errors.concat(checked.errors), []);
+  assert.equal(parsed.errors, []);
   assert.equal(trim_test_data(parsed.root), trim_test_data(expected));
 });
 
@@ -201,9 +193,7 @@ struct Frank: Person {
   }
 }
 `;
-  const tokens = tokenize(input);
-  const parsed = parse(tokens);
-  const checked = check(parsed.root);
+  const parsed = parse(input);
   const trait: TraitNode = {
     node_type: "trait",
     name: "Person",
@@ -268,7 +258,7 @@ struct Frank: Person {
     children: [trait, struct],
     i: 0,
   };
-  assert.equal(parsed.errors.concat(checked.errors), []);
+  assert.equal(parsed.errors, []);
   assert.equal(trim_test_data(parsed.root), trim_test_data(expected));
 });
 
@@ -282,9 +272,7 @@ trait Person {
 
 struct Frank: Person {}
 `;
-  const tokens = tokenize(input);
-  const parsed = parse(tokens);
-  const checked = check(parsed.root);
+  const parsed = parse(input);
   const trait: TraitNode = {
     node_type: "trait",
     name: "Person",
@@ -341,7 +329,7 @@ struct Frank: Person {}
     children: [trait, struct],
     i: 0,
   };
-  assert.equal(parsed.errors.concat(checked.errors), []);
+  assert.equal(parsed.errors, []);
   assert.equal(trim_test_data(parsed.root), trim_test_data(expected));
 });
 

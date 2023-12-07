@@ -1,3 +1,5 @@
+import check from "./check";
+import tokenize from "./tokenize";
 import type AccessFieldNode from "./types/AccessFieldNode";
 import type AccessInvocationNode from "./types/AccessInvocationNode";
 import type AccessNode from "./types/AccessNode";
@@ -30,7 +32,9 @@ interface ParseStatus {
   errors: CompileError[];
 }
 
-export default function parse(tokens: Token[]): ParseResult {
+export default function parse(input: string): ParseResult {
+  const tokens = tokenize(input);
+
   const root: ParseNode = {
     node_type: "root",
     children: [],
@@ -46,10 +50,13 @@ export default function parse(tokens: Token[]): ParseResult {
 
   parse_statement(status);
 
+  const checked = check(root);
+  const errors = status.errors.concat(checked.errors);
+
   return {
-    ok: !status.errors.length,
+    ok: !errors.length,
     root,
-    errors: status.errors,
+    errors,
   };
 }
 

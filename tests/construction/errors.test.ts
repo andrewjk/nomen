@@ -1,8 +1,6 @@
 import { suite } from "uvu";
 import assert from "uvu/assert";
-import check from "../../src/check";
 import parse from "../../src/parse";
-import tokenize from "../../src/tokenize";
 import type CompileError from "../../src/types/CompileError";
 
 const test = suite("Construction errors");
@@ -18,10 +16,8 @@ const dog = Dog.init()
       start: 17,
     },
   ];
-  const tokens = tokenize(input);
-  const parsed = parse(tokens);
-  const checked = check(parsed.root);
-  assert.equal(parsed.errors.concat(checked.errors), expected);
+  const parsed = parse(input);
+  assert.equal(parsed.errors, expected);
 });
 
 test("too many parameters", () => {
@@ -35,10 +31,8 @@ const dog = Dog.init("Spot")
       start: 31,
     },
   ];
-  const tokens = tokenize(input);
-  const parsed = parse(tokens);
-  const checked = check(parsed.root);
-  assert.equal(parsed.errors.concat(checked.errors), expected);
+  const parsed = parse(input);
+  assert.equal(parsed.errors, expected);
 });
 
 test("parameters missing", () => {
@@ -54,10 +48,8 @@ const dog = Dog.init()
       start: 53,
     },
   ];
-  const tokens = tokenize(input);
-  const parsed = parse(tokens);
-  const checked = check(parsed.root);
-  assert.equal(parsed.errors.concat(checked.errors), expected);
+  const parsed = parse(input);
+  assert.equal(parsed.errors, expected);
 });
 
 test("param type mismatch", () => {
@@ -73,10 +65,8 @@ const dog = Dog.init(5)
       start: 58,
     },
   ];
-  const tokens = tokenize(input);
-  const parsed = parse(tokens);
-  const checked = check(parsed.root);
-  assert.equal(parsed.errors.concat(checked.errors), expected);
+  const parsed = parse(input);
+  assert.equal(parsed.errors, expected);
 });
 
 test("param type mismatch -- unknown value type", () => {
@@ -93,10 +83,8 @@ const dog = Dog.init(z0)
       start: 58,
     },
   ];
-  const tokens = tokenize(input);
-  const parsed = parse(tokens);
-  const checked = check(parsed.root);
-  assert.equal(parsed.errors.concat(checked.errors), expected);
+  const parsed = parse(input);
+  assert.equal(parsed.errors, expected);
 });
 
 test.run();

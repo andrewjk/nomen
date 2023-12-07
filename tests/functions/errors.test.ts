@@ -1,8 +1,6 @@
 import { suite } from "uvu";
 import assert from "uvu/assert";
-import check from "../../src/check";
 import parse from "../../src/parse";
-import tokenize from "../../src/tokenize";
 import type CompileError from "../../src/types/CompileError";
 
 const test = suite("Function errors");
@@ -17,10 +15,8 @@ func add(a: what) {}
       start: 13,
     },
   ];
-  const tokens = tokenize(input);
-  const parsed = parse(tokens);
-  const checked = check(parsed.root);
-  assert.equal(parsed.errors.concat(checked.errors), expected);
+  const parsed = parse(input);
+  assert.equal(parsed.errors, expected);
 });
 
 test("unknown param value type", () => {
@@ -33,10 +29,8 @@ func add(a = z0) {}
       start: 14,
     },
   ];
-  const tokens = tokenize(input);
-  const parsed = parse(tokens);
-  const checked = check(parsed.root);
-  assert.equal(parsed.errors.concat(checked.errors), expected);
+  const parsed = parse(input);
+  assert.equal(parsed.errors, expected);
 });
 
 test("param type mismatch", () => {
@@ -49,10 +43,8 @@ func add(a: int = "string?!") {}
       start: 19,
     },
   ];
-  const tokens = tokenize(input);
-  const parsed = parse(tokens);
-  const checked = check(parsed.root);
-  assert.equal(parsed.errors.concat(checked.errors), expected);
+  const parsed = parse(input);
+  assert.equal(parsed.errors, expected);
 });
 
 test("param type mismatch - unknown value type", () => {
@@ -65,10 +57,8 @@ func add(a: int = z0) {}
       start: 19,
     },
   ];
-  const tokens = tokenize(input);
-  const parsed = parse(tokens);
-  const checked = check(parsed.root);
-  assert.equal(parsed.errors.concat(checked.errors), expected);
+  const parsed = parse(input);
+  assert.equal(parsed.errors, expected);
 });
 
 test("no param type or default value", () => {
@@ -81,10 +71,8 @@ func add(a) {}
       start: 10,
     },
   ];
-  const tokens = tokenize(input);
-  const parsed = parse(tokens);
-  const checked = check(parsed.root);
-  assert.equal(parsed.errors.concat(checked.errors), expected);
+  const parsed = parse(input);
+  assert.equal(parsed.errors, expected);
 });
 
 test("unknown return value type", () => {
@@ -99,10 +87,8 @@ func add() -> what {
       start: 15,
     },
   ];
-  const tokens = tokenize(input);
-  const parsed = parse(tokens);
-  const checked = check(parsed.root);
-  assert.equal(parsed.errors.concat(checked.errors), expected);
+  const parsed = parse(input);
+  assert.equal(parsed.errors, expected);
 });
 
 test("return type mismatch", () => {
@@ -117,10 +103,8 @@ func add() -> int {
       start: 30,
     },
   ];
-  const tokens = tokenize(input);
-  const parsed = parse(tokens);
-  const checked = check(parsed.root);
-  assert.equal(parsed.errors.concat(checked.errors), expected);
+  const parsed = parse(input);
+  assert.equal(parsed.errors, expected);
 });
 
 test("return type mismatch - unknown value type", () => {
@@ -135,10 +119,8 @@ func add() -> int {
       start: 30,
     },
   ];
-  const tokens = tokenize(input);
-  const parsed = parse(tokens);
-  const checked = check(parsed.root);
-  assert.equal(parsed.errors.concat(checked.errors), expected);
+  const parsed = parse(input);
+  assert.equal(parsed.errors, expected);
 });
 
 test("missing return", () => {
@@ -151,10 +133,8 @@ func add() -> int {}
       start: 20,
     },
   ];
-  const tokens = tokenize(input);
-  const parsed = parse(tokens);
-  const checked = check(parsed.root);
-  assert.equal(parsed.errors.concat(checked.errors), expected);
+  const parsed = parse(input);
+  assert.equal(parsed.errors, expected);
 });
 
 test.run();

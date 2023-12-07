@@ -1,8 +1,6 @@
 import { suite } from "uvu";
 import assert from "uvu/assert";
-import check from "../../src/check";
 import parse from "../../src/parse";
-import tokenize from "../../src/tokenize";
 import type StructNode from "../../src/types/StructNode";
 import type ValueNode from "../../src/types/ValueNode";
 import trim_test_data from "../trim_test_data";
@@ -13,9 +11,7 @@ test("struct", () => {
   const input = `
 struct Person {}
 `;
-  const tokens = tokenize(input);
-  const parsed = parse(tokens);
-  const checked = check(parsed.root);
+  const parsed = parse(input);
   const expected: StructNode = {
     node_type: "struct",
     name: "Person",
@@ -34,7 +30,7 @@ struct Person {}
     children: [],
     i: 0,
   };
-  assert.equal(parsed.errors.concat(checked.errors), []);
+  assert.equal(parsed.errors, []);
   assert.equal(
     trim_test_data(parsed.root.children[0]),
     trim_test_data(expected),
@@ -48,9 +44,7 @@ struct Person {
   var age = 0
 }
 `;
-  const tokens = tokenize(input);
-  const parsed = parse(tokens);
-  const checked = check(parsed.root);
+  const parsed = parse(input);
   const expected: StructNode = {
     node_type: "struct",
     name: "Person",
@@ -102,7 +96,7 @@ struct Person {
     children: [],
     i: 0,
   };
-  assert.equal(parsed.errors.concat(checked.errors), []);
+  assert.equal(parsed.errors, []);
   assert.equal(
     trim_test_data(parsed.root.children[0]),
     trim_test_data(expected),
@@ -115,9 +109,7 @@ struct Person {
   func greet() {}
 }
 `;
-  const tokens = tokenize(input);
-  const parsed = parse(tokens);
-  const checked = check(parsed.root);
+  const parsed = parse(input);
   const expected: StructNode = {
     node_type: "struct",
     name: "Person",
@@ -145,7 +137,7 @@ struct Person {
     children: [],
     i: 0,
   };
-  assert.equal(parsed.errors.concat(checked.errors), []);
+  assert.equal(parsed.errors, []);
   assert.equal(
     trim_test_data(parsed.root.children[0]),
     trim_test_data(expected),

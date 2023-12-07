@@ -1,9 +1,7 @@
 import { suite } from "uvu";
 import assert from "uvu/assert";
 import build from "../../src/build";
-import check from "../../src/check";
 import parse from "../../src/parse";
-import tokenize from "../../src/tokenize";
 
 const test = suite("Invocation build");
 
@@ -12,14 +10,12 @@ test("function without params", () => {
 func greet() {}
 greet()
 `;
-  const tokens = tokenize(input);
-  const parsed = parse(tokens);
-  const checked = check(parsed.root);
+  const parsed = parse(input);
   const result = build(parsed.root.children[1]);
   const expected = `
 greet();
 `;
-  assert.equal(parsed.errors.concat(checked.errors), []);
+  assert.equal(parsed.errors, []);
   assert.equal(result.code.trim(), expected.trim());
 });
 
@@ -28,14 +24,12 @@ test("function with params", () => {
 func greet(name: string, position: string) {}
 greet("Andrew", "Manager")
 `;
-  const tokens = tokenize(input);
-  const parsed = parse(tokens);
-  const checked = check(parsed.root);
+  const parsed = parse(input);
   const result = build(parsed.root.children[1]);
   const expected = `
 greet("Andrew", "Manager");
 `;
-  assert.equal(parsed.errors.concat(checked.errors), []);
+  assert.equal(parsed.errors, []);
   assert.equal(result.code.trim(), expected.trim());
 });
 

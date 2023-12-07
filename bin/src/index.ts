@@ -134,16 +134,12 @@ function processFile(filename: string, config: Config) {
 
   //console.log(input);
 
-  const tokens = tokenize(input);
-  console.log("Tokenized");
-  const parsed = parse(tokens);
+  const parsed = parse(input);
   console.log("Parsed");
-  const checked = check(parsed.root);
-  console.log("Checked");
 
-  let errors = parsed.errors
-    .concat(checked.errors)
-    .filter((f) => f.message !== "Function not found: printf");
+  let errors = parsed.errors.filter(
+    (f) => f.message !== "Function not found: printf",
+  );
   const ok = !errors.length;
 
   if (!ok) {

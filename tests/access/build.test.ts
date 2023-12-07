@@ -1,9 +1,7 @@
 import { suite } from "uvu";
 import assert from "uvu/assert";
 import build from "../../src/build";
-import check from "../../src/check";
 import parse from "../../src/parse";
-import tokenize from "../../src/tokenize";
 
 const test = suite("Access build");
 
@@ -15,14 +13,12 @@ struct Person {
 var p: Person
 var x = p.age
 `;
-  const tokens = tokenize(input);
-  const parsed = parse(tokens);
-  const checked = check(parsed.root);
+  const parsed = parse(input);
   const result = build(parsed.root.children[2]);
   const expected = `
 int x = p.age;
 `;
-  assert.equal(parsed.errors.concat(checked.errors), []);
+  assert.equal(parsed.errors, []);
   assert.equal(result.code.trim(), expected.trim());
 });
 
@@ -38,14 +34,12 @@ struct Person {
 var p: Person
 var x = p.address.line
 `;
-  const tokens = tokenize(input);
-  const parsed = parse(tokens);
-  const checked = check(parsed.root);
+  const parsed = parse(input);
   const result = build(parsed.root.children[3]);
   const expected = `
 char* x = p.address.line;
 `;
-  assert.equal(parsed.errors.concat(checked.errors), []);
+  assert.equal(parsed.errors, []);
   assert.equal(result.code.trim(), expected.trim());
 });
 
@@ -57,14 +51,12 @@ struct Person {
 var p: Person
 p.age = 20
 `;
-  const tokens = tokenize(input);
-  const parsed = parse(tokens);
-  const checked = check(parsed.root);
+  const parsed = parse(input);
   const result = build(parsed.root.children[2]);
   const expected = `
 p.age = 20;
 `;
-  assert.equal(parsed.errors.concat(checked.errors), []);
+  assert.equal(parsed.errors, []);
   assert.equal(result.code.trim(), expected.trim());
 });
 
@@ -80,14 +72,12 @@ struct Person {
 var p: Person
 p.address.line = "1 main st"
 `;
-  const tokens = tokenize(input);
-  const parsed = parse(tokens);
-  const checked = check(parsed.root);
+  const parsed = parse(input);
   const result = build(parsed.root.children[3]);
   const expected = `
 p.address.line = "1 main st";
 `;
-  assert.equal(parsed.errors.concat(checked.errors), []);
+  assert.equal(parsed.errors, []);
   assert.equal(result.code.trim(), expected.trim());
 });
 
@@ -101,14 +91,12 @@ struct Person {
 var p: Person
 var x = p.age()
 `;
-  const tokens = tokenize(input);
-  const parsed = parse(tokens);
-  const checked = check(parsed.root);
+  const parsed = parse(input);
   const result = build(parsed.root.children[2]);
   const expected = `
 int x = Person_age(p);
 `;
-  assert.equal(parsed.errors.concat(checked.errors), []);
+  assert.equal(parsed.errors, []);
   assert.equal(result.code.trim(), expected.trim());
 });
 
@@ -126,14 +114,12 @@ struct Person {
 var p: Person
 var x = p.address.line()
 `;
-  const tokens = tokenize(input);
-  const parsed = parse(tokens);
-  const checked = check(parsed.root);
+  const parsed = parse(input);
   const result = build(parsed.root.children[3]);
   const expected = `
 char* x = Address_line(p.address);
 `;
-  assert.equal(parsed.errors.concat(checked.errors), []);
+  assert.equal(parsed.errors, []);
   assert.equal(result.code.trim(), expected.trim());
 });
 
@@ -151,14 +137,12 @@ struct Person {
 var p: Person
 var x = p.address().line
 `;
-  const tokens = tokenize(input);
-  const parsed = parse(tokens);
-  const checked = check(parsed.root);
+  const parsed = parse(input);
   const result = build(parsed.root.children[3]);
   const expected = `
 char* x = Person_address(p).line;
 `;
-  assert.equal(parsed.errors.concat(checked.errors), []);
+  assert.equal(parsed.errors, []);
   assert.equal(result.code.trim(), expected.trim());
 });
 

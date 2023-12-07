@@ -1,8 +1,6 @@
 import { suite } from "uvu";
 import assert from "uvu/assert";
-import check from "../../src/check";
 import parse from "../../src/parse";
-import tokenize from "../../src/tokenize";
 import type CompileError from "../../src/types/CompileError";
 
 const test = suite("Trait errors");
@@ -17,10 +15,8 @@ trait Person People {}
       start: 14,
     },
   ];
-  const tokens = tokenize(input);
-  const parsed = parse(tokens);
-  const checked = check(parsed.root);
-  assert.equal(parsed.errors.concat(checked.errors), expected);
+  const parsed = parse(input);
+  assert.equal(parsed.errors, expected);
 });
 
 test("child trait", () => {
@@ -35,10 +31,8 @@ trait Person {
       start: 18,
     },
   ];
-  const tokens = tokenize(input);
-  const parsed = parse(tokens);
-  const checked = check(parsed.root);
-  assert.equal(parsed.errors.concat(checked.errors), expected);
+  const parsed = parse(input);
+  assert.equal(parsed.errors, expected);
 });
 
 test("child assignment", () => {
@@ -54,10 +48,8 @@ trait Person {
       start: 31,
     },
   ];
-  const tokens = tokenize(input);
-  const parsed = parse(tokens);
-  const checked = check(parsed.root);
-  assert.equal(parsed.errors.concat(checked.errors), expected);
+  const parsed = parse(input);
+  assert.equal(parsed.errors, expected);
 });
 
 test("unknown trait", () => {
@@ -72,10 +64,8 @@ struct Frank: Person {
       start: 1,
     },
   ];
-  const tokens = tokenize(input);
-  const parsed = parse(tokens);
-  const checked = check(parsed.root);
-  assert.equal(parsed.errors.concat(checked.errors), expected);
+  const parsed = parse(input);
+  assert.equal(parsed.errors, expected);
 });
 
 // TODO: non-matching traits etc

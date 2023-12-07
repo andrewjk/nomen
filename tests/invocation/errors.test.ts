@@ -1,8 +1,6 @@
 import { suite } from "uvu";
 import assert from "uvu/assert";
-import check from "../../src/check";
 import parse from "../../src/parse";
-import tokenize from "../../src/tokenize";
 import type CompileError from "../../src/types/CompileError";
 
 const test = suite("Invocation errors");
@@ -17,10 +15,8 @@ greet()
       start: 1,
     },
   ];
-  const tokens = tokenize(input);
-  const parsed = parse(tokens);
-  const checked = check(parsed.root);
-  assert.equal(parsed.errors.concat(checked.errors), expected);
+  const parsed = parse(input);
+  assert.equal(parsed.errors, expected);
 });
 
 test("too many parameters", () => {
@@ -34,10 +30,8 @@ greet(1, 2, 3)
       start: 40,
     },
   ];
-  const tokens = tokenize(input);
-  const parsed = parse(tokens);
-  const checked = check(parsed.root);
-  assert.equal(parsed.errors.concat(checked.errors), expected);
+  const parsed = parse(input);
+  assert.equal(parsed.errors, expected);
 });
 
 test("parameters missing", () => {
@@ -51,10 +45,8 @@ greet(1)
       start: 40,
     },
   ];
-  const tokens = tokenize(input);
-  const parsed = parse(tokens);
-  const checked = check(parsed.root);
-  assert.equal(parsed.errors.concat(checked.errors), expected);
+  const parsed = parse(input);
+  assert.equal(parsed.errors, expected);
 });
 
 test("param type mismatch", () => {
@@ -68,10 +60,8 @@ greet("andrew")
       start: 31,
     },
   ];
-  const tokens = tokenize(input);
-  const parsed = parse(tokens);
-  const checked = check(parsed.root);
-  assert.equal(parsed.errors.concat(checked.errors), expected);
+  const parsed = parse(input);
+  assert.equal(parsed.errors, expected);
 });
 
 test("param type mismatch -- unknown value type", () => {
@@ -86,10 +76,8 @@ greet(z0)
       start: 31,
     },
   ];
-  const tokens = tokenize(input);
-  const parsed = parse(tokens);
-  const checked = check(parsed.root);
-  assert.equal(parsed.errors.concat(checked.errors), expected);
+  const parsed = parse(input);
+  assert.equal(parsed.errors, expected);
 });
 
 test.run();

@@ -1,8 +1,6 @@
 import { suite } from "uvu";
 import assert from "uvu/assert";
-import check from "../../src/check";
 import parse from "../../src/parse";
-import tokenize from "../../src/tokenize";
 import type DeclarationNode from "../../src/types/DeclarationNode";
 import type FunctionNode from "../../src/types/FunctionNode";
 import type ReturnNode from "../../src/types/ReturnNode";
@@ -15,9 +13,7 @@ test("function", () => {
   const input = `
 func add() {}
 `;
-  const tokens = tokenize(input);
-  const parsed = parse(tokens);
-  const checked = check(parsed.root);
+  const parsed = parse(input);
   const expected: FunctionNode = {
     node_type: "func",
     name: "add",
@@ -27,7 +23,7 @@ func add() {}
     children: [],
     i: 0,
   };
-  assert.equal(parsed.errors.concat(checked.errors), []);
+  assert.equal(parsed.errors, []);
   assert.equal(
     trim_test_data(parsed.root.children[0]),
     trim_test_data(expected),
@@ -39,9 +35,7 @@ test("function with params", () => {
   const input = `
 func add(a: int, b: int) {}
 `;
-  const tokens = tokenize(input);
-  const parsed = parse(tokens);
-  const checked = check(parsed.root);
+  const parsed = parse(input);
   const expected: FunctionNode = {
     node_type: "func",
     name: "add",
@@ -66,7 +60,7 @@ func add(a: int, b: int) {}
     children: [],
     i: 0,
   };
-  assert.equal(parsed.errors.concat(checked.errors), []);
+  assert.equal(parsed.errors, []);
   assert.equal(
     trim_test_data(parsed.root.children[0]),
     trim_test_data(expected),
@@ -77,9 +71,7 @@ test("function with params with default value", () => {
   const input = `
 func add(a: int, b = 5) {}
 `;
-  const tokens = tokenize(input);
-  const parsed = parse(tokens);
-  const checked = check(parsed.root);
+  const parsed = parse(input);
   const expected: FunctionNode = {
     node_type: "func",
     name: "add",
@@ -105,7 +97,7 @@ func add(a: int, b = 5) {}
     children: [],
     i: 0,
   };
-  assert.equal(parsed.errors.concat(checked.errors), []);
+  assert.equal(parsed.errors, []);
   assert.equal(
     trim_test_data(parsed.root.children[0]),
     trim_test_data(expected),
@@ -118,9 +110,7 @@ func add() -> int {
   return 1
 }
 `;
-  const tokens = tokenize(input);
-  const parsed = parse(tokens);
-  const checked = check(parsed.root);
+  const parsed = parse(input);
   const expected: FunctionNode = {
     node_type: "func",
     name: "add",
@@ -145,7 +135,7 @@ func add() -> int {
     has_return: true,
     i: 0,
   };
-  assert.equal(parsed.errors.concat(checked.errors), []);
+  assert.equal(parsed.errors, []);
   assert.equal(
     trim_test_data(parsed.root.children[0]),
     trim_test_data(expected),
@@ -158,9 +148,7 @@ func add() {
   var x = 5
 }
 `;
-  const tokens = tokenize(input);
-  const parsed = parse(tokens);
-  const checked = check(parsed.root);
+  const parsed = parse(input);
   const decl: DeclarationNode = {
     node_type: "decl",
     declaration: "var",
@@ -185,7 +173,7 @@ func add() {
     children: [decl],
     i: 0,
   };
-  assert.equal(parsed.errors.concat(checked.errors), []);
+  assert.equal(parsed.errors, []);
   assert.equal(
     trim_test_data(parsed.root.children[0]),
     trim_test_data(expected),
@@ -198,9 +186,7 @@ func add() -> int {
   return 5
 }
 `;
-  const tokens = tokenize(input);
-  const parsed = parse(tokens);
-  const checked = check(parsed.root);
+  const parsed = parse(input);
   const ret: ReturnNode = {
     node_type: "ret",
     value: {
@@ -224,7 +210,7 @@ func add() -> int {
     children: [ret],
     i: 0,
   };
-  assert.equal(parsed.errors.concat(checked.errors), []);
+  assert.equal(parsed.errors, []);
   assert.equal(
     trim_test_data(parsed.root.children[0]),
     trim_test_data(expected),
@@ -237,9 +223,7 @@ func add() {}
 
 func subtract() {}
 `;
-  const tokens = tokenize(input);
-  const parsed = parse(tokens);
-  const checked = check(parsed.root);
+  const parsed = parse(input);
   const addFunction: FunctionNode = {
     node_type: "func",
     name: "add",
@@ -258,12 +242,12 @@ func subtract() {}
     children: [],
     i: 0,
   };
-  assert.equal(parsed.errors.concat(checked.errors), []);
+  assert.equal(parsed.errors, []);
   assert.equal(
     trim_test_data(parsed.root.children[0]),
     trim_test_data(addFunction),
   );
-  assert.equal(parsed.errors.concat(checked.errors), []);
+  assert.equal(parsed.errors, []);
   assert.equal(
     trim_test_data(parsed.root.children[1]),
     trim_test_data(subtractFunction),

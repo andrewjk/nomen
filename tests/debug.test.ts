@@ -78,11 +78,8 @@ func main() {
 `;
   input = `const y = [1, 2, 3]
 for x in y {}`;
-  const tokens = tokenize(input);
-  const parsed = parse(tokens);
-  const checked = check(parsed.root);
-  //console.log(JSON.stringify(parsed.root, null, 2));
-  //assert.equal(parsed.errors.concat(checked.errors), []);
+  const parsed = parse(input); //console.log(JSON.stringify(parsed.root, null, 2));
+  //assert.equal(parsed.errors, []);
   //assert.equal(result.ok, true);
   //assert.equal(result.errors.length, 1);
   //assert.equal(result.errors[0].i, 14);

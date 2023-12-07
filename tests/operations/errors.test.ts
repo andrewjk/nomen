@@ -1,8 +1,6 @@
 import { suite } from "uvu";
 import assert from "uvu/assert";
-import check from "../../src/check";
 import parse from "../../src/parse";
-import tokenize from "../../src/tokenize";
 import type CompileError from "../../src/types/CompileError";
 
 const test = suite("Operation errors");
@@ -17,10 +15,8 @@ const x = 5 + "b"
       start: 15,
     },
   ];
-  const tokens = tokenize(input);
-  const parsed = parse(tokens);
-  const checked = check(parsed.root);
-  assert.equal(parsed.errors.concat(checked.errors), expected);
+  const parsed = parse(input);
+  assert.equal(parsed.errors, expected);
 });
 
 test("declaration type mismatch", () => {
@@ -33,10 +29,8 @@ const x: int = "a" + "b"
       start: 16,
     },
   ];
-  const tokens = tokenize(input);
-  const parsed = parse(tokens);
-  const checked = check(parsed.root);
-  assert.equal(parsed.errors.concat(checked.errors), expected);
+  const parsed = parse(input);
+  assert.equal(parsed.errors, expected);
 });
 
 test("assignment type mismatch", () => {
@@ -50,10 +44,8 @@ x = "a" + "b"
       start: 16,
     },
   ];
-  const tokens = tokenize(input);
-  const parsed = parse(tokens);
-  const checked = check(parsed.root);
-  assert.equal(parsed.errors.concat(checked.errors), expected);
+  const parsed = parse(input);
+  assert.equal(parsed.errors, expected);
 });
 
 test.run();

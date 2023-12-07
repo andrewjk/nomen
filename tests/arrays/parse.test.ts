@@ -1,8 +1,6 @@
 import { suite } from "uvu";
 import assert from "uvu/assert";
-import check from "../../src/check";
 import parse from "../../src/parse";
-import tokenize from "../../src/tokenize";
 import type ArrayValuesNode from "../../src/types/ArrayValuesNode";
 import type DeclarationNode from "../../src/types/DeclarationNode";
 import type ValueNode from "../../src/types/ValueNode";
@@ -14,9 +12,7 @@ test("declaration with type", () => {
   const input = `
 const x: int[]
 `;
-  const tokens = tokenize(input);
-  const parsed = parse(tokens);
-  const checked = check(parsed.root);
+  const parsed = parse(input);
   const expected: DeclarationNode = {
     node_type: "decl",
     declaration: "const",
@@ -25,7 +21,7 @@ const x: int[]
     children: [],
     i: 0,
   };
-  assert.equal(parsed.errors.concat(checked.errors), []);
+  assert.equal(parsed.errors, []);
   assert.equal(
     trim_test_data(parsed.root.children[0]),
     trim_test_data(expected),
@@ -36,9 +32,7 @@ test("declaration with value", () => {
   const input = `
 var x = [1, 2, 3]
 `;
-  const tokens = tokenize(input);
-  const parsed = parse(tokens);
-  const checked = check(parsed.root);
+  const parsed = parse(input);
   const expected: DeclarationNode = {
     node_type: "decl",
     declaration: "var",
@@ -76,7 +70,7 @@ var x = [1, 2, 3]
     children: [],
     i: 0,
   };
-  assert.equal(parsed.errors.concat(checked.errors), []);
+  assert.equal(parsed.errors, []);
   assert.equal(
     trim_test_data(parsed.root.children[0]),
     trim_test_data(expected),
