@@ -1,9 +1,9 @@
-import type ParseNode from "./ParseNode";
+import type SyntaxNode from "./SyntaxNode";
 
-export default interface AccessInvocationNode extends ParseNode {
+export default interface AccessInvocationNode extends SyntaxNode {
   node_type: "accinv";
   name: string;
-  params: ParseNode[];
+  params: SyntaxNode[];
   type: string;
   // HACK: This should probably be on AccessNode
   static?: boolean;

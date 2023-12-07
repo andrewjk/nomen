@@ -1,9 +1,10 @@
 import { suite } from "uvu";
 import assert from "uvu/assert";
 import parse from "../../src/parse";
-import type ParseNode from "../../src/types/ParseNode";
 import type ReturnNode from "../../src/types/ReturnNode";
+import type RootNode from "../../src/types/RootNode";
 import type StructNode from "../../src/types/StructNode";
+import type SyntaxNode from "../../src/types/SyntaxNode";
 import type TraitNode from "../../src/types/TraitNode";
 import type ValueNode from "../../src/types/ValueNode";
 import trim_test_data from "../trim_test_data";
@@ -22,8 +23,7 @@ struct Frank: Person {}
     name: "Person",
     fields: [],
     functions: [],
-    children: [],
-    i: 0,
+    start: 0,
   };
   const struct: StructNode = {
     node_type: "struct",
@@ -36,17 +36,16 @@ struct Frank: Person {}
         name: "init",
         params: [],
         return_type: "Frank",
-        children: [],
-        i: 0,
+        statements: [],
+        start: 0,
       },
     ],
-    children: [],
-    i: 0,
+    start: 0,
   };
-  const expected: ParseNode = {
+  const expected: RootNode = {
     node_type: "root",
-    children: [trait, struct],
-    i: 0,
+    statements: [trait, struct],
+    start: 0,
   };
   assert.equal(parsed.errors, []);
   assert.equal(trim_test_data(parsed.root), trim_test_data(expected));
@@ -64,8 +63,7 @@ trait Person {}
     name: "Person",
     fields: [],
     functions: [],
-    children: [],
-    i: 0,
+    start: 0,
   };
   const struct: StructNode = {
     node_type: "struct",
@@ -78,17 +76,16 @@ trait Person {}
         name: "init",
         params: [],
         return_type: "Frank",
-        children: [],
-        i: 0,
+        statements: [],
+        start: 0,
       },
     ],
-    children: [],
-    i: 0,
+    start: 0,
   };
-  const expected: ParseNode = {
+  const expected: RootNode = {
     node_type: "root",
-    children: [struct, trait],
-    i: 0,
+    statements: [struct, trait],
+    start: 0,
   };
   assert.equal(parsed.errors, []);
   assert.equal(trim_test_data(parsed.root), trim_test_data(expected));
@@ -115,8 +112,7 @@ struct Frank: Person {
         declaration: "var",
         name: "name",
         type: "string",
-        children: [],
-        i: 0,
+        start: 0,
       },
       {
         node_type: "decl",
@@ -126,17 +122,14 @@ struct Frank: Person {
           node_type: "value",
           value: "0",
           type: "int",
-          children: [],
-          i: 0,
+          start: 0,
         } as ValueNode,
         type: "int",
-        children: [],
-        i: 0,
+        start: 0,
       },
     ],
     functions: [],
-    children: [],
-    i: 0,
+    start: 0,
   };
   const struct: StructNode = {
     node_type: "struct",
@@ -151,12 +144,10 @@ struct Frank: Person {
           node_type: "value",
           value: '"Frank"',
           type: "string",
-          children: [],
-          i: 0,
+          start: 0,
         } as ValueNode,
         type: "string",
-        children: [],
-        i: 0,
+        start: 0,
       },
     ],
     functions: [
@@ -165,17 +156,16 @@ struct Frank: Person {
         name: "init",
         params: [],
         return_type: "Frank",
-        children: [],
-        i: 0,
+        statements: [],
+        start: 0,
       },
     ],
-    children: [],
-    i: 0,
+    start: 0,
   };
-  const expected: ParseNode = {
+  const expected: RootNode = {
     node_type: "root",
-    children: [trait, struct],
-    i: 0,
+    statements: [trait, struct],
+    start: 0,
   };
   assert.equal(parsed.errors, []);
   assert.equal(trim_test_data(parsed.root), trim_test_data(expected));
@@ -204,12 +194,11 @@ struct Frank: Person {
         name: "greet",
         params: [],
         return_type: "string",
-        children: [],
-        i: 0,
+        statements: [],
+        start: 0,
       },
     ],
-    children: [],
-    i: 0,
+    start: 0,
   };
   const struct: StructNode = {
     node_type: "struct",
@@ -222,8 +211,8 @@ struct Frank: Person {
         name: "init",
         params: [],
         return_type: "Frank",
-        children: [],
-        i: 0,
+        statements: [],
+        start: 0,
       },
       {
         node_type: "func",
@@ -232,31 +221,28 @@ struct Frank: Person {
         return_type: "string",
         has_body: true,
         has_return: true,
-        children: [
+        statements: [
           {
             node_type: "ret",
             value: {
               node_type: "value",
               value: '"hi"',
               type: "string",
-              children: [],
-              i: 0,
+              start: 0,
             } as ValueNode,
             type: "string",
-            children: [],
-            i: 0,
+            start: 0,
           } as ReturnNode,
         ],
-        i: 0,
+        start: 0,
       },
     ],
-    children: [],
-    i: 0,
+    start: 0,
   };
-  const expected: ParseNode = {
+  const expected: RootNode = {
     node_type: "root",
-    children: [trait, struct],
-    i: 0,
+    statements: [trait, struct],
+    start: 0,
   };
   assert.equal(parsed.errors, []);
   assert.equal(trim_test_data(parsed.root), trim_test_data(expected));
@@ -285,26 +271,23 @@ struct Frank: Person {}
         return_type: "string",
         has_body: true,
         has_return: true,
-        children: [
+        statements: [
           {
             node_type: "ret",
             value: {
               node_type: "value",
               value: '"hi"',
               type: "string",
-              children: [],
-              i: 0,
+              start: 0,
             } as ValueNode,
             type: "string",
-            children: [],
-            i: 0,
+            start: 0,
           } as ReturnNode,
         ],
-        i: 0,
+        start: 0,
       },
     ],
-    children: [],
-    i: 0,
+    start: 0,
   };
   const struct: StructNode = {
     node_type: "struct",
@@ -317,17 +300,16 @@ struct Frank: Person {}
         name: "init",
         params: [],
         return_type: "Frank",
-        children: [],
-        i: 0,
+        statements: [],
+        start: 0,
       },
     ],
-    children: [],
-    i: 0,
+    start: 0,
   };
-  const expected: ParseNode = {
+  const expected: RootNode = {
     node_type: "root",
-    children: [trait, struct],
-    i: 0,
+    statements: [trait, struct],
+    start: 0,
   };
   assert.equal(parsed.errors, []);
   assert.equal(trim_test_data(parsed.root), trim_test_data(expected));

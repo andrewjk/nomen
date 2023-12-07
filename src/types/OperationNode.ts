@@ -1,9 +1,9 @@
-import type ParseNode from "./ParseNode";
+import type SyntaxNode from "./SyntaxNode";
 
-export default interface OperationNode extends ParseNode {
+export default interface OperationNode extends SyntaxNode {
   node_type: "op";
   op: "+" | "-";
-  left_value?: ParseNode;
-  right_value?: ParseNode;
+  left_value?: SyntaxNode;
+  right_value?: SyntaxNode;
   type: string;
 }

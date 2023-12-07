@@ -10,7 +10,7 @@ test("const with value", () => {
 const x = 5
 `;
   const parsed = parse(input);
-  const result = build(parsed.root.children[0]);
+  const result = build(parsed.root.statements[0]);
   const expected = `
 int x = 5;
 `;
@@ -24,7 +24,7 @@ test("const with type", () => {
 const x: int
 `;
   const parsed = parse(input);
-  const result = build(parsed.root.children[0]);
+  const result = build(parsed.root.statements[0]);
   const expected = `
 int x;
 `;
@@ -38,7 +38,7 @@ test("var with value", () => {
 var x = 5
 `;
   const parsed = parse(input);
-  const result = build(parsed.root.children[0]);
+  const result = build(parsed.root.statements[0]);
   const expected = `
 int x = 5;
 `;
@@ -52,7 +52,7 @@ test("var with type", () => {
 var x: int
 `;
   const parsed = parse(input);
-  const result = build(parsed.root.children[0]);
+  const result = build(parsed.root.statements[0]);
   const expected = `
 int x;
 `;

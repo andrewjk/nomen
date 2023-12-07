@@ -1,8 +1,8 @@
-import type ParseNode from "./ParseNode";
+import type SyntaxNode from "./SyntaxNode";
 
-export default interface RangeNode extends ParseNode {
+export default interface RangeNode extends SyntaxNode {
   node_type: "range";
-  left_value?: ParseNode;
-  right_value?: ParseNode;
+  left_value?: SyntaxNode;
+  right_value?: SyntaxNode;
   inclusive: boolean;
 }

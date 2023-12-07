@@ -12,11 +12,13 @@ import type FunctionNode from "./types/FunctionNode";
 import type InvocationNode from "./types/InvocationNode";
 import type OperationNode from "./types/OperationNode";
 import type ParameterNode from "./types/ParameterNode";
-import type ParseNode from "./types/ParseNode";
 import type ParseResult from "./types/ParseResult";
 import type RangeNode from "./types/RangeNode";
 import type ReturnNode from "./types/ReturnNode";
+import type RootNode from "./types/RootNode";
+import type StatementNode from "./types/StatementNode";
 import type StructNode from "./types/StructNode";
+import type SyntaxNode from "./types/SyntaxNode";
 import type Token from "./types/Token";
 import type TraitNode from "./types/TraitNode";
 import type ValueNode from "./types/ValueNode";
@@ -27,7 +29,7 @@ interface ParseStatus {
   // The current token index
   i: number;
   // The current node
-  stack: ParseNode[];
+  stack: SyntaxNode[];
   // Errors that have been encountered
   errors: CompileError[];
 }
@@ -35,10 +37,10 @@ interface ParseStatus {
 export default function parse(input: string): ParseResult {
   const tokens = tokenize(input);
 
-  const root: ParseNode = {
+  const root: RootNode = {
     node_type: "root",
-    children: [],
-    i: 0,
+    statements: [],
+    start: 0,
   };
 
   const status: ParseStatus = {
@@ -114,12 +116,12 @@ function parse_statement(status: ParseStatus) {
 function parse_statement_start(status: ParseStatus) {
   const i = status.tokens[status.i].i;
   const value = consume(status);
-  let node: ParseNode = {
+  let node: SyntaxNode = {
     node_type: "value",
     value,
     type: "",
-    children: [],
-    i,
+
+    start: i,
   } as ValueNode;
 
   while (true) {
@@ -131,8 +133,8 @@ function parse_statement_start(status: ParseStatus) {
           node_type: "access",
           source: node,
           access: parse_access(value, status),
-          children: [],
-          i: node.i,
+
+          start: node.start,
         };
         node = access;
         break;
@@ -144,8 +146,8 @@ function parse_statement_start(status: ParseStatus) {
           name: value,
           params: [],
           type: "",
-          children: [],
-          i: node.i,
+
+          start: node.start,
         };
         if (peek_current(status) !== ")") {
           parse_invocation_parameter(invoke, status);
@@ -160,8 +162,8 @@ function parse_statement_start(status: ParseStatus) {
           node_type: "assign",
           left_value: node,
           right_value: parse_expression(status),
-          children: [],
-          i: node.i,
+
+          start: node.start,
         };
         node = assign;
         break;
@@ -172,13 +174,13 @@ function parse_statement_start(status: ParseStatus) {
           case "root":
           case "func":
           case "for": {
-            parent.children.push(node);
+            (parent as StatementNode).statements.push(node);
             break;
           }
           default: {
             status.errors.push({
               message: `${node_name(node)} cannot appear here`,
-              start: node.i,
+              start: node.start,
             });
             return;
           }
@@ -193,18 +195,18 @@ function parse_statement_start(status: ParseStatus) {
  * An expression returns a value and can be used e.g. on the right side of an assignment, as the
  * initial value of a declaration or as a parameter value in a function call
  */
-function parse_expression(status: ParseStatus): ParseNode {
+function parse_expression(status: ParseStatus): SyntaxNode {
   // First check for an array of values
   const i = status.tokens[status.i].i;
   let value = consume(status);
-  let node: ParseNode;
+  let node: SyntaxNode;
   if (value === "[") {
     node = {
       node_type: "array",
       values: [],
       type: "",
-      children: [],
-      i,
+
+      start: i,
     } as ArrayValuesNode;
     if (peek_current(status) !== "]") {
       parse_array_value(node as ArrayValuesNode, status);
@@ -215,8 +217,8 @@ function parse_expression(status: ParseStatus): ParseNode {
       node_type: "value",
       value,
       type: "",
-      children: [],
-      i,
+
+      start: i,
     } as ValueNode;
   }
 
@@ -229,8 +231,8 @@ function parse_expression(status: ParseStatus): ParseNode {
           node_type: "access",
           source: node,
           access: parse_access(value, status),
-          children: [],
-          i: node.i,
+
+          start: node.start,
         };
         node = access;
         // TODO: This should be a type prop on AccessNode
@@ -253,8 +255,8 @@ function parse_expression(status: ParseStatus): ParseNode {
           name: value,
           params: [],
           type: "",
-          children: [],
-          i,
+
+          start: i,
         };
         if (peek_current(status) !== ")") {
           parse_invocation_parameter(invoke, status);
@@ -274,8 +276,8 @@ function parse_expression(status: ParseStatus): ParseNode {
           // TODO: Proper order of operations
           right_value: parse_expression(status),
           type: "",
-          children: [],
-          i,
+
+          start: i,
         };
         node = op;
         break;
@@ -288,8 +290,8 @@ function parse_expression(status: ParseStatus): ParseNode {
           left_value: node,
           right_value: parse_expression(status),
           inclusive: next_value === ".=",
-          children: [],
-          i,
+
+          start: i,
         };
         node = range;
         break;
@@ -309,14 +311,13 @@ function parse_declaration(declaration: "const" | "var", status: ParseStatus) {
     declaration,
     name: "",
     type: "",
-    children: [],
-    i: status.tokens[status.i].i,
+    start: status.tokens[status.i].i,
   };
   const parent = status.stack.at(-1)!;
   switch (parent.node_type) {
     case "root":
     case "func": {
-      parent.children.push(decl);
+      (parent as StatementNode).statements.push(decl);
       break;
     }
     case "trait":
@@ -327,7 +328,7 @@ function parse_declaration(declaration: "const" | "var", status: ParseStatus) {
     default: {
       status.errors.push({
         message: "Declaration cannot appear here",
-        start: decl.i,
+        start: decl.start,
       });
       consume(status);
       return;
@@ -355,7 +356,7 @@ function parse_declaration(declaration: "const" | "var", status: ParseStatus) {
   if (!decl.type && !decl.value) {
     status.errors.push({
       message: `Expected type or default value`,
-      start: decl.i + decl.declaration.length + 1,
+      start: decl.start + decl.declaration.length + 1,
     });
   }
 }
@@ -369,8 +370,8 @@ function parse_struct(status: ParseStatus) {
     traits: [],
     fields: [],
     functions: [],
-    children: [],
-    i: status.tokens[status.i].i,
+
+    start: status.tokens[status.i].i,
   };
   status.stack.push(struct);
 
@@ -399,13 +400,13 @@ function parse_struct(status: ParseStatus) {
           name: f.name,
           type: f.type,
           default_value: f.value,
-          children: [],
-          i: 0,
+
+          start: 0,
         } as ParameterNode;
       }),
     return_type: struct.name,
-    children: [],
-    i: 0,
+    statements: [],
+    start: 0,
   } as FunctionNode);
 
   status.stack.pop();
@@ -415,13 +416,13 @@ function parse_struct(status: ParseStatus) {
   switch (parent.node_type) {
     case "root":
     case "func": {
-      parent.children.push(struct);
+      (parent as StatementNode).statements.push(struct);
       break;
     }
     default: {
       status.errors.push({
         message: "Struct cannot appear here",
-        start: struct.i,
+        start: struct.start,
       });
       break;
     }
@@ -436,8 +437,8 @@ function parse_trait(status: ParseStatus) {
     name: "",
     fields: [],
     functions: [],
-    children: [],
-    i: status.tokens[status.i].i,
+
+    start: status.tokens[status.i].i,
   };
   status.stack.push(trait);
 
@@ -454,13 +455,13 @@ function parse_trait(status: ParseStatus) {
   switch (parent.node_type) {
     case "root":
     case "func": {
-      parent.children.push(trait);
+      (parent as StatementNode).statements.push(trait);
       break;
     }
     default: {
       status.errors.push({
         message: "Trait cannot appear here",
-        start: trait.i,
+        start: trait.start,
       });
       break;
     }
@@ -475,14 +476,14 @@ function parse_function(status: ParseStatus) {
     name: "",
     params: [],
     return_type: "",
-    children: [],
-    i: status.tokens[status.i].i,
+    statements: [],
+    start: status.tokens[status.i].i,
   };
   const parent = status.stack.at(-1)!;
   switch (parent.node_type) {
     case "root":
     case "func": {
-      parent.children.push(func);
+      (parent as StatementNode).statements.push(func);
       break;
     }
     case "trait":
@@ -493,7 +494,7 @@ function parse_function(status: ParseStatus) {
     default: {
       status.errors.push({
         message: "Function cannot appear here",
-        start: func.i,
+        start: func.start,
       });
       consume(status);
       return;
@@ -542,8 +543,8 @@ function parse_function_parameter(func: FunctionNode, status: ParseStatus) {
     node_type: "param",
     name: "",
     type: "",
-    children: [],
-    i: status.tokens[status.i].i,
+
+    start: status.tokens[status.i].i,
   };
   func.params.push(param);
 
@@ -581,20 +582,20 @@ function parse_function_parameter(func: FunctionNode, status: ParseStatus) {
 function parse_for_loop(status: ParseStatus) {
   const for_loop: ForNode = {
     node_type: "for",
-    children: [],
-    i: status.tokens[status.i].i,
+    statements: [],
+    start: status.tokens[status.i].i,
   };
   const parent = status.stack.at(-1)!;
   switch (parent.node_type) {
     case "root":
     case "func": {
-      parent.children.push(for_loop);
+      (parent as StatementNode).statements.push(for_loop);
       break;
     }
     default: {
       status.errors.push({
         message: "For cannot appear here",
-        start: for_loop.i,
+        start: for_loop.start,
       });
       consume(status);
       return;
@@ -608,8 +609,8 @@ function parse_for_loop(status: ParseStatus) {
     node_type: "value",
     value: consume(status),
     type: "",
-    children: [],
-    i: status.tokens[status.i].i,
+
+    start: status.tokens[status.i].i,
   } as ValueNode;
   // TODO: index option?
   if (expect("in", status)) {
@@ -649,10 +650,10 @@ function parse_return(status: ParseStatus) {
     node_type: "ret",
     value,
     type: "",
-    children: [],
-    i: value_start,
+
+    start: value_start,
   };
-  status.stack.at(-1)!.children.push(ret);
+  (status.stack.at(-1) as StatementNode).statements.push(ret);
 
   // Go up the stack looking for our function
   const func = find_parent_of_type("func", status) as FunctionNode;
@@ -682,8 +683,8 @@ function parse_access(
       name,
       params: [],
       type: "",
-      children: [],
-      i,
+
+      start: i,
     };
     // HACK:
     if (invoke.name === "init") {
@@ -700,8 +701,8 @@ function parse_access(
       node_type: "accfld",
       name,
       type: "",
-      children: [],
-      i,
+
+      start: i,
     };
     return field;
   }
@@ -785,7 +786,7 @@ function expect(value: string, status: ParseStatus): boolean {
 function find_parent_of_type(
   type: string,
   status: ParseStatus,
-): ParseNode | undefined {
+): SyntaxNode | undefined {
   for (let i = status.stack.length - 1; i >= 0; i--) {
     if (status.stack[i].node_type === type) {
       return status.stack[i];
@@ -793,9 +794,9 @@ function find_parent_of_type(
   }
 }
 
-function node_name(node: ParseNode) {
+function node_name(node: SyntaxNode) {
   switch (node.node_type) {
-    case "declare": {
+    case "decl": {
       return "Declaration";
     }
     case "assign": {

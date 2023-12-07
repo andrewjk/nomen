@@ -1,7 +1,7 @@
-import type ParseNode from "./ParseNode";
+import type SyntaxNode from "./SyntaxNode";
 
-export default interface ReturnNode extends ParseNode {
+export default interface ReturnNode extends SyntaxNode {
   node_type: "ret";
-  value: ParseNode;
+  value: SyntaxNode;
   type: string;
 }

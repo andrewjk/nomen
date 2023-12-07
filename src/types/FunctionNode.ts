@@ -1,7 +1,8 @@
 import type ParameterNode from "./ParameterNode";
-import type ParseNode from "./ParseNode";
+import type StatementNode from "./StatementNode";
+import type SyntaxNode from "./SyntaxNode";
 
-export default interface FunctionNode extends ParseNode {
+export default interface FunctionNode extends SyntaxNode, StatementNode {
   node_type: "func";
   name: string;
   params: ParameterNode[];
@@ -10,4 +11,5 @@ export default interface FunctionNode extends ParseNode {
   // TODO: Check all branches
   has_return?: boolean;
   return_type_start?: number;
+  statements: SyntaxNode[];
 }

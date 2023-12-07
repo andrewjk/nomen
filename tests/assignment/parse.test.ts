@@ -19,22 +19,19 @@ x = 5
       node_type: "value",
       value: "x",
       type: "int",
-      children: [],
-      i: 0,
+      start: 0,
     } as ValueNode,
     right_value: {
       node_type: "value",
       value: "5",
       type: "int",
-      children: [],
-      i: 0,
+      start: 0,
     } as ValueNode,
-    children: [],
-    i: 0,
+    start: 0,
   };
   assert.equal(parsed.errors, []);
   assert.equal(
-    trim_test_data(parsed.root.children[1]),
+    trim_test_data(parsed.root.statements[1]),
     trim_test_data(expected),
   );
 });

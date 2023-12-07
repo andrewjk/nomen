@@ -24,27 +24,23 @@ var x = 1 + 2
         node_type: "value",
         value: "1",
         type: "int",
-        children: [],
-        i: 0,
+        start: 0,
       } as ValueNode,
       right_value: {
         node_type: "value",
         value: "2",
         type: "int",
-        children: [],
-        i: 0,
+        start: 0,
       } as ValueNode,
       type: "int",
-      children: [],
-      i: 0,
+      start: 0,
     } as OperationNode,
     type: "int",
-    children: [],
-    i: 0,
+    start: 0,
   };
   assert.equal(parsed.errors, []);
   assert.equal(
-    trim_test_data(parsed.root.children[0]),
+    trim_test_data(parsed.root.statements[0]),
     trim_test_data(expected),
   );
 });
@@ -65,27 +61,23 @@ var x = 1 - 2
         node_type: "value",
         value: "1",
         type: "int",
-        children: [],
-        i: 0,
+        start: 0,
       } as ValueNode,
       right_value: {
         node_type: "value",
         value: "2",
         type: "int",
-        children: [],
-        i: 0,
+        start: 0,
       } as ValueNode,
       type: "int",
-      children: [],
-      i: 0,
+      start: 0,
     } as OperationNode,
     type: "int",
-    children: [],
-    i: 0,
+    start: 0,
   };
   assert.equal(parsed.errors, []);
   assert.equal(
-    trim_test_data(parsed.root.children[0]),
+    trim_test_data(parsed.root.statements[0]),
     trim_test_data(expected),
   );
 });
@@ -106,8 +98,7 @@ var x = 1 + 2 - 3
         node_type: "value",
         value: "1",
         type: "int",
-        children: [],
-        i: 0,
+        start: 0,
       } as ValueNode,
       right_value: {
         node_type: "op",
@@ -116,31 +107,26 @@ var x = 1 + 2 - 3
           node_type: "value",
           value: "2",
           type: "int",
-          children: [],
-          i: 0,
+          start: 0,
         } as ValueNode,
         right_value: {
           node_type: "value",
           value: "3",
           type: "int",
-          children: [],
-          i: 0,
+          start: 0,
         } as ValueNode,
         type: "int",
-        children: [],
-        i: 0,
+        start: 0,
       } as OperationNode,
       type: "int",
-      children: [],
-      i: 0,
+      start: 0,
     } as OperationNode,
     type: "int",
-    children: [],
-    i: 0,
+    start: 0,
   };
   assert.equal(parsed.errors, []);
   assert.equal(
-    trim_test_data(parsed.root.children[0]),
+    trim_test_data(parsed.root.statements[0]),
     trim_test_data(expected),
   );
 });

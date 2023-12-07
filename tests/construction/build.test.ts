@@ -12,7 +12,7 @@ struct Person {
 var x = Person.init()
 `;
   const parsed = parse(input);
-  const result = build(parsed.root.children[1]);
+  const result = build(parsed.root.statements[1]);
   const expected = `
 Person x = Person_init();
 `;
@@ -28,7 +28,7 @@ struct Person {
 var x = Person.init("Andrew")
 `;
   const parsed = parse(input);
-  const result = build(parsed.root.children[1]);
+  const result = build(parsed.root.statements[1]);
   const expected = `
 Person x = Person_init("Andrew");
 `;

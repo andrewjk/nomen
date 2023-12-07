@@ -23,16 +23,15 @@ struct Person {}
         name: "init",
         params: [],
         return_type: "Person",
-        children: [],
-        i: 0,
+        statements: [],
+        start: 0,
       },
     ],
-    children: [],
-    i: 0,
+    start: 0,
   };
   assert.equal(parsed.errors, []);
   assert.equal(
-    trim_test_data(parsed.root.children[0]),
+    trim_test_data(parsed.root.statements[0]),
     trim_test_data(expected),
   );
 });
@@ -55,8 +54,7 @@ struct Person {
         declaration: "var",
         name: "name",
         type: "string",
-        children: [],
-        i: 0,
+        start: 0,
       },
       {
         node_type: "decl",
@@ -66,12 +64,10 @@ struct Person {
           node_type: "value",
           value: "0",
           type: "int",
-          children: [],
-          i: 0,
+          start: 0,
         } as ValueNode,
         type: "int",
-        children: [],
-        i: 0,
+        start: 0,
       },
     ],
     functions: [
@@ -84,21 +80,19 @@ struct Person {
             name: "name",
             type: "string",
             default_value: undefined,
-            children: [],
-            i: 0,
+            start: 0,
           },
         ],
         return_type: "Person",
-        children: [],
-        i: 0,
+        statements: [],
+        start: 0,
       },
     ],
-    children: [],
-    i: 0,
+    start: 0,
   };
   assert.equal(parsed.errors, []);
   assert.equal(
-    trim_test_data(parsed.root.children[0]),
+    trim_test_data(parsed.root.statements[0]),
     trim_test_data(expected),
   );
 });
@@ -121,8 +115,8 @@ struct Person {
         name: "init",
         params: [],
         return_type: "Person",
-        children: [],
-        i: 0,
+        statements: [],
+        start: 0,
       },
       {
         node_type: "func",
@@ -130,16 +124,15 @@ struct Person {
         params: [],
         return_type: "",
         has_body: true,
-        children: [],
-        i: 0,
+        statements: [],
+        start: 0,
       },
     ],
-    children: [],
-    i: 0,
+    start: 0,
   };
   assert.equal(parsed.errors, []);
   assert.equal(
-    trim_test_data(parsed.root.children[0]),
+    trim_test_data(parsed.root.statements[0]),
     trim_test_data(expected),
   );
 });

@@ -11,7 +11,7 @@ var x: int
 x = 5
 `;
   const parsed = parse(input);
-  const result = build(parsed.root.children[1]);
+  const result = build(parsed.root.statements[1]);
   const expected = `
 x = 5;
 `;

@@ -22,22 +22,20 @@ for x in y {
       node_type: "value",
       value: "x",
       type: "int",
-      children: [],
-      i: 0,
+      start: 0,
     } as ValueNode,
     list: {
       node_type: "value",
       value: "y",
       type: "int[3]",
-      children: [],
-      i: 0,
+      start: 0,
     } as ValueNode,
-    children: [],
-    i: 0,
+    statements: [],
+    start: 0,
   };
   assert.equal(parsed.errors, []);
   assert.equal(
-    trim_test_data(parsed.root.children[1]),
+    trim_test_data(parsed.root.statements[1]),
     trim_test_data(expected),
   );
 });
@@ -53,8 +51,7 @@ for x in 0..5 {}
       node_type: "value",
       value: "x",
       type: "int",
-      children: [],
-      i: 0,
+      start: 0,
     } as ValueNode,
     list: {
       node_type: "range",
@@ -62,26 +59,23 @@ for x in 0..5 {}
         node_type: "value",
         value: "0",
         type: "int",
-        children: [],
-        i: 0,
+        start: 0,
       } as ValueNode,
       right_value: {
         node_type: "value",
         value: "5",
         type: "int",
-        children: [],
-        i: 0,
+        start: 0,
       } as ValueNode,
       inclusive: false,
-      children: [],
-      i: 0,
+      start: 0,
     } as RangeNode,
-    children: [],
-    i: 0,
+    statements: [],
+    start: 0,
   };
   assert.equal(parsed.errors, []);
   assert.equal(
-    trim_test_data(parsed.root.children[0]),
+    trim_test_data(parsed.root.statements[0]),
     trim_test_data(expected),
   );
 });

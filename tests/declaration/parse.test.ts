@@ -20,16 +20,14 @@ const x = 5
       node_type: "value",
       value: "5",
       type: "int",
-      children: [],
-      i: 0,
+      start: 0,
     } as ValueNode,
     type: "int",
-    children: [],
-    i: 0,
+    start: 0,
   };
   assert.equal(parsed.errors, []);
   assert.equal(
-    trim_test_data(parsed.root.children[0]),
+    trim_test_data(parsed.root.statements[0]),
     trim_test_data(expected),
   );
 });
@@ -44,12 +42,11 @@ const x: int
     declaration: "const",
     name: "x",
     type: "int",
-    children: [],
-    i: 0,
+    start: 0,
   };
   assert.equal(parsed.errors, []);
   assert.equal(
-    trim_test_data(parsed.root.children[0]),
+    trim_test_data(parsed.root.statements[0]),
     trim_test_data(expected),
   );
 });
@@ -67,16 +64,14 @@ var x = 5
       node_type: "value",
       value: "5",
       type: "int",
-      children: [],
-      i: 0,
+      start: 0,
     } as ValueNode,
     type: "int",
-    children: [],
-    i: 0,
+    start: 0,
   };
   assert.equal(parsed.errors, []);
   assert.equal(
-    trim_test_data(parsed.root.children[0]),
+    trim_test_data(parsed.root.statements[0]),
     trim_test_data(expected),
   );
 });
@@ -91,12 +86,11 @@ var x: int
     declaration: "var",
     name: "x",
     type: "int",
-    children: [],
-    i: 0,
+    start: 0,
   };
   assert.equal(parsed.errors, []);
   assert.equal(
-    trim_test_data(parsed.root.children[0]),
+    trim_test_data(parsed.root.statements[0]),
     trim_test_data(expected),
   );
 });

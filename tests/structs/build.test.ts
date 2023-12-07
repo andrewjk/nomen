@@ -10,7 +10,7 @@ test("struct", () => {
 struct Person {}
 `;
   const parsed = parse(input);
-  const result = build(parsed.root.children[0]);
+  const result = build(parsed.root.statements[0]);
   const expected = `
 // Person:
 typedef struct Person
@@ -36,7 +36,7 @@ struct Person {
 }
 `;
   const parsed = parse(input);
-  const result = build(parsed.root.children[0]);
+  const result = build(parsed.root.statements[0]);
   const expected = `
 // Person:
 typedef struct Person
@@ -65,7 +65,7 @@ struct Person {
 }
 `;
   const parsed = parse(input);
-  const result = build(parsed.root.children[0]);
+  const result = build(parsed.root.statements[0]);
   const expected = `
 // Person:
 typedef struct Person

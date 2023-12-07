@@ -1,7 +1,7 @@
-import type ParseNode from "./ParseNode";
+import type SyntaxNode from "./SyntaxNode";
 
-export default interface ArrayValuesNode extends ParseNode {
+export default interface ArrayValuesNode extends SyntaxNode {
   node_type: "array";
-  values: ParseNode[];
+  values: SyntaxNode[];
   type: string;
 }

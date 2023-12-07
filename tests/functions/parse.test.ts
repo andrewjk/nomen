@@ -20,12 +20,12 @@ func add() {}
     params: [],
     return_type: "",
     has_body: true,
-    children: [],
-    i: 0,
+    statements: [],
+    start: 0,
   };
   assert.equal(parsed.errors, []);
   assert.equal(
-    trim_test_data(parsed.root.children[0]),
+    trim_test_data(parsed.root.statements[0]),
     trim_test_data(expected),
   );
 });
@@ -44,25 +44,23 @@ func add(a: int, b: int) {}
         node_type: "param",
         name: "a",
         type: "int",
-        children: [],
-        i: 0,
+        start: 0,
       },
       {
         node_type: "param",
         name: "b",
         type: "int",
-        children: [],
-        i: 0,
+        start: 0,
       },
     ],
     return_type: "",
     has_body: true,
-    children: [],
-    i: 0,
+    statements: [],
+    start: 0,
   };
   assert.equal(parsed.errors, []);
   assert.equal(
-    trim_test_data(parsed.root.children[0]),
+    trim_test_data(parsed.root.statements[0]),
     trim_test_data(expected),
   );
 });
@@ -80,26 +78,24 @@ func add(a: int, b = 5) {}
         node_type: "param",
         name: "a",
         type: "int",
-        children: [],
-        i: 0,
+        start: 0,
       },
       {
         node_type: "param",
         name: "b",
         type: "int",
         default_value: "5",
-        children: [],
-        i: 0,
+        start: 0,
       },
     ],
     return_type: "",
     has_body: true,
-    children: [],
-    i: 0,
+    statements: [],
+    start: 0,
   };
   assert.equal(parsed.errors, []);
   assert.equal(
-    trim_test_data(parsed.root.children[0]),
+    trim_test_data(parsed.root.statements[0]),
     trim_test_data(expected),
   );
 });
@@ -117,27 +113,25 @@ func add() -> int {
     params: [],
     return_type: "int",
     has_body: true,
-    children: [
+    statements: [
       {
         node_type: "ret",
         value: {
           node_type: "value",
           value: "1",
           type: "int",
-          children: [],
-          i: 0,
+          start: 0,
         } as ValueNode,
         type: "int",
-        children: [],
-        i: 0,
+        start: 0,
       } as ReturnNode,
     ],
     has_return: true,
-    i: 0,
+    start: 0,
   };
   assert.equal(parsed.errors, []);
   assert.equal(
-    trim_test_data(parsed.root.children[0]),
+    trim_test_data(parsed.root.statements[0]),
     trim_test_data(expected),
   );
 });
@@ -157,12 +151,10 @@ func add() {
       node_type: "value",
       value: "5",
       type: "int",
-      children: [],
-      i: 0,
+      start: 0,
     } as ValueNode,
     type: "int",
-    children: [],
-    i: 0,
+    start: 0,
   };
   const expected: FunctionNode = {
     node_type: "func",
@@ -170,12 +162,12 @@ func add() {
     params: [],
     return_type: "",
     has_body: true,
-    children: [decl],
-    i: 0,
+    statements: [decl],
+    start: 0,
   };
   assert.equal(parsed.errors, []);
   assert.equal(
-    trim_test_data(parsed.root.children[0]),
+    trim_test_data(parsed.root.statements[0]),
     trim_test_data(expected),
   );
 });
@@ -193,12 +185,10 @@ func add() -> int {
       node_type: "value",
       value: "5",
       type: "int",
-      children: [],
-      i: 0,
+      start: 0,
     } as ValueNode,
     type: "int",
-    children: [],
-    i: 0,
+    start: 0,
   };
   const expected: FunctionNode = {
     node_type: "func",
@@ -207,12 +197,12 @@ func add() -> int {
     return_type: "int",
     has_body: true,
     has_return: true,
-    children: [ret],
-    i: 0,
+    statements: [ret],
+    start: 0,
   };
   assert.equal(parsed.errors, []);
   assert.equal(
-    trim_test_data(parsed.root.children[0]),
+    trim_test_data(parsed.root.statements[0]),
     trim_test_data(expected),
   );
 });
@@ -230,8 +220,8 @@ func subtract() {}
     params: [],
     return_type: "",
     has_body: true,
-    children: [],
-    i: 0,
+    statements: [],
+    start: 0,
   };
   const subtractFunction: FunctionNode = {
     node_type: "func",
@@ -239,17 +229,17 @@ func subtract() {}
     params: [],
     return_type: "",
     has_body: true,
-    children: [],
-    i: 0,
+    statements: [],
+    start: 0,
   };
   assert.equal(parsed.errors, []);
   assert.equal(
-    trim_test_data(parsed.root.children[0]),
+    trim_test_data(parsed.root.statements[0]),
     trim_test_data(addFunction),
   );
   assert.equal(parsed.errors, []);
   assert.equal(
-    trim_test_data(parsed.root.children[1]),
+    trim_test_data(parsed.root.statements[1]),
     trim_test_data(subtractFunction),
   );
 });

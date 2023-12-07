@@ -1,7 +1,7 @@
-import type ParseNode from "./ParseNode";
+import type SyntaxNode from "./SyntaxNode";
 
-export default interface AssignmentNode extends ParseNode {
+export default interface AssignmentNode extends SyntaxNode {
   node_type: "assign";
-  left_value?: ParseNode;
-  right_value?: ParseNode;
+  left_value?: SyntaxNode;
+  right_value?: SyntaxNode;
 }

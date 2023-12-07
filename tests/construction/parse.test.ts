@@ -33,20 +33,17 @@ var x = Person.init()
         params: [],
         type: "Person",
         static: true,
-        children: [],
-        i: 0,
+        start: 0,
       } as AccessInvocationNode,
-      children: [],
-      i: 0,
+      start: 0,
     } as AccessNode,
     type: "Person",
-    children: [],
-    i: 0,
+    start: 0,
   };
   assert.equal(parsed.errors, []);
   assert.equal(parsed.errors, []);
   assert.equal(
-    trim_test_data(parsed.root.children[1]),
+    trim_test_data(parsed.root.statements[1]),
     trim_test_data(expected),
   );
 });
@@ -78,25 +75,21 @@ var x = Person.init("Andrew")
             node_type: "value",
             value: '"Andrew"',
             type: "string",
-            children: [],
-            i: 0,
+            start: 0,
           } as ValueNode,
         ],
         type: "Person",
         static: true,
-        children: [],
-        i: 0,
+        start: 0,
       } as AccessInvocationNode,
-      children: [],
-      i: 0,
+      start: 0,
     } as AccessNode,
     type: "Person",
-    children: [],
-    i: 0,
+    start: 0,
   };
   assert.equal(parsed.errors, []);
   assert.equal(
-    trim_test_data(parsed.root.children[1]),
+    trim_test_data(parsed.root.statements[1]),
     trim_test_data(expected),
   );
 });
@@ -126,19 +119,16 @@ var x = Person.init()
         params: [],
         type: "Person",
         static: true,
-        children: [],
-        i: 0,
+        start: 0,
       } as AccessInvocationNode,
-      children: [],
-      i: 0,
+      start: 0,
     } as AccessNode,
     type: "Person",
-    children: [],
-    i: 0,
+    start: 0,
   };
   assert.equal(parsed.errors, []);
   assert.equal(
-    trim_test_data(parsed.root.children[1]),
+    trim_test_data(parsed.root.statements[1]),
     trim_test_data(expected),
   );
 });

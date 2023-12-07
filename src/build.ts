@@ -10,21 +10,22 @@ import type FunctionNode from "./types/FunctionNode";
 import type InvocationNode from "./types/InvocationNode";
 import type OperationNode from "./types/OperationNode";
 import type ParameterNode from "./types/ParameterNode";
-import type ParseNode from "./types/ParseNode";
 import type RangeNode from "./types/RangeNode";
 import type ReturnNode from "./types/ReturnNode";
+import type RootNode from "./types/RootNode";
 import type StructNode from "./types/StructNode";
+import type SyntaxNode from "./types/SyntaxNode";
 import type TraitNode from "./types/TraitNode";
 import type ValueNode from "./types/ValueNode";
 
 interface BuildStatus {
-  root: ParseNode;
+  root: SyntaxNode;
   traits: TraitNode[];
   headers: string;
   code: string;
 }
 
-export default function build(root: ParseNode): BuildResult {
+export default function build(root: SyntaxNode): BuildResult {
   let status: BuildStatus = {
     root,
     traits: [],
@@ -34,9 +35,11 @@ export default function build(root: ParseNode): BuildResult {
 
   // Collect the traits
   // TODO: Handle traits declared in functions??
-  status.traits = root.children.filter(
-    (c) => c.node_type === "trait",
-  ) as TraitNode[];
+  if (root.node_type === "root") {
+    status.traits = (root as RootNode).statements.filter(
+      (c) => c.node_type === "trait",
+    ) as TraitNode[];
+  }
 
   build_node(root, status);
 
@@ -46,10 +49,10 @@ export default function build(root: ParseNode): BuildResult {
   };
 }
 
-function build_node(node: ParseNode, status: BuildStatus) {
+function build_node(node: SyntaxNode, status: BuildStatus) {
   switch (node.node_type) {
     case "root": {
-      build_root_node(node, status);
+      build_root_node(node as RootNode, status);
       break;
     }
     case "decl": {
@@ -110,7 +113,7 @@ function build_node(node: ParseNode, status: BuildStatus) {
   }
 }
 
-function build_root_node(node: ParseNode, status: BuildStatus) {
+function build_root_node(node: RootNode, status: BuildStatus) {
   status.code += `#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -134,19 +137,19 @@ return *(trait + func_index);
 }\n\n`;
 
   // Build traits, then structs, then functions
-  for (let child of node.children) {
+  for (let child of node.statements) {
     if (child.node_type === "trait") {
       build_trait_node(child as TraitNode, status);
     }
   }
 
-  for (let child of node.children) {
+  for (let child of node.statements) {
     if (child.node_type === "struct") {
       build_struct_node(child as StructNode, status);
     }
   }
 
-  for (let child of node.children) {
+  for (let child of node.statements) {
     if (child.node_type === "func") {
       build_function_node(child as FunctionNode, status);
     }
@@ -348,7 +351,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
     }(struct ${node.name} this${func.params.length ? ", " : ""}${func.params
       .map((p) => build_parameter_node(p, status))
       .join(", ")})\n{\n`;
-    for (let child of func.children) {
+    for (let child of func.statements) {
       build_node(child, status);
     }
     status.code += `}\n`;
@@ -385,7 +388,7 @@ function build_trait_node(node: TraitNode, status: BuildStatus) {
     }(struct ${node.name} this${func.params.length ? ", " : ""}${func.params
       .map((p) => build_parameter_node(p, status))
       .join(", ")})\n{\n`;
-    for (let child of func.children) {
+    for (let child of func.statements) {
       build_node(child, status);
     }
     status.code += `}\n`;
@@ -408,7 +411,7 @@ function build_function_node(node: FunctionNode, status: BuildStatus) {
     build_parameter_node(node.params[i], status);
   }
   status.code += `)\n{\n`;
-  for (let child of node.children) {
+  for (let child of node.statements) {
     build_node(child, status);
   }
   status.code += `}\n`;
@@ -542,7 +545,7 @@ function build_for_node(node: ForNode, status: BuildStatus) {
     }
   }
 
-  for (let child of node.children) {
+  for (let child of node.statements) {
     build_node(child, status);
   }
 
@@ -586,7 +589,7 @@ function c_type(type: string): string {
   return type.replace("string", "char*");
 }
 
-function type_from_value_node(node: ParseNode): string {
+function type_from_value_node(node: SyntaxNode): string {
   switch (node.node_type) {
     case "access": {
       return type_from_value_node((node as AccessNode).access);

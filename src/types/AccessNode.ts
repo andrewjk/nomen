@@ -1,9 +1,9 @@
 import type AccessFieldNode from "./AccessFieldNode";
 import type AccessInvocationNode from "./AccessInvocationNode";
-import type ParseNode from "./ParseNode";
+import type SyntaxNode from "./SyntaxNode";
 
-export default interface AccessNode extends ParseNode {
+export default interface AccessNode extends SyntaxNode {
   node_type: "access";
-  source: ParseNode;
+  source: SyntaxNode;
   access: AccessFieldNode | AccessInvocationNode;
 }

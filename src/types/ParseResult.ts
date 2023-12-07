@@ -1,8 +1,8 @@
 import type CompileError from "./CompileError";
-import type ParseNode from "./ParseNode";
+import type RootNode from "./RootNode";
 
 export default interface ParseResult {
   ok: boolean;
-  root: ParseNode;
+  root: RootNode;
   errors: CompileError[];
 }

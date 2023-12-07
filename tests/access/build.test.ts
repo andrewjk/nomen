@@ -14,7 +14,7 @@ var p: Person
 var x = p.age
 `;
   const parsed = parse(input);
-  const result = build(parsed.root.children[2]);
+  const result = build(parsed.root.statements[2]);
   const expected = `
 int x = p.age;
 `;
@@ -35,7 +35,7 @@ var p: Person
 var x = p.address.line
 `;
   const parsed = parse(input);
-  const result = build(parsed.root.children[3]);
+  const result = build(parsed.root.statements[3]);
   const expected = `
 char* x = p.address.line;
 `;
@@ -52,7 +52,7 @@ var p: Person
 p.age = 20
 `;
   const parsed = parse(input);
-  const result = build(parsed.root.children[2]);
+  const result = build(parsed.root.statements[2]);
   const expected = `
 p.age = 20;
 `;
@@ -73,7 +73,7 @@ var p: Person
 p.address.line = "1 main st"
 `;
   const parsed = parse(input);
-  const result = build(parsed.root.children[3]);
+  const result = build(parsed.root.statements[3]);
   const expected = `
 p.address.line = "1 main st";
 `;
@@ -92,7 +92,7 @@ var p: Person
 var x = p.age()
 `;
   const parsed = parse(input);
-  const result = build(parsed.root.children[2]);
+  const result = build(parsed.root.statements[2]);
   const expected = `
 int x = Person_age(p);
 `;
@@ -115,7 +115,7 @@ var p: Person
 var x = p.address.line()
 `;
   const parsed = parse(input);
-  const result = build(parsed.root.children[3]);
+  const result = build(parsed.root.statements[3]);
   const expected = `
 char* x = Address_line(p.address);
 `;
@@ -138,7 +138,7 @@ var p: Person
 var x = p.address().line
 `;
   const parsed = parse(input);
-  const result = build(parsed.root.children[3]);
+  const result = build(parsed.root.statements[3]);
   const expected = `
 char* x = Person_address(p).line;
 `;

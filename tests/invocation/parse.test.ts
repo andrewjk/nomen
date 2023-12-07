@@ -18,12 +18,11 @@ greet()
     name: "greet",
     params: [],
     type: "",
-    children: [],
-    i: 0,
+    start: 0,
   };
   assert.equal(parsed.errors, []);
   assert.equal(
-    trim_test_data(parsed.root.children[1]),
+    trim_test_data(parsed.root.statements[1]),
     trim_test_data(expected),
   );
 });
@@ -42,24 +41,21 @@ greet("Andrew", "Manager")
         node_type: "value",
         value: '"Andrew"',
         type: "string",
-        children: [],
-        i: 0,
+        start: 0,
       } as ValueNode,
       {
         node_type: "value",
         value: '"Manager"',
         type: "string",
-        children: [],
-        i: 0,
+        start: 0,
       } as ValueNode,
     ],
     type: "",
-    children: [],
-    i: 0,
+    start: 0,
   };
   assert.equal(parsed.errors, []);
   assert.equal(
-    trim_test_data(parsed.root.children[1]),
+    trim_test_data(parsed.root.statements[1]),
     trim_test_data(expected),
   );
 });

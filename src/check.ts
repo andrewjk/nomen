@@ -11,17 +11,18 @@ import type FunctionNode from "./types/FunctionNode";
 import type InvocationNode from "./types/InvocationNode";
 import type OperationNode from "./types/OperationNode";
 import type ParameterNode from "./types/ParameterNode";
-import type ParseNode from "./types/ParseNode";
 import type RangeNode from "./types/RangeNode";
 import type ReturnNode from "./types/ReturnNode";
+import type RootNode from "./types/RootNode";
 import type StackValue from "./types/StackValue";
 import type StructNode from "./types/StructNode";
+import type SyntaxNode from "./types/SyntaxNode";
 import type TraitNode from "./types/TraitNode";
 import type ValueNode from "./types/ValueNode";
 
 interface CheckStatus {
   // The current node
-  stack: ParseNode[];
+  stack: SyntaxNode[];
   // TODO: Scope these properly
   // Types (values, structs and traits) in scope
   types: string[];
@@ -34,7 +35,7 @@ interface CheckStatus {
   errors: CompileError[];
 }
 
-export default function check(root: ParseNode): CheckResult {
+export default function check(root: SyntaxNode): CheckResult {
   const status: CheckStatus = {
     stack: [root],
     values: [],
@@ -45,7 +46,9 @@ export default function check(root: ParseNode): CheckResult {
     errors: [],
   };
 
-  gather_globals(root, status);
+  if (root.node_type === "root") {
+    gather_globals(root as RootNode, status);
+  }
 
   check_node(root, status);
 
@@ -55,8 +58,8 @@ export default function check(root: ParseNode): CheckResult {
   };
 }
 
-function gather_globals(root: ParseNode, status: CheckStatus) {
-  for (let node of root.children) {
+function gather_globals(root: RootNode, status: CheckStatus) {
+  for (let node of root.statements) {
     switch (node.node_type) {
       case "struct": {
         const struct = node as StructNode;
@@ -84,10 +87,10 @@ function gather_globals(root: ParseNode, status: CheckStatus) {
   }
 }
 
-function check_node(node: ParseNode, status: CheckStatus) {
+function check_node(node: SyntaxNode, status: CheckStatus) {
   switch (node.node_type) {
     case "root": {
-      check_statements(node, status);
+      check_statements(node as RootNode, status);
       break;
     }
     case "struct": {
@@ -145,16 +148,19 @@ function check_node(node: ParseNode, status: CheckStatus) {
     default: {
       status.errors.push({
         message: `Unknown node type: ${node.node_type}`,
-        start: node.i,
+        start: node.start,
       });
       break;
     }
   }
 }
 
-function check_statements(node: ParseNode, status: CheckStatus) {
+function check_statements(
+  node: SyntaxNode & { statements: SyntaxNode[] },
+  status: CheckStatus,
+) {
   status.stack.push(node);
-  for (let child of node.children) {
+  for (let child of node.statements) {
     check_node(child, status);
   }
   status.stack.pop();
@@ -165,7 +171,7 @@ function check_struct_node(struct: StructNode, status: CheckStatus) {
     if (!status.traits.find((t) => t.name === trait)) {
       status.errors.push({
         message: `Unknown trait: ${trait}`,
-        start: struct.i,
+        start: struct.start,
       });
     }
   }
@@ -187,8 +193,6 @@ function check_struct_node(struct: StructNode, status: CheckStatus) {
     name: struct.name,
     type: struct.name,
   });
-
-  check_statements(struct, status);
 }
 
 function check_trait_node(trait: TraitNode, status: CheckStatus) {
@@ -202,8 +206,6 @@ function check_trait_node(trait: TraitNode, status: CheckStatus) {
 
   status.types.push(trait.name);
   status.traits.push(trait);
-
-  check_statements(trait, status);
 }
 
 function check_function_node(func: FunctionNode, status: CheckStatus) {
@@ -258,7 +260,7 @@ function check_declaration_node(decl: DeclarationNode, status: CheckStatus) {
       type_from_value_node(decl.value, status),
       value_from_value_node(decl.value, status),
       status,
-      decl.value.i,
+      decl.value.start,
     );
 
     if (!decl.type) {
@@ -288,12 +290,12 @@ function check_assignment_node(assign: AssignmentNode, status: CheckStatus) {
   if (!lvalue) {
     status.errors.push({
       message: `Unknown variable: ${lvalueName}`,
-      start: assign.left_value!.i,
+      start: assign.left_value!.start,
     });
   } else if (lvalue.declaration === "const") {
     status.errors.push({
       message: `Assignment to const: ${lvalueName}`,
-      start: assign.left_value!.i,
+      start: assign.left_value!.start,
     });
   }
 
@@ -303,7 +305,7 @@ function check_assignment_node(assign: AssignmentNode, status: CheckStatus) {
       type_from_value_node(assign.right_value!, status),
       value_from_value_node(assign.right_value!, status),
       status,
-      assign.right_value!.i,
+      assign.right_value!.start,
     );
 }
 
@@ -328,17 +330,17 @@ function check_invocation_function(
   if (!func) {
     status.errors.push({
       message: `Function not found: ${invoke.name}`,
-      start: invoke.i,
+      start: invoke.start,
     });
   } else if (invoke.params.length > func.params.length) {
     status.errors.push({
       message: `Too many parameters for function: ${invoke.name}`,
-      start: invoke.i,
+      start: invoke.start,
     });
   } else if (invoke.params.length < func.params.length) {
     status.errors.push({
       message: `Parameters missing for function: ${invoke.name}`,
-      start: invoke.i,
+      start: invoke.start,
     });
   } else {
     invoke.params.forEach((param, i) => {
@@ -352,12 +354,12 @@ function check_invocation_function(
             param,
             status,
           )} cannot be used for ${paramType} parameter`,
-          start: param.i,
+          start: param.start,
         });
       } else if (valueType !== paramType) {
         status.errors.push({
           message: `Type mismatch: ${valueType} cannot be used for ${paramType} parameter`,
-          start: param.i,
+          start: param.start,
         });
       }
     });
@@ -404,7 +406,7 @@ function check_access_field_node(
   } else {
     status.errors.push({
       message: `Field not found: ${field.name}`,
-      start: field.i,
+      start: field.start,
     });
   }
 }
@@ -431,7 +433,7 @@ function check_for_node(for_loop: ForNode, status: CheckStatus) {
     if (!/\[.*\]/.test(list_type)) {
       status.errors.push({
         message: `For loop list must be an array, not ${list_type}`,
-        start: for_loop.list.i,
+        start: for_loop.list.start,
       });
     }
 
@@ -467,7 +469,7 @@ function check_operation_node(op: OperationNode, status: CheckStatus) {
     if (left_type !== right_type) {
       status.errors.push({
         message: `Invalid type in operation: ${right_type} (expected ${left_type})`,
-        start: op.right_value.i,
+        start: op.right_value.start,
       });
     }
   }
@@ -495,7 +497,7 @@ function check_array_values_node(array: ArrayValuesNode, status: CheckStatus) {
           /\[.*\]/,
           "",
         )})`,
-        start: value.i,
+        start: value.start,
       });
     }
   }
@@ -518,7 +520,7 @@ function check_range_node(range: RangeNode, status: CheckStatus) {
     if (left_type !== right_type) {
       status.errors.push({
         message: `Invalid type in range: ${right_type} (expected ${left_type})`,
-        start: range.right_value.i,
+        start: range.right_value.start,
       });
     }
   }
@@ -542,7 +544,7 @@ function check_return_node(ret: ReturnNode, status: CheckStatus) {
       type_from_value_node(ret.value, status),
       value_from_value_node(ret.value, status),
       status,
-      ret.i,
+      ret.start,
     );
   }
 }
@@ -632,7 +634,7 @@ function type_from_value(value: string, status: CheckStatus): string {
   }
 }
 
-function type_from_value_node(node: ParseNode, status: CheckStatus): string {
+function type_from_value_node(node: SyntaxNode, status: CheckStatus): string {
   switch (node.node_type) {
     case "value": {
       return type_from_value((node as ValueNode).value, status);
@@ -664,7 +666,7 @@ function type_from_value_node(node: ParseNode, status: CheckStatus): string {
   return "?";
 }
 
-function value_from_value_node(node: ParseNode, status: CheckStatus): string {
+function value_from_value_node(node: SyntaxNode, status: CheckStatus): string {
   switch (node.node_type) {
     case "value": {
       return (node as ValueNode).value;
@@ -682,7 +684,7 @@ function value_from_value_node(node: ParseNode, status: CheckStatus): string {
 function find_parent_of_type(
   type: string,
   status: CheckStatus,
-): ParseNode | undefined {
+): SyntaxNode | undefined {
   for (let i = status.stack.length - 1; i >= 0; i--) {
     if (status.stack[i].node_type === type) {
       return status.stack[i];
