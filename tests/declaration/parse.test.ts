@@ -1,8 +1,8 @@
 import { suite } from "uvu";
 import assert from "uvu/assert";
+import DeclarationNode from "../../src/nodes/DeclarationNode";
+import ValueNode from "../../src/nodes/ValueNode";
 import parse from "../../src/parse";
-import type DeclarationNode from "../../src/types/DeclarationNode";
-import type ValueNode from "../../src/types/ValueNode";
 import trim_test_data from "../trim_test_data";
 
 const test = suite("Declaration parse");
@@ -12,19 +12,13 @@ test("const with value", () => {
 const x = 5
 `;
   const parsed = parse(input);
-  const expected: DeclarationNode = {
-    node_type: "decl",
-    declaration: "const",
-    name: "x",
-    value: {
-      node_type: "value",
-      value: "5",
-      type: "int",
-      start: 0,
-    } as ValueNode,
-    type: "int",
-    start: 0,
-  };
+  const expected = new DeclarationNode(
+    1,
+    "const",
+    "x",
+    "int",
+    new ValueNode(11, "5", "int"),
+  );
   assert.equal(parsed.errors, []);
   assert.equal(
     trim_test_data(parsed.root.statements[0]),
@@ -37,13 +31,7 @@ test("const with type", () => {
 const x: int
 `;
   const parsed = parse(input);
-  const expected: DeclarationNode = {
-    node_type: "decl",
-    declaration: "const",
-    name: "x",
-    type: "int",
-    start: 0,
-  };
+  const expected = new DeclarationNode(1, "const", "x", "int");
   assert.equal(parsed.errors, []);
   assert.equal(
     trim_test_data(parsed.root.statements[0]),
@@ -56,19 +44,13 @@ test("var with value", () => {
 var x = 5
 `;
   const parsed = parse(input);
-  const expected: DeclarationNode = {
-    node_type: "decl",
-    declaration: "var",
-    name: "x",
-    value: {
-      node_type: "value",
-      value: "5",
-      type: "int",
-      start: 0,
-    } as ValueNode,
-    type: "int",
-    start: 0,
-  };
+  const expected = new DeclarationNode(
+    1,
+    "var",
+    "x",
+    "int",
+    new ValueNode(9, "5", "int"),
+  );
   assert.equal(parsed.errors, []);
   assert.equal(
     trim_test_data(parsed.root.statements[0]),
@@ -81,13 +63,7 @@ test("var with type", () => {
 var x: int
 `;
   const parsed = parse(input);
-  const expected: DeclarationNode = {
-    node_type: "decl",
-    declaration: "var",
-    name: "x",
-    type: "int",
-    start: 0,
-  };
+  const expected = new DeclarationNode(1, "var", "x", "int");
   assert.equal(parsed.errors, []);
   assert.equal(
     trim_test_data(parsed.root.statements[0]),

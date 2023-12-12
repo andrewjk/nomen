@@ -1,9 +1,9 @@
 import { suite } from "uvu";
 import assert from "uvu/assert";
+import ArrayValuesNode from "../../src/nodes/ArrayValuesNode";
+import DeclarationNode from "../../src/nodes/DeclarationNode";
+import ValueNode from "../../src/nodes/ValueNode";
 import parse from "../../src/parse";
-import type ArrayValuesNode from "../../src/types/ArrayValuesNode";
-import type DeclarationNode from "../../src/types/DeclarationNode";
-import type ValueNode from "../../src/types/ValueNode";
 import trim_test_data from "../trim_test_data";
 
 const test = suite("Array parse");
@@ -13,13 +13,7 @@ test("declaration with type", () => {
 const x: int[]
 `;
   const parsed = parse(input);
-  const expected: DeclarationNode = {
-    node_type: "decl",
-    declaration: "const",
-    name: "x",
-    type: "int[]",
-    start: 0,
-  };
+  const expected = new DeclarationNode(1, "const", "x", "int[]");
   assert.equal(parsed.errors, []);
   assert.equal(
     trim_test_data(parsed.root.statements[0]),
@@ -32,38 +26,21 @@ test("declaration with value", () => {
 var x = [1, 2, 3]
 `;
   const parsed = parse(input);
-  const expected: DeclarationNode = {
-    node_type: "decl",
-    declaration: "var",
-    name: "x",
-    value: {
-      node_type: "array",
-      values: [
-        {
-          node_type: "value",
-          value: "1",
-          type: "int",
-          start: 0,
-        } as ValueNode,
-        {
-          node_type: "value",
-          value: "2",
-          type: "int",
-          start: 0,
-        } as ValueNode,
-        {
-          node_type: "value",
-          value: "3",
-          type: "int",
-          start: 0,
-        } as ValueNode,
+  const expected = new DeclarationNode(
+    1,
+    "var",
+    "x",
+    "int[3]",
+    new ArrayValuesNode(
+      9,
+      [
+        new ValueNode(10, "1", "int"),
+        new ValueNode(13, "2", "int"),
+        new ValueNode(16, "3", "int"),
       ],
-      type: "int[3]",
-      start: 0,
-    } as ArrayValuesNode,
-    type: "int[3]",
-    start: 0,
-  };
+      "int[3]",
+    ),
+  );
   assert.equal(parsed.errors, []);
   assert.equal(
     trim_test_data(parsed.root.statements[0]),

@@ -1,8 +1,11 @@
 import { suite } from "uvu";
 import assert from "uvu/assert";
+import DeclarationNode from "../../src/nodes/DeclarationNode";
+import FunctionNode from "../../src/nodes/FunctionNode";
+import ParameterNode from "../../src/nodes/ParameterNode";
+import StructNode from "../../src/nodes/StructNode";
+import ValueNode from "../../src/nodes/ValueNode";
 import parse from "../../src/parse";
-import type StructNode from "../../src/types/StructNode";
-import type ValueNode from "../../src/types/ValueNode";
 import trim_test_data from "../trim_test_data";
 
 const test = suite("Struct parse");
@@ -12,23 +15,13 @@ test("struct", () => {
 struct Person {}
 `;
   const parsed = parse(input);
-  const expected: StructNode = {
-    node_type: "struct",
-    name: "Person",
-    traits: [],
-    fields: [],
-    functions: [
-      {
-        node_type: "func",
-        name: "init",
-        params: [],
-        return_type: "Person",
-        statements: [],
-        start: 0,
-      },
-    ],
-    start: 0,
-  };
+  const expected = new StructNode(
+    1,
+    "Person",
+    [],
+    [],
+    [new FunctionNode(-1, "init", "Person", [])],
+  );
   assert.equal(parsed.errors, []);
   assert.equal(
     trim_test_data(parsed.root.statements[0]),
@@ -44,52 +37,26 @@ struct Person {
 }
 `;
   const parsed = parse(input);
-  const expected: StructNode = {
-    node_type: "struct",
-    name: "Person",
-    traits: [],
-    fields: [
-      {
-        node_type: "decl",
-        declaration: "var",
-        name: "name",
-        type: "string",
-        start: 0,
-      },
-      {
-        node_type: "decl",
-        declaration: "var",
-        name: "age",
-        value: {
-          node_type: "value",
-          value: "0",
-          type: "int",
-          start: 0,
-        } as ValueNode,
-        type: "int",
-        start: 0,
-      },
+  const expected = new StructNode(
+    1,
+    "Person",
+    [],
+    [
+      new DeclarationNode(19, "var", "name", "string"),
+      new DeclarationNode(
+        38,
+        "var",
+        "age",
+        "int",
+        new ValueNode(48, "0", "int"),
+      ),
     ],
-    functions: [
-      {
-        node_type: "func",
-        name: "init",
-        params: [
-          {
-            node_type: "param",
-            name: "name",
-            type: "string",
-            default_value: undefined,
-            start: 0,
-          },
-        ],
-        return_type: "Person",
-        statements: [],
-        start: 0,
-      },
+    [
+      new FunctionNode(-1, "init", "Person", [
+        new ParameterNode(-1, "name", "string"),
+      ]),
     ],
-    start: 0,
-  };
+  );
   assert.equal(parsed.errors, []);
   assert.equal(
     trim_test_data(parsed.root.statements[0]),
@@ -104,32 +71,16 @@ struct Person {
 }
 `;
   const parsed = parse(input);
-  const expected: StructNode = {
-    node_type: "struct",
-    name: "Person",
-    traits: [],
-    fields: [],
-    functions: [
-      {
-        node_type: "func",
-        name: "init",
-        params: [],
-        return_type: "Person",
-        statements: [],
-        start: 0,
-      },
-      {
-        node_type: "func",
-        name: "greet",
-        params: [],
-        return_type: "",
-        has_body: true,
-        statements: [],
-        start: 0,
-      },
+  const expected = new StructNode(
+    1,
+    "Person",
+    [],
+    [],
+    [
+      new FunctionNode(-1, "init", "Person", []),
+      new FunctionNode(19, "greet", "", [], []),
     ],
-    start: 0,
-  };
+  );
   assert.equal(parsed.errors, []);
   assert.equal(
     trim_test_data(parsed.root.statements[0]),

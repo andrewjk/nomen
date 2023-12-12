@@ -1,14 +1,14 @@
 import { test } from "uvu";
 import assert from "uvu/assert";
 import check from "../src/check";
+import AccessFieldNode from "../src/nodes/AccessFieldNode";
+import AccessNode from "../src/nodes/AccessNode";
+import AssignmentNode from "../src/nodes/AssignmentNode";
+import DeclarationNode from "../src/nodes/DeclarationNode";
+import InvocationNode from "../src/nodes/InvocationNode";
+import ValueNode from "../src/nodes/ValueNode";
 import parse from "../src/parse";
 import tokenize from "../src/tokenize";
-import type AccessFieldNode from "../src/types/AccessFieldNode";
-import type AccessNode from "../src/types/AccessNode";
-import type AssignmentNode from "../src/types/AssignmentNode";
-import type DeclarationNode from "../src/types/DeclarationNode";
-import type InvocationNode from "../src/types/InvocationNode";
-import type ValueNode from "../src/types/ValueNode";
 import trim_test_data from "./trim_test_data";
 
 test("debugging test", () => {

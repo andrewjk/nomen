@@ -1,9 +1,9 @@
 import { suite } from "uvu";
 import assert from "uvu/assert";
+import ForNode from "../../src/nodes/ForNode";
+import RangeNode from "../../src/nodes/RangeNode";
+import ValueNode from "../../src/nodes/ValueNode";
 import parse from "../../src/parse";
-import type ForNode from "../../src/types/ForNode";
-import type RangeNode from "../../src/types/RangeNode";
-import type ValueNode from "../../src/types/ValueNode";
 import trim_test_data from "../trim_test_data";
 
 const test = suite("For parse");
@@ -16,23 +16,11 @@ for x in y {
 }
 `;
   const parsed = parse(input);
-  const expected: ForNode = {
-    node_type: "for",
-    item: {
-      node_type: "value",
-      value: "x",
-      type: "int",
-      start: 0,
-    } as ValueNode,
-    list: {
-      node_type: "value",
-      value: "y",
-      type: "int[3]",
-      start: 0,
-    } as ValueNode,
-    statements: [],
-    start: 0,
-  };
+  const expected = new ForNode(
+    21,
+    new ValueNode(25, "x", "int"),
+    new ValueNode(30, "y", "int[3]"),
+  );
   assert.equal(parsed.errors, []);
   assert.equal(
     trim_test_data(parsed.root.statements[1]),
@@ -45,34 +33,16 @@ test("with range", () => {
 for x in 0..5 {}
 `;
   const parsed = parse(input);
-  const expected: ForNode = {
-    node_type: "for",
-    item: {
-      node_type: "value",
-      value: "x",
-      type: "int",
-      start: 0,
-    } as ValueNode,
-    list: {
-      node_type: "range",
-      left_value: {
-        node_type: "value",
-        value: "0",
-        type: "int",
-        start: 0,
-      } as ValueNode,
-      right_value: {
-        node_type: "value",
-        value: "5",
-        type: "int",
-        start: 0,
-      } as ValueNode,
-      inclusive: false,
-      start: 0,
-    } as RangeNode,
-    statements: [],
-    start: 0,
-  };
+  const expected = new ForNode(
+    1,
+    new ValueNode(5, "x", "int"),
+    new RangeNode(
+      10,
+      new ValueNode(10, "0", "int"),
+      new ValueNode(13, "5", "int"),
+      false,
+    ),
+  );
   assert.equal(parsed.errors, []);
   assert.equal(
     trim_test_data(parsed.root.statements[0]),

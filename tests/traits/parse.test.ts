@@ -1,12 +1,14 @@
 import { suite } from "uvu";
 import assert from "uvu/assert";
+import BaseNode from "../../src/nodes/BaseNode";
+import DeclarationNode from "../../src/nodes/DeclarationNode";
+import FunctionNode from "../../src/nodes/FunctionNode";
+import ReturnNode from "../../src/nodes/ReturnNode";
+import RootNode from "../../src/nodes/RootNode";
+import StructNode from "../../src/nodes/StructNode";
+import TraitNode from "../../src/nodes/TraitNode";
+import ValueNode from "../../src/nodes/ValueNode";
 import parse from "../../src/parse";
-import type ReturnNode from "../../src/types/ReturnNode";
-import type RootNode from "../../src/types/RootNode";
-import type StructNode from "../../src/types/StructNode";
-import type SyntaxNode from "../../src/types/SyntaxNode";
-import type TraitNode from "../../src/types/TraitNode";
-import type ValueNode from "../../src/types/ValueNode";
 import trim_test_data from "../trim_test_data";
 
 const test = suite("Trait parse");
@@ -18,35 +20,16 @@ trait Person {}
 struct Frank: Person {}
 `;
   const parsed = parse(input);
-  const trait: TraitNode = {
-    node_type: "trait",
-    name: "Person",
-    fields: [],
-    functions: [],
-    start: 0,
-  };
-  const struct: StructNode = {
-    node_type: "struct",
-    name: "Frank",
-    traits: ["Person"],
-    fields: [],
-    functions: [
-      {
-        node_type: "func",
-        name: "init",
-        params: [],
-        return_type: "Frank",
-        statements: [],
-        start: 0,
-      },
-    ],
-    start: 0,
-  };
-  const expected: RootNode = {
-    node_type: "root",
-    statements: [trait, struct],
-    start: 0,
-  };
+  const expected = new RootNode([
+    new TraitNode(1, "Person"),
+    new StructNode(
+      18,
+      "Frank",
+      ["Person"],
+      [],
+      [new FunctionNode(-1, "init", "Frank")],
+    ),
+  ]);
   assert.equal(parsed.errors, []);
   assert.equal(trim_test_data(parsed.root), trim_test_data(expected));
 });
@@ -58,35 +41,16 @@ struct Frank: Person {}
 trait Person {}
 `;
   const parsed = parse(input);
-  const trait: TraitNode = {
-    node_type: "trait",
-    name: "Person",
-    fields: [],
-    functions: [],
-    start: 0,
-  };
-  const struct: StructNode = {
-    node_type: "struct",
-    name: "Frank",
-    traits: ["Person"],
-    fields: [],
-    functions: [
-      {
-        node_type: "func",
-        name: "init",
-        params: [],
-        return_type: "Frank",
-        statements: [],
-        start: 0,
-      },
-    ],
-    start: 0,
-  };
-  const expected: RootNode = {
-    node_type: "root",
-    statements: [struct, trait],
-    start: 0,
-  };
+  const expected = new RootNode([
+    new StructNode(
+      1,
+      "Frank",
+      ["Person"],
+      [],
+      [new FunctionNode(-1, "init", "Frank")],
+    ),
+    new TraitNode(26, "Person"),
+  ]);
   assert.equal(parsed.errors, []);
   assert.equal(trim_test_data(parsed.root), trim_test_data(expected));
 });
@@ -103,70 +67,33 @@ struct Frank: Person {
 }
 `;
   const parsed = parse(input);
-  const trait: TraitNode = {
-    node_type: "trait",
-    name: "Person",
-    fields: [
-      {
-        node_type: "decl",
-        declaration: "var",
-        name: "name",
-        type: "string",
-        start: 0,
-      },
-      {
-        node_type: "decl",
-        declaration: "var",
-        name: "age",
-        value: {
-          node_type: "value",
-          value: "0",
-          type: "int",
-          start: 0,
-        } as ValueNode,
-        type: "int",
-        start: 0,
-      },
-    ],
-    functions: [],
-    start: 0,
-  };
-  const struct: StructNode = {
-    node_type: "struct",
-    name: "Frank",
-    traits: ["Person"],
-    fields: [
-      {
-        node_type: "decl",
-        declaration: "var",
-        name: "name",
-        value: {
-          node_type: "value",
-          value: '"Frank"',
-          type: "string",
-          start: 0,
-        } as ValueNode,
-        type: "string",
-        start: 0,
-      },
-    ],
-    functions: [
-      {
-        node_type: "func",
-        name: "init",
-        params: [],
-        return_type: "Frank",
-        statements: [],
-        start: 0,
-      },
-    ],
-    start: 0,
-  };
-  const expected: RootNode = {
-    node_type: "root",
-    statements: [trait, struct],
-    start: 0,
-  };
+  const expected = new RootNode([
+    new TraitNode(1, "Person", [
+      new DeclarationNode(18, "var", "name", "string"),
+      new DeclarationNode(
+        37,
+        "var",
+        "age",
+        "int",
+        new ValueNode(47, "0", "int"),
+      ),
+    ]),
+    new StructNode(
+      52,
+      "Frank",
+      ["Person"],
+      [
+        new DeclarationNode(
+          77,
+          "var",
+          "name",
+          "string",
+          new ValueNode(88, '"Frank"', "string"),
+        ),
+      ],
+      [new FunctionNode(-1, "init", "Frank")],
+    ),
+  ]);
   assert.equal(parsed.errors, []);
   assert.equal(trim_test_data(parsed.root), trim_test_data(expected));
 });
@@ -184,66 +111,25 @@ struct Frank: Person {
 }
 `;
   const parsed = parse(input);
-  const trait: TraitNode = {
-    node_type: "trait",
-    name: "Person",
-    fields: [],
-    functions: [
-      {
-        node_type: "func",
-        name: "greet",
-        params: [],
-        return_type: "string",
-        statements: [],
-        start: 0,
-      },
-    ],
-    start: 0,
-  };
-  const struct: StructNode = {
-    node_type: "struct",
-    name: "Frank",
-    traits: ["Person"],
-    fields: [],
-    functions: [
-      {
-        node_type: "func",
-        name: "init",
-        params: [],
-        return_type: "Frank",
-        statements: [],
-        start: 0,
-      },
-      {
-        node_type: "func",
-        name: "greet",
-        params: [],
-        return_type: "string",
-        has_body: true,
-        has_return: true,
-        statements: [
-          {
-            node_type: "ret",
-            value: {
-              node_type: "value",
-              value: '"hi"',
-              type: "string",
-              start: 0,
-            } as ValueNode,
-            type: "string",
-            start: 0,
-          } as ReturnNode,
-        ],
-        start: 0,
-      },
-    ],
-    start: 0,
-  };
-  const expected: RootNode = {
-    node_type: "root",
-    statements: [trait, struct],
-    start: 0,
-  };
+  const expected = new RootNode([
+    new TraitNode(1, "Person", [], [new FunctionNode(18, "greet", "string")]),
+    new StructNode(
+      44,
+      "Frank",
+      ["Person"],
+      [],
+      [
+        new FunctionNode(-1, "init", "Frank"),
+        new FunctionNode(
+          69,
+          "greet",
+          "string",
+          [],
+          [new ReturnNode(105, new ValueNode(105, '"hi"', "string"), "string")],
+        ),
+      ],
+    ),
+  ]);
   assert.equal(parsed.errors, []);
   assert.equal(trim_test_data(parsed.root), trim_test_data(expected));
 });
@@ -259,58 +145,29 @@ trait Person {
 struct Frank: Person {}
 `;
   const parsed = parse(input);
-  const trait: TraitNode = {
-    node_type: "trait",
-    name: "Person",
-    fields: [],
-    functions: [
-      {
-        node_type: "func",
-        name: "greet",
-        params: [],
-        return_type: "string",
-        has_body: true,
-        has_return: true,
-        statements: [
-          {
-            node_type: "ret",
-            value: {
-              node_type: "value",
-              value: '"hi"',
-              type: "string",
-              start: 0,
-            } as ValueNode,
-            type: "string",
-            start: 0,
-          } as ReturnNode,
-        ],
-        start: 0,
-      },
-    ],
-    start: 0,
-  };
-  const struct: StructNode = {
-    node_type: "struct",
-    name: "Frank",
-    traits: ["Person"],
-    fields: [],
-    functions: [
-      {
-        node_type: "func",
-        name: "init",
-        params: [],
-        return_type: "Frank",
-        statements: [],
-        start: 0,
-      },
-    ],
-    start: 0,
-  };
-  const expected: RootNode = {
-    node_type: "root",
-    statements: [trait, struct],
-    start: 0,
-  };
+  const expected = new RootNode([
+    new TraitNode(
+      1,
+      "Person",
+      [],
+      [
+        new FunctionNode(
+          18,
+          "greet",
+          "string",
+          [],
+          [new ReturnNode(54, new ValueNode(54, '"hi"', "string"), "string")],
+        ),
+      ],
+    ),
+    new StructNode(
+      66,
+      "Frank",
+      ["Person"],
+      [],
+      [new FunctionNode(-1, "init", "Frank")],
+    ),
+  ]);
   assert.equal(parsed.errors, []);
   assert.equal(trim_test_data(parsed.root), trim_test_data(expected));
 });

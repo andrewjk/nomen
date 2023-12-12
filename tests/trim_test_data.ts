@@ -1,8 +1,8 @@
-import type SyntaxNode from "../src/types/SyntaxNode";
+import type BaseNode from "../src/nodes/BaseNode";
 
-export default function trim_test_data(node: SyntaxNode): SyntaxNode {
+export default function trim_test_data(node: BaseNode): string {
   trim_any(node);
-  return node;
+  return JSON.parse(JSON.stringify(node));
 }
 
 function trim_any(node: any) {
@@ -17,7 +17,7 @@ function trim_any(node: any) {
       if (!node.children.length) {
         delete node.children;
       }
-    } else if (key === "start" || key.endsWith("_start")) {
+    } else if (/*key === "start" ||*/ key.endsWith("_start")) {
       delete node[key];
     } else if (typeof value === "object") {
       trim_any(value);

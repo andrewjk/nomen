@@ -1,28 +1,28 @@
-import type AccessFieldNode from "./types/AccessFieldNode";
-import type AccessInvocationNode from "./types/AccessInvocationNode";
-import type AccessNode from "./types/AccessNode";
-import type ArrayValuesNode from "./types/ArrayValuesNode";
-import type AssignmentNode from "./types/AssignmentNode";
+import AccessFieldNode from "./nodes/AccessFieldNode";
+import AccessInvocationNode from "./nodes/AccessInvocationNode";
+import AccessNode from "./nodes/AccessNode";
+import ArrayValuesNode from "./nodes/ArrayValuesNode";
+import AssignmentNode from "./nodes/AssignmentNode";
+import BaseNode from "./nodes/BaseNode";
+import DeclarationNode from "./nodes/DeclarationNode";
+import ForNode from "./nodes/ForNode";
+import FunctionNode from "./nodes/FunctionNode";
+import InvocationNode from "./nodes/InvocationNode";
+import OperationNode from "./nodes/OperationNode";
+import ParameterNode from "./nodes/ParameterNode";
+import RangeNode from "./nodes/RangeNode";
+import ReturnNode from "./nodes/ReturnNode";
+import RootNode from "./nodes/RootNode";
+import StructNode from "./nodes/StructNode";
+import TraitNode from "./nodes/TraitNode";
+import ValueNode from "./nodes/ValueNode";
 import type CheckResult from "./types/CheckResult";
 import type CompileError from "./types/CompileError";
-import type DeclarationNode from "./types/DeclarationNode";
-import type ForNode from "./types/ForNode";
-import type FunctionNode from "./types/FunctionNode";
-import type InvocationNode from "./types/InvocationNode";
-import type OperationNode from "./types/OperationNode";
-import type ParameterNode from "./types/ParameterNode";
-import type RangeNode from "./types/RangeNode";
-import type ReturnNode from "./types/ReturnNode";
-import type RootNode from "./types/RootNode";
 import type StackValue from "./types/StackValue";
-import type StructNode from "./types/StructNode";
-import type SyntaxNode from "./types/SyntaxNode";
-import type TraitNode from "./types/TraitNode";
-import type ValueNode from "./types/ValueNode";
 
 interface CheckStatus {
   // The current node
-  stack: SyntaxNode[];
+  stack: BaseNode[];
   // TODO: Scope these properly
   // Types (values, structs and traits) in scope
   types: string[];
@@ -35,7 +35,7 @@ interface CheckStatus {
   errors: CompileError[];
 }
 
-export default function check(root: SyntaxNode): CheckResult {
+export default function check(root: BaseNode): CheckResult {
   const status: CheckStatus = {
     stack: [root],
     values: [],
@@ -87,7 +87,7 @@ function gather_globals(root: RootNode, status: CheckStatus) {
   }
 }
 
-function check_node(node: SyntaxNode, status: CheckStatus) {
+function check_node(node: BaseNode, status: CheckStatus) {
   switch (node.node_type) {
     case "root": {
       check_statements(node as RootNode, status);
@@ -105,7 +105,7 @@ function check_node(node: SyntaxNode, status: CheckStatus) {
       check_function_node(node as FunctionNode, status);
       break;
     }
-    case "decl": {
+    case "declare": {
       check_declaration_node(node as DeclarationNode, status);
       break;
     }
@@ -141,7 +141,7 @@ function check_node(node: SyntaxNode, status: CheckStatus) {
       check_value_node(node as ValueNode, status);
       break;
     }
-    case "ret": {
+    case "return": {
       check_return_node(node as ReturnNode, status);
       break;
     }
@@ -156,7 +156,7 @@ function check_node(node: SyntaxNode, status: CheckStatus) {
 }
 
 function check_statements(
-  node: SyntaxNode & { statements: SyntaxNode[] },
+  node: BaseNode & { statements: BaseNode[] },
   status: CheckStatus,
 ) {
   status.stack.push(node);
@@ -371,7 +371,7 @@ function check_access_node(node: AccessNode, status: CheckStatus) {
 
   const source_type = type_from_value_node(node.source, status);
   switch (node.access.node_type) {
-    case "accfld": {
+    case "ac_field": {
       check_access_field_node(
         source_type,
         node.access as AccessFieldNode,
@@ -379,7 +379,7 @@ function check_access_node(node: AccessNode, status: CheckStatus) {
       );
       break;
     }
-    case "accinv": {
+    case "ac_invoke": {
       check_access_invocation_node(
         source_type,
         node.access as AccessInvocationNode,
@@ -634,7 +634,7 @@ function type_from_value(value: string, status: CheckStatus): string {
   }
 }
 
-function type_from_value_node(node: SyntaxNode, status: CheckStatus): string {
+function type_from_value_node(node: BaseNode, status: CheckStatus): string {
   switch (node.node_type) {
     case "value": {
       return type_from_value((node as ValueNode).value, status);
@@ -648,10 +648,10 @@ function type_from_value_node(node: SyntaxNode, status: CheckStatus): string {
     case "invoke": {
       return (node as InvocationNode).type;
     }
-    case "accfld": {
+    case "ac_field": {
       return (node as AccessFieldNode).type;
     }
-    case "accinv": {
+    case "ac_invoke": {
       return (node as AccessInvocationNode).type;
     }
     case "op": {
@@ -666,7 +666,7 @@ function type_from_value_node(node: SyntaxNode, status: CheckStatus): string {
   return "?";
 }
 
-function value_from_value_node(node: SyntaxNode, status: CheckStatus): string {
+function value_from_value_node(node: BaseNode, status: CheckStatus): string {
   switch (node.node_type) {
     case "value": {
       return (node as ValueNode).value;
@@ -674,7 +674,7 @@ function value_from_value_node(node: SyntaxNode, status: CheckStatus): string {
     case "access": {
       return value_from_value_node((node as AccessNode).access, status);
     }
-    case "accfld": {
+    case "ac_field": {
       return (node as AccessFieldNode).name;
     }
   }
@@ -684,7 +684,7 @@ function value_from_value_node(node: SyntaxNode, status: CheckStatus): string {
 function find_parent_of_type(
   type: string,
   status: CheckStatus,
-): SyntaxNode | undefined {
+): BaseNode | undefined {
   for (let i = status.stack.length - 1; i >= 0; i--) {
     if (status.stack[i].node_type === type) {
       return status.stack[i];

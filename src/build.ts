@@ -1,31 +1,31 @@
-import type AccessFieldNode from "./types/AccessFieldNode";
-import type AccessInvocationNode from "./types/AccessInvocationNode";
-import type AccessNode from "./types/AccessNode";
-import type ArrayValuesNode from "./types/ArrayValuesNode";
-import type AssignmentNode from "./types/AssignmentNode";
+import AccessFieldNode from "./nodes/AccessFieldNode";
+import AccessInvocationNode from "./nodes/AccessInvocationNode";
+import AccessNode from "./nodes/AccessNode";
+import ArrayValuesNode from "./nodes/ArrayValuesNode";
+import AssignmentNode from "./nodes/AssignmentNode";
+import BaseNode from "./nodes/BaseNode";
+import DeclarationNode from "./nodes/DeclarationNode";
+import ForNode from "./nodes/ForNode";
+import FunctionNode from "./nodes/FunctionNode";
+import InvocationNode from "./nodes/InvocationNode";
+import OperationNode from "./nodes/OperationNode";
+import ParameterNode from "./nodes/ParameterNode";
+import RangeNode from "./nodes/RangeNode";
+import ReturnNode from "./nodes/ReturnNode";
+import RootNode from "./nodes/RootNode";
+import StructNode from "./nodes/StructNode";
+import TraitNode from "./nodes/TraitNode";
+import ValueNode from "./nodes/ValueNode";
 import type BuildResult from "./types/BuildResult";
-import type DeclarationNode from "./types/DeclarationNode";
-import type ForNode from "./types/ForNode";
-import type FunctionNode from "./types/FunctionNode";
-import type InvocationNode from "./types/InvocationNode";
-import type OperationNode from "./types/OperationNode";
-import type ParameterNode from "./types/ParameterNode";
-import type RangeNode from "./types/RangeNode";
-import type ReturnNode from "./types/ReturnNode";
-import type RootNode from "./types/RootNode";
-import type StructNode from "./types/StructNode";
-import type SyntaxNode from "./types/SyntaxNode";
-import type TraitNode from "./types/TraitNode";
-import type ValueNode from "./types/ValueNode";
 
 interface BuildStatus {
-  root: SyntaxNode;
+  root: BaseNode;
   traits: TraitNode[];
   headers: string;
   code: string;
 }
 
-export default function build(root: SyntaxNode): BuildResult {
+export default function build(root: BaseNode): BuildResult {
   let status: BuildStatus = {
     root,
     traits: [],
@@ -49,13 +49,13 @@ export default function build(root: SyntaxNode): BuildResult {
   };
 }
 
-function build_node(node: SyntaxNode, status: BuildStatus) {
+function build_node(node: BaseNode, status: BuildStatus) {
   switch (node.node_type) {
     case "root": {
       build_root_node(node as RootNode, status);
       break;
     }
-    case "decl": {
+    case "declare": {
       build_declaration_node(node as DeclarationNode, status);
       break;
     }
@@ -91,7 +91,7 @@ function build_node(node: SyntaxNode, status: BuildStatus) {
       build_for_node(node as ForNode, status);
       break;
     }
-    case "ret": {
+    case "return": {
       build_return_node(node as ReturnNode, status);
       break;
     }
@@ -449,12 +449,12 @@ function build_invocation_node(node: InvocationNode, status: BuildStatus) {
 
 function build_access_node(node: AccessNode, status: BuildStatus) {
   switch (node.access.node_type) {
-    case "accfld": {
+    case "ac_field": {
       build_node(node.source, status);
       status.code += `.${node.access.name}`;
       break;
     }
-    case "accinv": {
+    case "ac_invoke": {
       // Convert the access function into a C function that takes the struct as an argument
       const invoke = node.access as AccessInvocationNode;
       const type = type_from_value_node(node.source);
@@ -589,7 +589,7 @@ function c_type(type: string): string {
   return type.replace("string", "char*");
 }
 
-function type_from_value_node(node: SyntaxNode): string {
+function type_from_value_node(node: BaseNode): string {
   switch (node.node_type) {
     case "access": {
       return type_from_value_node((node as AccessNode).access);
@@ -603,10 +603,10 @@ function type_from_value_node(node: SyntaxNode): string {
     case "invoke": {
       return (node as InvocationNode).type;
     }
-    case "accfld": {
+    case "ac_field": {
       return (node as AccessFieldNode).type;
     }
-    case "accinv": {
+    case "ac_invoke": {
       return (node as AccessInvocationNode).type;
     }
     case "op": {

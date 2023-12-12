@@ -1,5 +1,5 @@
+import RootNode from "../nodes/RootNode";
 import type CompileError from "./CompileError";
-import type RootNode from "./RootNode";
 
 export default interface ParseResult {
   ok: boolean;

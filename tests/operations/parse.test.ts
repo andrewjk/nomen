@@ -1,9 +1,9 @@
 import { suite } from "uvu";
 import assert from "uvu/assert";
+import DeclarationNode from "../../src/nodes/DeclarationNode";
+import OperationNode from "../../src/nodes/OperationNode";
+import ValueNode from "../../src/nodes/ValueNode";
 import parse from "../../src/parse";
-import type DeclarationNode from "../../src/types/DeclarationNode";
-import type OperationNode from "../../src/types/OperationNode";
-import type ValueNode from "../../src/types/ValueNode";
 import trim_test_data from "../trim_test_data";
 
 const test = suite("Operation parse");
@@ -13,31 +13,19 @@ test("addition", () => {
 var x = 1 + 2
 `;
   const parsed = parse(input);
-  const expected: DeclarationNode = {
-    node_type: "decl",
-    declaration: "var",
-    name: "x",
-    value: {
-      node_type: "op",
-      op: "+",
-      left_value: {
-        node_type: "value",
-        value: "1",
-        type: "int",
-        start: 0,
-      } as ValueNode,
-      right_value: {
-        node_type: "value",
-        value: "2",
-        type: "int",
-        start: 0,
-      } as ValueNode,
-      type: "int",
-      start: 0,
-    } as OperationNode,
-    type: "int",
-    start: 0,
-  };
+  const expected = new DeclarationNode(
+    1,
+    "var",
+    "x",
+    "int",
+    new OperationNode(
+      9,
+      "+",
+      new ValueNode(9, "1", "int"),
+      new ValueNode(13, "2", "int"),
+      "int",
+    ),
+  );
   assert.equal(parsed.errors, []);
   assert.equal(
     trim_test_data(parsed.root.statements[0]),
@@ -50,31 +38,19 @@ test("subtraction", () => {
 var x = 1 - 2
 `;
   const parsed = parse(input);
-  const expected: DeclarationNode = {
-    node_type: "decl",
-    declaration: "var",
-    name: "x",
-    value: {
-      node_type: "op",
-      op: "-",
-      left_value: {
-        node_type: "value",
-        value: "1",
-        type: "int",
-        start: 0,
-      } as ValueNode,
-      right_value: {
-        node_type: "value",
-        value: "2",
-        type: "int",
-        start: 0,
-      } as ValueNode,
-      type: "int",
-      start: 0,
-    } as OperationNode,
-    type: "int",
-    start: 0,
-  };
+  const expected = new DeclarationNode(
+    1,
+    "var",
+    "x",
+    "int",
+    new OperationNode(
+      9,
+      "-",
+      new ValueNode(9, "1", "int"),
+      new ValueNode(13, "2", "int"),
+      "int",
+    ),
+  );
   assert.equal(parsed.errors, []);
   assert.equal(
     trim_test_data(parsed.root.statements[0]),
@@ -87,43 +63,25 @@ test("series", () => {
 var x = 1 + 2 - 3
 `;
   const parsed = parse(input);
-  const expected: DeclarationNode = {
-    node_type: "decl",
-    declaration: "var",
-    name: "x",
-    value: {
-      node_type: "op",
-      op: "+",
-      left_value: {
-        node_type: "value",
-        value: "1",
-        type: "int",
-        start: 0,
-      } as ValueNode,
-      right_value: {
-        node_type: "op",
-        op: "-",
-        left_value: {
-          node_type: "value",
-          value: "2",
-          type: "int",
-          start: 0,
-        } as ValueNode,
-        right_value: {
-          node_type: "value",
-          value: "3",
-          type: "int",
-          start: 0,
-        } as ValueNode,
-        type: "int",
-        start: 0,
-      } as OperationNode,
-      type: "int",
-      start: 0,
-    } as OperationNode,
-    type: "int",
-    start: 0,
-  };
+  const expected = new DeclarationNode(
+    1,
+    "var",
+    "x",
+    "int",
+    new OperationNode(
+      9,
+      "+",
+      new ValueNode(9, "1", "int"),
+      new OperationNode(
+        13,
+        "-",
+        new ValueNode(13, "2", "int"),
+        new ValueNode(17, "3", "int"),
+        "int",
+      ),
+      "int",
+    ),
+  );
   assert.equal(parsed.errors, []);
   assert.equal(
     trim_test_data(parsed.root.statements[0]),
