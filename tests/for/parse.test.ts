@@ -16,16 +16,9 @@ for x in y {
 }
 `;
   const parsed = parse(input);
-  const expected = new ForNode(
-    21,
-    new ValueNode(25, "x", "int"),
-    new ValueNode(30, "y", "int[3]"),
-  );
+  const expected = new ForNode(21, new ValueNode(25, "x", "int"), new ValueNode(30, "y", "int[3]"));
   assert.equal(parsed.errors, []);
-  assert.equal(
-    trim_test_data(parsed.root.statements[1]),
-    trim_test_data(expected),
-  );
+  assert.equal(trim_test_data(parsed.root.statements[1]), trim_test_data(expected));
 });
 
 test("with range", () => {
@@ -36,18 +29,10 @@ for x in 0..5 {}
   const expected = new ForNode(
     1,
     new ValueNode(5, "x", "int"),
-    new RangeNode(
-      10,
-      new ValueNode(10, "0", "int"),
-      new ValueNode(13, "5", "int"),
-      false,
-    ),
+    new RangeNode(10, new ValueNode(10, "0", "int"), new ValueNode(13, "5", "int"), false),
   );
   assert.equal(parsed.errors, []);
-  assert.equal(
-    trim_test_data(parsed.root.statements[0]),
-    trim_test_data(expected),
-  );
+  assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
 });
 
 test.run();

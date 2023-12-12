@@ -19,10 +19,7 @@ x = 5
     new ValueNode(16, "5", "int"),
   );
   assert.equal(parsed.errors, []);
-  assert.equal(
-    trim_test_data(parsed.root.statements[1]),
-    trim_test_data(expected),
-  );
+  assert.equal(trim_test_data(parsed.root.statements[1]), trim_test_data(expected));
 });
 
 test.run();

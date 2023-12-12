@@ -29,10 +29,7 @@ var x = Person.init()
   );
   assert.equal(parsed.errors, []);
   assert.equal(parsed.errors, []);
-  assert.equal(
-    trim_test_data(parsed.root.statements[1]),
-    trim_test_data(expected),
-  );
+  assert.equal(trim_test_data(parsed.root.statements[1]), trim_test_data(expected));
 });
 
 test("init struct with params", () => {
@@ -61,10 +58,7 @@ var x = Person.init("Andrew")
     ),
   );
   assert.equal(parsed.errors, []);
-  assert.equal(
-    trim_test_data(parsed.root.statements[1]),
-    trim_test_data(expected),
-  );
+  assert.equal(trim_test_data(parsed.root.statements[1]), trim_test_data(expected));
 });
 
 test("init struct with default values", () => {
@@ -87,10 +81,7 @@ var x = Person.init()
     ),
   );
   assert.equal(parsed.errors, []);
-  assert.equal(
-    trim_test_data(parsed.root.statements[1]),
-    trim_test_data(expected),
-  );
+  assert.equal(trim_test_data(parsed.root.statements[1]), trim_test_data(expected));
 });
 
 test.run();

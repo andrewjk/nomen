@@ -121,25 +121,14 @@ function processFile(filename: string, config: Config) {
   let input = fs.readFileSync(filename, "utf8");
 
   // HACK:
-  //input = input.replace(/Console.Write\(dog(.+?)\)/g, 'printf("%s", dog$1)');
-  //input = input.replace(/Console.Write\("(.+?)"\)/g, 'printf("$1")');
-  //input = input.replace(/Console.Write\((.+?)\)/g, 'printf("%d", $1)');
   input = input.replace(/Console.Write\("(.+?)"\)/g, 'printf("$1")');
-  input = input.replace(
-    /Console.Write\((.+?) \+ (.+?)\)/g,
-    'printf("%d", $1 + $2)',
-  );
+  input = input.replace(/Console.Write\((.+?) \+ (.+?)\)/g, 'printf("%d", $1 + $2)');
   input = input.replace(/Console.Write\((.+?)\)/g, 'printf("%s", $1)');
-  //input = input.replace("world", "code");
-
-  //console.log(input);
 
   const parsed = parse(input);
   console.log("Parsed");
 
-  let errors = parsed.errors.filter(
-    (f) => f.message !== "Function not found: printf",
-  );
+  let errors = parsed.errors.filter((f) => f.message !== "Function not found: printf");
   const ok = !errors.length;
 
   if (!ok) {
@@ -148,16 +137,14 @@ function processFile(filename: string, config: Config) {
       //const line = (input.slice(0, error.i).match(/\n/g) || "").length + 1;
       let slice = input.slice(0, error.start);
       let line = 1;
-      let lastLineIndex = 0;
+      let last_line_index = 0;
       for (let i = 0; i < slice.length; i++) {
         if (input[i] === "\n") {
           line += 1;
-          lastLineIndex = i;
+          last_line_index = i;
         }
       }
-      console.log(
-        `${line},${error.start - lastLineIndex - 1}: ${error.message}`,
-      );
+      console.log(`${line},${error.start - last_line_index - 1}: ${error.message}`);
     }
     return;
   }

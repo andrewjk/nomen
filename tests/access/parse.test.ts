@@ -25,17 +25,10 @@ var x = p.age
     "var",
     "x",
     "int",
-    new AccessNode(
-      56,
-      new ValueNode(56, "p", "Person"),
-      new AccessFieldNode(58, "age", "int"),
-    ),
+    new AccessNode(56, new ValueNode(56, "p", "Person"), new AccessFieldNode(58, "age", "int")),
   );
   assert.equal(parsed.errors, []);
-  assert.equal(
-    trim_test_data(parsed.root.statements[2]),
-    trim_test_data(expected),
-  );
+  assert.equal(trim_test_data(parsed.root.statements[2]), trim_test_data(expected));
 });
 
 test("getting nested field", () => {
@@ -67,10 +60,7 @@ var x = p.address.line
     ),
   );
   assert.equal(parsed.errors, []);
-  assert.equal(
-    trim_test_data(parsed.root.statements[3]),
-    trim_test_data(expected),
-  );
+  assert.equal(trim_test_data(parsed.root.statements[3]), trim_test_data(expected));
 });
 
 test("setting field", () => {
@@ -84,18 +74,11 @@ p.age = 20
   const parsed = parse(input);
   const expected = new AssignmentNode(
     48,
-    new AccessNode(
-      48,
-      new ValueNode(48, "p", "Person"),
-      new AccessFieldNode(50, "age", "int"),
-    ),
+    new AccessNode(48, new ValueNode(48, "p", "Person"), new AccessFieldNode(50, "age", "int")),
     new ValueNode(56, "20", "int"),
   );
   assert.equal(parsed.errors, []);
-  assert.equal(
-    trim_test_data(parsed.root.statements[2]),
-    trim_test_data(expected),
-  );
+  assert.equal(trim_test_data(parsed.root.statements[2]), trim_test_data(expected));
 });
 
 test("setting nested field", () => {
@@ -125,10 +108,7 @@ p.address.line = "1 main st"
     new ValueNode(126, '"1 main st"', "string"),
   );
   assert.equal(parsed.errors, []);
-  assert.equal(
-    trim_test_data(parsed.root.statements[3]),
-    trim_test_data(expected),
-  );
+  assert.equal(trim_test_data(parsed.root.statements[3]), trim_test_data(expected));
 });
 
 test("getting function", () => {
@@ -154,10 +134,7 @@ var x = p.age()
     ),
   );
   assert.equal(parsed.errors, []);
-  assert.equal(
-    trim_test_data(parsed.root.statements[2]),
-    trim_test_data(expected),
-  );
+  assert.equal(trim_test_data(parsed.root.statements[2]), trim_test_data(expected));
 });
 
 test("getting function after field", () => {
@@ -191,10 +168,7 @@ var x = p.address.line()
     ),
   );
   assert.equal(parsed.errors, []);
-  assert.equal(
-    trim_test_data(parsed.root.statements[3]),
-    trim_test_data(expected),
-  );
+  assert.equal(trim_test_data(parsed.root.statements[3]), trim_test_data(expected));
 });
 
 test("getting field after function", () => {
@@ -228,10 +202,7 @@ var x = p.address().line
     ),
   );
   assert.equal(parsed.errors, []);
-  assert.equal(
-    trim_test_data(parsed.root.statements[3]),
-    trim_test_data(expected),
-  );
+  assert.equal(trim_test_data(parsed.root.statements[3]), trim_test_data(expected));
 });
 
 test.run();

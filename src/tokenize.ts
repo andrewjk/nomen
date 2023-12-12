@@ -1,6 +1,6 @@
 import Token from "./types/Token";
 
-const compoundSymbols = ["&&", "||", "==", ">=", "<=", "->", "=>", "..", ".="];
+const COMPOUND_SYMBOLS = ["&&", "||", "==", ">=", "<=", "->", "=>", "..", ".="];
 
 export default function tokenize(input: string): Token[] {
   let tokens: Token[] = [];
@@ -40,11 +40,7 @@ export default function tokenize(input: string): Token[] {
             // It's a multi-line comment -- process until the close, handling nested comments
             let depth = 0;
             for (let j = i + 1; j < input.length; j++) {
-              if (
-                input[j] === "/" &&
-                j < input.length - 2 &&
-                input[j + 1] === "*"
-              ) {
+              if (input[j] === "/" && j < input.length - 2 && input[j + 1] === "*") {
                 depth += 1;
               } else if (input[j] === "/" && input[j - 1] === "*") {
                 if (depth > 0) {
@@ -57,10 +53,7 @@ export default function tokenize(input: string): Token[] {
               }
             }
           }
-        } else if (
-          i < input.length - 2 &&
-          compoundSymbols.includes(value + input[i + 1])
-        ) {
+        } else if (i < input.length - 2 && COMPOUND_SYMBOLS.includes(value + input[i + 1])) {
           // It's a compound symbol
           value = value + input[i + 1];
           i += 1;

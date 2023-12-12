@@ -23,10 +23,7 @@ struct Person {}
     [new FunctionNode(-1, "init", "Person", [])],
   );
   assert.equal(parsed.errors, []);
-  assert.equal(
-    trim_test_data(parsed.root.statements[0]),
-    trim_test_data(expected),
-  );
+  assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
 });
 
 test("struct with fields", () => {
@@ -43,25 +40,12 @@ struct Person {
     [],
     [
       new DeclarationNode(19, "var", "name", "string"),
-      new DeclarationNode(
-        38,
-        "var",
-        "age",
-        "int",
-        new ValueNode(48, "0", "int"),
-      ),
+      new DeclarationNode(38, "var", "age", "int", new ValueNode(48, "0", "int")),
     ],
-    [
-      new FunctionNode(-1, "init", "Person", [
-        new ParameterNode(-1, "name", "string"),
-      ]),
-    ],
+    [new FunctionNode(-1, "init", "Person", [new ParameterNode(-1, "name", "string")])],
   );
   assert.equal(parsed.errors, []);
-  assert.equal(
-    trim_test_data(parsed.root.statements[0]),
-    trim_test_data(expected),
-  );
+  assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
 });
 
 test("struct with functions", () => {
@@ -76,16 +60,10 @@ struct Person {
     "Person",
     [],
     [],
-    [
-      new FunctionNode(-1, "init", "Person", []),
-      new FunctionNode(19, "greet", "", [], []),
-    ],
+    [new FunctionNode(-1, "init", "Person", []), new FunctionNode(19, "greet", "", [], [])],
   );
   assert.equal(parsed.errors, []);
-  assert.equal(
-    trim_test_data(parsed.root.statements[0]),
-    trim_test_data(expected),
-  );
+  assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
 });
 
 test.run();

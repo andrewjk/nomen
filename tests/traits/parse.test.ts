@@ -22,13 +22,7 @@ struct Frank: Person {}
   const parsed = parse(input);
   const expected = new RootNode([
     new TraitNode(1, "Person"),
-    new StructNode(
-      18,
-      "Frank",
-      ["Person"],
-      [],
-      [new FunctionNode(-1, "init", "Frank")],
-    ),
+    new StructNode(18, "Frank", ["Person"], [], [new FunctionNode(-1, "init", "Frank")]),
   ]);
   assert.equal(parsed.errors, []);
   assert.equal(trim_test_data(parsed.root), trim_test_data(expected));
@@ -42,13 +36,7 @@ trait Person {}
 `;
   const parsed = parse(input);
   const expected = new RootNode([
-    new StructNode(
-      1,
-      "Frank",
-      ["Person"],
-      [],
-      [new FunctionNode(-1, "init", "Frank")],
-    ),
+    new StructNode(1, "Frank", ["Person"], [], [new FunctionNode(-1, "init", "Frank")]),
     new TraitNode(26, "Person"),
   ]);
   assert.equal(parsed.errors, []);
@@ -70,27 +58,13 @@ struct Frank: Person {
   const expected = new RootNode([
     new TraitNode(1, "Person", [
       new DeclarationNode(18, "var", "name", "string"),
-      new DeclarationNode(
-        37,
-        "var",
-        "age",
-        "int",
-        new ValueNode(47, "0", "int"),
-      ),
+      new DeclarationNode(37, "var", "age", "int", new ValueNode(47, "0", "int")),
     ]),
     new StructNode(
       52,
       "Frank",
       ["Person"],
-      [
-        new DeclarationNode(
-          77,
-          "var",
-          "name",
-          "string",
-          new ValueNode(88, '"Frank"', "string"),
-        ),
-      ],
+      [new DeclarationNode(77, "var", "name", "string", new ValueNode(88, '"Frank"', "string"))],
       [new FunctionNode(-1, "init", "Frank")],
     ),
   ]);
@@ -160,13 +134,7 @@ struct Frank: Person {}
         ),
       ],
     ),
-    new StructNode(
-      66,
-      "Frank",
-      ["Person"],
-      [],
-      [new FunctionNode(-1, "init", "Frank")],
-    ),
+    new StructNode(66, "Frank", ["Person"], [], [new FunctionNode(-1, "init", "Frank")]),
   ]);
   assert.equal(parsed.errors, []);
   assert.equal(trim_test_data(parsed.root), trim_test_data(expected));

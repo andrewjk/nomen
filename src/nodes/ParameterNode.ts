@@ -7,12 +7,7 @@ export default class ParameterNode extends BaseNode {
   type_start?: number;
   default_value_start?: number;
 
-  constructor(
-    start: number,
-    name: string,
-    type?: string,
-    default_value?: string,
-  ) {
+  constructor(start: number, name: string, type?: string, default_value?: string) {
     super("param", start);
     this.name = name;
     this.type = type || "";

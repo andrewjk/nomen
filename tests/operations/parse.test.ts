@@ -18,19 +18,10 @@ var x = 1 + 2
     "var",
     "x",
     "int",
-    new OperationNode(
-      9,
-      "+",
-      new ValueNode(9, "1", "int"),
-      new ValueNode(13, "2", "int"),
-      "int",
-    ),
+    new OperationNode(9, "+", new ValueNode(9, "1", "int"), new ValueNode(13, "2", "int"), "int"),
   );
   assert.equal(parsed.errors, []);
-  assert.equal(
-    trim_test_data(parsed.root.statements[0]),
-    trim_test_data(expected),
-  );
+  assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
 });
 
 test("subtraction", () => {
@@ -43,19 +34,10 @@ var x = 1 - 2
     "var",
     "x",
     "int",
-    new OperationNode(
-      9,
-      "-",
-      new ValueNode(9, "1", "int"),
-      new ValueNode(13, "2", "int"),
-      "int",
-    ),
+    new OperationNode(9, "-", new ValueNode(9, "1", "int"), new ValueNode(13, "2", "int"), "int"),
   );
   assert.equal(parsed.errors, []);
-  assert.equal(
-    trim_test_data(parsed.root.statements[0]),
-    trim_test_data(expected),
-  );
+  assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
 });
 
 test("series", () => {
@@ -83,10 +65,7 @@ var x = 1 + 2 - 3
     ),
   );
   assert.equal(parsed.errors, []);
-  assert.equal(
-    trim_test_data(parsed.root.statements[0]),
-    trim_test_data(expected),
-  );
+  assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
 });
 
 test.run();

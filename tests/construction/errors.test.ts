@@ -78,8 +78,7 @@ const dog = Dog.init(z0)
 `;
   const expected: CompileError[] = [
     {
-      message:
-        "Type mismatch -- unknown value type: z0 cannot be used for string parameter",
+      message: "Type mismatch -- unknown value type: z0 cannot be used for string parameter",
       start: 58,
     },
   ];

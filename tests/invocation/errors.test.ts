@@ -71,8 +71,7 @@ greet(z0)
 `;
   const expected: CompileError[] = [
     {
-      message:
-        "Type mismatch -- unknown value type: z0 cannot be used for int parameter",
+      message: "Type mismatch -- unknown value type: z0 cannot be used for int parameter",
       start: 31,
     },
   ];

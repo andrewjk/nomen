@@ -7,12 +7,7 @@ export default class TraitNode extends BaseNode {
   fields: DeclarationNode[];
   functions: FunctionNode[];
 
-  constructor(
-    start: number,
-    name: string,
-    fields?: DeclarationNode[],
-    functions?: FunctionNode[],
-  ) {
+  constructor(start: number, name: string, fields?: DeclarationNode[], functions?: FunctionNode[]) {
     super("trait", start);
     this.name = name;
     this.fields = fields || [];

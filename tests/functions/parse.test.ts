@@ -18,10 +18,7 @@ func add() {}
   const parsed = parse(input);
   const expected = new FunctionNode(1, "add", "", [], []);
   assert.equal(parsed.errors, []);
-  assert.equal(
-    trim_test_data(parsed.root.statements[0]),
-    trim_test_data(expected),
-  );
+  assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
 });
 
 test("function with params", () => {
@@ -37,10 +34,7 @@ func add(a: int, b: int) {}
     [],
   );
   assert.equal(parsed.errors, []);
-  assert.equal(
-    trim_test_data(parsed.root.statements[0]),
-    trim_test_data(expected),
-  );
+  assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
 });
 
 test("function with params with default value", () => {
@@ -56,10 +50,7 @@ func add(a: int, b = 5) {}
     [],
   );
   assert.equal(parsed.errors, []);
-  assert.equal(
-    trim_test_data(parsed.root.statements[0]),
-    trim_test_data(expected),
-  );
+  assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
 });
 
 test("function with body", () => {
@@ -77,10 +68,7 @@ func add() {
     [new DeclarationNode(16, "var", "x", "int", new ValueNode(24, "5", "int"))],
   );
   assert.equal(parsed.errors, []);
-  assert.equal(
-    trim_test_data(parsed.root.statements[0]),
-    trim_test_data(expected),
-  );
+  assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
 });
 
 test("function with return value", () => {
@@ -98,10 +86,7 @@ func add() -> int {
     [new ReturnNode(30, new ValueNode(30, "5", "int"), "int")],
   );
   assert.equal(parsed.errors, []);
-  assert.equal(
-    trim_test_data(parsed.root.statements[0]),
-    trim_test_data(expected),
-  );
+  assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
 });
 
 test("function followed by function", () => {

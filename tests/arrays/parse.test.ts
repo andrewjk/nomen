@@ -15,10 +15,7 @@ const x: int[]
   const parsed = parse(input);
   const expected = new DeclarationNode(1, "const", "x", "int[]");
   assert.equal(parsed.errors, []);
-  assert.equal(
-    trim_test_data(parsed.root.statements[0]),
-    trim_test_data(expected),
-  );
+  assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
 });
 
 test("declaration with value", () => {
@@ -33,19 +30,12 @@ var x = [1, 2, 3]
     "int[3]",
     new ArrayValuesNode(
       9,
-      [
-        new ValueNode(10, "1", "int"),
-        new ValueNode(13, "2", "int"),
-        new ValueNode(16, "3", "int"),
-      ],
+      [new ValueNode(10, "1", "int"), new ValueNode(13, "2", "int"), new ValueNode(16, "3", "int")],
       "int[3]",
     ),
   );
   assert.equal(parsed.errors, []);
-  assert.equal(
-    trim_test_data(parsed.root.statements[0]),
-    trim_test_data(expected),
-  );
+  assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
 });
 
 test.run();

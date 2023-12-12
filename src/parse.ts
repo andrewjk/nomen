@@ -119,11 +119,7 @@ function parse_statement_start(status: ParseStatus) {
     switch (next_value) {
       case ".": {
         accept(".", status);
-        const access = new AccessNode(
-          node.start,
-          node,
-          parse_access(value, status),
-        );
+        const access = new AccessNode(node.start, node, parse_access(value, status));
         node = access;
         break;
       }
@@ -139,11 +135,7 @@ function parse_statement_start(status: ParseStatus) {
       }
       case "=": {
         accept("=", status);
-        const assign = new AssignmentNode(
-          node.start,
-          node,
-          parse_expression(status),
-        );
+        const assign = new AssignmentNode(node.start, node, parse_expression(status));
         node = assign;
         break;
       }
@@ -179,11 +171,7 @@ function parse_expression(status: ParseStatus): BaseNode {
     switch (next_value) {
       case ".": {
         accept(".", status);
-        const access = new AccessNode(
-          node.start,
-          node,
-          parse_access(value, status),
-        );
+        const access = new AccessNode(node.start, node, parse_access(value, status));
         node = access;
         // TODO: This should be a type prop on AccessNode
         switch (access.access.node_type) {
@@ -213,24 +201,14 @@ function parse_expression(status: ParseStatus): BaseNode {
       case "-": {
         consume(status);
         // TODO: Proper order of operations
-        const op = new OperationNode(
-          start,
-          next_value,
-          node,
-          parse_expression(status),
-        );
+        const op = new OperationNode(start, next_value, node, parse_expression(status));
         node = op;
         break;
       }
       case "..":
       case ".=": {
         consume(status);
-        const range = new RangeNode(
-          start,
-          node,
-          parse_expression(status),
-          next_value === ".=",
-        );
+        const range = new RangeNode(start, node, parse_expression(status), next_value === ".=");
         node = range;
         break;
       }
@@ -368,10 +346,7 @@ function parse_function(status: ParseStatus) {
       const parent = status.stack.at(-1)!;
 
       // Traits don't need a body, everything else does
-      const has_body =
-        parent.node_type === "trait"
-          ? accept("{", status)
-          : expect("{", status);
+      const has_body = parent.node_type === "trait" ? accept("{", status) : expect("{", status);
       if (has_body) {
         func.has_body = true;
 
@@ -635,10 +610,7 @@ function add_to_parent(
   }
 }
 
-function find_parent_of_type(
-  type: string,
-  status: ParseStatus,
-): BaseNode | undefined {
+function find_parent_of_type(type: string, status: ParseStatus): BaseNode | undefined {
   for (let i = status.stack.length - 1; i >= 0; i--) {
     if (status.stack[i].node_type === type) {
       return status.stack[i];

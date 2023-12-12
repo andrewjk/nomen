@@ -15,10 +15,7 @@ greet()
   const parsed = parse(input);
   const expected = new InvocationNode(17, "greet");
   assert.equal(parsed.errors, []);
-  assert.equal(
-    trim_test_data(parsed.root.statements[1]),
-    trim_test_data(expected),
-  );
+  assert.equal(trim_test_data(parsed.root.statements[1]), trim_test_data(expected));
 });
 
 test("function with params", () => {
@@ -32,10 +29,7 @@ greet("Andrew", "Manager")
     new ValueNode(63, '"Manager"', "string"),
   ]);
   assert.equal(parsed.errors, []);
-  assert.equal(
-    trim_test_data(parsed.root.statements[1]),
-    trim_test_data(expected),
-  );
+  assert.equal(trim_test_data(parsed.root.statements[1]), trim_test_data(expected));
 });
 
 test.run();
