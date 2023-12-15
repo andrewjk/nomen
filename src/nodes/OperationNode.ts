@@ -1,6 +1,15 @@
 import BaseNode from "./BaseNode";
 
-type Operator = "+" | "-";
+/*
+// Technique for syncing array and type from https://stackoverflow.com/a/45486495
+// TODO: include range operators ".." and ".=" ??
+const OPERATORS = ["+", "-", "*", "/", "%", "==", "!=", ">", ">=", "<", "<=", "&&", "||"] as const;
+type OpTuple = typeof OPERATORS;
+type Operator = OpTuple[number];
+*/
+
+type Operator = "+" | "-" | "*" | "/" | "%" | "==" | "!=" | ">" | ">=" | "<" | "<=" | "&&" | "||";
+// TODO: inclued range operators ".." and ".=" ??
 
 export default class OperationNode extends BaseNode {
   op: Operator;

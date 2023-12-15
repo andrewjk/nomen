@@ -4,19 +4,22 @@ import AccessNode from "./nodes/AccessNode";
 import ArrayValuesNode from "./nodes/ArrayValuesNode";
 import AssignmentNode from "./nodes/AssignmentNode";
 import BaseNode from "./nodes/BaseNode";
-import BlockNode from "./nodes/BlockNode";
+import type BlockNode from "./nodes/BlockNode";
 import DeclarationNode from "./nodes/DeclarationNode";
-import ForNode from "./nodes/ForNode";
+import ForLoopNode from "./nodes/ForLoopNode";
 import FunctionNode from "./nodes/FunctionNode";
+import IfElseNode from "./nodes/IfElseNode";
 import InvocationNode from "./nodes/InvocationNode";
 import OperationNode from "./nodes/OperationNode";
 import ParameterNode from "./nodes/ParameterNode";
 import RangeNode from "./nodes/RangeNode";
 import ReturnNode from "./nodes/ReturnNode";
+import ReturningNode from "./nodes/ReturningNode";
 import RootNode from "./nodes/RootNode";
 import StructNode from "./nodes/StructNode";
 import TraitNode from "./nodes/TraitNode";
 import ValueNode from "./nodes/ValueNode";
+import isReturningNode from "./nodes/isReturningNode";
 import type CheckResult from "./types/CheckResult";
 import type CompileError from "./types/CompileError";
 import type StackValue from "./types/StackValue";
@@ -91,7 +94,7 @@ function gather_globals(root: RootNode, status: CheckStatus) {
 function check_node(node: BaseNode, status: CheckStatus) {
   switch (node.node_type) {
     case "root": {
-      check_statements(node as RootNode, status);
+      check_block_node(node as RootNode, status);
       break;
     }
     case "struct": {
@@ -122,8 +125,12 @@ function check_node(node: BaseNode, status: CheckStatus) {
       check_access_node(node as AccessNode, status);
       break;
     }
+    case "if": {
+      check_if_else_node(node as IfElseNode, status);
+      break;
+    }
     case "for": {
-      check_for_node(node as ForNode, status);
+      check_for_loop_node(node as ForLoopNode, status);
       break;
     }
     case "op": {
@@ -156,7 +163,7 @@ function check_node(node: BaseNode, status: CheckStatus) {
   }
 }
 
-function check_statements(node: BlockNode, status: CheckStatus) {
+function check_block_node(node: BlockNode, status: CheckStatus) {
   status.stack.push(node);
   for (let child of node.statements) {
     check_node(child, status);
@@ -219,7 +226,7 @@ function check_function_node(func: FunctionNode, status: CheckStatus) {
 
   status.functions.push(func);
 
-  check_statements(func, status);
+  check_block_node(func, status);
 }
 
 function check_function_parameter_node(param: ParameterNode, status: CheckStatus) {
@@ -408,7 +415,18 @@ function check_access_invocation_node(
   check_invocation_function(invoke, status, func);
 }
 
-function check_for_node(for_loop: ForNode, status: CheckStatus) {
+function check_if_else_node(if_else: IfElseNode, status: CheckStatus) {
+  check_node(if_else.condition, status);
+
+  status.stack.push(if_else);
+  check_block_node(if_else.if_branch, status);
+  if (if_else.else_branch) {
+    check_block_node(if_else.else_branch, status);
+  }
+  status.stack.pop();
+}
+
+function check_for_loop_node(for_loop: ForLoopNode, status: CheckStatus) {
   if (for_loop.list) {
     check_node(for_loop.list, status);
 
@@ -432,27 +450,48 @@ function check_for_node(for_loop: ForNode, status: CheckStatus) {
     }
   }
 
-  check_statements(for_loop, status);
+  check_block_node(for_loop, status);
 }
 
 function check_operation_node(op: OperationNode, status: CheckStatus) {
-  if (op.left_value) {
-    check_node(op.left_value, status);
-  }
-  if (op.right_value) {
-    check_node(op.right_value, status);
-  }
+  check_node(op.left_value, status);
+  check_node(op.right_value, status);
 
   // Check compatibility of types
-  if (op.left_value && op.right_value) {
-    const left_type = type_from_value_node(op.left_value, status);
-    const right_type = type_from_value_node(op.right_value, status);
-    op.type = left_type;
+  const left_type = type_from_value_node(op.left_value, status);
+  const right_type = type_from_value_node(op.right_value, status);
+  if (left_type !== right_type) {
+    status.errors.push({
+      message: `Invalid type in operation: ${right_type} (expected ${left_type})`,
+      start: op.right_value.start,
+    });
+  }
 
-    if (left_type !== right_type) {
+  // HACK: this needs to come from operator funcs for each operator and type combination
+  switch (op.op) {
+    case "+":
+    case "-":
+    case "*":
+    case "/":
+    case "%": {
+      op.type = "int";
+      break;
+    }
+    case "==":
+    case "!=":
+    case ">":
+    case ">=":
+    case "<":
+    case "<=":
+    case "&&":
+    case "||": {
+      op.type = "bool";
+      break;
+    }
+    default: {
       status.errors.push({
-        message: `Invalid type in operation: ${right_type} (expected ${left_type})`,
-        start: op.right_value.start,
+        message: `Unknown operator: ${op.op}`,
+        start: op.start,
       });
     }
   }
@@ -515,17 +554,26 @@ function check_return_node(ret: ReturnNode, status: CheckStatus) {
 
   ret.type = type_from_value_node(ret.value, status);
 
-  // Go up the stack looking for our function
-  const func = find_parent_of_type("func", status) as FunctionNode;
+  // Go up the stack looking for a returning node
+  let func: ReturningNode | null = null;
+  for (let i = status.stack.length - 1; i >= 0; i--) {
+    if (isReturningNode(status.stack[i])) {
+      func = status.stack[i] as ReturningNode;
+    }
+  }
 
-  if (func.return_type && func.return_type !== "?") {
-    check_type_and_value_match(
-      func.return_type,
-      type_from_value_node(ret.value, status),
-      value_from_value_node(ret.value, status),
-      status,
-      ret.start,
-    );
+  if (func) {
+    if (func.return_type && func.return_type !== "?") {
+      check_type_and_value_match(
+        func.return_type,
+        type_from_value_node(ret.value, status),
+        value_from_value_node(ret.value, status),
+        status,
+        ret.value.start,
+      );
+    } else {
+      func.return_type = ret.type;
+    }
   }
 }
 
@@ -625,6 +673,9 @@ function type_from_value_node(node: BaseNode, status: CheckStatus): string {
     }
     case "ac_invoke": {
       return (node as AccessInvocationNode).type;
+    }
+    case "if": {
+      return (node as IfElseNode).return_type;
     }
     case "op": {
       return (node as OperationNode).type;

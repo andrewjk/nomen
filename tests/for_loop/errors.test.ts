@@ -3,7 +3,7 @@ import assert from "uvu/assert";
 import parse from "../../src/parse";
 import type CompileError from "../../src/types/CompileError";
 
-const test = suite("For errors");
+const test = suite("For loop errors");
 
 test("string list", () => {
   const input = `

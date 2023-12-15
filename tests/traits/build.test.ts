@@ -142,16 +142,12 @@ return "hi";
 test("trait with implemented functions", () => {
   const input = `
 trait Person {
-  func greet() {
-    return "hi"
-  }
-}
-
-struct Frank: Person {
   func greet() -> string {
     return "hi"
   }
 }
+
+struct Frank: Person {}
 `;
   const parsed = parse(input);
   const result = build(parsed.root);
@@ -166,13 +162,13 @@ return *(trait + func_index);
 typedef struct Person
 {
 } Person;
-void Person_greet(struct Person this)
+char* Person_greet(struct Person this)
 {
 return "hi";
 }
 
 // Frank:
-void *_Frank_Person_funcs[] = {Frank_greet};
+void *_Frank_Person_funcs[] = {Person_greet};
 void *_Frank_traits[] = {_Frank_Person_funcs};
 typedef struct Frank
 {
@@ -183,10 +179,6 @@ Frank Frank_init()
 Frank f;
 f._vt = &_Frank_traits;
 return f;
-}
-char* Frank_greet(struct Frank this)
-{
-return "hi";
 }
 `;
   assert.equal(parsed.errors, []);

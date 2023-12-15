@@ -3,7 +3,7 @@ import assert from "uvu/assert";
 import build from "../../src/build";
 import parse from "../../src/parse";
 
-const test = suite("For build");
+const test = suite("For loop build");
 
 test("with array", () => {
   const input = `

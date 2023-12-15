@@ -1,12 +1,12 @@
 import { suite } from "uvu";
 import assert from "uvu/assert";
-import ForNode from "../../src/nodes/ForNode";
+import ForLoopNode from "../../src/nodes/ForLoopNode";
 import RangeNode from "../../src/nodes/RangeNode";
 import ValueNode from "../../src/nodes/ValueNode";
 import parse from "../../src/parse";
 import trim_test_data from "../trim_test_data";
 
-const test = suite("For parse");
+const test = suite("For loop parse");
 
 test("with array", () => {
   const input = `
@@ -16,7 +16,11 @@ for x in y {
 }
 `;
   const parsed = parse(input);
-  const expected = new ForNode(21, new ValueNode(25, "x", "int"), new ValueNode(30, "y", "int[3]"));
+  const expected = new ForLoopNode(
+    21,
+    new ValueNode(25, "x", "int"),
+    new ValueNode(30, "y", "int[3]"),
+  );
   assert.equal(parsed.errors, []);
   assert.equal(trim_test_data(parsed.root.statements[1]), trim_test_data(expected));
 });
@@ -26,7 +30,7 @@ test("with range", () => {
 for x in 0..5 {}
 `;
   const parsed = parse(input);
-  const expected = new ForNode(
+  const expected = new ForLoopNode(
     1,
     new ValueNode(5, "x", "int"),
     new RangeNode(10, new ValueNode(10, "0", "int"), new ValueNode(13, "5", "int"), false),

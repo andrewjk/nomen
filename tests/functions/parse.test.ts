@@ -83,7 +83,7 @@ func add() -> int {
     "add",
     "int",
     [],
-    [new ReturnNode(30, new ValueNode(30, "5", "int"), "int")],
+    [new ReturnNode(23, new ValueNode(30, "5", "int"), "int")],
   );
   assert.equal(parsed.errors, []);
   assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));

@@ -1,22 +1,8 @@
-type NodeType =
-  | "root"
-  | "struct"
-  | "trait"
-  | "func"
-  | "param"
-  | "declare"
-  | "assign"
-  | "op"
-  | "for"
-  | "invoke"
-  | "access"
-  | "ac_field"
-  | "ac_invoke"
-  | "value"
-  | "array"
-  | "range"
-  | "return";
+import NodeType from "./NodeType";
 
+/**
+ * The base node type which all nodes extend
+ */
 export default class BaseNode {
   node_type: NodeType;
   start: number;

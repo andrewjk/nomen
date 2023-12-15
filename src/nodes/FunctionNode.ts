@@ -1,11 +1,13 @@
 import BaseNode from "./BaseNode";
-import BlockNode from "./BlockNode";
+import type BlockNode from "./BlockNode";
 import ParameterNode from "./ParameterNode";
+import type ReturningNode from "./ReturningNode";
 
-export default class FunctionNode extends BlockNode {
+export default class FunctionNode extends BaseNode implements BlockNode, ReturningNode {
   name: string;
   return_type: string;
   params: ParameterNode[];
+  statements: BaseNode[];
   has_body?: boolean;
   // TODO: Check all branches
   has_return?: boolean;

@@ -5,8 +5,9 @@ import ArrayValuesNode from "./nodes/ArrayValuesNode";
 import AssignmentNode from "./nodes/AssignmentNode";
 import BaseNode from "./nodes/BaseNode";
 import DeclarationNode from "./nodes/DeclarationNode";
-import ForNode from "./nodes/ForNode";
+import ForLoopNode from "./nodes/ForLoopNode";
 import FunctionNode from "./nodes/FunctionNode";
+import IfElseNode from "./nodes/IfElseNode";
 import InvocationNode from "./nodes/InvocationNode";
 import OperationNode from "./nodes/OperationNode";
 import ParameterNode from "./nodes/ParameterNode";
@@ -23,6 +24,7 @@ interface BuildStatus {
   traits: TraitNode[];
   headers: string;
   code: string;
+  return_assign?: string;
 }
 
 export default function build(root: BaseNode): BuildResult {
@@ -87,8 +89,12 @@ function build_node(node: BaseNode, status: BuildStatus) {
       build_operation_node(node as OperationNode, status);
       break;
     }
+    case "if": {
+      build_if_else_node(node as IfElseNode, status);
+      break;
+    }
     case "for": {
-      build_for_node(node as ForNode, status);
+      build_for_loop_node(node as ForLoopNode, status);
       break;
     }
     case "return": {
@@ -193,8 +199,20 @@ function build_declaration_node(node: DeclarationNode, status: BuildStatus) {
       status.code += parts[2];
     }
     if (node.value) {
-      status.code += " = ";
-      build_node(node.value, status);
+      // TODO: This should be in more places?? Or apply to more nodes?? Probably in build_node -- if it's a returning node??
+      if (node.value.node_type === "if") {
+        status.code += ";\n";
+        const old_return_assign = status.return_assign;
+        status.return_assign = node.name;
+        build_node(node.value, status);
+        status.return_assign = old_return_assign;
+        // HACK:
+        status.code += "\n";
+        return;
+      } else {
+        status.code += " = ";
+        build_node(node.value, status);
+      }
     }
     status.code += ";\n";
   }
@@ -477,16 +495,28 @@ function build_access_node(node: AccessNode, status: BuildStatus) {
 }
 
 function build_operation_node(node: OperationNode, status: BuildStatus) {
-  if (node.left_value) {
-    build_node(node.left_value, status);
-  }
+  build_node(node.left_value, status);
   status.code += ` ${node.op} `;
-  if (node.right_value) {
-    build_node(node.right_value, status);
-  }
+  build_node(node.right_value, status);
 }
 
-function build_for_node(node: ForNode, status: BuildStatus) {
+function build_if_else_node(node: IfElseNode, status: BuildStatus) {
+  status.code += `if (`;
+  build_node(node.condition, status);
+  status.code += `) {\n`;
+  for (let child of node.if_branch.statements) {
+    build_node(child, status);
+  }
+  if (node.else_branch) {
+    status.code += `} else {\n`;
+    for (let child of node.else_branch.statements) {
+      build_node(child, status);
+    }
+  }
+  status.code += `}`;
+}
+
+function build_for_loop_node(node: ForLoopNode, status: BuildStatus) {
   if (node.item && node.list) {
     if (node.list.node_type == "range") {
       // HACK: Only want to do this if the item hasn't been declared previously?
@@ -539,7 +569,11 @@ function build_for_node(node: ForNode, status: BuildStatus) {
 }
 
 function build_return_node(node: ReturnNode, status: BuildStatus) {
-  status.code += `return `;
+  if (status.return_assign) {
+    status.code += `${status.return_assign} = `;
+  } else {
+    status.code += `return `;
+  }
   build_node(node.value, status);
   status.code += `;\n`;
 }

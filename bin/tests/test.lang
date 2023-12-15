@@ -6,6 +6,13 @@ func main() {
 	for i in 0..5 {
 		Console.Write("hello, world! ")
 		Console.Write(i + 1)
+		// TODO: if i + 1 < 4
+		const x = i + 1
+		if x < 4 {
+			Console.Write(" is less than 4")
+		else {
+			Console.Write(" is 4 or more")
+		}
 		Console.Write("\n")
 	}
 

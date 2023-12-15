@@ -5,19 +5,24 @@ import AccessNode from "./nodes/AccessNode";
 import ArrayValuesNode from "./nodes/ArrayValuesNode";
 import AssignmentNode from "./nodes/AssignmentNode";
 import BaseNode from "./nodes/BaseNode";
-import BlockNode from "./nodes/BlockNode";
+import type BlockNode from "./nodes/BlockNode";
+import BranchNode from "./nodes/BranchNode";
 import DeclarationNode from "./nodes/DeclarationNode";
-import ForNode from "./nodes/ForNode";
+import ForLoopNode from "./nodes/ForLoopNode";
 import FunctionNode from "./nodes/FunctionNode";
+import IfElseNode from "./nodes/IfElseNode";
 import InvocationNode from "./nodes/InvocationNode";
 import OperationNode from "./nodes/OperationNode";
 import ParameterNode from "./nodes/ParameterNode";
 import RangeNode from "./nodes/RangeNode";
 import ReturnNode from "./nodes/ReturnNode";
+import ReturningNode from "./nodes/ReturningNode";
 import RootNode from "./nodes/RootNode";
 import StructNode from "./nodes/StructNode";
 import TraitNode from "./nodes/TraitNode";
 import ValueNode from "./nodes/ValueNode";
+import isBlockNode from "./nodes/isBlockNode";
+import isReturningNode from "./nodes/isReturningNode";
 import tokenize from "./tokenize";
 import type CompileError from "./types/CompileError";
 import type ParseResult from "./types/ParseResult";
@@ -90,6 +95,16 @@ function parse_statement(status: ParseStatus) {
         parse_function(status);
         break;
       }
+      case "if": {
+        const if_else = parse_if_else(status);
+        if (if_else) {
+          add_to_parent(if_else, "If expression", status);
+        }
+        break;
+      }
+      case "else": {
+        return;
+      }
       case "for": {
         parse_for_loop(status);
         break;
@@ -115,8 +130,8 @@ function parse_statement_start(status: ParseStatus) {
   let node: BaseNode = new ValueNode(start, value);
 
   while (true) {
-    const next_value = peek_current(status);
-    switch (next_value) {
+    const current_value = peek_current(status);
+    switch (current_value) {
       case ".": {
         accept(".", status);
         const access = new AccessNode(node.start, node, parse_access(value, status));
@@ -140,7 +155,7 @@ function parse_statement_start(status: ParseStatus) {
         break;
       }
       default: {
-        add_to_parent(node, ["root", "func", "for"], node_name(node), status);
+        add_to_parent(node, node_name(node), status);
         return;
       }
     }
@@ -152,23 +167,41 @@ function parse_statement_start(status: ParseStatus) {
  * initial value of a declaration or as a parameter value in a function call
  */
 function parse_expression(status: ParseStatus): BaseNode {
-  // First check for an array of values
   const start = index(status);
-  let value = consume(status);
+  let value = peek_current(status) || "??";
   let node: BaseNode;
-  if (value === "[") {
-    node = new ArrayValuesNode(start);
-    if (peek_current(status) !== "]") {
-      parse_array_value(node as ArrayValuesNode, status);
+
+  // Get the initial value
+  switch (value) {
+    case "[": {
+      consume(status);
+      node = new ArrayValuesNode(start);
+      if (peek_current(status) !== "]") {
+        parse_array_value(node as ArrayValuesNode, status);
+      }
+      expect("]", status);
+      break;
     }
-    expect("]", status);
-  } else {
-    node = new ValueNode(start, value);
+    case "if": {
+      const if_else = parse_if_else(status);
+      if (if_else) {
+        node = if_else;
+      } else {
+        // TODO: ??
+        throw new Error("Bad if statement...");
+      }
+      break;
+    }
+    default: {
+      value = consume(status);
+      node = new ValueNode(start, value);
+    }
   }
 
+  // Get any accesses or operations applied to the value
   while (true) {
-    const next_value = peek_current(status);
-    switch (next_value) {
+    const current_value = peek_current(status);
+    switch (current_value) {
       case ".": {
         accept(".", status);
         const access = new AccessNode(node.start, node, parse_access(value, status));
@@ -198,17 +231,28 @@ function parse_expression(status: ParseStatus): BaseNode {
         break;
       }
       case "+":
-      case "-": {
+      case "-":
+      case "*":
+      case "/":
+      case "%":
+      case "==":
+      case "!=":
+      case ">":
+      case ">=":
+      case "<":
+      case "<=":
+      case "&&":
+      case "||": {
         consume(status);
         // TODO: Proper order of operations
-        const op = new OperationNode(start, next_value, node, parse_expression(status));
+        const op = new OperationNode(start, current_value, node, parse_expression(status));
         node = op;
         break;
       }
       case "..":
       case ".=": {
         consume(status);
-        const range = new RangeNode(start, node, parse_expression(status), next_value === ".=");
+        const range = new RangeNode(start, node, parse_expression(status), current_value === ".=");
         node = range;
         break;
       }
@@ -249,10 +293,13 @@ function parse_declaration(declaration: "const" | "var", status: ParseStatus) {
     });
   }
 
+  // TODO: Move this into add_to_parent somehow
   const parent = status.stack.at(-1)!;
   switch (parent.node_type) {
     case "root":
-    case "func": {
+    case "func":
+    case "for":
+    case "branch": {
       (parent as BlockNode).statements.push(decl);
       break;
     }
@@ -286,10 +333,8 @@ function parse_struct(status: ParseStatus) {
   }
   if (expect("{", status)) {
     status.stack.push(struct);
-
     parse_statement(status);
     expect("}", status);
-
     status.stack.pop();
 
     // Add the init function to the struct
@@ -300,7 +345,7 @@ function parse_struct(status: ParseStatus) {
       .map((f) => new ParameterNode(-1, f.name, f.type));
     struct.functions.unshift(func);
 
-    add_to_parent(struct, ["root", "func"], "Struct", status);
+    add_to_parent(struct, "Struct", status);
   }
 }
 
@@ -315,13 +360,11 @@ function parse_trait(status: ParseStatus) {
 
   if (expect("{", status)) {
     status.stack.push(trait);
-
     parse_statement(status);
     expect("}", status);
-
     status.stack.pop();
 
-    add_to_parent(trait, ["root", "func"], "Trait", status);
+    add_to_parent(trait, "Trait", status);
   }
 }
 
@@ -351,10 +394,8 @@ function parse_function(status: ParseStatus) {
         func.has_body = true;
 
         status.stack.push(func);
-
         parse_statement(status);
         expect("}", status);
-
         status.stack.pop();
 
         if (func.return_type && !func.has_return) {
@@ -420,6 +461,49 @@ function parse_function_parameter(func: FunctionNode, status: ParseStatus) {
   }
 }
 
+// IF / ELSE
+
+function parse_if_else(status: ParseStatus): IfElseNode | null {
+  const if_start = index(status);
+  accept("if", status);
+  const condition = parse_expression(status);
+  const short_if = accept("=>", status, false);
+  if (short_if || expect("{", status)) {
+    const if_branch = new BranchNode(index(status));
+    const if_else = new IfElseNode(if_start, condition, if_branch);
+
+    status.stack.push(if_else);
+    status.stack.push(if_branch);
+    if (short_if) {
+      parse_return(status);
+    } else {
+      parse_statement(status);
+    }
+
+    if (accept("else", status)) {
+      if ((short_if && expect("=>", status, false)) || (!short_if && expect("{", status))) {
+        const else_branch = new BranchNode(index(status));
+        if_else.else_branch = else_branch;
+
+        status.stack.push(else_branch);
+        if (short_if) {
+          parse_return(status);
+        } else {
+          parse_statement(status);
+        }
+        status.stack.pop();
+      }
+    }
+
+    status.stack.pop();
+    status.stack.pop();
+
+    return if_else;
+  }
+
+  return null;
+}
+
 // FOR LOOP
 
 function parse_for_loop(status: ParseStatus) {
@@ -432,16 +516,14 @@ function parse_for_loop(status: ParseStatus) {
   if (expect("in", status)) {
     const list = parse_expression(status);
     if (expect("{", status)) {
-      const for_loop = new ForNode(for_start, item, list);
+      const for_loop = new ForLoopNode(for_start, item, list);
 
       status.stack.push(for_loop);
-
       parse_statement(status);
       expect("}", status);
-
       status.stack.pop();
 
-      add_to_parent(for_loop, ["root", "func"], "For loop", status);
+      add_to_parent(for_loop, "For loop", status);
     }
   }
 }
@@ -464,20 +546,28 @@ function parse_invocation_parameter(
 // RETURN
 
 function parse_return(status: ParseStatus) {
+  const start = index(status);
   accept("return", status);
-
-  const value_start = index(status);
+  // TODO: Allow this anywhere?
+  accept("=>", status);
   const value = parse_expression(status);
-  const ret = new ReturnNode(value_start, value);
-  (status.stack.at(-1) as BlockNode).statements.push(ret);
+  const ret = new ReturnNode(start, value);
 
-  // Go up the stack looking for our function
-  const func = find_parent_of_type("func", status) as FunctionNode;
+  add_to_parent(ret, "Return node", status);
+
+  // Go up the stack looking for a returning node
+  let func: ReturningNode | null = null;
+  for (let i = status.stack.length - 1; i >= 0; i--) {
+    if (isReturningNode(status.stack[i])) {
+      func = status.stack[i] as ReturningNode;
+    }
+  }
+
   if (func) {
     func.has_return = true;
   } else {
     status.errors.push({
-      message: "Return outside function",
+      message: "Return outside expression",
       start: index(status),
     });
   }
@@ -543,10 +633,10 @@ function peek_next(status: ParseStatus): string | undefined {
   return status.tokens[status.i + 1]?.value;
 }
 
-function consume(status: ParseStatus): string {
+function consume(status: ParseStatus, advance = true): string {
   if (status.i < status.tokens.length) {
     const result = status.tokens[status.i].value;
-    status.i += 1;
+    status.i += advance ? 1 : 0;
     return result;
   } else {
     const last = status.tokens.at(-1);
@@ -558,20 +648,20 @@ function consume(status: ParseStatus): string {
   }
 }
 
-function accept(value: string, status: ParseStatus): boolean {
+function accept(value: string, status: ParseStatus, advance = true): boolean {
   if (status.i < status.tokens.length) {
     if (status.tokens[status.i].value == value) {
-      status.i += 1;
+      status.i += advance ? 1 : 0;
       return true;
     }
   }
   return false;
 }
 
-function expect(value: string, status: ParseStatus): boolean {
+function expect(value: string, status: ParseStatus, advance = true): boolean {
   if (status.i < status.tokens.length) {
     if (status.tokens[status.i].value == value) {
-      status.i += 1;
+      status.i += advance ? 1 : 0;
       return true;
     } else {
       status.errors.push({
@@ -591,14 +681,9 @@ function expect(value: string, status: ParseStatus): boolean {
 
 // UTILS
 
-function add_to_parent(
-  node: BaseNode,
-  types: string[],
-  description: string,
-  status: ParseStatus,
-): boolean {
+function add_to_parent(node: BaseNode, description: string, status: ParseStatus): boolean {
   const parent = status.stack.at(-1)!;
-  if (types.includes(parent.node_type)) {
+  if (isBlockNode(parent)) {
     (parent as BlockNode).statements.push(node);
     return true;
   } else {

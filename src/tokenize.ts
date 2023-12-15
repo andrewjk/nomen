@@ -1,6 +1,6 @@
 import Token from "./types/Token";
 
-const COMPOUND_SYMBOLS = ["&&", "||", "==", ">=", "<=", "->", "=>", "..", ".="];
+const COMPOUND_SYMBOLS = ["&&", "||", "==", "!=", ">=", "<=", "->", "=>", "..", ".="];
 
 export default function tokenize(input: string): Token[] {
   let tokens: Token[] = [];
