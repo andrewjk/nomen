@@ -21,6 +21,7 @@ import RootNode from "./nodes/RootNode";
 import StructNode from "./nodes/StructNode";
 import TraitNode from "./nodes/TraitNode";
 import ValueNode from "./nodes/ValueNode";
+import WhileLoopNode from "./nodes/WhileLoopNode";
 import isBlockNode from "./nodes/isBlockNode";
 import isReturningNode from "./nodes/isReturningNode";
 import tokenize from "./tokenize";
@@ -107,6 +108,10 @@ function parse_statement(status: ParseStatus) {
       }
       case "for": {
         parse_for_loop(status);
+        break;
+      }
+      case "while": {
+        parse_while_loop(status);
         break;
       }
       case "return": {
@@ -299,6 +304,7 @@ function parse_declaration(declaration: "const" | "var", status: ParseStatus) {
     case "root":
     case "func":
     case "for":
+    case "while":
     case "branch": {
       (parent as BlockNode).statements.push(decl);
       break;
@@ -525,6 +531,22 @@ function parse_for_loop(status: ParseStatus) {
 
       add_to_parent(for_loop, "For loop", status);
     }
+  }
+}
+
+function parse_while_loop(status: ParseStatus) {
+  const while_start = index(status);
+  accept("while", status);
+  const condition = parse_expression(status);
+  if (expect("{", status)) {
+    const while_loop = new WhileLoopNode(while_start, condition);
+
+    status.stack.push(while_loop);
+    parse_statement(status);
+    expect("}", status);
+    status.stack.pop();
+
+    add_to_parent(while_loop, "While loop", status);
   }
 }
 

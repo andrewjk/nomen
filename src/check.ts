@@ -19,6 +19,7 @@ import RootNode from "./nodes/RootNode";
 import StructNode from "./nodes/StructNode";
 import TraitNode from "./nodes/TraitNode";
 import ValueNode from "./nodes/ValueNode";
+import WhileLoopNode from "./nodes/WhileLoopNode";
 import isReturningNode from "./nodes/isReturningNode";
 import type CheckResult from "./types/CheckResult";
 import type CompileError from "./types/CompileError";
@@ -43,7 +44,7 @@ export default function check(root: BaseNode): CheckResult {
   const status: CheckStatus = {
     stack: [root],
     values: [],
-    types: ["int", "string"],
+    types: ["bool", "int", "string"],
     structs: [],
     traits: [],
     functions: [],
@@ -131,6 +132,10 @@ function check_node(node: BaseNode, status: CheckStatus) {
     }
     case "for": {
       check_for_loop_node(node as ForLoopNode, status);
+      break;
+    }
+    case "while": {
+      check_while_loop_node(node as WhileLoopNode, status);
       break;
     }
     case "op": {
@@ -453,6 +458,19 @@ function check_for_loop_node(for_loop: ForLoopNode, status: CheckStatus) {
   check_block_node(for_loop, status);
 }
 
+function check_while_loop_node(while_loop: WhileLoopNode, status: CheckStatus) {
+  check_node(while_loop.condition, status);
+  const condition_type = type_from_value_node(while_loop.condition, status);
+  if (condition_type !== "bool") {
+    status.errors.push({
+      message: `While loop condition must be a bool, not ${condition_type}`,
+      start: while_loop.condition.start,
+    });
+  }
+
+  check_block_node(while_loop, status);
+}
+
 function check_operation_node(op: OperationNode, status: CheckStatus) {
   check_node(op.left_value, status);
   check_node(op.right_value, status);
@@ -645,6 +663,8 @@ function type_from_value(value: string, status: CheckStatus): string {
   const decl_value = status.values.find((v) => v.name === value);
   if (decl_value) {
     return decl_value.type;
+  } else if (value === "true" || value === "false") {
+    return "bool";
   } else if (value.startsWith('"') && value.endsWith('"')) {
     return "string";
   } else if (/^\d+$/.test(value)) {

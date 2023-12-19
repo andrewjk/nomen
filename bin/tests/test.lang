@@ -2,7 +2,7 @@
 func main() {
 	Console.Write("\n")
 
-	// Test a simple range
+	// Test for loop and range
 	for i in 0..5 {
 		Console.Write("hello, world! ")
 		Console.Write(i + 1)
@@ -17,6 +17,15 @@ func main() {
 	}
 
 	Console.Write("\n")
+
+	// Test while loop
+	var y = 0
+	while y < 5 {
+		Console.Write("hi ")
+		y = y + 1
+	}
+
+	Console.Write("\n\n")
 
 	const dog = Dog.init()
 	Console.Write(dog.name)

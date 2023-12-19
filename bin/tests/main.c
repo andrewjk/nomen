@@ -90,6 +90,11 @@ printf(" is 4 or more");
 }printf("\n");
 }
 printf("\n");
+int y = 0;
+while (y < 5) {
+printf("hi ");
+y = y + 1;
+}printf("\n");
 Dog dog = Dog_init();
 printf("%s", dog.name);
 printf(": ");

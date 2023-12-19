@@ -9,6 +9,7 @@ type NodeType =
   | "op"
   | "if"
   | "for"
+  | "while"
   | "invoke"
   | "access"
   | "ac_field"

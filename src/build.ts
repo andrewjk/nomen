@@ -17,6 +17,7 @@ import RootNode from "./nodes/RootNode";
 import StructNode from "./nodes/StructNode";
 import TraitNode from "./nodes/TraitNode";
 import ValueNode from "./nodes/ValueNode";
+import WhileLoopNode from "./nodes/WhileLoopNode";
 import type BuildResult from "./types/BuildResult";
 
 interface BuildStatus {
@@ -95,6 +96,10 @@ function build_node(node: BaseNode, status: BuildStatus) {
     }
     case "for": {
       build_for_loop_node(node as ForLoopNode, status);
+      break;
+    }
+    case "while": {
+      build_while_loop_node(node as WhileLoopNode, status);
       break;
     }
     case "return": {
@@ -566,6 +571,16 @@ function build_for_loop_node(node: ForLoopNode, status: BuildStatus) {
   }
 
   status.code += `}\n`;
+}
+
+function build_while_loop_node(node: WhileLoopNode, status: BuildStatus) {
+  status.code += `while (`;
+  build_node(node.condition, status);
+  status.code += `) {\n`;
+  for (let child of node.statements) {
+    build_node(child, status);
+  }
+  status.code += `}`;
 }
 
 function build_return_node(node: ReturnNode, status: BuildStatus) {
