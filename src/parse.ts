@@ -501,6 +501,10 @@ function parse_if_else(status: ParseStatus): IfElseNode | null {
       }
     }
 
+    if (!short_if) {
+      expect("}", status);
+    }
+
     status.stack.pop();
     status.stack.pop();
 

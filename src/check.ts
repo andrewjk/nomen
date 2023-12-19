@@ -422,6 +422,13 @@ function check_access_invocation_node(
 
 function check_if_else_node(if_else: IfElseNode, status: CheckStatus) {
   check_node(if_else.condition, status);
+  const condition_type = type_from_value_node(if_else.condition, status);
+  if (condition_type !== "bool") {
+    status.errors.push({
+      message: `If/else condition must be a bool, not ${condition_type}`,
+      start: if_else.condition.start,
+    });
+  }
 
   status.stack.push(if_else);
   check_block_node(if_else.if_branch, status);
