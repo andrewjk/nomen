@@ -2,6 +2,7 @@ import { suite } from "uvu";
 import assert from "uvu/assert";
 import ForLoopNode from "../../src/nodes/ForLoopNode";
 import RangeNode from "../../src/nodes/RangeNode";
+import Type from "../../src/nodes/Type";
 import ValueNode from "../../src/nodes/ValueNode";
 import parse from "../../src/parse";
 import trim_test_data from "../trim_test_data";
@@ -19,7 +20,7 @@ for x in y {
   const expected = new ForLoopNode(
     21,
     new ValueNode(25, "x", "int"),
-    new ValueNode(30, "y", "int[3]"),
+    new ValueNode(30, "y", new Type("int", true, new ValueNode(-1, "3", "int"))),
   );
   assert.equal(parsed.errors, []);
   assert.equal(trim_test_data(parsed.root.statements[1]), trim_test_data(expected));

@@ -1,10 +1,11 @@
 import BaseNode from "./BaseNode";
 import BranchNode from "./BranchNode";
 import type ReturningNode from "./ReturningNode";
+import Type from "./Type";
 
 export default class IfElseNode extends BaseNode implements ReturningNode {
   condition: BaseNode;
-  return_type: string;
+  return_type: Type;
   if_branch: BranchNode;
   else_branch?: BranchNode;
   has_return?: boolean;
@@ -14,14 +15,15 @@ export default class IfElseNode extends BaseNode implements ReturningNode {
     condition: BaseNode,
     if_branch: BranchNode,
     else_branch?: BranchNode,
-    return_type?: string,
+    return_type?: string | Type,
   ) {
     super("if", start);
     this.condition = condition;
     this.if_branch = if_branch;
     this.else_branch = else_branch;
     // HACK: This is a ReturningNode, just like Function, but they are quite different...
-    this.return_type = return_type || "";
+    this.return_type =
+      typeof return_type === "string" ? new Type(return_type) : return_type || new Type("");
     this.has_return = !!return_type;
   }
 }

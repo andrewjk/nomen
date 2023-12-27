@@ -11,7 +11,7 @@ var x = 1.."b"
 `;
   const expected: CompileError[] = [
     {
-      message: "Invalid type in range: string (expected int)",
+      message: "Type mismatch in range: string (expected int)",
       start: 12,
     },
   ];

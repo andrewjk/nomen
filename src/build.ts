@@ -16,6 +16,7 @@ import ReturnNode from "./nodes/ReturnNode";
 import RootNode from "./nodes/RootNode";
 import StructNode from "./nodes/StructNode";
 import TraitNode from "./nodes/TraitNode";
+import Type from "./nodes/Type";
 import ValueNode from "./nodes/ValueNode";
 import WhileLoopNode from "./nodes/WhileLoopNode";
 import type BuildResult from "./types/BuildResult";
@@ -167,15 +168,11 @@ return *(trait + func_index);
 
 function build_declaration_node(node: DeclarationNode, status: BuildStatus) {
   // HACK: Move the array part of a declaration after the variable name if applicable
-  const parts = node.type.match(/([^\[\]]+)(\[.*\])*/);
-  const type = (parts && parts[1]) || node.type;
 
-  // HACK: Do array types properly
-  const is_array = parts && !!parts[2];
   // If it's an array of traits, make it contain pointers
   if (
-    is_array &&
-    !!status.traits.find((t) => t.name === type) &&
+    node.type.is_array &&
+    !!status.traits.find((t) => t.name === node.type.name) &&
     node.value &&
     node.value.node_type === "array"
   ) {
@@ -187,7 +184,7 @@ function build_declaration_node(node: DeclarationNode, status: BuildStatus) {
       // TODO: Better naming
       const var_name = "_x" + i;
       // HACK:
-      status.code += `${type_from_value_node(value)} ${var_name} = `;
+      status.code += `${c_type(type_from_value_node(value).name)} ${var_name} = `;
       build_node(value, status);
       status.code += ";\n";
       i += 1;
@@ -195,13 +192,19 @@ function build_declaration_node(node: DeclarationNode, status: BuildStatus) {
     }
 
     // Then build the array
-    status.code += `void *${node.name}${parts[2]} = {${variables
-      .map((v) => `&${v}`)
-      .join(", ")}};\n`;
+    status.code += `void *${node.name}[`;
+    if (node.type.length) {
+      build_node(node.type.length, status);
+    }
+    status.code += `] = {${variables.map((v) => `&${v}`).join(", ")}};\n`;
   } else {
-    status.code += `${c_type(type)} ${node.name}`;
-    if (parts && parts[2]) {
-      status.code += parts[2];
+    status.code += `${c_type(node.type.name)} ${node.name}`;
+    if (node.type.is_array) {
+      status.code += `[`;
+      if (node.type.length) {
+        build_node(node.type.length, status);
+      }
+      status.code += `]`;
     }
     if (node.value) {
       // TODO: This should be in more places?? Or apply to more nodes?? Probably in build_node -- if it's a returning node??
@@ -247,14 +250,14 @@ function build_struct_node(node: StructNode, status: BuildStatus) {
   status.code += `void *_vt;\n`;
   // Fields from the struct
   for (let field of node.fields) {
-    status.code += `${c_type(field.type)} ${field.name};\n`;
+    status.code += `${c_type(field.type.name)} ${field.name};\n`;
   }
   // Default fields from traits
   for (let traitName of node.traits) {
     const trait = status.traits.find((n) => n.name === traitName) as TraitNode;
     if (trait) {
       for (let field of trait.fields.filter((f) => !node.fields.find((nf) => nf.name === f.name))) {
-        status.code += `${c_type(field.type)} ${field.name};\n`;
+        status.code += `${c_type(field.type.name)} ${field.name};\n`;
       }
     }
   }
@@ -263,7 +266,7 @@ function build_struct_node(node: StructNode, status: BuildStatus) {
   // Declare the constructor
   const ctor = `${node.name} ${node.name}_init(${node.fields
     .filter((f) => f.value == null)
-    .map((f) => `${c_type(f.type)} ${f.name}`)
+    .map((f) => `${c_type(f.type.name)} ${f.name}`)
     .join(", ")})`;
   status.headers += `struct ${ctor};\n`;
 
@@ -353,15 +356,15 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 
     // Define the function
     // HACK: Need to map names to types
-    status.headers += `${c_type(func.return_type || "void")} ${node.name}_${func.name}(struct ${
-      node.name
-    } this${func.params.length ? ", " : ""}${func.params
+    status.headers += `${c_type(func.return_type.name || "void")} ${node.name}_${
+      func.name
+    }(struct ${node.name} this${func.params.length ? ", " : ""}${func.params
       .map((p) => build_parameter_node(p, status))
       .join(", ")});\n`;
 
     // Declare the function
     // HACK: Need to map names to types
-    status.code += `${c_type(func.return_type || "void")} ${node.name}_${func.name}(struct ${
+    status.code += `${c_type(func.return_type.name || "void")} ${node.name}_${func.name}(struct ${
       node.name
     } this${func.params.length ? ", " : ""}${func.params
       .map((p) => build_parameter_node(p, status))
@@ -390,15 +393,15 @@ function build_trait_node(node: TraitNode, status: BuildStatus) {
   for (let func of node.functions) {
     // Define the function
     // HACK: Need to map names to types
-    status.headers += `${c_type(func.return_type || "void")} ${node.name}_${func.name}(struct ${
-      node.name
-    } this${func.params.length ? ", " : ""}${func.params
+    status.headers += `${c_type(func.return_type.name || "void")} ${node.name}_${
+      func.name
+    }(struct ${node.name} this${func.params.length ? ", " : ""}${func.params
       .map((p) => build_parameter_node(p, status))
       .join(", ")});\n`;
 
     // Declare the function
     // HACK: Need to map names to types
-    status.code += `${c_type(func.return_type || "void")} ${node.name}_${func.name}(struct ${
+    status.code += `${c_type(func.return_type.name || "void")} ${node.name}_${func.name}(struct ${
       node.name
     } this${func.params.length ? ", " : ""}${func.params
       .map((p) => build_parameter_node(p, status))
@@ -433,16 +436,9 @@ function build_function_node(node: FunctionNode, status: BuildStatus) {
 }
 
 function build_parameter_node(node: ParameterNode, status: BuildStatus, with_name = true) {
-  if (node.type == "string") {
-    // HACK: Need a string library
-    status.code += "const char *";
-  } else {
-    status.code += node.type;
-    if (with_name) {
-      status.code += " ";
-    }
-  }
+  status.code += c_type(node.type.name);
   if (with_name) {
+    status.code += " ";
     status.code += node.name;
   }
 }
@@ -471,7 +467,7 @@ function build_access_node(node: AccessNode, status: BuildStatus) {
       const type = type_from_value_node(node.source);
 
       // PERF
-      const trait = status.traits.find((t) => t.name === type);
+      const trait = status.traits.find((t) => t.name === type.name);
       if (trait) {
         const func = trait.functions.find((f) => f.name == invoke.name)!;
         // TODO: Cast to the correct function definition
@@ -482,7 +478,7 @@ function build_access_node(node: AccessNode, status: BuildStatus) {
         build_node(node.source, status);
         status.code += `, ${status.traits.indexOf(trait)}, ${trait.functions.indexOf(func)}))()`;
       } else {
-        status.code += `${type}_${invoke.name}(`;
+        status.code += `${c_type(type.name)}_${invoke.name}(`;
         if (!invoke.static) {
           build_node(node.source, status);
         }
@@ -518,7 +514,7 @@ function build_if_else_node(node: IfElseNode, status: BuildStatus) {
       build_node(child, status);
     }
   }
-  status.code += `}`;
+  status.code += `}\n`;
 }
 
 function build_for_loop_node(node: ForLoopNode, status: BuildStatus) {
@@ -543,16 +539,17 @@ function build_for_loop_node(node: ForLoopNode, status: BuildStatus) {
       status.code += "; ";
       build_node(node.item, status);
       status.code += "++)\n{\n";
-    } else if (!!status.traits.find((t) => t.name === node.item!.type)) {
-      // TODO: Handle this.Index
-      // TODO: Array length
-      status.code += `for (int i = 0; i < 3; i++)\n{\n`;
-      status.code += `void **${node.item!.value} = *(`;
+    } else if (!!status.traits.find((t) => t.name === node.item.type.name)) {
+      // TODO: Handle index iterator variable
+      const length = type_from_value_node(node.list).length;
+      status.code += `for (int i = 0; i < `;
+      build_node(length!, status);
+      status.code += `; i++)\n{\n`;
+      status.code += `void **${node.item.value} = *(`;
       build_node(node.list!, status);
       status.code += " + i);\n";
     } else {
-      // TODO: Handle this.Index
-      // TODO: Array length
+      // TODO: Handle index iterator variable
       // HACK: Only want to do this if the item hasn't been declared previously?
       status.code += `int `;
       build_node(node.item, status);
@@ -560,7 +557,10 @@ function build_for_loop_node(node: ForLoopNode, status: BuildStatus) {
       build_node(node.item, status);
       status.code += " = 0; ";
       build_node(node.item, status);
-      status.code += " < ?; ";
+      const length = type_from_value_node(node.list).length;
+      status.code += ` < `;
+      build_node(length!, status);
+      status.code += `; `;
       build_node(node.item, status);
       status.code += "++)\n{\n";
     }
@@ -580,7 +580,7 @@ function build_while_loop_node(node: WhileLoopNode, status: BuildStatus) {
   for (let child of node.statements) {
     build_node(child, status);
   }
-  status.code += `}`;
+  status.code += `}\n`;
 }
 
 function build_return_node(node: ReturnNode, status: BuildStatus) {
@@ -621,7 +621,7 @@ function c_type(type: string): string {
   return type.replace("string", "char*");
 }
 
-function type_from_value_node(node: BaseNode): string {
+function type_from_value_node(node: BaseNode): Type {
   switch (node.node_type) {
     case "access": {
       return type_from_value_node((node as AccessNode).access);
@@ -645,5 +645,5 @@ function type_from_value_node(node: BaseNode): string {
       return (node as OperationNode).type;
     }
   }
-  return "?";
+  return new Type("");
 }

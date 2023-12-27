@@ -11,7 +11,7 @@ const x = 5 + "b"
 `;
   const expected: CompileError[] = [
     {
-      message: "Invalid type in operation: string (expected int)",
+      message: "Type mismatch in operation: string (expected int)",
       start: 15,
     },
   ];
@@ -25,7 +25,7 @@ const x: int = "a" + "b"
 `;
   const expected: CompileError[] = [
     {
-      message: "Type mismatch: string cannot be assigned to int variable",
+      message: "Type mismatch in declaration: string (expected int)",
       start: 16,
     },
   ];
@@ -40,7 +40,7 @@ x = "a" + "b"
 `;
   const expected: CompileError[] = [
     {
-      message: "Type mismatch: string cannot be assigned to int variable",
+      message: "Type mismatch in assignment: string (expected int)",
       start: 16,
     },
   ];

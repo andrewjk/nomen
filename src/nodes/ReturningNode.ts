@@ -1,4 +1,5 @@
 import NodeType from "./NodeType";
+import Type from "./Type";
 
 /**
  * A node that returns a value via the return statement
@@ -6,6 +7,6 @@ import NodeType from "./NodeType";
 export default interface ReturningNode {
   node_type: NodeType;
   start: number;
-  return_type: string;
+  return_type: Type;
   has_return?: boolean;
 }

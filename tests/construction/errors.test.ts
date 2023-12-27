@@ -61,7 +61,7 @@ const dog = Dog.init(5)
 `;
   const expected: CompileError[] = [
     {
-      message: "Type mismatch: int cannot be used for string parameter",
+      message: "Type mismatch in param: int (expected string)",
       start: 58,
     },
   ];
@@ -78,7 +78,7 @@ const dog = Dog.init(z0)
 `;
   const expected: CompileError[] = [
     {
-      message: "Type mismatch -- unknown value type: z0 cannot be used for string parameter",
+      message: "Type mismatch in param: unknown value type z0 (expected string)",
       start: 58,
     },
   ];

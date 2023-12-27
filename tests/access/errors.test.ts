@@ -15,7 +15,7 @@ var x: int = p.name
 `;
   const expected: CompileError[] = [
     {
-      message: "Type mismatch: string cannot be assigned to int variable",
+      message: "Type mismatch in declaration: string (expected int)",
       start: 65,
     },
   ];
@@ -33,7 +33,7 @@ p.age = "hi"
 `;
   const expected: CompileError[] = [
     {
-      message: "Type mismatch: string cannot be assigned to int variable",
+      message: "Type mismatch in assignment: string (expected int)",
       start: 56,
     },
   ];

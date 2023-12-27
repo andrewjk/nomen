@@ -12,7 +12,7 @@ x = "string?!"
 `;
   const expected: CompileError[] = [
     {
-      message: "Type mismatch: string cannot be assigned to int variable",
+      message: "Type mismatch in assignment: string (expected int)",
       start: 16,
     },
   ];
@@ -27,7 +27,7 @@ x = z0
 `;
   const expected: CompileError[] = [
     {
-      message: "Type mismatch -- unknown value type: z0",
+      message: "Type mismatch in assignment: unknown value type z0 (expected int)",
       start: 16,
     },
   ];

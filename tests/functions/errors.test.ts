@@ -39,7 +39,7 @@ func add(a: int = "string?!") {}
 `;
   const expected: CompileError[] = [
     {
-      message: "Type mismatch: string cannot be assigned to int variable",
+      message: "Type mismatch in param default: string (expected int)",
       start: 19,
     },
   ];
@@ -53,7 +53,7 @@ func add(a: int = z0) {}
 `;
   const expected: CompileError[] = [
     {
-      message: "Type mismatch -- unknown value type: z0",
+      message: "Type mismatch in param default: unknown value type z0 (expected int)",
       start: 19,
     },
   ];
@@ -99,7 +99,7 @@ func add() -> int {
 `;
   const expected: CompileError[] = [
     {
-      message: "Type mismatch: string cannot be assigned to int variable",
+      message: "Type mismatch in return: string (expected int)",
       start: 30,
     },
   ];
@@ -115,7 +115,7 @@ func add() -> int {
 `;
   const expected: CompileError[] = [
     {
-      message: "Type mismatch -- unknown value type: z0",
+      message: "Type mismatch in return: unknown value type z0 (expected int)",
       start: 30,
     },
   ];

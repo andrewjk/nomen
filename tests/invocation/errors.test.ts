@@ -56,7 +56,7 @@ greet("andrew")
 `;
   const expected: CompileError[] = [
     {
-      message: "Type mismatch: string cannot be used for int parameter",
+      message: "Type mismatch in param: string (expected int)",
       start: 31,
     },
   ];
@@ -71,7 +71,7 @@ greet(z0)
 `;
   const expected: CompileError[] = [
     {
-      message: "Type mismatch -- unknown value type: z0 cannot be used for int parameter",
+      message: "Type mismatch in param: unknown value type z0 (expected int)",
       start: 31,
     },
   ];

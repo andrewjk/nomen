@@ -5,16 +5,22 @@ import type CompileError from "../../src/types/CompileError";
 
 const test = suite("Array errors");
 
-// TODO: Better error text
-
 test("declaration type mismatch", () => {
   const input = `
 const x: int[] = ["a", "b", "c"]
 `;
   const expected: CompileError[] = [
     {
-      message: "Type mismatch: string[] cannot be assigned to int[] variable",
-      start: 18,
+      message: "Type mismatch in array: string (expected int)",
+      start: 19,
+    },
+    {
+      message: "Type mismatch in array: string (expected int)",
+      start: 24,
+    },
+    {
+      message: "Type mismatch in array: string (expected int)",
+      start: 29,
     },
   ];
   const parsed = parse(input);
@@ -27,7 +33,7 @@ const x = [1, "b", 2]
 `;
   const expected: CompileError[] = [
     {
-      message: "Invalid type in array: string (expected int)",
+      message: "Type mismatch in array: string (expected int)",
       start: 15,
     },
   ];
@@ -41,7 +47,7 @@ const x: int[] = 5
 `;
   const expected: CompileError[] = [
     {
-      message: "Type mismatch: int cannot be assigned to int[] variable",
+      message: "Type mismatch in declaration: int (expected int[])",
       start: 18,
     },
   ];
@@ -56,8 +62,16 @@ x = ["a", "b", "c"]
 `;
   const expected: CompileError[] = [
     {
-      message: "Type mismatch: string[] cannot be assigned to int[] variable",
-      start: 18,
+      message: "Type mismatch in array: string (expected int)",
+      start: 19,
+    },
+    {
+      message: "Type mismatch in array: string (expected int)",
+      start: 24,
+    },
+    {
+      message: "Type mismatch in array: string (expected int)",
+      start: 29,
     },
   ];
   const parsed = parse(input);
@@ -71,7 +85,7 @@ x = [1, "b", 2]
 `;
   const expected: CompileError[] = [
     {
-      message: "Invalid type in array: string (expected int)",
+      message: "Type mismatch in array: string (expected int)",
       start: 22,
     },
   ];
@@ -86,7 +100,7 @@ x = 5
 `;
   const expected: CompileError[] = [
     {
-      message: "Type mismatch: int cannot be assigned to int[] variable",
+      message: "Type mismatch in assignment: int (expected int[])",
       start: 18,
     },
   ];

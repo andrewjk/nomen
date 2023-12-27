@@ -20,6 +20,7 @@ import ReturningNode from "./nodes/ReturningNode";
 import RootNode from "./nodes/RootNode";
 import StructNode from "./nodes/StructNode";
 import TraitNode from "./nodes/TraitNode";
+import Type from "./nodes/Type";
 import ValueNode from "./nodes/ValueNode";
 import WhileLoopNode from "./nodes/WhileLoopNode";
 import isBlockNode from "./nodes/isBlockNode";
@@ -268,6 +269,19 @@ function parse_expression(status: ParseStatus): BaseNode {
   }
 }
 
+function parse_type(status: ParseStatus): Type {
+  const type = new Type(consume(status));
+  if (accept("[", status)) {
+    type.is_array = true;
+    if (peek_current(status) !== "]") {
+      // TODO: Should be parsing expression
+      type.length = new ValueNode(index(status), consume(status));
+    }
+    expect("]", status);
+  }
+  return type;
+}
+
 // DECLARATION
 
 function parse_declaration(declaration: "const" | "var", status: ParseStatus) {
@@ -278,20 +292,14 @@ function parse_declaration(declaration: "const" | "var", status: ParseStatus) {
   decl.name = consume(status);
   if (accept(":", status)) {
     decl.type_start = index(status);
-    decl.type = consume(status);
-    // HACK: Need to be fancier about this -- with a type node?
-    if (peek_current(status) === "[") {
-      while (!decl.type.endsWith("]")) {
-        decl.type += consume(status);
-      }
-    }
+    decl.type = parse_type(status);
   }
   if (accept("=", status)) {
     decl.value = parse_expression(status);
   }
 
   // Check type or value has been set
-  if (!decl.type && !decl.value) {
+  if (!decl.type.name && !decl.value) {
     status.errors.push({
       message: `Expected type or default value`,
       start: decl.start + decl.declaration.length + 1,
@@ -345,7 +353,7 @@ function parse_struct(status: ParseStatus) {
 
     // Add the init function to the struct
     // TODO: Allow overriding it
-    const func = new FunctionNode(-1, "init", struct.name);
+    const func = new FunctionNode(-1, "init", new Type(struct.name));
     func.params = struct.fields
       .filter((f) => !f.value)
       .map((f) => new ParameterNode(-1, f.name, f.type));
@@ -380,7 +388,7 @@ function parse_function(status: ParseStatus) {
   const start = index(status);
   accept("func", status);
   const name = consume(status);
-  const func = new FunctionNode(start, name, "");
+  const func = new FunctionNode(start, name, new Type(""));
 
   if (expect("(", status)) {
     if (peek_current(status) !== ")") {
@@ -389,7 +397,7 @@ function parse_function(status: ParseStatus) {
     if (expect(")", status)) {
       if (accept("->", status)) {
         func.return_type_start = index(status);
-        func.return_type = consume(status);
+        func.return_type = parse_type(status);
       }
 
       const parent = status.stack.at(-1)!;
@@ -404,7 +412,7 @@ function parse_function(status: ParseStatus) {
         expect("}", status);
         status.stack.pop();
 
-        if (func.return_type && !func.has_return) {
+        if (func.return_type.name && !func.has_return) {
           status.errors.push({
             message: `Missing return`,
             start: status.tokens[status.i - 1].i,
@@ -444,7 +452,7 @@ function parse_function_parameter(func: FunctionNode, status: ParseStatus) {
   // Parameter type
   if (accept(":", status)) {
     param.type_start = index(status);
-    param.type = consume(status);
+    param.type = parse_type(status);
   }
 
   // Parameter value
@@ -454,7 +462,7 @@ function parse_function_parameter(func: FunctionNode, status: ParseStatus) {
   }
 
   // Check type or value has been set
-  if (!param.type && !param.default_value) {
+  if (!param.type.name && !param.default_value) {
     status.errors.push({
       message: `Expected type or default value`,
       start: status.tokens[status.i - 1].i,
@@ -613,7 +621,7 @@ function parse_access(
     const invoke = new AccessInvocationNode(start, name);
     // HACK:
     if (invoke.name === "init") {
-      invoke.type = source_name;
+      invoke.type = new Type(source_name);
       invoke.static = true;
     }
     if (peek_current(status) !== ")") {
@@ -622,13 +630,7 @@ function parse_access(
     expect(")", status);
     return invoke;
   } else {
-    const field: AccessFieldNode = {
-      node_type: "ac_field",
-      name,
-      type: "",
-      start,
-    };
-    return field;
+    return new AccessFieldNode(start, name);
   }
 }
 

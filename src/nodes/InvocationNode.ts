@@ -1,14 +1,15 @@
 import BaseNode from "./BaseNode";
+import Type from "./Type";
 
 export default class InvocationNode extends BaseNode {
   name: string;
-  type: string;
+  type: Type;
   params: BaseNode[];
 
-  constructor(start: number, name: string, type?: string, params?: BaseNode[]) {
+  constructor(start: number, name: string, type?: string | Type, params?: BaseNode[]) {
     super("invoke", start);
     this.name = name;
-    this.type = type || "";
+    this.type = typeof type === "string" ? new Type(type) : type || new Type("");
     this.params = params || [];
   }
 }

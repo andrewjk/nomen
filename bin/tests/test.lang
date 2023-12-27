@@ -32,7 +32,7 @@ func main() {
 	Console.Write(": ")
 	Console.Write(dog.speak())
 
-	Console.Write("\n")
+	Console.Write("\n\n")
 
 	// Test an array of objects with traits
 	const animals: Animal[] = [Dog.init(), Cat.init(), Lizard.init()]

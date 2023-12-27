@@ -1,5 +1,7 @@
 import { suite } from "uvu";
 import assert from "uvu/assert";
+import AccessInvocationNode from "../../src/nodes/AccessInvocationNode";
+import AccessNode from "../../src/nodes/AccessNode";
 import DeclarationNode from "../../src/nodes/DeclarationNode";
 import ValueNode from "../../src/nodes/ValueNode";
 import parse from "../../src/parse";
@@ -45,6 +47,28 @@ var x: int
   const expected = new DeclarationNode(1, "var", "x", "int");
   assert.equal(parsed.errors, []);
   assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
+});
+
+test("trait var with struct", () => {
+  const input = `
+trait Animal {}
+struct Dog: Animal {}
+var x: Animal = Dog.init()
+`;
+  const parsed = parse(input);
+  const expected = new DeclarationNode(
+    39,
+    "var",
+    "x",
+    "Animal",
+    new AccessNode(
+      55,
+      new ValueNode(55, "Dog", "Dog"),
+      new AccessInvocationNode(59, "init", [], "Dog", true),
+    ),
+  );
+  assert.equal(parsed.errors, []);
+  assert.equal(trim_test_data(parsed.root.statements[2]), trim_test_data(expected));
 });
 
 test.run();

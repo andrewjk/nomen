@@ -87,23 +87,25 @@ if (x < 4) {
 printf(" is less than 4");
 } else {
 printf(" is 4 or more");
-}printf("\n");
+}
+printf("\n");
 }
 printf("\n");
 int y = 0;
 while (y < 5) {
 printf("hi ");
 y = y + 1;
-}printf("\n");
+}
+printf("\n\n");
 Dog dog = Dog_init();
 printf("%s", dog.name);
 printf(": ");
 printf("%s", Dog_speak(dog));
-printf("\n");
+printf("\n\n");
 Dog _x1 = Dog_init();
 Cat _x2 = Cat_init();
 Lizard _x3 = Lizard_init();
-void *animals[] = {&_x1, &_x2, &_x3};
+void *animals[3] = {&_x1, &_x2, &_x3};
 for (int i = 0; i < 3; i++)
 {
 void **a = *(animals + i);

@@ -2,6 +2,7 @@ import { suite } from "uvu";
 import assert from "uvu/assert";
 import DeclarationNode from "../../src/nodes/DeclarationNode";
 import RangeNode from "../../src/nodes/RangeNode";
+import Type from "../../src/nodes/Type";
 import ValueNode from "../../src/nodes/ValueNode";
 import parse from "../../src/parse";
 import trim_test_data from "../trim_test_data";
@@ -17,7 +18,7 @@ var x = 1..2
     1,
     "var",
     "x",
-    "int[]",
+    new Type("int", true),
     new RangeNode(9, new ValueNode(9, "1", "int"), new ValueNode(12, "2", "int"), false),
   );
   assert.equal(parsed.errors, []);
@@ -33,7 +34,7 @@ var x = 1.=2
     1,
     "var",
     "x",
-    "int[]",
+    new Type("int", true),
     new RangeNode(9, new ValueNode(9, "1", "int"), new ValueNode(12, "2", "int"), true),
   );
   assert.equal(parsed.errors, []);

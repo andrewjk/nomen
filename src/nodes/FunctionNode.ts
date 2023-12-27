@@ -2,10 +2,11 @@ import BaseNode from "./BaseNode";
 import type BlockNode from "./BlockNode";
 import ParameterNode from "./ParameterNode";
 import type ReturningNode from "./ReturningNode";
+import Type from "./Type";
 
 export default class FunctionNode extends BaseNode implements BlockNode, ReturningNode {
   name: string;
-  return_type: string;
+  return_type: Type;
   params: ParameterNode[];
   statements: BaseNode[];
   has_body?: boolean;
@@ -16,13 +17,14 @@ export default class FunctionNode extends BaseNode implements BlockNode, Returni
   constructor(
     start: number,
     name: string,
-    return_type: string,
+    return_type: string | Type,
     params?: ParameterNode[],
     statements?: BaseNode[],
   ) {
     super("func", start);
     this.name = name;
-    this.return_type = return_type;
+    this.return_type =
+      typeof return_type === "string" ? new Type(return_type) : return_type || new Type("");
     this.params = params || [];
     this.statements = statements || [];
     if (statements) {

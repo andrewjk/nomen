@@ -18,6 +18,7 @@ import ReturningNode from "./nodes/ReturningNode";
 import RootNode from "./nodes/RootNode";
 import StructNode from "./nodes/StructNode";
 import TraitNode from "./nodes/TraitNode";
+import Type from "./nodes/Type";
 import ValueNode from "./nodes/ValueNode";
 import WhileLoopNode from "./nodes/WhileLoopNode";
 import isReturningNode from "./nodes/isReturningNode";
@@ -31,6 +32,8 @@ interface CheckStatus {
   // TODO: Scope these properly
   // Types (values, structs and traits) in scope
   types: string[];
+  // For declarations and assignments, store the type if set, for use in ambigous nodes such as arrays
+  expected_type?: Type;
   // Values (vars, params etc), structs, traits and functions in scope
   values: StackValue[];
   structs: StructNode[];
@@ -72,7 +75,7 @@ function gather_globals(root: RootNode, status: CheckStatus) {
         status.values.push({
           declaration: "struct",
           name: struct.name,
-          type: struct.name,
+          type: new Type(struct.name),
         });
         status.structs.push(struct);
         break;
@@ -201,7 +204,7 @@ function check_struct_node(struct: StructNode, status: CheckStatus) {
   status.values.push({
     declaration: "struct",
     name: struct.name,
-    type: struct.name,
+    type: new Type(struct.name),
   });
 }
 
@@ -223,9 +226,10 @@ function check_function_node(func: FunctionNode, status: CheckStatus) {
     check_function_parameter_node(param, status);
   }
 
-  if (func.return_type) {
+  if (func.return_type.name) {
     if (!check_type_exists(func.return_type, status, func.return_type_start!)) {
-      func.return_type = "?";
+      // Set the return type to the unknown type so that returns won't get checked
+      func.return_type = new Type("?");
     }
   }
 
@@ -235,10 +239,8 @@ function check_function_node(func: FunctionNode, status: CheckStatus) {
 }
 
 function check_function_parameter_node(param: ParameterNode, status: CheckStatus) {
-  if (param.type) {
-    if (!check_type_exists(param.type, status, param.type_start!)) {
-      param.type = "?";
-    }
+  if (param.type.name) {
+    check_type_exists(param.type, status, param.type_start!);
   }
 
   if (param.default_value) {
@@ -248,29 +250,36 @@ function check_function_parameter_node(param: ParameterNode, status: CheckStatus
       param.default_value,
       status,
       param.default_value_start!,
+      "param default",
     );
-    param.type = param.type || type_from_value(param.default_value, status);
+    if (!param.type.name) {
+      param.type = type_from_value(param.default_value, status);
+    }
   }
 }
 
 function check_declaration_node(decl: DeclarationNode, status: CheckStatus) {
   // NOTE: At this point we must have either type or value
-  if (decl.type) {
+  if (decl.type.name) {
     check_type_exists(decl.type, status, decl.type_start!);
   }
 
   if (decl.value) {
+    const old_expected_type = status.expected_type;
+    status.expected_type = decl.type;
     check_node(decl.value, status);
+    status.expected_type = old_expected_type;
 
     check_type_and_value_match(
       decl.type,
       type_from_value_node(decl.value, status),
-      value_from_value_node(decl.value, status),
+      value_from_value_node(decl.value),
       status,
       decl.value.start,
+      "declaration",
     );
 
-    if (!decl.type) {
+    if (!decl.type.name) {
       decl.type = type_from_value_node(decl.value, status);
     }
   }
@@ -284,35 +293,36 @@ function check_declaration_node(decl: DeclarationNode, status: CheckStatus) {
 }
 
 function check_assignment_node(assign: AssignmentNode, status: CheckStatus) {
-  if (assign.left_value) {
-    check_node(assign.left_value, status);
-  }
-  if (assign.right_value) {
-    check_node(assign.right_value, status);
-  }
+  check_node(assign.left_value, status);
+
+  const old_expected_type = status.expected_type;
+  status.expected_type = type_from_value_node(assign.left_value, status);
+  check_node(assign.right_value, status);
+  status.expected_type = old_expected_type;
 
   // Make sure the left value exists and can be assigned to
-  const lvalue_name = value_from_value_node(assign.left_value!, status);
-  const lvalue = status.values.find((v) => v.name === lvalue_name);
-  if (!lvalue) {
+  const left_value_name = value_from_value_node(assign.left_value);
+  const left_value = status.values.find((v) => v.name === left_value_name);
+  if (!left_value) {
     status.errors.push({
-      message: `Unknown variable: ${lvalue_name}`,
+      message: `Unknown variable: ${left_value_name}`,
       start: assign.left_value!.start,
     });
-  } else if (lvalue.declaration === "const") {
+  } else if (left_value.declaration === "const") {
     status.errors.push({
-      message: `Assignment to const: ${lvalue_name}`,
+      message: `Assignment to const: ${left_value_name}`,
       start: assign.left_value!.start,
     });
   }
 
-  if (lvalue)
+  if (left_value)
     check_type_and_value_match(
-      lvalue.type,
-      type_from_value_node(assign.right_value!, status),
-      value_from_value_node(assign.right_value!, status),
+      left_value.type,
+      type_from_value_node(assign.right_value, status),
+      value_from_value_node(assign.right_value),
       status,
-      assign.right_value!.start,
+      assign.right_value.start,
+      "assignment",
     );
 }
 
@@ -351,24 +361,14 @@ function check_invocation_function(
     });
   } else {
     invoke.params.forEach((param, i) => {
-      //check_node(param, status);
-
-      const param_type = func.params[i].type;
-      const value_type = type_from_value_node(param, status);
-      if (value_type === "?") {
-        status.errors.push({
-          message: `Type mismatch -- unknown value type: ${value_from_value_node(
-            param,
-            status,
-          )} cannot be used for ${param_type} parameter`,
-          start: param.start,
-        });
-      } else if (value_type !== param_type) {
-        status.errors.push({
-          message: `Type mismatch: ${value_type} cannot be used for ${param_type} parameter`,
-          start: param.start,
-        });
-      }
+      check_type_and_value_match(
+        func.params[i].type,
+        type_from_value_node(param, status),
+        value_from_value_node(param),
+        status,
+        param.start,
+        "param",
+      );
     });
   }
 }
@@ -389,11 +389,11 @@ function check_access_node(node: AccessNode, status: CheckStatus) {
   }
 }
 
-function check_access_field_node(source_type: string, field: AccessFieldNode, status: CheckStatus) {
-  const struct = status.structs.find((s) => s.name === source_type);
+function check_access_field_node(source_type: Type, field: AccessFieldNode, status: CheckStatus) {
+  const struct = status.structs.find((s) => s.name === source_type.name);
   let prop = struct?.fields.find((f) => f.name === field.name);
   if (!prop) {
-    const trait = status.traits.find((s) => s.name === source_type);
+    const trait = status.traits.find((s) => s.name === source_type.name);
     prop = trait?.fields.find((f) => f.name === field.name);
   }
   if (prop) {
@@ -407,14 +407,14 @@ function check_access_field_node(source_type: string, field: AccessFieldNode, st
 }
 
 function check_access_invocation_node(
-  source_type: string,
+  source_type: Type,
   invoke: AccessInvocationNode,
   status: CheckStatus,
 ) {
-  const struct = status.structs.find((s) => s.name === source_type);
+  const struct = status.structs.find((s) => s.name === source_type.name);
   let func = struct?.functions.find((f) => f.name === invoke.name);
   if (!func) {
-    const trait = status.traits.find((s) => s.name === source_type);
+    const trait = status.traits.find((s) => s.name === source_type.name);
     func = trait?.functions.find((f) => f.name === invoke.name);
   }
   check_invocation_function(invoke, status, func);
@@ -423,9 +423,9 @@ function check_access_invocation_node(
 function check_if_else_node(if_else: IfElseNode, status: CheckStatus) {
   check_node(if_else.condition, status);
   const condition_type = type_from_value_node(if_else.condition, status);
-  if (condition_type !== "bool") {
+  if (type_name(condition_type) !== "bool") {
     status.errors.push({
-      message: `If/else condition must be a bool, not ${condition_type}`,
+      message: `If/else condition must be a bool, not ${type_name(condition_type)}`,
       start: if_else.condition.start,
     });
   }
@@ -443,16 +443,15 @@ function check_for_loop_node(for_loop: ForLoopNode, status: CheckStatus) {
     check_node(for_loop.list, status);
 
     const list_type = type_from_value_node(for_loop.list, status);
-    if (!/\[.*\]/.test(list_type)) {
+    if (!list_type.is_array) {
       status.errors.push({
-        message: `For loop list must be an array, not ${list_type}`,
+        message: `For loop list must be an array, not ${list_type.name}`,
         start: for_loop.list.start,
       });
     }
 
     if (for_loop.item) {
-      // HACK: handle array types properly
-      for_loop.item.type = list_type.replace(/\[.*\]/, "");
+      for_loop.item.type = new Type(list_type.name);
 
       status.values.push({
         declaration: "var",
@@ -468,9 +467,9 @@ function check_for_loop_node(for_loop: ForLoopNode, status: CheckStatus) {
 function check_while_loop_node(while_loop: WhileLoopNode, status: CheckStatus) {
   check_node(while_loop.condition, status);
   const condition_type = type_from_value_node(while_loop.condition, status);
-  if (condition_type !== "bool") {
+  if (type_name(condition_type) !== "bool") {
     status.errors.push({
-      message: `While loop condition must be a bool, not ${condition_type}`,
+      message: `While loop condition must be a bool, not ${type_name(condition_type)}`,
       start: while_loop.condition.start,
     });
   }
@@ -482,15 +481,16 @@ function check_operation_node(op: OperationNode, status: CheckStatus) {
   check_node(op.left_value, status);
   check_node(op.right_value, status);
 
-  // Check compatibility of types
   const left_type = type_from_value_node(op.left_value, status);
   const right_type = type_from_value_node(op.right_value, status);
-  if (left_type !== right_type) {
-    status.errors.push({
-      message: `Invalid type in operation: ${right_type} (expected ${left_type})`,
-      start: op.right_value.start,
-    });
-  }
+  check_type_and_value_match(
+    left_type,
+    right_type,
+    value_from_value_node(op.right_value),
+    status,
+    op.right_value.start,
+    "operation",
+  );
 
   // HACK: this needs to come from operator funcs for each operator and type combination
   switch (op.op) {
@@ -499,7 +499,8 @@ function check_operation_node(op: OperationNode, status: CheckStatus) {
     case "*":
     case "/":
     case "%": {
-      op.type = "int";
+      //op.type = new Type("int");
+      op.type = left_type;
       break;
     }
     case "==":
@@ -510,7 +511,7 @@ function check_operation_node(op: OperationNode, status: CheckStatus) {
     case "<=":
     case "&&":
     case "||": {
-      op.type = "bool";
+      op.type = new Type("bool");
       break;
     }
     default: {
@@ -523,54 +524,57 @@ function check_operation_node(op: OperationNode, status: CheckStatus) {
 }
 
 function check_array_values_node(array: ArrayValuesNode, status: CheckStatus) {
+  // The type of items in the array, which we will check each value against
+  let array_item_type = new Type(array.type.name);
+
+  // If there is an expected type of the array (e.g. for declarations), use it
+  if (!array.type.name && status.expected_type) {
+    array.type = status.expected_type;
+    array_item_type = new Type(array.type.name);
+  }
+
   for (let value of array.values) {
     check_node(value, status);
 
-    const type = type_from_value_node(value, status);
-    const array_type = type + `[${array.values.length}]`;
-    if (!array.type) {
-      array.type = array_type;
-    } else if (array.type !== array_type) {
-      // It might have a trait
-      // TOOD: Check this in more places
-      const struct = status.structs.find((f) => f.name === type);
-      const maybe_trait = array.type.replace(/\[.*\]/, "");
-      if (struct?.traits.includes(maybe_trait)) {
-        continue;
-      }
+    const value_type = type_from_value_node(value, status);
 
-      status.errors.push({
-        message: `Invalid type in array: ${type} (expected ${array.type.replace(/\[.*\]/, "")})`,
-        start: value.start,
-      });
+    // If the array has no type, use the type from the first value
+    if (!array.type.name) {
+      array.type = value_type;
+      array_item_type = new Type(array.type.name);
     }
+
+    check_type_and_value_match(
+      array_item_type,
+      value_type,
+      value_from_value_node(value),
+      status,
+      value.start,
+      "array",
+    );
+  }
+
+  if (!array.type.length) {
+    array.type.length = new ValueNode(-1, array.values.length.toString(), "int");
   }
 }
 
 function check_range_node(range: RangeNode, status: CheckStatus) {
-  if (range.left_value) {
-    check_node(range.left_value, status);
-  }
-  if (range.right_value) {
-    check_node(range.right_value, status);
-  }
+  check_node(range.left_value, status);
+  check_node(range.right_value, status);
 
-  // Check compatibility of types
-  if (range.left_value && range.right_value) {
-    const left_type = type_from_value_node(range.left_value, status);
-    const right_type = type_from_value_node(range.right_value, status);
-    //range.type = left_type;
-
-    if (left_type !== right_type) {
-      status.errors.push({
-        message: `Invalid type in range: ${right_type} (expected ${left_type})`,
-        start: range.right_value.start,
-      });
-    }
-  }
+  check_type_and_value_match(
+    type_from_value_node(range.left_value, status),
+    type_from_value_node(range.right_value, status),
+    value_from_value_node(range.right_value),
+    status,
+    range.right_value.start,
+    "range",
+  );
 }
 
 function check_value_node(value: ValueNode, status: CheckStatus) {
+  // TODO: If there's already a type, check that the value matches
   value.type = type_from_value(value.value, status);
 }
 
@@ -588,14 +592,17 @@ function check_return_node(ret: ReturnNode, status: CheckStatus) {
   }
 
   if (func) {
-    if (func.return_type && func.return_type !== "?") {
-      check_type_and_value_match(
-        func.return_type,
-        type_from_value_node(ret.value, status),
-        value_from_value_node(ret.value, status),
-        status,
-        ret.value.start,
-      );
+    if (func.return_type.name) {
+      if (func.return_type.name !== "?") {
+        check_type_and_value_match(
+          func.return_type,
+          type_from_value_node(ret.value, status),
+          value_from_value_node(ret.value),
+          status,
+          ret.value.start,
+          "return",
+        );
+      }
     } else {
       func.return_type = ret.type;
     }
@@ -605,46 +612,46 @@ function check_return_node(ret: ReturnNode, status: CheckStatus) {
 // UTILS
 
 function check_type_and_value_match(
-  target_type: string,
-  expression_type: string,
+  target_type: Type,
+  expression_type: Type,
+  // TODO: Do we need the value?? It's type should haev been retrieved??
   value: string,
   status: CheckStatus,
   i: number,
+  node_type: string,
 ) {
-  if (target_type) {
-    // HACK: Remove array length
-    const target_type_is_array = /\[.*\]/.test(target_type);
-    target_type = target_type.replace(/\[.*\]/, "");
-    const expression_type_is_array = /\[.*\]/.test(expression_type);
-    expression_type = expression_type.replace(/\[.*\]/, "");
+  // TODO: Should i just be cehcking that types exist for target_type and expression_type???
+
+  if (target_type.name) {
     // TODO: thorough checking
-    if (target_type_is_array && !expression_type_is_array) {
+    if (target_type.is_array !== expression_type.is_array) {
       status.errors.push({
-        message: `Type mismatch: ${expression_type}${
-          expression_type_is_array ? "[]" : ""
-        } cannot be assigned to ${target_type}${target_type_is_array ? "[]" : ""} variable`,
+        message: `Type mismatch in ${node_type}: ${type_name(
+          expression_type,
+        )} (expected ${type_name(target_type)})`,
         start: i,
       });
-    } else if (target_type !== expression_type) {
+    } else if (target_type.name !== expression_type.name) {
       // It might be a struct with a matching trait
       // TOOD: Check this in more places
-      const struct = status.structs.find((f) => f.name === expression_type);
-      if (struct?.traits.includes(target_type)) {
+      const struct = status.structs.find((f) => f.name === expression_type.name);
+      if (struct?.traits.includes(target_type.name)) {
         return;
       }
 
       status.errors.push({
-        message:
-          expression_type === "?"
-            ? `Type mismatch -- unknown value type: ${value}`
-            : `Type mismatch: ${expression_type}${
-                expression_type_is_array ? "[]" : ""
-              } cannot be assigned to ${target_type}${target_type_is_array ? "[]" : ""} variable`,
+        message: !expression_type.name
+          ? `Type mismatch in ${node_type}: unknown value type ${value} (expected ${type_name(
+              target_type,
+            )})`
+          : `Type mismatch in ${node_type}: ${type_name(expression_type)} (expected ${type_name(
+              target_type,
+            )})`,
         start: i,
       });
     }
   } else {
-    if (expression_type === "?") {
+    if (!expression_type.name) {
       status.errors.push({
         message: `Unknown value type: ${value}`,
         start: i,
@@ -653,12 +660,10 @@ function check_type_and_value_match(
   }
 }
 
-function check_type_exists(type: string, status: CheckStatus, start: number): boolean {
-  // Remove array brackets
-  type = type.replace(/\[.*\]/, "");
-  if (!status.types.includes(type)) {
+function check_type_exists(type: Type, status: CheckStatus, start: number): boolean {
+  if (!status.types.includes(type.name)) {
     status.errors.push({
-      message: `Unknown type: ${type}`,
+      message: `Unknown type: ${type_name(type)}`,
       start,
     });
     return false;
@@ -666,22 +671,22 @@ function check_type_exists(type: string, status: CheckStatus, start: number): bo
   return true;
 }
 
-function type_from_value(value: string, status: CheckStatus): string {
+function type_from_value(value: string, status: CheckStatus): Type {
   const decl_value = status.values.find((v) => v.name === value);
   if (decl_value) {
     return decl_value.type;
   } else if (value === "true" || value === "false") {
-    return "bool";
+    return new Type("bool");
   } else if (value.startsWith('"') && value.endsWith('"')) {
-    return "string";
+    return new Type("string");
   } else if (/^\d+$/.test(value)) {
-    return "int";
+    return new Type("int");
   } else {
-    return "?";
+    return new Type("");
   }
 }
 
-function type_from_value_node(node: BaseNode, status: CheckStatus): string {
+function type_from_value_node(node: BaseNode, status: CheckStatus): Type {
   switch (node.node_type) {
     case "value": {
       return type_from_value((node as ValueNode).value, status);
@@ -690,7 +695,9 @@ function type_from_value_node(node: BaseNode, status: CheckStatus): string {
       return type_from_value_node((node as AccessNode).access, status);
     }
     case "array": {
-      return (node as ArrayValuesNode).type;
+      const type = (node as ArrayValuesNode).type;
+      type.is_array = true;
+      return type;
     }
     case "invoke": {
       return (node as InvocationNode).type;
@@ -708,19 +715,21 @@ function type_from_value_node(node: BaseNode, status: CheckStatus): string {
       return (node as OperationNode).type;
     }
     case "range": {
-      return type_from_value_node((node as RangeNode).left_value!, status) + "[]";
+      const type = type_from_value_node((node as RangeNode).left_value!, status);
+      type.is_array = true;
+      return type;
     }
   }
-  return "?";
+  return new Type("");
 }
 
-function value_from_value_node(node: BaseNode, status: CheckStatus): string {
+function value_from_value_node(node: BaseNode): string {
   switch (node.node_type) {
     case "value": {
       return (node as ValueNode).value;
     }
     case "access": {
-      return value_from_value_node((node as AccessNode).access, status);
+      return value_from_value_node((node as AccessNode).access);
     }
     case "ac_field": {
       return (node as AccessFieldNode).name;
@@ -735,4 +744,8 @@ function find_parent_of_type(type: string, status: CheckStatus): BaseNode | unde
       return status.stack[i];
     }
   }
+}
+
+function type_name(type: Type) {
+  return `${type.name}${type.is_array ? `[]` : ""}`;
 }
