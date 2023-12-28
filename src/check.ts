@@ -5,6 +5,8 @@ import ArrayValuesNode from "./nodes/ArrayValuesNode";
 import AssignmentNode from "./nodes/AssignmentNode";
 import BaseNode from "./nodes/BaseNode";
 import type BlockNode from "./nodes/BlockNode";
+import BreakNode from "./nodes/BreakNode";
+import ContinueNode from "./nodes/ContinueNode";
 import DeclarationNode from "./nodes/DeclarationNode";
 import ForLoopNode from "./nodes/ForLoopNode";
 import FunctionNode from "./nodes/FunctionNode";
@@ -155,6 +157,19 @@ function check_node(node: BaseNode, status: CheckStatus) {
     }
     case "value": {
       check_value_node(node as ValueNode, status);
+      break;
+    }
+    case "break": {
+      check_break_or_continue_node(node as BreakNode, status);
+      break;
+    }
+    case "continue": {
+      check_break_or_continue_node(node as ContinueNode, status);
+      break;
+    }
+    case "panic":
+    case "todo": {
+      // todo
       break;
     }
     case "return": {
@@ -576,6 +591,25 @@ function check_range_node(range: RangeNode, status: CheckStatus) {
 function check_value_node(value: ValueNode, status: CheckStatus) {
   // TODO: If there's already a type, check that the value matches
   value.type = type_from_value(value.value, status);
+}
+
+function check_break_or_continue_node(node: BreakNode | ContinueNode, status: CheckStatus) {
+  // Go up the stack looking for a for or while node
+  let found = false;
+  for (let i = status.stack.length - 1; i >= 0; i--) {
+    if (status.stack[i].node_type === "for" || status.stack[i].node_type === "while") {
+      found = true;
+      break;
+    }
+  }
+
+  if (!found) {
+    const description = node.node_type.substring(0, 1).toUpperCase() + node.node_type.substring(1);
+    status.errors.push({
+      message: `${description} must be inside a for or while loop`,
+      start: node.start,
+    });
+  }
 }
 
 function check_return_node(ret: ReturnNode, status: CheckStatus) {

@@ -1,0 +1,88 @@
+import { suite } from "uvu";
+import assert from "uvu/assert";
+import BreakNode from "../../src/nodes/BreakNode";
+import ContinueNode from "../../src/nodes/ContinueNode";
+import ForLoopNode from "../../src/nodes/ForLoopNode";
+import FunctionNode from "../../src/nodes/FunctionNode";
+import PanicNode from "../../src/nodes/PanicNode";
+import RangeNode from "../../src/nodes/RangeNode";
+import TodoNode from "../../src/nodes/TodoNode";
+import ValueNode from "../../src/nodes/ValueNode";
+import parse from "../../src/parse";
+import trim_test_data from "../trim_test_data";
+
+const test = suite("Control parse");
+
+test("break", () => {
+  const input = `
+for x in 0..5 {
+  break
+}
+`;
+  const parsed = parse(input);
+  const expected = new ForLoopNode(
+    1,
+    new ValueNode(5, "x", "int"),
+    new RangeNode(10, new ValueNode(10, "0", "int"), new ValueNode(13, "5", "int"), false),
+    [new BreakNode(19)],
+  );
+  assert.equal(parsed.errors, []);
+  assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
+});
+
+test("continue", () => {
+  const input = `
+for x in 0..5 {
+  continue
+}
+`;
+  const parsed = parse(input);
+  const expected = new ForLoopNode(
+    1,
+    new ValueNode(5, "x", "int"),
+    new RangeNode(10, new ValueNode(10, "0", "int"), new ValueNode(13, "5", "int"), false),
+    [new ContinueNode(19)],
+  );
+  assert.equal(parsed.errors, []);
+  assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
+});
+
+test("panic", () => {
+  const input = `
+func add() -> int {
+  panic "something went wrong"
+}
+`;
+  const parsed = parse(input);
+  const expected = new FunctionNode(
+    1,
+    "add",
+    "int",
+    [],
+    [new PanicNode(23, "something went wrong")],
+  );
+  expected.has_return = true;
+  assert.equal(parsed.errors, []);
+  assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
+});
+
+test("todo", () => {
+  const input = `
+func add() -> int {
+  todo "haven't done this yet"
+}
+`;
+  const parsed = parse(input);
+  const expected = new FunctionNode(
+    1,
+    "add",
+    "int",
+    [],
+    [new TodoNode(23, "haven't done this yet")],
+  );
+  expected.has_return = true;
+  assert.equal(parsed.errors, []);
+  assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
+});
+
+test.run();

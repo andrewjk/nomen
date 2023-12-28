@@ -18,6 +18,10 @@ type NodeType =
   | "value"
   | "array"
   | "range"
+  | "break"
+  | "continue"
+  | "panic"
+  | "todo"
   | "return";
 
 export default NodeType;

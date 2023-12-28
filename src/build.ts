@@ -4,17 +4,21 @@ import AccessNode from "./nodes/AccessNode";
 import ArrayValuesNode from "./nodes/ArrayValuesNode";
 import AssignmentNode from "./nodes/AssignmentNode";
 import BaseNode from "./nodes/BaseNode";
+import BreakNode from "./nodes/BreakNode";
+import ContinueNode from "./nodes/ContinueNode";
 import DeclarationNode from "./nodes/DeclarationNode";
 import ForLoopNode from "./nodes/ForLoopNode";
 import FunctionNode from "./nodes/FunctionNode";
 import IfElseNode from "./nodes/IfElseNode";
 import InvocationNode from "./nodes/InvocationNode";
 import OperationNode from "./nodes/OperationNode";
+import PanicNode from "./nodes/PanicNode";
 import ParameterNode from "./nodes/ParameterNode";
 import RangeNode from "./nodes/RangeNode";
 import ReturnNode from "./nodes/ReturnNode";
 import RootNode from "./nodes/RootNode";
 import StructNode from "./nodes/StructNode";
+import TodoNode from "./nodes/TodoNode";
 import TraitNode from "./nodes/TraitNode";
 import Type from "./nodes/Type";
 import ValueNode from "./nodes/ValueNode";
@@ -101,6 +105,22 @@ function build_node(node: BaseNode, status: BuildStatus) {
     }
     case "while": {
       build_while_loop_node(node as WhileLoopNode, status);
+      break;
+    }
+    case "break": {
+      build_break_node(node as BreakNode, status);
+      break;
+    }
+    case "continue": {
+      build_continue_node(node as ContinueNode, status);
+      break;
+    }
+    case "panic": {
+      build_panic_node(node as PanicNode, status);
+      break;
+    }
+    case "todo": {
+      build_todo_node(node as TodoNode, status);
       break;
     }
     case "return": {
@@ -581,6 +601,26 @@ function build_while_loop_node(node: WhileLoopNode, status: BuildStatus) {
     build_node(child, status);
   }
   status.code += `}\n`;
+}
+
+function build_break_node(node: BreakNode, status: BuildStatus) {
+  status.code += `break;\n`;
+}
+
+function build_continue_node(node: ContinueNode, status: BuildStatus) {
+  status.code += `continue;\n`;
+}
+
+function build_panic_node(node: PanicNode, status: BuildStatus) {
+  // TODO: Unwind etc
+  status.code += `printf("${node.message}\\n");\n`;
+  status.code += `exit(EXIT_FAILURE);\n`;
+}
+
+function build_todo_node(node: TodoNode, status: BuildStatus) {
+  // TODO: Unwind etc
+  status.code += `printf("${node.message}\\n");\n`;
+  status.code += `exit(EXIT_FAILURE);\n`;
 }
 
 function build_return_node(node: ReturnNode, status: BuildStatus) {

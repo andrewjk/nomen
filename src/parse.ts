@@ -7,18 +7,22 @@ import AssignmentNode from "./nodes/AssignmentNode";
 import BaseNode from "./nodes/BaseNode";
 import type BlockNode from "./nodes/BlockNode";
 import BranchNode from "./nodes/BranchNode";
+import BreakNode from "./nodes/BreakNode";
+import ContinueNode from "./nodes/ContinueNode";
 import DeclarationNode from "./nodes/DeclarationNode";
 import ForLoopNode from "./nodes/ForLoopNode";
 import FunctionNode from "./nodes/FunctionNode";
 import IfElseNode from "./nodes/IfElseNode";
 import InvocationNode from "./nodes/InvocationNode";
 import OperationNode from "./nodes/OperationNode";
+import PanicNode from "./nodes/PanicNode";
 import ParameterNode from "./nodes/ParameterNode";
 import RangeNode from "./nodes/RangeNode";
 import ReturnNode from "./nodes/ReturnNode";
 import ReturningNode from "./nodes/ReturningNode";
 import RootNode from "./nodes/RootNode";
 import StructNode from "./nodes/StructNode";
+import TodoNode from "./nodes/TodoNode";
 import TraitNode from "./nodes/TraitNode";
 import Type from "./nodes/Type";
 import ValueNode from "./nodes/ValueNode";
@@ -113,6 +117,16 @@ function parse_statement(status: ParseStatus) {
       }
       case "while": {
         parse_while_loop(status);
+        break;
+      }
+      case "break":
+      case "continue": {
+        parse_break_or_continue(value, status);
+        break;
+      }
+      case "panic":
+      case "todo": {
+        parse_panic_or_todo(value, status);
         break;
       }
       case "return": {
@@ -282,8 +296,6 @@ function parse_type(status: ParseStatus): Type {
   return type;
 }
 
-// DECLARATION
-
 function parse_declaration(declaration: "const" | "var", status: ParseStatus) {
   const decl = new DeclarationNode(index(status), declaration, "");
 
@@ -331,8 +343,6 @@ function parse_declaration(declaration: "const" | "var", status: ParseStatus) {
   }
 }
 
-// STRUCT
-
 function parse_struct(status: ParseStatus) {
   const start = index(status);
   accept("struct", status);
@@ -363,8 +373,6 @@ function parse_struct(status: ParseStatus) {
   }
 }
 
-// TRAIT
-
 function parse_trait(status: ParseStatus) {
   const start = index(status);
 
@@ -381,8 +389,6 @@ function parse_trait(status: ParseStatus) {
     add_to_parent(trait, "Trait", status);
   }
 }
-
-// FUNCTIONS
 
 function parse_function(status: ParseStatus) {
   const start = index(status);
@@ -412,6 +418,7 @@ function parse_function(status: ParseStatus) {
         expect("}", status);
         status.stack.pop();
 
+        // TODO: check all branches
         if (func.return_type.name && !func.has_return) {
           status.errors.push({
             message: `Missing return`,
@@ -475,8 +482,6 @@ function parse_function_parameter(func: FunctionNode, status: ParseStatus) {
   }
 }
 
-// IF / ELSE
-
 function parse_if_else(status: ParseStatus): IfElseNode | null {
   const if_start = index(status);
   accept("if", status);
@@ -522,8 +527,6 @@ function parse_if_else(status: ParseStatus): IfElseNode | null {
   return null;
 }
 
-// FOR LOOP
-
 function parse_for_loop(status: ParseStatus) {
   const for_start = index(status);
   accept("for", status);
@@ -562,8 +565,6 @@ function parse_while_loop(status: ParseStatus) {
   }
 }
 
-// INVOCATION
-
 function parse_invocation_parameter(
   invoke: InvocationNode | AccessInvocationNode,
   status: ParseStatus,
@@ -577,7 +578,52 @@ function parse_invocation_parameter(
   }
 }
 
-// RETURN
+function parse_break_or_continue(name: "break" | "continue", status: ParseStatus) {
+  const description = name.substring(0, 1).toUpperCase() + name.substring(1);
+
+  const node_start = index(status);
+  accept(name, status);
+
+  const node = name === "break" ? new BreakNode(node_start) : new ContinueNode(node_start);
+  add_to_parent(node, `${description} statement`, status);
+}
+
+function parse_panic_or_todo(name: "panic" | "todo", status: ParseStatus) {
+  const description = name.substring(0, 1).toUpperCase() + name.substring(1);
+
+  const node_start = index(status);
+  accept(name, status);
+
+  const message_start = index(status);
+  let message = peek_current(status);
+  if (message && message.startsWith('"') && message.endsWith('"')) {
+    message = consume(status).substring(1, message.length - 1);
+  } else {
+    status.errors.push({
+      message: `Expected a ${name} message`,
+      start: message_start,
+    });
+  }
+
+  const node =
+    name === "panic" ? new PanicNode(node_start, message) : new TodoNode(node_start, message);
+  add_to_parent(node, `${description} statement`, status);
+
+  // TODO: Ignore requirements for this branch
+
+  // Go up the stack looking for a returning node
+  let func: ReturningNode | null = null;
+  for (let i = status.stack.length - 1; i >= 0; i--) {
+    if (isReturningNode(status.stack[i])) {
+      func = status.stack[i] as ReturningNode;
+      break;
+    }
+  }
+
+  if (func) {
+    func.has_return = true;
+  }
+}
 
 function parse_return(status: ParseStatus) {
   const start = index(status);
@@ -587,13 +633,14 @@ function parse_return(status: ParseStatus) {
   const value = parse_expression(status);
   const ret = new ReturnNode(start, value);
 
-  add_to_parent(ret, "Return node", status);
+  add_to_parent(ret, "Return statement", status);
 
   // Go up the stack looking for a returning node
   let func: ReturningNode | null = null;
   for (let i = status.stack.length - 1; i >= 0; i--) {
     if (isReturningNode(status.stack[i])) {
       func = status.stack[i] as ReturningNode;
+      break;
     }
   }
 
@@ -601,13 +648,11 @@ function parse_return(status: ParseStatus) {
     func.has_return = true;
   } else {
     status.errors.push({
-      message: "Return outside expression",
+      message: "Return must be inside an expression",
       start: index(status),
     });
   }
 }
-
-// ACCESS
 
 function parse_access(
   source_name: string,
@@ -633,8 +678,6 @@ function parse_access(
     return new AccessFieldNode(start, name);
   }
 }
-
-// ARRAY
 
 function parse_array_value(array: ArrayValuesNode, status: ParseStatus) {
   // Get this value
