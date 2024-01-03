@@ -56,6 +56,7 @@ func add() -> int {
   const parsed = parse(input);
   const expected = new FunctionNode(
     1,
+    "def",
     "add",
     "int",
     [],
@@ -75,6 +76,7 @@ func add() -> int {
   const parsed = parse(input);
   const expected = new FunctionNode(
     1,
+    "def",
     "add",
     "int",
     [],

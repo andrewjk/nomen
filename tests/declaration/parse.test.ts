@@ -14,7 +14,14 @@ test("const with value", () => {
 const x = 5
 `;
   const parsed = parse(input);
-  const expected = new DeclarationNode(1, "const", "x", "int", new ValueNode(11, "5", "int"));
+  const expected = new DeclarationNode(
+    1,
+    "def",
+    "const",
+    "x",
+    "int",
+    new ValueNode(11, "5", "int"),
+  );
   assert.equal(parsed.errors, []);
   assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
 });
@@ -24,7 +31,7 @@ test("const with type", () => {
 const x: int
 `;
   const parsed = parse(input);
-  const expected = new DeclarationNode(1, "const", "x", "int");
+  const expected = new DeclarationNode(1, "def", "const", "x", "int");
   assert.equal(parsed.errors, []);
   assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
 });
@@ -34,7 +41,7 @@ test("var with value", () => {
 var x = 5
 `;
   const parsed = parse(input);
-  const expected = new DeclarationNode(1, "var", "x", "int", new ValueNode(9, "5", "int"));
+  const expected = new DeclarationNode(1, "def", "var", "x", "int", new ValueNode(9, "5", "int"));
   assert.equal(parsed.errors, []);
   assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
 });
@@ -44,7 +51,7 @@ test("var with type", () => {
 var x: int
 `;
   const parsed = parse(input);
-  const expected = new DeclarationNode(1, "var", "x", "int");
+  const expected = new DeclarationNode(1, "def", "var", "x", "int");
   assert.equal(parsed.errors, []);
   assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
 });
@@ -58,6 +65,7 @@ var x: Animal = Dog.init()
   const parsed = parse(input);
   const expected = new DeclarationNode(
     39,
+    "def",
     "var",
     "x",
     "Animal",

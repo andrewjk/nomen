@@ -79,6 +79,7 @@ const y = if x > 5 {
   const parsed = parse(input);
   const expected = new DeclarationNode(
     14,
+    "def",
     "const",
     "y",
     "int",
@@ -109,6 +110,7 @@ const y = if x > 5 => 50
   const parsed = parse(input);
   const expected = new DeclarationNode(
     14,
+    "def",
     "const",
     "y",
     "int",
@@ -138,6 +140,7 @@ const y = if x > 5 => 50 else => 0
   const parsed = parse(input);
   const expected = new DeclarationNode(
     14,
+    "def",
     "const",
     "y",
     "int",

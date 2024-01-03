@@ -22,6 +22,7 @@ var x = p.age
   const parsed = parse(input);
   const expected = new DeclarationNode(
     48,
+    "def",
     "var",
     "x",
     "int",
@@ -46,6 +47,7 @@ var x = p.address.line
   const parsed = parse(input);
   const expected = new DeclarationNode(
     109,
+    "def",
     "var",
     "x",
     "string",
@@ -124,6 +126,7 @@ var x = p.age()
   const parsed = parse(input);
   const expected = new DeclarationNode(
     73,
+    "def",
     "var",
     "x",
     "int",
@@ -154,6 +157,7 @@ var x = p.address.line()
   const parsed = parse(input);
   const expected = new DeclarationNode(
     145,
+    "def",
     "var",
     "x",
     "string",
@@ -188,6 +192,7 @@ var x = p.address().line
   const parsed = parse(input);
   const expected = new DeclarationNode(
     159,
+    "def",
     "var",
     "x",
     "string",

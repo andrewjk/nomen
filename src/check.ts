@@ -374,6 +374,12 @@ function check_invocation_function(
       message: `Parameters missing for function: ${invoke.name}`,
       start: invoke.start,
     });
+  } else if (func.visibility === "sec") {
+    // TODO: You CAN do this from within the correct scope
+    status.errors.push({
+      message: `Can't access secret function: ${invoke.name}`,
+      start: invoke.start,
+    });
   } else {
     invoke.params.forEach((param, i) => {
       check_type_and_value_match(
@@ -412,7 +418,15 @@ function check_access_field_node(source_type: Type, field: AccessFieldNode, stat
     prop = trait?.fields.find((f) => f.name === field.name);
   }
   if (prop) {
-    field.type = prop.type;
+    if (prop.visibility === "sec") {
+      // TODO: You CAN do this from within the correct scope
+      status.errors.push({
+        message: `Can't access secret field: ${field.name}`,
+        start: field.start,
+      });
+    } else {
+      field.type = prop.type;
+    }
   } else {
     status.errors.push({
       message: `Field not found: ${field.name}`,

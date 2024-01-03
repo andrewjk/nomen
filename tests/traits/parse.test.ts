@@ -1,6 +1,5 @@
 import { suite } from "uvu";
 import assert from "uvu/assert";
-import BaseNode from "../../src/nodes/BaseNode";
 import DeclarationNode from "../../src/nodes/DeclarationNode";
 import FunctionNode from "../../src/nodes/FunctionNode";
 import ReturnNode from "../../src/nodes/ReturnNode";
@@ -21,8 +20,15 @@ struct Frank: Person {}
 `;
   const parsed = parse(input);
   const expected = new RootNode([
-    new TraitNode(1, "Person"),
-    new StructNode(18, "Frank", ["Person"], [], [new FunctionNode(-1, "init", "Frank")]),
+    new TraitNode(1, "def", "Person"),
+    new StructNode(
+      18,
+      "def",
+      "Frank",
+      ["Person"],
+      [],
+      [new FunctionNode(-1, "def", "init", "Frank")],
+    ),
   ]);
   assert.equal(parsed.errors, []);
   assert.equal(trim_test_data(parsed.root), trim_test_data(expected));
@@ -36,8 +42,15 @@ trait Person {}
 `;
   const parsed = parse(input);
   const expected = new RootNode([
-    new StructNode(1, "Frank", ["Person"], [], [new FunctionNode(-1, "init", "Frank")]),
-    new TraitNode(26, "Person"),
+    new StructNode(
+      1,
+      "def",
+      "Frank",
+      ["Person"],
+      [],
+      [new FunctionNode(-1, "def", "init", "Frank")],
+    ),
+    new TraitNode(26, "def", "Person"),
   ]);
   assert.equal(parsed.errors, []);
   assert.equal(trim_test_data(parsed.root), trim_test_data(expected));
@@ -56,16 +69,26 @@ struct Frank: Person {
 `;
   const parsed = parse(input);
   const expected = new RootNode([
-    new TraitNode(1, "Person", [
-      new DeclarationNode(18, "var", "name", "string"),
-      new DeclarationNode(37, "var", "age", "int", new ValueNode(47, "0", "int")),
+    new TraitNode(1, "def", "Person", [
+      new DeclarationNode(18, "def", "var", "name", "string"),
+      new DeclarationNode(37, "def", "var", "age", "int", new ValueNode(47, "0", "int")),
     ]),
     new StructNode(
       52,
+      "def",
       "Frank",
       ["Person"],
-      [new DeclarationNode(77, "var", "name", "string", new ValueNode(88, '"Frank"', "string"))],
-      [new FunctionNode(-1, "init", "Frank")],
+      [
+        new DeclarationNode(
+          77,
+          "def",
+          "var",
+          "name",
+          "string",
+          new ValueNode(88, '"Frank"', "string"),
+        ),
+      ],
+      [new FunctionNode(-1, "def", "init", "Frank")],
     ),
   ]);
   assert.equal(parsed.errors, []);
@@ -86,16 +109,18 @@ struct Frank: Person {
 `;
   const parsed = parse(input);
   const expected = new RootNode([
-    new TraitNode(1, "Person", [], [new FunctionNode(18, "greet", "string")]),
+    new TraitNode(1, "def", "Person", [], [new FunctionNode(18, "def", "greet", "string")]),
     new StructNode(
       44,
+      "def",
       "Frank",
       ["Person"],
       [],
       [
-        new FunctionNode(-1, "init", "Frank"),
+        new FunctionNode(-1, "def", "init", "Frank"),
         new FunctionNode(
           69,
+          "def",
           "greet",
           "string",
           [],
@@ -122,11 +147,13 @@ struct Frank: Person {}
   const expected = new RootNode([
     new TraitNode(
       1,
+      "def",
       "Person",
       [],
       [
         new FunctionNode(
           18,
+          "def",
           "greet",
           "string",
           [],
@@ -134,7 +161,14 @@ struct Frank: Person {}
         ),
       ],
     ),
-    new StructNode(66, "Frank", ["Person"], [], [new FunctionNode(-1, "init", "Frank")]),
+    new StructNode(
+      66,
+      "def",
+      "Frank",
+      ["Person"],
+      [],
+      [new FunctionNode(-1, "def", "init", "Frank")],
+    ),
   ]);
   assert.equal(parsed.errors, []);
   assert.equal(trim_test_data(parsed.root), trim_test_data(expected));

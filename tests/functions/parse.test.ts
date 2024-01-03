@@ -16,7 +16,7 @@ test("function", () => {
 func add() {}
 `;
   const parsed = parse(input);
-  const expected = new FunctionNode(1, "add", "", [], []);
+  const expected = new FunctionNode(1, "def", "add", "", [], []);
   assert.equal(parsed.errors, []);
   assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
 });
@@ -28,6 +28,7 @@ func add(a: int, b: int) {}
   const parsed = parse(input);
   const expected = new FunctionNode(
     1,
+    "def",
     "add",
     "",
     [new ParameterNode(10, "a", "int"), new ParameterNode(18, "b", "int")],
@@ -44,6 +45,7 @@ func add(a: int, b = 5) {}
   const parsed = parse(input);
   const expected = new FunctionNode(
     1,
+    "def",
     "add",
     "",
     [new ParameterNode(10, "a", "int"), new ParameterNode(18, "b", "int", "5")],
@@ -62,10 +64,11 @@ func add() {
   const parsed = parse(input);
   const expected = new FunctionNode(
     1,
+    "def",
     "add",
     "",
     [],
-    [new DeclarationNode(16, "var", "x", "int", new ValueNode(24, "5", "int"))],
+    [new DeclarationNode(16, "def", "var", "x", "int", new ValueNode(24, "5", "int"))],
   );
   assert.equal(parsed.errors, []);
   assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
@@ -80,6 +83,7 @@ func add() -> int {
   const parsed = parse(input);
   const expected = new FunctionNode(
     1,
+    "def",
     "add",
     "int",
     [],
@@ -97,8 +101,8 @@ func subtract() {}
 `;
   const parsed = parse(input);
   const expected = new RootNode([
-    new FunctionNode(1, "add", "", [], []),
-    new FunctionNode(16, "subtract", "", [], []),
+    new FunctionNode(1, "def", "add", "", [], []),
+    new FunctionNode(16, "def", "subtract", "", [], []),
   ]);
   assert.equal(parsed.errors, []);
   assert.equal(trim_test_data(parsed.root), trim_test_data(expected));

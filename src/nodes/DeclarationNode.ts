@@ -2,6 +2,7 @@ import BaseNode from "./BaseNode";
 import Type from "./Type";
 
 export default class DeclarationNode extends BaseNode {
+  visibility: "def" | "pub" | "sec";
   declaration: "const" | "var";
   name: string;
   type: Type;
@@ -11,12 +12,14 @@ export default class DeclarationNode extends BaseNode {
 
   constructor(
     start: number,
+    visibility: "def" | "pub" | "sec",
     declaration: "const" | "var",
     name: string,
     type?: string | Type,
     value?: BaseNode,
   ) {
     super("declare", start);
+    this.visibility = visibility;
     this.declaration = declaration;
     this.name = name;
     this.type = typeof type === "string" ? new Type(type) : type || new Type("");

@@ -15,6 +15,7 @@ var x = 1 + 2
   const parsed = parse(input);
   const expected = new DeclarationNode(
     1,
+    "def",
     "var",
     "x",
     "int",
@@ -31,6 +32,7 @@ var x = 1 - 2
   const parsed = parse(input);
   const expected = new DeclarationNode(
     1,
+    "def",
     "var",
     "x",
     "int",
@@ -47,6 +49,7 @@ var x = 1 + 2 - 3
   const parsed = parse(input);
   const expected = new DeclarationNode(
     1,
+    "def",
     "var",
     "x",
     "int",

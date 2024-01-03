@@ -17,7 +17,7 @@ test("declaration with type", () => {
 const x: int[]
 `;
   const parsed = parse(input);
-  const expected = new DeclarationNode(1, "const", "x", new Type("int", true));
+  const expected = new DeclarationNode(1, "def", "const", "x", new Type("int", true));
   assert.equal(parsed.errors, []);
   assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
 });
@@ -29,6 +29,7 @@ var x = [1, 2, 3]
   const parsed = parse(input);
   const expected = new DeclarationNode(
     1,
+    "def",
     "var",
     "x",
     new Type("int", true, new ValueNode(-1, "3", "int")),
@@ -52,6 +53,7 @@ var x: Animal[] = [Dog.init(), Cat.init()]
   const parsed = parse(input);
   const expected = new DeclarationNode(
     61,
+    "def",
     "var",
     "x",
     new Type("Animal", true, new ValueNode(-1, "2", "int")),

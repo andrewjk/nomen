@@ -18,6 +18,7 @@ var x = Person.init()
   const parsed = parse(input);
   const expected = new DeclarationNode(
     19,
+    "def",
     "var",
     "x",
     "Person",
@@ -42,6 +43,7 @@ var x = Person.init("Andrew")
   const parsed = parse(input);
   const expected = new DeclarationNode(
     38,
+    "def",
     "var",
     "x",
     "Person",
@@ -71,6 +73,7 @@ var x = Person.init()
   const parsed = parse(input);
   const expected = new DeclarationNode(
     36,
+    "def",
     "var",
     "x",
     "Person",

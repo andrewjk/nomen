@@ -60,7 +60,7 @@ export default function parse(input: string): ParseResult {
   parse_statement(status);
 
   const checked = check(root);
-  const errors = status.errors.concat(checked.errors);
+  const errors = status.errors.concat(checked.errors).sort((a, b) => a.start - b.start);
 
   return {
     ok: !errors.length,
@@ -84,21 +84,26 @@ function parse_statement(status: ParseStatus) {
 
     // First check for a keyword (var, if, switch, etc), then check for a following operator (=, +, etc)
     switch (value) {
+      case "pub":
+      case "sec": {
+        parse_visibility(value, status);
+        break;
+      }
       case "const":
       case "var": {
-        parse_declaration(value, status);
+        parse_declaration("def", value, status);
         break;
       }
       case "struct": {
-        parse_struct(status);
+        parse_struct("def", status);
         break;
       }
       case "trait": {
-        parse_trait(status);
+        parse_trait("def", status);
         break;
       }
       case "func": {
-        parse_function(status);
+        parse_function("def", status);
         break;
       }
       case "if": {
@@ -296,8 +301,68 @@ function parse_type(status: ParseStatus): Type {
   return type;
 }
 
-function parse_declaration(declaration: "const" | "var", status: ParseStatus) {
-  const decl = new DeclarationNode(index(status), declaration, "");
+function parse_visibility(visibility: "pub" | "sec", status: ParseStatus) {
+  // All code is internal by default
+  // Anything in the current package has access to anything else
+  // Although it has to be imported if it is in another file
+  // You can add `pub` to declarations, structs, traits and funcs to make them public (i.e. accessible from other packages)
+  // You can add `sec` to declarations, structs, traits and funcs to make them secret (i.e. cannot be accessed from other scopes)
+  // Initializers inherit the visibility of their struct
+  // Struct and trait declarations and functions do not inherit the visibility of their parent -- you must set `pub` or `sec` for each field
+
+  const next = peek_next(status);
+  switch (next) {
+    case "const":
+    case "var": {
+      if (visibility === "sec" && status.stack.at(-1)?.node_type === "trait") {
+        status.errors.push({
+          message: `Trait fields cannot be secret`,
+          start: index(status),
+        });
+        consume(status);
+      } else {
+        parse_declaration(visibility, next, status);
+      }
+      break;
+    }
+    case "struct": {
+      parse_struct(visibility, status);
+      break;
+    }
+    case "trait": {
+      parse_trait(visibility, status);
+      break;
+    }
+    case "func": {
+      if (visibility === "sec" && status.stack.at(-1)?.node_type === "trait") {
+        status.errors.push({
+          message: `Trait functions cannot be secret`,
+          start: index(status),
+        });
+        consume(status);
+      } else {
+        parse_function(visibility, status);
+      }
+      break;
+    }
+    default: {
+      status.errors.push({
+        message: `Visibility can only be set for const, var, struct, trait or func`,
+        start: index(status),
+      });
+      consume(status);
+    }
+  }
+}
+
+function parse_declaration(
+  visibility: "def" | "pub" | "sec",
+  declaration: "const" | "var",
+  status: ParseStatus,
+) {
+  const start = index(status);
+  accept(visibility, status);
+  const decl = new DeclarationNode(start, visibility, declaration, "");
 
   accept(declaration, status);
   decl.name_start = index(status);
@@ -343,11 +408,12 @@ function parse_declaration(declaration: "const" | "var", status: ParseStatus) {
   }
 }
 
-function parse_struct(status: ParseStatus) {
+function parse_struct(visibility: "def" | "pub" | "sec", status: ParseStatus) {
   const start = index(status);
+  accept(visibility, status);
   accept("struct", status);
   const name = consume(status);
-  const struct = new StructNode(start, name);
+  const struct = new StructNode(start, visibility, name);
 
   if (accept(":", status)) {
     struct.traits.push(consume(status));
@@ -355,6 +421,7 @@ function parse_struct(status: ParseStatus) {
       struct.traits.push(consume(status));
     }
   }
+
   if (expect("{", status)) {
     status.stack.push(struct);
     parse_statement(status);
@@ -363,9 +430,9 @@ function parse_struct(status: ParseStatus) {
 
     // Add the init function to the struct
     // TODO: Allow overriding it
-    const func = new FunctionNode(-1, "init", new Type(struct.name));
+    const func = new FunctionNode(-1, visibility, "init", new Type(struct.name));
     func.params = struct.fields
-      .filter((f) => !f.value)
+      .filter((f) => f.visibility !== "sec" && !f.value)
       .map((f) => new ParameterNode(-1, f.name, f.type));
     struct.functions.unshift(func);
 
@@ -373,12 +440,12 @@ function parse_struct(status: ParseStatus) {
   }
 }
 
-function parse_trait(status: ParseStatus) {
+function parse_trait(visibility: "def" | "pub" | "sec", status: ParseStatus) {
   const start = index(status);
-
+  accept(visibility, status);
   accept("trait", status);
   const name = consume(status);
-  const trait = new TraitNode(start, name);
+  const trait = new TraitNode(start, visibility, name);
 
   if (expect("{", status)) {
     status.stack.push(trait);
@@ -390,11 +457,12 @@ function parse_trait(status: ParseStatus) {
   }
 }
 
-function parse_function(status: ParseStatus) {
+function parse_function(visibility: "def" | "pub" | "sec", status: ParseStatus) {
   const start = index(status);
+  accept(visibility, status);
   accept("func", status);
   const name = consume(status);
-  const func = new FunctionNode(start, name, new Type(""));
+  const func = new FunctionNode(start, visibility, name, new Type(""));
 
   if (expect("(", status)) {
     if (peek_current(status) !== ")") {
