@@ -113,8 +113,9 @@ return *(trait + func_index);
 typedef struct Person
 {
 } Person;
-void Person_greet(struct Person this)
+void Person_greet(struct Person *self)
 {
+struct Person zz = *self;
 }
 
 // Frank:
@@ -130,8 +131,9 @@ Frank f;
 f._vt = &_Frank_traits;
 return f;
 }
-char* Frank_greet(struct Frank this)
+char* Frank_greet(struct Frank *self)
 {
+struct Frank zz = *self;
 return "hi";
 }
 `;
@@ -162,8 +164,9 @@ return *(trait + func_index);
 typedef struct Person
 {
 } Person;
-char* Person_greet(struct Person this)
+char* Person_greet(struct Person *self)
 {
+struct Person zz = *self;
 return "hi";
 }
 

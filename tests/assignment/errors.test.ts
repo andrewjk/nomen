@@ -20,14 +20,14 @@ x = "string?!"
   assert.equal(parsed.errors, expected);
 });
 
-test("type mismatch -- unknown value type", () => {
+test("type mismatch -- unknown value", () => {
   const input = `
 var x: int
 x = z0
 `;
   const expected: CompileError[] = [
     {
-      message: "Type mismatch in assignment: unknown value type z0 (expected int)",
+      message: "Type mismatch in assignment: unknown value z0 (expected int)",
       start: 16,
     },
   ];

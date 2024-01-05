@@ -78,8 +78,9 @@ Person p;
 p._vt = &_Person_traits;
 return p;
 }
-void Person_greet(struct Person this)
+void Person_greet(struct Person *self)
 {
+struct Person zz = *self;
 }
 `;
   assert.equal(parsed.errors, []);

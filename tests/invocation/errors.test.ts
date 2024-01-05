@@ -64,14 +64,14 @@ greet("andrew")
   assert.equal(parsed.errors, expected);
 });
 
-test("param type mismatch -- unknown value type", () => {
+test("param type mismatch -- unknown value", () => {
   const input = `
 func greet(age: int) {}
 greet(z0)
 `;
   const expected: CompileError[] = [
     {
-      message: "Type mismatch in param: unknown value type z0 (expected int)",
+      message: "Type mismatch in param: unknown value z0 (expected int)",
       start: 31,
     },
   ];

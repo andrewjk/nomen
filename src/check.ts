@@ -204,6 +204,13 @@ function check_struct_node(struct: StructNode, status: CheckStatus) {
     }
   }
 
+  // Add the `self` value that refers to the struct
+  status.values.push({
+    declaration: "const",
+    name: "self",
+    type: new Type(struct.name),
+  });
+
   for (let decl of struct.fields) {
     check_declaration_node(decl, status);
   }
@@ -211,6 +218,8 @@ function check_struct_node(struct: StructNode, status: CheckStatus) {
   for (let func of struct.functions) {
     check_function_node(func, status);
   }
+
+  // TODO: Remove the `self` value
 
   status.types.push(struct.name);
   status.structs.push(struct);
@@ -398,6 +407,14 @@ function check_access_node(node: AccessNode, status: CheckStatus) {
   check_node(node.source, status);
 
   const source_type = type_from_value_node(node.source, status);
+  if (!source_type.name) {
+    status.errors.push({
+      message: `Unknown target: ${value_from_value_node(node.source)}`,
+      start: node.source.start,
+    });
+    return;
+  }
+
   switch (node.access.node_type) {
     case "ac_field": {
       check_access_field_node(source_type, node.access as AccessFieldNode, status);
@@ -689,7 +706,7 @@ function check_type_and_value_match(
 
       status.errors.push({
         message: !expression_type.name
-          ? `Type mismatch in ${node_type}: unknown value type ${value} (expected ${type_name(
+          ? `Type mismatch in ${node_type}: unknown value ${value} (expected ${type_name(
               target_type,
             )})`
           : `Type mismatch in ${node_type}: ${type_name(expression_type)} (expected ${type_name(
@@ -701,7 +718,7 @@ function check_type_and_value_match(
   } else {
     if (!expression_type.name) {
       status.errors.push({
-        message: `Unknown value type: ${value}`,
+        message: `Unknown value: ${value}`,
         start: i,
       });
     }

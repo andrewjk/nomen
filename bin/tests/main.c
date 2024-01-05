@@ -13,8 +13,9 @@ return *(trait + func_index);
 typedef struct Animal
 {
 } Animal;
-char* Animal_speak(struct Animal this)
+char* Animal_speak(struct Animal *self)
 {
+struct Animal zz = *self;
 return "...";
 }
 
@@ -33,8 +34,9 @@ d._vt = &_Dog_traits;
 d.name = "Dog";
 return d;
 }
-char* Dog_speak(struct Dog this)
+char* Dog_speak(struct Dog *self)
 {
+struct Dog zz = *self;
 return "woof";
 }
 
@@ -53,9 +55,10 @@ c._vt = &_Cat_traits;
 c.name = "Cat";
 return c;
 }
-char* Cat_speak(struct Cat this)
+char* Cat_speak(struct Cat *self)
 {
-return "meow";
+struct Cat zz = *self;
+return zz.name;
 }
 
 // Lizard:
@@ -100,7 +103,7 @@ printf("\n\n");
 Dog dog = Dog_init();
 printf("%s", dog.name);
 printf(": ");
-printf("%s", Dog_speak(dog));
+printf("%s", Dog_speak(&dog));
 printf("\n\n");
 Dog _x1 = Dog_init();
 Cat _x2 = Cat_init();
@@ -109,7 +112,7 @@ void *animals[3] = {&_x1, &_x2, &_x3};
 for (int i = 0; i < 3; i++)
 {
 void **a = *(animals + i);
-printf("%s", ((char *(*)()) * _get_trait_func(a, 0, 0))());
+printf("%s", ((char *(*)(void *)) * _get_trait_func(a, 0, 0))(a));
 printf("\n");
 }
 }

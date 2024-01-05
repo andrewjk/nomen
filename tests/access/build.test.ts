@@ -94,7 +94,7 @@ var x = p.age()
   const parsed = parse(input);
   const result = build(parsed.root.statements[2]);
   const expected = `
-int x = Person_age(p);
+int x = Person_age(&p);
 `;
   assert.equal(parsed.errors, []);
   assert.equal(result.code.trim(), expected.trim());
@@ -117,7 +117,7 @@ var x = p.address.line()
   const parsed = parse(input);
   const result = build(parsed.root.statements[3]);
   const expected = `
-char* x = Address_line(p.address);
+char* x = Address_line(&p.address);
 `;
   assert.equal(parsed.errors, []);
   assert.equal(result.code.trim(), expected.trim());
@@ -140,7 +140,7 @@ var x = p.address().line
   const parsed = parse(input);
   const result = build(parsed.root.statements[3]);
   const expected = `
-char* x = Person_address(p).line;
+char* x = Person_address(&p).line;
 `;
   assert.equal(parsed.errors, []);
   assert.equal(result.code.trim(), expected.trim());

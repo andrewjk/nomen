@@ -25,7 +25,7 @@ func add(a = z0) {}
 `;
   const expected: CompileError[] = [
     {
-      message: "Unknown value type: z0",
+      message: "Unknown value: z0",
       start: 14,
     },
   ];
@@ -47,13 +47,13 @@ func add(a: int = "string?!") {}
   assert.equal(parsed.errors, expected);
 });
 
-test("param type mismatch - unknown value type", () => {
+test("param type mismatch - unknown value", () => {
   const input = `
 func add(a: int = z0) {}
 `;
   const expected: CompileError[] = [
     {
-      message: "Type mismatch in param default: unknown value type z0 (expected int)",
+      message: "Type mismatch in param default: unknown value z0 (expected int)",
       start: 19,
     },
   ];
@@ -107,7 +107,7 @@ func add() -> int {
   assert.equal(parsed.errors, expected);
 });
 
-test("return type mismatch - unknown value type", () => {
+test("return type mismatch - unknown value", () => {
   const input = `
 func add() -> int {
   return z0
@@ -115,7 +115,7 @@ func add() -> int {
 `;
   const expected: CompileError[] = [
     {
-      message: "Type mismatch in return: unknown value type z0 (expected int)",
+      message: "Type mismatch in return: unknown value z0 (expected int)",
       start: 30,
     },
   ];

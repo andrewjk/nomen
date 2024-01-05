@@ -41,4 +41,18 @@ p.age = "hi"
   assert.equal(parsed.errors, expected);
 });
 
+test("unknown target", () => {
+  const input = `
+var age = person.age
+`;
+  const expected: CompileError[] = [
+    {
+      message: "Unknown target: person",
+      start: 11,
+    },
+  ];
+  const parsed = parse(input);
+  assert.equal(parsed.errors, expected);
+});
+
 test.run();

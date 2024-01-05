@@ -19,13 +19,13 @@ const x: what
   assert.equal(parsed.errors, expected);
 });
 
-test("unknown value type", () => {
+test("unknown value", () => {
   const input = `
 const x = z0
 `;
   const expected: CompileError[] = [
     {
-      message: "Unknown value type: z0",
+      message: "Unknown value: z0",
       start: 11,
     },
   ];
@@ -47,13 +47,13 @@ const x: int = "string?!"
   assert.equal(parsed.errors, expected);
 });
 
-test("type mismatch - unknown value type", () => {
+test("type mismatch - unknown value", () => {
   const input = `
 const x: int = z0
 `;
   const expected: CompileError[] = [
     {
-      message: "Type mismatch in declaration: unknown value type z0 (expected int)",
+      message: "Type mismatch in declaration: unknown value z0 (expected int)",
       start: 16,
     },
   ];

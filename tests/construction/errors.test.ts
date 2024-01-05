@@ -11,9 +11,8 @@ const dog = Dog.init()
 `;
   const expected: CompileError[] = [
     {
-      // TODO: Better error here
-      message: "Function not found: init",
-      start: 17,
+      message: "Unknown target: Dog",
+      start: 13,
     },
   ];
   const parsed = parse(input);
@@ -69,7 +68,7 @@ const dog = Dog.init(5)
   assert.equal(parsed.errors, expected);
 });
 
-test("param type mismatch -- unknown value type", () => {
+test("param type mismatch -- unknown value", () => {
   const input = `
 struct Dog {
     var name: string
@@ -78,7 +77,7 @@ const dog = Dog.init(z0)
 `;
   const expected: CompileError[] = [
     {
-      message: "Type mismatch in param: unknown value type z0 (expected string)",
+      message: "Type mismatch in param: unknown value z0 (expected string)",
       start: 58,
     },
   ];

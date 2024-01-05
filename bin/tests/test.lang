@@ -65,7 +65,7 @@ struct Cat: Animal {
 	var name = "Cat"
 
 	func speak() -> string {
-		return "meow"
+		return self.name
 	}
 }
 

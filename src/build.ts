@@ -378,7 +378,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
     // HACK: Need to map names to types
     status.headers += `${c_type(func.return_type.name || "void")} ${node.name}_${
       func.name
-    }(struct ${node.name} this${func.params.length ? ", " : ""}${func.params
+    }(struct ${node.name} *self${func.params.length ? ", " : ""}${func.params
       .map((p) => build_parameter_node(p, status))
       .join(", ")});\n`;
 
@@ -386,9 +386,12 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
     // HACK: Need to map names to types
     status.code += `${c_type(func.return_type.name || "void")} ${node.name}_${func.name}(struct ${
       node.name
-    } this${func.params.length ? ", " : ""}${func.params
+    } *self${func.params.length ? ", " : ""}${func.params
       .map((p) => build_parameter_node(p, status))
       .join(", ")})\n{\n`;
+    // HACK: Dereference the `self` pointer arg to a local variable with a random name
+    // (`zz` for now, but we could automate it)
+    status.code += `struct ${node.name} zz = *self;\n`;
     for (let child of func.statements) {
       build_node(child, status);
     }
@@ -415,7 +418,7 @@ function build_trait_node(node: TraitNode, status: BuildStatus) {
     // HACK: Need to map names to types
     status.headers += `${c_type(func.return_type.name || "void")} ${node.name}_${
       func.name
-    }(struct ${node.name} this${func.params.length ? ", " : ""}${func.params
+    }(struct ${node.name} *self${func.params.length ? ", " : ""}${func.params
       .map((p) => build_parameter_node(p, status))
       .join(", ")});\n`;
 
@@ -423,9 +426,12 @@ function build_trait_node(node: TraitNode, status: BuildStatus) {
     // HACK: Need to map names to types
     status.code += `${c_type(func.return_type.name || "void")} ${node.name}_${func.name}(struct ${
       node.name
-    } this${func.params.length ? ", " : ""}${func.params
+    } *self${func.params.length ? ", " : ""}${func.params
       .map((p) => build_parameter_node(p, status))
       .join(", ")})\n{\n`;
+    // HACK: Dereference the `self` pointer arg to a local variable with a random name
+    // (`zz` for now, but we could automate it)
+    status.code += `struct ${node.name} zz = *self;\n`;
     for (let child of func.statements) {
       build_node(child, status);
     }
@@ -493,13 +499,16 @@ function build_access_node(node: AccessNode, status: BuildStatus) {
         // TODO: Cast to the correct function definition
         // TODO: Use the correct variable name
         // TODO: Pass parameters
-        const cast = "(char *(*)())";
+        const cast = "(char *(*)(void *))";
         status.code += `(${cast} * _get_trait_func(`;
         build_node(node.source, status);
-        status.code += `, ${status.traits.indexOf(trait)}, ${trait.functions.indexOf(func)}))()`;
+        status.code += `, ${status.traits.indexOf(trait)}, ${trait.functions.indexOf(func)}))(`;
+        build_node(node.source, status);
+        status.code += `)`;
       } else {
         status.code += `${c_type(type.name)}_${invoke.name}(`;
         if (!invoke.static) {
+          status.code += "&";
           build_node(node.source, status);
         }
         for (let i = 0; i < invoke.params.length; i++) {
@@ -636,7 +645,8 @@ function build_return_node(node: ReturnNode, status: BuildStatus) {
 function build_value_node(node: ValueNode, status: BuildStatus) {
   // TODO:
   //const value = node.type === "string" ? `"${node.value}"` : node.value;
-  status.code += node.value;
+  // HACK: Replace `self` with the dereferenced `zz`
+  status.code += node.value.replace("self", "zz");
 }
 
 function build_array_values_node(node: ArrayValuesNode, status: BuildStatus) {

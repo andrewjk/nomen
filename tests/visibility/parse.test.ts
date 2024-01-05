@@ -200,13 +200,13 @@ pub struct Person {
   assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
 });
 
-// TODO: Need support for 'this', rudimentary scoping
+// TODO: Need rudimentary scoping
 test("accessing sec fields within scope", () => {
   const input = `
 struct Person {
   sec var name: string
   sec func greet() -> string {
-    return "hi, " + this.name
+    return "hi, " + self.name
   }
 }
 `;
