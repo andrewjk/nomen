@@ -1,0 +1,66 @@
+
+func main = ()
+	Console.Write("\n")
+
+	// Test for loop and range
+	for i in 0..5:
+		Console.Write("hello, world! ")
+		Console.Write(i + 1)
+		// TODO: if i + 1 < 4
+		const x = i + 1
+		if x < 4:
+			Console.Write(" is less than 4")
+		else:
+			Console.Write(" is 4 or more")
+		;
+		Console.Write("\n")
+	;
+
+	Console.Write("\n")
+
+	// Test while loop
+	var y = 0
+	while y < 5:
+		Console.Write("hi ")
+		y = y + 1
+	;
+
+	Console.Write("\n\n")
+
+	const dog = Dog.init()
+	Console.Write(dog.name)
+	Console.Write(": ")
+	Console.Write(dog.speak())
+
+	Console.Write("\n\n")
+
+	// Test an array of objects with traits
+	const animals Animal[] = [Dog.init(), Cat.init(), Lizard.init()]
+	for a in animals:
+		// TODO: Fields in traits??
+		//Console.Write(a.name)
+		//Console.Write(": ")
+		Console.Write(a.speak())
+		Console.Write("\n")
+	;
+;
+
+trait Animal
+	var name String
+	func speak = () ~ "..."
+;
+
+type Dog is Animal 
+	pub var name = "Dog"
+	pub func speak = () ~ "woof"
+;
+
+type Cat is Animal
+	pub var name = "Cat"
+	pub func speak = () ~ self.name
+;
+
+type Lizard is Animal
+	pub var name = "Lizard"
+	// Uses the default speak function
+;
