@@ -5,9 +5,9 @@ import path from "path";
 import yargs from "yargs";
 import build from "../../src/build";
 import check from "../../src/check";
-import parse from "../../src/parse";
+import parse from "../../src/parse/utils/get_index";
 import tokenize from "../../src/tokenize";
-import Config from "./types/Config";
+import type Config from "./types/Config";
 
 const SUPPORTED_EXTENSION = ".lang";
 
