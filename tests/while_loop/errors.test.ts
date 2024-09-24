@@ -1,9 +1,8 @@
-import { suite } from "uvu";
-import assert from "uvu/assert";
+import { expect, test } from "vitest";
 import parse from "../../src/parse";
 import type CompileError from "../../src/types/CompileError";
 
-const test = suite("While loop errors");
+//const test = suite("While loop errors");
 
 test("string condition", () => {
   const input = `
@@ -18,7 +17,5 @@ while "hi" {
     },
   ];
   const parsed = parse(input);
-  assert.equal(parsed.errors, expected);
+  expect(parsed.errors).toEqual(expected);
 });
-
-test.run();

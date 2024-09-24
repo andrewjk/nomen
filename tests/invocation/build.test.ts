@@ -1,9 +1,8 @@
-import { suite } from "uvu";
-import assert from "uvu/assert";
+import { expect, test } from "vitest";
 import build from "../../src/build";
 import parse from "../../src/parse";
 
-const test = suite("Invocation build");
+//const test = suite("Invocation build");
 
 test("function without params", () => {
   const input = `
@@ -15,8 +14,8 @@ greet()
   const expected = `
 greet();
 `;
-  assert.equal(parsed.errors, []);
-  assert.equal(result.code.trim(), expected.trim());
+  expect(parsed.errors).toEqual([]);
+  expect(result.code.trim()).toEqual(expected.trim());
 });
 
 test("function with params", () => {
@@ -29,8 +28,6 @@ greet("Andrew", "Manager")
   const expected = `
 greet("Andrew", "Manager");
 `;
-  assert.equal(parsed.errors, []);
-  assert.equal(result.code.trim(), expected.trim());
+  expect(parsed.errors).toEqual([]);
+  expect(result.code.trim()).toEqual(expected.trim());
 });
-
-test.run();

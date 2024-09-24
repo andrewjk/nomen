@@ -1,5 +1,4 @@
-import { suite } from "uvu";
-import assert from "uvu/assert";
+import { expect, test } from "vitest";
 import AccessInvocationNode from "../../src/nodes/AccessInvocationNode";
 import AccessNode from "../../src/nodes/AccessNode";
 import ArrayValuesNode from "../../src/nodes/ArrayValuesNode";
@@ -10,16 +9,16 @@ import ValueNode from "../../src/nodes/ValueNode";
 import parse from "../../src/parse";
 import trim_test_data from "../trim_test_data";
 
-const test = suite("Array parse");
+//const test = suite("Array parse");
 
 test("declaration with type", () => {
   const input = `
 const x: int[]
 `;
   const parsed = parse(input);
-  const expected = new DeclarationNode(1, "def", "const", "x", new Type("int", true));
-  assert.equal(parsed.errors, []);
-  assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
+  const expected = new DeclarationNode(1, "mod", "const", "x", new Type("int", true));
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_data(parsed.root.statements[0])).toEqual(trim_test_data(expected));
 });
 
 test("declaration with value", () => {
@@ -29,7 +28,7 @@ var x = [1, 2, 3]
   const parsed = parse(input);
   const expected = new DeclarationNode(
     1,
-    "def",
+    "mod",
     "var",
     "x",
     new Type("int", true, new ValueNode(-1, "3", "int")),
@@ -39,8 +38,8 @@ var x = [1, 2, 3]
       new Type("int", true, new ValueNode(-1, "3", "int")),
     ),
   );
-  assert.equal(parsed.errors, []);
-  assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_data(parsed.root.statements[0])).toEqual(trim_test_data(expected));
 });
 
 test("declaration of trait array with type and structs", () => {
@@ -53,7 +52,7 @@ var x: Animal[] = [Dog.init(), Cat.init()]
   const parsed = parse(input);
   const expected = new DeclarationNode(
     61,
-    "def",
+    "mod",
     "var",
     "x",
     new Type("Animal", true, new ValueNode(-1, "2", "int")),
@@ -74,8 +73,8 @@ var x: Animal[] = [Dog.init(), Cat.init()]
       new Type("Animal", true, new ValueNode(-1, "2", "int")),
     ),
   );
-  assert.equal(parsed.errors, []);
-  assert.equal(trim_test_data(parsed.root.statements[3]), trim_test_data(expected));
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_data(parsed.root.statements[3])).toEqual(trim_test_data(expected));
 });
 
 test("assignment of trait array with structs", () => {
@@ -107,8 +106,6 @@ x = [Dog.init(), Cat.init()]
       new Type("Animal", true, new ValueNode(-1, "2", "int")),
     ),
   );
-  assert.equal(parsed.errors, []);
-  assert.equal(trim_test_data(parsed.root.statements[4]), trim_test_data(expected));
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_data(parsed.root.statements[4])).toEqual(trim_test_data(expected));
 });
-
-test.run();

@@ -1,9 +1,8 @@
-import { suite } from "uvu";
-import assert from "uvu/assert";
+import { expect, test } from "vitest";
 import build from "../../src/build";
 import parse from "../../src/parse";
 
-const test = suite("Operation build");
+//const test = suite("Operation build");
 
 test("addition", () => {
   const input = `
@@ -14,8 +13,8 @@ var x = 1 + 2
   const expected = `
 int x = 1 + 2;
 `;
-  assert.equal(parsed.errors, []);
-  assert.equal(result.code.trim(), expected.trim());
+  expect(parsed.errors).toEqual([]);
+  expect(result.code.trim()).toEqual(expected.trim());
 });
 
 test("subtraction", () => {
@@ -27,8 +26,8 @@ var x = 1 - 2
   const expected = `
 int x = 1 - 2;
 `;
-  assert.equal(parsed.errors, []);
-  assert.equal(result.code.trim(), expected.trim());
+  expect(parsed.errors).toEqual([]);
+  expect(result.code.trim()).toEqual(expected.trim());
 });
 
 test("series", () => {
@@ -40,8 +39,6 @@ var x = 1 + 2 - 3
   const expected = `
 int x = 1 + 2 - 3;
 `;
-  assert.equal(parsed.errors, []);
-  assert.equal(result.code.trim(), expected.trim());
+  expect(parsed.errors).toEqual([]);
+  expect(result.code.trim()).toEqual(expected.trim());
 });
-
-test.run();

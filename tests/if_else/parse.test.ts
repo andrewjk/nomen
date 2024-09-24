@@ -1,5 +1,4 @@
-import { suite } from "uvu";
-import assert from "uvu/assert";
+import { expect, test } from "vitest";
 import AssignmentNode from "../../src/nodes/AssignmentNode";
 import BranchNode from "../../src/nodes/BranchNode";
 import DeclarationNode from "../../src/nodes/DeclarationNode";
@@ -10,7 +9,7 @@ import ValueNode from "../../src/nodes/ValueNode";
 import parse from "../../src/parse";
 import trim_test_data from "../trim_test_data";
 
-const test = suite("If/else parse");
+//const test = suite("If/else parse");
 
 test("if", () => {
   const input = `
@@ -33,8 +32,8 @@ if x > 5 {
       new AssignmentNode(25, new ValueNode(25, "x", "int"), new ValueNode(29, "15", "int")),
     ]),
   );
-  assert.equal(parsed.errors, []);
-  assert.equal(trim_test_data(parsed.root.statements[1]), trim_test_data(expected));
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_data(parsed.root.statements[1])).toEqual(trim_test_data(expected));
 });
 
 test("if else", () => {
@@ -42,7 +41,7 @@ test("if else", () => {
 var x = 10
 if x > 5 {
   x = 15
-else {
+} else {
   x = 20
 }
 `;
@@ -59,27 +58,27 @@ else {
     new BranchNode(25, [
       new AssignmentNode(25, new ValueNode(25, "x", "int"), new ValueNode(29, "15", "int")),
     ]),
-    new BranchNode(41, [
-      new AssignmentNode(41, new ValueNode(41, "x", "int"), new ValueNode(45, "20", "int")),
+    new BranchNode(43, [
+      new AssignmentNode(43, new ValueNode(43, "x", "int"), new ValueNode(47, "20", "int")),
     ]),
   );
-  assert.equal(parsed.errors, []);
-  assert.equal(trim_test_data(parsed.root.statements[1]), trim_test_data(expected));
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_data(parsed.root.statements[1])).toEqual(trim_test_data(expected));
 });
 
 test("declaration with if", () => {
   const input = `
 const x = 10
 const y = if x > 5 {
-            return 50
-          else {
-            return 0
-          }
+  return 50
+} else {
+  return 0
+}
 `;
   const parsed = parse(input);
   const expected = new DeclarationNode(
     14,
-    "def",
+    "mod",
     "const",
     "y",
     "int",
@@ -92,25 +91,25 @@ const y = if x > 5 {
         new ValueNode(31, "5", "int"),
         "bool",
       ),
-      new BranchNode(47, [new ReturnNode(47, new ValueNode(54, "50", "int"), "int")]),
-      new BranchNode(86, [new ReturnNode(86, new ValueNode(93, "0", "int"), "int")]),
+      new BranchNode(37, [new ReturnNode(37, new ValueNode(44, "50", "int"), "int")]),
+      new BranchNode(58, [new ReturnNode(58, new ValueNode(65, "0", "int"), "int")]),
       "int",
     ),
   );
-  assert.equal(parsed.errors, []);
-  assert.equal(trim_test_data(parsed.root.statements[1]), trim_test_data(expected));
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_data(parsed.root.statements[1])).toEqual(trim_test_data(expected));
 });
 
 test("declaration with short if", () => {
   const input = `
 const x = 10
-const y = if x > 5 => 50
-          else => 0
+const y = if x > 5 ~ 50
+          else ~ 0
 `;
   const parsed = parse(input);
   const expected = new DeclarationNode(
     14,
-    "def",
+    "mod",
     "const",
     "y",
     "int",
@@ -123,24 +122,24 @@ const y = if x > 5 => 50
         new ValueNode(31, "5", "int"),
         "bool",
       ),
-      new BranchNode(33, [new ReturnNode(33, new ValueNode(36, "50", "int"), "int")]),
-      new BranchNode(54, [new ReturnNode(54, new ValueNode(57, "0", "int"), "int")]),
+      new BranchNode(33, [new ReturnNode(33, new ValueNode(35, "50", "int"), "int")]),
+      new BranchNode(53, [new ReturnNode(53, new ValueNode(55, "0", "int"), "int")]),
       "int",
     ),
   );
-  assert.equal(parsed.errors, []);
-  assert.equal(trim_test_data(parsed.root.statements[1]), trim_test_data(expected));
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_data(parsed.root.statements[1])).toEqual(trim_test_data(expected));
 });
 
 test("declaration with one line if", () => {
   const input = `
 const x = 10
-const y = if x > 5 => 50 else => 0
+const y = if x > 5 ~ 50 else ~ 0
 `;
   const parsed = parse(input);
   const expected = new DeclarationNode(
     14,
-    "def",
+    "mod",
     "const",
     "y",
     "int",
@@ -153,13 +152,11 @@ const y = if x > 5 => 50 else => 0
         new ValueNode(31, "5", "int"),
         "bool",
       ),
-      new BranchNode(33, [new ReturnNode(33, new ValueNode(36, "50", "int"), "int")]),
-      new BranchNode(44, [new ReturnNode(44, new ValueNode(47, "0", "int"), "int")]),
+      new BranchNode(33, [new ReturnNode(33, new ValueNode(35, "50", "int"), "int")]),
+      new BranchNode(43, [new ReturnNode(43, new ValueNode(45, "0", "int"), "int")]),
       "int",
     ),
   );
-  assert.equal(parsed.errors, []);
-  assert.equal(trim_test_data(parsed.root.statements[1]), trim_test_data(expected));
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_data(parsed.root.statements[1])).toEqual(trim_test_data(expected));
 });
-
-test.run();

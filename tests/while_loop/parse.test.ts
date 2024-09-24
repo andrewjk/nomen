@@ -1,5 +1,4 @@
-import { suite } from "uvu";
-import assert from "uvu/assert";
+import { expect, test } from "vitest";
 import AssignmentNode from "../../src/nodes/AssignmentNode";
 import OperationNode from "../../src/nodes/OperationNode";
 import ValueNode from "../../src/nodes/ValueNode";
@@ -7,7 +6,7 @@ import WhileLoopNode from "../../src/nodes/WhileLoopNode";
 import parse from "../../src/parse";
 import trim_test_data from "../trim_test_data";
 
-const test = suite("While loop parse");
+//const test = suite("While loop parse");
 
 test("while", () => {
   const input = `
@@ -40,8 +39,8 @@ while x < 5 {
       ),
     ],
   );
-  assert.equal(parsed.errors, []);
-  assert.equal(trim_test_data(parsed.root.statements[1]), trim_test_data(expected));
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_data(parsed.root.statements[1])).toEqual(trim_test_data(expected));
 });
 
 test("while true", () => {
@@ -52,8 +51,6 @@ while true {
 `;
   const parsed = parse(input);
   const expected = new WhileLoopNode(1, new ValueNode(7, "true", "bool"));
-  assert.equal(parsed.errors, []);
-  assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_data(parsed.root.statements[0])).toEqual(trim_test_data(expected));
 });
-
-test.run();

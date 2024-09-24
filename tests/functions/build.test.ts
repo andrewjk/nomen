@@ -1,9 +1,8 @@
-import { suite } from "uvu";
-import assert from "uvu/assert";
+import { expect, test } from "vitest";
 import build from "../../src/build";
 import parse from "../../src/parse";
 
-const test = suite("Function build");
+//const test = suite("Function build");
 
 test("function", () => {
   const input = `
@@ -16,8 +15,8 @@ void add()
 {
 }
 `;
-  assert.equal(parsed.errors, []);
-  assert.equal(result.code.trim(), expected.trim());
+  expect(parsed.errors).toEqual([]);
+  expect(result.code.trim()).toEqual(expected.trim());
 });
 
 test("function with params", () => {
@@ -31,8 +30,8 @@ void add(int a, int b)
 {
 }
 `;
-  assert.equal(parsed.errors, []);
-  assert.equal(result.code.trim(), expected.trim());
+  expect(parsed.errors).toEqual([]);
+  expect(result.code.trim()).toEqual(expected.trim());
 });
 
 test("function with params with default value", () => {
@@ -46,8 +45,8 @@ void add(int a, int b)
 {
 }
 `;
-  assert.equal(parsed.errors, []);
-  assert.equal(result.code.trim(), expected.trim());
+  expect(parsed.errors).toEqual([]);
+  expect(result.code.trim()).toEqual(expected.trim());
 });
 
 test("function with return type", () => {
@@ -64,8 +63,8 @@ void add()
 return 5;
 }
 `;
-  assert.equal(parsed.errors, []);
-  assert.equal(result.code.trim(), expected.trim());
+  expect(parsed.errors).toEqual([]);
+  expect(result.code.trim()).toEqual(expected.trim());
 });
 
 test("function with body", () => {
@@ -82,8 +81,8 @@ void add()
 int x = 5;
 }
 `;
-  assert.equal(parsed.errors, []);
-  assert.equal(result.code.trim(), expected.trim());
+  expect(parsed.errors).toEqual([]);
+  expect(result.code.trim()).toEqual(expected.trim());
 });
 
 test("function with return value", () => {
@@ -100,8 +99,8 @@ void add()
 return 5;
 }
 `;
-  assert.equal(parsed.errors, []);
-  assert.equal(result.code.trim(), expected.trim());
+  expect(parsed.errors).toEqual([]);
+  expect(result.code.trim()).toEqual(expected.trim());
 });
 
 /*
@@ -121,8 +120,7 @@ void subtract() {
 
 }
 `;
-  assert.equal(parsed.errors, []);
-  assert.equal(result.code.trim(), expected.trim());
+  expect(parsed.errors).toEqual([]);
+  expect(result.code.trim()).toEqual(expected.trim());
 });
 */
-test.run();

@@ -1,9 +1,8 @@
-import { suite } from "uvu";
-import assert from "uvu/assert";
+import { expect, test } from "vitest";
 import build from "../../src/build";
 import parse from "../../src/parse";
 
-const test = suite("While loop build");
+//const test = suite("While loop build");
 
 test("while", () => {
   const input = `
@@ -19,8 +18,8 @@ while (x < 5) {
 x = x + 1;
 }
 `;
-  assert.equal(parsed.errors, []);
-  assert.equal(result.code.trim(), expected.trim());
+  expect(parsed.errors).toEqual([]);
+  expect(result.code.trim()).toEqual(expected.trim());
 });
 
 test("while true", () => {
@@ -35,8 +34,6 @@ while true {
 while (true) {
 }
 `;
-  assert.equal(parsed.errors, []);
-  assert.equal(result.code.trim(), expected.trim());
+  expect(parsed.errors).toEqual([]);
+  expect(result.code.trim()).toEqual(expected.trim());
 });
-
-test.run();

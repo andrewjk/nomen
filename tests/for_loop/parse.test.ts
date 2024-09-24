@@ -1,5 +1,4 @@
-import { suite } from "uvu";
-import assert from "uvu/assert";
+import { expect, test } from "vitest";
 import ForLoopNode from "../../src/nodes/ForLoopNode";
 import RangeNode from "../../src/nodes/RangeNode";
 import Type from "../../src/nodes/Type";
@@ -7,7 +6,7 @@ import ValueNode from "../../src/nodes/ValueNode";
 import parse from "../../src/parse";
 import trim_test_data from "../trim_test_data";
 
-const test = suite("For loop parse");
+//const test = suite("For loop parse");
 
 test("with array", () => {
   const input = `
@@ -22,8 +21,8 @@ for x in y {
     new ValueNode(25, "x", "int"),
     new ValueNode(30, "y", new Type("int", true, new ValueNode(-1, "3", "int"))),
   );
-  assert.equal(parsed.errors, []);
-  assert.equal(trim_test_data(parsed.root.statements[1]), trim_test_data(expected));
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_data(parsed.root.statements[1])).toEqual(trim_test_data(expected));
 });
 
 test("with range", () => {
@@ -36,8 +35,6 @@ for x in 0..5 {}
     new ValueNode(5, "x", "int"),
     new RangeNode(10, new ValueNode(10, "0", "int"), new ValueNode(13, "5", "int"), false),
   );
-  assert.equal(parsed.errors, []);
-  assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_data(parsed.root.statements[0])).toEqual(trim_test_data(expected));
 });
-
-test.run();

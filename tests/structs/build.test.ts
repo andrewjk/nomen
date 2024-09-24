@@ -1,9 +1,8 @@
-import { suite } from "uvu";
-import assert from "uvu/assert";
+import { expect, test } from "vitest";
 import build from "../../src/build";
 import parse from "../../src/parse";
 
-const test = suite("Struct build");
+//const test = suite("Struct build");
 
 test("struct", () => {
   const input = `
@@ -24,8 +23,8 @@ p._vt = &_Person_traits;
 return p;
 }
 `;
-  assert.equal(parsed.errors, []);
-  assert.equal(result.code.trim(), expected.trim());
+  expect(parsed.errors).toEqual([]);
+  expect(result.code.trim()).toEqual(expected.trim());
 });
 
 test("struct with fields", () => {
@@ -54,8 +53,8 @@ p.age = 0;
 return p;
 }
 `;
-  assert.equal(parsed.errors, []);
-  assert.equal(result.code.trim(), expected.trim());
+  expect(parsed.errors).toEqual([]);
+  expect(result.code.trim()).toEqual(expected.trim());
 });
 
 test("struct with functions", () => {
@@ -83,8 +82,6 @@ void Person_greet(struct Person *self)
 struct Person zz = *self;
 }
 `;
-  assert.equal(parsed.errors, []);
-  assert.equal(result.code.trim(), expected.trim());
+  expect(parsed.errors).toEqual([]);
+  expect(result.code.trim()).toEqual(expected.trim());
 });
-
-test.run();

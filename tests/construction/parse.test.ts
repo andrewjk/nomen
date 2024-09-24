@@ -1,5 +1,4 @@
-import { suite } from "uvu";
-import assert from "uvu/assert";
+import { expect, test } from "vitest";
 import AccessInvocationNode from "../../src/nodes/AccessInvocationNode";
 import AccessNode from "../../src/nodes/AccessNode";
 import DeclarationNode from "../../src/nodes/DeclarationNode";
@@ -7,7 +6,7 @@ import ValueNode from "../../src/nodes/ValueNode";
 import parse from "../../src/parse";
 import trim_test_data from "../trim_test_data";
 
-const test = suite("Construction parse");
+//const test = suite("Construction parse");
 
 test("init struct", () => {
   const input = `
@@ -18,7 +17,7 @@ var x = Person.init()
   const parsed = parse(input);
   const expected = new DeclarationNode(
     19,
-    "def",
+    "mod",
     "var",
     "x",
     "Person",
@@ -28,9 +27,9 @@ var x = Person.init()
       new AccessInvocationNode(34, "init", [], "Person", true),
     ),
   );
-  assert.equal(parsed.errors, []);
-  assert.equal(parsed.errors, []);
-  assert.equal(trim_test_data(parsed.root.statements[1]), trim_test_data(expected));
+  expect(parsed.errors).toEqual([]);
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_data(parsed.root.statements[1])).toEqual(trim_test_data(expected));
 });
 
 test("init struct with params", () => {
@@ -43,7 +42,7 @@ var x = Person.init("Andrew")
   const parsed = parse(input);
   const expected = new DeclarationNode(
     38,
-    "def",
+    "mod",
     "var",
     "x",
     "Person",
@@ -59,8 +58,8 @@ var x = Person.init("Andrew")
       ),
     ),
   );
-  assert.equal(parsed.errors, []);
-  assert.equal(trim_test_data(parsed.root.statements[1]), trim_test_data(expected));
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_data(parsed.root.statements[1])).toEqual(trim_test_data(expected));
 });
 
 test("init struct with default values", () => {
@@ -73,7 +72,7 @@ var x = Person.init()
   const parsed = parse(input);
   const expected = new DeclarationNode(
     36,
-    "def",
+    "mod",
     "var",
     "x",
     "Person",
@@ -83,8 +82,6 @@ var x = Person.init()
       new AccessInvocationNode(51, "init", [], "Person", true),
     ),
   );
-  assert.equal(parsed.errors, []);
-  assert.equal(trim_test_data(parsed.root.statements[1]), trim_test_data(expected));
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_data(parsed.root.statements[1])).toEqual(trim_test_data(expected));
 });
-
-test.run();

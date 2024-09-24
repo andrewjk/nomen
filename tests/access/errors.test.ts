@@ -1,9 +1,8 @@
-import { suite } from "uvu";
-import assert from "uvu/assert";
+import { expect, test } from "vitest";
 import parse from "../../src/parse";
 import type CompileError from "../../src/types/CompileError";
 
-const test = suite("Access errors");
+//const test = suite("Access errors");
 
 test("type mismatch getting field", () => {
   const input = `
@@ -20,7 +19,7 @@ var x: int = p.name
     },
   ];
   const parsed = parse(input);
-  assert.equal(parsed.errors, expected);
+  expect(parsed.errors).toEqual(expected);
 });
 
 test("type mismatch setting field", () => {
@@ -38,7 +37,7 @@ p.age = "hi"
     },
   ];
   const parsed = parse(input);
-  assert.equal(parsed.errors, expected);
+  expect(parsed.errors).toEqual(expected);
 });
 
 test("unknown target", () => {
@@ -52,7 +51,5 @@ var age = person.age
     },
   ];
   const parsed = parse(input);
-  assert.equal(parsed.errors, expected);
+  expect(parsed.errors).toEqual(expected);
 });
-
-test.run();

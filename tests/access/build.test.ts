@@ -1,9 +1,8 @@
-import { suite } from "uvu";
-import assert from "uvu/assert";
+import { expect, test } from "vitest";
 import build from "../../src/build";
 import parse from "../../src/parse";
 
-const test = suite("Access build");
+//const test = suite("Access build");
 
 test("getting field", () => {
   const input = `
@@ -18,8 +17,8 @@ var x = p.age
   const expected = `
 int x = p.age;
 `;
-  assert.equal(parsed.errors, []);
-  assert.equal(result.code.trim(), expected.trim());
+  expect(parsed.errors).toEqual([]);
+  expect(result.code.trim()).toEqual(expected.trim());
 });
 
 test("getting nested field", () => {
@@ -39,8 +38,8 @@ var x = p.address.line
   const expected = `
 char* x = p.address.line;
 `;
-  assert.equal(parsed.errors, []);
-  assert.equal(result.code.trim(), expected.trim());
+  expect(parsed.errors).toEqual([]);
+  expect(result.code.trim()).toEqual(expected.trim());
 });
 
 test("setting field", () => {
@@ -56,8 +55,8 @@ p.age = 20
   const expected = `
 p.age = 20;
 `;
-  assert.equal(parsed.errors, []);
-  assert.equal(result.code.trim(), expected.trim());
+  expect(parsed.errors).toEqual([]);
+  expect(result.code.trim()).toEqual(expected.trim());
 });
 
 test("setting nested field", () => {
@@ -77,8 +76,8 @@ p.address.line = "1 main st"
   const expected = `
 p.address.line = "1 main st";
 `;
-  assert.equal(parsed.errors, []);
-  assert.equal(result.code.trim(), expected.trim());
+  expect(parsed.errors).toEqual([]);
+  expect(result.code.trim()).toEqual(expected.trim());
 });
 
 test("getting function", () => {
@@ -96,8 +95,8 @@ var x = p.age()
   const expected = `
 int x = Person_age(&p);
 `;
-  assert.equal(parsed.errors, []);
-  assert.equal(result.code.trim(), expected.trim());
+  expect(parsed.errors).toEqual([]);
+  expect(result.code.trim()).toEqual(expected.trim());
 });
 
 test("getting function after field", () => {
@@ -119,8 +118,8 @@ var x = p.address.line()
   const expected = `
 char* x = Address_line(&p.address);
 `;
-  assert.equal(parsed.errors, []);
-  assert.equal(result.code.trim(), expected.trim());
+  expect(parsed.errors).toEqual([]);
+  expect(result.code.trim()).toEqual(expected.trim());
 });
 
 test("getting field after function", () => {
@@ -142,8 +141,6 @@ var x = p.address().line
   const expected = `
 char* x = Person_address(&p).line;
 `;
-  assert.equal(parsed.errors, []);
-  assert.equal(result.code.trim(), expected.trim());
+  expect(parsed.errors).toEqual([]);
+  expect(result.code.trim()).toEqual(expected.trim());
 });
-
-test.run();

@@ -1,9 +1,8 @@
-import { suite } from "uvu";
-import assert from "uvu/assert";
+import { expect, test } from "vitest";
 import parse from "../../src/parse";
 import type CompileError from "../../src/types/CompileError";
 
-const test = suite("Declaration errors");
+//const test = suite("Declaration errors");
 
 test("unknown type", () => {
   const input = `
@@ -16,7 +15,7 @@ const x: what
     },
   ];
   const parsed = parse(input);
-  assert.equal(parsed.errors, expected);
+  expect(parsed.errors).toEqual(expected);
 });
 
 test("unknown value", () => {
@@ -30,7 +29,7 @@ const x = z0
     },
   ];
   const parsed = parse(input);
-  assert.equal(parsed.errors, expected);
+  expect(parsed.errors).toEqual(expected);
 });
 
 test("type mismatch", () => {
@@ -44,7 +43,7 @@ const x: int = "string?!"
     },
   ];
   const parsed = parse(input);
-  assert.equal(parsed.errors, expected);
+  expect(parsed.errors).toEqual(expected);
 });
 
 test("type mismatch - unknown value", () => {
@@ -58,7 +57,7 @@ const x: int = z0
     },
   ];
   const parsed = parse(input);
-  assert.equal(parsed.errors, expected);
+  expect(parsed.errors).toEqual(expected);
 });
 
 test("no type or default value", () => {
@@ -72,7 +71,5 @@ const x
     },
   ];
   const parsed = parse(input);
-  assert.equal(parsed.errors, expected);
+  expect(parsed.errors).toEqual(expected);
 });
-
-test.run();

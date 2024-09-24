@@ -1,9 +1,8 @@
-import { suite } from "uvu";
-import assert from "uvu/assert";
+import { expect, test } from "vitest";
 import parse from "../../src/parse";
 import type CompileError from "../../src/types/CompileError";
 
-const test = suite("Operation errors");
+//const test = suite("Operation errors");
 
 test("type mismatch", () => {
   const input = `
@@ -16,7 +15,7 @@ const x = 5 + "b"
     },
   ];
   const parsed = parse(input);
-  assert.equal(parsed.errors, expected);
+  expect(parsed.errors).toEqual(expected);
 });
 
 test("declaration type mismatch", () => {
@@ -30,7 +29,7 @@ const x: int = "a" + "b"
     },
   ];
   const parsed = parse(input);
-  assert.equal(parsed.errors, expected);
+  expect(parsed.errors).toEqual(expected);
 });
 
 test("assignment type mismatch", () => {
@@ -45,7 +44,5 @@ x = "a" + "b"
     },
   ];
   const parsed = parse(input);
-  assert.equal(parsed.errors, expected);
+  expect(parsed.errors).toEqual(expected);
 });
-
-test.run();

@@ -1,9 +1,8 @@
-import { suite } from "uvu";
-import assert from "uvu/assert";
+import { expect, test } from "vitest";
 import parse from "../../src/parse";
 import type CompileError from "../../src/types/CompileError";
 
-const test = suite("Pub errors");
+//const test = suite("Pub errors");
 
 test("invalid target", () => {
   const input = `
@@ -18,7 +17,7 @@ pub if true {
     },
   ];
   const parsed = parse(input);
-  assert.equal(parsed.errors, expected);
+  expect(parsed.errors).toEqual(expected);
 });
 
 test("accessing sec fields", () => {
@@ -42,7 +41,7 @@ x.greet()
     },
   ];
   const parsed = parse(input);
-  assert.equal(parsed.errors, expected);
+  expect(parsed.errors).toEqual(expected);
 });
 
 test("sec fields in trait", () => {
@@ -63,7 +62,5 @@ trait Person {
     },
   ];
   const parsed = parse(input);
-  assert.equal(parsed.errors, expected);
+  expect(parsed.errors).toEqual(expected);
 });
-
-test.run();

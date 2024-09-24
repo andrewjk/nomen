@@ -1,9 +1,8 @@
-import { suite } from "uvu";
-import assert from "uvu/assert";
+import { expect, test } from "vitest";
 import parse from "../../src/parse";
 import type CompileError from "../../src/types/CompileError";
 
-const test = suite("Array errors");
+//const test = suite("Array errors");
 
 test("declaration type mismatch", () => {
   const input = `
@@ -24,7 +23,7 @@ const x: int[] = ["a", "b", "c"]
     },
   ];
   const parsed = parse(input);
-  assert.equal(parsed.errors, expected);
+  expect(parsed.errors).toEqual(expected);
 });
 
 test("declaration type mixed", () => {
@@ -38,7 +37,7 @@ const x = [1, "b", 2]
     },
   ];
   const parsed = parse(input);
-  assert.equal(parsed.errors, expected);
+  expect(parsed.errors).toEqual(expected);
 });
 
 test("declaration type not an array", () => {
@@ -52,7 +51,7 @@ const x: int[] = 5
     },
   ];
   const parsed = parse(input);
-  assert.equal(parsed.errors, expected);
+  expect(parsed.errors).toEqual(expected);
 });
 
 test("assignment type mismatch", () => {
@@ -75,7 +74,7 @@ x = ["a", "b", "c"]
     },
   ];
   const parsed = parse(input);
-  assert.equal(parsed.errors, expected);
+  expect(parsed.errors).toEqual(expected);
 });
 
 test("assignment type mixed", () => {
@@ -90,7 +89,7 @@ x = [1, "b", 2]
     },
   ];
   const parsed = parse(input);
-  assert.equal(parsed.errors, expected);
+  expect(parsed.errors).toEqual(expected);
 });
 
 test("assignment type not an array", () => {
@@ -105,7 +104,5 @@ x = 5
     },
   ];
   const parsed = parse(input);
-  assert.equal(parsed.errors, expected);
+  expect(parsed.errors).toEqual(expected);
 });
-
-test.run();

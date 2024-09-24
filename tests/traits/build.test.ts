@@ -1,9 +1,8 @@
-import { suite } from "uvu";
-import assert from "uvu/assert";
+import { expect, test } from "vitest";
 import build from "../../src/build";
 import parse from "../../src/parse";
 
-const test = suite("Trait build");
+//const test = suite("Trait build");
 
 function trimCode(code: string) {
   return code
@@ -42,8 +41,8 @@ f._vt = &_Frank_traits;
 return f;
 }
 `;
-  assert.equal(parsed.errors, []);
-  assert.equal(trimCode(result.code), expected.trim());
+  expect(parsed.errors).toEqual([]);
+  expect(trimCode(result.code)).toEqual(expected.trim());
 });
 
 test("trait with fields", () => {
@@ -84,8 +83,8 @@ f.age = 0;
 return f;
 }
 `;
-  assert.equal(parsed.errors, []);
-  assert.equal(trimCode(result.code), expected.trim());
+  expect(parsed.errors).toEqual([]);
+  expect(trimCode(result.code)).toEqual(expected.trim());
 });
 
 test("trait with functions", () => {
@@ -137,8 +136,8 @@ struct Frank zz = *self;
 return "hi";
 }
 `;
-  assert.equal(parsed.errors, []);
-  assert.equal(trimCode(result.code), expected.trim());
+  expect(parsed.errors).toEqual([]);
+  expect(trimCode(result.code)).toEqual(expected.trim());
 });
 
 test("trait with implemented functions", () => {
@@ -184,8 +183,6 @@ f._vt = &_Frank_traits;
 return f;
 }
 `;
-  assert.equal(parsed.errors, []);
-  assert.equal(trimCode(result.code), expected.trim());
+  expect(parsed.errors).toEqual([]);
+  expect(trimCode(result.code)).toEqual(expected.trim());
 });
-
-test.run();

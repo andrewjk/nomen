@@ -1,9 +1,8 @@
-import { suite } from "uvu";
-import assert from "uvu/assert";
+import { expect, test } from "vitest";
 import parse from "../../src/parse";
 import type CompileError from "../../src/types/CompileError";
 
-const test = suite("Invocation errors");
+//const test = suite("Invocation errors");
 
 test("function not found", () => {
   const input = `
@@ -16,7 +15,7 @@ greet()
     },
   ];
   const parsed = parse(input);
-  assert.equal(parsed.errors, expected);
+  expect(parsed.errors).toEqual(expected);
 });
 
 test("too many parameters", () => {
@@ -31,7 +30,7 @@ greet(1, 2, 3)
     },
   ];
   const parsed = parse(input);
-  assert.equal(parsed.errors, expected);
+  expect(parsed.errors).toEqual(expected);
 });
 
 test("parameters missing", () => {
@@ -46,7 +45,7 @@ greet(1)
     },
   ];
   const parsed = parse(input);
-  assert.equal(parsed.errors, expected);
+  expect(parsed.errors).toEqual(expected);
 });
 
 test("param type mismatch", () => {
@@ -61,7 +60,7 @@ greet("andrew")
     },
   ];
   const parsed = parse(input);
-  assert.equal(parsed.errors, expected);
+  expect(parsed.errors).toEqual(expected);
 });
 
 test("param type mismatch -- unknown value", () => {
@@ -76,7 +75,5 @@ greet(z0)
     },
   ];
   const parsed = parse(input);
-  assert.equal(parsed.errors, expected);
+  expect(parsed.errors).toEqual(expected);
 });
-
-test.run();

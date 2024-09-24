@@ -1,5 +1,4 @@
-import { suite } from "uvu";
-import assert from "uvu/assert";
+import { expect, test } from "vitest";
 import DeclarationNode from "../../src/nodes/DeclarationNode";
 import FunctionNode from "../../src/nodes/FunctionNode";
 import ParameterNode from "../../src/nodes/ParameterNode";
@@ -10,7 +9,7 @@ import ValueNode from "../../src/nodes/ValueNode";
 import parse from "../../src/parse";
 import trim_test_data from "../trim_test_data";
 
-const test = suite("Visibility parse");
+//const test = suite("Visibility parse");
 
 test("pub var", () => {
   const input = `
@@ -25,8 +24,8 @@ pub var x = 1
     new Type("int"),
     new ValueNode(13, "1", "int"),
   );
-  assert.equal(parsed.errors, []);
-  assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_data(parsed.root.statements[0])).toEqual(trim_test_data(expected));
 });
 
 test("pub const", () => {
@@ -42,8 +41,8 @@ pub const x = 3
     new Type("int"),
     new ValueNode(15, "3", "int"),
   );
-  assert.equal(parsed.errors, []);
-  assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_data(parsed.root.statements[0])).toEqual(trim_test_data(expected));
 });
 
 test("pub struct", () => {
@@ -59,8 +58,8 @@ pub struct Person {}
     [],
     [new FunctionNode(-1, "pub", "init", "Person", [])],
   );
-  assert.equal(parsed.errors, []);
-  assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_data(parsed.root.statements[0])).toEqual(trim_test_data(expected));
 });
 
 test("pub trait", () => {
@@ -69,8 +68,8 @@ pub trait Person {}
 `;
   const parsed = parse(input);
   const expected = new TraitNode(1, "pub", "Person");
-  assert.equal(parsed.errors, []);
-  assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_data(parsed.root.statements[0])).toEqual(trim_test_data(expected));
 });
 
 test("pub function", () => {
@@ -79,8 +78,8 @@ pub func add() {}
 `;
   const parsed = parse(input);
   const expected = new FunctionNode(1, "pub", "add", "", [], []);
-  assert.equal(parsed.errors, []);
-  assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_data(parsed.root.statements[0])).toEqual(trim_test_data(expected));
 });
 
 test("pub fields in struct", () => {
@@ -102,8 +101,8 @@ pub struct Person {
       new FunctionNode(46, "sec", "greet", "", [], []),
     ],
   );
-  assert.equal(parsed.errors, []);
-  assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_data(parsed.root.statements[0])).toEqual(trim_test_data(expected));
 });
 
 test("sec var", () => {
@@ -119,8 +118,8 @@ sec var x = 1
     new Type("int"),
     new ValueNode(13, "1", "int"),
   );
-  assert.equal(parsed.errors, []);
-  assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_data(parsed.root.statements[0])).toEqual(trim_test_data(expected));
 });
 
 test("sec const", () => {
@@ -136,8 +135,8 @@ sec const x = 3
     new Type("int"),
     new ValueNode(15, "3", "int"),
   );
-  assert.equal(parsed.errors, []);
-  assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_data(parsed.root.statements[0])).toEqual(trim_test_data(expected));
 });
 
 test("sec struct", () => {
@@ -153,8 +152,8 @@ sec struct Person {}
     [],
     [new FunctionNode(-1, "sec", "init", "Person", [])],
   );
-  assert.equal(parsed.errors, []);
-  assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_data(parsed.root.statements[0])).toEqual(trim_test_data(expected));
 });
 
 test("sec trait", () => {
@@ -163,8 +162,8 @@ sec trait Person {}
 `;
   const parsed = parse(input);
   const expected = new TraitNode(1, "sec", "Person");
-  assert.equal(parsed.errors, []);
-  assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_data(parsed.root.statements[0])).toEqual(trim_test_data(expected));
 });
 
 test("sec function", () => {
@@ -173,8 +172,8 @@ sec func add() {}
 `;
   const parsed = parse(input);
   const expected = new FunctionNode(1, "sec", "add", "", [], []);
-  assert.equal(parsed.errors, []);
-  assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_data(parsed.root.statements[0])).toEqual(trim_test_data(expected));
 });
 
 test("sec fields in struct", () => {
@@ -196,8 +195,8 @@ pub struct Person {
       new FunctionNode(46, "sec", "greet", "", [], []),
     ],
   );
-  assert.equal(parsed.errors, []);
-  assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_data(parsed.root.statements[0])).toEqual(trim_test_data(expected));
 });
 
 // TODO: Need rudimentary scoping
@@ -211,7 +210,5 @@ struct Person {
 }
 `;
   const parsed = parse(input);
-  assert.equal(parsed.errors, []);
+  expect(parsed.errors).toEqual([]);
 });
-
-test.run();

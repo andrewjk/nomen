@@ -1,5 +1,4 @@
-import { suite } from "uvu";
-import assert from "uvu/assert";
+import { expect, test } from "vitest";
 import AccessFieldNode from "../../src/nodes/AccessFieldNode";
 import AccessInvocationNode from "../../src/nodes/AccessInvocationNode";
 import AccessNode from "../../src/nodes/AccessNode";
@@ -9,7 +8,7 @@ import ValueNode from "../../src/nodes/ValueNode";
 import parse from "../../src/parse";
 import trim_test_data from "../trim_test_data";
 
-const test = suite("Access parse");
+//const test = suite("Access parse");
 
 test("getting field", () => {
   const input = `
@@ -22,14 +21,14 @@ var x = p.age
   const parsed = parse(input);
   const expected = new DeclarationNode(
     48,
-    "def",
+    "mod",
     "var",
     "x",
     "int",
     new AccessNode(56, new ValueNode(56, "p", "Person"), new AccessFieldNode(58, "age", "int")),
   );
-  assert.equal(parsed.errors, []);
-  assert.equal(trim_test_data(parsed.root.statements[2]), trim_test_data(expected));
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_data(parsed.root.statements[2])).toEqual(trim_test_data(expected));
 });
 
 test("getting nested field", () => {
@@ -47,7 +46,7 @@ var x = p.address.line
   const parsed = parse(input);
   const expected = new DeclarationNode(
     109,
-    "def",
+    "mod",
     "var",
     "x",
     "string",
@@ -61,8 +60,8 @@ var x = p.address.line
       new AccessFieldNode(127, "line", "string"),
     ),
   );
-  assert.equal(parsed.errors, []);
-  assert.equal(trim_test_data(parsed.root.statements[3]), trim_test_data(expected));
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_data(parsed.root.statements[3])).toEqual(trim_test_data(expected));
 });
 
 test("setting field", () => {
@@ -79,8 +78,8 @@ p.age = 20
     new AccessNode(48, new ValueNode(48, "p", "Person"), new AccessFieldNode(50, "age", "int")),
     new ValueNode(56, "20", "int"),
   );
-  assert.equal(parsed.errors, []);
-  assert.equal(trim_test_data(parsed.root.statements[2]), trim_test_data(expected));
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_data(parsed.root.statements[2])).toEqual(trim_test_data(expected));
 });
 
 test("setting nested field", () => {
@@ -109,8 +108,8 @@ p.address.line = "1 main st"
     ),
     new ValueNode(126, '"1 main st"', "string"),
   );
-  assert.equal(parsed.errors, []);
-  assert.equal(trim_test_data(parsed.root.statements[3]), trim_test_data(expected));
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_data(parsed.root.statements[3])).toEqual(trim_test_data(expected));
 });
 
 test("getting function", () => {
@@ -126,7 +125,7 @@ var x = p.age()
   const parsed = parse(input);
   const expected = new DeclarationNode(
     73,
-    "def",
+    "mod",
     "var",
     "x",
     "int",
@@ -136,8 +135,8 @@ var x = p.age()
       new AccessInvocationNode(83, "age", [], "int"),
     ),
   );
-  assert.equal(parsed.errors, []);
-  assert.equal(trim_test_data(parsed.root.statements[2]), trim_test_data(expected));
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_data(parsed.root.statements[2])).toEqual(trim_test_data(expected));
 });
 
 test("getting function after field", () => {
@@ -157,7 +156,7 @@ var x = p.address.line()
   const parsed = parse(input);
   const expected = new DeclarationNode(
     145,
-    "def",
+    "mod",
     "var",
     "x",
     "string",
@@ -171,8 +170,8 @@ var x = p.address.line()
       new AccessInvocationNode(163, "line", [], "string"),
     ),
   );
-  assert.equal(parsed.errors, []);
-  assert.equal(trim_test_data(parsed.root.statements[3]), trim_test_data(expected));
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_data(parsed.root.statements[3])).toEqual(trim_test_data(expected));
 });
 
 test("getting field after function", () => {
@@ -192,7 +191,7 @@ var x = p.address().line
   const parsed = parse(input);
   const expected = new DeclarationNode(
     159,
-    "def",
+    "mod",
     "var",
     "x",
     "string",
@@ -206,8 +205,6 @@ var x = p.address().line
       new AccessFieldNode(179, "line", "string"),
     ),
   );
-  assert.equal(parsed.errors, []);
-  assert.equal(trim_test_data(parsed.root.statements[3]), trim_test_data(expected));
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_data(parsed.root.statements[3])).toEqual(trim_test_data(expected));
 });
-
-test.run();

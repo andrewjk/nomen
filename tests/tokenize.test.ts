@@ -1,8 +1,7 @@
-import { suite } from "uvu";
-import assert from "uvu/assert";
+import { expect, test } from "vitest";
 import tokenize from "../src/tokenize";
 
-const test = suite("Tokenization");
+//const test = suite("Tokenization");
 
 test("spaced", () => {
   const input = `
@@ -10,10 +9,7 @@ word ! x = 5
 `;
   const tokens = tokenize(input);
   const expected = ["word", "!", "x", "=", "5"];
-  assert.equal(
-    tokens.map((t) => t.value),
-    expected,
-  );
+  expect(tokens.map((t) => t.value)).toEqual(expected);
 });
 
 test("unspaced", () => {
@@ -22,10 +18,7 @@ word!x=5
 `;
   const tokens = tokenize(input);
   const expected = ["word", "!", "x", "=", "5"];
-  assert.equal(
-    tokens.map((t) => t.value),
-    expected,
-  );
+  expect(tokens.map((t) => t.value)).toEqual(expected);
 });
 
 test("group symbols", () => {
@@ -34,10 +27,7 @@ word && x ! = 5
 `;
   const tokens = tokenize(input);
   const expected = ["word", "&&", "x", "!", "=", "5"];
-  assert.equal(
-    tokens.map((t) => t.value),
-    expected,
-  );
+  expect(tokens.map((t) => t.value)).toEqual(expected);
 });
 
 test("string", () => {
@@ -46,10 +36,7 @@ word "I'm in a string!" 5
 `;
   const tokens = tokenize(input);
   const expected = ["word", `"I'm in a string!"`, "5"];
-  assert.equal(
-    tokens.map((t) => t.value),
-    expected,
-  );
+  expect(tokens.map((t) => t.value)).toEqual(expected);
 });
 
 test("nested string", () => {
@@ -58,10 +45,7 @@ word "I'm in a \\"nested\\" string!" 5
 `;
   const tokens = tokenize(input);
   const expected = ["word", `"I'm in a \\"nested\\" string!"`, "5"];
-  assert.equal(
-    tokens.map((t) => t.value),
-    expected,
-  );
+  expect(tokens.map((t) => t.value)).toEqual(expected);
 });
 
 test("multi line string", () => {
@@ -71,10 +55,7 @@ multi-line string!" 5
 `;
   const tokens = tokenize(input);
   const expected = ["word", `"I'm in a\nmulti-line string!"`, "5"];
-  assert.equal(
-    tokens.map((t) => t.value),
-    expected,
-  );
+  expect(tokens.map((t) => t.value)).toEqual(expected);
 });
 
 test("string unspaced", () => {
@@ -83,10 +64,7 @@ word"I'm in a string!"5
 `;
   const tokens = tokenize(input);
   const expected = ["word", `"I'm in a string!"`, "5"];
-  assert.equal(
-    tokens.map((t) => t.value),
-    expected,
-  );
+  expect(tokens.map((t) => t.value)).toEqual(expected);
 });
 
 test("one line comment", () => {
@@ -95,10 +73,7 @@ word // I'm in a comment!
 `;
   const tokens = tokenize(input);
   const expected = ["word", "// I'm in a comment!"];
-  assert.equal(
-    tokens.map((t) => t.value),
-    expected,
-  );
+  expect(tokens.map((t) => t.value)).toEqual(expected);
 });
 
 test("one line comment unspaced", () => {
@@ -107,10 +82,7 @@ word//I'm in a comment!
 `;
   const tokens = tokenize(input);
   const expected = ["word", "//I'm in a comment!"];
-  assert.equal(
-    tokens.map((t) => t.value),
-    expected,
-  );
+  expect(tokens.map((t) => t.value)).toEqual(expected);
 });
 
 test("multi line comment", () => {
@@ -120,10 +92,7 @@ multi-line comment */ 5
 `;
   const tokens = tokenize(input);
   const expected = ["word", "/* I'm in a\nmulti-line comment */", "5"];
-  assert.equal(
-    tokens.map((t) => t.value),
-    expected,
-  );
+  expect(tokens.map((t) => t.value)).toEqual(expected);
 });
 
 test("multi line comment unspaced", () => {
@@ -133,10 +102,7 @@ multi-line comment*/5
 `;
   const tokens = tokenize(input);
   const expected = ["word", "/*I'm in a\nmulti-line comment*/", "5"];
-  assert.equal(
-    tokens.map((t) => t.value),
-    expected,
-  );
+  expect(tokens.map((t) => t.value)).toEqual(expected);
 });
 
 test("nested comments", () => {
@@ -146,10 +112,5 @@ word /* I'm in a
 `;
   const tokens = tokenize(input);
   const expected = ["word", "/* I'm in a\n/* nested */ comment */", "5"];
-  assert.equal(
-    tokens.map((t) => t.value),
-    expected,
-  );
+  expect(tokens.map((t) => t.value)).toEqual(expected);
 });
-
-test.run();

@@ -1,9 +1,8 @@
-import { suite } from "uvu";
-import assert from "uvu/assert";
+import { expect, test } from "vitest";
 import parse from "../../src/parse";
 import type CompileError from "../../src/types/CompileError";
 
-const test = suite("Function errors");
+//const test = suite("Function errors");
 
 test("unknown param type", () => {
   const input = `
@@ -16,7 +15,7 @@ func add(a: what) {}
     },
   ];
   const parsed = parse(input);
-  assert.equal(parsed.errors, expected);
+  expect(parsed.errors).toEqual(expected);
 });
 
 test("unknown param value type", () => {
@@ -30,7 +29,7 @@ func add(a = z0) {}
     },
   ];
   const parsed = parse(input);
-  assert.equal(parsed.errors, expected);
+  expect(parsed.errors).toEqual(expected);
 });
 
 test("param type mismatch", () => {
@@ -44,7 +43,7 @@ func add(a: int = "string?!") {}
     },
   ];
   const parsed = parse(input);
-  assert.equal(parsed.errors, expected);
+  expect(parsed.errors).toEqual(expected);
 });
 
 test("param type mismatch - unknown value", () => {
@@ -58,7 +57,7 @@ func add(a: int = z0) {}
     },
   ];
   const parsed = parse(input);
-  assert.equal(parsed.errors, expected);
+  expect(parsed.errors).toEqual(expected);
 });
 
 test("no param type or default value", () => {
@@ -72,7 +71,7 @@ func add(a) {}
     },
   ];
   const parsed = parse(input);
-  assert.equal(parsed.errors, expected);
+  expect(parsed.errors).toEqual(expected);
 });
 
 test("unknown return value type", () => {
@@ -88,7 +87,7 @@ func add() -> what {
     },
   ];
   const parsed = parse(input);
-  assert.equal(parsed.errors, expected);
+  expect(parsed.errors).toEqual(expected);
 });
 
 test("return type mismatch", () => {
@@ -104,7 +103,7 @@ func add() -> int {
     },
   ];
   const parsed = parse(input);
-  assert.equal(parsed.errors, expected);
+  expect(parsed.errors).toEqual(expected);
 });
 
 test("return type mismatch - unknown value", () => {
@@ -120,7 +119,7 @@ func add() -> int {
     },
   ];
   const parsed = parse(input);
-  assert.equal(parsed.errors, expected);
+  expect(parsed.errors).toEqual(expected);
 });
 
 test("missing return", () => {
@@ -134,7 +133,5 @@ func add() -> int {}
     },
   ];
   const parsed = parse(input);
-  assert.equal(parsed.errors, expected);
+  expect(parsed.errors).toEqual(expected);
 });
-
-test.run();

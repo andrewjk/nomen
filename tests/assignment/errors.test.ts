@@ -1,9 +1,8 @@
-import { suite } from "uvu";
-import assert from "uvu/assert";
+import { expect, test } from "vitest";
 import parse from "../../src/parse";
 import type CompileError from "../../src/types/CompileError";
 
-const test = suite("Assignment errors");
+//const test = suite("Assignment errors");
 
 test("type mismatch", () => {
   const input = `
@@ -17,7 +16,7 @@ x = "string?!"
     },
   ];
   const parsed = parse(input);
-  assert.equal(parsed.errors, expected);
+  expect(parsed.errors).toEqual(expected);
 });
 
 test("type mismatch -- unknown value", () => {
@@ -32,7 +31,7 @@ x = z0
     },
   ];
   const parsed = parse(input);
-  assert.equal(parsed.errors, expected);
+  expect(parsed.errors).toEqual(expected);
 });
 
 test("unknown variable", () => {
@@ -47,14 +46,13 @@ y = "string?!"
     },
   ];
   const parsed = parse(input);
-  assert.equal(parsed.errors, expected);
+  expect(parsed.errors).toEqual(expected);
 });
 
-// TODO: This should be fine, as long as it's done once only?
 test("assignment to const", () => {
   const input = `
-const x: int
-x = 5
+const x  =5
+x = 10
 `;
   const expected: CompileError[] = [
     {
@@ -63,7 +61,37 @@ x = 5
     },
   ];
   const parsed = parse(input);
-  assert.equal(parsed.errors, expected);
+  expect(parsed.errors).toEqual(expected);
 });
 
-test.run();
+test("double assignment to const", () => {
+  const input = `
+const x: int
+x = 5
+x = 10
+`;
+  const expected: CompileError[] = [
+    {
+      message: "Assignment to const: x",
+      start: 14,
+    },
+  ];
+  const parsed = parse(input);
+  expect(parsed.errors).toEqual(expected);
+});
+
+test("assignment to const param", () => {
+  const input = `
+func set(x: int) {
+  x = 5
+}
+`;
+  const expected: CompileError[] = [
+    {
+      message: "Assignment to const: x",
+      start: 14,
+    },
+  ];
+  const parsed = parse(input);
+  expect(parsed.errors).toEqual(expected);
+});

@@ -1,9 +1,8 @@
-import { suite } from "uvu";
-import assert from "uvu/assert";
+import { expect, test } from "vitest";
 import build from "../../src/build";
 import parse from "../../src/parse";
 
-const test = suite("Control build");
+//const test = suite("Control build");
 
 test("break", () => {
   const input = `
@@ -20,8 +19,8 @@ for (x = 0; x < 5; x++)
 break;
 }
 `;
-  assert.equal(parsed.errors, []);
-  assert.equal(result.code.trim(), expected.trim());
+  expect(parsed.errors).toEqual([]);
+  expect(result.code.trim()).toEqual(expected.trim());
 });
 
 test("continue", () => {
@@ -39,8 +38,8 @@ for (x = 0; x < 5; x++)
 continue;
 }
 `;
-  assert.equal(parsed.errors, []);
-  assert.equal(result.code.trim(), expected.trim());
+  expect(parsed.errors).toEqual([]);
+  expect(result.code.trim()).toEqual(expected.trim());
 });
 
 test("panic", () => {
@@ -58,8 +57,8 @@ printf("something went wrong\\n");
 exit(EXIT_FAILURE);
 }
 `;
-  assert.equal(parsed.errors, []);
-  assert.equal(result.code.trim(), expected.trim());
+  expect(parsed.errors).toEqual([]);
+  expect(result.code.trim()).toEqual(expected.trim());
 });
 
 test("todo", () => {
@@ -77,8 +76,6 @@ printf("haven't done this yet\\n");
 exit(EXIT_FAILURE);
 }
 `;
-  assert.equal(parsed.errors, []);
-  assert.equal(result.code.trim(), expected.trim());
+  expect(parsed.errors).toEqual([]);
+  expect(result.code.trim()).toEqual(expected.trim());
 });
-
-test.run();

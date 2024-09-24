@@ -1,9 +1,8 @@
-import { suite } from "uvu";
-import assert from "uvu/assert";
+import { expect, test } from "vitest";
 import build from "../../src/build";
 import parse from "../../src/parse";
 
-const test = suite("Range build");
+//const test = suite("Range build");
 
 test("exclusive", () => {
   const input = `
@@ -14,8 +13,8 @@ var x = 1..4
   const expected = `
 int x[] = {1, 2, 3};
 `;
-  assert.equal(parsed.errors, []);
-  assert.equal(result.code.trim(), expected.trim());
+  expect(parsed.errors).toEqual([]);
+  expect(result.code.trim()).toEqual(expected.trim());
 });
 
 test("inclusive", () => {
@@ -27,8 +26,6 @@ var x = 1.=4
   const expected = `
 int x[] = {1, 2, 3, 4};
 `;
-  assert.equal(parsed.errors, []);
-  assert.equal(result.code.trim(), expected.trim());
+  expect(parsed.errors).toEqual([]);
+  expect(result.code.trim()).toEqual(expected.trim());
 });
-
-test.run();

@@ -1,9 +1,8 @@
-import { suite } from "uvu";
-import assert from "uvu/assert";
+import { expect, test } from "vitest";
 import parse from "../../src/parse";
 import type CompileError from "../../src/types/CompileError";
 
-const test = suite("Construction errors");
+//const test = suite("Construction errors");
 
 test("struct not found", () => {
   const input = `
@@ -16,7 +15,7 @@ const dog = Dog.init()
     },
   ];
   const parsed = parse(input);
-  assert.equal(parsed.errors, expected);
+  expect(parsed.errors).toEqual(expected);
 });
 
 test("too many parameters", () => {
@@ -31,7 +30,7 @@ const dog = Dog.init("Spot")
     },
   ];
   const parsed = parse(input);
-  assert.equal(parsed.errors, expected);
+  expect(parsed.errors).toEqual(expected);
 });
 
 test("parameters missing", () => {
@@ -48,7 +47,7 @@ const dog = Dog.init()
     },
   ];
   const parsed = parse(input);
-  assert.equal(parsed.errors, expected);
+  expect(parsed.errors).toEqual(expected);
 });
 
 test("param type mismatch", () => {
@@ -65,7 +64,7 @@ const dog = Dog.init(5)
     },
   ];
   const parsed = parse(input);
-  assert.equal(parsed.errors, expected);
+  expect(parsed.errors).toEqual(expected);
 });
 
 test("param type mismatch -- unknown value", () => {
@@ -82,7 +81,5 @@ const dog = Dog.init(z0)
     },
   ];
   const parsed = parse(input);
-  assert.equal(parsed.errors, expected);
+  expect(parsed.errors).toEqual(expected);
 });
-
-test.run();

@@ -1,9 +1,8 @@
-import { suite } from "uvu";
-import assert from "uvu/assert";
+import { expect, test } from "vitest";
 import build from "../../src/build";
 import parse from "../../src/parse";
 
-const test = suite("Declaration build");
+//const test = suite("Declaration build");
 
 test("const with value", () => {
   const input = `
@@ -14,9 +13,9 @@ const x = 5
   const expected = `
 int x = 5;
 `;
-  assert.equal(parsed.errors, []);
-  assert.equal(parsed.errors, []);
-  assert.equal(result.code.trim(), expected.trim());
+  expect(parsed.errors).toEqual([]);
+  expect(parsed.errors).toEqual([]);
+  expect(result.code.trim()).toEqual(expected.trim());
 });
 
 test("const with type", () => {
@@ -28,9 +27,9 @@ const x: int
   const expected = `
 int x;
 `;
-  assert.equal(parsed.errors, []);
-  assert.equal(parsed.errors, []);
-  assert.equal(result.code.trim(), expected.trim());
+  expect(parsed.errors).toEqual([]);
+  expect(parsed.errors).toEqual([]);
+  expect(result.code.trim()).toEqual(expected.trim());
 });
 
 test("var with value", () => {
@@ -42,9 +41,9 @@ var x = 5
   const expected = `
 int x = 5;
 `;
-  assert.equal(parsed.errors, []);
-  assert.equal(parsed.errors, []);
-  assert.equal(result.code.trim(), expected.trim());
+  expect(parsed.errors).toEqual([]);
+  expect(parsed.errors).toEqual([]);
+  expect(result.code.trim()).toEqual(expected.trim());
 });
 
 test("var with type", () => {
@@ -56,9 +55,7 @@ var x: int
   const expected = `
 int x;
 `;
-  assert.equal(parsed.errors, []);
-  assert.equal(parsed.errors, []);
-  assert.equal(result.code.trim(), expected.trim());
+  expect(parsed.errors).toEqual([]);
+  expect(parsed.errors).toEqual([]);
+  expect(result.code.trim()).toEqual(expected.trim());
 });
-
-test.run();

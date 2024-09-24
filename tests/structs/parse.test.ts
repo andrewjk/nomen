@@ -1,5 +1,4 @@
-import { suite } from "uvu";
-import assert from "uvu/assert";
+import { expect, test } from "vitest";
 import DeclarationNode from "../../src/nodes/DeclarationNode";
 import FunctionNode from "../../src/nodes/FunctionNode";
 import ParameterNode from "../../src/nodes/ParameterNode";
@@ -8,7 +7,7 @@ import ValueNode from "../../src/nodes/ValueNode";
 import parse from "../../src/parse";
 import trim_test_data from "../trim_test_data";
 
-const test = suite("Struct parse");
+//const test = suite("Struct parse");
 
 test("struct", () => {
   const input = `
@@ -17,14 +16,14 @@ struct Person {}
   const parsed = parse(input);
   const expected = new StructNode(
     1,
-    "def",
+    "mod",
     "Person",
     [],
     [],
-    [new FunctionNode(-1, "def", "init", "Person", [])],
+    [new FunctionNode(-1, "mod", "init", "Person", [])],
   );
-  assert.equal(parsed.errors, []);
-  assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_data(parsed.root.statements[0])).toEqual(trim_test_data(expected));
 });
 
 test("struct with fields", () => {
@@ -37,17 +36,17 @@ struct Person {
   const parsed = parse(input);
   const expected = new StructNode(
     1,
-    "def",
+    "mod",
     "Person",
     [],
     [
-      new DeclarationNode(19, "def", "var", "name", "string"),
-      new DeclarationNode(38, "def", "var", "age", "int", new ValueNode(48, "0", "int")),
+      new DeclarationNode(19, "mod", "var", "name", "string"),
+      new DeclarationNode(38, "mod", "var", "age", "int", new ValueNode(48, "0", "int")),
     ],
-    [new FunctionNode(-1, "def", "init", "Person", [new ParameterNode(-1, "name", "string")])],
+    [new FunctionNode(-1, "mod", "init", "Person", [new ParameterNode(-1, "name", "string")])],
   );
-  assert.equal(parsed.errors, []);
-  assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_data(parsed.root.statements[0])).toEqual(trim_test_data(expected));
 });
 
 test("struct with functions", () => {
@@ -59,17 +58,15 @@ struct Person {
   const parsed = parse(input);
   const expected = new StructNode(
     1,
-    "def",
+    "mod",
     "Person",
     [],
     [],
     [
-      new FunctionNode(-1, "def", "init", "Person", []),
-      new FunctionNode(19, "def", "greet", "", [], []),
+      new FunctionNode(-1, "mod", "init", "Person", []),
+      new FunctionNode(19, "mod", "greet", "", [], []),
     ],
   );
-  assert.equal(parsed.errors, []);
-  assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_data(parsed.root.statements[0])).toEqual(trim_test_data(expected));
 });
-
-test.run();

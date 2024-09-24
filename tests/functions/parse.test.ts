@@ -1,5 +1,4 @@
-import { suite } from "uvu";
-import assert from "uvu/assert";
+import { expect, test } from "vitest";
 import DeclarationNode from "../../src/nodes/DeclarationNode";
 import FunctionNode from "../../src/nodes/FunctionNode";
 import ParameterNode from "../../src/nodes/ParameterNode";
@@ -9,16 +8,16 @@ import ValueNode from "../../src/nodes/ValueNode";
 import parse from "../../src/parse";
 import trim_test_data from "../trim_test_data";
 
-const test = suite("Function parse");
+//const test = suite("Function parse");
 
 test("function", () => {
   const input = `
 func add() {}
 `;
   const parsed = parse(input);
-  const expected = new FunctionNode(1, "def", "add", "", [], []);
-  assert.equal(parsed.errors, []);
-  assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
+  const expected = new FunctionNode(1, "mod", "add", "", [], []);
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_data(parsed.root.statements[0])).toEqual(trim_test_data(expected));
 });
 
 test("function with params", () => {
@@ -28,14 +27,14 @@ func add(a: int, b: int) {}
   const parsed = parse(input);
   const expected = new FunctionNode(
     1,
-    "def",
+    "mod",
     "add",
     "",
     [new ParameterNode(10, "a", "int"), new ParameterNode(18, "b", "int")],
     [],
   );
-  assert.equal(parsed.errors, []);
-  assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_data(parsed.root.statements[0])).toEqual(trim_test_data(expected));
 });
 
 test("function with params with default value", () => {
@@ -45,14 +44,14 @@ func add(a: int, b = 5) {}
   const parsed = parse(input);
   const expected = new FunctionNode(
     1,
-    "def",
+    "mod",
     "add",
     "",
     [new ParameterNode(10, "a", "int"), new ParameterNode(18, "b", "int", "5")],
     [],
   );
-  assert.equal(parsed.errors, []);
-  assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_data(parsed.root.statements[0])).toEqual(trim_test_data(expected));
 });
 
 test("function with body", () => {
@@ -64,14 +63,14 @@ func add() {
   const parsed = parse(input);
   const expected = new FunctionNode(
     1,
-    "def",
+    "mod",
     "add",
     "",
     [],
-    [new DeclarationNode(16, "def", "var", "x", "int", new ValueNode(24, "5", "int"))],
+    [new DeclarationNode(16, "mod", "var", "x", "int", new ValueNode(24, "5", "int"))],
   );
-  assert.equal(parsed.errors, []);
-  assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_data(parsed.root.statements[0])).toEqual(trim_test_data(expected));
 });
 
 test("function with return value", () => {
@@ -83,14 +82,14 @@ func add() -> int {
   const parsed = parse(input);
   const expected = new FunctionNode(
     1,
-    "def",
+    "mod",
     "add",
     "int",
     [],
     [new ReturnNode(23, new ValueNode(30, "5", "int"), "int")],
   );
-  assert.equal(parsed.errors, []);
-  assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_data(parsed.root.statements[0])).toEqual(trim_test_data(expected));
 });
 
 test("function followed by function", () => {
@@ -101,11 +100,9 @@ func subtract() {}
 `;
   const parsed = parse(input);
   const expected = new RootNode([
-    new FunctionNode(1, "def", "add", "", [], []),
-    new FunctionNode(16, "def", "subtract", "", [], []),
+    new FunctionNode(1, "mod", "add", "", [], []),
+    new FunctionNode(16, "mod", "subtract", "", [], []),
   ]);
-  assert.equal(parsed.errors, []);
-  assert.equal(trim_test_data(parsed.root), trim_test_data(expected));
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_data(parsed.root)).toEqual(trim_test_data(expected));
 });
-
-test.run();

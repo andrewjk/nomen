@@ -1,12 +1,11 @@
-import { suite } from "uvu";
-import assert from "uvu/assert";
+import { expect, test } from "vitest";
 import DeclarationNode from "../../src/nodes/DeclarationNode";
 import OperationNode from "../../src/nodes/OperationNode";
 import ValueNode from "../../src/nodes/ValueNode";
 import parse from "../../src/parse";
 import trim_test_data from "../trim_test_data";
 
-const test = suite("Operation parse");
+//const test = suite("Operation parse");
 
 test("addition", () => {
   const input = `
@@ -15,14 +14,14 @@ var x = 1 + 2
   const parsed = parse(input);
   const expected = new DeclarationNode(
     1,
-    "def",
+    "mod",
     "var",
     "x",
     "int",
     new OperationNode(9, "+", new ValueNode(9, "1", "int"), new ValueNode(13, "2", "int"), "int"),
   );
-  assert.equal(parsed.errors, []);
-  assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_data(parsed.root.statements[0])).toEqual(trim_test_data(expected));
 });
 
 test("subtraction", () => {
@@ -32,14 +31,14 @@ var x = 1 - 2
   const parsed = parse(input);
   const expected = new DeclarationNode(
     1,
-    "def",
+    "mod",
     "var",
     "x",
     "int",
     new OperationNode(9, "-", new ValueNode(9, "1", "int"), new ValueNode(13, "2", "int"), "int"),
   );
-  assert.equal(parsed.errors, []);
-  assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_data(parsed.root.statements[0])).toEqual(trim_test_data(expected));
 });
 
 test("series", () => {
@@ -49,7 +48,7 @@ var x = 1 + 2 - 3
   const parsed = parse(input);
   const expected = new DeclarationNode(
     1,
-    "def",
+    "mod",
     "var",
     "x",
     "int",
@@ -67,8 +66,6 @@ var x = 1 + 2 - 3
       "int",
     ),
   );
-  assert.equal(parsed.errors, []);
-  assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_data(parsed.root.statements[0])).toEqual(trim_test_data(expected));
 });
-
-test.run();

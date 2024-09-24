@@ -1,9 +1,8 @@
-import { suite } from "uvu";
-import assert from "uvu/assert";
+import { expect, test } from "vitest";
 import build from "../../src/build";
 import parse from "../../src/parse";
 
-const test = suite("For loop build");
+//const test = suite("For loop build");
 
 test("with array", () => {
   const input = `
@@ -18,8 +17,8 @@ for (x = 0; x < 3; x++)
 {
 }
 `;
-  assert.equal(parsed.errors, []);
-  assert.equal(result.code.trim(), expected.trim());
+  expect(parsed.errors).toEqual([]);
+  expect(result.code.trim()).toEqual(expected.trim());
 });
 
 test("with range", () => {
@@ -34,8 +33,8 @@ for (x = 0; x < 5; x++)
 {
 }
 `;
-  assert.equal(parsed.errors, []);
-  assert.equal(result.code.trim(), expected.trim());
+  expect(parsed.errors).toEqual([]);
+  expect(result.code.trim()).toEqual(expected.trim());
 });
 
 test("series", () => {
@@ -47,8 +46,6 @@ var x = 1 + 2 - 3
   const expected = `
 int x = 1 + 2 - 3;
 `;
-  assert.equal(parsed.errors, []);
-  assert.equal(result.code.trim(), expected.trim());
+  expect(parsed.errors).toEqual([]);
+  expect(result.code.trim()).toEqual(expected.trim());
 });
-
-test.run();

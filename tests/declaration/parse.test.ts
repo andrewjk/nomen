@@ -1,5 +1,4 @@
-import { suite } from "uvu";
-import assert from "uvu/assert";
+import { expect, test } from "vitest";
 import AccessInvocationNode from "../../src/nodes/AccessInvocationNode";
 import AccessNode from "../../src/nodes/AccessNode";
 import DeclarationNode from "../../src/nodes/DeclarationNode";
@@ -7,7 +6,7 @@ import ValueNode from "../../src/nodes/ValueNode";
 import parse from "../../src/parse";
 import trim_test_data from "../trim_test_data";
 
-const test = suite("Declaration parse");
+//const test = suite("Declaration parse");
 
 test("const with value", () => {
   const input = `
@@ -16,14 +15,14 @@ const x = 5
   const parsed = parse(input);
   const expected = new DeclarationNode(
     1,
-    "def",
+    "mod",
     "const",
     "x",
     "int",
     new ValueNode(11, "5", "int"),
   );
-  assert.equal(parsed.errors, []);
-  assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_data(parsed.root.statements[0])).toEqual(trim_test_data(expected));
 });
 
 test("const with type", () => {
@@ -31,9 +30,9 @@ test("const with type", () => {
 const x: int
 `;
   const parsed = parse(input);
-  const expected = new DeclarationNode(1, "def", "const", "x", "int");
-  assert.equal(parsed.errors, []);
-  assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
+  const expected = new DeclarationNode(1, "mod", "const", "x", "int");
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_data(parsed.root.statements[0])).toEqual(trim_test_data(expected));
 });
 
 test("var with value", () => {
@@ -41,9 +40,9 @@ test("var with value", () => {
 var x = 5
 `;
   const parsed = parse(input);
-  const expected = new DeclarationNode(1, "def", "var", "x", "int", new ValueNode(9, "5", "int"));
-  assert.equal(parsed.errors, []);
-  assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
+  const expected = new DeclarationNode(1, "mod", "var", "x", "int", new ValueNode(9, "5", "int"));
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_data(parsed.root.statements[0])).toEqual(trim_test_data(expected));
 });
 
 test("var with type", () => {
@@ -51,9 +50,9 @@ test("var with type", () => {
 var x: int
 `;
   const parsed = parse(input);
-  const expected = new DeclarationNode(1, "def", "var", "x", "int");
-  assert.equal(parsed.errors, []);
-  assert.equal(trim_test_data(parsed.root.statements[0]), trim_test_data(expected));
+  const expected = new DeclarationNode(1, "mod", "var", "x", "int");
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_data(parsed.root.statements[0])).toEqual(trim_test_data(expected));
 });
 
 test("trait var with struct", () => {
@@ -65,7 +64,7 @@ var x: Animal = Dog.init()
   const parsed = parse(input);
   const expected = new DeclarationNode(
     39,
-    "def",
+    "mod",
     "var",
     "x",
     "Animal",
@@ -75,8 +74,6 @@ var x: Animal = Dog.init()
       new AccessInvocationNode(59, "init", [], "Dog", true),
     ),
   );
-  assert.equal(parsed.errors, []);
-  assert.equal(trim_test_data(parsed.root.statements[2]), trim_test_data(expected));
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_data(parsed.root.statements[2])).toEqual(trim_test_data(expected));
 });
-
-test.run();

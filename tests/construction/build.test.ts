@@ -1,9 +1,8 @@
-import { suite } from "uvu";
-import assert from "uvu/assert";
+import { expect, test } from "vitest";
 import build from "../../src/build";
 import parse from "../../src/parse";
 
-const test = suite("Construction build");
+//const test = suite("Construction build");
 
 test("init struct", () => {
   const input = `
@@ -16,8 +15,8 @@ var x = Person.init()
   const expected = `
 Person x = Person_init();
 `;
-  assert.equal(parsed.errors, []);
-  assert.equal(result.code.trim(), expected.trim());
+  expect(parsed.errors).toEqual([]);
+  expect(result.code.trim()).toEqual(expected.trim());
 });
 
 test("init struct with params", () => {
@@ -32,8 +31,6 @@ var x = Person.init("Andrew")
   const expected = `
 Person x = Person_init("Andrew");
 `;
-  assert.equal(parsed.errors, []);
-  assert.equal(result.code.trim(), expected.trim());
+  expect(parsed.errors).toEqual([]);
+  expect(result.code.trim()).toEqual(expected.trim());
 });
-
-test.run();

@@ -1,9 +1,8 @@
-import { suite } from "uvu";
-import assert from "uvu/assert";
+import { expect, test } from "vitest";
 import build from "../../src/build";
 import parse from "../../src/parse";
 
-const test = suite("If/else build");
+//const test = suite("If/else build");
 
 test("if", () => {
   const input = `
@@ -19,8 +18,8 @@ if (x > 5) {
 x = 15;
 }
 `;
-  assert.equal(parsed.errors, []);
-  assert.equal(result.code.trim(), expected.trim());
+  expect(parsed.errors).toEqual([]);
+  expect(result.code.trim()).toEqual(expected.trim());
 });
 
 test("if else", () => {
@@ -28,7 +27,7 @@ test("if else", () => {
 var x = 10
 if x > 5 {
   x = 15
-else {
+} else {
   x = 20
 }
 `;
@@ -41,18 +40,18 @@ x = 15;
 x = 20;
 }
 `;
-  assert.equal(parsed.errors, []);
-  assert.equal(result.code.trim(), expected.trim());
+  expect(parsed.errors).toEqual([]);
+  expect(result.code.trim()).toEqual(expected.trim());
 });
 
 test("declaration with if", () => {
   const input = `
 const x = 10
 const y = if x > 5 {
-            return 50
-          else {
-            return 0
-          }
+  return 50
+} else {
+  return 0
+}
 `;
   const parsed = parse(input);
   const result = build(parsed.root.statements[1]);
@@ -64,15 +63,15 @@ y = 50;
 y = 0;
 }
 `;
-  assert.equal(parsed.errors, []);
-  assert.equal(result.code.trim(), expected.trim());
+  expect(parsed.errors).toEqual([]);
+  expect(result.code.trim()).toEqual(expected.trim());
 });
 
 test("declaration with short if", () => {
   const input = `
 const x = 10
-const y = if x > 5 => 50
-          else => 0
+const y = if x > 5 ~ 50
+          else ~ 0
 `;
   const parsed = parse(input);
   const result = build(parsed.root.statements[1]);
@@ -84,14 +83,14 @@ y = 50;
 y = 0;
 }
 `;
-  assert.equal(parsed.errors, []);
-  assert.equal(result.code.trim(), expected.trim());
+  expect(parsed.errors).toEqual([]);
+  expect(result.code.trim()).toEqual(expected.trim());
 });
 
 test("declaration with one line if", () => {
   const input = `
 const x = 10
-const y = if x > 5 => 50 else => 0
+const y = if x > 5 ~ 50 else ~ 0
 `;
   const parsed = parse(input);
   const result = build(parsed.root.statements[1]);
@@ -103,8 +102,6 @@ y = 50;
 y = 0;
 }
 `;
-  assert.equal(parsed.errors, []);
-  assert.equal(result.code.trim(), expected.trim());
+  expect(parsed.errors).toEqual([]);
+  expect(result.code.trim()).toEqual(expected.trim());
 });
-
-test.run();

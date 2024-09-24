@@ -1,5 +1,4 @@
-import { suite } from "uvu";
-import assert from "uvu/assert";
+import { expect, test } from "vitest";
 import AccessInvocationNode from "../../src/nodes/AccessInvocationNode";
 import AccessNode from "../../src/nodes/AccessNode";
 import AssignmentNode from "../../src/nodes/AssignmentNode";
@@ -7,7 +6,7 @@ import ValueNode from "../../src/nodes/ValueNode";
 import parse from "../../src/parse";
 import trim_test_data from "../trim_test_data";
 
-const test = suite("Assignment parse");
+//const test = suite("Assignment parse");
 
 test("assignment to var", () => {
   const input = `
@@ -20,8 +19,8 @@ x = 5
     new ValueNode(12, "x", "int"),
     new ValueNode(16, "5", "int"),
   );
-  assert.equal(parsed.errors, []);
-  assert.equal(trim_test_data(parsed.root.statements[1]), trim_test_data(expected));
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_data(parsed.root.statements[1])).toEqual(trim_test_data(expected));
 });
 
 test("trait assignment with struct", () => {
@@ -41,8 +40,6 @@ x = Dog.init()
       new AccessInvocationNode(61, "init", [], "Dog", true),
     ),
   );
-  assert.equal(parsed.errors, []);
-  assert.equal(trim_test_data(parsed.root.statements[3]), trim_test_data(expected));
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_data(parsed.root.statements[3])).toEqual(trim_test_data(expected));
 });
-
-test.run();
