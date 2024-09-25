@@ -1,6 +1,7 @@
 import { expect, test } from "vitest";
 import build from "../../src/build";
 import parse from "../../src/parse";
+import trim_test_build from "../trim_test_build";
 
 //const test = suite("Access build");
 
@@ -18,7 +19,7 @@ var x = p.age
 int x = p.age;
 `;
   expect(parsed.errors).toEqual([]);
-  expect(result.code.trim()).toEqual(expected.trim());
+  expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
 });
 
 test("getting nested field", () => {
@@ -39,7 +40,7 @@ var x = p.address.line
 char* x = p.address.line;
 `;
   expect(parsed.errors).toEqual([]);
-  expect(result.code.trim()).toEqual(expected.trim());
+  expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
 });
 
 test("setting field", () => {
@@ -56,7 +57,7 @@ p.age = 20
 p.age = 20;
 `;
   expect(parsed.errors).toEqual([]);
-  expect(result.code.trim()).toEqual(expected.trim());
+  expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
 });
 
 test("setting nested field", () => {
@@ -77,7 +78,7 @@ p.address.line = "1 main st"
 p.address.line = "1 main st";
 `;
   expect(parsed.errors).toEqual([]);
-  expect(result.code.trim()).toEqual(expected.trim());
+  expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
 });
 
 test("getting function", () => {
@@ -96,7 +97,7 @@ var x = p.age()
 int x = Person_age(&p);
 `;
   expect(parsed.errors).toEqual([]);
-  expect(result.code.trim()).toEqual(expected.trim());
+  expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
 });
 
 test("getting function after field", () => {
@@ -119,7 +120,7 @@ var x = p.address.line()
 char* x = Address_line(&p.address);
 `;
   expect(parsed.errors).toEqual([]);
-  expect(result.code.trim()).toEqual(expected.trim());
+  expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
 });
 
 test("getting field after function", () => {
@@ -142,5 +143,5 @@ var x = p.address().line
 char* x = Person_address(&p).line;
 `;
   expect(parsed.errors).toEqual([]);
-  expect(result.code.trim()).toEqual(expected.trim());
+  expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
 });

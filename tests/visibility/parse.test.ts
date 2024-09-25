@@ -7,7 +7,7 @@ import TraitNode from "../../src/nodes/TraitNode";
 import Type from "../../src/nodes/Type";
 import ValueNode from "../../src/nodes/ValueNode";
 import parse from "../../src/parse";
-import trim_test_data from "../trim_test_data";
+import trim_test_parse from "../trim_test_parse";
 
 //const test = suite("Visibility parse");
 
@@ -25,7 +25,7 @@ pub var x = 1
     new ValueNode(13, "1", "int"),
   );
   expect(parsed.errors).toEqual([]);
-  expect(trim_test_data(parsed.root.statements[0])).toEqual(trim_test_data(expected));
+  expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
 });
 
 test("pub const", () => {
@@ -42,7 +42,7 @@ pub const x = 3
     new ValueNode(15, "3", "int"),
   );
   expect(parsed.errors).toEqual([]);
-  expect(trim_test_data(parsed.root.statements[0])).toEqual(trim_test_data(expected));
+  expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
 });
 
 test("pub struct", () => {
@@ -59,7 +59,7 @@ pub struct Person {}
     [new FunctionNode(-1, "pub", "init", "Person", [])],
   );
   expect(parsed.errors).toEqual([]);
-  expect(trim_test_data(parsed.root.statements[0])).toEqual(trim_test_data(expected));
+  expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
 });
 
 test("pub trait", () => {
@@ -69,7 +69,7 @@ pub trait Person {}
   const parsed = parse(input);
   const expected = new TraitNode(1, "pub", "Person");
   expect(parsed.errors).toEqual([]);
-  expect(trim_test_data(parsed.root.statements[0])).toEqual(trim_test_data(expected));
+  expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
 });
 
 test("pub function", () => {
@@ -79,7 +79,7 @@ pub func add() {}
   const parsed = parse(input);
   const expected = new FunctionNode(1, "pub", "add", "", [], []);
   expect(parsed.errors).toEqual([]);
-  expect(trim_test_data(parsed.root.statements[0])).toEqual(trim_test_data(expected));
+  expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
 });
 
 test("pub fields in struct", () => {
@@ -102,7 +102,7 @@ pub struct Person {
     ],
   );
   expect(parsed.errors).toEqual([]);
-  expect(trim_test_data(parsed.root.statements[0])).toEqual(trim_test_data(expected));
+  expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
 });
 
 test("sec var", () => {
@@ -119,7 +119,7 @@ sec var x = 1
     new ValueNode(13, "1", "int"),
   );
   expect(parsed.errors).toEqual([]);
-  expect(trim_test_data(parsed.root.statements[0])).toEqual(trim_test_data(expected));
+  expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
 });
 
 test("sec const", () => {
@@ -136,7 +136,7 @@ sec const x = 3
     new ValueNode(15, "3", "int"),
   );
   expect(parsed.errors).toEqual([]);
-  expect(trim_test_data(parsed.root.statements[0])).toEqual(trim_test_data(expected));
+  expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
 });
 
 test("sec struct", () => {
@@ -153,7 +153,7 @@ sec struct Person {}
     [new FunctionNode(-1, "sec", "init", "Person", [])],
   );
   expect(parsed.errors).toEqual([]);
-  expect(trim_test_data(parsed.root.statements[0])).toEqual(trim_test_data(expected));
+  expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
 });
 
 test("sec trait", () => {
@@ -163,7 +163,7 @@ sec trait Person {}
   const parsed = parse(input);
   const expected = new TraitNode(1, "sec", "Person");
   expect(parsed.errors).toEqual([]);
-  expect(trim_test_data(parsed.root.statements[0])).toEqual(trim_test_data(expected));
+  expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
 });
 
 test("sec function", () => {
@@ -173,7 +173,7 @@ sec func add() {}
   const parsed = parse(input);
   const expected = new FunctionNode(1, "sec", "add", "", [], []);
   expect(parsed.errors).toEqual([]);
-  expect(trim_test_data(parsed.root.statements[0])).toEqual(trim_test_data(expected));
+  expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
 });
 
 test("sec fields in struct", () => {
@@ -196,7 +196,7 @@ pub struct Person {
     ],
   );
   expect(parsed.errors).toEqual([]);
-  expect(trim_test_data(parsed.root.statements[0])).toEqual(trim_test_data(expected));
+  expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
 });
 
 // TODO: Need rudimentary scoping

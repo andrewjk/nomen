@@ -1,6 +1,7 @@
 import { expect, test } from "vitest";
 import build from "../../src/build";
 import parse from "../../src/parse";
+import trim_test_build from "../trim_test_build";
 
 //const test = suite("Operation build");
 
@@ -14,7 +15,7 @@ var x = 1 + 2
 int x = 1 + 2;
 `;
   expect(parsed.errors).toEqual([]);
-  expect(result.code.trim()).toEqual(expected.trim());
+  expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
 });
 
 test("subtraction", () => {
@@ -27,7 +28,7 @@ var x = 1 - 2
 int x = 1 - 2;
 `;
   expect(parsed.errors).toEqual([]);
-  expect(result.code.trim()).toEqual(expected.trim());
+  expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
 });
 
 test("series", () => {
@@ -40,5 +41,5 @@ var x = 1 + 2 - 3
 int x = 1 + 2 - 3;
 `;
   expect(parsed.errors).toEqual([]);
-  expect(result.code.trim()).toEqual(expected.trim());
+  expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
 });

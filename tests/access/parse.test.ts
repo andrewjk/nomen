@@ -6,7 +6,7 @@ import AssignmentNode from "../../src/nodes/AssignmentNode";
 import DeclarationNode from "../../src/nodes/DeclarationNode";
 import ValueNode from "../../src/nodes/ValueNode";
 import parse from "../../src/parse";
-import trim_test_data from "../trim_test_data";
+import trim_parse_tree from "../trim_test_parse";
 
 //const test = suite("Access parse");
 
@@ -28,7 +28,7 @@ var x = p.age
     new AccessNode(56, new ValueNode(56, "p", "Person"), new AccessFieldNode(58, "age", "int")),
   );
   expect(parsed.errors).toEqual([]);
-  expect(trim_test_data(parsed.root.statements[2])).toEqual(trim_test_data(expected));
+  expect(trim_parse_tree(parsed.root.statements[2])).toEqual(trim_parse_tree(expected));
 });
 
 test("getting nested field", () => {
@@ -61,7 +61,7 @@ var x = p.address.line
     ),
   );
   expect(parsed.errors).toEqual([]);
-  expect(trim_test_data(parsed.root.statements[3])).toEqual(trim_test_data(expected));
+  expect(trim_parse_tree(parsed.root.statements[3])).toEqual(trim_parse_tree(expected));
 });
 
 test("setting field", () => {
@@ -79,7 +79,7 @@ p.age = 20
     new ValueNode(56, "20", "int"),
   );
   expect(parsed.errors).toEqual([]);
-  expect(trim_test_data(parsed.root.statements[2])).toEqual(trim_test_data(expected));
+  expect(trim_parse_tree(parsed.root.statements[2])).toEqual(trim_parse_tree(expected));
 });
 
 test("setting nested field", () => {
@@ -109,7 +109,7 @@ p.address.line = "1 main st"
     new ValueNode(126, '"1 main st"', "string"),
   );
   expect(parsed.errors).toEqual([]);
-  expect(trim_test_data(parsed.root.statements[3])).toEqual(trim_test_data(expected));
+  expect(trim_parse_tree(parsed.root.statements[3])).toEqual(trim_parse_tree(expected));
 });
 
 test("getting function", () => {
@@ -136,7 +136,7 @@ var x = p.age()
     ),
   );
   expect(parsed.errors).toEqual([]);
-  expect(trim_test_data(parsed.root.statements[2])).toEqual(trim_test_data(expected));
+  expect(trim_parse_tree(parsed.root.statements[2])).toEqual(trim_parse_tree(expected));
 });
 
 test("getting function after field", () => {
@@ -171,7 +171,7 @@ var x = p.address.line()
     ),
   );
   expect(parsed.errors).toEqual([]);
-  expect(trim_test_data(parsed.root.statements[3])).toEqual(trim_test_data(expected));
+  expect(trim_parse_tree(parsed.root.statements[3])).toEqual(trim_parse_tree(expected));
 });
 
 test("getting field after function", () => {
@@ -206,5 +206,5 @@ var x = p.address().line
     ),
   );
   expect(parsed.errors).toEqual([]);
-  expect(trim_test_data(parsed.root.statements[3])).toEqual(trim_test_data(expected));
+  expect(trim_parse_tree(parsed.root.statements[3])).toEqual(trim_parse_tree(expected));
 });

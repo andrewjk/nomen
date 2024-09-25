@@ -4,7 +4,7 @@ import AccessNode from "../../src/nodes/AccessNode";
 import AssignmentNode from "../../src/nodes/AssignmentNode";
 import ValueNode from "../../src/nodes/ValueNode";
 import parse from "../../src/parse";
-import trim_test_data from "../trim_test_data";
+import trim_test_parse from "../trim_test_parse";
 
 //const test = suite("Assignment parse");
 
@@ -20,7 +20,7 @@ x = 5
     new ValueNode(16, "5", "int"),
   );
   expect(parsed.errors).toEqual([]);
-  expect(trim_test_data(parsed.root.statements[1])).toEqual(trim_test_data(expected));
+  expect(trim_test_parse(parsed.root.statements[1])).toEqual(trim_test_parse(expected));
 });
 
 test("trait assignment with struct", () => {
@@ -41,5 +41,5 @@ x = Dog.init()
     ),
   );
   expect(parsed.errors).toEqual([]);
-  expect(trim_test_data(parsed.root.statements[3])).toEqual(trim_test_data(expected));
+  expect(trim_test_parse(parsed.root.statements[3])).toEqual(trim_test_parse(expected));
 });

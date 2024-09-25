@@ -7,7 +7,7 @@ import StructNode from "../../src/nodes/StructNode";
 import TraitNode from "../../src/nodes/TraitNode";
 import ValueNode from "../../src/nodes/ValueNode";
 import parse from "../../src/parse";
-import trim_test_data from "../trim_test_data";
+import trim_test_parse from "../trim_test_parse";
 
 //const test = suite("Trait parse");
 
@@ -30,7 +30,7 @@ struct Frank: Person {}
     ),
   ]);
   expect(parsed.errors).toEqual([]);
-  expect(trim_test_data(parsed.root)).toEqual(trim_test_data(expected));
+  expect(trim_test_parse(parsed.root)).toEqual(trim_test_parse(expected));
 });
 
 test("trait after struct", () => {
@@ -52,7 +52,7 @@ trait Person {}
     new TraitNode(26, "mod", "Person"),
   ]);
   expect(parsed.errors).toEqual([]);
-  expect(trim_test_data(parsed.root)).toEqual(trim_test_data(expected));
+  expect(trim_test_parse(parsed.root)).toEqual(trim_test_parse(expected));
 });
 
 test("trait with fields", () => {
@@ -91,7 +91,7 @@ struct Frank: Person {
     ),
   ]);
   expect(parsed.errors).toEqual([]);
-  expect(trim_test_data(parsed.root)).toEqual(trim_test_data(expected));
+  expect(trim_test_parse(parsed.root)).toEqual(trim_test_parse(expected));
 });
 
 test("trait with functions", () => {
@@ -129,7 +129,7 @@ struct Frank: Person {
     ),
   ]);
   expect(parsed.errors).toEqual([]);
-  expect(trim_test_data(parsed.root)).toEqual(trim_test_data(expected));
+  expect(trim_test_parse(parsed.root)).toEqual(trim_test_parse(expected));
 });
 
 test("trait with implemented functions", () => {
@@ -170,5 +170,5 @@ struct Frank: Person {}
     ),
   ]);
   expect(parsed.errors).toEqual([]);
-  expect(trim_test_data(parsed.root)).toEqual(trim_test_data(expected));
+  expect(trim_test_parse(parsed.root)).toEqual(trim_test_parse(expected));
 });

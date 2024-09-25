@@ -4,7 +4,7 @@ import RangeNode from "../../src/nodes/RangeNode";
 import Type from "../../src/nodes/Type";
 import ValueNode from "../../src/nodes/ValueNode";
 import parse from "../../src/parse";
-import trim_test_data from "../trim_test_data";
+import trim_test_parse from "../trim_test_parse";
 
 //const test = suite("Range parse");
 
@@ -22,7 +22,7 @@ var x = 1..2
     new RangeNode(9, new ValueNode(9, "1", "int"), new ValueNode(12, "2", "int"), false),
   );
   expect(parsed.errors).toEqual([]);
-  expect(trim_test_data(parsed.root.statements[0])).toEqual(trim_test_data(expected));
+  expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
 });
 
 test("inclusive", () => {
@@ -39,5 +39,5 @@ var x = 1.=2
     new RangeNode(9, new ValueNode(9, "1", "int"), new ValueNode(12, "2", "int"), true),
   );
   expect(parsed.errors).toEqual([]);
-  expect(trim_test_data(parsed.root.statements[0])).toEqual(trim_test_data(expected));
+  expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
 });

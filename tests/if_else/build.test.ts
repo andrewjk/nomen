@@ -1,6 +1,7 @@
 import { expect, test } from "vitest";
 import build from "../../src/build";
 import parse from "../../src/parse";
+import trim_test_build from "../trim_test_build";
 
 //const test = suite("If/else build");
 
@@ -19,7 +20,7 @@ x = 15;
 }
 `;
   expect(parsed.errors).toEqual([]);
-  expect(result.code.trim()).toEqual(expected.trim());
+  expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
 });
 
 test("if else", () => {
@@ -41,7 +42,7 @@ x = 20;
 }
 `;
   expect(parsed.errors).toEqual([]);
-  expect(result.code.trim()).toEqual(expected.trim());
+  expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
 });
 
 test("declaration with if", () => {
@@ -64,7 +65,7 @@ y = 0;
 }
 `;
   expect(parsed.errors).toEqual([]);
-  expect(result.code.trim()).toEqual(expected.trim());
+  expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
 });
 
 test("declaration with short if", () => {
@@ -84,7 +85,7 @@ y = 0;
 }
 `;
   expect(parsed.errors).toEqual([]);
-  expect(result.code.trim()).toEqual(expected.trim());
+  expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
 });
 
 test("declaration with one line if", () => {
@@ -103,5 +104,5 @@ y = 0;
 }
 `;
   expect(parsed.errors).toEqual([]);
-  expect(result.code.trim()).toEqual(expected.trim());
+  expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
 });

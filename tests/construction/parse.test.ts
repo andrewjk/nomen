@@ -4,7 +4,7 @@ import AccessNode from "../../src/nodes/AccessNode";
 import DeclarationNode from "../../src/nodes/DeclarationNode";
 import ValueNode from "../../src/nodes/ValueNode";
 import parse from "../../src/parse";
-import trim_test_data from "../trim_test_data";
+import trim_test_parse from "../trim_test_parse";
 
 //const test = suite("Construction parse");
 
@@ -29,7 +29,7 @@ var x = Person.init()
   );
   expect(parsed.errors).toEqual([]);
   expect(parsed.errors).toEqual([]);
-  expect(trim_test_data(parsed.root.statements[1])).toEqual(trim_test_data(expected));
+  expect(trim_test_parse(parsed.root.statements[1])).toEqual(trim_test_parse(expected));
 });
 
 test("init struct with params", () => {
@@ -59,7 +59,7 @@ var x = Person.init("Andrew")
     ),
   );
   expect(parsed.errors).toEqual([]);
-  expect(trim_test_data(parsed.root.statements[1])).toEqual(trim_test_data(expected));
+  expect(trim_test_parse(parsed.root.statements[1])).toEqual(trim_test_parse(expected));
 });
 
 test("init struct with default values", () => {
@@ -83,5 +83,5 @@ var x = Person.init()
     ),
   );
   expect(parsed.errors).toEqual([]);
-  expect(trim_test_data(parsed.root.statements[1])).toEqual(trim_test_data(expected));
+  expect(trim_test_parse(parsed.root.statements[1])).toEqual(trim_test_parse(expected));
 });

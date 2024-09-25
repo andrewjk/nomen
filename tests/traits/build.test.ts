@@ -1,16 +1,9 @@
 import { expect, test } from "vitest";
 import build from "../../src/build";
 import parse from "../../src/parse";
+import trim_test_build from "../trim_test_build";
 
 //const test = suite("Trait build");
-
-function trimCode(code: string) {
-  return code
-    .split("\n")
-    .filter((l) => !l.startsWith("#"))
-    .join("\n")
-    .trim();
-}
 
 test("trait", () => {
   const input = `
@@ -21,15 +14,8 @@ struct Frank: Person {}
   const parsed = parse(input);
   const result = build(parsed.root);
   const expected = `
-void **_get_trait_func(void **obj, int trait_index, int func_index)
-{
-void **trait = *(obj + trait_index);
-return *(trait + func_index);
-}
-
-// Frank:
 void *_Frank_Person_funcs[] = {};
-void *_Frank_traits[] = {_Frank_Person_funcs};
+void *_Frank_traits[] = {&_Frank_Person_funcs};
 typedef struct Frank
 {
 void *_vt;
@@ -42,7 +28,7 @@ return f;
 }
 `;
   expect(parsed.errors).toEqual([]);
-  expect(trimCode(result.code)).toEqual(expected.trim());
+  expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
 });
 
 test("trait with fields", () => {
@@ -59,15 +45,8 @@ struct Frank: Person {
   const parsed = parse(input);
   const result = build(parsed.root);
   const expected = `
-void **_get_trait_func(void **obj, int trait_index, int func_index)
-{
-void **trait = *(obj + trait_index);
-return *(trait + func_index);
-}
-
-// Frank:
 void *_Frank_Person_funcs[] = {};
-void *_Frank_traits[] = {_Frank_Person_funcs};
+void *_Frank_traits[] = {&_Frank_Person_funcs};
 typedef struct Frank
 {
 void *_vt;
@@ -84,7 +63,7 @@ return f;
 }
 `;
   expect(parsed.errors).toEqual([]);
-  expect(trimCode(result.code)).toEqual(expected.trim());
+  expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
 });
 
 test("trait with functions", () => {
@@ -102,13 +81,6 @@ struct Frank: Person {
   const parsed = parse(input);
   const result = build(parsed.root);
   const expected = `
-void **_get_trait_func(void **obj, int trait_index, int func_index)
-{
-void **trait = *(obj + trait_index);
-return *(trait + func_index);
-}
-
-// Person:
 typedef struct Person
 {
 } Person;
@@ -117,9 +89,8 @@ void Person_greet(struct Person *self)
 struct Person zz = *self;
 }
 
-// Frank:
 void *_Frank_Person_funcs[] = {Frank_greet};
-void *_Frank_traits[] = {_Frank_Person_funcs};
+void *_Frank_traits[] = {&_Frank_Person_funcs};
 typedef struct Frank
 {
 void *_vt;
@@ -137,7 +108,7 @@ return "hi";
 }
 `;
   expect(parsed.errors).toEqual([]);
-  expect(trimCode(result.code)).toEqual(expected.trim());
+  expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
 });
 
 test("trait with implemented functions", () => {
@@ -153,13 +124,6 @@ struct Frank: Person {}
   const parsed = parse(input);
   const result = build(parsed.root);
   const expected = `
-void **_get_trait_func(void **obj, int trait_index, int func_index)
-{
-void **trait = *(obj + trait_index);
-return *(trait + func_index);
-}
-
-// Person:
 typedef struct Person
 {
 } Person;
@@ -171,7 +135,7 @@ return "hi";
 
 // Frank:
 void *_Frank_Person_funcs[] = {Person_greet};
-void *_Frank_traits[] = {_Frank_Person_funcs};
+void *_Frank_traits[] = {&_Frank_Person_funcs};
 typedef struct Frank
 {
 void *_vt;
@@ -184,5 +148,5 @@ return f;
 }
 `;
   expect(parsed.errors).toEqual([]);
-  expect(trimCode(result.code)).toEqual(expected.trim());
+  expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
 });

@@ -4,7 +4,7 @@ import OperationNode from "../../src/nodes/OperationNode";
 import ValueNode from "../../src/nodes/ValueNode";
 import WhileLoopNode from "../../src/nodes/WhileLoopNode";
 import parse from "../../src/parse";
-import trim_test_data from "../trim_test_data";
+import trim_test_parse from "../trim_test_parse";
 
 //const test = suite("While loop parse");
 
@@ -40,7 +40,7 @@ while x < 5 {
     ],
   );
   expect(parsed.errors).toEqual([]);
-  expect(trim_test_data(parsed.root.statements[1])).toEqual(trim_test_data(expected));
+  expect(trim_test_parse(parsed.root.statements[1])).toEqual(trim_test_parse(expected));
 });
 
 test("while true", () => {
@@ -52,5 +52,5 @@ while true {
   const parsed = parse(input);
   const expected = new WhileLoopNode(1, new ValueNode(7, "true", "bool"));
   expect(parsed.errors).toEqual([]);
-  expect(trim_test_data(parsed.root.statements[0])).toEqual(trim_test_data(expected));
+  expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
 });

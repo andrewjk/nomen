@@ -8,7 +8,7 @@ import RangeNode from "../../src/nodes/RangeNode";
 import TodoNode from "../../src/nodes/TodoNode";
 import ValueNode from "../../src/nodes/ValueNode";
 import parse from "../../src/parse";
-import trim_test_data from "../trim_test_data";
+import trim_test_parse from "../trim_test_parse";
 
 //const test = suite("Control parse");
 
@@ -26,7 +26,7 @@ for x in 0..5 {
     [new BreakNode(19)],
   );
   expect(parsed.errors).toEqual([]);
-  expect(trim_test_data(parsed.root.statements[0])).toEqual(trim_test_data(expected));
+  expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
 });
 
 test("continue", () => {
@@ -43,7 +43,7 @@ for x in 0..5 {
     [new ContinueNode(19)],
   );
   expect(parsed.errors).toEqual([]);
-  expect(trim_test_data(parsed.root.statements[0])).toEqual(trim_test_data(expected));
+  expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
 });
 
 test("panic", () => {
@@ -63,7 +63,7 @@ func add() -> int {
   );
   expected.has_return = true;
   expect(parsed.errors).toEqual([]);
-  expect(trim_test_data(parsed.root.statements[0])).toEqual(trim_test_data(expected));
+  expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
 });
 
 test("todo", () => {
@@ -83,5 +83,5 @@ func add() -> int {
   );
   expected.has_return = true;
   expect(parsed.errors).toEqual([]);
-  expect(trim_test_data(parsed.root.statements[0])).toEqual(trim_test_data(expected));
+  expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
 });

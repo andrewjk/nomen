@@ -4,7 +4,7 @@ import AccessNode from "../../src/nodes/AccessNode";
 import DeclarationNode from "../../src/nodes/DeclarationNode";
 import ValueNode from "../../src/nodes/ValueNode";
 import parse from "../../src/parse";
-import trim_test_data from "../trim_test_data";
+import trim_test_parse from "../trim_test_parse";
 
 //const test = suite("Declaration parse");
 
@@ -22,7 +22,7 @@ const x = 5
     new ValueNode(11, "5", "int"),
   );
   expect(parsed.errors).toEqual([]);
-  expect(trim_test_data(parsed.root.statements[0])).toEqual(trim_test_data(expected));
+  expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
 });
 
 test("const with type", () => {
@@ -32,7 +32,7 @@ const x: int
   const parsed = parse(input);
   const expected = new DeclarationNode(1, "mod", "const", "x", "int");
   expect(parsed.errors).toEqual([]);
-  expect(trim_test_data(parsed.root.statements[0])).toEqual(trim_test_data(expected));
+  expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
 });
 
 test("var with value", () => {
@@ -42,7 +42,7 @@ var x = 5
   const parsed = parse(input);
   const expected = new DeclarationNode(1, "mod", "var", "x", "int", new ValueNode(9, "5", "int"));
   expect(parsed.errors).toEqual([]);
-  expect(trim_test_data(parsed.root.statements[0])).toEqual(trim_test_data(expected));
+  expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
 });
 
 test("var with type", () => {
@@ -52,7 +52,7 @@ var x: int
   const parsed = parse(input);
   const expected = new DeclarationNode(1, "mod", "var", "x", "int");
   expect(parsed.errors).toEqual([]);
-  expect(trim_test_data(parsed.root.statements[0])).toEqual(trim_test_data(expected));
+  expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
 });
 
 test("trait var with struct", () => {
@@ -75,5 +75,5 @@ var x: Animal = Dog.init()
     ),
   );
   expect(parsed.errors).toEqual([]);
-  expect(trim_test_data(parsed.root.statements[2])).toEqual(trim_test_data(expected));
+  expect(trim_test_parse(parsed.root.statements[2])).toEqual(trim_test_parse(expected));
 });

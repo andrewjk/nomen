@@ -7,7 +7,7 @@ import OperationNode from "../../src/nodes/OperationNode";
 import ReturnNode from "../../src/nodes/ReturnNode";
 import ValueNode from "../../src/nodes/ValueNode";
 import parse from "../../src/parse";
-import trim_test_data from "../trim_test_data";
+import trim_test_parse from "../trim_test_parse";
 
 //const test = suite("If/else parse");
 
@@ -33,7 +33,7 @@ if x > 5 {
     ]),
   );
   expect(parsed.errors).toEqual([]);
-  expect(trim_test_data(parsed.root.statements[1])).toEqual(trim_test_data(expected));
+  expect(trim_test_parse(parsed.root.statements[1])).toEqual(trim_test_parse(expected));
 });
 
 test("if else", () => {
@@ -63,7 +63,7 @@ if x > 5 {
     ]),
   );
   expect(parsed.errors).toEqual([]);
-  expect(trim_test_data(parsed.root.statements[1])).toEqual(trim_test_data(expected));
+  expect(trim_test_parse(parsed.root.statements[1])).toEqual(trim_test_parse(expected));
 });
 
 test("declaration with if", () => {
@@ -97,7 +97,7 @@ const y = if x > 5 {
     ),
   );
   expect(parsed.errors).toEqual([]);
-  expect(trim_test_data(parsed.root.statements[1])).toEqual(trim_test_data(expected));
+  expect(trim_test_parse(parsed.root.statements[1])).toEqual(trim_test_parse(expected));
 });
 
 test("declaration with short if", () => {
@@ -128,7 +128,7 @@ const y = if x > 5 ~ 50
     ),
   );
   expect(parsed.errors).toEqual([]);
-  expect(trim_test_data(parsed.root.statements[1])).toEqual(trim_test_data(expected));
+  expect(trim_test_parse(parsed.root.statements[1])).toEqual(trim_test_parse(expected));
 });
 
 test("declaration with one line if", () => {
@@ -158,5 +158,5 @@ const y = if x > 5 ~ 50 else ~ 0
     ),
   );
   expect(parsed.errors).toEqual([]);
-  expect(trim_test_data(parsed.root.statements[1])).toEqual(trim_test_data(expected));
+  expect(trim_test_parse(parsed.root.statements[1])).toEqual(trim_test_parse(expected));
 });

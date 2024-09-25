@@ -1,18 +1,18 @@
 import type BaseNode from "../src/nodes/BaseNode";
 
-export default function trim_test_data(node: BaseNode): string {
-  trim_any(node);
+export default function trim_test_parse(node: BaseNode): string {
+  trim_node(node);
   return JSON.parse(JSON.stringify(node));
 }
 
-function trim_any(node: any) {
+function trim_node(node: any) {
   if (node.children && !node.children.length) {
     delete node.children;
   }
   for (let [key, value] of Object.entries(node)) {
     if (key === "children") {
       for (let child of node.children) {
-        trim_any(child);
+        trim_node(child);
       }
       if (!node.children.length) {
         delete node.children;
@@ -20,7 +20,7 @@ function trim_any(node: any) {
     } else if (/*key === "start" ||*/ key.endsWith("_start")) {
       delete node[key];
     } else if (typeof value === "object") {
-      trim_any(value);
+      trim_node(value);
     }
   }
 }

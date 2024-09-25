@@ -5,7 +5,7 @@ import ParameterNode from "../../src/nodes/ParameterNode";
 import StructNode from "../../src/nodes/StructNode";
 import ValueNode from "../../src/nodes/ValueNode";
 import parse from "../../src/parse";
-import trim_test_data from "../trim_test_data";
+import trim_test_parse from "../trim_test_parse";
 
 //const test = suite("Struct parse");
 
@@ -23,7 +23,7 @@ struct Person {}
     [new FunctionNode(-1, "mod", "init", "Person", [])],
   );
   expect(parsed.errors).toEqual([]);
-  expect(trim_test_data(parsed.root.statements[0])).toEqual(trim_test_data(expected));
+  expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
 });
 
 test("struct with fields", () => {
@@ -46,7 +46,7 @@ struct Person {
     [new FunctionNode(-1, "mod", "init", "Person", [new ParameterNode(-1, "name", "string")])],
   );
   expect(parsed.errors).toEqual([]);
-  expect(trim_test_data(parsed.root.statements[0])).toEqual(trim_test_data(expected));
+  expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
 });
 
 test("struct with functions", () => {
@@ -68,5 +68,5 @@ struct Person {
     ],
   );
   expect(parsed.errors).toEqual([]);
-  expect(trim_test_data(parsed.root.statements[0])).toEqual(trim_test_data(expected));
+  expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
 });

@@ -1,6 +1,7 @@
 import { expect, test } from "vitest";
 import build from "../../src/build";
 import parse from "../../src/parse";
+import trim_test_build from "../trim_test_build";
 
 //const test = suite("Function build");
 
@@ -16,7 +17,7 @@ void add()
 }
 `;
   expect(parsed.errors).toEqual([]);
-  expect(result.code.trim()).toEqual(expected.trim());
+  expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
 });
 
 test("function with params", () => {
@@ -31,7 +32,7 @@ void add(int a, int b)
 }
 `;
   expect(parsed.errors).toEqual([]);
-  expect(result.code.trim()).toEqual(expected.trim());
+  expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
 });
 
 test("function with params with default value", () => {
@@ -46,7 +47,7 @@ void add(int a, int b)
 }
 `;
   expect(parsed.errors).toEqual([]);
-  expect(result.code.trim()).toEqual(expected.trim());
+  expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
 });
 
 test("function with return type", () => {
@@ -64,7 +65,7 @@ return 5;
 }
 `;
   expect(parsed.errors).toEqual([]);
-  expect(result.code.trim()).toEqual(expected.trim());
+  expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
 });
 
 test("function with body", () => {
@@ -82,7 +83,7 @@ int x = 5;
 }
 `;
   expect(parsed.errors).toEqual([]);
-  expect(result.code.trim()).toEqual(expected.trim());
+  expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
 });
 
 test("function with return value", () => {
@@ -100,7 +101,7 @@ return 5;
 }
 `;
   expect(parsed.errors).toEqual([]);
-  expect(result.code.trim()).toEqual(expected.trim());
+  expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
 });
 
 /*
@@ -121,6 +122,6 @@ void subtract() {
 }
 `;
   expect(parsed.errors).toEqual([]);
-  expect(result.code.trim()).toEqual(expected.trim());
+  expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
 });
 */
