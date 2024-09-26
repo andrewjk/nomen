@@ -1,7 +1,7 @@
 import PanicNode from "../nodes/PanicNode";
 import ReturningNode from "../nodes/ReturningNode";
 import TodoNode from "../nodes/TodoNode";
-import isReturningNode from "../nodes/isReturningNode";
+import { is_returning_node } from "../nodes/check_node_type";
 import type ParseStatus from "./ParseStatus";
 import accept from "./utils/accept";
 import add_to_parent from "./utils/add_to_parent";
@@ -34,7 +34,7 @@ export default function parse_panic_or_todo(name: "panic" | "todo", status: Pars
   // Go up the stack looking for a returning node
   let func: ReturningNode | null = null;
   for (let i = status.stack.length - 1; i >= 0; i--) {
-    if (isReturningNode(status.stack[i])) {
+    if (is_returning_node(status.stack[i])) {
       func = status.stack[i] as ReturningNode;
       break;
     }

@@ -6,6 +6,7 @@ import RootNode from "./nodes/RootNode";
 import StructNode from "./nodes/StructNode";
 import TraitNode from "./nodes/TraitNode";
 import Type from "./nodes/Type";
+import { is_root_node } from "./nodes/check_node_type";
 import type CheckResult from "./types/CheckResult";
 
 export default function check(root: BaseNode): CheckResult {
@@ -19,8 +20,8 @@ export default function check(root: BaseNode): CheckResult {
     errors: [],
   };
 
-  if (root.node_type === "root") {
-    gather_globals(root as RootNode, status);
+  if (is_root_node(root)) {
+    gather_globals(root, status);
   }
 
   check_node(root, status);

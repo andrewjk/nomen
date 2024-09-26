@@ -1,5 +1,5 @@
 import BaseNode from "../../nodes/BaseNode";
-import isBlockNode from "../../nodes/isBlockNode";
+import { is_block_node } from "../../nodes/check_node_type";
 import type ParseStatus from "../ParseStatus";
 
 export default function add_to_parent(
@@ -8,7 +8,7 @@ export default function add_to_parent(
   status: ParseStatus,
 ): boolean {
   const parent = status.stack.at(-1)!;
-  if (isBlockNode(parent)) {
+  if (is_block_node(parent)) {
     parent.statements.push(node);
     return true;
   } else {

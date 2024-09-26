@@ -2,6 +2,7 @@ import FunctionNode from "../nodes/FunctionNode";
 import RootNode from "../nodes/RootNode";
 import StructNode from "../nodes/StructNode";
 import TraitNode from "../nodes/TraitNode";
+import { is_function_node, is_struct_node, is_trait_node } from "../nodes/check_node_type";
 import type BuildStatus from "./BuildStatus";
 import build_function_node from "./build_function_node";
 import build_struct_node from "./build_struct_node";
@@ -18,20 +19,20 @@ export default function build_root_node(node: RootNode, status: BuildStatus) {
 
   // Build traits, then structs, then functions
   for (let child of node.statements) {
-    if (child.node_type === "trait") {
-      build_trait_node(child as TraitNode, status);
+    if (is_trait_node(child)) {
+      build_trait_node(child, status);
     }
   }
 
   for (let child of node.statements) {
-    if (child.node_type === "struct") {
-      build_struct_node(child as StructNode, status);
+    if (is_struct_node(child)) {
+      build_struct_node(child, status);
     }
   }
 
   for (let child of node.statements) {
-    if (child.node_type === "func") {
-      build_function_node(child as FunctionNode, status);
+    if (is_function_node(child)) {
+      build_function_node(child, status);
     }
   }
 }

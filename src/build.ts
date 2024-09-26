@@ -1,9 +1,7 @@
 import type BuildStatus from "./build/BuildStatus";
 import build_node from "./build/build_node";
 import BaseNode from "./nodes/BaseNode";
-import RootNode from "./nodes/RootNode";
-import StructNode from "./nodes/StructNode";
-import TraitNode from "./nodes/TraitNode";
+import { is_root_node, is_struct_node, is_trait_node } from "./nodes/check_node_type";
 import type BuildResult from "./types/BuildResult";
 
 export default function build(root: BaseNode): BuildResult {
@@ -18,14 +16,9 @@ export default function build(root: BaseNode): BuildResult {
 
   // Collect the traits
   // TODO: Handle traits declared in child scopes??
-  if (root.node_type === "root") {
-    status.structs = (root as RootNode).statements.filter(
-      (c) => c.node_type === "struct",
-    ) as StructNode[];
-
-    status.traits = (root as RootNode).statements.filter(
-      (c) => c.node_type === "trait",
-    ) as TraitNode[];
+  if (is_root_node(root)) {
+    status.structs = root.statements.filter((c) => is_struct_node(c));
+    status.traits = root.statements.filter((c) => is_trait_node(c));
   }
 
   build_node(root, status);

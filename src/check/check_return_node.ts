@@ -1,6 +1,6 @@
 import ReturnNode from "../nodes/ReturnNode";
 import ReturningNode from "../nodes/ReturningNode";
-import isReturningNode from "../nodes/isReturningNode";
+import { is_returning_node } from "../nodes/check_node_type";
 import type CheckStatus from "./CheckStatus";
 import check_node from "./check_node";
 import check_type_and_value_match from "./utils/check_type_and_value_match";
@@ -15,7 +15,7 @@ export default function check_return_node(ret: ReturnNode, status: CheckStatus) 
   // Go up the stack looking for a returning node
   let func: ReturningNode | null = null;
   for (let i = status.stack.length - 1; i >= 0; i--) {
-    if (isReturningNode(status.stack[i])) {
+    if (is_returning_node(status.stack[i])) {
       func = status.stack[i] as ReturningNode;
     }
   }
