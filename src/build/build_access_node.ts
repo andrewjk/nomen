@@ -9,7 +9,7 @@ import type_from_value_node from "./utils/type_from_value_node";
 
 export default function build_access_node(node: AccessNode, status: BuildStatus) {
   // PERF:
-  const type = type_from_value_node(node.source);
+  const type = type_from_value_node(node.target);
   const trait = status.traits.find((t) => t.name === type.name);
 
   switch (node.access.node_type) {
@@ -24,16 +24,16 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
         const type = c_type(traitField.type.name);
         const cast = `(${type}(*)(void *))`;
         status.code += `(${cast}_get_trait_func((void *)`;
-        build_node(node.source, status);
+        build_node(node.target, status);
         const traitIndex = status.traits.indexOf(trait);
         const fieldIndex = trait.functions.length + trait.fields.indexOf(traitField) * 2;
         status.code += `, ${traitIndex}, ${fieldIndex}))(`;
-        build_node(node.source, status);
+        build_node(node.target, status);
         status.code += `)`;
         break;
       } else {
         // If the target is a struct, we can just access the field directly
-        build_node(node.source, status);
+        build_node(node.target, status);
         status.code += `.${node.access.name}`;
       }
       break;
@@ -49,11 +49,11 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
         // TODO: Pass parameters
         const cast = "(char *(*)(void *))";
         status.code += `(${cast}_get_trait_func(`;
-        build_node(node.source, status);
+        build_node(node.target, status);
         const traitIndex = status.traits.indexOf(trait);
         const funcIndex = trait.functions.indexOf(traitFunc);
         status.code += `, ${traitIndex}, ${funcIndex}))(`;
-        build_node(node.source, status);
+        build_node(node.target, status);
         status.code += `)`;
       } else {
         // If the target is a struct, we need to convert the access function
@@ -61,7 +61,7 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
         status.code += `${c_type(type.name)}_${func.name}(`;
         if (!func.static) {
           status.code += "&";
-          build_node(node.source, status);
+          build_node(node.target, status);
         }
         for (let i = 0; i < func.params.length; i++) {
           if (!func.static || i > 0) {

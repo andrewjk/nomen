@@ -10,7 +10,7 @@ import get_index from "./utils/get_index";
 import peek_current from "./utils/peek_current";
 
 export default function parse_access(
-  source_name: string,
+  target_name: string,
   status: ParseStatus,
 ): AccessFieldNode | AccessFunctionNode {
   const start = get_index(status);
@@ -21,7 +21,7 @@ export default function parse_access(
     const func = new AccessFunctionNode(start, name);
     // HACK:
     if (func.name === "init") {
-      func.type = new Type(source_name);
+      func.type = new Type(target_name);
       func.static = true;
     }
     if (peek_current(status) !== ")") {

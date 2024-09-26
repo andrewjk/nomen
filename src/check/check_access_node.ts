@@ -9,43 +9,43 @@ import type_from_value_node from "./utils/type_from_value_node";
 import value_from_value_node from "./utils/value_from_value_node";
 
 export default function check_access_node(node: AccessNode, status: CheckStatus) {
-  check_node(node.source, status);
+  check_node(node.target, status);
 
-  const source_type = type_from_value_node(node.source, status);
-  if (!source_type.name) {
+  const target_type = type_from_value_node(node.target, status);
+  if (!target_type.name) {
     console.log("WHAT IS THIS", node);
     status.errors.push({
-      message: `Unknown target: ${value_from_value_node(node.source)}`,
-      start: node.source.start,
+      message: `Unknown target: ${value_from_value_node(node.target)}`,
+      start: node.target.start,
     });
     return;
   }
 
   switch (node.access.node_type) {
     case "access_field": {
-      check_access_field_node(source_type, node.access as AccessFieldNode, status);
+      check_access_field_node(target_type, node.access as AccessFieldNode, status);
       break;
     }
     case "access_func": {
-      check_access_function_node(source_type, node.access as AccessFunctionNode, status);
+      check_access_function_node(target_type, node.access as AccessFunctionNode, status);
       break;
     }
   }
 }
 
-function check_access_field_node(source_type: Type, node: AccessFieldNode, status: CheckStatus) {
-  const struct = status.structs.find((s) => s.name === source_type.name);
+function check_access_field_node(target_type: Type, node: AccessFieldNode, status: CheckStatus) {
+  const struct = status.structs.find((s) => s.name === target_type.name);
   let field = struct?.fields.find((f) => f.name === node.name);
   if (!field) {
     // Are we accessing a field in a trait?
-    const trait = status.traits.find((s) => s.name === source_type.name);
+    const trait = status.traits.find((s) => s.name === target_type.name);
     if (trait) {
       field = trait?.fields.find((f) => f.name === node.name);
     }
   }
   if (!field) {
     // Are we accessing a field in a struct with a trait and a default value?
-    const struct = status.structs.find((s) => s.name === source_type.name);
+    const struct = status.structs.find((s) => s.name === target_type.name);
     if (struct) {
       for (let trait_name of struct.traits) {
         const trait = status.traits.find((s) => s.name === trait_name);
@@ -75,15 +75,15 @@ function check_access_field_node(source_type: Type, node: AccessFieldNode, statu
 }
 
 function check_access_function_node(
-  source_type: Type,
+  target_type: Type,
   node: AccessFunctionNode,
   status: CheckStatus,
 ) {
-  const struct = status.structs.find((s) => s.name === source_type.name);
+  const struct = status.structs.find((s) => s.name === target_type.name);
   let func = struct?.functions.find((f) => f.name === node.name);
   if (!func) {
     // Are we accessing a func in a trait?
-    const trait = status.traits.find((s) => s.name === source_type.name);
+    const trait = status.traits.find((s) => s.name === target_type.name);
     if (trait) {
       func = trait.functions.find((f) => f.name === node.name);
     }
