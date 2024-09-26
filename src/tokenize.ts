@@ -28,7 +28,7 @@ export default function tokenize(input: string): Token[] {
   let start = 0;
 
   for (let i = 0; i < input.length; i++) {
-    if (!is_alpha_numeric_char(input, i)) {
+    if (!is_word_char(input, i)) {
       // Add the previous word
       if (i > start) {
         const value = input.substring(start, i);
@@ -88,16 +88,16 @@ export default function tokenize(input: string): Token[] {
   return tokens;
 }
 
-function is_alpha_numeric(input: string) {
+function is_word(input: string) {
   for (let i = 0; i < input.length; i++) {
-    if (!is_alpha_numeric_char(input, i)) {
+    if (!is_word_char(input, i)) {
       return false;
     }
   }
   return true;
 }
 
-function is_alpha_numeric_char(input: string, i: number) {
+function is_word_char(input: string, i: number) {
   let code = input.charCodeAt(i);
   return (
     // 0-9
@@ -105,7 +105,9 @@ function is_alpha_numeric_char(input: string, i: number) {
     // A-Z
     (code > 64 && code < 91) ||
     // a-z
-    (code > 96 && code < 123)
+    (code > 96 && code < 123) ||
+    // _
+    code === 95
   );
 }
 
