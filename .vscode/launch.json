@@ -2,26 +2,18 @@
 {
   "version": "0.2.0",
   "configurations": [
-    // based on https://github.com/Microsoft/vscode-recipes/tree/master/debugging-jest-tests
     {
-      "name": "uvu All",
-      "type": "node",
+      "name": "Clang debug active file",
+      "type": "cppdbg",
       "request": "launch",
-      "skipFiles": ["<node_internals>/**"],
-      "program": "${workspaceFolder}/node_modules/uvu/bin.js",
-      "args": ["-r", "tsm", "./tests", "debug\\.test\\.ts$"],
-      "console": "integratedTerminal",
-      "windows": {
-        "program": "${workspaceFolder}/node_modules/uvu/bin.js"
-      }
-    },
-    {
-      "name": "uvu Current File",
-      "type": "node",
-      "request": "launch",
-      "skipFiles": ["<node_internals>/**"],
-      "args": ["-r", "tsm", "${relativeFile}"],
-      "console": "integratedTerminal"
+      "program": "${fileDirname}/${fileBasenameNoExtension}",
+      "args": [],
+      "stopAtEntry": true,
+      "cwd": "${workspaceFolder}",
+      "environment": [],
+      "externalConsole": false,
+      "MIMode": "lldb",
+      "preLaunchTask": "Clang build active file"
     }
   ]
 }

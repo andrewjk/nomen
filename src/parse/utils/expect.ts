@@ -3,7 +3,8 @@ import get_index from "./get_index";
 
 export default function expect(value: string, status: ParseStatus, advance = true): boolean {
   if (status.i < status.tokens.length) {
-    if (status.tokens[status.i].value == value) {
+    let token = status.tokens[status.i].value;
+    if (token === value) {
       status.i += advance ? 1 : 0;
       return true;
     } else {
