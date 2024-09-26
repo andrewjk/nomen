@@ -1,6 +1,6 @@
 import ParameterNode from "../nodes/ParameterNode";
 import type BuildStatus from "./BuildStatus";
-import c_type from "./c_type";
+import c_type from "./utils/c_type";
 
 export default function build_parameter_node(
   node: ParameterNode,

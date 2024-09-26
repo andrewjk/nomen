@@ -3,7 +3,7 @@ import TraitNode from "../nodes/TraitNode";
 import type BuildStatus from "./BuildStatus";
 import build_node from "./build_node";
 import build_parameter_node from "./build_parameter_node";
-import c_type from "./c_type";
+import c_type from "./utils/c_type";
 
 export default function build_struct_node(node: StructNode, status: BuildStatus) {
   // TODO: Only if top-level

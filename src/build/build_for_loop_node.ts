@@ -2,7 +2,7 @@ import ForLoopNode from "../nodes/ForLoopNode";
 import RangeNode from "../nodes/RangeNode";
 import type BuildStatus from "./BuildStatus";
 import build_node from "./build_node";
-import type_from_value_node from "./type_from_value_node";
+import type_from_value_node from "./utils/type_from_value_node";
 
 export default function build_for_loop_node(node: ForLoopNode, status: BuildStatus) {
   if (node.item && node.list) {

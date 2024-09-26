@@ -4,8 +4,8 @@ import AccessNode from "../nodes/AccessNode";
 import FunctionNode from "../nodes/FunctionNode";
 import type BuildStatus from "./BuildStatus";
 import build_node from "./build_node";
-import c_type from "./c_type";
-import type_from_value_node from "./type_from_value_node";
+import c_type from "./utils/c_type";
+import type_from_value_node from "./utils/type_from_value_node";
 
 export default function build_access_node(node: AccessNode, status: BuildStatus) {
   // PERF:

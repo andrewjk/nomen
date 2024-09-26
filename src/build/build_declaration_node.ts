@@ -2,8 +2,8 @@ import ArrayValuesNode from "../nodes/ArrayValuesNode";
 import DeclarationNode from "../nodes/DeclarationNode";
 import type BuildStatus from "./BuildStatus";
 import build_node from "./build_node";
-import c_type from "./c_type";
-import type_from_value_node from "./type_from_value_node";
+import c_type from "./utils/c_type";
+import type_from_value_node from "./utils/type_from_value_node";
 
 export default function build_declaration_node(node: DeclarationNode, status: BuildStatus) {
   // TODO: malloc() if it's on the heap

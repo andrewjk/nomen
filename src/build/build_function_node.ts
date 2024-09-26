@@ -3,7 +3,7 @@ import type BuildStatus from "./BuildStatus";
 import build_auto_free from "./build_auto_free";
 import build_node from "./build_node";
 import build_parameter_node from "./build_parameter_node";
-import c_type from "./c_type";
+import c_type from "./utils/c_type";
 
 export default function build_function_node(node: FunctionNode, status: BuildStatus) {
   const old_declarations = status.scoped_declarations;

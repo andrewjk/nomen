@@ -3,8 +3,8 @@ import AssignmentNode from "../nodes/AssignmentNode";
 import ValueNode from "../nodes/ValueNode";
 import type BuildStatus from "./BuildStatus";
 import build_node from "./build_node";
-import c_type from "./c_type";
-import type_from_value_node from "./type_from_value_node";
+import c_type from "./utils/c_type";
+import type_from_value_node from "./utils/type_from_value_node";
 
 export default function build_assignment_node(node: AssignmentNode, status: BuildStatus) {
   // Check whether this is an access of a field from a trait rather than a concrete type

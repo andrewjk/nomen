@@ -1,7 +1,7 @@
 import InvocationNode from "../nodes/InvocationNode";
 import type BuildStatus from "./BuildStatus";
 import build_node from "./build_node";
-import type_from_value_node from "./type_from_value_node";
+import type_from_value_node from "./utils/type_from_value_node";
 
 export default function build_invocation_node(node: InvocationNode, status: BuildStatus) {
   status.code += `${node.name}(`;
