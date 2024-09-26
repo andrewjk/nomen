@@ -78,7 +78,7 @@ return p;
 }
 void Person_greet(struct Person *self)
 {
-struct Person zz = *self;
+struct Person _self = *self;
 }
 `;
   expect(parsed.errors).toEqual([]);

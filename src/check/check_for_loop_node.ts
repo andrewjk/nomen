@@ -6,6 +6,8 @@ import check_node from "./check_node";
 import type_from_value_node from "./utils/type_from_value_node";
 
 export default function check_for_loop_node(for_loop: ForLoopNode, status: CheckStatus) {
+  const old_values = status.values;
+
   if (for_loop.list) {
     check_node(for_loop.list, status);
 
@@ -29,4 +31,6 @@ export default function check_for_loop_node(for_loop: ForLoopNode, status: Check
   }
 
   check_block_node(for_loop, status);
+
+  status.values = old_values;
 }

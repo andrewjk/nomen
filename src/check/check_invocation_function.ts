@@ -35,7 +35,7 @@ export default function check_invocation_function(
       message: `Parameters missing for function: ${invoke.name}`,
       start: invoke.start,
     });
-  } else if (func.visibility === "sec") {
+  } else if (func.visibility === "private") {
     // TODO: You CAN do this from within the correct scope
     status.errors.push({
       message: `Can't access secret function: ${invoke.name}`,

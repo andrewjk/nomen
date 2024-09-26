@@ -15,5 +15,7 @@ export default function check_while_loop_node(while_loop: WhileLoopNode, status:
     });
   }
 
+  const old_values = status.values;
   check_block_node(while_loop, status);
+  status.values = old_values;
 }

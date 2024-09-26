@@ -10,7 +10,10 @@ import consume from "./utils/consume";
 import expect from "./utils/expect";
 import get_index from "./utils/get_index";
 
-export default function parse_struct(visibility: "def" | "pub" | "sec", status: ParseStatus) {
+export default function parse_struct(
+  visibility: "inherit" | "pub" | "mod" | "private",
+  status: ParseStatus,
+) {
   const start = get_index(status);
   accept(visibility, status);
   accept("struct", status);
@@ -34,7 +37,7 @@ export default function parse_struct(visibility: "def" | "pub" | "sec", status: 
     // TODO: Allow overriding it
     const func = new FunctionNode(-1, visibility, "init", new Type(struct.name));
     func.params = struct.fields
-      .filter((f) => f.visibility !== "sec" && !f.value)
+      .filter((f) => f.visibility !== "private" && !f.value)
       .map((f) => new ParameterNode(-1, f.name, f.type));
     struct.functions.unshift(func);
 

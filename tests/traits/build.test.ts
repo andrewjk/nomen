@@ -86,7 +86,7 @@ typedef struct Person
 } Person;
 void Person_greet(struct Person *self)
 {
-struct Person zz = *self;
+struct Person _self = *self;
 }
 
 void *_Frank_Person_funcs[] = {Frank_greet};
@@ -103,7 +103,7 @@ return f;
 }
 char* Frank_greet(struct Frank *self)
 {
-struct Frank zz = *self;
+struct Frank _self = *self;
 return "hi";
 }
 `;
@@ -129,7 +129,7 @@ typedef struct Person
 } Person;
 char* Person_greet(struct Person *self)
 {
-struct Person zz = *self;
+struct Person _self = *self;
 return "hi";
 }
 

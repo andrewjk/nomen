@@ -22,4 +22,10 @@ export default function check_function_parameter_node(param: ParameterNode, stat
       param.type = type_from_value(param.default_value, status);
     }
   }
+
+  status.values.push({
+    declaration: "const",
+    name: param.name,
+    type: param.type,
+  });
 }

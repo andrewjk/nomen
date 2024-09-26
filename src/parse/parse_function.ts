@@ -12,7 +12,10 @@ import expect from "./utils/expect";
 import get_index from "./utils/get_index";
 import peek_current from "./utils/peek_current";
 
-export default function parse_function(visibility: "def" | "pub" | "sec", status: ParseStatus) {
+export default function parse_function(
+  visibility: "inherit" | "pub" | "mod" | "private",
+  status: ParseStatus,
+) {
   const start = get_index(status);
   accept(visibility, status);
   accept("func", status);

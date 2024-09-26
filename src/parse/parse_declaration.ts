@@ -9,7 +9,7 @@ import consume from "./utils/consume";
 import get_index from "./utils/get_index";
 
 export default function parse_declaration(
-  visibility: "def" | "pub" | "sec",
+  visibility: "inherit" | "pub" | "mod" | "private",
   declaration: "const" | "var",
   status: ParseStatus,
 ) {

@@ -13,6 +13,7 @@ export default function check_access_node(node: AccessNode, status: CheckStatus)
 
   const source_type = type_from_value_node(node.source, status);
   if (!source_type.name) {
+    console.log("WHAT IS THIS", node);
     status.errors.push({
       message: `Unknown target: ${value_from_value_node(node.source)}`,
       start: node.source.start,
@@ -32,41 +33,64 @@ export default function check_access_node(node: AccessNode, status: CheckStatus)
   }
 }
 
-function check_access_field_node(source_type: Type, field: AccessFieldNode, status: CheckStatus) {
+function check_access_field_node(source_type: Type, node: AccessFieldNode, status: CheckStatus) {
   const struct = status.structs.find((s) => s.name === source_type.name);
-  let prop = struct?.fields.find((f) => f.name === field.name);
-  if (!prop) {
+  let field = struct?.fields.find((f) => f.name === node.name);
+  if (!field) {
+    // Are we accessing a field in a trait?
     const trait = status.traits.find((s) => s.name === source_type.name);
-    prop = trait?.fields.find((f) => f.name === field.name);
+    if (trait) {
+      field = trait?.fields.find((f) => f.name === node.name);
+    }
   }
-  if (prop) {
-    if (prop.visibility === "sec") {
+  if (!field) {
+    // Are we accessing a field in a struct with a trait and a default value?
+    const struct = status.structs.find((s) => s.name === source_type.name);
+    if (struct) {
+      for (let trait_name of struct.traits) {
+        const trait = status.traits.find((s) => s.name === trait_name);
+        if (trait) {
+          field = trait.fields.find((f) => f.name === node.name && f.value);
+          break;
+        }
+      }
+    }
+  }
+  if (field) {
+    if (field.visibility === "private") {
       // TODO: You CAN do this from within the correct scope
       status.errors.push({
-        message: `Can't access secret field: ${field.name}`,
-        start: field.start,
+        message: `Can't access secret field: ${node.name}`,
+        start: node.start,
       });
     } else {
-      field.type = prop.type;
+      node.type = field.type;
     }
   } else {
     status.errors.push({
-      message: `Field not found: ${field.name}`,
-      start: field.start,
+      message: `Field not found: ${node.name}`,
+      start: node.start,
     });
   }
 }
 
 function check_access_invocation_node(
   source_type: Type,
-  invoke: AccessInvocationNode,
+  node: AccessInvocationNode,
   status: CheckStatus,
 ) {
   const struct = status.structs.find((s) => s.name === source_type.name);
-  let func = struct?.functions.find((f) => f.name === invoke.name);
+  let func = struct?.functions.find((f) => f.name === node.name);
   if (!func) {
+    // Are we accessing a func in a trait?
     const trait = status.traits.find((s) => s.name === source_type.name);
-    func = trait?.functions.find((f) => f.name === invoke.name);
+    if (trait) {
+      func = trait.functions.find((f) => f.name === node.name);
+    }
   }
-  check_invocation_function(invoke, status, func);
+  if (!func) {
+    // TODO:
+    // Are we accessing a func in a struct with a trait and a default value?
+  }
+  check_invocation_function(node, status, func);
 }

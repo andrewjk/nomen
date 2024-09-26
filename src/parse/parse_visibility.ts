@@ -7,19 +7,23 @@ import consume from "./utils/consume";
 import get_index from "./utils/get_index";
 import peek_next from "./utils/peek_next";
 
-export default function parse_visibility(visibility: "pub" | "sec", status: ParseStatus) {
-  // All code is internal by default
-  // Anything in the current package has access to anything else
-  // Although it has to be imported if it is in another file
-  // You can add `pub` to declarations, structs, traits and funcs to make them public (i.e. accessible from other packages)
-  // You can add `sec` to declarations, structs, traits and funcs to make them secret (i.e. cannot be accessed from other scopes)
-  // Initializers inherit the visibility of their struct
-  // Struct and trait declarations and functions do not inherit the visibility of their parent -- you must set `pub` or `sec` for each field
+export default function parse_visibility(visibility: "pub" | "private", status: ParseStatus) {
+  // Declarations, funcs, structs and traits can have their visibility controlled
+  // Visibility options are `pub`, `mod` and `sec`
+  // `pub` is visible within the module and from other modules
+  // `mod` is visible within the module only
+  // `private` is visible within the scope (e.g. function, folder) only
+  // Declarations, funcs, structs and traits have `mod` visibility by default
+  // Visibility and scope flow downwards, unless overridden to be more restrictive
+  // TODO: Folder based namespaces??
+  // Anything in the current folder has access to anything else
+  // Anything in the current module has access to anything with `mod` visibility via `use`
+  // Anything in other modules has access to anything with `pub` visibility via `use`
   const next = peek_next(status);
   switch (next) {
     case "const":
     case "var": {
-      if (visibility === "sec" && status.stack.at(-1)?.node_type === "trait") {
+      if (visibility === "private" && status.stack.at(-1)?.node_type === "trait") {
         status.errors.push({
           message: `Trait fields cannot be secret`,
           start: get_index(status),
@@ -39,7 +43,7 @@ export default function parse_visibility(visibility: "pub" | "sec", status: Pars
       break;
     }
     case "func": {
-      if (visibility === "sec" && status.stack.at(-1)?.node_type === "trait") {
+      if (visibility === "private" && status.stack.at(-1)?.node_type === "trait") {
         status.errors.push({
           message: `Trait functions cannot be secret`,
           start: get_index(status),

@@ -11,7 +11,7 @@ export default function parse_return(status: ParseStatus) {
   const start = get_index(status);
   accept("return", status);
   // TODO: Allow this anywhere?
-  accept("=>", status);
+  accept("~", status);
   const value = parse_expression(status);
   const ret = new ReturnNode(start, value);
 

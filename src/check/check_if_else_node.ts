@@ -16,9 +16,15 @@ export default function check_if_else_node(if_else: IfElseNode, status: CheckSta
   }
 
   status.stack.push(if_else);
-  check_block_node(if_else.if_branch, status);
+  if (if_else.if_branch) {
+    const old_values = status.values;
+    check_block_node(if_else.if_branch, status);
+    status.values = old_values;
+  }
   if (if_else.else_branch) {
+    const old_values = status.values;
     check_block_node(if_else.else_branch, status);
+    status.values = old_values;
   }
   status.stack.pop();
 }

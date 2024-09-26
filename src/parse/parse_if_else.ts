@@ -12,32 +12,35 @@ export default function parse_if_else(status: ParseStatus): IfElseNode | null {
   const if_start = get_index(status);
   accept("if", status);
   const condition = parse_expression(status);
-  const short_if = accept("=>", status, false);
+  const if_else = new IfElseNode(if_start, condition);
+  status.stack.push(if_else);
+
+  let if_branch = parse_if_branch(status);
+  if (if_branch) {
+    if_else.if_branch = if_branch;
+  }
+
+  if (accept("else", status)) {
+    let else_branch = parse_if_branch(status);
+    if (else_branch) {
+      if_else.else_branch = else_branch;
+    }
+  }
+
+  status.stack.pop();
+  return if_else;
+}
+
+function parse_if_branch(status: ParseStatus): BranchNode | null {
+  const short_if = accept("~", status, false) || accept("return", status, false);
   if (short_if || expect("{", status)) {
     const if_branch = new BranchNode(get_index(status));
-    const if_else = new IfElseNode(if_start, condition, if_branch);
-
-    status.stack.push(if_else);
     status.stack.push(if_branch);
+
     if (short_if) {
       parse_return(status);
     } else {
       parse_statement(status);
-    }
-
-    if (accept("else", status)) {
-      if ((short_if && expect("=>", status, false)) || (!short_if && expect("{", status))) {
-        const else_branch = new BranchNode(get_index(status));
-        if_else.else_branch = else_branch;
-
-        status.stack.push(else_branch);
-        if (short_if) {
-          parse_return(status);
-        } else {
-          parse_statement(status);
-        }
-        status.stack.pop();
-      }
     }
 
     if (!short_if) {
@@ -45,9 +48,7 @@ export default function parse_if_else(status: ParseStatus): IfElseNode | null {
     }
 
     status.stack.pop();
-    status.stack.pop();
-
-    return if_else;
+    return if_branch;
   }
 
   return null;

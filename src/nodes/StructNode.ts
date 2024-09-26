@@ -3,7 +3,7 @@ import DeclarationNode from "./DeclarationNode";
 import FunctionNode from "./FunctionNode";
 
 export default class StructNode extends BaseNode {
-  visibility: "def" | "pub" | "sec";
+  visibility: "inherit" | "pub" | "mod" | "private";
   name: string;
   traits: string[];
   fields: DeclarationNode[];
@@ -11,7 +11,7 @@ export default class StructNode extends BaseNode {
 
   constructor(
     start: number,
-    visibility: "def" | "pub" | "sec",
+    visibility: "inherit" | "pub" | "mod" | "private",
     name: string,
     traits?: string[],
     fields?: DeclarationNode[],

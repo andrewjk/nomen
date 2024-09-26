@@ -5,7 +5,7 @@ import path from "path";
 import yargs from "yargs";
 import build from "../../src/build";
 import check from "../../src/check";
-import parse from "../../src/parse/utils/get_index";
+import parse from "../../src/parse";
 import tokenize from "../../src/tokenize";
 import type Config from "./types/Config";
 
@@ -115,6 +115,7 @@ function shouldProcessFile(filename: string) {
 }
 
 function processFile(filename: string, config: Config) {
+  const startTime = performance.now();
   console.log("Processing", filename);
 
   // TODO: Automatic encoding
@@ -165,5 +166,8 @@ function processFile(filename: string, config: Config) {
   const codefile = path.join(path.dirname(filename), "main.c");
   fs.writeFileSync(headerfile, result.headers);
   fs.writeFileSync(codefile, result.code);
-  console.log("Created", codefile);
+  console.log(`Created ${codefile}`);
+
+  const endTime = performance.now();
+  console.log(`Took ${endTime - startTime}ms`);
 }

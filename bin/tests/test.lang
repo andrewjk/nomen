@@ -10,7 +10,7 @@ func main() {
 		const x = i + 1
 		if x < 4 {
 			Console.Write(" is less than 4")
-		else {
+		} else {
 			Console.Write(" is 4 or more")
 		}
 		Console.Write("\n")
@@ -27,7 +27,7 @@ func main() {
 
 	Console.Write("\n\n")
 
-	const dog = Dog.init()
+	var dog = make_dog()
 	Console.Write(dog.name)
 	Console.Write(": ")
 	Console.Write(dog.speak())
@@ -43,19 +43,34 @@ func main() {
 		Console.Write(a.speak())
 		Console.Write("\n")
 	}
+
+	var cat = Cat.init()
+	grow_animal(cat)
+	Console.Write("cat has age: ")
+	Console.Write(cat.age)
+}
+
+func make_dog() -> Dog {
+	const dog = Dog.init()
+	return dog
+}
+
+trait Disposable {
+	func dispose() {
+		Console.Write("\nboom!")
+	}
 }
 
 trait Animal {
 	var name: string
-	
+	var age = 1
 	func speak() -> string {
 		return "..."
 	}
 }
 
-struct Dog: Animal {
+struct Dog: Animal, Disposable {
 	var name = "Dog"
-
 	func speak() -> string {
 		return "woof"
 	}
@@ -63,7 +78,6 @@ struct Dog: Animal {
 
 struct Cat: Animal {
 	var name = "Cat"
-
 	func speak() -> string {
 		return self.name
 	}
@@ -71,4 +85,8 @@ struct Cat: Animal {
 
 struct Lizard: Animal {
 	var name = "Lizard"
+}
+
+func grow_animal(animal: Animal) {
+	animal.age = animal.age + 1
 }

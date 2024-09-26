@@ -6,23 +6,28 @@ import c_type from "./c_type";
 import type_from_value_node from "./type_from_value_node";
 
 export default function build_declaration_node(node: DeclarationNode, status: BuildStatus) {
+  // TODO: malloc() if it's on the heap
+
   // HACK: Move the array part of a declaration after the variable name if applicable
   // If it's an array of traits, make it contain pointers
   if (
     node.type.is_array &&
-    !!status.traits.find((t) => t.name === node.type.name) &&
+    status.traits.find((t) => t.name === node.type.name) &&
     node.value &&
     node.value.node_type === "array"
   ) {
     const array_values = node.value as ArrayValuesNode;
     // Support GCC by defining vars first
-    const variables = [];
+    const variables: string[] = [];
     let i = 1;
     for (let value of array_values.values) {
-      // TODO: Better naming
-      const var_name = "_x" + i;
+      const var_type = type_from_value_node(value);
+      const var_name = `_${node.name}_${i}`;
+      status.scoped_declarations.push(
+        new DeclarationNode(node.start, node.visibility, node.declaration, var_name, var_type),
+      );
       // HACK:
-      status.code += `${c_type(type_from_value_node(value).name)} ${var_name} = `;
+      status.code += `${c_type(var_type.name)} ${var_name} = `;
       build_node(value, status);
       status.code += ";\n";
       i += 1;
@@ -36,6 +41,8 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
     }
     status.code += `] = {${variables.map((v) => `&${v}`).join(", ")}};\n`;
   } else {
+    status.scoped_declarations.push(node);
+
     status.code += `${c_type(node.type.name)} ${node.name}`;
     if (node.type.is_array) {
       status.code += `[`;
@@ -45,7 +52,8 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
       status.code += `]`;
     }
     if (node.value) {
-      // TODO: This should be in more places?? Or apply to more nodes?? Probably in build_node -- if it's a returning node??
+      // TODO: This should be in more places?? Or apply to more nodes?? Probably
+      // in build_node -- if it's a returning node??
       if (node.value.node_type === "if") {
         status.code += ";\n";
         const old_return_assign = status.return_assign;

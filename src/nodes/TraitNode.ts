@@ -3,14 +3,14 @@ import DeclarationNode from "./DeclarationNode";
 import FunctionNode from "./FunctionNode";
 
 export default class TraitNode extends BaseNode {
-  visibility: "def" | "pub" | "sec";
+  visibility: "inherit" | "pub" | "mod" | "private";
   name: string;
   fields: DeclarationNode[];
   functions: FunctionNode[];
 
   constructor(
     start: number,
-    visibility: "def" | "pub" | "sec",
+    visibility: "inherit" | "pub" | "mod" | "private",
     name: string,
     fields?: DeclarationNode[],
     functions?: FunctionNode[],

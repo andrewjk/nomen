@@ -32,7 +32,7 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
       status.code += `for (int i = 0; i < `;
       build_node(length!, status);
       status.code += `; i++)\n{\n`;
-      status.code += `void **${node.item.value} = *(`;
+      status.code += `void *${node.item.value} = *(`;
       build_node(node.list!, status);
       status.code += " + i);\n";
     } else {

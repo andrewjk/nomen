@@ -98,7 +98,7 @@ pub struct Person {
     [new DeclarationNode(23, "pub", "var", "name", "string")],
     [
       new FunctionNode(-1, "pub", "init", "Person", [new ParameterNode(-1, "name", "string")]),
-      new FunctionNode(46, "sec", "greet", "", [], []),
+      new FunctionNode(46, "private", "greet", "", [], []),
     ],
   );
   expect(parsed.errors).toEqual([]);
@@ -112,7 +112,7 @@ sec var x = 1
   const parsed = parse(input);
   const expected = new DeclarationNode(
     1,
-    "sec",
+    "private",
     "var",
     "x",
     new Type("int"),
@@ -129,7 +129,7 @@ sec const x = 3
   const parsed = parse(input);
   const expected = new DeclarationNode(
     1,
-    "sec",
+    "private",
     "const",
     "x",
     new Type("int"),
@@ -146,11 +146,11 @@ sec struct Person {}
   const parsed = parse(input);
   const expected = new StructNode(
     1,
-    "sec",
+    "private",
     "Person",
     [],
     [],
-    [new FunctionNode(-1, "sec", "init", "Person", [])],
+    [new FunctionNode(-1, "private", "init", "Person", [])],
   );
   expect(parsed.errors).toEqual([]);
   expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
@@ -161,7 +161,7 @@ test("sec trait", () => {
 sec trait Person {}
 `;
   const parsed = parse(input);
-  const expected = new TraitNode(1, "sec", "Person");
+  const expected = new TraitNode(1, "private", "Person");
   expect(parsed.errors).toEqual([]);
   expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
 });
@@ -171,7 +171,7 @@ test("sec function", () => {
 sec func add() {}
 `;
   const parsed = parse(input);
-  const expected = new FunctionNode(1, "sec", "add", "", [], []);
+  const expected = new FunctionNode(1, "private", "add", "", [], []);
   expect(parsed.errors).toEqual([]);
   expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
 });
@@ -189,10 +189,10 @@ pub struct Person {
     "pub",
     "Person",
     [],
-    [new DeclarationNode(23, "sec", "var", "name", "string")],
+    [new DeclarationNode(23, "private", "var", "name", "string")],
     [
       new FunctionNode(-1, "pub", "init", "Person", []),
-      new FunctionNode(46, "sec", "greet", "", [], []),
+      new FunctionNode(46, "private", "greet", "", [], []),
     ],
   );
   expect(parsed.errors).toEqual([]);

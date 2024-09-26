@@ -5,7 +5,7 @@ import type ReturningNode from "./ReturningNode";
 import Type from "./Type";
 
 export default class FunctionNode extends BaseNode implements BlockNode, ReturningNode {
-  visibility: "def" | "pub" | "sec";
+  visibility: "inherit" | "pub" | "mod" | "private";
   name: string;
   return_type: Type;
   params: ParameterNode[];
@@ -17,7 +17,7 @@ export default class FunctionNode extends BaseNode implements BlockNode, Returni
 
   constructor(
     start: number,
-    visibility: "def" | "pub" | "sec",
+    visibility: "inherit" | "pub" | "mod" | "private",
     name: string,
     return_type: string | Type,
     params?: ParameterNode[],

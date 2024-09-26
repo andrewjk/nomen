@@ -6,14 +6,14 @@ import Type from "./Type";
 export default class IfElseNode extends BaseNode implements ReturningNode {
   condition: BaseNode;
   return_type: Type;
-  if_branch: BranchNode;
+  if_branch?: BranchNode;
   else_branch?: BranchNode;
   has_return?: boolean;
 
   constructor(
     start: number,
     condition: BaseNode,
-    if_branch: BranchNode,
+    if_branch?: BranchNode,
     else_branch?: BranchNode,
     return_type?: string | Type,
   ) {

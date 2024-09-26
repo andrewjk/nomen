@@ -38,28 +38,29 @@ export default function parse_statement(status: ParseStatus) {
       continue;
     }
 
-    // First check for a keyword (var, if, switch, etc), then check for a following operator (=, +, etc)
+    // First check for a keyword (var, if, switch, etc), then check for a
+    // following operator (=, +, etc)
     switch (value) {
       case "pub":
-      case "sec": {
+      case "private": {
         parse_visibility(value, status);
         break;
       }
       case "const":
       case "var": {
-        parse_declaration("def", value, status);
+        parse_declaration("mod", value, status);
         break;
       }
       case "struct": {
-        parse_struct("def", status);
+        parse_struct("mod", status);
         break;
       }
       case "trait": {
-        parse_trait("def", status);
+        parse_trait("mod", status);
         break;
       }
       case "func": {
-        parse_function("def", status);
+        parse_function("mod", status);
         break;
       }
       case "if": {
@@ -104,6 +105,7 @@ export default function parse_statement(status: ParseStatus) {
     }
   }
 }
+
 function parse_statement_start(status: ParseStatus) {
   const start = get_index(status);
   const value = consume(status);

@@ -6,8 +6,9 @@ import build_parameter_node from "./build_parameter_node";
 import c_type from "./c_type";
 
 export default function build_struct_node(node: StructNode, status: BuildStatus) {
-  status.headers += `// ${node.name}:\n`;
-  status.code += `// ${node.name}:\n`;
+  // TODO: Only if top-level
+  status.headers += `// struct ${node.name}\n`;
+  status.code += `// struct ${node.name}\n`;
 
   if (node.traits.length) {
     build_struct_traits(node, status);
@@ -85,67 +86,79 @@ ${object_name}._vt = &_${node.name}_traits;
 
 export function build_struct_traits(node: StructNode, status: BuildStatus) {
   // Build the vtable that points to the struct's traits' methods by index
-  for (let trait of node.traits) {
+  for (let traitName of node.traits) {
     // E.g. int* _Dog_Animal_vtable_[4];
-    status.code += `void *_${node.name}_${trait}_funcs[] = {`;
-    status.code += node.traits
-      .map((t) => {
-        const trait = status.traits.find((n) => n.name === t) as TraitNode;
-        return trait.functions
-          .map(
-            (f) =>
-              `${!!node.functions.find((tf) => tf.name === f.name) ? node.name : trait.name}_${
-                f.name
-              }`,
-          )
-          .join(", ");
-      })
-      .join(",");
-    status.code += `};\n`;
-
-    // Build the vtable that points to the above table by index
-    // E.g. int* _Dog_vtable_[];
-    status.code += `void *_${node.name}_traits[] = {`;
-    status.code += node.traits
-      .map((t) => {
-        return `_${node.name}_${t}_funcs`;
-      })
+    status.code += `void *_${node.name}_${traitName}_funcs[] = {`;
+    const trait = status.traits.find((n) => n.name === traitName) as TraitNode;
+    status.code += trait.functions
+      .map(
+        (f) =>
+          `${!!node.functions.find((tf) => tf.name === f.name) ? node.name : trait.name}_${f.name}`,
+      )
+      .join(", ");
+    if (trait.functions.length && trait.fields.length) {
+      status.code += ", ";
+    }
+    status.code += trait.fields
+      .map((f) => `get_${node.name}_${f.name}, set_${node.name}_${f.name}`)
       .join(", ");
     status.code += `};\n`;
   }
+
+  // Build the vtable that points to the above table by index
+  // E.g. int* _Dog_vtable_[];
+  status.code += `void *_${node.name}_traits[] = {`;
+  status.code += status.traits
+    .map((t) => {
+      if (node.traits.includes(t.name)) {
+        return `&_${node.name}_${t.name}_funcs`;
+      } else {
+        return "NULL";
+      }
+    })
+    .join(", ");
+  status.code += `};\n`;
 }
 
 export function build_struct_functions(node: StructNode, status: BuildStatus) {
   // Build the struct's functions
-  // TODO: Default functions from traits
   for (let func of node.functions) {
     if (func.name === "init") {
       // We create the constructor elsewhere
-      // We may need to do this here later on, if we allow custom init methods
+      // TODO: Allow custom init methods here
       continue;
     }
 
     // Define the function
     // HACK: Need to map names to types
-    status.headers += `${c_type(func.return_type.name || "void")} ${node.name}_${
+    const signature = `${c_type(func.return_type.name || "void")} ${node.name}_${
       func.name
     }(struct ${node.name} *self${func.params.length ? ", " : ""}${func.params
       .map((p) => build_parameter_node(p, status))
-      .join(", ")});\n`;
+      .join(", ")})`;
 
-    // Declare the function
-    // HACK: Need to map names to types
-    status.code += `${c_type(func.return_type.name || "void")} ${node.name}_${func.name}(struct ${
-      node.name
-    } *self${func.params.length ? ", " : ""}${func.params
-      .map((p) => build_parameter_node(p, status))
-      .join(", ")})\n{\n`;
+    status.headers += `${signature};\n`;
+    status.code += `${signature}\n{\n`;
     // HACK: Dereference the `self` pointer arg to a local variable with a random name
-    // (`zz` for now, but we could automate it)
-    status.code += `struct ${node.name} zz = *self;\n`;
+    // (`_self` for now, but we could automate it)
+    status.code += `struct ${node.name} _self = *self;\n`;
     for (let child of func.statements) {
       build_node(child, status);
     }
     status.code += `}\n`;
+  }
+
+  // Build functions to get and set the trait's fields
+  // TODO: Maybe this would be better done with a map?
+  for (let traitName of node.traits) {
+    const trait = status.traits.find((n) => n.name === traitName) as TraitNode;
+    for (let field of trait.fields) {
+      const get_signature = `${c_type(field.type.name)} get_${node.name}_${field.name}(struct ${node.name} *self)`;
+      status.headers += `${get_signature};\n`;
+      status.code += `${get_signature} { return self->${field.name}; }\n`;
+      const set_signature = `void set_${node.name}_${field.name}(struct ${node.name} *self, ${c_type(field.type.name)} value)`;
+      status.headers += `${set_signature};\n`;
+      status.code += `${set_signature} { self->${field.name} = value; }\n`;
+    }
   }
 }

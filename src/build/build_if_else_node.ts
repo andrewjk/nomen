@@ -6,8 +6,10 @@ export default function build_if_else_node(node: IfElseNode, status: BuildStatus
   status.code += `if (`;
   build_node(node.condition, status);
   status.code += `) {\n`;
-  for (let child of node.if_branch.statements) {
-    build_node(child, status);
+  if (node.if_branch) {
+    for (let child of node.if_branch.statements) {
+      build_node(child, status);
+    }
   }
   if (node.else_branch) {
     status.code += `} else {\n`;
