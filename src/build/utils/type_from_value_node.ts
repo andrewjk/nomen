@@ -1,12 +1,12 @@
-import AccessFieldNode from "../nodes/AccessFieldNode";
-import AccessInvocationNode from "../nodes/AccessInvocationNode";
-import AccessNode from "../nodes/AccessNode";
-import ArrayValuesNode from "../nodes/ArrayValuesNode";
-import BaseNode from "../nodes/BaseNode";
-import InvocationNode from "../nodes/InvocationNode";
-import OperationNode from "../nodes/OperationNode";
-import Type from "../nodes/Type";
-import ValueNode from "../nodes/ValueNode";
+import AccessFieldNode from "../../nodes/AccessFieldNode";
+import AccessFunctionNode from "../../nodes/AccessFunctionNode";
+import AccessNode from "../../nodes/AccessNode";
+import ArrayValuesNode from "../../nodes/ArrayValuesNode";
+import BaseNode from "../../nodes/BaseNode";
+import FunctionCallNode from "../../nodes/FunctionCallNode";
+import OperationNode from "../../nodes/OperationNode";
+import Type from "../../nodes/Type";
+import ValueNode from "../../nodes/ValueNode";
 
 export default function type_from_value_node(node: BaseNode): Type {
   switch (node.node_type) {
@@ -19,14 +19,14 @@ export default function type_from_value_node(node: BaseNode): Type {
     case "array": {
       return (node as ArrayValuesNode).type;
     }
-    case "invoke": {
-      return (node as InvocationNode).type;
+    case "func_call": {
+      return (node as FunctionCallNode).type;
     }
-    case "ac_field": {
+    case "access_field": {
       return (node as AccessFieldNode).type;
     }
-    case "ac_invoke": {
-      return (node as AccessInvocationNode).type;
+    case "access_func": {
+      return (node as AccessFunctionNode).type;
     }
     case "op": {
       return (node as OperationNode).type;

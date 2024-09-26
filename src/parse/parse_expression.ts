@@ -1,17 +1,17 @@
 import AccessFieldNode from "../nodes/AccessFieldNode";
-import AccessInvocationNode from "../nodes/AccessInvocationNode";
+import AccessFunctionNode from "../nodes/AccessFunctionNode";
 import AccessNode from "../nodes/AccessNode";
 import ArrayValuesNode from "../nodes/ArrayValuesNode";
 import BaseNode from "../nodes/BaseNode";
-import InvocationNode from "../nodes/InvocationNode";
+import FunctionCallNode from "../nodes/FunctionCallNode";
 import OperationNode from "../nodes/OperationNode";
 import RangeNode from "../nodes/RangeNode";
 import ValueNode from "../nodes/ValueNode";
 import type ParseStatus from "./ParseStatus";
 import parse_access from "./parse_access";
 import parse_array_value from "./parse_array_value";
+import parse_function_call_parameter from "./parse_function_call_parameter";
 import parse_if_else from "./parse_if_else";
-import parse_invocation_parameter from "./parse_invocation_parameter";
 import accept from "./utils/accept";
 import consume from "./utils/consume";
 import expect from "./utils/expect";
@@ -64,12 +64,12 @@ export default function parse_expression(status: ParseStatus): BaseNode {
         node = access;
         // TODO: This should be a type prop on AccessNode
         switch (access.access.node_type) {
-          case "ac_field": {
+          case "access_field": {
             value = (access.access as AccessFieldNode).name;
             break;
           }
-          case "ac_invoke": {
-            value = (access.access as AccessInvocationNode).name;
+          case "access_func": {
+            value = (access.access as AccessFunctionNode).name;
             break;
           }
         }
@@ -77,13 +77,13 @@ export default function parse_expression(status: ParseStatus): BaseNode {
       }
       case "(": {
         accept("(", status);
-        const invoke = new InvocationNode(start, value);
+        const func = new FunctionCallNode(start, value);
         if (peek_current(status) !== ")") {
-          parse_invocation_parameter(invoke, status);
+          parse_function_call_parameter(func, status);
         }
         expect(")", status);
-        node = invoke;
-        value = invoke.name;
+        node = func;
+        value = func.name;
         break;
       }
       case "+":

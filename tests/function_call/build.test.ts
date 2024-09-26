@@ -3,7 +3,7 @@ import build from "../../src/build";
 import parse from "../../src/parse";
 import trim_test_build from "../trim_test_build";
 
-//const test = suite("Invocation build");
+//const test = suite("Function call build");
 
 test("function without params", () => {
   const input = `

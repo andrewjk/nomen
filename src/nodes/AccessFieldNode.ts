@@ -6,7 +6,7 @@ export default class AccessFieldNode extends BaseNode {
   type: Type;
 
   constructor(start: number, name: string, type?: string | Type) {
-    super("ac_field", start);
+    super("access_field", start);
     this.name = name;
     this.type = typeof type === "string" ? new Type(type) : type || new Type("");
   }

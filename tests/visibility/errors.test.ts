@@ -20,11 +20,11 @@ pub if true {
   expect(parsed.errors).toEqual(expected);
 });
 
-test("accessing sec fields", () => {
+test("accessing private fields", () => {
   const input = `
 struct Person {
-  sec var name: string
-  sec func greet() {}
+  private var name: string
+  private func greet() {}
 }
 const x: Person
 x.name = "Andrew"
@@ -32,11 +32,11 @@ x.greet()
 `;
   const expected: CompileError[] = [
     {
-      message: "Can't access secret field: name",
+      message: "Can't access private field: name",
       start: 82,
     },
     {
-      message: "Can't access secret function: greet",
+      message: "Can't access private function: greet",
       start: 100,
     },
   ];
@@ -44,20 +44,20 @@ x.greet()
   expect(parsed.errors).toEqual(expected);
 });
 
-test("sec fields in trait", () => {
+test("private fields in trait", () => {
   const input = `
 trait Person {
-  sec var name: string
-  sec func greet()
+  private var name: string
+  private func greet()
 }
 `;
   const expected: CompileError[] = [
     {
-      message: "Trait fields cannot be secret",
+      message: "Trait fields cannot be private",
       start: 18,
     },
     {
-      message: "Trait functions cannot be secret",
+      message: "Trait functions cannot be private",
       start: 41,
     },
   ];

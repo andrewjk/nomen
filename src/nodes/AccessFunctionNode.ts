@@ -1,7 +1,7 @@
 import BaseNode from "./BaseNode";
 import Type from "./Type";
 
-export default class AccessInvocationNode extends BaseNode {
+export default class AccessFunctionNode extends BaseNode {
   name: string;
   params: BaseNode[];
   type: Type;
@@ -15,7 +15,7 @@ export default class AccessInvocationNode extends BaseNode {
     type?: string | Type,
     statico?: boolean,
   ) {
-    super("ac_invoke", start);
+    super("access_func", start);
     this.name = name;
     this.params = params || [];
     this.type = typeof type === "string" ? new Type(type) : type || new Type("");

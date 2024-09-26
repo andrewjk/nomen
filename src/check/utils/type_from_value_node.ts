@@ -1,10 +1,10 @@
 import AccessFieldNode from "../../nodes/AccessFieldNode";
-import AccessInvocationNode from "../../nodes/AccessInvocationNode";
+import AccessFunctionNode from "../../nodes/AccessFunctionNode";
 import AccessNode from "../../nodes/AccessNode";
 import ArrayValuesNode from "../../nodes/ArrayValuesNode";
 import BaseNode from "../../nodes/BaseNode";
+import FunctionCallNode from "../../nodes/FunctionCallNode";
 import IfElseNode from "../../nodes/IfElseNode";
-import InvocationNode from "../../nodes/InvocationNode";
 import OperationNode from "../../nodes/OperationNode";
 import RangeNode from "../../nodes/RangeNode";
 import Type from "../../nodes/Type";
@@ -25,14 +25,14 @@ export default function type_from_value_node(node: BaseNode, status: CheckStatus
       type.is_array = true;
       return type;
     }
-    case "invoke": {
-      return (node as InvocationNode).type;
+    case "func_call": {
+      return (node as FunctionCallNode).type;
     }
-    case "ac_field": {
+    case "access_field": {
       return (node as AccessFieldNode).type;
     }
-    case "ac_invoke": {
-      return (node as AccessInvocationNode).type;
+    case "access_func": {
+      return (node as AccessFunctionNode).type;
     }
     case "if": {
       return (node as IfElseNode).return_type;

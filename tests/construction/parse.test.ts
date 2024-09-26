@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import AccessInvocationNode from "../../src/nodes/AccessInvocationNode";
+import AccessFunctionNode from "../../src/nodes/AccessFunctionNode";
 import AccessNode from "../../src/nodes/AccessNode";
 import DeclarationNode from "../../src/nodes/DeclarationNode";
 import ValueNode from "../../src/nodes/ValueNode";
@@ -24,7 +24,7 @@ var x = Person.init()
     new AccessNode(
       27,
       new ValueNode(27, "Person", "Person"),
-      new AccessInvocationNode(34, "init", [], "Person", true),
+      new AccessFunctionNode(34, "init", [], "Person", true),
     ),
   );
   expect(parsed.errors).toEqual([]);
@@ -49,13 +49,7 @@ var x = Person.init("Andrew")
     new AccessNode(
       46,
       new ValueNode(46, "Person", "Person"),
-      new AccessInvocationNode(
-        53,
-        "init",
-        [new ValueNode(58, '"Andrew"', "string")],
-        "Person",
-        true,
-      ),
+      new AccessFunctionNode(53, "init", [new ValueNode(58, '"Andrew"', "string")], "Person", true),
     ),
   );
   expect(parsed.errors).toEqual([]);
@@ -79,7 +73,7 @@ var x = Person.init()
     new AccessNode(
       44,
       new ValueNode(44, "Person", "Person"),
-      new AccessInvocationNode(51, "init", [], "Person", true),
+      new AccessFunctionNode(51, "init", [], "Person", true),
     ),
   );
   expect(parsed.errors).toEqual([]);

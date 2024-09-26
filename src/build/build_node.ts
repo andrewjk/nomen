@@ -6,9 +6,9 @@ import BreakNode from "../nodes/BreakNode";
 import ContinueNode from "../nodes/ContinueNode";
 import DeclarationNode from "../nodes/DeclarationNode";
 import ForLoopNode from "../nodes/ForLoopNode";
+import FunctionCallNode from "../nodes/FunctionCallNode";
 import FunctionNode from "../nodes/FunctionNode";
 import IfElseNode from "../nodes/IfElseNode";
-import InvocationNode from "../nodes/InvocationNode";
 import OperationNode from "../nodes/OperationNode";
 import PanicNode from "../nodes/PanicNode";
 import RangeNode from "../nodes/RangeNode";
@@ -27,9 +27,9 @@ import build_break_node from "./build_break_node";
 import build_continue_node from "./build_continue_node";
 import build_declaration_node from "./build_declaration_node";
 import build_for_loop_node from "./build_for_loop_node";
+import build_function_call_node from "./build_function_call_node";
 import build_function_node from "./build_function_node";
 import build_if_else_node from "./build_if_else_node";
-import build_invocation_node from "./build_invocation_node";
 import build_operation_node from "./build_operation_node";
 import build_panic_node from "./build_panic_node";
 import build_range_node from "./build_range_node";
@@ -67,8 +67,8 @@ export default function build_node(node: BaseNode, status: BuildStatus) {
       build_function_node(node as FunctionNode, status);
       break;
     }
-    case "invoke": {
-      build_invocation_node(node as InvocationNode, status);
+    case "func_call": {
+      build_function_call_node(node as FunctionCallNode, status);
       break;
     }
     case "access": {

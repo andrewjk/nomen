@@ -2,7 +2,7 @@ import { expect, test } from "vitest";
 import parse from "../../src/parse";
 import type CompileError from "../../src/types/CompileError";
 
-//const test = suite("Invocation errors");
+//const test = suite("Function call errors");
 
 test("function not found", () => {
   const input = `

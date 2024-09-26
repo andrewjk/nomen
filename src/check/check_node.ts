@@ -6,9 +6,9 @@ import BreakNode from "../nodes/BreakNode";
 import ContinueNode from "../nodes/ContinueNode";
 import DeclarationNode from "../nodes/DeclarationNode";
 import ForLoopNode from "../nodes/ForLoopNode";
+import FunctionCallNode from "../nodes/FunctionCallNode";
 import FunctionNode from "../nodes/FunctionNode";
 import IfElseNode from "../nodes/IfElseNode";
-import InvocationNode from "../nodes/InvocationNode";
 import OperationNode from "../nodes/OperationNode";
 import RangeNode from "../nodes/RangeNode";
 import ReturnNode from "../nodes/ReturnNode";
@@ -25,9 +25,9 @@ import check_block_node from "./check_block_node";
 import check_break_or_continue_node from "./check_break_or_continue_node";
 import check_declaration_node from "./check_declaration_node";
 import check_for_loop_node from "./check_for_loop_node";
+import check_function_call_node from "./check_function_call_node";
 import check_function_node from "./check_function_node";
 import check_if_else_node from "./check_if_else_node";
-import check_invocation_node from "./check_invocation_node";
 import check_operation_node from "./check_operation_node";
 import check_range_node from "./check_range_node";
 import check_return_node from "./check_return_node";
@@ -62,8 +62,8 @@ export default function check_node(node: BaseNode, status: CheckStatus) {
       check_assignment_node(node as AssignmentNode, status);
       break;
     }
-    case "invoke": {
-      check_invocation_node(node as InvocationNode, status);
+    case "func_call": {
+      check_function_call_node(node as FunctionCallNode, status);
       break;
     }
     case "access": {

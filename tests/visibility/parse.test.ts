@@ -86,7 +86,7 @@ test("pub fields in struct", () => {
   const input = `
 pub struct Person {
   pub var name: string
-  sec func greet() {}
+  private func greet() {}
 }
 `;
   const parsed = parse(input);
@@ -105,9 +105,9 @@ pub struct Person {
   expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
 });
 
-test("sec var", () => {
+test("private var", () => {
   const input = `
-sec var x = 1
+private var x = 1
 `;
   const parsed = parse(input);
   const expected = new DeclarationNode(
@@ -122,9 +122,9 @@ sec var x = 1
   expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
 });
 
-test("sec const", () => {
+test("private const", () => {
   const input = `
-sec const x = 3
+private const x = 3
 `;
   const parsed = parse(input);
   const expected = new DeclarationNode(
@@ -139,9 +139,9 @@ sec const x = 3
   expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
 });
 
-test("sec struct", () => {
+test("private struct", () => {
   const input = `
-sec struct Person {}
+private struct Person {}
 `;
   const parsed = parse(input);
   const expected = new StructNode(
@@ -156,9 +156,9 @@ sec struct Person {}
   expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
 });
 
-test("sec trait", () => {
+test("private trait", () => {
   const input = `
-sec trait Person {}
+private trait Person {}
 `;
   const parsed = parse(input);
   const expected = new TraitNode(1, "private", "Person");
@@ -166,9 +166,9 @@ sec trait Person {}
   expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
 });
 
-test("sec function", () => {
+test("private function", () => {
   const input = `
-sec func add() {}
+private func add() {}
 `;
   const parsed = parse(input);
   const expected = new FunctionNode(1, "private", "add", "", [], []);
@@ -176,11 +176,11 @@ sec func add() {}
   expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
 });
 
-test("sec fields in struct", () => {
+test("private fields in struct", () => {
   const input = `
 pub struct Person {
-  sec var name: string
-  sec func greet() {}
+  private var name: string
+  private func greet() {}
 }
 `;
   const parsed = parse(input);
@@ -200,11 +200,11 @@ pub struct Person {
 });
 
 // TODO: Need rudimentary scoping
-test("accessing sec fields within scope", () => {
+test("accessing private fields within scope", () => {
   const input = `
 struct Person {
-  sec var name: string
-  sec func greet() -> string {
+  private var name: string
+  private func greet() -> string {
     return "hi, " + self.name
   }
 }

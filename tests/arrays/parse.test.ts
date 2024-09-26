@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import AccessInvocationNode from "../../src/nodes/AccessInvocationNode";
+import AccessFunctionNode from "../../src/nodes/AccessFunctionNode";
 import AccessNode from "../../src/nodes/AccessNode";
 import ArrayValuesNode from "../../src/nodes/ArrayValuesNode";
 import AssignmentNode from "../../src/nodes/AssignmentNode";
@@ -62,12 +62,12 @@ var x: Animal[] = [Dog.init(), Cat.init()]
         new AccessNode(
           80,
           new ValueNode(80, "Dog", "Dog"),
-          new AccessInvocationNode(84, "init", [], "Dog", true),
+          new AccessFunctionNode(84, "init", [], "Dog", true),
         ),
         new AccessNode(
           92,
           new ValueNode(92, "Cat", "Cat"),
-          new AccessInvocationNode(96, "init", [], "Cat", true),
+          new AccessFunctionNode(96, "init", [], "Cat", true),
         ),
       ],
       new Type("Animal", true, new ValueNode(-1, "2", "int")),
@@ -95,12 +95,12 @@ x = [Dog.init(), Cat.init()]
         new AccessNode(
           82,
           new ValueNode(82, "Dog", "Dog"),
-          new AccessInvocationNode(86, "init", [], "Dog", true),
+          new AccessFunctionNode(86, "init", [], "Dog", true),
         ),
         new AccessNode(
           94,
           new ValueNode(94, "Cat", "Cat"),
-          new AccessInvocationNode(98, "init", [], "Cat", true),
+          new AccessFunctionNode(98, "init", [], "Cat", true),
         ),
       ],
       new Type("Animal", true, new ValueNode(-1, "2", "int")),

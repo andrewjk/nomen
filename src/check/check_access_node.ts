@@ -1,9 +1,9 @@
 import AccessFieldNode from "../nodes/AccessFieldNode";
-import AccessInvocationNode from "../nodes/AccessInvocationNode";
+import AccessFunctionNode from "../nodes/AccessFunctionNode";
 import AccessNode from "../nodes/AccessNode";
 import Type from "../nodes/Type";
 import type CheckStatus from "./CheckStatus";
-import check_invocation_function from "./check_invocation_function";
+import check_function_call from "./check_function_call";
 import check_node from "./check_node";
 import type_from_value_node from "./utils/type_from_value_node";
 import value_from_value_node from "./utils/value_from_value_node";
@@ -22,12 +22,12 @@ export default function check_access_node(node: AccessNode, status: CheckStatus)
   }
 
   switch (node.access.node_type) {
-    case "ac_field": {
+    case "access_field": {
       check_access_field_node(source_type, node.access as AccessFieldNode, status);
       break;
     }
-    case "ac_invoke": {
-      check_access_invocation_node(source_type, node.access as AccessInvocationNode, status);
+    case "access_func": {
+      check_access_function_node(source_type, node.access as AccessFunctionNode, status);
       break;
     }
   }
@@ -74,9 +74,9 @@ function check_access_field_node(source_type: Type, node: AccessFieldNode, statu
   }
 }
 
-function check_access_invocation_node(
+function check_access_function_node(
   source_type: Type,
-  node: AccessInvocationNode,
+  node: AccessFunctionNode,
   status: CheckStatus,
 ) {
   const struct = status.structs.find((s) => s.name === source_type.name);
@@ -92,5 +92,5 @@ function check_access_invocation_node(
     // TODO:
     // Are we accessing a func in a struct with a trait and a default value?
   }
-  check_invocation_function(node, status, func);
+  check_function_call(node, status, func);
 }

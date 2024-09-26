@@ -1,7 +1,7 @@
 import AccessNode from "../nodes/AccessNode";
 import AssignmentNode from "../nodes/AssignmentNode";
 import BaseNode from "../nodes/BaseNode";
-import InvocationNode from "../nodes/InvocationNode";
+import FunctionCallNode from "../nodes/FunctionCallNode";
 import ValueNode from "../nodes/ValueNode";
 import type ParseStatus from "./ParseStatus";
 import parse_access from "./parse_access";
@@ -10,8 +10,8 @@ import parse_declaration from "./parse_declaration";
 import parse_expression from "./parse_expression";
 import parse_for_loop from "./parse_for_loop";
 import parse_function from "./parse_function";
+import parse_function_call_parameter from "./parse_function_call_parameter";
 import parse_if_else from "./parse_if_else";
-import parse_invocation_parameter from "./parse_invocation_parameter";
 import parse_panic_or_todo from "./parse_panic_or_todo";
 import parse_return from "./parse_return";
 import parse_struct from "./parse_struct";
@@ -122,12 +122,12 @@ function parse_statement_start(status: ParseStatus) {
       }
       case "(": {
         accept("(", status);
-        const invoke = new InvocationNode(node.start, value);
+        const func = new FunctionCallNode(node.start, value);
         if (peek_current(status) !== ")") {
-          parse_invocation_parameter(invoke, status);
+          parse_function_call_parameter(func, status);
         }
         expect(")", status);
-        node = invoke;
+        node = func;
         break;
       }
       case "=": {

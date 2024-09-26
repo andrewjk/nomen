@@ -11,7 +11,7 @@ export default function value_from_value_node(node: BaseNode): string {
     case "access": {
       return value_from_value_node((node as AccessNode).access);
     }
-    case "ac_field": {
+    case "access_field": {
       return (node as AccessFieldNode).name;
     }
   }

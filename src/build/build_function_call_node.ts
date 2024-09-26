@@ -1,9 +1,9 @@
-import InvocationNode from "../nodes/InvocationNode";
+import FunctionCallNode from "../nodes/FunctionCallNode";
 import type BuildStatus from "./BuildStatus";
 import build_node from "./build_node";
 import type_from_value_node from "./utils/type_from_value_node";
 
-export default function build_invocation_node(node: InvocationNode, status: BuildStatus) {
+export default function build_function_call_node(node: FunctionCallNode, status: BuildStatus) {
   status.code += `${node.name}(`;
   for (let i = 0; i < node.params.length; i++) {
     if (i > 0) {
