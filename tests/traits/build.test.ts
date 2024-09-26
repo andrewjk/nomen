@@ -14,6 +14,9 @@ struct Frank: Person {}
   const parsed = parse(input);
   const result = build(parsed.root);
   const expected = `
+typedef struct Person
+{
+} Person;
 void *_Frank_Person_funcs[] = {};
 void *_Frank_traits[] = {&_Frank_Person_funcs};
 typedef struct Frank
@@ -45,7 +48,10 @@ struct Frank: Person {
   const parsed = parse(input);
   const result = build(parsed.root);
   const expected = `
-void *_Frank_Person_funcs[] = {};
+typedef struct Person
+{
+} Person;
+void *_Frank_Person_funcs[] = {get_Frank_name, set_Frank_name, get_Frank_age, set_Frank_age};
 void *_Frank_traits[] = {&_Frank_Person_funcs};
 typedef struct Frank
 {
@@ -61,7 +67,10 @@ f.name = "Frank";
 f.age = 0;
 return f;
 }
-`;
+char* get_Frank_name(struct Frank *self) { return self->name; }
+void set_Frank_name(struct Frank *self, char* value) { self->name = value; }
+int get_Frank_age(struct Frank *self) { return self->age; }
+void set_Frank_age(struct Frank *self, int value) { self->age = value; }`;
   expect(parsed.errors).toEqual([]);
   expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
 });

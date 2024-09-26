@@ -25,7 +25,7 @@ export default function parse_visibility(visibility: "pub" | "private", status: 
     case "var": {
       if (visibility === "private" && status.stack.at(-1)?.node_type === "trait") {
         status.errors.push({
-          message: `Trait fields cannot be secret`,
+          message: `Trait fields cannot be private`,
           start: get_index(status),
         });
         consume(status);
@@ -45,7 +45,7 @@ export default function parse_visibility(visibility: "pub" | "private", status: 
     case "func": {
       if (visibility === "private" && status.stack.at(-1)?.node_type === "trait") {
         status.errors.push({
-          message: `Trait functions cannot be secret`,
+          message: `Trait functions cannot be private`,
           start: get_index(status),
         });
         consume(status);

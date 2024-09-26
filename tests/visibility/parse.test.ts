@@ -116,7 +116,7 @@ private var x = 1
     "var",
     "x",
     new Type("int"),
-    new ValueNode(13, "1", "int"),
+    new ValueNode(19, "1", "int"),
   );
   expect(parsed.errors).toEqual([]);
   expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));

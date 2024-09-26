@@ -13,7 +13,6 @@ export default function check_access_node(node: AccessNode, status: CheckStatus)
 
   const target_type = type_from_value_node(node.target, status);
   if (!target_type.name) {
-    console.log("WHAT IS THIS", node);
     status.errors.push({
       message: `Unknown target: ${value_from_value_node(node.target)}`,
       start: node.target.start,

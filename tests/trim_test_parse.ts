@@ -17,7 +17,7 @@ function trim_node(node: any) {
       if (!node.children.length) {
         delete node.children;
       }
-    } else if (/*key === "start" ||*/ key.endsWith("_start")) {
+    } else if (key === "start" || key.endsWith("_start")) {
       delete node[key];
     } else if (typeof value === "object") {
       trim_node(value);

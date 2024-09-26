@@ -59,7 +59,7 @@ func add() -> int {
   const parsed = parse(input);
   const result = build(parsed.root.statements[0]);
   const expected = `
-void add()
+int add()
 {
 return 5;
 }
@@ -95,7 +95,7 @@ func add() -> int {
   const parsed = parse(input);
   const result = build(parsed.root.statements[0]);
   const expected = `
-void add()
+int add()
 {
 return 5;
 }

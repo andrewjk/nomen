@@ -52,7 +52,7 @@ func add() -> int {
   const parsed = parse(input);
   const result = build(parsed.root.statements[0]);
   const expected = `
-void add()
+int add()
 {
 printf("something went wrong\\n");
 exit(EXIT_FAILURE);
@@ -71,7 +71,7 @@ func add() -> int {
   const parsed = parse(input);
   const result = build(parsed.root.statements[0]);
   const expected = `
-void add()
+int add()
 {
 printf("haven't done this yet\\n");
 exit(EXIT_FAILURE);
