@@ -51,7 +51,7 @@ export default function check_function_call(
   }
   if (node.params.length > expected_param_count) {
     status.errors.push({
-      message: `Too many parameters for function: ${node.name} (expected ${expected_param_count}, got ${node.params.length})`,
+      message: `Too many parameters for function: ${node.name}`,
       start: node.start,
     });
     return;
