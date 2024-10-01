@@ -29,38 +29,10 @@ export default function check(root: BaseNode): CheckResult {
   //  ]),
   //);
 
-  if (is_root_node(root)) {
-    gather_globals(root, status);
-  }
-
   check_node(root, status);
 
   return {
     ok: !status.errors.length,
     errors: status.errors,
   };
-}
-
-function gather_globals(root: RootNode, status: CheckStatus) {
-  for (let node of root.statements) {
-    switch (node.node_type) {
-      case "struct": {
-        const struct = node as StructNode;
-        status.types.push(struct.name);
-        status.structs.push(struct);
-        break;
-      }
-      case "trait": {
-        const trait = node as TraitNode;
-        status.types.push(trait.name);
-        status.traits.push(trait);
-        break;
-      }
-      case "func": {
-        const func = node as FunctionNode;
-        status.functions.push(func);
-        break;
-      }
-    }
-  }
 }
