@@ -10,7 +10,7 @@ typedef struct Disposable
 } Disposable;
 void Disposable_dispose()
 {
-    printf("%s", "\nboom!");
+    printf("\nboom!");
 }
 
 // trait Animal
@@ -103,37 +103,37 @@ void set_Lizard_age(struct Lizard *self, int value) { self->age = value; }
 // func main
 int main()
 {
-    printf("%s", "\n");
+    printf("\n");
     int i;
     for (i = 0; i < 5; i++)
     {
-        printf("%s", "hello, world! ");
+        printf("hello, world! ");
         printf("%d", i + 1);
         int x = i + 1;
         if (x < 4)
         {
-            printf("%s", " is less than 4");
+            printf(" is less than 4");
         }
         else
         {
-            printf("%s", " is 4 or more");
+            printf(" is 4 or more");
         }
-        printf("%s", "\n");
+        printf("\n");
     }
-    printf("%s", "\n");
+    printf("\n");
     int y = 0;
     while (y < 5)
     {
-        printf("%s", "hi ");
+        printf("hi ");
         y = y + 1;
     }
-    printf("%s", "\n\n");
+    printf("\n\n");
     Dog dog = make_dog();
     ;
     printf("%s", dog.name);
-    printf("%s", ": ");
+    printf(": ");
     printf("%s", Dog_speak(&dog));
-    printf("%s", "\n\n");
+    printf("\n\n");
     Dog _animals_1 = Dog_init();
     Cat _animals_2 = Cat_init();
     Lizard _animals_3 = Lizard_init();
@@ -142,11 +142,11 @@ int main()
     {
         void *a = *(animals + i);
         printf("%s", ((char *(*)(void *))_get_trait_func(a, 1, 0))(a));
-        printf("%s", "\n");
+        printf("\n");
     }
     Cat cat = Cat_init();
     grow_animal((void *)&cat);
-    printf("%s", "cat has age: ");
+    printf("cat has age: ");
     printf("%d", cat.age);
 
     ((void *(*)(void *))_get_trait_func((void *)&dog, 0, 0))(&dog);

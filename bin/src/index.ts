@@ -122,7 +122,7 @@ function processFile(filename: string, config: Config) {
   let input = fs.readFileSync(filename, "utf8");
 
   // HACK:
-  //input = input.replace(/Console.Write\("(.+?)"\)/g, 'printf("$1")');
+  input = input.replace(/Console.Write\("(.+?)"\)/g, 'printf("$1")');
   input = input.replace(/Console.Write\((.+?) \+ (.+?)\)/g, 'printf("%d", $1 + $2)');
   input = input.replace(/Console.Write\((.+?)\)/g, 'printf("%s", $1)');
 
