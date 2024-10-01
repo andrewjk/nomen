@@ -199,13 +199,27 @@ pub struct Person {
   expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
 });
 
-// TODO: Need rudimentary scoping
-test("accessing private fields within scope", () => {
+test("private fields within scope", () => {
   const input = `
 struct Person {
   private var name: string
-  private func greet() -> string {
-    return "hi, " + self.name
+  private func greet(self) -> string {
+    return self.name
+  }
+}
+`;
+  const parsed = parse(input);
+  expect(parsed.errors).toEqual([]);
+});
+
+test("private function within scope", () => {
+  const input = `
+struct Person {
+  private func name() -> string {
+    return "John"
+  }
+  private func greet(self) -> string {
+    return self.name()
   }
 }
 `;

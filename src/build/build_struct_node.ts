@@ -84,7 +84,7 @@ ${object_name}._vt = &_${node.name}_traits;
   status.code += "\n";
 }
 
-export function build_struct_traits(node: StructNode, status: BuildStatus) {
+function build_struct_traits(node: StructNode, status: BuildStatus) {
   // Build the vtable that points to the struct's traits' methods by index
   for (let traitName of node.traits) {
     // E.g. int* _Dog_Animal_vtable_[4];
@@ -120,7 +120,7 @@ export function build_struct_traits(node: StructNode, status: BuildStatus) {
   status.code += `};\n`;
 }
 
-export function build_struct_functions(node: StructNode, status: BuildStatus) {
+function build_struct_functions(node: StructNode, status: BuildStatus) {
   // Build the struct's functions
   for (let func of node.functions) {
     if (func.name === "init") {
@@ -131,17 +131,26 @@ export function build_struct_functions(node: StructNode, status: BuildStatus) {
 
     // Define the function
     // HACK: Need to map names to types
-    const signature = `${c_type(func.return_type.name || "void")} ${node.name}_${
-      func.name
-    }(struct ${node.name} *self${func.params.length ? ", " : ""}${func.params
-      .map((p) => build_parameter_node(p, status))
-      .join(", ")})`;
+    const func_start = status.code.length;
+    status.code += `${c_type(func.return_type.name || "void")} ${node.name}_${func.name}(`;
+    for (let i = 0; i < func.params.length; i++) {
+      if (i > 0) {
+        status.code += ", ";
+      }
+      build_parameter_node(func.params[i], status);
+    }
+    status.code += `)`;
 
-    status.headers += `${signature};\n`;
-    status.code += `${signature}\n{\n`;
+    // TODO: Only if top-level
+    status.headers += `${status.code.substring(func_start)};\n`;
+
+    status.code += `\n{\n`;
+
     // HACK: Dereference the `self` pointer arg to a local variable with a random name
     // (`_self` for now, but we could automate it)
-    status.code += `struct ${node.name} _self = *self;\n`;
+    if (func.params[0]?.is_self_param) {
+      status.code += `struct ${node.name} _self = *self;\n`;
+    }
     for (let child of func.statements) {
       build_node(child, status);
     }

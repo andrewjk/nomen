@@ -21,11 +21,15 @@ export default function check_assignment_node(assign: AssignmentNode, status: Ch
       message: `Unknown variable: ${left_value_name}`,
       start: assign.left_value!.start,
     });
-  } else if (left_value.declaration === "const") {
-    status.errors.push({
-      message: `Assignment to const: ${left_value_name}`,
-      start: assign.left_value!.start,
-    });
+  } else if (left_value.declaration !== "var") {
+    if (left_value.is_set) {
+      status.errors.push({
+        message: `Assignment to const: ${left_value_name}`,
+        start: assign.left_value!.start,
+      });
+    } else {
+      left_value.is_set = true;
+    }
   }
 
   if (left_value)

@@ -13,7 +13,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
   status.headers += `// func ${node.name}\n`;
   status.code += `// func ${node.name}\n`;
 
-  const funcStart = status.code.length;
+  const func_start = status.code.length;
   if (node.name.toLocaleLowerCase() === "main") {
     status.code += `int main(`;
   } else {
@@ -50,7 +50,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
   status.code += `)`;
 
   // TODO: Only if top-level
-  status.headers += `${status.code.substring(funcStart)};\n\n`;
+  status.headers += `${status.code.substring(func_start)};\n\n`;
 
   status.code += `\n{\n`;
   for (let child of node.statements) {

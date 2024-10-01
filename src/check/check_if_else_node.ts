@@ -2,6 +2,7 @@ import IfElseNode from "../nodes/IfElseNode";
 import type CheckStatus from "./CheckStatus";
 import check_block_node from "./check_block_node";
 import check_node from "./check_node";
+import clone_status from "./utils/clone_status";
 import type_from_value_node from "./utils/type_from_value_node";
 import type_name from "./utils/type_name";
 
@@ -16,15 +17,28 @@ export default function check_if_else_node(if_else: IfElseNode, status: CheckSta
   }
 
   status.stack.push(if_else);
+  let if_status = clone_status(status);
+  let else_status = clone_status(status);
   if (if_else.if_branch) {
-    const old_values = status.values;
-    check_block_node(if_else.if_branch, status);
-    status.values = old_values;
+    check_block_node(if_else.if_branch, if_status);
   }
   if (if_else.else_branch) {
-    const old_values = status.values;
-    check_block_node(if_else.else_branch, status);
-    status.values = old_values;
+    check_block_node(if_else.else_branch, else_status);
   }
   status.stack.pop();
+
+  for (let [i, value] of status.values.entries()) {
+    if (value.declaration === "const" && !value.is_set) {
+      let is_set_count =
+        0 + (if_status.values[i].is_set ? 1 : 0) + (else_status.values[i].is_set ? 1 : 0);
+      if (is_set_count === 2) {
+        value.is_set = true;
+      } else if (is_set_count === 1) {
+        status.errors.push({
+          message: `Const set incompletely: ${value.name}`,
+          start: if_else.start,
+        });
+      }
+    }
+  }
 }

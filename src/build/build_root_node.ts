@@ -1,7 +1,4 @@
-import FunctionNode from "../nodes/FunctionNode";
 import RootNode from "../nodes/RootNode";
-import StructNode from "../nodes/StructNode";
-import TraitNode from "../nodes/TraitNode";
 import { is_function_node, is_struct_node, is_trait_node } from "../nodes/check_node_type";
 import type BuildStatus from "./BuildStatus";
 import build_function_node from "./build_function_node";

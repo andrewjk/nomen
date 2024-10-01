@@ -1,6 +1,6 @@
 // trait Disposable
 struct Disposable;
-void Disposable_dispose(struct Disposable *self);
+void Disposable_dispose();
 
 // trait Animal
 struct Animal;
@@ -39,5 +39,5 @@ int main();
 struct Dog make_dog();
 
 // func grow_animal
-void grow_animal(struct Animal* animal);
+void grow_animal(struct Animal *animal);
 

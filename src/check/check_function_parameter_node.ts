@@ -27,5 +27,6 @@ export default function check_function_parameter_node(param: ParameterNode, stat
     declaration: "const",
     name: param.name,
     type: param.type,
+    is_set: true,
   });
 }

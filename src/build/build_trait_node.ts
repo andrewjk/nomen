@@ -30,18 +30,27 @@ export default function build_trait_node(node: TraitNode, status: BuildStatus) {
   for (let func of node.functions) {
     // Define the function
     // HACK: Need to map names to types
-    const signature = `${c_type(func.return_type.name || "void")} ${node.name}_${
-      func.name
-    }(struct ${node.name} *self${func.params.length ? ", " : ""}${func.params
-      .map((p) => build_parameter_node(p, status))
-      .join(", ")})`;
+    const func_start = status.code.length;
+    status.code += `${c_type(func.return_type.name || "void")} ${node.name}_${func.name}(`;
+    for (let i = 0; i < func.params.length; i++) {
+      if (i > 0) {
+        status.code += ", ";
+      }
+      build_parameter_node(func.params[i], status);
+    }
+    status.code += `)`;
 
-    status.headers += `${signature};\n`;
-    status.code += `${signature}\n{\n`;
+    // TODO: Only if top-level
+    status.headers += `${status.code.substring(func_start)};\n`;
+
+    status.code += `\n{\n`;
+
     // HACK: Dereference the `self` pointer arg to a local variable with a random name
     // (`_self` for now, but we could automate it)
     // TODO: Store whether the type of the parameter is a pointer, and use -> in build_node etc
-    status.code += `struct ${node.name} _self = *self;\n`;
+    if (func.params[0]?.is_self_param) {
+      status.code += `struct ${node.name} _self = *self;\n`;
+    }
     for (let child of func.statements) {
       build_node(child, status);
     }

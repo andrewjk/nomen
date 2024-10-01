@@ -2,6 +2,7 @@ import type CheckStatus from "./check/CheckStatus";
 import check_node from "./check/check_node";
 import BaseNode from "./nodes/BaseNode";
 import FunctionNode from "./nodes/FunctionNode";
+import ParameterNode from "./nodes/ParameterNode";
 import RootNode from "./nodes/RootNode";
 import StructNode from "./nodes/StructNode";
 import TraitNode from "./nodes/TraitNode";
@@ -19,6 +20,14 @@ export default function check(root: BaseNode): CheckResult {
     functions: [],
     errors: [],
   };
+
+  // HACK: Add printf as a global function
+  //status.functions.push(
+  //  new FunctionNode(0, "pub", "printf", new Type(""), [
+  //    new ParameterNode(0, "value", new Type("string")),
+  //    new ParameterNode(0, "value", new Type("string")),
+  //  ]),
+  //);
 
   if (is_root_node(root)) {
     gather_globals(root, status);
@@ -38,11 +47,6 @@ function gather_globals(root: RootNode, status: CheckStatus) {
       case "struct": {
         const struct = node as StructNode;
         status.types.push(struct.name);
-        status.values.push({
-          declaration: "struct",
-          name: struct.name,
-          type: new Type(struct.name),
-        });
         status.structs.push(struct);
         break;
       }

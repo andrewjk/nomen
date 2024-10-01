@@ -56,10 +56,12 @@ function check_access_field_node(target_type: Type, node: AccessFieldNode, statu
     }
   }
   if (field) {
-    if (field.visibility === "private") {
-      // TODO: You CAN do this from within the correct scope
+    if (
+      field.visibility === "private" &&
+      !status.structs.find((s) => s.name === target_type.name)?.privates_visible
+    ) {
       status.errors.push({
-        message: `Can't access secret field: ${node.name}`,
+        message: `Can't access private field: ${node.name}`,
         start: node.start,
       });
     } else {
@@ -88,8 +90,17 @@ function check_access_function_node(
     }
   }
   if (!func) {
-    // TODO:
     // Are we accessing a func in a struct with a trait and a default value?
+    const struct = status.structs.find((s) => s.name === target_type.name);
+    if (struct) {
+      for (let trait_name of struct.traits) {
+        const trait = status.traits.find((s) => s.name === trait_name);
+        if (trait) {
+          func = trait.functions.find((f) => f.name === node.name && f.has_body);
+          break;
+        }
+      }
+    }
   }
-  check_function_call(node, status, func);
+  check_function_call(node, status, func, target_type);
 }

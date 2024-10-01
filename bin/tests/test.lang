@@ -64,21 +64,21 @@ trait Disposable {
 trait Animal {
 	var name: string
 	var age = 1
-	func speak() -> string {
+	func speak(self) -> string {
 		return "..."
 	}
 }
 
 struct Dog: Animal, Disposable {
 	var name = "Dog"
-	func speak() -> string {
+	func speak(self) -> string {
 		return "woof"
 	}
 }
 
 struct Cat: Animal {
 	var name = "Cat"
-	func speak() -> string {
+	func speak(self) -> string {
 		return self.name
 	}
 }

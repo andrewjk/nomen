@@ -14,6 +14,8 @@ export default function parse(input: string): ParseResult {
     tokens,
     i: 0,
     stack: [root],
+    // TODO: Should be the base namespace, from module.config, folder structure, file name
+    namespace: "",
     errors: [],
   };
 

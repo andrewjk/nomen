@@ -103,25 +103,3 @@ return 5;
   expect(parsed.errors).toEqual([]);
   expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
 });
-
-/*
-test("function followed by function", () => {
-  const input = `
-func add() {}
-
-func subtract() {}
-`;
-const parsed = parse(input);  const result = build(parsed.root.statements[0]);
-  const expected = `
-void add() {
-
-}
-
-void subtract() {
-
-}
-`;
-  expect(parsed.errors).toEqual([]);
-  expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
-});
-*/

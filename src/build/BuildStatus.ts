@@ -9,6 +9,9 @@ export default interface BuildStatus {
   traits: TraitNode[];
   headers: string;
   code: string;
+  /**
+   * Declarations that were made in the current scope and will need to be freed
+   */
   scoped_declarations: DeclarationNode[];
   return_assign?: string;
 }

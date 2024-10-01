@@ -57,7 +57,7 @@ x = 10
   const expected: CompileError[] = [
     {
       message: "Assignment to const: x",
-      start: 14,
+      start: 13,
     },
   ];
   const parsed = parse(input);
@@ -73,6 +73,24 @@ x = 10
   const expected: CompileError[] = [
     {
       message: "Assignment to const: x",
+      start: 20,
+    },
+  ];
+  const parsed = parse(input);
+  expect(parsed.errors).toEqual(expected);
+});
+
+test("incomplete conditional assignment to const", () => {
+  const input = `
+const x: int
+if true {
+  x = 5
+}
+const y = x
+`;
+  const expected: CompileError[] = [
+    {
+      message: "Const set incompletely: x",
       start: 14,
     },
   ];
@@ -89,7 +107,7 @@ func set(x: int) {
   const expected: CompileError[] = [
     {
       message: "Assignment to const: x",
-      start: 14,
+      start: 22,
     },
   ];
   const parsed = parse(input);

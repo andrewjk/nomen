@@ -1,6 +1,7 @@
 import { expect, test } from "vitest";
 import parse from "../../src/parse";
 import type CompileError from "../../src/types/CompileError";
+import trim_test_parse from "../trim_test_parse";
 
 //const test = suite("Pub errors");
 
@@ -33,11 +34,11 @@ x.greet()
   const expected: CompileError[] = [
     {
       message: "Can't access private field: name",
-      start: 82,
+      start: 90,
     },
     {
       message: "Can't access private function: greet",
-      start: 100,
+      start: 108,
     },
   ];
   const parsed = parse(input);
@@ -58,7 +59,7 @@ trait Person {
     },
     {
       message: "Trait functions cannot be private",
-      start: 41,
+      start: 45,
     },
   ];
   const parsed = parse(input);

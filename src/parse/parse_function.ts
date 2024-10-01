@@ -1,3 +1,4 @@
+import BaseNode from "../nodes/BaseNode";
 import type BlockNode from "../nodes/BlockNode";
 import FunctionNode from "../nodes/FunctionNode";
 import ParameterNode from "../nodes/ParameterNode";
@@ -23,16 +24,16 @@ export default function parse_function(
   const func = new FunctionNode(start, visibility, name, new Type(""));
 
   if (expect("(", status)) {
+    const parent = status.stack.at(-1)!;
+
     if (peek_current(status) !== ")") {
-      parse_function_parameter(func, status);
+      parse_function_parameter(parent, func, status);
     }
     if (expect(")", status)) {
       if (accept("->", status)) {
         func.return_type_start = get_index(status);
         func.return_type = parse_type(status);
       }
-
-      const parent = status.stack.at(-1)!;
 
       // Traits don't need a body, everything else does
       const has_body = parent.node_type === "trait" ? accept("{", status) : expect("{", status);
@@ -59,8 +60,8 @@ export default function parse_function(
           (parent as BlockNode).statements.push(func);
           break;
         }
-        case "trait":
-        case "struct": {
+        case "struct":
+        case "trait": {
           (parent as StructNode).functions.push(func);
           break;
         }
@@ -75,12 +76,30 @@ export default function parse_function(
   }
 }
 
-function parse_function_parameter(func: FunctionNode, status: ParseStatus) {
+function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: ParseStatus) {
   const param = new ParameterNode(get_index(status), "");
   func.params.push(param);
 
   // Parameter name
   param.name = consume(status);
+
+  // Struct and trait functions can have a special `self` parameter in first place
+  if (
+    param.name === "self" &&
+    func.params.length === 1 &&
+    (parent.node_type === "struct" || parent.node_type === "trait")
+  ) {
+    param.type_start = param.start;
+    param.type = new Type((parent as StructNode).name);
+    param.is_self_param = true;
+
+    // Next parameter
+    if (accept(",", status)) {
+      parse_function_parameter(parent, func, status);
+    }
+
+    return;
+  }
 
   // Parameter type
   if (accept(":", status)) {
@@ -104,6 +123,6 @@ function parse_function_parameter(func: FunctionNode, status: ParseStatus) {
 
   // Next parameter
   if (accept(",", status)) {
-    parse_function_parameter(func, status);
+    parse_function_parameter(parent, func, status);
   }
 }

@@ -76,9 +76,42 @@ Person p;
 p._vt = &_Person_traits;
 return p;
 }
-void Person_greet(struct Person *self)
+void Person_greet()
+{
+}
+`;
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+});
+
+test("struct with mutating functions", () => {
+  const input = `
+struct Person {
+  var age = 0
+  func grow(self) {
+    self.age = self.age + 1
+  }
+}
+`;
+  const parsed = parse(input);
+  const result = build(parsed.root.statements[0]);
+  const expected = `
+typedef struct Person
+{
+void *_vt;
+int age;
+} Person;
+Person Person_init()
+{
+Person p;
+p._vt = &_Person_traits;
+p.age = 0;
+return p;
+}
+void Person_grow(struct Person *self)
 {
 struct Person _self = *self;
+_self.age = _self.age + 1;
 }
 `;
   expect(parsed.errors).toEqual([]);

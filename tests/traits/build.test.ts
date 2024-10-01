@@ -93,9 +93,8 @@ struct Frank: Person {
 typedef struct Person
 {
 } Person;
-void Person_greet(struct Person *self)
+void Person_greet()
 {
-struct Person _self = *self;
 }
 
 void *_Frank_Person_funcs[] = {Frank_greet};
@@ -110,9 +109,8 @@ Frank f;
 f._vt = &_Frank_traits;
 return f;
 }
-char* Frank_greet(struct Frank *self)
+char* Frank_greet()
 {
-struct Frank _self = *self;
 return "hi";
 }
 `;
@@ -136,9 +134,8 @@ struct Frank: Person {}
 typedef struct Person
 {
 } Person;
-char* Person_greet(struct Person *self)
+char* Person_greet()
 {
-struct Person _self = *self;
 return "hi";
 }
 

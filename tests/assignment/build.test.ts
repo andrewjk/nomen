@@ -25,10 +25,31 @@ const x: int
 x = 5
 `;
   const parsed = parse(input);
-  const result = build(parsed.root.statements[0]);
+  const result = build(parsed.root.statements[1]);
   const expected = `
-int x;
 x = 5;
+`;
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+});
+
+test("conditional assignment to const", () => {
+  const input = `
+const x: int
+if true {
+  x = 5
+} else {
+  x = 10
+}
+`;
+  const parsed = parse(input);
+  const result = build(parsed.root.statements[1]);
+  const expected = `
+if (true) {
+x = 5;
+} else {
+x = 10;
+}
 `;
   expect(parsed.errors).toEqual([]);
   expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));

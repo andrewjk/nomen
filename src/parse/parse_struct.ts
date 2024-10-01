@@ -20,6 +20,10 @@ export default function parse_struct(
   const name = consume(status);
   const struct = new StructNode(start, visibility, name);
 
+  // Bump the namespace
+  const old_namespace = status.namespace;
+  status.namespace += `.${name}`;
+
   if (accept(":", status)) {
     struct.traits.push(consume(status));
     while (accept(",", status)) {
@@ -43,4 +47,6 @@ export default function parse_struct(
 
     add_to_parent(struct, "Struct", status);
   }
+
+  status.namespace = old_namespace;
 }

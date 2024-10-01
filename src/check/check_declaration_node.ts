@@ -37,5 +37,6 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
     declaration: decl.declaration,
     name: decl.name,
     type: decl.type,
+    is_set: !!decl.value,
   });
 }
