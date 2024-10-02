@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import AccessFunctionNode from "../../src/nodes/AccessFunctionNode";
+import AccessFunctionCallNode from "../../src/nodes/AccessFunctionCallNode";
 import AccessNode from "../../src/nodes/AccessNode";
 import DeclarationNode from "../../src/nodes/DeclarationNode";
 import ValueNode from "../../src/nodes/ValueNode";
@@ -71,7 +71,7 @@ var x: Animal = Dog.init()
     new AccessNode(
       55,
       new ValueNode(55, "Dog", "Dog"),
-      new AccessFunctionNode(59, "init", [], "Dog", true),
+      new AccessFunctionCallNode(59, "init", "Dog", [], true),
     ),
   );
   expect(parsed.errors).toEqual([]);

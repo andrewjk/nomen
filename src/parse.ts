@@ -5,8 +5,8 @@ import parse_statement from "./parse/parse_statement";
 import tokenize from "./tokenize";
 import type ParseResult from "./types/ParseResult";
 
-export default function parse(input: string): ParseResult {
-  const tokens = tokenize(input);
+export default function parse(source: string): ParseResult {
+  const tokens = tokenize(source);
 
   const root = new RootNode();
 

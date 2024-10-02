@@ -12,7 +12,7 @@ func greet() {}
 greet()
 `;
   const parsed = parse(input);
-  const expected = new FunctionCallNode(17, "greet");
+  const expected = new FunctionCallNode(17, "greet", "", [], true);
   expect(parsed.errors).toEqual([]);
   expect(trim_test_parse(parsed.root.statements[1])).toEqual(trim_test_parse(expected));
 });
@@ -23,10 +23,13 @@ func greet(name: string, position: string) {}
 greet("Andrew", "Manager")
 `;
   const parsed = parse(input);
-  const expected = new FunctionCallNode(47, "greet", "", [
-    new ValueNode(53, '"Andrew"', "string"),
-    new ValueNode(63, '"Manager"', "string"),
-  ]);
+  const expected = new FunctionCallNode(
+    47,
+    "greet",
+    "",
+    [new ValueNode(53, '"Andrew"', "string"), new ValueNode(63, '"Manager"', "string")],
+    true,
+  );
   expect(parsed.errors).toEqual([]);
   expect(trim_test_parse(parsed.root.statements[1])).toEqual(trim_test_parse(expected));
 });

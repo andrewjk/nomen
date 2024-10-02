@@ -1,10 +1,19 @@
 // trait Disposable
 struct Disposable;
-void Disposable_dispose();
+void Disposable_dispose(struct Disposable *self);
+
+// trait Stringable
+struct Stringable;
 
 // trait Animal
 struct Animal;
 char* Animal_speak(struct Animal *self);
+
+char* int_to_string(int self);
+// struct Console
+struct Console;
+struct Console Console_init();
+void Console_write(char* line);
 
 // struct Dog
 struct Dog;

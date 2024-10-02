@@ -1,6 +1,7 @@
 import type BlockNode from "../nodes/BlockNode";
 import DeclarationNode from "../nodes/DeclarationNode";
 import StructNode from "../nodes/StructNode";
+import { is_value_node } from "../nodes/check_node_type";
 import type ParseStatus from "./ParseStatus";
 import parse_expression from "./parse_expression";
 import parse_type from "./parse_type";
@@ -26,6 +27,9 @@ export default function parse_declaration(
   }
   if (accept("=", status)) {
     decl.value = parse_expression(status);
+    if (!decl.type.name && is_value_node(decl.value)) {
+      decl.type = decl.value.type;
+    }
   }
 
   // Check type or value has been set

@@ -99,10 +99,13 @@ func add() {}
 func subtract() {}
 `;
   const parsed = parse(input);
-  const expected = new RootNode([
-    new FunctionNode(1, "mod", "add", "", [], []),
-    new FunctionNode(16, "mod", "subtract", "", [], []),
-  ]);
+  const expected = new RootNode(
+    [],
+    [
+      new FunctionNode(1, "mod", "add", "", [], []),
+      new FunctionNode(16, "mod", "subtract", "", [], []),
+    ],
+  );
   expect(parsed.errors).toEqual([]);
   expect(trim_test_parse(parsed.root)).toEqual(trim_test_parse(expected));
 });

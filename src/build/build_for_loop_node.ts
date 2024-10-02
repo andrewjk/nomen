@@ -1,6 +1,7 @@
 import ForLoopNode from "../nodes/ForLoopNode";
 import RangeNode from "../nodes/RangeNode";
 import type BuildStatus from "./BuildStatus";
+import build_block_node from "./build_block_node";
 import build_node from "./build_node";
 import type_from_value_node from "./utils/type_from_value_node";
 
@@ -53,9 +54,7 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
     }
   }
 
-  for (let child of node.statements) {
-    build_node(child, status);
-  }
+  build_block_node(node, status);
 
   status.code += `}\n`;
 }

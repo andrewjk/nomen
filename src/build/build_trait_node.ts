@@ -28,6 +28,10 @@ export default function build_trait_node(node: TraitNode, status: BuildStatus) {
 
   // Build the trait's default functions
   for (let func of node.functions) {
+    if (!func.has_body) {
+      continue;
+    }
+
     // Define the function
     // HACK: Need to map names to types
     const func_start = status.code.length;
@@ -52,7 +56,7 @@ export default function build_trait_node(node: TraitNode, status: BuildStatus) {
       status.code += `struct ${node.name} _self = *self;\n`;
     }
     for (let child of func.statements) {
-      build_node(child, status);
+      build_node(child, status, true);
     }
     status.code += `}\n`;
   }

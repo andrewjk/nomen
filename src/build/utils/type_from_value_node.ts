@@ -1,5 +1,5 @@
 import AccessFieldNode from "../../nodes/AccessFieldNode";
-import AccessFunctionNode from "../../nodes/AccessFunctionNode";
+import AccessFunctionCallNode from "../../nodes/AccessFunctionCallNode";
 import AccessNode from "../../nodes/AccessNode";
 import ArrayValuesNode from "../../nodes/ArrayValuesNode";
 import BaseNode from "../../nodes/BaseNode";
@@ -26,7 +26,7 @@ export default function type_from_value_node(node: BaseNode): Type {
       return (node as AccessFieldNode).type;
     }
     case "access_func": {
-      return (node as AccessFunctionNode).type;
+      return (node as AccessFunctionCallNode).type;
     }
     case "op": {
       return (node as OperationNode).type;

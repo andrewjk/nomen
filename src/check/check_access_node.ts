@@ -1,5 +1,5 @@
 import AccessFieldNode from "../nodes/AccessFieldNode";
-import AccessFunctionNode from "../nodes/AccessFunctionNode";
+import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode";
 import AccessNode from "../nodes/AccessNode";
 import Type from "../nodes/Type";
 import type CheckStatus from "./CheckStatus";
@@ -26,7 +26,7 @@ export default function check_access_node(node: AccessNode, status: CheckStatus)
       break;
     }
     case "access_func": {
-      check_access_function_node(target_type, node.access as AccessFunctionNode, status);
+      check_access_function_node(target_type, node.access as AccessFunctionCallNode, status);
       break;
     }
   }
@@ -77,7 +77,7 @@ function check_access_field_node(target_type: Type, node: AccessFieldNode, statu
 
 function check_access_function_node(
   target_type: Type,
-  node: AccessFunctionNode,
+  node: AccessFunctionCallNode,
   status: CheckStatus,
 ) {
   const struct = status.structs.find((s) => s.name === target_type.name);

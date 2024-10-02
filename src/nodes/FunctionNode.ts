@@ -14,6 +14,7 @@ export default class FunctionNode extends BaseNode implements BlockNode, Returni
   // TODO: Check all branches
   has_return?: boolean;
   return_type_start?: number;
+  is_static?: boolean;
 
   constructor(
     start: number,
@@ -29,6 +30,7 @@ export default class FunctionNode extends BaseNode implements BlockNode, Returni
     this.return_type =
       typeof return_type === "string" ? new Type(return_type) : return_type || new Type("");
     this.params = params || [];
+    this.is_static = !params || !params[0]?.is_self_param;
     this.statements = statements || [];
     if (statements) {
       this.has_body = true;

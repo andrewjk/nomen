@@ -7,15 +7,17 @@ export default function build_parameter_node(
   status: BuildStatus,
   with_name = true,
 ) {
-  if (
-    node.is_self_param ||
-    status.structs.find((s) => s.name === node.type.name) ||
-    status.traits.find((t) => t.name === node.type.name)
-  ) {
+  const struct_type = status.structs.find((s) => s.name === node.type.name);
+  //const is_struct = struct_type && !struct_type.is_simple_type;
+  const trait_type = status.traits.find((t) => t.name === node.type.name);
+  //const is_trait = !!trait_type;
+  const is_struct =
+    (node.is_self_param || struct_type || trait_type) && !struct_type?.is_simple_type;
+  if (is_struct) {
     status.code += `struct `;
   }
   status.code += c_type(node.type.name);
-  if (node.is_self_param || status.traits.find((t) => t.name === node.type.name)) {
+  if (is_struct) {
     status.code += ` *`;
   } else if (with_name) {
     status.code += ` `;

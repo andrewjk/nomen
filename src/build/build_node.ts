@@ -12,6 +12,7 @@ import IfElseNode from "../nodes/IfElseNode";
 import OperationNode from "../nodes/OperationNode";
 import PanicNode from "../nodes/PanicNode";
 import RangeNode from "../nodes/RangeNode";
+import RawNode from "../nodes/RawNode";
 import ReturnNode from "../nodes/ReturnNode";
 import RootNode from "../nodes/RootNode";
 import StructNode from "../nodes/StructNode";
@@ -33,6 +34,7 @@ import build_if_else_node from "./build_if_else_node";
 import build_operation_node from "./build_operation_node";
 import build_panic_node from "./build_panic_node";
 import build_range_node from "./build_range_node";
+import build_raw_node from "./build_raw_node";
 import build_return_node from "./build_return_node";
 import build_root_node from "./build_root_node";
 import build_struct_node from "./build_struct_node";
@@ -41,7 +43,7 @@ import build_trait_node from "./build_trait_node";
 import build_value_node from "./build_value_node";
 import build_while_loop_node from "./build_while_loop_node";
 
-export default function build_node(node: BaseNode, status: BuildStatus) {
+export default function build_node(node: BaseNode, status: BuildStatus, with_semicolon = false) {
   switch (node.node_type) {
     case "root": {
       build_root_node(node as RootNode, status);
@@ -69,10 +71,16 @@ export default function build_node(node: BaseNode, status: BuildStatus) {
     }
     case "func_call": {
       build_function_call_node(node as FunctionCallNode, status);
+      if (with_semicolon) {
+        status.code += ";\n";
+      }
       break;
     }
     case "access": {
       build_access_node(node as AccessNode, status);
+      if (with_semicolon) {
+        status.code += ";\n";
+      }
       break;
     }
     case "op": {
@@ -121,6 +129,10 @@ export default function build_node(node: BaseNode, status: BuildStatus) {
     }
     case "range": {
       build_range_node(node as RangeNode, status);
+      break;
+    }
+    case "raw": {
+      build_raw_node(node as RawNode, status);
       break;
     }
     default: {

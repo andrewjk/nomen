@@ -8,10 +8,11 @@ import accept from "./utils/accept";
 import expect from "./utils/expect";
 import get_index from "./utils/get_index";
 
-export default function parse_if_else(status: ParseStatus): IfElseNode | null {
+export default function parse_if_else(status: ParseStatus): IfElseNode {
   const if_start = get_index(status);
   accept("if", status);
   const condition = parse_expression(status);
+
   const if_else = new IfElseNode(if_start, condition);
   status.stack.push(if_else);
 
@@ -28,6 +29,7 @@ export default function parse_if_else(status: ParseStatus): IfElseNode | null {
   }
 
   status.stack.pop();
+
   return if_else;
 }
 

@@ -4,9 +4,8 @@ import fs from "fs";
 import path from "path";
 import yargs from "yargs";
 import build from "../../src/build";
-import check from "../../src/check";
+import join from "../../src/join";
 import parse from "../../src/parse";
-import tokenize from "../../src/tokenize";
 import type Config from "./types/Config";
 
 const SUPPORTED_EXTENSION = ".lang";
@@ -118,8 +117,7 @@ function processFile(filename: string, config: Config) {
   const startTime = performance.now();
   console.log("Processing", filename);
 
-  // TODO: Automatic encoding
-  let input = fs.readFileSync(filename, "utf8");
+  let input = join(path.resolve(filename));
 
   // HACK:
   input = input.replace(/Console.Write\("(.+?)"\)/g, 'printf("$1")');
@@ -147,6 +145,7 @@ function processFile(filename: string, config: Config) {
       }
       console.log(`${line},${error.start - last_line_index - 1}: ${error.message}`);
     }
+    console.log("======");
     return;
   }
 

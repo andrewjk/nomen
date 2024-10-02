@@ -1,6 +1,7 @@
 import FunctionNode from "../nodes/FunctionNode";
 import type BuildStatus from "./BuildStatus";
 import build_auto_free from "./build_auto_free";
+import build_block_node from "./build_block_node";
 import build_node from "./build_node";
 import build_parameter_node from "./build_parameter_node";
 import c_type from "./utils/c_type";
@@ -53,9 +54,8 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
   status.headers += `${status.code.substring(func_start)};\n\n`;
 
   status.code += `\n{\n`;
-  for (let child of node.statements) {
-    build_node(child, status);
-  }
+
+  build_block_node(node, status);
 
   if (!node.has_return) {
     build_auto_free(status);

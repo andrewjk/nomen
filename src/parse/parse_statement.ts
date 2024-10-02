@@ -12,7 +12,9 @@ import parse_for_loop from "./parse_for_loop";
 import parse_function from "./parse_function";
 import parse_function_call_parameter from "./parse_function_call_parameter";
 import parse_if_else from "./parse_if_else";
+import parse_import from "./parse_import";
 import parse_panic_or_todo from "./parse_panic_or_todo";
+import parse_raw from "./parse_raw";
 import parse_return from "./parse_return";
 import parse_struct from "./parse_struct";
 import parse_trait from "./parse_trait";
@@ -41,6 +43,10 @@ export default function parse_statement(status: ParseStatus) {
     // First check for a keyword (var, if, switch, etc), then check for a
     // following operator (=, +, etc)
     switch (value) {
+      case "import": {
+        parse_import(status);
+        break;
+      }
       case "pub":
       case "private": {
         parse_visibility(value, status);
@@ -65,9 +71,7 @@ export default function parse_statement(status: ParseStatus) {
       }
       case "if": {
         const if_else = parse_if_else(status);
-        if (if_else) {
-          add_to_parent(if_else, "If expression", status);
-        }
+        add_to_parent(if_else, "If expression", status);
         break;
       }
       case "else": {
@@ -93,6 +97,10 @@ export default function parse_statement(status: ParseStatus) {
       }
       case "return": {
         parse_return(status);
+        break;
+      }
+      case "raw": {
+        parse_raw(status);
         break;
       }
       case "}": {

@@ -1,13 +1,6 @@
 import type CheckStatus from "./check/CheckStatus";
 import check_node from "./check/check_node";
 import BaseNode from "./nodes/BaseNode";
-import FunctionNode from "./nodes/FunctionNode";
-import ParameterNode from "./nodes/ParameterNode";
-import RootNode from "./nodes/RootNode";
-import StructNode from "./nodes/StructNode";
-import TraitNode from "./nodes/TraitNode";
-import Type from "./nodes/Type";
-import { is_root_node } from "./nodes/check_node_type";
 import type CheckResult from "./types/CheckResult";
 
 export default function check(root: BaseNode): CheckResult {

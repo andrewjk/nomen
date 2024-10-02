@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import AccessFieldNode from "../../src/nodes/AccessFieldNode";
-import AccessFunctionNode from "../../src/nodes/AccessFunctionNode";
+import AccessFunctionCallNode from "../../src/nodes/AccessFunctionCallNode";
 import AccessNode from "../../src/nodes/AccessNode";
 import AssignmentNode from "../../src/nodes/AssignmentNode";
 import DeclarationNode from "../../src/nodes/DeclarationNode";
@@ -132,7 +132,7 @@ var x = p.age()
     new AccessNode(
       81,
       new ValueNode(81, "p", "Person"),
-      new AccessFunctionNode(83, "age", [], "int"),
+      new AccessFunctionCallNode(83, "age", "int", [], true),
     ),
   );
   expect(parsed.errors).toEqual([]);
@@ -167,7 +167,7 @@ var x = p.address.line()
         new ValueNode(153, "p", "Person"),
         new AccessFieldNode(155, "address", "Address"),
       ),
-      new AccessFunctionNode(163, "line", [], "string"),
+      new AccessFunctionCallNode(163, "line", "string", [], true),
     ),
   );
   expect(parsed.errors).toEqual([]);
@@ -200,7 +200,7 @@ var x = p.address().line
       new AccessNode(
         167,
         new ValueNode(167, "p", "Person"),
-        new AccessFunctionNode(169, "address", [], "Address"),
+        new AccessFunctionCallNode(169, "address", "Address", [], true),
       ),
       new AccessFieldNode(179, "line", "string"),
     ),

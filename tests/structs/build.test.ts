@@ -19,7 +19,6 @@ void *_vt;
 Person Person_init()
 {
 Person p;
-p._vt = &_Person_traits;
 return p;
 }
 `;
@@ -47,7 +46,6 @@ int age;
 Person Person_init(char* name)
 {
 Person p;
-p._vt = &_Person_traits;
 p.name = name;
 p.age = 0;
 return p;
@@ -73,7 +71,6 @@ void *_vt;
 Person Person_init()
 {
 Person p;
-p._vt = &_Person_traits;
 return p;
 }
 void Person_greet()
@@ -104,7 +101,6 @@ int age;
 Person Person_init()
 {
 Person p;
-p._vt = &_Person_traits;
 p.age = 0;
 return p;
 }

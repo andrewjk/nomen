@@ -18,17 +18,20 @@ trait Person {}
 struct Frank: Person {}
 `;
   const parsed = parse(input);
-  const expected = new RootNode([
-    new TraitNode(1, "mod", "Person"),
-    new StructNode(
-      18,
-      "mod",
-      "Frank",
-      ["Person"],
-      [],
-      [new FunctionNode(-1, "mod", "init", "Frank")],
-    ),
-  ]);
+  const expected = new RootNode(
+    [],
+    [
+      new TraitNode(1, "mod", "Person"),
+      new StructNode(
+        18,
+        "mod",
+        "Frank",
+        ["Person"],
+        [],
+        [new FunctionNode(-1, "mod", "init", "Frank")],
+      ),
+    ],
+  );
   expect(parsed.errors).toEqual([]);
   expect(trim_test_parse(parsed.root)).toEqual(trim_test_parse(expected));
 });
@@ -40,17 +43,20 @@ struct Frank: Person {}
 trait Person {}
 `;
   const parsed = parse(input);
-  const expected = new RootNode([
-    new StructNode(
-      1,
-      "mod",
-      "Frank",
-      ["Person"],
-      [],
-      [new FunctionNode(-1, "mod", "init", "Frank")],
-    ),
-    new TraitNode(26, "mod", "Person"),
-  ]);
+  const expected = new RootNode(
+    [],
+    [
+      new StructNode(
+        1,
+        "mod",
+        "Frank",
+        ["Person"],
+        [],
+        [new FunctionNode(-1, "mod", "init", "Frank")],
+      ),
+      new TraitNode(26, "mod", "Person"),
+    ],
+  );
   expect(parsed.errors).toEqual([]);
   expect(trim_test_parse(parsed.root)).toEqual(trim_test_parse(expected));
 });
@@ -67,29 +73,32 @@ struct Frank: Person {
 }
 `;
   const parsed = parse(input);
-  const expected = new RootNode([
-    new TraitNode(1, "mod", "Person", [
-      new DeclarationNode(18, "mod", "var", "name", "string"),
-      new DeclarationNode(37, "mod", "var", "age", "int", new ValueNode(47, "0", "int")),
-    ]),
-    new StructNode(
-      52,
-      "mod",
-      "Frank",
-      ["Person"],
-      [
-        new DeclarationNode(
-          77,
-          "mod",
-          "var",
-          "name",
-          "string",
-          new ValueNode(88, '"Frank"', "string"),
-        ),
-      ],
-      [new FunctionNode(-1, "mod", "init", "Frank")],
-    ),
-  ]);
+  const expected = new RootNode(
+    [],
+    [
+      new TraitNode(1, "mod", "Person", [
+        new DeclarationNode(18, "mod", "var", "name", "string"),
+        new DeclarationNode(37, "mod", "var", "age", "int", new ValueNode(47, "0", "int")),
+      ]),
+      new StructNode(
+        52,
+        "mod",
+        "Frank",
+        ["Person"],
+        [
+          new DeclarationNode(
+            77,
+            "mod",
+            "var",
+            "name",
+            "string",
+            new ValueNode(88, '"Frank"', "string"),
+          ),
+        ],
+        [new FunctionNode(-1, "mod", "init", "Frank")],
+      ),
+    ],
+  );
   expect(parsed.errors).toEqual([]);
   expect(trim_test_parse(parsed.root)).toEqual(trim_test_parse(expected));
 });
@@ -107,27 +116,30 @@ struct Frank: Person {
 }
 `;
   const parsed = parse(input);
-  const expected = new RootNode([
-    new TraitNode(1, "mod", "Person", [], [new FunctionNode(18, "mod", "greet", "string")]),
-    new StructNode(
-      44,
-      "mod",
-      "Frank",
-      ["Person"],
-      [],
-      [
-        new FunctionNode(-1, "mod", "init", "Frank"),
-        new FunctionNode(
-          69,
-          "mod",
-          "greet",
-          "string",
-          [],
-          [new ReturnNode(98, new ValueNode(105, '"hi"', "string"), "string")],
-        ),
-      ],
-    ),
-  ]);
+  const expected = new RootNode(
+    [],
+    [
+      new TraitNode(1, "mod", "Person", [], [new FunctionNode(18, "mod", "greet", "string")]),
+      new StructNode(
+        44,
+        "mod",
+        "Frank",
+        ["Person"],
+        [],
+        [
+          new FunctionNode(-1, "mod", "init", "Frank"),
+          new FunctionNode(
+            69,
+            "mod",
+            "greet",
+            "string",
+            [],
+            [new ReturnNode(98, new ValueNode(105, '"hi"', "string"), "string")],
+          ),
+        ],
+      ),
+    ],
+  );
   expect(parsed.errors).toEqual([]);
   expect(trim_test_parse(parsed.root)).toEqual(trim_test_parse(expected));
 });
@@ -143,32 +155,35 @@ trait Person {
 struct Frank: Person {}
 `;
   const parsed = parse(input);
-  const expected = new RootNode([
-    new TraitNode(
-      1,
-      "mod",
-      "Person",
-      [],
-      [
-        new FunctionNode(
-          18,
-          "mod",
-          "greet",
-          "string",
-          [],
-          [new ReturnNode(47, new ValueNode(54, '"hi"', "string"), "string")],
-        ),
-      ],
-    ),
-    new StructNode(
-      66,
-      "mod",
-      "Frank",
-      ["Person"],
-      [],
-      [new FunctionNode(-1, "mod", "init", "Frank")],
-    ),
-  ]);
+  const expected = new RootNode(
+    [],
+    [
+      new TraitNode(
+        1,
+        "mod",
+        "Person",
+        [],
+        [
+          new FunctionNode(
+            18,
+            "mod",
+            "greet",
+            "string",
+            [],
+            [new ReturnNode(47, new ValueNode(54, '"hi"', "string"), "string")],
+          ),
+        ],
+      ),
+      new StructNode(
+        66,
+        "mod",
+        "Frank",
+        ["Person"],
+        [],
+        [new FunctionNode(-1, "mod", "init", "Frank")],
+      ),
+    ],
+  );
   expect(parsed.errors).toEqual([]);
   expect(trim_test_parse(parsed.root)).toEqual(trim_test_parse(expected));
 });

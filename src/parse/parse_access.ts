@@ -1,5 +1,5 @@
 import AccessFieldNode from "../nodes/AccessFieldNode";
-import AccessFunctionNode from "../nodes/AccessFunctionNode";
+import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode";
 import Type from "../nodes/Type";
 import type ParseStatus from "./ParseStatus";
 import parse_function_call_parameter from "./parse_function_call_parameter";
@@ -12,17 +12,16 @@ import peek_current from "./utils/peek_current";
 export default function parse_access(
   target_name: string,
   status: ParseStatus,
-): AccessFieldNode | AccessFunctionNode {
+): AccessFieldNode | AccessFunctionCallNode {
   const start = get_index(status);
   const name = consume(status);
 
   if (peek_current(status) === "(") {
     accept("(", status);
-    const func = new AccessFunctionNode(start, name);
+    const func = new AccessFunctionCallNode(start, name);
     // HACK:
     if (func.name === "init") {
       func.type = new Type(target_name);
-      func.static = true;
     }
     if (peek_current(status) !== ")") {
       parse_function_call_parameter(func, status);

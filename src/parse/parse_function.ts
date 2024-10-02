@@ -29,6 +29,9 @@ export default function parse_function(
     if (peek_current(status) !== ")") {
       parse_function_parameter(parent, func, status);
     }
+
+    func.is_static = !func.params[0]?.is_self_param;
+
     if (expect(")", status)) {
       if (accept("->", status)) {
         func.return_type_start = get_index(status);

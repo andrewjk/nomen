@@ -43,6 +43,7 @@ export default function parse_struct(
     func.params = struct.fields
       .filter((f) => f.visibility !== "private" && !f.value)
       .map((f) => new ParameterNode(-1, f.name, f.type));
+    func.is_static = true;
     struct.functions.unshift(func);
 
     add_to_parent(struct, "Struct", status);

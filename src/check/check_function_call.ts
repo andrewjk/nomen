@@ -1,4 +1,4 @@
-import AccessFunctionNode from "../nodes/AccessFunctionNode";
+import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode";
 import FunctionCallNode from "../nodes/FunctionCallNode";
 import FunctionNode from "../nodes/FunctionNode";
 import Type from "../nodes/Type";
@@ -9,7 +9,7 @@ import type_from_value_node from "./utils/type_from_value_node";
 import value_from_value_node from "./utils/value_from_value_node";
 
 export default function check_function_call(
-  node: FunctionCallNode | AccessFunctionNode,
+  node: FunctionCallNode | AccessFunctionCallNode,
   status: CheckStatus,
   func: FunctionNode | undefined,
   target_type?: Type,
@@ -43,6 +43,7 @@ export default function check_function_call(
 
   // The node's type is the type that is returned from the function
   node.type = func.return_type;
+  node.is_static = func.is_static;
 
   // Check params length
   let expected_param_count = func.params.length;
@@ -66,7 +67,6 @@ export default function check_function_call(
   // Check each param
   for (let [i, param] of node.params.entries()) {
     check_node(param, status);
-
     check_type_and_value_match(
       func.params[i].type,
       type_from_value_node(param, status),

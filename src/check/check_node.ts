@@ -115,6 +115,10 @@ export default function check_node(node: BaseNode, status: CheckStatus) {
       check_return_node(node as ReturnNode, status);
       break;
     }
+    case "raw": {
+      // Anything can go in here
+      break;
+    }
     default: {
       status.errors.push({
         message: `Unknown node type: ${node.node_type}`,

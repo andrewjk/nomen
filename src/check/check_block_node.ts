@@ -7,7 +7,7 @@ import check_node from "./check_node";
 
 export default function check_block_node(node: BlockNode, status: CheckStatus) {
   // Gather structs, traits and funcs that might be used before they are declared
-  look_ahead(node, status);
+  gather_structs(node, status);
 
   // Check the block's statements
   status.stack.push(node);
@@ -17,7 +17,7 @@ export default function check_block_node(node: BlockNode, status: CheckStatus) {
   status.stack.pop();
 }
 
-function look_ahead(block: BlockNode, status: CheckStatus) {
+function gather_structs(block: BlockNode, status: CheckStatus) {
   for (let node of block.statements) {
     switch (node.node_type) {
       case "struct": {

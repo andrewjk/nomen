@@ -8,10 +8,16 @@
 typedef struct Disposable
 {
 } Disposable;
-void Disposable_dispose()
+void Disposable_dispose(struct Disposable *self)
 {
-    printf("\nboom!");
+    struct Disposable _self = *self;
+    Console_write("\nboom!");
 }
+
+// trait Stringable
+typedef struct Stringable
+{
+} Stringable;
 
 // trait Animal
 typedef struct Animal
@@ -23,10 +29,37 @@ char *Animal_speak(struct Animal *self)
     return "...";
 }
 
+// struct int
+char *int_to_string(int self)
+{
+
+    int length = snprintf(NULL, 0, "%d", self);
+    char str[length + 1];
+    snprintf(str, length + 1, "%d", self);
+    return str;
+    return "0";
+}
+
+// struct Console
+typedef struct Console
+{
+    void *_vt;
+} Console;
+Console Console_init()
+{
+    Console c;
+    return c;
+}
+void Console_write(char *line)
+{
+
+    printf(line);
+}
+
 // struct Dog
 void *_Dog_Animal_funcs[] = {Dog_speak, get_Dog_name, set_Dog_name, get_Dog_age, set_Dog_age};
 void *_Dog_Disposable_funcs[] = {Disposable_dispose};
-void *_Dog_traits[] = {&_Dog_Disposable_funcs, &_Dog_Animal_funcs};
+void *_Dog_traits[] = {&_Dog_Disposable_funcs, NULL, &_Dog_Animal_funcs};
 typedef struct Dog
 {
     void *_vt;
@@ -53,7 +86,7 @@ void set_Dog_age(struct Dog *self, int value) { self->age = value; }
 
 // struct Cat
 void *_Cat_Animal_funcs[] = {Cat_speak, get_Cat_name, set_Cat_name, get_Cat_age, set_Cat_age};
-void *_Cat_traits[] = {NULL, &_Cat_Animal_funcs};
+void *_Cat_traits[] = {NULL, NULL, &_Cat_Animal_funcs};
 typedef struct Cat
 {
     void *_vt;
@@ -80,7 +113,7 @@ void set_Cat_age(struct Cat *self, int value) { self->age = value; }
 
 // struct Lizard
 void *_Lizard_Animal_funcs[] = {Animal_speak, get_Lizard_name, set_Lizard_name, get_Lizard_age, set_Lizard_age};
-void *_Lizard_traits[] = {NULL, &_Lizard_Animal_funcs};
+void *_Lizard_traits[] = {NULL, NULL, &_Lizard_Animal_funcs};
 typedef struct Lizard
 {
     void *_vt;
@@ -104,36 +137,49 @@ void set_Lizard_age(struct Lizard *self, int value) { self->age = value; }
 int main()
 {
     printf("\n");
+    ;
     int i;
     for (i = 0; i < 5; i++)
     {
         printf("hello, world! ");
-        printf("%d", i + 1);
+        ;
+        printf("%d", (void *)&i + 1);
+        ;
         int x = i + 1;
         if (x < 4)
         {
             printf(" is less than 4");
+            ;
         }
         else
         {
             printf(" is 4 or more");
+            ;
         }
         printf("\n");
+        ;
     }
     printf("\n");
+    ;
     int y = 0;
     while (y < 5)
     {
         printf("hi ");
+        ;
         y = y + 1;
     }
     printf("\n\n");
+    ;
     Dog dog = make_dog();
     ;
     printf("%s", dog.name);
+    ;
     printf(": ");
+    ;
     printf("%s", Dog_speak(&dog));
+    ;
     printf("\n\n");
+    ;
     Dog _animals_1 = Dog_init();
     Cat _animals_2 = Cat_init();
     Lizard _animals_3 = Lizard_init();
@@ -141,13 +187,16 @@ int main()
     for (int i = 0; i < 3; i++)
     {
         void *a = *(animals + i);
-        printf("%s", ((char *(*)(void *))_get_trait_func(a, 1, 0))(a));
+        printf("%s", ((char *(*)(void *))_get_trait_func(a, 2, 0))(a));
+        ;
         printf("\n");
+        ;
     }
     Cat cat = Cat_init();
     grow_animal((void *)&cat);
-    printf("cat has age: ");
-    printf("%d", cat.age);
+    ;
+    Console_write("cat has age: ");
+    Console_write(int_to_string(&cat.age));
 
     ((void *(*)(void *))_get_trait_func((void *)&dog, 0, 0))(&dog);
     ((void *(*)(void *))_get_trait_func((void *)&_animals_1, 0, 0))(&_animals_1);
@@ -163,5 +212,5 @@ struct Dog make_dog()
 // func grow_animal
 void grow_animal(struct Animal *animal)
 {
-    ((void (*)(void *, int))_get_trait_func((void *)animal, 1, 4))(animal, ((int (*)(void *))_get_trait_func((void *)animal, 1, 3))(animal) + 1);
+    ((void (*)(void *, int))_get_trait_func((void *)animal, 2, 4))(animal, ((int (*)(void *))_get_trait_func((void *)animal, 2, 3))(animal) + 1);
 }

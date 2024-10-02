@@ -6,6 +6,15 @@ import build_parameter_node from "./build_parameter_node";
 import c_type from "./utils/c_type";
 
 export default function build_struct_node(node: StructNode, status: BuildStatus) {
+  // If it's an inbuilt type, only build its functions
+  // That way we can add e.g. traits like Stringable to ints
+  if (node.is_simple_type) {
+    status.code += `// struct ${node.name}\n`;
+    build_struct_functions(node, status);
+    status.code += "\n";
+    return;
+  }
+
   // TODO: Only if top-level
   status.headers += `// struct ${node.name}\n`;
   status.code += `// struct ${node.name}\n`;
@@ -44,11 +53,11 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 
   // Define the constructor
   const object_name = node.name.substring(0, 1).toLocaleLowerCase();
-  status.code += `${ctor}\n{`;
-  status.code += `
-${node.name} ${object_name};
-${object_name}._vt = &_${node.name}_traits;
-`;
+  status.code += `${ctor}\n{\n`;
+  status.code += `${node.name} ${object_name};\n`;
+  if (node.traits.length) {
+    status.code += `${object_name}._vt = &_${node.name}_traits;\n`;
+  }
   //status.code += ` *${object_name} = malloc(sizeof(${node.name}));`
   // Fields from the struct
   for (let field of node.fields) {
@@ -148,11 +157,11 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 
     // HACK: Dereference the `self` pointer arg to a local variable with a random name
     // (`_self` for now, but we could automate it)
-    if (func.params[0]?.is_self_param) {
+    if (!node.is_simple_type && func.params[0]?.is_self_param) {
       status.code += `struct ${node.name} _self = *self;\n`;
     }
     for (let child of func.statements) {
-      build_node(child, status);
+      build_node(child, status, true);
     }
     status.code += `}\n`;
   }

@@ -1,5 +1,5 @@
 import AccessFieldNode from "../nodes/AccessFieldNode";
-import AccessFunctionNode from "../nodes/AccessFunctionNode";
+import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode";
 import AccessNode from "../nodes/AccessNode";
 import ArrayValuesNode from "../nodes/ArrayValuesNode";
 import BaseNode from "../nodes/BaseNode";
@@ -39,13 +39,7 @@ export default function parse_expression(status: ParseStatus): BaseNode {
       break;
     }
     case "if": {
-      const if_else = parse_if_else(status);
-      if (if_else) {
-        node = if_else;
-      } else {
-        // TODO: ??
-        throw new Error("Bad if statement...");
-      }
+      node = parse_if_else(status);
       break;
     }
     default: {
@@ -69,7 +63,7 @@ export default function parse_expression(status: ParseStatus): BaseNode {
             break;
           }
           case "access_func": {
-            value = (access.access as AccessFunctionNode).name;
+            value = (access.access as AccessFunctionCallNode).name;
             break;
           }
         }

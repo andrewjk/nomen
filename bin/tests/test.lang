@@ -1,64 +1,59 @@
+import System
 
 func main() {
-	Console.Write("\n")
+	Console.write("\n")
 
 	// Test for loop and range
 	for i in 0..5 {
-		Console.Write("hello, world! ")
-		Console.Write(i + 1)
+		Console.write("hello, world! ")
+		Console.write((i + 1).to_string())
 		// TODO: if i + 1 < 4
 		const x = i + 1
 		if x < 4 {
-			Console.Write(" is less than 4")
+			Console.write(" is less than 4")
 		} else {
-			Console.Write(" is 4 or more")
+			Console.write(" is 4 or more")
 		}
-		Console.Write("\n")
+		Console.write("\n")
 	}
 
-	Console.Write("\n")
+	Console.write("\n")
 
 	// Test while loop
 	var y = 0
 	while y < 5 {
-		Console.Write("hi ")
+		Console.write("hi ")
 		y = y + 1
 	}
 
-	Console.Write("\n\n")
+	Console.write("\n\n")
 
 	var dog = make_dog()
-	Console.Write(dog.name)
-	Console.Write(": ")
-	Console.Write(dog.speak())
+	Console.write(dog.name)
+	Console.write(": ")
+	Console.write(dog.speak())
 
-	Console.Write("\n\n")
+	Console.write("\n\n")
 
 	// Test an array of objects with traits
 	const animals: Animal[] = [Dog.init(), Cat.init(), Lizard.init()]
 	for a in animals {
 		// TODO: Fields in traits??
-		//Console.Write(a.name)
-		//Console.Write(": ")
-		Console.Write(a.speak())
-		Console.Write("\n")
+		//Console.write(a.name)
+		//Console.write(": ")
+		Console.write(a.speak())
+		Console.write("\n")
 	}
 
 	var cat = Cat.init()
 	grow_animal(cat)
-	Console.Write("cat has age: ")
-	Console.Write(cat.age)
+	Console.write("cat has age: ")
+	Console.write(cat.age.to_string())
 }
 
 func make_dog() -> Dog {
 	const dog = Dog.init()
 	return dog
-}
-
-trait Disposable {
-	func dispose() {
-		Console.Write("\nboom!")
-	}
 }
 
 trait Animal {

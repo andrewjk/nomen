@@ -38,7 +38,18 @@ export default function tokenize(input: string): Token[] {
       // Add the current symbol (and potentially a little more)
       if (!is_whitespace(input[i])) {
         let value = input[i];
-        if (value === '"') {
+        if (value === "`" && input.substring(i, i + 3) === "```") {
+          // It's raw C code -- process until the next ```
+          for (let j = i + 1; j < input.length; j++) {
+            if (input[j] === "`" && input.substring(j, j + 3) === "```") {
+              value = input.substring(i + 3, j);
+              i = j + 3;
+              break;
+            }
+          }
+          // Pop a "raw" token before the value so we can find it when parsing
+          tokens.push({ value: "raw", i: start });
+        } else if (value === '"') {
           // It's a string -- process until the next quote
           for (let j = i + 1; j < input.length; j++) {
             if (input[j] === '"' && input[j - 1] !== "\\") {

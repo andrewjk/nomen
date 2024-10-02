@@ -8,7 +8,8 @@ export default class StructNode extends BaseNode {
   traits: string[];
   fields: DeclarationNode[];
   functions: FunctionNode[];
-  privates_visible = false;
+  privates_visible: boolean;
+  is_simple_type: boolean;
 
   constructor(
     start: number,
@@ -24,5 +25,8 @@ export default class StructNode extends BaseNode {
     this.traits = traits || [];
     this.fields = fields || [];
     this.functions = functions || [];
+
+    this.privates_visible = false;
+    this.is_simple_type = ["bool", "int", "string"].includes(this.name);
   }
 }

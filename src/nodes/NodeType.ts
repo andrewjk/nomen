@@ -1,4 +1,5 @@
 type NodeType =
+  | "import"
   | "root"
   | "struct"
   | "trait"
@@ -22,6 +23,7 @@ type NodeType =
   | "continue"
   | "panic"
   | "todo"
-  | "return";
+  | "return"
+  | "raw";
 
 export default NodeType;

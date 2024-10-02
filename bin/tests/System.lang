@@ -1,0 +1,31 @@
+
+pub trait Disposable {
+	func dispose(self) {
+		Console.write("\nboom!")
+	}
+}
+
+pub trait Stringable {
+    func to_string(self) -> string
+}
+
+pub struct int: Stringable {
+    pub func to_string(self) -> string {
+        ```
+        int length = snprintf(NULL, 0, "%d", self);
+        char str[length + 1];
+        snprintf(str, length + 1, "%d", self);
+        return str;
+        ```
+        // HACK: We need to return something outside of the raw C code to avoid a compiler error
+        return "0"
+    }
+}
+
+pub struct Console {
+    pub func write(line: string) {
+        ```
+        printf(line);
+        ```
+    }
+}

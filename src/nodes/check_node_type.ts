@@ -5,6 +5,7 @@ import type ReturningNode from "./ReturningNode";
 import RootNode from "./RootNode";
 import StructNode from "./StructNode";
 import TraitNode from "./TraitNode";
+import ValueNode from "./ValueNode";
 
 export function is_block_node(object: any): object is BlockNode {
   return "statements" in object;
@@ -28,6 +29,10 @@ export function is_trait_node(node: BaseNode): node is TraitNode {
 
 export function is_function_node(node: BaseNode): node is FunctionNode {
   return node.node_type === "func";
+}
+
+export function is_value_node(node: BaseNode): node is ValueNode {
+  return node.node_type === "value";
 }
 
 /*
@@ -73,16 +78,12 @@ export function is_access_field_node(node: BaseNode): node is AccessFieldNode {
   return node.node_type === "access_field";
 }
 
-export function is_access_function_node(node: BaseNode): node is AccessFunctionNode {
+export function is_access_function_node(node: BaseNode): node is AccessFunctionCallNode {
   return node.node_type === "access_func";
 }
 
 export function is_branch_node(node: BaseNode): node is BranchNode {
   return node.node_type === "branch";
-}
-
-export function is_value_node(node: BaseNode): node is ValueNode {
-  return node.node_type === "value";
 }
 
 export function is_array_values_node(node: BaseNode): node is ArrayValuesNode {
