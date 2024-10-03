@@ -146,7 +146,7 @@ function processFile(filename: string, config: Config) {
       console.log(`${line},${error.start - last_line_index - 1}: ${error.message}`);
     }
     console.log("======");
-    return;
+    //return;
   }
 
   const result = build(parsed.root);

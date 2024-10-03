@@ -18,8 +18,8 @@ for x in y {
   const parsed = parse(input);
   const expected = new ForLoopNode(
     21,
-    new ValueNode(25, "x", "int"),
-    new ValueNode(30, "y", new Type("int", true, new ValueNode(-1, "3", "int"))),
+    new ValueNode(25, "x", new Type("int")),
+    new ValueNode(30, "y", new Type("int", true, true, new ValueNode(-1, "3", new Type("int")))),
   );
   expect(parsed.errors).toEqual([]);
   expect(trim_test_parse(parsed.root.statements[1])).toEqual(trim_test_parse(expected));
@@ -32,8 +32,13 @@ for x in 0..5 {}
   const parsed = parse(input);
   const expected = new ForLoopNode(
     1,
-    new ValueNode(5, "x", "int"),
-    new RangeNode(10, new ValueNode(10, "0", "int"), new ValueNode(13, "5", "int"), false),
+    new ValueNode(5, "x", new Type("int")),
+    new RangeNode(
+      10,
+      new ValueNode(10, "0", new Type("int", true)),
+      new ValueNode(13, "5", new Type("int", true)),
+      false,
+    ),
   );
   expect(parsed.errors).toEqual([]);
   expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));

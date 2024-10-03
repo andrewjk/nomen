@@ -7,6 +7,7 @@ import FunctionNode from "../../src/nodes/FunctionNode";
 import OperationNode from "../../src/nodes/OperationNode";
 import ParameterNode from "../../src/nodes/ParameterNode";
 import StructNode from "../../src/nodes/StructNode";
+import Type from "../../src/nodes/Type";
 import ValueNode from "../../src/nodes/ValueNode";
 import parse from "../../src/parse";
 import trim_test_parse from "../trim_test_parse";
@@ -24,7 +25,7 @@ struct Person {}
     "Person",
     [],
     [],
-    [new FunctionNode(-1, "mod", "init", "Person", [])],
+    [new FunctionNode(-1, "mod", "init", new Type("Person"), [])],
   );
   expect(parsed.errors).toEqual([]);
   expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
@@ -44,10 +45,21 @@ struct Person {
     "Person",
     [],
     [
-      new DeclarationNode(19, "mod", "var", "name", "string"),
-      new DeclarationNode(38, "mod", "var", "age", "int", new ValueNode(48, "0", "int")),
+      new DeclarationNode(19, "mod", "var", "name", new Type("string")),
+      new DeclarationNode(
+        38,
+        "mod",
+        "var",
+        "age",
+        new Type("int", true),
+        new ValueNode(48, "0", new Type("int", true)),
+      ),
     ],
-    [new FunctionNode(-1, "mod", "init", "Person", [new ParameterNode(-1, "name", "string")])],
+    [
+      new FunctionNode(-1, "mod", "init", new Type("Person"), [
+        new ParameterNode(-1, "name", new Type("string")),
+      ]),
+    ],
   );
   expect(parsed.errors).toEqual([]);
   expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
@@ -67,8 +79,8 @@ struct Person {
     [],
     [],
     [
-      new FunctionNode(-1, "mod", "init", "Person", []),
-      new FunctionNode(19, "mod", "greet", "", [], []),
+      new FunctionNode(-1, "mod", "init", new Type("Person"), []),
+      new FunctionNode(19, "mod", "greet", new Type(""), [], []),
     ],
   );
   expect(parsed.errors).toEqual([]);
@@ -90,33 +102,42 @@ struct Person {
     "mod",
     "Person",
     [],
-    [new DeclarationNode(0, "mod", "var", "age", "int", new ValueNode(0, "0", "int"))],
     [
-      new FunctionNode(-1, "mod", "init", "Person", []),
+      new DeclarationNode(
+        0,
+        "mod",
+        "var",
+        "age",
+        new Type("int", true),
+        new ValueNode(0, "0", new Type("int", true)),
+      ),
+    ],
+    [
+      new FunctionNode(-1, "mod", "init", new Type("Person"), []),
       new FunctionNode(
         0,
         "mod",
         "grow",
-        "",
-        [new ParameterNode(0, "self", "Person", undefined, true)],
+        new Type(""),
+        [new ParameterNode(0, "self", new Type("Person"), undefined, true)],
         [
           new AssignmentNode(
             0,
             new AccessNode(
               0,
-              new ValueNode(0, "self", "Person"),
-              new AccessFieldNode(0, "age", "int"),
+              new ValueNode(0, "self", new Type("Person")),
+              new AccessFieldNode(0, "age", new Type("int", true)),
             ),
             new OperationNode(
               0,
               "+",
               new AccessNode(
                 0,
-                new ValueNode(0, "self", "Person"),
-                new AccessFieldNode(0, "age", "int"),
+                new ValueNode(0, "self", new Type("Person")),
+                new AccessFieldNode(0, "age", new Type("int", true)),
               ),
-              new ValueNode(0, "1", "int"),
-              "int",
+              new ValueNode(0, "1", new Type("int", true)),
+              new Type("int", true),
             ),
           ),
         ],

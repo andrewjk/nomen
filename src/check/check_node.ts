@@ -18,6 +18,7 @@ import StructNode from "../nodes/StructNode";
 import TraitNode from "../nodes/TraitNode";
 import ValueNode from "../nodes/ValueNode";
 import WhileLoopNode from "../nodes/WhileLoopNode";
+import { is_block_node } from "../nodes/check_node_type";
 import type CheckStatus from "./CheckStatus";
 import check_access_node from "./check_access_node";
 import check_array_values_node from "./check_array_values_node";
@@ -131,5 +132,17 @@ export default function check_node(node: BaseNode, status: CheckStatus) {
       });
       break;
     }
+  }
+
+  flush_unwound_declarations(node, status);
+}
+
+function flush_unwound_declarations(node: BaseNode, status: CheckStatus) {
+  const parent = status.stack.at(-1)!;
+  if (is_block_node(parent)) {
+    if (status.hoisted_declarations.length) {
+      node.associated_declarations = status.hoisted_declarations;
+    }
+    status.hoisted_declarations = [];
   }
 }

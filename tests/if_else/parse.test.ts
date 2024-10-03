@@ -5,6 +5,7 @@ import DeclarationNode from "../../src/nodes/DeclarationNode";
 import IfElseNode from "../../src/nodes/IfElseNode";
 import OperationNode from "../../src/nodes/OperationNode";
 import ReturnNode from "../../src/nodes/ReturnNode";
+import Type from "../../src/nodes/Type";
 import ValueNode from "../../src/nodes/ValueNode";
 import parse from "../../src/parse";
 import trim_test_parse from "../trim_test_parse";
@@ -24,12 +25,16 @@ if x > 5 {
     new OperationNode(
       15,
       ">",
-      new ValueNode(15, "x", "int"),
-      new ValueNode(19, "5", "int"),
-      "bool",
+      new ValueNode(15, "x", new Type("int", true)),
+      new ValueNode(19, "5", new Type("int", true)),
+      new Type("bool"),
     ),
     new BranchNode(25, [
-      new AssignmentNode(25, new ValueNode(25, "x", "int"), new ValueNode(29, "15", "int")),
+      new AssignmentNode(
+        25,
+        new ValueNode(25, "x", new Type("int", true)),
+        new ValueNode(29, "15", new Type("int", true)),
+      ),
     ]),
   );
   expect(parsed.errors).toEqual([]);
@@ -51,15 +56,23 @@ if x > 5 {
     new OperationNode(
       15,
       ">",
-      new ValueNode(15, "x", "int"),
-      new ValueNode(19, "5", "int"),
-      "bool",
+      new ValueNode(15, "x", new Type("int", true)),
+      new ValueNode(19, "5", new Type("int", true)),
+      new Type("bool"),
     ),
     new BranchNode(25, [
-      new AssignmentNode(25, new ValueNode(25, "x", "int"), new ValueNode(29, "15", "int")),
+      new AssignmentNode(
+        25,
+        new ValueNode(25, "x", new Type("int", true)),
+        new ValueNode(29, "15", new Type("int", true)),
+      ),
     ]),
     new BranchNode(43, [
-      new AssignmentNode(43, new ValueNode(43, "x", "int"), new ValueNode(47, "20", "int")),
+      new AssignmentNode(
+        43,
+        new ValueNode(43, "x", new Type("int", true)),
+        new ValueNode(47, "20", new Type("int", true)),
+      ),
     ]),
   );
   expect(parsed.errors).toEqual([]);
@@ -81,19 +94,23 @@ const y = if x > 5 {
     "mod",
     "const",
     "y",
-    "int",
+    new Type("int", true),
     new IfElseNode(
       24,
       new OperationNode(
         27,
         ">",
-        new ValueNode(27, "x", "int"),
-        new ValueNode(31, "5", "int"),
-        "bool",
+        new ValueNode(27, "x", new Type("int", true)),
+        new ValueNode(31, "5", new Type("int", true)),
+        new Type("bool"),
       ),
-      new BranchNode(37, [new ReturnNode(37, new ValueNode(44, "50", "int"), "int")]),
-      new BranchNode(58, [new ReturnNode(58, new ValueNode(65, "0", "int"), "int")]),
-      "int",
+      new BranchNode(37, [
+        new ReturnNode(37, new ValueNode(44, "50", new Type("int", true)), new Type("int", true)),
+      ]),
+      new BranchNode(58, [
+        new ReturnNode(58, new ValueNode(65, "0", new Type("int", true)), new Type("int", true)),
+      ]),
+      new Type("int", true),
     ),
   );
   expect(parsed.errors).toEqual([]);
@@ -112,19 +129,23 @@ const y = if x > 5 ~ 50
     "mod",
     "const",
     "y",
-    "int",
+    new Type("int", true),
     new IfElseNode(
       24,
       new OperationNode(
         27,
         ">",
-        new ValueNode(27, "x", "int"),
-        new ValueNode(31, "5", "int"),
-        "bool",
+        new ValueNode(27, "x", new Type("int", true)),
+        new ValueNode(31, "5", new Type("int", true)),
+        new Type("bool"),
       ),
-      new BranchNode(33, [new ReturnNode(33, new ValueNode(35, "50", "int"), "int")]),
-      new BranchNode(53, [new ReturnNode(53, new ValueNode(55, "0", "int"), "int")]),
-      "int",
+      new BranchNode(33, [
+        new ReturnNode(33, new ValueNode(35, "50", new Type("int", true)), new Type("int", true)),
+      ]),
+      new BranchNode(53, [
+        new ReturnNode(53, new ValueNode(55, "0", new Type("int", true)), new Type("int", true)),
+      ]),
+      new Type("int", true),
     ),
   );
   expect(parsed.errors).toEqual([]);
@@ -142,19 +163,23 @@ const y = if x > 5 ~ 50 else ~ 0
     "mod",
     "const",
     "y",
-    "int",
+    new Type("int", true),
     new IfElseNode(
       24,
       new OperationNode(
         27,
         ">",
-        new ValueNode(27, "x", "int"),
-        new ValueNode(31, "5", "int"),
-        "bool",
+        new ValueNode(27, "x", new Type("int", true)),
+        new ValueNode(31, "5", new Type("int", true)),
+        new Type("bool"),
       ),
-      new BranchNode(33, [new ReturnNode(33, new ValueNode(35, "50", "int"), "int")]),
-      new BranchNode(43, [new ReturnNode(43, new ValueNode(45, "0", "int"), "int")]),
-      "int",
+      new BranchNode(33, [
+        new ReturnNode(33, new ValueNode(35, "50", new Type("int", true)), new Type("int", true)),
+      ]),
+      new BranchNode(43, [
+        new ReturnNode(43, new ValueNode(45, "0", new Type("int", true)), new Type("int", true)),
+      ]),
+      new Type("int", true),
     ),
   );
   expect(parsed.errors).toEqual([]);

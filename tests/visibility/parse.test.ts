@@ -21,8 +21,8 @@ pub var x = 1
     "pub",
     "var",
     "x",
-    new Type("int"),
-    new ValueNode(13, "1", "int"),
+    new Type("int", true),
+    new ValueNode(13, "1", new Type("int", true)),
   );
   expect(parsed.errors).toEqual([]);
   expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
@@ -38,8 +38,8 @@ pub const x = 3
     "pub",
     "const",
     "x",
-    new Type("int"),
-    new ValueNode(15, "3", "int"),
+    new Type("int", true),
+    new ValueNode(15, "3", new Type("int", true)),
   );
   expect(parsed.errors).toEqual([]);
   expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
@@ -56,7 +56,7 @@ pub struct Person {}
     "Person",
     [],
     [],
-    [new FunctionNode(-1, "pub", "init", "Person", [])],
+    [new FunctionNode(-1, "pub", "init", new Type("Person"), [])],
   );
   expect(parsed.errors).toEqual([]);
   expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
@@ -77,7 +77,7 @@ test("pub function", () => {
 pub func add() {}
 `;
   const parsed = parse(input);
-  const expected = new FunctionNode(1, "pub", "add", "", [], []);
+  const expected = new FunctionNode(1, "pub", "add", new Type(""), [], []);
   expect(parsed.errors).toEqual([]);
   expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
 });
@@ -95,10 +95,12 @@ pub struct Person {
     "pub",
     "Person",
     [],
-    [new DeclarationNode(23, "pub", "var", "name", "string")],
+    [new DeclarationNode(23, "pub", "var", "name", new Type("string"))],
     [
-      new FunctionNode(-1, "pub", "init", "Person", [new ParameterNode(-1, "name", "string")]),
-      new FunctionNode(46, "private", "greet", "", [], []),
+      new FunctionNode(-1, "pub", "init", new Type("Person"), [
+        new ParameterNode(-1, "name", new Type("string")),
+      ]),
+      new FunctionNode(46, "private", "greet", new Type(""), [], []),
     ],
   );
   expect(parsed.errors).toEqual([]);
@@ -115,8 +117,8 @@ private var x = 1
     "private",
     "var",
     "x",
-    new Type("int"),
-    new ValueNode(19, "1", "int"),
+    new Type("int", true),
+    new ValueNode(19, "1", new Type("int", true)),
   );
   expect(parsed.errors).toEqual([]);
   expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
@@ -132,8 +134,8 @@ private const x = 3
     "private",
     "const",
     "x",
-    new Type("int"),
-    new ValueNode(15, "3", "int"),
+    new Type("int", true),
+    new ValueNode(15, "3", new Type("int", true)),
   );
   expect(parsed.errors).toEqual([]);
   expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
@@ -150,7 +152,7 @@ private struct Person {}
     "Person",
     [],
     [],
-    [new FunctionNode(-1, "private", "init", "Person", [])],
+    [new FunctionNode(-1, "private", "init", new Type("Person"), [])],
   );
   expect(parsed.errors).toEqual([]);
   expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
@@ -171,7 +173,7 @@ test("private function", () => {
 private func add() {}
 `;
   const parsed = parse(input);
-  const expected = new FunctionNode(1, "private", "add", "", [], []);
+  const expected = new FunctionNode(1, "private", "add", new Type(""), [], []);
   expect(parsed.errors).toEqual([]);
   expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
 });
@@ -189,10 +191,10 @@ pub struct Person {
     "pub",
     "Person",
     [],
-    [new DeclarationNode(23, "private", "var", "name", "string")],
+    [new DeclarationNode(23, "private", "var", "name", new Type("string"))],
     [
-      new FunctionNode(-1, "pub", "init", "Person", []),
-      new FunctionNode(46, "private", "greet", "", [], []),
+      new FunctionNode(-1, "pub", "init", new Type("Person"), []),
+      new FunctionNode(46, "private", "greet", new Type(""), [], []),
     ],
   );
   expect(parsed.errors).toEqual([]);

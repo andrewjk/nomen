@@ -1,11 +1,15 @@
 import ForLoopNode from "../nodes/ForLoopNode";
 import RangeNode from "../nodes/RangeNode";
 import type BuildStatus from "./BuildStatus";
+import build_auto_free from "./build_auto_free";
 import build_block_node from "./build_block_node";
 import build_node from "./build_node";
 import type_from_value_node from "./utils/type_from_value_node";
 
 export default function build_for_loop_node(node: ForLoopNode, status: BuildStatus) {
+  const old_scoped_declarations = status.scoped_declarations;
+  status.scoped_declarations = [];
+
   if (node.item && node.list) {
     if (node.list.node_type == "range") {
       // HACK: Only want to do this if the item hasn't been declared previously?
@@ -56,5 +60,9 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 
   build_block_node(node, status);
 
+  build_auto_free(status);
+
   status.code += `}\n`;
+
+  status.scoped_declarations = old_scoped_declarations;
 }

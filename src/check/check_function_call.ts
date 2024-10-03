@@ -1,7 +1,9 @@
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode";
+import DeclarationNode from "../nodes/DeclarationNode";
 import FunctionCallNode from "../nodes/FunctionCallNode";
 import FunctionNode from "../nodes/FunctionNode";
 import Type from "../nodes/Type";
+import ValueNode from "../nodes/ValueNode";
 import type CheckStatus from "./CheckStatus";
 import check_node from "./check_node";
 import check_type_and_value_match from "./utils/check_type_and_value_match";
@@ -14,12 +16,6 @@ export default function check_function_call(
   func: FunctionNode | undefined,
   target_type?: Type,
 ) {
-  // HACK: do checks at the top so that we can use printf -- remove this when we
-  // have string interpolation and/or function overloading
-  for (let param of node.params) {
-    check_node(param, status);
-  }
-
   // Make sure the function exists
   if (!func) {
     status.errors.push({
@@ -65,15 +61,42 @@ export default function check_function_call(
   }
 
   // Check each param
+  //console.log("BEFORE", node.params);
   for (let [i, param] of node.params.entries()) {
     check_node(param, status);
+
+    const param_type = type_from_value_node(param, status);
+    const param_value = value_from_value_node(param);
     check_type_and_value_match(
       func.params[i].type,
-      type_from_value_node(param, status),
-      value_from_value_node(param),
+      param_type,
+      param_value,
       status,
       param.start,
       "param",
     );
+
+    // Move the param into a declaration so that we can auto-free it later
+    if (param.node_type !== "value") {
+      const declaration_name = `_param_${status.var_name_counter.value++}`;
+      status.hoisted_declarations.push(
+        new DeclarationNode(param.start, "private", "const", declaration_name, param_type, param),
+      );
+      node.params.splice(i, 1, new ValueNode(param.start, declaration_name, param_type));
+    }
   }
+  //console.log("AFTER", node.params);
+
+  //for (let i = 0; i < node.params.length; i++) {
+  //  // Move the param into a declaration so that we can auto-free it later
+  //  const param = node.params[i];
+  //  const param_type = type_from_value_node(param, status);
+  //  if (param.node_type !== "value") {
+  //    const declaration_name = `_param_${status.unwound_counter++}`;
+  //    status.unwound_declarations.push(
+  //      new DeclarationNode(param.start, "private", "const", declaration_name, param_type, param),
+  //    );
+  //    node.params.splice(i, 1, new ValueNode(param.start, declaration_name, param_type));
+  //  }
+  //}
 }

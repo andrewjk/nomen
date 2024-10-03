@@ -16,7 +16,7 @@ test("declaration with type", () => {
 const x: int[]
 `;
   const parsed = parse(input);
-  const expected = new DeclarationNode(1, "mod", "const", "x", new Type("int", true));
+  const expected = new DeclarationNode(1, "mod", "const", "x", new Type("int", undefined, true));
   expect(parsed.errors).toEqual([]);
   expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
 });
@@ -31,11 +31,15 @@ var x = [1, 2, 3]
     "mod",
     "var",
     "x",
-    new Type("int", true, new ValueNode(-1, "3", "int")),
+    new Type("int", true, true, new ValueNode(-1, "3", new Type("int"))),
     new ArrayValuesNode(
       9,
-      [new ValueNode(10, "1", "int"), new ValueNode(13, "2", "int"), new ValueNode(16, "3", "int")],
-      new Type("int", true, new ValueNode(-1, "3", "int")),
+      [
+        new ValueNode(10, "1", new Type("int", true)),
+        new ValueNode(13, "2", new Type("int", true)),
+        new ValueNode(16, "3", new Type("int", true)),
+      ],
+      new Type("int", true, true, new ValueNode(-1, "3", new Type("int"))),
     ),
   );
   expect(parsed.errors).toEqual([]);
@@ -55,22 +59,22 @@ var x: Animal[] = [Dog.init(), Cat.init()]
     "mod",
     "var",
     "x",
-    new Type("Animal", true, new ValueNode(-1, "2", "int")),
+    new Type("Animal", undefined, true, new ValueNode(-1, "2", new Type("int"))),
     new ArrayValuesNode(
       79,
       [
         new AccessNode(
           80,
-          new ValueNode(80, "Dog", "Dog"),
-          new AccessFunctionCallNode(84, "init", "Dog", [], true),
+          new ValueNode(80, "Dog", new Type("Dog")),
+          new AccessFunctionCallNode(84, "init", new Type("Dog"), [], true),
         ),
         new AccessNode(
           92,
-          new ValueNode(92, "Cat", "Cat"),
-          new AccessFunctionCallNode(96, "init", "Cat", [], true),
+          new ValueNode(92, "Cat", new Type("Cat")),
+          new AccessFunctionCallNode(96, "init", new Type("Cat"), [], true),
         ),
       ],
-      new Type("Animal", true, new ValueNode(-1, "2", "int")),
+      new Type("Animal", undefined, true, new ValueNode(-1, "2", new Type("int"))),
     ),
   );
   expect(parsed.errors).toEqual([]);
@@ -88,22 +92,26 @@ x = [Dog.init(), Cat.init()]
   const parsed = parse(input);
   const expected = new AssignmentNode(
     77,
-    new ValueNode(77, "x", new Type("Animal", true, new ValueNode(-1, "2", "int"))),
+    new ValueNode(
+      77,
+      "x",
+      new Type("Animal", undefined, true, new ValueNode(-1, "2", new Type("int"))),
+    ),
     new ArrayValuesNode(
       81,
       [
         new AccessNode(
           82,
-          new ValueNode(82, "Dog", "Dog"),
-          new AccessFunctionCallNode(86, "init", "Dog", [], true),
+          new ValueNode(82, "Dog", new Type("Dog")),
+          new AccessFunctionCallNode(86, "init", new Type("Dog"), [], true),
         ),
         new AccessNode(
           94,
-          new ValueNode(94, "Cat", "Cat"),
-          new AccessFunctionCallNode(98, "init", "Cat", [], true),
+          new ValueNode(94, "Cat", new Type("Cat")),
+          new AccessFunctionCallNode(98, "init", new Type("Cat"), [], true),
         ),
       ],
-      new Type("Animal", true, new ValueNode(-1, "2", "int")),
+      new Type("Animal", undefined, true, new ValueNode(-1, "2", new Type("int"))),
     ),
   );
   expect(parsed.errors).toEqual([]);

@@ -11,16 +11,10 @@ export default function check(root: BaseNode): CheckResult {
     structs: [],
     traits: [],
     functions: [],
+    hoisted_declarations: [],
+    var_name_counter: { value: 0 },
     errors: [],
   };
-
-  // HACK: Add printf as a global function
-  //status.functions.push(
-  //  new FunctionNode(0, "pub", "printf", new Type(""), [
-  //    new ParameterNode(0, "value", new Type("string")),
-  //    new ParameterNode(0, "value", new Type("string")),
-  //  ]),
-  //);
 
   check_node(root, status);
 

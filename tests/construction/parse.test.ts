@@ -3,6 +3,7 @@ import AccessFunctionCallNode from "../../src/nodes/AccessFunctionCallNode";
 import AccessNode from "../../src/nodes/AccessNode";
 import DeclarationNode from "../../src/nodes/DeclarationNode";
 import FunctionNode from "../../src/nodes/FunctionNode";
+import Type from "../../src/nodes/Type";
 import ValueNode from "../../src/nodes/ValueNode";
 import parse from "../../src/parse";
 import trim_test_parse from "../trim_test_parse";
@@ -21,11 +22,11 @@ var x = Person.init()
     "mod",
     "var",
     "x",
-    "Person",
+    new Type("Person"),
     new AccessNode(
       27,
-      new ValueNode(27, "Person", "Person"),
-      new AccessFunctionCallNode(34, "init", "Person", [], true),
+      new ValueNode(27, "Person", new Type("Person")),
+      new AccessFunctionCallNode(34, "init", new Type("Person"), [], true),
     ),
   );
   expect(parsed.errors).toEqual([]);
@@ -46,15 +47,15 @@ var x = Person.init("Andrew")
     "mod",
     "var",
     "x",
-    "Person",
+    new Type("Person"),
     new AccessNode(
       46,
-      new ValueNode(46, "Person", "Person"),
+      new ValueNode(46, "Person", new Type("Person")),
       new AccessFunctionCallNode(
         53,
         "init",
-        "Person",
-        [new ValueNode(58, '"Andrew"', "string")],
+        new Type("Person"),
+        [new ValueNode(58, '"Andrew"', new Type("string", true))],
         true,
       ),
     ),
@@ -76,11 +77,11 @@ var x = Person.init()
     "mod",
     "var",
     "x",
-    "Person",
+    new Type("Person"),
     new AccessNode(
       44,
-      new ValueNode(44, "Person", "Person"),
-      new AccessFunctionCallNode(51, "init", "Person", [], true),
+      new ValueNode(44, "Person", new Type("Person")),
+      new AccessFunctionCallNode(51, "init", new Type("Person"), [], true),
     ),
   );
   expect(parsed.errors).toEqual([]);

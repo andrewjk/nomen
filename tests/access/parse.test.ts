@@ -4,6 +4,7 @@ import AccessFunctionCallNode from "../../src/nodes/AccessFunctionCallNode";
 import AccessNode from "../../src/nodes/AccessNode";
 import AssignmentNode from "../../src/nodes/AssignmentNode";
 import DeclarationNode from "../../src/nodes/DeclarationNode";
+import Type from "../../src/nodes/Type";
 import ValueNode from "../../src/nodes/ValueNode";
 import parse from "../../src/parse";
 import trim_parse_tree from "../trim_test_parse";
@@ -24,8 +25,12 @@ var x = p.age
     "mod",
     "var",
     "x",
-    "int",
-    new AccessNode(56, new ValueNode(56, "p", "Person"), new AccessFieldNode(58, "age", "int")),
+    new Type("int"),
+    new AccessNode(
+      56,
+      new ValueNode(56, "p", new Type("Person")),
+      new AccessFieldNode(58, "age", new Type("int")),
+    ),
   );
   expect(parsed.errors).toEqual([]);
   expect(trim_parse_tree(parsed.root.statements[2])).toEqual(trim_parse_tree(expected));
@@ -49,15 +54,15 @@ var x = p.address.line
     "mod",
     "var",
     "x",
-    "string",
+    new Type("string"),
     new AccessNode(
       117,
       new AccessNode(
         117,
-        new ValueNode(117, "p", "Person"),
-        new AccessFieldNode(119, "address", "Address"),
+        new ValueNode(117, "p", new Type("Person")),
+        new AccessFieldNode(119, "address", new Type("Address")),
       ),
-      new AccessFieldNode(127, "line", "string"),
+      new AccessFieldNode(127, "line", new Type("string")),
     ),
   );
   expect(parsed.errors).toEqual([]);
@@ -75,8 +80,12 @@ p.age = 20
   const parsed = parse(input);
   const expected = new AssignmentNode(
     48,
-    new AccessNode(48, new ValueNode(48, "p", "Person"), new AccessFieldNode(50, "age", "int")),
-    new ValueNode(56, "20", "int"),
+    new AccessNode(
+      48,
+      new ValueNode(48, "p", new Type("Person")),
+      new AccessFieldNode(50, "age", new Type("int")),
+    ),
+    new ValueNode(56, "20", new Type("int", true)),
   );
   expect(parsed.errors).toEqual([]);
   expect(trim_parse_tree(parsed.root.statements[2])).toEqual(trim_parse_tree(expected));
@@ -101,12 +110,12 @@ p.address.line = "1 main st"
       109,
       new AccessNode(
         109,
-        new ValueNode(109, "p", "Person"),
-        new AccessFieldNode(111, "address", "Address"),
+        new ValueNode(109, "p", new Type("Person")),
+        new AccessFieldNode(111, "address", new Type("Address")),
       ),
-      new AccessFieldNode(119, "line", "string"),
+      new AccessFieldNode(119, "line", new Type("string")),
     ),
-    new ValueNode(126, '"1 main st"', "string"),
+    new ValueNode(126, '"1 main st"', new Type("string", true)),
   );
   expect(parsed.errors).toEqual([]);
   expect(trim_parse_tree(parsed.root.statements[3])).toEqual(trim_parse_tree(expected));
@@ -128,11 +137,11 @@ var x = p.age()
     "mod",
     "var",
     "x",
-    "int",
+    new Type("int", true),
     new AccessNode(
       81,
-      new ValueNode(81, "p", "Person"),
-      new AccessFunctionCallNode(83, "age", "int", [], true),
+      new ValueNode(81, "p", new Type("Person")),
+      new AccessFunctionCallNode(83, "age", new Type("int", true), [], true),
     ),
   );
   expect(parsed.errors).toEqual([]);
@@ -159,15 +168,15 @@ var x = p.address.line()
     "mod",
     "var",
     "x",
-    "string",
+    new Type("string", true),
     new AccessNode(
       153,
       new AccessNode(
         153,
-        new ValueNode(153, "p", "Person"),
-        new AccessFieldNode(155, "address", "Address"),
+        new ValueNode(153, "p", new Type("Person")),
+        new AccessFieldNode(155, "address", new Type("Address")),
       ),
-      new AccessFunctionCallNode(163, "line", "string", [], true),
+      new AccessFunctionCallNode(163, "line", new Type("string", true), [], true),
     ),
   );
   expect(parsed.errors).toEqual([]);
@@ -194,15 +203,15 @@ var x = p.address().line
     "mod",
     "var",
     "x",
-    "string",
+    new Type("string"),
     new AccessNode(
       167,
       new AccessNode(
         167,
-        new ValueNode(167, "p", "Person"),
-        new AccessFunctionCallNode(169, "address", "Address", [], true),
+        new ValueNode(167, "p", new Type("Person")),
+        new AccessFunctionCallNode(169, "address", new Type("Address"), [], true),
       ),
-      new AccessFieldNode(179, "line", "string"),
+      new AccessFieldNode(179, "line", new Type("string")),
     ),
   );
   expect(parsed.errors).toEqual([]);

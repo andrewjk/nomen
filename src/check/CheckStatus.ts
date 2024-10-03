@@ -1,4 +1,5 @@
 import BaseNode from "../nodes/BaseNode";
+import DeclarationNode from "../nodes/DeclarationNode";
 import FunctionNode from "../nodes/FunctionNode";
 import StructNode from "../nodes/StructNode";
 import TraitNode from "../nodes/TraitNode";
@@ -17,7 +18,7 @@ export default interface CheckStatus {
   types: string[];
   /**
    * For declarations and assignments, store the type if set, for use in
-   * ambigous nodes such as arrays
+   * ambiguous nodes such as arrays
    */
   expected_type?: Type;
   /**
@@ -36,6 +37,17 @@ export default interface CheckStatus {
    * Functions in scope
    */
   functions: FunctionNode[];
+  /**
+   * Declarations that will need to be added before the current node, for
+   * storing paramater values etc that may need auto-freeing
+   */
+  hoisted_declarations: DeclarationNode[];
+  /**
+   * A counter for making new var names that (hopefully) don't clash. It needs
+   * to be in an object so that it continues to be incremented after the status
+   * is cloned
+   */
+  var_name_counter: { value: number };
   /**
    * Errors that have been encountered
    */

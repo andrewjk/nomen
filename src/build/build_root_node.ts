@@ -10,6 +10,7 @@ export default function build_root_node(node: RootNode, status: BuildStatus) {
 #include "main.h"
 
 int malloc_count;
+
 `;
 
   build_block_node(node, status);

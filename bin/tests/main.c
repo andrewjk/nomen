@@ -5,7 +5,8 @@
 #include "main.h"
 
 int malloc_count;
-// trait Disposable
+
+// Trait Disposable
 typedef struct Disposable
 {
 } Disposable;
@@ -15,12 +16,12 @@ void Disposable_dispose(struct Disposable *self)
     Console_write("\nboom!");
 }
 
-// trait Stringable
+// Trait Stringable
 typedef struct Stringable
 {
 } Stringable;
 
-// trait Animal
+// Trait Animal
 typedef struct Animal
 {
 } Animal;
@@ -30,7 +31,7 @@ char *Animal_speak(struct Animal *self)
     return "...";
 }
 
-// struct int
+// Struct int
 char *int_to_string(int self)
 {
     int length = snprintf(NULL, 0, "%d", self);
@@ -38,23 +39,15 @@ char *int_to_string(int self)
     malloc_count++;
     snprintf(str, length + 1, "%d", self);
     return str;
-    return "0";
 }
 
-// struct string
+// Struct string
 char *string_to_string(char *self)
 {
     return self;
-    return "0";
-}
-void string_dispose(char *self)
-{
-    Console_write("\nboom string!");
-    free(self);
-    malloc_count--;
 }
 
-// struct Console
+// Struct Console
 typedef struct Console
 {
     void *_vt;
@@ -69,7 +62,7 @@ void Console_write(char *line)
     printf("%s", line);
 }
 
-// struct Dog
+// Struct Dog
 void *_Dog_Animal_funcs[] = {Dog_speak, get_Dog_name, set_Dog_name, get_Dog_age, set_Dog_age};
 void *_Dog_Disposable_funcs[] = {Disposable_dispose};
 void *_Dog_traits[] = {&_Dog_Disposable_funcs, NULL, &_Dog_Animal_funcs};
@@ -97,7 +90,7 @@ void set_Dog_name(struct Dog *self, char *value) { self->name = value; }
 int get_Dog_age(struct Dog *self) { return self->age; }
 void set_Dog_age(struct Dog *self, int value) { self->age = value; }
 
-// struct Cat
+// Struct Cat
 void *_Cat_Animal_funcs[] = {Cat_speak, get_Cat_name, set_Cat_name, get_Cat_age, set_Cat_age};
 void *_Cat_traits[] = {NULL, NULL, &_Cat_Animal_funcs};
 typedef struct Cat
@@ -124,7 +117,7 @@ void set_Cat_name(struct Cat *self, char *value) { self->name = value; }
 int get_Cat_age(struct Cat *self) { return self->age; }
 void set_Cat_age(struct Cat *self, int value) { self->age = value; }
 
-// struct Lizard
+// Struct Lizard
 void *_Lizard_Animal_funcs[] = {Animal_speak, get_Lizard_name, set_Lizard_name, get_Lizard_age, set_Lizard_age};
 void *_Lizard_traits[] = {NULL, NULL, &_Lizard_Animal_funcs};
 typedef struct Lizard
@@ -146,7 +139,7 @@ void set_Lizard_name(struct Lizard *self, char *value) { self->name = value; }
 int get_Lizard_age(struct Lizard *self) { return self->age; }
 void set_Lizard_age(struct Lizard *self, int value) { self->age = value; }
 
-// func main
+// Func main
 int main()
 {
     Console_write("\n");
@@ -154,7 +147,8 @@ int main()
     for (i = 0; i < 5; i++)
     {
         Console_write("hello, world! ");
-        Console_write(int_to_string((i + 1)));
+        char *_param_0 = int_to_string((i + 1));
+        Console_write(_param_0);
         int x = i + 1;
         if (x < 4)
         {
@@ -165,6 +159,10 @@ int main()
             Console_write(" is 4 or more");
         }
         Console_write("\n");
+
+        // Auto-free
+        free(_param_0);
+        malloc_count--;
     }
     Console_write("\n");
     int y = 0;
@@ -175,9 +173,11 @@ int main()
     }
     Console_write("\n\n");
     Dog dog = make_dog();
-    Console_write(dog.name);
+    char *_param_1 = dog.name;
+    Console_write(_param_1);
     Console_write(": ");
-    Console_write(Dog_speak(&dog));
+    char *_param_2 = Dog_speak(&dog);
+    Console_write(_param_2);
     Console_write("\n\n");
     Dog _animals_1 = Dog_init();
     Cat _animals_2 = Cat_init();
@@ -186,29 +186,33 @@ int main()
     for (int i = 0; i < 3; i++)
     {
         void *a = *(animals + i);
-        Console_write(((char *(*)(void *))_get_trait_func(a, 2, 0))(a));
+        char *_param_3 = ((char *(*)(void *))_get_trait_func(a, 2, 0))(a);
+        Console_write(_param_3);
         Console_write("\n");
     }
     Cat cat = Cat_init();
     grow_animal((void *)&cat);
     Console_write("cat has age: ");
-    Console_write(int_to_string(cat.age));
+    char *_param_4 = int_to_string(cat.age);
+    Console_write(_param_4);
 
-    // auto-free
+    // Auto-free
     ((void *(*)(void *))_get_trait_func((void *)&dog, 0, 0))(&dog);
     ((void *(*)(void *))_get_trait_func((void *)&_animals_1, 0, 0))(&_animals_1);
+    free(_param_4);
+    malloc_count--;
 
     printf("\n\nMalloc balance: %d\n", malloc_count);
 }
 
-// func make_dog
+// Func make_dog
 struct Dog make_dog()
 {
     Dog dog = Dog_init();
     return dog;
 }
 
-// func grow_animal
+// Func grow_animal
 void grow_animal(struct Animal *animal)
 {
     ((void (*)(void *, int))_get_trait_func((void *)animal, 2, 4))(animal, ((int (*)(void *))_get_trait_func((void *)animal, 2, 3))(animal) + 1);

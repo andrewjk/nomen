@@ -16,11 +16,11 @@ export default function type_from_value(value: string, status: CheckStatus): Typ
   }
 
   if (value === "true" || value === "false") {
-    return new Type("bool");
+    return new Type("bool", true);
   } else if (value.startsWith('"') && value.endsWith('"')) {
-    return new Type("string");
+    return new Type("string", true);
   } else if (/^\d+$/.test(value)) {
-    return new Type("int");
+    return new Type("int", true);
   } else {
     return new Type("");
   }

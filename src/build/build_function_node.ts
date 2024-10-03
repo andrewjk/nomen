@@ -7,12 +7,12 @@ import build_parameter_node from "./build_parameter_node";
 import c_type from "./utils/c_type";
 
 export default function build_function_node(node: FunctionNode, status: BuildStatus) {
-  const old_declarations = status.scoped_declarations;
+  const old_scoped_declarations = status.scoped_declarations;
   status.scoped_declarations = [];
 
   // TODO: Only if top-level
-  status.headers += `// func ${node.name}\n`;
-  status.code += `// func ${node.name}\n`;
+  status.headers += `// Func ${node.name}\n`;
+  status.code += `// Func ${node.name}\n`;
 
   const func_start = status.code.length;
   if (node.name.toLocaleLowerCase() === "main") {
@@ -68,5 +68,5 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 
   status.code += `}\n\n`;
 
-  status.scoped_declarations = old_declarations;
+  status.scoped_declarations = old_scoped_declarations;
 }

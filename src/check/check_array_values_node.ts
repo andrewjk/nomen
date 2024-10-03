@@ -39,6 +39,6 @@ export default function check_array_values_node(array: ArrayValuesNode, status: 
   }
 
   if (!array.type.length) {
-    array.type.length = new ValueNode(-1, array.values.length.toString(), "int");
+    array.type.length = new ValueNode(-1, array.values.length.toString(), new Type("int"));
   }
 }

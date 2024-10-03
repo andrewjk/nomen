@@ -15,14 +15,14 @@ export default class DeclarationNode extends BaseNode {
     visibility: "inherit" | "pub" | "mod" | "private",
     declaration: "const" | "var",
     name: string,
-    type?: string | Type,
+    type?: Type,
     value?: BaseNode,
   ) {
     super("declare", start);
     this.visibility = visibility;
     this.declaration = declaration;
     this.name = name;
-    this.type = typeof type === "string" ? new Type(type) : type || new Type("");
+    this.type = type || new Type("");
     this.value = value;
   }
 }

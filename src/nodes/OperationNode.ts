@@ -23,12 +23,12 @@ export default class OperationNode extends BaseNode {
     op: Operator,
     left_value: BaseNode,
     right_value: BaseNode,
-    type?: string | Type,
+    type?: Type,
   ) {
     super("op", start);
     this.op = op;
     this.left_value = left_value;
     this.right_value = right_value;
-    this.type = typeof type === "string" ? new Type(type) : type || new Type("");
+    this.type = type || new Type("");
   }
 }

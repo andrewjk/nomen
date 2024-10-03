@@ -14,6 +14,9 @@ export default function clone_status(status: CheckStatus): CheckStatus {
     structs: status.structs.slice(),
     traits: status.traits.slice(),
     functions: status.functions.slice(),
+    // Unwound declarations get added to until flushed
+    hoisted_declarations: status.hoisted_declarations,
+    var_name_counter: status.var_name_counter,
     errors: status.errors,
   };
 }

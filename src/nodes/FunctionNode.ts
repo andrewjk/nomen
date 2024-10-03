@@ -20,15 +20,14 @@ export default class FunctionNode extends BaseNode implements BlockNode, Returni
     start: number,
     visibility: "inherit" | "pub" | "mod" | "private",
     name: string,
-    return_type: string | Type,
+    return_type: Type,
     params?: ParameterNode[],
     statements?: BaseNode[],
   ) {
     super("func", start);
     this.visibility = visibility;
     this.name = name;
-    this.return_type =
-      typeof return_type === "string" ? new Type(return_type) : return_type || new Type("");
+    this.return_type = return_type || new Type("");
     this.params = params || [];
     this.is_static = !params || !params[0]?.is_self_param;
     this.statements = statements || [];

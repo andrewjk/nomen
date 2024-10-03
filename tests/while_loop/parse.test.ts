@@ -1,6 +1,7 @@
 import { expect, test } from "vitest";
 import AssignmentNode from "../../src/nodes/AssignmentNode";
 import OperationNode from "../../src/nodes/OperationNode";
+import Type from "../../src/nodes/Type";
 import ValueNode from "../../src/nodes/ValueNode";
 import WhileLoopNode from "../../src/nodes/WhileLoopNode";
 import parse from "../../src/parse";
@@ -21,20 +22,20 @@ while x < 5 {
     new OperationNode(
       17,
       "<",
-      new ValueNode(17, "x", "int"),
-      new ValueNode(21, "5", "int"),
-      "bool",
+      new ValueNode(17, "x", new Type("int", true)),
+      new ValueNode(21, "5", new Type("int", true)),
+      new Type("bool"),
     ),
     [
       new AssignmentNode(
         27,
-        new ValueNode(27, "x", "int"),
+        new ValueNode(27, "x", new Type("int", true)),
         new OperationNode(
           31,
           "+",
-          new ValueNode(31, "x", "int"),
-          new ValueNode(35, "1", "int"),
-          "int",
+          new ValueNode(31, "x", new Type("int", true)),
+          new ValueNode(35, "1", new Type("int", true)),
+          new Type("int", true),
         ),
       ),
     ],
@@ -50,7 +51,7 @@ while true {
 }
 `;
   const parsed = parse(input);
-  const expected = new WhileLoopNode(1, new ValueNode(7, "true", "bool"));
+  const expected = new WhileLoopNode(1, new ValueNode(7, "true", new Type("bool", true)));
   expect(parsed.errors).toEqual([]);
   expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
 });

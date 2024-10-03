@@ -18,8 +18,13 @@ var x = 1..2
     "mod",
     "var",
     "x",
-    new Type("int", true),
-    new RangeNode(9, new ValueNode(9, "1", "int"), new ValueNode(12, "2", "int"), false),
+    new Type("int", true, true),
+    new RangeNode(
+      9,
+      new ValueNode(9, "1", new Type("int", true)),
+      new ValueNode(12, "2", new Type("int", true)),
+      false,
+    ),
   );
   expect(parsed.errors).toEqual([]);
   expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
@@ -35,8 +40,13 @@ var x = 1.=2
     "mod",
     "var",
     "x",
-    new Type("int", true),
-    new RangeNode(9, new ValueNode(9, "1", "int"), new ValueNode(12, "2", "int"), true),
+    new Type("int", true, true),
+    new RangeNode(
+      9,
+      new ValueNode(9, "1", new Type("int", true)),
+      new ValueNode(12, "2", new Type("int", true)),
+      true,
+    ),
   );
   expect(parsed.errors).toEqual([]);
   expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));

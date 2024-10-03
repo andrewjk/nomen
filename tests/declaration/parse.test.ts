@@ -2,6 +2,7 @@ import { expect, test } from "vitest";
 import AccessFunctionCallNode from "../../src/nodes/AccessFunctionCallNode";
 import AccessNode from "../../src/nodes/AccessNode";
 import DeclarationNode from "../../src/nodes/DeclarationNode";
+import Type from "../../src/nodes/Type";
 import ValueNode from "../../src/nodes/ValueNode";
 import parse from "../../src/parse";
 import trim_test_parse from "../trim_test_parse";
@@ -18,8 +19,8 @@ const x = 5
     "mod",
     "const",
     "x",
-    "int",
-    new ValueNode(11, "5", "int"),
+    new Type("int", true),
+    new ValueNode(11, "5", new Type("int", true)),
   );
   expect(parsed.errors).toEqual([]);
   expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
@@ -30,7 +31,7 @@ test("const with type", () => {
 const x: int
 `;
   const parsed = parse(input);
-  const expected = new DeclarationNode(1, "mod", "const", "x", "int");
+  const expected = new DeclarationNode(1, "mod", "const", "x", new Type("int"));
   expect(parsed.errors).toEqual([]);
   expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
 });
@@ -40,7 +41,14 @@ test("var with value", () => {
 var x = 5
 `;
   const parsed = parse(input);
-  const expected = new DeclarationNode(1, "mod", "var", "x", "int", new ValueNode(9, "5", "int"));
+  const expected = new DeclarationNode(
+    1,
+    "mod",
+    "var",
+    "x",
+    new Type("int", true),
+    new ValueNode(9, "5", new Type("int", true)),
+  );
   expect(parsed.errors).toEqual([]);
   expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
 });
@@ -50,7 +58,7 @@ test("var with type", () => {
 var x: int
 `;
   const parsed = parse(input);
-  const expected = new DeclarationNode(1, "mod", "var", "x", "int");
+  const expected = new DeclarationNode(1, "mod", "var", "x", new Type("int"));
   expect(parsed.errors).toEqual([]);
   expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
 });
@@ -67,11 +75,11 @@ var x: Animal = Dog.init()
     "mod",
     "var",
     "x",
-    "Animal",
+    new Type("Animal"),
     new AccessNode(
       55,
-      new ValueNode(55, "Dog", "Dog"),
-      new AccessFunctionCallNode(59, "init", "Dog", [], true),
+      new ValueNode(55, "Dog", new Type("Dog")),
+      new AccessFunctionCallNode(59, "init", new Type("Dog"), [], true),
     ),
   );
   expect(parsed.errors).toEqual([]);

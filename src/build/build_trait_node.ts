@@ -11,8 +11,8 @@ export default function build_trait_node(node: TraitNode, status: BuildStatus) {
   //}
 
   // TODO: Only if top-level
-  status.headers += `// trait ${node.name}\n`;
-  status.code += `// trait ${node.name}\n`;
+  status.headers += `// Trait ${node.name}\n`;
+  status.code += `// Trait ${node.name}\n`;
 
   // Declare the trait as a struct
   status.headers += `struct ${node.name};\n`;

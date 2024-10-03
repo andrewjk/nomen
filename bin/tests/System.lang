@@ -1,8 +1,8 @@
 
 pub trait Disposable {
-	func dispose(self) {
-		Console.write("\nboom!")
-	}
+    func dispose(self) {
+        Console.write("\nboom!")
+    }
 }
 
 pub trait Stringable {
@@ -18,26 +18,16 @@ pub struct int: Stringable {
         snprintf(str, length + 1, "%d", self);
         return str;
         ```
-        // HACK: We need to return something outside of the raw C code to avoid a compiler error
-        return "0"
+        return "from_c"
     }
 }
 
-pub struct string: Stringable, Disposable {
+pub struct string: Stringable {
     pub func to_string(self) -> string {
         ```
         return self;
         ```
-        // HACK: We need to return something outside of the raw C code to avoid a compiler error
-        return "0"
-    }
-
-    pub func dispose(self) {
-		Console.write("\nboom string!")
-        ```
-        free(self);
-        malloc_count--;
-        ```
+        return "from_c"
     }
 }
 

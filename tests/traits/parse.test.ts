@@ -5,6 +5,7 @@ import ReturnNode from "../../src/nodes/ReturnNode";
 import RootNode from "../../src/nodes/RootNode";
 import StructNode from "../../src/nodes/StructNode";
 import TraitNode from "../../src/nodes/TraitNode";
+import Type from "../../src/nodes/Type";
 import ValueNode from "../../src/nodes/ValueNode";
 import parse from "../../src/parse";
 import trim_test_parse from "../trim_test_parse";
@@ -28,7 +29,7 @@ struct Frank: Person {}
         "Frank",
         ["Person"],
         [],
-        [new FunctionNode(-1, "mod", "init", "Frank")],
+        [new FunctionNode(-1, "mod", "init", new Type("Frank"))],
       ),
     ],
   );
@@ -52,7 +53,7 @@ trait Person {}
         "Frank",
         ["Person"],
         [],
-        [new FunctionNode(-1, "mod", "init", "Frank")],
+        [new FunctionNode(-1, "mod", "init", new Type("Frank"))],
       ),
       new TraitNode(26, "mod", "Person"),
     ],
@@ -77,8 +78,15 @@ struct Frank: Person {
     [],
     [
       new TraitNode(1, "mod", "Person", [
-        new DeclarationNode(18, "mod", "var", "name", "string"),
-        new DeclarationNode(37, "mod", "var", "age", "int", new ValueNode(47, "0", "int")),
+        new DeclarationNode(18, "mod", "var", "name", new Type("string")),
+        new DeclarationNode(
+          37,
+          "mod",
+          "var",
+          "age",
+          new Type("int", true),
+          new ValueNode(47, "0", new Type("int", true)),
+        ),
       ]),
       new StructNode(
         52,
@@ -91,11 +99,11 @@ struct Frank: Person {
             "mod",
             "var",
             "name",
-            "string",
-            new ValueNode(88, '"Frank"', "string"),
+            new Type("string", true),
+            new ValueNode(88, '"Frank"', new Type("string", true)),
           ),
         ],
-        [new FunctionNode(-1, "mod", "init", "Frank")],
+        [new FunctionNode(-1, "mod", "init", new Type("Frank"))],
       ),
     ],
   );
@@ -119,7 +127,13 @@ struct Frank: Person {
   const expected = new RootNode(
     [],
     [
-      new TraitNode(1, "mod", "Person", [], [new FunctionNode(18, "mod", "greet", "string")]),
+      new TraitNode(
+        1,
+        "mod",
+        "Person",
+        [],
+        [new FunctionNode(18, "mod", "greet", new Type("string"))],
+      ),
       new StructNode(
         44,
         "mod",
@@ -127,14 +141,20 @@ struct Frank: Person {
         ["Person"],
         [],
         [
-          new FunctionNode(-1, "mod", "init", "Frank"),
+          new FunctionNode(-1, "mod", "init", new Type("Frank")),
           new FunctionNode(
             69,
             "mod",
             "greet",
-            "string",
+            new Type("string", true),
             [],
-            [new ReturnNode(98, new ValueNode(105, '"hi"', "string"), "string")],
+            [
+              new ReturnNode(
+                98,
+                new ValueNode(105, '"hi"', new Type("string", true)),
+                new Type("string", true),
+              ),
+            ],
           ),
         ],
       ),
@@ -168,9 +188,15 @@ struct Frank: Person {}
             18,
             "mod",
             "greet",
-            "string",
+            new Type("string", true),
             [],
-            [new ReturnNode(47, new ValueNode(54, '"hi"', "string"), "string")],
+            [
+              new ReturnNode(
+                47,
+                new ValueNode(54, '"hi"', new Type("string", true)),
+                new Type("string", true),
+              ),
+            ],
           ),
         ],
       ),
@@ -180,7 +206,7 @@ struct Frank: Person {}
         "Frank",
         ["Person"],
         [],
-        [new FunctionNode(-1, "mod", "init", "Frank")],
+        [new FunctionNode(-1, "mod", "init", new Type("Frank"))],
       ),
     ],
   );

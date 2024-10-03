@@ -45,6 +45,14 @@ import build_value_node from "./build_value_node";
 import build_while_loop_node from "./build_while_loop_node";
 
 export default function build_node(node: BaseNode, status: BuildStatus, with_semicolon = false) {
+  // Build any associated declarations first, e.g. for function call params that
+  // will later be freed
+  if (node.associated_declarations) {
+    for (let decl of node.associated_declarations) {
+      build_node(decl, status, true);
+    }
+  }
+
   switch (node.node_type) {
     case "root": {
       build_root_node(node as RootNode, status);
@@ -122,7 +130,11 @@ export default function build_node(node: BaseNode, status: BuildStatus, with_sem
       break;
     }
     case "return": {
-      build_return_node(node as ReturnNode, status);
+      if ((node as ReturnNode).from_c) {
+        with_semicolon = false;
+      } else {
+        build_return_node(node as ReturnNode, status);
+      }
       break;
     }
     case "value": {
@@ -147,6 +159,7 @@ export default function build_node(node: BaseNode, status: BuildStatus, with_sem
     }
   }
 
+  // Add a semicolon if this is a statement
   if (with_semicolon) {
     // But not if it was a declaration with an if statement etc
     if (!status.code.endsWith("}\n")) {

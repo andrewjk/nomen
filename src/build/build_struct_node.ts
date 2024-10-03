@@ -9,15 +9,15 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
   // If it's an inbuilt type, only build its functions
   // That way we can add e.g. traits like Stringable to ints
   if (node.is_simple_type) {
-    status.code += `// struct ${node.name}\n`;
+    status.code += `// Struct ${node.name}\n`;
     build_struct_functions(node, status);
     status.code += "\n";
     return;
   }
 
   // TODO: Only if top-level
-  status.headers += `// struct ${node.name}\n`;
-  status.code += `// struct ${node.name}\n`;
+  status.headers += `// Struct ${node.name}\n`;
+  status.code += `// Struct ${node.name}\n`;
 
   if (node.traits.length) {
     build_struct_traits(node, status);

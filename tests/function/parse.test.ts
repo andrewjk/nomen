@@ -4,6 +4,7 @@ import FunctionNode from "../../src/nodes/FunctionNode";
 import ParameterNode from "../../src/nodes/ParameterNode";
 import ReturnNode from "../../src/nodes/ReturnNode";
 import RootNode from "../../src/nodes/RootNode";
+import Type from "../../src/nodes/Type";
 import ValueNode from "../../src/nodes/ValueNode";
 import parse from "../../src/parse";
 import trim_test_parse from "../trim_test_parse";
@@ -15,7 +16,7 @@ test("function", () => {
 func add() {}
 `;
   const parsed = parse(input);
-  const expected = new FunctionNode(1, "mod", "add", "", [], []);
+  const expected = new FunctionNode(1, "mod", "add", new Type(""), [], []);
   expect(parsed.errors).toEqual([]);
   expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
 });
@@ -29,8 +30,8 @@ func add(a: int, b: int) {}
     1,
     "mod",
     "add",
-    "",
-    [new ParameterNode(10, "a", "int"), new ParameterNode(18, "b", "int")],
+    new Type(""),
+    [new ParameterNode(10, "a", new Type("int")), new ParameterNode(18, "b", new Type("int"))],
     [],
   );
   expect(parsed.errors).toEqual([]);
@@ -46,8 +47,11 @@ func add(a: int, b = 5) {}
     1,
     "mod",
     "add",
-    "",
-    [new ParameterNode(10, "a", "int"), new ParameterNode(18, "b", "int", "5")],
+    new Type(""),
+    [
+      new ParameterNode(10, "a", new Type("int")),
+      new ParameterNode(18, "b", new Type("int", true), "5"),
+    ],
     [],
   );
   expect(parsed.errors).toEqual([]);
@@ -65,9 +69,18 @@ func add() {
     1,
     "mod",
     "add",
-    "",
+    new Type(""),
     [],
-    [new DeclarationNode(16, "mod", "var", "x", "int", new ValueNode(24, "5", "int"))],
+    [
+      new DeclarationNode(
+        16,
+        "mod",
+        "var",
+        "x",
+        new Type("int", true),
+        new ValueNode(24, "5", new Type("int", true)),
+      ),
+    ],
   );
   expect(parsed.errors).toEqual([]);
   expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
@@ -84,9 +97,9 @@ func add() -> int {
     1,
     "mod",
     "add",
-    "int",
+    new Type("int", true),
     [],
-    [new ReturnNode(23, new ValueNode(30, "5", "int"), "int")],
+    [new ReturnNode(23, new ValueNode(30, "5", new Type("int", true)), new Type("int", true))],
   );
   expect(parsed.errors).toEqual([]);
   expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
@@ -102,8 +115,8 @@ func subtract() {}
   const expected = new RootNode(
     [],
     [
-      new FunctionNode(1, "mod", "add", "", [], []),
-      new FunctionNode(16, "mod", "subtract", "", [], []),
+      new FunctionNode(1, "mod", "add", new Type(""), [], []),
+      new FunctionNode(16, "mod", "subtract", new Type(""), [], []),
     ],
   );
   expect(parsed.errors).toEqual([]);
