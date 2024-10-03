@@ -8,6 +8,7 @@ import DeclarationNode from "../nodes/DeclarationNode";
 import ForLoopNode from "../nodes/ForLoopNode";
 import FunctionCallNode from "../nodes/FunctionCallNode";
 import FunctionNode from "../nodes/FunctionNode";
+import GroupedNode from "../nodes/GroupedNode";
 import IfElseNode from "../nodes/IfElseNode";
 import OperationNode from "../nodes/OperationNode";
 import RangeNode from "../nodes/RangeNode";
@@ -80,6 +81,10 @@ export default function check_node(node: BaseNode, status: CheckStatus) {
     }
     case "while": {
       check_while_loop_node(node as WhileLoopNode, status);
+      break;
+    }
+    case "grouped": {
+      check_node((node as GroupedNode).value, status);
       break;
     }
     case "op": {

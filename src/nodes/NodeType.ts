@@ -7,6 +7,7 @@ type NodeType =
   | "param"
   | "declare"
   | "assign"
+  | "grouped"
   | "op"
   | "if"
   | "for"

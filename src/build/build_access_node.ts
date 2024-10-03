@@ -60,7 +60,10 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
         // into a C function that takes the struct as an argument
         status.code += `${c_type(type.name)}_${access_func.name}(`;
         if (!access_func.is_static) {
-          status.code += "&";
+          // TODO: be more rigorous about this!
+          if (type.name !== "int") {
+            status.code += "&";
+          }
           build_node(node.target, status);
         }
         for (let i = 0; i < access_func.params.length; i++) {

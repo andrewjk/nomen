@@ -4,6 +4,7 @@ import AccessNode from "../../nodes/AccessNode";
 import ArrayValuesNode from "../../nodes/ArrayValuesNode";
 import BaseNode from "../../nodes/BaseNode";
 import FunctionCallNode from "../../nodes/FunctionCallNode";
+import GroupedNode from "../../nodes/GroupedNode";
 import IfElseNode from "../../nodes/IfElseNode";
 import OperationNode from "../../nodes/OperationNode";
 import RangeNode from "../../nodes/RangeNode";
@@ -36,6 +37,9 @@ export default function type_from_value_node(node: BaseNode, status: CheckStatus
     }
     case "if": {
       return (node as IfElseNode).return_type;
+    }
+    case "grouped": {
+      return type_from_value_node((node as GroupedNode).value, status);
     }
     case "op": {
       return (node as OperationNode).type;

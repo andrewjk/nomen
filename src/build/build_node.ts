@@ -8,6 +8,7 @@ import DeclarationNode from "../nodes/DeclarationNode";
 import ForLoopNode from "../nodes/ForLoopNode";
 import FunctionCallNode from "../nodes/FunctionCallNode";
 import FunctionNode from "../nodes/FunctionNode";
+import GroupedNode from "../nodes/GroupedNode";
 import IfElseNode from "../nodes/IfElseNode";
 import OperationNode from "../nodes/OperationNode";
 import PanicNode from "../nodes/PanicNode";
@@ -81,6 +82,12 @@ export default function build_node(node: BaseNode, status: BuildStatus, with_sem
       if (with_semicolon) {
         status.code += ";\n";
       }
+      break;
+    }
+    case "grouped": {
+      status.code += "(";
+      build_node((node as GroupedNode).value, status);
+      status.code += ")";
       break;
     }
     case "op": {

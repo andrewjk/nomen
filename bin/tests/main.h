@@ -10,6 +10,8 @@ struct Animal;
 char* Animal_speak(struct Animal *self);
 
 char* int_to_string(int self);
+char* string_to_string(char* self);
+void string_dispose(char* self);
 // struct Console
 struct Console;
 struct Console Console_init();

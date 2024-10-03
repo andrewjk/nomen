@@ -14,6 +14,7 @@ export default function build_block_node(node: BlockNode, status: BuildStatus) {
   gather_structs(node, status);
 
   // PERF: Probably an opportunity to cut down on loops here by adding a prop in check?
+  // Or storing these things in different lists?
 
   // Build traits, then structs, then functions
   for (let child of node.statements) {

@@ -13,7 +13,8 @@ pub struct int: Stringable {
     pub func to_string(self) -> string {
         ```
         int length = snprintf(NULL, 0, "%d", self);
-        char str[length + 1];
+        char* str = malloc(length + 1);
+        malloc_count++;
         snprintf(str, length + 1, "%d", self);
         return str;
         ```
@@ -22,10 +23,28 @@ pub struct int: Stringable {
     }
 }
 
+pub struct string: Stringable, Disposable {
+    pub func to_string(self) -> string {
+        ```
+        return self;
+        ```
+        // HACK: We need to return something outside of the raw C code to avoid a compiler error
+        return "0"
+    }
+
+    pub func dispose(self) {
+		Console.write("\nboom string!")
+        ```
+        free(self);
+        malloc_count--;
+        ```
+    }
+}
+
 pub struct Console {
     pub func write(line: string) {
         ```
-        printf(line);
+        printf("%s", line);
         ```
     }
 }

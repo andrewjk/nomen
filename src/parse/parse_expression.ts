@@ -4,6 +4,7 @@ import AccessNode from "../nodes/AccessNode";
 import ArrayValuesNode from "../nodes/ArrayValuesNode";
 import BaseNode from "../nodes/BaseNode";
 import FunctionCallNode from "../nodes/FunctionCallNode";
+import GroupedNode from "../nodes/GroupedNode";
 import OperationNode from "../nodes/OperationNode";
 import RangeNode from "../nodes/RangeNode";
 import ValueNode from "../nodes/ValueNode";
@@ -40,6 +41,12 @@ export default function parse_expression(status: ParseStatus): BaseNode {
     }
     case "if": {
       node = parse_if_else(status);
+      break;
+    }
+    case "(": {
+      consume(status);
+      node = new GroupedNode(start, parse_expression(status));
+      expect(")", status);
       break;
     }
     default: {

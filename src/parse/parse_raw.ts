@@ -31,7 +31,7 @@ export default function parse_raw(status: ParseStatus) {
   }
     */
 
-  const value = consume(status);
+  const value = consume(status).trim().replaceAll(/^\s+/gm, "");
   const raw = new RawNode(start, value);
   add_to_parent(raw, "Raw C", status);
 }
