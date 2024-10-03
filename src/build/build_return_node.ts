@@ -5,10 +5,6 @@ import build_auto_free from "./build_auto_free";
 import build_node from "./build_node";
 
 export default function build_return_node(node: ReturnNode, status: BuildStatus) {
-  if (node.from_c) {
-    return;
-  }
-
   // HACK: This needs more work to map return values to declarations
   // Remove the return value from scoped_declarations so it won't be disposed
   if (node.value.node_type === "value") {
