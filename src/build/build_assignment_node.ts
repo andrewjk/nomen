@@ -31,7 +31,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
         build_node(accessNode.target, status);
         status.code += `, `;
         build_node(node.right_value, status);
-        status.code += `);\n`;
+        status.code += `)`;
 
         return;
       }
@@ -42,5 +42,4 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
   build_node(node.left_value, status);
   status.code += " = ";
   build_node(node.right_value, status);
-  status.code += ";\n";
 }

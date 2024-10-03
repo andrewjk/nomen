@@ -23,6 +23,4 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
     status.code += `return `;
   }
   build_node(node.value, status);
-
-  status.code += `;\n`;
 }

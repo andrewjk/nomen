@@ -39,7 +39,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
     if (node.type.length) {
       build_node(node.type.length, status);
     }
-    status.code += `] = {${variables.map((v) => `&${v}`).join(", ")}};\n`;
+    status.code += `] = {${variables.map((v) => `&${v}`).join(", ")}}`;
   } else {
     status.scoped_declarations.push(node);
 
@@ -60,14 +60,10 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
         status.return_assign = node.name;
         build_node(node.value, status);
         status.return_assign = old_return_assign;
-        // HACK:
-        status.code += "\n";
-        return;
       } else {
         status.code += " = ";
         build_node(node.value, status);
       }
     }
-    status.code += ";\n";
   }
 }

@@ -11,8 +11,11 @@ func greet() {}
 greet()
 `;
   const parsed = parse(input);
-  const result = build(parsed.root.statements[1]);
+  const result = build(parsed.root);
   const expected = `
+void greet()
+{
+}
 greet();
 `;
   expect(parsed.errors).toEqual([]);
@@ -25,8 +28,11 @@ func greet(name: string, position: string) {}
 greet("Andrew", "Manager")
 `;
   const parsed = parse(input);
-  const result = build(parsed.root.statements[1]);
+  const result = build(parsed.root);
   const expected = `
+void greet(char* name, char* position)
+{
+}
 greet("Andrew", "Manager");
 `;
   expect(parsed.errors).toEqual([]);

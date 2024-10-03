@@ -14,8 +14,20 @@ var p: Person
 var x = p.age
 `;
   const parsed = parse(input);
-  const result = build(parsed.root.statements[2]);
+  const result = build(parsed.root);
   const expected = `
+typedef struct Person
+{
+void *_vt;
+int age;
+} Person;
+Person Person_init(int age)
+{
+Person p;
+p.age = age;
+return p;
+}
+Person p;
 int x = p.age;
 `;
   expect(parsed.errors).toEqual([]);
@@ -35,8 +47,33 @@ var p: Person
 var x = p.address.line
 `;
   const parsed = parse(input);
-  const result = build(parsed.root.statements[3]);
+  const result = build(parsed.root);
   const expected = `
+typedef struct Address
+{
+void *_vt;
+char* line;
+} Address;
+Address Address_init(char* line)
+{
+Address a;
+a.line = line;
+return a;
+}
+typedef struct Person
+{
+void *_vt;
+int age;
+Address address;
+} Person;
+Person Person_init(int age, Address address)
+{
+Person p;
+p.age = age;
+p.address = address;
+return p;
+}
+Person p;
 char* x = p.address.line;
 `;
   expect(parsed.errors).toEqual([]);
@@ -52,8 +89,20 @@ var p: Person
 p.age = 20
 `;
   const parsed = parse(input);
-  const result = build(parsed.root.statements[2]);
+  const result = build(parsed.root);
   const expected = `
+typedef struct Person
+{
+void *_vt;
+int age;
+} Person;
+Person Person_init(int age)
+{
+Person p;
+p.age = age;
+return p;
+}
+Person p;
 p.age = 20;
 `;
   expect(parsed.errors).toEqual([]);
@@ -73,8 +122,33 @@ var p: Person
 p.address.line = "1 main st"
 `;
   const parsed = parse(input);
-  const result = build(parsed.root.statements[3]);
+  const result = build(parsed.root);
   const expected = `
+typedef struct Address
+{
+void *_vt;
+char* line;
+} Address;
+Address Address_init(char* line)
+{
+Address a;
+a.line = line;
+return a;
+}
+typedef struct Person
+{
+void *_vt;
+int age;
+Address address;
+} Person;
+Person Person_init(int age, Address address)
+{
+Person p;
+p.age = age;
+p.address = address;
+return p;
+}
+Person p;
 p.address.line = "1 main st";
 `;
   expect(parsed.errors).toEqual([]);
@@ -92,8 +166,22 @@ var p: Person
 var x = p.age()
 `;
   const parsed = parse(input);
-  const result = build(parsed.root.statements[2]);
+  const result = build(parsed.root);
   const expected = `
+typedef struct Person
+{
+void *_vt;
+} Person;
+Person Person_init()
+{
+Person p;
+return p;
+}
+int Person_age()
+{
+return 20;
+}
+Person p;
 int x = Person_age();
 `;
   expect(parsed.errors).toEqual([]);
@@ -115,8 +203,35 @@ var p: Person
 var x = p.address.line()
 `;
   const parsed = parse(input);
-  const result = build(parsed.root.statements[3]);
+  const result = build(parsed.root);
   const expected = `
+typedef struct Address
+{
+void *_vt;
+} Address;
+Address Address_init()
+{
+Address a;
+return a;
+}
+char* Address_line()
+{
+return "123 main st";
+}
+typedef struct Person
+{
+void *_vt;
+int age;
+Address address;
+} Person;
+Person Person_init(int age, Address address)
+{
+Person p;
+p.age = age;
+p.address = address;
+return p;
+}
+Person p;
 char* x = Address_line();
 `;
   expect(parsed.errors).toEqual([]);
@@ -138,8 +253,35 @@ var p: Person
 var x = p.address().line
 `;
   const parsed = parse(input);
-  const result = build(parsed.root.statements[3]);
+  const result = build(parsed.root);
   const expected = `
+typedef struct Address
+{
+void *_vt;
+char* line;
+} Address;
+Address Address_init(char* line)
+{
+Address a;
+a.line = line;
+return a;
+}
+typedef struct Person
+{
+void *_vt;
+int age;
+} Person;
+Person Person_init(int age)
+{
+Person p;
+p.age = age;
+return p;
+}
+Address Person_address()
+{
+return Address_init("123 main st");
+}
+Person p;
 char* x = Person_address().line;
 `;
   expect(parsed.errors).toEqual([]);

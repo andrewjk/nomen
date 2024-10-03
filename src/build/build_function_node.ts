@@ -61,8 +61,8 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
     build_auto_free(status);
   }
 
+  // Print out the number of mallocs less the number of frees, which should be 0!
   if (node.name.toLocaleLowerCase() === "main") {
-    // Print out the number of mallocs less the number of frees, which should be 0!
     status.code += `\nprintf("\\n\\nMalloc balance: %d\\n", malloc_count);\n`;
   }
 

@@ -10,7 +10,7 @@ test("function", () => {
 func add() {}
 `;
   const parsed = parse(input);
-  const result = build(parsed.root.statements[0]);
+  const result = build(parsed.root);
   const expected = `
 void add()
 {
@@ -25,7 +25,7 @@ test("function with params", () => {
 func add(a: int, b: int) {}
 `;
   const parsed = parse(input);
-  const result = build(parsed.root.statements[0]);
+  const result = build(parsed.root);
   const expected = `
 void add(int a, int b)
 {
@@ -40,7 +40,7 @@ test("function with params with default value", () => {
 func add(a: int, b = 5) {}
 `;
   const parsed = parse(input);
-  const result = build(parsed.root.statements[0]);
+  const result = build(parsed.root);
   const expected = `
 void add(int a, int b)
 {
@@ -57,7 +57,7 @@ func add() -> int {
 }
 `;
   const parsed = parse(input);
-  const result = build(parsed.root.statements[0]);
+  const result = build(parsed.root);
   const expected = `
 int add()
 {
@@ -75,7 +75,7 @@ func add() {
 }
 `;
   const parsed = parse(input);
-  const result = build(parsed.root.statements[0]);
+  const result = build(parsed.root);
   const expected = `
 void add()
 {
@@ -93,7 +93,7 @@ func add() -> int {
 }
 `;
   const parsed = parse(input);
-  const result = build(parsed.root.statements[0]);
+  const result = build(parsed.root);
   const expected = `
 int add()
 {

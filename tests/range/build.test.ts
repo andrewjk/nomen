@@ -10,7 +10,7 @@ test("exclusive", () => {
 var x = 1..4
 `;
   const parsed = parse(input);
-  const result = build(parsed.root.statements[0]);
+  const result = build(parsed.root);
   const expected = `
 int x[] = {1, 2, 3};
 `;
@@ -23,7 +23,7 @@ test("inclusive", () => {
 var x = 1.=4
 `;
   const parsed = parse(input);
-  const result = build(parsed.root.statements[0]);
+  const result = build(parsed.root);
   const expected = `
 int x[] = {1, 2, 3, 4};
 `;

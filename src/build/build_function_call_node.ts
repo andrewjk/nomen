@@ -21,5 +21,5 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 
     build_node(node.params[i], status);
   }
-  status.code += ");\n";
+  status.code += ")";
 }

@@ -72,16 +72,10 @@ export default function build_node(node: BaseNode, status: BuildStatus, with_sem
     }
     case "func_call": {
       build_function_call_node(node as FunctionCallNode, status);
-      if (with_semicolon) {
-        status.code += ";\n";
-      }
       break;
     }
     case "access": {
       build_access_node(node as AccessNode, status);
-      if (with_semicolon) {
-        status.code += ";\n";
-      }
       break;
     }
     case "grouped": {
@@ -96,14 +90,17 @@ export default function build_node(node: BaseNode, status: BuildStatus, with_sem
     }
     case "if": {
       build_if_else_node(node as IfElseNode, status);
+      with_semicolon = false;
       break;
     }
     case "for": {
       build_for_loop_node(node as ForLoopNode, status);
+      with_semicolon = false;
       break;
     }
     case "while": {
       build_while_loop_node(node as WhileLoopNode, status);
+      with_semicolon = false;
       break;
     }
     case "break": {
@@ -116,10 +113,12 @@ export default function build_node(node: BaseNode, status: BuildStatus, with_sem
     }
     case "panic": {
       build_panic_node(node as PanicNode, status);
+      with_semicolon = false;
       break;
     }
     case "todo": {
       build_todo_node(node as TodoNode, status);
+      with_semicolon = false;
       break;
     }
     case "return": {
@@ -140,10 +139,18 @@ export default function build_node(node: BaseNode, status: BuildStatus, with_sem
     }
     case "raw": {
       build_raw_node(node as RawNode, status);
+      with_semicolon = false;
       break;
     }
     default: {
       throw Error("Invalid node: " + node.node_type);
+    }
+  }
+
+  if (with_semicolon) {
+    // But not if it was a declaration with an if statement etc
+    if (!status.code.endsWith("}\n")) {
+      status.code += ";\n";
     }
   }
 }

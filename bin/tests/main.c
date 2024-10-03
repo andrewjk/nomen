@@ -175,7 +175,6 @@ int main()
     }
     Console_write("\n\n");
     Dog dog = make_dog();
-    ;
     Console_write(dog.name);
     Console_write(": ");
     Console_write(Dog_speak(&dog));
@@ -192,10 +191,10 @@ int main()
     }
     Cat cat = Cat_init();
     grow_animal((void *)&cat);
-    ;
     Console_write("cat has age: ");
     Console_write(int_to_string(cat.age));
 
+    // auto-free
     ((void *(*)(void *))_get_trait_func((void *)&dog, 0, 0))(&dog);
     ((void *(*)(void *))_get_trait_func((void *)&_animals_1, 0, 0))(&_animals_1);
 

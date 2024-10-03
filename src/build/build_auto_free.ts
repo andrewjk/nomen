@@ -12,7 +12,7 @@ export default function build_auto_free(status: BuildStatus) {
       const func = trait?.functions.find((f) => f.name == "dispose");
       if (trait && func) {
         if (!have_scoped) {
-          status.code += "\n";
+          status.code += "\n// auto-free\n";
           have_scoped = true;
         }
         const cast = "(void *(*)(void *))";

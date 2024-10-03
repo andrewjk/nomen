@@ -11,8 +11,9 @@ const y = [1, 2, 3]
 for x in y {}
 `;
   const parsed = parse(input);
-  const result = build(parsed.root.statements[1]);
+  const result = build(parsed.root);
   const expected = `
+int y[3] = {1, 2, 3};
 int x;
 for (x = 0; x < 3; x++)
 {
@@ -27,7 +28,7 @@ test("with range", () => {
 for x in 0..5 {}
 `;
   const parsed = parse(input);
-  const result = build(parsed.root.statements[0]);
+  const result = build(parsed.root);
   const expected = `
 int x;
 for (x = 0; x < 5; x++)
@@ -43,7 +44,7 @@ test("series", () => {
 var x = 1 + 2 - 3
 `;
   const parsed = parse(input);
-  const result = build(parsed.root.statements[0]);
+  const result = build(parsed.root);
   const expected = `
 int x = 1 + 2 - 3;
 `;

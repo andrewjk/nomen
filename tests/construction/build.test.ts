@@ -12,8 +12,17 @@ struct Person {
 var x = Person.init()
 `;
   const parsed = parse(input);
-  const result = build(parsed.root.statements[1]);
+  const result = build(parsed.root);
   const expected = `
+typedef struct Person
+{
+void *_vt;
+} Person;
+Person Person_init()
+{
+Person p;
+return p;
+}
 Person x = Person_init();
 `;
   expect(parsed.errors).toEqual([]);
@@ -28,8 +37,19 @@ struct Person {
 var x = Person.init("Andrew")
 `;
   const parsed = parse(input);
-  const result = build(parsed.root.statements[1]);
+  const result = build(parsed.root);
   const expected = `
+typedef struct Person
+{
+void *_vt;
+char* name;
+} Person;
+Person Person_init(char* name)
+{
+Person p;
+p.name = name;
+return p;
+}
 Person x = Person_init("Andrew");
 `;
   expect(parsed.errors).toEqual([]);

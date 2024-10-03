@@ -10,7 +10,7 @@ test("declaration with type", () => {
 const x: int[]
 `;
   const parsed = parse(input);
-  const result = build(parsed.root.statements[0]);
+  const result = build(parsed.root);
   const expected = `
 int x[];
 `;
@@ -23,7 +23,7 @@ test("declaration with value", () => {
 var x = [1, 2, 3]
 `;
   const parsed = parse(input);
-  const result = build(parsed.root.statements[0]);
+  const result = build(parsed.root);
   const expected = `
 int x[3] = {1, 2, 3};
 `;

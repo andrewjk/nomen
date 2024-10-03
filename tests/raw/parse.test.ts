@@ -12,7 +12,7 @@ printf("do some stuff");
 \`\`\`
 `;
   const parsed = parse(input);
-  const expected = new RawNode(1, '\nprintf("do some stuff");\n');
+  const expected = new RawNode(1, 'printf("do some stuff");');
   expect(parsed.errors).toEqual([]);
   expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
 });

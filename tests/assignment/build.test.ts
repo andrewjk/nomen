@@ -11,8 +11,9 @@ var x: int
 x = 5
 `;
   const parsed = parse(input);
-  const result = build(parsed.root.statements[1]);
+  const result = build(parsed.root);
   const expected = `
+int x;
 x = 5;
 `;
   expect(parsed.errors).toEqual([]);
@@ -25,8 +26,9 @@ const x: int
 x = 5
 `;
   const parsed = parse(input);
-  const result = build(parsed.root.statements[1]);
+  const result = build(parsed.root);
   const expected = `
+int x;
 x = 5;
 `;
   expect(parsed.errors).toEqual([]);
@@ -43,8 +45,9 @@ if true {
 }
 `;
   const parsed = parse(input);
-  const result = build(parsed.root.statements[1]);
+  const result = build(parsed.root);
   const expected = `
+int x;
 if (true) {
 x = 5;
 } else {
@@ -62,7 +65,7 @@ func (var x: int) {
 }
 `;
   const parsed = parse(input);
-  const result = build(parsed.root.statements[0]);
+  const result = build(parsed.root);
   const expected = `
 void add(int *x)
 {
