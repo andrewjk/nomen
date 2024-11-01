@@ -47,8 +47,8 @@ import build_while_loop_node from "./build_while_loop_node";
 export default function build_node(node: BaseNode, status: BuildStatus, with_semicolon = false) {
   // Build any associated declarations first, e.g. for function call params that
   // will later be freed
-  if (node.associated_declarations) {
-    for (let decl of node.associated_declarations) {
+  if (node.allocations) {
+    for (let decl of node.allocations) {
       build_node(decl, status, true);
     }
   }

@@ -24,7 +24,7 @@ func add(a = z0) {}
 `;
   const expected: CompileError[] = [
     {
-      message: "Unknown value: z0",
+      message: "Type mismatch in param default: unknown value z0",
       start: 14,
     },
   ];

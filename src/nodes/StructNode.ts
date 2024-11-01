@@ -1,3 +1,4 @@
+import built_in_types from "../built_in_types";
 import BaseNode from "./BaseNode";
 import DeclarationNode from "./DeclarationNode";
 import FunctionNode from "./FunctionNode";
@@ -27,6 +28,7 @@ export default class StructNode extends BaseNode {
     this.functions = functions || [];
 
     this.privates_visible = false;
-    this.is_simple_type = ["bool", "int", "string"].includes(this.name);
+    // TODO: String shouldn't be a simple type in all circumstances (e.g. if it is growable)
+    this.is_simple_type = built_in_types.includes(name);
   }
 }

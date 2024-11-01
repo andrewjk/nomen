@@ -7,8 +7,12 @@ export default function trim_test_build(source: string, remove_typedefs = false)
     // Replace commented lines
     .replace(/^\/\/.+$/gm, "")
     // Replace empty lines
-    .replace(/\n{2,}/gm, "\n")
-    .trim();
+    .replace(/\n{2,}/gm, "\n");
 
-  return source;
+  const end = source.indexOf("void **_get_trait_func");
+  if (end !== -1) {
+    source = source.substring(0, end);
+  }
+
+  return source.trim();
 }

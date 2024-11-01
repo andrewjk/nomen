@@ -12,10 +12,62 @@ pub trait Stringable {
 pub struct int: Stringable {
     pub func to_string(self) -> string {
         ```
+        int length = snprintf(NULL, 0, "%ld", self);
+        char* str = malloc(length + 1);
+        malloc_count++;
+        snprintf(str, length + 1, "%ld", self);
+        return str;
+        ```
+        return "from_c"
+    }
+}
+
+pub struct uint: Stringable {
+    pub func to_string(self) -> string {
+        ```
+        int length = snprintf(NULL, 0, "%ld", self);
+        char* str = malloc(length + 1);
+        malloc_count++;
+        snprintf(str, length + 1, "%ld", self);
+        return str;
+        ```
+        return "from_c"
+    }
+}
+
+pub struct int8: Stringable {
+    pub func to_string(self) -> string {
+        ```
         int length = snprintf(NULL, 0, "%d", self);
         char* str = malloc(length + 1);
         malloc_count++;
         snprintf(str, length + 1, "%d", self);
+        return str;
+        ```
+        return "from_c"
+    }
+}
+
+pub struct uint8: Stringable {
+    pub func to_string(self) -> string {
+        ```
+        int length = snprintf(NULL, 0, "%d", self);
+        char* str = malloc(length + 1);
+        malloc_count++;
+        snprintf(str, length + 1, "%d", self);
+        return str;
+        ```
+        return "from_c"
+    }
+}
+
+pub struct float: Stringable {
+    pub func to_string(self) -> string {
+        ```
+        int length = snprintf(NULL, 0, "%f", self);
+        char* str = malloc(length + 1);
+        malloc_count++;
+        snprintf(str, length + 1, "%f", self);
         return str;
         ```
         return "from_c"

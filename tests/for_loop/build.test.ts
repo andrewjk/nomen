@@ -13,8 +13,8 @@ for x in y {}
   const parsed = parse(input);
   const result = build(parsed.root);
   const expected = `
-int y[3] = {1, 2, 3};
-int x;
+long y[3] = {1, 2, 3};
+long x;
 for (x = 0; x < 3; x++)
 {
 }
@@ -30,7 +30,7 @@ for x in 0..5 {}
   const parsed = parse(input);
   const result = build(parsed.root);
   const expected = `
-int x;
+long x;
 for (x = 0; x < 5; x++)
 {
 }
@@ -46,7 +46,7 @@ var x = 1 + 2 - 3
   const parsed = parse(input);
   const result = build(parsed.root);
   const expected = `
-int x = 1 + 2 - 3;
+long x = 1 + 2 - 3;
 `;
   expect(parsed.errors).toEqual([]);
   expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));

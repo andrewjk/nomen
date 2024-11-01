@@ -79,6 +79,41 @@ if x > 5 {
   expect(trim_test_parse(parsed.root.statements[1])).toEqual(trim_test_parse(expected));
 });
 
+test("if with boolean expression", () => {
+  const input = `
+var x = 10
+if x + 1 > 5 {
+  x = 15
+}
+`;
+  const parsed = parse(input);
+  const expected = new IfElseNode(
+    12,
+    new OperationNode(
+      15,
+      ">",
+      new OperationNode(
+        15,
+        "+",
+        new ValueNode(15, "x", new Type("int", true)),
+        new ValueNode(19, "1", new Type("int", true)),
+        new Type("int", true),
+      ),
+      new ValueNode(19, "5", new Type("int", true)),
+      new Type("bool"),
+    ),
+    new BranchNode(25, [
+      new AssignmentNode(
+        25,
+        new ValueNode(25, "x", new Type("int", true)),
+        new ValueNode(29, "15", new Type("int", true)),
+      ),
+    ]),
+  );
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_parse(parsed.root.statements[1])).toEqual(trim_test_parse(expected));
+});
+
 test("declaration with if", () => {
   const input = `
 const x = 10

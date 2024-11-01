@@ -81,7 +81,9 @@ function check_access_function_node(
   status: CheckStatus,
 ) {
   const struct = status.structs.find((s) => s.name === target_type.name);
+
   let func = struct?.functions.find((f) => f.name === node.name);
+
   if (!func) {
     // Are we accessing a func in a trait?
     const trait = status.traits.find((s) => s.name === target_type.name);
@@ -89,6 +91,7 @@ function check_access_function_node(
       func = trait.functions.find((f) => f.name === node.name);
     }
   }
+
   if (!func) {
     // Are we accessing a func in a struct with a trait and a default value?
     const struct = status.structs.find((s) => s.name === target_type.name);
@@ -102,5 +105,15 @@ function check_access_function_node(
       }
     }
   }
+
+  // Make sure the function exists
+  if (!func) {
+    status.errors.push({
+      message: `Function not found: ${target_type.name}.${node.name}`,
+      start: node.start,
+    });
+    return;
+  }
+
   check_function_call(node, status, func, target_type);
 }

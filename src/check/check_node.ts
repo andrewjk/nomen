@@ -134,15 +134,34 @@ export default function check_node(node: BaseNode, status: CheckStatus) {
     }
   }
 
-  flush_unwound_declarations(node, status);
+  promote_allocations(node, status);
 }
 
-function flush_unwound_declarations(node: BaseNode, status: CheckStatus) {
-  const parent = status.stack.at(-1)!;
-  if (is_block_node(parent)) {
-    if (status.hoisted_declarations.length) {
-      node.associated_declarations = status.hoisted_declarations;
+function promote_allocations(node: BaseNode, status: CheckStatus) {
+  // If allocations have been hoisted out of e.g. function params in a child of
+  // this node, and the parent of this node is a block node, add the allocations
+  // to this node so that they will be declared in the block node, before they
+  // are used in this node
+  // E.g. something like
+  // func print() {
+  //   ...
+  //   const z = "\{5}..."
+  // }
+  // will become
+  // func print() {
+  //   ...
+  //   const _param_1 = 5.to_string()
+  //   const z = _string_interpolate("%s...", _param_1)
+  //   free(_param_1)
+  // }
+  if (status.allocations.length) {
+    let parent = status.stack.at(-1);
+    if (is_block_node(parent)) {
+      node.allocations ??= [];
+      node.allocations.push(...status.allocations);
+      // HACK: We need allocations to be cleared in the status that this one may
+      // have been cloned from, so we can't just set status.allocations = []
+      status.allocations.length = 0;
     }
-    status.hoisted_declarations = [];
   }
 }

@@ -24,7 +24,7 @@ const x = z0
 `;
   const expected: CompileError[] = [
     {
-      message: "Unknown value: z0",
+      message: "Type mismatch in declaration: unknown value z0",
       start: 11,
     },
   ];

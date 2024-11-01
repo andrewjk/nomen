@@ -8,11 +8,13 @@ import GroupedNode from "../nodes/GroupedNode";
 import OperationNode from "../nodes/OperationNode";
 import RangeNode from "../nodes/RangeNode";
 import ValueNode from "../nodes/ValueNode";
+import { is_operation_node } from "../nodes/is_node_type";
 import type ParseStatus from "./ParseStatus";
 import parse_access from "./parse_access";
 import parse_array_value from "./parse_array_value";
 import parse_function_call_parameter from "./parse_function_call_parameter";
 import parse_if_else from "./parse_if_else";
+import parse_string_interpolation from "./parse_string_interpolation";
 import accept from "./utils/accept";
 import consume from "./utils/consume";
 import expect from "./utils/expect";
@@ -39,19 +41,23 @@ export default function parse_expression(status: ParseStatus): BaseNode {
       expect("]", status);
       break;
     }
-    case "if": {
-      node = parse_if_else(status);
-      break;
-    }
     case "(": {
       consume(status);
       node = new GroupedNode(start, parse_expression(status));
       expect(")", status);
       break;
     }
+    case "if": {
+      node = parse_if_else(status);
+      break;
+    }
     default: {
-      value = consume(status);
-      node = new ValueNode(start, value);
+      if (value && value.startsWith('"') && (value.length === 1 || !value.endsWith('"'))) {
+        node = parse_string_interpolation(status);
+      } else {
+        value = consume(status);
+        node = new ValueNode(start, value);
+      }
     }
   }
 
@@ -101,9 +107,27 @@ export default function parse_expression(status: ParseStatus): BaseNode {
       case "&&":
       case "||": {
         consume(status);
+
         // TODO: Proper order of operations
-        const op = new OperationNode(start, current_value, node, parse_expression(status));
-        node = op;
+        // Like https://en.cppreference.com/w/c/language/operator_precedence
+        const expression = parse_expression(status);
+        if (is_operation_node(expression)) {
+          const current_precedence = operator_precedence(current_value);
+          const expression_precedence = operator_precedence(expression.op);
+          if (current_precedence < expression_precedence) {
+            // Move things from the right to the left
+            // E.g. from `a + (b > c)` to `(a + b) > c`
+            node = new OperationNode(
+              start,
+              expression.op,
+              new OperationNode(start, current_value, node, expression.left_value),
+              expression.right_value,
+            );
+            break;
+          }
+        }
+
+        node = new OperationNode(start, current_value, node, expression);
         break;
       }
       case "..":
@@ -116,6 +140,59 @@ export default function parse_expression(status: ParseStatus): BaseNode {
       default: {
         return node;
       }
+    }
+  }
+}
+
+function operator_precedence(op: string) {
+  switch (op) {
+    case "*":
+    case "/":
+    case "%": {
+      return 3;
+    }
+    case "+":
+    case "-": {
+      return 4;
+    }
+    case "<<":
+    case ">>": {
+      return 5;
+    }
+    case "==":
+    case "!=": {
+      return 7;
+    }
+    case "&": {
+      return 8;
+    }
+    case "^": {
+      return 9;
+    }
+    case "|": {
+      return 10;
+    }
+    case "&&": {
+      return 11;
+    }
+    case "||": {
+      return 12;
+    }
+    case "=":
+    case "+=":
+    case "-=":
+    case "*=":
+    case "/=":
+    case "%=":
+    case "<<=":
+    case ">>=":
+    case "&=":
+    case "^=":
+    case "|=": {
+      return 14;
+    }
+    default: {
+      return 100;
     }
   }
 }

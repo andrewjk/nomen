@@ -19,16 +19,16 @@ var x = p.age
 typedef struct Person
 {
 void *_vt;
-int age;
+long age;
 } Person;
-Person Person_init(int age)
+Person Person_init(long age)
 {
 Person p;
 p.age = age;
 return p;
 }
 Person p;
-int x = p.age;
+long x = p.age;
 `;
   expect(parsed.errors).toEqual([]);
   expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
@@ -63,10 +63,10 @@ return a;
 typedef struct Person
 {
 void *_vt;
-int age;
+long age;
 Address address;
 } Person;
-Person Person_init(int age, Address address)
+Person Person_init(long age, Address address)
 {
 Person p;
 p.age = age;
@@ -94,9 +94,9 @@ p.age = 20
 typedef struct Person
 {
 void *_vt;
-int age;
+long age;
 } Person;
-Person Person_init(int age)
+Person Person_init(long age)
 {
 Person p;
 p.age = age;
@@ -138,10 +138,10 @@ return a;
 typedef struct Person
 {
 void *_vt;
-int age;
+long age;
 Address address;
 } Person;
-Person Person_init(int age, Address address)
+Person Person_init(long age, Address address)
 {
 Person p;
 p.age = age;
@@ -177,12 +177,12 @@ Person Person_init()
 Person p;
 return p;
 }
-int Person_age()
+long Person_age()
 {
 return 20;
 }
 Person p;
-int x = Person_age();
+long x = Person_age();
 `;
   expect(parsed.errors).toEqual([]);
   expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
@@ -221,10 +221,10 @@ return "123 main st";
 typedef struct Person
 {
 void *_vt;
-int age;
+long age;
 Address address;
 } Person;
-Person Person_init(int age, Address address)
+Person Person_init(long age, Address address)
 {
 Person p;
 p.age = age;
@@ -269,9 +269,9 @@ return a;
 typedef struct Person
 {
 void *_vt;
-int age;
+long age;
 } Person;
-Person Person_init(int age)
+Person Person_init(long age)
 {
 Person p;
 p.age = age;

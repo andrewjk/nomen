@@ -12,7 +12,7 @@ var x = 1..4
   const parsed = parse(input);
   const result = build(parsed.root);
   const expected = `
-int x[] = {1, 2, 3};
+long x[] = {1, 2, 3};
 `;
   expect(parsed.errors).toEqual([]);
   expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
@@ -25,7 +25,7 @@ var x = 1.=4
   const parsed = parse(input);
   const result = build(parsed.root);
   const expected = `
-int x[] = {1, 2, 3, 4};
+long x[] = {1, 2, 3, 4};
 `;
   expect(parsed.errors).toEqual([]);
   expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));

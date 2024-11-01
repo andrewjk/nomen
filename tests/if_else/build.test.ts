@@ -15,7 +15,7 @@ if x > 5 {
   const parsed = parse(input);
   const result = build(parsed.root);
   const expected = `
-int x = 10;
+long x = 10;
 if (x > 5) {
 x = 15;
 }
@@ -36,7 +36,7 @@ if x > 5 {
   const parsed = parse(input);
   const result = build(parsed.root);
   const expected = `
-int x = 10;
+long x = 10;
 if (x > 5) {
 x = 15;
 } else {
@@ -59,8 +59,8 @@ const y = if x > 5 {
   const parsed = parse(input);
   const result = build(parsed.root);
   const expected = `
-int x = 10;
-int y;
+long x = 10;
+long y;
 if (x > 5) {
 y = 50;
 } else {
@@ -80,8 +80,8 @@ const y = if x > 5 ~ 50
   const parsed = parse(input);
   const result = build(parsed.root);
   const expected = `
-int x = 10;
-int y;
+long x = 10;
+long y;
 if (x > 5) {
 y = 50;
 } else {
@@ -100,8 +100,8 @@ const y = if x > 5 ~ 50 else ~ 0
   const parsed = parse(input);
   const result = build(parsed.root);
   const expected = `
-int x = 10;
-int y;
+long x = 10;
+long y;
 if (x > 5) {
 y = 50;
 } else {

@@ -13,5 +13,6 @@ export default interface BuildStatus {
    * Declarations that were made in the current scope and will need to be freed
    */
   scoped_declarations: DeclarationNode[];
+  interpolate_string_counts: Set<number>;
   return_assign?: string;
 }

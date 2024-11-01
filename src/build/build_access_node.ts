@@ -58,7 +58,7 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
       } else {
         // If the target is a struct, we need to convert the access function
         // into a C function that takes the struct as an argument
-        status.code += `${c_type(type.name)}_${access_func.name}(`;
+        status.code += `${type.name}_${access_func.name}(`;
         if (!access_func.is_static) {
           // TODO: be more rigorous about this!
           if (type.name !== "int") {

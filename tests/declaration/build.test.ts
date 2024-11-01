@@ -12,7 +12,7 @@ const x = 5
   const parsed = parse(input);
   const result = build(parsed.root);
   const expected = `
-int x = 5;
+long x = 5;
 `;
   expect(parsed.errors).toEqual([]);
   expect(parsed.errors).toEqual([]);
@@ -26,7 +26,7 @@ const x: int
   const parsed = parse(input);
   const result = build(parsed.root);
   const expected = `
-int x;
+long x;
 `;
   expect(parsed.errors).toEqual([]);
   expect(parsed.errors).toEqual([]);
@@ -40,7 +40,7 @@ var x = 5
   const parsed = parse(input);
   const result = build(parsed.root);
   const expected = `
-int x = 5;
+long x = 5;
 `;
   expect(parsed.errors).toEqual([]);
   expect(parsed.errors).toEqual([]);
@@ -54,7 +54,7 @@ var x: int
   const parsed = parse(input);
   const result = build(parsed.root);
   const expected = `
-int x;
+long x;
 `;
   expect(parsed.errors).toEqual([]);
   expect(parsed.errors).toEqual([]);

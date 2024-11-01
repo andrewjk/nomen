@@ -41,7 +41,7 @@ export default interface CheckStatus {
    * Declarations that will need to be added before the current node, for
    * storing paramater values etc that may need auto-freeing
    */
-  hoisted_declarations: DeclarationNode[];
+  allocations: DeclarationNode[];
   /**
    * A counter for making new var names that (hopefully) don't clash. It needs
    * to be in an object so that it continues to be incremented after the status

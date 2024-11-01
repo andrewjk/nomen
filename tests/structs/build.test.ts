@@ -41,7 +41,7 @@ typedef struct Person
 {
 void *_vt;
 char* name;
-int age;
+long age;
 } Person;
 Person Person_init(char* name)
 {
@@ -96,7 +96,7 @@ struct Person {
 typedef struct Person
 {
 void *_vt;
-int age;
+long age;
 } Person;
 Person Person_init()
 {

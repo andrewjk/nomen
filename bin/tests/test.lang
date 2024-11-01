@@ -6,13 +6,11 @@ func main() {
 	// Test for loop and range
 	for i in 0..5 {
 		Console.write("hello, world! ")
-		Console.write((i + 1).to_string())
-		// TODO: if i + 1 < 4
-		const x = i + 1
-		if x < 4 {
-			Console.write(" is less than 4")
+		//Console.write((i + 1).to_string())
+		if i + 1 < 4 {
+			Console.write("\{i + 1} is less than 4")
 		} else {
-			Console.write(" is 4 or more")
+			Console.write("\{i + 1} is 4 or more")
 		}
 		Console.write("\n")
 	}

@@ -17,6 +17,7 @@ export default function parse_declaration(
   const start = get_index(status);
   accept(visibility, status);
   const decl = new DeclarationNode(start, visibility, declaration, "");
+  status.stack.push(decl);
 
   accept(declaration, status);
   decl.name_start = get_index(status);
@@ -39,6 +40,8 @@ export default function parse_declaration(
       start: decl.start + decl.declaration.length + 1,
     });
   }
+
+  status.stack.pop();
 
   // TODO: Move this into add_to_parent somehow
   const parent = status.stack.at(-1)!;

@@ -13,6 +13,8 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
   }
 
   if (decl.value) {
+    status.stack.push(decl);
+
     const old_expected_type = status.expected_type;
     status.expected_type = decl.type;
     check_node(decl.value, status);
@@ -30,6 +32,8 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
     if (!decl.type.name) {
       decl.type = type_from_value_node(decl.value, status);
     }
+
+    status.stack.pop();
   }
 
   // Add a new value to the stack

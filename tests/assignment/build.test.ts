@@ -13,7 +13,7 @@ x = 5
   const parsed = parse(input);
   const result = build(parsed.root);
   const expected = `
-int x;
+long x;
 x = 5;
 `;
   expect(parsed.errors).toEqual([]);
@@ -28,7 +28,7 @@ x = 5
   const parsed = parse(input);
   const result = build(parsed.root);
   const expected = `
-int x;
+long x;
 x = 5;
 `;
   expect(parsed.errors).toEqual([]);
@@ -47,7 +47,7 @@ if true {
   const parsed = parse(input);
   const result = build(parsed.root);
   const expected = `
-int x;
+long x;
 if (true) {
 x = 5;
 } else {

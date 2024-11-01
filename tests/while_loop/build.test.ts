@@ -15,7 +15,7 @@ while x < 5 {
   const parsed = parse(input);
   const result = build(parsed.root);
   const expected = `
-int x = 0;
+long x = 0;
 while (x < 5) {
 x = x + 1;
 }

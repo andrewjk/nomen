@@ -11,9 +11,10 @@ export default function build_function_call_node(node: FunctionCallNode, status:
     }
 
     // HACK: Always passing the pointer in -- maybe we shouldn't do this for ints etc
+    // HACK: Need a better way to determine built-ins??
     const param_type = type_from_value_node(node.params[i]);
     if (
-      status.structs.find((s) => s.name === param_type.name) ||
+      status.structs.find((s) => s.name === param_type.name && !s.is_simple_type) ||
       status.traits.find((t) => t.name === param_type.name)
     ) {
       status.code += `(void *)&`;
@@ -22,4 +23,8 @@ export default function build_function_call_node(node: FunctionCallNode, status:
     build_node(node.params[i], status);
   }
   status.code += ")";
+
+  if (node.name.startsWith("_string_interpolate_")) {
+    status.interpolate_string_counts.add(node.params.length - 1);
+  }
 }

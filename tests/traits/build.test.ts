@@ -57,7 +57,7 @@ typedef struct Frank
 {
 void *_vt;
 char* name;
-int age;
+long age;
 } Frank;
 Frank Frank_init()
 {
@@ -69,8 +69,8 @@ return f;
 }
 char* get_Frank_name(struct Frank *self) { return self->name; }
 void set_Frank_name(struct Frank *self, char* value) { self->name = value; }
-int get_Frank_age(struct Frank *self) { return self->age; }
-void set_Frank_age(struct Frank *self, int value) { self->age = value; }`;
+long get_Frank_age(struct Frank *self) { return self->age; }
+void set_Frank_age(struct Frank *self, long value) { self->age = value; }`;
   expect(parsed.errors).toEqual([]);
   expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
 });

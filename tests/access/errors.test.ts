@@ -49,6 +49,11 @@ var age = person.age
       message: "Unknown target: person",
       start: 11,
     },
+    {
+      // TODO: Don't want this one
+      message: "Type mismatch in declaration: unknown value age",
+      start: 11,
+    },
   ];
   const parsed = parse(input);
   expect(parsed.errors).toEqual(expected);

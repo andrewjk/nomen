@@ -13,18 +13,9 @@ import value_from_value_node from "./utils/value_from_value_node";
 export default function check_function_call(
   node: FunctionCallNode | AccessFunctionCallNode,
   status: CheckStatus,
-  func: FunctionNode | undefined,
+  func: FunctionNode,
   target_type?: Type,
 ) {
-  // Make sure the function exists
-  if (!func) {
-    status.errors.push({
-      message: `Function not found: ${node.name}`,
-      start: node.start,
-    });
-    return;
-  }
-
   // Make sure it's not a private function that we don't have access to
   if (
     func.visibility === "private" &&
@@ -61,7 +52,8 @@ export default function check_function_call(
   }
 
   // Check each param
-  //console.log("BEFORE", node.params);
+  status.stack.push(node);
+
   for (let [i, param] of node.params.entries()) {
     check_node(param, status);
 
@@ -77,26 +69,16 @@ export default function check_function_call(
     );
 
     // Move the param into a declaration so that we can auto-free it later
+    // TODO: Based on its expression type as well as its node_type
+    // e.g. if it's a function that returns a string
     if (param.node_type !== "value") {
       const declaration_name = `_param_${status.var_name_counter.value++}`;
-      status.hoisted_declarations.push(
+      status.allocations.push(
         new DeclarationNode(param.start, "private", "const", declaration_name, param_type, param),
       );
       node.params.splice(i, 1, new ValueNode(param.start, declaration_name, param_type));
     }
   }
-  //console.log("AFTER", node.params);
 
-  //for (let i = 0; i < node.params.length; i++) {
-  //  // Move the param into a declaration so that we can auto-free it later
-  //  const param = node.params[i];
-  //  const param_type = type_from_value_node(param, status);
-  //  if (param.node_type !== "value") {
-  //    const declaration_name = `_param_${status.unwound_counter++}`;
-  //    status.unwound_declarations.push(
-  //      new DeclarationNode(param.start, "private", "const", declaration_name, param_type, param),
-  //    );
-  //    node.params.splice(i, 1, new ValueNode(param.start, declaration_name, param_type));
-  //  }
-  //}
+  status.stack.pop();
 }

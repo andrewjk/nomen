@@ -4,6 +4,7 @@ import type BuildStatus from "./BuildStatus";
 import build_auto_free from "./build_auto_free";
 import build_block_node from "./build_block_node";
 import build_node from "./build_node";
+import c_type from "./utils/c_type";
 import type_from_value_node from "./utils/type_from_value_node";
 
 export default function build_for_loop_node(node: ForLoopNode, status: BuildStatus) {
@@ -13,7 +14,7 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
   if (node.item && node.list) {
     if (node.list.node_type == "range") {
       // HACK: Only want to do this if the item hasn't been declared previously?
-      status.code += `int `;
+      status.code += `${c_type("int")} `;
       build_node(node.item, status);
       status.code += ";\nfor (";
       build_node(node.item, status);
@@ -43,7 +44,7 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
     } else {
       // TODO: Handle index iterator variable
       // HACK: Only want to do this if the item hasn't been declared previously?
-      status.code += `int `;
+      status.code += `${c_type("int")} `;
       build_node(node.item, status);
       status.code += ";\nfor (";
       build_node(node.item, status);

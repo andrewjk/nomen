@@ -27,7 +27,7 @@ func add(a: int, b: int) {}
   const parsed = parse(input);
   const result = build(parsed.root);
   const expected = `
-void add(int a, int b)
+void add(long a, long b)
 {
 }
 `;
@@ -42,7 +42,7 @@ func add(a: int, b = 5) {}
   const parsed = parse(input);
   const result = build(parsed.root);
   const expected = `
-void add(int a, int b)
+void add(long a, long b)
 {
 }
 `;
@@ -59,7 +59,7 @@ func add() -> int {
   const parsed = parse(input);
   const result = build(parsed.root);
   const expected = `
-int add()
+long add()
 {
 return 5;
 }
@@ -79,7 +79,7 @@ func add() {
   const expected = `
 void add()
 {
-int x = 5;
+long x = 5;
 }
 `;
   expect(parsed.errors).toEqual([]);
@@ -95,11 +95,11 @@ func add() -> int {
   const parsed = parse(input);
   const result = build(parsed.root);
   const expected = `
-int add()
+long add()
 {
 return 5;
 }
 `;
   expect(parsed.errors).toEqual([]);
-  expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+  expect(trim_test_build(result.code)).toEqual(expected.trim());
 });

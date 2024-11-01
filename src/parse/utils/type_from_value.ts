@@ -6,8 +6,12 @@ export default function type_from_value(value: string, status: ParseStatus): Typ
     return new Type("bool", true);
   } else if (value.startsWith('"') && value.endsWith('"')) {
     return new Type("string", true);
-  } else if (/^\d+$/.test(value)) {
+  } else if (value.startsWith("'") && value.endsWith("'")) {
+    return new Type("char", true);
+  } else if (/^(\+|-)*\d+$/.test(value)) {
     return new Type("int", true);
+  } else if (/^(\+|-)*\d+.\d+$/.test(value)) {
+    return new Type("float", true);
   } else {
     return new Type("");
   }

@@ -14,7 +14,7 @@ for x in 0..5 {
   const parsed = parse(input);
   const result = build(parsed.root);
   const expected = `
-int x;
+long x;
 for (x = 0; x < 5; x++)
 {
 break;
@@ -33,7 +33,7 @@ for x in 0..5 {
   const parsed = parse(input);
   const result = build(parsed.root);
   const expected = `
-int x;
+long x;
 for (x = 0; x < 5; x++)
 {
 continue;
@@ -52,7 +52,7 @@ func add() -> int {
   const parsed = parse(input);
   const result = build(parsed.root);
   const expected = `
-int add()
+long add()
 {
 printf("something went wrong\\n");
 exit(EXIT_FAILURE);
@@ -71,7 +71,7 @@ func add() -> int {
   const parsed = parse(input);
   const result = build(parsed.root);
   const expected = `
-int add()
+long add()
 {
 printf("haven't done this yet\\n");
 exit(EXIT_FAILURE);

@@ -1,3 +1,4 @@
+import built_in_types from "./built_in_types";
 import type CheckStatus from "./check/CheckStatus";
 import check_node from "./check/check_node";
 import BaseNode from "./nodes/BaseNode";
@@ -7,11 +8,11 @@ export default function check(root: BaseNode): CheckResult {
   const status: CheckStatus = {
     stack: [root],
     values: [],
-    types: ["bool", "int", "string"],
+    types: [...built_in_types],
     structs: [],
     traits: [],
     functions: [],
-    hoisted_declarations: [],
+    allocations: [],
     var_name_counter: { value: 0 },
     errors: [],
   };

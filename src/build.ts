@@ -11,6 +11,7 @@ export default function build(root: BaseNode): BuildResult {
     headers: "",
     code: "",
     scoped_declarations: [],
+    interpolate_string_counts: new Set(),
   };
 
   build_node(root, status);

@@ -50,6 +50,7 @@ test("pub struct", () => {
 pub struct Person {}
 `;
   const parsed = parse(input);
+
   const expected = new StructNode(
     1,
     "pub",
