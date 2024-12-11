@@ -1,3 +1,4 @@
+import add_error from "../add_error";
 import ImportNode from "../nodes/ImportNode";
 import RootNode from "../nodes/RootNode";
 import type ParseStatus from "./ParseStatus";
@@ -19,10 +20,7 @@ export default function parse_import(status: ParseStatus) {
       break;
     }
     default: {
-      status.errors.push({
-        message: "Import cannot appear here",
-        start: imp.start,
-      });
+      add_error(status, "Import cannot appear here", imp.start);
     }
   }
 }

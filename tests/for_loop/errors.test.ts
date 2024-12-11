@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import parse from "../../src/parse";
-import type CompileError from "../../src/types/CompileError";
+import test_error from "../test_error";
 
 //const test = suite("For loop errors");
 
@@ -10,12 +10,7 @@ for x in "hi" {
   // ...
 }
 `;
-  const expected: CompileError[] = [
-    {
-      message: "For loop list must be an array, not string",
-      start: 10,
-    },
-  ];
+  const expected = [test_error(input, "For loop list must be an array, not string", 2, 10)];
   const parsed = parse(input);
   expect(parsed.errors).toEqual(expected);
 });

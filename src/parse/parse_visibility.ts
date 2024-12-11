@@ -1,3 +1,4 @@
+import add_error from "../add_error";
 import type ParseStatus from "./ParseStatus";
 import parse_declaration from "./parse_declaration";
 import parse_function from "./parse_function";
@@ -24,10 +25,7 @@ export default function parse_visibility(visibility: "pub" | "private", status: 
     case "const":
     case "var": {
       if (visibility === "private" && status.stack.at(-1)?.node_type === "trait") {
-        status.errors.push({
-          message: `Trait fields cannot be private`,
-          start: get_index(status),
-        });
+        add_error(status, `Trait fields cannot be private`, get_index(status));
         consume(status);
       } else {
         parse_declaration(visibility, next, status);
@@ -44,10 +42,7 @@ export default function parse_visibility(visibility: "pub" | "private", status: 
     }
     case "func": {
       if (visibility === "private" && status.stack.at(-1)?.node_type === "trait") {
-        status.errors.push({
-          message: `Trait functions cannot be private`,
-          start: get_index(status),
-        });
+        add_error(status, `Trait functions cannot be private`, get_index(status));
         consume(status);
       } else {
         parse_function(visibility, status);
@@ -55,10 +50,11 @@ export default function parse_visibility(visibility: "pub" | "private", status: 
       break;
     }
     default: {
-      status.errors.push({
-        message: `Visibility can only be set for const, var, struct, trait or func`,
-        start: get_index(status),
-      });
+      add_error(
+        status,
+        `Visibility can only be set for const, var, struct, trait or func`,
+        get_index(status),
+      );
       consume(status);
     }
   }

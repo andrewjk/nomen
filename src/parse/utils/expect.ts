@@ -1,3 +1,4 @@
+import add_error from "../../add_error";
 import type ParseStatus from "../ParseStatus";
 import get_index from "./get_index";
 
@@ -8,17 +9,11 @@ export default function expect(value: string, status: ParseStatus, advance = tru
       status.i += advance ? 1 : 0;
       return true;
     } else {
-      status.errors.push({
-        message: `Expected ${value}`,
-        start: get_index(status),
-      });
+      add_error(status, `Expected ${value}`, get_index(status));
     }
   } else {
     const last = status.tokens.at(-1);
-    status.errors.push({
-      message: "Expected token",
-      start: last ? last.i + last.value.length : 0,
-    });
+    add_error(status, "Expected token", last ? last.i + last.value.length : 0);
   }
   return false;
 }

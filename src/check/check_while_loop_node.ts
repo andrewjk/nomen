@@ -1,3 +1,4 @@
+import add_error from "../add_error";
 import WhileLoopNode from "../nodes/WhileLoopNode";
 import type CheckStatus from "./CheckStatus";
 import check_block_node from "./check_block_node";
@@ -12,10 +13,11 @@ export default function check_while_loop_node(while_loop: WhileLoopNode, status:
   check_node(while_loop.condition, while_status);
   const condition_type = type_from_value_node(while_loop.condition, while_status);
   if (type_name(condition_type) !== "bool") {
-    while_status.errors.push({
-      message: `While loop condition must be a bool, not ${type_name(condition_type)}`,
-      start: while_loop.condition.start,
-    });
+    add_error(
+      while_status,
+      `While loop condition must be a bool, not ${type_name(condition_type)}`,
+      while_loop.condition.start,
+    );
   }
 
   check_block_node(while_loop, while_status);

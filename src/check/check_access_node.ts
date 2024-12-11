@@ -1,3 +1,4 @@
+import add_error from "../add_error";
 import AccessFieldNode from "../nodes/AccessFieldNode";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode";
 import AccessNode from "../nodes/AccessNode";
@@ -13,10 +14,7 @@ export default function check_access_node(node: AccessNode, status: CheckStatus)
 
   const target_type = type_from_value_node(node.target, status);
   if (!target_type.name) {
-    status.errors.push({
-      message: `Unknown target: ${value_from_value_node(node.target)}`,
-      start: node.target.start,
-    });
+    add_error(status, `Unknown target: ${value_from_value_node(node.target)}`, node.target.start);
     return;
   }
 
@@ -60,18 +58,12 @@ function check_access_field_node(target_type: Type, node: AccessFieldNode, statu
       field.visibility === "private" &&
       !status.structs.find((s) => s.name === target_type.name)?.privates_visible
     ) {
-      status.errors.push({
-        message: `Can't access private field: ${node.name}`,
-        start: node.start,
-      });
+      add_error(status, `Can't access private field: ${node.name}`, node.start);
     } else {
       node.type = field.type;
     }
   } else {
-    status.errors.push({
-      message: `Field not found: ${node.name}`,
-      start: node.start,
-    });
+    add_error(status, `Field not found: ${node.name}`, node.start);
   }
 }
 
@@ -108,10 +100,7 @@ function check_access_function_node(
 
   // Make sure the function exists
   if (!func) {
-    status.errors.push({
-      message: `Function not found: ${target_type.name}.${node.name}`,
-      start: node.start,
-    });
+    add_error(status, `Function not found: ${target_type.name}.${node.name}`, node.start);
     return;
   }
 

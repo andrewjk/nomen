@@ -1,3 +1,4 @@
+import add_error from "../add_error";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode";
 import DeclarationNode from "../nodes/DeclarationNode";
 import FunctionCallNode from "../nodes/FunctionCallNode";
@@ -21,10 +22,7 @@ export default function check_function_call(
     func.visibility === "private" &&
     !status.structs.find((s) => s.name === target_type?.name)?.privates_visible
   ) {
-    status.errors.push({
-      message: `Can't access private function: ${node.name}`,
-      start: node.start,
-    });
+    add_error(status, `Can't access private function: ${node.name}`, node.start);
     return;
   }
 
@@ -38,16 +36,10 @@ export default function check_function_call(
     expected_param_count -= 1;
   }
   if (node.params.length > expected_param_count) {
-    status.errors.push({
-      message: `Too many parameters for function: ${node.name}`,
-      start: node.start,
-    });
+    add_error(status, `Too many parameters for function: ${node.name}`, node.start);
     return;
   } else if (node.params.length < expected_param_count) {
-    status.errors.push({
-      message: `Parameters missing for function: ${node.name}`,
-      start: node.start,
-    });
+    add_error(status, `Parameters missing for function: ${node.name}`, node.start);
     return;
   }
 

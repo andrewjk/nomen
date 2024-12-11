@@ -1,3 +1,4 @@
+import add_error from "../add_error";
 import FunctionCallNode from "../nodes/FunctionCallNode";
 import FunctionNode from "../nodes/FunctionNode";
 import ParameterNode from "../nodes/ParameterNode";
@@ -18,10 +19,7 @@ export default function check_function_call_node(node: FunctionCallNode, status:
 
   // Make sure the function exists
   if (!func) {
-    status.errors.push({
-      message: `Function not found: ${node.name}`,
-      start: node.start,
-    });
+    add_error(status, `Function not found: ${node.name}`, node.start);
     return;
   }
 

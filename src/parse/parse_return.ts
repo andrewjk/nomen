@@ -1,3 +1,4 @@
+import add_error from "../add_error";
 import ReturnNode from "../nodes/ReturnNode";
 import ReturningNode from "../nodes/ReturningNode";
 import { is_returning_node } from "../nodes/check_node_type";
@@ -29,9 +30,6 @@ export default function parse_return(status: ParseStatus) {
   if (func) {
     func.has_return = true;
   } else {
-    status.errors.push({
-      message: "Return must be inside an expression",
-      start: get_index(status),
-    });
+    add_error(status, "Return must be inside an expression", get_index(status));
   }
 }

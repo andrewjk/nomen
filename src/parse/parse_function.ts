@@ -1,3 +1,4 @@
+import add_error from "../add_error";
 import BaseNode from "../nodes/BaseNode";
 import type BlockNode from "../nodes/BlockNode";
 import FunctionNode from "../nodes/FunctionNode";
@@ -50,10 +51,7 @@ export default function parse_function(
 
         // TODO: check all branches
         if (func.return_type.name && !func.has_return) {
-          status.errors.push({
-            message: `Missing return`,
-            start: status.tokens[status.i - 1].i,
-          });
+          add_error(status, `Missing return`, status.tokens[status.i - 1].i);
         }
       }
 
@@ -69,10 +67,7 @@ export default function parse_function(
           break;
         }
         default: {
-          status.errors.push({
-            message: "Function cannot appear here",
-            start: func.start,
-          });
+          add_error(status, "Function cannot appear here", func.start);
         }
       }
     }
@@ -118,10 +113,7 @@ function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: 
 
   // Check type or value has been set
   if (!param.type.name && !param.default_value) {
-    status.errors.push({
-      message: `Expected type or default value`,
-      start: status.tokens[status.i - 1].i,
-    });
+    add_error(status, `Expected type or default value`, status.tokens[status.i - 1].i);
   }
 
   // Next parameter

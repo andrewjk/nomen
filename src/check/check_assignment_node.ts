@@ -1,3 +1,4 @@
+import add_error from "../add_error";
 import AssignmentNode from "../nodes/AssignmentNode";
 import type CheckStatus from "./CheckStatus";
 import check_node from "./check_node";
@@ -17,16 +18,10 @@ export default function check_assignment_node(assign: AssignmentNode, status: Ch
   const left_value_name = value_from_value_node(assign.left_value);
   const left_value = status.values.find((v) => v.name === left_value_name);
   if (!left_value) {
-    status.errors.push({
-      message: `Unknown variable: ${left_value_name}`,
-      start: assign.left_value!.start,
-    });
+    add_error(status, `Unknown variable: ${left_value_name}`, assign.left_value!.start);
   } else if (left_value.declaration !== "var") {
     if (left_value.is_set) {
-      status.errors.push({
-        message: `Assignment to const: ${left_value_name}`,
-        start: assign.left_value!.start,
-      });
+      add_error(status, `Assignment to const: ${left_value_name}`, assign.left_value!.start);
     } else {
       left_value.is_set = true;
     }

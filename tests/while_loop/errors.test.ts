@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import parse from "../../src/parse";
-import type CompileError from "../../src/types/CompileError";
+import test_error from "../test_error";
 
 //const test = suite("While loop errors");
 
@@ -10,12 +10,7 @@ while "hi" {
   // ...
 }
 `;
-  const expected: CompileError[] = [
-    {
-      message: "While loop condition must be a bool, not string",
-      start: 7,
-    },
-  ];
+  const expected = [test_error(input, "While loop condition must be a bool, not string", 2, 7)];
   const parsed = parse(input);
   expect(parsed.errors).toEqual(expected);
 });

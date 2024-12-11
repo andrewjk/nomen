@@ -1,3 +1,4 @@
+import add_error from "../../add_error";
 import Type from "../../nodes/Type";
 import type CheckStatus from "../CheckStatus";
 import type_name from "./type_name";
@@ -55,10 +56,7 @@ function add_error_message(
   if (expected_type) {
     message += ` (expected ${expected_type})`;
   }
-  status.errors.push({
-    message,
-    start: i,
-  });
+  add_error(status, message, i);
 }
 
 function can_coerce(target_type: string, value_type: string, value: string) {

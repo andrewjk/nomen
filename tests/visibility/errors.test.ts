@@ -1,7 +1,6 @@
 import { expect, test } from "vitest";
 import parse from "../../src/parse";
-import type CompileError from "../../src/types/CompileError";
-import trim_test_parse from "../trim_test_parse";
+import test_error from "../test_error";
 
 //const test = suite("Pub errors");
 
@@ -11,11 +10,8 @@ pub if true {
   // ...
 }
 `;
-  const expected: CompileError[] = [
-    {
-      message: "Visibility can only be set for const, var, struct, trait or func",
-      start: 1,
-    },
+  const expected = [
+    test_error(input, "Visibility can only be set for const, var, struct, trait or func", 2, 1),
   ];
   const parsed = parse(input);
   expect(parsed.errors).toEqual(expected);
@@ -31,15 +27,9 @@ const x: Person
 x.name = "Andrew"
 x.greet()
 `;
-  const expected: CompileError[] = [
-    {
-      message: "Can't access private field: name",
-      start: 90,
-    },
-    {
-      message: "Can't access private function: greet",
-      start: 108,
-    },
+  const expected = [
+    test_error(input, "Can't access private field: name", 7, 3),
+    test_error(input, "Can't access private function: greet", 8, 3),
   ];
   const parsed = parse(input);
   expect(parsed.errors).toEqual(expected);
@@ -52,15 +42,9 @@ trait Person {
   private func greet()
 }
 `;
-  const expected: CompileError[] = [
-    {
-      message: "Trait fields cannot be private",
-      start: 18,
-    },
-    {
-      message: "Trait functions cannot be private",
-      start: 45,
-    },
+  const expected = [
+    test_error(input, "Trait fields cannot be private", 3, 3),
+    test_error(input, "Trait functions cannot be private", 4, 3),
   ];
   const parsed = parse(input);
   expect(parsed.errors).toEqual(expected);

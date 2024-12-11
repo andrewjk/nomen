@@ -1,3 +1,4 @@
+import add_error from "../add_error";
 import type BlockNode from "../nodes/BlockNode";
 import DeclarationNode from "../nodes/DeclarationNode";
 import StructNode from "../nodes/StructNode";
@@ -35,10 +36,7 @@ export default function parse_declaration(
 
   // Check type or value has been set
   if (!decl.type.name && !decl.value) {
-    status.errors.push({
-      message: `Expected type or default value`,
-      start: decl.start + decl.declaration.length + 1,
-    });
+    add_error(status, `Expected type or default value`, decl.start + decl.declaration.length + 1);
   }
 
   status.stack.pop();
@@ -60,10 +58,7 @@ export default function parse_declaration(
       break;
     }
     default: {
-      status.errors.push({
-        message: "Declaration cannot appear here",
-        start: decl.start,
-      });
+      add_error(status, "Declaration cannot appear here", decl.start);
     }
   }
 }

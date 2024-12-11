@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import parse from "../../src/parse";
-import type CompileError from "../../src/types/CompileError";
+import test_error from "../test_error";
 
 //const test = suite("Assignment errors");
 
@@ -9,12 +9,7 @@ test("type mismatch", () => {
 var x: int
 x = "string?!"
 `;
-  const expected: CompileError[] = [
-    {
-      message: "Type mismatch in assignment: string (expected int)",
-      start: 16,
-    },
-  ];
+  const expected = [test_error(input, "Type mismatch in assignment: string (expected int)", 3, 5)];
   const parsed = parse(input);
   expect(parsed.errors).toEqual(expected);
 });
@@ -24,11 +19,8 @@ test("type mismatch -- unknown value", () => {
 var x: int
 x = z0
 `;
-  const expected: CompileError[] = [
-    {
-      message: "Type mismatch in assignment: unknown value z0 (expected int)",
-      start: 16,
-    },
+  const expected = [
+    test_error(input, "Type mismatch in assignment: unknown value z0 (expected int)", 3, 5),
   ];
   const parsed = parse(input);
   expect(parsed.errors).toEqual(expected);
@@ -39,12 +31,7 @@ test("unknown variable", () => {
 var x: int
 y = "string?!"
 `;
-  const expected: CompileError[] = [
-    {
-      message: "Unknown variable: y",
-      start: 12,
-    },
-  ];
+  const expected = [test_error(input, "Unknown variable: y", 3, 1)];
   const parsed = parse(input);
   expect(parsed.errors).toEqual(expected);
 });
@@ -54,12 +41,7 @@ test("assignment to const", () => {
 const x  =5
 x = 10
 `;
-  const expected: CompileError[] = [
-    {
-      message: "Assignment to const: x",
-      start: 13,
-    },
-  ];
+  const expected = [test_error(input, "Assignment to const: x", 3, 1)];
   const parsed = parse(input);
   expect(parsed.errors).toEqual(expected);
 });
@@ -70,12 +52,7 @@ const x: int
 x = 5
 x = 10
 `;
-  const expected: CompileError[] = [
-    {
-      message: "Assignment to const: x",
-      start: 20,
-    },
-  ];
+  const expected = [test_error(input, "Assignment to const: x", 4, 1)];
   const parsed = parse(input);
   expect(parsed.errors).toEqual(expected);
 });
@@ -88,12 +65,7 @@ if true {
 }
 const y = x
 `;
-  const expected: CompileError[] = [
-    {
-      message: "Const set incompletely: x",
-      start: 14,
-    },
-  ];
+  const expected = [test_error(input, "Const set incompletely: x", 3, 1)];
   const parsed = parse(input);
   expect(parsed.errors).toEqual(expected);
 });
@@ -104,12 +76,7 @@ func set(x: int) {
   x = 5
 }
 `;
-  const expected: CompileError[] = [
-    {
-      message: "Assignment to const: x",
-      start: 22,
-    },
-  ];
+  const expected = [test_error(input, "Assignment to const: x", 3, 3)];
   const parsed = parse(input);
   expect(parsed.errors).toEqual(expected);
 });

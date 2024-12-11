@@ -1,3 +1,4 @@
+import add_error from "../add_error";
 import BreakNode from "../nodes/BreakNode";
 import ContinueNode from "../nodes/ContinueNode";
 import type CheckStatus from "./CheckStatus";
@@ -17,9 +18,6 @@ export default function check_break_or_continue_node(
 
   if (!found) {
     const description = node.node_type.substring(0, 1).toUpperCase() + node.node_type.substring(1);
-    status.errors.push({
-      message: `${description} must be inside a for or while loop`,
-      start: node.start,
-    });
+    add_error(status, `${description} must be inside a for or while loop`, node.start);
   }
 }

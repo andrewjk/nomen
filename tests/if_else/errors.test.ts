@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import parse from "../../src/parse";
-import type CompileError from "../../src/types/CompileError";
+import test_error from "../test_error";
 
 //const test = suite("If/else errors");
 
@@ -10,12 +10,7 @@ if "hi" {
   // ...
 }
 `;
-  const expected: CompileError[] = [
-    {
-      message: "If/else condition must be a bool, not string",
-      start: 4,
-    },
-  ];
+  const expected = [test_error(input, "If/else condition must be a bool, not string", 2, 4)];
   const parsed = parse(input);
   expect(parsed.errors).toEqual(expected);
 });

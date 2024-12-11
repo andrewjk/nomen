@@ -1,3 +1,4 @@
+import add_error from "../../add_error";
 import type ParseStatus from "../ParseStatus";
 
 export default function consume(status: ParseStatus, advance = true): string {
@@ -7,10 +8,7 @@ export default function consume(status: ParseStatus, advance = true): string {
     return result;
   } else {
     const last = status.tokens.at(-1);
-    status.errors.push({
-      message: "Expected token",
-      start: last ? last.i + last.value.length : 0,
-    });
+    add_error(status, "Expected token", last ? last.i + last.value.length : 0);
     return "";
   }
 }

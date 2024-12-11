@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import parse from "../../src/parse";
-import type CompileError from "../../src/types/CompileError";
+import test_error from "../test_error";
 
 //const test = suite("Struct errors");
 
@@ -8,12 +8,7 @@ test("invalid syntax", () => {
   const input = `
 struct Person People {}
 `;
-  const expected: CompileError[] = [
-    {
-      message: "Expected {",
-      start: 15,
-    },
-  ];
+  const expected = [test_error(input, "Expected {", 2, 15)];
   const parsed = parse(input);
   expect(parsed.errors).toEqual(expected);
 });
@@ -24,12 +19,7 @@ struct Person {
   struct People {}
 }
 `;
-  const expected: CompileError[] = [
-    {
-      message: "Struct cannot appear here",
-      start: 19,
-    },
-  ];
+  const expected = [test_error(input, "Struct cannot appear here", 3, 3)];
   const parsed = parse(input);
   expect(parsed.errors).toEqual(expected);
 });
@@ -41,12 +31,7 @@ struct Person {
   x = 5
 }
 `;
-  const expected: CompileError[] = [
-    {
-      message: "Assignment cannot appear here",
-      start: 32,
-    },
-  ];
+  const expected = [test_error(input, "Assignment cannot appear here", 4, 3)];
   const parsed = parse(input);
   expect(parsed.errors).toEqual(expected);
 });

@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import parse from "../../src/parse";
-import type CompileError from "../../src/types/CompileError";
+import test_error from "../test_error";
 
 //const test = suite("Access errors");
 
@@ -12,11 +12,8 @@ struct Person {
 var p: Person
 var x: int = p.name
 `;
-  const expected: CompileError[] = [
-    {
-      message: "Type mismatch in declaration: string (expected int)",
-      start: 65,
-    },
+  const expected = [
+    test_error(input, "Type mismatch in declaration: string (expected int)", 6, 14),
   ];
   const parsed = parse(input);
   expect(parsed.errors).toEqual(expected);
@@ -30,12 +27,7 @@ struct Person {
 var p: Person
 p.age = "hi"
 `;
-  const expected: CompileError[] = [
-    {
-      message: "Type mismatch in assignment: string (expected int)",
-      start: 56,
-    },
-  ];
+  const expected = [test_error(input, "Type mismatch in assignment: string (expected int)", 6, 9)];
   const parsed = parse(input);
   expect(parsed.errors).toEqual(expected);
 });
@@ -44,16 +36,9 @@ test("unknown target", () => {
   const input = `
 var age = person.age
 `;
-  const expected: CompileError[] = [
-    {
-      message: "Unknown target: person",
-      start: 11,
-    },
-    {
-      // TODO: Don't want this one
-      message: "Type mismatch in declaration: unknown value age",
-      start: 11,
-    },
+  const expected = [
+    test_error(input, "Unknown target: person", 2, 11),
+    test_error(input, "Type mismatch in declaration: unknown value age", 2, 11),
   ];
   const parsed = parse(input);
   expect(parsed.errors).toEqual(expected);

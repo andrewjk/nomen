@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import parse from "../../src/parse";
-import type CompileError from "../../src/types/CompileError";
+import test_error from "../test_error";
 
 //const test = suite("Trait errors");
 
@@ -8,12 +8,7 @@ test("invalid syntax", () => {
   const input = `
 trait Person People {}
 `;
-  const expected: CompileError[] = [
-    {
-      message: "Expected {",
-      start: 14,
-    },
-  ];
+  const expected = [test_error(input, "Expected {", 2, 14)];
   const parsed = parse(input);
   expect(parsed.errors).toEqual(expected);
 });
@@ -24,12 +19,7 @@ trait Person {
   trait People {}
 }
 `;
-  const expected: CompileError[] = [
-    {
-      message: "Trait cannot appear here",
-      start: 18,
-    },
-  ];
+  const expected = [test_error(input, "Trait cannot appear here", 3, 3)];
   const parsed = parse(input);
   expect(parsed.errors).toEqual(expected);
 });
@@ -41,12 +31,7 @@ trait Person {
   x = 5
 }
 `;
-  const expected: CompileError[] = [
-    {
-      message: "Assignment cannot appear here",
-      start: 31,
-    },
-  ];
+  const expected = [test_error(input, "Assignment cannot appear here", 4, 3)];
   const parsed = parse(input);
   expect(parsed.errors).toEqual(expected);
 });
@@ -57,12 +42,7 @@ struct Frank: Person {
 }
 `;
   // TODO: Better start location
-  const expected: CompileError[] = [
-    {
-      message: "Unknown trait: Person",
-      start: 1,
-    },
-  ];
+  const expected = [test_error(input, "Unknown trait: Person", 2, 1)];
   const parsed = parse(input);
   expect(parsed.errors).toEqual(expected);
 });

@@ -1,3 +1,4 @@
+import add_error from "../add_error";
 import IfElseNode from "../nodes/IfElseNode";
 import type CheckStatus from "./CheckStatus";
 import check_block_node from "./check_block_node";
@@ -10,10 +11,11 @@ export default function check_if_else_node(if_else: IfElseNode, status: CheckSta
   check_node(if_else.condition, status);
   const condition_type = type_from_value_node(if_else.condition, status);
   if (type_name(condition_type) !== "bool") {
-    status.errors.push({
-      message: `If/else condition must be a bool, not ${type_name(condition_type)}`,
-      start: if_else.condition.start,
-    });
+    add_error(
+      status,
+      `If/else condition must be a bool, not ${type_name(condition_type)}`,
+      if_else.condition.start,
+    );
   }
 
   status.stack.push(if_else);
@@ -34,10 +36,7 @@ export default function check_if_else_node(if_else: IfElseNode, status: CheckSta
       if (is_set_count === 2) {
         value.is_set = true;
       } else if (is_set_count === 1) {
-        status.errors.push({
-          message: `Const set incompletely: ${value.name}`,
-          start: if_else.start,
-        });
+        add_error(status, `Const set incompletely: ${value.name}`, if_else.start);
       }
     }
   }

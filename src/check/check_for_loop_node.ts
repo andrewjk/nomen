@@ -1,3 +1,4 @@
+import add_error from "../add_error";
 import ForLoopNode from "../nodes/ForLoopNode";
 import Type from "../nodes/Type";
 import type CheckStatus from "./CheckStatus";
@@ -14,10 +15,11 @@ export default function check_for_loop_node(for_loop: ForLoopNode, status: Check
 
     const list_type = type_from_value_node(for_loop.list, for_status);
     if (!list_type.is_array) {
-      for_status.errors.push({
-        message: `For loop list must be an array, not ${list_type.name}`,
-        start: for_loop.list.start,
-      });
+      add_error(
+        for_status,
+        `For loop list must be an array, not ${list_type.name}`,
+        for_loop.list.start,
+      );
     }
 
     if (for_loop.item) {

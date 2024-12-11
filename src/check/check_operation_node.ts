@@ -1,3 +1,4 @@
+import add_error from "../add_error";
 import OperationNode from "../nodes/OperationNode";
 import Type from "../nodes/Type";
 import type CheckStatus from "./CheckStatus";
@@ -44,10 +45,7 @@ export default function check_operation_node(op: OperationNode, status: CheckSta
       break;
     }
     default: {
-      status.errors.push({
-        message: `Unknown operator: ${op.op}`,
-        start: op.start,
-      });
+      add_error(status, `Unknown operator: ${op.op}`, op.start);
     }
   }
 }

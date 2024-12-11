@@ -1,3 +1,4 @@
+import add_error from "../add_error";
 import AccessNode from "../nodes/AccessNode";
 import ArrayValuesNode from "../nodes/ArrayValuesNode";
 import AssignmentNode from "../nodes/AssignmentNode";
@@ -126,10 +127,7 @@ export default function check_node(node: BaseNode, status: CheckStatus) {
       break;
     }
     default: {
-      status.errors.push({
-        message: `Unknown node type: ${node.node_type}`,
-        start: node.start,
-      });
+      add_error(status, `Unknown node type: ${node.node_type}`, node.start);
       break;
     }
   }

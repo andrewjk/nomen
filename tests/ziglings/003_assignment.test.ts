@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import build from "../../src/build";
-import type CompileError from "../../src/types/CompileError";
+import test_error from "../test_error";
 import parse_with_imports from "./parse_with_imports";
 import trim_code from "./trim_code";
 
@@ -19,19 +19,10 @@ pub func main() {
     Console.write("\\{n} \\{pi} \\{negative_eleven}\\n")
 }
 `;
-  const expected: CompileError[] = [
-    {
-      message: "Assignment to const: n",
-      start: 62,
-    },
-    {
-      message: "Type mismatch in declaration: int (expected uint8)",
-      start: 95,
-    },
-    {
-      message: "Type mismatch in declaration: int (expected uint8)",
-      start: 138,
-    },
+  const expected = [
+    test_error(input, "Assignment to const: n", 6, 5),
+    test_error(input, "Type mismatch in declaration: int (expected uint8)", 8, 23),
+    test_error(input, "Type mismatch in declaration: int (expected uint8)", 10, 36),
   ];
   const parsed = parse_with_imports(input);
   expect(parsed.errors).toEqual(expected);

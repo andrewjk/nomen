@@ -1,3 +1,4 @@
+import add_error from "../add_error";
 import StructNode from "../nodes/StructNode";
 import type CheckStatus from "./CheckStatus";
 import check_declaration_node from "./check_declaration_node";
@@ -7,10 +8,7 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
   // Check traits
   for (let trait of struct.traits) {
     if (!status.traits.find((t) => t.name === trait)) {
-      status.errors.push({
-        message: `Unknown trait: ${trait}`,
-        start: struct.start,
-      });
+      add_error(status, `Unknown trait: ${trait}`, struct.start);
     }
   }
 

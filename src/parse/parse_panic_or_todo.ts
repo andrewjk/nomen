@@ -1,3 +1,4 @@
+import add_error from "../add_error";
 import PanicNode from "../nodes/PanicNode";
 import ReturningNode from "../nodes/ReturningNode";
 import TodoNode from "../nodes/TodoNode";
@@ -20,10 +21,7 @@ export default function parse_panic_or_todo(name: "panic" | "todo", status: Pars
   if (message && message.startsWith('"') && message.endsWith('"')) {
     message = consume(status).substring(1, message.length - 1);
   } else {
-    status.errors.push({
-      message: `Expected a ${name} message`,
-      start: message_start,
-    });
+    add_error(status, `Expected a ${name} message`, message_start);
   }
 
   const node =
