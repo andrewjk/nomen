@@ -114,3 +114,12 @@ word /* I'm in a
   const expected = ["word", "/* I'm in a\n/* nested */ comment */", "5"];
   expect(tokens.map((t) => t.value)).toEqual(expected);
 });
+
+test("float", () => {
+  const input = `
+var pi = 3.15465643
+`;
+  const tokens = tokenize(input);
+  const expected = ["var", "pi", "=", "3.15465643"];
+  expect(tokens.map((t) => t.value)).toEqual(expected);
+});

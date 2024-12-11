@@ -41,18 +41,6 @@ export default function tokenize(input: string, preserve_space = false): Token[]
       // Add the previous word
       if (status.i > status.start) {
         let value = input.substring(status.start, status.i);
-
-        if (is_number(value) && input[status.i] === "." && is_number(input[status.i + 1])) {
-          // It's a float, include the decimal part
-          for (let j = status.i + 2; j < input.length; j++) {
-            if (!is_number_char(input, j)) {
-              value = input.substring(status.start, j);
-              status.i = j - 1;
-              break;
-            }
-          }
-        }
-
         status.tokens.push({ value, i: status.start });
       }
 
@@ -92,6 +80,22 @@ export default function tokenize(input: string, preserve_space = false): Token[]
               break;
             }
           }
+        } else if (
+          value === "." &&
+          is_number(input[status.i + 1]) &&
+          is_number(status.tokens.at(-1)?.value ?? "")
+        ) {
+          // It's a float, add the decimal part to the previous token
+          const previous_token = status.tokens.at(-1)!;
+          for (let j = status.i + 2; j < input.length; j++) {
+            if (!is_number_char(input, j)) {
+              previous_token.value += input.substring(status.i, j);
+              status.start = j;
+              status.i = j - 1;
+              break;
+            }
+          }
+          continue;
         } else if (value === "`" && input.substring(status.i, status.i + 3) === "```") {
           // It's raw C code -- process until the next ```
           for (let j = status.i + 1; j < input.length; j++) {
