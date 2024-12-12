@@ -1,3 +1,4 @@
+import AccessIndexNode from "../nodes/AccessIndexNode";
 import AccessNode from "../nodes/AccessNode";
 import AssignmentNode from "../nodes/AssignmentNode";
 import BaseNode from "../nodes/BaseNode";
@@ -124,8 +125,14 @@ function parse_statement_start(status: ParseStatus) {
     switch (current_value) {
       case ".": {
         accept(".", status);
-        const access = new AccessNode(node.start, node, parse_access(value, status));
-        node = access;
+        node = new AccessNode(node.start, node, parse_access(value, status));
+        break;
+      }
+      case "[": {
+        accept("[", status);
+        const index = parse_expression(status);
+        expect("]", status);
+        node = new AccessNode(node.start, node, new AccessIndexNode(status.i, index));
         break;
       }
       case "(": {
@@ -140,8 +147,7 @@ function parse_statement_start(status: ParseStatus) {
       }
       case "=": {
         accept("=", status);
-        const assign = new AssignmentNode(node.start, node, parse_expression(status));
-        node = assign;
+        node = new AssignmentNode(node.start, node, parse_expression(status));
         break;
       }
       default: {

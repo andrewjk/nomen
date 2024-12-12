@@ -7,9 +7,11 @@ import check_type_and_value_match from "./utils/check_type_and_value_match";
 import type_from_value_node from "./utils/type_from_value_node";
 import value_from_value_node from "./utils/value_from_value_node";
 
-export default function check_operation_node(op: OperationNode, status: CheckStatus) {
-  check_node(op.left_value, status);
-  check_node(op.right_value, status);
+export default function check_operation_node(op: OperationNode, status: CheckStatus): boolean {
+  const result = check_node(op.left_value, status) && check_node(op.right_value, status);
+  if (!result) {
+    return false;
+  }
 
   const left_type = type_from_value_node(op.left_value, status);
   const right_type = type_from_value_node(op.right_value, status);
@@ -46,6 +48,9 @@ export default function check_operation_node(op: OperationNode, status: CheckSta
     }
     default: {
       add_error(status, `Unknown operator: ${op.op}`, op.start);
+      return false;
     }
   }
+
+  return true;
 }

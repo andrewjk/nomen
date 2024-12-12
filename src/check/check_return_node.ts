@@ -8,7 +8,9 @@ import type_from_value_node from "./utils/type_from_value_node";
 import value_from_value_node from "./utils/value_from_value_node";
 
 export default function check_return_node(ret: ReturnNode, status: CheckStatus) {
-  check_node(ret.value, status);
+  if (!check_node(ret.value, status)) {
+    return;
+  }
 
   ret.type = type_from_value_node(ret.value, status);
 

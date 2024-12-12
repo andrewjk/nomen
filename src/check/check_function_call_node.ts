@@ -5,7 +5,10 @@ import ParameterNode from "../nodes/ParameterNode";
 import type CheckStatus from "./CheckStatus";
 import check_function_call from "./check_function_call";
 
-export default function check_function_call_node(node: FunctionCallNode, status: CheckStatus) {
+export default function check_function_call_node(
+  node: FunctionCallNode,
+  status: CheckStatus,
+): boolean {
   let func = status.functions.find((f) => f.name === node.name);
 
   // We're making a fake string_interpolate method for now, but it should be a real one
@@ -20,8 +23,8 @@ export default function check_function_call_node(node: FunctionCallNode, status:
   // Make sure the function exists
   if (!func) {
     add_error(status, `Function not found: ${node.name}`, node.start);
-    return;
+    return false;
   }
 
-  check_function_call(node, status, func);
+  return check_function_call(node, status, func);
 }

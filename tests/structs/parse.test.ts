@@ -91,7 +91,7 @@ test("struct with mutating functions", () => {
   const input = `
 struct Person {
   var age = 0
-  func grow(self) {
+  func grow(var self) {
     self.age = self.age + 1
   }
 }
@@ -119,7 +119,7 @@ struct Person {
         "mod",
         "grow",
         new Type(""),
-        [new ParameterNode(0, "self", new Type("Person"), undefined, true)],
+        [new ParameterNode(0, "self", new Type("Person"), undefined, true, "var")],
         [
           new AssignmentNode(
             0,

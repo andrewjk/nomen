@@ -6,6 +6,7 @@ import ParameterNode from "../nodes/ParameterNode";
 import StructNode from "../nodes/StructNode";
 import Type from "../nodes/Type";
 import type ParseStatus from "./ParseStatus";
+import parse_expression from "./parse_expression";
 import parse_statement from "./parse_statement";
 import parse_type from "./parse_type";
 import accept from "./utils/accept";
@@ -78,6 +79,14 @@ function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: 
   const param = new ParameterNode(get_index(status), "");
   func.params.push(param);
 
+  // Optional parameter declaration
+  if (accept("var", status)) {
+    param.declaration = "var";
+  } else if (accept("cp", status)) {
+    param.declaration = "var";
+    param.is_copied = true;
+  }
+
   // Parameter name
   param.name = consume(status);
 
@@ -108,7 +117,7 @@ function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: 
   // Parameter value
   if (accept("=", status)) {
     param.default_value_start = get_index(status);
-    param.default_value = consume(status);
+    param.default_value = parse_expression(status);
   }
 
   // Check type or value has been set

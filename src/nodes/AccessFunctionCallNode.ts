@@ -1,5 +1,4 @@
 import BaseNode from "./BaseNode";
-import FunctionNode from "./FunctionNode";
 import Type from "./Type";
 
 export default class AccessFunctionCallNode extends BaseNode {

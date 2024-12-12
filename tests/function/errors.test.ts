@@ -17,7 +17,7 @@ test("unknown param value type", () => {
   const input = `
 func add(a = z0) {}
 `;
-  const expected = [test_error(input, "Type mismatch in param default: unknown value z0", 2, 14)];
+  const expected = [test_error(input, "Unknown value: z0", 2, 14)];
   const parsed = parse(input);
   expect(parsed.errors).toEqual(expected);
 });
@@ -37,9 +37,7 @@ test("param type mismatch - unknown value", () => {
   const input = `
 func add(a: int = z0) {}
 `;
-  const expected = [
-    test_error(input, "Type mismatch in param default: unknown value z0 (expected int)", 2, 19),
-  ];
+  const expected = [test_error(input, "Unknown value: z0", 2, 19)];
   const parsed = parse(input);
   expect(parsed.errors).toEqual(expected);
 });
@@ -81,9 +79,7 @@ func add() -> int {
   return z0
 }
 `;
-  const expected = [
-    test_error(input, "Type mismatch in return: unknown value z0 (expected int)", 3, 10),
-  ];
+  const expected = [test_error(input, "Unknown value: z0", 3, 10)];
   const parsed = parse(input);
   expect(parsed.errors).toEqual(expected);
 });

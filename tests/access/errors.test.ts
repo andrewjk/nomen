@@ -36,10 +36,7 @@ test("unknown target", () => {
   const input = `
 var age = person.age
 `;
-  const expected = [
-    test_error(input, "Unknown target: person", 2, 11),
-    test_error(input, "Type mismatch in declaration: unknown value age", 2, 11),
-  ];
+  const expected = [test_error(input, "Unknown value: person", 2, 11)];
   const parsed = parse(input);
   expect(parsed.errors).toEqual(expected);
 });

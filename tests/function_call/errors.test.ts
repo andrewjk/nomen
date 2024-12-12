@@ -48,9 +48,7 @@ test("param type mismatch -- unknown value", () => {
 func greet(age: int) {}
 greet(z0)
 `;
-  const expected = [
-    test_error(input, "Type mismatch in param: unknown value z0 (expected int)", 3, 7),
-  ];
+  const expected = [test_error(input, "Unknown value: z0", 3, 7)];
   const parsed = parse(input);
   expect(parsed.errors).toEqual(expected);
 });

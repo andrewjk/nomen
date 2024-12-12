@@ -19,9 +19,7 @@ test("type mismatch -- unknown value", () => {
 var x: int
 x = z0
 `;
-  const expected = [
-    test_error(input, "Type mismatch in assignment: unknown value z0 (expected int)", 3, 5),
-  ];
+  const expected = [test_error(input, "Unknown value: z0", 3, 5)];
   const parsed = parse(input);
   expect(parsed.errors).toEqual(expected);
 });
@@ -31,7 +29,7 @@ test("unknown variable", () => {
 var x: int
 y = "string?!"
 `;
-  const expected = [test_error(input, "Unknown variable: y", 3, 1)];
+  const expected = [test_error(input, "Unknown value: y", 3, 1)];
   const parsed = parse(input);
   expect(parsed.errors).toEqual(expected);
 });

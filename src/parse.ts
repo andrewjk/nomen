@@ -3,6 +3,7 @@ import RootNode from "./nodes/RootNode";
 import type ParseStatus from "./parse/ParseStatus";
 import parse_statement from "./parse/parse_statement";
 import tokenize from "./tokenize";
+import CompileError from "./types/CompileError";
 import type ParseResult from "./types/ParseResult";
 
 export default function parse(source: string): ParseResult {
@@ -21,8 +22,27 @@ export default function parse(source: string): ParseResult {
 
   parse_statement(status);
 
+  // No point type checking if the syntax is busted
+  if (status.errors.length) {
+    return {
+      ok: false,
+      root,
+      errors: format_errors(source, status.errors),
+    };
+  }
+
   const checked = check(root);
-  const errors = status.errors.concat(checked.errors).sort((a, b) => a.start - b.start);
+  //const errors = status.errors.concat(checked.errors).sort((a, b) => a.start - b.start);
+
+  return {
+    ok: !checked.errors.length,
+    root,
+    errors: format_errors(source, checked.errors),
+  };
+}
+
+function format_errors(source: string, errors: CompileError[]) {
+  errors = errors.sort((a, b) => a.start - b.start);
 
   // Add line and column information to errors
   let line = 1;
@@ -39,9 +59,5 @@ export default function parse(source: string): ParseResult {
     }
   }
 
-  return {
-    ok: !errors.length,
-    root,
-    errors,
-  };
+  return errors;
 }

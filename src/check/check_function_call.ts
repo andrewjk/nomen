@@ -16,14 +16,14 @@ export default function check_function_call(
   status: CheckStatus,
   func: FunctionNode,
   target_type?: Type,
-) {
+): boolean {
   // Make sure it's not a private function that we don't have access to
   if (
     func.visibility === "private" &&
     !status.structs.find((s) => s.name === target_type?.name)?.privates_visible
   ) {
     add_error(status, `Can't access private function: ${node.name}`, node.start);
-    return;
+    return false;
   }
 
   // The node's type is the type that is returned from the function
@@ -37,17 +37,19 @@ export default function check_function_call(
   }
   if (node.params.length > expected_param_count) {
     add_error(status, `Too many parameters for function: ${node.name}`, node.start);
-    return;
+    return false;
   } else if (node.params.length < expected_param_count) {
     add_error(status, `Parameters missing for function: ${node.name}`, node.start);
-    return;
+    return false;
   }
 
   // Check each param
   status.stack.push(node);
 
   for (let [i, param] of node.params.entries()) {
-    check_node(param, status);
+    if (!check_node(param, status)) {
+      continue;
+    }
 
     const param_type = type_from_value_node(param, status);
     const param_value = value_from_value_node(param);
@@ -73,4 +75,6 @@ export default function check_function_call(
   }
 
   status.stack.pop();
+
+  return true;
 }

@@ -71,11 +71,10 @@ int main()
 unsigned char n = 50;
 n = n + 5;
 float pi = 3.14159;
-9;
 char negative_eleven = -11;
-char* _param_0 = uint8_to_string(&n);
-char* _param_1 = float_to_string(&pi);
-char* _param_2 = int8_to_string(&negative_eleven);
+char* _param_0 = uint8_to_string(n);
+char* _param_1 = float_to_string(pi);
+char* _param_2 = int8_to_string(negative_eleven);
 char* _param_3 = _string_interpolate_3("%s %s %s\\n", _param_0, _param_1, _param_2);
 Console_write(_param_3);
 free(_param_0);

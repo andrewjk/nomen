@@ -1,5 +1,7 @@
 import BaseNode from "./BaseNode";
 
+// TODO: Remove is_array and length, add generic arguments
+
 export default class Type {
   name: string;
   is_static?: boolean;

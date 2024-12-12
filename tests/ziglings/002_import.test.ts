@@ -12,7 +12,7 @@ pub func main() {
     Console.write("Standard Library.\n")
 }
 `;
-  const expected = [test_error(input, "Unknown target: Console", 5, 5)];
+  const expected = [test_error(input, "Unknown value: Console", 5, 5)];
   const parsed = parse_with_imports(input);
   expect(parsed.errors).toEqual(expected);
 });

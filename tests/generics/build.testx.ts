@@ -3,111 +3,106 @@ import build from "../../src/build";
 import parse from "../../src/parse";
 import trim_test_build from "../trim_test_build";
 
-//const test = suite("Struct build");
+//const test = suite("Generic build");
 
-test("struct", () => {
+test("generic", () => {
   const input = `
-struct Person {}
+var x: Array<int>
 `;
   const parsed = parse(input);
   const result = build(parsed.root);
   const expected = `
-typedef struct Person
-{
-void *_vt;
-} Person;
-Person Person_init()
-{
-Person p;
-return p;
+long x = 10;
+if (x > 5) {
+x = 15;
 }
 `;
   expect(parsed.errors).toEqual([]);
   expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
 });
 
-test("struct with fields", () => {
+test("if else", () => {
   const input = `
-struct Person {
-  var name: string
-  var age = 0
+var x = 10
+if x > 5 {
+  x = 15
+} else {
+  x = 20
 }
 `;
   const parsed = parse(input);
   const result = build(parsed.root);
   const expected = `
-// Person:
-typedef struct Person
-{
-void *_vt;
-char* name;
-long age;
-} Person;
-Person Person_init(char* name)
-{
-Person p;
-p.name = name;
-p.age = 0;
-return p;
+long x = 10;
+if (x > 5) {
+x = 15;
+} else {
+x = 20;
 }
 `;
   expect(parsed.errors).toEqual([]);
   expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
 });
 
-test("struct with functions", () => {
+test("declaration with if", () => {
   const input = `
-struct Person {
-  func greet() {}
+const x = 10
+const y = if x > 5 {
+  return 50
+} else {
+  return 0
 }
 `;
   const parsed = parse(input);
   const result = build(parsed.root);
   const expected = `
-typedef struct Person
-{
-void *_vt;
-} Person;
-Person Person_init()
-{
-Person p;
-return p;
-}
-void Person_greet()
-{
+long x = 10;
+long y;
+if (x > 5) {
+y = 50;
+} else {
+y = 0;
 }
 `;
   expect(parsed.errors).toEqual([]);
   expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
 });
 
-test("struct with mutating functions", () => {
+test("declaration with short if", () => {
   const input = `
-struct Person {
-  var age = 0
-  func grow(var self) {
-    self.age = self.age + 1
-  }
-}
+const x = 10
+const y = if x > 5 ~ 50
+          else ~ 0
 `;
   const parsed = parse(input);
   const result = build(parsed.root);
   const expected = `
-typedef struct Person
-{
-void *_vt;
-long age;
-} Person;
-Person Person_init()
-{
-Person p;
-p.age = 0;
-return p;
+long x = 10;
+long y;
+if (x > 5) {
+y = 50;
+} else {
+y = 0;
 }
-void Person_grow(struct Person *self)
-{
-struct Person _self = *self;
-_self.age = _self.age + 1;
+`;
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+});
+
+test("declaration with one line if", () => {
+  const input = `
+const x = 10
+const y = if x > 5 ~ 50 else ~ 0
+`;
+  const parsed = parse(input);
+  const result = build(parsed.root);
+  const expected = `
+long x = 10;
+long y;
+if (x > 5) {
+y = 50;
+} else {
+y = 0;
 }
 `;
   expect(parsed.errors).toEqual([]);

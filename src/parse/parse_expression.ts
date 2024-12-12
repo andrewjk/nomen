@@ -1,5 +1,6 @@
 import AccessFieldNode from "../nodes/AccessFieldNode";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode";
+import AccessIndexNode from "../nodes/AccessIndexNode";
 import AccessNode from "../nodes/AccessNode";
 import ArrayValuesNode from "../nodes/ArrayValuesNode";
 import BaseNode from "../nodes/BaseNode";
@@ -70,16 +71,25 @@ export default function parse_expression(status: ParseStatus): BaseNode {
         const access = new AccessNode(node.start, node, parse_access(value, status));
         node = access;
         // TODO: This should be a type prop on AccessNode
-        switch (access.access.node_type) {
-          case "access_field": {
-            value = (access.access as AccessFieldNode).name;
-            break;
-          }
-          case "access_func": {
-            value = (access.access as AccessFunctionCallNode).name;
-            break;
-          }
-        }
+        ////switch (access.access.node_type) {
+        ////  case "access_field": {
+        ////    value = (access.access as AccessFieldNode).name;
+        ////    break;
+        ////  }
+        ////  case "access_func": {
+        ////    value = (access.access as AccessFunctionCallNode).name;
+        ////    break;
+        ////  }
+        ////}
+        break;
+      }
+      case "[": {
+        accept("[", status);
+        const index = parse_expression(status);
+        expect("]", status);
+        const access = new AccessNode(node.start, node, new AccessIndexNode(index.start, index));
+        node = access;
+        ////value = "TODO"; // (access.access as AccessIndexNode).index;
         break;
       }
       case "(": {
@@ -90,7 +100,7 @@ export default function parse_expression(status: ParseStatus): BaseNode {
         }
         expect(")", status);
         node = func;
-        value = func.name;
+        /////value = func.name;
         break;
       }
       case "+":

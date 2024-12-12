@@ -1,5 +1,7 @@
+import built_in_types from "../built_in_types";
 import AccessFieldNode from "../nodes/AccessFieldNode";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode";
+import AccessIndexNode from "../nodes/AccessIndexNode";
 import AccessNode from "../nodes/AccessNode";
 import FunctionNode from "../nodes/FunctionNode";
 import type BuildStatus from "./BuildStatus";
@@ -9,12 +11,20 @@ import type_from_value_node from "./utils/type_from_value_node";
 
 export default function build_access_node(node: AccessNode, status: BuildStatus) {
   // PERF:
-  const type = type_from_value_node(node.target);
-  const trait = status.traits.find((t) => t.name === type.name);
+  const target_type = type_from_value_node(node.target);
+  const trait = status.traits.find((t) => t.name === target_type.name);
 
   switch (node.access.node_type) {
     case "access_field": {
       const access_field = node.access as AccessFieldNode;
+      // HACK:
+      if (target_type.is_array && access_field.name === "length") {
+        const type = c_type(target_type.name);
+        status.code += "(sizeof(";
+        build_node(node.target, status);
+        status.code += `) / sizeof(${type}))`;
+        return;
+      }
       if (trait) {
         // If the target is a trait, we need to call the get/set method
         const traitField = trait.fields.find((f) => f.name == access_field.name)!;
@@ -34,7 +44,7 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
       } else {
         // If the target is a struct, we can just access the field directly
         build_node(node.target, status);
-        status.code += `.${node.access.name}`;
+        status.code += `.${access_field.name}`;
       }
       break;
     }
@@ -58,10 +68,10 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
       } else {
         // If the target is a struct, we need to convert the access function
         // into a C function that takes the struct as an argument
-        status.code += `${type.name}_${access_func.name}(`;
+        status.code += `${target_type.name}_${access_func.name}(`;
         if (!access_func.is_static) {
-          // TODO: be more rigorous about this!
-          if (type.name !== "int") {
+          // TODO: be more rigorous about this! Sometimes types should be passed by ref??
+          if (!built_in_types.includes(target_type.name)) {
             status.code += "&";
           }
           build_node(node.target, status);
@@ -74,6 +84,33 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
         }
         status.code += ")";
       }
+      break;
+    }
+    case "access_index": {
+      const access_index = node.access as AccessIndexNode;
+      //if (trait) {
+      //  // If the target is a trait, we need to call the get/set method
+      //  const traitField = trait.fields.find((f) => f.name == access_field.name)!;
+      //  // TODO: Cast to the correct function definition
+      //  // TODO: Use the correct variable name
+      //  // TODO: Pass parameters
+      //  const type = c_type(traitField.type.name);
+      //  const cast = `(${type}(*)(void *))`;
+      //  status.code += `(${cast}_get_trait_func((void *)`;
+      //  build_node(node.target, status);
+      //  const trait_index = status.traits.indexOf(trait);
+      //  const field_index = trait.functions.length + trait.fields.indexOf(traitField) * 2;
+      //  status.code += `, ${trait_index}, ${field_index}))(`;
+      //  build_node(node.target, status);
+      //  status.code += `)`;
+      //  break;
+      //} else {
+      // If the target is a struct, we can just access the field directly
+      build_node(node.target, status);
+      status.code += "[";
+      build_node(access_index.index, status);
+      status.code += "]";
+      //}
       break;
     }
   }

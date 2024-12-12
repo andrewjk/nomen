@@ -1,5 +1,6 @@
 import { expect, test } from "vitest";
 import AccessFunctionCallNode from "../../src/nodes/AccessFunctionCallNode";
+import AccessIndexNode from "../../src/nodes/AccessIndexNode";
 import AccessNode from "../../src/nodes/AccessNode";
 import ArrayValuesNode from "../../src/nodes/ArrayValuesNode";
 import AssignmentNode from "../../src/nodes/AssignmentNode";
@@ -116,4 +117,30 @@ x = [Dog.init(), Cat.init()]
   );
   expect(parsed.errors).toEqual([]);
   expect(trim_test_parse(parsed.root.statements[4])).toEqual(trim_test_parse(expected));
+});
+
+test("access value in array", () => {
+  const input = `
+const nums = [ 0, 1, 2, 3 ]
+const second = nums[1]
+`;
+  const parsed = parse(input);
+  const expected = new DeclarationNode(
+    77,
+    "mod",
+    "const",
+    "second",
+    new Type("int", true),
+    new AccessNode(
+      82,
+      new ValueNode(
+        82,
+        "nums",
+        new Type("int", true, true, new ValueNode(88, "4", new Type("int"))),
+      ),
+      new AccessIndexNode(86, new ValueNode(86, "1", new Type("int", true)), new Type("int", true)),
+    ),
+  );
+  expect(parsed.errors).toEqual([]);
+  expect(trim_test_parse(parsed.root.statements[1])).toEqual(trim_test_parse(expected));
 });

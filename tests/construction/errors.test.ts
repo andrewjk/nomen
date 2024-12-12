@@ -8,7 +8,7 @@ test("struct not found", () => {
   const input = `
 const dog = Dog.init()
 `;
-  const expected = [test_error(input, "Unknown target: Dog", 2, 13)];
+  const expected = [test_error(input, "Unknown value: Dog", 2, 13)];
   const parsed = parse(input);
   expect(parsed.errors).toEqual(expected);
 });
@@ -54,9 +54,7 @@ struct Dog {
 }
 const dog = Dog.init(z0)
 `;
-  const expected = [
-    test_error(input, "Type mismatch in param: unknown value z0 (expected string)", 5, 22),
-  ];
+  const expected = [test_error(input, "Unknown value: z0", 5, 22)];
   const parsed = parse(input);
   expect(parsed.errors).toEqual(expected);
 });

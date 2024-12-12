@@ -17,7 +17,7 @@ test("unknown value", () => {
   const input = `
 const x = z0
 `;
-  const expected = [test_error(input, "Type mismatch in declaration: unknown value z0", 2, 11)];
+  const expected = [test_error(input, "Unknown value: z0", 2, 11)];
   const parsed = parse(input);
   expect(parsed.errors).toEqual(expected);
 });
@@ -37,9 +37,7 @@ test("type mismatch - unknown value", () => {
   const input = `
 const x: int = z0
 `;
-  const expected = [
-    test_error(input, "Type mismatch in declaration: unknown value z0 (expected int)", 2, 16),
-  ];
+  const expected = [test_error(input, "Unknown value: z0", 2, 16)];
   const parsed = parse(input);
   expect(parsed.errors).toEqual(expected);
 });

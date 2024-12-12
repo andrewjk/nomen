@@ -23,6 +23,12 @@ const COMPOUND_SYMBOLS = [
   "=>",
 ];
 
+const LONG_COMPOUND_SYMBOLS = [
+  // Emphasis (mostly for ziglings, can be removed if necessary)
+  "???",
+  "!!!",
+];
+
 interface TokenizeStatus {
   i: number;
   start: number;
@@ -67,9 +73,13 @@ export default function tokenize(input: string, preserve_space = false): Token[]
           let end = consume_block_comment(input, status);
           value = input.substring(status.i, end);
           status.i = end - 1;
-        } else if (COMPOUND_SYMBOLS.includes(value + input[status.i + 1])) {
+        } else if (LONG_COMPOUND_SYMBOLS.includes(input.substring(status.i, status.i + 3))) {
           // It's a compound symbol
-          value = value + input[status.i + 1];
+          value = input.substring(status.i, status.i + 3);
+          status.i += 2;
+        } else if (COMPOUND_SYMBOLS.includes(input.substring(status.i, status.i + 2))) {
+          // It's a compound symbol
+          value = input.substring(status.i, status.i + 2);
           status.i += 1;
         } else if (value === "+" || value === "-") {
           // It might be a sign, include any numbers afterwards

@@ -60,14 +60,14 @@ x = 10;
 
 test("assignment to var param", () => {
   const input = `
-func (var x: int) {
+func add(var x: int) {
   x = 5
 }
 `;
   const parsed = parse(input);
   const result = build(parsed.root);
   const expected = `
-void add(int *x)
+void add(long *x)
 {
 (*x) = 5;
 }

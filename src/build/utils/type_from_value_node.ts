@@ -1,5 +1,6 @@
 import AccessFieldNode from "../../nodes/AccessFieldNode";
 import AccessFunctionCallNode from "../../nodes/AccessFunctionCallNode";
+import AccessIndexNode from "../../nodes/AccessIndexNode";
 import AccessNode from "../../nodes/AccessNode";
 import ArrayValuesNode from "../../nodes/ArrayValuesNode";
 import BaseNode from "../../nodes/BaseNode";
@@ -28,6 +29,9 @@ export default function type_from_value_node(node: BaseNode): Type {
     }
     case "access_func": {
       return (node as AccessFunctionCallNode).type;
+    }
+    case "access_index": {
+      return (node as AccessIndexNode).type;
     }
     case "grouped": {
       return type_from_value_node((node as GroupedNode).value);

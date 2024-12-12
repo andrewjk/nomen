@@ -15,19 +15,22 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
   if (decl.value) {
     status.stack.push(decl);
 
+    const error_count = status.errors.length;
     const old_expected_type = status.expected_type;
     status.expected_type = decl.type;
-    check_node(decl.value, status);
+    const result = check_node(decl.value, status);
     status.expected_type = old_expected_type;
 
-    check_type_and_value_match(
-      decl.type,
-      type_from_value_node(decl.value, status),
-      value_from_value_node(decl.value),
-      status,
-      decl.value.start,
-      "declaration",
-    );
+    if (result) {
+      check_type_and_value_match(
+        decl.type,
+        type_from_value_node(decl.value, status),
+        value_from_value_node(decl.value),
+        status,
+        decl.value.start,
+        "declaration",
+      );
+    }
 
     if (!decl.type.name) {
       decl.type = type_from_value_node(decl.value, status);

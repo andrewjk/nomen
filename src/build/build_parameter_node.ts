@@ -2,11 +2,7 @@ import ParameterNode from "../nodes/ParameterNode";
 import type BuildStatus from "./BuildStatus";
 import c_type from "./utils/c_type";
 
-export default function build_parameter_node(
-  node: ParameterNode,
-  status: BuildStatus,
-  with_name = true,
-) {
+export default function build_parameter_node(node: ParameterNode, status: BuildStatus) {
   const struct_type = status.structs.find((s) => s.name === node.type.name);
   //const is_struct = struct_type && !struct_type.is_simple_type;
   const trait_type = status.traits.find((t) => t.name === node.type.name);
@@ -17,12 +13,10 @@ export default function build_parameter_node(
     status.code += `struct `;
   }
   status.code += c_type(node.type.name);
-  if (is_struct) {
+  if (is_struct || node.declaration === "var") {
     status.code += ` *`;
-  } else if (with_name) {
+  } else {
     status.code += ` `;
   }
-  if (with_name) {
-    status.code += node.name;
-  }
+  status.code += node.name;
 }

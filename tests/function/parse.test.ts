@@ -50,7 +50,7 @@ func add(a: int, b = 5) {}
     new Type(""),
     [
       new ParameterNode(10, "a", new Type("int")),
-      new ParameterNode(18, "b", new Type("int", true), "5"),
+      new ParameterNode(18, "b", new Type("int", true), new ValueNode(20, "5")),
     ],
     [],
   );

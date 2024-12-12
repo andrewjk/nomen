@@ -1,6 +1,7 @@
 import add_error from "../add_error";
 import AccessFieldNode from "../nodes/AccessFieldNode";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode";
+import AccessIndexNode from "../nodes/AccessIndexNode";
 import AccessNode from "../nodes/AccessNode";
 import Type from "../nodes/Type";
 import type CheckStatus from "./CheckStatus";
@@ -9,28 +10,37 @@ import check_node from "./check_node";
 import type_from_value_node from "./utils/type_from_value_node";
 import value_from_value_node from "./utils/value_from_value_node";
 
-export default function check_access_node(node: AccessNode, status: CheckStatus) {
-  check_node(node.target, status);
+export default function check_access_node(node: AccessNode, status: CheckStatus): boolean {
+  if (!check_node(node.target, status)) {
+    return false;
+  }
 
   const target_type = type_from_value_node(node.target, status);
   if (!target_type.name) {
     add_error(status, `Unknown target: ${value_from_value_node(node.target)}`, node.target.start);
-    return;
+    return false;
   }
 
   switch (node.access.node_type) {
     case "access_field": {
-      check_access_field_node(target_type, node.access as AccessFieldNode, status);
-      break;
+      return check_access_field_node(target_type, node.access as AccessFieldNode, status);
     }
     case "access_func": {
-      check_access_function_node(target_type, node.access as AccessFunctionCallNode, status);
-      break;
+      return check_access_function_node(target_type, node.access as AccessFunctionCallNode, status);
+    }
+    case "access_index": {
+      return check_access_index_node(target_type, node.access as AccessIndexNode, status);
     }
   }
+
+  return true;
 }
 
-function check_access_field_node(target_type: Type, node: AccessFieldNode, status: CheckStatus) {
+function check_access_field_node(
+  target_type: Type,
+  node: AccessFieldNode,
+  status: CheckStatus,
+): boolean {
   const struct = status.structs.find((s) => s.name === target_type.name);
   let field = struct?.fields.find((f) => f.name === node.name);
   if (!field) {
@@ -53,25 +63,37 @@ function check_access_field_node(target_type: Type, node: AccessFieldNode, statu
       }
     }
   }
+  // HACK:
+  if (!field) {
+    // Are we accessing length in an array
+    if (target_type.is_array && node.name === "length") {
+      node.type = new Type("int");
+      return true;
+    }
+  }
   if (field) {
     if (
       field.visibility === "private" &&
       !status.structs.find((s) => s.name === target_type.name)?.privates_visible
     ) {
       add_error(status, `Can't access private field: ${node.name}`, node.start);
+      return false;
     } else {
       node.type = field.type;
     }
   } else {
     add_error(status, `Field not found: ${node.name}`, node.start);
+    return false;
   }
+
+  return true;
 }
 
 function check_access_function_node(
   target_type: Type,
   node: AccessFunctionCallNode,
   status: CheckStatus,
-) {
+): boolean {
   const struct = status.structs.find((s) => s.name === target_type.name);
 
   let func = struct?.functions.find((f) => f.name === node.name);
@@ -101,8 +123,25 @@ function check_access_function_node(
   // Make sure the function exists
   if (!func) {
     add_error(status, `Function not found: ${target_type.name}.${node.name}`, node.start);
-    return;
+    return false;
   }
 
-  check_function_call(node, status, func, target_type);
+  return check_function_call(node, status, func, target_type);
+}
+
+function check_access_index_node(
+  target_type: Type,
+  node: AccessIndexNode,
+  status: CheckStatus,
+): boolean {
+  // Make sure the type can be indexed
+  // TODO: Do this with an Indexable trait instead
+  if (!target_type.is_array) {
+    add_error(status, `Target not indexable: ${target_type.name}`, node.start);
+    return false;
+  }
+
+  node.type = new Type(target_type.name, target_type.is_static);
+
+  return check_node(node.index, status);
 }

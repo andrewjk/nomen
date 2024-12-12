@@ -39,7 +39,9 @@ import check_trait_node from "./check_trait_node";
 import check_value_node from "./check_value_node";
 import check_while_loop_node from "./check_while_loop_node";
 
-export default function check_node(node: BaseNode, status: CheckStatus) {
+export default function check_node(node: BaseNode, status: CheckStatus): boolean {
+  let result = true;
+
   switch (node.node_type) {
     case "root": {
       check_block_node(node as RootNode, status);
@@ -66,11 +68,11 @@ export default function check_node(node: BaseNode, status: CheckStatus) {
       break;
     }
     case "func_call": {
-      check_function_call_node(node as FunctionCallNode, status);
+      result = check_function_call_node(node as FunctionCallNode, status);
       break;
     }
     case "access": {
-      check_access_node(node as AccessNode, status);
+      result = check_access_node(node as AccessNode, status);
       break;
     }
     case "if": {
@@ -86,23 +88,23 @@ export default function check_node(node: BaseNode, status: CheckStatus) {
       break;
     }
     case "grouped": {
-      check_node((node as GroupedNode).value, status);
+      result = check_node((node as GroupedNode).value, status);
       break;
     }
     case "op": {
-      check_operation_node(node as OperationNode, status);
+      result = check_operation_node(node as OperationNode, status);
       break;
     }
     case "array": {
-      check_array_values_node(node as ArrayValuesNode, status);
+      result = check_array_values_node(node as ArrayValuesNode, status);
       break;
     }
     case "range": {
-      check_range_node(node as RangeNode, status);
+      result = check_range_node(node as RangeNode, status);
       break;
     }
     case "value": {
-      check_value_node(node as ValueNode, status);
+      result = check_value_node(node as ValueNode, status);
       break;
     }
     case "break": {
@@ -128,11 +130,14 @@ export default function check_node(node: BaseNode, status: CheckStatus) {
     }
     default: {
       add_error(status, `Unknown node type: ${node.node_type}`, node.start);
+      result = false;
       break;
     }
   }
 
   promote_allocations(node, status);
+
+  return result;
 }
 
 function promote_allocations(node: BaseNode, status: CheckStatus) {
