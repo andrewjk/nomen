@@ -21,7 +21,7 @@ function add_source(folder_path: string, file_path: string, inputs: Map<string, 
   source += fs.readFileSync(source_path, "utf8");
 
   source = source.replaceAll(/^import(.*)$/gm, (match, name) => {
-    const import_file_path = `./${name.trim()}.lang`;
+    const import_file_path = `./${name.trim()}.echo`;
     if (!inputs.has(import_file_path)) {
       add_source(folder_path, import_file_path, inputs);
     }

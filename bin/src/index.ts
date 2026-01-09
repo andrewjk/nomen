@@ -8,14 +8,14 @@ import join from "../../src/join";
 import parse from "../../src/parse";
 import type Config from "./types/Config";
 
-const SUPPORTED_EXTENSION = ".lang";
+const SUPPORTED_EXTENSION = ".echo";
 
 //(async () => {
 try {
-  console.log("\n~ LANG CLI ~\n");
+  console.log("\n~ ECHO CLI ~\n");
 
   const options = yargs
-    .usage("Usage: lang --in [file/folder]")
+    .usage("Usage: echo --in [file/folder]")
     .option("in", {
       alias: "i",
       describe: "Input file or folder",

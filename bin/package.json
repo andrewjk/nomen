@@ -1,17 +1,17 @@
 {
-  "name": "lang-cli",
+  "name": "echo-cli",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
   "scripts": {
     "build": "tsup",
-    "go": "tsup && npx lang -i ./tests/test.lang && clang ./tests/main.c && ./a.out",
+    "go": "tsup && npx echo -i ./tests/test.echo && clang ./tests/main.c && ./a.out",
     "go:c": "rm -f ./a.out && clang ./tests/main.c && ./a.out",
     "check": "tsc -p tsconfig-check.json --noEmit",
     "test": "uvu -r tsm tests"
   },
   "bin": {
-    "lang": "./dist/index.js"
+    "echo": "./dist/index.js"
   },
   "keywords": [],
   "author": "",
