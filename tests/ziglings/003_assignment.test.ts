@@ -1,6 +1,7 @@
 import { expect, test } from "vitest";
 import build from "../../src/build";
 import test_error from "../test_error";
+import check_output from "./check_output";
 import parse_with_imports from "./parse_with_imports";
 import trim_code from "./trim_code";
 
@@ -47,7 +48,7 @@ pub func main() {
   expect(parsed.errors).toEqual([]);
 });
 
-test("ziglings 003 assignment -- build", () => {
+test("ziglings 003 assignment -- build", async () => {
   const input = `
 import System
 
@@ -84,4 +85,7 @@ free(_param_3);
 }
 `;
   expect(trim_code(built.code)).toEqual(expected.trim());
+
+  const expected_output = "55 3.141590 -11";
+  await check_output("003", built, expected_output);
 });

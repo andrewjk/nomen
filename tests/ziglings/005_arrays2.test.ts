@@ -1,6 +1,7 @@
 import { expect, test } from "vitest";
 import build from "../../src/build";
 import test_error from "../test_error";
+import check_output from "./check_output";
 import parse_with_imports from "./parse_with_imports";
 import trim_code from "./trim_code";
 
@@ -71,7 +72,7 @@ pub func main() {
   expect(parsed.errors).toEqual([]);
 });
 
-test("ziglings 005 arrays 2 -- build", () => {
+test("ziglings 005 arrays 2 -- build", async () => {
   const input = `
 import System
 
@@ -121,4 +122,7 @@ free(_param_3);
 }
 `;
   expect(trim_code(built.code)).toEqual(expected.trim());
+
+  const expected_output = "Standard Library.";
+  await check_output("005", built, expected_output);
 });

@@ -1,4 +1,4 @@
 .DS_Store
-a.out
+*.out
 node_modules/
 dist/
