@@ -152,15 +152,47 @@ guard x > 5 else {
 }
 ```
 
-Or, for simple returns:
+### While Loops
+
+While loops are used to loop while a condition is true:
 
 ```
-guard x > 5 else return
+var x = 0
+while x < 5 {
+  print("\{x}")
+  x += 1
+}
 ```
 
-### For Statements
+You can break out of a while loop using the `break` statement:
 
-For statements are used to loop through a collection:
+```
+var x = 0
+while true {
+  print("\{x}")
+  if x > 5 {
+    break
+  }
+  x += 1
+}
+```
+
+You can skip to the next iteration using the `continue` statement:
+
+```
+var x = 0
+while x < 100 {
+  x += 1
+  if x % 2 == 0 {
+    continue
+  }
+  print("\{x}")
+}
+```
+
+### For Loops
+
+For loops are used to loop through a collection:
 
 ```
 for x in 0..5 {
@@ -176,11 +208,7 @@ for x, i in list, 0.. {
 }
 ```
 
-// TODO: break, continue
-
-### While Statements
-
-// TODO: ??
+You can use `break` and `continue` statements in for loops, just like in while loops.
 
 ### Switch Statements
 
