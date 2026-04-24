@@ -18,6 +18,7 @@ import parse_panic_or_todo from "./parse_panic_or_todo";
 import parse_raw from "./parse_raw";
 import parse_let from "./parse_let";
 import parse_return from "./parse_return";
+import parse_op from "./parse_op";
 import parse_struct from "./parse_struct";
 import parse_trait from "./parse_trait";
 import parse_visibility from "./parse_visibility";
@@ -69,6 +70,10 @@ export default function parse_statement(status: ParseStatus) {
       }
       case "func": {
         parse_function("mod", status);
+        break;
+      }
+      case "op": {
+        parse_op("mod", status);
         break;
       }
       case "if": {

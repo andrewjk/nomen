@@ -141,7 +141,12 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
     // Define the function
     // HACK: Need to map names to types
     const func_start = status.code.length;
-    status.code += `${c_type(func.return_type.name || "void")} ${node.name}_${func.name}(`;
+    const return_type = func.return_type.name || "void";
+    const return_struct = status.structs.find((s) => s.name === return_type && !s.is_simple_type);
+    if (return_struct) {
+      status.code += `struct `;
+    }
+    status.code += `${c_type(return_type)} ${node.name}_${func.name}(`;
     for (let i = 0; i < func.params.length; i++) {
       if (i > 0) {
         status.code += ", ";

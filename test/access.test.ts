@@ -278,7 +278,7 @@ Person p;
 p.age = age;
 return p;
 }
-Address Person_address()
+struct Address Person_address()
 {
 return Address_init("123 main st");
 }

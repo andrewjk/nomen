@@ -421,6 +421,20 @@ return Result.error("uh oh!")
 
 // TODO:
 
+### Custom Operations
+
+You can add custom operations to structs:
+
+```
+struct Person {
+  var string name
+
+  op + (self, Person other) -> {
+    return Person("\{self.name} & \{other.name}")
+  }
+}
+```
+
 ### Import
 
 // TODO:

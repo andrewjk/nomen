@@ -2,6 +2,7 @@ import add_error from "../add_error";
 import type ParseStatus from "./ParseStatus";
 import parse_declaration from "./parse_declaration";
 import parse_function from "./parse_function";
+import parse_op from "./parse_op";
 import parse_struct from "./parse_struct";
 import parse_trait from "./parse_trait";
 import consume from "./utils/consume";
@@ -46,6 +47,15 @@ export default function parse_visibility(visibility: "pub" | "priv", status: Par
         consume(status);
       } else {
         parse_function(visibility, status);
+      }
+      break;
+    }
+    case "op": {
+      if (visibility === "priv" && status.stack.at(-1)?.node_type === "trait") {
+        add_error(status, `Trait operators cannot be priv`, get_index(status));
+        consume(status);
+      } else {
+        parse_op(visibility, status);
       }
       break;
     }

@@ -17,6 +17,7 @@ export default class OperationNode extends BaseNode {
   left_value: BaseNode;
   right_value: BaseNode;
   type: Type;
+  operator_func?: { struct_name: string; func_name: string };
 
   constructor(
     start: number,
