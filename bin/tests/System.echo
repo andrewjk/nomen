@@ -1,6 +1,6 @@
 
 pub trait Disposable {
-    func dispose(self) {
+    func dispose = (self) -> {
         Console.write("\nboom!")
     }
 }
@@ -20,11 +20,13 @@ pub trait Multipliable {
 }
 */
 pub trait Stringable {
-    func to_string(self) -> string
+    func to_string = (self, out string) -> {
+        return "from_c"
+    }
 }
 
 pub struct int: Stringable {
-    pub func to_string(self) -> string {
+    pub func to_string = (self, out string) -> {
         ```
         int length = snprintf(NULL, 0, "%ld", self);
         char* str = malloc(length + 1);
@@ -37,7 +39,7 @@ pub struct int: Stringable {
 }
 
 pub struct uint: Stringable {
-    pub func to_string(self) -> string {
+    pub func to_string = (self, out string) -> {
         ```
         int length = snprintf(NULL, 0, "%ld", self);
         char* str = malloc(length + 1);
@@ -50,7 +52,7 @@ pub struct uint: Stringable {
 }
 
 pub struct int8: Stringable {
-    pub func to_string(self) -> string {
+    pub func to_string = (self, out string) -> {
         ```
         int length = snprintf(NULL, 0, "%d", self);
         char* str = malloc(length + 1);
@@ -63,7 +65,7 @@ pub struct int8: Stringable {
 }
 
 pub struct uint8: Stringable {
-    pub func to_string(self) -> string {
+    pub func to_string = (self, out string) -> {
         ```
         int length = snprintf(NULL, 0, "%d", self);
         char* str = malloc(length + 1);
@@ -76,7 +78,7 @@ pub struct uint8: Stringable {
 }
 
 pub struct float: Stringable {
-    pub func to_string(self) -> string {
+    pub func to_string = (self, out string) -> {
         ```
         int length = snprintf(NULL, 0, "%f", self);
         char* str = malloc(length + 1);
@@ -89,7 +91,7 @@ pub struct float: Stringable {
 }
 
 pub struct string: Stringable {
-    pub func to_string(self) -> string {
+    pub func to_string = (self, out string) -> {
         ```
         return self;
         ```
@@ -124,7 +126,7 @@ pub struct Array: Addable, Multipliable {
 }
 */
 pub struct Console {
-    pub func write(line: string) {
+    pub func write = (string line) -> {
         ```
         printf("%s", line);
         ```
