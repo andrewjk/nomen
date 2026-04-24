@@ -1,8 +1,8 @@
 import BranchNode from "../nodes/BranchNode";
 import IfElseNode from "../nodes/IfElseNode";
+import ReturnNode from "../nodes/ReturnNode";
 import type ParseStatus from "./ParseStatus";
 import parse_expression from "./parse_expression";
-import parse_return from "./parse_return";
 import parse_statement from "./parse_statement";
 import accept from "./utils/accept";
 import expect from "./utils/expect";
@@ -34,20 +34,27 @@ export default function parse_if_else(status: ParseStatus): IfElseNode {
 }
 
 function parse_if_branch(status: ParseStatus): BranchNode | null {
-  const short_if = accept("~", status, false) || accept("return", status, false);
-  if (short_if || expect("{", status)) {
+  // Check for one-liner syntax: -> (expr)
+  if (accept("->", status)) {
+    if (expect("(", status)) {
+      const branch_start = get_index(status);
+      const value = parse_expression(status);
+      expect(")", status);
+
+      const branch = new BranchNode(branch_start);
+      branch.statements.push(new ReturnNode(value.start, value));
+      return branch;
+    }
+    return null;
+  }
+
+  // Block syntax: { ... }
+  if (expect("{", status)) {
     const if_branch = new BranchNode(get_index(status));
     status.stack.push(if_branch);
 
-    if (short_if) {
-      parse_return(status);
-    } else {
-      parse_statement(status);
-    }
-
-    if (!short_if) {
-      expect("}", status);
-    }
+    parse_statement(status);
+    expect("}", status);
 
     status.stack.pop();
     return if_branch;

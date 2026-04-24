@@ -16,6 +16,7 @@ import parse_if_else from "./parse_if_else";
 import parse_import from "./parse_import";
 import parse_panic_or_todo from "./parse_panic_or_todo";
 import parse_raw from "./parse_raw";
+import parse_let from "./parse_let";
 import parse_return from "./parse_return";
 import parse_struct from "./parse_struct";
 import parse_trait from "./parse_trait";
@@ -94,6 +95,10 @@ export default function parse_statement(status: ParseStatus) {
       case "panic":
       case "todo": {
         parse_panic_or_todo(value, status);
+        break;
+      }
+      case "let": {
+        parse_let(status);
         break;
       }
       case "return": {
