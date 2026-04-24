@@ -238,7 +238,21 @@ Match statements must be exhaustive.
 
 ### Collections
 
-// TODO: Array, List, Range etc
+#### Array
+
+// TODO: 
+
+#### List
+
+// TODO:
+
+#### Range
+
+A range can be defined in the format start..end, where the start is inclusive and the end is exclusive:
+
+```
+var range = 0..4
+```
 
 ### Anonymous Types
 

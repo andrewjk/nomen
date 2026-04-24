@@ -49,9 +49,7 @@ export default function type_from_value_node(node: BaseNode, status: CheckStatus
       return (node as OperationNode).type;
     }
     case "range": {
-      const type = type_from_value_node((node as RangeNode).left_value!, status);
-      type.is_array = true;
-      return type;
+      return (node as RangeNode).type;
     }
   }
   return new Type("");

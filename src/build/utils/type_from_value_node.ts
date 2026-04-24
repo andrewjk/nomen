@@ -7,6 +7,7 @@ import BaseNode from "../../nodes/BaseNode";
 import FunctionCallNode from "../../nodes/FunctionCallNode";
 import GroupedNode from "../../nodes/GroupedNode";
 import OperationNode from "../../nodes/OperationNode";
+import RangeNode from "../../nodes/RangeNode";
 import Type from "../../nodes/Type";
 import ValueNode from "../../nodes/ValueNode";
 
@@ -38,6 +39,9 @@ export default function type_from_value_node(node: BaseNode): Type {
     }
     case "op": {
       return (node as OperationNode).type;
+    }
+    case "range": {
+      return (node as RangeNode).type;
     }
   }
   return new Type("");

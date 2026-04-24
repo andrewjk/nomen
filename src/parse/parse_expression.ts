@@ -140,10 +140,9 @@ export default function parse_expression(status: ParseStatus): BaseNode {
         node = new OperationNode(start, current_value, node, expression);
         break;
       }
-      case "..":
-      case ".=": {
+      case "..": {
         consume(status);
-        const range = new RangeNode(start, node, parse_expression(status), current_value === ".=");
+        const range = new RangeNode(start, node, parse_expression(status), false);
         node = range;
         break;
       }

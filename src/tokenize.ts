@@ -17,7 +17,6 @@ const COMPOUND_SYMBOLS = [
   "-=",
   // Range
   "..",
-  ".=",
   // Type
   "->",
   "=>",
