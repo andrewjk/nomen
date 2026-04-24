@@ -340,6 +340,34 @@ struct Person
 const andrew = Person.init("Andrew", "1 Main St")
 ```
 
+### Traits
+
+Traits can be applied to structs to make sure they have certain fields and functions available:
+
+```
+trait Person {
+  var string name
+
+  func (out string) greet
+}
+
+trait Dancer {
+  func () dance
+}
+
+struct Frank: Person, Dancer {
+  var name = "frank"
+
+  func greet = () -> {
+    return "hi, \{name}"
+  }
+
+  func dance = () -> {
+    print("hula")
+  } 
+}
+```
+
 ### Enums
 
 An enum can have one value set:
