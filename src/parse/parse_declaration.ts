@@ -2,6 +2,7 @@ import add_error from "../add_error";
 import type BlockNode from "../nodes/BlockNode";
 import DeclarationNode from "../nodes/DeclarationNode";
 import StructNode from "../nodes/StructNode";
+import Type from "../nodes/Type";
 import { is_value_node } from "../nodes/check_node_type";
 import type ParseStatus from "./ParseStatus";
 import parse_expression from "./parse_expression";
@@ -9,6 +10,7 @@ import parse_type from "./parse_type";
 import accept from "./utils/accept";
 import consume from "./utils/consume";
 import get_index from "./utils/get_index";
+import peek_current from "./utils/peek_current";
 
 export default function parse_declaration(
   visibility: "inherit" | "pub" | "mod" | "private",
@@ -21,12 +23,26 @@ export default function parse_declaration(
   status.stack.push(decl);
 
   accept(declaration, status);
-  decl.name_start = get_index(status);
-  decl.name = consume(status);
-  if (accept(":", status)) {
-    decl.type_start = get_index(status);
-    decl.type = parse_type(status);
+
+  // Try parsing a type, and backtrack if it turns out to be the name
+  const saved_i = status.i;
+  const saved_errors_length = status.errors.length;
+  decl.type_start = get_index(status);
+  decl.type = parse_type(status);
+
+  // If the next token is '=' or EOF, what we parsed was actually the name
+  if (peek_current(status) === "=" || status.i >= status.tokens.length) {
+    status.i = saved_i;
+    status.errors.length = saved_errors_length;
+    decl.type = new Type("");
+    decl.type_start = undefined;
+    decl.name_start = get_index(status);
+    decl.name = consume(status);
+  } else {
+    decl.name_start = get_index(status);
+    decl.name = consume(status);
   }
+
   if (accept("=", status)) {
     decl.value = parse_expression(status);
     if (!decl.type.name && is_value_node(decl.value)) {
