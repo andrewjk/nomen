@@ -59,7 +59,11 @@ export default function build_node(node: BaseNode, status: BuildStatus, with_sem
       break;
     }
     case "declare": {
-      build_declaration_node(node as DeclarationNode, status);
+      const decl = node as DeclarationNode;
+      build_declaration_node(decl, status);
+      if (decl.value?.node_type === "func") {
+        with_semicolon = false;
+      }
       break;
     }
     case "assign": {

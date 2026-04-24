@@ -73,16 +73,20 @@ func sum = (int a, int b, out int) -> {
 }
 ```
 
-If a function is simple it can be defined in one line. Note also that the type of the function can be inferred in this case:
+If a function is simple it can be defined in one line. TODO: Note also that the type of the function can be inferred in this case:
 
 ```
-func sum = (int a, int b) -> (a + b)
+func sum = (int a, int b, out int) -> (a + b)
 ```
 
 The function examples above are implicitly `const` declarations, but functions can be `var` too:
 
 ```
 var func (int a, int b, out int) sum
+
+// or
+
+var func sum = (int a, int b, out int) -> (a + b)
 ```
 
 A function is called with its name and parameters:

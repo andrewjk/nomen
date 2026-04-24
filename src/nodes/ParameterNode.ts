@@ -7,6 +7,7 @@ export default class ParameterNode extends BaseNode {
   type: Type;
   default_value?: BaseNode;
   type_start?: number;
+  name_start?: number;
   default_value_start?: number;
   is_self_param?: boolean;
   is_copied?: boolean;
