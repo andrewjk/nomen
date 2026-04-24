@@ -17,12 +17,15 @@ export default function parse_panic_or_todo(name: "panic" | "todo", status: Pars
   accept(name, status);
 
   const message_start = get_index(status);
+  // Allow optional parentheses around the message
+  accept("(", status);
   let message = peek_current(status);
   if (message && message.startsWith('"') && message.endsWith('"')) {
     message = consume(status).substring(1, message.length - 1);
   } else {
     add_error(status, `Expected a ${name} message`, message_start);
   }
+  accept(")", status);
 
   const node =
     name === "panic" ? new PanicNode(node_start, message) : new TodoNode(node_start, message);

@@ -210,6 +210,22 @@ for x, i in list, 0.. {
 
 You can use `break` and `continue` statements in for loops, just like in while loops.
 
+### Panic and Todo
+
+The `panic` statement is used to indicate that something has gone wrong and the program cannot continue:
+
+```
+panic("something went wrong")
+```
+
+The `todo` statement is used to indicate that something has not been implemented yet:
+
+```
+todo("haven't done this yet")
+```
+
+Both `panic` and `todo` will print their message and exit the program.
+
 ### Switch Statements
 
 Switch statements are a more complicated type of if statement that can be used to handle many branches:
