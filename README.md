@@ -20,24 +20,6 @@ This is a multiline comment
 /* This is a nested comment */
 The comment ends below
 */
-
-```
-
-### Declarations
-
-Declarations can be variable or constant:
-
-```
-var can_be_changed = true
-const is_immutable = 5
-```
-
-Types are inferred where possible, but can also be set explicitly:
-
-```
-var number_of_things: Float = 5
-// or
-var number_of_things = 5 as Float
 ```
 
 ### Built-In Types
@@ -57,27 +39,59 @@ String
 etc
 ```
 
+All built-in types can be lower-cased.
+
+```
+bool
+int
+int8
+...
+```
+
+### Declarations
+
+Declarations can be variable or constant:
+
+```
+var can_be_changed = true
+const IS_IMMUTABLE = true
+```
+
+Types are inferred where possible, but can also be set explicitly:
+
+```
+var float number_of_things
+```
+
 ### Functions
 
 Functions are defined like so:
 
 ```
-func sum(a: Int, b: Int) -> Int {
-  return a + b
-}
-
-func sum(a: Int, b: Int) -> Int {
+func sum = (int a, int b, out int) -> {
   return a + b
 }
 ```
 
-If a function is simple it can be defined in one line. Note also that the type of the function can be inferred:
+If a function is simple it can be defined in one line. Note also that the type of the function can be inferred in this case:
 
 ```
-func sum(a: Int, b: Int) => a + b
+func sum = (int a, int b) -> (a + b)
 ```
 
-TODO: Optional parameters, named parameters, inferred array parameters
+The function examples above are implicitly `const` declarations, but functions can be `var` too:
+
+```
+var func (int a, int b, out int) sum
+```
+
+A function is called with its name and parameters:
+
+```
+var x = sum(5, 2)
+```
+
+TODO: Optional parameters, named parameters, inferred array parameters (just arrays?)
 
 ### If Statements
 
@@ -91,10 +105,30 @@ if x > 10 {
 }
 ```
 
-They can be used inline, without braces:
+They can be used to set values with the `let` keyword:
 
 ```
-if x > 10 print("high") else print("low")
+var limit = if x > 5 { let 3 } else { let 12 }
+```
+
+And with simple one-liners:
+
+```
+var limit = if x > 5 -> (3) else -> (12)
+```
+
+### Blocks
+
+```
+const print_high = {
+  print("high")
+}
+
+const print_low = {
+  print("low")
+}
+
+if x > 5 print_high else print_low
 ```
 
 ### Guard Statements
@@ -106,7 +140,11 @@ guard x > 5 else {
   // Do something here, maybe some cleanup
   return
 }
-// or
+```
+
+Or, for simple returns:
+
+```
 guard x > 5 else return
 ```
 
@@ -118,55 +156,61 @@ For statements are used to loop through a collection:
 for x in 0..5 {
   print("\{x}")
 }
-// or
-for x in 0..5 print("\{x}")
 ```
 
-You can also include the index when looping:
+You can also include the index when looping with a range:
 
 ```
-for x, i in list, 0.. then print("\{i}: \{x}")
+for x, i in list, 0.. {
+  print("\{i}: \{x}")
+}
 ```
 
 // TODO: break, continue
 
 ### While Statements
 
-// TODO
+// TODO: ??
 
-### If Expressions
+### Switch Statements
 
-If expressions are a more complicated type of if statement, that can be used to handle many branches, or to return a value:
+Switch statements are a more complicated type of if statement that can be used to handle many branches:
 
 ```
-if {
-  case x > 10:
+switch {
+  case x > 10 {
     print("high")
-  case x > 5:
+  }
+  case x > 5 {
     print("medium")
-  else:
+  }
+  else {
     print("low")
+  }
 }
 
-const x = if {
-  case x > 10: "high"
-  case x > 5: "medium"
-  else: "low"
+const x = switch {
+  case x > 10 -> "high"
+  case x > 5 -> "medium"
+  else -> "low"
 }
 ```
 
-### Match Expressions
+### Match Statements
 
 Match statements are used to pattern-match against a variable.
 
 ```
 match x {
-  case Some(y) && y > 10:
+  case Some(y) && y > 10 {
     print("big y: \{y}")
-  case Some(y):
+  }
+  case Some(y) {
     print("small y: \{y}")
-  else:
+  }
+  else {
     print("something else")
+  }
 }
 ```
 
@@ -174,9 +218,9 @@ They can be used as an expression to return a value:
 
 ```
 const z = match x {
-  case Some(y) && y > 10: 10
-  case Some(y): 15
-  else: 20
+  case Some(y) && y > 10 -> 10
+  case Some(y) -> 15
+  else -> 20
 }
 ```
 
@@ -186,31 +230,40 @@ Match statements must be exhaustive.
 
 // TODO: Array, List, Range etc
 
+### Anonymous Types
+
+```
+const person = {
+  name: "Andrew",
+  address: "1 Main St"
+}
+```
+
 ### Custom Types
 
 ```
 type Person
   // Variables
-  var name: String
-  var address: String
-  // Put `inner` in front of variables that shouldn't be accessed outside of the type
+  var string name
+  var string address
+  // Put `internal` in front of variables that shouldn't be accessed outside of the type
   // This isn't a very good example...
-  inner var id: String
+  internal var string id
 
   // Automatically generate initializers at compile time?
-  @comp init()
+  @comp init
 
   // Custom inits
-  func init(name: String) {
+  func init (string name) = {
     return Person.init(name, "Unknown address")
   }
 
-  func greet() {
+  func greet = () -> {
     print("Hi, \{name}")
   }
 
   // Put `final` in front of one or more finalizer functions that must be called before an object created from this type goes out of scope
-  final func farewell() {
+  final func farewell = () -> {
     print("Goodbye, \{name}")
   }
 ;
@@ -219,6 +272,63 @@ type Person
 const andrew = Person.init("Andrew", "1 Main St")
 ```
 
+### Enums
+
+An enum can have one value set:
+
+```
+enum Options = {
+  case trim
+  case verbose
+}
+
+const options = Options.trim | Options.verbose
+```
+
+### Flags
+
+A flag can have one or more values set:
+
+```
+flag Options = {
+  case trim
+  case verbose
+}
+
+const options = Options.trim | Options.verbose
+```
+
+TODO: Need a better name for this -- not flags, but similar.
+
+### Unions
+
+A union can have one value set, with extra information:
+
+```
+enum Result = {
+  case ok
+  case error(string message)
+}
+
+return Result.error("uh oh!")
+```
+
 ### Traits / Protocols
 
-// TODO
+// TODO:
+
+### Generics
+
+// TODO:
+
+### Casting
+
+// TODO:
+
+### Import
+
+// TODO:
+
+### Export
+
+// TODO:
