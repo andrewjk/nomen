@@ -4,7 +4,21 @@ pub trait Disposable {
         Console.write("\nboom!")
     }
 }
+/*
+pub trait Addable<T> {
+    func add(self, other: T) -> T
+}
 
+pub trait Addable {
+    // TODO: Should be able to add any type and return any type
+    func add(self, other: Self) -> Self
+}
+
+pub trait Multipliable {
+    // TODO: Should be able to multiply any type and return any type
+    func multiply(self, other: Self) -> Self
+}
+*/
 pub trait Stringable {
     func to_string(self) -> string
 }
@@ -82,7 +96,33 @@ pub struct string: Stringable {
         return "from_c"
     }
 }
+/*
+pub struct Array: Addable, Multipliable {
+    pub const length: int
 
+    pub func add(self, other: Array) -> Array {
+        ```
+        int result[self.length + other.length];
+        memcpy(result, self, self.length * sizeof(int));
+        memcpy(&result[self.length], other, other.length * sizeof(int));
+        return result;
+        ```
+        return "from_c"
+    }
+
+    pub func multiply(self, other: int) -> Array {
+        ```
+        int result[self.length * other];
+        memcpy(result, self, self.length * sizeof(int));
+        for (let i = 1; i < other; i++) {
+            memcpy(&result[self.length * i], self, self.length * sizeof(int));
+        }
+        return result;
+        ```
+        return "from_c"
+    }
+}
+*/
 pub struct Console {
     pub func write(line: string) {
         ```

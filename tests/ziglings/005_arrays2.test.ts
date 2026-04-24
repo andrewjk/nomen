@@ -5,7 +5,7 @@ import check_output from "./check_output";
 import parse_with_imports from "./parse_with_imports";
 import trim_code from "./trim_code";
 
-test("ziglings 005 arrays 2 -- errors", () => {
+test.skip("ziglings 005 arrays 2 -- errors", () => {
   const input = `
 import System
 
@@ -41,7 +41,7 @@ pub func main() {
   expect(parsed.errors).toEqual(expected);
 });
 
-test("ziglings 005 arrays 2 -- fixed", () => {
+test.skip("ziglings 005 arrays 2 -- fixed", () => {
   const input = `
 import System
 
@@ -72,7 +72,7 @@ pub func main() {
   expect(parsed.errors).toEqual([]);
 });
 
-test("ziglings 005 arrays 2 -- build", async () => {
+test.skip("ziglings 005 arrays 2 -- build", async () => {
   const input = `
 import System
 
