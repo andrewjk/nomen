@@ -4,6 +4,7 @@ void Disposable_dispose(struct Disposable *self);
 
 // Trait Stringable
 struct Stringable;
+char* Stringable_to_string(struct Stringable *self);
 
 char* int_to_string(long self);
 char* uint_to_string(unsigned long self);
