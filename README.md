@@ -291,10 +291,10 @@ const person = {
 }
 ```
 
-### Custom Types
+### Structs
 
 ```
-type Person
+struct Person
   // Variables
   var string name
   var string address
