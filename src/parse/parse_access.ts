@@ -19,10 +19,6 @@ export default function parse_access(
   if (peek_current(status) === "(") {
     accept("(", status);
     const func = new AccessFunctionCallNode(start, name);
-    // HACK:
-    if (func.name === "init") {
-      func.type = new Type(target_name);
-    }
     if (peek_current(status) !== ")") {
       parse_function_call_parameter(func, status);
     }

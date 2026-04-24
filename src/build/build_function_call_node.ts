@@ -4,7 +4,10 @@ import build_node from "./build_node";
 import type_from_value_node from "./utils/type_from_value_node";
 
 export default function build_function_call_node(node: FunctionCallNode, status: BuildStatus) {
-  status.code += `${node.name}(`;
+  // Check for struct constructor
+  const is_struct = status.structs.find((s) => s.name === node.name && !s.is_simple_type);
+  const func_name = is_struct ? `${node.name}_init` : node.name;
+  status.code += `${func_name}(`;
   for (let i = 0; i < node.params.length; i++) {
     if (i > 0) {
       status.code += ", ";
