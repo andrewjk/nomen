@@ -17,7 +17,7 @@ import get_index from "./utils/get_index";
 import peek_current from "./utils/peek_current";
 
 export default function parse_function(
-  visibility: "inherit" | "pub" | "mod" | "private",
+  visibility: "inherit" | "pub" | "mod" | "priv",
   status: ParseStatus,
 ) {
   const start = get_index(status);

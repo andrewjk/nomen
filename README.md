@@ -314,9 +314,9 @@ struct Person
   // Variables
   var string name
   var string address
-  // Put `internal` in front of variables that shouldn't be accessed outside of the type
+  // Put `priv` in front of variables that shouldn't be accessed outside of the type
   // This isn't a very good example...
-  internal var string id
+  priv var string id
 
   // Automatically generate initializers at compile time?
   @comp init

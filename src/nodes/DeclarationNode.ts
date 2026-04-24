@@ -3,7 +3,7 @@ import ParameterNode from "./ParameterNode";
 import Type from "./Type";
 
 export default class DeclarationNode extends BaseNode {
-  visibility: "inherit" | "pub" | "mod" | "private";
+  visibility: "inherit" | "pub" | "mod" | "priv";
   declaration: "const" | "var";
   name: string;
   type: Type;
@@ -15,7 +15,7 @@ export default class DeclarationNode extends BaseNode {
 
   constructor(
     start: number,
-    visibility: "inherit" | "pub" | "mod" | "private",
+    visibility: "inherit" | "pub" | "mod" | "priv",
     declaration: "const" | "var",
     name: string,
     type?: Type,

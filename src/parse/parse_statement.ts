@@ -50,7 +50,7 @@ export default function parse_statement(status: ParseStatus) {
         break;
       }
       case "pub":
-      case "private": {
+      case "priv": {
         parse_visibility(value, status);
         break;
       }

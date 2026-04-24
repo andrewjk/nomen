@@ -18,7 +18,7 @@ import get_index from "./utils/get_index";
 import peek_current from "./utils/peek_current";
 
 export default function parse_declaration(
-  visibility: "inherit" | "pub" | "mod" | "private",
+  visibility: "inherit" | "pub" | "mod" | "priv",
   declaration: "const" | "var",
   status: ParseStatus,
 ) {

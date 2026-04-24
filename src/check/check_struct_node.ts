@@ -17,7 +17,7 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
     check_declaration_node(decl, status);
   }
 
-  // Anything within the struct's functions can access private fields
+  // Anything within the struct's functions can access priv fields
   // That includes nested struct functions
   struct.privates_visible = true;
 
@@ -30,6 +30,6 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
     check_function_node(func, status);
   }
 
-  // Don't allow anything from outside to access private fields
+  // Don't allow anything from outside to access priv fields
   struct.privates_visible = false;
 }

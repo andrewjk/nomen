@@ -17,12 +17,12 @@ export default function check_function_call(
   func: FunctionNode,
   target_type?: Type,
 ): boolean {
-  // Make sure it's not a private function that we don't have access to
+  // Make sure it's not a priv function that we don't have access to
   if (
-    func.visibility === "private" &&
+    func.visibility === "priv" &&
     !status.structs.find((s) => s.name === target_type?.name)?.privates_visible
   ) {
-    add_error(status, `Can't access private function: ${node.name}`, node.start);
+    add_error(status, `Can't access priv function: ${node.name}`, node.start);
     return false;
   }
 
@@ -73,7 +73,7 @@ export default function check_function_call(
     if (param.node_type !== "value") {
       const declaration_name = `_param_${status.var_name_counter.value++}`;
       status.allocations.push(
-        new DeclarationNode(param.start, "private", "const", declaration_name, param_type, param),
+        new DeclarationNode(param.start, "priv", "const", declaration_name, param_type, param),
       );
       node.params.splice(i, 1, new ValueNode(param.start, declaration_name, param_type));
     }

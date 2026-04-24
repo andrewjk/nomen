@@ -73,10 +73,10 @@ function check_access_field_node(
   }
   if (field) {
     if (
-      field.visibility === "private" &&
+      field.visibility === "priv" &&
       !status.structs.find((s) => s.name === target_type.name)?.privates_visible
     ) {
-      add_error(status, `Can't access private field: ${node.name}`, node.start);
+      add_error(status, `Can't access priv field: ${node.name}`, node.start);
       return false;
     } else {
       node.type = field.type;

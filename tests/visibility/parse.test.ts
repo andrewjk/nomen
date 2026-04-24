@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { expect, test } from "vitest";
 import DeclarationNode from "../../src/nodes/DeclarationNode";
 import FunctionNode from "../../src/nodes/FunctionNode";

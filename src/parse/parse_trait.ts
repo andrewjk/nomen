@@ -8,7 +8,7 @@ import expect from "./utils/expect";
 import get_index from "./utils/get_index";
 
 export default function parse_trait(
-  visibility: "inherit" | "pub" | "mod" | "private",
+  visibility: "inherit" | "pub" | "mod" | "priv",
   status: ParseStatus,
 ) {
   const start = get_index(status);

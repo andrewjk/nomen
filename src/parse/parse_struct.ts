@@ -11,7 +11,7 @@ import expect from "./utils/expect";
 import get_index from "./utils/get_index";
 
 export default function parse_struct(
-  visibility: "inherit" | "pub" | "mod" | "private",
+  visibility: "inherit" | "pub" | "mod" | "priv",
   status: ParseStatus,
 ) {
   const start = get_index(status);
@@ -41,7 +41,7 @@ export default function parse_struct(
     // TODO: Allow overriding it
     const func = new FunctionNode(-1, visibility, "init", new Type(struct.name));
     func.params = struct.fields
-      .filter((f) => f.visibility !== "private" && !f.value)
+      .filter((f) => f.visibility !== "priv" && !f.value)
       .map((f) => new ParameterNode(-1, f.name, f.type));
     func.is_static = true;
     struct.functions.unshift(func);

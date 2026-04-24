@@ -8,12 +8,12 @@ import consume from "./utils/consume";
 import get_index from "./utils/get_index";
 import peek_next from "./utils/peek_next";
 
-export default function parse_visibility(visibility: "pub" | "private", status: ParseStatus) {
+export default function parse_visibility(visibility: "pub" | "priv", status: ParseStatus) {
   // Declarations, funcs, structs and traits can have their visibility controlled
   // Visibility options are `pub`, `mod` and `sec`
   // `pub` is visible within the module and from other modules
   // `mod` is visible within the module only
-  // `private` is visible within the scope (e.g. function, folder) only
+  // `priv` is visible within the scope (e.g. function, folder) only
   // Declarations, funcs, structs and traits have `mod` visibility by default
   // Visibility and scope flow downwards, unless overridden to be more restrictive
   // TODO: Folder based namespaces??
@@ -24,8 +24,8 @@ export default function parse_visibility(visibility: "pub" | "private", status: 
   switch (next) {
     case "const":
     case "var": {
-      if (visibility === "private" && status.stack.at(-1)?.node_type === "trait") {
-        add_error(status, `Trait fields cannot be private`, get_index(status));
+      if (visibility === "priv" && status.stack.at(-1)?.node_type === "trait") {
+        add_error(status, `Trait fields cannot be priv`, get_index(status));
         consume(status);
       } else {
         parse_declaration(visibility, next, status);
@@ -41,8 +41,8 @@ export default function parse_visibility(visibility: "pub" | "private", status: 
       break;
     }
     case "func": {
-      if (visibility === "private" && status.stack.at(-1)?.node_type === "trait") {
-        add_error(status, `Trait functions cannot be private`, get_index(status));
+      if (visibility === "priv" && status.stack.at(-1)?.node_type === "trait") {
+        add_error(status, `Trait functions cannot be priv`, get_index(status));
         consume(status);
       } else {
         parse_function(visibility, status);
