@@ -30,15 +30,20 @@ export default function check_function_call(
   node.type = func.return_type;
   node.is_static = func.is_static;
 
-  // Check params length
-  let expected_param_count = func.params.length;
-  if (target_type && func.params[0]?.is_self_param) {
-    expected_param_count -= 1;
+  // Check params length (account for default values)
+  let required_param_count = 0;
+  for (const param of func.params) {
+    if (!param.default_value) {
+      required_param_count++;
+    }
   }
-  if (node.params.length > expected_param_count) {
+  if (target_type && func.params[0]?.is_self_param) {
+    required_param_count -= 1;
+  }
+  if (node.params.length > func.params.length) {
     add_error(status, `Too many parameters for function: ${node.name}`, node.start);
     return false;
-  } else if (node.params.length < expected_param_count) {
+  } else if (node.params.length < required_param_count) {
     add_error(status, `Parameters missing for function: ${node.name}`, node.start);
     return false;
   }

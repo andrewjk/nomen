@@ -95,7 +95,13 @@ A function is called with its name and parameters:
 var x = sum(5, 2)
 ```
 
-TODO: Optional parameters, named parameters, inferred array parameters (just arrays?)
+Function parameters can have default values:
+
+```
+func sum = (int a, int b, int c = 0, out int) -> (a + b)
+const x = sum(5, 10, 12)
+const y = sum(7, 3)
+```
 
 ### If Statements
 
