@@ -200,7 +200,7 @@ for x in 0..5 {
 }
 ```
 
-You can also include the index when looping with a range:
+TODO: You can also include the index when looping with a range:
 
 ```
 for x, i in list, 0.. {
