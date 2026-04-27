@@ -11,51 +11,51 @@ describe("declaration build", () => {
 const x = 5
 `;
     const parsed = parse(input);
-    const result = build(parsed.root);
+    const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
-long x = 5;
+x: .quad 5
 `;
     expect(parsed.errors).toEqual([]);
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
   });
-  
+
   test("const with type", () => {
     const input = `
 const int x
 `;
     const parsed = parse(input);
-    const result = build(parsed.root);
+    const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
-long x;
+x: .space 8
 `;
     expect(parsed.errors).toEqual([]);
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
   });
-  
+
   test("var with value", () => {
     const input = `
 var x = 5
 `;
     const parsed = parse(input);
-    const result = build(parsed.root);
+    const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
-long x = 5;
+x: .quad 5
 `;
     expect(parsed.errors).toEqual([]);
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
   });
-  
+
   test("var with type", () => {
     const input = `
 var int x
 `;
     const parsed = parse(input);
-    const result = build(parsed.root);
+    const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
-long x;
+x: .space 8
 `;
     expect(parsed.errors).toEqual([]);
     expect(parsed.errors).toEqual([]);
@@ -67,9 +67,9 @@ long x;
 const int x = 5
 `;
     const parsed = parse(input);
-    const result = build(parsed.root);
+    const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
-long x = 5;
+x: .quad 5
 `;
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
@@ -80,9 +80,9 @@ long x = 5;
 const int[] x
 `;
     const parsed = parse(input);
-    const result = build(parsed.root);
+    const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
-long x[];
+x: .space 0
 `;
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
@@ -93,9 +93,9 @@ long x[];
 const int[] x = [1, 2, 3]
 `;
     const parsed = parse(input);
-    const result = build(parsed.root);
+    const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
-long x[3] = {1, 2, 3};
+x: .quad 1, 2, 3
 `;
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
