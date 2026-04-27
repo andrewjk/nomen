@@ -19,4 +19,5 @@ export default interface BuildStatus {
   function_param_vars?: Set<string>;
   function_return_label?: string;
   strings?: Map<string, string>;
+  loop_labels?: { start: string; end: string }[];
 }

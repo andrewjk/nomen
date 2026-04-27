@@ -11,9 +11,9 @@ describe("range build", () => {
 var x = 1..4
 `;
     const parsed = parse(input);
-    const result = build(parsed.root);
+    const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
-long x[3] = {1, 2, 3};
+x: .quad 1, 2, 3
 `;
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
@@ -24,9 +24,9 @@ long x[3] = {1, 2, 3};
 var x = 1..(4 + 1)
 `;
     const parsed = parse(input);
-    const result = build(parsed.root);
+    const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
-long x[4] = {1, 2, 3, 4};
+x: .quad 1, 2, 3, 4
 `;
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
@@ -37,19 +37,15 @@ long x[4] = {1, 2, 3, 4};
 var x = -2..2
 `;
     const parsed = parse(input);
-    const result = build(parsed.root);
+    const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
-long x[4] = {-2, -1, 0, 1};
+x: .quad -2, -1, 0, 1
 `;
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
   });
 
   test.skip("range as param", () => {
-    // BUG: Passing a range directly as a function parameter causes a build error
-    // because the range node is used in a for loop where type_from_value_node
-    // expects a length property on the type, but range types don't have their
-    // length set properly when passed through function calls.
     const input = `
 func sum = (int[] nums, out int) -> {
   var total = 0
@@ -61,18 +57,8 @@ func sum = (int[] nums, out int) -> {
 const result = sum(1..4)
 `;
     const parsed = parse(input);
-    const result = build(parsed.root);
+    const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
-long sum(long nums[])
-{
-long total = 0;
-for (int i = 0; i < 3; i++) {
-long n = nums[i];
-total = total + n;
-}
-return total;
-}
-long result = sum((long[]){1, 2, 3});
 `;
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
@@ -89,18 +75,45 @@ func sum = (out int) -> {
 }
 `;
     const parsed = parse(input);
-    const result = build(parsed.root);
+    const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
-long sum()
-{
-long total = 0;
-long n;
-for (n = 1; n < 4; n++)
-{
-total = total + n;
-}
-return total;
-}
+sum:
+stp x29, x30, [sp, #-16]!
+mov x29, sp
+total: .quad 0
+ldr x0, =1
+adr x1, n
+str x0, [x1]
+.for_0:
+adr x0, n
+ldr x0, [x0]
+mov x2, x0
+ldr x0, =4
+cmp x2, x0
+bge .end_0
+adr x0, n
+ldr x0, [x0]
+mov x2, x0
+adr x0, total
+ldr x0, [x0]
+mov x1, x0
+add x0, x1, x2
+
+adr x1, total
+str x0, [x1]
+adr x0, n
+ldr x0, [x0]
+add x0, x0, #1
+adr x1, n
+str x0, [x1]
+b .for_0
+.end_0:
+adr x0, total
+ldr x0, [x0]
+b .return_0
+.return_0:
+ldp x29, x30, [sp], #16
+ret
 `;
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));

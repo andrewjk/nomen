@@ -22,17 +22,22 @@ import TraitNode from "../nodes/TraitNode";
 import ValueNode from "../nodes/ValueNode";
 import WhileLoopNode from "../nodes/WhileLoopNode";
 import type BuildStatus from "../build/BuildStatus";
+import build_access_node from "./build_access_node";
 import build_array_values_node from "./build_array_values_node";
 import build_assignment_node from "./build_assignment_node";
 import build_block_node from "./build_block_node";
+import build_break_node from "./build_break_node";
+import build_continue_node from "./build_continue_node";
 import build_declaration_node from "./build_declaration_node";
 import build_for_loop_node from "./build_for_loop_node";
 import build_function_call_node from "./build_function_call_node";
 import build_function_node from "./build_function_node";
 import build_if_else_node from "./build_if_else_node";
 import build_operation_node from "./build_operation_node";
+import build_range_node from "./build_range_node";
 import build_return_node from "./build_return_node";
 import build_value_node from "./build_value_node";
+import build_while_loop_node from "./build_while_loop_node";
 
 export default function build_node(node: BaseNode, status: BuildStatus, with_semicolon = false) {
   if (node.allocations) {
@@ -85,6 +90,19 @@ export default function build_node(node: BaseNode, status: BuildStatus, with_sem
       with_semicolon = false;
       break;
     }
+    case "while": {
+      build_while_loop_node(node as WhileLoopNode, status);
+      with_semicolon = false;
+      break;
+    }
+    case "break": {
+      build_break_node(status);
+      break;
+    }
+    case "continue": {
+      build_continue_node(status);
+      break;
+    }
     case "return": {
       build_return_node(node as ReturnNode, status);
       break;
@@ -95,6 +113,14 @@ export default function build_node(node: BaseNode, status: BuildStatus, with_sem
     }
     case "array": {
       build_array_values_node(node as ArrayValuesNode, status);
+      break;
+    }
+    case "range": {
+      build_range_node(node as RangeNode, status);
+      break;
+    }
+    case "access": {
+      build_access_node(node as AccessNode, status);
       break;
     }
     default: {

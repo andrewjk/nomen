@@ -43,6 +43,8 @@ function map_op(op: string): string {
       return "mul";
     case "/":
       return "sdiv";
+    case "%":
+      return "mod";
     default:
       return "add";
   }
@@ -89,18 +91,34 @@ function build_operand(
   }
 }
 
+function is_simple(node: BaseNode): boolean {
+  return node.node_type === "value";
+}
+
 export default function build_operation_node(
   node: OperationNode,
   status: BuildStatus,
 ) {
-  // Evaluate right first, then left, so that saving left doesn't clobber right's param reg
+  const need_spill = !is_simple(node.left_value);
+
   build_operand(node.right_value, "x2", status);
-  if (!status.code.endsWith("\n")) {
-    status.code += "\n";
+  if (need_spill) {
+    if (!status.code.endsWith("\n")) {
+      status.code += "\n";
+    }
+    status.code += `str x2, [sp, #-16]!\n`;
+  } else {
+    if (!status.code.endsWith("\n")) {
+      status.code += "\n";
+    }
   }
+
   build_operand(node.left_value, "x1", status);
   if (!status.code.endsWith("\n")) {
     status.code += "\n";
+  }
+  if (need_spill) {
+    status.code += `ldr x2, [sp], #16\n`;
   }
 
   if (is_comparison(node.op)) {
@@ -108,6 +126,11 @@ export default function build_operation_node(
     status.code += `cset x0, ${map_cmp(node.op)}\n`;
   } else {
     const op = map_op(node.op);
-    status.code += `${op} x0, x1, x2\n`;
+    if (op === "mod") {
+      status.code += `sdiv x3, x1, x2\n`;
+      status.code += `msub x0, x3, x2, x1\n`;
+    } else {
+      status.code += `${op} x0, x1, x2\n`;
+    }
   }
 }

@@ -11,9 +11,14 @@ describe("operation build", () => {
 var x = 1 + 2
 `;
     const parsed = parse(input);
-    const result = build(parsed.root);
+    const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
-long x = 1 + 2;
+x: .space 8
+ldr x2, =2
+ldr x1, =1
+add x0, x1, x2
+adr x1, x
+str x0, [x1]
 `;
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
@@ -24,9 +29,14 @@ long x = 1 + 2;
 var x = 1 - 2
 `;
     const parsed = parse(input);
-    const result = build(parsed.root);
+    const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
-long x = 1 - 2;
+x: .space 8
+ldr x2, =2
+ldr x1, =1
+sub x0, x1, x2
+adr x1, x
+str x0, [x1]
 `;
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
@@ -37,9 +47,17 @@ long x = 1 - 2;
 var x = 1 + 2 - 3
 `;
     const parsed = parse(input);
-    const result = build(parsed.root);
+    const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
-long x = 1 + 2 - 3;
+x: .space 8
+ldr x2, =3
+ldr x1, =2
+sub x0, x1, x2
+mov x2, x0
+ldr x1, =1
+add x0, x1, x2
+adr x1, x
+str x0, [x1]
 `;
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
@@ -50,9 +68,14 @@ long x = 1 + 2 - 3;
 var x = 3 * 4
 `;
     const parsed = parse(input);
-    const result = build(parsed.root);
+    const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
-long x = 3 * 4;
+x: .space 8
+ldr x2, =4
+ldr x1, =3
+mul x0, x1, x2
+adr x1, x
+str x0, [x1]
 `;
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
@@ -63,9 +86,14 @@ long x = 3 * 4;
 var x = 10 / 2
 `;
     const parsed = parse(input);
-    const result = build(parsed.root);
+    const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
-long x = 10 / 2;
+x: .space 8
+ldr x2, =2
+ldr x1, =10
+sdiv x0, x1, x2
+adr x1, x
+str x0, [x1]
 `;
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
@@ -76,9 +104,17 @@ long x = 10 / 2;
 var x = 1 + 2 * 3
 `;
     const parsed = parse(input);
-    const result = build(parsed.root);
+    const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
-long x = 1 + 2 * 3;
+x: .space 8
+ldr x2, =3
+ldr x1, =2
+mul x0, x1, x2
+mov x2, x0
+ldr x1, =1
+add x0, x1, x2
+adr x1, x
+str x0, [x1]
 `;
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
@@ -89,9 +125,19 @@ long x = 1 + 2 * 3;
 var x = (1 + 2) * 3
 `;
     const parsed = parse(input);
-    const result = build(parsed.root);
+    const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
-long x = (1 + 2) * 3;
+x: .space 8
+ldr x2, =3
+str x2, [sp, #-16]!
+ldr x2, =2
+ldr x1, =1
+add x0, x1, x2
+mov x1, x0
+ldr x2, [sp], #16
+mul x0, x1, x2
+adr x1, x
+str x0, [x1]
 `;
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));

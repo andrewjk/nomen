@@ -11,9 +11,9 @@ describe("array build", () => {
 const int[] x
 `;
     const parsed = parse(input);
-    const result = build(parsed.root);
+    const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
-long x[];
+x: .space 0
 `;
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
@@ -24,9 +24,9 @@ long x[];
 var x = [1, 2, 3]
 `;
     const parsed = parse(input);
-    const result = build(parsed.root);
+    const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
-long x[3] = {1, 2, 3};
+x: .quad 1, 2, 3
 `;
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
@@ -37,9 +37,9 @@ long x[3] = {1, 2, 3};
 const int[] x = [1, 2, 3]
 `;
     const parsed = parse(input);
-    const result = build(parsed.root);
+    const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
-long x[3] = {1, 2, 3};
+x: .quad 1, 2, 3
 `;
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
@@ -51,18 +51,21 @@ const nums = [10, 20, 30]
 const x = nums[1]
 `;
     const parsed = parse(input);
-    const result = build(parsed.root);
+    const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
-long nums[3] = {10, 20, 30};
-long x = nums[1];
+nums: .quad 10, 20, 30
+x: .space 8
+adr x0, nums
+mov x3, x0
+ldr x0, [x3, #8]
+adr x1, x
+str x0, [x1]
 `;
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
   });
 
   test.skip("array in function param", () => {
-    // BUG: Same as range param - for loop over function param arrays
-    // causes undefined allocations in build_node
     const input = `
 func sum = (int[] nums, out int) -> {
   var total = 0
@@ -73,18 +76,8 @@ func sum = (int[] nums, out int) -> {
 }
 `;
     const parsed = parse(input);
-    const result = build(parsed.root);
+    const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
-long sum(long nums[])
-{
-long total = 0;
-long n;
-for (n = 0; n < 3; n++)
-{
-sum = sum + n;
-}
-return total;
-}
 `;
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));

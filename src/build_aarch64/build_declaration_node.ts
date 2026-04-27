@@ -1,10 +1,12 @@
 import ArrayValuesNode from "../nodes/ArrayValuesNode";
 import DeclarationNode from "../nodes/DeclarationNode";
 import FunctionNode from "../nodes/FunctionNode";
+import RangeNode from "../nodes/RangeNode";
 import ValueNode from "../nodes/ValueNode";
 import type BuildStatus from "../build/BuildStatus";
 import build_array_values_node from "./build_array_values_node";
 import build_node from "./build_node";
+import build_range_node from "./build_range_node";
 import aarch64_size from "./utils/aarch64_size";
 import aarch64_type from "./utils/aarch64_type";
 
@@ -38,6 +40,9 @@ export default function build_declaration_node(
     if (node.value && node.value.node_type === "array") {
       status.code += `${node.name}: ${directive} `;
       build_array_values_node(node.value as ArrayValuesNode, status);
+    } else if (node.value && node.value.node_type === "range") {
+      status.code += `${node.name}: ${directive} `;
+      build_range_node(node.value as RangeNode, status);
     } else {
       status.code += `${node.name}: .space 0`;
     }
@@ -47,6 +52,9 @@ export default function build_declaration_node(
     } else if (node.value.node_type === "array") {
       status.code += `${node.name}: ${directive} `;
       build_array_values_node(node.value as ArrayValuesNode, status);
+    } else if (node.value.node_type === "range") {
+      status.code += `${node.name}: ${directive} `;
+      build_range_node(node.value as RangeNode, status);
     } else if (node.value.node_type === "if") {
       status.code += `${node.name}: .space ${size}\n`;
       const old_return_assign = status.return_assign;

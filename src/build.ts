@@ -3,6 +3,7 @@ import build_c_node from "./build/build_node";
 import build_aarch64_node from "./build_aarch64/build_node";
 import { reset_label_counter as reset_for_label_counter } from "./build_aarch64/build_for_loop_node";
 import { reset_label_counter as reset_if_label_counter } from "./build_aarch64/build_if_else_node";
+import { reset_label_counter as reset_while_label_counter } from "./build_aarch64/build_while_loop_node";
 import { reset_string_counter as reset_op_string_counter } from "./build_aarch64/build_operation_node";
 import { reset_string_counter as reset_value_string_counter } from "./build_aarch64/build_value_node";
 import BaseNode from "./nodes/BaseNode";
@@ -28,6 +29,7 @@ export default function build(
     reset_op_string_counter();
     reset_if_label_counter();
     reset_for_label_counter();
+    reset_while_label_counter();
     build_aarch64_node(root, status);
     if (status.strings && status.strings.size > 0) {
       status.code += "\n";
