@@ -5,6 +5,10 @@ import build_node from "./build_node";
 
 let label_counter = 0;
 
+export function reset_label_counter() {
+  label_counter = 0;
+}
+
 export default function build_if_else_node(
   node: IfElseNode,
   status: BuildStatus,

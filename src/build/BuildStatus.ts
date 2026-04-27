@@ -16,4 +16,7 @@ export default interface BuildStatus {
   interpolate_string_counts: Set<number>;
   return_assign?: string;
   function_param_regs?: Map<string, string>;
+  function_param_vars?: Set<string>;
+  function_return_label?: string;
+  strings?: Map<string, string>;
 }

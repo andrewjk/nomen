@@ -12,12 +12,15 @@ func greet = () -> {}
 greet()
 `;
     const parsed = parse(input);
-    const result = build(parsed.root);
+    const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
-void greet()
-{
-}
-greet();
+greet:
+stp x29, x30, [sp, #-16]!
+mov x29, sp
+.return_0:
+ldp x29, x30, [sp], #16
+ret
+bl greet
 `;
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
@@ -29,12 +32,21 @@ func greet = (string name, string position) -> {}
 greet("Andrew", "Manager")
 `;
     const parsed = parse(input);
-    const result = build(parsed.root);
+    const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
-void greet(char* name, char* position)
-{
-}
-greet("Andrew", "Manager");
+greet:
+stp x29, x30, [sp, #-16]!
+mov x29, sp
+.return_1:
+ldp x29, x30, [sp], #16
+ret
+adr x0, _str_0
+mov x1, x0
+adr x0, _str_1
+bl greet
+
+_str_0: .asciz "Manager"
+_str_1: .asciz "Andrew"
 `;
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
@@ -46,13 +58,25 @@ func add = (int a, int b, out int) -> (a + b)
 const x = add(1, 2)
 `;
     const parsed = parse(input);
-    const result = build(parsed.root);
+    const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
-long add(long a, long b)
-{
-return a + b;
-}
-long x = add(1, 2);
+add:
+stp x29, x30, [sp, #-16]!
+mov x29, sp
+mov x2, x1
+mov x1, x0
+add x0, x1, x2
+b .return_2
+.return_2:
+ldp x29, x30, [sp], #16
+ret
+x: .space 8
+ldr x0, =2
+mov x1, x0
+ldr x0, =1
+bl add
+adr x1, x
+str x0, [x1]
 `;
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
@@ -64,12 +88,18 @@ func greet = (string name, string greeting = "Hello") -> {}
 greet("Andrew")
 `;
     const parsed = parse(input);
-    const result = build(parsed.root);
+    const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
-void greet(char* name, char* greeting)
-{
-}
-greet("Andrew");
+greet:
+stp x29, x30, [sp, #-16]!
+mov x29, sp
+.return_3:
+ldp x29, x30, [sp], #16
+ret
+adr x0, _str_0
+bl greet
+
+_str_0: .asciz "Andrew"
 `;
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));

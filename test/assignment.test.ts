@@ -85,6 +85,7 @@ mov x29, sp
 mov x2, x0
 ldr x0, =5
 str x0, [x2]
+.return_0:
 ldp x29, x30, [sp], #16
 ret
 `;
@@ -101,11 +102,11 @@ x = x + 5
     const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
 x: .quad 10
+ldr x2, =5
 adr x0, x
 ldr x0, [x0]
 mov x1, x0
-ldr x0, =5
-add x0, x1, x0
+add x0, x1, x2
 adr x1, x
 str x0, [x1]
 `;

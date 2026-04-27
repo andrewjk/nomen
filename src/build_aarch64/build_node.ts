@@ -26,9 +26,12 @@ import build_array_values_node from "./build_array_values_node";
 import build_assignment_node from "./build_assignment_node";
 import build_block_node from "./build_block_node";
 import build_declaration_node from "./build_declaration_node";
+import build_for_loop_node from "./build_for_loop_node";
+import build_function_call_node from "./build_function_call_node";
 import build_function_node from "./build_function_node";
 import build_if_else_node from "./build_if_else_node";
 import build_operation_node from "./build_operation_node";
+import build_return_node from "./build_return_node";
 import build_value_node from "./build_value_node";
 
 export default function build_node(node: BaseNode, status: BuildStatus, with_semicolon = false) {
@@ -60,6 +63,10 @@ export default function build_node(node: BaseNode, status: BuildStatus, with_sem
       with_semicolon = false;
       break;
     }
+    case "func_call": {
+      build_function_call_node(node as FunctionCallNode, status);
+      break;
+    }
     case "grouped": {
       build_node((node as GroupedNode).value, status);
       break;
@@ -71,6 +78,15 @@ export default function build_node(node: BaseNode, status: BuildStatus, with_sem
     case "if": {
       build_if_else_node(node as IfElseNode, status);
       with_semicolon = false;
+      break;
+    }
+    case "for": {
+      build_for_loop_node(node as ForLoopNode, status);
+      with_semicolon = false;
+      break;
+    }
+    case "return": {
+      build_return_node(node as ReturnNode, status);
       break;
     }
     case "value": {

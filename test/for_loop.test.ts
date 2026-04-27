@@ -14,14 +14,34 @@ for x in y {
 }
 `;
     const parsed = parse(input);
-    const result = build(parsed.root);
+    const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
-long y[3] = {1, 2, 3};
-long x;
-for (x = 0; x < 3; x++)
-{
-x = x + 1;
-}
+y: .quad 1, 2, 3
+ldr x0, =0
+adr x1, x
+str x0, [x1]
+.for_0:
+adr x0, x
+ldr x0, [x0]
+mov x2, x0
+ldr x0, =3
+cmp x2, x0
+bge .end_0
+ldr x2, =1
+adr x0, x
+ldr x0, [x0]
+mov x1, x0
+add x0, x1, x2
+
+adr x1, x
+str x0, [x1]
+adr x0, x
+ldr x0, [x0]
+add x0, x0, #1
+adr x1, x
+str x0, [x1]
+b .for_0
+.end_0:
 `;
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
@@ -34,13 +54,33 @@ for x in 0..5 {
 }
 `;
     const parsed = parse(input);
-    const result = build(parsed.root);
+    const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
-long x;
-for (x = 0; x < 5; x++)
-{
-x = x + 1;
-}
+ldr x0, =0
+adr x1, x
+str x0, [x1]
+.for_0:
+adr x0, x
+ldr x0, [x0]
+mov x2, x0
+ldr x0, =5
+cmp x2, x0
+bge .end_0
+ldr x2, =1
+adr x0, x
+ldr x0, [x0]
+mov x1, x0
+add x0, x1, x2
+
+adr x1, x
+str x0, [x1]
+adr x0, x
+ldr x0, [x0]
+add x0, x0, #1
+adr x1, x
+str x0, [x1]
+b .for_0
+.end_0:
 `;
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
@@ -55,15 +95,37 @@ for n in nums {
 }
 `;
     const parsed = parse(input);
-    const result = build(parsed.root);
+    const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
-long nums[3] = {1, 2, 3};
-long sum = 0;
-long n;
-for (n = 0; n < 3; n++)
-{
-sum = sum + n;
-}
+nums: .quad 1, 2, 3
+sum: .quad 0
+ldr x0, =0
+adr x1, n
+str x0, [x1]
+.for_0:
+adr x0, n
+ldr x0, [x0]
+mov x2, x0
+ldr x0, =3
+cmp x2, x0
+bge .end_0
+adr x0, n
+ldr x0, [x0]
+mov x2, x0
+adr x0, sum
+ldr x0, [x0]
+mov x1, x0
+add x0, x1, x2
+
+adr x1, sum
+str x0, [x1]
+adr x0, n
+ldr x0, [x0]
+add x0, x0, #1
+adr x1, n
+str x0, [x1]
+b .for_0
+.end_0:
 `;
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
