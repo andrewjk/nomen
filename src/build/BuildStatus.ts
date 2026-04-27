@@ -15,4 +15,5 @@ export default interface BuildStatus {
   scoped_declarations: DeclarationNode[];
   interpolate_string_counts: Set<number>;
   return_assign?: string;
+  function_param_regs?: Map<string, string>;
 }

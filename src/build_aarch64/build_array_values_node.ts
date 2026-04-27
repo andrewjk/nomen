@@ -1,6 +1,13 @@
 import ArrayValuesNode from "../nodes/ArrayValuesNode";
+import ValueNode from "../nodes/ValueNode";
 import type BuildStatus from "../build/BuildStatus";
-import build_node from "../build/build_node";
+
+function get_raw_value(node: ValueNode): string {
+  let val = node.value;
+  if (val === "true") return "1";
+  if (val === "false") return "0";
+  return val;
+}
 
 export default function build_array_values_node(
   node: ArrayValuesNode,
@@ -8,6 +15,10 @@ export default function build_array_values_node(
 ) {
   node.values.forEach((value, i) => {
     if (i > 0) status.code += ", ";
-    build_node(value, status);
+    if (value.node_type === "value") {
+      status.code += get_raw_value(value as ValueNode);
+    } else {
+      status.code += "/* complex */";
+    }
   });
 }
