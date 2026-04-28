@@ -13,23 +13,15 @@ trait Person {}
 struct Frank: Person {}
 `;
     const parsed = parse(input);
-    const result = build(parsed.root);
+    const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
-typedef struct Person
-{
-} Person;
-void *_Frank_Person_funcs[] = {};
-void *_Frank_traits[] = {&_Frank_Person_funcs};
-typedef struct Frank
-{
-void *_vt;
-} Frank;
-Frank Frank_init()
-{
-Frank f;
-f._vt = &_Frank_traits;
-return f;
-}
+Frank_init:
+stp x29, x30, [sp, #-16]!
+mov x29, sp
+str xzr, [x0]
+.return_Frank_init:
+ldp x29, x30, [sp], #16
+ret
 `;
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
@@ -47,31 +39,20 @@ struct Frank: Person {
 }
 `;
     const parsed = parse(input);
-    const result = build(parsed.root);
+    const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
-typedef struct Person
-{
-} Person;
-void *_Frank_Person_funcs[] = {get_Frank_name, set_Frank_name, get_Frank_age, set_Frank_age};
-void *_Frank_traits[] = {&_Frank_Person_funcs};
-typedef struct Frank
-{
-void *_vt;
-char* name;
-long age;
-} Frank;
-Frank Frank_init()
-{
-Frank f;
-f._vt = &_Frank_traits;
-f.name = "Frank";
-f.age = 0;
-return f;
-}
-char* get_Frank_name(struct Frank *self) { return self->name; }
-void set_Frank_name(struct Frank *self, char* value) { self->name = value; }
-long get_Frank_age(struct Frank *self) { return self->age; }
-void set_Frank_age(struct Frank *self, long value) { self->age = value; }`;
+Frank_init:
+stp x29, x30, [sp, #-16]!
+mov x29, sp
+str xzr, [x0]
+adr x1, _str_Frank_init_name
+str x1, [x0, #8]
+.return_Frank_init:
+ldp x29, x30, [sp], #16
+ret
+
+_str_Frank_init_name: .asciz "Frank"
+`;
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
   });
@@ -89,31 +70,25 @@ struct Frank: Person {
 }
 `;
     const parsed = parse(input);
-    const result = build(parsed.root);
+    const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
-typedef struct Person
-{
-} Person;
-void Person_greet()
-{
-}
+Frank_init:
+stp x29, x30, [sp, #-16]!
+mov x29, sp
+str xzr, [x0]
+.return_Frank_init:
+ldp x29, x30, [sp], #16
+ret
+Frank_greet:
+stp x29, x30, [sp, #-16]!
+mov x29, sp
+adr x0, _str_0
+b .return_Frank_greet
+.return_Frank_greet:
+ldp x29, x30, [sp], #16
+ret
 
-void *_Frank_Person_funcs[] = {Frank_greet};
-void *_Frank_traits[] = {&_Frank_Person_funcs};
-typedef struct Frank
-{
-void *_vt;
-} Frank;
-Frank Frank_init()
-{
-Frank f;
-f._vt = &_Frank_traits;
-return f;
-}
-char* Frank_greet()
-{
-return "hi";
-}
+_str_0: .asciz "hi"
 `;
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
@@ -130,29 +105,15 @@ trait Person {
 struct Frank: Person {}
 `;
     const parsed = parse(input);
-    const result = build(parsed.root);
+    const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
-typedef struct Person
-{
-} Person;
-char* Person_greet()
-{
-return "hi";
-}
-
-// Frank:
-void *_Frank_Person_funcs[] = {Person_greet};
-void *_Frank_traits[] = {&_Frank_Person_funcs};
-typedef struct Frank
-{
-void *_vt;
-} Frank;
-Frank Frank_init()
-{
-Frank f;
-f._vt = &_Frank_traits;
-return f;
-}
+Frank_init:
+stp x29, x30, [sp, #-16]!
+mov x29, sp
+str xzr, [x0]
+.return_Frank_init:
+ldp x29, x30, [sp], #16
+ret
 `;
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
@@ -178,44 +139,31 @@ struct Frank: Person, Dancer {
 }
 `;
     const parsed = parse(input);
-    const result = build(parsed.root);
+    const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
-typedef struct Person
-{
-} Person;
-char* Person_greet()
-{
-return "hi";
-}
+Frank_init:
+stp x29, x30, [sp, #-16]!
+mov x29, sp
+str xzr, [x0]
+.return_Frank_init:
+ldp x29, x30, [sp], #16
+ret
+Frank_greet:
+stp x29, x30, [sp, #-16]!
+mov x29, sp
+adr x0, _str_0
+b .return_Frank_greet
+.return_Frank_greet:
+ldp x29, x30, [sp], #16
+ret
+Frank_dance:
+stp x29, x30, [sp, #-16]!
+mov x29, sp
+.return_Frank_dance:
+ldp x29, x30, [sp], #16
+ret
 
-typedef struct Dancer
-{
-} Dancer;
-void Dancer_dance()
-{
-}
-
-// Frank:
-void *_Frank_Person_funcs[] = {Frank_greet};
-void *_Frank_Dancer_funcs[] = {Frank_dance};
-void *_Frank_traits[] = {&_Frank_Person_funcs, &_Frank_Dancer_funcs};
-typedef struct Frank
-{
-void *_vt;
-} Frank;
-Frank Frank_init()
-{
-Frank f;
-f._vt = &_Frank_traits;
-return f;
-}
-char* Frank_greet()
-{
-return "hi, frank";
-}
-void Frank_dance()
-{
-}
+_str_0: .asciz "hi, frank"
 `;
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
