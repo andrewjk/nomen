@@ -17,6 +17,7 @@ function is_literal(value: string): boolean {
 }
 
 export default function build_value_node(node: ValueNode, status: BuildStatus) {
+  const original_value = node.value;
   let value = node.value.replace("self", "_self");
 
   if (value === "true") {
@@ -25,9 +26,19 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
     value = "0";
   }
 
-  const paramReg = status.function_param_regs?.get(value);
+  // Check param regs with both original and replaced name
+  let paramReg = status.function_param_regs?.get(original_value);
+  if (!paramReg) {
+    paramReg = status.function_param_regs?.get(value);
+  }
+
   if (paramReg) {
-    if (status.function_param_vars?.has(value)) {
+    if (original_value === "self" || value === "_self") {
+      // self is always the struct address, don't dereference
+      if (paramReg !== "x0") {
+        status.code += `mov x0, ${paramReg}`;
+      }
+    } else if (status.function_param_vars?.has(original_value) || status.function_param_vars?.has(value)) {
       // var param - address in register, load value
       status.code += `ldr x0, [${paramReg}]`;
     } else {

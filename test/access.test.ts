@@ -15,21 +15,22 @@ var Person p
 var x = p.age
 `;
     const parsed = parse(input);
-    const result = build(parsed.root);
+    const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
-typedef struct Person
-{
-void *_vt;
-long age;
-} Person;
-Person Person_init(long age)
-{
-Person p;
-p.age = age;
-return p;
-}
-Person p;
-long x = p.age;
+Person_init:
+stp x29, x30, [sp, #-16]!
+mov x29, sp
+str xzr, [x0]
+str x1, [x0, #8]
+.return_Person_init:
+ldp x29, x30, [sp], #16
+ret
+p: .space 16
+x: .space 8
+adr x0, p
+ldr x0, [x0, #8]
+adr x1, x
+str x0, [x1]
 `;
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
@@ -48,34 +49,31 @@ var Person p
 var x = p.address.line
 `;
     const parsed = parse(input);
-    const result = build(parsed.root);
+    const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
-typedef struct Address
-{
-void *_vt;
-char* line;
-} Address;
-Address Address_init(char* line)
-{
-Address a;
-a.line = line;
-return a;
-}
-typedef struct Person
-{
-void *_vt;
-long age;
-Address address;
-} Person;
-Person Person_init(long age, Address address)
-{
-Person p;
-p.age = age;
-p.address = address;
-return p;
-}
-Person p;
-char* x = p.address.line;
+Address_init:
+stp x29, x30, [sp, #-16]!
+mov x29, sp
+str xzr, [x0]
+str x1, [x0, #8]
+.return_Address_init:
+ldp x29, x30, [sp], #16
+ret
+Person_init:
+stp x29, x30, [sp, #-16]!
+mov x29, sp
+str xzr, [x0]
+str x1, [x0, #8]
+str x2, [x0, #16]
+.return_Person_init:
+ldp x29, x30, [sp], #16
+ret
+p: .space 24
+x: .space 8
+adr x0, p
+ldr x0, [x0, #24]
+adr x1, x
+str x0, [x1]
 `;
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
@@ -90,21 +88,21 @@ var Person p
 p.age = 20
 `;
     const parsed = parse(input);
-    const result = build(parsed.root);
+    const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
-typedef struct Person
-{
-void *_vt;
-long age;
-} Person;
-Person Person_init(long age)
-{
-Person p;
-p.age = age;
-return p;
-}
-Person p;
-p.age = 20;
+Person_init:
+stp x29, x30, [sp, #-16]!
+mov x29, sp
+str xzr, [x0]
+str x1, [x0, #8]
+.return_Person_init:
+ldp x29, x30, [sp], #16
+ret
+p: .space 16
+ldr x0, =20
+mov x2, x0
+adr x0, p
+str x2, [x0, #8]
 `;
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
@@ -123,34 +121,33 @@ var Person p
 p.address.line = "1 main st"
 `;
     const parsed = parse(input);
-    const result = build(parsed.root);
+    const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
-typedef struct Address
-{
-void *_vt;
-char* line;
-} Address;
-Address Address_init(char* line)
-{
-Address a;
-a.line = line;
-return a;
-}
-typedef struct Person
-{
-void *_vt;
-long age;
-Address address;
-} Person;
-Person Person_init(long age, Address address)
-{
-Person p;
-p.age = age;
-p.address = address;
-return p;
-}
-Person p;
-p.address.line = "1 main st";
+Address_init:
+stp x29, x30, [sp, #-16]!
+mov x29, sp
+str xzr, [x0]
+str x1, [x0, #8]
+.return_Address_init:
+ldp x29, x30, [sp], #16
+ret
+Person_init:
+stp x29, x30, [sp, #-16]!
+mov x29, sp
+str xzr, [x0]
+str x1, [x0, #8]
+str x2, [x0, #16]
+.return_Person_init:
+ldp x29, x30, [sp], #16
+ret
+p: .space 24
+adr x0, _str_0
+mov x2, x0
+adr x0, p
+ldr x0, [x0, #16]
+str x2, [x0, #8]
+
+_str_0: .asciz "1 main st"
 `;
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
@@ -167,23 +164,28 @@ var Person p
 var x = p.age()
 `;
     const parsed = parse(input);
-    const result = build(parsed.root);
+    const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
-typedef struct Person
-{
-void *_vt;
-} Person;
-Person Person_init()
-{
-Person p;
-return p;
-}
-long Person_age()
-{
-return 20;
-}
-Person p;
-long x = Person_age();
+Person_init:
+stp x29, x30, [sp, #-16]!
+mov x29, sp
+str xzr, [x0]
+.return_Person_init:
+ldp x29, x30, [sp], #16
+ret
+Person_age:
+stp x29, x30, [sp, #-16]!
+mov x29, sp
+ldr x0, =20
+b .return_Person_age
+.return_Person_age:
+ldp x29, x30, [sp], #16
+ret
+p: .space 8
+x: .space 8
+bl Person_age
+adr x1, x
+str x0, [x1]
 `;
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
@@ -204,36 +206,39 @@ var Person p
 var x = p.address.line()
 `;
     const parsed = parse(input);
-    const result = build(parsed.root);
+    const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
-typedef struct Address
-{
-void *_vt;
-} Address;
-Address Address_init()
-{
-Address a;
-return a;
-}
-char* Address_line()
-{
-return "123 main st";
-}
-typedef struct Person
-{
-void *_vt;
-long age;
-Address address;
-} Person;
-Person Person_init(long age, Address address)
-{
-Person p;
-p.age = age;
-p.address = address;
-return p;
-}
-Person p;
-char* x = Address_line();
+Address_init:
+stp x29, x30, [sp, #-16]!
+mov x29, sp
+str xzr, [x0]
+.return_Address_init:
+ldp x29, x30, [sp], #16
+ret
+Address_line:
+stp x29, x30, [sp, #-16]!
+mov x29, sp
+adr x0, _str_0
+b .return_Address_line
+.return_Address_line:
+ldp x29, x30, [sp], #16
+ret
+Person_init:
+stp x29, x30, [sp, #-16]!
+mov x29, sp
+str xzr, [x0]
+str x1, [x0, #8]
+str x2, [x0, #16]
+.return_Person_init:
+ldp x29, x30, [sp], #16
+ret
+p: .space 24
+x: .space 8
+bl Address_line
+adr x1, x
+str x0, [x1]
+
+_str_0: .asciz "123 main st"
 `;
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
@@ -254,36 +259,45 @@ var Person p
 var x = p.address().line
 `;
     const parsed = parse(input);
-    const result = build(parsed.root);
+    const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
-typedef struct Address
-{
-void *_vt;
-char* line;
-} Address;
-Address Address_init(char* line)
-{
-Address a;
-a.line = line;
-return a;
-}
-typedef struct Person
-{
-void *_vt;
-long age;
-} Person;
-Person Person_init(long age)
-{
-Person p;
-p.age = age;
-return p;
-}
-struct Address Person_address()
-{
-return Address_init("123 main st");
-}
-Person p;
-char* x = Person_address().line;
+Address_init:
+stp x29, x30, [sp, #-16]!
+mov x29, sp
+str xzr, [x0]
+str x1, [x0, #8]
+.return_Address_init:
+ldp x29, x30, [sp], #16
+ret
+Person_init:
+stp x29, x30, [sp, #-16]!
+mov x29, sp
+str xzr, [x0]
+str x1, [x0, #8]
+.return_Person_init:
+ldp x29, x30, [sp], #16
+ret
+Person_address:
+stp x29, x30, [sp, #-16]!
+mov x29, sp
+_temp_0: .space 16
+adr x0, _temp_0
+adr x0, _str_0
+mov x1, x0
+bl Address_init
+adr x0, _temp_0
+b .return_Person_address
+.return_Person_address:
+ldp x29, x30, [sp], #16
+ret
+p: .space 16
+x: .space 8
+adr x0, p
+ldr x0, [x0, #8]
+adr x1, x
+str x0, [x1]
+
+_str_0: .asciz "123 main st"
 `;
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));

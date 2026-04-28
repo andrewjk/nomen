@@ -12,18 +12,18 @@ struct Person {}
 var x = Person()
 `;
     const parsed = parse(input);
-    const result = build(parsed.root);
+    const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
-typedef struct Person
-{
-void *_vt;
-} Person;
-Person Person_init()
-{
-Person p;
-return p;
-}
-Person x = Person_init();
+Person_init:
+stp x29, x30, [sp, #-16]!
+mov x29, sp
+str xzr, [x0]
+.return_Person_init:
+ldp x29, x30, [sp], #16
+ret
+x: .space 8
+adr x0, x
+bl Person_init
 `;
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
@@ -37,21 +37,23 @@ struct Person {
 var x = Person("Andrew")
 `;
     const parsed = parse(input);
-    const result = build(parsed.root);
+    const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
-// Person:
-typedef struct Person
-{
-void *_vt;
-char* name;
-} Person;
-Person Person_init(char* name)
-{
-Person p;
-p.name = name;
-return p;
-}
-Person x = Person_init("Andrew");
+Person_init:
+stp x29, x30, [sp, #-16]!
+mov x29, sp
+str xzr, [x0]
+str x1, [x0, #8]
+.return_Person_init:
+ldp x29, x30, [sp], #16
+ret
+x: .space 16
+adr x0, _str_0
+mov x1, x0
+adr x0, x
+bl Person_init
+
+_str_0: .asciz "Andrew"
 `;
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
@@ -66,23 +68,25 @@ struct Person {
 var x = Person("Andrew")
 `;
     const parsed = parse(input);
-    const result = build(parsed.root);
+    const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
-// Person:
-typedef struct Person
-{
-void *_vt;
-char* name;
-long age;
-} Person;
-Person Person_init(char* name)
-{
-Person p;
-p.name = name;
-p.age = 0;
-return p;
-}
-Person x = Person_init("Andrew");
+Person_init:
+stp x29, x30, [sp, #-16]!
+mov x29, sp
+str xzr, [x0]
+str x1, [x0, #8]
+ldr x1, =0
+str x1, [x0, #16]
+.return_Person_init:
+ldp x29, x30, [sp], #16
+ret
+x: .space 24
+adr x0, _str_0
+mov x1, x0
+adr x0, x
+bl Person_init
+
+_str_0: .asciz "Andrew"
 `;
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));

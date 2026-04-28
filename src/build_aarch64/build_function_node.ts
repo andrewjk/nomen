@@ -24,6 +24,14 @@ export default function build_function_node(
   const return_label = `.return_${label_counter++}`;
   status.function_return_label = return_label;
 
+  // Check if return type is a non-simple struct
+  const return_struct = status.structs.find(
+    (s) => s.name === node.return_type.name && !s.is_simple_type,
+  );
+  if (return_struct) {
+    status.struct_return_buffer = "x8";
+  }
+
   status.code += `${node.name}:\n`;
   status.code += `stp x29, x30, [sp, #-16]!\n`;
   status.code += `mov x29, sp\n`;
@@ -38,4 +46,5 @@ export default function build_function_node(
   status.function_param_regs = undefined;
   status.function_param_vars = undefined;
   status.function_return_label = undefined;
+  status.struct_return_buffer = undefined;
 }

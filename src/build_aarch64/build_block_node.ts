@@ -6,9 +6,16 @@ import { is_function_node, is_struct_node, is_trait_node } from "../nodes/check_
 import type BuildStatus from "../build/BuildStatus";
 import build_function_node from "./build_function_node";
 import build_node from "./build_node";
+import build_struct_node from "./build_struct_node";
 
 export default function build_block_node(node: BlockNode, status: BuildStatus) {
   gather_structs(node, status);
+
+  for (let child of node.statements) {
+    if (is_struct_node(child)) {
+      build_struct_node(child as StructNode, status);
+    }
+  }
 
   for (let child of node.statements) {
     if (is_function_node(child)) {

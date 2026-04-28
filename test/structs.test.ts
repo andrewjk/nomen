@@ -11,17 +11,15 @@ describe("struct build", () => {
 struct Person {}
 `;
     const parsed = parse(input);
-    const result = build(parsed.root);
+    const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
-typedef struct Person
-{
-void *_vt;
-} Person;
-Person Person_init()
-{
-Person p;
-return p;
-}
+Person_init:
+stp x29, x30, [sp, #-16]!
+mov x29, sp
+str xzr, [x0]
+.return_Person_init:
+ldp x29, x30, [sp], #16
+ret
 `;
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
@@ -35,22 +33,18 @@ struct Person {
 }
 `;
     const parsed = parse(input);
-    const result = build(parsed.root);
+    const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
-// Person:
-typedef struct Person
-{
-void *_vt;
-char* name;
-long age;
-} Person;
-Person Person_init(char* name)
-{
-Person p;
-p.name = name;
-p.age = 0;
-return p;
-}
+Person_init:
+stp x29, x30, [sp, #-16]!
+mov x29, sp
+str xzr, [x0]
+str x1, [x0, #8]
+ldr x1, =0
+str x1, [x0, #16]
+.return_Person_init:
+ldp x29, x30, [sp], #16
+ret
 `;
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
@@ -63,20 +57,21 @@ struct Person {
 }
 `;
     const parsed = parse(input);
-    const result = build(parsed.root);
+    const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
-typedef struct Person
-{
-void *_vt;
-} Person;
-Person Person_init()
-{
-Person p;
-return p;
-}
-void Person_greet()
-{
-}
+Person_init:
+stp x29, x30, [sp, #-16]!
+mov x29, sp
+str xzr, [x0]
+.return_Person_init:
+ldp x29, x30, [sp], #16
+ret
+Person_greet:
+stp x29, x30, [sp, #-16]!
+mov x29, sp
+.return_Person_greet:
+ldp x29, x30, [sp], #16
+ret
 `;
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
@@ -92,24 +87,32 @@ struct Person {
 }
 `;
     const parsed = parse(input);
-    const result = build(parsed.root);
+    const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
-typedef struct Person
-{
-void *_vt;
-long age;
-} Person;
-Person Person_init()
-{
-Person p;
-p.age = 0;
-return p;
-}
-void Person_grow(struct Person *self)
-{
-struct Person _self = *self;
-_self.age = _self.age + 1;
-}
+Person_init:
+stp x29, x30, [sp, #-16]!
+mov x29, sp
+str xzr, [x0]
+ldr x1, =0
+str x1, [x0, #8]
+.return_Person_init:
+ldp x29, x30, [sp], #16
+ret
+Person_grow:
+stp x29, x30, [sp, #-16]!
+mov x29, sp
+ldr x2, =1
+str x2, [sp, #-16]!
+adr x0, self
+ldr x0, [x0, #8]
+mov x1, x0
+ldr x2, [sp], #16
+add x0, x1, x2
+mov x2, x0
+str x2, [x0, #8]
+.return_Person_grow:
+ldp x29, x30, [sp], #16
+ret
 `;
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
@@ -125,25 +128,25 @@ struct Person {
 }
 `;
     const parsed = parse(input);
-    const result = build(parsed.root);
+    const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
-// Person:
-typedef struct Person
-{
-void *_vt;
-char* name;
-} Person;
-Person Person_init(char* name)
-{
-Person p;
-p.name = name;
-return p;
-}
-char* Person_get_name(struct Person *self)
-{
-struct Person _self = *self;
-return _self.name;
-}
+Person_init:
+stp x29, x30, [sp, #-16]!
+mov x29, sp
+str xzr, [x0]
+str x1, [x0, #8]
+.return_Person_init:
+ldp x29, x30, [sp], #16
+ret
+Person_get_name:
+stp x29, x30, [sp, #-16]!
+mov x29, sp
+adr x0, self
+ldr x0, [x0, #8]
+b .return_Person_get_name
+.return_Person_get_name:
+ldp x29, x30, [sp], #16
+ret
 `;
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
