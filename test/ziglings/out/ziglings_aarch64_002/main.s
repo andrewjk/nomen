@@ -1,0 +1,195 @@
+.p2align 2
+int_to_string:
+stp x29, x30, [sp, #-16]!
+str x19, [sp, #-16]!
+mov x19, x0
+mov x29, sp
+mov x0, xzr
+mov x1, xzr
+adr x2, .Lfmt_int_ld
+mov x3, x19
+bl _snprintf
+add x0, x0, #1
+str x0, [sp, #-16]!
+bl _malloc
+mov x1, x0
+ldr x0, [sp], #16
+str x1, [sp, #-16]!
+adr x2, .Lfmt_int_ld
+mov x3, x19
+bl _snprintf
+ldr x0, [sp], #16
+b .Lend_int_to_string
+.Lfmt_int_ld: .asciz "%ld"
+.p2align 2
+.Lend_int_to_string:
+.return_int_to_string:
+ldr x19, [sp], #16
+ldp x29, x30, [sp], #16
+ret
+.p2align 2
+uint_to_string:
+stp x29, x30, [sp, #-16]!
+str x19, [sp, #-16]!
+mov x19, x0
+mov x29, sp
+mov x0, xzr
+mov x1, xzr
+adr x2, .Lfmt_uint_ld
+mov x3, x19
+bl _snprintf
+add x0, x0, #1
+str x0, [sp, #-16]!
+bl _malloc
+mov x1, x0
+ldr x0, [sp], #16
+str x1, [sp, #-16]!
+adr x2, .Lfmt_uint_ld
+mov x3, x19
+bl _snprintf
+ldr x0, [sp], #16
+b .Lend_uint_to_string
+.Lfmt_uint_ld: .asciz "%ld"
+.p2align 2
+.Lend_uint_to_string:
+.return_uint_to_string:
+ldr x19, [sp], #16
+ldp x29, x30, [sp], #16
+ret
+.p2align 2
+int8_to_string:
+stp x29, x30, [sp, #-16]!
+str x19, [sp, #-16]!
+mov x19, x0
+mov x29, sp
+mov x0, xzr
+mov x1, xzr
+adr x2, .Lfmt_int8_d
+mov x3, x19
+bl _snprintf
+add x0, x0, #1
+str x0, [sp, #-16]!
+bl _malloc
+mov x1, x0
+ldr x0, [sp], #16
+str x1, [sp, #-16]!
+adr x2, .Lfmt_int8_d
+mov x3, x19
+bl _snprintf
+ldr x0, [sp], #16
+b .Lend_int8_to_string
+.Lfmt_int8_d: .asciz "%d"
+.p2align 2
+.Lend_int8_to_string:
+.return_int8_to_string:
+ldr x19, [sp], #16
+ldp x29, x30, [sp], #16
+ret
+.p2align 2
+uint8_to_string:
+stp x29, x30, [sp, #-16]!
+str x19, [sp, #-16]!
+mov x19, x0
+mov x29, sp
+mov x0, xzr
+mov x1, xzr
+adr x2, .Lfmt_uint8_d
+mov x3, x19
+bl _snprintf
+add x0, x0, #1
+str x0, [sp, #-16]!
+bl _malloc
+mov x1, x0
+ldr x0, [sp], #16
+str x1, [sp, #-16]!
+adr x2, .Lfmt_uint8_d
+mov x3, x19
+bl _snprintf
+ldr x0, [sp], #16
+b .Lend_uint8_to_string
+.Lfmt_uint8_d: .asciz "%d"
+.p2align 2
+.Lend_uint8_to_string:
+.return_uint8_to_string:
+ldr x19, [sp], #16
+ldp x29, x30, [sp], #16
+ret
+.p2align 2
+float_to_string:
+stp x29, x30, [sp, #-16]!
+str x19, [sp, #-16]!
+mov x19, x0
+mov x29, sp
+mov x0, xzr
+mov x1, xzr
+adr x2, .Lfmt_float_f
+mov x3, x19
+bl _snprintf
+add x0, x0, #1
+str x0, [sp, #-16]!
+bl _malloc
+mov x1, x0
+ldr x0, [sp], #16
+str x1, [sp, #-16]!
+adr x2, .Lfmt_float_f
+mov x3, x19
+bl _snprintf
+ldr x0, [sp], #16
+b .Lend_float_to_string
+.Lfmt_float_f: .asciz "%f"
+.p2align 2
+.Lend_float_to_string:
+.return_float_to_string:
+ldr x19, [sp], #16
+ldp x29, x30, [sp], #16
+ret
+.p2align 2
+string_to_string:
+stp x29, x30, [sp, #-16]!
+str x19, [sp, #-16]!
+mov x19, x0
+mov x29, sp
+mov x0, x19
+.return_string_to_string:
+ldr x19, [sp], #16
+ldp x29, x30, [sp], #16
+ret
+.p2align 2
+Console_init:
+stp x29, x30, [sp, #-16]!
+mov x29, sp
+str xzr, [x0]
+.return_Console_init:
+ldp x29, x30, [sp], #16
+ret
+.p2align 2
+Console_write:
+stp x29, x30, [sp, #-16]!
+mov x29, sp
+sub sp, sp, #16
+mov x1, x0
+str x1, [sp]
+adr x0, .Lfmt_console_s
+bl _printf
+add sp, sp, #16
+b .Lend_Console_write
+.Lfmt_console_s: .asciz "%s"
+.p2align 2
+.Lend_Console_write:
+.return_Console_write:
+ldp x29, x30, [sp], #16
+ret
+.p2align 2
+.globl _main
+_main:
+stp x29, x30, [sp, #-16]!
+mov x29, sp
+adr x0, _str_0
+mov x1, x0
+bl Console_write
+.return_0:
+mov x0, #0
+ldp x29, x30, [sp], #16
+ret
+
+_str_0: .asciz "Standard Library.\n"

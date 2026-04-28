@@ -15,6 +15,7 @@ struct Frank: Person {}
     const parsed = parse(input);
     const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
+.p2align 2
 Frank_init:
 stp x29, x30, [sp, #-16]!
 mov x29, sp
@@ -41,6 +42,7 @@ struct Frank: Person {
     const parsed = parse(input);
     const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
+.p2align 2
 Frank_init:
 stp x29, x30, [sp, #-16]!
 mov x29, sp
@@ -72,6 +74,7 @@ struct Frank: Person {
     const parsed = parse(input);
     const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
+.p2align 2
 Frank_init:
 stp x29, x30, [sp, #-16]!
 mov x29, sp
@@ -79,6 +82,7 @@ str xzr, [x0]
 .return_Frank_init:
 ldp x29, x30, [sp], #16
 ret
+.p2align 2
 Frank_greet:
 stp x29, x30, [sp, #-16]!
 mov x29, sp
@@ -107,6 +111,7 @@ struct Frank: Person {}
     const parsed = parse(input);
     const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
+.p2align 2
 Frank_init:
 stp x29, x30, [sp, #-16]!
 mov x29, sp
@@ -141,6 +146,7 @@ struct Frank: Person, Dancer {
     const parsed = parse(input);
     const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
+.p2align 2
 Frank_init:
 stp x29, x30, [sp, #-16]!
 mov x29, sp
@@ -148,6 +154,7 @@ str xzr, [x0]
 .return_Frank_init:
 ldp x29, x30, [sp], #16
 ret
+.p2align 2
 Frank_greet:
 stp x29, x30, [sp, #-16]!
 mov x29, sp
@@ -156,6 +163,7 @@ b .return_Frank_greet
 .return_Frank_greet:
 ldp x29, x30, [sp], #16
 ret
+.p2align 2
 Frank_dance:
 stp x29, x30, [sp, #-16]!
 mov x29, sp

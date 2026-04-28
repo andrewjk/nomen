@@ -14,6 +14,7 @@ greet()
     const parsed = parse(input);
     const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
+.p2align 2
 greet:
 stp x29, x30, [sp, #-16]!
 mov x29, sp
@@ -34,6 +35,7 @@ greet("Andrew", "Manager")
     const parsed = parse(input);
     const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
+.p2align 2
 greet:
 stp x29, x30, [sp, #-16]!
 mov x29, sp
@@ -60,6 +62,7 @@ const x = add(1, 2)
     const parsed = parse(input);
     const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
+.p2align 2
 add:
 stp x29, x30, [sp, #-16]!
 mov x29, sp
@@ -90,6 +93,7 @@ greet("Andrew")
     const parsed = parse(input);
     const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
+.p2align 2
 greet:
 stp x29, x30, [sp, #-16]!
 mov x29, sp

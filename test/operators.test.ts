@@ -22,6 +22,7 @@ const p3 = p1 + p2
     const parsed = parse(input);
     const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
+.p2align 2
 Point_init:
 stp x29, x30, [sp, #-16]!
 mov x29, sp
@@ -31,6 +32,7 @@ str x2, [x0, #16]
 .return_Point_init:
 ldp x29, x30, [sp], #16
 ret
+.p2align 2
 Point_add:
 stp x29, x30, [sp, #-16]!
 str x19, [sp, #-16]!
@@ -121,6 +123,7 @@ const p2 = p1 * 4
     const parsed = parse(input);
     const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
+.p2align 2
 Point_init:
 stp x29, x30, [sp, #-16]!
 mov x29, sp
@@ -130,6 +133,7 @@ str x2, [x0, #16]
 .return_Point_init:
 ldp x29, x30, [sp], #16
 ret
+.p2align 2
 Point_mul:
 stp x29, x30, [sp, #-16]!
 str x19, [sp, #-16]!

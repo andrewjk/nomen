@@ -79,6 +79,7 @@ func add = (out int) -> {
     const parsed = parse(input);
     const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
+.p2align 2
 add:
 stp x29, x30, [sp, #-16]!
 mov x29, sp
@@ -105,6 +106,7 @@ func add = (out int) -> {
     const parsed = parse(input);
     const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
+.p2align 2
 add:
 stp x29, x30, [sp, #-16]!
 mov x29, sp

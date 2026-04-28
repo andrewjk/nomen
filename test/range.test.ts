@@ -77,6 +77,7 @@ func sum = (out int) -> {
     const parsed = parse(input);
     const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
+.p2align 2
 sum:
 stp x29, x30, [sp, #-16]!
 mov x29, sp

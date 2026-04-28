@@ -39,7 +39,7 @@ pub struct int: Stringable {
         #arch: aarch64
         mov x0, xzr
         mov x1, xzr
-        adr x2, .Lfmt_ld
+        adr x2, .Lfmt_int_ld
         mov x3, x19
         bl snprintf
         add x0, x0, #1
@@ -48,13 +48,14 @@ pub struct int: Stringable {
         mov x1, x0
         ldr x0, [sp], #16
         str x1, [sp, #-16]!
-        adr x2, .Lfmt_ld
+        adr x2, .Lfmt_int_ld
         mov x3, x19
         bl snprintf
         ldr x0, [sp], #16
-        .section .rodata
-        .Lfmt_ld: .asciz "%ld"
-        .text
+        b .Lend_int_to_string
+        .Lfmt_int_ld: .asciz "%ld"
+        .p2align 2
+        .Lend_int_to_string:
         ```
         return "from_c"
     }
@@ -74,7 +75,7 @@ pub struct uint: Stringable {
         #arch: aarch64
         mov x0, xzr
         mov x1, xzr
-        adr x2, .Lfmt_ld
+        adr x2, .Lfmt_uint_ld
         mov x3, x19
         bl snprintf
         add x0, x0, #1
@@ -83,13 +84,14 @@ pub struct uint: Stringable {
         mov x1, x0
         ldr x0, [sp], #16
         str x1, [sp, #-16]!
-        adr x2, .Lfmt_ld
+        adr x2, .Lfmt_uint_ld
         mov x3, x19
         bl snprintf
         ldr x0, [sp], #16
-        .section .rodata
-        .Lfmt_ld: .asciz "%ld"
-        .text
+        b .Lend_uint_to_string
+        .Lfmt_uint_ld: .asciz "%ld"
+        .p2align 2
+        .Lend_uint_to_string:
         ```
         return "from_c"
     }
@@ -109,7 +111,7 @@ pub struct int8: Stringable {
         #arch: aarch64
         mov x0, xzr
         mov x1, xzr
-        adr x2, .Lfmt_d
+        adr x2, .Lfmt_int8_d
         mov x3, x19
         bl snprintf
         add x0, x0, #1
@@ -118,13 +120,14 @@ pub struct int8: Stringable {
         mov x1, x0
         ldr x0, [sp], #16
         str x1, [sp, #-16]!
-        adr x2, .Lfmt_d
+        adr x2, .Lfmt_int8_d
         mov x3, x19
         bl snprintf
         ldr x0, [sp], #16
-        .section .rodata
-        .Lfmt_d: .asciz "%d"
-        .text
+        b .Lend_int8_to_string
+        .Lfmt_int8_d: .asciz "%d"
+        .p2align 2
+        .Lend_int8_to_string:
         ```
         return "from_c"
     }
@@ -144,7 +147,7 @@ pub struct uint8: Stringable {
         #arch: aarch64
         mov x0, xzr
         mov x1, xzr
-        adr x2, .Lfmt_d
+        adr x2, .Lfmt_uint8_d
         mov x3, x19
         bl snprintf
         add x0, x0, #1
@@ -153,13 +156,14 @@ pub struct uint8: Stringable {
         mov x1, x0
         ldr x0, [sp], #16
         str x1, [sp, #-16]!
-        adr x2, .Lfmt_d
+        adr x2, .Lfmt_uint8_d
         mov x3, x19
         bl snprintf
         ldr x0, [sp], #16
-        .section .rodata
-        .Lfmt_d: .asciz "%d"
-        .text
+        b .Lend_uint8_to_string
+        .Lfmt_uint8_d: .asciz "%d"
+        .p2align 2
+        .Lend_uint8_to_string:
         ```
         return "from_c"
     }
@@ -179,7 +183,7 @@ pub struct float: Stringable {
         #arch: aarch64
         mov x0, xzr
         mov x1, xzr
-        adr x2, .Lfmt_f
+        adr x2, .Lfmt_float_f
         mov x3, x19
         bl snprintf
         add x0, x0, #1
@@ -188,13 +192,14 @@ pub struct float: Stringable {
         mov x1, x0
         ldr x0, [sp], #16
         str x1, [sp, #-16]!
-        adr x2, .Lfmt_f
+        adr x2, .Lfmt_float_f
         mov x3, x19
         bl snprintf
         ldr x0, [sp], #16
-        .section .rodata
-        .Lfmt_f: .asciz "%f"
-        .text
+        b .Lend_float_to_string
+        .Lfmt_float_f: .asciz "%f"
+        .p2align 2
+        .Lend_float_to_string:
         ```
         return "from_c"
     }
@@ -248,12 +253,16 @@ pub struct Console {
         ```
         ```
         #arch: aarch64
+        sub sp, sp, #16
         mov x1, x0
-        adr x0, .Lfmt_s
-        bl printf
-        .section .rodata
-        .Lfmt_s: .asciz "%s"
-        .text
+        str x1, [sp]
+        adr x0, .Lfmt_console_s
+        bl _printf
+        add sp, sp, #16
+        b .Lend_Console_write
+        .Lfmt_console_s: .asciz "%s"
+        .p2align 2
+        .Lend_Console_write:
         ```
     }
 }

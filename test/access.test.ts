@@ -17,6 +17,7 @@ var x = p.age
     const parsed = parse(input);
     const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
+.p2align 2
 Person_init:
 stp x29, x30, [sp, #-16]!
 mov x29, sp
@@ -51,6 +52,7 @@ var x = p.address.line
     const parsed = parse(input);
     const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
+.p2align 2
 Address_init:
 stp x29, x30, [sp, #-16]!
 mov x29, sp
@@ -59,6 +61,7 @@ str x1, [x0, #8]
 .return_Address_init:
 ldp x29, x30, [sp], #16
 ret
+.p2align 2
 Person_init:
 stp x29, x30, [sp, #-16]!
 mov x29, sp
@@ -90,6 +93,7 @@ p.age = 20
     const parsed = parse(input);
     const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
+.p2align 2
 Person_init:
 stp x29, x30, [sp, #-16]!
 mov x29, sp
@@ -123,6 +127,7 @@ p.address.line = "1 main st"
     const parsed = parse(input);
     const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
+.p2align 2
 Address_init:
 stp x29, x30, [sp, #-16]!
 mov x29, sp
@@ -131,6 +136,7 @@ str x1, [x0, #8]
 .return_Address_init:
 ldp x29, x30, [sp], #16
 ret
+.p2align 2
 Person_init:
 stp x29, x30, [sp, #-16]!
 mov x29, sp
@@ -166,6 +172,7 @@ var x = p.age()
     const parsed = parse(input);
     const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
+.p2align 2
 Person_init:
 stp x29, x30, [sp, #-16]!
 mov x29, sp
@@ -173,6 +180,7 @@ str xzr, [x0]
 .return_Person_init:
 ldp x29, x30, [sp], #16
 ret
+.p2align 2
 Person_age:
 stp x29, x30, [sp, #-16]!
 mov x29, sp
@@ -208,6 +216,7 @@ var x = p.address.line()
     const parsed = parse(input);
     const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
+.p2align 2
 Address_init:
 stp x29, x30, [sp, #-16]!
 mov x29, sp
@@ -215,6 +224,7 @@ str xzr, [x0]
 .return_Address_init:
 ldp x29, x30, [sp], #16
 ret
+.p2align 2
 Address_line:
 stp x29, x30, [sp, #-16]!
 mov x29, sp
@@ -223,6 +233,7 @@ b .return_Address_line
 .return_Address_line:
 ldp x29, x30, [sp], #16
 ret
+.p2align 2
 Person_init:
 stp x29, x30, [sp, #-16]!
 mov x29, sp
@@ -261,6 +272,7 @@ var x = p.address().line
     const parsed = parse(input);
     const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
+.p2align 2
 Address_init:
 stp x29, x30, [sp, #-16]!
 mov x29, sp
@@ -269,6 +281,7 @@ str x1, [x0, #8]
 .return_Address_init:
 ldp x29, x30, [sp], #16
 ret
+.p2align 2
 Person_init:
 stp x29, x30, [sp, #-16]!
 mov x29, sp
@@ -277,6 +290,7 @@ str x1, [x0, #8]
 .return_Person_init:
 ldp x29, x30, [sp], #16
 ret
+.p2align 2
 Person_address:
 stp x29, x30, [sp, #-16]!
 mov x29, sp

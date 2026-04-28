@@ -13,6 +13,7 @@ func add = () -> {}
     const parsed = parse(input);
     const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
+.p2align 2
 add:
 stp x29, x30, [sp, #-16]!
 mov x29, sp
@@ -31,6 +32,7 @@ func add = (int a, int b) -> {}
     const parsed = parse(input);
     const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
+.p2align 2
 add:
 stp x29, x30, [sp, #-16]!
 mov x29, sp
@@ -49,6 +51,7 @@ func add = (int a, b = 5) -> {}
     const parsed = parse(input);
     const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
+.p2align 2
 add:
 stp x29, x30, [sp, #-16]!
 mov x29, sp
@@ -69,6 +72,7 @@ func add = (out int) -> {
     const parsed = parse(input);
     const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
+.p2align 2
 add:
 stp x29, x30, [sp, #-16]!
 mov x29, sp
@@ -91,6 +95,7 @@ func add = () -> {
     const parsed = parse(input);
     const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
+.p2align 2
 add:
 stp x29, x30, [sp, #-16]!
 mov x29, sp
@@ -112,6 +117,7 @@ func add = (out int) -> {
     const parsed = parse(input);
     const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
+.p2align 2
 add:
 stp x29, x30, [sp, #-16]!
 mov x29, sp
@@ -132,6 +138,7 @@ func add = (int a = 5) -> {}
     const parsed = parse(input);
     const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
+.p2align 2
 add:
 stp x29, x30, [sp, #-16]!
 mov x29, sp
@@ -150,6 +157,7 @@ func add = (var int a) -> {}
     const parsed = parse(input);
     const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
+.p2align 2
 add:
 stp x29, x30, [sp, #-16]!
 mov x29, sp
@@ -170,6 +178,7 @@ func add = (int a, out int) -> {
     const parsed = parse(input);
     const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
+.p2align 2
 add:
 stp x29, x30, [sp, #-16]!
 mov x29, sp
@@ -189,6 +198,7 @@ func sum = (int a, int b, out int) -> (a + b)
     const parsed = parse(input);
     const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
+.p2align 2
 sum:
 stp x29, x30, [sp, #-16]!
 mov x29, sp
@@ -226,6 +236,7 @@ var func (int a, int b, out int) sum = (int a, int b, out int) -> {
     const parsed = parse(input);
     const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
+.p2align 2
 sum:
 stp x29, x30, [sp, #-16]!
 mov x29, sp

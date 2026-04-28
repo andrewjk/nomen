@@ -26,6 +26,7 @@ function build_init_function(node: StructNode, status: BuildStatus) {
   // x1-x7 = field params (fields without default values)
   const required_fields = node.fields.filter((f) => f.value == null);
 
+  status.code += `.p2align 2\n`;
   status.code += `${func_name}:\n`;
   status.code += `stp x29, x30, [sp, #-16]!\n`;
   status.code += `mov x29, sp\n`;
@@ -102,6 +103,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
     const return_label = `.return_${node.name}_${func.name}`;
     status.function_return_label = return_label;
 
+    status.code += `.p2align 2\n`;
     status.code += `${node.name}_${func.name}:\n`;
     status.code += `stp x29, x30, [sp, #-16]!\n`;
 

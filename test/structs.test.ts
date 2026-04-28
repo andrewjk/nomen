@@ -13,6 +13,7 @@ struct Person {}
     const parsed = parse(input);
     const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
+.p2align 2
 Person_init:
 stp x29, x30, [sp, #-16]!
 mov x29, sp
@@ -35,6 +36,7 @@ struct Person {
     const parsed = parse(input);
     const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
+.p2align 2
 Person_init:
 stp x29, x30, [sp, #-16]!
 mov x29, sp
@@ -59,6 +61,7 @@ struct Person {
     const parsed = parse(input);
     const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
+.p2align 2
 Person_init:
 stp x29, x30, [sp, #-16]!
 mov x29, sp
@@ -66,6 +69,7 @@ str xzr, [x0]
 .return_Person_init:
 ldp x29, x30, [sp], #16
 ret
+.p2align 2
 Person_greet:
 stp x29, x30, [sp, #-16]!
 mov x29, sp
@@ -89,6 +93,7 @@ struct Person {
     const parsed = parse(input);
     const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
+.p2align 2
 Person_init:
 stp x29, x30, [sp, #-16]!
 mov x29, sp
@@ -98,6 +103,7 @@ str x1, [x0, #8]
 .return_Person_init:
 ldp x29, x30, [sp], #16
 ret
+.p2align 2
 Person_grow:
 stp x29, x30, [sp, #-16]!
 mov x29, sp
@@ -129,6 +135,7 @@ struct Person {
     const parsed = parse(input);
     const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
+.p2align 2
 Person_init:
 stp x29, x30, [sp, #-16]!
 mov x29, sp
@@ -137,6 +144,7 @@ str x1, [x0, #8]
 .return_Person_init:
 ldp x29, x30, [sp], #16
 ret
+.p2align 2
 Person_get_name:
 stp x29, x30, [sp, #-16]!
 str x19, [sp, #-16]!

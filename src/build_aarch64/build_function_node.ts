@@ -32,6 +32,7 @@ export default function build_function_node(
     status.struct_return_buffer = "x8";
   }
 
+  status.code += `.p2align 2\n`;
   status.code += `${node.name}:\n`;
   status.code += `stp x29, x30, [sp, #-16]!\n`;
   status.code += `mov x29, sp\n`;
@@ -39,6 +40,9 @@ export default function build_function_node(
   build_block_node(node, status);
 
   status.code += `${return_label}:\n`;
+  if (node.name === "main") {
+    status.code += `mov x0, #0\n`;
+  }
   status.code += `ldp x29, x30, [sp], #16\n`;
   status.code += `ret\n`;
 
