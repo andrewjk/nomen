@@ -294,12 +294,11 @@ ret
 Person_address:
 stp x29, x30, [sp, #-16]!
 mov x29, sp
-_temp_0: .space 16
-adr x0, _temp_0
+sub x0, x29, #0
 adr x0, _str_0
 mov x1, x0
 bl Address_init
-adr x0, _temp_0
+sub x0, x29, #0
 b .return_Person_address
 .return_Person_address:
 ldp x29, x30, [sp], #16

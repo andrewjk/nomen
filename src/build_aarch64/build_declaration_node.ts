@@ -78,6 +78,8 @@ export default function build_declaration_node(
     if (status.function_return_label) {
       const offset = allocate_stack_space(status, struct_size);
       status.stack_offsets!.set(node.name, offset);
+    } else {
+      emit_data(status, `${node.name}: .space ${struct_size}\n`);
     }
     if (node.value && node.value.node_type === "func_call") {
       const func_call = node.value as FunctionCallNode;

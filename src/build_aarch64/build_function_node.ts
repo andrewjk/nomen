@@ -4,6 +4,10 @@ import build_block_node from "./build_block_node";
 
 let label_counter = 0;
 
+export function reset_label_counter() {
+  label_counter = 0;
+}
+
 export default function build_function_node(
   node: FunctionNode,
   status: BuildStatus,

@@ -114,7 +114,7 @@ adr x0, _str_todo_haven_t_done_this_yet
 bl printf
 mov x0, #1
 bl exit
-.return_1:
+.return_0:
 ldp x29, x30, [sp], #16
 ret
 

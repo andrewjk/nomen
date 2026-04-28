@@ -38,7 +38,6 @@ stp x29, x30, [sp, #-16]!
 str x19, [sp, #-16]!
 mov x19, x0
 mov x29, sp
-_param_0: .space 8
 mov x0, x1
 ldr x0, [x0, #8]
 mov x2, x0
@@ -48,9 +47,7 @@ ldr x0, [x0, #8]
 mov x1, x0
 ldr x2, [sp], #16
 add x0, x1, x2
-adr x1, _param_0
-str x0, [x1]
-_param_1: .space 8
+str x0, [x29, #0]
 mov x0, x1
 ldr x0, [x0, #16]
 mov x2, x0
@@ -60,18 +57,14 @@ ldr x0, [x0, #16]
 mov x1, x0
 ldr x2, [sp], #16
 add x0, x1, x2
-adr x1, _param_1
-str x0, [x1]
-_temp_0: .space 16
-adr x0, _temp_0
-adr x0, _param_1
-ldr x0, [x0]
+str x0, [x29, #8]
+sub x0, x29, #16
+ldr x0, [x29, #8]
 mov x2, x0
-adr x0, _param_0
-ldr x0, [x0]
+ldr x0, [x29, #0]
 mov x1, x0
 bl Point_init
-adr x0, _temp_0
+sub x0, x29, #16
 b .return_Point_add
 .return_Point_add:
 ldr x19, [sp], #16
@@ -139,7 +132,6 @@ stp x29, x30, [sp, #-16]!
 str x19, [sp, #-16]!
 mov x19, x0
 mov x29, sp
-_param_0: .space 8
 mov x2, x1
 str x2, [sp, #-16]!
 mov x0, x19
@@ -147,9 +139,7 @@ ldr x0, [x0, #8]
 mov x1, x0
 ldr x2, [sp], #16
 mul x0, x1, x2
-adr x1, _param_0
-str x0, [x1]
-_param_1: .space 8
+str x0, [x29, #0]
 mov x2, x1
 str x2, [sp, #-16]!
 mov x0, x19
@@ -157,18 +147,14 @@ ldr x0, [x0, #16]
 mov x1, x0
 ldr x2, [sp], #16
 mul x0, x1, x2
-adr x1, _param_1
-str x0, [x1]
-_temp_0: .space 16
-adr x0, _temp_0
-adr x0, _param_1
-ldr x0, [x0]
+str x0, [x29, #8]
+sub x0, x29, #16
+ldr x0, [x29, #8]
 mov x2, x0
-adr x0, _param_0
-ldr x0, [x0]
+ldr x0, [x29, #0]
 mov x1, x0
 bl Point_init
-adr x0, _temp_0
+sub x0, x29, #16
 b .return_Point_mul
 .return_Point_mul:
 ldr x19, [sp], #16

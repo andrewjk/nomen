@@ -80,39 +80,35 @@ func sum = (out int) -> {
 .p2align 2
 sum:
 stp x29, x30, [sp, #-16]!
+sub sp, sp, #16
 mov x29, sp
-total: .quad 0
+mov x0, #0
+str x0, [x29, #0]
 ldr x0, =1
-adr x1, n
-str x0, [x1]
+str x0, [x29, #8]
 .for_0:
-adr x0, n
-ldr x0, [x0]
+ldr x0, [x29, #8]
 mov x2, x0
 ldr x0, =4
 cmp x2, x0
 bge .end_0
-adr x0, n
-ldr x0, [x0]
+ldr x0, [x29, #8]
 mov x2, x0
-adr x0, total
-ldr x0, [x0]
+ldr x0, [x29, #0]
 mov x1, x0
 add x0, x1, x2
 
-adr x1, total
+add x1, x29, #0
 str x0, [x1]
-adr x0, n
-ldr x0, [x0]
+ldr x0, [x29, #8]
 add x0, x0, #1
-adr x1, n
-str x0, [x1]
+str x0, [x29, #8]
 b .for_0
 .end_0:
-adr x0, total
-ldr x0, [x0]
+ldr x0, [x29, #0]
 b .return_0
 .return_0:
+add sp, sp, #16
 ldp x29, x30, [sp], #16
 ret
 `;

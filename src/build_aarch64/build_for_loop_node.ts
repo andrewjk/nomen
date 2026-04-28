@@ -4,7 +4,7 @@ import type BuildStatus from "../build/BuildStatus";
 import type_from_value_node from "../build/utils/type_from_value_node";
 import build_block_node from "./build_block_node";
 import build_node from "./build_node";
-import { emit_var_store } from "./utils/stack_var";
+import { allocate_stack_space, emit_var_store } from "./utils/stack_var";
 
 let label_counter = 0;
 
@@ -26,6 +26,12 @@ export default function build_for_loop_node(
 
   status.loop_labels = status.loop_labels || [];
   status.loop_labels.push({ start: start_label, end: end_label });
+
+  // Allocate stack space for loop item variable
+  if (status.function_return_label) {
+    const item_offset = allocate_stack_space(status, 8);
+    status.stack_offsets!.set(item_name, item_offset);
+  }
 
   if (node.list && node.list.node_type === "range") {
     const range = node.list as RangeNode;

@@ -39,7 +39,7 @@ greet("Andrew", "Manager")
 greet:
 stp x29, x30, [sp, #-16]!
 mov x29, sp
-.return_1:
+.return_0:
 ldp x29, x30, [sp], #16
 ret
 adr x0, _str_0
@@ -69,8 +69,8 @@ mov x29, sp
 mov x2, x1
 mov x1, x0
 add x0, x1, x2
-b .return_2
-.return_2:
+b .return_0
+.return_0:
 ldp x29, x30, [sp], #16
 ret
 x: .space 8
@@ -97,7 +97,7 @@ greet("Andrew")
 greet:
 stp x29, x30, [sp, #-16]!
 mov x29, sp
-.return_3:
+.return_0:
 ldp x29, x30, [sp], #16
 ret
 adr x0, _str_0

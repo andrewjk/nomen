@@ -36,7 +36,7 @@ func add = (int a, int b) -> {}
 add:
 stp x29, x30, [sp, #-16]!
 mov x29, sp
-.return_1:
+.return_0:
 ldp x29, x30, [sp], #16
 ret
 `;
@@ -55,7 +55,7 @@ func add = (int a, b = 5) -> {}
 add:
 stp x29, x30, [sp, #-16]!
 mov x29, sp
-.return_2:
+.return_0:
 ldp x29, x30, [sp], #16
 ret
 `;
@@ -77,8 +77,8 @@ add:
 stp x29, x30, [sp, #-16]!
 mov x29, sp
 ldr x0, =5
-b .return_3
-.return_3:
+b .return_0
+.return_0:
 ldp x29, x30, [sp], #16
 ret
 `;
@@ -98,9 +98,12 @@ func add = () -> {
 .p2align 2
 add:
 stp x29, x30, [sp, #-16]!
+sub sp, sp, #16
 mov x29, sp
-x: .quad 5
-.return_4:
+mov x0, #5
+str x0, [x29, #0]
+.return_0:
+add sp, sp, #16
 ldp x29, x30, [sp], #16
 ret
 `;
@@ -122,8 +125,8 @@ add:
 stp x29, x30, [sp, #-16]!
 mov x29, sp
 ldr x0, =5
-b .return_5
-.return_5:
+b .return_0
+.return_0:
 ldp x29, x30, [sp], #16
 ret
 `;
@@ -142,7 +145,7 @@ func add = (int a = 5) -> {}
 add:
 stp x29, x30, [sp, #-16]!
 mov x29, sp
-.return_6:
+.return_0:
 ldp x29, x30, [sp], #16
 ret
 `;
@@ -161,7 +164,7 @@ func add = (var int a) -> {}
 add:
 stp x29, x30, [sp, #-16]!
 mov x29, sp
-.return_7:
+.return_0:
 ldp x29, x30, [sp], #16
 ret
 `;
@@ -182,8 +185,8 @@ func add = (int a, out int) -> {
 add:
 stp x29, x30, [sp, #-16]!
 mov x29, sp
-b .return_8
-.return_8:
+b .return_0
+.return_0:
 ldp x29, x30, [sp], #16
 ret
 `;
@@ -205,8 +208,8 @@ mov x29, sp
 mov x2, x1
 mov x1, x0
 add x0, x1, x2
-b .return_9
-.return_9:
+b .return_0
+.return_0:
 ldp x29, x30, [sp], #16
 ret
 `;
@@ -243,8 +246,8 @@ mov x29, sp
 mov x2, x1
 mov x1, x0
 add x0, x1, x2
-b .return_10
-.return_10:
+b .return_0
+.return_0:
 ldp x29, x30, [sp], #16
 ret
 `;
