@@ -1,8 +1,8 @@
-import built_in_types from "./built_in_types";
-import type CheckStatus from "./check/CheckStatus";
-import check_node from "./check/check_node";
-import BaseNode from "./nodes/BaseNode";
-import type CheckResult from "./types/CheckResult";
+import built_in_types from "./built_in_types.ts";
+import check_node from "./check/check_node.ts";
+import type CheckStatus from "./check/CheckStatus.ts";
+import BaseNode from "./nodes/BaseNode.ts";
+import type CheckResult from "./types/CheckResult.ts";
 
 export default function check(root: BaseNode): CheckResult {
   const status: CheckStatus = {

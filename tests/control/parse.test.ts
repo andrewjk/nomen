@@ -1,13 +1,14 @@
-import { expect, test } from "vitest";
-import BreakNode from "../../src/nodes/BreakNode";
-import ContinueNode from "../../src/nodes/ContinueNode";
-import ForLoopNode from "../../src/nodes/ForLoopNode";
-import FunctionNode from "../../src/nodes/FunctionNode";
-import PanicNode from "../../src/nodes/PanicNode";
-import RangeNode from "../../src/nodes/RangeNode";
-import TodoNode from "../../src/nodes/TodoNode";
-import Type from "../../src/nodes/Type";
-import ValueNode from "../../src/nodes/ValueNode";
+import { expect, test } from "vite-plus/test";
+
+import BreakNode from "../../src/nodes/BreakNode.ts";
+import ContinueNode from "../../src/nodes/ContinueNode.ts";
+import ForLoopNode from "../../src/nodes/ForLoopNode.ts";
+import FunctionNode from "../../src/nodes/FunctionNode.ts";
+import PanicNode from "../../src/nodes/PanicNode.ts";
+import RangeNode from "../../src/nodes/RangeNode.ts";
+import TodoNode from "../../src/nodes/TodoNode.ts";
+import Type from "../../src/nodes/Type.ts";
+import ValueNode from "../../src/nodes/ValueNode.ts";
 import parse from "../../src/parse";
 import trim_test_parse from "../trim_test_parse";
 

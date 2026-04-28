@@ -1,5 +1,5 @@
-import Type from "../../nodes/Type";
-import type CheckStatus from "../CheckStatus";
+import Type from "../../nodes/Type.ts";
+import type CheckStatus from "../CheckStatus.ts";
 
 export default function type_from_value(value: string, status: CheckStatus): Type {
   // Is it a value that's been declared in a var/const or param?

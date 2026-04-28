@@ -1,8 +1,9 @@
-import { expect, describe, test } from "vitest";
+import { expect, describe, test } from "vite-plus/test";
+
 import build from "../src/build";
 import parse from "../src/parse";
-import trim_test_build from "./trim_test_build";
 import test_error from "./test_error";
+import trim_test_build from "./trim_test_build";
 
 // BUILD
 describe("custom operator build", () => {
@@ -197,9 +198,7 @@ const p1 = Point(1, 2)
 const p2 = Point(3, 4)
 const p3 = p1 + p2
 `;
-    const expected = [
-      test_error(input, "No operator + defined for type Point", 8, 12),
-    ];
+    const expected = [test_error(input, "No operator + defined for type Point", 8, 12)];
     const parsed = parse(input);
     expect(parsed.errors).toEqual(expected);
   });
@@ -216,9 +215,7 @@ struct Point {
 const p1 = Point(1, 2)
 const p3 = p1 + 5
 `;
-    const expected = [
-      test_error(input, "Type mismatch in param: int (expected Point)", 10, 17),
-    ];
+    const expected = [test_error(input, "Type mismatch in param: int (expected Point)", 10, 17)];
     const parsed = parse(input);
     expect(parsed.errors).toEqual(expected);
   });

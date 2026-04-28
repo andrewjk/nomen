@@ -1,8 +1,8 @@
-import ReturnNode from "../nodes/ReturnNode";
-import ValueNode from "../nodes/ValueNode";
-import type BuildStatus from "./BuildStatus";
-import build_auto_free from "./build_auto_free";
-import build_node from "./build_node";
+import ReturnNode from "../nodes/ReturnNode.ts";
+import ValueNode from "../nodes/ValueNode.ts";
+import build_auto_free from "./build_auto_free.ts";
+import build_node from "./build_node.ts";
+import type BuildStatus from "./BuildStatus.ts";
 
 export default function build_return_node(node: ReturnNode, status: BuildStatus) {
   // HACK: This needs more work to map return values to declarations

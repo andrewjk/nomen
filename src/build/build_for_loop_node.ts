@@ -1,11 +1,11 @@
-import ForLoopNode from "../nodes/ForLoopNode";
-import RangeNode from "../nodes/RangeNode";
-import type BuildStatus from "./BuildStatus";
-import build_auto_free from "./build_auto_free";
-import build_block_node from "./build_block_node";
-import build_node from "./build_node";
-import c_type from "./utils/c_type";
-import type_from_value_node from "./utils/type_from_value_node";
+import ForLoopNode from "../nodes/ForLoopNode.ts";
+import RangeNode from "../nodes/RangeNode.ts";
+import build_auto_free from "./build_auto_free.ts";
+import build_block_node from "./build_block_node.ts";
+import build_node from "./build_node.ts";
+import type BuildStatus from "./BuildStatus.ts";
+import c_type from "./utils/c_type.ts";
+import type_from_value_node from "./utils/type_from_value_node.ts";
 
 export default function build_for_loop_node(node: ForLoopNode, status: BuildStatus) {
   const old_scoped_declarations = status.scoped_declarations;
@@ -32,7 +32,7 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
       status.code += "; ";
       build_node(node.item, status);
       status.code += "++)\n{\n";
-    } else if (!!status.traits.find((t) => t.name === node.item.type.name)) {
+    } else if (status.traits.find((t) => t.name === node.item.type.name) !== undefined) {
       // TODO: Handle index iterator variable
       const length = type_from_value_node(node.list).length;
       status.code += `for (int i = 0; i < `;

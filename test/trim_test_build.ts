@@ -1,7 +1,7 @@
-export default function trim_test_build(source: string, remove_typedefs = false): string {
+export default function trim_test_build(source: string): string {
   source = source
     // Replace includes
-    .replace(/^\#include.+$/gm, "")
+    .replace(/^#include.+$/gm, "")
     // Replace malloc_count declaration
     .replace(/^int malloc_count;$/gm, "")
     // Replace commented lines

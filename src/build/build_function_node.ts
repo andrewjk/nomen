@@ -1,10 +1,10 @@
-import FunctionNode from "../nodes/FunctionNode";
-import type BuildStatus from "./BuildStatus";
-import build_auto_free from "./build_auto_free";
-import build_block_node from "./build_block_node";
-import build_node from "./build_node";
-import build_parameter_node from "./build_parameter_node";
-import c_type from "./utils/c_type";
+import FunctionNode from "../nodes/FunctionNode.ts";
+import build_auto_free from "./build_auto_free.ts";
+import build_block_node from "./build_block_node.ts";
+import build_node from "./build_node.ts";
+import build_parameter_node from "./build_parameter_node.ts";
+import type BuildStatus from "./BuildStatus.ts";
+import c_type from "./utils/c_type.ts";
 
 export default function build_function_node(node: FunctionNode, status: BuildStatus) {
   const old_scoped_declarations = status.scoped_declarations;

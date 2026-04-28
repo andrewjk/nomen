@@ -1,6 +1,6 @@
-import FunctionNode from "../nodes/FunctionNode";
-import type BuildStatus from "../build/BuildStatus";
-import build_block_node from "./build_block_node";
+import type BuildStatus from "../build/BuildStatus.ts";
+import FunctionNode from "../nodes/FunctionNode.ts";
+import build_block_node from "./build_block_node.ts";
 
 let label_counter = 0;
 
@@ -8,10 +8,7 @@ export function reset_label_counter() {
   label_counter = 0;
 }
 
-export default function build_function_node(
-  node: FunctionNode,
-  status: BuildStatus,
-) {
+export default function build_function_node(node: FunctionNode, status: BuildStatus) {
   const old_scoped_declarations = status.scoped_declarations;
   status.scoped_declarations = [];
 

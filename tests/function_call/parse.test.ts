@@ -1,7 +1,8 @@
-import { expect, test } from "vitest";
-import FunctionCallNode from "../../src/nodes/FunctionCallNode";
-import Type from "../../src/nodes/Type";
-import ValueNode from "../../src/nodes/ValueNode";
+import { expect, test } from "vite-plus/test";
+
+import FunctionCallNode from "../../src/nodes/FunctionCallNode.ts";
+import Type from "../../src/nodes/Type.ts";
+import ValueNode from "../../src/nodes/ValueNode.ts";
 import parse from "../../src/parse";
 import trim_test_parse from "../trim_test_parse";
 

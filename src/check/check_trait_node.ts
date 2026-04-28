@@ -1,7 +1,7 @@
-import TraitNode from "../nodes/TraitNode";
-import type CheckStatus from "./CheckStatus";
-import check_declaration_node from "./check_declaration_node";
-import check_function_node from "./check_function_node";
+import TraitNode from "../nodes/TraitNode.ts";
+import check_declaration_node from "./check_declaration_node.ts";
+import check_function_node from "./check_function_node.ts";
+import type CheckStatus from "./CheckStatus.ts";
 
 export default function check_trait_node(trait: TraitNode, status: CheckStatus) {
   for (let decl of trait.fields) {

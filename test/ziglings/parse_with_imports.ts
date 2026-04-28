@@ -1,4 +1,5 @@
 import fs from "node:fs";
+
 import parse from "../../src/parse";
 
 export default function parse_with_imports(source: string) {

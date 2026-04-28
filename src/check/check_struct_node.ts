@@ -1,8 +1,8 @@
-import add_error from "../add_error";
-import StructNode from "../nodes/StructNode";
-import type CheckStatus from "./CheckStatus";
-import check_declaration_node from "./check_declaration_node";
-import check_function_node from "./check_function_node";
+import add_error from "../add_error.ts";
+import StructNode from "../nodes/StructNode.ts";
+import check_declaration_node from "./check_declaration_node.ts";
+import check_function_node from "./check_function_node.ts";
+import type CheckStatus from "./CheckStatus.ts";
 
 export default function check_struct_node(struct: StructNode, status: CheckStatus) {
   // Check traits

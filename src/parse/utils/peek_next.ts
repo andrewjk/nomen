@@ -1,4 +1,4 @@
-import type ParseStatus from "../ParseStatus";
+import type ParseStatus from "../ParseStatus.ts";
 
 export default function peek_next(status: ParseStatus): string | undefined {
   return status.tokens[status.i + 1]?.value;

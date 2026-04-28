@@ -1,4 +1,4 @@
-import type ParseStatus from "../ParseStatus";
+import type ParseStatus from "../ParseStatus.ts";
 
 export default function accept(value: string, status: ParseStatus, advance = true): boolean {
   if (status.i < status.tokens.length) {

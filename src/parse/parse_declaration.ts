@@ -1,21 +1,21 @@
-import add_error from "../add_error";
-import type BlockNode from "../nodes/BlockNode";
-import DeclarationNode from "../nodes/DeclarationNode";
-import FunctionNode from "../nodes/FunctionNode";
-import ParameterNode from "../nodes/ParameterNode";
-import ReturnNode from "../nodes/ReturnNode";
-import StructNode from "../nodes/StructNode";
-import Type from "../nodes/Type";
-import { is_value_node } from "../nodes/check_node_type";
-import type ParseStatus from "./ParseStatus";
-import parse_expression from "./parse_expression";
-import parse_statement from "./parse_statement";
-import parse_type from "./parse_type";
-import accept from "./utils/accept";
-import consume from "./utils/consume";
-import expect from "./utils/expect";
-import get_index from "./utils/get_index";
-import peek_current from "./utils/peek_current";
+import add_error from "../add_error.ts";
+import type BlockNode from "../nodes/BlockNode.ts";
+import { is_value_node } from "../nodes/check_node_type.ts";
+import DeclarationNode from "../nodes/DeclarationNode.ts";
+import FunctionNode from "../nodes/FunctionNode.ts";
+import ParameterNode from "../nodes/ParameterNode.ts";
+import ReturnNode from "../nodes/ReturnNode.ts";
+import StructNode from "../nodes/StructNode.ts";
+import Type from "../nodes/Type.ts";
+import parse_expression from "./parse_expression.ts";
+import parse_statement from "./parse_statement.ts";
+import parse_type from "./parse_type.ts";
+import type ParseStatus from "./ParseStatus.ts";
+import accept from "./utils/accept.ts";
+import consume from "./utils/consume.ts";
+import expect from "./utils/expect.ts";
+import get_index from "./utils/get_index.ts";
+import peek_current from "./utils/peek_current.ts";
 
 export default function parse_declaration(
   visibility: "inherit" | "pub" | "mod" | "priv",

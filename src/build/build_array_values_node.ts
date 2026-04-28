@@ -1,6 +1,6 @@
-import ArrayValuesNode from "../nodes/ArrayValuesNode";
-import type BuildStatus from "./BuildStatus";
-import build_node from "./build_node";
+import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
+import build_node from "./build_node.ts";
+import type BuildStatus from "./BuildStatus.ts";
 
 export default function build_array_values_node(node: ArrayValuesNode, status: BuildStatus) {
   status.code += `{`;

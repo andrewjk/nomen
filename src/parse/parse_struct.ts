@@ -1,14 +1,14 @@
-import FunctionNode from "../nodes/FunctionNode";
-import ParameterNode from "../nodes/ParameterNode";
-import StructNode from "../nodes/StructNode";
-import Type from "../nodes/Type";
-import type ParseStatus from "./ParseStatus";
-import parse_statement from "./parse_statement";
-import accept from "./utils/accept";
-import add_to_parent from "./utils/add_to_parent";
-import consume from "./utils/consume";
-import expect from "./utils/expect";
-import get_index from "./utils/get_index";
+import FunctionNode from "../nodes/FunctionNode.ts";
+import ParameterNode from "../nodes/ParameterNode.ts";
+import StructNode from "../nodes/StructNode.ts";
+import Type from "../nodes/Type.ts";
+import parse_statement from "./parse_statement.ts";
+import type ParseStatus from "./ParseStatus.ts";
+import accept from "./utils/accept.ts";
+import add_to_parent from "./utils/add_to_parent.ts";
+import consume from "./utils/consume.ts";
+import expect from "./utils/expect.ts";
+import get_index from "./utils/get_index.ts";
 
 export default function parse_struct(
   visibility: "inherit" | "pub" | "mod" | "priv",

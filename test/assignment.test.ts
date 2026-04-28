@@ -1,8 +1,9 @@
-import { expect, describe, test } from "vitest";
+import { expect, describe, test } from "vite-plus/test";
+
 import build from "../src/build";
 import parse from "../src/parse";
-import trim_test_build from "./trim_test_build";
 import test_error from "./test_error";
+import trim_test_build from "./trim_test_build";
 
 // BUILD
 describe("assignment build", () => {
@@ -123,7 +124,9 @@ describe("assignment errors", () => {
 var int x
 x = "string?!"
 `;
-    const expected = [test_error(input, "Type mismatch in assignment: string (expected int)", 3, 5)];
+    const expected = [
+      test_error(input, "Type mismatch in assignment: string (expected int)", 3, 5),
+    ];
     const parsed = parse(input);
     expect(parsed.errors).toEqual(expected);
   });

@@ -1,6 +1,6 @@
-import BaseNode from "./BaseNode";
-import type BlockNode from "./BlockNode";
-import ValueNode from "./ValueNode";
+import BaseNode from "./BaseNode.ts";
+import type BlockNode from "./BlockNode.ts";
+import ValueNode from "./ValueNode.ts";
 
 export default class ForLoopNode extends BaseNode implements BlockNode {
   item: ValueNode;

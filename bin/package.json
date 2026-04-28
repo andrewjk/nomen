@@ -2,6 +2,12 @@
   "name": "echo-cli",
   "version": "1.0.0",
   "description": "",
+  "keywords": [],
+  "license": "ISC",
+  "author": "",
+  "bin": {
+    "echo": "./dist/index.js"
+  },
   "main": "index.js",
   "scripts": {
     "build": "tsup",
@@ -10,12 +16,6 @@
     "check": "tsc -p tsconfig-check.json --noEmit",
     "test": "uvu -r tsm tests"
   },
-  "bin": {
-    "echo": "./dist/index.js"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
   "dependencies": {
     "chokidar": "^5.0.0",
     "yargs": "^18.0.0"

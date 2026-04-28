@@ -1,7 +1,6 @@
-import Type from "../../nodes/Type";
-import type ParseStatus from "../ParseStatus";
+import Type from "../../nodes/Type.ts";
 
-export default function type_from_value(value: string, status: ParseStatus): Type {
+export default function type_from_value(value: string): Type {
   if (value === "true" || value === "false") {
     return new Type("bool", true);
   } else if (value.startsWith('"') && value.endsWith('"')) {

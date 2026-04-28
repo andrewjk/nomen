@@ -1,11 +1,10 @@
-import ArrayValuesNode from "../nodes/ArrayValuesNode";
-import DeclarationNode from "../nodes/DeclarationNode";
-import FunctionNode from "../nodes/FunctionNode";
-import type BuildStatus from "./BuildStatus";
-import build_node from "./build_node";
-import build_parameter_node from "./build_parameter_node";
-import c_type from "./utils/c_type";
-import type_from_value_node from "./utils/type_from_value_node";
+import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
+import DeclarationNode from "../nodes/DeclarationNode.ts";
+import build_node from "./build_node.ts";
+import build_parameter_node from "./build_parameter_node.ts";
+import type BuildStatus from "./BuildStatus.ts";
+import c_type from "./utils/c_type.ts";
+import type_from_value_node from "./utils/type_from_value_node.ts";
 
 export default function build_declaration_node(node: DeclarationNode, status: BuildStatus) {
   // TODO: malloc() if it's on the heap

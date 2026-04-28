@@ -1,11 +1,11 @@
-import ReturnNode from "../nodes/ReturnNode";
-import ReturningNode from "../nodes/ReturningNode";
-import { is_returning_node } from "../nodes/check_node_type";
-import type CheckStatus from "./CheckStatus";
-import check_node from "./check_node";
-import check_type_and_value_match from "./utils/check_type_and_value_match";
-import type_from_value_node from "./utils/type_from_value_node";
-import value_from_value_node from "./utils/value_from_value_node";
+import { is_returning_node } from "../nodes/check_node_type.ts";
+import type ReturningNode from "../nodes/ReturningNode.ts";
+import ReturnNode from "../nodes/ReturnNode.ts";
+import check_node from "./check_node.ts";
+import type CheckStatus from "./CheckStatus.ts";
+import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
+import type_from_value_node from "./utils/type_from_value_node.ts";
+import value_from_value_node from "./utils/value_from_value_node.ts";
 
 export default function check_return_node(ret: ReturnNode, status: CheckStatus) {
   if (!check_node(ret.value, status)) {

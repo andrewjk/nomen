@@ -1,14 +1,14 @@
-import AccessFieldNode from "../nodes/AccessFieldNode";
-import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode";
-import AccessIndexNode from "../nodes/AccessIndexNode";
-import AccessNode from "../nodes/AccessNode";
-import ValueNode from "../nodes/ValueNode";
-import type BuildStatus from "../build/BuildStatus";
-import type_from_value_node from "../build/utils/type_from_value_node";
-import build_node from "./build_node";
-import { allocate_stack_space, emit_var_address } from "./utils/stack_var";
-import { get_field_offset, get_struct_size } from "./utils/struct_layout";
-import aarch64_size from "./utils/aarch64_size";
+import type BuildStatus from "../build/BuildStatus.ts";
+import type_from_value_node from "../build/utils/type_from_value_node.ts";
+import AccessFieldNode from "../nodes/AccessFieldNode.ts";
+import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
+import AccessIndexNode from "../nodes/AccessIndexNode.ts";
+import AccessNode from "../nodes/AccessNode.ts";
+import ValueNode from "../nodes/ValueNode.ts";
+import build_node from "./build_node.ts";
+import aarch64_size from "./utils/aarch64_size.ts";
+import { allocate_stack_space, emit_var_address } from "./utils/stack_var.ts";
+import { get_field_offset, get_struct_size } from "./utils/struct_layout.ts";
 
 let access_temp_counter = 0;
 
@@ -113,10 +113,9 @@ function build_access_method(
   if (!access_func.is_static) {
     // Instance method: load target into x0 (self)
     // For simple types, pass value; for structs, pass address
-    const target_is_simple =
-      !status.structs.find(
-        (s) => s.name === target_type.name && !s.is_simple_type,
-      );
+    const target_is_simple = !status.structs.find(
+      (s) => s.name === target_type.name && !s.is_simple_type,
+    );
     if (node.target.node_type === "value") {
       const name = (node.target as ValueNode).value;
       const paramReg = get_param_reg(name, status);
@@ -130,7 +129,11 @@ function build_access_method(
       }
       if (target_is_simple) {
         const size = aarch64_size(target_type.name);
-        const signed = target_type.name.startsWith("int") || target_type.name === "float" || target_type.name === "float32" || target_type.name === "float64";
+        const signed =
+          target_type.name.startsWith("int") ||
+          target_type.name === "float" ||
+          target_type.name === "float32" ||
+          target_type.name === "float64";
         if (size === 1) {
           status.code += signed ? `ldrsb x0, [x0]\n` : `ldrb w0, [x0]\n`;
         } else if (size === 4) {
@@ -169,11 +172,7 @@ function build_access_method(
   }
 }
 
-function build_access_index(
-  node: AccessNode,
-  access_index: AccessIndexNode,
-  status: BuildStatus,
-) {
+function build_access_index(node: AccessNode, access_index: AccessIndexNode, status: BuildStatus) {
   // Get base address
   if (node.target.node_type === "value") {
     const name = (node.target as ValueNode).value;

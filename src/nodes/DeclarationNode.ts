@@ -1,6 +1,6 @@
-import BaseNode from "./BaseNode";
-import ParameterNode from "./ParameterNode";
-import Type from "./Type";
+import BaseNode from "./BaseNode.ts";
+import ParameterNode from "./ParameterNode.ts";
+import Type from "./Type.ts";
 
 export default class DeclarationNode extends BaseNode {
   visibility: "inherit" | "pub" | "mod" | "priv";

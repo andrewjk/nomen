@@ -1,12 +1,12 @@
-import BranchNode from "../nodes/BranchNode";
-import IfElseNode from "../nodes/IfElseNode";
-import ReturnNode from "../nodes/ReturnNode";
-import type ParseStatus from "./ParseStatus";
-import parse_expression from "./parse_expression";
-import parse_statement from "./parse_statement";
-import accept from "./utils/accept";
-import expect from "./utils/expect";
-import get_index from "./utils/get_index";
+import BranchNode from "../nodes/BranchNode.ts";
+import IfElseNode from "../nodes/IfElseNode.ts";
+import ReturnNode from "../nodes/ReturnNode.ts";
+import parse_expression from "./parse_expression.ts";
+import parse_statement from "./parse_statement.ts";
+import type ParseStatus from "./ParseStatus.ts";
+import accept from "./utils/accept.ts";
+import expect from "./utils/expect.ts";
+import get_index from "./utils/get_index.ts";
 
 export default function parse_if_else(status: ParseStatus): IfElseNode {
   const if_start = get_index(status);

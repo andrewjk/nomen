@@ -1,7 +1,8 @@
-import { expect, describe, test } from "vitest";
+import { expect, describe, test } from "vite-plus/test";
+
 import build from "../src/build";
-import trim_test_build from "./trim_test_build";
 import parse_with_imports from "../tests/ziglings/parse_with_imports";
+import trim_test_build from "./trim_test_build";
 
 // BUILD
 describe("interpolate string build", () => {

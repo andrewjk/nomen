@@ -284,7 +284,7 @@ Match statements must be exhaustive.
 
 #### Array
 
-// TODO: 
+// TODO:
 
 #### List
 
@@ -364,7 +364,7 @@ struct Frank: Person, Dancer {
 
   func dance = () -> {
     print("hula")
-  } 
+  }
 }
 ```
 

@@ -1,8 +1,8 @@
-import WhileLoopNode from "../nodes/WhileLoopNode";
-import type BuildStatus from "./BuildStatus";
-import build_auto_free from "./build_auto_free";
-import build_block_node from "./build_block_node";
-import build_node from "./build_node";
+import WhileLoopNode from "../nodes/WhileLoopNode.ts";
+import build_auto_free from "./build_auto_free.ts";
+import build_block_node from "./build_block_node.ts";
+import build_node from "./build_node.ts";
+import type BuildStatus from "./BuildStatus.ts";
 
 export default function build_while_loop_node(node: WhileLoopNode, status: BuildStatus) {
   const old_scoped_declarations = status.scoped_declarations;

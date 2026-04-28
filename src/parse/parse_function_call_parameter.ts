@@ -1,8 +1,8 @@
-import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode";
-import FunctionCallNode from "../nodes/FunctionCallNode";
-import type ParseStatus from "./ParseStatus";
-import parse_expression from "./parse_expression";
-import accept from "./utils/accept";
+import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
+import FunctionCallNode from "../nodes/FunctionCallNode.ts";
+import parse_expression from "./parse_expression.ts";
+import type ParseStatus from "./ParseStatus.ts";
+import accept from "./utils/accept.ts";
 
 export default function parse_function_call_parameter(
   node: FunctionCallNode | AccessFunctionCallNode,

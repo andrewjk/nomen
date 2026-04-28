@@ -1,5 +1,5 @@
-import PanicNode from "../nodes/PanicNode";
-import type BuildStatus from "../build/BuildStatus";
+import type BuildStatus from "../build/BuildStatus.ts";
+import PanicNode from "../nodes/PanicNode.ts";
 
 export default function build_panic_node(node: PanicNode, status: BuildStatus) {
   // TODO: Unwind etc

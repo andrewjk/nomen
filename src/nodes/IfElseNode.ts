@@ -1,7 +1,7 @@
-import BaseNode from "./BaseNode";
-import BranchNode from "./BranchNode";
-import type ReturningNode from "./ReturningNode";
-import Type from "./Type";
+import BaseNode from "./BaseNode.ts";
+import BranchNode from "./BranchNode.ts";
+import type ReturningNode from "./ReturningNode.ts";
+import Type from "./Type.ts";
 
 export default class IfElseNode extends BaseNode implements ReturningNode {
   condition: BaseNode;

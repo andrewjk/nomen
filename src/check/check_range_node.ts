@@ -1,12 +1,12 @@
-import OperationNode from "../nodes/OperationNode";
-import RangeNode from "../nodes/RangeNode";
-import Type from "../nodes/Type";
-import ValueNode from "../nodes/ValueNode";
-import type CheckStatus from "./CheckStatus";
-import check_node from "./check_node";
-import check_type_and_value_match from "./utils/check_type_and_value_match";
-import type_from_value_node from "./utils/type_from_value_node";
-import value_from_value_node from "./utils/value_from_value_node";
+import OperationNode from "../nodes/OperationNode.ts";
+import RangeNode from "../nodes/RangeNode.ts";
+import Type from "../nodes/Type.ts";
+import ValueNode from "../nodes/ValueNode.ts";
+import check_node from "./check_node.ts";
+import type CheckStatus from "./CheckStatus.ts";
+import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
+import type_from_value_node from "./utils/type_from_value_node.ts";
+import value_from_value_node from "./utils/value_from_value_node.ts";
 
 export default function check_range_node(range: RangeNode, status: CheckStatus): boolean {
   let result = check_node(range.left_value, status) && check_node(range.right_value, status);
@@ -40,7 +40,9 @@ export default function check_range_node(range: RangeNode, status: CheckStatus):
     const left_expr_val = evaluate_expression(range.left_value);
     const right_expr_val = evaluate_expression(range.right_value);
     if (left_expr_val !== undefined && right_expr_val !== undefined) {
-      const length = range.inclusive ? right_expr_val - left_expr_val + 1 : right_expr_val - left_expr_val;
+      const length = range.inclusive
+        ? right_expr_val - left_expr_val + 1
+        : right_expr_val - left_expr_val;
       range.type.length = new ValueNode(-1, length.toString(), new Type("int", true));
     } else {
       // For non-constant expressions, create an operation node for the length
@@ -93,10 +95,14 @@ function evaluate_expression(node: any): number | undefined {
     const right = evaluate_expression(op.right_value);
     if (left !== undefined && right !== undefined) {
       switch (op.op) {
-        case "+": return left + right;
-        case "-": return left - right;
-        case "*": return left * right;
-        case "/": return Math.floor(left / right);
+        case "+":
+          return left + right;
+        case "-":
+          return left - right;
+        case "*":
+          return left * right;
+        case "/":
+          return Math.floor(left / right);
       }
     }
   }

@@ -1,10 +1,10 @@
-import ForLoopNode from "../nodes/ForLoopNode";
-import RangeNode from "../nodes/RangeNode";
-import type BuildStatus from "../build/BuildStatus";
-import type_from_value_node from "../build/utils/type_from_value_node";
-import build_block_node from "./build_block_node";
-import build_node from "./build_node";
-import { allocate_stack_space, emit_var_store } from "./utils/stack_var";
+import type BuildStatus from "../build/BuildStatus.ts";
+import type_from_value_node from "../build/utils/type_from_value_node.ts";
+import ForLoopNode from "../nodes/ForLoopNode.ts";
+import RangeNode from "../nodes/RangeNode.ts";
+import build_block_node from "./build_block_node.ts";
+import build_node from "./build_node.ts";
+import { allocate_stack_space, emit_var_store } from "./utils/stack_var.ts";
 
 let label_counter = 0;
 
@@ -12,10 +12,7 @@ export function reset_label_counter() {
   label_counter = 0;
 }
 
-export default function build_for_loop_node(
-  node: ForLoopNode,
-  status: BuildStatus,
-) {
+export default function build_for_loop_node(node: ForLoopNode, status: BuildStatus) {
   const old_scoped_declarations = status.scoped_declarations;
   status.scoped_declarations = [];
 

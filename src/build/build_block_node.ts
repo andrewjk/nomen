@@ -1,13 +1,12 @@
-import type BlockNode from "../nodes/BlockNode";
-import FunctionNode from "../nodes/FunctionNode";
-import StructNode from "../nodes/StructNode";
-import TraitNode from "../nodes/TraitNode";
-import { is_function_node, is_struct_node, is_trait_node } from "../nodes/check_node_type";
-import type BuildStatus from "./BuildStatus";
-import build_function_node from "./build_function_node";
-import build_node from "./build_node";
-import build_struct_node from "./build_struct_node";
-import build_trait_node from "./build_trait_node";
+import type BlockNode from "../nodes/BlockNode.ts";
+import { is_function_node, is_struct_node, is_trait_node } from "../nodes/check_node_type.ts";
+import StructNode from "../nodes/StructNode.ts";
+import TraitNode from "../nodes/TraitNode.ts";
+import build_function_node from "./build_function_node.ts";
+import build_node from "./build_node.ts";
+import build_struct_node from "./build_struct_node.ts";
+import build_trait_node from "./build_trait_node.ts";
+import type BuildStatus from "./BuildStatus.ts";
 
 export default function build_block_node(node: BlockNode, status: BuildStatus) {
   // Gather structs, traits and funcs that might be used before they are declared

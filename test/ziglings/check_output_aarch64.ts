@@ -2,7 +2,9 @@ import { exec } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import util from "node:util";
-import { expect } from "vitest";
+
+import { expect } from "vite-plus/test";
+
 import type BuildResult from "../../src/types/BuildResult";
 
 function postprocess_macos(code: string): string {

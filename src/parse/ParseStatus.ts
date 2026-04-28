@@ -1,6 +1,6 @@
-import BaseNode from "../nodes/BaseNode";
-import type CompileError from "../types/CompileError";
-import type Token from "../types/Token";
+import BaseNode from "../nodes/BaseNode.ts";
+import type CompileError from "../types/CompileError.ts";
+import type Token from "../types/Token.ts";
 
 export default interface ParseStatus {
   /**

@@ -1,9 +1,9 @@
-import BaseNode from "../nodes/BaseNode";
-import OperationNode from "../nodes/OperationNode";
-import ValueNode from "../nodes/ValueNode";
-import type BuildStatus from "../build/BuildStatus";
-import type_from_value_node from "../build/utils/type_from_value_node";
-import build_node from "./build_node";
+import type BuildStatus from "../build/BuildStatus.ts";
+import type_from_value_node from "../build/utils/type_from_value_node.ts";
+import BaseNode from "../nodes/BaseNode.ts";
+import OperationNode from "../nodes/OperationNode.ts";
+import ValueNode from "../nodes/ValueNode.ts";
+import build_node from "./build_node.ts";
 
 let string_counter = 0;
 
@@ -51,11 +51,7 @@ function map_op(op: string): string {
   }
 }
 
-function build_operand(
-  node: BaseNode,
-  target_reg: string,
-  status: BuildStatus,
-) {
+function build_operand(node: BaseNode, target_reg: string, status: BuildStatus) {
   if (node.node_type === "value") {
     const value = (node as ValueNode).value.replace("self", "_self");
     if (value === "true" || value === "false") {
@@ -99,17 +95,10 @@ function is_simple(node: BaseNode): boolean {
 function is_struct_type(node: BaseNode, status: BuildStatus): boolean {
   if (node.node_type !== "value") return false;
   const type = type_from_value_node(node as ValueNode);
-  return !!status.structs.find(
-    (s) => s.name === type.name && !s.is_simple_type,
-  );
+  return !!status.structs.find((s) => s.name === type.name && !s.is_simple_type);
 }
 
-function build_operator_operand(
-  node: BaseNode,
-  target_reg: string,
-  status: BuildStatus,
-  is_self = false,
-) {
+function build_operator_operand(node: BaseNode, target_reg: string, status: BuildStatus) {
   if (node.node_type === "value" && is_struct_type(node, status)) {
     const name = (node as ValueNode).value;
     status.code += `adr ${target_reg}, ${name}`;
@@ -118,10 +107,7 @@ function build_operator_operand(
   build_operand(node, target_reg, status);
 }
 
-export default function build_operation_node(
-  node: OperationNode,
-  status: BuildStatus,
-) {
+export default function build_operation_node(node: OperationNode, status: BuildStatus) {
   if (node.operator_func) {
     // Custom operator function call
     // Right operand into x1 (x0 is reserved for self)
@@ -131,7 +117,7 @@ export default function build_operation_node(
     }
 
     // Left operand (self) into x0
-    build_operator_operand(node.left_value, "x0", status, true);
+    build_operator_operand(node.left_value, "x0", status);
     if (!status.code.endsWith("\n")) {
       status.code += "\n";
     }

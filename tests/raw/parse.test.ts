@@ -1,5 +1,6 @@
-import { expect, test } from "vitest";
-import RawNode from "../../src/nodes/RawNode";
+import { expect, test } from "vite-plus/test";
+
+import RawNode from "../../src/nodes/RawNode.ts";
 import parse from "../../src/parse";
 import trim_test_parse from "../trim_test_parse";
 

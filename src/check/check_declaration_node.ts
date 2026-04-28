@@ -1,17 +1,17 @@
-import DeclarationNode from "../nodes/DeclarationNode";
-import Type from "../nodes/Type";
-import type CheckStatus from "./CheckStatus";
-import check_node from "./check_node";
-import check_type_and_value_match from "./utils/check_type_and_value_match";
-import check_type_exists from "./utils/check_type_exists";
-import type_from_value_node from "./utils/type_from_value_node";
-import value_from_value_node from "./utils/value_from_value_node";
+import DeclarationNode from "../nodes/DeclarationNode.ts";
+import Type from "../nodes/Type.ts";
+import check_node from "./check_node.ts";
+import type CheckStatus from "./CheckStatus.ts";
+import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
+import check_type_exists from "./utils/check_type_exists.ts";
+import type_from_value_node from "./utils/type_from_value_node.ts";
+import value_from_value_node from "./utils/value_from_value_node.ts";
 
 export default function check_declaration_node(decl: DeclarationNode, status: CheckStatus) {
   // Handle function type declarations
   if (decl.func_params) {
     if (decl.func_return_type) {
-      check_type_exists(decl.func_return_type, status, decl.func_return_type.name);
+      check_type_exists(decl.func_return_type, status, -1);
     }
     for (const param of decl.func_params) {
       if (param.type.name) {
@@ -43,7 +43,7 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
   if (decl.value) {
     status.stack.push(decl);
 
-    const error_count = status.errors.length;
+    //const error_count = status.errors.length;
     const old_expected_type = status.expected_type;
     status.expected_type = decl.type;
     const result = check_node(decl.value, status);

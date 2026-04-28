@@ -1,8 +1,9 @@
-import { expect, describe, test } from "vitest";
+import { expect, describe, test } from "vite-plus/test";
+
 import build from "../src/build";
 import parse from "../src/parse";
-import trim_test_build from "./trim_test_build";
 import test_error from "./test_error";
+import trim_test_build from "./trim_test_build";
 
 // BUILD
 describe("range build", () => {

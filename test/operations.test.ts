@@ -1,8 +1,9 @@
-import { expect, describe, test } from "vitest";
+import { expect, describe, test } from "vite-plus/test";
+
 import build from "../src/build";
 import parse from "../src/parse";
-import trim_test_build from "./trim_test_build";
 import test_error from "./test_error";
+import trim_test_build from "./trim_test_build";
 
 // BUILD
 describe("operation build", () => {
@@ -150,7 +151,9 @@ describe("operation errors", () => {
     const input = `
 const x = 5 + "b"
 `;
-    const expected = [test_error(input, "Type mismatch in operation: string (expected int)", 2, 15)];
+    const expected = [
+      test_error(input, "Type mismatch in operation: string (expected int)", 2, 15),
+    ];
     const parsed = parse(input);
     expect(parsed.errors).toEqual(expected);
   });
@@ -171,7 +174,9 @@ const int x = "a" + "b"
 var int x
 x = "a" + "b"
 `;
-    const expected = [test_error(input, "Type mismatch in assignment: string (expected int)", 3, 5)];
+    const expected = [
+      test_error(input, "Type mismatch in assignment: string (expected int)", 3, 5),
+    ];
     const parsed = parse(input);
     expect(parsed.errors).toEqual(expected);
   });

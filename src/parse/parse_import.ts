@@ -1,10 +1,10 @@
-import add_error from "../add_error";
-import ImportNode from "../nodes/ImportNode";
-import RootNode from "../nodes/RootNode";
-import type ParseStatus from "./ParseStatus";
-import accept from "./utils/accept";
-import consume from "./utils/consume";
-import get_index from "./utils/get_index";
+import add_error from "../add_error.ts";
+import ImportNode from "../nodes/ImportNode.ts";
+import RootNode from "../nodes/RootNode.ts";
+import type ParseStatus from "./ParseStatus.ts";
+import accept from "./utils/accept.ts";
+import consume from "./utils/consume.ts";
+import get_index from "./utils/get_index.ts";
 
 export default function parse_import(status: ParseStatus) {
   const start = get_index(status);

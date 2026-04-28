@@ -1,5 +1,5 @@
-import ValueNode from "../nodes/ValueNode";
-import type BuildStatus from "./BuildStatus";
+import ValueNode from "../nodes/ValueNode.ts";
+import type BuildStatus from "./BuildStatus.ts";
 
 export default function build_value_node(node: ValueNode, status: BuildStatus) {
   // TODO:

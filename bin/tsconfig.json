@@ -4,7 +4,7 @@
     "module": "CommonJS",
     "strict": true,
     "esModuleInterop": true,
-    "moduleResolution": "node"
+    "types": ["node"]
   },
   "include": ["src/*", "tsup.config.ts"]
 }

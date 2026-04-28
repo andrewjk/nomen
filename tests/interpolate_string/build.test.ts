@@ -1,4 +1,5 @@
-import { expect, test } from "vitest";
+import { expect, test } from "vite-plus/test";
+
 import build from "../../src/build";
 import trim_test_build from "../trim_test_build";
 import parse_with_imports from "../ziglings/parse_with_imports";

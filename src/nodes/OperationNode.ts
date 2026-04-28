@@ -1,5 +1,5 @@
-import BaseNode from "./BaseNode";
-import Type from "./Type";
+import BaseNode from "./BaseNode.ts";
+import Type from "./Type.ts";
 
 /*
 // Technique for syncing array and type from https://stackoverflow.com/a/45486495

@@ -1,9 +1,10 @@
-import { expect, test } from "vitest";
+import { expect, test } from "vite-plus/test";
+
 import build from "../../src/build";
 import test_error from "../test_error";
+import trim_test_build from "../trim_test_build";
 import check_output_aarch64 from "./check_output_aarch64";
 import parse_with_imports from "./parse_with_imports";
-import trim_test_build from "../trim_test_build";
 
 test("ziglings 002 import -- errors", () => {
   const input = `

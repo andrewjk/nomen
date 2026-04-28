@@ -1,4 +1,4 @@
-import type BuildStatus from "../../build/BuildStatus";
+import type BuildStatus from "../../build/BuildStatus.ts";
 
 export function allocate_stack_space(status: BuildStatus, size: number, alignment = 8): number {
   if (!status.stack_size) status.stack_size = 0;

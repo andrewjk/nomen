@@ -1,15 +1,15 @@
-import AccessFieldNode from "../../nodes/AccessFieldNode";
-import AccessFunctionCallNode from "../../nodes/AccessFunctionCallNode";
-import AccessIndexNode from "../../nodes/AccessIndexNode";
-import AccessNode from "../../nodes/AccessNode";
-import ArrayValuesNode from "../../nodes/ArrayValuesNode";
-import BaseNode from "../../nodes/BaseNode";
-import FunctionCallNode from "../../nodes/FunctionCallNode";
-import GroupedNode from "../../nodes/GroupedNode";
-import OperationNode from "../../nodes/OperationNode";
-import RangeNode from "../../nodes/RangeNode";
-import Type from "../../nodes/Type";
-import ValueNode from "../../nodes/ValueNode";
+import AccessFieldNode from "../../nodes/AccessFieldNode.ts";
+import AccessFunctionCallNode from "../../nodes/AccessFunctionCallNode.ts";
+import AccessIndexNode from "../../nodes/AccessIndexNode.ts";
+import AccessNode from "../../nodes/AccessNode.ts";
+import ArrayValuesNode from "../../nodes/ArrayValuesNode.ts";
+import BaseNode from "../../nodes/BaseNode.ts";
+import FunctionCallNode from "../../nodes/FunctionCallNode.ts";
+import GroupedNode from "../../nodes/GroupedNode.ts";
+import OperationNode from "../../nodes/OperationNode.ts";
+import RangeNode from "../../nodes/RangeNode.ts";
+import Type from "../../nodes/Type.ts";
+import ValueNode from "../../nodes/ValueNode.ts";
 
 export default function type_from_value_node(node: BaseNode): Type {
   switch (node.node_type) {

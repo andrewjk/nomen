@@ -1,4 +1,4 @@
-import BaseNode from "./BaseNode";
+import BaseNode from "./BaseNode.ts";
 
 // TODO: Remove is_array and length, add generic arguments
 

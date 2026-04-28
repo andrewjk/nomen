@@ -1,13 +1,12 @@
-import AccessFieldNode from "../nodes/AccessFieldNode";
-import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode";
-import Type from "../nodes/Type";
-import type ParseStatus from "./ParseStatus";
-import parse_function_call_parameter from "./parse_function_call_parameter";
-import accept from "./utils/accept";
-import consume from "./utils/consume";
-import expect from "./utils/expect";
-import get_index from "./utils/get_index";
-import peek_current from "./utils/peek_current";
+import AccessFieldNode from "../nodes/AccessFieldNode.ts";
+import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
+import parse_function_call_parameter from "./parse_function_call_parameter.ts";
+import type ParseStatus from "./ParseStatus.ts";
+import accept from "./utils/accept.ts";
+import consume from "./utils/consume.ts";
+import expect from "./utils/expect.ts";
+import get_index from "./utils/get_index.ts";
+import peek_current from "./utils/peek_current.ts";
 
 export default function parse_access(
   target_name: string,

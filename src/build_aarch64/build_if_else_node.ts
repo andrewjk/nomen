@@ -1,7 +1,7 @@
-import IfElseNode from "../nodes/IfElseNode";
-import type BuildStatus from "../build/BuildStatus";
-import build_block_node from "./build_block_node";
-import build_node from "./build_node";
+import type BuildStatus from "../build/BuildStatus.ts";
+import IfElseNode from "../nodes/IfElseNode.ts";
+import build_block_node from "./build_block_node.ts";
+import build_node from "./build_node.ts";
 
 let label_counter = 0;
 
@@ -9,10 +9,7 @@ export function reset_label_counter() {
   label_counter = 0;
 }
 
-export default function build_if_else_node(
-  node: IfElseNode,
-  status: BuildStatus,
-) {
+export default function build_if_else_node(node: IfElseNode, status: BuildStatus) {
   const label = label_counter++;
   const old_scoped_declarations = status.scoped_declarations;
   status.scoped_declarations = [];

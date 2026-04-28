@@ -1,9 +1,10 @@
-import { expect, test } from "vitest";
-import AssignmentNode from "../../src/nodes/AssignmentNode";
-import OperationNode from "../../src/nodes/OperationNode";
-import Type from "../../src/nodes/Type";
-import ValueNode from "../../src/nodes/ValueNode";
-import WhileLoopNode from "../../src/nodes/WhileLoopNode";
+import { expect, test } from "vite-plus/test";
+
+import AssignmentNode from "../../src/nodes/AssignmentNode.ts";
+import OperationNode from "../../src/nodes/OperationNode.ts";
+import Type from "../../src/nodes/Type.ts";
+import ValueNode from "../../src/nodes/ValueNode.ts";
+import WhileLoopNode from "../../src/nodes/WhileLoopNode.ts";
 import parse from "../../src/parse";
 import trim_test_parse from "../trim_test_parse";
 

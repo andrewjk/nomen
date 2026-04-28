@@ -1,11 +1,11 @@
-import add_error from "../add_error";
-import ForLoopNode from "../nodes/ForLoopNode";
-import Type from "../nodes/Type";
-import type CheckStatus from "./CheckStatus";
-import check_block_node from "./check_block_node";
-import check_node from "./check_node";
-import clone_status from "./utils/clone_status";
-import type_from_value_node from "./utils/type_from_value_node";
+import add_error from "../add_error.ts";
+import ForLoopNode from "../nodes/ForLoopNode.ts";
+import Type from "../nodes/Type.ts";
+import check_block_node from "./check_block_node.ts";
+import check_node from "./check_node.ts";
+import type CheckStatus from "./CheckStatus.ts";
+import clone_status from "./utils/clone_status.ts";
+import type_from_value_node from "./utils/type_from_value_node.ts";
 
 export default function check_for_loop_node(for_loop: ForLoopNode, status: CheckStatus) {
   let for_status = clone_status(status);

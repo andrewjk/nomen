@@ -1,7 +1,7 @@
-import built_in_types from "../built_in_types";
-import BaseNode from "./BaseNode";
-import DeclarationNode from "./DeclarationNode";
-import FunctionNode from "./FunctionNode";
+import built_in_types from "../built_in_types.ts";
+import BaseNode from "./BaseNode.ts";
+import DeclarationNode from "./DeclarationNode.ts";
+import FunctionNode from "./FunctionNode.ts";
 
 export default class StructNode extends BaseNode {
   visibility: "inherit" | "pub" | "mod" | "priv";

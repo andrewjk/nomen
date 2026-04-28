@@ -1,26 +1,24 @@
-import AccessFieldNode from "../nodes/AccessFieldNode";
-import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode";
-import AccessIndexNode from "../nodes/AccessIndexNode";
-import AccessNode from "../nodes/AccessNode";
-import ArrayValuesNode from "../nodes/ArrayValuesNode";
-import BaseNode from "../nodes/BaseNode";
-import FunctionCallNode from "../nodes/FunctionCallNode";
-import GroupedNode from "../nodes/GroupedNode";
-import OperationNode from "../nodes/OperationNode";
-import RangeNode from "../nodes/RangeNode";
-import ValueNode from "../nodes/ValueNode";
-import { is_operation_node } from "../nodes/is_node_type";
-import type ParseStatus from "./ParseStatus";
-import parse_access from "./parse_access";
-import parse_array_value from "./parse_array_value";
-import parse_function_call_parameter from "./parse_function_call_parameter";
-import parse_if_else from "./parse_if_else";
-import parse_string_interpolation from "./parse_string_interpolation";
-import accept from "./utils/accept";
-import consume from "./utils/consume";
-import expect from "./utils/expect";
-import get_index from "./utils/get_index";
-import peek_current from "./utils/peek_current";
+import AccessIndexNode from "../nodes/AccessIndexNode.ts";
+import AccessNode from "../nodes/AccessNode.ts";
+import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
+import BaseNode from "../nodes/BaseNode.ts";
+import FunctionCallNode from "../nodes/FunctionCallNode.ts";
+import GroupedNode from "../nodes/GroupedNode.ts";
+import { is_operation_node } from "../nodes/is_node_type.ts";
+import OperationNode from "../nodes/OperationNode.ts";
+import RangeNode from "../nodes/RangeNode.ts";
+import ValueNode from "../nodes/ValueNode.ts";
+import parse_access from "./parse_access.ts";
+import parse_array_value from "./parse_array_value.ts";
+import parse_function_call_parameter from "./parse_function_call_parameter.ts";
+import parse_if_else from "./parse_if_else.ts";
+import parse_string_interpolation from "./parse_string_interpolation.ts";
+import type ParseStatus from "./ParseStatus.ts";
+import accept from "./utils/accept.ts";
+import consume from "./utils/consume.ts";
+import expect from "./utils/expect.ts";
+import get_index from "./utils/get_index.ts";
+import peek_current from "./utils/peek_current.ts";
 
 /**
  * An expression returns a value and can be used e.g. on the right side of an assignment, as the

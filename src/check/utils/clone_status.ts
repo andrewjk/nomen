@@ -1,4 +1,4 @@
-import type CheckStatus from "../CheckStatus";
+import type CheckStatus from "../CheckStatus.ts";
 
 /**
  * Clones a status for passing down to checking in a block and discarding afterwards

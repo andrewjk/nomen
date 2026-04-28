@@ -1,8 +1,6 @@
-import AccessFieldNode from "../../nodes/AccessFieldNode";
-import AccessIndexNode from "../../nodes/AccessIndexNode";
-import AccessNode from "../../nodes/AccessNode";
-import BaseNode from "../../nodes/BaseNode";
-import ValueNode from "../../nodes/ValueNode";
+import AccessNode from "../../nodes/AccessNode.ts";
+import BaseNode from "../../nodes/BaseNode.ts";
+import ValueNode from "../../nodes/ValueNode.ts";
 
 export default function value_from_value_node(node: BaseNode): string {
   switch (node.node_type) {
@@ -10,7 +8,7 @@ export default function value_from_value_node(node: BaseNode): string {
       return (node as ValueNode).value;
     }
     case "access": {
-      const access_field = (node as AccessNode).access;
+      //const access_field = (node as AccessNode).access;
       //if (access_field.node_type === "access_index") {
       return value_from_value_node((node as AccessNode).target);
       //} else {

@@ -1,13 +1,13 @@
-import AccessFieldNode from "../nodes/AccessFieldNode";
-import AccessNode from "../nodes/AccessNode";
-import AssignmentNode from "../nodes/AssignmentNode";
-import ValueNode from "../nodes/ValueNode";
-import type BuildStatus from "../build/BuildStatus";
-import type_from_value_node from "../build/utils/type_from_value_node";
-import build_node from "./build_node";
-import { emit_var_address } from "./utils/stack_var";
-import { get_field_offset } from "./utils/struct_layout";
-import aarch64_size from "./utils/aarch64_size";
+import type BuildStatus from "../build/BuildStatus.ts";
+import type_from_value_node from "../build/utils/type_from_value_node.ts";
+import AccessFieldNode from "../nodes/AccessFieldNode.ts";
+import AccessNode from "../nodes/AccessNode.ts";
+import AssignmentNode from "../nodes/AssignmentNode.ts";
+import ValueNode from "../nodes/ValueNode.ts";
+import build_node from "./build_node.ts";
+import aarch64_size from "./utils/aarch64_size.ts";
+import { emit_var_address } from "./utils/stack_var.ts";
+import { get_field_offset } from "./utils/struct_layout.ts";
 
 function get_store_instruction(size: number): string {
   if (size === 1) return "strb";
@@ -26,10 +26,7 @@ function find_var_size(name: string, status: BuildStatus): number {
   return 8;
 }
 
-export default function build_assignment_node(
-  node: AssignmentNode,
-  status: BuildStatus,
-) {
+export default function build_assignment_node(node: AssignmentNode, status: BuildStatus) {
   if (node.left_value.node_type === "value") {
     const name = (node.left_value as ValueNode).value;
     const paramReg = status.function_param_regs?.get(name);

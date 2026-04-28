@@ -1,7 +1,7 @@
-import ArrayValuesNode from "../nodes/ArrayValuesNode";
-import type ParseStatus from "./ParseStatus";
-import parse_expression from "./parse_expression";
-import accept from "./utils/accept";
+import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
+import parse_expression from "./parse_expression.ts";
+import type ParseStatus from "./ParseStatus.ts";
+import accept from "./utils/accept.ts";
 
 export default function parse_array_value(array: ArrayValuesNode, status: ParseStatus) {
   // Get this value

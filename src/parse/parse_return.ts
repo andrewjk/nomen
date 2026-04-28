@@ -1,12 +1,12 @@
-import add_error from "../add_error";
-import ReturnNode from "../nodes/ReturnNode";
-import ReturningNode from "../nodes/ReturningNode";
-import { is_returning_node } from "../nodes/check_node_type";
-import type ParseStatus from "./ParseStatus";
-import parse_expression from "./parse_expression";
-import accept from "./utils/accept";
-import add_to_parent from "./utils/add_to_parent";
-import get_index from "./utils/get_index";
+import add_error from "../add_error.ts";
+import { is_returning_node } from "../nodes/check_node_type.ts";
+import type ReturningNode from "../nodes/ReturningNode.ts";
+import ReturnNode from "../nodes/ReturnNode.ts";
+import parse_expression from "./parse_expression.ts";
+import type ParseStatus from "./ParseStatus.ts";
+import accept from "./utils/accept.ts";
+import add_to_parent from "./utils/add_to_parent.ts";
+import get_index from "./utils/get_index.ts";
 
 export default function parse_return(status: ParseStatus) {
   const start = get_index(status);

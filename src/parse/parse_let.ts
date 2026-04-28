@@ -1,9 +1,10 @@
-import ReturnNode from "../nodes/ReturnNode";
-import type ParseStatus from "./ParseStatus";
-import parse_expression from "./parse_expression";
-import accept from "./utils/accept";
-import add_to_parent from "./utils/add_to_parent";
-import get_index from "./utils/get_index";
+import { is_returning_node } from "../nodes/check_node_type.ts";
+import ReturnNode from "../nodes/ReturnNode.ts";
+import parse_expression from "./parse_expression.ts";
+import type ParseStatus from "./ParseStatus.ts";
+import accept from "./utils/accept.ts";
+import add_to_parent from "./utils/add_to_parent.ts";
+import get_index from "./utils/get_index.ts";
 
 export default function parse_let(status: ParseStatus) {
   const start = get_index(status);
@@ -17,7 +18,7 @@ export default function parse_let(status: ParseStatus) {
   let func = null;
   for (let i = status.stack.length - 1; i >= 0; i--) {
     const node = status.stack[i];
-    if (node.node_type === "if" || node.node_type === "func") {
+    if (is_returning_node(node)) {
       func = node;
       break;
     }

@@ -1,8 +1,9 @@
-import { expect, describe, test } from "vitest";
+import { expect, describe, test } from "vite-plus/test";
+
 import build from "../src/build";
 import parse from "../src/parse";
-import trim_test_build from "./trim_test_build";
 import test_error from "./test_error";
+import trim_test_build from "./trim_test_build";
 
 // BUILD
 describe("declaration build", () => {
@@ -112,7 +113,7 @@ const what x
     const parsed = parse(input);
     expect(parsed.errors).toEqual(expected);
   });
-  
+
   test("unknown value", () => {
     const input = `
 const x = z0
@@ -121,7 +122,7 @@ const x = z0
     const parsed = parse(input);
     expect(parsed.errors).toEqual(expected);
   });
-  
+
   test("type mismatch", () => {
     const input = `
 const int x = "string?!"
@@ -132,7 +133,7 @@ const int x = "string?!"
     const parsed = parse(input);
     expect(parsed.errors).toEqual(expected);
   });
-  
+
   test("type mismatch - unknown value", () => {
     const input = `
 const int x = z0
@@ -141,7 +142,7 @@ const int x = z0
     const parsed = parse(input);
     expect(parsed.errors).toEqual(expected);
   });
-  
+
   test("no type or default value", () => {
     const input = `
 const x
@@ -162,4 +163,4 @@ const what x = 5
     const parsed = parse(input);
     expect(parsed.errors).toEqual(expected);
   });
-})
+});

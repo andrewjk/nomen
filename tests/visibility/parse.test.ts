@@ -1,12 +1,13 @@
 // @ts-nocheck
-import { expect, test } from "vitest";
-import DeclarationNode from "../../src/nodes/DeclarationNode";
-import FunctionNode from "../../src/nodes/FunctionNode";
-import ParameterNode from "../../src/nodes/ParameterNode";
-import StructNode from "../../src/nodes/StructNode";
-import TraitNode from "../../src/nodes/TraitNode";
-import Type from "../../src/nodes/Type";
-import ValueNode from "../../src/nodes/ValueNode";
+import { expect, test } from "vite-plus/test";
+
+import DeclarationNode from "../../src/nodes/DeclarationNode.ts";
+import FunctionNode from "../../src/nodes/FunctionNode.ts";
+import ParameterNode from "../../src/nodes/ParameterNode.ts";
+import StructNode from "../../src/nodes/StructNode.ts";
+import TraitNode from "../../src/nodes/TraitNode.ts";
+import Type from "../../src/nodes/Type.ts";
+import ValueNode from "../../src/nodes/ValueNode.ts";
 import parse from "../../src/parse";
 import trim_test_parse from "../trim_test_parse";
 

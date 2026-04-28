@@ -1,9 +1,9 @@
-import GroupedNode from "../nodes/GroupedNode";
-import OperationNode from "../nodes/OperationNode";
-import RangeNode from "../nodes/RangeNode";
-import ValueNode from "../nodes/ValueNode";
-import type BuildStatus from "./BuildStatus";
-import build_node from "./build_node";
+import GroupedNode from "../nodes/GroupedNode.ts";
+import OperationNode from "../nodes/OperationNode.ts";
+import RangeNode from "../nodes/RangeNode.ts";
+import ValueNode from "../nodes/ValueNode.ts";
+import build_node from "./build_node.ts";
+import type BuildStatus from "./BuildStatus.ts";
 
 export default function build_range_node(node: RangeNode, status: BuildStatus) {
   const start = evaluate_constant(node.left_value);
@@ -38,10 +38,14 @@ function evaluate_constant(node: any): number | undefined {
     const right = evaluate_constant(op.right_value);
     if (left !== undefined && right !== undefined) {
       switch (op.op) {
-        case "+": return left + right;
-        case "-": return left - right;
-        case "*": return left * right;
-        case "/": return Math.floor(left / right);
+        case "+":
+          return left + right;
+        case "-":
+          return left - right;
+        case "*":
+          return left * right;
+        case "/":
+          return Math.floor(left / right);
       }
     }
   }

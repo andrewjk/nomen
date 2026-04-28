@@ -1,12 +1,9 @@
-import ReturnNode from "../nodes/ReturnNode";
-import type BuildStatus from "../build/BuildStatus";
-import build_node from "./build_node";
-import { emit_var_store } from "./utils/stack_var";
+import type BuildStatus from "../build/BuildStatus.ts";
+import ReturnNode from "../nodes/ReturnNode.ts";
+import build_node from "./build_node.ts";
+import { emit_var_store } from "./utils/stack_var.ts";
 
-export default function build_return_node(
-  node: ReturnNode,
-  status: BuildStatus,
-) {
+export default function build_return_node(node: ReturnNode, status: BuildStatus) {
   if (node.from_c) {
     return;
   }

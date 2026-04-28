@@ -1,13 +1,13 @@
-import add_error from "../add_error";
-import type ParseStatus from "./ParseStatus";
-import parse_declaration from "./parse_declaration";
-import parse_function from "./parse_function";
-import parse_op from "./parse_op";
-import parse_struct from "./parse_struct";
-import parse_trait from "./parse_trait";
-import consume from "./utils/consume";
-import get_index from "./utils/get_index";
-import peek_next from "./utils/peek_next";
+import add_error from "../add_error.ts";
+import parse_declaration from "./parse_declaration.ts";
+import parse_function from "./parse_function.ts";
+import parse_op from "./parse_op.ts";
+import parse_struct from "./parse_struct.ts";
+import parse_trait from "./parse_trait.ts";
+import type ParseStatus from "./ParseStatus.ts";
+import consume from "./utils/consume.ts";
+import get_index from "./utils/get_index.ts";
+import peek_next from "./utils/peek_next.ts";
 
 export default function parse_visibility(visibility: "pub" | "priv", status: ParseStatus) {
   // Declarations, funcs, structs and traits can have their visibility controlled

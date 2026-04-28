@@ -1,4 +1,4 @@
-import BaseNode from "./BaseNode";
+import BaseNode from "./BaseNode.ts";
 
 export default class ImportNode extends BaseNode {
   name: string;

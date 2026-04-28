@@ -1,9 +1,9 @@
-import StructNode from "../nodes/StructNode";
-import TraitNode from "../nodes/TraitNode";
-import type BuildStatus from "./BuildStatus";
-import build_node from "./build_node";
-import build_parameter_node from "./build_parameter_node";
-import c_type from "./utils/c_type";
+import StructNode from "../nodes/StructNode.ts";
+import TraitNode from "../nodes/TraitNode.ts";
+import build_node from "./build_node.ts";
+import build_parameter_node from "./build_parameter_node.ts";
+import type BuildStatus from "./BuildStatus.ts";
+import c_type from "./utils/c_type.ts";
 
 export default function build_struct_node(node: StructNode, status: BuildStatus) {
   // If it's an inbuilt type, only build its functions
@@ -102,7 +102,7 @@ function build_struct_traits(node: StructNode, status: BuildStatus) {
     status.code += trait.functions
       .map(
         (f) =>
-          `${!!node.functions.find((tf) => tf.name === f.name) ? node.name : trait.name}_${f.name}`,
+          `${node.functions.find((tf) => tf.name === f.name) !== undefined ? node.name : trait.name}_${f.name}`,
       )
       .join(", ");
     if (trait.functions.length && trait.fields.length) {

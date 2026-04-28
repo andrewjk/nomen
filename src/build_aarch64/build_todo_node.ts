@@ -1,5 +1,5 @@
-import TodoNode from "../nodes/TodoNode";
-import type BuildStatus from "../build/BuildStatus";
+import type BuildStatus from "../build/BuildStatus.ts";
+import TodoNode from "../nodes/TodoNode.ts";
 
 export default function build_todo_node(node: TodoNode, status: BuildStatus) {
   // TODO: Unwind etc

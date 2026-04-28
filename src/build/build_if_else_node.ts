@@ -1,8 +1,8 @@
-import IfElseNode from "../nodes/IfElseNode";
-import type BuildStatus from "./BuildStatus";
-import build_auto_free from "./build_auto_free";
-import build_block_node from "./build_block_node";
-import build_node from "./build_node";
+import IfElseNode from "../nodes/IfElseNode.ts";
+import build_auto_free from "./build_auto_free.ts";
+import build_block_node from "./build_block_node.ts";
+import build_node from "./build_node.ts";
+import type BuildStatus from "./BuildStatus.ts";
 
 export default function build_if_else_node(node: IfElseNode, status: BuildStatus) {
   const old_scoped_declarations = status.scoped_declarations;

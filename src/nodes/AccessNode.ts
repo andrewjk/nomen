@@ -1,7 +1,7 @@
-import AccessFieldNode from "./AccessFieldNode";
-import AccessFunctionCallNode from "./AccessFunctionCallNode";
-import AccessIndexNode from "./AccessIndexNode";
-import BaseNode from "./BaseNode";
+import AccessFieldNode from "./AccessFieldNode.ts";
+import AccessFunctionCallNode from "./AccessFunctionCallNode.ts";
+import AccessIndexNode from "./AccessIndexNode.ts";
+import BaseNode from "./BaseNode.ts";
 
 export default class AccessNode extends BaseNode {
   target: BaseNode;

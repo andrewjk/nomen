@@ -1,5 +1,5 @@
-import BaseNode from "./BaseNode";
-import type BlockNode from "./BlockNode";
+import BaseNode from "./BaseNode.ts";
+import type BlockNode from "./BlockNode.ts";
 
 export default class WhileLoopNode extends BaseNode implements BlockNode {
   condition: BaseNode;

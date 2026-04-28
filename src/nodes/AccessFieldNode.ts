@@ -1,5 +1,5 @@
-import BaseNode from "./BaseNode";
-import Type from "./Type";
+import BaseNode from "./BaseNode.ts";
+import Type from "./Type.ts";
 
 export default class AccessFieldNode extends BaseNode {
   name: string;

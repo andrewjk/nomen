@@ -1,5 +1,5 @@
-import add_error from "../../add_error";
-import type ParseStatus from "../ParseStatus";
+import add_error from "../../add_error.ts";
+import type ParseStatus from "../ParseStatus.ts";
 
 export default function consume(status: ParseStatus, advance = true): string {
   if (status.i < status.tokens.length) {

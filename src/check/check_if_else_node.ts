@@ -1,11 +1,11 @@
-import add_error from "../add_error";
-import IfElseNode from "../nodes/IfElseNode";
-import type CheckStatus from "./CheckStatus";
-import check_block_node from "./check_block_node";
-import check_node from "./check_node";
-import clone_status from "./utils/clone_status";
-import type_from_value_node from "./utils/type_from_value_node";
-import type_name from "./utils/type_name";
+import add_error from "../add_error.ts";
+import IfElseNode from "../nodes/IfElseNode.ts";
+import check_block_node from "./check_block_node.ts";
+import check_node from "./check_node.ts";
+import type CheckStatus from "./CheckStatus.ts";
+import clone_status from "./utils/clone_status.ts";
+import type_from_value_node from "./utils/type_from_value_node.ts";
+import type_name from "./utils/type_name.ts";
 
 export default function check_if_else_node(if_else: IfElseNode, status: CheckStatus) {
   check_node(if_else.condition, status);

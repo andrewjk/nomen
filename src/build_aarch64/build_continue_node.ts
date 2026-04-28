@@ -1,4 +1,4 @@
-import type BuildStatus from "../build/BuildStatus";
+import type BuildStatus from "../build/BuildStatus.ts";
 
 export default function build_continue_node(status: BuildStatus) {
   const loop = status.loop_labels?.[status.loop_labels.length - 1];

@@ -1,11 +1,11 @@
-import BaseNode from "./BaseNode";
-import type BlockNode from "./BlockNode";
-import FunctionNode from "./FunctionNode";
-import type ReturningNode from "./ReturningNode";
-import RootNode from "./RootNode";
-import StructNode from "./StructNode";
-import TraitNode from "./TraitNode";
-import ValueNode from "./ValueNode";
+import BaseNode from "./BaseNode.ts";
+import type BlockNode from "./BlockNode.ts";
+import FunctionNode from "./FunctionNode.ts";
+import type ReturningNode from "./ReturningNode.ts";
+import RootNode from "./RootNode.ts";
+import StructNode from "./StructNode.ts";
+import TraitNode from "./TraitNode.ts";
+import ValueNode from "./ValueNode.ts";
 
 export function is_block_node(object: any): object is BlockNode {
   return "statements" in object;

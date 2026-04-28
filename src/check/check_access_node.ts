@@ -1,14 +1,14 @@
-import add_error from "../add_error";
-import AccessFieldNode from "../nodes/AccessFieldNode";
-import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode";
-import AccessIndexNode from "../nodes/AccessIndexNode";
-import AccessNode from "../nodes/AccessNode";
-import Type from "../nodes/Type";
-import type CheckStatus from "./CheckStatus";
-import check_function_call from "./check_function_call";
-import check_node from "./check_node";
-import type_from_value_node from "./utils/type_from_value_node";
-import value_from_value_node from "./utils/value_from_value_node";
+import add_error from "../add_error.ts";
+import AccessFieldNode from "../nodes/AccessFieldNode.ts";
+import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
+import AccessIndexNode from "../nodes/AccessIndexNode.ts";
+import AccessNode from "../nodes/AccessNode.ts";
+import Type from "../nodes/Type.ts";
+import check_function_call from "./check_function_call.ts";
+import check_node from "./check_node.ts";
+import type CheckStatus from "./CheckStatus.ts";
+import type_from_value_node from "./utils/type_from_value_node.ts";
+import value_from_value_node from "./utils/value_from_value_node.ts";
 
 export default function check_access_node(node: AccessNode, status: CheckStatus): boolean {
   if (!check_node(node.target, status)) {

@@ -1,7 +1,7 @@
-import add_error from "../add_error";
-import BreakNode from "../nodes/BreakNode";
-import ContinueNode from "../nodes/ContinueNode";
-import type CheckStatus from "./CheckStatus";
+import add_error from "../add_error.ts";
+import BreakNode from "../nodes/BreakNode.ts";
+import ContinueNode from "../nodes/ContinueNode.ts";
+import type CheckStatus from "./CheckStatus.ts";
 
 export default function check_break_or_continue_node(
   node: BreakNode | ContinueNode,

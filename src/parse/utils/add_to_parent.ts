@@ -1,7 +1,7 @@
-import add_error from "../../add_error";
-import BaseNode from "../../nodes/BaseNode";
-import { is_block_node } from "../../nodes/check_node_type";
-import type ParseStatus from "../ParseStatus";
+import add_error from "../../add_error.ts";
+import BaseNode from "../../nodes/BaseNode.ts";
+import { is_block_node } from "../../nodes/check_node_type.ts";
+import type ParseStatus from "../ParseStatus.ts";
 
 export default function add_to_parent(
   node: BaseNode,

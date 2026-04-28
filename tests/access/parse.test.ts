@@ -1,11 +1,12 @@
-import { expect, test } from "vitest";
-import AccessFieldNode from "../../src/nodes/AccessFieldNode";
-import AccessFunctionCallNode from "../../src/nodes/AccessFunctionCallNode";
-import AccessNode from "../../src/nodes/AccessNode";
-import AssignmentNode from "../../src/nodes/AssignmentNode";
-import DeclarationNode from "../../src/nodes/DeclarationNode";
-import Type from "../../src/nodes/Type";
-import ValueNode from "../../src/nodes/ValueNode";
+import { expect, test } from "vite-plus/test";
+
+import AccessFieldNode from "../../src/nodes/AccessFieldNode.ts";
+import AccessFunctionCallNode from "../../src/nodes/AccessFunctionCallNode.ts";
+import AccessNode from "../../src/nodes/AccessNode.ts";
+import AssignmentNode from "../../src/nodes/AssignmentNode.ts";
+import DeclarationNode from "../../src/nodes/DeclarationNode.ts";
+import Type from "../../src/nodes/Type.ts";
+import ValueNode from "../../src/nodes/ValueNode.ts";
 import parse from "../../src/parse";
 import trim_parse_tree from "../trim_test_parse";
 

@@ -1,13 +1,13 @@
-import ForLoopNode from "../nodes/ForLoopNode";
-import ValueNode from "../nodes/ValueNode";
-import type ParseStatus from "./ParseStatus";
-import parse_expression from "./parse_expression";
-import parse_statement from "./parse_statement";
-import accept from "./utils/accept";
-import add_to_parent from "./utils/add_to_parent";
-import consume from "./utils/consume";
-import expect from "./utils/expect";
-import get_index from "./utils/get_index";
+import ForLoopNode from "../nodes/ForLoopNode.ts";
+import ValueNode from "../nodes/ValueNode.ts";
+import parse_expression from "./parse_expression.ts";
+import parse_statement from "./parse_statement.ts";
+import type ParseStatus from "./ParseStatus.ts";
+import accept from "./utils/accept.ts";
+import add_to_parent from "./utils/add_to_parent.ts";
+import consume from "./utils/consume.ts";
+import expect from "./utils/expect.ts";
+import get_index from "./utils/get_index.ts";
 
 export default function parse_for_loop(status: ParseStatus) {
   const for_start = get_index(status);

@@ -1,11 +1,11 @@
-import BaseNode from "../nodes/BaseNode";
-import DeclarationNode from "../nodes/DeclarationNode";
-import FunctionNode from "../nodes/FunctionNode";
-import StructNode from "../nodes/StructNode";
-import TraitNode from "../nodes/TraitNode";
-import Type from "../nodes/Type";
-import type CompileError from "../types/CompileError";
-import type StackValue from "./StackValue";
+import BaseNode from "../nodes/BaseNode.ts";
+import DeclarationNode from "../nodes/DeclarationNode.ts";
+import FunctionNode from "../nodes/FunctionNode.ts";
+import StructNode from "../nodes/StructNode.ts";
+import TraitNode from "../nodes/TraitNode.ts";
+import Type from "../nodes/Type.ts";
+import type CompileError from "../types/CompileError.ts";
+import type StackValue from "./StackValue.ts";
 
 export default interface CheckStatus {
   /**

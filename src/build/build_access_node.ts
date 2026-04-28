@@ -1,13 +1,12 @@
-import built_in_types from "../built_in_types";
-import AccessFieldNode from "../nodes/AccessFieldNode";
-import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode";
-import AccessIndexNode from "../nodes/AccessIndexNode";
-import AccessNode from "../nodes/AccessNode";
-import FunctionNode from "../nodes/FunctionNode";
-import type BuildStatus from "./BuildStatus";
-import build_node from "./build_node";
-import c_type from "./utils/c_type";
-import type_from_value_node from "./utils/type_from_value_node";
+import built_in_types from "../built_in_types.ts";
+import AccessFieldNode from "../nodes/AccessFieldNode.ts";
+import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
+import AccessIndexNode from "../nodes/AccessIndexNode.ts";
+import AccessNode from "../nodes/AccessNode.ts";
+import build_node from "./build_node.ts";
+import type BuildStatus from "./BuildStatus.ts";
+import c_type from "./utils/c_type.ts";
+import type_from_value_node from "./utils/type_from_value_node.ts";
 
 export default function build_access_node(node: AccessNode, status: BuildStatus) {
   // PERF:

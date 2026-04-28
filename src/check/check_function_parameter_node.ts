@@ -1,11 +1,10 @@
-import ParameterNode from "../nodes/ParameterNode";
-import type CheckStatus from "./CheckStatus";
-import check_node from "./check_node";
-import check_type_and_value_match from "./utils/check_type_and_value_match";
-import check_type_exists from "./utils/check_type_exists";
-import type_from_value from "./utils/type_from_value";
-import type_from_value_node from "./utils/type_from_value_node";
-import value_from_value_node from "./utils/value_from_value_node";
+import ParameterNode from "../nodes/ParameterNode.ts";
+import check_node from "./check_node.ts";
+import type CheckStatus from "./CheckStatus.ts";
+import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
+import check_type_exists from "./utils/check_type_exists.ts";
+import type_from_value_node from "./utils/type_from_value_node.ts";
+import value_from_value_node from "./utils/value_from_value_node.ts";
 
 export default function check_function_parameter_node(param: ParameterNode, status: CheckStatus) {
   if (param.type.name) {

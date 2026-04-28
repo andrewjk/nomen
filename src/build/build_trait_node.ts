@@ -1,8 +1,8 @@
-import TraitNode from "../nodes/TraitNode";
-import type BuildStatus from "./BuildStatus";
-import build_node from "./build_node";
-import build_parameter_node from "./build_parameter_node";
-import c_type from "./utils/c_type";
+import TraitNode from "../nodes/TraitNode.ts";
+import build_node from "./build_node.ts";
+import build_parameter_node from "./build_parameter_node.ts";
+import type BuildStatus from "./BuildStatus.ts";
+import c_type from "./utils/c_type.ts";
 
 export default function build_trait_node(node: TraitNode, status: BuildStatus) {
   // We only need to build a trait node if there are default functions

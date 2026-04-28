@@ -1,8 +1,9 @@
-import { expect, describe, test } from "vitest";
+import { expect, describe, test } from "vite-plus/test";
+
 import build from "../src/build";
 import parse from "../src/parse";
-import trim_test_build from "./trim_test_build";
 import test_error from "./test_error";
+import trim_test_build from "./trim_test_build";
 
 // BUILD
 describe("array build", () => {
@@ -112,7 +113,9 @@ const x = [1, "b", 2]
     const input = `
 const int[] x = 5
 `;
-    const expected = [test_error(input, "Type mismatch in declaration: int (expected int[])", 2, 17)];
+    const expected = [
+      test_error(input, "Type mismatch in declaration: int (expected int[])", 2, 17),
+    ];
     const parsed = parse(input);
     expect(parsed.errors).toEqual(expected);
   });

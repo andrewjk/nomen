@@ -1,4 +1,4 @@
-import type Token from "./types/Token";
+import type Token from "./types/Token.ts";
 
 const COMPOUND_SYMBOLS = [
   // Relational
@@ -126,7 +126,7 @@ export default function tokenize(input: string, preserve_space = false): Token[]
   // Add the last word
   if (input.length > status.start) {
     const value = input.substring(status.start, input.length);
-    if (!!value.trim()) {
+    if (value.trim() !== "") {
       status.tokens.push({ value, i: status.start });
     }
   }
@@ -196,14 +196,14 @@ function consume_block_comment(input: string, status: TokenizeStatus) {
   return input.length - 1;
 }
 
-function is_word(input: string) {
-  for (let i = 0; i < input.length; i++) {
-    if (!is_word_char(input, i)) {
-      return false;
-    }
-  }
-  return true;
-}
+//function is_word(input: string) {
+//  for (let i = 0; i < input.length; i++) {
+//    if (!is_word_char(input, i)) {
+//      return false;
+//    }
+//  }
+//  return true;
+//}
 
 function is_word_char(input: string, i: number) {
   let code = input.charCodeAt(i);

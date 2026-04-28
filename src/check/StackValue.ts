@@ -1,4 +1,4 @@
-import Type from "../nodes/Type";
+import Type from "../nodes/Type.ts";
 
 /**
  * A value (declaration, param etc) that is accessible at the current point

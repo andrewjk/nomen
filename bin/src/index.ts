@@ -1,8 +1,10 @@
 #! /usr/bin/env node
+import fs from "node:fs";
+import path from "node:path";
+
 import chokidar from "chokidar";
-import fs from "fs";
-import path from "path";
 import yargs from "yargs";
+
 import build from "../../src/build";
 import join from "../../src/join";
 import parse from "../../src/parse";
@@ -103,7 +105,7 @@ function processFolder(folder: string, config: Config) {
   while ((dirent = dir.readSync()) !== null) {
     if (shouldProcessFile(dirent.name)) {
       processFile(path.join(folder, dirent.name), config);
-      fs.watch;
+      let _ = fs.watch;
     }
   }
   dir.closeSync();
@@ -113,7 +115,7 @@ function shouldProcessFile(filename: string) {
   return path.extname(filename) === SUPPORTED_EXTENSION;
 }
 
-function processFile(filename: string, config: Config) {
+function processFile(filename: string, _config: Config) {
   const startTime = performance.now();
   console.log("Processing", filename);
 

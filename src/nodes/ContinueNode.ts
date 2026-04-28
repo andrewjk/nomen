@@ -1,4 +1,4 @@
-import BaseNode from "./BaseNode";
+import BaseNode from "./BaseNode.ts";
 
 export default class ContinueNode extends BaseNode {
   constructor(start: number) {

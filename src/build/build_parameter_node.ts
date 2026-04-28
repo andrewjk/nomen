@@ -1,6 +1,6 @@
-import ParameterNode from "../nodes/ParameterNode";
-import type BuildStatus from "./BuildStatus";
-import c_type from "./utils/c_type";
+import ParameterNode from "../nodes/ParameterNode.ts";
+import type BuildStatus from "./BuildStatus.ts";
+import c_type from "./utils/c_type.ts";
 
 export default function build_parameter_node(node: ParameterNode, status: BuildStatus) {
   const struct_type = status.structs.find((s) => s.name === node.type.name);

@@ -1,7 +1,7 @@
-import FunctionCallNode from "../nodes/FunctionCallNode";
-import type BuildStatus from "./BuildStatus";
-import build_node from "./build_node";
-import type_from_value_node from "./utils/type_from_value_node";
+import FunctionCallNode from "../nodes/FunctionCallNode.ts";
+import build_node from "./build_node.ts";
+import type BuildStatus from "./BuildStatus.ts";
+import type_from_value_node from "./utils/type_from_value_node.ts";
 
 export default function build_function_call_node(node: FunctionCallNode, status: BuildStatus) {
   // Check for struct constructor

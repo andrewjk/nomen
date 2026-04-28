@@ -1,6 +1,6 @@
-import add_error from "../../add_error";
-import type ParseStatus from "../ParseStatus";
-import get_index from "./get_index";
+import add_error from "../../add_error.ts";
+import type ParseStatus from "../ParseStatus.ts";
+import get_index from "./get_index.ts";
 
 export default function expect(value: string, status: ParseStatus, advance = true): boolean {
   if (status.i < status.tokens.length) {

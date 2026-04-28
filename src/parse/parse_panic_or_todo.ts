@@ -1,14 +1,14 @@
-import add_error from "../add_error";
-import PanicNode from "../nodes/PanicNode";
-import ReturningNode from "../nodes/ReturningNode";
-import TodoNode from "../nodes/TodoNode";
-import { is_returning_node } from "../nodes/check_node_type";
-import type ParseStatus from "./ParseStatus";
-import accept from "./utils/accept";
-import add_to_parent from "./utils/add_to_parent";
-import consume from "./utils/consume";
-import get_index from "./utils/get_index";
-import peek_current from "./utils/peek_current";
+import add_error from "../add_error.ts";
+import { is_returning_node } from "../nodes/check_node_type.ts";
+import PanicNode from "../nodes/PanicNode.ts";
+import type ReturningNode from "../nodes/ReturningNode.ts";
+import TodoNode from "../nodes/TodoNode.ts";
+import type ParseStatus from "./ParseStatus.ts";
+import accept from "./utils/accept.ts";
+import add_to_parent from "./utils/add_to_parent.ts";
+import consume from "./utils/consume.ts";
+import get_index from "./utils/get_index.ts";
+import peek_current from "./utils/peek_current.ts";
 
 export default function parse_panic_or_todo(name: "panic" | "todo", status: ParseStatus) {
   const description = name.substring(0, 1).toUpperCase() + name.substring(1);

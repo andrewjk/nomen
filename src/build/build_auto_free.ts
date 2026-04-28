@@ -1,4 +1,4 @@
-import type BuildStatus from "./BuildStatus";
+import type BuildStatus from "./BuildStatus.ts";
 
 export default function build_auto_free(status: BuildStatus) {
   // Add dispose calls, if applicable

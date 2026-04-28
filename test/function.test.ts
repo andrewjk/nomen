@@ -1,8 +1,9 @@
-import { expect, describe, test } from "vitest";
+import { expect, describe, test } from "vite-plus/test";
+
 import build from "../src/build";
 import parse from "../src/parse";
-import trim_test_build from "./trim_test_build";
 import test_error from "./test_error";
+import trim_test_build from "./trim_test_build";
 
 // BUILD
 describe("function build", () => {
@@ -254,7 +255,7 @@ ret
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
   });
-})
+});
 
 // ERRORS
 describe("function errors", () => {
@@ -351,9 +352,7 @@ func add = (out int) -> {}
     const input = `
 func add = (out int) -> ("string")
 `;
-    const expected = [
-      test_error(input, "Type mismatch in return: string (expected int)", 2, 26),
-    ];
+    const expected = [test_error(input, "Type mismatch in return: string (expected int)", 2, 26)];
     const parsed = parse(input);
     expect(parsed.errors).toEqual(expected);
   });

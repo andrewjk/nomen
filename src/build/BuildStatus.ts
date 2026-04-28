@@ -1,7 +1,7 @@
-import BaseNode from "../nodes/BaseNode";
-import DeclarationNode from "../nodes/DeclarationNode";
-import StructNode from "../nodes/StructNode";
-import TraitNode from "../nodes/TraitNode";
+import BaseNode from "../nodes/BaseNode.ts";
+import DeclarationNode from "../nodes/DeclarationNode.ts";
+import StructNode from "../nodes/StructNode.ts";
+import TraitNode from "../nodes/TraitNode.ts";
 
 export default interface BuildStatus {
   root: BaseNode;

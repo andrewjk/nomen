@@ -1,5 +1,5 @@
-import type CheckStatus from "./check/CheckStatus";
-import type ParseStatus from "./parse/ParseStatus";
+import type CheckStatus from "./check/CheckStatus.ts";
+import type ParseStatus from "./parse/ParseStatus.ts";
 
 export default function add_error(
   status: ParseStatus | CheckStatus,

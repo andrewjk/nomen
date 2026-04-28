@@ -1,6 +1,5 @@
-import BaseNode from "./BaseNode";
-import FunctionNode from "./FunctionNode";
-import Type from "./Type";
+import BaseNode from "./BaseNode.ts";
+import Type from "./Type.ts";
 
 export default class FunctionCallNode extends BaseNode {
   name: string;

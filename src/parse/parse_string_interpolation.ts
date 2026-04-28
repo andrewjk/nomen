@@ -1,14 +1,13 @@
-import type_from_value_node from "../check/utils/type_from_value_node";
-import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode";
-import AccessNode from "../nodes/AccessNode";
-import FunctionCallNode from "../nodes/FunctionCallNode";
-import Type from "../nodes/Type";
-import ValueNode from "../nodes/ValueNode";
-import type ParseStatus from "./ParseStatus";
-import parse_expression from "./parse_expression";
-import accept from "./utils/accept";
-import consume from "./utils/consume";
-import get_index from "./utils/get_index";
+import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
+import AccessNode from "../nodes/AccessNode.ts";
+import FunctionCallNode from "../nodes/FunctionCallNode.ts";
+import Type from "../nodes/Type.ts";
+import ValueNode from "../nodes/ValueNode.ts";
+import parse_expression from "./parse_expression.ts";
+import type ParseStatus from "./ParseStatus.ts";
+import accept from "./utils/accept.ts";
+import consume from "./utils/consume.ts";
+import get_index from "./utils/get_index.ts";
 
 // TODO: This should actually be calling a standard String.interpolate method with a params array
 

@@ -1,4 +1,4 @@
-import type BaseNode from "../src/nodes/BaseNode";
+import type BaseNode from "../src/nodes/BaseNode.ts";
 
 export default function trim_test_parse(node: BaseNode): string {
   trim_node(node);

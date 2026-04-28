@@ -1,9 +1,7 @@
-import FunctionNode from "../nodes/FunctionNode";
-import StructNode from "../nodes/StructNode";
-import type BuildStatus from "../build/BuildStatus";
-import build_block_node from "./build_block_node";
-import build_function_node from "./build_function_node";
-import { get_field_offset, get_struct_size } from "./utils/struct_layout";
+import type BuildStatus from "../build/BuildStatus.ts";
+import StructNode from "../nodes/StructNode.ts";
+import build_block_node from "./build_block_node.ts";
+import { get_field_offset } from "./utils/struct_layout.ts";
 
 export default function build_struct_node(node: StructNode, status: BuildStatus) {
   if (node.is_simple_type) {
@@ -20,7 +18,6 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 
 function build_init_function(node: StructNode, status: BuildStatus) {
   const func_name = `${node.name}_init`;
-  const object_name = node.name.substring(0, 1).toLocaleLowerCase();
 
   // x0 = destination address
   // x1-x7 = field params (fields without default values)

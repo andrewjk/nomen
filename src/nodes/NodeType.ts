@@ -1,4 +1,4 @@
-type NodeType =
+export type NodeType =
   | "import"
   | "root"
   | "struct"
@@ -27,5 +27,3 @@ type NodeType =
   | "todo"
   | "return"
   | "raw";
-
-export default NodeType;

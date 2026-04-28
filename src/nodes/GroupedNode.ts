@@ -1,5 +1,4 @@
-import BaseNode from "./BaseNode";
-import Type from "./Type";
+import BaseNode from "./BaseNode.ts";
 
 export default class GroupedNode extends BaseNode {
   value: BaseNode;

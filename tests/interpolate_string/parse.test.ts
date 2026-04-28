@@ -1,11 +1,12 @@
-import { expect, test } from "vitest";
-import AccessFunctionCallNode from "../../src/nodes/AccessFunctionCallNode";
-import AccessNode from "../../src/nodes/AccessNode";
-import DeclarationNode from "../../src/nodes/DeclarationNode";
-import FunctionCallNode from "../../src/nodes/FunctionCallNode";
-import OperationNode from "../../src/nodes/OperationNode";
-import Type from "../../src/nodes/Type";
-import ValueNode from "../../src/nodes/ValueNode";
+import { expect, test } from "vite-plus/test";
+
+import AccessFunctionCallNode from "../../src/nodes/AccessFunctionCallNode.ts";
+import AccessNode from "../../src/nodes/AccessNode.ts";
+import DeclarationNode from "../../src/nodes/DeclarationNode.ts";
+import FunctionCallNode from "../../src/nodes/FunctionCallNode.ts";
+import OperationNode from "../../src/nodes/OperationNode.ts";
+import Type from "../../src/nodes/Type.ts";
+import ValueNode from "../../src/nodes/ValueNode.ts";
 import trim_test_parse from "../trim_test_parse";
 import parse_with_imports from "../ziglings/parse_with_imports";
 
@@ -41,7 +42,7 @@ const z = "\\{x} is less than \\{x + 5}!"
   expected.allocations = [
     new DeclarationNode(
       0,
-      "private",
+      "priv",
       "const",
       "_param_0",
       new Type("string"),
@@ -53,7 +54,7 @@ const z = "\\{x} is less than \\{x + 5}!"
     ),
     new DeclarationNode(
       0,
-      "private",
+      "priv",
       "const",
       "_param_1",
       new Type("string"),

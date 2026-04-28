@@ -1,6 +1,6 @@
-import BaseNode from "./BaseNode";
-import DeclarationNode from "./DeclarationNode";
-import FunctionNode from "./FunctionNode";
+import BaseNode from "./BaseNode.ts";
+import DeclarationNode from "./DeclarationNode.ts";
+import FunctionNode from "./FunctionNode.ts";
 
 export default class TraitNode extends BaseNode {
   visibility: "inherit" | "pub" | "mod" | "priv";

@@ -1,4 +1,4 @@
-import type CompileError from "../src/types/CompileError";
+import type CompileError from "../src/types/CompileError.ts";
 
 export default function test_error(
   source: string,

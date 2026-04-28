@@ -1,7 +1,7 @@
-import FunctionCallNode from "../nodes/FunctionCallNode";
-import type BuildStatus from "../build/BuildStatus";
-import build_node from "./build_node";
-import { allocate_stack_space } from "./utils/stack_var";
+import type BuildStatus from "../build/BuildStatus.ts";
+import FunctionCallNode from "../nodes/FunctionCallNode.ts";
+import build_node from "./build_node.ts";
+import { allocate_stack_space } from "./utils/stack_var.ts";
 
 let temp_counter = 0;
 
@@ -9,13 +9,8 @@ export function reset_temp_counter() {
   temp_counter = 0;
 }
 
-export default function build_function_call_node(
-  node: FunctionCallNode,
-  status: BuildStatus,
-) {
-  const is_struct = status.structs.find(
-    (s) => s.name === node.name && !s.is_simple_type,
-  );
+export default function build_function_call_node(node: FunctionCallNode, status: BuildStatus) {
+  const is_struct = status.structs.find((s) => s.name === node.name && !s.is_simple_type);
   const func_name = is_struct ? `${node.name}_init` : node.name;
   const param_regs = ["x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7"];
 

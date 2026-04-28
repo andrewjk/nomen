@@ -1,4 +1,4 @@
-import type ParseStatus from "../ParseStatus";
+import type ParseStatus from "../ParseStatus.ts";
 
 export default function consume_space(status: ParseStatus): string {
   if (status.i < status.tokens.length) {

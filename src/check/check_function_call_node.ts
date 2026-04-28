@@ -1,10 +1,10 @@
-import add_error from "../add_error";
-import FunctionCallNode from "../nodes/FunctionCallNode";
-import FunctionNode from "../nodes/FunctionNode";
-import ParameterNode from "../nodes/ParameterNode";
-import Type from "../nodes/Type";
-import type CheckStatus from "./CheckStatus";
-import check_function_call from "./check_function_call";
+import add_error from "../add_error.ts";
+import FunctionCallNode from "../nodes/FunctionCallNode.ts";
+import FunctionNode from "../nodes/FunctionNode.ts";
+import ParameterNode from "../nodes/ParameterNode.ts";
+import Type from "../nodes/Type.ts";
+import check_function_call from "./check_function_call.ts";
+import type CheckStatus from "./CheckStatus.ts";
 
 export default function check_function_call_node(
   node: FunctionCallNode,

@@ -1,20 +1,16 @@
-import ArrayValuesNode from "../nodes/ArrayValuesNode";
-import DeclarationNode from "../nodes/DeclarationNode";
-import FunctionCallNode from "../nodes/FunctionCallNode";
-import RangeNode from "../nodes/RangeNode";
-import ValueNode from "../nodes/ValueNode";
-import type BuildStatus from "../build/BuildStatus";
-import build_array_values_node from "./build_array_values_node";
-import build_node from "./build_node";
-import build_range_node from "./build_range_node";
-import aarch64_size from "./utils/aarch64_size";
-import aarch64_type from "./utils/aarch64_type";
-import { get_struct_size } from "./utils/struct_layout";
-import {
-  allocate_stack_space,
-  emit_var_address,
-  emit_var_store,
-} from "./utils/stack_var";
+import type BuildStatus from "../build/BuildStatus.ts";
+import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
+import DeclarationNode from "../nodes/DeclarationNode.ts";
+import FunctionCallNode from "../nodes/FunctionCallNode.ts";
+import RangeNode from "../nodes/RangeNode.ts";
+import ValueNode from "../nodes/ValueNode.ts";
+import build_array_values_node from "./build_array_values_node.ts";
+import build_node from "./build_node.ts";
+import build_range_node from "./build_range_node.ts";
+import aarch64_size from "./utils/aarch64_size.ts";
+import aarch64_type from "./utils/aarch64_type.ts";
+import { allocate_stack_space, emit_var_address, emit_var_store } from "./utils/stack_var.ts";
+import { get_struct_size } from "./utils/struct_layout.ts";
 
 function get_raw_value(node: ValueNode): string {
   let val = node.value;
@@ -32,10 +28,7 @@ function emit_data(status: BuildStatus, data: string) {
   }
 }
 
-export default function build_declaration_node(
-  node: DeclarationNode,
-  status: BuildStatus,
-) {
+export default function build_declaration_node(node: DeclarationNode, status: BuildStatus) {
   // Function type declaration
   if (node.func_params) {
     if (node.value && node.value.node_type === "func") {
@@ -58,9 +51,7 @@ export default function build_declaration_node(
   const size = aarch64_size(node.type.name);
 
   // Check if type is a struct
-  const struct_type = status.structs.find(
-    (s) => s.name === node.type.name && !s.is_simple_type,
-  );
+  const struct_type = status.structs.find((s) => s.name === node.type.name && !s.is_simple_type);
 
   if (node.type.is_array) {
     if (node.value && node.value.node_type === "array") {

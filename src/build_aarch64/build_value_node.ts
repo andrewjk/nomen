@@ -1,6 +1,5 @@
-import ValueNode from "../nodes/ValueNode";
-import type BuildStatus from "../build/BuildStatus";
-import { emit_var_load } from "./utils/stack_var";
+import type BuildStatus from "../build/BuildStatus.ts";
+import ValueNode from "../nodes/ValueNode.ts";
 
 let string_counter = 0;
 
@@ -39,7 +38,10 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
       if (paramReg !== "x0") {
         status.code += `mov x0, ${paramReg}`;
       }
-    } else if (status.function_param_vars?.has(original_value) || status.function_param_vars?.has(value)) {
+    } else if (
+      status.function_param_vars?.has(original_value) ||
+      status.function_param_vars?.has(value)
+    ) {
       // var param - address in register, load value
       status.code += `ldr x0, [${paramReg}]`;
     } else {
@@ -70,7 +72,11 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
     // Infer size from type if available, default to 8
     const type_name = node.type?.name || "";
     const size = type_name === "float" ? 4 : type_name === "uint8" || type_name === "int8" ? 1 : 8;
-    const signed = type_name.startsWith("int") || type_name === "float" || type_name === "float32" || type_name === "float64";
+    const signed =
+      type_name.startsWith("int") ||
+      type_name === "float" ||
+      type_name === "float32" ||
+      type_name === "float64";
     if (size === 1) {
       status.code += signed ? `ldrsb x0, [x29, #${offset}]` : `ldrb w0, [x29, #${offset}]`;
     } else if (size === 4) {

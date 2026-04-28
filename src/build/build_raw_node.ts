@@ -1,5 +1,5 @@
-import RawNode from "../nodes/RawNode";
-import type BuildStatus from "./BuildStatus";
+import RawNode from "../nodes/RawNode.ts";
+import type BuildStatus from "./BuildStatus.ts";
 
 function should_emit_for_arch(content: string, arch: string): [boolean, string] {
   const lines = content.split("\n");

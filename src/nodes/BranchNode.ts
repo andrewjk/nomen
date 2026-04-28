@@ -1,5 +1,5 @@
-import BaseNode from "./BaseNode";
-import type BlockNode from "./BlockNode";
+import BaseNode from "./BaseNode.ts";
+import type BlockNode from "./BlockNode.ts";
 
 /**
  * A branch such as the result of an IfElseNode, or the arm of a SwitchNode

@@ -1,5 +1,5 @@
-import NodeType from "./NodeType";
-import Type from "./Type";
+import type { NodeType } from "./NodeType.ts";
+import Type from "./Type.ts";
 
 /**
  * A node that returns a value via the return statement

@@ -1,7 +1,6 @@
-import DeclarationNode from "../nodes/DeclarationNode";
-import StructNode from "../nodes/StructNode";
-import type BuildStatus from "../build/BuildStatus";
-import aarch64_size from "./aarch64_size";
+import type BuildStatus from "../../build/BuildStatus.ts";
+import DeclarationNode from "../../nodes/DeclarationNode.ts";
+import aarch64_size from "./aarch64_size.ts";
 
 const VT_SIZE = 8;
 

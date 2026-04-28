@@ -1,8 +1,8 @@
-import BaseNode from "./BaseNode";
-import type BlockNode from "./BlockNode";
-import ParameterNode from "./ParameterNode";
-import type ReturningNode from "./ReturningNode";
-import Type from "./Type";
+import BaseNode from "./BaseNode.ts";
+import type BlockNode from "./BlockNode.ts";
+import ParameterNode from "./ParameterNode.ts";
+import type ReturningNode from "./ReturningNode.ts";
+import Type from "./Type.ts";
 
 export default class FunctionNode extends BaseNode implements BlockNode, ReturningNode {
   visibility: "inherit" | "pub" | "mod" | "priv";

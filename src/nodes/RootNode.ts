@@ -1,6 +1,6 @@
-import BaseNode from "./BaseNode";
-import type BlockNode from "./BlockNode";
-import ImportNode from "./ImportNode";
+import BaseNode from "./BaseNode.ts";
+import type BlockNode from "./BlockNode.ts";
+import ImportNode from "./ImportNode.ts";
 
 export default class RootNode extends BaseNode implements BlockNode {
   imports: ImportNode[];

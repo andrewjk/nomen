@@ -1,12 +1,13 @@
-import { expect, test } from "vitest";
-import AssignmentNode from "../../src/nodes/AssignmentNode";
-import BranchNode from "../../src/nodes/BranchNode";
-import DeclarationNode from "../../src/nodes/DeclarationNode";
-import IfElseNode from "../../src/nodes/IfElseNode";
-import OperationNode from "../../src/nodes/OperationNode";
-import ReturnNode from "../../src/nodes/ReturnNode";
-import Type from "../../src/nodes/Type";
-import ValueNode from "../../src/nodes/ValueNode";
+import { expect, test } from "vite-plus/test";
+
+import AssignmentNode from "../../src/nodes/AssignmentNode.ts";
+import BranchNode from "../../src/nodes/BranchNode.ts";
+import DeclarationNode from "../../src/nodes/DeclarationNode.ts";
+import IfElseNode from "../../src/nodes/IfElseNode.ts";
+import OperationNode from "../../src/nodes/OperationNode.ts";
+import ReturnNode from "../../src/nodes/ReturnNode.ts";
+import Type from "../../src/nodes/Type.ts";
+import ValueNode from "../../src/nodes/ValueNode.ts";
 import parse from "../../src/parse";
 import trim_test_parse from "../trim_test_parse";
 

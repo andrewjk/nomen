@@ -1,10 +1,10 @@
-import check from "./check";
-import RootNode from "./nodes/RootNode";
-import type ParseStatus from "./parse/ParseStatus";
-import parse_statement from "./parse/parse_statement";
-import tokenize from "./tokenize";
-import CompileError from "./types/CompileError";
-import type ParseResult from "./types/ParseResult";
+import check from "./check.ts";
+import RootNode from "./nodes/RootNode.ts";
+import parse_statement from "./parse/parse_statement.ts";
+import type ParseStatus from "./parse/ParseStatus.ts";
+import tokenize from "./tokenize.ts";
+import type CompileError from "./types/CompileError.ts";
+import type ParseResult from "./types/ParseResult.ts";
 
 export default function parse(source: string): ParseResult {
   const tokens = tokenize(source);

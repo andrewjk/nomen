@@ -1,9 +1,9 @@
-import type BlockNode from "../nodes/BlockNode";
-import FunctionNode from "../nodes/FunctionNode";
-import StructNode from "../nodes/StructNode";
-import TraitNode from "../nodes/TraitNode";
-import type CheckStatus from "./CheckStatus";
-import check_node from "./check_node";
+import type BlockNode from "../nodes/BlockNode.ts";
+import FunctionNode from "../nodes/FunctionNode.ts";
+import StructNode from "../nodes/StructNode.ts";
+import TraitNode from "../nodes/TraitNode.ts";
+import check_node from "./check_node.ts";
+import type CheckStatus from "./CheckStatus.ts";
 
 export default function check_block_node(node: BlockNode, status: CheckStatus) {
   // Gather structs, traits and funcs that might be used before they are declared

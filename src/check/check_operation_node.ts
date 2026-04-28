@@ -1,12 +1,12 @@
-import add_error from "../add_error";
-import FunctionNode from "../nodes/FunctionNode";
-import OperationNode from "../nodes/OperationNode";
-import Type from "../nodes/Type";
-import type CheckStatus from "./CheckStatus";
-import check_node from "./check_node";
-import check_type_and_value_match from "./utils/check_type_and_value_match";
-import type_from_value_node from "./utils/type_from_value_node";
-import value_from_value_node from "./utils/value_from_value_node";
+import add_error from "../add_error.ts";
+import FunctionNode from "../nodes/FunctionNode.ts";
+import OperationNode from "../nodes/OperationNode.ts";
+import Type from "../nodes/Type.ts";
+import check_node from "./check_node.ts";
+import type CheckStatus from "./CheckStatus.ts";
+import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
+import type_from_value_node from "./utils/type_from_value_node.ts";
+import value_from_value_node from "./utils/value_from_value_node.ts";
 
 export default function check_operation_node(op: OperationNode, status: CheckStatus): boolean {
   const result = check_node(op.left_value, status) && check_node(op.right_value, status);
@@ -37,11 +37,7 @@ export default function check_operation_node(op: OperationNode, status: CheckSta
   // If left operand is a non-simple struct and no custom operator was found, it's an error
   const struct_name = left_type.is_array ? "Array" : left_type.name;
   if (status.structs.find((s) => s.name === struct_name && !s.is_simple_type)) {
-    add_error(
-      status,
-      `No operator ${op.op} defined for type ${struct_name}`,
-      op.start,
-    );
+    add_error(status, `No operator ${op.op as string} defined for type ${struct_name}`, op.start);
     return false;
   }
 
@@ -77,7 +73,7 @@ export default function check_operation_node(op: OperationNode, status: CheckSta
       break;
     }
     default: {
-      add_error(status, `Unknown operator: ${op.op}`, op.start);
+      add_error(status, `Unknown operator: ${op.op as string}`, op.start);
       return false;
     }
   }

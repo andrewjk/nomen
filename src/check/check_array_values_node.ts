@@ -1,11 +1,11 @@
-import ArrayValuesNode from "../nodes/ArrayValuesNode";
-import Type from "../nodes/Type";
-import ValueNode from "../nodes/ValueNode";
-import type CheckStatus from "./CheckStatus";
-import check_node from "./check_node";
-import check_type_and_value_match from "./utils/check_type_and_value_match";
-import type_from_value_node from "./utils/type_from_value_node";
-import value_from_value_node from "./utils/value_from_value_node";
+import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
+import Type from "../nodes/Type.ts";
+import ValueNode from "../nodes/ValueNode.ts";
+import check_node from "./check_node.ts";
+import type CheckStatus from "./CheckStatus.ts";
+import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
+import type_from_value_node from "./utils/type_from_value_node.ts";
+import value_from_value_node from "./utils/value_from_value_node.ts";
 
 export default function check_array_values_node(
   array: ArrayValuesNode,

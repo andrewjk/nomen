@@ -1,12 +1,12 @@
-import type BlockNode from "../nodes/BlockNode";
-import FunctionNode from "../nodes/FunctionNode";
-import StructNode from "../nodes/StructNode";
-import TraitNode from "../nodes/TraitNode";
-import { is_function_node, is_struct_node, is_trait_node } from "../nodes/check_node_type";
-import type BuildStatus from "../build/BuildStatus";
-import build_function_node from "./build_function_node";
-import build_node from "./build_node";
-import build_struct_node from "./build_struct_node";
+import type BuildStatus from "../build/BuildStatus.ts";
+import type BlockNode from "../nodes/BlockNode.ts";
+import { is_function_node, is_struct_node, is_trait_node } from "../nodes/check_node_type.ts";
+import FunctionNode from "../nodes/FunctionNode.ts";
+import StructNode from "../nodes/StructNode.ts";
+import TraitNode from "../nodes/TraitNode.ts";
+import build_function_node from "./build_function_node.ts";
+import build_node from "./build_node.ts";
+import build_struct_node from "./build_struct_node.ts";
 
 export default function build_block_node(node: BlockNode, status: BuildStatus) {
   gather_structs(node, status);

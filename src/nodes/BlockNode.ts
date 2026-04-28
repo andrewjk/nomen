@@ -1,5 +1,5 @@
-import BaseNode from "./BaseNode";
-import NodeType from "./NodeType";
+import BaseNode from "./BaseNode.ts";
+import type { NodeType } from "./NodeType.ts";
 
 /**
  * A node with statements in a body, such as a RootNode or FunctionNode

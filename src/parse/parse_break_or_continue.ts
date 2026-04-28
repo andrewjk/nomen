@@ -1,9 +1,9 @@
-import BreakNode from "../nodes/BreakNode";
-import ContinueNode from "../nodes/ContinueNode";
-import type ParseStatus from "./ParseStatus";
-import accept from "./utils/accept";
-import add_to_parent from "./utils/add_to_parent";
-import get_index from "./utils/get_index";
+import BreakNode from "../nodes/BreakNode.ts";
+import ContinueNode from "../nodes/ContinueNode.ts";
+import type ParseStatus from "./ParseStatus.ts";
+import accept from "./utils/accept.ts";
+import add_to_parent from "./utils/add_to_parent.ts";
+import get_index from "./utils/get_index.ts";
 
 export default function parse_break_or_continue(name: "break" | "continue", status: ParseStatus) {
   const description = name.substring(0, 1).toUpperCase() + name.substring(1);
