@@ -8,31 +8,31 @@ import TraitNode from "./TraitNode.ts";
 import ValueNode from "./ValueNode.ts";
 
 export function is_block_node(object: any): object is BlockNode {
-  return "statements" in object;
+	return "statements" in object;
 }
 
 export function is_returning_node(object: any): object is ReturningNode {
-  return "return_type" in object;
+	return "return_type" in object;
 }
 
 export function is_root_node(node: BaseNode): node is RootNode {
-  return node.node_type === "root";
+	return node.node_type === "root";
 }
 
 export function is_struct_node(node: BaseNode): node is StructNode {
-  return node.node_type === "struct";
+	return node.node_type === "struct";
 }
 
 export function is_trait_node(node: BaseNode): node is TraitNode {
-  return node.node_type === "trait";
+	return node.node_type === "trait";
 }
 
 export function is_function_node(node: BaseNode): node is FunctionNode {
-  return node.node_type === "func";
+	return node.node_type === "func";
 }
 
 export function is_value_node(node: BaseNode): node is ValueNode {
-  return node.node_type === "value";
+	return node.node_type === "value";
 }
 
 /*

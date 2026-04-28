@@ -40,131 +40,131 @@ import check_while_loop_node from "./check_while_loop_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 
 export default function check_node(node: BaseNode, status: CheckStatus): boolean {
-  let result = true;
+	let result = true;
 
-  switch (node.node_type) {
-    case "root": {
-      check_block_node(node as RootNode, status);
-      break;
-    }
-    case "struct": {
-      check_struct_node(node as StructNode, status);
-      break;
-    }
-    case "trait": {
-      check_trait_node(node as TraitNode, status);
-      break;
-    }
-    case "func": {
-      check_function_node(node as FunctionNode, status);
-      break;
-    }
-    case "declare": {
-      check_declaration_node(node as DeclarationNode, status);
-      break;
-    }
-    case "assign": {
-      check_assignment_node(node as AssignmentNode, status);
-      break;
-    }
-    case "func_call": {
-      result = check_function_call_node(node as FunctionCallNode, status);
-      break;
-    }
-    case "access": {
-      result = check_access_node(node as AccessNode, status);
-      break;
-    }
-    case "if": {
-      check_if_else_node(node as IfElseNode, status);
-      break;
-    }
-    case "for": {
-      check_for_loop_node(node as ForLoopNode, status);
-      break;
-    }
-    case "while": {
-      check_while_loop_node(node as WhileLoopNode, status);
-      break;
-    }
-    case "grouped": {
-      result = check_node((node as GroupedNode).value, status);
-      break;
-    }
-    case "op": {
-      result = check_operation_node(node as OperationNode, status);
-      break;
-    }
-    case "array": {
-      result = check_array_values_node(node as ArrayValuesNode, status);
-      break;
-    }
-    case "range": {
-      result = check_range_node(node as RangeNode, status);
-      break;
-    }
-    case "value": {
-      result = check_value_node(node as ValueNode, status);
-      break;
-    }
-    case "break": {
-      check_break_or_continue_node(node as BreakNode, status);
-      break;
-    }
-    case "continue": {
-      check_break_or_continue_node(node as ContinueNode, status);
-      break;
-    }
-    case "panic":
-    case "todo": {
-      // todo
-      break;
-    }
-    case "return": {
-      check_return_node(node as ReturnNode, status);
-      break;
-    }
-    case "raw": {
-      // Anything can go in here
-      break;
-    }
-    default: {
-      add_error(status, `Unknown node type: ${node.node_type}`, node.start);
-      result = false;
-      break;
-    }
-  }
+	switch (node.node_type) {
+		case "root": {
+			check_block_node(node as RootNode, status);
+			break;
+		}
+		case "struct": {
+			check_struct_node(node as StructNode, status);
+			break;
+		}
+		case "trait": {
+			check_trait_node(node as TraitNode, status);
+			break;
+		}
+		case "func": {
+			check_function_node(node as FunctionNode, status);
+			break;
+		}
+		case "declare": {
+			check_declaration_node(node as DeclarationNode, status);
+			break;
+		}
+		case "assign": {
+			check_assignment_node(node as AssignmentNode, status);
+			break;
+		}
+		case "func_call": {
+			result = check_function_call_node(node as FunctionCallNode, status);
+			break;
+		}
+		case "access": {
+			result = check_access_node(node as AccessNode, status);
+			break;
+		}
+		case "if": {
+			check_if_else_node(node as IfElseNode, status);
+			break;
+		}
+		case "for": {
+			check_for_loop_node(node as ForLoopNode, status);
+			break;
+		}
+		case "while": {
+			check_while_loop_node(node as WhileLoopNode, status);
+			break;
+		}
+		case "grouped": {
+			result = check_node((node as GroupedNode).value, status);
+			break;
+		}
+		case "op": {
+			result = check_operation_node(node as OperationNode, status);
+			break;
+		}
+		case "array": {
+			result = check_array_values_node(node as ArrayValuesNode, status);
+			break;
+		}
+		case "range": {
+			result = check_range_node(node as RangeNode, status);
+			break;
+		}
+		case "value": {
+			result = check_value_node(node as ValueNode, status);
+			break;
+		}
+		case "break": {
+			check_break_or_continue_node(node as BreakNode, status);
+			break;
+		}
+		case "continue": {
+			check_break_or_continue_node(node as ContinueNode, status);
+			break;
+		}
+		case "panic":
+		case "todo": {
+			// todo
+			break;
+		}
+		case "return": {
+			check_return_node(node as ReturnNode, status);
+			break;
+		}
+		case "raw": {
+			// Anything can go in here
+			break;
+		}
+		default: {
+			add_error(status, `Unknown node type: ${node.node_type}`, node.start);
+			result = false;
+			break;
+		}
+	}
 
-  promote_allocations(node, status);
+	promote_allocations(node, status);
 
-  return result;
+	return result;
 }
 
 function promote_allocations(node: BaseNode, status: CheckStatus) {
-  // If allocations have been hoisted out of e.g. function params in a child of
-  // this node, and the parent of this node is a block node, add the allocations
-  // to this node so that they will be declared in the block node, before they
-  // are used in this node
-  // E.g. something like
-  // func print() {
-  //   ...
-  //   const z = "\{5}..."
-  // }
-  // will become
-  // func print() {
-  //   ...
-  //   const _param_1 = 5.to_string()
-  //   const z = _string_interpolate("%s...", _param_1)
-  //   free(_param_1)
-  // }
-  if (status.allocations.length) {
-    let parent = status.stack.at(-1);
-    if (is_block_node(parent)) {
-      node.allocations ??= [];
-      node.allocations.push(...status.allocations);
-      // HACK: We need allocations to be cleared in the status that this one may
-      // have been cloned from, so we can't just set status.allocations = []
-      status.allocations.length = 0;
-    }
-  }
+	// If allocations have been hoisted out of e.g. function params in a child of
+	// this node, and the parent of this node is a block node, add the allocations
+	// to this node so that they will be declared in the block node, before they
+	// are used in this node
+	// E.g. something like
+	// func print() {
+	//   ...
+	//   const z = "\{5}..."
+	// }
+	// will become
+	// func print() {
+	//   ...
+	//   const _param_1 = 5.to_string()
+	//   const z = _string_interpolate("%s...", _param_1)
+	//   free(_param_1)
+	// }
+	if (status.allocations.length) {
+		let parent = status.stack.at(-1);
+		if (is_block_node(parent)) {
+			node.allocations ??= [];
+			node.allocations.push(...status.allocations);
+			// HACK: We need allocations to be cleared in the status that this one may
+			// have been cloned from, so we can't just set status.allocations = []
+			status.allocations.length = 0;
+		}
+	}
 }

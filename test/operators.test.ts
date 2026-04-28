@@ -7,8 +7,8 @@ import trim_test_build from "./trim_test_build";
 
 // BUILD
 describe("custom operator build", () => {
-  test("add operator on struct", () => {
-    const input = `
+	test("add operator on struct", () => {
+		const input = `
 struct Point {
   var int x
   var int y
@@ -20,9 +20,9 @@ const p1 = Point(1, 2)
 const p2 = Point(3, 4)
 const p3 = p1 + p2
 `;
-    const parsed = parse(input);
-    const result = build(parsed.root, { arch: "aarch64" });
-    const expected = `
+		const parsed = parse(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		const expected = `
 .p2align 2
 Point_init:
 stp x29, x30, [sp, #-16]!
@@ -98,12 +98,12 @@ str x3, [x2, #8]
 ldr x3, [x1, #16]
 str x3, [x2, #16]
 `;
-    expect(parsed.errors).toEqual([]);
-    expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
-  });
+		expect(parsed.errors).toEqual([]);
+		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+	});
 
-  test("multiply operator on struct", () => {
-    const input = `
+	test("multiply operator on struct", () => {
+		const input = `
 struct Point {
   var int x
   var int y
@@ -114,9 +114,9 @@ struct Point {
 const p1 = Point(2, 3)
 const p2 = p1 * 4
 `;
-    const parsed = parse(input);
-    const result = build(parsed.root, { arch: "aarch64" });
-    const expected = `
+		const parsed = parse(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		const expected = `
 .p2align 2
 Point_init:
 stp x29, x30, [sp, #-16]!
@@ -181,15 +181,15 @@ str x3, [x2, #8]
 ldr x3, [x1, #16]
 str x3, [x2, #16]
 `;
-    expect(parsed.errors).toEqual([]);
-    expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
-  });
+		expect(parsed.errors).toEqual([]);
+		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+	});
 });
 
 // ERRORS
 describe("custom operator errors", () => {
-  test("operator function not found", () => {
-    const input = `
+	test("operator function not found", () => {
+		const input = `
 struct Point {
   var int x
   var int y
@@ -198,13 +198,13 @@ const p1 = Point(1, 2)
 const p2 = Point(3, 4)
 const p3 = p1 + p2
 `;
-    const expected = [test_error(input, "No operator + defined for type Point", 8, 12)];
-    const parsed = parse(input);
-    expect(parsed.errors).toEqual(expected);
-  });
+		const expected = [test_error(input, "No operator + defined for type Point", 8, 12)];
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual(expected);
+	});
 
-  test("operator param type mismatch", () => {
-    const input = `
+	test("operator param type mismatch", () => {
+		const input = `
 struct Point {
   var int x
   var int y
@@ -215,8 +215,8 @@ struct Point {
 const p1 = Point(1, 2)
 const p3 = p1 + 5
 `;
-    const expected = [test_error(input, "Type mismatch in param: int (expected Point)", 10, 17)];
-    const parsed = parse(input);
-    expect(parsed.errors).toEqual(expected);
-  });
+		const expected = [test_error(input, "Type mismatch in param: int (expected Point)", 10, 17)];
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual(expected);
+	});
 });

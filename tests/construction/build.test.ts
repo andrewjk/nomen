@@ -7,14 +7,14 @@ import trim_test_build from "../trim_test_build";
 //const test = suite("Construction build");
 
 test("init struct", () => {
-  const input = `
+	const input = `
 struct Person {
 }
 var x = Person.init()
 `;
-  const parsed = parse(input);
-  const result = build(parsed.root);
-  const expected = `
+	const parsed = parse(input);
+	const result = build(parsed.root);
+	const expected = `
 typedef struct Person
 {
 void *_vt;
@@ -26,20 +26,20 @@ return p;
 }
 Person x = Person_init();
 `;
-  expect(parsed.errors).toEqual([]);
-  expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+	expect(parsed.errors).toEqual([]);
+	expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
 });
 
 test("init struct with params", () => {
-  const input = `
+	const input = `
 struct Person {
   var name: string
 }
 var x = Person.init("Andrew")
 `;
-  const parsed = parse(input);
-  const result = build(parsed.root);
-  const expected = `
+	const parsed = parse(input);
+	const result = build(parsed.root);
+	const expected = `
 typedef struct Person
 {
 void *_vt;
@@ -53,6 +53,6 @@ return p;
 }
 Person x = Person_init("Andrew");
 `;
-  expect(parsed.errors).toEqual([]);
-  expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+	expect(parsed.errors).toEqual([]);
+	expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
 });

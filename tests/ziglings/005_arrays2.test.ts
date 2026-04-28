@@ -7,7 +7,7 @@ import parse_with_imports from "./parse_with_imports";
 import trim_code from "./trim_code";
 
 test.skip("ziglings 005 arrays 2 -- errors", () => {
-  const input = `
+	const input = `
 import System
 
 pub func main() {
@@ -33,17 +33,17 @@ pub func main() {
     Console.write("\\n")
   }
 `;
-  const expected = [
-    test_error(input, "Assignment to const: n", 2, 63),
-    test_error(input, "Type mismatch in declaration: int (expected uint8)", 2, 97),
-    test_error(input, "Type mismatch in declaration: int (expected uint8)", 2, 141),
-  ];
-  const parsed = parse_with_imports(input);
-  expect(parsed.errors).toEqual(expected);
+	const expected = [
+		test_error(input, "Assignment to const: n", 2, 63),
+		test_error(input, "Type mismatch in declaration: int (expected uint8)", 2, 97),
+		test_error(input, "Type mismatch in declaration: int (expected uint8)", 2, 141),
+	];
+	const parsed = parse_with_imports(input);
+	expect(parsed.errors).toEqual(expected);
 });
 
 test.skip("ziglings 005 arrays 2 -- fixed", () => {
-  const input = `
+	const input = `
 import System
 
 pub func main() {
@@ -69,12 +69,12 @@ pub func main() {
     Console.write("\\n")
 }
 `;
-  const parsed = parse_with_imports(input);
-  expect(parsed.errors).toEqual([]);
+	const parsed = parse_with_imports(input);
+	expect(parsed.errors).toEqual([]);
 });
 
 test.skip("ziglings 005 arrays 2 -- build", async () => {
-  const input = `
+	const input = `
 import System
 
 pub func main() {
@@ -100,10 +100,10 @@ pub func main() {
   Console.write("\\n")
 }
 `;
-  const parsed = parse_with_imports(input);
-  expect(parsed.errors).toEqual([]);
-  const built = build(parsed.root);
-  const expected = `
+	const parsed = parse_with_imports(input);
+	expect(parsed.errors).toEqual([]);
+	const built = build(parsed.root);
+	const expected = `
 int main()
 {
 unsigned char some_primes[8] = {1, 3, 5, 7, 11, 13, 17, 19};
@@ -122,8 +122,8 @@ free(_param_2);
 free(_param_3);
 }
 `;
-  expect(trim_code(built.code)).toEqual(expected.trim());
+	expect(trim_code(built.code)).toEqual(expected.trim());
 
-  const expected_output = "Standard Library.";
-  await check_output("005", built, expected_output);
+	const expected_output = "Standard Library.";
+	await check_output("005", built, expected_output);
 });

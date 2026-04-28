@@ -1,4 +1,4 @@
 export default interface BuildResult {
-  headers: string;
-  code: string;
+	headers: string;
+	code: string;
 }

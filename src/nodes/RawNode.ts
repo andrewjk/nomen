@@ -1,10 +1,10 @@
 import BaseNode from "./BaseNode.ts";
 
 export default class RawNode extends BaseNode {
-  value: string;
+	value: string;
 
-  constructor(start: number, value: string) {
-    super("raw", start);
-    this.value = value;
-  }
+	constructor(start: number, value: string) {
+		super("raw", start);
+		this.value = value;
+	}
 }

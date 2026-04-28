@@ -7,7 +7,7 @@ import parse_with_imports from "./parse_with_imports";
 import trim_code from "./trim_code";
 
 test("ziglings 004 arrays -- errors", () => {
-  const input = `
+	const input = `
 import System
 
 pub func main() {
@@ -22,17 +22,17 @@ pub func main() {
   Console.write("First: \\{first}, Fourth: \\{fourth}, Length: \\{length}\\n")
 }
 `;
-  const expected = [
-    test_error(input, "Assignment to const: some_primes", 7, 3),
-    test_error(input, "Unknown value: ???", 10, 30),
-    test_error(input, "Field not found: ???", 11, 30),
-  ];
-  const parsed = parse_with_imports(input);
-  expect(parsed.errors).toEqual(expected);
+	const expected = [
+		test_error(input, "Assignment to const: some_primes", 7, 3),
+		test_error(input, "Unknown value: ???", 10, 30),
+		test_error(input, "Field not found: ???", 11, 30),
+	];
+	const parsed = parse_with_imports(input);
+	expect(parsed.errors).toEqual(expected);
 });
 
 test("ziglings 004 arrays -- fixed", () => {
-  const input = `
+	const input = `
 import System
 
 pub func main() {
@@ -46,12 +46,12 @@ pub func main() {
 
   Console.write("First: \\{first}, Fourth: \\{fourth}, Length: \\{length}\\n")
 }`;
-  const parsed = parse_with_imports(input);
-  expect(parsed.errors).toEqual([]);
+	const parsed = parse_with_imports(input);
+	expect(parsed.errors).toEqual([]);
 });
 
 test("ziglings 004 arrays -- build", async () => {
-  const input = `
+	const input = `
 import System
 
 pub func main() {
@@ -66,10 +66,10 @@ pub func main() {
   Console.write("First: \\{first}, Fourth: \\{fourth}, Length: \\{length}\\n")
 }
 `;
-  const parsed = parse_with_imports(input);
-  expect(parsed.errors).toEqual([]);
-  const built = build(parsed.root);
-  const expected = `
+	const parsed = parse_with_imports(input);
+	expect(parsed.errors).toEqual([]);
+	const built = build(parsed.root);
+	const expected = `
 int main()
 {
 unsigned char some_primes[8] = {1, 3, 5, 7, 11, 13, 17, 19};
@@ -88,8 +88,8 @@ free(_param_2);
 free(_param_3);
 }
 `;
-  expect(trim_code(built.code)).toEqual(expected.trim());
+	expect(trim_code(built.code)).toEqual(expected.trim());
 
-  const expected_output = "First: 2, Fourth: 7, Length: 8";
-  await check_output("004", built, expected_output);
+	const expected_output = "First: 2, Fourth: 7, Length: 8";
+	await check_output("004", built, expected_output);
 });

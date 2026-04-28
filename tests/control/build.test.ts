@@ -7,77 +7,77 @@ import trim_test_build from "../trim_test_build";
 //const test = suite("Control build");
 
 test("break", () => {
-  const input = `
+	const input = `
 for x in 0..5 {
   break
 }
 `;
-  const parsed = parse(input);
-  const result = build(parsed.root);
-  const expected = `
+	const parsed = parse(input);
+	const result = build(parsed.root);
+	const expected = `
 long x;
 for (x = 0; x < 5; x++)
 {
 break;
 }
 `;
-  expect(parsed.errors).toEqual([]);
-  expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+	expect(parsed.errors).toEqual([]);
+	expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
 });
 
 test("continue", () => {
-  const input = `
+	const input = `
 for x in 0..5 {
   continue
 }
 `;
-  const parsed = parse(input);
-  const result = build(parsed.root);
-  const expected = `
+	const parsed = parse(input);
+	const result = build(parsed.root);
+	const expected = `
 long x;
 for (x = 0; x < 5; x++)
 {
 continue;
 }
 `;
-  expect(parsed.errors).toEqual([]);
-  expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+	expect(parsed.errors).toEqual([]);
+	expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
 });
 
 test("panic", () => {
-  const input = `
+	const input = `
 func add() -> int {
   panic "something went wrong"
 }
 `;
-  const parsed = parse(input);
-  const result = build(parsed.root);
-  const expected = `
+	const parsed = parse(input);
+	const result = build(parsed.root);
+	const expected = `
 long add()
 {
 printf("something went wrong\\n");
 exit(EXIT_FAILURE);
 }
 `;
-  expect(parsed.errors).toEqual([]);
-  expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+	expect(parsed.errors).toEqual([]);
+	expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
 });
 
 test("todo", () => {
-  const input = `
+	const input = `
 func add() -> int {
   todo "haven't done this yet"
 }
 `;
-  const parsed = parse(input);
-  const result = build(parsed.root);
-  const expected = `
+	const parsed = parse(input);
+	const result = build(parsed.root);
+	const expected = `
 long add()
 {
 printf("haven't done this yet\\n");
 exit(EXIT_FAILURE);
 }
 `;
-  expect(parsed.errors).toEqual([]);
-  expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+	expect(parsed.errors).toEqual([]);
+	expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
 });

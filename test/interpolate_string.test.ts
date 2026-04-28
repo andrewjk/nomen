@@ -6,16 +6,16 @@ import trim_test_build from "./trim_test_build";
 
 // BUILD
 describe("interpolate string build", () => {
-  test("interpolate string", () => {
-    const input = `
+	test("interpolate string", () => {
+		const input = `
 import System
 
 const x = 5
 const z = "\\{x} is less than \\{x + 5}!"
 `;
-    const parsed = parse_with_imports(input);
-    const result = build(parsed.root, { arch: "aarch64" });
-    const expected = `
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		const expected = `
 x: .quad 5
 _param_0: .space 8
 adr x0, x
@@ -74,9 +74,9 @@ add sp, sp, #80
 ldp x29, x30, [sp], #16
 ret
 `;
-    expect(parsed.errors).toEqual([]);
-    expect(trim_test_build(result.code.substring(result.code.indexOf("x: .quad 5")))).toEqual(
-      trim_test_build(expected),
-    );
-  });
+		expect(parsed.errors).toEqual([]);
+		expect(trim_test_build(result.code.substring(result.code.indexOf("x: .quad 5")))).toEqual(
+			trim_test_build(expected),
+		);
+	});
 });

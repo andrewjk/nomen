@@ -7,16 +7,16 @@ import trim_test_build from "./trim_test_build";
 
 // BUILD
 describe("while loop build", () => {
-  test("while", () => {
-    const input = `
+	test("while", () => {
+		const input = `
 var x = 0
 while x < 5 {
   x = x + 1
 }
 `;
-    const parsed = parse(input);
-    const result = build(parsed.root, { arch: "aarch64" });
-    const expected = `
+		const parsed = parse(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		const expected = `
 x: .quad 0
 .while_0:
 ldr x2, =5
@@ -38,19 +38,19 @@ str x0, [x1]
 b .while_0
 .end_while_0:
 `;
-    expect(parsed.errors).toEqual([]);
-    expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
-  });
+		expect(parsed.errors).toEqual([]);
+		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+	});
 
-  test("while true", () => {
-    const input = `
+	test("while true", () => {
+		const input = `
 while true {
   // ...
 }
 `;
-    const parsed = parse(input);
-    const result = build(parsed.root, { arch: "aarch64" });
-    const expected = `
+		const parsed = parse(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		const expected = `
 .while_0:
 ldr x0, =1
 cmp x0, #0
@@ -58,12 +58,12 @@ beq .end_while_0
 b .while_0
 .end_while_0:
 `;
-    expect(parsed.errors).toEqual([]);
-    expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
-  });
+		expect(parsed.errors).toEqual([]);
+		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+	});
 
-  test("while with break", () => {
-    const input = `
+	test("while with break", () => {
+		const input = `
 var x = 0
 while true {
   x = x + 1
@@ -72,9 +72,9 @@ while true {
   }
 }
 `;
-    const parsed = parse(input);
-    const result = build(parsed.root, { arch: "aarch64" });
-    const expected = `
+		const parsed = parse(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		const expected = `
 x: .quad 0
 .while_0:
 ldr x0, =1
@@ -102,12 +102,12 @@ end_0:
 b .while_0
 .end_while_0:
 `;
-    expect(parsed.errors).toEqual([]);
-    expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
-  });
+		expect(parsed.errors).toEqual([]);
+		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+	});
 
-  test("while with continue", () => {
-    const input = `
+	test("while with continue", () => {
+		const input = `
 var x = 0
 while x < 10 {
   x = x + 1
@@ -117,9 +117,9 @@ while x < 10 {
   x = x * 2
 }
 `;
-    const parsed = parse(input);
-    const result = build(parsed.root, { arch: "aarch64" });
-    const expected = `
+		const parsed = parse(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		const expected = `
 x: .quad 0
 .while_0:
 ldr x2, =10
@@ -166,21 +166,21 @@ str x0, [x1]
 b .while_0
 .end_while_0:
 `;
-    expect(parsed.errors).toEqual([]);
-    expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
-  });
+		expect(parsed.errors).toEqual([]);
+		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+	});
 });
 
 // ERRORS
 describe("while loop errors", () => {
-  test("string condition", () => {
-    const input = `
+	test("string condition", () => {
+		const input = `
 while "hi" {
   // ...
 }
 `;
-    const expected = [test_error(input, "While loop condition must be a bool, not string", 2, 7)];
-    const parsed = parse(input);
-    expect(parsed.errors).toEqual(expected);
-  });
+		const expected = [test_error(input, "While loop condition must be a bool, not string", 2, 7)];
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual(expected);
+	});
 });

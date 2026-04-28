@@ -8,24 +8,24 @@ import { expect } from "vite-plus/test";
 import type BuildResult from "../../src/types/BuildResult";
 
 export default async function check_output(
-  name: string,
-  built: BuildResult,
-  expected_output: string,
+	name: string,
+	built: BuildResult,
+	expected_output: string,
 ) {
-  const folder = path.join(".", "tests", "ziglings", "out", "ziglings_" + name);
-  if (!fs.existsSync(folder)) {
-    fs.mkdirSync(folder);
-  }
+	const folder = path.join(".", "tests", "ziglings", "out", "ziglings_" + name);
+	if (!fs.existsSync(folder)) {
+		fs.mkdirSync(folder);
+	}
 
-  const headerfile = path.join(folder, "main.h");
-  const codefile = path.join(folder, "main.c");
-  const outfile = path.join(folder, "main.out");
-  fs.writeFileSync(headerfile, built.headers);
-  fs.writeFileSync(codefile, built.code);
+	const headerfile = path.join(folder, "main.h");
+	const codefile = path.join(folder, "main.c");
+	const outfile = path.join(folder, "main.out");
+	fs.writeFileSync(headerfile, built.headers);
+	fs.writeFileSync(codefile, built.code);
 
-  const execPromise = util.promisify(exec);
-  const { stdout, stderr } = await execPromise(`clang ${codefile} -o ${outfile} && ${outfile}`);
+	const execPromise = util.promisify(exec);
+	const { stdout, stderr } = await execPromise(`clang ${codefile} -o ${outfile} && ${outfile}`);
 
-  expect(stderr).toBeFalsy();
-  expect(stdout.substring(0, expected_output.length)).toBe(expected_output);
+	expect(stderr).toBeFalsy();
+	expect(stdout.substring(0, expected_output.length)).toBe(expected_output);
 }

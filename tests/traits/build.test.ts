@@ -7,14 +7,14 @@ import trim_test_build from "../trim_test_build";
 //const test = suite("Trait build");
 
 test("trait", () => {
-  const input = `
+	const input = `
 trait Person {}
 
 struct Frank: Person {}
 `;
-  const parsed = parse(input);
-  const result = build(parsed.root);
-  const expected = `
+	const parsed = parse(input);
+	const result = build(parsed.root);
+	const expected = `
 typedef struct Person
 {
 } Person;
@@ -31,12 +31,12 @@ f._vt = &_Frank_traits;
 return f;
 }
 `;
-  expect(parsed.errors).toEqual([]);
-  expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+	expect(parsed.errors).toEqual([]);
+	expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
 });
 
 test("trait with fields", () => {
-  const input = `
+	const input = `
 trait Person {
   var name: string
   var age = 0
@@ -46,9 +46,9 @@ struct Frank: Person {
   var name = "Frank"
 }
 `;
-  const parsed = parse(input);
-  const result = build(parsed.root);
-  const expected = `
+	const parsed = parse(input);
+	const result = build(parsed.root);
+	const expected = `
 typedef struct Person
 {
 } Person;
@@ -72,12 +72,12 @@ char* get_Frank_name(struct Frank *self) { return self->name; }
 void set_Frank_name(struct Frank *self, char* value) { self->name = value; }
 long get_Frank_age(struct Frank *self) { return self->age; }
 void set_Frank_age(struct Frank *self, long value) { self->age = value; }`;
-  expect(parsed.errors).toEqual([]);
-  expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+	expect(parsed.errors).toEqual([]);
+	expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
 });
 
 test("trait with functions", () => {
-  const input = `
+	const input = `
 trait Person {
   func greet() {}
 }
@@ -88,9 +88,9 @@ struct Frank: Person {
   }
 }
 `;
-  const parsed = parse(input);
-  const result = build(parsed.root);
-  const expected = `
+	const parsed = parse(input);
+	const result = build(parsed.root);
+	const expected = `
 typedef struct Person
 {
 } Person;
@@ -115,12 +115,12 @@ char* Frank_greet()
 return "hi";
 }
 `;
-  expect(parsed.errors).toEqual([]);
-  expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+	expect(parsed.errors).toEqual([]);
+	expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
 });
 
 test("trait with implemented functions", () => {
-  const input = `
+	const input = `
 trait Person {
   func greet() -> string {
     return "hi"
@@ -129,9 +129,9 @@ trait Person {
 
 struct Frank: Person {}
 `;
-  const parsed = parse(input);
-  const result = build(parsed.root);
-  const expected = `
+	const parsed = parse(input);
+	const result = build(parsed.root);
+	const expected = `
 typedef struct Person
 {
 } Person;
@@ -154,6 +154,6 @@ f._vt = &_Frank_traits;
 return f;
 }
 `;
-  expect(parsed.errors).toEqual([]);
-  expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+	expect(parsed.errors).toEqual([]);
+	expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
 });

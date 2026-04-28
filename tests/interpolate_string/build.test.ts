@@ -7,23 +7,23 @@ import parse_with_imports from "../ziglings/parse_with_imports";
 //const test = suite("interpolate string build");
 
 test("interpolate string", () => {
-  const input = `
+	const input = `
 import System
 
 const x = 5
 const z = "\\{x} is less than \\{x + 5}!"
 `;
-  const parsed = parse_with_imports(input);
-  const result = build(parsed.root);
-  const expected = `
+	const parsed = parse_with_imports(input);
+	const result = build(parsed.root);
+	const expected = `
 long x = 5;
 char* _param_0 = int_to_string(x);
 char* _param_1 = int_to_string(x + 5);
 char* z = _string_interpolate_2("%s is less than %s!", _param_0, _param_1);
 `;
-  //console.log(result);
-  expect(parsed.errors).toEqual([]);
-  expect(trim_test_build(result.code.substring(result.code.indexOf("long x = 5;")))).toEqual(
-    trim_test_build(expected),
-  );
+	//console.log(result);
+	expect(parsed.errors).toEqual([]);
+	expect(trim_test_build(result.code.substring(result.code.indexOf("long x = 5;")))).toEqual(
+		trim_test_build(expected),
+	);
 });

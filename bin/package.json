@@ -1,32 +1,32 @@
 {
-  "name": "echo-cli",
-  "version": "1.0.0",
-  "description": "",
-  "keywords": [],
-  "license": "ISC",
-  "author": "",
-  "bin": {
-    "echo": "./dist/index.js"
-  },
-  "main": "index.js",
-  "scripts": {
-    "build": "tsup",
-    "go": "tsup && npx echo -i ./tests/test.echo && clang ./tests/main.c && ./a.out",
-    "go:c": "rm -f ./a.out && clang ./tests/main.c && ./a.out",
-    "check": "tsc -p tsconfig-check.json --noEmit",
-    "test": "uvu -r tsm tests"
-  },
-  "dependencies": {
-    "chokidar": "^5.0.0",
-    "yargs": "^18.0.0"
-  },
-  "devDependencies": {
-    "@trivago/prettier-plugin-sort-imports": "^6.0.2",
-    "@types/node": "^25.0.3",
-    "@types/yargs": "^17.0.35",
-    "prettier": "^3.7.4",
-    "tsm": "^2.3.0",
-    "tsup": "^8.5.1",
-    "typescript": "^5.9.3"
-  }
+	"name": "echo-cli",
+	"version": "1.0.0",
+	"description": "",
+	"keywords": [],
+	"license": "ISC",
+	"author": "",
+	"bin": {
+		"echo": "./dist/index.js"
+	},
+	"main": "index.js",
+	"scripts": {
+		"build": "tsup",
+		"go": "tsup && npx echo -i ./tests/test.echo && clang ./tests/main.c && ./a.out",
+		"go:c": "rm -f ./a.out && clang ./tests/main.c && ./a.out",
+		"check": "tsc -p tsconfig-check.json --noEmit",
+		"test": "uvu -r tsm tests"
+	},
+	"dependencies": {
+		"chokidar": "^5.0.0",
+		"yargs": "^18.0.0"
+	},
+	"devDependencies": {
+		"@trivago/prettier-plugin-sort-imports": "^6.0.2",
+		"@types/node": "^25.0.3",
+		"@types/yargs": "^17.0.35",
+		"prettier": "^3.7.4",
+		"tsm": "^2.3.0",
+		"tsup": "^8.5.1",
+		"typescript": "^5.9.3"
+	}
 }

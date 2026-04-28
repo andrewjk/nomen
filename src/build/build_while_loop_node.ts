@@ -5,18 +5,18 @@ import build_node from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 
 export default function build_while_loop_node(node: WhileLoopNode, status: BuildStatus) {
-  const old_scoped_declarations = status.scoped_declarations;
-  status.scoped_declarations = [];
+	const old_scoped_declarations = status.scoped_declarations;
+	status.scoped_declarations = [];
 
-  status.code += `while (`;
-  build_node(node.condition, status);
-  status.code += `) {\n`;
+	status.code += `while (`;
+	build_node(node.condition, status);
+	status.code += `) {\n`;
 
-  build_block_node(node, status);
+	build_block_node(node, status);
 
-  build_auto_free(status);
+	build_auto_free(status);
 
-  status.code += `}\n`;
+	status.code += `}\n`;
 
-  status.scoped_declarations = old_scoped_declarations;
+	status.scoped_declarations = old_scoped_declarations;
 }

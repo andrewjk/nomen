@@ -39,110 +39,110 @@ import build_value_node from "./build_value_node.ts";
 import build_while_loop_node from "./build_while_loop_node.ts";
 
 export default function build_node(node: BaseNode, status: BuildStatus, with_semicolon = false) {
-  if (node.allocations) {
-    for (let decl of node.allocations) {
-      build_node(decl, status, true);
-    }
-  }
+	if (node.allocations) {
+		for (let decl of node.allocations) {
+			build_node(decl, status, true);
+		}
+	}
 
-  switch (node.node_type) {
-    case "root": {
-      build_block_node(node as RootNode, status);
-      break;
-    }
-    case "declare": {
-      const decl = node as DeclarationNode;
-      build_declaration_node(decl, status);
-      if (decl.value?.node_type === "func") {
-        with_semicolon = false;
-      }
-      break;
-    }
-    case "assign": {
-      build_assignment_node(node as AssignmentNode, status);
-      break;
-    }
-    case "func": {
-      build_function_node(node as FunctionNode, status);
-      with_semicolon = false;
-      break;
-    }
-    case "func_call": {
-      build_function_call_node(node as FunctionCallNode, status);
-      break;
-    }
-    case "grouped": {
-      build_node((node as GroupedNode).value, status);
-      break;
-    }
-    case "op": {
-      build_operation_node(node as OperationNode, status);
-      break;
-    }
-    case "if": {
-      build_if_else_node(node as IfElseNode, status);
-      with_semicolon = false;
-      break;
-    }
-    case "for": {
-      build_for_loop_node(node as ForLoopNode, status);
-      with_semicolon = false;
-      break;
-    }
-    case "while": {
-      build_while_loop_node(node as WhileLoopNode, status);
-      with_semicolon = false;
-      break;
-    }
-    case "break": {
-      build_break_node(status);
-      break;
-    }
-    case "continue": {
-      build_continue_node(status);
-      break;
-    }
-    case "return": {
-      build_return_node(node as ReturnNode, status);
-      break;
-    }
-    case "value": {
-      build_value_node(node as ValueNode, status);
-      break;
-    }
-    case "array": {
-      build_array_values_node(node as ArrayValuesNode, status);
-      break;
-    }
-    case "range": {
-      build_range_node(node as RangeNode, status);
-      break;
-    }
-    case "access": {
-      build_access_node(node as AccessNode, status);
-      break;
-    }
-    case "panic": {
-      build_panic_node(node as PanicNode, status);
-      break;
-    }
-    case "todo": {
-      build_todo_node(node as TodoNode, status);
-      break;
-    }
-    case "raw": {
-      build_raw_node(node as RawNode, status);
-      with_semicolon = false;
-      break;
-    }
-    default: {
-      throw Error("Invalid node: " + node.node_type);
-    }
-  }
+	switch (node.node_type) {
+		case "root": {
+			build_block_node(node as RootNode, status);
+			break;
+		}
+		case "declare": {
+			const decl = node as DeclarationNode;
+			build_declaration_node(decl, status);
+			if (decl.value?.node_type === "func") {
+				with_semicolon = false;
+			}
+			break;
+		}
+		case "assign": {
+			build_assignment_node(node as AssignmentNode, status);
+			break;
+		}
+		case "func": {
+			build_function_node(node as FunctionNode, status);
+			with_semicolon = false;
+			break;
+		}
+		case "func_call": {
+			build_function_call_node(node as FunctionCallNode, status);
+			break;
+		}
+		case "grouped": {
+			build_node((node as GroupedNode).value, status);
+			break;
+		}
+		case "op": {
+			build_operation_node(node as OperationNode, status);
+			break;
+		}
+		case "if": {
+			build_if_else_node(node as IfElseNode, status);
+			with_semicolon = false;
+			break;
+		}
+		case "for": {
+			build_for_loop_node(node as ForLoopNode, status);
+			with_semicolon = false;
+			break;
+		}
+		case "while": {
+			build_while_loop_node(node as WhileLoopNode, status);
+			with_semicolon = false;
+			break;
+		}
+		case "break": {
+			build_break_node(status);
+			break;
+		}
+		case "continue": {
+			build_continue_node(status);
+			break;
+		}
+		case "return": {
+			build_return_node(node as ReturnNode, status);
+			break;
+		}
+		case "value": {
+			build_value_node(node as ValueNode, status);
+			break;
+		}
+		case "array": {
+			build_array_values_node(node as ArrayValuesNode, status);
+			break;
+		}
+		case "range": {
+			build_range_node(node as RangeNode, status);
+			break;
+		}
+		case "access": {
+			build_access_node(node as AccessNode, status);
+			break;
+		}
+		case "panic": {
+			build_panic_node(node as PanicNode, status);
+			break;
+		}
+		case "todo": {
+			build_todo_node(node as TodoNode, status);
+			break;
+		}
+		case "raw": {
+			build_raw_node(node as RawNode, status);
+			with_semicolon = false;
+			break;
+		}
+		default: {
+			throw Error("Invalid node: " + node.node_type);
+		}
+	}
 
-  if (with_semicolon) {
-    if (!status.code.endsWith("\n")) {
-      status.code += "\n";
-    }
-  }
+	if (with_semicolon) {
+		if (!status.code.endsWith("\n")) {
+			status.code += "\n";
+		}
+	}
 }

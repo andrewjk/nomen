@@ -7,7 +7,7 @@ import check_output_aarch64 from "./check_output_aarch64";
 import parse_with_imports from "./parse_with_imports";
 
 test("ziglings 003 assignment -- errors", () => {
-  const input = `
+	const input = `
 import System
 
 pub func main = () -> {
@@ -21,17 +21,17 @@ pub func main = () -> {
     Console.write("\\{n} \\{pi} \\{negative_eleven}\\n")
 }
 `;
-  const expected = [
-    test_error(input, "Assignment to const: n", 6, 5),
-    test_error(input, "Type mismatch in declaration: int (expected uint8)", 8, 22),
-    test_error(input, "Type mismatch in declaration: int (expected uint8)", 10, 35),
-  ];
-  const parsed = parse_with_imports(input);
-  expect(parsed.errors).toEqual(expected);
+	const expected = [
+		test_error(input, "Assignment to const: n", 6, 5),
+		test_error(input, "Type mismatch in declaration: int (expected uint8)", 8, 22),
+		test_error(input, "Type mismatch in declaration: int (expected uint8)", 10, 35),
+	];
+	const parsed = parse_with_imports(input);
+	expect(parsed.errors).toEqual(expected);
 });
 
 test("ziglings 003 assignment -- parse", () => {
-  const input = `
+	const input = `
 import System
 
 pub func main = () -> {
@@ -45,12 +45,12 @@ pub func main = () -> {
     Console.write("\\{n} \\{pi} \\{negative_eleven}\\n")
 }
 `;
-  const parsed = parse_with_imports(input);
-  expect(parsed.errors).toEqual([]);
+	const parsed = parse_with_imports(input);
+	expect(parsed.errors).toEqual([]);
 });
 
 test("ziglings 003 assignment -- build", async () => {
-  const input = `
+	const input = `
 import System
 
 pub func main = () -> {
@@ -64,10 +64,10 @@ pub func main = () -> {
     Console.write("\\{n} \\{pi} \\{negative_eleven}\\n")
 }
 `;
-  const parsed = parse_with_imports(input);
-  expect(parsed.errors).toEqual([]);
-  const built = build(parsed.root, { arch: "aarch64" });
-  const expected = `
+	const parsed = parse_with_imports(input);
+	expect(parsed.errors).toEqual([]);
+	const built = build(parsed.root, { arch: "aarch64" });
+	const expected = `
 .p2align 2
 main:
 stp x29, x30, [sp, #-16]!
@@ -146,10 +146,10 @@ add sp, sp, #80
 ldp x29, x30, [sp], #16
 ret
 `;
-  expect(trim_test_build(built.code.substring(built.code.indexOf("\n.p2align 2\nmain:")))).toEqual(
-    trim_test_build(expected),
-  );
+	expect(trim_test_build(built.code.substring(built.code.indexOf("\n.p2align 2\nmain:")))).toEqual(
+		trim_test_build(expected),
+	);
 
-  const expected_output = "55 3.141590 -11";
-  await check_output_aarch64("003", built, expected_output);
+	const expected_output = "55 3.141590 -11";
+	await check_output_aarch64("003", built, expected_output);
 });

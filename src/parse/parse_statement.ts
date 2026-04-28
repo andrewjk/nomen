@@ -31,153 +31,153 @@ import get_index from "./utils/get_index.ts";
 import peek_current from "./utils/peek_current.ts";
 
 export default function parse_statement(status: ParseStatus) {
-  while (true) {
-    const value = peek_current(status);
-    if (!value) {
-      break;
-    }
+	while (true) {
+		const value = peek_current(status);
+		if (!value) {
+			break;
+		}
 
-    // Ignore comments
-    if (value.startsWith("//") || value.startsWith("/*")) {
-      consume(status);
-      continue;
-    }
+		// Ignore comments
+		if (value.startsWith("//") || value.startsWith("/*")) {
+			consume(status);
+			continue;
+		}
 
-    // First check for a keyword (var, if, switch, etc), then check for a
-    // following operator (=, +, etc)
-    switch (value) {
-      case "import": {
-        parse_import(status);
-        break;
-      }
-      case "pub":
-      case "priv": {
-        parse_visibility(value, status);
-        break;
-      }
-      case "const":
-      case "var": {
-        parse_declaration("mod", value, status);
-        break;
-      }
-      case "struct": {
-        parse_struct("mod", status);
-        break;
-      }
-      case "trait": {
-        parse_trait("mod", status);
-        break;
-      }
-      case "func": {
-        parse_function("mod", status);
-        break;
-      }
-      case "op": {
-        parse_op("mod", status);
-        break;
-      }
-      case "if": {
-        const if_else = parse_if_else(status);
-        add_to_parent(if_else, "If expression", status);
-        break;
-      }
-      case "else": {
-        return;
-      }
-      case "for": {
-        parse_for_loop(status);
-        break;
-      }
-      case "while": {
-        parse_while_loop(status);
-        break;
-      }
-      case "break":
-      case "continue": {
-        parse_break_or_continue(value, status);
-        break;
-      }
-      case "panic":
-      case "todo": {
-        parse_panic_or_todo(value, status);
-        break;
-      }
-      case "let": {
-        parse_let(status);
-        break;
-      }
-      case "return": {
-        parse_return(status);
-        break;
-      }
-      case "raw": {
-        parse_raw(status);
-        break;
-      }
-      case "}": {
-        return;
-      }
-      default: {
-        parse_statement_start(status);
-        break;
-      }
-    }
-  }
+		// First check for a keyword (var, if, switch, etc), then check for a
+		// following operator (=, +, etc)
+		switch (value) {
+			case "import": {
+				parse_import(status);
+				break;
+			}
+			case "pub":
+			case "priv": {
+				parse_visibility(value, status);
+				break;
+			}
+			case "const":
+			case "var": {
+				parse_declaration("mod", value, status);
+				break;
+			}
+			case "struct": {
+				parse_struct("mod", status);
+				break;
+			}
+			case "trait": {
+				parse_trait("mod", status);
+				break;
+			}
+			case "func": {
+				parse_function("mod", status);
+				break;
+			}
+			case "op": {
+				parse_op("mod", status);
+				break;
+			}
+			case "if": {
+				const if_else = parse_if_else(status);
+				add_to_parent(if_else, "If expression", status);
+				break;
+			}
+			case "else": {
+				return;
+			}
+			case "for": {
+				parse_for_loop(status);
+				break;
+			}
+			case "while": {
+				parse_while_loop(status);
+				break;
+			}
+			case "break":
+			case "continue": {
+				parse_break_or_continue(value, status);
+				break;
+			}
+			case "panic":
+			case "todo": {
+				parse_panic_or_todo(value, status);
+				break;
+			}
+			case "let": {
+				parse_let(status);
+				break;
+			}
+			case "return": {
+				parse_return(status);
+				break;
+			}
+			case "raw": {
+				parse_raw(status);
+				break;
+			}
+			case "}": {
+				return;
+			}
+			default: {
+				parse_statement_start(status);
+				break;
+			}
+		}
+	}
 }
 
 function parse_statement_start(status: ParseStatus) {
-  const start = get_index(status);
-  const value = consume(status);
-  let node: BaseNode = new ValueNode(start, value);
+	const start = get_index(status);
+	const value = consume(status);
+	let node: BaseNode = new ValueNode(start, value);
 
-  while (true) {
-    const current_value = peek_current(status);
-    switch (current_value) {
-      case ".": {
-        accept(".", status);
-        node = new AccessNode(node.start, node, parse_access(value, status));
-        break;
-      }
-      case "[": {
-        accept("[", status);
-        const index = parse_expression(status);
-        expect("]", status);
-        node = new AccessNode(node.start, node, new AccessIndexNode(status.i, index));
-        break;
-      }
-      case "(": {
-        accept("(", status);
-        const func = new FunctionCallNode(node.start, value);
-        if (peek_current(status) !== ")") {
-          parse_function_call_parameter(func, status);
-        }
-        expect(")", status);
-        node = func;
-        break;
-      }
-      case "=": {
-        accept("=", status);
-        node = new AssignmentNode(node.start, node, parse_expression(status));
-        break;
-      }
-      default: {
-        add_to_parent(node, node_name(node), status);
-        return;
-      }
-    }
-  }
+	while (true) {
+		const current_value = peek_current(status);
+		switch (current_value) {
+			case ".": {
+				accept(".", status);
+				node = new AccessNode(node.start, node, parse_access(value, status));
+				break;
+			}
+			case "[": {
+				accept("[", status);
+				const index = parse_expression(status);
+				expect("]", status);
+				node = new AccessNode(node.start, node, new AccessIndexNode(status.i, index));
+				break;
+			}
+			case "(": {
+				accept("(", status);
+				const func = new FunctionCallNode(node.start, value);
+				if (peek_current(status) !== ")") {
+					parse_function_call_parameter(func, status);
+				}
+				expect(")", status);
+				node = func;
+				break;
+			}
+			case "=": {
+				accept("=", status);
+				node = new AssignmentNode(node.start, node, parse_expression(status));
+				break;
+			}
+			default: {
+				add_to_parent(node, node_name(node), status);
+				return;
+			}
+		}
+	}
 }
 
 function node_name(node: BaseNode) {
-  switch (node.node_type) {
-    case "declare": {
-      return "Declaration";
-    }
-    case "assign": {
-      return "Assignment";
-    }
-    default: {
-      return node.node_type;
-    }
-  }
+	switch (node.node_type) {
+		case "declare": {
+			return "Declaration";
+		}
+		case "assign": {
+			return "Assignment";
+		}
+		default: {
+			return node.node_type;
+		}
+	}
 }

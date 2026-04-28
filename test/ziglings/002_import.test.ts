@@ -7,42 +7,42 @@ import check_output_aarch64 from "./check_output_aarch64";
 import parse_with_imports from "./parse_with_imports";
 
 test("ziglings 002 import -- errors", () => {
-  const input = `
+	const input = `
 import ???
 
 pub func main = () -> {
     Console.write("Standard Library.\\n")
 }
 `;
-  const expected = [test_error(input, "Unknown value: Console", 5, 5)];
-  const parsed = parse_with_imports(input);
-  expect(parsed.errors).toEqual(expected);
+	const expected = [test_error(input, "Unknown value: Console", 5, 5)];
+	const parsed = parse_with_imports(input);
+	expect(parsed.errors).toEqual(expected);
 });
 
 test("ziglings 002 import -- parse", () => {
-  const input = `
+	const input = `
 import System
 
 pub func main = () -> {
     Console.write("Standard Library.\\n")
 }
 `;
-  const parsed = parse_with_imports(input);
-  expect(parsed.errors).toEqual([]);
+	const parsed = parse_with_imports(input);
+	expect(parsed.errors).toEqual([]);
 });
 
 test("ziglings 002 import -- build", async () => {
-  const input = `
+	const input = `
 import System
 
 pub func main = () -> {
     Console.write("Standard Library.\\n")
 }
 `;
-  const parsed = parse_with_imports(input);
-  expect(parsed.errors).toEqual([]);
-  const built = build(parsed.root, { arch: "aarch64" });
-  const expected = `
+	const parsed = parse_with_imports(input);
+	expect(parsed.errors).toEqual([]);
+	const built = build(parsed.root, { arch: "aarch64" });
+	const expected = `
 .p2align 2
 main:
 stp x29, x30, [sp, #-16]!
@@ -57,10 +57,10 @@ ret
 
 _str_0: .asciz "Standard Library.\\n"
 `;
-  expect(trim_test_build(built.code.substring(built.code.indexOf("\n.p2align 2\nmain:")))).toEqual(
-    trim_test_build(expected),
-  );
+	expect(trim_test_build(built.code.substring(built.code.indexOf("\n.p2align 2\nmain:")))).toEqual(
+		trim_test_build(expected),
+	);
 
-  const expected_output = "Standard Library.";
-  await check_output_aarch64("002", built, expected_output);
+	const expected_output = "Standard Library.";
+	await check_output_aarch64("002", built, expected_output);
 });

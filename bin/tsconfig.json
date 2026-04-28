@@ -1,10 +1,10 @@
 {
-  "compilerOptions": {
-    "target": "ESNext",
-    "module": "CommonJS",
-    "strict": true,
-    "esModuleInterop": true,
-    "types": ["node"]
-  },
-  "include": ["src/*", "tsup.config.ts"]
+	"compilerOptions": {
+		"target": "ESNext",
+		"module": "CommonJS",
+		"strict": true,
+		"esModuleInterop": true,
+		"types": ["node"]
+	},
+	"include": ["src/*", "tsup.config.ts"]
 }

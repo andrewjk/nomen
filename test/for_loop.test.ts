@@ -7,16 +7,16 @@ import trim_test_build from "./trim_test_build";
 
 // BUILD
 describe("for loop build", () => {
-  test("with array", () => {
-    const input = `
+	test("with array", () => {
+		const input = `
 const y = [1, 2, 3]
 for x in y {
   x = x + 1
 }
 `;
-    const parsed = parse(input);
-    const result = build(parsed.root, { arch: "aarch64" });
-    const expected = `
+		const parsed = parse(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		const expected = `
 y: .quad 1, 2, 3
 ldr x0, =0
 adr x1, x
@@ -44,19 +44,19 @@ str x0, [x1]
 b .for_0
 .end_0:
 `;
-    expect(parsed.errors).toEqual([]);
-    expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
-  });
+		expect(parsed.errors).toEqual([]);
+		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+	});
 
-  test("with range", () => {
-    const input = `
+	test("with range", () => {
+		const input = `
 for x in 0..5 {
   x = x + 1
 }
 `;
-    const parsed = parse(input);
-    const result = build(parsed.root, { arch: "aarch64" });
-    const expected = `
+		const parsed = parse(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		const expected = `
 ldr x0, =0
 adr x1, x
 str x0, [x1]
@@ -83,21 +83,21 @@ str x0, [x1]
 b .for_0
 .end_0:
 `;
-    expect(parsed.errors).toEqual([]);
-    expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
-  });
+		expect(parsed.errors).toEqual([]);
+		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+	});
 
-  test("with body", () => {
-    const input = `
+	test("with body", () => {
+		const input = `
 const nums = [1, 2, 3]
 var sum = 0
 for n in nums {
   sum = sum + n
 }
 `;
-    const parsed = parse(input);
-    const result = build(parsed.root, { arch: "aarch64" });
-    const expected = `
+		const parsed = parse(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		const expected = `
 nums: .quad 1, 2, 3
 sum: .quad 0
 ldr x0, =0
@@ -128,21 +128,21 @@ str x0, [x1]
 b .for_0
 .end_0:
 `;
-    expect(parsed.errors).toEqual([]);
-    expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
-  });
+		expect(parsed.errors).toEqual([]);
+		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+	});
 });
 
 // ERRORS
 describe("for loop errors", () => {
-  test("string list", () => {
-    const input = `
+	test("string list", () => {
+		const input = `
 for x in "hi" {
   // ...
 }
 `;
-    const expected = [test_error(input, "For loop list must be an array, not string", 2, 10)];
-    const parsed = parse(input);
-    expect(parsed.errors).toEqual(expected);
-  });
+		const expected = [test_error(input, "For loop list must be an array, not string", 2, 10)];
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual(expected);
+	});
 });

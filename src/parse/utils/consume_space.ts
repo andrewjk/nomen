@@ -1,12 +1,12 @@
 import type ParseStatus from "../ParseStatus.ts";
 
 export default function consume_space(status: ParseStatus): string {
-  if (status.i < status.tokens.length) {
-    if (!status.tokens[status.i].value.trim()) {
-      const result = status.tokens[status.i].value;
-      status.i += 1;
-      return result;
-    }
-  }
-  return "";
+	if (status.i < status.tokens.length) {
+		if (!status.tokens[status.i].value.trim()) {
+			const result = status.tokens[status.i].value;
+			status.i += 1;
+			return result;
+		}
+	}
+	return "";
 }

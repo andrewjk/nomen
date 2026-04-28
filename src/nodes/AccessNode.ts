@@ -4,16 +4,16 @@ import AccessIndexNode from "./AccessIndexNode.ts";
 import BaseNode from "./BaseNode.ts";
 
 export default class AccessNode extends BaseNode {
-  target: BaseNode;
-  access: AccessFieldNode | AccessFunctionCallNode | AccessIndexNode;
+	target: BaseNode;
+	access: AccessFieldNode | AccessFunctionCallNode | AccessIndexNode;
 
-  constructor(
-    start: number,
-    target: BaseNode,
-    access: AccessFieldNode | AccessFunctionCallNode | AccessIndexNode,
-  ) {
-    super("access", start);
-    this.target = target;
-    this.access = access;
-  }
+	constructor(
+		start: number,
+		target: BaseNode,
+		access: AccessFieldNode | AccessFunctionCallNode | AccessIndexNode,
+	) {
+		super("access", start);
+		this.target = target;
+		this.access = access;
+	}
 }

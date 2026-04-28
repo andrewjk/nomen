@@ -7,15 +7,15 @@ import trim_test_build from "./trim_test_build";
 
 // BUILD
 describe("control build", () => {
-  test("break", () => {
-    const input = `
+	test("break", () => {
+		const input = `
 for x in 0..5 {
   break
 }
 `;
-    const parsed = parse(input);
-    const result = build(parsed.root, { arch: "aarch64" });
-    const expected = `
+		const parsed = parse(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		const expected = `
 ldr x0, =0
 adr x1, x
 str x0, [x1]
@@ -35,19 +35,19 @@ str x0, [x1]
 b .for_0
 .end_0:
 `;
-    expect(parsed.errors).toEqual([]);
-    expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
-  });
+		expect(parsed.errors).toEqual([]);
+		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+	});
 
-  test("continue", () => {
-    const input = `
+	test("continue", () => {
+		const input = `
 for x in 0..5 {
   continue
 }
 `;
-    const parsed = parse(input);
-    const result = build(parsed.root, { arch: "aarch64" });
-    const expected = `
+		const parsed = parse(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		const expected = `
 ldr x0, =0
 adr x1, x
 str x0, [x1]
@@ -67,19 +67,19 @@ str x0, [x1]
 b .for_0
 .end_0:
 `;
-    expect(parsed.errors).toEqual([]);
-    expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
-  });
+		expect(parsed.errors).toEqual([]);
+		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+	});
 
-  test("panic", () => {
-    const input = `
+	test("panic", () => {
+		const input = `
 func add = (out int) -> {
   panic("something went wrong")
 }
 `;
-    const parsed = parse(input);
-    const result = build(parsed.root, { arch: "aarch64" });
-    const expected = `
+		const parsed = parse(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		const expected = `
 .p2align 2
 add:
 stp x29, x30, [sp, #-16]!
@@ -94,19 +94,19 @@ ret
 
 _str_panic_something_went_wrong: .asciz "something went wrong\\n"
 `;
-    expect(parsed.errors).toEqual([]);
-    expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
-  });
+		expect(parsed.errors).toEqual([]);
+		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+	});
 
-  test("todo", () => {
-    const input = `
+	test("todo", () => {
+		const input = `
 func add = (out int) -> {
   todo("haven't done this yet")
 }
 `;
-    const parsed = parse(input);
-    const result = build(parsed.root, { arch: "aarch64" });
-    const expected = `
+		const parsed = parse(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		const expected = `
 .p2align 2
 add:
 stp x29, x30, [sp, #-16]!
@@ -121,56 +121,56 @@ ret
 
 _str_todo_haven_t_done_this_yet: .asciz "haven't done this yet\\n"
 `;
-    expect(parsed.errors).toEqual([]);
-    expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
-  });
+		expect(parsed.errors).toEqual([]);
+		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+	});
 });
 
 // ERRORS
 describe("control errors", () => {
-  test("break outside loop", () => {
-    const input = `
+	test("break outside loop", () => {
+		const input = `
 func add = (out int) -> {
   break
   return 5
 }
 `;
-    const expected = [test_error(input, "Break must be inside a for or while loop", 3, 3)];
-    const parsed = parse(input);
-    expect(parsed.errors).toEqual(expected);
-  });
+		const expected = [test_error(input, "Break must be inside a for or while loop", 3, 3)];
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual(expected);
+	});
 
-  test("continue outside loop", () => {
-    const input = `
+	test("continue outside loop", () => {
+		const input = `
 func add = (out int) -> {
   continue
   return 5
 }
 `;
-    const expected = [test_error(input, "Continue must be inside a for or while loop", 3, 3)];
-    const parsed = parse(input);
-    expect(parsed.errors).toEqual(expected);
-  });
+		const expected = [test_error(input, "Continue must be inside a for or while loop", 3, 3)];
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual(expected);
+	});
 
-  test("panic without a message", () => {
-    const input = `
+	test("panic without a message", () => {
+		const input = `
 func add = (out int) -> {
   panic
 }
 `;
-    const expected = [test_error(input, "Expected a panic message", 4, 1)];
-    const parsed = parse(input);
-    expect(parsed.errors).toEqual(expected);
-  });
+		const expected = [test_error(input, "Expected a panic message", 4, 1)];
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual(expected);
+	});
 
-  test("todo without a message", () => {
-    const input = `
+	test("todo without a message", () => {
+		const input = `
 func add = (out int) -> {
   todo
 }
 `;
-    const expected = [test_error(input, "Expected a todo message", 4, 1)];
-    const parsed = parse(input);
-    expect(parsed.errors).toEqual(expected);
-  });
+		const expected = [test_error(input, "Expected a todo message", 4, 1)];
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual(expected);
+	});
 });

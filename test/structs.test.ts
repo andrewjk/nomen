@@ -7,13 +7,13 @@ import trim_test_build from "./trim_test_build";
 
 // BUILD
 describe("struct build", () => {
-  test("struct", () => {
-    const input = `
+	test("struct", () => {
+		const input = `
 struct Person {}
 `;
-    const parsed = parse(input);
-    const result = build(parsed.root, { arch: "aarch64" });
-    const expected = `
+		const parsed = parse(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		const expected = `
 .p2align 2
 Person_init:
 stp x29, x30, [sp, #-16]!
@@ -23,20 +23,20 @@ str xzr, [x0]
 ldp x29, x30, [sp], #16
 ret
 `;
-    expect(parsed.errors).toEqual([]);
-    expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
-  });
+		expect(parsed.errors).toEqual([]);
+		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+	});
 
-  test("struct with fields", () => {
-    const input = `
+	test("struct with fields", () => {
+		const input = `
 struct Person {
   var string name
   var age = 0
 }
 `;
-    const parsed = parse(input);
-    const result = build(parsed.root, { arch: "aarch64" });
-    const expected = `
+		const parsed = parse(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		const expected = `
 .p2align 2
 Person_init:
 stp x29, x30, [sp, #-16]!
@@ -49,19 +49,19 @@ str x1, [x0, #16]
 ldp x29, x30, [sp], #16
 ret
 `;
-    expect(parsed.errors).toEqual([]);
-    expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
-  });
+		expect(parsed.errors).toEqual([]);
+		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+	});
 
-  test("struct with functions", () => {
-    const input = `
+	test("struct with functions", () => {
+		const input = `
 struct Person {
   func greet = () -> {}
 }
 `;
-    const parsed = parse(input);
-    const result = build(parsed.root, { arch: "aarch64" });
-    const expected = `
+		const parsed = parse(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		const expected = `
 .p2align 2
 Person_init:
 stp x29, x30, [sp, #-16]!
@@ -78,12 +78,12 @@ mov x29, sp
 ldp x29, x30, [sp], #16
 ret
 `;
-    expect(parsed.errors).toEqual([]);
-    expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
-  });
+		expect(parsed.errors).toEqual([]);
+		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+	});
 
-  test("struct with mutating functions", () => {
-    const input = `
+	test("struct with mutating functions", () => {
+		const input = `
 struct Person {
   var int age = 0
   func grow = (var self) -> {
@@ -91,9 +91,9 @@ struct Person {
   }
 }
 `;
-    const parsed = parse(input);
-    const result = build(parsed.root, { arch: "aarch64" });
-    const expected = `
+		const parsed = parse(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		const expected = `
 .p2align 2
 Person_init:
 stp x29, x30, [sp, #-16]!
@@ -120,12 +120,12 @@ str x2, [x0, #8]
 ldp x29, x30, [sp], #16
 ret
 `;
-    expect(parsed.errors).toEqual([]);
-    expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
-  });
+		expect(parsed.errors).toEqual([]);
+		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+	});
 
-  test("struct with function returning value", () => {
-    const input = `
+	test("struct with function returning value", () => {
+		const input = `
 struct Person {
   var string name
   func get_name = (self, out string) -> {
@@ -133,9 +133,9 @@ struct Person {
   }
 }
 `;
-    const parsed = parse(input);
-    const result = build(parsed.root, { arch: "aarch64" });
-    const expected = `
+		const parsed = parse(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		const expected = `
 .p2align 2
 Person_init:
 stp x29, x30, [sp, #-16]!
@@ -159,42 +159,42 @@ ldr x19, [sp], #16
 ldp x29, x30, [sp], #16
 ret
 `;
-    expect(parsed.errors).toEqual([]);
-    expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
-  });
+		expect(parsed.errors).toEqual([]);
+		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+	});
 });
 
 // ERRORS
 describe("struct errors", () => {
-  test("invalid syntax", () => {
-    const input = `
+	test("invalid syntax", () => {
+		const input = `
 struct Person People {}
 `;
-    const expected = [test_error(input, "Expected {", 2, 15)];
-    const parsed = parse(input);
-    expect(parsed.errors).toEqual(expected);
-  });
+		const expected = [test_error(input, "Expected {", 2, 15)];
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual(expected);
+	});
 
-  test("child struct", () => {
-    const input = `
+	test("child struct", () => {
+		const input = `
 struct Person {
   struct People {}
 }
 `;
-    const expected = [test_error(input, "Struct cannot appear here", 3, 3)];
-    const parsed = parse(input);
-    expect(parsed.errors).toEqual(expected);
-  });
+		const expected = [test_error(input, "Struct cannot appear here", 3, 3)];
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual(expected);
+	});
 
-  test("child assignment", () => {
-    const input = `
+	test("child assignment", () => {
+		const input = `
 struct Person {
   var int x
   x = 5
 }
 `;
-    const expected = [test_error(input, "Assignment cannot appear here", 4, 3)];
-    const parsed = parse(input);
-    expect(parsed.errors).toEqual(expected);
-  });
+		const expected = [test_error(input, "Assignment cannot appear here", 4, 3)];
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual(expected);
+	});
 });

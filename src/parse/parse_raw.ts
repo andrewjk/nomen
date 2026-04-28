@@ -6,9 +6,9 @@ import consume from "./utils/consume.ts";
 import get_index from "./utils/get_index.ts";
 
 export default function parse_raw(status: ParseStatus) {
-  const start = get_index(status);
-  accept("raw", status);
-  /*
+	const start = get_index(status);
+	accept("raw", status);
+	/*
   if (expect("{", status)) {
     let value: string[] = [];
     let depth = 0;
@@ -30,7 +30,7 @@ export default function parse_raw(status: ParseStatus) {
   }
     */
 
-  const value = consume(status).trim().replaceAll(/^\s+/gm, "");
-  const raw = new RawNode(start, value);
-  add_to_parent(raw, "Raw C", status);
+	const value = consume(status).trim().replaceAll(/^\s+/gm, "");
+	const raw = new RawNode(start, value);
+	add_to_parent(raw, "Raw C", status);
 }

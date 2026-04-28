@@ -84,15 +84,15 @@ The project also has uvu configured:
 
   ```typescript
   export default interface ParseResult {
-    ok: boolean;
-    root: RootNode;
-    errors: CompileError[];
+  	ok: boolean;
+  	root: RootNode;
+  	errors: CompileError[];
   }
 
   export default class Type {
-    name: string;
-    is_static?: boolean;
-    // ...
+  	name: string;
+  	is_static?: boolean;
+  	// ...
   }
   ```
 
@@ -129,11 +129,11 @@ Status objects track compilation state across passes:
 - Common test structure:
   ```typescript
   test("test name", () => {
-    const input = `echo code`;
-    const parsed = parse(input);
-    const result = build(parsed.root);
-    expect(parsed.errors).toEqual([]);
-    expect(trim_test_build(result.code)).toEqual(expected);
+  	const input = `echo code`;
+  	const parsed = parse(input);
+  	const result = build(parsed.root);
+  	expect(parsed.errors).toEqual([]);
+  	expect(trim_test_build(result.code)).toEqual(expected);
   });
   ```
 

@@ -11,43 +11,43 @@ import expect from "./utils/expect.ts";
 import get_index from "./utils/get_index.ts";
 
 export default function parse_struct(
-  visibility: "inherit" | "pub" | "mod" | "priv",
-  status: ParseStatus,
+	visibility: "inherit" | "pub" | "mod" | "priv",
+	status: ParseStatus,
 ) {
-  const start = get_index(status);
-  accept(visibility, status);
-  accept("struct", status);
-  const name = consume(status);
-  const struct = new StructNode(start, visibility, name);
+	const start = get_index(status);
+	accept(visibility, status);
+	accept("struct", status);
+	const name = consume(status);
+	const struct = new StructNode(start, visibility, name);
 
-  // Bump the namespace
-  const old_namespace = status.namespace;
-  status.namespace += `.${name}`;
+	// Bump the namespace
+	const old_namespace = status.namespace;
+	status.namespace += `.${name}`;
 
-  if (accept(":", status)) {
-    struct.traits.push(consume(status));
-    while (accept(",", status)) {
-      struct.traits.push(consume(status));
-    }
-  }
+	if (accept(":", status)) {
+		struct.traits.push(consume(status));
+		while (accept(",", status)) {
+			struct.traits.push(consume(status));
+		}
+	}
 
-  if (expect("{", status)) {
-    status.stack.push(struct);
-    parse_statement(status);
-    expect("}", status);
-    status.stack.pop();
+	if (expect("{", status)) {
+		status.stack.push(struct);
+		parse_statement(status);
+		expect("}", status);
+		status.stack.pop();
 
-    // Add the init function to the struct
-    // TODO: Allow overriding it
-    const func = new FunctionNode(-1, visibility, "init", new Type(struct.name));
-    func.params = struct.fields
-      .filter((f) => f.visibility !== "priv" && !f.value)
-      .map((f) => new ParameterNode(-1, f.name, f.type));
-    func.is_static = true;
-    struct.functions.unshift(func);
+		// Add the init function to the struct
+		// TODO: Allow overriding it
+		const func = new FunctionNode(-1, visibility, "init", new Type(struct.name));
+		func.params = struct.fields
+			.filter((f) => f.visibility !== "priv" && !f.value)
+			.map((f) => new ParameterNode(-1, f.name, f.type));
+		func.is_static = true;
+		struct.functions.unshift(func);
 
-    add_to_parent(struct, "Struct", status);
-  }
+		add_to_parent(struct, "Struct", status);
+	}
 
-  status.namespace = old_namespace;
+	status.namespace = old_namespace;
 }

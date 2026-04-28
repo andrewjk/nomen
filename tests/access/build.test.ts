@@ -7,16 +7,16 @@ import trim_test_build from "../trim_test_build";
 //const test = suite("Access build");
 
 test("getting field", () => {
-  const input = `
+	const input = `
 struct Person {
   var age: int
 }
 var p: Person
 var x = p.age
 `;
-  const parsed = parse(input);
-  const result = build(parsed.root);
-  const expected = `
+	const parsed = parse(input);
+	const result = build(parsed.root);
+	const expected = `
 typedef struct Person
 {
 void *_vt;
@@ -31,12 +31,12 @@ return p;
 Person p;
 long x = p.age;
 `;
-  expect(parsed.errors).toEqual([]);
-  expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+	expect(parsed.errors).toEqual([]);
+	expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
 });
 
 test("getting nested field", () => {
-  const input = `
+	const input = `
 struct Address {
   var line: string
 }
@@ -47,9 +47,9 @@ struct Person {
 var p: Person
 var x = p.address.line
 `;
-  const parsed = parse(input);
-  const result = build(parsed.root);
-  const expected = `
+	const parsed = parse(input);
+	const result = build(parsed.root);
+	const expected = `
 typedef struct Address
 {
 void *_vt;
@@ -77,21 +77,21 @@ return p;
 Person p;
 char* x = p.address.line;
 `;
-  expect(parsed.errors).toEqual([]);
-  expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+	expect(parsed.errors).toEqual([]);
+	expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
 });
 
 test("setting field", () => {
-  const input = `
+	const input = `
 struct Person {
   var age: int
 }
 var p: Person
 p.age = 20
 `;
-  const parsed = parse(input);
-  const result = build(parsed.root);
-  const expected = `
+	const parsed = parse(input);
+	const result = build(parsed.root);
+	const expected = `
 typedef struct Person
 {
 void *_vt;
@@ -106,12 +106,12 @@ return p;
 Person p;
 p.age = 20;
 `;
-  expect(parsed.errors).toEqual([]);
-  expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+	expect(parsed.errors).toEqual([]);
+	expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
 });
 
 test("setting nested field", () => {
-  const input = `
+	const input = `
 struct Address {
   var line: string
 }
@@ -122,9 +122,9 @@ struct Person {
 var p: Person
 p.address.line = "1 main st"
 `;
-  const parsed = parse(input);
-  const result = build(parsed.root);
-  const expected = `
+	const parsed = parse(input);
+	const result = build(parsed.root);
+	const expected = `
 typedef struct Address
 {
 void *_vt;
@@ -152,12 +152,12 @@ return p;
 Person p;
 p.address.line = "1 main st";
 `;
-  expect(parsed.errors).toEqual([]);
-  expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+	expect(parsed.errors).toEqual([]);
+	expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
 });
 
 test("getting function", () => {
-  const input = `
+	const input = `
 struct Person {
   func age() -> int {
     return 20
@@ -166,9 +166,9 @@ struct Person {
 var p: Person
 var x = p.age()
 `;
-  const parsed = parse(input);
-  const result = build(parsed.root);
-  const expected = `
+	const parsed = parse(input);
+	const result = build(parsed.root);
+	const expected = `
 typedef struct Person
 {
 void *_vt;
@@ -185,12 +185,12 @@ return 20;
 Person p;
 long x = Person_age();
 `;
-  expect(parsed.errors).toEqual([]);
-  expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+	expect(parsed.errors).toEqual([]);
+	expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
 });
 
 test("getting function after field", () => {
-  const input = `
+	const input = `
 struct Address {
   func line() -> string {
     return "123 main st"
@@ -203,9 +203,9 @@ struct Person {
 var p: Person
 var x = p.address.line()
 `;
-  const parsed = parse(input);
-  const result = build(parsed.root);
-  const expected = `
+	const parsed = parse(input);
+	const result = build(parsed.root);
+	const expected = `
 typedef struct Address
 {
 void *_vt;
@@ -235,12 +235,12 @@ return p;
 Person p;
 char* x = Address_line();
 `;
-  expect(parsed.errors).toEqual([]);
-  expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+	expect(parsed.errors).toEqual([]);
+	expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
 });
 
 test("getting field after function", () => {
-  const input = `
+	const input = `
 struct Address {
   var line: string
 }
@@ -253,9 +253,9 @@ struct Person {
 var p: Person
 var x = p.address().line
 `;
-  const parsed = parse(input);
-  const result = build(parsed.root);
-  const expected = `
+	const parsed = parse(input);
+	const result = build(parsed.root);
+	const expected = `
 typedef struct Address
 {
 void *_vt;
@@ -285,6 +285,6 @@ return Address_init("123 main st");
 Person p;
 char* x = Person_address().line;
 `;
-  expect(parsed.errors).toEqual([]);
-  expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+	expect(parsed.errors).toEqual([]);
+	expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
 });

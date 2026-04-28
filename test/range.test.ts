@@ -7,47 +7,47 @@ import trim_test_build from "./trim_test_build";
 
 // BUILD
 describe("range build", () => {
-  test("exclusive", () => {
-    const input = `
+	test("exclusive", () => {
+		const input = `
 var x = 1..4
 `;
-    const parsed = parse(input);
-    const result = build(parsed.root, { arch: "aarch64" });
-    const expected = `
+		const parsed = parse(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		const expected = `
 x: .quad 1, 2, 3
 `;
-    expect(parsed.errors).toEqual([]);
-    expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
-  });
+		expect(parsed.errors).toEqual([]);
+		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+	});
 
-  test("inclusive with expression", () => {
-    const input = `
+	test("inclusive with expression", () => {
+		const input = `
 var x = 1..(4 + 1)
 `;
-    const parsed = parse(input);
-    const result = build(parsed.root, { arch: "aarch64" });
-    const expected = `
+		const parsed = parse(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		const expected = `
 x: .quad 1, 2, 3, 4
 `;
-    expect(parsed.errors).toEqual([]);
-    expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
-  });
+		expect(parsed.errors).toEqual([]);
+		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+	});
 
-  test("range with negative start", () => {
-    const input = `
+	test("range with negative start", () => {
+		const input = `
 var x = -2..2
 `;
-    const parsed = parse(input);
-    const result = build(parsed.root, { arch: "aarch64" });
-    const expected = `
+		const parsed = parse(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		const expected = `
 x: .quad -2, -1, 0, 1
 `;
-    expect(parsed.errors).toEqual([]);
-    expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
-  });
+		expect(parsed.errors).toEqual([]);
+		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+	});
 
-  test.skip("range as param", () => {
-    const input = `
+	test.skip("range as param", () => {
+		const input = `
 func sum = (int[] nums, out int) -> {
   var total = 0
   for n in nums {
@@ -57,16 +57,16 @@ func sum = (int[] nums, out int) -> {
 }
 const result = sum(1..4)
 `;
-    const parsed = parse(input);
-    const result = build(parsed.root, { arch: "aarch64" });
-    const expected = `
+		const parsed = parse(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		const expected = `
 `;
-    expect(parsed.errors).toEqual([]);
-    expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
-  });
+		expect(parsed.errors).toEqual([]);
+		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+	});
 
-  test("range in for loop", () => {
-    const input = `
+	test("range in for loop", () => {
+		const input = `
 func sum = (out int) -> {
   var total = 0
   for n in 1..4 {
@@ -75,9 +75,9 @@ func sum = (out int) -> {
   return total
 }
 `;
-    const parsed = parse(input);
-    const result = build(parsed.root, { arch: "aarch64" });
-    const expected = `
+		const parsed = parse(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		const expected = `
 .p2align 2
 sum:
 stp x29, x30, [sp, #-16]!
@@ -113,19 +113,19 @@ add sp, sp, #16
 ldp x29, x30, [sp], #16
 ret
 `;
-    expect(parsed.errors).toEqual([]);
-    expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
-  });
+		expect(parsed.errors).toEqual([]);
+		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+	});
 });
 
 // ERRORS
 describe("range errors", () => {
-  test("type mismatch", () => {
-    const input = `
+	test("type mismatch", () => {
+		const input = `
 var x = 1.."b"
 `;
-    const expected = [test_error(input, "Type mismatch in range: string (expected int)", 2, 12)];
-    const parsed = parse(input);
-    expect(parsed.errors).toEqual(expected);
-  });
+		const expected = [test_error(input, "Type mismatch in range: string (expected int)", 2, 12)];
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual(expected);
+	});
 });

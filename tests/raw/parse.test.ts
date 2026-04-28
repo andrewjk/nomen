@@ -7,13 +7,13 @@ import trim_test_parse from "../trim_test_parse";
 //const test = suite("Raw parse");
 
 test("raw", () => {
-  const input = `
+	const input = `
 \`\`\`
 printf("do some stuff");
 \`\`\`
 `;
-  const parsed = parse(input);
-  const expected = new RawNode(1, 'printf("do some stuff");');
-  expect(parsed.errors).toEqual([]);
-  expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
+	const parsed = parse(input);
+	const expected = new RawNode(1, 'printf("do some stuff");');
+	expect(parsed.errors).toEqual([]);
+	expect(trim_test_parse(parsed.root.statements[0])).toEqual(trim_test_parse(expected));
 });

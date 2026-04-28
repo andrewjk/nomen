@@ -7,7 +7,7 @@ import parse_with_imports from "./parse_with_imports";
 import trim_code from "./trim_code";
 
 test("ziglings 003 assignment -- errors", () => {
-  const input = `
+	const input = `
 import System
 
 pub func main() {
@@ -21,17 +21,17 @@ pub func main() {
     Console.write("\\{n} \\{pi} \\{negative_eleven}\\n")
 }
 `;
-  const expected = [
-    test_error(input, "Assignment to const: n", 6, 5),
-    test_error(input, "Type mismatch in declaration: int (expected uint8)", 8, 23),
-    test_error(input, "Type mismatch in declaration: int (expected uint8)", 10, 36),
-  ];
-  const parsed = parse_with_imports(input);
-  expect(parsed.errors).toEqual(expected);
+	const expected = [
+		test_error(input, "Assignment to const: n", 6, 5),
+		test_error(input, "Type mismatch in declaration: int (expected uint8)", 8, 23),
+		test_error(input, "Type mismatch in declaration: int (expected uint8)", 10, 36),
+	];
+	const parsed = parse_with_imports(input);
+	expect(parsed.errors).toEqual(expected);
 });
 
 test("ziglings 003 assignment -- parse", () => {
-  const input = `
+	const input = `
 import System
 
 pub func main() {
@@ -45,12 +45,12 @@ pub func main() {
     Console.write("\\{n} \\{pi} \\{negative_eleven}\\n")
 }
 `;
-  const parsed = parse_with_imports(input);
-  expect(parsed.errors).toEqual([]);
+	const parsed = parse_with_imports(input);
+	expect(parsed.errors).toEqual([]);
 });
 
 test("ziglings 003 assignment -- build", async () => {
-  const input = `
+	const input = `
 import System
 
 pub func main() {
@@ -64,10 +64,10 @@ pub func main() {
     Console.write("\\{n} \\{pi} \\{negative_eleven}\\n")
 }
 `;
-  const parsed = parse_with_imports(input);
-  expect(parsed.errors).toEqual([]);
-  const built = build(parsed.root);
-  const expected = `
+	const parsed = parse_with_imports(input);
+	expect(parsed.errors).toEqual([]);
+	const built = build(parsed.root);
+	const expected = `
 int main()
 {
 unsigned char n = 50;
@@ -85,8 +85,8 @@ free(_param_2);
 free(_param_3);
 }
 `;
-  expect(trim_code(built.code)).toEqual(expected.trim());
+	expect(trim_code(built.code)).toEqual(expected.trim());
 
-  const expected_output = "55 3.141590 -11";
-  await check_output("003", built, expected_output);
+	const expected_output = "55 3.141590 -11";
+	await check_output("003", built, expected_output);
 });

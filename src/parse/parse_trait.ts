@@ -8,21 +8,21 @@ import expect from "./utils/expect.ts";
 import get_index from "./utils/get_index.ts";
 
 export default function parse_trait(
-  visibility: "inherit" | "pub" | "mod" | "priv",
-  status: ParseStatus,
+	visibility: "inherit" | "pub" | "mod" | "priv",
+	status: ParseStatus,
 ) {
-  const start = get_index(status);
-  accept(visibility, status);
-  accept("trait", status);
-  const name = consume(status);
-  const trait = new TraitNode(start, visibility, name);
+	const start = get_index(status);
+	accept(visibility, status);
+	accept("trait", status);
+	const name = consume(status);
+	const trait = new TraitNode(start, visibility, name);
 
-  if (expect("{", status)) {
-    status.stack.push(trait);
-    parse_statement(status);
-    expect("}", status);
-    status.stack.pop();
+	if (expect("{", status)) {
+		status.stack.push(trait);
+		parse_statement(status);
+		expect("}", status);
+		status.stack.pop();
 
-    add_to_parent(trait, "Trait", status);
-  }
+		add_to_parent(trait, "Trait", status);
+	}
 }

@@ -7,37 +7,37 @@ import trim_test_build from "../trim_test_build";
 //const test = suite("Assignment build");
 
 test("assignment to var", () => {
-  const input = `
+	const input = `
 var x: int
 x = 5
 `;
-  const parsed = parse(input);
-  const result = build(parsed.root);
-  const expected = `
+	const parsed = parse(input);
+	const result = build(parsed.root);
+	const expected = `
 long x;
 x = 5;
 `;
-  expect(parsed.errors).toEqual([]);
-  expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+	expect(parsed.errors).toEqual([]);
+	expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
 });
 
 test("single assignment to const", () => {
-  const input = `
+	const input = `
 const x: int
 x = 5
 `;
-  const parsed = parse(input);
-  const result = build(parsed.root);
-  const expected = `
+	const parsed = parse(input);
+	const result = build(parsed.root);
+	const expected = `
 long x;
 x = 5;
 `;
-  expect(parsed.errors).toEqual([]);
-  expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+	expect(parsed.errors).toEqual([]);
+	expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
 });
 
 test("conditional assignment to const", () => {
-  const input = `
+	const input = `
 const x: int
 if true {
   x = 5
@@ -45,9 +45,9 @@ if true {
   x = 10
 }
 `;
-  const parsed = parse(input);
-  const result = build(parsed.root);
-  const expected = `
+	const parsed = parse(input);
+	const result = build(parsed.root);
+	const expected = `
 long x;
 if (true) {
 x = 5;
@@ -55,24 +55,24 @@ x = 5;
 x = 10;
 }
 `;
-  expect(parsed.errors).toEqual([]);
-  expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+	expect(parsed.errors).toEqual([]);
+	expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
 });
 
 test("assignment to var param", () => {
-  const input = `
+	const input = `
 func add(var x: int) {
   x = 5
 }
 `;
-  const parsed = parse(input);
-  const result = build(parsed.root);
-  const expected = `
+	const parsed = parse(input);
+	const result = build(parsed.root);
+	const expected = `
 void add(long *x)
 {
 (*x) = 5;
 }
 `;
-  expect(parsed.errors).toEqual([]);
-  expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+	expect(parsed.errors).toEqual([]);
+	expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
 });
