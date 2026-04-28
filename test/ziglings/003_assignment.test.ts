@@ -1,9 +1,9 @@
 import { expect, test } from "vitest";
 import build from "../../src/build";
 import test_error from "../test_error";
-import check_output from "./check_output";
+import check_output_aarch64 from "./check_output_aarch64";
 import parse_with_imports from "./parse_with_imports";
-import trim_code from "./trim_code";
+import trim_test_build from "../trim_test_build";
 
 test("ziglings 003 assignment -- errors", () => {
   const input = `
@@ -65,27 +65,90 @@ pub func main = () -> {
 `;
   const parsed = parse_with_imports(input);
   expect(parsed.errors).toEqual([]);
-  const built = build(parsed.root);
+  const built = build(parsed.root, { arch: "aarch64" });
   const expected = `
-int main()
-{
-unsigned char n = 50;
-n = n + 5;
-float pi = 3.14159;
-char negative_eleven = -11;
-char* _param_0 = uint8_to_string(n);
-char* _param_1 = float_to_string(pi);
-char* _param_2 = int8_to_string(negative_eleven);
-char* _param_3 = _string_interpolate_3("%s %s %s\\n", _param_0, _param_1, _param_2);
-Console_write(_param_3);
-free(_param_0);
-free(_param_1);
-free(_param_2);
-free(_param_3);
-}
+.p2align 2
+main:
+stp x29, x30, [sp, #-16]!
+sub sp, sp, #48
+mov x29, sp
+mov x0, #50
+strb w0, [x29, #0]
+ldr x2, =5
+ldrb w0, [x29, #0]
+mov x1, x0
+add x0, x1, x2
+add x1, x29, #0
+strb w0, [x1]
+add x0, x29, #0
+ldrb w0, [x0]
+bl uint8_to_string
+str x0, [x29, #8]
+adr x0, pi
+ldr x0, [x0]
+bl float_to_string
+str x0, [x29, #16]
+adr x0, negative_eleven
+ldrsb x0, [x0]
+bl int8_to_string
+str x0, [x29, #24]
+ldr x0, [x29, #24]
+mov x3, x0
+ldr x0, [x29, #16]
+mov x2, x0
+ldr x0, [x29, #8]
+mov x1, x0
+adr x0, _str_0
+bl _string_interpolate_3
+str x0, [x29, #32]
+ldr x0, [x29, #32]
+mov x1, x0
+bl Console_write
+.return_0:
+mov x0, #0
+add sp, sp, #48
+ldp x29, x30, [sp], #16
+ret
+pi: .double 3.14159
+negative_eleven: .byte -11
+.p2align 2
+_str_0: .asciz "%s %s %s\\n"
+.p2align 2
+_string_interpolate_3:
+stp x29, x30, [sp, #-16]!
+mov x29, sp
+sub sp, sp, #80
+str x0, [sp, #72]
+str x1, [sp, #0]
+str x2, [sp, #8]
+str x3, [sp, #16]
+mov x0, xzr
+mov x1, xzr
+ldr x2, [sp, #72]
+ldr x3, [sp, #0]
+ldr x4, [sp, #8]
+ldr x5, [sp, #16]
+bl _snprintf
+add x0, x0, #1
+str x0, [sp, #56]
+bl _malloc
+str x0, [sp, #64]
+ldr x0, [sp, #64]
+ldr x1, [sp, #56]
+ldr x2, [sp, #72]
+ldr x3, [sp, #0]
+ldr x4, [sp, #8]
+ldr x5, [sp, #16]
+bl _snprintf
+ldr x0, [sp, #64]
+add sp, sp, #80
+ldp x29, x30, [sp], #16
+ret
 `;
-  expect(trim_code(built.code)).toEqual(expected.trim());
+  expect(trim_test_build(built.code.substring(built.code.indexOf("\n.p2align 2\nmain:")))).toEqual(
+    trim_test_build(expected),
+  );
 
   const expected_output = "55 3.141590 -11";
-  await check_output("003", built, expected_output);
+  await check_output_aarch64("003", built, expected_output);
 });

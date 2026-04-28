@@ -21,4 +21,7 @@ export default interface BuildStatus {
   strings?: Map<string, string>;
   loop_labels?: { start: string; end: string }[];
   struct_return_buffer?: string;
+  function_data?: string;
+  stack_size?: number;
+  stack_offsets?: Map<string, number>;
 }

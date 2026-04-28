@@ -1,6 +1,7 @@
 import ReturnNode from "../nodes/ReturnNode";
 import type BuildStatus from "../build/BuildStatus";
 import build_node from "./build_node";
+import { emit_var_store } from "./utils/stack_var";
 
 export default function build_return_node(
   node: ReturnNode,
@@ -14,7 +15,7 @@ export default function build_return_node(
     if (!status.code.endsWith("\n")) {
       status.code += "\n";
     }
-    status.code += `adr x1, ${status.return_assign}\nstr x0, [x1]\n`;
+    emit_var_store(status, "x0", status.return_assign, 8);
   } else if (status.function_return_label) {
     if (!status.code.endsWith("\n")) {
       status.code += "\n";

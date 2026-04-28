@@ -32,9 +32,14 @@ export default function build_function_node(
     status.struct_return_buffer = "x8";
   }
 
+  status.stack_size = 0;
+  status.stack_offsets = new Map();
+
   status.code += `.p2align 2\n`;
   status.code += `${node.name}:\n`;
   status.code += `stp x29, x30, [sp, #-16]!\n`;
+  const stack_placeholder = `STACK_SIZE_${node.name}`;
+  status.code += `sub sp, sp, #${stack_placeholder}\n`;
   status.code += `mov x29, sp\n`;
 
   build_block_node(node, status);
@@ -43,10 +48,26 @@ export default function build_function_node(
   if (node.name === "main") {
     status.code += `mov x0, #0\n`;
   }
+  // Restore stack and frame
+  const total_stack = Math.ceil((status.stack_size || 0) / 16) * 16;
+  status.code = status.code.replace(
+    `sub sp, sp, #${stack_placeholder}`,
+    total_stack > 0 ? `sub sp, sp, #${total_stack}` : `// no stack needed`,
+  );
+  if (total_stack > 0) {
+    status.code += `add sp, sp, #${total_stack}\n`;
+  }
   status.code += `ldp x29, x30, [sp], #16\n`;
   status.code += `ret\n`;
 
+  if (status.function_data) {
+    status.code += status.function_data;
+    status.function_data = undefined;
+  }
+
   status.scoped_declarations = old_scoped_declarations;
+  status.stack_size = undefined;
+  status.stack_offsets = undefined;
   status.function_param_regs = undefined;
   status.function_param_vars = undefined;
   status.function_return_label = undefined;

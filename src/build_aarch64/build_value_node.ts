@@ -1,5 +1,6 @@
 import ValueNode from "../nodes/ValueNode";
 import type BuildStatus from "../build/BuildStatus";
+import { emit_var_load } from "./utils/stack_var";
 
 let string_counter = 0;
 
@@ -63,5 +64,21 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
     return;
   }
 
-  status.code += `adr x0, ${value}\nldr x0, [x0]`;
+  // Variable reference - use stack offset if available
+  const offset = status.stack_offsets?.get(value);
+  if (offset !== undefined) {
+    // Infer size from type if available, default to 8
+    const type_name = node.type?.name || "";
+    const size = type_name === "float" ? 4 : type_name === "uint8" || type_name === "int8" ? 1 : 8;
+    const signed = type_name.startsWith("int") || type_name === "float" || type_name === "float32" || type_name === "float64";
+    if (size === 1) {
+      status.code += signed ? `ldrsb x0, [x29, #${offset}]` : `ldrb w0, [x29, #${offset}]`;
+    } else if (size === 4) {
+      status.code += signed ? `ldrsw x0, [x29, #${offset}]` : `ldr w0, [x29, #${offset}]`;
+    } else {
+      status.code += `ldr x0, [x29, #${offset}]`;
+    }
+  } else {
+    status.code += `adr x0, ${value}\nldr x0, [x0]`;
+  }
 }

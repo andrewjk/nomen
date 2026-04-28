@@ -4,6 +4,7 @@ import type BuildStatus from "../build/BuildStatus";
 import type_from_value_node from "../build/utils/type_from_value_node";
 import build_block_node from "./build_block_node";
 import build_node from "./build_node";
+import { emit_var_store } from "./utils/stack_var";
 
 let label_counter = 0;
 
@@ -35,7 +36,8 @@ export default function build_for_loop_node(
     } else {
       status.code += `ldr x0, =0`;
     }
-    status.code += `\nadr x1, ${item_name}\nstr x0, [x1]\n`;
+    status.code += `\n`;
+    emit_var_store(status, "x0", item_name, 8);
 
     // loop start
     status.code += `${start_label}:\n`;
@@ -61,7 +63,7 @@ export default function build_for_loop_node(
     // increment
     build_node(node.item, status);
     status.code += `\nadd x0, x0, #1\n`;
-    status.code += `adr x1, ${item_name}\nstr x0, [x1]\n`;
+    emit_var_store(status, "x0", item_name, 8);
 
     status.code += `b ${start_label}\n`;
     status.code += `${end_label}:\n`;
@@ -72,7 +74,7 @@ export default function build_for_loop_node(
 
     // init: item = 0
     status.code += `ldr x0, =0\n`;
-    status.code += `adr x1, ${item_name}\nstr x0, [x1]\n`;
+    emit_var_store(status, "x0", item_name, 8);
 
     // loop start
     status.code += `${start_label}:\n`;
@@ -90,7 +92,7 @@ export default function build_for_loop_node(
     // increment
     build_node(node.item, status);
     status.code += `\nadd x0, x0, #1\n`;
-    status.code += `adr x1, ${item_name}\nstr x0, [x1]\n`;
+    emit_var_store(status, "x0", item_name, 8);
 
     status.code += `b ${start_label}\n`;
     status.code += `${end_label}:\n`;

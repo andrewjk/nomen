@@ -1,6 +1,7 @@
 import FunctionCallNode from "../nodes/FunctionCallNode";
 import type BuildStatus from "../build/BuildStatus";
 import build_node from "./build_node";
+import { allocate_stack_space } from "./utils/stack_var";
 
 let temp_counter = 0;
 
@@ -26,10 +27,11 @@ export default function build_function_call_node(
       // Use the provided return buffer address
       status.code += `mov x0, ${status.struct_return_buffer}\n`;
     } else {
-      // Create a temp
+      // Create a temp on stack
       const dest_addr = `_temp_${temp_counter++}`;
-      status.code += `${dest_addr}: .space 16\n`;
-      status.code += `adr x0, ${dest_addr}\n`;
+      const offset = allocate_stack_space(status, 16);
+      status.stack_offsets!.set(dest_addr, offset);
+      status.code += `sub x0, x29, #${offset}\n`;
     }
     start_reg = 1;
   }
@@ -51,7 +53,8 @@ export default function build_function_call_node(
   if (is_struct && !status.struct_return_buffer) {
     // Find the last temp created
     const temp_addr = `_temp_${temp_counter - 1}`;
-    status.code += `adr x0, ${temp_addr}\n`;
+    const offset = status.stack_offsets!.get(temp_addr)!;
+    status.code += `sub x0, x29, #${offset}\n`;
   }
 
   if (node.name.startsWith("_string_interpolate_")) {

@@ -6,7 +6,9 @@ import ValueNode from "../nodes/ValueNode";
 import type BuildStatus from "../build/BuildStatus";
 import type_from_value_node from "../build/utils/type_from_value_node";
 import build_node from "./build_node";
+import { allocate_stack_space, emit_var_address } from "./utils/stack_var";
 import { get_field_offset, get_struct_size } from "./utils/struct_layout";
+import aarch64_size from "./utils/aarch64_size";
 
 let access_temp_counter = 0;
 
@@ -74,7 +76,7 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
       }
       // if already x0, no-op
     } else {
-      status.code += `adr x0, ${name}\n`;
+      emit_var_address(status, "x0", name);
     }
   } else {
     build_node(base, status);
@@ -100,14 +102,21 @@ function build_access_method(
   );
 
   let temp_addr = "";
+  let temp_offset = 0;
   if (return_struct) {
     temp_addr = `_access_temp_${access_temp_counter++}`;
-    status.code += `${temp_addr}: .space ${get_struct_size(access_func.type.name, status)}\n`;
-    status.code += `adr x8, ${temp_addr}\n`;
+    temp_offset = allocate_stack_space(status, get_struct_size(access_func.type.name, status));
+    status.stack_offsets!.set(temp_addr, temp_offset);
+    status.code += `sub x8, x29, #${temp_offset}\n`;
   }
 
   if (!access_func.is_static) {
-    // Instance method: load target address into x0 (self)
+    // Instance method: load target into x0 (self)
+    // For simple types, pass value; for structs, pass address
+    const target_is_simple =
+      !status.structs.find(
+        (s) => s.name === target_type.name && !s.is_simple_type,
+      );
     if (node.target.node_type === "value") {
       const name = (node.target as ValueNode).value;
       const paramReg = get_param_reg(name, status);
@@ -117,13 +126,25 @@ function build_access_method(
         }
         // if already x0, no-op
       } else {
-        status.code += `adr x0, ${name}\n`;
+        emit_var_address(status, "x0", name);
+      }
+      if (target_is_simple) {
+        const size = aarch64_size(target_type.name);
+        const signed = target_type.name.startsWith("int") || target_type.name === "float" || target_type.name === "float32" || target_type.name === "float64";
+        if (size === 1) {
+          status.code += signed ? `ldrsb x0, [x0]\n` : `ldrb w0, [x0]\n`;
+        } else if (size === 4) {
+          status.code += signed ? `ldrsw x0, [x0]\n` : `ldr w0, [x0]\n`;
+        } else {
+          status.code += `ldr x0, [x0]\n`;
+        }
       }
     } else {
       build_node(node.target, status);
       if (!status.code.endsWith("\n")) {
         status.code += "\n";
       }
+      // For expression targets, the result is already a value, no need to load
     }
   }
 
@@ -144,7 +165,7 @@ function build_access_method(
   status.code += `bl ${method_name}\n`;
 
   if (return_struct) {
-    status.code += `adr x0, ${temp_addr}\n`;
+    status.code += `sub x0, x29, #${temp_offset}\n`;
   }
 }
 
@@ -163,7 +184,7 @@ function build_access_index(
       }
       // if already x0, no-op
     } else {
-      status.code += `adr x0, ${name}\n`;
+      emit_var_address(status, "x0", name);
     }
   } else {
     build_node(node.target, status);

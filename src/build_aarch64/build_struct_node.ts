@@ -26,6 +26,9 @@ function build_init_function(node: StructNode, status: BuildStatus) {
   // x1-x7 = field params (fields without default values)
   const required_fields = node.fields.filter((f) => f.value == null);
 
+  status.stack_size = 0;
+  status.stack_offsets = new Map();
+
   status.code += `.p2align 2\n`;
   status.code += `${func_name}:\n`;
   status.code += `stp x29, x30, [sp, #-16]!\n`;
@@ -69,6 +72,9 @@ function build_init_function(node: StructNode, status: BuildStatus) {
   status.code += `.return_${func_name}:\n`;
   status.code += `ldp x29, x30, [sp], #16\n`;
   status.code += `ret\n`;
+
+  status.stack_size = undefined;
+  status.stack_offsets = undefined;
 }
 
 function build_struct_functions(node: StructNode, status: BuildStatus) {
@@ -77,6 +83,9 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 
     const old_scoped_declarations = status.scoped_declarations;
     status.scoped_declarations = [];
+
+    status.stack_size = 0;
+    status.stack_offsets = new Map();
 
     const param_regs = ["x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7"];
     status.function_param_regs = new Map();
@@ -133,5 +142,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
     status.function_param_regs = undefined;
     status.function_param_vars = undefined;
     status.function_return_label = undefined;
+    status.stack_size = undefined;
+    status.stack_offsets = undefined;
   }
 }

@@ -11,10 +11,10 @@ export default function aarch64_size(type: string): number {
     case "int32":
     case "uint32":
     case "float":
-    case "float32":
     case "ufloat":
+    case "float32":
     case "ufloat32":
-      return 4;
+      return 8;
     case "int":
     case "uint":
     case "int64":

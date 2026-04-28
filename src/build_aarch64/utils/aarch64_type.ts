@@ -22,7 +22,7 @@ export default function aarch64_type(type: string): string {
     case "float32":
     case "ufloat":
     case "ufloat32":
-      return ".float";
+      return ".double";
     case "float64":
     case "ufloat64":
       return ".double";
