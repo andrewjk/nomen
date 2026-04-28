@@ -56,6 +56,10 @@ function get_base_target(node: AccessNode): ValueNode | AccessNode {
   return node.target as ValueNode;
 }
 
+function get_param_reg(name: string, status: BuildStatus): string | undefined {
+  return status.function_param_regs?.get(name);
+}
+
 function build_access_field(node: AccessNode, status: BuildStatus) {
   const offset = compute_field_offset(node, status);
   const base = get_base_target(node);
@@ -63,7 +67,15 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
   // Get base address into x0
   if (base.node_type === "value") {
     const name = (base as ValueNode).value;
-    status.code += `adr x0, ${name}\n`;
+    const paramReg = get_param_reg(name, status);
+    if (paramReg) {
+      if (paramReg !== "x0") {
+        status.code += `mov x0, ${paramReg}\n`;
+      }
+      // if already x0, no-op
+    } else {
+      status.code += `adr x0, ${name}\n`;
+    }
   } else {
     build_node(base, status);
     if (!status.code.endsWith("\n")) {
@@ -98,7 +110,15 @@ function build_access_method(
     // Instance method: load target address into x0 (self)
     if (node.target.node_type === "value") {
       const name = (node.target as ValueNode).value;
-      status.code += `adr x0, ${name}\n`;
+      const paramReg = get_param_reg(name, status);
+      if (paramReg) {
+        if (paramReg !== "x0") {
+          status.code += `mov x0, ${paramReg}\n`;
+        }
+        // if already x0, no-op
+      } else {
+        status.code += `adr x0, ${name}\n`;
+      }
     } else {
       build_node(node.target, status);
       if (!status.code.endsWith("\n")) {
@@ -136,7 +156,15 @@ function build_access_index(
   // Get base address
   if (node.target.node_type === "value") {
     const name = (node.target as ValueNode).value;
-    status.code += `adr x0, ${name}\n`;
+    const paramReg = get_param_reg(name, status);
+    if (paramReg) {
+      if (paramReg !== "x0") {
+        status.code += `mov x0, ${paramReg}\n`;
+      }
+      // if already x0, no-op
+    } else {
+      status.code += `adr x0, ${name}\n`;
+    }
   } else {
     build_node(node.target, status);
     if (!status.code.endsWith("\n")) {

@@ -103,7 +103,6 @@ stp x29, x30, [sp, #-16]!
 mov x29, sp
 ldr x2, =1
 str x2, [sp, #-16]!
-adr x0, self
 ldr x0, [x0, #8]
 mov x1, x0
 ldr x2, [sp], #16
@@ -140,11 +139,14 @@ ldp x29, x30, [sp], #16
 ret
 Person_get_name:
 stp x29, x30, [sp, #-16]!
+str x19, [sp, #-16]!
+mov x19, x0
 mov x29, sp
-adr x0, self
+mov x0, x19
 ldr x0, [x0, #8]
 b .return_Person_get_name
 .return_Person_get_name:
+ldr x19, [sp], #16
 ldp x29, x30, [sp], #16
 ret
 `;

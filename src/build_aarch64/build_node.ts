@@ -34,8 +34,10 @@ import build_function_call_node from "./build_function_call_node";
 import build_function_node from "./build_function_node";
 import build_if_else_node from "./build_if_else_node";
 import build_operation_node from "./build_operation_node";
+import build_panic_node from "./build_panic_node";
 import build_range_node from "./build_range_node";
 import build_return_node from "./build_return_node";
+import build_todo_node from "./build_todo_node";
 import build_value_node from "./build_value_node";
 import build_while_loop_node from "./build_while_loop_node";
 
@@ -121,6 +123,14 @@ export default function build_node(node: BaseNode, status: BuildStatus, with_sem
     }
     case "access": {
       build_access_node(node as AccessNode, status);
+      break;
+    }
+    case "panic": {
+      build_panic_node(node as PanicNode, status);
+      break;
+    }
+    case "todo": {
+      build_todo_node(node as TodoNode, status);
       break;
     }
     default: {

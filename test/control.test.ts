@@ -13,13 +13,26 @@ for x in 0..5 {
 }
 `;
     const parsed = parse(input);
-    const result = build(parsed.root);
+    const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
-long x;
-for (x = 0; x < 5; x++)
-{
-break;
-}
+ldr x0, =0
+adr x1, x
+str x0, [x1]
+.for_0:
+adr x0, x
+ldr x0, [x0]
+mov x2, x0
+ldr x0, =5
+cmp x2, x0
+bge .end_0
+b .end_0
+adr x0, x
+ldr x0, [x0]
+add x0, x0, #1
+adr x1, x
+str x0, [x1]
+b .for_0
+.end_0:
 `;
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
@@ -32,13 +45,26 @@ for x in 0..5 {
 }
 `;
     const parsed = parse(input);
-    const result = build(parsed.root);
+    const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
-long x;
-for (x = 0; x < 5; x++)
-{
-continue;
-}
+ldr x0, =0
+adr x1, x
+str x0, [x1]
+.for_0:
+adr x0, x
+ldr x0, [x0]
+mov x2, x0
+ldr x0, =5
+cmp x2, x0
+bge .end_0
+b .for_0
+adr x0, x
+ldr x0, [x0]
+add x0, x0, #1
+adr x1, x
+str x0, [x1]
+b .for_0
+.end_0:
 `;
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
@@ -51,13 +77,20 @@ func add = (out int) -> {
 }
 `;
     const parsed = parse(input);
-    const result = build(parsed.root);
+    const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
-long add()
-{
-printf("something went wrong\\n");
-exit(EXIT_FAILURE);
-}
+add:
+stp x29, x30, [sp, #-16]!
+mov x29, sp
+adr x0, _str_panic_something_went_wrong
+bl printf
+mov x0, #1
+bl exit
+.return_0:
+ldp x29, x30, [sp], #16
+ret
+
+_str_panic_something_went_wrong: .asciz "something went wrong\\n"
 `;
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
@@ -70,13 +103,20 @@ func add = (out int) -> {
 }
 `;
     const parsed = parse(input);
-    const result = build(parsed.root);
+    const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
-long add()
-{
-printf("haven't done this yet\\n");
-exit(EXIT_FAILURE);
-}
+add:
+stp x29, x30, [sp, #-16]!
+mov x29, sp
+adr x0, _str_todo_haven_t_done_this_yet
+bl printf
+mov x0, #1
+bl exit
+.return_1:
+ldp x29, x30, [sp], #16
+ret
+
+_str_todo_haven_t_done_this_yet: .asciz "haven't done this yet\\n"
 `;
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));

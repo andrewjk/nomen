@@ -20,31 +20,87 @@ const p2 = Point(3, 4)
 const p3 = p1 + p2
 `;
     const parsed = parse(input);
-    const result = build(parsed.root);
+    const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
-typedef struct Point
-{
-void *_vt;
-long x;
-long y;
-} Point;
-Point Point_init(long x, long y)
-{
-Point p;
-p.x = x;
-p.y = y;
-return p;
-}
-struct Point Point_add(struct Point *self, struct Point *other)
-{
-struct Point _self = *self;
-return long _param_0 = _self.x + other.x;
-long _param_1 = _self.y + other.y;
-Point_init(_param_0, _param_1);
-}
-Point p1 = Point_init(1, 2);
-Point p2 = Point_init(3, 4);
-Point p3 = Point_add(&p1, &p2);
+Point_init:
+stp x29, x30, [sp, #-16]!
+mov x29, sp
+str xzr, [x0]
+str x1, [x0, #8]
+str x2, [x0, #16]
+.return_Point_init:
+ldp x29, x30, [sp], #16
+ret
+Point_add:
+stp x29, x30, [sp, #-16]!
+str x19, [sp, #-16]!
+mov x19, x0
+mov x29, sp
+_param_0: .space 8
+mov x0, x1
+ldr x0, [x0, #8]
+mov x2, x0
+str x2, [sp, #-16]!
+mov x0, x19
+ldr x0, [x0, #8]
+mov x1, x0
+ldr x2, [sp], #16
+add x0, x1, x2
+adr x1, _param_0
+str x0, [x1]
+_param_1: .space 8
+mov x0, x1
+ldr x0, [x0, #16]
+mov x2, x0
+str x2, [sp, #-16]!
+mov x0, x19
+ldr x0, [x0, #16]
+mov x1, x0
+ldr x2, [sp], #16
+add x0, x1, x2
+adr x1, _param_1
+str x0, [x1]
+_temp_0: .space 16
+adr x0, _temp_0
+adr x0, _param_1
+ldr x0, [x0]
+mov x2, x0
+adr x0, _param_0
+ldr x0, [x0]
+mov x1, x0
+bl Point_init
+adr x0, _temp_0
+b .return_Point_add
+.return_Point_add:
+ldr x19, [sp], #16
+ldp x29, x30, [sp], #16
+ret
+p1: .space 24
+ldr x0, =2
+mov x2, x0
+ldr x0, =1
+mov x1, x0
+adr x0, p1
+bl Point_init
+p2: .space 24
+ldr x0, =4
+mov x2, x0
+ldr x0, =3
+mov x1, x0
+adr x0, p2
+bl Point_init
+p3: .space 24
+adr x1, p2
+adr x0, p1
+bl Point_add
+mov x1, x0
+adr x2, p3
+ldr x3, [x1, #0]
+str x3, [x2, #0]
+ldr x3, [x1, #8]
+str x3, [x2, #8]
+ldr x3, [x1, #16]
+str x3, [x2, #16]
 `;
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
@@ -63,30 +119,76 @@ const p1 = Point(2, 3)
 const p2 = p1 * 4
 `;
     const parsed = parse(input);
-    const result = build(parsed.root);
+    const result = build(parsed.root, { arch: "aarch64" });
     const expected = `
-typedef struct Point
-{
-void *_vt;
-long x;
-long y;
-} Point;
-Point Point_init(long x, long y)
-{
-Point p;
-p.x = x;
-p.y = y;
-return p;
-}
-struct Point Point_mul(struct Point *self, long scalar)
-{
-struct Point _self = *self;
-return long _param_0 = _self.x * scalar;
-long _param_1 = _self.y * scalar;
-Point_init(_param_0, _param_1);
-}
-Point p1 = Point_init(2, 3);
-Point p2 = Point_mul(&p1, 4);
+Point_init:
+stp x29, x30, [sp, #-16]!
+mov x29, sp
+str xzr, [x0]
+str x1, [x0, #8]
+str x2, [x0, #16]
+.return_Point_init:
+ldp x29, x30, [sp], #16
+ret
+Point_mul:
+stp x29, x30, [sp, #-16]!
+str x19, [sp, #-16]!
+mov x19, x0
+mov x29, sp
+_param_0: .space 8
+mov x2, x1
+str x2, [sp, #-16]!
+mov x0, x19
+ldr x0, [x0, #8]
+mov x1, x0
+ldr x2, [sp], #16
+mul x0, x1, x2
+adr x1, _param_0
+str x0, [x1]
+_param_1: .space 8
+mov x2, x1
+str x2, [sp, #-16]!
+mov x0, x19
+ldr x0, [x0, #16]
+mov x1, x0
+ldr x2, [sp], #16
+mul x0, x1, x2
+adr x1, _param_1
+str x0, [x1]
+_temp_0: .space 16
+adr x0, _temp_0
+adr x0, _param_1
+ldr x0, [x0]
+mov x2, x0
+adr x0, _param_0
+ldr x0, [x0]
+mov x1, x0
+bl Point_init
+adr x0, _temp_0
+b .return_Point_mul
+.return_Point_mul:
+ldr x19, [sp], #16
+ldp x29, x30, [sp], #16
+ret
+p1: .space 24
+ldr x0, =3
+mov x2, x0
+ldr x0, =2
+mov x1, x0
+adr x0, p1
+bl Point_init
+p2: .space 24
+ldr x1, =4
+adr x0, p1
+bl Point_mul
+mov x1, x0
+adr x2, p2
+ldr x3, [x1, #0]
+str x3, [x2, #0]
+ldr x3, [x1, #8]
+str x3, [x2, #8]
+ldr x3, [x1, #16]
+str x3, [x2, #16]
 `;
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));

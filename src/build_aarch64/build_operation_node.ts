@@ -2,6 +2,7 @@ import BaseNode from "../nodes/BaseNode";
 import OperationNode from "../nodes/OperationNode";
 import ValueNode from "../nodes/ValueNode";
 import type BuildStatus from "../build/BuildStatus";
+import type_from_value_node from "../build/utils/type_from_value_node";
 import build_node from "./build_node";
 
 let string_counter = 0;
@@ -95,10 +96,50 @@ function is_simple(node: BaseNode): boolean {
   return node.node_type === "value";
 }
 
+function is_struct_type(node: BaseNode, status: BuildStatus): boolean {
+  if (node.node_type !== "value") return false;
+  const type = type_from_value_node(node as ValueNode);
+  return !!status.structs.find(
+    (s) => s.name === type.name && !s.is_simple_type,
+  );
+}
+
+function build_operator_operand(
+  node: BaseNode,
+  target_reg: string,
+  status: BuildStatus,
+  is_self = false,
+) {
+  if (node.node_type === "value" && is_struct_type(node, status)) {
+    const name = (node as ValueNode).value;
+    status.code += `adr ${target_reg}, ${name}`;
+    return;
+  }
+  build_operand(node, target_reg, status);
+}
+
 export default function build_operation_node(
   node: OperationNode,
   status: BuildStatus,
 ) {
+  if (node.operator_func) {
+    // Custom operator function call
+    // Right operand into x1 (x0 is reserved for self)
+    build_operator_operand(node.right_value, "x1", status);
+    if (!status.code.endsWith("\n")) {
+      status.code += "\n";
+    }
+
+    // Left operand (self) into x0
+    build_operator_operand(node.left_value, "x0", status, true);
+    if (!status.code.endsWith("\n")) {
+      status.code += "\n";
+    }
+
+    status.code += `bl ${node.operator_func.struct_name}_${node.operator_func.func_name}\n`;
+    return;
+  }
+
   const need_spill = !is_simple(node.left_value);
 
   build_operand(node.right_value, "x2", status);

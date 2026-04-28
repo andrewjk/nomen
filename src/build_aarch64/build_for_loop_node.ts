@@ -20,6 +20,11 @@ export default function build_for_loop_node(
 
   const label = label_counter++;
   const item_name = node.item.value;
+  const start_label = `.for_${label}`;
+  const end_label = `.end_${label}`;
+
+  status.loop_labels = status.loop_labels || [];
+  status.loop_labels.push({ start: start_label, end: end_label });
 
   if (node.list && node.list.node_type === "range") {
     const range = node.list as RangeNode;
@@ -33,7 +38,7 @@ export default function build_for_loop_node(
     status.code += `\nadr x1, ${item_name}\nstr x0, [x1]\n`;
 
     // loop start
-    status.code += `.for_${label}:\n`;
+    status.code += `${start_label}:\n`;
 
     // condition: item < right_value
     build_node(node.item, status);
@@ -45,9 +50,9 @@ export default function build_for_loop_node(
     }
     status.code += `\ncmp x2, x0\n`;
     if (range.inclusive) {
-      status.code += `bgt .end_${label}\n`;
+      status.code += `bgt ${end_label}\n`;
     } else {
-      status.code += `bge .end_${label}\n`;
+      status.code += `bge ${end_label}\n`;
     }
 
     // body
@@ -58,8 +63,8 @@ export default function build_for_loop_node(
     status.code += `\nadd x0, x0, #1\n`;
     status.code += `adr x1, ${item_name}\nstr x0, [x1]\n`;
 
-    status.code += `b .for_${label}\n`;
-    status.code += `.end_${label}:\n`;
+    status.code += `b ${start_label}\n`;
+    status.code += `${end_label}:\n`;
   } else {
     // array iteration
     const type = type_from_value_node(node.list);
@@ -70,14 +75,14 @@ export default function build_for_loop_node(
     status.code += `adr x1, ${item_name}\nstr x0, [x1]\n`;
 
     // loop start
-    status.code += `.for_${label}:\n`;
+    status.code += `${start_label}:\n`;
 
     // condition: item < length
     build_node(node.item, status);
     status.code += `\nmov x2, x0\n`;
     status.code += `ldr x0, =${length}\n`;
     status.code += `cmp x2, x0\n`;
-    status.code += `bge .end_${label}\n`;
+    status.code += `bge ${end_label}\n`;
 
     // body
     build_block_node(node, status);
@@ -87,9 +92,10 @@ export default function build_for_loop_node(
     status.code += `\nadd x0, x0, #1\n`;
     status.code += `adr x1, ${item_name}\nstr x0, [x1]\n`;
 
-    status.code += `b .for_${label}\n`;
-    status.code += `.end_${label}:\n`;
+    status.code += `b ${start_label}\n`;
+    status.code += `${end_label}:\n`;
   }
 
+  status.loop_labels.pop();
   status.scoped_declarations = old_scoped_declarations;
 }

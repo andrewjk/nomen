@@ -80,6 +80,20 @@ export default function build_declaration_node(
         build_node(node.value, status);
         status.code += `adr x1, ${node.name}\nstr x0, [x1]\n`;
       }
+    } else if (node.value) {
+      status.code += `${node.name}: .space ${struct_size}\n`;
+      build_node(node.value, status);
+      if (!status.code.endsWith("\n")) {
+        status.code += "\n";
+      }
+      // Copy struct data from returned address in x0 to declaration
+      status.code += `mov x1, x0\n`;
+      status.code += `adr x2, ${node.name}\n`;
+      const words = Math.ceil(struct_size / 8);
+      for (let i = 0; i < words; i++) {
+        status.code += `ldr x3, [x1, #${i * 8}]\n`;
+        status.code += `str x3, [x2, #${i * 8}]\n`;
+      }
     } else {
       status.code += `${node.name}: .space ${struct_size}`;
     }

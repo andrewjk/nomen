@@ -87,11 +87,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
       if (func.params[0].declaration === "var") {
         status.function_param_vars.add("self");
       }
-      // Add field access for self
-      for (const field of node.fields) {
-        const offset = get_field_offset(node.name, field.name, status);
-        status.function_param_regs.set(field.name, `self_${field.name}_${func.name}`);
-      }
+      // Field accesses on self will use the base address from x19/x0 with offset
     }
 
     for (let i = 0; i < func.params.length; i++) {
@@ -108,6 +104,15 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 
     status.code += `${node.name}_${func.name}:\n`;
     status.code += `stp x29, x30, [sp, #-16]!\n`;
+
+    // Save x19 if we need it for self
+    const needs_x19 = func.params[0]?.is_self_param && func.params[0]?.declaration !== "var";
+    if (needs_x19) {
+      status.code += `str x19, [sp, #-16]!\n`;
+      status.code += `mov x19, x0\n`;
+      status.function_param_regs.set("self", "x19");
+    }
+
     status.code += `mov x29, sp\n`;
 
     // For non-var self, load fields into "virtual" registers
@@ -116,6 +121,9 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
     build_block_node(func, status);
 
     status.code += `${return_label}:\n`;
+    if (needs_x19) {
+      status.code += `ldr x19, [sp], #16\n`;
+    }
     status.code += `ldp x29, x30, [sp], #16\n`;
     status.code += `ret\n`;
 
