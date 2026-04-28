@@ -37,18 +37,12 @@ mov x2, x0
 adr x0, _param_0
 ldr x0, [x0]
 mov x1, x0
-adr x0, _str_6
+adr x0, _str_0
 bl _string_interpolate_2
 adr x1, z
 str x0, [x1]
 
-_str_0: .asciz "from_c"
-_str_1: .asciz "from_c"
-_str_2: .asciz "from_c"
-_str_3: .asciz "from_c"
-_str_4: .asciz "from_c"
-_str_5: .asciz "from_c"
-_str_6: .asciz "%s is less than %s!"
+_str_0: .asciz "%s is less than %s!"
 `;
     expect(parsed.errors).toEqual([]);
     expect(trim_test_build(result.code.substring(result.code.indexOf("x: .quad 5")))).toEqual(

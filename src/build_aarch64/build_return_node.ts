@@ -6,6 +6,9 @@ export default function build_return_node(
   node: ReturnNode,
   status: BuildStatus,
 ) {
+  if (node.from_c) {
+    return;
+  }
   build_node(node.value, status);
   if (status.return_assign) {
     if (!status.code.endsWith("\n")) {

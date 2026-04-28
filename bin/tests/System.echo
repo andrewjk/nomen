@@ -28,11 +28,33 @@ pub trait Stringable {
 pub struct int: Stringable {
     pub func to_string = (self, out string) -> {
         ```
+        #arch: c
         int length = snprintf(NULL, 0, "%ld", self);
         char* str = malloc(length + 1);
         malloc_count++;
         snprintf(str, length + 1, "%ld", self);
         return str;
+        ```
+        ```
+        #arch: aarch64
+        mov x0, xzr
+        mov x1, xzr
+        adr x2, .Lfmt_ld
+        mov x3, x19
+        bl snprintf
+        add x0, x0, #1
+        str x0, [sp, #-16]!
+        bl malloc
+        mov x1, x0
+        ldr x0, [sp], #16
+        str x1, [sp, #-16]!
+        adr x2, .Lfmt_ld
+        mov x3, x19
+        bl snprintf
+        ldr x0, [sp], #16
+        .section .rodata
+        .Lfmt_ld: .asciz "%ld"
+        .text
         ```
         return "from_c"
     }
@@ -41,11 +63,33 @@ pub struct int: Stringable {
 pub struct uint: Stringable {
     pub func to_string = (self, out string) -> {
         ```
+        #arch: c
         int length = snprintf(NULL, 0, "%ld", self);
         char* str = malloc(length + 1);
         malloc_count++;
         snprintf(str, length + 1, "%ld", self);
         return str;
+        ```
+        ```
+        #arch: aarch64
+        mov x0, xzr
+        mov x1, xzr
+        adr x2, .Lfmt_ld
+        mov x3, x19
+        bl snprintf
+        add x0, x0, #1
+        str x0, [sp, #-16]!
+        bl malloc
+        mov x1, x0
+        ldr x0, [sp], #16
+        str x1, [sp, #-16]!
+        adr x2, .Lfmt_ld
+        mov x3, x19
+        bl snprintf
+        ldr x0, [sp], #16
+        .section .rodata
+        .Lfmt_ld: .asciz "%ld"
+        .text
         ```
         return "from_c"
     }
@@ -54,11 +98,33 @@ pub struct uint: Stringable {
 pub struct int8: Stringable {
     pub func to_string = (self, out string) -> {
         ```
+        #arch: c
         int length = snprintf(NULL, 0, "%d", self);
         char* str = malloc(length + 1);
         malloc_count++;
         snprintf(str, length + 1, "%d", self);
         return str;
+        ```
+        ```
+        #arch: aarch64
+        mov x0, xzr
+        mov x1, xzr
+        adr x2, .Lfmt_d
+        mov x3, x19
+        bl snprintf
+        add x0, x0, #1
+        str x0, [sp, #-16]!
+        bl malloc
+        mov x1, x0
+        ldr x0, [sp], #16
+        str x1, [sp, #-16]!
+        adr x2, .Lfmt_d
+        mov x3, x19
+        bl snprintf
+        ldr x0, [sp], #16
+        .section .rodata
+        .Lfmt_d: .asciz "%d"
+        .text
         ```
         return "from_c"
     }
@@ -67,11 +133,33 @@ pub struct int8: Stringable {
 pub struct uint8: Stringable {
     pub func to_string = (self, out string) -> {
         ```
+        #arch: c
         int length = snprintf(NULL, 0, "%d", self);
         char* str = malloc(length + 1);
         malloc_count++;
         snprintf(str, length + 1, "%d", self);
         return str;
+        ```
+        ```
+        #arch: aarch64
+        mov x0, xzr
+        mov x1, xzr
+        adr x2, .Lfmt_d
+        mov x3, x19
+        bl snprintf
+        add x0, x0, #1
+        str x0, [sp, #-16]!
+        bl malloc
+        mov x1, x0
+        ldr x0, [sp], #16
+        str x1, [sp, #-16]!
+        adr x2, .Lfmt_d
+        mov x3, x19
+        bl snprintf
+        ldr x0, [sp], #16
+        .section .rodata
+        .Lfmt_d: .asciz "%d"
+        .text
         ```
         return "from_c"
     }
@@ -80,11 +168,33 @@ pub struct uint8: Stringable {
 pub struct float: Stringable {
     pub func to_string = (self, out string) -> {
         ```
+        #arch: c
         int length = snprintf(NULL, 0, "%f", self);
         char* str = malloc(length + 1);
         malloc_count++;
         snprintf(str, length + 1, "%f", self);
         return str;
+        ```
+        ```
+        #arch: aarch64
+        mov x0, xzr
+        mov x1, xzr
+        adr x2, .Lfmt_f
+        mov x3, x19
+        bl snprintf
+        add x0, x0, #1
+        str x0, [sp, #-16]!
+        bl malloc
+        mov x1, x0
+        ldr x0, [sp], #16
+        str x1, [sp, #-16]!
+        adr x2, .Lfmt_f
+        mov x3, x19
+        bl snprintf
+        ldr x0, [sp], #16
+        .section .rodata
+        .Lfmt_f: .asciz "%f"
+        .text
         ```
         return "from_c"
     }
@@ -93,7 +203,12 @@ pub struct float: Stringable {
 pub struct string: Stringable {
     pub func to_string = (self, out string) -> {
         ```
+        #arch: c
         return self;
+        ```
+        ```
+        #arch: aarch64
+        mov x0, x19
         ```
         return "from_c"
     }
@@ -128,7 +243,17 @@ pub struct Array: Addable, Multipliable {
 pub struct Console {
     pub func write = (string line) -> {
         ```
+        #arch: c
         printf("%s", line);
+        ```
+        ```
+        #arch: aarch64
+        mov x1, x0
+        adr x0, .Lfmt_s
+        bl printf
+        .section .rodata
+        .Lfmt_s: .asciz "%s"
+        .text
         ```
     }
 }
