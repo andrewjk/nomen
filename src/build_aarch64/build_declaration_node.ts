@@ -55,13 +55,57 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 
 	if (node.type.is_array) {
 		if (node.value && node.value.node_type === "array") {
-			status.code += `${node.name}: ${directive} `;
-			build_array_values_node(node.value as ArrayValuesNode, status);
+			const array_values = node.value as ArrayValuesNode;
+			if (status.function_return_label && node.declaration === "var") {
+				const element_size = size;
+				const total_size = array_values.values.length * element_size;
+				const offset = allocate_stack_space(status, total_size, element_size);
+				status.stack_offsets!.set(node.name, offset);
+				array_values.values.forEach((value, i) => {
+					if (value.node_type === "value") {
+						const raw = get_raw_value(value as ValueNode);
+						status.code += `mov x0, #${raw}\n`;
+						if (element_size === 1) {
+							status.code += `strb w0, [x29, #${offset + i * element_size}]\n`;
+						} else if (element_size === 4) {
+							status.code += `str w0, [x29, #${offset + i * element_size}]\n`;
+						} else {
+							status.code += `str x0, [x29, #${offset + i * element_size}]\n`;
+						}
+					}
+				});
+			} else if (status.function_return_label) {
+				emit_data(status, `${node.name}: ${directive} `);
+				array_values.values.forEach((value, i) => {
+					if (i > 0) emit_data(status, ", ");
+					if (value.node_type === "value") {
+						emit_data(status, get_raw_value(value as ValueNode));
+					} else {
+						emit_data(status, "/* complex */");
+					}
+				});
+				emit_data(status, `\n.p2align 2\n`);
+			} else {
+				status.code += `${node.name}: ${directive} `;
+				build_array_values_node(array_values, status);
+				status.code += `\n.p2align 2\n`;
+			}
 		} else if (node.value && node.value.node_type === "range") {
-			status.code += `${node.name}: ${directive} `;
-			build_range_node(node.value as RangeNode, status);
+			if (status.function_return_label) {
+				emit_data(status, `${node.name}: ${directive} `);
+				build_range_node(node.value as RangeNode, status);
+				emit_data(status, `\n.p2align 2\n`);
+			} else {
+				status.code += `${node.name}: ${directive} `;
+				build_range_node(node.value as RangeNode, status);
+				status.code += `\n.p2align 2\n`;
+			}
 		} else {
-			status.code += `${node.name}: .space 0`;
+			if (status.function_return_label) {
+				emit_data(status, `${node.name}: .space 0\n.p2align 2\n`);
+			} else {
+				status.code += `${node.name}: .space 0\n.p2align 2\n`;
+			}
 		}
 	} else if (struct_type) {
 		// Struct declaration
@@ -138,13 +182,33 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 				}
 			}
 		} else if (node.value.node_type === "array") {
-			status.code += `${node.name}: ${directive} `;
-			build_array_values_node(node.value as ArrayValuesNode, status);
-			status.code += `\n`;
+			const array_values = node.value as ArrayValuesNode;
+			if (status.function_return_label) {
+				emit_data(status, `${node.name}: ${directive} `);
+				array_values.values.forEach((value, i) => {
+					if (i > 0) emit_data(status, ", ");
+					if (value.node_type === "value") {
+						emit_data(status, get_raw_value(value as ValueNode));
+					} else {
+						emit_data(status, "/* complex */");
+					}
+				});
+				emit_data(status, `\n.p2align 2\n`);
+			} else {
+				status.code += `${node.name}: ${directive} `;
+				build_array_values_node(array_values, status);
+				status.code += `\n.p2align 2\n`;
+			}
 		} else if (node.value.node_type === "range") {
-			status.code += `${node.name}: ${directive} `;
-			build_range_node(node.value as RangeNode, status);
-			status.code += `\n`;
+			if (status.function_return_label) {
+				emit_data(status, `${node.name}: ${directive} `);
+				build_range_node(node.value as RangeNode, status);
+				emit_data(status, `\n.p2align 2\n`);
+			} else {
+				status.code += `${node.name}: ${directive} `;
+				build_range_node(node.value as RangeNode, status);
+				status.code += `\n.p2align 2\n`;
+			}
 		} else if (node.value.node_type === "if") {
 			if (status.function_return_label) {
 				const offset = allocate_stack_space(status, size, size);

@@ -1,6 +1,7 @@
 import type BuildStatus from "../build/BuildStatus.ts";
 import type_from_value_node from "../build/utils/type_from_value_node.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
+import AccessIndexNode from "../nodes/AccessIndexNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import AssignmentNode from "../nodes/AssignmentNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
@@ -95,6 +96,69 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 			}
 
 			status.code += `str x2, [x0, #${offset}]\n`;
+		} else if (access.access.node_type === "access_index") {
+			const access_index = access.access as AccessIndexNode;
+			const target_type = type_from_value_node(access.target);
+			const element_size = target_type.name ? aarch64_size(target_type.name) : 8;
+
+			// Get base address first (before RHS clobbers registers)
+			if (access.target.node_type === "value") {
+				const name = (access.target as ValueNode).value;
+				emit_var_address(status, "x3", name);
+			} else {
+				build_node(access.target, status);
+				if (!status.code.endsWith("\n")) {
+					status.code += "\n";
+				}
+				status.code += `mov x3, x0\n`;
+			}
+
+			// Compute offset from index
+			if (access_index.index.node_type === "value") {
+				const index_val = (access_index.index as ValueNode).value;
+				if (/^(\+|-)*\d+$/.test(index_val)) {
+					const byte_offset = parseInt(index_val) * element_size;
+
+					// Evaluate RHS
+					build_node(node.right_value, status);
+					if (!status.code.endsWith("\n")) {
+						status.code += "\n";
+					}
+
+					if (element_size === 1) {
+						status.code += `strb w0, [x3, #${byte_offset}]\n`;
+					} else if (element_size === 4) {
+						status.code += `str w0, [x3, #${byte_offset}]\n`;
+					} else {
+						status.code += `str x0, [x3, #${byte_offset}]\n`;
+					}
+					return;
+				}
+			}
+
+			// Dynamic index
+			build_node(access_index.index, status);
+			if (!status.code.endsWith("\n")) {
+				status.code += "\n";
+			}
+			status.code += `mov x1, x0\n`;
+			status.code += `mov x2, #${element_size}\n`;
+			status.code += `mul x1, x1, x2\n`;
+			status.code += `add x3, x3, x1\n`;
+
+			// Evaluate RHS
+			build_node(node.right_value, status);
+			if (!status.code.endsWith("\n")) {
+				status.code += "\n";
+			}
+
+			if (element_size === 1) {
+				status.code += `strb w0, [x3]\n`;
+			} else if (element_size === 4) {
+				status.code += `str w0, [x3]\n`;
+			} else {
+				status.code += `str x0, [x3]\n`;
+			}
 		} else {
 			build_node(node.right_value, status);
 			status.code += `\n// complex assignment\n`;

@@ -18,6 +18,7 @@ for x in y {
 		const result = build(parsed.root, { arch: "aarch64" });
 		const expected = `
 y: .quad 1, 2, 3
+.p2align 2
 ldr x0, =0
 adr x1, x
 str x0, [x1]
@@ -99,6 +100,7 @@ for n in nums {
 		const result = build(parsed.root, { arch: "aarch64" });
 		const expected = `
 nums: .quad 1, 2, 3
+.p2align 2
 sum: .quad 0
 ldr x0, =0
 adr x1, n

@@ -63,6 +63,28 @@ function get_param_reg(name: string, status: BuildStatus): string | undefined {
 }
 
 function build_access_field(node: AccessNode, status: BuildStatus) {
+	const target_type = type_from_value_node(node.target);
+	const access_field = node.access as AccessFieldNode;
+
+	if (target_type.is_array && access_field.name === "length") {
+		const decl = status.scoped_declarations.find((d) => {
+			if (node.target.node_type === "value") {
+				return d.name === (node.target as ValueNode).value;
+			}
+			return false;
+		});
+		if (decl && decl.type.length) {
+			const length_value = (decl.type.length as any).value || "0";
+			status.code += `mov x0, #${length_value}\n`;
+		} else if (decl && decl.value && decl.value.node_type === "array") {
+			const count = (decl.value as any).values.length;
+			status.code += `mov x0, #${count}\n`;
+		} else {
+			status.code += `mov x0, #0\n`;
+		}
+		return;
+	}
+
 	const offset = compute_field_offset(node, status);
 	const base = get_base_target(node);
 
@@ -173,6 +195,11 @@ function build_access_method(
 }
 
 function build_access_index(node: AccessNode, access_index: AccessIndexNode, status: BuildStatus) {
+	const target_type = type_from_value_node(node.target);
+	const element_size = target_type.name ? aarch64_size(target_type.name) : 8;
+	const element_signed =
+		target_type.name && (target_type.name.startsWith("int") || target_type.name === "float");
+
 	// Get base address
 	if (node.target.node_type === "value") {
 		const name = (node.target as ValueNode).value;
@@ -181,7 +208,6 @@ function build_access_index(node: AccessNode, access_index: AccessIndexNode, sta
 			if (paramReg !== "x0") {
 				status.code += `mov x0, ${paramReg}\n`;
 			}
-			// if already x0, no-op
 		} else {
 			emit_var_address(status, "x0", name);
 		}
@@ -197,8 +223,18 @@ function build_access_index(node: AccessNode, access_index: AccessIndexNode, sta
 	if (access_index.index.node_type === "value") {
 		const index_val = (access_index.index as ValueNode).value;
 		if (/^(\+|-)*\d+$/.test(index_val)) {
-			const offset = parseInt(index_val) * 8;
-			status.code += `ldr x0, [x3, #${offset}]\n`;
+			const offset = parseInt(index_val) * element_size;
+			if (element_size === 1) {
+				status.code += element_signed
+					? `ldrsb x0, [x3, #${offset}]\n`
+					: `ldrb w0, [x3, #${offset}]\n`;
+			} else if (element_size === 4) {
+				status.code += element_signed
+					? `ldrsw x0, [x3, #${offset}]\n`
+					: `ldr w0, [x3, #${offset}]\n`;
+			} else {
+				status.code += `ldr x0, [x3, #${offset}]\n`;
+			}
 			return;
 		}
 	}
@@ -208,8 +244,14 @@ function build_access_index(node: AccessNode, access_index: AccessIndexNode, sta
 		status.code += "\n";
 	}
 	status.code += `mov x1, x0\n`;
-	status.code += `mov x2, #8\n`;
+	status.code += `mov x2, #${element_size}\n`;
 	status.code += `mul x1, x1, x2\n`;
 	status.code += `add x0, x3, x1\n`;
-	status.code += `ldr x0, [x0]\n`;
+	if (element_size === 1) {
+		status.code += element_signed ? `ldrsb x0, [x0]\n` : `ldrb w0, [x0]\n`;
+	} else if (element_size === 4) {
+		status.code += element_signed ? `ldrsw x0, [x0]\n` : `ldr w0, [x0]\n`;
+	} else {
+		status.code += `ldr x0, [x0]\n`;
+	}
 }

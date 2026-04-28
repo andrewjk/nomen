@@ -15,6 +15,7 @@ var x = 1..4
 		const result = build(parsed.root, { arch: "aarch64" });
 		const expected = `
 x: .quad 1, 2, 3
+.p2align 2
 `;
 		expect(parsed.errors).toEqual([]);
 		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
@@ -28,6 +29,7 @@ var x = 1..(4 + 1)
 		const result = build(parsed.root, { arch: "aarch64" });
 		const expected = `
 x: .quad 1, 2, 3, 4
+.p2align 2
 `;
 		expect(parsed.errors).toEqual([]);
 		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
@@ -41,6 +43,7 @@ var x = -2..2
 		const result = build(parsed.root, { arch: "aarch64" });
 		const expected = `
 x: .quad -2, -1, 0, 1
+.p2align 2
 `;
 		expect(parsed.errors).toEqual([]);
 		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
