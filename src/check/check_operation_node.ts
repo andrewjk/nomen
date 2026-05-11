@@ -57,6 +57,18 @@ export default function check_operation_node(op: OperationNode, status: CheckSta
 		return false;
 	}
 
+	// Handle string operators
+	if (left_type.name === "string") {
+		if (op.op === "+" && right_type.name === "string") {
+			op.type = new Type("string");
+			return true;
+		}
+		if (op.op === "*" && right_type.name === "int") {
+			op.type = new Type("string");
+			return true;
+		}
+	}
+
 	check_type_and_value_match(
 		left_type,
 		right_type,

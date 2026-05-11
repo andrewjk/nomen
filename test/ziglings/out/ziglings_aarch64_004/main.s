@@ -175,6 +175,41 @@ ldr x19, [sp], #16
 ldp x29, x30, [sp], #16
 ret
 .p2align 2
+char_to_string:
+stp x29, x30, [sp, #-16]!
+str x19, [sp, #-16]!
+mov x19, x0
+mov x29, sp
+sub sp, sp, #128
+str x0, [sp, #0]
+str x1, [sp, #8]
+str x2, [sp, #16]
+str x3, [sp, #24]
+mov x0, xzr
+mov x1, xzr
+adr x2, .Lfmt_char_c
+mov x3, x19
+bl _snprintf
+add x0, x0, #1
+str x0, [sp, #64]
+bl _malloc
+str x0, [sp, #72]
+ldr x0, [sp, #72]
+ldr x1, [sp, #64]
+adr x2, .Lfmt_char_c
+mov x3, x19
+bl _snprintf
+ldr x0, [sp, #72]
+add sp, sp, #128
+b .Lend_char_to_string
+.Lfmt_char_c: .asciz "%c"
+.p2align 2
+.Lend_char_to_string:
+.return_char_to_string:
+ldr x19, [sp], #16
+ldp x29, x30, [sp], #16
+ret
+.p2align 2
 string_to_string:
 stp x29, x30, [sp, #-16]!
 str x19, [sp, #-16]!

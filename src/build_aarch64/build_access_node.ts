@@ -149,7 +149,7 @@ function build_access_method(
 			} else {
 				emit_var_address(status, "x0", name);
 			}
-			if (target_is_simple) {
+			if (target_is_simple && target_type.name !== "string") {
 				const size = aarch64_size(target_type.name);
 				const signed =
 					target_type.name.startsWith("int") ||
@@ -196,7 +196,8 @@ function build_access_method(
 
 function build_access_index(node: AccessNode, access_index: AccessIndexNode, status: BuildStatus) {
 	const target_type = type_from_value_node(node.target);
-	const element_size = target_type.name ? aarch64_size(target_type.name) : 8;
+	const is_string = target_type.name === "string";
+	const element_size = is_string ? 1 : target_type.name ? aarch64_size(target_type.name) : 8;
 	const element_signed =
 		target_type.name && (target_type.name.startsWith("int") || target_type.name === "float");
 

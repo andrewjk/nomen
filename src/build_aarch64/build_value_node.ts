@@ -85,6 +85,11 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 			status.code += `ldr x0, [x29, #${offset}]`;
 		}
 	} else {
-		status.code += `adr x0, ${value}\nldr x0, [x0]`;
+		const type_name = node.type?.name || "";
+		if (type_name === "string" && status.string_literal_names?.has(value)) {
+			status.code += `adr x0, ${value}`;
+		} else {
+			status.code += `adr x0, ${value}\nldr x0, [x0]`;
+		}
 	}
 }

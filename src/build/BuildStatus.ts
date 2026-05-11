@@ -24,4 +24,5 @@ export default interface BuildStatus {
 	function_data?: string;
 	stack_size?: number;
 	stack_offsets?: Map<string, number>;
+	string_literal_names?: Set<string>;
 }

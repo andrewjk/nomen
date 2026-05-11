@@ -136,12 +136,14 @@ function check_access_index_node(
 ): boolean {
 	// Make sure the type can be indexed
 	// TODO: Do this with an Indexable trait instead
-	if (!target_type.is_array) {
+	if (target_type.name === "string") {
+		node.type = new Type("char");
+	} else if (target_type.is_array) {
+		node.type = new Type(target_type.name, target_type.is_static);
+	} else {
 		add_error(status, `Target not indexable: ${target_type.name}`, node.start);
 		return false;
 	}
-
-	node.type = new Type(target_type.name, target_type.is_static);
 
 	return check_node(node.index, status);
 }

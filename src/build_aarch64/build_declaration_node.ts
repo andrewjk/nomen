@@ -63,6 +63,46 @@ function resolve_array_values(node: any, status: BuildStatus): string[] | null {
 	return null;
 }
 
+function resolve_string_value(node: any, status: BuildStatus): string | null {
+	if (node.node_type === "value") {
+		const val = (node as ValueNode).value;
+		if (val.startsWith('"') && val.endsWith('"')) return val;
+		const decl = status.scoped_declarations.find((d) => d.name === val);
+		if (decl && decl.value) return resolve_string_value(decl.value, status);
+	}
+	if (node.node_type === "op" && node.type?.name === "string") {
+		return resolve_string_op(node, status);
+	}
+	return null;
+}
+
+function strip_quotes(s: string): string {
+	return s.slice(1, -1);
+}
+
+function resolve_string_op(op: OperationNode, status: BuildStatus): string | null {
+	const left = resolve_string_value(op.left_value, status);
+	if (!left) return null;
+	const left_content = strip_quotes(left);
+
+	if (op.op === "+") {
+		const right = resolve_string_value(op.right_value, status);
+		if (!right) return null;
+		const right_content = strip_quotes(right);
+		return `"${left_content}${right_content}"`;
+	}
+
+	if (op.op === "*") {
+		if (op.right_value.node_type === "value") {
+			const multiplier = parseInt((op.right_value as ValueNode).value);
+			if (isNaN(multiplier)) return null;
+			return `"${left_content.repeat(multiplier)}"`;
+		}
+	}
+
+	return null;
+}
+
 export default function build_declaration_node(node: DeclarationNode, status: BuildStatus) {
 	// Function type declaration
 	if (node.func_params) {
@@ -218,7 +258,20 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			}
 		}
 	} else if (node.value) {
-		if (node.value.node_type === "value") {
+		if (node.value.node_type === "op" && (node.value as OperationNode).type?.name === "string") {
+			const op = node.value as OperationNode;
+			const str_result = resolve_string_op(op, status);
+			if (str_result !== null) {
+				if (status.function_return_label) {
+					emit_data(status, `${node.name}: .asciz ${str_result}\n.p2align 2\n`);
+				} else {
+					status.code += `${node.name}: .asciz ${str_result}\n.p2align 2\n`;
+				}
+				status.string_literal_names!.add(node.name);
+			} else {
+				build_node(node.value, status);
+			}
+		} else if (node.value.node_type === "value") {
 			const raw = get_raw_value(node.value as ValueNode);
 			const use_stack = status.function_return_label && node.declaration === "var";
 			if (use_stack) {
@@ -241,9 +294,14 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 					}
 				}
 			} else {
-				emit_data(status, `${node.name}: ${directive} ${raw}\n`);
-				if (size % 4 !== 0) {
-					emit_data(status, `.p2align 2\n`);
+				if (node.type.name === "string" && raw.startsWith('"')) {
+					emit_data(status, `${node.name}: .asciz ${raw}\n.p2align 2\n`);
+					status.string_literal_names!.add(node.name);
+				} else {
+					emit_data(status, `${node.name}: ${directive} ${raw}\n`);
+					if (size % 4 !== 0) {
+						emit_data(status, `.p2align 2\n`);
+					}
 				}
 			}
 		} else if (node.value.node_type === "array") {

@@ -25,6 +25,7 @@ export default function build(
 		scoped_declarations: [],
 		interpolate_string_counts: new Set(),
 		strings: new Map(),
+		string_literal_names: new Set(),
 	};
 
 	if (options.arch === "aarch64") {
