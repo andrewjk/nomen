@@ -14,7 +14,7 @@ export default function check_for_loop_node(for_loop: ForLoopNode, status: Check
 		check_node(for_loop.list, for_status);
 
 		const list_type = type_from_value_node(for_loop.list, for_status);
-		if (!list_type.is_array) {
+		if (!list_type.is_array && list_type.name) {
 			add_error(
 				for_status,
 				`For loop list must be an array, not ${list_type.name}`,

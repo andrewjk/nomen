@@ -249,33 +249,33 @@ pub struct string: Stringable {
         return "from_c"
     }
 }
-/*
-pub struct Array: Addable, Multipliable {
-    pub const length: int
+pub struct Array {
+    pub const int length
 
-    pub func add(self, other: Array) -> Array {
+    pub func add = (self, Array other, out Array) -> {
         ```
-        int result[self.length + other.length];
-        memcpy(result, self, self.length * sizeof(int));
-        memcpy(&result[self.length], other, other.length * sizeof(int));
+        #arch: c
+        int result[self.length + other->length];
+        memcpy(result, &self, self.length * sizeof(int));
+        memcpy(&result[self.length], other, other->length * sizeof(int));
         return result;
         ```
         return "from_c"
     }
 
-    pub func multiply(self, other: int) -> Array {
+    pub func mul = (self, int other, out Array) -> {
         ```
+        #arch: c
         int result[self.length * other];
-        memcpy(result, self, self.length * sizeof(int));
-        for (let i = 1; i < other; i++) {
-            memcpy(&result[self.length * i], self, self.length * sizeof(int));
+        memcpy(result, &self, self.length * sizeof(int));
+        for (int i = 1; i < other; i++) {
+            memcpy(&result[self.length * i], &self, self.length * sizeof(int));
         }
         return result;
         ```
         return "from_c"
     }
 }
-*/
 pub struct Console {
     pub func write = (string line) -> {
         ```

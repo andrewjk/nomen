@@ -243,67 +243,112 @@ ret
 .globl _main
 _main:
 stp x29, x30, [sp, #-16]!
-sub sp, sp, #48
+sub sp, sp, #64
 mov x29, sp
-mov x0, #50
-strb w0, [x29, #0]
-ldr x2, =5
-ldrb w0, [x29, #0]
+adr x0, _str_0
 mov x1, x0
-add x0, x1, x2
-
-add x1, x29, #0
-strb w0, [x1]
-add x0, x29, #0
-ldrb w0, [x0]
-bl uint8_to_string
+bl Console_write
+ldr x0, =0
 str x0, [x29, #8]
-adr x0, pi
+.for_0:
+ldr x0, [x29, #8]
+mov x2, x0
+ldr x0, =4
+cmp x2, x0
+bge .end_0
+adr x3, leet
+ldr x1, [x29, #8]
+mov x2, #8
+mul x1, x1, x2
+add x0, x3, x1
 ldr x0, [x0]
-bl float_to_string
+str x0, [x29, #0]
+add x0, x29, #0
+ldr x0, [x0]
+bl int_to_string
 str x0, [x29, #16]
-adr x0, negative_eleven
-ldrsb x0, [x0]
-bl int8_to_string
+ldr x0, [x29, #16]
+mov x1, x0
+adr x0, _str_1
+bl _string_interpolate_1
 str x0, [x29, #24]
 ldr x0, [x29, #24]
-mov x3, x0
-ldr x0, [x29, #16]
-mov x2, x0
-ldr x0, [x29, #8]
 mov x1, x0
-adr x0, _str_0
-bl _string_interpolate_3
+bl Console_write
+ldr x0, [x29, #8]
+add x0, x0, #1
+str x0, [x29, #8]
+b .for_0
+.end_0:
+adr x0, _str_2
+mov x1, x0
+bl Console_write
+ldr x0, =0
+str x0, [x29, #40]
+.for_1:
+ldr x0, [x29, #40]
+mov x2, x0
+ldr x0, =12
+cmp x2, x0
+bge .end_1
+adr x3, bit_pattern
+ldr x1, [x29, #40]
+mov x2, #8
+mul x1, x1, x2
+add x0, x3, x1
+ldr x0, [x0]
 str x0, [x29, #32]
-ldr x0, [x29, #32]
+add x0, x29, #32
+ldr x0, [x0]
+bl int_to_string
+str x0, [x29, #48]
+ldr x0, [x29, #48]
+mov x1, x0
+adr x0, _str_3
+bl _string_interpolate_1
+str x0, [x29, #56]
+ldr x0, [x29, #56]
+mov x1, x0
+bl Console_write
+ldr x0, [x29, #40]
+add x0, x0, #1
+str x0, [x29, #40]
+b .for_1
+.end_1:
+adr x0, _str_4
 mov x1, x0
 bl Console_write
 .return_0:
 mov x0, #0
-add sp, sp, #48
+add sp, sp, #64
 ldp x29, x30, [sp], #16
 ret
-pi: .double 3.14159
-negative_eleven: .byte -11
+le: .quad 1, 3
+.p2align 2
+et: .quad 3, 7
+.p2align 2
+leet: .quad 1, 3, 3, 7
+.p2align 2
+bit_pattern: .quad 1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1
 .p2align 2
 
-_str_0: .asciz "%s %s %s\n"
+_str_0: .asciz "LEET: "
+_str_1: .asciz "%s"
+_str_2: .asciz ", Bits: "
+_str_3: .asciz "%s"
+_str_4: .asciz "\n"
 
 .p2align 2
-_string_interpolate_3:
+_string_interpolate_1:
 stp x29, x30, [sp, #-16]!
 mov x29, sp
 sub sp, sp, #80
 str x0, [sp, #72]
 str x1, [sp, #0]
-str x2, [sp, #8]
-str x3, [sp, #16]
 mov x0, xzr
 mov x1, xzr
 ldr x2, [sp, #72]
 ldr x3, [sp, #0]
-ldr x4, [sp, #8]
-ldr x5, [sp, #16]
 bl _snprintf
 add x0, x0, #1
 str x0, [sp, #56]
@@ -313,8 +358,6 @@ ldr x0, [sp, #64]
 ldr x1, [sp, #56]
 ldr x2, [sp, #72]
 ldr x3, [sp, #0]
-ldr x4, [sp, #8]
-ldr x5, [sp, #16]
 bl _snprintf
 ldr x0, [sp, #64]
 add sp, sp, #80

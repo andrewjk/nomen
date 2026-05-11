@@ -20,15 +20,24 @@ for x in y {
 y: .quad 1, 2, 3
 .p2align 2
 ldr x0, =0
-adr x1, x
+adr x1, _idx_x
 str x0, [x1]
 .for_0:
-adr x0, x
+adr x0, _idx_x
 ldr x0, [x0]
 mov x2, x0
 ldr x0, =3
 cmp x2, x0
 bge .end_0
+adr x3, y
+adr x1, _idx_x
+ldr x1, [x1]
+mov x2, #8
+mul x1, x1, x2
+add x0, x3, x1
+ldr x0, [x0]
+adr x1, x
+str x0, [x1]
 ldr x2, =1
 adr x0, x
 ldr x0, [x0]
@@ -37,10 +46,10 @@ add x0, x1, x2
 
 adr x1, x
 str x0, [x1]
-adr x0, x
+adr x0, _idx_x
 ldr x0, [x0]
 add x0, x0, #1
-adr x1, x
+adr x1, _idx_x
 str x0, [x1]
 b .for_0
 .end_0:
@@ -103,15 +112,24 @@ nums: .quad 1, 2, 3
 .p2align 2
 sum: .quad 0
 ldr x0, =0
-adr x1, n
+adr x1, _idx_n
 str x0, [x1]
 .for_0:
-adr x0, n
+adr x0, _idx_n
 ldr x0, [x0]
 mov x2, x0
 ldr x0, =3
 cmp x2, x0
 bge .end_0
+adr x3, nums
+adr x1, _idx_n
+ldr x1, [x1]
+mov x2, #8
+mul x1, x1, x2
+add x0, x3, x1
+ldr x0, [x0]
+adr x1, n
+str x0, [x1]
 adr x0, n
 ldr x0, [x0]
 mov x2, x0
@@ -122,10 +140,10 @@ add x0, x1, x2
 
 adr x1, sum
 str x0, [x1]
-adr x0, n
+adr x0, _idx_n
 ldr x0, [x0]
 add x0, x0, #1
-adr x1, n
+adr x1, _idx_n
 str x0, [x1]
 b .for_0
 .end_0:

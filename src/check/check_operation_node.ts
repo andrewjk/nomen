@@ -2,6 +2,7 @@ import add_error from "../add_error.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
 import Type from "../nodes/Type.ts";
+import ValueNode from "../nodes/ValueNode.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
@@ -31,6 +32,21 @@ export default function check_operation_node(op: OperationNode, status: CheckSta
 			struct_name: left_type.is_array ? "Array" : left_type.name,
 			func_name: custom_op.name,
 		};
+
+		// Propagate array length for + and * operations
+		if (left_type.is_array && op.type.is_array) {
+			const left_len = left_type.length ? parseInt((left_type.length as any).value || "0") : 0;
+			const right_val = value_from_value_node(op.right_value);
+
+			if (op.op === "+" && right_type.is_array) {
+				const right_len = right_type.length ? parseInt((right_type.length as any).value || "0") : 0;
+				op.type.length = new ValueNode(-1, (left_len + right_len).toString(), new Type("int"));
+			} else if (op.op === "*" && right_type.name === "int" && /^(\+|-)*\d+$/.test(right_val)) {
+				const multiplier = parseInt(right_val);
+				op.type.length = new ValueNode(-1, (left_len * multiplier).toString(), new Type("int"));
+			}
+		}
+
 		return true;
 	}
 

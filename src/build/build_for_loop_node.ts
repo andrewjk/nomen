@@ -42,20 +42,16 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 			build_node(node.list!, status);
 			status.code += " + i);\n";
 		} else {
-			// TODO: Handle index iterator variable
-			// HACK: Only want to do this if the item hasn't been declared previously?
-			status.code += `${c_type("int")} `;
-			build_node(node.item, status);
-			status.code += ";\nfor (";
-			build_node(node.item, status);
-			status.code += " = 0; ";
-			build_node(node.item, status);
-			const length = type_from_value_node(node.list).length;
-			status.code += ` < `;
+			const list_type = type_from_value_node(node.list);
+			const length = list_type.length;
+			const element_type = list_type.name || "int";
+			const idx_var = `_idx_${node.item.value}`;
+			status.code += `for (int ${idx_var} = 0; ${idx_var} < `;
 			build_node(length!, status);
-			status.code += `; `;
-			build_node(node.item, status);
-			status.code += "++)\n{\n";
+			status.code += `; ${idx_var}++)\n{\n`;
+			status.code += `${c_type(element_type)} ${node.item.value} = `;
+			build_node(node.list!, status);
+			status.code += `[${idx_var}];\n`;
 		}
 	}
 

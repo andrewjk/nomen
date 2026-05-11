@@ -186,6 +186,35 @@ ldr x19, [sp], #16
 ldp x29, x30, [sp], #16
 ret
 .p2align 2
+Array_init:
+stp x29, x30, [sp, #-16]!
+mov x29, sp
+str xzr, [x0]
+str x1, [x0, #8]
+.return_Array_init:
+ldp x29, x30, [sp], #16
+ret
+.p2align 2
+Array_add:
+stp x29, x30, [sp, #-16]!
+str x19, [sp, #-16]!
+mov x19, x0
+mov x29, sp
+.return_Array_add:
+ldr x19, [sp], #16
+ldp x29, x30, [sp], #16
+ret
+.p2align 2
+Array_mul:
+stp x29, x30, [sp, #-16]!
+str x19, [sp, #-16]!
+mov x19, x0
+mov x29, sp
+.return_Array_mul:
+ldr x19, [sp], #16
+ldp x29, x30, [sp], #16
+ret
+.p2align 2
 Console_init:
 stp x29, x30, [sp, #-16]!
 mov x29, sp

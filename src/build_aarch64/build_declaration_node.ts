@@ -2,6 +2,7 @@ import type BuildStatus from "../build/BuildStatus.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
+import OperationNode from "../nodes/OperationNode.ts";
 import RangeNode from "../nodes/RangeNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_array_values_node from "./build_array_values_node.ts";
@@ -26,6 +27,40 @@ function emit_data(status: BuildStatus, data: string) {
 	} else {
 		status.code += data;
 	}
+}
+
+function resolve_array_values(node: any, status: BuildStatus): string[] | null {
+	if (node.node_type === "array") {
+		return (node as ArrayValuesNode).values
+			.map((v) => {
+				if (v.node_type === "value") return get_raw_value(v as ValueNode);
+				return null;
+			})
+			.filter((v): v is string => v !== null);
+	}
+	if (node.node_type === "value") {
+		const name = (node as ValueNode).value;
+		const decl = status.scoped_declarations.find((d) => d.name === name);
+		if (decl && decl.value) return resolve_array_values(decl.value, status);
+	}
+	if (node.node_type === "op") {
+		const op = node as OperationNode;
+		if (op.operator_func && op.type.is_array) {
+			const left_vals = resolve_array_values(op.left_value, status);
+			const right_vals = resolve_array_values(op.right_value, status);
+			if (left_vals && op.op === "+") {
+				const right_all = right_vals || [];
+				return [...left_vals, ...right_all];
+			}
+			if (left_vals && op.op === "*" && op.right_value.node_type === "value") {
+				const multiplier = parseInt((op.right_value as ValueNode).value);
+				const result: string[] = [];
+				for (let i = 0; i < multiplier; i++) result.push(...left_vals);
+				return result;
+			}
+		}
+	}
+	return null;
 }
 
 export default function build_declaration_node(node: DeclarationNode, status: BuildStatus) {
@@ -99,6 +134,36 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 				status.code += `${node.name}: ${directive} `;
 				build_range_node(node.value as RangeNode, status);
 				status.code += `\n.p2align 2\n`;
+			}
+		} else if (node.value && node.value.node_type === "op") {
+			const op = node.value as OperationNode;
+			if (op.operator_func && op.type.is_array) {
+				const values = resolve_array_values(op, status);
+				if (values) {
+					if (status.function_return_label && node.declaration === "var") {
+						const total_size = values.length * size;
+						const offset = allocate_stack_space(status, total_size, size);
+						status.stack_offsets!.set(node.name, offset);
+						values.forEach((val, i) => {
+							status.code += `mov x0, #${val}\n`;
+							if (size === 1) {
+								status.code += `strb w0, [x29, #${offset + i * size}]\n`;
+							} else if (size === 4) {
+								status.code += `str w0, [x29, #${offset + i * size}]\n`;
+							} else {
+								status.code += `str x0, [x29, #${offset + i * size}]\n`;
+							}
+						});
+					} else if (status.function_return_label) {
+						emit_data(status, `${node.name}: ${directive} ${values.join(", ")}\n.p2align 2\n`);
+					} else {
+						status.code += `${node.name}: ${directive} ${values.join(", ")}\n.p2align 2\n`;
+					}
+				} else {
+					build_node(node.value, status);
+				}
+			} else {
+				build_node(node.value, status);
 			}
 		} else {
 			if (status.function_return_label) {
