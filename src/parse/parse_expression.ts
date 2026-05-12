@@ -21,6 +21,44 @@ import expect from "./utils/expect.ts";
 import get_index from "./utils/get_index.ts";
 import peek_current from "./utils/peek_current.ts";
 
+function parse_primary(status: ParseStatus, value: string): BaseNode {
+	const start = get_index(status);
+	switch (value) {
+		case "!": {
+			consume(status);
+			const next = peek_current(status) || "??";
+			const inner = parse_primary(status, next);
+			return new OperationNode(start, "!", inner, inner);
+		}
+		case "[": {
+			consume(status);
+			const node = new ArrayValuesNode(start);
+			if (peek_current(status) !== "]") {
+				parse_array_value(node as ArrayValuesNode, status);
+			}
+			expect("]", status);
+			return node;
+		}
+		case "(": {
+			consume(status);
+			const node = new GroupedNode(start, parse_expression(status));
+			expect(")", status);
+			return node;
+		}
+		case "if": {
+			return parse_if_else(status);
+		}
+		default: {
+			if (value && value.startsWith('"') && (value.length === 1 || !value.endsWith('"'))) {
+				return parse_string_interpolation(status);
+			} else {
+				const v = consume(status);
+				return new ValueNode(start, v);
+			}
+		}
+	}
+}
+
 /**
  * An expression returns a value and can be used e.g. on the right side of an assignment, as the
  * initial value of a declaration or as a parameter value in a function call
@@ -28,38 +66,7 @@ import peek_current from "./utils/peek_current.ts";
 export default function parse_expression(status: ParseStatus): BaseNode {
 	const start = get_index(status);
 	let value = peek_current(status) || "??";
-	let node: BaseNode;
-
-	// Get the initial value
-	switch (value) {
-		case "[": {
-			consume(status);
-			node = new ArrayValuesNode(start);
-			if (peek_current(status) !== "]") {
-				parse_array_value(node as ArrayValuesNode, status);
-			}
-			expect("]", status);
-			break;
-		}
-		case "(": {
-			consume(status);
-			node = new GroupedNode(start, parse_expression(status));
-			expect(")", status);
-			break;
-		}
-		case "if": {
-			node = parse_if_else(status);
-			break;
-		}
-		default: {
-			if (value && value.startsWith('"') && (value.length === 1 || !value.endsWith('"'))) {
-				node = parse_string_interpolation(status);
-			} else {
-				value = consume(status);
-				node = new ValueNode(start, value);
-			}
-		}
-	}
+	let node = parse_primary(status, value);
 
 	// Get any accesses or operations applied to the value
 	while (true) {
@@ -69,17 +76,6 @@ export default function parse_expression(status: ParseStatus): BaseNode {
 				accept(".", status);
 				const access = new AccessNode(node.start, node, parse_access(value, status));
 				node = access;
-				// TODO: This should be a type prop on AccessNode
-				////switch (access.access.node_type) {
-				////  case "access_field": {
-				////    value = (access.access as AccessFieldNode).name;
-				////    break;
-				////  }
-				////  case "access_func": {
-				////    value = (access.access as AccessFunctionCallNode).name;
-				////    break;
-				////  }
-				////}
 				break;
 			}
 			case "[": {
@@ -88,7 +84,6 @@ export default function parse_expression(status: ParseStatus): BaseNode {
 				expect("]", status);
 				const access = new AccessNode(node.start, node, new AccessIndexNode(index.start, index));
 				node = access;
-				////value = "TODO"; // (access.access as AccessIndexNode).index;
 				break;
 			}
 			case "(": {
@@ -99,7 +94,6 @@ export default function parse_expression(status: ParseStatus): BaseNode {
 				}
 				expect(")", status);
 				node = func;
-				/////value = func.name;
 				break;
 			}
 			case "+":
@@ -163,6 +157,9 @@ export default function parse_expression(status: ParseStatus): BaseNode {
 
 function operator_precedence(op: string) {
 	switch (op) {
+		case "!": {
+			return 2;
+		}
 		case "*":
 		case "/":
 		case "%": {

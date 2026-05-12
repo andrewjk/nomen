@@ -303,76 +303,75 @@ ret
 .globl _main
 _main:
 stp x29, x30, [sp, #-16]!
-sub sp, sp, #32
+sub sp, sp, #16
 mov x29, sp
-mov x0, #1
-str x0, [x29, #0]
-.while_0:
-ldr x0, =1
-cmp x0, #0
-beq .end_while_0
-ldr x2, =4
-ldr x0, [x29, #0]
+adr x0, _str_0
+bl Console_write
+ldr x0, =0
+str x0, [x29, #8]
+.for_0:
+ldr x0, [x29, #8]
+mov x2, x0
+ldr x0, =5
+cmp x2, x0
+bge .end_0
+adr x3, story
+ldr x1, [x29, #8]
+mov x2, #1
+mul x1, x1, x2
+add x0, x3, x1
+ldrb w0, [x0]
+strb w0, [x29, #0]
+ldr x2, =104
+ldrb w0, [x29, #0]
 mov x1, x0
 cmp x1, x2
 cset x0, eq
 
 cmp x0, #0
 beq end_0
-b .end_while_0
+adr x0, _str_1
+bl Console_write
 end_0:
-.while_update_0:
-add x1, x29, #0
-ldr x1, [x1]
-str x1, [sp, #-16]!
-ldr x0, =1
-ldr x1, [sp], #16
-add x0, x1, x0
-add x1, x29, #0
-str x0, [x1]
-b .while_0
-.end_while_0:
-add x0, x29, #0
-ldr x0, [x0]
-bl int_to_string
-str x0, [x29, #8]
-ldr x0, [x29, #8]
+ldr x2, =115
+ldrb w0, [x29, #0]
 mov x1, x0
-adr x0, _str_0
-bl _string_interpolate_1
-str x0, [x29, #16]
-ldr x0, [x29, #16]
+cmp x1, x2
+cset x0, eq
+
+cmp x0, #0
+beq end_1
+adr x0, _str_2
+bl Console_write
+end_1:
+ldr x2, =110
+ldrb w0, [x29, #0]
+mov x1, x0
+cmp x1, x2
+cset x0, eq
+
+cmp x0, #0
+beq end_2
+adr x0, _str_3
+bl Console_write
+end_2:
+ldr x0, [x29, #8]
+add x0, x0, #1
+str x0, [x29, #8]
+b .for_0
+.end_0:
+adr x0, _str_4
 bl Console_write
 .return_0:
 mov x0, #0
-add sp, sp, #32
+add sp, sp, #16
 ldp x29, x30, [sp], #16
 ret
-
-_str_0: .asciz "n=%s\n"
-
+story: .byte 104, 104, 115, 110, 104
 .p2align 2
-_string_interpolate_1:
-stp x29, x30, [sp, #-16]!
-mov x29, sp
-sub sp, sp, #80
-str x0, [sp, #72]
-str x1, [sp, #0]
-mov x0, xzr
-mov x1, xzr
-ldr x2, [sp, #72]
-ldr x3, [sp, #0]
-bl _snprintf
-add x0, x0, #1
-str x0, [sp, #56]
-bl _malloc
-str x0, [sp, #64]
-ldr x0, [sp, #64]
-ldr x1, [sp, #56]
-ldr x2, [sp, #72]
-ldr x3, [sp, #0]
-bl _snprintf
-ldr x0, [sp, #64]
-add sp, sp, #80
-ldp x29, x30, [sp], #16
-ret
+
+_str_0: .asciz "A Dramatic Story: "
+_str_1: .asciz ":-)  "
+_str_2: .asciz ":-(  "
+_str_3: .asciz ":-|  "
+_str_4: .asciz "The End.\n"

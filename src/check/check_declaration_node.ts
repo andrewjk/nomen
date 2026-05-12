@@ -62,6 +62,12 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 
 		if (!decl.type.name) {
 			decl.type = type_from_value_node(decl.value, status);
+		} else if (decl.value.node_type === "array" && !decl.type.is_array) {
+			const value_type = type_from_value_node(decl.value, status);
+			if (value_type.is_array && value_type.name === decl.type.name) {
+				decl.type.is_array = true;
+				decl.type.length = value_type.length;
+			}
 		}
 
 		status.stack.pop();

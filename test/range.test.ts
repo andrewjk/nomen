@@ -53,7 +53,7 @@ x: .quad -2, -1, 0, 1
 		const input = `
 func sum = (int[] nums, out int) -> {
   var total = 0
-  for n in nums {
+  for n of nums {
     total = total + n
   }
   return total
@@ -72,7 +72,7 @@ const result = sum(1..4)
 		const input = `
 func sum = (out int) -> {
   var total = 0
-  for n in 1..4 {
+  for n of 1..4 {
     total = total + n
   }
   return total

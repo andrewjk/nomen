@@ -275,6 +275,31 @@ b .Lend_Console_write
 ldp x29, x30, [sp], #16
 ret
 .p2align 2
+Math_init:
+stp x29, x30, [sp, #-16]!
+mov x29, sp
+str xzr, [x0]
+.return_Math_init:
+ldp x29, x30, [sp], #16
+ret
+.p2align 2
+Math_power:
+stp x29, x30, [sp, #-16]!
+mov x29, sp
+mov x2, #1
+mov x3, #0
+b .Lchk_Math_power
+.Lloop_Math_power:
+mul x2, x2, x0
+add x3, x3, #1
+.Lchk_Math_power:
+cmp x3, x1
+blt .Lloop_Math_power
+mov x0, x2
+.return_Math_power:
+ldp x29, x30, [sp], #16
+ret
+.p2align 2
 .globl _main
 _main:
 stp x29, x30, [sp, #-16]!
@@ -290,12 +315,10 @@ cset x0, eq
 cmp x0, #0
 beq else_0
 adr x0, _str_0
-mov x1, x0
 bl Console_write
 b end_0
 else_0:
 adr x0, _str_1
-mov x1, x0
 bl Console_write
 end_0:
 .return_0:

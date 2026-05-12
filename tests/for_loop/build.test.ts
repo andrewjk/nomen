@@ -9,7 +9,7 @@ import trim_test_build from "../trim_test_build";
 test("with array", () => {
 	const input = `
 const y = [1, 2, 3]
-for x in y {}
+for x of y {}
 `;
 	const parsed = parse(input);
 	const result = build(parsed.root);
@@ -26,7 +26,7 @@ for (x = 0; x < 3; x++)
 
 test("with range", () => {
 	const input = `
-for x in 0..5 {}
+for x of 0..5 {}
 `;
 	const parsed = parse(input);
 	const result = build(parsed.root);

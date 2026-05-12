@@ -4,7 +4,10 @@ import type BuildStatus from "./BuildStatus.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 
 export default function build_operation_node(node: OperationNode, status: BuildStatus) {
-	if (node.operator_func) {
+	if (node.op === "!") {
+		status.code += `!`;
+		build_node(node.right_value, status);
+	} else if (node.operator_func) {
 		// Custom operator function call
 		status.code += `${node.operator_func.struct_name}_${node.operator_func.func_name}(`;
 		build_operand(node.left_value, status);

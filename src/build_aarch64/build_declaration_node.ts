@@ -24,6 +24,9 @@ function get_raw_value(node: ValueNode): string {
 	let val = node.value;
 	if (val === "true") return "1";
 	if (val === "false") return "0";
+	if (val.startsWith("'") && val.endsWith("'") && val.length === 3) {
+		return val.charCodeAt(1).toString();
+	}
 	return val;
 }
 
@@ -285,12 +288,30 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 				build_node(node.value, status);
 			}
 		} else if (node.value.node_type === "value") {
-			const raw = get_raw_value(node.value as ValueNode);
-			const use_stack = status.function_return_label && node.declaration === "var";
+			const value_node = node.value as ValueNode;
+			const raw = get_raw_value(value_node);
+			const is_literal =
+				/^(\+|-)?\d+(\.\d+)?$/.test(raw) ||
+				raw.startsWith('"') ||
+				raw === "true" ||
+				raw === "false";
+			const use_stack = status.function_return_label && (node.declaration === "var" || !is_literal);
 			if (use_stack) {
 				const offset = allocate_stack_space(status, size, size);
 				status.stack_offsets!.set(node.name, offset);
-				if (node.type.name === "float") {
+				if (!is_literal) {
+					build_node(node.value, status);
+					if (!status.code.endsWith("\n")) {
+						status.code += "\n";
+					}
+					if (size === 1) {
+						status.code += `strb w0, [x29, #${offset}]\n`;
+					} else if (size === 4) {
+						status.code += `str w0, [x29, #${offset}]\n`;
+					} else {
+						status.code += `str x0, [x29, #${offset}]\n`;
+					}
+				} else if (node.type.name === "float") {
 					const label = `_float_const_${node.name}`;
 					emit_data(status, `${label}: .double ${raw}\n.p2align 2\n`);
 					status.code += `adr x0, ${label}\n`;

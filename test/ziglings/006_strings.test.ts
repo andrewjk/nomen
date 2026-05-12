@@ -106,7 +106,6 @@ adr x0, _str_0
 bl _string_interpolate_3
 str x0, [x29, #32]
 ldr x0, [x29, #32]
-mov x1, x0
 bl Console_write
 .return_0:
 mov x0, #0

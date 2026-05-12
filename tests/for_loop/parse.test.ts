@@ -12,7 +12,7 @@ import trim_test_parse from "../trim_test_parse";
 test("with array", () => {
 	const input = `
 const y = [1, 2, 3]
-for x in y {
+for x of y {
   // ...
 }
 `;
@@ -28,7 +28,7 @@ for x in y {
 
 test("with range", () => {
 	const input = `
-for x in 0..5 {}
+for x of 0..5 {}
 `;
 	const parsed = parse(input);
 	const expected = new ForLoopNode(

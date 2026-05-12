@@ -63,6 +63,12 @@ export default function tokenize(input: string, preserve_space = false): Token[]
 					let end = consume_string(input, status);
 					value = normalize_multiline_string(input.substring(status.i, end));
 					status.i = end - 1;
+				} else if (value === "'") {
+					// It's a char literal -- e.g. 'h'
+					if (input[status.i + 2] === "'") {
+						value = input.substring(status.i, status.i + 3);
+						status.i += 2;
+					}
 				} else if (value === "/" && input[status.i + 1] === "/") {
 					// It's a one-line comment -- process until the newline
 					let end = consume_comment(input, status);

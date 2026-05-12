@@ -20,13 +20,13 @@ pub func main() {
 
     Console.write("LEET: ")
 
-    for n in leet {
+    for n of leet {
         Console.write("\\{n}")
     }
 
     Console.write(", Bits: ")
 
-    for n in bit_pattern {
+    for n of bit_pattern {
         Console.write("\\{n}")
     }
 
@@ -56,13 +56,13 @@ pub func main() {
 
     Console.write("LEET: ")
 
-    for n in leet {
+    for n of leet {
         Console.write("\\{n}")
     }
 
     Console.write(", Bits: ")
 
-    for n in bit_pattern {
+    for n of bit_pattern {
         Console.write("\\{n}")
     }
 
@@ -87,13 +87,13 @@ pub func main() {
 
   Console.write("LEET: ")
 
-  for n in leet {
+  for n of leet {
       Console.write("\\{n}")
   }
 
   Console.write(", Bits: ")
 
-  for n in bit_pattern {
+  for n of bit_pattern {
       Console.write("\\{n}")
   }
 

@@ -16,10 +16,16 @@ export default function parse_for_loop(status: ParseStatus) {
 	const value = consume(status);
 	const item = new ValueNode(start, value);
 	// TODO: index option?
-	if (expect("in", status)) {
+	if (expect("of", status)) {
 		const list = parse_expression(status);
+
+		let update;
+		if (accept(";", status)) {
+			update = parse_expression(status);
+		}
+
 		if (expect("{", status)) {
-			const for_loop = new ForLoopNode(for_start, item, list);
+			const for_loop = new ForLoopNode(for_start, item, list, undefined, update);
 
 			status.stack.push(for_loop);
 			parse_statement(status);

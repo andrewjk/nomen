@@ -9,8 +9,21 @@ type OpTuple = typeof OPERATORS;
 type Operator = OpTuple[number];
 */
 
-type Operator = "+" | "-" | "*" | "/" | "%" | "==" | "!=" | ">" | ">=" | "<" | "<=" | "&&" | "||";
-// TODO: inclued range operators ".." and ".=" ??
+type Operator =
+	| "+"
+	| "-"
+	| "*"
+	| "/"
+	| "%"
+	| "=="
+	| "!="
+	| ">"
+	| ">="
+	| "<="
+	| "<"
+	| "&&"
+	| "||"
+	| "!";
 
 export default class OperationNode extends BaseNode {
 	op: Operator;

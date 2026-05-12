@@ -275,13 +275,37 @@ b .Lend_Console_write
 ldp x29, x30, [sp], #16
 ret
 .p2align 2
+Math_init:
+stp x29, x30, [sp, #-16]!
+mov x29, sp
+str xzr, [x0]
+.return_Math_init:
+ldp x29, x30, [sp], #16
+ret
+.p2align 2
+Math_power:
+stp x29, x30, [sp, #-16]!
+mov x29, sp
+mov x2, #1
+mov x3, #0
+b .Lchk_Math_power
+.Lloop_Math_power:
+mul x2, x2, x0
+add x3, x3, #1
+.Lchk_Math_power:
+cmp x3, x1
+blt .Lloop_Math_power
+mov x0, x2
+.return_Math_power:
+ldp x29, x30, [sp], #16
+ret
+.p2align 2
 .globl _main
 _main:
 stp x29, x30, [sp, #-16]!
 sub sp, sp, #64
 mov x29, sp
 adr x0, _str_0
-mov x1, x0
 bl Console_write
 ldr x0, =0
 str x0, [x29, #8]
@@ -308,7 +332,6 @@ adr x0, _str_1
 bl _string_interpolate_1
 str x0, [x29, #24]
 ldr x0, [x29, #24]
-mov x1, x0
 bl Console_write
 ldr x0, [x29, #8]
 add x0, x0, #1
@@ -316,7 +339,6 @@ str x0, [x29, #8]
 b .for_0
 .end_0:
 adr x0, _str_2
-mov x1, x0
 bl Console_write
 ldr x0, =0
 str x0, [x29, #40]
@@ -343,7 +365,6 @@ adr x0, _str_3
 bl _string_interpolate_1
 str x0, [x29, #56]
 ldr x0, [x29, #56]
-mov x1, x0
 bl Console_write
 ldr x0, [x29, #40]
 add x0, x0, #1
@@ -351,7 +372,6 @@ str x0, [x29, #40]
 b .for_1
 .end_1:
 adr x0, _str_4
-mov x1, x0
 bl Console_write
 .return_0:
 mov x0, #0

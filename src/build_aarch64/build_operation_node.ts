@@ -72,6 +72,11 @@ function build_operand(node: BaseNode, target_reg: string, status: BuildStatus) 
 			}
 			return;
 		}
+		if (value.startsWith("'") && value.endsWith("'") && value.length === 3) {
+			const char_code = value.charCodeAt(1);
+			status.code += `ldr ${target_reg}, =${char_code}`;
+			return;
+		}
 		if (value.startsWith('"')) {
 			const label = `_str_op_${string_counter++}`;
 			status.strings!.set(label, value);
@@ -108,6 +113,16 @@ function build_operator_operand(node: BaseNode, target_reg: string, status: Buil
 }
 
 export default function build_operation_node(node: OperationNode, status: BuildStatus) {
+	if (node.op === "!") {
+		build_node(node.right_value, status);
+		if (!status.code.endsWith("\n")) {
+			status.code += "\n";
+		}
+		status.code += `cmp x0, #0\n`;
+		status.code += `cset x0, eq\n`;
+		return;
+	}
+
 	if (node.operator_func) {
 		// Custom operator function call
 		// Right operand into x1 (x0 is reserved for self)
@@ -148,7 +163,19 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		status.code += `ldr x2, [sp], #16\n`;
 	}
 
-	if (is_comparison(node.op)) {
+	if (node.op === "&&") {
+		status.code += `cmp x1, #0\n`;
+		status.code += `cset x1, ne\n`;
+		status.code += `cmp x2, #0\n`;
+		status.code += `cset x2, ne\n`;
+		status.code += `and x0, x1, x2\n`;
+	} else if (node.op === "||") {
+		status.code += `cmp x1, #0\n`;
+		status.code += `cset x1, ne\n`;
+		status.code += `cmp x2, #0\n`;
+		status.code += `cset x2, ne\n`;
+		status.code += `orr x0, x1, x2\n`;
+	} else if (is_comparison(node.op)) {
 		status.code += `cmp x1, x2\n`;
 		status.code += `cset x0, ${map_cmp(node.op)}\n`;
 	} else {

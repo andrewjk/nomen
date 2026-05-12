@@ -10,6 +10,14 @@ import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
 
 export default function check_operation_node(op: OperationNode, status: CheckStatus): boolean {
+	if (op.op === "!") {
+		if (!check_node(op.right_value, status)) {
+			return false;
+		}
+		op.type = new Type("bool");
+		return true;
+	}
+
 	const result = check_node(op.left_value, status) && check_node(op.right_value, status);
 	if (!result) {
 		return false;

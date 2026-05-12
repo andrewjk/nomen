@@ -20,13 +20,13 @@ pub func main = () -> {
 
     Console.write("LEET: ")
 
-    for n in leet {
+    for n of leet {
         Console.write("\\{n}")
     }
 
     Console.write(", Bits: ")
 
-    for n in bit_pattern {
+    for n of bit_pattern {
         Console.write("\\{n}")
     }
 
@@ -59,13 +59,13 @@ pub func main = () -> {
 
     Console.write("LEET: ")
 
-    for n in leet {
+    for n of leet {
         Console.write("\\{n}")
     }
 
     Console.write(", Bits: ")
 
-    for n in bit_pattern {
+    for n of bit_pattern {
         Console.write("\\{n}")
     }
 
@@ -90,13 +90,13 @@ pub func main = () -> {
 
   Console.write("LEET: ")
 
-  for n in leet {
+  for n of leet {
       Console.write("\\{n}")
   }
 
   Console.write(", Bits: ")
 
-  for n in bit_pattern {
+  for n of bit_pattern {
       Console.write("\\{n}")
   }
 
@@ -113,7 +113,6 @@ stp x29, x30, [sp, #-16]!
 sub sp, sp, #64
 mov x29, sp
 adr x0, _str_0
-mov x1, x0
 bl Console_write
 ldr x0, =0
 str x0, [x29, #8]
@@ -140,7 +139,6 @@ adr x0, _str_1
 bl _string_interpolate_1
 str x0, [x29, #24]
 ldr x0, [x29, #24]
-mov x1, x0
 bl Console_write
 ldr x0, [x29, #8]
 add x0, x0, #1
@@ -148,7 +146,6 @@ str x0, [x29, #8]
 b .for_0
 .end_0:
 adr x0, _str_2
-mov x1, x0
 bl Console_write
 ldr x0, =0
 str x0, [x29, #40]
@@ -175,7 +172,6 @@ adr x0, _str_3
 bl _string_interpolate_1
 str x0, [x29, #56]
 ldr x0, [x29, #56]
-mov x1, x0
 bl Console_write
 ldr x0, [x29, #40]
 add x0, x0, #1
@@ -183,7 +179,6 @@ str x0, [x29, #40]
 b .for_1
 .end_1:
 adr x0, _str_4
-mov x1, x0
 bl Console_write
 .return_0:
 mov x0, #0

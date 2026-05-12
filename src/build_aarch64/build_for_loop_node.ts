@@ -26,9 +26,10 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 	const item_name = node.item.value;
 	const start_label = `.for_${label}`;
 	const end_label = `.end_${label}`;
+	const continue_label = node.update ? `.for_update_${label}` : start_label;
 
 	status.loop_labels = status.loop_labels || [];
-	status.loop_labels.push({ start: start_label, end: end_label });
+	status.loop_labels.push({ start: continue_label, end: end_label });
 
 	// Allocate stack space for loop item variable
 	if (status.function_return_label) {
@@ -124,6 +125,15 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 
 		// body
 		build_block_node(node, status);
+
+		// update clause
+		if (node.update) {
+			status.code += `${continue_label}:\n`;
+			build_node(node.update, status);
+			if (!status.code.endsWith("\n")) {
+				status.code += "\n";
+			}
+		}
 
 		// increment: index++
 		emit_var_load(status, "x0", idx_name, 8);

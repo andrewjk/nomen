@@ -7,7 +7,7 @@ import test_error from "../test_error";
 
 test("string list", () => {
 	const input = `
-for x in "hi" {
+for x of "hi" {
   // ...
 }
 `;

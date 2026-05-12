@@ -303,53 +303,81 @@ ret
 .globl _main
 _main:
 stp x29, x30, [sp, #-16]!
-sub sp, sp, #32
+sub sp, sp, #64
 mov x29, sp
-mov x0, #1
+mov x0, #0
 str x0, [x29, #0]
-.while_0:
-ldr x0, =1
-cmp x0, #0
-beq .end_while_0
-ldr x2, =4
-ldr x0, [x29, #0]
+mov x0, #0
+str x0, [x29, #8]
+ldr x0, =0
+str x0, [x29, #24]
+.for_0:
+ldr x0, [x29, #24]
+mov x2, x0
+ldr x0, =4
+cmp x2, x0
+bge .end_0
+adr x3, bits
+ldr x1, [x29, #24]
+mov x2, #1
+mul x1, x1, x2
+add x0, x3, x1
+ldrb w0, [x0]
+strb w0, [x29, #16]
+ldr x0, [x29, #8]
+str x0, [x29, #32]
+ldr x0, [x29, #32]
 mov x1, x0
-cmp x1, x2
-cset x0, eq
-
-cmp x0, #0
-beq end_0
-b .end_while_0
-end_0:
-.while_update_0:
+ldr x0, =2
+bl Math_power
+str x0, [x29, #40]
 add x1, x29, #0
+ldr x1, [x1]
+str x1, [sp, #-16]!
+ldrb w0, [x29, #16]
+mov x2, x0
+ldr x0, [x29, #40]
+mov x1, x0
+mul x0, x1, x2
+
+ldr x1, [sp], #16
+add x0, x1, x0
+add x1, x29, #0
+str x0, [x1]
+.for_update_0:
+add x1, x29, #8
 ldr x1, [x1]
 str x1, [sp, #-16]!
 ldr x0, =1
 ldr x1, [sp], #16
 add x0, x1, x0
-add x1, x29, #0
+add x1, x29, #8
 str x0, [x1]
-b .while_0
-.end_while_0:
+ldr x0, [x29, #24]
+add x0, x0, #1
+str x0, [x29, #24]
+b .for_0
+.end_0:
 add x0, x29, #0
 ldr x0, [x0]
 bl int_to_string
-str x0, [x29, #8]
-ldr x0, [x29, #8]
+str x0, [x29, #48]
+ldr x0, [x29, #48]
 mov x1, x0
 adr x0, _str_0
 bl _string_interpolate_1
-str x0, [x29, #16]
-ldr x0, [x29, #16]
+str x0, [x29, #56]
+ldr x0, [x29, #56]
 bl Console_write
 .return_0:
 mov x0, #0
-add sp, sp, #32
+add sp, sp, #64
 ldp x29, x30, [sp], #16
 ret
+bits: .byte 1, 0, 1, 1
+.p2align 2
 
-_str_0: .asciz "n=%s\n"
+_str_0: .asciz "The value of bits '1101': %s.\n"
 
 .p2align 2
 _string_interpolate_1:

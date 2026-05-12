@@ -9,7 +9,7 @@ import trim_test_build from "./trim_test_build";
 describe("control build", () => {
 	test("break", () => {
 		const input = `
-for x in 0..5 {
+for x of 0..5 {
   break
 }
 `;
@@ -41,7 +41,7 @@ b .for_0
 
 	test("continue", () => {
 		const input = `
-for x in 0..5 {
+for x of 0..5 {
   continue
 }
 `;

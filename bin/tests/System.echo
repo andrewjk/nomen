@@ -339,3 +339,29 @@ pub struct Console {
         ```
     }
 }
+pub struct Math {
+    pub func power = (int base, int exp, out int) -> {
+        ```
+        #arch: c
+        int result = 1;
+        for (int i = 0; i < exp; i++) {
+            result *= base;
+        }
+        return result;
+        ```
+        ```
+        #arch: aarch64
+        mov x2, #1
+        mov x3, #0
+        b .Lchk_Math_power
+        .Lloop_Math_power:
+        mul x2, x2, x0
+        add x3, x3, #1
+        .Lchk_Math_power:
+        cmp x3, x1
+        blt .Lloop_Math_power
+        mov x0, x2
+        ```
+        return "from_c"
+    }
+}

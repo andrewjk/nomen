@@ -185,8 +185,10 @@ function build_access_method(
 	}
 
 	// Evaluate params
-	const param_regs = ["x1", "x2", "x3", "x4", "x5", "x6", "x7"];
-	const start_idx = access_func.is_static ? 0 : 1;
+	const param_regs = access_func.is_static
+		? ["x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7"]
+		: ["x1", "x2", "x3", "x4", "x5", "x6", "x7"];
+	const start_idx = 0;
 	for (let i = access_func.params.length - 1; i >= 0; i--) {
 		build_node(access_func.params[i], status);
 		const reg = param_regs[start_idx + i];
@@ -198,6 +200,9 @@ function build_access_method(
 		}
 	}
 
+	if (!status.code.endsWith("\n")) {
+		status.code += "\n";
+	}
 	status.code += `bl ${method_name}\n`;
 
 	if (return_struct) {

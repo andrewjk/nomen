@@ -8,7 +8,7 @@ import trim_test_build from "../trim_test_build";
 
 test("break", () => {
 	const input = `
-for x in 0..5 {
+for x of 0..5 {
   break
 }
 `;
@@ -27,7 +27,7 @@ break;
 
 test("continue", () => {
 	const input = `
-for x in 0..5 {
+for x of 0..5 {
   continue
 }
 `;

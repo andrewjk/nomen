@@ -74,7 +74,7 @@ str x0, [x1]
 		const input = `
 func sum = (int[] nums, out int) -> {
   var total = 0
-  for n in nums {
+  for n of nums {
     total = total + n
   }
   return total

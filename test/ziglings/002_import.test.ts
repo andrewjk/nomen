@@ -48,7 +48,6 @@ main:
 stp x29, x30, [sp, #-16]!
 mov x29, sp
 adr x0, _str_0
-mov x1, x0
 bl Console_write
 .return_0:
 mov x0, #0

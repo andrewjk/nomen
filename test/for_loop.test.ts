@@ -10,7 +10,7 @@ describe("for loop build", () => {
 	test("with array", () => {
 		const input = `
 const y = [1, 2, 3]
-for x in y {
+for x of y {
   x = x + 1
 }
 `;
@@ -60,7 +60,7 @@ b .for_0
 
 	test("with range", () => {
 		const input = `
-for x in 0..5 {
+for x of 0..5 {
   x = x + 1
 }
 `;
@@ -101,7 +101,7 @@ b .for_0
 		const input = `
 const nums = [1, 2, 3]
 var sum = 0
-for n in nums {
+for n of nums {
   sum = sum + n
 }
 `;
@@ -157,7 +157,7 @@ b .for_0
 describe("for loop errors", () => {
 	test("string list", () => {
 		const input = `
-for x in "hi" {
+for x of "hi" {
   // ...
 }
 `;

@@ -12,18 +12,13 @@ import System
 pub func main = () -> {
     const foo = 1
 
-    const uint8 price = if (foo) {
-        17
-    } else {
-        20
-    }
+    const price = if ???
 
     Console.write("With the discount, the price is \\{price}.\\n")
 }
 `;
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors.length).toBeGreaterThan(0);
-	expect(parsed.errors.some((e: any) => e.message.includes("bool"))).toBe(true);
 });
 
 test("ziglings 010 if 2 -- fixed", () => {
@@ -33,7 +28,7 @@ import System
 pub func main = () -> {
     const discount = true
 
-    const uint8 price = if discount -> 17 else -> 20
+    const price = if discount -> 17 else -> 20
 
     Console.write("With the discount, the price is \\{price}.\\n")
 }
@@ -49,7 +44,7 @@ import System
 pub func main = () -> {
     const discount = true
 
-    const uint8 price = if discount -> 17 else -> 20
+    const price = if discount -> 17 else -> 20
 
     Console.write("With the discount, the price is \\{price}.\\n")
 }

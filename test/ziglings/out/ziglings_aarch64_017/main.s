@@ -308,19 +308,101 @@ mov x29, sp
 mov x0, #1
 str x0, [x29, #0]
 .while_0:
-ldr x0, =1
-cmp x0, #0
-beq .end_while_0
-ldr x2, =4
+adr x0, stop_at
+ldr x0, [x0]
+mov x2, x0
 ldr x0, [x29, #0]
 mov x1, x0
+cmp x1, x2
+cset x0, le
+cmp x0, #0
+beq .end_while_0
+ldr x2, =0
+str x2, [sp, #-16]!
+ldr x2, =3
+ldr x0, [x29, #0]
+mov x1, x0
+sdiv x3, x1, x2
+msub x0, x3, x2, x1
+mov x1, x0
+ldr x2, [sp], #16
 cmp x1, x2
 cset x0, eq
 
 cmp x0, #0
 beq end_0
-b .end_while_0
+adr x0, _str_0
+bl Console_write
 end_0:
+ldr x2, =0
+str x2, [sp, #-16]!
+ldr x2, =5
+ldr x0, [x29, #0]
+mov x1, x0
+sdiv x3, x1, x2
+msub x0, x3, x2, x1
+mov x1, x0
+ldr x2, [sp], #16
+cmp x1, x2
+cset x0, eq
+
+cmp x0, #0
+beq end_1
+adr x0, _str_1
+bl Console_write
+end_1:
+ldr x2, =0
+str x2, [sp, #-16]!
+ldr x2, =5
+ldr x0, [x29, #0]
+mov x1, x0
+sdiv x3, x1, x2
+msub x0, x3, x2, x1
+mov x1, x0
+ldr x2, [sp], #16
+cmp x1, x2
+cset x0, eq
+cmp x0, #0
+cset x0, eq
+mov x2, x0
+str x2, [sp, #-16]!
+ldr x2, =0
+str x2, [sp, #-16]!
+ldr x2, =3
+ldr x0, [x29, #0]
+mov x1, x0
+sdiv x3, x1, x2
+msub x0, x3, x2, x1
+mov x1, x0
+ldr x2, [sp], #16
+cmp x1, x2
+cset x0, eq
+cmp x0, #0
+cset x0, eq
+mov x1, x0
+ldr x2, [sp], #16
+cmp x1, #0
+cset x1, ne
+cmp x2, #0
+cset x2, ne
+and x0, x1, x2
+
+cmp x0, #0
+beq end_2
+add x0, x29, #0
+ldr x0, [x0]
+bl int_to_string
+str x0, [x29, #8]
+ldr x0, [x29, #8]
+mov x1, x0
+adr x0, _str_2
+bl _string_interpolate_1
+str x0, [x29, #16]
+ldr x0, [x29, #16]
+bl Console_write
+end_2:
+adr x0, _str_3
+bl Console_write
 .while_update_0:
 add x1, x29, #0
 ldr x1, [x1]
@@ -332,24 +414,17 @@ add x1, x29, #0
 str x0, [x1]
 b .while_0
 .end_while_0:
-add x0, x29, #0
-ldr x0, [x0]
-bl int_to_string
-str x0, [x29, #8]
-ldr x0, [x29, #8]
-mov x1, x0
-adr x0, _str_0
-bl _string_interpolate_1
-str x0, [x29, #16]
-ldr x0, [x29, #16]
-bl Console_write
 .return_0:
 mov x0, #0
 add sp, sp, #32
 ldp x29, x30, [sp], #16
 ret
+stop_at: .quad 16
 
-_str_0: .asciz "n=%s\n"
+_str_0: .asciz "Fizz"
+_str_1: .asciz "Buzz"
+_str_2: .asciz "%s"
+_str_3: .asciz ", "
 
 .p2align 2
 _string_interpolate_1:

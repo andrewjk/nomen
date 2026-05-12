@@ -59,6 +59,12 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 		return;
 	}
 
+	if (value.startsWith("'") && value.endsWith("'") && value.length === 3) {
+		const char_code = value.charCodeAt(1);
+		status.code += `ldr x0, =${char_code}`;
+		return;
+	}
+
 	if (value.startsWith('"')) {
 		const label = `_str_${string_counter++}`;
 		status.strings!.set(label, value);
@@ -71,7 +77,12 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 	if (offset !== undefined) {
 		// Infer size from type if available, default to 8
 		const type_name = node.type?.name || "";
-		const size = type_name === "float" ? 4 : type_name === "uint8" || type_name === "int8" ? 1 : 8;
+		const size =
+			type_name === "float"
+				? 4
+				: type_name === "uint8" || type_name === "int8" || type_name === "char"
+					? 1
+					: 8;
 		const signed =
 			type_name.startsWith("int") ||
 			type_name === "float" ||

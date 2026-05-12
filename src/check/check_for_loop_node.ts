@@ -34,4 +34,8 @@ export default function check_for_loop_node(for_loop: ForLoopNode, status: Check
 	}
 
 	check_block_node(for_loop, for_status);
+
+	if (for_loop.update) {
+		check_node(for_loop.update, for_status);
+	}
 }
