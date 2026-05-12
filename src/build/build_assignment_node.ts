@@ -40,6 +40,10 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 
 	status.code += ``;
 	build_node(node.left_value, status);
-	status.code += " = ";
+	if (node.operator) {
+		status.code += ` ${node.operator.slice(0, -1)}= `;
+	} else {
+		status.code += " = ";
+	}
 	build_node(node.right_value, status);
 }

@@ -59,10 +59,17 @@ function add_error_message(
 	add_error(status, message, i);
 }
 
+const INT_TYPES = ["int8", "int16", "int32", "int", "int64"];
+const UINT_TYPES = ["uint8", "uint16", "uint32", "uint", "uint64"];
+const ALL_INT_TYPES = [...INT_TYPES, ...UINT_TYPES];
+
 function can_coerce(target_type: string, value_type: string, value: string) {
 	// TODO: Should we do this with a trait?
 	// TODO: Also fix those bitwise operations, I just threw them in there
 	// TODO: Also make sure ints aren't floats
+	if (value === "?") {
+		return can_coerce_type(target_type, value_type);
+	}
 	switch (target_type) {
 		case "bool":
 			return ["true", "false"].includes(value);
@@ -121,4 +128,14 @@ function int_is_valid(int: number, bits: number) {
 function uint_is_valid(uint: number, bits: number) {
 	const max = Math.pow(2, bits);
 	return uint >= 0 && uint < max;
+}
+
+function can_coerce_type(target_type: string, value_type: string): boolean {
+	const target_idx = ALL_INT_TYPES.indexOf(target_type);
+	const value_idx = ALL_INT_TYPES.indexOf(value_type);
+	if (target_idx === -1 || value_idx === -1) return false;
+	const target_is_uint = UINT_TYPES.includes(target_type);
+	const value_is_uint = UINT_TYPES.includes(value_type);
+	if (value_is_uint && !target_is_uint) return false;
+	return target_idx >= value_idx;
 }

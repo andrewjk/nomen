@@ -34,18 +34,19 @@ export default function parse_if_else(status: ParseStatus): IfElseNode {
 }
 
 function parse_if_branch(status: ParseStatus): BranchNode | null {
-	// Check for one-liner syntax: -> (expr)
 	if (accept("->", status)) {
-		if (expect("(", status)) {
-			const branch_start = get_index(status);
-			const value = parse_expression(status);
+		const branch_start = get_index(status);
+		let value;
+		if (accept("(", status)) {
+			value = parse_expression(status);
 			expect(")", status);
-
-			const branch = new BranchNode(branch_start);
-			branch.statements.push(new ReturnNode(value.start, value));
-			return branch;
+		} else {
+			value = parse_expression(status);
 		}
-		return null;
+
+		const branch = new BranchNode(branch_start);
+		branch.statements.push(new ReturnNode(value.start, value));
+		return branch;
 	}
 
 	// Block syntax: { ... }

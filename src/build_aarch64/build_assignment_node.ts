@@ -27,6 +27,23 @@ function find_var_size(name: string, status: BuildStatus): number {
 	return 8;
 }
 
+function get_load_instruction(size: number): string {
+	if (size === 1) return "ldrb";
+	if (size === 4) return "ldr";
+	return "ldr";
+}
+
+function get_load_reg(reg: string, size: number): string {
+	if (size === 1 || size === 4) return reg.replace("x", "w");
+	return reg;
+}
+
+function emit_compound_op(op: string, status: BuildStatus) {
+	if (op === "+=") status.code += `add x0, x1, x0\n`;
+	else if (op === "-=") status.code += `sub x0, x1, x0\n`;
+	else if (op === "*=") status.code += `mul x0, x1, x0\n`;
+}
+
 export default function build_assignment_node(node: AssignmentNode, status: BuildStatus) {
 	if (node.left_value.node_type === "value") {
 		const name = (node.left_value as ValueNode).value;
@@ -39,12 +56,34 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 				// var param - address in register, store value
 				status.code += `mov x2, ${paramReg}\n`;
 				build_node(node.right_value, status);
+				if (node.operator) {
+					status.code += `\nstr x0, [sp, #-16]!\n`;
+					const load_op = get_load_instruction(size);
+					const load_reg = get_load_reg("x1", size);
+					status.code += `${load_op} ${load_reg}, [x2]\n`;
+					status.code += `mov x1, x0\n`;
+					status.code += `ldr x0, [sp], #16\n`;
+					emit_compound_op(node.operator, status);
+				}
 				status.code += `\n${store_op} ${store_reg}, [x2]\n`;
 			} else {
 				// const param - can't assign
 				build_node(node.right_value, status);
 				status.code += `\n// cannot assign to const param\n`;
 			}
+		} else if (node.operator) {
+			// Compound assignment: load current, compute RHS, op, store
+			emit_var_address(status, "x1", name);
+			const load_op = get_load_instruction(size);
+			const load_reg = get_load_reg("x1", size);
+			status.code += `${load_op} ${load_reg}, [x1]\n`;
+			status.code += `str x1, [sp, #-16]!\n`;
+			build_node(node.right_value, status);
+			status.code += `\n`;
+			status.code += `ldr x1, [sp], #16\n`;
+			emit_compound_op(node.operator, status);
+			emit_var_address(status, "x1", name);
+			status.code += `${store_op} ${store_reg}, [x1]\n`;
 		} else {
 			build_node(node.right_value, status);
 			status.code += `\n`;

@@ -19,6 +19,7 @@ export default function check_return_node(ret: ReturnNode, status: CheckStatus) 
 	for (let i = status.stack.length - 1; i >= 0; i--) {
 		if (is_returning_node(status.stack[i])) {
 			func = status.stack[i] as ReturningNode;
+			break;
 		}
 	}
 
