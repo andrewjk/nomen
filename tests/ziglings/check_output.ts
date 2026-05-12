@@ -20,11 +20,41 @@ export default async function check_output(
 	const headerfile = path.join(folder, "main.h");
 	const codefile = path.join(folder, "main.c");
 	const outfile = path.join(folder, "main.out");
+	const outputfile = path.join(folder, "output.txt");
+
 	fs.writeFileSync(headerfile, built.headers);
-	fs.writeFileSync(codefile, built.code);
 
 	const execPromise = util.promisify(exec);
-	const { stdout, stderr } = await execPromise(`clang ${codefile} -o ${outfile} && ${outfile}`);
+
+	let stdout: string;
+	let stderr: string;
+
+	if (fs.existsSync(codefile)) {
+		const previous_code = fs.readFileSync(codefile, "utf-8");
+		if (previous_code === built.code) {
+			if (fs.existsSync(outputfile)) {
+				stdout = fs.readFileSync(outputfile, "utf-8");
+				stderr = "";
+			} else {
+				const result = await execPromise(`clang ${codefile} -o ${outfile} && ${outfile}`);
+				stdout = result.stdout;
+				stderr = result.stderr;
+				fs.writeFileSync(outputfile, stdout);
+			}
+		} else {
+			fs.writeFileSync(codefile, built.code);
+			const result = await execPromise(`clang ${codefile} -o ${outfile} && ${outfile}`);
+			stdout = result.stdout;
+			stderr = result.stderr;
+			fs.writeFileSync(outputfile, stdout);
+		}
+	} else {
+		fs.writeFileSync(codefile, built.code);
+		const result = await execPromise(`clang ${codefile} -o ${outfile} && ${outfile}`);
+		stdout = result.stdout;
+		stderr = result.stderr;
+		fs.writeFileSync(outputfile, stdout);
+	}
 
 	expect(stderr).toBeFalsy();
 	expect(stdout.substring(0, expected_output.length)).toBe(expected_output);

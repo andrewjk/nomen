@@ -29,16 +29,46 @@ export default async function check_output_aarch64(
 
 	const codefile = path.join(folder, "main.s");
 	const outfile = path.join(folder, "main.out");
+	const outputfile = path.join(folder, "output.txt");
 
 	let code = built.code;
 	code = postprocess_macos(code);
 
-	fs.writeFileSync(codefile, code);
+	let stdout: string;
+	let stderr: string;
 
 	const execPromise = util.promisify(exec);
-	const { stdout, stderr } = await execPromise(
-		`clang -x assembler ${codefile} -o ${outfile} && ${outfile}`,
-	);
+
+	if (fs.existsSync(codefile)) {
+		const previous_code = fs.readFileSync(codefile, "utf-8");
+		if (previous_code === code) {
+			if (fs.existsSync(outputfile)) {
+				stdout = fs.readFileSync(outputfile, "utf-8");
+				stderr = "";
+			} else {
+				const result = await execPromise(
+					`clang -x assembler ${codefile} -o ${outfile} && ${outfile}`,
+				);
+				stdout = result.stdout;
+				stderr = result.stderr;
+				fs.writeFileSync(outputfile, stdout);
+			}
+		} else {
+			fs.writeFileSync(codefile, code);
+			const result = await execPromise(
+				`clang -x assembler ${codefile} -o ${outfile} && ${outfile}`,
+			);
+			stdout = result.stdout;
+			stderr = result.stderr;
+			fs.writeFileSync(outputfile, stdout);
+		}
+	} else {
+		fs.writeFileSync(codefile, code);
+		const result = await execPromise(`clang -x assembler ${codefile} -o ${outfile} && ${outfile}`);
+		stdout = result.stdout;
+		stderr = result.stderr;
+		fs.writeFileSync(outputfile, stdout);
+	}
 
 	if (stderr && stderr.includes("error:")) {
 		expect(stderr).toBeFalsy();
