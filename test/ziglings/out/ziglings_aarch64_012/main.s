@@ -278,86 +278,73 @@ ret
 .globl _main
 _main:
 stp x29, x30, [sp, #-16]!
-sub sp, sp, #64
+sub sp, sp, #48
 mov x29, sp
-mov x0, #1
-strb w0, [x29, #0]
-mov x0, #3
-strb w0, [x29, #1]
-mov x0, #5
-strb w0, [x29, #2]
-mov x0, #7
-strb w0, [x29, #3]
-mov x0, #11
-strb w0, [x29, #4]
-mov x0, #13
-strb w0, [x29, #5]
-mov x0, #17
-strb w0, [x29, #6]
-mov x0, #19
-strb w0, [x29, #7]
-add x3, x29, #0
-str x3, [sp, #-16]!
-ldr x0, =2
-ldr x3, [sp], #16
-strb w0, [x3, #0]
+mov x0, #2
+str x0, [x29, #0]
+.while_0:
+ldr x2, =1000
+ldr x0, [x29, #0]
+mov x1, x0
+cmp x1, x2
+cset x0, lt
+cmp x0, #0
+beq .end_while_0
 add x0, x29, #0
-mov x3, x0
-ldrb w0, [x3, #0]
-strb w0, [x29, #8]
-add x0, x29, #0
-mov x3, x0
-ldrb w0, [x3, #3]
-strb w0, [x29, #9]
-mov x0, #8
-str x0, [x29, #16]
-add x0, x29, #8
-ldrb w0, [x0]
-bl uint8_to_string
-str x0, [x29, #24]
-add x0, x29, #9
-ldrb w0, [x0]
-bl uint8_to_string
-str x0, [x29, #32]
-add x0, x29, #16
 ldr x0, [x0]
 bl int_to_string
-str x0, [x29, #40]
-ldr x0, [x29, #40]
-mov x3, x0
-ldr x0, [x29, #32]
-mov x2, x0
-ldr x0, [x29, #24]
+str x0, [x29, #8]
+ldr x0, [x29, #8]
 mov x1, x0
 adr x0, _str_0
-bl _string_interpolate_3
-str x0, [x29, #48]
-ldr x0, [x29, #48]
+bl _string_interpolate_1
+str x0, [x29, #16]
+ldr x0, [x29, #16]
+mov x1, x0
+bl Console_write
+.while_update_0:
+add x1, x29, #0
+ldr x1, [x1]
+str x1, [sp, #-16]!
+ldr x0, =2
+ldr x1, [sp], #16
+mul x0, x1, x0
+add x1, x29, #0
+str x0, [x1]
+b .while_0
+.end_while_0:
+add x0, x29, #0
+ldr x0, [x0]
+bl int_to_string
+str x0, [x29, #24]
+ldr x0, [x29, #24]
+mov x1, x0
+adr x0, _str_1
+bl _string_interpolate_1
+str x0, [x29, #32]
+ldr x0, [x29, #32]
 mov x1, x0
 bl Console_write
 .return_0:
 mov x0, #0
-add sp, sp, #64
+add sp, sp, #48
 ldp x29, x30, [sp], #16
 ret
 
-_str_0: .asciz "First: %s, Fourth: %s, Length: %s\n"
+_str_0: .asciz "%s "
+_str_1: .asciz "n=%s\n"
 
 .p2align 2
-_string_interpolate_3:
+_string_interpolate_1:
 stp x29, x30, [sp, #-16]!
 mov x29, sp
 sub sp, sp, #80
 str x0, [sp, #72]
 str x1, [sp, #0]
-str x2, [sp, #8]
-str x3, [sp, #16]
 mov x0, xzr
 mov x1, xzr
 ldr x2, [sp, #72]
 ldr x3, [sp, #0]
-ldr x4, [sp, #8]
-ldr x5, [sp, #16]
 bl _snprintf
 add x0, x0, #1
 str x0, [sp, #56]
@@ -367,8 +354,6 @@ ldr x0, [sp, #64]
 ldr x1, [sp, #56]
 ldr x2, [sp, #72]
 ldr x3, [sp, #0]
-ldr x4, [sp, #8]
-ldr x5, [sp, #16]
 bl _snprintf
 ldr x0, [sp, #64]
 add sp, sp, #80
