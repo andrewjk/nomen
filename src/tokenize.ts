@@ -60,7 +60,7 @@ export default function tokenize(input: string, preserve_space = false): Token[]
 				if (value === '"') {
 					// It's a string -- process until the next quote, including interpolations
 					let end = consume_string(input, status);
-					value = input.substring(status.i, end);
+					value = normalize_multiline_string(input.substring(status.i, end));
 					status.i = end - 1;
 				} else if (value === "/" && input[status.i + 1] === "/") {
 					// It's a one-line comment -- process until the newline
@@ -136,7 +136,16 @@ export default function tokenize(input: string, preserve_space = false): Token[]
 
 function consume_string(input: string, status: TokenizeStatus) {
 	for (let j = status.i + 1; j < input.length; j++) {
-		if (input[j] === "\\" && input[j + 1] === "{") {
+		if (input[j] === "\n") {
+			const next_quote = find_next_line_quote(input, j + 1);
+			if (next_quote !== -1) {
+				let next = next_quote + 1;
+				while (next < input.length && is_whitespace_char(input, next)) next++;
+				j = next - 1;
+			} else {
+				return j;
+			}
+		} else if (input[j] === "\\" && input[j + 1] === "{") {
 			status.tokens.push({ value: input.substring(status.i, j), i: status.i });
 			status.i = j;
 			status.tokens.push({ value: "\\{", i: status.i });
@@ -155,6 +164,13 @@ function consume_string(input: string, status: TokenizeStatus) {
 		}
 	}
 	return input.length - 1;
+}
+
+function find_next_line_quote(input: string, line_start: number): number {
+	let k = line_start;
+	while (k < input.length && input[k] !== "\n" && is_whitespace_char(input, k)) k++;
+	if (k < input.length && input[k] === '"') return k;
+	return -1;
 }
 
 function consume_interpolated_expression(input: string, i: number) {
@@ -234,6 +250,25 @@ function is_number_char(input: string, i: number) {
 		// 0-9
 		(code > 47 && code < 58) || code === 95
 	);
+}
+
+function normalize_multiline_string(value: string): string {
+	if (!value.includes("\n")) return value;
+	const lines = value.split("\n");
+	if (lines.length <= 1) return value;
+	let result = lines[0];
+	for (let i = 1; i < lines.length; i++) {
+		const stripped = lines[i].trimStart();
+		if (stripped.startsWith('"')) {
+			result += "\n" + stripped.substring(1);
+		} else {
+			result += "\n" + lines[i];
+		}
+	}
+	if (!result.endsWith('"')) {
+		result += '"';
+	}
+	return result;
 }
 
 function is_whitespace(input: string) {

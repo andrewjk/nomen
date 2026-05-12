@@ -41,7 +41,8 @@ export default function build(
 		if (status.strings && status.strings.size > 0) {
 			status.code += "\n";
 			for (const [label, value] of status.strings) {
-				status.code += `${label}: .asciz ${value}\n`;
+				const escaped = value.replace(/\n/g, "\\n");
+				status.code += `${label}: .asciz ${escaped}\n`;
 			}
 		}
 		// Generate _string_interpolate_N helpers for aarch64

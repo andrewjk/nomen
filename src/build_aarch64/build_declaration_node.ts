@@ -3,6 +3,13 @@ import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
+
+function escape_asciz(value: string): string {
+	if (!value.includes("\n")) return value;
+	const quote = value[0];
+	const content = value.slice(1, value.endsWith(quote) ? -1 : undefined);
+	return quote + content.replace(/\n/g, "\\n") + (value.endsWith(quote) ? quote : "");
+}
 import RangeNode from "../nodes/RangeNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_array_values_node from "./build_array_values_node.ts";
@@ -263,9 +270,9 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			const str_result = resolve_string_op(op, status);
 			if (str_result !== null) {
 				if (status.function_return_label) {
-					emit_data(status, `${node.name}: .asciz ${str_result}\n.p2align 2\n`);
+					emit_data(status, `${node.name}: .asciz ${escape_asciz(str_result)}\n.p2align 2\n`);
 				} else {
-					status.code += `${node.name}: .asciz ${str_result}\n.p2align 2\n`;
+					status.code += `${node.name}: .asciz ${escape_asciz(str_result)}\n.p2align 2\n`;
 				}
 				status.string_literal_names!.add(node.name);
 			} else {
@@ -295,7 +302,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 				}
 			} else {
 				if (node.type.name === "string" && raw.startsWith('"')) {
-					emit_data(status, `${node.name}: .asciz ${raw}\n.p2align 2\n`);
+					emit_data(status, `${node.name}: .asciz ${escape_asciz(raw)}\n.p2align 2\n`);
 					status.string_literal_names!.add(node.name);
 				} else {
 					emit_data(status, `${node.name}: ${directive} ${raw}\n`);

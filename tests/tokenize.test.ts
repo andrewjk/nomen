@@ -52,7 +52,7 @@ word "I'm in a \\"nested\\" string!" 5
 test("multi line string", () => {
 	const input = `
 word "I'm in a
-multi-line string!" 5
+"multi-line string!" 5
 `;
 	const tokens = tokenize(input);
 	const expected = ["word", `"I'm in a\nmulti-line string!"`, "5"];
