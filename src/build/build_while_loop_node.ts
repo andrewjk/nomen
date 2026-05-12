@@ -14,6 +14,12 @@ export default function build_while_loop_node(node: WhileLoopNode, status: Build
 
 	build_block_node(node, status);
 
+	if (node.update) {
+		status.code += `\t`;
+		build_node(node.update, status);
+		status.code += `;\n`;
+	}
+
 	build_auto_free(status);
 
 	status.code += `}\n`;

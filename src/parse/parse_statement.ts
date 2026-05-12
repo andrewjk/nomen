@@ -160,6 +160,15 @@ function parse_statement_start(status: ParseStatus) {
 				node = new AssignmentNode(node.start, node, parse_expression(status));
 				break;
 			}
+			case "+=":
+			case "-=":
+			case "*=": {
+				const op = current_value;
+				accept(op, status);
+				const rhs = parse_expression(status);
+				node = new AssignmentNode(node.start, node, rhs, op);
+				break;
+			}
 			default: {
 				add_to_parent(node, node_name(node), status);
 				return;

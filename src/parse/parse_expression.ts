@@ -1,6 +1,7 @@
 import AccessIndexNode from "../nodes/AccessIndexNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
+import AssignmentNode from "../nodes/AssignmentNode.ts";
 import BaseNode from "../nodes/BaseNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import GroupedNode from "../nodes/GroupedNode.ts";
@@ -142,6 +143,15 @@ export default function parse_expression(status: ParseStatus): BaseNode {
 				consume(status);
 				const range = new RangeNode(start, node, parse_expression(status), false);
 				node = range;
+				break;
+			}
+			case "=":
+			case "+=":
+			case "-=":
+			case "*=": {
+				const op = consume(status);
+				const rhs = parse_expression(status);
+				node = new AssignmentNode(start, node, rhs, op === "=" ? undefined : op);
 				break;
 			}
 			default: {

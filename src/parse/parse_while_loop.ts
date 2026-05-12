@@ -11,8 +11,14 @@ export default function parse_while_loop(status: ParseStatus) {
 	const while_start = get_index(status);
 	accept("while", status);
 	const condition = parse_expression(status);
+
+	let update;
+	if (accept(";", status)) {
+		update = parse_expression(status);
+	}
+
 	if (expect("{", status)) {
-		const while_loop = new WhileLoopNode(while_start, condition);
+		const while_loop = new WhileLoopNode(while_start, condition, undefined, update);
 
 		status.stack.push(while_loop);
 		parse_statement(status);

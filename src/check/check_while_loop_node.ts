@@ -21,4 +21,8 @@ export default function check_while_loop_node(while_loop: WhileLoopNode, status:
 	}
 
 	check_block_node(while_loop, while_status);
+
+	if (while_loop.update) {
+		check_node(while_loop.update, while_status);
+	}
 }

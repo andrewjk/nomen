@@ -15,6 +15,7 @@ const COMPOUND_SYMBOLS = [
 	// Assignment
 	"+=",
 	"-=",
+	"*=",
 	// Range
 	"..",
 	// Type

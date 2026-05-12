@@ -16,9 +16,10 @@ export default function build_while_loop_node(node: WhileLoopNode, status: Build
 	const label = label_counter++;
 	const start_label = `.while_${label}`;
 	const end_label = `.end_while_${label}`;
+	const continue_label = node.update ? `.while_update_${label}` : start_label;
 
 	status.loop_labels = status.loop_labels || [];
-	status.loop_labels.push({ start: start_label, end: end_label });
+	status.loop_labels.push({ start: continue_label, end: end_label });
 
 	status.code += `${start_label}:\n`;
 
@@ -32,6 +33,15 @@ export default function build_while_loop_node(node: WhileLoopNode, status: Build
 
 	// body
 	build_block_node(node, status);
+
+	// update clause (e.g. n += 1)
+	if (node.update) {
+		status.code += `${continue_label}:\n`;
+		build_node(node.update, status);
+		if (!status.code.endsWith("\n")) {
+			status.code += "\n";
+		}
+	}
 
 	status.code += `b ${start_label}\n`;
 	status.code += `${end_label}:\n`;
