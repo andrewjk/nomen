@@ -93,7 +93,9 @@ strb w0, [x29, #6]
 mov x0, #19
 strb w0, [x29, #7]
 add x3, x29, #0
+str x3, [sp, #-16]!
 ldr x0, =2
+ldr x3, [sp], #16
 strb w0, [x3, #0]
 add x0, x29, #0
 mov x3, x0

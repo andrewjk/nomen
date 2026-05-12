@@ -119,11 +119,14 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 				if (/^(\+|-)*\d+$/.test(index_val)) {
 					const byte_offset = parseInt(index_val) * element_size;
 
-					// Evaluate RHS
+					status.code += `str x3, [sp, #-16]!\n`;
+
 					build_node(node.right_value, status);
 					if (!status.code.endsWith("\n")) {
 						status.code += "\n";
 					}
+
+					status.code += `ldr x3, [sp], #16\n`;
 
 					if (element_size === 1) {
 						status.code += `strb w0, [x3, #${byte_offset}]\n`;
@@ -146,11 +149,14 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 			status.code += `mul x1, x1, x2\n`;
 			status.code += `add x3, x3, x1\n`;
 
-			// Evaluate RHS
+			status.code += `str x3, [sp, #-16]!\n`;
+
 			build_node(node.right_value, status);
 			if (!status.code.endsWith("\n")) {
 				status.code += "\n";
 			}
+
+			status.code += `ldr x3, [sp], #16\n`;
 
 			if (element_size === 1) {
 				status.code += `strb w0, [x3]\n`;

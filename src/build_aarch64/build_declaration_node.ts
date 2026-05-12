@@ -213,10 +213,16 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 				build_node(node.value, status);
 			}
 		} else {
-			if (status.function_return_label) {
-				emit_data(status, `${node.name}: .space 0\n.p2align 2\n`);
+			const array_size = node.type.length
+				? size * parseInt((node.type.length as ValueNode).value)
+				: 0;
+			if (status.function_return_label && node.declaration === "var") {
+				const offset = allocate_stack_space(status, array_size, size);
+				status.stack_offsets!.set(node.name, offset);
+			} else if (status.function_return_label) {
+				emit_data(status, `${node.name}: .space ${array_size}\n.p2align 2\n`);
 			} else {
-				status.code += `${node.name}: .space 0\n.p2align 2\n`;
+				status.code += `${node.name}: .space ${array_size}\n.p2align 2\n`;
 			}
 		}
 	} else if (struct_type) {
@@ -361,13 +367,17 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			emit_var_store(status, "x0", node.name, size);
 		}
 	} else {
+		const total_size =
+			node.type.is_array && node.type.length
+				? size * parseInt((node.type.length as ValueNode).value)
+				: size;
 		const use_stack = status.function_return_label && node.declaration === "var";
 		if (use_stack) {
-			const offset = allocate_stack_space(status, size, size);
+			const offset = allocate_stack_space(status, total_size, size);
 			status.stack_offsets!.set(node.name, offset);
 		} else {
-			emit_data(status, `${node.name}: .space ${size}\n`);
-			if (size % 4 !== 0) {
+			emit_data(status, `${node.name}: .space ${total_size}\n`);
+			if (total_size % 4 !== 0) {
 				emit_data(status, `.p2align 2\n`);
 			}
 		}

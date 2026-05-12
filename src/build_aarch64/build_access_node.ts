@@ -116,6 +116,17 @@ function build_access_method(
 	status: BuildStatus,
 ) {
 	const target_type = type_from_value_node(node.target);
+
+	if (
+		access_func.name === "to_string" &&
+		target_type.is_array &&
+		target_type.name === "char" &&
+		target_type.length
+	) {
+		build_char_array_to_string(node, (target_type.length as ValueNode).value, status);
+		return;
+	}
+
 	const method_name = `${target_type.name}_${access_func.name}`;
 
 	// Check if method returns a struct
@@ -255,4 +266,37 @@ function build_access_index(node: AccessNode, access_index: AccessIndexNode, sta
 	} else {
 		status.code += `ldr x0, [x0]\n`;
 	}
+}
+
+function build_char_array_to_string(node: AccessNode, length: string, status: BuildStatus) {
+	const len = parseInt(length);
+
+	if (node.target.node_type === "value") {
+		const name = (node.target as ValueNode).value;
+		const paramReg = get_param_reg(name, status);
+		if (paramReg) {
+			if (paramReg !== "x0") {
+				status.code += `mov x0, ${paramReg}\n`;
+			}
+		} else {
+			emit_var_address(status, "x0", name);
+		}
+	} else {
+		build_node(node.target, status);
+		if (!status.code.endsWith("\n")) {
+			status.code += "\n";
+		}
+	}
+
+	status.code += `str x19, [sp, #-16]!\n`;
+	status.code += `mov x19, x0\n`;
+	status.code += `mov x0, #${len + 1}\n`;
+	status.code += `bl _malloc\n`;
+
+	for (let i = 0; i < len; i++) {
+		status.code += `ldrb w1, [x19, #${i}]\n`;
+		status.code += `strb w1, [x0, #${i}]\n`;
+	}
+	status.code += `strb wzr, [x0, #${len}]\n`;
+	status.code += `ldr x19, [sp], #16\n`;
 }
