@@ -3,6 +3,7 @@ import AccessNode from "../nodes/AccessNode.ts";
 import AssignmentNode from "../nodes/AssignmentNode.ts";
 import BaseNode from "../nodes/BaseNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
+import ReturnNode from "../nodes/ReturnNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import parse_access from "./parse_access.ts";
 import parse_break_or_continue from "./parse_break_or_continue.ts";
@@ -13,7 +14,6 @@ import parse_function from "./parse_function.ts";
 import parse_function_call_parameter from "./parse_function_call_parameter.ts";
 import parse_if_else from "./parse_if_else.ts";
 import parse_import from "./parse_import.ts";
-import parse_let from "./parse_let.ts";
 import parse_op from "./parse_op.ts";
 import parse_panic_or_todo from "./parse_panic_or_todo.ts";
 import parse_raw from "./parse_raw.ts";
@@ -102,8 +102,12 @@ export default function parse_statement(status: ParseStatus) {
 				parse_panic_or_todo(value, status);
 				break;
 			}
+			case "->":
 			case "let": {
-				parse_let(status);
+				accept(value, status);
+				const expr = parse_expression(status);
+				const ret = new ReturnNode(get_index(status), expr);
+				add_to_parent(ret, "Return expression", status);
 				break;
 			}
 			case "return": {

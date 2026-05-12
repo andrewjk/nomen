@@ -40,4 +40,11 @@ export default function check_if_else_node(if_else: IfElseNode, status: CheckSta
 			}
 		}
 	}
+
+	if (if_else.if_branch && !if_else.else_branch) {
+		const parent = status.stack.at(-1);
+		if (parent && (parent.node_type === "declare" || parent.node_type === "assign")) {
+			add_error(status, "If expression must have an else branch", if_else.start);
+		}
+	}
 }

@@ -34,7 +34,7 @@ export default function parse_if_else(status: ParseStatus): IfElseNode {
 }
 
 function parse_if_branch(status: ParseStatus): BranchNode | null {
-	if (accept("->", status)) {
+	if (accept("->", status) || accept("let", status)) {
 		const branch_start = get_index(status);
 		let value;
 		if (accept("(", status)) {
