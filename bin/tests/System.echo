@@ -26,110 +26,6 @@ pub trait Stringable {
 }
 
 pub struct int: Stringable {
-    func to_string = (self, out string) {
-        return "from_c"
-    }
-}
-
-pub struct uint: Stringable {
-    func to_string = (self, out string) {
-        return "from_c"
-    }
-}
-
-pub struct int8: Stringable {
-    func to_string = (self, out string) {
-        return "from_c"
-    }
-}
-
-pub struct uint8: Stringable {
-    func to_string = (self, out string) {
-        return "from_c"
-    }
-}
-
-pub struct float: Stringable {
-    func to_string = (self, out string) {
-        return "from_c"
-    }
-}
-
-pub struct char: Stringable {
-    func to_string = (self, out string) {
-        return "from_c"
-    }
-}
-
-pub struct string: Stringable {
-    func to_string = (self, out string) {
-        return "from_c"
-    }
-}
-
-pub struct Array {
-    pub const int length
-
-    pub func add = (self, Array other, out Array) {
-        return "from_c"
-    }
-
-    pub func mul = (self, int other, out Array) {
-        return "from_c"
-    }
-}
-
-pub struct Console {
-    pub func write = (string line) {
-        ```
-        #arch: c
-        printf("%s", line);
-        ```
-        ```
-        #arch: aarch64
-        sub sp, sp, #16
-        mov x1, x0
-        str x1, [sp]
-        adr x0, .Lfmt_console_s
-        bl _printf
-        add sp, sp, #16
-        b .Lend_Console_write
-        .Lfmt_console_s: .asciz "%s"
-        .p2align 2
-        .Lend_Console_write:
-        ```
-    }
-}
-
-pub struct Math {
-    pub func power = (int base, int exp, out int) {
-        return "from_c"
-    }
-}
-
-}
-/*
-pub trait Addable<T> {
-    func add(self, other: T, out T)
-}
-
-pub trait Addable {
-    // TODO: Should be able to add any type and return any type
-    func add(self, other: Self, out Self)
-}
-
-pub trait Multipliable {
-    // TODO: Should be able to multiply any type and return any type
-    func multiply(self, other: Self, out Self)
-}
-*/
-pub trait Stringable {
-    func to_string = (self, out string) {
-        return "from_c"
-    }
-}
-
-pub struct int: Stringable {
     pub func to_string = (self, out string) {
         ```
         #arch: c
@@ -465,6 +361,66 @@ pub struct Math {
         cmp x3, x1
         blt .Lloop_Math_power
         mov x0, x2
+        ```
+        return "from_c"
+    }
+}
+
+pub struct bool: Stringable {
+    pub func to_string = (self, out string) {
+        ```
+        #arch: c
+        int length = snprintf(NULL, 0, "%s", self ? "true" : "false");
+        char* str = malloc(length + 1);
+        malloc_count++;
+        snprintf(str, length + 1, "%s", self ? "true" : "false");
+        return str;
+        ```
+        ```
+        #arch: aarch64
+        sub sp, sp, #128
+        str x0, [sp, #0]
+        str x1, [sp, #8]
+        str x2, [sp, #16]
+        str x3, [sp, #24]
+        mov x0, xzr
+        mov x1, xzr
+        cbz x19, .Lfalse_bool
+        adr x2, .Lfmt_bool_true
+        mov x3, x19
+        bl _snprintf
+        add x0, x0, #1
+        str x0, [sp, #64]
+        bl _malloc
+        str x0, [sp, #72]
+        ldr x0, [sp, #72]
+        ldr x1, [sp, #64]
+        adr x2, .Lfmt_bool_true
+        mov x3, x19
+        bl _snprintf
+        ldr x0, [sp, #72]
+        add sp, sp, #128
+        b .Lend_bool_to_string
+        .Lfalse_bool:
+        adr x2, .Lfmt_bool_false
+        mov x3, x19
+        bl _snprintf
+        add x0, x0, #1
+        str x0, [sp, #64]
+        bl _malloc
+        str x0, [sp, #72]
+        ldr x0, [sp, #72]
+        ldr x1, [sp, #64]
+        adr x2, .Lfmt_bool_false
+        mov x3, x19
+        bl _snprintf
+        ldr x0, [sp, #72]
+        add sp, sp, #128
+        b .Lend_bool_to_string
+        .Lfmt_bool_true: .asciz "true"
+        .Lfmt_bool_false: .asciz "false"
+        .p2align 2
+        .Lend_bool_to_string:
         ```
         return "from_c"
     }
