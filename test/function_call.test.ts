@@ -9,7 +9,7 @@ import trim_test_build from "./trim_test_build";
 describe("function call build", () => {
 	test("function without params", () => {
 		const input = `
-func greet = () -> {}
+func greet = () {}
 greet()
 `;
 		const parsed = parse(input);
@@ -30,7 +30,7 @@ bl greet
 
 	test("function with params", () => {
 		const input = `
-func greet = (string name, string position) -> {}
+func greet = (string name, string position) {}
 greet("Andrew", "Manager")
 `;
 		const parsed = parse(input);
@@ -57,7 +57,7 @@ _str_1: .asciz "Andrew"
 
 	test("function call with return value", () => {
 		const input = `
-func add = (int a, int b, out int) -> (a + b)
+func add = (int a, int b, out int) => a + b
 const x = add(1, 2)
 `;
 		const parsed = parse(input);
@@ -88,7 +88,7 @@ str x0, [x1]
 
 	test("function call with default param", () => {
 		const input = `
-func greet = (string name, string greeting = "Hello") -> {}
+func greet = (string name, string greeting = "Hello") {}
 greet("Andrew")
 `;
 		const parsed = parse(input);
@@ -124,7 +124,7 @@ greet()
 
 	test("too many parameters", () => {
 		const input = `
-func greet = (int first, int second) -> {}
+func greet = (int first, int second) {}
 greet(1, 2, 3)
 `;
 		const expected = [test_error(input, "Too many parameters for function: greet", 3, 1)];
@@ -134,7 +134,7 @@ greet(1, 2, 3)
 
 	test("parameters missing", () => {
 		const input = `
-func greet = (int first, int second) -> {}
+func greet = (int first, int second) {}
 greet(1)
 `;
 		const expected = [test_error(input, "Parameters missing for function: greet", 3, 1)];
@@ -144,7 +144,7 @@ greet(1)
 
 	test("param type mismatch", () => {
 		const input = `
-func greet = (int age) -> {}
+func greet = (int age) {}
 greet("andrew")
 `;
 		const expected = [test_error(input, "Type mismatch in param: string (expected int)", 3, 7)];
@@ -154,7 +154,7 @@ greet("andrew")
 
 	test("param type mismatch -- unknown value", () => {
 		const input = `
-func greet = (int age) -> {}
+func greet = (int age) {}
 greet(z0)
 `;
 		const expected = [test_error(input, "Unknown value: z0", 3, 7)];
