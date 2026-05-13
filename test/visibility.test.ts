@@ -21,7 +21,7 @@ pub if true {
 		const input = `
 struct Person {
   priv var string name
-  priv func greet = () -> {}
+  priv func greet = () {}
 }
 var Person x
 x.name = "Andrew"
@@ -39,7 +39,7 @@ x.greet()
 		const input = `
 trait Person {
   priv var string name
-  priv func greet = () -> {}
+  priv func greet = () {}
 }
 `;
 		const expected = [

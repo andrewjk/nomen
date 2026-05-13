@@ -9,7 +9,7 @@ test("ziglings 009 if -- errors", () => {
 	const input = `
 import System
 
-pub func main = () -> {
+pub func main = () {
     const foo = 1
 
     if (foo) {
@@ -28,7 +28,7 @@ test("ziglings 009 if -- fixed", () => {
 	const input = `
 import System
 
-pub func main = () -> {
+pub func main = () {
     const foo = 1
 
     if (foo == 1) {
@@ -46,7 +46,7 @@ test("ziglings 009 if -- build", async () => {
 	const input = `
 import System
 
-pub func main = () -> {
+pub func main = () {
     const foo = 1
 
     if (foo == 1) {

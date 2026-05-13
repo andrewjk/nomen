@@ -72,7 +72,7 @@ str x0, [x1]
 
 	test.skip("array in function param", () => {
 		const input = `
-func sum = (int[] nums, out int) -> {
+func sum = (int[] nums, out int) {
   var total = 0
   for n of nums {
     total = total + n

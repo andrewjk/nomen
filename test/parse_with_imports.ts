@@ -6,7 +6,7 @@ const system = fs.readFileSync("./bin/tests/System.echo", "utf8");
 
 export default function parse_with_imports(source: string) {
 	let source_to_parse = `${system}
-pub func main = () -> {
+pub func main = () {
 ${source}
 }`;
 	return parse(source_to_parse);

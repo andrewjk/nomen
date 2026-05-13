@@ -8,7 +8,7 @@ test("ziglings 015 for -- errors", () => {
 	const input = `
 import System
 
-pub func main = () -> {
+pub func main = () {
     const char story = [ 'h', 'h', 's', 'n', 'h' ]
 
     Console.write("A Dramatic Story: ")
@@ -30,7 +30,7 @@ test("ziglings 015 for -- fixed", () => {
 	const input = `
 import System
 
-pub func main = () -> {
+pub func main = () {
     const char story = [ 'h', 'h', 's', 'n', 'h' ]
 
     Console.write("A Dramatic Story: ")
@@ -52,7 +52,7 @@ test("ziglings 015 for -- build", async () => {
 	const input = `
 import System
 
-pub func main = () -> {
+pub func main = () {
     const char story = [ 'h', 'h', 's', 'n', 'h' ]
 
     Console.write("A Dramatic Story: ")

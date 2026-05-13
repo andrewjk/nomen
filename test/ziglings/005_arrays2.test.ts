@@ -10,7 +10,7 @@ test("ziglings 005 arrays 2 -- errors", () => {
 	const input = `
 import System
 
-pub func main = () -> {
+pub func main = () {
     const le = [ 1, 3 ]
     const et = [ 3, 7 ]
 
@@ -49,7 +49,7 @@ test("ziglings 005 arrays 2 -- fixed", () => {
 	const input = `
 import System
 
-pub func main = () -> {
+pub func main = () {
     const le = [ 1, 3 ]
     const et = [ 3, 7 ]
 
@@ -80,7 +80,7 @@ test("ziglings 005 arrays 2 -- build", async () => {
 	const input = `
 import System
 
-pub func main = () -> {
+pub func main = () {
   const le = [ 1, 3 ]
   const et = [ 3, 7 ]
 

@@ -63,11 +63,11 @@ _str_Frank_init_name: .asciz "Frank"
 	test("trait with functions", () => {
 		const input = `
 trait Person {
-  func greet = () -> {}
+  func greet = () {}
 }
 
 struct Frank: Person {
-  func greet = (out string) -> {
+  func greet = (out string) {
     return "hi"
   }
 }
@@ -102,7 +102,7 @@ _str_0: .asciz "hi"
 	test("trait with implemented functions", () => {
 		const input = `
 trait Person {
-  func greet = (out string) -> {
+  func greet = (out string) {
     return "hi"
   }
 }
@@ -128,20 +128,20 @@ ret
 	test("struct with multiple traits", () => {
 		const input = `
 trait Person {
-  func greet = (out string) -> {
+  func greet = (out string) {
     return "hi"
   }
 }
 
 trait Dancer {
-  func dance = () -> {}
+  func dance = () {}
 }
 
 struct Frank: Person, Dancer {
-  func greet = (out string) -> {
+  func greet = (out string) {
     return "hi, frank"
   }
-  func dance = () -> {}
+  func dance = () {}
 }
 `;
 		const parsed = parse(input);

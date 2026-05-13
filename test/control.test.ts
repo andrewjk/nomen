@@ -73,7 +73,7 @@ b .for_0
 
 	test("panic", () => {
 		const input = `
-func add = (out int) -> {
+func add = (out int) {
   panic("something went wrong")
 }
 `;
@@ -100,7 +100,7 @@ _str_panic_something_went_wrong: .asciz "something went wrong\\n"
 
 	test("todo", () => {
 		const input = `
-func add = (out int) -> {
+func add = (out int) {
   todo("haven't done this yet")
 }
 `;
@@ -130,7 +130,7 @@ _str_todo_haven_t_done_this_yet: .asciz "haven't done this yet\\n"
 describe("control errors", () => {
 	test("break outside loop", () => {
 		const input = `
-func add = (out int) -> {
+func add = (out int) {
   break
   return 5
 }
@@ -142,7 +142,7 @@ func add = (out int) -> {
 
 	test("continue outside loop", () => {
 		const input = `
-func add = (out int) -> {
+func add = (out int) {
   continue
   return 5
 }
@@ -154,7 +154,7 @@ func add = (out int) -> {
 
 	test("panic without a message", () => {
 		const input = `
-func add = (out int) -> {
+func add = (out int) {
   panic
 }
 `;
@@ -165,7 +165,7 @@ func add = (out int) -> {
 
 	test("todo without a message", () => {
 		const input = `
-func add = (out int) -> {
+func add = (out int) {
   todo
 }
 `;

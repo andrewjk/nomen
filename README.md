@@ -68,7 +68,7 @@ var float number_of_things
 Functions are defined like so:
 
 ```
-func sum = (int a, int b, out int) -> {
+func sum = (int a, int b, out int) {
   return a + b
 }
 ```
@@ -326,12 +326,12 @@ struct Person
     return Person.init(name, "Unknown address")
   }
 
-  func greet = () -> {
+  func greet = () {
     print("Hi, \{name}")
   }
 
   // Put `final` in front of one or more finalizer functions that must be called before an object created from this type goes out of scope
-  final func farewell = () -> {
+  final func farewell = () {
     print("Goodbye, \{name}")
   }
 ;
@@ -358,11 +358,11 @@ trait Dancer {
 struct Frank: Person, Dancer {
   var name = "frank"
 
-  func greet = () -> {
+  func greet = () {
     return "hi, \{name}"
   }
 
-  func dance = () -> {
+  func dance = () {
     print("hula")
   }
 }
@@ -429,7 +429,7 @@ You can add custom operations to structs:
 struct Person {
   var string name
 
-  op + (self, Person other) -> {
+  op + (self, Person other) {
     return Person("\{self.name} & \{other.name}")
   }
 }

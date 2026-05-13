@@ -33,12 +33,13 @@ export default function check_return_node(ret: ReturnNode, status: CheckStatus) 
 				if (return_value === '"from_c"') {
 					ret.from_c = true;
 				} else {
+					const error_pos = ret.value.node_type === "grouped" ? ret.start + 2 : ret.value.start;
 					check_type_and_value_match(
 						func.return_type,
 						return_type,
 						return_value,
 						status,
-						ret.value.start,
+						error_pos,
 						"return",
 					);
 					// HACK: need to check more thoroughly

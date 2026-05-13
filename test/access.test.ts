@@ -163,7 +163,7 @@ _str_0: .asciz "1 main st"
 	test("getting function", () => {
 		const input = `
 struct Person {
-  func age = (out int) -> {
+  func age = (out int) {
     return 20
   }
 }
@@ -203,7 +203,7 @@ str x0, [x1]
 	test("getting function after field", () => {
 		const input = `
 struct Address {
-  func line = (out string) -> {
+  func line = (out string) {
     return "123 main st"
   }
 }
@@ -263,7 +263,7 @@ struct Address {
 }
 struct Person {
   var int age
-  func address = (out Address) -> {
+  func address = (out Address) {
     return Address("123 main st")
   }
 }

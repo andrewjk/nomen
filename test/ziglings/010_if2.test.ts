@@ -9,7 +9,7 @@ test("ziglings 010 if 2 -- errors", () => {
 	const input = `
 import System
 
-pub func main = () -> {
+pub func main = () {
     const foo = 1
 
     const price = if ???
@@ -25,7 +25,7 @@ test("ziglings 010 if 2 -- fixed", () => {
 	const input = `
 import System
 
-pub func main = () -> {
+pub func main = () {
     const discount = true
 
     const price = if discount -> 17 else -> 20
@@ -41,7 +41,7 @@ test("ziglings 010 if 2 -- build", async () => {
 	const input = `
 import System
 
-pub func main = () -> {
+pub func main = () {
     const discount = true
 
     const price = if discount -> 17 else -> 20

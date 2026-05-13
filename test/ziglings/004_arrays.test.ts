@@ -10,7 +10,7 @@ test("ziglings 004 arrays -- errors", () => {
 	const input = `
 import System
 
-pub func main = () -> {
+pub func main = () {
   const uint8[] some_primes = [ 1, 3, 5, 7, 11, 13, 17, 19 ]
 
   some_primes[0] = 2
@@ -36,7 +36,7 @@ test("ziglings 004 arrays -- fixed", () => {
 	const input = `
 import System
 
-pub func main = () -> {
+pub func main = () {
   var uint8[] some_primes = [ 1, 3, 5, 7, 11, 13, 17, 19 ]
 
   some_primes[0] = 2
@@ -55,7 +55,7 @@ test("ziglings 004 arrays -- build", async () => {
 	const input = `
 import System
 
-pub func main = () -> {
+pub func main = () {
   var uint8[] some_primes = [ 1, 3, 5, 7, 11, 13, 17, 19 ]
 
   some_primes[0] = 2

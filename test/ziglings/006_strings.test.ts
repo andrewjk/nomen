@@ -10,7 +10,7 @@ test("ziglings 006 strings -- errors", () => {
 	const input = `
 import System
 
-pub func main = () -> {
+pub func main = () {
     const ziggy = "stardust"
 
     const d = ziggy[???]
@@ -37,7 +37,7 @@ test("ziglings 006 strings -- fixed", () => {
 	const input = `
 import System
 
-pub func main = () -> {
+pub func main = () {
     const ziggy = "stardust"
 
     const d = ziggy[4]
@@ -59,7 +59,7 @@ test("ziglings 006 strings -- build", async () => {
 	const input = `
 import System
 
-pub func main = () -> {
+pub func main = () {
     const ziggy = "stardust"
 
     const d = ziggy[4]

@@ -107,16 +107,30 @@ function parse_function_type_declaration(decl: DeclarationNode, status: ParseSta
 			decl.func_params = params.filter((p) => !p.type.is_return_type);
 			decl.func_return_type = return_type;
 
-			if (accept("=", status)) {
-				// Check if the value is a function definition
-				if (peek_current(status) === "(") {
-					const func = parse_anonymous_function(decl.name, status);
-					if (func) {
-						decl.value = func;
-					}
-				} else {
-					decl.value = parse_expression(status);
+			// Check for function body with or without `=`
+			const has_equals = accept("=", status);
+			if (peek_current(status) === "{") {
+				// var func (params) name { body } or var func (params) name = { body }
+				const func_start = get_index(status);
+				const func = new FunctionNode(func_start, "mod", decl.name, new Type(""));
+				func.params = decl.func_params || [];
+				func.return_type = decl.func_return_type || new Type("");
+				accept("{", status);
+				func.has_body = true;
+
+				status.stack.push(func);
+				parse_statement(status);
+				expect("}", status);
+				status.stack.pop();
+
+				decl.value = func;
+			} else if (has_equals && peek_current(status) === "(") {
+				const func = parse_anonymous_function(decl.name, status);
+				if (func) {
+					decl.value = func;
 				}
+			} else if (has_equals) {
+				decl.value = parse_expression(status);
 			}
 		}
 	}
@@ -173,9 +187,18 @@ function parse_anonymous_function(name: string, status: ParseStatus): FunctionNo
 	}
 
 	if (expect(")", status)) {
-		if (expect("->", status)) {
+		if (accept("=>", status)) {
 			const next = peek_current(status);
-			if (next === "{") {
+			if (next === "(") {
+				// Arrow with parentheses: (a, b, out int) => (a + b)
+				accept("(", status);
+				func.has_body = true;
+				func.has_return = true;
+				const return_expr = parse_expression(status);
+				expect(")", status);
+				func.statements.push(new ReturnNode(return_expr.start, return_expr));
+			} else if (next === "{") {
+				// Arrow with block: (a, b, out int) => { return a + b }
 				accept("{", status);
 				func.has_body = true;
 
@@ -183,17 +206,27 @@ function parse_anonymous_function(name: string, status: ParseStatus): FunctionNo
 				parse_statement(status);
 				expect("}", status);
 				status.stack.pop();
-			} else if (next === "(") {
-				accept("(", status);
+
+				// Arrow with block always has implicit return
+				func.has_return = true;
+			} else {
+				// Direct expression: (a, b, out int) => a + b
 				func.has_body = true;
 				func.has_return = true;
 				const return_expr = parse_expression(status);
-				expect(")", status);
 				func.statements.push(new ReturnNode(return_expr.start, return_expr));
-			} else {
-				add_error(status, `Expected { or (`, get_index(status));
-				return undefined;
 			}
+
+			return func;
+		} else {
+			// Block body without arrow: (a, b, out int) { return a + b }
+			accept("{", status);
+			func.has_body = true;
+
+			status.stack.push(func);
+			parse_statement(status);
+			expect("}", status);
+			status.stack.pop();
 
 			return func;
 		}

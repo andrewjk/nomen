@@ -10,7 +10,7 @@ test("ziglings 003 assignment -- errors", () => {
 	const input = `
 import System
 
-pub func main = () -> {
+pub func main = () {
     const uint8 n = 50
     n = n + 5
 
@@ -34,7 +34,7 @@ test("ziglings 003 assignment -- parse", () => {
 	const input = `
 import System
 
-pub func main = () -> {
+pub func main = () {
     var uint8 n = 50
     n = n + 5
 
@@ -53,7 +53,7 @@ test("ziglings 003 assignment -- build", async () => {
 	const input = `
 import System
 
-pub func main = () -> {
+pub func main = () {
     var uint8 n = 50
     n = n + 5
 

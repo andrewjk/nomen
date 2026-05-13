@@ -9,7 +9,7 @@ test("ziglings 008 quiz -- errors", () => {
 	const input = `
 import System
 
-pub func main = () -> {
+pub func main = () {
     const letters = "YZhifg"
     const x = 1
 
@@ -40,7 +40,7 @@ test("ziglings 008 quiz -- fixed", () => {
 	const input = `
 import System
 
-pub func main = () -> {
+pub func main = () {
     const letters = "YZhifg"
     var x = 1
 
@@ -65,7 +65,7 @@ test("ziglings 008 quiz -- build", async () => {
 	const input = `
 import System
 
-pub func main = () -> {
+pub func main = () {
     const letters = "YZhifg"
     var x = 1
 

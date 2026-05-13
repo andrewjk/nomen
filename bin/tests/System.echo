@@ -1,6 +1,6 @@
 
 pub trait Disposable {
-    func dispose = (self) -> {
+    func dispose = (self) {
         Console.write("\nboom!")
     }
 }
@@ -20,13 +20,117 @@ pub trait Multipliable {
 }
 */
 pub trait Stringable {
-    func to_string = (self, out string) -> {
+    func to_string = (self, out string) {
         return "from_c"
     }
 }
 
 pub struct int: Stringable {
-    pub func to_string = (self, out string) -> {
+    func to_string = (self, out string) {
+        return "from_c"
+    }
+}
+
+pub struct uint: Stringable {
+    func to_string = (self, out string) {
+        return "from_c"
+    }
+}
+
+pub struct int8: Stringable {
+    func to_string = (self, out string) {
+        return "from_c"
+    }
+}
+
+pub struct uint8: Stringable {
+    func to_string = (self, out string) {
+        return "from_c"
+    }
+}
+
+pub struct float: Stringable {
+    func to_string = (self, out string) {
+        return "from_c"
+    }
+}
+
+pub struct char: Stringable {
+    func to_string = (self, out string) {
+        return "from_c"
+    }
+}
+
+pub struct string: Stringable {
+    func to_string = (self, out string) {
+        return "from_c"
+    }
+}
+
+pub struct Array {
+    pub const int length
+
+    pub func add = (self, Array other, out Array) {
+        return "from_c"
+    }
+
+    pub func mul = (self, int other, out Array) {
+        return "from_c"
+    }
+}
+
+pub struct Console {
+    pub func write = (string line) {
+        ```
+        #arch: c
+        printf("%s", line);
+        ```
+        ```
+        #arch: aarch64
+        sub sp, sp, #16
+        mov x1, x0
+        str x1, [sp]
+        adr x0, .Lfmt_console_s
+        bl _printf
+        add sp, sp, #16
+        b .Lend_Console_write
+        .Lfmt_console_s: .asciz "%s"
+        .p2align 2
+        .Lend_Console_write:
+        ```
+    }
+}
+
+pub struct Math {
+    pub func power = (int base, int exp, out int) {
+        return "from_c"
+    }
+}
+
+}
+/*
+pub trait Addable<T> {
+    func add(self, other: T, out T)
+}
+
+pub trait Addable {
+    // TODO: Should be able to add any type and return any type
+    func add(self, other: Self, out Self)
+}
+
+pub trait Multipliable {
+    // TODO: Should be able to multiply any type and return any type
+    func multiply(self, other: Self, out Self)
+}
+*/
+pub trait Stringable {
+    func to_string = (self, out string) {
+        return "from_c"
+    }
+}
+
+pub struct int: Stringable {
+    pub func to_string = (self, out string) {
         ```
         #arch: c
         int length = snprintf(NULL, 0, "%ld", self);
@@ -68,7 +172,7 @@ pub struct int: Stringable {
 }
 
 pub struct uint: Stringable {
-    pub func to_string = (self, out string) -> {
+    pub func to_string = (self, out string) {
         ```
         #arch: c
         int length = snprintf(NULL, 0, "%ld", self);
@@ -110,7 +214,7 @@ pub struct uint: Stringable {
 }
 
 pub struct int8: Stringable {
-    pub func to_string = (self, out string) -> {
+    pub func to_string = (self, out string) {
         ```
         #arch: c
         int length = snprintf(NULL, 0, "%d", self);
@@ -152,7 +256,7 @@ pub struct int8: Stringable {
 }
 
 pub struct uint8: Stringable {
-    pub func to_string = (self, out string) -> {
+    pub func to_string = (self, out string) {
         ```
         #arch: c
         int length = snprintf(NULL, 0, "%d", self);
@@ -194,7 +298,7 @@ pub struct uint8: Stringable {
 }
 
 pub struct float: Stringable {
-    pub func to_string = (self, out string) -> {
+    pub func to_string = (self, out string) {
         ```
         #arch: c
         int length = snprintf(NULL, 0, "%f", self);
@@ -237,7 +341,7 @@ pub struct float: Stringable {
 }
 
 pub struct char: Stringable {
-    pub func to_string = (self, out string) -> {
+    pub func to_string = (self, out string) {
         ```
         #arch: c
         int length = snprintf(NULL, 0, "%c", self);
@@ -279,7 +383,7 @@ pub struct char: Stringable {
 }
 
 pub struct string: Stringable {
-    pub func to_string = (self, out string) -> {
+    pub func to_string = (self, out string) {
         ```
         #arch: c
         return self;
@@ -294,7 +398,7 @@ pub struct string: Stringable {
 pub struct Array {
     pub const int length
 
-    pub func add = (self, Array other, out Array) -> {
+    pub func add = (self, Array other, out Array) {
         ```
         #arch: c
         int result[self.length + other->length];
@@ -305,7 +409,7 @@ pub struct Array {
         return "from_c"
     }
 
-    pub func mul = (self, int other, out Array) -> {
+    pub func mul = (self, int other, out Array) {
         ```
         #arch: c
         int result[self.length * other];
@@ -319,7 +423,7 @@ pub struct Array {
     }
 }
 pub struct Console {
-    pub func write = (string line) -> {
+    pub func write = (string line) {
         ```
         #arch: c
         printf("%s", line);
@@ -340,7 +444,7 @@ pub struct Console {
     }
 }
 pub struct Math {
-    pub func power = (int base, int exp, out int) -> {
+    pub func power = (int base, int exp, out int) {
         ```
         #arch: c
         int result = 1;

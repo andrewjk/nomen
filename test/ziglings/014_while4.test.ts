@@ -8,7 +8,7 @@ test("ziglings 014 while 4 -- errors", () => {
 	const input = `
 import System
 
-pub func main = () -> {
+pub func main = () {
     var n = 1
 
     while true; n += 1 {
@@ -26,7 +26,7 @@ test("ziglings 014 while 4 -- fixed", () => {
 	const input = `
 import System
 
-pub func main = () -> {
+pub func main = () {
     var n = 1
 
     while true; n += 1 {
@@ -44,7 +44,7 @@ test("ziglings 014 while 4 -- build", async () => {
 	const input = `
 import System
 
-pub func main = () -> {
+pub func main = () {
     var n = 1
 
     while true; n += 1 {

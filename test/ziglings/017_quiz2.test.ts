@@ -8,7 +8,7 @@ test("ziglings 017 quiz -- errors", () => {
 	const input = `
 import System
 
-pub func main = () -> {
+pub func main = () {
     var i = 1
     const stop_at = 16
 
@@ -30,7 +30,7 @@ test("ziglings 017 quiz -- fixed", () => {
 	const input = `
 import System
 
-pub func main = () -> {
+pub func main = () {
     var i = 1
     const stop_at = 16
 
@@ -52,7 +52,7 @@ test("ziglings 017 quiz -- build", async () => {
 	const input = `
 import System
 
-pub func main = () -> {
+pub func main = () {
     var i = 1
     const stop_at = 16
 

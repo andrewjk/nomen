@@ -73,7 +73,7 @@ end_0:
 
 	test("assignment to var param", () => {
 		const input = `
-func add = (var int x) -> {
+func add = (var int x) {
   x = 5
 }
 `;
@@ -187,7 +187,7 @@ const y = x
 
 	test("assignment to const param", () => {
 		const input = `
-func set = (int x) -> {
+func set = (int x) {
   x = 5
 }
 `;

@@ -36,10 +36,19 @@ export default function parse_function(
 		func.is_static = !func.params[0]?.is_self_param;
 
 		if (expect(")", status)) {
-			if (expect("->", status)) {
+			if (accept("=>", status)) {
+				// Arrow syntax: func = (...) => ...
 				const next = peek_current(status);
-				if (next === "{") {
-					// Block body
+				if (next === "(") {
+					// Arrow with parentheses: func = (...) => (expr)
+					accept("(", status);
+					func.has_body = true;
+					func.has_return = true;
+					const return_expr = parse_expression(status);
+					expect(")", status);
+					func.statements.push(new ReturnNode(return_expr.start, return_expr));
+				} else if (next === "{") {
+					// Arrow with block: func = (...) => { ... }
 					const has_body = parent.node_type === "trait" ? accept("{", status) : expect("{", status);
 					if (has_body) {
 						func.has_body = true;
@@ -49,37 +58,47 @@ export default function parse_function(
 						expect("}", status);
 						status.stack.pop();
 
-						// TODO: check all branches
-						if (func.return_type.name && !func.has_return) {
-							add_error(status, `Missing return`, status.tokens[status.i - 1].i);
-						}
+						// Arrow with block always has implicit return
+						func.has_return = true;
 					}
-				} else if (next === "(") {
-					// One-line return: -> (expr)
-					accept("(", status);
+				} else {
+					// Direct expression: func = (...) => expr
 					func.has_body = true;
 					func.has_return = true;
 					const return_expr = parse_expression(status);
-					expect(")", status);
 					func.statements.push(new ReturnNode(return_expr.start, return_expr));
-				} else {
-					add_error(status, `Expected { or (`, get_index(status));
 				}
+			} else {
+				// Block body: func = (...) { ... }
+				const has_body = parent.node_type === "trait" ? accept("{", status) : expect("{", status);
+				if (has_body) {
+					func.has_body = true;
 
-				switch (parent.node_type) {
-					case "root":
-					case "func": {
-						(parent as BlockNode).statements.push(func);
-						break;
+					status.stack.push(func);
+					parse_statement(status);
+					expect("}", status);
+					status.stack.pop();
+
+					// TODO: check all branches
+					if (func.return_type.name && !func.has_return) {
+						add_error(status, `Missing return`, status.tokens[status.i - 2].i);
 					}
-					case "struct":
-					case "trait": {
-						(parent as StructNode).functions.push(func);
-						break;
-					}
-					default: {
-						add_error(status, "Function cannot appear here", func.start);
-					}
+				}
+			}
+
+			switch (parent.node_type) {
+				case "root":
+				case "func": {
+					(parent as BlockNode).statements.push(func);
+					break;
+				}
+				case "struct":
+				case "trait": {
+					(parent as StructNode).functions.push(func);
+					break;
+				}
+				default: {
+					add_error(status, "Function cannot appear here", func.start);
 				}
 			}
 		}
@@ -118,7 +137,7 @@ function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: 
 	param.type_start = get_index(status);
 	param.type = parse_type(status);
 
-	// If the next token is '=' or ')' or ',', what we parsed was actually the name
+	// If next token is '=' or ')' or ',', what we parsed was actually a name
 	const next = peek_current(status);
 	if (next === "=" || next === ")" || next === "," || status.i >= status.tokens.length) {
 		status.i = saved_i;

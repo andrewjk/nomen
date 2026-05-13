@@ -8,7 +8,7 @@ test("ziglings 011 while -- errors", () => {
 	const input = `
 import System
 
-pub func main = () -> {
+pub func main = () {
     var n = 2
 
     while ??? {
@@ -28,7 +28,7 @@ test("ziglings 011 while -- fixed", () => {
 	const input = `
 import System
 
-pub func main = () -> {
+pub func main = () {
     var n = 2
 
     while n < 1024 {
@@ -48,7 +48,7 @@ test("ziglings 011 while -- build", async () => {
 	const input = `
 import System
 
-pub func main = () -> {
+pub func main = () {
     var n = 2
 
     while n < 1024 {

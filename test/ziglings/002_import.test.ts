@@ -10,7 +10,7 @@ test("ziglings 002 import -- errors", () => {
 	const input = `
 import ???
 
-pub func main = () -> {
+pub func main = () {
     Console.write("Standard Library.\\n")
 }
 `;
@@ -23,7 +23,7 @@ test("ziglings 002 import -- parse", () => {
 	const input = `
 import System
 
-pub func main = () -> {
+pub func main = () {
     Console.write("Standard Library.\\n")
 }
 `;
@@ -35,7 +35,7 @@ test("ziglings 002 import -- build", async () => {
 	const input = `
 import System
 
-pub func main = () -> {
+pub func main = () {
     Console.write("Standard Library.\\n")
 }
 `;

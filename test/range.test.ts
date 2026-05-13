@@ -51,7 +51,7 @@ x: .quad -2, -1, 0, 1
 
 	test.skip("range as param", () => {
 		const input = `
-func sum = (int[] nums, out int) -> {
+func sum = (int[] nums, out int) {
   var total = 0
   for n of nums {
     total = total + n
@@ -70,7 +70,7 @@ const result = sum(1..4)
 
 	test("range in for loop", () => {
 		const input = `
-func sum = (out int) -> {
+func sum = (out int) {
   var total = 0
   for n of 1..4 {
     total = total + n

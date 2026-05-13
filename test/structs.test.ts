@@ -56,7 +56,7 @@ ret
 	test("struct with functions", () => {
 		const input = `
 struct Person {
-  func greet = () -> {}
+  func greet = () {}
 }
 `;
 		const parsed = parse(input);
@@ -86,7 +86,7 @@ ret
 		const input = `
 struct Person {
   var int age = 0
-  func grow = (var self) -> {
+  func grow = (var self) {
     self.age = self.age + 1
   }
 }
@@ -128,7 +128,7 @@ ret
 		const input = `
 struct Person {
   var string name
-  func get_name = (self, out string) -> {
+  func get_name = (self, out string) {
     return self.name
   }
 }

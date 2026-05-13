@@ -1,3 +1,4 @@
+import add_error from "../add_error.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import ParameterNode from "../nodes/ParameterNode.ts";
 import StructNode from "../nodes/StructNode.ts";
@@ -45,20 +46,8 @@ export default function parse_op(
 		}
 
 		if (expect(")", status)) {
-			if (expect("->", status)) {
-				const has_body = parent.node_type === "trait" ? accept("{", status) : expect("{", status);
-				if (has_body) {
-					func.has_body = true;
-
-					status.stack.push(func);
-					parse_statement(status);
-					expect("}", status);
-					status.stack.pop();
-
-					if (func.return_type.name && !func.has_return) {
-						// This shouldn't happen for operators but keep for consistency
-					}
-				}
+			if (accept("{", status)) {
+				func.has_body = true;
 
 				switch (parent.node_type) {
 					case "root":
@@ -74,6 +63,17 @@ export default function parse_op(
 					default: {
 						// op cannot appear here
 					}
+				}
+
+				status.stack.push(func);
+				while (peek_current(status) !== "}") {
+					parse_statement(status);
+				}
+				expect("}", status);
+				status.stack.pop();
+
+				if (func.return_type.name && !func.has_return) {
+					add_error(status, "Missing return", status.tokens[status.i - 2].i);
 				}
 			}
 		}

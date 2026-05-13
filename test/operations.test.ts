@@ -179,7 +179,7 @@ Console.write("\\{x}")
 
 	test("operations in function call", async () => {
 		const input = `
-func add = (int a, int b, out int) -> {
+func add = (int a, int b, out int) {
   return a + b
 }
 

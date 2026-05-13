@@ -9,7 +9,7 @@ test("ziglings 007 strings 2 -- errors", () => {
 	const input = `
 import System
 
-pub func main = () -> {
+pub func main = () {
     const lyrics =
         Ziggy played guitar
         Jamming good with Andrew Kelley
@@ -26,7 +26,7 @@ test("ziglings 007 strings 2 -- fixed", () => {
 	const input = `
 import System
 
-pub func main = () -> {
+pub func main = () {
     const lyrics =
         "Ziggy played guitar
         "Jamming good with Andrew Kelley
@@ -43,7 +43,7 @@ test("ziglings 007 strings 2 -- build", async () => {
 	const input = `
 import System
 
-pub func main = () -> {
+pub func main = () {
     const lyrics =
         "Ziggy played guitar
         "Jamming good with Andrew Kelley

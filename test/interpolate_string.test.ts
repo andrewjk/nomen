@@ -90,7 +90,7 @@ Console.write("\\n")
 
 	test.skip("interpolation with function call", async () => {
 		const input = `
-func get_value = (out int) -> {
+func get_value = (out int) {
   return 42
 }
 
