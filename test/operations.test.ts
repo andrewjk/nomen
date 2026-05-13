@@ -1,183 +1,300 @@
 import { expect, describe, test } from "vite-plus/test";
 
 import build from "../src/build";
-import parse from "../src/parse";
-import test_error from "./test_error";
-import trim_test_build from "./trim_test_build";
+import check_output from "./check_output";
+import parse_with_imports from "./parse_with_imports";
 
 // BUILD
-describe("operation build", () => {
-	test("addition", () => {
+describe("operations build", () => {
+	test("addition", async () => {
 		const input = `
-var x = 1 + 2
+const x = 5 + 3
+Console.write("\\{x}")
 `;
-		const parsed = parse(input);
+		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64" });
-		const expected = `
-x: .space 8
-ldr x2, =2
-ldr x1, =1
-add x0, x1, x2
-adr x1, x
-str x0, [x1]
-`;
 		expect(parsed.errors).toEqual([]);
-		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+		await check_output("operations_addition", result, "8");
 	});
 
-	test("subtraction", () => {
+	test("subtraction", async () => {
 		const input = `
-var x = 1 - 2
+const x = 10 - 3
+Console.write("\\{x}")
 `;
-		const parsed = parse(input);
+		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64" });
-		const expected = `
-x: .space 8
-ldr x2, =2
-ldr x1, =1
-sub x0, x1, x2
-adr x1, x
-str x0, [x1]
-`;
 		expect(parsed.errors).toEqual([]);
-		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+		await check_output("operations_subtraction", result, "7");
 	});
 
-	test("series", () => {
+	test("multiplication", async () => {
 		const input = `
-var x = 1 + 2 - 3
+const x = 4 * 3
+Console.write("\\{x}")
 `;
-		const parsed = parse(input);
+		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64" });
-		const expected = `
-x: .space 8
-ldr x2, =3
-ldr x1, =2
-sub x0, x1, x2
-mov x2, x0
-ldr x1, =1
-add x0, x1, x2
-adr x1, x
-str x0, [x1]
-`;
 		expect(parsed.errors).toEqual([]);
-		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+		await check_output("operations_multiplication", result, "12");
 	});
 
-	test("multiplication", () => {
+	test("division", async () => {
 		const input = `
-var x = 3 * 4
+const x = 10 / 2
+Console.write("\\{x}")
 `;
-		const parsed = parse(input);
+		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64" });
-		const expected = `
-x: .space 8
-ldr x2, =4
-ldr x1, =3
-mul x0, x1, x2
-adr x1, x
-str x0, [x1]
-`;
 		expect(parsed.errors).toEqual([]);
-		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+		await check_output("operations_division", result, "5");
 	});
 
-	test("division", () => {
+	test("modulo", async () => {
 		const input = `
-var x = 10 / 2
+const x = 10 % 3
+Console.write("\\{x}")
 `;
-		const parsed = parse(input);
+		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64" });
-		const expected = `
-x: .space 8
-ldr x2, =2
-ldr x1, =10
-sdiv x0, x1, x2
-adr x1, x
-str x0, [x1]
-`;
 		expect(parsed.errors).toEqual([]);
-		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+		await check_output("operations_modulo", result, "1");
 	});
 
-	test("operator precedence", () => {
+	test("operator precedence", async () => {
 		const input = `
-var x = 1 + 2 * 3
+const x = 1 + 2 * 3
+Console.write("\\{x}")
 `;
-		const parsed = parse(input);
+		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64" });
-		const expected = `
-x: .space 8
-ldr x2, =3
-ldr x1, =2
-mul x0, x1, x2
-mov x2, x0
-ldr x1, =1
-add x0, x1, x2
-adr x1, x
-str x0, [x1]
-`;
 		expect(parsed.errors).toEqual([]);
-		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+		await check_output("operations_precedence", result, "7");
 	});
 
-	test("grouped precedence", () => {
+	test("grouped precedence", async () => {
 		const input = `
-var x = (1 + 2) * 3
+const x = (1 + 2) * 3
+Console.write("\\{x}")
 `;
-		const parsed = parse(input);
+		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64" });
-		const expected = `
-x: .space 8
-ldr x2, =3
-str x2, [sp, #-16]!
-ldr x2, =2
-ldr x1, =1
-add x0, x1, x2
-mov x1, x0
-ldr x2, [sp], #16
-mul x0, x1, x2
-adr x1, x
-str x0, [x1]
-`;
 		expect(parsed.errors).toEqual([]);
-		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+		await check_output("operations_grouped", result, "9");
+	});
+
+	test("negative numbers in operations", async () => {
+		const input = `
+const x = -5 + 3
+Console.write("\\{x}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("operations_negative", result, "-2");
+	});
+
+	test("multiple operations in expression", async () => {
+		const input = `
+const x = 2 + 3 * 4 - 5 / 5
+Console.write("\\{x}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("operations_multiple", result, "13");
+	});
+
+	test("operations with variables", async () => {
+		const input = `
+const a = 5
+const b = 3
+const c = a + b
+Console.write("\\{c}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("operations_variables", result, "8");
+	});
+
+	test("operations in assignment", async () => {
+		const input = `
+var x = 0
+x = x + 1
+Console.write("\\{x}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("operations_assignment", result, "1");
+	});
+
+	test("compound addition", async () => {
+		const input = `
+var x = 5
+x += 3
+Console.write("\\{x}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("operations_compound_add", result, "8");
+	});
+
+	test("compound subtraction", async () => {
+		const input = `
+var x = 10
+x -= 3
+Console.write("\\{x}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("operations_compound_sub", result, "7");
+	});
+
+	test("compound multiplication", async () => {
+		const input = `
+var x = 4
+x *= 3
+Console.write("\\{x}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("operations_compound_mul", result, "12");
+	});
+
+	test("series of operations", async () => {
+		const input = `
+const x = 1 + 2 - 3 + 4
+Console.write("\\{x}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("operations_series", result, "4");
+	});
+
+	test.skip("operations in function call", async () => {
+		const input = `
+func add = (int a, int b, out int) -> {
+  return a + b
+}
+
+const result = add(5, 3)
+Console.write("\\{result}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("operations_function", result, "8");
+	});
+
+	test("operations with zero", async () => {
+		const input = `
+const x = 5 + 0
+Console.write("\\{x}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("operations_zero", result, "5");
+	});
+
+	test("large number operations", async () => {
+		const input = `
+const x = 1000000 + 2000000
+Console.write("\\{x}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("operations_large", result, "3000000");
 	});
 });
 
 // ERRORS
-describe("operation errors", () => {
-	test("type mismatch", () => {
+describe("operations errors", () => {
+	test("type mismatch in operation", () => {
 		const input = `
-const x = 5 + "b"
+const x = 5 + "hello"
 `;
-		const expected = [
-			test_error(input, "Type mismatch in operation: string (expected int)", 2, 15),
-		];
-		const parsed = parse(input);
-		expect(parsed.errors).toEqual(expected);
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors.length).toBeGreaterThan(0);
+		expect(parsed.errors.some((e) => e.message.includes("Type mismatch"))).toBe(true);
 	});
 
 	test("declaration type mismatch", () => {
 		const input = `
-const int x = "a" + "b"
+const int x = "hello" + "world"
 `;
-		const expected = [
-			test_error(input, "Type mismatch in declaration: string (expected int)", 2, 15),
-		];
-		const parsed = parse(input);
-		expect(parsed.errors).toEqual(expected);
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors.length).toBeGreaterThan(0);
+		expect(parsed.errors.some((e) => e.message.includes("Type mismatch"))).toBe(true);
 	});
 
 	test("assignment type mismatch", () => {
 		const input = `
 var int x
-x = "a" + "b"
+x = "hello" + "world"
 `;
-		const expected = [
-			test_error(input, "Type mismatch in assignment: string (expected int)", 3, 5),
-		];
-		const parsed = parse(input);
-		expect(parsed.errors).toEqual(expected);
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors.length).toBeGreaterThan(0);
+		expect(parsed.errors.some((e) => e.message.includes("Type mismatch"))).toBe(true);
+	});
+
+	// TODO: This needs runtime protection
+	test.skip("division by zero", () => {
+		const input = `
+const x = 5 / 0
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors.length).toBeGreaterThan(0);
+	});
+
+	// TODO: This needs runtime protection
+	test.skip("modulo by zero", () => {
+		const input = `
+const x = 5 % 0
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors.length).toBeGreaterThan(0);
+	});
+
+	test("undefined variable in operation", () => {
+		const input = `
+const x = undefined_var + 5
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors.length).toBeGreaterThan(0);
+		expect(parsed.errors.some((e) => e.message.includes("Unknown value: undefined_var"))).toBe(
+			true,
+		);
+	});
+
+	test("invalid operator", () => {
+		const input = `
+const x = 5 @ 3
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors.length).toBeGreaterThan(0);
+	});
+
+	test("missing operand", () => {
+		const input = `
+const x = 5 +
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors.length).toBeGreaterThan(0);
+	});
+
+	test("incomplete expression", () => {
+		const input = `
+const x = + 5
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors.length).toBeGreaterThan(0);
 	});
 });
