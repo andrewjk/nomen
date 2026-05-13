@@ -22,6 +22,7 @@ export default interface BuildStatus {
 	loop_labels?: { start: string; end: string }[];
 	struct_return_buffer?: string;
 	function_data?: string;
+	nested_functions?: string;
 	stack_size?: number;
 	stack_offsets?: Map<string, number>;
 	string_literal_names?: Set<string>;

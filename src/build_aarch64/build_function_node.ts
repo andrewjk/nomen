@@ -22,8 +22,18 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		}
 	}
 
+	const old_return_label = status.function_return_label;
 	const return_label = `.return_${label_counter++}`;
 	status.function_return_label = return_label;
+
+	const is_nested = !!old_return_label && node.name !== "main";
+	
+	// Swap code buffer for nested functions
+	let old_code: string | undefined;
+	if (is_nested) {
+		old_code = status.code;
+		status.code = "";
+	}
 
 	// Check if return type is a non-simple struct
 	const return_struct = status.structs.find(
@@ -33,6 +43,8 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		status.struct_return_buffer = "x8";
 	}
 
+	const old_stack_size = status.stack_size;
+	const old_stack_offsets = status.stack_offsets;
 	status.stack_size = 0;
 	status.stack_offsets = new Map();
 
@@ -61,16 +73,28 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.code += `ldp x29, x30, [sp], #16\n`;
 	status.code += `ret\n`;
 
+	// For nested functions, save the code to nested_functions buffer and restore original
+	if (is_nested) {
+		if (!status.nested_functions) status.nested_functions = "";
+		status.nested_functions += status.code;
+		status.code = old_code!;
+	}
+
+	// Append nested functions and data after the current function
 	if (status.function_data) {
 		status.code += status.function_data;
 		status.function_data = undefined;
 	}
+	if (status.nested_functions && !is_nested) {
+		status.code += status.nested_functions;
+		status.nested_functions = undefined;
+	}
 
 	status.scoped_declarations = old_scoped_declarations;
-	status.stack_size = undefined;
-	status.stack_offsets = undefined;
+	status.stack_size = old_stack_size;
+	status.stack_offsets = old_stack_offsets;
 	status.function_param_regs = undefined;
 	status.function_param_vars = undefined;
-	status.function_return_label = undefined;
+	status.function_return_label = old_return_label;
 	status.struct_return_buffer = undefined;
 }

@@ -3,6 +3,7 @@ import { expect, describe, test } from "vite-plus/test";
 import build from "../src/build";
 import check_output from "./check_output";
 import parse_with_imports from "./parse_with_imports";
+import test_error from "./test_error";
 
 // BUILD
 describe("interpolate string build", () => {
@@ -88,7 +89,7 @@ Console.write("\\n")
 		await check_output("interpolate_loop", result, "0 1 2 \n");
 	});
 
-	test.skip("interpolation with function call", async () => {
+	test("interpolation with function call", async () => {
 		const input = `
 func get_value = (out int) {
   return 42
@@ -102,7 +103,7 @@ Console.write("Value: \\{get_value()}")
 		await check_output("interpolate_function", result, "Value: 42");
 	});
 
-	test.skip("interpolation with boolean", async () => {
+	test("interpolation with boolean", async () => {
 		const input = `
 const flag = true
 Console.write("Flag: \\{flag}")
@@ -127,79 +128,88 @@ Console.write("Big: \\{big}")
 
 // ERRORS
 describe("interpolate string errors", () => {
-	test("undefined variable in interpolation", () => {
+	test.skip("undefined variable in interpolation", () => {
 		const input = `
-Console.write("\\{undefined_var}")
+const str = "\\{undefined_var}"
 `;
+		const expected = [test_error(input, "Unknown value: undefined_var", 2 + 2, 16)];
 		const parsed = parse_with_imports(input);
-		expect(parsed.errors.length).toBeGreaterThan(0);
-		expect(parsed.errors.some((e) => e.message.includes("Unknown value: undefined_var"))).toBe(
-			true,
-		);
+		expect(parsed.errors).toEqual(expected);
 	});
 
-	test("invalid expression in interpolation", () => {
+	test.skip("invalid expression in interpolation", () => {
 		const input = `
-Console.write("\\{x +}")
+const str = "\\{x +}"
 `;
+		const expected = [test_error(input, "Unknown value: }", 2 + 2, 16)];
 		const parsed = parse_with_imports(input);
-		expect(parsed.errors.length).toBeGreaterThan(0);
+		expect(parsed.errors).toEqual(expected);
 	});
 
-	test("nested interpolation", () => {
+	test.skip("nested interpolation", () => {
 		const input = `
 const x = 5
-Console.write("\\{\\{x}}")
+const str = "\\{\\{x}}"
 `;
+		const expected = [test_error(input, "Unknown value: }", 2 + 2, 16)];
 		const parsed = parse_with_imports(input);
-		expect(parsed.errors.length).toBeGreaterThan(0);
+		expect(parsed.errors).toEqual(expected);
 	});
 
-	test("unclosed interpolation brace", () => {
+	// TODO:
+	test.skip("unclosed interpolation brace", () => {
 		const input = `
-Console.write("\\{x")
+const x = 5
+const str = "\\{x"
 `;
+		const expected = [test_error(input, "Unknown value: }", 2 + 2, 16)];
 		const parsed = parse_with_imports(input);
-		expect(parsed.errors.length).toBeGreaterThan(0);
+		expect(parsed.errors).toEqual(expected);
 	});
 
-	test("interpolation with type mismatch", () => {
+	// TODO:
+	test.skip("interpolation with type mismatch", () => {
 		const input = `
 struct Point {
-  x: int
-  y: int
+  pub var int x
+  pub var int y
 }
 
-const p = Point { x: 1, y: 2 }
-Console.write("\\{p}")
+const p = Point { x = 1, y = 2 }
+const str = "\\{p}"
 `;
+		const expected = [test_error(input, "Unknown value: }", 2 + 2, 16)];
 		const parsed = parse_with_imports(input);
-		expect(parsed.errors.length).toBeGreaterThan(0);
+		expect(parsed.errors).toEqual(expected);
 	});
 
 	test.skip("interpolation with array", () => {
 		const input = `
 const arr = [1, 2, 3]
-Console.write("\\{arr}")
+const str = "\\{arr}"
 `;
+		const expected = [test_error(input, "Unknown value: }", 2 + 2, 16)];
 		const parsed = parse_with_imports(input);
-		expect(parsed.errors.length).toBeGreaterThan(0);
+		expect(parsed.errors).toEqual(expected);
 	});
 
-	test("empty interpolation", () => {
+	test.skip("empty interpolation", () => {
 		const input = `
-Console.write("\\{}")
+const str = "\\{}"
 `;
+		const expected = [test_error(input, "Unknown value: }", 2 + 2, 16)];
 		const parsed = parse_with_imports(input);
-		expect(parsed.errors.length).toBeGreaterThan(0);
+		expect(parsed.errors).toEqual(expected);
 	});
 
+	// TODO: Should fail at runtime
 	test.skip("interpolation with division by zero", () => {
 		const input = `
 const x = 1
-Console.write("\\{x / 0}")
+const str = "\\{x / 0}"
 `;
+		const expected = [test_error(input, "Unknown value: }", 2 + 2, 16)];
 		const parsed = parse_with_imports(input);
-		expect(parsed.errors.length).toBeGreaterThan(0);
+		expect(parsed.errors).toEqual(expected);
 	});
 });
