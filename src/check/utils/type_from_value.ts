@@ -15,6 +15,11 @@ export default function type_from_value(value: string, status: CheckStatus): Typ
 		return new Type(struct_value.name);
 	}
 
+	const func_value = status.functions.find((f) => f.name === value);
+	if (func_value) {
+		return new Type("func");
+	}
+
 	if (value === "true" || value === "false") {
 		return new Type("bool", true);
 	} else if (value.startsWith('"') && value.endsWith('"')) {

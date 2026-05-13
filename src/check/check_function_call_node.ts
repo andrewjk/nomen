@@ -32,6 +32,24 @@ export default function check_function_call_node(
 		]);
 	}
 
+	// Check if the call target is a function-typed parameter
+	if (!func) {
+		const param_value = status.values.find((v) => v.name === node.name);
+		if (param_value?.type.name === "func") {
+			func = new FunctionNode(0, "pub", node.name, param_value.type);
+			const param = status.stack
+				.flatMap((n: any) => n.params || [])
+				.find((p: any) => p.name === node.name);
+			if (param?.func_params) {
+				func.params = param.func_params;
+			}
+			if (param?.func_return_type) {
+				func.return_type = param.func_return_type;
+			}
+			node.is_func_param = true;
+		}
+	}
+
 	// Make sure the function exists
 	if (!func) {
 		add_error(status, `Function not found: ${node.name}`, node.start);

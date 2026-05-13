@@ -1,6 +1,8 @@
 import type BuildStatus from "../build/BuildStatus.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import build_block_node from "./build_block_node.ts";
+import aarch64_size from "./utils/aarch64_size.ts";
+import { allocate_stack_space } from "./utils/stack_var.ts";
 
 let label_counter = 0;
 
@@ -27,15 +29,13 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.function_return_label = return_label;
 
 	const is_nested = !!old_return_label && node.name !== "main";
-	
-	// Swap code buffer for nested functions
+
 	let old_code: string | undefined;
 	if (is_nested) {
 		old_code = status.code;
 		status.code = "";
 	}
 
-	// Check if return type is a non-simple struct
 	const return_struct = status.structs.find(
 		(s) => s.name === node.return_type.name && !s.is_simple_type,
 	);
@@ -48,6 +48,17 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.stack_size = 0;
 	status.stack_offsets = new Map();
 
+	const has_body = node.has_body && node.statements.length > 0;
+
+	if (has_body) {
+		for (let i = 0; i < node.params.length; i++) {
+			const param = node.params[i];
+			const size = aarch64_size(param.type.name);
+			const offset = allocate_stack_space(status, size, size);
+			status.stack_offsets!.set(param.name, offset);
+		}
+	}
+
 	status.code += `.p2align 2\n`;
 	status.code += `${node.name}:\n`;
 	status.code += `stp x29, x30, [sp, #-16]!\n`;
@@ -55,13 +66,30 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.code += `sub sp, sp, #${stack_placeholder}\n`;
 	status.code += `mov x29, sp\n`;
 
+	if (has_body) {
+		for (let i = 0; i < node.params.length; i++) {
+			const param = node.params[i];
+			const offset = status.stack_offsets!.get(param.name)!;
+			const size = aarch64_size(param.type.name);
+			const reg = param_regs[i];
+			if (size === 1) {
+				status.code += `strb ${reg.replace("x", "w")}, [x29, #${offset}]\n`;
+			} else if (size === 4) {
+				status.code += `str ${reg.replace("x", "w")}, [x29, #${offset}]\n`;
+			} else {
+				status.code += `str ${reg}, [x29, #${offset}]\n`;
+			}
+		}
+		status.function_param_regs = new Map();
+		status.function_param_vars = new Set();
+	}
+
 	build_block_node(node, status);
 
 	status.code += `${return_label}:\n`;
 	if (node.name === "main") {
 		status.code += `mov x0, #0\n`;
 	}
-	// Restore stack and frame
 	const total_stack = Math.ceil((status.stack_size || 0) / 16) * 16;
 	status.code = status.code.replace(
 		`sub sp, sp, #${stack_placeholder}`,
@@ -73,14 +101,12 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.code += `ldp x29, x30, [sp], #16\n`;
 	status.code += `ret\n`;
 
-	// For nested functions, save the code to nested_functions buffer and restore original
 	if (is_nested) {
 		if (!status.nested_functions) status.nested_functions = "";
 		status.nested_functions += status.code;
 		status.code = old_code!;
 	}
 
-	// Append nested functions and data after the current function
 	if (status.function_data) {
 		status.code += status.function_data;
 		status.function_data = undefined;

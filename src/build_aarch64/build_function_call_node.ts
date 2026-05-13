@@ -31,18 +31,46 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		start_reg = 1;
 	}
 
-	// Evaluate params right-to-left to avoid clobbering
-	for (let i = node.params.length - 1; i >= 0; i--) {
-		build_node(node.params[i], status);
-		const reg = param_regs[start_reg + i];
-		if (reg !== "x0") {
-			status.code += `\nmov ${reg}, x0\n`;
+	if (node.is_func_param) {
+		// Load function pointer from stack
+		const func_offset = status.stack_offsets?.get(node.name);
+		if (func_offset !== undefined) {
+			status.code += `ldr x8, [x29, #${func_offset}]\n`;
 		} else {
-			status.code += `\n`;
+			const paramReg = status.function_param_regs?.get(node.name);
+			if (paramReg) {
+				status.code += `mov x8, ${paramReg}\n`;
+			} else {
+				status.code += `adr x8, ${node.name}\n`;
+			}
 		}
-	}
 
-	status.code += `bl ${func_name}\n`;
+		// Evaluate params right-to-left
+		for (let i = node.params.length - 1; i >= 0; i--) {
+			build_node(node.params[i], status);
+			const reg = param_regs[start_reg + i];
+			if (reg !== "x0") {
+				status.code += `\nmov ${reg}, x0\n`;
+			} else {
+				status.code += `\n`;
+			}
+		}
+
+		status.code += `blr x8\n`;
+	} else {
+		// Evaluate params right-to-left to avoid clobbering
+		for (let i = node.params.length - 1; i >= 0; i--) {
+			build_node(node.params[i], status);
+			const reg = param_regs[start_reg + i];
+			if (reg !== "x0") {
+				status.code += `\nmov ${reg}, x0\n`;
+			} else {
+				status.code += `\n`;
+			}
+		}
+
+		status.code += `bl ${func_name}\n`;
+	}
 
 	// For struct constructors with a temp, load temp address into x0
 	if (is_struct && !status.struct_return_buffer) {

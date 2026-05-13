@@ -72,6 +72,12 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 		return;
 	}
 
+	// Function reference - just need the address
+	if (node.type?.name === "func") {
+		status.code += `adr x0, ${value}`;
+		return;
+	}
+
 	// Variable reference - use stack offset if available
 	const offset = status.stack_offsets?.get(value);
 	if (offset !== undefined) {

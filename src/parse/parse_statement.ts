@@ -110,6 +110,7 @@ export default function parse_statement(status: ParseStatus) {
 				add_to_parent(ret, "Return expression", status);
 				break;
 			}
+			case "=>":
 			case "return": {
 				parse_return(status);
 				break;

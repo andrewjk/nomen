@@ -160,7 +160,7 @@ function build_access_method(
 			} else {
 				emit_var_address(status, "x0", name);
 			}
-			if (target_is_simple && target_type.name !== "string") {
+			if (target_is_simple && (target_type.name !== "string" || status.stack_offsets?.has(name))) {
 				const size = aarch64_size(target_type.name);
 				const signed =
 					target_type.name.startsWith("int") ||

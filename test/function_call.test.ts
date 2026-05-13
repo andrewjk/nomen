@@ -2,112 +2,120 @@ import { expect, describe, test } from "vite-plus/test";
 
 import build from "../src/build";
 import parse from "../src/parse";
+import check_output from "./check_output";
+import parse_with_imports from "./parse_with_imports";
 import test_error from "./test_error";
-import trim_test_build from "./trim_test_build";
 
 // BUILD
 describe("function call build", () => {
-	test("function without params", () => {
+	test("function without params", async () => {
 		const input = `
-func greet = () {}
+func greet = () {
+  Console.write("hello")
+}
 greet()
 `;
-		const parsed = parse(input);
+		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64" });
-		const expected = `
-.p2align 2
-greet:
-stp x29, x30, [sp, #-16]!
-mov x29, sp
-.return_0:
-ldp x29, x30, [sp], #16
-ret
-bl greet
-`;
 		expect(parsed.errors).toEqual([]);
-		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+		await check_output("func_call_no_params", result, "hello");
 	});
 
-	test("function with params", () => {
+	test("function with string params", async () => {
 		const input = `
-func greet = (string name, string position) {}
+func greet = (string name, string title) {
+  Console.write("\\{title} \\{name}")
+}
 greet("Andrew", "Manager")
 `;
-		const parsed = parse(input);
+		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64" });
-		const expected = `
-.p2align 2
-greet:
-stp x29, x30, [sp, #-16]!
-mov x29, sp
-.return_0:
-ldp x29, x30, [sp], #16
-ret
-adr x0, _str_0
-mov x1, x0
-adr x0, _str_1
-bl greet
-
-_str_0: .asciz "Manager"
-_str_1: .asciz "Andrew"
-`;
 		expect(parsed.errors).toEqual([]);
-		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+		await check_output("func_call_string_params", result, "Manager Andrew");
 	});
 
-	test("function call with return value", () => {
+	test("function call with return value", async () => {
 		const input = `
 func add = (int a, int b, out int) => a + b
 const x = add(1, 2)
+Console.write("\\{x}")
 `;
-		const parsed = parse(input);
+		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64" });
-		const expected = `
-.p2align 2
-add:
-stp x29, x30, [sp, #-16]!
-mov x29, sp
-mov x2, x1
-mov x1, x0
-add x0, x1, x2
-b .return_0
-.return_0:
-ldp x29, x30, [sp], #16
-ret
-x: .space 8
-ldr x0, =2
-mov x1, x0
-ldr x0, =1
-bl add
-adr x1, x
-str x0, [x1]
-`;
 		expect(parsed.errors).toEqual([]);
-		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+		await check_output("func_call_return_value", result, "3");
 	});
 
-	test("function call with default param", () => {
+	test("function call with default param", async () => {
 		const input = `
-func greet = (string name, string greeting = "Hello") {}
+func greet = (string name, string greeting = "Hello") {
+  Console.write("\\{greeting} \\{name}")
+}
 greet("Andrew")
 `;
-		const parsed = parse(input);
+		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64" });
-		const expected = `
-.p2align 2
-greet:
-stp x29, x30, [sp, #-16]!
-mov x29, sp
-.return_0:
-ldp x29, x30, [sp], #16
-ret
-adr x0, _str_0
-bl greet
-
-_str_0: .asciz "Andrew"
-`;
 		expect(parsed.errors).toEqual([]);
-		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+		await check_output("func_call_default_param", result, "Hello Andrew");
+	});
+
+	test("function call with all default params provided", async () => {
+		const input = `
+func greet = (string name, string greeting = "Hello") {
+  Console.write("\\{greeting} \\{name}")
+}
+greet("Andrew", "Hi")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("func_call_override_default", result, "Hi Andrew");
+	});
+
+	test("chained function calls", async () => {
+		const input = `
+func double = (int x, out int) => x * 2
+func triple = (int x, out int) => x * 3
+Console.write("\\{triple(double(2))}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("func_call_chained", result, "12");
+	});
+
+	test("function call in expression", async () => {
+		const input = `
+func get_val = (out int) => 10
+Console.write("\\{get_val() + 5}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("func_call_in_expr", result, "15");
+	});
+
+	test("function call with int params", async () => {
+		const input = `
+func multiply = (int a, int b, out int) => a * b
+Console.write("\\{multiply(4, 7)}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("func_call_int_params", result, "28");
+	});
+
+	test("function call with function params", async () => {
+		const input = `
+func multiply = (int a, out int) => a * 5
+func apply_func_to_num = (int num, func (int, out int) f, out int) => f(num)
+Console.write("\\{apply_func_to_num(4, multiply)}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("func_call_func_param", result, "20");
 	});
 });
 

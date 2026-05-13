@@ -83,11 +83,14 @@ func add = (var int x) {
 .p2align 2
 add:
 stp x29, x30, [sp, #-16]!
+sub sp, sp, #16
 mov x29, sp
-mov x2, x0
+str x0, [x29, #0]
 ldr x0, =5
-str x0, [x2]
+add x1, x29, #0
+str x0, [x1]
 .return_0:
+add sp, sp, #16
 ldp x29, x30, [sp], #16
 ret
 `;

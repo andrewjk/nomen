@@ -133,7 +133,9 @@ Console.write("\\{undefined_var}")
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors.length).toBeGreaterThan(0);
-		expect(parsed.errors.some((e) => e.message.includes("Unknown value: undefined_var"))).toBe(true);
+		expect(parsed.errors.some((e) => e.message.includes("Unknown value: undefined_var"))).toBe(
+			true,
+		);
 	});
 
 	test("invalid expression in interpolation", () => {

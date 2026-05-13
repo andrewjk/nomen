@@ -7,6 +7,7 @@ export default class FunctionCallNode extends BaseNode {
 	params: BaseNode[];
 
 	is_static?: boolean;
+	is_func_param?: boolean;
 
 	constructor(start: number, name: string, type?: Type, params?: BaseNode[], is_static?: boolean) {
 		super("func_call", start);

@@ -37,39 +37,11 @@ export default function parse_function(
 
 		if (expect(")", status)) {
 			if (accept("=>", status)) {
-				// Arrow syntax: func = (...) => ...
-				const next = peek_current(status);
-				if (next === "(") {
-					// Arrow with parentheses: func = (...) => (expr)
-					accept("(", status);
-					func.has_body = true;
-					func.has_return = true;
-					const return_expr = parse_expression(status);
-					expect(")", status);
-					func.statements.push(new ReturnNode(return_expr.start, return_expr));
-				} else if (next === "{") {
-					// Arrow with block: func = (...) => { ... }
-					const has_body = parent.node_type === "trait" ? accept("{", status) : expect("{", status);
-					if (has_body) {
-						func.has_body = true;
-
-						status.stack.push(func);
-						parse_statement(status);
-						expect("}", status);
-						status.stack.pop();
-
-						// Arrow with block always has implicit return
-						func.has_return = true;
-					}
-				} else {
-					// Direct expression: func = (...) => expr
-					func.has_body = true;
-					func.has_return = true;
-					const return_expr = parse_expression(status);
-					func.statements.push(new ReturnNode(return_expr.start, return_expr));
-				}
+				func.has_body = true;
+				func.has_return = true;
+				const return_expr = parse_expression(status);
+				func.statements.push(new ReturnNode(return_expr.start, return_expr));
 			} else {
-				// Block body: func = (...) { ... }
 				const has_body = parent.node_type === "trait" ? accept("{", status) : expect("{", status);
 				if (has_body) {
 					func.has_body = true;
@@ -79,7 +51,6 @@ export default function parse_function(
 					expect("}", status);
 					status.stack.pop();
 
-					// TODO: check all branches
 					if (func.return_type.name && !func.has_return) {
 						add_error(status, `Missing return`, status.tokens[status.i - 2].i);
 					}
@@ -108,12 +79,10 @@ export default function parse_function(
 function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: ParseStatus) {
 	const param_start = get_index(status);
 
-	// Check for return type: `out type`
 	if (accept("out", status)) {
 		func.return_type_start = get_index(status);
 		func.return_type = parse_type(status);
 
-		// Next parameter
 		if (accept(",", status)) {
 			parse_function_parameter(parent, func, status);
 		}
@@ -123,7 +92,6 @@ function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: 
 	const param = new ParameterNode(param_start, "");
 	func.params.push(param);
 
-	// Optional parameter declaration
 	if (accept("var", status)) {
 		param.declaration = "var";
 	} else if (accept("cp", status)) {
@@ -131,26 +99,45 @@ function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: 
 		param.is_copied = true;
 	}
 
-	// Try parsing a type, and backtrack if it turns out to be a name with default value
 	const saved_i = status.i;
 	const saved_errors_length = status.errors.length;
 	param.type_start = get_index(status);
 	param.type = parse_type(status);
 
-	// If next token is '=' or ')' or ',', what we parsed was actually a name
-	const next = peek_current(status);
-	if (next === "=" || next === ")" || next === "," || status.i >= status.tokens.length) {
-		status.i = saved_i;
-		status.errors.length = saved_errors_length;
-		param.type = new Type("");
-		param.type_start = undefined;
-		param.name = consume(status);
-	} else {
+	if (param.type.name === "func" && accept("(", status)) {
+		const func_type_params: ParameterNode[] = [];
+
+		if (peek_current(status) !== ")") {
+			parse_param_func_type_params(func_type_params, status);
+		}
+
+		if (expect(")", status)) {
+			for (const fp of func_type_params) {
+				if (fp.type.is_return_type) {
+					param.func_return_type = fp.type;
+				} else {
+					if (!param.func_params) param.func_params = [];
+					param.func_params.push(fp);
+				}
+			}
+		}
+
 		param.name_start = get_index(status);
 		param.name = consume(status);
+	} else {
+		const next = peek_current(status);
+		if (next === "=" || next === ")" || next === "," || status.i >= status.tokens.length) {
+			status.i = saved_i;
+			status.errors.length = saved_errors_length;
+			param.type = new Type("");
+			param.type_start = undefined;
+			param.name = consume(status);
+		} else {
+			param.name_start = get_index(status);
+			param.name = consume(status);
+		}
 	}
 
-	// Struct and trait functions can have a special `self` parameter in first place
 	if (
 		param.name === "self" &&
 		func.params.length === 1 &&
@@ -160,7 +147,6 @@ function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: 
 		param.type = new Type((parent as StructNode).name);
 		param.is_self_param = true;
 
-		// Next parameter
 		if (accept(",", status)) {
 			parse_function_parameter(parent, func, status);
 		}
@@ -168,19 +154,42 @@ function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: 
 		return;
 	}
 
-	// Parameter value
 	if (accept("=", status)) {
 		param.default_value_start = get_index(status);
 		param.default_value = parse_expression(status);
 	}
 
-	// Check type or value has been set
 	if (!param.type.name && !param.default_value) {
 		add_error(status, `Expected type or default value`, param.start);
 	}
 
-	// Next parameter
 	if (accept(",", status)) {
 		parse_function_parameter(parent, func, status);
+	}
+}
+
+function parse_param_func_type_params(params: ParameterNode[], status: ParseStatus) {
+	const param_start = get_index(status);
+
+	if (accept("out", status)) {
+		const return_type = parse_type(status);
+		return_type.is_return_type = true;
+		const param = new ParameterNode(param_start, "", return_type);
+		param.type.is_return_type = true;
+		params.push(param);
+
+		if (accept(",", status)) {
+			parse_param_func_type_params(params, status);
+		}
+		return;
+	}
+
+	const param = new ParameterNode(param_start, "");
+	param.type_start = get_index(status);
+	param.type = parse_type(status);
+	params.push(param);
+
+	if (accept(",", status)) {
+		parse_param_func_type_params(params, status);
 	}
 }

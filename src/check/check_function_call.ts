@@ -17,7 +17,6 @@ export default function check_function_call(
 	func: FunctionNode,
 	target_type?: Type,
 ): boolean {
-	// Make sure it's not a priv function that we don't have access to
 	if (
 		func.visibility === "priv" &&
 		!status.structs.find((s) => s.name === target_type?.name)?.privates_visible
@@ -26,11 +25,9 @@ export default function check_function_call(
 		return false;
 	}
 
-	// The node's type is the type that is returned from the function
 	node.type = func.return_type;
 	node.is_static = func.is_static;
 
-	// Check params length (account for default values)
 	let required_param_count = 0;
 	for (const param of func.params) {
 		if (!param.default_value) {
@@ -48,7 +45,15 @@ export default function check_function_call(
 		return false;
 	}
 
-	// Check each param
+	while (node.params.length < func.params.length) {
+		const missing_param = func.params[node.params.length];
+		if (missing_param.default_value) {
+			node.params.push(missing_param.default_value);
+		} else {
+			break;
+		}
+	}
+
 	status.stack.push(node);
 
 	for (let [i, param] of node.params.entries()) {
@@ -67,9 +72,6 @@ export default function check_function_call(
 			"param",
 		);
 
-		// Move the param into a declaration so that we can auto-free it later
-		// TODO: Based on its expression type as well as its node_type
-		// e.g. if it's a function that returns a string
 		if (param.node_type !== "value") {
 			const declaration_name = `_param_${status.var_name_counter.value++}`;
 			status.allocations.push(

@@ -11,6 +11,8 @@ export default class ParameterNode extends BaseNode {
 	default_value_start?: number;
 	is_self_param?: boolean;
 	is_copied?: boolean;
+	func_params?: ParameterNode[];
+	func_return_type?: Type;
 
 	constructor(
 		start: number,

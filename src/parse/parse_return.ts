@@ -10,23 +10,19 @@ import get_index from "./utils/get_index.ts";
 export default function parse_return(status: ParseStatus) {
 	const start = get_index(status);
 	accept("return", status);
-	// TODO: Allow this anywhere?
-	accept("~", status);
+	accept("=>", status);
 	const value = parse_expression(status);
 	const ret = new ReturnNode(start, value);
 
 	add_to_parent(ret, "Return statement", status);
 
-	// Go up to stack looking for a returning node
-	let func: ReturningNode | null = null;
 	for (let i = status.stack.length - 1; i >= 0; i--) {
 		if (is_returning_node(status.stack[i])) {
-			func = status.stack[i] as ReturningNode;
-			break;
+			const returning = status.stack[i] as ReturningNode;
+			returning.has_return = true;
+			if (status.stack[i].node_type === "func") {
+				break;
+			}
 		}
-	}
-
-	if (func) {
-		func.has_return = true;
 	}
 }

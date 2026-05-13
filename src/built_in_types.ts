@@ -28,6 +28,8 @@ const built_in_types = [
 	//      const string = "hello, \{name}" is fixed size and on the stack
 	//      var string = "hello" is on the heap
 	"string",
+	// Function type
+	"func",
 ];
 
 export default built_in_types;
