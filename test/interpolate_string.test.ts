@@ -1,82 +1,162 @@
 import { expect, describe, test } from "vite-plus/test";
 
 import build from "../src/build";
-import parse_with_imports from "../tests/ziglings/parse_with_imports";
-import trim_test_build from "./trim_test_build";
+import check_output from "./check_output";
+import parse_with_imports from "./parse_with_imports";
 
 // BUILD
 describe("interpolate string build", () => {
-	test("interpolate string", () => {
+	test("basic interpolation", async () => {
 		const input = `
-import System
-
 const x = 5
-const z = "\\{x} is less than \\{x + 5}!"
+Console.write("\\{x} is the value")
 `;
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64" });
-		const expected = `
-x: .quad 5
-_param_0: .space 8
-adr x0, x
-ldr x0, [x0]
-bl int_to_string
-adr x1, _param_0
-str x0, [x1]
-_param_1: .space 8
-ldr x2, =5
-adr x0, x
-ldr x0, [x0]
-mov x1, x0
-add x0, x1, x2
-bl int_to_string
-adr x1, _param_1
-str x0, [x1]
-z: .space 8
-adr x0, _param_1
-ldr x0, [x0]
-mov x2, x0
-adr x0, _param_0
-ldr x0, [x0]
-mov x1, x0
-adr x0, _str_0
-bl _string_interpolate_2
-adr x1, z
-str x0, [x1]
-
-_str_0: .asciz "%s is less than %s!"
-.p2align 2
-_string_interpolate_2:
-stp x29, x30, [sp, #-16]!
-mov x29, sp
-sub sp, sp, #80
-str x0, [sp, #72]
-str x1, [sp, #0]
-str x2, [sp, #8]
-mov x0, xzr
-mov x1, xzr
-ldr x2, [sp, #72]
-ldr x3, [sp, #0]
-ldr x4, [sp, #8]
-bl _snprintf
-add x0, x0, #1
-str x0, [sp, #56]
-bl _malloc
-str x0, [sp, #64]
-ldr x0, [sp, #64]
-ldr x1, [sp, #56]
-ldr x2, [sp, #72]
-ldr x3, [sp, #0]
-ldr x4, [sp, #8]
-bl _snprintf
-ldr x0, [sp, #64]
-add sp, sp, #80
-ldp x29, x30, [sp], #16
-ret
-`;
 		expect(parsed.errors).toEqual([]);
-		expect(trim_test_build(result.code.substring(result.code.indexOf("x: .quad 5")))).toEqual(
-			trim_test_build(expected),
+		await check_output("interpolate_basic", result, "5 is the value");
+	});
+
+	test("multiple interpolations", async () => {
+		const input = `
+const x = 5
+const y = 10
+Console.write("\\{x} + \\{y} = \\{x + y}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("interpolate_multiple", result, "5 + 10 = 15");
+	});
+
+	test("interpolation with expression", async () => {
+		const input = `
+const x = 5
+Console.write("\\{x * 2} is double")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("interpolate_expression", result, "10 is double");
+	});
+
+	test("interpolation with string variable", async () => {
+		const input = `
+const name = "world"
+Console.write("Hello \\{name}!")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("interpolate_string", result, "Hello world!");
+	});
+
+	test("interpolation with negative number", async () => {
+		const input = `
+const x = -5
+Console.write("Value: \\{x}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("interpolate_negative", result, "Value: -5");
+	});
+
+	test("interpolation with zero", async () => {
+		const input = `
+const x = 0
+Console.write("Zero: \\{x}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("interpolate_zero", result, "Zero: 0");
+	});
+
+	test("interpolation in loop", async () => {
+		const input = `
+var i = 0
+while i < 3 {
+  Console.write("\\{i} ")
+  i = i + 1
+}
+Console.write("\\n")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("interpolate_loop", result, "0 1 2 \n");
+	});
+
+	test("interpolation with large number", async () => {
+		const input = `
+const big = 123456789
+Console.write("Big: \\{big}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("interpolate_large", result, "Big: 123456789");
+	});
+});
+
+// ERRORS
+describe("interpolate string errors", () => {
+	test("undefined variable in interpolation", () => {
+		const input = `
+Console.write("\\{undefined_var}")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors.length).toBeGreaterThan(0);
+		expect(parsed.errors.some((e) => e.message.includes("Unknown value: undefined_var"))).toBe(
+			true,
 		);
+	});
+
+	test("invalid expression in interpolation", () => {
+		const input = `
+Console.write("\\{x +}")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors.length).toBeGreaterThan(0);
+	});
+
+	test("nested interpolation", () => {
+		const input = `
+const x = 5
+Console.write("\\{\\{x}}")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors.length).toBeGreaterThan(0);
+	});
+
+	test("unclosed interpolation brace", () => {
+		const input = `
+Console.write("\\{x")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors.length).toBeGreaterThan(0);
+	});
+
+	test("interpolation with type mismatch", () => {
+		const input = `
+struct Point {
+  x: int
+  y: int
+}
+
+const p = Point { x: 1, y: 2 }
+Console.write("\\{p}")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors.length).toBeGreaterThan(0);
+	});
+
+	test("empty interpolation", () => {
+		const input = `
+Console.write("\\{}")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors.length).toBeGreaterThan(0);
 	});
 });
