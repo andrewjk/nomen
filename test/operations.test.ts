@@ -177,7 +177,7 @@ Console.write("\\{x}")
 		await check_output("operations_series", result, "4");
 	});
 
-	test.skip("operations in function call", async () => {
+	test("operations in function call", async () => {
 		const input = `
 func add = (int a, int b, out int) -> {
   return a + b
