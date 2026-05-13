@@ -70,6 +70,15 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 		// body
 		build_block_node(node, status);
 
+		// update clause
+		if (node.update) {
+			status.code += `${continue_label}:\n`;
+			build_node(node.update, status);
+			if (!status.code.endsWith("\n")) {
+				status.code += "\n";
+			}
+		}
+
 		// increment
 		build_node(node.item, status);
 		status.code += `\nadd x0, x0, #1\n`;
