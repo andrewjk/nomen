@@ -10,6 +10,7 @@ export type NodeType =
 	| "grouped"
 	| "op"
 	| "if"
+	| "switch"
 	| "for"
 	| "while"
 	| "func_call"

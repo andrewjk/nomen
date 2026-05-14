@@ -19,6 +19,7 @@ import parse_panic_or_todo from "./parse_panic_or_todo.ts";
 import parse_raw from "./parse_raw.ts";
 import parse_return from "./parse_return.ts";
 import parse_struct from "./parse_struct.ts";
+import parse_switch from "./parse_switch.ts";
 import parse_trait from "./parse_trait.ts";
 import parse_visibility from "./parse_visibility.ts";
 import parse_while_loop from "./parse_while_loop.ts";
@@ -79,6 +80,11 @@ export default function parse_statement(status: ParseStatus) {
 			case "if": {
 				const if_else = parse_if_else(status);
 				add_to_parent(if_else, "If expression", status);
+				break;
+			}
+			case "switch": {
+				const switch_node = parse_switch(status);
+				add_to_parent(switch_node, "Switch expression", status);
 				break;
 			}
 			case "else": {

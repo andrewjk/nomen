@@ -17,6 +17,7 @@ import RangeNode from "../nodes/RangeNode.ts";
 import ReturnNode from "../nodes/ReturnNode.ts";
 import RootNode from "../nodes/RootNode.ts";
 import StructNode from "../nodes/StructNode.ts";
+import SwitchNode from "../nodes/SwitchNode.ts";
 import TraitNode from "../nodes/TraitNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import WhileLoopNode from "../nodes/WhileLoopNode.ts";
@@ -34,6 +35,7 @@ import check_operation_node from "./check_operation_node.ts";
 import check_range_node from "./check_range_node.ts";
 import check_return_node from "./check_return_node.ts";
 import check_struct_node from "./check_struct_node.ts";
+import check_switch_node from "./check_switch_node.ts";
 import check_trait_node from "./check_trait_node.ts";
 import check_value_node from "./check_value_node.ts";
 import check_while_loop_node from "./check_while_loop_node.ts";
@@ -77,6 +79,10 @@ export default function check_node(node: BaseNode, status: CheckStatus): boolean
 		}
 		case "if": {
 			check_if_else_node(node as IfElseNode, status);
+			break;
+		}
+		case "switch": {
+			check_switch_node(node as SwitchNode, status);
 			break;
 		}
 		case "for": {

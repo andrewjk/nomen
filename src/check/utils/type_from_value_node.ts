@@ -9,6 +9,7 @@ import GroupedNode from "../../nodes/GroupedNode.ts";
 import IfElseNode from "../../nodes/IfElseNode.ts";
 import OperationNode from "../../nodes/OperationNode.ts";
 import RangeNode from "../../nodes/RangeNode.ts";
+import SwitchNode from "../../nodes/SwitchNode.ts";
 import Type from "../../nodes/Type.ts";
 import ValueNode from "../../nodes/ValueNode.ts";
 import type CheckStatus from "../CheckStatus.ts";
@@ -41,6 +42,9 @@ export default function type_from_value_node(node: BaseNode, status: CheckStatus
 		}
 		case "if": {
 			return (node as IfElseNode).return_type;
+		}
+		case "switch": {
+			return (node as SwitchNode).return_type;
 		}
 		case "grouped": {
 			return type_from_value_node((node as GroupedNode).value, status);

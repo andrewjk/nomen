@@ -15,6 +15,7 @@ import RangeNode from "../nodes/RangeNode.ts";
 import RawNode from "../nodes/RawNode.ts";
 import ReturnNode from "../nodes/ReturnNode.ts";
 import RootNode from "../nodes/RootNode.ts";
+import SwitchNode from "../nodes/SwitchNode.ts";
 import TodoNode from "../nodes/TodoNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import WhileLoopNode from "../nodes/WhileLoopNode.ts";
@@ -34,6 +35,7 @@ import build_panic_node from "./build_panic_node.ts";
 import build_range_node from "./build_range_node.ts";
 import build_raw_node from "./build_raw_node.ts";
 import build_return_node from "./build_return_node.ts";
+import build_switch_node from "./build_switch_node.ts";
 import build_todo_node from "./build_todo_node.ts";
 import build_value_node from "./build_value_node.ts";
 import build_while_loop_node from "./build_while_loop_node.ts";
@@ -81,6 +83,11 @@ export default function build_node(node: BaseNode, status: BuildStatus, with_sem
 		}
 		case "if": {
 			build_if_else_node(node as IfElseNode, status);
+			with_semicolon = false;
+			break;
+		}
+		case "switch": {
+			build_switch_node(node as SwitchNode, status);
 			with_semicolon = false;
 			break;
 		}

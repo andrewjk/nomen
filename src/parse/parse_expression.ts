@@ -14,6 +14,7 @@ import parse_array_value from "./parse_array_value.ts";
 import parse_function_call_parameter from "./parse_function_call_parameter.ts";
 import parse_if_else from "./parse_if_else.ts";
 import parse_string_interpolation from "./parse_string_interpolation.ts";
+import parse_switch from "./parse_switch.ts";
 import type ParseStatus from "./ParseStatus.ts";
 import accept from "./utils/accept.ts";
 import consume from "./utils/consume.ts";
@@ -47,6 +48,9 @@ function parse_primary(status: ParseStatus, value: string): BaseNode {
 		}
 		case "if": {
 			return parse_if_else(status);
+		}
+		case "switch": {
+			return parse_switch(status);
 		}
 		default: {
 			if (value && value.startsWith('"') && (value.length === 1 || !value.endsWith('"'))) {
