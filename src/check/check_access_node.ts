@@ -58,7 +58,7 @@ function check_access_field_node(
 				const trait = status.traits.find((s) => s.name === trait_name);
 				if (trait) {
 					field = trait.fields.find((f) => f.name === node.name && f.value);
-					break;
+					if (field) break;
 				}
 			}
 		}
@@ -114,7 +114,7 @@ function check_access_function_node(
 				const trait = status.traits.find((s) => s.name === trait_name);
 				if (trait) {
 					func = trait.functions.find((f) => f.name === node.name && f.has_body);
-					break;
+					if (func) break;
 				}
 			}
 		}

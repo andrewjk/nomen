@@ -15,14 +15,6 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.scoped_declarations = [];
 
 	const param_regs = ["x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7"];
-	status.function_param_regs = new Map();
-	status.function_param_vars = new Set();
-	for (let i = 0; i < node.params.length; i++) {
-		status.function_param_regs.set(node.params[i].name, param_regs[i]);
-		if (node.params[i].declaration === "var") {
-			status.function_param_vars.add(node.params[i].name);
-		}
-	}
 
 	const old_return_label = status.function_return_label;
 	const return_label = `.return_${label_counter++}`;
@@ -50,38 +42,58 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 
 	const has_body = node.has_body && node.statements.length > 0;
 
-	if (has_body) {
-		for (let i = 0; i < node.params.length; i++) {
-			const param = node.params[i];
-			const size = aarch64_size(param.type.name);
-			const offset = allocate_stack_space(status, size, size);
-			status.stack_offsets!.set(param.name, offset);
-		}
-	}
+	const callee_saved = ["x19", "x20", "x21", "x22"];
+	const callee_map = new Map<string, string>();
+	let callee_idx = 0;
 
 	status.code += `.p2align 2\n`;
 	status.code += `${node.name}:\n`;
 	status.code += `stp x29, x30, [sp, #-16]!\n`;
-	const stack_placeholder = `STACK_SIZE_${node.name}`;
-	status.code += `sub sp, sp, #${stack_placeholder}\n`;
-	status.code += `mov x29, sp\n`;
 
 	if (has_body) {
 		for (let i = 0; i < node.params.length; i++) {
 			const param = node.params[i];
-			const offset = status.stack_offsets!.get(param.name)!;
-			const size = aarch64_size(param.type.name);
-			const reg = param_regs[i];
-			if (size === 1) {
-				status.code += `strb ${reg.replace("x", "w")}, [x29, #${offset}]\n`;
-			} else if (size === 4) {
-				status.code += `str ${reg.replace("x", "w")}, [x29, #${offset}]\n`;
-			} else {
-				status.code += `str ${reg}, [x29, #${offset}]\n`;
+			const is_struct_type = !!status.structs.find(
+				(s) => s.name === param.type.name && !s.is_simple_type,
+			);
+			if (is_struct_type && callee_idx < callee_saved.length) {
+				const saved_reg = callee_saved[callee_idx++];
+				status.code += `str ${saved_reg}, [sp, #-16]!\n`;
+				status.code += `mov ${saved_reg}, ${param_regs[i]}\n`;
+				callee_map.set(param.name, saved_reg);
 			}
 		}
-		status.function_param_regs = new Map();
-		status.function_param_vars = new Set();
+	}
+
+	const stack_placeholder = `STACK_SIZE_${node.name}`;
+	status.code += `sub sp, sp, #${stack_placeholder}\n`;
+	status.code += `mov x29, sp\n`;
+
+	status.function_param_regs = new Map();
+	status.function_param_vars = new Set();
+
+	if (has_body) {
+		for (let i = 0; i < node.params.length; i++) {
+			const param = node.params[i];
+			if (callee_map.has(param.name)) {
+				status.function_param_regs.set(param.name, callee_map.get(param.name)!);
+			} else {
+				const size = aarch64_size(param.type.name);
+				const offset = allocate_stack_space(status, size, size);
+				status.stack_offsets!.set(param.name, offset);
+				const reg = param_regs[i];
+				if (size === 1) {
+					status.code += `strb ${reg.replace("x", "w")}, [x29, #${offset}]\n`;
+				} else if (size === 4) {
+					status.code += `str ${reg.replace("x", "w")}, [x29, #${offset}]\n`;
+				} else {
+					status.code += `str ${reg}, [x29, #${offset}]\n`;
+				}
+			}
+			if (param.declaration === "var") {
+				status.function_param_vars.add(param.name);
+			}
+		}
 	}
 
 	build_block_node(node, status);
@@ -98,6 +110,11 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	if (total_stack > 0) {
 		status.code += `add sp, sp, #${total_stack}\n`;
 	}
+
+	for (let ci = callee_idx - 1; ci >= 0; ci--) {
+		status.code += `ldr ${callee_saved[ci]}, [sp], #16\n`;
+	}
+
 	status.code += `ldp x29, x30, [sp], #16\n`;
 	status.code += `ret\n`;
 

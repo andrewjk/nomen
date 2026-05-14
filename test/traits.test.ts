@@ -50,7 +50,7 @@ Console.write(f.greet())
 		await check_output("trait_method_override", result, "hello from Frank");
 	});
 
-	test.skip("trait with default method implementation", async () => {
+	test("trait with default method implementation", async () => {
 		const input = `
 trait Person {
   var string name
@@ -91,7 +91,7 @@ Console.write("\\{c.count}")
 		await check_output("trait_int_field", result, "5");
 	});
 
-	test.skip("struct with multiple traits", async () => {
+	test("struct with multiple traits", async () => {
 		const input = `
 trait Greeter {
   func greet = (out string) {
@@ -120,11 +120,11 @@ Console.write("\\{f.greet()} \\{f.dance()}")
 		await check_output("trait_multiple", result, "hello dance");
 	});
 
-	test.skip("trait method using struct fields", async () => {
+	test("trait method using struct fields", async () => {
 		const input = `
 trait Person {
   var string name
-  func greet = (out string) {
+  func greet = (self, out string) {
     return self.name
   }
 }
@@ -142,11 +142,11 @@ Console.write(f.greet())
 		await check_output("trait_method_using_fields", result, "Frank");
 	});
 
-	test.skip("trait with int field and method", async () => {
+	test("trait with int field and method", async () => {
 		const input = `
 trait Counter {
   var int count
-  func value = (out int) {
+  func value = (self, out int) {
     return self.count
   }
 }
@@ -278,7 +278,7 @@ struct MyCounter: Counter {
 
 var c = MyCounter()
 c.count = 10
-Console.write("\{c.count}")
+Console.write("\\{c.count}")
 `;
 	const parsed = parse_with_imports(input);
 	const result = build(parsed.root, { arch: "aarch64" });
@@ -297,7 +297,7 @@ struct MyStatus: Status {
 }
 
 const s = MyStatus()
-Console.write("\{s.active}")
+Console.write("\\{s.active}")
 `;
 	const parsed = parse_with_imports(input);
 	const result = build(parsed.root, { arch: "aarch64" });

@@ -19,6 +19,7 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 	} else {
 		build_init_function(node, status);
 		build_struct_functions(node, status);
+		build_trait_functions(node, status);
 	}
 
 	if (is_nested) {
@@ -97,8 +98,6 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		status.stack_size = 0;
 		status.stack_offsets = new Map();
 
-		const param_regs = ["x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7"];
-
 		const return_label = `.return_${node.name}_${func.name}`;
 		status.function_return_label = return_label;
 
@@ -117,6 +116,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 			status.code += `mov x19, x0\n`;
 		}
 
+		const param_regs = ["x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7"];
 		const callee_saved = ["x19", "x20", "x21", "x22"];
 		let callee_idx = 0;
 		if (needs_x19) {
@@ -208,5 +208,98 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		status.struct_return_buffer = undefined;
 		status.stack_size = old_stack_size;
 		status.stack_offsets = old_stack_offsets;
+	}
+}
+
+function build_trait_functions(node: StructNode, status: BuildStatus) {
+	for (const trait_name of node.traits) {
+		const trait = status.traits.find((t) => t.name === trait_name);
+		if (!trait) continue;
+
+		for (const func of trait.functions) {
+			if (func.name === "init") continue;
+			if (node.functions.find((f) => f.name === func.name)) continue;
+
+			const func_label = `${node.name}_${func.name}`;
+			const trait_func_label = `${trait_name}_${func.name}`;
+
+			status.code += `.p2align 2\n`;
+			status.code += `${func_label}:\n`;
+			status.code += `b ${trait_func_label}\n`;
+		}
+	}
+
+	for (const trait_name of node.traits) {
+		const trait = status.traits.find((t) => t.name === trait_name);
+		if (!trait) continue;
+
+		for (const func of trait.functions) {
+			if (!func.has_body) continue;
+
+			const old_scoped_declarations = status.scoped_declarations;
+			const old_stack_size = status.stack_size;
+			const old_stack_offsets = status.stack_offsets;
+			const old_param_regs = status.function_param_regs;
+			const old_param_vars = status.function_param_vars;
+			const old_return_label = status.function_return_label;
+
+			status.scoped_declarations = [];
+			status.stack_size = 0;
+			status.stack_offsets = new Map();
+
+			const trait_func_label = `${trait_name}_${func.name}`;
+			const return_label = `.return_${trait_name}_${func.name}`;
+			status.function_return_label = return_label;
+
+			const stack_placeholder = `STACK_SIZE_${trait_func_label}`;
+
+			status.code += `.p2align 2\n`;
+			status.code += `${trait_func_label}:\n`;
+			status.code += `stp x29, x30, [sp, #-16]!\n`;
+
+			const is_self_param = func.params[0]?.is_self_param;
+			const self_is_var = is_self_param && func.params[0]?.declaration === "var";
+			const needs_x19 = is_self_param && !self_is_var;
+			if (needs_x19) {
+				status.code += `str x19, [sp, #-16]!\n`;
+				status.code += `mov x19, x0\n`;
+			}
+
+			status.function_param_regs = new Map();
+			status.function_param_vars = new Set();
+
+			if (needs_x19) {
+				status.function_param_regs.set("self", "x19");
+			}
+
+			status.code += `sub sp, sp, #${stack_placeholder}\n`;
+			status.code += `mov x29, sp\n`;
+
+			build_block_node(func, status);
+
+			status.code += `${return_label}:\n`;
+
+			const total_stack = Math.ceil((status.stack_size || 0) / 16) * 16;
+			status.code = status.code.replace(
+				`sub sp, sp, #${stack_placeholder}`,
+				total_stack > 0 ? `sub sp, sp, #${total_stack}` : `// no stack needed`,
+			);
+			if (total_stack > 0) {
+				status.code += `add sp, sp, #${total_stack}\n`;
+			}
+
+			if (needs_x19) {
+				status.code += `ldr x19, [sp], #16\n`;
+			}
+			status.code += `ldp x29, x30, [sp], #16\n`;
+			status.code += `ret\n`;
+
+			status.scoped_declarations = old_scoped_declarations;
+			status.function_param_regs = old_param_regs;
+			status.function_param_vars = old_param_vars;
+			status.function_return_label = old_return_label;
+			status.stack_size = old_stack_size;
+			status.stack_offsets = old_stack_offsets;
+		}
 	}
 }
