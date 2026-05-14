@@ -82,7 +82,6 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 	status.stack_offsets = old_stack_offsets;
 }
 
-
 function build_struct_functions(node: StructNode, status: BuildStatus) {
 	for (const func of node.functions) {
 		if (func.name === "init") continue;

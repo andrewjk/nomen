@@ -140,6 +140,7 @@ bl _string_interpolate_1
 str x0, [x29, #24]
 ldr x0, [x29, #24]
 bl Console_write
+.for_inc_0:
 ldr x0, [x29, #8]
 add x0, x0, #1
 str x0, [x29, #8]
@@ -173,6 +174,7 @@ bl _string_interpolate_1
 str x0, [x29, #56]
 ldr x0, [x29, #56]
 bl Console_write
+.for_inc_1:
 ldr x0, [x29, #40]
 add x0, x0, #1
 str x0, [x29, #40]

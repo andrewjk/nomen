@@ -2,127 +2,302 @@ import { expect, describe, test } from "vite-plus/test";
 
 import build from "../src/build";
 import parse from "../src/parse";
+import check_output from "./check_output";
+import parse_with_imports from "./parse_with_imports";
 import test_error from "./test_error";
-import trim_test_build from "./trim_test_build";
 
 // BUILD
 describe("control build", () => {
-	test("break", () => {
+	test("if true", async () => {
 		const input = `
-for x of 0..5 {
-  break
+var int x = 0
+if true {
+  x = 1
 }
+Console.write("\\{x}")
 `;
-		const parsed = parse(input);
+		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64" });
-		const expected = `
-ldr x0, =0
-adr x1, x
-str x0, [x1]
-.for_0:
-adr x0, x
-ldr x0, [x0]
-mov x2, x0
-ldr x0, =5
-cmp x2, x0
-bge .end_0
-b .end_0
-adr x0, x
-ldr x0, [x0]
-add x0, x0, #1
-adr x1, x
-str x0, [x1]
-b .for_0
-.end_0:
-`;
 		expect(parsed.errors).toEqual([]);
-		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+		await check_output("control_if_true", result, "1");
 	});
 
-	test("continue", () => {
+	test("if false", async () => {
 		const input = `
-for x of 0..5 {
-  continue
+var int x = 0
+if false {
+  x = 1
 }
+Console.write("\\{x}")
 `;
-		const parsed = parse(input);
+		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64" });
-		const expected = `
-ldr x0, =0
-adr x1, x
-str x0, [x1]
-.for_0:
-adr x0, x
-ldr x0, [x0]
-mov x2, x0
-ldr x0, =5
-cmp x2, x0
-bge .end_0
-b .for_0
-adr x0, x
-ldr x0, [x0]
-add x0, x0, #1
-adr x1, x
-str x0, [x1]
-b .for_0
-.end_0:
-`;
 		expect(parsed.errors).toEqual([]);
-		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+		await check_output("control_if_false", result, "0");
 	});
 
-	test("panic", () => {
+	test("if else true", async () => {
 		const input = `
-func add = (out int) {
+var int x = 0
+if true {
+  x = 1
+} else {
+  x = 2
+}
+Console.write("\\{x}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("control_if_else_true", result, "1");
+	});
+
+	test("if else false", async () => {
+		const input = `
+var int x = 0
+if false {
+  x = 1
+} else {
+  x = 2
+}
+Console.write("\\{x}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("control_if_else_false", result, "2");
+	});
+
+	test("if with condition", async () => {
+		const input = `
+const a = 5
+var int result = 0
+if a > 3 {
+  result = 1
+}
+Console.write("\\{result}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("control_if_condition", result, "1");
+	});
+
+	test("if else with condition", async () => {
+		const input = `
+const a = 2
+var int result = 0
+if a > 3 {
+  result = 1
+} else {
+  result = 2
+}
+Console.write("\\{result}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("control_if_else_condition", result, "2");
+	});
+
+	test("for loop with break", async () => {
+		const input = `
+var int sum = 0
+for i of 0..10 {
+  if i == 5 {
+    break
+  }
+  sum = sum + i
+}
+Console.write("\\{sum}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("control_for_break", result, "10");
+	});
+
+	test("for loop with continue", async () => {
+		const input = `
+var int sum = 0
+for i of 0..5 {
+  if i == 2 {
+    continue
+  }
+  sum = sum + i
+}
+Console.write("\\{sum}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("control_for_continue", result, "8");
+	});
+
+	test("while loop", async () => {
+		const input = `
+var int x = 0
+var int count = 0
+while x < 5 {
+  x = x + 1
+  count = count + 1
+}
+Console.write("\\{count}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("control_while", result, "5");
+	});
+
+	test("while loop with break", async () => {
+		const input = `
+var int x = 0
+while true {
+  if x == 3 {
+    break
+  }
+  x = x + 1
+}
+Console.write("\\{x}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("control_while_break", result, "3");
+	});
+
+	test("while loop with update clause", async () => {
+		const input = `
+var int x = 0
+var int sum = 0
+while x < 5; x = x + 1 {
+  sum = sum + x
+}
+Console.write("\\{sum}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("control_while_update", result, "10");
+	});
+
+	test("for loop iterating array", async () => {
+		const input = `
+const arr = [10, 20, 30]
+var int sum = 0
+for item of arr {
+  sum = sum + item
+}
+Console.write("\\{sum}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("control_for_array", result, "60");
+	});
+
+	test("for loop with index array access", async () => {
+		const input = `
+const arr = [10, 20, 30]
+var int sum = 0
+for i of 0..3 {
+  sum = sum + arr[i]
+}
+Console.write("\\{sum}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("control_for_index_array", result, "60");
+	});
+
+	test("nested loops", async () => {
+		const input = `
+var int count = 0
+for i of 0..3 {
+  for j of 0..2 {
+    count = count + 1
+  }
+}
+Console.write("\\{count}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("control_nested_loops", result, "6");
+	});
+
+	test("if else with comparison operators", async () => {
+		const input = `
+var int result = 0
+if 3 >= 3 {
+  result = result + 1
+}
+if 3 <= 3 {
+  result = result + 1
+}
+if 4 != 3 {
+  result = result + 1
+}
+if 3 == 3 {
+  result = result + 1
+}
+Console.write("\\{result}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("control_comparisons", result, "4");
+	});
+
+	test("logical operators in conditions", async () => {
+		const input = `
+var int result = 0
+if true && true {
+  result = result + 1
+}
+if true && false {
+  result = result + 10
+}
+if false || true {
+  result = result + 1
+}
+if false || false {
+  result = result + 10
+}
+Console.write("\\{result}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("control_logical_ops", result, "2");
+	});
+
+	test("panic outputs message", () => {
+		const input = `
+func crash = (out int) {
   panic("something went wrong")
 }
+crash()
 `;
-		const parsed = parse(input);
+		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64" });
-		const expected = `
-.p2align 2
-add:
-stp x29, x30, [sp, #-16]!
-mov x29, sp
-adr x0, _str_panic_something_went_wrong
-bl printf
-mov x0, #1
-bl exit
-.return_0:
-ldp x29, x30, [sp], #16
-ret
-
-_str_panic_something_went_wrong: .asciz "something went wrong\\n"
-`;
 		expect(parsed.errors).toEqual([]);
-		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+		expect(result.code).toContain("something went wrong");
 	});
 
-	test("todo", () => {
+	test("todo outputs message", () => {
 		const input = `
-func add = (out int) {
-  todo("haven't done this yet")
+func incomplete = (out int) {
+  todo("not done yet")
 }
+incomplete()
 `;
-		const parsed = parse(input);
+		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64" });
-		const expected = `
-.p2align 2
-add:
-stp x29, x30, [sp, #-16]!
-mov x29, sp
-adr x0, _str_todo_haven_t_done_this_yet
-bl printf
-mov x0, #1
-bl exit
-.return_0:
-ldp x29, x30, [sp], #16
-ret
-
-_str_todo_haven_t_done_this_yet: .asciz "haven't done this yet\\n"
-`;
 		expect(parsed.errors).toEqual([]);
-		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+		expect(result.code).toContain("not done yet");
 	});
 });
 

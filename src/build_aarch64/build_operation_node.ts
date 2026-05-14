@@ -131,10 +131,7 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		);
 		let return_temp_offset: number | undefined;
 		if (return_struct) {
-			return_temp_offset = allocate_stack_space(
-				status,
-				get_struct_size(node.type!.name, status),
-			);
+			return_temp_offset = allocate_stack_space(status, get_struct_size(node.type!.name, status));
 			status.code += `add x8, x29, #${return_temp_offset}\n`;
 		}
 

@@ -12,6 +12,7 @@ function postprocess_macos(code: string): string {
 	code = code.replace(/\bbl printf\b/g, "bl _printf");
 	code = code.replace(/\bbl snprintf\b/g, "bl _snprintf");
 	code = code.replace(/\bbl malloc\b/g, "bl _malloc");
+	code = code.replace(/\bbl exit\b/g, "bl _exit");
 	// macOS entry point must be _main
 	code = code.replace(/\bmain:\n/g, ".globl _main\n_main:\n");
 	return code;

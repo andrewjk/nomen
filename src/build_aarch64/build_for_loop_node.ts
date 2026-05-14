@@ -26,7 +26,8 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 	const item_name = node.item.value;
 	const start_label = `.for_${label}`;
 	const end_label = `.end_${label}`;
-	const continue_label = node.update ? `.for_update_${label}` : start_label;
+	const increment_label = `.for_inc_${label}`;
+	const continue_label = node.update ? `.for_update_${label}` : increment_label;
 
 	status.loop_labels = status.loop_labels || [];
 	status.loop_labels.push({ start: continue_label, end: end_label });
@@ -93,6 +94,7 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 		}
 
 		// increment
+		status.code += `${increment_label}:\n`;
 		build_node(node.item, status);
 		status.code += `\nadd x0, x0, #1\n`;
 		emit_var_store(status, "x0", item_name, 8);
@@ -158,6 +160,7 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 		}
 
 		// increment: index++
+		status.code += `${increment_label}:\n`;
 		emit_var_load(status, "x0", idx_name, 8);
 		status.code += `add x0, x0, #1\n`;
 		emit_var_store(status, "x0", idx_name, 8);
