@@ -2,165 +2,191 @@ import { expect, describe, test } from "vite-plus/test";
 
 import build from "../src/build";
 import parse from "../src/parse";
+import check_output from "./check_output";
+import parse_with_imports from "./parse_with_imports";
 import test_error from "./test_error";
-import trim_test_build from "./trim_test_build";
 
 // BUILD
 describe("struct build", () => {
-	test("struct", () => {
-		const input = `
-struct Person {}
-`;
-		const parsed = parse(input);
-		const result = build(parsed.root, { arch: "aarch64" });
-		const expected = `
-.p2align 2
-Person_init:
-stp x29, x30, [sp, #-16]!
-mov x29, sp
-str xzr, [x0]
-.return_Person_init:
-ldp x29, x30, [sp], #16
-ret
-`;
-		expect(parsed.errors).toEqual([]);
-		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
-	});
-
-	test("struct with fields", () => {
-		const input = `
-struct Person {
-  var string name
-  var age = 0
-}
-`;
-		const parsed = parse(input);
-		const result = build(parsed.root, { arch: "aarch64" });
-		const expected = `
-.p2align 2
-Person_init:
-stp x29, x30, [sp, #-16]!
-mov x29, sp
-str xzr, [x0]
-str x1, [x0, #8]
-ldr x1, =0
-str x1, [x0, #16]
-.return_Person_init:
-ldp x29, x30, [sp], #16
-ret
-`;
-		expect(parsed.errors).toEqual([]);
-		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
-	});
-
-	test("struct with functions", () => {
-		const input = `
-struct Person {
-  func greet = () {}
-}
-`;
-		const parsed = parse(input);
-		const result = build(parsed.root, { arch: "aarch64" });
-		const expected = `
-.p2align 2
-Person_init:
-stp x29, x30, [sp, #-16]!
-mov x29, sp
-str xzr, [x0]
-.return_Person_init:
-ldp x29, x30, [sp], #16
-ret
-.p2align 2
-Person_greet:
-stp x29, x30, [sp, #-16]!
-mov x29, sp
-.return_Person_greet:
-ldp x29, x30, [sp], #16
-ret
-`;
-		expect(parsed.errors).toEqual([]);
-		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
-	});
-
-	test("struct with mutating functions", () => {
+	test("struct with int field", async () => {
 		const input = `
 struct Person {
   var int age = 0
-  func grow = (var self) {
-    self.age = self.age + 1
-  }
 }
+var Person p
+p.age = 25
+Console.write("\\{p.age}")
 `;
-		const parsed = parse(input);
+		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64" });
-		const expected = `
-.p2align 2
-Person_init:
-stp x29, x30, [sp, #-16]!
-mov x29, sp
-str xzr, [x0]
-ldr x1, =0
-str x1, [x0, #8]
-.return_Person_init:
-ldp x29, x30, [sp], #16
-ret
-.p2align 2
-Person_grow:
-stp x29, x30, [sp, #-16]!
-mov x29, sp
-ldr x2, =1
-str x2, [sp, #-16]!
-ldr x0, [x0, #8]
-mov x1, x0
-ldr x2, [sp], #16
-add x0, x1, x2
-mov x2, x0
-str x2, [x0, #8]
-.return_Person_grow:
-ldp x29, x30, [sp], #16
-ret
-`;
 		expect(parsed.errors).toEqual([]);
-		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+		await check_output("struct_int_field", result, "25");
 	});
 
-	test("struct with function returning value", () => {
+	test("struct with string field", async () => {
 		const input = `
 struct Person {
   var string name
-  func get_name = (self, out string) {
-    return self.name
+  var int age = 0
+}
+var Person p = Person("Alice")
+Console.write("\\{p.name}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("struct_string_field", result, "Alice");
+	});
+
+	test("struct with default field value", async () => {
+		const input = `
+struct Counter {
+  var int count = 0
+}
+var Counter c = Counter()
+Console.write("\\{c.count}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("struct_default_field", result, "0");
+	});
+
+	test("struct field get and set", async () => {
+		const input = `
+struct Point {
+  var int x
+  var int y
+}
+var Point p = Point(10, 20)
+Console.write("\\{p.x} \\{p.y}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("struct_field_get_set", result, "10 20");
+	});
+
+	test("struct method returning value", async () => {
+		const input = `
+struct Person {
+  var int age = 0
+  func get_age = (self, out int) {
+    return self.age
   }
 }
+var Person p = Person()
+p.age = 42
+const age = p.get_age()
+Console.write("\\{age}")
 `;
-		const parsed = parse(input);
+		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64" });
-		const expected = `
-.p2align 2
-Person_init:
-stp x29, x30, [sp, #-16]!
-mov x29, sp
-str xzr, [x0]
-str x1, [x0, #8]
-.return_Person_init:
-ldp x29, x30, [sp], #16
-ret
-.p2align 2
-Person_get_name:
-stp x29, x30, [sp, #-16]!
-str x19, [sp, #-16]!
-mov x19, x0
-mov x29, sp
-mov x0, x19
-ldr x0, [x0, #8]
-b .return_Person_get_name
-.return_Person_get_name:
-ldr x19, [sp], #16
-ldp x29, x30, [sp], #16
-ret
-`;
 		expect(parsed.errors).toEqual([]);
-		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+		await check_output("struct_method_return", result, "42");
+	});
+
+	test("struct mutating method", async () => {
+		const input = `
+struct Counter {
+  var int count = 0
+  func increment = (var self) {
+    self.count = self.count + 1
+  }
+}
+var Counter c = Counter()
+c.increment()
+c.increment()
+c.increment()
+Console.write("\\{c.count}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("struct_mutating_method", result, "3");
+	});
+
+	test("struct static function", async () => {
+		const input = `
+struct Calc {
+  func add = (int a, int b, out int) {
+    return a + b
+  }
+}
+const result = Calc.add(3, 7)
+Console.write("\\{result}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("struct_static_func", result, "10");
+	});
+
+	test("struct field update and read", async () => {
+		const input = `
+struct Point {
+  var int x
+  var int y
+}
+var Point p = Point(3, 4)
+p.x = 10
+Console.write("\\{p.x} \\{p.y}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("struct_field_update", result, "10 4");
+	});
+
+	test("struct with method using field arithmetic", async () => {
+		const input = `
+struct Rect {
+  var int width = 0
+  var int height = 0
+  func area = (self, out int) {
+    return self.width * self.height
+  }
+}
+var Rect r = Rect()
+r.width = 6
+r.height = 7
+Console.write("\\{r.area()}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("struct_method_arithmetic", result, "42");
+	});
+
+	test("multiple struct instances", async () => {
+		const input = `
+struct Point {
+  var int x
+  var int y
+}
+var Point a = Point(10, 30)
+var Point b = Point(20, 40)
+Console.write("\\{a.x} \\{b.x}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("struct_multiple_instances", result, "10 20");
+	});
+
+	test("struct constructed with required fields", async () => {
+		const input = `
+struct Point {
+  var int x
+  var int y
+}
+var Point p = Point(3, 4)
+Console.write("\\{p.x} \\{p.y}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("struct_constructed_params", result, "3 4");
 	});
 });
 
@@ -194,6 +220,31 @@ struct Person {
 }
 `;
 		const expected = [test_error(input, "Assignment cannot appear here", 4, 3)];
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual(expected);
+	});
+
+	test("field type mismatch on construction", () => {
+		const input = `
+struct Dog {
+  var string name
+}
+const dog = Dog(5)
+`;
+		const expected = [test_error(input, "Type mismatch in param: int (expected string)", 5, 17)];
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual(expected);
+	});
+
+	test("unknown field access", () => {
+		const input = `
+struct Person {
+  var int age
+}
+var Person p
+const x = p.name
+`;
+		const expected = [test_error(input, "Field not found: name", 6, 13)];
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
 	});

@@ -2,319 +2,206 @@ import { expect, describe, test } from "vite-plus/test";
 
 import build from "../src/build";
 import parse from "../src/parse";
+import check_output from "./check_output";
+import parse_with_imports from "./parse_with_imports";
 import test_error from "./test_error";
-import trim_test_build from "./trim_test_build";
 
 // BUILD
 describe("access build", () => {
-	test("getting field", () => {
+	test("getting int field", async () => {
 		const input = `
 struct Person {
-  var int age
+  var int age = 0
 }
-var Person p
-var x = p.age
+var Person p = Person()
+p.age = 25
+Console.write("\\{p.age}")
 `;
-		const parsed = parse(input);
+		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64" });
-		const expected = `
-.p2align 2
-Person_init:
-stp x29, x30, [sp, #-16]!
-mov x29, sp
-str xzr, [x0]
-str x1, [x0, #8]
-.return_Person_init:
-ldp x29, x30, [sp], #16
-ret
-p: .space 16
-x: .space 8
-adr x0, p
-ldr x0, [x0, #8]
-adr x1, x
-str x0, [x1]
-`;
 		expect(parsed.errors).toEqual([]);
-		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+		await check_output("access_get_field", result, "25");
 	});
 
-	test("getting nested field", () => {
+	test("getting string field", async () => {
 		const input = `
-struct Address {
-  var string line
-}
 struct Person {
-  var int age
-  var Address address
+  var string name
 }
-var Person p
-var x = p.address.line
+var Person p = Person("Alice")
+Console.write("\\{p.name}")
 `;
-		const parsed = parse(input);
+		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64" });
-		const expected = `
-.p2align 2
-Address_init:
-stp x29, x30, [sp, #-16]!
-mov x29, sp
-str xzr, [x0]
-str x1, [x0, #8]
-.return_Address_init:
-ldp x29, x30, [sp], #16
-ret
-.p2align 2
-Person_init:
-stp x29, x30, [sp, #-16]!
-mov x29, sp
-str xzr, [x0]
-str x1, [x0, #8]
-str x2, [x0, #16]
-.return_Person_init:
-ldp x29, x30, [sp], #16
-ret
-p: .space 24
-x: .space 8
-adr x0, p
-ldr x0, [x0, #24]
-adr x1, x
-str x0, [x1]
-`;
 		expect(parsed.errors).toEqual([]);
-		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+		await check_output("access_get_string_field", result, "Alice");
 	});
 
-	test("setting field", () => {
+	test("setting int field", async () => {
 		const input = `
 struct Person {
-  var int age
+  var int age = 0
 }
-var Person p
+var Person p = Person()
 p.age = 20
+Console.write("\\{p.age}")
 `;
-		const parsed = parse(input);
+		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64" });
-		const expected = `
-.p2align 2
-Person_init:
-stp x29, x30, [sp, #-16]!
-mov x29, sp
-str xzr, [x0]
-str x1, [x0, #8]
-.return_Person_init:
-ldp x29, x30, [sp], #16
-ret
-p: .space 16
-ldr x0, =20
-mov x2, x0
-adr x0, p
-str x2, [x0, #8]
-`;
 		expect(parsed.errors).toEqual([]);
-		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+		await check_output("access_set_field", result, "20");
 	});
 
-	test("setting nested field", () => {
+	test("getting and setting field", async () => {
 		const input = `
-struct Address {
-  var string line
-}
 struct Person {
-  var int age
-  var Address address
+  var int age = 0
 }
-var Person p
-p.address.line = "1 main st"
+var Person p = Person()
+p.age = 10
+p.age = 30
+Console.write("\\{p.age}")
 `;
-		const parsed = parse(input);
+		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64" });
-		const expected = `
-.p2align 2
-Address_init:
-stp x29, x30, [sp, #-16]!
-mov x29, sp
-str xzr, [x0]
-str x1, [x0, #8]
-.return_Address_init:
-ldp x29, x30, [sp], #16
-ret
-.p2align 2
-Person_init:
-stp x29, x30, [sp, #-16]!
-mov x29, sp
-str xzr, [x0]
-str x1, [x0, #8]
-str x2, [x0, #16]
-.return_Person_init:
-ldp x29, x30, [sp], #16
-ret
-p: .space 24
-adr x0, _str_0
-mov x2, x0
-adr x0, p
-ldr x0, [x0, #16]
-str x2, [x0, #8]
-
-_str_0: .asciz "1 main st"
-`;
 		expect(parsed.errors).toEqual([]);
-		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+		await check_output("access_get_set_field", result, "30");
 	});
 
-	test("getting function", () => {
+	test("field used in expression", async () => {
+		const input = `
+struct Point {
+  var int x
+  var int y
+}
+var Point p = Point(3, 4)
+const sum = p.x + p.y
+Console.write("\\{sum}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("access_field_expr", result, "7");
+	});
+
+	test("multiple instances independent", async () => {
+		const input = `
+struct Point {
+  var int x
+  var int y
+}
+var Point a = Point(10, 20)
+var Point b = Point(30, 40)
+a.x = 50
+Console.write("\\{a.x} \\{a.y} \\{b.x}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("access_multi_fields", result, "50 20 30");
+	});
+
+	test("method returning value", async () => {
 		const input = `
 struct Person {
-  func age = (out int) {
-    return 20
+  var int age = 0
+  func get_age = (self, out int) {
+    return self.age
   }
 }
-var Person p
-var x = p.age()
+var Person p = Person()
+p.age = 42
+Console.write("\\{p.get_age()}")
 `;
-		const parsed = parse(input);
+		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64" });
-		const expected = `
-.p2align 2
-Person_init:
-stp x29, x30, [sp, #-16]!
-mov x29, sp
-str xzr, [x0]
-.return_Person_init:
-ldp x29, x30, [sp], #16
-ret
-.p2align 2
-Person_age:
-stp x29, x30, [sp, #-16]!
-mov x29, sp
-ldr x0, =20
-b .return_Person_age
-.return_Person_age:
-ldp x29, x30, [sp], #16
-ret
-p: .space 8
-x: .space 8
-bl Person_age
-adr x1, x
-str x0, [x1]
-`;
 		expect(parsed.errors).toEqual([]);
-		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+		await check_output("access_method_return", result, "42");
 	});
 
-	test("getting function after field", () => {
+	test("method using field arithmetic", async () => {
 		const input = `
-struct Address {
-  func line = (out string) {
-    return "123 main st"
+struct Rect {
+  var int width = 0
+  var int height = 0
+  func area = (self, out int) {
+    return self.width * self.height
   }
 }
-struct Person {
-  var int age
-  var Address address
-}
-var Person p
-var x = p.address.line()
+var Rect r = Rect()
+r.width = 5
+r.height = 6
+Console.write("\\{r.area()}")
 `;
-		const parsed = parse(input);
+		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64" });
-		const expected = `
-.p2align 2
-Address_init:
-stp x29, x30, [sp, #-16]!
-mov x29, sp
-str xzr, [x0]
-.return_Address_init:
-ldp x29, x30, [sp], #16
-ret
-.p2align 2
-Address_line:
-stp x29, x30, [sp, #-16]!
-mov x29, sp
-adr x0, _str_0
-b .return_Address_line
-.return_Address_line:
-ldp x29, x30, [sp], #16
-ret
-.p2align 2
-Person_init:
-stp x29, x30, [sp, #-16]!
-mov x29, sp
-str xzr, [x0]
-str x1, [x0, #8]
-str x2, [x0, #16]
-.return_Person_init:
-ldp x29, x30, [sp], #16
-ret
-p: .space 24
-x: .space 8
-bl Address_line
-adr x1, x
-str x0, [x1]
-
-_str_0: .asciz "123 main st"
-`;
 		expect(parsed.errors).toEqual([]);
-		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+		await check_output("access_method_arithmetic", result, "30");
 	});
 
-	test("getting field after function", () => {
+	test("static function on struct", async () => {
 		const input = `
-struct Address {
-  var string line
-}
-struct Person {
-  var int age
-  func address = (out Address) {
-    return Address("123 main st")
+struct Calc {
+  func double = (int x, out int) {
+    return x * 2
   }
 }
-var Person p
-var x = p.address().line
+const result = Calc.double(21)
+Console.write("\\{result}")
 `;
-		const parsed = parse(input);
+		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64" });
-		const expected = `
-.p2align 2
-Address_init:
-stp x29, x30, [sp, #-16]!
-mov x29, sp
-str xzr, [x0]
-str x1, [x0, #8]
-.return_Address_init:
-ldp x29, x30, [sp], #16
-ret
-.p2align 2
-Person_init:
-stp x29, x30, [sp, #-16]!
-mov x29, sp
-str xzr, [x0]
-str x1, [x0, #8]
-.return_Person_init:
-ldp x29, x30, [sp], #16
-ret
-.p2align 2
-Person_address:
-stp x29, x30, [sp, #-16]!
-mov x29, sp
-sub x0, x29, #0
-adr x0, _str_0
-mov x1, x0
-bl Address_init
-sub x0, x29, #0
-b .return_Person_address
-.return_Person_address:
-ldp x29, x30, [sp], #16
-ret
-p: .space 16
-x: .space 8
-adr x0, p
-ldr x0, [x0, #8]
-adr x1, x
-str x0, [x1]
-
-_str_0: .asciz "123 main st"
-`;
 		expect(parsed.errors).toEqual([]);
-		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+		await check_output("access_static_func", result, "42");
+	});
+
+	test("array index access", async () => {
+		const input = `
+var int[3] nums
+nums[0] = 10
+nums[1] = 20
+nums[2] = 30
+Console.write("\\{nums[0]} \\{nums[1]} \\{nums[2]}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("access_array_index", result, "10 20 30");
+	});
+
+	test("array index with variable", async () => {
+		const input = `
+var int[3] nums
+nums[0] = 100
+nums[1] = 200
+nums[2] = 300
+var i = 1
+Console.write("\\{nums[i]}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("access_array_var_index", result, "200");
+	});
+
+	test("field update then method call", async () => {
+		const input = `
+struct Counter {
+  var int count = 0
+  func increment = (var self) {
+    self.count = self.count + 1
+  }
+}
+var Counter c = Counter()
+c.increment()
+c.increment()
+c.increment()
+Console.write("\\{c.count}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("access_field_update_method", result, "3");
 	});
 });
 
@@ -355,6 +242,32 @@ p.age = "hi"
 var age = person.age
 `;
 		const expected = [test_error(input, "Unknown value: person", 2, 11)];
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual(expected);
+	});
+
+	test("field not found", () => {
+		const input = `
+struct Person {
+  var int age
+}
+var Person p
+const x = p.name
+`;
+		const expected = [test_error(input, "Field not found: name", 6, 13)];
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual(expected);
+	});
+
+	test("unknown method", () => {
+		const input = `
+struct Person {
+  var int age
+}
+var Person p
+p.greet()
+`;
+		const expected = [test_error(input, "Function not found: Person.greet", 6, 3)];
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
 	});

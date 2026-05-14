@@ -44,6 +44,28 @@ function emit_compound_op(op: string, status: BuildStatus) {
 	else if (op === "*=") status.code += `mul x0, x1, x0\n`;
 }
 
+function get_base_address(access: AccessNode, status: BuildStatus, reg: string) {
+	if (access.target.node_type === "value") {
+		const name = (access.target as ValueNode).value;
+		const paramReg = status.function_param_regs?.get(name);
+		if (paramReg) {
+			if (paramReg !== reg) {
+				status.code += `mov ${reg}, ${paramReg}\n`;
+			}
+		} else {
+			emit_var_address(status, reg, name);
+		}
+	} else {
+		build_node(access.target, status);
+		if (!status.code.endsWith("\n")) {
+			status.code += "\n";
+		}
+		if (reg !== "x0") {
+			status.code += `mov ${reg}, x0\n`;
+		}
+	}
+}
+
 export default function build_assignment_node(node: AssignmentNode, status: BuildStatus) {
 	if (node.left_value.node_type === "value") {
 		const name = (node.left_value as ValueNode).value;
@@ -53,7 +75,6 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 		const store_reg = get_store_reg("x0", size);
 		if (paramReg) {
 			if (status.function_param_vars?.has(name)) {
-				// var param - address in register, store value
 				status.code += `mov x2, ${paramReg}\n`;
 				build_node(node.right_value, status);
 				if (node.operator) {
@@ -67,12 +88,10 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 				}
 				status.code += `\n${store_op} ${store_reg}, [x2]\n`;
 			} else {
-				// const param - can't assign
 				build_node(node.right_value, status);
 				status.code += `\n// cannot assign to const param\n`;
 			}
 		} else if (node.operator) {
-			// Compound assignment: load current, compute RHS, op, store
 			emit_var_address(status, "x1", name);
 			const load_op = get_load_instruction(size);
 			const load_reg = get_load_reg("x1", size);
@@ -97,42 +116,24 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 			const target_type = type_from_value_node(access.target);
 			const offset = get_field_offset(target_type.name, field_name, status);
 
-			// Evaluate RHS
+			if (access.target.node_type === "value") {
+				const name = (access.target as ValueNode).value;
+				const paramReg = status.function_param_regs?.get(name);
+				if (paramReg && name !== "self" && !status.function_param_vars?.has(name)) {
+					status.code += `// cannot assign to field of value param\n`;
+					return;
+				}
+			}
+
+			get_base_address(access, status, "x0");
+			status.code += `str x0, [sp, #-16]!\n`;
+
 			build_node(node.right_value, status);
 			if (!status.code.endsWith("\n")) {
 				status.code += "\n";
 			}
 			status.code += `mov x2, x0\n`;
-
-			// Get base address - for value targets, just use adr; for others, build_node
-			if (access.target.node_type === "value") {
-				const name = (access.target as ValueNode).value;
-				const paramReg = status.function_param_regs?.get(name);
-				if (paramReg) {
-					if (name === "self" || name === "_self") {
-						// self is already the struct address in x0
-						// but x0 might have been overwritten by RHS evaluation
-						// x2 has the RHS value, so we can use x0 for the address
-						if (paramReg !== "x0") {
-							status.code += `mov x0, ${paramReg}\n`;
-						}
-					} else if (status.function_param_vars?.has(name)) {
-						// var param contains address
-						status.code += `mov x0, ${paramReg}\n`;
-					} else {
-						// const param contains value, not address - can't assign to field
-						status.code += `// cannot assign to field of value param\n`;
-						return;
-					}
-				} else {
-					emit_var_address(status, "x0", name);
-				}
-			} else {
-				build_node(access.target, status);
-				if (!status.code.endsWith("\n")) {
-					status.code += "\n";
-				}
-			}
+			status.code += `ldr x0, [sp], #16\n`;
 
 			status.code += `str x2, [x0, #${offset}]\n`;
 		} else if (access.access.node_type === "access_index") {
@@ -140,7 +141,6 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 			const target_type = type_from_value_node(access.target);
 			const element_size = target_type.name ? aarch64_size(target_type.name) : 8;
 
-			// Get base address first (before RHS clobbers registers)
 			if (access.target.node_type === "value") {
 				const name = (access.target as ValueNode).value;
 				emit_var_address(status, "x3", name);
@@ -152,7 +152,6 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 				status.code += `mov x3, x0\n`;
 			}
 
-			// Compute offset from index
 			if (access_index.index.node_type === "value") {
 				const index_val = (access_index.index as ValueNode).value;
 				if (/^(\+|-)*\d+$/.test(index_val)) {
@@ -178,7 +177,6 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 				}
 			}
 
-			// Dynamic index
 			build_node(access_index.index, status);
 			if (!status.code.endsWith("\n")) {
 				status.code += "\n";
