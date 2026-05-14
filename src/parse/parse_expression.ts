@@ -117,7 +117,7 @@ export default function parse_expression(status: ParseStatus): BaseNode {
 				if (is_operation_node(expression)) {
 					const current_precedence = operator_precedence(current_value);
 					const expression_precedence = operator_precedence(expression.op);
-					if (current_precedence < expression_precedence) {
+					if (current_precedence <= expression_precedence) {
 						// Move things from the right to the left
 						// E.g. from `a + (b > c)` to `(a + b) > c`
 						node = new OperationNode(
