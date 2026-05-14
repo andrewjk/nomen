@@ -96,7 +96,7 @@ function check_access_function_node(
 ): boolean {
 	const struct = status.structs.find((s) => s.name === target_type.name);
 
-	let func = struct?.functions.find((f) => f.name === node.name);
+	let func = struct?.functions.findLast((f) => f.name === node.name);
 
 	if (!func) {
 		// Are we accessing a func in a trait?

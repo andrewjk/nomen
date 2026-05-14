@@ -1,3 +1,4 @@
+import add_error from "../add_error.ts";
 import ParameterNode from "../nodes/ParameterNode.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
@@ -28,6 +29,10 @@ export default function check_function_parameter_node(param: ParameterNode, stat
 		if (!param.type.name) {
 			param.type = type_from_value_node(param.default_value, status);
 		}
+	}
+
+	if (status.values.some((v) => v.name === param.name)) {
+		add_error(status, `Parameter already declared: ${param.name}`, param.start);
 	}
 
 	status.values.push({

@@ -10,11 +10,11 @@ export default function check_function_call_node(
 	node: FunctionCallNode,
 	status: CheckStatus,
 ): boolean {
-	let func = status.functions.find((f) => f.name === node.name);
+	let func = status.functions.findLast((f) => f.name === node.name);
 
 	// Check for struct constructor: StructName(...)
 	if (!func) {
-		const struct = status.structs.find((s) => s.name === node.name);
+		const struct = status.structs.findLast((s) => s.name === node.name);
 		if (struct) {
 			func = struct.functions.find((f) => f.name === "init");
 			if (func) {
@@ -34,7 +34,7 @@ export default function check_function_call_node(
 
 	// Check if the call target is a function-typed parameter
 	if (!func) {
-		const param_value = status.values.find((v) => v.name === node.name);
+		const param_value = status.values.findLast((v) => v.name === node.name);
 		if (param_value?.type.name === "func") {
 			func = new FunctionNode(0, "pub", node.name, param_value.type);
 			const param = status.stack

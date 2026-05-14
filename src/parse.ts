@@ -42,7 +42,7 @@ export default function parse(source: string): ParseResult {
 }
 
 function format_errors(source: string, errors: CompileError[]) {
-	errors = errors.sort((a, b) => a.start - b.start);
+	errors = errors.sort((a, b) => a.start - b.start).filter((e) => e.start >= 0);
 
 	// Add line and column information to errors
 	let line = 1;

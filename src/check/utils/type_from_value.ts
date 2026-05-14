@@ -3,19 +3,19 @@ import type CheckStatus from "../CheckStatus.ts";
 
 export default function type_from_value(value: string, status: CheckStatus): Type {
 	// Is it a value that's been declared in a var/const or param?
-	const decl_value = status.values.find((v) => v.name === value);
+	const decl_value = status.values.findLast((v) => v.name === value);
 	if (decl_value) {
 		return decl_value.type;
 	}
 
 	// Is it a struct?
-	const struct_value = status.structs.find((s) => s.name === value);
+	const struct_value = status.structs.findLast((s) => s.name === value);
 	if (struct_value) {
 		// NOTE: Maybe we should be storing this type on the struct?
 		return new Type(struct_value.name);
 	}
 
-	const func_value = status.functions.find((f) => f.name === value);
+	const func_value = status.functions.findLast((f) => f.name === value);
 	if (func_value) {
 		return new Type("func");
 	}
