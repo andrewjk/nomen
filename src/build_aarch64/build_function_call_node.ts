@@ -26,7 +26,7 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			const dest_addr = `_temp_${temp_counter++}`;
 			const offset = allocate_stack_space(status, 16);
 			status.stack_offsets!.set(dest_addr, offset);
-			status.code += `sub x0, x29, #${offset}\n`;
+			status.code += `add x0, x29, #${offset}\n`;
 		}
 		start_reg = 1;
 	}
@@ -69,6 +69,10 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			}
 		}
 
+		if (is_struct && status.struct_return_buffer) {
+			status.code += `mov x0, ${status.struct_return_buffer}\n`;
+		}
+
 		status.code += `bl ${func_name}\n`;
 	}
 
@@ -77,7 +81,7 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		// Find the last temp created
 		const temp_addr = `_temp_${temp_counter - 1}`;
 		const offset = status.stack_offsets!.get(temp_addr)!;
-		status.code += `sub x0, x29, #${offset}\n`;
+		status.code += `add x0, x29, #${offset}\n`;
 	}
 
 	if (node.name.startsWith("_string_interpolate_")) {

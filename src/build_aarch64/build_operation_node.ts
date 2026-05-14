@@ -4,6 +4,8 @@ import BaseNode from "../nodes/BaseNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_node from "./build_node.ts";
+import { allocate_stack_space, emit_var_address } from "./utils/stack_var.ts";
+import { get_struct_size } from "./utils/struct_layout.ts";
 
 let string_counter = 0;
 
@@ -106,7 +108,7 @@ function is_struct_type(node: BaseNode, status: BuildStatus): boolean {
 function build_operator_operand(node: BaseNode, target_reg: string, status: BuildStatus) {
 	if (node.node_type === "value" && is_struct_type(node, status)) {
 		const name = (node as ValueNode).value;
-		status.code += `adr ${target_reg}, ${name}`;
+		emit_var_address(status, target_reg, name);
 		return;
 	}
 	build_operand(node, target_reg, status);
@@ -124,7 +126,18 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 	}
 
 	if (node.operator_func) {
-		// Custom operator function call
+		const return_struct = status.structs.find(
+			(s) => s.name === node.type?.name && !s.is_simple_type,
+		);
+		let return_temp_offset: number | undefined;
+		if (return_struct) {
+			return_temp_offset = allocate_stack_space(
+				status,
+				get_struct_size(node.type!.name, status),
+			);
+			status.code += `add x8, x29, #${return_temp_offset}\n`;
+		}
+
 		// Right operand into x1 (x0 is reserved for self)
 		build_operator_operand(node.right_value, "x1", status);
 		if (!status.code.endsWith("\n")) {
@@ -138,6 +151,10 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		}
 
 		status.code += `bl ${node.operator_func.struct_name}_${node.operator_func.func_name}\n`;
+
+		if (return_struct && return_temp_offset !== undefined) {
+			status.code += `add x0, x29, #${return_temp_offset}\n`;
+		}
 		return;
 	}
 
