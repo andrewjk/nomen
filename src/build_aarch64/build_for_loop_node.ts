@@ -54,13 +54,26 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 
 		// condition: item < right_value
 		build_node(node.item, status);
-		status.code += `\nmov x2, x0\n`;
-		if (range.right_value) {
-			build_node(range.right_value, status);
+		const right_is_literal = range.right_value?.node_type === "value";
+		if (right_is_literal) {
+			status.code += `\nmov x2, x0\n`;
+			if (range.right_value) {
+				build_node(range.right_value, status);
+			} else {
+				status.code += `ldr x0, =0`;
+			}
+			status.code += `\ncmp x2, x0\n`;
 		} else {
-			status.code += `ldr x0, =0`;
+			status.code += `\nstr x0, [sp, #-16]!\n`;
+			if (range.right_value) {
+				build_node(range.right_value, status);
+			} else {
+				status.code += `ldr x0, =0`;
+			}
+			status.code += `\nmov x2, x0\n`;
+			status.code += `ldr x1, [sp], #16\n`;
+			status.code += `cmp x1, x2\n`;
 		}
-		status.code += `\ncmp x2, x0\n`;
 		if (range.inclusive) {
 			status.code += `bgt ${end_label}\n`;
 		} else {

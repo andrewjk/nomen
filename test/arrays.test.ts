@@ -2,75 +2,168 @@ import { expect, describe, test } from "vite-plus/test";
 
 import build from "../src/build";
 import parse from "../src/parse";
+import check_output from "./check_output";
+import parse_with_imports from "./parse_with_imports";
 import test_error from "./test_error";
-import trim_test_build from "./trim_test_build";
 
 // BUILD
 describe("array build", () => {
-	test("declaration with type", () => {
-		const input = `
-const int[] x
-`;
-		const parsed = parse(input);
-		const result = build(parsed.root, { arch: "aarch64" });
-		const expected = `
-x: .space 0
-.p2align 2
-`;
-		expect(parsed.errors).toEqual([]);
-		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
-	});
-
-	test("declaration with value", () => {
-		const input = `
-var x = [1, 2, 3]
-`;
-		const parsed = parse(input);
-		const result = build(parsed.root, { arch: "aarch64" });
-		const expected = `
-x: .quad 1, 2, 3
-.p2align 2
-`;
-		expect(parsed.errors).toEqual([]);
-		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
-	});
-
-	test("declaration with type and value", () => {
-		const input = `
-const int[] x = [1, 2, 3]
-`;
-		const parsed = parse(input);
-		const result = build(parsed.root, { arch: "aarch64" });
-		const expected = `
-x: .quad 1, 2, 3
-.p2align 2
-`;
-		expect(parsed.errors).toEqual([]);
-		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
-	});
-
-	test("array access", () => {
+	test("array with values in for loop", async () => {
 		const input = `
 const nums = [10, 20, 30]
-const x = nums[1]
+for n of nums {
+  Console.write("\\{n} ")
+}
 `;
-		const parsed = parse(input);
+		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64" });
-		const expected = `
-nums: .quad 10, 20, 30
-.p2align 2
-x: .space 8
-adr x0, nums
-mov x3, x0
-ldr x0, [x3, #8]
-adr x1, x
-str x0, [x1]
-`;
 		expect(parsed.errors).toEqual([]);
-		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+		await check_output("array_for_loop", result, "10 20 30 ");
 	});
 
-	test.skip("array in function param", () => {
+	test("array access by index", async () => {
+		const input = `
+const nums = [10, 20, 30]
+Console.write("\\{nums[0]}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("array_access_index_0", result, "10");
+	});
+
+	test("array access middle element", async () => {
+		const input = `
+const nums = [10, 20, 30]
+Console.write("\\{nums[1]}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("array_access_middle", result, "20");
+	});
+
+	test("array access last element", async () => {
+		const input = `
+const nums = [10, 20, 30]
+Console.write("\\{nums[2]}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("array_access_last", result, "30");
+	});
+
+	test("array with explicit type", async () => {
+		const input = `
+const int[] nums = [5, 10, 15]
+Console.write("\\{nums[0]} \\{nums[1]} \\{nums[2]}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("array_explicit_type", result, "5 10 15");
+	});
+
+	test("array sum with for loop", async () => {
+		const input = `
+const nums = [1, 2, 3, 4, 5]
+var total = 0
+for n of nums {
+  total = total + n
+}
+Console.write("\\{total}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("array_sum_loop", result, "15");
+	});
+
+	test("array with index-based access in loop", async () => {
+		const input = `
+const nums = [100, 200, 300]
+var total = 0
+for i of 0..3 {
+  total = total + nums[i]
+}
+Console.write("\\{total}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("array_index_loop", result, "600");
+	});
+
+	test("array with single element", async () => {
+		const input = `
+const nums = [42]
+Console.write("\\{nums[0]}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("array_single_element", result, "42");
+	});
+
+	test("array with negative values", async () => {
+		const input = `
+const nums = [-1, -5, -10]
+Console.write("\\{nums[0]} \\{nums[1]} \\{nums[2]}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("array_negative_values", result, "-1 -5 -10");
+	});
+
+	test("multiple arrays", async () => {
+		const input = `
+const a = [1, 2, 3]
+const b = [4, 5, 6]
+Console.write("\\{a[1]} \\{b[1]}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("array_multiple", result, "2 5");
+	});
+
+	test("array access with expression index", async () => {
+		const input = `
+const nums = [10, 20, 30]
+const i = 2
+Console.write("\\{nums[i]}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("array_expr_index", result, "30");
+	});
+
+	test("empty array with type", async () => {
+		const input = `
+const int[] x
+Console.write("ok")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("array_empty_typed", result, "ok");
+	});
+
+	test("nested array access in expression", async () => {
+		const input = `
+const nums = [10, 20, 30]
+Console.write("\\{nums[0] + nums[2]}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("array_access_in_expr", result, "40");
+	});
+
+	test.skip("array in function param", async () => {
 		const input = `
 func sum = (int[] nums, out int) {
   var total = 0
@@ -79,13 +172,13 @@ func sum = (int[] nums, out int) {
   }
   return total
 }
+const n = sum([2, 4, 6])
+Console.write("\\{n}")
 `;
-		const parsed = parse(input);
+		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64" });
-		const expected = `
-`;
 		expect(parsed.errors).toEqual([]);
-		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+		await check_output("array_func_param", result, "12");
 	});
 });
 

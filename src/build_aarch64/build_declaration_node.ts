@@ -177,9 +177,14 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			}
 		} else if (node.value && node.value.node_type === "range") {
 			if (status.function_return_label) {
-				emit_data(status, `${node.name}: ${directive} `);
-				build_range_node(node.value as RangeNode, status);
-				emit_data(status, `\n.p2align 2\n`);
+				const range_str = evaluate_range_static(node.value as RangeNode);
+				if (range_str !== null) {
+					emit_data(status, `${node.name}: ${directive} ${range_str}\n.p2align 2\n`);
+				} else {
+					emit_data(status, `${node.name}: ${directive} `);
+					build_range_node(node.value as RangeNode, status);
+					emit_data(status, `\n.p2align 2\n`);
+				}
 			} else {
 				status.code += `${node.name}: ${directive} `;
 				build_range_node(node.value as RangeNode, status);
@@ -358,9 +363,14 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			}
 		} else if (node.value.node_type === "range") {
 			if (status.function_return_label) {
-				emit_data(status, `${node.name}: ${directive} `);
-				build_range_node(node.value as RangeNode, status);
-				emit_data(status, `\n.p2align 2\n`);
+				const range_str = evaluate_range_static(node.value as RangeNode);
+				if (range_str !== null) {
+					emit_data(status, `${node.name}: ${directive} ${range_str}\n.p2align 2\n`);
+				} else {
+					emit_data(status, `${node.name}: ${directive} `);
+					build_range_node(node.value as RangeNode, status);
+					emit_data(status, `\n.p2align 2\n`);
+				}
 			} else {
 				status.code += `${node.name}: ${directive} `;
 				build_range_node(node.value as RangeNode, status);
@@ -392,7 +402,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			node.type.is_array && node.type.length
 				? size * parseInt((node.type.length as ValueNode).value)
 				: size;
-		const use_stack = status.function_return_label && node.declaration === "var";
+		const use_stack = status.function_return_label;
 		if (use_stack) {
 			const offset = allocate_stack_space(status, total_size, size);
 			status.stack_offsets!.set(node.name, offset);
@@ -403,4 +413,41 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			}
 		}
 	}
+}
+
+function evaluate_range_static(node: RangeNode): string | null {
+	const start = evaluate_range_const(node.left_value);
+	const end = evaluate_range_const(node.right_value);
+	if (start !== undefined && end !== undefined) {
+		const actual_end = end + (node.inclusive ? 1 : 0);
+		return [...Array(actual_end - start).keys()].map((v) => start + v).join(", ");
+	}
+	return null;
+}
+
+function evaluate_range_const(node: any): number | undefined {
+	if (node.node_type === "value") {
+		const n = parseInt(node.value);
+		if (!isNaN(n)) return n;
+	}
+	if (node.node_type === "grouped") {
+		return evaluate_range_const(node.value);
+	}
+	if (node.node_type === "op") {
+		const left = evaluate_range_const(node.left_value);
+		const right = evaluate_range_const(node.right_value);
+		if (left !== undefined && right !== undefined) {
+			switch (node.op) {
+				case "+":
+					return left + right;
+				case "-":
+					return left - right;
+				case "*":
+					return left * right;
+				case "/":
+					return Math.floor(left / right);
+			}
+		}
+	}
+	return undefined;
 }

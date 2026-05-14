@@ -2,106 +2,164 @@ import { expect, describe, test } from "vite-plus/test";
 
 import build from "../src/build";
 import parse from "../src/parse";
+import check_output from "./check_output";
+import parse_with_imports from "./parse_with_imports";
 import test_error from "./test_error";
-import trim_test_build from "./trim_test_build";
 
 // BUILD
 describe("declaration build", () => {
-	test("const with value", () => {
+	test("const int declaration", async () => {
 		const input = `
 const x = 5
+Console.write("\\{x}")
 `;
-		const parsed = parse(input);
+		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64" });
-		const expected = `
-x: .quad 5
-`;
 		expect(parsed.errors).toEqual([]);
-		expect(parsed.errors).toEqual([]);
-		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+		await check_output("decl_const_int", result, "5");
 	});
 
-	test("const with type", () => {
+	test("const with explicit type", async () => {
 		const input = `
-const int x
+const int x = 42
+Console.write("\\{x}")
 `;
-		const parsed = parse(input);
+		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64" });
-		const expected = `
-x: .space 8
-`;
 		expect(parsed.errors).toEqual([]);
-		expect(parsed.errors).toEqual([]);
-		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+		await check_output("decl_const_explicit_type", result, "42");
 	});
 
-	test("var with value", () => {
+	test("var with value", async () => {
 		const input = `
-var x = 5
+var x = 10
+Console.write("\\{x}")
 `;
-		const parsed = parse(input);
+		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64" });
-		const expected = `
-x: .quad 5
-`;
 		expect(parsed.errors).toEqual([]);
-		expect(parsed.errors).toEqual([]);
-		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+		await check_output("decl_var_with_value", result, "10");
 	});
 
-	test("var with type", () => {
+	test("var reassigned", async () => {
+		const input = `
+var x = 10
+x = 20
+Console.write("\\{x}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("decl_var_reassigned", result, "20");
+	});
+
+	test("var with type and assignment", async () => {
 		const input = `
 var int x
+x = 99
+Console.write("\\{x}")
 `;
-		const parsed = parse(input);
+		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64" });
-		const expected = `
-x: .space 8
-`;
 		expect(parsed.errors).toEqual([]);
-		expect(parsed.errors).toEqual([]);
-		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+		await check_output("decl_var_type_assign", result, "99");
 	});
 
-	test("const with type and value", () => {
+	test("const string declaration", async () => {
 		const input = `
-const int x = 5
+const name = "world"
+Console.write("\\{name}")
 `;
-		const parsed = parse(input);
+		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64" });
-		const expected = `
-x: .quad 5
-`;
 		expect(parsed.errors).toEqual([]);
-		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+		await check_output("decl_const_string", result, "world");
 	});
 
-	test("const with array type", () => {
+	test("const bool declaration", async () => {
 		const input = `
-const int[] x
+const flag = true
+Console.write("\\{flag}")
 `;
-		const parsed = parse(input);
+		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64" });
-		const expected = `
-x: .space 0
-.p2align 2
-`;
 		expect(parsed.errors).toEqual([]);
-		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+		await check_output("decl_const_bool", result, "true");
 	});
 
-	test("const with array type and value", () => {
+	test("multiple declarations", async () => {
 		const input = `
-const int[] x = [1, 2, 3]
+const a = 10
+const b = 20
+Console.write("\\{a + b}")
 `;
-		const parsed = parse(input);
+		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64" });
-		const expected = `
-x: .quad 1, 2, 3
-.p2align 2
-`;
 		expect(parsed.errors).toEqual([]);
-		expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+		await check_output("decl_multiple", result, "30");
+	});
+
+	test("const with expression value", async () => {
+		const input = `
+const x = 3 + 4
+Console.write("\\{x}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("decl_const_expression", result, "7");
+	});
+
+	test("var updated in if block", async () => {
+		const input = `
+var x = 5
+if true {
+  x = 15
+}
+Console.write("\\{x}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("decl_var_if_update", result, "15");
+	});
+
+	test("const set in both branches", async () => {
+		const input = `
+const int x
+if true {
+  x = 1
+} else {
+  x = 2
+}
+Console.write("\\{x}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("decl_const_branches", result, "1");
+	});
+
+	test("declaration with negative value", async () => {
+		const input = `
+const x = -5
+Console.write("\\{x}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("decl_negative", result, "-5");
+	});
+
+	test("const with array type and value", async () => {
+		const input = `
+const int[] x = [10, 20, 30]
+Console.write("\\{x[1]}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("decl_const_array", result, "20");
 	});
 });
 
@@ -136,7 +194,7 @@ const int x = "string?!"
 		expect(parsed.errors).toEqual(expected);
 	});
 
-	test("type mismatch - unknown value", () => {
+	test("type mismatch -- unknown value", () => {
 		const input = `
 const int x = z0
 `;
@@ -162,6 +220,29 @@ const what x = 5
 			test_error(input, "Unknown type: what", 2, 7),
 			test_error(input, "Type mismatch in declaration: int (expected what)", 2, 16),
 		];
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual(expected);
+	});
+
+	test("reassignment to const", () => {
+		const input = `
+const x = 5
+x = 10
+`;
+		const expected = [test_error(input, "Assignment to const: x", 3, 1)];
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual(expected);
+	});
+
+	test("incomplete conditional const", () => {
+		const input = `
+const int x
+if true {
+  x = 5
+}
+const y = x
+`;
+		const expected = [test_error(input, "Const set incompletely: x", 3, 1)];
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
 	});

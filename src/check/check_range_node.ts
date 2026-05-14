@@ -14,17 +14,31 @@ export default function check_range_node(range: RangeNode, status: CheckStatus):
 		return false;
 	}
 
-	check_type_and_value_match(
-		type_from_value_node(range.left_value, status),
-		type_from_value_node(range.right_value, status),
-		value_from_value_node(range.right_value),
-		status,
-		range.right_value.start,
-		"range",
-	);
+	const left_type = type_from_value_node(range.left_value, status);
+	const right_type = type_from_value_node(range.right_value, status);
+
+	if (left_type.name !== "int") {
+		check_type_and_value_match(
+			new Type("int"),
+			left_type,
+			value_from_value_node(range.left_value),
+			status,
+			range.left_value.start,
+			"range",
+		);
+	}
+	if (right_type.name !== "int") {
+		check_type_and_value_match(
+			new Type("int"),
+			right_type,
+			value_from_value_node(range.right_value),
+			status,
+			range.right_value.start,
+			"range",
+		);
+	}
 
 	// Set the range type
-	const left_type = type_from_value_node(range.left_value, status);
 	range.type = new Type(left_type.name);
 	range.type.is_array = true;
 
