@@ -14,6 +14,7 @@ import parse_function from "./parse_function.ts";
 import parse_function_call_parameter from "./parse_function_call_parameter.ts";
 import parse_if_else from "./parse_if_else.ts";
 import parse_import from "./parse_import.ts";
+import parse_match from "./parse_match.ts";
 import parse_op from "./parse_op.ts";
 import parse_panic_or_todo from "./parse_panic_or_todo.ts";
 import parse_raw from "./parse_raw.ts";
@@ -80,6 +81,11 @@ export default function parse_statement(status: ParseStatus) {
 			case "if": {
 				const if_else = parse_if_else(status);
 				add_to_parent(if_else, "If expression", status);
+				break;
+			}
+			case "match": {
+				const match_node = parse_match(status);
+				add_to_parent(match_node, "Match expression", status);
 				break;
 			}
 			case "switch": {

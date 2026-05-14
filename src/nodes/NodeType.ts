@@ -11,6 +11,7 @@ export type NodeType =
 	| "op"
 	| "if"
 	| "switch"
+	| "match"
 	| "for"
 	| "while"
 	| "func_call"

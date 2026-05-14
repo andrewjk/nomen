@@ -376,7 +376,11 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 				build_range_node(node.value as RangeNode, status);
 				status.code += `\n.p2align 2\n`;
 			}
-		} else if (node.value.node_type === "if" || node.value.node_type === "switch") {
+		} else if (
+			node.value.node_type === "if" ||
+			node.value.node_type === "match" ||
+			node.value.node_type === "switch"
+		) {
 			if (status.function_return_label) {
 				const offset = allocate_stack_space(status, size, size);
 				status.stack_offsets!.set(node.name, offset);

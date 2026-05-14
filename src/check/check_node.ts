@@ -12,6 +12,7 @@ import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import GroupedNode from "../nodes/GroupedNode.ts";
 import IfElseNode from "../nodes/IfElseNode.ts";
+import MatchNode from "../nodes/MatchNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
 import RangeNode from "../nodes/RangeNode.ts";
 import ReturnNode from "../nodes/ReturnNode.ts";
@@ -31,6 +32,7 @@ import check_for_loop_node from "./check_for_loop_node.ts";
 import check_function_call_node from "./check_function_call_node.ts";
 import check_function_node from "./check_function_node.ts";
 import check_if_else_node from "./check_if_else_node.ts";
+import check_match_node from "./check_match_node.ts";
 import check_operation_node from "./check_operation_node.ts";
 import check_range_node from "./check_range_node.ts";
 import check_return_node from "./check_return_node.ts";
@@ -79,6 +81,10 @@ export default function check_node(node: BaseNode, status: CheckStatus): boolean
 		}
 		case "if": {
 			check_if_else_node(node as IfElseNode, status);
+			break;
+		}
+		case "match": {
+			check_match_node(node as MatchNode, status);
 			break;
 		}
 		case "switch": {

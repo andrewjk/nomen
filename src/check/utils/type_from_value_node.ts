@@ -7,6 +7,7 @@ import BaseNode from "../../nodes/BaseNode.ts";
 import FunctionCallNode from "../../nodes/FunctionCallNode.ts";
 import GroupedNode from "../../nodes/GroupedNode.ts";
 import IfElseNode from "../../nodes/IfElseNode.ts";
+import MatchNode from "../../nodes/MatchNode.ts";
 import OperationNode from "../../nodes/OperationNode.ts";
 import RangeNode from "../../nodes/RangeNode.ts";
 import SwitchNode from "../../nodes/SwitchNode.ts";
@@ -42,6 +43,9 @@ export default function type_from_value_node(node: BaseNode, status: CheckStatus
 		}
 		case "if": {
 			return (node as IfElseNode).return_type;
+		}
+		case "match": {
+			return (node as MatchNode).return_type;
 		}
 		case "switch": {
 			return (node as SwitchNode).return_type;
