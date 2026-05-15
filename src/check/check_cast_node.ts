@@ -84,18 +84,23 @@ export default function check_cast_node(node: CastNode, status: CheckStatus) {
 	if (from === "char" && to_idx !== -1) return;
 	if (from_idx !== -1 && to === "char") return;
 
-	const struct = status.structs.find((s) => s.name === from && !s.is_simple_type);
-	if (struct) {
-		const as_func = struct.functions.find((f) => f.name === "as");
-		if (as_func) return;
-	}
-
-	const target_struct = status.structs.find((s) => s.name === to && !s.is_simple_type);
-	if (target_struct) {
-		const source_struct = status.structs.find((s) => s.name === from && !s.is_simple_type);
-		if (source_struct) {
-			const as_func = source_struct.functions.find((f) => f.name === "as");
-			if (as_func) return;
+	const source_struct = status.structs.find((s) => s.name === from && !s.is_simple_type);
+	if (source_struct) {
+		const as_func = source_struct.functions.find((f) => f.name === "as");
+		if (as_func) {
+			const return_type = as_func.return_type.name;
+			if (return_type !== to) {
+				add_error(
+					status,
+					`Cannot cast from ${from} to ${to}: as operator returns ${return_type}`,
+					node.start,
+				);
+			}
+			node.operator_func = {
+				struct_name: from,
+				func_name: "as",
+			};
+			return;
 		}
 	}
 
