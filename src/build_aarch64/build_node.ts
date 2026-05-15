@@ -3,6 +3,7 @@ import AccessNode from "../nodes/AccessNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import AssignmentNode from "../nodes/AssignmentNode.ts";
 import BaseNode from "../nodes/BaseNode.ts";
+import CastNode from "../nodes/CastNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
 import ForLoopNode from "../nodes/ForLoopNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
@@ -25,6 +26,7 @@ import build_array_values_node from "./build_array_values_node.ts";
 import build_assignment_node from "./build_assignment_node.ts";
 import build_block_node from "./build_block_node.ts";
 import build_break_node from "./build_break_node.ts";
+import build_cast_node from "./build_cast_node.ts";
 import build_continue_node from "./build_continue_node.ts";
 import build_declaration_node from "./build_declaration_node.ts";
 import build_for_loop_node from "./build_for_loop_node.ts";
@@ -86,6 +88,10 @@ export default function build_node(node: BaseNode, status: BuildStatus, with_sem
 		case "if": {
 			build_if_else_node(node as IfElseNode, status);
 			with_semicolon = false;
+			break;
+		}
+		case "cast": {
+			build_cast_node(node as CastNode, status);
 			break;
 		}
 		case "match": {

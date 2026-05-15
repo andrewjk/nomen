@@ -4,6 +4,7 @@ import AccessIndexNode from "../../nodes/AccessIndexNode.ts";
 import AccessNode from "../../nodes/AccessNode.ts";
 import ArrayValuesNode from "../../nodes/ArrayValuesNode.ts";
 import BaseNode from "../../nodes/BaseNode.ts";
+import CastNode from "../../nodes/CastNode.ts";
 import FunctionCallNode from "../../nodes/FunctionCallNode.ts";
 import GroupedNode from "../../nodes/GroupedNode.ts";
 import IfElseNode from "../../nodes/IfElseNode.ts";
@@ -43,6 +44,9 @@ export default function type_from_value_node(node: BaseNode, status: CheckStatus
 		}
 		case "if": {
 			return (node as IfElseNode).return_type;
+		}
+		case "cast": {
+			return (node as CastNode).target_type;
 		}
 		case "match": {
 			return (node as MatchNode).return_type;

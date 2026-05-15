@@ -7,6 +7,7 @@ export type NodeType =
 	| "param"
 	| "declare"
 	| "assign"
+	| "cast"
 	| "grouped"
 	| "op"
 	| "if"

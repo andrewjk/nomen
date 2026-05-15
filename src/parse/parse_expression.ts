@@ -3,6 +3,7 @@ import AccessNode from "../nodes/AccessNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import AssignmentNode from "../nodes/AssignmentNode.ts";
 import BaseNode from "../nodes/BaseNode.ts";
+import CastNode from "../nodes/CastNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import GroupedNode from "../nodes/GroupedNode.ts";
 import { is_operation_node } from "../nodes/is_node_type.ts";
@@ -16,6 +17,7 @@ import parse_if_else from "./parse_if_else.ts";
 import parse_match from "./parse_match.ts";
 import parse_string_interpolation from "./parse_string_interpolation.ts";
 import parse_switch from "./parse_switch.ts";
+import parse_type from "./parse_type.ts";
 import type ParseStatus from "./ParseStatus.ts";
 import accept from "./utils/accept.ts";
 import consume from "./utils/consume.ts";
@@ -139,6 +141,12 @@ export default function parse_expression(status: ParseStatus): BaseNode {
 				}
 
 				node = new OperationNode(start, current_value, node, expression);
+				break;
+			}
+			case "as": {
+				consume(status);
+				const target_type = parse_type(status);
+				node = new CastNode(start, node, target_type);
 				break;
 			}
 			case "..": {

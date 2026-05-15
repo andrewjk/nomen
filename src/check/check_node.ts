@@ -4,6 +4,7 @@ import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import AssignmentNode from "../nodes/AssignmentNode.ts";
 import BaseNode from "../nodes/BaseNode.ts";
 import BreakNode from "../nodes/BreakNode.ts";
+import CastNode from "../nodes/CastNode.ts";
 import { is_block_node } from "../nodes/check_node_type.ts";
 import ContinueNode from "../nodes/ContinueNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
@@ -27,6 +28,7 @@ import check_array_values_node from "./check_array_values_node.ts";
 import check_assignment_node from "./check_assignment_node.ts";
 import check_block_node from "./check_block_node.ts";
 import check_break_or_continue_node from "./check_break_or_continue_node.ts";
+import check_cast_node from "./check_cast_node.ts";
 import check_declaration_node from "./check_declaration_node.ts";
 import check_for_loop_node from "./check_for_loop_node.ts";
 import check_function_call_node from "./check_function_call_node.ts";
@@ -81,6 +83,10 @@ export default function check_node(node: BaseNode, status: CheckStatus): boolean
 		}
 		case "if": {
 			check_if_else_node(node as IfElseNode, status);
+			break;
+		}
+		case "cast": {
+			check_cast_node(node as CastNode, status);
 			break;
 		}
 		case "match": {
