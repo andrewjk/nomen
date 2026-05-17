@@ -171,7 +171,7 @@ Console.write("\\{x}")
 		await check_output("assign_in_else", result, "25");
 	});
 
-	test.skip("var string assignment", async () => {
+	test("var string assignment", async () => {
 		const input = `
 var name = "hello"
 name = "world"

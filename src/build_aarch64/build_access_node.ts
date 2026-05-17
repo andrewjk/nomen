@@ -4,6 +4,7 @@ import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessIndexNode from "../nodes/AccessIndexNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
+import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_node from "./build_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
@@ -107,7 +108,20 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 		}
 	}
 
-	status.code += `ldr x0, [x0, #${offset}]\n`;
+	const field_type = access_field.type?.name || "";
+	const size = aarch64_size(field_type);
+	const signed =
+		field_type.startsWith("int") ||
+		field_type === "float" ||
+		field_type === "float32" ||
+		field_type === "float64";
+	if (size === 1) {
+		status.code += signed ? `ldrsb x0, [x0, #${offset}]\n` : `ldrb w0, [x0, #${offset}]\n`;
+	} else if (size === 4) {
+		status.code += signed ? `ldrsw x0, [x0, #${offset}]\n` : `ldr w0, [x0, #${offset}]\n`;
+	} else {
+		status.code += `ldr x0, [x0, #${offset}]\n`;
+	}
 }
 
 function build_access_method(
@@ -124,6 +138,11 @@ function build_access_method(
 		target_type.length
 	) {
 		build_char_array_to_string(node, (target_type.length as ValueNode).value, status);
+		return;
+	}
+
+	if (access_func.name === "to_string" && target_type.is_array && target_type.length) {
+		build_int_array_to_string(node, target_type, status);
 		return;
 	}
 
@@ -271,6 +290,69 @@ function build_access_index(node: AccessNode, access_index: AccessIndexNode, sta
 	} else {
 		status.code += `ldr x0, [x0]\n`;
 	}
+}
+
+function build_int_array_to_string(node: AccessNode, target_type: Type, status: BuildStatus) {
+	const length = parseInt((target_type.length as ValueNode).value);
+	const element_size = aarch64_size(target_type.name);
+
+	// Get array base address into x19
+	if (node.target.node_type === "value") {
+		const name = (node.target as ValueNode).value;
+		const paramReg = get_param_reg(name, status);
+		if (paramReg) {
+			if (paramReg !== "x0") {
+				status.code += `mov x0, ${paramReg}\n`;
+			}
+		} else {
+			emit_var_address(status, "x0", name);
+		}
+	} else {
+		build_node(node.target, status);
+		if (!status.code.endsWith("\n")) {
+			status.code += "\n";
+		}
+	}
+
+	// Save x19, x20
+	status.code += `str x19, [sp, #-16]!\n`;
+	status.code += `str x20, [sp, #-16]!\n`;
+	status.code += `mov x19, x0\n`;
+
+	// Allocate result buffer - estimate 20 bytes per int element
+	const buf_size = Math.max(length * 20, 32);
+	status.code += `mov x0, #${buf_size}\n`;
+	status.code += `bl _malloc\n`;
+	status.code += `mov x20, x0\n`;
+
+	// Zero out the buffer
+	status.code += `strb wzr, [x20]\n`;
+
+	// Loop through elements
+	for (let i = 0; i < length; i++) {
+		// Load element
+		const offset = i * element_size;
+		if (element_size === 1) {
+			status.code += `ldrb w0, [x19, #${offset}]\n`;
+			status.code += `uxtb w0, w0\n`;
+		} else {
+			status.code += `ldr x0, [x19, #${offset}]\n`;
+		}
+
+		// Call int_to_string (or appropriate to_string)
+		const to_string_fn = `${target_type.name}_to_string`;
+		status.code += `bl ${to_string_fn}\n`;
+
+		// Concatenate: strcat(x20, x0)
+		status.code += `mov x1, x0\n`;
+		status.code += `mov x0, x20\n`;
+		status.code += `bl _strcat\n`;
+	}
+
+	// Return result in x0
+	status.code += `mov x0, x20\n`;
+	status.code += `ldr x20, [sp], #16\n`;
+	status.code += `ldr x19, [sp], #16\n`;
 }
 
 function build_char_array_to_string(node: AccessNode, length: string, status: BuildStatus) {

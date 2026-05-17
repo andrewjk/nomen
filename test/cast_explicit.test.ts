@@ -97,7 +97,7 @@ Console.write(result)
 		const result = build(parsed.root, { arch: "aarch64" });
 
 		expect(parsed.errors).toEqual([]);
-		await check_output("cast_in_func", result, "10");
+		await check_output("cast_inside_func", result, "10");
 	});
 
 	test("cast with same value", async () => {

@@ -1,6 +1,8 @@
 import type BuildStatus from "../build/BuildStatus.ts";
+import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
+import ValueNode from "../nodes/ValueNode.ts";
 import build_node from "./build_node.ts";
 import { allocate_stack_space, emit_var_address } from "./utils/stack_var.ts";
 
@@ -8,11 +10,21 @@ let temp_counter = 0;
 
 export function reset_temp_counter() {
 	temp_counter = 0;
+	array_param_counter = 0;
 }
 
 function is_struct_type(type_name: string, status: BuildStatus): boolean {
 	return !!status.structs.find((s) => s.name === type_name && !s.is_simple_type);
 }
+
+function get_raw_value(node: ValueNode): string {
+	let val = node.value;
+	if (val === "true") return "1";
+	if (val === "false") return "0";
+	return val;
+}
+
+let array_param_counter = 0;
 
 function emit_struct_address(node: BaseNode, status: BuildStatus) {
 	if (node.node_type === "value") {
@@ -84,8 +96,17 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 	} else {
 		// Evaluate params right-to-left to avoid clobbering
 		for (let i = node.params.length - 1; i >= 0; i--) {
-			const param_type = (node.params[i] as any).type?.name || "";
-			if (is_struct_type(param_type, status)) {
+			const param = node.params[i];
+			const param_type = (param as any).type?.name || "";
+			if (param.node_type === "array" && param_type) {
+				const arr = param as ArrayValuesNode;
+				const label = `_arr_param_${array_param_counter++}`;
+				const values = arr.values
+					.map((v) => (v.node_type === "value" ? get_raw_value(v as ValueNode) : "0"))
+					.join(", ");
+				status.code += `${label}: .quad ${values}\n.p2align 2\n`;
+				status.code += `adr x0, ${label}`;
+			} else if (is_struct_type(param_type, status)) {
 				emit_struct_address(node.params[i], status);
 			} else {
 				build_node(node.params[i], status);

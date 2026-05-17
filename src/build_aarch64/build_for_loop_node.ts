@@ -129,11 +129,17 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 		status.code += `bge ${end_label}\n`;
 
 		// Load array[index] into item variable
-		emit_var_address(
-			status,
-			"x3",
-			node.list.node_type === "value" ? (node.list as any).value : "_list",
-		);
+		const list_name = node.list.node_type === "value" ? (node.list as any).value : "_list";
+		const list_is_param = !!status.function_param_regs?.has(list_name);
+		const list_stack_offset = status.stack_offsets?.get(list_name);
+		const list_type = type_from_value_node(node.list);
+		const list_is_pointer =
+			list_type.is_array && (list_is_param || list_stack_offset !== undefined);
+		if (list_is_pointer) {
+			emit_var_load(status, "x3", list_name, 8);
+		} else {
+			emit_var_address(status, "x3", list_name);
+		}
 		emit_var_load(status, "x1", idx_name, 8);
 		status.code += `mov x2, #${element_size}\n`;
 		status.code += `mul x1, x1, x2\n`;

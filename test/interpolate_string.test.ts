@@ -123,6 +123,17 @@ Console.write("Big: \\{big}")
 		expect(parsed.errors).toEqual([]);
 		await check_output("interpolate_large", result, "Big: 123456789");
 	});
+
+	test("interpolation with array", async () => {
+		const input = `
+const arr = [1, 2, 3]
+Console.write("\\{arr}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("interpolate_with_array", result, "123");
+	});
 });
 
 // ERRORS
@@ -166,7 +177,7 @@ Console.write("\\{}")
 		expect(parsed.errors.some((e) => e.message.includes("Unknown value: }"))).toBe(true);
 	});
 
-	test.skip("unclosed interpolation brace", () => {
+	test("unclosed interpolation brace", () => {
 		const input = `
 Console.write("\\{x")
 `;
@@ -174,7 +185,7 @@ Console.write("\\{x")
 		expect(parsed.errors.length).toBeGreaterThan(0);
 	});
 
-	test.skip("interpolation with type mismatch", () => {
+	test("interpolation with type mismatch", () => {
 		const input = `
 struct Point {
   x: int
@@ -183,15 +194,6 @@ struct Point {
 
 const p = Point { x: 1, y: 2 }
 Console.write("\\{p}")
-`;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors.length).toBeGreaterThan(0);
-	});
-
-	test.skip("interpolation with array", () => {
-		const input = `
-const arr = [1, 2, 3]
-Console.write("\\{arr}")
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors.length).toBeGreaterThan(0);

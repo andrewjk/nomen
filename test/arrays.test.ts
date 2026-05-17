@@ -163,7 +163,7 @@ Console.write("\\{nums[0] + nums[2]}")
 		await check_output("array_access_in_expr", result, "40");
 	});
 
-	test.skip("array in function param", async () => {
+	test("array in function param", async () => {
 		const input = `
 func sum = (int[] nums, out int) {
   var total = 0

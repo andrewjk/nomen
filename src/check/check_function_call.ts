@@ -72,6 +72,10 @@ export default function check_function_call(
 			"param",
 		);
 
+		if (param_type.is_array && param_type.length && !func.params[i].type.length) {
+			func.params[i].type.length = param_type.length;
+		}
+
 		if (param.node_type !== "value") {
 			const declaration_name = `_param_${status.var_name_counter.value++}`;
 			status.allocations.push(

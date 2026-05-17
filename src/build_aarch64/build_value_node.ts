@@ -106,7 +106,10 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 		}
 	} else {
 		const type_name = node.type?.name || "";
-		if (type_name === "string" && status.string_literal_names?.has(value)) {
+		const is_array = node.type?.is_array || false;
+		if (is_array) {
+			status.code += `adr x0, ${value}`;
+		} else if (type_name === "string" && status.string_literal_names?.has(value)) {
 			status.code += `adr x0, ${value}`;
 		} else {
 			const size =

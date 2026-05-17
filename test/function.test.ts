@@ -69,7 +69,7 @@ Console.write("\\{square(3)} \\{square(5)}")
 		await check_output("function_called_multi", result, "9 25");
 	});
 
-	test.skip("function with var param", async () => {
+	test("function with var param", async () => {
 		const input = `
 func increment = (var int x, out int) {
   x = x + 1
@@ -83,7 +83,7 @@ Console.write("\\{increment(10)}")
 		await check_output("function_var_param", result, "11");
 	});
 
-	test.skip("function with default param", async () => {
+	test("function with default param", async () => {
 		const input = `
 func greet = (string name = "world") {
   Console.write("Hello \\{name}!")

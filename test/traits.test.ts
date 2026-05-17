@@ -222,7 +222,7 @@ struct Foo: Empty {}
 	});
 });
 
-test.skip("trait struct in function", async () => {
+test("trait struct in function", async () => {
 	const input = `
 trait Named {
   var string name
@@ -266,7 +266,7 @@ Console.write(f.hello())
 	await check_output("trait_method_no_self", result, "hello from Frank");
 });
 
-test.skip("trait struct field update", async () => {
+test("trait struct field update", async () => {
 	const input = `
 trait Counter {
   var int count
@@ -286,7 +286,7 @@ Console.write("\\{c.count}")
 	await check_output("trait_field_update", result, "10");
 });
 
-test.skip("trait with bool field", async () => {
+test("trait with bool field", async () => {
 	const input = `
 trait Status {
   var bool active
@@ -302,7 +302,7 @@ Console.write("\\{s.active}")
 	const parsed = parse_with_imports(input);
 	const result = build(parsed.root, { arch: "aarch64" });
 	expect(parsed.errors).toEqual([]);
-	await check_output("trait_bool_field", result, "1");
+	await check_output("trait_bool_field", result, "true");
 });
 
 test("trait struct with method using fields", async () => {
