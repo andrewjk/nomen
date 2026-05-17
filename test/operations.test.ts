@@ -215,6 +215,126 @@ Console.write("\\{x}")
 	});
 });
 
+test("comparison with && (both true)", async () => {
+	const input = `
+const x = 5
+var int result = 0
+if x > 3 && x < 7 {
+	result = 1
+}
+Console.write("\\{result}")
+`;
+	const parsed = parse_with_imports(input);
+	const result = build(parsed.root, { arch: "aarch64" });
+	expect(parsed.errors).toEqual([]);
+	await check_output("op_and_both_true", result, "1");
+});
+
+test("comparison with && (one false)", async () => {
+	const input = `
+const x = 10
+var int result = 0
+if x > 3 && x < 7 {
+	result = 1
+}
+Console.write("\\{result}")
+`;
+	const parsed = parse_with_imports(input);
+	const result = build(parsed.root, { arch: "aarch64" });
+	expect(parsed.errors).toEqual([]);
+	await check_output("op_and_one_false", result, "0");
+});
+
+test("comparison with || (both false)", async () => {
+	const input = `
+const x = 2
+var int result = 0
+if x > 3 || x < 1 {
+	result = 1
+}
+Console.write("\\{result}")
+`;
+	const parsed = parse_with_imports(input);
+	const result = build(parsed.root, { arch: "aarch64" });
+	expect(parsed.errors).toEqual([]);
+	await check_output("op_or_both_false", result, "0");
+});
+
+test("comparison with || (one true)", async () => {
+	const input = `
+const x = 10
+var int result = 0
+if x > 3 || x < 7 {
+	result = 1
+}
+Console.write("\\{result}")
+`;
+	const parsed = parse_with_imports(input);
+	const result = build(parsed.root, { arch: "aarch64" });
+	expect(parsed.errors).toEqual([]);
+	await check_output("op_or_one_true", result, "1");
+});
+
+test("chained && and ||", async () => {
+	const input = `
+const x = 5
+var int result = 0
+if x > 0 && x < 10 || x == 20 {
+	result = 1
+}
+Console.write("\\{result}")
+`;
+	const parsed = parse_with_imports(input);
+	const result = build(parsed.root, { arch: "aarch64" });
+	expect(parsed.errors).toEqual([]);
+	await check_output("op_chained_and_or", result, "1");
+});
+
+test("equality with &&", async () => {
+	const input = `
+const x = 5
+var int result = 0
+if x == 5 && x != 3 {
+	result = 1
+}
+Console.write("\\{result}")
+`;
+	const parsed = parse_with_imports(input);
+	const result = build(parsed.root, { arch: "aarch64" });
+	expect(parsed.errors).toEqual([]);
+	await check_output("op_equality_and", result, "1");
+});
+
+test(">= and <= with &&", async () => {
+	const input = `
+const x = 5
+var int result = 0
+if x >= 5 && x <= 5 {
+	result = 1
+}
+Console.write("\\{result}")
+`;
+	const parsed = parse_with_imports(input);
+	const result = build(parsed.root, { arch: "aarch64" });
+	expect(parsed.errors).toEqual([]);
+	await check_output("op_gte_lte_and", result, "1");
+});
+
+test("arithmetic with comparison and &&", async () => {
+	const input = `
+const x = 5
+var int result = 0
+if x + 1 > 3 && x - 1 < 7 {
+	result = 1
+}
+Console.write("\\{result}")
+`;
+	const parsed = parse_with_imports(input);
+	const result = build(parsed.root, { arch: "aarch64" });
+	expect(parsed.errors).toEqual([]);
+	await check_output("op_arith_cmp_and", result, "1");
+});
+
 // ERRORS
 describe("operations errors", () => {
 	test("type mismatch in operation", () => {

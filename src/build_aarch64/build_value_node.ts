@@ -86,7 +86,10 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 		const size =
 			type_name === "float"
 				? 4
-				: type_name === "uint8" || type_name === "int8" || type_name === "char"
+				: type_name === "uint8" ||
+					  type_name === "int8" ||
+					  type_name === "char" ||
+					  type_name === "bool"
 					? 1
 					: 8;
 		const signed =
@@ -106,7 +109,22 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 		if (type_name === "string" && status.string_literal_names?.has(value)) {
 			status.code += `adr x0, ${value}`;
 		} else {
-			status.code += `adr x0, ${value}\nldr x0, [x0]`;
+			const size =
+				type_name === "uint8" ||
+				type_name === "int8" ||
+				type_name === "char" ||
+				type_name === "bool"
+					? 1
+					: type_name === "int16" || type_name === "uint16"
+						? 2
+						: 8;
+			if (size === 1) {
+				status.code += `adr x0, ${value}\nldrb w0, [x0]`;
+			} else if (size === 2) {
+				status.code += `adr x0, ${value}\nldrh w0, [x0]`;
+			} else {
+				status.code += `adr x0, ${value}\nldr x0, [x0]`;
+			}
 		}
 	}
 }

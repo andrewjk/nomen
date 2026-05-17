@@ -216,7 +216,7 @@ Console.write("\\{result}")
 		await check_output("switch_comparisons", result, "2");
 	});
 
-	test.skip("switch with logical operators (pre-existing parser bug)", async () => {
+	test("switch with logical operators", async () => {
 		const input = `
 var int result = 0
 const x = 5

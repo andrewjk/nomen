@@ -9,7 +9,7 @@ type OpTuple = typeof OPERATORS;
 type Operator = OpTuple[number];
 */
 
-type Operator =
+export type Operator =
 	| "+"
 	| "-"
 	| "*"

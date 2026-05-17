@@ -7,7 +7,7 @@ import CastNode from "../nodes/CastNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import GroupedNode from "../nodes/GroupedNode.ts";
 import { is_operation_node } from "../nodes/is_node_type.ts";
-import OperationNode from "../nodes/OperationNode.ts";
+import OperationNode, { type Operator } from "../nodes/OperationNode.ts";
 import RangeNode from "../nodes/RangeNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import parse_access from "./parse_access.ts";
@@ -24,6 +24,38 @@ import consume from "./utils/consume.ts";
 import expect from "./utils/expect.ts";
 import get_index from "./utils/get_index.ts";
 import peek_current from "./utils/peek_current.ts";
+
+function restructure_op(
+	start: number,
+	current_op: Operator,
+	current_prec: number,
+	current_node: BaseNode,
+	expression: OperationNode,
+): OperationNode {
+	const expression_precedence = operator_precedence(expression.op);
+	if (current_prec <= expression_precedence) {
+		if (is_operation_node(expression.left_value)) {
+			const left_prec = operator_precedence((expression.left_value as OperationNode).op);
+			if (current_prec <= left_prec) {
+				const restructured_left = restructure_op(
+					start,
+					current_op,
+					current_prec,
+					current_node,
+					expression.left_value as OperationNode,
+				);
+				return new OperationNode(start, expression.op, restructured_left, expression.right_value);
+			}
+		}
+		return new OperationNode(
+			start,
+			expression.op,
+			new OperationNode(start, current_op, current_node, expression.left_value),
+			expression.right_value,
+		);
+	}
+	return new OperationNode(start, current_op, current_node, expression);
+}
 
 function parse_primary(status: ParseStatus, value: string): BaseNode {
 	const start = get_index(status);
@@ -126,21 +158,10 @@ export default function parse_expression(status: ParseStatus): BaseNode {
 				const expression = parse_expression(status);
 				if (is_operation_node(expression)) {
 					const current_precedence = operator_precedence(current_value);
-					const expression_precedence = operator_precedence(expression.op);
-					if (current_precedence <= expression_precedence) {
-						// Move things from the right to the left
-						// E.g. from `a + (b > c)` to `(a + b) > c`
-						node = new OperationNode(
-							start,
-							expression.op,
-							new OperationNode(start, current_value, node, expression.left_value),
-							expression.right_value,
-						);
-						break;
-					}
+					node = restructure_op(start, current_value, current_precedence, node, expression);
+				} else {
+					node = new OperationNode(start, current_value, node, expression);
 				}
-
-				node = new OperationNode(start, current_value, node, expression);
 				break;
 			}
 			case "as": {
@@ -188,6 +209,12 @@ function operator_precedence(op: string) {
 		case "<<":
 		case ">>": {
 			return 5;
+		}
+		case ">":
+		case ">=":
+		case "<":
+		case "<=": {
+			return 6;
 		}
 		case "==":
 		case "!=": {
