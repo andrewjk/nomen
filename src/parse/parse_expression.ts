@@ -150,7 +150,12 @@ export default function parse_expression(status: ParseStatus): BaseNode {
 			case "<":
 			case "<=":
 			case "&&":
-			case "||": {
+			case "||":
+			case "<<":
+			case ">>":
+			case "&":
+			case "|":
+			case "^": {
 				consume(status);
 
 				// TODO: Proper order of operations

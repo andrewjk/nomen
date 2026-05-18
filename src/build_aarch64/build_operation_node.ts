@@ -48,6 +48,16 @@ function map_op(op: string): string {
 			return "sdiv";
 		case "%":
 			return "mod";
+		case "<<":
+			return "lsl";
+		case ">>":
+			return "asr";
+		case "&":
+			return "and";
+		case "|":
+			return "orr";
+		case "^":
+			return "eor";
 		default:
 			return "add";
 	}

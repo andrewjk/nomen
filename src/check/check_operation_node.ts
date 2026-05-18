@@ -92,8 +92,12 @@ export default function check_operation_node(op: OperationNode, status: CheckSta
 		case "-":
 		case "*":
 		case "/":
-		case "%": {
-			//op.type = new Type("int");
+		case "%":
+		case "<<":
+		case ">>":
+		case "&":
+		case "|":
+		case "^": {
 			op.type = left_type;
 			break;
 		}
