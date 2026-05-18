@@ -37,14 +37,16 @@ export default function parse_struct(
 		expect("}", status);
 		status.stack.pop();
 
-		// Add the init function to the struct
-		// TODO: Allow overriding it
-		const func = new FunctionNode(-1, visibility, "init", new Type(struct.name));
-		func.params = struct.fields
-			.filter((f) => f.visibility !== "priv" && !f.value)
-			.map((f) => new ParameterNode(-1, f.name, f.type));
-		func.is_static = true;
-		struct.functions.unshift(func);
+		// Add auto-generated init if user hasn't defined one
+		const has_custom_init = struct.functions.some((f) => f.name === "init");
+		if (!has_custom_init) {
+			const func = new FunctionNode(-1, visibility, "init", new Type(struct.name));
+			func.params = struct.fields
+				.filter((f) => f.visibility !== "priv" && !f.value)
+				.map((f) => new ParameterNode(-1, f.name, f.type));
+			func.is_static = true;
+			struct.functions.unshift(func);
+		}
 
 		add_to_parent(struct, "Struct", status);
 	}

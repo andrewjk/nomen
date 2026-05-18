@@ -7,6 +7,7 @@ import parse_trait from "./parse_trait.ts";
 import type ParseStatus from "./ParseStatus.ts";
 import consume from "./utils/consume.ts";
 import get_index from "./utils/get_index.ts";
+import peek_current from "./utils/peek_current.ts";
 import peek_next from "./utils/peek_next.ts";
 
 export default function parse_visibility(visibility: "pub" | "priv", status: ParseStatus) {
@@ -47,6 +48,21 @@ export default function parse_visibility(visibility: "pub" | "priv", status: Par
 				consume(status);
 			} else {
 				parse_function(visibility, status);
+			}
+			break;
+		}
+		case "init": {
+			consume(status);
+			parse_function(visibility, status, "init");
+			break;
+		}
+		case "final": {
+			consume(status);
+			consume(status);
+			if (peek_current(status) === "func") {
+				parse_function(visibility, status, undefined, true);
+			} else {
+				add_error(status, "Expected func after final", get_index(status));
 			}
 			break;
 		}

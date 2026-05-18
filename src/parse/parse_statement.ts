@@ -1,3 +1,4 @@
+import add_error from "../add_error.ts";
 import AccessIndexNode from "../nodes/AccessIndexNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import AssignmentNode from "../nodes/AssignmentNode.ts";
@@ -72,6 +73,21 @@ export default function parse_statement(status: ParseStatus) {
 			}
 			case "func": {
 				parse_function("mod", status);
+				break;
+			}
+			case "init": {
+				// init = (...) { } is shorthand for func init = (...) { }
+				parse_function("mod", status, "init");
+				break;
+			}
+			case "final": {
+				// final func name = (...) { }
+				consume(status);
+				if (peek_current(status) === "func") {
+					parse_function("mod", status, undefined, true);
+				} else {
+					add_error(status, "Expected func after final", get_index(status));
+				}
 				break;
 			}
 			case "op": {

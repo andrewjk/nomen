@@ -19,12 +19,26 @@ import peek_current from "./utils/peek_current.ts";
 export default function parse_function(
 	visibility: "inherit" | "pub" | "mod" | "priv",
 	status: ParseStatus,
+	name_override?: string,
+	is_final?: boolean,
 ) {
 	const start = get_index(status);
-	accept(visibility, status);
-	accept("func", status);
-	const name = consume(status);
-	const func = new FunctionNode(start, visibility, name, new Type(""));
+	if (name_override) {
+		accept(name_override, status);
+	} else {
+		accept(visibility, status);
+		accept("func", status);
+	}
+	const name = name_override || consume(status);
+	const parent_for_type = status.stack.at(-1);
+	let return_type = new Type("");
+	if (name === "init" && parent_for_type?.node_type === "struct") {
+		return_type = new Type((parent_for_type as StructNode).name);
+	}
+	const func = new FunctionNode(start, visibility, name, return_type);
+	if (is_final) {
+		func.is_final = true;
+	}
 
 	if (expect("=", status) && expect("(", status)) {
 		const parent = status.stack.at(-1)!;
@@ -51,7 +65,7 @@ export default function parse_function(
 					expect("}", status);
 					status.stack.pop();
 
-					if (func.return_type.name && !func.has_return) {
+					if (func.return_type.name && !func.has_return && name !== "init") {
 						add_error(status, `Missing return`, status.tokens[status.i - 2].i);
 					}
 				}
@@ -146,6 +160,9 @@ function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: 
 		param.type_start = param.start;
 		param.type = new Type((parent as StructNode).name);
 		param.is_self_param = true;
+		if (func.name === "init") {
+			param.declaration = "var";
+		}
 
 		if (accept(",", status)) {
 			parse_function_parameter(parent, func, status);

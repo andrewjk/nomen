@@ -35,9 +35,11 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 		}
 	}
 
+	const values_length_before_fields = status.values.length;
 	for (let decl of struct.fields) {
 		check_declaration_node(decl, status);
 	}
+	status.values.length = values_length_before_fields;
 
 	struct.privates_visible = true;
 

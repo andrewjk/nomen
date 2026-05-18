@@ -1,4 +1,5 @@
 import type BuildStatus from "../build/BuildStatus.ts";
+import FunctionNode from "../nodes/FunctionNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import build_block_node from "./build_block_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
@@ -14,10 +15,14 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 		status.code = "";
 	}
 
+	const custom_init = node.functions.find((f) => f.name === "init" && f.has_body);
+
 	if (node.is_simple_type) {
 		build_struct_functions(node, status);
 	} else {
-		build_init_function(node, status);
+		if (!custom_init) {
+			build_init_function(node, status);
+		}
 		build_struct_functions(node, status);
 		build_trait_functions(node, status);
 	}
@@ -83,9 +88,115 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 	status.stack_offsets = old_stack_offsets;
 }
 
+function build_custom_init_function(node: StructNode, func: FunctionNode, status: BuildStatus) {
+	const func_name = `${node.name}_init`;
+
+	const old_scoped_declarations = status.scoped_declarations;
+	const old_stack_size = status.stack_size;
+	const old_stack_offsets = status.stack_offsets;
+	const old_param_regs = status.function_param_regs;
+	const old_param_vars = status.function_param_vars;
+	const old_return_label = status.function_return_label;
+
+	status.scoped_declarations = [];
+	status.stack_size = 0;
+	status.stack_offsets = new Map();
+
+	const return_label = `.return_${node.name}_init`;
+	status.function_return_label = return_label;
+
+	const stack_placeholder = `STACK_SIZE_${func_name}`;
+
+	status.code += `.p2align 2\n`;
+	status.code += `${func_name}:\n`;
+	status.code += `stp x29, x30, [sp, #-16]!\n`;
+
+	status.code += `str x19, [sp, #-16]!\n`;
+	status.code += `mov x19, x0\n`;
+
+	status.function_param_regs = new Map();
+	status.function_param_vars = new Set();
+
+	status.function_param_regs.set("self", "x19");
+
+	for (let i = 0; i < func.params.length; i++) {
+		const param = func.params[i];
+		if (param.is_self_param) continue;
+		status.function_param_vars.add(param.name);
+	}
+
+	status.code += `sub sp, sp, #${stack_placeholder}\n`;
+	status.code += `mov x29, sp\n`;
+
+	for (let i = 0; i < func.params.length; i++) {
+		const param = func.params[i];
+		if (param.is_self_param) continue;
+		const size = aarch64_size(param.type.name);
+		const offset = allocate_stack_space(status, size, size);
+		status.stack_offsets!.set(param.name, offset);
+		const param_regs = ["x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7"];
+		status.code += `str ${param_regs[i]}, [x29, #${offset}]\n`;
+	}
+
+	// Zero the struct memory
+	status.code += `str xzr, [x19]\n`;
+
+	// Initialize default field values
+	for (const field of node.fields) {
+		if (field.value) {
+			const offset = get_field_offset(node.name, field.name, status);
+			if (field.value.node_type === "value") {
+				const val = (field.value as any).value;
+				if (val === "true") {
+					status.code += `mov x1, #1\n`;
+				} else if (val === "false") {
+					status.code += `mov x1, #0\n`;
+				} else if (/^(\+|-)*\d+$/.test(val)) {
+					status.code += `ldr x1, =${val}\n`;
+				} else if (val.startsWith('"')) {
+					const label = `_str_${func_name}_${field.name}`;
+					status.strings!.set(label, val);
+					status.code += `adr x1, ${label}\n`;
+				} else {
+					status.code += `ldr x1, =${val}\n`;
+				}
+				status.code += `str x1, [x19, #${offset}]\n`;
+			}
+		}
+	}
+
+	build_block_node(func, status);
+
+	status.code += `${return_label}:\n`;
+
+	const total_stack = Math.ceil((status.stack_size || 0) / 16) * 16;
+	status.code = status.code.replace(
+		`sub sp, sp, #${stack_placeholder}`,
+		total_stack > 0 ? `sub sp, sp, #${total_stack}` : `// no stack needed`,
+	);
+	if (total_stack > 0) {
+		status.code += `add sp, sp, #${total_stack}\n`;
+	}
+
+	status.code += `ldr x19, [sp], #16\n`;
+	status.code += `ldp x29, x30, [sp], #16\n`;
+	status.code += `ret\n`;
+
+	status.scoped_declarations = old_scoped_declarations;
+	status.function_param_regs = old_param_regs;
+	status.function_param_vars = old_param_vars;
+	status.function_return_label = old_return_label;
+	status.stack_size = old_stack_size;
+	status.stack_offsets = old_stack_offsets;
+}
+
 function build_struct_functions(node: StructNode, status: BuildStatus) {
 	for (const func of node.functions) {
-		if (func.name === "init") continue;
+		if (func.name === "init" && !func.has_body) continue;
+		if (func.name === "init" && func.has_body) {
+			build_custom_init_function(node, func, status);
+			continue;
+		}
 
 		const old_scoped_declarations = status.scoped_declarations;
 		const old_stack_size = status.stack_size;

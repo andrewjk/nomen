@@ -34,7 +34,7 @@ export default function check_function_call(
 			required_param_count++;
 		}
 	}
-	if (target_type && func.params[0]?.is_self_param) {
+	if (func.params[0]?.is_self_param) {
 		required_param_count -= 1;
 	}
 	if (node.params.length > func.params.length) {
@@ -56,6 +56,8 @@ export default function check_function_call(
 
 	status.stack.push(node);
 
+	const self_offset = func.params[0]?.is_self_param ? 1 : 0;
+
 	for (let [i, param] of node.params.entries()) {
 		if (!check_node(param, status)) {
 			continue;
@@ -63,8 +65,9 @@ export default function check_function_call(
 
 		const param_type = type_from_value_node(param, status);
 		const param_value = value_from_value_node(param);
+		const func_param = func.params[i + self_offset];
 		check_type_and_value_match(
-			func.params[i].type,
+			func_param.type,
 			param_type,
 			param_value,
 			status,
@@ -72,8 +75,8 @@ export default function check_function_call(
 			"param",
 		);
 
-		if (param_type.is_array && param_type.length && !func.params[i].type.length) {
-			func.params[i].type.length = param_type.length;
+		if (param_type.is_array && param_type.length && !func_param.type.length) {
+			func_param.type.length = param_type.length;
 		}
 
 		if (param.node_type !== "value") {
