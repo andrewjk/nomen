@@ -14,7 +14,9 @@ export default class ValueNode extends BaseNode {
 
 // HACK: This is duplicated in too many places
 function type_from_value(value: string): Type {
-	if (value === "true" || value === "false") {
+	if (value === "null") {
+		return new Type("null", true);
+	} else if (value === "true" || value === "false") {
 		return new Type("bool", true);
 	} else if (value.startsWith('"') && value.endsWith('"')) {
 		return new Type("string", true);

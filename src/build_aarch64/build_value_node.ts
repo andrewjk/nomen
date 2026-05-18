@@ -24,6 +24,8 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 		value = "1";
 	} else if (value === "false") {
 		value = "0";
+	} else if (value === "null") {
+		value = "0";
 	}
 
 	// Check param regs with both original and replaced name

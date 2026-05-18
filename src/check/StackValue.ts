@@ -13,4 +13,5 @@ export default interface StackValue {
 	 */
 	is_set?: boolean;
 	start?: number;
+	is_null?: boolean;
 }

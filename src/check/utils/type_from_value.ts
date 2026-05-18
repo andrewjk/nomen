@@ -20,7 +20,11 @@ export default function type_from_value(value: string, status: CheckStatus): Typ
 		return new Type("func");
 	}
 
-	if (value === "true" || value === "false") {
+	if (value === "null") {
+		const t = new Type("null", true);
+		t.is_nullable = true;
+		return t;
+	} else if (value === "true" || value === "false") {
 		return new Type("bool", true);
 	} else if (value.startsWith('"') && value.endsWith('"')) {
 		return new Type("string", true);

@@ -9,6 +9,9 @@ import peek_current from "./utils/peek_current.ts";
 
 export default function parse_type(status: ParseStatus): Type {
 	const type = new Type(consume(status));
+	if (accept("?", status)) {
+		type.is_nullable = true;
+	}
 	if (accept("[", status)) {
 		type.is_array = true;
 		if (peek_current(status) !== "]") {

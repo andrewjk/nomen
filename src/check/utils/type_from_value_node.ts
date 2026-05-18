@@ -20,7 +20,13 @@ import type_from_value from "./type_from_value.ts";
 export default function type_from_value_node(node: BaseNode, status: CheckStatus): Type {
 	switch (node.node_type) {
 		case "value": {
-			return type_from_value((node as ValueNode).value, status);
+			const vn = node as ValueNode;
+			if (vn.value === "null") {
+				const t = new Type("null", true);
+				t.is_nullable = true;
+				return t;
+			}
+			return type_from_value(vn.value, status);
 		}
 		case "access": {
 			return type_from_value_node((node as AccessNode).access, status);

@@ -26,6 +26,9 @@ export default function check_type_and_value_match(
 		if (target_type.is_array !== value_type.is_array) {
 			// Trying to assign a non-array to an array or vice-versa
 			add_error_message(status, i, node_type, type_name(value_type), type_name(target_type));
+		} else if (value_type.name === "null" && target_type.is_nullable) {
+			// Assigning null to a nullable type is ok
+			return;
 		} else if (target_type.name !== value_type.name) {
 			// It might be a type that can be coerced
 			if (can_coerce(target_type.name, value_type.name, value)) {
@@ -39,6 +42,11 @@ export default function check_type_and_value_match(
 				return;
 			}
 
+			// null assigned to non-nullable?
+			if (value_type.name === "null" && !target_type.is_nullable) {
+				add_error_message(status, i, node_type, "null", type_name(target_type));
+				return;
+			}
 			// Trying to assign an invalid type
 			add_error_message(status, i, node_type, type_name(value_type), type_name(target_type));
 		}

@@ -22,6 +22,7 @@ Echo is a statically-typed, compiled language that compiles to C or AArch64 asse
 - **String**: `string` (C-style null-terminated string)
 - **Character**: `char` (8-bit character)
 - **Boolean**: `bool`
+- **Null**: `null` (represents the absence of a value for nullable types)
 - **Void**: `void` (used for functions with no return value)
 
 ### Array Types
@@ -43,6 +44,36 @@ Array length can be accessed via `.length`:
 
 ```
 const len = numbers.length
+```
+
+### Nullable Types
+
+Any type can be made nullable by appending `?`:
+
+```
+var int? x = null
+var string? name = null
+```
+
+Nullable variables can hold either a value of the base type or `null`. Assigning `null` to a non-nullable type is a compile error:
+
+```
+const int x = null      // Error: cannot assign null to non-nullable int
+var int? y = null        // OK
+```
+
+The compiler tracks which nullable variables are null. Using a null variable is a compile error:
+
+```
+var int? x = null
+const y = x + 1          // Error: Variable 'x' is null
+```
+
+Nullable variables initialized with a non-null value can be used freely:
+
+```
+var int? x = 5
+const y = x + 1          // OK, y = 6
 ```
 
 ### Range Types
@@ -161,6 +192,7 @@ Types are inferred from initializers when omitted:
 - `'h'` → `char`
 - integers → `int`
 - floats → `float`
+- `null` → `null` (requires explicit nullable type annotation)
 
 ### Functions
 
@@ -458,6 +490,9 @@ const char c = 'h'
 
 // Booleans
 const bool flag = true
+
+// Null
+var int? nothing = null
 ```
 
 ### Arrays
