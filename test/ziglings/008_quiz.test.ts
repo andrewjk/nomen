@@ -27,10 +27,10 @@ pub func main = () {
 }
 `;
 	const expected = [
-		{ message: "Assignment to const: x", start: 138, line: 12, column: 5 },
-		{ message: "Unknown value: ???", start: 153, line: 13, column: 10 },
-		{ message: "Unknown value: ???", start: 180, line: 15, column: 9 },
-		{ message: "Unknown value: ???", start: 206, line: 16, column: 23 },
+		{ message: "Assignment to const: x", start: 135, line: 12, column: 5 },
+		{ message: "Unknown value: ???", start: 150, line: 13, column: 10 },
+		{ message: "Unknown value: ???", start: 177, line: 15, column: 9 },
+		{ message: "Unknown value: ???", start: 203, line: 16, column: 23 },
 	];
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual(expected);
