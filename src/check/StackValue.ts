@@ -12,4 +12,5 @@ export default interface StackValue {
 	 * exactly once
 	 */
 	is_set?: boolean;
+	start?: number;
 }

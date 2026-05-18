@@ -67,6 +67,7 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			name: decl.name,
 			type: decl.func_return_type || decl.type,
 			is_set: !!decl.value,
+			start: decl.start,
 		});
 	} else {
 		if (decl.type.name) {
@@ -110,6 +111,7 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			name: decl.name,
 			type: decl.type,
 			is_set: !!decl.value,
+			start: decl.start,
 		});
 	}
 }

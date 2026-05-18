@@ -142,3 +142,82 @@ init = (int x) {
 		expect(parsed.errors.length).toBeGreaterThan(0);
 	});
 });
+
+describe("final function enforcement", () => {
+	test("error when final function not called", () => {
+		const input = `
+struct Resource {
+    var int handle
+
+    final func release = (var self) {
+        self.handle = 0
+    }
+}
+
+const r = Resource(42)
+Console.write("\\{r.handle}")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors.length).toBe(1);
+		expect(parsed.errors[0].message).toBe(
+			"Final function 'release' must be called before 'r' goes out of scope",
+		);
+	});
+
+	test("no error when final function is called", () => {
+		const input = `
+struct Resource {
+    var int handle
+
+    final func release = (var self) {
+        self.handle = 0
+    }
+}
+
+const r = Resource(42)
+r.release()
+Console.write("\\{r.handle}")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+	});
+
+	test("error when final function not called on second instance", () => {
+		const input = `
+struct Resource {
+    var int handle
+
+    final func release = (var self) {
+        self.handle = 0
+    }
+}
+
+const r1 = Resource(1)
+r1.release()
+const r2 = Resource(2)
+Console.write("\\{r2.handle}")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors.length).toBe(1);
+		expect(parsed.errors[0].message).toBe(
+			"Final function 'release' must be called before 'r2' goes out of scope",
+		);
+	});
+
+	test("struct without final function produces no error", () => {
+		const input = `
+struct Counter {
+    var int count
+
+    func reset = (var self) {
+        self.count = 0
+    }
+}
+
+const c = Counter(5)
+Console.write("\\{c.count}")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+	});
+});

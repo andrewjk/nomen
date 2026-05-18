@@ -3,7 +3,9 @@ import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessIndexNode from "../nodes/AccessIndexNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
+import BaseNode from "../nodes/BaseNode.ts";
 import Type from "../nodes/Type.ts";
+import ValueNode from "../nodes/ValueNode.ts";
 import check_function_call from "./check_function_call.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
@@ -26,7 +28,12 @@ export default function check_access_node(node: AccessNode, status: CheckStatus)
 			return check_access_field_node(target_type, node.access as AccessFieldNode, status);
 		}
 		case "access_func": {
-			return check_access_function_node(target_type, node.access as AccessFunctionCallNode, status);
+			return check_access_function_node(
+				target_type,
+				node.target,
+				node.access as AccessFunctionCallNode,
+				status,
+			);
 		}
 		case "access_index": {
 			return check_access_index_node(target_type, node.access as AccessIndexNode, status);
@@ -91,6 +98,7 @@ function check_access_field_node(
 
 function check_access_function_node(
 	target_type: Type,
+	target: BaseNode,
 	node: AccessFunctionCallNode,
 	status: CheckStatus,
 ): boolean {
@@ -124,6 +132,10 @@ function check_access_function_node(
 	if (!func) {
 		add_error(status, `Function not found: ${target_type.name}.${node.name}`, node.start);
 		return false;
+	}
+
+	if (func.is_final && target.node_type === "value") {
+		status.finalized.add((target as ValueNode).value);
 	}
 
 	return check_function_call(node, status, func, target_type);

@@ -18,5 +18,6 @@ export default function clone_status(status: CheckStatus): CheckStatus {
 		allocations: status.allocations,
 		var_name_counter: status.var_name_counter,
 		errors: status.errors,
+		finalized: status.finalized,
 	};
 }

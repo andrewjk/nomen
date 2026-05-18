@@ -15,6 +15,7 @@ export default function check(root: BaseNode): CheckResult {
 		allocations: [],
 		var_name_counter: { value: 0 },
 		errors: [],
+		finalized: new Set(),
 	};
 
 	check_node(root, status);
