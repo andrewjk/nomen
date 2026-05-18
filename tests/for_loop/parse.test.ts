@@ -38,7 +38,6 @@ for x of 0..5 {}
 			10,
 			new ValueNode(10, "0", new Type("int", true)),
 			new ValueNode(13, "5", new Type("int", true)),
-			false,
 		),
 	);
 	expect(parsed.errors).toEqual([]);

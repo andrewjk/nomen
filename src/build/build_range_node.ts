@@ -11,7 +11,7 @@ export default function build_range_node(node: RangeNode, status: BuildStatus) {
 
 	if (start !== undefined && end !== undefined) {
 		// Static bounds - generate array literal
-		const actual_end = end + (node.inclusive ? 1 : 0);
+		const actual_end = end;
 		status.code += `{${[...Array(actual_end - start).keys()].map((value) => start + value).join(", ")}}`;
 	} else {
 		// Dynamic bounds - generate a compound literal with the range expressions

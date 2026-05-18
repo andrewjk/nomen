@@ -177,7 +177,7 @@ export default function parse_expression(status: ParseStatus): BaseNode {
 			}
 			case "..": {
 				consume(status);
-				const range = new RangeNode(start, node, parse_expression(status), false);
+				const range = new RangeNode(start, node, parse_expression(status));
 				node = range;
 				break;
 			}

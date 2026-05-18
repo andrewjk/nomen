@@ -25,7 +25,7 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 			}
 			status.code += "; ";
 			build_node(node.item, status);
-			status.code += range.inclusive ? " <= " : " < ";
+			status.code += " < ";
 			if (range.right_value) {
 				build_node(range.right_value, status);
 			}

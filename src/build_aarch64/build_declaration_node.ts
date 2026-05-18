@@ -428,7 +428,7 @@ function evaluate_range_static(node: RangeNode): string | null {
 	const start = evaluate_range_const(node.left_value);
 	const end = evaluate_range_const(node.right_value);
 	if (start !== undefined && end !== undefined) {
-		const actual_end = end + (node.inclusive ? 1 : 0);
+		const actual_end = end;
 		return [...Array(actual_end - start).keys()].map((v) => start + v).join(", ");
 	}
 	return null;

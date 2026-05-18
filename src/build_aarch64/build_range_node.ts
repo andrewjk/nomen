@@ -9,7 +9,7 @@ export default function build_range_node(node: RangeNode, status: BuildStatus) {
 	const end = evaluate_constant(node.right_value);
 
 	if (start !== undefined && end !== undefined) {
-		const actual_end = end + (node.inclusive ? 1 : 0);
+		const actual_end = end;
 		status.code += `${[...Array(actual_end - start).keys()].map((value) => start + value).join(", ")}`;
 	} else {
 		// Dynamic bounds - not supported for static array generation

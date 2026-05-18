@@ -47,16 +47,14 @@ export default function check_range_node(range: RangeNode, status: CheckStatus):
 	const left_val = get_literal_value(range.left_value);
 	const right_val = get_literal_value(range.right_value);
 	if (left_val !== undefined && right_val !== undefined) {
-		const length = range.inclusive ? right_val - left_val + 1 : right_val - left_val;
+		const length = right_val - left_val;
 		range.type.length = new ValueNode(-1, length.toString(), new Type("int", true));
 	} else {
 		// Try to evaluate constant expressions
 		const left_expr_val = evaluate_expression(range.left_value);
 		const right_expr_val = evaluate_expression(range.right_value);
 		if (left_expr_val !== undefined && right_expr_val !== undefined) {
-			const length = range.inclusive
-				? right_expr_val - left_expr_val + 1
-				: right_expr_val - left_expr_val;
+			const length = right_expr_val - left_expr_val;
 			range.type.length = new ValueNode(-1, length.toString(), new Type("int", true));
 		} else {
 			// For non-constant expressions, create an operation node for the length
@@ -67,17 +65,7 @@ export default function check_range_node(range: RangeNode, status: CheckStatus):
 				range.left_value,
 				new Type("int"),
 			);
-			if (range.inclusive) {
-				range.type.length = new OperationNode(
-					range.right_value.start,
-					"+",
-					diff,
-					new ValueNode(-1, "1", new Type("int", true)),
-					new Type("int"),
-				);
-			} else {
-				range.type.length = diff;
-			}
+			range.type.length = diff;
 		}
 	}
 

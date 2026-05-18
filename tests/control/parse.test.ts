@@ -28,7 +28,6 @@ for x of 0..5 {
 			10,
 			new ValueNode(10, "0", new Type("int", true)),
 			new ValueNode(13, "5", new Type("int", true)),
-			false,
 		),
 		[new BreakNode(19)],
 	);
@@ -50,7 +49,6 @@ for x of 0..5 {
 			10,
 			new ValueNode(10, "0", new Type("int", true)),
 			new ValueNode(13, "5", new Type("int", true)),
-			false,
 		),
 		[new ContinueNode(19)],
 	);

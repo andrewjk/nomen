@@ -75,11 +75,7 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 			status.code += `ldr x1, [sp], #16\n`;
 			status.code += `cmp x1, x2\n`;
 		}
-		if (range.inclusive) {
-			status.code += `bgt ${end_label}\n`;
-		} else {
-			status.code += `bge ${end_label}\n`;
-		}
+		status.code += `bge ${end_label}\n`;
 
 		// body
 		build_block_node(node, status);
