@@ -1,4 +1,3 @@
-import add_error from "../add_error.ts";
 import AccessIndexNode from "../nodes/AccessIndexNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import AssignmentNode from "../nodes/AssignmentNode.ts";
@@ -9,6 +8,7 @@ import ValueNode from "../nodes/ValueNode.ts";
 import parse_access from "./parse_access.ts";
 import parse_break_or_continue from "./parse_break_or_continue.ts";
 import parse_declaration from "./parse_declaration.ts";
+import parse_destroy from "./parse_destroy.ts";
 import parse_expression from "./parse_expression.ts";
 import parse_for_loop from "./parse_for_loop.ts";
 import parse_function from "./parse_function.ts";
@@ -80,14 +80,8 @@ export default function parse_statement(status: ParseStatus) {
 				parse_function("mod", status, "init");
 				break;
 			}
-			case "final": {
-				// final func name = (...) { }
-				consume(status);
-				if (peek_current(status) === "func") {
-					parse_function("mod", status, undefined, true);
-				} else {
-					add_error(status, "Expected func after final", get_index(status));
-				}
+			case "destroy": {
+				parse_destroy(status);
 				break;
 			}
 			case "op": {

@@ -20,7 +20,6 @@ export default function parse_function(
 	visibility: "inherit" | "pub" | "mod" | "priv",
 	status: ParseStatus,
 	name_override?: string,
-	is_final?: boolean,
 ) {
 	const start = get_index(status);
 	if (name_override) {
@@ -36,9 +35,6 @@ export default function parse_function(
 		return_type = new Type((parent_for_type as StructNode).name);
 	}
 	const func = new FunctionNode(start, visibility, name, return_type);
-	if (is_final) {
-		func.is_final = true;
-	}
 
 	if (expect("=", status) && expect("(", status)) {
 		const parent = status.stack.at(-1)!;

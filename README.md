@@ -330,8 +330,8 @@ struct Person
     print("Hi, \{name}")
   }
 
-  // Put `final` in front of one or more finalizer functions that must be called before an object created from this type goes out of scope
-  final func farewell = () {
+  // Destroy block runs automatically when the struct goes out of scope
+  destroy = {
     print("Goodbye, \{name}")
   }
 ;

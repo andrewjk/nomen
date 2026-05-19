@@ -121,24 +121,20 @@ pub struct Point {
 }
 ```
 
-### Finalizers
+### Destroy Blocks
 
-If a struct has one or more `final` functions, one of them must be called before the struct is disposed.
+If a struct has a `destroy` block, it runs automatically when the struct goes out of scope. Unlike functions, the destroy block cannot be called manually and always executes at scope exit.
 
 ```
 pub struct Transaction {
     pub int handle
 
-    init func init = (var self, int handle) {
+    init = (self, int handle) {
         self.handle = handle
     }
 
-    final func commit = () {
-        // commit the transaction
-    }
-
-    final func undo = () {
-        // undo the transaction
+    destroy = {
+        // automatically runs when the Transaction goes out of scope
     }
 }
 ```

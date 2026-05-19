@@ -7,7 +7,7 @@ import TraitNode from "../nodes/TraitNode.ts";
 import build_function_node from "./build_function_node.ts";
 import build_node from "./build_node.ts";
 import build_struct_node from "./build_struct_node.ts";
-import { emit_auto_final_for_scope } from "./utils/auto_final.ts";
+import { emit_destroy_for_scope } from "./utils/auto_destroy.ts";
 
 export default function build_block_node(node: BlockNode, status: BuildStatus) {
 	gather_structs(node, status);
@@ -31,7 +31,7 @@ export default function build_block_node(node: BlockNode, status: BuildStatus) {
 			build_node(child, status, true);
 	}
 
-	emit_auto_final_for_scope(status, declarations_before);
+	emit_destroy_for_scope(status, declarations_before);
 }
 
 function gather_structs(block: BlockNode, status: BuildStatus) {

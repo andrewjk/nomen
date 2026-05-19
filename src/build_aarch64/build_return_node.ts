@@ -2,7 +2,7 @@ import type BuildStatus from "../build/BuildStatus.ts";
 import ReturnNode from "../nodes/ReturnNode.ts";
 import build_node from "./build_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
-import { emit_auto_final_for_decl, mark_moved_if_struct } from "./utils/auto_final.ts";
+import { emit_destroy_for_decl, mark_moved_if_struct } from "./utils/auto_destroy.ts";
 import { emit_var_store } from "./utils/stack_var.ts";
 
 function find_var_size(name: string, status: BuildStatus): number {
@@ -29,11 +29,11 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 			status.code += "\n";
 		}
 		mark_moved_if_struct(node.value, status);
-		const finalized = status.finalized ?? new Set<string>();
+		const finalized = status.moved ?? new Set<string>();
 		status.code += `mov x19, x0\n`;
 		for (const decl of status.scoped_declarations) {
 			if (finalized.has(decl.name)) continue;
-			emit_auto_final_for_decl(status, decl.name, decl.type.name);
+			emit_destroy_for_decl(status, decl.name, decl.type.name);
 		}
 		status.code += `mov x0, x19\n`;
 		status.code += `b ${status.function_return_label}\n`;

@@ -52,8 +52,4 @@ export default interface CheckStatus {
 	 * Errors that have been encountered
 	 */
 	errors: CompileError[];
-	/**
-	 * Names of variables that have had their final function called
-	 */
-	finalized: Set<string>;
 }

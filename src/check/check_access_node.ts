@@ -5,7 +5,6 @@ import AccessIndexNode from "../nodes/AccessIndexNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import BaseNode from "../nodes/BaseNode.ts";
 import Type from "../nodes/Type.ts";
-import ValueNode from "../nodes/ValueNode.ts";
 import check_function_call from "./check_function_call.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
@@ -132,10 +131,6 @@ function check_access_function_node(
 	if (!func) {
 		add_error(status, `Function not found: ${target_type.name}.${node.name}`, node.start);
 		return false;
-	}
-
-	if (func.is_final && target.node_type === "value") {
-		status.finalized.add((target as ValueNode).value);
 	}
 
 	return check_function_call(node, status, func, target_type);

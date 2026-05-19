@@ -9,7 +9,7 @@ import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_node from "./build_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
-import { mark_moved_if_struct } from "./utils/auto_final.ts";
+import { mark_moved_if_struct } from "./utils/auto_destroy.ts";
 import { emit_var_address } from "./utils/stack_var.ts";
 import { get_field_offset, get_struct_size } from "./utils/struct_layout.ts";
 

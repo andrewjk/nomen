@@ -88,50 +88,28 @@ Console.write(w.name)
 	});
 });
 
-describe("final functions build", () => {
-	test("struct with final function", async () => {
+describe("destroy blocks build", () => {
+	test("struct with destroy block", async () => {
 		const input = `
 struct Resource {
     var int handle
 
-    final func release = (var self) {
+    destroy = {
         self.handle = 0
     }
 }
 
 const r = Resource(42)
 Console.write("\\{r.handle}")
-r.release()
-Console.write("\\{r.handle}")
 `;
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
-		await check_output("final_func", result, "420");
-	});
-
-	test("struct with final function that returns", async () => {
-		const input = `
-struct SafeInt {
-    var int value
-
-    final func unwrap = (self, out int) {
-        return self.value
-    }
-}
-
-const s = SafeInt(99)
-const v = s.unwrap()
-Console.write("\\{v}")
-`;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
-		expect(parsed.errors).toEqual([]);
-		await check_output("final_return", result, "99");
+		await check_output("destroy_basic", result, "42");
 	});
 });
 
-describe("init and final parse errors", () => {
+describe("init and destroy parse errors", () => {
 	test("init outside struct", () => {
 		const input = `
 init = (int x) {
@@ -143,13 +121,13 @@ init = (int x) {
 	});
 });
 
-describe("final function enforcement", () => {
-	test("auto-final when final function not called", async () => {
+describe("auto-destroy enforcement", () => {
+	test("auto-destroy runs at scope exit", async () => {
 		const input = `
 struct Resource {
     var int handle
 
-    final func release = (var self) {
+    destroy = {
         self.handle = 0
     }
 }
@@ -160,49 +138,30 @@ Console.write("\\{r.handle}")
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
-		await check_output("auto_final_basic", result, "42");
+		await check_output("auto_destroy_basic", result, "42");
 	});
 
-	test("no error when final function is called", () => {
+	test("auto-destroy on second instance", async () => {
 		const input = `
 struct Resource {
     var int handle
 
-    final func release = (var self) {
-        self.handle = 0
-    }
-}
-
-const r = Resource(42)
-r.release()
-Console.write("\\{r.handle}")
-`;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-	});
-
-	test("auto-final on second instance", async () => {
-		const input = `
-struct Resource {
-    var int handle
-
-    final func release = (var self) {
+    destroy = {
         self.handle = 0
     }
 }
 
 const r1 = Resource(1)
-r1.release()
 const r2 = Resource(2)
 Console.write("\\{r2.handle}")
 `;
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
-		await check_output("auto_final_second", result, "2");
+		await check_output("auto_destroy_second", result, "2");
 	});
 
-	test("struct without final function produces no error", () => {
+	test("struct without destroy block produces no error", () => {
 		const input = `
 struct Counter {
     var int count
@@ -226,7 +185,7 @@ describe("move on return", () => {
 struct Resource {
     var int handle
 
-    final func release = (var self) {
+    destroy = {
         self.handle = 0
     }
 }
@@ -244,13 +203,14 @@ Console.write("\\{get_handle()}")
 		await check_output("return_field_no_move", result, "42");
 	});
 });
+
 describe("ownership transfer", () => {
 	test("struct assigned to struct field via init", async () => {
 		const input = `
 struct Inner {
     var int value
 
-    final func release = (var self) {
+    destroy = {
         self.value = 0
     }
 }
@@ -270,12 +230,12 @@ Console.write("\\{outer.child.value}")
 		await check_output("assign_to_field", result, "42");
 	});
 
-	test("recursive finalization of struct fields", async () => {
+	test("recursive destroy of struct fields", async () => {
 		const input = `
 struct File {
     var int handle
 
-    final func close = (var self) {
+    destroy = {
         self.handle = 0
     }
 }
@@ -292,6 +252,6 @@ Console.write("\\{mgr.id}")
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
-		await check_output("recursive_final", result, "1");
+		await check_output("recursive_destroy", result, "1");
 	});
 });

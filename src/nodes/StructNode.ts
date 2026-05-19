@@ -9,6 +9,7 @@ export default class StructNode extends BaseNode {
 	traits: string[];
 	fields: DeclarationNode[];
 	functions: FunctionNode[];
+	destroy_body?: BaseNode;
 	privates_visible: boolean;
 	is_simple_type: boolean;
 
