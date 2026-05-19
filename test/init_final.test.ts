@@ -245,6 +245,31 @@ Console.write("\\{get_handle()}")
 	});
 });
 describe("ownership transfer", () => {
+	test("struct assigned to struct field via init", async () => {
+		const input = `
+struct Inner {
+    var int value
+
+    final func release = (var self) {
+        self.value = 0
+    }
+}
+
+struct Outer {
+    var Inner child
+}
+
+const inner = Inner(42)
+var Outer outer
+outer.child = inner
+Console.write("\\{outer.child.value}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("assign_to_field", result, "42");
+	});
+
 	test("recursive finalization of struct fields", async () => {
 		const input = `
 struct File {
