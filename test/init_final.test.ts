@@ -219,3 +219,28 @@ Console.write("\\{c.count}")
 		expect(parsed.errors).toEqual([]);
 	});
 });
+
+describe("move on return", () => {
+	test("returning struct field does not move the struct", async () => {
+		const input = `
+struct Resource {
+    var int handle
+
+    final func release = (var self) {
+        self.handle = 0
+    }
+}
+
+func get_handle = (out int) {
+    const r = Resource(42)
+    return r.handle
+}
+
+Console.write("\\{get_handle()}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("return_field_no_move", result, "42");
+	});
+});
