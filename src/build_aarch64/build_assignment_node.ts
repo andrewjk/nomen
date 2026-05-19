@@ -7,6 +7,7 @@ import AssignmentNode from "../nodes/AssignmentNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_node from "./build_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
+import { mark_moved_if_struct } from "./utils/auto_final.ts";
 import { emit_var_address } from "./utils/stack_var.ts";
 import { get_field_offset } from "./utils/struct_layout.ts";
 
@@ -163,6 +164,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 					if (!status.code.endsWith("\n")) {
 						status.code += "\n";
 					}
+					mark_moved_if_struct(node.right_value, status);
 
 					status.code += `ldr x3, [sp], #16\n`;
 
@@ -192,6 +194,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 			if (!status.code.endsWith("\n")) {
 				status.code += "\n";
 			}
+			mark_moved_if_struct(node.right_value, status);
 
 			status.code += `ldr x3, [sp], #16\n`;
 

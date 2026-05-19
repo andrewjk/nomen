@@ -244,3 +244,29 @@ Console.write("\\{get_handle()}")
 		await check_output("return_field_no_move", result, "42");
 	});
 });
+describe("ownership transfer", () => {
+	test("recursive finalization of struct fields", async () => {
+		const input = `
+struct File {
+    var int handle
+
+    final func close = (var self) {
+        self.handle = 0
+    }
+}
+
+struct FileManager {
+    var int id
+    var File file
+}
+
+const f = File(10)
+const mgr = FileManager(1, f)
+Console.write("\\{mgr.id}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("recursive_final", result, "1");
+	});
+});
