@@ -13,6 +13,8 @@ function postprocess_macos(code: string, audit = false): string {
 	code = code.replace(/\bbl snprintf\b/g, "bl _snprintf");
 	code = code.replace(/\bbl malloc\b/g, "bl _malloc");
 	code = code.replace(/\bbl exit\b/g, "bl _exit");
+	code = code.replace(/\bbl realloc\b/g, "bl _realloc");
+	code = code.replace(/\bbl free\b/g, "bl _free");
 	if (audit) {
 		code = code.replace(/\bbl _malloc\b/g, "bl _echo_malloc_wrap");
 		code = code.replace(/\bbl _free\b/g, "bl _echo_free_wrap");

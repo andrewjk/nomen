@@ -204,6 +204,11 @@ function build_access_method(
 		}
 	}
 
+	const needs_self_save = !access_func.is_static && access_func.params.length > 0;
+	if (needs_self_save) {
+		status.code += `str x0, [sp, #-16]!\n`;
+	}
+
 	// Evaluate params
 	const param_regs = access_func.is_static
 		? ["x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7"]
@@ -223,6 +228,10 @@ function build_access_method(
 	if (!status.code.endsWith("\n")) {
 		status.code += "\n";
 	}
+	if (needs_self_save) {
+		status.code += `ldr x0, [sp], #16\n`;
+	}
+
 	status.code += `bl ${method_name}\n`;
 
 	if (return_struct) {
