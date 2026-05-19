@@ -1,0 +1,22 @@
+
+pub struct Console {
+    pub func write = (string line) {
+        ```
+        #arch: c
+        printf("%s", line);
+        ```
+        ```
+        #arch: aarch64
+        sub sp, sp, #16
+        mov x1, x0
+        str x1, [sp]
+        adr x0, .Lfmt_console_s
+        bl _printf
+        add sp, sp, #16
+        b .Lend_Console_write
+        .Lfmt_console_s: .asciz "%s"
+        .p2align 2
+        .Lend_Console_write:
+        ```
+    }
+}

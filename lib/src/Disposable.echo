@@ -1,0 +1,6 @@
+
+pub trait Disposable {
+    func dispose = (self) {
+        Console.write("\nboom!")
+    }
+}

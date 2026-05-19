@@ -1,15 +1,16 @@
-import fs from "node:fs";
+import path from "node:path";
 
+import { get_library } from "../src/lib";
 import parse from "../src/parse";
 
-const system = fs.readFileSync("./bin/tests/System.echo", "utf8");
+const system = get_library(path.resolve(import.meta.dirname, "../lib"));
 
 export default function parse_with_imports(source: string) {
 	let source_to_parse = `
 pub func main = () {
 ${source}
 }
-${system}
+${system.source}
 `;
 	return parse(source_to_parse);
 }

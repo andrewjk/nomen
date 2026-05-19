@@ -1,0 +1,14 @@
+
+pub struct string: Stringable {
+    pub func to_string = (self, out string) {
+        ```
+        #arch: c
+        return self;
+        ```
+        ```
+        #arch: aarch64
+        mov x0, x19
+        ```
+        return "from_c"
+    }
+}
