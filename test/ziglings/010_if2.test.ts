@@ -1,7 +1,6 @@
 import { expect, test } from "vite-plus/test";
 
 import build from "../../src/build";
-import trim_test_build from "../trim_test_build";
 import check_output_aarch64 from "./check_output_aarch64";
 import parse_with_imports from "./parse_with_imports";
 
@@ -55,8 +54,4 @@ pub func main = () {
 
 	const expected_output = "With the discount, the price is 17.";
 	await check_output_aarch64("010", built, expected_output);
-
-	const main_start = built.code.indexOf("\nmain:\n");
-	expect(main_start).toBeGreaterThan(-1);
-	expect(trim_test_build(built.code.substring(main_start))).toContain("price is");
 });

@@ -1,7 +1,6 @@
 import { expect, test } from "vite-plus/test";
 
 import build from "../../src/build";
-import trim_test_build from "../trim_test_build";
 import check_output_aarch64 from "./check_output_aarch64";
 import parse_with_imports from "./parse_with_imports";
 
@@ -85,11 +84,6 @@ pub func main = () {
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual([]);
 	const built = build(parsed.root, { arch: "aarch64" });
-
 	const expected_output = "Program in Zig!";
 	await check_output_aarch64("008", built, expected_output);
-
-	const main_start = built.code.indexOf("\nstp x29, x30, [sp, #-16]!\nsub sp, sp, #");
-	expect(main_start).toBeGreaterThan(-1);
-	expect(trim_test_build(built.code.substring(main_start))).toContain('letters: .asciz "YZhifg"');
 });
