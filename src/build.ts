@@ -9,12 +9,13 @@ import build_aarch64_node from "./build_aarch64/build_node.ts";
 import { reset_string_counter as reset_op_string_counter } from "./build_aarch64/build_operation_node.ts";
 import { reset_string_counter as reset_value_string_counter } from "./build_aarch64/build_value_node.ts";
 import { reset_label_counter as reset_while_label_counter } from "./build_aarch64/build_while_loop_node.ts";
+import { emit_malloc } from "./build_aarch64/utils/audit.ts";
 import BaseNode from "./nodes/BaseNode.ts";
 import type BuildResult from "./types/BuildResult.ts";
 
 export default function build(
 	root: BaseNode,
-	options: { arch?: "c" | "aarch64" } = {},
+	options: { arch?: "c" | "aarch64"; audit?: boolean } = {},
 ): BuildResult {
 	let status: BuildStatus = {
 		root,
@@ -26,6 +27,7 @@ export default function build(
 		interpolate_string_counts: new Set(),
 		strings: new Map(),
 		string_literal_names: new Set(),
+		audit: options.audit,
 	};
 
 	if (options.arch === "aarch64") {
@@ -69,7 +71,7 @@ export default function build(
 			status.code += `bl _snprintf\n`;
 			status.code += `add x0, x0, #1\n`;
 			status.code += `str x0, [sp, #56]\n`;
-			status.code += `bl _malloc\n`;
+			emit_malloc(status);
 			status.code += `str x0, [sp, #64]\n`;
 			status.code += `ldr x0, [sp, #64]\n`;
 			status.code += `ldr x1, [sp, #56]\n`;
@@ -82,6 +84,9 @@ export default function build(
 			status.code += `add sp, sp, #80\n`;
 			status.code += `ldp x29, x30, [sp], #16\n`;
 			status.code += `ret\n`;
+		}
+		if (options.audit) {
+			status.code = status.code.replace(".return_0:\n", "bl _echo_audit_check\n.return_0:\n");
 		}
 	} else {
 		build_c_node(root, status);

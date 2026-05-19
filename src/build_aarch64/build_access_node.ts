@@ -8,6 +8,7 @@ import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_node from "./build_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
+import { emit_malloc } from "./utils/audit.ts";
 import { allocate_stack_space, emit_var_address } from "./utils/stack_var.ts";
 import { get_field_offset, get_struct_size } from "./utils/struct_layout.ts";
 
@@ -322,7 +323,7 @@ function build_int_array_to_string(node: AccessNode, target_type: Type, status: 
 	// Allocate result buffer - estimate 20 bytes per int element
 	const buf_size = Math.max(length * 20, 32);
 	status.code += `mov x0, #${buf_size}\n`;
-	status.code += `bl _malloc\n`;
+	emit_malloc(status);
 	status.code += `mov x20, x0\n`;
 
 	// Zero out the buffer
@@ -378,7 +379,7 @@ function build_char_array_to_string(node: AccessNode, length: string, status: Bu
 	status.code += `str x19, [sp, #-16]!\n`;
 	status.code += `mov x19, x0\n`;
 	status.code += `mov x0, #${len + 1}\n`;
-	status.code += `bl _malloc\n`;
+	emit_malloc(status);
 
 	for (let i = 0; i < len; i++) {
 		status.code += `ldrb w1, [x19, #${i}]\n`;

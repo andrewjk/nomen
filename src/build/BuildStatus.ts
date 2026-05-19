@@ -26,4 +26,5 @@ export default interface BuildStatus {
 	stack_size?: number;
 	stack_offsets?: Map<string, number>;
 	string_literal_names?: Set<string>;
+	audit?: boolean;
 }

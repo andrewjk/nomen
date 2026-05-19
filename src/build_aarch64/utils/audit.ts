@@ -1,0 +1,9 @@
+import type BuildStatus from "../../build/BuildStatus.ts";
+
+export function emit_malloc(status: BuildStatus) {
+	status.code += status.audit ? "bl _echo_malloc_wrap\n" : "bl _malloc\n";
+}
+
+export function emit_free(status: BuildStatus) {
+	status.code += status.audit ? "bl _echo_free_wrap\n" : "bl _free\n";
+}
