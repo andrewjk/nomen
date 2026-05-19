@@ -146,8 +146,55 @@ export default function parse_expression(status: ParseStatus): BaseNode {
 			case "==":
 			case "!=":
 			case ">":
-			case ">=":
-			case "<":
+			case ">=": {
+				consume(status);
+				const expression = parse_expression(status);
+				if (is_operation_node(expression)) {
+					node = restructure_op(
+						start,
+						current_value,
+						operator_precedence(current_value),
+						node,
+						expression,
+					);
+				} else {
+					node = new OperationNode(start, current_value, node, expression);
+				}
+				break;
+			}
+			case "<": {
+				if (node.node_type === "value") {
+					const next = status.tokens[status.i + 1]?.value;
+					const after_next = status.tokens[status.i + 2]?.value;
+					if (next && after_next === ">" && status.tokens[status.i + 3]?.value === "(") {
+						accept("<", status);
+						const type_args = [parse_type(status)];
+						while (peek_current(status) === ",") {
+							accept(",", status);
+							type_args.push(parse_type(status));
+						}
+						expect(">", status);
+						accept("(", status);
+						const name = (node as ValueNode).value;
+						const func = new FunctionCallNode(start, name);
+						func.type_args = type_args;
+						if (peek_current(status) !== ")") {
+							parse_function_call_parameter(func, status);
+						}
+						expect(")", status);
+						node = func;
+						break;
+					}
+				}
+				consume(status);
+				const lt_expr = parse_expression(status);
+				if (is_operation_node(lt_expr)) {
+					node = restructure_op(start, "<", operator_precedence("<"), node, lt_expr);
+				} else {
+					node = new OperationNode(start, "<", node, lt_expr);
+				}
+				break;
+			}
 			case "<=":
 			case "&&":
 			case "||":

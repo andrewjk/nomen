@@ -7,7 +7,7 @@ import parse_with_imports from "./parse_with_imports";
 describe("List push", () => {
 	test("push and read back via pop", async () => {
 		const input = `
-var List list = List()
+var List<int> list = List<int>()
 list.push(10)
 list.push(20)
 list.push(30)
@@ -23,7 +23,7 @@ Console.write("\\{a} \\{b}")
 
 	test("push multiple and pop all", async () => {
 		const input = `
-var List list = List()
+var List<int> list = List<int>()
 list.push(1)
 list.push(2)
 list.push(3)
@@ -44,7 +44,7 @@ Console.write("\\{a}\\{b}\\{c}\\{d}\\{e}")
 
 	test("push triggers resize", async () => {
 		const input = `
-var List list = List()
+var List<int> list = List<int>()
 list.push(1)
 list.push(2)
 list.push(3)
@@ -64,7 +64,7 @@ Console.write("\\{list.length}")
 
 	test("push and pop interleaved", async () => {
 		const input = `
-var List list = List()
+var List<int> list = List<int>()
 list.push(10)
 const int a = list.pop()
 list.push(20)
@@ -82,7 +82,7 @@ Console.write("\\{a} \\{b}")
 describe("List length", () => {
 	test("length tracks pushes and pops", async () => {
 		const input = `
-var List list = List()
+var List<int> list = List<int>()
 list.push(1)
 list.push(2)
 list.push(3)

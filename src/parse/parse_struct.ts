@@ -20,7 +20,14 @@ export default function parse_struct(
 	const name = consume(status);
 	const struct = new StructNode(start, visibility, name);
 
-	// Bump the namespace
+	if (accept("<", status)) {
+		struct.type_params.push(consume(status));
+		while (accept(",", status)) {
+			struct.type_params.push(consume(status));
+		}
+		expect(">", status);
+	}
+
 	const old_namespace = status.namespace;
 	status.namespace += `.${name}`;
 
@@ -37,7 +44,6 @@ export default function parse_struct(
 		expect("}", status);
 		status.stack.pop();
 
-		// Add auto-generated init if user hasn't defined one
 		const has_custom_init = struct.functions.some((f) => f.name === "init");
 		if (!has_custom_init) {
 			const func = new FunctionNode(-1, visibility, "init", new Type(struct.name));

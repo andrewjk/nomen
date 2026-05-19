@@ -12,18 +12,18 @@ export default function check_function_call_node(
 ): boolean {
 	let func = status.functions.findLast((f) => f.name === node.name);
 
-	// Check for struct constructor: StructName(...)
 	if (!func) {
 		const struct = status.structs.findLast((s) => s.name === node.name);
 		if (struct) {
 			func = struct.functions.find((f) => f.name === "init");
 			if (func) {
-				node.type = new Type(struct.name);
+				const type = new Type(struct.name);
+				type.type_args = node.type_args;
+				node.type = type;
 			}
 		}
 	}
 
-	// We're making a fake string_interpolate method for now, but it should be a real one
 	if (!func && node.name.startsWith("_string_interpolate_")) {
 		const length = parseInt(node.name.substring("_string_interpolate_".length));
 		func = new FunctionNode(0, "pub", node.name, node.type, [
@@ -32,7 +32,6 @@ export default function check_function_call_node(
 		]);
 	}
 
-	// Check if the call target is a function-typed parameter
 	if (!func) {
 		const param_value = status.values.findLast((v) => v.name === node.name);
 		if (param_value?.type.name === "func") {
@@ -50,7 +49,6 @@ export default function check_function_call_node(
 		}
 	}
 
-	// Make sure the function exists
 	if (!func) {
 		add_error(status, `Function not found: ${node.name}`, node.start);
 		return false;

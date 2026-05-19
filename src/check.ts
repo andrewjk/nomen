@@ -14,6 +14,7 @@ export default function check(root: BaseNode): CheckResult {
 		functions: [],
 		allocations: [],
 		var_name_counter: { value: 0 },
+		type_params: [],
 		errors: [],
 	};
 

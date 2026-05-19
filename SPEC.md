@@ -139,6 +139,37 @@ pub struct Transaction {
 }
 ```
 
+### Generic Structs
+
+Structs can declare type parameters using `<T>` syntax. Type parameters are type-erased at the storage level — all values are 8 bytes on aarch64, so `T` is purely for compile-time type checking with no monomorphization.
+
+```
+pub struct List<T> {
+    var int length = 0
+    var int capacity = 0
+    var int items = 0
+
+    pub func push = (self, T value) { ... }
+    pub func pop = (self, out T) { ... }
+}
+```
+
+Generic structs are instantiated by providing concrete type arguments in the constructor call:
+
+```
+var List<int> numbers = List<int>()
+numbers.push(42)
+const int top = numbers.pop()
+```
+
+Type parameters can be used in:
+
+- Field types
+- Parameter types
+- Return types (`out T`)
+
+Within the struct body, type parameters match any concrete type during type checking. At the call site, the type argument (`<int>`) ensures the correct types are enforced.
+
 ### Trait Types
 
 Interfaces that can be implemented by structs:

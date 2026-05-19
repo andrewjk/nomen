@@ -9,13 +9,19 @@ import peek_current from "./utils/peek_current.ts";
 
 export default function parse_type(status: ParseStatus): Type {
 	const type = new Type(consume(status));
+	if (accept("<", status)) {
+		type.type_args = [parse_type(status)];
+		while (accept(",", status)) {
+			type.type_args.push(parse_type(status));
+		}
+		expect(">", status);
+	}
 	if (accept("?", status)) {
 		type.is_nullable = true;
 	}
 	if (accept("[", status)) {
 		type.is_array = true;
 		if (peek_current(status) !== "]") {
-			// TODO: Should be parsing expression
 			type.length = new ValueNode(get_index(status), consume(status));
 		}
 		expect("]", status);

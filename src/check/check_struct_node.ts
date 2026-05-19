@@ -35,6 +35,12 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 		}
 	}
 
+	const types_length_before = status.types.length;
+	status.types.push(...struct.type_params);
+
+	const type_params_length_before = status.type_params.length;
+	status.type_params.push(...struct.type_params);
+
 	const values_length_before_fields = status.values.length;
 	for (let decl of struct.fields) {
 		check_declaration_node(decl, status);
@@ -51,4 +57,8 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 	}
 
 	struct.privates_visible = false;
+
+	status.type_params.length = type_params_length_before;
+	status.types.length = types_length_before;
+	status.types.push(struct.name);
 }

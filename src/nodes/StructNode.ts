@@ -10,6 +10,7 @@ export default class StructNode extends BaseNode {
 	fields: DeclarationNode[];
 	functions: FunctionNode[];
 	destroy_body?: BaseNode;
+	type_params: string[];
 	privates_visible: boolean;
 	is_simple_type: boolean;
 
@@ -27,6 +28,7 @@ export default class StructNode extends BaseNode {
 		this.traits = traits || [];
 		this.fields = fields || [];
 		this.functions = functions || [];
+		this.type_params = [];
 
 		this.privates_visible = false;
 		// TODO: String shouldn't be a simple type in all circumstances (e.g. if it is growable)

@@ -9,6 +9,7 @@ export default class Type {
 	length?: BaseNode;
 	is_return_type?: boolean;
 	is_nullable?: boolean;
+	type_args?: Type[];
 
 	constructor(name: string, is_static?: boolean, is_array?: boolean, length?: BaseNode) {
 		this.name = name;

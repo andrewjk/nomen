@@ -1,5 +1,5 @@
 
-pub struct List {
+pub struct List<T> {
     var int length = 0
     var int capacity = 0
     var int items = 0
@@ -16,7 +16,7 @@ pub struct List {
         ```
     }
 
-    pub func push = (self, int value) {
+    pub func push = (self, T value) {
         ```
         #arch: c
         if (self->length >= self->capacity) {
@@ -57,7 +57,7 @@ pub struct List {
         ```
     }
 
-    pub func pop = (self, out int) {
+    pub func pop = (self, out T) {
         ```
         #arch: c
         self->length--;

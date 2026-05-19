@@ -8,5 +8,10 @@ export default function check_type_exists(type: Type, status: CheckStatus, start
 		add_error(status, `Unknown type: ${type_name(type)}`, start);
 		return false;
 	}
+	if (type.type_args) {
+		for (const arg of type.type_args) {
+			check_type_exists(arg, status, start);
+		}
+	}
 	return true;
 }

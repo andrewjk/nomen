@@ -49,6 +49,11 @@ export default interface CheckStatus {
 	 */
 	var_name_counter: { value: number };
 	/**
+	 * Type parameters currently in scope (e.g. T in struct List<T>)
+	 */
+	type_params: string[];
+
+	/**
 	 * Errors that have been encountered
 	 */
 	errors: CompileError[];

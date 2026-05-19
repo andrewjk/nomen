@@ -4,50 +4,44 @@ import type CheckStatus from "../CheckStatus.ts";
 import type_name from "./type_name.ts";
 
 export default function check_type_and_value_match(
-	/** The target type, which is being assigned to */
 	target_type: Type,
-	/** The value type, which is being assigned */
 	value_type: Type,
 	value: string,
 	status: CheckStatus,
 	i: number,
-	/** The type of node that is being checked, for showing in error messages */
 	node_type: string,
 ) {
 	if (!target_type.name && !value_type.name) {
-		// Trying to assign an unknown value to an unknown type e.g. const x = y
 		add_error_message(status, i, node_type, `unknown value ${value}`);
 	} else if (!target_type.name && value_type.name) {
-		// Trying to assign a known value to an unknown type -- that's actually ok e.g. const x = 5
+		// ok
 	} else if (target_type.name && !value_type.name) {
-		// Trying to assign an unknown value to a known type e.g. const x: int = y
 		add_error_message(status, i, node_type, `unknown value ${value}`, type_name(target_type));
 	} else if (target_type.name && value_type.name) {
 		if (target_type.is_array !== value_type.is_array) {
-			// Trying to assign a non-array to an array or vice-versa
 			add_error_message(status, i, node_type, type_name(value_type), type_name(target_type));
 		} else if (value_type.name === "null" && target_type.is_nullable) {
-			// Assigning null to a nullable type is ok
 			return;
 		} else if (target_type.name !== value_type.name) {
-			// It might be a type that can be coerced
+			if (is_type_param(target_type.name, status)) {
+				return;
+			}
+			if (is_type_param(value_type.name, status)) {
+				return;
+			}
 			if (can_coerce(target_type.name, value_type.name, value)) {
 				return;
 			}
 
-			// It might be a struct with a matching trait
-			// TODO: Check this in more places
 			const struct = status.structs.find((f) => f.name === value_type.name);
 			if (struct?.traits.includes(target_type.name)) {
 				return;
 			}
 
-			// null assigned to non-nullable?
 			if (value_type.name === "null" && !target_type.is_nullable) {
 				add_error_message(status, i, node_type, "null", type_name(target_type));
 				return;
 			}
-			// Trying to assign an invalid type
 			add_error_message(status, i, node_type, type_name(value_type), type_name(target_type));
 		}
 	}
@@ -148,4 +142,12 @@ function type_bits(t: string): number {
 		default:
 			return 0;
 	}
+}
+
+function is_type_param(name: string, status: CheckStatus): boolean {
+	if (status.type_params.includes(name)) return true;
+	for (const s of status.structs) {
+		if (s.type_params.includes(name)) return true;
+	}
+	return false;
 }
