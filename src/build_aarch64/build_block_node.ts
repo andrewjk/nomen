@@ -7,9 +7,12 @@ import TraitNode from "../nodes/TraitNode.ts";
 import build_function_node from "./build_function_node.ts";
 import build_node from "./build_node.ts";
 import build_struct_node from "./build_struct_node.ts";
+import { emit_var_address } from "./utils/stack_var.ts";
 
 export default function build_block_node(node: BlockNode, status: BuildStatus) {
 	gather_structs(node, status);
+
+	const declarations_before = status.scoped_declarations.length;
 
 	for (let child of node.statements) {
 		if (is_struct_node(child)) {
@@ -26,6 +29,22 @@ export default function build_block_node(node: BlockNode, status: BuildStatus) {
 	for (let child of node.statements) {
 		if (!is_trait_node(child) && !is_struct_node(child) && !is_function_node(child))
 			build_node(child, status, true);
+	}
+
+	emit_auto_final(status, declarations_before);
+}
+
+function emit_auto_final(status: BuildStatus, declarations_before: number) {
+	const finalized = status.finalized ?? new Set<string>();
+	for (let i = declarations_before; i < status.scoped_declarations.length; i++) {
+		const decl = status.scoped_declarations[i];
+		if (finalized.has(decl.name)) continue;
+		const struct_type = status.structs.find((s) => s.name === decl.type.name && !s.is_simple_type);
+		if (!struct_type) continue;
+		const final_func = struct_type.functions.find((f) => f.is_final);
+		if (!final_func) continue;
+		emit_var_address(status, "x0", decl.name);
+		status.code += `bl ${struct_type.name}_${final_func.name}\n`;
 	}
 }
 

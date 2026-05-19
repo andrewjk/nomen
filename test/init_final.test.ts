@@ -144,7 +144,7 @@ init = (int x) {
 });
 
 describe("final function enforcement", () => {
-	test("error when final function not called", () => {
+	test("auto-final when final function not called", async () => {
 		const input = `
 struct Resource {
     var int handle
@@ -158,10 +158,9 @@ const r = Resource(42)
 Console.write("\\{r.handle}")
 `;
 		const parsed = parse_with_imports(input);
-		expect(parsed.errors.length).toBe(1);
-		expect(parsed.errors[0].message).toBe(
-			"Final function 'release' must be called before 'r' goes out of scope",
-		);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("auto_final_basic", result, "42");
 	});
 
 	test("no error when final function is called", () => {
@@ -182,7 +181,7 @@ Console.write("\\{r.handle}")
 		expect(parsed.errors).toEqual([]);
 	});
 
-	test("error when final function not called on second instance", () => {
+	test("auto-final on second instance", async () => {
 		const input = `
 struct Resource {
     var int handle
@@ -198,10 +197,9 @@ const r2 = Resource(2)
 Console.write("\\{r2.handle}")
 `;
 		const parsed = parse_with_imports(input);
-		expect(parsed.errors.length).toBe(1);
-		expect(parsed.errors[0].message).toBe(
-			"Final function 'release' must be called before 'r2' goes out of scope",
-		);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("auto_final_second", result, "2");
 	});
 
 	test("struct without final function produces no error", () => {

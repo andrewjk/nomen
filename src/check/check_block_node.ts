@@ -9,31 +9,11 @@ import type CheckStatus from "./CheckStatus.ts";
 export default function check_block_node(node: BlockNode, status: CheckStatus) {
 	gather_structs(node, status);
 
-	const values_before = status.values.length;
-
 	status.stack.push(node);
 	for (let child of node.statements) {
 		check_node(child, status);
 	}
 	status.stack.pop();
-
-	check_unfinalized(status, values_before);
-}
-
-function check_unfinalized(status: CheckStatus, values_before: number) {
-	for (let i = values_before; i < status.values.length; i++) {
-		const v = status.values[i];
-		if (status.finalized.has(v.name)) continue;
-		const struct = status.structs.find((s) => s.name === v.type.name);
-		if (!struct) continue;
-		const final_func = struct.functions.find((f) => f.is_final);
-		if (!final_func) continue;
-		add_error(
-			status,
-			`Final function '${final_func.name}' must be called before '${v.name}' goes out of scope`,
-			v.start ?? -1,
-		);
-	}
 }
 
 function gather_structs(block: BlockNode, status: CheckStatus) {
