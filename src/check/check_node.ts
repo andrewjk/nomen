@@ -3,11 +3,13 @@ import AccessNode from "../nodes/AccessNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import AssignmentNode from "../nodes/AssignmentNode.ts";
 import BaseNode from "../nodes/BaseNode.ts";
+import BitsetNode from "../nodes/BitsetNode.ts";
 import BreakNode from "../nodes/BreakNode.ts";
 import CastNode from "../nodes/CastNode.ts";
 import { is_block_node } from "../nodes/check_node_type.ts";
 import ContinueNode from "../nodes/ContinueNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
+import EnumNode from "../nodes/EnumNode.ts";
 import ForLoopNode from "../nodes/ForLoopNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
@@ -26,10 +28,12 @@ import WhileLoopNode from "../nodes/WhileLoopNode.ts";
 import check_access_node from "./check_access_node.ts";
 import check_array_values_node from "./check_array_values_node.ts";
 import check_assignment_node from "./check_assignment_node.ts";
+import check_bitset_node from "./check_bitset_node.ts";
 import check_block_node from "./check_block_node.ts";
 import check_break_or_continue_node from "./check_break_or_continue_node.ts";
 import check_cast_node from "./check_cast_node.ts";
 import check_declaration_node from "./check_declaration_node.ts";
+import check_enum_node from "./check_enum_node.ts";
 import check_for_loop_node from "./check_for_loop_node.ts";
 import check_function_call_node from "./check_function_call_node.ts";
 import check_function_node from "./check_function_node.ts";
@@ -59,6 +63,14 @@ export default function check_node(node: BaseNode, status: CheckStatus): boolean
 		}
 		case "trait": {
 			check_trait_node(node as TraitNode, status);
+			break;
+		}
+		case "enum": {
+			check_enum_node(node as EnumNode, status);
+			break;
+		}
+		case "bitset": {
+			check_bitset_node(node as BitsetNode, status);
 			break;
 		}
 		case "func": {

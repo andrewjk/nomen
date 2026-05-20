@@ -202,6 +202,83 @@ pub trait Printable {
 }
 ```
 
+## Enums
+
+Enums are used to define a restricted set of options:
+
+```
+pub enum Direction {
+    case north
+    case east
+    case south
+    case west
+}
+
+var direction = Direction.north
+```
+
+Enum values can be compared and reassigned:
+
+```
+if direction == Direction.north {
+    direction = Direction.south
+}
+
+const label = if direction == Direction.north -> "N"
+              else -> "S"
+```
+
+Enum cases can contain information:
+
+```
+pub enum Result {
+    case ok
+    case error(int code)
+}
+
+var result = Result.error(5)
+```
+
+Enum cases can have multiple fields:
+
+```
+pub enum Shape {
+    case circle(int radius)
+    case rect(int width, int height)
+}
+
+var shape = Shape.rect(10, 20)
+```
+
+## Bitsets
+
+Bitsets are used to define a restricted set of options that can be combined using bitwise operators:
+
+```
+pub bitset Permissions {
+    case read
+    case write
+    case execute
+}
+
+var perms = Permissions.read | Permissions.write
+```
+
+Bitset values can be combined, checked, and toggled:
+
+```
+var flags = Permissions.read
+
+// Add an option
+flags = flags | Permissions.write
+
+// Check if an option is set
+const can_write = (flags & Permissions.write) == Permissions.write
+
+// Toggle an option
+flags = flags ^ Permissions.execute
+```
+
 ## Declarations
 
 ### Variables
@@ -389,6 +466,22 @@ const result = match x {
 ```
 
 Each `case` value is type-checked against the match expression type. Branches can use `->` for expression return or `{ }` for block body. The `else` branch is required when using `match` as an expression value.
+
+Match with enums:
+
+```
+enum Result {
+    case ok
+    case error(int code)
+}
+const result = Result.error(10)
+const message = match result {
+    case .ok -> "it's ok"
+    case .error(code) -> "error \{code} encountered"
+}
+```
+
+Matches used with enums must be exhaustive.
 
 ### Switch Statement
 

@@ -1,6 +1,8 @@
 import type BuildStatus from "../build/BuildStatus.ts";
+import BitsetNode from "../nodes/BitsetNode.ts";
 import type BlockNode from "../nodes/BlockNode.ts";
 import { is_function_node, is_struct_node, is_trait_node } from "../nodes/check_node_type.ts";
+import EnumNode from "../nodes/EnumNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import TraitNode from "../nodes/TraitNode.ts";
@@ -27,7 +29,13 @@ export default function build_block_node(node: BlockNode, status: BuildStatus) {
 	}
 
 	for (let child of node.statements) {
-		if (!is_trait_node(child) && !is_struct_node(child) && !is_function_node(child))
+		if (
+			!is_trait_node(child) &&
+			!is_struct_node(child) &&
+			!is_function_node(child) &&
+			child.node_type !== "enum" &&
+			child.node_type !== "bitset"
+		)
 			build_node(child, status, true);
 	}
 
@@ -45,6 +53,14 @@ function gather_structs(block: BlockNode, status: BuildStatus) {
 			case "trait": {
 				const trait = node as TraitNode;
 				status.traits.push(trait);
+				break;
+			}
+			case "enum": {
+				status.enums.push(node as EnumNode);
+				break;
+			}
+			case "bitset": {
+				status.bitsets.push(node as BitsetNode);
 				break;
 			}
 		}

@@ -21,6 +21,8 @@ export default function build(
 		root,
 		structs: [],
 		traits: [],
+		enums: [],
+		bitsets: [],
 		headers: "",
 		code: "",
 		scoped_declarations: [],

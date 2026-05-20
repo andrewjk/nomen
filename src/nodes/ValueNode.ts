@@ -4,6 +4,7 @@ import Type from "./Type.ts";
 export default class ValueNode extends BaseNode {
 	value: string;
 	type: Type;
+	is_enum_shorthand?: boolean;
 
 	constructor(start: number, value: string, type?: Type) {
 		super("value", start);

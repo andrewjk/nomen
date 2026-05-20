@@ -13,6 +13,8 @@ export default function clone_status(status: CheckStatus): CheckStatus {
 		// Clone struct, trait and function arrays so that they can be reset when exiting a block
 		structs: status.structs.slice(),
 		traits: status.traits.slice(),
+		enums: status.enums.slice(),
+		bitsets: status.bitsets.slice(),
 		functions: status.functions.slice(),
 		// Unwound declarations get added to until flushed
 		allocations: status.allocations,

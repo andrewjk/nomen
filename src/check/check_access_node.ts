@@ -71,6 +71,41 @@ function check_access_field_node(
 	}
 	// HACK:
 	if (!field) {
+		// Are we accessing an enum case?
+		const enum_node = status.enums.find((e) => e.name === target_type.name);
+		if (enum_node) {
+			const enum_case = enum_node.cases.find((c) => c.name === node.name);
+			if (enum_case) {
+				if (enum_case.params.length > 0 && enum_node.has_associated_data) {
+					add_error(
+						status,
+						`Enum case ${node.name} has associated data, use ${target_type.name}.${node.name}(...)`,
+						node.start,
+					);
+					return false;
+				}
+				node.type = new Type(target_type.name);
+				return true;
+			} else {
+				add_error(status, `Unknown enum case: ${target_type.name}.${node.name}`, node.start);
+				return false;
+			}
+		}
+	}
+	if (!field) {
+		// Are we accessing a bitset case?
+		const bitset_node = status.bitsets.find((b) => b.name === target_type.name);
+		if (bitset_node) {
+			if (bitset_node.cases.includes(node.name)) {
+				node.type = new Type(target_type.name);
+				return true;
+			} else {
+				add_error(status, `Unknown bitset case: ${target_type.name}.${node.name}`, node.start);
+				return false;
+			}
+		}
+	}
+	if (!field) {
 		// Are we accessing length in an array
 		if (target_type.is_array && node.name === "length") {
 			node.type = new Type("int");
@@ -127,7 +162,36 @@ function check_access_function_node(
 		}
 	}
 
+	if (!func) {
+		// Are we calling an enum case constructor?
+		const enum_node = status.enums.find((e) => e.name === target_type.name);
+		if (enum_node) {
+			const enum_case = enum_node.cases.find((c) => c.name === node.name);
+			if (enum_case) {
+				node.type = new Type(target_type.name);
+				node.is_static = true;
+
+				for (let param of node.params) {
+					check_node(param, status);
+				}
+
+				return true;
+			}
+		}
+	}
+
 	// Make sure the function exists
+	if (!func) {
+		// For enum/bitset types, delegate to_string to int
+		if (
+			node.name === "to_string" &&
+			(status.enums.find((e) => e.name === target_type.name) ||
+				status.bitsets.find((b) => b.name === target_type.name))
+		) {
+			const int_struct = status.structs.find((s) => s.name === "int");
+			func = int_struct?.functions.find((f) => f.name === "to_string");
+		}
+	}
 	if (!func) {
 		add_error(status, `Function not found: ${target_type.name}.${node.name}`, node.start);
 		return false;

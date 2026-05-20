@@ -15,9 +15,39 @@ export default function type_from_value(value: string, status: CheckStatus): Typ
 		return new Type(struct_value.name);
 	}
 
+	// Is it an enum?
+	const enum_value = status.enums.findLast((e) => e.name === value);
+	if (enum_value) {
+		return new Type(enum_value.name);
+	}
+
+	// Is it a bitset?
+	const bitset_value = status.bitsets.findLast((b) => b.name === value);
+	if (bitset_value) {
+		return new Type(bitset_value.name);
+	}
+
 	const func_value = status.functions.findLast((f) => f.name === value);
 	if (func_value) {
 		return new Type("func");
+	}
+
+	// Is it an enum/bitset shorthand? (e.g. Direction_east)
+	for (const e of status.enums) {
+		if (value.startsWith(e.name + "_")) {
+			const case_name = value.substring(e.name.length + 1);
+			if (e.cases.some((c) => c.name === case_name)) {
+				return new Type(e.name);
+			}
+		}
+	}
+	for (const b of status.bitsets) {
+		if (value.startsWith(b.name + "_")) {
+			const case_name = value.substring(b.name.length + 1);
+			if (b.cases.includes(case_name)) {
+				return new Type(b.name);
+			}
+		}
 	}
 
 	if (value === "null") {

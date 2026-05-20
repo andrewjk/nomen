@@ -2,9 +2,11 @@ import AccessNode from "../nodes/AccessNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import AssignmentNode from "../nodes/AssignmentNode.ts";
 import BaseNode from "../nodes/BaseNode.ts";
+import BitsetNode from "../nodes/BitsetNode.ts";
 import BreakNode from "../nodes/BreakNode.ts";
 import ContinueNode from "../nodes/ContinueNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
+import EnumNode from "../nodes/EnumNode.ts";
 import ForLoopNode from "../nodes/ForLoopNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
@@ -24,9 +26,11 @@ import WhileLoopNode from "../nodes/WhileLoopNode.ts";
 import build_access_node from "./build_access_node.ts";
 import build_array_values_node from "./build_array_values_node.ts";
 import build_assignment_node from "./build_assignment_node.ts";
+import build_bitset_node from "./build_bitset_node.ts";
 import build_break_node from "./build_break_node.ts";
 import build_continue_node from "./build_continue_node.ts";
 import build_declaration_node from "./build_declaration_node.ts";
+import build_enum_node from "./build_enum_node.ts";
 import build_for_loop_node from "./build_for_loop_node.ts";
 import build_function_call_node from "./build_function_call_node.ts";
 import build_function_node from "./build_function_node.ts";
@@ -76,6 +80,14 @@ export default function build_node(node: BaseNode, status: BuildStatus, with_sem
 		}
 		case "trait": {
 			build_trait_node(node as TraitNode, status);
+			break;
+		}
+		case "enum": {
+			build_enum_node(node as EnumNode, status);
+			break;
+		}
+		case "bitset": {
+			build_bitset_node(node as BitsetNode, status);
 			break;
 		}
 		case "func": {

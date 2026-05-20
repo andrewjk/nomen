@@ -6,9 +6,11 @@ import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import ReturnNode from "../nodes/ReturnNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import parse_access from "./parse_access.ts";
+import parse_bitset from "./parse_bitset.ts";
 import parse_break_or_continue from "./parse_break_or_continue.ts";
 import parse_declaration from "./parse_declaration.ts";
 import parse_destroy from "./parse_destroy.ts";
+import parse_enum from "./parse_enum.ts";
 import parse_expression from "./parse_expression.ts";
 import parse_for_loop from "./parse_for_loop.ts";
 import parse_function from "./parse_function.ts";
@@ -65,6 +67,14 @@ export default function parse_statement(status: ParseStatus) {
 			}
 			case "struct": {
 				parse_struct("mod", status);
+				break;
+			}
+			case "enum": {
+				parse_enum("mod", status);
+				break;
+			}
+			case "bitset": {
+				parse_bitset("mod", status);
 				break;
 			}
 			case "trait": {

@@ -1,5 +1,7 @@
 import BaseNode from "../nodes/BaseNode.ts";
+import BitsetNode from "../nodes/BitsetNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
+import EnumNode from "../nodes/EnumNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import TraitNode from "../nodes/TraitNode.ts";
@@ -29,6 +31,14 @@ export default interface CheckStatus {
 	 * Structs in scope
 	 */
 	structs: StructNode[];
+	/**
+	 * Enums in scope
+	 */
+	enums: EnumNode[];
+	/**
+	 * Bitsets in scope
+	 */
+	bitsets: BitsetNode[];
 	/**
 	 * Traits in scope
 	 */

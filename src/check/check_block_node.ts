@@ -1,5 +1,7 @@
 import add_error from "../add_error.ts";
+import BitsetNode from "../nodes/BitsetNode.ts";
 import type BlockNode from "../nodes/BlockNode.ts";
+import EnumNode from "../nodes/EnumNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import TraitNode from "../nodes/TraitNode.ts";
@@ -21,6 +23,8 @@ function gather_structs(block: BlockNode, status: CheckStatus) {
 		structs: new Set<string>(),
 		traits: new Set<string>(),
 		functions: new Set<string>(),
+		enums: new Set<string>(),
+		bitsets: new Set<string>(),
 	};
 
 	for (let node of block.statements) {
@@ -54,6 +58,28 @@ function gather_structs(block: BlockNode, status: CheckStatus) {
 				} else {
 					names_in_block.functions.add(func.name);
 					status.functions.push(func);
+				}
+				break;
+			}
+			case "enum": {
+				const enum_node = node as EnumNode;
+				if (names_in_block.enums.has(enum_node.name)) {
+					add_error(status, `Enum already declared: ${enum_node.name}`, enum_node.start);
+				} else {
+					names_in_block.enums.add(enum_node.name);
+					status.types.push(enum_node.name);
+					status.enums.push(enum_node);
+				}
+				break;
+			}
+			case "bitset": {
+				const bitset_node = node as BitsetNode;
+				if (names_in_block.bitsets.has(bitset_node.name)) {
+					add_error(status, `Bitset already declared: ${bitset_node.name}`, bitset_node.start);
+				} else {
+					names_in_block.bitsets.add(bitset_node.name);
+					status.types.push(bitset_node.name);
+					status.bitsets.push(bitset_node);
 				}
 				break;
 			}

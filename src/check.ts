@@ -10,6 +10,8 @@ export default function check(root: BaseNode): CheckResult {
 		values: [],
 		types: [...built_in_types],
 		structs: [],
+		enums: [],
+		bitsets: [],
 		traits: [],
 		functions: [],
 		allocations: [],

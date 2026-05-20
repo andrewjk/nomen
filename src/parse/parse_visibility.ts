@@ -1,5 +1,7 @@
 import add_error from "../add_error.ts";
+import parse_bitset from "./parse_bitset.ts";
 import parse_declaration from "./parse_declaration.ts";
+import parse_enum from "./parse_enum.ts";
 import parse_function from "./parse_function.ts";
 import parse_op from "./parse_op.ts";
 import parse_struct from "./parse_struct.ts";
@@ -35,6 +37,14 @@ export default function parse_visibility(visibility: "pub" | "priv", status: Par
 		}
 		case "struct": {
 			parse_struct(visibility, status);
+			break;
+		}
+		case "enum": {
+			parse_enum(visibility, status);
+			break;
+		}
+		case "bitset": {
+			parse_bitset(visibility, status);
 			break;
 		}
 		case "trait": {

@@ -1,7 +1,11 @@
+import BitsetNode from "../nodes/BitsetNode.ts";
 import type BlockNode from "../nodes/BlockNode.ts";
 import { is_function_node, is_struct_node, is_trait_node } from "../nodes/check_node_type.ts";
+import EnumNode from "../nodes/EnumNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import TraitNode from "../nodes/TraitNode.ts";
+import build_bitset_node from "./build_bitset_node.ts";
+import build_enum_node from "./build_enum_node.ts";
 import build_function_node from "./build_function_node.ts";
 import build_node from "./build_node.ts";
 import build_struct_node from "./build_struct_node.ts";
@@ -15,10 +19,22 @@ export default function build_block_node(node: BlockNode, status: BuildStatus) {
 	// PERF: Probably an opportunity to cut down on loops here by adding a prop in check?
 	// Or storing these things in different lists?
 
-	// Build traits, then structs, then functions
+	// Build traits, then enums/bitsets, then structs, then functions
 	for (let child of node.statements) {
 		if (is_trait_node(child)) {
 			build_trait_node(child, status);
+		}
+	}
+
+	for (let child of node.statements) {
+		if (child.node_type === "enum") {
+			build_enum_node(child as EnumNode, status);
+		}
+	}
+
+	for (let child of node.statements) {
+		if (child.node_type === "bitset") {
+			build_bitset_node(child as BitsetNode, status);
 		}
 	}
 
@@ -36,7 +52,13 @@ export default function build_block_node(node: BlockNode, status: BuildStatus) {
 
 	// Build the block's statements
 	for (let child of node.statements) {
-		if (!is_trait_node(child) && !is_struct_node(child) && !is_function_node(child))
+		if (
+			!is_trait_node(child) &&
+			!is_struct_node(child) &&
+			!is_function_node(child) &&
+			child.node_type !== "enum" &&
+			child.node_type !== "bitset"
+		)
 			build_node(child, status, true);
 	}
 }
@@ -52,6 +74,14 @@ function gather_structs(block: BlockNode, status: BuildStatus) {
 			case "trait": {
 				const trait = node as TraitNode;
 				status.traits.push(trait);
+				break;
+			}
+			case "enum": {
+				status.enums.push(node as EnumNode);
+				break;
+			}
+			case "bitset": {
+				status.bitsets.push(node as BitsetNode);
 				break;
 			}
 			//case "func": {

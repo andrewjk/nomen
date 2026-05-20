@@ -68,6 +68,30 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 	const target_type = type_from_value_node(node.target);
 	const access_field = node.access as AccessFieldNode;
 
+	const enum_node = status.enums.find((e) => e.name === target_type.name);
+	if (enum_node) {
+		const enum_case = enum_node.cases.find((c) => c.name === access_field.name);
+		if (enum_case) {
+			if (enum_node.has_associated_data) {
+				const case_index = enum_node.cases.indexOf(enum_case);
+				status.code += `mov x0, #${case_index}\n`;
+			} else {
+				const case_index = enum_node.cases.indexOf(enum_case);
+				status.code += `mov x0, #${case_index}\n`;
+			}
+			return;
+		}
+	}
+
+	const bitset_node = status.bitsets.find((b) => b.name === target_type.name);
+	if (bitset_node) {
+		const case_index = bitset_node.cases.indexOf(access_field.name);
+		if (case_index >= 0) {
+			status.code += `mov x0, #(1 << ${case_index})\n`;
+			return;
+		}
+	}
+
 	if (target_type.is_array && access_field.name === "length") {
 		const decl = status.scoped_declarations.find((d) => {
 			if (node.target.node_type === "value") {
@@ -131,6 +155,42 @@ function build_access_method(
 	status: BuildStatus,
 ) {
 	const target_type = type_from_value_node(node.target);
+
+	const enum_node = status.enums.find((e) => e.name === target_type.name);
+	if (enum_node) {
+		const enum_case = enum_node.cases.find((c) => c.name === access_func.name);
+		if (enum_case) {
+			const case_index = enum_node.cases.indexOf(enum_case);
+			status.code += `mov x0, #${case_index}\n`;
+			return;
+		}
+	}
+
+	if (
+		access_func.name === "to_string" &&
+		(status.enums.find((e) => e.name === target_type.name) ||
+			status.bitsets.find((b) => b.name === target_type.name))
+	) {
+		if (node.target.node_type === "value") {
+			const name = (node.target as ValueNode).value;
+			const paramReg = get_param_reg(name, status);
+			if (paramReg) {
+				if (paramReg !== "x0") {
+					status.code += `mov x0, ${paramReg}\n`;
+				}
+			} else {
+				emit_var_address(status, "x0", name);
+			}
+			status.code += `ldr x0, [x0]\n`;
+		} else {
+			build_node(node.target, status);
+			if (!status.code.endsWith("\n")) {
+				status.code += "\n";
+			}
+		}
+		status.code += `bl int_to_string\n`;
+		return;
+	}
 
 	if (
 		access_func.name === "to_string" &&

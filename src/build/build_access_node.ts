@@ -12,6 +12,8 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 	// PERF:
 	const target_type = type_from_value_node(node.target);
 	const trait = status.traits.find((t) => t.name === target_type.name);
+	const enum_node = status.enums.find((e) => e.name === target_type.name);
+	const bitset_node = status.bitsets.find((b) => b.name === target_type.name);
 
 	switch (node.access.node_type) {
 		case "access_field": {
@@ -23,6 +25,23 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				build_node(node.target, status);
 				status.code += `) / sizeof(${type}))`;
 				return;
+			}
+			if (enum_node) {
+				const enum_case = enum_node.cases.find((c) => c.name === access_field.name);
+				if (enum_case) {
+					if (enum_node.has_associated_data) {
+						status.code += `${enum_node.name}_${enum_case.name}_init()`;
+					} else {
+						status.code += `${enum_node.name}_${enum_case.name}`;
+					}
+					return;
+				}
+			}
+			if (bitset_node) {
+				if (bitset_node.cases.includes(access_field.name)) {
+					status.code += `${bitset_node.name}_${access_field.name}`;
+					return;
+				}
 			}
 			if (trait) {
 				// If the target is a trait, we need to call the get/set method
@@ -49,6 +68,30 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 		}
 		case "access_func": {
 			const access_func = node.access as AccessFunctionCallNode;
+			if (enum_node) {
+				const enum_case = enum_node.cases.find((c) => c.name === access_func.name);
+				if (enum_case) {
+					status.code += `${enum_node.name}_${enum_case.name}_init(`;
+					for (let i = 0; i < access_func.params.length; i++) {
+						if (i > 0) {
+							status.code += ", ";
+						}
+						build_node(access_func.params[i], status);
+					}
+					status.code += ")";
+					break;
+				}
+			}
+			if (
+				access_func.name === "to_string" &&
+				(status.enums.find((e) => e.name === target_type.name) ||
+					status.bitsets.find((b) => b.name === target_type.name))
+			) {
+				status.code += `int_to_string(`;
+				build_node(node.target, status);
+				status.code += ")";
+				break;
+			}
 			if (trait) {
 				// If the target is a trait, we need to find the correct function to
 				// call from the vtable

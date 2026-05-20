@@ -18,12 +18,20 @@ export default function check_operation_node(op: OperationNode, status: CheckSta
 		return true;
 	}
 
-	const result = check_node(op.left_value, status) && check_node(op.right_value, status);
-	if (!result) {
+	if (!check_node(op.left_value, status)) {
 		return false;
 	}
 
 	const left_type = type_from_value_node(op.left_value, status);
+
+	const old_expected_type = status.expected_type;
+	status.expected_type = left_type;
+	const right_result = check_node(op.right_value, status);
+	status.expected_type = old_expected_type;
+	if (!right_result) {
+		return false;
+	}
+
 	const right_type = type_from_value_node(op.right_value, status);
 
 	// Check for custom operator on struct (including arrays, which use the Array struct)

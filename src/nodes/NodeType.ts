@@ -26,6 +26,8 @@ export type NodeType =
 	| "range"
 	| "break"
 	| "continue"
+	| "enum"
+	| "bitset"
 	| "panic"
 	| "todo"
 	| "return"

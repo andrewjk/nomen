@@ -1,5 +1,7 @@
 import BaseNode from "../nodes/BaseNode.ts";
+import BitsetNode from "../nodes/BitsetNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
+import EnumNode from "../nodes/EnumNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import TraitNode from "../nodes/TraitNode.ts";
 
@@ -7,6 +9,8 @@ export default interface BuildStatus {
 	root: BaseNode;
 	structs: StructNode[];
 	traits: TraitNode[];
+	enums: EnumNode[];
+	bitsets: BitsetNode[];
 	headers: string;
 	code: string;
 	/**

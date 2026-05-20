@@ -8,6 +8,8 @@ export default function clone_status(status: BuildStatus): BuildStatus {
 		root: status.root,
 		structs: status.structs,
 		traits: status.traits,
+		enums: status.enums,
+		bitsets: status.bitsets,
 		headers: status.headers,
 		code: status.code,
 		// Empty scoped declarations, so that we are only dealing with the

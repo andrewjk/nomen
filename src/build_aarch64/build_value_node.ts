@@ -20,6 +20,27 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 	const original_value = node.value;
 	let value = node.value.replace("self", "_self");
 
+	if (node.is_enum_shorthand) {
+		const enum_node = status.enums.find((e) => value.startsWith(e.name + "_"));
+		if (enum_node) {
+			const case_name = value.substring(enum_node.name.length + 1);
+			const case_index = enum_node.cases.findIndex((c) => c.name === case_name);
+			if (case_index >= 0) {
+				status.code += `mov x0, #${case_index}\n`;
+				return;
+			}
+		}
+		const bitset_node = status.bitsets.find((b) => value.startsWith(b.name + "_"));
+		if (bitset_node) {
+			const case_name = value.substring(bitset_node.name.length + 1);
+			const case_index = bitset_node.cases.indexOf(case_name);
+			if (case_index >= 0) {
+				status.code += `mov x0, #(1 << ${case_index})\n`;
+				return;
+			}
+		}
+	}
+
 	if (value === "true") {
 		value = "1";
 	} else if (value === "false") {

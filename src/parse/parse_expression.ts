@@ -66,6 +66,11 @@ function parse_primary(status: ParseStatus, value: string): BaseNode {
 			const inner = parse_primary(status, next);
 			return new OperationNode(start, "!", inner, inner);
 		}
+		case ".": {
+			consume(status);
+			const name = consume(status);
+			return new ValueNode(start, `.${name}`);
+		}
 		case "[": {
 			consume(status);
 			const node = new ArrayValuesNode(start);

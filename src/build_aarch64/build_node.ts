@@ -155,6 +155,10 @@ export default function build_node(node: BaseNode, status: BuildStatus, with_sem
 			with_semicolon = false;
 			break;
 		}
+		case "enum":
+		case "bitset": {
+			break;
+		}
 		default: {
 			throw Error("Invalid node: " + node.node_type);
 		}
