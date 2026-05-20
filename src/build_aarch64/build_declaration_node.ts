@@ -265,12 +265,16 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 				emit_var_store(status, "x0", node.name, struct_size);
 			}
 		} else if (node.value) {
-			build_node(node.value, status);
-			if (!status.code.endsWith("\n")) {
-				status.code += "\n";
+			if (node.value.node_type === "value") {
+				const src_name = (node.value as ValueNode).value;
+				emit_var_address(status, "x1", src_name);
+			} else {
+				build_node(node.value, status);
+				if (!status.code.endsWith("\n")) {
+					status.code += "\n";
+				}
+				status.code += `mov x1, x0\n`;
 			}
-			// Copy struct data from returned address in x0 to declaration
-			status.code += `mov x1, x0\n`;
 			emit_var_address(status, "x2", node.name);
 			const words = Math.ceil(struct_size / 8);
 			for (let i = 0; i < words; i++) {
