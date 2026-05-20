@@ -9,8 +9,9 @@ import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_node from "./build_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
+import { emit_free } from "./utils/audit.ts";
 import { mark_moved_if_struct } from "./utils/auto_destroy.ts";
-import { emit_var_address } from "./utils/stack_var.ts";
+import { emit_var_address, emit_var_load } from "./utils/stack_var.ts";
 import { get_field_offset, get_struct_size } from "./utils/struct_layout.ts";
 
 function get_store_instruction(size: number): string {
@@ -137,6 +138,8 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 		}
 
 		const size = find_var_size(name, status);
+		const lhs_decl = status.scoped_declarations.find((d) => d.name === name);
+		const lhs_type_name = lhs_decl?.type?.name ?? "";
 		const store_op = get_store_instruction(size);
 		const store_reg = get_store_reg("x0", size);
 		if (paramReg) {
@@ -170,7 +173,18 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 			emit_var_address(status, "x1", name);
 			status.code += `${store_op} ${store_reg}, [x1]\n`;
 		} else {
+			const lhs_is_heap = status.heap_strings?.has(name);
+			if (lhs_is_heap) {
+				emit_var_load(status, "x0", name, 8);
+				emit_free(status);
+				status.heap_strings!.delete(name);
+			}
+			status.last_result_is_heap = false;
 			build_node(node.right_value, status);
+			if (status.last_result_is_heap && lhs_type_name === "string") {
+				if (!status.heap_strings) status.heap_strings = new Set<string>();
+				status.heap_strings.add(name);
+			}
 			status.code += `\n`;
 			emit_var_address(status, "x1", name);
 			status.code += `${store_op} ${store_reg}, [x1]\n`;

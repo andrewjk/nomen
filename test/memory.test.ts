@@ -131,3 +131,99 @@ Console.write("ok")
 		await check_output("leak_no_leak", result, "ok", { audit: true });
 	});
 });
+
+describe("double free (aarch64)", () => {
+	test("BUG: assigning heap string to another causes double-free", async () => {
+		const input = `
+var int x = 1
+var int y = 2
+var string s = x.to_string()
+var string t = y.to_string()
+t = s
+Console.write(s)
+Console.write(t)
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		expect(parsed.errors).toEqual([]);
+		await check_output("dfree_assign_heap_string", result, "11", { audit: true });
+	});
+
+	test("BUG: returning heap string is use-after-free", async () => {
+		const input = `
+func make_greeting = (int x, out string) {
+  var string s = x.to_string()
+  return s
+}
+var string result = make_greeting(42)
+Console.write(result)
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		expect(parsed.errors).toEqual([]);
+		await check_output("dfree_return_heap_string", result, "42", { audit: true });
+	});
+
+	test("BUG: reassigning heap string to literal frees non-heap pointer", async () => {
+		const input = `
+var int x = 42
+var string s = x.to_string()
+s = "literal"
+Console.write(s)
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		expect(parsed.errors).toEqual([]);
+		await check_output("dfree_reassign_to_literal", result, "literal", { audit: true });
+	});
+
+	test("BUG: reassigning heap string leaks old value", async () => {
+		const input = `
+var int a = 1
+var int b = 2
+var string s = a.to_string()
+s = b.to_string()
+Console.write(s)
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		expect(parsed.errors).toEqual([]);
+		await check_output("dfree_reassign_leaks_old", result, "2", { audit: true });
+	});
+
+	test("BUG: returning from nested scope leaks string", async () => {
+		const input = `
+func greet = (int x, out string) {
+  var string s = x.to_string()
+  if x == 42 {
+    return s
+  }
+  return s
+}
+var string result = greet(42)
+Console.write(result)
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		expect(parsed.errors).toEqual([]);
+		await check_output("dfree_return_nested_scope", result, "42", { audit: true });
+	});
+
+	test("BUG: struct with string field leaks on destroy", async () => {
+		const input = `
+struct Named {
+  var int id
+  var string name
+}
+
+var int id = 1
+var string name = 42.to_string()
+var Named n = Named(id, name)
+Console.write("\\{n.id}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		expect(parsed.errors).toEqual([]);
+		await check_output("dfree_struct_string_field", result, "1", { audit: true });
+	});
+});
