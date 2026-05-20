@@ -12,6 +12,7 @@ import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import GroupedNode from "../nodes/GroupedNode.ts";
 import IfElseNode from "../nodes/IfElseNode.ts";
+import MatchNode from "../nodes/MatchNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
 import PanicNode from "../nodes/PanicNode.ts";
 import RangeNode from "../nodes/RangeNode.ts";
@@ -35,6 +36,7 @@ import build_for_loop_node from "./build_for_loop_node.ts";
 import build_function_call_node from "./build_function_call_node.ts";
 import build_function_node from "./build_function_node.ts";
 import build_if_else_node from "./build_if_else_node.ts";
+import build_match_node from "./build_match_node.ts";
 import build_operation_node from "./build_operation_node.ts";
 import build_panic_node from "./build_panic_node.ts";
 import build_range_node from "./build_range_node.ts";
@@ -114,6 +116,11 @@ export default function build_node(node: BaseNode, status: BuildStatus, with_sem
 		}
 		case "if": {
 			build_if_else_node(node as IfElseNode, status);
+			with_semicolon = false;
+			break;
+		}
+		case "match": {
+			build_match_node(node as MatchNode, status);
 			with_semicolon = false;
 			break;
 		}

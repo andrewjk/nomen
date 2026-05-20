@@ -321,9 +321,102 @@ Console.write("\\{result}")
 `;
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64" });
-
 		expect(parsed.errors).toEqual([]);
 		await check_output("match_expr_case", result, "1");
+	});
+
+	test("match on enum", async () => {
+		const input = `
+enum Direction {
+  case north
+  case south
+  case east
+  case west
+}
+
+var direction = Direction.south
+match direction {
+	case .north {
+		Console.write("north")
+	}
+	case .south {
+		Console.write("south")
+	}
+	else {
+		Console.write("other")
+	}
+}
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("match_enum", result, "south");
+	});
+
+	test("match on enum as expression", async () => {
+		const input = `
+enum Direction {
+  case north
+  case south
+}
+
+var direction = Direction.north
+const label = match direction {
+	case .north -> "N"
+	case .south -> "S"
+	else -> "?"
+}
+Console.write(label)
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("match_enum_expr", result, "N");
+	});
+
+	test("match on bool", async () => {
+		const input = `
+var bool flag = true
+match flag {
+	case true {
+		Console.write("yes")
+	}
+	case false {
+		Console.write("no")
+	}
+}
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		await check_output("match_bool", result, "yes");
+	});
+
+	test("match on enum C output", () => {
+		const input = `
+enum Direction {
+  case north
+  case south
+}
+
+func main = () {
+  var direction = Direction.north
+  match direction {
+    case .north {
+      Console.write("north")
+    }
+    case .south {
+      Console.write("south")
+    }
+  }
+}
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "c" });
+		expect(parsed.errors).toEqual([]);
+		expect(result.code).toContain("switch");
+		expect(result.code).toContain("Direction_north");
+		expect(result.code).toContain("Direction_south");
 	});
 });
 
@@ -345,5 +438,157 @@ func test = (out int) {
 		];
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
+	});
+
+	test("non-exhaustive enum match", () => {
+		const input = `
+enum Direction {
+  case north
+  case south
+  case east
+  case west
+}
+
+func main = () {
+  var direction = Direction.north
+  match direction {
+    case .north {
+      Console.write("north")
+    }
+    case .south {
+      Console.write("south")
+    }
+  }
+}
+`;
+		const parsed = parse(input);
+		expect(parsed.errors.length).toBeGreaterThan(0);
+		expect(parsed.errors[0].message).toContain("Non-exhaustive match");
+		expect(parsed.errors[0].message).toContain("east");
+		expect(parsed.errors[0].message).toContain("west");
+	});
+
+	test("exhaustive enum match with all cases", () => {
+		const input = `
+enum Direction {
+  case north
+  case south
+}
+
+func main = () {
+  var direction = Direction.north
+  match direction {
+    case .north {
+      Console.write("north")
+    }
+    case .south {
+      Console.write("south")
+    }
+  }
+}
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+	});
+
+	test("exhaustive enum match with else", () => {
+		const input = `
+enum Direction {
+  case north
+  case south
+  case east
+}
+
+func main = () {
+  var direction = Direction.north
+  match direction {
+    case .north {
+      Console.write("north")
+    }
+    else {
+      Console.write("other")
+    }
+  }
+}
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+	});
+
+	test("non-exhaustive bool match", () => {
+		const input = `
+func main = () {
+  var bool flag = true
+  match flag {
+    case true {
+      Console.write("yes")
+    }
+  }
+}
+`;
+		const parsed = parse(input);
+		expect(parsed.errors.length).toBeGreaterThan(0);
+		expect(parsed.errors[0].message).toContain("Non-exhaustive match");
+		expect(parsed.errors[0].message).toContain("false");
+	});
+
+	test("exhaustive bool match", () => {
+		const input = `
+func main = () {
+  var bool flag = true
+  match flag {
+    case true {
+      Console.write("yes")
+    }
+    case false {
+      Console.write("no")
+    }
+  }
+}
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+	});
+
+	test("int match not checked for exhaustiveness", () => {
+		const input = `
+func main = () {
+  var int x = 5
+  match x {
+    case 1 {
+      Console.write("one")
+    }
+    case 2 {
+      Console.write("two")
+    }
+  }
+}
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+	});
+
+	test("enum match with full form cases", () => {
+		const input = `
+enum Direction {
+  case north
+  case south
+  case east
+}
+
+func main = () {
+  var direction = Direction.north
+  match direction {
+    case Direction.north {
+      Console.write("north")
+    }
+  }
+}
+`;
+		const parsed = parse(input);
+		expect(parsed.errors.length).toBeGreaterThan(0);
+		expect(parsed.errors[0].message).toContain("Non-exhaustive match");
+		expect(parsed.errors[0].message).toContain("south");
+		expect(parsed.errors[0].message).toContain("east");
 	});
 });

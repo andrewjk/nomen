@@ -228,6 +228,19 @@ const label = if direction == Direction.north -> "N"
               else -> "S"
 ```
 
+Enum shorthand syntax (`.case_name`) can be used when the type is known from context:
+
+```
+var Direction dir = .east
+dir = .west
+
+if dir == .north {
+    Console.write("north")
+}
+```
+
+Shorthand is resolved in declarations with explicit type, assignments (inferred from target type), and comparisons (inferred from left operand type). Shorthand is only for simple case access — cases with associated data must use the full form `EnumName.case(args)`.
+
 Enum cases can contain information:
 
 ```
@@ -467,7 +480,39 @@ const result = match x {
 
 Each `case` value is type-checked against the match expression type. Branches can use `->` for expression return or `{ }` for block body. The `else` branch is required when using `match` as an expression value.
 
-Match with enums:
+Match with enums (using shorthand syntax):
+
+```
+enum Direction {
+    case north
+    case south
+    case east
+    case west
+}
+
+var direction = Direction.north
+match direction {
+    case .north -> Console.write("north")
+    case .south -> Console.write("south")
+    case .east -> Console.write("east")
+    case .west -> Console.write("west")
+}
+```
+
+Enum case values can use either shorthand (`.north`) or full form (`Direction.north`). Matches on enums without an `else` branch must be exhaustive — all enum cases must be covered, or a compile error is produced.
+
+Match with bools:
+
+```
+match flag {
+    case true -> Console.write("yes")
+    case false -> Console.write("no")
+}
+```
+
+Match on `bool` without an `else` branch must cover both `true` and `false`. Match on `int` and other types does not require exhaustiveness — an `else` branch is optional.
+
+Match with enums and associated data:
 
 ```
 enum Result {
@@ -480,8 +525,6 @@ const message = match result {
     case .error(code) -> "error \{code} encountered"
 }
 ```
-
-Matches used with enums must be exhaustive.
 
 ### Switch Statement
 
