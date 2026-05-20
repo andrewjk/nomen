@@ -50,3 +50,79 @@ Console.write("\\{b.id}")
 		await check_output("uaf_struct_alias", result, "11");
 	});
 });
+
+describe("memory leaks (aarch64)", () => {
+	test("string interpolation leaks malloc'd buffer", async () => {
+		const input = `
+Console.write("\\{42}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		expect(parsed.errors).toEqual([]);
+		await check_output("leak_interpolate", result, "42", { audit: true });
+	});
+
+	test("int.to_string leaks malloc'd buffer", async () => {
+		const input = `
+var string s = 42.to_string()
+Console.write(s)
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		expect(parsed.errors).toEqual([]);
+		await check_output("leak_to_string", result, "42", { audit: true });
+	});
+
+	test("multiple interpolations leak each buffer", async () => {
+		const input = `
+Console.write("\\{1}")
+Console.write("\\{2}")
+Console.write("\\{3}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		expect(parsed.errors).toEqual([]);
+		await check_output("leak_multiple_interpolate", result, "123", { audit: true });
+	});
+
+	test("struct destroy does not free string fields", async () => {
+		const input = `
+struct Named {
+  var int id
+  var string name
+}
+
+var Named n = Named(1, "Alice")
+Console.write("\\{n.id}: \\{n.name}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		expect(parsed.errors).toEqual([]);
+		await check_output("leak_struct_string_field", result, "1: Alice", { audit: true });
+	});
+
+	test("inner scope string is not freed", async () => {
+		const input = `
+if 1 == 1 {
+  var string s = 42.to_string()
+  Console.write(s)
+}
+Console.write("done")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		expect(parsed.errors).toEqual([]);
+		await check_output("leak_scope_string", result, "42done", { audit: true });
+	});
+
+	test("no leak: bare string literal (no malloc)", async () => {
+		const input = `
+var int x = 42
+Console.write("ok")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		expect(parsed.errors).toEqual([]);
+		await check_output("leak_no_leak", result, "ok", { audit: true });
+	});
+});
