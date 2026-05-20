@@ -32,4 +32,6 @@ export default interface BuildStatus {
 	string_literal_names?: Set<string>;
 	audit?: boolean;
 	moved?: Set<string>;
+	heap_strings?: Set<string>;
+	last_result_is_heap?: boolean;
 }

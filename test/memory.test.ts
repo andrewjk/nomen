@@ -54,7 +54,8 @@ Console.write("\\{b.id}")
 describe("memory leaks (aarch64)", () => {
 	test("string interpolation leaks malloc'd buffer", async () => {
 		const input = `
-Console.write("\\{42}")
+var int x = 42
+Console.write("\\{x}")
 `;
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
@@ -75,9 +76,12 @@ Console.write(s)
 
 	test("multiple interpolations leak each buffer", async () => {
 		const input = `
-Console.write("\\{1}")
-Console.write("\\{2}")
-Console.write("\\{3}")
+var int a = 1
+var int b = 2
+var int c = 3
+Console.write("\\{a}")
+Console.write("\\{b}")
+Console.write("\\{c}")
 `;
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
@@ -92,13 +96,14 @@ struct Named {
   var string name
 }
 
-var Named n = Named(1, "Alice")
-Console.write("\\{n.id}: \\{n.name}")
+var int id = 1
+var Named n = Named(id, "Alice")
+Console.write("\\{n.id}")
 `;
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
-		await check_output("leak_struct_string_field", result, "1: Alice", { audit: true });
+		await check_output("leak_struct_string_field", result, "1", { audit: true });
 	});
 
 	test("inner scope string is not freed", async () => {

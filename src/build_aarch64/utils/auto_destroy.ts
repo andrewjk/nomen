@@ -1,8 +1,14 @@
 import type BuildStatus from "../../build/BuildStatus.ts";
 import StructNode from "../../nodes/StructNode.ts";
 import aarch64_size from "./aarch64_size.ts";
-import { emit_var_address } from "./stack_var.ts";
+import { emit_free } from "./audit.ts";
+import { emit_var_address, emit_var_load } from "./stack_var.ts";
 import { get_struct_size } from "./struct_layout.ts";
+
+export function mark_heap_string(status: BuildStatus, name: string) {
+	if (!status.heap_strings) status.heap_strings = new Set<string>();
+	status.heap_strings.add(name);
+}
 
 function is_struct_type(type_name: string, status: BuildStatus): StructNode | undefined {
 	return status.structs.find((s) => s.name === type_name && !s.is_simple_type);
@@ -20,6 +26,16 @@ export function emit_destroy_for_decl(
 ) {
 	const moved = status.moved ?? new Set<string>();
 	if (moved.has(decl_name)) return;
+
+	if (status.heap_strings?.has(decl_name)) {
+		if (addr_offset !== undefined) {
+			status.code += `add x0, x0, #${addr_offset}\n`;
+		} else {
+			emit_var_load(status, "x0", decl_name, 8);
+		}
+		emit_free(status);
+		return;
+	}
 
 	const struct_type = is_struct_type(decl_type_name, status);
 	if (!struct_type) return;
@@ -134,6 +150,11 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 	for (let i = declarations_before; i < status.scoped_declarations.length; i++) {
 		const decl = status.scoped_declarations[i];
 		if (moved.has(decl.name)) continue;
+		if (status.heap_strings?.has(decl.name)) {
+			emit_var_load(status, "x0", decl.name, 8);
+			emit_free(status);
+			continue;
+		}
 		const struct_type = is_struct_type(decl.type.name, status);
 		if (!struct_type) continue;
 		if (!has_destroy(struct_type) && !has_struct_fields_with_destroy(struct_type, status)) continue;

@@ -232,27 +232,34 @@ function build_access_method(
 		if (node.target.node_type === "value") {
 			const name = (node.target as ValueNode).value;
 			const paramReg = get_param_reg(name, status);
+			const is_literal_value =
+				/^(\+|-)?\d+(\.\d+)?$/.test(name) || name === "true" || name === "false";
 			if (paramReg) {
 				if (paramReg !== "x0") {
 					status.code += `mov x0, ${paramReg}\n`;
 				}
-				// if already x0, no-op
+			} else if (is_literal_value || (name.startsWith("'") && name.endsWith("'"))) {
+				build_node(node.target, status);
+				if (!status.code.endsWith("\n")) {
+					status.code += "\n";
+				}
 			} else {
+				const has_stack_offset = status.stack_offsets?.has(name);
 				emit_var_address(status, "x0", name);
-			}
-			if (target_is_simple && (target_type.name !== "string" || status.stack_offsets?.has(name))) {
-				const size = aarch64_size(target_type.name);
-				const signed =
-					target_type.name.startsWith("int") ||
-					target_type.name === "float" ||
-					target_type.name === "float32" ||
-					target_type.name === "float64";
-				if (size === 1) {
-					status.code += signed ? `ldrsb x0, [x0]\n` : `ldrb w0, [x0]\n`;
-				} else if (size === 4) {
-					status.code += signed ? `ldrsw x0, [x0]\n` : `ldr w0, [x0]\n`;
-				} else {
-					status.code += `ldr x0, [x0]\n`;
+				if (target_is_simple && (target_type.name !== "string" || has_stack_offset)) {
+					const size = aarch64_size(target_type.name);
+					const signed =
+						target_type.name.startsWith("int") ||
+						target_type.name === "float" ||
+						target_type.name === "float32" ||
+						target_type.name === "float64";
+					if (size === 1) {
+						status.code += signed ? `ldrsb x0, [x0]\n` : `ldrb w0, [x0]\n`;
+					} else if (size === 4) {
+						status.code += signed ? `ldrsw x0, [x0]\n` : `ldr w0, [x0]\n`;
+					} else {
+						status.code += `ldr x0, [x0]\n`;
+					}
 				}
 			}
 		} else {
@@ -293,6 +300,10 @@ function build_access_method(
 	}
 
 	status.code += `bl ${method_name}\n`;
+
+	if (method_name.endsWith("_to_string") && method_name !== "string_to_string") {
+		status.last_result_is_heap = true;
+	}
 
 	if (return_struct) {
 		status.code += `sub x0, x29, #${temp_offset}\n`;

@@ -137,5 +137,6 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 
 	if (node.name.startsWith("_string_interpolate_")) {
 		status.interpolate_string_counts.add(node.params.length - 1);
+		status.last_result_is_heap = true;
 	}
 }

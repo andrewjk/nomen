@@ -17,6 +17,7 @@ import build_node from "./build_node.ts";
 import build_range_node from "./build_range_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import aarch64_type from "./utils/aarch64_type.ts";
+import { mark_heap_string } from "./utils/auto_destroy.ts";
 import { allocate_stack_space, emit_var_address, emit_var_store } from "./utils/stack_var.ts";
 import { get_struct_size } from "./utils/struct_layout.ts";
 
@@ -114,6 +115,16 @@ function resolve_string_op(op: OperationNode, status: BuildStatus): string | nul
 }
 
 export default function build_declaration_node(node: DeclarationNode, status: BuildStatus) {
+	status.last_result_is_heap = false;
+	const prev_heap = status.last_result_is_heap;
+
+	function check_heap() {
+		if (node.type.name === "string" && status.last_result_is_heap) {
+			mark_heap_string(status, node.name);
+		}
+		status.last_result_is_heap = prev_heap;
+	}
+
 	// Function type declaration
 	if (node.func_params) {
 		if (node.value && node.value.node_type === "func") {
@@ -400,6 +411,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			status.return_assign = node.name;
 			build_node(node.value, status);
 			status.return_assign = old_return_assign;
+			check_heap();
 		} else {
 			if (status.function_return_label) {
 				const offset = allocate_stack_space(status, size, size);
@@ -409,6 +421,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			}
 			build_node(node.value, status);
 			emit_var_store(status, "x0", node.name, size);
+			check_heap();
 		}
 	} else {
 		const total_size =
