@@ -10,6 +10,7 @@ import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import GroupedNode from "../nodes/GroupedNode.ts";
 import IfElseNode from "../nodes/IfElseNode.ts";
+import LetNode from "../nodes/LetNode.ts";
 import MatchNode from "../nodes/MatchNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
 import PanicNode from "../nodes/PanicNode.ts";
@@ -33,6 +34,7 @@ import build_for_loop_node from "./build_for_loop_node.ts";
 import build_function_call_node from "./build_function_call_node.ts";
 import build_function_node from "./build_function_node.ts";
 import build_if_else_node from "./build_if_else_node.ts";
+import build_let_node from "./build_let_node.ts";
 import build_match_node from "./build_match_node.ts";
 import build_operation_node from "./build_operation_node.ts";
 import build_panic_node from "./build_panic_node.ts";
@@ -124,6 +126,10 @@ export default function build_node(node: BaseNode, status: BuildStatus, with_sem
 		}
 		case "return": {
 			build_return_node(node as ReturnNode, status);
+			break;
+		}
+		case "let": {
+			build_let_node(node as LetNode, status);
 			break;
 		}
 		case "value": {

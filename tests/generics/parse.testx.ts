@@ -4,8 +4,9 @@ import AssignmentNode from "../../src/nodes/AssignmentNode.ts";
 import BranchNode from "../../src/nodes/BranchNode.ts";
 import DeclarationNode from "../../src/nodes/DeclarationNode.ts";
 import IfElseNode from "../../src/nodes/IfElseNode.ts";
+import LetNode from "../../src/nodes/LetNode.ts";
 import OperationNode from "../../src/nodes/OperationNode.ts";
-import ReturnNode from "../../src/nodes/ReturnNode.ts";
+import LetNode from "../../src/nodes/LetNode.ts";
 import Type from "../../src/nodes/Type.ts";
 import ValueNode from "../../src/nodes/ValueNode.ts";
 import parse from "../../src/parse";
@@ -138,10 +139,10 @@ const y = if x > 5 {
 				new Type("bool"),
 			),
 			new BranchNode(37, [
-				new ReturnNode(37, new ValueNode(44, "50", new Type("int", true)), new Type("int", true)),
+				new LetNode(37, new ValueNode(44, "50", new Type("int", true)), new Type("int", true)),
 			]),
 			new BranchNode(58, [
-				new ReturnNode(58, new ValueNode(65, "0", new Type("int", true)), new Type("int", true)),
+				new LetNode(58, new ValueNode(65, "0", new Type("int", true)), new Type("int", true)),
 			]),
 			new Type("int", true),
 		),
@@ -173,10 +174,10 @@ const y = if x > 5 ~ 50
 				new Type("bool"),
 			),
 			new BranchNode(33, [
-				new ReturnNode(33, new ValueNode(35, "50", new Type("int", true)), new Type("int", true)),
+				new LetNode(33, new ValueNode(35, "50", new Type("int", true)), new Type("int", true)),
 			]),
 			new BranchNode(53, [
-				new ReturnNode(53, new ValueNode(55, "0", new Type("int", true)), new Type("int", true)),
+				new LetNode(53, new ValueNode(55, "0", new Type("int", true)), new Type("int", true)),
 			]),
 			new Type("int", true),
 		),
@@ -207,10 +208,10 @@ const y = if x > 5 ~ 50 else ~ 0
 				new Type("bool"),
 			),
 			new BranchNode(33, [
-				new ReturnNode(33, new ValueNode(35, "50", new Type("int", true)), new Type("int", true)),
+				new LetNode(33, new ValueNode(35, "50", new Type("int", true)), new Type("int", true)),
 			]),
 			new BranchNode(43, [
-				new ReturnNode(43, new ValueNode(45, "0", new Type("int", true)), new Type("int", true)),
+				new LetNode(43, new ValueNode(45, "0", new Type("int", true)), new Type("int", true)),
 			]),
 			new Type("int", true),
 		),

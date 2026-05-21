@@ -1,6 +1,6 @@
 import BranchNode from "../nodes/BranchNode.ts";
+import LetNode from "../nodes/LetNode.ts";
 import MatchNode from "../nodes/MatchNode.ts";
-import ReturnNode from "../nodes/ReturnNode.ts";
 import parse_expression from "./parse_expression.ts";
 import parse_statement from "./parse_statement.ts";
 import type ParseStatus from "./ParseStatus.ts";
@@ -53,7 +53,7 @@ function parse_match_branch(status: ParseStatus): BranchNode | null {
 		}
 
 		const branch = new BranchNode(branch_start);
-		branch.statements.push(new ReturnNode(value.start, value));
+		branch.statements.push(new LetNode(value.start, value));
 		return branch;
 	}
 

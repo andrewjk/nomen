@@ -3,6 +3,7 @@ import AccessNode from "../nodes/AccessNode.ts";
 import AssignmentNode from "../nodes/AssignmentNode.ts";
 import BaseNode from "../nodes/BaseNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
+import LetNode from "../nodes/LetNode.ts";
 import ReturnNode from "../nodes/ReturnNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import parse_access from "./parse_access.ts";
@@ -138,8 +139,8 @@ export default function parse_statement(status: ParseStatus) {
 			case "let": {
 				accept(value, status);
 				const expr = parse_expression(status);
-				const ret = new ReturnNode(get_index(status), expr);
-				add_to_parent(ret, "Return expression", status);
+				const ret = new LetNode(get_index(status), expr);
+				add_to_parent(ret, "Let expression", status);
 				break;
 			}
 			case "=>":

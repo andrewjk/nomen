@@ -1,5 +1,5 @@
 import BranchNode from "../nodes/BranchNode.ts";
-import ReturnNode from "../nodes/ReturnNode.ts";
+import LetNode from "../nodes/LetNode.ts";
 import SwitchNode from "../nodes/SwitchNode.ts";
 import parse_expression from "./parse_expression.ts";
 import parse_statement from "./parse_statement.ts";
@@ -51,7 +51,7 @@ function parse_case_branch(status: ParseStatus): BranchNode | null {
 		}
 
 		const branch = new BranchNode(branch_start);
-		branch.statements.push(new ReturnNode(value.start, value));
+		branch.statements.push(new LetNode(value.start, value));
 		return branch;
 	}
 

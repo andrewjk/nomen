@@ -31,4 +31,5 @@ export type NodeType =
 	| "panic"
 	| "todo"
 	| "return"
+	| "let"
 	| "raw";
