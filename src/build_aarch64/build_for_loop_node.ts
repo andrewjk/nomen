@@ -11,6 +11,7 @@ import {
 	emit_var_load,
 	emit_var_store,
 } from "./utils/stack_var.ts";
+import { get_struct_size } from "./utils/struct_layout.ts";
 
 let label_counter = 0;
 
@@ -101,8 +102,19 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 		// array iteration using hidden index variable
 		const type = type_from_value_node(node.list);
 		const length = type.length ? (type.length as any).value : "0";
-		const element_size = type.name ? aarch64_size(type.name) : 8;
+		const struct_type = status.structs.find((s) => s.name === type.name && !s.is_simple_type);
+		const element_size = struct_type
+			? get_struct_size(type.name, status)
+			: type.name
+				? aarch64_size(type.name)
+				: 8;
 		const idx_name = `_idx_${item_name}`;
+
+		if (struct_type && status.function_return_label) {
+			const struct_size = element_size;
+			const item_offset = allocate_stack_space(status, struct_size);
+			status.stack_offsets!.set(item_name, item_offset);
+		}
 
 		// Allocate stack space for index variable
 		if (status.function_return_label) {
@@ -126,11 +138,8 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 
 		// Load array[index] into item variable
 		const list_name = node.list.node_type === "value" ? (node.list as any).value : "_list";
-		const list_is_param = !!status.function_param_regs?.has(list_name);
-		const list_stack_offset = status.stack_offsets?.get(list_name);
 		const list_type = type_from_value_node(node.list);
-		const list_is_pointer =
-			list_type.is_array && (list_is_param || list_stack_offset !== undefined);
+		const list_is_pointer = list_type.is_array && !!status.function_array_params?.has(list_name);
 		if (list_is_pointer) {
 			emit_var_load(status, "x3", list_name, 8);
 		} else {
@@ -140,14 +149,25 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 		status.code += `mov x2, #${element_size}\n`;
 		status.code += `mul x1, x1, x2\n`;
 		status.code += `add x0, x3, x1\n`;
-		if (element_size === 1) {
-			status.code += `ldrb w0, [x0]\n`;
-		} else if (element_size === 4) {
-			status.code += `ldr w0, [x0]\n`;
+		if (struct_type) {
+			const item_offset = status.stack_offsets!.get(item_name);
+			if (item_offset !== undefined) {
+				const words = Math.ceil(element_size / 8);
+				for (let w = 0; w < words; w++) {
+					status.code += `ldr x1, [x0, #${w * 8}]\n`;
+					status.code += `str x1, [x29, #${item_offset + w * 8}]\n`;
+				}
+			}
 		} else {
-			status.code += `ldr x0, [x0]\n`;
+			if (element_size === 1) {
+				status.code += `ldrb w0, [x0]\n`;
+			} else if (element_size === 4) {
+				status.code += `ldr w0, [x0]\n`;
+			} else {
+				status.code += `ldr x0, [x0]\n`;
+			}
+			emit_var_store(status, "x0", item_name, element_size);
 		}
-		emit_var_store(status, "x0", item_name, element_size);
 
 		// body
 		build_block_node(node, status);

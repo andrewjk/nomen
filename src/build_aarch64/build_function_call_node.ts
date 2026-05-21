@@ -17,10 +17,18 @@ function is_struct_type(type_name: string, status: BuildStatus): boolean {
 	return !!status.structs.find((s) => s.name === type_name && !s.is_simple_type);
 }
 
-function get_raw_value(node: ValueNode): string {
+function get_raw_value(node: ValueNode, status?: BuildStatus): string {
 	let val = node.value;
 	if (val === "true") return "1";
 	if (val === "false") return "0";
+	if (node.is_enum_shorthand && status) {
+		const enum_node = status.enums.find((e) => val.startsWith(e.name + "_"));
+		if (enum_node) {
+			const case_name = val.substring(enum_node.name.length + 1);
+			const case_index = enum_node.cases.findIndex((c) => c.name === case_name);
+			if (case_index >= 0) return String(case_index);
+		}
+	}
 	return val;
 }
 
@@ -102,7 +110,7 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 				const arr = param as ArrayValuesNode;
 				const label = `_arr_param_${array_param_counter++}`;
 				const values = arr.values
-					.map((v) => (v.node_type === "value" ? get_raw_value(v as ValueNode) : "0"))
+					.map((v) => (v.node_type === "value" ? get_raw_value(v as ValueNode, status) : "0"))
 					.join(", ");
 				status.code += `${label}: .quad ${values}\n.p2align 2\n`;
 				status.code += `adr x0, ${label}`;

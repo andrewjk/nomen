@@ -12,7 +12,7 @@ function escape_asciz(value: string): string {
 }
 import RangeNode from "../nodes/RangeNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
-import build_array_values_node from "./build_array_values_node.ts";
+import build_array_values_node, { resolve_static_value } from "./build_array_values_node.ts";
 import build_node from "./build_node.ts";
 import build_range_node from "./build_range_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
@@ -21,12 +21,20 @@ import { mark_heap_string } from "./utils/auto_destroy.ts";
 import { allocate_stack_space, emit_var_address, emit_var_store } from "./utils/stack_var.ts";
 import { get_struct_size } from "./utils/struct_layout.ts";
 
-function get_raw_value(node: ValueNode): string {
+function get_raw_value(node: ValueNode, status?: BuildStatus): string {
 	let val = node.value;
 	if (val === "true") return "1";
 	if (val === "false") return "0";
 	if (val.startsWith("'") && val.endsWith("'") && val.length === 3) {
 		return val.charCodeAt(1).toString();
+	}
+	if (node.is_enum_shorthand && status) {
+		const enum_node = status.enums.find((e) => val.startsWith(e.name + "_"));
+		if (enum_node) {
+			const case_name = val.substring(enum_node.name.length + 1);
+			const case_index = enum_node.cases.findIndex((c) => c.name === case_name);
+			if (case_index >= 0) return String(case_index);
+		}
 	}
 	return val;
 }
@@ -40,13 +48,57 @@ function emit_data(status: BuildStatus, data: string) {
 	}
 }
 
+function is_struct_constructor(
+	node: import("../nodes/BaseNode.ts").default,
+	status: BuildStatus,
+): boolean {
+	if (node.node_type !== "func_call") return false;
+	const fc = node as FunctionCallNode;
+	return !!status.structs.find((s) => s.name === fc.name && !s.is_simple_type);
+}
+
+function emit_struct_constructor_to_slot(
+	fc: FunctionCallNode,
+	slot_addr: string,
+	status: BuildStatus,
+) {
+	const param_regs = ["x1", "x2", "x3", "x4", "x5", "x6", "x7"];
+	for (let i = fc.params.length - 1; i >= 0; i--) {
+		build_node(fc.params[i], status);
+		if (!status.code.endsWith("\n")) status.code += "\n";
+		status.code += `mov ${param_regs[i]}, x0\n`;
+	}
+	status.code += slot_addr;
+	status.code += `bl ${fc.name}_init\n`;
+}
+
+function emit_global_slot_addr(status: BuildStatus, name: string, offset: number) {
+	if (offset === 0) {
+		status.code += `adr x0, ${name}\n`;
+	} else {
+		status.code += `adr x0, ${name}\n`;
+		status.code += `add x0, x0, #${offset}\n`;
+	}
+}
+
+function emit_stack_slot_addr(offset: number): string {
+	if (offset === 0) {
+		return `add x0, x29, #0\n`;
+	}
+	return `add x0, x29, #${offset}\n`;
+}
+
+function has_complex_elements(
+	values: import("../nodes/BaseNode.ts").default[],
+	status: BuildStatus,
+): boolean {
+	return values.some((v) => resolve_static_value(v, status) === null);
+}
+
 function resolve_array_values(node: any, status: BuildStatus): string[] | null {
 	if (node.node_type === "array") {
 		return (node as ArrayValuesNode).values
-			.map((v) => {
-				if (v.node_type === "value") return get_raw_value(v as ValueNode);
-				return null;
-			})
+			.map((v) => resolve_static_value(v, status))
 			.filter((v): v is string => v !== null);
 	}
 	if (node.node_type === "value") {
@@ -152,14 +204,61 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 	if (node.type.is_array) {
 		if (node.value && node.value.node_type === "array") {
 			const array_values = node.value as ArrayValuesNode;
-			if (status.function_return_label && node.declaration === "var") {
-				const element_size = size;
+			const complex = has_complex_elements(array_values.values, status);
+			const struct_element = status.structs.find(
+				(s) => s.name === node.type.name && !s.is_simple_type,
+			);
+			const element_size = struct_element ? get_struct_size(node.type.name, status) : size;
+
+			if (complex) {
+				const total_size = array_values.values.length * element_size;
+				if (status.function_return_label) {
+					const offset = allocate_stack_space(status, total_size, element_size);
+					status.stack_offsets!.set(node.name, offset);
+					array_values.values.forEach((value, i) => {
+						const slot_offset = offset + i * element_size;
+						if (is_struct_constructor(value, status)) {
+							emit_struct_constructor_to_slot(
+								value as FunctionCallNode,
+								emit_stack_slot_addr(slot_offset),
+								status,
+							);
+						} else {
+							const raw = resolve_static_value(value, status);
+							if (raw !== null) {
+								status.code += `mov x0, #${raw}\n`;
+								if (element_size === 1) {
+									status.code += `strb w0, [x29, #${slot_offset}]\n`;
+								} else if (element_size === 4) {
+									status.code += `str w0, [x29, #${slot_offset}]\n`;
+								} else {
+									status.code += `str x0, [x29, #${slot_offset}]\n`;
+								}
+							}
+						}
+					});
+				} else {
+					emit_data(status, `${node.name}: .space ${total_size}\n.p2align 2\n`);
+					array_values.values.forEach((value, i) => {
+						if (is_struct_constructor(value, status)) {
+							emit_global_slot_addr(status, node.name, i * element_size);
+							emit_struct_constructor_to_slot(value as FunctionCallNode, "", status);
+						} else {
+							const raw = resolve_static_value(value, status);
+							if (raw !== null) {
+								status.code += `ldr x0, =${raw}\n`;
+								status.code += `str x0, [${node.name} + ${i * element_size}]\n`;
+							}
+						}
+					});
+				}
+			} else if (status.function_return_label && node.declaration === "var") {
 				const total_size = array_values.values.length * element_size;
 				const offset = allocate_stack_space(status, total_size, element_size);
 				status.stack_offsets!.set(node.name, offset);
 				array_values.values.forEach((value, i) => {
-					if (value.node_type === "value") {
-						const raw = get_raw_value(value as ValueNode);
+					const raw = resolve_static_value(value, status);
+					if (raw !== null) {
 						status.code += `mov x0, #${raw}\n`;
 						if (element_size === 1) {
 							status.code += `strb w0, [x29, #${offset + i * element_size}]\n`;
@@ -174,11 +273,8 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 				emit_data(status, `${node.name}: ${directive} `);
 				array_values.values.forEach((value, i) => {
 					if (i > 0) emit_data(status, ", ");
-					if (value.node_type === "value") {
-						emit_data(status, get_raw_value(value as ValueNode));
-					} else {
-						emit_data(status, "/* complex */");
-					}
+					const resolved = resolve_static_value(value, status);
+					emit_data(status, resolved !== null ? resolved : "0");
 				});
 				emit_data(status, `\n.p2align 2\n`);
 			} else {
@@ -365,15 +461,49 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			}
 		} else if (node.value.node_type === "array") {
 			const array_values = node.value as ArrayValuesNode;
-			if (status.function_return_label) {
+			const complex = has_complex_elements(array_values.values, status);
+			if (complex) {
+				const total_size = array_values.values.length * size;
+				if (status.function_return_label) {
+					const offset = allocate_stack_space(status, total_size, size);
+					status.stack_offsets!.set(node.name, offset);
+					array_values.values.forEach((value, i) => {
+						const slot_offset = offset + i * size;
+						if (is_struct_constructor(value, status)) {
+							emit_struct_constructor_to_slot(
+								value as FunctionCallNode,
+								emit_stack_slot_addr(slot_offset),
+								status,
+							);
+						} else {
+							const raw = resolve_static_value(value, status);
+							if (raw !== null) {
+								status.code += `mov x0, #${raw}\n`;
+								status.code += `str x0, [x29, #${slot_offset}]\n`;
+							}
+						}
+					});
+				} else {
+					emit_data(status, `${node.name}: .space ${total_size}\n.p2align 2\n`);
+					array_values.values.forEach((value, i) => {
+						if (is_struct_constructor(value, status)) {
+							emit_global_slot_addr(status, node.name, i * size);
+							emit_struct_constructor_to_slot(value as FunctionCallNode, "", status);
+						} else {
+							const raw = resolve_static_value(value, status);
+							if (raw !== null) {
+								status.code += `ldr x0, =${raw}\n`;
+								status.code += `str x0, [${node.name} + ${i * size}]\n`;
+							}
+						}
+					});
+				}
+			} else if (status.function_return_label) {
 				emit_data(status, `${node.name}: ${directive} `);
 				array_values.values.forEach((value, i) => {
 					if (i > 0) emit_data(status, ", ");
-					if (value.node_type === "value") {
-						emit_data(status, get_raw_value(value as ValueNode));
-					} else {
-						emit_data(status, "/* complex */");
-					}
+					const resolved = resolve_static_value(value, status);
+					emit_data(status, resolved !== null ? resolved : "0");
 				});
 				emit_data(status, `\n.p2align 2\n`);
 			} else {

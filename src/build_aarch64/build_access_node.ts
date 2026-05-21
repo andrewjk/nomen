@@ -38,19 +38,57 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 }
 
 function compute_field_offset(node: AccessNode, status: BuildStatus): number {
-	const target_type = type_from_value_node(node.target);
-	const field_name = (node.access as AccessFieldNode).name;
-	let offset = get_field_offset(target_type.name, field_name, status);
+	if (node.access.node_type === "access_field") {
+		const target_type = type_from_value_node(node.target);
+		const field_name = (node.access as AccessFieldNode).name;
+		let offset = get_field_offset(target_type.name, field_name, status);
 
-	// If target is another access node, add its offset
-	if (node.target.node_type === "access") {
-		const inner_access = node.target as AccessNode;
-		if (inner_access.access.node_type === "access_field") {
-			offset += compute_field_offset(inner_access, status);
+		if (node.target.node_type === "access") {
+			const inner_access = node.target as AccessNode;
+			offset += compute_access_offset(inner_access, status);
 		}
+
+		return offset;
 	}
 
-	return offset;
+	if (node.access.node_type === "access_index") {
+		return compute_access_offset(node, status);
+	}
+
+	return 0;
+}
+
+function compute_access_offset(node: AccessNode, status: BuildStatus): number {
+	if (node.access.node_type === "access_field") {
+		return compute_field_offset(node, status);
+	}
+
+	if (node.access.node_type === "access_index") {
+		const access_index = node.access as AccessIndexNode;
+		const target_type = type_from_value_node(node.target);
+		const struct_type = status.structs.find(
+			(s) => s.name === target_type.name && !s.is_simple_type,
+		);
+		const element_size = struct_type
+			? get_struct_size(target_type.name, status)
+			: aarch64_size(target_type.name);
+
+		let index_offset = 0;
+		if (access_index.index.node_type === "value") {
+			const index_val = (access_index.index as ValueNode).value;
+			if (/^(\+|-)*\d+$/.test(index_val)) {
+				index_offset = parseInt(index_val) * element_size;
+			}
+		}
+
+		if (node.target.node_type === "access") {
+			index_offset += compute_access_offset(node.target as AccessNode, status);
+		}
+
+		return index_offset;
+	}
+
+	return 0;
 }
 
 function get_base_target(node: AccessNode): ValueNode | AccessNode {
@@ -313,7 +351,14 @@ function build_access_method(
 function build_access_index(node: AccessNode, access_index: AccessIndexNode, status: BuildStatus) {
 	const target_type = type_from_value_node(node.target);
 	const is_string = target_type.name === "string";
-	const element_size = is_string ? 1 : target_type.name ? aarch64_size(target_type.name) : 8;
+	const struct_type = status.structs.find((s) => s.name === target_type.name && !s.is_simple_type);
+	const element_size = is_string
+		? 1
+		: struct_type
+			? get_struct_size(target_type.name, status)
+			: target_type.name
+				? aarch64_size(target_type.name)
+				: 8;
 	const element_signed =
 		target_type.name && (target_type.name.startsWith("int") || target_type.name === "float");
 
