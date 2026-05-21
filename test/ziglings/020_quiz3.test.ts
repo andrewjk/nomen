@@ -1,73 +1,97 @@
 import { expect, test } from "vite-plus/test";
 
 import build from "../../src/build";
-import test_error from "../test_error";
 import check_output_aarch64 from "./check_output_aarch64";
 import parse_with_imports from "./parse_with_imports";
 
-// TODO: convert zig code to echo
-const zig_source = `//
-// Let's see if we can make use of some of the things we've learned so far.
-// We'll create two functions: one that contains a "for" loop and one
-// that contains a "while" loop.
-//
-// Both of these are simply labeled "loop" below.
-//
-const std = @import("std");
+test("ziglings 020 quiz3 -- errors", () => {
+	const input = `
+import System
 
-pub fn main() void {
-    const my_numbers = [4]u16{ 5, 6, 7, 8 };
-
-    printPowersOfTwo(my_numbers);
-    std.debug.print("\\n", .{});
+pub func main = () {
+    const my_numbers = [5, 6, 7, 8]
+    printPowersOfTwo(my_numbers)
 }
 
-// You won't see this every day: a function that takes an array with
-// exactly four u16 numbers. This is not how you would normally pass
-// an array to a function. We'll learn about slices and pointers in
-// a little while. For now, we're using what we know.
-//
-// This function prints, but does not return anything.
-//
-fn printPowersOfTwo(numbers: [4]u16) ??? {
-    loop (numbers) |n| {
-        std.debug.print("{} ", .{twoToThe(n)});
+func printPowersOfTwo = (int numbers, ???) {
+    for n of numbers {
+        Console.write("\\{twoToThe(n)} ")
     }
 }
 
-// This function bears a striking resemblance to twoToThe() in the last
-// exercise. But don't be fooled! This one does the math without the aid
-// of the standard library!
-//
-fn twoToThe(number: u16) ??? {
-    var n: u16 = 0;
-    var total: u16 = 1;
+func twoToThe = (int number, ??? int) {
+    var int n = 0
+    var int total = 1
 
-    loop (n < number) : (n += 1) {
-        total *= 2;
+    while n < number; n += 1 {
+        total *= 2
     }
 
-    return ???;
+    return ???
 }
 `;
-
-test.skip("ziglings 020 quiz3 -- errors", () => {
-	const input = zig_source;
-	const expected: any[] = [];
 	const parsed = parse_with_imports(input);
-	expect(parsed.errors).toEqual(expected);
+	expect(parsed.errors.length).toBeGreaterThan(0);
 });
 
-test.skip("ziglings 020 quiz3 -- fixed", () => {
-	const input = zig_source;
+test("ziglings 020 quiz3 -- fixed", () => {
+	const input = `
+import System
+
+pub func main = () {
+    const my_numbers = [5, 6, 7, 8]
+    printPowersOfTwo(my_numbers)
+}
+
+func printPowersOfTwo = (int[] numbers) {
+    for n of numbers {
+        Console.write("\\{twoToThe(n)} ")
+    }
+}
+
+func twoToThe = (int number, out int) {
+    var int n = 0
+    var int total = 1
+
+    while n < number; n += 1 {
+        total *= 2
+    }
+
+    return total
+}
+`;
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual([]);
 });
 
-test.skip("ziglings 020 quiz3 -- build", async () => {
-	const input = zig_source;
+test("ziglings 020 quiz3 -- build", async () => {
+	const input = `
+import System
+
+pub func main = () {
+    const my_numbers = [5, 6, 7, 8]
+    printPowersOfTwo(my_numbers)
+}
+
+func printPowersOfTwo = (int[] numbers) {
+    for n of numbers {
+        Console.write("\\{twoToThe(n)} ")
+    }
+}
+
+func twoToThe = (int number, out int) {
+    var int n = 0
+    var int total = 1
+
+    while n < number; n += 1 {
+        total *= 2
+    }
+
+    return total
+}
+`;
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual([]);
 	const built = build(parsed.root, { arch: "aarch64" });
-	await check_output_aarch64("0203", built, "");
+	await check_output_aarch64("020", built, "32 64 128 256 ");
 });
