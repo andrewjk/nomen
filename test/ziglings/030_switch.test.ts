@@ -1,83 +1,97 @@
 import { expect, test } from "vite-plus/test";
 
 import build from "../../src/build";
-import test_error from "../test_error";
 import check_output_aarch64 from "./check_output_aarch64";
 import parse_with_imports from "./parse_with_imports";
 
-// TODO: convert zig code to echo
-const zig_source = `//
-// The "switch" statement lets you match the possible values of an
-// expression and perform a different action for each.
-//
-// This switch:
-//
-//     switch (players) {
-//         1 => startOnePlayerGame(),
-//         2 => startTwoPlayerGame(),
-//         else => {
-//             alert();
-//             return GameError.TooManyPlayers;
-//         }
-//     }
-//
-// Is equivalent to this if/else:
-//
-//     if (players == 1) startOnePlayerGame();
-//     else if (players == 2) startTwoPlayerGame();
-//     else {
-//         alert();
-//         return GameError.TooManyPlayers;
-//     }
-//
-const std = @import("std");
+test("ziglings 030 switch -- errors", () => {
+	const input = `
+import System
 
-pub fn main() void {
-    const lang_chars = [_]u8{ 26, 9, 7, 42 };
+pub func main = () {
+    const chars = [26, 9, 7, 42]
 
-    for (lang_chars) |c| {
-        switch (c) {
-            1 => std.debug.print("A", .{}),
-            2 => std.debug.print("B", .{}),
-            3 => std.debug.print("C", .{}),
-            4 => std.debug.print("D", .{}),
-            5 => std.debug.print("E", .{}),
-            6 => std.debug.print("F", .{}),
-            7 => std.debug.print("G", .{}),
-            8 => std.debug.print("H", .{}),
-            9 => std.debug.print("I", .{}),
-            10 => std.debug.print("J", .{}),
-            // ... we don't need everything in between ...
-            25 => std.debug.print("Y", .{}),
-            26 => std.debug.print("Z", .{}),
-            // Switch statements must be "exhaustive" (there must be a
-            // match for every possible value).  Please add an "else"
-            // to this switch to print a question mark "?" when c is
-            // not one of the existing matches.
+    for c of chars {
+        match c {
+            case 1 -> Console.write("A")
+            case 2 -> Console.write("B")
+            case 3 -> Console.write("C")
+            case 4 -> Console.write("D")
+            case 5 -> Console.write("E")
+            case 6 -> Console.write("F")
+            case 7 -> Console.write("G")
+            case 8 -> Console.write("H")
+            case 9 -> Console.write("I")
+            case 10 -> Console.write("J")
+            case 25 -> Console.write("Y")
+            case 26 -> Console.write("Z")
+            else -> Console.???
         }
     }
-
-    std.debug.print("\\n", .{});
 }
 `;
-
-test.skip("ziglings 030 switch -- errors", () => {
-	const input = zig_source;
-	const expected: any[] = [];
 	const parsed = parse_with_imports(input);
-	expect(parsed.errors).toEqual(expected);
+	expect(parsed.errors.length).toBeGreaterThan(0);
 });
 
-test.skip("ziglings 030 switch -- fixed", () => {
-	const input = zig_source;
+test("ziglings 030 switch -- fixed", () => {
+	const input = `
+import System
+
+pub func main = () {
+    const chars = [26, 9, 7, 42]
+
+    for c of chars {
+        match c {
+            case 1 -> Console.write("A")
+            case 2 -> Console.write("B")
+            case 3 -> Console.write("C")
+            case 4 -> Console.write("D")
+            case 5 -> Console.write("E")
+            case 6 -> Console.write("F")
+            case 7 -> Console.write("G")
+            case 8 -> Console.write("H")
+            case 9 -> Console.write("I")
+            case 10 -> Console.write("J")
+            case 25 -> Console.write("Y")
+            case 26 -> Console.write("Z")
+            else -> Console.write("?")
+        }
+    }
+}
+`;
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual([]);
 });
 
-test.skip("ziglings 030 switch -- build", async () => {
-	const input = zig_source;
+test("ziglings 030 switch -- build", async () => {
+	const input = `
+import System
+
+pub func main = () {
+    const chars = [26, 9, 7, 42]
+
+    for c of chars {
+        match c {
+            case 1 -> Console.write("A")
+            case 2 -> Console.write("B")
+            case 3 -> Console.write("C")
+            case 4 -> Console.write("D")
+            case 5 -> Console.write("E")
+            case 6 -> Console.write("F")
+            case 7 -> Console.write("G")
+            case 8 -> Console.write("H")
+            case 9 -> Console.write("I")
+            case 10 -> Console.write("J")
+            case 25 -> Console.write("Y")
+            case 26 -> Console.write("Z")
+            else -> Console.write("?")
+        }
+    }
+}
+`;
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual([]);
 	const built = build(parsed.root, { arch: "aarch64" });
-	await check_output_aarch64("030", built, "");
+	await check_output_aarch64("030", built, "ZIG?");
 });
