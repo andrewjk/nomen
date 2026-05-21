@@ -57,11 +57,6 @@ export default function check_match_node(match_node: MatchNode, status: CheckSta
 	}
 
 	if (!match_node.else_branch) {
-		const parent = status.stack.at(-1);
-		if (parent && (parent.node_type === "declare" || parent.node_type === "assign")) {
-			add_error(status, "Match expression must have an else branch", match_node.start);
-		}
-
 		check_exhaustiveness(match_node, match_type, status);
 	}
 }
@@ -109,7 +104,10 @@ function check_exhaustiveness(
 				match_node.start,
 			);
 		}
+		return;
 	}
+
+	add_error(status, `Non-exhaustive match: missing else branch`, match_node.start);
 }
 
 function extract_enum_case_name(

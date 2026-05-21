@@ -77,7 +77,7 @@ pub func main = () {
     var current_value = 0
 
     for op of operations {
-        switch {
+        match op {
             case 1 {
                 current_value += 1
             }
@@ -87,10 +87,9 @@ pub func main = () {
             case 3 {
                 current_value *= current_value
             }
-            // TODO:
-            //else {
-            //    panic("unreachable")
-            //}
+            else {
+                Console.write("unreachable")
+            }
         }
 
         Console.write("\\{current_value} ")

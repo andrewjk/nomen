@@ -6,7 +6,7 @@ import check_output from "./check_output";
 import parse_with_imports from "./parse_with_imports";
 import test_error from "./test_error";
 
-// TODO: do matches need to be exhaustive??
+// Match is exhaustive: enums must cover all cases, other types require else
 
 // BUILD
 describe("match build", () => {
@@ -16,6 +16,9 @@ var x = 5
 match x {
 	case 5 {
 		Console.write("five")
+	}
+	else {
+		Console.write("other")
 	}
 }
 `;
@@ -33,6 +36,9 @@ var int result = 0
 match x {
 	case 5 {
 		result = 1
+	}
+	else {
+		result = 0
 	}
 }
 Console.write("\\{result}")
@@ -57,6 +63,9 @@ match x {
 	case 15 {
 		Console.write("fifteen")
 	}
+	else {
+		Console.write("other")
+	}
 }
 `;
 		const parsed = parse_with_imports(input);
@@ -79,6 +88,9 @@ match x {
 	case 15 {
 		Console.write("fifteen")
 	}
+	else {
+		Console.write("other")
+	}
 }
 `;
 		const parsed = parse_with_imports(input);
@@ -100,6 +112,9 @@ match x {
 	}
 	case 15 {
 		Console.write("fifteen")
+	}
+	else {
+		Console.write("other")
 	}
 }
 `;
@@ -177,6 +192,9 @@ match x {
 	}
 	case 15 {
 		result = 3
+	}
+	else {
+		result = 0
 	}
 }
 Console.write("\\{result}")
@@ -270,6 +288,9 @@ match x {
 	}
 	case 0 {
 		result = 2
+	}
+	else {
+		result = 3
 	}
 }
 Console.write("\\{result}")
@@ -429,6 +450,8 @@ func test = (out int) {
 	match x {
 		case "hello" {
 		}
+		else {
+		}
 	}
 	return 0
 }
@@ -550,7 +573,7 @@ func main = () {
 		expect(parsed.errors).toEqual([]);
 	});
 
-	test("int match not checked for exhaustiveness", () => {
+	test("int match requires else branch", () => {
 		const input = `
 func main = () {
   var int x = 5
@@ -564,8 +587,10 @@ func main = () {
   }
 }
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
+		const parsed = parse(input);
+		expect(parsed.errors.length).toBeGreaterThan(0);
+		expect(parsed.errors[0].message).toContain("Non-exhaustive match");
+		expect(parsed.errors[0].message).toContain("else");
 	});
 
 	test("enum match with full form cases", () => {
