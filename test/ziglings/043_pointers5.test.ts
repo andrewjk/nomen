@@ -1,129 +1,118 @@
 import { expect, test } from "vite-plus/test";
 
 import build from "../../src/build";
-import test_error from "../test_error";
 import check_output_aarch64 from "./check_output_aarch64";
 import parse_with_imports from "./parse_with_imports";
 
-// TODO: convert zig code to echo
-const zig_source = `//
-// As with integers, you can pass a pointer to a struct when you
-// will wish to modify that struct. Pointers are also useful when
-// you need to store a reference to a struct (a "link" to it).
-//
-//     const Vertex = struct{ x: u32, y: u32, z: u32 };
-//
-//     var v1 = Vertex{ .x=3, .y=2, .z=5 };
-//
-//     var pv: *Vertex = &v1;   // <-- a pointer to our struct
-//
-// Note that you don't need to dereference the "pv" pointer to access
-// the struct's fields:
-//
-//     YES: pv.x
-//     NO:  pv.*.x
-//
-// We can write functions that take pointers to structs as
-// arguments. This foo() function modifies struct v:
-//
-//     fn foo(v: *Vertex) void {
-//         v.x += 2;
-//         v.y += 3;
-//         v.z += 7;
-//     }
-//
-// And call them like so:
-//
-//     foo(&v1);
-//
-// Let's revisit our RPG example and make a printCharacter() function
-// that takes a Character by reference and prints it...*and*
-// prints a linked "mentor" Character, if there is one.
-//
-const std = @import("std");
+test("ziglings 043 pointers5 -- errors", () => {
+	const input = `
+import System
 
-const Class = enum {
-    wizard,
-    thief,
-    bard,
-    warrior,
-};
-
-const Character = struct {
-    class: Class,
-    gold: u32,
-    health: u8 = 100, // You can provide default values
-    experience: u32,
-
-    // I need to use the '?' here to allow for a null value. But
-    // I don't explain it until later. Please don't tell anyone.
-    mentor: ?*Character = null,
-};
-
-pub fn main() void {
-    var mighty_krodor = Character{
-        .class = Class.wizard,
-        .gold = 10000,
-        .experience = 2340,
-    };
-
-    var glorp = Character{ // Glorp!
-        .class = Class.wizard,
-        .gold = 10,
-        .experience = 20,
-        .mentor = &mighty_krodor, // Glorp's mentor is the Mighty Krodor
-    };
-
-    // FIX ME!
-    // Please pass Glorp to printCharacter():
-    printCharacter(???);
+enum Role {
+  case wizard
+  case thief
+  case bard
+  case warrior
 }
 
-// Note how this function's "c" parameter is a pointer to a Character struct.
-fn printCharacter(c: *Character) void {
-    // Here's something you haven't seen before: when switching an enum, you
-    // don't have to write the full enum name. Zig understands that ".wizard"
-    // means "Class.wizard" when we switch on a Class enum value:
-    const class_name = switch (c.class) {
-        .wizard => "Wizard",
-        .thief => "Thief",
-        .bard => "Bard",
-        .warrior => "Warrior",
-    };
+struct Character {
+  var Role role
+  var int gold
+  var int health
+  var int experience
+}
 
-    std.debug.print("{s} (G:{} H:{} XP:{})\\n", .{
-        class_name,
-        c.gold,
-        c.health,
-        c.experience,
-    });
+pub func main = () {
+    var Character glorp = Character(Role.wizard, 10, 100, 20)
+    printCharacter(???)
+}
 
-    // Checking an "optional" value and capturing it will be
-    // explained later (this pairs with the '?' mentioned above.)
-    if (c.mentor) |mentor| {
-        std.debug.print("  Mentor: ", .{});
-        printCharacter(mentor);
+func printCharacter = (ref Character c) {
+    match c.role {
+        case .wizard -> Console.write("Wizard")
+        case .thief -> Console.write("Thief")
+        case .bard -> Console.write("Bard")
+        case .warrior -> Console.write("Warrior")
     }
+    Console.write(" (G:\\{c.gold} H:\\{c.health} XP:\\{c.experience})\\n")
 }
 `;
-
-test.skip("ziglings 043 pointers5 -- errors", () => {
-	const input = zig_source;
-	const expected: any[] = [];
 	const parsed = parse_with_imports(input);
-	expect(parsed.errors).toEqual(expected);
+	expect(parsed.errors.length).toBeGreaterThan(0);
 });
 
-test.skip("ziglings 043 pointers5 -- fixed", () => {
-	const input = zig_source;
+test("ziglings 043 pointers5 -- fixed", () => {
+	const input = `
+import System
+
+enum Role {
+  case wizard
+  case thief
+  case bard
+  case warrior
+}
+
+struct Character {
+  var Role role
+  var int gold
+  var int health
+  var int experience
+}
+
+pub func main = () {
+    var Character glorp = Character(Role.wizard, 10, 100, 20)
+    printCharacter(ref glorp)
+}
+
+func printCharacter = (ref Character c) {
+    match c.role {
+        case .wizard -> Console.write("Wizard")
+        case .thief -> Console.write("Thief")
+        case .bard -> Console.write("Bard")
+        case .warrior -> Console.write("Warrior")
+    }
+    Console.write(" (G:\\{c.gold} H:\\{c.health} XP:\\{c.experience})\\n")
+}
+`;
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual([]);
 });
 
-test.skip("ziglings 043 pointers5 -- build", async () => {
-	const input = zig_source;
+test("ziglings 043 pointers5 -- build", async () => {
+	const input = `
+import System
+
+enum Role {
+  case wizard
+  case thief
+  case bard
+  case warrior
+}
+
+struct Character {
+  var Role role
+  var int gold
+  var int health
+  var int experience
+}
+
+pub func main = () {
+    var Character glorp = Character(Role.wizard, 10, 100, 20)
+    printCharacter(ref glorp)
+}
+
+func printCharacter = (ref Character c) {
+    match c.role {
+        case .wizard -> Console.write("Wizard")
+        case .thief -> Console.write("Thief")
+        case .bard -> Console.write("Bard")
+        case .warrior -> Console.write("Warrior")
+    }
+    Console.write(" (G:\\{c.gold} H:\\{c.health} XP:\\{c.experience})\\n")
+}
+`;
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual([]);
 	const built = build(parsed.root, { arch: "aarch64" });
-	await check_output_aarch64("0435", built, "");
+	await check_output_aarch64("043", built, "Wizard (G:10 H:100 XP:20)\n");
 });
