@@ -152,6 +152,38 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 	const offset = compute_field_offset(node, status);
 	const base = get_base_target(node);
 
+	const target_is_ref_access =
+		node.target.node_type === "access" &&
+		(node.target as AccessNode).access.node_type === "access_field" &&
+		((node.target as AccessNode).access as AccessFieldNode).type?.is_ref;
+
+	if (target_is_ref_access) {
+		build_node(node.target, status);
+		if (!status.code.endsWith("\n")) {
+			status.code += "\n";
+		}
+		const final_offset = get_field_offset(access_field.type?.name || "", access_field.name, status);
+		const field_type = access_field.type?.name || "";
+		const size = aarch64_size(field_type);
+		const signed =
+			field_type.startsWith("int") ||
+			field_type === "float" ||
+			field_type === "float32" ||
+			field_type === "float64";
+		if (size === 1) {
+			status.code += signed
+				? `ldrsb x0, [x0, #${final_offset}]\n`
+				: `ldrb w0, [x0, #${final_offset}]\n`;
+		} else if (size === 4) {
+			status.code += signed
+				? `ldrsw x0, [x0, #${final_offset}]\n`
+				: `ldr w0, [x0, #${final_offset}]\n`;
+		} else {
+			status.code += `ldr x0, [x0, #${final_offset}]\n`;
+		}
+		return;
+	}
+
 	// Get base address into x0
 	if (base.node_type === "value") {
 		const name = (base as ValueNode).value;

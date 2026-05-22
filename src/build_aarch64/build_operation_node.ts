@@ -199,6 +199,9 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		status.code += `cmp x2, #0\n`;
 		status.code += `cset x2, ne\n`;
 		status.code += `orr x0, x1, x2\n`;
+	} else if (node.op === "??") {
+		status.code += `cmp x1, #0\n`;
+		status.code += `csel x0, x2, x1, eq\n`;
 	} else if (is_comparison(node.op)) {
 		status.code += `cmp x1, x2\n`;
 		status.code += `cset x0, ${map_cmp(node.op)}\n`;

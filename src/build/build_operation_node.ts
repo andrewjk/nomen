@@ -7,6 +7,14 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 	if (node.op === "!") {
 		status.code += `!`;
 		build_node(node.right_value, status);
+	} else if (node.op === "??") {
+		status.code += `(`;
+		build_node(node.left_value, status);
+		status.code += ` ? `;
+		build_node(node.left_value, status);
+		status.code += ` : `;
+		build_node(node.right_value, status);
+		status.code += `)`;
 	} else if (node.operator_func) {
 		// Custom operator function call
 		status.code += `${node.operator_func.struct_name}_${node.operator_func.func_name}(`;

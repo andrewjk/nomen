@@ -62,6 +62,7 @@ export default interface CheckStatus {
 	 * Type parameters currently in scope (e.g. T in struct List<T>)
 	 */
 	type_params: string[];
+	allow_null_value?: boolean;
 
 	/**
 	 * Errors that have been encountered

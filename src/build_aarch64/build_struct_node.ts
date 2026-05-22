@@ -127,6 +127,8 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 					status.code += `mov x1, #1\n`;
 				} else if (val === "false") {
 					status.code += `mov x1, #0\n`;
+				} else if (val === "null") {
+					status.code += `mov x1, #0\n`;
 				} else if (/^(\+|-)*\d+$/.test(val)) {
 					status.code += `ldr x1, =${val}\n`;
 				} else if (val.startsWith('"')) {
@@ -211,6 +213,8 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 				if (val === "true") {
 					status.code += `mov x1, #1\n`;
 				} else if (val === "false") {
+					status.code += `mov x1, #0\n`;
+				} else if (val === "null") {
 					status.code += `mov x1, #0\n`;
 				} else if (/^(\+|-)*\d+$/.test(val)) {
 					status.code += `ldr x1, =${val}\n`;

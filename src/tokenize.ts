@@ -12,6 +12,8 @@ const COMPOUND_SYMBOLS = [
 	// Logical
 	"&&",
 	"||",
+	// Null coalescing
+	"??",
 	// Assignment
 	"+=",
 	"-=",

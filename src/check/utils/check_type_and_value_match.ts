@@ -29,6 +29,8 @@ export default function check_type_and_value_match(
 			add_error_message(status, i, node_type, type_name(value_type), type_name(effective_target));
 		} else if (value_type.name === "null" && effective_target.is_nullable) {
 			return;
+		} else if (effective_target.name === "null" && value_type.is_nullable) {
+			return;
 		} else if (effective_target.name !== value_type.name) {
 			if (is_type_param(effective_target.name, status)) {
 				return;

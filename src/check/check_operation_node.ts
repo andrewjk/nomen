@@ -18,7 +18,15 @@ export default function check_operation_node(op: OperationNode, status: CheckSta
 		return true;
 	}
 
+	const is_equality = op.op === "==" || op.op === "!=";
+	const is_null_coalesce = op.op === "??";
+	const old_allow_null = status.allow_null_value;
+	if (is_equality || is_null_coalesce) {
+		status.allow_null_value = true;
+	}
+
 	if (!check_node(op.left_value, status)) {
+		status.allow_null_value = old_allow_null;
 		return false;
 	}
 
@@ -28,6 +36,7 @@ export default function check_operation_node(op: OperationNode, status: CheckSta
 	status.expected_type = left_type;
 	const right_result = check_node(op.right_value, status);
 	status.expected_type = old_expected_type;
+	status.allow_null_value = old_allow_null;
 	if (!right_result) {
 		return false;
 	}
@@ -67,8 +76,12 @@ export default function check_operation_node(op: OperationNode, status: CheckSta
 	}
 
 	// If left operand is a non-simple struct and no custom operator was found, it's an error
+	// But ref and nullable types can use == and != (comparing pointers or checking null)
 	const struct_name = left_type.is_array ? "Array" : left_type.name;
-	if (status.structs.find((s) => s.name === struct_name && !s.is_simple_type)) {
+	if (
+		status.structs.find((s) => s.name === struct_name && !s.is_simple_type) &&
+		!(left_type.is_ref || left_type.is_nullable)
+	) {
 		add_error(status, `No operator ${op.op as string} defined for type ${struct_name}`, op.start);
 		return false;
 	}
@@ -118,6 +131,18 @@ export default function check_operation_node(op: OperationNode, status: CheckSta
 		case "&&":
 		case "||": {
 			op.type = new Type("bool");
+			break;
+		}
+		case "??": {
+			const result_type = new Type(
+				left_type.name,
+				left_type.is_static,
+				left_type.is_array,
+				left_type.length,
+			);
+			result_type.type_args = left_type.type_args;
+			result_type.is_ref = left_type.is_ref;
+			op.type = result_type;
 			break;
 		}
 		default: {

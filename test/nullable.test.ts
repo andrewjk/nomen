@@ -78,4 +78,166 @@ Console.write("ok")
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
 	});
+
+	test("nullable == null comparison", async () => {
+		const input = `
+var int? x = null
+if x == null {
+    Console.write("is null")
+}
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64" });
+		await check_output("nullable_eq_null", result, "is null");
+	});
+
+	test("nullable != null comparison", async () => {
+		const input = `
+var int? x = 5
+if x != null {
+    Console.write("\\{x}")
+}
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64" });
+		await check_output("nullable_neq_null", result, "5");
+	});
+
+	test("null == nullable comparison", async () => {
+		const input = `
+var int? x = null
+if null == x {
+    Console.write("is null")
+}
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64" });
+		await check_output("null_eq_nullable", result, "is null");
+	});
+
+	test("null != nullable comparison", async () => {
+		const input = `
+var int? x = 5
+if null != x {
+    Console.write("\\{x}")
+}
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64" });
+		await check_output("null_neq_nullable", result, "5");
+	});
+
+	test("nullable variable usable after != null check", async () => {
+		const input = `
+var int? x = 5
+if x != null {
+    Console.write("\\{x}")
+}
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64" });
+		await check_output("nullable_narrowed_neq", result, "5");
+	});
+
+	test("nullable variable usable in else after == null check", async () => {
+		const input = `
+var int? x = 5
+if x == null {
+    Console.write("null")
+} else {
+    Console.write("\\{x}")
+}
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64" });
+		await check_output("nullable_narrowed_eq_else", result, "5");
+	});
+
+	test("null-valued variable usable after != null check", async () => {
+		const input = `
+func getVal = (out int?) {
+    return 10
+}
+var int? x = getVal()
+if x != null {
+    Console.write("\\{x}")
+}
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64" });
+		await check_output("nullable_narrowed_func", result, "10");
+	});
+});
+
+describe("null coalescing ??", () => {
+	test("?? with null value returns default", async () => {
+		const input = `
+var int? x = null
+var int y = x ?? 42
+Console.write("\\{y}")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64" });
+		await check_output("coalesce_null", result, "42");
+	});
+
+	test("?? with non-null value returns value", async () => {
+		const input = `
+var int? x = 5
+var int y = x ?? 42
+Console.write("\\{y}")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64" });
+		await check_output("coalesce_non_null", result, "5");
+	});
+
+	test("?? with function returning null", async () => {
+		const input = `
+func deepThought = (out int?) {
+    return null
+}
+var int answer = deepThought() ?? 42
+Console.write("\\{answer}")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64" });
+		await check_output("coalesce_func_null", result, "42");
+	});
+
+	test("?? with function returning value", async () => {
+		const input = `
+func deepThought = (out int?) {
+    return 7
+}
+var int answer = deepThought() ?? 42
+Console.write("\\{answer}")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64" });
+		await check_output("coalesce_func_val", result, "7");
+	});
+
+	test("?? result is non-nullable", async () => {
+		const input = `
+var int? x = null
+var int y = x ?? 10
+Console.write("\\{y + 1}")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64" });
+		await check_output("coalesce_non_nullable", result, "11");
+	});
 });

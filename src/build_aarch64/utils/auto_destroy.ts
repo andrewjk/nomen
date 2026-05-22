@@ -164,6 +164,7 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 
 function has_struct_fields_with_destroy(struct_type: StructNode, status: BuildStatus): boolean {
 	for (const field of struct_type.fields) {
+		if (field.type.is_ref) continue;
 		const field_struct = is_struct_type(field.type.name, status);
 		if (field_struct) {
 			if (has_destroy(field_struct)) return true;

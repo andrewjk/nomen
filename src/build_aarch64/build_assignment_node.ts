@@ -222,7 +222,21 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 				}
 			}
 
-			if (field_is_struct && !node.operator) {
+			if (field_type?.is_ref) {
+				const offset = get_field_offset(target_type.name, field_name, status);
+
+				get_base_address(access, status, "x0");
+				status.code += `str x0, [sp, #-16]!\n`;
+
+				get_source_address(node.right_value, status);
+				if (!status.code.endsWith("\n")) {
+					status.code += "\n";
+				}
+				status.code += `mov x2, x0\n`;
+				status.code += `ldr x0, [sp], #16\n`;
+
+				status.code += `str x2, [x0, #${offset}]\n`;
+			} else if (field_is_struct && !node.operator) {
 				const offset = get_field_offset(target_type.name, field_name, status);
 				const struct_size = get_struct_size(field_type!.name, status);
 				mark_moved_if_struct(node.right_value, status);

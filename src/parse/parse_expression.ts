@@ -63,7 +63,11 @@ function parse_primary(status: ParseStatus, value: string): BaseNode {
 		case "!": {
 			consume(status);
 			const next = peek_current(status) || "??";
-			const inner = parse_primary(status, next);
+			let inner: BaseNode = parse_primary(status, next);
+			while (peek_current(status) === ".") {
+				accept(".", status);
+				inner = new AccessNode(inner.start, inner, parse_access(next, status));
+			}
 			return new OperationNode(start, "!", inner, inner);
 		}
 		case ".": {
@@ -207,7 +211,8 @@ export default function parse_expression(status: ParseStatus): BaseNode {
 			case ">>":
 			case "&":
 			case "|":
-			case "^": {
+			case "^":
+			case "??": {
 				consume(status);
 
 				// TODO: Proper order of operations
@@ -291,6 +296,9 @@ function operator_precedence(op: string) {
 		}
 		case "||": {
 			return 12;
+		}
+		case "??": {
+			return 13;
 		}
 		case "=":
 		case "+=":
