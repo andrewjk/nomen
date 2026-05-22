@@ -31,6 +31,7 @@ pub func main = () {
 
         Console.write("\\{current_value} ")
     }
+    Console.write("\\n")
 }
 `;
 	const parsed = parse_with_imports(input);
@@ -66,6 +67,7 @@ pub func main = () {
 
         Console.write("\\{current_value} ")
     }
+    Console.write("\\n")
 }
 `;
 	const parsed = parse_with_imports(input);
@@ -101,10 +103,11 @@ pub func main = () {
 
         Console.write("\\{current_value} ")
     }
+    Console.write("\\n")
 }
 `;
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual([]);
 	const built = build(parsed.root, { arch: "aarch64" });
-	await check_output_aarch64("035", built, "1 2 3 9 8 7 ");
+	await check_output_aarch64("035", built, "1 2 3 9 8 7 \n");
 });

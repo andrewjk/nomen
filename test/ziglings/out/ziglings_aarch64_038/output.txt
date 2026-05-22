@@ -1,2 +1,2 @@
-G:20 H:100 XP:10
-G:10 H:100 XP:20
+Character 1 - G:20 H:100 XP:10
+Character 2 - G:10 H:100 XP:20

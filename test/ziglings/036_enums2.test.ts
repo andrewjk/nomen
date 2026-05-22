@@ -1,4 +1,8 @@
 import { expect, test } from "vite-plus/test";
+// TODO: The original Zig exercise uses @intFromEnum with {x:0>6} hex formatting
+// to print HTML like <span style="color: #ff0000">Red</span>. Echo has neither
+// @intFromEnum nor hex formatting, so we print the hex color codes directly
+// per enum variant instead. The exercise still tests enum exhaustiveness.
 
 import build from "../../src/build";
 import check_output_aarch64 from "./check_output_aarch64";
@@ -18,9 +22,9 @@ pub func main = () {
     const colors = [Color.red, Color.green, Color.blue]
     for color of colors {
         match color {
-            case .red -> Console.write("red ")
-            case .green -> Console.write("green ")
-            case .??? -> Console.write("blue ")
+            case .red -> Console.write("#ff0000\\n")
+            case .green -> Console.write("#00ff00\\n")
+            case .??? -> Console.write("#0000ff\\n")
         }
     }
 }
@@ -43,9 +47,9 @@ pub func main = () {
     const colors = [Color.red, Color.green, Color.blue]
     for color of colors {
         match color {
-            case .red -> Console.write("red ")
-            case .green -> Console.write("green ")
-            case .blue -> Console.write("blue ")
+            case .red -> Console.write("#ff0000\\n")
+            case .green -> Console.write("#00ff00\\n")
+            case .blue -> Console.write("#0000ff\\n")
         }
     }
 }
@@ -68,9 +72,9 @@ pub func main = () {
     const colors = [Color.red, Color.green, Color.blue]
     for color of colors {
         match color {
-            case .red -> Console.write("red ")
-            case .green -> Console.write("green ")
-            case .blue -> Console.write("blue ")
+            case .red -> Console.write("#ff0000\\n")
+            case .green -> Console.write("#00ff00\\n")
+            case .blue -> Console.write("#0000ff\\n")
         }
     }
 }
@@ -78,5 +82,5 @@ pub func main = () {
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual([]);
 	const built = build(parsed.root, { arch: "aarch64" });
-	await check_output_aarch64("036", built, "red green blue ");
+	await check_output_aarch64("036", built, "#ff0000\n#00ff00\n#0000ff\n");
 });

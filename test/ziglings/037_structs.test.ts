@@ -25,7 +25,7 @@ pub func main = () {
     var Character glorp = Character(Role.wizard, 20, 10, ???)
     glorp.gold = glorp.gold + 5
     glorp.health = glorp.health - 10
-    Console.write("Your wizard has \\{glorp.health} health and \\{glorp.gold} gold")
+    Console.write("Your wizard has \\{glorp.health} health and \\{glorp.gold} gold.\\n")
 }
 `;
 	const parsed = parse_with_imports(input);
@@ -54,7 +54,7 @@ pub func main = () {
     var Character glorp = Character(Role.wizard, 20, 10, 100)
     glorp.gold = glorp.gold + 5
     glorp.health = glorp.health - 10
-    Console.write("Your wizard has \\{glorp.health} health and \\{glorp.gold} gold")
+    Console.write("Your wizard has \\{glorp.health} health and \\{glorp.gold} gold.\\n")
 }
 `;
 	const parsed = parse_with_imports(input);
@@ -83,11 +83,11 @@ pub func main = () {
     var Character glorp = Character(Role.wizard, 20, 10, 100)
     glorp.gold = glorp.gold + 5
     glorp.health = glorp.health - 10
-    Console.write("Your wizard has \\{glorp.health} health and \\{glorp.gold} gold")
+    Console.write("Your wizard has \\{glorp.health} health and \\{glorp.gold} gold.\\n")
 }
 `;
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual([]);
 	const built = build(parsed.root, { arch: "aarch64" });
-	await check_output_aarch64("037", built, "Your wizard has 90 health and 25 gold");
+	await check_output_aarch64("037", built, "Your wizard has 90 health and 25 gold.\n");
 });
