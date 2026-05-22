@@ -1,131 +1,177 @@
 import { expect, test } from "vite-plus/test";
 
 import build from "../../src/build";
-import test_error from "../test_error";
 import check_output_aarch64 from "./check_output_aarch64";
 import parse_with_imports from "./parse_with_imports";
 
-// TODO: convert zig code to echo
-const zig_source = `//
-// Help! Evil alien creatures have hidden eggs all over the Earth
-// and they're starting to hatch!
-//
-// Before you jump into battle, you'll need to know three things:
-//
-// 1. You can attach functions to structs (and other "type definitions"):
-//
-//     const Foo = struct{
-//         pub fn hello() void {
-//             std.debug.print("Foo says hello!\\n", .{});
-//         }
-//     };
-//
-// 2. A function that is a member of a struct is "namespaced" within
-//    that struct and is called by specifying the "namespace" and then
-//    using the "dot syntax":
-//
-//     Foo.hello();
-//
-// 3. The NEAT feature of these functions is that if their first argument
-//    is an instance of the struct (or a pointer to one) then we can use
-//    the instance as the namespace instead of the type:
-//
-//     const Bar = struct{
-//         pub fn a(self: Bar) void {}
-//         pub fn b(this: *Bar, other: u8) void {}
-//         pub fn c(bar: *const Bar) void {}
-//     };
-//
-//    var bar = Bar{};
-//    bar.a() // is equivalent to Bar.a(bar)
-//    bar.b(3) // is equivalent to Bar.b(&bar, 3)
-//    bar.c() // is equivalent to Bar.c(&bar)
-//
-//    Notice that the name of the parameter doesn't matter. Some use
-//    self, others use a lowercase version of the type name, but feel
-//    free to use whatever is most appropriate.
-//
-// Okay, you're armed.
-//
-// Now, please zap the alien structs until they're all gone or
-// the Earth will be doomed!
-//
-const std = @import("std");
+// The original Zig exercise teaches struct methods (static and instance).
+// Echo uses `func name = (self, ...) ` for instance methods (self is a copy)
+// and `func name = (Type arg, out Ret)` for static methods.
+// Echo requires `ref` keyword at both definition and call site for mutation.
+// The Zig version uses arrays with pointer iteration; Echo uses individual
+// variables since for-of iterates by value (mutations to copies don't
+// propagate back to the array).
 
-// Look at this hideous Alien struct. Know your enemy!
-const Alien = struct {
-    health: u8,
+test("ziglings 047 methods -- errors", () => {
+	const input = `
+import System
 
-    // We hate this method:
-    pub fn hatch(strength: u8) Alien {
-        return Alien{
-            .health = strength * 5,
-        };
+struct Alien {
+    var int health
+    func hatch = (int strength, out Alien) {
+        return Alien(strength * 5)
     }
-};
+}
 
-// Your trusty weapon. Zap those aliens!
-const HeatRay = struct {
-    damage: u8,
-
-    // We love this method:
-    pub fn zap(self: HeatRay, alien: *Alien) void {
-        alien.health -= if (self.damage >= alien.health) alien.health else self.damage;
-    }
-};
-
-pub fn main() void {
-    // Look at all of these aliens of various strengths!
-    var aliens = [_]Alien{
-        Alien.hatch(2),
-        Alien.hatch(1),
-        Alien.hatch(3),
-        Alien.hatch(3),
-        Alien.hatch(5),
-        Alien.hatch(3),
-    };
-
-    var aliens_alive = aliens.len;
-    const heat_ray = HeatRay{ .damage = 7 }; // We've been given a heat ray weapon.
-
-    // We'll keep checking to see if we've killed all the aliens yet.
-    while (aliens_alive > 0) {
-        aliens_alive = 0;
-
-        // Loop through every alien by reference (* makes a pointer capture value)
-        for (&aliens) |*alien| {
-
-            // *** Zap the alien with the heat ray here! ***
-            ???.zap(???);
-
-            // If the alien's health is still above 0, it's still alive.
-            if (alien.health > 0) aliens_alive += 1;
+struct HeatRay {
+    var int damage
+    func zap = (self, ref Alien alien) {
+        if self.damage >= alien.health {
+            alien.health = 0
+        } else {
+            alien.health = alien.health - self.damage
         }
-
-        std.debug.print("{} aliens. ", .{aliens_alive});
     }
+}
 
-    std.debug.print("Earth is saved!\\n", .{});
+pub func main = () {
+    var Alien a = Alien.hatch(2)
+    var Alien b = Alien.hatch(1)
+    var Alien c = Alien.hatch(3)
+    var Alien d = Alien.hatch(3)
+    var Alien e = Alien.hatch(5)
+    var Alien f = Alien.hatch(3)
+    var int alive = 6
+    var HeatRay ray = HeatRay(7)
+    while alive > 0 {
+        alive = 0
+        ray.zap(a)
+        if a.health > 0 { alive = alive + 1 }
+        ray.zap(b)
+        if b.health > 0 { alive = alive + 1 }
+        ray.zap(c)
+        if c.health > 0 { alive = alive + 1 }
+        ray.zap(d)
+        if d.health > 0 { alive = alive + 1 }
+        ray.zap(e)
+        if e.health > 0 { alive = alive + 1 }
+        ray.zap(f)
+        if f.health > 0 { alive = alive + 1 }
+        Console.write("\\{alive} aliens. ")
+    }
+    Console.write("Earth is saved!\\n")
 }
 `;
-
-test.skip("ziglings 047 methods -- errors", () => {
-	const input = zig_source;
-	const expected: any[] = [];
 	const parsed = parse_with_imports(input);
-	expect(parsed.errors).toEqual(expected);
+	expect(parsed.errors.length).toBeGreaterThan(0);
 });
 
-test.skip("ziglings 047 methods -- fixed", () => {
-	const input = zig_source;
+test("ziglings 047 methods -- fixed", () => {
+	const input = `
+import System
+
+struct Alien {
+    var int health
+    func hatch = (int strength, out Alien) {
+        return Alien(strength * 5)
+    }
+}
+
+struct HeatRay {
+    var int damage
+    func zap = (self, ref Alien alien) {
+        if self.damage >= alien.health {
+            alien.health = 0
+        } else {
+            alien.health = alien.health - self.damage
+        }
+    }
+}
+
+pub func main = () {
+    var Alien a = Alien.hatch(2)
+    var Alien b = Alien.hatch(1)
+    var Alien c = Alien.hatch(3)
+    var Alien d = Alien.hatch(3)
+    var Alien e = Alien.hatch(5)
+    var Alien f = Alien.hatch(3)
+    var int alive = 6
+    var HeatRay ray = HeatRay(7)
+    while alive > 0 {
+        alive = 0
+        ray.zap(ref a)
+        if a.health > 0 { alive = alive + 1 }
+        ray.zap(ref b)
+        if b.health > 0 { alive = alive + 1 }
+        ray.zap(ref c)
+        if c.health > 0 { alive = alive + 1 }
+        ray.zap(ref d)
+        if d.health > 0 { alive = alive + 1 }
+        ray.zap(ref e)
+        if e.health > 0 { alive = alive + 1 }
+        ray.zap(ref f)
+        if f.health > 0 { alive = alive + 1 }
+        Console.write("\\{alive} aliens. ")
+    }
+    Console.write("Earth is saved!\\n")
+}
+`;
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual([]);
 });
 
-test.skip("ziglings 047 methods -- build", async () => {
-	const input = zig_source;
+test("ziglings 047 methods -- build", async () => {
+	const input = `
+import System
+
+struct Alien {
+    var int health
+    func hatch = (int strength, out Alien) {
+        return Alien(strength * 5)
+    }
+}
+
+struct HeatRay {
+    var int damage
+    func zap = (self, ref Alien alien) {
+        if self.damage >= alien.health {
+            alien.health = 0
+        } else {
+            alien.health = alien.health - self.damage
+        }
+    }
+}
+
+pub func main = () {
+    var Alien a = Alien.hatch(2)
+    var Alien b = Alien.hatch(1)
+    var Alien c = Alien.hatch(3)
+    var Alien d = Alien.hatch(3)
+    var Alien e = Alien.hatch(5)
+    var Alien f = Alien.hatch(3)
+    var int alive = 6
+    var HeatRay ray = HeatRay(7)
+    while alive > 0 {
+        alive = 0
+        ray.zap(ref a)
+        if a.health > 0 { alive = alive + 1 }
+        ray.zap(ref b)
+        if b.health > 0 { alive = alive + 1 }
+        ray.zap(ref c)
+        if c.health > 0 { alive = alive + 1 }
+        ray.zap(ref d)
+        if d.health > 0 { alive = alive + 1 }
+        ray.zap(ref e)
+        if e.health > 0 { alive = alive + 1 }
+        ray.zap(ref f)
+        if f.health > 0 { alive = alive + 1 }
+        Console.write("\\{alive} aliens. ")
+    }
+    Console.write("Earth is saved!\\n")
+}
+`;
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual([]);
 	const built = build(parsed.root, { arch: "aarch64" });
-	await check_output_aarch64("047", built, "");
+	await check_output_aarch64("047", built, "5 aliens. 4 aliens. 1 aliens. 0 aliens. Earth is saved!\n");
 });

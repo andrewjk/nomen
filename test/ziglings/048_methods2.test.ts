@@ -1,108 +1,177 @@
 import { expect, test } from "vite-plus/test";
 
 import build from "../../src/build";
-import test_error from "../test_error";
 import check_output_aarch64 from "./check_output_aarch64";
 import parse_with_imports from "./parse_with_imports";
 
-// TODO: convert zig code to echo
-const zig_source = `//
-// Now that we've seen how methods work, let's see if we can help
-// our elephants out a bit more with some Elephant methods.
-//
-const std = @import("std");
+// The original Zig exercise teaches struct methods on an Elephant linked list.
+// Echo uses `(self)` for read-only self and `(var self)` for mutable copy self.
+// Note: `(var self)` mutations are local to the copy and don't propagate back.
+// Since each elephant is printed before visit() is called, the output is unaffected.
+// The `ref Elephant? tail` field uses `ref` for pointer-like semantics.
+// `getTail` is omitted since returning a nullable ref field as a struct has
+// type complications; direct field access `current.tail` is used instead.
 
-const Elephant = struct {
-    letter: u8,
-    tail: ?*Elephant = null,
-    visited: bool = false,
+test("ziglings 048 methods2 -- errors", () => {
+	const input = `
+import System
 
-    // New Elephant methods!
-    pub fn getTail(self: *Elephant) *Elephant {
-        return self.tail.?; // Remember, this means "orelse unreachable"
+struct Elephant {
+    var char letter
+    var ref Elephant? tail = null
+    var bool visited = false
+
+    func visit = (var self) {
+        self.visited = true
     }
 
-    pub fn hasTail(self: *Elephant) bool {
-        return (self.tail != null);
+    func print = (self) {
+        if self.visited {
+            Console.write("\\{self.letter}v ")
+        } else {
+            Console.write("\\{self.letter}  ")
+        }
     }
 
-    pub fn visit(self: *Elephant) void {
-        self.visited = true;
-    }
-
-    pub fn print(self: *Elephant) void {
-        // Prints elephant letter and [v]isited
-        const v: u8 = if (self.visited) 'v' else ' ';
-        std.debug.print("{u}{u} ", .{ self.letter, v });
-    }
-};
-
-pub fn main() void {
-    var elephantA = Elephant{ .letter = 'A' };
-    var elephantB = Elephant{ .letter = 'B' };
-    var elephantC = Elephant{ .letter = 'C' };
-
-    // This links the elephants so that each tail "points" to the next.
-    elephantA.tail = &elephantB;
-    elephantB.tail = &elephantC;
-
-    visitElephants(&elephantA);
-
-    std.debug.print("\\n", .{});
-}
-
-// This function visits all elephants once, starting with the
-// first elephant and following the tails to the next elephant.
-fn visitElephants(first_elephant: *Elephant) void {
-    var e = first_elephant;
-
-    while (true) {
-        e.print();
-        e.visit();
-
-        // This gets the next elephant or stops:
-        // which method do we want here?
-        e = if (e.hasTail()) e.??? else break;
+    func hasTail = (self, out bool) {
+        return self.tail != null
     }
 }
 
-// Zig's enums can also have methods! This comment originally asked
-// if anyone could find instances of enum methods in the wild. The
-// first five pull requests were accepted and here they are:
-//
-// 1) drforester - I found one in the Zig source:
-// https://github.com/ziglang/zig/blob/041212a41cfaf029dc3eb9740467b721c76f406c/src/Compilation.zig#L2495
-//
-// 2) bbuccianti - I found one!
-// https://github.com/ziglang/zig/blob/6787f163eb6db2b8b89c2ea6cb51d63606487e12/lib/std/debug.zig#L477
-//
-// 3) GoldsteinE - Found many, here's one
-// https://github.com/ziglang/zig/blob/ce14bc7176f9e441064ffdde2d85e35fd78977f2/lib/std/target.zig#L65
-//
-// 4) SpencerCDixon - Love this language so far :-)
-// https://github.com/ziglang/zig/blob/a502c160cd51ce3de80b3be945245b7a91967a85/src/zir.zig#L530
-//
-// 5) tomkun - here's another enum method
-// https://github.com/ziglang/zig/blob/4ca1f4ec2e3ae1a08295bc6ed03c235cb7700ab9/src/codegen/aarch64.zig#L24
+func visitElephants = (ref Elephant current) {
+    while true {
+        current.print()
+        current.visit()
+        if current.tail() {
+            current = current.tail
+        } else {
+            break
+        }
+    }
+}
+
+pub func main = () {
+    var Elephant elephantA = Elephant('A')
+    var Elephant elephantB = Elephant('B')
+    var Elephant elephantC = Elephant('C')
+
+    elephantA.tail = elephantB
+    elephantB.tail = elephantC
+
+    visitElephants(ref elephantA)
+    Console.write("\\n")
+}
 `;
-
-test.skip("ziglings 048 methods2 -- errors", () => {
-	const input = zig_source;
-	const expected: any[] = [];
 	const parsed = parse_with_imports(input);
-	expect(parsed.errors).toEqual(expected);
+	expect(parsed.errors.length).toBeGreaterThan(0);
 });
 
-test.skip("ziglings 048 methods2 -- fixed", () => {
-	const input = zig_source;
+test("ziglings 048 methods2 -- fixed", () => {
+	const input = `
+import System
+
+struct Elephant {
+    var char letter
+    var ref Elephant? tail = null
+    var bool visited = false
+
+    func visit = (var self) {
+        self.visited = true
+    }
+
+    func print = (self) {
+        if self.visited {
+            Console.write("\\{self.letter}v ")
+        } else {
+            Console.write("\\{self.letter}  ")
+        }
+    }
+
+    func hasTail = (self, out bool) {
+        return self.tail != null
+    }
+}
+
+func visitElephants = (ref Elephant current) {
+    while true {
+        current.print()
+        current.visit()
+        if current.hasTail() {
+            current = current.tail
+        } else {
+            break
+        }
+    }
+}
+
+pub func main = () {
+    var Elephant elephantA = Elephant('A')
+    var Elephant elephantB = Elephant('B')
+    var Elephant elephantC = Elephant('C')
+
+    elephantA.tail = elephantB
+    elephantB.tail = elephantC
+
+    visitElephants(ref elephantA)
+    Console.write("\\n")
+}
+`;
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual([]);
 });
 
-test.skip("ziglings 048 methods2 -- build", async () => {
-	const input = zig_source;
+test("ziglings 048 methods2 -- build", async () => {
+	const input = `
+import System
+
+struct Elephant {
+    var char letter
+    var ref Elephant? tail = null
+    var bool visited = false
+
+    func visit = (var self) {
+        self.visited = true
+    }
+
+    func print = (self) {
+        if self.visited {
+            Console.write("\\{self.letter}v ")
+        } else {
+            Console.write("\\{self.letter}  ")
+        }
+    }
+
+    func hasTail = (self, out bool) {
+        return self.tail != null
+    }
+}
+
+func visitElephants = (ref Elephant current) {
+    while true {
+        current.print()
+        current.visit()
+        if current.hasTail() {
+            current = current.tail
+        } else {
+            break
+        }
+    }
+}
+
+pub func main = () {
+    var Elephant elephantA = Elephant('A')
+    var Elephant elephantB = Elephant('B')
+    var Elephant elephantC = Elephant('C')
+
+    elephantA.tail = elephantB
+    elephantB.tail = elephantC
+
+    visitElephants(ref elephantA)
+    Console.write("\\n")
+}
+`;
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual([]);
 	const built = build(parsed.root, { arch: "aarch64" });
-	await check_output_aarch64("0482", built, "");
+	await check_output_aarch64("0482", built, "A  B  C  \n");
 });

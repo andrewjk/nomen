@@ -299,8 +299,11 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 			callee_idx = 1;
 		}
 
+		const old_ref_params = status.function_ref_params;
+
 		status.function_param_regs = new Map();
 		status.function_param_vars = new Set();
+		status.function_ref_params = new Set();
 		status.struct_return_buffer = undefined;
 
 		const return_struct = status.structs.find(
@@ -332,6 +335,9 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 			}
 			if (param.declaration === "var") {
 				status.function_param_vars.add(param.name);
+			}
+			if (param.type.is_ref) {
+				status.function_ref_params!.add(param.name);
 			}
 		}
 
@@ -380,6 +386,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		status.scoped_declarations = old_scoped_declarations;
 		status.function_param_regs = old_param_regs;
 		status.function_param_vars = old_param_vars;
+		status.function_ref_params = old_ref_params;
 		status.function_return_label = old_return_label;
 		status.struct_return_buffer = undefined;
 		status.stack_size = old_stack_size;

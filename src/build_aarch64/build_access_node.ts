@@ -14,6 +14,10 @@ import { get_field_offset, get_struct_size } from "./utils/struct_layout.ts";
 
 let access_temp_counter = 0;
 
+function is_struct_type(type_name: string, status: BuildStatus): boolean {
+	return !!status.structs.find((s) => s.name === type_name && !s.is_simple_type);
+}
+
 export function reset_access_temp_counter() {
 	access_temp_counter = 0;
 }
@@ -290,7 +294,7 @@ function build_access_method(
 		temp_addr = `_access_temp_${access_temp_counter++}`;
 		temp_offset = allocate_stack_space(status, get_struct_size(access_func.type.name, status));
 		status.stack_offsets!.set(temp_addr, temp_offset);
-		status.code += `sub x8, x29, #${temp_offset}\n`;
+		status.code += `add x8, x29, #${temp_offset}\n`;
 	}
 
 	if (!access_func.is_static) {
@@ -352,7 +356,40 @@ function build_access_method(
 		: ["x1", "x2", "x3", "x4", "x5", "x6", "x7"];
 	const start_idx = 0;
 	for (let i = access_func.params.length - 1; i >= 0; i--) {
-		build_node(access_func.params[i], status);
+		const param = access_func.params[i];
+		const is_ref_param = access_func.ref_param_indices?.includes(i);
+		const param_type = (param as any).type?.name || "";
+		const is_struct = is_struct_type(param_type, status);
+		if (is_ref_param) {
+			if (param.node_type === "value") {
+				const name = (param as ValueNode).value;
+				emit_var_address(status, "x0", name);
+			} else {
+				build_node(param, status);
+				if (!status.code.endsWith("\n")) {
+					status.code += "\n";
+				}
+			}
+		} else if (is_struct) {
+			if (param.node_type === "value") {
+				const name = (param as ValueNode).value;
+				const paramReg = status.function_param_regs?.get(name);
+				if (paramReg) {
+					if (paramReg !== "x0") {
+						status.code += `mov x0, ${paramReg}\n`;
+					}
+				} else {
+					emit_var_address(status, "x0", name);
+				}
+			} else {
+				build_node(param, status);
+				if (!status.code.endsWith("\n")) {
+					status.code += "\n";
+				}
+			}
+		} else {
+			build_node(param, status);
+		}
 		const reg = param_regs[start_idx + i];
 		if (reg && reg !== "x0") {
 			if (!status.code.endsWith("\n")) {
@@ -376,7 +413,7 @@ function build_access_method(
 	}
 
 	if (return_struct) {
-		status.code += `sub x0, x29, #${temp_offset}\n`;
+		status.code += `add x0, x29, #${temp_offset}\n`;
 	}
 }
 

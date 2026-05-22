@@ -130,8 +130,12 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 				status.code += "\n";
 			}
 			if (paramReg && is_mutable_param(name, status)) {
-				status.code += `mov x1, ${paramReg}\n`;
-				emit_struct_store("x0", "x1", 0, struct_size, status);
+				if (status.function_ref_params?.has(name)) {
+					status.code += `mov ${paramReg}, x0\n`;
+				} else {
+					status.code += `mov x1, ${paramReg}\n`;
+					emit_struct_store("x0", "x1", 0, struct_size, status);
+				}
 			} else if (paramReg) {
 				status.code += `// cannot assign to const param\n`;
 			} else {

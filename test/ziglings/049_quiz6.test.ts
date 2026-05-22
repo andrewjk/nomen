@@ -1,121 +1,206 @@
 import { expect, test } from "vite-plus/test";
 
 import build from "../../src/build";
-import test_error from "../test_error";
 import check_output_aarch64 from "./check_output_aarch64";
 import parse_with_imports from "./parse_with_imports";
 
-// TODO: convert zig code to echo
-const zig_source = `//
-//    "Trunks and tails
-//     Are handy things"
-
-//     from Holding Hands
-//       by Lenore M. Link
+// The original Zig exercise uses a doubly-linked list with tail/trunk pointers,
+// traversing tails forward then trunks backward. The visited flag is set during
+// the first pass and checked during the second.
 //
-// Now that we have tails all figured out, can you implement trunks?
-//
-const std = @import("std");
+// Echo's `ref` params now support proper pointer reassignment — `current = current.tail`
+// updates the reference to point to the next elephant rather than copying struct data.
+// This allows a general-purpose traversal loop matching the Zig structure.
 
-const Elephant = struct {
-    letter: u8,
-    tail: ?*Elephant = null,
-    trunk: ?*Elephant = null,
-    visited: bool = false,
+test("ziglings 049 quiz6 -- errors", () => {
+	const input = `
+import System
 
-    // Elephant tail methods!
-    pub fn getTail(self: *Elephant) *Elephant {
-        return self.tail.?; // Remember, this means "orelse unreachable"
+struct Elephant {
+    var char letter
+    var ref Elephant? tail = null
+    var ref Elephant? trunk = null
+    var bool visited = false
+
+    func hasTail = (self, out bool) {
+        return self.tail != null
     }
 
-    pub fn hasTail(self: *Elephant) bool {
-        return (self.tail != null);
+    func print = (self) {
+        if self.visited {
+            Console.write("\\{self.letter}v ")
+        } else {
+            Console.write("\\{self.letter}  ")
+        }
     }
-
-    // Your Elephant trunk methods go here!
-    // ---------------------------------------------------
-
-    ???
-
-    // ---------------------------------------------------
-
-    pub fn visit(self: *Elephant) void {
-        self.visited = true;
-    }
-
-    pub fn print(self: *Elephant) void {
-        // Prints elephant letter and [v]isited
-        const v: u8 = if (self.visited) 'v' else ' ';
-        std.debug.print("{u}{u} ", .{ self.letter, v });
-    }
-};
-
-pub fn main() void {
-    var elephantA = Elephant{ .letter = 'A' };
-    var elephantB = Elephant{ .letter = 'B' };
-    var elephantC = Elephant{ .letter = 'C' };
-
-    // We link the elephants so that each tail "points" to the next.
-    elephantA.tail = &elephantB;
-    elephantB.tail = &elephantC;
-
-    // And link the elephants so that each trunk "points" to the previous.
-    elephantB.trunk = &elephantA;
-    elephantC.trunk = &elephantB;
-
-    visitElephants(&elephantA);
-
-    std.debug.print("\\n", .{});
 }
 
-// This function visits all elephants twice, tails to trunks.
-fn visitElephants(first_elephant: *Elephant) void {
-    var e = first_elephant;
-
-    // We follow the tails!
-    while (true) {
-        e.print();
-        e.visit();
-
-        // This gets the next elephant or stops.
-        if (e.hasTail()) {
-            e = e.getTail();
+func visitElephants = (ref Elephant current) {
+    while true {
+        current.print()
+        current.visited = true
+        if current.hasTail() {
+            current = current.tail
         } else {
-            break;
+            break
         }
     }
-
-    // We follow the trunks!
-    while (true) {
-        e.print();
-
-        // This gets the previous elephant or stops.
-        if (e.hasTrunk()) {
-            e = e.getTrunk();
+    while true {
+        current.print()
+        if current.hasTrunk() {
+            current = current.trunk
         } else {
-            break;
+            break
         }
     }
+}
+
+pub func main = () {
+    var Elephant elephantA = Elephant('A')
+    var Elephant elephantB = Elephant('B')
+    var Elephant elephantC = Elephant('C')
+
+    elephantA.tail = elephantB
+    elephantB.tail = elephantC
+    elephantB.trunk = elephantA
+    elephantC.trunk = elephantB
+
+    visitElephants(ref elephantA)
+    Console.write("\\n")
 }
 `;
-
-test.skip("ziglings 049 quiz6 -- errors", () => {
-	const input = zig_source;
-	const expected: any[] = [];
 	const parsed = parse_with_imports(input);
-	expect(parsed.errors).toEqual(expected);
+	expect(parsed.errors.length).toBeGreaterThan(0);
 });
 
-test.skip("ziglings 049 quiz6 -- fixed", () => {
-	const input = zig_source;
+test("ziglings 049 quiz6 -- fixed", () => {
+	const input = `
+import System
+
+struct Elephant {
+    var char letter
+    var ref Elephant? tail = null
+    var ref Elephant? trunk = null
+    var bool visited = false
+
+    func hasTail = (self, out bool) {
+        return self.tail != null
+    }
+
+    func hasTrunk = (self, out bool) {
+        return self.trunk != null
+    }
+
+    func print = (self) {
+        if self.visited {
+            Console.write("\\{self.letter}v ")
+        } else {
+            Console.write("\\{self.letter}  ")
+        }
+    }
+}
+
+func visitElephants = (ref Elephant current) {
+    while true {
+        current.print()
+        current.visited = true
+        if current.hasTail() {
+            current = current.tail
+        } else {
+            break
+        }
+    }
+    while true {
+        current.print()
+        if current.hasTrunk() {
+            current = current.trunk
+        } else {
+            break
+        }
+    }
+}
+
+pub func main = () {
+    var Elephant elephantA = Elephant('A')
+    var Elephant elephantB = Elephant('B')
+    var Elephant elephantC = Elephant('C')
+
+    elephantA.tail = elephantB
+    elephantB.tail = elephantC
+    elephantB.trunk = elephantA
+    elephantC.trunk = elephantB
+
+    visitElephants(ref elephantA)
+    Console.write("\\n")
+}
+`;
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual([]);
 });
 
-test.skip("ziglings 049 quiz6 -- build", async () => {
-	const input = zig_source;
+test("ziglings 049 quiz6 -- build", async () => {
+	const input = `
+import System
+
+struct Elephant {
+    var char letter
+    var ref Elephant? tail = null
+    var ref Elephant? trunk = null
+    var bool visited = false
+
+    func hasTail = (self, out bool) {
+        return self.tail != null
+    }
+
+    func hasTrunk = (self, out bool) {
+        return self.trunk != null
+    }
+
+    func print = (self) {
+        if self.visited {
+            Console.write("\\{self.letter}v ")
+        } else {
+            Console.write("\\{self.letter}  ")
+        }
+    }
+}
+
+func visitElephants = (ref Elephant current) {
+    while true {
+        current.print()
+        current.visited = true
+        if current.hasTail() {
+            current = current.tail
+        } else {
+            break
+        }
+    }
+    while true {
+        current.print()
+        if current.hasTrunk() {
+            current = current.trunk
+        } else {
+            break
+        }
+    }
+}
+
+pub func main = () {
+    var Elephant elephantA = Elephant('A')
+    var Elephant elephantB = Elephant('B')
+    var Elephant elephantC = Elephant('C')
+
+    elephantA.tail = elephantB
+    elephantB.tail = elephantC
+    elephantB.trunk = elephantA
+    elephantC.trunk = elephantB
+
+    visitElephants(ref elephantA)
+    Console.write("\\n")
+}
+`;
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual([]);
 	const built = build(parsed.root, { arch: "aarch64" });
-	await check_output_aarch64("0496", built, "");
+	await check_output_aarch64("0496", built, "A  B  C  Cv Bv Av \n");
 });
