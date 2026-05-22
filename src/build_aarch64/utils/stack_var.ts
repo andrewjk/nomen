@@ -11,12 +11,23 @@ export function get_stack_offset(status: BuildStatus, name: string): number | un
 	return status.stack_offsets?.get(name);
 }
 
+export function is_local_ref_var(name: string, status: BuildStatus): boolean {
+	return !!status.function_ref_params?.has(name) && !status.function_param_regs?.has(name);
+}
+
 export function emit_var_address(status: BuildStatus, reg: string, name: string) {
 	const offset = status.stack_offsets?.get(name);
 	if (offset !== undefined) {
 		status.code += `add ${reg}, x29, #${offset}\n`;
 	} else {
 		status.code += `adr ${reg}, ${name}\n`;
+	}
+}
+
+export function emit_deref_var_address(status: BuildStatus, reg: string, name: string) {
+	emit_var_address(status, reg, name);
+	if (is_local_ref_var(name, status)) {
+		status.code += `ldr ${reg}, [${reg}]\n`;
 	}
 }
 

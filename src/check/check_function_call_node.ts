@@ -35,15 +35,24 @@ export default function check_function_call_node(
 	if (!func) {
 		const param_value = status.values.findLast((v) => v.name === node.name);
 		if (param_value?.type.name === "func") {
-			func = new FunctionNode(0, "pub", node.name, param_value.type);
+			func = new FunctionNode(
+				0,
+				"pub",
+				node.name,
+				param_value.type.func_return_type || param_value.type,
+			);
 			const param = status.stack
 				.flatMap((n: any) => n.params || [])
 				.find((p: any) => p.name === node.name);
 			if (param?.func_params) {
 				func.params = param.func_params;
+			} else if (param_value.type.func_params) {
+				func.params = param_value.type.func_params;
 			}
 			if (param?.func_return_type) {
 				func.return_type = param.func_return_type;
+			} else if (param_value.type.func_return_type) {
+				func.return_type = param_value.type.func_return_type;
 			}
 			node.is_func_param = true;
 		}

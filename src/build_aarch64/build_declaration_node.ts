@@ -179,16 +179,20 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 
 	// Function type declaration
 	if (node.func_params) {
+		if (status.function_return_label) {
+			const offset = allocate_stack_space(status, 8);
+			status.stack_offsets!.set(node.name, offset);
+		} else {
+			emit_data(status, `${node.name}: .space 8`);
+		}
 		if (node.value && node.value.node_type === "func") {
 			build_node(node.value, status);
-		} else {
-			// Function pointer - allocate on stack if in function, else global data
-			if (status.function_return_label) {
-				const offset = allocate_stack_space(status, 8);
-				status.stack_offsets!.set(node.name, offset);
-			} else {
-				emit_data(status, `${node.name}: .space 8`);
+		} else if (node.value) {
+			build_node(node.value, status);
+			if (!status.code.endsWith("\n")) {
+				status.code += "\n";
 			}
+			emit_var_store(status, "x0", node.name, 8);
 		}
 		return;
 	}
@@ -341,52 +345,75 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			}
 		}
 	} else if (struct_type) {
-		// Struct declaration
-		const struct_size = get_struct_size(node.type.name, status);
-		if (status.function_return_label) {
-			const offset = allocate_stack_space(status, struct_size);
-			status.stack_offsets!.set(node.name, offset);
-		} else {
-			emit_data(status, `${node.name}: .space ${struct_size}\n`);
-		}
-		if (node.value && node.value.node_type === "func_call") {
-			const func_call = node.value as FunctionCallNode;
-			const is_constructor = status.structs.find(
-				(s) => s.name === func_call.name && !s.is_simple_type,
-			);
-			if (is_constructor) {
-				// Evaluate params into x1-x7 first (before setting x0)
-				const param_regs = ["x1", "x2", "x3", "x4", "x5", "x6", "x7"];
-				for (let i = func_call.params.length - 1; i >= 0; i--) {
-					build_node(func_call.params[i], status);
+		if (node.type.is_ref) {
+			if (status.function_return_label) {
+				const offset = allocate_stack_space(status, 8);
+				status.stack_offsets!.set(node.name, offset);
+			} else {
+				emit_data(status, `${node.name}: .space 8\n`);
+			}
+			if (node.value) {
+				if (node.value.node_type === "value") {
+					const src_name = (node.value as ValueNode).value;
+					emit_var_address(status, "x0", src_name);
+				} else {
+					build_node(node.value, status);
 					if (!status.code.endsWith("\n")) {
 						status.code += "\n";
 					}
-					status.code += `mov ${param_regs[i]}, x0\n`;
 				}
-				// Pass declaration address in x0
-				emit_var_address(status, "x0", node.name);
-				status.code += `bl ${func_call.name}_init\n`;
-			} else {
-				build_node(node.value, status);
-				emit_var_store(status, "x0", node.name, struct_size);
+				emit_var_store(status, "x0", node.name, 8);
 			}
-		} else if (node.value) {
-			if (node.value.node_type === "value") {
-				const src_name = (node.value as ValueNode).value;
-				emit_var_address(status, "x1", src_name);
+			if (!status.function_ref_params) status.function_ref_params = new Set();
+			status.function_ref_params.add(node.name);
+		} else {
+			// Struct declaration
+			const struct_size = get_struct_size(node.type.name, status);
+			if (status.function_return_label) {
+				const offset = allocate_stack_space(status, struct_size);
+				status.stack_offsets!.set(node.name, offset);
 			} else {
-				build_node(node.value, status);
-				if (!status.code.endsWith("\n")) {
-					status.code += "\n";
+				emit_data(status, `${node.name}: .space ${struct_size}\n`);
+			}
+			if (node.value && node.value.node_type === "func_call") {
+				const func_call = node.value as FunctionCallNode;
+				const is_constructor = status.structs.find(
+					(s) => s.name === func_call.name && !s.is_simple_type,
+				);
+				if (is_constructor) {
+					// Evaluate params into x1-x7 first (before setting x0)
+					const param_regs = ["x1", "x2", "x3", "x4", "x5", "x6", "x7"];
+					for (let i = func_call.params.length - 1; i >= 0; i--) {
+						build_node(func_call.params[i], status);
+						if (!status.code.endsWith("\n")) {
+							status.code += "\n";
+						}
+						status.code += `mov ${param_regs[i]}, x0\n`;
+					}
+					// Pass declaration address in x0
+					emit_var_address(status, "x0", node.name);
+					status.code += `bl ${func_call.name}_init\n`;
+				} else {
+					build_node(node.value, status);
+					emit_var_store(status, "x0", node.name, struct_size);
 				}
-				status.code += `mov x1, x0\n`;
-			}
-			emit_var_address(status, "x2", node.name);
-			const words = Math.ceil(struct_size / 8);
-			for (let i = 0; i < words; i++) {
-				status.code += `ldr x3, [x1, #${i * 8}]\n`;
-				status.code += `str x3, [x2, #${i * 8}]\n`;
+			} else if (node.value) {
+				if (node.value.node_type === "value") {
+					const src_name = (node.value as ValueNode).value;
+					emit_var_address(status, "x1", src_name);
+				} else {
+					build_node(node.value, status);
+					if (!status.code.endsWith("\n")) {
+						status.code += "\n";
+					}
+					status.code += `mov x1, x0\n`;
+				}
+				emit_var_address(status, "x2", node.name);
+				const words = Math.ceil(struct_size / 8);
+				for (let i = 0; i < words; i++) {
+					status.code += `ldr x3, [x1, #${i * 8}]\n`;
+					status.code += `str x3, [x2, #${i * 8}]\n`;
+				}
 			}
 		}
 	} else if (node.value) {

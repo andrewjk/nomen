@@ -112,6 +112,17 @@ function check_access_field_node(
 			return true;
 		}
 	}
+	if (!field) {
+		const struct = status.structs.find((s) => s.name === target_type.name);
+		const func = struct?.functions.find((f) => f.name === node.name);
+		if (func) {
+			const func_type = new Type("func");
+			func_type.func_params = func.params;
+			func_type.func_return_type = func.return_type;
+			node.type = func_type;
+			return true;
+		}
+	}
 	if (field) {
 		if (
 			field.visibility === "priv" &&

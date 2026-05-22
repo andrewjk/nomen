@@ -97,9 +97,14 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 		return;
 	}
 
-	// Function reference - just need the address
+	// Function reference - need the address
 	if (node.type?.name === "func") {
-		status.code += `adr x0, ${value}`;
+		const func_offset = status.stack_offsets?.get(value);
+		if (func_offset !== undefined) {
+			status.code += `ldr x0, [x29, #${func_offset}]\n`;
+		} else {
+			status.code += `adr x0, ${value}\n`;
+		}
 		return;
 	}
 

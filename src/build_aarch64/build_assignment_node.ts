@@ -11,7 +11,12 @@ import build_node from "./build_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free } from "./utils/audit.ts";
 import { mark_moved_if_struct } from "./utils/auto_destroy.ts";
-import { emit_var_address, emit_var_load } from "./utils/stack_var.ts";
+import {
+	emit_deref_var_address,
+	emit_var_address,
+	emit_var_load,
+	is_local_ref_var,
+} from "./utils/stack_var.ts";
 import { get_field_offset, get_struct_size } from "./utils/struct_layout.ts";
 
 function is_mutable_param(name: string, status: BuildStatus): boolean {
@@ -60,6 +65,8 @@ function get_base_address(access: AccessNode, status: BuildStatus, reg: string) 
 			if (paramReg !== reg) {
 				status.code += `mov ${reg}, ${paramReg}\n`;
 			}
+		} else if (is_local_ref_var(name, status)) {
+			emit_deref_var_address(status, reg, name);
 		} else {
 			emit_var_address(status, reg, name);
 		}
@@ -103,6 +110,8 @@ function get_source_address(value: BaseNode, status: BuildStatus) {
 		const paramReg = status.function_param_regs?.get(name);
 		if (paramReg) {
 			status.code += `mov x0, ${paramReg}\n`;
+		} else if (is_local_ref_var(name, status)) {
+			emit_deref_var_address(status, "x0", name);
 		} else {
 			emit_var_address(status, "x0", name);
 		}
@@ -138,6 +147,9 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 				}
 			} else if (paramReg) {
 				status.code += `// cannot assign to const param\n`;
+			} else if (is_local_ref_var(name, status)) {
+				emit_var_address(status, "x1", name);
+				status.code += `str x0, [x1]\n`;
 			} else {
 				emit_var_address(status, "x1", name);
 				emit_struct_store("x0", "x1", 0, struct_size, status);

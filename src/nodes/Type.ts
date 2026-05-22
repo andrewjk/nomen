@@ -11,6 +11,8 @@ export default class Type {
 	is_return_type?: boolean;
 	is_nullable?: boolean;
 	type_args?: Type[];
+	func_params?: import("./ParameterNode.ts").default[];
+	func_return_type?: Type;
 
 	constructor(name: string, is_static?: boolean, is_array?: boolean, length?: BaseNode) {
 		this.name = name;

@@ -9,7 +9,12 @@ import ValueNode from "../nodes/ValueNode.ts";
 import build_node from "./build_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_malloc } from "./utils/audit.ts";
-import { allocate_stack_space, emit_var_address } from "./utils/stack_var.ts";
+import {
+	allocate_stack_space,
+	emit_deref_var_address,
+	emit_var_address,
+	is_local_ref_var,
+} from "./utils/stack_var.ts";
 import { get_field_offset, get_struct_size } from "./utils/struct_layout.ts";
 
 let access_temp_counter = 0;
@@ -110,6 +115,11 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 	const target_type = type_from_value_node(node.target);
 	const access_field = node.access as AccessFieldNode;
 
+	if (access_field.type?.name === "func") {
+		status.code += `adr x0, ${target_type.name}_${access_field.name}\n`;
+		return;
+	}
+
 	const enum_node = status.enums.find((e) => e.name === target_type.name);
 	if (enum_node) {
 		const enum_case = enum_node.cases.find((c) => c.name === access_field.name);
@@ -196,7 +206,8 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 			if (paramReg !== "x0") {
 				status.code += `mov x0, ${paramReg}\n`;
 			}
-			// if already x0, no-op
+		} else if (is_local_ref_var(name, status)) {
+			emit_deref_var_address(status, "x0", name);
 		} else {
 			emit_var_address(status, "x0", name);
 		}
@@ -319,8 +330,16 @@ function build_access_method(
 				}
 			} else {
 				const has_stack_offset = status.stack_offsets?.has(name);
-				emit_var_address(status, "x0", name);
-				if (target_is_simple && (target_type.name !== "string" || has_stack_offset)) {
+				if (is_local_ref_var(name, status)) {
+					emit_deref_var_address(status, "x0", name);
+				} else {
+					emit_var_address(status, "x0", name);
+				}
+				if (
+					target_is_simple &&
+					(target_type.name !== "string" || has_stack_offset) &&
+					!is_local_ref_var(name, status)
+				) {
 					const size = aarch64_size(target_type.name);
 					const signed =
 						target_type.name.startsWith("int") ||
@@ -363,7 +382,11 @@ function build_access_method(
 		if (is_ref_param) {
 			if (param.node_type === "value") {
 				const name = (param as ValueNode).value;
-				emit_var_address(status, "x0", name);
+				if (is_local_ref_var(name, status)) {
+					emit_deref_var_address(status, "x0", name);
+				} else {
+					emit_var_address(status, "x0", name);
+				}
 			} else {
 				build_node(param, status);
 				if (!status.code.endsWith("\n")) {
@@ -378,6 +401,8 @@ function build_access_method(
 					if (paramReg !== "x0") {
 						status.code += `mov x0, ${paramReg}\n`;
 					}
+				} else if (is_local_ref_var(name, status)) {
+					emit_deref_var_address(status, "x0", name);
 				} else {
 					emit_var_address(status, "x0", name);
 				}

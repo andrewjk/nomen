@@ -4,7 +4,12 @@ import type BaseNode from "../nodes/BaseNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_node from "./build_node.ts";
-import { allocate_stack_space, emit_var_address } from "./utils/stack_var.ts";
+import {
+	allocate_stack_space,
+	emit_deref_var_address,
+	emit_var_address,
+	is_local_ref_var,
+} from "./utils/stack_var.ts";
 
 let temp_counter = 0;
 
@@ -42,6 +47,8 @@ function emit_struct_address(node: BaseNode, status: BuildStatus) {
 			if (paramReg !== "x0") {
 				status.code += `mov x0, ${paramReg}\n`;
 			}
+		} else if (is_local_ref_var(name, status)) {
+			emit_deref_var_address(status, "x0", name);
 		} else {
 			emit_var_address(status, "x0", name);
 		}
@@ -120,7 +127,11 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			} else if (is_ref_param) {
 				if (param.node_type === "value") {
 					const name = (param as ValueNode).value;
-					emit_var_address(status, "x0", name);
+					if (is_local_ref_var(name, status)) {
+						emit_deref_var_address(status, "x0", name);
+					} else {
+						emit_var_address(status, "x0", name);
+					}
 				} else {
 					build_node(node.params[i], status);
 					if (!status.code.endsWith("\n")) {
