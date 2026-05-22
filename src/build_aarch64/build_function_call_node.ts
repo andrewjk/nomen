@@ -22,6 +22,11 @@ function is_struct_type(type_name: string, status: BuildStatus): boolean {
 	return !!status.structs.find((s) => s.name === type_name && !s.is_simple_type);
 }
 
+function is_enum_with_data_type(type_name: string, status: BuildStatus): boolean {
+	const e = status.enums.find((e) => e.name === type_name);
+	return !!e && !!e.has_associated_data;
+}
+
 function get_raw_value(node: ValueNode, status?: BuildStatus): string {
 	let val = node.value;
 	if (val === "true") return "1";
@@ -122,7 +127,7 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 					.join(", ");
 				status.code += `${label}: .quad ${values}\n.p2align 2\n`;
 				status.code += `adr x0, ${label}`;
-			} else if (is_struct_type(param_type, status)) {
+			} else if (is_struct_type(param_type, status) || is_enum_with_data_type(param_type, status)) {
 				emit_struct_address(node.params[i], status);
 			} else if (is_ref_param) {
 				if (param.node_type === "value") {

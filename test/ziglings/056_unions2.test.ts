@@ -1,94 +1,116 @@
 import { expect, test } from "vite-plus/test";
 
 import build from "../../src/build";
-import test_error from "../test_error";
 import check_output_aarch64 from "./check_output_aarch64";
 import parse_with_imports from "./parse_with_imports";
 
-// TODO: convert zig code to echo
-const zig_source = `//
-// It is really quite inconvenient having to manually keep track
-// of the active field in our union, isn't it?
-//
-// Thankfully, Zig also has "tagged unions", which allow us to
-// store an enum value within our union representing which field
-// is active.
-//
-//     const FooTag = enum{ small, medium, large };
-//
-//     const Foo = union(FooTag) {
-//         small: u8,
-//         medium: u32,
-//         large: u64,
-//     };
-//
-// Now we can use a switch directly on the union to act on the
-// active field:
-//
-//     var f = Foo{ .small = 10 };
-//
-//     switch (f) {
-//         .small => |my_small| do_something(my_small),
-//         .medium => |my_medium| do_something(my_medium),
-//         .large => |my_large| do_something(my_large),
-//     }
-//
-// Let's make our Insects use a tagged union (Doctor Zoraptera
-// approves).
-//
-const std = @import("std");
+// 056: Zig tagged unions use switch to capture the active field's value.
+// In Echo, enums with associated data are tagged unions, and match with
+// payload field access gives us the same thing.
+// The fix: pass ant/bee to printInsect, match on insect and use the
+// captured values via field access.
 
-const InsectStat = enum { flowers_visited, still_alive };
+test("ziglings 056 unions2 -- errors", () => {
+	const input = `
+import System
 
-const Insect = union(InsectStat) {
-    flowers_visited: u16,
-    still_alive: bool,
-};
-
-pub fn main() void {
-    const ant = Insect{ .still_alive = true };
-    const bee = Insect{ .flowers_visited = 16 };
-
-    std.debug.print("Insect report! ", .{});
-
-    // Could it really be as simple as just passing the union?
-    printInsect(???);
-    printInsect(???);
-
-    std.debug.print("\\n", .{});
+enum Insect {
+    case flowers_visited(int count)
+    case still_alive(bool alive)
 }
 
-fn printInsect(insect: Insect) void {
-    switch (???) {
-        .still_alive => |a| std.debug.print("Ant alive is: {}. ", .{a}),
-        .flowers_visited => |f| std.debug.print("Bee visited {} flowers. ", .{f}),
+func printInsect = (Insect insect) {
+    match insect {
+        case Insect.still_alive {
+            Console.write("Ant alive is: \\{insect.alive}. ")
+        }
+        case Insect.flowers_visited {
+            Console.write("Bee visited \\{insect.count} flowers. ")
+        }
     }
 }
 
-// By the way, did unions remind you of optional values and errors?
-// Optional values are basically "null unions" and errors use "error
-// union types". Now we can add our own unions to the mix to handle
-// whatever situations we might encounter:
-//          union(Tag) { value: u32, toxic_ooze: void }
+pub func main = () {
+    var Insect ant = Insect.still_alive(true)
+    var Insect bee = Insect.flowers_visited(16)
+    Console.write("Insect report! ")
+    printInsect(???)
+    printInsect(???)
+    Console.write("\\n")
+}
 `;
-
-test.skip("ziglings 056 unions2 -- errors", () => {
-	const input = zig_source;
-	const expected: any[] = [];
 	const parsed = parse_with_imports(input);
-	expect(parsed.errors).toEqual(expected);
+	expect(parsed.errors.length).toBeGreaterThan(0);
 });
 
-test.skip("ziglings 056 unions2 -- fixed", () => {
-	const input = zig_source;
+test("ziglings 056 unions2 -- fixed", () => {
+	const input = `
+import System
+
+enum Insect {
+    case flowers_visited(int count)
+    case still_alive(bool alive)
+}
+
+func printInsect = (Insect insect) {
+    match insect {
+        case Insect.still_alive {
+            Console.write("Ant alive is: \\{insect.alive}. ")
+        }
+        case Insect.flowers_visited {
+            Console.write("Bee visited \\{insect.count} flowers. ")
+        }
+    }
+}
+
+pub func main = () {
+    var Insect ant = Insect.still_alive(true)
+    var Insect bee = Insect.flowers_visited(16)
+    Console.write("Insect report! ")
+    printInsect(ant)
+    printInsect(bee)
+    Console.write("\\n")
+}
+`;
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual([]);
 });
 
-test.skip("ziglings 056 unions2 -- build", async () => {
-	const input = zig_source;
+test("ziglings 056 unions2 -- build", async () => {
+	const input = `
+import System
+
+enum Insect {
+    case flowers_visited(int count)
+    case still_alive(bool alive)
+}
+
+func printInsect = (Insect insect) {
+    match insect {
+        case Insect.still_alive {
+            Console.write("Ant alive is: \\{insect.alive}. ")
+        }
+        case Insect.flowers_visited {
+            Console.write("Bee visited \\{insect.count} flowers. ")
+        }
+    }
+}
+
+pub func main = () {
+    var Insect ant = Insect.still_alive(true)
+    var Insect bee = Insect.flowers_visited(16)
+    Console.write("Insect report! ")
+    printInsect(ant)
+    printInsect(bee)
+    Console.write("\\n")
+}
+`;
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual([]);
 	const built = build(parsed.root, { arch: "aarch64" });
-	await check_output_aarch64("0562", built, "");
+	await check_output_aarch64(
+		"056",
+		built,
+		"Insect report! Ant alive is: true. Bee visited 16 flowers. \n",
+	);
 });

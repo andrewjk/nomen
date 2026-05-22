@@ -15,6 +15,11 @@ import {
 	emit_var_address,
 	is_local_ref_var,
 } from "./utils/stack_var.ts";
+import {
+	get_enum_case_index,
+	get_enum_payload_offset,
+	get_enum_size,
+} from "./utils/struct_layout.ts";
 import { get_field_offset, get_struct_size } from "./utils/struct_layout.ts";
 
 let access_temp_counter = 0;
@@ -113,6 +118,8 @@ function get_param_reg(name: string, status: BuildStatus): string | undefined {
 
 function build_access_field(node: AccessNode, status: BuildStatus) {
 	const target_type = type_from_value_node(node.target);
+	const target_name =
+		node.target.node_type === "value" ? (node.target as ValueNode).value : target_type?.name;
 	const access_field = node.access as AccessFieldNode;
 
 	if (access_field.type?.name === "func") {
@@ -120,7 +127,7 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 		return;
 	}
 
-	const enum_node = status.enums.find((e) => e.name === target_type.name);
+	const enum_node = status.enums.find((e) => e.name === (target_name || target_type?.name));
 	if (enum_node) {
 		const enum_case = enum_node.cases.find((c) => c.name === access_field.name);
 		if (enum_case) {
@@ -132,6 +139,58 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 				status.code += `mov x0, #${case_index}\n`;
 			}
 			return;
+		}
+	}
+
+	// Check for enum payload field access (e.g., insect.count)
+	const enum_with_data = status.enums.find(
+		(e) => e.name === (target_name || target_type?.name) && e.has_associated_data,
+	);
+	if (enum_with_data) {
+		for (const c of enum_with_data.cases) {
+			const param = c.params.find((p) => p.name === access_field.name);
+			if (param) {
+				let payload_offset = 8;
+				for (const p of c.params) {
+					if (p.name === access_field.name) break;
+					payload_offset += aarch64_size(p.type.name);
+				}
+				if (node.target.node_type === "value") {
+					const name = (node.target as ValueNode).value;
+					const paramReg = get_param_reg(name, status);
+					if (paramReg) {
+						if (paramReg !== "x0") {
+							status.code += `mov x0, ${paramReg}\n`;
+						}
+					} else if (is_local_ref_var(name, status)) {
+						emit_deref_var_address(status, "x0", name);
+					} else {
+						emit_var_address(status, "x0", name);
+					}
+				} else {
+					build_node(node.target, status);
+					if (!status.code.endsWith("\n")) status.code += "\n";
+				}
+				const field_type = access_field.type?.name || "int";
+				const field_size = aarch64_size(field_type);
+				const signed =
+					field_type.startsWith("int") ||
+					field_type === "float" ||
+					field_type === "float32" ||
+					field_type === "float64";
+				if (field_size === 1) {
+					status.code += signed
+						? `ldrsb x0, [x0, #${payload_offset}]\n`
+						: `ldrb w0, [x0, #${payload_offset}]\n`;
+				} else if (field_size === 4) {
+					status.code += signed
+						? `ldrsw x0, [x0, #${payload_offset}]\n`
+						: `ldr w0, [x0, #${payload_offset}]\n`;
+				} else {
+					status.code += `ldr x0, [x0, #${payload_offset}]\n`;
+				}
+				return;
+			}
 		}
 	}
 
@@ -240,13 +299,41 @@ function build_access_method(
 	status: BuildStatus,
 ) {
 	const target_type = type_from_value_node(node.target);
+	const target_name =
+		node.target.node_type === "value" ? (node.target as ValueNode).value : target_type?.name;
 
-	const enum_node = status.enums.find((e) => e.name === target_type.name);
+	const enum_node = status.enums.find((e) => e.name === target_name);
 	if (enum_node) {
 		const enum_case = enum_node.cases.find((c) => c.name === access_func.name);
 		if (enum_case) {
 			const case_index = enum_node.cases.indexOf(enum_case);
-			status.code += `mov x0, #${case_index}\n`;
+			if (enum_node.has_associated_data) {
+				const enum_size = get_enum_size(target_name!, status);
+				const temp_name = `_enum_${access_temp_counter++}`;
+				const temp_offset = allocate_stack_space(status, enum_size);
+				status.stack_offsets!.set(temp_name, temp_offset);
+				status.code += `add x0, x29, #${temp_offset}\n`;
+				status.code += `mov x1, #${case_index}\n`;
+				status.code += `str x1, [x0]\n`;
+				let payload_offset = 8;
+				for (let i = access_func.params.length - 1; i >= 0; i--) {
+					build_node(access_func.params[i], status);
+					if (!status.code.endsWith("\n")) status.code += "\n";
+					const param_size = aarch64_size(enum_case.params[i].type.name);
+					const abs_offset = temp_offset + payload_offset;
+					if (param_size === 1) {
+						status.code += `strb w0, [x29, #${abs_offset}]\n`;
+					} else if (param_size === 4) {
+						status.code += `str w0, [x29, #${abs_offset}]\n`;
+					} else {
+						status.code += `str x0, [x29, #${abs_offset}]\n`;
+					}
+					payload_offset += param_size;
+				}
+				status.code += `add x0, x29, #${temp_offset}\n`;
+			} else {
+				status.code += `mov x0, #${case_index}\n`;
+			}
 			return;
 		}
 	}

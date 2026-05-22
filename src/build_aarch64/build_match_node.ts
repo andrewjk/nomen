@@ -1,4 +1,5 @@
 import type BuildStatus from "../build/BuildStatus.ts";
+import type_from_value_node from "../build/utils/type_from_value_node.ts";
 import MatchNode from "../nodes/MatchNode.ts";
 import build_block_node from "./build_block_node.ts";
 import build_node from "./build_node.ts";
@@ -18,12 +19,27 @@ function ensure_newline(status: BuildStatus) {
 export default function build_match_node(node: MatchNode, status: BuildStatus) {
 	const label = label_counter++;
 	const old_scoped_declarations = status.scoped_declarations;
+	const match_type = type_from_value_node(node.value, status);
+	const match_type_name = match_type?.name;
+	const enum_with_data = match_type_name
+		? status.enums.find((e) => e.name === match_type_name && e.has_associated_data)
+		: null;
 
-	status.code += `str x19, [sp, #-16]!\n`;
+	if (enum_with_data) {
+		status.code += `stp x19, x20, [sp, #-16]!\n`;
+	} else {
+		status.code += `str x19, [sp, #-16]!\n`;
+	}
 
 	build_node(node.value, status);
 	ensure_newline(status);
-	status.code += `mov x19, x0\n`;
+
+	if (enum_with_data) {
+		status.code += `mov x20, x0\n`;
+		status.code += `ldr x19, [x20]\n`;
+	} else {
+		status.code += `mov x19, x0\n`;
+	}
 
 	for (let i = 0; i < node.cases.length; i++) {
 		status.scoped_declarations = [];
@@ -38,7 +54,18 @@ export default function build_match_node(node: MatchNode, status: BuildStatus) {
 			status.code += `bne end_match_${label}\n`;
 		}
 
-		build_block_node(node.cases[i].branch, status);
+		if (enum_with_data) {
+			const old_param_regs = status.function_param_regs;
+			const param_name = node.value.node_type === "value" ? (node.value as any).value : null;
+			if (param_name && old_param_regs?.get(param_name) === "x19") {
+				status.function_param_regs = new Map(old_param_regs);
+				status.function_param_regs.set(param_name, "x20");
+			}
+			build_block_node(node.cases[i].branch, status);
+			status.function_param_regs = old_param_regs;
+		} else {
+			build_block_node(node.cases[i].branch, status);
+		}
 		status.code += `b end_match_${label}\n`;
 
 		status.code += `case_next_${label}_${i}:\n`;
@@ -50,7 +77,11 @@ export default function build_match_node(node: MatchNode, status: BuildStatus) {
 	}
 
 	status.code += `end_match_${label}:\n`;
-	status.code += `ldr x19, [sp], #16\n`;
+	if (enum_with_data) {
+		status.code += `ldp x19, x20, [sp], #16\n`;
+	} else {
+		status.code += `ldr x19, [sp], #16\n`;
+	}
 
 	status.scoped_declarations = old_scoped_declarations;
 }

@@ -19,7 +19,7 @@ import aarch64_size from "./utils/aarch64_size.ts";
 import aarch64_type from "./utils/aarch64_type.ts";
 import { mark_heap_string } from "./utils/auto_destroy.ts";
 import { allocate_stack_space, emit_var_address, emit_var_store } from "./utils/stack_var.ts";
-import { get_struct_size } from "./utils/struct_layout.ts";
+import { emit_struct_copy, get_enum_size, get_struct_size } from "./utils/struct_layout.ts";
 
 function get_raw_value(node: ValueNode, status?: BuildStatus): string {
 	let val = node.value;
@@ -204,6 +204,30 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 
 	// Check if type is a struct
 	const struct_type = status.structs.find((s) => s.name === node.type.name && !s.is_simple_type);
+
+	// Check if type is an enum with associated data
+	const enum_type = status.enums.find((e) => e.name === node.type.name && e.has_associated_data);
+
+	if (enum_type) {
+		const enum_size = get_enum_size(node.type.name, status);
+		if (status.function_return_label) {
+			const offset = allocate_stack_space(status, enum_size);
+			status.stack_offsets!.set(node.name, offset);
+		} else {
+			emit_data(status, `${node.name}: .space ${enum_size}\n`);
+		}
+		if (node.value) {
+			build_node(node.value, status);
+			if (!status.code.endsWith("\n")) status.code += "\n";
+			if (node.value.node_type === "access") {
+				emit_var_address(status, "x1", node.name);
+				emit_struct_copy("x0", "x1", 0, enum_size, status);
+			} else {
+				emit_var_store(status, "x0", node.name, 8);
+			}
+		}
+		return;
+	}
 
 	if (node.type.is_array) {
 		if (node.value && node.value.node_type === "array") {

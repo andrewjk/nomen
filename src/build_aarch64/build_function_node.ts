@@ -56,7 +56,10 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 			const is_struct_type = !!status.structs.find(
 				(s) => s.name === param.type.name && !s.is_simple_type,
 			);
-			if (is_struct_type && callee_idx < callee_saved.length) {
+			const is_enum_with_data = !!status.enums.find(
+				(e) => e.name === param.type.name && e.has_associated_data,
+			);
+			if ((is_struct_type || is_enum_with_data) && callee_idx < callee_saved.length) {
 				const saved_reg = callee_saved[callee_idx++];
 				status.code += `str ${saved_reg}, [sp, #-16]!\n`;
 				status.code += `mov ${saved_reg}, ${param_regs[i]}\n`;

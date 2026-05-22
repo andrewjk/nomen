@@ -17,7 +17,7 @@ import {
 	emit_var_load,
 	is_local_ref_var,
 } from "./utils/stack_var.ts";
-import { get_field_offset, get_struct_size } from "./utils/struct_layout.ts";
+import { emit_struct_copy, get_field_offset, get_struct_size } from "./utils/struct_layout.ts";
 
 function is_mutable_param(name: string, status: BuildStatus): boolean {
 	return !!(status.function_param_vars?.has(name) || status.function_ref_params?.has(name));
@@ -86,24 +86,6 @@ function is_struct_type(type: Type | undefined, status: BuildStatus): boolean {
 	return !!status.structs.find((s) => s.name === type.name && !s.is_simple_type);
 }
 
-function emit_struct_store(
-	src_addr_reg: string,
-	dst_base_reg: string,
-	dst_offset: number,
-	struct_size: number,
-	status: BuildStatus,
-) {
-	const words = Math.ceil(struct_size / 8);
-	for (let i = 0; i < words; i++) {
-		status.code += `ldr x3, [${src_addr_reg}, #${i * 8}]\n`;
-		if (dst_offset + i * 8 === 0) {
-			status.code += `str x3, [${dst_base_reg}]\n`;
-		} else {
-			status.code += `str x3, [${dst_base_reg}, #${dst_offset + i * 8}]\n`;
-		}
-	}
-}
-
 function get_source_address(value: BaseNode, status: BuildStatus) {
 	if (value.node_type === "value") {
 		const name = (value as ValueNode).value;
@@ -143,7 +125,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 					status.code += `mov ${paramReg}, x0\n`;
 				} else {
 					status.code += `mov x1, ${paramReg}\n`;
-					emit_struct_store("x0", "x1", 0, struct_size, status);
+					emit_struct_copy("x0", "x1", 0, struct_size, status);
 				}
 			} else if (paramReg) {
 				status.code += `// cannot assign to const param\n`;
@@ -152,7 +134,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 				status.code += `str x0, [x1]\n`;
 			} else {
 				emit_var_address(status, "x1", name);
-				emit_struct_store("x0", "x1", 0, struct_size, status);
+				emit_struct_copy("x0", "x1", 0, struct_size, status);
 			}
 			return;
 		}
@@ -267,7 +249,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 				status.code += `mov x1, x0\n`;
 				status.code += `ldr x0, [sp], #16\n`;
 
-				emit_struct_store("x1", "x0", offset, struct_size, status);
+				emit_struct_copy("x1", "x0", offset, struct_size, status);
 			} else {
 				const offset = get_field_offset(target_type.name, field_name, status);
 
@@ -321,7 +303,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 							status.code += "\n";
 						}
 						status.code += `ldr x3, [sp], #16\n`;
-						emit_struct_store("x0", "x3", byte_offset, struct_size, status);
+						emit_struct_copy("x0", "x3", byte_offset, struct_size, status);
 					} else {
 						build_node(node.right_value, status);
 						if (!status.code.endsWith("\n")) {
@@ -362,7 +344,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 					status.code += "\n";
 				}
 				status.code += `ldr x3, [sp], #16\n`;
-				emit_struct_store("x0", "x3", 0, struct_size, status);
+				emit_struct_copy("x0", "x3", 0, struct_size, status);
 			} else {
 				build_node(node.right_value, status);
 				if (!status.code.endsWith("\n")) {

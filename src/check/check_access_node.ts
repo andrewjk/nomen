@@ -76,17 +76,18 @@ function check_access_field_node(
 		if (enum_node) {
 			const enum_case = enum_node.cases.find((c) => c.name === node.name);
 			if (enum_case) {
-				if (enum_case.params.length > 0 && enum_node.has_associated_data) {
-					add_error(
-						status,
-						`Enum case ${node.name} has associated data, use ${target_type.name}.${node.name}(...)`,
-						node.start,
-					);
-					return false;
-				}
 				node.type = new Type(target_type.name);
 				return true;
 			} else {
+				if (enum_node.has_associated_data) {
+					for (const c of enum_node.cases) {
+						const param = c.params.find((p) => p.name === node.name);
+						if (param) {
+							node.type = param.type;
+							return true;
+						}
+					}
+				}
 				add_error(status, `Unknown enum case: ${target_type.name}.${node.name}`, node.start);
 				return false;
 			}
@@ -121,6 +122,18 @@ function check_access_field_node(
 			func_type.func_return_type = func.return_type;
 			node.type = func_type;
 			return true;
+		}
+	}
+	if (!field) {
+		const enum_node = status.enums.find((e) => e.name === target_type.name);
+		if (enum_node && enum_node.has_associated_data) {
+			for (const c of enum_node.cases) {
+				const param = c.params.find((p) => p.name === node.name);
+				if (param) {
+					node.type = param.type;
+					return true;
+				}
+			}
 		}
 	}
 	if (field) {
