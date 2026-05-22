@@ -63,7 +63,9 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 			}
 		} else if (
 			status.function_param_vars?.has(original_value) ||
-			status.function_param_vars?.has(value)
+			status.function_param_vars?.has(value) ||
+			status.function_ref_params?.has(original_value) ||
+			status.function_ref_params?.has(value)
 		) {
 			// var param - address in register, load value
 			status.code += `ldr x0, [${paramReg}]`;

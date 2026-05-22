@@ -66,6 +66,20 @@ export default function check_function_call(
 		const param_type = type_from_value_node(param, status);
 		const param_value = value_from_value_node(param);
 		const func_param = func.params[i + self_offset];
+		const has_ref_keyword = node.ref_param_indices?.includes(i) ?? false;
+		if (func_param.type.is_ref && !has_ref_keyword) {
+			add_error(
+				status,
+				`Missing 'ref' keyword for ref parameter '${func_param.name}'`,
+				param.start,
+			);
+		} else if (!func_param.type.is_ref && has_ref_keyword) {
+			add_error(
+				status,
+				`Unexpected 'ref' keyword for non-ref parameter '${func_param.name}'`,
+				param.start,
+			);
+		}
 		check_type_and_value_match(
 			func_param.type,
 			param_type,

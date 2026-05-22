@@ -10,17 +10,18 @@ export function get_struct_size(name: string, status: BuildStatus): number {
 	if (struct.is_simple_type) return VT_SIZE;
 	let size = VT_SIZE;
 	for (const field of struct.fields) {
-		size += get_type_size(field.type.name, status);
+		size += get_type_size(field.type, status);
 	}
 	return size;
 }
 
-function get_type_size(type_name: string, status: BuildStatus): number {
-	const struct = status.structs.find((s) => s.name === type_name && !s.is_simple_type);
+function get_type_size(type: import("../../nodes/Type.ts").default, status: BuildStatus): number {
+	if (type.is_ref) return 8;
+	const struct = status.structs.find((s) => s.name === type.name && !s.is_simple_type);
 	if (struct) {
-		return get_struct_size(type_name, status);
+		return get_struct_size(type.name, status);
 	}
-	return aarch64_size(type_name);
+	return aarch64_size(type.name);
 }
 
 export function get_field_offset(
@@ -33,7 +34,7 @@ export function get_field_offset(
 	let offset = VT_SIZE;
 	for (const field of struct.fields) {
 		if (field.name === field_name) return offset;
-		offset += get_type_size(field.type.name, status);
+		offset += get_type_size(field.type, status);
 	}
 	return offset;
 }

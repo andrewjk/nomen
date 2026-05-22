@@ -7,6 +7,7 @@ export default class AccessFunctionCallNode extends BaseNode {
 	params: BaseNode[];
 
 	is_static?: boolean;
+	ref_param_indices?: number[];
 
 	constructor(start: number, name: string, type?: Type, params?: BaseNode[], is_static?: boolean) {
 		super("access_func", start);

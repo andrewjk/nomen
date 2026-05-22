@@ -14,6 +14,10 @@ import { mark_moved_if_struct } from "./utils/auto_destroy.ts";
 import { emit_var_address, emit_var_load } from "./utils/stack_var.ts";
 import { get_field_offset, get_struct_size } from "./utils/struct_layout.ts";
 
+function is_mutable_param(name: string, status: BuildStatus): boolean {
+	return !!(status.function_param_vars?.has(name) || status.function_ref_params?.has(name));
+}
+
 function get_store_instruction(size: number): string {
 	if (size === 1) return "strb";
 	if (size === 4) return "str";
@@ -125,7 +129,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 			if (!status.code.endsWith("\n")) {
 				status.code += "\n";
 			}
-			if (paramReg && status.function_param_vars?.has(name)) {
+			if (paramReg && is_mutable_param(name, status)) {
 				status.code += `mov x1, ${paramReg}\n`;
 				emit_struct_store("x0", "x1", 0, struct_size, status);
 			} else if (paramReg) {
@@ -143,7 +147,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 		const store_op = get_store_instruction(size);
 		const store_reg = get_store_reg("x0", size);
 		if (paramReg) {
-			if (status.function_param_vars?.has(name)) {
+			if (is_mutable_param(name, status)) {
 				status.code += `mov x2, ${paramReg}\n`;
 				build_node(node.right_value, status);
 				if (node.operator) {
@@ -160,6 +164,17 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 				build_node(node.right_value, status);
 				status.code += `\n// cannot assign to const param\n`;
 			}
+		} else if (status.function_ref_params?.has(name)) {
+			const offset = status.stack_offsets?.get(name);
+			if (offset !== undefined) {
+				status.code += `ldr x2, [x29, #${offset}]\n`;
+			} else {
+				emit_var_address(status, "x2", name);
+				status.code += `ldr x2, [x2]\n`;
+			}
+			build_node(node.right_value, status);
+			if (!status.code.endsWith("\n")) status.code += "\n";
+			status.code += `${store_op} ${store_reg}, [x2]\n`;
 		} else if (node.operator) {
 			emit_var_address(status, "x1", name);
 			const load_op = get_load_instruction(size);
@@ -201,7 +216,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 			if (access.target.node_type === "value") {
 				const name = (access.target as ValueNode).value;
 				const paramReg = status.function_param_regs?.get(name);
-				if (paramReg && name !== "self" && !status.function_param_vars?.has(name)) {
+				if (paramReg && name !== "self" && !is_mutable_param(name, status)) {
 					status.code += `// cannot assign to field of value param\n`;
 					return;
 				}

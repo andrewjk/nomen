@@ -8,7 +8,9 @@ import get_index from "./utils/get_index.ts";
 import peek_current from "./utils/peek_current.ts";
 
 export default function parse_type(status: ParseStatus): Type {
+	const is_ref = accept("ref", status);
 	const type = new Type(consume(status));
+	if (is_ref) type.is_ref = true;
 	if (accept("<", status)) {
 		type.type_args = [parse_type(status)];
 		while (accept(",", status)) {

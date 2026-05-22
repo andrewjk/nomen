@@ -13,14 +13,15 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			status.code += ", ";
 		}
 
-		// HACK: Always passing the pointer in -- maybe we shouldn't do this for ints etc
-		// HACK: Need a better way to determine built-ins??
 		const param_type = type_from_value_node(node.params[i]);
+		const is_ref_param = node.ref_param_indices?.includes(i);
 		if (
 			status.structs.find((s) => s.name === param_type.name && !s.is_simple_type) ||
 			status.traits.find((t) => t.name === param_type.name)
 		) {
 			status.code += `(void *)&`;
+		} else if (is_ref_param) {
+			status.code += `&`;
 		}
 
 		build_node(node.params[i], status);

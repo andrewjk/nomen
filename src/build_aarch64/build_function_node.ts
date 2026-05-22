@@ -72,6 +72,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.function_param_regs = new Map();
 	status.function_param_vars = new Set();
 	status.function_array_params = new Set();
+	status.function_ref_params = new Set();
 
 	if (has_body) {
 		for (let i = 0; i < node.params.length; i++) {
@@ -96,6 +97,9 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 			}
 			if (param.type.is_array) {
 				status.function_array_params!.add(param.name);
+			}
+			if (param.type.is_ref) {
+				status.function_ref_params!.add(param.name);
 			}
 		}
 	}

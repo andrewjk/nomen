@@ -8,10 +8,14 @@ export default function parse_function_call_parameter(
 	node: FunctionCallNode | AccessFunctionCallNode,
 	status: ParseStatus,
 ) {
+	const is_ref = accept("ref", status);
 	const param = parse_expression(status);
 	node.params.push(param);
+	if (is_ref) {
+		if (!node.ref_param_indices) node.ref_param_indices = [];
+		node.ref_param_indices.push(node.params.length - 1);
+	}
 
-	// Next parameter
 	if (accept(",", status)) {
 		parse_function_call_parameter(node, status);
 	}

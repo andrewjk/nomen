@@ -11,38 +11,45 @@ export default function check_type_and_value_match(
 	i: number,
 	node_type: string,
 ) {
-	if (!target_type.name && !value_type.name) {
+	const effective_target = target_type.is_ref
+		? new Type(target_type.name, target_type.is_static, target_type.is_array, target_type.length)
+		: target_type;
+	if (effective_target !== target_type) {
+		effective_target.is_nullable = target_type.is_nullable;
+		effective_target.type_args = target_type.type_args;
+	}
+	if (!effective_target.name && !value_type.name) {
 		add_error_message(status, i, node_type, `unknown value ${value}`);
-	} else if (!target_type.name && value_type.name) {
+	} else if (!effective_target.name && value_type.name) {
 		// ok
-	} else if (target_type.name && !value_type.name) {
-		add_error_message(status, i, node_type, `unknown value ${value}`, type_name(target_type));
-	} else if (target_type.name && value_type.name) {
-		if (target_type.is_array !== value_type.is_array) {
-			add_error_message(status, i, node_type, type_name(value_type), type_name(target_type));
-		} else if (value_type.name === "null" && target_type.is_nullable) {
+	} else if (effective_target.name && !value_type.name) {
+		add_error_message(status, i, node_type, `unknown value ${value}`, type_name(effective_target));
+	} else if (effective_target.name && value_type.name) {
+		if (effective_target.is_array !== value_type.is_array) {
+			add_error_message(status, i, node_type, type_name(value_type), type_name(effective_target));
+		} else if (value_type.name === "null" && effective_target.is_nullable) {
 			return;
-		} else if (target_type.name !== value_type.name) {
-			if (is_type_param(target_type.name, status)) {
+		} else if (effective_target.name !== value_type.name) {
+			if (is_type_param(effective_target.name, status)) {
 				return;
 			}
 			if (is_type_param(value_type.name, status)) {
 				return;
 			}
-			if (can_coerce(target_type.name, value_type.name, value)) {
+			if (can_coerce(effective_target.name, value_type.name, value)) {
 				return;
 			}
 
 			const struct = status.structs.find((f) => f.name === value_type.name);
-			if (struct?.traits.includes(target_type.name)) {
+			if (struct?.traits.includes(effective_target.name)) {
 				return;
 			}
 
-			if (value_type.name === "null" && !target_type.is_nullable) {
-				add_error_message(status, i, node_type, "null", type_name(target_type));
+			if (value_type.name === "null" && !effective_target.is_nullable) {
+				add_error_message(status, i, node_type, "null", type_name(effective_target));
 				return;
 			}
-			add_error_message(status, i, node_type, type_name(value_type), type_name(target_type));
+			add_error_message(status, i, node_type, type_name(value_type), type_name(effective_target));
 		}
 	}
 }

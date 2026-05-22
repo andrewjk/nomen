@@ -106,6 +106,7 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		for (let i = node.params.length - 1; i >= 0; i--) {
 			const param = node.params[i];
 			const param_type = (param as any).type?.name || "";
+			const is_ref_param = node.ref_param_indices?.includes(i);
 			if (param.node_type === "array" && param_type) {
 				const arr = param as ArrayValuesNode;
 				const label = `_arr_param_${array_param_counter++}`;
@@ -116,6 +117,16 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 				status.code += `adr x0, ${label}`;
 			} else if (is_struct_type(param_type, status)) {
 				emit_struct_address(node.params[i], status);
+			} else if (is_ref_param) {
+				if (param.node_type === "value") {
+					const name = (param as ValueNode).value;
+					emit_var_address(status, "x0", name);
+				} else {
+					build_node(node.params[i], status);
+					if (!status.code.endsWith("\n")) {
+						status.code += "\n";
+					}
+				}
 			} else {
 				build_node(node.params[i], status);
 			}

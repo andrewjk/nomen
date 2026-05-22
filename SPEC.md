@@ -76,6 +76,58 @@ var int? x = 5
 const y = x + 1          // OK, y = 6
 ```
 
+### Reference Types
+
+Any type can be made a reference type by prefixing with `ref`:
+
+```
+ref int       // reference to an int
+ref Character // reference to a Character struct
+ref Node?     // nullable reference to a Node
+```
+
+A `ref` type holds a pointer to a value rather than the value itself. This allows functions to modify caller variables and structs to link to other structs.
+
+#### Reference Parameters
+
+Functions can accept parameters by reference using `ref`. The caller must also use the `ref` keyword at the call site to make the mutation explicit:
+
+```
+func makeFive = (ref int x) {
+    x = 5
+}
+
+var int num = 1
+makeFive(ref num)
+// num is now 5
+```
+
+Calling without `ref` at the call site is a compile error:
+
+```
+makeFive(num)  // Error: Missing 'ref' keyword for ref parameter 'x'
+```
+
+Using `ref` for a non-ref parameter is also an error:
+
+```
+func print = (int x) { ... }
+print(ref 5)   // Error: Unexpected 'ref' keyword for non-ref parameter 'x'
+```
+
+#### Reference Struct Fields
+
+Struct fields can be reference types, enabling linked data structures:
+
+```
+struct Node {
+    var int value
+    var ref Node next
+}
+```
+
+A `ref` field is stored as a pointer (8 bytes), regardless of the underlying type size.
+
 ### Range Types
 
 Ranges produce an array of integers from `start` to `end` (exclusive):
@@ -354,16 +406,22 @@ greet()        // "Hello, world!"
 greet("Alice") // "Hello, Alice!"
 ```
 
-#### `var` and `cp` Parameters
+#### `var` and `ref` Parameters
 
-Parameters are `const` by default. Use `var` for mutable parameters:
+Parameters are `const` by default. Use `var` for mutable local copies, or `ref` for pass-by-reference:
 
 ```
 func increment = (var int x, out int) {
     x = x + 1
     return x
 }
+
+func makeFive = (ref int x) {
+    x = 5  // modifies the caller's variable
+}
 ```
+
+`var` creates a mutable copy — changes don't affect the caller. `ref` passes a pointer to the caller's variable — changes are visible to the caller. The `ref` keyword is required at both the definition and call site (see [Reference Types](#reference-types)).
 
 #### Function-Typed Parameters (Higher-Order Functions)
 

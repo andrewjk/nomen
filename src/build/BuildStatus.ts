@@ -21,6 +21,7 @@ export default interface BuildStatus {
 	return_assign?: string;
 	function_param_regs?: Map<string, string>;
 	function_param_vars?: Set<string>;
+	function_ref_params?: Set<string>;
 	function_array_params?: Set<string>;
 	function_return_label?: string;
 	strings?: Map<string, string>;
