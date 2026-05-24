@@ -1,5 +1,6 @@
 import type ReturningNode from "../nodes/ReturningNode.ts";
 import ReturnNode from "../nodes/ReturnNode.ts";
+import Type from "../nodes/Type.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
@@ -13,6 +14,14 @@ export default function check_return_node(ret: ReturnNode, status: CheckStatus) 
 			func = status.stack[i] as ReturningNode;
 			break;
 		}
+	}
+
+	if (!ret.value) {
+		if (func && !func.return_type.name) {
+			func.return_type = new Type("void");
+		}
+		ret.type = new Type("void");
+		return;
 	}
 
 	const old_expected_type = status.expected_type;

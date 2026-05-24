@@ -10,8 +10,15 @@ import get_index from "./utils/get_index.ts";
 export default function parse_return(status: ParseStatus) {
 	const start = get_index(status);
 	accept("return", status);
-	accept("=>", status);
-	const value = parse_expression(status);
+	let value = null;
+	if (accept("=>", status)) {
+		value = parse_expression(status);
+	} else {
+		const next = status.tokens[status.i]?.value;
+		if (next && next !== "}" && next !== ";") {
+			value = parse_expression(status);
+		}
+	}
 	const ret = new ReturnNode(start, value);
 
 	add_to_parent(ret, "Return statement", status);

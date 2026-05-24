@@ -1,5 +1,8 @@
+import { is_returning_node } from "../nodes/check_node_type.ts";
+import type ReturningNode from "../nodes/ReturningNode.ts";
 import BranchNode from "../nodes/BranchNode.ts";
 import LetNode from "../nodes/LetNode.ts";
+import ReturnNode from "../nodes/ReturnNode.ts";
 import SwitchNode from "../nodes/SwitchNode.ts";
 import parse_expression from "./parse_expression.ts";
 import parse_statement from "./parse_statement.ts";
@@ -40,7 +43,8 @@ export default function parse_switch(status: ParseStatus): SwitchNode {
 }
 
 function parse_case_branch(status: ParseStatus): BranchNode | null {
-	if (accept("->", status)) {
+	const is_return = accept("=>", status);
+	if (is_return || accept("->", status)) {
 		const branch_start = get_index(status);
 		let value;
 		if (accept("(", status)) {
@@ -51,7 +55,18 @@ function parse_case_branch(status: ParseStatus): BranchNode | null {
 		}
 
 		const branch = new BranchNode(branch_start);
-		branch.statements.push(new LetNode(value.start, value));
+		if (is_return) {
+			const ret = new ReturnNode(value.start, value);
+			branch.statements.push(ret);
+			for (let i = status.stack.length - 1; i >= 0; i--) {
+				if (is_returning_node(status.stack[i])) {
+					(status.stack[i] as ReturningNode).has_return = true;
+					if (status.stack[i].node_type === "func") break;
+				}
+			}
+		} else {
+			branch.statements.push(new LetNode(value.start, value));
+		}
 		return branch;
 	}
 

@@ -17,6 +17,30 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 	if (node.from_c) {
 		return;
 	}
+
+	if (!node.value) {
+		if (status.return_assign) {
+			const size = find_var_size(status.return_assign, status);
+			status.code += `mov x0, #0\n`;
+			emit_var_store(status, "x0", status.return_assign, size);
+		} else if (status.function_return_label) {
+			const finalized = status.moved ?? new Set<string>();
+			for (const decl of status.scoped_declarations) {
+				if (finalized.has(decl.name)) continue;
+				emit_destroy_for_decl(status, decl.name, decl.type.name);
+			}
+			status.code += `mov x0, #0\n`;
+			const match_saves = status.match_save_size || 0;
+			if (match_saves > 0) {
+				for (let i = 0; i < match_saves; i += 16) {
+					status.code += `ldr x19, [sp], #16\n`;
+				}
+			}
+			status.code += `b ${status.function_return_label}\n`;
+		}
+		return;
+	}
+
 	build_node(node.value, status);
 	if (status.return_assign) {
 		if (!status.code.endsWith("\n")) {
@@ -30,12 +54,18 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 		}
 		mark_moved_if_struct(node.value, status);
 		const finalized = status.moved ?? new Set<string>();
-		status.code += `mov x19, x0\n`;
+		status.code += `mov x20, x0\n`;
 		for (const decl of status.scoped_declarations) {
 			if (finalized.has(decl.name)) continue;
 			emit_destroy_for_decl(status, decl.name, decl.type.name);
 		}
-		status.code += `mov x0, x19\n`;
+		status.code += `mov x0, x20\n`;
+		const match_saves = status.match_save_size || 0;
+		if (match_saves > 0) {
+			for (let i = 0; i < match_saves; i += 16) {
+				status.code += `ldr x19, [sp], #16\n`;
+			}
+		}
 		status.code += `b ${status.function_return_label}\n`;
 	}
 }

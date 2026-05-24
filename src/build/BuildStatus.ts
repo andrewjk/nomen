@@ -36,4 +36,5 @@ export default interface BuildStatus {
 	moved?: Set<string>;
 	heap_strings?: Set<string>;
 	last_result_is_heap?: boolean;
+	match_save_size?: number;
 }

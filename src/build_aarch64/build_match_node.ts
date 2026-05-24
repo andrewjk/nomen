@@ -27,8 +27,10 @@ export default function build_match_node(node: MatchNode, status: BuildStatus) {
 
 	if (enum_with_data) {
 		status.code += `stp x19, x20, [sp, #-16]!\n`;
+		status.match_save_size = (status.match_save_size || 0) + 16;
 	} else {
 		status.code += `str x19, [sp, #-16]!\n`;
+		status.match_save_size = (status.match_save_size || 0) + 16;
 	}
 
 	build_node(node.value, status);
@@ -79,8 +81,10 @@ export default function build_match_node(node: MatchNode, status: BuildStatus) {
 	status.code += `end_match_${label}:\n`;
 	if (enum_with_data) {
 		status.code += `ldp x19, x20, [sp], #16\n`;
+		status.match_save_size = (status.match_save_size || 0) - 16;
 	} else {
 		status.code += `ldr x19, [sp], #16\n`;
+		status.match_save_size = (status.match_save_size || 0) - 16;
 	}
 
 	status.scoped_declarations = old_scoped_declarations;

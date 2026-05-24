@@ -5,6 +5,16 @@ import build_node from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 
 export default function build_return_node(node: ReturnNode, status: BuildStatus) {
+	if (!node.value) {
+		build_auto_free(status);
+		if (status.return_assign) {
+			status.code += `${status.return_assign} = 0;\n`;
+		} else {
+			status.code += `return;\n`;
+		}
+		return;
+	}
+
 	// HACK: This needs more work to map return values to declarations
 	// Remove the return value from scoped_declarations so it won't be disposed
 	if (node.value.node_type === "value") {

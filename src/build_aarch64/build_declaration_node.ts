@@ -459,6 +459,19 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 				status.string_literal_names!.add(node.name);
 			} else {
 				build_node(node.value, status);
+				if (!status.code.endsWith("\n")) {
+					status.code += "\n";
+				}
+				if (status.function_return_label) {
+					const offset = allocate_stack_space(status, 8);
+					status.stack_offsets!.set(node.name, offset);
+					status.code += `str x0, [x29, #${offset}]\n`;
+				} else {
+					emit_data(status, `${node.name}: .space 8\n`);
+					status.code += `adr x1, ${node.name}\n`;
+					status.code += `str x0, [x1]\n`;
+				}
+				check_heap();
 			}
 		} else if (node.value.node_type === "value") {
 			const value_node = node.value as ValueNode;
