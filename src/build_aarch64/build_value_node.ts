@@ -11,9 +11,25 @@ function is_literal(value: string): boolean {
 	return (
 		/^(\+|-)*\d+$/.test(value) ||
 		/^(\+|-)*\d+.\d+$/.test(value) ||
+		/^0x[0-9a-fA-F_]+$/.test(value) ||
+		/^0o[0-7_]+$/.test(value) ||
+		/^0b[01_]+$/.test(value) ||
 		value === "true" ||
 		value === "false"
 	);
+}
+
+function to_decimal(value: string): string {
+	if (value.startsWith("0x") || value.startsWith("0X")) {
+		return String(parseInt(value.replace(/_/g, ""), 16));
+	}
+	if (value.startsWith("0o") || value.startsWith("0O")) {
+		return String(parseInt(value.replace(/_/g, ""), 8));
+	}
+	if (value.startsWith("0b") || value.startsWith("0B")) {
+		return String(parseInt(value.replace(/_/g, ""), 2));
+	}
+	return value;
 }
 
 export default function build_value_node(node: ValueNode, status: BuildStatus) {
@@ -80,7 +96,7 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 	}
 
 	if (is_literal(value)) {
-		status.code += `ldr x0, =${value}`;
+		status.code += `ldr x0, =${to_decimal(value)}`;
 		return;
 	}
 

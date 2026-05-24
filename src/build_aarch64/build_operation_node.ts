@@ -109,8 +109,70 @@ function is_simple(node: BaseNode): boolean {
 	return node.node_type === "value";
 }
 
+function is_float_type(node: BaseNode): boolean {
+	const type = type_from_value_node(node);
+	const name = type?.name || "";
+	return name === "float" || name === "float32" || name === "float64" || name === "ufloat";
+}
+
+function build_float_operand(node: BaseNode, target_reg: string, status: BuildStatus) {
+	if (node.node_type === "value") {
+		const value = (node as ValueNode).value.replace("self", "_self");
+		if (/^(\+|-)*\d+.\d+$/.test(value)) {
+			const label = `_float_op_${string_counter++}`;
+			const data = `${label}: .double ${value}\n.p2align 2\n`;
+			if (status.function_return_label) {
+				if (!status.function_data) status.function_data = "";
+				status.function_data += data;
+			} else {
+				status.code += data;
+			}
+			status.code += `adr x3, ${label}\n`;
+			status.code += `ldr ${target_reg}, [x3]\n`;
+			return;
+		}
+		if (/^(\+|-)*\d+$/.test(value)) {
+			status.code += `ldr x3, =${to_decimal_literal(value)}\n`;
+			status.code += `scvtf ${target_reg}, x3\n`;
+			return;
+		}
+		const offset = status.stack_offsets?.get(value);
+		if (offset !== undefined) {
+			status.code += `ldr ${target_reg}, [x29, #${offset}]\n`;
+			return;
+		}
+	}
+	build_node(node, status);
+	if (!status.code.endsWith("\n")) status.code += "\n";
+	status.code += `fmov ${target_reg}, x0\n`;
+}
+
+function to_decimal_literal(value: string): string {
+	if (value.startsWith("0x") || value.startsWith("0X"))
+		return String(parseInt(value.replace(/_/g, ""), 16));
+	if (value.startsWith("0o") || value.startsWith("0O"))
+		return String(parseInt(value.replace(/_/g, ""), 8));
+	if (value.startsWith("0b") || value.startsWith("0B"))
+		return String(parseInt(value.replace(/_/g, ""), 2));
+	return value;
+}
+
+function map_float_op(op: string): string {
+	switch (op) {
+		case "+":
+			return "fadd";
+		case "-":
+			return "fsub";
+		case "*":
+			return "fmul";
+		case "/":
+			return "fdiv";
+		default:
+			return "fmul";
+	}
+}
+
 function is_struct_type(node: BaseNode, status: BuildStatus): boolean {
-	if (node.node_type !== "value") return false;
 	const type = type_from_value_node(node as ValueNode);
 	return !!status.structs.find((s) => s.name === type.name && !s.is_simple_type);
 }
@@ -162,6 +224,19 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		if (return_struct && return_temp_offset !== undefined) {
 			status.code += `add x0, x29, #${return_temp_offset}\n`;
 		}
+		return;
+	}
+
+	const is_float =
+		is_float_type(node) || is_float_type(node.left_value) || is_float_type(node.right_value);
+
+	if (is_float && !is_comparison(node.op)) {
+		build_float_operand(node.right_value, "d1", status);
+		if (!status.code.endsWith("\n")) status.code += "\n";
+		build_float_operand(node.left_value, "d0", status);
+		if (!status.code.endsWith("\n")) status.code += "\n";
+		status.code += `${map_float_op(node.op)} d0, d0, d1\n`;
+		status.code += `fmov x0, d0\n`;
 		return;
 	}
 
