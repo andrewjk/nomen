@@ -552,7 +552,11 @@ function build_access_index(node: AccessNode, access_index: AccessIndexNode, sta
 				status.code += `mov x0, ${paramReg}\n`;
 			}
 		} else {
+			const is_stack_var = status.stack_offsets?.has(name);
 			emit_var_address(status, "x0", name);
+			if (is_string && is_stack_var) {
+				status.code += `ldr x0, [x0]\n`;
+			}
 		}
 	} else {
 		build_node(node.target, status);
