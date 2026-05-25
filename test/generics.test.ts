@@ -161,8 +161,8 @@ struct Pair<T, U> {
     var U second
 }
 
-func usePair = (Pair p) {
-    var int f = p.first
+func usePair<T, U> = (Pair<T, U> p) {
+    var T f = p.first
     return
 }
 
@@ -328,4 +328,166 @@ pub func main = () {
 	const built = build(parsed.root, { arch: "aarch64" });
 	expect(built.code).toContain("printFirst_Pair_int_string");
 	await check_output_aarch64("gen_func_pair", built, "10\n20\n");
+});
+
+test("generics -- explicit type params on function", () => {
+	const input = `
+struct Box<T> {
+    var T value
+}
+
+func identity<T> = (Box<T> box) {
+    return box.value
+}
+
+pub func main = () {
+    var Box<int> b = Box<int>(42)
+    var int v = identity(b)
+    return
+}
+`;
+	const parsed = parse(input);
+	expect(parsed.errors).toEqual([]);
+});
+
+test("generics -- explicit type params with different names", () => {
+	const input = `
+struct Pair<T, U> {
+    var T first
+    var U second
+}
+
+func usePair<A, B> = (Pair<A, B> p) {
+    var A f = p.first
+    var B s = p.second
+    return
+}
+
+pub func main = () {
+    var Pair<int, string> a = Pair<int, string>(1, "hello")
+    usePair(a)
+    return
+}
+`;
+	const parsed = parse(input);
+	expect(parsed.errors).toEqual([]);
+});
+
+test("generics -- explicit type params with return type", () => {
+	const input = `
+struct Box<T> {
+    var T value
+}
+
+func unwrap<T> = (out T, Box<T> box) {
+    return box.value
+}
+
+pub func main = () {
+    var Box<int> b = Box<int>(42)
+    var int v = unwrap(b)
+    return
+}
+`;
+	const parsed = parse(input);
+	expect(parsed.errors).toEqual([]);
+});
+
+test("generics -- explicit type params two specializations", () => {
+	const input = `
+struct Box<T> {
+    var T value
+}
+
+func identity<T> = (Box<T> box) {
+    return box.value
+}
+
+pub func main = () {
+    var Box<int> a = Box<int>(1)
+    var Box<string> b = Box<string>("hi")
+    var int x = identity(a)
+    var string y = identity(b)
+    return
+}
+`;
+	const parsed = parse(input);
+	expect(parsed.errors).toEqual([]);
+	const spec_int = parsed.root.statements.find(
+		(s: any) => s.node_type === "func" && s.name === "identity_Box_int",
+	);
+	const spec_str = parsed.root.statements.find(
+		(s: any) => s.node_type === "func" && s.name === "identity_Box_string",
+	);
+	expect(spec_int).toBeTruthy();
+	expect(spec_str).toBeTruthy();
+});
+
+test("generics -- explicit type params reused specialization", () => {
+	const input = `
+struct Box<T> {
+    var T value
+}
+
+func identity<T> = (Box<T> box) {
+    return box.value
+}
+
+pub func main = () {
+    var Box<int> a = Box<int>(1)
+    var Box<int> b = Box<int>(2)
+    var int x = identity(a)
+    var int y = identity(b)
+    return
+}
+`;
+	const parsed = parse(input);
+	expect(parsed.errors).toEqual([]);
+	const specs = parsed.root.statements.filter(
+		(s: any) => s.node_type === "func" && s.name.startsWith("identity_Box_"),
+	);
+	expect(specs.length).toBe(1);
+});
+
+test("generics -- explicit type params with anon struct", () => {
+	const input = `
+struct Point<T> {
+    var T x
+    var T y
+}
+
+func sumCoords<T> = (Point<T> p) {
+    return p.x + p.y
+}
+
+pub func main = () {
+    var int total = sumCoords([ x = 10, y = 20 ])
+    return
+}
+`;
+	const parsed = parse(input);
+	expect(parsed.errors).toEqual([]);
+});
+
+test("generics -- explicit type params with operations in body", () => {
+	const input = `
+struct Vec<T> {
+    var T x
+    var T y
+}
+
+func addX<T> = (Vec<T> a, Vec<T> b) {
+    var T result = a.x + b.x
+    return
+}
+
+pub func main = () {
+    var Vec<int> a = Vec<int>(1, 2)
+    var Vec<int> b = Vec<int>(3, 4)
+    addX(a, b)
+    return
+}
+`;
+	const parsed = parse(input);
+	expect(parsed.errors).toEqual([]);
 });

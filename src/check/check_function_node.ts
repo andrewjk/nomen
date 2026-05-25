@@ -7,6 +7,7 @@ import check_type_exists from "./utils/check_type_exists.ts";
 import clone_status from "./utils/clone_status.ts";
 
 function is_generic_func(func: FunctionNode, status: CheckStatus): boolean {
+	if (func.type_params.length > 0) return true;
 	for (const param of func.params) {
 		if (param.type.type_args?.length) continue;
 		const struct = status.structs.findLast((s) => s.name === param.type.name);

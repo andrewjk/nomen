@@ -179,7 +179,11 @@ function substitute_type(type: Type, substitution: Map<string, string>): Type {
 	const new_type = new Type(resolved_name, type.is_static, type.is_array, type.length);
 	new_type.is_ref = type.is_ref;
 	new_type.is_nullable = type.is_nullable;
-	new_type.type_args = type.type_args?.map((t) => substitute_type(t, substitution));
+	if (resolved_name !== type.name) {
+		new_type.type_args = undefined;
+	} else {
+		new_type.type_args = type.type_args?.map((t) => substitute_type(t, substitution));
+	}
 	new_type.func_params = type.func_params;
 	new_type.func_return_type = type.func_return_type
 		? substitute_type(type.func_return_type, substitution)
@@ -219,6 +223,13 @@ function specialize_function(
 				for (let j = 0; j < generic_struct.type_params.length; j++) {
 					if (j < arg_type.type_args.length) {
 						substitution.set(generic_struct.type_params[j], arg_type.type_args[j].name);
+					}
+				}
+				if (param.type.type_args?.length) {
+					for (let j = 0; j < param.type.type_args.length; j++) {
+						if (j < arg_type.type_args.length) {
+							substitution.set(param.type.type_args[j].name, arg_type.type_args[j].name);
+						}
 					}
 				}
 			} else if (arg_type.name !== param.type.name) {
@@ -281,10 +292,31 @@ function specialize_function(
 		cloned.return_type = substitute_type(cloned.return_type, substitution);
 	}
 
+	if (generic_func.type_params.length > 0) {
+		substitute_body_types(cloned.statements, substitution);
+	}
+
+	cloned.type_params = [];
+
 	const root = status.stack[0] as RootNode;
 	root.statements.push(cloned);
 
-	check_function_node(cloned, status);
+	const root_status: CheckStatus = {
+		stack: [root],
+		types: status.types.slice(),
+		values: [],
+		structs: status.structs,
+		traits: status.traits,
+		enums: status.enums,
+		bitsets: status.bitsets,
+		functions: status.functions,
+		allocations: [],
+		var_name_counter: status.var_name_counter,
+		type_params: [],
+		errors: status.errors,
+	};
+
+	check_function_node(cloned, root_status);
 
 	return status.functions.findLast((f) => f.name === specialized_name) || null;
 }
@@ -326,4 +358,142 @@ function infer_from_anon_struct(
 		}
 	}
 	return generic_struct.type_params.map((tp) => new Type(substitution.get(tp) || tp));
+}
+
+function substitute_body_types(statements: import("../nodes/BaseNode.ts").default[], substitution: Map<string, string>) {
+	for (const stmt of statements) {
+		substitute_node_types(stmt, substitution);
+	}
+}
+
+function substitute_node_types(node: import("../nodes/BaseNode.ts").default, substitution: Map<string, string>) {
+	if (!node) return;
+
+	switch (node.node_type) {
+		case "declare": {
+			const n = node as import("../nodes/DeclarationNode.ts").default;
+			n.type = substitute_type(n.type, substitution);
+			if (n.value) substitute_node_types(n.value, substitution);
+			if (n.func_return_type) n.func_return_type = substitute_type(n.func_return_type, substitution);
+			break;
+		}
+		case "return": {
+			const n = node as import("../nodes/ReturnNode.ts").default;
+			if (n.value) substitute_node_types(n.value, substitution);
+			if (n.type) n.type = substitute_type(n.type, substitution);
+			break;
+		}
+		case "let": {
+			const n = node as import("../nodes/LetNode.ts").default;
+			if (n.value) substitute_node_types(n.value, substitution);
+			if (n.type) n.type = substitute_type(n.type, substitution);
+			break;
+		}
+		case "assign": {
+			const n = node as import("../nodes/AssignmentNode.ts").default;
+			substitute_node_types(n.left_value, substitution);
+			substitute_node_types(n.right_value, substitution);
+			break;
+		}
+		case "if": {
+			const n = node as import("../nodes/IfElseNode.ts").default;
+			substitute_node_types(n.condition, substitution);
+			if (n.if_branch) substitute_body_types(n.if_branch.statements, substitution);
+			if (n.else_branch) substitute_body_types(n.else_branch.statements, substitution);
+			if (n.return_type) n.return_type = substitute_type(n.return_type, substitution);
+			break;
+		}
+		case "match": {
+			const n = node as import("../nodes/MatchNode.ts").default;
+			substitute_node_types(n.value, substitution);
+			for (const c of n.cases) {
+				substitute_node_types(c.match_value, substitution);
+				substitute_body_types(c.branch.statements, substitution);
+			}
+			if (n.else_branch) substitute_body_types(n.else_branch.statements, substitution);
+			if (n.return_type) n.return_type = substitute_type(n.return_type, substitution);
+			break;
+		}
+		case "switch": {
+			const n = node as import("../nodes/SwitchNode.ts").default;
+			for (const c of n.cases) {
+				substitute_node_types(c.condition, substitution);
+				substitute_body_types(c.branch.statements, substitution);
+			}
+			if (n.else_branch) substitute_body_types(n.else_branch.statements, substitution);
+			if (n.return_type) n.return_type = substitute_type(n.return_type, substitution);
+			break;
+		}
+		case "for": {
+			const n = node as import("../nodes/ForLoopNode.ts").default;
+			substitute_node_types(n.item, substitution);
+			substitute_node_types(n.list, substitution);
+			substitute_body_types(n.statements, substitution);
+			if (n.update) substitute_node_types(n.update, substitution);
+			break;
+		}
+		case "while": {
+			const n = node as import("../nodes/WhileLoopNode.ts").default;
+			substitute_node_types(n.condition, substitution);
+			substitute_body_types(n.statements, substitution);
+			if (n.update) substitute_node_types(n.update, substitution);
+			break;
+		}
+		case "func_call": {
+			const n = node as FunctionCallNode;
+			for (const p of n.params) substitute_node_types(p, substitution);
+			if (n.type) n.type = substitute_type(n.type, substitution);
+			break;
+		}
+		case "access": {
+			const n = node as import("../nodes/AccessNode.ts").default;
+			substitute_node_types(n.target, substitution);
+			substitute_node_types(n.access, substitution);
+			break;
+		}
+		case "access_func": {
+			const n = node as import("../nodes/AccessFunctionCallNode.ts").default;
+			for (const p of n.params) substitute_node_types(p, substitution);
+			if (n.type) n.type = substitute_type(n.type, substitution);
+			break;
+		}
+		case "access_field": {
+			const n = node as import("../nodes/AccessFieldNode.ts").default;
+			if (n.type) n.type = substitute_type(n.type, substitution);
+			break;
+		}
+		case "access_index": {
+			const n = node as import("../nodes/AccessIndexNode.ts").default;
+			substitute_node_types(n.index, substitution);
+			if (n.type) n.type = substitute_type(n.type, substitution);
+			break;
+		}
+		case "op": {
+			const n = node as import("../nodes/OperationNode.ts").default;
+			substitute_node_types(n.left_value, substitution);
+			substitute_node_types(n.right_value, substitution);
+			if (n.type) n.type = substitute_type(n.type, substitution);
+			break;
+		}
+		case "grouped": {
+			const n = node as import("../nodes/GroupedNode.ts").default;
+			substitute_node_types(n.value, substitution);
+			break;
+		}
+		case "cast": {
+			const n = node as import("../nodes/CastNode.ts").default;
+			substitute_node_types(n.value, substitution);
+			n.target_type = substitute_type(n.target_type, substitution);
+			if (n.type) n.type = substitute_type(n.type, substitution);
+			break;
+		}
+		case "value":
+		case "break":
+		case "continue":
+		case "panic":
+		case "todo":
+		case "raw":
+		case "import":
+			break;
+	}
 }

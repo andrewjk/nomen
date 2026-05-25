@@ -36,6 +36,14 @@ export default function parse_function(
 	}
 	const func = new FunctionNode(start, visibility, name, return_type);
 
+	if (accept("<", status)) {
+		func.type_params.push(consume(status));
+		while (accept(",", status)) {
+			func.type_params.push(consume(status));
+		}
+		expect(">", status);
+	}
+
 	if (expect("=", status) && expect("(", status)) {
 		const parent = status.stack.at(-1)!;
 
