@@ -4,6 +4,7 @@ import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessIndexNode from "../nodes/AccessIndexNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
+import type BaseNode from "../nodes/BaseNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_node from "./build_node.ts";
@@ -21,6 +22,101 @@ import {
 	get_enum_size,
 } from "./utils/struct_layout.ts";
 import { get_field_offset, get_struct_size } from "./utils/struct_layout.ts";
+
+export function emit_address_of(node: BaseNode, status: BuildStatus) {
+	if (node.node_type === "value") {
+		const name = (node as ValueNode).value;
+		if (is_local_ref_var(name, status)) {
+			emit_deref_var_address(status, "x0", name);
+		} else {
+			emit_var_address(status, "x0", name);
+		}
+	} else if (node.node_type === "access") {
+		const access = node as AccessNode;
+		if (access.access.node_type === "access_index") {
+			const access_index = access.access as AccessIndexNode;
+			const target_type = type_from_value_node(access.target);
+			const struct_type = status.structs.find(
+				(s) => s.name === target_type.name && !s.is_simple_type,
+			);
+			const element_size = target_type.name
+				? struct_type
+					? get_struct_size(target_type.name, status)
+					: aarch64_size(target_type.name)
+				: 8;
+
+			if (access.target.node_type === "value") {
+				const name = (access.target as ValueNode).value;
+				const paramReg = get_param_reg(name, status);
+				if (paramReg) {
+					if (paramReg !== "x0") {
+						status.code += `mov x0, ${paramReg}\n`;
+					}
+				} else {
+					emit_var_address(status, "x0", name);
+				}
+			} else {
+				emit_address_of(access.target, status);
+				if (!status.code.endsWith("\n")) {
+					status.code += "\n";
+				}
+			}
+
+			if (
+				access_index.index.node_type === "value" &&
+				/^(\+|-)*\d+$/.test((access_index.index as ValueNode).value)
+			) {
+				const offset = parseInt((access_index.index as ValueNode).value) * element_size;
+				status.code += `add x0, x0, #${offset}\n`;
+			} else {
+				status.code += `mov x3, x0\n`;
+				build_node(access_index.index, status);
+				if (!status.code.endsWith("\n")) {
+					status.code += "\n";
+				}
+				status.code += `mov x1, x0\n`;
+				status.code += `mov x2, #${element_size}\n`;
+				status.code += `mul x1, x1, x2\n`;
+				status.code += `add x0, x3, x1\n`;
+			}
+		} else if (access.access.node_type === "access_field") {
+			const access_field = access.access as AccessFieldNode;
+			const target_type = type_from_value_node(access.target);
+			const offset = get_field_offset(target_type.name, access_field.name, status);
+			if (access.target.node_type === "value") {
+				const name = (access.target as ValueNode).value;
+				const paramReg = get_param_reg(name, status);
+				if (paramReg) {
+					if (paramReg !== "x0") {
+						status.code += `mov x0, ${paramReg}\n`;
+					}
+				} else if (is_local_ref_var(name, status)) {
+					emit_deref_var_address(status, "x0", name);
+				} else {
+					emit_var_address(status, "x0", name);
+				}
+			} else {
+				emit_address_of(access.target, status);
+				if (!status.code.endsWith("\n")) {
+					status.code += "\n";
+				}
+			}
+			if (offset) {
+				status.code += `add x0, x0, #${offset}\n`;
+			}
+		} else {
+			build_node(node, status);
+			if (!status.code.endsWith("\n")) {
+				status.code += "\n";
+			}
+		}
+	} else {
+		build_node(node, status);
+		if (!status.code.endsWith("\n")) {
+			status.code += "\n";
+		}
+	}
+}
 
 let access_temp_counter = 0;
 
@@ -467,19 +563,7 @@ function build_access_method(
 		const param_type = (param as any).type?.name || "";
 		const is_struct = is_struct_type(param_type, status);
 		if (is_ref_param) {
-			if (param.node_type === "value") {
-				const name = (param as ValueNode).value;
-				if (is_local_ref_var(name, status)) {
-					emit_deref_var_address(status, "x0", name);
-				} else {
-					emit_var_address(status, "x0", name);
-				}
-			} else {
-				build_node(param, status);
-				if (!status.code.endsWith("\n")) {
-					status.code += "\n";
-				}
-			}
+			emit_address_of(param, status);
 		} else if (is_struct) {
 			if (param.node_type === "value") {
 				const name = (param as ValueNode).value;

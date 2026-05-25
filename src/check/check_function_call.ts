@@ -93,7 +93,7 @@ export default function check_function_call(
 			func_param.type.length = param_type.length;
 		}
 
-		if (param.node_type !== "value") {
+		if (param.node_type !== "value" && !has_ref_keyword) {
 			const declaration_name = `_param_${status.var_name_counter.value++}`;
 			status.allocations.push(
 				new DeclarationNode(param.start, "priv", "const", declaration_name, param_type, param),

@@ -2,11 +2,16 @@ import type BuildStatus from "../build/BuildStatus.ts";
 import TodoNode from "../nodes/TodoNode.ts";
 
 export default function build_todo_node(node: TodoNode, status: BuildStatus) {
-	// TODO: Unwind etc
+	const msg = node.message + "\\n";
 	const label = `_str_todo_${node.message.replace(/[^a-zA-Z0-9]/g, "_")}`;
-	status.strings!.set(label, `"${node.message}\\n"`);
-	status.code += `adr x0, ${label}\n`;
-	status.code += `bl printf\n`;
+	status.strings!.set(label, `"${msg}"`);
+	const len = msg.length - 1;
+	status.code += `mov x0, #2\n`;
+	status.code += `adr x1, ${label}\n`;
+	status.code += `mov x2, #${len}\n`;
+	status.code += `mov x16, #4\n`;
+	status.code += `svc #0x80\n`;
 	status.code += `mov x0, #1\n`;
-	status.code += `bl exit\n`;
+	status.code += `mov x16, #1\n`;
+	status.code += `svc #0x80\n`;
 }

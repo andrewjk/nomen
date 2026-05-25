@@ -1,8 +1,8 @@
-import { is_returning_node } from "../nodes/check_node_type.ts";
-import type ReturningNode from "../nodes/ReturningNode.ts";
 import BranchNode from "../nodes/BranchNode.ts";
+import { is_returning_node } from "../nodes/check_node_type.ts";
 import LetNode from "../nodes/LetNode.ts";
 import MatchNode from "../nodes/MatchNode.ts";
+import type ReturningNode from "../nodes/ReturningNode.ts";
 import ReturnNode from "../nodes/ReturnNode.ts";
 import parse_expression from "./parse_expression.ts";
 import parse_statement from "./parse_statement.ts";

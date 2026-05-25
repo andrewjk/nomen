@@ -3,6 +3,7 @@ import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
+import { emit_address_of } from "./build_access_node.ts";
 import build_node from "./build_node.ts";
 import {
 	allocate_stack_space,
@@ -136,19 +137,7 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			} else if (is_struct_type(param_type, status) || is_enum_with_data_type(param_type, status)) {
 				emit_struct_address(node.params[i], status);
 			} else if (is_ref_param) {
-				if (param.node_type === "value") {
-					const name = (param as ValueNode).value;
-					if (is_local_ref_var(name, status)) {
-						emit_deref_var_address(status, "x0", name);
-					} else {
-						emit_var_address(status, "x0", name);
-					}
-				} else {
-					build_node(node.params[i], status);
-					if (!status.code.endsWith("\n")) {
-						status.code += "\n";
-					}
-				}
+				emit_address_of(node.params[i], status);
 			} else {
 				build_node(node.params[i], status);
 			}
