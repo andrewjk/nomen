@@ -1,4 +1,7 @@
+import AnonStructNode from "../nodes/AnonStructNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
+import FunctionCallNode from "../nodes/FunctionCallNode.ts";
+import Type from "../nodes/Type.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
@@ -32,6 +35,8 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			return;
 		} else if (decl.value) {
 			status.stack.push(decl);
+
+			convert_anon_struct(decl, status);
 
 			const old_expected_type = status.expected_type;
 			status.expected_type = decl.type;
@@ -78,6 +83,8 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 		if (decl.value) {
 			status.stack.push(decl);
 
+			convert_anon_struct(decl, status);
+
 			const old_expected_type = status.expected_type;
 			status.expected_type = decl.type;
 			const result = check_node(decl.value, status);
@@ -116,4 +123,31 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			is_null: decl.value?.node_type === "value" && (decl.value as any).value === "null",
 		});
 	}
+}
+
+function convert_anon_struct(decl: DeclarationNode, status: CheckStatus) {
+	if (decl.value?.node_type !== "anon_struct") return;
+	const struct = status.structs.findLast((s) => s.name === decl.type.name);
+	if (!struct) return;
+	const anon = decl.value as AnonStructNode;
+	const init_func = struct.functions.find((f) => f.name === "init");
+	if (!init_func) return;
+	const args: import("../nodes/BaseNode.ts").default[] = [];
+	for (const init_param of init_func.params) {
+		const field = anon.fields.find((f) => f.name === init_param.name);
+		if (field) {
+			args.push(field.value);
+		} else if (init_param.default_value) {
+			args.push(init_param.default_value);
+		}
+	}
+	for (const field of anon.fields) {
+		if (!init_func.params.find((p) => p.name === field.name)) {
+			return;
+		}
+	}
+	const constructor = new FunctionCallNode(anon.start, struct.name);
+	constructor.params = args;
+	constructor.type = new Type(struct.name);
+	decl.value = constructor;
 }

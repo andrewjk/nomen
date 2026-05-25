@@ -2,6 +2,7 @@ import AccessFieldNode from "../../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../../nodes/AccessFunctionCallNode.ts";
 import AccessIndexNode from "../../nodes/AccessIndexNode.ts";
 import AccessNode from "../../nodes/AccessNode.ts";
+import AnonStructNode from "../../nodes/AnonStructNode.ts";
 import ArrayValuesNode from "../../nodes/ArrayValuesNode.ts";
 import BaseNode from "../../nodes/BaseNode.ts";
 import CastNode from "../../nodes/CastNode.ts";
@@ -46,6 +47,9 @@ export default function type_from_value_node(node: BaseNode): Type {
 		}
 		case "range": {
 			return (node as RangeNode).type;
+		}
+		case "anon_struct": {
+			return (node as AnonStructNode).type || new Type("");
 		}
 	}
 	return new Type("");

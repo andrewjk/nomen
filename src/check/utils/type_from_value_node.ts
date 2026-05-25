@@ -69,6 +69,9 @@ export default function type_from_value_node(node: BaseNode, status: CheckStatus
 		case "range": {
 			return (node as RangeNode).type;
 		}
+		case "anon_struct": {
+			return (node as import("../../nodes/AnonStructNode.ts").default).type || new Type("");
+		}
 	}
 	return new Type("");
 }

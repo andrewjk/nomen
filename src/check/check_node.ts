@@ -1,5 +1,6 @@
 import add_error from "../add_error.ts";
 import AccessNode from "../nodes/AccessNode.ts";
+import AnonStructNode from "../nodes/AnonStructNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import AssignmentNode from "../nodes/AssignmentNode.ts";
 import BaseNode from "../nodes/BaseNode.ts";
@@ -162,6 +163,13 @@ export default function check_node(node: BaseNode, status: CheckStatus): boolean
 		}
 		case "raw": {
 			// Anything can go in here
+			break;
+		}
+		case "anon_struct": {
+			const anon = node as AnonStructNode;
+			for (const field of anon.fields) {
+				result = check_node(field.value, status) && result;
+			}
 			break;
 		}
 		default: {

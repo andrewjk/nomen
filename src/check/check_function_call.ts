@@ -1,5 +1,7 @@
 import add_error from "../add_error.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
+import AnonStructNode from "../nodes/AnonStructNode.ts";
+import type BaseNode from "../nodes/BaseNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
@@ -57,6 +59,48 @@ export default function check_function_call(
 	status.stack.push(node);
 
 	const self_offset = func.params[0]?.is_self_param ? 1 : 0;
+
+	for (let i = 0; i < node.params.length; i++) {
+		const param = node.params[i];
+		if (param.node_type !== "anon_struct") continue;
+		const func_param = func.params[i + self_offset];
+		if (!func_param) continue;
+		const struct = status.structs.findLast((s) => s.name === func_param.type.name);
+		if (!struct) {
+			add_error(status, `Unknown struct type: ${func_param.type.name}`, param.start);
+			continue;
+		}
+		const anon = param as AnonStructNode;
+		const init_func = struct.functions.find((f) => f.name === "init");
+		if (!init_func) {
+			add_error(status, `Struct ${struct.name} has no init`, param.start);
+			continue;
+		}
+		const args: BaseNode[] = [];
+		for (const init_param of init_func.params) {
+			const field = anon.fields.find((f) => f.name === init_param.name);
+			if (field) {
+				args.push(field.value);
+			} else if (init_param.default_value) {
+				args.push(init_param.default_value);
+			} else {
+				add_error(status, `Missing field '${init_param.name}' in anonymous struct`, param.start);
+			}
+		}
+		for (const field of anon.fields) {
+			if (!init_func.params.find((p) => p.name === field.name)) {
+				add_error(
+					status,
+					`Unknown field '${field.name}' in anonymous struct for ${struct.name}`,
+					param.start,
+				);
+			}
+		}
+		const constructor = new FunctionCallNode(param.start, struct.name);
+		constructor.params = args;
+		constructor.type = new Type(struct.name);
+		node.params.splice(i, 1, constructor);
+	}
 
 	for (let [i, param] of node.params.entries()) {
 		if (!check_node(param, status)) {

@@ -32,4 +32,5 @@ export type NodeType =
 	| "todo"
 	| "return"
 	| "let"
-	| "raw";
+	| "raw"
+	| "anon_struct";

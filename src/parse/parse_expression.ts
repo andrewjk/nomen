@@ -1,5 +1,6 @@
 import AccessIndexNode from "../nodes/AccessIndexNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
+import AnonStructNode from "../nodes/AnonStructNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import AssignmentNode from "../nodes/AssignmentNode.ts";
 import BaseNode from "../nodes/BaseNode.ts";
@@ -57,6 +58,19 @@ function restructure_op(
 	return new OperationNode(start, current_op, current_node, expression);
 }
 
+function parse_anon_struct(start: number, status: ParseStatus): AnonStructNode {
+	const fields: { name: string; value: BaseNode }[] = [];
+	while (peek_current(status) !== "]") {
+		const name = consume(status);
+		expect("=", status);
+		const value = parse_expression(status);
+		fields.push({ name, value });
+		if (!accept(",", status)) break;
+	}
+	expect("]", status);
+	return new AnonStructNode(start, fields);
+}
+
 function parse_primary(status: ParseStatus, value: string): BaseNode {
 	const start = get_index(status);
 	switch (value) {
@@ -76,6 +90,12 @@ function parse_primary(status: ParseStatus, value: string): BaseNode {
 			return new ValueNode(start, `.${name}`);
 		}
 		case "[": {
+			const next = status.tokens[status.i + 1]?.value;
+			const after_next = status.tokens[status.i + 2]?.value;
+			if (next && after_next === "=") {
+				consume(status);
+				return parse_anon_struct(start, status);
+			}
 			consume(status);
 			const node = new ArrayValuesNode(start);
 			if (peek_current(status) !== "]") {
@@ -98,6 +118,10 @@ function parse_primary(status: ParseStatus, value: string): BaseNode {
 		}
 		case "switch": {
 			return parse_switch(status);
+		}
+		case "{": {
+			const v = consume(status);
+			return new ValueNode(start, v);
 		}
 		default: {
 			if (value && value.startsWith('"') && (value.length === 1 || !value.endsWith('"'))) {
@@ -195,6 +219,7 @@ export default function parse_expression(status: ParseStatus): BaseNode {
 						break;
 					}
 				}
+
 				consume(status);
 				const lt_expr = parse_expression(status);
 				if (is_operation_node(lt_expr)) {

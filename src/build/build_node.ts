@@ -1,4 +1,5 @@
 import AccessNode from "../nodes/AccessNode.ts";
+import AnonStructNode from "../nodes/AnonStructNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import AssignmentNode from "../nodes/AssignmentNode.ts";
 import BaseNode from "../nodes/BaseNode.ts";
@@ -181,6 +182,13 @@ export default function build_node(node: BaseNode, status: BuildStatus, with_sem
 		case "raw": {
 			build_raw_node(node as RawNode, status);
 			with_semicolon = false;
+			break;
+		}
+		case "anon_struct": {
+			const anon = node as AnonStructNode;
+			for (const field of anon.fields) {
+				build_node(field.value, status);
+			}
 			break;
 		}
 		default: {
