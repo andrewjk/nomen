@@ -58,6 +58,18 @@ function restructure_op(
 	return new OperationNode(start, current_op, current_node, expression);
 }
 
+function find_matching_close(tokens: { value: string }[], start: number): number {
+	let depth = 0;
+	for (let i = start; i < tokens.length; i++) {
+		if (tokens[i].value === "<") depth++;
+		else if (tokens[i].value === ">") {
+			depth--;
+			if (depth === 0) return i;
+		}
+	}
+	return -1;
+}
+
 function parse_anon_struct(start: number, status: ParseStatus): AnonStructNode {
 	const fields: { name: string; value: BaseNode }[] = [];
 	while (peek_current(status) !== "]") {
@@ -197,9 +209,12 @@ export default function parse_expression(status: ParseStatus): BaseNode {
 			}
 			case "<": {
 				if (node.node_type === "value") {
-					const next = status.tokens[status.i + 1]?.value;
-					const after_next = status.tokens[status.i + 2]?.value;
-					if (next && after_next === ">" && status.tokens[status.i + 3]?.value === "(") {
+					const close_idx = find_matching_close(status.tokens, status.i);
+					if (
+						close_idx !== -1 &&
+						close_idx + 1 < status.tokens.length &&
+						status.tokens[close_idx + 1]?.value === "("
+					) {
 						accept("<", status);
 						const type_args = [parse_type(status)];
 						while (peek_current(status) === ",") {

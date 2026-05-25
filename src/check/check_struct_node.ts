@@ -48,6 +48,7 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 	status.values.length = values_length_before_fields;
 
 	struct.privates_visible = true;
+	struct.is_generic = struct.type_params.length > 0;
 
 	status.types.push(struct.name);
 	status.structs.push(struct);

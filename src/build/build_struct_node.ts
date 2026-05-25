@@ -6,6 +6,8 @@ import type BuildStatus from "./BuildStatus.ts";
 import c_type from "./utils/c_type.ts";
 
 export default function build_struct_node(node: StructNode, status: BuildStatus) {
+	if (node.is_generic) return;
+
 	// If it's an inbuilt type, only build its functions
 	// That way we can add e.g. traits like Stringable to ints
 	if (node.is_simple_type) {

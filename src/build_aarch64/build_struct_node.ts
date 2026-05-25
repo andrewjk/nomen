@@ -7,6 +7,8 @@ import { allocate_stack_space } from "./utils/stack_var.ts";
 import { get_field_offset } from "./utils/struct_layout.ts";
 
 export default function build_struct_node(node: StructNode, status: BuildStatus) {
+	if (node.is_generic) return;
+
 	const is_nested = !!status.function_return_label;
 
 	let old_code: string | undefined;

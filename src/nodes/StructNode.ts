@@ -13,6 +13,7 @@ export default class StructNode extends BaseNode {
 	type_params: string[];
 	privates_visible: boolean;
 	is_simple_type: boolean;
+	is_generic?: boolean;
 
 	constructor(
 		start: number,
