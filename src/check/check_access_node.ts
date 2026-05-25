@@ -47,7 +47,12 @@ function check_access_field_node(
 	node: AccessFieldNode,
 	status: CheckStatus,
 ): boolean {
-	const struct = status.structs.find((s) => s.name === target_type.name);
+	let struct = status.structs.find((s) => s.name === target_type.name);
+	if (struct?.is_generic && target_type.type_args?.length) {
+		const mono_name =
+			target_type.name + "_" + target_type.type_args.map((t) => t.name).join("_");
+		struct = status.structs.find((s) => s.name === mono_name) || struct;
+	}
 	let field = struct?.fields.find((f) => f.name === node.name);
 	if (!field) {
 		// Are we accessing a field in a trait?

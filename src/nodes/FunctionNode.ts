@@ -28,6 +28,8 @@ export default class FunctionNode extends BaseNode implements BlockNode, Returni
 	has_return?: boolean;
 	return_type_start?: number;
 	is_static?: boolean;
+	is_generic?: boolean;
+	checked?: boolean;
 
 	constructor(
 		start: number,

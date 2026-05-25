@@ -12,6 +12,7 @@ import type CheckStatus from "./CheckStatus.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
+import { monomorphize } from "./check_function_call_node.ts";
 
 export default function check_function_call(
 	node: FunctionCallNode | AccessFunctionCallNode,
@@ -65,12 +66,39 @@ export default function check_function_call(
 		if (param.node_type !== "anon_struct") continue;
 		const func_param = func.params[i + self_offset];
 		if (!func_param) continue;
-		const struct = status.structs.findLast((s) => s.name === func_param.type.name);
+		let struct = status.structs.findLast((s) => s.name === func_param.type.name);
 		if (!struct) {
 			add_error(status, `Unknown struct type: ${func_param.type.name}`, param.start);
 			continue;
 		}
 		const anon = param as AnonStructNode;
+
+		if (struct.is_generic && !func_param.type.type_args?.length) {
+			const type_map = new Map<string, Type>();
+			for (const af of anon.fields) {
+				if (!check_node(af.value, status)) continue;
+				const val_type = type_from_value_node(af.value, status);
+				const struct_field = struct.fields.find((f) => f.name === af.name);
+				if (struct_field && struct.type_params.includes(struct_field.type.name)) {
+					if (!type_map.has(struct_field.type.name)) {
+						type_map.set(struct_field.type.name, val_type);
+					}
+				}
+			}
+			if (type_map.size > 0) {
+				const inferred_args = struct.type_params.map((tp) => type_map.get(tp) || new Type(tp));
+				const mono_name =
+					struct.name + "_" + inferred_args.map((t) => t.name).join("_");
+				let mono = status.structs.find((s) => s.name === mono_name);
+				if (!mono) {
+					mono = monomorphize(struct, inferred_args, status) ?? undefined;
+				}
+				if (mono) {
+					struct = mono;
+				}
+			}
+		}
+
 		const init_func = struct.functions.find((f) => f.name === "init");
 		if (!init_func) {
 			add_error(status, `Struct ${struct.name} has no init`, param.start);

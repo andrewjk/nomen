@@ -1,5 +1,6 @@
 import add_error from "../add_error.ts";
 import built_in_types from "../built_in_types.ts";
+import clone_node from "../nodes/clone_node.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
@@ -7,8 +8,11 @@ import ParameterNode from "../nodes/ParameterNode.ts";
 import RootNode from "../nodes/RootNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import Type from "../nodes/Type.ts";
+import type_from_value from "./utils/type_from_value.ts";
 import check_function_call from "./check_function_call.ts";
+import check_function_node from "./check_function_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
+import type_from_value_node from "./utils/type_from_value_node.ts";
 
 export default function check_function_call_node(
 	node: FunctionCallNode,
@@ -80,10 +84,19 @@ export default function check_function_call_node(
 		return false;
 	}
 
+	if (func.is_generic) {
+		const specialized = specialize_function(func, node, status);
+		if (specialized) {
+			node.name = specialized.name;
+			return check_function_call(node, status, specialized);
+		}
+		return false;
+	}
+
 	return check_function_call(node, status, func);
 }
 
-function monomorphize(
+export function monomorphize(
 	generic_struct: StructNode,
 	type_args: Type[],
 	status: CheckStatus,
@@ -172,4 +185,145 @@ function substitute_type(type: Type, substitution: Map<string, string>): Type {
 		? substitute_type(type.func_return_type, substitution)
 		: undefined;
 	return new_type;
+}
+
+function specialize_function(
+	generic_func: FunctionNode,
+	call_node: FunctionCallNode,
+	status: CheckStatus,
+): FunctionNode | null {
+	const substitution = new Map<string, string>();
+	const suffix_parts: string[] = [];
+
+	for (let i = 0; i < generic_func.params.length; i++) {
+		const param = generic_func.params[i];
+		const generic_struct = status.structs.findLast((s) => s.name === param.type.name);
+		if (!generic_struct?.is_generic) continue;
+
+		const arg = call_node.params[i];
+		if (!arg) continue;
+
+		let type_args_for_struct: Type[] = [];
+
+		if (arg.node_type === "anon_struct") {
+			type_args_for_struct = infer_from_anon_struct(
+				arg as import("../nodes/AnonStructNode.ts").default,
+				generic_struct,
+				status,
+				substitution,
+			);
+		} else {
+			const arg_type = infer_arg_type(arg, status);
+			if (arg_type.type_args?.length) {
+				type_args_for_struct = arg_type.type_args;
+				for (let j = 0; j < generic_struct.type_params.length; j++) {
+					if (j < arg_type.type_args.length) {
+						substitution.set(generic_struct.type_params[j], arg_type.type_args[j].name);
+					}
+				}
+			} else if (arg_type.name !== param.type.name) {
+				const mono_struct = status.structs.findLast((s) => s.name === arg_type.name);
+				if (mono_struct) {
+					for (let j = 0; j < generic_struct.type_params.length; j++) {
+						const field = mono_struct.fields[j];
+						if (field) {
+							substitution.set(generic_struct.type_params[j], field.type.name);
+						}
+					}
+				}
+			}
+		}
+
+		if (type_args_for_struct.length === 0) {
+			type_args_for_struct = generic_struct.type_params.map(
+				(tp) => new Type(substitution.get(tp) || tp),
+			);
+		}
+		const mono_name =
+			generic_struct.name + "_" + type_args_for_struct.map((t) => t.name).join("_");
+		substitution.set(generic_struct.name, mono_name);
+		suffix_parts.push(mono_name);
+	}
+
+	if (substitution.size === 0) {
+		add_error(
+			status,
+			`Cannot infer type arguments for generic function: ${generic_func.name}`,
+			call_node.start,
+		);
+		return null;
+	}
+
+	for (let i = 0; i < generic_func.params.length; i++) {
+		const param = generic_func.params[i];
+		const generic_struct = status.structs.findLast((s) => s.name === param.type.name);
+		if (!generic_struct?.is_generic) continue;
+		const type_args = generic_struct.type_params.map((tp) => {
+			const resolved = substitution.get(tp);
+			return new Type(resolved || tp);
+		});
+		monomorphize(generic_struct, type_args, status);
+	}
+
+	const specialized_name = generic_func.name + "_" + suffix_parts.join("_");
+
+	const existing = status.functions.findLast((f) => f.name === specialized_name);
+	if (existing) return existing;
+
+	const cloned = clone_node(generic_func) as FunctionNode;
+	cloned.name = specialized_name;
+	cloned.is_generic = false;
+
+	for (const param of cloned.params) {
+		param.type = substitute_type(param.type, substitution);
+	}
+	if (cloned.return_type.name) {
+		cloned.return_type = substitute_type(cloned.return_type, substitution);
+	}
+
+	const root = status.stack[0] as RootNode;
+	root.statements.push(cloned);
+
+	check_function_node(cloned, status);
+
+	return status.functions.findLast((f) => f.name === specialized_name) || null;
+}
+
+function infer_arg_type(node: import("../nodes/BaseNode.ts").default, status: CheckStatus): Type {
+	if (node.node_type === "value") {
+		const vn = node as import("../nodes/ValueNode.ts").default;
+		if (vn.type?.name) return vn.type;
+		return type_from_value(vn.value, status);
+	}
+	if (node.node_type === "func_call") {
+		return (node as FunctionCallNode).type;
+	}
+	if (node.node_type === "access") {
+		const access = node as import("../nodes/AccessNode.ts").default;
+		const inner = access.access;
+		if (inner.node_type === "access_field") {
+			return (inner as import("../nodes/AccessFieldNode.ts").default).type || new Type("");
+		}
+	}
+	return new Type("");
+}
+
+function infer_from_anon_struct(
+	anon: import("../nodes/AnonStructNode.ts").default,
+	generic_struct: StructNode,
+	status: CheckStatus,
+	substitution: Map<string, string>,
+): Type[] {
+	for (const field of anon.fields) {
+		const struct_field = generic_struct.fields.find((f) => f.name === field.name);
+		if (!struct_field) continue;
+		const type_param_name = struct_field.type.name;
+		if (!generic_struct.type_params.includes(type_param_name)) continue;
+		if (substitution.has(type_param_name)) continue;
+		const val_type = infer_arg_type(field.value, status);
+		if (val_type.name) {
+			substitution.set(type_param_name, val_type.name);
+		}
+	}
+	return generic_struct.type_params.map((tp) => new Type(substitution.get(tp) || tp));
 }

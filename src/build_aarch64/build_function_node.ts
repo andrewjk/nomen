@@ -11,6 +11,8 @@ export function reset_label_counter() {
 }
 
 export default function build_function_node(node: FunctionNode, status: BuildStatus) {
+	if (node.is_generic) return;
+
 	const old_scoped_declarations = status.scoped_declarations;
 	status.scoped_declarations = [];
 
