@@ -9,13 +9,10 @@ catalogs:
     vite-plus:
       specifier: ^0.1.22
       version: 0.1.22
-    vitest:
-      specifier: npm:@voidzero-dev/vite-plus-test@^0.1.22
-      version: 0.1.22
 
 overrides:
   vite: npm:@voidzero-dev/vite-plus-core@latest
-  vitest: npm:@voidzero-dev/vite-plus-test@latest
+  vitest: npm:@voidzero-dev/vite-plus-test@^0.1.22
 
 importers:
 
@@ -34,7 +31,7 @@ importers:
         specifier: 'catalog:'
         version: 0.1.22(@types/node@25.9.1)(esbuild@0.27.7)(typescript@6.0.3)(vite@7.3.1(@types/node@25.9.1)(lightningcss@1.32.0))
       vitest:
-        specifier: 'catalog:'
+        specifier: npm:@voidzero-dev/vite-plus-test@^0.1.22
         version: '@voidzero-dev/vite-plus-test@0.1.22(@types/node@25.9.1)(esbuild@0.27.7)(typescript@6.0.3)(vite@7.3.1(@types/node@25.9.1)(lightningcss@1.32.0))'
 
 packages:
