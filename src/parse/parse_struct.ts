@@ -13,12 +13,14 @@ import get_index from "./utils/get_index.ts";
 export default function parse_struct(
 	visibility: "inherit" | "pub" | "mod" | "priv",
 	status: ParseStatus,
+	is_class = false,
 ) {
 	const start = get_index(status);
 	accept(visibility, status);
-	accept("struct", status);
+	accept(is_class ? "class" : "struct", status);
 	const name = consume(status);
 	const struct = new StructNode(start, visibility, name);
+	if (is_class) struct.is_class = true;
 
 	if (accept("<", status)) {
 		struct.type_params.push(consume(status));

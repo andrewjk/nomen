@@ -39,6 +39,10 @@ export default function parse_visibility(visibility: "pub" | "priv", status: Par
 			parse_struct(visibility, status);
 			break;
 		}
+		case "class": {
+			parse_struct(visibility, status, true);
+			break;
+		}
 		case "enum": {
 			parse_enum(visibility, status);
 			break;

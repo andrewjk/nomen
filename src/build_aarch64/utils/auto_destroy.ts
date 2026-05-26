@@ -14,13 +14,26 @@ export function mark_heap_string(status: BuildStatus, name: string) {
 	}
 }
 
-export function track_struct_decl(status: BuildStatus, name: string, type_name: string, type_args?: Type[]) {
+export function track_struct_decl(
+	status: BuildStatus,
+	name: string,
+	type_name: string,
+	type_args?: Type[],
+) {
 	if (status.heap_cleanup_stack?.length) {
-		status.heap_cleanup_stack[status.heap_cleanup_stack.length - 1].struct_decls.push({ name, type_name, type_args });
+		status.heap_cleanup_stack[status.heap_cleanup_stack.length - 1].struct_decls.push({
+			name,
+			type_name,
+			type_args,
+		});
 	}
 }
 
-export function resolve_struct_name(type_name: string, type_args?: Type[], status?: BuildStatus): string {
+export function resolve_struct_name(
+	type_name: string,
+	type_args?: Type[],
+	status?: BuildStatus,
+): string {
 	if (type_args?.length) {
 		const mono_name = type_name + "_" + type_args.map((t) => t.name).join("_");
 		if (status?.structs.find((s) => s.name === mono_name)) return mono_name;
@@ -57,7 +70,8 @@ export function emit_destroy_for_decl(
 	}
 
 	const resolved_name = resolve_struct_name(decl_type_name, type_args, status);
-	const struct_type = is_struct_type(resolved_name, status) || is_struct_type(decl_type_name, status);
+	const struct_type =
+		is_struct_type(resolved_name, status) || is_struct_type(decl_type_name, status);
 	if (!struct_type) return;
 
 	if (has_destroy(struct_type)) {
@@ -69,7 +83,18 @@ export function emit_destroy_for_decl(
 		status.code += `bl ${resolved_name}_destroy\n`;
 	}
 
-	emit_field_destroys(status, struct_type, decl_name, addr_offset);
+	if (struct_type.is_class) {
+		if (status.heap_strings?.has(decl_name)) {
+			if (addr_offset !== undefined) {
+				status.code += `add x0, x0, #${addr_offset}\n`;
+			} else {
+				emit_var_load(status, "x0", decl_name, 8);
+			}
+			emit_free(status);
+		}
+	} else {
+		emit_field_destroys(status, struct_type, decl_name, addr_offset);
+	}
 }
 
 function emit_field_destroys(
@@ -177,12 +202,20 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 		}
 		const struct_type = is_struct_type(decl.type.name, status);
 		if (!struct_type) continue;
-		if (!has_destroy(struct_type) && !has_struct_fields_with_destroy(struct_type, status)) continue;
+		if (
+			!has_destroy(struct_type) &&
+			!has_struct_fields_with_destroy(struct_type, status) &&
+			!struct_type.is_class
+		)
+			continue;
 		emit_destroy_for_decl(status, decl.name, decl.type.name, undefined, decl.type.type_args);
 	}
 }
 
-export function has_struct_fields_with_destroy(struct_type: StructNode, status: BuildStatus): boolean {
+export function has_struct_fields_with_destroy(
+	struct_type: StructNode,
+	status: BuildStatus,
+): boolean {
 	for (const field of struct_type.fields) {
 		if (field.type.is_ref) continue;
 		const field_struct = is_struct_type(field.type.name, status);

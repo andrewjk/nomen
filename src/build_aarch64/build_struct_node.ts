@@ -341,6 +341,10 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 			if (param.type.is_ref) {
 				status.function_ref_params!.add(param.name);
 			}
+			const param_struct = status.structs.find((s) => s.name === param.type.name && s.is_class);
+			if (param_struct) {
+				status.function_ref_params!.add(param.name);
+			}
 		}
 
 		status.code += `sub sp, sp, #${stack_placeholder}\n`;

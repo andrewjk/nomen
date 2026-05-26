@@ -106,6 +106,10 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 			if (param.type.is_ref) {
 				status.function_ref_params!.add(param.name);
 			}
+			const param_struct = status.structs.find((s) => s.name === param.type.name && s.is_class);
+			if (param_struct) {
+				status.function_ref_params!.add(param.name);
+			}
 		}
 	}
 

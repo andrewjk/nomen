@@ -70,6 +70,10 @@ export default function parse_statement(status: ParseStatus) {
 				parse_struct("mod", status);
 				break;
 			}
+			case "class": {
+				parse_struct("mod", status, true);
+				break;
+			}
 			case "enum": {
 				parse_enum("mod", status);
 				break;

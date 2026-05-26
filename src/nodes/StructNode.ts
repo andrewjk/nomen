@@ -14,6 +14,7 @@ export default class StructNode extends BaseNode {
 	privates_visible: boolean;
 	is_simple_type: boolean;
 	is_generic?: boolean;
+	is_class?: boolean;
 
 	constructor(
 		start: number,

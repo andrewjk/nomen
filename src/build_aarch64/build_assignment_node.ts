@@ -86,6 +86,11 @@ function is_struct_type(type: Type | undefined, status: BuildStatus): boolean {
 	return !!status.structs.find((s) => s.name === type.name && !s.is_simple_type);
 }
 
+function is_class_type(type: Type | undefined, status: BuildStatus): boolean {
+	if (!type?.name) return false;
+	return !!status.structs.find((s) => s.name === type.name && !s.is_simple_type && s.is_class);
+}
+
 function get_source_address(value: BaseNode, status: BuildStatus) {
 	if (value.node_type === "value") {
 		const name = (value as ValueNode).value;

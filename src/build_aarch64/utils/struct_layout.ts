@@ -19,6 +19,7 @@ function get_type_size(type: import("../../nodes/Type.ts").default, status: Buil
 	if (type.is_ref) return 8;
 	const struct = status.structs.find((s) => s.name === type.name && !s.is_simple_type);
 	if (struct) {
+		if (struct.is_class) return 8;
 		return get_struct_size(type.name, status);
 	}
 	return aarch64_size(type.name);

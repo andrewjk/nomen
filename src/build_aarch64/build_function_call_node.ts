@@ -5,12 +5,15 @@ import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import { emit_address_of } from "./build_access_node.ts";
 import build_node from "./build_node.ts";
+import { emit_malloc } from "./utils/audit.ts";
 import {
 	allocate_stack_space,
 	emit_deref_var_address,
 	emit_var_address,
+	emit_var_load,
 	is_local_ref_var,
 } from "./utils/stack_var.ts";
+import { get_struct_size } from "./utils/struct_layout.ts";
 
 let temp_counter = 0;
 
@@ -80,12 +83,14 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 	let start_reg = 0;
 
 	if (is_struct) {
-		// Struct constructor
-		if (status.struct_return_buffer) {
-			// Use the provided return buffer address
+		if (is_struct.is_class) {
+			const struct_size = get_struct_size(node.name, status);
+			status.code += `mov x0, #${struct_size}\n`;
+			emit_malloc(status);
+			status.code += `str x0, [sp, #-16]!\n`;
+		} else if (status.struct_return_buffer) {
 			status.code += `mov x0, ${status.struct_return_buffer}\n`;
 		} else {
-			// Create a temp on stack
 			const dest_addr = `_temp_${temp_counter++}`;
 			const offset = allocate_stack_space(status, 16);
 			status.stack_offsets!.set(dest_addr, offset);
@@ -152,6 +157,8 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 
 		if (is_struct && status.struct_return_buffer) {
 			status.code += `mov x0, ${status.struct_return_buffer}\n`;
+		} else if (is_struct && is_struct.is_class) {
+			status.code += `ldr x0, [sp]\n`;
 		}
 
 		status.code += `bl ${func_name}\n`;
@@ -159,10 +166,13 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 
 	// For struct constructors with a temp, load temp address into x0
 	if (is_struct && !status.struct_return_buffer) {
-		// Find the last temp created
-		const temp_addr = `_temp_${temp_counter - 1}`;
-		const offset = status.stack_offsets!.get(temp_addr)!;
-		status.code += `add x0, x29, #${offset}\n`;
+		if (is_struct.is_class) {
+			status.code += `ldr x0, [sp], #16\n`;
+		} else {
+			const temp_addr = `_temp_${temp_counter - 1}`;
+			const offset = status.stack_offsets!.get(temp_addr)!;
+			status.code += `add x0, x29, #${offset}\n`;
+		}
 	}
 
 	if (node.name.startsWith("_string_interpolate_")) {
