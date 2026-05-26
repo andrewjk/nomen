@@ -18,7 +18,7 @@ import build_range_node from "./build_range_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import aarch64_type from "./utils/aarch64_type.ts";
 import { emit_strdup } from "./utils/audit.ts";
-import { mark_heap_string } from "./utils/auto_destroy.ts";
+import { mark_heap_string, track_struct_decl, has_struct_fields_with_destroy } from "./utils/auto_destroy.ts";
 import { allocate_stack_space, emit_var_address, emit_var_load, emit_var_store } from "./utils/stack_var.ts";
 import { emit_struct_copy, get_enum_size, get_struct_size } from "./utils/struct_layout.ts";
 
@@ -211,6 +211,9 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 
 	// Check if type is a struct
 	const struct_type = status.structs.find((s) => s.name === node.type.name && !s.is_simple_type);
+	if (struct_type && (struct_type.destroy_body || has_struct_fields_with_destroy(struct_type, status))) {
+		track_struct_decl(status, node.name, node.type.name);
+	}
 
 	// Check if type is an enum with associated data
 	const enum_type = status.enums.find((e) => e.name === node.type.name && e.has_associated_data);

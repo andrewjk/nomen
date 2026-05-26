@@ -9,11 +9,17 @@ export function mark_heap_string(status: BuildStatus, name: string) {
 	if (!status.heap_strings) status.heap_strings = new Set<string>();
 	status.heap_strings.add(name);
 	if (status.heap_cleanup_stack?.length) {
-		status.heap_cleanup_stack[status.heap_cleanup_stack.length - 1].add(name);
+		status.heap_cleanup_stack[status.heap_cleanup_stack.length - 1].heap_strings.add(name);
 	}
 }
 
-function is_struct_type(type_name: string, status: BuildStatus): StructNode | undefined {
+export function track_struct_decl(status: BuildStatus, name: string, type_name: string) {
+	if (status.heap_cleanup_stack?.length) {
+		status.heap_cleanup_stack[status.heap_cleanup_stack.length - 1].struct_decls.push({ name, type_name });
+	}
+}
+
+export function is_struct_type(type_name: string, status: BuildStatus): StructNode | undefined {
 	return status.structs.find((s) => s.name === type_name && !s.is_simple_type);
 }
 
@@ -165,7 +171,7 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 	}
 }
 
-function has_struct_fields_with_destroy(struct_type: StructNode, status: BuildStatus): boolean {
+export function has_struct_fields_with_destroy(struct_type: StructNode, status: BuildStatus): boolean {
 	for (const field of struct_type.fields) {
 		if (field.type.is_ref) continue;
 		const field_struct = is_struct_type(field.type.name, status);
@@ -183,7 +189,12 @@ export function emit_cleanup_to_loop_depth(status: BuildStatus) {
 	const moved = status.moved ?? new Set<string>();
 	const depth = loop.cleanup_depth;
 	for (let i = status.heap_cleanup_stack.length - 1; i >= depth; i--) {
-		for (const name of status.heap_cleanup_stack[i]) {
+		const scope = status.heap_cleanup_stack[i];
+		for (const entry of scope.struct_decls) {
+			if (moved.has(entry.name)) continue;
+			emit_destroy_for_decl(status, entry.name, entry.type_name);
+		}
+		for (const name of scope.heap_strings) {
 			if (moved.has(name)) continue;
 			if (!status.heap_strings?.has(name)) continue;
 			emit_var_load(status, "x0", name, 8);

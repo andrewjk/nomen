@@ -309,4 +309,61 @@ Console.write("done")
 		expect(parsed.errors).toEqual([]);
 		await check_output("leak_while_break", result, "0done", { audit: true });
 	});
+
+	test("BUG: break skips struct destroy in loop", async () => {
+		const input = `
+struct Resource {
+  var int handle
+
+  destroy = {
+    self.handle = -1
+  }
+}
+
+var int i = 0
+while i < 3 {
+  var Resource r = Resource(i)
+  if i == 1 {
+    i += 1
+    break
+  }
+  i += 1
+}
+Console.write("done")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		expect(result.code).toContain("bl Resource_destroy");
+		expect(result.code.match(/bl Resource_destroy/g)?.length).toBe(2);
+		await check_output("leak_break_struct_destroy", result, "done");
+	});
+
+	test("BUG: continue skips struct destroy in loop", async () => {
+		const input = `
+struct Resource {
+  var int handle
+
+  destroy = {
+    self.handle = -1
+  }
+}
+
+var int i = 0
+while i < 3 {
+  var Resource r = Resource(i)
+  i += 1
+  if i == 2 {
+    continue
+  }
+}
+Console.write("done")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(parsed.errors).toEqual([]);
+		expect(result.code).toContain("bl Resource_destroy");
+		expect(result.code.match(/bl Resource_destroy/g)?.length).toBe(2);
+		await check_output("leak_continue_struct_destroy", result, "done");
+	});
 });

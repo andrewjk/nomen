@@ -15,7 +15,7 @@ export default function build_block_node(node: BlockNode, status: BuildStatus) {
 	gather_structs(node, status);
 
 	if (!status.heap_cleanup_stack) status.heap_cleanup_stack = [];
-	status.heap_cleanup_stack.push(new Set<string>());
+	status.heap_cleanup_stack.push({ heap_strings: new Set<string>(), struct_decls: [] });
 
 	const declarations_before = status.scoped_declarations.length;
 
