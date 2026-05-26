@@ -109,7 +109,22 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		}
 	}
 
+	const moved_before = new Set(status.moved ?? []);
+	const heap_before = new Set(status.heap_strings ?? []);
+
 	build_block_node(node, status);
+
+	const moved_after = status.moved;
+	const heap_after = status.heap_strings;
+	if (moved_after && heap_after) {
+		for (const name of moved_after) {
+			if (!moved_before.has(name) && heap_after.has(name)) {
+				if (!status.heap_returning_functions) status.heap_returning_functions = new Set();
+				status.heap_returning_functions.add(node.name);
+				break;
+			}
+		}
+	}
 
 	status.code += `${return_label}:\n`;
 	if (node.name === "main") {

@@ -169,4 +169,8 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		status.interpolate_string_counts.add(node.params.length - 1);
 		status.last_result_is_heap = true;
 	}
+
+	if (status.heap_returning_functions?.has(node.name)) {
+		status.last_result_is_heap = true;
+	}
 }
