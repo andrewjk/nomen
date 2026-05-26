@@ -227,11 +227,19 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 	if (enum_node) {
 		const enum_case = enum_node.cases.find((c) => c.name === access_field.name);
 		if (enum_case) {
-			if (enum_node.has_associated_data) {
-				const case_index = enum_node.cases.indexOf(enum_case);
-				status.code += `mov x0, #${case_index}\n`;
+			const case_index = enum_node.cases.indexOf(enum_case);
+			if (enum_node.has_associated_data && enum_case.params.length === 0) {
+				const enum_size = get_enum_size(target_name || target_type?.name || "", status);
+				const temp_name = `_enum_${access_temp_counter++}`;
+				const temp_offset = allocate_stack_space(status, enum_size);
+				status.stack_offsets!.set(temp_name, temp_offset);
+				status.code += `add x0, x29, #${temp_offset}\n`;
+				status.code += `mov x1, #${case_index}\n`;
+				status.code += `str x1, [x0]\n`;
+				for (let off = 8; off < enum_size; off += 8) {
+					status.code += `str xzr, [x0, #${off}]\n`;
+				}
 			} else {
-				const case_index = enum_node.cases.indexOf(enum_case);
 				status.code += `mov x0, #${case_index}\n`;
 			}
 			return;
@@ -475,7 +483,10 @@ function build_access_method(
 		return;
 	}
 
-	const method_name = `${target_type.name}_${access_func.name}`;
+	const mono_struct_name = target_type.type_args?.length
+		? target_type.name + "_" + target_type.type_args.map((t) => t.name).join("_")
+		: target_type.name;
+	const method_name = `${mono_struct_name}_${access_func.name}`;
 
 	// Check if method returns a struct
 	const return_struct = status.structs.find(

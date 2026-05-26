@@ -1,5 +1,6 @@
 import type BuildStatus from "../../build/BuildStatus.ts";
 import StructNode from "../../nodes/StructNode.ts";
+import Type from "../../nodes/Type.ts";
 import aarch64_size from "./aarch64_size.ts";
 import { emit_free } from "./audit.ts";
 import { emit_var_address, emit_var_load } from "./stack_var.ts";
@@ -13,10 +14,18 @@ export function mark_heap_string(status: BuildStatus, name: string) {
 	}
 }
 
-export function track_struct_decl(status: BuildStatus, name: string, type_name: string) {
+export function track_struct_decl(status: BuildStatus, name: string, type_name: string, type_args?: Type[]) {
 	if (status.heap_cleanup_stack?.length) {
-		status.heap_cleanup_stack[status.heap_cleanup_stack.length - 1].struct_decls.push({ name, type_name });
+		status.heap_cleanup_stack[status.heap_cleanup_stack.length - 1].struct_decls.push({ name, type_name, type_args });
 	}
+}
+
+export function resolve_struct_name(type_name: string, type_args?: Type[], status?: BuildStatus): string {
+	if (type_args?.length) {
+		const mono_name = type_name + "_" + type_args.map((t) => t.name).join("_");
+		if (status?.structs.find((s) => s.name === mono_name)) return mono_name;
+	}
+	return type_name;
 }
 
 export function is_struct_type(type_name: string, status: BuildStatus): StructNode | undefined {
@@ -32,6 +41,7 @@ export function emit_destroy_for_decl(
 	decl_name: string,
 	decl_type_name: string,
 	addr_offset?: number,
+	type_args?: Type[],
 ) {
 	const moved = status.moved ?? new Set<string>();
 	if (moved.has(decl_name)) return;
@@ -46,7 +56,8 @@ export function emit_destroy_for_decl(
 		return;
 	}
 
-	const struct_type = is_struct_type(decl_type_name, status);
+	const resolved_name = resolve_struct_name(decl_type_name, type_args, status);
+	const struct_type = is_struct_type(resolved_name, status) || is_struct_type(decl_type_name, status);
 	if (!struct_type) return;
 
 	if (has_destroy(struct_type)) {
@@ -55,7 +66,7 @@ export function emit_destroy_for_decl(
 		} else {
 			emit_var_address(status, "x0", decl_name);
 		}
-		status.code += `bl ${struct_type.name}_destroy\n`;
+		status.code += `bl ${resolved_name}_destroy\n`;
 	}
 
 	emit_field_destroys(status, struct_type, decl_name, addr_offset);
@@ -167,7 +178,7 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 		const struct_type = is_struct_type(decl.type.name, status);
 		if (!struct_type) continue;
 		if (!has_destroy(struct_type) && !has_struct_fields_with_destroy(struct_type, status)) continue;
-		emit_destroy_for_decl(status, decl.name, decl.type.name);
+		emit_destroy_for_decl(status, decl.name, decl.type.name, undefined, decl.type.type_args);
 	}
 }
 
@@ -192,7 +203,7 @@ export function emit_cleanup_to_loop_depth(status: BuildStatus) {
 		const scope = status.heap_cleanup_stack[i];
 		for (const entry of scope.struct_decls) {
 			if (moved.has(entry.name)) continue;
-			emit_destroy_for_decl(status, entry.name, entry.type_name);
+			emit_destroy_for_decl(status, entry.name, entry.type_name, undefined, entry.type_args);
 		}
 		for (const name of scope.heap_strings) {
 			if (moved.has(name)) continue;

@@ -14,7 +14,7 @@ function find_var_size(name: string, status: BuildStatus): number {
 }
 
 export default function build_return_node(node: ReturnNode, status: BuildStatus) {
-	if (node.from_c) {
+	if (node.from_c || (node.value?.node_type === "value" && (node.value as any).value === '"from_c"')) {
 		return;
 	}
 
@@ -27,7 +27,7 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 			const finalized = status.moved ?? new Set<string>();
 			for (const decl of status.scoped_declarations) {
 				if (finalized.has(decl.name)) continue;
-				emit_destroy_for_decl(status, decl.name, decl.type.name);
+				emit_destroy_for_decl(status, decl.name, decl.type.name, undefined, decl.type.type_args);
 			}
 			status.code += `mov x0, #0\n`;
 			const match_saves = status.match_save_size || 0;

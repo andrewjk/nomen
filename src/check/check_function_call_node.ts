@@ -141,6 +141,16 @@ export function monomorphize(
 		mono_fields,
 		[],
 	);
+	mono_struct.destroy_body = generic_struct.destroy_body
+		? clone_node(generic_struct.destroy_body)
+		: undefined;
+
+	for (const func of generic_struct.functions) {
+		if (func.name === "init" && !func.has_body) continue;
+		const cloned = clone_node(func) as FunctionNode;
+		cloned.checked = true;
+		mono_struct.functions.push(cloned);
+	}
 
 	const init_params: ParameterNode[] = [];
 	for (const field of mono_fields) {

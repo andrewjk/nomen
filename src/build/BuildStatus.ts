@@ -4,6 +4,7 @@ import DeclarationNode from "../nodes/DeclarationNode.ts";
 import EnumNode from "../nodes/EnumNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import TraitNode from "../nodes/TraitNode.ts";
+import Type from "../nodes/Type.ts";
 
 export default interface BuildStatus {
 	root: BaseNode;
@@ -26,7 +27,7 @@ export default interface BuildStatus {
 	function_return_label?: string;
 	strings?: Map<string, string>;
 	loop_labels?: { start: string; end: string; cleanup_depth?: number }[];
-	heap_cleanup_stack?: { heap_strings: Set<string>; struct_decls: { name: string; type_name: string }[] }[];
+	heap_cleanup_stack?: { heap_strings: Set<string>; struct_decls: { name: string; type_name: string; type_args?: Type[] }[] }[];
 	struct_return_buffer?: string;
 	function_data?: string;
 	nested_functions?: string;

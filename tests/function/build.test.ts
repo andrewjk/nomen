@@ -1,0 +1,106 @@
+import { expect, test } from "vite-plus/test";
+
+import build from "../../src/build";
+import parse from "../../src/parse";
+import trim_test_build from "../trim_test_build";
+
+//const test = suite("Function build");
+
+test("function", () => {
+	const input = `
+func add() {}
+`;
+	const parsed = parse(input);
+	const result = build(parsed.root);
+	const expected = `
+void add()
+{
+}
+`;
+	expect(parsed.errors).toEqual([]);
+	expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+});
+
+test("function with params", () => {
+	const input = `
+func add(a: int, b: int) {}
+`;
+	const parsed = parse(input);
+	const result = build(parsed.root);
+	const expected = `
+void add(long a, long b)
+{
+}
+`;
+	expect(parsed.errors).toEqual([]);
+	expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+});
+
+test("function with params with default value", () => {
+	const input = `
+func add(a: int, b = 5) {}
+`;
+	const parsed = parse(input);
+	const result = build(parsed.root);
+	const expected = `
+void add(long a, long b)
+{
+}
+`;
+	expect(parsed.errors).toEqual([]);
+	expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+});
+
+test("function with return type", () => {
+	const input = `
+func add() -> int {
+  return 5
+}
+`;
+	const parsed = parse(input);
+	const result = build(parsed.root);
+	const expected = `
+long add()
+{
+return 5;
+}
+`;
+	expect(parsed.errors).toEqual([]);
+	expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+});
+
+test("function with body", () => {
+	const input = `
+func add() {
+  var x = 5
+}
+`;
+	const parsed = parse(input);
+	const result = build(parsed.root);
+	const expected = `
+void add()
+{
+long x = 5;
+}
+`;
+	expect(parsed.errors).toEqual([]);
+	expect(trim_test_build(result.code)).toEqual(trim_test_build(expected));
+});
+
+test("function with return value", () => {
+	const input = `
+func add() -> int {
+  return 5
+}
+`;
+	const parsed = parse(input);
+	const result = build(parsed.root);
+	const expected = `
+long add()
+{
+return 5;
+}
+`;
+	expect(parsed.errors).toEqual([]);
+	expect(trim_test_build(result.code)).toEqual(expected.trim());
+});
