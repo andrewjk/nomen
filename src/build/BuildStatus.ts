@@ -25,7 +25,8 @@ export default interface BuildStatus {
 	function_array_params?: Set<string>;
 	function_return_label?: string;
 	strings?: Map<string, string>;
-	loop_labels?: { start: string; end: string }[];
+	loop_labels?: { start: string; end: string; cleanup_depth?: number }[];
+	heap_cleanup_stack?: Set<string>[];
 	struct_return_buffer?: string;
 	function_data?: string;
 	nested_functions?: string;

@@ -19,7 +19,8 @@ export default function build_while_loop_node(node: WhileLoopNode, status: Build
 	const continue_label = node.update ? `.while_update_${label}` : start_label;
 
 	status.loop_labels = status.loop_labels || [];
-	status.loop_labels.push({ start: continue_label, end: end_label });
+	const cleanup_depth = status.heap_cleanup_stack?.length ?? 0;
+	status.loop_labels.push({ start: continue_label, end: end_label, cleanup_depth });
 
 	status.code += `${start_label}:\n`;
 

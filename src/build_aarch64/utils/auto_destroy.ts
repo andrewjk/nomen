@@ -8,6 +8,9 @@ import { get_struct_size } from "./struct_layout.ts";
 export function mark_heap_string(status: BuildStatus, name: string) {
 	if (!status.heap_strings) status.heap_strings = new Set<string>();
 	status.heap_strings.add(name);
+	if (status.heap_cleanup_stack?.length) {
+		status.heap_cleanup_stack[status.heap_cleanup_stack.length - 1].add(name);
+	}
 }
 
 function is_struct_type(type_name: string, status: BuildStatus): StructNode | undefined {
@@ -172,6 +175,21 @@ function has_struct_fields_with_destroy(struct_type: StructNode, status: BuildSt
 		}
 	}
 	return false;
+}
+
+export function emit_cleanup_to_loop_depth(status: BuildStatus) {
+	const loop = status.loop_labels?.[status.loop_labels.length - 1];
+	if (!loop?.cleanup_depth || !status.heap_cleanup_stack) return;
+	const moved = status.moved ?? new Set<string>();
+	const depth = loop.cleanup_depth;
+	for (let i = status.heap_cleanup_stack.length - 1; i >= depth; i--) {
+		for (const name of status.heap_cleanup_stack[i]) {
+			if (moved.has(name)) continue;
+			if (!status.heap_strings?.has(name)) continue;
+			emit_var_load(status, "x0", name, 8);
+			emit_free(status);
+		}
+	}
 }
 
 export function mark_moved_if_struct(value: any, status: BuildStatus) {

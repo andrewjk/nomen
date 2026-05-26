@@ -31,42 +31,39 @@ export default function check_type_and_value_match(
 			return;
 		} else if (effective_target.name === "null" && value_type.is_nullable) {
 			return;
-	} else if (effective_target.name !== value_type.name) {
-		if (is_type_param(effective_target.name, status)) {
-			return;
-		}
-		if (is_type_param(value_type.name, status)) {
-			return;
-		}
-		if (can_coerce(effective_target.name, value_type.name, value)) {
-			return;
-		}
+		} else if (effective_target.name !== value_type.name) {
+			if (is_type_param(effective_target.name, status)) {
+				return;
+			}
+			if (is_type_param(value_type.name, status)) {
+				return;
+			}
+			if (can_coerce(effective_target.name, value_type.name, value)) {
+				return;
+			}
 
-		const struct = status.structs.find((f) => f.name === value_type.name);
-		if (struct?.traits.includes(effective_target.name)) {
-			return;
-		}
+			const struct = status.structs.find((f) => f.name === value_type.name);
+			if (struct?.traits.includes(effective_target.name)) {
+				return;
+			}
 
-		if (value_type.name === "null" && !effective_target.is_nullable) {
-			add_error_message(status, i, node_type, "null", type_name(effective_target));
-			return;
-		}
+			if (value_type.name === "null" && !effective_target.is_nullable) {
+				add_error_message(status, i, node_type, "null", type_name(effective_target));
+				return;
+			}
 
-		if (value_type.type_args?.length) {
-			const mono_name =
-				value_type.name + "_" + value_type.type_args.map((t) => t.name).join("_");
-			if (mono_name === effective_target.name) return;
-		}
-		if (effective_target.type_args?.length) {
-			const mono_name =
-				effective_target.name +
-				"_" +
-				effective_target.type_args.map((t) => t.name).join("_");
-			if (mono_name === value_type.name) return;
-		}
+			if (value_type.type_args?.length) {
+				const mono_name = value_type.name + "_" + value_type.type_args.map((t) => t.name).join("_");
+				if (mono_name === effective_target.name) return;
+			}
+			if (effective_target.type_args?.length) {
+				const mono_name =
+					effective_target.name + "_" + effective_target.type_args.map((t) => t.name).join("_");
+				if (mono_name === value_type.name) return;
+			}
 
-		add_error_message(status, i, node_type, type_name(value_type), type_name(effective_target));
-	}
+			add_error_message(status, i, node_type, type_name(value_type), type_name(effective_target));
+		}
 	}
 }
 

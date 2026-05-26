@@ -31,7 +31,8 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 	const continue_label = node.update ? `.for_update_${label}` : increment_label;
 
 	status.loop_labels = status.loop_labels || [];
-	status.loop_labels.push({ start: continue_label, end: end_label });
+	const cleanup_depth = status.heap_cleanup_stack?.length ?? 0;
+	status.loop_labels.push({ start: continue_label, end: end_label, cleanup_depth });
 
 	// Allocate stack space for loop item variable
 	if (status.function_return_label) {

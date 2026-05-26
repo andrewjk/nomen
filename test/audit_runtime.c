@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 static long echo_malloc_count = 0;
 
@@ -12,6 +13,14 @@ void *echo_malloc_wrap(unsigned long size) {
 void echo_free_wrap(void *ptr) {
 	free(ptr);
 	echo_malloc_count--;
+}
+
+void *echo_strdup_wrap(const char *s) {
+	unsigned long len = strlen(s) + 1;
+	void *ptr = malloc(len);
+	if (ptr) memcpy(ptr, s, len);
+	echo_malloc_count++;
+	return ptr;
 }
 
 void echo_audit_check(void) {

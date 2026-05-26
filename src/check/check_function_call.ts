@@ -7,12 +7,12 @@ import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
+import { monomorphize } from "./check_function_call_node.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
-import { monomorphize } from "./check_function_call_node.ts";
 
 export default function check_function_call(
 	node: FunctionCallNode | AccessFunctionCallNode,
@@ -87,8 +87,7 @@ export default function check_function_call(
 			}
 			if (type_map.size > 0) {
 				const inferred_args = struct.type_params.map((tp) => type_map.get(tp) || new Type(tp));
-				const mono_name =
-					struct.name + "_" + inferred_args.map((t) => t.name).join("_");
+				const mono_name = struct.name + "_" + inferred_args.map((t) => t.name).join("_");
 				let mono = status.structs.find((s) => s.name === mono_name);
 				if (!mono) {
 					mono = monomorphize(struct, inferred_args, status) ?? undefined;

@@ -14,6 +14,9 @@ import { emit_destroy_for_scope } from "./utils/auto_destroy.ts";
 export default function build_block_node(node: BlockNode, status: BuildStatus) {
 	gather_structs(node, status);
 
+	if (!status.heap_cleanup_stack) status.heap_cleanup_stack = [];
+	status.heap_cleanup_stack.push(new Set<string>());
+
 	const declarations_before = status.scoped_declarations.length;
 
 	for (let child of node.statements) {
@@ -40,6 +43,7 @@ export default function build_block_node(node: BlockNode, status: BuildStatus) {
 	}
 
 	emit_destroy_for_scope(status, declarations_before);
+	status.heap_cleanup_stack.pop();
 }
 
 function gather_structs(block: BlockNode, status: BuildStatus) {

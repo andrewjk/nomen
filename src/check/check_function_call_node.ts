@@ -8,10 +8,10 @@ import ParameterNode from "../nodes/ParameterNode.ts";
 import RootNode from "../nodes/RootNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import Type from "../nodes/Type.ts";
-import type_from_value from "./utils/type_from_value.ts";
 import check_function_call from "./check_function_call.ts";
 import check_function_node from "./check_function_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
+import type_from_value from "./utils/type_from_value.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 
 export default function check_function_call_node(
@@ -110,8 +110,7 @@ export function monomorphize(
 		return null;
 	}
 
-	const mono_name =
-		generic_struct.name + "_" + type_args.map((t) => t.name).join("_");
+	const mono_name = generic_struct.name + "_" + type_args.map((t) => t.name).join("_");
 
 	const existing = status.structs.find((s) => s.name === mono_name);
 	if (existing) return existing;
@@ -250,8 +249,7 @@ function specialize_function(
 				(tp) => new Type(substitution.get(tp) || tp),
 			);
 		}
-		const mono_name =
-			generic_struct.name + "_" + type_args_for_struct.map((t) => t.name).join("_");
+		const mono_name = generic_struct.name + "_" + type_args_for_struct.map((t) => t.name).join("_");
 		substitution.set(generic_struct.name, mono_name);
 		suffix_parts.push(mono_name);
 	}
@@ -360,13 +358,19 @@ function infer_from_anon_struct(
 	return generic_struct.type_params.map((tp) => new Type(substitution.get(tp) || tp));
 }
 
-function substitute_body_types(statements: import("../nodes/BaseNode.ts").default[], substitution: Map<string, string>) {
+function substitute_body_types(
+	statements: import("../nodes/BaseNode.ts").default[],
+	substitution: Map<string, string>,
+) {
 	for (const stmt of statements) {
 		substitute_node_types(stmt, substitution);
 	}
 }
 
-function substitute_node_types(node: import("../nodes/BaseNode.ts").default, substitution: Map<string, string>) {
+function substitute_node_types(
+	node: import("../nodes/BaseNode.ts").default,
+	substitution: Map<string, string>,
+) {
 	if (!node) return;
 
 	switch (node.node_type) {
@@ -374,7 +378,8 @@ function substitute_node_types(node: import("../nodes/BaseNode.ts").default, sub
 			const n = node as import("../nodes/DeclarationNode.ts").default;
 			n.type = substitute_type(n.type, substitution);
 			if (n.value) substitute_node_types(n.value, substitution);
-			if (n.func_return_type) n.func_return_type = substitute_type(n.func_return_type, substitution);
+			if (n.func_return_type)
+				n.func_return_type = substitute_type(n.func_return_type, substitution);
 			break;
 		}
 		case "return": {

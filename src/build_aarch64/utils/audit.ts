@@ -7,3 +7,7 @@ export function emit_malloc(status: BuildStatus) {
 export function emit_free(status: BuildStatus) {
 	status.code += status.audit ? "bl _echo_free_wrap\n" : "bl _free\n";
 }
+
+export function emit_strdup(status: BuildStatus) {
+	status.code += status.audit ? "bl _echo_strdup_wrap\n" : "bl _strdup\n";
+}

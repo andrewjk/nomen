@@ -226,4 +226,87 @@ Console.write("\\{n.id}")
 		expect(parsed.errors).toEqual([]);
 		await check_output("dfree_struct_string_field", result, "1", { audit: true });
 	});
+
+	test("BUG: break leaks heap string in loop body", async () => {
+		const input = `
+var int i = 0
+while i < 3 {
+  var string s = i.to_string()
+  if i == 1 {
+    i += 1
+    break
+  }
+  Console.write(s)
+  i += 1
+}
+Console.write("done")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		expect(parsed.errors).toEqual([]);
+		await check_output("leak_break_heap_string", result, "0done", { audit: true });
+	});
+
+	test("BUG: continue leaks heap string in loop body", async () => {
+		const input = `
+var int i = 0
+while i < 3 {
+  var string s = i.to_string()
+  i += 1
+  if i == 2 {
+    continue
+  }
+  Console.write(s)
+}
+Console.write("done")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		expect(parsed.errors).toEqual([]);
+		await check_output("leak_continue_heap_string", result, "02done", { audit: true });
+	});
+
+	test("BUG: aliasing heap string via declaration then reassigning original is UAF", async () => {
+		const input = `
+var string a = 42.to_string()
+var string b = a
+a = "literal"
+Console.write(b)
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		expect(parsed.errors).toEqual([]);
+		await check_output("uaf_alias_then_reassign", result, "42", { audit: true });
+	});
+
+	test("BUG: assigning heap string to another variable leaks old value", async () => {
+		const input = `
+var string s = 42.to_string()
+var string t = s
+Console.write(t)
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		expect(parsed.errors).toEqual([]);
+		await check_output("leak_alias_declaration", result, "42", { audit: true });
+	});
+
+	test("BUG: while loop break leaks heap string", async () => {
+		const input = `
+var int i = 0
+while i < 3 {
+  var string s = i.to_string()
+  i += 1
+  if i == 2 {
+    break
+  }
+  Console.write(s)
+}
+Console.write("done")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		expect(parsed.errors).toEqual([]);
+		await check_output("leak_while_break", result, "0done", { audit: true });
+	});
 });

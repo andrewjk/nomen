@@ -5,8 +5,8 @@ import AccessNode from "./AccessNode.ts";
 import AnonStructNode from "./AnonStructNode.ts";
 import ArrayValuesNode from "./ArrayValuesNode.ts";
 import AssignmentNode from "./AssignmentNode.ts";
-import BitsetNode from "./BitsetNode.ts";
 import type BaseNode from "./BaseNode.ts";
+import BitsetNode from "./BitsetNode.ts";
 import BranchNode from "./BranchNode.ts";
 import BreakNode from "./BreakNode.ts";
 import CastNode from "./CastNode.ts";
@@ -37,7 +37,12 @@ import ValueNode from "./ValueNode.ts";
 import WhileLoopNode from "./WhileLoopNode.ts";
 
 export function clone_type(type: Type): Type {
-	const t = new Type(type.name, type.is_static, type.is_array, type.length ? clone_node(type.length) : undefined);
+	const t = new Type(
+		type.name,
+		type.is_static,
+		type.is_array,
+		type.length ? clone_node(type.length) : undefined,
+	);
 	t.is_ref = type.is_ref;
 	t.is_return_type = type.is_return_type;
 	t.is_nullable = type.is_nullable;
@@ -59,8 +64,11 @@ export default function clone_node(node: BaseNode): BaseNode {
 		case "func_call": {
 			const n = node as FunctionCallNode;
 			const c = new FunctionCallNode(
-				n.start, n.name, n.type ? clone_type(n.type) : undefined,
-				n.params.map(clone_node), n.is_static,
+				n.start,
+				n.name,
+				n.type ? clone_type(n.type) : undefined,
+				n.params.map(clone_node),
+				n.is_static,
 			);
 			c.is_func_param = n.is_func_param;
 			c.type_args = n.type_args?.map(clone_type);
@@ -83,8 +91,11 @@ export default function clone_node(node: BaseNode): BaseNode {
 		case "access_func": {
 			const n = node as AccessFunctionCallNode;
 			const c = new AccessFunctionCallNode(
-				n.start, n.name, n.type ? clone_type(n.type) : undefined,
-				n.params.map(clone_node), n.is_static,
+				n.start,
+				n.name,
+				n.type ? clone_type(n.type) : undefined,
+				n.params.map(clone_node),
+				n.is_static,
 			);
 			c.ref_param_indices = n.ref_param_indices?.slice();
 			c.allocations = n.allocations?.map(clone_node);
@@ -92,14 +103,21 @@ export default function clone_node(node: BaseNode): BaseNode {
 		}
 		case "access_index": {
 			const n = node as AccessIndexNode;
-			const c = new AccessIndexNode(n.start, clone_node(n.index), n.type ? clone_type(n.type) : undefined);
+			const c = new AccessIndexNode(
+				n.start,
+				clone_node(n.index),
+				n.type ? clone_type(n.type) : undefined,
+			);
 			c.allocations = n.allocations?.map(clone_node);
 			return c;
 		}
 		case "declare": {
 			const n = node as DeclarationNode;
 			const c = new DeclarationNode(
-				n.start, n.visibility, n.declaration, n.name,
+				n.start,
+				n.visibility,
+				n.declaration,
+				n.name,
 				n.type ? clone_type(n.type) : undefined,
 				n.value ? clone_node(n.value) : undefined,
 			);
@@ -112,14 +130,21 @@ export default function clone_node(node: BaseNode): BaseNode {
 		}
 		case "assign": {
 			const n = node as AssignmentNode;
-			const c = new AssignmentNode(n.start, clone_node(n.left_value), clone_node(n.right_value), n.operator);
+			const c = new AssignmentNode(
+				n.start,
+				clone_node(n.left_value),
+				clone_node(n.right_value),
+				n.operator,
+			);
 			c.allocations = n.allocations?.map(clone_node);
 			return c;
 		}
 		case "return": {
 			const n = node as ReturnNode;
 			const c = new ReturnNode(
-				n.start, n.value ? clone_node(n.value) : null, n.type ? clone_type(n.type) : undefined,
+				n.start,
+				n.value ? clone_node(n.value) : null,
+				n.type ? clone_type(n.type) : undefined,
 			);
 			c.from_c = n.from_c;
 			c.allocations = n.allocations?.map(clone_node);
@@ -134,7 +159,8 @@ export default function clone_node(node: BaseNode): BaseNode {
 		case "if": {
 			const n = node as IfElseNode;
 			const c = new IfElseNode(
-				n.start, clone_node(n.condition),
+				n.start,
+				clone_node(n.condition),
 				n.if_branch ? (clone_node(n.if_branch) as BranchNode) : undefined,
 				n.else_branch ? (clone_node(n.else_branch) as BranchNode) : undefined,
 				n.return_type ? clone_type(n.return_type) : undefined,
@@ -156,7 +182,9 @@ export default function clone_node(node: BaseNode): BaseNode {
 				branch: clone_node(mc.branch) as BranchNode,
 			}));
 			const c = new MatchNode(
-				n.start, clone_node(n.value), cases,
+				n.start,
+				clone_node(n.value),
+				cases,
 				n.else_branch ? (clone_node(n.else_branch) as BranchNode) : undefined,
 				n.return_type ? clone_type(n.return_type) : undefined,
 			);
@@ -171,7 +199,8 @@ export default function clone_node(node: BaseNode): BaseNode {
 				branch: clone_node(sc.branch) as BranchNode,
 			}));
 			const c = new SwitchNode(
-				n.start, cases,
+				n.start,
+				cases,
 				n.else_branch ? (clone_node(n.else_branch) as BranchNode) : undefined,
 				n.return_type ? clone_type(n.return_type) : undefined,
 			);
@@ -195,7 +224,9 @@ export default function clone_node(node: BaseNode): BaseNode {
 		case "while": {
 			const n = node as WhileLoopNode;
 			const c = new WhileLoopNode(
-				n.start, clone_node(n.condition), n.statements.map(clone_node),
+				n.start,
+				clone_node(n.condition),
+				n.statements.map(clone_node),
 				n.update ? clone_node(n.update) : undefined,
 			);
 			c.allocations = n.allocations?.map(clone_node);
@@ -204,7 +235,10 @@ export default function clone_node(node: BaseNode): BaseNode {
 		case "op": {
 			const n = node as OperationNode;
 			const c = new OperationNode(
-				n.start, n.op, clone_node(n.left_value), clone_node(n.right_value),
+				n.start,
+				n.op,
+				clone_node(n.left_value),
+				clone_node(n.right_value),
 				n.type ? clone_type(n.type) : undefined,
 			);
 			c.operator_func = n.operator_func ? { ...n.operator_func } : undefined;
@@ -235,7 +269,8 @@ export default function clone_node(node: BaseNode): BaseNode {
 		case "anon_struct": {
 			const n = node as AnonStructNode;
 			const c = new AnonStructNode(
-				n.start, n.fields.map((f) => ({ name: f.name, value: clone_node(f.value) })),
+				n.start,
+				n.fields.map((f) => ({ name: f.name, value: clone_node(f.value) })),
 			);
 			c.type = n.type ? clone_type(n.type) : undefined;
 			c.allocations = n.allocations?.map(clone_node);
@@ -286,7 +321,10 @@ export default function clone_node(node: BaseNode): BaseNode {
 		case "struct": {
 			const n = node as StructNode;
 			const c = new StructNode(
-				n.start, n.visibility, n.name, n.traits.slice(),
+				n.start,
+				n.visibility,
+				n.name,
+				n.traits.slice(),
 				n.fields.map((f) => clone_node(f) as DeclarationNode),
 				n.functions.map((f) => clone_node(f) as FunctionNode),
 			);
@@ -300,7 +338,9 @@ export default function clone_node(node: BaseNode): BaseNode {
 		case "func": {
 			const n = node as FunctionNode;
 			const c = new FunctionNode(
-				n.start, n.visibility, n.name,
+				n.start,
+				n.visibility,
+				n.name,
 				clone_type(n.return_type),
 				n.params.map((p) => clone_node(p) as ParameterNode),
 				n.statements.map(clone_node),
@@ -314,7 +354,9 @@ export default function clone_node(node: BaseNode): BaseNode {
 		case "param": {
 			const n = node as ParameterNode;
 			const c = new ParameterNode(
-				n.start, n.name, n.type ? clone_type(n.type) : new Type(""),
+				n.start,
+				n.name,
+				n.type ? clone_type(n.type) : new Type(""),
 				n.default_value ? clone_node(n.default_value) : undefined,
 				n.is_self_param,
 				n.is_copied ? "cp" : n.declaration,
@@ -355,7 +397,9 @@ export default function clone_node(node: BaseNode): BaseNode {
 		case "trait": {
 			const n = node as TraitNode;
 			const c = new TraitNode(
-				n.start, n.visibility, n.name,
+				n.start,
+				n.visibility,
+				n.name,
 				n.fields.map((f) => clone_node(f) as DeclarationNode),
 				n.functions.map((f) => clone_node(f) as FunctionNode),
 			);
