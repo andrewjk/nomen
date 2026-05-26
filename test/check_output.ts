@@ -28,7 +28,7 @@ export default async function check_output(
 	name: string,
 	built: BuildResult,
 	expected_output: string,
-	options: { audit?: boolean } = {},
+	options: { audit?: boolean } = { audit: true },
 ) {
 	const folder = path.join(".", "test", "out", name);
 	if (!fs.existsSync(folder)) {
