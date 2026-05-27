@@ -115,6 +115,28 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 
 		if (rhs_is_struct && !node.operator) {
 			const struct_size = get_struct_size(rhs_type.name, status);
+			const rhs_struct = status.structs.find((s) => s.name === rhs_type.name && s.is_class);
+			if (rhs_struct && node.right_value.node_type === "func_call") {
+				const func_call = node.right_value as import("../nodes/FunctionCallNode.ts").default;
+				const is_constructor = status.structs.find(
+					(s) => s.name === func_call.name && !s.is_simple_type,
+				);
+				if (is_constructor) {
+					mark_moved_if_struct(node.right_value, status);
+					build_node(node.right_value, status);
+					if (!status.code.endsWith("\n")) status.code += "\n";
+					const offset = status.stack_offsets?.get(name);
+					if (offset !== undefined) {
+						status.code += `str x0, [x29, #${offset}]\n`;
+					}
+					if (!status.heap_strings) status.heap_strings = new Set();
+					status.heap_strings.add(name);
+					if (status.heap_cleanup_stack?.length) {
+						status.heap_cleanup_stack[status.heap_cleanup_stack.length - 1].heap_strings.add(name);
+					}
+					return;
+				}
+			}
 			mark_moved_if_struct(node.right_value, status);
 			get_source_address(node.right_value, status);
 			if (!status.code.endsWith("\n")) {
@@ -163,6 +185,24 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 				status.code += `\n// cannot assign to const param\n`;
 			}
 		} else if (status.function_ref_params?.has(name)) {
+			const struct_type = status.structs.find((s) => s.name === lhs_type_name && s.is_class);
+			if (struct_type && !node.operator && node.right_value.node_type === "func_call") {
+				const func_call = node.right_value as import("../nodes/FunctionCallNode.ts").default;
+				const is_constructor = status.structs.find(
+					(s) => s.name === func_call.name && !s.is_simple_type,
+				);
+				if (is_constructor) {
+					build_node(node.right_value, status);
+					if (!status.code.endsWith("\n")) status.code += "\n";
+					emit_var_store(status, "x0", name, 8);
+					if (!status.heap_strings) status.heap_strings = new Set();
+					status.heap_strings.add(name);
+					if (status.heap_cleanup_stack?.length) {
+						status.heap_cleanup_stack[status.heap_cleanup_stack.length - 1].heap_strings.add(name);
+					}
+					return;
+				}
+			}
 			const offset = status.stack_offsets?.get(name);
 			if (offset !== undefined) {
 				status.code += `ldr x2, [x29, #${offset}]\n`;

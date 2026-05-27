@@ -545,6 +545,14 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 				if (node.value.node_type === "value") {
 					const src_name = (node.value as ValueNode).value;
 					emit_var_load(status, "x0", src_name, 8);
+					if (status.heap_strings?.has(src_name)) {
+						status.heap_strings.delete(src_name);
+						status.heap_strings.add(node.name);
+						if (status.heap_cleanup_stack?.length) {
+							status.heap_cleanup_stack[status.heap_cleanup_stack.length - 1].heap_strings.delete(src_name);
+							status.heap_cleanup_stack[status.heap_cleanup_stack.length - 1].heap_strings.add(node.name);
+						}
+					}
 				} else {
 					build_node(node.value, status);
 					if (!status.code.endsWith("\n")) {

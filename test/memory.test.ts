@@ -562,6 +562,7 @@ class Box {
 }
 
 var Box s = Box(1)
+// TODO: free Box(1) here:
 s = Box(2)
 Console.write("\\{s.value}")
 `;
