@@ -31,7 +31,7 @@ test("ziglings 015 for -- fixed", () => {
 import System
 
 pub func main = () {
-    const char story = [ 'h', 'h', 's', 'n', 'h' ]
+    const char[] story = [ 'h', 'h', 's', 'n', 'h' ]
 
     Console.write("A Dramatic Story: ")
 
@@ -53,7 +53,7 @@ test("ziglings 015 for -- build", async () => {
 import System
 
 pub func main = () {
-    const char story = [ 'h', 'h', 's', 'n', 'h' ]
+    const char[] story = [ 'h', 'h', 's', 'n', 'h' ]
 
     Console.write("A Dramatic Story: ")
 

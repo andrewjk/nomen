@@ -16,7 +16,14 @@ export default function check_array_values_node(
 
 	// If there is an expected type of the array (e.g. for declarations), use it
 	if (!array.type.name && status.expected_type) {
-		array.type = status.expected_type;
+		array.type = new Type(
+			status.expected_type.name,
+			status.expected_type.is_static,
+			status.expected_type.is_array,
+			status.expected_type.length,
+		);
+		array.type.is_nullable = status.expected_type.is_nullable;
+		array.type.type_args = status.expected_type.type_args;
 		array_item_type = new Type(array.type.name);
 	}
 

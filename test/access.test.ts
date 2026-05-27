@@ -237,6 +237,34 @@ p.age = "hi"
 		expect(parsed.errors).toEqual(expected);
 	});
 
+	test("type mismatch setting field -- array", () => {
+		const input = `
+struct Person {
+  var int age
+}
+var Person p
+p.age = [1, 2]
+`;
+		const expected = [test_error(input, "Type mismatch in assignment: int[] (expected int)", 6, 9)];
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual(expected);
+	});
+
+	test("type mismatch setting field -- array 2", () => {
+		const input = `
+struct Person {
+  var int[] ages
+}
+var Person p
+p.ages = 3
+`;
+		const expected = [
+			test_error(input, "Type mismatch in assignment: int (expected int[])", 6, 10),
+		];
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual(expected);
+	});
+
 	test("unknown target", () => {
 		const input = `
 var age = person.age

@@ -194,6 +194,28 @@ const int x = "string?!"
 		expect(parsed.errors).toEqual(expected);
 	});
 
+	test("type mismatch -- array", () => {
+		const input = `
+const int x = [1, 2]"
+`;
+		const expected = [
+			test_error(input, "Type mismatch in declaration: int[] (expected int)", 2, 15),
+		];
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual(expected);
+	});
+
+	test("type mismatch -- array 2", () => {
+		const input = `
+const int[] x = 3"
+`;
+		const expected = [
+			test_error(input, "Type mismatch in declaration: int (expected int[])", 2, 17),
+		];
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual(expected);
+	});
+
 	test("type mismatch -- unknown value", () => {
 		const input = `
 const int x = z0

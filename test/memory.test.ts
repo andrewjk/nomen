@@ -803,7 +803,7 @@ Console.write("done")
 describe("memory leaks (arrays of heap types, aarch64)", () => {
 	test("BUG: array of strings from to_string leaks each element", async () => {
 		const input = `
-var string parts = [1.to_string(), 2.to_string(), 3.to_string()]
+var string[] parts = [1.to_string(), 2.to_string(), 3.to_string()]
 Console.write("\\{parts[0]}")
 Console.write("\\{parts[1]}")
 Console.write("\\{parts[2]}")
@@ -820,7 +820,7 @@ class Box {
   var int value
 }
 
-var Box items = [Box(1), Box(2), Box(3)]
+var Box[] items = [Box(1), Box(2), Box(3)]
 Console.write("\\{items[0].value}")
 Console.write("\\{items[1].value}")
 Console.write("\\{items[2].value}")
@@ -843,7 +843,7 @@ class Resource {
   }
 }
 
-var Resource items = [Resource(1), Resource(2)]
+var Resource[] items = [Resource(1), Resource(2)]
 Console.write("\\{items[0].handle}")
 Console.write("\\{items[1].handle}")
 `;
@@ -858,7 +858,7 @@ Console.write("\\{items[1].handle}")
 	test("BUG: inner scope array of strings leaks", async () => {
 		const input = `
 if 1 == 1 {
-  var string parts = [42.to_string(), 99.to_string()]
+  var string[] parts = [42.to_string(), 99.to_string()]
   Console.write("\\{parts[0]}")
 }
 Console.write("done")
@@ -878,7 +878,7 @@ class Box {
 }
 
 if 1 == 1 {
-  var Box items = [Box(10), Box(20)]
+  var Box[] items = [Box(10), Box(20)]
   Console.write("\\{items[0].value}")
 }
 Console.write("done")
@@ -893,7 +893,7 @@ Console.write("done")
 
 	test("BUG: for-each over string array leaks elements", async () => {
 		const input = `
-var string parts = [1.to_string(), 2.to_string()]
+var string[] parts = [1.to_string(), 2.to_string()]
 for s of parts {
   Console.write(s)
 }
@@ -912,7 +912,7 @@ class Box {
   var int value
 }
 
-var Box items = [Box(1), Box(2)]
+var Box[] items = [Box(1), Box(2)]
 for b of items {
   Console.write("\\{b.value}")
 }
@@ -929,7 +929,7 @@ for b of items {
 		const input = `
 var int i = 0
 while i < 3 {
-  var string parts = [i.to_string()]
+  var string[] parts = [i.to_string()]
   if i == 1 {
     i += 1
     break
@@ -955,7 +955,7 @@ class Box {
 
 var int i = 0
 while i < 3 {
-  var Box items = [Box(i)]
+  var Box[] items = [Box(i)]
   if i == 1 {
     i += 1
     break
@@ -977,7 +977,7 @@ Console.write("done")
 		const input = `
 var int i = 0
 while i < 3 {
-  var string parts = [i.to_string()]
+  var string[] parts = [i.to_string()]
   i += 1
   if i == 2 {
     continue
@@ -1002,7 +1002,7 @@ class Box {
 
 var int i = 0
 while i < 3 {
-  var Box items = [Box(i)]
+  var Box[] items = [Box(i)]
   i += 1
   if i == 2 {
     continue
@@ -1038,7 +1038,7 @@ Console.write("\\{c.items[0]}\\{c.items[1]}")
 
 	test("no leak: array of primitives (no heap allocation)", async () => {
 		const input = `
-var int nums = [1, 2, 3]
+var int[] nums = [1, 2, 3]
 Console.write("\\{nums[0]}")
 Console.write("\\{nums[1]}")
 Console.write("\\{nums[2]}")

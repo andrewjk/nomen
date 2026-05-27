@@ -56,10 +56,9 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 
 			if (!decl.type.name) {
 				decl.type = type_from_value_node(decl.value, status);
-			} else if (decl.value.node_type === "array" && !decl.type.is_array) {
+			} else if (decl.type.is_array && decl.value.node_type === "array") {
 				const value_type = type_from_value_node(decl.value, status);
-				if (value_type.is_array && value_type.name === decl.type.name) {
-					decl.type.is_array = true;
+				if (value_type.is_array && value_type.length) {
 					decl.type.length = value_type.length;
 				}
 			}
@@ -103,10 +102,9 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 
 			if (!decl.type.name) {
 				decl.type = type_from_value_node(decl.value, status);
-			} else if (decl.value.node_type === "array" && !decl.type.is_array) {
+			} else if (decl.type.is_array && decl.value.node_type === "array") {
 				const value_type = type_from_value_node(decl.value, status);
-				if (value_type.is_array && value_type.name === decl.type.name) {
-					decl.type.is_array = true;
+				if (value_type.is_array && value_type.length) {
 					decl.type.length = value_type.length;
 				}
 			}

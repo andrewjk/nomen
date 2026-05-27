@@ -240,6 +240,26 @@ x = "string?!"
 		expect(parsed.errors).toEqual(expected);
 	});
 
+	test("type mismatch -- array", () => {
+		const input = `
+var int x
+x = [1, 2]
+`;
+		const expected = [test_error(input, "Type mismatch in assignment: int[] (expected int)", 3, 5)];
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual(expected);
+	});
+
+	test("type mismatch -- array 2", () => {
+		const input = `
+var int[] x
+x = 3
+`;
+		const expected = [test_error(input, "Type mismatch in assignment: int (expected int[])", 3, 5)];
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual(expected);
+	});
+
 	test("type mismatch -- unknown value", () => {
 		const input = `
 var int x
