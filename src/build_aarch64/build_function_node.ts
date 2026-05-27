@@ -114,7 +114,6 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	}
 
 	const moved_before = new Set(status.moved ?? []);
-	const heap_before = new Set(status.heap_strings ?? []);
 
 	build_block_node(node, status);
 

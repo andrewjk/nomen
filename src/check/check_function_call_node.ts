@@ -1,5 +1,4 @@
 import add_error from "../add_error.ts";
-import built_in_types from "../built_in_types.ts";
 import clone_node from "../nodes/clone_node.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
@@ -12,7 +11,6 @@ import check_function_call from "./check_function_call.ts";
 import check_function_node from "./check_function_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import type_from_value from "./utils/type_from_value.ts";
-import type_from_value_node from "./utils/type_from_value_node.ts";
 
 export default function check_function_call_node(
 	node: FunctionCallNode,

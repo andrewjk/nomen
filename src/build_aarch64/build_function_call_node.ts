@@ -10,7 +10,6 @@ import {
 	allocate_stack_space,
 	emit_deref_var_address,
 	emit_var_address,
-	emit_var_load,
 	is_local_ref_var,
 } from "./utils/stack_var.ts";
 import { get_struct_size } from "./utils/struct_layout.ts";

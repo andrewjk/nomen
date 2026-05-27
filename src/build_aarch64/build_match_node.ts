@@ -19,7 +19,7 @@ function ensure_newline(status: BuildStatus) {
 export default function build_match_node(node: MatchNode, status: BuildStatus) {
 	const label = label_counter++;
 	const old_scoped_declarations = status.scoped_declarations;
-	const match_type = type_from_value_node(node.value, status);
+	const match_type = type_from_value_node(node.value);
 	const match_type_name = match_type?.name;
 	const enum_with_data = match_type_name
 		? status.enums.find((e) => e.name === match_type_name && e.has_associated_data)

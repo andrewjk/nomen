@@ -1,4 +1,5 @@
 import add_error from "../add_error.ts";
+import type BaseNode from "../nodes/BaseNode.ts";
 import IfElseNode from "../nodes/IfElseNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";

@@ -16,11 +16,7 @@ import {
 	emit_var_address,
 	is_local_ref_var,
 } from "./utils/stack_var.ts";
-import {
-	get_enum_case_index,
-	get_enum_payload_offset,
-	get_enum_size,
-} from "./utils/struct_layout.ts";
+import { get_enum_size } from "./utils/struct_layout.ts";
 import { get_field_offset, get_struct_size } from "./utils/struct_layout.ts";
 
 export function emit_address_of(node: BaseNode, status: BuildStatus) {
