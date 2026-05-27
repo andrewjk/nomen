@@ -230,6 +230,11 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 				if (struct_type) {
 					if (!status.heap_strings) status.heap_strings = new Set();
 					status.heap_strings.add(node.name);
+					if (status.heap_cleanup_stack?.length) {
+						status.heap_cleanup_stack[status.heap_cleanup_stack.length - 1].heap_strings.add(
+							node.name,
+						);
+					}
 				}
 			}
 		}
@@ -512,6 +517,11 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 					emit_malloc(status);
 					if (!status.heap_strings) status.heap_strings = new Set();
 					status.heap_strings.add(node.name);
+					if (status.heap_cleanup_stack?.length) {
+						status.heap_cleanup_stack[status.heap_cleanup_stack.length - 1].heap_strings.add(
+							node.name,
+						);
+					}
 					status.code += `str x0, [x29, #${status.stack_offsets!.get(node.name)}]\n`;
 					const param_regs = ["x1", "x2", "x3", "x4", "x5", "x6", "x7"];
 					for (let i = func_call.params.length - 1; i >= 0; i--) {
