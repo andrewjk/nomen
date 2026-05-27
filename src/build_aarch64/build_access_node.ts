@@ -627,14 +627,17 @@ function build_access_method(
 function build_access_index(node: AccessNode, access_index: AccessIndexNode, status: BuildStatus) {
 	const target_type = type_from_value_node(node.target);
 	const is_string = target_type.name === "string";
+	const is_string_array = is_string && target_type.is_array;
 	const struct_type = status.structs.find((s) => s.name === target_type.name && !s.is_simple_type);
-	const element_size = is_string
-		? 1
-		: struct_type
-			? get_struct_size(target_type.name, status)
-			: target_type.name
-				? aarch64_size(target_type.name)
-				: 8;
+	const element_size = is_string_array
+		? 8
+		: is_string
+			? 1
+			: struct_type
+				? get_struct_size(target_type.name, status)
+				: target_type.name
+					? aarch64_size(target_type.name)
+					: 8;
 	const element_signed =
 		target_type.name && (target_type.name.startsWith("int") || target_type.name === "float");
 
@@ -649,7 +652,7 @@ function build_access_index(node: AccessNode, access_index: AccessIndexNode, sta
 		} else {
 			const is_stack_var = status.stack_offsets?.has(name);
 			emit_var_address(status, "x0", name);
-			if (is_string && is_stack_var) {
+			if (is_string && !is_string_array && is_stack_var) {
 				status.code += `ldr x0, [x0]\n`;
 			}
 		}

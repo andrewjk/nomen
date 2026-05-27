@@ -292,6 +292,12 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 								} else {
 									status.code += `str x0, [x29, #${slot_offset}]\n`;
 								}
+							} else {
+								build_node(value, status);
+								if (!status.code.endsWith("\n")) {
+									status.code += "\n";
+								}
+								status.code += `str x0, [x29, #${slot_offset}]\n`;
 							}
 						}
 					});
@@ -305,6 +311,12 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 							const raw = resolve_static_value(value, status);
 							if (raw !== null) {
 								status.code += `ldr x0, =${raw}\n`;
+								status.code += `str x0, [${node.name} + ${i * element_size}]\n`;
+							} else {
+								build_node(value, status);
+								if (!status.code.endsWith("\n")) {
+									status.code += "\n";
+								}
 								status.code += `str x0, [${node.name} + ${i * element_size}]\n`;
 							}
 						}
