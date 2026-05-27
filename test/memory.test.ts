@@ -562,7 +562,6 @@ class Box {
 }
 
 var Box s = Box(1)
-// TODO: free Box(1) here:
 s = Box(2)
 Console.write("\\{s.value}")
 `;
@@ -572,7 +571,7 @@ Console.write("\\{s.value}")
 		await check_output("dfree_reassign_class", result, "2");
 	});
 
-	test.skip("BUG: returning from nested scope leaks class", async () => {
+	test("BUG: returning from nested scope leaks class", async () => {
 		const input = `
 class Box {
   var int value
@@ -591,7 +590,7 @@ Console.write("\\{result.value}")
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
-		expect(result.code).toContain("bl _free");
+		expect(result.code).toContain("bl _echo_free_wrap");
 		expect(result.code).toContain("bl Box_init");
 		await check_output("dfree_class_nested_scope_leaks", result, "42");
 	});
@@ -717,7 +716,7 @@ Console.write("done")
 		await check_output("leak_while_break_class", result, "0done");
 	});
 
-	test.skip("BUG: break skips class destroy in loop", async () => {
+	test("BUG: break skips class destroy in loop", async () => {
 		const input = `
 class Resource {
   var int handle
@@ -741,12 +740,12 @@ Console.write("done")
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
-		expect(result.code).toContain("bl _free");
-		expect(result.code.match(/bl _free/g)?.length).toBe(2);
+		expect(result.code).toContain("bl _echo_free_wrap");
+		expect(result.code.match(/bl _echo_free_wrap/g)?.length).toBe(2);
 		await check_output("leak_break_class_destroy", result, "done");
 	});
 
-	test.skip("BUG: continue skips class destroy in loop", async () => {
+	test("BUG: continue skips class destroy in loop", async () => {
 		const input = `
 class Resource {
   var int handle
@@ -769,8 +768,8 @@ Console.write("done")
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
-		expect(result.code).toContain("bl _free");
-		expect(result.code.match(/bl _free/g)?.length).toBe(2);
+		expect(result.code).toContain("bl _echo_free_wrap");
+		expect(result.code.match(/bl _echo_free_wrap/g)?.length).toBe(2);
 		await check_output("leak_continue_class_destroy", result, "done");
 	});
 });

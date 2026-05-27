@@ -3,6 +3,7 @@ import StructNode from "../../nodes/StructNode.ts";
 import Type from "../../nodes/Type.ts";
 import aarch64_size from "./aarch64_size.ts";
 import { emit_free } from "./audit.ts";
+import { allocate_stack_space } from "./stack_var.ts";
 import { emit_var_address, emit_var_load } from "./stack_var.ts";
 import { get_struct_size } from "./struct_layout.ts";
 
@@ -12,6 +13,38 @@ export function mark_heap_string(status: BuildStatus, name: string) {
 	if (status.heap_cleanup_stack?.length) {
 		status.heap_cleanup_stack[status.heap_cleanup_stack.length - 1].heap_strings.add(name);
 	}
+}
+
+export function anchor_heap_pointer(status: BuildStatus, var_name?: string): number {
+	const offset = allocate_stack_space(status, 8, 8);
+	status.code += `str x0, [x29, #${offset}]\n`;
+	if (status.heap_cleanup_stack?.length) {
+		status.heap_cleanup_stack[status.heap_cleanup_stack.length - 1].heap_slots.push({
+			offset,
+			var_name,
+		});
+	}
+	return offset;
+}
+
+export function emit_heap_slots_cleanup_for_return(status: BuildStatus) {
+	const moved = status.moved ?? new Set<string>();
+	for (const scope of status.heap_cleanup_stack ?? []) {
+		for (const slot of scope.heap_slots) {
+			if (slot.var_name && moved.has(slot.var_name)) continue;
+			status.code += `ldr x0, [x29, #${slot.offset}]\n`;
+			emit_free(status);
+		}
+	}
+}
+
+export function find_anchor_slot(status: BuildStatus, var_name: string) {
+	for (const scope of status.heap_cleanup_stack ?? []) {
+		for (const slot of scope.heap_slots) {
+			if (slot.var_name === var_name) return slot.offset;
+		}
+	}
+	return undefined;
 }
 
 export function track_struct_decl(
@@ -192,6 +225,43 @@ function emit_destroy_for_array_elem(
 
 export function emit_destroy_for_scope(status: BuildStatus, declarations_before: number) {
 	const moved = status.moved ?? new Set<string>();
+	const current_scope = status.heap_cleanup_stack?.[status.heap_cleanup_stack.length - 1];
+	if (current_scope?.heap_slots.length) {
+		for (let i = declarations_before; i < status.scoped_declarations.length; i++) {
+			const decl = status.scoped_declarations[i];
+			if (moved.has(decl.name)) continue;
+			if (status.heap_string_arrays?.has(decl.name)) {
+				const len = status.heap_string_arrays.get(decl.name)!;
+				for (let j = 0; j < len; j++) {
+					emit_var_address(status, "x0", decl.name);
+					status.code += `ldr x0, [x0, #${j * 8}]\n`;
+					emit_free(status);
+				}
+				continue;
+			}
+			if (status.heap_strings?.has(decl.name)) {
+				emit_var_load(status, "x0", decl.name, 8);
+				emit_free(status);
+				continue;
+			}
+			const struct_type = is_struct_type(decl.type.name, status);
+			if (!struct_type) continue;
+			if (has_destroy(struct_type)) {
+				if (struct_type.is_class) {
+					emit_var_load(status, "x0", decl.name, 8);
+				} else {
+					emit_var_address(status, "x0", decl.name);
+				}
+				status.code += `bl ${struct_type.name}_destroy\n`;
+			}
+		}
+		for (const slot of current_scope.heap_slots) {
+			if (slot.var_name && moved.has(slot.var_name)) continue;
+			status.code += `ldr x0, [x29, #${slot.offset}]\n`;
+			emit_free(status);
+		}
+		return;
+	}
 	for (let i = declarations_before; i < status.scoped_declarations.length; i++) {
 		const decl = status.scoped_declarations[i];
 		if (moved.has(decl.name)) continue;
@@ -239,10 +309,17 @@ export function has_struct_fields_with_destroy(
 export function emit_cleanup_to_loop_depth(status: BuildStatus) {
 	const loop = status.loop_labels?.[status.loop_labels.length - 1];
 	if (!loop?.cleanup_depth || !status.heap_cleanup_stack) return;
-	const moved = status.moved ?? new Set<string>();
 	const depth = loop.cleanup_depth;
 	for (let i = status.heap_cleanup_stack.length - 1; i >= depth; i--) {
 		const scope = status.heap_cleanup_stack[i];
+		if (scope.heap_slots.length) {
+			for (const slot of scope.heap_slots) {
+				status.code += `ldr x0, [x29, #${slot.offset}]\n`;
+				emit_free(status);
+			}
+			continue;
+		}
+		const moved = status.moved ?? new Set<string>();
 		for (const entry of scope.struct_decls) {
 			if (moved.has(entry.name)) continue;
 			emit_destroy_for_decl(status, entry.name, entry.type_name, undefined, entry.type_args);
@@ -271,7 +348,8 @@ export function mark_moved_if_struct(value: any, status: BuildStatus) {
 	const var_type = value.type;
 	if (!var_type) return;
 	const is_local = status.scoped_declarations.some((d) => d.name === var_name);
-	if (!is_local) return;
+	const has_anchor = find_anchor_slot(status, var_name) !== undefined;
+	if (!is_local && !has_anchor) return;
 	const is_struct = is_struct_type(var_type.name, status);
 	if (is_struct) {
 		if (!status.moved) status.moved = new Set<string>();

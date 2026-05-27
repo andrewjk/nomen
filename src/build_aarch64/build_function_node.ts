@@ -119,14 +119,22 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 
 	const moved_after = status.moved;
 	const heap_after = status.heap_strings;
-	if (moved_after && heap_after) {
+	if (moved_after) {
 		for (const name of moved_after) {
-			if (!moved_before.has(name) && heap_after.has(name)) {
+			if (moved_before.has(name)) continue;
+			if (heap_after?.has(name)) {
 				if (!status.heap_returning_functions) status.heap_returning_functions = new Set();
 				status.heap_returning_functions.add(node.name);
 				break;
 			}
 		}
+	}
+	const return_is_class = status.structs.some(
+		(s) => s.name === node.return_type.name && s.is_class,
+	);
+	if (return_is_class) {
+		if (!status.heap_returning_functions) status.heap_returning_functions = new Set();
+		status.heap_returning_functions.add(node.name);
 	}
 
 	status.code += `${return_label}:\n`;

@@ -29,6 +29,7 @@ export default interface BuildStatus {
 	loop_labels?: { start: string; end: string; cleanup_depth?: number }[];
 	heap_cleanup_stack?: {
 		heap_strings: Set<string>;
+		heap_slots: { offset: number; var_name?: string }[];
 		struct_decls: { name: string; type_name: string; type_args?: Type[] }[];
 	}[];
 	struct_return_buffer?: string;

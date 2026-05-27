@@ -13,6 +13,7 @@ import aarch64_size from "./utils/aarch64_size.ts";
 import aarch64_type from "./utils/aarch64_type.ts";
 import { emit_strdup, emit_malloc } from "./utils/audit.ts";
 import {
+	anchor_heap_pointer,
 	mark_heap_string,
 	track_struct_decl,
 	has_struct_fields_with_destroy,
@@ -228,13 +229,8 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			} else {
 				const struct_type = status.structs.find((s) => s.name === node.type.name && s.is_class);
 				if (struct_type) {
-					if (!status.heap_strings) status.heap_strings = new Set();
-					status.heap_strings.add(node.name);
-					if (status.heap_cleanup_stack?.length) {
-						status.heap_cleanup_stack[status.heap_cleanup_stack.length - 1].heap_strings.add(
-							node.name,
-						);
-					}
+					emit_var_load(status, "x0", node.name, 8);
+					anchor_heap_pointer(status, node.name);
 				}
 			}
 		}
@@ -515,13 +511,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 					const struct_size = get_struct_size(node.type.name, status);
 					status.code += `mov x0, #${struct_size}\n`;
 					emit_malloc(status);
-					if (!status.heap_strings) status.heap_strings = new Set();
-					status.heap_strings.add(node.name);
-					if (status.heap_cleanup_stack?.length) {
-						status.heap_cleanup_stack[status.heap_cleanup_stack.length - 1].heap_strings.add(
-							node.name,
-						);
-					}
+					anchor_heap_pointer(status, node.name);
 					status.code += `str x0, [x29, #${status.stack_offsets!.get(node.name)}]\n`;
 					const param_regs = ["x1", "x2", "x3", "x4", "x5", "x6", "x7"];
 					for (let i = func_call.params.length - 1; i >= 0; i--) {
@@ -545,14 +535,6 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 				if (node.value.node_type === "value") {
 					const src_name = (node.value as ValueNode).value;
 					emit_var_load(status, "x0", src_name, 8);
-					if (status.heap_strings?.has(src_name)) {
-						status.heap_strings.delete(src_name);
-						status.heap_strings.add(node.name);
-						if (status.heap_cleanup_stack?.length) {
-							status.heap_cleanup_stack[status.heap_cleanup_stack.length - 1].heap_strings.delete(src_name);
-							status.heap_cleanup_stack[status.heap_cleanup_stack.length - 1].heap_strings.add(node.name);
-						}
-					}
 				} else {
 					build_node(node.value, status);
 					if (!status.code.endsWith("\n")) {

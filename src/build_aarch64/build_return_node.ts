@@ -2,7 +2,11 @@ import type BuildStatus from "../build/BuildStatus.ts";
 import ReturnNode from "../nodes/ReturnNode.ts";
 import build_node from "./build_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
-import { emit_destroy_for_decl, mark_moved_if_struct } from "./utils/auto_destroy.ts";
+import {
+	emit_destroy_for_decl,
+	emit_heap_slots_cleanup_for_return,
+	mark_moved_if_struct,
+} from "./utils/auto_destroy.ts";
 import { emit_var_store } from "./utils/stack_var.ts";
 
 function find_var_size(name: string, status: BuildStatus): number {
@@ -32,6 +36,7 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 				if (finalized.has(decl.name)) continue;
 				emit_destroy_for_decl(status, decl.name, decl.type.name, undefined, decl.type.type_args);
 			}
+			emit_heap_slots_cleanup_for_return(status);
 			status.code += `mov x0, #0\n`;
 			const match_saves = status.match_save_size || 0;
 			if (match_saves > 0) {
@@ -62,6 +67,7 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 			if (finalized.has(decl.name)) continue;
 			emit_destroy_for_decl(status, decl.name, decl.type.name);
 		}
+		emit_heap_slots_cleanup_for_return(status);
 		status.code += `mov x0, x20\n`;
 		const match_saves = status.match_save_size || 0;
 		if (match_saves > 0) {

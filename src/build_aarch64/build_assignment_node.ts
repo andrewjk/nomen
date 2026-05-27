@@ -10,7 +10,11 @@ import ValueNode from "../nodes/ValueNode.ts";
 import build_node from "./build_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free } from "./utils/audit.ts";
-import { mark_moved_if_struct } from "./utils/auto_destroy.ts";
+import {
+	anchor_heap_pointer,
+	find_anchor_slot,
+	mark_moved_if_struct,
+} from "./utils/auto_destroy.ts";
 import {
 	emit_deref_var_address,
 	emit_var_address,
@@ -125,14 +129,10 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 					mark_moved_if_struct(node.right_value, status);
 					build_node(node.right_value, status);
 					if (!status.code.endsWith("\n")) status.code += "\n";
+					anchor_heap_pointer(status, name);
 					const offset = status.stack_offsets?.get(name);
 					if (offset !== undefined) {
 						status.code += `str x0, [x29, #${offset}]\n`;
-					}
-					if (!status.heap_strings) status.heap_strings = new Set();
-					status.heap_strings.add(name);
-					if (status.heap_cleanup_stack?.length) {
-						status.heap_cleanup_stack[status.heap_cleanup_stack.length - 1].heap_strings.add(name);
 					}
 					return;
 				}
@@ -152,11 +152,53 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 			} else if (paramReg) {
 				status.code += `// cannot assign to const param\n`;
 			} else if (is_local_ref_var(name, status)) {
-				emit_var_address(status, "x1", name);
-				status.code += `str x0, [x1]\n`;
+				if (rhs_struct) {
+					const anchor = find_anchor_slot(status, name);
+					if (anchor !== undefined) {
+						const var_offset = status.stack_offsets?.get(name);
+						status.code += `str x0, [sp, #-16]!\n`;
+						status.code += `ldr x0, [x29, #${anchor}]\n`;
+						emit_free(status);
+						status.code += `ldr x3, [sp], #16\n`;
+						status.code += `str x3, [x29, #${anchor}]\n`;
+						if (var_offset !== undefined) {
+							status.code += `str x3, [x29, #${var_offset}]\n`;
+						} else {
+							emit_var_address(status, "x1", name);
+							status.code += `str x3, [x1]\n`;
+						}
+					} else {
+						emit_var_address(status, "x1", name);
+						status.code += `str x0, [x1]\n`;
+					}
+				} else {
+					emit_var_address(status, "x1", name);
+					status.code += `str x0, [x1]\n`;
+				}
 			} else {
-				emit_var_address(status, "x1", name);
-				emit_struct_copy("x0", "x1", 0, struct_size, status);
+				if (rhs_struct) {
+					const anchor = find_anchor_slot(status, name);
+					if (anchor !== undefined) {
+						const var_offset = status.stack_offsets?.get(name);
+						status.code += `str x0, [sp, #-16]!\n`;
+						status.code += `ldr x0, [x29, #${anchor}]\n`;
+						emit_free(status);
+						status.code += `ldr x3, [sp], #16\n`;
+						status.code += `str x3, [x29, #${anchor}]\n`;
+						if (var_offset !== undefined) {
+							status.code += `str x3, [x29, #${var_offset}]\n`;
+						} else {
+							emit_var_address(status, "x1", name);
+							status.code += `str x3, [x1]\n`;
+						}
+					} else {
+						emit_var_address(status, "x1", name);
+						emit_struct_copy("x0", "x1", 0, struct_size, status);
+					}
+				} else {
+					emit_var_address(status, "x1", name);
+					emit_struct_copy("x0", "x1", 0, struct_size, status);
+				}
 			}
 			return;
 		}
@@ -194,11 +236,10 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 				if (is_constructor) {
 					build_node(node.right_value, status);
 					if (!status.code.endsWith("\n")) status.code += "\n";
-					emit_var_store(status, "x0", name, 8);
-					if (!status.heap_strings) status.heap_strings = new Set();
-					status.heap_strings.add(name);
-					if (status.heap_cleanup_stack?.length) {
-						status.heap_cleanup_stack[status.heap_cleanup_stack.length - 1].heap_strings.add(name);
+					anchor_heap_pointer(status, name);
+					const offset = status.stack_offsets?.get(name);
+					if (offset !== undefined) {
+						status.code += `str x0, [x29, #${offset}]\n`;
 					}
 					return;
 				}
