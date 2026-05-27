@@ -1007,9 +1007,11 @@ raw "inline code here"
 
 At the end of each scope, the compiler automatically:
 
-- Calls `dispose()` on variables implementing the `Disposable` trait
-- Frees non-static strings
-- Tracks allocation counts
+- Calls destroy blocks on structs and classes going out of scope
+- Frees heap-allocated strings and class instances
+- Cleans up all intermediate scopes on `break`, `continue`, and `return`
+
+See [MEMORY.md](MEMORY.md) for the full memory model description.
 
 ## Calling Conventions
 

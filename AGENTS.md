@@ -6,6 +6,8 @@ This document provides guidelines for agentic coding agents working on the Echo 
 
 The language's syntax and capabilites are documented in SPEC.md.
 
+The memory model is documented in MEMORY.md.
+
 ## Build, Lint, and Test Commands
 
 ### Primary Commands
