@@ -10,6 +10,41 @@ function escape_asciz(value: string): string {
 	const content = value.slice(1, value.endsWith(quote) ? -1 : undefined);
 	return quote + content.replace(/\n/g, "\\n") + (value.endsWith(quote) ? quote : "");
 }
+
+let string_array_counter = 0;
+
+function emit_string_array_labels(
+	values: import("./nodes/BaseNode.ts").default[],
+	status: BuildStatus,
+): Map<string, string> {
+	const labels = new Map<string, string>();
+	values.forEach((value) => {
+		const resolved = resolve_static_value(value, status);
+		if (resolved !== null && resolved.startsWith('"')) {
+			const label = `_str_arr_${string_array_counter++}`;
+			emit_data(status, `${label}: .asciz ${escape_asciz(resolved)}\n.p2align 2\n`);
+			labels.set(resolved, label);
+		}
+	});
+	return labels;
+}
+
+function needs_runtime_array_init(
+	values: import("./nodes/BaseNode.ts").default[],
+	status: BuildStatus,
+): boolean {
+	return values.some((value) => {
+		const resolved = resolve_static_value(value, status);
+		return resolved !== null && resolved.startsWith('"');
+	});
+}
+
+function resolve_array_element(raw: string, labels: Map<string, string>): string {
+	if (raw.startsWith('"') && labels.has(raw)) {
+		return labels.get(raw)!;
+	}
+	return raw;
+}
 import RangeNode from "../nodes/RangeNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_array_values_node, { resolve_static_value } from "./build_array_values_node.ts";
@@ -340,13 +375,29 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 					}
 				});
 			} else if (status.function_return_label) {
-				emit_data(status, `${node.name}: ${directive} `);
-				array_values.values.forEach((value, i) => {
-					if (i > 0) emit_data(status, ", ");
-					const resolved = resolve_static_value(value, status);
-					emit_data(status, resolved !== null ? resolved : "0");
-				});
-				emit_data(status, `\n.p2align 2\n`);
+				const labels = emit_string_array_labels(array_values.values, status);
+				if (needs_runtime_array_init(array_values.values, status)) {
+					const total_size = array_values.values.length * element_size;
+					const offset = allocate_stack_space(status, total_size, element_size);
+					status.stack_offsets!.set(node.name, offset);
+					array_values.values.forEach((value, i) => {
+						const slot_offset = offset + i * element_size;
+						const resolved = resolve_static_value(value, status);
+						if (resolved !== null) {
+							const label = resolve_array_element(resolved, labels);
+							status.code += `adr x0, ${label}\n`;
+							status.code += `str x0, [x29, #${slot_offset}]\n`;
+						}
+					});
+				} else {
+					emit_data(status, `${node.name}: ${directive} `);
+					array_values.values.forEach((value, i) => {
+						if (i > 0) emit_data(status, ", ");
+						const resolved = resolve_static_value(value, status);
+						emit_data(status, resolved !== null ? resolved : "0");
+					});
+					emit_data(status, `\n.p2align 2\n`);
+				}
 			} else {
 				status.code += `${node.name}: ${directive} `;
 				build_array_values_node(array_values, status);
@@ -663,13 +714,29 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 					});
 				}
 			} else if (status.function_return_label) {
-				emit_data(status, `${node.name}: ${directive} `);
-				array_values.values.forEach((value, i) => {
-					if (i > 0) emit_data(status, ", ");
-					const resolved = resolve_static_value(value, status);
-					emit_data(status, resolved !== null ? resolved : "0");
-				});
-				emit_data(status, `\n.p2align 2\n`);
+				const labels = emit_string_array_labels(array_values.values, status);
+				if (needs_runtime_array_init(array_values.values, status)) {
+					const total_size = array_values.values.length * size;
+					const offset = allocate_stack_space(status, total_size, size);
+					status.stack_offsets!.set(node.name, offset);
+					array_values.values.forEach((value, i) => {
+						const slot_offset = offset + i * size;
+						const resolved = resolve_static_value(value, status);
+						if (resolved !== null) {
+							const label = resolve_array_element(resolved, labels);
+							status.code += `adr x0, ${label}\n`;
+							status.code += `str x0, [x29, #${slot_offset}]\n`;
+						}
+					});
+				} else {
+					emit_data(status, `${node.name}: ${directive} `);
+					array_values.values.forEach((value, i) => {
+						if (i > 0) emit_data(status, ", ");
+						const resolved = resolve_static_value(value, status);
+						emit_data(status, resolved !== null ? resolved : "0");
+					});
+					emit_data(status, `\n.p2align 2\n`);
+				}
 			} else {
 				status.code += `${node.name}: ${directive} `;
 				build_array_values_node(array_values, status);

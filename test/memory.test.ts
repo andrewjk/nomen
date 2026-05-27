@@ -86,7 +86,9 @@ Console.write("\\{c}")
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
-		await check_output("leak_multiple_interpolate", result, "123", { audit: true });
+		await check_output("leak_multiple_interpolate", result, "123", {
+			audit: true,
+		});
 	});
 
 	test("struct destroy does not free string fields", async () => {
@@ -103,7 +105,9 @@ Console.write("\\{n.id}")
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
-		await check_output("leak_struct_string_field", result, "1", { audit: true });
+		await check_output("leak_struct_string_field", result, "1", {
+			audit: true,
+		});
 	});
 
 	test("inner scope string is not freed", async () => {
@@ -146,7 +150,9 @@ Console.write(t)
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
-		await check_output("dfree_assign_heap_string", result, "11", { audit: true });
+		await check_output("dfree_assign_heap_string", result, "11", {
+			audit: true,
+		});
 	});
 
 	test("BUG: returning heap string is use-after-free", async () => {
@@ -161,7 +167,9 @@ Console.write(result)
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
-		await check_output("dfree_return_heap_string", result, "42", { audit: true });
+		await check_output("dfree_return_heap_string", result, "42", {
+			audit: true,
+		});
 	});
 
 	test("BUG: reassigning heap string to literal frees non-heap pointer", async () => {
@@ -174,7 +182,9 @@ Console.write(s)
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
-		await check_output("dfree_reassign_to_literal", result, "literal", { audit: true });
+		await check_output("dfree_reassign_to_literal", result, "literal", {
+			audit: true,
+		});
 	});
 
 	test("BUG: reassigning heap string leaks old value", async () => {
@@ -188,7 +198,9 @@ Console.write(s)
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
-		await check_output("dfree_reassign_leaks_old", result, "2", { audit: true });
+		await check_output("dfree_reassign_leaks_old", result, "2", {
+			audit: true,
+		});
 	});
 
 	test("BUG: returning from nested scope leaks string", async () => {
@@ -206,7 +218,9 @@ Console.write(result)
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
-		await check_output("dfree_return_nested_scope", result, "42", { audit: true });
+		await check_output("dfree_return_nested_scope", result, "42", {
+			audit: true,
+		});
 	});
 
 	test("BUG: struct with string field leaks on destroy", async () => {
@@ -224,7 +238,9 @@ Console.write("\\{n.id}")
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
-		await check_output("dfree_struct_string_field", result, "1", { audit: true });
+		await check_output("dfree_struct_string_field", result, "1", {
+			audit: true,
+		});
 	});
 
 	test("BUG: break leaks heap string in loop body", async () => {
@@ -244,7 +260,9 @@ Console.write("done")
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
-		await check_output("leak_break_heap_string", result, "0done", { audit: true });
+		await check_output("leak_break_heap_string", result, "0done", {
+			audit: true,
+		});
 	});
 
 	test("BUG: continue leaks heap string in loop body", async () => {
@@ -263,7 +281,9 @@ Console.write("done")
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
-		await check_output("leak_continue_heap_string", result, "02done", { audit: true });
+		await check_output("leak_continue_heap_string", result, "02done", {
+			audit: true,
+		});
 	});
 
 	test("BUG: aliasing heap string via declaration then reassigning original is UAF", async () => {
@@ -276,7 +296,9 @@ Console.write(b)
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
-		await check_output("uaf_alias_then_reassign", result, "42", { audit: true });
+		await check_output("uaf_alias_then_reassign", result, "42", {
+			audit: true,
+		});
 	});
 
 	test("BUG: assigning heap string to another variable leaks old value", async () => {
@@ -553,7 +575,9 @@ Console.write("\\{result.value}")
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
-		await check_output("dfree_return_nested_class", result, "42", { audit: true });
+		await check_output("dfree_return_nested_class", result, "42", {
+			audit: true,
+		});
 	});
 
 	test("BUG: reassigning class leaks old value", async () => {
@@ -610,7 +634,9 @@ Console.write("\\{n.id}")
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
-		await check_output("dfree_class_string_field", result, "1", { audit: true });
+		await check_output("dfree_class_string_field", result, "1", {
+			audit: true,
+		});
 	});
 
 	test("BUG: break leaks class in loop body", async () => {
@@ -802,7 +828,9 @@ Console.write("\\{items[2].value}")
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
-		await check_output("leak_array_of_classes", result, "123", { audit: false });
+		await check_output("leak_array_of_classes", result, "123", {
+			audit: false,
+		});
 	});
 
 	test("array of classes with destroy leaks each element", async () => {
@@ -822,7 +850,9 @@ Console.write("\\{items[1].handle}")
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
-		await check_output("leak_array_class_destroy", result, "12", { audit: false });
+		await check_output("leak_array_class_destroy", result, "12", {
+			audit: false,
+		});
 	});
 
 	test("BUG: inner scope array of strings leaks", async () => {
@@ -836,7 +866,9 @@ Console.write("done")
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
-		await check_output("leak_scope_array_strings", result, "42done", { audit: false });
+		await check_output("leak_scope_array_strings", result, "42done", {
+			audit: false,
+		});
 	});
 
 	test("inner scope array of classes leaks", async () => {
@@ -854,7 +886,9 @@ Console.write("done")
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
-		await check_output("leak_scope_array_classes", result, "10done", { audit: false });
+		await check_output("leak_scope_array_classes", result, "10done", {
+			audit: false,
+		});
 	});
 
 	test("BUG: for-each over string array leaks elements", async () => {
@@ -867,7 +901,9 @@ for s of parts {
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
-		await check_output("leak_foreach_string_array", result, "12", { audit: false });
+		await check_output("leak_foreach_string_array", result, "12", {
+			audit: false,
+		});
 	});
 
 	test("for-each over class array leaks elements", async () => {
@@ -884,7 +920,9 @@ for b of items {
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
-		await check_output("leak_foreach_class_array", result, "12", { audit: false });
+		await check_output("leak_foreach_class_array", result, "12", {
+			audit: false,
+		});
 	});
 
 	test("BUG: break leaks array string elements in loop", async () => {
@@ -904,7 +942,9 @@ Console.write("done")
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
-		await check_output("leak_break_array_strings", result, "0done", { audit: false });
+		await check_output("leak_break_array_strings", result, "0done", {
+			audit: false,
+		});
 	});
 
 	test("BUG: break leaks array class elements in loop", async () => {
@@ -928,7 +968,9 @@ Console.write("done")
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
-		await check_output("leak_break_array_classes", result, "0done", { audit: false });
+		await check_output("leak_break_array_classes", result, "0done", {
+			audit: false,
+		});
 	});
 
 	test("BUG: continue leaks array string elements in loop", async () => {
@@ -947,7 +989,9 @@ Console.write("done")
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
-		await check_output("leak_continue_array_strings", result, "02done", { audit: false });
+		await check_output("leak_continue_array_strings", result, "02done", {
+			audit: false,
+		});
 	});
 
 	test("BUG: continue leaks array class elements in loop", async () => {
@@ -970,22 +1014,26 @@ Console.write("done")
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
-		await check_output("leak_continue_array_classes", result, "02done", { audit: false });
+		await check_output("leak_continue_array_classes", result, "02done", {
+			audit: false,
+		});
 	});
 
 	test("BUG: struct field array of strings leaks elements", async () => {
 		const input = `
 struct Container {
-  var string items
+  var string[] items
 }
 
-var Container c = Container(["hello", "world"])
-Console.write("\\{c.items[0]}")
+var c = Container(["hello", "world"])
+Console.write("\\{c.items[0]}\\{c.items[1]}")
 `;
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
-		await check_output("leak_struct_field_string_array", result, "helloworld", { audit: false });
+		await check_output("leak_struct_field_string_array", result, "helloworld", {
+			audit: false,
+		});
 	});
 
 	test("no leak: array of primitives (no heap allocation)", async () => {
@@ -998,6 +1046,8 @@ Console.write("\\{nums[2]}")
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
-		await check_output("leak_array_primitives", result, "123", { audit: false });
+		await check_output("leak_array_primitives", result, "123", {
+			audit: false,
+		});
 	});
 });
