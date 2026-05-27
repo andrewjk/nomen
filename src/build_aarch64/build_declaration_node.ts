@@ -187,8 +187,16 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 	const prev_heap = status.last_result_is_heap;
 
 	function check_heap() {
-		if (node.type.name === "string" && status.last_result_is_heap) {
-			mark_heap_string(status, node.name);
+		if (status.last_result_is_heap) {
+			if (node.type.name === "string") {
+				mark_heap_string(status, node.name);
+			} else {
+				const struct_type = status.structs.find((s) => s.name === node.type.name && s.is_class);
+				if (struct_type) {
+					if (!status.heap_strings) status.heap_strings = new Set();
+					status.heap_strings.add(node.name);
+				}
+			}
 		}
 		status.last_result_is_heap = prev_heap;
 	}
@@ -443,6 +451,13 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 					}
 					emit_var_load(status, "x0", node.name, 8);
 					status.code += `bl ${func_call.name}_init\n`;
+				} else {
+					build_node(func_call, status);
+					if (!status.code.endsWith("\n")) {
+						status.code += "\n";
+					}
+					emit_var_store(status, "x0", node.name, 8);
+					check_heap();
 				}
 			} else if (node.value) {
 				if (node.value.node_type === "value") {
