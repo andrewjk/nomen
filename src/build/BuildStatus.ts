@@ -41,6 +41,7 @@ export default interface BuildStatus {
 	moved?: Set<string>;
 	heap_returning_functions?: Set<string>;
 	heap_strings?: Set<string>;
+	heap_string_arrays?: Map<string, number>;
 	last_result_is_heap?: boolean;
 	match_save_size?: number;
 }

@@ -195,6 +195,15 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 	for (let i = declarations_before; i < status.scoped_declarations.length; i++) {
 		const decl = status.scoped_declarations[i];
 		if (moved.has(decl.name)) continue;
+		if (status.heap_string_arrays?.has(decl.name)) {
+			const len = status.heap_string_arrays.get(decl.name)!;
+			for (let j = 0; j < len; j++) {
+				emit_var_address(status, "x0", decl.name);
+				status.code += `ldr x0, [x0, #${j * 8}]\n`;
+				emit_free(status);
+			}
+			continue;
+		}
 		if (status.heap_strings?.has(decl.name)) {
 			emit_var_load(status, "x0", decl.name, 8);
 			emit_free(status);
@@ -240,6 +249,15 @@ export function emit_cleanup_to_loop_depth(status: BuildStatus) {
 		}
 		for (const name of scope.heap_strings) {
 			if (moved.has(name)) continue;
+			if (status.heap_string_arrays?.has(name)) {
+				const len = status.heap_string_arrays.get(name)!;
+				for (let j = 0; j < len; j++) {
+					emit_var_address(status, "x0", name);
+					status.code += `ldr x0, [x0, #${j * 8}]\n`;
+					emit_free(status);
+				}
+				continue;
+			}
 			if (!status.heap_strings?.has(name)) continue;
 			emit_var_load(status, "x0", name, 8);
 			emit_free(status);

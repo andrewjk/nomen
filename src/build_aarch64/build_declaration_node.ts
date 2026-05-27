@@ -1,50 +1,9 @@
 import type BuildStatus from "../build/BuildStatus.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
+import type BaseNode from "../nodes/BaseNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
-
-function escape_asciz(value: string): string {
-	if (!value.includes("\n")) return value;
-	const quote = value[0];
-	const content = value.slice(1, value.endsWith(quote) ? -1 : undefined);
-	return quote + content.replace(/\n/g, "\\n") + (value.endsWith(quote) ? quote : "");
-}
-
-let string_array_counter = 0;
-
-function emit_string_array_labels(
-	values: import("./nodes/BaseNode.ts").default[],
-	status: BuildStatus,
-): Map<string, string> {
-	const labels = new Map<string, string>();
-	values.forEach((value) => {
-		const resolved = resolve_static_value(value, status);
-		if (resolved !== null && resolved.startsWith('"')) {
-			const label = `_str_arr_${string_array_counter++}`;
-			emit_data(status, `${label}: .asciz ${escape_asciz(resolved)}\n.p2align 2\n`);
-			labels.set(resolved, label);
-		}
-	});
-	return labels;
-}
-
-function needs_runtime_array_init(
-	values: import("./nodes/BaseNode.ts").default[],
-	status: BuildStatus,
-): boolean {
-	return values.some((value) => {
-		const resolved = resolve_static_value(value, status);
-		return resolved !== null && resolved.startsWith('"');
-	});
-}
-
-function resolve_array_element(raw: string, labels: Map<string, string>): string {
-	if (raw.startsWith('"') && labels.has(raw)) {
-		return labels.get(raw)!;
-	}
-	return raw;
-}
 import RangeNode from "../nodes/RangeNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_array_values_node, { resolve_static_value } from "./build_array_values_node.ts";
@@ -65,6 +24,42 @@ import {
 	emit_var_store,
 } from "./utils/stack_var.ts";
 import { emit_struct_copy, get_enum_size, get_struct_size } from "./utils/struct_layout.ts";
+
+function escape_asciz(value: string): string {
+	if (!value.includes("\n")) return value;
+	const quote = value[0];
+	const content = value.slice(1, value.endsWith(quote) ? -1 : undefined);
+	return quote + content.replace(/\n/g, "\\n") + (value.endsWith(quote) ? quote : "");
+}
+
+let string_array_counter = 0;
+
+function emit_string_array_labels(values: BaseNode[], status: BuildStatus): Map<string, string> {
+	const labels = new Map<string, string>();
+	values.forEach((value) => {
+		const resolved = resolve_static_value(value, status);
+		if (resolved !== null && resolved.startsWith('"')) {
+			const label = `_str_arr_${string_array_counter++}`;
+			emit_data(status, `${label}: .asciz ${escape_asciz(resolved)}\n.p2align 2\n`);
+			labels.set(resolved, label);
+		}
+	});
+	return labels;
+}
+
+function needs_runtime_array_init(values: BaseNode[], status: BuildStatus): boolean {
+	return values.some((value) => {
+		const resolved = resolve_static_value(value, status);
+		return resolved !== null && resolved.startsWith('"');
+	});
+}
+
+function resolve_array_element(raw: string, labels: Map<string, string>): string {
+	if (raw.startsWith('"') && labels.has(raw)) {
+		return labels.get(raw)!;
+	}
+	return raw;
+}
 
 function get_raw_value(node: ValueNode, status?: BuildStatus): string {
 	let val = node.value;
@@ -99,10 +94,7 @@ function emit_data(status: BuildStatus, data: string) {
 	}
 }
 
-function is_struct_constructor(
-	node: import("../nodes/BaseNode.ts").default,
-	status: BuildStatus,
-): boolean {
+function is_struct_constructor(node: BaseNode, status: BuildStatus): boolean {
 	if (node.node_type !== "func_call") return false;
 	const fc = node as FunctionCallNode;
 	return !!status.structs.find((s) => s.name === fc.name && !s.is_simple_type);
@@ -139,10 +131,7 @@ function emit_stack_slot_addr(offset: number): string {
 	return `add x0, x29, #${offset}\n`;
 }
 
-function has_complex_elements(
-	values: import("../nodes/BaseNode.ts").default[],
-	status: BuildStatus,
-): boolean {
+function has_complex_elements(values: BaseNode[], status: BuildStatus): boolean {
 	return values.some((v) => resolve_static_value(v, status) === null);
 }
 
@@ -223,8 +212,19 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 
 	function check_heap() {
 		if (status.last_result_is_heap) {
-			if (node.type.name === "string") {
+			if (node.type.name === "string" && !node.type.is_array) {
 				mark_heap_string(status, node.name);
+			} else if (node.type.name === "string" && node.type.is_array) {
+				const len = node.type.length ? parseInt((node.type.length as ValueNode).value || "0") : 0;
+				if (len > 0) {
+					if (!status.heap_string_arrays) status.heap_string_arrays = new Map();
+					status.heap_string_arrays.set(node.name, len);
+					if (status.heap_cleanup_stack?.length) {
+						status.heap_cleanup_stack[status.heap_cleanup_stack.length - 1].heap_strings.add(
+							node.name,
+						);
+					}
+				}
 			} else {
 				const struct_type = status.structs.find((s) => s.name === node.type.name && s.is_class);
 				if (struct_type) {
@@ -356,6 +356,15 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 							}
 						}
 					});
+				}
+				if (node.type.name === "string" && node.type.is_array) {
+					if (!status.heap_string_arrays) status.heap_string_arrays = new Map();
+					status.heap_string_arrays.set(node.name, array_values.values.length);
+					if (status.heap_cleanup_stack?.length) {
+						status.heap_cleanup_stack[status.heap_cleanup_stack.length - 1].heap_strings.add(
+							node.name,
+						);
+					}
 				}
 			} else if (status.function_return_label && node.declaration === "var") {
 				const total_size = array_values.values.length * element_size;
@@ -736,6 +745,15 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 						emit_data(status, resolved !== null ? resolved : "0");
 					});
 					emit_data(status, `\n.p2align 2\n`);
+				}
+				if (node.type.name === "string" && node.type.is_array) {
+					if (!status.heap_string_arrays) status.heap_string_arrays = new Map();
+					status.heap_string_arrays.set(node.name, array_values.values.length);
+					if (status.heap_cleanup_stack?.length) {
+						status.heap_cleanup_stack[status.heap_cleanup_stack.length - 1].heap_strings.add(
+							node.name,
+						);
+					}
 				}
 			} else {
 				status.code += `${node.name}: ${directive} `;
