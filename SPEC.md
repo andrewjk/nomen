@@ -191,6 +191,79 @@ pub struct Transaction {
 }
 ```
 
+### Class Types
+
+Classes are reference types — they are always allocated on the heap and passed by pointer. Assigning a class variable to another creates a shared reference to the same instance, not a copy.
+
+```
+class Point {
+    var int x
+    var int y
+}
+```
+
+Classes are constructed the same way as structs, by calling the name as a function:
+
+```
+var p = Point(1, 2)
+```
+
+#### Assignment Semantics
+
+Unlike structs, which are value types copied on assignment, classes share the underlying instance:
+
+```
+var p = Point(10, 20)
+var q = p
+q.x = 99
+// p.x is now also 99 — p and q point to the same instance
+```
+
+#### Methods
+
+Class methods use `var self` to declare mutable access to the instance:
+
+```
+class Counter {
+    var int count
+
+    func increment = (var self) {
+        self.count = self.count + 1
+    }
+}
+```
+
+Methods are called with dot syntax on the instance:
+
+```
+var c = Counter(0)
+c.increment()
+```
+
+#### Destroy Blocks
+
+Like structs, classes support `destroy` blocks that run automatically when the class instance goes out of scope:
+
+```
+class Resource {
+    var int handle
+
+    destroy = {
+        self.handle = -1
+    }
+}
+```
+
+#### Passing to Functions
+
+Classes passed as function parameters share the same heap instance. Modifications inside the function are visible to the caller:
+
+```
+func getX = (Point p) {
+    return p.x
+}
+```
+
 ### Generic Structs
 
 Structs can declare type parameters using `<T>` syntax. Type parameters are type-erased at the storage level — all values are 8 bytes on aarch64, so `T` is purely for compile-time type checking with no monomorphization.
