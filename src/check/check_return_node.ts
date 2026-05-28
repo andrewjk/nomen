@@ -1,11 +1,23 @@
+import add_error from "../add_error.ts";
 import type ReturningNode from "../nodes/ReturningNode.ts";
 import ReturnNode from "../nodes/ReturnNode.ts";
 import Type from "../nodes/Type.ts";
+import ValueNode from "../nodes/ValueNode.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
+
+function is_class_type(type_name: string, status: CheckStatus): boolean {
+	return !!status.structs.find((s) => s.name === type_name && s.is_class);
+}
+
+function get_inner_value_node(node: import("../nodes/BaseNode.ts").default): ValueNode | null {
+	if (node.node_type === "value") return node as ValueNode;
+	if (node.node_type === "grouped") return get_inner_value_node((node as any).value);
+	return null;
+}
 
 export default function check_return_node(ret: ReturnNode, status: CheckStatus) {
 	let func: ReturningNode | null = null;
@@ -36,6 +48,22 @@ export default function check_return_node(ret: ReturnNode, status: CheckStatus) 
 	status.expected_type = old_expected_type;
 
 	ret.type = type_from_value_node(ret.value, status);
+
+	if (func && ret.type && is_class_type(ret.type.name, status)) {
+		const value_node = get_inner_value_node(ret.value);
+		if (value_node) {
+			const param = (func as import("../nodes/FunctionNode.ts").default).params.find(
+				(p) => p.name === value_node.value,
+			);
+			if (param && is_class_type(param.type.name, status) && !param.is_moved) {
+				add_error(
+					status,
+					`Cannot return class parameter '${param.name}' without 'mov' — would create shared reference`,
+					ret.value.start,
+				);
+			}
+		}
+	}
 
 	if (func) {
 		if (func.return_type.name) {

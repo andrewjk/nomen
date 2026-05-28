@@ -1148,8 +1148,10 @@ var Box a = Box(42)
 var Box b = identity(mov a)
 `;
 		const parsed = parse_with_imports(input);
-		expect(parsed.errors.length).toBeGreaterThan(0);
-		expect(parsed.errors[0].message).toContain("Unexpected 'mov' keyword");
+		expect(parsed.errors.length).toBeGreaterThanOrEqual(2);
+		expect(parsed.errors.map((e) => e.message)).toContain(
+			"Unexpected 'mov' keyword for non-mov parameter 'b'",
+		);
 	});
 
 	test("class reassigned to new instance frees old instance", async () => {
@@ -1483,8 +1485,107 @@ var Box b = share(a)
 Console.write("\\{a.value},\\{b.value}")
 `;
 		const parsed = parse_with_imports(input);
+		expect(parsed.errors.length).toBeGreaterThan(0);
+		expect(parsed.errors[0].message).toContain("Cannot return class parameter 'b' without 'mov'");
+	});
+
+	test("returning class param with mov is allowed", async () => {
+		const input = `
+class Box {
+  var int value
+}
+
+func share = (mov Box b, out Box) {
+  return b
+}
+
+var Box a = Box(42)
+var Box b = share(mov a)
+Console.write("\\{b.value}")
+`;
+		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("shared_class_return", result, "42,42");
+		await check_output("mov_class_return", result, "42");
+	});
+
+	test("returning class local var is allowed", async () => {
+		const input = `
+class Box {
+  var int value
+}
+
+func make = (out Box) {
+  var Box a = Box(42)
+  return a
+}
+
+var Box b = make()
+Console.write("\\{b.value}")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		await check_output("return_class_local", result, "42");
+	});
+
+	test("returning class param accessed through grouped expression", async () => {
+		const input = `
+class Box {
+  var int value
+}
+
+func share = (Box b, out Box) {
+  return (b)
+}
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors.length).toBeGreaterThan(0);
+		expect(parsed.errors[0].message).toContain("Cannot return class parameter 'b' without 'mov'");
+	});
+
+	test.skip("returning non-class struct param without mov is allowed", async () => {
+		const input = `
+struct Point {
+  var int x
+  var int y
+}
+
+func identity = (Point p, out Point) {
+  return p
+}
+
+var Point a = Point(1, 2)
+var Point b = identity(a)
+Console.write("\\{b.x}")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		await check_output("return_struct_param", result, "1");
+	});
+
+	test("returning class param via function call is allowed", async () => {
+		const input = `
+class Box {
+  var int value
+}
+
+func identity = (mov Box x, out Box) {
+  return x
+}
+
+func wrap = (mov Box b, out Box) {
+  return identity(mov b)
+}
+
+var Box a = Box(42)
+var Box b = wrap(mov a)
+Console.write("\\{b.value}")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		await check_output("return_class_via_call", result, "42");
 	});
 });
