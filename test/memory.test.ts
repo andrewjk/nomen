@@ -1069,7 +1069,7 @@ Console.write("\\{result.value}")
 		await check_output("own_nested_return", result, "42");
 	});
 
-	test.skip("BUG: class param stored in returned array causes double-free", async () => {
+	test("class param stored in returned array causes double-free", async () => {
 		const input = `
 class Box {
   var int value
@@ -1090,7 +1090,7 @@ Console.write("\\{result[0].value}")
 		await check_output("own_param_in_array", result, "42");
 	});
 
-	test.skip("BUG: class in struct field returned from function with mov (struct return convention broken)", async () => {
+	test("class in struct field returned from function with mov", async () => {
 		const input = `
 class Box {
   var int value
@@ -1114,7 +1114,7 @@ Console.write("\\{h.content.value}")
 		await check_output("own_class_in_struct_field", result, "42");
 	});
 
-	test.skip("BUG: function returning stack-allocated array of classes returns stack pointer", async () => {
+	test.skip("BUG: class elements in heap-allocated returned arrays leak (make_arr)", async () => {
 		const input = `
 class Box {
   var int value

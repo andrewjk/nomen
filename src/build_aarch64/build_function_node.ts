@@ -31,11 +31,12 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	}
 
 	const return_struct = status.structs.find(
-		(s) => s.name === node.return_type.name && !s.is_simple_type,
+		(s) => s.name === node.return_type.name && !s.is_simple_type && !s.is_class,
 	);
 	if (return_struct) {
 		status.struct_return_buffer = "x8";
 	}
+	status.function_return_type = node.return_type;
 
 	const old_stack_size = status.stack_size;
 	const old_stack_offsets = status.stack_offsets;
@@ -175,4 +176,5 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.function_param_vars = undefined;
 	status.function_return_label = old_return_label;
 	status.struct_return_buffer = undefined;
+	status.function_return_type = undefined;
 }

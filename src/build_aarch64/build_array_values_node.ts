@@ -25,12 +25,33 @@ function get_raw_value(node: ValueNode, status: BuildStatus): string {
 	return val;
 }
 
+function is_literal_value(raw: string): boolean {
+	return (
+		/^(\+|-)?\d+(\.\d+)?$/.test(raw) ||
+		raw === "true" ||
+		raw === "false" ||
+		raw.startsWith('"') ||
+		raw.startsWith("0x") ||
+		raw.startsWith("0X") ||
+		raw.startsWith("0o") ||
+		raw.startsWith("0O") ||
+		raw.startsWith("0b") ||
+		raw.startsWith("0B")
+	);
+}
+
 function resolve_static_value(
 	node: import("../nodes/BaseNode.ts").default,
 	status: BuildStatus,
 ): string | null {
 	if (node.node_type === "value") {
-		return get_raw_value(node as ValueNode, status);
+		const valueNode = node as ValueNode;
+		if (valueNode.is_enum_shorthand) {
+			return get_raw_value(valueNode, status);
+		}
+		const raw = get_raw_value(valueNode, status);
+		if (is_literal_value(raw)) return raw;
+		return null;
 	}
 	if (node.node_type === "access") {
 		const access = node as AccessNode;

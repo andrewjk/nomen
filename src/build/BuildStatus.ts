@@ -25,6 +25,9 @@ export default interface BuildStatus {
 	function_ref_params?: Set<string>;
 	function_array_params?: Set<string>;
 	function_return_label?: string;
+	heap_array_vars?: Set<string>;
+	heap_class_arrays?: Map<string, number>;
+	function_return_type?: Type;
 	strings?: Map<string, string>;
 	loop_labels?: { start: string; end: string; cleanup_depth?: number }[];
 	heap_cleanup_stack?: {

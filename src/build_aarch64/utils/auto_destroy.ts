@@ -140,21 +140,30 @@ function emit_field_destroys(
 	for (const field of struct_type.fields) {
 		const field_struct = is_struct_type(field.type.name, status);
 		if (field_struct) {
-			if (has_destroy(field_struct)) {
-				const actual_offset = base_offset !== undefined ? base_offset + offset : offset;
+			if (field_struct.is_class && !field.type.is_ref) {
 				if (decl_name) {
 					emit_var_address(status, "x0", decl_name);
 				}
-				status.code += `add x0, x0, #${actual_offset}\n`;
-				status.code += `bl ${field_struct.name}_destroy\n`;
+				const actual_offset = base_offset !== undefined ? base_offset + offset : offset;
+				status.code += `ldr x0, [x0, #${actual_offset}]\n`;
+				emit_free(status);
+			} else {
+				if (has_destroy(field_struct)) {
+					const actual_offset = base_offset !== undefined ? base_offset + offset : offset;
+					if (decl_name) {
+						emit_var_address(status, "x0", decl_name);
+					}
+					status.code += `add x0, x0, #${actual_offset}\n`;
+					status.code += `bl ${field_struct.name}_destroy\n`;
+				}
+				emit_nested_field_destroys(
+					status,
+					field_struct,
+					decl_name,
+					base_offset !== undefined ? base_offset + offset : offset,
+				);
 			}
 			const field_size = get_struct_size(field.type.name, status);
-			emit_nested_field_destroys(
-				status,
-				field_struct,
-				decl_name,
-				base_offset !== undefined ? base_offset + offset : offset,
-			);
 			offset += field_size;
 		} else if (field.type.is_array) {
 			const elem_struct = is_struct_type(field.type.name, status);
@@ -254,6 +263,9 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 				}
 				status.code += `bl ${struct_type.name}_destroy\n`;
 			}
+			if (!struct_type.is_class) {
+				emit_field_destroys(status, struct_type, decl.name);
+			}
 		}
 		for (const slot of current_scope.heap_slots) {
 			if (slot.var_name && moved.has(slot.var_name)) continue;
@@ -299,6 +311,7 @@ export function has_struct_fields_with_destroy(
 		if (field.type.is_ref) continue;
 		const field_struct = is_struct_type(field.type.name, status);
 		if (field_struct) {
+			if (field_struct.is_class) return true;
 			if (has_destroy(field_struct)) return true;
 			if (has_struct_fields_with_destroy(field_struct, status)) return true;
 		}

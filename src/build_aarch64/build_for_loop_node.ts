@@ -105,7 +105,9 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 		const length = type.length ? (type.length as any).value : "0";
 		const struct_type = status.structs.find((s) => s.name === type.name && !s.is_simple_type);
 		const element_size = struct_type
-			? get_struct_size(type.name, status)
+			? struct_type.is_class
+				? 8
+				: get_struct_size(type.name, status)
 			: type.name
 				? aarch64_size(type.name)
 				: 8;
@@ -140,7 +142,9 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 		// Load array[index] into item variable
 		const list_name = node.list.node_type === "value" ? (node.list as any).value : "_list";
 		const list_type = type_from_value_node(node.list);
-		const list_is_pointer = list_type.is_array && !!status.function_array_params?.has(list_name);
+		const list_is_pointer =
+			list_type.is_array &&
+			(!!status.function_array_params?.has(list_name) || !!status.heap_array_vars?.has(list_name));
 		if (list_is_pointer) {
 			emit_var_load(status, "x3", list_name, 8);
 		} else {

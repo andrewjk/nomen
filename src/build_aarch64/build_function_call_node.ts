@@ -159,9 +159,31 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			status.code += `mov x0, ${status.struct_return_buffer}\n`;
 		} else if (is_struct && is_struct.is_class) {
 			status.code += `ldr x0, [sp]\n`;
+		} else if (!is_struct && node.type?.name && !status.struct_return_buffer) {
+			const return_struct = status.structs.find(
+				(s) => s.name === node.type!.name && !s.is_simple_type && !s.is_class,
+			);
+			if (return_struct) {
+				const struct_size = get_struct_size(node.type!.name, status);
+				const temp_name = `_call_ret_${temp_counter++}`;
+				const offset = allocate_stack_space(status, struct_size);
+				status.stack_offsets!.set(temp_name, offset);
+				status.code += `add x8, x29, #${offset}\n`;
+			}
 		}
 
 		status.code += `bl ${func_name}\n`;
+
+		if (!is_struct && node.type?.name && !status.struct_return_buffer) {
+			const return_struct = status.structs.find(
+				(s) => s.name === node.type!.name && !s.is_simple_type && !s.is_class,
+			);
+			if (return_struct) {
+				const temp_name = `_call_ret_${temp_counter - 1}`;
+				const offset = status.stack_offsets!.get(temp_name)!;
+				status.code += `add x0, x29, #${offset}\n`;
+			}
+		}
 	}
 
 	// For struct constructors with a temp, load temp address into x0

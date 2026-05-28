@@ -15,6 +15,7 @@ import {
 	allocate_stack_space,
 	emit_deref_var_address,
 	emit_var_address,
+	emit_var_load,
 	is_local_ref_var,
 } from "./utils/stack_var.ts";
 import { get_enum_size } from "./utils/struct_layout.ts";
@@ -25,6 +26,8 @@ export function emit_address_of(node: BaseNode, status: BuildStatus) {
 		const name = (node as ValueNode).value;
 		if (is_local_ref_var(name, status)) {
 			emit_deref_var_address(status, "x0", name);
+		} else if (status.heap_array_vars?.has(name)) {
+			emit_var_load(status, "x0", name, 8);
 		} else {
 			emit_var_address(status, "x0", name);
 		}
@@ -38,7 +41,9 @@ export function emit_address_of(node: BaseNode, status: BuildStatus) {
 			);
 			const element_size = target_type.name
 				? struct_type
-					? get_struct_size(target_type.name, status)
+					? struct_type.is_class
+						? 8
+						: get_struct_size(target_type.name, status)
 					: aarch64_size(target_type.name)
 				: 8;
 
@@ -177,7 +182,9 @@ function compute_access_offset(node: AccessNode, status: BuildStatus): number {
 			(s) => s.name === target_type.name && !s.is_simple_type,
 		);
 		const element_size = struct_type
-			? get_struct_size(target_type.name, status)
+			? struct_type.is_class
+				? 8
+				: get_struct_size(target_type.name, status)
 			: aarch64_size(target_type.name);
 
 		let index_offset = 0;
@@ -265,9 +272,11 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 						}
 					} else if (is_local_ref_var(name, status)) {
 						emit_deref_var_address(status, "x0", name);
-					} else {
-						emit_var_address(status, "x0", name);
-					}
+			} else if (status.heap_array_vars?.has(name)) {
+					emit_var_load(status, "x0", name, 8);
+				} else {
+					emit_var_address(status, "x0", name);
+				}
 				} else {
 					build_node(node.target, status);
 					if (!status.code.endsWith("\n")) status.code += "\n";
@@ -326,6 +335,51 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 	const offset = compute_field_offset(node, status);
 	const base = get_base_target(node);
 
+	const target_is_class_access =
+		node.target.node_type === "access" &&
+		(node.target as AccessNode).access.node_type === "access_field" &&
+		!!status.structs.find(
+			(s) =>
+				s.name === ((node.target as AccessNode).access as AccessFieldNode).type?.name &&
+				s.is_class,
+		);
+
+	const target_is_class_array_access =
+		node.target.node_type === "access" &&
+		(node.target as AccessNode).access.node_type === "access_index" &&
+		!!status.structs.find(
+			(s) =>
+				s.name ===
+					type_from_value_node((node.target as AccessNode).target)?.name && s.is_class,
+		);
+
+	if (target_is_class_access || target_is_class_array_access) {
+		build_node(node.target, status);
+		if (!status.code.endsWith("\n")) {
+			status.code += "\n";
+		}
+		const final_offset = get_field_offset(target_type?.name || "", access_field.name, status);
+		const field_type = access_field.type?.name || "";
+		const size = aarch64_size(field_type);
+		const signed =
+			field_type.startsWith("int") ||
+			field_type === "float" ||
+			field_type === "float32" ||
+			field_type === "float64";
+		if (size === 1) {
+			status.code += signed
+				? `ldrsb x0, [x0, #${final_offset}]\n`
+				: `ldrb w0, [x0, #${final_offset}]\n`;
+		} else if (size === 4) {
+			status.code += signed
+				? `ldrsw x0, [x0, #${final_offset}]\n`
+				: `ldr w0, [x0, #${final_offset}]\n`;
+		} else {
+			status.code += `ldr x0, [x0, #${final_offset}]\n`;
+		}
+		return;
+	}
+
 	const target_is_ref_access =
 		node.target.node_type === "access" &&
 		(node.target as AccessNode).access.node_type === "access_field" &&
@@ -337,6 +391,42 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 			status.code += "\n";
 		}
 		const final_offset = get_field_offset(access_field.type?.name || "", access_field.name, status);
+		const field_type = access_field.type?.name || "";
+		const size = aarch64_size(field_type);
+		const signed =
+			field_type.startsWith("int") ||
+			field_type === "float" ||
+			field_type === "float32" ||
+			field_type === "float64";
+		if (size === 1) {
+			status.code += signed
+				? `ldrsb x0, [x0, #${final_offset}]\n`
+				: `ldrb w0, [x0, #${final_offset}]\n`;
+		} else if (size === 4) {
+			status.code += signed
+				? `ldrsw x0, [x0, #${final_offset}]\n`
+				: `ldr w0, [x0, #${final_offset}]\n`;
+		} else {
+			status.code += `ldr x0, [x0, #${final_offset}]\n`;
+		}
+		return;
+	}
+
+	const target_is_class_var =
+		node.target.node_type === "value" &&
+		!!status.structs.find((s) => s.name === target_type?.name && s.is_class);
+
+	if (target_is_class_var) {
+		const name = (node.target as ValueNode).value;
+		const paramReg = get_param_reg(name, status);
+		if (paramReg) {
+			if (paramReg !== "x0") {
+				status.code += `mov x0, ${paramReg}\n`;
+			}
+		} else {
+			emit_var_load(status, "x0", name, 8);
+		}
+		const final_offset = get_field_offset(target_type?.name || "", access_field.name, status);
 		const field_type = access_field.type?.name || "";
 		const size = aarch64_size(field_type);
 		const signed =
@@ -640,7 +730,9 @@ function build_access_index(node: AccessNode, access_index: AccessIndexNode, sta
 		: is_string
 			? 1
 			: struct_type
-				? get_struct_size(target_type.name, status)
+				? struct_type.is_class
+					? 8
+					: get_struct_size(target_type.name, status)
 				: target_type.name
 					? aarch64_size(target_type.name)
 					: 8;
@@ -655,6 +747,8 @@ function build_access_index(node: AccessNode, access_index: AccessIndexNode, sta
 			if (paramReg !== "x0") {
 				status.code += `mov x0, ${paramReg}\n`;
 			}
+		} else if (status.heap_array_vars?.has(name)) {
+			emit_var_load(status, "x0", name, 8);
 		} else {
 			const is_stack_var = status.stack_offsets?.has(name);
 			emit_var_address(status, "x0", name);

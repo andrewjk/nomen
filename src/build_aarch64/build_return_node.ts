@@ -2,12 +2,14 @@ import type BuildStatus from "../build/BuildStatus.ts";
 import ReturnNode from "../nodes/ReturnNode.ts";
 import build_node from "./build_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
+import { emit_malloc } from "./utils/audit.ts";
 import {
 	emit_destroy_for_decl,
 	emit_heap_slots_cleanup_for_return,
 	mark_moved_if_struct,
 } from "./utils/auto_destroy.ts";
 import { emit_var_store } from "./utils/stack_var.ts";
+import { get_struct_size } from "./utils/struct_layout.ts";
 
 function find_var_size(name: string, status: BuildStatus): number {
 	const decl = status.scoped_declarations?.find((d) => d.name === name);
@@ -60,6 +62,51 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 		if (!status.code.endsWith("\n")) {
 			status.code += "\n";
 		}
+
+		const return_type = status.function_return_type;
+		if (return_type?.is_array) {
+			const struct_element = status.structs.find(
+				(s) => s.name === return_type.name && !s.is_simple_type,
+			);
+			const element_size = struct_element
+				? struct_element.is_class
+					? 8
+					: get_struct_size(return_type.name, status)
+				: aarch64_size(return_type.name);
+			const var_name = node.value?.node_type === "value" ? (node.value as any).value : undefined;
+			const decl = var_name
+				? status.scoped_declarations?.find((d) => d.name === var_name)
+				: undefined;
+			const array_len =
+				decl?.value?.node_type === "array"
+					? (decl.value as any).values.length
+					: decl?.type?.length
+						? parseInt((decl.type.length as any).value || "0")
+						: 0;
+			const total_size = array_len * element_size;
+			if (total_size > 0) {
+				status.code += `str x0, [sp, #-16]!\n`;
+				status.code += `mov x0, #${total_size}\n`;
+				emit_malloc(status);
+				status.code += `mov x1, x0\n`;
+				status.code += `ldr x2, [sp]\n`;
+				const words = Math.ceil(total_size / 8);
+				for (let i = 0; i < words; i++) {
+					status.code += `ldr x3, [x2, #${i * 8}]\n`;
+					status.code += `str x3, [x1, #${i * 8}]\n`;
+				}
+				status.code += `add sp, sp, #16\n`;
+			}
+			if (struct_element?.is_class && var_name) {
+				if (!status.moved) status.moved = new Set();
+				const offset = status.stack_offsets?.get(var_name) ?? 0;
+				for (let i = 0; i < array_len; i++) {
+					const anchor_name = `${var_name}_elem_${offset + i * element_size}`;
+					status.moved.add(anchor_name);
+				}
+			}
+		}
+
 		mark_moved_if_struct(node.value, status);
 		const finalized = status.moved ?? new Set<string>();
 		status.code += `mov x20, x0\n`;

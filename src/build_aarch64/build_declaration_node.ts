@@ -101,6 +101,34 @@ function is_struct_constructor(node: BaseNode, status: BuildStatus): boolean {
 	return !!status.structs.find((s) => s.name === fc.name && !s.is_simple_type);
 }
 
+function is_class_constructor(node: BaseNode, status: BuildStatus): boolean {
+	if (node.node_type !== "func_call") return false;
+	const fc = node as FunctionCallNode;
+	const s = status.structs.find((s) => s.name === fc.name && !s.is_simple_type);
+	return !!s && !!s.is_class;
+}
+
+function emit_class_constructor_to_slot(
+	fc: FunctionCallNode,
+	slot_offset: number,
+	status: BuildStatus,
+	arr_name: string,
+) {
+	const param_regs = ["x1", "x2", "x3", "x4", "x5", "x6", "x7"];
+	const struct_size = get_struct_size(fc.name, status);
+	status.code += `mov x0, #${struct_size}\n`;
+	emit_malloc(status);
+	status.code += `str x0, [x29, #${slot_offset}]\n`;
+	anchor_heap_pointer(status, `${arr_name}_elem_${slot_offset}`);
+	for (let i = fc.params.length - 1; i >= 0; i--) {
+		build_node(fc.params[i], status);
+		if (!status.code.endsWith("\n")) status.code += "\n";
+		status.code += `mov ${param_regs[i]}, x0\n`;
+	}
+	status.code += `ldr x0, [x29, #${slot_offset}]\n`;
+	status.code += `bl ${fc.name}_init\n`;
+}
+
 function emit_struct_constructor_to_slot(
 	fc: FunctionCallNode,
 	slot_addr: string,
@@ -302,7 +330,11 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			const struct_element = status.structs.find(
 				(s) => s.name === node.type.name && !s.is_simple_type,
 			);
-			const element_size = struct_element ? get_struct_size(node.type.name, status) : size;
+			const element_size = struct_element
+			? struct_element.is_class
+				? 8
+				: get_struct_size(node.type.name, status)
+			: size;
 
 			if (complex) {
 				const total_size = array_values.values.length * element_size;
@@ -311,7 +343,14 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 					status.stack_offsets!.set(node.name, offset);
 					array_values.values.forEach((value, i) => {
 						const slot_offset = offset + i * element_size;
-						if (is_struct_constructor(value, status)) {
+						if (is_class_constructor(value, status)) {
+							emit_class_constructor_to_slot(
+								value as FunctionCallNode,
+								slot_offset,
+								status,
+								node.name,
+							);
+						} else if (is_struct_constructor(value, status)) {
 							emit_struct_constructor_to_slot(
 								value as FunctionCallNode,
 								emit_stack_slot_addr(slot_offset),
@@ -458,6 +497,32 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			} else {
 				build_node(node.value, status);
 			}
+		} else if (node.value && node.value.node_type === "func_call") {
+			if (!status.heap_array_vars) status.heap_array_vars = new Set();
+			status.heap_array_vars.add(node.name);
+			const class_element = status.structs.find((s) => s.name === node.type.name && s.is_class);
+			if (class_element) {
+				const fc = node.value as FunctionCallNode;
+				const len = fc.type?.length ? parseInt((fc.type.length as any).value || "0") : undefined;
+				if (len !== undefined) {
+					if (!status.heap_class_arrays) status.heap_class_arrays = new Map();
+					status.heap_class_arrays.set(node.name, len);
+				}
+			}
+			if (status.function_return_label) {
+				const offset = allocate_stack_space(status, 8);
+				status.stack_offsets!.set(node.name, offset);
+				build_node(node.value, status);
+				if (!status.code.endsWith("\n")) status.code += "\n";
+				status.code += `str x0, [x29, #${offset}]\n`;
+			} else {
+				emit_data(status, `${node.name}: .space 8\n.p2align 2\n`);
+				build_node(node.value, status);
+				if (!status.code.endsWith("\n")) status.code += "\n";
+				status.code += `adr x1, ${node.name}\n`;
+				status.code += `str x0, [x1]\n`;
+			}
+			check_heap();
 		} else {
 			const array_size = node.type.length
 				? size * parseInt((node.type.length as ValueNode).value)
@@ -571,8 +636,23 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 					emit_var_address(status, "x0", node.name);
 					status.code += `bl ${func_call.name}_init\n`;
 				} else {
-					build_node(node.value, status);
-					emit_var_store(status, "x0", node.name, struct_size);
+					const func_return_struct = status.structs.find(
+						(s) =>
+							s.name === (func_call.type?.name ?? func_call.name) &&
+							!s.is_simple_type &&
+							!s.is_class,
+					);
+					if (func_return_struct && status.function_return_label) {
+						const old_buffer = status.struct_return_buffer;
+						emit_var_address(status, "x8", node.name);
+						status.struct_return_buffer = "x8";
+						build_node(node.value, status);
+						status.struct_return_buffer = old_buffer;
+						emit_var_address(status, "x0", node.name);
+					} else {
+						build_node(node.value, status);
+						emit_var_store(status, "x0", node.name, struct_size);
+					}
 				}
 			} else if (node.value) {
 				if (node.value.node_type === "value") {
