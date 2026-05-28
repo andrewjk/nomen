@@ -54,6 +54,16 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 	status.structs.push(struct);
 
 	for (let func of struct.functions) {
+		if (func.name === "init" && !func.has_body) {
+			for (const param of func.params) {
+				if (
+					!param.is_moved &&
+					status.structs.find((s) => s.name === param.type.name && s.is_class)
+				) {
+					param.is_moved = true;
+				}
+			}
+		}
 		check_function_node(func, status);
 	}
 

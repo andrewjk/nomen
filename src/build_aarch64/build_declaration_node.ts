@@ -15,6 +15,7 @@ import { emit_strdup, emit_malloc } from "./utils/audit.ts";
 import {
 	anchor_heap_pointer,
 	mark_heap_string,
+	mark_moved_if_struct,
 	track_struct_decl,
 	has_struct_fields_with_destroy,
 } from "./utils/auto_destroy.ts";
@@ -631,6 +632,11 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 					// Pass declaration address in x0
 					emit_var_address(status, "x0", node.name);
 					status.code += `bl ${func_call.name}_init\n`;
+					if (func_call.mov_param_indices?.length) {
+						for (const idx of func_call.mov_param_indices) {
+							mark_moved_if_struct(func_call.params[idx], status);
+						}
+					}
 				} else {
 					const func_return_struct = status.structs.find(
 						(s) =>

@@ -153,7 +153,14 @@ export function monomorphize(
 	const init_params: ParameterNode[] = [];
 	for (const field of mono_fields) {
 		if (!field.value) {
-			init_params.push(new ParameterNode(field.start, field.name, field.type));
+			const param = new ParameterNode(field.start, field.name, field.type);
+			const field_is_class = !!status.structs.find(
+				(s) => s.name === field.type.name && s.is_class,
+			);
+			if (field_is_class) {
+				param.is_moved = true;
+			}
+			init_params.push(param);
 		}
 	}
 	const init_return_type = new Type(generic_struct.name);

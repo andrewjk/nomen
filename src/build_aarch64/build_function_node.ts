@@ -2,6 +2,7 @@ import type BuildStatus from "../build/BuildStatus.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import build_block_node from "./build_block_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
+import { emit_free } from "./utils/audit.ts";
 import { allocate_stack_space } from "./utils/stack_var.ts";
 
 let label_counter = 0;
@@ -79,6 +80,10 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.function_param_vars = new Set();
 	status.function_array_params = new Set();
 	status.function_ref_params = new Set();
+	status.moved_class_params = new Map();
+
+	// Save mov'd class param values for cleanup at return
+	let moved_param_save_slots: Map<string, number> = new Map();
 
 	if (has_body) {
 		for (let i = 0; i < node.params.length; i++) {
@@ -107,10 +112,28 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 			if (param.type.is_ref) {
 				status.function_ref_params!.add(param.name);
 			}
+			if (param.is_moved) {
+				const is_class = !!status.structs.find(
+					(s) => s.name === param.type.name && s.is_class,
+				);
+				if (is_class) {
+					const reg = callee_map.get(param.name);
+					if (reg) {
+						status.moved_class_params!.set(param.name, reg);
+					}
+				}
+			}
 		}
 	}
 
 	const moved_before = new Set(status.moved ?? []);
+
+	// Save mov'd class param values for cleanup at return
+	for (const [name, reg] of status.moved_class_params!) {
+		const save_offset = allocate_stack_space(status, 8);
+		moved_param_save_slots.set(name, save_offset);
+		status.code += `str ${reg}, [x29, #${save_offset}]\n`;
+	}
 
 	build_block_node(node, status);
 
@@ -138,6 +161,24 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	if (node.name === "main") {
 		status.code += `mov x0, #0\n`;
 	}
+
+	// Free mov'd class params that aren't the return value and haven't been moved within the body
+	const moved_set = status.moved;
+	if (moved_param_save_slots.size > 0 && node.name !== "main") {
+		const return_save = allocate_stack_space(status, 8);
+		status.code += `str x0, [x29, #${return_save}]\n`;
+		for (const [name, slot] of moved_param_save_slots) {
+			if (moved_set?.has(name)) continue;
+			status.code += `ldr x0, [x29, #${slot}]\n`;
+			status.code += `ldr x1, [x29, #${return_save}]\n`;
+			status.code += `cmp x0, x1\n`;
+			status.code += `beq .Lkeep_${name}\n`;
+			emit_free(status);
+			status.code += `.Lkeep_${name}:\n`;
+		}
+		status.code += `ldr x0, [x29, #${return_save}]\n`;
+	}
+
 	const total_stack = Math.ceil((status.stack_size || 0) / 16) * 16;
 	status.code = status.code.replace(
 		`sub sp, sp, #${stack_placeholder}`,

@@ -25,6 +25,7 @@ export default interface BuildStatus {
 	function_ref_params?: Set<string>;
 	function_array_params?: Set<string>;
 	function_return_label?: string;
+	moved_class_params?: Map<string, string>;
 	heap_array_vars?: Set<string>;
 	heap_class_arrays?: Map<string, number>;
 	function_return_type?: Type;
