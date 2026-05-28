@@ -1069,19 +1069,19 @@ Console.write("\\{result.value}")
 		await check_output("own_nested_return", result, "42");
 	});
 
-	test("class param stored in returned array causes double-free", async () => {
+	test("class param stored in returned array with mov", async () => {
 		const input = `
 class Box {
   var int value
 }
 
-func store = (Box b, out Box[]) {
+func store = (mov Box b, out Box[]) {
   var Box[] arr = [b]
   return arr
 }
 
 var Box a = Box(42)
-var Box[] result = store(a)
+var Box[] result = store(mov a)
 Console.write("\\{result[0].value}")
 `;
 		const parsed = parse_with_imports(input);
@@ -1114,7 +1114,7 @@ Console.write("\\{h.content.value}")
 		await check_output("own_class_in_struct_field", result, "42");
 	});
 
-	test.skip("BUG: class elements in heap-allocated returned arrays leak (make_arr)", async () => {
+	test("class elements in heap-allocated returned arrays (make_arr)", async () => {
 		const input = `
 class Box {
   var int value

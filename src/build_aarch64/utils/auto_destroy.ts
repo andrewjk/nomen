@@ -248,6 +248,26 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 				}
 				continue;
 			}
+			if (status.heap_class_arrays?.has(decl.name)) {
+				status.code += `str x19, [sp, #-16]!\n`;
+				status.code += `str x20, [sp, #-16]!\n`;
+				emit_var_load(status, "x0", decl.name, 8);
+				status.code += `mov x19, x0\n`;
+				status.code += `ldr x20, [x19]\n`;
+				status.code += `cbz x20, .Lskip_cls_${decl.name}\n`;
+				status.code += `add x19, x19, #8\n`;
+				const label = `.Lcls_${decl.name}`;
+				status.code += `${label}:\n`;
+				status.code += `ldr x0, [x19]\n`;
+				emit_free(status);
+				status.code += `add x19, x19, #8\n`;
+				status.code += `sub x20, x20, #1\n`;
+				status.code += `cbnz x20, ${label}\n`;
+				status.code += `.Lskip_cls_${decl.name}:\n`;
+				status.code += `ldr x20, [sp], #16\n`;
+				status.code += `ldr x19, [sp], #16\n`;
+				continue;
+			}
 			if (status.heap_strings?.has(decl.name)) {
 				emit_var_load(status, "x0", decl.name, 8);
 				emit_free(status);
@@ -284,6 +304,26 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 				status.code += `ldr x0, [x0, #${j * 8}]\n`;
 				emit_free(status);
 			}
+			continue;
+		}
+		if (status.heap_class_arrays?.has(decl.name)) {
+			status.code += `str x19, [sp, #-16]!\n`;
+			status.code += `str x20, [sp, #-16]!\n`;
+			emit_var_load(status, "x0", decl.name, 8);
+			status.code += `mov x19, x0\n`;
+			status.code += `ldr x20, [x19]\n`;
+			status.code += `cbz x20, .Lskip_cls_${decl.name}\n`;
+			status.code += `add x19, x19, #8\n`;
+			const label = `.Lcls_${decl.name}`;
+			status.code += `${label}:\n`;
+			status.code += `ldr x0, [x19]\n`;
+			emit_free(status);
+			status.code += `add x19, x19, #8\n`;
+			status.code += `sub x20, x20, #1\n`;
+			status.code += `cbnz x20, ${label}\n`;
+			status.code += `.Lskip_cls_${decl.name}:\n`;
+			status.code += `ldr x20, [sp], #16\n`;
+			status.code += `ldr x19, [sp], #16\n`;
 			continue;
 		}
 		if (status.heap_strings?.has(decl.name)) {

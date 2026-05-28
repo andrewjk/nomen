@@ -502,12 +502,8 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			status.heap_array_vars.add(node.name);
 			const class_element = status.structs.find((s) => s.name === node.type.name && s.is_class);
 			if (class_element) {
-				const fc = node.value as FunctionCallNode;
-				const len = fc.type?.length ? parseInt((fc.type.length as any).value || "0") : undefined;
-				if (len !== undefined) {
-					if (!status.heap_class_arrays) status.heap_class_arrays = new Map();
-					status.heap_class_arrays.set(node.name, len);
-				}
+				if (!status.heap_class_arrays) status.heap_class_arrays = new Map();
+				status.heap_class_arrays.set(node.name, 0);
 			}
 			if (status.function_return_label) {
 				const offset = allocate_stack_space(status, 8);

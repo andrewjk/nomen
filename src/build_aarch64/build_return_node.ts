@@ -86,9 +86,12 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 			const total_size = array_len * element_size;
 			if (total_size > 0) {
 				status.code += `str x0, [sp, #-16]!\n`;
-				status.code += `mov x0, #${total_size}\n`;
+				status.code += `mov x0, #${8 + total_size}\n`;
 				emit_malloc(status);
 				status.code += `mov x1, x0\n`;
+				status.code += `mov x2, #${array_len}\n`;
+				status.code += `str x2, [x1]\n`;
+				status.code += `add x1, x1, #8\n`;
 				status.code += `ldr x2, [sp]\n`;
 				const words = Math.ceil(total_size / 8);
 				for (let i = 0; i < words; i++) {

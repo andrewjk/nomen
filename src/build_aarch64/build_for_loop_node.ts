@@ -147,6 +147,9 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 			(!!status.function_array_params?.has(list_name) || !!status.heap_array_vars?.has(list_name));
 		if (list_is_pointer) {
 			emit_var_load(status, "x3", list_name, 8);
+			if (status.heap_array_vars?.has(list_name)) {
+				status.code += `add x3, x3, #8\n`;
+			}
 		} else {
 			emit_var_address(status, "x3", list_name);
 		}

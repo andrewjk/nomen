@@ -272,11 +272,12 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 						}
 					} else if (is_local_ref_var(name, status)) {
 						emit_deref_var_address(status, "x0", name);
-			} else if (status.heap_array_vars?.has(name)) {
-					emit_var_load(status, "x0", name, 8);
-				} else {
-					emit_var_address(status, "x0", name);
-				}
+					} else if (status.heap_array_vars?.has(name)) {
+						emit_var_load(status, "x0", name, 8);
+						status.code += `add x0, x0, #8\n`;
+					} else {
+						emit_var_address(status, "x0", name);
+					}
 				} else {
 					build_node(node.target, status);
 					if (!status.code.endsWith("\n")) status.code += "\n";
@@ -749,6 +750,7 @@ function build_access_index(node: AccessNode, access_index: AccessIndexNode, sta
 			}
 		} else if (status.heap_array_vars?.has(name)) {
 			emit_var_load(status, "x0", name, 8);
+			status.code += `add x0, x0, #8\n`;
 		} else {
 			const is_stack_var = status.stack_offsets?.has(name);
 			emit_var_address(status, "x0", name);
