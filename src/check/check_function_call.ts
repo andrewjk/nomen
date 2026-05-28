@@ -138,6 +138,7 @@ export default function check_function_call(
 		const param_value = value_from_value_node(param);
 		const func_param = func.params[i + self_offset];
 		const has_ref_keyword = node.ref_param_indices?.includes(i) ?? false;
+		const has_mov_keyword = node.mov_param_indices?.includes(i) ?? false;
 		if (func_param.type.is_ref && !has_ref_keyword) {
 			add_error(
 				status,
@@ -148,6 +149,19 @@ export default function check_function_call(
 			add_error(
 				status,
 				`Unexpected 'ref' keyword for non-ref parameter '${func_param.name}'`,
+				param.start,
+			);
+		}
+		if (func_param.is_moved && !has_mov_keyword) {
+			add_error(
+				status,
+				`Missing 'mov' keyword for mov parameter '${func_param.name}'`,
+				param.start,
+			);
+		} else if (!func_param.is_moved && has_mov_keyword) {
+			add_error(
+				status,
+				`Unexpected 'mov' keyword for non-mov parameter '${func_param.name}'`,
 				param.start,
 			);
 		}

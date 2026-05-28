@@ -115,6 +115,9 @@ function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: 
 	} else if (accept("cp", status)) {
 		param.declaration = "var";
 		param.is_copied = true;
+	} else if (accept("mov", status)) {
+		param.declaration = "var";
+		param.is_moved = true;
 	}
 
 	const saved_i = status.i;

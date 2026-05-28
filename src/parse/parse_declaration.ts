@@ -258,6 +258,9 @@ function parse_anon_function_parameter(func: FunctionNode, status: ParseStatus) 
 	} else if (accept("cp", status)) {
 		param.declaration = "var";
 		param.is_copied = true;
+	} else if (accept("mov", status)) {
+		param.declaration = "var";
+		param.is_moved = true;
 	}
 
 	// Try parsing a type, and backtrack if it turns out to be a name with default value

@@ -83,8 +83,16 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 			status.function_ref_params?.has(original_value) ||
 			status.function_ref_params?.has(value)
 		) {
-			// var param - address in register, load value
-			status.code += `ldr x0, [${paramReg}]`;
+			const param_type_name = node.type?.name;
+			const is_class =
+				param_type_name && status.structs.find((s) => s.name === param_type_name && s.is_class);
+			if (is_class) {
+				if (paramReg !== "x0") {
+					status.code += `mov x0, ${paramReg}`;
+				}
+			} else {
+				status.code += `ldr x0, [${paramReg}]`;
+			}
 		} else {
 			// const param - value in register
 			if (paramReg !== "x0") {

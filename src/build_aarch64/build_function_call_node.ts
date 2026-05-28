@@ -6,6 +6,7 @@ import ValueNode from "../nodes/ValueNode.ts";
 import { emit_address_of } from "./build_access_node.ts";
 import build_node from "./build_node.ts";
 import { emit_malloc } from "./utils/audit.ts";
+import { mark_moved_if_struct } from "./utils/auto_destroy.ts";
 import {
 	allocate_stack_space,
 	emit_deref_var_address,
@@ -181,5 +182,14 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 
 	if (status.heap_returning_functions?.has(node.name)) {
 		status.last_result_is_heap = true;
+	}
+
+	if (node.mov_param_indices?.length) {
+		for (const idx of node.mov_param_indices) {
+			const param = node.params[idx];
+			if (param) {
+				mark_moved_if_struct(param, status);
+			}
+		}
 	}
 }

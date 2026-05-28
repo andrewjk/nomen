@@ -11,6 +11,7 @@ export default class ParameterNode extends BaseNode {
 	default_value_start?: number;
 	is_self_param?: boolean;
 	is_copied?: boolean;
+	is_moved?: boolean;
 	func_params?: ParameterNode[];
 	func_return_type?: Type;
 
@@ -20,7 +21,7 @@ export default class ParameterNode extends BaseNode {
 		type?: Type,
 		default_value?: BaseNode,
 		is_self_param?: boolean,
-		declaration?: "const" | "var" | "cp",
+		declaration?: "const" | "var" | "cp" | "mov",
 	) {
 		super("param", start);
 		this.name = name;
@@ -31,6 +32,9 @@ export default class ParameterNode extends BaseNode {
 			this.declaration = declaration === "const" ? "const" : "var";
 			if (declaration === "cp") {
 				this.is_copied = true;
+			}
+			if (declaration === "mov") {
+				this.is_moved = true;
 			}
 		}
 	}

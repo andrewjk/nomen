@@ -73,6 +73,7 @@ export default function clone_node(node: BaseNode): BaseNode {
 			c.is_func_param = n.is_func_param;
 			c.type_args = n.type_args?.map(clone_type);
 			c.ref_param_indices = n.ref_param_indices?.slice();
+			c.mov_param_indices = n.mov_param_indices?.slice();
 			c.allocations = n.allocations?.map(clone_node);
 			return c;
 		}
@@ -98,6 +99,7 @@ export default function clone_node(node: BaseNode): BaseNode {
 				n.is_static,
 			);
 			c.ref_param_indices = n.ref_param_indices?.slice();
+			c.mov_param_indices = n.mov_param_indices?.slice();
 			c.allocations = n.allocations?.map(clone_node);
 			return c;
 		}
@@ -359,7 +361,7 @@ export default function clone_node(node: BaseNode): BaseNode {
 				n.type ? clone_type(n.type) : new Type(""),
 				n.default_value ? clone_node(n.default_value) : undefined,
 				n.is_self_param,
-				n.is_copied ? "cp" : n.declaration,
+				n.is_copied ? "cp" : n.is_moved ? "mov" : n.declaration,
 			);
 			c.type_start = n.type_start;
 			c.name_start = n.name_start;

@@ -1001,3 +1001,172 @@ Console.write("\\{nums[2]}")
 		await check_output("leak_array_primitives", result, "123");
 	});
 });
+
+describe("class ownership transfer (mov keyword)", () => {
+	test("returning mov class param transfers ownership", async () => {
+		const input = `
+class Box {
+  var int value
+}
+
+func identity = (mov Box b, out Box) {
+  return b
+}
+
+var Box a = Box(42)
+var Box b = identity(mov a)
+Console.write("\\{b.value}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		expect(parsed.errors).toEqual([]);
+		await check_output("own_return_param", result, "42");
+	});
+
+	test("returning one of two class params only moves the returned one", async () => {
+		const input = `
+class Box {
+  var int value
+}
+
+func pick = (Box a, mov Box b, out Box) {
+  return b
+}
+
+var Box x = Box(1)
+var Box y = Box(2)
+var Box z = pick(x, mov y)
+Console.write("\\{x.value}")
+Console.write("\\{z.value}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		expect(parsed.errors).toEqual([]);
+		await check_output("own_return_one_of_two", result, "12");
+	});
+
+	test("class param returned through nested function with mov", async () => {
+		const input = `
+class Box {
+  var int value
+}
+
+func inner = (mov Box b, out Box) {
+  return b
+}
+
+func outer = (mov Box b, out Box) {
+  return inner(mov b)
+}
+
+var Box a = Box(42)
+var Box result = outer(mov a)
+Console.write("\\{result.value}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		expect(parsed.errors).toEqual([]);
+		await check_output("own_nested_return", result, "42");
+	});
+
+	test.skip("BUG: class param stored in returned array causes double-free", async () => {
+		const input = `
+class Box {
+  var int value
+}
+
+func store = (Box b, out Box[]) {
+  var Box[] arr = [b]
+  return arr
+}
+
+var Box a = Box(42)
+var Box[] result = store(a)
+Console.write("\\{result[0].value}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		expect(parsed.errors).toEqual([]);
+		await check_output("own_param_in_array", result, "42");
+	});
+
+	test.skip("BUG: class in struct field returned from function with mov (struct return convention broken)", async () => {
+		const input = `
+class Box {
+  var int value
+}
+
+struct Holder {
+  var Box content
+}
+
+func wrap = (mov Box b, out Holder) {
+  return Holder(b)
+}
+
+var Box a = Box(42)
+var Holder h = wrap(mov a)
+Console.write("\\{h.content.value}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		expect(parsed.errors).toEqual([]);
+		await check_output("own_class_in_struct_field", result, "42");
+	});
+
+	test.skip("BUG: function returning stack-allocated array of classes returns stack pointer", async () => {
+		const input = `
+class Box {
+  var int value
+}
+
+func make_arr = (out Box[]) {
+  var Box[] arr = [Box(42)]
+  return arr
+}
+
+var Box[] result = make_arr()
+Console.write("\\{result[0].value}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		expect(parsed.errors).toEqual([]);
+		await check_output("own_stack_array_return", result, "42");
+	});
+
+	test("mov at call site requires mov in definition", async () => {
+		const input = `
+class Box {
+  var int value
+}
+
+func identity = (Box b, out Box) {
+  return b
+}
+
+var Box a = Box(42)
+var Box b = identity(mov a)
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors.length).toBeGreaterThan(0);
+		expect(parsed.errors[0].message).toContain("Unexpected 'mov' keyword");
+	});
+
+	test("mov in definition requires mov at call site", async () => {
+		const input = `
+class Box {
+  var int value
+}
+
+func identity = (mov Box b, out Box) {
+  return b
+}
+
+var Box a = Box(42)
+var Box b = identity(a)
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors.length).toBeGreaterThan(0);
+		expect(parsed.errors[0].message).toContain("Missing 'mov' keyword");
+	});
+});

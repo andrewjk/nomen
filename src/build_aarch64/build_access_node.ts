@@ -10,6 +10,7 @@ import ValueNode from "../nodes/ValueNode.ts";
 import build_node from "./build_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_malloc } from "./utils/audit.ts";
+import { mark_moved_if_struct } from "./utils/auto_destroy.ts";
 import {
 	allocate_stack_space,
 	emit_deref_var_address,
@@ -610,6 +611,15 @@ function build_access_method(
 	}
 
 	status.code += `bl ${method_name}\n`;
+
+	if (access_func.mov_param_indices?.length) {
+		for (const idx of access_func.mov_param_indices) {
+			const param = access_func.params[idx];
+			if (param) {
+				mark_moved_if_struct(param, status);
+			}
+		}
+	}
 
 	if (method_name.endsWith("_to_string") && method_name !== "string_to_string") {
 		status.last_result_is_heap = true;
