@@ -283,7 +283,7 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 					if (!status.code.endsWith("\n")) status.code += "\n";
 				}
 			const field_type = access_field.type?.name || "int";
-			const field_size = access_field.type?.is_ptr ? 8 : aarch64_size(field_type);
+			const field_size = aarch64_size(field_type);
 				const signed =
 					field_type.startsWith("int") ||
 					field_type === "float" ||
@@ -359,7 +359,7 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 		}
 		const final_offset = get_field_offset(target_type?.name || "", access_field.name, status);
 		const field_type = access_field.type?.name || "";
-		const size = access_field.type?.is_ptr ? 8 : aarch64_size(field_type);
+		const size = aarch64_size(field_type);
 		const signed =
 			field_type.startsWith("int") ||
 			field_type === "float" ||
@@ -391,7 +391,7 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 		}
 		const final_offset = get_field_offset(access_field.type?.name || "", access_field.name, status);
 		const field_type = access_field.type?.name || "";
-		const size = access_field.type?.is_ptr ? 8 : aarch64_size(field_type);
+		const size = aarch64_size(field_type);
 		const signed =
 			field_type.startsWith("int") ||
 			field_type === "float" ||
@@ -427,7 +427,7 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 		}
 		const final_offset = get_field_offset(target_type?.name || "", access_field.name, status);
 		const field_type = access_field.type?.name || "";
-		const size = access_field.type?.is_ptr ? 8 : aarch64_size(field_type);
+		const size = aarch64_size(field_type);
 		const signed =
 			field_type.startsWith("int") ||
 			field_type === "float" ||
@@ -468,7 +468,7 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 	}
 
 	const field_type = access_field.type?.name || "";
-	const size = access_field.type?.is_ptr ? 8 : aarch64_size(field_type);
+	const size = aarch64_size(field_type);
 	const signed =
 		field_type.startsWith("int") ||
 		field_type === "float" ||

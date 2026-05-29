@@ -158,19 +158,10 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 		}
 		case "access_index": {
 			const access_index = node.access as AccessIndexNode;
-			const target_type = type_from_value_node(node.target);
-			if (target_type.is_ptr) {
-				status.code += `((${c_type(target_type.name)}*)`;
-				build_node(node.target, status);
-				status.code += ")[";
-				build_node(access_index.index, status);
-				status.code += "]";
-			} else {
-				build_node(node.target, status);
-				status.code += "[";
-				build_node(access_index.index, status);
-				status.code += "]";
-			}
+			build_node(node.target, status);
+			status.code += "[";
+			build_node(access_index.index, status);
+			status.code += "]";
 			break;
 		}
 	}

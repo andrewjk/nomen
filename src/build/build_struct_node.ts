@@ -33,11 +33,7 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 	status.code += `void *_vt;\n`;
 	// Fields from the struct
 	for (let field of node.fields) {
-		if (field.type.is_ptr) {
-			status.code += `long ${field.name};\n`;
-		} else {
-			status.code += `${c_type(field.type.name)} ${field.name};\n`;
-		}
+		status.code += `${c_type(field.type.name)} ${field.name};\n`;
 	}
 	// Default fields from traits
 	for (let traitName of node.traits) {

@@ -7,7 +7,7 @@ export default class Type {
 	is_static?: boolean;
 	is_array?: boolean;
 	is_ref?: boolean;
-	is_ptr?: boolean;
+
 	length?: BaseNode;
 	is_return_type?: boolean;
 	is_nullable?: boolean;

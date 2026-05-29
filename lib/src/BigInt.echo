@@ -13,17 +13,17 @@ pub struct BigInt {
             v = 0 - v
         }
         self.digits.alloc(8)
-        self.digits.data[0] = v as uint32
+        self.digits.store(0, v as uint32)
         self.len = 1
         return self
     }
 
     func get = (self, int i, out int) {
-        return self.digits.data[i] as int
+        return self.digits.load(i) as int
     }
 
     func set = (ref self, int i, uint64 val) {
-        self.digits.data[i] = val as uint32
+        self.digits.store(i, val as uint32)
     }
 
     func ensure = (ref self, int needed) {
@@ -125,11 +125,11 @@ pub struct BigInt {
             var uint64 carry = 0
             var int j = 0
             while j < b.len || carry != 0 {
-                var uint64 cur = (tmp.data[j + i] as uint64) + carry
+                var uint64 cur = (tmp.load(j + i) as uint64) + carry
                 if j < b.len {
                     cur = cur + (a.get(i) as uint64) * (b.get(j) as uint64)
                 }
-                tmp.data[j + i] = cur as uint32
+                tmp.store(j + i, cur as uint32)
                 carry = cur >> 32
                 j = j + 1
             }
@@ -139,7 +139,7 @@ pub struct BigInt {
         self.clear(new_len)
         var int k = 0
         while k < new_len {
-            self.set(k, tmp.data[k] as uint64)
+            self.set(k, tmp.load(k) as uint64)
             k = k + 1
         }
         self.len = new_len
@@ -165,8 +165,8 @@ pub struct BigInt {
             var uint64 carry = 0
             var int j = 0
             while j < remainder.len {
-                var uint64 val = (remainder.digits.data[j] as uint64 << 1) + carry
-                remainder.digits.data[j] = val as uint32
+                var uint64 val = (remainder.digits.load(j) as uint64 << 1) + carry
+                remainder.digits.store(j, val as uint32)
                 carry = val >> 32
                 j = j + 1
             }
@@ -175,15 +175,15 @@ pub struct BigInt {
                     var int nc = remainder.digits.cap * 2
                     remainder.digits.grow(nc)
                 }
-                remainder.digits.data[remainder.len] = carry as uint32
+                remainder.digits.store(remainder.len, carry as uint32)
                 remainder.len = remainder.len + 1
             }
 
             var int word = i / 32
             var int bit = i % 32
             if word < a.len {
-                if ((a.digits.data[word] as int) & (1 << bit)) != 0 {
-                    remainder.digits.data[0] = (remainder.digits.data[0] as int | 1) as uint32
+                if ((a.digits.load(word) as int) & (1 << bit)) != 0 {
+                    remainder.digits.store(0, (remainder.digits.load(0) as int | 1) as uint32)
                 }
             }
 
@@ -197,8 +197,8 @@ pub struct BigInt {
             } else {
                 var int cj = remainder.len - 1
                 while cj >= 0 {
-                    var int rd = remainder.digits.data[cj] as int
-                    var int bd = b.digits.data[cj] as int
+                    var int rd = remainder.digits.load(cj) as int
+                    var int bd = b.digits.load(cj) as int
                     if rd != bd {
                         if rd > bd {
                             cmp_result = 1
@@ -215,9 +215,9 @@ pub struct BigInt {
                 var int borrow = 0
                 var int sj = 0
                 while sj < remainder.len {
-                    var int diff = (remainder.digits.data[sj] as int) - borrow
+                    var int diff = (remainder.digits.load(sj) as int) - borrow
                     if sj < b.len {
-                        diff = diff - (b.digits.data[sj] as int)
+                        diff = diff - (b.digits.load(sj) as int)
                     }
                     if diff < 0 {
                         diff = diff + 4294967296
@@ -225,11 +225,11 @@ pub struct BigInt {
                     } else {
                         borrow = 0
                     }
-                    remainder.digits.data[sj] = diff as uint32
+                    remainder.digits.store(sj, diff as uint32)
                     sj = sj + 1
                 }
                 while remainder.len > 1 {
-                    if (remainder.digits.data[remainder.len - 1] as int) != 0 {
+                    if (remainder.digits.load(remainder.len - 1) as int) != 0 {
                         break
                     }
                     remainder.len = remainder.len - 1
@@ -245,13 +245,13 @@ pub struct BigInt {
                 if word >= self.len {
                     self.len = word + 1
                 }
-                self.digits.data[word] = ((self.digits.data[word] as int) | (1 << bit)) as uint32
+                self.digits.store_or(word, (1 << bit) as uint32)
             }
 
             i = i - 1
         }
         while self.len > 1 {
-            if (self.digits.data[self.len - 1] as int) != 0 {
+            if (self.digits.load(self.len - 1) as int) != 0 {
                 break
             }
             self.len = self.len - 1

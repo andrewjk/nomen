@@ -1,12 +1,12 @@
 pub struct Buffer {
-    var ptr uint32 data = 0
+    var uint64 data = 0
     var int cap = 0
 
     func alloc = (ref self, int size) {
         ```
         #arch: c
         self->cap = size;
-        self->data = (long)calloc(size, sizeof(unsigned int));
+        self->data = (unsigned long long)(unsigned int*)calloc(size, sizeof(unsigned int));
         ```
         ```
         #arch: aarch64
@@ -25,8 +25,8 @@ pub struct Buffer {
         int new_cap = self->cap;
         if (new_cap == 0) new_cap = 8;
         while (new_cap < needed) new_cap *= 2;
-        self->data = (long)realloc((unsigned int*)self->data, new_cap * sizeof(unsigned int));
-        memset((unsigned int*)self->data + self->cap, 0, (new_cap - self->cap) * sizeof(unsigned int));
+        self->data = (unsigned long long)(unsigned int*)realloc((unsigned int*)(unsigned long long)self->data, new_cap * sizeof(unsigned int));
+        memset((unsigned int*)(unsigned long long)self->data + self->cap, 0, (new_cap - self->cap) * sizeof(unsigned int));
         self->cap = new_cap;
         ```
         ```
@@ -67,7 +67,7 @@ pub struct Buffer {
     func zero = (ref self, int len) {
         ```
         #arch: c
-        memset((unsigned int*)self->data, 0, len * sizeof(unsigned int));
+        memset((unsigned int*)(unsigned long long)self->data, 0, len * sizeof(unsigned int));
         ```
         ```
         #arch: aarch64
@@ -78,10 +78,57 @@ pub struct Buffer {
         ```
     }
 
+    func load = (self, int i, out uint32) {
+        ```
+        #arch: c
+        return ((unsigned int*)(unsigned long long)self->data)[i];
+        ```
+        ```
+        #arch: aarch64
+        ldr x0, [x19, #8]
+        lsl x1, x1, #2
+        add x0, x0, x1
+        ldr w0, [x0]
+        and x0, x0, #0xFFFFFFFF
+        b .return_Buffer_load
+        ```
+        return 0 as uint32
+    }
+
+    func store = (ref self, int i, uint32 val) {
+        ```
+        #arch: c
+        ((unsigned int*)(unsigned long long)self->data)[i] = val;
+        ```
+        ```
+        #arch: aarch64
+        ldr x0, [x19, #8]
+        lsl x3, x1, #2
+        add x0, x0, x3
+        str w2, [x0]
+        ```
+    }
+
+    func store_or = (ref self, int i, uint32 val) {
+        ```
+        #arch: c
+        ((unsigned int*)(unsigned long long)self->data)[i] |= val;
+        ```
+        ```
+        #arch: aarch64
+        ldr x0, [x19, #8]
+        lsl x3, x1, #2
+        add x0, x0, x3
+        ldr w3, [x0]
+        orr w3, w3, w2
+        str w3, [x0]
+        ```
+    }
+
     destroy = {
         ```
         #arch: c
-        if (self->data) free((unsigned int*)self->data);
+        if (self->data) free((unsigned int*)(unsigned long long)self->data);
         ```
         ```
         #arch: aarch64

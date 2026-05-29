@@ -237,8 +237,6 @@ function check_access_index_node(
 	// TODO: Do this with an Indexable trait instead
 	if (target_type.is_array) {
 		node.type = new Type(target_type.name, target_type.is_static);
-	} else if (target_type.is_ptr) {
-		node.type = new Type(target_type.name);
 	} else if (target_type.name === "string") {
 		node.type = new Type("char");
 	} else {

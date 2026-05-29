@@ -17,7 +17,6 @@ export function get_struct_size(name: string, status: BuildStatus): number {
 
 function get_type_size(type: import("../../nodes/Type.ts").default, status: BuildStatus): number {
 	if (type.is_ref) return 8;
-	if (type.is_ptr) return 8;
 	const struct = status.structs.find((s) => s.name === type.name && !s.is_simple_type);
 	if (struct) {
 		if (struct.is_class) return 8;
