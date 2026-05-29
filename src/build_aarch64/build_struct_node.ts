@@ -4,7 +4,7 @@ import StructNode from "../nodes/StructNode.ts";
 import build_block_node from "./build_block_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { allocate_stack_space } from "./utils/stack_var.ts";
-import { get_field_offset } from "./utils/struct_layout.ts";
+import { get_field_offset, get_struct_size } from "./utils/struct_layout.ts";
 
 export default function build_struct_node(node: StructNode, status: BuildStatus) {
 	if (node.is_generic) return;
@@ -141,6 +141,17 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 					status.code += `ldr x1, =${val}\n`;
 				}
 				status.code += `str x1, [x0, #${offset}]\n`;
+			} else if (field.value.node_type === "func_call") {
+				const field_struct = status.structs.find(
+					(s) => s.name === field.type.name && !s.is_simple_type,
+				);
+				if (field_struct) {
+					const field_size = get_struct_size(field.type.name, status);
+					const words = Math.ceil(field_size / 8);
+					for (let w = 0; w < words; w++) {
+						status.code += `str xzr, [x0, #${offset + w * 8}]\n`;
+					}
+				}
 			}
 		}
 	}
@@ -228,6 +239,17 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 					status.code += `ldr x1, =${val}\n`;
 				}
 				status.code += `str x1, [x19, #${offset}]\n`;
+			} else if (field.value.node_type === "func_call") {
+				const field_struct = status.structs.find(
+					(s) => s.name === field.type.name && !s.is_simple_type,
+				);
+				if (field_struct) {
+					const field_size = get_struct_size(field.type.name, status);
+					const words = Math.ceil(field_size / 8);
+					for (let w = 0; w < words; w++) {
+						status.code += `str xzr, [x19, #${offset + w * 8}]\n`;
+					}
+				}
 			}
 		}
 	}
@@ -311,7 +333,9 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		const return_struct = status.structs.find(
 			(s) => s.name === func.return_type?.name && !s.is_simple_type,
 		);
+		let return_buffer_stack_offset: number | undefined;
 		if (return_struct) {
+			status.function_return_type = func.return_type;
 			status.struct_return_buffer = "x8";
 		}
 
@@ -349,6 +373,12 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 
 		status.code += `sub sp, sp, #${stack_placeholder}\n`;
 		status.code += `mov x29, sp\n`;
+
+		if (return_struct) {
+			return_buffer_stack_offset = allocate_stack_space(status, 8, 8);
+			status.code += `str x8, [x29, #${return_buffer_stack_offset}]\n`;
+			status.return_buffer_stack_offset = return_buffer_stack_offset;
+		}
 
 		// Save non-struct params and var self to stack now that x29 is set
 		for (let i = 0; i < func.params.length; i++) {
@@ -395,6 +425,8 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		status.function_ref_params = old_ref_params;
 		status.function_return_label = old_return_label;
 		status.struct_return_buffer = undefined;
+		status.function_return_type = undefined;
+		status.return_buffer_stack_offset = undefined;
 		status.stack_size = old_stack_size;
 		status.stack_offsets = old_stack_offsets;
 	}

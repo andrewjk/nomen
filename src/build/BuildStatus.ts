@@ -38,6 +38,7 @@ export default interface BuildStatus {
 		struct_decls: { name: string; type_name: string; type_args?: Type[] }[];
 	}[];
 	struct_return_buffer?: string;
+	return_buffer_stack_offset?: number;
 	function_data?: string;
 	nested_functions?: string;
 	stack_size?: number;

@@ -1,48 +1,37 @@
+import Buffer
+
 pub struct BigInt {
     var int sign = 0
     var int len = 0
-    var int cap = 0
-    var ptr uint32 digits = 0
+    var Buffer digits = Buffer()
 
     pub func new = (self, int val, out BigInt) {
-        ```
-        #arch: c
-        self->sign = val < 0 ? -1 : 1;
-        self->cap = 8;
-        self->digits = (long)calloc(self->cap, sizeof(unsigned int));
-        if (val < 0) val = -val;
-        ((unsigned int*)self->digits)[0] = (unsigned int)val;
-        self->len = 1;
-        return *self;
-        ```
-        return "from_c"
+        self.sign = 1
+        var int v = val
+        if v < 0 {
+            self.sign = -1
+            v = 0 - v
+        }
+        self.digits.alloc(8)
+        self.digits.data[0] = v as uint32
+        self.len = 1
+        return self
     }
 
     func get = (self, int i, out int) {
-        return self.digits[i] as int
+        return self.digits.data[i] as int
     }
 
     func set = (ref self, int i, uint64 val) {
-        self.digits[i] = val as uint32
+        self.digits.data[i] = val as uint32
     }
 
     func ensure = (ref self, int needed) {
-        ```
-        #arch: c
-        if (self->cap >= needed) return;
-        int new_cap = self->cap;
-        while (new_cap < needed) new_cap *= 2;
-        self->digits = (long)realloc((unsigned int*)self->digits, new_cap * sizeof(unsigned int));
-        memset((unsigned int*)self->digits + self->cap, 0, (new_cap - self->cap) * sizeof(unsigned int));
-        self->cap = new_cap;
-        ```
+        self.digits.grow(needed)
     }
 
     func clear = (ref self, int len) {
-        ```
-        #arch: c
-        memset((unsigned int*)self->digits, 0, len * sizeof(unsigned int));
-        ```
+        self.digits.zero(len)
     }
 
     pub func cmp = (self, BigInt other, out int) {
@@ -128,100 +117,146 @@ pub struct BigInt {
     }
 
     pub func mul = (self, BigInt a, BigInt b, out BigInt) {
-        ```
-        #arch: c
-        int new_len = a->len + b->len;
-        unsigned int *tmp = calloc(new_len, sizeof(unsigned int));
-        unsigned int *ad = (unsigned int*)a->digits;
-        unsigned int *bd = (unsigned int*)b->digits;
-        for (int i = 0; i < a->len; i++) {
-            unsigned long long carry = 0;
-            for (int j = 0; j < b->len || carry; j++) {
-                unsigned long long cur = (unsigned long long)tmp[i + j] + carry;
-                if (j < b->len) cur += (unsigned long long)ad[i] * bd[j];
-                tmp[i + j] = (unsigned int)cur;
-                carry = cur >> 32;
+        var int new_len = a.len + b.len
+        var Buffer tmp = Buffer()
+        tmp.alloc(new_len)
+        var int i = 0
+        while i < a.len {
+            var uint64 carry = 0
+            var int j = 0
+            while j < b.len || carry != 0 {
+                var uint64 cur = (tmp.data[j + i] as uint64) + carry
+                if j < b.len {
+                    cur = cur + (a.get(i) as uint64) * (b.get(j) as uint64)
+                }
+                tmp.data[j + i] = cur as uint32
+                carry = cur >> 32
+                j = j + 1
             }
+            i = i + 1
         }
-        if (self->cap < new_len) {
-            self->digits = (long)realloc((unsigned int*)self->digits, new_len * sizeof(unsigned int));
-            self->cap = new_len;
+        self.ensure(new_len)
+        self.clear(new_len)
+        var int k = 0
+        while k < new_len {
+            self.set(k, tmp.data[k] as uint64)
+            k = k + 1
         }
-        memcpy((unsigned int*)self->digits, tmp, new_len * sizeof(unsigned int));
-        self->len = new_len;
-        free(tmp);
-        while (self->len > 1 && ((unsigned int*)self->digits)[self->len - 1] == 0) self->len--;
-        return *self;
-        ```
-        return "from_c"
+        self.len = new_len
+        while self.len > 1 {
+            if self.get(self.len - 1) != 0 {
+                break
+            }
+            self.len = self.len - 1
+        }
+        return self
     }
 
-    pub func div = (self, BigInt a, BigInt b, BigInt remainder, out BigInt) {
-        ```
-        #arch: c
-        memset((unsigned int*)self->digits, 0, self->cap * sizeof(unsigned int));
-        self->len = 1;
-        memset((unsigned int*)remainder->digits, 0, remainder->cap * sizeof(unsigned int));
-        remainder->len = 1;
-        unsigned int *ad = (unsigned int*)a->digits;
-        unsigned int *bd = (unsigned int*)b->digits;
-        for (int i = a->len * 32 - 1; i >= 0; i--) {
-            unsigned long long carry = 0;
-            unsigned int *rd = (unsigned int*)remainder->digits;
-            for (int j = 0; j < remainder->len; j++) {
-                unsigned long long val = ((unsigned long long)rd[j] << 1) + carry;
-                rd[j] = (unsigned int)val;
-                carry = val >> 32;
+    pub func div = (self, BigInt a, BigInt b, var BigInt remainder, out BigInt) {
+        self.ensure(a.len + b.len + 1)
+        self.clear(self.digits.cap)
+        self.len = 1
+        remainder.ensure(a.len + 1)
+        remainder.clear(remainder.digits.cap)
+        remainder.len = 1
+
+        var int i = a.len * 32 - 1
+        while i >= 0 {
+            var uint64 carry = 0
+            var int j = 0
+            while j < remainder.len {
+                var uint64 val = (remainder.digits.data[j] as uint64 << 1) + carry
+                remainder.digits.data[j] = val as uint32
+                carry = val >> 32
+                j = j + 1
             }
-            if (carry) {
-                if (remainder->len >= remainder->cap) {
-                    int nc = remainder->cap * 2;
-                    remainder->digits = (long)realloc((unsigned int*)remainder->digits, nc * sizeof(unsigned int));
-                    memset((unsigned int*)remainder->digits + remainder->cap, 0, (nc - remainder->cap) * sizeof(unsigned int));
-                    remainder->cap = nc;
+            if carry != 0 {
+                if remainder.len >= remainder.digits.cap {
+                    var int nc = remainder.digits.cap * 2
+                    remainder.digits.grow(nc)
                 }
-                rd = (unsigned int*)remainder->digits;
-                rd[remainder->len] = (unsigned int)carry;
-                remainder->len++;
+                remainder.digits.data[remainder.len] = carry as uint32
+                remainder.len = remainder.len + 1
             }
-            int word = i / 32;
-            int bit = i % 32;
-            if (word < a->len && (ad[word] & (1U << bit))) {
-                ((unsigned int*)remainder->digits)[0] |= 1;
-            }
-            int cmp = 0;
-            if (remainder->len != b->len) cmp = remainder->len > b->len ? 1 : -1;
-            else {
-                rd = (unsigned int*)remainder->digits;
-                for (int j = remainder->len - 1; j >= 0; j--) {
-                    if (rd[j] != bd[j]) { cmp = rd[j] > bd[j] ? 1 : -1; break; }
+
+            var int word = i / 32
+            var int bit = i % 32
+            if word < a.len {
+                if ((a.digits.data[word] as int) & (1 << bit)) != 0 {
+                    remainder.digits.data[0] = (remainder.digits.data[0] as int | 1) as uint32
                 }
             }
-            if (cmp >= 0) {
-                rd = (unsigned int*)remainder->digits;
-                long long borrow = 0;
-                for (int j = 0; j < remainder->len; j++) {
-                    long long diff = (long long)rd[j] - borrow;
-                    if (j < b->len) diff -= bd[j];
-                    if (diff < 0) { diff += (1LL << 32); borrow = 1; } else { borrow = 0; }
-                    rd[j] = (unsigned int)diff;
+
+            var int cmp_result = 0
+            if remainder.len != b.len {
+                if remainder.len > b.len {
+                    cmp_result = 1
+                } else {
+                    cmp_result = -1
                 }
-                while (remainder->len > 1 && rd[remainder->len - 1] == 0) remainder->len--;
-                if (self->cap <= word) {
-                    int nc = self->cap;
-                    while (nc <= word) nc *= 2;
-                    self->digits = (long)realloc((unsigned int*)self->digits, nc * sizeof(unsigned int));
-                    memset((unsigned int*)self->digits + self->cap, 0, (nc - self->cap) * sizeof(unsigned int));
-                    self->cap = nc;
+            } else {
+                var int cj = remainder.len - 1
+                while cj >= 0 {
+                    var int rd = remainder.digits.data[cj] as int
+                    var int bd = b.digits.data[cj] as int
+                    if rd != bd {
+                        if rd > bd {
+                            cmp_result = 1
+                        } else {
+                            cmp_result = -1
+                        }
+                        break
+                    }
+                    cj = cj - 1
                 }
-                if (word >= self->len) self->len = word + 1;
-                ((unsigned int*)self->digits)[word] |= (1U << bit);
             }
+
+            if cmp_result >= 0 {
+                var int borrow = 0
+                var int sj = 0
+                while sj < remainder.len {
+                    var int diff = (remainder.digits.data[sj] as int) - borrow
+                    if sj < b.len {
+                        diff = diff - (b.digits.data[sj] as int)
+                    }
+                    if diff < 0 {
+                        diff = diff + 4294967296
+                        borrow = 1
+                    } else {
+                        borrow = 0
+                    }
+                    remainder.digits.data[sj] = diff as uint32
+                    sj = sj + 1
+                }
+                while remainder.len > 1 {
+                    if (remainder.digits.data[remainder.len - 1] as int) != 0 {
+                        break
+                    }
+                    remainder.len = remainder.len - 1
+                }
+
+                if self.digits.cap <= word {
+                    var int nc = self.digits.cap
+                    while nc <= word {
+                        nc = nc * 2
+                    }
+                    self.digits.grow(nc)
+                }
+                if word >= self.len {
+                    self.len = word + 1
+                }
+                self.digits.data[word] = ((self.digits.data[word] as int) | (1 << bit)) as uint32
+            }
+
+            i = i - 1
         }
-        while (self->len > 1 && ((unsigned int*)self->digits)[self->len - 1] == 0) self->len--;
-        return *self;
-        ```
-        return "from_c"
+        while self.len > 1 {
+            if (self.digits.data[self.len - 1] as int) != 0 {
+                break
+            }
+            self.len = self.len - 1
+        }
+        return self
     }
 
     pub func to_digit = (self, out int) {
@@ -232,12 +267,5 @@ pub struct BigInt {
             return self.get(1) << 32 | self.get(0)
         }
         return -1
-    }
-
-    destroy = {
-        ```
-        #arch: c
-        free((unsigned int*)self->digits);
-        ```
     }
 }

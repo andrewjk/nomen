@@ -62,6 +62,9 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 			(s) => s.name === status.function_return_type!.name && !s.is_simple_type && !s.is_class,
 		);
 		if (ret_struct) {
+			if (status.return_buffer_stack_offset !== undefined) {
+				status.code += `ldr x8, [x29, #${status.return_buffer_stack_offset}]\n`;
+			}
 			const struct_size = get_struct_size(status.function_return_type!.name, status);
 			if (node.value.node_type === "value") {
 				const var_name = (node.value as ValueNode).value;
@@ -138,13 +141,13 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 
 		mark_moved_if_struct(node.value, status);
 		const finalized = status.moved ?? new Set<string>();
-		status.code += `mov x20, x0\n`;
+		status.code += `str x0, [sp, #-16]!\n`;
 		for (const decl of status.scoped_declarations) {
 			if (finalized.has(decl.name)) continue;
 			emit_destroy_for_decl(status, decl.name, decl.type.name);
 		}
 		emit_heap_slots_cleanup_for_return(status);
-		status.code += `mov x0, x20\n`;
+		status.code += `ldr x0, [sp], #16\n`;
 		const match_saves = status.match_save_size || 0;
 		if (match_saves > 0) {
 			for (let i = 0; i < match_saves; i += 16) {

@@ -1,0 +1,94 @@
+pub struct Buffer {
+    var ptr uint32 data = 0
+    var int cap = 0
+
+    func alloc = (ref self, int size) {
+        ```
+        #arch: c
+        self->cap = size;
+        self->data = (long)calloc(size, sizeof(unsigned int));
+        ```
+        ```
+        #arch: aarch64
+        str x1, [x19, #16]
+        mov x0, x1
+        mov x1, #4
+        bl _calloc
+        str x0, [x19, #8]
+        ```
+    }
+
+    func grow = (ref self, int needed) {
+        ```
+        #arch: c
+        if (self->cap >= needed) return;
+        int new_cap = self->cap;
+        if (new_cap == 0) new_cap = 8;
+        while (new_cap < needed) new_cap *= 2;
+        self->data = (long)realloc((unsigned int*)self->data, new_cap * sizeof(unsigned int));
+        memset((unsigned int*)self->data + self->cap, 0, (new_cap - self->cap) * sizeof(unsigned int));
+        self->cap = new_cap;
+        ```
+        ```
+        #arch: aarch64
+        ldr x2, [x19, #16]
+        cmp x2, x1
+        b.ge .Lbuffer_grow_end
+        mov x3, #8
+        cmp x2, #0
+        csel x3, x3, x2, eq
+        cmp x3, x1
+        b.ge .Lbuffer_grow_got
+        .Lbuffer_grow_loop:
+        lsl x3, x3, #1
+        cmp x3, x1
+        b.lt .Lbuffer_grow_loop
+        .Lbuffer_grow_got:
+        sub sp, sp, #16
+        str x2, [sp, #0]
+        str x3, [sp, #8]
+        ldr x0, [x19, #8]
+        lsl x1, x3, #2
+        bl _realloc
+        str x0, [x19, #8]
+        ldr x2, [sp, #0]
+        ldr x3, [sp, #8]
+        add sp, sp, #16
+        str x3, [x19, #16]
+        add x0, x0, x2, lsl #2
+        mov x1, #0
+        sub x2, x3, x2
+        lsl x2, x2, #2
+        bl _memset
+        .Lbuffer_grow_end:
+        ```
+    }
+
+    func zero = (ref self, int len) {
+        ```
+        #arch: c
+        memset((unsigned int*)self->data, 0, len * sizeof(unsigned int));
+        ```
+        ```
+        #arch: aarch64
+        ldr x0, [x19, #8]
+        lsl x2, x1, #2
+        mov x1, #0
+        bl _memset
+        ```
+    }
+
+    destroy = {
+        ```
+        #arch: c
+        if (self->data) free((unsigned int*)self->data);
+        ```
+        ```
+        #arch: aarch64
+        ldr x0, [x19, #8]
+        cbz x0, .Lbuffer_destroy_end
+        bl _free
+        .Lbuffer_destroy_end:
+        ```
+    }
+}

@@ -282,8 +282,8 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 					build_node(node.target, status);
 					if (!status.code.endsWith("\n")) status.code += "\n";
 				}
-				const field_type = access_field.type?.name || "int";
-				const field_size = aarch64_size(field_type);
+			const field_type = access_field.type?.name || "int";
+			const field_size = access_field.type?.is_ptr ? 8 : aarch64_size(field_type);
 				const signed =
 					field_type.startsWith("int") ||
 					field_type === "float" ||
@@ -359,7 +359,7 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 		}
 		const final_offset = get_field_offset(target_type?.name || "", access_field.name, status);
 		const field_type = access_field.type?.name || "";
-		const size = aarch64_size(field_type);
+		const size = access_field.type?.is_ptr ? 8 : aarch64_size(field_type);
 		const signed =
 			field_type.startsWith("int") ||
 			field_type === "float" ||
@@ -391,7 +391,7 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 		}
 		const final_offset = get_field_offset(access_field.type?.name || "", access_field.name, status);
 		const field_type = access_field.type?.name || "";
-		const size = aarch64_size(field_type);
+		const size = access_field.type?.is_ptr ? 8 : aarch64_size(field_type);
 		const signed =
 			field_type.startsWith("int") ||
 			field_type === "float" ||
@@ -427,7 +427,7 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 		}
 		const final_offset = get_field_offset(target_type?.name || "", access_field.name, status);
 		const field_type = access_field.type?.name || "";
-		const size = aarch64_size(field_type);
+		const size = access_field.type?.is_ptr ? 8 : aarch64_size(field_type);
 		const signed =
 			field_type.startsWith("int") ||
 			field_type === "float" ||
@@ -468,7 +468,7 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 	}
 
 	const field_type = access_field.type?.name || "";
-	const size = aarch64_size(field_type);
+	const size = access_field.type?.is_ptr ? 8 : aarch64_size(field_type);
 	const signed =
 		field_type.startsWith("int") ||
 		field_type === "float" ||
@@ -635,12 +635,43 @@ function build_access_method(
 					}
 				}
 			}
+		} else if (!target_is_simple && node.target.node_type === "access") {
+			const access_target = node.target as AccessNode;
+			if (access_target.access.node_type === "access_field") {
+				const offset = compute_field_offset(access_target, status);
+				const base = get_base_target(access_target);
+				if (base.node_type === "value") {
+					const name = (base as ValueNode).value;
+					const paramReg = get_param_reg(name, status);
+					if (paramReg) {
+						if (paramReg !== "x0") {
+							status.code += `mov x0, ${paramReg}\n`;
+						}
+					} else if (is_local_ref_var(name, status)) {
+						emit_deref_var_address(status, "x0", name);
+					} else {
+						emit_var_address(status, "x0", name);
+					}
+				} else {
+					build_node(base, status);
+					if (!status.code.endsWith("\n")) {
+						status.code += "\n";
+					}
+				}
+				if (offset > 0) {
+					status.code += `add x0, x0, #${offset}\n`;
+				}
+			} else {
+				build_node(node.target, status);
+				if (!status.code.endsWith("\n")) {
+					status.code += "\n";
+				}
+			}
 		} else {
 			build_node(node.target, status);
 			if (!status.code.endsWith("\n")) {
 				status.code += "\n";
 			}
-			// For expression targets, the result is already a value, no need to load
 		}
 	}
 
