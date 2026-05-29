@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 
 import { expect, test } from "vite-plus/test";
@@ -6,7 +7,6 @@ import build from "../src/build";
 import { get_library } from "../src/lib";
 import parse from "../src/parse";
 import check_output from "./check_output";
-import fs from "node:fs";
 
 const system = get_library(path.resolve(import.meta.dirname, "../lib"));
 

@@ -282,8 +282,8 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 					build_node(node.target, status);
 					if (!status.code.endsWith("\n")) status.code += "\n";
 				}
-			const field_type = access_field.type?.name || "int";
-			const field_size = aarch64_size(field_type);
+				const field_type = access_field.type?.name || "int";
+				const field_size = aarch64_size(field_type);
 				const signed =
 					field_type.startsWith("int") ||
 					field_type === "float" ||

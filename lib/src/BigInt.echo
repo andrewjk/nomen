@@ -56,45 +56,46 @@ pub struct BigInt {
         return 0
     }
 
-    pub func add = (self, BigInt a, BigInt b, out BigInt) {
-        var int max_len = a.len
-        if b.len > max_len {
-            max_len = b.len
+    pub op + (self, BigInt other, out BigInt) {
+        var BigInt out = BigInt()
+        var int max_len = self.len
+        if other.len > max_len {
+            max_len = other.len
         }
-        self.ensure(max_len + 2)
+        out.ensure(max_len + 2)
         var int carry = 0
         var int i = 0
         while i < max_len || carry != 0 {
             var int sum = carry
-            if i < a.len {
-                sum = sum + a.get(i)
+            if i < self.len {
+                sum = sum + self.get(i)
             }
-            if i < b.len {
-                sum = sum + b.get(i)
+            if i < other.len {
+                sum = sum + other.get(i)
             }
-            self.set(i, sum & 4294967295)
+            out.set(i, sum & 4294967295)
             carry = sum >> 32
             i = i + 1
         }
-        self.len = i
-        while self.len > 1 {
-            var int top = self.get(self.len - 1)
-            if top != 0 {
+        out.len = i
+        while out.len > 1 {
+            if out.get(out.len - 1) != 0 {
                 break
             }
-            self.len = self.len - 1
+            out.len = out.len - 1
         }
-        return self
+        return out
     }
 
-    pub func sub = (self, BigInt a, BigInt b, out BigInt) {
-        self.ensure(a.len)
+    pub op - (self, BigInt other, out BigInt) {
+        var BigInt out = BigInt()
+        out.ensure(self.len)
         var int borrow = 0
         var int i = 0
-        while i < a.len {
-            var int diff = a.get(i) - borrow
-            if i < b.len {
-                diff = diff - b.get(i)
+        while i < self.len {
+            var int diff = self.get(i) - borrow
+            if i < other.len {
+                diff = diff - other.get(i)
             }
             if diff < 0 {
                 diff = diff + 4294967296
@@ -102,32 +103,32 @@ pub struct BigInt {
             } else {
                 borrow = 0
             }
-            self.set(i, diff)
+            out.set(i, diff)
             i = i + 1
         }
-        self.len = a.len
-        while self.len > 1 {
-            var int top = self.get(self.len - 1)
-            if top != 0 {
+        out.len = self.len
+        while out.len > 1 {
+            if out.get(out.len - 1) != 0 {
                 break
             }
-            self.len = self.len - 1
+            out.len = out.len - 1
         }
-        return self
+        return out
     }
 
-    pub func mul = (self, BigInt a, BigInt b, out BigInt) {
-        var int new_len = a.len + b.len
+    pub op * (self, BigInt other, out BigInt) {
+        var BigInt out = BigInt()
+        var int new_len = self.len + other.len
         var Buffer tmp = Buffer()
         tmp.alloc(new_len)
         var int i = 0
-        while i < a.len {
+        while i < self.len {
             var uint64 carry = 0
             var int j = 0
-            while j < b.len || carry != 0 {
+            while j < other.len || carry != 0 {
                 var uint64 cur = (tmp.load(j + i) as uint64) + carry
-                if j < b.len {
-                    cur = cur + (a.get(i) as uint64) * (b.get(j) as uint64)
+                if j < other.len {
+                    cur = cur + (self.get(i) as uint64) * (other.get(j) as uint64)
                 }
                 tmp.store(j + i, cur as uint32)
                 carry = cur >> 32
@@ -135,21 +136,21 @@ pub struct BigInt {
             }
             i = i + 1
         }
-        self.ensure(new_len)
-        self.clear(new_len)
+        out.ensure(new_len)
+        out.clear(new_len)
         var int k = 0
         while k < new_len {
-            self.set(k, tmp.load(k) as uint64)
+            out.set(k, tmp.load(k) as uint64)
             k = k + 1
         }
-        self.len = new_len
-        while self.len > 1 {
-            if self.get(self.len - 1) != 0 {
+        out.len = new_len
+        while out.len > 1 {
+            if out.get(out.len - 1) != 0 {
                 break
             }
-            self.len = self.len - 1
+            out.len = out.len - 1
         }
-        return self
+        return out
     }
 
     pub func div = (self, BigInt a, BigInt b, var BigInt remainder, out BigInt) {
