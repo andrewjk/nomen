@@ -1,3 +1,3 @@
 export default interface Config {
-	// TODO:
+	arch?: "c" | "aarch64";
 }

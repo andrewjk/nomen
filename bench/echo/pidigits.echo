@@ -1,0 +1,39 @@
+pub func main = () {
+    var int k = 1
+    var int n1 = 4
+    var int n2 = 3
+    var int d = 1
+
+    var int digits_printed = 0
+    var int u = 0
+    var int v = 0
+    var int w = 0
+    var int k2 = 0
+
+    while 1 == 1 {
+        u = n1 / d
+        v = n2 / d
+        
+        if u == v {
+            printf("%d", u)
+            digits_printed = digits_printed + 1
+            
+            if digits_printed >= 10 {
+                break
+            }
+            
+            n1 = n1 * 10 - u * d * 10
+            n2 = n2 * 10 - u * d * 10
+        } else {
+            k2 = k * 2
+            u = n1 * (k2 - 1)
+            v = n2 * 2
+            w = n1 * (k - 1)
+            n1 = u + v
+            u = n2 * (k + 2)
+            n2 = w + u
+            d = d * (k2 + 1)
+            k = k + 1
+        }
+    }
+}

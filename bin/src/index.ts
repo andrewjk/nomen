@@ -1,9 +1,11 @@
 #! /usr/bin/env node
+import { execSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
 import chokidar from "chokidar";
-import yargs from "yargs";
+import { hideBin } from "yargs/helpers";
+import yargs from "yargs/yargs";
 
 import build from "../../src/build";
 import join from "../../src/join";
@@ -16,7 +18,7 @@ const SUPPORTED_EXTENSION = ".echo";
 try {
 	console.log("\n~ ECHO CLI ~\n");
 
-	const options = yargs
+	const options = yargs(hideBin(process.argv))
 		.usage("Usage: echo --in [file/folder]")
 		.option("in", {
 			alias: "i",
@@ -42,13 +44,19 @@ try {
 			type: "boolean",
 			demandOption: false,
 		})
+		.option("arch", {
+			alias: "a",
+			describe: "Target architecture (c or aarch64)",
+			type: "string",
+			default: "aarch64",
+		})
 		.help(true)
 		.parseSync();
 
 	// Does the --in path exist
 	if (fs.existsSync(options.in)) {
 		// Does the --config path exist
-		let config: Config = {};
+		let config: Config = { arch: options.arch as "c" | "aarch64" };
 		if (options.config && fs.existsSync(options.config)) {
 			// TODO: Support a js/ts config file as well as JSON
 			//config = await import(options.config);
@@ -115,19 +123,17 @@ function shouldProcessFile(filename: string) {
 	return path.extname(filename) === SUPPORTED_EXTENSION;
 }
 
-function processFile(filename: string, _config: Config) {
-	const startTime = performance.now();
+function processFile(filename: string, config: Config) {
 	console.log("Processing", filename);
 
+	const arch = config.arch || "aarch64";
+
+	let startTime = performance.now();
+
 	let input = join(path.resolve(filename));
-
-	// HACK:
-	input = input.replace(/Console.Write\("(.+?)"\)/g, 'printf("$1")');
-	input = input.replace(/Console.Write\((.+?) \+ (.+?)\)/g, 'printf("%d", $1 + $2)');
-	input = input.replace(/Console.Write\((.+?)\)/g, 'printf("%s", $1)');
-
 	const parsed = parse(input);
-	console.log("Parsed");
+	// TODO: If verbose flag
+	// console.log("Parsed");
 
 	let errors = parsed.errors.filter((f) => f.message !== "Function not found: printf");
 	const ok = !errors.length;
@@ -135,7 +141,6 @@ function processFile(filename: string, _config: Config) {
 	if (!ok) {
 		console.log("\nERRORS\n======");
 		for (let error of errors) {
-			//const line = (input.slice(0, error.i).match(/\n/g) || "").length + 1;
 			let slice = input.slice(0, error.start);
 			let line = 1;
 			let last_line_index = 0;
@@ -148,27 +153,40 @@ function processFile(filename: string, _config: Config) {
 			console.log(`${line},${error.start - last_line_index - 1}: ${error.message}`);
 		}
 		console.log("======");
-		//return;
 	}
 
-	const result = build(parsed.root);
-	console.log("Built");
-	/*
-  if (!result.ok) {
-    console.log("ERRORS");
-    for (let error of result.errors) {
-      console.log(error.i + ": " + error.message);
-    }
-    return;
-  }
-  */
+	const result = build(parsed.root, { arch });
+	// TODO: If verbose flag
+	// console.log("Built");
 
-	const headerfile = path.join(path.dirname(filename), "main.h");
-	const codefile = path.join(path.dirname(filename), "main.c");
+	const dir = path.dirname(filename);
+	const basename = path.basename(filename, ".echo");
+	const buildDir = path.join(dir, "build");
+	if (!fs.existsSync(buildDir)) {
+		fs.mkdirSync(buildDir, { recursive: true });
+	}
+	const ext = arch === "aarch64" ? ".s" : ".c";
+	const headerfile = path.join(buildDir, "main.h");
+	const codefile = path.join(buildDir, basename + ext);
+	const outfile = path.join(buildDir, basename);
 	fs.writeFileSync(headerfile, result.headers);
 	fs.writeFileSync(codefile, result.code);
-	console.log(`Created ${codefile}`);
 
-	const endTime = performance.now();
-	console.log(`Took ${endTime - startTime}ms`);
+	const compileTime = performance.now();
+	console.log(`Created ${codefile} in ${(compileTime - startTime).toFixed(2)}ms`);
+	console.log("");
+
+	startTime = performance.now();
+
+	if (arch === "aarch64") {
+		execSync(`clang -o ${outfile} ${codefile}`);
+	} else {
+		execSync(`clang -o ${outfile} ${codefile}`);
+	}
+	execSync(outfile, { stdio: "inherit" });
+
+	const runTime = performance.now();
+	console.log("");
+	console.log("");
+	console.log(`Completed in ${(runTime - startTime).toFixed(2)}ms`);
 }
