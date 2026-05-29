@@ -2,6 +2,7 @@
 node_modules/
 dist/
 
+*.cache
 *.out
 main.s
 audit_runtime.o
