@@ -154,9 +154,7 @@ export function monomorphize(
 	for (const field of mono_fields) {
 		if (!field.value) {
 			const param = new ParameterNode(field.start, field.name, field.type);
-			const field_is_class = !!status.structs.find(
-				(s) => s.name === field.type.name && s.is_class,
-			);
+			const field_is_class = !!status.structs.find((s) => s.name === field.type.name && s.is_class);
 			if (field_is_class) {
 				param.is_moved = true;
 			}

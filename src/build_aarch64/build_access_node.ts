@@ -341,8 +341,7 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 		(node.target as AccessNode).access.node_type === "access_field" &&
 		!!status.structs.find(
 			(s) =>
-				s.name === ((node.target as AccessNode).access as AccessFieldNode).type?.name &&
-				s.is_class,
+				s.name === ((node.target as AccessNode).access as AccessFieldNode).type?.name && s.is_class,
 		);
 
 	const target_is_class_array_access =
@@ -350,8 +349,7 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 		(node.target as AccessNode).access.node_type === "access_index" &&
 		!!status.structs.find(
 			(s) =>
-				s.name ===
-					type_from_value_node((node.target as AccessNode).target)?.name && s.is_class,
+				s.name === type_from_value_node((node.target as AccessNode).target)?.name && s.is_class,
 		);
 
 	if (target_is_class_access || target_is_class_array_access) {

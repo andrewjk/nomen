@@ -57,11 +57,7 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 		status.code += "\n";
 	}
 
-	if (
-		status.function_return_label &&
-		status.struct_return_buffer &&
-		status.function_return_type
-	) {
+	if (status.function_return_label && status.struct_return_buffer && status.function_return_type) {
 		const ret_struct = status.structs.find(
 			(s) => s.name === status.function_return_type!.name && !s.is_simple_type && !s.is_class,
 		);

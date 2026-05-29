@@ -108,23 +108,28 @@ function parse_op_parameter(parent: any, func: FunctionNode, status: ParseStatus
 		param.is_moved = true;
 	}
 
-	// Try parsing a type, and backtrack if it turns out to be a name with default value
-	const saved_i = status.i;
-	const saved_errors_length = status.errors.length;
-	param.type_start = get_index(status);
-	param.type = parse_type(status);
-
-	// If the next token is '=' or ')' or ',', what we parsed was actually the name
-	const next = peek_current(status);
-	if (next === "=" || next === ")" || next === "," || status.i >= status.tokens.length) {
-		status.i = saved_i;
-		status.errors.length = saved_errors_length;
-		param.type = new Type("");
-		param.type_start = undefined;
-		param.name = consume(status);
+	if (status.tokens[status.i]?.value === "ref" && status.tokens[status.i + 1]?.value === "self") {
+		param.declaration = "var";
+		param.is_ref = true;
+		status.i += 2;
+		param.name = "self";
 	} else {
-		param.name_start = get_index(status);
-		param.name = consume(status);
+		const saved_i = status.i;
+		const saved_errors_length = status.errors.length;
+		param.type_start = get_index(status);
+		param.type = parse_type(status);
+
+		const next = peek_current(status);
+		if (next === "=" || next === ")" || next === "," || status.i >= status.tokens.length) {
+			status.i = saved_i;
+			status.errors.length = saved_errors_length;
+			param.type = new Type("");
+			param.type_start = undefined;
+			param.name = consume(status);
+		} else {
+			param.name_start = get_index(status);
+			param.name = consume(status);
+		}
 	}
 
 	// Handle `self` parameter

@@ -121,9 +121,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 				status.function_ref_params!.add(param.name);
 			}
 			if (param.is_moved) {
-				const is_class = !!status.structs.find(
-					(s) => s.name === param.type.name && s.is_class,
-				);
+				const is_class = !!status.structs.find((s) => s.name === param.type.name && s.is_class);
 				if (is_class) {
 					const reg = callee_map.get(param.name);
 					if (reg) {

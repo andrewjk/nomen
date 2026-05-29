@@ -32,6 +32,10 @@ export default function build_trait_node(node: TraitNode, status: BuildStatus) {
 			continue;
 		}
 
+		const old_self_is_ref = status.self_is_ref;
+		const self_param = func.params[0]?.is_self_param ? func.params[0] : null;
+		status.self_is_ref = !!self_param?.is_ref;
+
 		// Define the function
 		// HACK: Need to map names to types
 		const func_start = status.code.length;
@@ -51,14 +55,15 @@ export default function build_trait_node(node: TraitNode, status: BuildStatus) {
 
 		// HACK: Dereference the `self` pointer arg to a local variable with a random name
 		// (`_self` for now, but we could automate it)
-		// TODO: Store whether the type of the parameter is a pointer, and use -> in build_node etc
-		if (func.params[0]?.is_self_param) {
+		// Skip for `ref self` — mutations should propagate through the pointer directly
+		if (func.params[0]?.is_self_param && !func.params[0]?.is_ref) {
 			status.code += `struct ${node.name} _self = *self;\n`;
 		}
 		for (let child of func.statements) {
 			build_node(child, status, true);
 		}
 		status.code += `}\n`;
+		status.self_is_ref = old_self_is_ref;
 	}
 
 	status.headers += "\n";

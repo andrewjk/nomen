@@ -135,7 +135,7 @@ function processFile(filename: string, config: Config) {
 	// TODO: If verbose flag
 	// console.log("Parsed");
 
-	let errors = parsed.errors.filter((f) => f.message !== "Function not found: printf");
+	let errors = parsed.errors;
 	const ok = !errors.length;
 
 	if (!ok) {
@@ -153,6 +153,7 @@ function processFile(filename: string, config: Config) {
 			console.log(`${line},${error.start - last_line_index - 1}: ${error.message}`);
 		}
 		console.log("======");
+		return;
 	}
 
 	const result = build(parsed.root, { arch });

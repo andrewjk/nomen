@@ -57,7 +57,25 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 
 	status.code += `\n{\n`;
 
+	const old_ref_params = status.function_ref_params;
+	status.function_ref_params = new Set<string>();
+	for (let param of node.params) {
+		const param_struct = status.structs.find((s) => s.name === param.type.name);
+		const param_trait = status.traits.find((t) => t.name === param.type.name);
+		if (
+			param.is_self_param ||
+			(param_struct && !param_struct.is_simple_type) ||
+			param_trait ||
+			param.declaration === "var" ||
+			param.type.is_ref
+		) {
+			status.function_ref_params.add(param.name);
+		}
+	}
+
 	build_block_node(node, status);
+
+	status.function_ref_params = old_ref_params;
 
 	if (!node.has_return) {
 		build_auto_free(status);

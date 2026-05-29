@@ -3,6 +3,7 @@ import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessIndexNode from "../nodes/AccessIndexNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
+import ValueNode from "../nodes/ValueNode.ts";
 import build_node from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import c_type from "./utils/c_type.ts";
@@ -60,9 +61,13 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				status.code += `)`;
 				break;
 			} else {
-				// If the target is a struct, we can just access the field directly
+				const target_value =
+					node.target.node_type === "value" ? (node.target as ValueNode).value : "";
+				const target_is_ref =
+					(target_value !== "self" || status.self_is_ref) &&
+					status.function_ref_params?.has(target_value);
 				build_node(node.target, status);
-				status.code += `.${access_field.name}`;
+				status.code += target_is_ref ? `->${access_field.name}` : `.${access_field.name}`;
 			}
 			break;
 		}
@@ -114,13 +119,36 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				if (!access_func.is_static) {
 					// TODO: be more rigorous about this! Sometimes types should be passed by ref??
 					if (!built_in_types.includes(target_type.name)) {
-						status.code += "&";
+						const target_value =
+							node.target.node_type === "value" ? (node.target as ValueNode).value : "";
+						const target_is_ref_param =
+							(target_value !== "self" || status.self_is_ref) &&
+							status.function_ref_params?.has(target_value);
+						if (!target_is_ref_param) {
+							status.code += "&";
+						}
 					}
 					build_node(node.target, status);
 				}
 				for (let i = 0; i < access_func.params.length; i++) {
 					if (!access_func.is_static || i > 0) {
 						status.code += ", ";
+					}
+					const param_type = type_from_value_node(access_func.params[i]);
+					if (
+						status.structs.find((s) => s.name === param_type.name && !s.is_simple_type) ||
+						status.traits.find((t) => t.name === param_type.name)
+					) {
+						const param_value =
+							access_func.params[i].node_type === "value"
+								? (access_func.params[i] as ValueNode).value
+								: "";
+						const param_is_ref_param =
+							(param_value !== "self" || status.self_is_ref) &&
+							status.function_ref_params?.has(param_value);
+						if (!param_is_ref_param) {
+							status.code += "&";
+						}
 					}
 					build_node(access_func.params[i], status);
 				}

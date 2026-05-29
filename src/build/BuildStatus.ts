@@ -23,6 +23,7 @@ export default interface BuildStatus {
 	function_param_regs?: Map<string, string>;
 	function_param_vars?: Set<string>;
 	function_ref_params?: Set<string>;
+	self_is_ref?: boolean;
 	function_array_params?: Set<string>;
 	function_return_label?: string;
 	moved_class_params?: Map<string, string>;

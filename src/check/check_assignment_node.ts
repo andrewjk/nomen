@@ -32,7 +32,11 @@ export default function check_assignment_node(
 	if (!left_value) {
 		add_error(status, `Unknown variable: ${left_value_name}`, assign.left_value!.start);
 		return false;
-	} else if (left_value.declaration !== "var" && !left_value.type.is_ref) {
+	} else if (
+		left_value.declaration !== "var" &&
+		!left_value.type.is_ref &&
+		left_value_name !== "self"
+	) {
 		if (left_value.is_set) {
 			add_error(status, `Assignment to const: ${left_value_name}`, assign.left_value!.start);
 			return false;

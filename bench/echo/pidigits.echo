@@ -1,39 +1,75 @@
+import BigInt
+import Console
+import int
+import Stringable
+
 pub func main = () {
-    var int k = 1
-    var int n1 = 4
-    var int n2 = 3
-    var int d = 1
-
+    var int n = 3
     var int digits_printed = 0
-    var int u = 0
-    var int v = 0
-    var int w = 0
-    var int k2 = 0
 
-    while 1 == 1 {
-        u = n1 / d
-        v = n2 / d
-        
-        if u == v {
-            printf("%d", u)
+    var BigInt k = BigInt()
+    var BigInt n1 = BigInt()
+    var BigInt n2 = BigInt()
+    var BigInt d = BigInt()
+    var BigInt one = BigInt()
+    var BigInt two = BigInt()
+    var BigInt ten = BigInt()
+    var BigInt u = BigInt()
+    var BigInt v = BigInt()
+    var BigInt w = BigInt()
+    var BigInt k2 = BigInt()
+    var BigInt tmp = BigInt()
+    var BigInt tmp2 = BigInt()
+    var BigInt rem = BigInt()
+
+    k = k.new(1)
+    n1 = n1.new(4)
+    n2 = n2.new(3)
+    d = d.new(1)
+    one = one.new(1)
+    two = two.new(2)
+    ten = ten.new(10)
+    u = u.new(0)
+    v = v.new(0)
+    w = w.new(0)
+    k2 = k2.new(0)
+    tmp = tmp.new(0)
+    tmp2 = tmp2.new(0)
+    rem = rem.new(0)
+
+    while true {
+        u = u.div(n1, d, rem)
+        v = v.div(n2, d, rem)
+
+        if u.cmp(v) == 0 {
+            Console.write(u.to_digit().to_string())
             digits_printed = digits_printed + 1
-            
-            if digits_printed >= 10 {
+
+            if digits_printed >= n {
+                Console.write("\t:\{digits_printed}")
                 break
             }
-            
-            n1 = n1 * 10 - u * d * 10
-            n2 = n2 * 10 - u * d * 10
+
+            tmp = tmp.mul(u, d)
+            tmp2 = tmp2.mul(tmp, ten)
+            tmp = tmp.mul(n1, ten)
+            n1 = n1.sub(tmp, tmp2)
+            tmp = tmp.mul(n2, ten)
+            n2 = n2.sub(tmp, tmp2)
         } else {
-            k2 = k * 2
-            u = n1 * (k2 - 1)
-            v = n2 * 2
-            w = n1 * (k - 1)
-            n1 = u + v
-            u = n2 * (k + 2)
-            n2 = w + u
-            d = d * (k2 + 1)
-            k = k + 1
+            k2 = k2.mul(k, two)
+            tmp = tmp.sub(k2, one)
+            u = u.mul(tmp, n1)
+            v = v.mul(n2, two)
+            tmp = tmp.sub(k, one)
+            w = w.mul(tmp, n1)
+            n1 = n1.add(u, v)
+            tmp = tmp.add(k, two)
+            u = u.mul(tmp, n2)
+            n2 = n2.add(w, u)
+            tmp2 = tmp2.add(k2, one)
+            d = d.mul(tmp2, d)
+            k = k.add(k, one)
         }
     }
 }

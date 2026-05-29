@@ -1,0 +1,251 @@
+pub struct BigInt {
+    var int sign = 0
+    var int len = 0
+    var int cap = 0
+    var int digits = 0
+
+    pub func new = (self, int val, out BigInt) {
+        ```
+        #arch: c
+        self->sign = val < 0 ? -1 : 1;
+        self->cap = 8;
+        self->digits = (long)calloc(self->cap, sizeof(unsigned int));
+        if (val < 0) val = -val;
+        ((unsigned int*)self->digits)[0] = (unsigned int)val;
+        self->len = 1;
+        return *self;
+        ```
+        return "from_c"
+    }
+
+    func get = (self, int i, out int) {
+        ```
+        #arch: c
+        return ((unsigned int*)self->digits)[i];
+        ```
+        return "from_c"
+    }
+
+    func set = (ref self, int i, uint64 val) {
+        ```
+        #arch: c
+        ((unsigned int*)self->digits)[i] = (unsigned int)val;
+        ```
+    }
+
+    func ensure = (ref self, int needed) {
+        ```
+        #arch: c
+        if (self->cap >= needed) return;
+        int new_cap = self->cap;
+        while (new_cap < needed) new_cap *= 2;
+        self->digits = (long)realloc((unsigned int*)self->digits, new_cap * sizeof(unsigned int));
+        memset((unsigned int*)self->digits + self->cap, 0, (new_cap - self->cap) * sizeof(unsigned int));
+        self->cap = new_cap;
+        ```
+    }
+
+    func clear = (ref self, int len) {
+        ```
+        #arch: c
+        memset((unsigned int*)self->digits, 0, len * sizeof(unsigned int));
+        ```
+    }
+
+    pub func cmp = (self, BigInt other, out int) {
+        if self.len != other.len {
+            if self.len > other.len {
+                return 1
+            }
+            return -1
+        }
+        var int i = self.len - 1
+        while i >= 0 {
+            var int a = self.get(i)
+            var int b = other.get(i)
+            if a != b {
+                if a > b {
+                    return 1
+                }
+                return -1
+            }
+            i = i - 1
+        }
+        return 0
+    }
+
+    pub func add = (self, BigInt a, BigInt b, out BigInt) {
+        var int max_len = a.len
+        if b.len > max_len {
+            max_len = b.len
+        }
+        self.ensure(max_len + 2)
+        var int carry = 0
+        var int i = 0
+        while i < max_len || carry != 0 {
+            var int sum = carry
+            if i < a.len {
+                sum = sum + a.get(i)
+            }
+            if i < b.len {
+                sum = sum + b.get(i)
+            }
+            self.set(i, sum & 4294967295)
+            carry = sum >> 32
+            i = i + 1
+        }
+        self.len = i
+        while self.len > 1 {
+            var int top = self.get(self.len - 1)
+            if top != 0 {
+                break
+            }
+            self.len = self.len - 1
+        }
+        return self
+    }
+
+    pub func sub = (self, BigInt a, BigInt b, out BigInt) {
+        self.ensure(a.len)
+        var int borrow = 0
+        var int i = 0
+        while i < a.len {
+            var int diff = a.get(i) - borrow
+            if i < b.len {
+                diff = diff - b.get(i)
+            }
+            if diff < 0 {
+                diff = diff + 4294967296
+                borrow = 1
+            } else {
+                borrow = 0
+            }
+            self.set(i, diff)
+            i = i + 1
+        }
+        self.len = a.len
+        while self.len > 1 {
+            var int top = self.get(self.len - 1)
+            if top != 0 {
+                break
+            }
+            self.len = self.len - 1
+        }
+        return self
+    }
+
+    pub func mul = (self, BigInt a, BigInt b, out BigInt) {
+        ```
+        #arch: c
+        int new_len = a->len + b->len;
+        unsigned int *tmp = calloc(new_len, sizeof(unsigned int));
+        unsigned int *ad = (unsigned int*)a->digits;
+        unsigned int *bd = (unsigned int*)b->digits;
+        for (int i = 0; i < a->len; i++) {
+            unsigned long long carry = 0;
+            for (int j = 0; j < b->len || carry; j++) {
+                unsigned long long cur = (unsigned long long)tmp[i + j] + carry;
+                if (j < b->len) cur += (unsigned long long)ad[i] * bd[j];
+                tmp[i + j] = (unsigned int)cur;
+                carry = cur >> 32;
+            }
+        }
+        if (self->cap < new_len) {
+            self->digits = (long)realloc((unsigned int*)self->digits, new_len * sizeof(unsigned int));
+            self->cap = new_len;
+        }
+        memcpy((unsigned int*)self->digits, tmp, new_len * sizeof(unsigned int));
+        self->len = new_len;
+        free(tmp);
+        while (self->len > 1 && ((unsigned int*)self->digits)[self->len - 1] == 0) self->len--;
+        return *self;
+        ```
+        return "from_c"
+    }
+
+    pub func div = (self, BigInt a, BigInt b, BigInt remainder, out BigInt) {
+        ```
+        #arch: c
+        memset((unsigned int*)self->digits, 0, self->cap * sizeof(unsigned int));
+        self->len = 1;
+        memset((unsigned int*)remainder->digits, 0, remainder->cap * sizeof(unsigned int));
+        remainder->len = 1;
+        unsigned int *ad = (unsigned int*)a->digits;
+        unsigned int *bd = (unsigned int*)b->digits;
+        for (int i = a->len * 32 - 1; i >= 0; i--) {
+            unsigned long long carry = 0;
+            unsigned int *rd = (unsigned int*)remainder->digits;
+            for (int j = 0; j < remainder->len; j++) {
+                unsigned long long val = ((unsigned long long)rd[j] << 1) + carry;
+                rd[j] = (unsigned int)val;
+                carry = val >> 32;
+            }
+            if (carry) {
+                if (remainder->len >= remainder->cap) {
+                    int nc = remainder->cap * 2;
+                    remainder->digits = (long)realloc((unsigned int*)remainder->digits, nc * sizeof(unsigned int));
+                    memset((unsigned int*)remainder->digits + remainder->cap, 0, (nc - remainder->cap) * sizeof(unsigned int));
+                    remainder->cap = nc;
+                }
+                rd = (unsigned int*)remainder->digits;
+                rd[remainder->len] = (unsigned int)carry;
+                remainder->len++;
+            }
+            int word = i / 32;
+            int bit = i % 32;
+            if (word < a->len && (ad[word] & (1U << bit))) {
+                ((unsigned int*)remainder->digits)[0] |= 1;
+            }
+            int cmp = 0;
+            if (remainder->len != b->len) cmp = remainder->len > b->len ? 1 : -1;
+            else {
+                rd = (unsigned int*)remainder->digits;
+                for (int j = remainder->len - 1; j >= 0; j--) {
+                    if (rd[j] != bd[j]) { cmp = rd[j] > bd[j] ? 1 : -1; break; }
+                }
+            }
+            if (cmp >= 0) {
+                rd = (unsigned int*)remainder->digits;
+                long long borrow = 0;
+                for (int j = 0; j < remainder->len; j++) {
+                    long long diff = (long long)rd[j] - borrow;
+                    if (j < b->len) diff -= bd[j];
+                    if (diff < 0) { diff += (1LL << 32); borrow = 1; } else { borrow = 0; }
+                    rd[j] = (unsigned int)diff;
+                }
+                while (remainder->len > 1 && rd[remainder->len - 1] == 0) remainder->len--;
+                if (self->cap <= word) {
+                    int nc = self->cap;
+                    while (nc <= word) nc *= 2;
+                    self->digits = (long)realloc((unsigned int*)self->digits, nc * sizeof(unsigned int));
+                    memset((unsigned int*)self->digits + self->cap, 0, (nc - self->cap) * sizeof(unsigned int));
+                    self->cap = nc;
+                }
+                if (word >= self->len) self->len = word + 1;
+                ((unsigned int*)self->digits)[word] |= (1U << bit);
+            }
+        }
+        while (self->len > 1 && ((unsigned int*)self->digits)[self->len - 1] == 0) self->len--;
+        return *self;
+        ```
+        return "from_c"
+    }
+
+    pub func to_digit = (self, out int) {
+        ```
+        #arch: c
+        unsigned int *d = (unsigned int*)self->digits;
+        if (self->len == 1) return d[0];
+        if (self->len == 2) return (int)((unsigned long long)d[1] << 32 | d[0]);
+        return -1;
+        ```
+        return "from_c"
+    }
+
+    destroy = {
+        ```
+        #arch: c
+        free((unsigned int*)self->digits);
+        ```
+    }
+}

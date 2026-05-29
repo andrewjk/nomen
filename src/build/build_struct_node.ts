@@ -153,6 +153,25 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 			continue;
 		}
 
+		const old_ref_params = status.function_ref_params;
+		const old_self_is_ref = status.self_is_ref;
+		status.function_ref_params = new Set<string>();
+		const self_param = func.params[0]?.is_self_param ? func.params[0] : null;
+		status.self_is_ref = !!self_param?.is_ref;
+		for (let param of func.params) {
+			const param_struct = status.structs.find((s) => s.name === param.type.name);
+			const param_trait = status.traits.find((t) => t.name === param.type.name);
+			if (
+				param.is_self_param ||
+				(param_struct && !param_struct.is_simple_type) ||
+				param_trait ||
+				param.declaration === "var" ||
+				param.type.is_ref
+			) {
+				status.function_ref_params.add(param.name);
+			}
+		}
+
 		// Define the function
 		// HACK: Need to map names to types
 		const func_start = status.code.length;
@@ -177,13 +196,16 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 
 		// HACK: Dereference the `self` pointer arg to a local variable with a random name
 		// (`_self` for now, but we could automate it)
-		if (!node.is_simple_type && func.params[0]?.is_self_param) {
+		// Skip for `ref self` — mutations should propagate through the pointer directly
+		if (!node.is_simple_type && func.params[0]?.is_self_param && !func.params[0]?.is_ref) {
 			status.code += `struct ${node.name} _self = *self;\n`;
 		}
 		for (let child of func.statements) {
 			build_node(child, status, true);
 		}
 		status.code += `}\n`;
+		status.function_ref_params = old_ref_params;
+		status.self_is_ref = old_self_is_ref;
 	}
 
 	// Build functions to get and set the trait's fields

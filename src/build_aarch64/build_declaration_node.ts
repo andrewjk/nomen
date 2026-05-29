@@ -332,10 +332,10 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 				(s) => s.name === node.type.name && !s.is_simple_type,
 			);
 			const element_size = struct_element
-			? struct_element.is_class
-				? 8
-				: get_struct_size(node.type.name, status)
-			: size;
+				? struct_element.is_class
+					? 8
+					: get_struct_size(node.type.name, status)
+				: size;
 
 			if (complex) {
 				const total_size = array_values.values.length * element_size;

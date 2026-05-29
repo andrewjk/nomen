@@ -120,42 +120,49 @@ function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: 
 		param.is_moved = true;
 	}
 
-	const saved_i = status.i;
-	const saved_errors_length = status.errors.length;
-	param.type_start = get_index(status);
-	param.type = parse_type(status);
+	if (status.tokens[status.i]?.value === "ref" && status.tokens[status.i + 1]?.value === "self") {
+		param.declaration = "var";
+		param.is_ref = true;
+		status.i += 2;
+		param.name = "self";
+	} else {
+		const saved_i = status.i;
+		const saved_errors_length = status.errors.length;
+		param.type_start = get_index(status);
+		param.type = parse_type(status);
 
-	if (param.type.name === "func" && accept("(", status)) {
-		const func_type_params: ParameterNode[] = [];
+		if (param.type.name === "func" && accept("(", status)) {
+			const func_type_params: ParameterNode[] = [];
 
-		if (peek_current(status) !== ")") {
-			parse_param_func_type_params(func_type_params, status);
-		}
+			if (peek_current(status) !== ")") {
+				parse_param_func_type_params(func_type_params, status);
+			}
 
-		if (expect(")", status)) {
-			for (const fp of func_type_params) {
-				if (fp.type.is_return_type) {
-					param.func_return_type = fp.type;
-				} else {
-					if (!param.func_params) param.func_params = [];
-					param.func_params.push(fp);
+			if (expect(")", status)) {
+				for (const fp of func_type_params) {
+					if (fp.type.is_return_type) {
+						param.func_return_type = fp.type;
+					} else {
+						if (!param.func_params) param.func_params = [];
+						param.func_params.push(fp);
+					}
 				}
 			}
-		}
 
-		param.name_start = get_index(status);
-		param.name = consume(status);
-	} else {
-		const next = peek_current(status);
-		if (next === "=" || next === ")" || next === "," || status.i >= status.tokens.length) {
-			status.i = saved_i;
-			status.errors.length = saved_errors_length;
-			param.type = new Type("");
-			param.type_start = undefined;
-			param.name = consume(status);
-		} else {
 			param.name_start = get_index(status);
 			param.name = consume(status);
+		} else {
+			const next = peek_current(status);
+			if (next === "=" || next === ")" || next === "," || status.i >= status.tokens.length) {
+				status.i = saved_i;
+				status.errors.length = saved_errors_length;
+				param.type = new Type("");
+				param.type_start = undefined;
+				param.name = consume(status);
+			} else {
+				param.name_start = get_index(status);
+				param.name = consume(status);
+			}
 		}
 	}
 
