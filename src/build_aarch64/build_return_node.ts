@@ -1,5 +1,6 @@
 import type BuildStatus from "../build/BuildStatus.ts";
 import ReturnNode from "../nodes/ReturnNode.ts";
+import ValueNode from "../nodes/ValueNode.ts";
 import build_node from "./build_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_malloc } from "./utils/audit.ts";
@@ -8,8 +9,8 @@ import {
 	emit_heap_slots_cleanup_for_return,
 	mark_moved_if_struct,
 } from "./utils/auto_destroy.ts";
-import { emit_var_store } from "./utils/stack_var.ts";
-import { get_struct_size } from "./utils/struct_layout.ts";
+import { emit_var_address, emit_var_store } from "./utils/stack_var.ts";
+import { emit_struct_copy, get_struct_size } from "./utils/struct_layout.ts";
 
 function find_var_size(name: string, status: BuildStatus): number {
 	const decl = status.scoped_declarations?.find((d) => d.name === name);
@@ -52,6 +53,35 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 	}
 
 	build_node(node.value, status);
+	if (!status.code.endsWith("\n")) {
+		status.code += "\n";
+	}
+
+	if (
+		status.function_return_label &&
+		status.struct_return_buffer &&
+		status.function_return_type
+	) {
+		const ret_struct = status.structs.find(
+			(s) => s.name === status.function_return_type!.name && !s.is_simple_type && !s.is_class,
+		);
+		if (ret_struct) {
+			const struct_size = get_struct_size(status.function_return_type!.name, status);
+			if (node.value.node_type === "value") {
+				const var_name = (node.value as ValueNode).value;
+				const paramReg = status.function_param_regs?.get(var_name);
+				if (paramReg) {
+					emit_struct_copy(paramReg, "x8", 0, struct_size, status);
+				} else {
+					emit_var_address(status, "x0", var_name);
+					emit_struct_copy("x0", "x8", 0, struct_size, status);
+				}
+			} else {
+				emit_struct_copy("x0", "x8", 0, struct_size, status);
+			}
+		}
+	}
+
 	if (status.return_assign) {
 		if (!status.code.endsWith("\n")) {
 			status.code += "\n";

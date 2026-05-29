@@ -17,10 +17,15 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	const old_scoped_declarations = status.scoped_declarations;
 	status.scoped_declarations = [];
 
+	const old_moved: Set<string> | undefined = status.moved;
+	(status.moved as Set<string> | undefined) = undefined;
+
 	const param_regs = ["x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7"];
 
 	const old_return_label = status.function_return_label;
-	const return_label = `.return_${label_counter++}`;
+	const return_label = `.return_${label_counter}`;
+	const keep_prefix = `.Lkeep_${label_counter}`;
+	label_counter++;
 	status.function_return_label = return_label;
 
 	const is_nested = !!old_return_label && node.name !== "main";
@@ -172,9 +177,9 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 			status.code += `ldr x0, [x29, #${slot}]\n`;
 			status.code += `ldr x1, [x29, #${return_save}]\n`;
 			status.code += `cmp x0, x1\n`;
-			status.code += `beq .Lkeep_${name}\n`;
+			status.code += `beq ${keep_prefix}_${name}\n`;
 			emit_free(status);
-			status.code += `.Lkeep_${name}:\n`;
+			status.code += `${keep_prefix}_${name}:\n`;
 		}
 		status.code += `ldr x0, [x29, #${return_save}]\n`;
 	}
@@ -211,6 +216,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	}
 
 	status.scoped_declarations = old_scoped_declarations;
+	status.moved = old_moved;
 	status.stack_size = old_stack_size;
 	status.stack_offsets = old_stack_offsets;
 	status.function_param_regs = undefined;

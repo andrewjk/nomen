@@ -374,6 +374,9 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 									status.code += "\n";
 								}
 								status.code += `str x0, [x29, #${slot_offset}]\n`;
+								if (struct_element?.is_class) {
+									mark_moved_if_struct(value, status);
+								}
 							}
 						}
 					});
@@ -394,6 +397,9 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 									status.code += "\n";
 								}
 								status.code += `str x0, [${node.name} + ${i * element_size}]\n`;
+								if (struct_element?.is_class) {
+									mark_moved_if_struct(value, status);
+								}
 							}
 						}
 					});

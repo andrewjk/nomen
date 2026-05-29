@@ -402,7 +402,10 @@ export function mark_moved_if_struct(value: any, status: BuildStatus) {
 	if (!var_type) return;
 	const is_local = status.scoped_declarations.some((d) => d.name === var_name);
 	const has_anchor = find_anchor_slot(status, var_name) !== undefined;
-	if (!is_local && !has_anchor) return;
+	const is_class_param = !!status.moved_class_params?.has(var_name)
+		|| !!status.function_param_regs?.has(var_name)
+			&& is_struct_type(var_type.name, status);
+	if (!is_local && !has_anchor && !is_class_param) return;
 	const is_struct = is_struct_type(var_type.name, status);
 	if (is_struct) {
 		if (!status.moved) status.moved = new Set<string>();
