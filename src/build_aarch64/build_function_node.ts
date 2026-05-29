@@ -56,7 +56,10 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	let callee_idx = 0;
 
 	status.code += `.p2align 2\n`;
-	status.code += `${node.name}:\n`;
+	if (node.name === "main") {
+		status.code += `.globl _main\n`;
+	}
+	status.code += `${node.name === "main" ? "_" : ""}${node.name}:\n`;
 	status.code += `stp x29, x30, [sp, #-16]!\n`;
 
 	if (has_body) {

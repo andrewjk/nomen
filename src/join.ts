@@ -1,9 +1,9 @@
-//import { promises as fs } from "node:fs";
 import fs from "node:fs";
 import path from "node:path";
 
 // HACK: Just loading everything into a single big source file for now
 // TODO: Retain line numbers!!
+const LIB_PATH = path.resolve(__dirname, "../lib/src");
 
 export default function join(entry_file_path: string): string {
 	const folder_path = path.dirname(entry_file_path);
@@ -14,7 +14,14 @@ export default function join(entry_file_path: string): string {
 }
 
 function add_source(folder_path: string, file_path: string, inputs: Map<string, string>) {
-	const source_path = path.resolve(folder_path, file_path);
+	let source_path = path.resolve(folder_path, file_path);
+
+	if (!fs.existsSync(source_path)) {
+		const lib_source_path = path.resolve(LIB_PATH, file_path);
+		if (fs.existsSync(lib_source_path)) {
+			source_path = lib_source_path;
+		}
+	}
 
 	let source = `// file://${source_path}\n`;
 
