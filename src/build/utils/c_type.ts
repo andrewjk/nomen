@@ -15,9 +15,9 @@ export default function c_type(type: string): string {
 		case "uint16":
 			return "unsigned short";
 		case "int32":
-			return "long";
+			return "int";
 		case "uint32":
-			return "unsigned long";
+			return "unsigned int";
 		case "int64":
 			return "long long";
 		case "uint64":

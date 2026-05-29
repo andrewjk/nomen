@@ -31,6 +31,7 @@ import build_array_values_node from "./build_array_values_node.ts";
 import build_assignment_node from "./build_assignment_node.ts";
 import build_bitset_node from "./build_bitset_node.ts";
 import build_break_node from "./build_break_node.ts";
+import build_cast_node from "./build_cast_node.ts";
 import build_continue_node from "./build_continue_node.ts";
 import build_declaration_node from "./build_declaration_node.ts";
 import build_enum_node from "./build_enum_node.ts";
@@ -111,6 +112,10 @@ export default function build_node(node: BaseNode, status: BuildStatus, with_sem
 			status.code += "(";
 			build_node((node as GroupedNode).value, status);
 			status.code += ")";
+			break;
+		}
+		case "cast": {
+			build_cast_node(node as CastNode, status);
 			break;
 		}
 		case "op": {

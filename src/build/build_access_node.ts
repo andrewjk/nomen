@@ -158,29 +158,19 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 		}
 		case "access_index": {
 			const access_index = node.access as AccessIndexNode;
-			//if (trait) {
-			//  // If the target is a trait, we need to call the get/set method
-			//  const traitField = trait.fields.find((f) => f.name == access_field.name)!;
-			//  // TODO: Cast to the correct function definition
-			//  // TODO: Use the correct variable name
-			//  // TODO: Pass parameters
-			//  const type = c_type(traitField.type.name);
-			//  const cast = `(${type}(*)(void *))`;
-			//  status.code += `(${cast}_get_trait_func((void *)`;
-			//  build_node(node.target, status);
-			//  const trait_index = status.traits.indexOf(trait);
-			//  const field_index = trait.functions.length + trait.fields.indexOf(traitField) * 2;
-			//  status.code += `, ${trait_index}, ${field_index}))(`;
-			//  build_node(node.target, status);
-			//  status.code += `)`;
-			//  break;
-			//} else {
-			// If the target is a struct, we can just access the field directly
-			build_node(node.target, status);
-			status.code += "[";
-			build_node(access_index.index, status);
-			status.code += "]";
-			//}
+			const target_type = type_from_value_node(node.target);
+			if (target_type.is_ptr) {
+				status.code += `((${c_type(target_type.name)}*)`;
+				build_node(node.target, status);
+				status.code += ")[";
+				build_node(access_index.index, status);
+				status.code += "]";
+			} else {
+				build_node(node.target, status);
+				status.code += "[";
+				build_node(access_index.index, status);
+				status.code += "]";
+			}
 			break;
 		}
 	}

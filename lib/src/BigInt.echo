@@ -2,7 +2,7 @@ pub struct BigInt {
     var int sign = 0
     var int len = 0
     var int cap = 0
-    var int digits = 0
+    var ptr uint32 digits = 0
 
     pub func new = (self, int val, out BigInt) {
         ```
@@ -19,18 +19,11 @@ pub struct BigInt {
     }
 
     func get = (self, int i, out int) {
-        ```
-        #arch: c
-        return ((unsigned int*)self->digits)[i];
-        ```
-        return "from_c"
+        return self.digits[i] as int
     }
 
     func set = (ref self, int i, uint64 val) {
-        ```
-        #arch: c
-        ((unsigned int*)self->digits)[i] = (unsigned int)val;
-        ```
+        self.digits[i] = val as uint32
     }
 
     func ensure = (ref self, int needed) {
@@ -232,14 +225,13 @@ pub struct BigInt {
     }
 
     pub func to_digit = (self, out int) {
-        ```
-        #arch: c
-        unsigned int *d = (unsigned int*)self->digits;
-        if (self->len == 1) return d[0];
-        if (self->len == 2) return (int)((unsigned long long)d[1] << 32 | d[0]);
-        return -1;
-        ```
-        return "from_c"
+        if self.len == 1 {
+            return self.get(0)
+        }
+        if self.len == 2 {
+            return self.get(1) << 32 | self.get(0)
+        }
+        return -1
     }
 
     destroy = {
