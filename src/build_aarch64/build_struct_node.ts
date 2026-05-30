@@ -22,6 +22,7 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 	if (node.is_simple_type) {
 		build_struct_functions(node, status);
 	} else {
+		status.current_struct = node;
 		if (!custom_init) {
 			build_init_function(node, status);
 		}
@@ -30,6 +31,7 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 		if (node.destroy_body) {
 			build_destroy_function(node, status);
 		}
+		status.current_struct = undefined;
 	}
 
 	if (is_nested) {

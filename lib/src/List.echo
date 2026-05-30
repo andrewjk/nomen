@@ -1,76 +1,24 @@
+import Buffer
 
 pub struct List<T> {
     var int length = 0
-    var int capacity = 0
-    var int items = 0
+    var Buffer items = Buffer()
 
-    destroy = {
-        ```
-        #arch: c
-        free((void*)self->items);
-        ```
-        ```
-        #arch: aarch64
-        ldr x0, [x19, #24]
-        bl _free
-        ```
-    }
-
-    pub func push = (self, T value) {
-        ```
-        #arch: c
-        if (self->length >= self->capacity) {
-            long new_cap = self->capacity < 4 ? 4 : self->capacity * 2;
-            self->items = (long)realloc((void*)self->items, new_cap * sizeof(long));
-            self->capacity = new_cap;
+    pub func push = (ref self, T value) {
+        if self.length >= self.items.get_cap() {
+            var int new_cap = 4
+            var int old_cap = self.items.get_cap()
+            if old_cap >= 4 {
+                new_cap = old_cap * 2
+            }
+            self.items.grow_int(new_cap)
         }
-        ((long*)self->items)[self->length] = value;
-        self->length++;
-        ```
-        ```
-        #arch: aarch64
-        sub sp, sp, #32
-        str x1, [sp, #0]
-        ldr x2, [x19, #8]
-        ldr x3, [x19, #16]
-        cmp x2, x3
-        blt .Llist_push_store
-        cmp x3, #4
-        bge .Llist_push_cap_ok
-        mov x3, #4
-        .Llist_push_cap_ok:
-        lsl x3, x3, #1
-        str x3, [x19, #16]
-        ldr x0, [x19, #24]
-        lsl x1, x3, #3
-        bl _realloc
-        str x0, [x19, #24]
-        .Llist_push_store:
-        ldr x1, [sp, #0]
-        ldr x2, [x19, #8]
-        ldr x3, [x19, #24]
-        str x1, [x3, x2, lsl #3]
-        ldr x2, [x19, #8]
-        add x2, x2, #1
-        str x2, [x19, #8]
-        add sp, sp, #32
-        ```
+        self.items.store_int(self.length, value)
+        self.length = self.length + 1
     }
 
-    pub func pop = (self, out T) {
-        ```
-        #arch: c
-        self->length--;
-        return ((long*)self->items)[self->length];
-        ```
-        ```
-        #arch: aarch64
-        ldr x2, [x19, #8]
-        sub x2, x2, #1
-        str x2, [x19, #8]
-        ldr x3, [x19, #24]
-        ldr x0, [x3, x2, lsl #3]
-        ```
-        return "from_c"
+    pub func pop = (ref self, out T) {
+        self.length = self.length - 1
+        return self.items.load_int(self.length)
     }
 }

@@ -151,9 +151,15 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 
 function compute_field_offset(node: AccessNode, status: BuildStatus): number {
 	if (node.access.node_type === "access_field") {
-		const target_type = type_from_value_node(node.target);
+		let target_type = type_from_value_node(node.target);
+		if (!target_type?.name && node.target.node_type === "value") {
+			const name = (node.target as ValueNode).value;
+			if (name === "self" && status.current_struct) {
+				target_type = new Type(status.current_struct.name);
+			}
+		}
 		const field_name = (node.access as AccessFieldNode).name;
-		let offset = get_field_offset(target_type.name, field_name, status);
+		let offset = get_field_offset(target_type?.name || "", field_name, status);
 
 		if (node.target.node_type === "access") {
 			const inner_access = node.target as AccessNode;
@@ -488,10 +494,13 @@ function build_access_method(
 	access_func: AccessFunctionCallNode,
 	status: BuildStatus,
 ) {
-	const target_type = type_from_value_node(node.target);
+	let target_type = type_from_value_node(node.target);
+	if (!target_type?.name && node.target.node_type === "access") {
+		const resolved = resolve_access_type(node.target as AccessNode, status);
+		if (resolved) target_type = resolved;
+	}
 	const target_name =
 		node.target.node_type === "value" ? (node.target as ValueNode).value : target_type?.name;
-
 	const enum_node = status.enums.find((e) => e.name === target_name);
 	if (enum_node) {
 		const enum_case = enum_node.cases.find((c) => c.name === access_func.name);
@@ -926,4 +935,29 @@ function build_char_array_to_string(node: AccessNode, length: string, status: Bu
 	}
 	status.code += `strb wzr, [x0, #${len}]\n`;
 	status.code += `ldr x19, [sp], #16\n`;
+}
+
+function resolve_access_type(node: AccessNode, status: BuildStatus): Type | null {
+	const inner = node.access;
+	if (inner.node_type !== "access_field") return null;
+	const field_name = (inner as AccessFieldNode).name;
+
+	let base_type: Type | null = null;
+	if (node.target.node_type === "value") {
+		const name = (node.target as ValueNode).value;
+		const vtype = (node.target as ValueNode).type;
+		if (vtype?.name) {
+			base_type = vtype;
+		} else if (name === "self" && status.current_struct) {
+			base_type = new Type(status.current_struct.name);
+		}
+	} else if (node.target.node_type === "access") {
+		base_type = resolve_access_type(node.target as AccessNode, status);
+	}
+
+	if (!base_type?.name) return null;
+	const struct = status.structs.find((s) => s.name === base_type!.name);
+	if (!struct) return null;
+	const field = struct.fields.find((f) => f.name === field_name);
+	return field?.type || null;
 }
