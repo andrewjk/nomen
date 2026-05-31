@@ -10,7 +10,7 @@ describe("memory UAF", () => {
 struct Counter {
   var int count
 
-  destroy = {
+  func destroy = () {
     self.count = 0
   }
 }
@@ -33,7 +33,7 @@ Console.write("\\{c.count}")
 struct Token {
   var int id
 
-  destroy = {
+  func destroy = () {
     self.id = 0
   }
 }
@@ -314,7 +314,7 @@ Console.write("done")
 struct Resource {
   var int handle
 
-  destroy = {
+  func destroy = () {
     self.handle = -1
   }
 }
@@ -343,7 +343,7 @@ Console.write("done")
 struct Resource {
   var int handle
 
-  destroy = {
+  func destroy = () {
     self.handle = -1
   }
 }
@@ -373,7 +373,7 @@ describe("memory UAF (class)", () => {
 class Counter {
   var int count
 
-  destroy = {
+  func destroy = () {
     self.count = 0
   }
 }
@@ -396,7 +396,7 @@ Console.write("\\{c.count}")
 class Token {
   var int id
 
-  destroy = {
+  func destroy = () {
     self.id = 0
   }
 }
@@ -721,7 +721,7 @@ Console.write("done")
 class Resource {
   var int handle
 
-  destroy = {
+  func destroy = () {
     self.handle = -1
   }
 }
@@ -750,7 +750,7 @@ Console.write("done")
 class Resource {
   var int handle
 
-  destroy = {
+  func destroy = () {
     self.handle = -1
   }
 }
@@ -810,7 +810,7 @@ Console.write("\\{items[2].value}")
 class Resource {
   var int handle
 
-  destroy = {
+  func destroy = () {
     self.handle = -1
   }
 }
@@ -1210,7 +1210,7 @@ Console.write("done")
 class Resource {
   var int handle
 
-  destroy = {
+  func destroy = () {
     self.handle = -1
   }
 }

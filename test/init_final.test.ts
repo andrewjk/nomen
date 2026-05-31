@@ -94,7 +94,7 @@ describe("destroy blocks build", () => {
 struct Resource {
     var int handle
 
-    destroy = {
+    func destroy = () {
         self.handle = 0
     }
 }
@@ -127,7 +127,7 @@ describe("auto-destroy enforcement", () => {
 struct Resource {
     var int handle
 
-    destroy = {
+    func destroy = () {
         self.handle = 0
     }
 }
@@ -146,7 +146,7 @@ Console.write("\\{r.handle}")
 struct Resource {
     var int handle
 
-    destroy = {
+    func destroy = () {
         self.handle = 0
     }
 }
@@ -185,7 +185,7 @@ describe("move on return", () => {
 struct Resource {
     var int handle
 
-    destroy = {
+    func destroy = () {
         self.handle = 0
     }
 }
@@ -210,7 +210,7 @@ describe("ownership transfer", () => {
 struct Inner {
     var int value
 
-    destroy = {
+    func destroy = () {
         self.value = 0
     }
 }
@@ -235,7 +235,7 @@ Console.write("\\{outer.child.value}")
 struct File {
     var int handle
 
-    destroy = {
+    func destroy = () {
         self.handle = 0
     }
 }

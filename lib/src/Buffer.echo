@@ -231,7 +231,7 @@ pub struct Buffer {
         return 0
     }
 
-    destroy = {
+    func destroy = () {
         ```
         #arch: c
         if (self->data) free((unsigned int*)(unsigned long long)self->data);

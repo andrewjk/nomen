@@ -173,9 +173,9 @@ pub struct Point {
 }
 ```
 
-### Destroy Blocks
+### Destroy Functions
 
-If a struct has a `destroy` block, it runs automatically when the struct goes out of scope. Unlike functions, the destroy block cannot be called manually and always executes at scope exit.
+If a struct has a `destroy` function, it runs automatically when the struct goes out of scope. The destroy function takes no parameters (besides `self`) and cannot be called manually.
 
 ```
 pub struct Transaction {
@@ -185,7 +185,7 @@ pub struct Transaction {
         self.handle = handle
     }
 
-    destroy = {
+    func destroy = () {
         // automatically runs when the Transaction goes out of scope
     }
 }
@@ -240,15 +240,15 @@ var c = Counter(0)
 c.increment()
 ```
 
-#### Destroy Blocks
+#### Destroy Functions
 
-Like structs, classes support `destroy` blocks that run automatically when the class instance goes out of scope:
+Like structs, classes support `destroy` functions that run automatically when the class instance goes out of scope:
 
 ```
 class Resource {
     var int handle
 
-    destroy = {
+    func destroy = () {
         self.handle = -1
     }
 }
@@ -1007,7 +1007,7 @@ raw "inline code here"
 
 At the end of each scope, the compiler automatically:
 
-- Calls destroy blocks on structs and classes going out of scope
+- Calls destroy functions on structs and classes going out of scope
 - Frees heap-allocated strings and class instances
 - Cleans up all intermediate scopes on `break`, `continue`, and `return`
 

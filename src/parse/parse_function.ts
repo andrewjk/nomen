@@ -47,6 +47,12 @@ export default function parse_function(
 	if (expect("=", status) && expect("(", status)) {
 		const parent = status.stack.at(-1)!;
 
+		if (name === "destroy" && parent.node_type === "struct") {
+			const self_param = new ParameterNode(start, "self", new Type((parent as StructNode).name));
+			self_param.is_self_param = true;
+			func.params.push(self_param);
+		}
+
 		if (peek_current(status) !== ")") {
 			parse_function_parameter(parent, func, status);
 		}
@@ -69,7 +75,7 @@ export default function parse_function(
 					expect("}", status);
 					status.stack.pop();
 
-					if (func.return_type.name && !func.has_return && name !== "init") {
+					if (func.return_type.name && !func.has_return && name !== "init" && name !== "destroy") {
 						add_error(status, `Missing return`, status.tokens[status.i - 2].i);
 					}
 				}

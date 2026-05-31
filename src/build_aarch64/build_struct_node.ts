@@ -28,8 +28,9 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 		}
 		build_struct_functions(node, status);
 		build_trait_functions(node, status);
-		if (node.destroy_body) {
-			build_destroy_function(node, status);
+		const destroy_func = node.functions.find((f) => f.name === "destroy");
+		if (destroy_func) {
+			build_destroy_function(node, destroy_func, status);
 		}
 		status.current_struct = undefined;
 	}
@@ -41,8 +42,7 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 	}
 }
 
-function build_destroy_function(node: StructNode, status: BuildStatus) {
-	const func = node.destroy_body! as FunctionNode;
+function build_destroy_function(node: StructNode, func: FunctionNode, status: BuildStatus) {
 	const func_label = `${node.name}_destroy`;
 
 	const old_scoped_declarations = status.scoped_declarations;
@@ -288,6 +288,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 			build_custom_init_function(node, func, status);
 			continue;
 		}
+		if (func.name === "destroy") continue;
 
 		const old_scoped_declarations = status.scoped_declarations;
 		const old_stack_size = status.stack_size;

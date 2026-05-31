@@ -295,7 +295,8 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 	const struct_type = status.structs.find((s) => s.name === node.type.name && !s.is_simple_type);
 	if (
 		struct_type &&
-		(struct_type.destroy_body || has_struct_fields_with_destroy(struct_type, status))
+		(struct_type.functions.find((f) => f.name === "destroy") ||
+			has_struct_fields_with_destroy(struct_type, status))
 	) {
 		track_struct_decl(status, node.name, node.type.name, node.type.type_args);
 	}

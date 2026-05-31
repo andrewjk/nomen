@@ -152,6 +152,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		if (func.name === "init" && !func.has_body) {
 			continue;
 		}
+		if (func.name === "destroy") continue;
 
 		const old_ref_params = status.function_ref_params;
 		const old_self_is_ref = status.self_is_ref;

@@ -143,7 +143,7 @@ import System
 class Resource {
     var int value
 
-    destroy = {
+    func destroy = () {
         self.value = 999
     }
 }

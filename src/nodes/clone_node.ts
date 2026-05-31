@@ -333,7 +333,6 @@ export default function clone_node(node: BaseNode): BaseNode {
 			c.type_params = n.type_params.slice();
 			c.is_generic = n.is_generic;
 			c.privates_visible = n.privates_visible;
-			c.destroy_body = n.destroy_body ? clone_node(n.destroy_body) : undefined;
 			c.allocations = n.allocations?.map(clone_node);
 			return c;
 		}

@@ -95,7 +95,7 @@ export default function parse_statement(status: ParseStatus) {
 				break;
 			}
 			case "destroy": {
-				parse_destroy(status);
+				parse_destroy("mod", status);
 				break;
 			}
 			case "op": {

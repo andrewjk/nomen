@@ -139,9 +139,6 @@ export function monomorphize(
 		mono_fields,
 		[],
 	);
-	mono_struct.destroy_body = generic_struct.destroy_body
-		? clone_node(generic_struct.destroy_body)
-		: undefined;
 
 	for (const func of generic_struct.functions) {
 		if (func.name === "init" && !func.has_body) continue;
