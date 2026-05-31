@@ -17,7 +17,10 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		status.code += `)`;
 	} else if (node.operator_func) {
 		// Custom operator function call
-		status.code += `${node.operator_func.struct_name}_${node.operator_func.func_name}(`;
+		const label =
+			node.operator_func.mangled_name ||
+			`${node.operator_func.struct_name}_${node.operator_func.func_name}`;
+		status.code += `${label}(`;
 		build_operand(node.left_value, status);
 		status.code += ", ";
 		build_operand(node.right_value, status);

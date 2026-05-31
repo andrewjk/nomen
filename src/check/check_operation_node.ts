@@ -6,6 +6,11 @@ import ValueNode from "../nodes/ValueNode.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
+import {
+	find_function_by_params,
+	is_overloaded,
+	mangled_label,
+} from "./utils/function_overload.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
 
@@ -53,9 +58,16 @@ export default function check_operation_node(op: OperationNode, status: CheckSta
 		} else {
 			op.type = custom_op.return_type;
 		}
+		const struct_name = left_type.is_array ? "Array" : left_type.name;
+		const func_name = operator_to_func_name(op.op) || custom_op.name;
+		const struct_node = status.structs.find((s) => s.name === struct_name);
 		op.operator_func = {
-			struct_name: left_type.is_array ? "Array" : left_type.name,
+			struct_name,
 			func_name: custom_op.name,
+			mangled_name:
+				struct_node && is_overloaded(struct_node, func_name)
+					? mangled_label(custom_op, struct_name)
+					: undefined,
 		};
 
 		// Propagate array length for + and * operations
@@ -176,7 +188,7 @@ function find_custom_operator(
 		return undefined;
 	}
 
-	const func = struct.functions.find((f) => f.name === func_name);
+	const func = find_function_by_params(struct.functions, func_name, [right_type]);
 	if (!func) {
 		return undefined;
 	}

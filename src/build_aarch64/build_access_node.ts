@@ -581,7 +581,7 @@ function build_access_method(
 	const mono_struct_name = target_type.type_args?.length
 		? target_type.name + "_" + target_type.type_args.map((t) => t.name).join("_")
 		: target_type.name;
-	const method_name = `${mono_struct_name}_${access_func.name}`;
+	const method_name = access_func.mangled_name || `${mono_struct_name}_${access_func.name}`;
 
 	// Check if method returns a struct
 	const return_struct = status.structs.find(

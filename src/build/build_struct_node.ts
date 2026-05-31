@@ -1,3 +1,4 @@
+import { is_overloaded, mangled_label } from "../check/utils/function_overload.ts";
 import StructNode from "../nodes/StructNode.ts";
 import TraitNode from "../nodes/TraitNode.ts";
 import build_node from "./build_node.ts";
@@ -181,7 +182,10 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		if (return_struct) {
 			status.code += `struct `;
 		}
-		status.code += `${c_type(return_type)} ${node.name}_${func.name}(`;
+		const func_label_name = is_overloaded(node, func.name)
+			? mangled_label(func, node.name)
+			: `${node.name}_${func.name}`;
+		status.code += `${c_type(return_type)} ${func_label_name}(`;
 		for (let i = 0; i < func.params.length; i++) {
 			if (i > 0) {
 				status.code += ", ";

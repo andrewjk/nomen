@@ -219,7 +219,10 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 			status.code += "\n";
 		}
 
-		status.code += `bl ${node.operator_func.struct_name}_${node.operator_func.func_name}\n`;
+		const label =
+			node.operator_func.mangled_name ||
+			`${node.operator_func.struct_name}_${node.operator_func.func_name}`;
+		status.code += `bl ${label}\n`;
 
 		if (return_struct && return_temp_offset !== undefined) {
 			status.code += `add x0, x29, #${return_temp_offset}\n`;

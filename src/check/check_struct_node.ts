@@ -1,8 +1,19 @@
 import add_error from "../add_error.ts";
+import FunctionNode from "../nodes/FunctionNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import check_declaration_node from "./check_declaration_node.ts";
 import check_function_node from "./check_function_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
+
+function params_differ(a: FunctionNode, b: FunctionNode): boolean {
+	const a_params = a.params.filter((p) => !p.is_self_param);
+	const b_params = b.params.filter((p) => !p.is_self_param);
+	if (a_params.length !== b_params.length) return true;
+	for (let i = 0; i < a_params.length; i++) {
+		if (a_params[i].type.name !== b_params[i].type.name) return true;
+	}
+	return false;
+}
 
 export default function check_struct_node(struct: StructNode, status: CheckStatus) {
 	for (let trait of struct.traits) {
@@ -26,11 +37,13 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 	for (let i = 0; i < struct.functions.length; i++) {
 		for (let j = i + 1; j < struct.functions.length; j++) {
 			if (struct.functions[i].name === struct.functions[j].name) {
-				add_error(
-					status,
-					`Function already declared: ${struct.functions[j].name}`,
-					struct.functions[j].start,
-				);
+				if (!params_differ(struct.functions[i], struct.functions[j])) {
+					add_error(
+						status,
+						`Function already declared: ${struct.functions[j].name}`,
+						struct.functions[j].start,
+					);
+				}
 			}
 		}
 	}

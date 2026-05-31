@@ -1,4 +1,5 @@
 import type BuildStatus from "../build/BuildStatus.ts";
+import { is_overloaded, mangled_label } from "../check/utils/function_overload.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import build_block_node from "./build_block_node.ts";
@@ -301,10 +302,12 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		status.stack_size = 0;
 		status.stack_offsets = new Map();
 
-		const return_label = `.return_${node.name}_${func.name}`;
+		const func_label = is_overloaded(node, func.name)
+			? mangled_label(func, node.name)
+			: `${node.name}_${func.name}`;
+		const return_label = `.return_${func_label}`;
 		status.function_return_label = return_label;
 
-		const func_label = `${node.name}_${func.name}`;
 		const stack_placeholder = `STACK_SIZE_${func_label}`;
 
 		status.code += `.p2align 2\n`;

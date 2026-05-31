@@ -4,10 +4,16 @@ import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessIndexNode from "../nodes/AccessIndexNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import BaseNode from "../nodes/BaseNode.ts";
+import FunctionNode from "../nodes/FunctionNode.ts";
 import Type from "../nodes/Type.ts";
 import check_function_call from "./check_function_call.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
+import {
+	find_function_by_params,
+	is_overloaded,
+	mangled_label,
+} from "./utils/function_overload.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
 
@@ -166,7 +172,15 @@ function check_access_function_node(
 ): boolean {
 	const struct = status.structs.find((s) => s.name === target_type.name);
 
-	let func = struct?.functions.findLast((f) => f.name === node.name);
+	let func: FunctionNode | undefined;
+	if (struct) {
+		const arg_types = node.params.map((p) => type_from_value_node(p, status));
+		func = find_function_by_params(struct.functions, node.name, arg_types);
+	}
+
+	if (!func) {
+		func = struct?.functions.findLast((f) => f.name === node.name);
+	}
 
 	if (!func) {
 		// Are we accessing a func in a trait?
@@ -223,6 +237,10 @@ function check_access_function_node(
 	if (!func) {
 		add_error(status, `Function not found: ${target_type.name}.${node.name}`, node.start);
 		return false;
+	}
+
+	if (struct && is_overloaded(struct, node.name)) {
+		node.mangled_name = mangled_label(func, struct.name);
 	}
 
 	return check_function_call(node, status, func, target_type);

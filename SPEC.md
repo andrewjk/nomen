@@ -506,6 +506,48 @@ func apply = (func (int, out int) mapper, int value, out int) {
 }
 ```
 
+#### Function Overloading
+
+Multiple struct methods can share the same name if their parameter types differ:
+
+```
+struct Vec2 {
+    var int x
+    var int y
+
+    pub func scale = (self, int s) {
+        self.x = self.x * s
+        self.y = self.y * s
+    }
+
+    pub func scale = (self, Vec2 other) {
+        self.x = self.x * other.x
+        self.y = self.y * other.y
+    }
+}
+
+const v = Vec2(2, 3)
+v.scale(4)       // calls scale(int) -> (8, 12)
+v.scale(v)       // calls scale(Vec2) -> (16, 36)
+```
+
+Overload resolution matches by the number and types of non-`self` parameters. Operators can also be overloaded:
+
+```
+struct Vec2 {
+    var int x
+    var int y
+
+    pub op + (self, Vec2 other, out Vec2) {
+        return Vec2(self.x + other.x, self.y + other.y)
+    }
+
+    pub op + (self, int scalar, out Vec2) {
+        return Vec2(self.x + scalar, self.y + scalar)
+    }
+}
+```
+
 #### Anonymous Functions (Lambdas)
 
 ```

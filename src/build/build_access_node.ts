@@ -113,9 +113,8 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				build_node(node.target, status);
 				status.code += `)`;
 			} else {
-				// If the target is a struct, we need to convert the access function
-				// into a C function that takes the struct as an argument
-				status.code += `${target_type.name}_${access_func.name}(`;
+				const label = access_func.mangled_name || `${target_type.name}_${access_func.name}`;
+				status.code += `${label}(`;
 				if (!access_func.is_static) {
 					// TODO: be more rigorous about this! Sometimes types should be passed by ref??
 					if (!built_in_types.includes(target_type.name)) {
