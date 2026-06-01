@@ -18,7 +18,7 @@ p.age = 25
 Console.write("\\{p.age}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("access_get_field", result, "25");
 	});
@@ -32,7 +32,7 @@ var Person p = Person("Alice")
 Console.write("\\{p.name}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("access_get_string_field", result, "Alice");
 	});
@@ -47,7 +47,7 @@ p.age = 20
 Console.write("\\{p.age}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("access_set_field", result, "20");
 	});
@@ -63,7 +63,7 @@ p.age = 30
 Console.write("\\{p.age}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("access_get_set_field", result, "30");
 	});
@@ -79,7 +79,7 @@ const sum = p.x + p.y
 Console.write("\\{sum}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("access_field_expr", result, "7");
 	});
@@ -96,7 +96,7 @@ a.x = 50
 Console.write("\\{a.x} \\{a.y} \\{b.x}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("access_multi_fields", result, "50 20 30");
 	});
@@ -114,7 +114,7 @@ p.age = 42
 Console.write("\\{p.get_age()}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("access_method_return", result, "42");
 	});
@@ -134,7 +134,7 @@ r.height = 6
 Console.write("\\{r.area()}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("access_method_arithmetic", result, "30");
 	});
@@ -150,7 +150,7 @@ const result = Calc.double(21)
 Console.write("\\{result}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("access_static_func", result, "42");
 	});
@@ -164,7 +164,7 @@ nums[2] = 30
 Console.write("\\{nums[0]} \\{nums[1]} \\{nums[2]}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("access_array_index", result, "10 20 30");
 	});
@@ -179,7 +179,7 @@ var i = 1
 Console.write("\\{nums[i]}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("access_array_var_index", result, "200");
 	});
@@ -199,7 +199,7 @@ c.increment()
 Console.write("\\{c.count}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("access_field_update_method", result, "3");
 	});

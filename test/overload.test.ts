@@ -1,7 +1,6 @@
 import { expect, describe, test } from "vite-plus/test";
 
 import build from "../src/build";
-import parse from "../src/parse";
 import check_output from "./check_output";
 import parse_with_imports from "./parse_with_imports";
 
@@ -25,7 +24,7 @@ Console.write("\\{p.last_int} \\{p.last_str}")
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		await check_output("overload_print", result, "42 hello");
 	});
 
@@ -52,7 +51,7 @@ Console.write("\\{v1.x} \\{v1.y} \\{v3.x} \\{v3.y}")
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		await check_output("overload_struct_params", result, "8 12 10 18");
 	});
 
@@ -76,7 +75,7 @@ Console.write("\\{c.x} \\{c.y} \\{d.x} \\{d.y}")
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		await check_output("overload_operator", result, "4 6 11 12");
 	});
 });

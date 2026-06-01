@@ -14,7 +14,7 @@ const x = 5
 Console.write("\\{x}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("decl_const_int", result, "5");
 	});
@@ -25,7 +25,7 @@ const int x = 42
 Console.write("\\{x}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("decl_const_explicit_type", result, "42");
 	});
@@ -36,7 +36,7 @@ var x = 10
 Console.write("\\{x}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("decl_var_with_value", result, "10");
 	});
@@ -48,7 +48,7 @@ x = 20
 Console.write("\\{x}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("decl_var_reassigned", result, "20");
 	});
@@ -60,7 +60,7 @@ x = 99
 Console.write("\\{x}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("decl_var_type_assign", result, "99");
 	});
@@ -71,7 +71,7 @@ const name = "world"
 Console.write("\\{name}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("decl_const_string", result, "world");
 	});
@@ -82,7 +82,7 @@ const flag = true
 Console.write("\\{flag}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("decl_const_bool", result, "true");
 	});
@@ -94,7 +94,7 @@ const b = 20
 Console.write("\\{a + b}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("decl_multiple", result, "30");
 	});
@@ -105,7 +105,7 @@ const x = 3 + 4
 Console.write("\\{x}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("decl_const_expression", result, "7");
 	});
@@ -119,7 +119,7 @@ if true {
 Console.write("\\{x}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("decl_var_if_update", result, "15");
 	});
@@ -135,7 +135,7 @@ if true {
 Console.write("\\{x}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("decl_const_branches", result, "1");
 	});
@@ -146,7 +146,7 @@ const x = -5
 Console.write("\\{x}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("decl_negative", result, "-5");
 	});
@@ -157,7 +157,7 @@ const int[] x = [10, 20, 30]
 Console.write("\\{x[1]}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("decl_const_array", result, "20");
 	});

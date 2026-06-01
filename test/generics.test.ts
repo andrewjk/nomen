@@ -297,7 +297,7 @@ pub func main = () {
 `;
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual([]);
-	const built = build(parsed.root, { arch: "aarch64" });
+	const built = build(parsed.root, { arch: "aarch64", audit: true });
 	expect(built.code).toContain("printBox_Box_int");
 	await check_output_aarch64("gen_func_box", built, "99\n");
 });
@@ -325,7 +325,7 @@ pub func main = () {
 `;
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual([]);
-	const built = build(parsed.root, { arch: "aarch64" });
+	const built = build(parsed.root, { arch: "aarch64", audit: true });
 	expect(built.code).toContain("printFirst_Pair_int_string");
 	await check_output_aarch64("gen_func_pair", built, "10\n20\n");
 });

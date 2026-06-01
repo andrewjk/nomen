@@ -20,7 +20,7 @@ const c = Counter(5)
 Console.write("\\{c.count}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("custom_init", result, "5");
 	});
@@ -43,7 +43,7 @@ const p = Point(3, 4)
 Console.write("\\{p.sum}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("custom_init_computed", result, "7");
 	});
@@ -63,7 +63,7 @@ const cfg = Config(3)
 Console.write("\\{cfg.timeout}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("custom_init_default", result, "30");
 	});
@@ -82,7 +82,7 @@ const w = Widget("test")
 Console.write(w.name)
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("pub_init", result, "test");
 	});
@@ -103,7 +103,7 @@ const r = Resource(42)
 Console.write("\\{r.handle}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("destroy_basic", result, "42");
 	});
@@ -136,7 +136,7 @@ const r = Resource(42)
 Console.write("\\{r.handle}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("auto_destroy_basic", result, "42");
 	});
@@ -156,7 +156,7 @@ const r2 = Resource(2)
 Console.write("\\{r2.handle}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("auto_destroy_second", result, "2");
 	});
@@ -198,7 +198,7 @@ func get_handle = (out int) {
 Console.write("\\{get_handle()}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("return_field_no_move", result, "42");
 	});
@@ -225,7 +225,7 @@ outer.child = inner
 Console.write("\\{outer.child.value}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("assign_to_field", result, "42");
 	});
@@ -250,7 +250,7 @@ const mgr = FileManager(1, f)
 Console.write("\\{mgr.id}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("recursive_destroy", result, "1");
 	});

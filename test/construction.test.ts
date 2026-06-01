@@ -19,7 +19,7 @@ var Empty e = Empty()
 Console.write("ok")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("construct_empty", result, "ok");
 	});
@@ -33,7 +33,7 @@ var Person p = Person("Andrew")
 Console.write("\\{p.name}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("construct_string_param", result, "Andrew");
 	});
@@ -48,7 +48,7 @@ var Person p = Person("Bob")
 Console.write("\\{p.name} \\{p.age}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("construct_default_field", result, "Bob 0");
 	});
@@ -63,7 +63,7 @@ var Point p = Point(3, 4)
 Console.write("\\{p.x} \\{p.y}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("construct_multi_param", result, "3 4");
 	});
@@ -79,7 +79,7 @@ const sum = p.x + p.y
 Console.write("\\{sum}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("construct_field_expr", result, "30");
 	});
@@ -95,7 +95,7 @@ c.count = c.count + 10
 Console.write("\\{c.count}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("construct_modify_field", result, "15");
 	});
@@ -112,7 +112,7 @@ b.value = 200
 Console.write("\\{a.value} \\{b.value}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("construct_two_instances", result, "100 200");
 	});

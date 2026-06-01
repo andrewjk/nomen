@@ -17,7 +17,7 @@ if true {
 Console.write("\\{x}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("control_if_true", result, "1");
 	});
@@ -31,7 +31,7 @@ if false {
 Console.write("\\{x}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("control_if_false", result, "0");
 	});
@@ -47,7 +47,7 @@ if true {
 Console.write("\\{x}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("control_if_else_true", result, "1");
 	});
@@ -63,7 +63,7 @@ if false {
 Console.write("\\{x}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("control_if_else_false", result, "2");
 	});
@@ -78,7 +78,7 @@ if a > 3 {
 Console.write("\\{result}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("control_if_condition", result, "1");
 	});
@@ -95,7 +95,7 @@ if a > 3 {
 Console.write("\\{result}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("control_if_else_condition", result, "2");
 	});
@@ -112,7 +112,7 @@ for i of 0..10 {
 Console.write("\\{sum}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("control_for_break", result, "10");
 	});
@@ -129,7 +129,7 @@ for i of 0..5 {
 Console.write("\\{sum}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("control_for_continue", result, "8");
 	});
@@ -145,7 +145,7 @@ while x < 5 {
 Console.write("\\{count}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("control_while", result, "5");
 	});
@@ -162,7 +162,7 @@ while true {
 Console.write("\\{x}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("control_while_break", result, "3");
 	});
@@ -177,7 +177,7 @@ while x < 5; x = x + 1 {
 Console.write("\\{sum}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("control_while_update", result, "10");
 	});
@@ -192,7 +192,7 @@ for item of arr {
 Console.write("\\{sum}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("control_for_array", result, "60");
 	});
@@ -207,7 +207,7 @@ for i of 0..3 {
 Console.write("\\{sum}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("control_for_index_array", result, "60");
 	});
@@ -223,7 +223,7 @@ for i of 0..3 {
 Console.write("\\{count}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("control_nested_loops", result, "6");
 	});
@@ -246,7 +246,7 @@ if 3 == 3 {
 Console.write("\\{result}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("control_comparisons", result, "4");
 	});
@@ -269,7 +269,7 @@ if false || false {
 Console.write("\\{result}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("control_logical_ops", result, "2");
 	});
@@ -282,7 +282,7 @@ func crash = (out int) {
 crash()
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		expect(result.code).toContain("something went wrong");
 	});
@@ -295,7 +295,7 @@ func incomplete = (out int) {
 incomplete()
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		expect(result.code).toContain("not done yet");
 	});

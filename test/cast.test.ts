@@ -15,7 +15,7 @@ var int y = x as int
 Console.write("\\{y}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 
 		expect(parsed.errors).toEqual([]);
 		await check_output("cast_int8_int", result, "5");
@@ -28,7 +28,7 @@ var int y = x as int
 Console.write("\\{y}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 
 		expect(parsed.errors).toEqual([]);
 		await check_output("cast_uint8_int", result, "200");
@@ -41,7 +41,7 @@ var int8 y = x as int8
 Console.write("\\{y}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 
 		expect(parsed.errors).toEqual([]);
 		await check_output("cast_int_int8", result, "2");
@@ -54,7 +54,7 @@ var uint8 y = x as uint8
 Console.write("\\{y}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 
 		expect(parsed.errors).toEqual([]);
 		await check_output("cast_int_uint8", result, "44");
@@ -67,7 +67,7 @@ var int y = x as int
 Console.write("\\{y}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 
 		expect(parsed.errors).toEqual([]);
 		await check_output("cast_int16_int", result, "1000");
@@ -80,7 +80,7 @@ var int y = x as int
 Console.write("\\{y}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 
 		expect(parsed.errors).toEqual([]);
 		await check_output("cast_same_type", result, "42");
@@ -93,7 +93,7 @@ var int y = (x as int) + 5
 Console.write("\\{y}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 
 		expect(parsed.errors).toEqual([]);
 		await check_output("cast_in_expr", result, "15");
@@ -106,7 +106,7 @@ const y = x as int
 Console.write("\\{y}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 
 		expect(parsed.errors).toEqual([]);
 		await check_output("cast_decl_value", result, "100");
@@ -119,7 +119,7 @@ var int y = x as int
 Console.write("\\{y}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 
 		expect(parsed.errors).toEqual([]);
 		await check_output("cast_uint_int", result, "42");
@@ -132,7 +132,7 @@ var int y = x as int
 Console.write("\\{y}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 
 		expect(parsed.errors).toEqual([]);
 		await check_output("cast_int8_neg", result, "-1");
@@ -148,7 +148,7 @@ const y = convert(x)
 Console.write("\\{y}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 
 		expect(parsed.errors).toEqual([]);
 		await check_output("cast_in_func", result, "7");
@@ -162,7 +162,7 @@ var int z2 = y as int
 Console.write("\\{z2}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 
 		expect(parsed.errors).toEqual([]);
 		await check_output("cast_chained", result, "5");

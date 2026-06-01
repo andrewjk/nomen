@@ -31,7 +31,7 @@ const c = d as Cat
 Console.write(c.to_string())
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 
 		expect(parsed.errors).toEqual([]);
 		await check_output("cast_struct_struct", result, "6");
@@ -60,7 +60,7 @@ const name = id as Name
 Console.write(name.to_string())
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 
 		expect(parsed.errors).toEqual([]);
 		await check_output("cast_field_access", result, "105");
@@ -94,7 +94,7 @@ const result = convert(dog)
 Console.write(result)
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 
 		expect(parsed.errors).toEqual([]);
 		await check_output("cast_inside_func", result, "10");
@@ -123,7 +123,7 @@ const b = a as B
 Console.write(b.to_string())
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 
 		expect(parsed.errors).toEqual([]);
 		await check_output("cast_same_value", result, "42");
@@ -144,7 +144,7 @@ const v = w as int
 Console.write("\\{v}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 
 		expect(parsed.errors).toEqual([]);
 		await check_output("cast_to_int", result, "99");

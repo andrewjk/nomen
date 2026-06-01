@@ -16,7 +16,7 @@ func greet = () {
 greet()
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("func_call_no_params", result, "hello");
 	});
@@ -29,7 +29,7 @@ func greet = (string name, string title) {
 greet("Andrew", "Manager")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("func_call_string_params", result, "Manager Andrew");
 	});
@@ -41,7 +41,7 @@ const x = add(1, 2)
 Console.write("\\{x}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("func_call_return_value", result, "3");
 	});
@@ -54,7 +54,7 @@ func greet = (string name, string greeting = "Hello") {
 greet("Andrew")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("func_call_default_param", result, "Hello Andrew");
 	});
@@ -67,7 +67,7 @@ func greet = (string name, string greeting = "Hello") {
 greet("Andrew", "Hi")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("func_call_override_default", result, "Hi Andrew");
 	});
@@ -79,7 +79,7 @@ func triple = (int x, out int) => x * 3
 Console.write("\\{triple(double(2))}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("func_call_chained", result, "12");
 	});
@@ -90,7 +90,7 @@ func get_val = (out int) => 10
 Console.write("\\{get_val() + 5}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("func_call_in_expr", result, "15");
 	});
@@ -101,7 +101,7 @@ func multiply = (int a, int b, out int) => a * b
 Console.write("\\{multiply(4, 7)}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("func_call_int_params", result, "28");
 	});
@@ -113,7 +113,7 @@ func apply_func_to_num = (int num, func (int, out int) f, out int) => f(num)
 Console.write("\\{apply_func_to_num(4, multiply)}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("func_call_func_param", result, "20");
 	});

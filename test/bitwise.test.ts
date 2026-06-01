@@ -13,7 +13,7 @@ const int c = a & b
 Console.write("\\{c}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("bitwise_and", result, "8");
 	});
@@ -26,7 +26,7 @@ const int c = a | b
 Console.write("\\{c}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("bitwise_or", result, "14");
 	});
@@ -39,7 +39,7 @@ const int c = a ^ b
 Console.write("\\{c}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("bitwise_xor", result, "6");
 	});
@@ -51,7 +51,7 @@ const int b = a << 2
 Console.write("\\{b}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("bitwise_lsl", result, "12");
 	});
@@ -63,7 +63,7 @@ const int b = a >> 2
 Console.write("\\{b}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("bitwise_asr", result, "4");
 	});
@@ -76,7 +76,7 @@ const int c = a & b
 Console.write("\\{c}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("bitwise_and_2", result, "6");
 	});
@@ -89,7 +89,7 @@ const int c = (a | b) + 1
 Console.write("\\{c}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("bitwise_combined", result, "8");
 	});

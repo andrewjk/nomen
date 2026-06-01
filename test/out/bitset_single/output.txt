@@ -1,1 +1,1 @@
-4
+4LEAK: 1 allocation(s)

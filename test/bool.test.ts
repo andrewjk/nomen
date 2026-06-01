@@ -15,7 +15,7 @@ if flag {
 Console.write("\\{result}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("bool_const_true", result, "1");
 	});
@@ -30,7 +30,7 @@ if flag {
 Console.write("\\{result}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("bool_const_false", result, "0");
 	});
@@ -46,7 +46,7 @@ if flag {
 Console.write("\\{result}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("bool_cmp_stored", result, "1");
 	});
@@ -62,7 +62,7 @@ if flag {
 Console.write("\\{result}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("bool_cmp_false_stored", result, "0");
 	});
@@ -81,7 +81,7 @@ const result = check(flag)
 Console.write("\\{result}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("bool_func_param", result, "1");
 	});
@@ -100,7 +100,7 @@ if result {
 Console.write("\\{output}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("bool_func_return", result, "1");
 	});
@@ -115,7 +115,7 @@ if !flag {
 Console.write("\\{result}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("bool_negated", result, "0");
 	});
@@ -131,7 +131,7 @@ if a == b {
 Console.write("\\{result}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("bool_equality", result, "1");
 	});

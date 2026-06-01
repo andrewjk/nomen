@@ -17,7 +17,7 @@ for n of nums {
 Console.write("\\n")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 
 		expect(parsed.errors).toEqual([]);
 		await check_output("for_loop_array", result, "123\n");
@@ -31,7 +31,7 @@ for i of 0..3 {
 Console.write("\\n")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 
 		expect(parsed.errors).toEqual([]);
 		await check_output("for_loop_range", result, "012\n");
@@ -47,7 +47,7 @@ for n of nums {
 Console.write("\\{sum}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 
 		expect(parsed.errors).toEqual([]);
 		await check_output("for_loop_sum_calculation", result, "15");
@@ -63,7 +63,7 @@ for n of nums {
 Console.write("\\{product}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 
 		expect(parsed.errors).toEqual([]);
 		await check_output("for_loop_multiplication", result, "24");
@@ -81,7 +81,7 @@ for n of nums {
 Console.write("\\{count}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 
 		expect(parsed.errors).toEqual([]);
 		await check_output("for_loop_condition_body", result, "3");
@@ -95,7 +95,7 @@ for n of nums {
 }
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 
 		expect(parsed.errors).toEqual([]);
 		await check_output("for_loop_single_element", result, "42");
@@ -114,7 +114,7 @@ for r of rows {
 Console.write("\\{total}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 
 		expect(parsed.errors).toEqual([]);
 		await check_output("for_loop_nested", result, "21");
@@ -130,7 +130,7 @@ for i of 0..3 {
 Console.write("\\{total}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 
 		expect(parsed.errors).toEqual([]);
 		await check_output("for_loop_index_calculation", result, "60");
@@ -145,7 +145,7 @@ for i of 0..5 {
 Console.write("\\{count}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 
 		expect(parsed.errors).toEqual([]);
 		await check_output("for_loop_decrement", result, "0");
@@ -161,7 +161,7 @@ for i of 0..3 {
 Console.write("\\{sum}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 
 		expect(parsed.errors).toEqual([]);
 		await check_output("for_loop_array_access", result, "600");
@@ -179,7 +179,7 @@ for n of nums {
 Console.write("\\{max}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 
 		expect(parsed.errors).toEqual([]);
 		await check_output("for_loop_comparison", result, "7");
@@ -197,7 +197,7 @@ for n of nums {
 Console.write("\\{sum}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 
 		expect(parsed.errors).toEqual([]);
 		await check_output("for_loop_modulo", result, "6");
@@ -214,7 +214,7 @@ for n of nums; i += 1 {
 Console.write("\\{sum}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 
 		expect(parsed.errors).toEqual([]);
 		await check_output("for_loop_post_assignment", result, "9");
@@ -230,7 +230,7 @@ for n of 0..5; i += 2 {
 Console.write("\\{sum}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 
 		expect(parsed.errors).toEqual([]);
 		// 0 + 0 + 2 + 4 + 6 + 8
@@ -250,7 +250,7 @@ for n of nums; i += 1 {
 Console.write("\\{sum}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 
 		expect(parsed.errors).toEqual([]);
 		// 0 + 0 + 0 + 1 + 3 + 2 + 6 + 3 + 9 + 4 + 12
@@ -269,7 +269,7 @@ for n of nums; i += multiplier {
 Console.write("\\{sum}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 
 		expect(parsed.errors).toEqual([]);
 		// 0 + 1 + 0 + 2 + 2 + 3 + 4
@@ -286,7 +286,7 @@ for n of nums; counter += 1 {
 Console.write("\\n")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 
 		expect(parsed.errors).toEqual([]);
 		await check_output("for_loop_update_side_effect", result, "1 2 3 \n");
@@ -302,7 +302,7 @@ for n of 0..5; i += 3 {
 Console.write("\\{sum}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 
 		expect(parsed.errors).toEqual([]);
 		// 0 + 0 + 0 + 1 + 3 + 2 + 6 + 3 + 9 + 4 + 12

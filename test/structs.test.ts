@@ -18,7 +18,7 @@ p.age = 25
 Console.write("\\{p.age}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("struct_int_field", result, "25");
 	});
@@ -33,7 +33,7 @@ var Person p = Person("Alice")
 Console.write("\\{p.name}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("struct_string_field", result, "Alice");
 	});
@@ -47,7 +47,7 @@ var Counter c = Counter()
 Console.write("\\{c.count}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("struct_default_field", result, "0");
 	});
@@ -62,7 +62,7 @@ var Point p = Point(10, 20)
 Console.write("\\{p.x} \\{p.y}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("struct_field_get_set", result, "10 20");
 	});
@@ -81,7 +81,7 @@ const age = p.get_age()
 Console.write("\\{age}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("struct_method_return", result, "42");
 	});
@@ -101,7 +101,7 @@ c.increment()
 Console.write("\\{c.count}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("struct_mutating_method", result, "3");
 	});
@@ -117,7 +117,7 @@ const result = Calc.add(3, 7)
 Console.write("\\{result}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("struct_static_func", result, "10");
 	});
@@ -133,7 +133,7 @@ p.x = 10
 Console.write("\\{p.x} \\{p.y}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("struct_field_update", result, "10 4");
 	});
@@ -153,7 +153,7 @@ r.height = 7
 Console.write("\\{r.area()}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("struct_method_arithmetic", result, "42");
 	});
@@ -169,7 +169,7 @@ var Point b = Point(20, 40)
 Console.write("\\{a.x} \\{b.x}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("struct_multiple_instances", result, "10 20");
 	});
@@ -184,7 +184,7 @@ var Point p = Point(3, 4)
 Console.write("\\{p.x} \\{p.y}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("struct_constructed_params", result, "3 4");
 	});

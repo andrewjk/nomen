@@ -1,1 +1,1 @@
-10 30
+10 30LEAK: -1 allocation(s)

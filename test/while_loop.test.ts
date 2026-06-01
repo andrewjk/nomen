@@ -18,7 +18,7 @@ while x < 3 {
 Console.write("\\n")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 
 		expect(parsed.errors).toEqual([]);
 		await check_output("while_loop_with_output", result, "0 1 2 \n");
@@ -33,7 +33,7 @@ while x > 0 {
 Console.write("\\{x}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 
 		expect(parsed.errors).toEqual([]);
 		await check_output("while_loop_greater_than", result, "0");
@@ -48,7 +48,7 @@ while x != 3 {
 Console.write("\\{x}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 
 		expect(parsed.errors).toEqual([]);
 		await check_output("while_loop_equality", result, "3");
@@ -69,7 +69,7 @@ while i < 3 {
 Console.write("\\{total}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 
 		expect(parsed.errors).toEqual([]);
 		await check_output("while_loop_nested", result, "6");
@@ -85,7 +85,7 @@ while x < 3; counter += 1 {
 Console.write("\\{x}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 
 		expect(parsed.errors).toEqual([]);
 		await check_output("while_loop_update_clause", result, "3");
@@ -100,7 +100,7 @@ while x < 3; x += 1 {
 Console.write("\\n")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 
 		expect(parsed.errors).toEqual([]);
 		await check_output("while_loop_increment_update", result, "0 1 2 \n");
@@ -119,7 +119,7 @@ while x < 10 {
 Console.write("\\{sum}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("while_loop_modulo", result, "20");
 	});
@@ -136,7 +136,7 @@ while true {
 Console.write("\\{x}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("while_loop_break", result, "5");
 	});
@@ -154,7 +154,7 @@ while x < 10 {
 Console.write("\\{x}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("while_loop_continue", result, "14");
 	});

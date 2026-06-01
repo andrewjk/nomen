@@ -1,1 +1,1 @@
-123
+123LEAK: 4 allocation(s)

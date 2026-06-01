@@ -20,7 +20,7 @@ var direction = Direction.north
 Console.write("\\{direction}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("enum_simple", result, "0");
 	});
@@ -38,7 +38,7 @@ const d = Direction.south
 Console.write("\\{d}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("enum_different_case", result, "1");
 	});
@@ -54,7 +54,7 @@ var result = Result.error(42)
 Console.write("\\{result}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("enum_associated", result, "1");
 	});
@@ -73,7 +73,7 @@ direction = Direction.south
 Console.write("\\{direction}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("enum_reassign", result, "1");
 	});
@@ -95,7 +95,7 @@ if direction == Direction.north {
 }
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("enum_compare_equals", result, "north");
 	});
@@ -117,7 +117,7 @@ if direction != Direction.north {
 }
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("enum_compare_not_equals", result, "not north");
 	});
@@ -135,7 +135,7 @@ const label = if direction == Direction.north -> "N"
 Console.write(label)
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("enum_if_expression", result, "N");
 	});
@@ -163,7 +163,7 @@ if size == Size.large {
 }
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("enum_multiple", result, "greenlarge");
 	});
@@ -179,7 +179,7 @@ var s = Status.active
 Console.write("\\{s}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("enum_pub", result, "0");
 	});
@@ -195,7 +195,7 @@ var shape = Shape.rect(10, 20)
 Console.write("\\{shape}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("enum_multi_associated", result, "1");
 	});
@@ -212,7 +212,7 @@ var msg = Message.quit
 Console.write("\\{msg}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("enum_all_data_cases", result, "0");
 	});
@@ -236,7 +236,7 @@ if light == TrafficLight.green {
 }
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("enum_change_and_check", result, "go");
 	});
@@ -254,7 +254,7 @@ var Direction dir = .east
 Console.write("\\{dir}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("enum_shorthand_decl", result, "2");
 	});
@@ -273,7 +273,7 @@ direction = .south
 Console.write("\\{direction}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("enum_shorthand_assign", result, "1");
 	});
@@ -295,7 +295,7 @@ if direction == .north {
 }
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("enum_shorthand_compare", result, "north");
 	});
@@ -313,7 +313,7 @@ const label = if direction == .north -> "N"
 Console.write(label)
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("enum_shorthand_if_expr", result, "N");
 	});

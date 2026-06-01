@@ -16,7 +16,7 @@ for n of nums {
 }
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("array_for_loop", result, "10 20 30 ");
 	});
@@ -27,7 +27,7 @@ const nums = [10, 20, 30]
 Console.write("\\{nums[0]}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("array_access_index_0", result, "10");
 	});
@@ -38,7 +38,7 @@ const nums = [10, 20, 30]
 Console.write("\\{nums[1]}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("array_access_middle", result, "20");
 	});
@@ -49,7 +49,7 @@ const nums = [10, 20, 30]
 Console.write("\\{nums[2]}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("array_access_last", result, "30");
 	});
@@ -60,7 +60,7 @@ const int[] nums = [5, 10, 15]
 Console.write("\\{nums[0]} \\{nums[1]} \\{nums[2]}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("array_explicit_type", result, "5 10 15");
 	});
@@ -75,7 +75,7 @@ for n of nums {
 Console.write("\\{total}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("array_sum_loop", result, "15");
 	});
@@ -90,7 +90,7 @@ for i of 0..3 {
 Console.write("\\{total}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("array_index_loop", result, "600");
 	});
@@ -101,7 +101,7 @@ const nums = [42]
 Console.write("\\{nums[0]}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("array_single_element", result, "42");
 	});
@@ -112,7 +112,7 @@ const nums = [-1, -5, -10]
 Console.write("\\{nums[0]} \\{nums[1]} \\{nums[2]}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("array_negative_values", result, "-1 -5 -10");
 	});
@@ -124,7 +124,7 @@ const b = [4, 5, 6]
 Console.write("\\{a[1]} \\{b[1]}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("array_multiple", result, "2 5");
 	});
@@ -136,7 +136,7 @@ const i = 2
 Console.write("\\{nums[i]}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("array_expr_index", result, "30");
 	});
@@ -147,7 +147,7 @@ const int[] x
 Console.write("ok")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("array_empty_typed", result, "ok");
 	});
@@ -158,7 +158,7 @@ const nums = [10, 20, 30]
 Console.write("\\{nums[0] + nums[2]}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("array_access_in_expr", result, "40");
 	});
@@ -176,7 +176,7 @@ const n = sum([2, 4, 6])
 Console.write("\\{n}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("array_func_param", result, "12");
 	});

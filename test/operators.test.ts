@@ -23,7 +23,7 @@ const p3 = p1 + p2
 Console.write("\\{p3.x} \\{p3.y}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("op_add_struct", result, "4 6");
 	});
@@ -42,7 +42,7 @@ const p2 = p1 * 4
 Console.write("\\{p2.x} \\{p2.y}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("op_mul_struct", result, "8 12");
 	});

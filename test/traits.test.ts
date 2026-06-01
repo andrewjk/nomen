@@ -22,7 +22,7 @@ const f = Frank()
 Console.write(f.name)
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("trait_field_access", result, "Frank");
 	});
@@ -45,7 +45,7 @@ const f = Frank()
 Console.write(f.greet())
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("trait_method_override", result, "hello from Frank");
 	});
@@ -67,7 +67,7 @@ const f = Frank()
 Console.write(f.greet())
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("trait_default_method", result, "hi");
 	});
@@ -86,7 +86,7 @@ const c = MyCounter()
 Console.write("\\{c.count}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("trait_int_field", result, "5");
 	});
@@ -115,7 +115,7 @@ const f = Frank()
 Console.write("\\{f.greet()} \\{f.dance()}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("trait_multiple", result, "hello dance");
 	});
@@ -137,7 +137,7 @@ const f = Frank()
 Console.write(f.greet())
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("trait_method_using_fields", result, "Frank");
 	});
@@ -159,7 +159,7 @@ const c = MyCounter()
 Console.write("\\{c.value()}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("trait_int_field_method", result, "42");
 	});
@@ -183,7 +183,7 @@ const b = Bob()
 Console.write("\\{a.name} \\{b.name}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("trait_multi_instances", result, "Alice Bob");
 	});
@@ -204,7 +204,7 @@ const f = Frank()
 Console.write("\\{f.name} \\{f.age}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("trait_multi_fields", result, "Frank 30");
 	});
@@ -216,7 +216,7 @@ trait Empty {}
 struct Foo: Empty {}
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		await check_output("trait_empty", result, "");
 	});
@@ -238,7 +238,7 @@ func get_name = (Alice a, out string) {
 Console.write(get_name(Alice()))
 `;
 	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64" });
+	const result = build(parsed.root, { arch: "aarch64", audit: true });
 	expect(parsed.errors).toEqual([]);
 	await check_output("trait_struct_in_func", result, "Alice");
 });
@@ -261,7 +261,7 @@ const f = Frank()
 Console.write(f.hello())
 `;
 	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64" });
+	const result = build(parsed.root, { arch: "aarch64", audit: true });
 	expect(parsed.errors).toEqual([]);
 	await check_output("trait_method_no_self", result, "hello from Frank");
 });
@@ -281,7 +281,7 @@ c.count = 10
 Console.write("\\{c.count}")
 `;
 	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64" });
+	const result = build(parsed.root, { arch: "aarch64", audit: true });
 	expect(parsed.errors).toEqual([]);
 	await check_output("trait_field_update", result, "10");
 });
@@ -300,7 +300,7 @@ const s = MyStatus()
 Console.write("\\{s.active}")
 `;
 	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64" });
+	const result = build(parsed.root, { arch: "aarch64", audit: true });
 	expect(parsed.errors).toEqual([]);
 	await check_output("trait_bool_field", result, "true");
 });
@@ -324,7 +324,7 @@ const f = Frank()
 Console.write(f.describe())
 `;
 	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64" });
+	const result = build(parsed.root, { arch: "aarch64", audit: true });
 	expect(parsed.errors).toEqual([]);
 	await check_output("trait_struct_method_fields", result, "hello");
 });

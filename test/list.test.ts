@@ -17,7 +17,7 @@ Console.write("\\{a} \\{b}")
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		await check_output("list_push_pop", result, "30 20");
 	});
 
@@ -38,7 +38,7 @@ Console.write("\\{a}\\{b}\\{c}\\{d}\\{e}")
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		await check_output("list_push_pop_all", result, "54321");
 	});
 
@@ -58,7 +58,7 @@ Console.write("\\{list.length}")
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		await check_output("list_resize", result, "9");
 	});
 
@@ -74,7 +74,7 @@ Console.write("\\{a} \\{b}")
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		await check_output("list_interleaved", result, "10 30");
 	});
 });
@@ -92,7 +92,7 @@ Console.write("\\{list.length}")
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		await check_output("list_length", result, "32");
 	});
 });

@@ -66,7 +66,7 @@ Console.write("\\{x}")
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		await check_output("nullable_non_null", result, "5");
 	});
 
@@ -88,7 +88,7 @@ if x == null {
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		await check_output("nullable_eq_null", result, "is null");
 	});
 
@@ -101,7 +101,7 @@ if x != null {
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		await check_output("nullable_neq_null", result, "5");
 	});
 
@@ -114,7 +114,7 @@ if null == x {
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		await check_output("null_eq_nullable", result, "is null");
 	});
 
@@ -127,7 +127,7 @@ if null != x {
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		await check_output("null_neq_nullable", result, "5");
 	});
 
@@ -140,7 +140,7 @@ if x != null {
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		await check_output("nullable_narrowed_neq", result, "5");
 	});
 
@@ -155,7 +155,7 @@ if x == null {
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		await check_output("nullable_narrowed_eq_else", result, "5");
 	});
 
@@ -171,7 +171,7 @@ if x != null {
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		await check_output("nullable_narrowed_func", result, "10");
 	});
 });
@@ -185,7 +185,7 @@ Console.write("\\{y}")
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		await check_output("coalesce_null", result, "42");
 	});
 
@@ -197,7 +197,7 @@ Console.write("\\{y}")
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		await check_output("coalesce_non_null", result, "5");
 	});
 
@@ -211,7 +211,7 @@ Console.write("\\{answer}")
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		await check_output("coalesce_func_null", result, "42");
 	});
 
@@ -225,7 +225,7 @@ Console.write("\\{answer}")
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		await check_output("coalesce_func_val", result, "7");
 	});
 
@@ -237,7 +237,7 @@ Console.write("\\{y + 1}")
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		await check_output("coalesce_non_nullable", result, "11");
 	});
 });
