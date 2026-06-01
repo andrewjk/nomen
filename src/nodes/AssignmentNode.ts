@@ -4,6 +4,7 @@ export default class AssignmentNode extends BaseNode {
 	left_value: BaseNode;
 	right_value: BaseNode;
 	operator?: string;
+	swap?: BaseNode;
 
 	constructor(start: number, left_value: BaseNode, right_value: BaseNode, operator?: string) {
 		super("assign", start);

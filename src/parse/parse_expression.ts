@@ -284,7 +284,12 @@ export default function parse_expression(status: ParseStatus): BaseNode {
 			case "*=": {
 				const op = consume(status);
 				const rhs = parse_expression(status);
-				node = new AssignmentNode(start, node, rhs, op === "=" ? undefined : op);
+				const assign = new AssignmentNode(start, node, rhs, op === "=" ? undefined : op);
+				if (peek_current(status) === "swap") {
+					consume(status);
+					assign.swap = parse_expression(status);
+				}
+				node = assign;
 				break;
 			}
 			default: {

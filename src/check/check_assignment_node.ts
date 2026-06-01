@@ -60,5 +60,12 @@ export default function check_assignment_node(
 		"assignment",
 	);
 
+	if (assign.swap) {
+		check_node(assign.swap, status);
+		const left_type = type_from_value_node(assign.left_value, status);
+		const swap_type = type_from_value_node(assign.swap, status);
+		check_type_and_value_match(left_type, swap_type, undefined, status, assign.swap.start, "swap");
+	}
+
 	return true;
 }

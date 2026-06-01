@@ -46,4 +46,13 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 		status.code += " = ";
 	}
 	build_node(node.right_value, status);
+
+	if (node.swap) {
+		status.code += `;\n`;
+		status.code += `{ `;
+		build_node(node.right_value, status);
+		status.code += ` = `;
+		build_node(node.swap, status);
+		status.code += `; }\n`;
+	}
 }

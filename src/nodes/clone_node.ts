@@ -138,6 +138,7 @@ export default function clone_node(node: BaseNode): BaseNode {
 				clone_node(n.right_value),
 				n.operator,
 			);
+			c.swap = n.swap ? clone_node(n.swap) : undefined;
 			c.allocations = n.allocations?.map(clone_node);
 			return c;
 		}

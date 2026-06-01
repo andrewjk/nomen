@@ -198,7 +198,13 @@ function parse_statement_start(status: ParseStatus) {
 			}
 			case "=": {
 				accept("=", status);
-				node = new AssignmentNode(node.start, node, parse_expression(status));
+				const rhs = parse_expression(status);
+				const assign = new AssignmentNode(node.start, node, rhs);
+				if (peek_current(status) === "swap") {
+					consume(status);
+					assign.swap = parse_expression(status);
+				}
+				node = assign;
 				break;
 			}
 			case "+=":

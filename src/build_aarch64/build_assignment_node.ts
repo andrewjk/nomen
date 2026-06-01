@@ -90,6 +90,56 @@ function is_struct_type(type: Type | undefined, status: BuildStatus): boolean {
 	return !!status.structs.find((s) => s.name === type.name && !s.is_simple_type);
 }
 
+function build_swap(node: AssignmentNode, status: BuildStatus) {
+	if (!node.swap) return;
+	const rhs = node.right_value;
+	if (rhs.node_type === "access" && (rhs as AccessNode).access.node_type === "access_field") {
+		const rhs_access = rhs as AccessNode;
+		const rhs_field = (rhs_access.access as AccessFieldNode).name;
+		const rhs_target_type = type_from_value_node(rhs_access.target);
+		const rhs_offset = get_field_offset(rhs_target_type.name, rhs_field, status);
+
+		build_node(node.swap, status);
+		if (!status.code.endsWith("\n")) {
+			status.code += "\n";
+		}
+		status.code += `// swap: store replacement to rhs source field\n`;
+		status.code += `str x0, [sp, #-16]!\n`;
+
+		get_source_address(rhs_access.target, status);
+		if (!status.code.endsWith("\n")) {
+			status.code += "\n";
+		}
+		status.code += `ldr x1, [sp], #16\n`;
+		status.code += `str x1, [x0, #${rhs_offset}]\n`;
+	} else if (rhs.node_type === "value") {
+		const rhs_value = rhs as ValueNode;
+		build_node(node.swap, status);
+		if (!status.code.endsWith("\n")) {
+			status.code += "\n";
+		}
+		status.code += `// swap: store replacement to rhs variable\n`;
+		status.code += `str x0, [sp, #-16]!\n`;
+		const rhs_name = rhs_value.value;
+		const paramReg = status.function_param_regs?.get(rhs_name);
+		if (paramReg) {
+			status.code += `mov x0, ${paramReg}\n`;
+		} else {
+			emit_var_address(status, "x0", rhs_name);
+		}
+		if (!status.code.endsWith("\n")) {
+			status.code += "\n";
+		}
+		status.code += `ldr x1, [sp], #16\n`;
+		status.code += `str x1, [x0]\n`;
+		const rhs_anchor = find_anchor_slot(status, rhs_name);
+		if (rhs_anchor !== undefined) {
+			status.code += `str x1, [x29, #${rhs_anchor}]\n`;
+		}
+		status.moved?.delete(rhs_name);
+	}
+}
+
 function get_source_address(value: BaseNode, status: BuildStatus) {
 	if (value.node_type === "value") {
 		const name = (value as ValueNode).value;
@@ -134,6 +184,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 					if (offset !== undefined) {
 						status.code += `str x0, [x29, #${offset}]\n`;
 					}
+					build_swap(node, status);
 					return;
 				}
 			}
@@ -200,6 +251,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 					emit_struct_copy("x0", "x1", 0, struct_size, status);
 				}
 			}
+			build_swap(node, status);
 			return;
 		}
 
@@ -241,6 +293,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 					if (offset !== undefined) {
 						status.code += `str x0, [x29, #${offset}]\n`;
 					}
+					build_swap(node, status);
 					return;
 				}
 			}
@@ -297,6 +350,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 				const paramReg = status.function_param_regs?.get(name);
 				if (paramReg && name !== "self" && !is_mutable_param(name, status)) {
 					status.code += `// cannot assign to field of value param\n`;
+					build_swap(node, status);
 					return;
 				}
 			}
@@ -316,21 +370,41 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 
 				status.code += `str x2, [x0, #${offset}]\n`;
 			} else if (field_is_struct && !node.operator) {
-				const offset = get_field_offset(target_type.name, field_name, status);
-				const struct_size = get_struct_size(field_type!.name, status);
-				mark_moved_if_struct(node.right_value, status);
+				const field_struct = status.structs.find((s) => s.name === field_type!.name);
+				if (field_struct?.is_class) {
+					const offset = get_field_offset(target_type.name, field_name, status);
+					mark_moved_if_struct(node.right_value, status);
 
-				get_base_address(access, status, "x0");
-				status.code += `str x0, [sp, #-16]!\n`;
+					get_base_address(access, status, "x0");
+					status.code += `str x0, [sp, #-16]!\n`;
+					status.code += `ldr x0, [x0, #${offset}]\n`;
+					emit_free(status);
 
-				get_source_address(node.right_value, status);
-				if (!status.code.endsWith("\n")) {
-					status.code += "\n";
+					build_node(node.right_value, status);
+					if (!status.code.endsWith("\n")) {
+						status.code += "\n";
+					}
+					status.code += `mov x2, x0\n`;
+					status.code += `ldr x0, [sp], #16\n`;
+
+					status.code += `str x2, [x0, #${offset}]\n`;
+				} else {
+					const offset = get_field_offset(target_type.name, field_name, status);
+					const struct_size = get_struct_size(field_type!.name, status);
+					mark_moved_if_struct(node.right_value, status);
+
+					get_base_address(access, status, "x0");
+					status.code += `str x0, [sp, #-16]!\n`;
+
+					get_source_address(node.right_value, status);
+					if (!status.code.endsWith("\n")) {
+						status.code += "\n";
+					}
+					status.code += `mov x1, x0\n`;
+					status.code += `ldr x0, [sp], #16\n`;
+
+					emit_struct_copy("x1", "x0", offset, struct_size, status);
 				}
-				status.code += `mov x1, x0\n`;
-				status.code += `ldr x0, [sp], #16\n`;
-
-				emit_struct_copy("x1", "x0", offset, struct_size, status);
 			} else {
 				const offset = get_field_offset(target_type.name, field_name, status);
 
@@ -402,6 +476,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 							status.code += `str x0, [x3, #${byte_offset}]\n`;
 						}
 					}
+					build_swap(node, status);
 					return;
 				}
 			}
@@ -451,4 +526,6 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 		build_node(node.right_value, status);
 		status.code += `\n// complex assignment\n`;
 	}
+
+	build_swap(node, status);
 }
