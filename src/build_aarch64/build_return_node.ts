@@ -57,6 +57,13 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 		status.code += "\n";
 	}
 
+	if (status.last_result_is_heap && status.function_return_type?.name === "string") {
+		if (!status.heap_returning_functions) status.heap_returning_functions = new Set();
+		if (status.current_function_name) {
+			status.heap_returning_functions.add(status.current_function_name);
+		}
+	}
+
 	if (status.function_return_label && status.struct_return_buffer && status.function_return_type) {
 		const ret_struct = status.structs.find(
 			(s) => s.name === status.function_return_type!.name && !s.is_simple_type && !s.is_class,

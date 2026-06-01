@@ -1,1 +1,1 @@
-Hi Alice!LEAK: 1 allocation(s)
+Hi Alice!

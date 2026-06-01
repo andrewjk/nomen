@@ -52,4 +52,5 @@ export default interface BuildStatus {
 	last_result_is_heap?: boolean;
 	match_save_size?: number;
 	current_struct?: StructNode;
+	current_function_name?: string;
 }

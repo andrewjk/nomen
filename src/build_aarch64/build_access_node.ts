@@ -9,7 +9,7 @@ import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_node from "./build_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
-import { emit_malloc } from "./utils/audit.ts";
+import { emit_free, emit_malloc } from "./utils/audit.ts";
 import { mark_moved_if_struct } from "./utils/auto_destroy.ts";
 import {
 	allocate_stack_space,
@@ -560,6 +560,7 @@ function build_access_method(
 			}
 		}
 		status.code += `bl int_to_string\n`;
+		status.last_result_is_heap = true;
 		return;
 	}
 
@@ -570,11 +571,13 @@ function build_access_method(
 		target_type.length
 	) {
 		build_char_array_to_string(node, (target_type.length as ValueNode).value, status);
+		status.last_result_is_heap = true;
 		return;
 	}
 
 	if (access_func.name === "to_string" && target_type.is_array && target_type.length) {
 		build_int_array_to_string(node, target_type, status);
+		status.last_result_is_heap = true;
 		return;
 	}
 
@@ -893,9 +896,12 @@ function build_int_array_to_string(node: AccessNode, target_type: Type, status: 
 		status.code += `bl ${to_string_fn}\n`;
 
 		// Concatenate: strcat(x20, x0)
+		status.code += `str x0, [sp, #-16]!\n`;
 		status.code += `mov x1, x0\n`;
 		status.code += `mov x0, x20\n`;
 		status.code += `bl _strcat\n`;
+		status.code += `ldr x0, [sp], #16\n`;
+		emit_free(status);
 	}
 
 	// Return result in x0

@@ -14,6 +14,9 @@ export function reset_label_counter() {
 export default function build_function_node(node: FunctionNode, status: BuildStatus) {
 	if (node.is_generic) return;
 
+	const old_function_name = status.current_function_name;
+	status.current_function_name = node.name;
+
 	const old_scoped_declarations = status.scoped_declarations;
 	status.scoped_declarations = [];
 
@@ -218,6 +221,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 
 	status.scoped_declarations = old_scoped_declarations;
 	status.moved = old_moved;
+	status.current_function_name = old_function_name;
 	status.stack_size = old_stack_size;
 	status.stack_offsets = old_stack_offsets;
 	status.function_param_regs = undefined;
