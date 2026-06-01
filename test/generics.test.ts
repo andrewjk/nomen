@@ -3,8 +3,8 @@ import { expect, test } from "vite-plus/test";
 import build from "../src/build";
 import check from "../src/check";
 import parse from "../src/parse";
-import check_output_aarch64 from "./ziglings/check_output_aarch64";
-import parse_with_imports from "./ziglings/parse_with_imports";
+import check_output from "./check_output";
+import parse_with_imports from "./parse_with_imports";
 
 test("generics -- parse generic struct", () => {
 	const input = `
@@ -26,10 +26,7 @@ struct Circle<T> {
     var T radius
 }
 
-pub func main = () {
-    var Circle<int> c = Circle<int>(25, 70, 15)
-    return
-}
+var Circle<int> c = Circle<int>(25, 70, 15)
 `;
 	const parsed = parse(input);
 	expect(parsed.errors).toEqual([]);
@@ -46,11 +43,8 @@ struct Circle<T> {
     var T radius
 }
 
-pub func main = () {
-    var Circle<int> c = Circle<int>(25, 70, 15)
-    var int x = c.center_x
-    return
-}
+var Circle<int> c = Circle<int>(25, 70, 15)
+var int x = c.center_x
 `;
 	const parsed = parse(input);
 	expect(parsed.errors).toEqual([]);
@@ -67,10 +61,7 @@ struct Circle<T> {
     var T radius
 }
 
-pub func main = () {
-    var Circle<int> c = Circle<int>(25, 70, 15)
-    return
-}
+var Circle<int> c = Circle<int>(25, 70, 15)
 `;
 	const parsed = parse(input);
 	expect(parsed.errors).toEqual([]);
@@ -85,11 +76,8 @@ struct Pair<T, U> {
     var U second
 }
 
-pub func main = () {
-    var Pair<int, int> a = Pair<int, int>(1, 2)
-    var Pair<int, string> b = Pair<int, string>(3, "hello")
-    return
-}
+var Pair<int, int> a = Pair<int, int>(1, 2)
+var Pair<int, string> b = Pair<int, string>(3, "hello")
 `;
 	const parsed = parse(input);
 	expect(parsed.errors).toEqual([]);
@@ -106,10 +94,7 @@ struct Circle<T> {
     var T radius
 }
 
-pub func main = () {
-    var Circle<int, string> c = Circle<int, string>(25, 70, 15)
-    return
-}
+var Circle<int, string> c = Circle<int, string>(25, 70, 15)
 `;
 	const parsed = parse(input);
 	expect(parsed.errors.length).toBeGreaterThan(0);
@@ -125,10 +110,7 @@ func unwrap = (Box box) {
     return box.value
 }
 
-pub func main = () {
-    var Box<int> b = Box<int>(42)
-    return
-}
+var Box<int> b = Box<int>(42)
 `;
 	const parsed = parse(input);
 	expect(parsed.errors).toEqual([]);
@@ -144,11 +126,8 @@ func unwrap = (Box box) {
     return box.value
 }
 
-pub func main = () {
-    var Box<int> b = Box<int>(42)
-    var int v = unwrap(b)
-    return
-}
+var Box<int> b = Box<int>(42)
+var int v = unwrap(b)
 `;
 	const parsed = parse(input);
 	expect(parsed.errors).toEqual([]);
@@ -166,10 +145,7 @@ func usePair<T, U> = (Pair<T, U> p) {
     return
 }
 
-pub func main = () {
-    usePair([ first = 1, second = "hello" ])
-    return
-}
+usePair([ first = 1, second = "hello" ])
 `;
 	const parsed = parse(input);
 	expect(parsed.errors).toEqual([]);
@@ -185,13 +161,10 @@ func printBox = (Box box) {
     return
 }
 
-pub func main = () {
-    var Box<int> a = Box<int>(1)
-    var Box<string> b = Box<string>("hi")
-    printBox(a)
-    printBox(b)
-    return
-}
+var Box<int> a = Box<int>(1)
+var Box<string> b = Box<string>("hi")
+printBox(a)
+printBox(b)
 `;
 	const parsed = parse(input);
 	expect(parsed.errors).toEqual([]);
@@ -218,13 +191,10 @@ func use = (Box box) {
     return
 }
 
-pub func main = () {
-    var Box<int> a = Box<int>(1)
-    var Box<int> b = Box<int>(2)
-    use(a)
-    use(b)
-    return
-}
+var Box<int> a = Box<int>(1)
+var Box<int> b = Box<int>(2)
+use(a)
+use(b)
 `;
 	const parsed = parse(input);
 	expect(parsed.errors).toEqual([]);
@@ -236,8 +206,6 @@ pub func main = () {
 
 test("generics -- generic function field access resolves concrete type", () => {
 	const input = `
-import System
-
 struct Box<T> {
     var T value
 }
@@ -247,10 +215,7 @@ func getValue = (Box box) {
     Console.write(v.to_string())
 }
 
-pub func main = () {
-    getValue([ value = 42 ])
-    return
-}
+getValue([ value = 42 ])
 `;
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual([]);
@@ -267,10 +232,7 @@ func sum = (Point p) {
     return p.x + p.y
 }
 
-pub func main = () {
-    var int total = sum([ x = 10, y = 20 ])
-    return
-}
+var int total = sum([ x = 10, y = 20 ])
 `;
 	const parsed = parse(input);
 	expect(parsed.errors).toEqual([]);
@@ -278,8 +240,6 @@ pub func main = () {
 
 test("generics -- generic function build aarch64", async () => {
 	const input = `
-import System
-
 struct Box<T> {
     var T value
 }
@@ -290,22 +250,17 @@ func printBox = (Box box) {
     Console.write("\\n")
 }
 
-pub func main = () {
-    printBox([ value = 99 ])
-    return
-}
+printBox([ value = 99 ])
 `;
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual([]);
 	const built = build(parsed.root, { arch: "aarch64", audit: true });
 	expect(built.code).toContain("printBox_Box_int");
-	await check_output_aarch64("gen_func_box", built, "99\n");
+	await check_output("gen_func_box", built, "99\n");
 });
 
 test("generics -- generic function two types build aarch64", async () => {
 	const input = `
-import System
-
 struct Pair<T, U> {
     var T first
     var U second
@@ -317,17 +272,14 @@ func printFirst = (Pair p) {
     Console.write("\\n")
 }
 
-pub func main = () {
-    printFirst([ first = 10, second = "a" ])
-    printFirst([ first = 20, second = "b" ])
-    return
-}
+printFirst([ first = 10, second = "a" ])
+printFirst([ first = 20, second = "b" ])
 `;
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual([]);
 	const built = build(parsed.root, { arch: "aarch64", audit: true });
 	expect(built.code).toContain("printFirst_Pair_int_string");
-	await check_output_aarch64("gen_func_pair", built, "10\n20\n");
+	await check_output("gen_func_pair", built, "10\n20\n");
 });
 
 test("generics -- explicit type params on function", () => {
@@ -340,11 +292,8 @@ func identity<T> = (Box<T> box) {
     return box.value
 }
 
-pub func main = () {
-    var Box<int> b = Box<int>(42)
-    var int v = identity(b)
-    return
-}
+var Box<int> b = Box<int>(42)
+var int v = identity(b)
 `;
 	const parsed = parse(input);
 	expect(parsed.errors).toEqual([]);
@@ -363,11 +312,8 @@ func usePair<A, B> = (Pair<A, B> p) {
     return
 }
 
-pub func main = () {
-    var Pair<int, string> a = Pair<int, string>(1, "hello")
-    usePair(a)
-    return
-}
+var Pair<int, string> a = Pair<int, string>(1, "hello")
+usePair(a)
 `;
 	const parsed = parse(input);
 	expect(parsed.errors).toEqual([]);
@@ -383,11 +329,8 @@ func unwrap<T> = (out T, Box<T> box) {
     return box.value
 }
 
-pub func main = () {
-    var Box<int> b = Box<int>(42)
-    var int v = unwrap(b)
-    return
-}
+var Box<int> b = Box<int>(42)
+var int v = unwrap(b)
 `;
 	const parsed = parse(input);
 	expect(parsed.errors).toEqual([]);
@@ -403,13 +346,10 @@ func identity<T> = (Box<T> box) {
     return box.value
 }
 
-pub func main = () {
-    var Box<int> a = Box<int>(1)
-    var Box<string> b = Box<string>("hi")
-    var int x = identity(a)
-    var string y = identity(b)
-    return
-}
+var Box<int> a = Box<int>(1)
+var Box<string> b = Box<string>("hi")
+var int x = identity(a)
+var string y = identity(b)
 `;
 	const parsed = parse(input);
 	expect(parsed.errors).toEqual([]);
@@ -433,13 +373,10 @@ func identity<T> = (Box<T> box) {
     return box.value
 }
 
-pub func main = () {
-    var Box<int> a = Box<int>(1)
-    var Box<int> b = Box<int>(2)
-    var int x = identity(a)
-    var int y = identity(b)
-    return
-}
+var Box<int> a = Box<int>(1)
+var Box<int> b = Box<int>(2)
+var int x = identity(a)
+var int y = identity(b)
 `;
 	const parsed = parse(input);
 	expect(parsed.errors).toEqual([]);
@@ -460,10 +397,7 @@ func sumCoords<T> = (Point<T> p) {
     return p.x + p.y
 }
 
-pub func main = () {
-    var int total = sumCoords([ x = 10, y = 20 ])
-    return
-}
+var int total = sumCoords([ x = 10, y = 20 ])
 `;
 	const parsed = parse(input);
 	expect(parsed.errors).toEqual([]);
@@ -481,12 +415,9 @@ func addX<T> = (Vec<T> a, Vec<T> b) {
     return
 }
 
-pub func main = () {
-    var Vec<int> a = Vec<int>(1, 2)
-    var Vec<int> b = Vec<int>(3, 4)
-    addX(a, b)
-    return
-}
+var Vec<int> a = Vec<int>(1, 2)
+var Vec<int> b = Vec<int>(3, 4)
+addX(a, b)
 `;
 	const parsed = parse(input);
 	expect(parsed.errors).toEqual([]);
