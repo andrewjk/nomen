@@ -65,6 +65,11 @@ export default interface CheckStatus {
 	allow_null_value?: boolean;
 
 	/**
+	 * Variables that have been moved via `mov` and can no longer be used
+	 */
+	moved_variables?: Set<string>;
+
+	/**
 	 * Errors that have been encountered
 	 */
 	errors: CompileError[];

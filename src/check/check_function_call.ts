@@ -165,6 +165,10 @@ export default function check_function_call(
 				param.start,
 			);
 		}
+		if (has_mov_keyword && param_value) {
+			if (!status.moved_variables) status.moved_variables = new Set();
+			status.moved_variables.add(param_value);
+		}
 		check_type_and_value_match(
 			func_param.type,
 			param_type,

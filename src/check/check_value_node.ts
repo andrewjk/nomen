@@ -22,6 +22,11 @@ export default function check_value_node(node: ValueNode, status: CheckStatus): 
 		return false;
 	}
 
+	if (status.moved_variables?.has(node.value)) {
+		add_error(status, `Variable '${node.value}' used after move`, node.start);
+		return false;
+	}
+
 	const decl_value = status.values.findLast((v) => v.name === node.value);
 	if (decl_value?.is_null && !status.allow_null_value) {
 		add_error(status, `Variable '${node.value}' is null`, node.start);
