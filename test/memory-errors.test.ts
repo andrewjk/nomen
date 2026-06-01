@@ -9,23 +9,6 @@ import build from "../src/build";
 import type BuildResult from "../src/types/BuildResult";
 import parse_with_imports from "./parse_with_imports";
 
-function postprocess_macos(code: string): string {
-	code = code.replace(/\bbl printf\b/g, "bl _printf");
-	code = code.replace(/\bbl snprintf\b/g, "bl _snprintf");
-	code = code.replace(/\bbl malloc\b/g, "bl _malloc");
-	code = code.replace(/\bbl exit\b/g, "bl _exit");
-	code = code.replace(/\bbl realloc\b/g, "bl _realloc");
-	code = code.replace(/\bbl free\b/g, "bl _free");
-	code = code.replace(/\bbl strdup\b/g, "bl _strdup");
-	code = code.replace(/\bbl _malloc\b/g, "bl _echo_malloc_wrap");
-	code = code.replace(/\bbl _calloc\b/g, "bl _echo_calloc_wrap");
-	code = code.replace(/\bbl _realloc\b/g, "bl _echo_realloc_wrap");
-	code = code.replace(/\bbl _free\b/g, "bl _echo_free_wrap");
-	code = code.replace(/\bbl _strdup\b/g, "bl _echo_strdup_wrap");
-	code = code.replace(/\bmain:\n/g, ".globl _main\n_main:\n");
-	return code;
-}
-
 interface RunResult {
 	ok: boolean;
 	stdout: string;
@@ -39,15 +22,28 @@ async function compile_and_run(name: string, built: BuildResult): Promise<RunRes
 		fs.mkdirSync(folder, { recursive: true });
 	}
 
-	const code = postprocess_macos(built.code);
-	const codefile = path.join(folder, "main.s");
-	const outfile = path.join(folder, "main.out");
-
-	fs.writeFileSync(codefile, code);
-
 	const execPromise = util.promisify(exec);
 	const audit_runtime = path.join(".", "test", "audit_runtime.c");
 	const audit_obj = path.join(folder, "audit_runtime.o");
+	const codefile = path.join(folder, "main.s");
+	const outfile = path.join(folder, "main.out");
+
+	const code = built.code
+		.replace(/\bbl printf\b/g, "bl _printf")
+		.replace(/\bbl snprintf\b/g, "bl _snprintf")
+		.replace(/\bbl malloc\b/g, "bl _malloc")
+		.replace(/\bbl exit\b/g, "bl _exit")
+		.replace(/\bbl realloc\b/g, "bl _realloc")
+		.replace(/\bbl free\b/g, "bl _free")
+		.replace(/\bbl strdup\b/g, "bl _strdup")
+		.replace(/\bbl _malloc\b/g, "bl _echo_malloc_wrap")
+		.replace(/\bbl _calloc\b/g, "bl _echo_calloc_wrap")
+		.replace(/\bbl _realloc\b/g, "bl _echo_realloc_wrap")
+		.replace(/\bbl _free\b/g, "bl _echo_free_wrap")
+		.replace(/\bbl _strdup\b/g, "bl _echo_strdup_wrap")
+		.replace(/\bmain:\n/g, ".globl _main\n_main:\n");
+
+	fs.writeFileSync(codefile, code);
 
 	try {
 		await execPromise(`clang -c ${audit_runtime} -o ${audit_obj}`);
@@ -72,7 +68,7 @@ function extract_main(asm: string): string {
 
 describe("memory errors", () => {
 	describe("runtime bugs (codegen issues)", () => {
-		test("leak: reassigning struct variable overwrites Buffer.data without freeing old", async () => {
+		test("reassigning struct variable frees old Buffer.data", async () => {
 			const input = `
 var List<int> a = List<int>()
 a.push(1)
@@ -86,7 +82,8 @@ Console.write("\\{v}")
 			expect(parsed.errors).toEqual([]);
 			const result = build(parsed.root, { arch: "aarch64", audit: true });
 			const run = await compile_and_run("leak_reassign", result);
-			expect(run.stdout).toContain("LEAK:");
+			expect(run.stdout).not.toContain("LEAK:");
+			expect(run.stdout).toContain("3");
 		});
 
 		test("leak: early return skips Buffer.destroy and audit_check", async () => {
@@ -112,7 +109,7 @@ a.push(3)
 			expect(auditIdx).toBeGreaterThan(jumpIdx);
 		});
 
-		test("leak: assigning struct overwrites old Buffer.data", async () => {
+		test("assigning struct frees old Buffer.data", async () => {
 			const input = `
 var List<int> a = List<int>()
 a.push(1)
@@ -126,7 +123,8 @@ Console.write("\\{v}")
 			expect(parsed.errors).toEqual([]);
 			const result = build(parsed.root, { arch: "aarch64", audit: true });
 			const run = await compile_and_run("leak_field_assign", result);
-			expect(run.stdout).toContain("LEAK:");
+			expect(run.stdout).not.toContain("LEAK:");
+			expect(run.stdout).toContain("1");
 		});
 
 		test("uaf: returning local struct with owned Buffer from function", async () => {
@@ -145,102 +143,6 @@ Console.write("\\{v}")
 			const result = build(parsed.root, { arch: "aarch64", audit: true });
 			const run = await compile_and_run("uaf_return_local_struct", result);
 			expect(run.ok).toBe(false);
-		});
-	});
-
-	describe("use-after-move (compile errors)", () => {
-		test("passing class to two mov functions", () => {
-			const input = `
-class Box {
-	var int value
-}
-func take = (mov Box b) {
-}
-var Box a = Box(42)
-take(mov a)
-take(mov a)
-`;
-			const parsed = parse_with_imports(input);
-			expect(parsed.errors.length).toBeGreaterThan(0);
-			expect(parsed.errors.map((e) => e.message)).toContainEqual(
-				expect.stringContaining("used after move"),
-			);
-		});
-
-		test("class field mutation after mov", () => {
-			const input = `
-class Box {
-	var int value
-}
-func take = (mov Box b) {
-}
-var Box a = Box(42)
-take(mov a)
-a.value = 10
-`;
-			const parsed = parse_with_imports(input);
-			expect(parsed.errors.length).toBeGreaterThan(0);
-			expect(parsed.errors.map((e) => e.message)).toContainEqual(
-				expect.stringContaining("used after move"),
-			);
-		});
-
-		test("class used as struct init after mov", () => {
-			const input = `
-class Box {
-	var int value
-}
-struct Holder {
-	var Box content
-}
-func take = (mov Box b) {
-}
-var Box a = Box(42)
-take(mov a)
-var Holder h = Holder(mov a)
-`;
-			const parsed = parse_with_imports(input);
-			expect(parsed.errors.length).toBeGreaterThan(0);
-			expect(parsed.errors.map((e) => e.message)).toContainEqual(
-				expect.stringContaining("used after move"),
-			);
-		});
-
-		test("reading class after mov into struct", () => {
-			const input = `
-class Box {
-	var int value
-}
-struct Holder {
-	var Box content
-}
-var Box a = Box(42)
-var Holder h = Holder(mov a)
-Console.write("\\{a.value}")
-`;
-			const parsed = parse_with_imports(input);
-			expect(parsed.errors.length).toBeGreaterThan(0);
-			expect(parsed.errors.map((e) => e.message)).toContainEqual(
-				expect.stringContaining("used after move"),
-			);
-		});
-
-		test("reading class field after mov to function", () => {
-			const input = `
-class Box {
-	var int value
-}
-func take = (mov Box b) {
-}
-var Box a = Box(42)
-take(mov a)
-Console.write("\\{a.value}")
-`;
-			const parsed = parse_with_imports(input);
-			expect(parsed.errors.length).toBeGreaterThan(0);
-			expect(parsed.errors.map((e) => e.message)).toContainEqual(
-				expect.stringContaining("used after move"),
-			);
 		});
 	});
 

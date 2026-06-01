@@ -6,7 +6,7 @@ import type_name from "./type_name.ts";
 export default function check_type_and_value_match(
 	target_type: Type,
 	value_type: Type,
-	value: string,
+	value: string | undefined,
 	status: CheckStatus,
 	i: number,
 	node_type: string,
@@ -85,8 +85,11 @@ const INT_TYPES = ["int8", "int16", "int32", "int", "int64"];
 const UINT_TYPES = ["uint8", "uint16", "uint32", "uint", "uint64"];
 const ALL_INT_TYPES = [...INT_TYPES, ...UINT_TYPES];
 
-function can_coerce(target_type: string, value_type: string, value: string) {
+function can_coerce(target_type: string, value_type: string, value: string | undefined) {
 	if (value === "?") {
+		return can_coerce_type(target_type, value_type);
+	}
+	if (value === undefined) {
 		return can_coerce_type(target_type, value_type);
 	}
 	const num = parseInt(value);

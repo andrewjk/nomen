@@ -12,6 +12,7 @@ import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free } from "./utils/audit.ts";
 import {
 	anchor_heap_pointer,
+	emit_destroy_for_decl,
 	find_anchor_slot,
 	mark_moved_if_struct,
 } from "./utils/auto_destroy.ts";
@@ -247,6 +248,11 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 						emit_struct_copy("x0", "x1", 0, struct_size, status);
 					}
 				} else {
+					const lhs_decl = status.scoped_declarations.find((d) => d.name === name);
+					const lhs_type_name = lhs_decl?.type?.name ?? "";
+					status.code += `str x0, [sp, #-16]!\n`;
+					emit_destroy_for_decl(status, name, lhs_type_name);
+					status.code += `ldr x0, [sp], #16\n`;
 					emit_var_address(status, "x1", name);
 					emit_struct_copy("x0", "x1", 0, struct_size, status);
 				}

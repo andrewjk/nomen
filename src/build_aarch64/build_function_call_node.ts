@@ -7,6 +7,7 @@ import { emit_address_of } from "./build_access_node.ts";
 import build_node from "./build_node.ts";
 import { emit_malloc } from "./utils/audit.ts";
 import { mark_moved_if_struct } from "./utils/auto_destroy.ts";
+import { build_swap_params } from "./utils/build_swap.ts";
 import {
 	allocate_stack_space,
 	emit_deref_var_address,
@@ -94,7 +95,6 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			const dest_addr = `_temp_${temp_counter++}`;
 			const offset = allocate_stack_space(status, 16);
 			status.stack_offsets!.set(dest_addr, offset);
-			status.code += `add x0, x29, #${offset}\n`;
 		}
 		start_reg = 1;
 	}
@@ -159,6 +159,10 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			status.code += `mov x0, ${status.struct_return_buffer}\n`;
 		} else if (is_struct && is_struct.is_class) {
 			status.code += `ldr x0, [sp]\n`;
+		} else if (is_struct && !is_struct.is_class) {
+			const temp_addr = `_temp_${temp_counter - 1}`;
+			const temp_offset = status.stack_offsets!.get(temp_addr)!;
+			status.code += `add x0, x29, #${temp_offset}\n`;
 		} else if (!is_struct && node.type?.name && !status.struct_return_buffer) {
 			const return_struct = status.structs.find(
 				(s) => s.name === node.type!.name && !s.is_simple_type && !s.is_class,
@@ -185,6 +189,8 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			}
 		}
 	}
+
+	build_swap_params(node, status);
 
 	// For struct constructors with a temp, load temp address into x0
 	if (is_struct && !status.struct_return_buffer) {

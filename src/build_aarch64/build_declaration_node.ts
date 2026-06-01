@@ -19,6 +19,7 @@ import {
 	track_struct_decl,
 	has_struct_fields_with_destroy,
 } from "./utils/auto_destroy.ts";
+import { build_swap_params } from "./utils/build_swap.ts";
 import {
 	allocate_stack_space,
 	emit_var_address,
@@ -592,6 +593,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 					}
 					emit_var_load(status, "x0", node.name, 8);
 					status.code += `bl ${func_call.name}_init\n`;
+					build_swap_params(func_call, status);
 				} else {
 					build_node(func_call, status);
 					if (!status.code.endsWith("\n")) {
@@ -644,6 +646,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 							mark_moved_if_struct(func_call.params[idx], status);
 						}
 					}
+					build_swap_params(func_call, status);
 				} else {
 					const func_return_struct = status.structs.find(
 						(s) =>

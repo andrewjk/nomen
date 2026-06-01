@@ -165,9 +165,26 @@ export default function check_function_call(
 				param.start,
 			);
 		}
-		if (has_mov_keyword && param_value) {
+		if (has_mov_keyword && param_value && !node.swap_params?.has(i)) {
 			if (!status.moved_variables) status.moved_variables = new Set();
 			status.moved_variables.add(param_value);
+		}
+		const swap_expr = node.swap_params?.get(i);
+		if (swap_expr) {
+			if (!has_mov_keyword) {
+				add_error(status, `swap requires mov keyword`, swap_expr.start);
+			} else {
+				check_node(swap_expr, status);
+				const swap_type = type_from_value_node(swap_expr, status);
+				check_type_and_value_match(
+					param_type,
+					swap_type,
+					undefined,
+					status,
+					swap_expr.start,
+					"swap",
+				);
+			}
 		}
 		check_type_and_value_match(
 			func_param.type,
@@ -182,7 +199,7 @@ export default function check_function_call(
 			func_param.type.length = param_type.length;
 		}
 
-		if (param.node_type !== "value" && !has_ref_keyword) {
+		if (param.node_type !== "value" && !has_ref_keyword && !node.swap_params?.has(i)) {
 			const declaration_name = `_param_${status.var_name_counter.value++}`;
 			status.allocations.push(
 				new DeclarationNode(param.start, "priv", "const", declaration_name, param_type, param),
