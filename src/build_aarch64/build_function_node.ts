@@ -46,7 +46,6 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		status.struct_return_buffer = "x8";
 	}
 	status.function_return_type = node.return_type;
-
 	const old_stack_size = status.stack_size;
 	const old_stack_offsets = status.stack_offsets;
 	status.stack_size = 0;
@@ -86,6 +85,12 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	const stack_placeholder = `STACK_SIZE_${node.name}`;
 	status.code += `sub sp, sp, #${stack_placeholder}\n`;
 	status.code += `mov x29, sp\n`;
+
+	if (return_struct) {
+		const return_buffer_stack_offset = allocate_stack_space(status, 8, 8);
+		status.code += `str x8, [x29, #${return_buffer_stack_offset}]\n`;
+		status.return_buffer_stack_offset = return_buffer_stack_offset;
+	}
 
 	status.function_param_regs = new Map();
 	status.function_param_vars = new Set();
@@ -228,5 +233,6 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.function_param_vars = undefined;
 	status.function_return_label = old_return_label;
 	status.struct_return_buffer = undefined;
+	status.return_buffer_stack_offset = undefined;
 	status.function_return_type = undefined;
 }
