@@ -1,5 +1,7 @@
 import add_error from "../add_error.ts";
+import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
+import AccessNode from "../nodes/AccessNode.ts";
 import AnonStructNode from "../nodes/AnonStructNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
@@ -11,6 +13,7 @@ import { monomorphize } from "./check_function_call_node.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
+import { is_class_type } from "./utils/ownership.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
 
@@ -168,6 +171,23 @@ export default function check_function_call(
 		if (has_mov_keyword && param_value && !node.swap_params?.has(i)) {
 			if (!status.moved_variables) status.moved_variables = new Set();
 			status.moved_variables.add(param_value);
+		}
+		if (
+			has_mov_keyword &&
+			!node.swap_params?.has(i) &&
+			param.node_type === "access" &&
+			(param as AccessNode).access.node_type === "access_field"
+		) {
+			const access = param as AccessNode;
+			const field_type = type_from_value_node(access.access, status);
+			if (field_type.name && is_class_type(field_type.name, status)) {
+				const field_name = (access.access as AccessFieldNode).name;
+				add_error(
+					status,
+					`cannot mov '${field_name}' out of struct — struct owns its class fields`,
+					param.start,
+				);
+			}
 		}
 		const swap_expr = node.swap_params?.get(i);
 		if (swap_expr) {

@@ -3,6 +3,7 @@ import AssignmentNode from "../nodes/AssignmentNode.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
+import { is_class_type } from "./utils/ownership.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
 
@@ -59,6 +60,20 @@ export default function check_assignment_node(
 		assign.right_value.start,
 		"assignment",
 	);
+
+	const rhs_type = type_from_value_node(assign.right_value, status);
+	if (
+		!assign.swap &&
+		assign.right_value.node_type === "access" &&
+		rhs_type.name &&
+		is_class_type(rhs_type.name, status)
+	) {
+		add_error(
+			status,
+			`cannot assign class field '${rhs_type.name}' from another owner, use mov with swap`,
+			assign.right_value.start,
+		);
+	}
 
 	if (assign.swap) {
 		check_node(assign.swap, status);
