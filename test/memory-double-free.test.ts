@@ -515,4 +515,37 @@ Console.write("done")
 		expect(result.code.match(/bl _echo_free_wrap/g)?.length).toBe(2);
 		await check_output("leak_continue_class_destroy", result, "done");
 	});
+
+	test("BUG: reassigning struct from self method call double-frees buffer", async () => {
+		const input = `
+var BigInt k = BigInt()
+k = k.new(1)
+var BigInt k2 = BigInt()
+k2 = k2.new(2)
+k = k2.new(3)
+var int d = k.to_digit()
+Console.write(d.to_string())
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64", audit: false });
+		expect(parsed.errors).toEqual([]);
+		await check_output("dfree_struct_self_method_reassign", result, "3", { audit: false });
+	});
+
+	test("BUG: struct reassignment in loop double-frees buffer", async () => {
+		const input = `
+var BigInt k = BigInt()
+var int i = 0
+while i < 3 {
+	k = k.new(i)
+	var int d = k.to_digit()
+	Console.write(d.to_string())
+	i += 1
+}
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64", audit: false });
+		expect(parsed.errors).toEqual([]);
+		await check_output("dfree_struct_loop_reassign", result, "012", { audit: false });
+	});
 });

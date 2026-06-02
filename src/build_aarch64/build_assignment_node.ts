@@ -1,10 +1,12 @@
 import type BuildStatus from "../build/BuildStatus.ts";
 import type_from_value_node from "../build/utils/type_from_value_node.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
+import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessIndexNode from "../nodes/AccessIndexNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import AssignmentNode from "../nodes/AssignmentNode.ts";
 import BaseNode from "../nodes/BaseNode.ts";
+import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_node from "./build_node.ts";
@@ -89,6 +91,20 @@ function get_base_address(access: AccessNode, status: BuildStatus, reg: string) 
 function is_struct_type(type: Type | undefined, status: BuildStatus): boolean {
 	if (!type?.name) return false;
 	return !!status.structs.find((s) => s.name === type.name && !s.is_simple_type);
+}
+
+function get_self_param(node: BaseNode): BaseNode | null {
+	if (node.node_type === "access" && (node as AccessNode).access.node_type === "access_func") {
+		return (node as AccessNode).target;
+	}
+	if (node.node_type === "func_call") {
+		const fc = node as FunctionCallNode;
+		const is_init = fc.name.includes("_init") || fc.name.includes("_new");
+		if (fc.params.length > 0 && !is_init) {
+			return fc.params[0];
+		}
+	}
+	return null;
 }
 
 function build_swap(node: AssignmentNode, status: BuildStatus) {
@@ -190,6 +206,26 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 				}
 			}
 			mark_moved_if_struct(node.right_value, status);
+			if (rhs_is_struct && !rhs_struct) {
+				const self_param = get_self_param(node.right_value);
+				if (self_param && self_param.node_type === "value") {
+					const self_name = (self_param as ValueNode).value;
+					if (self_name !== name) {
+						mark_moved_if_struct(self_param, status);
+					}
+				}
+			}
+			const lhs_decl = status.scoped_declarations.find((d) => d.name === name);
+			const lhs_type_name = lhs_decl?.type?.name ?? "";
+			const needs_pre_destroy =
+				rhs_is_struct &&
+				!rhs_struct &&
+				!paramReg &&
+				!is_local_ref_var(name, status) &&
+				lhs_type_name;
+			if (needs_pre_destroy) {
+				emit_destroy_for_decl(status, name, lhs_type_name);
+			}
 			get_source_address(node.right_value, status);
 			if (!status.code.endsWith("\n")) {
 				status.code += "\n";
@@ -248,11 +284,6 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 						emit_struct_copy("x0", "x1", 0, struct_size, status);
 					}
 				} else {
-					const lhs_decl = status.scoped_declarations.find((d) => d.name === name);
-					const lhs_type_name = lhs_decl?.type?.name ?? "";
-					status.code += `str x0, [sp, #-16]!\n`;
-					emit_destroy_for_decl(status, name, lhs_type_name);
-					status.code += `ldr x0, [sp], #16\n`;
 					emit_var_address(status, "x1", name);
 					emit_struct_copy("x0", "x1", 0, struct_size, status);
 				}
