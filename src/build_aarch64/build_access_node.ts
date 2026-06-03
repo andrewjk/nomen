@@ -1,5 +1,6 @@
 import type BuildStatus from "../build/BuildStatus.ts";
 import type_from_value_node from "../build/utils/type_from_value_node.ts";
+import { mangled_label } from "../check/utils/function_overload.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessIndexNode from "../nodes/AccessIndexNode.ts";
@@ -7,6 +8,7 @@ import AccessNode from "../nodes/AccessNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
+import build_inline_method from "./build_inline_method.ts";
 import build_node from "./build_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free, emit_malloc } from "./utils/audit.ts";
@@ -742,7 +744,21 @@ function build_access_method(
 		status.code += `ldr x0, [sp], #16\n`;
 	}
 
-	status.code += `bl ${method_name}\n`;
+	const target_struct = status.structs.find((s) => s.name === mono_struct_name);
+	const inline_func = target_struct?.functions.find(
+		(f) =>
+			f.is_inline &&
+			f.name === access_func.name &&
+			(access_func.mangled_name
+				? mangled_label(f, mono_struct_name) === access_func.mangled_name
+				: true),
+	);
+
+	if (inline_func) {
+		build_inline_method(target_struct!, inline_func, status);
+	} else {
+		status.code += `bl ${method_name}\n`;
+	}
 
 	if (access_func.mov_param_indices?.length) {
 		for (const idx of access_func.mov_param_indices) {

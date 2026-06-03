@@ -89,6 +89,15 @@ export default function parse_statement(status: ParseStatus) {
 				parse_function("mod", status);
 				break;
 			}
+			case "inline": {
+				consume(status);
+				if (peek_current(status) === "func") {
+					parse_function("mod", status, undefined, true);
+				} else {
+					add_error(status, "Expected func after inline", get_index(status));
+				}
+				break;
+			}
 			case "init": {
 				// init = (...) { } is shorthand for func init = (...) { }
 				parse_function("mod", status, "init");

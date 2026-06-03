@@ -5,6 +5,7 @@ import { reset_label_counter as reset_for_label_counter } from "./build_aarch64/
 import { reset_temp_counter as reset_func_call_temp_counter } from "./build_aarch64/build_function_call_node.ts";
 import { reset_label_counter as reset_func_label_counter } from "./build_aarch64/build_function_node.ts";
 import { reset_label_counter as reset_if_label_counter } from "./build_aarch64/build_if_else_node.ts";
+import { reset_inline_counter } from "./build_aarch64/build_inline_method.ts";
 import build_aarch64_node from "./build_aarch64/build_node.ts";
 import { reset_string_counter as reset_op_string_counter } from "./build_aarch64/build_operation_node.ts";
 import { reset_string_counter as reset_value_string_counter } from "./build_aarch64/build_value_node.ts";
@@ -42,6 +43,7 @@ export default function build(
 		reset_func_label_counter();
 		reset_access_temp_counter();
 		reset_func_call_temp_counter();
+		reset_inline_counter();
 		status.heap_returning_functions = scan_heap_returning_functions(root);
 		status.heap_returning_functions.add("int_to_string");
 		status.heap_returning_functions.add("uint_to_string");

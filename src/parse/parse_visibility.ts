@@ -64,6 +64,15 @@ export default function parse_visibility(visibility: "pub" | "priv", status: Par
 			}
 			break;
 		}
+		case "inline": {
+			consume(status);
+			if (peek_next(status) === "func") {
+				parse_function(visibility, status, undefined, true);
+			} else {
+				add_error(status, "Expected func after inline", get_index(status));
+			}
+			break;
+		}
 		case "init": {
 			consume(status);
 			parse_function(visibility, status, "init");

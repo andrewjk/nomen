@@ -20,6 +20,7 @@ export default function parse_function(
 	visibility: "inherit" | "pub" | "mod" | "priv",
 	status: ParseStatus,
 	name_override?: string,
+	is_inline?: boolean,
 ) {
 	const start = get_index(status);
 	if (name_override) {
@@ -35,6 +36,7 @@ export default function parse_function(
 		return_type = new Type((parent_for_type as StructNode).name);
 	}
 	const func = new FunctionNode(start, visibility, name, return_type);
+	if (is_inline) func.is_inline = true;
 
 	if (accept("<", status)) {
 		func.type_params.push(consume(status));

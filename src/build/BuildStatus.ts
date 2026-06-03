@@ -53,4 +53,5 @@ export default interface BuildStatus {
 	match_save_size?: number;
 	current_struct?: StructNode;
 	current_function_name?: string;
+	inline_functions?: Map<string, BaseNode>;
 }

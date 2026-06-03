@@ -290,6 +290,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 			continue;
 		}
 		if (func.name === "destroy") continue;
+		if (func.is_inline) continue;
 
 		const old_scoped_declarations = status.scoped_declarations;
 		const old_stack_size = status.stack_size;

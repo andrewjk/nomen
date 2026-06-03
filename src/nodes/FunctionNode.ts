@@ -30,6 +30,7 @@ export default class FunctionNode extends BaseNode implements BlockNode, Returni
 	is_static?: boolean;
 	is_generic?: boolean;
 	checked?: boolean;
+	is_inline?: boolean;
 	type_params: string[] = [];
 
 	constructor(
