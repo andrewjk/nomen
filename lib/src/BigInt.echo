@@ -12,26 +12,26 @@ pub struct BigInt {
             self.sign = -1
             v = 0 - v
         }
-        self.digits.alloc(8)
-        self.digits.store(0, v as uint32)
+        self.digits.alloc_int(4)
+        self.digits.store_int(0, v)
         self.len = 1
         return self
     }
 
-    func get = (self, int i, out int) {
-        return self.digits.load(i) as int
+    func get = (self, int i, out uint64) {
+        return self.digits.load_int(i) as uint64
     }
 
     func set = (ref self, int i, uint64 val) {
-        self.digits.store(i, val as uint32)
+        self.digits.store_int(i, val as int)
     }
 
     func ensure = (ref self, int needed) {
-        self.digits.grow(needed)
+        self.digits.grow_int(needed)
     }
 
     func clear = (ref self, int len) {
-        self.digits.zero(len)
+        self.digits.zero_int(len)
     }
 
     pub func cmp = (self, BigInt other, out int) {
@@ -43,8 +43,8 @@ pub struct BigInt {
         }
         var int i = self.len - 1
         while i >= 0 {
-            var int a = self.get(i)
-            var int b = other.get(i)
+            var uint64 a = self.get(i)
+            var uint64 b = other.get(i)
             if a != b {
                 if a > b {
                     return 1
@@ -56,135 +56,187 @@ pub struct BigInt {
         return 0
     }
 
-    pub op + (self, BigInt other, out BigInt) {
-        var BigInt out = BigInt()
-        var int max_len = self.len
-        if other.len > max_len {
-            max_len = other.len
+    pub func add_to = (ref self, BigInt a, BigInt b) {
+        var int a_len = a.len
+        var int b_len = b.len
+        var int max_len = a_len
+        if b_len > max_len {
+            max_len = b_len
         }
-        out.ensure(max_len + 2)
+        self.ensure(max_len + 2)
         var int carry = 0
         var int i = 0
         while i < max_len || carry != 0 {
-            var int sum = carry
-            if i < self.len {
-                sum = sum + self.get(i)
+            var uint64 a_val = 0
+            if i < a_len {
+                a_val = a.get(i)
             }
-            if i < other.len {
-                sum = sum + other.get(i)
+            var uint64 b_val = 0
+            if i < b_len {
+                b_val = b.get(i)
             }
-            out.set(i, sum & 4294967295)
-            carry = sum >> 32
+            var uint64 sum = a_val + b_val
+            var int c1 = 0
+            if sum < a_val {
+                c1 = 1
+            }
+            var uint64 sum2 = sum + carry
+            var int c2 = 0
+            if sum2 < sum {
+                c2 = 1
+            }
+            self.set(i, sum2)
+            carry = c1 + c2
             i = i + 1
         }
-        out.len = i
-        while out.len > 1 {
-            if out.get(out.len - 1) != 0 {
+        self.len = i
+        while self.len > 1 {
+            if self.get(self.len - 1) != 0 {
                 break
             }
-            out.len = out.len - 1
+            self.len = self.len - 1
         }
-        return out
     }
 
-    pub op - (self, BigInt other, out BigInt) {
-        var BigInt out = BigInt()
-        out.ensure(self.len)
+    pub func sub_to = (ref self, BigInt a, BigInt b) {
+        self.ensure(a.len)
         var int borrow = 0
         var int i = 0
-        while i < self.len {
-            var int diff = self.get(i) - borrow
-            if i < other.len {
-                diff = diff - other.get(i)
+        while i < a.len {
+            var uint64 a_val = a.get(i)
+            var uint64 b_val = 0
+            if i < b.len {
+                b_val = b.get(i)
             }
-            if diff < 0 {
-                diff = diff + 4294967296
-                borrow = 1
+            var uint64 diff = a_val - borrow
+            var int new_borrow = 0
+            if diff > a_val {
+                new_borrow = 1
+            }
+            var uint64 diff2 = diff - b_val
+            if diff2 > diff {
+                borrow = new_borrow + 1
             } else {
-                borrow = 0
+                borrow = new_borrow
             }
-            out.set(i, diff)
+            self.set(i, diff2)
             i = i + 1
         }
-        out.len = self.len
-        while out.len > 1 {
-            if out.get(out.len - 1) != 0 {
+        self.len = a.len
+        while self.len > 1 {
+            if self.get(self.len - 1) != 0 {
                 break
             }
-            out.len = out.len - 1
+            self.len = self.len - 1
         }
-        return out
     }
 
-    pub op * (self, BigInt other, out BigInt) {
-        var BigInt out = BigInt()
-        var int new_len = self.len + other.len
+    pub func mul_to = (ref self, BigInt a, BigInt b) {
+        var int new_len = a.len + b.len
         var Buffer tmp = Buffer()
-        tmp.alloc(new_len)
+        tmp.alloc_int(new_len)
         var int i = 0
-        while i < self.len {
+        while i < a.len {
+            var uint64 ai = a.get(i)
+            var uint64 ai_lo = ai & 4294967295
+            var uint64 ai_hi = ai >> 32
             var uint64 carry = 0
             var int j = 0
-            while j < other.len || carry != 0 {
-                var uint64 cur = (tmp.load(j + i) as uint64) + carry
-                if j < other.len {
-                    cur = cur + (self.get(i) as uint64) * (other.get(j) as uint64)
+            while j < b.len || carry != 0 {
+                var uint64 bj_lo = 0
+                var uint64 bj_hi = 0
+                if j < b.len {
+                    var uint64 bj = b.get(j)
+                    bj_lo = bj & 4294967295
+                    bj_hi = bj >> 32
                 }
-                tmp.store(j + i, cur as uint32)
-                carry = cur >> 32
+                var uint64 lo_prod = ai_lo * bj_lo
+                var uint64 cross1 = ai_hi * bj_lo
+                var uint64 cross2 = ai_lo * bj_hi
+                var uint64 hi_prod = ai_hi * bj_hi
+                var uint64 sum_cross = cross1 + cross2
+                var int cross_carry = 0
+                if sum_cross < cross1 {
+                    cross_carry = 1
+                }
+                var uint64 cross_lo = sum_cross << 32
+                var uint64 cross_hi = (sum_cross >> 32) + (cross_carry as uint64 << 32)
+                var uint64 old = tmp.load_int(j + i) as uint64
+                var uint64 cur = old + carry
+                var int c1 = 0
+                if cur < old {
+                    c1 = 1
+                }
+                var uint64 cur2 = cur + lo_prod
+                var int c2 = 0
+                if cur2 < cur {
+                    c2 = 1
+                }
+                var uint64 cur3 = cur2 + cross_lo
+                var int c3 = 0
+                if cur3 < cur2 {
+                    c3 = 1
+                }
+                carry = c1 + c2 + c3 + cross_hi as int + hi_prod as int
+                tmp.store_int(j + i, cur3 as int)
                 j = j + 1
             }
             i = i + 1
         }
-        out.ensure(new_len)
-        out.clear(new_len)
+        self.ensure(new_len)
+        self.clear(new_len)
         var int k = 0
         while k < new_len {
-            out.set(k, tmp.load(k) as uint64)
+            self.set(k, tmp.load_int(k) as uint64)
             k = k + 1
         }
-        out.len = new_len
-        while out.len > 1 {
-            if out.get(out.len - 1) != 0 {
+        self.len = new_len
+        while self.len > 1 {
+            if self.get(self.len - 1) != 0 {
                 break
             }
-            out.len = out.len - 1
+            self.len = self.len - 1
         }
-        return out
     }
 
     pub func div = (self, BigInt a, BigInt b, var BigInt remainder, out BigInt) {
         self.ensure(a.len + b.len + 1)
-        self.clear(self.digits.cap)
+        self.clear(self.digits.get_cap())
         self.len = 1
         remainder.ensure(a.len + 1)
-        remainder.clear(remainder.digits.cap)
+        remainder.clear(remainder.digits.get_cap())
         remainder.len = 1
 
-        var int i = a.len * 32 - 1
+        var int total_bits = a.len * 64 - 1
+        var int i = total_bits
         while i >= 0 {
-            var uint64 carry = 0
+            var int carry = 0
             var int j = 0
             while j < remainder.len {
-                var uint64 val = (remainder.digits.load(j) as uint64 << 1) + carry
-                remainder.digits.store(j, val as uint32)
-                carry = val >> 32
+                var uint64 val = remainder.digits.load_int(j) as uint64
+                var uint64 msb = val >> 63
+                var uint64 shifted = val << 1
+                var uint64 new_val = shifted + carry
+                remainder.digits.store_int(j, new_val as int)
+                carry = msb as int
                 j = j + 1
             }
             if carry != 0 {
-                if remainder.len >= remainder.digits.cap {
-                    var int nc = remainder.digits.cap * 2
-                    remainder.digits.grow(nc)
+                if remainder.len >= remainder.digits.get_cap() {
+                    var int nc = remainder.digits.get_cap() * 2
+                    remainder.digits.grow_int(nc)
                 }
-                remainder.digits.store(remainder.len, carry as uint32)
+                remainder.digits.store_int(remainder.len, carry)
                 remainder.len = remainder.len + 1
             }
 
-            var int word = i / 32
-            var int bit = i % 32
+            var int word = i / 64
+            var int bit = i % 64
             if word < a.len {
-                if ((a.digits.load(word) as int) & (1 << bit)) != 0 {
-                    remainder.digits.store(0, (remainder.digits.load(0) as int | 1) as uint32)
+                var uint64 limb = a.digits.load_int(word) as uint64
+                if (limb & (1 as uint64 << bit)) != 0 {
+                    var uint64 r0 = remainder.digits.load_int(0) as uint64
+                    remainder.digits.store_int(0, (r0 | 1) as int)
                 }
             }
 
@@ -198,8 +250,8 @@ pub struct BigInt {
             } else {
                 var int cj = remainder.len - 1
                 while cj >= 0 {
-                    var int rd = remainder.digits.load(cj) as int
-                    var int bd = b.digits.load(cj) as int
+                    var uint64 rd = remainder.digits.load_int(cj) as uint64
+                    var uint64 bd = b.digits.load_int(cj) as uint64
                     if rd != bd {
                         if rd > bd {
                             cmp_result = 1
@@ -216,43 +268,51 @@ pub struct BigInt {
                 var int borrow = 0
                 var int sj = 0
                 while sj < remainder.len {
-                    var int diff = (remainder.digits.load(sj) as int) - borrow
+                    var uint64 r_val = remainder.digits.load_int(sj) as uint64
+                    var uint64 diff = r_val - borrow
+                    var int new_borrow = 0
+                    if diff > r_val {
+                        new_borrow = 1
+                    }
                     if sj < b.len {
-                        diff = diff - (b.digits.load(sj) as int)
-                    }
-                    if diff < 0 {
-                        diff = diff + 4294967296
-                        borrow = 1
+                        var uint64 b_val = b.digits.load_int(sj) as uint64
+                        var uint64 diff2 = diff - b_val
+                        if diff2 > diff {
+                            borrow = new_borrow + 1
+                        } else {
+                            borrow = new_borrow
+                        }
+                        remainder.digits.store_int(sj, diff2 as int)
                     } else {
-                        borrow = 0
+                        borrow = new_borrow
+                        remainder.digits.store_int(sj, diff as int)
                     }
-                    remainder.digits.store(sj, diff as uint32)
                     sj = sj + 1
                 }
                 while remainder.len > 1 {
-                    if (remainder.digits.load(remainder.len - 1) as int) != 0 {
+                    if (remainder.digits.load_int(remainder.len - 1)) != 0 {
                         break
                     }
                     remainder.len = remainder.len - 1
                 }
 
-                if self.digits.cap <= word {
-                    var int nc = self.digits.cap
+                if self.digits.get_cap() <= word {
+                    var int nc = self.digits.get_cap()
                     while nc <= word {
                         nc = nc * 2
                     }
-                    self.digits.grow(nc)
+                    self.digits.grow_int(nc)
                 }
                 if word >= self.len {
                     self.len = word + 1
                 }
-                self.digits.store_or(word, (1 << bit) as uint32)
+                self.digits.store_or_int(word, (1 as uint64 << bit) as int)
             }
 
             i = i - 1
         }
         while self.len > 1 {
-            if (self.digits.load(self.len - 1) as int) != 0 {
+            if (self.digits.load_int(self.len - 1)) != 0 {
                 break
             }
             self.len = self.len - 1
@@ -262,11 +322,19 @@ pub struct BigInt {
 
     pub func to_digit = (self, out int) {
         if self.len == 1 {
-            return self.get(0)
-        }
-        if self.len == 2 {
-            return self.get(1) << 32 | self.get(0)
+            return self.get(0) as int
         }
         return -1
+    }
+
+    pub func copy_from = (ref self, BigInt other) {
+        self.ensure(other.len)
+        self.len = other.len
+        self.sign = other.sign
+        var int i = 0
+        while i < other.len {
+            self.set(i, other.get(i))
+            i = i + 1
+        }
     }
 }

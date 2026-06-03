@@ -231,6 +231,36 @@ pub struct Buffer {
         return 0
     }
 
+    func zero_int = (ref self, int len) {
+        ```
+        #arch: c
+        memset((long*)(unsigned long long)self->data, 0, len * sizeof(long));
+        ```
+        ```
+        #arch: aarch64
+        ldr x0, [x19, #8]
+        lsl x2, x1, #3
+        mov x1, #0
+        bl _memset
+        ```
+    }
+
+    func store_or_int = (ref self, int i, int val) {
+        ```
+        #arch: c
+        ((long*)(unsigned long long)self->data)[i] |= val;
+        ```
+        ```
+        #arch: aarch64
+        ldr x0, [x19, #8]
+        lsl x3, x1, #3
+        add x0, x0, x3
+        ldr x3, [x0]
+        orr x3, x3, x2
+        str x3, [x0]
+        ```
+    }
+
     func destroy = () {
         ```
         #arch: c

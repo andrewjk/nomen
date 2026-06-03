@@ -17,7 +17,25 @@ function is_comparison(op: string): boolean {
 	return [">", "<", "==", "!=", ">=", "<="].includes(op);
 }
 
-function map_cmp(op: string): string {
+function map_cmp(op: string, unsigned: boolean = false): string {
+	if (unsigned) {
+		switch (op) {
+			case ">":
+				return "hi";
+			case "<":
+				return "lo";
+			case "==":
+				return "eq";
+			case "!=":
+				return "ne";
+			case ">=":
+				return "hs";
+			case "<=":
+				return "ls";
+			default:
+				return "eq";
+		}
+	}
 	switch (op) {
 		case ">":
 			return "gt";
@@ -36,7 +54,7 @@ function map_cmp(op: string): string {
 	}
 }
 
-function map_op(op: string): string {
+function map_op(op: string, unsigned: boolean = false): string {
 	switch (op) {
 		case "+":
 			return "add";
@@ -45,13 +63,13 @@ function map_op(op: string): string {
 		case "*":
 			return "mul";
 		case "/":
-			return "sdiv";
+			return unsigned ? "udiv" : "sdiv";
 		case "%":
 			return "mod";
 		case "<<":
 			return "lsl";
 		case ">>":
-			return "asr";
+			return unsigned ? "lsr" : "asr";
 		case "&":
 			return "and";
 		case "|":
@@ -113,6 +131,12 @@ function is_float_type(node: BaseNode): boolean {
 	const type = type_from_value_node(node);
 	const name = type?.name || "";
 	return name === "float" || name === "float32" || name === "float64" || name === "ufloat";
+}
+
+function is_unsigned_type(node: BaseNode): boolean {
+	const type = type_from_value_node(node);
+	const name = type?.name || "";
+	return name === "uint64" || name === "uint32" || name === "uint8";
 }
 
 function build_float_operand(node: BaseNode, target_reg: string, status: BuildStatus) {
@@ -265,6 +289,8 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		status.code += `ldr x2, [sp], #16\n`;
 	}
 
+	const unsigned = is_unsigned_type(node.left_value) || is_unsigned_type(node.right_value);
+
 	if (node.op === "&&") {
 		status.code += `cmp x1, #0\n`;
 		status.code += `cset x1, ne\n`;
@@ -282,11 +308,12 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		status.code += `csel x0, x2, x1, eq\n`;
 	} else if (is_comparison(node.op)) {
 		status.code += `cmp x1, x2\n`;
-		status.code += `cset x0, ${map_cmp(node.op)}\n`;
+		status.code += `cset x0, ${map_cmp(node.op, unsigned)}\n`;
 	} else {
-		const op = map_op(node.op);
+		const op = map_op(node.op, unsigned);
 		if (op === "mod") {
-			status.code += `sdiv x3, x1, x2\n`;
+			const div_op = unsigned ? "udiv" : "sdiv";
+			status.code += `${div_op} x3, x1, x2\n`;
 			status.code += `msub x0, x3, x2, x1\n`;
 		} else {
 			status.code += `${op} x0, x1, x2\n`;

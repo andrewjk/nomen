@@ -4,7 +4,7 @@ import int
 import Stringable
 
 pub func main = () {
-    var int n = 3
+    var int n = 100
     var int digits_printed = 0
 
     var BigInt k = BigInt()
@@ -46,30 +46,33 @@ pub func main = () {
             digits_printed = digits_printed + 1
 
             if digits_printed >= n {
-                Console.write("\t:\{digits_printed}")
+                Console.write("\t:{digits_printed}")
                 break
             }
 
-            tmp = u * d
-            tmp2 = tmp * ten
-            tmp = n1 * ten
-            n1 = tmp - tmp2
-            tmp = n2 * ten
-            n2 = tmp - tmp2
+            tmp.mul_to(u, d)
+            tmp2.mul_to(tmp, ten)
+            tmp.mul_to(n1, ten)
+            n1.sub_to(tmp, tmp2)
+            tmp.mul_to(n2, ten)
+            n2.sub_to(tmp, tmp2)
         } else {
-            k2 = k * two
-            tmp = k2 - one
-            u = tmp * n1
-            v = n2 * two
-            tmp = k - one
-            w = tmp * n1
-            n1 = u + v
-            tmp = k + two
-            u = tmp * n2
-            n2 = w + u
-            tmp2 = k2 + one
-            d = tmp2 * d
-            k = k + one
+            k2.mul_to(k, two)
+            tmp.sub_to(k2, one)
+            u.mul_to(tmp, n1)
+            v.mul_to(n2, two)
+            tmp.sub_to(k, one)
+            w.mul_to(tmp, n1)
+            tmp.add_to(u, v)
+            n1.copy_from(tmp)
+            tmp.add_to(k, two)
+            u.mul_to(tmp, n2)
+            tmp.add_to(w, u)
+            n2.copy_from(tmp)
+            tmp2.add_to(k2, one)
+            d.mul_to(tmp2, d)
+            tmp.add_to(k, one)
+            k.copy_from(tmp)
         }
     }
 }
