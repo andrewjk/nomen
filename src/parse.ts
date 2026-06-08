@@ -1,4 +1,5 @@
 import check from "./check.ts";
+import type { Library } from "./lib.ts";
 import RootNode from "./nodes/RootNode.ts";
 import parse_statement from "./parse/parse_statement.ts";
 import type ParseStatus from "./parse/ParseStatus.ts";
@@ -6,7 +7,11 @@ import tokenize from "./tokenize.ts";
 import type CompileError from "./types/CompileError.ts";
 import type ParseResult from "./types/ParseResult.ts";
 
-export default function parse(source: string): ParseResult {
+export default function parse(source: string, library?: Library): ParseResult {
+	if (library) {
+		source = resolve_linked_types(source, library);
+	}
+
 	const tokens = tokenize(source);
 
 	const root = new RootNode();
@@ -32,13 +37,74 @@ export default function parse(source: string): ParseResult {
 	}
 
 	const checked = check(root);
-	//const errors = status.errors.concat(checked.errors).sort((a, b) => a.start - b.start);
 
 	return {
 		ok: !checked.errors.length,
 		root,
 		errors: format_errors(source, checked.errors),
 	};
+}
+
+function resolve_linked_types(source: string, library: Library): string {
+	const tokens = tokenize(source);
+
+	let has_system_import = false;
+	for (let i = 0; i < tokens.length - 1; i++) {
+		if (tokens[i].value === "import" && tokens[i + 1].value === "System") {
+			has_system_import = true;
+			break;
+		}
+	}
+	if (!has_system_import) return source;
+
+	const needed = new Set<string>(BASE_TYPES);
+	for (const token of tokens) {
+		if (library.types.has(token.value) && !BASE_TYPES.includes(token.value)) {
+			needed.add(token.value);
+		}
+	}
+
+	const resolved = resolve_types_with_deps(needed, library);
+	if (!resolved) return source;
+
+	return source + "\n" + resolved;
+}
+
+const BASE_TYPES = [
+	"Disposable",
+	"Stringable",
+	"int",
+	"uint",
+	"int8",
+	"uint8",
+	"float",
+	"char",
+	"string",
+	"Array",
+	"Console",
+	"bool",
+];
+
+function resolve_types_with_deps(needed: Set<string>, library: Library): string {
+	const resolved = new Set<string>();
+	const result: string[] = [];
+
+	function resolve(name: string) {
+		if (resolved.has(name)) return;
+		const entry = library.types.get(name);
+		if (!entry) return;
+		for (const dep of entry.deps) {
+			resolve(dep);
+		}
+		resolved.add(name);
+		result.push(entry.source);
+	}
+
+	for (const name of needed) {
+		resolve(name);
+	}
+
+	return result.join("\n");
 }
 
 function format_errors(source: string, errors: CompileError[]) {

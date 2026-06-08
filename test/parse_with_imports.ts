@@ -7,10 +7,10 @@ const system = get_library(path.resolve(import.meta.dirname, "../lib"));
 
 export default function parse_with_imports(source: string) {
 	let source_to_parse = `
+import System
 pub func main = () {
 ${source}
 }
-${system.source}
 `;
-	return parse(source_to_parse);
+	return parse(source_to_parse, system);
 }

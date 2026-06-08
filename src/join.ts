@@ -1,23 +1,31 @@
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 // HACK: Just loading everything into a single big source file for now
 // TODO: Retain line numbers!!
-const LIB_PATH = path.resolve(__dirname, "../lib/src");
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const DEFAULT_LIB_PATH = path.resolve(__dirname, "../../lib/src");
 
-export default function join(entry_file_path: string): string {
+export default function join(entry_file_path: string, lib_path?: string): string {
 	const folder_path = path.dirname(entry_file_path);
 	const file_path = path.basename(entry_file_path);
 	const inputs = new Map();
-	add_source(folder_path, file_path, inputs);
+	const resolved_lib_path = lib_path ? path.resolve(lib_path, "src") : DEFAULT_LIB_PATH;
+	add_source(folder_path, file_path, inputs, resolved_lib_path);
 	return Array.from(inputs.values()).join("\n\n") + "\n";
 }
 
-function add_source(folder_path: string, file_path: string, inputs: Map<string, string>) {
+function add_source(
+	folder_path: string,
+	file_path: string,
+	inputs: Map<string, string>,
+	lib_path: string,
+) {
 	let source_path = path.resolve(folder_path, file_path);
 
 	if (!fs.existsSync(source_path)) {
-		const lib_source_path = path.resolve(LIB_PATH, file_path);
+		const lib_source_path = path.resolve(lib_path, file_path);
 		if (fs.existsSync(lib_source_path)) {
 			source_path = lib_source_path;
 		}
@@ -30,7 +38,7 @@ function add_source(folder_path: string, file_path: string, inputs: Map<string, 
 	source = source.replaceAll(/^import(.*)$/gm, (match, name) => {
 		const import_file_path = `./${name.trim()}.echo`;
 		if (!inputs.has(import_file_path)) {
-			add_source(folder_path, import_file_path, inputs);
+			add_source(folder_path, import_file_path, inputs, lib_path);
 		}
 		return "";
 	});

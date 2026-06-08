@@ -9,6 +9,13 @@ export interface LibraryConfig {
 export interface Library {
 	name: string;
 	source: string;
+	types: Map<string, LibraryType>;
+}
+
+export interface LibraryType {
+	name: string;
+	source: string;
+	deps: string[];
 }
 
 export function read_library_config(lib_dir: string): LibraryConfig {
@@ -53,6 +60,81 @@ function get_file_priority(file_path: string): number {
 	return FILE_ORDER.length;
 }
 
+function extract_deps(source: string): string[] {
+	const deps: string[] = [];
+	for (const line of source.split("\n")) {
+		const trimmed = line.trim();
+		if (trimmed.startsWith("import ")) {
+			deps.push(trimmed.slice(7).trim());
+		} else if (trimmed.startsWith("pub struct ") || trimmed.startsWith("struct ")) {
+			const colon_idx = trimmed.indexOf(":");
+			if (colon_idx >= 0) {
+				const after_colon = trimmed.slice(colon_idx + 1).trim();
+				const trait_name = after_colon.split(/\s|<|{/)[0];
+				if (trait_name) deps.push(trait_name);
+			}
+			break;
+		} else if (trimmed.startsWith("pub trait ") || trimmed.startsWith("trait ")) {
+			break;
+		} else if (trimmed.length > 0 && !trimmed.startsWith("//")) {
+			break;
+		}
+	}
+	return deps;
+}
+
+function extract_type_name(source: string): string | null {
+	for (const line of source.split("\n")) {
+		const trimmed = line.trim();
+		const struct_match = trimmed.match(/^pub struct (\w+)/);
+		if (struct_match) return struct_match[1];
+		const trait_match = trimmed.match(/^pub trait (\w+)/);
+		if (trait_match) return trait_match[1];
+	}
+	return null;
+}
+
+function build_type_map(files: string[]): Map<string, LibraryType> {
+	const types = new Map<string, LibraryType>();
+	for (const f of files) {
+		const source = fs.readFileSync(f, "utf8");
+		const deps = extract_deps(source);
+		const name = extract_type_name(source);
+		if (name) {
+			types.set(name, { name, source, deps });
+		}
+	}
+	return types;
+}
+
+export function resolve_types(needed: Set<string>, types: Map<string, LibraryType>): string {
+	const resolved = new Set<string>();
+	const result: string[] = [];
+
+	function resolve(name: string) {
+		if (resolved.has(name)) return;
+		const entry = types.get(name);
+		if (!entry) return;
+		for (const dep of entry.deps) {
+			resolve(dep);
+		}
+		resolved.add(name);
+		result.push(entry.source);
+	}
+
+	const ordered = [...needed].sort((a, b) => {
+		const ai = FILE_ORDER.indexOf(a);
+		const bi = FILE_ORDER.indexOf(b);
+		return (ai >= 0 ? ai : FILE_ORDER.length) - (bi >= 0 ? bi : FILE_ORDER.length);
+	});
+
+	for (const name of ordered) {
+		resolve(name);
+	}
+
+	return result.join("\n");
+}
+
 export function build_library(lib_dir: string): Library {
 	const config = read_library_config(lib_dir);
 
@@ -64,10 +146,12 @@ export function build_library(lib_dir: string): Library {
 	all_files.sort((a, b) => get_file_priority(a) - get_file_priority(b));
 
 	const source = all_files.map((f) => fs.readFileSync(f, "utf8")).join("\n");
+	const types = build_type_map(all_files);
 
 	return {
 		name: config.name,
 		source,
+		types,
 	};
 }
 

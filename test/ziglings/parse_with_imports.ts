@@ -7,7 +7,7 @@ const system = get_library(path.resolve(import.meta.dirname, "../../lib"));
 
 export default function parse_with_imports(source: string) {
 	if (source.includes("import System")) {
-		source += system.source;
+		return parse(source, system);
 	}
 	return parse(source);
 }
