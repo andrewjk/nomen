@@ -15,10 +15,10 @@
 		"prepare": "vp config"
 	},
 	"devDependencies": {
-		"@types/node": "^25.9.1",
+		"@types/node": "^25.9.2",
 		"typescript": "^6.0.3",
 		"vite-plus": "catalog:",
 		"vitest": "catalog:"
 	},
-	"packageManager": "pnpm@11.3.0"
+	"packageManager": "pnpm@11.5.0"
 }
