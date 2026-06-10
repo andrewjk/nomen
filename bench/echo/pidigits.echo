@@ -4,7 +4,7 @@ import int
 import Stringable
 
 pub func main = () {
-    var int n = 100
+    var int n = 200
     var int digits_printed = 0
 
     var BigInt k = BigInt()
@@ -19,7 +19,6 @@ pub func main = () {
     var BigInt w = BigInt()
     var BigInt k2 = BigInt()
     var BigInt tmp = BigInt()
-    var BigInt tmp2 = BigInt()
     var BigInt rem = BigInt()
 
     k = k.new(1)
@@ -34,7 +33,6 @@ pub func main = () {
     w = w.new(0)
     k2 = k2.new(0)
     tmp = tmp.new(0)
-    tmp2 = tmp2.new(0)
     rem = rem.new(0)
 
     while true {
@@ -46,33 +44,30 @@ pub func main = () {
             digits_printed = digits_printed + 1
 
             if digits_printed >= n {
-                Console.write("\t:{digits_printed}")
+                Console.write("\t:\{digits_printed}")
                 break
             }
 
-            tmp.mul_to(u, d)
-            tmp2.mul_to(tmp, ten)
-            tmp.mul_to(n1, ten)
-            n1.sub_to(tmp, tmp2)
-            tmp.mul_to(n2, ten)
-            n2.sub_to(tmp, tmp2)
+            n1.mul_to(n1, ten, rem)
+            n2.mul_to(n2, ten, rem)
+            tmp.mul_to(u, d, rem)
+            tmp.mul_to(tmp, ten, rem)
+            n1.sub_to(n1, tmp)
+            n2.sub_to(n2, tmp)
         } else {
-            k2.mul_to(k, two)
+            k2.mul_to(k, two, rem)
             tmp.sub_to(k2, one)
-            u.mul_to(tmp, n1)
-            v.mul_to(n2, two)
+            u.mul_to(tmp, n1, rem)
+            v.mul_to(n2, two, rem)
             tmp.sub_to(k, one)
-            w.mul_to(tmp, n1)
-            tmp.add_to(u, v)
-            n1.copy_from(tmp)
+            w.mul_to(tmp, n1, rem)
+            n1.add_to(u, v)
             tmp.add_to(k, two)
-            u.mul_to(tmp, n2)
-            tmp.add_to(w, u)
-            n2.copy_from(tmp)
-            tmp2.add_to(k2, one)
-            d.mul_to(tmp2, d)
-            tmp.add_to(k, one)
-            k.copy_from(tmp)
+            u.mul_to(tmp, n2, rem)
+            n2.add_to(w, u)
+            tmp.add_to(k2, one)
+            d.mul_to(tmp, d, rem)
+            k.add_to(k, one)
         }
     }
 }

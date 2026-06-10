@@ -1,5 +1,0 @@
-import Console
-
-pub func main = () {
-    Console.write("Hello from Echo!")
-}
