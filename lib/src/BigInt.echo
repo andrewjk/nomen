@@ -18,12 +18,34 @@ pub struct BigInt {
         return self
     }
 
-    func get = (self, int i, out uint64) {
-        return self.digits.load_int(i) as uint64
+    inline func get = (self, int i, out uint64) {
+        ```
+        #arch: c
+        return ((unsigned long long*)((unsigned long long)((unsigned long long*)&self + 32)))[i];
+        ```
+        ```
+        #arch: aarch64
+        ldr x0, [x0, #32]
+        lsl x1, x1, #3
+        add x0, x0, x1
+        ldr x0, [x0]
+        b .return_BigInt_get
+        ```
+        return 0
     }
 
-    func set = (ref self, int i, uint64 val) {
-        self.digits.store_int(i, val as int)
+    inline func set = (ref self, int i, uint64 val) {
+        ```
+        #arch: c
+        ((unsigned long long*)((unsigned long long)((unsigned long long*)self + 32)))[i] = val;
+        ```
+        ```
+        #arch: aarch64
+        ldr x0, [x19, #32]
+        lsl x1, x1, #3
+        add x0, x0, x1
+        str x2, [x0]
+        ```
     }
 
     func ensure = (ref self, int needed) {
@@ -32,6 +54,93 @@ pub struct BigInt {
 
     func clear = (ref self, int len) {
         self.digits.zero_int(len)
+    }
+
+    func copy_range_from = (ref self, BigInt src, int start, int count) {
+        self.ensure(count)
+        var int i = 0
+        while i < count {
+            self.set(i, src.get(start + i))
+            i = i + 1
+        }
+        self.len = count
+        while self.len > 1 {
+            if self.get(self.len - 1) != 0 {
+                break
+            }
+            self.len = self.len - 1
+        }
+    }
+
+    func add_at = (ref self, BigInt other, int shift) {
+        self.ensure(other.len + shift + 1)
+        var int carry = 0
+        var int i = 0
+        while i < other.len || carry != 0 {
+            var uint64 a_val = 0
+            if i + shift < self.len {
+                a_val = self.get(i + shift)
+            }
+            var uint64 b_val = 0
+            if i < other.len {
+                b_val = other.get(i)
+            }
+            var uint64 sum = a_val + b_val
+            var int c1 = 0
+            if sum < a_val {
+                c1 = 1
+            }
+            var uint64 sum2 = sum + carry
+            var int c2 = 0
+            if sum2 < sum {
+                c2 = 1
+            }
+            self.set(i + shift, sum2)
+            carry = c1 + c2
+            i = i + 1
+        }
+        if i + shift > self.len {
+            self.len = i + shift
+        }
+    }
+
+    func sub_at = (ref self, BigInt other, int shift) {
+        var int borrow = 0
+        var int i = 0
+        while i < other.len {
+            var uint64 a_val = self.get(i + shift)
+            var uint64 b_val = other.get(i)
+            var uint64 diff = a_val - borrow
+            var int new_borrow = 0
+            if diff > a_val {
+                new_borrow = 1
+            }
+            var uint64 diff2 = diff - b_val
+            if diff2 > diff {
+                borrow = new_borrow + 1
+            } else {
+                borrow = new_borrow
+            }
+            self.set(i + shift, diff2)
+            i = i + 1
+        }
+        while borrow != 0 {
+            var uint64 a_val = self.get(i + shift)
+            var uint64 diff = a_val - borrow
+            if diff > a_val {
+                borrow = 1
+            } else {
+                borrow = 0
+            }
+            self.set(i + shift, diff)
+            i = i + 1
+        }
+        while self.len > 1 {
+            if self.get(self.len - 1) != 0 {
+                break
+            }
+            self.len = self.len - 1
+        }
     }
 
     func div128 = (self, uint64 hi, uint64 lo, uint64 d, out uint64) {
@@ -93,6 +202,20 @@ pub struct BigInt {
     }
 
     pub func add_to = (ref self, BigInt a, BigInt b) {
+        if a.len == 1 && b.len == 1 {
+            var uint64 a_val = a.get(0)
+            var uint64 b_val = b.get(0)
+            var uint64 sum = a_val + b_val
+            var int carry = 0
+            if sum < a_val {
+                carry = 1
+            }
+            self.ensure(2)
+            self.set(0, sum)
+            self.set(1, carry)
+            self.len = 1 + carry
+            return
+        }
         var int a_len = a.len
         var int b_len = b.len
         var int max_len = a_len
@@ -135,6 +258,12 @@ pub struct BigInt {
     }
 
     pub func sub_to = (ref self, BigInt a, BigInt b) {
+        if a.len == 1 && b.len == 1 {
+            self.ensure(1)
+            self.set(0, a.get(0) - b.get(0))
+            self.len = 1
+            return
+        }
         self.ensure(a.len)
         var int borrow = 0
         var int i = 0
@@ -168,45 +297,31 @@ pub struct BigInt {
     }
 
     pub func mul_to = (ref self, BigInt a, BigInt b, var BigInt scratch) {
-        // Single-limb fast path: copy multi-limb operand into scratch (safe buffer),
-        // then compute directly into self without inner schoolbook loop
+        // Single-limb fast path: read directly from the multi-limb operand
         if a.len == 1 || b.len == 1 {
             var uint64 sv
             var int other_len
             if a.len == 1 {
                 sv = a.get(0)
                 other_len = b.len
-                scratch.ensure(b.len)
-                scratch.clear(b.len)
-                scratch.len = b.len
-                var int ci = 0
-                while ci < b.len {
-                    scratch.set(ci, b.get(ci))
-                    ci = ci + 1
-                }
             } else {
                 sv = b.get(0)
                 other_len = a.len
-                scratch.ensure(a.len)
-                scratch.clear(a.len)
-                scratch.len = a.len
-                var int ci = 0
-                while ci < a.len {
-                    scratch.set(ci, a.get(ci))
-                    ci = ci + 1
-                }
             }
             self.ensure(other_len + 1)
-            self.clear(other_len + 1)
+            var uint64 sv_lo = sv & 4294967295
+            var uint64 sv_hi = sv >> 32
             var uint64 carry = 0
             var int i = 0
             while i < other_len || carry != 0 {
                 var uint64 ov = 0
                 if i < other_len {
-                    ov = scratch.get(i)
+                    if a.len == 1 {
+                        ov = b.get(i)
+                    } else {
+                        ov = a.get(i)
+                    }
                 }
-                var uint64 sv_lo = sv & 4294967295
-                var uint64 sv_hi = sv >> 32
                 var uint64 ov_lo = ov & 4294967295
                 var uint64 ov_hi = ov >> 32
                 var uint64 p_lo = sv_lo * ov_lo
@@ -244,67 +359,140 @@ pub struct BigInt {
             return
         }
 
-        // Multi-limb × multi-limb: schoolbook into scratch, then copy to self
+        // Multi-limb × multi-limb: Karatsuba for large operands, schoolbook for small
         var int new_len = a.len + b.len
-        scratch.ensure(new_len)
-        scratch.clear(new_len)
-        scratch.len = new_len
-        var int i = 0
-        while i < a.len {
-            var uint64 ai = a.get(i)
-            var uint64 ai_lo = ai & 4294967295
-            var uint64 ai_hi = ai >> 32
-            var uint64 carry = 0
-            var int j = 0
-            while j < b.len || carry != 0 {
-                var uint64 bj_lo = 0
-                var uint64 bj_hi = 0
-                if j < b.len {
-                    var uint64 bj = b.get(j)
-                    bj_lo = bj & 4294967295
-                    bj_hi = bj >> 32
+        if a.len < 32 && b.len < 32 {
+            // Schoolbook for small operands
+            scratch.ensure(new_len)
+            scratch.clear(new_len)
+            scratch.len = new_len
+            var int i = 0
+            while i < a.len {
+                var uint64 ai = a.get(i)
+                var uint64 ai_lo = ai & 4294967295
+                var uint64 ai_hi = ai >> 32
+                var uint64 carry = 0
+                var int j = 0
+                while j < b.len || carry != 0 {
+                    var uint64 bj_lo = 0
+                    var uint64 bj_hi = 0
+                    if j < b.len {
+                        var uint64 bj = b.get(j)
+                        bj_lo = bj & 4294967295
+                        bj_hi = bj >> 32
+                    }
+                    var uint64 lo_prod = ai_lo * bj_lo
+                    var uint64 cross1 = ai_hi * bj_lo
+                    var uint64 cross2 = ai_lo * bj_hi
+                    var uint64 hi_prod = ai_hi * bj_hi
+                    var uint64 sum_cross = cross1 + cross2
+                    var int cross_carry = 0
+                    if sum_cross < cross1 {
+                        cross_carry = 1
+                    }
+                    var uint64 cross_lo = sum_cross << 32
+                    var uint64 cross_hi = (sum_cross >> 32) + (cross_carry as uint64 << 32)
+                    var uint64 old = scratch.get(j + i)
+                    var uint64 cur = old + carry
+                    var int c1 = 0
+                    if cur < old {
+                        c1 = 1
+                    }
+                    var uint64 cur2 = cur + lo_prod
+                    var int c2 = 0
+                    if cur2 < cur {
+                        c2 = 1
+                    }
+                    var uint64 cur3 = cur2 + cross_lo
+                    var int c3 = 0
+                    if cur3 < cur2 {
+                        c3 = 1
+                    }
+                    carry = c1 + c2 + c3 + cross_hi as int + hi_prod as int
+                    scratch.set(j + i, cur3)
+                    j = j + 1
                 }
-                var uint64 lo_prod = ai_lo * bj_lo
-                var uint64 cross1 = ai_hi * bj_lo
-                var uint64 cross2 = ai_lo * bj_hi
-                var uint64 hi_prod = ai_hi * bj_hi
-                var uint64 sum_cross = cross1 + cross2
-                var int cross_carry = 0
-                if sum_cross < cross1 {
-                    cross_carry = 1
-                }
-                var uint64 cross_lo = sum_cross << 32
-                var uint64 cross_hi = (sum_cross >> 32) + (cross_carry as uint64 << 32)
-                var uint64 old = scratch.get(j + i)
-                var uint64 cur = old + carry
-                var int c1 = 0
-                if cur < old {
-                    c1 = 1
-                }
-                var uint64 cur2 = cur + lo_prod
-                var int c2 = 0
-                if cur2 < cur {
-                    c2 = 1
-                }
-                var uint64 cur3 = cur2 + cross_lo
-                var int c3 = 0
-                if cur3 < cur2 {
-                    c3 = 1
-                }
-                carry = c1 + c2 + c3 + cross_hi as int + hi_prod as int
-                scratch.set(j + i, cur3)
-                j = j + 1
+                i = i + 1
             }
-            i = i + 1
+            self.ensure(new_len)
+            var int k = 0
+            while k < new_len {
+                self.set(k, scratch.get(k))
+                k = k + 1
+            }
+            self.len = new_len
+            while self.len > 1 {
+                if self.get(self.len - 1) != 0 {
+                    break
+                }
+                self.len = self.len - 1
+            }
+            return
         }
+
+        // Karatsuba: split a = a1*B^m + a0, b = b1*B^m + b0
+        // result = z2*B^(2m) + z1*B^m + z0
+        // z0 = a0*b0, z2 = a1*b1, z1 = (a0+a1)*(b0+b1) - z0 - z2
+        var int m = a.len
+        if b.len > m {
+            m = b.len
+        }
+        m = m / 2
+
+        var int a0_len = m
+        if a0_len > a.len {
+            a0_len = a.len
+        }
+        var int b0_len = m
+        if b0_len > b.len {
+            b0_len = b.len
+        }
+        var int a1_len = a.len - a0_len
+        var int b1_len = b.len - b0_len
+
+        var BigInt a0 = BigInt()
+        var BigInt a1 = BigInt()
+        var BigInt b0 = BigInt()
+        var BigInt b1 = BigInt()
+        a0.copy_range_from(a, 0, a0_len)
+        b0.copy_range_from(b, 0, b0_len)
+        if a1_len > 0 {
+            a1.copy_range_from(a, m, a1_len)
+        }
+        if b1_len > 0 {
+            b1.copy_range_from(b, m, b1_len)
+        }
+
+        // z0 = a0 * b0
+        var BigInt z0 = BigInt()
+        var BigInt s0 = BigInt()
+        z0.mul_to(a0, b0, s0)
+
+        // z2 = a1 * b1 (only if both have high parts)
+        var BigInt z2 = BigInt()
+        var BigInt s2 = BigInt()
+        if a1_len > 0 && b1_len > 0 {
+            z2.mul_to(a1, b1, s2)
+        }
+
+        // z1 = (a0+a1)*(b0+b1) - z0 - z2
+        var BigInt aa = BigInt()
+        var BigInt bb = BigInt()
+        var BigInt z1 = BigInt()
+        var BigInt s1 = BigInt()
+        aa.add_to(a0, a1)
+        bb.add_to(b0, b1)
+        z1.mul_to(aa, bb, s1)
+        z1.sub_at(z0, 0)
+        z1.sub_at(z2, 0)
+
+        // Combine: self = z0 + z1 << m + z2 << (2*m)
         self.ensure(new_len)
         self.clear(new_len)
-        var int k = 0
-        while k < new_len {
-            self.set(k, scratch.get(k))
-            k = k + 1
-        }
         self.len = new_len
+        self.add_at(z0, 0)
+        self.add_at(z1, m)
+        self.add_at(z2, m + m)
         while self.len > 1 {
             if self.get(self.len - 1) != 0 {
                 break

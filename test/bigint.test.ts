@@ -897,7 +897,7 @@ Console.write("\\n")
 	const parsed = parse_with_imports(input);
 	const result = build(parsed.root, { arch: "aarch64", audit: true });
 	expect(parsed.errors).toEqual([]);
-	await check_output("bigint_bug_four", result, "len=2 l0=42000000000 l1=0");
+	await check_output("bigint_bug_four", result, "len=1 l0=42000000000 l1=0");
 });
 
 test("bug: mul_to scratch==b with a.len==1 clobbers b", async () => {
