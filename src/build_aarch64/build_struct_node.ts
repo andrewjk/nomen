@@ -405,6 +405,28 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 
 		build_block_node(func, status);
 
+		const loop_regs_used = status.callee_saved_regs_used
+			? [...status.callee_saved_regs_used].sort()
+			: [];
+		status.callee_saved_regs_used = undefined;
+
+		if (loop_regs_used.length > 0) {
+			const label = `${func_label}:`;
+			const func_start = status.code.indexOf(label);
+			const after_prologue =
+				func_start !== -1
+					? status.code.indexOf(`sub sp, sp, #${stack_placeholder}`, func_start)
+					: -1;
+			if (after_prologue !== -1) {
+				let saves = "";
+				for (const reg of loop_regs_used) {
+					saves += `str ${reg}, [sp, #-16]!\n`;
+				}
+				status.code =
+					status.code.slice(0, after_prologue) + saves + status.code.slice(after_prologue);
+			}
+		}
+
 		status.code += `${return_label}:\n`;
 
 		const total_stack = Math.ceil((status.stack_size || 0) / 16) * 16;
@@ -414,6 +436,10 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		);
 		if (total_stack > 0) {
 			status.code += `add sp, sp, #${total_stack}\n`;
+		}
+
+		for (const reg of loop_regs_used) {
+			status.code += `ldr ${reg}, [sp], #16\n`;
 		}
 
 		for (let ci = callee_idx - 1; ci >= 0; ci--) {

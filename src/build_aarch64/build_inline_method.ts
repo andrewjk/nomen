@@ -84,6 +84,7 @@ export default function build_inline_method(
 	const old_struct_return_buffer = status.struct_return_buffer;
 	const old_return_buffer_offset = status.return_buffer_stack_offset;
 	const old_function_return_type = status.function_return_type;
+	const old_register_allocations = status.register_allocations;
 
 	const return_label = `.inline_ret_${inline_counter++}`;
 	status.function_return_label = return_label;
@@ -173,4 +174,5 @@ export default function build_inline_method(
 	status.struct_return_buffer = old_struct_return_buffer;
 	status.return_buffer_stack_offset = old_return_buffer_offset;
 	status.function_return_type = old_function_return_type;
+	status.register_allocations = old_register_allocations;
 }

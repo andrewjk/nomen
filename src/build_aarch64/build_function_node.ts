@@ -151,6 +151,26 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 
 	build_block_node(node, status);
 
+	const loop_regs_used = status.callee_saved_regs_used
+		? [...status.callee_saved_regs_used].sort()
+		: [];
+	status.callee_saved_regs_used = undefined;
+
+	if (loop_regs_used.length > 0 && has_body) {
+		const func_label = `${node.name === "main" ? "_" : ""}${node.name}:`;
+		const func_start = status.code.indexOf(func_label);
+		const search_for = `sub sp, sp, #${stack_placeholder}`;
+		const after_prologue = func_start !== -1 ? status.code.indexOf(search_for, func_start) : -1;
+		if (after_prologue !== -1) {
+			let saves = "";
+			for (const reg of loop_regs_used) {
+				saves += `str ${reg}, [sp, #-16]!\n`;
+			}
+			status.code =
+				status.code.slice(0, after_prologue) + saves + status.code.slice(after_prologue);
+		}
+	}
+
 	const moved_after = status.moved;
 	const heap_after = status.heap_strings;
 	if (moved_after) {
@@ -200,6 +220,10 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	);
 	if (total_stack > 0) {
 		status.code += `add sp, sp, #${total_stack}\n`;
+	}
+
+	for (const reg of loop_regs_used) {
+		status.code += `ldr ${reg}, [sp], #16\n`;
 	}
 
 	for (let ci = callee_idx - 1; ci >= 0; ci--) {

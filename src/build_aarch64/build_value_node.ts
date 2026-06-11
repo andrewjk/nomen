@@ -132,7 +132,14 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 		return;
 	}
 
-	// Variable reference - use stack offset if available
+	// Variable reference - check register allocation first, then stack offset
+	const alloc_reg = status.register_allocations?.get(value);
+	if (alloc_reg) {
+		if (alloc_reg !== "x0") {
+			status.code += `mov x0, ${alloc_reg}`;
+		}
+		return;
+	}
 	const offset = status.stack_offsets?.get(value);
 	if (offset !== undefined) {
 		const type_name = node.type?.name || "";

@@ -22,6 +22,7 @@ import {
 	emit_deref_var_address,
 	emit_var_address,
 	emit_var_load,
+	emit_var_store,
 	is_local_ref_var,
 } from "./utils/stack_var.ts";
 import { emit_struct_copy, get_field_offset, get_struct_size } from "./utils/struct_layout.ts";
@@ -334,28 +335,44 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 					return;
 				}
 			}
-			const offset = status.stack_offsets?.get(name);
-			if (offset !== undefined) {
-				status.code += `ldr x2, [x29, #${offset}]\n`;
+			const alloc_reg_a = status.register_allocations?.get(name);
+			if (alloc_reg_a) {
+				status.code += `mov x2, ${alloc_reg_a}\n`;
 			} else {
-				emit_var_address(status, "x2", name);
-				status.code += `ldr x2, [x2]\n`;
+				const offset = status.stack_offsets?.get(name);
+				if (offset !== undefined) {
+					status.code += `ldr x2, [x29, #${offset}]\n`;
+				} else {
+					emit_var_address(status, "x2", name);
+					status.code += `ldr x2, [x2]\n`;
+				}
 			}
 			build_node(node.right_value, status);
 			if (!status.code.endsWith("\n")) status.code += "\n";
 			status.code += `${store_op} ${store_reg}, [x2]\n`;
 		} else if (node.operator) {
-			emit_var_address(status, "x1", name);
-			const load_op = get_load_instruction(size);
-			const load_reg = get_load_reg("x1", size);
-			status.code += `${load_op} ${load_reg}, [x1]\n`;
-			status.code += `str x1, [sp, #-16]!\n`;
-			build_node(node.right_value, status);
-			status.code += `\n`;
-			status.code += `ldr x1, [sp], #16\n`;
-			emit_compound_op(node.operator, status);
-			emit_var_address(status, "x1", name);
-			status.code += `${store_op} ${store_reg}, [x1]\n`;
+			const alloc_reg_op = status.register_allocations?.get(name);
+			if (alloc_reg_op) {
+				status.code += `mov x1, ${alloc_reg_op}\n`;
+				status.code += `str x1, [sp, #-16]!\n`;
+				build_node(node.right_value, status);
+				status.code += `\n`;
+				status.code += `ldr x1, [sp], #16\n`;
+				emit_compound_op(node.operator, status);
+				status.code += `mov ${alloc_reg_op}, x0\n`;
+			} else {
+				emit_var_address(status, "x1", name);
+				const load_op = get_load_instruction(size);
+				const load_reg = get_load_reg("x1", size);
+				status.code += `${load_op} ${load_reg}, [x1]\n`;
+				status.code += `str x1, [sp, #-16]!\n`;
+				build_node(node.right_value, status);
+				status.code += `\n`;
+				status.code += `ldr x1, [sp], #16\n`;
+				emit_compound_op(node.operator, status);
+				emit_var_address(status, "x1", name);
+				status.code += `${store_op} ${store_reg}, [x1]\n`;
+			}
 		} else {
 			const lhs_is_heap = status.heap_strings?.has(name);
 			if (lhs_is_heap) {
@@ -366,12 +383,11 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 			status.last_result_is_heap = false;
 			build_node(node.right_value, status);
 			if (status.last_result_is_heap && lhs_type_name === "string") {
-				if (!status.heap_strings) status.heap_strings = new Set<string>();
+				if (!status.heap_strings) status.heap_strings = new Set();
 				status.heap_strings.add(name);
 			}
 			status.code += `\n`;
-			emit_var_address(status, "x1", name);
-			status.code += `${store_op} ${store_reg}, [x1]\n`;
+			emit_var_store(status, "x0", name, size);
 		}
 	} else if (node.left_value.node_type === "access") {
 		const access = node.left_value as AccessNode;

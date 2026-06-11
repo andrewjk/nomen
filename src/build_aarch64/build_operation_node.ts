@@ -160,6 +160,11 @@ function build_float_operand(node: BaseNode, target_reg: string, status: BuildSt
 			status.code += `scvtf ${target_reg}, x3\n`;
 			return;
 		}
+		const alloc_reg_op = status.register_allocations?.get(value);
+		if (alloc_reg_op) {
+			status.code += `fmov ${target_reg}, ${alloc_reg_op}\n`;
+			return;
+		}
 		const offset = status.stack_offsets?.get(value);
 		if (offset !== undefined) {
 			status.code += `ldr ${target_reg}, [x29, #${offset}]\n`;

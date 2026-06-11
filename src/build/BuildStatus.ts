@@ -54,4 +54,10 @@ export default interface BuildStatus {
 	current_struct?: StructNode;
 	current_function_name?: string;
 	inline_functions?: Map<string, BaseNode>;
+	/**
+	 * Maps variable names to callee-saved registers (x23-x28) for loop register allocation.
+	 * When present, emit_var_load/emit_var_store will use the register instead of stack.
+	 */
+	register_allocations?: Map<string, string>;
+	callee_saved_regs_used?: Set<string>;
 }

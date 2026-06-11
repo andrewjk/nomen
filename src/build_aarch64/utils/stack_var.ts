@@ -16,6 +16,14 @@ export function is_local_ref_var(name: string, status: BuildStatus): boolean {
 }
 
 export function emit_var_address(status: BuildStatus, reg: string, name: string) {
+	const alloc_reg = status.register_allocations?.get(name);
+	if (alloc_reg) {
+		// Variable is in a register - spill it to stack so address is valid
+		const offset = status.stack_offsets?.get(name);
+		if (offset !== undefined) {
+			status.code += `str ${alloc_reg}, [x29, #${offset}]\n`;
+		}
+	}
 	const offset = status.stack_offsets?.get(name);
 	if (offset !== undefined) {
 		status.code += `add ${reg}, x29, #${offset}\n`;
@@ -32,6 +40,13 @@ export function emit_deref_var_address(status: BuildStatus, reg: string, name: s
 }
 
 export function emit_var_load(status: BuildStatus, reg: string, name: string, size: number) {
+	const alloc_reg = status.register_allocations?.get(name);
+	if (alloc_reg) {
+		if (reg !== alloc_reg) {
+			status.code += `mov ${reg}, ${alloc_reg}\n`;
+		}
+		return;
+	}
 	const offset = status.stack_offsets?.get(name);
 	if (offset !== undefined) {
 		if (size === 1) {
@@ -54,6 +69,13 @@ export function emit_var_load(status: BuildStatus, reg: string, name: string, si
 }
 
 export function emit_var_store(status: BuildStatus, reg: string, name: string, size: number) {
+	const alloc_reg = status.register_allocations?.get(name);
+	if (alloc_reg) {
+		if (reg !== alloc_reg) {
+			status.code += `mov ${alloc_reg}, ${reg}\n`;
+		}
+		return;
+	}
 	const offset = status.stack_offsets?.get(name);
 	if (offset !== undefined) {
 		if (size === 1) {

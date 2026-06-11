@@ -5,6 +5,7 @@ import RangeNode from "../nodes/RangeNode.ts";
 import build_block_node from "./build_block_node.ts";
 import build_node from "./build_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
+import collect_var_refs from "./utils/collect_var_refs.ts";
 import {
 	allocate_stack_space,
 	emit_var_address,
@@ -12,6 +13,28 @@ import {
 	emit_var_store,
 } from "./utils/stack_var.ts";
 import { get_struct_size } from "./utils/struct_layout.ts";
+
+const CALLEE_SAVED_REGS = ["x23", "x24", "x25", "x26", "x27", "x28"];
+const SCALAR_TYPES = new Set([
+	"int",
+	"uint",
+	"int64",
+	"uint64",
+	"int32",
+	"uint32",
+	"int16",
+	"uint16",
+	"int8",
+	"uint8",
+	"bool",
+	"char",
+	"float",
+	"ufloat",
+	"float32",
+	"ufloat32",
+	"float64",
+	"ufloat64",
+]);
 
 let label_counter = 0;
 
@@ -34,16 +57,84 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 	const cleanup_depth = status.heap_cleanup_stack?.length ?? 0;
 	status.loop_labels.push({ start: continue_label, end: end_label, cleanup_depth });
 
-	// Allocate stack space for loop item variable
 	if (status.function_return_label) {
 		const item_offset = allocate_stack_space(status, 8);
 		status.stack_offsets!.set(item_name, item_offset);
 	}
 
+	const promoted: { name: string; reg: string; offset: number }[] = [];
+	const saved_reg_allocs = status.register_allocations
+		? new Map(status.register_allocations)
+		: undefined;
+
+	if (status.function_return_label && node.statements.length > 0) {
+		const all_refs = new Map<string, { reads: number; address_taken: boolean }>();
+		const merge_refs = (refs: Map<string, { reads: number; address_taken: boolean }>) => {
+			for (const [name, info] of refs) {
+				const existing = all_refs.get(name);
+				if (existing) {
+					existing.reads += info.reads;
+					if (info.address_taken) existing.address_taken = true;
+				} else {
+					all_refs.set(name, { reads: info.reads, address_taken: info.address_taken });
+				}
+			}
+		};
+		for (const stmt of node.statements) {
+			merge_refs(collect_var_refs(stmt));
+		}
+		if (node.update) {
+			merge_refs(collect_var_refs(node.update));
+		}
+
+		const eligible: { name: string; reads: number; offset: number }[] = [];
+		for (const [name, info] of all_refs) {
+			if (info.reads < 3) continue;
+			if (info.address_taken) continue;
+			const offset = status.stack_offsets?.get(name);
+			if (offset === undefined) continue;
+			if (status.register_allocations?.has(name)) continue;
+			const decl = old_scoped_declarations.find((d) => d.name === name);
+			if (decl) {
+				const type_name = decl.type?.name || "";
+				if (!SCALAR_TYPES.has(type_name)) continue;
+			}
+			eligible.push({ name, reads: info.reads, offset });
+		}
+		eligible.sort((a, b) => b.reads - a.reads);
+
+		if (!status.register_allocations) {
+			status.register_allocations = new Map();
+		}
+
+		const used_regs = new Set(status.register_allocations.values());
+		let reg_idx = 0;
+		for (const v of eligible) {
+			while (reg_idx < CALLEE_SAVED_REGS.length && used_regs.has(CALLEE_SAVED_REGS[reg_idx])) {
+				reg_idx++;
+			}
+			if (reg_idx >= CALLEE_SAVED_REGS.length) break;
+			const reg = CALLEE_SAVED_REGS[reg_idx];
+			status.register_allocations.set(v.name, reg);
+			used_regs.add(reg);
+			promoted.push({ name: v.name, reg, offset: v.offset });
+			status.code += `ldr ${reg}, [x29, #${v.offset}]\n`;
+			reg_idx++;
+		}
+
+		if (promoted.length > 0) {
+			if (!status.callee_saved_regs_used) {
+				status.callee_saved_regs_used = new Set();
+			}
+			for (const p of promoted) {
+				status.callee_saved_regs_used.add(p.reg);
+			}
+		}
+	}
+
 	if (node.list && node.list.node_type === "range") {
 		const range = node.list as RangeNode;
 
-		// init: item = left_value
 		if (range.left_value) {
 			build_node(range.left_value, status);
 		} else {
@@ -52,10 +143,8 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 		status.code += `\n`;
 		emit_var_store(status, "x0", item_name, 8);
 
-		// loop start
 		status.code += `${start_label}:\n`;
 
-		// condition: item < right_value
 		build_node(node.item, status);
 		const right_is_literal = range.right_value?.node_type === "value";
 		if (right_is_literal) {
@@ -79,10 +168,8 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 		}
 		status.code += `bge ${end_label}\n`;
 
-		// body
 		build_block_node(node, status);
 
-		// update clause
 		if (node.update) {
 			status.code += `${continue_label}:\n`;
 			build_node(node.update, status);
@@ -91,7 +178,6 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 			}
 		}
 
-		// increment
 		status.code += `${increment_label}:\n`;
 		build_node(node.item, status);
 		status.code += `\nadd x0, x0, #1\n`;
@@ -100,7 +186,6 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 		status.code += `b ${start_label}\n`;
 		status.code += `${end_label}:\n`;
 	} else {
-		// array iteration using hidden index variable
 		const type = type_from_value_node(node.list);
 		const length = type.length ? (type.length as any).value : "0";
 		const struct_type = status.structs.find((s) => s.name === type.name && !s.is_simple_type);
@@ -119,27 +204,22 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 			status.stack_offsets!.set(item_name, item_offset);
 		}
 
-		// Allocate stack space for index variable
 		if (status.function_return_label) {
 			const idx_offset = allocate_stack_space(status, 8);
 			status.stack_offsets!.set(idx_name, idx_offset);
 		}
 
-		// init: index = 0
 		status.code += `ldr x0, =0\n`;
 		emit_var_store(status, "x0", idx_name, 8);
 
-		// loop start
 		status.code += `${start_label}:\n`;
 
-		// condition: index < length
 		emit_var_load(status, "x0", idx_name, 8);
 		status.code += `mov x2, x0\n`;
 		status.code += `ldr x0, =${length}\n`;
 		status.code += `cmp x2, x0\n`;
 		status.code += `bge ${end_label}\n`;
 
-		// Load array[index] into item variable
 		const list_name = node.list.node_type === "value" ? (node.list as any).value : "_list";
 		const list_type = type_from_value_node(node.list);
 		const list_is_pointer =
@@ -177,10 +257,8 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 			emit_var_store(status, "x0", item_name, element_size);
 		}
 
-		// body
 		build_block_node(node, status);
 
-		// update clause
 		if (node.update) {
 			status.code += `${continue_label}:\n`;
 			build_node(node.update, status);
@@ -189,7 +267,6 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 			}
 		}
 
-		// increment: index++
 		status.code += `${increment_label}:\n`;
 		emit_var_load(status, "x0", idx_name, 8);
 		status.code += `add x0, x0, #1\n`;
@@ -197,6 +274,16 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 
 		status.code += `b ${start_label}\n`;
 		status.code += `${end_label}:\n`;
+	}
+
+	for (const p of promoted) {
+		status.code += `str ${p.reg}, [x29, #${p.offset}]\n`;
+	}
+
+	if (saved_reg_allocs) {
+		status.register_allocations = saved_reg_allocs;
+	} else {
+		status.register_allocations = undefined;
 	}
 
 	status.loop_labels.pop();
