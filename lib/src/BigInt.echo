@@ -29,9 +29,7 @@ pub struct BigInt {
         lsl x1, x1, #3
         add x0, x0, x1
         ldr x0, [x0]
-        b .return_BigInt_get
         ```
-        return 0
     }
 
     inline func set = (ref self, int i, uint64 val) {

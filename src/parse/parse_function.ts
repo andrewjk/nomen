@@ -78,7 +78,10 @@ export default function parse_function(
 					status.stack.pop();
 
 					if (func.return_type.name && !func.has_return && name !== "init" && name !== "destroy") {
-						add_error(status, `Missing return`, status.tokens[status.i - 2].i);
+						const is_raw_only = func.statements.every((s) => s.node_type === "raw");
+						if (!is_raw_only) {
+							add_error(status, `Missing return`, status.tokens[status.i - 2].i);
+						}
 					}
 				}
 			}
