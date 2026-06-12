@@ -151,7 +151,7 @@ pub struct BigInt {
         #arch: aarch64
         mov x4, x1
         mov x0, #0
-        mov x7, #63
+        mov x7, 63
 
         .Ldiv128_loop:
         adds x4, x4, x4
@@ -223,6 +223,7 @@ pub struct BigInt {
         self.ensure(max_len + 2)
         var int carry = 0
         var int i = 0
+        var int last_nonzero = 1
         while i < max_len || carry != 0 {
             var uint64 a_val = 0
             if i < a_len {
@@ -243,15 +244,18 @@ pub struct BigInt {
                 c2 = 1
             }
             self.set(i, sum2)
+            if sum2 != 0 {
+                last_nonzero = i + 1
+            }
             carry = c1 + c2
             i = i + 1
         }
         self.len = i
-        while self.len > 1 {
-            if self.get(self.len - 1) != 0 {
-                break
-            }
-            self.len = self.len - 1
+        if last_nonzero < self.len {
+            self.len = last_nonzero
+        }
+        if self.len == 0 {
+            self.len = 1
         }
     }
 
@@ -265,6 +269,7 @@ pub struct BigInt {
         self.ensure(a.len)
         var int borrow = 0
         var int i = 0
+        var int last_nonzero = 1
         while i < a.len {
             var uint64 a_val = a.get(i)
             var uint64 b_val = 0
@@ -283,19 +288,21 @@ pub struct BigInt {
                 borrow = new_borrow
             }
             self.set(i, diff2)
+            if diff2 != 0 {
+                last_nonzero = i + 1
+            }
             i = i + 1
         }
         self.len = a.len
-        while self.len > 1 {
-            if self.get(self.len - 1) != 0 {
-                break
-            }
-            self.len = self.len - 1
+        if last_nonzero < self.len {
+            self.len = last_nonzero
+        }
+        if self.len == 0 {
+            self.len = 1
         }
     }
 
     pub func mul_to = (ref self, BigInt a, BigInt b, var BigInt scratch) {
-        // Single-limb fast path: read directly from the multi-limb operand
         if a.len == 1 || b.len == 1 {
             var uint64 sv
             var int other_len
@@ -311,48 +318,82 @@ pub struct BigInt {
             var uint64 sv_hi = sv >> 32
             var uint64 carry = 0
             var int i = 0
-            while i < other_len || carry != 0 {
-                var uint64 ov = 0
-                if i < other_len {
-                    if a.len == 1 {
+            var int last_nonzero = 0
+            if a.len == 1 {
+                while i < other_len || carry != 0 {
+                    var uint64 ov = 0
+                    if i < other_len {
                         ov = b.get(i)
-                    } else {
+                    }
+                    var uint64 ov_lo = ov & 4294967295
+                    var uint64 ov_hi = ov >> 32
+                    var uint64 p_lo = sv_lo * ov_lo
+                    var uint64 p_lh = sv_hi * ov_lo
+                    var uint64 p_hl = sv_lo * ov_hi
+                    var uint64 p_hi = sv_hi * ov_hi
+                    var uint64 cross = p_lh + p_hl
+                    var int cross_c = 0
+                    if cross < p_lh {
+                        cross_c = 1
+                    }
+                    var uint64 lo = p_lo + carry
+                    var int c1 = 0
+                    if lo < p_lo {
+                        c1 = 1
+                    }
+                    var uint64 lo2 = lo + (cross << 32)
+                    var int c2 = 0
+                    if lo2 < lo {
+                        c2 = 1
+                    }
+                    carry = c1 + c2 + ((cross >> 32) + (cross_c as uint64 << 32)) as int + p_hi as int
+                    self.set(i, lo2)
+                    if lo2 != 0 {
+                        last_nonzero = i + 1
+                    }
+                    i = i + 1
+                }
+            } else {
+                while i < other_len || carry != 0 {
+                    var uint64 ov = 0
+                    if i < other_len {
                         ov = a.get(i)
                     }
+                    var uint64 ov_lo = ov & 4294967295
+                    var uint64 ov_hi = ov >> 32
+                    var uint64 p_lo = sv_lo * ov_lo
+                    var uint64 p_lh = sv_hi * ov_lo
+                    var uint64 p_hl = sv_lo * ov_hi
+                    var uint64 p_hi = sv_hi * ov_hi
+                    var uint64 cross = p_lh + p_hl
+                    var int cross_c = 0
+                    if cross < p_lh {
+                        cross_c = 1
+                    }
+                    var uint64 lo = p_lo + carry
+                    var int c1 = 0
+                    if lo < p_lo {
+                        c1 = 1
+                    }
+                    var uint64 lo2 = lo + (cross << 32)
+                    var int c2 = 0
+                    if lo2 < lo {
+                        c2 = 1
+                    }
+                    carry = c1 + c2 + ((cross >> 32) + (cross_c as uint64 << 32)) as int + p_hi as int
+                    self.set(i, lo2)
+                    if lo2 != 0 {
+                        last_nonzero = i + 1
+                    }
+                    i = i + 1
                 }
-                var uint64 ov_lo = ov & 4294967295
-                var uint64 ov_hi = ov >> 32
-                var uint64 p_lo = sv_lo * ov_lo
-                var uint64 p_lh = sv_hi * ov_lo
-                var uint64 p_hl = sv_lo * ov_hi
-                var uint64 p_hh = sv_hi * ov_hi
-                var uint64 mid = p_lh + p_hl
-                var int mc = 0
-                if mid < p_lh {
-                    mc = 1
-                }
-                var uint64 mid_lo = mid << 32
-                var uint64 mid_hi = (mid >> 32) + (mc as uint64 << 32)
-                var uint64 r0 = p_lo + carry
-                var int c1 = 0
-                if r0 < p_lo {
-                    c1 = 1
-                }
-                var uint64 r1 = r0 + mid_lo
-                var int c2 = 0
-                if r1 < r0 {
-                    c2 = 1
-                }
-                carry = c1 + c2 + mid_hi as int + p_hh as int
-                self.set(i, r1)
-                i = i + 1
             }
             self.len = i
-            while self.len > 1 {
-                if self.get(self.len - 1) != 0 {
-                    break
-                }
-                self.len = self.len - 1
+            if last_nonzero < self.len {
+                self.len = last_nonzero
+            }
+            if self.len == 0 {
+                self.len = 1
             }
             return
         }
@@ -413,18 +454,17 @@ pub struct BigInt {
                 i = i + 1
             }
             self.ensure(new_len)
+            var int last_nonzero = 1
             var int k = 0
             while k < new_len {
-                self.set(k, scratch.get(k))
+                var uint64 val = scratch.get(k)
+                self.set(k, val)
+                if val != 0 {
+                    last_nonzero = k + 1
+                }
                 k = k + 1
             }
-            self.len = new_len
-            while self.len > 1 {
-                if self.get(self.len - 1) != 0 {
-                    break
-                }
-                self.len = self.len - 1
-            }
+            self.len = last_nonzero
             return
         }
 
@@ -508,6 +548,7 @@ pub struct BigInt {
             self.ensure(a.len)
             self.len = a.len
             var uint64 rem = 0
+            var int last_nonzero = 1
             var int i = a.len - 1
             while i >= 0 {
                 var uint64 ai = a.get(i)
@@ -534,13 +575,16 @@ pub struct BigInt {
                 var uint64 sub_lo = ai - p_lo_val
                 rem = sub_lo
                 self.set(i, q_val)
+                if q_val != 0 {
+                    last_nonzero = i + 1
+                }
                 i = i - 1
             }
-            while self.len > 1 {
-                if self.get(self.len - 1) != 0 {
-                    break
-                }
-                self.len = self.len - 1
+            if last_nonzero < self.len {
+                self.len = last_nonzero
+            }
+            if self.len == 0 {
+                self.len = 1
             }
             remainder.len = 1
             remainder.ensure(1)
