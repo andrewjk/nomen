@@ -4,7 +4,7 @@ import int
 import Stringable
 
 pub func main = () {
-    var int n = 200
+    var int n = 2000
     var int digits_printed = 0
 
     var BigInt k = BigInt()

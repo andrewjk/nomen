@@ -63,14 +63,14 @@ echo ""
 # ── Go ────────────────────────────────────────────────────────────────────────
 echo "Building Go pidigits (n=$N)..."
 
-cd "$BENCH_DIR/go"
-go build -o "$TMPDIR/go_pidigits" pidigits.go 2>"$TMPDIR/go_compile_err.txt" || {
+mkdir -p "$BENCH_DIR/go/build"
+go build -o "$BENCH_DIR/go/build/pidigits" "$BENCH_DIR/go/pidigits.go" 2>"$TMPDIR/go_compile_err.txt" || {
     echo "FAIL: Go compilation failed"
     cat "$TMPDIR/go_compile_err.txt"
     exit 1
 }
 
-{ time "$TMPDIR/go_pidigits" "$N" > "$TMPDIR/go_out.txt" 2>&1; } 2>"$TMPDIR/go_time.txt"
+{ time "$BENCH_DIR/go/build/pidigits" "$N" > "$TMPDIR/go_out.txt" 2>&1; } 2>"$TMPDIR/go_time.txt"
 GO_REAL=$(grep real "$TMPDIR/go_time.txt" | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//')
 GO_MS=$(to_ms "$GO_REAL")
 cat "$TMPDIR/go_out.txt"

@@ -1,0 +1,109 @@
+import Console
+import int
+import Stringable
+
+class MerkleNode {
+	var int hash = 0
+	var int value = 0
+	var bool has_hash = false
+	var bool has_value = false
+	var MerkleNode? left = null
+	var MerkleNode? right = null
+}
+
+func make_merkle = (int depth, out MerkleNode) {
+	if depth <= 0 {
+		var MerkleNode node = MerkleNode()
+		node.value = 1
+		node.has_value = true
+		return node
+	}
+	var MerkleNode left = make_merkle(depth - 1)
+	var MerkleNode right = make_merkle(depth - 1)
+	var MerkleNode node = MerkleNode()
+	node.left = left
+	node.right = right
+	return node
+}
+
+func cal_hash = (var MerkleNode node) {
+	if node.has_hash {
+		return
+	}
+	if node.has_value {
+		node.hash = node.value
+		node.has_hash = true
+		return
+	}
+	if node.left != null {
+		cal_hash(node.left)
+	}
+	if node.right != null {
+		cal_hash(node.right)
+	}
+	var int left_hash = 0
+	if node.left != null {
+		left_hash = node.left.hash
+	}
+	var int right_hash = 0
+	if node.right != null {
+		right_hash = node.right.hash
+	}
+	node.hash = left_hash + right_hash
+	node.has_hash = true
+}
+
+func check_merkle = (MerkleNode node, out int) {
+	if !node.has_hash {
+		return 0
+	}
+	if node.has_value {
+		return 1
+	}
+	var int left_ok = 1
+	var int right_ok = 1
+	if node.left != null {
+		left_ok = check_merkle(node.left)
+	}
+	if node.right != null {
+		right_ok = check_merkle(node.right)
+	}
+	if left_ok == 1 && right_ok == 1 {
+		return 1
+	}
+	return 0
+}
+
+pub func main = () {
+	var int n = 5
+	var int min_depth = 4
+	var int max_depth = n
+	if min_depth + 2 > max_depth {
+		max_depth = min_depth + 2
+	}
+
+	var int stretch_depth = max_depth + 1
+	var MerkleNode stretch_tree = make_merkle(stretch_depth)
+	cal_hash(stretch_tree)
+	Console.write("stretch tree of depth \{stretch_depth}\t root hash: \{stretch_tree.hash} check: \{check_merkle(stretch_tree)}\n")
+
+	var MerkleNode long_lived_tree = make_merkle(max_depth)
+
+	var int depth = min_depth
+	while depth <= max_depth {
+		var int iterations = 1 << (max_depth - depth + min_depth)
+		var int sum = 0
+		var int i = 1
+		while i <= iterations {
+			var MerkleNode tree = make_merkle(depth)
+			cal_hash(tree)
+			sum = sum + tree.hash
+			i = i + 1
+		}
+		Console.write("\{iterations}\t trees of depth \{depth}\t root hash sum: \{sum}\n")
+		depth = depth + 2
+	}
+
+	cal_hash(long_lived_tree)
+	Console.write("long lived tree of depth \{max_depth}\t root hash: \{long_lived_tree.hash} check: \{check_merkle(long_lived_tree)}\n")
+}

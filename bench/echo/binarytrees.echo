@@ -1,0 +1,63 @@
+import Console
+import int
+import Stringable
+
+class TreeNode {
+	var TreeNode? left = null
+	var TreeNode? right = null
+}
+
+func create_tree = (int depth, out TreeNode) {
+	if depth > 1 {
+		var TreeNode left = create_tree(depth - 1)
+		var TreeNode right = create_tree(depth - 1)
+		var TreeNode node = TreeNode()
+		node.left = left
+		node.right = right
+		return node
+	}
+	var TreeNode node = TreeNode()
+	node.left = TreeNode()
+	node.right = TreeNode()
+	return node
+}
+
+func check_tree = (TreeNode node, out int) {
+	var int sum = 1
+	if node.left != null {
+		sum = sum + check_tree(node.left)
+	}
+	if node.right != null {
+		sum = sum + check_tree(node.right)
+	}
+	return sum
+}
+
+pub func main = () {
+	var int n = 10
+	var int min_depth = 4
+	var int max_depth = n
+	if min_depth + 2 > max_depth {
+		max_depth = min_depth + 2
+	}
+
+	var TreeNode stretch_tree = create_tree(max_depth + 1)
+	Console.write("stretch tree of depth \{max_depth + 1}\t check: \{check_tree(stretch_tree)}\n")
+
+	var TreeNode long_lived_tree = create_tree(max_depth)
+
+	var int depth = min_depth
+	while depth <= max_depth {
+		var int iterations = 1 << (max_depth - depth + min_depth)
+		var int sum = 0
+		var int i = 0
+		while i < iterations {
+			sum = sum + check_tree(create_tree(depth))
+			i = i + 1
+		}
+		Console.write("\{iterations}\t trees of depth \{depth}\t check: \{sum}\n")
+		depth = depth + 2
+	}
+
+	Console.write("long lived tree of depth \{max_depth}\t check: \{check_tree(long_lived_tree)}\n")
+}

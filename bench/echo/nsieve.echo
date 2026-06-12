@@ -1,0 +1,33 @@
+import Console
+import Buffer
+import int
+import Stringable
+import uint8
+
+func nsieve = (int n) {
+	var Buffer flags = Buffer()
+	flags.alloc(n)
+
+	var int count = 0
+	var int i = 2
+	while i < n {
+		if flags.load(i) == 0 {
+			count = count + 1
+			var int j = i * 2
+			while j < n {
+				flags.store(j, 1)
+				j = j + i
+			}
+		}
+		i = i + 1
+	}
+	Console.write("Primes up to \{n} \{count}\n")
+}
+
+pub func main = () {
+	var int n = 4
+
+	nsieve(10000 << n)
+	nsieve(10000 << (n - 1))
+	nsieve(10000 << (n - 2))
+}
