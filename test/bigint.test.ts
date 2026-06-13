@@ -814,10 +814,9 @@ Console.write("\\n")
 	await check_output("bigint_div_repeated", result, "3 3 3 3 3");
 });
 
-// ==================== known aliasing bugs ====================
+// ==================== aliasing bugs (now caught at compile time) ====================
 
 test("bug: mul_to scratch==a multi-limb clobbers a", async () => {
-	// scratch.clear(new_len) zeroes a's digits before schoolbook reads them
 	const input = `
 var BigInt a = BigInt()
 var BigInt b = BigInt()
@@ -831,13 +830,12 @@ Console.write(a.len.to_string())
 Console.write("\\n")
 `;
 	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("bigint_bug_one", result, "a=3000000000 a.len=1");
+	build(parsed.root, { arch: "aarch64", audit: true });
+	expect(parsed.errors.length).toBeGreaterThan(0);
+	expect(parsed.errors[0].message).toContain("Aliasing");
 });
 
 test("bug: mul_to scratch==b multi-limb clobbers b", async () => {
-	// scratch.clear(new_len) zeroes b's digits before schoolbook reads them
 	const input = `
 var BigInt a = BigInt()
 var BigInt b = BigInt()
@@ -851,13 +849,12 @@ Console.write(a.len.to_string())
 Console.write("\\n")
 `;
 	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("bigint_bug_two", result, "a=3000000000 a.len=1");
+	build(parsed.root, { arch: "aarch64", audit: true });
+	expect(parsed.errors.length).toBeGreaterThan(0);
+	expect(parsed.errors[0].message).toContain("Aliasing");
 });
 
 test("bug: mul_to scratch==self multi-limb zeroes result", async () => {
-	// self.clear(new_len) zeroes scratch (=self) after schoolbook loop
 	const input = `
 var BigInt a = BigInt()
 var BigInt b = BigInt()
@@ -873,13 +870,12 @@ Console.write((a.get(1) as int).to_string())
 Console.write("\\n")
 `;
 	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("bigint_bug_three", result, "len=2 l0=0 l1=1");
+	build(parsed.root, { arch: "aarch64", audit: true });
+	expect(parsed.errors.length).toBeGreaterThan(0);
+	expect(parsed.errors[0].message).toContain("Aliasing");
 });
 
 test("bug: mul_to scratch==self single-limb zeroes result", async () => {
-	// self.clear(other_len+1) zeroes scratch (=self) after copying multi-limb into it
 	const input = `
 var BigInt a = BigInt()
 var BigInt b = BigInt()
@@ -895,13 +891,12 @@ Console.write((a.get(1) as int).to_string())
 Console.write("\\n")
 `;
 	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("bigint_bug_four", result, "len=1 l0=42000000000 l1=0");
+	build(parsed.root, { arch: "aarch64", audit: true });
+	expect(parsed.errors.length).toBeGreaterThan(0);
+	expect(parsed.errors[0].message).toContain("Aliasing");
 });
 
 test("bug: mul_to scratch==b with a.len==1 clobbers b", async () => {
-	// scratch.clear(b.len) zeroes b, then copy loop reads zeros
 	const input = `
 var BigInt a = BigInt()
 var BigInt b = BigInt()
@@ -915,13 +910,12 @@ Console.write(a.len.to_string())
 Console.write("\\n")
 `;
 	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("bigint_bug_five", result, "a=7000000000 a.len=1");
+	build(parsed.root, { arch: "aarch64", audit: true });
+	expect(parsed.errors.length).toBeGreaterThan(0);
+	expect(parsed.errors[0].message).toContain("Aliasing");
 });
 
 test("bug: mul_to scratch==a with b.len==1 clobbers a", async () => {
-	// scratch.clear(a.len) zeroes a, then copy loop reads zeros
 	const input = `
 var BigInt a = BigInt()
 var BigInt b = BigInt()
@@ -935,7 +929,7 @@ Console.write(a.len.to_string())
 Console.write("\\n")
 `;
 	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("bigint_bug_six", result, "a=7000000000 a.len=1");
+	build(parsed.root, { arch: "aarch64", audit: true });
+	expect(parsed.errors.length).toBeGreaterThan(0);
+	expect(parsed.errors[0].message).toContain("Aliasing");
 });

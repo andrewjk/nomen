@@ -243,7 +243,7 @@ function check_access_function_node(
 		node.mangled_name = mangled_label(func, struct.name);
 	}
 
-	return check_function_call(node, status, func, target_type);
+	return check_function_call(node, status, func, target_type, value_from_value_node(target));
 }
 
 function check_access_index_node(

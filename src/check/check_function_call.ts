@@ -22,6 +22,7 @@ export default function check_function_call(
 	status: CheckStatus,
 	func: FunctionNode,
 	target_type?: Type,
+	self_value?: string,
 ): boolean {
 	if (
 		func.visibility === "priv" &&
@@ -227,8 +228,64 @@ export default function check_function_call(
 			node.params.splice(i, 1, new ValueNode(param.start, declaration_name, param_type));
 		}
 	}
+	// Check for parameter aliasing: struct params are passed by pointer.
+	// Track all struct params; when a mutable param (var/mov/ref) shares the
+	// same variable as any previously-seen struct param (const or mutable),
+	// flag aliasing — mutation can cause use-after-free or corrupted reads.
+	const self_param = func.params[0];
+	const self_is_struct =
+		self_param?.is_self_param &&
+		status.structs.find((s) => s.name === self_param.type.name && !s.is_simple_type);
+	const self_is_mutable =
+		self_is_struct && (self_param.type?.is_ref || self_param.declaration === "var");
+
+	const struct_param_seen: Map<string, string> = new Map();
+
+	// Track self separately — we check it against mutable params,
+	// but don't add it to the general map (avoids false positives on
+	// patterns like a.add_to(a, b) where self aliases with a const param).
+	let self_tracked_value: string | null = null;
+	if (self_value && self_value !== "?" && self_is_mutable) {
+		self_tracked_value = self_value;
+	}
+
+	for (let i = 0; i < node.params.length; i++) {
+		const param = node.params[i];
+		const func_param = func.params[i + self_offset];
+		if (!func_param) continue;
+
+		const is_struct = !!status.structs.find(
+			(s) => s.name === func_param.type.name && !s.is_simple_type,
+		);
+		if (!is_struct) continue;
+
+		const val = value_from_value_node(param);
+		if (val === "?") continue;
+
+		const is_mutable =
+			func_param.declaration === "var" || func_param.is_moved || func_param.type?.is_ref;
+
+		if (is_mutable) {
+			// Check self aliasing first
+			if (self_tracked_value === val) {
+				add_error(
+					status,
+					`Aliasing: '${val}' passed as both 'self' and '${func_param.name}' — mutable parameter aliasing can cause use-after-free`,
+					param.start,
+				);
+			} else if (struct_param_seen.has(val)) {
+				const prev = struct_param_seen.get(val)!;
+				add_error(
+					status,
+					`Aliasing: '${val}' passed as both '${prev}' and '${func_param.name}' — mutable parameter aliasing can cause use-after-free`,
+					param.start,
+				);
+			}
+		}
+
+		struct_param_seen.set(val, func_param.name);
+	}
 
 	status.stack.pop();
-
 	return true;
 }
