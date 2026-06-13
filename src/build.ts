@@ -30,6 +30,7 @@ export default function build(
 		scoped_declarations: [],
 		interpolate_string_counts: new Set(),
 		strings: new Map(),
+		float_literals: new Map(),
 		string_literal_names: new Set(),
 		audit: options.audit,
 	};
@@ -66,6 +67,12 @@ export default function build(
 			for (const [label, value] of status.strings) {
 				const escaped = value.replace(/\n/g, "\\n");
 				status.code += `${label}: .asciz ${escaped}\n`;
+			}
+		}
+		if (status.float_literals && status.float_literals.size > 0) {
+			status.code += "\n.p2align 2\n";
+			for (const [label, value] of status.float_literals) {
+				status.code += `${label}: .double ${value}\n`;
 			}
 		}
 		// Generate _string_interpolate_N helpers for aarch64

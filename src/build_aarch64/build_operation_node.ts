@@ -275,10 +275,17 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		is_float_type(node) || is_float_type(node.left_value) || is_float_type(node.right_value);
 
 	if (is_float && !is_comparison(node.op)) {
+		const need_float_spill = !is_simple(node.left_value);
 		build_float_operand(node.right_value, "d1", status);
 		if (!status.code.endsWith("\n")) status.code += "\n";
+		if (need_float_spill) {
+			status.code += `str d1, [sp, #-16]!\n`;
+		}
 		build_float_operand(node.left_value, "d0", status);
 		if (!status.code.endsWith("\n")) status.code += "\n";
+		if (need_float_spill) {
+			status.code += `ldr d1, [sp], #16\n`;
+		}
 		status.code += `${map_float_op(node.op)} d0, d0, d1\n`;
 		status.code += `fmov x0, d0\n`;
 		return;

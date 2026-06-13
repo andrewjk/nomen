@@ -91,12 +91,47 @@ export default function tokenize(input: string, preserve_space = false): Token[]
 					status.i += 1;
 				} else if (value === "+" || value === "-") {
 					// It might be a sign, include any numbers afterwards
-					for (let j = status.i + 1; j < input.length; j++) {
+					let j = status.i + 1;
+					for (; j < input.length; j++) {
 						if (!is_number_char(input, j)) {
-							value = input.substring(status.i, j);
-							status.i = j - 1;
 							break;
 						}
+					}
+					// Check for decimal part
+					if (
+						j < input.length &&
+						input[j] === "." &&
+						j + 1 < input.length &&
+						is_number_char(input, j + 1)
+					) {
+						j++;
+						for (; j < input.length; j++) {
+							if (!is_number_char(input, j)) {
+								break;
+							}
+						}
+						// Check for scientific notation
+						if (
+							j < input.length &&
+							(input[j] === "e" || input[j] === "E") &&
+							j + 1 < input.length &&
+							(is_number_char(input, j + 1) ||
+								((input[j + 1] === "+" || input[j + 1] === "-") &&
+									j + 2 < input.length &&
+									is_number_char(input, j + 2)))
+						) {
+							j++;
+							if (input[j] === "+" || input[j] === "-") j++;
+							for (; j < input.length; j++) {
+								if (!is_number_char(input, j)) {
+									break;
+								}
+							}
+						}
+					}
+					if (j > status.i + 1) {
+						value = input.substring(status.i, j);
+						status.i = j - 1;
 					}
 				} else if (
 					value === "." &&
@@ -105,14 +140,39 @@ export default function tokenize(input: string, preserve_space = false): Token[]
 				) {
 					// It's a float, add the decimal part to the previous token
 					const previous_token = status.tokens.at(-1)!;
+					let end = status.i + 1;
 					for (let j = status.i + 2; j < input.length; j++) {
 						if (!is_number_char(input, j)) {
-							previous_token.value += input.substring(status.i, j);
-							status.start = j;
-							status.i = j - 1;
+							end = j;
 							break;
 						}
+						end = j + 1;
 					}
+					// Check for scientific notation: e/E followed by optional +/- and digits
+					if (
+						end < input.length &&
+						(input[end] === "e" || input[end] === "E") &&
+						end + 1 < input.length &&
+						(is_number(input[end + 1]) ||
+							((input[end + 1] === "+" || input[end + 1] === "-") &&
+								end + 2 < input.length &&
+								is_number(input[end + 2])))
+					) {
+						let exp_end = end + 2;
+						if (input[end + 1] === "+" || input[end + 1] === "-") {
+							exp_end = end + 3;
+						}
+						for (let j = exp_end; j < input.length; j++) {
+							if (!is_number_char(input, j)) {
+								break;
+							}
+							exp_end = j + 1;
+						}
+						end = exp_end;
+					}
+					previous_token.value += input.substring(status.i, end);
+					status.start = end;
+					status.i = end - 1;
 					continue;
 				} else if (value === "`" && input.substring(status.i, status.i + 3) === "```") {
 					// It's raw C code -- process until the next ```
@@ -245,7 +305,10 @@ function is_word_char(input: string, i: number) {
 }
 
 function is_number(input: string) {
-	for (let i = 0; i < input.length; i++) {
+	let start = 0;
+	if (input[0] === "-" || input[0] === "+") start = 1;
+	if (start >= input.length) return false;
+	for (let i = start; i < input.length; i++) {
 		if (!is_number_char(input, i)) {
 			return false;
 		}

@@ -31,6 +31,7 @@ export default interface BuildStatus {
 	heap_class_arrays?: Map<string, number>;
 	function_return_type?: Type;
 	strings?: Map<string, string>;
+	float_literals?: Map<string, string>;
 	loop_labels?: { start: string; end: string; cleanup_depth?: number }[];
 	heap_cleanup_stack?: {
 		heap_strings: Set<string>;

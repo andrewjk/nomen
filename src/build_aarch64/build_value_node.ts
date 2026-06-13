@@ -14,6 +14,13 @@ function can_encode_as_mov(value: string): boolean {
 }
 
 function emit_immediate(reg: string, value: string, status: BuildStatus) {
+	if (value.includes(".")) {
+		const label = `_float_lit_${string_counter++}`;
+		status.float_literals!.set(label, value);
+		status.code += `adr ${reg}, ${label}\n`;
+		status.code += `ldr ${reg}, [${reg}]`;
+		return;
+	}
 	const num = parseInt(value, 10);
 	if (!isNaN(num) && can_encode_as_mov(value)) {
 		if (num >= 0 && num <= 65535) {
@@ -31,7 +38,7 @@ function emit_immediate(reg: string, value: string, status: BuildStatus) {
 function is_literal(value: string): boolean {
 	return (
 		/^(\+|-)*\d+$/.test(value) ||
-		/^(\+|-)*\d+.\d+$/.test(value) ||
+		/^(\+|-)*\d+.\d+([eE](\+|-)?\d+)?$/.test(value) ||
 		/^0x[0-9a-fA-F_]+$/.test(value) ||
 		/^0o[0-7_]+$/.test(value) ||
 		/^0b[01_]+$/.test(value) ||
@@ -173,14 +180,16 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 			status.code += `add x0, x29, #${offset}`;
 		} else {
 			const size =
-				type_name === "float"
-					? 4
-					: type_name === "uint8" ||
-						  type_name === "int8" ||
-						  type_name === "char" ||
-						  type_name === "bool"
-						? 1
-						: 8;
+				type_name === "uint8" ||
+				type_name === "int8" ||
+				type_name === "char" ||
+				type_name === "bool"
+					? 1
+					: type_name === "int16" || type_name === "uint16"
+						? 2
+						: type_name === "int32" || type_name === "uint32"
+							? 4
+							: 8;
 			const signed =
 				type_name.startsWith("int") ||
 				type_name === "float" ||
@@ -188,6 +197,8 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 				type_name === "float64";
 			if (size === 1) {
 				status.code += signed ? `ldrsb x0, [x29, #${offset}]` : `ldrb w0, [x29, #${offset}]`;
+			} else if (size === 2) {
+				status.code += signed ? `ldrsh x0, [x29, #${offset}]` : `ldrh w0, [x29, #${offset}]`;
 			} else if (size === 4) {
 				status.code += signed ? `ldrsw x0, [x29, #${offset}]` : `ldr w0, [x29, #${offset}]`;
 			} else {

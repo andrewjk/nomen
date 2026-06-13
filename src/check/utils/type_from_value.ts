@@ -62,7 +62,7 @@ export default function type_from_value(value: string, status: CheckStatus): Typ
 		return new Type("char", true);
 	} else if (/^(\+|-)*\d+$/.test(value)) {
 		return new Type("int", true);
-	} else if (/^(\+|-)*\d+.\d+$/.test(value)) {
+	} else if (/^(\+|-)*\d+.\d+([eE](\+|-)?\d+)?$/.test(value)) {
 		return new Type("float", true);
 	} else {
 		return new Type("");

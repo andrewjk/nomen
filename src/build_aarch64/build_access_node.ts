@@ -229,6 +229,14 @@ function get_param_reg(name: string, status: BuildStatus): string | undefined {
 	return status.function_param_regs?.get(name);
 }
 
+function is_constant_index(access_index: AccessIndexNode): boolean {
+	if (access_index.index.node_type === "value") {
+		const index_val = (access_index.index as ValueNode).value;
+		return /^(\+|-)*\d+$/.test(index_val);
+	}
+	return false;
+}
+
 function build_access_field(node: AccessNode, status: BuildStatus) {
 	const target_type = type_from_value_node(node.target);
 	const target_name =
@@ -427,6 +435,38 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 	const target_is_class_var =
 		node.target.node_type === "value" &&
 		!!status.structs.find((s) => s.name === target_type?.name && s.is_class);
+
+	const target_has_variable_index =
+		node.target.node_type === "access" &&
+		(node.target as AccessNode).access.node_type === "access_index" &&
+		!is_constant_index((node.target as AccessNode).access as AccessIndexNode);
+
+	if (target_has_variable_index) {
+		emit_address_of(node.target, status);
+		if (!status.code.endsWith("\n")) {
+			status.code += "\n";
+		}
+		const final_offset = get_field_offset(target_type?.name || "", access_field.name, status);
+		const field_type = access_field.type?.name || "";
+		const size = aarch64_size(field_type);
+		const signed =
+			field_type.startsWith("int") ||
+			field_type === "float" ||
+			field_type === "float32" ||
+			field_type === "float64";
+		if (size === 1) {
+			status.code += signed
+				? `ldrsb x0, [x0, #${final_offset}]\n`
+				: `ldrb w0, [x0, #${final_offset}]\n`;
+		} else if (size === 4) {
+			status.code += signed
+				? `ldrsw x0, [x0, #${final_offset}]\n`
+				: `ldr w0, [x0, #${final_offset}]\n`;
+		} else {
+			status.code += `ldr x0, [x0, #${final_offset}]\n`;
+		}
+		return;
+	}
 
 	if (target_is_class_var) {
 		const name = (node.target as ValueNode).value;

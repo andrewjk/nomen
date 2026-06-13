@@ -1,7 +1,6 @@
 import type BuildStatus from "../build/BuildStatus.ts";
 import type_from_value_node from "../build/utils/type_from_value_node.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
-import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessIndexNode from "../nodes/AccessIndexNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import AssignmentNode from "../nodes/AssignmentNode.ts";
@@ -9,6 +8,7 @@ import BaseNode from "../nodes/BaseNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
+import { emit_address_of } from "./build_access_node.ts";
 import build_node from "./build_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free } from "./utils/audit.ts";
@@ -79,7 +79,7 @@ function get_base_address(access: AccessNode, status: BuildStatus, reg: string) 
 			emit_var_address(status, reg, name);
 		}
 	} else {
-		build_node(access.target, status);
+		emit_address_of(access.target, status);
 		if (!status.code.endsWith("\n")) {
 			status.code += "\n";
 		}

@@ -29,6 +29,9 @@ export default function parse_function_call_parameter(
 	}
 
 	if (accept(",", status)) {
+		if (peek_current(status) === ")") {
+			return;
+		}
 		parse_function_call_parameter(node, status);
 	}
 }
