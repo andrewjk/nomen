@@ -1,2 +1,1 @@
-3 3 
-LEAK: 7 allocation(s)
+3 3 3 3 3 

@@ -12,7 +12,8 @@ pub struct BigInt {
             self.sign = -1
             v = 0 - v
         }
-        self.digits.alloc_int(4)
+        self.digits.grow_int(4)
+        self.digits.zero_int(self.digits.cap)
         self.digits.store_int(0, v)
         self.len = 1
         return self
@@ -537,9 +538,20 @@ pub struct BigInt {
             }
             self.len = self.len - 1
         }
-    }
 
-    // Knuth's Algorithm D for multi-limb division (TAOCP Vol 2, 4.3.1)
+        a0.digits.destroy()
+        a1.digits.destroy()
+        b0.digits.destroy()
+        b1.digits.destroy()
+        z0.digits.destroy()
+        z2.digits.destroy()
+        aa.digits.destroy()
+        bb.digits.destroy()
+        z1.digits.destroy()
+        s0.digits.destroy()
+        s1.digits.destroy()
+        s2.digits.destroy()
+    }
     // self = quotient, a = dividend, b = divisor, remainder = remainder
     // Uses remainder's internal buffer as working space
     pub func div = (self, BigInt a, BigInt b, var BigInt remainder, out BigInt) {

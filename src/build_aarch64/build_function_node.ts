@@ -315,8 +315,8 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		status.code += `add sp, sp, #${total_stack}\n`;
 	}
 
-	for (const reg of loop_regs_used) {
-		status.code += `ldr ${reg}, [sp], #16\n`;
+	for (let i = loop_regs_used.length - 1; i >= 0; i--) {
+		status.code += `ldr ${loop_regs_used[i]}, [sp], #16\n`;
 	}
 
 	for (let ci = callee_idx - 1; ci >= 0; ci--) {

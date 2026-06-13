@@ -261,10 +261,12 @@ pub struct Buffer {
         ```
     }
 
-    inline func destroy = () {
+    func destroy = () {
         ```
         #arch: c
         if (self->data) free((unsigned int*)(unsigned long long)self->data);
+        self->data = 0;
+        self->cap = 0;
         ```
         ```
         #arch: aarch64
@@ -272,6 +274,8 @@ pub struct Buffer {
         cbz x0, .Lbuffer_destroy_end
         bl _free
         .Lbuffer_destroy_end:
+        str xzr, [x19, #8]
+        str xzr, [x19, #16]
         ```
     }
 }
