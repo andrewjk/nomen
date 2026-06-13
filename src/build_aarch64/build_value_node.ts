@@ -7,6 +7,27 @@ export function reset_string_counter() {
 	string_counter = 0;
 }
 
+function can_encode_as_mov(value: string): boolean {
+	if (value.startsWith("-")) return value.length <= 7;
+	if (value.startsWith("+")) return value.length <= 6;
+	return value.length <= 5;
+}
+
+function emit_immediate(reg: string, value: string, status: BuildStatus) {
+	const num = parseInt(value, 10);
+	if (!isNaN(num) && can_encode_as_mov(value)) {
+		if (num >= 0 && num <= 65535) {
+			status.code += `mov ${reg}, #${value}`;
+		} else if (num < 0 && num >= -65536) {
+			status.code += `movn ${reg}, #${-num - 1}`;
+		} else {
+			status.code += `ldr ${reg}, =${value}`;
+		}
+	} else {
+		status.code += `ldr ${reg}, =${value}`;
+	}
+}
+
 function is_literal(value: string): boolean {
 	return (
 		/^(\+|-)*\d+$/.test(value) ||
@@ -104,13 +125,17 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 	}
 
 	if (is_literal(value)) {
-		status.code += `ldr x0, =${to_decimal(value)}`;
+		emit_immediate("x0", to_decimal(value), status);
 		return;
 	}
 
 	if (value.startsWith("'") && value.endsWith("'") && value.length === 3) {
 		const char_code = value.charCodeAt(1);
-		status.code += `ldr x0, =${char_code}`;
+		if (char_code <= 65535) {
+			status.code += `mov x0, #${char_code}`;
+		} else {
+			status.code += `ldr x0, =${char_code}`;
+		}
 		return;
 	}
 

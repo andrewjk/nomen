@@ -234,9 +234,14 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 			emit_var_address(status, "x3", list_name);
 		}
 		emit_var_load(status, "x1", idx_name, 8);
-		status.code += `mov x2, #${element_size}\n`;
-		status.code += `mul x1, x1, x2\n`;
-		status.code += `add x0, x3, x1\n`;
+		const shift = Math.log2(element_size);
+		if (Number.isInteger(shift) && shift > 0) {
+			status.code += `add x0, x3, x1, lsl #${shift}\n`;
+		} else {
+			status.code += `mov x2, #${element_size}\n`;
+			status.code += `mul x1, x1, x2\n`;
+			status.code += `add x0, x3, x1\n`;
+		}
 		if (struct_type) {
 			const item_offset = status.stack_offsets!.get(item_name);
 			if (item_offset !== undefined) {

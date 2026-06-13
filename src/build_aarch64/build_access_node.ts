@@ -79,9 +79,14 @@ export function emit_address_of(node: BaseNode, status: BuildStatus) {
 					status.code += "\n";
 				}
 				status.code += `mov x1, x0\n`;
-				status.code += `mov x2, #${element_size}\n`;
-				status.code += `mul x1, x1, x2\n`;
-				status.code += `add x0, x3, x1\n`;
+				const shift = Math.log2(element_size);
+				if (Number.isInteger(shift) && shift > 0) {
+					status.code += `add x0, x3, x1, lsl #${shift}\n`;
+				} else {
+					status.code += `mov x2, #${element_size}\n`;
+					status.code += `mul x1, x1, x2\n`;
+					status.code += `add x0, x3, x1\n`;
+				}
 			}
 		} else if (access.access.node_type === "access_field") {
 			const access_field = access.access as AccessFieldNode;
@@ -848,15 +853,32 @@ function build_access_index(node: AccessNode, access_index: AccessIndexNode, sta
 		status.code += "\n";
 	}
 	status.code += `mov x1, x0\n`;
-	status.code += `mov x2, #${element_size}\n`;
-	status.code += `mul x1, x1, x2\n`;
-	status.code += `add x0, x3, x1\n`;
-	if (element_size === 1) {
-		status.code += element_signed ? `ldrsb x0, [x0]\n` : `ldrb w0, [x0]\n`;
-	} else if (element_size === 4) {
-		status.code += element_signed ? `ldrsw x0, [x0]\n` : `ldr w0, [x0]\n`;
+	const shift = Math.log2(element_size);
+	if (Number.isInteger(shift) && shift > 0) {
+		if (element_size === 8) {
+			status.code += `ldr x0, [x3, x1, lsl #${shift}]\n`;
+		} else if (element_size === 4) {
+			status.code += element_signed
+				? `ldrsw x0, [x3, x1, lsl #${shift}]\n`
+				: `ldr w0, [x3, x1, lsl #${shift}]\n`;
+		} else if (element_size === 2) {
+			status.code += element_signed
+				? `ldrsh x0, [x3, x1, lsl #${shift}]\n`
+				: `ldrh w0, [x3, x1, lsl #${shift}]\n`;
+		} else {
+			status.code += `ldrb w0, [x3, x1, lsl #${shift}]\n`;
+		}
+	} else if (element_size === 1) {
+		status.code += element_signed ? `ldrsb x0, [x3, x1]\n` : `ldrb w0, [x3, x1]\n`;
 	} else {
-		status.code += `ldr x0, [x0]\n`;
+		status.code += `mov x2, #${element_size}\n`;
+		status.code += `mul x1, x1, x2\n`;
+		status.code += `add x0, x3, x1\n`;
+		if (element_size === 4) {
+			status.code += element_signed ? `ldrsw x0, [x0]\n` : `ldr w0, [x0]\n`;
+		} else {
+			status.code += `ldr x0, [x0]\n`;
+		}
 	}
 }
 

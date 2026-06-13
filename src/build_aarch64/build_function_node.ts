@@ -11,6 +11,99 @@ export function reset_label_counter() {
 	label_counter = 0;
 }
 
+function peephole_optimize(code: string): string {
+	const conditions: Record<string, string> = {
+		eq: "ne",
+		ne: "eq",
+		gt: "le",
+		ge: "lt",
+		lt: "ge",
+		le: "gt",
+		hi: "ls",
+		hs: "lo",
+		lo: "hs",
+		ls: "hi",
+	};
+
+	const lines = code.split("\n");
+
+	// Pass 1: cset + cmp #0 + b.eq/b.ne → direct conditional branch
+	{
+		const out: string[] = [];
+		for (let i = 0; i < lines.length; i++) {
+			if (lines[i].trim() === "") {
+				out.push(lines[i]);
+				continue;
+			}
+			const cset_match = lines[i].match(/^(\s*)cset x0, (\w+)\s*$/);
+			if (cset_match) {
+				let j = i + 1;
+				while (j < lines.length && lines[j].trim() === "") j++;
+				if (j < lines.length) {
+					const cmp_match = lines[j].match(/^(\s*)cmp x0, #0\s*$/);
+					if (cmp_match) {
+						let k = j + 1;
+						while (k < lines.length && lines[k].trim() === "") k++;
+						if (k < lines.length) {
+							const branch_match = lines[k].match(/^(\s*)b(eq|ne)\s+(\S+)\s*$/);
+							if (branch_match) {
+								const indent = cset_match[1];
+								const cond = cset_match[2];
+								const branch_cond = branch_match[2];
+								const label = branch_match[3];
+								if (branch_cond === "eq") {
+									out.push(`${indent}b.${conditions[cond] || "ne"} ${label}`);
+								} else {
+									out.push(`${indent}b.${cond} ${label}`);
+								}
+								i = k;
+								continue;
+							}
+						}
+					}
+				}
+			}
+			out.push(lines[i]);
+		}
+		lines.length = 0;
+		lines.push(...out);
+	}
+
+	// Pass 2: eliminate str x3, [sp, #-16]! ... ldr x3, [sp], #16 when safe
+	// Disabled - causes incorrect code generation for some patterns
+	// {
+	// 	const out: string[] = [];
+	// 	for (let i = 0; i < lines.length; i++) {
+	// 		const push_match = lines[i].match(/^(\s*)str x3, \[sp, #-16\]!\s*$/);
+	// 		if (push_match) {
+	// 			let j = i + 1;
+	// 			let safe = true;
+	// 			while (j < lines.length && !/^(\s*)ldr x3, \[sp\], #16\s*$/.test(lines[j])) {
+	// 				const trimmed = lines[j].trim();
+	// 				if (trimmed === "" || trimmed.startsWith("//")) {
+	// 					j++;
+	// 					continue;
+	// 				}
+	// 				if (/\bx3\b/.test(trimmed) || /\bsp\b/.test(trimmed)) {
+	// 					safe = false;
+	// 					break;
+	// 				}
+	// 				j++;
+	// 			}
+	// 			if (safe && j < lines.length && /^(\s*)ldr x3, \[sp\], #16\s*$/.test(lines[j])) {
+	// 				i = j;
+	// 				continue;
+	// 			}
+	// 		}
+	// 		out.push(lines[i]);
+	// 	}
+	// 	lines.length = 0;
+	// 	lines.push(...out);
+	// }
+
+	return lines.join("\n");
+}
+
 export default function build_function_node(node: FunctionNode, status: BuildStatus) {
 	if (node.is_generic) return;
 
@@ -232,6 +325,8 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 
 	status.code += `ldp x29, x30, [sp], #16\n`;
 	status.code += `ret\n`;
+
+	status.code = peephole_optimize(status.code);
 
 	if (is_nested) {
 		if (!status.nested_functions) status.nested_functions = "";

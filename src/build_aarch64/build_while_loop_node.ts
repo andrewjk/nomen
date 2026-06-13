@@ -121,12 +121,17 @@ export default function build_while_loop_node(node: WhileLoopNode, status: Build
 
 	status.code += `${start_label}:\n`;
 
-	build_node(node.condition, status);
-	if (!status.code.endsWith("\n")) {
-		status.code += "\n";
+	const is_always_true =
+		node.condition.node_type === "value" && (node.condition as any).value === "true";
+
+	if (!is_always_true) {
+		build_node(node.condition, status);
+		if (!status.code.endsWith("\n")) {
+			status.code += "\n";
+		}
+		status.code += `cmp x0, #0\n`;
+		status.code += `beq ${end_label}\n`;
 	}
-	status.code += `cmp x0, #0\n`;
-	status.code += `beq ${end_label}\n`;
 
 	build_block_node(node, status);
 

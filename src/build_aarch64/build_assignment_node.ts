@@ -539,9 +539,16 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 				status.code += "\n";
 			}
 			status.code += `mov x1, x0\n`;
-			status.code += `mov x2, #${element_size}\n`;
-			status.code += `mul x1, x1, x2\n`;
-			status.code += `add x3, x3, x1\n`;
+			const shift = Math.log2(element_size);
+			if (Number.isInteger(shift) && shift > 0) {
+				status.code += `add x3, x3, x1, lsl #${shift}\n`;
+			} else if (element_size === 1) {
+				// no shift needed, x1 is byte offset
+			} else {
+				status.code += `mov x2, #${element_size}\n`;
+				status.code += `mul x1, x1, x2\n`;
+				status.code += `add x3, x3, x1\n`;
+			}
 
 			status.code += `str x3, [sp, #-16]!\n`;
 

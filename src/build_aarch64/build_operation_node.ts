@@ -81,16 +81,24 @@ function map_op(op: string, unsigned: boolean = false): string {
 	}
 }
 
+function emit_immediate(target_reg: string, value: string, status: BuildStatus) {
+	const num = parseInt(value, 10);
+	if (!isNaN(num) && num >= 0 && num <= 65535) {
+		status.code += `mov ${target_reg}, #${value}`;
+	} else {
+		status.code += `ldr ${target_reg}, =${value}`;
+	}
+}
+
 function build_operand(node: BaseNode, target_reg: string, status: BuildStatus) {
 	if (node.node_type === "value") {
 		const value = (node as ValueNode).value.replace("self", "_self");
 		if (value === "true" || value === "false") {
-			const num = value === "true" ? "1" : "0";
-			status.code += `ldr ${target_reg}, =${num}`;
+			emit_immediate(target_reg, value === "true" ? "1" : "0", status);
 			return;
 		}
 		if (/^(\+|-)*\d+$/.test(value) || /^(\+|-)*\d+.\d+$/.test(value)) {
-			status.code += `ldr ${target_reg}, =${value}`;
+			emit_immediate(target_reg, value, status);
 			return;
 		}
 		const paramReg = status.function_param_regs?.get(value);
@@ -104,7 +112,11 @@ function build_operand(node: BaseNode, target_reg: string, status: BuildStatus) 
 		}
 		if (value.startsWith("'") && value.endsWith("'") && value.length === 3) {
 			const char_code = value.charCodeAt(1);
-			status.code += `ldr ${target_reg}, =${char_code}`;
+			if (char_code <= 65535) {
+				status.code += `mov ${target_reg}, #${char_code}`;
+			} else {
+				status.code += `ldr ${target_reg}, =${char_code}`;
+			}
 			return;
 		}
 		if (value.startsWith('"')) {
