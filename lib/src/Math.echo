@@ -24,4 +24,28 @@ pub struct Math {
         ```
         return "from_c"
     }
+
+    pub func sqrt = (float x, out float) {
+        ```
+        #arch: aarch64
+        fmov d0, x0
+        fsqrt d0, d0
+        fmov x0, d0
+        ```
+        return "from_c"
+    }
+
+    pub func log = (float x, out float) {
+        ```
+        #arch: c
+        return log(x);
+        ```
+        ```
+        #arch: aarch64
+        fmov d0, x0
+        bl _log
+        fmov x0, d0
+        ```
+        return "from_c"
+    }
 }
