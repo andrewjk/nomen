@@ -261,6 +261,52 @@ pub struct Buffer {
         ```
     }
 
+    func alloc_float = (ref self, int size) {
+        ```
+        #arch: c
+        self->cap = size;
+        self->data = (unsigned long long)(double*)calloc(size, sizeof(double));
+        ```
+        ```
+        #arch: aarch64
+        str x1, [x19, #16]
+        mov x0, x1
+        mov x1, #8
+        bl _calloc
+        str x0, [x19, #8]
+        ```
+    }
+
+    inline func load_float = (self, int i, out float) {
+        ```
+        #arch: c
+        return ((double*)(unsigned long long)self->data)[i];
+        ```
+        ```
+        #arch: aarch64
+        ldr x0, [x19, #8]
+        lsl x1, x1, #3
+        add x0, x0, x1
+        ldr x0, [x0]
+        b .return_Buffer_load_float
+        ```
+        return 0.0
+    }
+
+    inline func store_float = (ref self, int i, float val) {
+        ```
+        #arch: c
+        ((double*)(unsigned long long)self->data)[i] = val;
+        ```
+        ```
+        #arch: aarch64
+        ldr x0, [x19, #8]
+        lsl x3, x1, #3
+        add x0, x0, x3
+        str x2, [x0]
+        ```
+    }
+
     func destroy = () {
         ```
         #arch: c

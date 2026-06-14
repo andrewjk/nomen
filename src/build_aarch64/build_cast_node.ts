@@ -33,7 +33,23 @@ export default function build_cast_node(node: CastNode, status: BuildStatus) {
 	const fs = aarch64_size(from);
 	const ts = aarch64_size(to);
 
-	if (from === to || (fs === ts && from !== "float" && from !== "float32" && from !== "float64")) {
+	const is_from_float = from === "float" || from === "float32" || from === "float64";
+	const is_to_float = to === "float" || to === "float32" || to === "float64";
+
+	if (is_from_float && !is_to_float) {
+		status.code += `fcvtzs x0, d0\n`;
+		status.code += `fmov d0, x0\n`;
+		return;
+	}
+
+	if (!is_from_float && is_to_float) {
+		status.code += `fmov d0, x0\n`;
+		status.code += `scvtf d0, d0\n`;
+		status.code += `fmov x0, d0\n`;
+		return;
+	}
+
+	if (from === to || (fs === ts && !is_from_float)) {
 		return;
 	}
 
