@@ -1,0 +1,139 @@
+import Console
+import BigInt
+import int
+import float
+import Math
+import Stringable
+
+const float ln10 = 2.3025850929940455
+const float two_pi = 6.283185307179586
+
+func test_k = (int n, int k, out bool) {
+	if k < 0 {
+		return false
+	}
+	var float fk = k as float
+	var float fn = n as float
+	var float ln_k_fact = fk * (Math.log(fk) - 1.0) + 0.5 * Math.log(two_pi)
+	var float log10_k_fact = ln_k_fact / ln10
+	return log10_k_fact >= fn + 50.0
+}
+
+func binary_search = (int n, out int) {
+	var int a = 0
+	var int b = 1
+	while test_k(n, b) == false {
+		a = b
+		b = b * 2
+	}
+	while b - a > 1 {
+		var int m = (a + b) / 2
+		if test_k(n, m) {
+			b = m
+		} else {
+			a = m
+		}
+	}
+	return b
+}
+
+pub func main = () {
+	var int n = 27
+	var int k = binary_search(n)
+
+	var BigInt ten = BigInt()
+	ten = ten.new(10)
+	var BigInt tmp = BigInt()
+	var BigInt scratch = BigInt()
+	var BigInt one = BigInt()
+	one = one.new(1)
+
+	// Use extra precision: compute with n+10 digits, then truncate
+	var int precision = n + 10
+
+	// Compute 10^(precision-1)
+	var BigInt power = BigInt()
+	power = power.new(1)
+	var int exp = 0
+	while exp < precision - 1 {
+		tmp.mul_to(power, ten, scratch)
+		power.copy_from(tmp)
+		exp = exp + 1
+	}
+
+	// e = sum_{i=0}^{k-1} 1/i!
+	// answer = sum_{i=0}^{k-1} 10^(precision-1) / i!
+	var BigInt answer = BigInt()
+	answer.copy_from(power)
+	var BigInt term = BigInt()
+	term.copy_from(power)
+
+	var int i = 1
+	while i <= k - 1 {
+		var BigInt ii = BigInt()
+		ii = ii.new(i)
+		var BigInt rem = BigInt()
+		var BigInt newterm = BigInt()
+		newterm = newterm.div(term, ii, rem)
+		term.copy_from(newterm)
+
+		tmp.add_to(answer, term)
+		answer.copy_from(tmp)
+
+		if term.cmp(one) < 0 {
+			break
+		}
+		i = i + 1
+	}
+
+	// Truncate to n digits: divide by 10^(precision - n)
+	var int trim = precision - n
+	var BigInt divisor = BigInt()
+	divisor = divisor.new(1)
+	exp = 0
+	while exp < trim {
+		tmp.mul_to(divisor, ten, scratch)
+		divisor.copy_from(tmp)
+		exp = exp + 1
+	}
+	var BigInt trim_rem = BigInt()
+	var BigInt trimmed = BigInt()
+	trimmed = trimmed.div(answer, divisor, trim_rem)
+
+	// Extract digits from trimmed answer
+	var BigInt result = BigInt()
+	result.copy_from(trimmed)
+	var BigInt q_ten = BigInt()
+	q_ten = q_ten.new(10)
+	var BigInt rem = BigInt()
+	var int[64] digits
+	var int digit_count = 0
+
+	while result.cmp(one) >= 0 {
+		rem = rem.new(0)
+		var BigInt qq = BigInt()
+		qq = qq.div(result, q_ten, rem)
+		digits[digit_count] = rem.to_digit()
+		digit_count = digit_count + 1
+		result.copy_from(qq)
+	}
+
+	var int pos = digit_count - 1
+	while pos >= 0 {
+		Console.write(digits[pos].to_string())
+		if pos == digit_count - 1 && digit_count > 1 {
+			Console.write(".")
+		}
+		pos = pos - 1
+		if (digit_count - 1 - pos) % 10 == 0 && pos >= 0 {
+			Console.write("\t:")
+			Console.write((digit_count - 1 - pos).to_string())
+			Console.write("\n")
+		}
+	}
+	if (digit_count - 1 - pos) % 10 != 0 {
+		Console.write("\t:")
+		Console.write(digit_count.to_string())
+	}
+	Console.write("\n")
+}

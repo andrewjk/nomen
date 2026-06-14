@@ -12,9 +12,9 @@ const Pair = struct {
     }
 };
 
-pub fn main() !void {
-    const stdout = std.io.getStdOut().writer();
-    const n = try get_n();
+pub fn main(init: std.process.Init) !void {
+    var buf: [128]u8 = undefined;
+    const n = try get_n(init);
     const k = binary_search(n);
     var pair = try sum_terms(0, k - 1);
     defer pair.deinit();
@@ -44,9 +44,11 @@ pub fn main() !void {
             j += 1;
         }
         if (i + 10 <= n_usize) {
-            try stdout.print("{s}\t:{d}\n", .{ sb, i + 10 });
+            const msg = std.fmt.bufPrint(&buf, "{s}\t:{d}\n", .{ sb, i + 10 }) catch unreachable;
+            _ = std.c.write(1, msg.ptr, msg.len);
         } else {
-            try stdout.print("{s}\t:{d}\n", .{ sb, n });
+            const msg = std.fmt.bufPrint(&buf, "{s}\t:{d}\n", .{ sb, n }) catch unreachable;
+            _ = std.c.write(1, msg.ptr, msg.len);
         }
         i += 10;
     }
@@ -106,12 +108,10 @@ fn test_k(n: i32, k: i32) bool {
     return log_10_k_factorial >= float_n + 50.0;
 }
 
-fn get_n() !i32 {
-    const args = try std.process.argsAlloc(global_allocator);
-    defer std.process.argsFree(global_allocator, args);
-    if (args.len > 1) {
-        return try std.fmt.parseInt(i32, args[1], 10);
-    } else {
-        return 27;
-    }
+fn get_n(init: std.process.Init) !i32 {
+    var arg_iter = try std.process.Args.iterateAllocator(init.minimal.args, init.gpa);
+    defer arg_iter.deinit();
+    _ = arg_iter.skip();
+    const arg = arg_iter.next() orelse return 27;
+    return try std.fmt.parseInt(i32, arg, 10);
 }

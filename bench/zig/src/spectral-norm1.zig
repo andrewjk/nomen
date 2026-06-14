@@ -35,9 +35,9 @@ fn eval_ata_times_u(atau: []f64, u: []const f64, scratch: []f64) void {
     eval_a_times_u(true, atau, scratch);
 }
 
-pub fn main() !void {
-    const stdout = std.io.getStdOut().writer();
-    const n = try get_n();
+pub fn main(init: std.process.Init) !void {
+    var buf: [64]u8 = undefined;
+    const n = try get_n(init);
 
     const u = try global_allocator.alloc(f64, n);
     const v = try global_allocator.alloc(f64, n);
@@ -62,15 +62,14 @@ pub fn main() !void {
         vv += v[i] * v[i];
     }
 
-    try stdout.print("{d:.9}\n", .{std.math.sqrt(vbv / vv)});
+    const msg = std.fmt.bufPrint(&buf, "{d:.9}\n", .{std.math.sqrt(vbv / vv)}) catch unreachable;
+    _ = std.c.write(1, msg.ptr, msg.len);
 }
 
-fn get_n() !usize {
-    const args = try std.process.argsAlloc(global_allocator);
-    defer std.process.argsFree(global_allocator, args);
-    if (args.len > 1) {
-        return try std.fmt.parseInt(usize, args[1], 10);
-    } else {
-        return 100;
-    }
+fn get_n(init: std.process.Init) !usize {
+    var arg_iter = try std.process.Args.iterateAllocator(init.minimal.args, init.gpa);
+    defer arg_iter.deinit();
+    _ = arg_iter.skip();
+    const arg = arg_iter.next() orelse return 100;
+    return try std.fmt.parseInt(usize, arg, 10);
 }

@@ -1,10 +1,7 @@
 // From https://github.com/tiehuis/zig-benchmarks-game/blob/master/src/n-body.zig
 
 const std = @import("std");
-const builtin = @import("builtin");
 const math = std.math;
-
-const global_allocator = std.heap.c_allocator;
 
 const solar_mass = 4.0 * math.pi * math.pi;
 const year = 365.24;
@@ -92,18 +89,8 @@ fn offset_momentum(bodies: []Planet) void {
 }
 
 const solar_bodies = [_]Planet{
-    // Sun
-    Planet{
-        .x = 0.0,
-        .y = 0.0,
-        .z = 0.0,
-        .vx = 0.0,
-        .vy = 0.0,
-        .vz = 0.0,
-        .mass = solar_mass,
-    },
-    // Jupiter
-    Planet{
+    .{ .x = 0.0, .y = 0.0, .z = 0.0, .vx = 0.0, .vy = 0.0, .vz = 0.0, .mass = solar_mass },
+    .{
         .x = 4.84143144246472090e+00,
         .y = -1.16032004402742839e+00,
         .z = -1.03622044471123109e-01,
@@ -112,8 +99,7 @@ const solar_bodies = [_]Planet{
         .vz = -6.90460016972063023e-05 * year,
         .mass = 9.54791938424326609e-04 * solar_mass,
     },
-    // Saturn
-    Planet{
+    .{
         .x = 8.34336671824457987e+00,
         .y = 4.12479856412430479e+00,
         .z = -4.03523417114321381e-01,
@@ -122,8 +108,7 @@ const solar_bodies = [_]Planet{
         .vz = 2.30417297573763929e-05 * year,
         .mass = 2.85885980666130812e-04 * solar_mass,
     },
-    // Uranus
-    Planet{
+    .{
         .x = 1.28943695621391310e+01,
         .y = -1.51111514016986312e+01,
         .z = -2.23307578892655734e-01,
@@ -132,8 +117,7 @@ const solar_bodies = [_]Planet{
         .vz = -2.96589568540237556e-05 * year,
         .mass = 4.36624404335156298e-05 * solar_mass,
     },
-    // Neptune
-    Planet{
+    .{
         .x = 1.53796971148509165e+01,
         .y = -2.59193146099879641e+01,
         .z = 1.79258772950371181e-01,
@@ -144,27 +128,27 @@ const solar_bodies = [_]Planet{
     },
 };
 
-var buffer: [32]u8 = undefined;
-var fixed_allocator = std.heap.FixedBufferAllocator.init(buffer[0..]);
-var allocator = &fixed_allocator.allocator;
+var fmt_buf: [64]u8 = undefined;
 
-pub fn main() !void {
-    const stdout = std.io.getStdOut().writer();
-    const n = try get_n();
+pub fn main(init: std.process.Init) !void {
+    const n = try getN(init);
     var bodies = solar_bodies;
 
     offset_momentum(bodies[0..]);
     var ret = energy(bodies[0..]);
-    try stdout.print("{d:.9}\n", .{ret});
+    var msg = std.fmt.bufPrint(&fmt_buf, "{d:.9}\n", .{ret}) catch unreachable;
+    _ = std.c.write(1, msg.ptr, msg.len);
 
     advance(bodies[0..], 0.01, n);
     ret = energy(bodies[0..]);
-    try stdout.print("{d:.9}\n", .{ret});
+    msg = std.fmt.bufPrint(&fmt_buf, "{d:.9}\n", .{ret}) catch unreachable;
+    _ = std.c.write(1, msg.ptr, msg.len);
 }
 
-fn get_n() !usize {
-    var arg_it = std.process.args();
-    _ = arg_it.skip();
-    const arg = arg_it.next() orelse return 1000;
+fn getN(init: std.process.Init) !usize {
+    var arg_iter = try std.process.Args.iterateAllocator(init.minimal.args, init.gpa);
+    defer arg_iter.deinit();
+    _ = arg_iter.skip();
+    const arg = arg_iter.next() orelse return 1000;
     return try std.fmt.parseInt(usize, arg, 10);
 }

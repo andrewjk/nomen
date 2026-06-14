@@ -1,0 +1,73 @@
+import Console
+import Buffer
+import float
+import Stringable
+import Math
+
+func eval_a = (int i, int j, out float) {
+	var int denom = (i + j) * (i + j + 1) / 2 + i + 1
+	return 1.0 / (denom as float)
+}
+
+func eval_a_times_u = (ref Buffer au, ref Buffer u, int n, bool transpose) {
+	var int i = 0
+	while i < n {
+		var float a = 0.0
+		var int j = 0
+		while j < n {
+			var float coeff = 0.0
+			if transpose {
+				coeff = eval_a(j, i)
+			} else {
+				coeff = eval_a(i, j)
+			}
+			a = a + coeff * u.load_float(j)
+			j = j + 1
+		}
+		au.store_float(i, a)
+		i = i + 1
+	}
+}
+
+func eval_ata_times_u = (ref Buffer atau, ref Buffer u, ref Buffer scratch, int n) {
+	eval_a_times_u(ref scratch, ref u, n, false)
+	eval_a_times_u(ref atau, ref scratch, n, true)
+}
+
+pub func main = () {
+	var int n = 100
+
+	var Buffer u = Buffer()
+	var Buffer v = Buffer()
+	var Buffer scratch = Buffer()
+	u.alloc_float(n)
+	v.alloc_float(n)
+	scratch.alloc_float(n)
+
+	var int i = 0
+	while i < n {
+		u.store_float(i, 1.0)
+		v.store_float(i, 1.0)
+		i = i + 1
+	}
+
+	i = 0
+	while i < 10 {
+		eval_ata_times_u(ref v, ref u, ref scratch, n)
+		eval_ata_times_u(ref u, ref v, ref scratch, n)
+		i = i + 1
+	}
+
+	var float vbv = 0.0
+	var float vv = 0.0
+	i = 0
+	while i < n {
+		vbv = vbv + u.load_float(i) * v.load_float(i)
+		vv = vv + v.load_float(i) * v.load_float(i)
+		i = i + 1
+	}
+
+	var float result = Math.sqrt(vbv / vv)
+	Console.write(result.to_string())
+	Console.write("\n")
+}

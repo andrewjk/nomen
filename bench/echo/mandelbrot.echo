@@ -1,0 +1,59 @@
+import Console
+import float
+import Stringable
+import int
+
+func mbrot = (float cr, float ci, out int) {
+	var float zr = 0.0
+	var float zi = 0.0
+	var float tr = 0.0
+	var float ti = 0.0
+	var int outer = 0
+	while outer < 10 {
+		var int inner = 0
+		while inner < 5 {
+			zi = (zr + zr) * zi + ci
+			zr = tr - ti + cr
+			tr = zr * zr
+			ti = zi * zi
+			inner = inner + 1
+		}
+		if tr + ti > 4.0 {
+			return 0
+		}
+		outer = outer + 1
+	}
+	return 1
+}
+
+pub func main = () {
+	var int n = 200
+	var int size = (n + 7) / 8 * 8
+	var int chunk_size = size / 8
+	var float inv = 2.0 / (size as float)
+
+	var int checksum = 0
+	var int y = 0
+	while y < size {
+		var float ci = (y as float) * inv - 1.0
+		var int x = 0
+		while x < chunk_size {
+			var int byte_val = 0
+			var int bit = 0
+			while bit < 8 {
+				var int xi = x * 8 + bit
+				var float cr = (xi as float) * inv - 1.5
+				var int r = mbrot(cr, ci)
+				if r == 1 {
+					byte_val = byte_val + (128 >> bit)
+				}
+				bit = bit + 1
+			}
+			checksum = checksum + byte_val
+			x = x + 1
+		}
+		y = y + 1
+	}
+
+	Console.write("checksum \{checksum}\n")
+}

@@ -147,6 +147,22 @@ compile_echo nsieve 4 "var int n = 4" && echo "  echo/nsieve OK" || echo "  echo
 compile_go nsieve 2>/dev/null && echo "  go/nsieve OK" || echo "  go/nsieve FAIL (expected)"
 compile_zig nsieve "$BENCH_DIR/zig/src/nsieve1.zig" && echo "  zig/nsieve OK" || echo "  zig/nsieve SKIP"
 
+compile_echo nbody $N "var int n = 1000" && echo "  echo/nbody OK" || echo "  echo/nbody FAIL"
+compile_go nbody && echo "  go/nbody OK" || echo "  go/nbody FAIL"
+compile_zig nbody "$BENCH_DIR/zig/src/nbody1.zig" && echo "  zig/nbody OK" || echo "  zig/nbody SKIP"
+
+compile_echo spectral-norm 100 "var int n = 100" && echo "  echo/spectral-norm OK" || echo "  echo/spectral-norm FAIL"
+compile_go spectral-norm && echo "  go/spectral-norm OK" || echo "  go/spectral-norm FAIL"
+compile_zig spectral-norm "$BENCH_DIR/zig/src/spectral-norm1.zig" && echo "  zig/spectral-norm OK" || echo "  zig/spectral-norm SKIP"
+
+compile_echo mandelbrot 200 "var int n = 200" && echo "  echo/mandelbrot OK" || echo "  echo/mandelbrot FAIL"
+compile_go mandelbrot && echo "  go/mandelbrot OK" || echo "  go/mandelbrot FAIL"
+compile_zig mandelbrot "$BENCH_DIR/zig/src/mandelbrot1.zig" && echo "  zig/mandelbrot OK" || echo "  zig/mandelbrot SKIP"
+
+compile_echo edigits 27 "var int n = 27" && echo "  echo/edigits OK" || echo "  echo/edigits FAIL"
+compile_go edigits && echo "  go/edigits OK" || echo "  go/edigits FAIL"
+compile_zig edigits "$BENCH_DIR/zig/src/edigits1.zig" && echo "  zig/edigits OK" || echo "  zig/edigits SKIP"
+
 echo ""
 
 # ── Run benchmarks (compile times measured separately) ─────────────────────────
@@ -235,6 +251,10 @@ run_one "fannkuch-redux(n=10)" fannkuch-redux 10
 run_one "binarytrees(n=15)" binarytrees 15
 run_one "merkletrees(n=15)" merkletrees 15
 run_one "nsieve(n=4)" nsieve 4
+run_one "nbody(n=$N)" nbody $N
+run_one "spectral-norm(n=100)" spectral-norm 100
+run_one "mandelbrot(n=200)" mandelbrot 200
+run_one "edigits(n=27)" edigits 27
 
 # ── Summary ───────────────────────────────────────────────────────────────────
 
