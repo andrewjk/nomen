@@ -21,10 +21,7 @@ function find_var_size(name: string, status: BuildStatus): number {
 }
 
 export default function build_return_node(node: ReturnNode, status: BuildStatus) {
-	if (
-		node.from_c ||
-		(node.value?.node_type === "value" && (node.value as any).value === '"from_c"')
-	) {
+	if (node.from_inline) {
 		return;
 	}
 

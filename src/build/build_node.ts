@@ -161,7 +161,7 @@ export default function build_node(node: BaseNode, status: BuildStatus, with_sem
 			break;
 		}
 		case "return": {
-			if ((node as ReturnNode).from_c) {
+			if ((node as ReturnNode).from_inline) {
 				with_semicolon = false;
 			} else {
 				build_return_node(node as ReturnNode, status);

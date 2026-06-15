@@ -38,6 +38,5 @@ pub struct float: Stringable {
         .p2align 2
         .Lend_float_to_string:
         ```
-        return "from_c"
     }
 }

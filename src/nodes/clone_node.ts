@@ -156,7 +156,7 @@ export default function clone_node(node: BaseNode): BaseNode {
 				n.value ? clone_node(n.value) : null,
 				n.type ? clone_type(n.type) : undefined,
 			);
-			c.from_c = n.from_c;
+			c.from_inline = n.from_inline;
 			c.allocations = n.allocations?.map(clone_node);
 			return c;
 		}

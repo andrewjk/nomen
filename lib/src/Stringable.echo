@@ -1,6 +1,6 @@
 
 pub trait Stringable {
     func to_string = (self, out string) {
-        return "from_c"
+        return ""
     }
 }

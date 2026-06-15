@@ -5,7 +5,7 @@ export default class ReturnNode extends BaseNode {
 	value: BaseNode | null;
 	type: Type;
 
-	from_c?: boolean;
+	from_inline?: boolean;
 
 	constructor(start: number, value: BaseNode | null, type?: Type) {
 		super("return", start);

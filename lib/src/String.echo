@@ -9,6 +9,5 @@ pub struct string: Stringable {
         #arch: aarch64
         mov x0, x19
         ```
-        return "from_c"
     }
 }

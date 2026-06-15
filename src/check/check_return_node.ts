@@ -70,20 +70,16 @@ export default function check_return_node(ret: ReturnNode, status: CheckStatus) 
 			if (func.return_type.name !== "?") {
 				const return_type = type_from_value_node(ret.value, status);
 				const return_value = value_from_value_node(ret.value);
-				if (return_value === '"from_c"') {
-					ret.from_c = true;
-				} else {
-					const error_pos = ret.value.node_type === "grouped" ? ret.start + 2 : ret.value.start;
-					check_type_and_value_match(
-						func.return_type,
-						return_type,
-						return_value,
-						status,
-						error_pos,
-						"return",
-					);
-					func.return_type.is_static = return_type.is_static;
-				}
+				const error_pos = ret.value.node_type === "grouped" ? ret.start + 2 : ret.value.start;
+				check_type_and_value_match(
+					func.return_type,
+					return_type,
+					return_value,
+					status,
+					error_pos,
+					"return",
+				);
+				func.return_type.is_static = return_type.is_static;
 			}
 		} else {
 			func.return_type = ret.type;

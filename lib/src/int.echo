@@ -37,6 +37,5 @@ pub struct int: Stringable {
         .p2align 2
         .Lend_int_to_string:
         ```
-        return "from_c"
     }
 }

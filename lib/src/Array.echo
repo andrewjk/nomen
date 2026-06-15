@@ -10,7 +10,6 @@ pub struct Array {
         memcpy(&result[self.length], other, other->length * sizeof(int));
         return result;
         ```
-        return "from_c"
     }
 
     pub func mul = (self, int other, out Array) {
@@ -23,6 +22,5 @@ pub struct Array {
         }
         return result;
         ```
-        return "from_c"
     }
 }

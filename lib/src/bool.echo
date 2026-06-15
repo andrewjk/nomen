@@ -55,6 +55,5 @@ pub struct bool: Stringable {
         .p2align 2
         .Lend_bool_to_string:
         ```
-        return "from_c"
     }
 }
