@@ -90,6 +90,9 @@ export default function build_inline_method(
 	status.function_return_label = return_label;
 
 	status.scoped_declarations = [];
+	status.function_return_type = undefined;
+	status.struct_return_buffer = undefined;
+	status.return_buffer_stack_offset = undefined;
 
 	if (needs_x19) {
 		status.code += `str x19, [sp, #-16]!\n`;
@@ -127,8 +130,17 @@ export default function build_inline_method(
 			status.code += `mov ${saved_reg}, ${param_regs[i]}\n`;
 			status.function_param_regs.set(param.name, saved_reg);
 		} else if (!is_struct_type) {
-			status.code += `str ${param_regs[i]}, [sp, #-16]!\n`;
-			saved_stack_slots.push(param.name);
+			if (param.type.is_ref || callee_idx >= callee_saved.length) {
+				status.code += `str ${param_regs[i]}, [sp, #-16]!\n`;
+				saved_stack_slots.push(param.name);
+			} else {
+				const saved_reg = callee_saved[callee_idx++];
+				if (saved_reg !== "x19" || !needs_x19) {
+					status.code += `str ${saved_reg}, [sp, #-16]!\n`;
+				}
+				status.code += `mov ${saved_reg}, ${param_regs[i]}\n`;
+				status.function_param_regs.set(param.name, saved_reg);
+			}
 		}
 		if (param.declaration === "var") {
 			status.function_param_vars.add(param.name);

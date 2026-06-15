@@ -143,39 +143,34 @@ pub struct BigInt {
     }
 
     func div128 = (self, uint64 hi, uint64 lo, uint64 d, out uint64) {
+        var uint64 remainder = hi
+        var uint64 quotient = 0
+        var uint64 bit_mask = 9223372036854775808
+        var int bit = 63
+        while bit >= 0 {
+            var uint64 msb = remainder >> 63
+            var uint64 lo_bit = (lo / bit_mask) & 1
+            remainder = (remainder << 1) | lo_bit
+            if msb == 1 || remainder >= d {
+                remainder = remainder - d
+                quotient = quotient | bit_mask
+            }
+            bit_mask = bit_mask >> 1
+            bit = bit - 1
+        }
+        return quotient
+    }
+
+    inline func mul_wide_hi = (self, uint64 a, uint64 b, out uint64) {
         ```
         #arch: c
-        unsigned __int128 dividend = ((unsigned __int128)(unsigned long long)hi << 64) | (unsigned long long)lo;
-        return (unsigned long long)(dividend / (unsigned long long)d);
+        unsigned __int128 product = (unsigned __int128)(unsigned long long)a * (unsigned long long)b;
+        return (unsigned long long)(product >> 64);
         ```
         ```
         #arch: aarch64
-        mov x4, x1
-        mov x0, #0
-        mov x7, 63
-
-        .Ldiv128_loop:
-        adds x4, x4, x4
-        lsr x5, x2, x7
-        and x5, x5, #1
-        orr x4, x4, x5
-        b.cs .Ldiv128_subtract
-        cmp x4, x3
-        b.lo .Ldiv128_skip
-
-        .Ldiv128_subtract:
-        sub x4, x4, x3
-        mov x5, #1
-        lsl x5, x5, x7
-        orr x0, x0, x5
-
-        .Ldiv128_skip:
-        subs x7, x7, #1
-        b.ge .Ldiv128_loop
-
-        b .return_BigInt_div128
+        umulh x0, x1, x2
         ```
-        return 0
     }
 
     pub func cmp = (self, BigInt other, out int) {
@@ -315,8 +310,6 @@ pub struct BigInt {
                 other_len = a.len
             }
             self.ensure(other_len + 1)
-            var uint64 sv_lo = sv & 4294967295
-            var uint64 sv_hi = sv >> 32
             var uint64 carry = 0
             var int i = 0
             var int last_nonzero = 0
@@ -326,30 +319,16 @@ pub struct BigInt {
                     if i < other_len {
                         ov = b.get(i)
                     }
-                    var uint64 ov_lo = ov & 4294967295
-                    var uint64 ov_hi = ov >> 32
-                    var uint64 p_lo = sv_lo * ov_lo
-                    var uint64 p_lh = sv_hi * ov_lo
-                    var uint64 p_hl = sv_lo * ov_hi
-                    var uint64 p_hi = sv_hi * ov_hi
-                    var uint64 cross = p_lh + p_hl
-                    var int cross_c = 0
-                    if cross < p_lh {
-                        cross_c = 1
-                    }
-                    var uint64 lo = p_lo + carry
+                    var uint64 lo_prod = sv * ov
+                    var uint64 hi_prod = self.mul_wide_hi(sv, ov)
+                    var uint64 result = lo_prod + carry
                     var int c1 = 0
-                    if lo < p_lo {
+                    if result < lo_prod {
                         c1 = 1
                     }
-                    var uint64 lo2 = lo + (cross << 32)
-                    var int c2 = 0
-                    if lo2 < lo {
-                        c2 = 1
-                    }
-                    carry = c1 + c2 + ((cross >> 32) + (cross_c as uint64 << 32)) as int + p_hi as int
-                    self.set(i, lo2)
-                    if lo2 != 0 {
+                    carry = hi_prod + c1
+                    self.set(i, result)
+                    if result != 0 {
                         last_nonzero = i + 1
                     }
                     i = i + 1
@@ -360,30 +339,16 @@ pub struct BigInt {
                     if i < other_len {
                         ov = a.get(i)
                     }
-                    var uint64 ov_lo = ov & 4294967295
-                    var uint64 ov_hi = ov >> 32
-                    var uint64 p_lo = sv_lo * ov_lo
-                    var uint64 p_lh = sv_hi * ov_lo
-                    var uint64 p_hl = sv_lo * ov_hi
-                    var uint64 p_hi = sv_hi * ov_hi
-                    var uint64 cross = p_lh + p_hl
-                    var int cross_c = 0
-                    if cross < p_lh {
-                        cross_c = 1
-                    }
-                    var uint64 lo = p_lo + carry
+                    var uint64 lo_prod = sv * ov
+                    var uint64 hi_prod = self.mul_wide_hi(sv, ov)
+                    var uint64 result = lo_prod + carry
                     var int c1 = 0
-                    if lo < p_lo {
+                    if result < lo_prod {
                         c1 = 1
                     }
-                    var uint64 lo2 = lo + (cross << 32)
-                    var int c2 = 0
-                    if lo2 < lo {
-                        c2 = 1
-                    }
-                    carry = c1 + c2 + ((cross >> 32) + (cross_c as uint64 << 32)) as int + p_hi as int
-                    self.set(i, lo2)
-                    if lo2 != 0 {
+                    carry = hi_prod + c1
+                    self.set(i, result)
+                    if result != 0 {
                         last_nonzero = i + 1
                     }
                     i = i + 1
@@ -409,30 +374,16 @@ pub struct BigInt {
             var int i = 0
             while i < a.len {
                 var uint64 ai = a.get(i)
-                var uint64 ai_lo = ai & 4294967295
-                var uint64 ai_hi = ai >> 32
                 var uint64 carry = 0
                 var int j = 0
                 while j < b.len || carry != 0 {
-                    var uint64 bj_lo = 0
-                    var uint64 bj_hi = 0
+                    var uint64 bj = 0
                     if j < b.len {
-                        var uint64 bj = b.get(j)
-                        bj_lo = bj & 4294967295
-                        bj_hi = bj >> 32
+                        bj = b.get(j)
                     }
-                    var uint64 lo_prod = ai_lo * bj_lo
-                    var uint64 cross1 = ai_hi * bj_lo
-                    var uint64 cross2 = ai_lo * bj_hi
-                    var uint64 hi_prod = ai_hi * bj_hi
-                    var uint64 sum_cross = cross1 + cross2
-                    var int cross_carry = 0
-                    if sum_cross < cross1 {
-                        cross_carry = 1
-                    }
-                    var uint64 cross_lo = sum_cross << 32
-                    var uint64 cross_hi = (sum_cross >> 32) + (cross_carry as uint64 << 32)
                     var uint64 old = scratch.get(j + i)
+                    var uint64 lo_prod = ai * bj
+                    var uint64 hi_prod = scratch.mul_wide_hi(ai, bj)
                     var uint64 cur = old + carry
                     var int c1 = 0
                     if cur < old {
@@ -443,13 +394,8 @@ pub struct BigInt {
                     if cur2 < cur {
                         c2 = 1
                     }
-                    var uint64 cur3 = cur2 + cross_lo
-                    var int c3 = 0
-                    if cur3 < cur2 {
-                        c3 = 1
-                    }
-                    carry = c1 + c2 + c3 + cross_hi as int + hi_prod as int
-                    scratch.set(j + i, cur3)
+                    carry = c1 + c2 + hi_prod as int
+                    scratch.set(j + i, cur2)
                     j = j + 1
                 }
                 i = i + 1
@@ -698,27 +644,11 @@ pub struct BigInt {
                     var int pi = 0
                     while pi < n {
                         var uint64 vv = remainder.digits.load_int(pi) as uint64
-                        var uint64 vv_lo = vv & 4294967295
-                        var uint64 vv_hi = vv >> 32
-                        var uint64 q_lo = q_hat & 4294967295
-                        var uint64 q_hi = q_hat >> 32
-                        var uint64 p_ll = q_lo * vv_lo
-                        var uint64 p_lh = q_lo * vv_hi
-                        var uint64 p_hl = q_hi * vv_lo
-                        var uint64 p_hh = q_hi * vv_hi
-                        var uint64 s_cross = p_lh + p_hl
-                        var int s_overflow = 0
-                        if s_cross < p_lh {
-                            s_overflow = 1
-                        }
-                        var uint64 s_lo = p_ll + ((s_cross & 4294967295) << 32)
-                        var uint64 s_hi = p_hh + (s_cross >> 32)
-                        if s_overflow != 0 {
-                            s_hi = s_hi + 4294967296
-                        }
-                        var uint64 p_lo = s_lo + hv_carry
-                        hv_carry = s_hi
-                        if p_lo < s_lo {
+                        var uint64 lo_prod = q_hat * vv
+                        var uint64 hi_prod = self.mul_wide_hi(q_hat, vv)
+                        var uint64 p_lo = lo_prod + hv_carry
+                        hv_carry = hi_prod
+                        if p_lo < lo_prod {
                             hv_carry = hv_carry + 1
                         }
                         remainder.digits.store_int(wd_off + u_len + 1 + pi, p_lo as int)
@@ -766,27 +696,11 @@ pub struct BigInt {
             var int mi = 0
             while mi < n {
                 var uint64 vv = remainder.digits.load_int(mi) as uint64
-                var uint64 vv_lo = vv & 4294967295
-                var uint64 vv_hi = vv >> 32
-                var uint64 q_lo = q_hat & 4294967295
-                var uint64 q_hi = q_hat >> 32
-                var uint64 p_ll = q_lo * vv_lo
-                var uint64 p_lh = q_lo * vv_hi
-                var uint64 p_hl = q_hi * vv_lo
-                var uint64 p_hh = q_hi * vv_hi
-                var uint64 s_cross = p_lh + p_hl
-                var int sc_overflow = 0
-                if s_cross < p_lh {
-                    sc_overflow = 1
-                }
-                var uint64 s_lo = p_ll + ((s_cross & 4294967295) << 32)
-                var uint64 s_hi = p_hh + (s_cross >> 32)
-                if sc_overflow != 0 {
-                    s_hi = s_hi + 4294967296
-                }
-                var uint64 prod = s_lo + mul_carry
-                mul_carry = s_hi
-                if prod < s_lo {
+                var uint64 lo_prod = q_hat * vv
+                var uint64 hi_prod = self.mul_wide_hi(q_hat, vv)
+                var uint64 prod = lo_prod + mul_carry
+                mul_carry = hi_prod
+                if prod < lo_prod {
                     mul_carry = mul_carry + 1
                 }
                 remainder.digits.store_int(wd_off + u_len + 1 + mi, prod as int)
