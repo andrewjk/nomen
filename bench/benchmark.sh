@@ -25,13 +25,12 @@ time_cmd() {
 	to_ms "$real"
 }
 
-# compile_echo <bench_name> <n_value> <sed_pattern>
+# compile_echo <bench_name>
 compile_echo() {
-	local bench="$1" bn="$2" nv="$3"
-	echo "  Compiling echo/$bench (n=$bn)..." >&2
-	sed "s/${nv}/var int n = ${bn}/" "$BENCH_DIR/echo/$bench.echo" > "$TMPDIR/echo_${bench}.echo"
+	local bench="$1"
+	echo "  Compiling echo/$bench..." >&2
 	cp "$BENCH_DIR/echo/package.jsonc" "$TMPDIR/package.jsonc"
-	"$TSX" "$BENCH_DIR/compile_echo.ts" "$TMPDIR/echo_${bench}.echo" "$TMPDIR/echo_${bench}" "$ROOT/lib" 2>"$TMPDIR/echo_${bench}_err.txt" || {
+	"$TSX" "$BENCH_DIR/compile_echo.ts" "$BENCH_DIR/echo/$bench.echo" "$TMPDIR/echo_${bench}" "$ROOT/lib" 2>"$TMPDIR/echo_${bench}_err.txt" || {
 		echo "  FAIL: Echo $bench compilation failed" >&2
 		cat "$TMPDIR/echo_${bench}_err.txt" >&2
 		return 1
@@ -69,52 +68,6 @@ compile_zig() {
 RESULTS_FILE="$TMPDIR/results.txt"
 > "$RESULTS_FILE"
 
-run_benchmark() {
-	local name="$1" bench="$2" bn="$3" sed_pat="$4" zig_src_override="${5:-}"
-
-	local e_compile="-" e_run="-" g_compile="-" g_run="-" z_compile="-" z_run="-"
-
-	echo "── $name ──"
-
-	# Echo
-	if compile_echo "$bench" "$bn" "$sed_pat" 2>/dev/null; then
-		e_compile=$(time_cmd "echo/$bench compile" "$TMPDIR/echo_${bench}" --version 2>/dev/null || true)
-		# recompile properly
-		"$TSX" "$BENCH_DIR/compile_echo.ts" "$TMPDIR/echo_${bench}.echo" "$TMPDIR/echo_${bench}" "$ROOT/lib" 2>/dev/null
-		e_compile=$( { time "$TSX" "$BENCH_DIR/compile_echo.ts" "$TMPDIR/echo_${bench}.echo" "$TMPDIR/echo_${bench}" "$ROOT/lib" 2>/dev/null; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//' )
-		e_compile=$(to_ms "$e_compile")
-		e_run=$(time_cmd "echo/$bench run" "$TMPDIR/echo_${bench}")
-		echo "  Echo:  compile=${e_compile}ms  run=${e_run}ms"
-	else
-		echo "  Echo:  FAIL"
-	fi
-
-	# Go
-	if compile_go "$bench" 2>/dev/null; then
-		g_compile=$( { time go build -o "$GO_BUILD/$bench" "$BENCH_DIR/go/$bench.go" 2>/dev/null; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//' )
-		g_compile=$(to_ms "$g_compile")
-		g_run=$(time_cmd "go/$bench run" "$GO_BUILD/$bench" "$bn")
-		echo "  Go:    compile=${g_compile}ms  run=${g_run}ms"
-	else
-		echo "  Go:    FAIL"
-	fi
-
-	# Zig
-	local zig_src="$BENCH_DIR/zig/src/${bench}1.zig"
-	if [ -n "$zig_src_override" ]; then zig_src="$zig_src_override"; fi
-	if compile_zig "$bench" "$zig_src" 2>/dev/null; then
-		z_compile=$( { time zig build-exe -O ReleaseFast -femit-bin="$TMPDIR/zig_${bench}" "$zig_src" -lc 2>/dev/null; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//' )
-		z_compile=$(to_ms "$z_compile")
-		z_run=$(time_cmd "zig/$bench run" "$TMPDIR/zig_${bench}" "$bn")
-		echo "  Zig:   compile=${z_compile}ms  run=${z_run}ms"
-	else
-		echo "  Zig:   $([ -f "$zig_src" ] && echo "FAIL" || echo "SKIP")"
-	fi
-
-	echo "$name ${e_compile} ${e_run} ${g_compile} ${g_run} ${z_compile} ${z_run}" >> "$RESULTS_FILE"
-	echo ""
-}
-
 echo "=== Echo Benchmark Suite (n=$N) ==="
 echo ""
 
@@ -123,43 +76,43 @@ echo ""
 echo "=== Compiling all benchmarks ==="
 echo ""
 
-compile_echo pidigits $N "var int n = 200" && echo "  echo/pidigits OK" || echo "  echo/pidigits FAIL"
+compile_echo pidigits && echo "  echo/pidigits OK" || echo "  echo/pidigits FAIL"
 compile_go pidigits && echo "  go/pidigits OK" || echo "  go/pidigits FAIL"
 compile_zig pidigits "$BENCH_DIR/zig/src/pidigits1.zig" && echo "  zig/pidigits OK" || echo "  zig/pidigits FAIL"
 
-compile_echo helloworld 0 "var int n = 0" && echo "  echo/helloworld OK" || echo "  echo/helloworld FAIL"
+compile_echo helloworld && echo "  echo/helloworld OK" || echo "  echo/helloworld FAIL"
 compile_go helloworld && echo "  go/helloworld OK" || echo "  go/helloworld FAIL"
 compile_zig helloworld "$BENCH_DIR/zig/src/helloworld1.zig" && echo "  zig/helloworld OK" || echo "  zig/helloworld SKIP"
 
-compile_echo fannkuch-redux 10 "var int n = 10" && echo "  echo/fannkuch-redux OK" || echo "  echo/fannkuch-redux FAIL"
+compile_echo fannkuch-redux && echo "  echo/fannkuch-redux OK" || echo "  echo/fannkuch-redux FAIL"
 compile_go fannkuch-redux && echo "  go/fannkuch-redux OK" || echo "  go/fannkuch-redux FAIL"
 compile_zig fannkuch-redux "$BENCH_DIR/zig/src/fannkuch-redux1.zig" && echo "  zig/fannkuch-redux OK" || echo "  zig/fannkuch-redux SKIP"
 
-compile_echo binarytrees 15 "var int n = 10" && echo "  echo/binarytrees OK" || echo "  echo/binarytrees FAIL"
+compile_echo binarytrees && echo "  echo/binarytrees OK" || echo "  echo/binarytrees FAIL"
 compile_go binarytrees && echo "  go/binarytrees OK" || echo "  go/binarytrees FAIL"
 compile_zig binarytrees "$BENCH_DIR/zig/src/binarytrees1.zig" && echo "  zig/binarytrees OK" || echo "  zig/binarytrees SKIP"
 
-compile_echo merkletrees 15 "var int n = 5" && echo "  echo/merkletrees OK" || echo "  echo/merkletrees FAIL"
+compile_echo merkletrees && echo "  echo/merkletrees OK" || echo "  echo/merkletrees FAIL"
 compile_go merkletrees && echo "  go/merkletrees OK" || echo "  go/merkletrees FAIL"
 compile_zig merkletrees "$BENCH_DIR/zig/src/merkletrees1.zig" && echo "  zig/merkletrees OK" || echo "  zig/merkletrees SKIP"
 
-compile_echo nsieve 4 "var int n = 4" && echo "  echo/nsieve OK" || echo "  echo/nsieve FAIL"
+compile_echo nsieve && echo "  echo/nsieve OK" || echo "  echo/nsieve FAIL"
 compile_go nsieve 2>/dev/null && echo "  go/nsieve OK" || echo "  go/nsieve FAIL (expected)"
 compile_zig nsieve "$BENCH_DIR/zig/src/nsieve1.zig" && echo "  zig/nsieve OK" || echo "  zig/nsieve SKIP"
 
-compile_echo nbody $N "var int n = 1000" && echo "  echo/nbody OK" || echo "  echo/nbody FAIL"
+compile_echo nbody && echo "  echo/nbody OK" || echo "  echo/nbody FAIL"
 compile_go nbody && echo "  go/nbody OK" || echo "  go/nbody FAIL"
 compile_zig nbody "$BENCH_DIR/zig/src/nbody1.zig" && echo "  zig/nbody OK" || echo "  zig/nbody SKIP"
 
-compile_echo spectral-norm 100 "var int n = 100" && echo "  echo/spectral-norm OK" || echo "  echo/spectral-norm FAIL"
+compile_echo spectral-norm && echo "  echo/spectral-norm OK" || echo "  echo/spectral-norm FAIL"
 compile_go spectral-norm && echo "  go/spectral-norm OK" || echo "  go/spectral-norm FAIL"
 compile_zig spectral-norm "$BENCH_DIR/zig/src/spectral-norm1.zig" && echo "  zig/spectral-norm OK" || echo "  zig/spectral-norm SKIP"
 
-compile_echo mandelbrot 200 "var int n = 200" && echo "  echo/mandelbrot OK" || echo "  echo/mandelbrot FAIL"
+compile_echo mandelbrot && echo "  echo/mandelbrot OK" || echo "  echo/mandelbrot FAIL"
 compile_go mandelbrot && echo "  go/mandelbrot OK" || echo "  go/mandelbrot FAIL"
 compile_zig mandelbrot "$BENCH_DIR/zig/src/mandelbrot1.zig" && echo "  zig/mandelbrot OK" || echo "  zig/mandelbrot SKIP"
 
-compile_echo edigits 27 "var int n = 27" && echo "  echo/edigits OK" || echo "  echo/edigits FAIL"
+compile_echo edigits && echo "  echo/edigits OK" || echo "  echo/edigits FAIL"
 compile_go edigits && echo "  go/edigits OK" || echo "  go/edigits FAIL"
 compile_zig edigits "$BENCH_DIR/zig/src/edigits1.zig" && echo "  zig/edigits OK" || echo "  zig/edigits SKIP"
 
@@ -187,13 +140,13 @@ run_one() {
 
 	# Echo compile time
 	if [ -x "$bin_echo" ]; then
-		e_compile=$( { time "$TSX" "$BENCH_DIR/compile_echo.ts" "$TMPDIR/echo_${bench}.echo" "$TMPDIR/echo_${bench}" "$ROOT/lib" 2>/dev/null; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//' )
+		e_compile=$( { time "$TSX" "$BENCH_DIR/compile_echo.ts" "$BENCH_DIR/echo/$bench.echo" "$TMPDIR/echo_${bench}" "$ROOT/lib" 2>/dev/null; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//' )
 		e_compile=$(to_ms "$e_compile")
 		# warmup + best of 3
-		"$bin_echo" > /dev/null 2>&1 || true
-		local t1=$( { time "$bin_echo" > /dev/null 2>&1; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//' )
-		local t2=$( { time "$bin_echo" > /dev/null 2>&1; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//' )
-		local t3=$( { time "$bin_echo" > /dev/null 2>&1; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//' )
+		"$bin_echo" "$bn" > /dev/null 2>&1 || true
+		local t1=$( { time "$bin_echo" "$bn" > /dev/null 2>&1; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//' )
+		local t2=$( { time "$bin_echo" "$bn" > /dev/null 2>&1; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//' )
+		local t3=$( { time "$bin_echo" "$bn" > /dev/null 2>&1; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//' )
 		e_run=$(to_ms "$t1")
 		local r2=$(to_ms "$t2") local r3=$(to_ms "$t3")
 		[ "$r2" -lt "$e_run" ] && e_run=$r2

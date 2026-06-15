@@ -1,5 +1,6 @@
 import Console
 import Buffer
+import Init
 import int
 import Stringable
 import uint8
@@ -24,8 +25,11 @@ func nsieve = (int n) {
 	Console.write("Primes up to \{n} \{count}\n")
 }
 
-pub func main = () {
+pub func main = (Init init) {
 	var int n = 4
+	if init.argc > 1 {
+		n = parse_int(init.args[1])
+	}
 
 	nsieve(10000 << n)
 	nsieve(10000 << (n - 1))

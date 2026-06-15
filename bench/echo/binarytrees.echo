@@ -1,4 +1,5 @@
 import Console
+import Init
 import int
 import Stringable
 
@@ -33,8 +34,11 @@ func check_tree = (TreeNode node, out int) {
 	return sum
 }
 
-pub func main = () {
+pub func main = (Init init) {
 	var int n = 10
+	if init.argc > 1 {
+		n = parse_int(init.args[1])
+	}
 	var int min_depth = 4
 	var int max_depth = n
 	if min_depth + 2 > max_depth {

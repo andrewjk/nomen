@@ -1,4 +1,5 @@
 import Console
+import Init
 import float
 import Stringable
 import int
@@ -26,8 +27,11 @@ func mbrot = (float cr, float ci, out int) {
 	return 1
 }
 
-pub func main = () {
+pub func main = (Init init) {
 	var int n = 200
+	if init.argc > 1 {
+		n = parse_int(init.args[1])
+	}
 	var int size = (n + 7) / 8 * 8
 	var int chunk_size = size / 8
 	var float inv = 2.0 / (size as float)

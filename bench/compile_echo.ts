@@ -54,6 +54,7 @@ code = code.replace(/\bbl realloc\b/g, "bl _realloc");
 code = code.replace(/\bbl free\b/g, "bl _free");
 code = code.replace(/\bbl strdup\b/g, "bl _strdup");
 code = code.replace(/\bbl log\b/g, "bl _log");
+code = code.replace(/\bbl atoi\b/g, "bl _atoi");
 code = code.replace(/\bmain:\n/g, ".globl _main\n_main:\n");
 
 const out = path.resolve(output_file);

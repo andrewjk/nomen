@@ -1,0 +1,15 @@
+pub struct Init {
+    var int argc
+    var string[16] args
+}
+
+pub func parse_int = (string s, out int) {
+    ```
+    #arch: c
+    return atoi(s);
+    ```
+    ```
+    #arch: aarch64
+    bl _atoi
+    ```
+}

@@ -1,10 +1,14 @@
 import BigInt
 import Console
+import Init
 import int
 import Stringable
 
-pub func main = () {
+pub func main = (Init init) {
     var int n = 2000
+    if init.argc > 1 {
+        n = parse_int(init.args[1])
+    }
     var int digits_printed = 0
 
     var BigInt k = BigInt()

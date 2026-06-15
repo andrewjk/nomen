@@ -860,6 +860,11 @@ function build_access_index(node: AccessNode, access_index: AccessIndexNode, sta
 				status.code += `ldr x0, [x0]\n`;
 			}
 		}
+	} else if (target_type.is_array && target_type.length && node.target.node_type === "access") {
+		emit_address_of(node.target, status);
+		if (!status.code.endsWith("\n")) {
+			status.code += "\n";
+		}
 	} else {
 		build_node(node.target, status);
 		if (!status.code.endsWith("\n")) {

@@ -157,6 +157,43 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.code += `${node.name === "main" ? "_" : ""}${node.name}:\n`;
 	status.code += `stp x29, x30, [sp, #-16]!\n`;
 
+	const is_main_with_init =
+		node.name === "main" &&
+		has_body &&
+		node.params.length > 0 &&
+		node.params[0].type.name === "Init";
+	let init_struct_offset = -1;
+	let init_struct_size = 0;
+	if (is_main_with_init) {
+		init_struct_offset = 0;
+		const vt_size = 8;
+		const argc_offset = vt_size;
+		const args_offset = vt_size + 8;
+		const args_count = 16;
+		init_struct_size = args_offset + args_count * 8;
+		status.code += `sub sp, sp, #${init_struct_size}\n`;
+		status.code += `str x0, [sp, #${argc_offset}]\n`;
+		status.code += `str x1, [sp, #${args_offset}]\n`;
+		status.code += `mov x20, x1\n`;
+		status.code += `mov x2, #0\n`;
+		const loop_label = `.Linit_loop_${label_counter}`;
+		const end_label = `.Linit_end_${label_counter}`;
+		label_counter++;
+		status.code += `${loop_label}:\n`;
+		status.code += `ldr x3, [sp, #${argc_offset}]\n`;
+		status.code += `cmp x2, x3\n`;
+		status.code += `b.ge ${end_label}\n`;
+		status.code += `cmp x2, #${args_count}\n`;
+		status.code += `b.ge ${end_label}\n`;
+		status.code += `ldr x0, [x20, x2, lsl #3]\n`;
+		status.code += `add x3, x2, #2\n`;
+		status.code += `str x0, [sp, x3, lsl #3]\n`;
+		status.code += `add x2, x2, #1\n`;
+		status.code += `b ${loop_label}\n`;
+		status.code += `${end_label}:\n`;
+		status.code += `mov x0, sp\n`;
+	}
+
 	if (has_body) {
 		for (let i = 0; i < node.params.length; i++) {
 			const param = node.params[i];
@@ -321,6 +358,10 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 
 	for (let ci = callee_idx - 1; ci >= 0; ci--) {
 		status.code += `ldr ${callee_saved[ci]}, [sp], #16\n`;
+	}
+
+	if (init_struct_size > 0) {
+		status.code += `add sp, sp, #${init_struct_size}\n`;
 	}
 
 	status.code += `ldp x29, x30, [sp], #16\n`;
