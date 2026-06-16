@@ -46,8 +46,8 @@ a.value = 10
 class Box {
 	var int value
 }
-struct Holder {
-	var Box content
+class Holder {
+	mov Box content
 }
 func take = (mov Box b) {
 }
@@ -67,8 +67,8 @@ var Holder h = Holder(mov a)
 class Box {
 	var int value
 }
-struct Holder {
-	var Box content
+class Holder {
+	mov Box content
 }
 var Box a = Box(42)
 var Holder h = Holder(mov a)
@@ -122,9 +122,9 @@ Console.write("\\{b.value}")
 class Box {
 	var int value
 }
-struct Holder {
+class Holder {
 	var int id
-	var Box content
+	mov Box content
 }
 var Box b = Box(99)
 var Holder h = Holder(1, mov b)

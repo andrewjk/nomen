@@ -3,12 +3,11 @@ import AnonStructNode from "../nodes/AnonStructNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import Type from "../nodes/Type.ts";
-import ValueNode from "../nodes/ValueNode.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
 import check_type_exists from "./utils/check_type_exists.ts";
-import { struct_has_class_fields } from "./utils/ownership.ts";
+import { is_class_type } from "./utils/ownership.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
 
@@ -82,6 +81,16 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			check_type_exists(decl.type, status, decl.type_start!);
 		}
 
+		// Check for var on class-type fields in classes/traits (must use mov)
+		if (
+			decl.declaration === "var" &&
+			decl.type.name &&
+			is_class_type(decl.type.name, status) &&
+			(decl.scope?.node_type === "struct" || decl.scope?.node_type === "trait")
+		) {
+			add_error(status, `class-type fields must use 'mov', not 'var'`, decl.start);
+		}
+
 		if (decl.value) {
 			status.stack.push(decl);
 
@@ -101,21 +110,6 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 					decl.value.start,
 					"declaration",
 				);
-			}
-
-			if (
-				decl.value.node_type === "value" &&
-				decl.type.name &&
-				struct_has_class_fields(decl.type.name, status)
-			) {
-				const val = decl.value as ValueNode;
-				if (val.value !== "null") {
-					add_error(
-						status,
-						`cannot copy '${decl.type.name}' — struct owns class fields, use mov`,
-						decl.value.start,
-					);
-				}
 			}
 
 			if (!decl.type.name) {

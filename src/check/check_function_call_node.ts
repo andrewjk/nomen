@@ -151,9 +151,16 @@ export function monomorphize(
 	for (const field of mono_fields) {
 		if (!field.value) {
 			const param = new ParameterNode(field.start, field.name, field.type);
-			const field_is_class = !!status.structs.find((s) => s.name === field.type.name && s.is_class);
-			if (field_is_class) {
-				param.is_moved = true;
+			// For mov fields: keep mov only if resolved type is class, otherwise convert to var
+			if (field.declaration === "mov") {
+				const field_is_class = !!status.structs.find(
+					(s) => s.name === field.type.name && s.is_class,
+				);
+				if (field_is_class) {
+					param.is_moved = true;
+				} else {
+					param.declaration = "var";
+				}
 			}
 			init_params.push(param);
 		}

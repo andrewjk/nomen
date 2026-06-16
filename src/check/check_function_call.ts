@@ -30,11 +30,18 @@ export default function check_function_call(
 	if (func.name === "init") {
 		const struct_name = target_type?.name || func.return_type.name;
 		const struct = status.structs.find((s) => s.name === struct_name);
-		if (struct && struct.visibility === "private" && !is_visible(struct.scope, struct.visibility, access_scope, status.stack)) {
+		if (
+			struct &&
+			struct.visibility === "private" &&
+			!is_visible(struct.scope, struct.visibility, access_scope, status.stack)
+		) {
 			add_error(status, `Can't access private function: ${node.name}`, node.start);
 			return false;
 		}
-	} else if (func.visibility === "private" && !is_visible(func.scope, func.visibility, access_scope, status.stack)) {
+	} else if (
+		func.visibility === "private" &&
+		!is_visible(func.scope, func.visibility, access_scope, status.stack)
+	) {
 		add_error(status, `Can't access private function: ${node.name}`, node.start);
 		return false;
 	}
@@ -173,6 +180,14 @@ export default function check_function_call(
 			add_error(
 				status,
 				`Unexpected 'mov' keyword for non-mov parameter '${func_param.name}'`,
+				param.start,
+			);
+		}
+		// Check for mov on value types at call site
+		if (has_mov_keyword && func_param.type.name && !is_class_type(func_param.type.name, status)) {
+			add_error(
+				status,
+				`mov is only allowed for class types, not '${func_param.type.name}'`,
 				param.start,
 			);
 		}

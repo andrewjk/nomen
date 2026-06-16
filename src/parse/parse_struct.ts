@@ -51,7 +51,13 @@ export default function parse_struct(
 			const func = new FunctionNode(-1, visibility, "init", new Type(struct.name));
 			func.params = struct.fields
 				.filter((f) => f.visibility !== "private" && !f.value)
-				.map((f) => new ParameterNode(-1, f.name, f.type));
+				.map((f) => {
+					const param = new ParameterNode(-1, f.name, f.type);
+					if (f.declaration === "mov") {
+						param.is_moved = true;
+					}
+					return param;
+				});
 			func.is_static = true;
 			struct.functions.unshift(func);
 		}

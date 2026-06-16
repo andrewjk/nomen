@@ -4,7 +4,7 @@ import Type from "../nodes/Type.ts";
  * A value (declaration, param etc) that is accessible at the current point
  */
 export default interface StackValue {
-	declaration: "const" | "var";
+	declaration: "const" | "var" | "mov";
 	name: string;
 	type: Type;
 	/**

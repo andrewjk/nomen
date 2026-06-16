@@ -10,8 +10,8 @@ describe("swap", () => {
 class Box {
 	var int value
 }
-struct Holder {
-	var Box content
+class Holder {
+	mov Box content
 }
 var Holder h1 = Holder(mov Box(1))
 var Holder h2 = Holder(mov Box(2))
@@ -29,8 +29,8 @@ Console.write("\\{h1.content.value} \\{h2.content.value}")
 class Box {
 	var int value
 }
-struct Holder {
-	var Box content
+class Holder {
+	mov Box content
 }
 var Holder h1 = Holder(mov Box(1))
 var Holder h2 = Holder(mov Box(2))
@@ -48,8 +48,8 @@ Console.write("done")
 class Box {
 	var int value
 }
-struct Holder {
-	var Box content
+class Holder {
+	mov Box content
 }
 var Holder h1 = Holder(mov Box(10))
 var Holder h2 = Holder(mov Box(20))
@@ -67,8 +67,8 @@ Console.write("\\{h1.content.value} \\{h2.content.value}")
 class Box {
 	var int value
 }
-struct Holder {
-	var Box content
+class Holder {
+	mov Box content
 }
 var Holder h1 = Holder(mov Box(1))
 var Holder h2 = Holder(mov Box(2))
@@ -86,8 +86,8 @@ Console.write("done")
 class Box {
 	var int value
 }
-struct Holder {
-	var Box content
+class Holder {
+	mov Box content
 }
 var Holder h1 = Holder(mov Box(1))
 var Holder h2 = Holder(mov Box(2))

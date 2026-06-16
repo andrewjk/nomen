@@ -20,7 +20,7 @@ import peek_current from "./utils/peek_current.ts";
 
 export default function parse_declaration(
 	visibility: "pub" | "private",
-	declaration: "const" | "var",
+	declaration: "const" | "var" | "mov",
 	status: ParseStatus,
 ) {
 	const start = get_index(status);

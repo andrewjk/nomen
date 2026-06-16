@@ -62,11 +62,12 @@ export default function parse_statement(status: ParseStatus) {
 				parse_visibility(value, status);
 				break;
 			}
-		case "const":
-		case "var": {
-			parse_declaration(default_visibility(status), value, status);
-			break;
-		}
+			case "const":
+			case "var":
+			case "mov": {
+				parse_declaration(default_visibility(status), value, status);
+				break;
+			}
 			case "struct": {
 				parse_struct(default_visibility(status), status);
 				break;

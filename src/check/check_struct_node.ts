@@ -4,6 +4,7 @@ import StructNode from "../nodes/StructNode.ts";
 import check_declaration_node from "./check_declaration_node.ts";
 import check_function_node from "./check_function_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
+import { is_class_type } from "./utils/ownership.ts";
 
 function params_differ(a: FunctionNode, b: FunctionNode): boolean {
 	const a_params = a.params.filter((p) => !p.is_self_param);
@@ -57,7 +58,11 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 	const values_length_before_fields = status.values.length;
 	for (let decl of struct.fields) {
 		decl.scope = struct;
-		check_declaration_node(decl, status);
+		if (!struct.is_class && is_class_type(decl.type.name, status)) {
+			add_error(status, `struct fields cannot be class types, use a class instead`, decl.start);
+		} else {
+			check_declaration_node(decl, status);
+		}
 	}
 	status.values.length = values_length_before_fields;
 
@@ -68,16 +73,6 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 
 	for (let func of struct.functions) {
 		func.scope = struct;
-		if (func.name === "init" && !func.has_body) {
-			for (const param of func.params) {
-				if (
-					!param.is_moved &&
-					status.structs.find((s) => s.name === param.type.name && s.is_class)
-				) {
-					param.is_moved = true;
-				}
-			}
-		}
 		check_function_node(func, status);
 	}
 

@@ -13,7 +13,7 @@ pub if true {
 		const expected = [
 			test_error(
 				input,
-				"Visibility can only be set for const, var, class, struct, trait or func",
+				"Visibility can only be set for const, var, mov, class, struct, trait or func",
 				2,
 				1,
 			),

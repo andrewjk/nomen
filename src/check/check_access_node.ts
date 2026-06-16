@@ -149,7 +149,10 @@ function check_access_field_node(
 	}
 	if (field) {
 		const access_scope = status.stack.at(-1)!;
-		if (field.visibility === "private" && !is_visible(field.scope, field.visibility, access_scope, status.stack)) {
+		if (
+			field.visibility === "private" &&
+			!is_visible(field.scope, field.visibility, access_scope, status.stack)
+		) {
 			add_error(status, `Can't access private field: ${node.name}`, node.start);
 			return false;
 		} else {

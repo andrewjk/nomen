@@ -104,20 +104,20 @@ Console.write("\\{v}")
 	});
 
 	describe("class field ownership (compile errors)", () => {
-		test("cannot copy struct that owns a class field", () => {
+		test("class aliasing is allowed (reference type)", () => {
 			const input = `
 class Box {
 	var int value
 }
-struct Holder {
-	var Box content
+class Holder {
+	mov Box content
 }
 var Holder h1 = Holder(mov Box(42))
 var Holder h2 = h1
+Console.write("\\{h1.content.value}")
 `;
 			const parsed = parse_with_imports(input);
-			expect(parsed.errors.length).toBeGreaterThan(0);
-			expect(parsed.errors.map((e) => e.message)).toContainEqual(expect.stringContaining("copy"));
+			expect(parsed.errors).toEqual([]);
 		});
 
 		test("cannot assign class field from another owner", () => {
@@ -125,8 +125,8 @@ var Holder h2 = h1
 class Box {
 	var int value
 }
-struct Holder {
-	var Box content
+class Holder {
+	mov Box content
 }
 var Holder h1 = Holder(mov Box(1))
 var Holder h2 = Holder(mov Box(2))
@@ -137,13 +137,13 @@ h1.content = h2.content
 			expect(parsed.errors.map((e) => e.message)).toContainEqual(expect.stringContaining("cannot"));
 		});
 
-		test("cannot mov out of struct field", () => {
+		test("cannot mov out of class field", () => {
 			const input = `
 class Box {
 	var int value
 }
-struct Holder {
-	var Box content
+class Holder {
+	mov Box content
 }
 var Holder h1 = Holder(mov Box(42))
 var Holder h2 = Holder(mov h1.content)
@@ -153,13 +153,13 @@ var Holder h2 = Holder(mov h1.content)
 			expect(parsed.errors.map((e) => e.message)).toContainEqual(expect.stringContaining("cannot"));
 		});
 
-		test("reading class field from struct is allowed", async () => {
+		test("reading class field from class is allowed", async () => {
 			const input = `
 class Box {
 	var int value
 }
-struct Holder {
-	var Box content
+class Holder {
+	mov Box content
 }
 var Holder h = Holder(mov Box(42))
 Console.write("\\{h.content.value}")

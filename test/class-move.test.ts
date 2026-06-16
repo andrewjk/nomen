@@ -1,8 +1,10 @@
 import { expect, describe, test } from "vite-plus/test";
 
 import build from "../src/build";
+import parse from "../src/parse";
 import check_output from "./check_output";
 import parse_with_imports from "./parse_with_imports";
+import test_error from "./test_error";
 
 describe("class ownership transfer (mov keyword)", () => {
 	test("returning mov class param transfers ownership", async () => {
@@ -98,8 +100,8 @@ class Box {
   var int value
 }
 
-struct Holder {
-  var Box content
+class Holder {
+  mov Box content
 }
 
 func wrap = (mov Box b, out Holder) {
@@ -294,8 +296,8 @@ class Box {
   var int value
 }
 
-struct Holder {
-  var Box content
+class Holder {
+  mov Box content
 }
 
 var Holder h = Holder(mov Box(42))
@@ -430,7 +432,7 @@ Console.write("done")
 		await check_output("continue_class_array", result, "02done");
 	});
 
-	test("mov with struct (non-class) parameter", async () => {
+	test("mov with struct (non-class) parameter", () => {
 		const input = `
 struct Point {
   var int x
@@ -443,12 +445,12 @@ func identity = (mov Point p, out Point) {
 
 var Point a = Point(1, 2)
 var Point b = identity(mov a)
-Console.write("\\{b.x}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("mov_struct", result, "1");
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual([
+			test_error(input, "mov is only allowed for class types, not 'Point'", 7, 18),
+			test_error(input, "mov is only allowed for class types, not 'Point'", 12, 28),
+		]);
 	});
 
 	test("multiple mov parameters", async () => {
@@ -546,7 +548,7 @@ func share = (Box b, out Box) {
 		expect(parsed.errors[0].message).toContain("Cannot return class parameter 'b' without 'mov'");
 	});
 
-	test.skip("returning non-class struct param without mov is allowed", async () => {
+	test("returning non-class struct param without mov is allowed", async () => {
 		const input = `
 struct Point {
   var int x

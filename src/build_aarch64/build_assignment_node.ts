@@ -194,6 +194,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 					(s) => s.name === func_call.name && !s.is_simple_type,
 				);
 				if (is_constructor) {
+					emit_destroy_for_decl(status, name, rhs_type.name);
 					mark_moved_if_struct(node.right_value, status);
 					build_node(node.right_value, status);
 					if (!status.code.endsWith("\n")) status.code += "\n";

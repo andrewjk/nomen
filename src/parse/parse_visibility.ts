@@ -21,7 +21,8 @@ export default function parse_visibility(visibility: "pub" | "private", status: 
 	const next = peek_next(status);
 	switch (next) {
 		case "const":
-		case "var": {
+		case "var":
+		case "mov": {
 			if (visibility === "private" && status.stack.at(-1)?.node_type === "trait") {
 				add_error(status, `Trait fields cannot be private`, get_index(status));
 				consume(status);
@@ -86,7 +87,7 @@ export default function parse_visibility(visibility: "pub" | "private", status: 
 		default: {
 			add_error(
 				status,
-				`Visibility can only be set for const, var, class, struct, trait or func`,
+				`Visibility can only be set for const, var, mov, class, struct, trait or func`,
 				get_index(status),
 			);
 			consume(status);

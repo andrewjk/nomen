@@ -10,8 +10,8 @@ describe("mov-swap in function call args", () => {
 class Box {
 	var int value
 }
-struct Holder {
-	var Box content
+class Holder {
+	mov Box content
 }
 var Holder h1 = Holder(mov Box(42))
 var Holder h2 = Holder(mov h1.content swap Box(0))
@@ -28,8 +28,8 @@ Console.write("\\{h1.content.value} \\{h2.content.value}")
 class Box {
 	var int value
 }
-struct Holder {
-	var Box content
+class Holder {
+	mov Box content
 }
 func take = (mov Box b) {
 	Console.write("\\{b.value}")
@@ -49,8 +49,8 @@ Console.write("\\{h.content.value}")
 class Box {
 	var int value
 }
-struct Holder {
-	var Box content
+class Holder {
+	mov Box content
 }
 func take = (mov Box b) {
 }
@@ -69,8 +69,8 @@ take(h.content swap Box(0))
 class Box {
 	var int value
 }
-struct Holder {
-	var Box content
+class Holder {
+	mov Box content
 }
 func take = (mov Box b) {
 }
@@ -86,8 +86,8 @@ take(mov h.content swap 99)
 class Box {
 	var int value
 }
-struct Holder {
-	var Box content
+class Holder {
+	mov Box content
 }
 var Holder h1 = Holder(mov Box(1))
 var Holder h2 = Holder(mov Box(2))

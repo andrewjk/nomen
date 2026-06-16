@@ -125,8 +125,17 @@ export function emit_destroy_for_decl(
 			}
 			emit_free(status);
 		}
+		emit_field_destroys(status, struct_type, decl_name, addr_offset, true);
 	} else {
 		emit_field_destroys(status, struct_type, decl_name, addr_offset);
+	}
+}
+
+function emit_base_ptr(status: BuildStatus, decl_name: string, is_class_parent?: boolean) {
+	if (is_class_parent) {
+		emit_var_load(status, "x0", decl_name, 8);
+	} else {
+		emit_var_address(status, "x0", decl_name);
 	}
 }
 
@@ -135,6 +144,7 @@ function emit_field_destroys(
 	struct_type: StructNode,
 	decl_name: string,
 	base_offset?: number,
+	is_class_parent?: boolean,
 ) {
 	let offset = 8;
 	for (const field of struct_type.fields) {
@@ -142,7 +152,7 @@ function emit_field_destroys(
 		if (field_struct) {
 			if (field_struct.is_class && !field.type.is_ref) {
 				if (decl_name) {
-					emit_var_address(status, "x0", decl_name);
+					emit_base_ptr(status, decl_name, is_class_parent);
 				}
 				const actual_offset = base_offset !== undefined ? base_offset + offset : offset;
 				status.code += `ldr x0, [x0, #${actual_offset}]\n`;
@@ -151,7 +161,7 @@ function emit_field_destroys(
 				if (has_destroy(field_struct)) {
 					const actual_offset = base_offset !== undefined ? base_offset + offset : offset;
 					if (decl_name) {
-						emit_var_address(status, "x0", decl_name);
+						emit_base_ptr(status, decl_name, is_class_parent);
 					}
 					status.code += `add x0, x0, #${actual_offset}\n`;
 					status.code += `bl ${field_struct.name}_destroy\n`;
@@ -161,6 +171,7 @@ function emit_field_destroys(
 					field_struct,
 					decl_name,
 					base_offset !== undefined ? base_offset + offset : offset,
+					is_class_parent,
 				);
 			}
 			const field_size = get_struct_size(field.type.name, status);
@@ -172,7 +183,13 @@ function emit_field_destroys(
 				const arr_len = field.type.length ? parseInt((field.type.length as any).value || "0") : 0;
 				const actual_base = base_offset !== undefined ? base_offset + offset : offset;
 				for (let i = 0; i < arr_len; i++) {
-					emit_destroy_for_array_elem(status, elem_struct, decl_name, actual_base + i * elem_size);
+					emit_destroy_for_array_elem(
+						status,
+						elem_struct,
+						decl_name,
+						actual_base + i * elem_size,
+						is_class_parent,
+					);
 				}
 			}
 			const elem_size = aarch64_size(field.type.name);
@@ -189,18 +206,25 @@ function emit_nested_field_destroys(
 	struct_type: StructNode,
 	decl_name: string,
 	base_offset: number,
+	is_class_parent?: boolean,
 ) {
 	let offset = 8;
 	for (const field of struct_type.fields) {
 		const field_struct = is_struct_type(field.type.name, status);
 		if (field_struct) {
 			if (has_destroy(field_struct)) {
-				emit_var_address(status, "x0", decl_name);
+				emit_base_ptr(status, decl_name, is_class_parent);
 				status.code += `add x0, x0, #${base_offset + offset}\n`;
 				status.code += `bl ${field_struct.name}_destroy\n`;
 			}
 			const field_size = get_struct_size(field.type.name, status);
-			emit_nested_field_destroys(status, field_struct, decl_name, base_offset + offset);
+			emit_nested_field_destroys(
+				status,
+				field_struct,
+				decl_name,
+				base_offset + offset,
+				is_class_parent,
+			);
 			offset += field_size;
 		} else {
 			offset += aarch64_size(field.type.name);
@@ -213,9 +237,10 @@ function emit_destroy_for_array_elem(
 	struct_type: StructNode,
 	decl_name: string,
 	elem_offset: number,
+	is_class_parent?: boolean,
 ) {
 	if (has_destroy(struct_type)) {
-		emit_var_address(status, "x0", decl_name);
+		emit_base_ptr(status, decl_name, is_class_parent);
 		status.code += `add x0, x0, #${elem_offset}\n`;
 		status.code += `bl ${struct_type.name}_destroy\n`;
 	}
@@ -224,7 +249,13 @@ function emit_destroy_for_array_elem(
 		const field_struct = is_struct_type(field.type.name, status);
 		if (field_struct) {
 			const field_size = get_struct_size(field.type.name, status);
-			emit_nested_field_destroys(status, field_struct, decl_name, elem_offset + offset);
+			emit_nested_field_destroys(
+				status,
+				field_struct,
+				decl_name,
+				elem_offset + offset,
+				is_class_parent,
+			);
 			offset += field_size;
 		} else {
 			offset += aarch64_size(field.type.name);
@@ -283,9 +314,7 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 				}
 				status.code += `bl ${struct_type.name}_destroy\n`;
 			}
-			if (!struct_type.is_class) {
-				emit_field_destroys(status, struct_type, decl.name);
-			}
+			emit_field_destroys(status, struct_type, decl.name, undefined, struct_type.is_class);
 		}
 		for (const slot of current_scope.heap_slots) {
 			if (slot.var_name && moved.has(slot.var_name)) continue;

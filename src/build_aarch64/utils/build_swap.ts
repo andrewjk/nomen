@@ -5,8 +5,8 @@ import AccessNode from "../../nodes/AccessNode.ts";
 import FunctionCallNode from "../../nodes/FunctionCallNode.ts";
 import ValueNode from "../../nodes/ValueNode.ts";
 import build_node from "../build_node.ts";
-import { find_anchor_slot } from "./auto_destroy.ts";
-import { emit_var_address } from "./stack_var.ts";
+import { find_anchor_slot, is_struct_type } from "./auto_destroy.ts";
+import { emit_var_address, emit_var_load } from "./stack_var.ts";
 import { get_field_offset } from "./struct_layout.ts";
 
 export function build_swap_params(node: FunctionCallNode, status: BuildStatus) {
@@ -18,6 +18,7 @@ export function build_swap_params(node: FunctionCallNode, status: BuildStatus) {
 
 		build_node(swap_expr, status);
 		if (!status.code.endsWith("\n")) status.code += "\n";
+
 		status.code += `str x0, [sp, #-16]!\n`;
 
 		if (
@@ -30,7 +31,12 @@ export function build_swap_params(node: FunctionCallNode, status: BuildStatus) {
 			const src_offset = get_field_offset(src_target_type.name, src_field, status);
 
 			const target_name = (src_access.target as ValueNode).value;
-			emit_var_address(status, "x0", target_name);
+			const target_struct = is_struct_type(src_target_type.name, status);
+			if (target_struct?.is_class) {
+				emit_var_load(status, "x0", target_name, 8);
+			} else {
+				emit_var_address(status, "x0", target_name);
+			}
 			if (!status.code.endsWith("\n")) status.code += "\n";
 			status.code += `ldr x1, [sp], #16\n`;
 			status.code += `str x1, [x0, #${src_offset}]\n`;
