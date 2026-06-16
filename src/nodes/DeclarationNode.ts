@@ -3,7 +3,7 @@ import ParameterNode from "./ParameterNode.ts";
 import Type from "./Type.ts";
 
 export default class DeclarationNode extends BaseNode {
-	visibility: "inherit" | "pub" | "mod" | "priv";
+	visibility: "pub" | "private";
 	declaration: "const" | "var";
 	name: string;
 	type: Type;
@@ -12,10 +12,11 @@ export default class DeclarationNode extends BaseNode {
 	type_start?: number;
 	func_params?: ParameterNode[];
 	func_return_type?: Type;
+	scope?: BaseNode;
 
 	constructor(
 		start: number,
-		visibility: "inherit" | "pub" | "mod" | "priv",
+		visibility: "pub" | "private",
 		declaration: "const" | "var",
 		name: string,
 		type?: Type,

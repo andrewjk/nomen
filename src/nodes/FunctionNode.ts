@@ -19,7 +19,7 @@ function branch_has_return(statements: BaseNode[]): boolean {
 }
 
 export default class FunctionNode extends BaseNode implements BlockNode, ReturningNode {
-	visibility: "inherit" | "pub" | "mod" | "priv";
+	visibility: "pub" | "private";
 	name: string;
 	return_type: Type;
 	params: ParameterNode[];
@@ -32,10 +32,11 @@ export default class FunctionNode extends BaseNode implements BlockNode, Returni
 	checked?: boolean;
 	is_inline?: boolean;
 	type_params: string[] = [];
+	scope?: BaseNode;
 
 	constructor(
 		start: number,
-		visibility: "inherit" | "pub" | "mod" | "priv",
+		visibility: "pub" | "private",
 		name: string,
 		return_type: Type,
 		params?: ParameterNode[],

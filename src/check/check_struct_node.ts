@@ -56,17 +56,18 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 
 	const values_length_before_fields = status.values.length;
 	for (let decl of struct.fields) {
+		decl.scope = struct;
 		check_declaration_node(decl, status);
 	}
 	status.values.length = values_length_before_fields;
 
-	struct.privates_visible = true;
 	struct.is_generic = struct.type_params.length > 0;
 
 	status.types.push(struct.name);
 	status.structs.push(struct);
 
 	for (let func of struct.functions) {
+		func.scope = struct;
 		if (func.name === "init" && !func.has_body) {
 			for (const param of func.params) {
 				if (
@@ -79,8 +80,6 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 		}
 		check_function_node(func, status);
 	}
-
-	struct.privates_visible = false;
 
 	status.type_params.length = type_params_length_before;
 	status.types.length = types_length_before;

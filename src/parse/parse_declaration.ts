@@ -13,12 +13,13 @@ import parse_type from "./parse_type.ts";
 import type ParseStatus from "./ParseStatus.ts";
 import accept from "./utils/accept.ts";
 import consume from "./utils/consume.ts";
+import default_visibility from "./utils/default_visibility.ts";
 import expect from "./utils/expect.ts";
 import get_index from "./utils/get_index.ts";
 import peek_current from "./utils/peek_current.ts";
 
 export default function parse_declaration(
-	visibility: "inherit" | "pub" | "mod" | "priv",
+	visibility: "pub" | "private",
 	declaration: "const" | "var",
 	status: ParseStatus,
 ) {
@@ -112,7 +113,12 @@ function parse_function_type_declaration(decl: DeclarationNode, status: ParseSta
 			if (peek_current(status) === "{") {
 				// var func (params) name { body } or var func (params) name = { body }
 				const func_start = get_index(status);
-				const func = new FunctionNode(func_start, "mod", decl.name, new Type(""));
+				const func = new FunctionNode(
+					func_start,
+					default_visibility(status),
+					decl.name,
+					new Type(""),
+				);
 				func.params = decl.func_params || [];
 				func.return_type = decl.func_return_type || new Type("");
 				accept("{", status);
@@ -180,7 +186,7 @@ function parse_anonymous_function(name: string, status: ParseStatus): FunctionNo
 		return undefined;
 	}
 
-	const func = new FunctionNode(start, "mod", name, new Type(""));
+	const func = new FunctionNode(start, default_visibility(status), name, new Type(""));
 
 	if (peek_current(status) !== ")") {
 		parse_anon_function_parameter(func, status);

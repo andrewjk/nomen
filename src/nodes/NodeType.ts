@@ -2,6 +2,7 @@ export type NodeType =
 	| "import"
 	| "root"
 	| "struct"
+	| "class"
 	| "trait"
 	| "func"
 	| "param"

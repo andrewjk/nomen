@@ -9,10 +9,7 @@ import expect from "./utils/expect.ts";
 import get_index from "./utils/get_index.ts";
 import peek_current from "./utils/peek_current.ts";
 
-export default function parse_enum(
-	visibility: "inherit" | "pub" | "mod" | "priv",
-	status: ParseStatus,
-) {
+export default function parse_enum(visibility: "pub" | "private", status: ParseStatus) {
 	const start = get_index(status);
 	accept(visibility, status);
 	accept("enum", status);

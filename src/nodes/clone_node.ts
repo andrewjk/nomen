@@ -134,6 +134,7 @@ export default function clone_node(node: BaseNode): BaseNode {
 			c.type_start = n.type_start;
 			c.func_params = n.func_params?.map((p) => clone_node(p) as ParameterNode);
 			c.func_return_type = n.func_return_type ? clone_type(n.func_return_type) : undefined;
+			c.scope = n.scope;
 			c.allocations = n.allocations?.map(clone_node);
 			return c;
 		}
@@ -340,7 +341,7 @@ export default function clone_node(node: BaseNode): BaseNode {
 			);
 			c.type_params = n.type_params.slice();
 			c.is_generic = n.is_generic;
-			c.privates_visible = n.privates_visible;
+			c.scope = n.scope;
 			c.allocations = n.allocations?.map(clone_node);
 			return c;
 		}
@@ -357,6 +358,7 @@ export default function clone_node(node: BaseNode): BaseNode {
 			c.has_return = n.has_return;
 			c.return_type_start = n.return_type_start;
 			c.is_static = n.is_static;
+			c.scope = n.scope;
 			c.allocations = n.allocations?.map(clone_node);
 			return c;
 		}

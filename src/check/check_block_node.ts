@@ -1,4 +1,5 @@
 import add_error from "../add_error.ts";
+import BaseNode from "../nodes/BaseNode.ts";
 import BitsetNode from "../nodes/BitsetNode.ts";
 import type BlockNode from "../nodes/BlockNode.ts";
 import EnumNode from "../nodes/EnumNode.ts";
@@ -35,6 +36,7 @@ function gather_structs(block: BlockNode, status: CheckStatus) {
 					add_error(status, `Struct already declared: ${struct.name}`, struct.start);
 				} else {
 					names_in_block.structs.add(struct.name);
+					struct.scope = status.stack.at(-1) || block;
 					status.types.push(struct.name);
 					status.structs.push(struct);
 				}
@@ -57,6 +59,7 @@ function gather_structs(block: BlockNode, status: CheckStatus) {
 					add_error(status, `Function already declared: ${func.name}`, func.start);
 				} else {
 					names_in_block.functions.add(func.name);
+					func.scope = status.stack.at(-1) || block;
 					status.functions.push(func);
 				}
 				break;

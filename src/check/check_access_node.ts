@@ -14,6 +14,7 @@ import {
 	is_overloaded,
 	mangled_label,
 } from "./utils/function_overload.ts";
+import is_visible from "./utils/is_visible.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
 
@@ -147,11 +148,9 @@ function check_access_field_node(
 		}
 	}
 	if (field) {
-		if (
-			field.visibility === "priv" &&
-			!status.structs.find((s) => s.name === target_type.name)?.privates_visible
-		) {
-			add_error(status, `Can't access priv field: ${node.name}`, node.start);
+		const access_scope = status.stack.at(-1)!;
+		if (field.visibility === "private" && !is_visible(field.scope, field.visibility, access_scope, status.stack)) {
+			add_error(status, `Can't access private field: ${node.name}`, node.start);
 			return false;
 		} else {
 			node.type = field.type;

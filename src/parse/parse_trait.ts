@@ -7,10 +7,7 @@ import consume from "./utils/consume.ts";
 import expect from "./utils/expect.ts";
 import get_index from "./utils/get_index.ts";
 
-export default function parse_trait(
-	visibility: "inherit" | "pub" | "mod" | "priv",
-	status: ParseStatus,
-) {
+export default function parse_trait(visibility: "pub" | "private", status: ParseStatus) {
 	const start = get_index(status);
 	accept(visibility, status);
 	accept("trait", status);

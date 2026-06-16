@@ -11,24 +11,19 @@ import consume from "./utils/consume.ts";
 import get_index from "./utils/get_index.ts";
 import peek_next from "./utils/peek_next.ts";
 
-export default function parse_visibility(visibility: "pub" | "priv", status: ParseStatus) {
+export default function parse_visibility(visibility: "pub" | "private", status: ParseStatus) {
 	// Declarations, funcs, structs and traits can have their visibility controlled
-	// Visibility options are `pub`, `mod` and `sec`
-	// `pub` is visible within the module and from other modules
-	// `mod` is visible within the module only
-	// `priv` is visible within the scope (e.g. function, folder) only
-	// Declarations, funcs, structs and traits have `mod` visibility by default
-	// Visibility and scope flow downwards, unless overridden to be more restrictive
-	// TODO: Folder based namespaces??
-	// Anything in the current folder has access to anything else
-	// Anything in the current module has access to anything with `mod` visibility via `use`
-	// Anything in other modules has access to anything with `pub` visibility via `use`
+	// Visibility options are `pub` and `private`
+	// `pub` is visible within the parent's scope (e.g. file, foler)
+	// `private` is visible within the scope (e.g. function, file) only
+	// Declarations, funcs, structs and traits have `private` visibility by default
+	// Struct fields have `pub` visibility by default
 	const next = peek_next(status);
 	switch (next) {
 		case "const":
 		case "var": {
-			if (visibility === "priv" && status.stack.at(-1)?.node_type === "trait") {
-				add_error(status, `Trait fields cannot be priv`, get_index(status));
+			if (visibility === "private" && status.stack.at(-1)?.node_type === "trait") {
+				add_error(status, `Trait fields cannot be private`, get_index(status));
 				consume(status);
 			} else {
 				parse_declaration(visibility, next, status);
@@ -56,8 +51,8 @@ export default function parse_visibility(visibility: "pub" | "priv", status: Par
 			break;
 		}
 		case "func": {
-			if (visibility === "priv" && status.stack.at(-1)?.node_type === "trait") {
-				add_error(status, `Trait functions cannot be priv`, get_index(status));
+			if (visibility === "private" && status.stack.at(-1)?.node_type === "trait") {
+				add_error(status, `Trait functions cannot be private`, get_index(status));
 				consume(status);
 			} else {
 				parse_function(visibility, status);
@@ -80,8 +75,8 @@ export default function parse_visibility(visibility: "pub" | "priv", status: Par
 		}
 
 		case "op": {
-			if (visibility === "priv" && status.stack.at(-1)?.node_type === "trait") {
-				add_error(status, `Trait operators cannot be priv`, get_index(status));
+			if (visibility === "private" && status.stack.at(-1)?.node_type === "trait") {
+				add_error(status, `Trait operators cannot be private`, get_index(status));
 				consume(status);
 			} else {
 				parse_op(visibility, status);
@@ -91,7 +86,7 @@ export default function parse_visibility(visibility: "pub" | "priv", status: Par
 		default: {
 			add_error(
 				status,
-				`Visibility can only be set for const, var, struct, trait or func`,
+				`Visibility can only be set for const, var, class, struct, trait or func`,
 				get_index(status),
 			);
 			consume(status);

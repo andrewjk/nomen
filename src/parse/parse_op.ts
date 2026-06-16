@@ -21,10 +21,7 @@ const OPERATOR_MAP: Record<string, string> = {
 	"%": "mod",
 };
 
-export default function parse_op(
-	visibility: "inherit" | "pub" | "mod" | "priv",
-	status: ParseStatus,
-) {
+export default function parse_op(visibility: "pub" | "private", status: ParseStatus) {
 	const start = get_index(status);
 	accept(visibility, status);
 	accept("op", status);
@@ -73,7 +70,8 @@ export default function parse_op(
 				status.stack.pop();
 
 				if (func.return_type.name && !func.has_return) {
-					const is_raw_only = func.statements.length > 0 && func.statements.every((s) => s.node_type === "raw");
+					const is_raw_only =
+						func.statements.length > 0 && func.statements.every((s) => s.node_type === "raw");
 					if (!is_raw_only) {
 						add_error(status, "Missing return", status.tokens[status.i - 2].i);
 					}

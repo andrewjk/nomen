@@ -17,7 +17,7 @@ import get_index from "./utils/get_index.ts";
 import peek_current from "./utils/peek_current.ts";
 
 export default function parse_function(
-	visibility: "inherit" | "pub" | "mod" | "priv",
+	visibility: "pub" | "private",
 	status: ParseStatus,
 	name_override?: string,
 	is_inline?: boolean,
@@ -78,7 +78,8 @@ export default function parse_function(
 					status.stack.pop();
 
 					if (func.return_type.name && !func.has_return && name !== "init" && name !== "destroy") {
-						const is_raw_only = func.statements.length > 0 && func.statements.every((s) => s.node_type === "raw");
+						const is_raw_only =
+							func.statements.length > 0 && func.statements.every((s) => s.node_type === "raw");
 						if (!is_raw_only) {
 							add_error(status, `Missing return`, status.tokens[status.i - 2].i);
 						}

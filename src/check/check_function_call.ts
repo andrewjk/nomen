@@ -13,6 +13,7 @@ import { monomorphize } from "./check_function_call_node.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
+import is_visible from "./utils/is_visible.ts";
 import { is_class_type } from "./utils/ownership.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
@@ -24,11 +25,17 @@ export default function check_function_call(
 	target_type?: Type,
 	self_value?: string,
 ): boolean {
-	if (
-		func.visibility === "priv" &&
-		!status.structs.find((s) => s.name === target_type?.name)?.privates_visible
-	) {
-		add_error(status, `Can't access priv function: ${node.name}`, node.start);
+	const access_scope = status.stack.at(-1)!;
+	// For init functions, check the struct's visibility
+	if (func.name === "init") {
+		const struct_name = target_type?.name || func.return_type.name;
+		const struct = status.structs.find((s) => s.name === struct_name);
+		if (struct && struct.visibility === "private" && !is_visible(struct.scope, struct.visibility, access_scope, status.stack)) {
+			add_error(status, `Can't access private function: ${node.name}`, node.start);
+			return false;
+		}
+	} else if (func.visibility === "private" && !is_visible(func.scope, func.visibility, access_scope, status.stack)) {
+		add_error(status, `Can't access private function: ${node.name}`, node.start);
 		return false;
 	}
 
@@ -223,7 +230,7 @@ export default function check_function_call(
 		if (param.node_type !== "value" && !has_ref_keyword && !node.swap_params?.has(i)) {
 			const declaration_name = `_param_${status.var_name_counter.value++}`;
 			status.allocations.push(
-				new DeclarationNode(param.start, "priv", "const", declaration_name, param_type, param),
+				new DeclarationNode(param.start, "private", "const", declaration_name, param_type, param),
 			);
 			node.params.splice(i, 1, new ValueNode(param.start, declaration_name, param_type));
 		}

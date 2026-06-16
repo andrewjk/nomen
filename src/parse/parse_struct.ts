@@ -11,7 +11,7 @@ import expect from "./utils/expect.ts";
 import get_index from "./utils/get_index.ts";
 
 export default function parse_struct(
-	visibility: "inherit" | "pub" | "mod" | "priv",
+	visibility: "pub" | "private",
 	status: ParseStatus,
 	is_class = false,
 ) {
@@ -50,7 +50,7 @@ export default function parse_struct(
 		if (!has_custom_init) {
 			const func = new FunctionNode(-1, visibility, "init", new Type(struct.name));
 			func.params = struct.fields
-				.filter((f) => f.visibility !== "priv" && !f.value)
+				.filter((f) => f.visibility !== "private" && !f.value)
 				.map((f) => new ParameterNode(-1, f.name, f.type));
 			func.is_static = true;
 			struct.functions.unshift(func);

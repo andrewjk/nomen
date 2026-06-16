@@ -1,3 +1,4 @@
+import add_error from "../add_error.ts";
 import AccessIndexNode from "../nodes/AccessIndexNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import AssignmentNode from "../nodes/AssignmentNode.ts";
@@ -31,6 +32,7 @@ import type ParseStatus from "./ParseStatus.ts";
 import accept from "./utils/accept.ts";
 import add_to_parent from "./utils/add_to_parent.ts";
 import consume from "./utils/consume.ts";
+import default_visibility from "./utils/default_visibility.ts";
 import expect from "./utils/expect.ts";
 import get_index from "./utils/get_index.ts";
 import peek_current from "./utils/peek_current.ts";
@@ -56,43 +58,43 @@ export default function parse_statement(status: ParseStatus) {
 				break;
 			}
 			case "pub":
-			case "priv": {
+			case "private": {
 				parse_visibility(value, status);
 				break;
 			}
-			case "const":
-			case "var": {
-				parse_declaration("mod", value, status);
-				break;
-			}
+		case "const":
+		case "var": {
+			parse_declaration(default_visibility(status), value, status);
+			break;
+		}
 			case "struct": {
-				parse_struct("mod", status);
+				parse_struct(default_visibility(status), status);
 				break;
 			}
 			case "class": {
-				parse_struct("mod", status, true);
+				parse_struct(default_visibility(status), status, true);
 				break;
 			}
 			case "enum": {
-				parse_enum("mod", status);
+				parse_enum(default_visibility(status), status);
 				break;
 			}
 			case "bitset": {
-				parse_bitset("mod", status);
+				parse_bitset(default_visibility(status), status);
 				break;
 			}
 			case "trait": {
-				parse_trait("mod", status);
+				parse_trait(default_visibility(status), status);
 				break;
 			}
 			case "func": {
-				parse_function("mod", status);
+				parse_function(default_visibility(status), status);
 				break;
 			}
 			case "inline": {
 				consume(status);
 				if (peek_current(status) === "func") {
-					parse_function("mod", status, undefined, true);
+					parse_function(default_visibility(status), status, undefined, true);
 				} else {
 					add_error(status, "Expected func after inline", get_index(status));
 				}
@@ -100,15 +102,15 @@ export default function parse_statement(status: ParseStatus) {
 			}
 			case "init": {
 				// init = (...) { } is shorthand for func init = (...) { }
-				parse_function("mod", status, "init");
+				parse_function(default_visibility(status), status, "init");
 				break;
 			}
 			case "destroy": {
-				parse_destroy("mod", status);
+				parse_destroy(default_visibility(status), status);
 				break;
 			}
 			case "op": {
-				parse_op("mod", status);
+				parse_op(default_visibility(status), status);
 				break;
 			}
 			case "if": {

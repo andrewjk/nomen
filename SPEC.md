@@ -993,9 +993,8 @@ const result = Math.power(2, 10)
 
 ## Visibility Modifiers
 
-- `pub`: Public (accessible from anywhere)
-- `mod`: Module-level (accessible within the same module only — this is the default)
-- `priv`: Private (accessible only within the same struct or scope)
+- `pub`: Public (accessible from the parent scope)
+- `private`: Private (accessible only within the same struct or scope)
 
 ## Type Coercion
 

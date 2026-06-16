@@ -2,13 +2,13 @@ import BaseNode from "./BaseNode.ts";
 import ParameterNode from "./ParameterNode.ts";
 
 export default class EnumNode extends BaseNode {
-	visibility: "inherit" | "pub" | "mod" | "priv";
+	visibility: "pub" | "private";
 	name: string;
 	cases: { name: string; params: ParameterNode[] }[];
 
 	constructor(
 		start: number,
-		visibility: "inherit" | "pub" | "mod" | "priv",
+		visibility: "pub" | "private",
 		name: string,
 		cases?: { name: string; params: ParameterNode[] }[],
 	) {
