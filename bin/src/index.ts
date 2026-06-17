@@ -10,6 +10,7 @@ import yargs from "yargs/yargs";
 import build from "../../src/build.ts";
 import join from "../../src/join.ts";
 import parse from "../../src/parse.ts";
+import render_errors from "./format_errors.ts";
 import type Config from "./types/Config.ts";
 
 const SUPPORTED_EXTENSION = ".echo";
@@ -201,20 +202,7 @@ function processFile(filename: string, config: Config) {
 	const ok = !errors.length;
 
 	if (!ok) {
-		console.log("\nERRORS\n======");
-		for (let error of errors) {
-			let slice = input.slice(0, error.start);
-			let line = 1;
-			let last_line_index = 0;
-			for (let i = 0; i < slice.length; i++) {
-				if (input[i] === "\n") {
-					line += 1;
-					last_line_index = i;
-				}
-			}
-			console.log(`${line},${error.start - last_line_index - 1}: ${error.message}`);
-		}
-		console.log("======");
+		console.log(render_errors(input, errors));
 		return;
 	}
 
