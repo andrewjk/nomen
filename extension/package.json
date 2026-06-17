@@ -16,7 +16,15 @@
 			{
 				"id": "echo",
 				"extensions": [".echo"],
-				"aliases": ["Echo"]
+				"aliases": ["Echo"],
+				"configuration": "./language-configuration.json"
+			}
+		],
+		"grammars": [
+			{
+				"language": "echo",
+				"scopeName": "source.echo",
+				"path": "./syntaxes/echo.tmLanguage.json"
 			}
 		],
 		"commands": [
@@ -48,7 +56,7 @@
 				"echo.auditRuntime": {
 					"type": "string",
 					"default": "",
-					"markdownDescription": "Path to `audit_runtime.c`, linked in when running Audit. Supports `${workspaceFolder}`. Defaults to `${workspaceFolder}/test/audit_runtime.c`."
+					"markdownDescription": "Path to `audit_runtime.c`, linked in when running Audit. Supports `${workspaceFolder}`. Defaults to `${workspaceFolder}/src/audit_runtime.c`."
 				},
 				"echo.saveBeforeRun": {
 					"type": "boolean",
