@@ -237,14 +237,10 @@ function update_diagnostics(document: vscode.TextDocument): void {
 
 	const text = document.getText();
 	const library = load_library(document.uri);
-	// Append `import System` so the compiler resolves System types (Console, Init,
-	// ...) without inlining. User code stays at offset 0, so error offsets map
-	// directly to the document.
-	const source = `${text}\nimport System\n`;
 
 	let errors: CompileError[];
 	try {
-		errors = parse(source, library).errors;
+		errors = parse(text, library).errors;
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
 		diagnostics.set(document.uri, [

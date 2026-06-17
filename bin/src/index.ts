@@ -8,6 +8,7 @@ import { hideBin } from "yargs/helpers";
 import yargs from "yargs/yargs";
 
 import build from "../../src/build.ts";
+import { get_library } from "../../src/lib.ts";
 import join from "../../src/join.ts";
 import parse from "../../src/parse.ts";
 import render_errors from "./format_errors.ts";
@@ -117,14 +118,26 @@ try {
 }
 
 function resolve_lib(file_path: string): string | undefined {
-	const dir = path.dirname(path.resolve(file_path));
-	const config_path = path.join(dir, "package.jsonc");
-	if (!fs.existsSync(config_path)) return undefined;
-	const raw = fs.readFileSync(config_path, "utf8");
-	const json = raw.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
-	const parsed = JSON.parse(json);
-	if (parsed.imports?.System) {
-		return path.resolve(dir, parsed.imports.System);
+	let dir = path.dirname(path.resolve(file_path));
+	for (let i = 0; i < 20; i++) {
+		const config_path = path.join(dir, "package.jsonc");
+		if (fs.existsSync(config_path)) {
+			try {
+				const raw = fs.readFileSync(config_path, "utf8");
+				const json = raw.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
+				const parsed = JSON.parse(json);
+				if (parsed.imports?.System) {
+					return path.resolve(dir, parsed.imports.System);
+				}
+			} catch {
+				// ignore malformed package.jsonc and keep searching
+			}
+		}
+		const lib_config = path.join(dir, "lib", "package.jsonc");
+		if (fs.existsSync(lib_config)) return path.join(dir, "lib");
+		const parent = path.dirname(dir);
+		if (parent === dir) break;
+		dir = parent;
 	}
 	return undefined;
 }
@@ -194,7 +207,8 @@ function processFile(filename: string, config: Config) {
 	let startTime = performance.now();
 
 	let input = join(path.resolve(filename), config.lib);
-	const parsed = parse(input);
+	const library = config.lib ? get_library(config.lib) : undefined;
+	const parsed = parse(input, library);
 	// TODO: If verbose flag
 	// console.log("Parsed");
 

@@ -36,7 +36,11 @@ function add_source(
 	source += fs.readFileSync(source_path, "utf8");
 
 	source = source.replaceAll(/^import(.*)$/gm, (match, name) => {
-		const import_file_path = `./${name.trim()}.echo`;
+		const trimmed = name.trim();
+		// `import System` is the library aggregate, resolved at parse time via
+		// resolve_linked_types — not a file to inline here.
+		if (trimmed === "System") return match;
+		const import_file_path = `./${trimmed}.echo`;
 		if (!inputs.has(import_file_path)) {
 			add_source(folder_path, import_file_path, inputs, lib_path);
 		}
