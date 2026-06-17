@@ -115,6 +115,10 @@ export default function build(
 		}
 		if (options.audit) {
 			status.code = status.code.replace(".return_0:\n", "bl _echo_audit_check\n.return_0:\n");
+			// Raw assembly blocks in the library (e.g. int_to_string) call _malloc/_free
+			// directly. Wrap them so the audit counter stays balanced.
+			status.code = status.code.replaceAll("bl _malloc\n", "bl _echo_malloc_wrap\n");
+			status.code = status.code.replaceAll("bl _free\n", "bl _echo_free_wrap\n");
 		}
 	} else {
 		build_c_node(root, status);
