@@ -1,0 +1,78 @@
+{
+	"name": "echo",
+	"displayName": "Echo",
+	"description": "Run and Audit support for the Echo programming language.",
+	"version": "0.0.1",
+	"publisher": "echo-lang",
+	"license": "ISC",
+	"engines": {
+		"vscode": "^1.85.0"
+	},
+	"categories": ["Programming Languages"],
+	"main": "./dist/extension.js",
+	"activationEvents": ["onLanguage:echo"],
+	"contributes": {
+		"languages": [
+			{
+				"id": "echo",
+				"extensions": [".echo"],
+				"aliases": ["Echo"]
+			}
+		],
+		"commands": [
+			{
+				"command": "echo.run",
+				"title": "Echo: Run File",
+				"enablement": "resourceLangId == echo"
+			},
+			{
+				"command": "echo.audit",
+				"title": "Echo: Audit File",
+				"enablement": "resourceLangId == echo"
+			}
+		],
+		"configuration": {
+			"title": "Echo",
+			"properties": {
+				"echo.executable": {
+					"type": "string",
+					"default": "lang",
+					"markdownDescription": "The command used to invoke the Echo CLI. Supports `${workspaceFolder}`. Defaults to auto-detecting `bin/dist/index.mjs` in the workspace, falling back to `lang` on your PATH."
+				},
+				"echo.arch": {
+					"type": "string",
+					"enum": ["aarch64", "c"],
+					"default": "aarch64",
+					"description": "Target architecture passed to the compiler via --arch."
+				},
+				"echo.saveBeforeRun": {
+					"type": "boolean",
+					"default": true,
+					"description": "Save the file before running."
+				},
+				"echo.terminal": {
+					"type": "string",
+					"enum": ["dedicated", "new"],
+					"enumDescriptions": [
+						"Reuse a single Echo terminal across runs.",
+						"Create a fresh terminal for each run."
+					],
+					"default": "dedicated",
+					"description": "How to manage the terminal used for runs."
+				}
+			}
+		}
+	},
+	"scripts": {
+		"build": "node esbuild.mjs",
+		"dev": "node esbuild.mjs --watch",
+		"check": "tsc --noEmit",
+		"package": "node esbuild.mjs --minify && vsce package"
+	},
+	"devDependencies": {
+		"@types/node": "^25.9.2",
+		"@types/vscode": "^1.85.0",
+		"esbuild": "^0.25.0",
+		"typescript": "^6.0.3"
+	}
+}
