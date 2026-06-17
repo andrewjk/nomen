@@ -2,9 +2,10 @@
 	"compilerOptions": {
 		"module": "esnext",
 		"target": "es2022",
-		"lib": ["es2022"],
+		"lib": ["es2023"],
 		"moduleResolution": "bundler",
-		"rootDir": "src",
+		"allowImportingTsExtensions": true,
+		"rootDir": "..",
 		"outDir": "dist",
 		"strict": true,
 		"esModuleInterop": true,

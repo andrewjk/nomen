@@ -72,6 +72,17 @@
 					],
 					"default": "dedicated",
 					"description": "How to manage the terminal used for runs."
+				},
+				"echo.diagnostics": {
+					"type": "string",
+					"enum": ["onType", "onSave", "off"],
+					"enumDescriptions": [
+						"Show parse and compile errors as you type (debounced).",
+						"Show errors only when a file is saved.",
+						"Disable error diagnostics."
+					],
+					"default": "onType",
+					"description": "When to compute Echo error diagnostics."
 				}
 			}
 		}
