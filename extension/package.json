@@ -45,6 +45,11 @@
 					"default": "aarch64",
 					"description": "Target architecture passed to the compiler via --arch."
 				},
+				"echo.auditRuntime": {
+					"type": "string",
+					"default": "",
+					"markdownDescription": "Path to `audit_runtime.c`, linked in when running Audit. Supports `${workspaceFolder}`. Defaults to `${workspaceFolder}/test/audit_runtime.c`."
+				},
 				"echo.saveBeforeRun": {
 					"type": "boolean",
 					"default": true,

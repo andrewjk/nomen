@@ -15,7 +15,10 @@ export function activate(context: vscode.ExtensionContext): void {
 	terminal = undefined;
 
 	context.subscriptions.push(
-		vscode.languages.registerCodeLensProvider({ language: ECHO_LANGUAGE }, new EchoCodeLensProvider()),
+		vscode.languages.registerCodeLensProvider(
+			{ language: ECHO_LANGUAGE },
+			new EchoCodeLensProvider(),
+		),
 		vscode.commands.registerCommand("echo.run", (uri?: vscode.Uri) => runEcho(uri, false)),
 		vscode.commands.registerCommand("echo.audit", (uri?: vscode.Uri) => runEcho(uri, true)),
 		vscode.window.onDidCloseTerminal((t) => {
@@ -68,7 +71,11 @@ async function runEcho(uri: vscode.Uri | undefined, audit: boolean): Promise<voi
 	const arch = get_config<"aarch64" | "c">("arch", "aarch64");
 	const file_arg = shell_quote(document.uri.fsPath);
 	const flags = ["--in", file_arg, "--arch", arch];
-	if (audit) flags.push("--audit");
+	if (audit) {
+		flags.push("--audit");
+		const runtime = resolve_audit_runtime(document.uri);
+		if (runtime) flags.push("--audit-runtime", shell_quote(runtime));
+	}
 
 	const command = `${executable} ${flags.join(" ")}`;
 
@@ -86,18 +93,11 @@ function resolveDocument(uri: vscode.Uri | undefined): vscode.TextDocument | und
 }
 
 function resolve_executable(uri: vscode.Uri): string {
-	const ws = vscode.workspace.getWorkspaceFolder(uri);
-	const workspace_folder = ws?.uri.fsPath ?? "";
-	const substitute = (value: string): string =>
-		value
-			.split("${workspaceFolder}")
-			.join(workspace_folder)
-			.split("$workspaceFolder")
-			.join(workspace_folder);
+	const workspace_folder = workspace_folder_of(uri);
 
 	const setting = get_config<string>("executable", "lang").trim();
 	if (setting && setting !== "lang") {
-		return substitute(setting);
+		return substitute_workspace(setting, workspace_folder);
 	}
 
 	if (workspace_folder) {
@@ -108,6 +108,35 @@ function resolve_executable(uri: vscode.Uri): string {
 	}
 
 	return "lang";
+}
+
+function resolve_audit_runtime(uri: vscode.Uri): string | undefined {
+	const workspace_folder = workspace_folder_of(uri);
+
+	const setting = get_config<string>("auditRuntime", "").trim();
+	if (setting) {
+		const resolved = substitute_workspace(setting, workspace_folder);
+		return fs.existsSync(resolved) ? resolved : undefined;
+	}
+
+	if (workspace_folder) {
+		const candidate = path.join(workspace_folder, "src", "audit_runtime.c");
+		if (fs.existsSync(candidate)) return candidate;
+	}
+
+	return undefined;
+}
+
+function workspace_folder_of(uri: vscode.Uri): string {
+	return vscode.workspace.getWorkspaceFolder(uri)?.uri.fsPath ?? "";
+}
+
+function substitute_workspace(value: string, workspace_folder: string): string {
+	return value
+		.split("${workspaceFolder}")
+		.join(workspace_folder)
+		.split("$workspaceFolder")
+		.join(workspace_folder);
 }
 
 function get_terminal(): vscode.Terminal {

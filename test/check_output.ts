@@ -30,7 +30,7 @@ function postprocess_macos(code: string, audit = false): string {
 function compute_cache_key(code: string, options: { audit?: boolean }): string {
 	const parts = [code];
 	if (options.audit) {
-		const audit_runtime = path.join(".", "test", "audit_runtime.c");
+		const audit_runtime = path.join(".", "src", "audit_runtime.c");
 		if (fs.existsSync(audit_runtime)) {
 			parts.push(fs.readFileSync(audit_runtime, "utf-8"));
 		}
@@ -66,7 +66,7 @@ export default async function check_output(
 	let stdout: string;
 	let stderr: string;
 
-	const audit_runtime = path.join(".", "test", "audit_runtime.c");
+	const audit_runtime = path.join(".", "src", "audit_runtime.c");
 	const audit_obj = path.join(folder, "audit_runtime.o");
 	const execPromise = util.promisify(exec);
 	const compileCmd = options.audit

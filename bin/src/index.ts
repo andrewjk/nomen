@@ -7,61 +7,81 @@ import chokidar from "chokidar";
 import { hideBin } from "yargs/helpers";
 import yargs from "yargs/yargs";
 
-import build from "../../src/build";
-import join from "../../src/join";
-import parse from "../../src/parse";
-import type Config from "./types/Config";
+import build from "../../src/build.ts";
+import join from "../../src/join.ts";
+import parse from "../../src/parse.ts";
+import type Config from "./types/Config.ts";
 
 const SUPPORTED_EXTENSION = ".echo";
 
-//(async () => {
+console.log("\n~ ECHO ~\n");
+
+const options = yargs(hideBin(process.argv))
+	.usage("Usage: lang --in [file/folder]")
+	.option("in", {
+		alias: "i",
+		describe: "Input file or folder",
+		type: "string",
+	})
+	.option("out", {
+		alias: "o",
+		describe: "Output file",
+		type: "string",
+	})
+	.option("config", {
+		alias: "c",
+		describe: "The path to a config file",
+		type: "string",
+	})
+	.option("watch", {
+		alias: "w",
+		describe: "Whether to watch for file changes",
+		type: "boolean",
+	})
+	.option("arch", {
+		alias: "a",
+		describe: "Target architecture (aarch64 or c)",
+		type: "string",
+		default: "aarch64",
+	})
+	.option("lib", {
+		alias: "l",
+		describe: "Path to System library directory (containing package.jsonc)",
+		type: "string",
+	})
+	.option("audit", {
+		describe: "Whether to audit the generated program for memory issues",
+		type: "boolean",
+	})
+	.option("audit-runtime", {
+		describe: "Path to audit_runtime.c, linked in when --audit is set",
+		type: "string",
+	})
+	.help(true)
+	.check((argv) => {
+		if (!argv._.length && !argv.in) {
+			throw new Error("Missing required argument: in");
+		}
+		return true;
+	})
+	.parseSync();
+
 try {
-	console.log("\n~ ECHO CLI ~\n");
+	if (!options.in) {
+		process.exit(0);
+	}
 
-	const options = yargs(hideBin(process.argv))
-		.usage("Usage: echo --in [file/folder]")
-		.option("in", {
-			alias: "i",
-			describe: "Input file or folder",
-			type: "string",
-			demandOption: true,
-		})
-		.option("out", {
-			alias: "o",
-			describe: "Output file",
-			type: "string",
-			demandOption: false,
-		})
-		.option("config", {
-			alias: "c",
-			describe: "The path to a config file",
-			type: "string",
-			demandOption: false,
-		})
-		.option("watch", {
-			alias: "w",
-			describe: "Whether to watch for file changes",
-			type: "boolean",
-			demandOption: false,
-		})
-		.option("arch", {
-			alias: "a",
-			describe: "Target architecture (c or aarch64)",
-			type: "string",
-			default: "aarch64",
-		})
-		.help(true)
-		.parseSync();
-
-	// Does the --in path exist
 	if (fs.existsSync(options.in)) {
-		// Does the --config path exist
-		let config: Config = { arch: options.arch as "c" | "aarch64" };
+		let config: Config = { arch: "aarch64" };
+		// Load the config from a file
 		if (options.config && fs.existsSync(options.config)) {
-			// TODO: Support a js/ts config file as well as JSON
-			//config = await import(options.config);
 			config = JSON.parse(fs.readFileSync(options.config, "utf-8"));
 		}
+		// Overwrite with args
+		if (options.arch) config.arch = options.arch as "aarch64" | "c";
+		if (options.lib) config.lib = options.lib;
+		if (options.audit) config.audit = options.audit;
+		if (options["audit-runtime"]) config.audit_runtime = options["audit-runtime"];
 
 		// Is the --in path a folder
 		if (fs.lstatSync(options.in).isDirectory()) {
@@ -93,16 +113,53 @@ try {
 	}
 } catch (err) {
 	console.log("UH", err);
-	yargs.showHelp();
 }
-//})();
 
-function watchPath(path: string, config: Config) {
-	chokidar.watch(path).on("all", (event, path) => {
-		//console.log("Change", event, path);
-		// TODO: Remove deleted files etc
-		if (shouldProcessFile(path)) {
-			processFile(path, config);
+function resolve_lib(file_path: string): string | undefined {
+	const dir = path.dirname(path.resolve(file_path));
+	const config_path = path.join(dir, "package.jsonc");
+	if (!fs.existsSync(config_path)) return undefined;
+	const raw = fs.readFileSync(config_path, "utf8");
+	const json = raw.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
+	const parsed = JSON.parse(json);
+	if (parsed.imports?.System) {
+		return path.resolve(dir, parsed.imports.System);
+	}
+	return undefined;
+}
+
+function resolve_audit_runtime(config: Config, input_path: string): string | undefined {
+	if (config.audit_runtime) {
+		const explicit = path.resolve(config.audit_runtime);
+		return fs.existsSync(explicit) ? explicit : undefined;
+	}
+	let dir = path.dirname(input_path);
+	for (let i = 0; i < 20; i++) {
+		const candidate = path.join(dir, "src", "audit_runtime.c");
+		if (fs.existsSync(candidate)) return candidate;
+		const parent = path.dirname(dir);
+		if (parent === dir) break;
+		dir = parent;
+	}
+	return undefined;
+}
+
+function compile_audit_runtime(config: Config, input_path: string, buildDir: string): string {
+	const runtime_src = resolve_audit_runtime(config, input_path);
+	if (!runtime_src) {
+		throw new Error(
+			"Audit enabled but audit_runtime.c was not found. Pass --audit-runtime <path/to/audit_runtime.c>.",
+		);
+	}
+	const audit_obj = path.join(buildDir, "audit_runtime.o");
+	execSync(`clang -c ${runtime_src} -o ${audit_obj}`);
+	return audit_obj;
+}
+
+function watchPath(p: string, config: Config) {
+	chokidar.watch(p).on("all", (event, filePath) => {
+		if (shouldProcessFile(filePath)) {
+			processFile(filePath, config);
 		}
 	});
 }
@@ -113,6 +170,7 @@ function processFolder(folder: string, config: Config) {
 	while ((dirent = dir.readSync()) !== null) {
 		if (shouldProcessFile(dirent.name)) {
 			processFile(path.join(folder, dirent.name), config);
+			// @ts-ignore
 			let _ = fs.watch;
 		}
 	}
@@ -128,9 +186,13 @@ function processFile(filename: string, config: Config) {
 
 	const arch = config.arch || "aarch64";
 
+	const resolved = path.resolve(filename);
+	const lib_path = resolve_lib(resolved);
+	config.lib = lib_path;
+
 	let startTime = performance.now();
 
-	let input = join(path.resolve(filename));
+	let input = join(path.resolve(filename), config.lib);
 	const parsed = parse(input);
 	// TODO: If verbose flag
 	// console.log("Parsed");
@@ -156,9 +218,9 @@ function processFile(filename: string, config: Config) {
 		return;
 	}
 
-	const result = build(parsed.root, { arch });
 	// TODO: If verbose flag
 	// console.log("Built");
+	const result = build(parsed.root, { arch, audit: config.audit });
 
 	const dir = path.dirname(filename);
 	const basename = path.basename(filename, ".echo");
@@ -179,11 +241,9 @@ function processFile(filename: string, config: Config) {
 
 	startTime = performance.now();
 
-	if (arch === "aarch64") {
-		execSync(`clang -o ${outfile} ${codefile}`);
-	} else {
-		execSync(`clang -o ${outfile} ${codefile}`);
-	}
+	const audit_obj = config.audit ? compile_audit_runtime(config, resolved, buildDir) : undefined;
+	const link_inputs = audit_obj ? `${codefile} ${audit_obj}` : `${codefile}`;
+	execSync(`clang -o ${outfile} ${link_inputs}`);
 	execSync(outfile, { stdio: "inherit" });
 
 	const runTime = performance.now();

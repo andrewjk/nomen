@@ -16,7 +16,8 @@
 		"check": "vp check",
 		"format": "vp check --fix",
 		"prepare": "vp config",
-		"go": "tsx src/index.ts"
+		"go": "tsx src/index.ts",
+		"register": "pnpm build && pnpm add -g ."
 	},
 	"dependencies": {
 		"chokidar": "^5.0.0",
