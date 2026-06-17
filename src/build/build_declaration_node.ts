@@ -49,6 +49,10 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 		status.code += `] = {${variables.map((v) => `&${v}`).join(", ")}}`;
 	} else {
 		status.scoped_declarations.push(node);
+		if (node.type?.name) {
+			if (!status.variable_types) status.variable_types = new Map();
+			status.variable_types.set(node.name, node.type);
+		}
 
 		status.code += `${c_type(node.type.name)} ${node.name}`;
 		if (node.type.is_array) {

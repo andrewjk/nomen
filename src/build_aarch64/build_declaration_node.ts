@@ -288,6 +288,10 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 	}
 
 	status.scoped_declarations.push(node);
+	if (node.type?.name) {
+		if (!status.variable_types) status.variable_types = new Map();
+		status.variable_types.set(node.name, node.type);
+	}
 
 	const directive = aarch64_type(node.type.name);
 	const size = aarch64_size(node.type.name);

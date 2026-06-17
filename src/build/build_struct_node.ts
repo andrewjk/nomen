@@ -1,6 +1,7 @@
 import { is_overloaded, mangled_label } from "../check/utils/function_overload.ts";
 import StructNode from "../nodes/StructNode.ts";
 import TraitNode from "../nodes/TraitNode.ts";
+import Type from "../nodes/Type.ts";
 import build_node from "./build_node.ts";
 import build_parameter_node from "./build_parameter_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
@@ -149,6 +150,8 @@ function build_struct_traits(node: StructNode, status: BuildStatus) {
 
 function build_struct_functions(node: StructNode, status: BuildStatus) {
 	// Build the struct's functions
+	const old_current_struct = status.current_struct;
+	status.current_struct = node;
 	for (let func of node.functions) {
 		if (func.name === "init" && !func.has_body) {
 			continue;
@@ -204,6 +207,9 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		// Skip for `ref self` — mutations should propagate through the pointer directly
 		if (!node.is_simple_type && func.params[0]?.is_self_param && !func.params[0]?.is_ref) {
 			status.code += `struct ${node.name} _self = *self;\n`;
+			if (!status.variable_types) status.variable_types = new Map();
+			status.variable_types.set("_self", new Type(node.name));
+			status.variable_types.set("self", new Type(node.name));
 		}
 		for (let child of func.statements) {
 			build_node(child, status, true);
@@ -212,6 +218,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		status.function_ref_params = old_ref_params;
 		status.self_is_ref = old_self_is_ref;
 	}
+	status.current_struct = old_current_struct;
 
 	// Build functions to get and set the trait's fields
 	// TODO: Maybe this would be better done with a map?

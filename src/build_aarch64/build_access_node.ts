@@ -133,6 +133,20 @@ function is_struct_type(type_name: string, status: BuildStatus): boolean {
 	return !!status.structs.find((s) => s.name === type_name && !s.is_simple_type);
 }
 
+function resolve_field_type(
+	access_field: AccessFieldNode,
+	target_type_name: string | undefined,
+	status: BuildStatus,
+): Type | undefined {
+	if (access_field.type?.name) return access_field.type;
+	if (!target_type_name) return undefined;
+	const target_struct = status.structs.find(
+		(s) => s.name === target_type_name && !s.is_simple_type,
+	);
+	const field = target_struct?.fields.find((f) => f.name === access_field.name);
+	return field?.type;
+}
+
 export function reset_access_temp_counter() {
 	access_temp_counter = 0;
 }
@@ -238,7 +252,15 @@ function is_constant_index(access_index: AccessIndexNode): boolean {
 }
 
 function build_access_field(node: AccessNode, status: BuildStatus) {
-	const target_type = type_from_value_node(node.target);
+	let target_type = type_from_value_node(node.target);
+	if (!target_type?.name && node.target.node_type === "value") {
+		const name = (node.target as ValueNode).value;
+		if (name === "self" && status.current_struct) {
+			target_type = new Type(status.current_struct.name);
+		} else if (status.variable_types?.has(name)) {
+			target_type = status.variable_types.get(name)!;
+		}
+	}
 	const target_name =
 		node.target.node_type === "value" ? (node.target as ValueNode).value : target_type?.name;
 	const access_field = node.access as AccessFieldNode;
@@ -520,13 +542,27 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 		}
 	}
 
-	const field_type = access_field.type?.name || "";
-	const size = aarch64_size(field_type);
+	const field_type_obj = resolve_field_type(access_field, target_type?.name, status);
+	const resolved_field_type = field_type_obj?.name || "";
+	const field_is_struct =
+		!!resolved_field_type &&
+		!field_type_obj?.is_ref &&
+		!field_type_obj?.is_nullable &&
+		is_struct_type(resolved_field_type, status);
+
+	if (field_is_struct) {
+		if (offset > 0) {
+			status.code += `add x0, x0, #${offset}\n`;
+		}
+		return;
+	}
+
+	const size = aarch64_size(resolved_field_type);
 	const signed =
-		field_type.startsWith("int") ||
-		field_type === "float" ||
-		field_type === "float32" ||
-		field_type === "float64";
+		resolved_field_type.startsWith("int") ||
+		resolved_field_type === "float" ||
+		resolved_field_type === "float32" ||
+		resolved_field_type === "float64";
 	if (size === 1) {
 		status.code += signed ? `ldrsb x0, [x0, #${offset}]\n` : `ldrb w0, [x0, #${offset}]\n`;
 	} else if (size === 4) {
@@ -545,6 +581,19 @@ function build_access_method(
 	if (!target_type?.name && node.target.node_type === "access") {
 		const resolved = resolve_access_type(node.target as AccessNode, status);
 		if (resolved) target_type = resolved;
+	}
+	if (!target_type?.name && node.target.node_type === "value") {
+		const name = (node.target as ValueNode).value;
+		if (name === "self" && status.current_struct) {
+			target_type = new Type(status.current_struct.name);
+		} else if (status.variable_types?.has(name)) {
+			target_type = status.variable_types.get(name)!;
+		} else {
+			const decl = status.scoped_declarations.findLast((d) => d.name === name);
+			if (decl?.type?.name) {
+				target_type = decl.type;
+			}
+		}
 	}
 	const target_name =
 		node.target.node_type === "value" ? (node.target as ValueNode).value : target_type?.name;

@@ -3,6 +3,7 @@ import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessIndexNode from "../nodes/AccessIndexNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
+import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_node from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
@@ -11,7 +12,20 @@ import type_from_value_node from "./utils/type_from_value_node.ts";
 
 export default function build_access_node(node: AccessNode, status: BuildStatus) {
 	// PERF:
-	const target_type = type_from_value_node(node.target);
+	let target_type = type_from_value_node(node.target);
+	if (!target_type?.name && node.target.node_type === "value") {
+		const name = (node.target as ValueNode).value;
+		if (name === "self" && status.current_struct) {
+			target_type = new Type(status.current_struct.name);
+		} else if (status.variable_types?.has(name)) {
+			target_type = status.variable_types.get(name)!;
+		} else {
+			const decl = status.scoped_declarations.findLast((d) => d.name === name);
+			if (decl?.type?.name) {
+				target_type = decl.type;
+			}
+		}
+	}
 	const trait = status.traits.find((t) => t.name === target_type.name);
 	const enum_node = status.enums.find((e) => e.name === target_type.name);
 	const bitset_node = status.bitsets.find((b) => b.name === target_type.name);
@@ -113,11 +127,17 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				build_node(node.target, status);
 				status.code += `)`;
 			} else {
-				const label = access_func.mangled_name || `${target_type.name}_${access_func.name}`;
+				let method_type: Type | undefined = target_type;
+				if (!method_type?.name && node.target.node_type === "access") {
+					method_type = resolve_access_field_type(node.target as AccessNode, status);
+				}
+				const label =
+					access_func.mangled_name ||
+					`${method_type?.name || ""}_${access_func.name}`;
 				status.code += `${label}(`;
 				if (!access_func.is_static) {
 					// TODO: be more rigorous about this! Sometimes types should be passed by ref??
-					if (!built_in_types.includes(target_type.name)) {
+					if (!built_in_types.includes(method_type?.name || "")) {
 						const target_value =
 							node.target.node_type === "value" ? (node.target as ValueNode).value : "";
 						const target_is_ref_param =
@@ -164,4 +184,31 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 			break;
 		}
 	}
+}
+
+function resolve_access_field_type(node: AccessNode, status: BuildStatus): Type | undefined {
+	if (node.access.node_type !== "access_field") return undefined;
+	const field_name = (node.access as AccessFieldNode).name;
+
+	let base_type: Type | undefined;
+	if (node.target.node_type === "value") {
+		const name = (node.target as ValueNode).value;
+		const vtype = (node.target as ValueNode).type;
+		if (vtype?.name) {
+			base_type = vtype;
+		} else if (name === "self" && status.current_struct) {
+			base_type = new Type(status.current_struct.name);
+		} else if (status.variable_types?.has(name)) {
+			base_type = status.variable_types.get(name);
+		}
+	} else if (node.target.node_type === "access") {
+		base_type = resolve_access_field_type(node.target as AccessNode, status);
+	}
+
+	if (!base_type?.name) return undefined;
+	const struct = status.structs.find(
+		(s) => s.name === base_type!.name && !s.is_simple_type,
+	);
+	const field = struct?.fields.find((f) => f.name === field_name);
+	return field?.type;
 }

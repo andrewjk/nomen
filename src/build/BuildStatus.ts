@@ -54,6 +54,12 @@ export default interface BuildStatus {
 	match_save_size?: number;
 	current_struct?: StructNode;
 	current_function_name?: string;
+	/**
+	 * Accumulates variable name → type across all scopes during building.
+	 * Used to resolve types for monomorphized generic functions whose ValueNodes
+	 * were never type-resolved by the check pass.
+	 */
+	variable_types?: Map<string, Type>;
 	inline_functions?: Map<string, BaseNode>;
 	/**
 	 * Maps variable names to callee-saved registers (x23-x28) for loop register allocation.

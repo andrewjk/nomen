@@ -1,0 +1,109 @@
+import Buffer
+
+pub struct Map<TK, TV> {
+	var int length = 0
+	var Buffer keys = Buffer()
+	var Buffer values = Buffer()
+	var Buffer used = Buffer()
+
+	pub func set = (ref self, TK key, TV value) {
+		var int cap = self.keys.get_cap()
+		if cap == 0 {
+			self.keys.alloc_int(8)
+			self.values.alloc_int(8)
+			self.used.alloc(8)
+			cap = 8
+		}
+		if self.length * 4 >= cap * 3 {
+			self.rehash(cap * 2)
+			cap = self.keys.get_cap()
+		}
+		var int idx = self.find_slot(key, cap)
+		if self.used.load(idx) == 0 {
+			self.used.store(idx, 1)
+			self.keys.store_int(idx, key)
+			self.values.store_int(idx, value)
+			self.length = self.length + 1
+		} else {
+			self.values.store_int(idx, value)
+		}
+	}
+
+	pub func get = (self, TK key, out TV) {
+		var int cap = self.keys.get_cap()
+		if cap == 0 {
+			return 0
+		}
+		var int idx = self.find_slot(key, cap)
+		if self.used.load(idx) == 0 {
+			return 0
+		}
+		return self.values.load_int(idx)
+	}
+
+	pub func has = (self, TK key, out bool) {
+		var int cap = self.keys.get_cap()
+		if cap == 0 {
+			return false
+		}
+		var int idx = self.find_slot(key, cap)
+		return self.used.load(idx) != 0
+	}
+
+	pub func remove = (ref self, TK key) {
+		var int cap = self.keys.get_cap()
+		if cap == 0 {
+			return
+		}
+		var int idx = self.find_slot(key, cap)
+		if self.used.load(idx) == 0 {
+			return
+		}
+		self.used.store(idx, 0)
+		self.keys.store_int(idx, 0)
+		self.values.store_int(idx, 0)
+		self.length = self.length - 1
+		self.rehash(cap)
+	}
+
+	func find_slot = (self, TK key, int cap, out int) {
+		var int k = key
+		var int idx = k % cap
+		if idx < 0 {
+			idx = idx + cap
+		}
+		while self.used.load(idx) != 0 {
+			if self.keys.load_int(idx) == k {
+				return idx
+			}
+			idx = idx + 1
+			if idx >= cap {
+				idx = 0
+			}
+		}
+		return idx
+	}
+
+	func rehash = (ref self, int new_cap) {
+		var Buffer old_keys = self.keys
+		var Buffer old_values = self.values
+		var Buffer old_used = self.used
+		var int old_cap = old_keys.get_cap()
+
+		self.keys = Buffer()
+		self.values = Buffer()
+		self.used = Buffer()
+		self.keys.alloc_int(new_cap)
+		self.values.alloc_int(new_cap)
+		self.used.alloc(new_cap)
+		self.length = 0
+
+		var int i = 0
+		while i < old_cap {
+			if old_used.load(i) != 0 {
+				self.set(old_keys.load_int(i), old_values.load_int(i))
+			}
+			i = i + 1
+		}
+	}
+}
