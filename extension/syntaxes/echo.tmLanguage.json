@@ -12,6 +12,7 @@
 		{ "include": "#keywords" },
 		{ "include": "#numbers" },
 		{ "include": "#types" },
+		{ "include": "#function-call" },
 		{ "include": "#operators" }
 	],
 	"repository": {
@@ -77,6 +78,7 @@
 				{ "include": "#keywords" },
 				{ "include": "#numbers" },
 				{ "include": "#types" },
+				{ "include": "#function-call" },
 				{ "include": "#operators" }
 			]
 		},
@@ -104,18 +106,18 @@
 					"name": "keyword.control.echo",
 					"match": "\\b(?:if|else|while|for|of|in|break|continue|return|switch|case|match)\\b"
 				},
-				{
-					"name": "storage.type.echo",
-					"match": "\\b(?:func|struct|trait|enum)\\b"
-				},
-				{
-					"name": "keyword.other.echo",
-					"match": "\\b(?:var|const|let|import|destroy|init|op|panic|todo)\\b"
-				},
-				{
-					"name": "storage.modifier.echo",
-					"match": "\\b(?:pub|priv|out|ref)\\b"
-				},
+			{
+				"name": "storage.type.echo",
+				"match": "\\b(?:func|struct|class|trait|enum|bitset)\\b"
+			},
+			{
+				"name": "keyword.other.echo",
+				"match": "\\b(?:var|const|let|mov|cp|import|destroy|init|op|panic|todo)\\b"
+			},
+			{
+				"name": "storage.modifier.echo",
+				"match": "\\b(?:pub|private|inline|out|ref)\\b"
+			},
 				{
 					"name": "keyword.operator.word.echo",
 					"match": "\\b(?:as)\\b"
@@ -145,6 +147,14 @@
 					"match": "\\b[A-Z][A-Za-z0-9_]*\\b"
 				}
 			]
+		},
+		"function-call": {
+			"name": "meta.function-call.echo",
+			"match": "\\b([A-Za-z_][A-Za-z0-9_]*)\\s*(\\()",
+			"captures": {
+				"1": { "name": "entity.name.function.echo" },
+				"2": { "name": "punctuation.section.parens.begin.echo" }
+			}
 		},
 		"constants": {
 			"name": "entity.name.constant.echo",

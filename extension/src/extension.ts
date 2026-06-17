@@ -295,6 +295,9 @@ function resolve_lib_dir(uri: vscode.Uri): string | undefined {
 				// ignore malformed package.jsonc and keep searching
 			}
 		}
+		// Also check for a `lib/` directory at this level (the standard library itself).
+		const lib_config = path.join(dir, "lib", "package.jsonc");
+		if (fs.existsSync(lib_config)) return path.join(dir, "lib");
 		const parent = path.dirname(dir);
 		if (parent === dir) break;
 		dir = parent;
