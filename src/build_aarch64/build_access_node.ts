@@ -914,10 +914,21 @@ function build_access_index(node: AccessNode, access_index: AccessIndexNode, sta
 		if (!status.code.endsWith("\n")) {
 			status.code += "\n";
 		}
-		// Struct fields store a pointer to the array, not the array inline.
-		// Dereference to get the actual array base address.
+		// Dynamic arrays (string[]) store a pointer to the array in the struct field.
+		// Fixed-size arrays (string[N]) store elements inline — no dereference needed.
+		// Distinguish by checking if the field's length was declared in source (start >= 0)
+		// vs inferred by the checker (start < 0).
 		if ((node.target as AccessNode).access.node_type === "access_field") {
-			status.code += `ldr x0, [x0]\n`;
+			const access_field = (node.target as AccessNode).access as AccessFieldNode;
+			const target_type_name = type_from_value_node(
+				(node.target as AccessNode).target,
+			).name;
+			const struct_def = status.structs.find((s) => s.name === target_type_name);
+			const field = struct_def?.fields.find((f) => f.name === access_field.name);
+			const is_fixed_array = field?.type.is_array && (field.type.length?.start ?? -1) >= 0;
+			if (!is_fixed_array) {
+				status.code += `ldr x0, [x0]\n`;
+			}
 		}
 	} else {
 		build_node(node.target, status);

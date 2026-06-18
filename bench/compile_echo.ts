@@ -4,6 +4,7 @@ import path from "node:path";
 
 import build from "../src/build.ts";
 import join from "../src/join.ts";
+import { get_library } from "../src/lib.ts";
 import parse from "../src/parse.ts";
 
 const input_file = process.argv[2];
@@ -19,7 +20,22 @@ const resolved = path.resolve(input_file);
 
 let lib_path: string | undefined;
 if (lib_arg) {
-	lib_path = path.resolve(lib_arg);
+	const arg_dir = path.resolve(lib_arg);
+	const arg_config = path.join(arg_dir, "package.jsonc");
+	if (fs.existsSync(arg_config)) {
+		const raw = fs.readFileSync(arg_config, "utf8");
+		const json = raw.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
+		const parsed = JSON.parse(json);
+		if (parsed.exports) {
+			// lib_arg is the library directory itself
+			lib_path = arg_dir;
+		} else if (parsed.imports?.System) {
+			// lib_arg is a source directory that imports System
+			lib_path = path.resolve(arg_dir, parsed.imports.System);
+		}
+	} else {
+		lib_path = arg_dir;
+	}
 } else {
 	const dir = path.dirname(resolved);
 	const config_path = path.join(dir, "package.jsonc");
@@ -34,7 +50,8 @@ if (lib_arg) {
 }
 
 const source = join(resolved, lib_path);
-const parsed = parse(source);
+const library = lib_path ? get_library(lib_path) : undefined;
+const parsed = parse(source, library);
 
 if (parsed.errors.length) {
 	for (const error of parsed.errors) {

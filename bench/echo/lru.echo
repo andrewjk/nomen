@@ -1,8 +1,4 @@
-import Console
-import Map
-import Buffer
-import Init
-import int
+import System
 
 func move_to_end = (ref Buffer order, ref int order_len, int key) {
 	var int i = 0
@@ -52,9 +48,9 @@ pub func main = (Init init) {
 		switch {
 			case lru.has(n0) {
 				lru.set(n0, n0)
-				move_to_end(order, order_len, n0)
-			}
-			case order_len >= size {
+			move_to_end(ref order, ref order_len, n0)
+		}
+		case order_len >= size {
 				var int oldest = order.load_int(0)
 				lru.remove(oldest)
 				var int j = 0
@@ -77,7 +73,7 @@ pub func main = (Init init) {
 
 		if lru.has(n1) {
 			hit = hit + 1
-			move_to_end(order, order_len, n1)
+			move_to_end(ref order, ref order_len, n1)
 		} else {
 			missed = missed + 1
 		}

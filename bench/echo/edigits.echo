@@ -1,10 +1,4 @@
-import Console
-import BigInt
-import Init
-import int
-import float
-import Math
-import Stringable
+import System
 
 const float ln10 = 2.3025850929940455
 const float two_pi = 6.283185307179586

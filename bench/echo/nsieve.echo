@@ -1,9 +1,4 @@
-import Console
-import Buffer
-import Init
-import int
-import Stringable
-import uint8
+import System
 
 func nsieve = (int n) {
 	var Buffer flags = Buffer()

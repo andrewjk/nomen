@@ -42,9 +42,9 @@ The remaining Go benchmarks require language features or standard library suppor
 
 ### Needs hash maps (partially done)
 
-| Benchmark       | What's needed                                                                                                                | Status |
-| --------------- | ---------------------------------------------------------------------------------------------------------------------------- | ------ |
-| **lru**         | Hash map (`map[K]V`) and doubly-linked list (`container/list`). Would need a custom hash map implementation in Echo.         | ✅ Done |
+| Benchmark       | What's needed                                                                                                                | Status         |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| **lru**         | Hash map (`map[K]V`) and doubly-linked list (`container/list`). Would need a custom hash map implementation in Echo.         | ✅ Done        |
 | **knucleotide** | Hash maps for nucleotide frequency counting, plus file I/O to read input data. Also needs bitwise operations on byte arrays. | Needs file I/O |
 
 ### Needs file I/O

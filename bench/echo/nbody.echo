@@ -1,8 +1,4 @@
-import Console
-import Init
-import float
-import Stringable
-import Math
+import System
 
 struct Body {
 	var float x

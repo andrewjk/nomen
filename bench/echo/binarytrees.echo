@@ -1,11 +1,8 @@
-import Console
-import Init
-import int
-import Stringable
+import System
 
 class TreeNode {
-	var TreeNode? left = null
-	var TreeNode? right = null
+	mov TreeNode? left = null
+	mov TreeNode? right = null
 }
 
 func create_tree = (int depth, out TreeNode) {

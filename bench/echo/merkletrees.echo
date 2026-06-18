@@ -1,15 +1,12 @@
-import Console
-import Init
-import int
-import Stringable
+import System
 
 class MerkleNode {
 	var int hash = 0
 	var int value = 0
 	var bool has_hash = false
 	var bool has_value = false
-	var MerkleNode? left = null
-	var MerkleNode? right = null
+	mov MerkleNode? left = null
+	mov MerkleNode? right = null
 }
 
 func make_merkle = (int depth, out MerkleNode) {

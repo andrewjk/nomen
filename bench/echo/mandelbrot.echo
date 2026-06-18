@@ -1,8 +1,4 @@
-import Console
-import Init
-import float
-import Stringable
-import int
+import System
 
 func mbrot = (float cr, float ci, out int) {
 	var float zr = 0.0

@@ -1,5 +1,4 @@
-import Console
-import Init
+import System
 
 pub func main = (Init init) {
 	Console.write("Hello world!\n")

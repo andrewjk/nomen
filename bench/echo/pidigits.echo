@@ -1,8 +1,4 @@
-import BigInt
-import Console
-import Init
-import int
-import Stringable
+import System
 
 pub func main = (Init init) {
     var int n = 2000

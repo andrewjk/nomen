@@ -1,9 +1,4 @@
-import Console
-import Buffer
-import Init
-import float
-import Stringable
-import Math
+import System
 
 func eval_a = (int i, int j, out float) {
 	var int denom = (i + j) * (i + j + 1) / 2 + i + 1
