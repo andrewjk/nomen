@@ -52,6 +52,20 @@ Console.write("\\{c.items[0]}\\{c.items[1]}")
 		await check_output("struct_string_array_field", result, "helloworld");
 	});
 
+	test("struct with string array field and explicit type", async () => {
+		const input = `
+struct Container {
+  var string[] items
+}
+var Container c = Container(["hello", "world"])
+Console.write("\\{c.items[0]}\\{c.items[1]}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		expect(parsed.errors).toEqual([]);
+		await check_output("struct_string_array_field_explicit", result, "helloworld");
+	});
+
 	test("struct with default field value", async () => {
 		const input = `
 struct Counter {

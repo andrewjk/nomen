@@ -148,13 +148,24 @@ export default function check_function_call(
 	}
 
 	for (let [i, param] of node.params.entries()) {
+		const func_param = func.params[i + self_offset];
+
+		// Set expected_type to the function parameter's type so that
+		// untyped values (e.g. array literals) are inferred correctly,
+		// rather than leaking the outer declaration's expected_type.
+		const old_expected_type = status.expected_type;
+		if (func_param) {
+			status.expected_type = func_param.type;
+		}
+
 		if (!check_node(param, status)) {
+			status.expected_type = old_expected_type;
 			continue;
 		}
+		status.expected_type = old_expected_type;
 
 		const param_type = type_from_value_node(param, status);
 		const param_value = value_from_value_node(param);
-		const func_param = func.params[i + self_offset];
 		const has_ref_keyword = node.ref_param_indices?.includes(i) ?? false;
 		const has_mov_keyword = node.mov_param_indices?.includes(i) ?? false;
 		if (func_param.type.is_ref && !has_ref_keyword) {
