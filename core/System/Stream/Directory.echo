@@ -1,0 +1,43 @@
+pub struct Directory {
+	pub func create = (string path) {
+		```
+		#arch: c
+		mkdir(path, 0777);
+		```
+		```
+		#arch: aarch64
+		mov x1, #0x1FF
+		bl _mkdir
+		```
+	}
+
+	pub func remove = (string path) {
+		```
+		#arch: c
+		rmdir(path);
+		```
+		```
+		#arch: aarch64
+		bl _rmdir
+		```
+	}
+
+	pub func exists = (string path, out bool) {
+		```
+		#arch: c
+		struct stat st;
+		return stat(path, &st) == 0 ? 1 : 0;
+		```
+		```
+		#arch: aarch64
+		sub sp, sp, #160
+		mov x1, sp
+		bl _stat
+		cmp x0, #0
+		cset x0, eq
+		add sp, sp, #160
+		b .return_Directory_exists
+		```
+		return false
+	}
+}

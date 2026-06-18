@@ -7,6 +7,8 @@ export default function build_root_node(node: RootNode, status: BuildStatus) {
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include "main.h"
 
 int malloc_count;

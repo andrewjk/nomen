@@ -10,4 +10,18 @@ pub struct string: Stringable {
         mov x0, x19
         ```
     }
+
+    pub func length = (self, out int) {
+        ```
+        #arch: c
+        return strlen(self);
+        ```
+        ```
+        #arch: aarch64
+        mov x0, x19
+        bl _strlen
+        b .return_string_length
+        ```
+        return 0
+    }
 }

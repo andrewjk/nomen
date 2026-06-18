@@ -26,7 +26,7 @@ export default async function check_output_aarch64(
 	built: BuildResult,
 	expected_output: string,
 ) {
-	const folder = path.join(".", "test", "ziglings", "out", "ziglings_aarch64_" + name);
+	const folder = path.resolve(".", "test", "ziglings", "out", "ziglings_aarch64_" + name);
 	if (!fs.existsSync(folder)) {
 		fs.mkdirSync(folder, { recursive: true });
 	}
@@ -54,9 +54,10 @@ export default async function check_output_aarch64(
 		stderr = "";
 	} else {
 		fs.writeFileSync(codefile, code);
-		const result = await execPromise(`${compileCmd} && ${outfile}`);
-		stdout = result.stdout;
-		stderr = result.stderr;
+		const compile_result = await execPromise(compileCmd);
+		const run_result = await execPromise(`"${outfile}"`, { cwd: folder });
+		stdout = run_result.stdout;
+		stderr = (compile_result.stderr || "") + (run_result.stderr || "");
 		fs.writeFileSync(outputfile, stdout);
 		fs.writeFileSync(cachefile, cache_key);
 	}
