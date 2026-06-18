@@ -1,5 +1,6 @@
 import type BuildStatus from "../../build/BuildStatus.ts";
 import DeclarationNode from "../../nodes/DeclarationNode.ts";
+import ValueNode from "../../nodes/ValueNode.ts";
 import aarch64_size from "./aarch64_size.ts";
 
 const VT_SIZE = 8;
@@ -25,7 +26,12 @@ export function get_type_size(
 		if (struct.is_class) return 8;
 		return get_struct_size(type.name, status);
 	}
-	return aarch64_size(type.name);
+	const element_size = aarch64_size(type.name);
+	if (type.is_array && type.length && (type.length.start ?? -1) >= 0) {
+		const length = parseInt((type.length as ValueNode).value || "0");
+		return element_size * length;
+	}
+	return element_size;
 }
 
 export function get_field_offset(

@@ -66,6 +66,37 @@ Console.write("\\{c.items[0]}\\{c.items[1]}")
 		await check_output("struct_string_array_field_explicit", result, "helloworld");
 	});
 
+	// BROKEN: constructor stores a pointer instead of copying elements inline
+	test("struct with fixed-size string array field", async () => {
+		const input = `
+struct Holder {
+  var int argc
+  var string[2] args
+}
+var Holder h = Holder(0, ["first", "second"])
+Console.write("\\{h.args[0]}\\{h.args[1]}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		expect(parsed.errors).toEqual([]);
+		await check_output("struct_fixed_size_string_array_field", result, "firstsecond");
+	});
+
+	// BROKEN: same issue with int arrays
+	test("struct with fixed-size int array field", async () => {
+		const input = `
+struct Nums {
+  var int[3] values
+}
+var Nums n = Nums([10, 20, 30])
+Console.write("\\{n.values[0]} \\{n.values[1]} \\{n.values[2]}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		expect(parsed.errors).toEqual([]);
+		await check_output("struct_fixed_size_int_array_field", result, "10 20 30");
+	});
+
 	test("struct with default field value", async () => {
 		const input = `
 struct Counter {

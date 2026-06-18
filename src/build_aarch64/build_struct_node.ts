@@ -2,6 +2,7 @@ import type BuildStatus from "../build/BuildStatus.ts";
 import { is_overloaded, mangled_label } from "../check/utils/function_overload.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import StructNode from "../nodes/StructNode.ts";
+import ValueNode from "../nodes/ValueNode.ts";
 import build_block_node from "./build_block_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { allocate_stack_space } from "./utils/stack_var.ts";
@@ -120,7 +121,17 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 	for (let i = 0; i < required_fields.length; i++) {
 		const field = required_fields[i];
 		const offset = get_field_offset(node.name, field.name, status);
-		status.code += `str ${param_regs[i]}, [x0, #${offset}]\n`;
+		if (field.type.is_array && field.type.length && (field.type.length.start ?? -1) >= 0) {
+			const element_size = aarch64_size(field.type.name);
+			const length = parseInt((field.type.length as ValueNode).value || "0");
+			for (let e = 0; e < length; e++) {
+				const byte_offset = e * element_size;
+				status.code += load_element(param_regs[i], byte_offset, element_size);
+				status.code += store_element("x0", offset + byte_offset, element_size);
+			}
+		} else {
+			status.code += `str ${param_regs[i]}, [x0, #${offset}]\n`;
+		}
 	}
 
 	for (const field of node.fields) {
@@ -556,4 +567,37 @@ function build_trait_functions(node: StructNode, status: BuildStatus) {
 			status.stack_offsets = old_stack_offsets;
 		}
 	}
+}
+
+function load_element(src_reg: string, offset: number, element_size: number): string {
+	if (element_size === 1) {
+		return `ldrb w9, [${src_reg}, #${offset}]\n`;
+	} else if (element_size === 2) {
+		return `ldrh w9, [${src_reg}, #${offset}]\n`;
+	} else if (element_size === 4) {
+		return `ldr w9, [${src_reg}, #${offset}]\n`;
+	}
+	return `ldr x9, [${src_reg}, #${offset}]\n`;
+}
+
+function store_element(dst_base: string, offset: number, element_size: number): string {
+	let op: string;
+	let reg: string;
+	if (element_size === 1) {
+		op = "strb";
+		reg = "w9";
+	} else if (element_size === 2) {
+		op = "strh";
+		reg = "w9";
+	} else if (element_size === 4) {
+		op = "str";
+		reg = "w9";
+	} else {
+		op = "str";
+		reg = "x9";
+	}
+	if (offset === 0) {
+		return `${op} ${reg}, [${dst_base}]\n`;
+	}
+	return `${op} ${reg}, [${dst_base}, #${offset}]\n`;
 }
