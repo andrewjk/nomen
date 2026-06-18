@@ -12,6 +12,7 @@ These benchmarks have been converted to Echo and are included in `benchmark.sh`.
 | binarytrees    | ✅   | ✅  | -   | Recursive tree allocation using classes                                 |
 | merkletrees    | ✅   | ✅  | -   | Merkle tree hash computation using classes                              |
 | nsieve         | ✅   | -   | -   | Sieve of Eratosthenes using Buffer (Go needs external `bitset` package) |
+| lru            | ✅   | ✅  | -   | LRU cache using Map and Buffer for access order tracking                |
 
 ## Not Converted
 
@@ -39,12 +40,12 @@ The remaining Go benchmarks require language features or standard library suppor
 | **coro-prime-sieve** | Goroutines and channels for the daisy-chain prime sieve. Would require a completely different single-threaded algorithm (e.g., trial division). |
 | **binarytrees (Go)** | The Go version uses `sync.WaitGroup` and goroutines for parallelism. The Echo version is single-threaded but produces identical results.        |
 
-### Needs hash maps
+### Needs hash maps (partially done)
 
-| Benchmark       | What's needed                                                                                                                |
-| --------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| **lru**         | Hash map (`map[K]V`) and doubly-linked list (`container/list`). Would need a custom hash map implementation in Echo.         |
-| **knucleotide** | Hash maps for nucleotide frequency counting, plus file I/O to read input data. Also needs bitwise operations on byte arrays. |
+| Benchmark       | What's needed                                                                                                                | Status |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------- | ------ |
+| **lru**         | Hash map (`map[K]V`) and doubly-linked list (`container/list`). Would need a custom hash map implementation in Echo.         | ✅ Done |
+| **knucleotide** | Hash maps for nucleotide frequency counting, plus file I/O to read input data. Also needs bitwise operations on byte arrays. | Needs file I/O |
 
 ### Needs file I/O
 

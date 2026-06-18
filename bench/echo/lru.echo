@@ -1,0 +1,90 @@
+import Console
+import Map
+import Buffer
+import Init
+import int
+
+func move_to_end = (ref Buffer order, ref int order_len, int key) {
+	var int i = 0
+	while i < order_len {
+		if order.load_int(i) == key {
+			if i < order_len - 1 {
+				var int j = i
+				while j < order_len - 1 {
+					order.store_int(j, order.load_int(j + 1))
+					j = j + 1
+				}
+			}
+			order.store_int(order_len - 1, key)
+			return
+		}
+		i = i + 1
+	}
+}
+
+pub func main = (Init init) {
+	var int size = 100
+	if init.argc > 1 {
+		size = parse_int(init.args[1])
+	}
+	var int n = 10000
+	if init.argc > 2 {
+		n = parse_int(init.args[2])
+	}
+
+	var int M = size * 10
+	var int rng0_state = 0
+	var int rng1_state = 1
+
+	var Map<int, int> lru = Map<int, int>()
+	var Buffer order = Buffer()
+	order.alloc_int(size)
+	var int order_len = 0
+
+	var int hit = 0
+	var int missed = 0
+
+	var int i = 0
+	while i < n {
+		rng0_state = (1103515245 * rng0_state + 12345) % 2147483648
+		var int n0 = rng0_state % M
+
+		switch {
+			case lru.has(n0) {
+				lru.set(n0, n0)
+				move_to_end(order, order_len, n0)
+			}
+			case order_len >= size {
+				var int oldest = order.load_int(0)
+				lru.remove(oldest)
+				var int j = 0
+				while j < order_len - 1 {
+					order.store_int(j, order.load_int(j + 1))
+					j = j + 1
+				}
+				order.store_int(order_len - 1, n0)
+				lru.set(n0, n0)
+			}
+			else {
+				order.store_int(order_len, n0)
+				order_len = order_len + 1
+				lru.set(n0, n0)
+			}
+		}
+
+		rng1_state = (1103515245 * rng1_state + 12345) % 2147483648
+		var int n1 = rng1_state % M
+
+		if lru.has(n1) {
+			hit = hit + 1
+			move_to_end(order, order_len, n1)
+		} else {
+			missed = missed + 1
+		}
+
+		i = i + 1
+	}
+
+	Console.write("\{hit}\n")
+	Console.write("\{missed}\n")
+}
