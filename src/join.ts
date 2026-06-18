@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 // HACK: Just loading everything into a single big source file for now
 // TODO: Retain line numbers!!
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DEFAULT_LIB_PATH = path.resolve(__dirname, "../../lib/src");
+const DEFAULT_LIB_PATH = path.resolve(__dirname, "../../core/src");
 
 export default function join(entry_file_path: string, lib_path?: string): string {
 	const folder_path = path.dirname(entry_file_path);

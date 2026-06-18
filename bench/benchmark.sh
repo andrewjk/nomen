@@ -57,7 +57,7 @@ for entry in "${BENCHES[@]}"; do
 		# Echo compile
 		if [ -f "$BENCH_DIR/echo/$bench.echo" ]; then
 			cp "$BENCH_DIR/echo/package.jsonc" "$TMPDIR/package.jsonc" 2>/dev/null || true
-			if raw=$( { time "$TSX" "$BENCH_DIR/compile_echo.ts" "$BENCH_DIR/echo/$bench.echo" "$TMPDIR/echo_${bench}" "$ROOT/lib" 2>/dev/null; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//'); then
+			if raw=$( { time "$TSX" "$BENCH_DIR/compile_echo.ts" "$BENCH_DIR/echo/$bench.echo" "$TMPDIR/echo_${bench}" "$ROOT/core" 2>/dev/null; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//'); then
 				echo_ms="$(to_ms "$raw")ms"
 			else
 				echo_ms="FAIL"

@@ -291,9 +291,9 @@ function resolve_lib_dir(uri: vscode.Uri): string | undefined {
 				// ignore malformed package.jsonc and keep searching
 			}
 		}
-		// Also check for a `lib/` directory at this level (the standard library itself).
-		const lib_config = path.join(dir, "lib", "package.jsonc");
-		if (fs.existsSync(lib_config)) return path.join(dir, "lib");
+		// Also check for a `core/` directory at this level (the standard library itself).
+		const lib_config = path.join(dir, "core", "package.jsonc");
+		if (fs.existsSync(lib_config)) return path.join(dir, "core");
 		const parent = path.dirname(dir);
 		if (parent === dir) break;
 		dir = parent;
@@ -301,7 +301,7 @@ function resolve_lib_dir(uri: vscode.Uri): string | undefined {
 
 	const workspace_folder = workspace_folder_of(uri);
 	if (workspace_folder) {
-		const fallback = path.join(workspace_folder, "lib");
+		const fallback = path.join(workspace_folder, "core");
 		if (fs.existsSync(path.join(fallback, "package.jsonc"))) return fallback;
 	}
 	return undefined;
