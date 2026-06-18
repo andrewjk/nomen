@@ -15,7 +15,10 @@ export function get_struct_size(name: string, status: BuildStatus): number {
 	return size;
 }
 
-function get_type_size(type: import("../../nodes/Type.ts").default, status: BuildStatus): number {
+export function get_type_size(
+	type: import("../../nodes/Type.ts").default,
+	status: BuildStatus,
+): number {
 	if (type.is_ref) return 8;
 	const struct = status.structs.find((s) => s.name === type.name && !s.is_simple_type);
 	if (struct) {

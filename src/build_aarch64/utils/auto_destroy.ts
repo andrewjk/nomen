@@ -5,7 +5,7 @@ import aarch64_size from "./aarch64_size.ts";
 import { emit_free } from "./audit.ts";
 import { allocate_stack_space } from "./stack_var.ts";
 import { emit_var_address, emit_var_load } from "./stack_var.ts";
-import { get_struct_size } from "./struct_layout.ts";
+import { get_struct_size, get_type_size } from "./struct_layout.ts";
 
 export function mark_heap_string(status: BuildStatus, name: string) {
 	if (!status.heap_strings) status.heap_strings = new Set<string>();
@@ -174,7 +174,7 @@ function emit_field_destroys(
 					is_class_parent,
 				);
 			}
-			const field_size = get_struct_size(field.type.name, status);
+			const field_size = get_type_size(field.type, status);
 			offset += field_size;
 		} else if (field.type.is_array) {
 			const elem_struct = is_struct_type(field.type.name, status);
@@ -217,7 +217,7 @@ function emit_nested_field_destroys(
 				status.code += `add x0, x0, #${base_offset + offset}\n`;
 				status.code += `bl ${field_struct.name}_destroy\n`;
 			}
-			const field_size = get_struct_size(field.type.name, status);
+			const field_size = get_type_size(field.type, status);
 			emit_nested_field_destroys(
 				status,
 				field_struct,
@@ -248,7 +248,7 @@ function emit_destroy_for_array_elem(
 	for (const field of struct_type.fields) {
 		const field_struct = is_struct_type(field.type.name, status);
 		if (field_struct) {
-			const field_size = get_struct_size(field.type.name, status);
+			const field_size = get_type_size(field.type, status);
 			emit_nested_field_destroys(
 				status,
 				field_struct,

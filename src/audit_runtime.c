@@ -25,8 +25,10 @@ void *echo_realloc_wrap(void *old_ptr, unsigned long size) {
 }
 
 void echo_free_wrap(void *ptr) {
-	free(ptr);
-	echo_malloc_count--;
+	if (ptr) {
+		free(ptr);
+		echo_malloc_count--;
+	}
 }
 
 void *echo_strdup_wrap(const char *s) {

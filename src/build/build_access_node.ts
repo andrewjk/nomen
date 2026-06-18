@@ -131,9 +131,7 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				if (!method_type?.name && node.target.node_type === "access") {
 					method_type = resolve_access_field_type(node.target as AccessNode, status);
 				}
-				const label =
-					access_func.mangled_name ||
-					`${method_type?.name || ""}_${access_func.name}`;
+				const label = access_func.mangled_name || `${method_type?.name || ""}_${access_func.name}`;
 				status.code += `${label}(`;
 				if (!access_func.is_static) {
 					// TODO: be more rigorous about this! Sometimes types should be passed by ref??
@@ -206,9 +204,7 @@ function resolve_access_field_type(node: AccessNode, status: BuildStatus): Type 
 	}
 
 	if (!base_type?.name) return undefined;
-	const struct = status.structs.find(
-		(s) => s.name === base_type!.name && !s.is_simple_type,
-	);
+	const struct = status.structs.find((s) => s.name === base_type!.name && !s.is_simple_type);
 	const field = struct?.fields.find((f) => f.name === field_name);
 	return field?.type;
 }
