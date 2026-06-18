@@ -548,4 +548,30 @@ while i < 3 {
 		expect(parsed.errors).toEqual([]);
 		await check_output("dfree_struct_loop_reassign", result, "012", { audit: false });
 	});
+
+	test("BUG: class field access creates borrowed reference that should not be destroyed", async () => {
+		const input = `
+class Box {
+  var int value
+}
+
+class Holder {
+  mov Box box
+}
+
+func get_value = (Holder h, out int) {
+  var Box b = h.box
+  return b.value
+}
+
+var Box box = Box(42)
+var Holder h = Holder(mov box)
+var int v = get_value(h)
+Console.write("\\{v}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		expect(parsed.errors).toEqual([]);
+		await check_output("dfree_class_field_borrowed_ref", result, "42");
+	});
 });

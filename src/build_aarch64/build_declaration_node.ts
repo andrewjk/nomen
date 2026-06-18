@@ -1,4 +1,5 @@
 import type BuildStatus from "../build/BuildStatus.ts";
+import AccessNode from "../nodes/AccessNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
@@ -287,7 +288,6 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 		return;
 	}
 
-	status.scoped_declarations.push(node);
 	if (node.type?.name) {
 		if (!status.variable_types) status.variable_types = new Map();
 		status.variable_types.set(node.name, node.type);
@@ -298,7 +298,21 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 
 	// Check if type is a struct
 	const struct_type = status.structs.find((s) => s.name === node.type.name && !s.is_simple_type);
+
+	// Don't track class variables initialized from field accesses on classes as owned
+	// (they are borrowed references, not owned instances)
+	const is_borrowed_class_ref =
+		node.type?.name &&
+		struct_type &&
+		struct_type.is_class &&
+		node.value?.node_type === "access" &&
+		(node.value as AccessNode).access.node_type === "access_field";
+
+	if (!is_borrowed_class_ref) {
+		status.scoped_declarations.push(node);
+	}
 	if (
+		!is_borrowed_class_ref &&
 		struct_type &&
 		(struct_type.functions.find((f) => f.name === "destroy") ||
 			has_struct_fields_with_destroy(struct_type, status))
