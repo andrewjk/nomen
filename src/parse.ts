@@ -57,8 +57,20 @@ function resolve_linked_types(source: string, library: Library): string {
 	}
 	if (!has_system_import) return source;
 
+	// User-defined types shadow library types of the same name, so the library
+	// version must not be pulled in (otherwise duplicate symbols at build time).
+	const user_defined = new Set<string>();
+	for (let i = 0; i < tokens.length; i++) {
+		if (["struct", "trait", "enum", "bitset"].includes(tokens[i].value)) {
+			if (i + 1 < tokens.length) {
+				user_defined.add(tokens[i + 1].value);
+			}
+		}
+	}
+
 	const needed = new Set<string>(BASE_TYPES);
 	for (const token of tokens) {
+		if (user_defined.has(token.value)) continue;
 		if (library.types.has(token.value) && !BASE_TYPES.includes(token.value)) {
 			needed.add(token.value);
 		}

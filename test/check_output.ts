@@ -48,7 +48,7 @@ export default async function check_output(
 	expected_output: string,
 	options: { audit?: boolean } = { audit: true },
 ) {
-	const folder = path.join(".", "test", "out", name);
+	const folder = path.resolve(".", "test", "out", name);
 	if (!fs.existsSync(folder)) {
 		fs.mkdirSync(folder, { recursive: true });
 	}
@@ -80,9 +80,10 @@ export default async function check_output(
 		stderr = "";
 	} else {
 		fs.writeFileSync(codefile, code);
-		const result = await execPromise(`${compileCmd} && ${outfile}`);
-		stdout = result.stdout;
-		stderr = result.stderr;
+		const compile_result = await execPromise(compileCmd);
+		const run_result = await execPromise(`"${outfile}"`, { cwd: folder });
+		stdout = run_result.stdout;
+		stderr = (compile_result.stderr || "") + (run_result.stderr || "");
 		fs.writeFileSync(outputfile, stdout);
 		fs.writeFileSync(cachefile, cache_key);
 	}

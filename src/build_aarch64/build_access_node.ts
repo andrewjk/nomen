@@ -867,6 +867,10 @@ function build_access_method(
 		status.last_result_is_heap = true;
 	}
 
+	if (status.heap_returning_functions?.has(method_name)) {
+		status.last_result_is_heap = true;
+	}
+
 	if (return_struct) {
 		status.code += `add x0, x29, #${temp_offset}\n`;
 	}

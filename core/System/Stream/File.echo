@@ -1,0 +1,268 @@
+pub struct File {
+	var uint64 handle = 0
+	pub var bool eof = false
+
+	pub func open = (ref self, string path, string mode) {
+		```
+		#arch: c
+		self->handle = (unsigned long long)fopen(path, mode);
+		```
+		```
+		#arch: aarch64
+		mov x0, x1
+		mov x1, x2
+		bl _fopen
+		str x0, [x19, #8]
+		```
+	}
+
+	pub func close = (ref self) {
+		```
+		#arch: c
+		if (self->handle) {
+			fclose((FILE*)(unsigned long long)self->handle);
+			self->handle = 0;
+		}
+		```
+		```
+		#arch: aarch64
+		ldr x0, [x19, #8]
+		cbz x0, .Lfile_close_end
+		bl _fclose
+		.Lfile_close_end:
+		str xzr, [x19, #8]
+		```
+	}
+
+	pub func readAll = (ref self, out string) {
+		```
+		#arch: c
+		FILE *f = (FILE*)(unsigned long long)self->handle;
+		fseek(f, 0, SEEK_END);
+		long size = ftell(f);
+		fseek(f, 0, SEEK_SET);
+		char *buf = (char*)malloc(size + 1);
+		malloc_count++;
+		fread(buf, 1, size, f);
+		buf[size] = 0;
+		self->eof = 1;
+		return buf;
+		```
+		```
+		#arch: aarch64
+		sub sp, sp, #16
+		ldr x0, [x19, #8]
+		mov x1, #0
+		mov x2, #2
+		bl _fseek
+		ldr x0, [x19, #8]
+		bl _ftell
+		str x0, [sp, #0]
+		ldr x0, [x19, #8]
+		mov x1, #0
+		mov x2, #0
+		bl _fseek
+		ldr x0, [sp, #0]
+		add x0, x0, #1
+		bl _malloc
+		str x0, [sp, #8]
+		ldr x0, [sp, #8]
+		mov x1, #1
+		ldr x2, [sp, #0]
+		ldr x3, [x19, #8]
+		bl _fread
+		ldr x0, [sp, #8]
+		ldr x1, [sp, #0]
+		strb wzr, [x0, x1]
+		mov w1, #1
+		strb w1, [x19, #16]
+		ldr x0, [sp, #8]
+		add sp, sp, #16
+		b .return_File_readAll
+		```
+		return ""
+	}
+
+	pub func writeAll = (self, string data) {
+		```
+		#arch: c
+		FILE *f = (FILE*)(unsigned long long)self->handle;
+		fputs(data, f);
+		```
+		```
+		#arch: aarch64
+		mov x0, x1
+		ldr x1, [x19, #8]
+		bl _fputs
+		```
+	}
+
+	pub func readLine = (ref self, out string) {
+		```
+		#arch: c
+		FILE *f = (FILE*)(unsigned long long)self->handle;
+		int cap = 16;
+		int len = 0;
+		char *buf = (char*)malloc(cap);
+		malloc_count++;
+		int c = fgetc(f);
+		while (c != EOF && c != '\n') {
+			if (len + 1 >= cap) {
+				cap *= 2;
+				buf = (char*)realloc(buf, cap);
+			}
+			buf[len++] = (char)c;
+			c = fgetc(f);
+		}
+		buf[len] = 0;
+		if (c == EOF) self->eof = 1;
+		return buf;
+		```
+		```
+		#arch: aarch64
+		sub sp, sp, #32
+		mov x0, #16
+		bl _malloc
+		str x0, [sp, #0]
+		mov x1, #16
+		str x1, [sp, #8]
+		str xzr, [sp, #16]
+		ldr x0, [x19, #8]
+		bl _fgetc
+		str w0, [sp, #24]
+		.Lfile_readline_loop:
+		ldr w0, [sp, #24]
+		cmp w0, #0
+		blt .Lfile_readline_done
+		cmp w0, #10
+		beq .Lfile_readline_done
+		ldr x0, [sp, #16]
+		add x0, x0, #1
+		ldr x1, [sp, #8]
+		cmp x0, x1
+		ble .Lfile_readline_store
+		ldr x1, [sp, #8]
+		lsl x1, x1, #1
+		str x1, [sp, #8]
+		ldr x0, [sp, #0]
+		bl _realloc
+		str x0, [sp, #0]
+		.Lfile_readline_store:
+		ldr x0, [sp, #0]
+		ldr x1, [sp, #16]
+		ldr w2, [sp, #24]
+		strb w2, [x0, x1]
+		ldr x0, [sp, #16]
+		add x0, x0, #1
+		str x0, [sp, #16]
+		ldr x0, [x19, #8]
+		bl _fgetc
+		str w0, [sp, #24]
+		b .Lfile_readline_loop
+		.Lfile_readline_done:
+		ldr x0, [sp, #0]
+		ldr x1, [sp, #16]
+		strb wzr, [x0, x1]
+		ldr w0, [sp, #24]
+		cmp w0, #0
+		bge .Lfile_readline_ret
+		mov w1, #1
+		strb w1, [x19, #16]
+		.Lfile_readline_ret:
+		ldr x0, [sp, #0]
+		add sp, sp, #32
+		b .return_File_readLine
+		```
+		return ""
+	}
+
+	pub func writeLine = (self, string data) {
+		```
+		#arch: c
+		FILE *f = (FILE*)(unsigned long long)self->handle;
+		fputs(data, f);
+		fputc('\n', f);
+		```
+		```
+		#arch: aarch64
+		mov x0, x1
+		ldr x1, [x19, #8]
+		bl _fputs
+		mov w0, #10
+		ldr x1, [x19, #8]
+		bl _fputc
+		```
+	}
+
+	pub func readChunk = (ref self, int size, out string) {
+		```
+		#arch: c
+		FILE *f = (FILE*)(unsigned long long)self->handle;
+		char *buf = (char*)malloc(size + 1);
+		malloc_count++;
+		long n = fread(buf, 1, size, f);
+		buf[n] = 0;
+		if (n < size) self->eof = 1;
+		return buf;
+		```
+		```
+		#arch: aarch64
+		sub sp, sp, #16
+		str x1, [sp, #0]
+		ldr x0, [sp, #0]
+		add x0, x0, #1
+		bl _malloc
+		str x0, [sp, #8]
+		ldr x0, [sp, #8]
+		mov x1, #1
+		ldr x2, [sp, #0]
+		ldr x3, [x19, #8]
+		bl _fread
+		ldr x1, [sp, #8]
+		strb wzr, [x1, x0]
+		ldr x2, [sp, #0]
+		cmp x0, x2
+		bge .Lfile_readchunk_ret
+		mov w3, #1
+		strb w3, [x19, #16]
+		.Lfile_readchunk_ret:
+		ldr x0, [sp, #8]
+		add sp, sp, #16
+		b .return_File_readChunk
+		```
+		return ""
+	}
+
+	pub func writeChunk = (self, string data, int size) {
+		```
+		#arch: c
+		FILE *f = (FILE*)(unsigned long long)self->handle;
+		fwrite(data, 1, size, f);
+		```
+		```
+		#arch: aarch64
+		mov x0, x1
+		mov x1, #1
+		ldr x3, [x19, #8]
+		bl _fwrite
+		```
+	}
+
+	func destroy = () {
+		```
+		#arch: c
+		if (self->handle) {
+			fclose((FILE*)(unsigned long long)self->handle);
+			self->handle = 0;
+		}
+		```
+		```
+		#arch: aarch64
+		ldr x0, [x19, #8]
+		cbz x0, .Lfile_destroy_end
+		bl _fclose
+		.Lfile_destroy_end:
+		str xzr, [x19, #8]
+		```
+	}
+}

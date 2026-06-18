@@ -19,6 +19,9 @@ const KNOWN_HEAP_RETURNING = new Set([
 	"float64_to_string",
 	"bool_to_string",
 	"char_to_string",
+	"File_readAll",
+	"File_readLine",
+	"File_readChunk",
 ]);
 
 export function scan_heap_returning_functions(root: BaseNode): Set<string> {
