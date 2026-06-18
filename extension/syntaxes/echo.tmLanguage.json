@@ -106,18 +106,18 @@
 					"name": "keyword.control.echo",
 					"match": "\\b(?:if|else|while|for|of|in|break|continue|return|switch|case|match)\\b"
 				},
-			{
-				"name": "storage.type.echo",
-				"match": "\\b(?:func|struct|class|trait|enum|bitset)\\b"
-			},
-			{
-				"name": "keyword.other.echo",
-				"match": "\\b(?:var|const|let|mov|cp|import|destroy|init|op|panic|todo)\\b"
-			},
-			{
-				"name": "storage.modifier.echo",
-				"match": "\\b(?:pub|private|inline|out|ref)\\b"
-			},
+				{
+					"name": "storage.type.echo",
+					"match": "\\b(?:func|struct|class|trait|enum|bitset)\\b"
+				},
+				{
+					"name": "keyword.other.echo",
+					"match": "\\b(?:var|const|let|mov|cp|import|destroy|init|op|panic|todo)\\b"
+				},
+				{
+					"name": "storage.modifier.echo",
+					"match": "\\b(?:pub|private|inline|out|ref)\\b"
+				},
 				{
 					"name": "keyword.operator.word.echo",
 					"match": "\\b(?:as)\\b"

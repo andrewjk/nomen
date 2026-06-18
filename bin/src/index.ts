@@ -8,8 +8,8 @@ import { hideBin } from "yargs/helpers";
 import yargs from "yargs/yargs";
 
 import build from "../../src/build.ts";
-import { get_library } from "../../src/lib.ts";
 import join from "../../src/join.ts";
+import { get_library } from "../../src/lib.ts";
 import parse from "../../src/parse.ts";
 import render_errors from "./format_errors.ts";
 import type Config from "./types/Config.ts";
@@ -133,8 +133,8 @@ function resolve_lib(file_path: string): string | undefined {
 				// ignore malformed package.jsonc and keep searching
 			}
 		}
-		const lib_config = path.join(dir, "lib", "package.jsonc");
-		if (fs.existsSync(lib_config)) return path.join(dir, "lib");
+		const lib_config = path.join(dir, "core", "package.jsonc");
+		if (fs.existsSync(lib_config)) return path.join(dir, "core");
 		const parent = path.dirname(dir);
 		if (parent === dir) break;
 		dir = parent;

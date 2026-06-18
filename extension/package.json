@@ -1,22 +1,36 @@
 {
 	"name": "echo",
 	"displayName": "Echo",
-	"description": "Run and Audit support for the Echo programming language.",
 	"version": "0.0.1",
-	"publisher": "echo-lang",
+	"description": "Run and Audit support for the Echo programming language.",
+	"categories": [
+		"Programming Languages"
+	],
 	"license": "ISC",
-	"engines": {
-		"vscode": "^1.85.0"
-	},
-	"categories": ["Programming Languages"],
+	"publisher": "echo-lang",
 	"main": "./dist/extension.js",
-	"activationEvents": ["onLanguage:echo"],
+	"scripts": {
+		"build": "node esbuild.mjs",
+		"dev": "node esbuild.mjs --watch",
+		"check": "tsc --noEmit",
+		"package": "node esbuild.mjs --minify && vsce package"
+	},
+	"devDependencies": {
+		"@types/node": "^25.9.2",
+		"@types/vscode": "^1.85.0",
+		"esbuild": "^0.25.0",
+		"typescript": "^6.0.3"
+	},
 	"contributes": {
 		"languages": [
 			{
 				"id": "echo",
-				"extensions": [".echo"],
-				"aliases": ["Echo"],
+				"extensions": [
+					".echo"
+				],
+				"aliases": [
+					"Echo"
+				],
 				"configuration": "./language-configuration.json"
 			}
 		],
@@ -49,7 +63,10 @@
 				},
 				"echo.arch": {
 					"type": "string",
-					"enum": ["aarch64", "c"],
+					"enum": [
+						"aarch64",
+						"c"
+					],
 					"default": "aarch64",
 					"description": "Target architecture passed to the compiler via --arch."
 				},
@@ -65,7 +82,10 @@
 				},
 				"echo.terminal": {
 					"type": "string",
-					"enum": ["dedicated", "new"],
+					"enum": [
+						"dedicated",
+						"new"
+					],
 					"enumDescriptions": [
 						"Reuse a single Echo terminal across runs.",
 						"Create a fresh terminal for each run."
@@ -75,7 +95,11 @@
 				},
 				"echo.diagnostics": {
 					"type": "string",
-					"enum": ["onType", "onSave", "off"],
+					"enum": [
+						"onType",
+						"onSave",
+						"off"
+					],
 					"enumDescriptions": [
 						"Show parse and compile errors as you type (debounced).",
 						"Show errors only when a file is saved.",
@@ -87,16 +111,10 @@
 			}
 		}
 	},
-	"scripts": {
-		"build": "node esbuild.mjs",
-		"dev": "node esbuild.mjs --watch",
-		"check": "tsc --noEmit",
-		"package": "node esbuild.mjs --minify && vsce package"
-	},
-	"devDependencies": {
-		"@types/node": "^25.9.2",
-		"@types/vscode": "^1.85.0",
-		"esbuild": "^0.25.0",
-		"typescript": "^6.0.3"
+	"activationEvents": [
+		"onLanguage:echo"
+	],
+	"engines": {
+		"vscode": "^1.85.0"
 	}
 }
