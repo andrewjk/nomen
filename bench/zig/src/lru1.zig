@@ -6,9 +6,10 @@ const AutoContext = std.hash_map.AutoContext;
 
 const global_allocator = std.heap.c_allocator;
 
-pub fn main() !void {
-    const stdout = std.io.getStdOut().writer();
-    const args = try get_args();
+var fmt_buf: [64]u8 = undefined;
+
+pub fn main(init: std.process.Init) !void {
+    const args = try get_args(init);
     const size = args[0];
     const n = args[1];
     const mod = size * 10;
@@ -29,11 +30,13 @@ pub fn main() !void {
             hit += 1;
         }
     }
-    try stdout.print("{d}\n{d}\n", .{ hit, missed });
+    const msg = std.fmt.bufPrint(&fmt_buf, "{d}\n{d}\n", .{ hit, missed }) catch unreachable;
+    _ = std.c.write(1, msg.ptr, msg.len);
 }
 
-fn get_args() ![2]u32 {
-    var arg_it = std.process.args();
+fn get_args(init: std.process.Init) ![2]u32 {
+    var arg_it = try std.process.Args.iterateAllocator(init.minimal.args, init.gpa);
+    defer arg_it.deinit();
     _ = arg_it.skip();
     var arg = arg_it.next() orelse return [_]u32{ 100, 100 };
     const size = try std.fmt.parseInt(u32, arg, 10);

@@ -34,7 +34,7 @@ BENCHES=(
 	"binarytrees|15|binarytrees1.zig"
 	"merkletrees|15|merkletrees1.zig"
 	"nsieve|4|nsieve1.zig"
-	"lru|$N|lru1.zig"
+	"lru|$N $N|lru1.zig"
 	"nbody|$N|nbody1.zig"
 	"spectral-norm|100|spectral-norm1.zig"
 	"mandelbrot|200|mandelbrot1.zig"
@@ -110,10 +110,10 @@ for entry in "${BENCHES[@]}"; do
 	# Echo run
 	bin_echo="$TMPDIR/echo_${bench}"
 	if [ -x "$bin_echo" ]; then
-		{ "$bin_echo" "$bn" > /dev/null 2>&1; } 2>/dev/null || true
-		t1=$( { time "$bin_echo" "$bn" > /dev/null 2>&1; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//' ) 2>/dev/null || true
-		t2=$( { time "$bin_echo" "$bn" > /dev/null 2>&1; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//' ) 2>/dev/null || true
-		t3=$( { time "$bin_echo" "$bn" > /dev/null 2>&1; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//' ) 2>/dev/null || true
+		{ "$bin_echo" $bn > /dev/null 2>&1; } 2>/dev/null || true
+		t1=$( { time "$bin_echo" $bn > /dev/null 2>&1; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//' ) 2>/dev/null || true
+		t2=$( { time "$bin_echo" $bn > /dev/null 2>&1; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//' ) 2>/dev/null || true
+		t3=$( { time "$bin_echo" $bn > /dev/null 2>&1; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//' ) 2>/dev/null || true
 		if [ -n "$t1" ] && [ -n "$t2" ] && [ -n "$t3" ]; then
 			r1=$(to_ms "$t1") r2=$(to_ms "$t2") r3=$(to_ms "$t3")
 			echo_ms=$r1
@@ -130,10 +130,10 @@ for entry in "${BENCHES[@]}"; do
 	# Go run
 	bin_go="$GO_BUILD/$bench"
 	if [ -x "$bin_go" ]; then
-		"$bin_go" "$bn" > /dev/null 2>&1 || true
-		t1=$( { time "$bin_go" "$bn" > /dev/null 2>&1; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//' ) || true
-		t2=$( { time "$bin_go" "$bn" > /dev/null 2>&1; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//' ) || true
-		t3=$( { time "$bin_go" "$bn" > /dev/null 2>&1; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//' ) || true
+		"$bin_go" $bn > /dev/null 2>&1 || true
+		t1=$( { time "$bin_go" $bn > /dev/null 2>&1; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//' ) || true
+		t2=$( { time "$bin_go" $bn > /dev/null 2>&1; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//' ) || true
+		t3=$( { time "$bin_go" $bn > /dev/null 2>&1; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//' ) || true
 		if [ -n "$t1" ] && [ -n "$t2" ] && [ -n "$t3" ]; then
 			r1=$(to_ms "$t1") r2=$(to_ms "$t2") r3=$(to_ms "$t3")
 			go_ms=$r1
@@ -150,10 +150,10 @@ for entry in "${BENCHES[@]}"; do
 	# Zig run
 	bin_zig="$TMPDIR/zig_${bench}"
 	if [ -x "$bin_zig" ]; then
-		"$bin_zig" "$bn" > /dev/null 2>&1 || true
-		t1=$( { time "$bin_zig" "$bn" > /dev/null 2>&1; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//' ) || true
-		t2=$( { time "$bin_zig" "$bn" > /dev/null 2>&1; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//' ) || true
-		t3=$( { time "$bin_zig" "$bn" > /dev/null 2>&1; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//' ) || true
+		"$bin_zig" $bn > /dev/null 2>&1 || true
+		t1=$( { time "$bin_zig" $bn > /dev/null 2>&1; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//' ) || true
+		t2=$( { time "$bin_zig" $bn > /dev/null 2>&1; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//' ) || true
+		t3=$( { time "$bin_zig" $bn > /dev/null 2>&1; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//' ) || true
 		if [ -n "$t1" ] && [ -n "$t2" ] && [ -n "$t3" ]; then
 			r1=$(to_ms "$t1") r2=$(to_ms "$t2") r3=$(to_ms "$t3")
 			zig_ms=$r1
