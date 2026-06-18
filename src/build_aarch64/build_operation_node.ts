@@ -103,8 +103,17 @@ function build_operand(node: BaseNode, target_reg: string, status: BuildStatus) 
 		}
 		const paramReg = status.function_param_regs?.get(value);
 		if (paramReg) {
-			if (status.function_param_vars?.has(value)) {
-				status.code += `ldr ${target_reg}, [${paramReg}]`;
+			if (status.function_param_vars?.has(value) || status.function_ref_params?.has(value)) {
+				const param_type_name = (node as ValueNode).type?.name;
+				const is_class =
+					param_type_name && status.structs.find((s) => s.name === param_type_name && s.is_class);
+				if (is_class) {
+					if (paramReg !== target_reg) {
+						status.code += `mov ${target_reg}, ${paramReg}`;
+					}
+				} else {
+					status.code += `ldr ${target_reg}, [${paramReg}]`;
+				}
 			} else if (paramReg !== target_reg) {
 				status.code += `mov ${target_reg}, ${paramReg}`;
 			}

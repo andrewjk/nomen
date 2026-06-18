@@ -167,8 +167,20 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 	// Variable reference - check register allocation first, then stack offset
 	const alloc_reg = status.register_allocations?.get(value);
 	if (alloc_reg) {
-		if (alloc_reg !== "x0") {
-			status.code += `mov x0, ${alloc_reg}`;
+		if (status.function_ref_params?.has(value) || status.function_ref_params?.has(original_value)) {
+			if (alloc_reg !== "x0") {
+				status.code += `mov x0, ${alloc_reg}\n`;
+			}
+			const param_type_name = node.type?.name;
+			const is_class =
+				param_type_name && status.structs.find((s) => s.name === param_type_name && s.is_class);
+			if (!is_class) {
+				status.code += `ldr x0, [x0]`;
+			}
+		} else {
+			if (alloc_reg !== "x0") {
+				status.code += `mov x0, ${alloc_reg}`;
+			}
 		}
 		return;
 	}
@@ -176,6 +188,11 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 	if (offset !== undefined) {
 		const type_name = node.type?.name || "";
 		const is_array = node.type?.is_array || false;
+		const is_ref =
+			status.function_ref_params?.has(value) || status.function_ref_params?.has(original_value);
+		const param_type_name = node.type?.name;
+		const is_class =
+			param_type_name && status.structs.find((s) => s.name === param_type_name && s.is_class);
 		if (is_array) {
 			status.code += `add x0, x29, #${offset}`;
 		} else {
@@ -203,6 +220,9 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 				status.code += signed ? `ldrsw x0, [x29, #${offset}]` : `ldr w0, [x29, #${offset}]`;
 			} else {
 				status.code += `ldr x0, [x29, #${offset}]`;
+			}
+			if (is_ref && !is_class) {
+				status.code += `\nldr x0, [x0]`;
 			}
 		}
 	} else {

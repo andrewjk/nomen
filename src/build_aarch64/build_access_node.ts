@@ -914,6 +914,11 @@ function build_access_index(node: AccessNode, access_index: AccessIndexNode, sta
 		if (!status.code.endsWith("\n")) {
 			status.code += "\n";
 		}
+		// Struct fields store a pointer to the array, not the array inline.
+		// Dereference to get the actual array base address.
+		if ((node.target as AccessNode).access.node_type === "access_field") {
+			status.code += `ldr x0, [x0]\n`;
+		}
 	} else {
 		build_node(node.target, status);
 		if (!status.code.endsWith("\n")) {

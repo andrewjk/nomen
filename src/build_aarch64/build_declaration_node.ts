@@ -433,7 +433,11 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 						);
 					}
 				}
-			} else if (status.function_return_label && node.declaration === "var") {
+			} else if (
+				status.function_return_label &&
+				node.declaration === "var" &&
+				node.type.name !== "string"
+			) {
 				const total_size = array_values.values.length * element_size;
 				const offset = allocate_stack_space(status, total_size, element_size);
 				status.stack_offsets!.set(node.name, offset);
@@ -474,6 +478,16 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 					});
 					emit_data(status, `\n.p2align 2\n`);
 				}
+			} else if (node.type.name === "string" && node.type.is_array) {
+				const labels = emit_string_array_labels(array_values.values, status);
+				status.code += `${node.name}: ${directive} `;
+				array_values.values.forEach((value, i) => {
+					if (i > 0) status.code += ", ";
+					const resolved = resolve_static_value(value, status);
+					const label = resolved !== null ? resolve_array_element(resolved, labels) : "0";
+					status.code += label;
+				});
+				status.code += `\n.p2align 2\n`;
 			} else {
 				status.code += `${node.name}: ${directive} `;
 				build_array_values_node(array_values, status);
@@ -655,7 +669,26 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 					// Evaluate params into x1-x7 first (before setting x0)
 					const param_regs = ["x1", "x2", "x3", "x4", "x5", "x6", "x7"];
 					for (let i = func_call.params.length - 1; i >= 0; i--) {
-						build_node(func_call.params[i], status);
+						const param = func_call.params[i];
+						if (param.node_type === "array" && (param as ArrayValuesNode).type?.name === "string") {
+							const arr = param as ArrayValuesNode;
+							const str_labels: string[] = [];
+							arr.values.forEach((v, idx) => {
+								const resolved = resolve_static_value(v, status);
+								if (resolved !== null && resolved.startsWith('"')) {
+									const label = `_arr_str_${string_array_counter++}`;
+									status.code += `${label}: .asciz ${escape_asciz(resolved)}\n.p2align 2\n`;
+									str_labels.push(label);
+								} else {
+									str_labels.push(resolved !== null ? resolved : "0");
+								}
+							});
+							const label = `_arr_param_${string_array_counter++}`;
+							status.code += `${label}: .quad ${str_labels.join(", ")}\n.p2align 2\n`;
+							status.code += `adr x0, ${label}`;
+						} else {
+							build_node(param, status);
+						}
 						if (!status.code.endsWith("\n")) {
 							status.code += "\n";
 						}

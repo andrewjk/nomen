@@ -32,6 +32,17 @@ Console.write("\\{nums[0]}")
 		await check_output("array_access_index_0", result, "10");
 	});
 
+	test("var string array with literals in function", async () => {
+		const input = `
+var string[] words = ["hello", "world"]
+Console.write("\\{words[0]}\\{words[1]}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		expect(parsed.errors).toEqual([]);
+		await check_output("var_string_array_literals", result, "helloworld");
+	});
+
 	test("array access middle element", async () => {
 		const input = `
 const nums = [10, 20, 30]

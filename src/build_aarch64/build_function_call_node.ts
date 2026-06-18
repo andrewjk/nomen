@@ -134,10 +134,27 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			if (param.node_type === "array" && param_type) {
 				const arr = param as ArrayValuesNode;
 				const label = `_arr_param_${array_param_counter++}`;
-				const values = arr.values
-					.map((v) => (v.node_type === "value" ? get_raw_value(v as ValueNode, status) : "0"))
-					.join(", ");
-				status.code += `${label}: .quad ${values}\n.p2align 2\n`;
+				const has_strings = arr.values.some(
+					(v) => v.node_type === "value" && (v as ValueNode).value.startsWith('"'),
+				);
+				if (has_strings) {
+					const str_labels: string[] = [];
+					arr.values.forEach((v, idx) => {
+						if (v.node_type === "value" && (v as ValueNode).value.startsWith('"')) {
+							const str_label = `_arr_str_${array_param_counter++}_${idx}`;
+							status.code += `${str_label}: .asciz ${(v as ValueNode).value}\n.p2align 2\n`;
+							str_labels.push(str_label);
+						} else {
+							str_labels.push(get_raw_value(v as ValueNode, status));
+						}
+					});
+					status.code += `${label}: .quad ${str_labels.join(", ")}\n.p2align 2\n`;
+				} else {
+					const values = arr.values
+						.map((v) => (v.node_type === "value" ? get_raw_value(v as ValueNode, status) : "0"))
+						.join(", ");
+					status.code += `${label}: .quad ${values}\n.p2align 2\n`;
+				}
 				status.code += `adr x0, ${label}`;
 			} else if (is_struct_type(param_type, status) || is_enum_with_data_type(param_type, status)) {
 				emit_struct_address(node.params[i], status);
