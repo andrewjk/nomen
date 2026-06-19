@@ -103,6 +103,8 @@ async function runEcho(uri: vscode.Uri | undefined, audit: boolean): Promise<voi
 	const arch = get_config<"aarch64" | "c">("arch", "aarch64");
 	const file_arg = shell_quote(document.uri.fsPath);
 	const flags = ["--in", file_arg, "--arch", arch];
+	const lib_dir = resolve_lib_dir(document.uri);
+	if (lib_dir) flags.push("--lib", shell_quote(lib_dir));
 	if (audit) {
 		flags.push("--audit");
 		const runtime = resolve_audit_runtime(document.uri);

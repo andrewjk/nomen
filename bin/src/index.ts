@@ -201,8 +201,9 @@ function processFile(filename: string, config: Config) {
 	const arch = config.arch || "aarch64";
 
 	const resolved = path.resolve(filename);
-	const lib_path = resolve_lib(resolved);
-	config.lib = lib_path;
+	if (!config.lib) {
+		config.lib = resolve_lib(resolved);
+	}
 
 	let startTime = performance.now();
 
