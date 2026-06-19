@@ -1,3 +1,5 @@
+import AccessFieldNode from "../../nodes/AccessFieldNode.ts";
+import AccessNode from "../../nodes/AccessNode.ts";
 import OperationNode from "../../nodes/OperationNode.ts";
 import ValueNode from "../../nodes/ValueNode.ts";
 import type CheckStatus from "../CheckStatus.ts";
@@ -79,6 +81,34 @@ function evaluate_numeric_or_bool(
 		// Look up const variable
 		const decl = status.values.findLast((v) => v.name === vn.value);
 		return decl?.const_value;
+	}
+
+	// Handle property access, e.g. source.length on an array
+	if (node.node_type === "access") {
+		const access = node as AccessNode;
+		if (access.access.node_type === "access_field") {
+			const field = access.access as AccessFieldNode;
+			if (field.name === "length") {
+				// Evaluate the target and check if it's an array with a known length
+				const target = evaluate_numeric_or_bool(access.target, status);
+				if (target !== undefined) return target;
+				// Look up the type to find array length
+				if (access.target.node_type === "value") {
+					const vn = access.target as ValueNode;
+					const decl = status.values.findLast((v) => v.name === vn.value);
+					if (decl?.type?.length) {
+						const len_node = decl.type.length as ValueNode;
+						const len = parseInt(len_node.value, 10);
+						if (!isNaN(len)) return len;
+					}
+				}
+			}
+		}
+	}
+
+	// Handle nested operations (e.g. i >= 0 inside x && y)
+	if (node.node_type === "op") {
+		return evaluate_const_condition(node as OperationNode, status);
 	}
 
 	// Could extend to handle arithmetic operations (+, -, *, /) in the future

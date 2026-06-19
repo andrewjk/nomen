@@ -148,6 +148,11 @@ export default function check_function_call(
 		node.params.splice(i, 1, constructor);
 	}
 
+	// Collect argument values for constraint evaluation (all params, not just current)
+	// Collect argument values for constraint evaluation
+	// (all params, since constraints can reference other params like source.length)
+	const constraint_args: { name: string; type: Type; value: number | boolean | undefined }[] = [];
+
 	for (let [i, param] of node.params.entries()) {
 		const func_param = func.params[i + self_offset];
 
@@ -254,41 +259,41 @@ export default function check_function_call(
 			func_param.type.length = param_type.length;
 		}
 
-		// Check parameter constraints (e.g. int x: x > 5)
-		if (func_param.constraint) {
-			let arg_value: number | boolean | undefined;
-			if (param.node_type === "value") {
-				const vn = param as ValueNode;
-				if (/^[+-]?\d+$/.test(vn.value)) arg_value = parseInt(vn.value, 10);
-				if (vn.value === "true") arg_value = true;
-				if (vn.value === "false") arg_value = false;
-				// Check for const variable references
-				if (arg_value === undefined) {
-					const decl = status.values.findLast((v) => v.name === vn.value);
-					if (decl && typeof decl.const_value === "number") {
-						arg_value = decl.const_value;
-					}
+		// Collect argument for constraint evaluation
+		let arg_value: number | boolean | undefined;
+		if (param.node_type === "value") {
+			const vn = param as ValueNode;
+			if (/^[+-]?\d+$/.test(vn.value)) arg_value = parseInt(vn.value, 10);
+			if (vn.value === "true") arg_value = true;
+			if (vn.value === "false") arg_value = false;
+			// Check for const variable references
+			if (arg_value === undefined) {
+				const decl = status.values.findLast((v) => v.name === vn.value);
+				if (decl && typeof decl.const_value === "number") {
+					arg_value = decl.const_value;
 				}
 			}
+		}
+		constraint_args.push({ name: func_param.name, type: param_type, value: arg_value });
 
-			if (arg_value !== undefined) {
-				// Temporarily push the argument value to evaluate the constraint
-				const saved_values_length = status.values.length;
+		// Evaluate constraints that reference this or earlier parameters
+		if (func_param.constraint) {
+			const saved_values_length = status.values.length;
+			for (const ca of constraint_args) {
 				status.values.push({
 					declaration: "const",
-					name: func_param.name,
-					type: func_param.type,
+					name: ca.name,
+					type: ca.type,
 					is_set: true,
-					const_value: arg_value,
+					const_value: ca.value,
 				});
+			}
 
-				const satisfied = evaluate_const_condition(func_param.constraint, status);
+			const satisfied = evaluate_const_condition(func_param.constraint, status);
+			status.values.length = saved_values_length;
 
-				status.values.length = saved_values_length;
-
-				if (satisfied === false) {
-					add_error(status, `Parameter constraint not satisfied: ${func_param.name}`, param.start);
-				}
+			if (satisfied === false) {
+				add_error(status, `Parameter constraint not satisfied: ${func_param.name}`, param.start);
 			}
 		}
 

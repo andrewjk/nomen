@@ -5,20 +5,16 @@ import { describe, test, expect } from "vite-plus/test";
 import { get_library } from "../src/lib.ts";
 import parse from "../src/parse.ts";
 
-function make_lib() {
-	return get_library(path.resolve(import.meta.dirname, "../core"));
-}
-
 describe("param constraint", () => {
-	test("restricted function with constraint violation errors", () => {
-		const lib = make_lib();
+	test("simple literal index violates constraint", () => {
+		const lib = get_library(path.resolve(import.meta.dirname, "../core"));
 		const input = `
 import System
-func restricted = (int x: x > 5) {
-    Console.write("\\{x}")
+func restricted = (int i: i > 0) {
+    Console.write("ok")
 }
 func caller = () {
-    restricted(2)
+    restricted(0)
 }
 `;
 		const parsed = parse(input, lib);
@@ -26,47 +22,93 @@ func caller = () {
 		expect(parsed.errors.some((e) => e.message.includes("not satisfied"))).toBe(true);
 	});
 
-	test("restricted function with valid call passes", () => {
-		const lib = make_lib();
+	test("simple literal index satisfies constraint", () => {
+		const lib = get_library(path.resolve(import.meta.dirname, "../core"));
 		const input = `
 import System
-func restricted = (int x: x > 5) {
-    Console.write("\\{x}")
+func restricted = (int i: i > 0) {
+    Console.write("ok")
 }
 func caller = () {
-    restricted(6)
+    restricted(5)
 }
 `;
 		const parsed = parse(input, lib);
 		expect(parsed.errors).toEqual([]);
 	});
 
-	test("restricted function with const arg that satisfies", () => {
-		const lib = make_lib();
+	test("array length constraint violation", () => {
+		const lib = get_library(path.resolve(import.meta.dirname, "../core"));
 		const input = `
 import System
-func restricted = (int x: x > 5) {
-    Console.write("\\{x}")
+func restricted = (string[] source, int i: i < source.length) {
+    Console.write("ok")
 }
 func caller = () {
-    const int val = 10
-    restricted(val)
+    restricted(["a", "b", "c"], 4)
+}
+`;
+		const parsed = parse(input, lib);
+		expect(parsed.errors.length).toBeGreaterThanOrEqual(1);
+		expect(parsed.errors.some((e) => e.message.includes("not satisfied"))).toBe(true);
+	});
+
+	test("array length constraint satisfied", () => {
+		const lib = get_library(path.resolve(import.meta.dirname, "../core"));
+		const input = `
+import System
+func restricted = (string[] source, int i: i < source.length) {
+    Console.write("ok")
+}
+func caller = () {
+    restricted(["a", "b", "c"], 2)
 }
 `;
 		const parsed = parse(input, lib);
 		expect(parsed.errors).toEqual([]);
 	});
 
-	test("restricted function with const arg that violates", () => {
-		const lib = make_lib();
+	test("compound constraint violated", () => {
+		const lib = get_library(path.resolve(import.meta.dirname, "../core"));
 		const input = `
 import System
-func restricted = (int x: x > 5) {
-    Console.write("\\{x}")
+func restricted = (string[] source, int i: i >= 0 && i < source.length) {
+    Console.write("ok")
 }
 func caller = () {
-    const int val = 1
-    restricted(val)
+    restricted(["a", "b", "c"], 5)
+}
+`;
+		const parsed = parse(input, lib);
+		expect(parsed.errors.length).toBeGreaterThanOrEqual(1);
+		expect(parsed.errors.some((e) => e.message.includes("not satisfied"))).toBe(true);
+	});
+
+	test("compound constraint satisfied", () => {
+		const lib = get_library(path.resolve(import.meta.dirname, "../core"));
+		const input = `
+import System
+func restricted = (string[] source, int i: i >= 0 && i < source.length) {
+    Console.write("ok")
+}
+func caller = () {
+    restricted(["a", "b", "c"], 2)
+}
+`;
+		const parsed = parse(input, lib);
+		expect(parsed.errors).toEqual([]);
+	});
+
+	test("compound constraint with variable array violated", () => {
+		const lib = get_library(path.resolve(import.meta.dirname, "../core"));
+		const input = `
+import System
+func restricted = (string[] source, int i: i >= 0 && i < source.length) {
+    Console.write("ok")
+}
+func caller = () {
+    var things = ["a", "b", "c"]
+    restricted(things, 4)
 }
 `;
 		const parsed = parse(input, lib);
