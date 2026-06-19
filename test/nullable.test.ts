@@ -241,3 +241,50 @@ Console.write("\\{y + 1}")
 		await check_output("coalesce_non_nullable", result, "11");
 	});
 });
+
+describe("nullable function parameters", () => {
+	test("field access on nullable param errors", () => {
+		const input = `
+class Thing {
+    var int value
+}
+func null_check = (Thing? thing) {
+    const x = thing.value
+    Console.write("\\{x}")
+}
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors.length).toBeGreaterThanOrEqual(1);
+		expect(parsed.errors.some((e) => e.message.includes("null"))).toBe(true);
+	});
+
+	test("nullable param with null check is fine", () => {
+		const input = `
+class Thing {
+    var int value
+}
+func null_check = (Thing? thing) {
+    if thing != null {
+        const x = thing.value
+        Console.write("\\{x}")
+    }
+}
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+	});
+
+	test("non-nullable param field access is fine", () => {
+		const input = `
+class Thing {
+    var int value
+}
+func use_thing = (Thing thing) {
+    const x = thing.value
+    Console.write("\\{x}")
+}
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+	});
+});

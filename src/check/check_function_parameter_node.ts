@@ -46,5 +46,6 @@ export default function check_function_parameter_node(param: ParameterNode, stat
 		name: param.name,
 		type: param.type,
 		is_set: true,
+		is_null: param.type.is_nullable ? true : undefined,
 	});
 }
