@@ -300,7 +300,7 @@ const dog = Dog(5)
 struct Person {
   var int age
 }
-var Person p
+var Person p = Person(0)
 const x = p.name
 `;
 		const expected = [test_error(input, "Field not found: name", 6, 13)];

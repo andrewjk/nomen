@@ -11,9 +11,12 @@ export default function check_assignment_node(
 	assign: AssignmentNode,
 	status: CheckStatus,
 ): boolean {
+	status.is_assignment_target = true;
 	if (!check_node(assign.left_value, status)) {
+		status.is_assignment_target = false;
 		return false;
 	}
+	status.is_assignment_target = false;
 
 	const old_expected_type = status.expected_type;
 	status.expected_type = type_from_value_node(assign.left_value, status);
@@ -44,6 +47,8 @@ export default function check_assignment_node(
 		} else {
 			left_value.is_set = true;
 		}
+	} else if (left_value.declaration === "var") {
+		left_value.is_set = true;
 	}
 
 	// Make sure that the types match

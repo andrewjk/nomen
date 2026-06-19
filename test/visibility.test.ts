@@ -28,7 +28,7 @@ struct Person {
   private var string name
   private func greet = () {}
 }
-var Person x
+var Person x = Person()
 x.name = "Andrew"
 x.greet()
 `;

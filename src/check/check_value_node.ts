@@ -33,6 +33,18 @@ export default function check_value_node(node: ValueNode, status: CheckStatus): 
 		return false;
 	}
 
+	// Check that var declarations are initialized before use (skip assignment targets)
+	if (
+		decl_value &&
+		decl_value.is_set === false &&
+		decl_value.declaration === "var" &&
+		!status.is_assignment_target &&
+		!status.allow_null_value
+	) {
+		add_error(status, `Variable '${node.value}' is not initialized`, node.start);
+		return false;
+	}
+
 	return true;
 }
 

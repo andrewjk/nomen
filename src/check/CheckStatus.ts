@@ -65,6 +65,12 @@ export default interface CheckStatus {
 	allow_null_value?: boolean;
 
 	/**
+	 * True when checking the left side of an assignment — uninitialized vars
+	 * are allowed here since they are about to be set
+	 */
+	is_assignment_target?: boolean;
+
+	/**
 	 * Variables that have been moved via `mov` and can no longer be used
 	 */
 	moved_variables?: Set<string>;

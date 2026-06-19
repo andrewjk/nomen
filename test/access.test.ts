@@ -212,7 +212,7 @@ describe("access errors", () => {
 struct Person {
   var string name
 }
-var Person p
+var Person p = Person("")
 var int x = p.name
 `;
 		const expected = [
@@ -279,7 +279,7 @@ var age = person.age
 struct Person {
   var int age
 }
-var Person p
+var Person p = Person(0)
 const x = p.name
 `;
 		const expected = [test_error(input, "Field not found: name", 6, 13)];
@@ -292,7 +292,7 @@ const x = p.name
 struct Person {
   var int age
 }
-var Person p
+var Person p = Person(0)
 p.greet()
 `;
 		const expected = [test_error(input, "Function not found: Person.greet", 6, 3)];

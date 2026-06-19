@@ -54,6 +54,13 @@ export default function check_match_node(match_node: MatchNode, status: CheckSta
 				add_error(status, `Const set incompletely: ${value.name}`, match_node.start);
 			}
 		}
+
+		if (value.declaration === "var" && !value.is_set) {
+			let set_count = branch_statuses.filter((bs) => bs.values[i]?.is_set).length;
+			if (set_count === branch_statuses.length && branch_statuses.length > 0) {
+				value.is_set = true;
+			}
+		}
 	}
 
 	if (!match_node.else_branch) {

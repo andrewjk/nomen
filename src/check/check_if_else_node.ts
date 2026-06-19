@@ -77,6 +77,16 @@ export default function check_if_else_node(if_else: IfElseNode, status: CheckSta
 				add_error(status, `Const set incompletely: ${value.name}`, if_else.start);
 			}
 		}
+
+		// For var declarations, track whether they were set in all branches.
+		// An unset var used later is undefined behavior (and for classes, a null pointer).
+		if (value.declaration === "var" && !value.is_set) {
+			let is_set_count =
+				0 + (if_status.values[i].is_set ? 1 : 0) + (else_status.values[i].is_set ? 1 : 0);
+			if (is_set_count === 2) {
+				value.is_set = true;
+			}
+		}
 	}
 
 	if (if_else.if_branch && !if_else.else_branch) {

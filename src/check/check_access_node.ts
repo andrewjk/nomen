@@ -15,6 +15,7 @@ import {
 	mangled_label,
 } from "./utils/function_overload.ts";
 import is_visible from "./utils/is_visible.ts";
+import { is_class_type } from "./utils/ownership.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
 
@@ -27,6 +28,20 @@ export default function check_access_node(node: AccessNode, status: CheckStatus)
 	if (!target_type.name) {
 		add_error(status, `Unknown target: ${value_from_value_node(node.target)}`, node.target.start);
 		return false;
+	}
+
+	// Check that class-type variables are initialized before field/method access
+	if (
+		node.target.node_type === "value" &&
+		target_type.name &&
+		is_class_type(target_type.name, status)
+	) {
+		const var_name = (node.target as import("../nodes/ValueNode.ts").default).value;
+		const decl = status.values.findLast((v) => v.name === var_name);
+		if (decl && decl.is_set === false && !status.allow_null_value) {
+			add_error(status, `Variable '${var_name}' is not initialized`, node.target.start);
+			return false;
+		}
 	}
 
 	switch (node.access.node_type) {
