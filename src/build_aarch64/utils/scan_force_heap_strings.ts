@@ -47,7 +47,7 @@ function visit(node: BaseNode | undefined, result: Set<string>) {
 	}
 }
 
-// A right-hand side that produces a fresh heap string (concat, repetition,
+// A right-hand side that produces a fresh heap string (concat, repeat,
 // interpolation, to_string, or any string-returning function/method call).
 // Bare literals and variable references are excluded — they don't allocate.
 function is_fresh_heap_string(node: BaseNode | undefined): boolean {

@@ -286,6 +286,11 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		return;
 	}
 
+	if (node.op === "*" && node.type?.name === "string") {
+		build_string_repeat(node, status);
+		return;
+	}
+
 	const is_float =
 		is_float_type(node) || is_float_type(node.left_value) || is_float_type(node.right_value);
 
@@ -408,6 +413,76 @@ function build_string_concat(node: OperationNode, status: BuildStatus) {
 	}
 
 	status.code += `ldr x0, [sp, #24]\n`;
+	status.code += `add sp, sp, #32\n`;
+	status.last_result_is_heap = true;
+}
+
+// Runtime string repetition: produces a new heap string = left repeated right times.
+// Stack layout (32 bytes): [0]=left ptr, [8]=left len, [16]=buf ptr, [24]=original count.
+// Uses x19 as the loop counter (preserved across memcpy calls).
+function build_string_repeat(node: OperationNode, status: BuildStatus) {
+	// Allocate 32 bytes for local state + 16 bytes to preserve x19/x20.
+	status.code += `sub sp, sp, #32\n`;
+	status.code += `stp x19, x20, [sp, #-16]!\n`;
+
+	// Evaluate left operand (string).
+	build_node(node.left_value!, status);
+	const left_is_heap = is_owned_heap_temp(node.left_value!);
+	if (!status.code.endsWith("\n")) status.code += "\n";
+	status.code += `str x0, [sp, #16]\n`; // [16] = left ptr (offset from post-stp sp)
+
+	// Evaluate right operand (int count).
+	build_node(node.right_value!, status);
+	if (!status.code.endsWith("\n")) status.code += "\n";
+	status.code += `mov x19, x0\n`; // x19 = loop counter
+
+	// strlen(left)
+	status.code += `ldr x0, [sp, #16]\n`;
+	status.code += `bl _strlen\n`;
+	status.code += `str x0, [sp, #24]\n`; // [24] = left len
+
+	// total = len * count + 1
+	status.code += `mul x20, x0, x19\n`; // x20 = original count * len (preserved across loop)
+	status.code += `add x0, x20, #1\n`;
+	status.code += `bl _malloc\n`;
+	status.code += `str x0, [sp, #32]\n`; // [32] = buf
+
+	// Copy loop.
+	const loop_top = `_str_repeat_loop_${string_counter++}`;
+	const loop_end = `_str_repeat_end_${string_counter++}`;
+	status.code += `${loop_top}:\n`;
+	status.code += `cbz x19, ${loop_end}\n`;
+	// memcpy(buf, left, len)
+	status.code += `ldr x0, [sp, #32]\n`;
+	status.code += `ldr x1, [sp, #16]\n`;
+	status.code += `ldr x2, [sp, #24]\n`;
+	status.code += `bl _memcpy\n`;
+	// buf += len
+	status.code += `ldr x0, [sp, #32]\n`;
+	status.code += `ldr x1, [sp, #24]\n`;
+	status.code += `add x0, x0, x1\n`;
+	status.code += `str x0, [sp, #32]\n`;
+	// count--
+	status.code += `sub x19, x19, #1\n`;
+	status.code += `b ${loop_top}\n`;
+	status.code += `${loop_end}:\n`;
+
+	// Null-terminate.
+	status.code += `ldr x0, [sp, #32]\n`;
+	status.code += `strb wzr, [x0]\n`;
+
+	// Free the temporary heap left operand if it was freshly allocated.
+	if (left_is_heap) {
+		status.code += `ldr x0, [sp, #16]\n`;
+		emit_free(status);
+	}
+
+	// Return buf - original_len * original_count (start of the buffer).
+	status.code += `ldr x0, [sp, #32]\n`;
+	status.code += `sub x0, x0, x20\n`;
+
+	// Restore x19/x20 and deallocate stack.
+	status.code += `ldp x19, x20, [sp], #16\n`;
 	status.code += `add sp, sp, #32\n`;
 	status.last_result_is_heap = true;
 }
