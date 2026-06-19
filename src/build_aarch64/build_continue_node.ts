@@ -1,4 +1,4 @@
-import type BuildStatus from "../build/BuildStatus.ts";
+import type BuildStatus from "../build_c/BuildStatus.ts";
 import { emit_cleanup_to_loop_depth } from "./utils/auto_destroy.ts";
 
 export default function build_continue_node(status: BuildStatus) {

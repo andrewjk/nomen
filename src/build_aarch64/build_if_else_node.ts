@@ -1,4 +1,4 @@
-import type BuildStatus from "../build/BuildStatus.ts";
+import type BuildStatus from "../build_c/BuildStatus.ts";
 import IfElseNode from "../nodes/IfElseNode.ts";
 import build_block_node from "./build_block_node.ts";
 import build_node from "./build_node.ts";

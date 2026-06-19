@@ -1,4 +1,4 @@
-import type BuildStatus from "../build/BuildStatus.ts";
+import type BuildStatus from "../build_c/BuildStatus.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";

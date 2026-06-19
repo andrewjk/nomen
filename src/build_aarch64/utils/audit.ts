@@ -1,4 +1,4 @@
-import type BuildStatus from "../../build/BuildStatus.ts";
+import type BuildStatus from "../../build_c/BuildStatus.ts";
 
 export function emit_malloc(status: BuildStatus) {
 	status.code += status.audit ? "bl _echo_malloc_wrap\n" : "bl _malloc\n";

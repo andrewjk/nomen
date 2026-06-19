@@ -1,5 +1,3 @@
-import build_c_node from "./build/build_node.ts";
-import type BuildStatus from "./build/BuildStatus.ts";
 import { reset_access_temp_counter } from "./build_aarch64/build_access_node.ts";
 import { reset_label_counter as reset_for_label_counter } from "./build_aarch64/build_for_loop_node.ts";
 import { reset_temp_counter as reset_func_call_temp_counter } from "./build_aarch64/build_function_call_node.ts";
@@ -12,6 +10,8 @@ import { reset_string_counter as reset_value_string_counter } from "./build_aarc
 import { reset_label_counter as reset_while_label_counter } from "./build_aarch64/build_while_loop_node.ts";
 import { emit_malloc } from "./build_aarch64/utils/audit.ts";
 import { scan_heap_returning_functions } from "./build_aarch64/utils/scan_heap_returns.ts";
+import build_c_node from "./build_c/build_node.ts";
+import type BuildStatus from "./build_c/BuildStatus.ts";
 import BaseNode from "./nodes/BaseNode.ts";
 import type BuildResult from "./types/BuildResult.ts";
 

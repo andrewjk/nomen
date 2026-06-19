@@ -1,4 +1,4 @@
-import type BuildStatus from "../build/BuildStatus.ts";
+import type BuildStatus from "../build_c/BuildStatus.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import RawNode from "../nodes/RawNode.ts";
 import StructNode from "../nodes/StructNode.ts";

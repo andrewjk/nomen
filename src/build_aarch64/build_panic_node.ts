@@ -1,4 +1,4 @@
-import type BuildStatus from "../build/BuildStatus.ts";
+import type BuildStatus from "../build_c/BuildStatus.ts";
 import PanicNode from "../nodes/PanicNode.ts";
 
 export default function build_panic_node(node: PanicNode, status: BuildStatus) {

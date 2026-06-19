@@ -1,4 +1,4 @@
-import type BuildStatus from "../../build/BuildStatus.ts";
+import type BuildStatus from "../../build_c/BuildStatus.ts";
 import StructNode from "../../nodes/StructNode.ts";
 import Type from "../../nodes/Type.ts";
 import aarch64_size from "./aarch64_size.ts";

@@ -1,5 +1,5 @@
-import type BuildStatus from "../build/BuildStatus.ts";
-import type_from_value_node from "../build/utils/type_from_value_node.ts";
+import type BuildStatus from "../build_c/BuildStatus.ts";
+import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import MatchNode from "../nodes/MatchNode.ts";
 import build_block_node from "./build_block_node.ts";
 import build_node from "./build_node.ts";

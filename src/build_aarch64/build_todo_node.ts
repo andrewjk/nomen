@@ -1,4 +1,4 @@
-import type BuildStatus from "../build/BuildStatus.ts";
+import type BuildStatus from "../build_c/BuildStatus.ts";
 import TodoNode from "../nodes/TodoNode.ts";
 
 export default function build_todo_node(node: TodoNode, status: BuildStatus) {

@@ -1,4 +1,4 @@
-import type BuildStatus from "../build/BuildStatus.ts";
+import type BuildStatus from "../build_c/BuildStatus.ts";
 import RawNode from "../nodes/RawNode.ts";
 
 function should_emit_for_arch(content: string, arch: string): [boolean, string] {

@@ -1,5 +1,5 @@
-import type BuildStatus from "../build/BuildStatus.ts";
-import type_from_value_node from "../build/utils/type_from_value_node.ts";
+import type BuildStatus from "../build_c/BuildStatus.ts";
+import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import CastNode from "../nodes/CastNode.ts";
 import build_node from "./build_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";

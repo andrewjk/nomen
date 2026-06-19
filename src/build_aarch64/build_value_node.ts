@@ -1,4 +1,4 @@
-import type BuildStatus from "../build/BuildStatus.ts";
+import type BuildStatus from "../build_c/BuildStatus.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 
 let string_counter = 0;
