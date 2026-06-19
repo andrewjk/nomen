@@ -376,14 +376,24 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 			}
 		} else {
 			const lhs_is_heap = status.heap_strings?.has(name);
+			status.last_result_is_heap = false;
+			// Build the RHS first: it may read the current (old) value of `name`
+			// (e.g. `s = s + "x"`), so the old value must still be alive here.
+			build_node(node.right_value, status);
+			if (!status.code.endsWith("\n")) status.code += "\n";
+			// Preserve the freshly computed value across freeing the old value.
+			status.code += `str x0, [sp, #-16]!\n`;
 			if (lhs_is_heap) {
 				emit_var_load(status, "x0", name, 8);
 				emit_free(status);
 				status.heap_strings!.delete(name);
 			}
-			status.last_result_is_heap = false;
-			build_node(node.right_value, status);
-			if (status.last_result_is_heap && lhs_type_name === "string") {
+			status.code += `ldr x0, [sp], #16\n`;
+			// last_result_is_heap means the RHS produced a fresh heap string, so the
+			// target now owns a heap value. (Don't key off lhs_type_name: inside a
+			// loop body the scoped-declaration table is swapped out, so the type
+			// can't always be resolved here.)
+			if (status.last_result_is_heap) {
 				if (!status.heap_strings) status.heap_strings = new Set();
 				status.heap_strings.add(name);
 			}

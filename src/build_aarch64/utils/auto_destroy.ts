@@ -264,7 +264,7 @@ function emit_destroy_for_array_elem(
 }
 
 export function emit_destroy_for_scope(status: BuildStatus, declarations_before: number) {
-	const moved = status.moved ?? new Set<string>();
+	const moved = status.moved ?? new Set();
 	const current_scope = status.heap_cleanup_stack?.[status.heap_cleanup_stack.length - 1];
 	if (current_scope?.heap_slots.length) {
 		for (let i = declarations_before; i < status.scoped_declarations.length; i++) {

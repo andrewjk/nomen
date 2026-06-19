@@ -924,9 +924,7 @@ function build_access_index(node: AccessNode, access_index: AccessIndexNode, sta
 		// vs inferred by the checker (start < 0).
 		if ((node.target as AccessNode).access.node_type === "access_field") {
 			const access_field = (node.target as AccessNode).access as AccessFieldNode;
-			const target_type_name = type_from_value_node(
-				(node.target as AccessNode).target,
-			).name;
+			const target_type_name = type_from_value_node((node.target as AccessNode).target).name;
 			const struct_def = status.structs.find((s) => s.name === target_type_name);
 			const field = struct_def?.fields.find((f) => f.name === access_field.name);
 			const is_fixed_array = field?.type.is_array && (field.type.length?.start ?? -1) >= 0;

@@ -806,10 +806,19 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 					status.code += `ldr d0, [x0]\n`;
 					status.code += `str d0, [x29, #${offset}]\n`;
 				} else if (node.type.name === "string" && raw.startsWith('"')) {
-					const label = `_str_init_${node.name}`;
-					emit_data(status, `${label}: .asciz ${escape_asciz(raw)}\n.p2align 2\n`);
-					status.code += `adr x0, ${label}\n`;
-					status.code += `str x0, [x29, #${offset}]\n`;
+					if (status.force_heap_strings?.has(node.name)) {
+						const label = `_str_init_${node.name}`;
+						emit_data(status, `${label}: .asciz ${escape_asciz(raw)}\n.p2align 2\n`);
+						status.code += `adr x0, ${label}\n`;
+						emit_strdup(status);
+						status.code += `str x0, [x29, #${offset}]\n`;
+						mark_heap_string(status, node.name);
+					} else {
+						const label = `_str_init_${node.name}`;
+						emit_data(status, `${label}: .asciz ${escape_asciz(raw)}\n.p2align 2\n`);
+						status.code += `adr x0, ${label}\n`;
+						status.code += `str x0, [x29, #${offset}]\n`;
+					}
 				} else {
 					status.code += `mov x0, #${raw}\n`;
 					if (size === 1) {

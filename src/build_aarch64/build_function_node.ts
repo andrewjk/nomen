@@ -3,6 +3,7 @@ import FunctionNode from "../nodes/FunctionNode.ts";
 import build_block_node from "./build_block_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free } from "./utils/audit.ts";
+import scan_force_heap_strings from "./utils/scan_force_heap_strings.ts";
 import { allocate_stack_space } from "./utils/stack_var.ts";
 
 let label_counter = 0;
@@ -279,7 +280,12 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		status.code += `str ${reg}, [x29, #${save_offset}]\n`;
 	}
 
+	const old_force_heap = status.force_heap_strings;
+	status.force_heap_strings = scan_force_heap_strings(node.statements);
+
 	build_block_node(node, status);
+
+	status.force_heap_strings = old_force_heap;
 
 	const loop_regs_used = status.callee_saved_regs_used
 		? [...status.callee_saved_regs_used].sort()

@@ -4,6 +4,7 @@ import BaseNode from "../nodes/BaseNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_node from "./build_node.ts";
+import { emit_free } from "./utils/audit.ts";
 import { allocate_stack_space, emit_var_address } from "./utils/stack_var.ts";
 import { get_struct_size } from "./utils/struct_layout.ts";
 
@@ -280,6 +281,11 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		return;
 	}
 
+	if (node.op === "+" && node.type?.name === "string") {
+		build_string_concat(node, status);
+		return;
+	}
+
 	const is_float =
 		is_float_type(node) || is_float_type(node.left_value) || is_float_type(node.right_value);
 
@@ -352,4 +358,74 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 			status.code += `${op} x0, x1, x2\n`;
 		}
 	}
+}
+
+// Runtime string concatenation: produces a new heap string = left + right.
+// Stack layout (32 bytes): [0]=left ptr, [8]=right ptr, [16]=left len, [24]=buf.
+// Temporary heap operands (e.g. intermediate results of chained concats) are
+// freed after use; variables and literals are left untouched.
+function build_string_concat(node: OperationNode, status: BuildStatus) {
+	status.code += `sub sp, sp, #32\n`;
+
+	build_node(node.left_value!, status);
+	const left_is_heap = is_owned_heap_temp(node.left_value!);
+	if (!status.code.endsWith("\n")) status.code += "\n";
+	status.code += `str x0, [sp, #0]\n`;
+
+	build_node(node.right_value!, status);
+	const right_is_heap = is_owned_heap_temp(node.right_value!);
+	if (!status.code.endsWith("\n")) status.code += "\n";
+	status.code += `str x0, [sp, #8]\n`;
+
+	// total length = strlen(left) + strlen(right) + 1
+	status.code += `ldr x0, [sp, #0]\n`;
+	status.code += `bl _strlen\n`;
+	status.code += `str x0, [sp, #16]\n`;
+	status.code += `ldr x0, [sp, #8]\n`;
+	status.code += `bl _strlen\n`;
+	status.code += `ldr x1, [sp, #16]\n`;
+	status.code += `add x0, x0, x1\n`;
+	status.code += `add x0, x0, #1\n`;
+	status.code += `bl _malloc\n`;
+	status.code += `str x0, [sp, #24]\n`;
+
+	// strcpy(buf, left) then strcat(buf, right)
+	status.code += `ldr x0, [sp, #24]\n`;
+	status.code += `ldr x1, [sp, #0]\n`;
+	status.code += `bl _strcpy\n`;
+	status.code += `ldr x0, [sp, #24]\n`;
+	status.code += `ldr x1, [sp, #8]\n`;
+	status.code += `bl _strcat\n`;
+
+	// Free temporary heap operands now that they've been copied in.
+	if (left_is_heap) {
+		status.code += `ldr x0, [sp, #0]\n`;
+		emit_free(status);
+	}
+	if (right_is_heap) {
+		status.code += `ldr x0, [sp, #8]\n`;
+		emit_free(status);
+	}
+
+	status.code += `ldr x0, [sp, #24]\n`;
+	status.code += `add sp, sp, #32\n`;
+	status.last_result_is_heap = true;
+}
+
+// Whether an operand node produces a fresh heap string that is safe to free
+// once consumed (nested concat/repeat, interpolation, or a *_to_string call).
+// Variables, literals, and arbitrary function calls are NOT freed here because
+// they may be static or owned elsewhere.
+function is_owned_heap_temp(node: BaseNode): boolean {
+	const type_name = (node as { type?: { name?: string } }).type?.name;
+	if (type_name !== "string") return false;
+	if (node.node_type === "op") return true;
+	if (node.node_type === "func_call") {
+		const name = (node as unknown as { name: string }).name;
+		return (
+			name.startsWith("_string_interpolate_") ||
+			(name.endsWith("_to_string") && name !== "string_to_string")
+		);
+	}
+	return false;
 }

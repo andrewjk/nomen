@@ -49,6 +49,12 @@ export default interface BuildStatus {
 	moved?: Set<string>;
 	heap_returning_functions?: Set<string>;
 	heap_strings?: Set<string>;
+	/**
+	 * String variables that are reassigned a freshly-allocated (heap) value at
+	 * some point (e.g. `s = s + "x"` in a loop). Their initial literal value is
+	 * heap-allocated too, so reassignment can always free the old value.
+	 */
+	force_heap_strings?: Set<string>;
 	heap_string_arrays?: Map<string, number>;
 	last_result_is_heap?: boolean;
 	match_save_size?: number;
