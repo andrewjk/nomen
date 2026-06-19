@@ -13,6 +13,7 @@ import { monomorphize } from "./check_function_call_node.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
+import evaluate_const_condition from "./utils/evaluate_const_condition.ts";
 import is_visible from "./utils/is_visible.ts";
 import { is_class_type } from "./utils/ownership.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
@@ -251,6 +252,44 @@ export default function check_function_call(
 
 		if (param_type.is_array && param_type.length && !func_param.type.length) {
 			func_param.type.length = param_type.length;
+		}
+
+		// Check parameter constraints (e.g. int x: x > 5)
+		if (func_param.constraint) {
+			let arg_value: number | boolean | undefined;
+			if (param.node_type === "value") {
+				const vn = param as ValueNode;
+				if (/^[+-]?\d+$/.test(vn.value)) arg_value = parseInt(vn.value, 10);
+				if (vn.value === "true") arg_value = true;
+				if (vn.value === "false") arg_value = false;
+				// Check for const variable references
+				if (arg_value === undefined) {
+					const decl = status.values.findLast((v) => v.name === vn.value);
+					if (decl && typeof decl.const_value === "number") {
+						arg_value = decl.const_value;
+					}
+				}
+			}
+
+			if (arg_value !== undefined) {
+				// Temporarily push the argument value to evaluate the constraint
+				const saved_values_length = status.values.length;
+				status.values.push({
+					declaration: "const",
+					name: func_param.name,
+					type: func_param.type,
+					is_set: true,
+					const_value: arg_value,
+				});
+
+				const satisfied = evaluate_const_condition(func_param.constraint, status);
+
+				status.values.length = saved_values_length;
+
+				if (satisfied === false) {
+					add_error(status, `Parameter constraint not satisfied: ${func_param.name}`, param.start);
+				}
+			}
 		}
 
 		if (param.node_type !== "value" && !has_ref_keyword && !node.swap_params?.has(i)) {

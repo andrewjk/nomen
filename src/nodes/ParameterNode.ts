@@ -6,6 +6,7 @@ export default class ParameterNode extends BaseNode {
 	name: string;
 	type: Type;
 	default_value?: BaseNode;
+	constraint?: BaseNode;
 	type_start?: number;
 	name_start?: number;
 	default_value_start?: number;

@@ -178,6 +178,11 @@ function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: 
 		}
 	}
 
+	// Parse parameter constraint: int x: x > 5
+	if (accept(":", status)) {
+		param.constraint = parse_expression(status);
+	}
+
 	if (
 		param.name === "self" &&
 		func.params.length === 1 &&
