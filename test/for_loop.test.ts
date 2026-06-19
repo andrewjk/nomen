@@ -384,7 +384,7 @@ for x of [1, 2, 3]
   // ...
 }
 `;
-		const expected = [test_error(input, "Expected {", 3, 3)];
+		const expected = [test_error(input, "Expected {", 4, 1)];
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
 	});
@@ -394,7 +394,7 @@ for x of [1, 2, 3]
 for x of [1, 2, 3] {
   // ...
 `;
-		const expected = [test_error(input, "Expected token", 4, 0)];
+		const expected = [test_error(input, "Expected token", 3, 0)];
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
 	});

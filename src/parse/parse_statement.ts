@@ -44,12 +44,6 @@ export default function parse_statement(status: ParseStatus) {
 			break;
 		}
 
-		// Ignore comments
-		if (value.startsWith("//") || value.startsWith("/*")) {
-			consume(status);
-			continue;
-		}
-
 		// First check for a keyword (var, if, switch, etc), then check for a
 		// following operator (=, +, etc)
 		switch (value) {

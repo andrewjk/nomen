@@ -37,7 +37,7 @@ interface TokenizeStatus {
 	tokens: Token[];
 }
 
-export default function tokenize(input: string, preserve_space = false): Token[] {
+export default function tokenize(input: string, preserve_source = false): Token[] {
 	let status: TokenizeStatus = {
 		i: 0,
 		start: 0,
@@ -54,7 +54,7 @@ export default function tokenize(input: string, preserve_space = false): Token[]
 
 			// Add the current symbol (and potentially a little more)
 			if (is_whitespace(input[status.i])) {
-				if (preserve_space) {
+				if (preserve_source) {
 					let value = input[status.i];
 					status.tokens.push({ value, i: status.start });
 				}
@@ -74,11 +74,21 @@ export default function tokenize(input: string, preserve_space = false): Token[]
 				} else if (value === "/" && input[status.i + 1] === "/") {
 					// It's a one-line comment -- process until the newline
 					let end = consume_comment(input, status);
+					if (!preserve_source) {
+						status.i = end - 1;
+						status.start = status.i + 1;
+						continue;
+					}
 					value = input.substring(status.i, end);
 					status.i = end - 1;
 				} else if (value === "/" && input[status.i + 1] === "*") {
 					// It's a block comment -- process until the close, handling nested comments
 					let end = consume_block_comment(input, status);
+					if (!preserve_source) {
+						status.i = end - 1;
+						status.start = status.i + 1;
+						continue;
+					}
 					value = input.substring(status.i, end);
 					status.i = end - 1;
 				} else if (LONG_COMPOUND_SYMBOLS.includes(input.substring(status.i, status.i + 3))) {

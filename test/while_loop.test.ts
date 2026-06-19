@@ -190,7 +190,7 @@ while x < 5
   // ...
 }
 `;
-		const expected = [test_error(input, "Expected {", 3, 3)];
+		const expected = [test_error(input, "Expected {", 4, 1)];
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
 	});
@@ -214,7 +214,7 @@ while x < 5 {
 while x < 5 {
   // ...
 `;
-		const expected = [test_error(input, "Expected token", 4, 0)];
+		const expected = [test_error(input, "Expected token", 3, 0)];
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
 	});
@@ -225,7 +225,7 @@ while {
   // ...
 }
 `;
-		const expected = [test_error(input, "Expected {", 3, 3)];
+		const expected = [test_error(input, "Expected {", 4, 1)];
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
 	});

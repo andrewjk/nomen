@@ -324,7 +324,7 @@ if {
   // ...
 }
 `;
-		const expected = [test_error(input, "Expected {", 3, 3)];
+		const expected = [test_error(input, "Expected {", 4, 1)];
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
 	});
