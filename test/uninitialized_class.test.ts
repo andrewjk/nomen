@@ -395,3 +395,37 @@ Console.write("\\{f.x}")
 		expect(parsed.errors).toEqual([]);
 	});
 });
+
+describe("for loop and compound assignment", () => {
+	test("for loop variable is initialized", () => {
+		const input = `
+const arr = [1, 2, 3]
+for item of arr {
+    Console.write("\\{item}")
+}
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+	});
+
+	test("compound assignment on uninitialized var errors", () => {
+		const input = `
+var int x
+x += 1
+Console.write("\\{x}")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors.length).toBeGreaterThanOrEqual(1);
+		expect(parsed.errors.some((e) => e.message.includes("not initialized"))).toBe(true);
+	});
+
+	test("compound assignment on initialized var is fine", () => {
+		const input = `
+var int x = 5
+x += 1
+Console.write("\\{x}")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+	});
+});

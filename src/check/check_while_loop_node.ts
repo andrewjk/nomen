@@ -4,6 +4,7 @@ import check_block_node from "./check_block_node.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import clone_status from "./utils/clone_status.ts";
+import get_null_check_var from "./utils/get_null_check_var.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import type_name from "./utils/type_name.ts";
 
@@ -18,6 +19,14 @@ export default function check_while_loop_node(while_loop: WhileLoopNode, status:
 			`While loop condition must be a bool, not ${type_name(condition_type)}`,
 			while_loop.condition.start,
 		);
+	}
+
+	// Narrow null state from condition into loop body (e.g. while thing != null)
+	const null_check = get_null_check_var(while_loop.condition);
+	if (null_check && !null_check.is_null_check) {
+		// condition is thing != null — inside the loop, thing is not null
+		const loop_var = while_status.values.find((v) => v.name === null_check.name);
+		if (loop_var) loop_var.is_null = false;
 	}
 
 	check_block_node(while_loop, while_status);

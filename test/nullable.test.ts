@@ -305,3 +305,104 @@ func use_thing = (Thing thing) {
 		expect(parsed.errors).toEqual([]);
 	});
 });
+
+describe("flow analysis improvements", () => {
+	test("assignment to nullable var clears is_null", () => {
+		const input = `
+class Thing {
+    var int value
+}
+func test = (Thing? thing) {
+    var Thing? t = null
+    t = Thing(5)
+    const x = t.value
+    Console.write("\\{x}")
+}
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+	});
+
+	test("assignment of null re-sets is_null", () => {
+		const input = `
+class Thing {
+    var int value
+}
+func test = () {
+    var Thing? t = Thing(5)
+    t = null
+    const x = t.value
+    Console.write("\\{x}")
+}
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors.length).toBeGreaterThanOrEqual(1);
+		expect(parsed.errors.some((e) => e.message.includes("may be null"))).toBe(true);
+	});
+
+	test("break as guard clause in while loop", () => {
+		const input = `
+class Thing {
+    var int value
+}
+func test = (Thing? thing) {
+    while true {
+        if thing == null {
+            break
+        }
+        const x = thing.value
+        Console.write("\\{x}")
+    }
+}
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+	});
+
+	test("&& short-circuit null narrowing in if condition", () => {
+		const input = `
+class Thing {
+    var int value
+}
+func test = (Thing? thing) {
+    if thing != null && thing.value > 0 {
+        Console.write("\\{thing.value}")
+    }
+}
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+	});
+
+	test("&& short-circuit null narrowing in if body", () => {
+		const input = `
+class Thing {
+    var int value
+}
+func test = (Thing? thing) {
+    if thing != null && thing.value > 0 {
+        const x = thing.value
+        Console.write("\\{x}")
+    }
+}
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+	});
+
+	test("while loop condition narrows null in body", () => {
+		const input = `
+class Thing {
+    var int value
+}
+func test = (Thing? thing) {
+    while thing != null {
+        const x = thing.value
+        Console.write("\\{x}")
+    }
+}
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+	});
+});

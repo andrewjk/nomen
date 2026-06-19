@@ -2,40 +2,20 @@ import add_error from "../add_error.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import IfElseNode from "../nodes/IfElseNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
-import ValueNode from "../nodes/ValueNode.ts";
 import check_block_node from "./check_block_node.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import clone_status from "./utils/clone_status.ts";
 import evaluate_const_condition from "./utils/evaluate_const_condition.ts";
+import get_null_check_var from "./utils/get_null_check_var.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import type_name from "./utils/type_name.ts";
 
-function get_null_check_var(condition: BaseNode): { name: string; is_null_check: boolean } | null {
-	if (condition.node_type !== "op") return null;
-	const op = condition as OperationNode;
-	if (op.op !== "==" && op.op !== "!=") return null;
-
-	const left = op.left_value;
-	const right = op.right_value;
-	const is_eq = op.op === "==";
-
-	if (left.node_type === "value" && right.node_type === "value") {
-		const lv = left as ValueNode;
-		const rv = right as ValueNode;
-		if (rv.value === "null" && lv.type?.is_nullable) {
-			return { name: lv.value, is_null_check: is_eq };
-		}
-		if (lv.value === "null" && rv.type?.is_nullable) {
-			return { name: rv.value, is_null_check: is_eq };
-		}
-	}
-	return null;
-}
-
-/** Check if a block always exits (e.g. contains a top-level return statement) */
+/** Check if a block always exits (e.g. contains a top-level return/break/continue) */
 function block_always_returns(node: { statements: BaseNode[] }): boolean {
-	return node.statements.some((s) => s.node_type === "return");
+	return node.statements.some(
+		(s) => s.node_type === "return" || s.node_type === "break" || s.node_type === "continue",
+	);
 }
 
 export default function check_if_else_node(if_else: IfElseNode, status: CheckStatus) {
@@ -62,6 +42,19 @@ export default function check_if_else_node(if_else: IfElseNode, status: CheckSta
 		} else {
 			const else_var = else_status.values.find((v) => v.name === null_check.name);
 			if (else_var) else_var.is_null = false;
+		}
+	}
+
+	// For && conditions with null check on the left side (e.g. thing != null && ...),
+	// narrow is_null for the if body
+	if (if_else.condition.node_type === "op") {
+		const cond_op = if_else.condition as OperationNode;
+		if (cond_op.op === "&&") {
+			const left_check = get_null_check_var(cond_op.left_value);
+			if (left_check && !left_check.is_null_check) {
+				const if_var = if_status.values.find((v) => v.name === left_check.name);
+				if (if_var) if_var.is_null = false;
+			}
 		}
 	}
 

@@ -11,7 +11,12 @@ export default function check_assignment_node(
 	assign: AssignmentNode,
 	status: CheckStatus,
 ): boolean {
-	status.is_assignment_target = true;
+	// For compound assignment (x += 1), the left value is read, so check is_set.
+	// For regular assignment (x = 5), the left value is only written.
+	const is_compound = !!assign.operator;
+	if (!is_compound) {
+		status.is_assignment_target = true;
+	}
 	if (!check_node(assign.left_value, status)) {
 		status.is_assignment_target = false;
 		return false;
@@ -49,6 +54,13 @@ export default function check_assignment_node(
 		}
 	} else if (left_value.declaration === "var") {
 		left_value.is_set = true;
+	}
+
+	// Update is_null based on the RHS value
+	if (left_value.declaration === "var") {
+		const rhs_is_null =
+			assign.right_value.node_type === "value" && (assign.right_value as any).value === "null";
+		left_value.is_null = rhs_is_null || undefined;
 	}
 
 	// Make sure that the types match

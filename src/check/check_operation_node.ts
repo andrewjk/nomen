@@ -11,6 +11,7 @@ import {
 	is_overloaded,
 	mangled_label,
 } from "./utils/function_overload.ts";
+import get_null_check_var from "./utils/get_null_check_var.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
 
@@ -19,6 +20,32 @@ export default function check_operation_node(op: OperationNode, status: CheckSta
 		if (!check_node(op.right_value, status)) {
 			return false;
 		}
+		op.type = new Type("bool");
+		return true;
+	}
+
+	if (op.op === ("&&" as const)) {
+		if (!check_node(op.left_value, status)) return false;
+
+		// Short-circuit: narrow is_null when left side is thing != null
+		const left_check = get_null_check_var(op.left_value);
+		let saved_null: boolean | undefined;
+		if (left_check && !left_check.is_null_check) {
+			const var_obj = status.values.findLast((v) => v.name === left_check.name);
+			if (var_obj && var_obj.is_null) {
+				saved_null = var_obj.is_null;
+				var_obj.is_null = false;
+			}
+		}
+
+		if (!check_node(op.right_value, status)) return false;
+
+		// Restore is_null after the condition (else branch shouldn't be narrowed)
+		if (saved_null !== undefined && left_check) {
+			const var_obj = status.values.findLast((v) => v.name === left_check.name);
+			if (var_obj) var_obj.is_null = saved_null;
+		}
+
 		op.type = new Type("bool");
 		return true;
 	}
@@ -128,7 +155,6 @@ export default function check_operation_node(op: OperationNode, status: CheckSta
 		case ">=":
 		case "<":
 		case "<=":
-		case "&&":
 		case "||": {
 			op.type = new Type("bool");
 			break;

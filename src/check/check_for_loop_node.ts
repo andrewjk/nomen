@@ -29,6 +29,7 @@ export default function check_for_loop_node(for_loop: ForLoopNode, status: Check
 				declaration: "var",
 				name: for_loop.item.value,
 				type: for_loop.item.type,
+				is_set: true,
 			});
 		}
 	}
