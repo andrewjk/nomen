@@ -29,7 +29,7 @@ export default function check_value_node(node: ValueNode, status: CheckStatus): 
 
 	const decl_value = status.values.findLast((v) => v.name === node.value);
 	if (decl_value?.is_null && !status.allow_null_value) {
-		add_error(status, `Variable '${node.value}' is null`, node.start);
+		add_error(status, `Variable '${node.value}' may be null`, node.start);
 		return false;
 	}
 

@@ -33,6 +33,11 @@ function get_null_check_var(condition: BaseNode): { name: string; is_null_check:
 	return null;
 }
 
+/** Check if a block always exits (e.g. contains a top-level return statement) */
+function block_always_returns(node: { statements: BaseNode[] }): boolean {
+	return node.statements.some((s) => s.node_type === "return");
+}
+
 export default function check_if_else_node(if_else: IfElseNode, status: CheckStatus) {
 	check_node(if_else.condition, status);
 	const condition_type = type_from_value_node(if_else.condition, status);
@@ -74,29 +79,48 @@ export default function check_if_else_node(if_else: IfElseNode, status: CheckSta
 	const else_reachable = const_cond !== true;
 	const has_else = !!if_else.else_branch;
 
-	for (let [i, value] of status.values.entries()) {
-		// Collect which reachable branches set this variable.
-		// If there's no else branch, the implicit else is a no-op (doesn't set).
-		const reachable_sets: boolean[] = [];
-		if (if_reachable) reachable_sets.push(!!if_status.values[i].is_set);
-		if (else_reachable) reachable_sets.push(has_else ? !!else_status.values[i].is_set : false);
+	// Check which branches always exit (e.g. guard clause with return)
+	const if_returns = if_else.if_branch && block_always_returns(if_else.if_branch);
+	const else_returns = if_else.else_branch && block_always_returns(if_else.else_branch);
 
-		const reachable_count = reachable_sets.length;
-		const set_count = reachable_sets.filter((s) => s).length;
+	// A branch "falls through" if it's reachable AND doesn't always exit.
+	// The implicit else (no else branch) always falls through.
+	const if_falls_through = if_reachable && !if_returns;
+	const else_falls_through = else_reachable && (!has_else || !else_returns);
+
+	for (let [i, value] of status.values.entries()) {
+		// is_set reconciliation: only branches that fall through contribute to post-if state
+		const contributing_sets: boolean[] = [];
+		if (if_falls_through) contributing_sets.push(!!if_status.values[i].is_set);
+		if (else_falls_through)
+			contributing_sets.push(has_else ? !!else_status.values[i].is_set : false);
+
+		const contributing_count = contributing_sets.length;
+		const set_count = contributing_sets.filter((s) => s).length;
 
 		if (value.declaration === "const" && !value.is_set) {
-			if (reachable_count > 0 && set_count === reachable_count) {
+			if (contributing_count > 0 && set_count === contributing_count) {
 				value.is_set = true;
-			} else if (set_count > 0 && set_count < reachable_count) {
+			} else if (set_count > 0 && set_count < contributing_count) {
 				add_error(status, `Const set incompletely: ${value.name}`, if_else.start);
 			}
 		}
 
 		if (value.declaration === "var" && !value.is_set) {
-			if (reachable_count > 0 && set_count === reachable_count) {
+			if (contributing_count > 0 && set_count === contributing_count) {
 				value.is_set = true;
 			}
 		}
+
+		// is_null propagation: if only one branch falls through, inherit its null state.
+		// This handles guard clauses like: if thing == null { return } — after this,
+		// thing is known to be non-null.
+		if (if_falls_through && !else_falls_through) {
+			value.is_null = if_status.values[i].is_null;
+		} else if (else_falls_through && !if_falls_through) {
+			value.is_null = else_status.values[i].is_null;
+		}
+		// If both fall through, keep original is_null (conservative)
 	}
 
 	if (if_else.if_branch && !if_else.else_branch) {

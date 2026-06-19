@@ -44,7 +44,7 @@ Console.write("\\{b}")
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors.length).toBeGreaterThanOrEqual(1);
-		expect(parsed.errors.some((e) => e.message.includes("is null"))).toBe(true);
+		expect(parsed.errors.some((e) => e.message.includes("may be null"))).toBe(true);
 	});
 
 	test("using null variable in function call errors", () => {
@@ -54,7 +54,7 @@ Console.write("\\{x}")
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors.length).toBeGreaterThanOrEqual(1);
-		expect(parsed.errors.some((e) => e.message.includes("is null"))).toBe(true);
+		expect(parsed.errors.some((e) => e.message.includes("may be null"))).toBe(true);
 	});
 });
 
@@ -268,6 +268,23 @@ func null_check = (Thing? thing) {
         const x = thing.value
         Console.write("\\{x}")
     }
+}
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+	});
+
+	test("nullable param with guard clause return is fine", () => {
+		const input = `
+class Thing {
+    var int value
+}
+func null_check = (Thing? thing) {
+    if thing == null {
+        return
+    }
+    const x = thing.value
+    Console.write("\\{x}")
 }
 `;
 		const parsed = parse_with_imports(input);
