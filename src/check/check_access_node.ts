@@ -123,6 +123,11 @@ function check_access_field_node(
 			node.type = new Type("int");
 			return true;
 		}
+		// Are we accessing length on a string (computed property → strlen)
+		if (target_type.name === "string" && node.name === "length") {
+			node.type = new Type("int");
+			return true;
+		}
 	}
 	if (!field) {
 		const struct = status.structs.find((s) => s.name === target_type.name);
@@ -237,6 +242,11 @@ function check_access_function_node(
 		}
 	}
 	if (!func) {
+		// String.length() — method call form of the string.length property
+		if (target_type.name === "string" && node.name === "length" && node.params.length === 0) {
+			node.type = new Type("int");
+			return true;
+		}
 		add_error(status, `Function not found: ${target_type.name}.${node.name}`, node.start);
 		return false;
 	}

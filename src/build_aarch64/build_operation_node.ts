@@ -258,36 +258,66 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 			status.code += `add x8, x29, #${return_temp_offset}\n`;
 		}
 
-		// Right operand into x1 (x0 is reserved for self)
-		build_operator_operand(node.right_value, "x1", status);
+		// Check if operands are owned heap temps before building them
+		const right_is_heap = node.type?.name === "string" && is_owned_heap_temp(node.right_value);
+		const left_is_heap = node.type?.name === "string" && is_owned_heap_temp(node.left_value);
+
+		// Evaluate right operand, spill to stack (left evaluation may clobber x1)
+		const right_spill = allocate_stack_space(status, 8);
+		build_operator_operand(node.right_value, "x0", status);
 		if (!status.code.endsWith("\n")) {
 			status.code += "\n";
 		}
+		status.code += `str x0, [x29, #${right_spill}]\n`;
 
-		// Left operand (self) into x0
+		// Always spill left operand — nested ops (e.g. s * n) return in x0
+		// which we must preserve through the spill/restore sequence.
+		const left_spill = allocate_stack_space(status, 8);
 		build_operator_operand(node.left_value, "x0", status);
 		if (!status.code.endsWith("\n")) {
 			status.code += "\n";
 		}
+		status.code += `str x0, [x29, #${left_spill}]\n`;
+
+		// Restore right operand into x1
+		status.code += `ldr x1, [x29, #${right_spill}]\n`;
 
 		const label =
 			node.operator_func.mangled_name ||
 			`${node.operator_func.struct_name}_${node.operator_func.func_name}`;
 		status.code += `bl ${label}\n`;
 
+		// Save result before freeing heap temps (emit_free clobbers x0).
+		const has_heap_temps = left_is_heap || right_is_heap;
+		let result_spill: number | undefined;
+		if (has_heap_temps) {
+			result_spill = allocate_stack_space(status, 8);
+			status.code += `str x0, [x29, #${result_spill}]\n`;
+		}
+
 		if (return_struct && return_temp_offset !== undefined) {
 			status.code += `add x0, x29, #${return_temp_offset}\n`;
 		}
-		return;
-	}
 
-	if (node.op === "+" && node.type?.name === "string") {
-		build_string_concat(node, status);
-		return;
-	}
+		// Free owned heap temp operands AFTER the operator has consumed them.
+		if (left_is_heap) {
+			status.code += `ldr x0, [x29, #${left_spill}]\n`;
+			emit_free(status);
+		}
+		if (right_is_heap) {
+			status.code += `ldr x0, [x29, #${right_spill}]\n`;
+			emit_free(status);
+		}
 
-	if (node.op === "*" && node.type?.name === "string") {
-		build_string_repeat(node, status);
+		// Restore result if it was spilled.
+		if (result_spill !== undefined) {
+			status.code += `ldr x0, [x29, #${result_spill}]\n`;
+		}
+
+		// Operator functions that return strings produce heap-allocated results.
+		if (node.type?.name === "string") {
+			status.last_result_is_heap = true;
+		}
 		return;
 	}
 
@@ -363,128 +393,6 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 			status.code += `${op} x0, x1, x2\n`;
 		}
 	}
-}
-
-// Runtime string concatenation: produces a new heap string = left + right.
-// Stack layout (32 bytes): [0]=left ptr, [8]=right ptr, [16]=left len, [24]=buf.
-// Temporary heap operands (e.g. intermediate results of chained concats) are
-// freed after use; variables and literals are left untouched.
-function build_string_concat(node: OperationNode, status: BuildStatus) {
-	status.code += `sub sp, sp, #32\n`;
-
-	build_node(node.left_value!, status);
-	const left_is_heap = is_owned_heap_temp(node.left_value!);
-	if (!status.code.endsWith("\n")) status.code += "\n";
-	status.code += `str x0, [sp, #0]\n`;
-
-	build_node(node.right_value!, status);
-	const right_is_heap = is_owned_heap_temp(node.right_value!);
-	if (!status.code.endsWith("\n")) status.code += "\n";
-	status.code += `str x0, [sp, #8]\n`;
-
-	// total length = strlen(left) + strlen(right) + 1
-	status.code += `ldr x0, [sp, #0]\n`;
-	status.code += `bl _strlen\n`;
-	status.code += `str x0, [sp, #16]\n`;
-	status.code += `ldr x0, [sp, #8]\n`;
-	status.code += `bl _strlen\n`;
-	status.code += `ldr x1, [sp, #16]\n`;
-	status.code += `add x0, x0, x1\n`;
-	status.code += `add x0, x0, #1\n`;
-	status.code += `bl _malloc\n`;
-	status.code += `str x0, [sp, #24]\n`;
-
-	// strcpy(buf, left) then strcat(buf, right)
-	status.code += `ldr x0, [sp, #24]\n`;
-	status.code += `ldr x1, [sp, #0]\n`;
-	status.code += `bl _strcpy\n`;
-	status.code += `ldr x0, [sp, #24]\n`;
-	status.code += `ldr x1, [sp, #8]\n`;
-	status.code += `bl _strcat\n`;
-
-	// Free temporary heap operands now that they've been copied in.
-	if (left_is_heap) {
-		status.code += `ldr x0, [sp, #0]\n`;
-		emit_free(status);
-	}
-	if (right_is_heap) {
-		status.code += `ldr x0, [sp, #8]\n`;
-		emit_free(status);
-	}
-
-	status.code += `ldr x0, [sp, #24]\n`;
-	status.code += `add sp, sp, #32\n`;
-	status.last_result_is_heap = true;
-}
-
-// Runtime string repetition: produces a new heap string = left repeated right times.
-// Stack layout (32 bytes): [0]=left ptr, [8]=left len, [16]=buf ptr, [24]=original count.
-// Uses x19 as the loop counter (preserved across memcpy calls).
-function build_string_repeat(node: OperationNode, status: BuildStatus) {
-	// Allocate 32 bytes for local state + 16 bytes to preserve x19/x20.
-	status.code += `sub sp, sp, #32\n`;
-	status.code += `stp x19, x20, [sp, #-16]!\n`;
-
-	// Evaluate left operand (string).
-	build_node(node.left_value!, status);
-	const left_is_heap = is_owned_heap_temp(node.left_value!);
-	if (!status.code.endsWith("\n")) status.code += "\n";
-	status.code += `str x0, [sp, #16]\n`; // [16] = left ptr (offset from post-stp sp)
-
-	// Evaluate right operand (int count).
-	build_node(node.right_value!, status);
-	if (!status.code.endsWith("\n")) status.code += "\n";
-	status.code += `mov x19, x0\n`; // x19 = loop counter
-
-	// strlen(left)
-	status.code += `ldr x0, [sp, #16]\n`;
-	status.code += `bl _strlen\n`;
-	status.code += `str x0, [sp, #24]\n`; // [24] = left len
-
-	// total = len * count + 1
-	status.code += `mul x20, x0, x19\n`; // x20 = original count * len (preserved across loop)
-	status.code += `add x0, x20, #1\n`;
-	status.code += `bl _malloc\n`;
-	status.code += `str x0, [sp, #32]\n`; // [32] = buf
-
-	// Copy loop.
-	const loop_top = `_str_repeat_loop_${string_counter++}`;
-	const loop_end = `_str_repeat_end_${string_counter++}`;
-	status.code += `${loop_top}:\n`;
-	status.code += `cbz x19, ${loop_end}\n`;
-	// memcpy(buf, left, len)
-	status.code += `ldr x0, [sp, #32]\n`;
-	status.code += `ldr x1, [sp, #16]\n`;
-	status.code += `ldr x2, [sp, #24]\n`;
-	status.code += `bl _memcpy\n`;
-	// buf += len
-	status.code += `ldr x0, [sp, #32]\n`;
-	status.code += `ldr x1, [sp, #24]\n`;
-	status.code += `add x0, x0, x1\n`;
-	status.code += `str x0, [sp, #32]\n`;
-	// count--
-	status.code += `sub x19, x19, #1\n`;
-	status.code += `b ${loop_top}\n`;
-	status.code += `${loop_end}:\n`;
-
-	// Null-terminate.
-	status.code += `ldr x0, [sp, #32]\n`;
-	status.code += `strb wzr, [x0]\n`;
-
-	// Free the temporary heap left operand if it was freshly allocated.
-	if (left_is_heap) {
-		status.code += `ldr x0, [sp, #16]\n`;
-		emit_free(status);
-	}
-
-	// Return buf - original_len * original_count (start of the buffer).
-	status.code += `ldr x0, [sp, #32]\n`;
-	status.code += `sub x0, x0, x20\n`;
-
-	// Restore x19/x20 and deallocate stack.
-	status.code += `ldp x19, x20, [sp], #16\n`;
-	status.code += `add sp, sp, #32\n`;
-	status.last_result_is_heap = true;
 }
 
 // Whether an operand node produces a fresh heap string that is safe to free

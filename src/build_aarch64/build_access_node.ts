@@ -376,6 +376,14 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 		return;
 	}
 
+	// String.length → strlen(self)
+	if (target_type.name === "string" && access_field.name === "length") {
+		build_node(node.target, status);
+		if (!status.code.endsWith("\n")) status.code += "\n";
+		status.code += `bl _strlen\n`;
+		return;
+	}
+
 	const offset = compute_field_offset(node, status);
 	const base = get_base_target(node);
 
@@ -674,6 +682,18 @@ function build_access_method(
 	if (access_func.name === "to_string" && target_type.is_array && target_type.length) {
 		build_int_array_to_string(node, target_type, status);
 		status.last_result_is_heap = true;
+		return;
+	}
+
+	// String.length() — method call form of the string.length property → strlen
+	if (
+		target_type.name === "string" &&
+		access_func.name === "length" &&
+		access_func.params.length === 0
+	) {
+		build_node(node.target, status);
+		if (!status.code.endsWith("\n")) status.code += "\n";
+		status.code += `bl _strlen\n`;
 		return;
 	}
 

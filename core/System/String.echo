@@ -11,17 +11,78 @@ pub struct string: Stringable {
         ```
     }
 
-    pub func length = (self, out int) {
+    pub op + (self, string other, out string) {
         ```
         #arch: c
-        return strlen(self);
+        int left_len = strlen(self);
+        int right_len = strlen(other);
+        char* result = malloc(left_len + right_len + 1);
+        strcpy(result, self);
+        strcat(result, other);
+        return result;
         ```
         ```
         #arch: aarch64
-        mov x0, x19
+        stp x20, x21, [sp, #-16]!
+        mov x20, x1
         bl _strlen
-        b .return_string_length
+        mov x21, x0
+        mov x0, x20
+        bl _strlen
+        add x0, x21, x0
+        add x0, x0, #1
+        bl _malloc
+        mov x21, x0
+        mov x1, x19
+        bl _strcpy
+        mov x0, x21
+        mov x1, x20
+        bl _strcat
+        mov x0, x21
+        ldp x20, x21, [sp], #16
         ```
-        return 0
+    }
+
+    pub op * (self, int count, out string) {
+        ```
+        #arch: c
+        int str_len = strlen(self);
+        int total = str_len * count + 1;
+        char* buf = malloc(total);
+        char* p = buf;
+        for (int i = 0; i < count; i++) {
+            memcpy(p, self, str_len);
+            p += str_len;
+        }
+        *p = 0;
+        return buf;
+        ```
+        ```
+        #arch: aarch64
+        stp x20, x21, [sp, #-16]!
+        stp x22, xzr, [sp, #-16]!
+        mov x20, x1
+        bl _strlen
+        mov x21, x0
+        mul x0, x0, x20
+        add x0, x0, #1
+        bl _malloc
+        str x0, [x29, #8]
+        mov x22, x0
+        .Lmul_loop:
+        cbz x20, .Lmul_done
+        mov x0, x22
+        mov x1, x19
+        mov x2, x21
+        bl _memcpy
+        add x22, x22, x21
+        sub x20, x20, #1
+        b .Lmul_loop
+        .Lmul_done:
+        strb wzr, [x22]
+        ldr x0, [x29, #8]
+        ldp x22, xzr, [sp], #16
+        ldp x20, x21, [sp], #16
+        ```
     }
 }
