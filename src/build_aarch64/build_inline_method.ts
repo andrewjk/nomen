@@ -3,7 +3,6 @@ import FunctionNode from "../nodes/FunctionNode.ts";
 import RawNode from "../nodes/RawNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import build_block_node from "./build_block_node.ts";
-import aarch64_size from "./utils/aarch64_size.ts";
 
 let inline_counter = 0;
 

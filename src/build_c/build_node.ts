@@ -5,6 +5,7 @@ import AssignmentNode from "../nodes/AssignmentNode.ts";
 import BaseNode from "../nodes/BaseNode.ts";
 import BitsetNode from "../nodes/BitsetNode.ts";
 import BreakNode from "../nodes/BreakNode.ts";
+import CastNode from "../nodes/CastNode.ts";
 import ContinueNode from "../nodes/ContinueNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
 import EnumNode from "../nodes/EnumNode.ts";

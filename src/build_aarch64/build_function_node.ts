@@ -163,10 +163,8 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		has_body &&
 		node.params.length > 0 &&
 		node.params[0].type.name === "Init";
-	let init_struct_offset = -1;
 	let init_struct_size = 0;
 	if (is_main_with_init) {
-		init_struct_offset = 0;
 		const vt_size = 8;
 		const argc_offset = vt_size;
 		const args_offset = vt_size + 8;

@@ -1,5 +1,4 @@
 import add_error from "../add_error.ts";
-import BaseNode from "../nodes/BaseNode.ts";
 import BitsetNode from "../nodes/BitsetNode.ts";
 import type BlockNode from "../nodes/BlockNode.ts";
 import EnumNode from "../nodes/EnumNode.ts";
