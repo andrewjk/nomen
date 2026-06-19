@@ -259,12 +259,13 @@ x = 10
 	test("incomplete conditional const", () => {
 		const input = `
 const int x
-if true {
+var int dummy = 1
+if dummy > 0 {
   x = 5
 }
 const y = x
 `;
-		const expected = [test_error(input, "Const set incompletely: x", 3, 1)];
+		const expected = [test_error(input, "Const set incompletely: x", 4, 1)];
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
 	});

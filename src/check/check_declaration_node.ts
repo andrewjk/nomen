@@ -3,6 +3,7 @@ import AnonStructNode from "../nodes/AnonStructNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import Type from "../nodes/Type.ts";
+import ValueNode from "../nodes/ValueNode.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
@@ -75,6 +76,7 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			is_set: !!decl.value,
 			start: decl.start,
 			is_null: decl.value?.node_type === "value" && (decl.value as any).value === "null",
+			const_value: decl.declaration === "const" ? extract_const_value(decl.value) : undefined,
 		});
 	} else {
 		if (decl.type.name) {
@@ -131,6 +133,7 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			is_set: !!decl.value,
 			start: decl.start,
 			is_null: decl.value?.node_type === "value" && (decl.value as any).value === "null",
+			const_value: decl.declaration === "const" ? extract_const_value(decl.value) : undefined,
 		});
 	}
 }
@@ -160,4 +163,20 @@ function convert_anon_struct(decl: DeclarationNode, status: CheckStatus) {
 	constructor.params = args;
 	constructor.type = new Type(struct.name);
 	decl.value = constructor;
+}
+
+/**
+ * Extract a compile-time literal value from a declaration's initializer node.
+ * Returns a number, string, or boolean for simple literals; undefined otherwise.
+ */
+function extract_const_value(
+	value: import("../nodes/BaseNode.ts").default | undefined,
+): number | string | boolean | undefined {
+	if (!value || value.node_type !== "value") return undefined;
+	const vn = value as ValueNode;
+	if (vn.value === "true") return true;
+	if (vn.value === "false") return false;
+	if (/^[+-]?\d+$/.test(vn.value)) return parseInt(vn.value, 10);
+	if (/^[+-]?\d+\.\d+$/.test(vn.value)) return parseFloat(vn.value);
+	return undefined;
 }

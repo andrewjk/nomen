@@ -1,6 +1,5 @@
 import { describe, test, expect } from "vite-plus/test";
 
-import parse from "../src/parse";
 import parse_with_imports from "./parse_with_imports";
 
 describe("uninitialized class variable errors", () => {
@@ -40,7 +39,8 @@ class Foo {
 }
 
 var Foo f
-if true {
+var bool cond = true
+if cond {
     f = Foo(10)
 }
 Console.write("\\{f.x}")
@@ -234,7 +234,8 @@ describe("uninitialized primitive var errors", () => {
 	test("use uninitialized var int in expression", () => {
 		const input = `
 var int y
-if true {
+var bool cond = true
+if cond {
     y = 22
 }
 var int z = 2 + y
@@ -285,6 +286,110 @@ Console.write("\\{y}")
 		const input = `
 var int y = 42
 Console.write("\\{y}")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+	});
+});
+
+describe("constant condition evaluation", () => {
+	test("if true without else sets var", () => {
+		const input = `
+var int y
+if true {
+    y = 22
+}
+Console.write("\\{y}")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+	});
+
+	test("if false without else does not set var", () => {
+		const input = `
+var int y
+if false {
+    y = 22
+}
+Console.write("\\{y}")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors.length).toBeGreaterThanOrEqual(1);
+		expect(parsed.errors.some((e) => e.message.includes("not initialized"))).toBe(true);
+	});
+
+	test("const comparison true sets var in if without else", () => {
+		const input = `
+const int xx = 5
+var int y
+if xx < 12 {
+    y = 22
+}
+Console.write("\\{y}")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+	});
+
+	test("const comparison false does not set var in if without else", () => {
+		const input = `
+const int xx = 5
+var int y
+if xx > 12 {
+    y = 22
+}
+Console.write("\\{y}")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors.length).toBeGreaterThanOrEqual(1);
+		expect(parsed.errors.some((e) => e.message.includes("not initialized"))).toBe(true);
+	});
+
+	test("if true without else sets class var", () => {
+		const input = `
+class Foo {
+    var int x
+}
+
+var Foo f
+if true {
+    f = Foo(10)
+}
+Console.write("\\{f.x}")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+	});
+
+	test("if false without else does not set class var", () => {
+		const input = `
+class Foo {
+    var int x
+}
+
+var Foo f
+if false {
+    f = Foo(10)
+}
+Console.write("\\{f.x}")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors.length).toBeGreaterThanOrEqual(1);
+		expect(parsed.errors.some((e) => e.message.includes("not initialized"))).toBe(true);
+	});
+
+	test("const comparison true sets class var in if without else", () => {
+		const input = `
+class Foo {
+    var int x
+}
+
+const int xx = 5
+var Foo f
+if xx < 12 {
+    f = Foo(10)
+}
+Console.write("\\{f.x}")
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);

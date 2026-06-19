@@ -7,6 +7,7 @@ import check_block_node from "./check_block_node.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import clone_status from "./utils/clone_status.ts";
+import evaluate_const_condition from "./utils/evaluate_const_condition.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import type_name from "./utils/type_name.ts";
 
@@ -67,23 +68,32 @@ export default function check_if_else_node(if_else: IfElseNode, status: CheckSta
 	}
 	status.stack.pop();
 
+	// Evaluate the condition at compile time if possible
+	const const_cond = evaluate_const_condition(if_else.condition, status);
+	const if_reachable = const_cond !== false;
+	const else_reachable = const_cond !== true;
+	const has_else = !!if_else.else_branch;
+
 	for (let [i, value] of status.values.entries()) {
+		// Collect which reachable branches set this variable.
+		// If there's no else branch, the implicit else is a no-op (doesn't set).
+		const reachable_sets: boolean[] = [];
+		if (if_reachable) reachable_sets.push(!!if_status.values[i].is_set);
+		if (else_reachable) reachable_sets.push(has_else ? !!else_status.values[i].is_set : false);
+
+		const reachable_count = reachable_sets.length;
+		const set_count = reachable_sets.filter((s) => s).length;
+
 		if (value.declaration === "const" && !value.is_set) {
-			let is_set_count =
-				0 + (if_status.values[i].is_set ? 1 : 0) + (else_status.values[i].is_set ? 1 : 0);
-			if (is_set_count === 2) {
+			if (reachable_count > 0 && set_count === reachable_count) {
 				value.is_set = true;
-			} else if (is_set_count === 1) {
+			} else if (set_count > 0 && set_count < reachable_count) {
 				add_error(status, `Const set incompletely: ${value.name}`, if_else.start);
 			}
 		}
 
-		// For var declarations, track whether they were set in all branches.
-		// An unset var used later is undefined behavior (and for classes, a null pointer).
 		if (value.declaration === "var" && !value.is_set) {
-			let is_set_count =
-				0 + (if_status.values[i].is_set ? 1 : 0) + (else_status.values[i].is_set ? 1 : 0);
-			if (is_set_count === 2) {
+			if (reachable_count > 0 && set_count === reachable_count) {
 				value.is_set = true;
 			}
 		}
