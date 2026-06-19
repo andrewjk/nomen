@@ -1,0 +1,247 @@
+import System
+
+// knucleotide benchmark (single-threaded port of the Go version).
+// Reads a FASTA file, extracts the sequence under the >THREE header,
+// packs each base into 2 bits, and counts k-nucleotide sequences.
+// Note: avoids string concatenation (unreliable in loops), writing
+// output piece by piece instead.
+
+func base_code = (int c, out int) {
+	return ((c >> 1) & 3)
+}
+
+func nt = (int code, out string) {
+	if code == 0 {
+		return "A"
+	}
+	if code == 1 {
+		return "C"
+	}
+	if code == 2 {
+		return "T"
+	}
+	return "G"
+}
+
+// write the nucleotides of a packed key, left to right
+func write_nucleotides = (int key, int k) {
+	var int j = 0
+	while j < k {
+		var int code = (key >> (2 * (k - 1 - j))) & 3
+		Console.write(nt(code))
+		j = j + 1
+	}
+}
+
+// write a value (already scaled by 1000) as whole.frac with 3 decimals
+func write_number = (int val) {
+	var int whole = val / 1000
+	var int frac = val % 1000
+	Console.write(whole.to_string())
+	Console.write(".")
+	if frac < 100 {
+		Console.write("0")
+	}
+	if frac < 10 {
+		Console.write("0")
+	}
+	Console.write(frac.to_string())
+}
+
+// pack a nucleotide string into a key
+func pack = (string s, out int) {
+	var int key = 0
+	var int i = 0
+	var int len = s.length()
+	while i < len {
+		key = (key << 2) | (((s[i] as int) >> 1) & 3)
+		i = i + 1
+	}
+	return key
+}
+
+func count_seq = (ref Buffer data, int n, int target, int k, out int) {
+	if n < k {
+		return 0
+	}
+	var int mask = (1 << (2 * k)) - 1
+	var int key = 0
+	var int j = 0
+	while j < k {
+		key = (key << 2) | data.load_int(j)
+		j = j + 1
+	}
+	var int total = 0
+	if key == target {
+		total = total + 1
+	}
+	var int i = 1
+	var int end = n - k
+	while i <= end {
+		key = ((key << 2) | data.load_int(i + k - 1)) & mask
+		if key == target {
+			total = total + 1
+		}
+		i = i + 1
+	}
+	return total
+}
+
+func write_freq = (ref Buffer data, int n, int k) {
+	var int limit = 1 << (2 * k)
+	var Buffer freq = Buffer()
+	freq.alloc_int(limit)
+
+	if n >= k {
+		var int mask = limit - 1
+		var int key = 0
+		var int j = 0
+		while j < k {
+			key = (key << 2) | data.load_int(j)
+			j = j + 1
+		}
+		freq.store_int(key, freq.load_int(key) + 1)
+		var int i = 1
+		var int end = n - k
+		while i <= end {
+			key = ((key << 2) | data.load_int(i + k - 1)) & mask
+			freq.store_int(key, freq.load_int(key) + 1)
+			i = i + 1
+		}
+	}
+
+	var Buffer keys = Buffer()
+	var Buffer counts = Buffer()
+	keys.alloc_int(limit)
+	counts.alloc_int(limit)
+	var int found = 0
+	var int kk = 0
+	while kk < limit {
+		var int c = freq.load_int(kk)
+		if c > 0 {
+			keys.store_int(found, kk)
+			counts.store_int(found, c)
+			found = found + 1
+		}
+		kk = kk + 1
+	}
+
+	var int a = 0
+	while a < found {
+		var int best = a
+		var int b = a + 1
+		while b < found {
+			if counts.load_int(b) > counts.load_int(best) {
+				best = b
+			}
+			b = b + 1
+		}
+		if best != a {
+			var int tk = keys.load_int(a)
+			var int tc = counts.load_int(a)
+			keys.store_int(a, keys.load_int(best))
+			counts.store_int(a, counts.load_int(best))
+			keys.store_int(best, tk)
+			counts.store_int(best, tc)
+		}
+		a = a + 1
+	}
+
+	var int sum = n - k + 1
+	if sum < 1 {
+		sum = 1
+	}
+	var int idx = 0
+	while idx < found {
+		var int code = keys.load_int(idx)
+		var int c = counts.load_int(idx)
+		var int pct = (c * 100000 + sum / 2) / sum
+		write_nucleotides(code, k)
+		Console.write(" ")
+		write_number(pct)
+		Console.write("\n")
+		idx = idx + 1
+	}
+}
+
+func write_count = (ref Buffer data, int n, string query) {
+	var int k = query.length()
+	var int target = pack(query)
+	var int c = count_seq(ref data, n, target, k)
+	Console.write(c.to_string())
+	Console.write("\t")
+	Console.write(query)
+	Console.write("\n")
+}
+
+pub func main = (Init init) {
+	var string filename = "25000_in"
+	if init.argc > 1 {
+		filename = init.args[1]
+	}
+
+	var File f = File()
+	f.open(filename, "r")
+	var string text = f.readAll()
+	f.close()
+
+	var int textlen = text.length()
+	var Buffer data = Buffer()
+	data.alloc_int(textlen)
+	var int n = 0
+
+	var int i = 0
+	var int started = 0
+	while i < textlen {
+		var int c = text[i] as int
+		if started == 1 {
+			if c != 10 {
+				if c != 13 {
+					data.store_int(n, base_code(c))
+					n = n + 1
+				}
+			}
+			i = i + 1
+		} else {
+			var int matched = 0
+			if c == 62 {
+				if i + 5 < textlen {
+					if (text[i + 1] as int) == 84 {
+						if (text[i + 2] as int) == 72 {
+							if (text[i + 3] as int) == 82 {
+								if (text[i + 4] as int) == 69 {
+									if (text[i + 5] as int) == 69 {
+										matched = 1
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+			if matched == 1 {
+				i = i + 6
+				while i < textlen {
+					if (text[i] as int) == 10 {
+						i = i + 1
+						break
+					}
+					i = i + 1
+				}
+				started = 1
+			} else {
+				i = i + 1
+			}
+		}
+	}
+
+	write_freq(ref data, n, 1)
+	Console.write("\n")
+	write_freq(ref data, n, 2)
+	Console.write("\n")
+	write_count(ref data, n, "GGT")
+	write_count(ref data, n, "GGTA")
+	write_count(ref data, n, "GGTATT")
+	write_count(ref data, n, "GGTATTTTAATT")
+	write_count(ref data, n, "GGTATTTTAATTTATAGT")
+}

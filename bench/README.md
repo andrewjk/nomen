@@ -13,6 +13,7 @@ These benchmarks have been converted to Echo and are included in `benchmark.sh`.
 | merkletrees    | ✅   | ✅  | -   | Merkle tree hash computation using classes                              |
 | nsieve         | ✅   | -   | -   | Sieve of Eratosthenes using Buffer (Go needs external `bitset` package) |
 | lru            | ✅   | ✅  | -   | LRU cache using Map and Buffer for access order tracking                |
+| knucleotide    | ✅   | ✅  | -   | DNA k-mer frequency counting using File I/O, Buffer, and bit-packing    |
 
 ## Not Converted
 
@@ -45,13 +46,11 @@ The remaining Go benchmarks require language features or standard library suppor
 | Benchmark       | What's needed                                                                                                                | Status         |
 | --------------- | ---------------------------------------------------------------------------------------------------------------------------- | -------------- |
 | **lru**         | Hash map (`map[K]V`) and doubly-linked list (`container/list`). Would need a custom hash map implementation in Echo.         | ✅ Done        |
-| **knucleotide** | Hash maps for nucleotide frequency counting, plus file I/O to read input data. Also needs bitwise operations on byte arrays. | Needs file I/O |
 
 ### Needs file I/O
 
 | Benchmark       | What's needed                                                                |
 | --------------- | ---------------------------------------------------------------------------- |
-| **knucleotide** | File reading (`os.Open`, `bufio.Scanner`) to parse DNA sequence input files. |
 | **regex-redux** | File reading for input, plus regex substitution engine.                      |
 | **json-serde**  | File reading for JSON input, JSON parser and serializer.                     |
 

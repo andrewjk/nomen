@@ -35,6 +35,7 @@ BENCHES=(
 	"merkletrees|15|merkletrees1.zig"
 	"nsieve|4|nsieve1.zig"
 	"lru|$N $N|lru1.zig"
+	"knucleotide|$BENCH_DIR/knucleotide_input.txt|"
 	"nbody|$N|nbody1.zig"
 	"spectral-norm|100|spectral-norm1.zig"
 	"mandelbrot|200|mandelbrot1.zig"
