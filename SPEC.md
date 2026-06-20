@@ -76,6 +76,89 @@ var int? x = 5
 const y = x + 1          // OK, y = 6
 ```
 
+### Constraints
+
+Constraints are compile-time assertions on parameters, fields, and variables. They use `:` after the name followed by a boolean expression. When the value is a compile-time constant, the constraint is evaluated at compile time and violations produce errors.
+
+#### Parameter Constraints
+
+Function parameters can have constraints that are checked at every call site when the argument is a compile-time constant:
+
+```
+func restricted = (int x: x > 5) {
+    Console.write("\\{x}")
+}
+
+restricted(10)   // OK, 10 > 5
+restricted(2)    // Error: Parameter constraint not satisfied: x
+```
+
+Constraints can reference other parameters, including array properties like `.length`:
+
+```
+func safe_index = (string[] source, int i: i >= 0 && i < source.length) {
+    return source[i]
+}
+
+const items = ["a", "b", "c"]
+safe_index(items, 1)   // OK, 1 >= 0 && 1 < 3
+safe_index(items, 5)   // Error: Parameter constraint not satisfied: i
+```
+
+Constraints also work with `const` variables passed as arguments:
+
+```
+func above_zero = (int x: x > 0) { ... }
+
+const int threshold = 10
+above_zero(threshold)   // OK, 10 > 0
+```
+
+#### Field Constraints
+
+Struct and class fields can have constraints. Fields without default values that have constraints will have those constraints propagated to the auto-generated `init` parameters:
+
+```
+struct Bounded {
+    var int x: x > 0
+    var int y: x < 100
+}
+
+const b = Bounded(5, 50)    // OK
+const b = Bounded(-1, 50)   // Error: Parameter constraint not satisfied: x
+```
+
+Fields with default values are checked at definition time:
+
+```
+struct Config {
+    var int retries: retries >= 0 = 3     // OK, 3 >= 0
+    var int timeout: timeout > 0 = 0      // Error: Constraint not satisfied: timeout
+}
+```
+
+#### Variable Constraints
+
+Local variables can have constraints that are checked both at initialization and on reassignment:
+
+```
+func process = () {
+    var int x: x > 5 = 10     // OK, 10 > 5
+    x = 20                    // OK, 20 > 5
+    x = 2                     // Error: Constraint not satisfied: x
+}
+```
+
+#### How Constraints Are Evaluated
+
+Constraints are only checked when the value is a compile-time constant (integer literals, boolean literals, or `const` variables with known values). When the value is not known at compile time (e.g. runtime input, function call results), the constraint is not evaluated and no error is produced.
+
+Constraint expressions support:
+- Comparisons: `>`, `<`, `>=`, `<=`, `==`, `!=`
+- Logical operators: `&&`, `||`
+- Array `.length` property
+- References to other parameters/fields by name
+
 ### Reference Types
 
 Any type can be made a reference type by prefixing with `ref`:
