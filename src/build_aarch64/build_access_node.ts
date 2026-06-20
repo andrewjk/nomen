@@ -358,6 +358,20 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 	}
 
 	if (target_type.is_array && access_field.name === "length") {
+		// Variadic param .length → load from stack offset of hidden _name_len
+		if (
+			node.target.node_type === "value" &&
+			status.function_variadic_params?.has((node.target as ValueNode).value)
+		) {
+			const name = (node.target as ValueNode).value;
+			const offset = status.stack_offsets?.get(`_${name}_len`);
+			if (offset !== undefined) {
+				status.code += `ldr x0, [x29, #${offset}]\n`;
+			} else {
+				status.code += `mov x0, #0\n`;
+			}
+			return;
+		}
 		const decl = status.scoped_declarations.find((d) => {
 			if (node.target.node_type === "value") {
 				return d.name === (node.target as ValueNode).value;
@@ -930,6 +944,8 @@ function build_access_index(node: AccessNode, access_index: AccessIndexNode, sta
 			const is_stack_var = status.stack_offsets?.has(name);
 			emit_var_address(status, "x0", name);
 			if (is_string && !is_string_array && is_stack_var) {
+				status.code += `ldr x0, [x0]\n`;
+			} else if (status.function_variadic_params?.has(name)) {
 				status.code += `ldr x0, [x0]\n`;
 			}
 		}

@@ -33,6 +33,16 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 	switch (node.access.node_type) {
 		case "access_field": {
 			const access_field = node.access as AccessFieldNode;
+			// Variadic param .length → hidden _name_len parameter
+			if (
+				target_type.is_array &&
+				access_field.name === "length" &&
+				node.target.node_type === "value" &&
+				status.function_variadic_params?.has((node.target as ValueNode).value)
+			) {
+				status.code += `_${(node.target as ValueNode).value}_len`;
+				return;
+			}
 			// HACK:
 			if (target_type.is_array && access_field.name === "length") {
 				const type = c_type(target_type.name);

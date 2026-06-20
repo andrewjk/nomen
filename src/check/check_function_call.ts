@@ -3,6 +3,7 @@ import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import AnonStructNode from "../nodes/AnonStructNode.ts";
+import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
@@ -50,8 +51,11 @@ export default function check_function_call(
 	node.type = func.return_type;
 	node.is_static = func.is_static;
 
+	const variadic_param_index = func.params.findIndex((p) => p.is_variadic);
+
 	let required_param_count = 0;
 	for (const param of func.params) {
+		if (param.is_variadic) continue;
 		if (!param.default_value) {
 			required_param_count++;
 		}
@@ -59,12 +63,31 @@ export default function check_function_call(
 	if (func.params[0]?.is_self_param) {
 		required_param_count -= 1;
 	}
-	if (node.params.length > func.params.length) {
+
+	const non_variadic_param_count = func.params.filter((p) => !p.is_variadic).length;
+	const variadic_arg_count =
+		variadic_param_index >= 0 ? node.params.length - non_variadic_param_count : 0;
+
+	if (variadic_param_index >= 0 && variadic_arg_count < 0) {
+		add_error(status, `Parameters missing for function: ${node.name}`, node.start);
+		return false;
+	} else if (variadic_param_index < 0 && node.params.length > func.params.length) {
 		add_error(status, `Too many parameters for function: ${node.name}`, node.start);
 		return false;
 	} else if (node.params.length < required_param_count) {
 		add_error(status, `Parameters missing for function: ${node.name}`, node.start);
 		return false;
+	}
+
+	if (variadic_param_index >= 0) {
+		const variadic_elem_type = func.params[variadic_param_index].type;
+		const variadic_args = node.params.splice(variadic_param_index, variadic_arg_count);
+		const array_node = new ArrayValuesNode(variadic_args[0]?.start ?? 0, variadic_args);
+		array_node.type = new Type(variadic_elem_type.name);
+		array_node.type.is_array = true;
+		node.params.splice(variadic_param_index, 0, array_node);
+		node.variadic_param_name = func.params[variadic_param_index].name;
+		(node as FunctionCallNode).variadic_param_index = variadic_param_index;
 	}
 
 	while (node.params.length < func.params.length) {
@@ -297,7 +320,12 @@ export default function check_function_call(
 			}
 		}
 
-		if (param.node_type !== "value" && !has_ref_keyword && !node.swap_params?.has(i)) {
+		if (
+			param.node_type !== "value" &&
+			!has_ref_keyword &&
+			!node.swap_params?.has(i) &&
+			!(i === (node as FunctionCallNode).variadic_param_index && param.node_type === "array")
+		) {
 			const declaration_name = `_param_${status.var_name_counter.value++}`;
 			status.allocations.push(
 				new DeclarationNode(param.start, "private", "const", declaration_name, param_type, param),

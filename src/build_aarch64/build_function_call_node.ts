@@ -126,49 +126,113 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 
 		status.code += `blr x8\n`;
 	} else {
-		// Evaluate params right-to-left to avoid clobbering
-		for (let i = node.params.length - 1; i >= 0; i--) {
-			const param = node.params[i];
-			const param_type = (param as any).type?.name || "";
-			const is_ref_param = node.ref_param_indices?.includes(i);
-			if (param.node_type === "array" && param_type) {
-				const arr = param as ArrayValuesNode;
-				const label = `_arr_param_${array_param_counter++}`;
-				const has_strings = arr.values.some(
-					(v) => v.node_type === "value" && (v as ValueNode).value.startsWith('"'),
-				);
-				if (has_strings) {
-					const str_labels: string[] = [];
-					arr.values.forEach((v, idx) => {
-						if (v.node_type === "value" && (v as ValueNode).value.startsWith('"')) {
-							const str_label = `_arr_str_${array_param_counter++}_${idx}`;
-							status.code += `${str_label}: .asciz ${(v as ValueNode).value}\n.p2align 2\n`;
-							str_labels.push(str_label);
-						} else {
-							str_labels.push(get_raw_value(v as ValueNode, status));
-						}
-					});
-					status.code += `${label}: .quad ${str_labels.join(", ")}\n.p2align 2\n`;
+		const variadic_idx = (node as FunctionCallNode).variadic_param_index;
+
+		if (variadic_idx !== undefined) {
+			// Variadic call: pack variadic args into a stack array
+			const arr = node.params[variadic_idx] as ArrayValuesNode;
+			const elem_size = 8;
+			const arr_offset = allocate_stack_space(status, arr.values.length * elem_size, 16);
+
+			// Evaluate all variadic args and store on stack
+			for (let j = arr.values.length - 1; j >= 0; j--) {
+				build_node(arr.values[j], status);
+				if (!status.code.endsWith("\n")) status.code += "\n";
+				const slot_offset = arr_offset + j * elem_size;
+				status.code += `str x0, [x29, #${slot_offset}]\n`;
+			}
+
+			// Evaluate non-variadic params right-to-left (they come after variadic in the call)
+			const non_variadic: { node: BaseNode; is_struct: boolean; is_ref: boolean }[] = [];
+			for (let i = 0; i < node.params.length; i++) {
+				if (i === variadic_idx) continue;
+				const param = node.params[i];
+				const param_type = (param as any).type?.name || "";
+				const is_ref_param = node.ref_param_indices?.includes(i);
+				non_variadic.push({
+					node: param,
+					is_struct:
+						is_struct_type(param_type, status) || is_enum_with_data_type(param_type, status),
+					is_ref: !!is_ref_param,
+				});
+			}
+			// Set up array pointer
+			status.code += `add x0, x29, #${arr_offset}\n`;
+			const ptr_reg = param_regs[start_reg + non_variadic.length + 1];
+			if (ptr_reg !== "x0") {
+				status.code += `mov ${ptr_reg}, x0\n`;
+			}
+
+			// Set up count (after pointer to avoid clobbering x0)
+			const count_reg = param_regs[start_reg + non_variadic.length];
+			status.code += `mov ${count_reg}, #${arr.values.length}\n`;
+
+			// Evaluate non-variadic params right-to-left (after count/pointer so they go into x0, x1, etc. without being clobbered)
+			for (let i = non_variadic.length - 1; i >= 0; i--) {
+				const ep = non_variadic[i];
+				if (ep.is_struct) {
+					emit_struct_address(ep.node, status);
+				} else if (ep.is_ref) {
+					emit_address_of(ep.node, status);
 				} else {
-					const values = arr.values
-						.map((v) => (v.node_type === "value" ? get_raw_value(v as ValueNode, status) : "0"))
-						.join(", ");
-					status.code += `${label}: .quad ${values}\n.p2align 2\n`;
+					build_node(ep.node, status);
 				}
-				status.code += `adr x0, ${label}`;
-			} else if (is_struct_type(param_type, status) || is_enum_with_data_type(param_type, status)) {
-				emit_struct_address(node.params[i], status);
-			} else if (is_ref_param) {
-				emit_address_of(node.params[i], status);
-			} else {
-				build_node(node.params[i], status);
+				if (!status.code.endsWith("\n")) status.code += "\n";
+				const reg_idx = start_reg + i;
+				const reg = param_regs[reg_idx];
+				if (reg && reg !== "x0") {
+					status.code += `mov ${reg}, x0\n`;
+				}
 			}
-			if (!status.code.endsWith("\n")) {
-				status.code += "\n";
-			}
-			const reg = param_regs[start_reg + i];
-			if (reg !== "x0") {
-				status.code += `mov ${reg}, x0\n`;
+		} else {
+			// Non-variadic call: original logic
+			// Evaluate params right-to-left to avoid clobbering
+			for (let i = node.params.length - 1; i >= 0; i--) {
+				const param = node.params[i];
+				const param_type = (param as any).type?.name || "";
+				const is_ref_param = node.ref_param_indices?.includes(i);
+				if (param.node_type === "array" && param_type) {
+					const arr = param as ArrayValuesNode;
+					const label = `_arr_param_${array_param_counter++}`;
+					const has_strings = arr.values.some(
+						(v) => v.node_type === "value" && (v as ValueNode).value.startsWith('"'),
+					);
+					if (has_strings) {
+						const str_labels: string[] = [];
+						arr.values.forEach((v, idx) => {
+							if (v.node_type === "value" && (v as ValueNode).value.startsWith('"')) {
+								const str_label = `_arr_str_${array_param_counter++}_${idx}`;
+								status.code += `${str_label}: .asciz ${(v as ValueNode).value}\n.p2align 2\n`;
+								str_labels.push(str_label);
+							} else {
+								str_labels.push(get_raw_value(v as ValueNode, status));
+							}
+						});
+						status.code += `${label}: .quad ${str_labels.join(", ")}\n.p2align 2\n`;
+					} else {
+						const values = arr.values
+							.map((v) => (v.node_type === "value" ? get_raw_value(v as ValueNode, status) : "0"))
+							.join(", ");
+						status.code += `${label}: .quad ${values}\n.p2align 2\n`;
+					}
+					status.code += `adr x0, ${label}`;
+				} else if (
+					is_struct_type(param_type, status) ||
+					is_enum_with_data_type(param_type, status)
+				) {
+					emit_struct_address(node.params[i], status);
+				} else if (is_ref_param) {
+					emit_address_of(node.params[i], status);
+				} else {
+					build_node(node.params[i], status);
+				}
+				if (!status.code.endsWith("\n")) {
+					status.code += "\n";
+				}
+				const reg = param_regs[start_reg + i];
+				if (reg !== "x0") {
+					status.code += `mov ${reg}, x0\n`;
+				}
 			}
 		}
 

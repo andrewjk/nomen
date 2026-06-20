@@ -77,6 +77,8 @@ export default function clone_node(node: BaseNode): BaseNode {
 			c.swap_params = n.swap_params
 				? new Map([...n.swap_params].map(([k, v]) => [k, clone_node(v)]))
 				: undefined;
+			c.variadic_param_name = n.variadic_param_name;
+			c.variadic_param_index = n.variadic_param_index;
 			c.allocations = n.allocations?.map(clone_node);
 			return c;
 		}
@@ -106,6 +108,7 @@ export default function clone_node(node: BaseNode): BaseNode {
 			c.swap_params = n.swap_params
 				? new Map([...n.swap_params].map(([k, v]) => [k, clone_node(v)]))
 				: undefined;
+			c.variadic_param_name = n.variadic_param_name;
 			c.mangled_name = n.mangled_name;
 			c.allocations = n.allocations?.map(clone_node);
 			return c;

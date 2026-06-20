@@ -14,6 +14,7 @@ export default class ParameterNode extends BaseNode {
 	is_copied?: boolean;
 	is_moved?: boolean;
 	is_ref?: boolean;
+	is_variadic?: boolean;
 	func_params?: ParameterNode[];
 	func_return_type?: Type;
 

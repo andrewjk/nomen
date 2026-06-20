@@ -9,13 +9,25 @@ import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
 
 export default function check_function_parameter_node(param: ParameterNode, status: CheckStatus) {
-	if (param.type.name) {
+	if (param.is_variadic) {
+		if (!param.type.name) {
+			add_error(status, `Variadic parameter requires a type`, param.start);
+			return;
+		}
+		check_type_exists(param.type, status, param.type_start!);
+		param.type.is_array = true;
+	} else if (param.type.name) {
 		check_type_exists(param.type, status, param.type_start!);
 	}
 
 	// Check for mov on value types (only class types can use mov)
 	if (param.is_moved && param.type.name && !is_class_type(param.type.name, status)) {
 		add_error(status, `mov is only allowed for class types, not '${param.type.name}'`, param.start);
+	}
+
+	if (param.is_variadic && param.default_value) {
+		add_error(status, `Variadic parameter cannot have a default value`, param.start);
+		return;
 	}
 
 	if (param.default_value) {

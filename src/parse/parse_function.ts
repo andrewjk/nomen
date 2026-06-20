@@ -59,6 +59,13 @@ export default function parse_function(
 			parse_function_parameter(parent, func, status);
 		}
 
+		// Validate: variadic params must be last
+		for (let i = 0; i < func.params.length; i++) {
+			if (func.params[i].is_variadic && i < func.params.length - 1) {
+				add_error(status, `Variadic parameter must be the last parameter`, func.params[i].start);
+			}
+		}
+
 		func.is_static = !func.params[0]?.is_self_param;
 
 		if (expect(")", status)) {
@@ -138,6 +145,10 @@ function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: 
 		status.i += 2;
 		param.name = "self";
 	} else {
+		if (accept("...", status)) {
+			param.is_variadic = true;
+		}
+
 		const saved_i = status.i;
 		const saved_errors_length = status.errors.length;
 		param.type_start = get_index(status);

@@ -12,6 +12,8 @@ export default class FunctionCallNode extends BaseNode {
 	ref_param_indices?: number[];
 	mov_param_indices?: number[];
 	swap_params?: Map<number, BaseNode>;
+	variadic_param_name?: string;
+	variadic_param_index?: number;
 
 	constructor(start: number, name: string, type?: Type, params?: BaseNode[], is_static?: boolean) {
 		super("func_call", start);

@@ -13,7 +13,7 @@ export default function build_parameter_node(node: ParameterNode, status: BuildS
 		status.code += `struct `;
 	}
 	status.code += c_type(node.type.name);
-	if (is_struct || node.declaration === "var" || node.type.is_ref) {
+	if (is_struct || node.declaration === "var" || node.type.is_ref || node.type.is_array) {
 		status.code += ` *`;
 	} else {
 		status.code += ` `;

@@ -154,6 +154,7 @@ func process = () {
 Constraints are only checked when the value is a compile-time constant (integer literals, boolean literals, or `const` variables with known values). When the value is not known at compile time (e.g. runtime input, function call results), the constraint is not evaluated and no error is produced.
 
 Constraint expressions support:
+
 - Comparisons: `>`, `<`, `>=`, `<=`, `==`, `!=`
 - Logical operators: `&&`, `||`
 - Array `.length` property
@@ -561,6 +562,56 @@ func greet = (string name = "world") {
 greet()        // "Hello, world!"
 greet("Alice") // "Hello, Alice!"
 ```
+
+#### Variadic Parameters
+
+Functions can accept a variable number of arguments using `...` before the parameter type. Inside the function, the variadic parameter is treated as an array:
+
+```
+func sum = (...int numbers, out int) {
+    var total = 0
+    var i = 0
+    while i < numbers.length {
+        total = total + numbers[i]
+        i = i + 1
+    }
+    return total
+}
+
+sum(1, 2, 3)    // 6
+sum(42)          // 42
+sum()            // 0
+```
+
+Variadic parameters can be mixed with regular parameters. The variadic parameter must be the last parameter before any `out` return type:
+
+```
+func add_to = (int base, ...int numbers, out int) {
+    var total = base
+    var i = 0
+    while i < numbers.length {
+        total = total + numbers[i]
+        i = i + 1
+    }
+    return total
+}
+
+add_to(10, 1, 2, 3)  // 16
+```
+
+Variadic parameters work with any type, including strings:
+
+```
+func count = (...string items, out int) => items.length
+
+count("a", "b", "c")  // 3
+```
+
+Constraints:
+
+- A variadic parameter must be the last parameter in the parameter list
+- Variadic parameters cannot have default values
+- The type is required (no inference)
 
 #### `var` and `ref` Parameters
 

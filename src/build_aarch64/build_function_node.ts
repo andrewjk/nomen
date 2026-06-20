@@ -225,21 +225,35 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.function_param_vars = new Set();
 	status.function_array_params = new Set();
 	status.function_ref_params = new Set();
+	const old_variadic_params_aarch64 = status.function_variadic_params;
+	status.function_variadic_params = new Set();
 	status.moved_class_params = new Map();
 
 	// Save mov'd class param values for cleanup at return
 	let moved_param_save_slots: Map<string, number> = new Map();
 
 	if (has_body) {
+		let param_idx = 0;
 		for (let i = 0; i < node.params.length; i++) {
 			const param = node.params[i];
+
+			if (param.is_variadic) {
+				status.function_variadic_params!.add(param.name);
+				// Hidden _name_len param (takes a register slot before the array ptr)
+				const len_offset = allocate_stack_space(status, 8, 8);
+				status.stack_offsets!.set(`_${param.name}_len`, len_offset);
+				const len_reg = param_regs[param_idx];
+				status.code += `str ${len_reg}, [x29, #${len_offset}]\n`;
+				param_idx++;
+			}
+
 			if (callee_map.has(param.name)) {
 				status.function_param_regs.set(param.name, callee_map.get(param.name)!);
 			} else {
 				const size = aarch64_size(param.type.name);
 				const offset = allocate_stack_space(status, size, size);
 				status.stack_offsets!.set(param.name, offset);
-				const reg = param_regs[i];
+				const reg = param_regs[param_idx];
 				if (size === 1) {
 					status.code += `strb ${reg.replace("x", "w")}, [x29, #${offset}]\n`;
 				} else if (size === 4) {
@@ -248,6 +262,8 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 					status.code += `str ${reg}, [x29, #${offset}]\n`;
 				}
 			}
+			param_idx++;
+
 			if (param.declaration === "var") {
 				status.function_param_vars.add(param.name);
 			}
@@ -395,6 +411,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.stack_offsets = old_stack_offsets;
 	status.function_param_regs = undefined;
 	status.function_param_vars = undefined;
+	status.function_variadic_params = old_variadic_params_aarch64;
 	status.function_return_label = old_return_label;
 	status.struct_return_buffer = undefined;
 	status.return_buffer_stack_offset = undefined;

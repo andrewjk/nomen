@@ -48,6 +48,9 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		if (i > 0) {
 			status.code += ", ";
 		}
+		if (node.params[i].is_variadic) {
+			status.code += `long _${node.params[i].name}_len, `;
+		}
 		build_parameter_node(node.params[i], status);
 	}
 	status.code += `)`;
@@ -59,7 +62,12 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 
 	const old_ref_params = status.function_ref_params;
 	status.function_ref_params = new Set<string>();
+	const old_variadic_params = status.function_variadic_params;
+	status.function_variadic_params = new Set<string>();
 	for (let param of node.params) {
+		if (param.is_variadic) {
+			status.function_variadic_params.add(param.name);
+		}
 		const param_struct = status.structs.find((s) => s.name === param.type.name);
 		const param_trait = status.traits.find((t) => t.name === param.type.name);
 		if (
@@ -76,6 +84,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	build_block_node(node, status);
 
 	status.function_ref_params = old_ref_params;
+	status.function_variadic_params = old_variadic_params;
 
 	if (!node.has_return) {
 		build_auto_free(status);

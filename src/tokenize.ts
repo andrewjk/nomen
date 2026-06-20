@@ -26,6 +26,8 @@ const COMPOUND_SYMBOLS = [
 ];
 
 const LONG_COMPOUND_SYMBOLS = [
+	// Variadic
+	"...",
 	// Emphasis (mostly for ziglings, can be removed if necessary)
 	"???",
 	"!!!",
