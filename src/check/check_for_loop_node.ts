@@ -1,6 +1,5 @@
 import add_error from "../add_error.ts";
-import AccessFieldNode from "../nodes/AccessFieldNode.ts";
-import AccessNode from "../nodes/AccessNode.ts";
+import type BaseNode from "../nodes/BaseNode.ts";
 import ForLoopNode from "../nodes/ForLoopNode.ts";
 import RangeNode from "../nodes/RangeNode.ts";
 import Type from "../nodes/Type.ts";
@@ -9,6 +8,7 @@ import check_block_node from "./check_block_node.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import clone_status from "./utils/clone_status.ts";
+import { evaluate_numeric_or_bool } from "./utils/evaluate_const_condition.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 
 export default function check_for_loop_node(for_loop: ForLoopNode, status: CheckStatus) {
@@ -38,21 +38,8 @@ export default function check_for_loop_node(for_loop: ForLoopNode, status: Check
 					range_lower = parseInt((range.left_value as ValueNode).value, 10);
 					if (isNaN(range_lower)) range_lower = undefined;
 				}
-				if (range.right_value.node_type === "access") {
-					const access = range.right_value as AccessNode;
-					if (access.access.node_type === "access_field") {
-						const field = access.access as AccessFieldNode;
-						if (field.name === "length" && access.target.node_type === "value") {
-							const decl = for_status.values.findLast(
-								(v) => v.name === (access.target as ValueNode).value,
-							);
-							if (decl?.type?.length) {
-								range_upper = parseInt((decl.type.length as ValueNode).value, 10);
-								if (isNaN(range_upper)) range_upper = undefined;
-							}
-						}
-					}
-				}
+				// Evaluate right bound: literal or .length access
+				range_upper = evaluate_range_bound_value(range.right_value, for_status);
 			}
 
 			for_status.values.push({
@@ -71,4 +58,10 @@ export default function check_for_loop_node(for_loop: ForLoopNode, status: Check
 	if (for_loop.update) {
 		check_node(for_loop.update, for_status);
 	}
+}
+
+function evaluate_range_bound_value(node: BaseNode, status: CheckStatus): number | undefined {
+	const val = evaluate_numeric_or_bool(node, status);
+	if (typeof val === "number") return val;
+	return undefined;
 }

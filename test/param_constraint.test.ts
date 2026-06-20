@@ -115,4 +115,169 @@ func caller = () {
 		expect(parsed.errors.length).toBeGreaterThanOrEqual(1);
 		expect(parsed.errors.some((e) => e.message.includes("not satisfied"))).toBe(true);
 	});
+
+	test("for-loop variable satisfies compound constraint", () => {
+		const lib = get_library(path.resolve(import.meta.dirname, "../core"));
+		const input = `
+import System
+func restricted = (string[] source, int i: i >= 0 && i < source.length) {
+    Console.write("ok")
+}
+func caller = () {
+    var things = ["a", "b", "c"]
+    for i of 0 .. things.length {
+        restricted(things, i)
+    }
+}
+`;
+		const parsed = parse(input, lib);
+		expect(parsed.errors).toEqual([]);
+	});
+
+	test("for-loop variable modified before constraint check fails", () => {
+		const lib = get_library(path.resolve(import.meta.dirname, "../core"));
+		const input = `
+import System
+func restricted = (string[] source, int i: i >= 0 && i < source.length) {
+    Console.write("ok")
+}
+func caller = () {
+    var things = ["a", "b", "c"]
+    for i of 0 .. things.length {
+        i += 1
+        restricted(things, i)
+    }
+}
+`;
+		const parsed = parse(input, lib);
+		expect(parsed.errors.length).toBeGreaterThanOrEqual(1);
+		expect(parsed.errors.some((e) => e.message.includes("cannot be verified"))).toBe(true);
+	});
+
+	test("for-loop variable with non-literal range fails constraint", () => {
+		const lib = get_library(path.resolve(import.meta.dirname, "../core"));
+		const input = `
+import System
+func restricted = (string[] source, int i: i >= 0 && i < source.length) {
+    Console.write("ok")
+}
+func caller = () {
+    var things = ["a", "b", "c"]
+    var start = 0
+    for i of start .. things.length {
+        restricted(things, i)
+    }
+}
+`;
+		const parsed = parse(input, lib);
+		expect(parsed.errors.length).toBeGreaterThanOrEqual(1);
+		expect(parsed.errors.some((e) => e.message.includes("cannot be verified"))).toBe(true);
+	});
+
+	test("for-loop variable satisfies lower bound only", () => {
+		const lib = get_library(path.resolve(import.meta.dirname, "../core"));
+		const input = `
+import System
+func check = (int i: i >= 0) {
+    Console.write("ok")
+}
+func caller = () {
+    for i of 0 .. 10 {
+        check(i)
+    }
+}
+`;
+		const parsed = parse(input, lib);
+		expect(parsed.errors).toEqual([]);
+	});
+
+	test("for-loop variable satisfies upper bound only", () => {
+		const lib = get_library(path.resolve(import.meta.dirname, "../core"));
+		const input = `
+import System
+func check = (int i: i < 10) {
+    Console.write("ok")
+}
+func caller = () {
+    for i of 0 .. 10 {
+        check(i)
+    }
+}
+`;
+		const parsed = parse(input, lib);
+		expect(parsed.errors).toEqual([]);
+	});
+
+	test("for-loop variable range does not satisfy lower bound", () => {
+		const lib = get_library(path.resolve(import.meta.dirname, "../core"));
+		const input = `
+import System
+func check = (int i: i >= 5) {
+    Console.write("ok")
+}
+func caller = () {
+    for i of 0 .. 3 {
+        check(i)
+    }
+}
+`;
+		const parsed = parse(input, lib);
+		expect(parsed.errors.length).toBeGreaterThanOrEqual(1);
+		expect(parsed.errors.some((e) => e.message.includes("not satisfied"))).toBe(true);
+	});
+
+	test("for-loop variable range does not satisfy upper bound", () => {
+		const lib = get_library(path.resolve(import.meta.dirname, "../core"));
+		const input = `
+import System
+func check = (int i: i < 3) {
+    Console.write("ok")
+}
+func caller = () {
+    for i of 0 .. 5 {
+        check(i)
+    }
+}
+`;
+		const parsed = parse(input, lib);
+		expect(parsed.errors.length).toBeGreaterThanOrEqual(1);
+		expect(parsed.errors.some((e) => e.message.includes("not satisfied"))).toBe(true);
+	});
+
+	test("for-loop variable satisfies i <= constraint", () => {
+		const lib = get_library(path.resolve(import.meta.dirname, "../core"));
+		const input = `
+import System
+func check = (int i: i <= 9) {
+    Console.write("ok")
+}
+func caller = () {
+    for i of 0 .. 10 {
+        check(i)
+    }
+}
+`;
+		const parsed = parse(input, lib);
+		expect(parsed.errors).toEqual([]);
+	});
+
+	test("while loop variable fails constraint (no range info)", () => {
+		const lib = get_library(path.resolve(import.meta.dirname, "../core"));
+		const input = `
+import System
+func restricted = (string[] source, int i: i >= 0 && i < source.length) {
+    Console.write("ok")
+}
+func caller = () {
+    var things = ["a", "b", "c"]
+    var k = 0
+    while k < things.length; k += 1 {
+        restricted(things, k)
+    }
+}
+`;
+		const parsed = parse(input, lib);
+		expect(parsed.errors.length).toBeGreaterThanOrEqual(1);
+		expect(parsed.errors.some((e) => e.message.includes("cannot be verified"))).toBe(true);
+	});
 });
