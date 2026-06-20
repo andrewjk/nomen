@@ -58,6 +58,9 @@ export default function check_assignment_node(
 		}
 	} else if (left_value.declaration === "var") {
 		left_value.is_set = true;
+		// Clear range bounds: assignment invalidates for-loop range knowledge
+		left_value.range_lower = undefined;
+		left_value.range_upper = undefined;
 	}
 
 	// Update is_null based on the RHS value
