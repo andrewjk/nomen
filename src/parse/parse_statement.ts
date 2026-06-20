@@ -19,7 +19,6 @@ import parse_function_call_parameter from "./parse_function_call_parameter.ts";
 import parse_if_else from "./parse_if_else.ts";
 import parse_import from "./parse_import.ts";
 import parse_match from "./parse_match.ts";
-import parse_op from "./parse_op.ts";
 import parse_panic_or_todo from "./parse_panic_or_todo.ts";
 import parse_raw from "./parse_raw.ts";
 import parse_return from "./parse_return.ts";
@@ -110,10 +109,6 @@ export default function parse_statement(status: ParseStatus) {
 					add_error(status, `Expected #init or #destroy`, get_index(status));
 					consume(status);
 				}
-				break;
-			}
-			case "op": {
-				parse_op(default_visibility(status), status);
 				break;
 			}
 			case "if": {

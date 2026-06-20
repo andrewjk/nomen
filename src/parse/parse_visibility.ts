@@ -3,7 +3,6 @@ import parse_bitset from "./parse_bitset.ts";
 import parse_declaration from "./parse_declaration.ts";
 import parse_enum from "./parse_enum.ts";
 import parse_function from "./parse_function.ts";
-import parse_op from "./parse_op.ts";
 import parse_struct from "./parse_struct.ts";
 import parse_trait from "./parse_trait.ts";
 import type ParseStatus from "./ParseStatus.ts";
@@ -88,15 +87,6 @@ export default function parse_visibility(visibility: "pub" | "private", status: 
 			break;
 		}
 
-		case "op": {
-			if (visibility === "private" && status.stack.at(-1)?.node_type === "trait") {
-				add_error(status, `Trait operators cannot be private`, get_index(status));
-				consume(status);
-			} else {
-				parse_op(visibility, status);
-			}
-			break;
-		}
 		default: {
 			add_error(
 				status,

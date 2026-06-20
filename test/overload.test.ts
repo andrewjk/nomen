@@ -60,10 +60,10 @@ Console.write("\\{v1.x} \\{v1.y} \\{v3.x} \\{v3.y}")
 struct Vec2 {
   var int x
   var int y
-  pub op + (self, Vec2 other, out Vec2) {
+  pub func #op_add = (self, Vec2 other, out Vec2) {
     return Vec2(self.x + other.x, self.y + other.y)
   }
-  pub op + (self, int scalar, out Vec2) {
+  pub func #op_add = (self, int scalar, out Vec2) {
     return Vec2(self.x + scalar, self.y + scalar)
   }
 }

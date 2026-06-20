@@ -97,7 +97,7 @@
 		"function-decl": {
 			"patterns": [
 				{
-					"match": "\\b(func)\\s+(#(?:init|destroy))\\b",
+					"match": "\\b(func)\\s+(#(?:init|destroy|op_\\w+))\\b",
 					"captures": {
 						"1": { "name": "storage.type.function.echo" },
 						"2": { "name": "entity.name.function.echo" }
@@ -130,7 +130,7 @@
 				},
 				{
 					"name": "keyword.other.echo",
-					"match": "\\b(?:var|const|let|mov|cp|import|op|panic|todo)\\b"
+					"match": "\\b(?:var|const|let|mov|cp|import|panic|todo)\\b"
 				},
 				{
 					"name": "storage.modifier.echo",

@@ -32,9 +32,21 @@ export default function parse_function(
 	let name = name_override || consume(status);
 	if (!name_override && name === "#") {
 		const next = consume(status);
-		if (next === "init" || next === "destroy") {
+		if (next === "init" || next === "destroy" || next.startsWith("op_")) {
 			name = `#${next}`;
 		}
+	}
+	// Map #op_* to internal function names
+	const op_internal: Record<string, string> = {
+		"#op_add": "add",
+		"#op_sub": "sub",
+		"#op_mul": "mul",
+		"#op_div": "div",
+		"#op_mod": "mod",
+		"#op_as": "as",
+	};
+	if (op_internal[name]) {
+		name = op_internal[name];
 	}
 	const parent_for_type = status.stack.at(-1);
 	let return_type = new Type("");

@@ -13,7 +13,7 @@ describe("custom operator build", () => {
 struct Point {
   var int x
   var int y
-  pub op + (self, Point other, out Point) {
+  pub func #op_add = (self, Point other, out Point) {
     return Point(self.x + other.x, self.y + other.y)
   }
 }
@@ -33,7 +33,7 @@ Console.write("\\{p3.x} \\{p3.y}")
 struct Point {
   var int x
   var int y
-  pub op * (self, int scalar, out Point) {
+  pub func #op_mul = (self, int scalar, out Point) {
     return Point(self.x * scalar, self.y * scalar)
   }
 }
@@ -70,7 +70,7 @@ const p3 = p1 + p2
 struct Point {
   var int x
   var int y
-  op + (self, Point other, out Point) {
+  func #op_add = (self, Point other, out Point) {
     return Point(self.x + other.x, self.y + other.y)
   }
 }

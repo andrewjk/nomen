@@ -11,7 +11,7 @@ pub struct string: Stringable {
         ```
     }
 
-    pub op + (self, string other, out string) {
+    pub func #op_add = (self, string other, out string) {
         ```
         #arch: c
         int left_len = strlen(self);
@@ -43,7 +43,7 @@ pub struct string: Stringable {
         ```
     }
 
-    pub op * (self, int count, out string) {
+    pub func #op_mul = (self, int count, out string) {
         ```
         #arch: c
         int str_len = strlen(self);

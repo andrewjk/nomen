@@ -13,7 +13,7 @@ describe("explicit cast build", () => {
 struct Dog {
 	var int value
 
-	op as (self, out Cat) {
+	func #op_as = (self, out Cat) {
 		return Cat(self.value + 1)
 	}
 }
@@ -42,7 +42,7 @@ Console.write(c.to_string())
 struct Id {
 	var int value
 
-	op as (self, out Name) {
+	func #op_as = (self, out Name) {
 		return Name(self.value + 100)
 	}
 }
@@ -71,7 +71,7 @@ Console.write(name.to_string())
 struct Dog {
 	var int value
 
-	op as (self, out Cat) {
+	func #op_as = (self, out Cat) {
 		return Cat(self.value + 1)
 	}
 }
@@ -105,7 +105,7 @@ Console.write(result)
 struct A {
 	var int value
 
-	op as (self, out B) {
+	func #op_as = (self, out B) {
 		return B(self.value)
 	}
 }
@@ -134,7 +134,7 @@ Console.write(b.to_string())
 struct Wrapped {
 	var int value
 
-	op as (self, out int) {
+	func #op_as = (self, out int) {
 		return self.value
 	}
 }
@@ -158,7 +158,7 @@ describe("explicit cast errors", () => {
 struct Celsius {
 	var int value
 
-	op as (self, out Fahrenheit) {
+	func #op_as = (self, out Fahrenheit) {
 		return Fahrenheit(self.value)
 	}
 }
