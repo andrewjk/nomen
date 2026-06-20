@@ -14,7 +14,9 @@ import { monomorphize } from "./check_function_call_node.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
-import evaluate_const_condition from "./utils/evaluate_const_condition.ts";
+import evaluate_const_condition, {
+	evaluate_numeric_or_bool,
+} from "./utils/evaluate_const_condition.ts";
 import is_visible from "./utils/is_visible.ts";
 import { is_class_type } from "./utils/ownership.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
@@ -297,6 +299,12 @@ export default function check_function_call(
 				}
 			}
 		}
+		if (arg_value === undefined) {
+			const evaluated = evaluate_numeric_or_bool(param, status);
+			if (typeof evaluated === "number" || typeof evaluated === "boolean") {
+				arg_value = evaluated;
+			}
+		}
 		constraint_args.push({ name: func_param.name, type: param_type, value: arg_value });
 
 		// Evaluate constraints that reference this or earlier parameters
@@ -317,6 +325,12 @@ export default function check_function_call(
 
 			if (satisfied === false) {
 				add_error(status, `Parameter constraint not satisfied: ${func_param.name}`, param.start);
+			} else if (satisfied === undefined) {
+				add_error(
+					status,
+					`Parameter constraint cannot be verified at compile time: ${func_param.name}`,
+					param.start,
+				);
 			}
 		}
 

@@ -67,7 +67,7 @@ function evaluate_operation(op: OperationNode, status: CheckStatus): boolean | u
 /**
  * Evaluate a node to a compile-time constant value.
  */
-function evaluate_numeric_or_bool(
+export function evaluate_numeric_or_bool(
 	node: import("../../nodes/BaseNode.ts").default,
 	status: CheckStatus,
 ): number | boolean | string | undefined {
@@ -108,9 +108,27 @@ function evaluate_numeric_or_bool(
 
 	// Handle nested operations (e.g. i >= 0 inside x && y)
 	if (node.node_type === "op") {
-		return evaluate_const_condition(node as OperationNode, status);
+		const op_node = node as OperationNode;
+		// Arithmetic operations: resolve to a numeric value
+		if (op_node.op === "+" || op_node.op === "-" || op_node.op === "*" || op_node.op === "/") {
+			const left = evaluate_numeric_or_bool(op_node.left_value, status);
+			const right = evaluate_numeric_or_bool(op_node.right_value, status);
+			if (typeof left === "number" && typeof right === "number") {
+				switch (op_node.op) {
+					case "+":
+						return left + right;
+					case "-":
+						return left - right;
+					case "*":
+						return left * right;
+					case "/":
+						return right !== 0 ? left / right : undefined;
+				}
+			}
+			return undefined;
+		}
+		return evaluate_const_condition(op_node, status);
 	}
 
-	// Could extend to handle arithmetic operations (+, -, *, /) in the future
 	return undefined;
 }
