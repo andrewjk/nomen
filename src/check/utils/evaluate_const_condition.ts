@@ -37,6 +37,18 @@ function evaluate_value(vn: ValueNode, status: CheckStatus): boolean | undefined
 }
 
 function evaluate_operation(op: OperationNode, status: CheckStatus): boolean | undefined {
+	// Check if left side is a variable with range bounds (from for-loop)
+	if (op.left_value.node_type === "value") {
+		const vn = op.left_value as ValueNode;
+		const decl = status.values.findLast((v) => v.name === vn.value);
+		if (decl && (decl.range_lower !== undefined || decl.range_upper !== undefined)) {
+			const right_val = evaluate_numeric_or_bool(op.right_value, status);
+			if (right_val !== undefined && typeof right_val === "number") {
+				return evaluate_range_bound(decl, op.op, right_val);
+			}
+		}
+	}
+
 	const left = evaluate_numeric_or_bool(op.left_value, status);
 	const right = evaluate_numeric_or_bool(op.right_value, status);
 
@@ -61,6 +73,49 @@ function evaluate_operation(op: OperationNode, status: CheckStatus): boolean | u
 			return Boolean(left) || Boolean(right);
 		default:
 			return undefined;
+	}
+
+	/**
+	 * Evaluate a comparison against a variable with range bounds (from a for-loop).
+	 * The range is [range_lower, range_upper) — lower inclusive, upper exclusive.
+	 */
+	function evaluate_range_bound(
+		decl: { range_lower?: number; range_upper?: number },
+		op: string,
+		right_val: number,
+	): boolean | undefined {
+		switch (op) {
+			case ">=":
+				return decl.range_lower !== undefined ? decl.range_lower >= right_val : undefined;
+			case "<":
+				// i < X: since i < range_upper (exclusive), need range_upper <= X
+				return decl.range_upper !== undefined ? decl.range_upper <= right_val : undefined;
+			case ">":
+				return decl.range_lower !== undefined ? decl.range_lower > right_val : undefined;
+			case "<=":
+				// i <= X: max value is range_upper - 1, need range_upper - 1 <= X
+				return decl.range_upper !== undefined ? decl.range_upper - 1 <= right_val : undefined;
+			case "==":
+				if (
+					decl.range_lower !== undefined &&
+					decl.range_upper !== undefined &&
+					decl.range_lower === decl.range_upper - 1
+				) {
+					return decl.range_lower === right_val;
+				}
+				return undefined;
+			case "!=":
+				if (
+					decl.range_lower !== undefined &&
+					decl.range_upper !== undefined &&
+					decl.range_lower === decl.range_upper - 1
+				) {
+					return decl.range_lower !== right_val;
+				}
+				return undefined;
+			default:
+				return undefined;
+		}
 	}
 }
 

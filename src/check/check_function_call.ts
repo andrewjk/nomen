@@ -176,7 +176,13 @@ export default function check_function_call(
 	// Collect argument values for constraint evaluation (all params, not just current)
 	// Collect argument values for constraint evaluation
 	// (all params, since constraints can reference other params like source.length)
-	const constraint_args: { name: string; type: Type; value: number | boolean | undefined }[] = [];
+	const constraint_args: {
+		name: string;
+		type: Type;
+		value: number | boolean | undefined;
+		range_lower?: number;
+		range_upper?: number;
+	}[] = [];
 
 	for (let [i, param] of node.params.entries()) {
 		const func_param = func.params[i + self_offset];
@@ -305,7 +311,23 @@ export default function check_function_call(
 				arg_value = evaluated;
 			}
 		}
-		constraint_args.push({ name: func_param.name, type: param_type, value: arg_value });
+		// Look up range info from the original variable (e.g. for-loop range variables)
+		let range_lower: number | undefined;
+		let range_upper: number | undefined;
+		if (param.node_type === "value") {
+			const decl = status.values.findLast((v) => v.name === (param as ValueNode).value);
+			if (decl) {
+				range_lower = decl.range_lower;
+				range_upper = decl.range_upper;
+			}
+		}
+		constraint_args.push({
+			name: func_param.name,
+			type: param_type,
+			value: arg_value,
+			range_lower,
+			range_upper,
+		});
 
 		// Evaluate constraints that reference this or earlier parameters
 		if (func_param.constraint) {
@@ -317,6 +339,8 @@ export default function check_function_call(
 					type: ca.type,
 					is_set: true,
 					const_value: ca.value,
+					range_lower: ca.range_lower,
+					range_upper: ca.range_upper,
 				});
 			}
 

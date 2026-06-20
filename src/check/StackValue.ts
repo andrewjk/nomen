@@ -24,4 +24,10 @@ export default interface StackValue {
 	 * Constraint expression from the declaration (e.g. `var int x: x > 5`)
 	 */
 	constraint?: BaseNode;
+	/**
+	 * For for-loop variables from a range (e.g. `for i of 0 .. n`),
+	 * the evaluated lower and upper bounds (upper is exclusive).
+	 */
+	range_lower?: number;
+	range_upper?: number;
 }
