@@ -314,7 +314,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 	if (
 		!is_borrowed_class_ref &&
 		struct_type &&
-		(struct_type.functions.find((f) => f.name === "destroy") ||
+		(struct_type.functions.find((f) => f.name === "#destroy") ||
 			has_struct_fields_with_destroy(struct_type, status))
 	) {
 		track_struct_decl(status, node.name, node.type.name, node.type.type_args);

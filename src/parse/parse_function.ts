@@ -29,10 +29,16 @@ export default function parse_function(
 		accept(visibility, status);
 		accept("func", status);
 	}
-	const name = name_override || consume(status);
+	let name = name_override || consume(status);
+	if (!name_override && name === "#") {
+		const next = consume(status);
+		if (next === "init" || next === "destroy") {
+			name = `#${next}`;
+		}
+	}
 	const parent_for_type = status.stack.at(-1);
 	let return_type = new Type("");
-	if (name === "init" && parent_for_type?.node_type === "struct") {
+	if (name === "#init" && parent_for_type?.node_type === "struct") {
 		return_type = new Type((parent_for_type as StructNode).name);
 	}
 	const func = new FunctionNode(start, visibility, name, return_type);
@@ -49,7 +55,7 @@ export default function parse_function(
 	if (expect("=", status) && expect("(", status)) {
 		const parent = status.stack.at(-1)!;
 
-		if (name === "destroy" && parent.node_type === "struct") {
+		if (name === "#destroy" && parent.node_type === "struct") {
 			const self_param = new ParameterNode(start, "self", new Type((parent as StructNode).name));
 			self_param.is_self_param = true;
 			func.params.push(self_param);
@@ -84,7 +90,12 @@ export default function parse_function(
 					expect("}", status);
 					status.stack.pop();
 
-					if (func.return_type.name && !func.has_return && name !== "init" && name !== "destroy") {
+					if (
+						func.return_type.name &&
+						!func.has_return &&
+						name !== "#init" &&
+						name !== "#destroy"
+					) {
 						const is_raw_only =
 							func.statements.length > 0 && func.statements.every((s) => s.node_type === "raw");
 						if (!is_raw_only) {
@@ -202,7 +213,7 @@ function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: 
 		param.type_start = param.start;
 		param.type = new Type((parent as StructNode).name);
 		param.is_self_param = true;
-		if (func.name === "init") {
+		if (func.name === "#init") {
 			param.declaration = "var";
 		}
 

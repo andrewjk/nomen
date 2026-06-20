@@ -24,7 +24,7 @@ export default function check_function_call_node(
 			if (struct.type_params.length > 0 && node.type_args?.length) {
 				const mono = monomorphize(struct, node.type_args, status);
 				if (mono) {
-					func = mono.functions.find((f) => f.name === "init");
+					func = mono.functions.find((f) => f.name === "#init");
 					if (func) {
 						const type = new Type(struct.name);
 						type.type_args = node.type_args;
@@ -33,7 +33,7 @@ export default function check_function_call_node(
 					}
 				}
 			} else {
-				func = struct.functions.find((f) => f.name === "init");
+				func = struct.functions.find((f) => f.name === "#init");
 				if (func) {
 					const type = new Type(struct.name);
 					type.type_args = node.type_args;
@@ -141,7 +141,7 @@ export function monomorphize(
 	);
 
 	for (const func of generic_struct.functions) {
-		if (func.name === "init" && !func.has_body) continue;
+		if (func.name === "#init" && !func.has_body) continue;
 		const cloned = clone_node(func) as FunctionNode;
 		cloned.checked = true;
 		mono_struct.functions.push(cloned);
@@ -175,7 +175,7 @@ export function monomorphize(
 	const init_func = new FunctionNode(
 		generic_struct.start,
 		"pub",
-		"init",
+		"#init",
 		init_return_type,
 		init_params,
 	);

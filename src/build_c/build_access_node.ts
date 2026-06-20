@@ -141,7 +141,9 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				if (!method_type?.name && node.target.node_type === "access") {
 					method_type = resolve_access_field_type(node.target as AccessNode, status);
 				}
-				const label = access_func.mangled_name || `${method_type?.name || ""}_${access_func.name}`;
+				const label =
+					access_func.mangled_name ||
+					`${method_type?.name || ""}_${access_func.name.replace(/#/g, "")}`;
 				status.code += `${label}(`;
 				if (!access_func.is_static) {
 					// TODO: be more rigorous about this! Sometimes types should be passed by ref??

@@ -42,9 +42,14 @@ export function is_overloaded(struct: StructNode, func_name: string): boolean {
 	return struct.functions.filter((f) => f.name === func_name).length > 1;
 }
 
+function sanitize_label(name: string): string {
+	return name.replace(/#/g, "");
+}
+
 export function mangled_label(func: FunctionNode, struct_name: string): string {
 	const non_self = func.params.filter((p) => !p.is_self_param);
-	if (non_self.length === 0) return `${struct_name}_${func.name}`;
+	const func_name = sanitize_label(func.name);
+	if (non_self.length === 0) return `${struct_name}_${func_name}`;
 	const suffix = non_self.map((p) => p.type.name || "any").join("_");
-	return `${struct_name}_${func.name}_${suffix}`;
+	return `${struct_name}_${func_name}_${suffix}`;
 }

@@ -199,7 +199,7 @@ Console.write("\\{items[2].value}")
 class Resource {
   var int handle
 
-  func destroy = () {
+  func #destroy = () {
     self.handle = -1
   }
 }

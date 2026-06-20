@@ -40,7 +40,7 @@ export default function build_trait_node(node: TraitNode, status: BuildStatus) {
 		// Define the function
 		// HACK: Need to map names to types
 		const func_start = status.code.length;
-		status.code += `${c_type(func.return_type.name || "void")} ${node.name}_${func.name}(`;
+		status.code += `${c_type(func.return_type.name || "void")} ${node.name}_${func.name.replace(/#/g, "")}(`;
 		for (let i = 0; i < func.params.length; i++) {
 			if (i > 0) {
 				status.code += ", ";

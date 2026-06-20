@@ -19,7 +19,7 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 		status.code = "";
 	}
 
-	const custom_init = node.functions.find((f) => f.name === "init" && f.has_body);
+	const custom_init = node.functions.find((f) => f.name === "#init" && f.has_body);
 
 	if (node.is_simple_type) {
 		build_struct_functions(node, status);
@@ -30,7 +30,7 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 		}
 		build_struct_functions(node, status);
 		build_trait_functions(node, status);
-		const destroy_func = node.functions.find((f) => f.name === "destroy");
+		const destroy_func = node.functions.find((f) => f.name === "#destroy");
 		if (destroy_func) {
 			build_destroy_function(node, destroy_func, status);
 		}
@@ -295,12 +295,12 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 
 function build_struct_functions(node: StructNode, status: BuildStatus) {
 	for (const func of node.functions) {
-		if (func.name === "init" && !func.has_body) continue;
-		if (func.name === "init" && func.has_body) {
+		if (func.name === "#init" && !func.has_body) continue;
+		if (func.name === "#init" && func.has_body) {
 			build_custom_init_function(node, func, status);
 			continue;
 		}
-		if (func.name === "destroy") continue;
+		if (func.name === "#destroy") continue;
 		if (func.is_inline) continue;
 
 		const old_scoped_declarations = status.scoped_declarations;
@@ -316,7 +316,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 
 		const func_label = is_overloaded(node, func.name)
 			? mangled_label(func, node.name)
-			: `${node.name}_${func.name}`;
+			: `${node.name}_${func.name.replace(/#/g, "")}`;
 		const return_label = `.return_${func_label}`;
 		status.function_return_label = return_label;
 
@@ -482,11 +482,11 @@ function build_trait_functions(node: StructNode, status: BuildStatus) {
 		if (!trait) continue;
 
 		for (const func of trait.functions) {
-			if (func.name === "init") continue;
+			if (func.name === "#init") continue;
 			if (node.functions.find((f) => f.name === func.name)) continue;
 
-			const func_label = `${node.name}_${func.name}`;
-			const trait_func_label = `${trait_name}_${func.name}`;
+			const func_label = `${node.name}_${func.name.replace(/#/g, "")}`;
+			const trait_func_label = `${trait_name}_${func.name.replace(/#/g, "")}`;
 
 			status.code += `.p2align 2\n`;
 			status.code += `${func_label}:\n`;

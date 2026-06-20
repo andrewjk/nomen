@@ -11,7 +11,7 @@ describe("custom init build", () => {
 struct Counter {
     var int count
 
-    init = (self, int start) {
+    #init = (self, int start) {
         self.count = start
     }
 }
@@ -32,7 +32,7 @@ struct Point {
     var int y
     var int sum
 
-    init = (self, int x, int y) {
+    #init = (self, int x, int y) {
         self.x = x
         self.y = y
         self.sum = x + y
@@ -54,7 +54,7 @@ struct Config {
     var int timeout = 30
     var int retries
 
-    init = (self, int retries) {
+    #init = (self, int retries) {
         self.retries = retries
     }
 }
@@ -73,7 +73,7 @@ Console.write("\\{cfg.timeout}")
 pub struct Widget {
     var string name
 
-    pub init = (self, string name) {
+    pub #init = (self, string name) {
         self.name = name
     }
 }
@@ -94,7 +94,7 @@ describe("destroy blocks build", () => {
 struct Resource {
     var int handle
 
-    func destroy = () {
+    func #destroy = () {
         self.handle = 0
     }
 }
@@ -109,10 +109,10 @@ Console.write("\\{r.handle}")
 	});
 });
 
-describe("init and destroy parse errors", () => {
-	test("init outside struct", () => {
+describe("#init and #destroy parse errors", () => {
+	test("#init outside struct", () => {
 		const input = `
-init = (int x) {
+#init = (int x) {
     Console.write(x)
 }
 `;
@@ -127,7 +127,7 @@ describe("auto-destroy enforcement", () => {
 struct Resource {
     var int handle
 
-    func destroy = () {
+    func #destroy = () {
         self.handle = 0
     }
 }
@@ -146,7 +146,7 @@ Console.write("\\{r.handle}")
 struct Resource {
     var int handle
 
-    func destroy = () {
+    func #destroy = () {
         self.handle = 0
     }
 }
@@ -185,7 +185,7 @@ describe("move on return", () => {
 struct Resource {
     var int handle
 
-    func destroy = () {
+    func #destroy = () {
         self.handle = 0
     }
 }
@@ -210,7 +210,7 @@ describe("ownership transfer", () => {
 struct Inner {
     var int value
 
-    func destroy = () {
+    func #destroy = () {
         self.value = 0
     }
 }
@@ -235,7 +235,7 @@ Console.write("\\{outer.child.value}")
 struct File {
     var int handle
 
-    func destroy = () {
+    func #destroy = () {
         self.handle = 0
     }
 }

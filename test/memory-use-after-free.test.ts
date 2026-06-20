@@ -10,7 +10,7 @@ describe("memory UAF", () => {
 struct Counter {
   var int count
 
-  func destroy = () {
+  func #destroy = () {
     self.count = 0
   }
 }
@@ -33,7 +33,7 @@ Console.write("\\{c.count}")
 struct Token {
   var int id
 
-  func destroy = () {
+  func #destroy = () {
     self.id = 0
   }
 }
@@ -54,7 +54,7 @@ Console.write("\\{b.id}")
 class Counter {
   var int count
 
-  func destroy = () {
+  func #destroy = () {
     self.count = 0
   }
 }
@@ -77,7 +77,7 @@ Console.write("\\{c.count}")
 class Token {
   var int id
 
-  func destroy = () {
+  func #destroy = () {
     self.id = 0
   }
 }

@@ -155,7 +155,8 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	if (node.name === "main") {
 		status.code += `.globl _main\n`;
 	}
-	status.code += `${node.name === "main" ? "_" : ""}${node.name}:\n`;
+	const label_name = node.name.replace(/#/g, "");
+	status.code += `${node.name === "main" ? "_" : ""}${label_name}:\n`;
 	status.code += `stp x29, x30, [sp, #-16]!\n`;
 
 	const is_main_with_init =

@@ -50,7 +50,7 @@ function count_x19_reads(asm: string): number {
 
 function build_naked_inline(struct_node: StructNode, func: FunctionNode, status: BuildStatus) {
 	let asm = extract_aarch64_asm(func);
-	const standalone_return_label = `.return_${struct_node.name}_${func.name}`;
+	const standalone_return_label = `.return_${struct_node.name}_${func.name.replace(/#/g, "")}`;
 	asm = asm.replaceAll(`b ${standalone_return_label}`, "");
 
 	if (count_x19_reads(asm) === 1) {
@@ -159,7 +159,7 @@ export default function build_inline_method(
 
 	build_block_node(func, status);
 
-	const standalone_return_label = `.return_${struct_node.name}_${func.name}`;
+	const standalone_return_label = `.return_${struct_node.name}_${func.name.replace(/#/g, "")}`;
 	status.code = status.code.replaceAll(`b ${standalone_return_label}`, `b ${return_label}`);
 
 	status.code += `${return_label}:\n`;

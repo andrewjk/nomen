@@ -187,7 +187,7 @@ Console.write("done")
 struct Resource {
   var int handle
 
-  func destroy = () {
+  func #destroy = () {
     self.handle = -1
   }
 }
@@ -216,7 +216,7 @@ Console.write("done")
 struct Resource {
   var int handle
 
-  func destroy = () {
+  func #destroy = () {
     self.handle = -1
   }
 }
@@ -464,7 +464,7 @@ Console.write("done")
 class Resource {
   var int handle
 
-  func destroy = () {
+  func #destroy = () {
     self.handle = -1
   }
 }
@@ -493,7 +493,7 @@ Console.write("done")
 class Resource {
   var int handle
 
-  func destroy = () {
+  func #destroy = () {
     self.handle = -1
   }
 }

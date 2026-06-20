@@ -87,7 +87,7 @@ Console.write("\\{result}")
 class Resource {
     var int value
 
-    func destroy = () {
+    func #destroy = () {
         self.value = 999
     }
 }

@@ -79,7 +79,7 @@ export function is_struct_type(type_name: string, status: BuildStatus): StructNo
 }
 
 function has_destroy(struct_type: StructNode): boolean {
-	return !!struct_type.functions.find((f) => f.name === "destroy");
+	return !!struct_type.functions.find((f) => f.name === "#destroy");
 }
 
 export function emit_destroy_for_decl(

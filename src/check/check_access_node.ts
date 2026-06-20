@@ -203,6 +203,9 @@ function check_access_function_node(
 	if (!func) {
 		func = struct?.functions.findLast((f) => f.name === node.name);
 	}
+	if (!func && (node.name === "destroy" || node.name === "init")) {
+		func = struct?.functions.findLast((f) => f.name === `#${node.name}`);
+	}
 
 	if (!func) {
 		// Are we accessing a func in a trait?

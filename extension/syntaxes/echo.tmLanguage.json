@@ -8,6 +8,7 @@
 		{ "include": "#chars" },
 		{ "include": "#annotations" },
 		{ "include": "#function-decl" },
+		{ "include": "#lifecycle-decl" },
 		{ "include": "#constants" },
 		{ "include": "#keywords" },
 		{ "include": "#numbers" },
@@ -94,10 +95,27 @@
 			}
 		},
 		"function-decl": {
-			"match": "\\b(func)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+			"patterns": [
+				{
+					"match": "\\b(func)\\s+(#(?:init|destroy))\\b",
+					"captures": {
+						"1": { "name": "storage.type.function.echo" },
+						"2": { "name": "entity.name.function.echo" }
+					}
+				},
+				{
+					"match": "\\b(func)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+					"captures": {
+						"1": { "name": "storage.type.function.echo" },
+						"2": { "name": "entity.name.function.echo" }
+					}
+				}
+			]
+		},
+		"lifecycle-decl": {
+			"match": "(#(?:init|destroy))\\s*=",
 			"captures": {
-				"1": { "name": "storage.type.function.echo" },
-				"2": { "name": "entity.name.function.echo" }
+				"1": { "name": "entity.name.function.echo" }
 			}
 		},
 		"keywords": {
@@ -112,7 +130,7 @@
 				},
 				{
 					"name": "keyword.other.echo",
-					"match": "\\b(?:var|const|let|mov|cp|import|destroy|init|op|panic|todo)\\b"
+					"match": "\\b(?:var|const|let|mov|cp|import|op|panic|todo)\\b"
 				},
 				{
 					"name": "storage.modifier.echo",

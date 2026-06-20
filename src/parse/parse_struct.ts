@@ -46,9 +46,9 @@ export default function parse_struct(
 		expect("}", status);
 		status.stack.pop();
 
-		const has_custom_init = struct.functions.some((f) => f.name === "init");
+		const has_custom_init = struct.functions.some((f) => f.name === "#init");
 		if (!has_custom_init) {
-			const func = new FunctionNode(-1, visibility, "init", new Type(struct.name));
+			const func = new FunctionNode(-1, visibility, "#init", new Type(struct.name));
 			func.params = struct.fields
 				.filter((f) => f.visibility !== "private" && !f.value)
 				.map((f) => {

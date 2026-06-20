@@ -148,7 +148,7 @@ function convert_anon_struct(decl: DeclarationNode, status: CheckStatus) {
 	const struct = status.structs.findLast((s) => s.name === decl.type.name);
 	if (!struct) return;
 	const anon = decl.value as AnonStructNode;
-	const init_func = struct.functions.find((f) => f.name === "init");
+	const init_func = struct.functions.find((f) => f.name === "#init");
 	if (!init_func) return;
 	const args: import("../nodes/BaseNode.ts").default[] = [];
 	for (const init_param of init_func.params) {

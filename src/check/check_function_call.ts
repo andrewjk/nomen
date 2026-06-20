@@ -29,7 +29,7 @@ export default function check_function_call(
 ): boolean {
 	const access_scope = status.stack.at(-1)!;
 	// For init functions, check the struct's visibility
-	if (func.name === "init") {
+	if (func.name === "#init") {
 		const struct_name = target_type?.name || func.return_type.name;
 		const struct = status.structs.find((s) => s.name === struct_name);
 		if (
@@ -140,7 +140,7 @@ export default function check_function_call(
 			}
 		}
 
-		const init_func = struct.functions.find((f) => f.name === "init");
+		const init_func = struct.functions.find((f) => f.name === "#init");
 		if (!init_func) {
 			add_error(status, `Struct ${struct.name} has no init`, param.start);
 			continue;

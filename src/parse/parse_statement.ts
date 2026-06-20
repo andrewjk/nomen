@@ -95,13 +95,21 @@ export default function parse_statement(status: ParseStatus) {
 				}
 				break;
 			}
-			case "init": {
-				// init = (...) { } is shorthand for func init = (...) { }
-				parse_function(default_visibility(status), status, "init");
-				break;
-			}
-			case "destroy": {
-				parse_destroy(default_visibility(status), status);
+			case "#": {
+				// #init or #destroy — special struct functions
+				const next = status.tokens[status.i + 1]?.value;
+				if (next === "init") {
+					consume(status); // consume #
+					consume(status); // consume init
+					parse_function(default_visibility(status), status, "#init");
+				} else if (next === "destroy") {
+					consume(status); // consume #
+					consume(status); // consume destroy
+					parse_destroy(default_visibility(status), status, "#destroy");
+				} else {
+					add_error(status, `Expected #init or #destroy`, get_index(status));
+					consume(status);
+				}
 				break;
 			}
 			case "op": {

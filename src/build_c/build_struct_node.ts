@@ -48,7 +48,7 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 	}
 	status.code += `} ${node.name};\n`;
 
-	const custom_init = node.functions.find((f) => f.name === "init" && f.has_body);
+	const custom_init = node.functions.find((f) => f.name === "#init" && f.has_body);
 
 	// Declare the constructor
 	const ctor_params = custom_init
@@ -153,10 +153,10 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 	const old_current_struct = status.current_struct;
 	status.current_struct = node;
 	for (let func of node.functions) {
-		if (func.name === "init" && !func.has_body) {
+		if (func.name === "#init" && !func.has_body) {
 			continue;
 		}
-		if (func.name === "destroy") continue;
+		if (func.name === "#destroy") continue;
 
 		const old_ref_params = status.function_ref_params;
 		const old_self_is_ref = status.self_is_ref;
@@ -187,7 +187,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		}
 		const func_label_name = is_overloaded(node, func.name)
 			? mangled_label(func, node.name)
-			: `${node.name}_${func.name}`;
+			: `${node.name}_${func.name.replace(/#/g, "")}`;
 		status.code += `${c_type(return_type)} ${func_label_name}(`;
 		for (let i = 0; i < func.params.length; i++) {
 			if (i > 0) {

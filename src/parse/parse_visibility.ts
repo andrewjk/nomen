@@ -69,9 +69,22 @@ export default function parse_visibility(visibility: "pub" | "private", status: 
 			}
 			break;
 		}
-		case "init": {
-			consume(status);
-			parse_function(visibility, status, "init");
+		case "#": {
+			const next2 = status.tokens[status.i + 2]?.value;
+			if (next2 === "init") {
+				consume(status); // consume pub
+				consume(status); // consume #
+				consume(status); // consume init
+				parse_function(visibility, status, "#init");
+			} else if (next2 === "destroy") {
+				consume(status); // consume pub
+				consume(status); // consume #
+				consume(status); // consume destroy
+				parse_function(visibility, status, "#destroy");
+			} else {
+				add_error(status, `Expected #init or #destroy after pub`, get_index(status));
+				consume(status);
+			}
 			break;
 		}
 
