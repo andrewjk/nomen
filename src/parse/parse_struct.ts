@@ -56,6 +56,7 @@ export default function parse_struct(
 					if (f.declaration === "mov") {
 						param.is_moved = true;
 					}
+					param.constraint = f.constraint;
 					return param;
 				});
 			func.is_static = true;

@@ -8,6 +8,7 @@ import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
 import check_type_exists from "./utils/check_type_exists.ts";
+import evaluate_const_condition from "./utils/evaluate_const_condition.ts";
 import { is_class_type } from "./utils/ownership.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
@@ -77,6 +78,7 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			start: decl.start,
 			is_null: decl.value?.node_type === "value" && (decl.value as any).value === "null",
 			const_value: decl.declaration === "const" ? extract_const_value(decl.value) : undefined,
+			constraint: decl.constraint,
 		});
 	} else {
 		if (decl.type.name) {
@@ -126,6 +128,8 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			status.stack.pop();
 		}
 
+		check_constraint(decl, status);
+
 		status.values.push({
 			declaration: decl.declaration,
 			name: decl.name,
@@ -134,6 +138,7 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			start: decl.start,
 			is_null: decl.value?.node_type === "value" && (decl.value as any).value === "null",
 			const_value: decl.declaration === "const" ? extract_const_value(decl.value) : undefined,
+			constraint: decl.constraint,
 		});
 	}
 }
@@ -163,6 +168,40 @@ function convert_anon_struct(decl: DeclarationNode, status: CheckStatus) {
 	constructor.params = args;
 	constructor.type = new Type(struct.name);
 	decl.value = constructor;
+}
+
+/**
+ * Check that a declaration's value satisfies its constraint (if any).
+ * Only checks compile-time constant values.
+ */
+function check_constraint(decl: DeclarationNode, status: CheckStatus) {
+	if (!decl.constraint || !decl.value) return;
+
+	let arg_value: number | boolean | undefined;
+	if (decl.value.node_type === "value") {
+		const vn = decl.value as ValueNode;
+		if (/^[+-]?\d+$/.test(vn.value)) arg_value = parseInt(vn.value, 10);
+		if (vn.value === "true") arg_value = true;
+		if (vn.value === "false") arg_value = false;
+	}
+
+	if (arg_value === undefined) return;
+
+	const saved_length = status.values.length;
+	status.values.push({
+		declaration: "const",
+		name: decl.name,
+		type: decl.type,
+		is_set: true,
+		const_value: arg_value,
+	});
+
+	const satisfied = evaluate_const_condition(decl.constraint, status);
+	status.values.length = saved_length;
+
+	if (satisfied === false) {
+		add_error(status, `Constraint not satisfied: ${decl.name}`, decl.value.start);
+	}
 }
 
 /**

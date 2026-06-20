@@ -53,6 +53,11 @@ export default function parse_declaration(
 			decl.name = consume(status);
 		}
 
+		// Parse field/variable constraint: var int x: x > 5
+		if (accept(":", status)) {
+			decl.constraint = parse_expression(status, false);
+		}
+
 		if (accept("=", status)) {
 			decl.value = parse_expression(status);
 			if (!decl.type.name && is_value_node(decl.value)) {

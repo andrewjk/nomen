@@ -8,6 +8,7 @@ export default class DeclarationNode extends BaseNode {
 	name: string;
 	type: Type;
 	value?: BaseNode;
+	constraint?: BaseNode;
 	name_start?: number;
 	type_start?: number;
 	func_params?: ParameterNode[];

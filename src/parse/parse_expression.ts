@@ -150,7 +150,7 @@ function parse_primary(status: ParseStatus, value: string): BaseNode {
  * An expression returns a value and can be used e.g. on the right side of an assignment, as the
  * initial value of a declaration or as a parameter value in a function call
  */
-export default function parse_expression(status: ParseStatus): BaseNode {
+export default function parse_expression(status: ParseStatus, allow_assignment = true): BaseNode {
 	const start = get_index(status);
 	let value = peek_current(status) || "??";
 	let node = parse_primary(status, value);
@@ -193,7 +193,7 @@ export default function parse_expression(status: ParseStatus): BaseNode {
 			case ">":
 			case ">=": {
 				consume(status);
-				const expression = parse_expression(status);
+				const expression = parse_expression(status, allow_assignment);
 				if (is_operation_node(expression)) {
 					node = restructure_op(
 						start,
@@ -236,7 +236,7 @@ export default function parse_expression(status: ParseStatus): BaseNode {
 				}
 
 				consume(status);
-				const lt_expr = parse_expression(status);
+				const lt_expr = parse_expression(status, allow_assignment);
 				if (is_operation_node(lt_expr)) {
 					node = restructure_op(start, "<", operator_precedence("<"), node, lt_expr);
 				} else {
@@ -257,7 +257,7 @@ export default function parse_expression(status: ParseStatus): BaseNode {
 
 				// TODO: Proper order of operations
 				// Like https://en.cppreference.com/w/c/language/operator_precedence
-				const expression = parse_expression(status);
+				const expression = parse_expression(status, allow_assignment);
 				if (is_operation_node(expression)) {
 					const current_precedence = operator_precedence(current_value);
 					node = restructure_op(start, current_value, current_precedence, node, expression);
@@ -282,6 +282,7 @@ export default function parse_expression(status: ParseStatus): BaseNode {
 			case "+=":
 			case "-=":
 			case "*=": {
+				if (!allow_assignment) return node;
 				const op = consume(status);
 				const rhs = parse_expression(status);
 				const assign = new AssignmentNode(start, node, rhs, op === "=" ? undefined : op);

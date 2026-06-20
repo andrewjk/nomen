@@ -1,8 +1,12 @@
 import add_error from "../add_error.ts";
+import AccessFieldNode from "../nodes/AccessFieldNode.ts";
+import AccessNode from "../nodes/AccessNode.ts";
 import AssignmentNode from "../nodes/AssignmentNode.ts";
+import ValueNode from "../nodes/ValueNode.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
+import evaluate_const_condition from "./utils/evaluate_const_condition.ts";
 import { is_class_type } from "./utils/ownership.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
@@ -77,6 +81,67 @@ export default function check_assignment_node(
 		assign.right_value.start,
 		"assignment",
 	);
+
+	// Check field constraints on assignment (e.g. foo.x = value where x has a constraint)
+	if (assign.left_value.node_type === "access") {
+		const access = assign.left_value as AccessNode;
+		if (access.access.node_type === "access_field") {
+			const field_access = access.access as AccessFieldNode;
+			const target_type = type_from_value_node(access.target, status);
+			const struct = status.structs.findLast((s) => s.name === target_type.name);
+			const field = struct?.fields.find((f) => f.name === field_access.name);
+			if (field?.constraint) {
+				let arg_value: number | boolean | undefined;
+				if (assign.right_value.node_type === "value") {
+					const vn = assign.right_value as ValueNode;
+					if (/^[+-]?\d+$/.test(vn.value)) arg_value = parseInt(vn.value, 10);
+					if (vn.value === "true") arg_value = true;
+					if (vn.value === "false") arg_value = false;
+				}
+				if (arg_value !== undefined) {
+					const saved_length = status.values.length;
+					status.values.push({
+						declaration: "const",
+						name: field.name,
+						type: field.type,
+						is_set: true,
+						const_value: arg_value,
+					});
+					const satisfied = evaluate_const_condition(field.constraint, status);
+					status.values.length = saved_length;
+					if (satisfied === false) {
+						add_error(status, `Constraint not satisfied: ${field.name}`, assign.right_value.start);
+					}
+				}
+			}
+		}
+	}
+
+	// Check variable constraints on simple assignment (e.g. x = 2 where x has a constraint)
+	if (assign.left_value.node_type === "value" && left_value.constraint) {
+		let arg_value: number | boolean | undefined;
+		if (assign.right_value.node_type === "value") {
+			const vn = assign.right_value as ValueNode;
+			if (/^[+-]?\d+$/.test(vn.value)) arg_value = parseInt(vn.value, 10);
+			if (vn.value === "true") arg_value = true;
+			if (vn.value === "false") arg_value = false;
+		}
+		if (arg_value !== undefined) {
+			const saved_length = status.values.length;
+			status.values.push({
+				declaration: "const",
+				name: left_value.name,
+				type: left_value.type,
+				is_set: true,
+				const_value: arg_value,
+			});
+			const satisfied = evaluate_const_condition(left_value.constraint, status);
+			status.values.length = saved_length;
+			if (satisfied === false) {
+				add_error(status, `Constraint not satisfied: ${left_value.name}`, assign.right_value.start);
+			}
+		}
+	}
 
 	const rhs_type = type_from_value_node(assign.right_value, status);
 	if (

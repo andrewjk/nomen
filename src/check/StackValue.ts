@@ -1,3 +1,4 @@
+import BaseNode from "../nodes/BaseNode.ts";
 import Type from "../nodes/Type.ts";
 
 /**
@@ -19,4 +20,8 @@ export default interface StackValue {
 	 * (number, string, or boolean). Used for constant condition evaluation.
 	 */
 	const_value?: number | string | boolean;
+	/**
+	 * Constraint expression from the declaration (e.g. `var int x: x > 5`)
+	 */
+	constraint?: BaseNode;
 }
