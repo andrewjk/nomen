@@ -116,7 +116,7 @@ above_zero(threshold)   // OK, 10 > 0
 
 #### Field Constraints
 
-Struct and class fields can have constraints. Fields without default values that have constraints will have those constraints propagated to the auto-generated `init` parameters:
+Struct and class fields can have constraints. Fields without default values that have constraints will have those constraints propagated to the auto-generated `#init` parameters:
 
 ```
 struct Bounded {
@@ -233,7 +233,7 @@ pub struct Point {
 }
 ```
 
-Structs are constructed by calling the struct name as a function. An `init` function is auto-generated with parameters for all non-private fields that don't have default values:
+Structs are constructed by calling the struct name as a function. A `#init` function is auto-generated with parameters for all non-private fields that don't have default values:
 
 ```
 const point = Point(5, 10)
@@ -249,7 +249,7 @@ pub struct Point {
     pub int y
     pub int sum
 
-    init (self, int x, int y) {
+    #init = (self, int x, int y) {
         self.x = x
         self.y = y
         self.sum = x + y
@@ -259,17 +259,17 @@ pub struct Point {
 
 ### Destroy Functions
 
-If a struct has a `destroy` function, it runs automatically when the struct goes out of scope. The destroy function takes no parameters (besides `self`) and cannot be called manually.
+If a struct has a `#destroy` function, it runs automatically when the struct goes out of scope. The destroy function takes no parameters (besides `self`) and cannot be called manually.
 
 ```
 pub struct Transaction {
     pub int handle
 
-    init = (self, int handle) {
+    #init = (self, int handle) {
         self.handle = handle
     }
 
-    func destroy = () {
+    func #destroy = () {
         // automatically runs when the Transaction goes out of scope
     }
 }
@@ -326,13 +326,13 @@ c.increment()
 
 #### Destroy Functions
 
-Like structs, classes support `destroy` functions that run automatically when the class instance goes out of scope:
+Like structs, classes support `#destroy` functions that run automatically when the class instance goes out of scope:
 
 ```
 class Resource {
     var int handle
 
-    func destroy = () {
+    func #destroy = () {
         self.handle = -1
     }
 }
@@ -672,11 +672,11 @@ struct Vec2 {
     var int x
     var int y
 
-    pub op + (self, Vec2 other, out Vec2) {
+    pub func #op_add = (self, Vec2 other, out Vec2) {
         return Vec2(self.x + other.x, self.y + other.y)
     }
 
-    pub op + (self, int scalar, out Vec2) {
+    pub func #op_add = (self, int scalar, out Vec2) {
         return Vec2(self.x + scalar, self.y + scalar)
     }
 }
@@ -1021,24 +1021,24 @@ const range = 0..5     // [0, 1, 2, 3, 4]
 
 #### Operator Overloading
 
-Structs can define custom behavior for operators using the `op` keyword:
+Structs can define custom behavior for operators using `#`-prefixed function names:
 
 ```
 struct Vec2 {
     var int x
     var int y
 
-    op + (self, Vec2 other, out Vec2) {
+    func #op_add = (self, Vec2 other, out Vec2) {
         return Vec2(self.x + other.x, self.y + other.y)
     }
 
-    op * (self, int scalar, out Vec2) {
+    func #op_mul = (self, int scalar, out Vec2) {
         return Vec2(self.x * scalar, self.y * scalar)
     }
 }
 ```
 
-Supported operator mappings: `+` → `add`, `-` → `sub`, `*` → `mul`, `/` → `div`, `%` → `mod`.
+Supported operator functions: `#op_add` (+), `#op_sub` (-), `#op_mul` (\*), `#op_div` (/), `#op_mod` (%).
 
 ### Cast Operator (`as`)
 
@@ -1060,13 +1060,13 @@ Allowed casts:
 
 #### Custom Struct Casting
 
-Structs can define custom cast behavior with `op as`:
+Structs can define custom cast behavior with `func #op_as`:
 
 ```
 struct Dog {
     var int value
 
-    op as (self, out Cat) {
+    func #op_as = (self, out Cat) {
         return Cat(self.value + 1)
     }
 }
