@@ -11,7 +11,7 @@ pub struct Array<T> {
         ```
         #arch: aarch64
         // x19 = self (struct pointer), variadic items packed at call site
-        // _items_len at [x29, #<len_offset>], items ptr at [x29, #<ptr_offset>]
+        // _items_len at [x29, #0], items ptr at [x29, #8]
 
         // Store length
         ldr x0, [x29, #0]
@@ -24,6 +24,96 @@ pub struct Array<T> {
         add x0, x19, #16
         ldr x1, [x29, #8]
         bl _memcpy
+        ```
+    }
+
+    pub func at = (self, int index: index >= 0 && index < self.length, out T) {
+        ```
+        #arch: c
+        return ((T*)&self)[index];
+        ```
+        ```
+        #arch: aarch64
+        // x19 = self (first elem), x1 = index
+        mov x2, #T_SIZE
+        mul x1, x1, x2
+        ldr x0, [x19, x1]
+        ```
+    }
+
+    pub func at_end = (self, out T) {
+        ```
+        #arch: c
+        return ((T*)&self)[self.length - 1];
+        ```
+        ```
+        #arch: aarch64
+        // x19 = self (first elem), length at [x19 - 8]
+        ldr x0, [x19, #-8]
+        sub x0, x0, #1
+        mov x1, #T_SIZE
+        mul x0, x0, x1
+        ldr x0, [x19, x0]
+        ```
+    }
+
+    pub func with_length = (self, int length: length >= 0, out Array) {
+        ```
+        #arch: c
+        T result[length];
+        int copy = self.length < length ? self.length : length;
+        memcpy(result, &self, copy * sizeof(T));
+        if (length > self.length) {
+            memset(result + self.length, 0, (length - self.length) * sizeof(T));
+        }
+        return result;
+        ```
+        ```
+        #arch: aarch64
+        // x19 = self (first elem), x1 = new length, x8 = return buf (first elem)
+        // Save new length and return buf
+        stp x1, x8, [sp, #-16]!
+
+        // Determine copy count: min(self.length, new_length)
+        ldr x2, [x19, #-8]
+        cmp x2, x1
+        csel x2, x2, x1, lt
+
+        // Save copy count
+        str x2, [sp, #16]
+
+        // copy_bytes = copy_count * T_SIZE
+        mov x3, #T_SIZE
+        mul x2, x2, x3
+
+        // memcpy(return_buf, self, copy_bytes)
+        ldr x0, [sp, #8]
+        mov x1, x19
+        bl _memcpy
+
+        // Zero-fill if extending
+        ldr x4, [x19, #-8]
+        ldr x5, [sp]
+        cmp x5, x4
+        ble .Larray_with_length_end
+
+        // fill_bytes = (new_len - old_len) * T_SIZE
+        sub x5, x5, x4
+        mov x6, #T_SIZE
+        mul x2, x5, x6
+
+        // offset = copy_count * T_SIZE (reload since memcpy clobbered)
+        ldr x4, [sp, #16]
+        mul x3, x4, x6
+
+        // memset(return_buf + offset, 0, fill_bytes)
+        ldr x0, [sp, #8]
+        add x0, x0, x3
+        mov x1, #0
+        bl _memset
+
+        .Larray_with_length_end:
+        add sp, sp, #16
         ```
     }
 

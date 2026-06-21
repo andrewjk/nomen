@@ -349,6 +349,16 @@ export default function check_function_call(
 					range_upper: ca.range_upper,
 				});
 			}
+			// Push self so constraints can reference self.length
+			if (self_value && self_value !== "?") {
+				const self_type = target_type || func.params[0]?.type;
+				status.values.push({
+					declaration: "const",
+					name: "self",
+					type: self_type,
+					is_set: true,
+				});
+			}
 
 			const satisfied = evaluate_const_condition(func_param.constraint, status);
 			status.values.length = saved_values_length;

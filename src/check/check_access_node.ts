@@ -6,7 +6,9 @@ import AccessNode from "../nodes/AccessNode.ts";
 import BaseNode from "../nodes/BaseNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import Type from "../nodes/Type.ts";
+import ValueNode from "../nodes/ValueNode.ts";
 import check_function_call from "./check_function_call.ts";
+import { monomorphize } from "./check_function_call_node.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import {
@@ -192,7 +194,23 @@ function check_access_function_node(
 	node: AccessFunctionCallNode,
 	status: CheckStatus,
 ): boolean {
-	const struct = status.structs.find((s) => s.name === target_type.name);
+	// For array types, route method calls to the Array struct
+	let effective_type = target_type;
+	if (target_type.is_array) {
+		const array_struct = status.structs.find((s) => s.name === "Array");
+		if (array_struct) {
+			// Monomorphize for the element type if generic
+			if (array_struct.type_params.length > 0) {
+				const elem_type = new Type(target_type.name);
+				const mono = monomorphize(array_struct, [elem_type], status);
+				if (mono) {
+					effective_type = new Type(mono.name);
+				}
+			}
+		}
+	}
+
+	const struct = status.structs.find((s) => s.name === effective_type.name);
 
 	let func: FunctionNode | undefined;
 	if (struct) {
@@ -273,7 +291,39 @@ function check_access_function_node(
 		node.mangled_name = mangled_label(func, struct.name);
 	}
 
-	return check_function_call(node, status, func, target_type, value_from_value_node(target));
+	const result = check_function_call(
+		node,
+		status,
+		func,
+		target_type,
+		value_from_value_node(target),
+	);
+
+	// Convert Array struct return type back to array type for array method calls
+	if (result && target_type.is_array && node.type) {
+		const return_is_array_struct =
+			node.type.name === "Array" || node.type.name?.startsWith("Array_");
+		if (return_is_array_struct) {
+			// For with_length, try to determine result length from the argument
+			let result_length: ValueNode | undefined;
+			if (node.name === "with_length" && node.params.length > 0) {
+				const len_param = node.params[0];
+				if (len_param.node_type === "value") {
+					const val = parseInt((len_param as ValueNode).value, 10);
+					if (!isNaN(val)) {
+						result_length = new ValueNode(-1, String(val), new Type("int"));
+					}
+				}
+			}
+			node.type = new Type(target_type.name);
+			node.type.is_array = true;
+			if (result_length) {
+				node.type.length = result_length;
+			}
+		}
+	}
+
+	return result;
 }
 
 function check_access_index_node(
