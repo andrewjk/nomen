@@ -175,7 +175,31 @@ function convert_anon_struct(decl: DeclarationNode, status: CheckStatus) {
  * Only checks compile-time constant values.
  */
 function check_constraint(decl: DeclarationNode, status: CheckStatus) {
-	if (!decl.constraint || !decl.value) return;
+	if (!decl.constraint) return;
+
+	// Type-check the constraint expression and verify it's boolean
+	const saved_length = status.values.length;
+	status.values.push({
+		declaration: "const",
+		name: decl.name,
+		type: decl.type,
+		is_set: true,
+	});
+	check_node(decl.constraint, status);
+	const constraint_type = type_from_value_node(decl.constraint, status);
+	if (constraint_type.name && constraint_type.name !== "bool") {
+		add_error(
+			status,
+			`Constraint must be a boolean expression, got ${constraint_type.name}`,
+			decl.constraint.start,
+		);
+	}
+
+	// Check compile-time constant value (only if value exists)
+	if (!decl.value) {
+		status.values.length = saved_length;
+		return;
+	}
 
 	let arg_value: number | boolean | undefined;
 	if (decl.value.node_type === "value") {
@@ -185,16 +209,13 @@ function check_constraint(decl: DeclarationNode, status: CheckStatus) {
 		if (vn.value === "false") arg_value = false;
 	}
 
-	if (arg_value === undefined) return;
+	if (arg_value === undefined) {
+		status.values.length = saved_length;
+		return;
+	}
 
-	const saved_length = status.values.length;
-	status.values.push({
-		declaration: "const",
-		name: decl.name,
-		type: decl.type,
-		is_set: true,
-		const_value: arg_value,
-	});
+	// Update the const_value for evaluation
+	(status.values[status.values.length - 1] as any).const_value = arg_value;
 
 	const satisfied = evaluate_const_condition(decl.constraint, status);
 	status.values.length = saved_length;

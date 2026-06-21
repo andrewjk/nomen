@@ -1,4 +1,5 @@
 import add_error from "../add_error.ts";
+import type BaseNode from "../nodes/BaseNode.ts";
 import ParameterNode from "../nodes/ParameterNode.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
@@ -60,4 +61,17 @@ export default function check_function_parameter_node(param: ParameterNode, stat
 		is_set: true,
 		is_null: param.type.is_nullable ? true : undefined,
 	});
+
+	// Type-check the constraint expression (if any)
+	if (param.constraint) {
+		check_node(param.constraint, status);
+		const constraint_type = type_from_value_node(param.constraint as BaseNode, status);
+		if (constraint_type.name && constraint_type.name !== "bool") {
+			add_error(
+				status,
+				`Constraint must be a boolean expression, got ${constraint_type.name}`,
+				param.constraint.start,
+			);
+		}
+	}
 }

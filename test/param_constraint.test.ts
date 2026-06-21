@@ -280,4 +280,89 @@ func caller = () {
 		expect(parsed.errors.length).toBeGreaterThanOrEqual(1);
 		expect(parsed.errors.some((e) => e.message.includes("cannot be verified"))).toBe(true);
 	});
+
+	test("constraint comparing int with string errors", () => {
+		const lib = get_library(path.resolve(import.meta.dirname, "../core"));
+		const input = `
+import System
+func bad = (int i: i > "abc") {
+    Console.write("ok")
+}
+`;
+		const parsed = parse(input, lib);
+		expect(parsed.errors.length).toBeGreaterThanOrEqual(1);
+		expect(parsed.errors.some((e) => e.message.includes("Type mismatch"))).toBe(true);
+	});
+
+	test("constraint that is just an int literal errors", () => {
+		const lib = get_library(path.resolve(import.meta.dirname, "../core"));
+		const input = `
+import System
+func bad = (int i: 5) {
+    Console.write("ok")
+}
+`;
+		const parsed = parse(input, lib);
+		expect(parsed.errors.some((e) => e.message.includes("boolean expression"))).toBe(true);
+	});
+
+	test("constraint that is arithmetic expression errors", () => {
+		const lib = get_library(path.resolve(import.meta.dirname, "../core"));
+		const input = `
+import System
+func bad = (int i: i + 1) {
+    Console.write("ok")
+}
+`;
+		const parsed = parse(input, lib);
+		expect(parsed.errors.some((e) => e.message.includes("boolean expression"))).toBe(true);
+	});
+
+	test("constraint that is a string literal errors", () => {
+		const lib = get_library(path.resolve(import.meta.dirname, "../core"));
+		const input = `
+import System
+func bad = (int i: "hello") {
+    Console.write("ok")
+}
+`;
+		const parsed = parse(input, lib);
+		expect(parsed.errors.some((e) => e.message.includes("boolean expression"))).toBe(true);
+	});
+
+	test("valid bool constraint with && passes", () => {
+		const lib = get_library(path.resolve(import.meta.dirname, "../core"));
+		const input = `
+import System
+func ok = (int i: i >= 0 && i < 10) {
+    Console.write("ok")
+}
+`;
+		const parsed = parse(input, lib);
+		expect(parsed.errors).toEqual([]);
+	});
+
+	test("local var constraint with wrong type errors", () => {
+		const lib = get_library(path.resolve(import.meta.dirname, "../core"));
+		const input = `
+import System
+pub func main = () {
+    var int x: x > "abc" = 5
+}
+`;
+		const parsed = parse(input, lib);
+		expect(parsed.errors.some((e) => e.message.includes("Type mismatch"))).toBe(true);
+	});
+
+	test("local var constraint that is not boolean errors", () => {
+		const lib = get_library(path.resolve(import.meta.dirname, "../core"));
+		const input = `
+import System
+pub func main = () {
+    var int x: x + 1 = 5
+}
+`;
+		const parsed = parse(input, lib);
+		expect(parsed.errors.some((e) => e.message.includes("boolean expression"))).toBe(true);
+	});
 });
