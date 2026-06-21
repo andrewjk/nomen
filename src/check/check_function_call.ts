@@ -277,8 +277,14 @@ export default function check_function_call(
 				);
 			}
 		}
+		// For variadic params, the packed array type is T[] but func_param.type is T
+		let expected_type = func_param.type;
+		if (func_param.is_variadic) {
+			expected_type = new Type(func_param.type.name);
+			expected_type.is_array = true;
+		}
 		check_type_and_value_match(
-			func_param.type,
+			expected_type,
 			param_type,
 			param_value,
 			status,

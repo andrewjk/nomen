@@ -1,6 +1,32 @@
 pub struct Array<T> {
     pub const int length
 
+    pub func #init = (...T items) {
+        ```
+        #arch: c
+        self->length = _items_len;
+        T* data = (T*)((char*)self + sizeof(*self));
+        for (int i = 0; i < _items_len; i++) data[i] = items[i];
+        ```
+        ```
+        #arch: aarch64
+        // x19 = self (struct pointer), variadic items packed at call site
+        // _items_len at [x29, #<len_offset>], items ptr at [x29, #<ptr_offset>]
+
+        // Store length
+        ldr x0, [x29, #0]
+        str x0, [x19, #8]
+
+        // Copy items: memcpy(self + 16, items, len * T_SIZE)
+        ldr x2, [x29, #0]
+        mov x3, #T_SIZE
+        mul x2, x2, x3
+        add x0, x19, #16
+        ldr x1, [x29, #8]
+        bl _memcpy
+        ```
+    }
+
     pub func add = (self, Array other, out Array) {
         ```
         #arch: c

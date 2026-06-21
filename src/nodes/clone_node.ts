@@ -378,6 +378,7 @@ export default function clone_node(node: BaseNode): BaseNode {
 			c.type_start = n.type_start;
 			c.name_start = n.name_start;
 			c.default_value_start = n.default_value_start;
+			c.is_variadic = n.is_variadic;
 			c.func_params = n.func_params?.map((p) => clone_node(p) as ParameterNode);
 			c.func_return_type = n.func_return_type ? clone_type(n.func_return_type) : undefined;
 			c.allocations = n.allocations?.map(clone_node);
