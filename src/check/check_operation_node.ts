@@ -3,6 +3,7 @@ import FunctionNode from "../nodes/FunctionNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
+import { monomorphize } from "./check_function_call_node.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
@@ -78,22 +79,24 @@ export default function check_operation_node(op: OperationNode, status: CheckSta
 	// Check for custom operator on struct (including arrays, which use the Array struct)
 	const custom_op = find_custom_operator(op, left_type, right_type, status);
 	if (custom_op) {
+		const func = custom_op.func;
 		// For array types, preserve the element type in the result
-		if (left_type.is_array && custom_op.return_type.name === "Array") {
+		if (left_type.is_array && func.return_type.name === "Array") {
 			op.type = new Type(left_type.name);
 			op.type.is_array = true;
 		} else {
-			op.type = custom_op.return_type;
+			op.type = func.return_type;
 		}
-		const struct_name = left_type.is_array ? "Array" : left_type.name;
-		const func_name = operator_to_func_name(op.op) || custom_op.name;
+		const struct_name =
+			custom_op.mono_struct_name || (left_type.is_array ? "Array" : left_type.name);
+		const func_name = operator_to_func_name(op.op) || func.name;
 		const struct_node = status.structs.find((s) => s.name === struct_name);
 		op.operator_func = {
 			struct_name,
-			func_name: custom_op.name,
+			func_name: func.name,
 			mangled_name:
 				struct_node && is_overloaded(struct_node, func_name)
-					? mangled_label(custom_op, struct_name)
+					? mangled_label(func, struct_name)
 					: undefined,
 		};
 
@@ -185,14 +188,14 @@ function find_custom_operator(
 	left_type: Type,
 	right_type: Type,
 	status: CheckStatus,
-): FunctionNode | undefined {
+): { func: FunctionNode; mono_struct_name?: string } | undefined {
 	// For array types, look up operators on the Array struct
 	const struct_name = left_type.is_array ? "Array" : left_type.name;
 	if (!struct_name) {
 		return undefined;
 	}
 
-	const struct = status.structs.find((s) => s.name === struct_name);
+	let struct = status.structs.find((s) => s.name === struct_name);
 	if (!struct) {
 		return undefined;
 	}
@@ -200,6 +203,17 @@ function find_custom_operator(
 	const func_name = operator_to_func_name(op.op);
 	if (!func_name) {
 		return undefined;
+	}
+
+	// For generic Array struct with arrays, monomorphize for the element type
+	let mono_struct_name: string | undefined;
+	if (struct.type_params.length > 0 && left_type.is_array) {
+		const elem_type = new Type(left_type.name);
+		const mono = monomorphize(struct, [elem_type], status);
+		if (mono) {
+			mono_struct_name = mono.name;
+			struct = mono;
+		}
 	}
 
 	const func = find_function_by_params(struct.functions, func_name, [right_type]);
@@ -234,7 +248,7 @@ function find_custom_operator(
 		);
 	}
 
-	return func;
+	return { func, mono_struct_name };
 }
 
 function operator_to_func_name(op: string): string | undefined {

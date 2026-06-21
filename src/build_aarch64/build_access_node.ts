@@ -372,21 +372,37 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 			}
 			return;
 		}
-		const decl = status.scoped_declarations.find((d) => {
-			if (node.target.node_type === "value") {
-				return d.name === (node.target as ValueNode).value;
-			}
-			return false;
-		});
-		if (decl && decl.type.length) {
-			const length_value = (decl.type.length as any).value || "0";
-			status.code += `mov x0, #${length_value}\n`;
-		} else if (decl && decl.value && decl.value.node_type === "array") {
-			const count = (decl.value as any).values.length;
-			status.code += `mov x0, #${count}\n`;
-		} else {
-			status.code += `mov x0, #0\n`;
+		// For heap arrays: load pointer, then load length from [pointer]
+		if (
+			node.target.node_type === "value" &&
+			status.heap_array_vars?.has((node.target as ValueNode).value)
+		) {
+			const name = (node.target as ValueNode).value;
+			emit_var_load(status, "x0", name, 8);
+			if (!status.code.endsWith("\n")) status.code += "\n";
+			status.code += `ldr x0, [x0]\n`;
+			return;
 		}
+		// For stack arrays: load length from the 8-byte prefix at [base - 8]
+		if (node.target.node_type === "value") {
+			const name = (node.target as ValueNode).value;
+			const offset = status.stack_offsets?.get(name);
+			if (offset !== undefined) {
+				// Array parameters store a pointer — dereference to get length from [ptr - 8]
+				if (status.function_array_params?.has(name)) {
+					status.code += `ldr x0, [x29, #${offset}]\n`;
+					status.code += `ldr x0, [x0, #-8]\n`;
+				} else {
+					status.code += `ldr x0, [x29, #${offset - 8}]\n`;
+				}
+				return;
+			}
+			// Global array: length prefix is at label - 8
+			status.code += `adr x0, ${name}\n`;
+			status.code += `ldr x0, [x0, #-8]\n`;
+			return;
+		}
+		status.code += `mov x0, #0\n`;
 		return;
 	}
 
@@ -947,6 +963,8 @@ function build_access_index(node: AccessNode, access_index: AccessIndexNode, sta
 			if (is_string && !is_string_array && is_stack_var) {
 				status.code += `ldr x0, [x0]\n`;
 			} else if (status.function_variadic_params?.has(name)) {
+				status.code += `ldr x0, [x0]\n`;
+			} else if (status.function_array_params?.has(name)) {
 				status.code += `ldr x0, [x0]\n`;
 			}
 		}

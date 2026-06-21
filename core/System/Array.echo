@@ -1,26 +1,110 @@
-
-pub struct Array {
+pub struct Array<T> {
     pub const int length
 
     pub func add = (self, Array other, out Array) {
         ```
         #arch: c
-        int result[self.length + other->length];
-        memcpy(result, &self, self.length * sizeof(int));
-        memcpy(&result[self.length], other, other->length * sizeof(int));
+        T result[self.length + other->length];
+        memcpy(result, &self, self.length * sizeof(T));
+        memcpy(&result[self.length], other, other->length * sizeof(T));
         return result;
+        ```
+        ```
+        #arch: aarch64
+        // x19 = self (first elem), x20 = other (first elem), x8 = return buf (first elem)
+        // Length prefix is at [base - 8]
+
+        // Save return buffer (clobbered by _memcpy)
+        str x8, [sp, #-16]!
+
+        // Load lengths and store result length
+        ldr x2, [x19, #-8]
+        ldr x3, [x20, #-8]
+        add x4, x2, x3
+        ldr x8, [sp]
+        str x4, [x8, #-8]
+
+        // self_bytes = self_len * T_SIZE
+        mov x5, #T_SIZE
+        mul x5, x2, x5
+
+        // memcpy(return_buf, self, self_bytes)
+        mov x0, x8
+        mov x1, x19
+        mov x2, x5
+        bl _memcpy
+
+        // Reload return buf and self_len (clobbered by memcpy)
+        ldr x8, [sp]
+        ldr x2, [x19, #-8]
+        mov x5, #T_SIZE
+        mul x5, x2, x5
+
+        // other_bytes
+        ldr x3, [x20, #-8]
+        mov x6, #T_SIZE
+        mul x6, x3, x6
+
+        // memcpy(return_buf + self_bytes, other, other_bytes)
+        add x0, x8, x5
+        mov x1, x20
+        mov x2, x6
+        bl _memcpy
+
+        add sp, sp, #16
         ```
     }
 
     pub func mul = (self, int other, out Array) {
         ```
         #arch: c
-        int result[self.length * other];
-        memcpy(result, &self, self.length * sizeof(int));
+        T result[self.length * other];
+        memcpy(result, &self, self.length * sizeof(T));
         for (int i = 1; i < other; i++) {
-            memcpy(&result[self.length * i], &self, self.length * sizeof(int));
+            memcpy(&result[self.length * i], &self, self.length * sizeof(T));
         }
         return result;
+        ```
+        ```
+        #arch: aarch64
+        // x19 = self (first elem), x1 = multiplier, x8 = return buf (first elem)
+
+        // Save return buf and multiplier
+        stp x8, x1, [sp, #-16]!
+
+        // self_len and self_bytes
+        ldr x2, [x19, #-8]
+        mov x5, #T_SIZE
+        mul x5, x2, x5
+
+        // result_len = self_len * multiplier
+        mul x3, x2, x1
+        ldr x8, [sp]
+        str x3, [x8, #-8]
+
+        // Loop: copy self to result multiplier times
+        mov x4, #0
+
+        .Larray_mul_loop:
+        ldr x1, [sp, #8]
+        cmp x4, x1
+        b.ge .Larray_mul_end
+
+        // dest = return_buf + x4 * self_bytes
+        ldr x8, [sp]
+        mul x6, x4, x5
+        add x0, x8, x6
+
+        // memcpy(dest, self, self_bytes)
+        mov x1, x19
+        mov x2, x5
+        bl _memcpy
+
+        add x4, x4, #1
+        b .Larray_mul_loop
+
+        .Larray_mul_end:
+        add sp, sp, #16
         ```
     }
 }

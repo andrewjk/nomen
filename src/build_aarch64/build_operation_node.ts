@@ -4,6 +4,7 @@ import BaseNode from "../nodes/BaseNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_node from "./build_node.ts";
+import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free } from "./utils/audit.ts";
 import { allocate_stack_space, emit_var_address } from "./utils/stack_var.ts";
 import { get_struct_size } from "./utils/struct_layout.ts";
@@ -249,12 +250,29 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 	}
 
 	if (node.operator_func) {
+		const left_type = type_from_value_node(node.left_value);
+		const is_array_op = node.operator_func.struct_name.startsWith("Array") && left_type.is_array;
+
 		const return_struct = status.structs.find(
 			(s) => s.name === node.type?.name && !s.is_simple_type,
 		);
 		let return_temp_offset: number | undefined;
 		if (return_struct) {
 			return_temp_offset = allocate_stack_space(status, get_struct_size(node.type!.name, status));
+			status.code += `add x8, x29, #${return_temp_offset}\n`;
+		}
+
+		// For array + and *, allocate result with length prefix and call the
+		// monomorphized Array function (e.g. Array_int_add)
+		if (is_array_op) {
+			const elem_size = aarch64_size(left_type.name);
+			const result_len = node.type?.length
+				? parseInt((node.type.length as any).value || "0", 10)
+				: 0;
+
+			// Allocate result buffer with length prefix
+			const alloc_start = allocate_stack_space(status, 8 + elem_size * result_len);
+			return_temp_offset = alloc_start + 8;
 			status.code += `add x8, x29, #${return_temp_offset}\n`;
 		}
 

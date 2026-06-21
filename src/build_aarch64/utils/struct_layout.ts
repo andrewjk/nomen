@@ -29,7 +29,7 @@ export function get_type_size(
 	const element_size = aarch64_size(type.name);
 	if (type.is_array && type.length && (type.length.start ?? -1) >= 0) {
 		const length = parseInt((type.length as ValueNode).value || "0");
-		return element_size * length;
+		return 8 + element_size * length;
 	}
 	return element_size;
 }

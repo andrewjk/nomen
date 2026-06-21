@@ -1,9 +1,11 @@
 import add_error from "../add_error.ts";
+import type BaseNode from "../nodes/BaseNode.ts";
 import clone_node from "../nodes/clone_node.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import ParameterNode from "../nodes/ParameterNode.ts";
+import RawNode from "../nodes/RawNode.ts";
 import RootNode from "../nodes/RootNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import Type from "../nodes/Type.ts";
@@ -143,6 +145,7 @@ export function monomorphize(
 	for (const func of generic_struct.functions) {
 		if (func.name === "#init" && !func.has_body) continue;
 		const cloned = clone_node(func) as FunctionNode;
+		substitute_raw_types(cloned, substitution);
 		cloned.checked = true;
 		mono_struct.functions.push(cloned);
 	}
@@ -205,6 +208,63 @@ function substitute_type(type: Type, substitution: Map<string, string>): Type {
 		? substitute_type(type.func_return_type, substitution)
 		: undefined;
 	return new_type;
+}
+
+function substitute_raw_types(func: FunctionNode, substitution: Map<string, string>) {
+	for (const stmt of func.statements) {
+		substitute_raw_in_node(stmt, substitution);
+	}
+}
+
+function raw_type_size(name: string): number {
+	switch (name) {
+		case "bool":
+		case "int8":
+		case "uint8":
+		case "char":
+			return 1;
+		case "int16":
+		case "uint16":
+			return 2;
+		case "int32":
+		case "uint32":
+			return 4;
+		default:
+			return 8;
+	}
+}
+
+function substitute_raw_in_node(node: BaseNode, substitution: Map<string, string>) {
+	if (node.node_type === "raw") {
+		const raw = node as RawNode;
+		let value = raw.value;
+		for (const [param, type] of substitution) {
+			value = value.replace(new RegExp(`\\b${param}\\b`, "g"), type);
+			// Also substitute T_SIZE placeholder with element byte size
+			const size = raw_type_size(type);
+			value = value.replace(new RegExp(`\\b${param}_SIZE\\b`, "g"), String(size));
+		}
+		raw.value = value;
+		return;
+	}
+	// Recursively walk common container nodes
+	const any_node = node as any;
+	if (any_node.statements && Array.isArray(any_node.statements)) {
+		for (const child of any_node.statements) {
+			if (child && typeof child === "object" && "node_type" in child) {
+				substitute_raw_in_node(child, substitution);
+			}
+		}
+	}
+	if (any_node.value && any_node.value.node_type) {
+		substitute_raw_in_node(any_node.value, substitution);
+	}
+	if (any_node.left_value?.node_type) {
+		substitute_raw_in_node(any_node.left_value, substitution);
+	}
+	if (any_node.right_value?.node_type) {
+		substitute_raw_in_node(any_node.right_value, substitution);
+	}
 }
 
 function specialize_function(

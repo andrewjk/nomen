@@ -36,6 +36,20 @@ function escape_asciz(value: string): string {
 	return quote + content.replace(/\n/g, "\\n") + (value.endsWith(quote) ? quote : "");
 }
 
+/** Allocate an array on the stack with an 8-byte length prefix.
+ *  Writes the length at the start and returns the offset of the first element. */
+function alloc_array_with_prefix(
+	status: BuildStatus,
+	length: number,
+	element_size: number,
+): number {
+	const total_size = 8 + length * element_size;
+	const start = allocate_stack_space(status, total_size, element_size);
+	status.code += `mov x0, #${length}\n`;
+	status.code += `str x0, [x29, #${start}]\n`;
+	return start + 8;
+}
+
 let string_array_counter = 0;
 
 function emit_string_array_labels(values: BaseNode[], status: BuildStatus): Map<string, string> {
@@ -360,7 +374,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			if (complex) {
 				const total_size = array_values.values.length * element_size;
 				if (status.function_return_label) {
-					const offset = allocate_stack_space(status, total_size, element_size);
+					const offset = alloc_array_with_prefix(status, array_values.values.length, element_size);
 					status.stack_offsets!.set(node.name, offset);
 					array_values.values.forEach((value, i) => {
 						const slot_offset = offset + i * element_size;
@@ -401,6 +415,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 						}
 					});
 				} else {
+					emit_data(status, `.quad ${array_values.values.length}\n`);
 					emit_data(status, `${node.name}: .space ${total_size}\n.p2align 2\n`);
 					array_values.values.forEach((value, i) => {
 						if (is_struct_constructor(value, status)) {
@@ -438,8 +453,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 				node.declaration === "var" &&
 				node.type.name !== "string"
 			) {
-				const total_size = array_values.values.length * element_size;
-				const offset = allocate_stack_space(status, total_size, element_size);
+				const offset = alloc_array_with_prefix(status, array_values.values.length, element_size);
 				status.stack_offsets!.set(node.name, offset);
 				array_values.values.forEach((value, i) => {
 					const raw = resolve_static_value(value, status);
@@ -457,8 +471,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			} else if (status.function_return_label) {
 				const labels = emit_string_array_labels(array_values.values, status);
 				if (needs_runtime_array_init(array_values.values, status)) {
-					const total_size = array_values.values.length * element_size;
-					const offset = allocate_stack_space(status, total_size, element_size);
+					const offset = alloc_array_with_prefix(status, array_values.values.length, element_size);
 					status.stack_offsets!.set(node.name, offset);
 					array_values.values.forEach((value, i) => {
 						const slot_offset = offset + i * element_size;
@@ -514,8 +527,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 				const values = resolve_array_values(op, status);
 				if (values) {
 					if (status.function_return_label && node.declaration === "var") {
-						const total_size = values.length * size;
-						const offset = allocate_stack_space(status, total_size, size);
+						const offset = alloc_array_with_prefix(status, values.length, size);
 						status.stack_offsets!.set(node.name, offset);
 						values.forEach((val, i) => {
 							status.code += `mov x0, #${val}\n`;
@@ -561,15 +573,16 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			}
 			check_heap();
 		} else {
-			const array_size = node.type.length
-				? size * parseInt((node.type.length as ValueNode).value)
-				: 0;
+			const array_length = node.type.length ? parseInt((node.type.length as ValueNode).value) : 0;
+			const array_size = size * array_length;
 			if (status.function_return_label && node.declaration === "var") {
-				const offset = allocate_stack_space(status, array_size, size);
+				const offset = alloc_array_with_prefix(status, array_length, size);
 				status.stack_offsets!.set(node.name, offset);
 			} else if (status.function_return_label) {
+				emit_data(status, `.quad ${array_length}\n`);
 				emit_data(status, `${node.name}: .space ${array_size}\n.p2align 2\n`);
 			} else {
+				status.code += `.quad ${array_length}\n`;
 				status.code += `${node.name}: .space ${array_size}\n.p2align 2\n`;
 			}
 		}
@@ -846,7 +859,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			if (complex) {
 				const total_size = array_values.values.length * size;
 				if (status.function_return_label) {
-					const offset = allocate_stack_space(status, total_size, size);
+					const offset = alloc_array_with_prefix(status, array_values.values.length, size);
 					status.stack_offsets!.set(node.name, offset);
 					array_values.values.forEach((value, i) => {
 						const slot_offset = offset + i * size;
@@ -865,6 +878,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 						}
 					});
 				} else {
+					emit_data(status, `.quad ${array_values.values.length}\n`);
 					emit_data(status, `${node.name}: .space ${total_size}\n.p2align 2\n`);
 					array_values.values.forEach((value, i) => {
 						if (is_struct_constructor(value, status)) {
@@ -882,8 +896,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			} else if (status.function_return_label) {
 				const labels = emit_string_array_labels(array_values.values, status);
 				if (needs_runtime_array_init(array_values.values, status)) {
-					const total_size = array_values.values.length * size;
-					const offset = allocate_stack_space(status, total_size, size);
+					const offset = alloc_array_with_prefix(status, array_values.values.length, size);
 					status.stack_offsets!.set(node.name, offset);
 					array_values.values.forEach((value, i) => {
 						const slot_offset = offset + i * size;
@@ -913,21 +926,26 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 					}
 				}
 			} else {
+				status.code += `.quad ${array_values.values.length}\n`;
 				status.code += `${node.name}: ${directive} `;
 				build_array_values_node(array_values, status);
 				status.code += `\n.p2align 2\n`;
 			}
 		} else if (node.value.node_type === "range") {
+			const range_len = compute_range_length(node.value as RangeNode);
 			if (status.function_return_label) {
 				const range_str = evaluate_range_static(node.value as RangeNode);
 				if (range_str !== null) {
+					emit_data(status, `.quad ${range_len}\n`);
 					emit_data(status, `${node.name}: ${directive} ${range_str}\n.p2align 2\n`);
 				} else {
+					emit_data(status, `.quad ${range_len}\n`);
 					emit_data(status, `${node.name}: ${directive} `);
 					build_range_node(node.value as RangeNode, status);
 					emit_data(status, `\n.p2align 2\n`);
 				}
 			} else {
+				status.code += `.quad ${range_len}\n`;
 				status.code += `${node.name}: ${directive} `;
 				build_range_node(node.value as RangeNode, status);
 				status.code += `\n.p2align 2\n`;
@@ -960,15 +978,22 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			check_heap();
 		}
 	} else {
-		const total_size =
-			node.type.is_array && node.type.length
-				? size * parseInt((node.type.length as ValueNode).value)
-				: size;
+		const array_length =
+			node.type.is_array && node.type.length ? parseInt((node.type.length as ValueNode).value) : 0;
+		const total_size = node.type.is_array ? size * array_length : size;
 		const use_stack = status.function_return_label;
 		if (use_stack) {
-			const offset = allocate_stack_space(status, total_size, size);
-			status.stack_offsets!.set(node.name, offset);
+			if (node.type.is_array) {
+				const offset = alloc_array_with_prefix(status, array_length, size);
+				status.stack_offsets!.set(node.name, offset);
+			} else {
+				const offset = allocate_stack_space(status, total_size, size);
+				status.stack_offsets!.set(node.name, offset);
+			}
 		} else {
+			if (node.type.is_array) {
+				emit_data(status, `.quad ${array_length}\n`);
+			}
 			emit_data(status, `${node.name}: .space ${total_size}\n`);
 			if (total_size % 4 !== 0) {
 				emit_data(status, `.p2align 2\n`);
@@ -985,6 +1010,15 @@ function evaluate_range_static(node: RangeNode): string | null {
 		return [...Array(actual_end - start).keys()].map((v) => start + v).join(", ");
 	}
 	return null;
+}
+
+function compute_range_length(node: RangeNode): number {
+	const start = evaluate_range_const(node.left_value);
+	const end = evaluate_range_const(node.right_value);
+	if (start !== undefined && end !== undefined) {
+		return end - start;
+	}
+	return 0;
 }
 
 function evaluate_range_const(node: any): number | undefined {
