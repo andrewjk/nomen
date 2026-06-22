@@ -59,8 +59,6 @@ export default function collect_var_refs(node: BaseNode): Map<string, VarRefInfo
 						for (const arg of (acc.access as any).args || []) {
 							visit(arg);
 						}
-					} else if (acc.access.node_type === "access_index") {
-						visit((acc.access as any).index);
 					}
 				}
 				break;

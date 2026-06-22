@@ -153,8 +153,8 @@ Console.write("\\{x}")
 
 	test("const with array type and value", async () => {
 		const input = `
-const int[] x = [10, 20, 30]
-Console.write("\\{x[1]}")
+const x = Array(10, 20, 30)
+Console.write("\\{x.at(1)}")
 `;
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
@@ -196,10 +196,10 @@ const int x = "string?!"
 
 	test("type mismatch -- array", () => {
 		const input = `
-const int x = [1, 2]"
+const int x = Array(1, 2)"
 `;
 		const expected = [
-			test_error(input, "Type mismatch in declaration: int[] (expected int)", 2, 15),
+			test_error(input, "Type mismatch in declaration: Array<int> (expected int)", 2, 15),
 		];
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
@@ -207,10 +207,10 @@ const int x = [1, 2]"
 
 	test("type mismatch -- array 2", () => {
 		const input = `
-const int[] x = 3"
+const Array<int> x = 3"
 `;
 		const expected = [
-			test_error(input, "Type mismatch in declaration: int (expected int[])", 2, 17),
+			test_error(input, "Type mismatch in declaration: int (expected Array<int>)", 2, 22),
 		];
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);

@@ -3,7 +3,6 @@ import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import { mangled_label } from "../check/utils/function_overload.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
-import AccessIndexNode from "../nodes/AccessIndexNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import Type from "../nodes/Type.ts";
@@ -35,60 +34,7 @@ export function emit_address_of(node: BaseNode, status: BuildStatus) {
 		}
 	} else if (node.node_type === "access") {
 		const access = node as AccessNode;
-		if (access.access.node_type === "access_index") {
-			const access_index = access.access as AccessIndexNode;
-			const target_type = type_from_value_node(access.target);
-			const struct_type = status.structs.find(
-				(s) => s.name === target_type.name && !s.is_simple_type,
-			);
-			const element_size = target_type.name
-				? struct_type
-					? struct_type.is_class
-						? 8
-						: get_struct_size(target_type.name, status)
-					: aarch64_size(target_type.name)
-				: 8;
-
-			if (access.target.node_type === "value") {
-				const name = (access.target as ValueNode).value;
-				const paramReg = get_param_reg(name, status);
-				if (paramReg) {
-					if (paramReg !== "x0") {
-						status.code += `mov x0, ${paramReg}\n`;
-					}
-				} else {
-					emit_var_address(status, "x0", name);
-				}
-			} else {
-				emit_address_of(access.target, status);
-				if (!status.code.endsWith("\n")) {
-					status.code += "\n";
-				}
-			}
-
-			if (
-				access_index.index.node_type === "value" &&
-				/^(\+|-)*\d+$/.test((access_index.index as ValueNode).value)
-			) {
-				const offset = parseInt((access_index.index as ValueNode).value) * element_size;
-				status.code += `add x0, x0, #${offset}\n`;
-			} else {
-				status.code += `mov x3, x0\n`;
-				build_node(access_index.index, status);
-				if (!status.code.endsWith("\n")) {
-					status.code += "\n";
-				}
-				status.code += `mov x1, x0\n`;
-				const shift = Math.log2(element_size);
-				if (Number.isInteger(shift) && shift > 0) {
-					status.code += `add x0, x3, x1, lsl #${shift}\n`;
-				} else {
-					status.code += `mov x2, #${element_size}\n`;
-					status.code += `mul x1, x1, x2\n`;
-					status.code += `add x0, x3, x1\n`;
-				}
-			}
-		} else if (access.access.node_type === "access_field") {
+		if (access.access.node_type === "access_field") {
 			const access_field = access.access as AccessFieldNode;
 			const target_type = type_from_value_node(access.target);
 			const offset = get_field_offset(target_type.name, access_field.name, status);
@@ -162,11 +108,6 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 			build_access_method(node, access_func, status);
 			break;
 		}
-		case "access_index": {
-			const access_index = node.access as AccessIndexNode;
-			build_access_index(node, access_index, status);
-			break;
-		}
 	}
 }
 
@@ -184,49 +125,10 @@ function compute_field_offset(node: AccessNode, status: BuildStatus): number {
 
 		if (node.target.node_type === "access") {
 			const inner_access = node.target as AccessNode;
-			offset += compute_access_offset(inner_access, status);
+			offset += compute_field_offset(inner_access, status);
 		}
 
 		return offset;
-	}
-
-	if (node.access.node_type === "access_index") {
-		return compute_access_offset(node, status);
-	}
-
-	return 0;
-}
-
-function compute_access_offset(node: AccessNode, status: BuildStatus): number {
-	if (node.access.node_type === "access_field") {
-		return compute_field_offset(node, status);
-	}
-
-	if (node.access.node_type === "access_index") {
-		const access_index = node.access as AccessIndexNode;
-		const target_type = type_from_value_node(node.target);
-		const struct_type = status.structs.find(
-			(s) => s.name === target_type.name && !s.is_simple_type,
-		);
-		const element_size = struct_type
-			? struct_type.is_class
-				? 8
-				: get_struct_size(target_type.name, status)
-			: aarch64_size(target_type.name);
-
-		let index_offset = 0;
-		if (access_index.index.node_type === "value") {
-			const index_val = (access_index.index as ValueNode).value;
-			if (/^(\+|-)*\d+$/.test(index_val)) {
-				index_offset = parseInt(index_val) * element_size;
-			}
-		}
-
-		if (node.target.node_type === "access") {
-			index_offset += compute_access_offset(node.target as AccessNode, status);
-		}
-
-		return index_offset;
 	}
 
 	return 0;
@@ -241,14 +143,6 @@ function get_base_target(node: AccessNode): ValueNode | AccessNode {
 
 function get_param_reg(name: string, status: BuildStatus): string | undefined {
 	return status.function_param_regs?.get(name);
-}
-
-function is_constant_index(access_index: AccessIndexNode): boolean {
-	if (access_index.index.node_type === "value") {
-		const index_val = (access_index.index as ValueNode).value;
-		return /^(\+|-)*\d+$/.test(index_val);
-	}
-	return false;
 }
 
 function build_access_field(node: AccessNode, status: BuildStatus) {
@@ -425,15 +319,40 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 				s.name === ((node.target as AccessNode).access as AccessFieldNode).type?.name && s.is_class,
 		);
 
-	const target_is_class_array_access =
+	// When target is a method call (e.g., points.at(0).x), build the method call
+	// which leaves the result in x0, then apply the field offset from x0
+	const target_is_method_access =
 		node.target.node_type === "access" &&
-		(node.target as AccessNode).access.node_type === "access_index" &&
-		!!status.structs.find(
-			(s) =>
-				s.name === type_from_value_node((node.target as AccessNode).target)?.name && s.is_class,
-		);
+		(node.target as AccessNode).access.node_type === "access_func";
 
-	if (target_is_class_access || target_is_class_array_access) {
+	if (target_is_method_access) {
+		build_node(node.target, status);
+		if (!status.code.endsWith("\n")) {
+			status.code += "\n";
+		}
+		const final_offset = offset;
+		const field_type = access_field.type?.name || "";
+		const size = aarch64_size(field_type);
+		const signed =
+			field_type.startsWith("int") ||
+			field_type === "float" ||
+			field_type === "float32" ||
+			field_type === "float64";
+		if (size === 1) {
+			status.code += signed
+				? `ldrsb x0, [x0, #${final_offset}]\n`
+				: `ldrb w0, [x0, #${final_offset}]\n`;
+		} else if (size === 4) {
+			status.code += signed
+				? `ldrsw x0, [x0, #${final_offset}]\n`
+				: `ldr w0, [x0, #${final_offset}]\n`;
+		} else {
+			status.code += `ldr x0, [x0, #${final_offset}]\n`;
+		}
+		return;
+	}
+
+	if (target_is_class_access) {
 		build_node(node.target, status);
 		if (!status.code.endsWith("\n")) {
 			status.code += "\n";
@@ -495,38 +414,6 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 	const target_is_class_var =
 		node.target.node_type === "value" &&
 		!!status.structs.find((s) => s.name === target_type?.name && s.is_class);
-
-	const target_has_variable_index =
-		node.target.node_type === "access" &&
-		(node.target as AccessNode).access.node_type === "access_index" &&
-		!is_constant_index((node.target as AccessNode).access as AccessIndexNode);
-
-	if (target_has_variable_index) {
-		emit_address_of(node.target, status);
-		if (!status.code.endsWith("\n")) {
-			status.code += "\n";
-		}
-		const final_offset = get_field_offset(target_type?.name || "", access_field.name, status);
-		const field_type = access_field.type?.name || "";
-		const size = aarch64_size(field_type);
-		const signed =
-			field_type.startsWith("int") ||
-			field_type === "float" ||
-			field_type === "float32" ||
-			field_type === "float64";
-		if (size === 1) {
-			status.code += signed
-				? `ldrsb x0, [x0, #${final_offset}]\n`
-				: `ldrb w0, [x0, #${final_offset}]\n`;
-		} else if (size === 4) {
-			status.code += signed
-				? `ldrsw x0, [x0, #${final_offset}]\n`
-				: `ldr w0, [x0, #${final_offset}]\n`;
-		} else {
-			status.code += `ldr x0, [x0, #${final_offset}]\n`;
-		}
-		return;
-	}
 
 	if (target_is_class_var) {
 		const name = (node.target as ValueNode).value;
@@ -727,15 +614,168 @@ function build_access_method(
 		return;
 	}
 
-	const mono_struct_name = target_type.type_args?.length
-		? target_type.name + "_" + target_type.type_args.map((t) => t.name).join("_")
-		: target_type.name;
+	// Inline array .at() and .set() to use element-size-aware load/store
+	// Only inline for: value targets (not class arrays) and fixed-size struct field targets
+	if (target_type.is_array && (access_func.name === "at" || access_func.name === "set")) {
+		const elem_type_name = target_type.name;
+		const elem_struct = status.structs.find((s) => s.name === elem_type_name && !s.is_simple_type);
+		const is_struct_field_target =
+			node.target.node_type === "access" &&
+			(node.target as AccessNode).access.node_type === "access_field";
+		// Fixed-size fields have a length with a real source position (start >= 0).
+		// Dynamic arrays (e.g. constructed at runtime) use length.start = -1 and are stored
+		// as a pointer to heap data, so they can't be inlined like inline array fields.
+		const length_has_source = !!target_type.length && (target_type.length.start ?? -1) >= 0;
+		const is_fixed_size_field = is_struct_field_target && length_has_source;
+		const can_inline =
+			!elem_struct?.is_class && (node.target.node_type === "value" || is_fixed_size_field);
+		if (can_inline) {
+			const elem_size = elem_struct
+				? get_struct_size(elem_type_name, status)
+				: aarch64_size(elem_type_name);
+			const elem_signed =
+				!elem_struct &&
+				elem_type_name.startsWith("int") &&
+				elem_type_name !== "int8" &&
+				elem_type_name !== "int16" &&
+				elem_type_name !== "int32";
+
+			// Build target (array pointer) into x19
+			if (node.target.node_type === "value") {
+				const name = (node.target as ValueNode).value;
+				const paramReg = get_param_reg(name, status);
+				if (paramReg) {
+					status.code += `mov x19, ${paramReg}\n`;
+				} else if (is_local_ref_var(name, status)) {
+					emit_deref_var_address(status, "x19", name);
+				} else if (status.heap_array_vars?.has(name)) {
+					// Heap-allocated array: variable stores a heap pointer with an 8-byte
+					// length prefix. Dereference and skip the prefix to get the first element.
+					emit_var_address(status, "x19", name);
+					status.code += `ldr x19, [x19]\n`;
+					status.code += `add x19, x19, #8\n`;
+				} else if (
+					status.function_array_params?.has(name) ||
+					status.function_variadic_params?.has(name)
+				) {
+					// Array passed as a param: variable stores a pointer to raw data (no prefix)
+					emit_var_address(status, "x19", name);
+					status.code += `ldr x19, [x19]\n`;
+				} else {
+					// Local var/const array: data is inline, emit_var_address points to first element
+					emit_var_address(status, "x19", name);
+				}
+			} else if (is_fixed_size_field) {
+				// Fixed-size struct field array (e.g., h.args.at(0)): compute field address
+				const inner_access = node.target as AccessNode;
+				const inner_field = inner_access.access as AccessFieldNode;
+				const inner_base = inner_access.target;
+				const inner_target_type = type_from_value_node(inner_base);
+				const field_offset = get_field_offset(
+					inner_target_type?.name || "",
+					inner_field.name,
+					status,
+				);
+
+				if (inner_base.node_type === "value") {
+					const base_name = (inner_base as ValueNode).value;
+					emit_var_address(status, "x19", base_name);
+				} else {
+					build_node(inner_base, status);
+					if (!status.code.endsWith("\n")) status.code += "\n";
+					status.code += `mov x19, x0\n`;
+				}
+				if (field_offset > 0) {
+					status.code += `add x19, x19, #${field_offset}\n`;
+				}
+			}
+			// Build index argument into x1
+			if (access_func.params.length > 0) {
+				build_node(access_func.params[0], status);
+				if (!status.code.endsWith("\n")) status.code += "\n";
+				status.code += `mov x1, x0\n`;
+			}
+
+			if (access_func.name === "at") {
+				if (elem_struct) {
+					// Struct element: compute address (base + index * elem_size), return pointer
+					if (elem_size === 8) {
+						status.code += `add x0, x19, x1, lsl #3\n`;
+					} else {
+						status.code += `mov x2, #${elem_size}\n`;
+						status.code += `mul x1, x1, x2\n`;
+						status.code += `add x0, x19, x1\n`;
+					}
+				} else {
+					// Simple element: compute offset and load value
+					if (elem_size === 8) {
+						status.code += `ldr x0, [x19, x1, lsl #3]\n`;
+					} else {
+						status.code += `mov x2, #${elem_size}\n`;
+						status.code += `mul x1, x1, x2\n`;
+						if (elem_size === 1) {
+							status.code += elem_signed ? `ldrsb x0, [x19, x1]\n` : `ldrb w0, [x19, x1]\n`;
+						} else if (elem_size === 2) {
+							status.code += elem_signed ? `ldrsh x0, [x19, x1]\n` : `ldrh w0, [x19, x1]\n`;
+						} else if (elem_size === 4) {
+							status.code += elem_signed ? `ldrsw x0, [x19, x1]\n` : `ldr w0, [x19, x1]\n`;
+						} else {
+							status.code += `ldr x0, [x19, x1]\n`;
+						}
+					}
+				}
+			} else {
+				// set(): build value into x2, compute offset and store
+				if (access_func.params.length > 1) {
+					build_node(access_func.params[1], status);
+					if (!status.code.endsWith("\n")) status.code += "\n";
+					status.code += `mov x2, x0\n`;
+				}
+				if (elem_struct) {
+					// Struct element: x2 is address of value, memcpy to computed address
+					if (elem_size === 8) {
+						status.code += `add x0, x19, x1, lsl #3\n`;
+					} else {
+						status.code += `mov x3, #${elem_size}\n`;
+						status.code += `mul x1, x1, x3\n`;
+						status.code += `add x0, x19, x1\n`;
+					}
+					status.code += `mov x1, x2\n`;
+					status.code += `mov x2, #${elem_size}\n`;
+					status.code += `bl _memcpy\n`;
+				} else {
+					if (elem_size === 8) {
+						status.code += `str x2, [x19, x1, lsl #3]\n`;
+					} else {
+						status.code += `mov x3, #${elem_size}\n`;
+						status.code += `mul x1, x1, x3\n`;
+						if (elem_size === 1) {
+							status.code += `strb w2, [x19, x1]\n`;
+						} else if (elem_size === 2) {
+							status.code += `strh w2, [x19, x1]\n`;
+						} else if (elem_size === 4) {
+							status.code += `str w2, [x19, x1]\n`;
+						} else {
+							status.code += `str x2, [x19, x1]\n`;
+						}
+					}
+				}
+			}
+			return;
+		}
+	}
+
+	const mono_struct_name = target_type.is_array
+		? "Array_" + target_type.name
+		: target_type.type_args?.length
+			? target_type.name + "_" + target_type.type_args.map((t) => t.name).join("_")
+			: target_type.name;
 	const method_name =
 		access_func.mangled_name || `${mono_struct_name}_${access_func.name.replace(/#/g, "")}`;
 
 	// Check if method returns a struct
 	const return_struct = status.structs.find(
-		(s) => s.name === access_func.type.name && !s.is_simple_type,
+		(s) => s.name === access_func.type.name && !s.is_simple_type && !s.is_class,
 	);
 
 	let temp_addr = "";
@@ -774,7 +814,22 @@ function build_access_method(
 				} else {
 					emit_var_address(status, "x0", name);
 				}
+				// Heap-allocated arrays store a heap pointer with an 8-byte length prefix.
+				// Function array params store a pointer to raw data (no prefix).
 				if (
+					target_type.is_array &&
+					status.heap_array_vars?.has(name) &&
+					!is_local_ref_var(name, status)
+				) {
+					status.code += `ldr x0, [x0]\n`;
+					status.code += `add x0, x0, #8\n`;
+				} else if (
+					target_type.is_array &&
+					(status.function_array_params?.has(name) || status.function_variadic_params?.has(name)) &&
+					!is_local_ref_var(name, status)
+				) {
+					status.code += `ldr x0, [x0]\n`;
+				} else if (
 					target_is_simple &&
 					(target_type.name !== "string" || has_stack_offset) &&
 					!is_local_ref_var(name, status)
@@ -924,128 +979,6 @@ function build_access_method(
 
 	if (return_struct) {
 		status.code += `add x0, x29, #${temp_offset}\n`;
-	}
-}
-
-function build_access_index(node: AccessNode, access_index: AccessIndexNode, status: BuildStatus) {
-	const target_type = type_from_value_node(node.target);
-	const is_string = target_type.name === "string";
-	const is_string_array = is_string && target_type.is_array;
-	const struct_type = status.structs.find((s) => s.name === target_type.name && !s.is_simple_type);
-	const element_size = is_string_array
-		? 8
-		: is_string
-			? 1
-			: struct_type
-				? struct_type.is_class
-					? 8
-					: get_struct_size(target_type.name, status)
-				: target_type.name
-					? aarch64_size(target_type.name)
-					: 8;
-	const element_signed =
-		target_type.name && (target_type.name.startsWith("int") || target_type.name === "float");
-
-	// Get base address
-	if (node.target.node_type === "value") {
-		const name = (node.target as ValueNode).value;
-		const paramReg = get_param_reg(name, status);
-		if (paramReg) {
-			if (paramReg !== "x0") {
-				status.code += `mov x0, ${paramReg}\n`;
-			}
-		} else if (status.heap_array_vars?.has(name)) {
-			emit_var_load(status, "x0", name, 8);
-			status.code += `add x0, x0, #8\n`;
-		} else {
-			const is_stack_var = status.stack_offsets?.has(name);
-			emit_var_address(status, "x0", name);
-			if (is_string && !is_string_array && is_stack_var) {
-				status.code += `ldr x0, [x0]\n`;
-			} else if (status.function_variadic_params?.has(name)) {
-				status.code += `ldr x0, [x0]\n`;
-			} else if (status.function_array_params?.has(name)) {
-				status.code += `ldr x0, [x0]\n`;
-			}
-		}
-	} else if (target_type.is_array && target_type.length && node.target.node_type === "access") {
-		emit_address_of(node.target, status);
-		if (!status.code.endsWith("\n")) {
-			status.code += "\n";
-		}
-		// Dynamic arrays (string[]) store a pointer to the array in the struct field.
-		// Fixed-size arrays (string[N]) store elements inline — no dereference needed.
-		// Distinguish by checking if the field's length was declared in source (start >= 0)
-		// vs inferred by the checker (start < 0).
-		if ((node.target as AccessNode).access.node_type === "access_field") {
-			const access_field = (node.target as AccessNode).access as AccessFieldNode;
-			const target_type_name = type_from_value_node((node.target as AccessNode).target).name;
-			const struct_def = status.structs.find((s) => s.name === target_type_name);
-			const field = struct_def?.fields.find((f) => f.name === access_field.name);
-			const is_fixed_array = field?.type.is_array && (field.type.length?.start ?? -1) >= 0;
-			if (!is_fixed_array) {
-				status.code += `ldr x0, [x0]\n`;
-			}
-		}
-	} else {
-		build_node(node.target, status);
-		if (!status.code.endsWith("\n")) {
-			status.code += "\n";
-		}
-	}
-	status.code += `mov x3, x0\n`;
-
-	// Evaluate index
-	if (access_index.index.node_type === "value") {
-		const index_val = (access_index.index as ValueNode).value;
-		if (/^(\+|-)*\d+$/.test(index_val)) {
-			const offset = parseInt(index_val) * element_size;
-			if (element_size === 1) {
-				status.code += element_signed
-					? `ldrsb x0, [x3, #${offset}]\n`
-					: `ldrb w0, [x3, #${offset}]\n`;
-			} else if (element_size === 4) {
-				status.code += element_signed
-					? `ldrsw x0, [x3, #${offset}]\n`
-					: `ldr w0, [x3, #${offset}]\n`;
-			} else {
-				status.code += `ldr x0, [x3, #${offset}]\n`;
-			}
-			return;
-		}
-	}
-
-	build_node(access_index.index, status);
-	if (!status.code.endsWith("\n")) {
-		status.code += "\n";
-	}
-	status.code += `mov x1, x0\n`;
-	const shift = Math.log2(element_size);
-	if (Number.isInteger(shift) && shift > 0) {
-		if (element_size === 8) {
-			status.code += `ldr x0, [x3, x1, lsl #${shift}]\n`;
-		} else if (element_size === 4) {
-			status.code += element_signed
-				? `ldrsw x0, [x3, x1, lsl #${shift}]\n`
-				: `ldr w0, [x3, x1, lsl #${shift}]\n`;
-		} else if (element_size === 2) {
-			status.code += element_signed
-				? `ldrsh x0, [x3, x1, lsl #${shift}]\n`
-				: `ldrh w0, [x3, x1, lsl #${shift}]\n`;
-		} else {
-			status.code += `ldrb w0, [x3, x1, lsl #${shift}]\n`;
-		}
-	} else if (element_size === 1) {
-		status.code += element_signed ? `ldrsb x0, [x3, x1]\n` : `ldrb w0, [x3, x1]\n`;
-	} else {
-		status.code += `mov x2, #${element_size}\n`;
-		status.code += `mul x1, x1, x2\n`;
-		status.code += `add x0, x3, x1\n`;
-		if (element_size === 4) {
-			status.code += element_signed ? `ldrsw x0, [x0]\n` : `ldr w0, [x0]\n`;
-		} else {
-			status.code += `ldr x0, [x0]\n`;
-		}
 	}
 }
 

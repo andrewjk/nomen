@@ -9,7 +9,7 @@ test("ziglings 032 unreachable -- errors", () => {
 import System
 
 pub func main = () {
-    const operations = [1, 1, 1, 3, 2, 2]
+    const operations = Array(1, 1, 1, 3, 2, 2)
     var current_value = 0
 
     for op of operations {
@@ -41,7 +41,7 @@ test("ziglings 032 unreachable -- fixed", () => {
 import System
 
 pub func main = () {
-    const operations = [1, 1, 1, 3, 2, 2]
+    const operations = Array(1, 1, 1, 3, 2, 2)
     var current_value = 0
 
     for op of operations {
@@ -73,7 +73,7 @@ test("ziglings 032 unreachable -- build", async () => {
 import System
 
 pub func main = () {
-    const operations = [1, 1, 1, 3, 2, 2]
+    const operations = Array(1, 1, 1, 3, 2, 2)
     var current_value = 0
 
     for op of operations {

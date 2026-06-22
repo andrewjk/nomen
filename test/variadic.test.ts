@@ -14,7 +14,7 @@ func sum = (...int nums, out int) {
   var total = 0
   var i = 0
   while i < nums.length {
-    total = total + nums[i]
+    total = total + nums.at(i)
     i = i + 1
   }
   return total
@@ -40,7 +40,7 @@ Console.write("\\{count()}")
 
 	test("variadic with single arg", async () => {
 		const input = `
-func first = (...int nums, out int) => nums[0]
+func first = (...int nums, out int) => nums.at(0)
 Console.write("\\{first(42)}")
 `;
 		const parsed = parse_with_imports(input);
@@ -55,7 +55,7 @@ func add_to = (int base, ...int nums, out int) {
   var total = base
   var i = 0
   while i < nums.length {
-    total = total + nums[i]
+    total = total + nums.at(i)
     i = i + 1
   }
   return total
@@ -87,16 +87,20 @@ describe("variadic errors", () => {
 		const input = `
 func bad = (...int nums, int x) {}
 `;
-		const expected = [test_error(input, "Variadic parameter must be the last parameter", 2, 13)];
+		const expected = Array(
+			test_error(input, "Variadic parameter must be the last parameter", 2, 13),
+		);
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
 	});
 
 	test("variadic with default value", () => {
 		const input = `
-func bad = (...int nums = [1]) {}
+func bad = (...int nums = Array(1)) {}
 `;
-		const expected = [test_error(input, "Variadic parameter cannot have a default value", 2, 13)];
+		const expected = Array(
+			test_error(input, "Variadic parameter cannot have a default value", 2, 13),
+		);
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
 	});

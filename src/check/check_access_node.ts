@@ -1,7 +1,6 @@
 import add_error from "../add_error.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
-import AccessIndexNode from "../nodes/AccessIndexNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import BaseNode from "../nodes/BaseNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
@@ -57,9 +56,6 @@ export default function check_access_node(node: AccessNode, status: CheckStatus)
 				node.access as AccessFunctionCallNode,
 				status,
 			);
-		}
-		case "access_index": {
-			return check_access_index_node(target_type, node.access as AccessIndexNode, status);
 		}
 	}
 
@@ -208,6 +204,19 @@ function check_access_function_node(
 				}
 			}
 		}
+	} else if (
+		target_type.name === "Array" &&
+		target.node_type === "value" &&
+		(target as ValueNode).type_args?.length
+	) {
+		// Static method call on Array<T> (e.g. Array<int>.with_length(3))
+		const array_struct = status.structs.find((s) => s.name === "Array");
+		if (array_struct && array_struct.type_params.length > 0) {
+			const mono = monomorphize(array_struct, (target as ValueNode).type_args!, status);
+			if (mono) {
+				effective_type = new Type(mono.name);
+			}
+		}
 	}
 
 	const struct = status.structs.find((s) => s.name === effective_type.name);
@@ -291,6 +300,24 @@ function check_access_function_node(
 		node.mangled_name = mangled_label(func, struct.name);
 	}
 
+	// Check for calling a mutating method on a const variable
+	// (detected by `ref self` on the first parameter)
+	if (
+		func.params[0]?.is_self_param &&
+		(func.params[0].is_ref || func.params[0].type?.is_ref) &&
+		target.node_type === "value"
+	) {
+		const target_name = (target as ValueNode).value;
+		// Skip 'self' — ref self methods can be called on self within other ref self methods
+		if (target_name !== "self") {
+			const decl = status.values.findLast((v) => v.name === target_name);
+			if (decl?.declaration === "const") {
+				add_error(status, `Update to const: ${target_name}`, node.start);
+				return false;
+			}
+		}
+	}
+
 	const result = check_function_call(
 		node,
 		status,
@@ -300,7 +327,7 @@ function check_access_function_node(
 	);
 
 	// Convert Array struct return type back to array type for array method calls
-	if (result && target_type.is_array && node.type) {
+	if (result && node.type) {
 		const return_is_array_struct =
 			node.type.name === "Array" || node.type.name?.startsWith("Array_");
 		if (return_is_array_struct) {
@@ -315,32 +342,23 @@ function check_access_function_node(
 					}
 				}
 			}
-			node.type = new Type(target_type.name);
-			node.type.is_array = true;
-			if (result_length) {
-				node.type.length = result_length;
+			// Determine element type: from target array, from explicit type_args, or from mono name
+			const elem_name = target_type.is_array
+				? target_type.name
+				: target.node_type === "value" && (target as ValueNode).type_args?.length
+					? (target as ValueNode).type_args![0].name
+					: node.type.name.startsWith("Array_")
+						? node.type.name.slice(6)
+						: "";
+			if (elem_name) {
+				node.type = new Type(elem_name);
+				node.type.is_array = true;
+				if (result_length) {
+					node.type.length = result_length;
+				}
 			}
 		}
 	}
 
 	return result;
-}
-
-function check_access_index_node(
-	target_type: Type,
-	node: AccessIndexNode,
-	status: CheckStatus,
-): boolean {
-	// Make sure the type can be indexed
-	// TODO: Do this with an Indexable trait instead
-	if (target_type.is_array) {
-		node.type = new Type(target_type.name, target_type.is_static);
-	} else if (target_type.name === "string") {
-		node.type = new Type("char");
-	} else {
-		add_error(status, `Target not indexable: ${target_type.name}`, node.start);
-		return false;
-	}
-
-	return check_node(node.index, status);
 }

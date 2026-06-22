@@ -1,5 +1,4 @@
 import add_error from "../add_error.ts";
-import AccessIndexNode from "../nodes/AccessIndexNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import AssignmentNode from "../nodes/AssignmentNode.ts";
 import BaseNode from "../nodes/BaseNode.ts";
@@ -186,13 +185,6 @@ function parse_statement_start(status: ParseStatus) {
 			case ".": {
 				accept(".", status);
 				node = new AccessNode(node.start, node, parse_access(value, status));
-				break;
-			}
-			case "[": {
-				accept("[", status);
-				const index = parse_expression(status);
-				expect("]", status);
-				node = new AccessNode(node.start, node, new AccessIndexNode(status.i, index));
 				break;
 			}
 			case "(": {

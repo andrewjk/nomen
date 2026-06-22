@@ -143,9 +143,16 @@ export function monomorphize(
 	);
 
 	for (const func of generic_struct.functions) {
-		if (func.name === "#init" && !func.has_body) continue;
+		if (func.name === "#init") continue;
 		const cloned = clone_node(func) as FunctionNode;
 		substitute_raw_types(cloned, substitution);
+		cloned.return_type = substitute_type(cloned.return_type, substitution);
+		for (const param of cloned.params) {
+			param.type = substitute_type(param.type, substitution);
+			if (param.constraint) {
+				substitute_raw_in_node(param.constraint, substitution);
+			}
+		}
 		cloned.checked = true;
 		mono_struct.functions.push(cloned);
 	}
@@ -541,12 +548,6 @@ function substitute_node_types(
 		}
 		case "access_field": {
 			const n = node as import("../nodes/AccessFieldNode.ts").default;
-			if (n.type) n.type = substitute_type(n.type, substitution);
-			break;
-		}
-		case "access_index": {
-			const n = node as import("../nodes/AccessIndexNode.ts").default;
-			substitute_node_types(n.index, substitution);
 			if (n.type) n.type = substitute_type(n.type, substitution);
 			break;
 		}

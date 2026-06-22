@@ -339,7 +339,9 @@ switch {
 	}
 }
 `;
-		const expected = [test_error(input, "Switch case condition must be a bool, not string", 3, 7)];
+		const expected = Array(
+			test_error(input, "Switch case condition must be a bool, not string", 3, 7),
+		);
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
 	});
@@ -351,7 +353,9 @@ switch {
 	}
 }
 `;
-		const expected = [test_error(input, "Switch case condition must be a bool, not int", 3, 7)];
+		const expected = Array(
+			test_error(input, "Switch case condition must be a bool, not int", 3, 7),
+		);
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
 	});

@@ -9,7 +9,7 @@ test("ziglings 016 for 2 -- errors", () => {
 import System
 
 pub func main = () {
-    const uint8[] bits = [ 1, 0, 1, 1 ]
+    const bits = Array( 1, 0, 1, 1 )
     var int value = 0
 
     var int i = 0
@@ -31,7 +31,7 @@ test("ziglings 016 for 2 -- fixed", () => {
 import System
 
 pub func main = () {
-    const uint8[] bits = [ 1, 0, 1, 1 ]
+    const bits = Array( 1, 0, 1, 1 )
     var int value = 0
 
     var int i = 0
@@ -53,7 +53,7 @@ test("ziglings 016 for 2 -- build", async () => {
 import System
 
 pub func main = () {
-    const uint8[] bits = [ 1, 0, 1, 1 ]
+    const bits = Array( 1, 0, 1, 1 )
     var int value = 0
 
     var int i = 0

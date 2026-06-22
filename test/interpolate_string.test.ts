@@ -126,7 +126,7 @@ Console.write("Big: \\{big}")
 
 	test("interpolation with array", async () => {
 		const input = `
-const arr = [1, 2, 3]
+const arr = Array(1, 2, 3)
 Console.write("\\{arr}")
 `;
 		const parsed = parse_with_imports(input);

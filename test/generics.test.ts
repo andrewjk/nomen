@@ -397,7 +397,7 @@ func sumCoords<T> = (Point<T> p) {
     return p.x + p.y
 }
 
-var int total = sumCoords([ x = 10, y = 20 ])
+var total = sumCoords([ x = 10, y = 20 ])
 `;
 	const parsed = parse(input);
 	expect(parsed.errors).toEqual([]);

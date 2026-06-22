@@ -34,10 +34,12 @@ export default function check_value_node(node: ValueNode, status: CheckStatus): 
 	}
 
 	// Check that var declarations are initialized before use (skip assignment targets)
+	// Arrays are exempt — they have allocated stack space even without an initializer
 	if (
 		decl_value &&
 		decl_value.is_set === false &&
 		decl_value.declaration === "var" &&
+		!decl_value.type.is_array &&
 		!status.is_assignment_target &&
 		!status.allow_null_value
 	) {

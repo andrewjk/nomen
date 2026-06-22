@@ -1,6 +1,7 @@
 import { expect, test } from "vite-plus/test";
 
 import build from "../../src/build";
+import test_error from "../test_error";
 import check_output_aarch64 from "./check_output_aarch64";
 import parse_with_imports from "./parse_with_imports";
 
@@ -12,24 +13,24 @@ pub func main = () {
     const letters = "YZhifg"
     const x = 1
 
-    var char[3] lang
+    var lang = Array<char>.with_length(3)
 
-    lang[0] = letters[x]
+    lang.set(0, letters.at(x))
 
     x = 3
-    lang[???] = letters[x]
+    lang.set(???, letters.at(x))
 
     x = ???
-    lang[2] = letters[???]
+    lang.set(2, letters.at(???))
 
     Console.write("Program in \\{lang}!\\n")
 }
 `;
 	const expected = [
-		{ message: "Assignment to const: x", start: 135, line: 12, column: 5 },
-		{ message: "Unknown value: ???", start: 150, line: 13, column: 10 },
-		{ message: "Unknown value: ???", start: 177, line: 15, column: 9 },
-		{ message: "Unknown value: ???", start: 203, line: 16, column: 23 },
+		test_error(input, "Assignment to const: x", 12, 5),
+		test_error(input, "Unknown value: ???", 13, 14),
+		test_error(input, "Unknown value: ???", 15, 9),
+		test_error(input, "Unknown value: ???", 16, 28),
 	];
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual(expected);
@@ -43,15 +44,15 @@ pub func main = () {
     const letters = "YZhifg"
     var x = 1
 
-    var char[3] lang
+    var lang = Array<char>.with_length(3)
 
-    lang[0] = letters[x]
+    lang.set(0, letters.at(x))
 
     x = 3
-    lang[1] = letters[x]
+    lang.set(1, letters.at(x))
 
     x = 5
-    lang[2] = letters[x]
+    lang.set(2, letters.at(x))
 
     Console.write("Program in \\{lang}!\\n")
 }
@@ -68,15 +69,15 @@ pub func main = () {
     const letters = "YZhifg"
     var x = 1
 
-    var char[3] lang
+    var lang = Array<char>.with_length(3)
 
-    lang[0] = letters[x]
+    lang.set(0, letters.at(x))
 
     x = 3
-    lang[1] = letters[x]
+    lang.set(1, letters.at(x))
 
     x = 5
-    lang[2] = letters[x]
+    lang.set(2, letters.at(x))
 
     Console.write("Program in \\{lang}!\\n")
 }

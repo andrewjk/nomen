@@ -23,7 +23,7 @@ struct Character {
 }
 
 pub func main = () {
-    var Character[2] chars = [Character(Role.wizard, 20, 100, 10), Character(???.bard, 10, 100, 20)]
+    var chars = Array(Character(Role.wizard, 20, 100, 10), Character(???.bard, 10, 100, 20))
     var int num = 1
 
     for c of chars; num += 1 {
@@ -54,7 +54,7 @@ struct Character {
 }
 
 pub func main = () {
-    var Character[2] chars = [Character(Role.wizard, 20, 100, 10), Character(Role.bard, 10, 100, 20)]
+    var chars = Array(Character(Role.wizard, 20, 100, 10), Character(Role.bard, 10, 100, 20))
     var int num = 1
 
     for c of chars; num += 1 {
@@ -85,7 +85,7 @@ struct Character {
 }
 
 pub func main = () {
-    var Character[2] chars = [Character(Role.wizard, 20, 100, 10), Character(Role.bard, 10, 100, 20)]
+    var chars = Array(Character(Role.wizard, 20, 100, 10), Character(Role.bard, 10, 100, 20))
     var int num = 1
 
     for c of chars; num += 1 {

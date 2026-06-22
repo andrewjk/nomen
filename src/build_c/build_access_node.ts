@@ -1,7 +1,6 @@
 import built_in_types from "../built_in_types.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
-import AccessIndexNode from "../nodes/AccessIndexNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
@@ -141,9 +140,13 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				if (!method_type?.name && node.target.node_type === "access") {
 					method_type = resolve_access_field_type(node.target as AccessNode, status);
 				}
+				const mono_struct_name = method_type?.is_array
+					? "Array_" + method_type.name
+					: method_type?.type_args?.length
+						? method_type.name + "_" + method_type.type_args.map((t) => t.name).join("_")
+						: method_type?.name || "";
 				const label =
-					access_func.mangled_name ||
-					`${method_type?.name || ""}_${access_func.name.replace(/#/g, "")}`;
+					access_func.mangled_name || `${mono_struct_name}_${access_func.name.replace(/#/g, "")}`;
 				status.code += `${label}(`;
 				if (!access_func.is_static) {
 					// TODO: be more rigorous about this! Sometimes types should be passed by ref??
@@ -183,14 +186,6 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				}
 				status.code += ")";
 			}
-			break;
-		}
-		case "access_index": {
-			const access_index = node.access as AccessIndexNode;
-			build_node(node.target, status);
-			status.code += "[";
-			build_node(access_index.index, status);
-			status.code += "]";
 			break;
 		}
 	}

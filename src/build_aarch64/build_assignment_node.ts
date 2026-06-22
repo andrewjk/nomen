@@ -1,7 +1,6 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
-import AccessIndexNode from "../nodes/AccessIndexNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import AssignmentNode from "../nodes/AssignmentNode.ts";
 import BaseNode from "../nodes/BaseNode.ts";
@@ -484,110 +483,6 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 				status.code += `ldr x0, [sp], #16\n`;
 
 				status.code += `str x2, [x0, #${offset}]\n`;
-			}
-		} else if (access.access.node_type === "access_index") {
-			const access_index = access.access as AccessIndexNode;
-			const target_type = type_from_value_node(access.target);
-			const element_type = access_index.type;
-			const element_is_struct = is_struct_type(element_type, status);
-			const element_size = element_is_struct
-				? get_struct_size(element_type!.name, status)
-				: target_type.name
-					? aarch64_size(target_type.name)
-					: 8;
-
-			if (access.target.node_type === "value") {
-				const name = (access.target as ValueNode).value;
-				emit_var_address(status, "x3", name);
-			} else {
-				build_node(access.target, status);
-				if (!status.code.endsWith("\n")) {
-					status.code += "\n";
-				}
-				status.code += `mov x3, x0\n`;
-			}
-
-			if (access_index.index.node_type === "value") {
-				const index_val = (access_index.index as ValueNode).value;
-				if (/^(\+|-)*\d+$/.test(index_val)) {
-					const byte_offset = parseInt(index_val) * element_size;
-
-					status.code += `str x3, [sp, #-16]!\n`;
-
-					if (element_is_struct) {
-						const struct_size = get_struct_size(element_type!.name, status);
-						mark_moved_if_struct(node.right_value, status);
-						get_source_address(node.right_value, status);
-						if (!status.code.endsWith("\n")) {
-							status.code += "\n";
-						}
-						status.code += `ldr x3, [sp], #16\n`;
-						emit_struct_copy("x0", "x3", byte_offset, struct_size, status);
-					} else {
-						build_node(node.right_value, status);
-						if (!status.code.endsWith("\n")) {
-							status.code += "\n";
-						}
-						mark_moved_if_struct(node.right_value, status);
-
-						status.code += `ldr x3, [sp], #16\n`;
-
-						if (element_size === 1) {
-							status.code += `strb w0, [x3, #${byte_offset}]\n`;
-						} else if (element_size === 4) {
-							status.code += `str w0, [x3, #${byte_offset}]\n`;
-						} else {
-							status.code += `str x0, [x3, #${byte_offset}]\n`;
-						}
-					}
-					build_swap(node, status);
-					return;
-				}
-			}
-
-			build_node(access_index.index, status);
-			if (!status.code.endsWith("\n")) {
-				status.code += "\n";
-			}
-			status.code += `mov x1, x0\n`;
-			const shift = Math.log2(element_size);
-			if (Number.isInteger(shift) && shift > 0) {
-				status.code += `add x3, x3, x1, lsl #${shift}\n`;
-			} else if (element_size === 1) {
-				// no shift needed, x1 is byte offset
-			} else {
-				status.code += `mov x2, #${element_size}\n`;
-				status.code += `mul x1, x1, x2\n`;
-				status.code += `add x3, x3, x1\n`;
-			}
-
-			status.code += `str x3, [sp, #-16]!\n`;
-
-			if (element_is_struct) {
-				const struct_size = get_struct_size(element_type!.name, status);
-				mark_moved_if_struct(node.right_value, status);
-				get_source_address(node.right_value, status);
-				if (!status.code.endsWith("\n")) {
-					status.code += "\n";
-				}
-				status.code += `ldr x3, [sp], #16\n`;
-				emit_struct_copy("x0", "x3", 0, struct_size, status);
-			} else {
-				build_node(node.right_value, status);
-				if (!status.code.endsWith("\n")) {
-					status.code += "\n";
-				}
-				mark_moved_if_struct(node.right_value, status);
-
-				status.code += `ldr x3, [sp], #16\n`;
-
-				if (element_size === 1) {
-					status.code += `strb w0, [x3]\n`;
-				} else if (element_size === 4) {
-					status.code += `str w0, [x3]\n`;
-				} else {
-					status.code += `str x0, [x3]\n`;
-				}
 			}
 		} else {
 			build_node(node.right_value, status);

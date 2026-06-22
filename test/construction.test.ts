@@ -158,7 +158,9 @@ struct Dog {
 }
 const dog = Dog(5)
 `;
-		const expected = [test_error(input, "Type mismatch in param: int (expected string)", 5, 17)];
+		const expected = Array(
+			test_error(input, "Type mismatch in param: int (expected string)", 5, 17),
+		);
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
 	});

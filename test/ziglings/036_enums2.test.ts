@@ -19,7 +19,7 @@ enum Color {
 }
 
 pub func main = () {
-    const colors = [Color.red, Color.green, Color.blue]
+    const colors = Array(Color.red, Color.green, Color.blue)
     for color of colors {
         match color {
             case .red -> Console.write("#ff0000\\n")
@@ -44,7 +44,7 @@ enum Color {
 }
 
 pub func main = () {
-    const colors = [Color.red, Color.green, Color.blue]
+    const colors = Array(Color.red, Color.green, Color.blue)
     for color of colors {
         match color {
             case .red -> Console.write("#ff0000\\n")
@@ -69,7 +69,7 @@ enum Color {
 }
 
 pub func main = () {
-    const colors = [Color.red, Color.green, Color.blue]
+    const colors = Array(Color.red, Color.green, Color.blue)
     for color of colors {
         match color {
             case .red -> Console.write("#ff0000\\n")

@@ -1,6 +1,5 @@
 import AccessFieldNode from "./AccessFieldNode.ts";
 import AccessFunctionCallNode from "./AccessFunctionCallNode.ts";
-import AccessIndexNode from "./AccessIndexNode.ts";
 import AccessNode from "./AccessNode.ts";
 import AnonStructNode from "./AnonStructNode.ts";
 import ArrayValuesNode from "./ArrayValuesNode.ts";
@@ -110,16 +109,6 @@ export default function clone_node(node: BaseNode): BaseNode {
 				: undefined;
 			c.variadic_param_name = n.variadic_param_name;
 			c.mangled_name = n.mangled_name;
-			c.allocations = n.allocations?.map(clone_node);
-			return c;
-		}
-		case "access_index": {
-			const n = node as AccessIndexNode;
-			const c = new AccessIndexNode(
-				n.start,
-				clone_node(n.index),
-				n.type ? clone_type(n.type) : undefined,
-			);
 			c.allocations = n.allocations?.map(clone_node);
 			return c;
 		}
@@ -379,6 +368,7 @@ export default function clone_node(node: BaseNode): BaseNode {
 			c.name_start = n.name_start;
 			c.default_value_start = n.default_value_start;
 			c.is_variadic = n.is_variadic;
+			c.is_ref = n.is_ref;
 			c.constraint = n.constraint ? clone_node(n.constraint) : undefined;
 			c.func_params = n.func_params?.map((p) => clone_node(p) as ParameterNode);
 			c.func_return_type = n.func_return_type ? clone_type(n.func_return_type) : undefined;

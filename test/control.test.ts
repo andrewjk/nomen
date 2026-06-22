@@ -184,7 +184,7 @@ Console.write("\\{sum}")
 
 	test("for loop iterating array", async () => {
 		const input = `
-const arr = [10, 20, 30]
+const arr = Array(10, 20, 30)
 var int sum = 0
 for item of arr {
   sum = sum + item
@@ -199,10 +199,10 @@ Console.write("\\{sum}")
 
 	test("for loop with index array access", async () => {
 		const input = `
-const arr = [10, 20, 30]
+const arr = Array(10, 20, 30)
 var int sum = 0
 for i of 0..3 {
-  sum = sum + arr[i]
+  sum = sum + arr.at(i)
 }
 Console.write("\\{sum}")
 `;

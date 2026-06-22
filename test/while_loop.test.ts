@@ -168,7 +168,9 @@ while "hi" {
   // ...
 }
 `;
-		const expected = [test_error(input, "While loop condition must be a bool, not string", 2, 7)];
+		const expected = Array(
+			test_error(input, "While loop condition must be a bool, not string", 2, 7),
+		);
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
 	});

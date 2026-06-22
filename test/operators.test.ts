@@ -77,7 +77,9 @@ struct Point {
 const p1 = Point(1, 2)
 const p3 = p1 + 5
 `;
-		const expected = [test_error(input, "Type mismatch in param: int (expected Point)", 10, 17)];
+		const expected = Array(
+			test_error(input, "Type mismatch in param: int (expected Point)", 10, 17),
+		);
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
 	});

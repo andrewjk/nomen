@@ -27,7 +27,7 @@ func char_for = (int c, out string) {
 }
 
 pub func main = () {
-    const chars = [26, 9, 7, 42]
+    const chars = Array(26, 9, 7, 42)
 
     for c of chars {
         Console.write(char_for(c))
@@ -61,7 +61,7 @@ func char_for = (int c, out string) {
 }
 
 pub func main = () {
-    const chars = [26, 9, 7, 42]
+    const chars = Array(26, 9, 7, 42)
 
     for c of chars {
         Console.write(char_for(c))
@@ -95,7 +95,7 @@ func char_for = (int c, out string) {
 }
 
 pub func main = () {
-    const chars = [26, 9, 7, 42]
+    const chars = Array(26, 9, 7, 42)
 
     for c of chars {
         Console.write(char_for(c))

@@ -326,7 +326,9 @@ func add = (out int) {
   return "string?!"
 }
 `;
-		const expected = [test_error(input, "Type mismatch in return: string (expected int)", 3, 10)];
+		const expected = Array(
+			test_error(input, "Type mismatch in return: string (expected int)", 3, 10),
+		);
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
 	});
@@ -355,7 +357,9 @@ func add = (out int) {}
 		const input = `
 func add = (out int) => ("string")
 `;
-		const expected = [test_error(input, "Type mismatch in return: string (expected int)", 2, 27)];
+		const expected = Array(
+			test_error(input, "Type mismatch in return: string (expected int)", 2, 27),
+		);
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
 	});

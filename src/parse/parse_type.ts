@@ -28,5 +28,13 @@ export default function parse_type(status: ParseStatus): Type {
 		}
 		expect("]", status);
 	}
+	// Convert `Array<T>` to internal array representation: name=T, is_array=true
+	if (type.is_array === undefined && type.name === "Array" && type.type_args?.length === 1) {
+		const elem = type.type_args[0];
+		type.name = elem.name;
+		type.is_array = true;
+		type.is_nullable = elem.is_nullable;
+		type.type_args = undefined;
+	}
 	return type;
 }

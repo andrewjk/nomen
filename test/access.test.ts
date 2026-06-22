@@ -157,11 +157,11 @@ Console.write("\\{result}")
 
 	test("array index access", async () => {
 		const input = `
-var int[3] nums
-nums[0] = 10
-nums[1] = 20
-nums[2] = 30
-Console.write("\\{nums[0]} \\{nums[1]} \\{nums[2]}")
+var nums = Array<int>.with_length(3)
+nums.set(0, 10)
+nums.set(1, 20)
+nums.set(2, 30)
+Console.write("\\{nums.at(0)} \\{nums.at(1)} \\{nums.at(2)}")
 `;
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
@@ -171,12 +171,12 @@ Console.write("\\{nums[0]} \\{nums[1]} \\{nums[2]}")
 
 	test("array index with variable", async () => {
 		const input = `
-var int[3] nums
-nums[0] = 100
-nums[1] = 200
-nums[2] = 300
+var nums = Array<int>.with_length(3)
+nums.set(0, 100)
+nums.set(1, 200)
+nums.set(2, 300)
 var i = 1
-Console.write("\\{nums[i]}")
+Console.write("\\{nums.at(i)}")
 `;
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
@@ -243,9 +243,11 @@ struct Person {
   var int age
 }
 var Person p
-p.age = [1, 2]
+p.age = Array(1, 2)
 `;
-		const expected = [test_error(input, "Type mismatch in assignment: int[] (expected int)", 6, 9)];
+		const expected = [
+			test_error(input, "Type mismatch in assignment: Array<int> (expected int)", 6, 9),
+		];
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
 	});
@@ -253,13 +255,13 @@ p.age = [1, 2]
 	test("type mismatch setting field -- array 2", () => {
 		const input = `
 struct Person {
-  var int[] ages
+  var Array<int> ages
 }
 var Person p
 p.ages = 3
 `;
 		const expected = [
-			test_error(input, "Type mismatch in assignment: int (expected int[])", 6, 10),
+			test_error(input, "Type mismatch in assignment: int (expected Array<int>)", 6, 10),
 		];
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);

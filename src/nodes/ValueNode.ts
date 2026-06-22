@@ -5,6 +5,7 @@ export default class ValueNode extends BaseNode {
 	value: string;
 	type: Type;
 	is_enum_shorthand?: boolean;
+	type_args?: Type[];
 
 	constructor(start: number, value: string, type?: Type) {
 		super("value", start);

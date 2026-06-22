@@ -21,7 +21,7 @@ func number_fail = (int n, out NumberError) {
 }
 
 pub func main = () {
-  const nums = [5, 3, 4]
+  const nums = Array(5, 3, 4)
   for n of nums {
     const err = number_fail(n)
     if err == NumberError.too_big {
@@ -57,7 +57,7 @@ func number_fail = (int n, out NumberError) {
 }
 
 pub func main = () {
-  const nums = [5, 3, 4]
+  const nums = Array(5, 3, 4)
   for n of nums {
     const err = number_fail(n)
     if err == .too_big {
@@ -93,7 +93,7 @@ func number_fail = (int n, out NumberError) {
 }
 
 pub func main = () {
-  const nums = [5, 3, 4]
+  const nums = Array(5, 3, 4)
   for n of nums {
     const err = number_fail(n)
     if err == .too_big {

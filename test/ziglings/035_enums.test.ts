@@ -13,7 +13,7 @@ enum Ops {
 }
 
 pub func main = () {
-    const ops = [Ops.inc, Ops.inc, Ops.inc, Ops.pow, Ops.dec, Ops.dec]
+    const ops = Array(Ops.inc, Ops.inc, Ops.inc, Ops.pow, Ops.dec, Ops.dec)
     var current_value = 0
 
     for op of ops {
@@ -49,7 +49,7 @@ enum Ops {
 }
 
 pub func main = () {
-    const ops = [Ops.inc, Ops.inc, Ops.inc, Ops.pow, Ops.dec, Ops.dec]
+    const ops = Array(Ops.inc, Ops.inc, Ops.inc, Ops.pow, Ops.dec, Ops.dec)
     var current_value = 0
 
     for op of ops {
@@ -85,7 +85,7 @@ enum Ops {
 }
 
 pub func main = () {
-    const ops = [Ops.inc, Ops.inc, Ops.inc, Ops.pow, Ops.dec, Ops.dec]
+    const ops = Array(Ops.inc, Ops.inc, Ops.inc, Ops.pow, Ops.dec, Ops.dec)
     var current_value = 0
 
     for op of ops {

@@ -37,8 +37,10 @@ export default function check_array_values_node(
 		const value_type = type_from_value_node(value, status);
 
 		// If the array has no type, use the type from the first value
+		// (copy properties — don't alias, since callers may mutate the returned type)
 		if (!array.type.name) {
-			array.type = value_type;
+			array.type = new Type(value_type.name);
+			array.type.is_array = true;
 			array_item_type = new Type(array.type.name);
 		}
 
@@ -55,6 +57,7 @@ export default function check_array_values_node(
 	if (!array.type.length) {
 		array.type.length = new ValueNode(-1, array.values.length.toString(), new Type("int"));
 	}
+	array.type.is_array = true;
 
 	return result;
 }

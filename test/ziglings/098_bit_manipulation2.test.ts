@@ -26,7 +26,7 @@ func isPangram = (string str, out bool) {
     var int bits = 0
     var int i = 0
     while i < 44 {
-        var int c = str[i] as int
+        var int c = str.at(i) as int
         if c >= 65 && c <= 90 {
             c = c + 32
         }
@@ -50,8 +50,6 @@ pub func main = () {
 `;
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual([]);
-	// No compile error, but comparing to 0 means it always returns false
-	// Should compare to 67108863 (0x3ffffff) — all 26 bits set
 });
 
 test("ziglings 098 bit manipulation2 -- fixed", () => {
@@ -62,7 +60,7 @@ func isPangram = (string str, out bool) {
     var int bits = 0
     var int i = 0
     while i < 44 {
-        var int c = str[i] as int
+        var int c = str.at(i) as int
         if c >= 65 && c <= 90 {
             c = c + 32
         }
@@ -96,7 +94,7 @@ func isPangram = (string str, out bool) {
     var int bits = 0
     var int i = 0
     while i < 44 {
-        var int c = str[i] as int
+        var int c = str.at(i) as int
         if c >= 65 && c <= 90 {
             c = c + 32
         }

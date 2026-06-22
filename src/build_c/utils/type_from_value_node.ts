@@ -1,6 +1,5 @@
 import AccessFieldNode from "../../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../../nodes/AccessFunctionCallNode.ts";
-import AccessIndexNode from "../../nodes/AccessIndexNode.ts";
 import AccessNode from "../../nodes/AccessNode.ts";
 import AnonStructNode from "../../nodes/AnonStructNode.ts";
 import ArrayValuesNode from "../../nodes/ArrayValuesNode.ts";
@@ -32,9 +31,6 @@ export default function type_from_value_node(node: BaseNode): Type {
 		}
 		case "access_func": {
 			return (node as AccessFunctionCallNode).type;
-		}
-		case "access_index": {
-			return (node as AccessIndexNode).type;
 		}
 		case "grouped": {
 			return type_from_value_node((node as GroupedNode).value);

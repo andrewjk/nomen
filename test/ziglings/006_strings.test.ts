@@ -12,7 +12,7 @@ import System
 pub func main = () {
     const ziggy = "stardust"
 
-    const d = ziggy[???]
+    const d = ziggy.at(???)
 
     const laugh = "ha " ???
 
@@ -24,7 +24,7 @@ pub func main = () {
 }
 `;
 	const expected = [
-		test_error(input, "Unknown value: ???", 7, 21),
+		test_error(input, "Unknown value: ???", 7, 24),
 		test_error(input, "Unknown value: ???", 9, 25),
 		test_error(input, "Unknown value: ???", 13, 29),
 	];
@@ -39,7 +39,7 @@ import System
 pub func main = () {
     const ziggy = "stardust"
 
-    const d = ziggy[4]
+    const d = ziggy.at(4)
 
     const laugh = "ha " * 3
 
@@ -61,7 +61,7 @@ import System
 pub func main = () {
     const ziggy = "stardust"
 
-    const d = ziggy[4]
+    const d = ziggy.at(4)
 
     const laugh = "ha " * 3
 

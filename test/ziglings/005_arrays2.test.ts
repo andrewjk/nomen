@@ -10,12 +10,12 @@ test("ziglings 005 arrays 2 -- errors", () => {
 import System
 
 pub func main = () {
-    const le = [ 1, 3 ]
-    const et = [ 3, 7 ]
+    const le = Array( 1, 3 )
+    const et = Array( 3, 7 )
 
     const leet = ???
 
-    const bit_pattern = [ ??? ] * 3
+    const bit_pattern = Array( ??? ) * 3
 
     Console.write("LEET: ")
 
@@ -34,7 +34,7 @@ pub func main = () {
 `;
 	const expected = [
 		test_error(input, "Unknown value: ???", 8, 18),
-		test_error(input, "Unknown value: ???", 10, 27),
+		test_error(input, "Unknown value: ???", 10, 32),
 		test_error(input, "Unknown value: leet", 14, 14),
 		test_error(input, "Unknown value: n", 15, 26),
 		test_error(input, "Unknown value: bit_pattern", 20, 14),
@@ -49,12 +49,12 @@ test("ziglings 005 arrays 2 -- fixed", () => {
 import System
 
 pub func main = () {
-    const le = [ 1, 3 ]
-    const et = [ 3, 7 ]
+    const le = Array( 1, 3 )
+    const et = Array( 3, 7 )
 
     const leet = le + et
 
-    const bit_pattern = [ 1, 0, 0, 1] * 3
+    const bit_pattern = Array( 1, 0, 0, 1) * 3
 
     Console.write("LEET: ")
 
@@ -80,12 +80,12 @@ test("ziglings 005 arrays 2 -- build", async () => {
 import System
 
 pub func main = () {
-  const le = [ 1, 3 ]
-  const et = [ 3, 7 ]
+  const le = Array( 1, 3 )
+  const et = Array( 3, 7 )
 
   const leet = le + et
 
-  const bit_pattern = [ 1, 0, 0, 1] * 3
+  const bit_pattern = Array( 1, 0, 0, 1) * 3
 
   Console.write("LEET: ")
 

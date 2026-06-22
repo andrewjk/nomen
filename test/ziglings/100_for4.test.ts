@@ -14,12 +14,12 @@ test("ziglings 100 for4 -- errors", () => {
 import System
 
 pub func main = () {
-    var int[] hex_nums = [11, 42, 119]
-    var int[] dec_nums = [11, 42, ???]
+    var hex_nums = Array(11, 42, 119)
+    var dec_nums = Array(11, 42, ???)
 
     var int i = 0
     for hn of hex_nums; i += 1 {
-        var int dn = dec_nums[i]
+        var int dn = dec_nums.at(i)
         if hn != dn {
             Console.write("Uh oh! Found a mismatch: \\{hn} vs \\{dn}\\n")
             return
@@ -38,12 +38,12 @@ test("ziglings 100 for4 -- fixed", () => {
 import System
 
 pub func main = () {
-    var int[] hex_nums = [11, 42, 119]
-    var int[] dec_nums = [11, 42, 119]
+    var hex_nums = Array(11, 42, 119)
+    var dec_nums = Array(11, 42, 119)
 
     var int i = 0
     for hn of hex_nums; i += 1 {
-        var int dn = dec_nums[i]
+        var int dn = dec_nums.at(i)
         if hn != dn {
             Console.write("Uh oh! Found a mismatch: \\{hn} vs \\{dn}\\n")
             return
@@ -62,12 +62,12 @@ test("ziglings 100 for4 -- build", async () => {
 import System
 
 pub func main = () {
-    var int[] hex_nums = [11, 42, 119]
-    var int[] dec_nums = [11, 42, 119]
+    var hex_nums = Array(11, 42, 119)
+    var dec_nums = Array(11, 42, 119)
 
     var int i = 0
     for hn of hex_nums; i += 1 {
-        var int dn = dec_nums[i]
+        var int dn = dec_nums.at(i)
         if hn != dn {
             Console.write("Uh oh! Found a mismatch: \\{hn} vs \\{dn}\\n")
             return

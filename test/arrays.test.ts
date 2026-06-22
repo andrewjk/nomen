@@ -10,7 +10,7 @@ import test_error from "./test_error";
 describe("array build", () => {
 	test("array with values in for loop", async () => {
 		const input = `
-const nums = [10, 20, 30]
+const nums = Array(10, 20, 30)
 for n of nums {
   Console.write("\\{n} ")
 }
@@ -23,8 +23,8 @@ for n of nums {
 
 	test("array access by index", async () => {
 		const input = `
-const nums = [10, 20, 30]
-Console.write("\\{nums[0]}")
+const nums = Array(10, 20, 30)
+Console.write("\\{nums.at(0)}")
 `;
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
@@ -34,8 +34,8 @@ Console.write("\\{nums[0]}")
 
 	test("var string array with literals in function", async () => {
 		const input = `
-var string[] words = ["hello", "world"]
-Console.write("\\{words[0]}\\{words[1]}")
+var words = Array("hello", "world")
+Console.write("\\{words.at(0)}\\{words.at(1)}")
 `;
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
@@ -45,8 +45,8 @@ Console.write("\\{words[0]}\\{words[1]}")
 
 	test("array access middle element", async () => {
 		const input = `
-const nums = [10, 20, 30]
-Console.write("\\{nums[1]}")
+const nums = Array(10, 20, 30)
+Console.write("\\{nums.at(1)}")
 `;
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
@@ -56,8 +56,8 @@ Console.write("\\{nums[1]}")
 
 	test("array access last element", async () => {
 		const input = `
-const nums = [10, 20, 30]
-Console.write("\\{nums[2]}")
+const nums = Array(10, 20, 30)
+Console.write("\\{nums.at(2)}")
 `;
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
@@ -67,8 +67,8 @@ Console.write("\\{nums[2]}")
 
 	test("array with explicit type", async () => {
 		const input = `
-const int[] nums = [5, 10, 15]
-Console.write("\\{nums[0]} \\{nums[1]} \\{nums[2]}")
+const nums = Array(5, 10, 15)
+Console.write("\\{nums.at(0)} \\{nums.at(1)} \\{nums.at(2)}")
 `;
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
@@ -78,7 +78,7 @@ Console.write("\\{nums[0]} \\{nums[1]} \\{nums[2]}")
 
 	test("array sum with for loop", async () => {
 		const input = `
-const nums = [1, 2, 3, 4, 5]
+const nums = Array(1, 2, 3, 4, 5)
 var total = 0
 for n of nums {
   total = total + n
@@ -93,10 +93,10 @@ Console.write("\\{total}")
 
 	test("array with index-based access in loop", async () => {
 		const input = `
-const nums = [100, 200, 300]
+const nums = Array(100, 200, 300)
 var total = 0
 for i of 0..3 {
-  total = total + nums[i]
+  total = total + nums.at(i)
 }
 Console.write("\\{total}")
 `;
@@ -108,8 +108,8 @@ Console.write("\\{total}")
 
 	test("array with single element", async () => {
 		const input = `
-const nums = [42]
-Console.write("\\{nums[0]}")
+const nums = Array(42)
+Console.write("\\{nums.at(0)}")
 `;
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
@@ -119,8 +119,8 @@ Console.write("\\{nums[0]}")
 
 	test("array with negative values", async () => {
 		const input = `
-const nums = [-1, -5, -10]
-Console.write("\\{nums[0]} \\{nums[1]} \\{nums[2]}")
+const nums = Array(-1, -5, -10)
+Console.write("\\{nums.at(0)} \\{nums.at(1)} \\{nums.at(2)}")
 `;
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
@@ -130,9 +130,9 @@ Console.write("\\{nums[0]} \\{nums[1]} \\{nums[2]}")
 
 	test("multiple arrays", async () => {
 		const input = `
-const a = [1, 2, 3]
-const b = [4, 5, 6]
-Console.write("\\{a[1]} \\{b[1]}")
+const a = Array(1, 2, 3)
+const b = Array(4, 5, 6)
+Console.write("\\{a.at(1)} \\{b.at(1)}")
 `;
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
@@ -142,9 +142,9 @@ Console.write("\\{a[1]} \\{b[1]}")
 
 	test("array access with expression index", async () => {
 		const input = `
-const nums = [10, 20, 30]
+const nums = Array(10, 20, 30)
 const i = 2
-Console.write("\\{nums[i]}")
+Console.write("\\{nums.at(i)}")
 `;
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
@@ -154,7 +154,7 @@ Console.write("\\{nums[i]}")
 
 	test("empty array with type", async () => {
 		const input = `
-const int[] x
+const Array<int> x
 Console.write("ok")
 `;
 		const parsed = parse_with_imports(input);
@@ -165,8 +165,8 @@ Console.write("ok")
 
 	test("nested array access in expression", async () => {
 		const input = `
-const nums = [10, 20, 30]
-Console.write("\\{nums[0] + nums[2]}")
+const nums = Array(10, 20, 30)
+Console.write("\\{nums.at(0) + nums.at(2)}")
 `;
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
@@ -176,14 +176,14 @@ Console.write("\\{nums[0] + nums[2]}")
 
 	test("array in function param", async () => {
 		const input = `
-func sum = (int[] nums, out int) {
+func sum = (Array<int> nums, out int) {
   var total = 0
   for n of nums {
     total = total + n
   }
   return total
 }
-const n = sum([2, 4, 6])
+const n = sum(Array(2, 4, 6))
 Console.write("\\{n}")
 `;
 		const parsed = parse_with_imports(input);
@@ -197,12 +197,12 @@ Console.write("\\{n}")
 describe("array errors", () => {
 	test("declaration type mismatch", () => {
 		const input = `
-const int[] x = ["a", "b", "c"]
+const Array<int> x = Array("a", "b", "c")
 `;
 		const expected = [
-			test_error(input, "Type mismatch in array: string (expected int)", 2, 18),
-			test_error(input, "Type mismatch in array: string (expected int)", 2, 23),
 			test_error(input, "Type mismatch in array: string (expected int)", 2, 28),
+			test_error(input, "Type mismatch in array: string (expected int)", 2, 33),
+			test_error(input, "Type mismatch in array: string (expected int)", 2, 38),
 		];
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
@@ -210,19 +210,21 @@ const int[] x = ["a", "b", "c"]
 
 	test("declaration type mixed", () => {
 		const input = `
-const x = [1, "b", 2]
+const x = Array(1, "b", 2)
 `;
-		const expected = [test_error(input, "Type mismatch in array: string (expected int)", 2, 15)];
+		const expected = Array(
+			test_error(input, "Type mismatch in array: string (expected int)", 2, 20),
+		);
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
 	});
 
 	test("declaration type not an array", () => {
 		const input = `
-const int[] x = 5
+const Array<int> x = 5
 `;
 		const expected = [
-			test_error(input, "Type mismatch in declaration: int (expected int[])", 2, 17),
+			test_error(input, "Type mismatch in declaration: int (expected Array<int>)", 2, 22),
 		];
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
@@ -230,13 +232,13 @@ const int[] x = 5
 
 	test("assignment type mismatch", () => {
 		const input = `
-var int[] x
-x = ["a", "b", "c"]
+var Array<int> x
+x = Array("a", "b", "c")
 `;
 		const expected = [
-			test_error(input, "Type mismatch in array: string (expected int)", 3, 6),
 			test_error(input, "Type mismatch in array: string (expected int)", 3, 11),
 			test_error(input, "Type mismatch in array: string (expected int)", 3, 16),
+			test_error(input, "Type mismatch in array: string (expected int)", 3, 21),
 		];
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
@@ -244,20 +246,24 @@ x = ["a", "b", "c"]
 
 	test("assignment type mixed", () => {
 		const input = `
-var int[] x
-x = [1, "b", 2]
+var Array<int> x
+x = Array(1, "b", 2)
 `;
-		const expected = [test_error(input, "Type mismatch in array: string (expected int)", 3, 9)];
+		const expected = Array(
+			test_error(input, "Type mismatch in array: string (expected int)", 3, 14),
+		);
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
 	});
 
 	test("assignment type not an array", () => {
 		const input = `
-var int[] x
+var Array<int> x
 x = 5
 `;
-		const expected = [test_error(input, "Type mismatch in assignment: int (expected int[])", 3, 5)];
+		const expected = Array(
+			test_error(input, "Type mismatch in assignment: int (expected Array<int>)", 3, 5),
+		);
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
 	});

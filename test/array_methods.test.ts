@@ -12,7 +12,7 @@ describe("Array methods", () => {
 		const input = `
 import System
 pub func main = () {
-    var int[3] arr = [10, 20, 30]
+    var arr = Array(10, 20, 30)
     var int x = arr.at(0)
     var int y = arr.at(1)
     var int z = arr.at(2)
@@ -27,7 +27,7 @@ pub func main = () {
 		const input = `
 import System
 pub func main = () {
-    var int[3] arr = [10, 20, 30]
+    var arr = Array(10, 20, 30)
     var int x = arr.at(5)
 }
 `;
@@ -40,7 +40,7 @@ pub func main = () {
 		const input = `
 import System
 pub func main = () {
-    var int[3] arr = [10, 20, 30]
+    var arr = Array(10, 20, 30)
     var int x = arr.at(-1)
 }
 `;
@@ -53,7 +53,7 @@ pub func main = () {
 		const input = `
 import System
 pub func main = () {
-    var int[3] arr = [10, 20, 30]
+    var arr = Array(10, 20, 30)
     for i of 0 .. arr.length {
         var int x = arr.at(i)
         Console.write("\\{x}")
@@ -68,7 +68,7 @@ pub func main = () {
 		const input = `
 import System
 pub func main = () {
-    var int[3] arr = [10, 20, 30]
+    var arr = Array(10, 20, 30)
     var int x = arr.at_end()
     Console.write("\\{x}")
 }
@@ -81,8 +81,8 @@ pub func main = () {
 		const input = `
 import System
 pub func main = () {
-    var int[5] arr = [1, 2, 3, 4, 5]
-    var int[3] shorter = arr.with_length(3)
+    var arr = Array(1, 2, 3, 4, 5)
+    var shorter = Array<int>.with_length(3)
     Console.write("\\{shorter.length}")
 }
 `;
@@ -94,8 +94,8 @@ pub func main = () {
 		const input = `
 import System
 pub func main = () {
-    var int[3] arr = [10, 20, 30]
-    var int[1] bad = arr.with_length(-1)
+    var arr = Array(10, 20, 30)
+    var bad = Array<int>.with_length(-1)
 }
 `;
 		const parsed = parse(input, lib);
@@ -107,8 +107,8 @@ pub func main = () {
 		const input = `
 import System
 pub func main = () {
-    var string[2] arr = ["hello", "world"]
-    var string s = arr.at(0)
+    var arr = Array("hello", "world")
+    var s = arr.at(0)
     Console.write(s)
 }
 `;

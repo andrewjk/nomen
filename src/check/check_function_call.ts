@@ -366,11 +366,21 @@ export default function check_function_call(
 			if (satisfied === false) {
 				add_error(status, `Parameter constraint not satisfied: ${func_param.name}`, param.start);
 			} else if (satisfied === undefined) {
-				add_error(
-					status,
-					`Parameter constraint cannot be verified at compile time: ${func_param.name}`,
-					param.start,
-				);
+				// Constraint can't be verified at compile time (e.g. runtime variable index).
+				// For self constraints on core library types (arrays, strings), allow silently
+				// since the constraint references self.length which may legitimately be unknown.
+				// For user-defined functions, emit an error since the constraint can't be verified.
+				const is_core_method =
+					target_type?.is_array ||
+					target_type?.name === "string" ||
+					target_type?.name?.startsWith("Array_");
+				if (!is_core_method) {
+					add_error(
+						status,
+						`Parameter constraint cannot be verified: ${func_param.name}`,
+						param.start,
+					);
+				}
 			}
 		}
 

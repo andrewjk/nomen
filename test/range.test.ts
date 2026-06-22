@@ -115,7 +115,7 @@ Console.write("\\{total}")
 	test("range as array literal", async () => {
 		const input = `
 const x = 1..4
-Console.write("\\{x[0]}\\{x[1]}\\{x[2]}")
+Console.write("\\{x.at(0)}\\{x.at(1)}\\{x.at(2)}")
 `;
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
@@ -125,10 +125,10 @@ Console.write("\\{x[0]}\\{x[1]}\\{x[2]}")
 
 	test("range used for index-based array access", async () => {
 		const input = `
-const nums = [10, 20, 30]
+const nums = Array(10, 20, 30)
 var total = 0
 for i of 0..3 {
-  total = total + nums[i]
+  total = total + nums.at(i)
 }
 Console.write("\\{total}")
 `;
@@ -145,7 +145,9 @@ describe("range errors", () => {
 		const input = `
 var x = 1.."b"
 `;
-		const expected = [test_error(input, "Type mismatch in range: string (expected int)", 2, 12)];
+		const expected = Array(
+			test_error(input, "Type mismatch in range: string (expected int)", 2, 12),
+		);
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
 	});

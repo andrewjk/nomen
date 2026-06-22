@@ -243,19 +243,23 @@ x = "string?!"
 	test("type mismatch -- array", () => {
 		const input = `
 var int x
-x = [1, 2]
+x = Array(1, 2)
 `;
-		const expected = [test_error(input, "Type mismatch in assignment: int[] (expected int)", 3, 5)];
+		const expected = [
+			test_error(input, "Type mismatch in assignment: Array<int> (expected int)", 3, 5),
+		];
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
 	});
 
 	test("type mismatch -- array 2", () => {
 		const input = `
-var int[] x
+var Array<int> x
 x = 3
 `;
-		const expected = [test_error(input, "Type mismatch in assignment: int (expected int[])", 3, 5)];
+		const expected = [
+			test_error(input, "Type mismatch in assignment: int (expected Array<int>)", 3, 5),
+		];
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
 	});
@@ -331,7 +335,9 @@ func set = (int x) {
 var int x
 x = true
 `;
-		const expected = [test_error(input, "Type mismatch in assignment: bool (expected int)", 3, 5)];
+		const expected = Array(
+			test_error(input, "Type mismatch in assignment: bool (expected int)", 3, 5),
+		);
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
 	});

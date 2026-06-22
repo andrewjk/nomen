@@ -9,7 +9,7 @@ test("ziglings 020 quiz3 -- errors", () => {
 import System
 
 pub func main = () {
-    const my_numbers = [5, 6, 7, 8]
+    const my_numbers = Array(5, 6, 7, 8)
     printPowersOfTwo(my_numbers)
 }
 
@@ -39,11 +39,11 @@ test("ziglings 020 quiz3 -- fixed", () => {
 import System
 
 pub func main = () {
-    const my_numbers = [5, 6, 7, 8]
+    const my_numbers = Array(5, 6, 7, 8)
     printPowersOfTwo(my_numbers)
 }
 
-func printPowersOfTwo = (int[] numbers) {
+func printPowersOfTwo = (Array<int> numbers) {
     for n of numbers {
         Console.write("\\{twoToThe(n)} ")
     }
@@ -69,11 +69,11 @@ test("ziglings 020 quiz3 -- build", async () => {
 import System
 
 pub func main = () {
-    const my_numbers = [5, 6, 7, 8]
+    const my_numbers = Array(5, 6, 7, 8)
     printPowersOfTwo(my_numbers)
 }
 
-func printPowersOfTwo = (int[] numbers) {
+func printPowersOfTwo = (Array<int> numbers) {
     for n of numbers {
         Console.write("\\{twoToThe(n)} ")
     }

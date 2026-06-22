@@ -41,6 +41,20 @@ pub struct Array<T> {
         ```
     }
 
+    pub func set = (ref self, int index: index >= 0 && index < self.length, T value) {
+        ```
+        #arch: c
+        ((T*)&self)[index] = value;
+        ```
+        ```
+        #arch: aarch64
+        // x19 = self (first elem), x1 = index, x2 = value
+        mov x3, #T_SIZE
+        mul x1, x1, x3
+        str x2, [x19, x1]
+        ```
+    }
+
     pub func at_end = (self, out T) {
         ```
         #arch: c
@@ -57,7 +71,7 @@ pub struct Array<T> {
         ```
     }
 
-    pub func with_length = (self, int length: length >= 0, out Array) {
+    pub func with_length = (ref self, int length: length >= 0, out Array) {
         ```
         #arch: c
         T result[length];

@@ -399,7 +399,7 @@ Console.write("\\{f.x}")
 describe("for loop and compound assignment", () => {
 	test("for loop variable is initialized", () => {
 		const input = `
-const arr = [1, 2, 3]
+const arr = Array(1, 2, 3)
 for item of arr {
     Console.write("\\{item}")
 }

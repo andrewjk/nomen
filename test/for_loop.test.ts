@@ -10,7 +10,7 @@ import test_error from "./test_error";
 describe("for loop build", () => {
 	test("for loop with array", async () => {
 		const input = `
-const nums = [1, 2, 3]
+const nums = Array(1, 2, 3)
 for n of nums {
   Console.write("\\{n}")
 }
@@ -39,7 +39,7 @@ Console.write("\\n")
 
 	test("for loop with sum calculation", async () => {
 		const input = `
-const nums = [1, 2, 3, 4, 5]
+const nums = Array(1, 2, 3, 4, 5)
 var sum = 0
 for n of nums {
   sum = sum + n
@@ -55,7 +55,7 @@ Console.write("\\{sum}")
 
 	test("for loop with multiplication", async () => {
 		const input = `
-const nums = [2, 3, 4]
+const nums = Array(2, 3, 4)
 var product = 1
 for n of nums {
   product = product * n
@@ -71,7 +71,7 @@ Console.write("\\{product}")
 
 	test("for loop with condition in body", async () => {
 		const input = `
-const nums = [1, 2, 3, 4, 5]
+const nums = Array(1, 2, 3, 4, 5)
 var count = 0
 for n of nums {
   if n > 2 {
@@ -89,7 +89,7 @@ Console.write("\\{count}")
 
 	test("for loop with single element", async () => {
 		const input = `
-const nums = [42]
+const nums = Array(42)
 for n of nums {
   Console.write("\\{n}")
 }
@@ -103,8 +103,8 @@ for n of nums {
 
 	test("for loop with nested loops", async () => {
 		const input = `
-const rows = [1, 2]
-const cols = [3, 4]
+const rows = Array(1, 2)
+const cols = Array(3, 4)
 var total = 0
 for r of rows {
   for c of cols {
@@ -122,10 +122,10 @@ Console.write("\\{total}")
 
 	test("for loop with index calculation", async () => {
 		const input = `
-const nums = [10, 20, 30]
+const nums = Array(10, 20, 30)
 var total = 0
 for i of 0..3 {
-  total = total + nums[i]
+  total = total + nums.at(i)
 }
 Console.write("\\{total}")
 `;
@@ -153,10 +153,10 @@ Console.write("\\{count}")
 
 	test("for loop with array access", async () => {
 		const input = `
-const nums = [100, 200, 300]
+const nums = Array(100, 200, 300)
 var sum = 0
 for i of 0..3 {
-  sum = sum + nums[i]
+  sum = sum + nums.at(i)
 }
 Console.write("\\{sum}")
 `;
@@ -169,7 +169,7 @@ Console.write("\\{sum}")
 
 	test("for loop with comparison", async () => {
 		const input = `
-const nums = [1, 5, 3, 7, 2]
+const nums = Array(1, 5, 3, 7, 2)
 var max = 0
 for n of nums {
   if n > max {
@@ -187,7 +187,7 @@ Console.write("\\{max}")
 
 	test("for loop with modulo", async () => {
 		const input = `
-const nums = [1, 2, 3, 4, 5]
+const nums = Array(1, 2, 3, 4, 5)
 var sum = 0
 for n of nums {
   if n % 2 == 0 {
@@ -205,7 +205,7 @@ Console.write("\\{sum}")
 
 	test("for loop with simple assignment in update", async () => {
 		const input = `
-const nums = [1, 2, 3]
+const nums = Array(1, 2, 3)
 var sum = 0
 var i = 0
 for n of nums; i += 1 {
@@ -239,7 +239,7 @@ Console.write("\\{sum}")
 
 	test("for loop with update and condition", async () => {
 		const input = `
-const nums = [1, 2, 3, 4, 5]
+const nums = Array(1, 2, 3, 4, 5)
 var sum = 0
 var i = 0
 for n of nums; i += 1 {
@@ -259,7 +259,7 @@ Console.write("\\{sum}")
 
 	test("for loop with update accessing outer variable", async () => {
 		const input = `
-const nums = [1, 2, 3]
+const nums = Array(1, 2, 3)
 var multiplier = 2
 var sum = 0
 var i = 0
@@ -278,7 +278,7 @@ Console.write("\\{sum}")
 
 	test("for loop with side effect in update", async () => {
 		const input = `
-const nums = [1, 2, 3]
+const nums = Array(1, 2, 3)
 var counter = 0
 for n of nums; counter += 1 {
   Console.write("\\{n} ")
@@ -369,7 +369,7 @@ for x nums {
 
 	test("missing loop variable", () => {
 		const input = `
-for of [1, 2, 3] {
+for of Array(1, 2, 3) {
   // ...
 }
 `;
@@ -380,7 +380,7 @@ for of [1, 2, 3] {
 
 	test("missing opening brace", () => {
 		const input = `
-for x of [1, 2, 3]
+for x of Array(1, 2, 3)
   // ...
 }
 `;
@@ -391,7 +391,7 @@ for x of [1, 2, 3]
 
 	test("missing closing brace", () => {
 		const input = `
-for x of [1, 2, 3] {
+for x of Array(1, 2, 3) {
   // ...
 `;
 		const expected = [test_error(input, "Expected token", 3, 0)];
@@ -401,11 +401,11 @@ for x of [1, 2, 3] {
 
 	test("missing closing bracket", () => {
 		const input = `
-for x of [1, 2, 3 {
+for x of Array(1, 2, 3 {
   // ...
 }
 `;
-		const expected = [test_error(input, "Expected ]", 2, 19)];
+		const expected = [test_error(input, "Expected )", 2, 24)];
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
 	});
@@ -458,7 +458,7 @@ for x of start..end {
 
 	test("update with undefined variable", () => {
 		const input = `
-const nums = [1, 2, 3]
+const nums = Array(1, 2, 3)
 for n of nums; n += undefined_var {
   // body
 }
@@ -470,7 +470,7 @@ for n of nums; n += undefined_var {
 
 	test("update with unknown function", () => {
 		const input = `
-const nums = [1, 2, 3]
+const nums = Array(1, 2, 3)
 for n of nums; n = some_func(n) {
   // body
 }
@@ -482,7 +482,7 @@ for n of nums; n = some_func(n) {
 
 	test("multiple semicolons", () => {
 		const input = `
-const nums = [1, 2, 3]
+const nums = Array(1, 2, 3)
 for n of nums; n += 1; {
   // body
 }

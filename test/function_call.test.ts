@@ -155,7 +155,9 @@ greet(1)
 func greet = (int age) {}
 greet("andrew")
 `;
-		const expected = [test_error(input, "Type mismatch in param: string (expected int)", 3, 7)];
+		const expected = Array(
+			test_error(input, "Type mismatch in param: string (expected int)", 3, 7),
+		);
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
 	});

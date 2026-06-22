@@ -41,11 +41,11 @@ func caller = () {
 		const lib = get_library(path.resolve(import.meta.dirname, "../core"));
 		const input = `
 import System
-func restricted = (string[] source, int i: i < source.length) {
+func restricted = (Array<string> source, int i: i < source.length) {
     Console.write("ok")
 }
 func caller = () {
-    restricted(["a", "b", "c"], 4)
+    restricted(Array("a", "b", "c"), 4)
 }
 `;
 		const parsed = parse(input, lib);
@@ -57,11 +57,11 @@ func caller = () {
 		const lib = get_library(path.resolve(import.meta.dirname, "../core"));
 		const input = `
 import System
-func restricted = (string[] source, int i: i < source.length) {
+func restricted = (Array<string> source, int i: i < source.length) {
     Console.write("ok")
 }
 func caller = () {
-    restricted(["a", "b", "c"], 2)
+    restricted(Array("a", "b", "c"), 2)
 }
 `;
 		const parsed = parse(input, lib);
@@ -72,11 +72,11 @@ func caller = () {
 		const lib = get_library(path.resolve(import.meta.dirname, "../core"));
 		const input = `
 import System
-func restricted = (string[] source, int i: i >= 0 && i < source.length) {
+func restricted = (Array<string> source, int i: i >= 0 && i < source.length) {
     Console.write("ok")
 }
 func caller = () {
-    restricted(["a", "b", "c"], 5)
+    restricted(Array("a", "b", "c"), 5)
 }
 `;
 		const parsed = parse(input, lib);
@@ -88,11 +88,11 @@ func caller = () {
 		const lib = get_library(path.resolve(import.meta.dirname, "../core"));
 		const input = `
 import System
-func restricted = (string[] source, int i: i >= 0 && i < source.length) {
+func restricted = (Array<string> source, int i: i >= 0 && i < source.length) {
     Console.write("ok")
 }
 func caller = () {
-    restricted(["a", "b", "c"], 2)
+    restricted(Array("a", "b", "c"), 2)
 }
 `;
 		const parsed = parse(input, lib);
@@ -103,11 +103,11 @@ func caller = () {
 		const lib = get_library(path.resolve(import.meta.dirname, "../core"));
 		const input = `
 import System
-func restricted = (string[] source, int i: i >= 0 && i < source.length) {
+func restricted = (Array<string> source, int i: i >= 0 && i < source.length) {
     Console.write("ok")
 }
 func caller = () {
-    var things = ["a", "b", "c"]
+    var things = Array("a", "b", "c")
     restricted(things, 4)
 }
 `;
@@ -120,11 +120,11 @@ func caller = () {
 		const lib = get_library(path.resolve(import.meta.dirname, "../core"));
 		const input = `
 import System
-func restricted = (string[] source, int i: i >= 0 && i < source.length) {
+func restricted = (Array<string> source, int i: i >= 0 && i < source.length) {
     Console.write("ok")
 }
 func caller = () {
-    var things = ["a", "b", "c"]
+    var things = Array("a", "b", "c")
     for i of 0 .. things.length {
         restricted(things, i)
     }
@@ -138,11 +138,11 @@ func caller = () {
 		const lib = get_library(path.resolve(import.meta.dirname, "../core"));
 		const input = `
 import System
-func restricted = (string[] source, int i: i >= 0 && i < source.length) {
+func restricted = (Array<string> source, int i: i >= 0 && i < source.length) {
     Console.write("ok")
 }
 func caller = () {
-    var things = ["a", "b", "c"]
+    var things = Array("a", "b", "c")
     for i of 0 .. things.length {
         i += 1
         restricted(things, i)
@@ -158,11 +158,11 @@ func caller = () {
 		const lib = get_library(path.resolve(import.meta.dirname, "../core"));
 		const input = `
 import System
-func restricted = (string[] source, int i: i >= 0 && i < source.length) {
+func restricted = (Array<string> source, int i: i >= 0 && i < source.length) {
     Console.write("ok")
 }
 func caller = () {
-    var things = ["a", "b", "c"]
+    var things = Array("a", "b", "c")
     var start = 0
     for i of start .. things.length {
         restricted(things, i)
@@ -265,11 +265,11 @@ func caller = () {
 		const lib = get_library(path.resolve(import.meta.dirname, "../core"));
 		const input = `
 import System
-func restricted = (string[] source, int i: i >= 0 && i < source.length) {
+func restricted = (Array<string> source, int i: i >= 0 && i < source.length) {
     Console.write("ok")
 }
 func caller = () {
-    var things = ["a", "b", "c"]
+    var things = Array("a", "b", "c")
     var k = 0
     while k < things.length; k += 1 {
         restricted(things, k)

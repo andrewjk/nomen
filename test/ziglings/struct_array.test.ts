@@ -14,10 +14,10 @@ struct Point {
 }
 
 pub func main = () {
-    const points = [Point(1, 2), Point(3, 4), Point(5, 6)]
-    Console.write("\\{points[0].x} \\{points[0].y}\\n")
-    Console.write("\\{points[1].x} \\{points[1].y}\\n")
-    Console.write("\\{points[2].x} \\{points[2].y}")
+    const points = Array(Point(1, 2), Point(3, 4), Point(5, 6))
+    Console.write("\\{points.at(0).x} \\{points.at(0).y}\\n")
+    Console.write("\\{points.at(1).x} \\{points.at(1).y}\\n")
+    Console.write("\\{points.at(2).x} \\{points.at(2).y}")
 }
 `;
 	const parsed = parse_with_imports(input);

@@ -80,13 +80,13 @@ class Box {
 }
 
 func store = (mov Box b, out Box[]) {
-  var Box[] arr = [b]
+  var arr = Array(b)
   return arr
 }
 
 var Box a = Box(42)
 var Box[] result = store(mov a)
-Console.write("\\{result[0].value}")
+Console.write("\\{result.at(0).value}")
 `;
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
@@ -125,12 +125,12 @@ class Box {
 }
 
 func make_arr = (out Box[]) {
-  var Box[] arr = [Box(42)]
+  var arr = Array(Box(42))
   return arr
 }
 
 var Box[] result = make_arr()
-Console.write("\\{result[0].value}")
+Console.write("\\{result.at(0).value}")
 `;
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
@@ -260,8 +260,8 @@ class Box {
 }
 
 if 1 == 1 {
-  var Box[] items = [Box(1), Box(2)]
-  Console.write("\\{items[0].value}\\{items[1].value}")
+  var items = Array(Box(1), Box(2))
+  Console.write("\\{items.at(0).value}\\{items.at(1).value}")
 }
 Console.write("done")
 `;
@@ -336,13 +336,13 @@ class Box {
 }
 
 func make_arr = (out Box[]) {
-  var Box[] arr = [Box(1), Box(2), Box(3)]
+  var arr = Array(Box(1), Box(2), Box(3))
   return arr
 }
 
 if 1 == 1 {
   var Box[] result = make_arr()
-  Console.write("\\{result[0].value}\\{result[1].value}\\{result[2].value}")
+  Console.write("\\{result.at(0).value}\\{result.at(1).value}\\{result.at(2).value}")
 }
 Console.write("done")
 `;
@@ -374,7 +374,7 @@ class Box {
   var int value
 }
 
-var Box[] items = [Box(1), Box(2), Box(3)]
+var items = Array(Box(1), Box(2), Box(3))
 for b of items {
   Console.write("\\{b.value}")
 }
@@ -393,12 +393,12 @@ class Box {
 
 var int i = 0
 while i < 3 {
-  var Box[] items = [Box(i)]
+  var items = Array(Box(i))
   if i == 1 {
     i += 1
     break
   }
-  Console.write("\\{items[0].value}")
+  Console.write("\\{items.at(0).value}")
   i += 1
 }
 Console.write("done")
@@ -417,12 +417,12 @@ class Box {
 
 var int i = 0
 while i < 3 {
-  var Box[] items = [Box(i)]
+  var items = Array(Box(i))
   i += 1
   if i == 2 {
     continue
   }
-  Console.write("\\{items[0].value}")
+  Console.write("\\{items.at(0).value}")
 }
 Console.write("done")
 `;

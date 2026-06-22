@@ -10,20 +10,20 @@ test("ziglings 004 arrays -- errors", () => {
 import System
 
 pub func main = () {
-  const uint8[] some_primes = [ 1, 3, 5, 7, 11, 13, 17, 19 ]
+  const some_primes = Array( 1, 3, 5, 7, 11, 13, 17, 19 )
 
-  some_primes[0] = 2
+  some_primes.set(0, 2)
 
-  const first = some_primes[0]
-  const fourth = some_primes[???]
+  const first = some_primes.at(0)
+  const fourth = some_primes.at(???)
   const length = some_primes.???
 
   Console.write("First: \\{first}, Fourth: \\{fourth}, Length: \\{length}\\n")
 }
 `;
 	const expected = [
-		test_error(input, "Assignment to const: some_primes", 7, 3),
-		test_error(input, "Unknown value: ???", 10, 30),
+		test_error(input, "Update to const: some_primes", 7, 15),
+		test_error(input, "Unknown value: ???", 10, 33),
 		test_error(input, "Field not found: ???", 11, 30),
 		test_error(input, "Unknown value: length", 13, 64),
 	];
@@ -36,12 +36,12 @@ test("ziglings 004 arrays -- fixed", () => {
 import System
 
 pub func main = () {
-  var uint8[] some_primes = [ 1, 3, 5, 7, 11, 13, 17, 19 ]
+  var some_primes = Array( 1, 3, 5, 7, 11, 13, 17, 19 )
 
-  some_primes[0] = 2
+  some_primes.set(0, 2)
 
-  const first = some_primes[0]
-  const fourth = some_primes[3]
+  const first = some_primes.at(0)
+  const fourth = some_primes.at(3)
   const length = some_primes.length
 
   Console.write("First: \\{first}, Fourth: \\{fourth}, Length: \\{length}\\n")
@@ -55,12 +55,12 @@ test("ziglings 004 arrays -- build", async () => {
 import System
 
 pub func main = () {
-  var uint8[] some_primes = [ 1, 3, 5, 7, 11, 13, 17, 19 ]
+  var some_primes = Array( 1, 3, 5, 7, 11, 13, 17, 19 )
 
-  some_primes[0] = 2
+  some_primes.set(0, 2)
 
-  const first = some_primes[0]
-  const fourth = some_primes[3]
+  const first = some_primes.at(0)
+  const fourth = some_primes.at(3)
   const length = some_primes.length
 
   Console.write("First: \\{first}, Fourth: \\{fourth}, Length: \\{length}\\n")

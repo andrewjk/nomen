@@ -9,7 +9,7 @@ test("ziglings 030 switch -- errors", () => {
 import System
 
 pub func main = () {
-    const chars = [26, 9, 7, 42]
+    const chars = Array(26, 9, 7, 42)
 
     for c of chars {
         match c {
@@ -39,7 +39,7 @@ test("ziglings 030 switch -- fixed", () => {
 import System
 
 pub func main = () {
-    const chars = [26, 9, 7, 42]
+    const chars = Array(26, 9, 7, 42)
 
     for c of chars {
         match c {
@@ -69,7 +69,7 @@ test("ziglings 030 switch -- build", async () => {
 import System
 
 pub func main = () {
-    const chars = [26, 9, 7, 42]
+    const chars = Array(26, 9, 7, 42)
 
     for c of chars {
         match c {

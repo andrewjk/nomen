@@ -20,7 +20,6 @@ export type NodeType =
 	| "access"
 	| "access_field"
 	| "access_func"
-	| "access_index"
 	| "branch"
 	| "value"
 	| "array"

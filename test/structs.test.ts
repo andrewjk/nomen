@@ -44,7 +44,7 @@ struct Container {
   var string[] items
 }
 var c = Container(["hello", "world"])
-Console.write("\\{c.items[0]}\\{c.items[1]}")
+Console.write("\\{c.items.at(0)}\\{c.items.at(1)}")
 `;
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
@@ -58,7 +58,7 @@ struct Container {
   var string[] items
 }
 var Container c = Container(["hello", "world"])
-Console.write("\\{c.items[0]}\\{c.items[1]}")
+Console.write("\\{c.items.at(0)}\\{c.items.at(1)}")
 `;
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
@@ -74,7 +74,7 @@ struct Holder {
   var string[2] args
 }
 var Holder h = Holder(0, ["first", "second"])
-Console.write("\\{h.args[0]}\\{h.args[1]}")
+Console.write("\\{h.args.at(0)}\\{h.args.at(1)}")
 `;
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
@@ -89,7 +89,7 @@ struct Nums {
   var int[3] values
 }
 var Nums n = Nums([10, 20, 30])
-Console.write("\\{n.values[0]} \\{n.values[1]} \\{n.values[2]}")
+Console.write("\\{n.values.at(0)} \\{n.values.at(1)} \\{n.values.at(2)}")
 `;
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });

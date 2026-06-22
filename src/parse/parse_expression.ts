@@ -1,4 +1,3 @@
-import AccessIndexNode from "../nodes/AccessIndexNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import AnonStructNode from "../nodes/AnonStructNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
@@ -165,16 +164,18 @@ export default function parse_expression(status: ParseStatus, allow_assignment =
 				node = access;
 				break;
 			}
-			case "[": {
-				accept("[", status);
-				const index = parse_expression(status);
-				expect("]", status);
-				const access = new AccessNode(node.start, node, new AccessIndexNode(index.start, index));
-				node = access;
-				break;
-			}
 			case "(": {
 				accept("(", status);
+				// Convert `Array(...)` calls into ArrayValuesNode (array literal)
+				if (node.node_type === "value" && (node as ValueNode).value === "Array") {
+					const arr = new ArrayValuesNode(start);
+					if (peek_current(status) !== ")") {
+						parse_array_value(arr, status);
+					}
+					expect(")", status);
+					node = arr;
+					break;
+				}
 				const func = new FunctionCallNode(start, value);
 				if (peek_current(status) !== ")") {
 					parse_function_call_parameter(func, status);
@@ -213,7 +214,8 @@ export default function parse_expression(status: ParseStatus, allow_assignment =
 					if (
 						close_idx !== -1 &&
 						close_idx + 1 < status.tokens.length &&
-						status.tokens[close_idx + 1]?.value === "("
+						(status.tokens[close_idx + 1]?.value === "(" ||
+							status.tokens[close_idx + 1]?.value === ".")
 					) {
 						accept("<", status);
 						const type_args = [parse_type(status)];
@@ -222,15 +224,31 @@ export default function parse_expression(status: ParseStatus, allow_assignment =
 							type_args.push(parse_type(status));
 						}
 						expect(">", status);
-						accept("(", status);
 						const name = (node as ValueNode).value;
-						const func = new FunctionCallNode(start, name);
-						func.type_args = type_args;
-						if (peek_current(status) !== ")") {
-							parse_function_call_parameter(func, status);
+						// Attach type_args to the value node so subsequent .method() access
+						// can route to the correctly monomorphized struct
+						(node as ValueNode).type_args = type_args;
+						// If followed by `(`, it's a typed constructor call like Array<int>(...)
+						if (peek_current(status) === "(") {
+							accept("(", status);
+							// Convert Array<T>(...) into ArrayValuesNode (array literal)
+							if (name === "Array") {
+								const arr = new ArrayValuesNode(start);
+								if (peek_current(status) !== ")") {
+									parse_array_value(arr, status);
+								}
+								expect(")", status);
+								node = arr;
+							} else {
+								const func = new FunctionCallNode(start, name);
+								func.type_args = type_args;
+								if (peek_current(status) !== ")") {
+									parse_function_call_parameter(func, status);
+								}
+								expect(")", status);
+								node = func;
+							}
 						}
-						expect(")", status);
-						node = func;
 						break;
 					}
 				}

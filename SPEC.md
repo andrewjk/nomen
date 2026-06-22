@@ -97,7 +97,7 @@ Constraints can reference other parameters, including array properties like `.le
 
 ```
 func safe_index = (string[] source, int i: i >= 0 && i < source.length) {
-    return source[i]
+    return source.at(i)
 }
 
 const items = ["a", "b", "c"]
@@ -572,7 +572,7 @@ func sum = (...int numbers, out int) {
     var total = 0
     var i = 0
     while i < numbers.length {
-        total = total + numbers[i]
+        total = total + numbers.at(i)
         i = i + 1
     }
     return total
@@ -590,7 +590,7 @@ func add_to = (int base, ...int numbers, out int) {
     var total = base
     var i = 0
     while i < numbers.length {
-        total = total + numbers[i]
+        total = total + numbers.at(i)
         i = i + 1
     }
     return total
@@ -1100,13 +1100,34 @@ Console.write("\\{arr}")             // Arrays stringify element-by-element
 
 ### Indexing
 
+Arrays and strings are accessed via `.at()` and modified via `.set()`:
+
 ```
 const arr = [10, 20, 30]
-const first = arr[0]  // 10
+const first = arr.at(0)  // 10
+arr.set(1, 99)           // arr is now [10, 99, 30]
 
 const str = "hello"
-const second = str[1]  // 'e' (as char)
+const second = str.at(1)  // 'e' (as char)
 ```
+
+The `.at()` method has a compile-time bounds check when the index is a constant:
+
+```
+const arr = [10, 20, 30]
+const x = arr.at(5)  // Error: Parameter constraint not satisfied
+```
+
+### Spread
+
+Array literals support a spread syntax (`...`) to flatten an array into individual arguments:
+
+```
+const a = [1, 2, 3]
+const b = [...a, 4, 5]  // [1, 2, 3, 4, 5]
+```
+
+This is used internally by `Array.#init` to copy elements from a variadic parameter list into the array's storage.
 
 ### Field Access
 
