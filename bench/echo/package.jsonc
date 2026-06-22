@@ -1,6 +1,6 @@
 {
 	"name": "Bench",
 	"imports": {
-		"System": "../../lib"
+		"System": "../../core"
 	}
 }
