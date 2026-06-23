@@ -250,7 +250,6 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 					is_struct_type(param_type, status) ||
 					is_enum_with_data_type(param_type, status)
 				) {
-					console.error(`[DBG] emit_struct_address for ${param_type} param`);
 					emit_struct_address(node.params[i], status);
 				} else if (is_ref_param) {
 					emit_address_of(node.params[i], status);

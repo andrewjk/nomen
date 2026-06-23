@@ -13,7 +13,7 @@ pub func main = () {
     const letters = "YZhifg"
     const x = 1
 
-    var lang = Array<char>.with_length(3)
+    var lang = Array.with(' ', 3)
 
     lang.set(0, letters.at(x))
 
@@ -44,7 +44,7 @@ pub func main = () {
     const letters = "YZhifg"
     var x = 1
 
-    var lang = Array<char>.with_length(3)
+    var lang = Array.with(' ', 3)
 
     lang.set(0, letters.at(x))
 
@@ -69,7 +69,7 @@ pub func main = () {
     const letters = "YZhifg"
     var x = 1
 
-    var lang = Array<char>.with_length(3)
+    var lang = Array.with(' ', 3)
 
     lang.set(0, letters.at(x))
 

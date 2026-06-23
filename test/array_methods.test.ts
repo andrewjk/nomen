@@ -77,25 +77,23 @@ pub func main = () {
 		expect(parsed.errors).toEqual([]);
 	});
 
-	test("with_length() truncates array", () => {
+	test("with() creates array with repeated value", () => {
 		const input = `
 import System
 pub func main = () {
-    var arr = Array(1, 2, 3, 4, 5)
-    var shorter = Array<int>.with_length(3)
-    Console.write("\\{shorter.length}")
+    var arr = Array.with(0, 5)
+    Console.write("\\{arr.length}")
 }
 `;
 		const parsed = parse(input, lib);
 		expect(parsed.errors).toEqual([]);
 	});
 
-	test("with_length() constraint fails for negative length", () => {
+	test("with() constraint fails for negative count", () => {
 		const input = `
 import System
 pub func main = () {
-    var arr = Array(10, 20, 30)
-    var bad = Array<int>.with_length(-1)
+    var bad = Array.with(0, -1)
 }
 `;
 		const parsed = parse(input, lib);

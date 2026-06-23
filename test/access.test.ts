@@ -157,7 +157,7 @@ Console.write("\\{result}")
 
 	test("array index access", async () => {
 		const input = `
-var nums = Array<int>.with_length(3)
+var nums = Array.with(0, 3)
 nums.set(0, 10)
 nums.set(1, 20)
 nums.set(2, 30)
@@ -171,7 +171,7 @@ Console.write("\\{nums.at(0)} \\{nums.at(1)} \\{nums.at(2)}")
 
 	test("array index with variable", async () => {
 		const input = `
-var nums = Array<int>.with_length(3)
+var nums = Array.with(0, 3)
 nums.set(0, 100)
 nums.set(1, 200)
 nums.set(2, 300)

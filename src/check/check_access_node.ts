@@ -204,17 +204,26 @@ function check_access_function_node(
 				}
 			}
 		}
-	} else if (
-		target_type.name === "Array" &&
-		target.node_type === "value" &&
-		(target as ValueNode).type_args?.length
-	) {
-		// Static method call on Array<T> (e.g. Array<int>.with_length(3))
+	} else if (target_type.name === "Array" && target.node_type === "value") {
+		// Static method call on Array (e.g. Array<int>.with(0, 3) or Array.with(0, 3))
 		const array_struct = status.structs.find((s) => s.name === "Array");
 		if (array_struct && array_struct.type_params.length > 0) {
-			const mono = monomorphize(array_struct, (target as ValueNode).type_args!, status);
-			if (mono) {
-				effective_type = new Type(mono.name);
+			const type_args = (target as ValueNode).type_args;
+			if (type_args?.length) {
+				// Explicit type args: Array<int>.with(0, 3)
+				const mono = monomorphize(array_struct, type_args, status);
+				if (mono) {
+					effective_type = new Type(mono.name);
+				}
+			} else if (node.params.length > 0 && node.name === "with") {
+				// No type args but calling with(): infer T from first arg
+				const arg_type = type_from_value_node(node.params[0], status);
+				if (arg_type.name && !arg_type.is_array) {
+					const mono = monomorphize(array_struct, [arg_type], status);
+					if (mono) {
+						effective_type = new Type(mono.name);
+					}
+				}
 			}
 		}
 	}
@@ -330,32 +339,41 @@ function check_access_function_node(
 	if (result && node.type) {
 		const return_is_array_struct =
 			node.type.name === "Array" || node.type.name?.startsWith("Array_");
-		if (return_is_array_struct) {
-			// For with_length, try to determine result length from the argument
+		const return_is_array_type = node.type.is_array;
+		if (return_is_array_struct || return_is_array_type) {
+			// For with, try to determine result length from the count argument (second param)
 			let result_length: ValueNode | undefined;
-			if (node.name === "with_length" && node.params.length > 0) {
-				const len_param = node.params[0];
-				if (len_param.node_type === "value") {
-					const val = parseInt((len_param as ValueNode).value, 10);
+			if (node.name === "with" && node.params.length > 1) {
+				const count_param = node.params[1];
+				if (count_param.node_type === "value") {
+					const val = parseInt((count_param as ValueNode).value, 10);
 					if (!isNaN(val)) {
 						result_length = new ValueNode(-1, String(val), new Type("int"));
 					}
 				}
 			}
-			// Determine element type: from target array, from explicit type_args, or from mono name
-			const elem_name = target_type.is_array
-				? target_type.name
-				: target.node_type === "value" && (target as ValueNode).type_args?.length
-					? (target as ValueNode).type_args![0].name
-					: node.type.name.startsWith("Array_")
-						? node.type.name.slice(6)
-						: "";
-			if (elem_name) {
-				node.type = new Type(elem_name);
-				node.type.is_array = true;
-				if (result_length) {
-					node.type.length = result_length;
+			if (return_is_array_struct) {
+				// Determine element type: from target array, from explicit type_args, from mono name, or from return type_args
+				const elem_name = target_type.is_array
+					? target_type.name
+					: target.node_type === "value" && (target as ValueNode).type_args?.length
+						? (target as ValueNode).type_args![0].name
+						: node.type.name.startsWith("Array_")
+							? node.type.name.slice(6)
+							: node.type.type_args?.length
+								? node.type.type_args[0].name
+								: "";
+				if (elem_name) {
+					node.type = new Type(elem_name);
+					node.type.is_array = true;
+					if (result_length) {
+						node.type.length = result_length;
+					}
 				}
+			} else if (return_is_array_type && result_length) {
+				// Return type is already in internal array form (e.g. Type("char", is_array=true))
+				// Just set the length
+				node.type.length = result_length;
 			}
 		}
 	}
