@@ -379,6 +379,159 @@ Type parameters can be used in:
 
 Within the struct body, type parameters match any concrete type during type checking. At the call site, the type argument (`<int>`) ensures the correct types are enforced.
 
+### Anonymous Structs
+
+Anonymous structs are inline struct literals created with `[ field = value ]` syntax. They're used when calling functions that expect a specific struct type:
+
+```
+struct Circle {
+    var string name
+    var int center_x
+    var int center_y
+    var int radius
+}
+
+func printCircle = (Circle circle) {
+    Console.write("[\\{circle.name}: \\{circle.center_x},\\{circle.center_y},\\{circle.radius}]\\n")
+}
+
+printCircle([ center_x = 25, center_y = 70, radius = 15 ])
+// Output: [Circle: 25,70,15]
+```
+
+All fields must be provided. The anonymous struct must match the expected struct's field names and types.
+
+### Tuple Types
+
+Tuples are anonymous struct types with positional fields named `_0`, `_1`, `_2`, etc. They allow grouping heterogeneous values without defining a named struct.
+
+#### Tuple Type Declaration
+
+```
+var [int, string] things
+var [int, string, bool] triple
+```
+
+#### Tuple Values
+
+```
+var things = [1, "first"]                    // inferred as [int, string]
+var triple = [42, "hello", true]             // [int, string, bool]
+```
+
+When no explicit type is provided, a bracket-enclosed heterogeneous list is inferred as a tuple. To create a typed array instead, use `Array<T>`:
+
+```
+var Array<int> nums = [1, 2, 3]             // typed array, not tuple
+var mixed = [1, "hello"]                     // inferred as [int, string] tuple
+```
+
+#### Field Access
+
+Tuple fields are accessed with underscore-prefixed indices:
+
+```
+var [int, string] things = [42, "answer"]
+Console.write("\\{things._0} \\{things._1}")  // "42 answer"
+```
+
+#### Destructuring
+
+Tuples can be destructured into individual variables:
+
+```
+func get_person = (int id, out [string, int]) {
+    return ["Andrew", id + 100]
+}
+
+var [name, age] = get_person(12)
+Console.write("\\{name} \\{age}")  // "Andrew 112"
+```
+
+Destructuring also works with tuple literals:
+
+```
+var [a, b] = [11, "hello"]
+Console.write("\\{a} \\{b}")  // "11 hello"
+```
+
+#### Tuple Return Types
+
+Functions can return tuples:
+
+```
+func make_pair = (int a, int b, out [int, int]) {
+    return [a, b]
+}
+
+const p = make_pair(10, 20)
+Console.write("\\{p._0} \\{p._1}")  // "10 20"
+```
+
+#### Tuples as Struct Fields
+
+Tuples can be used as struct fields:
+
+```
+struct Container {
+    var [int, string] payload
+}
+
+const c = Container([99, "bottles"])
+Console.write("\\{c.payload._0} \\{c.payload._1}")  // "99 bottles"
+```
+
+#### Variadic Tuple Parameters
+
+Functions can accept variable numbers of tuple arguments using `...` before a tuple type:
+
+```
+func sum_pairs = (...[int, int] pairs, out int) {
+    var total = 0
+    var i = 0
+    while i < pairs.length {
+        total = total + pairs.at(i)._0 + pairs.at(i)._1
+        i = i + 1
+    }
+    return total
+}
+
+sum_pairs([1, 2], [3, 4])  // 10 (1+2 + 3+4)
+sum_pairs()                 // 0
+```
+
+Variadic tuples can be mixed with regular parameters:
+
+```
+func sum_with_base = (int base, ...[int, int] pairs, out int) {
+    var total = base
+    var i = 0
+    while i < pairs.length {
+        total = total + pairs.at(i)._0 + pairs.at(i)._1
+        i = i + 1
+    }
+    return total
+}
+
+sum_with_base(100, [1, 2], [3, 4])  // 110
+```
+
+Variadic tuples work with mixed types:
+
+```
+func first_parts = (...[string, int] pairs, out string) {
+    var result = ">"
+    var i = 0
+    while i < pairs.length {
+        result = result + pairs.at(i)._0
+        i = i + 1
+    }
+    return result
+}
+
+first_parts(["count", 1], ["sum", 2])  // ">countsum"
+```
+
 ### Trait Types
 
 Interfaces that can be implemented by structs:
