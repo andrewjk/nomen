@@ -14,6 +14,11 @@ export default class Type {
 	type_args?: Type[];
 	func_params?: import("./ParameterNode.ts").default[];
 	func_return_type?: Type;
+	/**
+	 * For tuple types `[T1, T2, ...]`, the list of element types.
+	 * When set, `name` is "tuple".
+	 */
+	tuple_types?: Type[];
 
 	constructor(name: string, is_static?: boolean, is_array?: boolean, length?: BaseNode) {
 		this.name = name;

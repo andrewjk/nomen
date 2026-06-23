@@ -10,6 +10,7 @@ import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
 import check_type_exists from "./utils/check_type_exists.ts";
 import evaluate_const_condition from "./utils/evaluate_const_condition.ts";
 import { is_class_type } from "./utils/ownership.ts";
+import { materialize_tuple_type } from "./utils/tuple_struct.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
 
@@ -17,10 +18,16 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 	if (decl.func_params) {
 		if (decl.func_return_type) {
 			check_type_exists(decl.func_return_type, status, -1);
+			if (decl.func_return_type.name === "tuple" && decl.func_return_type.tuple_types?.length) {
+				decl.func_return_type = materialize_tuple_type(decl.func_return_type, status);
+			}
 		}
 		for (const param of decl.func_params) {
 			if (param.type.name) {
 				check_type_exists(param.type, status, param.type_start!);
+				if (param.type.name === "tuple" && param.type.tuple_types?.length) {
+					param.type = materialize_tuple_type(param.type, status);
+				}
 			}
 		}
 
@@ -83,6 +90,10 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 	} else {
 		if (decl.type.name) {
 			check_type_exists(decl.type, status, decl.type_start!);
+		}
+		// Materialize tuple types into anonymous structs
+		if (decl.type.name === "tuple" && decl.type.tuple_types?.length) {
+			decl.type = materialize_tuple_type(decl.type, status);
 		}
 
 		// Check for var on class-type fields in classes/traits (must use mov)

@@ -1,4 +1,7 @@
 import add_error from "../add_error.ts";
+import AccessFieldNode from "../nodes/AccessFieldNode.ts";
+import AccessNode from "../nodes/AccessNode.ts";
+import BaseNode from "../nodes/BaseNode.ts";
 import type BlockNode from "../nodes/BlockNode.ts";
 import { is_value_node } from "../nodes/check_node_type.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
@@ -7,6 +10,7 @@ import ParameterNode from "../nodes/ParameterNode.ts";
 import ReturnNode from "../nodes/ReturnNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import Type from "../nodes/Type.ts";
+import ValueNode from "../nodes/ValueNode.ts";
 import parse_expression from "./parse_expression.ts";
 import parse_statement from "./parse_statement.ts";
 import parse_type from "./parse_type.ts";
@@ -25,12 +29,23 @@ export default function parse_declaration(
 ) {
 	const start = get_index(status);
 	accept(visibility, status);
+
+	// Detect destructuring: `var [a, b, ...] = expr`
+	// Look ahead: if the bracketed names are followed by `=`, treat as destructuring.
+	if (
+		peek_current(status) === declaration &&
+		status.tokens[status.i + 1]?.value === "[" &&
+		looks_like_destructuring(status, status.i + 1)
+	) {
+		accept(declaration, status);
+		parse_destructuring(visibility, declaration, start, status);
+		return;
+	}
+
 	const decl = new DeclarationNode(start, visibility, declaration, "");
 	status.stack.push(decl);
 
 	accept(declaration, status);
-
-	// Check for function type declaration: var func (...) name
 	if (peek_current(status) === "func") {
 		parse_function_type_declaration(decl, status);
 	} else {
@@ -307,5 +322,105 @@ function parse_anon_function_parameter(func: FunctionNode, status: ParseStatus) 
 	// Next parameter
 	if (accept(",", status)) {
 		parse_anon_function_parameter(func, status);
+	}
+}
+
+/**
+ * Look ahead from a `[` at position `start_idx` to see if this is
+ * destructuring (names then `=`) vs. a tuple type declaration
+ * (types then a name).
+ */
+function looks_like_destructuring(status: ParseStatus, start_idx: number): boolean {
+	let depth = 0;
+	let j = start_idx;
+	while (j < status.tokens.length) {
+		const v = status.tokens[j].value;
+		if (v === "[") depth++;
+		else if (v === "]") {
+			depth--;
+			if (depth === 0) {
+				// Check what's after the matching ]
+				const after = status.tokens[j + 1]?.value;
+				return after === "=";
+			}
+		}
+		j++;
+	}
+	return false;
+}
+
+/**
+ * Parse `var [a, b, ...] = expr` — produces a temp declaration holding the
+ * RHS value, plus one declaration per destructured name accessing fields
+ * `_0`, `_1`, ... on the temp.
+ */
+function parse_destructuring(
+	visibility: "pub" | "private",
+	declaration: "const" | "var" | "mov",
+	start: number,
+	status: ParseStatus,
+) {
+	expect("[", status);
+	const names: string[] = [];
+	while (peek_current(status) !== "]" && status.i < status.tokens.length) {
+		const name = consume(status);
+		names.push(name);
+		if (!accept(",", status)) break;
+	}
+	expect("]", status);
+	expect("=", status);
+	const value = parse_expression(status);
+
+	const parent = status.stack.at(-1)!;
+	const push_to_parent = (node: DeclarationNode) => {
+		switch (parent.node_type) {
+			case "root":
+			case "func":
+			case "for":
+			case "while":
+			case "branch": {
+				(parent as BlockNode).statements.push(node);
+				break;
+			}
+			default: {
+				add_error(status, "Destructuring cannot appear here", start);
+			}
+		}
+	};
+
+	// If the RHS is a simple value, access fields directly off it without
+	// introducing a temporary. Otherwise create a temp.
+	const value_is_simple = value.node_type === "value";
+	let base_node: BaseNode;
+	if (value_is_simple) {
+		base_node = value;
+	} else {
+		const temp_counter = (status as any).__tuple_destructure_counter || 0;
+		(status as any).__tuple_destructure_counter = temp_counter + 1;
+		const temp_name = `_tuple_dst_${temp_counter}`;
+		const temp_decl = new DeclarationNode(
+			start,
+			"private",
+			"const",
+			temp_name,
+			new Type(""),
+			value,
+		);
+		push_to_parent(temp_decl);
+		base_node = new ValueNode(start, temp_name);
+	}
+
+	for (let i = 0; i < names.length; i++) {
+		const access_field = new AccessFieldNode(start, `_${i}`);
+		const access = new AccessNode(start, base_node, access_field);
+		const name_decl = new DeclarationNode(
+			start,
+			visibility,
+			declaration,
+			names[i],
+			new Type(""),
+			access,
+		);
+		push_to_parent(name_decl);
 	}
 }

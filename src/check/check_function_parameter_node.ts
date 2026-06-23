@@ -6,6 +6,7 @@ import type CheckStatus from "./CheckStatus.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
 import check_type_exists from "./utils/check_type_exists.ts";
 import { is_class_type } from "./utils/ownership.ts";
+import { materialize_tuple_type } from "./utils/tuple_struct.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
 
@@ -16,9 +17,18 @@ export default function check_function_parameter_node(param: ParameterNode, stat
 			return;
 		}
 		check_type_exists(param.type, status, param.type_start!);
+		// Variadic tuple: `...[int, string]` materializes the tuple struct and
+		// marks the type as an array of that struct (one tuple per arg group)
+		if (param.type.name === "tuple" && param.type.tuple_types?.length) {
+			param.type = materialize_tuple_type(param.type, status);
+			param.is_variadic_tuple = true;
+		}
 		param.type.is_array = true;
 	} else if (param.type.name) {
 		check_type_exists(param.type, status, param.type_start!);
+		if (param.type.name === "tuple" && param.type.tuple_types?.length) {
+			param.type = materialize_tuple_type(param.type, status);
+		}
 	}
 
 	// Check for mov on value types (only class types can use mov)

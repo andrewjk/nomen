@@ -15,6 +15,11 @@ export default class ParameterNode extends BaseNode {
 	is_moved?: boolean;
 	is_ref?: boolean;
 	is_variadic?: boolean;
+	/**
+	 * Set when this is a variadic tuple parameter (`...[T1, T2, ...]`).
+	 * At the call site, consecutive arguments are grouped into tuples.
+	 */
+	is_variadic_tuple?: boolean;
 	func_params?: ParameterNode[];
 	func_return_type?: Type;
 

@@ -129,6 +129,21 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 				status.code += load_element(param_regs[i], byte_offset, element_size);
 				status.code += store_element("x0", offset + byte_offset, element_size);
 			}
+		} else if (
+			!field.type.is_ref &&
+			status.structs.find((s) => s.name === field.type.name && !s.is_simple_type && !s.is_class)
+		) {
+			// Struct/tuple field: copy word-by-word from param register (which
+			// holds a pointer to the struct value). Use x9 as a scratch so we
+			// don't clobber the source pointer in param_regs[i].
+			// (Class fields hold a pointer and are handled by the plain store
+			// path below.)
+			const field_size = get_struct_size(field.type.name, status);
+			const words = Math.ceil(field_size / 8);
+			for (let w = 0; w < words; w++) {
+				status.code += `ldr x9, [${param_regs[i]}, #${w * 8}]\n`;
+				status.code += `str x9, [x0, #${offset + w * 8}]\n`;
+			}
 		} else {
 			status.code += `str ${param_regs[i]}, [x0, #${offset}]\n`;
 		}

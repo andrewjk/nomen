@@ -197,6 +197,9 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	if (has_body) {
 		for (let i = 0; i < node.params.length; i++) {
 			const param = node.params[i];
+			// Array-typed params (including variadic) hold a pointer, not a
+			// struct value — don't classify them as struct params.
+			if (param.type.is_array || param.is_variadic) continue;
 			const is_struct_type = !!status.structs.find(
 				(s) => s.name === param.type.name && !s.is_simple_type,
 			);
@@ -391,6 +394,10 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.code = peephole_optimize(status.code);
 
 	if (is_nested) {
+		if (status.function_data) {
+			status.code += status.function_data;
+			status.function_data = undefined;
+		}
 		if (!status.nested_functions) status.nested_functions = "";
 		status.nested_functions += status.code;
 		status.code = old_code!;

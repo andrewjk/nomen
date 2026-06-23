@@ -1,6 +1,9 @@
 import Type from "../../nodes/Type.ts";
 
 export default function type_name(type: Type): string {
+	if (type.tuple_types?.length && type.name === "tuple") {
+		return `[${type.tuple_types.map((t) => type_name(t)).join(", ")}]${type.is_nullable ? "?" : ""}`;
+	}
 	if (type.is_array) {
 		const elem = type_name_without_array(type);
 		return `Array<${elem}>${type.is_nullable ? "?" : ""}`;

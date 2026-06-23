@@ -23,11 +23,36 @@ import {
 import { build_swap_params } from "./utils/build_swap.ts";
 import {
 	allocate_stack_space,
+	emit_deref_var_address,
 	emit_var_address,
 	emit_var_load,
 	emit_var_store,
+	is_local_ref_var,
 } from "./utils/stack_var.ts";
 import { emit_struct_copy, get_enum_size, get_struct_size } from "./utils/struct_layout.ts";
+
+/**
+ * Pass a struct-typed param by address. For ValueNode (variable references)
+ * we emit the variable's address; for inline struct constructors we build
+ * them and rely on the constructor leaving the address in x0.
+ */
+function emit_struct_address_param(node: BaseNode, status: BuildStatus) {
+	if (node.node_type === "value") {
+		const name = (node as ValueNode).value;
+		const paramReg = status.function_param_regs?.get(name);
+		if (paramReg) {
+			if (paramReg !== "x0") {
+				status.code += `mov x0, ${paramReg}\n`;
+			}
+		} else if (is_local_ref_var(name, status)) {
+			emit_deref_var_address(status, "x0", name);
+		} else {
+			emit_var_address(status, "x0", name);
+		}
+	} else {
+		build_node(node, status);
+	}
+}
 
 function escape_asciz(value: string): string {
 	if (!value.includes("\n")) return value;
@@ -686,7 +711,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 						if (param.node_type === "array" && (param as ArrayValuesNode).type?.name === "string") {
 							const arr = param as ArrayValuesNode;
 							const str_labels: string[] = [];
-							arr.values.forEach((v, idx) => {
+							arr.values.forEach((v, _idx) => {
 								const resolved = resolve_static_value(v, status);
 								if (resolved !== null && resolved.startsWith('"')) {
 									const label = `_arr_str_${string_array_counter++}`;
@@ -699,6 +724,14 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 							const label = `_arr_param_${string_array_counter++}`;
 							status.code += `${label}: .quad ${str_labels.join(", ")}\n.p2align 2\n`;
 							status.code += `adr x0, ${label}`;
+						} else if (
+							(param as any).type?.name &&
+							!!status.structs.find(
+								(s) => s.name === (param as any).type!.name && !s.is_simple_type,
+							)
+						) {
+							// Struct param: pass by address
+							emit_struct_address_param(param, status);
 						} else {
 							build_node(param, status);
 						}

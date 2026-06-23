@@ -93,7 +93,8 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			status.code += `mov x0, ${status.struct_return_buffer}\n`;
 		} else {
 			const dest_addr = `_temp_${temp_counter++}`;
-			const offset = allocate_stack_space(status, 16);
+			const struct_size = get_struct_size(node.name, status);
+			const offset = allocate_stack_space(status, struct_size);
 			status.stack_offsets!.set(dest_addr, offset);
 		}
 		start_reg = 1;
@@ -131,15 +132,44 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		if (variadic_idx !== undefined) {
 			// Variadic call: pack variadic args into a stack array
 			const arr = node.params[variadic_idx] as ArrayValuesNode;
-			const elem_size = 8;
+			const elem_type_name = arr.type.name || "int";
+			const elem_struct = status.structs.find(
+				(s) => s.name === elem_type_name && !s.is_simple_type,
+			);
+			const elem_size = elem_struct ? get_struct_size(elem_type_name, status) : 8;
 			const arr_offset = allocate_stack_space(status, arr.values.length * elem_size, 16);
 
 			// Evaluate all variadic args and store on stack
 			for (let j = arr.values.length - 1; j >= 0; j--) {
-				build_node(arr.values[j], status);
-				if (!status.code.endsWith("\n")) status.code += "\n";
+				const arg = arr.values[j];
 				const slot_offset = arr_offset + j * elem_size;
-				status.code += `str x0, [x29, #${slot_offset}]\n`;
+				if (elem_struct && arg.node_type === "func_call") {
+					// Tuple constructor: evaluate params into x1..x7 (right-to-left)
+					// then set x0 to slot address and call _init
+					const fc = arg as FunctionCallNode;
+					const fc_param_regs = ["x1", "x2", "x3", "x4", "x5", "x6", "x7"];
+					for (let k = fc.params.length - 1; k >= 0; k--) {
+						build_node(fc.params[k], status);
+						if (!status.code.endsWith("\n")) status.code += "\n";
+						status.code += `mov ${fc_param_regs[k]}, x0\n`;
+					}
+					status.code += `add x0, x29, #${slot_offset}\n`;
+					status.code += `bl ${fc.name}_init\n`;
+				} else if (elem_struct) {
+					// Struct value: copy from where it lives into the slot
+					emit_struct_address(arg, status);
+					if (!status.code.endsWith("\n")) status.code += "\n";
+					status.code += `mov x1, x0\n`;
+					status.code += `add x0, x29, #${slot_offset}\n`;
+					for (let b = 0; b < elem_size; b += 8) {
+						status.code += `ldr x2, [x1, #${b}]\n`;
+						status.code += `str x2, [x0, #${b}]\n`;
+					}
+				} else {
+					build_node(arr.values[j], status);
+					if (!status.code.endsWith("\n")) status.code += "\n";
+					status.code += `str x0, [x29, #${slot_offset}]\n`;
+				}
 			}
 
 			// Evaluate non-variadic params right-to-left (they come after variadic in the call)
@@ -220,6 +250,7 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 					is_struct_type(param_type, status) ||
 					is_enum_with_data_type(param_type, status)
 				) {
+					console.error(`[DBG] emit_struct_address for ${param_type} param`);
 					emit_struct_address(node.params[i], status);
 				} else if (is_ref_param) {
 					emit_address_of(node.params[i], status);

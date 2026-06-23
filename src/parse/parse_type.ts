@@ -8,6 +8,29 @@ import get_index from "./utils/get_index.ts";
 import peek_current from "./utils/peek_current.ts";
 
 export default function parse_type(status: ParseStatus): Type {
+	// Tuple type: `[T1, T2, ...]`
+	if (peek_current(status) === "[") {
+		accept("[", status);
+		const tuple_types: Type[] = [];
+		if (peek_current(status) !== "]") {
+			tuple_types.push(parse_type(status));
+			while (accept(",", status)) {
+				// Allow trailing comma
+				if (peek_current(status) === "]") break;
+				tuple_types.push(parse_type(status));
+			}
+		}
+		expect("]", status);
+		// Variadic tuple type: follows `...` prefix handled by caller
+		const type = new Type("tuple");
+		type.tuple_types = tuple_types;
+		// Variadic tuple marker — caller may set is_array via the ... prefix
+		if (accept("?", status)) {
+			type.is_nullable = true;
+		}
+		return type;
+	}
+
 	const is_ref = accept("ref", status);
 	const type = new Type(consume(status));
 	if (is_ref) type.is_ref = true;
