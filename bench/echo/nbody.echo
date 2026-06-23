@@ -17,19 +17,19 @@ func energy = (ref Body[5] bodies, out float) {
 	var float e = 0.0
 	var int i = 0
 	while i < 5 {
-		var float vx = bodies[i].vx
-		var float vy = bodies[i].vy
-		var float vz = bodies[i].vz
-		var float mass = bodies[i].mass
+		var float vx = bodies.at(i).vx
+		var float vy = bodies.at(i).vy
+		var float vz = bodies.at(i).vz
+		var float mass = bodies.at(i).mass
 		e = e + 0.5 * mass * (vx * vx + vy * vy + vz * vz)
 
 		var int j = i + 1
 		while j < 5 {
-			var float dx = bodies[i].x - bodies[j].x
-			var float dy = bodies[i].y - bodies[j].y
-			var float dz = bodies[i].z - bodies[j].z
+			var float dx = bodies.at(i).x - bodies.at(j).x
+			var float dy = bodies.at(i).y - bodies.at(j).y
+			var float dz = bodies.at(i).z - bodies.at(j).z
 			var float dist = Math.sqrt(dx * dx + dy * dy + dz * dz)
-			e = e - (mass * bodies[j].mass) / dist
+			e = e - (mass * bodies.at(j).mass) / dist
 			j = j + 1
 		}
 		i = i + 1
@@ -40,39 +40,39 @@ func energy = (ref Body[5] bodies, out float) {
 func advance = (ref Body[5] bodies, float dt) {
 	var int i = 0
 	while i < 5 {
-		var float vx = bodies[i].vx
-		var float vy = bodies[i].vy
-		var float vz = bodies[i].vz
-		var float mass_i = bodies[i].mass
+		var float vx = bodies.at(i).vx
+		var float vy = bodies.at(i).vy
+		var float vz = bodies.at(i).vz
+		var float mass_i = bodies.at(i).mass
 
 		var int j = i + 1
 		while j < 5 {
-			var float dx = bodies[i].x - bodies[j].x
-			var float dy = bodies[i].y - bodies[j].y
-			var float dz = bodies[i].z - bodies[j].z
+			var float dx = bodies.at(i).x - bodies.at(j).x
+			var float dy = bodies.at(i).y - bodies.at(j).y
+			var float dz = bodies.at(i).z - bodies.at(j).z
 
 			var float d_sq = dx * dx + dy * dy + dz * dz
 			var float dist = Math.sqrt(d_sq)
 			var float mag = dt / (d_sq * dist)
 
-			vx = vx - dx * bodies[j].mass * mag
-			vy = vy - dy * bodies[j].mass * mag
-			vz = vz - dz * bodies[j].mass * mag
+			vx = vx - dx * bodies.at(j).mass * mag
+			vy = vy - dy * bodies.at(j).mass * mag
+			vz = vz - dz * bodies.at(j).mass * mag
 
-			bodies[j].vx = bodies[j].vx + dx * mass_i * mag
-			bodies[j].vy = bodies[j].vy + dy * mass_i * mag
-			bodies[j].vz = bodies[j].vz + dz * mass_i * mag
+			bodies.at(j).vx = bodies.at(j).vx + dx * mass_i * mag
+			bodies.at(j).vy = bodies.at(j).vy + dy * mass_i * mag
+			bodies.at(j).vz = bodies.at(j).vz + dz * mass_i * mag
 
 			j = j + 1
 		}
 
-		bodies[i].vx = vx
-		bodies[i].vy = vy
-		bodies[i].vz = vz
+		bodies.at(i).vx = vx
+		bodies.at(i).vy = vy
+		bodies.at(i).vz = vz
 
-		bodies[i].x = bodies[i].x + dt * vx
-		bodies[i].y = bodies[i].y + dt * vy
-		bodies[i].z = bodies[i].z + dt * vz
+		bodies.at(i).x = bodies.at(i).x + dt * vx
+		bodies.at(i).y = bodies.at(i).y + dt * vy
+		bodies.at(i).z = bodies.at(i).z + dt * vz
 
 		i = i + 1
 	}
@@ -85,15 +85,15 @@ func offset_momentum = (ref Body[5] bodies) {
 
 	var int i = 0
 	while i < 5 {
-		px = px - bodies[i].vx * bodies[i].mass
-		py = py - bodies[i].vy * bodies[i].mass
-		pz = pz - bodies[i].vz * bodies[i].mass
+		px = px - bodies.at(i).vx * bodies.at(i).mass
+		py = py - bodies.at(i).vy * bodies.at(i).mass
+		pz = pz - bodies.at(i).vz * bodies.at(i).mass
 		i = i + 1
 	}
 
-	bodies[0].vx = px / solar_mass
-	bodies[0].vy = py / solar_mass
-	bodies[0].vz = pz / solar_mass
+	bodies.at(0).vx = px / solar_mass
+	bodies.at(0).vy = py / solar_mass
+	bodies.at(0).vz = pz / solar_mass
 }
 
 pub func main = (Init init) {
@@ -145,7 +145,7 @@ pub func main = (Init init) {
 
 	var int n = 1000
 	if init.argc > 1 {
-		n = parse_int(init.args[1])
+		n = parse_int(init.args.at(1))
 	}
 	var int step = 0
 	while step < n {

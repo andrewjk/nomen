@@ -21,11 +21,11 @@ func move_to_end = (ref Buffer order, ref int order_len, int key) {
 pub func main = (Init init) {
 	var int size = 100
 	if init.argc > 1 {
-		size = parse_int(init.args[1])
+		size = parse_int(init.args.at(1))
 	}
 	var int n = 10000
 	if init.argc > 2 {
-		n = parse_int(init.args[2])
+		n = parse_int(init.args.at(2))
 	}
 
 	var int M = size * 10

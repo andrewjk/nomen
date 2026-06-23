@@ -34,7 +34,7 @@ func check_tree = (TreeNode node, out int) {
 pub func main = (Init init) {
 	var int n = 10
 	if init.argc > 1 {
-		n = parse_int(init.args[1])
+		n = parse_int(init.args.at(1))
 	}
 	var int min_depth = 4
 	var int max_depth = n

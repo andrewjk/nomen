@@ -33,7 +33,7 @@ func eval_ata_times_u = (ref Buffer atau, ref Buffer u, ref Buffer scratch, int 
 pub func main = (Init init) {
 	var int n = 100
 	if init.argc > 1 {
-		n = parse_int(init.args[1])
+		n = parse_int(init.args.at(1))
 	}
 
 	var Buffer u = Buffer()

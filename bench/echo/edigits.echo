@@ -35,7 +35,7 @@ func binary_search = (int n, out int) {
 pub func main = (Init init) {
 	var int n = 27
 	if init.argc > 1 {
-		n = parse_int(init.args[1])
+		n = parse_int(init.args.at(1))
 	}
 	var int k = binary_search(n)
 
@@ -111,14 +111,14 @@ pub func main = (Init init) {
 		rem = rem.new(0)
 		var BigInt qq = BigInt()
 		qq = qq.div(result, q_ten, rem)
-		digits[digit_count] = rem.to_digit()
+		digits.set(digit_count, rem.to_digit())
 		digit_count = digit_count + 1
 		result.copy_from(qq)
 	}
 
 	var int pos = digit_count - 1
 	while pos >= 0 {
-		Console.write(digits[pos].to_string())
+		Console.write(digits.at(pos).to_string())
 		if pos == digit_count - 1 && digit_count > 1 {
 			Console.write(".")
 		}

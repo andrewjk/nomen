@@ -23,7 +23,7 @@ func nsieve = (int n) {
 pub func main = (Init init) {
 	var int n = 4
 	if init.argc > 1 {
-		n = parse_int(init.args[1])
+		n = parse_int(init.args.at(1))
 	}
 
 	nsieve(10000 << n)

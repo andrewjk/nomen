@@ -75,7 +75,7 @@ func check_merkle = (MerkleNode node, out int) {
 pub func main = (Init init) {
 	var int n = 5
 	if init.argc > 1 {
-		n = parse_int(init.args[1])
+		n = parse_int(init.args.at(1))
 	}
 	var int min_depth = 4
 	var int max_depth = n

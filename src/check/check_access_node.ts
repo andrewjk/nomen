@@ -320,7 +320,7 @@ function check_access_function_node(
 		// Skip 'self' — ref self methods can be called on self within other ref self methods
 		if (target_name !== "self") {
 			const decl = status.values.findLast((v) => v.name === target_name);
-			if (decl?.declaration === "const") {
+			if (decl?.declaration === "const" && !decl?.type?.is_ref) {
 				add_error(status, `Update to const: ${target_name}`, node.start);
 				return false;
 			}

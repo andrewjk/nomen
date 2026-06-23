@@ -146,6 +146,7 @@ export function monomorphize(
 		if (func.name === "#init") continue;
 		const cloned = clone_node(func) as FunctionNode;
 		substitute_raw_types(cloned, substitution);
+		rename_local_labels(cloned, mono_name);
 		cloned.return_type = substitute_type(cloned.return_type, substitution);
 		for (const param of cloned.params) {
 			param.type = substitute_type(param.type, substitution);
@@ -195,7 +196,12 @@ export function monomorphize(
 	status.types.push(mono_name);
 
 	const root = status.stack[0] as RootNode;
-	root.statements.push(mono_struct);
+	const already_in_root = root.statements.some(
+		(s) => s.node_type === "struct" && (s as StructNode).name === mono_name,
+	);
+	if (!already_in_root) {
+		root.statements.push(mono_struct);
+	}
 
 	return mono_struct;
 }
@@ -220,6 +226,34 @@ function substitute_type(type: Type, substitution: Map<string, string>): Type {
 function substitute_raw_types(func: FunctionNode, substitution: Map<string, string>) {
 	for (const stmt of func.statements) {
 		substitute_raw_in_node(stmt, substitution);
+	}
+}
+
+function rename_local_labels(node: BaseNode, prefix: string) {
+	if (node.node_type === "raw") {
+		const raw = node as RawNode;
+		raw.value = raw.value.replace(/\.L(\w+)/g, `.L${prefix}_$1`);
+		return;
+	}
+	const any_node = node as any;
+	if (any_node.statements && Array.isArray(any_node.statements)) {
+		for (const child of any_node.statements) {
+			if (child && typeof child === "object" && "node_type" in child) {
+				rename_local_labels(child, prefix);
+			}
+		}
+	}
+	if (any_node.value && any_node.value.node_type) {
+		rename_local_labels(any_node.value, prefix);
+	}
+	if (any_node.left_value?.node_type) {
+		rename_local_labels(any_node.left_value, prefix);
+	}
+	if (any_node.right_value?.node_type) {
+		rename_local_labels(any_node.right_value, prefix);
+	}
+	if (any_node.constraint?.node_type) {
+		rename_local_labels(any_node.constraint, prefix);
 	}
 }
 

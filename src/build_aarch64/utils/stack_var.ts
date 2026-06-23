@@ -28,7 +28,13 @@ export function emit_var_address(status: BuildStatus, reg: string, name: string)
 	if (offset !== undefined) {
 		status.code += `add ${reg}, x29, #${offset}\n`;
 	} else {
-		status.code += `adr ${reg}, ${name}\n`;
+		const param_reg = status.function_param_regs?.get(name);
+		if (param_reg) {
+			// Variable is in a callee-saved register — move it to the target reg
+			status.code += `mov ${reg}, ${param_reg}\n`;
+		} else {
+			status.code += `adr ${reg}, ${name}\n`;
+		}
 	}
 }
 
@@ -57,13 +63,20 @@ export function emit_var_load(status: BuildStatus, reg: string, name: string, si
 			status.code += `ldr ${reg}, [x29, #${offset}]\n`;
 		}
 	} else {
-		status.code += `adr ${reg}, ${name}\n`;
-		if (size === 1) {
-			status.code += `ldrb ${reg.replace("x", "w")}, [${reg}]\n`;
-		} else if (size === 4) {
-			status.code += `ldr ${reg.replace("x", "w")}, [${reg}]\n`;
+		const param_reg = status.function_param_regs?.get(name);
+		if (param_reg) {
+			if (reg !== param_reg) {
+				status.code += `mov ${reg}, ${param_reg}\n`;
+			}
 		} else {
-			status.code += `ldr ${reg}, [${reg}]\n`;
+			status.code += `adr ${reg}, ${name}\n`;
+			if (size === 1) {
+				status.code += `ldrb ${reg.replace("x", "w")}, [${reg}]\n`;
+			} else if (size === 4) {
+				status.code += `ldr ${reg.replace("x", "w")}, [${reg}]\n`;
+			} else {
+				status.code += `ldr ${reg}, [${reg}]\n`;
+			}
 		}
 	}
 }
@@ -86,13 +99,18 @@ export function emit_var_store(status: BuildStatus, reg: string, name: string, s
 			status.code += `str ${reg}, [x29, #${offset}]\n`;
 		}
 	} else {
-		status.code += `adr x1, ${name}\n`;
-		if (size === 1) {
-			status.code += `strb ${reg.replace("x", "w")}, [x1]\n`;
-		} else if (size === 4) {
-			status.code += `str ${reg.replace("x", "w")}, [x1]\n`;
+		const param_reg = status.function_param_regs?.get(name);
+		if (param_reg) {
+			status.code += `mov ${param_reg}, ${reg}\n`;
 		} else {
-			status.code += `str ${reg}, [x1]\n`;
+			status.code += `adr x1, ${name}\n`;
+			if (size === 1) {
+				status.code += `strb ${reg.replace("x", "w")}, [x1]\n`;
+			} else if (size === 4) {
+				status.code += `str ${reg.replace("x", "w")}, [x1]\n`;
+			} else {
+				status.code += `str ${reg}, [x1]\n`;
+			}
 		}
 	}
 }
