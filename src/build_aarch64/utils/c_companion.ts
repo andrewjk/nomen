@@ -32,7 +32,15 @@ export function generate_companion(functions: CompanionFunction[], status: Build
 		}
 	}
 	out += `#include <stdint.h>\n`;
-	out += `#include <stdlib.h>\n\n`;
+	out += `#include <stdlib.h>\n`;
+	// Standard libc headers commonly needed by companion function bodies.
+	// These are included at file scope (not inside function bodies) because
+	// headers defining types (e.g. regex.h's regex_t) are guarded and only
+	// expand once, so per-function includes would leave later functions
+	// without the type definitions.
+	out += `#include <stdio.h>\n`;
+	out += `#include <string.h>\n`;
+	out += `#include <regex.h>\n\n`;
 
 	// --- Struct typedefs ---
 	// Emit every non-simple struct so the function bodies can reference them.

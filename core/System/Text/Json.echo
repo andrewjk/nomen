@@ -78,7 +78,6 @@ pub struct Json {
 	pub func serialize_int = (int value, out string) {
 		```
 		#arch: c, aarch64_use_c
-		#include <stdio.h>
 		char* out = (char*)malloc(24);
 		snprintf(out, 24, "%ld", value);
 		return out;
@@ -89,7 +88,6 @@ pub struct Json {
 	pub func deserialize_int = (string json, out int) {
 		```
 		#arch: c, aarch64_use_c
-		#include <stdlib.h>
 		return strtol(json, 0, 10);
 		```
 	}

@@ -1,0 +1,70 @@
+import System
+
+// regex-redux benchmark — mirrors the Go version: read a FASTA file,
+// strip headers and newlines, count 9 DNA regex variants, apply 5
+// substitution patterns, and print the results.
+//
+// Usage: regex-redux <filename>
+
+pub func main = (Init init) {
+	var string filename = "25000_in"
+	if init.argc > 1 {
+		filename = init.args.at(1)
+	}
+
+	var File f = File()
+	f.open(filename, "r")
+	var string text = f.readAll()
+	f.close()
+
+	var int original_len = text.length()
+
+	// Clean: remove FASTA headers (>...) and all newlines
+	var string cleaned = Regex.replace_all("(>[^\n]+)?\n", text, "")
+	var int cleaned_len = cleaned.length()
+
+	// Count variants
+	var string v1 = "agggtaaa|tttaccct"
+	var string v2 = "[cgt]gggtaaa|tttaccc[acg]"
+	var string v3 = "a[act]ggtaaa|tttacc[agt]t"
+	var string v4 = "ag[act]gtaaa|tttac[agt]ct"
+	var string v5 = "agg[act]taaa|ttta[agt]cct"
+	var string v6 = "aggg[acg]aaa|ttt[cgt]ccct"
+	var string v7 = "agggt[cgt]aa|tt[acg]accct"
+	var string v8 = "agggta[cgt]a|t[acg]taccct"
+	var string v9 = "agggtaa[cgt]|[acg]ttaccct"
+
+	Console.write(v1 + " " + Regex.count(v1, cleaned).to_string())
+	Console.write("\n")
+	Console.write(v2 + " " + Regex.count(v2, cleaned).to_string())
+	Console.write("\n")
+	Console.write(v3 + " " + Regex.count(v3, cleaned).to_string())
+	Console.write("\n")
+	Console.write(v4 + " " + Regex.count(v4, cleaned).to_string())
+	Console.write("\n")
+	Console.write(v5 + " " + Regex.count(v5, cleaned).to_string())
+	Console.write("\n")
+	Console.write(v6 + " " + Regex.count(v6, cleaned).to_string())
+	Console.write("\n")
+	Console.write(v7 + " " + Regex.count(v7, cleaned).to_string())
+	Console.write("\n")
+	Console.write(v8 + " " + Regex.count(v8, cleaned).to_string())
+	Console.write("\n")
+	Console.write(v9 + " " + Regex.count(v9, cleaned).to_string())
+	Console.write("\n")
+
+	// Substitutions
+	cleaned = Regex.replace_all("tHa[Nt]", cleaned, "<4>")
+	cleaned = Regex.replace_all("aND|caN|Ha[DS]|WaS", cleaned, "<3>")
+	cleaned = Regex.replace_all("a[NSt]|BY", cleaned, "<2>")
+	cleaned = Regex.replace_all("<[^>]*>", cleaned, "|")
+	cleaned = Regex.replace_all("\\|[^|][^|]*\\|", cleaned, "-")
+
+	Console.write("\n")
+	Console.write(original_len.to_string())
+	Console.write("\n")
+	Console.write(cleaned_len.to_string())
+	Console.write("\n")
+	Console.write(cleaned.length().to_string())
+	Console.write("\n")
+}

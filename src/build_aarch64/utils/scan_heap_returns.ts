@@ -28,6 +28,7 @@ const KNOWN_HEAP_RETURNING = new Set([
 	"Json_serialize",
 	"Json_deserialize",
 	"Json_serialize_int",
+	"Regex_match",
 ]);
 
 export function scan_heap_returning_functions(root: BaseNode): Set<string> {

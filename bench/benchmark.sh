@@ -37,6 +37,7 @@ BENCHES=(
 	"lru|$N $N|lru1.zig"
 	"knucleotide|$BENCH_DIR/knucleotide_input.txt|"
 	"json-serde|$N|"
+	"regex-redux|$BENCH_DIR/25000_in|"
 	"nbody|$N|nbody1.zig"
 	"spectral-norm|100|spectral-norm1.zig"
 	"mandelbrot|200|mandelbrot1.zig"
