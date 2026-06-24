@@ -1,6 +1,7 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import build_block_node from "./build_block_node.ts";
+import { check_c_fallback } from "./build_raw_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free } from "./utils/audit.ts";
 import scan_force_heap_strings from "./utils/scan_force_heap_strings.ts";
@@ -107,6 +108,7 @@ function peephole_optimize(code: string): string {
 
 export default function build_function_node(node: FunctionNode, status: BuildStatus) {
 	if (node.is_generic) return;
+	if (check_c_fallback(node, undefined, status)) return;
 
 	const old_function_name = status.current_function_name;
 	status.current_function_name = node.name;

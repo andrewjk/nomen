@@ -2,6 +2,7 @@ import BaseNode from "../nodes/BaseNode.ts";
 import BitsetNode from "../nodes/BitsetNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
 import EnumNode from "../nodes/EnumNode.ts";
+import FunctionNode from "../nodes/FunctionNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import TraitNode from "../nodes/TraitNode.ts";
 import Type from "../nodes/Type.ts";
@@ -14,6 +15,21 @@ export default interface BuildStatus {
 	bitsets: BitsetNode[];
 	headers: string;
 	code: string;
+	/**
+	 * C companion code (functions with `aarch64_use_c` raw blocks).
+	 * Emitted as a separate `.m`/`.c` file and linked with the assembly output.
+	 */
+	c_companion?: string;
+	/**
+	 * Functions whose bodies are compiled as C (via `aarch64_use_c`).
+	 * Each entry records the function node, owning struct (if any), and the
+	 * concatenated raw C code — used to generate the companion file.
+	 */
+	c_companion_functions?: { func: FunctionNode; struct_name?: string; raw_code: string }[];
+	/**
+	 * Build errors (e.g. missing arch block for the target architecture).
+	 */
+	build_errors?: { message: string; start: number }[];
 	/**
 	 * Declarations that were made in the current scope and will need to be freed
 	 */

@@ -3,7 +3,7 @@ pub struct Window {
 
 	pub func create = (string title, int width, int height, out Window) {
 		```
-		#arch: c
+		#arch: c, aarch64_use_c
 		#platform: macos
 		// Set up NSApplication first
 		id app = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
@@ -28,115 +28,7 @@ pub struct Window {
 		return result;
 		```
 		```
-		#arch: aarch64
-		#platform: macos
-		sub sp, sp, #64
-		str x8, [sp, #0]
-		str x19, [sp, #48]
-		str x20, [sp, #56]
-		str x0, [sp, #8]
-		str x1, [sp, #16]
-		str x2, [sp, #24]
-		adr x0, .Lcls_NSApplication_create
-		bl _objc_getClass
-		mov x19, x0
-		adr x0, .Lsel_sharedApplication_create
-		bl _sel_registerName
-		mov x1, x0
-		mov x0, x19
-		bl _objc_msgSend
-		mov x19, x0
-		adr x0, .Lsel_setActivationPolicy
-		bl _sel_registerName
-		mov x1, x0
-		mov x0, x19
-		mov x2, #0
-		bl _objc_msgSend
-		adr x0, .Lsel_activateIgnoringOtherApps
-		bl _sel_registerName
-		mov x1, x0
-		mov x0, x19
-		mov x2, #1
-		bl _objc_msgSend
-		adr x0, .Lcls_NSWindow_create
-		bl _objc_getClass
-		mov x19, x0
-		adr x0, .Lsel_alloc_create
-		bl _sel_registerName
-		mov x1, x0
-		mov x0, x19
-		bl _objc_msgSend
-		mov x19, x0
-		adr x0, .Lsel_initWithContentRect
-		bl _sel_registerName
-		mov x1, x0
-		mov x0, x19
-		ldr x3, [sp, #16]
-		scvtf d2, x3
-		ldr x3, [sp, #24]
-		scvtf d3, x3
-		mov x3, #0
-		scvtf d0, x3
-		scvtf d1, x3
-		mov x2, #15
-		mov x3, #2
-		mov x4, #0
-		bl _objc_msgSend
-		str x0, [sp, #32]
-		adr x0, .Lcls_NSString_create
-		bl _objc_getClass
-		mov x19, x0
-		adr x0, .Lsel_stringWithUTF8String
-		bl _sel_registerName
-		mov x1, x0
-		mov x0, x19
-		ldr x2, [sp, #8]
-		bl _objc_msgSend
-		str x0, [sp, #40]
-		adr x0, .Lsel_setTitle_create
-		bl _sel_registerName
-		mov x1, x0
-		ldr x0, [sp, #32]
-		ldr x2, [sp, #40]
-		bl _objc_msgSend
-		adr x0, .Lsel_setFrameTopLeftPoint
-		bl _sel_registerName
-		mov x1, x0
-		ldr x0, [sp, #32]
-		mov x3, #100
-		scvtf d0, x3
-		mov x3, #100
-		scvtf d1, x3
-		bl _objc_msgSend
-		adr x0, .Lsel_makeKeyAndOrderFront
-		bl _sel_registerName
-		mov x1, x0
-		ldr x0, [sp, #32]
-		mov x2, #0
-		bl _objc_msgSend
-		ldr x8, [sp, #0]
-		ldr x0, [sp, #32]
-		str x0, [x8, #8]
-		ldr x20, [sp, #56]
-		ldr x19, [sp, #48]
-		add sp, sp, #64
-		b .return_Window_create
-		.Lcls_NSApplication_create: .asciz "NSApplication"
-		.Lsel_sharedApplication_create: .asciz "sharedApplication"
-		.Lsel_setActivationPolicy: .asciz "setActivationPolicy:"
-		.Lsel_activateIgnoringOtherApps: .asciz "activateIgnoringOtherApps:"
-		.Lcls_NSWindow_create: .asciz "NSWindow"
-		.Lsel_alloc_create: .asciz "alloc"
-		.Lsel_initWithContentRect: .asciz "initWithContentRect:styleMask:backing:defer:"
-		.Lsel_setTitle_create: .asciz "setTitle:"
-		.Lcls_NSString_create: .asciz "NSString"
-		.Lsel_stringWithUTF8String: .asciz "stringWithUTF8String:"
-		.Lsel_setFrameTopLeftPoint: .asciz "setFrameTopLeftPoint:"
-		.Lsel_makeKeyAndOrderFront: .asciz "makeKeyAndOrderFront:"
-		.p2align 2
-		```
-		```
-		#arch: c
+		#arch: c, aarch64_use_c
 		#platform: ios
 		struct Window result;
 		id win = ((id(*)(id, SEL))objc_msgSend)(
@@ -151,25 +43,12 @@ pub struct Window {
 
 	pub func show = (self) {
 		```
-		#arch: c
+		#arch: c, aarch64_use_c
 		#platform: macos
 		((void(*)(id, SEL, id))objc_msgSend)((id)self->handle, sel_registerName("makeKeyAndOrderFront:"), 0);
 		```
 		```
-		#arch: aarch64
-		#platform: macos
-		adr x0, .Lsel_makeKeyAndOrderFront_show
-		bl _sel_registerName
-		mov x1, x0
-		ldr x0, [x19, #8]
-		mov x2, #0
-		bl _objc_msgSend
-		b .return_Window_show
-		.Lsel_makeKeyAndOrderFront_show: .asciz "makeKeyAndOrderFront:"
-		.p2align 2
-		```
-		```
-		#arch: c
+		#arch: c, aarch64_use_c
 		#platform: ios
 		((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("makeKeyAndVisible"));
 		```
@@ -177,77 +56,24 @@ pub struct Window {
 
 	pub func set_title = (self, string title) {
 		```
-		#arch: c
+		#arch: c, aarch64_use_c
 		#platform: macos
 		((id(*)(id, SEL, id))objc_msgSend)(
 			(id)self->handle, sel_registerName("setTitle:"),
 			((id(*)(id, SEL, const char*))objc_msgSend)(
 				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title));
 		```
-		```
-		#arch: aarch64
-		#platform: macos
-		sub sp, sp, #16
-		str x1, [sp, #0]
-		adr x0, .Lcls_NSString_setTitle
-		bl _objc_getClass
-		str x0, [sp, #8]
-		adr x0, .Lsel_stringWithUTF8String_setTitle
-		bl _sel_registerName
-		mov x1, x0
-		ldr x0, [sp, #8]
-		ldr x2, [sp, #0]
-		bl _objc_msgSend
-		str x0, [sp, #8]
-		adr x0, .Lsel_setTitle_setTitle
-		bl _sel_registerName
-		mov x1, x0
-		ldr x0, [x19, #8]
-		ldr x2, [sp, #8]
-		bl _objc_msgSend
-		add sp, sp, #16
-		b .return_Window_set_title
-		.Lcls_NSString_setTitle: .asciz "NSString"
-		.Lsel_stringWithUTF8String_setTitle: .asciz "stringWithUTF8String:"
-		.Lsel_setTitle_setTitle: .asciz "setTitle:"
-		.p2align 2
-		```
 	}
 
 	pub func run = () {
 		```
-		#arch: c
+		#arch: c, aarch64_use_c
 		#platform: macos
 		((void(*)(id, SEL))objc_msgSend)(
 			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication")), sel_registerName("run"));
 		```
 		```
-		#arch: aarch64
-		#platform: macos
-		str x19, [sp, #-16]!
-		adr x0, .Lcls_NSApplication_run
-		bl _objc_getClass
-		mov x19, x0
-		adr x0, .Lsel_sharedApplication_run
-		bl _sel_registerName
-		mov x1, x0
-		mov x0, x19
-		bl _objc_msgSend
-		mov x19, x0
-		adr x0, .Lsel_run
-		bl _sel_registerName
-		mov x1, x0
-		mov x0, x19
-		bl _objc_msgSend
-		ldr x19, [sp], #16
-		b .return_Window_run
-		.Lcls_NSApplication_run: .asciz "NSApplication"
-		.Lsel_sharedApplication_run: .asciz "sharedApplication"
-		.Lsel_run: .asciz "run"
-		.p2align 2
-		```
-		```
-		#arch: c
+		#arch: c, aarch64_use_c
 		#platform: ios
 		UIApplicationMain(0, 0, 0, 0);
 		```
@@ -255,7 +81,7 @@ pub struct Window {
 
 	func #destroy = () {
 		```
-		#arch: c
+		#arch: c, aarch64_use_c
 		#platform: macos
 		if (self->handle) {
 			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
@@ -263,27 +89,7 @@ pub struct Window {
 		}
 		```
 		```
-		#arch: aarch64
-		#platform: macos
-		ldr x0, [x19, #8]
-		cbz x0, .Lend_destroy
-		sub sp, sp, #16
-		str x0, [sp, #0]
-		adr x0, .Lsel_release_destroy
-		bl _sel_registerName
-		mov x1, x0
-		ldr x0, [sp, #0]
-		bl _objc_msgSend
-		mov x0, #0
-		str x0, [x19, #8]
-		add sp, sp, #16
-		.Lend_destroy:
-		b .return_Window_destroy
-		.Lsel_release_destroy: .asciz "release"
-		.p2align 2
-		```
-		```
-		#arch: c
+		#arch: c, aarch64_use_c
 		#platform: ios
 		if (self->handle) {
 			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));

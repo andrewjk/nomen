@@ -4,6 +4,7 @@ import FunctionNode from "../nodes/FunctionNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_block_node from "./build_block_node.ts";
+import { check_c_fallback } from "./build_raw_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { allocate_stack_space } from "./utils/stack_var.ts";
 import { get_field_offset, get_struct_size } from "./utils/struct_layout.ts";
@@ -32,7 +33,9 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 		build_trait_functions(node, status);
 		const destroy_func = node.functions.find((f) => f.name === "#destroy");
 		if (destroy_func) {
-			build_destroy_function(node, destroy_func, status);
+			if (!check_c_fallback(destroy_func, node.name, status)) {
+				build_destroy_function(node, destroy_func, status);
+			}
 		}
 		status.current_struct = undefined;
 	}
@@ -312,11 +315,14 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 	for (const func of node.functions) {
 		if (func.name === "#init" && !func.has_body) continue;
 		if (func.name === "#init" && func.has_body) {
-			build_custom_init_function(node, func, status);
+			if (!check_c_fallback(func, node.name, status)) {
+				build_custom_init_function(node, func, status);
+			}
 			continue;
 		}
 		if (func.name === "#destroy") continue;
 		if (func.is_inline) continue;
+		if (check_c_fallback(func, node.name, status)) continue;
 
 		const old_scoped_declarations = status.scoped_declarations;
 		const old_stack_size = status.stack_size;

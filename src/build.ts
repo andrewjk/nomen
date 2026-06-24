@@ -9,6 +9,7 @@ import { reset_string_counter as reset_op_string_counter } from "./build_aarch64
 import { reset_string_counter as reset_value_string_counter } from "./build_aarch64/build_value_node.ts";
 import { reset_label_counter as reset_while_label_counter } from "./build_aarch64/build_while_loop_node.ts";
 import { emit_malloc } from "./build_aarch64/utils/audit.ts";
+import { generate_companion } from "./build_aarch64/utils/c_companion.ts";
 import { scan_heap_returning_functions } from "./build_aarch64/utils/scan_heap_returns.ts";
 import build_c_node from "./build_c/build_node.ts";
 import type BuildStatus from "./build_c/BuildStatus.ts";
@@ -125,9 +126,16 @@ export default function build(
 		build_c_node(root, status);
 	}
 
+	let companion: string | undefined;
+	if (status.c_companion_functions && status.c_companion_functions.length > 0) {
+		companion = generate_companion(status.c_companion_functions, status);
+	}
+
 	return {
 		headers: status.headers,
 		code: status.code,
+		companion,
+		errors: status.build_errors?.map((e) => ({ ...e, line: 0, column: 0 })),
 	};
 }
 

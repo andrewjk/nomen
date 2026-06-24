@@ -232,6 +232,11 @@ function processFile(filename: string, config: Config) {
 	// console.log("Built");
 	const result = build(parsed.root, { arch, platform, audit: config.audit });
 
+	if (result.errors && result.errors.length > 0) {
+		console.log(render_errors(input, result.errors));
+		return;
+	}
+
 	const dir = path.dirname(filename);
 	const basename = path.basename(filename, ".echo");
 	const buildDir = path.join(dir, "build");
@@ -245,6 +250,13 @@ function processFile(filename: string, config: Config) {
 	fs.writeFileSync(headerfile, result.headers);
 	fs.writeFileSync(codefile, result.code);
 
+	let companionfile: string | undefined;
+	if (result.companion) {
+		const comp_ext = platform === "macos" || platform === "ios" ? ".m" : ".c";
+		companionfile = path.join(buildDir, basename + "_companion" + comp_ext);
+		fs.writeFileSync(companionfile, result.companion);
+	}
+
 	const compileTime = performance.now();
 	console.log(`Created ${codefile} in ${(compileTime - startTime).toFixed(2)}ms`);
 	console.log("");
@@ -252,7 +264,9 @@ function processFile(filename: string, config: Config) {
 	startTime = performance.now();
 
 	const audit_obj = config.audit ? compile_audit_runtime(config, resolved, buildDir) : undefined;
-	const link_inputs = audit_obj ? `${codefile} ${audit_obj}` : `${codefile}`;
+	let link_inputs = codefile;
+	if (companionfile) link_inputs += ` ${companionfile}`;
+	if (audit_obj) link_inputs += ` ${audit_obj}`;
 	const framework_flags =
 		platform === "macos" || platform === "ios"
 			? " -framework CoreGraphics -framework Foundation -framework AppKit -lobjc"
