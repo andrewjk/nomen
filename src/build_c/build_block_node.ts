@@ -8,6 +8,7 @@ import build_bitset_node from "./build_bitset_node.ts";
 import build_enum_node from "./build_enum_node.ts";
 import build_function_node from "./build_function_node.ts";
 import build_node from "./build_node.ts";
+import build_struct_body from "./build_struct_body.ts";
 import build_struct_node from "./build_struct_node.ts";
 import build_trait_node from "./build_trait_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
@@ -19,7 +20,26 @@ export default function build_block_node(node: BlockNode, status: BuildStatus) {
 	// PERF: Probably an opportunity to cut down on loops here by adding a prop in check?
 	// Or storing these things in different lists?
 
-	// Build traits, then enums/bitsets, then structs, then functions
+	// Emit all struct forward declarations to headers before building anything,
+	// so that function declarations can reference struct types not yet built.
+	for (let child of node.statements) {
+		if (is_struct_node(child)) {
+			const struct = child as StructNode;
+			if (!struct.is_simple_type && !struct.is_generic) {
+				status.headers += `struct ${struct.name};\n`;
+			}
+		}
+	}
+
+	// Pass 1: Emit all struct bodies first so that all types are fully defined
+	// before any struct functions are emitted (which may access fields of other structs).
+	for (let child of node.statements) {
+		if (is_struct_node(child)) {
+			build_struct_body(child as StructNode, status);
+		}
+	}
+
+	// Pass 2: Build traits, then enums/bitsets, then struct functions, then functions
 	for (let child of node.statements) {
 		if (is_trait_node(child)) {
 			build_trait_node(child, status);

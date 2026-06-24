@@ -3,6 +3,19 @@ import build_block_node from "./build_block_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 
 export default function build_root_node(node: RootNode, status: BuildStatus) {
+	if (status.platform === "macos" || status.platform === "ios") {
+		status.headers += `#import <Foundation/Foundation.h>\n`;
+		status.headers += `#include <objc/runtime.h>\n`;
+		status.headers += `#include <objc/message.h>\n`;
+		if (status.platform === "macos") {
+			status.headers += `#import <Cocoa/Cocoa.h>\n`;
+		} else {
+			status.headers += `#import <UIKit/UIKit.h>\n`;
+		}
+	} else {
+		status.headers += `#include <stdint.h>\n`;
+	}
+	status.headers += `#include <stdint.h>\n`;
 	status.code += `
 #include <stdio.h>
 #include <stdlib.h>

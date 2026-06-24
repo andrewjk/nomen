@@ -1,0 +1,227 @@
+pub struct Text {
+	var uint64 handle = 0
+
+	pub func create = (Window window, out Text) {
+		```
+		#arch: c
+		#platform: macos
+		struct Text result;
+		id label = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSTextField"), sel_registerName("alloc")),
+			sel_registerName("initWithFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)(10, 10, 200, 30));
+		((void(*)(id, SEL, BOOL))objc_msgSend)(
+			label, sel_registerName("setEditable:"), 0);
+		((void(*)(id, SEL, BOOL))objc_msgSend)(
+			label, sel_registerName("setSelectable:"), 0);
+		((void(*)(id, SEL, BOOL))objc_msgSend)(
+			label, sel_registerName("setBordered:"), 0);
+		((void(*)(id, SEL, BOOL))objc_msgSend)(
+			label, sel_registerName("setDrawsBackground:"), 0);
+		id contentView = ((id(*)(id, SEL))objc_msgSend)(
+			(id)window->handle, sel_registerName("contentView"));
+		((void(*)(id, SEL, id))objc_msgSend)(
+			contentView, sel_registerName("addSubview:"), label);
+		result.handle = (uint64_t)label;
+		return result;
+		```
+		```
+		#arch: aarch64
+		#platform: macos
+		sub sp, sp, #32
+		str x8, [sp, #0]
+		adr x0, .Lcls_NSTextField
+		bl _objc_getClass
+		str x0, [sp, #8]
+		adr x0, .Lsel_alloc_text
+		bl _sel_registerName
+		mov x1, x0
+		ldr x0, [sp, #8]
+		bl _objc_msgSend
+		str x0, [sp, #8]
+		adr x0, .Lsel_initWithFrame
+		bl _sel_registerName
+		mov x1, x0
+		ldr x0, [sp, #8]
+		mov x2, #10
+		scvtf d0, x2
+		mov x2, #10
+		scvtf d1, x2
+		mov x2, #200
+		scvtf d2, x2
+		mov x2, #30
+		scvtf d3, x2
+		bl _objc_msgSend
+		str x0, [sp, #8]
+		adr x0, .Lsel_setEditable
+		bl _sel_registerName
+		mov x1, x0
+		ldr x0, [sp, #8]
+		mov x2, #0
+		bl _objc_msgSend
+		adr x0, .Lsel_setSelectable
+		bl _sel_registerName
+		mov x1, x0
+		ldr x0, [sp, #8]
+		mov x2, #0
+		bl _objc_msgSend
+		adr x0, .Lsel_setBordered
+		bl _sel_registerName
+		mov x1, x0
+		ldr x0, [sp, #8]
+		mov x2, #0
+		bl _objc_msgSend
+		adr x0, .Lsel_setDrawsBackground
+		bl _sel_registerName
+		mov x1, x0
+		ldr x0, [sp, #8]
+		mov x2, #0
+		bl _objc_msgSend
+		adr x0, .Lsel_contentView
+		bl _sel_registerName
+		mov x1, x0
+		ldr x0, [x19, #8]
+		bl _objc_msgSend
+		str x0, [sp, #16]
+		adr x0, .Lsel_addSubview
+		bl _sel_registerName
+		mov x1, x0
+		ldr x0, [sp, #16]
+		ldr x2, [sp, #8]
+		bl _objc_msgSend
+		ldr x8, [sp, #0]
+		ldr x0, [sp, #8]
+		str x0, [x8, #8]
+		add sp, sp, #32
+		b .return_Text_create
+		.Lcls_NSTextField: .asciz "NSTextField"
+		.Lsel_alloc_text: .asciz "alloc"
+		.Lsel_initWithFrame: .asciz "initWithFrame:"
+		.Lsel_setEditable: .asciz "setEditable:"
+		.Lsel_setSelectable: .asciz "setSelectable:"
+		.Lsel_setBordered: .asciz "setBordered:"
+		.Lsel_setDrawsBackground: .asciz "setDrawsBackground:"
+		.Lsel_contentView: .asciz "contentView"
+		.Lsel_addSubview: .asciz "addSubview:"
+		.p2align 2
+		```
+		```
+		#arch: c
+		#platform: ios
+		struct Text result;
+		id label = ((id(*)(id, SEL))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)(objc_getClass("UILabel"), sel_registerName("alloc")),
+			sel_registerName("initWithFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)(10, 10, 200, 30));
+		((void(*)(id, SEL, id))objc_msgSend)(
+			label, sel_registerName("setText:"),
+			((id(*)(id, SEL, const char*))objc_msgSend)(
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), ""));
+		((void(*)(id, SEL, BOOL))objc_msgSend)(
+			label, sel_registerName("setUserInteractionEnabled:"), 0);
+		id parentView = ((id(*)(id, SEL))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)(
+				(id)window->handle, sel_registerName("rootViewController")),
+			sel_registerName("view"));
+		((void(*)(id, SEL, id))objc_msgSend)(
+			parentView, sel_registerName("addSubview:"), label);
+		result.handle = (uint64_t)label;
+		return result;
+		```
+	}
+
+	pub func set_text = (self, string text) {
+		```
+		#arch: c
+		#platform: macos
+		((void(*)(id, SEL, id))objc_msgSend)(
+			(id)self->handle, sel_registerName("setStringValue:"),
+			((id(*)(id, SEL, const char*))objc_msgSend)(
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), text));
+		```
+		```
+		#arch: aarch64
+		#platform: macos
+		sub sp, sp, #16
+		str x1, [sp, #0]
+		adr x0, .Lcls_NSString_setText
+		bl _objc_getClass
+		str x0, [sp, #8]
+		adr x0, .Lsel_stringWithUTF8String_setText
+		bl _sel_registerName
+		mov x1, x0
+		ldr x0, [sp, #8]
+		ldr x2, [sp, #0]
+		bl _objc_msgSend
+		str x0, [sp, #8]
+		adr x0, .Lsel_setStringValue
+		bl _sel_registerName
+		mov x1, x0
+		ldr x0, [x19, #8]
+		ldr x2, [sp, #8]
+		bl _objc_msgSend
+		add sp, sp, #16
+		b .return_Text_set_text
+		.Lcls_NSString_setText: .asciz "NSString"
+		.Lsel_stringWithUTF8String_setText: .asciz "stringWithUTF8String:"
+		.Lsel_setStringValue: .asciz "setStringValue:"
+		.p2align 2
+		```
+		```
+		#arch: c
+		#platform: ios
+		((void(*)(id, SEL, id))objc_msgSend)(
+			(id)self->handle, sel_registerName("setText:"),
+			((id(*)(id, SEL, const char*))objc_msgSend)(
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), text));
+		```
+	}
+
+	func #destroy = () {
+		```
+		#arch: c
+		#platform: macos
+		if (self->handle) {
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+			self->handle = 0;
+		}
+		```
+		```
+		#arch: aarch64
+		#platform: macos
+		ldr x0, [x19, #8]
+		cbz x0, .Lend_text_destroy
+		sub sp, sp, #16
+		str x0, [sp, #0]
+		adr x0, .Lsel_removeFromSuperview
+		bl _sel_registerName
+		mov x1, x0
+		ldr x0, [sp, #0]
+		bl _objc_msgSend
+		ldr x0, [sp, #0]
+		adr x0, .Lsel_release_text
+		bl _sel_registerName
+		mov x1, x0
+		ldr x0, [sp, #0]
+		bl _objc_msgSend
+		mov x0, #0
+		str x0, [x19, #8]
+		add sp, sp, #16
+		.Lend_text_destroy:
+		b .return_Text_destroy
+		.Lsel_removeFromSuperview: .asciz "removeFromSuperview"
+		.Lsel_release_text: .asciz "release"
+		.p2align 2
+		```
+		```
+		#arch: c
+		#platform: ios
+		if (self->handle) {
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+			self->handle = 0;
+		}
+		```
+	}
+}

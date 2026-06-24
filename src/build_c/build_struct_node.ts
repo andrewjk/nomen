@@ -27,26 +27,9 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 		build_struct_traits(node, status);
 	}
 
-	// Declare the struct
+	// Struct body (typedef) was already emitted by build_struct_body in the first pass.
+	// We just need to emit the forward declaration to headers here.
 	status.headers += `struct ${node.name};\n`;
-
-	// Define the struct
-	status.code += `typedef struct ${node.name}\n{\n`;
-	status.code += `void *_vt;\n`;
-	// Fields from the struct
-	for (let field of node.fields) {
-		status.code += `${c_type(field.type.name)} ${field.name};\n`;
-	}
-	// Default fields from traits
-	for (let traitName of node.traits) {
-		const trait = status.traits.find((n) => n.name === traitName) as TraitNode;
-		if (trait) {
-			for (let field of trait.fields.filter((f) => !node.fields.find((nf) => nf.name === f.name))) {
-				status.code += `${c_type(field.type.name)} ${field.name};\n`;
-			}
-		}
-	}
-	status.code += `} ${node.name};\n`;
 
 	const custom_init = node.functions.find((f) => f.name === "#init" && f.has_body);
 

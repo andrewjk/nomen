@@ -49,10 +49,18 @@ function resolve_linked_types(source: string, library: Library): string {
 	const tokens = tokenize(source);
 
 	let has_system_import = false;
+	const namespace_imports = new Set<string>();
 	for (let i = 0; i < tokens.length - 1; i++) {
 		if (tokens[i].value === "import" && tokens[i + 1].value === "System") {
 			has_system_import = true;
-			break;
+			// Check for `import System / <namespace>` (tokens: import, System, /, name)
+			if (
+				i + 3 < tokens.length &&
+				tokens[i + 2].value === "/" &&
+				tokens[i + 3].value !== undefined
+			) {
+				namespace_imports.add(tokens[i + 3].value);
+			}
 		}
 	}
 	if (!has_system_import) return source;
@@ -69,6 +77,20 @@ function resolve_linked_types(source: string, library: Library): string {
 	}
 
 	const needed = new Set<string>(BASE_TYPES);
+
+	// Add types from explicitly imported namespaces
+	for (const ns of namespace_imports) {
+		const ns_types = library.namespaces.get(ns);
+		if (ns_types) {
+			for (const name of ns_types) {
+				if (!user_defined.has(name)) {
+					needed.add(name);
+				}
+			}
+		}
+	}
+
+	// Auto-import any library types referenced in the source
 	for (const token of tokens) {
 		if (user_defined.has(token.value)) continue;
 		if (library.types.has(token.value) && !BASE_TYPES.includes(token.value)) {

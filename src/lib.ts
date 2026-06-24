@@ -10,12 +10,14 @@ export interface Library {
 	name: string;
 	source: string;
 	types: Map<string, LibraryType>;
+	namespaces: Map<string, Set<string>>;
 }
 
 export interface LibraryType {
 	name: string;
 	source: string;
 	deps: string[];
+	namespace?: string;
 }
 
 export function read_library_config(lib_dir: string): LibraryConfig {
@@ -94,14 +96,17 @@ function extract_type_name(source: string): string | null {
 	return null;
 }
 
-function build_type_map(files: string[]): Map<string, LibraryType> {
+function build_type_map(files: string[], lib_dir: string): Map<string, LibraryType> {
 	const types = new Map<string, LibraryType>();
 	for (const f of files) {
 		const source = fs.readFileSync(f, "utf8");
 		const deps = extract_deps(source);
 		const name = extract_type_name(source);
 		if (name) {
-			types.set(name, { name, source, deps });
+			const rel = path.relative(path.resolve(lib_dir, "System"), f);
+			const parts = rel.split(path.sep);
+			const namespace = parts.length > 1 ? parts[0] : undefined;
+			types.set(name, { name, source, deps, namespace });
 		}
 	}
 	return types;
@@ -146,12 +151,25 @@ export function build_library(lib_dir: string): Library {
 	all_files.sort((a, b) => get_file_priority(a) - get_file_priority(b));
 
 	const source = all_files.map((f) => fs.readFileSync(f, "utf8")).join("\n");
-	const types = build_type_map(all_files);
+	const types = build_type_map(all_files, lib_dir);
+
+	const namespaces = new Map<string, Set<string>>();
+	for (const [name, type] of types) {
+		if (type.namespace) {
+			let ns = namespaces.get(type.namespace);
+			if (!ns) {
+				ns = new Set();
+				namespaces.set(type.namespace, ns);
+			}
+			ns.add(name);
+		}
+	}
 
 	return {
 		name: config.name,
 		source,
 		types,
+		namespaces,
 	};
 }
 

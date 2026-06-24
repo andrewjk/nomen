@@ -9,7 +9,11 @@ import get_index from "./utils/get_index.ts";
 export default function parse_import(status: ParseStatus) {
 	const start = get_index(status);
 	accept("import", status);
-	const name = consume(status);
+	let name = consume(status);
+	// Handle `import System/Controls` (tokens: System, /, Controls)
+	while (accept("/", status)) {
+		name += "/" + consume(status);
+	}
 	const imp = new ImportNode(start, name);
 
 	// TODO: Move this into add_to_parent somehow

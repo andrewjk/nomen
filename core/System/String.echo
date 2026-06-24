@@ -23,11 +23,11 @@ pub struct string: Stringable {
         ```
     }
 
-    pub func set = (ref self, int index: index >= 0 && index < self.length, char value) {
-        ```
-        #arch: c
-        self[index] = value;
-        ```
+	pub func set = (ref self, int index: index >= 0 && index < self.length, char value) {
+		```
+		#arch: c
+		(*self)[index] = value;
+		```
         ```
         #arch: aarch64
         // x19 = self (pointer), x1 = index, w2 = value

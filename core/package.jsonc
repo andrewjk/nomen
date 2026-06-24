@@ -1,4 +1,4 @@
 {
 	"name": "System",
-	"exports": ["./System/*", "./System/Stream/*"]
+	"exports": ["./System/*", "./System/Stream/*", "./System/Controls/*"]
 }

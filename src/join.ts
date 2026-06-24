@@ -37,9 +37,9 @@ function add_source(
 
 	source = source.replaceAll(/^import(.*)$/gm, (match, name) => {
 		const trimmed = name.trim();
-		// `import System` is the library aggregate, resolved at parse time via
-		// resolve_linked_types — not a file to inline here.
-		if (trimmed === "System") return match;
+		// `import System` and `import System/<namespace>` are library imports,
+		// resolved at parse time via resolve_linked_types — not files to inline.
+		if (trimmed === "System" || trimmed.startsWith("System/")) return match;
 		const import_file_path = `./${trimmed}.echo`;
 		if (!inputs.has(import_file_path)) {
 			add_source(folder_path, import_file_path, inputs, lib_path);

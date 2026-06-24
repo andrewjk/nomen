@@ -238,7 +238,7 @@ function processFile(filename: string, config: Config) {
 	if (!fs.existsSync(buildDir)) {
 		fs.mkdirSync(buildDir, { recursive: true });
 	}
-	const ext = arch === "aarch64" ? ".s" : ".c";
+	const ext = arch === "aarch64" ? ".s" : platform === "macos" || platform === "ios" ? ".m" : ".c";
 	const headerfile = path.join(buildDir, "main.h");
 	const codefile = path.join(buildDir, basename + ext);
 	const outfile = path.join(buildDir, basename);
@@ -253,7 +253,11 @@ function processFile(filename: string, config: Config) {
 
 	const audit_obj = config.audit ? compile_audit_runtime(config, resolved, buildDir) : undefined;
 	const link_inputs = audit_obj ? `${codefile} ${audit_obj}` : `${codefile}`;
-	execSync(`clang -o ${outfile} ${link_inputs}`);
+	const framework_flags =
+		platform === "macos" || platform === "ios"
+			? " -framework CoreGraphics -framework Foundation -framework AppKit -lobjc"
+			: "";
+	execSync(`clang -o ${outfile} ${link_inputs}${framework_flags}`);
 	execSync(outfile, { stdio: "inherit" });
 
 	const runTime = performance.now();
