@@ -36,6 +36,20 @@ import { emit_struct_copy, get_enum_size, get_struct_size } from "./utils/struct
  * we emit the variable's address; for inline struct constructors we build
  * them and rely on the constructor leaving the address in x0.
  */
+// Load an integer literal into x0. aarch64 `mov` (movz) only encodes unsigned
+// 16-bit immediates (and movn for small negatives), so larger magnitudes must
+// use a `ldr =imm` literal pool load.
+function emit_int_immediate(status: BuildStatus, raw: string) {
+	const num = parseInt(raw, 10);
+	if (!isNaN(num) && num >= 0 && num <= 65535) {
+		status.code += `mov x0, #${raw}\n`;
+	} else if (!isNaN(num) && num < 0 && num >= -65536) {
+		status.code += `movn x0, #${-num - 1}\n`;
+	} else {
+		status.code += `ldr x0, =${raw}\n`;
+	}
+}
+
 function emit_struct_address_param(node: BaseNode, status: BuildStatus) {
 	if (node.node_type === "value") {
 		const name = (node as ValueNode).value;
@@ -866,7 +880,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 						status.code += `str x0, [x29, #${offset}]\n`;
 					}
 				} else {
-					status.code += `mov x0, #${raw}\n`;
+					emit_int_immediate(status, raw);
 					if (size === 1) {
 						status.code += `strb w0, [x29, #${offset}]\n`;
 					} else if (size === 4) {

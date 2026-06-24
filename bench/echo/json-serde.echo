@@ -1,0 +1,33 @@
+import System
+
+// json-serde benchmark — exercises Json.serialize / deserialize for both
+// strings and integers. n controls the iteration count (default 100000).
+// Output: the integer round-trip checksum followed by the deserialized
+// string, both verifiable.
+
+pub func main = (Init init) {
+	var int n = 100000
+	if init.argc > 1 {
+		n = parse_int(init.args.at(1))
+	}
+
+	// Integer round-trip: serialize each i, deserialize it back, accumulate.
+	var int acc = 0
+	var int i = 0
+	while i < n {
+		var string s = Json.serialize_int(i)
+		var int v = Json.deserialize_int(s)
+		acc = acc + v
+		i = i + 1
+	}
+
+	// String round-trip: serialize a fixed value, deserialize it back.
+	var string payload = "hello echo"
+	var string json = Json.serialize(payload)
+	var string back = Json.deserialize(json)
+
+	Console.write(acc.to_string())
+	Console.write("\n")
+	Console.write(back)
+	Console.write("\n")
+}

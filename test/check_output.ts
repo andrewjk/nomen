@@ -63,11 +63,20 @@ export default async function check_output(
 	const outfile = path.join(folder, "main.out");
 	const outputfile = path.join(folder, "output.txt");
 	const cachefile = path.join(folder, ".cache");
+	// The companion file includes Foundation/Cocoa headers on apple platforms,
+	// so it must be compiled as Objective-C (.m) there.
+	const comp_ext = process.platform === "darwin" ? ".m" : ".c";
+	const companionfile = path.join(folder, `main_companion${comp_ext}`);
 
 	let code = built.code;
 	code = postprocess_macos(code, options.audit);
 
-	const cache_key = compute_cache_key(code, options);
+	const has_companion = !!built.companion;
+	if (has_companion) {
+		fs.writeFileSync(companionfile, built.companion!);
+	}
+
+	const cache_key = compute_cache_key(code + (built.companion ?? ""), options);
 
 	let stdout: string;
 	let stderr: string;
@@ -75,9 +84,12 @@ export default async function check_output(
 	const audit_runtime = path.join(".", "src", "audit_runtime.c");
 	const audit_obj = path.join(folder, "audit_runtime.o");
 	const execPromise = util.promisify(exec);
+	let link_inputs = codefile;
+	if (has_companion) link_inputs += ` ${companionfile}`;
+	if (options.audit) link_inputs += ` ${audit_obj}`;
 	const compileCmd = options.audit
-		? `clang -c ${audit_runtime} -o ${audit_obj} && clang ${codefile} ${audit_obj} -o ${outfile}`
-		: `clang -x assembler ${codefile} -o ${outfile}`;
+		? `clang -c ${audit_runtime} -o ${audit_obj} && clang ${link_inputs} -o ${outfile}`
+		: `clang ${link_inputs} -o ${outfile}`;
 
 	const cached_key = fs.existsSync(cachefile) ? fs.readFileSync(cachefile, "utf-8") : null;
 

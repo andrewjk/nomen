@@ -78,4 +78,14 @@ const out = path.resolve(output_file);
 const folder = path.dirname(out);
 fs.mkdirSync(folder, { recursive: true });
 fs.writeFileSync(out + ".s", code);
-execSync(`clang -x assembler ${out}.s -o ${out}`);
+
+let link_inputs = `${out}.s`;
+if (result.companion) {
+	// The companion file includes Foundation/Cocoa headers on apple platforms,
+	// so it must be compiled as Objective-C (.m) there.
+	const comp_ext = process.platform === "darwin" ? ".m" : ".c";
+	const companion_file = `${out}_companion${comp_ext}`;
+	fs.writeFileSync(companion_file, result.companion);
+	link_inputs += ` ${companion_file}`;
+}
+execSync(`clang ${link_inputs} -o ${out}`);

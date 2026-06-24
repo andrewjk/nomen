@@ -25,6 +25,9 @@ const KNOWN_HEAP_RETURNING = new Set([
 	"File_readChunk",
 	"Console_read_line",
 	"Console_platform",
+	"Json_serialize",
+	"Json_deserialize",
+	"Json_serialize_int",
 ]);
 
 export function scan_heap_returning_functions(root: BaseNode): Set<string> {
