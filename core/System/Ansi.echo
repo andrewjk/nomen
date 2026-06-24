@@ -1,0 +1,148 @@
+
+// ANSI escape code helpers for styling terminal output. Each function wraps a
+// string with the relevant SGR (Select Graphic Rendition) sequence and a
+// trailing reset, so styles never leak past the wrapped text.
+//
+// Usage:
+//   Console.write("\{Ansi.bg_red("ERROR")}: it didn't work")
+//   Console.write_line(Ansi.bold(Ansi.green("success")))
+//
+// The escape sequences ("\x1b[...m") are interpreted by the C compiler and the
+// assembler when the string literals are emitted, so the resulting strings
+// carry real ESC (0x1b) bytes. Modern terminals (macOS Terminal, iTerm, Linux
+// xterm, Windows Terminal/PowerShell 7, etc.) render them. On the web platform
+// you would typically render to the DOM rather than use Ansi.
+
+pub struct Ansi {
+    // Styles
+    pub func bold = (string s, out string) {
+        return "\x1b[1m" + s + "\x1b[0m"
+    }
+
+    pub func dim = (string s, out string) {
+        return "\x1b[2m" + s + "\x1b[0m"
+    }
+
+    pub func italic = (string s, out string) {
+        return "\x1b[3m" + s + "\x1b[0m"
+    }
+
+    pub func underline = (string s, out string) {
+        return "\x1b[4m" + s + "\x1b[0m"
+    }
+
+    pub func blink = (string s, out string) {
+        return "\x1b[5m" + s + "\x1b[0m"
+    }
+
+    pub func reverse = (string s, out string) {
+        return "\x1b[7m" + s + "\x1b[0m"
+    }
+
+    pub func hidden = (string s, out string) {
+        return "\x1b[8m" + s + "\x1b[0m"
+    }
+
+    pub func strikethrough = (string s, out string) {
+        return "\x1b[9m" + s + "\x1b[0m"
+    }
+
+    // Foreground colors
+    pub func black = (string s, out string) {
+        return "\x1b[30m" + s + "\x1b[0m"
+    }
+
+    pub func red = (string s, out string) {
+        return "\x1b[31m" + s + "\x1b[0m"
+    }
+
+    pub func green = (string s, out string) {
+        return "\x1b[32m" + s + "\x1b[0m"
+    }
+
+    pub func yellow = (string s, out string) {
+        return "\x1b[33m" + s + "\x1b[0m"
+    }
+
+    pub func blue = (string s, out string) {
+        return "\x1b[34m" + s + "\x1b[0m"
+    }
+
+    pub func magenta = (string s, out string) {
+        return "\x1b[35m" + s + "\x1b[0m"
+    }
+
+    pub func cyan = (string s, out string) {
+        return "\x1b[36m" + s + "\x1b[0m"
+    }
+
+    pub func white = (string s, out string) {
+        return "\x1b[37m" + s + "\x1b[0m"
+    }
+
+    // Bright foreground colors
+    pub func bright_black = (string s, out string) {
+        return "\x1b[90m" + s + "\x1b[0m"
+    }
+
+    pub func bright_red = (string s, out string) {
+        return "\x1b[91m" + s + "\x1b[0m"
+    }
+
+    pub func bright_green = (string s, out string) {
+        return "\x1b[92m" + s + "\x1b[0m"
+    }
+
+    pub func bright_yellow = (string s, out string) {
+        return "\x1b[93m" + s + "\x1b[0m"
+    }
+
+    pub func bright_blue = (string s, out string) {
+        return "\x1b[94m" + s + "\x1b[0m"
+    }
+
+    pub func bright_magenta = (string s, out string) {
+        return "\x1b[95m" + s + "\x1b[0m"
+    }
+
+    pub func bright_cyan = (string s, out string) {
+        return "\x1b[96m" + s + "\x1b[0m"
+    }
+
+    pub func bright_white = (string s, out string) {
+        return "\x1b[97m" + s + "\x1b[0m"
+    }
+
+    // Background colors
+    pub func bg_black = (string s, out string) {
+        return "\x1b[40m" + s + "\x1b[0m"
+    }
+
+    pub func bg_red = (string s, out string) {
+        return "\x1b[41m" + s + "\x1b[0m"
+    }
+
+    pub func bg_green = (string s, out string) {
+        return "\x1b[42m" + s + "\x1b[0m"
+    }
+
+    pub func bg_yellow = (string s, out string) {
+        return "\x1b[43m" + s + "\x1b[0m"
+    }
+
+    pub func bg_blue = (string s, out string) {
+        return "\x1b[44m" + s + "\x1b[0m"
+    }
+
+    pub func bg_magenta = (string s, out string) {
+        return "\x1b[45m" + s + "\x1b[0m"
+    }
+
+    pub func bg_cyan = (string s, out string) {
+        return "\x1b[46m" + s + "\x1b[0m"
+    }
+
+    pub func bg_white = (string s, out string) {
+        return "\x1b[47m" + s + "\x1b[0m"
+    }
+}

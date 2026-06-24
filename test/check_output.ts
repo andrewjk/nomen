@@ -27,13 +27,19 @@ function postprocess_macos(code: string, audit = false): string {
 	return code;
 }
 
-function compute_cache_key(code: string, options: { audit?: boolean }): string {
+function compute_cache_key(
+	code: string,
+	options: { audit?: boolean; provideStdin?: string },
+): string {
 	const parts = [code];
 	if (options.audit) {
 		const audit_runtime = path.join(".", "src", "audit_runtime.c");
 		if (fs.existsSync(audit_runtime)) {
 			parts.push(fs.readFileSync(audit_runtime, "utf-8"));
 		}
+	}
+	if (options.provideStdin !== undefined) {
+		parts.push(`stdin:${options.provideStdin}`);
 	}
 	const hash = crypto.createHash("sha256");
 	for (const part of parts) {
@@ -46,7 +52,7 @@ export default async function check_output(
 	name: string,
 	built: BuildResult,
 	expected_output: string,
-	options: { audit?: boolean } = { audit: true },
+	options: { audit?: boolean; provideStdin?: string } = { audit: true },
 ) {
 	const folder = path.resolve(".", "test", "out", name);
 	if (!fs.existsSync(folder)) {
@@ -81,7 +87,13 @@ export default async function check_output(
 	} else {
 		fs.writeFileSync(codefile, code);
 		const compile_result = await execPromise(compileCmd);
-		const run_result = await execPromise(`"${outfile}"`, { cwd: folder });
+		let run_cmd = `"${outfile}"`;
+		if (options.provideStdin !== undefined) {
+			const inputfile = path.join(folder, "input.txt");
+			fs.writeFileSync(inputfile, options.provideStdin);
+			run_cmd = `"${outfile}" < "${inputfile}"`;
+		}
+		const run_result = await execPromise(run_cmd, { cwd: folder });
 		stdout = run_result.stdout;
 		stderr = (compile_result.stderr || "") + (run_result.stderr || "");
 		fs.writeFileSync(outputfile, stdout);

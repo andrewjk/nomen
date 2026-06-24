@@ -277,8 +277,10 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		}
 
 		// Check if operands are owned heap temps before building them
-		const right_is_heap = node.type?.name === "string" && is_owned_heap_temp(node.right_value);
-		const left_is_heap = node.type?.name === "string" && is_owned_heap_temp(node.left_value);
+		const right_is_heap =
+			node.type?.name === "string" && is_owned_heap_temp(node.right_value, status);
+		const left_is_heap =
+			node.type?.name === "string" && is_owned_heap_temp(node.left_value, status);
 
 		// Evaluate right operand, spill to stack (left evaluation may clobber x1)
 		const right_spill = allocate_stack_space(status, 8);
@@ -417,16 +419,37 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 // once consumed (nested concat/repeat, interpolation, or a *_to_string call).
 // Variables, literals, and arbitrary function calls are NOT freed here because
 // they may be static or owned elsewhere.
-function is_owned_heap_temp(node: BaseNode): boolean {
-	const type_name = (node as { type?: { name?: string } }).type?.name;
-	if (type_name !== "string") return false;
-	if (node.node_type === "op") return true;
-	if (node.node_type === "func_call") {
-		const name = (node as unknown as { name: string }).name;
-		return (
-			name.startsWith("_string_interpolate_") ||
-			(name.endsWith("_to_string") && name !== "string_to_string")
-		);
+function is_owned_heap_temp(node: BaseNode, status?: BuildStatus): boolean {
+	// Method calls land in an `access` node wrapping an `access_func` (e.g.
+	// `Ansi.green(...)`). Unwrap and check the mangled `StructName_func` label,
+	// and pull the result type off the access_func since the wrapping access
+	// node doesn't always carry it.
+	let target_value: string | undefined;
+	let check_node = node;
+	let check_type_name = (node as { type?: { name?: string } }).type?.name;
+	if (node.node_type === "access") {
+		const access_node = node as unknown as {
+			access?: { node_type?: string; type?: { name?: string } };
+			target?: { value?: string };
+		};
+		if (access_node.access?.node_type !== "access_func") return false;
+		target_value = access_node.target?.value;
+		check_node = access_node.access as unknown as BaseNode;
+		check_type_name = access_node.access?.type?.name;
+	}
+	if (check_type_name !== "string") return false;
+	if (check_node.node_type === "op") return true;
+	if (check_node.node_type === "func_call" || check_node.node_type === "access_func") {
+		const raw_name = (check_node as unknown as { name: string }).name;
+		const mangled = (check_node as unknown as { mangled_name?: string }).mangled_name || raw_name;
+		if (mangled.startsWith("_string_interpolate_")) return true;
+		if (mangled.endsWith("_to_string") && mangled !== "string_to_string") return true;
+		const heap_set = status?.heap_returning_functions;
+		if (heap_set?.has(mangled)) return true;
+		// Non-overloaded struct methods don't carry a precomputed mangled_name on
+		// the AST; the build phase emits them as `StructName_func`. Try that.
+		if (heap_set && target_value && heap_set.has(`${target_value}_${raw_name}`)) return true;
+		return false;
 	}
 	return false;
 }

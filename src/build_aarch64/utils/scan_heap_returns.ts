@@ -2,6 +2,7 @@ import BaseNode from "../../nodes/BaseNode.ts";
 import FunctionCallNode from "../../nodes/FunctionCallNode.ts";
 import FunctionNode from "../../nodes/FunctionNode.ts";
 import ReturnNode from "../../nodes/ReturnNode.ts";
+import StructNode from "../../nodes/StructNode.ts";
 
 const KNOWN_HEAP_RETURNING = new Set([
 	"int_to_string",
@@ -22,16 +23,23 @@ const KNOWN_HEAP_RETURNING = new Set([
 	"File_readAll",
 	"File_readLine",
 	"File_readChunk",
+	"Console_read_line",
+	"Console_platform",
 ]);
 
 export function scan_heap_returning_functions(root: BaseNode): Set<string> {
 	const result = new Set<string>(KNOWN_HEAP_RETURNING);
-	scan_statements((root as any).statements ?? [], result);
+	scan_statements((root as any).statements ?? [], result, undefined);
 	return result;
 }
 
-function scan_statements(statements: any[], result: Set<string>) {
+function scan_statements(statements: any[], result: Set<string>, struct_name: string | undefined) {
 	for (const stmt of statements) {
+		if (stmt.node_type === "struct") {
+			// Recurse into struct methods so e.g. Ansi.red / String.+ are detected.
+			scan_statements((stmt as StructNode).functions ?? [], result, (stmt as StructNode).name);
+			continue;
+		}
 		if (stmt.node_type === "func") {
 			const func = stmt as FunctionNode;
 			if (func.return_type?.name === "string" && func.has_body) {
@@ -40,13 +48,16 @@ function scan_statements(statements: any[], result: Set<string>) {
 						s.node_type === "return" &&
 						is_heap_string_expr((s as ReturnNode).value ?? undefined)
 					) {
-						result.add(func.name);
+						// Match the label the build phase emits: `StructName_func_name`.
+						const sanitized = func.name.replace(/#/g, "");
+						const label = struct_name ? `${struct_name}_${sanitized}` : sanitized;
+						result.add(label);
 						break;
 					}
 				}
 			}
 			if (func.statements) {
-				scan_statements(func.statements, result);
+				scan_statements(func.statements, result, struct_name);
 			}
 		}
 	}

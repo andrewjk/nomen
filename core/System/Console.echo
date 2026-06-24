@@ -19,4 +19,192 @@ pub struct Console {
         .Lend_Console_write:
         ```
     }
+
+    pub func write_line = (string line) {
+        ```
+        #arch: c
+        printf("%s\n", line);
+        ```
+        ```
+        #arch: aarch64
+        sub sp, sp, #16
+        mov x1, x0
+        str x1, [sp]
+        adr x0, .Lfmt_console_snl
+        bl _printf
+        add sp, sp, #16
+        b .Lend_Console_write_line
+        .Lfmt_console_snl: .asciz "%s\n"
+        .p2align 2
+        .Lend_Console_write_line:
+        ```
+    }
+
+    pub func read_line = (out string) {
+        ```
+        #arch: c
+        int cap = 16;
+        int len = 0;
+        char *buf = (char*)malloc(cap);
+        malloc_count++;
+        int c = getchar();
+        while (c != EOF && c != '\n') {
+            if (len + 1 >= cap) {
+                cap *= 2;
+                buf = (char*)realloc(buf, cap);
+            }
+            buf[len++] = (char)c;
+            c = getchar();
+        }
+        buf[len] = 0;
+        return buf;
+        ```
+        ```
+        #arch: aarch64
+        sub sp, sp, #32
+        mov x0, #16
+        bl _malloc
+        str x0, [sp, #0]
+        mov x1, #16
+        str x1, [sp, #8]
+        str xzr, [sp, #16]
+        bl _getchar
+        str w0, [sp, #24]
+        .Lconsole_readline_loop:
+        ldr w0, [sp, #24]
+        cmp w0, #0
+        blt .Lconsole_readline_done
+        cmp w0, #10
+        beq .Lconsole_readline_done
+        ldr x0, [sp, #16]
+        add x0, x0, #1
+        ldr x1, [sp, #8]
+        cmp x0, x1
+        ble .Lconsole_readline_store
+        ldr x1, [sp, #8]
+        lsl x1, x1, #1
+        str x1, [sp, #8]
+        ldr x0, [sp, #0]
+        bl _realloc
+        str x0, [sp, #0]
+        .Lconsole_readline_store:
+        ldr x0, [sp, #0]
+        ldr x1, [sp, #16]
+        ldr w2, [sp, #24]
+        strb w2, [x0, x1]
+        ldr x0, [sp, #16]
+        add x0, x0, #1
+        str x0, [sp, #16]
+        bl _getchar
+        str w0, [sp, #24]
+        b .Lconsole_readline_loop
+        .Lconsole_readline_done:
+        ldr x0, [sp, #0]
+        ldr x1, [sp, #16]
+        strb wzr, [x0, x1]
+        ldr x0, [sp, #0]
+        add sp, sp, #32
+        b .return_Console_read_line
+        ```
+        return ""
+    }
+
+    pub func read_char = (out char) {
+        ```
+        #arch: c
+        return (char)getchar();
+        ```
+        ```
+        #arch: aarch64
+        bl _getchar
+        ```
+    }
+
+    pub func platform = (out string) {
+        ```
+        #arch: c
+        #platform: macos
+        return strdup("macos");
+        ```
+        ```
+        #arch: c
+        #platform: ios
+        return strdup("ios");
+        ```
+        ```
+        #arch: c
+        #platform: linux
+        return strdup("linux");
+        ```
+        ```
+        #arch: c
+        #platform: android
+        return strdup("android");
+        ```
+        ```
+        #arch: c
+        #platform: windows
+        return strdup("windows");
+        ```
+        ```
+        #arch: c
+        #platform: web
+        return strdup("web");
+        ```
+        ```
+        #arch: aarch64
+        #platform: macos
+        adr x0, .Lconsole_plat_macos
+        bl _strdup
+        b .return_Console_platform
+        .Lconsole_plat_macos: .asciz "macos"
+        .p2align 2
+        ```
+        ```
+        #arch: aarch64
+        #platform: ios
+        adr x0, .Lconsole_plat_ios
+        bl _strdup
+        b .return_Console_platform
+        .Lconsole_plat_ios: .asciz "ios"
+        .p2align 2
+        ```
+        ```
+        #arch: aarch64
+        #platform: linux
+        adr x0, .Lconsole_plat_linux
+        bl _strdup
+        b .return_Console_platform
+        .Lconsole_plat_linux: .asciz "linux"
+        .p2align 2
+        ```
+        ```
+        #arch: aarch64
+        #platform: android
+        adr x0, .Lconsole_plat_android
+        bl _strdup
+        b .return_Console_platform
+        .Lconsole_plat_android: .asciz "android"
+        .p2align 2
+        ```
+        ```
+        #arch: aarch64
+        #platform: windows
+        adr x0, .Lconsole_plat_windows
+        bl _strdup
+        b .return_Console_platform
+        .Lconsole_plat_windows: .asciz "windows"
+        .p2align 2
+        ```
+        ```
+        #arch: aarch64
+        #platform: web
+        adr x0, .Lconsole_plat_web
+        bl _strdup
+        b .return_Console_platform
+        .Lconsole_plat_web: .asciz "web"
+        .p2align 2
+        ```
+        return ""
+    }
 }

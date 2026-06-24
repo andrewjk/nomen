@@ -17,7 +17,7 @@ import type BuildResult from "./types/BuildResult.ts";
 
 export default function build(
 	root: BaseNode,
-	options: { arch?: "c" | "aarch64"; audit?: boolean } = {},
+	options: { arch?: "c" | "aarch64"; platform?: string; audit?: boolean } = {},
 ): BuildResult {
 	let status: BuildStatus = {
 		root,
@@ -33,6 +33,7 @@ export default function build(
 		float_literals: new Map(),
 		string_literal_names: new Set(),
 		audit: options.audit,
+		platform: options.platform ?? default_platform(),
 	};
 
 	if (options.arch === "aarch64") {
@@ -128,4 +129,18 @@ export default function build(
 		headers: status.headers,
 		code: status.code,
 	};
+}
+
+/** Derive a default target platform from the host when none is supplied. */
+export function default_platform(): string {
+	switch (process.platform) {
+		case "darwin":
+			return "macos";
+		case "linux":
+			return "linux";
+		case "win32":
+			return "windows";
+		default:
+			return process.platform;
+	}
 }

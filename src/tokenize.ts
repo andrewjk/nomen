@@ -240,6 +240,10 @@ function consume_string(input: string, status: TokenizeStatus) {
 			status.i = end;
 			status.tokens.push({ value: "}", i: status.i });
 			status.i = status.i + 1;
+			// Skip past the interpolation so the outer scan doesn't re-walk the
+			// expression body (which could contain `"` or `\n` and confuse the
+			// surrounding string scan).
+			j = end;
 		} else if (input[j] === '"' && input[j - 1] !== "\\") {
 			return j + 1;
 		}

@@ -7,7 +7,7 @@ import chokidar from "chokidar";
 import { hideBin } from "yargs/helpers";
 import yargs from "yargs/yargs";
 
-import build from "../../src/build.ts";
+import build, { default_platform } from "../../src/build.ts";
 import join from "../../src/join.ts";
 import { get_library } from "../../src/lib.ts";
 import parse from "../../src/parse.ts";
@@ -46,6 +46,11 @@ const options = yargs(hideBin(process.argv))
 		type: "string",
 		default: "aarch64",
 	})
+	.option("platform", {
+		alias: "p",
+		describe: "Target platform (macos, ios, linux, android, windows, web)",
+		type: "string",
+	})
 	.option("lib", {
 		alias: "l",
 		describe: "Path to System library directory (containing package.jsonc)",
@@ -74,13 +79,14 @@ try {
 	}
 
 	if (fs.existsSync(options.in)) {
-		let config: Config = { arch: "aarch64" };
+		let config: Config = { arch: "aarch64", platform: default_platform() };
 		// Load the config from a file
 		if (options.config && fs.existsSync(options.config)) {
 			config = JSON.parse(fs.readFileSync(options.config, "utf-8"));
 		}
 		// Overwrite with args
 		if (options.arch) config.arch = options.arch as "aarch64" | "c";
+		if (options.platform) config.platform = options.platform as string;
 		if (options.lib) config.lib = options.lib;
 		if (options.audit) config.audit = options.audit;
 		if (options["audit-runtime"]) config.audit_runtime = options["audit-runtime"];
@@ -199,6 +205,7 @@ function processFile(filename: string, config: Config) {
 	console.log("Processing", filename);
 
 	const arch = config.arch || "aarch64";
+	const platform = config.platform || default_platform();
 
 	const resolved = path.resolve(filename);
 	if (!config.lib) {
@@ -223,7 +230,7 @@ function processFile(filename: string, config: Config) {
 
 	// TODO: If verbose flag
 	// console.log("Built");
-	const result = build(parsed.root, { arch, audit: config.audit });
+	const result = build(parsed.root, { arch, platform, audit: config.audit });
 
 	const dir = path.dirname(filename);
 	const basename = path.basename(filename, ".echo");

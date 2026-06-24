@@ -1352,6 +1352,34 @@ Raw code can also be written using backtick blocks or the `raw` keyword:
 raw "inline code here"
 ```
 
+### Conditional Compilation
+
+Each raw block can carry `#arch:` and `#platform:` directives at the top. A
+block is emitted only when its target matches the build configuration (or when
+no directive is given).
+
+Supported platforms: `macos`, `ios`, `linux`, `android`, `windows`, `web`.
+
+````
+pub struct Console {
+    pub func platform = (out string) {
+        ```
+        #arch: c
+        #platform: macos
+        return strdup("macos");
+        ```
+        ```
+        #arch: c
+        #platform: linux
+        return strdup("linux");
+        ```
+        return ""
+    }
+}
+````
+
+The platform is selected with `--platform` (defaults to the host platform).
+
 ## Auto-free
 
 At the end of each scope, the compiler automatically:
@@ -1361,6 +1389,40 @@ At the end of each scope, the compiler automatically:
 - Cleans up all intermediate scopes on `break`, `continue`, and `return`
 
 See [MEMORY.md](MEMORY.md) for the full memory model description.
+
+## Standard Library
+
+The `System` library (in `core/System/`) is imported with `import System`. The
+most useful entry points are:
+
+### Console
+
+Output and input on `stdin` / `stdout`:
+
+```
+Console.write("no newline")           // write a string
+Console.write_line("with newline")    // write a string followed by '\n'
+
+const string line = Console.read_line()   // read a line from stdin (no trailing '\n')
+const char c     = Console.read_char()    // read a single character from stdin
+const string p   = Console.platform()     // current target platform, e.g. "macos"
+```
+
+### Ansi
+
+ANSI escape helpers for styling terminal output. Each function wraps a string
+with the relevant SGR sequence and a trailing reset (`ESC[0m`), so styles never
+leak past the wrapped text:
+
+```
+Console.write("\{Ansi.bg_red("ERROR")}: it didn't work")
+Console.write_line(Ansi.bold(Ansi.green("success")))
+```
+
+Foreground colours: `black`, `red`, `green`, `yellow`, `blue`, `magenta`,
+`cyan`, `white`, plus `bright_*` variants. Background colours: `bg_*` for each
+foreground colour. Styles: `bold`, `dim`, `italic`, `underline`, `blink`,
+`reverse`, `hidden`, `strikethrough`.
 
 ## Calling Conventions
 

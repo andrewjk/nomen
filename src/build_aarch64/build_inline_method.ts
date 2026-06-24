@@ -2,6 +2,7 @@ import type BuildStatus from "../build_c/BuildStatus.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import RawNode from "../nodes/RawNode.ts";
 import StructNode from "../nodes/StructNode.ts";
+import { parse_raw_directives } from "../raw_directives.ts";
 import build_block_node from "./build_block_node.ts";
 
 let inline_counter = 0;
@@ -14,30 +15,14 @@ function is_raw_only(func: FunctionNode): boolean {
 	return func.statements.every((s) => s.node_type === "raw");
 }
 
-function extract_aarch64_asm(func: FunctionNode): string {
+function extract_aarch64_asm(func: FunctionNode, platform: string): string {
 	let asm = "";
 	for (const stmt of func.statements) {
 		const raw = stmt as RawNode;
-		const lines = raw.value.split("\n");
-		if (lines.length > 0 && lines[0].trim().startsWith("#arch:")) {
-			const arches = lines[0]
-				.trim()
-				.substring(6)
-				.split(",")
-				.map((a) => a.trim());
-			if (arches.includes("aarch64")) {
-				const code = lines.slice(1).join("\n").trim();
-				if (code) {
-					if (asm) asm += "\n";
-					asm += code;
-				}
-			}
-		} else {
-			const code = raw.value.trim();
-			if (code) {
-				if (asm) asm += "\n";
-				asm += code;
-			}
+		const { should_emit, code } = parse_raw_directives(raw.value, "aarch64", platform);
+		if (should_emit && code) {
+			if (asm) asm += "\n";
+			asm += code;
 		}
 	}
 	return asm;
@@ -49,7 +34,7 @@ function count_x19_reads(asm: string): number {
 }
 
 function build_naked_inline(struct_node: StructNode, func: FunctionNode, status: BuildStatus) {
-	let asm = extract_aarch64_asm(func);
+	let asm = extract_aarch64_asm(func, status.platform);
 	const standalone_return_label = `.return_${struct_node.name}_${func.name.replace(/#/g, "")}`;
 	asm = asm.replaceAll(`b ${standalone_return_label}`, "");
 
