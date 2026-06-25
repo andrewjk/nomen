@@ -1,100 +1,417 @@
-// Simple regular expression support backed by POSIX regex (libc).
+// Regular expression support implemented in pure Echo.
 //
 // `test` reports whether a pattern matches anywhere in the input; `match`
 // returns the first matched substring (or "" when there is no match).
-// Patterns use POSIX Extended Regular Expression syntax. The matching logic
-// is implemented in C (compiled as a companion file on aarch64).
+// Patterns use POSIX Extended Regular Expression syntax.
 
 pub struct Regex {
 	// Test whether pattern matches anywhere in input.
 	pub func test = (string pattern, string input, out bool) {
-		```
-		#arch: c, aarch64_use_c
-		regex_t re;
-		if (regcomp(&re, pattern, REG_EXTENDED) != 0) return 0;
-		int rc = regexec(&re, input, 0, 0, 0);
-		regfree(&re);
-		return rc == 0 ? 1 : 0;
-		```
+		var int pat_len = pattern.length()
+		var int len = input.length()
+		var int i = 0
+		while i <= len {
+			if match_here(pattern, 0, pat_len, input, i) >= 0 {
+				return true
+			}
+			i = i + 1
+		}
+		return false
 	}
 
 	// Return the first substring of input matching pattern, or "" if none.
 	pub func match = (string pattern, string input, out string) {
-		```
-		#arch: c, aarch64_use_c
-		regex_t re;
-		if (regcomp(&re, pattern, REG_EXTENDED) != 0) return strdup("");
-		regmatch_t m[1];
-		int rc = regexec(&re, input, 1, m, 0);
-		regfree(&re);
-		if (rc != 0) return strdup("");
-		long len = m[0].rm_eo - m[0].rm_so;
-		char* out = (char*)malloc(len + 1);
-		memcpy(out, input + m[0].rm_so, len);
-		out[len] = 0;
-		return out;
-		```
+		var string match_result = ""
+		var int pat_len = pattern.length()
+		var int len = input.length()
+		var int i = 0
+		while i <= len {
+			var int end = match_here(pattern, 0, pat_len, input, i)
+			if end >= 0 {
+				var int j = i
+				while j < end {
+					match_result = match_result + "\{input.at(j)}"
+					j = j + 1
+				}
+				break
+			}
+			i = i + 1
+		}
+		return match_result
 	}
 
 	// Count the number of non-overlapping occurrences of pattern in input.
 	pub func count = (string pattern, string input, out int) {
-		```
-		#arch: c, aarch64_use_c
-		regex_t re;
-		if (regcomp(&re, pattern, REG_EXTENDED) != 0) return 0;
-		int count = 0;
-		const char *p = input;
-		regmatch_t m[1];
-		while (regexec(&re, p, 1, m, 0) == 0) {
-			count++;
-			p += m[0].rm_eo;
-			if (m[0].rm_so == m[0].rm_eo) p++;
+		var int pat_len = pattern.length()
+		var int len = input.length()
+		var int total = 0
+		var int pos = 0
+		while pos < len {
+			var int end = match_here(pattern, 0, pat_len, input, pos)
+			if end >= 0 {
+				total = total + 1
+				if end == pos {
+					pos = pos + 1
+				} else {
+					pos = end
+				}
+			} else {
+				pos = pos + 1
+			}
 		}
-		regfree(&re);
-		return count;
-		```
+		return total
 	}
 
 	// Replace all non-overlapping occurrences of pattern in input with replacement.
 	pub func replace_all = (string pattern, string input, string replacement, out string) {
-		```
-		#arch: c, aarch64_use_c
-		regex_t re;
-		if (regcomp(&re, pattern, REG_EXTENDED) != 0) return strdup(input);
-		long input_len = strlen(input);
-		long rep_len = strlen(replacement);
-		long result_cap = input_len + 1;
-		char *result = (char*)malloc(result_cap);
-		result[0] = 0;
-		long rpos = 0;
-		const char *p = input;
-		regmatch_t m[1];
-		while (regexec(&re, p, 1, m, 0) == 0) {
-			long match_start = m[0].rm_so;
-			long match_len = m[0].rm_eo - m[0].rm_so;
-			long prefix_len = match_start;
-			long new_len = rpos + prefix_len + rep_len;
-			if (new_len + 1 > result_cap) {
-				result_cap = new_len * 2 + 1;
-				result = (char*)realloc(result, result_cap);
+		var string replace_result = ""
+		var int pat_len = pattern.length()
+		var int len = input.length()
+		var int pos = 0
+		while pos < len {
+			var int end = match_here(pattern, 0, pat_len, input, pos)
+			if end >= 0 {
+				replace_result = replace_result + replacement
+				if end == pos {
+					replace_result = replace_result + "\{input.at(pos)}"
+					pos = pos + 1
+				} else {
+					pos = end
+				}
+			} else {
+				replace_result = replace_result + "\{input.at(pos)}"
+				pos = pos + 1
 			}
-			memcpy(result + rpos, p, prefix_len);
-			rpos += prefix_len;
-			memcpy(result + rpos, replacement, rep_len);
-			rpos += rep_len;
-			p += match_start + match_len;
-			if (match_len == 0) { p++; }
 		}
-		long tail_len = input + input_len - p;
-		long new_len = rpos + tail_len;
-		if (new_len + 1 > result_cap) {
-			result = (char*)realloc(result, new_len + 1);
-		}
-		memcpy(result + rpos, p, tail_len);
-		rpos += tail_len;
-		result[rpos] = 0;
-		regfree(&re);
-		return result;
-		```
+		return replace_result
 	}
+}
+
+// Match pattern[pat_pos..pat_end) against input starting at in_pos.
+// Returns the end position in input after a successful match, or -1.
+func match_here = (string pattern, int pat_pos, int pat_end, string input, int in_pos, out int) {
+	// Handle top-level alternation: a '|' at bracket/paren depth 0 splits the
+	// range into alternatives. Char classes and escapes are skipped so a '|' or
+	// '\|' inside them is not mistaken for an alternation operator.
+	var int depth = 0
+	var int i = pat_pos
+	while i < pat_end {
+		var char c = pattern.at(i)
+		if (c as int) == 92 {
+			i = i + 2
+		} else {
+			if c == '[' {
+				i = atom_end_pos(pattern, i, pat_end)
+			} else {
+				if c == '(' {
+					depth = depth + 1
+				}
+				if c == ')' {
+					if depth > 0 {
+						depth = depth - 1
+					}
+				}
+				if (c as int) == 124 {
+					if depth == 0 {
+						var int left = match_here(pattern, pat_pos, i, input, in_pos)
+						if left >= 0 {
+							return left
+						}
+						return match_here(pattern, i + 1, pat_end, input, in_pos)
+					}
+				}
+				i = i + 1
+			}
+		}
+	}
+
+	// Pattern exhausted: match succeeds at the current position.
+	if pat_pos >= pat_end {
+		return in_pos
+	}
+
+	var char pc = pattern.at(pat_pos)
+
+	// Anchors (zero-width assertions).
+	if pc == '^' {
+		if in_pos != 0 {
+			return -1
+		}
+		return match_here(pattern, pat_pos + 1, pat_end, input, in_pos)
+	}
+	if pc == '$' {
+		if in_pos != input.length() {
+			return -1
+		}
+		return match_here(pattern, pat_pos + 1, pat_end, input, in_pos)
+	}
+
+	// Determine the bounds of the current atom.
+	var int a_end = atom_end_pos(pattern, pat_pos, pat_end)
+
+	// Check for a quantifier following the atom.
+	if a_end < pat_end {
+		var char q = pattern.at(a_end)
+		if q == '*' {
+			return match_star(pattern, pat_pos, a_end, pat_end, input, in_pos, 0)
+		}
+		if q == '+' {
+			return match_star(pattern, pat_pos, a_end, pat_end, input, in_pos, 1)
+		}
+		if q == '?' {
+			return match_optional(pattern, pat_pos, a_end, pat_end, input, in_pos)
+		}
+	}
+
+	// No quantifier: match the atom once, then the rest of the pattern.
+	var int next = match_single_atom(pattern, pat_pos, a_end, input, in_pos)
+	if next < 0 {
+		return -1
+	}
+	return match_here(pattern, a_end, pat_end, input, next)
+}
+
+// Return the position just past the atom that starts at pat_pos. Handles
+// character classes [...], groups (...), and escaped characters (\x).
+func atom_end_pos = (string pattern, int pat_pos, int pat_end, out int) {
+	var char pc = pattern.at(pat_pos)
+	if pc == '[' {
+		var int cs = pat_pos + 1
+		if cs < pat_end {
+			if pattern.at(cs) == '^' {
+				cs = cs + 1
+			}
+		}
+		while cs < pat_end {
+			if pattern.at(cs) == ']' {
+				return cs + 1
+			}
+			cs = cs + 1
+		}
+		return pat_end
+	}
+	if pc == '(' {
+		var int d = 1
+		var int j = pat_pos + 1
+		while j < pat_end {
+			var char c = pattern.at(j)
+			if c == '(' {
+				d = d + 1
+			}
+			if c == ')' {
+				d = d - 1
+				if d == 0 {
+					return j + 1
+				}
+			}
+			j = j + 1
+		}
+		return pat_end
+	}
+	if (pc as int) == 92 {
+		if pat_pos + 1 < pat_end {
+			return pat_pos + 2
+		}
+		return pat_pos + 1
+	}
+	return pat_pos + 1
+}
+
+// Match the atom [atom_start..atom_end) exactly once at in_pos.
+// Returns the new input position after consuming the atom, or -1.
+func match_single_atom = (string pattern, int atom_start, int atom_end, string input, int in_pos, out int) {
+	var int in_len = input.length()
+	var char pc = pattern.at(atom_start)
+
+	if pc == '.' {
+		if in_pos < in_len {
+			if (input.at(in_pos) as int) != 10 {
+				return in_pos + 1
+			}
+		}
+		return -1
+	}
+	if pc == '[' {
+		if in_pos < in_len {
+			if char_in_class(pattern, atom_start, atom_end, input, in_pos) {
+				return in_pos + 1
+			}
+		}
+		return -1
+	}
+	if pc == '(' {
+		// Match the group's inner content.
+		return match_here(pattern, atom_start + 1, atom_end - 1, input, in_pos)
+	}
+	if (pc as int) == 92 {
+		if atom_start + 1 < atom_end {
+			var char ec = pattern.at(atom_start + 1)
+			if in_pos < in_len {
+				if input.at(in_pos) == ec {
+					return in_pos + 1
+				}
+			}
+		}
+		return -1
+	}
+	if in_pos < in_len {
+		if input.at(in_pos) == pc {
+			return in_pos + 1
+		}
+	}
+	return -1
+}
+
+// Report whether input.at(pos) matches the single-character atom at
+// [atom_start..atom_end). Used by the greedy star matcher.
+func char_matches_atom = (string pattern, int atom_start, int atom_end, string input, int pos, out bool) {
+	var char pc = pattern.at(atom_start)
+	var char ic = input.at(pos)
+	if pc == '.' {
+		if (ic as int) == 10 {
+			return false
+		}
+		return true
+	}
+	if pc == '[' {
+		return char_in_class(pattern, atom_start, atom_end, input, pos)
+	}
+	if (pc as int) == 92 {
+		if atom_start + 1 < atom_end {
+			return ic == pattern.at(atom_start + 1)
+		}
+		return false
+	}
+	return pc == ic
+}
+
+// Greedily match the atom [atom_start..atom_end) followed by the rest of the
+// pattern pattern[atom_end+1..pat_end). min_count is 0 for '*' and 1 for '+'.
+// Single-character atoms are handled iteratively; groups recurse.
+func match_star = (string pattern, int atom_start, int atom_end, int pat_end, string input, int in_pos, int min_count, out int) {
+	var char pc = pattern.at(atom_start)
+	if pc == '(' {
+		return match_star_group(pattern, atom_start, atom_end, pat_end, input, in_pos, min_count)
+	}
+
+	var int in_len = input.length()
+	// Greedily consume the longest run of matching characters.
+	var int max_pos = in_pos
+	while max_pos < in_len {
+		if char_matches_atom(pattern, atom_start, atom_end, input, max_pos) {
+			max_pos = max_pos + 1
+		} else {
+			break
+		}
+	}
+	// Backtrack from the longest match down to the minimum, trying the rest.
+	var int try_pos = max_pos
+	while try_pos >= in_pos + min_count {
+		var int r = match_here(pattern, atom_end + 1, pat_end, input, try_pos)
+		if r >= 0 {
+			return r
+		}
+		try_pos = try_pos - 1
+	}
+	return -1
+}
+
+// Recursive greedy backtracking for group atoms quantified with '*' or '+'.
+func match_star_group = (string pattern, int atom_start, int atom_end, int pat_end, string input, int in_pos, int min_count, out int) {
+	// Try matching the group one more time (greedy).
+	var int next = match_single_atom(pattern, atom_start, atom_end, input, in_pos)
+	if next >= 0 {
+		if next != in_pos {
+			var int new_min = 0
+			if min_count > 0 {
+				new_min = min_count - 1
+			}
+			var int r = match_star_group(pattern, atom_start, atom_end, pat_end, input, next, new_min)
+			if r >= 0 {
+				return r
+			}
+		}
+	}
+	// Stop repeating and try the rest of the pattern, if the minimum is met.
+	if min_count <= 0 {
+		return match_here(pattern, atom_end + 1, pat_end, input, in_pos)
+	}
+	return -1
+}
+
+// Match the atom optionally ('?'), preferring to include it.
+func match_optional = (string pattern, int atom_start, int atom_end, int pat_end, string input, int in_pos, out int) {
+	var int next = match_single_atom(pattern, atom_start, atom_end, input, in_pos)
+	if next >= 0 {
+		var int r = match_here(pattern, atom_end + 1, pat_end, input, next)
+		if r >= 0 {
+			return r
+		}
+	}
+	return match_here(pattern, atom_end + 1, pat_end, input, in_pos)
+}
+
+// Report whether input.at(in_pos) belongs to the character class whose '[' is
+// at open_pos and whose ']' is at atom_end - 1 (atom_end is just after ']').
+func char_in_class = (string pattern, int open_pos, int atom_end, string input, int in_pos, out bool) {
+	var int in_len = input.length()
+	if in_pos >= in_len {
+		return false
+	}
+	var char ic = input.at(in_pos)
+
+	var int content_start = open_pos + 1
+	var bool negated = false
+	if content_start < atom_end {
+		if pattern.at(content_start) == '^' {
+			negated = true
+			content_start = content_start + 1
+		}
+	}
+	var int content_end = atom_end - 1
+
+	var bool found = false
+	var int i = content_start
+	while i < content_end {
+		var char c = pattern.at(i)
+		if (c as int) == 92 {
+			if i + 1 < content_end {
+				if ic == pattern.at(i + 1) {
+					found = true
+				}
+			}
+			i = i + 2
+		} else {
+			if i + 2 < content_end {
+				if pattern.at(i + 1) == '-' {
+					var char lo = c
+					var char hi = pattern.at(i + 2)
+					if (ic as int) >= (lo as int) {
+						if (ic as int) <= (hi as int) {
+							found = true
+						}
+					}
+					i = i + 3
+				} else {
+					if ic == c {
+						found = true
+					}
+					i = i + 1
+				}
+			} else {
+				if ic == c {
+					found = true
+				}
+				i = i + 1
+			}
+		}
+	}
+
+	if negated {
+		if found {
+			return false
+		}
+		return true
+	}
+	return found
 }
