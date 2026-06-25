@@ -4,19 +4,23 @@ import System
 // parse it into a tree of JsonNode, and serialize it back. Repeats the
 // parse+serialize n times.
 //
-// Usage: json-serde <n>
-// The input is bench/sample.json (hardcoded). Unlike Go/Zig this does NOT
+// Usage: json-serde [sample.json] [n]
+// The input defaults to bench/sample.json. Unlike Go/Zig this does NOT
 // md5-hash the output (see bench/README.md); it prints the serialized length
 // as a verifiable checksum instead.
 
 pub func main = (Init init) {
-	var int n = 10
+	var string filename = "bench/sample.json"
 	if init.argc > 1 {
-		n = parse_int(init.args.at(1))
+		filename = init.args.at(1)
+	}
+	var int n = 10
+	if init.argc > 2 {
+		n = parse_int(init.args.at(2))
 	}
 
 	var File f = File()
-	f.open("bench/sample.json", "r")
+	f.open(filename, "r")
 	var string text = f.readAll()
 	f.close()
 

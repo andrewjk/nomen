@@ -640,6 +640,18 @@ function build_access_method(
 				elem_type_name !== "int16" &&
 				elem_type_name !== "int32";
 
+			// The inlined .at()/.set() below uses x19 as scratch for the array base.
+			// x19 is also the callee-saved home register for `self` and the first struct
+			// parameter, so when it is live we must preserve it — otherwise computing
+			// a field address (e.g. `h.items.at(0)` where `h` is held in x19) emits
+			// `add x19, x19, #offset`, corrupting the struct pointer for any later
+			// field read such as `h.count`.
+			const x19_live =
+				!!status.function_param_regs && [...status.function_param_regs.values()].includes("x19");
+			if (x19_live) {
+				status.code += `str x19, [sp, #-16]!\n`;
+			}
+
 			// Build target (array pointer) into x19
 			if (node.target.node_type === "value") {
 				const name = (node.target as ValueNode).value;
@@ -760,6 +772,9 @@ function build_access_method(
 						}
 					}
 				}
+			}
+			if (x19_live) {
+				status.code += `ldr x19, [sp], #16\n`;
 			}
 			return;
 		}

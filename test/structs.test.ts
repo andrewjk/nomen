@@ -97,6 +97,32 @@ Console.write("\\{n.values.at(0)} \\{n.values.at(1)} \\{n.values.at(2)}")
 		await check_output("struct_fixed_size_int_array_field", result, "10 20 30");
 	});
 
+	// Regression: inlined .at() on a fixed-size array field of a struct *parameter*
+	// must not corrupt the struct's home register (x19). Reading the array field
+	// shifts x19 by the field offset; without preserving x19, the subsequent scalar
+	// field read returns the wrong value (e.g. reads values[1] instead of `total`).
+	test("struct param array field access preserves struct register", async () => {
+		const input = `
+struct Nums {
+  var int total
+  var int[3] values
+}
+
+func first_then_total = (Nums n, out int) {
+  var int first = n.values.at(0)
+  return n.total
+}
+
+var Nums n = Nums(7, [10, 20, 30])
+var int result = first_then_total(n)
+Console.write("\\{result}")
+`;
+		const parsed = parse_with_imports(input);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		expect(parsed.errors).toEqual([]);
+		await check_output("struct_param_array_field_register", result, "7");
+	});
+
 	test("struct with default field value", async () => {
 		const input = `
 struct Counter {
