@@ -9,7 +9,7 @@ import (
 )
 
 func main() {
-	fileName := "sample"
+	fileName := "bench/sample"
 	n := 10
 	if len(os.Args) > 1 {
 		fileName = os.Args[1]

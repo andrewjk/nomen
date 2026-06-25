@@ -27,7 +27,6 @@ const KNOWN_HEAP_RETURNING = new Set([
 	"Console_platform",
 	"Json_serialize",
 	"Json_deserialize",
-	"Json_serialize_int",
 	"Regex_match",
 ]);
 

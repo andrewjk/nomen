@@ -38,4 +38,16 @@ pub struct int: Stringable {
         .Lend_int_to_string:
         ```
     }
+
+    // Parse a base-10 integer from a string.
+    pub func parse = (string s, out int) {
+        ```
+        #arch: c
+        return atoi(s);
+        ```
+        ```
+        #arch: aarch64
+        bl _atoi
+        ```
+    }
 }

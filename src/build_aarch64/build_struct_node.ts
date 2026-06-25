@@ -6,6 +6,7 @@ import ValueNode from "../nodes/ValueNode.ts";
 import build_block_node from "./build_block_node.ts";
 import { check_c_fallback } from "./build_raw_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
+import scan_force_heap_strings from "./utils/scan_force_heap_strings.ts";
 import { allocate_stack_space } from "./utils/stack_var.ts";
 import { get_field_offset, get_struct_size } from "./utils/struct_layout.ts";
 
@@ -330,6 +331,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		const old_param_regs = status.function_param_regs;
 		const old_param_vars = status.function_param_vars;
 		const old_return_label = status.function_return_label;
+		const old_force_heap = status.force_heap_strings;
 
 		status.scoped_declarations = [];
 		status.stack_size = 0;
@@ -435,6 +437,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 			}
 		}
 
+		status.force_heap_strings = scan_force_heap_strings(func.statements);
 		build_block_node(func, status);
 
 		const loop_regs_used = status.callee_saved_regs_used
@@ -489,6 +492,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		status.function_param_vars = old_param_vars;
 		status.function_ref_params = old_ref_params;
 		status.function_return_label = old_return_label;
+		status.force_heap_strings = old_force_heap;
 		status.struct_return_buffer = undefined;
 		status.function_return_type = undefined;
 		status.return_buffer_stack_offset = undefined;

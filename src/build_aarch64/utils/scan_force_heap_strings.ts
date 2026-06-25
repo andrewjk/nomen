@@ -2,6 +2,7 @@ import AccessNode from "../../nodes/AccessNode.ts";
 import AssignmentNode from "../../nodes/AssignmentNode.ts";
 import BaseNode from "../../nodes/BaseNode.ts";
 import IfElseNode from "../../nodes/IfElseNode.ts";
+import SwitchNode from "../../nodes/SwitchNode.ts";
 import ValueNode from "../../nodes/ValueNode.ts";
 
 // Collect string variable names that are reassigned a freshly-allocated heap
@@ -39,6 +40,14 @@ function visit(node: BaseNode | undefined, result: Set<string>) {
 		case "if": {
 			const n = node as IfElseNode;
 			walk(n.if_branch?.statements, result);
+			walk(n.else_branch?.statements, result);
+			break;
+		}
+		case "switch": {
+			const n = node as SwitchNode;
+			for (const c of n.cases) {
+				walk(c.branch?.statements, result);
+			}
 			walk(n.else_branch?.statements, result);
 			break;
 		}

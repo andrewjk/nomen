@@ -22,6 +22,7 @@ export default defineConfig({
 				},
 			},
 		],
+		ignorePatterns: ["bench/**.json"],
 	},
 	test: {
 		exclude: ["**/node_modules/**", "**/dist/**", "./temp/**", "./tests/**"],
