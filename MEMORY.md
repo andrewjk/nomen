@@ -8,7 +8,7 @@ This document describes memory behavior at two levels: what Echo programmers can
 
 ### Strings
 
-Strings are heap-allocated. The compiler tracks which variables hold heap strings and frees them automatically when they go out of scope or are reassigned.
+Strings are heap-allocated. The compiler tracks which variables hold heap strings and frees them automatically when they go of scope or are reassigned.
 
 ```
 var string name = "Alice"      // heap allocation
@@ -17,19 +17,6 @@ name = "Bob"                   // old string freed, new one allocated
 ```
 
 String interpolation (`"\{expr}"`) creates temporary heap allocations that are freed at the end of the enclosing scope.
-
-```
-Console.write("\{x}")     // temporary string freed at scope exit
-```
-
-### String Arrays
-
-Arrays of strings (`string[]`) are stack-allocated containers where each element is a heap pointer. At scope exit, each element is freed individually.
-
-```
-var string[] names = ["Alice", "Bob", "Charlie"]
-// at scope exit: each element pointer is freed, then the stack array is reclaimed
-```
 
 ### Structs (Value Types)
 
@@ -47,15 +34,15 @@ b.x = 99
 // a.x is still 1
 ```
 
-#### Destroy Blocks
+#### Destroy Functions
 
-Structs can define a `destroy` block that runs automatically when the struct goes out of scope:
+Structs can define a `#destroy` function that runs automatically when the struct goes out of scope:
 
 ```
 struct Resource {
     var int handle
 
-    destroy = {
+    func #destroy = () {
         self.handle = -1
     }
 }
@@ -64,14 +51,14 @@ var Resource r = Resource(10)
 // at scope exit: r.handle is set to -1
 ```
 
-Destroy blocks run at:
+Destroy functions run at:
 
 - Scope exit (end of `if` body, function body, loop body, etc.)
 - `break` and `continue` in loops
 - `return` statements
-- Reassignment of a variable that held a struct with a destroy block
+- Reassignment of a variable that held a struct with a destroy function
 
-Nested struct fields with destroy blocks are also cleaned up recursively.
+Nested struct fields with destroy functions are also cleaned up recursively.
 
 ### Classes (Reference Types)
 
@@ -90,31 +77,22 @@ q.value = 99
 
 #### Automatic Deallocation
 
-Each class instance is freed exactly once, when the last reference goes out of scope:
+Each class instance is freed exactly once, when the owning reference goes out of scope:
 
 - **Declaration**: `var Box b = Box(42)` allocates and tracks the instance
 - **Scope exit**: the instance is freed when the scope where it was anchored ends
 - **Reassignment**: `b = Box(99)` frees the old instance before storing the new pointer
 - **Return**: returning a class transfers ownership to the caller — the function does not free it
 
-```
-func make_box = (int x, out Box) {
-    var Box b = Box(x)
-    return b         // ownership transferred to caller
-}
-var Box result = make_box(42)   // caller now owns the instance
-// result freed at caller's scope exit
-```
+#### Destroy Functions
 
-#### Destroy Blocks
-
-Classes can define `destroy` blocks, which run before the instance memory is freed:
+Classes can define `#destroy` functions, which run before the instance memory is freed:
 
 ```
 class Counter {
     var int count
 
-    destroy = {
+    func #destroy = () {
         self.count = 0
     }
 }
@@ -123,35 +101,59 @@ var Counter c = Counter(5)
 // at scope exit: c.count is set to 0, then the heap allocation is freed
 ```
 
-#### Cross-Scope Assignment
+#### Borrowed References
 
-When a class from an inner scope is assigned to an outer-scope variable, ownership transfers:
-
-```
-var Counter c = Counter(0)
-if condition {
-    var Counter inner = Counter(5)
-    c = inner          // c now points to Counter(5); Counter(0) is freed
-}                      // inner is not freed here — c owns it now
-Console.write("\{c.count}")   // prints 5
-// Counter(5) freed at outer scope exit
-```
-
-### Loops
-
-Variables declared inside loop bodies are cleaned up at each iteration. `break` and `continue` clean up all intermediate scopes between the current position and the loop boundary:
+Class values obtained from field access or accessor methods are **borrowed references** — they point to an instance owned elsewhere. The compiler does not free borrowed references at scope exit. This prevents double-frees when retrieving class pointers from containers:
 
 ```
-while condition {
-    var Resource r = Resource(1)
-    if should_skip {
-        continue        // r is cleaned up before jumping back to loop start
+var Elephant a = Elephant('A')     // a owns this instance
+list.add(a)                        // list stores a copy of the pointer
+var Elephant cur = list.value(0)   // cur is a borrowed reference — NOT freed at scope exit
+// a is freed at scope exit (a owns the instance); cur is not freed
+```
+
+#### Ownership Transfer with `mov`
+
+The `mov` keyword explicitly transfers ownership of a class instance into a struct field or function parameter. The source variable is marked as "moved" and excluded from cleanup:
+
+```
+class Box { var int value }
+class Holder { mov Box content }
+
+var Box b = Box(42)
+var Holder h = Holder(mov b)   // ownership moves from b to h.content
+// b is moved — not freed at scope exit
+// h.content is freed when h is destroyed
+```
+
+### Generic Containers
+
+Generic containers (`List<T>`, `Set<T>`, `Map<K,V>`, `LinkedList<T>`, `Tree<T>`, `Graph<T>`) use **type-erased storage**: all values are stored as 8-byte slots via `Buffer.store_int` / `Buffer.load_int`, regardless of `T`. This works because on aarch64, ints, pointers, and class references are all 8 bytes.
+
+```
+pub struct List<T> {
+    var int length = 0
+    var Buffer items = Buffer()
+
+    pub func push = (ref self, T value) {
+        // ...
+        var int v = value       // T coerces to int for storage
+        self.items.store_int(self.length, v)
+        // ...
     }
-    if should_exit {
-        break           // r is cleaned up before jumping to loop end
+
+    pub func pop = (ref self, out T) {
+        // ...
+        return self.items.load_int(self.length)  // int coerces back to T
     }
 }
 ```
+
+When `T` is a class type, the stored value is a pointer. Retrieving it returns a borrowed reference — the container does not own the instances, the original variables do.
+
+### Loops
+
+Variables declared inside loop bodies are cleaned up at each iteration. `break` and `continue` clean up all intermediate scopes between the current position and the loop boundary.
 
 ### Summary of Cleanup Timing
 
@@ -168,23 +170,42 @@ while condition {
 
 This section describes how the aarch64 backend implements the memory model. All cleanup is inserted at compile time — there is no runtime GC.
 
+### Struct Layout
+
+Every struct/class instance has an 8-byte prefix (`VT_SIZE = 8`) reserved for a vtable/type-id slot. Fields are laid out sequentially after this prefix:
+
+```
+offset 0:  vtable slot (8 bytes, zeroed by _init)
+offset 8:  first field
+offset 8+sizeof(first): second field
+...
+```
+
+`get_struct_size` returns `VT_SIZE + sum(field_sizes)`. Classes are always stored as 8-byte pointers (the instance is heap-allocated; the variable holds a pointer to it). Ref fields (`ref T`) are also 8 bytes.
+
+Auto-generated `_init` functions use correctly-sized store instructions (`strb` for 1-byte fields like `char`/`bool`, `strh` for 2-byte, `str` for 4-byte, `str` with `x` register for 8-byte) to avoid heap buffer overflows on class instances malloc'd to exact size.
+
 ### Heap Tracking Data Structures
 
-The `BuildStatus` object carries several tracking structures during code generation:
+The `BuildStatus` object (`src/build_c/BuildStatus.ts`) carries several tracking structures during code generation:
 
 ```typescript
-// Per-scope cleanup frame
+// Per-scope cleanup frame (pushed/popped by build_block_node)
 heap_cleanup_stack: {
-    heap_strings: Set<string>                          // variable names holding heap strings
-    heap_slots: { offset: number, var_name?: string }[] // anchor slots for class instances
-    struct_decls: { name, type_name, type_args? }[]    // structs needing destroy
+    heap_strings: Set<string>                            // variable names holding heap strings
+    heap_slots: { offset: number, var_name?: string }[]  // anchor slots for class instances
+    struct_decls: { name, type_name, type_args? }[]      // structs needing destroy
 }[]
 
 // Global tracking
 heap_strings: Set<string>               // all heap string variable names
-heap_string_arrays: Map<string, number> // variable name → element count
+heap_string_arrays: Map<string, number> // string[] variable name → element count
+heap_class_arrays: Map<string, number>  // class array variable name → length
+heap_array_vars: Set<string>            // heap-allocated array variables
 moved: Set<string>                      // variables whose ownership was transferred
-heap_returning_functions: Set<string>   // functions that return heap allocations
+heap_returning_functions: Set<string>   // functions that return fresh heap allocations
+moved_class_params: Map<string, string> // mov'd class params (name → saved register)
+last_result_is_heap: boolean            // whether the last-built expression produced fresh heap
 ```
 
 ### Scope Lifecycle
@@ -210,47 +231,7 @@ ldr x0, [x29, #<var_offset>]    // load string pointer
 bl _echo_free_wrap                // free it
 ```
 
-**Reassignment**: The old string is freed before storing the new one:
-
-```asm
-ldr x0, [x29, #<var_offset>]    // load old pointer
-bl _echo_free_wrap                // free old
-// ... build new value into x0 ...
-str x0, [x29, #<var_offset>]    // store new pointer
-```
-
-### String Arrays
-
-**Tracking**: `heap_string_arrays` maps variable names to their element count. At cleanup, each element pointer is freed individually:
-
-```asm
-add x0, x29, #<array_offset>
-ldr x0, [x0, #0]              // element 0
-bl _echo_free_wrap
-add x0, x29, #<array_offset>
-ldr x0, [x0, #8]              // element 1
-bl _echo_free_wrap
-// ... repeat for each element
-```
-
-### Structs
-
-**Tracking**: Structs with `destroy` blocks (or with fields that have destroy blocks) are tracked via `track_struct_decl(status, name, type_name)` which adds them to the current scope's `struct_decls`.
-
-**Scope exit cleanup**: For each tracked struct, the `_destroy` function is called with the struct's stack address:
-
-```asm
-add x0, x29, #<struct_offset>
-bl StructName_destroy
-```
-
-**Nested fields**: `emit_field_destroys` recursively walks struct fields. For each field that is itself a struct with a destroy block, it emits a destroy call at the correct offset:
-
-```asm
-add x0, x29, #<struct_offset>
-add x0, x0, #<field_offset>
-bl InnerStruct_destroy
-```
+**Reassignment**: The old string is freed before storing the new one. The new value is preserved across the free call via push/pop because `_echo_free_wrap` clobbers caller-saved registers.
 
 ### Classes
 
@@ -258,13 +239,13 @@ Classes use an **anchor slot** system to manage heap deallocation across variabl
 
 #### Anchor Slots
 
-Every `malloc` for a class instance stores the pointer in a dedicated 8-byte **anchor slot** on the stack, separate from the variable that references the instance. The anchor slot is immutable — it always holds the allocation address and is freed at scope exit.
+Every `malloc` for a class instance stores the pointer in a dedicated 8-byte **anchor slot** on the stack, separate from the variable that references the instance. The anchor slot holds the allocation address and is freed at scope exit.
 
 ```asm
-mov x0, #16                   // struct size
-bl _echo_malloc_wrap           // malloc → x0 = heap pointer
-str x0, [x29, #<anchor>]      // anchor: save pointer for cleanup
-str x0, [x29, #<var>]         // variable: also store for access
+mov x0, #<struct_size>          // class size (VT_SIZE + fields)
+bl _echo_malloc_wrap             // malloc → x0 = heap pointer
+str x0, [x29, #<anchor>]        // anchor: save pointer for cleanup
+str x0, [x29, #<var>]           // variable: also store for access
 // ... call ClassName_init ...
 ```
 
@@ -277,85 +258,54 @@ Each anchor slot records:
 
 At scope exit, anchor slots are freed after all destroy bodies have run:
 
-1. Call `ClassName_destroy` on class instances that have destroy blocks (passing the heap pointer, not the stack slot)
+1. Call `ClassName_destroy` on class instances that have destroy functions (passing the heap pointer)
 2. Free string arrays and heap strings
 3. Free all anchor slots (skipping those marked as "moved")
 
-```asm
-// Step 1: destroy bodies
-ldr x0, [x29, #<var_offset>]     // load heap pointer
-bl Counter_destroy
+#### Class Variable Reassignment
 
-// Step 2: string cleanup
-ldr x0, [x29, #<string_offset>]
-bl _echo_free_wrap
+When reassigning a class variable, the compiler distinguishes between:
 
-// Step 3: free anchor slots
-ldr x0, [x29, #<anchor_offset>]
-bl _echo_free_wrap
-```
+- **Constructor calls** (`cur = Box(42)`): always anchor the new allocation
+- **Heap-returning function calls** (`cur = make_box()`): anchor only if `last_result_is_heap` is true
+- **Borrowed references** (`cur = list.value(0)`): never anchor — the reference is owned elsewhere
 
-#### Reassignment
+This distinction prevents double-frees when retrieving class pointers from generic containers. The `last_result_is_heap` flag is set by `heap_returning_functions` membership at the call site.
 
-When a class variable is reassigned, the old instance is freed via the anchor slot before storing the new pointer:
+#### Borrowed Reference Detection
 
-```asm
-// x0 = new pointer (from malloc or another variable)
-str x0, [sp, #-16]!              // save new pointer on stack
-ldr x0, [x29, #<anchor>]         // load old pointer from anchor
-bl _echo_free_wrap                // free old instance
-ldr x3, [sp], #16                // restore new pointer
-str x3, [x29, #<anchor>]         // update anchor
-str x3, [x29, #<var>]            // update variable slot
-```
+Class-typed declarations initialized from field accesses (`is_borrowed_class_ref` in `build_declaration_node.ts`) are excluded from `scoped_declarations` and destroy tracking — they are treated as borrowed references, not owned instances.
 
-The new pointer is saved to the stack (push/pop) because `_echo_free_wrap` clobbers caller-saved registers (x0–x18).
+#### Ownership Transfer with `mov`
 
-#### Alias Assignment
+When a class is passed with `mov`, the source variable is added to the `moved` set. The `mark_moved_if_struct` function handles this by checking whether the value is a local variable, has an anchor slot, or is a class parameter. Moved variables are skipped at every cleanup point.
 
-When assigning one class variable to another (`var Box q = p` or `p = q`), no allocation or deallocation occurs — only a pointer copy. The anchor slot of the destination is updated to point to the source's allocation. The `mark_moved_if_struct` function marks the source as "moved" so the source scope's cleanup skips it, transferring ownership.
+For `mov` class parameters, the original pointer value is saved to a stack slot at function entry. At return, each saved slot is compared to the return value — if they differ, the parameter's instance is freed (it was moved in but not returned). If they match, it is kept (ownership transferred to caller via return).
 
 #### Returning Classes
 
-When a class is returned from a function, `mark_moved_if_struct` adds the variable to `status.moved`. The return cleanup (`emit_heap_slots_cleanup_for_return`) skips anchor slots for moved variables. The caller detects that the function returns a class type (via `heap_returning_functions`) and anchors the returned pointer in its own scope.
+When a class is returned from a function, the return variable is marked as "moved". The return cleanup (`emit_heap_slots_cleanup_for_return`) skips anchor slots for moved variables. The caller detects that the function returns a class type (via `heap_returning_functions`) and anchors the returned pointer in its own scope.
 
-```asm
-// Inside function (return path):
-ldr x0, [x29, #<var_offset>]    // load return value
-mov x20, x0                      // save to callee-saved register
-// ... cleanup other locals ...
-// anchor for returned var is SKIPPED (moved)
-mov x0, x20                      // restore return value
-b .return_label
+A function is added to `heap_returning_functions` when:
 
-// Caller:
-bl make_box                      // call returns heap pointer in x0
-str x0, [x29, #<anchor>]         // anchor it in caller's scope
-str x0, [x29, #<var>]            // store to variable
-```
+- It returns a `string` from a heap-producing expression (interpolation, `to_string`, etc.)
+- It returns a class type (detected in `build_function_node`)
+
+### Heap-Returning Function Detection
+
+The `scan_heap_returning_functions` pass pre-scans all function return statements for heap string production. Known built-ins (`int_to_string`, `char_to_string`, `Console_read_line`, etc.) are seeded into the set. Functions are also added dynamically during building when their return expressions produce heap values.
 
 ### Break and Continue
 
 `break` and `continue` call `emit_cleanup_to_loop_depth`, which cleans up all scopes between the current position and the loop's entry depth. The loop records its `cleanup_depth` (the `heap_cleanup_stack` length at loop entry) so the cleanup knows how many scope frames to unwind.
-
-```asm
-// break inside a nested scope in a loop body:
-// cleanup inner scope's anchor slots
-ldr x0, [x29, #<inner_anchor>]
-bl _echo_free_wrap
-// cleanup inner scope's struct destroys
-add x0, x29, #<struct_offset>
-bl Resource_destroy
-// jump to loop end
-b .end_while_3
-```
 
 ### Move Semantics
 
 Variables can be marked as "moved" to exclude them from cleanup. This happens when:
 
 - A class or struct is returned from a function
-- A class is assigned from an inner scope to an outer scope variable
+- A class is assigned from an inner scope to an outer-scope variable
+- A class is passed with the `mov` keyword
 
 The `moved` set is checked at every cleanup point (scope exit, return, break, continue). Anchor slots with a matching `var_name` are skipped.
 
@@ -373,23 +323,31 @@ bl _echo_malloc_wrap     // increments counter
 bl _echo_free_wrap       // decrements counter
 ```
 
-At program exit, `echo_audit_check()` reports any remaining allocations as `LEAK: N allocation(s)`. This is used by tests in `test/memory.test.ts` to verify no memory is leaked.
+At program exit, `echo_audit_check()` reports any remaining allocations as `LEAK: N allocation(s)`. This is used by memory tests to verify no memory is leaked.
 
 ### Implementation Files
 
-| File                                          | Purpose                                                                                                                                                                                  |
-| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/build/BuildStatus.ts`                    | `heap_cleanup_stack`, `heap_strings`, `heap_string_arrays`, `moved` data structures                                                                                                      |
-| `src/build_aarch64/utils/auto_destroy.ts`     | `anchor_heap_pointer`, `emit_destroy_for_scope`, `emit_destroy_for_decl`, `emit_cleanup_to_loop_depth`, `mark_moved_if_struct`, `find_anchor_slot`, `emit_heap_slots_cleanup_for_return` |
-| `src/build_aarch64/utils/audit.ts`            | `emit_malloc`, `emit_free`, `emit_strdup` wrappers                                                                                                                                       |
-| `src/build_aarch64/build_block_node.ts`       | Pushes/pops cleanup frames                                                                                                                                                               |
-| `src/build_aarch64/build_declaration_node.ts` | Class constructor malloc + anchor, string tracking via `check_heap()`                                                                                                                    |
-| `src/build_aarch64/build_assignment_node.ts`  | Class reassignment with anchor update, string free-before-store                                                                                                                          |
-| `src/build_aarch64/build_return_node.ts`      | Return cleanup with move semantics                                                                                                                                                       |
-| `src/build_aarch64/build_function_node.ts`    | Detects class-returning functions                                                                                                                                                        |
-| `src/build_aarch64/build_break_node.ts`       | Break with scope cleanup                                                                                                                                                                 |
-| `src/build_aarch64/build_continue_node.ts`    | Continue with scope cleanup                                                                                                                                                              |
-| `src/build_aarch64/build_while_loop_node.ts`  | Records `cleanup_depth` for loop                                                                                                                                                         |
-| `src/build_aarch64/build_for_loop_node.ts`    | Records `cleanup_depth` for loop                                                                                                                                                         |
-| `src/audit_runtime.c`                         | C-side malloc/free counter implementation                                                                                                                                                |
-| `test/memory.test.ts`                         | 54 tests covering strings, structs, classes, loops, returns                                                                                                                              |
+| File                                             | Purpose                                                                                                                                                                                                     |
+| ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/build_c/BuildStatus.ts`                     | `BuildStatus` interface with `heap_cleanup_stack`, `heap_strings`, `heap_string_arrays`, `heap_class_arrays`, `moved`, `heap_returning_functions`, `last_result_is_heap` data structures                    |
+| `src/build_aarch64/utils/auto_destroy.ts`        | `anchor_heap_pointer`, `emit_destroy_for_scope`, `emit_destroy_for_decl`, `emit_field_destroys`, `emit_cleanup_to_loop_depth`, `mark_moved_if_struct`, `find_anchor_slot`, `has_struct_fields_with_destroy` |
+| `src/build_aarch64/utils/struct_layout.ts`       | `get_struct_size`, `get_type_size`, `get_field_offset`, `emit_struct_copy` — VT_SIZE prefix, typed sizes per field                                                                                          |
+| `src/build_aarch64/utils/audit.ts`               | `emit_malloc`, `emit_free`, `emit_strdup` wrappers                                                                                                                                                          |
+| `src/build_aarch64/utils/scan_heap_returns.ts`   | Pre-scans function returns to detect heap-returning functions                                                                                                                                               |
+| `src/build_aarch64/build_struct_node.ts`         | Struct/class codegen: auto `_init` with typed stores (`emit_typed_store`), `_destroy`, custom `#init`, struct method building                                                                               |
+| `src/build_aarch64/build_block_node.ts`          | Pushes/pops cleanup frames                                                                                                                                                                                  |
+| `src/build_aarch64/build_declaration_node.ts`    | Class constructor malloc + anchor, string tracking via `check_heap()`, borrowed reference detection (`is_borrowed_class_ref`)                                                                               |
+| `src/build_aarch64/build_assignment_node.ts`     | Class reassignment with conditional anchoring (`last_result_is_heap`), string free-before-store, swap support                                                                                               |
+| `src/build_aarch64/build_return_node.ts`         | Return cleanup with move semantics, heap-returning detection                                                                                                                                                |
+| `src/build_aarch64/build_function_node.ts`       | Function prologue/epilogue, callee-saved register allocation, `mov` param save slots, class-return detection                                                                                                |
+| `src/build_aarch64/build_break_node.ts`          | Break with scope cleanup                                                                                                                                                                                    |
+| `src/build_aarch64/build_continue_node.ts`       | Continue with scope cleanup                                                                                                                                                                                 |
+| `src/build_aarch64/build_while_loop_node.ts`     | Records `cleanup_depth` for loop                                                                                                                                                                            |
+| `src/build_aarch64/build_for_loop_node.ts`       | Records `cleanup_depth` for loop                                                                                                                                                                            |
+| `src/audit_runtime.c`                            | C-side malloc/free counter implementation                                                                                                                                                                   |
+| `test/memory-leaks.test.ts`                      | Leak detection tests (24 tests)                                                                                                                                                                             |
+| `test/memory-double-free.test.ts`                | Double-free prevention tests (29 tests)                                                                                                                                                                     |
+| `test/memory-use-after-free.test.ts`             | Use-after-free prevention tests                                                                                                                                                                             |
+| `test/memory-errors.test.ts`                     | Memory error detection tests                                                                                                                                                                                |
+| `test/class.test.ts` / `test/class-move.test.ts` | Class allocation, move semantics, destroy, cross-scope assignment (35 tests combined)                                                                                                                       |
+| `test/containers.test.ts`                        | Generic containers with class pointers (LinkedList, Tree, Graph)                                                                                                                                            |
