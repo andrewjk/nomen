@@ -9,7 +9,7 @@ describe("Tree<T> add and value", () => {
 		const input = `
 var Tree<int> t = Tree<int>()
 t.add(42)
-var int v = t.value(0)
+var int v = t.at(0)
 Console.write("\\{v}")
 `;
 		const parsed = parse_with_imports(input);
@@ -24,9 +24,9 @@ var Tree<int> t = Tree<int>()
 t.add(10)
 t.add(20)
 t.add(30)
-var int a = t.value(0)
-var int b = t.value(1)
-var int c = t.value(2)
+var int a = t.at(0)
+var int b = t.at(1)
+var int c = t.at(2)
 Console.write("\\{a} \\{b} \\{c}")
 `;
 		const parsed = parse_with_imports(input);
@@ -68,8 +68,8 @@ Console.write("\\{t.length()}")
 var Tree<int> t = Tree<int>()
 t.add(-5)
 t.add(-10)
-var int a = t.value(0)
-var int b = t.value(1)
+var int a = t.at(0)
+var int b = t.at(1)
 Console.write("\\{a} \\{b}")
 `;
 		const parsed = parse_with_imports(input);
@@ -88,7 +88,7 @@ t.add(0)
 var int lc = t.count
 t.add(10)
 t.set_left(root, lc)
-var int lv = t.value(t.left(root))
+var int lv = t.at(t.left(root))
 Console.write("\\{lv}")
 `;
 		const parsed = parse_with_imports(input);
@@ -105,7 +105,7 @@ t.add(0)
 var int rc = t.count
 t.add(20)
 t.set_right(root, rc)
-var int rv = t.value(t.right(root))
+var int rv = t.at(t.right(root))
 Console.write("\\{rv}")
 `;
 		const parsed = parse_with_imports(input);
@@ -151,8 +151,8 @@ var int rc = t.count
 t.add(3)
 t.set_left(root, lc)
 t.set_right(root, rc)
-var int lv = t.value(t.left(root))
-var int rv = t.value(t.right(root))
+var int lv = t.at(t.left(root))
+var int rv = t.at(t.right(root))
 Console.write("\\{lv} \\{rv}")
 `;
 		const parsed = parse_with_imports(input);
@@ -233,7 +233,7 @@ func sum_tree = (Tree<int> tree, int idx, out int) {
   if idx == -1 {
     return 0
   }
-  return tree.value(idx) + sum_tree(tree, tree.left(idx)) + sum_tree(tree, tree.right(idx))
+  return tree.at(idx) + sum_tree(tree, tree.left(idx)) + sum_tree(tree, tree.right(idx))
 }
 var int root = t.count
 t.add(10)

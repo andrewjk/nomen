@@ -9,7 +9,7 @@ describe("Graph<T> add_node and value", () => {
 		const input = `
 var Graph<int> g = Graph<int>()
 g.add_node(42)
-var int v = g.value(0)
+var int v = g.at(0)
 Console.write("\\{v}")
 `;
 		const parsed = parse_with_imports(input);
@@ -24,9 +24,9 @@ var Graph<int> g = Graph<int>()
 g.add_node(10)
 g.add_node(20)
 g.add_node(30)
-var int a = g.value(0)
-var int b = g.value(1)
-var int c = g.value(2)
+var int a = g.at(0)
+var int b = g.at(1)
+var int c = g.at(2)
 Console.write("\\{a} \\{b} \\{c}")
 `;
 		const parsed = parse_with_imports(input);
@@ -68,8 +68,8 @@ Console.write("\\{g.node_length()}")
 var Graph<int> g = Graph<int>()
 g.add_node(-1)
 g.add_node(-100)
-var int a = g.value(0)
-var int b = g.value(1)
+var int a = g.at(0)
+var int b = g.at(1)
 Console.write("\\{a} \\{b}")
 `;
 		const parsed = parse_with_imports(input);
@@ -86,9 +86,9 @@ var Graph<int> g = Graph<int>()
 g.add_node(1)
 g.add_node(2)
 g.add_edge(0, 1)
-var int e = g.first_edge(0)
+var int e = g.edges_of(0)
 var int target = g.edge_target(e)
-var int v = g.value(target)
+var int v = g.at(target)
 Console.write("\\{v}")
 `;
 		const parsed = parse_with_imports(input);
@@ -121,7 +121,7 @@ Console.write("\\{e0} \\{e1} \\{e3}")
 		const input = `
 var Graph<int> g = Graph<int>()
 g.add_node(1)
-var int e = g.first_edge(0)
+var int e = g.edges_of(0)
 Console.write("\\{e}")
 `;
 		const parsed = parse_with_imports(input);
@@ -139,9 +139,9 @@ g.add_node(20)
 g.add_edge(0, 1)
 g.add_edge(0, 2)
 var int sum = 0
-var int e = g.first_edge(0)
+var int e = g.edges_of(0)
 while e != -1 {
-  sum = sum + g.value(g.edge_target(e))
+  sum = sum + g.at(g.edge_target(e))
   e = g.next_edge(e)
 }
 Console.write("\\{sum}")
@@ -164,9 +164,9 @@ g.add_edge(0, 1)
 g.add_edge(0, 2)
 g.add_edge(1, 2)
 var int total = 0
-var int e = g.first_edge(0)
+var int e = g.edges_of(0)
 while e != -1 {
-  total = total + g.value(g.edge_target(e))
+  total = total + g.at(g.edge_target(e))
   e = g.next_edge(e)
 }
 Console.write("\\{total}")
@@ -188,9 +188,9 @@ g.add_edge(0, 1)
 g.add_edge(0, 2)
 g.add_edge(0, 3)
 var int sum = 0
-var int e = g.first_edge(0)
+var int e = g.edges_of(0)
 while e != -1 {
-  sum = sum + g.value(g.edge_target(e))
+  sum = sum + g.at(g.edge_target(e))
   e = g.next_edge(e)
 }
 Console.write("\\{sum}")
@@ -207,9 +207,9 @@ var Graph<int> g = Graph<int>()
 g.add_node(1)
 g.add_node(2)
 g.add_node(3)
-var int e0 = g.first_edge(0)
-var int e1 = g.first_edge(1)
-var int e2 = g.first_edge(2)
+var int e0 = g.edges_of(0)
+var int e1 = g.edges_of(1)
+var int e2 = g.edges_of(2)
 Console.write("\\{e0} \\{e1} \\{e2}")
 `;
 		const parsed = parse_with_imports(input);
@@ -227,14 +227,14 @@ g.add_node(3)
 g.add_edge(0, 1)
 g.add_edge(1, 2)
 var int sum = 0
-var int e = g.first_edge(0)
+var int e = g.edges_of(0)
 while e != -1 {
   var int t = g.edge_target(e)
-  sum = sum + g.value(t)
-  var int e2 = g.first_edge(t)
+  sum = sum + g.at(t)
+  var int e2 = g.edges_of(t)
   while e2 != -1 {
     var int t2 = g.edge_target(e2)
-    sum = sum + g.value(t2)
+    sum = sum + g.at(t2)
     e2 = g.next_edge(e2)
   }
   e = g.next_edge(e)

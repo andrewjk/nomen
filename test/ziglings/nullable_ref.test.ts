@@ -16,8 +16,8 @@ pub func main = () {
     var LinkedList<int> list = LinkedList<int>()
     list.add(1)
     list.add(2)
-    var int a = list.value(0)
-    var int b = list.value(1)
+    var int a = list.at(0)
+    var int b = list.at(1)
     Console.write("a.value=\\{a} b.value=\\{b}\\n")
 }
 `;
@@ -34,7 +34,7 @@ import System
 pub func main = () {
     var LinkedList<int> list = LinkedList<int>()
     list.add(1)
-    if list.next(0) == -1 {
+    if list.next_at(0) == -1 {
         Console.write("next is null\\n")
     }
 }

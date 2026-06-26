@@ -21,4 +21,13 @@ pub struct List<T> {
         self.length = self.length - 1
         return self.items.load_int(self.length)
     }
+
+    pub func at = (self, int i: i >= 0, out T) {
+        return self.items.load_int(i)
+    }
+
+    pub func set = (ref self, int i: i >= 0, T value) {
+        var int v = value
+        self.items.store_int(i, v)
+    }
 }

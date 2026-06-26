@@ -24,8 +24,8 @@ list.set_next(b, c)
 var int sum = 0
 var int cur = list.head
 while cur != -1 {
-  sum = sum + list.value(cur)
-  cur = list.next(cur)
+  sum = sum + list.at(cur)
+  cur = list.next_at(cur)
 }
 Console.write("len=\\{list.length()} sum=\\{sum}\\n")
 `;
@@ -70,9 +70,9 @@ g.add_edge(a, b)
 g.add_edge(a, c)
 g.add_edge(b, c)
 var int total = 0
-var int e = g.first_edge(a)
+var int e = g.edges_of(a)
 while e != -1 {
-  total = total + g.value(g.edge_target(e))
+  total = total + g.at(g.edge_target(e))
   e = g.next_edge(e)
 }
 Console.write("nodes=\\{g.node_length()} edges_from_a=\\{total}\\n")
@@ -102,17 +102,17 @@ var int ic = list.count
 list.add(c)
 list.set_next(ia, ib)
 list.set_next(ib, ic)
-var Elephant cur = list.value(ia)
+var Elephant cur = list.at(ia)
 cur.visited = true
-cur = list.value(ib)
+cur = list.at(ib)
 cur.visited = true
-cur = list.value(ic)
+cur = list.at(ic)
 cur.visited = true
-cur = list.value(ia)
+cur = list.at(ia)
 Console.write("\\{cur.letter} ")
-cur = list.value(ib)
+cur = list.at(ib)
 Console.write("\\{cur.letter} ")
-cur = list.value(ic)
+cur = list.at(ic)
 Console.write("\\{cur.letter}\\n")
 `;
 		const parsed = parse_with_imports(input);
@@ -137,17 +137,17 @@ var int right = t.count
 t.add(Elephant('R'))
 t.set_left(root, left)
 t.set_right(root, right)
-var Elephant e = t.value(root)
+var Elephant e = t.at(root)
 e.visited = true
-e = t.value(left)
+e = t.at(left)
 e.visited = true
-e = t.value(right)
+e = t.at(right)
 e.visited = true
-e = t.value(root)
+e = t.at(root)
 Console.write("\\{e.letter} ")
-e = t.value(left)
+e = t.at(left)
 Console.write("\\{e.letter} ")
-e = t.value(right)
+e = t.at(right)
 Console.write("\\{e.letter}\\n")
 `;
 		const parsed = parse_with_imports(input);
@@ -172,17 +172,17 @@ var int c = g.node_count
 g.add_node(Elephant('C'))
 g.add_edge(a, b)
 g.add_edge(a, c)
-var Elephant e = g.value(a)
+var Elephant e = g.at(a)
 e.visited = true
-e = g.value(b)
+e = g.at(b)
 e.visited = true
-e = g.value(c)
+e = g.at(c)
 e.visited = true
-e = g.value(a)
+e = g.at(a)
 Console.write("\\{e.letter} ")
-e = g.value(b)
+e = g.at(b)
 Console.write("\\{e.letter} ")
-e = g.value(c)
+e = g.at(c)
 Console.write("\\{e.letter}\\n")
 `;
 		const parsed = parse_with_imports(input);

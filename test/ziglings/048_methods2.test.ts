@@ -140,8 +140,8 @@ pub func main = () {
 
     var int cur = elephants.head
     while cur != -1 {
-        Console.write("\\{letters.at(elephants.value(cur))}  ")
-        cur = elephants.next(cur)
+        Console.write("\\{letters.at(elephants.at(cur))}  ")
+        cur = elephants.next_at(cur)
     }
     Console.write("\\n")
 }

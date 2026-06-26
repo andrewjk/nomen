@@ -476,7 +476,16 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 					status.code += `mov x2, x0\n`;
 					status.code += `ldr x0, [sp], #16\n`;
 
-					status.code += `str x2, [x0, #${offset}]\n`;
+					const field_size = aarch64_size(field_type?.name ?? "int");
+					if (field_size === 1) {
+						status.code += `strb w2, [x0, #${offset}]\n`;
+					} else if (field_size === 2) {
+						status.code += `strh w2, [x0, #${offset}]\n`;
+					} else if (field_size === 4) {
+						status.code += `str w2, [x0, #${offset}]\n`;
+					} else {
+						status.code += `str x2, [x0, #${offset}]\n`;
+					}
 				} else {
 					const offset = get_field_offset(target_type.name, field_name, status);
 					const struct_size = get_struct_size(field_type!.name, status);
@@ -508,7 +517,16 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 				status.code += `mov x2, x0\n`;
 				status.code += `ldr x0, [sp], #16\n`;
 
-				status.code += `str x2, [x0, #${offset}]\n`;
+				const field_size = aarch64_size(field_type?.name ?? "int");
+				if (field_size === 1) {
+					status.code += `strb w2, [x0, #${offset}]\n`;
+				} else if (field_size === 2) {
+					status.code += `strh w2, [x0, #${offset}]\n`;
+				} else if (field_size === 4) {
+					status.code += `str w2, [x0, #${offset}]\n`;
+				} else {
+					status.code += `str x2, [x0, #${offset}]\n`;
+				}
 			}
 		} else {
 			build_node(node.right_value, status);

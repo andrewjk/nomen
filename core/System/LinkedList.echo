@@ -1,15 +1,13 @@
 import Buffer
 
-// Arena-backed singly-linked list. Values and next-links live in flat Buffers,
-// so there is a single owner and cleanup is a flat free -- no recursive pointer
-// chasing, no borrow lifetimes. Node identifiers are stable int indices
+// Arena-backed doubly-linked list. Values and next/prev links live in flat
+// Buffers, so there is a single owner and cleanup is a flat free — no recursive
+// pointer chasing, no borrow lifetimes. Node identifiers are stable int indices
 // (read `count` before `add`); -1 means "no node" / "end".
-// The `add` mutator is void: capturing the return of a `ref self` method on a
-// forward-referenced struct currently fails type resolution. Returning nothing
-// sidesteps that.
 pub struct LinkedList<T> {
 	var Buffer values = Buffer()
 	var Buffer nexts = Buffer()
+	var Buffer prevs = Buffer()
 	var int head = -1
 	var int count = 0
 
@@ -20,6 +18,8 @@ pub struct LinkedList<T> {
 		self.values.store_int(idx, v)
 		self.nexts.grow_int(idx + 1)
 		self.nexts.store_int(idx, -1)
+		self.prevs.grow_int(idx + 1)
+		self.prevs.store_int(idx, -1)
 		self.count = self.count + 1
 		if self.head == -1 {
 			self.head = idx
@@ -28,13 +28,27 @@ pub struct LinkedList<T> {
 
 	pub func set_next = (ref self, int idx, int next) {
 		self.nexts.store_int(idx, next)
+		if next != -1 {
+			self.prevs.store_int(next, idx)
+		}
 	}
 
-	pub func next = (self, int idx, out int) {
+	pub func set_previous = (ref self, int idx, int prev) {
+		self.prevs.store_int(idx, prev)
+		if prev != -1 {
+			self.nexts.store_int(prev, idx)
+		}
+	}
+
+	pub func next_at = (self, int idx: idx >= 0, out int) {
 		return self.nexts.load_int(idx)
 	}
 
-	pub func value = (self, int idx, out T) {
+	pub func previous_at = (self, int idx: idx >= 0, out int) {
+		return self.prevs.load_int(idx)
+	}
+
+	pub func at = (self, int idx: idx >= 0, out T) {
 		return self.values.load_int(idx)
 	}
 

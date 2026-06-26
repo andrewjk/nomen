@@ -370,11 +370,13 @@ export default function check_function_call(
 				// For self constraints on core library types (arrays, strings), allow silently
 				// since the constraint references self.length which may legitimately be unknown.
 				// For user-defined functions, emit an error since the constraint can't be verified.
+				const base_name = target_type?.name?.split("_")[0] ?? "";
+				const core_types = ["Array", "Buffer", "LinkedList", "Tree", "Graph", "List", "Set", "Map"];
 				const is_core_method =
 					target_type?.is_array ||
 					target_type?.name === "string" ||
 					target_type?.name === "Buffer" ||
-					target_type?.name?.startsWith("Array_");
+					core_types.includes(base_name);
 				if (!is_core_method) {
 					add_error(
 						status,

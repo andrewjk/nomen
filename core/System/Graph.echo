@@ -4,7 +4,6 @@ import Buffer
 // edges are stored as a per-node linked list of edge records (CSR-style), so
 // there is a single owner and cleanup is a flat free. Node and edge identifiers
 // are stable int indices; -1 means "none".
-// The `add_node` mutator is void for the same reason as LinkedList.add.
 pub struct Graph<T> {
 	var Buffer values = Buffer()
 	var Buffer head_edge = Buffer()
@@ -33,19 +32,19 @@ pub struct Graph<T> {
 		self.edge_count = self.edge_count + 1
 	}
 
-	pub func first_edge = (self, int node, out int) {
+	pub func edges_of = (self, int node: node >= 0, out int) {
 		return self.head_edge.load_int(node)
 	}
 
-	pub func edge_target = (self, int e, out int) {
+	pub func edge_target = (self, int e: e >= 0, out int) {
 		return self.edge_target.load_int(e)
 	}
 
-	pub func next_edge = (self, int e, out int) {
+	pub func next_edge = (self, int e: e >= 0, out int) {
 		return self.edge_next.load_int(e)
 	}
 
-	pub func value = (self, int idx, out T) {
+	pub func at = (self, int idx: idx >= 0, out T) {
 		return self.values.load_int(idx)
 	}
 

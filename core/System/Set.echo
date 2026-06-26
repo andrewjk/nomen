@@ -33,6 +33,18 @@ pub struct Set<T> {
 		return self.used.load(idx) != 0
 	}
 
+	pub func get = (self, T key, out T) {
+		var int cap = self.slots.get_cap()
+		if cap == 0 {
+			return 0
+		}
+		var int idx = self.find_slot(key, cap)
+		if self.used.load(idx) == 0 {
+			return 0
+		}
+		return self.slots.load_int(idx)
+	}
+
 	pub func remove = (ref self, T value) {
 		var int cap = self.slots.get_cap()
 		if cap == 0 {
