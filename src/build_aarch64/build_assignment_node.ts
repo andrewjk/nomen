@@ -403,7 +403,15 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 		const access = node.left_value as AccessNode;
 		if (access.access.node_type === "access_field") {
 			const field_name = (access.access as AccessFieldNode).name;
-			const target_type = type_from_value_node(access.target);
+			let target_type = type_from_value_node(access.target);
+			if (!target_type?.name && access.target.node_type === "value") {
+				const name = (access.target as ValueNode).value;
+				if (name === "self" && status.current_struct) {
+					target_type = new Type(status.current_struct.name);
+				} else if (status.variable_types?.has(name)) {
+					target_type = status.variable_types.get(name)!;
+				}
+			}
 
 			const field_type = (access.access as AccessFieldNode).type;
 			const field_is_struct = is_struct_type(field_type, status);

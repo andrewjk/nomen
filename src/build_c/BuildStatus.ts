@@ -91,4 +91,5 @@ export default interface BuildStatus {
 	register_allocations?: Map<string, string>;
 	callee_saved_regs_used?: Set<string>;
 	platform: string;
+	label_counter?: number;
 }

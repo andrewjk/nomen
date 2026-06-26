@@ -6,6 +6,7 @@ import ValueNode from "../nodes/ValueNode.ts";
 import build_block_node from "./build_block_node.ts";
 import { check_c_fallback } from "./build_raw_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
+import { emit_field_destroys } from "./utils/auto_destroy.ts";
 import scan_force_heap_strings from "./utils/scan_force_heap_strings.ts";
 import { allocate_stack_space } from "./utils/stack_var.ts";
 import { get_field_offset, get_struct_size } from "./utils/struct_layout.ts";
@@ -37,6 +38,8 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 			if (!check_c_fallback(destroy_func, node.name, status)) {
 				build_destroy_function(node, destroy_func, status);
 			}
+		} else if (node.is_class) {
+			build_auto_destroy_function(node, status);
 		}
 		status.current_struct = undefined;
 	}
@@ -81,6 +84,71 @@ function build_destroy_function(node: StructNode, func: FunctionNode, status: Bu
 	status.code += `mov x29, sp\n`;
 
 	build_block_node(func, status);
+
+	// After the user body, recursively destroy all class-typed fields.
+	// This ensures that grandchildren (and deeper) are freed, not just
+	// direct children.
+	if (node.is_class) {
+		emit_field_destroys(status, node, "self", undefined, false);
+	}
+
+	status.code += `${return_label}:\n`;
+
+	const total_stack = Math.ceil((status.stack_size || 0) / 16) * 16;
+	status.code = status.code.replace(
+		`sub sp, sp, #${stack_placeholder}`,
+		total_stack > 0 ? `sub sp, sp, #${total_stack}` : `// no stack needed`,
+	);
+	if (total_stack > 0) {
+		status.code += `add sp, sp, #${total_stack}\n`;
+	}
+
+	status.code += `ldr x19, [sp], #16\n`;
+	status.code += `ldp x29, x30, [sp], #16\n`;
+	status.code += `ret\n`;
+
+	status.scoped_declarations = old_scoped_declarations;
+	status.function_param_regs = old_param_regs;
+	status.function_param_vars = old_param_vars;
+	status.function_return_label = old_return_label;
+	status.stack_size = old_stack_size;
+	status.stack_offsets = old_stack_offsets;
+}
+
+function build_auto_destroy_function(node: StructNode, status: BuildStatus) {
+	const func_label = `${node.name}_destroy`;
+
+	const old_scoped_declarations = status.scoped_declarations;
+	const old_stack_size = status.stack_size;
+	const old_stack_offsets = status.stack_offsets;
+	const old_param_regs = status.function_param_regs;
+	const old_param_vars = status.function_param_vars;
+	const old_return_label = status.function_return_label;
+
+	status.scoped_declarations = [];
+	status.stack_size = 0;
+	status.stack_offsets = new Map();
+
+	const return_label = `.return_${func_label}`;
+	status.function_return_label = return_label;
+
+	const stack_placeholder = `STACK_SIZE_${func_label}`;
+
+	status.code += `.p2align 2\n`;
+	status.code += `${func_label}:\n`;
+	status.code += `stp x29, x30, [sp, #-16]!\n`;
+	status.code += `str x19, [sp, #-16]!\n`;
+	status.code += `mov x19, x0\n`;
+
+	status.function_param_regs = new Map();
+	status.function_param_vars = new Set();
+	status.function_param_regs.set("self", "x19");
+
+	status.code += `sub sp, sp, #${stack_placeholder}\n`;
+	status.code += `mov x29, sp\n`;
+
+	// No user body — just destroy class-typed fields
+	emit_field_destroys(status, node, "self", undefined, false);
 
 	status.code += `${return_label}:\n`;
 

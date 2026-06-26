@@ -139,7 +139,7 @@ function emit_base_ptr(status: BuildStatus, decl_name: string, is_class_parent?:
 	}
 }
 
-function emit_field_destroys(
+export function emit_field_destroys(
 	status: BuildStatus,
 	struct_type: StructNode,
 	decl_name: string,
@@ -156,6 +156,14 @@ function emit_field_destroys(
 				}
 				const actual_offset = base_offset !== undefined ? base_offset + offset : offset;
 				status.code += `ldr x0, [x0, #${actual_offset}]\n`;
+				// Save child pointer, recursively destroy its fields, then free it
+				status.code += `str x0, [sp, #-16]!\n`;
+				const label_id = (status.label_counter = (status.label_counter ?? 0) + 1);
+				const skip_label = `.Lskip_destroy_${label_id}`;
+				status.code += `cbz x0, ${skip_label}\n`;
+				status.code += `bl ${field_struct.name}_destroy\n`;
+				status.code += `${skip_label}:\n`;
+				status.code += `ldr x0, [sp], #16\n`;
 				emit_free(status);
 			} else {
 				if (has_destroy(field_struct)) {

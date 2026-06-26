@@ -1,0 +1,59 @@
+import Buffer
+
+// Arena-backed directed graph. Node values and edges live in flat Buffers;
+// edges are stored as a per-node linked list of edge records (CSR-style), so
+// there is a single owner and cleanup is a flat free. Node and edge identifiers
+// are stable int indices; -1 means "none".
+// The `add_node` mutator is void for the same reason as LinkedList.add.
+pub struct Graph<T> {
+	var Buffer values = Buffer()
+	var Buffer head_edge = Buffer()
+	var Buffer edge_target = Buffer()
+	var Buffer edge_next = Buffer()
+	var int node_count = 0
+	var int edge_count = 0
+
+	pub func add_node = (ref self, T value) {
+		var int idx = self.node_count
+		self.values.grow_int(idx + 1)
+		var int v = value
+		self.values.store_int(idx, v)
+		self.head_edge.grow_int(idx + 1)
+		self.head_edge.store_int(idx, -1)
+		self.node_count = self.node_count + 1
+	}
+
+	pub func add_edge = (ref self, int from, int to) {
+		var int e = self.edge_count
+		self.edge_target.grow_int(e + 1)
+		self.edge_target.store_int(e, to)
+		self.edge_next.grow_int(e + 1)
+		self.edge_next.store_int(e, self.head_edge.load_int(from))
+		self.head_edge.store_int(from, e)
+		self.edge_count = self.edge_count + 1
+	}
+
+	pub func first_edge = (self, int node, out int) {
+		return self.head_edge.load_int(node)
+	}
+
+	pub func edge_target = (self, int e, out int) {
+		return self.edge_target.load_int(e)
+	}
+
+	pub func next_edge = (self, int e, out int) {
+		return self.edge_next.load_int(e)
+	}
+
+	pub func value = (self, int idx, out T) {
+		return self.values.load_int(idx)
+	}
+
+	pub func node_length = (self, out int) {
+		return self.node_count
+	}
+
+	pub func edge_length = (self, out int) {
+		return self.edge_count
+	}
+}

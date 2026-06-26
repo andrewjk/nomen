@@ -1,43 +1,40 @@
 import { expect, test } from "vite-plus/test";
 
 import build from "../../src/build";
-import check_output from "./check_output_aarch64";
+import check_output_aarch64 from "./check_output_aarch64";
 import parse_with_imports from "./parse_with_imports";
 
-test("struct with nullable ref field - basic", async () => {
+// Originally used `ref Node?` fields (now disallowed for soundness). Rewritten
+// to use the arena LinkedList: a flat buffer of value+next-index slots with a
+// single owner, so there is no dangling borrow. -1 plays the role of "null".
+
+test("arena linked list - basic", async () => {
 	const input = `
 import System
 
-struct Node {
-    var int value
-    var ref Node? next = null
-}
-
 pub func main = () {
-    var Node a = Node(1)
-    var Node b = Node(2)
-    Console.write("a.value=\\{a.value} b.value=\\{b.value}\\n")
+    var LinkedList<int> list = LinkedList<int>()
+    list.add(1)
+    list.add(2)
+    var int a = list.value(0)
+    var int b = list.value(1)
+    Console.write("a.value=\\{a} b.value=\\{b}\\n")
 }
 `;
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual([]);
 	const result = build(parsed.root, { arch: "aarch64" });
-	await check_output("nullable_ref_basic", result, "a.value=1 b.value=2\n");
+	await check_output_aarch64("nullable_ref_basic", result, "a.value=1 b.value=2\n");
 });
 
-test("struct with nullable ref field - null check", async () => {
+test("arena linked list - empty next is -1", async () => {
 	const input = `
 import System
 
-struct Node {
-    var int value
-    var ref Node? next = null
-}
-
 pub func main = () {
-    var Node a = Node(1)
-    const int? next_val = 0
-    if a.next == null {
+    var LinkedList<int> list = LinkedList<int>()
+    list.add(1)
+    if list.next(0) == -1 {
         Console.write("next is null\\n")
     }
 }
@@ -45,7 +42,7 @@ pub func main = () {
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual([]);
 	const result = build(parsed.root, { arch: "aarch64" });
-	await check_output("nullable_ref_null_check", result, "next is null\n");
+	await check_output_aarch64("nullable_ref_null_check", result, "next is null\n");
 });
 
 test("ref struct param field access", async () => {
@@ -69,7 +66,7 @@ pub func main = () {
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual([]);
 	const result = build(parsed.root, { arch: "aarch64" });
-	await check_output("ref_struct_param", result, "5");
+	await check_output_aarch64("ref_struct_param", result, "5");
 });
 
 test("ref struct param field assignment", async () => {
@@ -94,7 +91,7 @@ pub func main = () {
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual([]);
 	const result = build(parsed.root, { arch: "aarch64" });
-	await check_output("ref_struct_assign", result, "42");
+	await check_output_aarch64("ref_struct_assign", result, "42");
 });
 
 test("ref struct param bool field in while", async () => {
@@ -121,5 +118,5 @@ pub func main = () {
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual([]);
 	const result = build(parsed.root, { arch: "aarch64" });
-	await check_output("ref_struct_bool", result, "7");
+	await check_output_aarch64("ref_struct_bool", result, "7");
 });

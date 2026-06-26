@@ -86,10 +86,12 @@ function extract_deps(source: string): string[] {
 }
 
 function extract_type_name(source: string): string | null {
-	for (const line of source.split("\n")) {
+	for (let line of source.split("\n")) {
 		const trimmed = line.trim();
 		const struct_match = trimmed.match(/^pub struct (\w+)/);
 		if (struct_match) return struct_match[1];
+		const class_match = trimmed.match(/^pub class (\w+)/);
+		if (class_match) return class_match[1];
 		const trait_match = trimmed.match(/^pub trait (\w+)/);
 		if (trait_match) return trait_match[1];
 	}

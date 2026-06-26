@@ -327,6 +327,24 @@ function check_access_function_node(
 		}
 	}
 
+	// Forward-reference fix: a non-generic struct method with an *inferred*
+	// return type gets that type only when its body is checked. If the struct
+	// is defined textually after this call (always true for library structs,
+	// whose source is appended after user code), the body hasn't been checked
+	// yet and the return type is unknown. Infer it now by checking just the
+	// body in a throwaway cloned status -- this only sets func.return_type on
+	// the node; it does not mark the function checked or otherwise disturb the
+	// main check/build flow (generic structs are handled by monomorphization).
+	if (
+		struct &&
+		struct.type_params.length === 0 &&
+		func &&
+		!func.return_type.name &&
+		returns_value(func)
+	) {
+		infer_return_type(func, status);
+	}
+
 	const result = check_function_call(
 		node,
 		status,
@@ -379,4 +397,159 @@ function check_access_function_node(
 	}
 
 	return result;
+}
+
+// Infer a function's return type by scanning its body for return statements
+// and resolving the return value's type directly from the AST. This avoids
+// calling check_block_node / check_function_call which mutate shared AST nodes
+// (e.g. replacing params with _param_N ValueNodes), causing "Unknown value"
+// errors when the main check later processes the same body.
+function infer_return_type(func: FunctionNode, status: CheckStatus) {
+	// Collect local variable types from the body so we can resolve return
+	// expressions that reference locals (e.g. `return idx` where idx was
+	// declared as `var int idx = ...` earlier in the body).
+	const locals = collect_local_vars(func, status);
+	for (const child of func.statements) {
+		const rt = resolve_return_type_from_node(child, func, locals, status);
+		if (rt) {
+			func.return_type = rt;
+			return;
+		}
+	}
+}
+
+function collect_local_vars(func: FunctionNode, status: CheckStatus): Map<string, Type> {
+	const locals = new Map<string, Type>();
+	for (const child of func.statements) {
+		collect_vars_from_node(child, locals, status);
+	}
+	return locals;
+}
+
+function collect_vars_from_node(node: BaseNode, locals: Map<string, Type>, status: CheckStatus) {
+	if (node.node_type === "declare") {
+		const decl = node as { name: string; type?: Type; value?: BaseNode };
+		if (decl.type?.name) {
+			locals.set(decl.name, decl.type);
+		}
+	}
+	for (const val of Object.values(node)) {
+		if (Array.isArray(val)) {
+			for (const item of val) {
+				if (item && typeof item === "object" && "node_type" in item) {
+					collect_vars_from_node(item as BaseNode, locals, status);
+				}
+			}
+		} else if (val && typeof val === "object" && "node_type" in val) {
+			collect_vars_from_node(val as BaseNode, locals, status);
+		}
+	}
+}
+
+function resolve_return_type_from_node(
+	node: BaseNode,
+	func: FunctionNode,
+	locals: Map<string, Type>,
+	status: CheckStatus,
+): Type | null {
+	if (node.node_type === "return") {
+		const ret = node as { value?: BaseNode };
+		if (ret.value) {
+			return resolve_type_from_expr(ret.value, func, status, locals);
+		}
+		return null;
+	}
+	// Recurse into child nodes that might contain return statements
+	for (const val of Object.values(node)) {
+		if (Array.isArray(val)) {
+			for (const item of val) {
+				if (item && typeof item === "object" && "node_type" in item) {
+					const rt = resolve_return_type_from_node(item as BaseNode, func, locals, status);
+					if (rt) return rt;
+				}
+			}
+		} else if (val && typeof val === "object" && "node_type" in val) {
+			const rt = resolve_return_type_from_node(val as BaseNode, func, locals, status);
+			if (rt) return rt;
+		}
+	}
+	return null;
+}
+
+function resolve_type_from_expr(
+	node: BaseNode,
+	func: FunctionNode,
+	status: CheckStatus,
+	locals?: Map<string, Type>,
+): Type | null {
+	if (node.node_type === "value") {
+		const val = node as ValueNode;
+		// Look up in function params
+		for (const param of func.params ?? []) {
+			if (param.name === val.value) {
+				return param.type;
+			}
+		}
+		// Look up in local variables
+		if (locals?.has(val.value)) {
+			return locals.get(val.value)!;
+		}
+		// Look up in local values
+		const decl = status.values.findLast((v) => v.name === val.value);
+		if (decl) return decl.type;
+	}
+	if (node.node_type === "access") {
+		const access = node as AccessNode;
+		if (access.access.node_type === "access_field") {
+			const target_type = resolve_type_from_expr(access.target, func, status, locals);
+			if (target_type?.name) {
+				const struct = status.structs.find((s) => s.name === target_type.name);
+				const field = struct?.fields.find(
+					(f) => f.name === (access.access as AccessFieldNode).name,
+				);
+				if (field) return field.type;
+			}
+		}
+	}
+	if (node.node_type === "binary_op") {
+		const op = node as { op: string; left: BaseNode; right: BaseNode };
+		if (op.op === "+" || op.op === "-" || op.op === "*" || op.op === "/") {
+			return resolve_type_from_expr(op.left, func, status, locals);
+		}
+	}
+	return null;
+}
+
+// Whether a function body contains a `return <value>` statement (i.e. it has
+// an inferred return type to discover). Bare `return` / void functions have no
+// return type to infer, so we leave them alone. A visited set guards against
+// back-references (e.g. a node's `scope` pointing to the owning struct, which
+// in turn holds this function).
+function returns_value(node: BaseNode, visited: Set<BaseNode> = new Set()): boolean {
+	if (visited.has(node)) {
+		return false;
+	}
+	visited.add(node);
+	if (node.node_type === "return") {
+		return !!(node as { value?: BaseNode }).value;
+	}
+	for (const val of Object.values(node)) {
+		if (Array.isArray(val)) {
+			for (const item of val) {
+				if (
+					item &&
+					typeof item === "object" &&
+					"node_type" in item &&
+					returns_value(item as BaseNode, visited)
+				) {
+					return true;
+				}
+			}
+		} else if (val && typeof val === "object" && "node_type" in val) {
+			if (returns_value(val as BaseNode, visited)) {
+				return true;
+			}
+		}
+	}
+	return false;
 }

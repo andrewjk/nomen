@@ -1,0 +1,4 @@
+stretch 15
+loop 700
+long 7
+LEAK: 416 allocation(s)
