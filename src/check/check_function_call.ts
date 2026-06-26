@@ -373,6 +373,7 @@ export default function check_function_call(
 				const is_core_method =
 					target_type?.is_array ||
 					target_type?.name === "string" ||
+					target_type?.name === "Buffer" ||
 					target_type?.name?.startsWith("Array_");
 				if (!is_core_method) {
 					add_error(

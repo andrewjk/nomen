@@ -79,7 +79,7 @@ pub struct Buffer {
         ```
     }
 
-    inline func load = (self, int i, out uint32) {
+    inline func load = (self, int i: i >= 0, out uint32) {
         ```
         #arch: c
         return ((unsigned int*)(unsigned long long)self->data)[i];
@@ -96,7 +96,7 @@ pub struct Buffer {
         return 0 as uint32
     }
 
-    inline func store = (ref self, int i, uint32 val) {
+    inline func store = (ref self, int i: i >= 0, uint32 val) {
         ```
         #arch: c
         ((unsigned int*)(unsigned long long)self->data)[i] = val;
@@ -110,7 +110,7 @@ pub struct Buffer {
         ```
     }
 
-    inline func store_or = (ref self, int i, uint32 val) {
+    inline func store_or = (ref self, int i: i >= 0, uint32 val) {
         ```
         #arch: c
         ((unsigned int*)(unsigned long long)self->data)[i] |= val;
@@ -188,7 +188,7 @@ pub struct Buffer {
         ```
     }
 
-    inline func load_int = (self, int i, out int) {
+    inline func load_int = (self, int i: i >= 0, out int) {
         ```
         #arch: c
         return ((long*)(unsigned long long)self->data)[i];
@@ -204,7 +204,7 @@ pub struct Buffer {
         return 0
     }
 
-    inline func store_int = (ref self, int i, int val) {
+    inline func store_int = (ref self, int i: i >= 0, int val) {
         ```
         #arch: c
         ((long*)(unsigned long long)self->data)[i] = val;
@@ -245,7 +245,7 @@ pub struct Buffer {
         ```
     }
 
-    inline func store_or_int = (ref self, int i, int val) {
+    inline func store_or_int = (ref self, int i: i >= 0, int val) {
         ```
         #arch: c
         ((long*)(unsigned long long)self->data)[i] |= val;
@@ -277,7 +277,7 @@ pub struct Buffer {
         ```
     }
 
-    inline func load_float = (self, int i, out float) {
+    inline func load_float = (self, int i: i >= 0, out float) {
         ```
         #arch: c
         return ((double*)(unsigned long long)self->data)[i];
@@ -293,7 +293,7 @@ pub struct Buffer {
         return 0.0
     }
 
-    inline func store_float = (ref self, int i, float val) {
+    inline func store_float = (ref self, int i: i >= 0, float val) {
         ```
         #arch: c
         ((double*)(unsigned long long)self->data)[i] = val;
