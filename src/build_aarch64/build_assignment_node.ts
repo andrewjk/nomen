@@ -335,6 +335,24 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 					return;
 				}
 			}
+			if (struct_type && !node.operator) {
+				status.last_result_is_heap = false;
+				build_node(node.right_value, status);
+				if (!status.code.endsWith("\n")) status.code += "\n";
+				// Only anchor when the RHS produced a fresh heap allocation
+				// (e.g. a factory function). Borrowed references returned by
+				// accessor methods must not be anchored — they are owned
+				// elsewhere and anchoring them would cause a double-free.
+				if (status.last_result_is_heap) {
+					anchor_heap_pointer(status, name);
+				}
+				const offset = status.stack_offsets?.get(name);
+				if (offset !== undefined) {
+					status.code += `str x0, [x29, #${offset}]\n`;
+				}
+				build_swap(node, status);
+				return;
+			}
 			const alloc_reg_a = status.register_allocations?.get(name);
 			if (alloc_reg_a) {
 				status.code += `mov x2, ${alloc_reg_a}\n`;

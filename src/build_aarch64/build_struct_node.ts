@@ -9,7 +9,27 @@ import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_field_destroys } from "./utils/auto_destroy.ts";
 import scan_force_heap_strings from "./utils/scan_force_heap_strings.ts";
 import { allocate_stack_space } from "./utils/stack_var.ts";
-import { get_field_offset, get_struct_size } from "./utils/struct_layout.ts";
+import { get_field_offset, get_struct_size, get_type_size } from "./utils/struct_layout.ts";
+
+function emit_typed_store(
+	status: BuildStatus,
+	src_reg: string,
+	dst_base: string,
+	offset: number,
+	size: number,
+) {
+	const wreg = src_reg.replace("x", "w");
+	const addr = offset === 0 ? `[${dst_base}]` : `[${dst_base}, #${offset}]`;
+	if (size === 1) {
+		status.code += `strb ${wreg}, ${addr}\n`;
+	} else if (size === 2) {
+		status.code += `strh ${wreg}, ${addr}\n`;
+	} else if (size === 4) {
+		status.code += `str ${wreg}, ${addr}\n`;
+	} else {
+		status.code += `str ${src_reg}, ${addr}\n`;
+	}
+}
 
 export default function build_struct_node(node: StructNode, status: BuildStatus) {
 	if (node.is_generic) return;
@@ -217,7 +237,8 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 				status.code += `str x9, [x0, #${offset + w * 8}]\n`;
 			}
 		} else {
-			status.code += `str ${param_regs[i]}, [x0, #${offset}]\n`;
+			const field_size = get_type_size(field.type, status);
+			emit_typed_store(status, param_regs[i], "x0", offset, field_size);
 		}
 	}
 
@@ -241,7 +262,7 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 				} else {
 					status.code += `ldr x1, =${val}\n`;
 				}
-				status.code += `str x1, [x0, #${offset}]\n`;
+				emit_typed_store(status, "x1", "x0", offset, get_type_size(field.type, status));
 			} else if (field.value.node_type === "func_call") {
 				const field_struct = status.structs.find(
 					(s) => s.name === field.type.name && !s.is_simple_type,
@@ -339,7 +360,7 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 				} else {
 					status.code += `ldr x1, =${val}\n`;
 				}
-				status.code += `str x1, [x19, #${offset}]\n`;
+				emit_typed_store(status, "x1", "x19", offset, get_type_size(field.type, status));
 			} else if (field.value.node_type === "func_call") {
 				const field_struct = status.structs.find(
 					(s) => s.name === field.type.name && !s.is_simple_type,

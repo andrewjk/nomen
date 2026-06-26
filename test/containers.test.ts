@@ -82,4 +82,112 @@ Console.write("nodes=\\{g.node_length()} edges_from_a=\\{total}\\n")
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		await check_output("arena_graph", result, "nodes=3 edges_from_a=5\n");
 	});
+
+	test("LinkedList<Elephant> store and retrieve class pointers", async () => {
+		const input = `
+class Elephant {
+  var char letter
+  var bool visited = false
+}
+
+var LinkedList<Elephant> list = LinkedList<Elephant>()
+var Elephant a = Elephant('A')
+var Elephant b = Elephant('B')
+var Elephant c = Elephant('C')
+var int ia = list.count
+list.add(a)
+var int ib = list.count
+list.add(b)
+var int ic = list.count
+list.add(c)
+list.set_next(ia, ib)
+list.set_next(ib, ic)
+var Elephant cur = list.value(ia)
+cur.visited = true
+cur = list.value(ib)
+cur.visited = true
+cur = list.value(ic)
+cur.visited = true
+cur = list.value(ia)
+Console.write("\\{cur.letter} ")
+cur = list.value(ib)
+Console.write("\\{cur.letter} ")
+cur = list.value(ic)
+Console.write("\\{cur.letter}\\n")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		await check_output("linkedlist_class", result, "A B C\n");
+	});
+
+	test("Tree<Elephant> store and traverse class pointers", async () => {
+		const input = `
+class Elephant {
+  var char letter
+  var bool visited = false
+}
+
+var Tree<Elephant> t = Tree<Elephant>()
+var int root = t.count
+t.add(Elephant('R'))
+var int left = t.count
+t.add(Elephant('L'))
+var int right = t.count
+t.add(Elephant('R'))
+t.set_left(root, left)
+t.set_right(root, right)
+var Elephant e = t.value(root)
+e.visited = true
+e = t.value(left)
+e.visited = true
+e = t.value(right)
+e.visited = true
+e = t.value(root)
+Console.write("\\{e.letter} ")
+e = t.value(left)
+Console.write("\\{e.letter} ")
+e = t.value(right)
+Console.write("\\{e.letter}\\n")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		await check_output("tree_class", result, "R L R\n");
+	});
+
+	test("Graph<Elephant> store and traverse class pointers", async () => {
+		const input = `
+class Elephant {
+  var char letter
+  var bool visited = false
+}
+
+var Graph<Elephant> g = Graph<Elephant>()
+var int a = g.node_count
+g.add_node(Elephant('A'))
+var int b = g.node_count
+g.add_node(Elephant('B'))
+var int c = g.node_count
+g.add_node(Elephant('C'))
+g.add_edge(a, b)
+g.add_edge(a, c)
+var Elephant e = g.value(a)
+e.visited = true
+e = g.value(b)
+e.visited = true
+e = g.value(c)
+e.visited = true
+e = g.value(a)
+Console.write("\\{e.letter} ")
+e = g.value(b)
+Console.write("\\{e.letter} ")
+e = g.value(c)
+Console.write("\\{e.letter}\\n")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		await check_output("graph_class", result, "A B C\n");
+	});
 });

@@ -1,6 +1,7 @@
 import add_error from "../../add_error.ts";
 import Type from "../../nodes/Type.ts";
 import type CheckStatus from "../CheckStatus.ts";
+import { is_class_type } from "./ownership.ts";
 import type_name from "./type_name.ts";
 
 export default function check_type_and_value_match(
@@ -39,6 +40,13 @@ export default function check_type_and_value_match(
 				return;
 			}
 			if (can_coerce(effective_target.name, value_type.name, value)) {
+				return;
+			}
+
+			if (
+				node_type !== "swap" &&
+				can_class_int_coerce(effective_target.name, value_type.name, status)
+			) {
 				return;
 			}
 
@@ -172,5 +180,11 @@ function is_type_param(name: string, status: CheckStatus): boolean {
 	for (const s of status.structs) {
 		if (s.type_params.includes(name)) return true;
 	}
+	return false;
+}
+
+function can_class_int_coerce(target: string, value: string, status: CheckStatus): boolean {
+	if (target === "int" && is_class_type(value, status)) return true;
+	if (is_class_type(target, status) && value === "int") return true;
 	return false;
 }
