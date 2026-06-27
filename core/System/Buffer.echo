@@ -191,14 +191,26 @@ pub struct Buffer {
     inline func load_int = (self, int i: i >= 0, out int) {
         ```
         #arch: c
+        if (i < 0 || i >= self->cap || self->cap == 0) return 0;
         return ((long*)(unsigned long long)self->data)[i];
         ```
         ```
         #arch: aarch64
-        ldr x0, [x19, #8]
+        ldr x9, [x0, #16]
+        cbz x9, 1f
+        cmp x1, #0
+        csel x1, xzr, x1, lt
+        sub x10, x9, #1
+        cmp x1, x10
+        csel x1, x10, x1, ge
+        ldr x0, [x0, #8]
         lsl x1, x1, #3
         add x0, x0, x1
         ldr x0, [x0]
+        b 2f
+        1:
+        mov x0, #0
+        2:
         b .return_Buffer_load_int
         ```
         return 0
@@ -207,14 +219,23 @@ pub struct Buffer {
     inline func store_int = (ref self, int i: i >= 0, int val) {
         ```
         #arch: c
+        if (i < 0 || i >= self->cap || self->cap == 0) return;
         ((long*)(unsigned long long)self->data)[i] = val;
         ```
         ```
         #arch: aarch64
-        ldr x0, [x19, #8]
+        ldr x9, [x0, #16]
+        cbz x9, 1f
+        cmp x1, #0
+        csel x1, xzr, x1, lt
+        sub x10, x9, #1
+        cmp x1, x10
+        csel x1, x10, x1, ge
+        ldr x9, [x0, #8]
         lsl x3, x1, #3
-        add x0, x0, x3
-        str x2, [x0]
+        add x9, x9, x3
+        str x2, [x9]
+        1:
         ```
     }
 
