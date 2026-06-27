@@ -22,11 +22,11 @@ pub struct List<T> {
         return self.items.load_int(self.length)
     }
 
-    pub func at = (self, int i: i >= 0, out T) {
+    pub func at = (self, int i: i >= 0 && i < self.length, out T) {
         return self.items.load_int(i)
     }
 
-    pub func set = (ref self, int i: i >= 0, mov T value) {
+    pub func set = (ref self, int i: i >= 0 && i < self.length, mov T value) {
         var int v = value
         self.items.store_int(i, v)
     }

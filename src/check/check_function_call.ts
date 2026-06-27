@@ -182,6 +182,8 @@ export default function check_function_call(
 		value: number | boolean | undefined;
 		range_lower?: number;
 		range_upper?: number;
+		upper_bound_expr?: string;
+		lower_bound_expr?: string;
 	}[] = [];
 
 	for (let [i, param] of node.params.entries()) {
@@ -323,11 +325,15 @@ export default function check_function_call(
 		// Look up range info from the original variable (e.g. for-loop range variables)
 		let range_lower: number | undefined;
 		let range_upper: number | undefined;
+		let upper_bound_expr: string | undefined;
+		let lower_bound_expr: string | undefined;
 		if (param.node_type === "value") {
 			const decl = status.values.findLast((v) => v.name === (param as ValueNode).value);
 			if (decl) {
 				range_lower = decl.range_lower;
 				range_upper = decl.range_upper;
+				upper_bound_expr = decl.upper_bound_expr;
+				lower_bound_expr = decl.lower_bound_expr;
 			}
 		}
 		constraint_args.push({
@@ -336,6 +342,8 @@ export default function check_function_call(
 			value: arg_value,
 			range_lower,
 			range_upper,
+			upper_bound_expr,
+			lower_bound_expr,
 		});
 
 		// Evaluate constraints that reference this or earlier parameters
@@ -350,6 +358,8 @@ export default function check_function_call(
 					const_value: ca.value,
 					range_lower: ca.range_lower,
 					range_upper: ca.range_upper,
+					upper_bound_expr: ca.upper_bound_expr,
+					lower_bound_expr: ca.lower_bound_expr,
 				});
 			}
 			// Push self so constraints can reference self.length
@@ -360,6 +370,7 @@ export default function check_function_call(
 					name: "self",
 					type: self_type,
 					is_set: true,
+					alias_of: self_value,
 				});
 			}
 

@@ -30,4 +30,16 @@ export default interface StackValue {
 	 */
 	range_lower?: number;
 	range_upper?: number;
+	/**
+	 * Flow-sensitive bounds established by enclosing if/while conditions.
+	 * E.g. inside `while j < list.length`, j has upper_bound_expr = "list.length".
+	 * Used to verify method constraints like `i < self.length` at the call site.
+	 */
+	upper_bound_expr?: string;
+	lower_bound_expr?: string;
+	/**
+	 * For `self` pushed during constraint evaluation: the actual variable name
+	 * this refers to (e.g. "list"), so self.length can be resolved to list.length.
+	 */
+	alias_of?: string;
 }

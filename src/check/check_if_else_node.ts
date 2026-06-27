@@ -7,6 +7,7 @@ import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import clone_status from "./utils/clone_status.ts";
 import evaluate_const_condition from "./utils/evaluate_const_condition.ts";
+import { apply_bounds } from "./utils/flow_bounds.ts";
 import get_null_check_var from "./utils/get_null_check_var.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import type_name from "./utils/type_name.ts";
@@ -57,6 +58,9 @@ export default function check_if_else_node(if_else: IfElseNode, status: CheckSta
 			}
 		}
 	}
+
+	// Establish flow-sensitive bounds from condition (e.g. if j < list.length)
+	apply_bounds(if_else.condition, if_status);
 
 	if (if_else.if_branch) {
 		check_block_node(if_else.if_branch, if_status);

@@ -9,6 +9,7 @@ import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import clone_status from "./utils/clone_status.ts";
 import { evaluate_numeric_or_bool } from "./utils/evaluate_const_condition.ts";
+import { expr_to_string } from "./utils/flow_bounds.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 
 export default function check_for_loop_node(for_loop: ForLoopNode, status: CheckStatus) {
@@ -42,6 +43,13 @@ export default function check_for_loop_node(for_loop: ForLoopNode, status: Check
 				range_upper = evaluate_range_bound_value(range.right_value, for_status);
 			}
 
+			// If the upper bound isn't a compile-time number, track the expression
+			// so flow-sensitive bounds checking can use it (e.g. 0..list.length)
+			let upper_bound_expr: string | undefined;
+			if (for_loop.list instanceof RangeNode && range_upper === undefined) {
+				upper_bound_expr = expr_to_string((for_loop.list as RangeNode).right_value, for_status);
+			}
+
 			for_status.values.push({
 				declaration: "var",
 				name: for_loop.item.value,
@@ -49,6 +57,7 @@ export default function check_for_loop_node(for_loop: ForLoopNode, status: Check
 				is_set: true,
 				range_lower,
 				range_upper,
+				upper_bound_expr,
 			});
 		}
 	}

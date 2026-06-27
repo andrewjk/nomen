@@ -3,6 +3,7 @@ import AccessNode from "../../nodes/AccessNode.ts";
 import OperationNode from "../../nodes/OperationNode.ts";
 import ValueNode from "../../nodes/ValueNode.ts";
 import type CheckStatus from "../CheckStatus.ts";
+import { expr_to_string } from "./flow_bounds.ts";
 
 /**
  * Try to evaluate a condition at compile time.
@@ -37,6 +38,25 @@ function evaluate_value(vn: ValueNode, status: CheckStatus): boolean | undefined
 }
 
 function evaluate_operation(op: OperationNode, status: CheckStatus): boolean | undefined {
+	// Check flow-sensitive bounds: if left side is a variable with a known
+	// upper/lower bound expression matching the right side, the comparison is true.
+	// E.g. inside `while j < list.length`, j has upper_bound_expr = "list.length",
+	// so `j < self.length` (where self = list) evaluates to true.
+	if ((op.op === "<" || op.op === "<=") && op.left_value.node_type === "value") {
+		const decl = status.values.findLast((v) => v.name === (op.left_value as ValueNode).value);
+		if (decl?.upper_bound_expr) {
+			const right_str = expr_to_string(op.right_value, status);
+			if (right_str && right_str === decl.upper_bound_expr) return true;
+		}
+	}
+	if ((op.op === ">" || op.op === ">=") && op.left_value.node_type === "value") {
+		const decl = status.values.findLast((v) => v.name === (op.left_value as ValueNode).value);
+		if (decl?.lower_bound_expr) {
+			const right_str = expr_to_string(op.right_value, status);
+			if (right_str && right_str === decl.lower_bound_expr) return true;
+		}
+	}
+
 	// Check if left side is a variable with range bounds (from for-loop)
 	if (op.left_value.node_type === "value") {
 		const vn = op.left_value as ValueNode;

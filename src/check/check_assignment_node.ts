@@ -61,6 +61,9 @@ export default function check_assignment_node(
 		// Clear range bounds: assignment invalidates for-loop range knowledge
 		left_value.range_lower = undefined;
 		left_value.range_upper = undefined;
+		// Clear flow-sensitive bounds: assignment invalidates bounds from if/while
+		left_value.upper_bound_expr = undefined;
+		left_value.lower_bound_expr = undefined;
 	}
 
 	// Update is_null based on the RHS value
