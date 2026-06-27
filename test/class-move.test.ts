@@ -449,7 +449,6 @@ var Point b = identity(mov a)
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual([
 			test_error(input, "mov is only allowed for class types, not 'Point'", 7, 18),
-			test_error(input, "mov is only allowed for class types, not 'Point'", 12, 28),
 		]);
 	});
 

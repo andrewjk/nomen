@@ -115,7 +115,7 @@ class Counter {
 		});
 	});
 
-	describe("mov only allowed for class types", () => {
+	describe("mov only allowed for class types (or type params)", () => {
 		test("mov int parameter", () => {
 			const input = `
 func identity = (mov int x, out int) {
@@ -167,6 +167,19 @@ func identity = (mov string s, out string) {
 			expect(parsed.errors).toEqual([
 				test_error(input, "mov is only allowed for class types, not 'string'", 2, 18),
 			]);
+		});
+
+		test("mov on generic type parameter is allowed", () => {
+			const input = `
+struct Container<T> {
+  var int dummy
+  func add = (ref self, mov T value) {
+    return
+  }
+}
+`;
+			const parsed = parse(input);
+			expect(parsed.errors).toEqual([]);
 		});
 	});
 
