@@ -228,6 +228,15 @@ function check_access_function_node(
 		}
 	}
 
+	// Resolve generic type to monomorphized name so we find the right methods
+	if (effective_type.type_args?.length && !effective_type.is_array) {
+		const mono_name =
+			effective_type.name + "_" + effective_type.type_args.map((t) => t.name).join("_");
+		if (status.structs.find((s) => s.name === mono_name)) {
+			effective_type = new Type(mono_name);
+		}
+	}
+
 	const struct = status.structs.find((s) => s.name === effective_type.name);
 
 	let func: FunctionNode | undefined;

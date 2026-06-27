@@ -6,7 +6,7 @@ pub struct Map<TK, TV> {
 	var Buffer values = Buffer()
 	var Buffer used = Buffer()
 
-	pub func set = (ref self, TK key, TV value) {
+	pub func set = (ref self, mov TK key, mov TV value) {
 		var int cap = self.keys.get_cap()
 		if cap == 0 {
 			self.keys.alloc_int(8)

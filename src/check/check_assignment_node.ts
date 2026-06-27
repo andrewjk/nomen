@@ -150,6 +150,7 @@ export default function check_assignment_node(
 	if (
 		!assign.swap &&
 		assign.right_value.node_type === "access" &&
+		(assign.right_value as AccessNode).access.node_type === "access_field" &&
 		rhs_type.name &&
 		is_class_type(rhs_type.name, status)
 	) {

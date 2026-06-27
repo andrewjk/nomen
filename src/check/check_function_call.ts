@@ -218,7 +218,13 @@ export default function check_function_call(
 				param.start,
 			);
 		}
-		if (func_param.is_moved && !has_mov_keyword) {
+		// Only require explicit 'mov' keyword at the call site when the
+		// parameter is a class type AND the argument is a variable (has a
+		// name to invalidate). For temporaries (function call results,
+		// literals) and non-class types, mov is implicit or a no-op.
+		const param_is_class = func_param.type.name && is_class_type(func_param.type.name, status);
+		const arg_is_variable = param.node_type === "value";
+		if (func_param.is_moved && !has_mov_keyword && param_is_class && arg_is_variable) {
 			add_error(
 				status,
 				`Missing 'mov' keyword for mov parameter '${func_param.name}'`,
@@ -231,17 +237,14 @@ export default function check_function_call(
 				param.start,
 			);
 		}
-		// Check for mov on value types at call site
-		if (has_mov_keyword && func_param.type.name && !is_class_type(func_param.type.name, status)) {
-			add_error(
-				status,
-				`mov is only allowed for class types, not '${func_param.type.name}'`,
-				param.start,
-			);
-		}
+		// mov is allowed on any type at the call site. Only invalidate the
+		// caller's variable when the parameter type is a class — for non-class
+		// types (int, struct, etc.), mov is a no-op.
 		if (has_mov_keyword && param_value && !node.swap_params?.has(i)) {
-			if (!status.moved_variables) status.moved_variables = new Set();
-			status.moved_variables.add(param_value);
+			if (func_param.type.name && is_class_type(func_param.type.name, status)) {
+				if (!status.moved_variables) status.moved_variables = new Set();
+				status.moved_variables.add(param_value);
+			}
 		}
 		if (
 			has_mov_keyword &&

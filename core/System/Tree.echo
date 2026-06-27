@@ -11,7 +11,7 @@ pub struct Tree<T> {
 	var Buffer parents = Buffer()
 	var int count = 0
 
-	pub func add = (ref self, T value) {
+	pub func add = (ref self, mov T value) {
 		var int idx = self.count
 		self.values.grow_int(idx + 1)
 		var int v = value

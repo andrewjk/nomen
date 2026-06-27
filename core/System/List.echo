@@ -4,7 +4,7 @@ pub struct List<T> {
     var int length = 0
     var Buffer items = Buffer()
 
-    pub func push = (ref self, T value) {
+    pub func push = (ref self, mov T value) {
         if self.length >= self.items.get_cap() {
             var int new_cap = 4
             var int old_cap = self.items.get_cap()
@@ -26,7 +26,7 @@ pub struct List<T> {
         return self.items.load_int(i)
     }
 
-    pub func set = (ref self, int i: i >= 0, T value) {
+    pub func set = (ref self, int i: i >= 0, mov T value) {
         var int v = value
         self.items.store_int(i, v)
     }

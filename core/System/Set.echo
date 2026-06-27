@@ -5,7 +5,7 @@ pub struct Set<T> {
 	var Buffer slots = Buffer()
 	var Buffer used = Buffer()
 
-	pub func add = (ref self, T value) {
+	pub func add = (ref self, mov T value) {
 		var int cap = self.slots.get_cap()
 		if cap == 0 {
 			self.slots.alloc_int(8)
