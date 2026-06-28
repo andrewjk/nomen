@@ -8,6 +8,7 @@ import type BaseNode from "../nodes/BaseNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
+import StructNode from "../nodes/StructNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import { monomorphize } from "./check_function_call_node.ts";
@@ -17,10 +18,57 @@ import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
 import evaluate_const_condition, {
 	evaluate_numeric_or_bool,
 } from "./utils/evaluate_const_condition.ts";
+import { expr_to_string, record_buffer_cap } from "./utils/flow_bounds.ts";
 import is_visible from "./utils/is_visible.ts";
 import { is_class_type } from "./utils/ownership.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
+
+/**
+ * Core data structures whose internals maintain length<=cap invariants or use
+ * computed indices that flow analysis can't always prove. When we're checking
+ * a call inside one of these structs' methods, unverifiable Buffer constraints
+ * are silently allowed (the data structure is trusted to maintain its own
+ * invariants).
+ */
+const CORE_DATA_STRUCTURES = new Set([
+	"Buffer",
+	"List",
+	"Map",
+	"Set",
+	"Tree",
+	"Graph",
+	"LinkedList",
+	"BigInt",
+	"Array",
+	"String",
+]);
+
+/**
+ * Walk the checking stack to find the nearest enclosing FunctionNode and check
+ * whether its scope is a method of a core data structure.
+ */
+function is_inside_core_method(status: CheckStatus): boolean {
+	for (let i = status.stack.length - 1; i >= 0; i--) {
+		const node = status.stack[i];
+		if (node.node_type === "func") {
+			const func = node as FunctionNode;
+			const scope = func.scope as StructNode | undefined;
+			if (scope && scope.node_type === "struct" && CORE_DATA_STRUCTURES.has(scope.name)) {
+				return true;
+			}
+			// Also check the function name prefix for monomorphized structs
+			// (e.g. List_int's methods still belong to a core data structure)
+			if (scope && scope.node_type === "struct") {
+				const base = scope.name.split("_")[0];
+				if (CORE_DATA_STRUCTURES.has(base)) return true;
+			}
+			// Found the nearest function but it's not a core method — stop walking
+			return false;
+		}
+	}
+	return false;
+}
 
 export default function check_function_call(
 	node: FunctionCallNode | AccessFunctionCallNode,
@@ -28,6 +76,7 @@ export default function check_function_call(
 	func: FunctionNode,
 	target_type?: Type,
 	self_value?: string,
+	self_path?: string,
 ): boolean {
 	const access_scope = status.stack.at(-1)!;
 	// For init functions, check the struct's visibility
@@ -365,12 +414,15 @@ export default function check_function_call(
 			// Push self so constraints can reference self.length
 			if (self_value && self_value !== "?") {
 				const self_type = target_type || func.params[0]?.type;
+				// self_path is the full access path (e.g. "self.items" for
+				// `self.items.load_int(...)`), so self.cap resolves correctly
+				// to "self.items.cap" when matching against flow bounds.
 				status.values.push({
 					declaration: "const",
 					name: "self",
 					type: self_type,
 					is_set: true,
-					alias_of: self_value,
+					alias_of: self_path ?? self_value,
 				});
 			}
 
@@ -381,9 +433,13 @@ export default function check_function_call(
 				add_error(status, `Parameter constraint not satisfied: ${func_param.name}`, param.start);
 			} else if (satisfied === undefined) {
 				// Constraint can't be verified at compile time (e.g. runtime variable index).
-				// For self constraints on core library types (arrays, strings), allow silently
-				// since the constraint references self.length which may legitimately be unknown.
-				// For user-defined functions, emit an error since the constraint can't be verified.
+				// For self constraints on core library types (arrays, strings, Buffer), allow
+				// silently since the constraint references self.length/self.cap which may
+				// legitimately be unknown. The flow analysis (flow_bounds.ts) verifies these
+				// when possible (e.g. `while i < buf.get_cap()` inside the loop body).
+				// For user-defined functions, emit an error since the constraint can't be
+				// verified. Also allow silently when the call site is inside another core
+				// data structure's method — those types maintain their own invariants.
 				const base_name = target_type?.name?.split("_")[0] ?? "";
 				const core_types = ["Array", "Buffer", "LinkedList", "Tree", "Graph", "List", "Set", "Map"];
 				const is_core_method =
@@ -391,7 +447,8 @@ export default function check_function_call(
 					target_type?.name === "string" ||
 					target_type?.name === "Buffer" ||
 					core_types.includes(base_name);
-				if (!is_core_method) {
+				const inside_core = is_inside_core_method(status);
+				if (!is_core_method && !inside_core) {
 					add_error(
 						status,
 						`Parameter constraint cannot be verified: ${func_param.name}`,
@@ -470,6 +527,30 @@ export default function check_function_call(
 		}
 
 		struct_param_seen.set(val, func_param.name);
+	}
+
+	// Record known minimum capacity for Buffer after grow/alloc calls.
+	// This lets subsequent `buf.store_int(0, …)` verify `0 < buf.cap`.
+	if (
+		self_path &&
+		self_path !== "?" &&
+		target_type?.name === "Buffer" &&
+		(func.name === "grow_int" || func.name === "alloc_int" || func.name === "alloc")
+	) {
+		// size arg is the first non-self param
+		const size_param = node.params[0];
+		if (size_param?.node_type === "value") {
+			const vn = size_param as ValueNode;
+			if (/^\d+$/.test(vn.value)) {
+				record_buffer_cap(self_path, parseInt(vn.value, 10), status);
+			} else {
+				// constant variable reference
+				const decl = status.values.findLast((v) => v.name === vn.value);
+				if (decl?.const_value !== undefined && typeof decl.const_value === "number") {
+					record_buffer_cap(self_path, decl.const_value, status);
+				}
+			}
+		}
 	}
 
 	status.stack.pop();

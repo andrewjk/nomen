@@ -79,4 +79,13 @@ export default interface CheckStatus {
 	 * Errors that have been encountered
 	 */
 	errors: CompileError[];
+
+	/**
+	 * Map from buffer access path (e.g. "buf", "self.items") to the minimum
+	 * guaranteed capacity, established by recent calls to grow_int(N)/alloc(N)/
+	 * alloc_int(N). Used by the constraint evaluator to verify
+	 * compile-time `i < buf.cap` constraints after a known-size allocation.
+	 * Cleared on mutation/reassignment of the buffer variable.
+	 */
+	buffer_caps?: Map<string, number>;
 }

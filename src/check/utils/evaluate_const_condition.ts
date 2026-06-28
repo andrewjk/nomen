@@ -3,7 +3,7 @@ import AccessNode from "../../nodes/AccessNode.ts";
 import OperationNode from "../../nodes/OperationNode.ts";
 import ValueNode from "../../nodes/ValueNode.ts";
 import type CheckStatus from "../CheckStatus.ts";
-import { expr_to_string } from "./flow_bounds.ts";
+import { expr_to_string, lookup_buffer_cap } from "./flow_bounds.ts";
 
 /**
  * Try to evaluate a condition at compile time.
@@ -54,6 +54,22 @@ function evaluate_operation(op: OperationNode, status: CheckStatus): boolean | u
 		if (decl?.lower_bound_expr) {
 			const right_str = expr_to_string(op.right_value, status);
 			if (right_str && right_str === decl.lower_bound_expr) return true;
+		}
+	}
+
+	// Three-valued logic for && and ||: only need both sides resolved for true &&
+	// true; a single false makes && false; a single true makes || true.
+	if (op.op === "&&" || op.op === "||") {
+		const left = evaluate_const_condition(op.left_value, status);
+		const right = evaluate_const_condition(op.right_value, status);
+		if (op.op === "&&") {
+			if (left === false || right === false) return false;
+			if (left === true && right === true) return true;
+			return undefined;
+		} else {
+			if (left === true || right === true) return true;
+			if (left === false && right === false) return false;
+			return undefined;
 		}
 	}
 
@@ -176,6 +192,16 @@ export function evaluate_numeric_or_bool(
 						const len = parseInt(len_node.value, 10);
 						if (!isNaN(len)) return len;
 					}
+				}
+			}
+			if (field.name === "cap") {
+				// Resolve `X.cap` to the minimum known capacity from recent
+				// grow/alloc calls. Look up by the *target* path (e.g. "buf"),
+				// not "buf.cap", since record_buffer_cap stores by buffer path.
+				const target_path = expr_to_string(access.target, status);
+				if (target_path) {
+					const cap = lookup_buffer_cap(target_path, status);
+					if (cap !== undefined) return cap;
 				}
 			}
 		}

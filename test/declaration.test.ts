@@ -257,15 +257,18 @@ x = 10
 	});
 
 	test("incomplete conditional const", () => {
+		// Wrap in a function with a parameter so the compiler can't evaluate
+		// the condition at compile time.
 		const input = `
-const int x
-var int dummy = 1
-if dummy > 0 {
-  x = 5
+func f = (int dummy) {
+  const int x
+  if dummy > 0 {
+    x = 5
+  }
+  const y = x
 }
-const y = x
 `;
-		const expected = [test_error(input, "Const set incompletely: x", 4, 1)];
+		const expected = [test_error(input, "Const set incompletely: x", 4, 3)];
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
 	});

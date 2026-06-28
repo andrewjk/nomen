@@ -4,10 +4,11 @@ import build from "../src/build";
 import check_output from "./check_output";
 import parse_with_imports from "./parse_with_imports";
 
-// Buffer bounds checking: load_int/store_int clamp the index to [0, cap-1]
-// at runtime. Negative constant indices are also caught at compile time via
-// the `i >= 0` constraint. Out-of-range reads return 0; out-of-range writes
-// are silently ignored. This prevents heap corruption without runtime aborts.
+// Buffer bounds checking: load_int/store_int have an `i >= 0 && i < self.cap`
+// constraint. The compiler verifies this at compile time via flow analysis
+// (e.g. cap tracked from grow_int, alias tracking for `var int c = buf.get_cap()`,
+// post-loop bounds). There is no runtime clamp — out-of-bounds access is a
+// compile error when provable.
 
 describe("buffer bounds checking", () => {
 	test("negative constant index is caught at compile time", () => {
@@ -23,7 +24,7 @@ Console.write("\\{neg}\\n")
 		expect(parsed.errors[0].message).toContain("constraint");
 	});
 
-	test("index past capacity returns 0 (clamped at runtime)", async () => {
+	test("index past capacity is caught at compile time", () => {
 		const input = `
 var Buffer buf = Buffer()
 buf.grow_int(4)
@@ -32,30 +33,61 @@ var int past = buf.load_int(100)
 Console.write("past=\\{past}\\n")
 `;
 		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		// Index 100 is clamped to cap-1=3. buf[3] was zeroed by grow_int → 0.
-		await check_output("oob_read_positive", result, "past=0\n");
+		expect(parsed.errors.length).toBeGreaterThan(0);
+		expect(parsed.errors[0].message).toContain("constraint");
 	});
 
-	test("write past capacity is clamped to last valid index", async () => {
+	test("write past capacity is caught at compile time", () => {
 		const input = `
 var Buffer buf = Buffer()
 buf.grow_int(2)
 buf.store_int(0, 11)
 buf.store_int(1, 22)
 buf.store_int(5, 999)
+Console.write("\\{buf.load_int(0)}\\n")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors.length).toBeGreaterThan(0);
+		expect(parsed.errors[0].message).toContain("constraint");
+	});
+
+	test("verifiable in-bounds access compiles clean", async () => {
+		const input = `
+var Buffer buf = Buffer()
+buf.grow_int(4)
+buf.store_int(0, 111)
+buf.store_int(1, 222)
+buf.store_int(2, 333)
+buf.store_int(3, 444)
 var int a = buf.load_int(0)
-var int b = buf.load_int(1)
-var int c = buf.load_int(2)
-var int d = buf.load_int(3)
-Console.write("\\{a} \\{b} \\{c} \\{d}\\n")
+var int b = buf.load_int(3)
+Console.write("\\{a} \\{b}\\n")
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		// grow_int(2) rounds up to cap=4. store_int(5, 999) clamps to
-		// index 3 (cap-1). data = [11, 22, 0, 999]. No crash, no corruption.
-		await check_output("oob_write_positive", result, "11 22 0 999\n");
+		await check_output("oob_in_bounds", result, "111 444\n");
+	});
+
+	test("runtime index inside `if i < cap` verifies", async () => {
+		const input = `
+var Buffer buf = Buffer()
+buf.grow_int(4)
+buf.store_int(0, 10)
+buf.store_int(1, 20)
+buf.store_int(2, 30)
+buf.store_int(3, 40)
+var int i = 0
+var int sum = 0
+while i < buf.cap {
+	sum = sum + buf.load_int(i)
+	i = i + 1
+}
+Console.write("\\{sum}\\n")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		await check_output("oob_runtime_bounded", result, "100\n");
 	});
 });

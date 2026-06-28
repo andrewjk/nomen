@@ -18,6 +18,7 @@ export default function check(root: BaseNode): CheckResult {
 		var_name_counter: { value: 0 },
 		type_params: [],
 		errors: [],
+		buffer_caps: new Map(),
 	};
 
 	check_node(root, status);

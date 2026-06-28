@@ -118,7 +118,24 @@ function compute_field_offset(node: AccessNode, status: BuildStatus): number {
 			const name = (node.target as ValueNode).value;
 			if (name === "self" && status.current_struct) {
 				target_type = new Type(status.current_struct.name);
+			} else if (status.variable_types?.has(name)) {
+				target_type = status.variable_types.get(name)!;
+			} else {
+				// Local variables: look up the declaration's type so that
+				// nested field access on locals resolves the correct offset.
+				const decl = status.scoped_declarations.findLast((d) => d.name === name);
+				if (decl?.type?.name) {
+					target_type = decl.type;
+				}
 			}
+		}
+		// Resolve access targets whose type_from_value_node returned empty.
+		// This happens for nested struct field access like `self.keys.cap`
+		// where the access_field's .type wasn't populated during checking —
+		// resolve_access_type walks the chain via status.structs instead.
+		if (!target_type?.name && node.target.node_type === "access") {
+			const resolved = resolve_access_type(node.target as AccessNode, status);
+			if (resolved) target_type = resolved;
 		}
 		const field_name = (node.access as AccessFieldNode).name;
 		let offset = get_field_offset(target_type?.name || "", field_name, status);
@@ -153,6 +170,14 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 			target_type = new Type(status.current_struct.name);
 		} else if (status.variable_types?.has(name)) {
 			target_type = status.variable_types.get(name)!;
+		} else {
+			// Local variables: look up the declaration's type.
+			// Without this, nested field access on locals (e.g. `old_keys.cap`)
+			// falls back to VT_SIZE for the offset, reading the wrong field.
+			const decl = status.scoped_declarations.findLast((d) => d.name === name);
+			if (decl?.type?.name) {
+				target_type = decl.type;
+			}
 		}
 	}
 	const target_name =

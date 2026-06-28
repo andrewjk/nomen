@@ -79,7 +79,7 @@ pub struct Buffer {
         ```
     }
 
-    inline func load = (self, int i: i >= 0, out uint32) {
+    inline func load = (self, int i: i >= 0 && i < self.cap, out uint32) {
         ```
         #arch: c
         return ((unsigned int*)(unsigned long long)self->data)[i];
@@ -96,7 +96,7 @@ pub struct Buffer {
         return 0 as uint32
     }
 
-    inline func store = (ref self, int i: i >= 0, uint32 val) {
+    inline func store = (ref self, int i: i >= 0 && i < self.cap, uint32 val) {
         ```
         #arch: c
         ((unsigned int*)(unsigned long long)self->data)[i] = val;
@@ -110,7 +110,7 @@ pub struct Buffer {
         ```
     }
 
-    inline func store_or = (ref self, int i: i >= 0, uint32 val) {
+    inline func store_or = (ref self, int i: i >= 0 && i < self.cap, uint32 val) {
         ```
         #arch: c
         ((unsigned int*)(unsigned long long)self->data)[i] |= val;
@@ -188,68 +188,34 @@ pub struct Buffer {
         ```
     }
 
-    inline func load_int = (self, int i: i >= 0, out int) {
+    inline func load_int = (self, int i: i >= 0 && i < self.cap, out int) {
         ```
         #arch: c
-        if (i < 0 || i >= self->cap || self->cap == 0) return 0;
         return ((long*)(unsigned long long)self->data)[i];
         ```
         ```
         #arch: aarch64
-        ldr x9, [x0, #16]
-        cbz x9, 1f
-        cmp x1, #0
-        csel x1, xzr, x1, lt
-        sub x10, x9, #1
-        cmp x1, x10
-        csel x1, x10, x1, ge
-        ldr x0, [x0, #8]
+        ldr x0, [x19, #8]
         lsl x1, x1, #3
         add x0, x0, x1
         ldr x0, [x0]
-        b 2f
-        1:
-        mov x0, #0
-        2:
         b .return_Buffer_load_int
         ```
         return 0
     }
 
-    inline func store_int = (ref self, int i: i >= 0, int val) {
+    inline func store_int = (ref self, int i: i >= 0 && i < self.cap, int val) {
         ```
         #arch: c
-        if (i < 0 || i >= self->cap || self->cap == 0) return;
         ((long*)(unsigned long long)self->data)[i] = val;
         ```
         ```
         #arch: aarch64
-        ldr x9, [x0, #16]
-        cbz x9, 1f
-        cmp x1, #0
-        csel x1, xzr, x1, lt
-        sub x10, x9, #1
-        cmp x1, x10
-        csel x1, x10, x1, ge
-        ldr x9, [x0, #8]
+        ldr x0, [x19, #8]
         lsl x3, x1, #3
-        add x9, x9, x3
-        str x2, [x9]
-        1:
+        add x0, x0, x3
+        str x2, [x0]
         ```
-    }
-
-    inline func get_cap = (self, out int) {
-        ```
-        #arch: c
-        return self->cap;
-        ```
-        ```
-        #arch: aarch64
-        ldr x0, [x19, #16]
-        b .return_Buffer_get_cap
-        ```
-        return 0
     }
 
     inline func zero_int = (ref self, int len) {
@@ -266,7 +232,7 @@ pub struct Buffer {
         ```
     }
 
-    inline func store_or_int = (ref self, int i: i >= 0, int val) {
+    inline func store_or_int = (ref self, int i: i >= 0 && i < self.cap, int val) {
         ```
         #arch: c
         ((long*)(unsigned long long)self->data)[i] |= val;
@@ -298,7 +264,7 @@ pub struct Buffer {
         ```
     }
 
-    inline func load_float = (self, int i: i >= 0, out float) {
+    inline func load_float = (self, int i: i >= 0 && i < self.cap, out float) {
         ```
         #arch: c
         return ((double*)(unsigned long long)self->data)[i];
@@ -314,7 +280,7 @@ pub struct Buffer {
         return 0.0
     }
 
-    inline func store_float = (ref self, int i: i >= 0, float val) {
+    inline func store_float = (ref self, int i: i >= 0 && i < self.cap, float val) {
         ```
         #arch: c
         ((double*)(unsigned long long)self->data)[i] = val;

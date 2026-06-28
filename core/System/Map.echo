@@ -7,7 +7,7 @@ pub struct Map<TK, TV> {
 	var Buffer used = Buffer()
 
 	pub func set = (ref self, mov TK key, mov TV value) {
-		var int cap = self.keys.get_cap()
+		var int cap = self.keys.cap
 		if cap == 0 {
 			self.keys.alloc_int(8)
 			self.values.alloc_int(8)
@@ -16,7 +16,7 @@ pub struct Map<TK, TV> {
 		}
 		if self.length * 4 >= cap * 3 {
 			self.rehash(cap * 2)
-			cap = self.keys.get_cap()
+			cap = self.keys.cap
 		}
 		var int idx = self.find_slot(key, cap)
 		if self.used.load(idx) == 0 {
@@ -30,7 +30,7 @@ pub struct Map<TK, TV> {
 	}
 
 	pub func get = (self, TK key, out TV) {
-		var int cap = self.keys.get_cap()
+		var int cap = 	self.keys.cap
 		if cap == 0 {
 			return 0
 		}
@@ -42,7 +42,7 @@ pub struct Map<TK, TV> {
 	}
 
 	pub func has = (self, TK key, out bool) {
-		var int cap = self.keys.get_cap()
+		var int cap = 	self.keys.cap
 		if cap == 0 {
 			return false
 		}
@@ -51,7 +51,7 @@ pub struct Map<TK, TV> {
 	}
 
 	pub func remove = (ref self, TK key) {
-		var int cap = self.keys.get_cap()
+		var int cap = 	self.keys.cap
 		if cap == 0 {
 			return
 		}
@@ -88,7 +88,7 @@ pub struct Map<TK, TV> {
 		var Buffer old_keys = self.keys
 		var Buffer old_values = self.values
 		var Buffer old_used = self.used
-		var int old_cap = old_keys.get_cap()
+		var int old_cap = old_keys.cap
 
 		self.keys = Buffer()
 		self.values = Buffer()

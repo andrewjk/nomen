@@ -5,6 +5,7 @@ import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
 import check_type_exists from "./utils/check_type_exists.ts";
+import { apply_bounds } from "./utils/flow_bounds.ts";
 import { is_class_type } from "./utils/ownership.ts";
 import { materialize_tuple_type } from "./utils/tuple_struct.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
@@ -91,5 +92,10 @@ export default function check_function_parameter_node(param: ParameterNode, stat
 				param.constraint.start,
 			);
 		}
+		// Translate the constraint into flow-sensitive bounds on this parameter.
+		// E.g. `int i: i >= 0 && i < self.length` sets i.lower_bound_expr = "0"
+		// and i.upper_bound_expr = "self.length", so calls inside the body can
+		// verify constraints like `i < self.cap` if cap == length is known.
+		apply_bounds(param.constraint as BaseNode, status);
 	}
 }

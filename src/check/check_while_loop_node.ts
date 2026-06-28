@@ -4,7 +4,7 @@ import check_block_node from "./check_block_node.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import clone_status from "./utils/clone_status.ts";
-import { apply_bounds } from "./utils/flow_bounds.ts";
+import { apply_bounds, apply_negated_bounds } from "./utils/flow_bounds.ts";
 import get_null_check_var from "./utils/get_null_check_var.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import type_name from "./utils/type_name.ts";
@@ -38,4 +38,8 @@ export default function check_while_loop_node(while_loop: WhileLoopNode, status:
 	if (while_loop.update) {
 		check_node(while_loop.update, while_status);
 	}
+
+	// After the loop exits, the negation of the condition is true
+	// (e.g. `while idx >= cap` → after: idx < cap). Apply to parent scope.
+	apply_negated_bounds(while_loop.condition, status);
 }

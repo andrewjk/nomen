@@ -261,7 +261,9 @@ func caller = () {
 		expect(parsed.errors).toEqual([]);
 	});
 
-	test("while loop variable fails constraint (no range info)", () => {
+	test("while loop variable satisfies constraint via flow analysis", () => {
+		// The flow analysis tracks `k < things.length` from the while condition
+		// and uses it to verify the constraint at the call site.
 		const lib = get_library(path.resolve(import.meta.dirname, "../core"));
 		const input = `
 import System
@@ -277,8 +279,7 @@ func caller = () {
 }
 `;
 		const parsed = parse(input, lib);
-		expect(parsed.errors.length).toBeGreaterThanOrEqual(1);
-		expect(parsed.errors.some((e) => e.message.includes("cannot be verified"))).toBe(true);
+		expect(parsed.errors).toEqual([]);
 	});
 
 	test("constraint comparing int with string errors", () => {

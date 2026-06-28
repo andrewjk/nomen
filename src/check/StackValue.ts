@@ -42,4 +42,10 @@ export default interface StackValue {
 	 * this refers to (e.g. "list"), so self.length can be resolved to list.length.
 	 */
 	alias_of?: string;
+	/**
+	 * For Buffer variables: the minimum guaranteed capacity, established by
+	 * calls to grow_int(N)/alloc_int(N)/alloc(N). Used to verify compile-time
+	 * `i < buf.cap` constraints after a known-size allocation.
+	 */
+	known_min_cap?: number;
 }

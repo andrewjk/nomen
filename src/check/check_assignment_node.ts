@@ -7,6 +7,7 @@ import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
 import evaluate_const_condition from "./utils/evaluate_const_condition.ts";
+import { track_assignment_bounds } from "./utils/flow_bounds.ts";
 import { is_class_type } from "./utils/ownership.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
@@ -64,6 +65,13 @@ export default function check_assignment_node(
 		// Clear flow-sensitive bounds: assignment invalidates bounds from if/while
 		left_value.upper_bound_expr = undefined;
 		left_value.lower_bound_expr = undefined;
+		left_value.alias_of = undefined;
+		// Re-track bounds if the RHS establishes new ones (e.g. cap = buf.get_cap()).
+		// Skip for compound assignments (+=, -=, etc.) since the RHS is a delta,
+		// not the new value.
+		if (!is_compound && left_value_name === left_value.name) {
+			track_assignment_bounds(left_value.name, assign.right_value, status);
+		}
 	}
 
 	// Update is_null based on the RHS value

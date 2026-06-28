@@ -564,7 +564,7 @@ pub struct BigInt {
             self.set(0, 0)
             self.len = 1
             remainder.ensure(a.len)
-            remainder.clear(remainder.digits.get_cap())
+            remainder.clear(remainder.digits.cap)
             var int ci = 0
             while ci < a.len {
                 remainder.set(ci, a.get(ci))

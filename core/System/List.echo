@@ -5,9 +5,9 @@ pub struct List<T> {
     var Buffer items = Buffer()
 
     pub func push = (ref self, mov T value) {
-        if self.length >= self.items.get_cap() {
+        if self.length >= self.items.cap {
             var int new_cap = 4
-            var int old_cap = self.items.get_cap()
+            var int old_cap = self.items.cap
             if old_cap >= 4 {
                 new_cap = old_cap * 2
             }

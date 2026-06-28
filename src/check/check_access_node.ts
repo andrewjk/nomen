@@ -10,6 +10,7 @@ import check_function_call from "./check_function_call.ts";
 import { monomorphize } from "./check_function_call_node.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
+import { expr_to_string } from "./utils/flow_bounds.ts";
 import {
 	find_function_by_params,
 	is_overloaded,
@@ -360,6 +361,7 @@ function check_access_function_node(
 		func,
 		target_type,
 		value_from_value_node(target),
+		expr_to_string(target, status),
 	);
 
 	// Convert Array struct return type back to array type for array method calls

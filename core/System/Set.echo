@@ -6,7 +6,7 @@ pub struct Set<T> {
 	var Buffer used = Buffer()
 
 	pub func add = (ref self, mov T value) {
-		var int cap = self.slots.get_cap()
+		var int cap = 	self.slots.cap
 		if cap == 0 {
 			self.slots.alloc_int(8)
 			self.used.alloc(8)
@@ -14,7 +14,7 @@ pub struct Set<T> {
 		}
 		if self.length * 4 >= cap * 3 {
 			self.rehash(cap * 2)
-			cap = self.slots.get_cap()
+			cap = 	self.slots.cap
 		}
 		var int idx = self.find_slot(value, cap)
 		if self.used.load(idx) == 0 {
@@ -25,7 +25,7 @@ pub struct Set<T> {
 	}
 
 	pub func has = (self, T value, out bool) {
-		var int cap = self.slots.get_cap()
+		var int cap = 	self.slots.cap
 		if cap == 0 {
 			return false
 		}
@@ -34,7 +34,7 @@ pub struct Set<T> {
 	}
 
 	pub func get = (self, T key, out T) {
-		var int cap = self.slots.get_cap()
+		var int cap = 	self.slots.cap
 		if cap == 0 {
 			return 0
 		}
@@ -46,7 +46,7 @@ pub struct Set<T> {
 	}
 
 	pub func remove = (ref self, T value) {
-		var int cap = self.slots.get_cap()
+		var int cap = 	self.slots.cap
 		if cap == 0 {
 			return
 		}
@@ -81,7 +81,7 @@ pub struct Set<T> {
 	func rehash = (ref self, int new_cap) {
 		var Buffer old_slots = self.slots
 		var Buffer old_used = self.used
-		var int old_cap = old_slots.get_cap()
+		var int old_cap = old_slots.cap
 
 		self.slots = Buffer()
 		self.used = Buffer()

@@ -21,5 +21,7 @@ export default function clone_status(status: CheckStatus): CheckStatus {
 		var_name_counter: status.var_name_counter,
 		type_params: status.type_params,
 		errors: status.errors,
+		// Buffer cap tracking: share the same map (writes propagate to parent)
+		buffer_caps: status.buffer_caps,
 	};
 }
