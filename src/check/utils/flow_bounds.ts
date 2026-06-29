@@ -43,11 +43,14 @@ export function extract_bound(
 
 	if (op.op !== "<" && op.op !== "<=" && op.op !== ">" && op.op !== ">=") return undefined;
 
-	// Try var OP expr (e.g. j < list.length)
-	if (op.left_value.node_type === "value") {
-		const var_name = (op.left_value as ValueNode).value;
+	// Try var/access OP expr (e.g. j < list.length, self.length < self.items.cap)
+	if (op.left_value.node_type === "value" || op.left_value.node_type === "access") {
+		const var_name =
+			op.left_value.node_type === "value"
+				? (op.left_value as ValueNode).value
+				: expr_to_string(op.left_value, status);
 		const expr = expr_to_string(op.right_value, status);
-		if (expr) return { var_name, op: op.op, expr };
+		if (var_name && expr) return { var_name, op: op.op, expr };
 	}
 
 	// Try expr OP var (e.g. list.length > j → j < list.length)
@@ -82,7 +85,13 @@ export function apply_bounds(condition: BaseNode, status: CheckStatus) {
 	const bound = extract_bound(condition, status);
 	if (!bound) return;
 
-	const var_decl = status.values.findLast((v) => v.name === bound.var_name);
+	// For dotted names like "self.length", the StackValue is stored under
+	// the base name "self", but bounds are keyed by the full dotted path.
+	let var_decl = status.values.findLast((v) => v.name === bound.var_name);
+	if (!var_decl && bound.var_name.includes(".")) {
+		const base = bound.var_name.split(".")[0];
+		var_decl = status.values.findLast((v) => v.name === base);
+	}
 	if (!var_decl) return;
 
 	if (bound.op === "<" || bound.op === "<=") {

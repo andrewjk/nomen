@@ -38,31 +38,48 @@ function evaluate_value(vn: ValueNode, status: CheckStatus): boolean | undefined
 }
 
 function evaluate_operation(op: OperationNode, status: CheckStatus): boolean | undefined {
-	// Check flow-sensitive bounds: if left side is a variable with a known
-	// upper/lower bound expression matching the right side, the comparison is true.
+	// Check flow-sensitive bounds: if left side is a variable (or field access)
+	// with a known upper/lower bound expression matching the right side,
+	// the comparison is true.
 	// E.g. inside `while j < list.length`, j has upper_bound_expr = "list.length",
 	// so `j < self.length` (where self = list) evaluates to true.
-	if ((op.op === "<" || op.op === "<=") && op.left_value.node_type === "value") {
-		const decl = status.values.findLast((v) => v.name === (op.left_value as ValueNode).value);
-		if (decl?.upper_bound_exprs?.length) {
-			const right_str = expr_to_string(op.right_value, status);
-			if (right_str && decl.upper_bound_exprs.includes(right_str)) return true;
+	// Also handles field accesses: `self.length < self.items.cap` resolves
+	// "self.length" as a variable name and checks its bounds.
+	if (op.op === "<" || op.op === "<=" || op.op === ">" || op.op === ">=") {
+		// Resolve left side to a variable name (handles both ValueNode and AccessNode)
+		let left_var: string | undefined;
+		if (op.left_value.node_type === "value") {
+			left_var = (op.left_value as ValueNode).value;
+		} else if (op.left_value.node_type === "access") {
+			left_var = expr_to_string(op.left_value, status);
 		}
-		// Backwards compat for code paths that still set upper_bound_expr
-		if (decl?.upper_bound_expr) {
+
+		if (left_var) {
+			let decl = status.values.findLast((v) => v.name === left_var);
+			// For dotted names like "self.length", bounds are stored on the base
+			// variable "self" with key "self.length" in upper_bound_exprs.
+			if (!decl && left_var.includes(".")) {
+				const base = left_var.split(".")[0];
+				decl = status.values.findLast((v) => v.name === base);
+			}
 			const right_str = expr_to_string(op.right_value, status);
-			if (right_str && right_str === decl.upper_bound_expr) return true;
-		}
-	}
-	if ((op.op === ">" || op.op === ">=") && op.left_value.node_type === "value") {
-		const decl = status.values.findLast((v) => v.name === (op.left_value as ValueNode).value);
-		if (decl?.lower_bound_exprs?.length) {
-			const right_str = expr_to_string(op.right_value, status);
-			if (right_str && decl.lower_bound_exprs.includes(right_str)) return true;
-		}
-		if (decl?.lower_bound_expr) {
-			const right_str = expr_to_string(op.right_value, status);
-			if (right_str && right_str === decl.lower_bound_expr) return true;
+
+			if (op.op === "<" || op.op === "<=") {
+				if (decl?.upper_bound_exprs?.length && right_str) {
+					if (decl.upper_bound_exprs.includes(right_str)) return true;
+				}
+				if (decl?.upper_bound_expr && right_str) {
+					if (right_str === decl.upper_bound_expr) return true;
+				}
+			}
+			if (op.op === ">" || op.op === ">=") {
+				if (decl?.lower_bound_exprs?.length && right_str) {
+					if (decl.lower_bound_exprs.includes(right_str)) return true;
+				}
+				if (decl?.lower_bound_expr && right_str) {
+					if (right_str === decl.lower_bound_expr) return true;
+				}
+			}
 		}
 	}
 

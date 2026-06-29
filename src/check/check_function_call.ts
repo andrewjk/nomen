@@ -31,7 +31,7 @@ import value_from_value_node from "./utils/value_from_value_node.ts";
  * are silently allowed (the data structure is trusted to maintain its own
  * invariants).
  */
-const CORE_DATA_STRUCTURES = new Set(["Buffer", "Tree", "Graph", "LinkedList", "BigInt"]);
+const CORE_DATA_STRUCTURES = new Set(["Buffer", "BigInt"]);
 
 /**
  * Walk the checking stack to find the nearest enclosing FunctionNode and check
@@ -440,7 +440,7 @@ export default function check_function_call(
 				// verified. Also allow silently when the call site is inside another core
 				// data structure's method — those types maintain their own invariants.
 				const base_name = target_type?.name?.split("_")[0] ?? "";
-				const core_types = ["Array", "Buffer", "LinkedList", "Tree", "Graph", "BigInt"];
+				const core_types = ["Array", "Buffer", "BigInt"];
 				const is_core_method =
 					target_type?.is_array ||
 					target_type?.name === "string" ||
@@ -530,24 +530,13 @@ export default function check_function_call(
 
 	// Record known minimum capacity for Buffer after grow/alloc calls.
 	// This lets subsequent `buf.store_int(0, …)` verify `0 < buf.cap`.
-	if (
-		self_path &&
-		self_path !== "?" &&
-		target_type?.name === "Buffer" &&
-		(func.name === "grow_int" || func.name === "alloc_int" || func.name === "alloc")
-	) {
-		// size arg is the first non-self param
+	// Covers void-style calls where the return value isn't captured.
+	if (self_path && self_path !== "?" && target_type?.name === "Buffer" && func.return_constraint) {
 		const size_param = node.params[0];
-		if (size_param?.node_type === "value") {
-			const vn = size_param as ValueNode;
-			if (/^\d+$/.test(vn.value)) {
-				record_buffer_cap(self_path, parseInt(vn.value, 10), status);
-			} else {
-				// constant variable reference
-				const decl = status.values.findLast((v) => v.name === vn.value);
-				if (decl?.const_value !== undefined && typeof decl.const_value === "number") {
-					record_buffer_cap(self_path, decl.const_value, status);
-				}
+		if (size_param) {
+			const size_val = evaluate_numeric_or_bool(size_param, status);
+			if (typeof size_val === "number" && size_val > 0) {
+				record_buffer_cap(self_path, size_val, status);
 			}
 		}
 	}

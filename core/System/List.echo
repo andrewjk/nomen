@@ -18,8 +18,12 @@ pub struct List<T> {
     }
 
     pub func pop = (ref self, out T) {
-        self.length = self.length - 1
-        return self.items.load_int(self.length)
+        if self.length <= 0 {
+            return 0
+        }
+        var int idx = self.length - 1
+        self.length = idx
+        return self.items.load_int(idx)
     }
 
     pub func at = (self, int i: i >= 0 && i < self.length, out T) {

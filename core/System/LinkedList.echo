@@ -27,29 +27,42 @@ pub struct LinkedList<T> {
 	}
 
 	pub func set_next = (ref self, int idx, int next) {
-		self.nexts.store_int(idx, next)
-		if next != -1 {
+		if idx < self.nexts.cap {
+			self.nexts.store_int(idx, next)
+		}
+		if next != -1 && next < self.prevs.cap {
 			self.prevs.store_int(next, idx)
 		}
 	}
 
 	pub func set_previous = (ref self, int idx, int prev) {
-		self.prevs.store_int(idx, prev)
-		if prev != -1 {
+		if idx < self.prevs.cap {
+			self.prevs.store_int(idx, prev)
+		}
+		if prev != -1 && prev < self.nexts.cap {
 			self.nexts.store_int(prev, idx)
 		}
 	}
 
-	pub func next_at = (self, int idx: idx >= 0, out int) {
-		return self.nexts.load_int(idx)
+	pub func next_at = (self, int idx, out int) {
+		if idx >= 0 && idx < self.nexts.cap {
+			return self.nexts.load_int(idx)
+		}
+		return -1
 	}
 
-	pub func previous_at = (self, int idx: idx >= 0, out int) {
-		return self.prevs.load_int(idx)
+	pub func previous_at = (self, int idx, out int) {
+		if idx >= 0 && idx < self.prevs.cap {
+			return self.prevs.load_int(idx)
+		}
+		return -1
 	}
 
-	pub func at = (self, int idx: idx >= 0, out T) {
-		return self.values.load_int(idx)
+	pub func at = (self, int idx, out T) {
+		if idx >= 0 && idx < self.values.cap {
+			return self.values.load_int(idx)
+		}
+		return 0
 	}
 
 	pub func length = (self, out int) {

@@ -8,9 +8,8 @@ pub struct Set<T> {
 	pub func add = (ref self, mov T value) {
 		var int cap = 	self.slots.cap
 		if cap == 0 {
-			self.slots.alloc_int(8)
+			cap = self.slots.alloc_int(8)
 			self.used.alloc(8)
-			cap = 8
 		}
 		if self.length * 4 >= cap * 3 {
 			self.rehash(cap * 2)

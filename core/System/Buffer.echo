@@ -3,11 +3,12 @@ pub struct Buffer {
     var uint64 data = 0
     var int cap = 0
 
-    func alloc = (ref self, int size) {
+    func alloc = (ref self, int size, out int: out >= size) {
         ```
         #arch: c
         self->cap = size;
         self->data = (unsigned long long)(unsigned int*)calloc(size, sizeof(unsigned int));
+        return self->cap;
         ```
         ```
         #arch: aarch64
@@ -16,19 +17,21 @@ pub struct Buffer {
         mov x1, #4
         bl _calloc
         str x0, [x19, #8]
+        ldr x0, [x19, #16]
         ```
     }
 
-    func grow = (ref self, int needed) {
+    func grow = (ref self, int needed, out int: out >= needed) {
         ```
         #arch: c
-        if (self->cap >= needed) return;
+        if (self->cap >= needed) return self->cap;
         int new_cap = self->cap;
         if (new_cap == 0) new_cap = 8;
         while (new_cap < needed) new_cap *= 2;
         self->data = (unsigned long long)(unsigned int*)realloc((unsigned int*)(unsigned long long)self->data, new_cap * sizeof(unsigned int));
         memset((unsigned int*)(unsigned long long)self->data + self->cap, 0, (new_cap - self->cap) * sizeof(unsigned int));
         self->cap = new_cap;
+        return self->cap;
         ```
         ```
         #arch: aarch64
@@ -62,6 +65,7 @@ pub struct Buffer {
         lsl x2, x2, #2
         bl _memset
         .Lbuffer_grow_end:
+        ldr x0, [x19, #16]
         ```
     }
 
@@ -126,11 +130,12 @@ pub struct Buffer {
         ```
     }
 
-    func alloc_int = (ref self, int size) {
+    func alloc_int = (ref self, int size, out int: out >= size) {
         ```
         #arch: c
         self->cap = size;
         self->data = (unsigned long long)(long*)calloc(size, sizeof(long));
+        return self->cap;
         ```
         ```
         #arch: aarch64
@@ -139,19 +144,21 @@ pub struct Buffer {
         mov x1, #8
         bl _calloc
         str x0, [x19, #8]
+        ldr x0, [x19, #16]
         ```
     }
 
-    func grow_int = (ref self, int needed) {
+    func grow_int = (ref self, int needed, out int: out >= needed) {
         ```
         #arch: c
-        if (self->cap >= needed) return;
+        if (self->cap >= needed) return self->cap;
         int new_cap = self->cap;
         if (new_cap == 0) new_cap = 4;
         while (new_cap < needed) new_cap *= 2;
         self->data = (unsigned long long)(long*)realloc((long*)(unsigned long long)self->data, new_cap * sizeof(long));
         memset((long*)(unsigned long long)self->data + self->cap, 0, (new_cap - self->cap) * sizeof(long));
         self->cap = new_cap;
+        return self->cap;
         ```
         ```
         #arch: aarch64
@@ -185,6 +192,7 @@ pub struct Buffer {
         lsl x2, x2, #3
         bl _memset
         .Lbuffer_grow_int_end:
+        ldr x0, [x19, #16]
         ```
     }
 
@@ -248,11 +256,12 @@ pub struct Buffer {
         ```
     }
 
-    func alloc_float = (ref self, int size) {
+    func alloc_float = (ref self, int size, out int: out >= size) {
         ```
         #arch: c
         self->cap = size;
         self->data = (unsigned long long)(double*)calloc(size, sizeof(double));
+        return self->cap;
         ```
         ```
         #arch: aarch64
@@ -261,6 +270,7 @@ pub struct Buffer {
         mov x1, #8
         bl _calloc
         str x0, [x19, #8]
+        ldr x0, [x19, #16]
         ```
     }
 

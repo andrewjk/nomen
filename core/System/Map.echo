@@ -9,10 +9,9 @@ pub struct Map<TK, TV> {
 	pub func set = (ref self, mov TK key, mov TV value) {
 		var int cap = self.keys.cap
 		if cap == 0 {
-			self.keys.alloc_int(8)
+			cap = self.keys.alloc_int(8)
 			self.values.alloc_int(8)
 			self.used.alloc(8)
-			cap = 8
 		}
 		if self.length * 4 >= cap * 3 {
 			self.rehash(cap * 2)

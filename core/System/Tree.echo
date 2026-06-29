@@ -5,64 +5,80 @@ import Buffer
 // Node identifiers are stable int indices (read `count` before `add`); -1 means
 // "no child" / "no parent".
 pub struct Tree<T> {
-	var Buffer values = Buffer()
-	var Buffer lefts = Buffer()
-	var Buffer rights = Buffer()
-	var Buffer parents = Buffer()
-	var int count = 0
+    var Buffer values = Buffer()
+    var Buffer lefts = Buffer()
+    var Buffer rights = Buffer()
+    var Buffer parents = Buffer()
+    var int count = 0
 
-	pub func add = (ref self, mov T value) {
-		var int idx = self.count
-		self.values.grow_int(idx + 1)
-		var int v = value
-		self.values.store_int(idx, v)
-		self.lefts.grow_int(idx + 1)
-		self.lefts.store_int(idx, -1)
-		self.rights.grow_int(idx + 1)
-		self.rights.store_int(idx, -1)
-		self.parents.grow_int(idx + 1)
-		self.parents.store_int(idx, -1)
-		self.count = self.count + 1
-	}
+    pub func add = (ref self, mov T value) {
+        var int idx = self.count
+        self.values.grow_int(idx + 1)
+        var int v = value
+        self.values.store_int(idx, v)
+        self.lefts.grow_int(idx + 1)
+        self.lefts.store_int(idx, -1)
+        self.rights.grow_int(idx + 1)
+        self.rights.store_int(idx, -1)
+        self.parents.grow_int(idx + 1)
+        self.parents.store_int(idx, -1)
+        self.count = self.count + 1
+    }
 
-	pub func set_left = (ref self, int idx, int left) {
-		self.lefts.store_int(idx, left)
-		if left != -1 {
-			self.parents.store_int(left, idx)
-		}
-	}
+    pub func set_left = (ref self, int idx, int left) {
+        if idx < self.lefts.cap {
+            self.lefts.store_int(idx, left)
+        }
+        if left != -1 && left < self.parents.cap {
+            self.parents.store_int(left, idx)
+        }
+    }
 
-	pub func set_right = (ref self, int idx, int right) {
-		self.rights.store_int(idx, right)
-		if right != -1 {
-			self.parents.store_int(right, idx)
-		}
-	}
+    pub func set_right = (ref self, int idx, int right) {
+        if idx < self.rights.cap {
+            self.rights.store_int(idx, right)
+        }
+        if right != -1 && right < self.parents.cap {
+            self.parents.store_int(right, idx)
+        }
+    }
 
-	pub func left = (self, int idx: idx >= 0, out int) {
-		return self.lefts.load_int(idx)
-	}
+    pub func left = (self, int idx, out int) {
+        if idx >= 0 && idx < self.lefts.cap {
+            return self.lefts.load_int(idx)
+        }
+        return -1
+    }
 
-	pub func right = (self, int idx: idx >= 0, out int) {
-		return self.rights.load_int(idx)
-	}
+    pub func right = (self, int idx, out int) {
+        if idx >= 0 && idx < self.rights.cap {
+            return self.rights.load_int(idx)
+        }
+        return -1
+    }
 
-	pub func parent_of = (self, int idx: idx >= 0, out int) {
-		return self.parents.load_int(idx)
-	}
+    pub func parent_of = (self, int idx, out int) {
+        if idx >= 0 && idx < self.parents.cap {
+            return self.parents.load_int(idx)
+        }
+        return -1
+    }
 
-	pub func at = (self, int idx: idx >= 0, out T) {
-		return self.values.load_int(idx)
-	}
+    pub func at = (self, int idx, out T) {
+        if idx >= 0 && idx < self.values.cap {
+            return self.values.load_int(idx)
+        }
+        return 0
+    }
 
-	pub func count_nodes = (self, int idx, out int) {
-		if idx == -1 {
-			return 0
-		}
-		return 1 + self.count_nodes(self.left(idx)) + self.count_nodes(self.right(idx))
-	}
+    pub func count_nodes = (self, int idx, out int) {
+        if idx == -1 {
+            return 0
+        }
+        return 1 + self.count_nodes(self.left(idx)) + self.count_nodes(self.right(idx))
+    }
 
-	pub func length = (self, out int) {
-		return self.count
-	}
+    pub func length = (self, out int) {
+        return self.count
+    }
 }
