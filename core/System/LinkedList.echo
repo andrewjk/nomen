@@ -40,11 +40,11 @@ pub struct LinkedList<T>: Enumerable {
 		}
 	}
 
-	pub func next_at = (self, int idx, out int) {
+	pub func next_at = (self, int idx, out int: out >= -1 && out < self.count) {
 		return self.nexts.load_int(idx)
 	}
 
-	pub func previous_at = (self, int idx, out int) {
+	pub func previous_at = (self, int idx, out int: out >= -1 && out < self.count) {
 		return self.prevs.load_int(idx)
 	}
 

@@ -18,7 +18,12 @@ import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
 import evaluate_const_condition, {
 	evaluate_numeric_or_bool,
 } from "./utils/evaluate_const_condition.ts";
-import { apply_bounds, record_buffer_cap, substitute_constraint } from "./utils/flow_bounds.ts";
+import {
+	apply_bounds,
+	path_to_node,
+	record_buffer_cap,
+	substitute_constraint,
+} from "./utils/flow_bounds.ts";
 import is_visible from "./utils/is_visible.ts";
 import { is_class_type } from "./utils/ownership.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
@@ -548,6 +553,12 @@ export default function check_function_call(
 		const lhs_name = find_lhs_var_name(status);
 		if (lhs_name) {
 			const param_to_arg = new Map<string, BaseNode>();
+			// Map `self` onto the caller's receiver path so return contracts that
+			// reference self.X (e.g. `out < self.count`) resolve at the call site
+			// (e.g. `cur < list.count`), giving the LHS variable a tracked bound.
+			if (self_path && self_path !== "?") {
+				param_to_arg.set("self", path_to_node(self_path));
+			}
 			for (let i = 0; i < node.params.length; i++) {
 				const fp = func.params[i + self_offset];
 				if (fp?.name) {
@@ -555,7 +566,21 @@ export default function check_function_call(
 				}
 			}
 			const substituted = substitute_constraint(func.return_constraint, lhs_name, param_to_arg);
-			apply_bounds(substituted, status);
+			if (status.values.some((v) => v.name === lhs_name)) {
+				// Assignment to an existing variable — bind immediately.
+				apply_bounds(substituted, status);
+			} else {
+				// Declaration in progress: the variable isn't in scope yet, so
+				// stash the bound for check_declaration_node to apply once it
+				// pushes the variable.
+				if (!status.pending_return_bounds) status.pending_return_bounds = new Map();
+				let arr = status.pending_return_bounds.get(lhs_name);
+				if (!arr) {
+					arr = [];
+					status.pending_return_bounds.set(lhs_name, arr);
+				}
+				arr.push(substituted);
+			}
 		}
 	}
 

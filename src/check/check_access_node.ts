@@ -3,6 +3,7 @@ import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import BaseNode from "../nodes/BaseNode.ts";
+import type DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
@@ -419,7 +420,7 @@ function infer_return_type(func: FunctionNode, status: CheckStatus) {
 	// Collect local variable types from the body so we can resolve return
 	// expressions that reference locals (e.g. `return idx` where idx was
 	// declared as `var int idx = ...` earlier in the body).
-	const locals = collect_local_vars(func, status);
+	const locals = collect_local_vars(func);
 	for (const child of func.statements) {
 		const rt = resolve_return_type_from_node(child, func, locals, status);
 		if (rt) {
@@ -429,17 +430,17 @@ function infer_return_type(func: FunctionNode, status: CheckStatus) {
 	}
 }
 
-function collect_local_vars(func: FunctionNode, status: CheckStatus): Map<string, Type> {
+function collect_local_vars(func: FunctionNode): Map<string, Type> {
 	const locals = new Map<string, Type>();
 	for (const child of func.statements) {
-		collect_vars_from_node(child, locals, status);
+		collect_vars_from_node(child, locals);
 	}
 	return locals;
 }
 
-function collect_vars_from_node(node: BaseNode, locals: Map<string, Type>, status: CheckStatus) {
+function collect_vars_from_node(node: BaseNode, locals: Map<string, Type>) {
 	if (node.node_type === "declare") {
-		const decl = node as { name: string; type?: Type; value?: BaseNode };
+		const decl = node as DeclarationNode;
 		if (decl.type?.name) {
 			locals.set(decl.name, decl.type);
 		}
@@ -448,11 +449,11 @@ function collect_vars_from_node(node: BaseNode, locals: Map<string, Type>, statu
 		if (Array.isArray(val)) {
 			for (const item of val) {
 				if (item && typeof item === "object" && "node_type" in item) {
-					collect_vars_from_node(item as BaseNode, locals, status);
+					collect_vars_from_node(item as BaseNode, locals);
 				}
 			}
 		} else if (val && typeof val === "object" && "node_type" in val) {
-			collect_vars_from_node(val as BaseNode, locals, status);
+			collect_vars_from_node(val as BaseNode, locals);
 		}
 	}
 }
@@ -520,12 +521,6 @@ function resolve_type_from_expr(
 				);
 				if (field) return field.type;
 			}
-		}
-	}
-	if (node.node_type === "binary_op") {
-		const op = node as { op: string; left: BaseNode; right: BaseNode };
-		if (op.op === "+" || op.op === "-" || op.op === "*" || op.op === "/") {
-			return resolve_type_from_expr(op.left, func, status, locals);
 		}
 	}
 	return null;

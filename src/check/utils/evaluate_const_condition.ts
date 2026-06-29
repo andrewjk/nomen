@@ -148,10 +148,6 @@ function evaluate_operation(op: OperationNode, status: CheckStatus): boolean | u
 			return left === right;
 		case "!=":
 			return left !== right;
-		case "&&":
-			return Boolean(left) && Boolean(right);
-		case "||":
-			return Boolean(left) || Boolean(right);
 		default:
 			return undefined;
 	}

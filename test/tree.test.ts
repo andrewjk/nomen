@@ -98,7 +98,7 @@ var int lc = t.count
 t.add(10)
 t.set_left(root, lc)
 var int left_idx = t.left(root)
-if left_idx >= 0 && left_idx < t.count {
+if left_idx >= 0 {
   var int lv = t.at(left_idx)
   Console.write("\\{lv}")
 }
@@ -118,7 +118,7 @@ var int rc = t.count
 t.add(20)
 t.set_right(root, rc)
 var int right_idx = t.right(root)
-if right_idx >= 0 && right_idx < t.count {
+if right_idx >= 0 {
   var int rv = t.at(right_idx)
   Console.write("\\{rv}")
 }
@@ -168,7 +168,7 @@ t.set_left(root, lc)
 t.set_right(root, rc)
 var int li = t.left(root)
 var int ri = t.right(root)
-if li >= 0 && li < t.count && ri >= 0 && ri < t.count {
+if li >= 0 && ri >= 0 {
   var int lv = t.at(li)
   var int rv = t.at(ri)
   Console.write("\\{lv} \\{rv}")

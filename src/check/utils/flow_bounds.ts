@@ -162,6 +162,31 @@ export function substitute_constraint(
 		);
 	}
 
+	if (node.node_type === "access") {
+		const access = node as AccessNode;
+		// Recurse into the target so `self.count` has its `self` replaced with
+		// the caller's receiver. The accessed field name is left as-is.
+		return new AccessNode(
+			access.start,
+			substitute_constraint(access.target, lhs_name, param_to_arg, visited),
+			access.access,
+		);
+	}
+
+	return node;
+}
+
+/**
+ * Build an expression node tree from a dotted path string (e.g. "list",
+ * "self.items") for use in return-contract substitution. Used to map `self`
+ * onto the caller's receiver path.
+ */
+export function path_to_node(path: string): BaseNode {
+	const parts = path.split(".");
+	let node: BaseNode = new ValueNode(0, parts[0]);
+	for (let i = 1; i < parts.length; i++) {
+		node = new AccessNode(0, node, new AccessFieldNode(0, parts[i]));
+	}
 	return node;
 }
 

@@ -36,15 +36,15 @@ pub struct Graph<T>: Enumerable {
         self.edge_count = self.edge_count + 1
     }
 
-    pub func edges_of = (self, int node, out int) {
+    pub func edges_of = (self, int node, out int: out >= -1 && out < self.edge_count) {
         return self.head_edge.load_int(node)
     }
 
-    pub func edge_target = (self, int e, out int) {
+    pub func edge_target = (self, int e, out int: out >= 0 && out < self.node_count) {
         return self.edge_target.load_int(e)
     }
 
-    pub func next_edge = (self, int e, out int) {
+    pub func next_edge = (self, int e, out int: out >= -1 && out < self.edge_count) {
         return self.edge_next.load_int(e)
     }
 

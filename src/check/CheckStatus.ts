@@ -88,4 +88,14 @@ export default interface CheckStatus {
 	 * Cleared on mutation/reassignment of the buffer variable.
 	 */
 	buffer_caps?: Map<string, number>;
+
+	/**
+	 * Return-contract bounds (canonical bound expression trees) awaiting the
+	 * LHS variable to be pushed into scope. When a call's result initializes a
+	 * declaration, the variable isn't in `values` yet during the initializer
+	 * check, so the return contract can't bind directly. It is stashed here
+	 * keyed by the variable name and applied by `check_declaration_node` once
+	 * the variable is pushed.
+	 */
+	pending_return_bounds?: Map<string, BaseNode[]>;
 }

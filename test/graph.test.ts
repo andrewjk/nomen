@@ -97,10 +97,8 @@ g.add_node(2)
 g.add_edge(0, 1)
 var int e = g.edges_of(0)
 var int target = g.edge_target(e)
-if target >= 0 && target < g.node_count {
-  var int v = g.at(target)
-  Console.write("\\{v}")
-}
+var int v = g.at(target)
+Console.write("\\{v}")
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
@@ -153,9 +151,7 @@ var int sum = 0
 var int e = g.edges_of(0)
 while e != -1 {
   var int target = g.edge_target(e)
-  if target >= 0 && target < g.node_count {
-    sum = sum + g.at(target)
-  }
+  sum = sum + g.at(target)
   e = g.next_edge(e)
 }
 Console.write("\\{sum}")
@@ -181,9 +177,7 @@ var int total = 0
 var int e = g.edges_of(0)
 while e != -1 {
   var int target = g.edge_target(e)
-  if target >= 0 && target < g.node_count {
-    total = total + g.at(target)
-  }
+  total = total + g.at(target)
   e = g.next_edge(e)
 }
 Console.write("\\{total}")
@@ -208,9 +202,7 @@ var int sum = 0
 var int e = g.edges_of(0)
 while e != -1 {
   var int target = g.edge_target(e)
-  if target >= 0 && target < g.node_count {
-    sum = sum + g.at(target)
-  }
+  sum = sum + g.at(target)
   e = g.next_edge(e)
 }
 Console.write("\\{sum}")
@@ -250,15 +242,11 @@ var int sum = 0
 var int e = g.edges_of(0)
 while e != -1 {
   var int t = g.edge_target(e)
-  if t >= 0 && t < g.node_count {
-    sum = sum + g.at(t)
-  }
+  sum = sum + g.at(t)
   var int e2 = g.edges_of(t)
   while e2 != -1 {
     var int t2 = g.edge_target(e2)
-    if t2 >= 0 && t2 < g.node_count {
-      sum = sum + g.at(t2)
-    }
+    sum = sum + g.at(t2)
     e2 = g.next_edge(e2)
   }
   e = g.next_edge(e)

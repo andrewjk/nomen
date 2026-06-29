@@ -35,15 +35,15 @@ pub struct Tree<T>: Enumerable {
         self.parents.store_int(right, idx)
     }
 
-    pub func left = (self, int idx, out int) {
+    pub func left = (self, int idx, out int: out >= -1 && out < self.count) {
         return self.lefts.load_int(idx)
     }
 
-    pub func right = (self, int idx, out int) {
+    pub func right = (self, int idx, out int: out >= -1 && out < self.count) {
         return self.rights.load_int(idx)
     }
 
-    pub func parent_of = (self, int idx, out int) {
+    pub func parent_of = (self, int idx, out int: out >= -1 && out < self.count) {
         return self.parents.load_int(idx)
     }
 

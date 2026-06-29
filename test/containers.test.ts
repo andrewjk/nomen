@@ -73,9 +73,7 @@ var int total = 0
 var int e = g.edges_of(a)
 while e != -1 {
   var int target = g.edge_target(e)
-  if target >= 0 && target < g.node_count {
-    total = total + g.at(target)
-  }
+  total = total + g.at(target)
   e = g.next_edge(e)
 }
 Console.write("nodes=\\{g.node_length()} edges_from_a=\\{total}\\n")

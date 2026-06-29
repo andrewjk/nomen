@@ -9,7 +9,7 @@ import type CheckStatus from "./CheckStatus.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
 import check_type_exists from "./utils/check_type_exists.ts";
 import evaluate_const_condition from "./utils/evaluate_const_condition.ts";
-import { track_assignment_bounds } from "./utils/flow_bounds.ts";
+import { apply_bounds, track_assignment_bounds } from "./utils/flow_bounds.ts";
 import { is_class_type } from "./utils/ownership.ts";
 import { materialize_tuple_type } from "./utils/tuple_struct.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
@@ -167,6 +167,15 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 		});
 		if (decl.value) {
 			track_assignment_bounds(decl.name, decl.value, status);
+		}
+		// Apply any return-contract bounds stashed while checking the initializer
+		// (the variable wasn't in scope during its own initializer check).
+		if (status.pending_return_bounds) {
+			const pending = status.pending_return_bounds.get(decl.name);
+			if (pending) {
+				for (const bound of pending) apply_bounds(bound, status);
+				status.pending_return_bounds.delete(decl.name);
+			}
 		}
 	}
 }
