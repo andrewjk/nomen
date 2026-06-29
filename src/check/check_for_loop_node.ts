@@ -57,6 +57,7 @@ export default function check_for_loop_node(for_loop: ForLoopNode, status: Check
 				is_set: true,
 				range_lower,
 				range_upper,
+				upper_bound_exprs: upper_bound_expr ? [upper_bound_expr] : undefined,
 				upper_bound_expr,
 			});
 		}

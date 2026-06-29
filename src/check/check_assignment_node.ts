@@ -65,6 +65,8 @@ export default function check_assignment_node(
 		// Clear flow-sensitive bounds: assignment invalidates bounds from if/while
 		left_value.upper_bound_expr = undefined;
 		left_value.lower_bound_expr = undefined;
+		left_value.upper_bound_exprs = undefined;
+		left_value.lower_bound_exprs = undefined;
 		left_value.alias_of = undefined;
 		// Re-track bounds if the RHS establishes new ones (e.g. cap = buf.get_cap()).
 		// Skip for compound assignments (+=, -=, etc.) since the RHS is a delta,

@@ -44,6 +44,11 @@ function evaluate_operation(op: OperationNode, status: CheckStatus): boolean | u
 	// so `j < self.length` (where self = list) evaluates to true.
 	if ((op.op === "<" || op.op === "<=") && op.left_value.node_type === "value") {
 		const decl = status.values.findLast((v) => v.name === (op.left_value as ValueNode).value);
+		if (decl?.upper_bound_exprs?.length) {
+			const right_str = expr_to_string(op.right_value, status);
+			if (right_str && decl.upper_bound_exprs.includes(right_str)) return true;
+		}
+		// Backwards compat for code paths that still set upper_bound_expr
 		if (decl?.upper_bound_expr) {
 			const right_str = expr_to_string(op.right_value, status);
 			if (right_str && right_str === decl.upper_bound_expr) return true;
@@ -51,6 +56,10 @@ function evaluate_operation(op: OperationNode, status: CheckStatus): boolean | u
 	}
 	if ((op.op === ">" || op.op === ">=") && op.left_value.node_type === "value") {
 		const decl = status.values.findLast((v) => v.name === (op.left_value as ValueNode).value);
+		if (decl?.lower_bound_exprs?.length) {
+			const right_str = expr_to_string(op.right_value, status);
+			if (right_str && decl.lower_bound_exprs.includes(right_str)) return true;
+		}
 		if (decl?.lower_bound_expr) {
 			const right_str = expr_to_string(op.right_value, status);
 			if (right_str && right_str === decl.lower_bound_expr) return true;

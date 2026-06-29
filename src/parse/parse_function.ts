@@ -143,6 +143,12 @@ function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: 
 		func.return_type_start = get_index(status);
 		func.return_type = parse_type(status);
 
+		// Optional return contract: `out TYPE: out >= 0 && out < cap`
+		// The placeholder `out` refers to the return value.
+		if (accept(":", status)) {
+			func.return_constraint = parse_expression(status);
+		}
+
 		if (accept(",", status)) {
 			parse_function_parameter(parent, func, status);
 		}

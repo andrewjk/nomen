@@ -82,16 +82,21 @@ export function apply_bounds(condition: BaseNode, status: CheckStatus) {
 	const bound = extract_bound(condition, status);
 	if (!bound) return;
 
-	const var_decl = status.values.find((v) => v.name === bound.var_name);
+	const var_decl = status.values.findLast((v) => v.name === bound.var_name);
 	if (!var_decl) return;
 
-	if (bound.op === "<") {
+	if (bound.op === "<" || bound.op === "<=") {
+		if (!var_decl.upper_bound_exprs) var_decl.upper_bound_exprs = [];
+		if (!var_decl.upper_bound_exprs.includes(bound.expr)) {
+			var_decl.upper_bound_exprs.push(bound.expr);
+		}
+		// Backwards compat
 		var_decl.upper_bound_expr = bound.expr;
-	} else if (bound.op === "<=") {
-		var_decl.upper_bound_expr = bound.expr;
-	} else if (bound.op === ">") {
-		var_decl.lower_bound_expr = bound.expr;
-	} else if (bound.op === ">=") {
+	} else if (bound.op === ">" || bound.op === ">=") {
+		if (!var_decl.lower_bound_exprs) var_decl.lower_bound_exprs = [];
+		if (!var_decl.lower_bound_exprs.includes(bound.expr)) {
+			var_decl.lower_bound_exprs.push(bound.expr);
+		}
 		var_decl.lower_bound_expr = bound.expr;
 	}
 }
@@ -102,22 +107,63 @@ export function apply_bounds(condition: BaseNode, status: CheckStatus) {
 export function clear_bounds(name: string, status: CheckStatus) {
 	const decl = status.values.findLast((v) => v.name === name);
 	if (decl) {
+		decl.upper_bound_exprs = undefined;
+		decl.lower_bound_exprs = undefined;
 		decl.upper_bound_expr = undefined;
 		decl.lower_bound_expr = undefined;
 	}
 }
 
 /**
+ * Substitute `out` and parameter names in a return-constraint expression with
+ * caller-side expressions. Used to translate a function's `out TYPE: contract`
+ * into bounds on the caller's LHS variable.
+ *
+ * Returns a new OperationNode tree (shallow clone where needed) with:
+ *   - ValueNode("out") replaced with ValueNode(lhs_name)
+ *   - ValueNode(param_name) replaced with the matching arg expression
+ */
+export function substitute_constraint(
+	node: BaseNode,
+	lhs_name: string,
+	param_to_arg: Map<string, BaseNode>,
+	visited: Set<BaseNode> = new Set(),
+): BaseNode {
+	if (visited.has(node)) return node;
+	visited.add(node);
+
+	if (node.node_type === "value") {
+		const vn = node as ValueNode;
+		if (vn.value === "out") {
+			return new ValueNode(vn.start, lhs_name, vn.type);
+		}
+		const arg = param_to_arg.get(vn.value);
+		if (arg) return arg;
+		return node;
+	}
+
+	if (node.node_type === "op") {
+		const op = node as OperationNode;
+		return new OperationNode(
+			op.start,
+			op.op,
+			substitute_constraint(op.left_value, lhs_name, param_to_arg, visited),
+			substitute_constraint(op.right_value, lhs_name, param_to_arg, visited),
+			op.type,
+		);
+	}
+
+	return node;
+}
+
+/**
  * Track flow-sensitive knowledge gained from a declaration/assignment.
  * Currently handles:
+ *   - `var int x = Y.field`     → x becomes an alias for "Y.field"
  *   - `var int x = a % b`        → x.range_lower = 0, x.range_upper = b
  *                                  (when b is a known positive constant)
  *   - `var int x = N`            → x.range_lower = N, x.range_upper = N + 1
  *                                  (the value IS N, until reassigned)
- *
- * Buffer capacity is read directly as a public field (`buf.cap`), so no alias
- * tracking is needed — `expr_to_string` already resolves `buf.cap` to the
- * canonical "buf.cap" string used by the flow analysis.
  *
  * Call this AFTER the variable has been pushed to status.values.
  */
@@ -125,7 +171,17 @@ export function track_assignment_bounds(var_name: string, value: BaseNode, statu
 	const decl = status.values.findLast((v) => v.name === var_name);
 	if (!decl) return;
 
-	// 1) Modulo range: `var int idx = a % b` → 0 <= idx < b
+	// 1) Field-access alias: `var int cap = self.keys.cap` → cap alias_of "self.keys.cap"
+	//    Lets bounds on `cap` flow through to verifications involving `self.keys.cap`.
+	if (value.node_type === "access") {
+		const field_str = expr_to_string(value, status);
+		if (field_str) {
+			decl.alias_of = field_str;
+			return;
+		}
+	}
+
+	// 2) Modulo range: `var int idx = a % b` → 0 <= idx < b
 	//    (only when b is a positive compile-time constant)
 	if (value.node_type === "op") {
 		const op = value as OperationNode;
@@ -148,7 +204,7 @@ export function track_assignment_bounds(var_name: string, value: BaseNode, statu
 		}
 	}
 
-	// 2) Literal initialization: `var int i = 5` → range [5, 6), so the value
+	// 3) Literal initialization: `var int i = 5` → range [5, 6), so the value
 	//    is provably 5. Cleared on reassignment by check_assignment_node.
 	const lit = int_literal(value);
 	if (lit !== undefined) {
@@ -207,8 +263,16 @@ export function apply_negated_bounds(condition: BaseNode, status: CheckStatus) {
 	}
 
 	if (rel === "<" || rel === "<=") {
+		if (!var_decl.upper_bound_exprs) var_decl.upper_bound_exprs = [];
+		if (!var_decl.upper_bound_exprs.includes(expr)) {
+			var_decl.upper_bound_exprs.push(expr);
+		}
 		var_decl.upper_bound_expr = expr;
 	} else {
+		if (!var_decl.lower_bound_exprs) var_decl.lower_bound_exprs = [];
+		if (!var_decl.lower_bound_exprs.includes(expr)) {
+			var_decl.lower_bound_exprs.push(expr);
+		}
 		var_decl.lower_bound_expr = expr;
 	}
 }

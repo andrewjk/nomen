@@ -18,7 +18,7 @@ import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
 import evaluate_const_condition, {
 	evaluate_numeric_or_bool,
 } from "./utils/evaluate_const_condition.ts";
-import { expr_to_string, record_buffer_cap } from "./utils/flow_bounds.ts";
+import { apply_bounds, record_buffer_cap, substitute_constraint } from "./utils/flow_bounds.ts";
 import is_visible from "./utils/is_visible.ts";
 import { is_class_type } from "./utils/ownership.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
@@ -31,18 +31,7 @@ import value_from_value_node from "./utils/value_from_value_node.ts";
  * are silently allowed (the data structure is trusted to maintain its own
  * invariants).
  */
-const CORE_DATA_STRUCTURES = new Set([
-	"Buffer",
-	"List",
-	"Map",
-	"Set",
-	"Tree",
-	"Graph",
-	"LinkedList",
-	"BigInt",
-	"Array",
-	"String",
-]);
+const CORE_DATA_STRUCTURES = new Set(["Buffer", "Tree", "Graph", "LinkedList", "BigInt"]);
 
 /**
  * Walk the checking stack to find the nearest enclosing FunctionNode and check
@@ -231,6 +220,8 @@ export default function check_function_call(
 		value: number | boolean | undefined;
 		range_lower?: number;
 		range_upper?: number;
+		upper_bound_exprs?: string[];
+		lower_bound_exprs?: string[];
 		upper_bound_expr?: string;
 		lower_bound_expr?: string;
 	}[] = [];
@@ -374,6 +365,8 @@ export default function check_function_call(
 		// Look up range info from the original variable (e.g. for-loop range variables)
 		let range_lower: number | undefined;
 		let range_upper: number | undefined;
+		let upper_bound_exprs: string[] | undefined;
+		let lower_bound_exprs: string[] | undefined;
 		let upper_bound_expr: string | undefined;
 		let lower_bound_expr: string | undefined;
 		if (param.node_type === "value") {
@@ -381,6 +374,8 @@ export default function check_function_call(
 			if (decl) {
 				range_lower = decl.range_lower;
 				range_upper = decl.range_upper;
+				upper_bound_exprs = decl.upper_bound_exprs;
+				lower_bound_exprs = decl.lower_bound_exprs;
 				upper_bound_expr = decl.upper_bound_expr;
 				lower_bound_expr = decl.lower_bound_expr;
 			}
@@ -391,6 +386,8 @@ export default function check_function_call(
 			value: arg_value,
 			range_lower,
 			range_upper,
+			upper_bound_exprs,
+			lower_bound_exprs,
 			upper_bound_expr,
 			lower_bound_expr,
 		});
@@ -407,6 +404,8 @@ export default function check_function_call(
 					const_value: ca.value,
 					range_lower: ca.range_lower,
 					range_upper: ca.range_upper,
+					upper_bound_exprs: ca.upper_bound_exprs,
+					lower_bound_exprs: ca.lower_bound_exprs,
 					upper_bound_expr: ca.upper_bound_expr,
 					lower_bound_expr: ca.lower_bound_expr,
 				});
@@ -441,7 +440,7 @@ export default function check_function_call(
 				// verified. Also allow silently when the call site is inside another core
 				// data structure's method — those types maintain their own invariants.
 				const base_name = target_type?.name?.split("_")[0] ?? "";
-				const core_types = ["Array", "Buffer", "LinkedList", "Tree", "Graph", "List", "Set", "Map"];
+				const core_types = ["Array", "Buffer", "LinkedList", "Tree", "Graph", "BigInt"];
 				const is_core_method =
 					target_type?.is_array ||
 					target_type?.name === "string" ||
@@ -553,6 +552,50 @@ export default function check_function_call(
 		}
 	}
 
+	// Propagate return contract (`out TYPE: out < cap`) to the caller's LHS.
+	// Walk up the stack to find the enclosing declaration/assignment so we
+	// know which variable to bind.
+	if (func.return_constraint) {
+		const lhs_name = find_lhs_var_name(status);
+		if (lhs_name) {
+			const param_to_arg = new Map<string, BaseNode>();
+			for (let i = 0; i < node.params.length; i++) {
+				const fp = func.params[i + self_offset];
+				if (fp?.name) {
+					param_to_arg.set(fp.name, node.params[i]);
+				}
+			}
+			const substituted = substitute_constraint(func.return_constraint, lhs_name, param_to_arg);
+			apply_bounds(substituted, status);
+		}
+	}
+
 	status.stack.pop();
 	return true;
+}
+
+/**
+ * Walk the checking stack to find the name of the variable being assigned
+ * by the nearest enclosing DeclarationNode or AssignmentNode. Returns
+ * undefined if the call's result isn't being captured by a named variable.
+ */
+function find_lhs_var_name(status: CheckStatus): string | undefined {
+	for (let i = status.stack.length - 1; i >= 0; i--) {
+		const node = status.stack[i];
+		if (node.node_type === "declare") {
+			const decl = node as DeclarationNode;
+			return decl.name;
+		}
+		if (node.node_type === "assign") {
+			const assign = node as import("../nodes/AssignmentNode.ts").default;
+			if (assign.left_value?.node_type === "value") {
+				return (assign.left_value as ValueNode).value;
+			}
+			return undefined;
+		}
+		// Don't walk past a function boundary — the LHS belongs to a
+		// different function context.
+		if (node.node_type === "func") return undefined;
+	}
+	return undefined;
 }

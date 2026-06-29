@@ -33,6 +33,13 @@ export default class FunctionNode extends BaseNode implements BlockNode, Returni
 	is_inline?: boolean;
 	type_params: string[] = [];
 	scope?: BaseNode;
+	/**
+	 * Optional contract on the return value, parsed from `out TYPE: constraint`.
+	 * The placeholder `out` refers to the return value; other identifiers refer
+	 * to the function's parameters. Used by check_function_call to propagate
+	 * bounds to the caller's LHS variable.
+	 */
+	return_constraint?: BaseNode;
 
 	constructor(
 		start: number,

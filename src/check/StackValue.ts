@@ -31,9 +31,17 @@ export default interface StackValue {
 	range_lower?: number;
 	range_upper?: number;
 	/**
-	 * Flow-sensitive bounds established by enclosing if/while conditions.
-	 * E.g. inside `while j < list.length`, j has upper_bound_expr = "list.length".
-	 * Used to verify method constraints like `i < self.length` at the call site.
+	 * Flow-sensitive bounds established by enclosing if/while conditions or
+	 * propagated from a function's return contract. Each entry is a canonical
+	 * expression string (e.g. "list.length", "self.keys.cap") that the
+	 * variable is known to be strictly less than (or ≤ / ≥ / > for the lower
+	 * variants). Multiple bounds can be active simultaneously — verification
+	 * succeeds if ANY active bound satisfies the constraint being checked.
+	 */
+	upper_bound_exprs?: string[];
+	lower_bound_exprs?: string[];
+	/**
+	 * @deprecated use upper_bound_exprs / lower_bound_exprs
 	 */
 	upper_bound_expr?: string;
 	lower_bound_expr?: string;
