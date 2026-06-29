@@ -4,7 +4,7 @@ import Buffer
 // edges are stored as a per-node linked list of edge records (CSR-style), so
 // there is a single owner and cleanup is a flat free. Node and edge identifiers
 // are stable int indices; -1 means "none".
-pub struct Graph<T> {
+pub struct Graph<T>: Enumerable {
     var Buffer values = Buffer()
     var Buffer head_edge = Buffer()
     var Buffer edge_target = Buffer()
@@ -36,32 +36,24 @@ pub struct Graph<T> {
         self.edge_count = self.edge_count + 1
     }
 
-    pub func edges_of = (self, int node, out int) {
-        if node >= 0 && node < self.head_edge.cap {
-            return self.head_edge.load_int(node)
-        }
-        return -1
+    pub func edges_of = (self, int node: node >= 0 && node < self.head_edge.cap, out int) {
+        return self.head_edge.load_int(node)
     }
 
-    pub func edge_target = (self, int e, out int) {
-        if e >= 0 && e < self.edge_target.cap {
-            return self.edge_target.load_int(e)
-        }
-        return -1
+    pub func edge_target = (self, int e: e >= 0 && e < self.edge_target.cap, out int) {
+        return self.edge_target.load_int(e)
     }
 
-    pub func next_edge = (self, int e, out int) {
-        if e >= 0 && e < self.edge_next.cap {
-            return self.edge_next.load_int(e)
-        }
-        return -1
+    pub func next_edge = (self, int e: e >= 0 && e < self.edge_next.cap, out int) {
+        return self.edge_next.load_int(e)
     }
 
-    pub func at = (self, int idx, out T) {
-        if idx >= 0 && idx < self.values.cap {
-            return self.values.load_int(idx)
-        }
-        return 0
+    pub func first = (self: self.values.cap > 0, out T) {
+        return self.values.load_int(0)
+    }
+
+    pub func at = (self, int idx: idx >= 0 && idx < self.values.cap, out T) {
+        return self.values.load_int(idx)
     }
 
     pub func node_length = (self, out int) {

@@ -185,6 +185,50 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 
 		status.code += `b ${start_label}\n`;
 		status.code += `${end_label}:\n`;
+	} else if (node.list && is_enumerable_type(node.list, status)) {
+		// Enumerable type: call .length() and iterate 0..length
+		const list_name = node.list.node_type === "value" ? (node.list as any).value : "_list";
+
+		// Call container.length() to get upper bound
+		status.code += `// call ${list_name}.length()\n`;
+		emit_var_address(status, "x0", list_name);
+		status.code += `str x0, [sp, #-16]!\n`;
+		status.code += `bl ${list_name}_length\n`;
+		status.code += `add sp, sp, #16\n`;
+		// x0 now has length; store it in a temp
+		const len_offset = allocate_stack_space(status, 8);
+		status.code += `str x0, [x29, #${len_offset}]\n`;
+
+		// Initialize index to 0
+		status.code += `ldr x0, =0\n`;
+		emit_var_store(status, "x0", item_name, 8);
+
+		status.code += `${start_label}:\n`;
+
+		// Load index
+		emit_var_load(status, "x0", item_name, 8);
+		// Load length
+		status.code += `ldr x1, [x29, #${len_offset}]\n`;
+		status.code += `cmp x0, x1\n`;
+		status.code += `bge ${end_label}\n`;
+
+		build_block_node(node, status);
+
+		if (node.update) {
+			status.code += `${continue_label}:\n`;
+			build_node(node.update, status);
+			if (!status.code.endsWith("\n")) {
+				status.code += "\n";
+			}
+		}
+
+		status.code += `${increment_label}:\n`;
+		emit_var_load(status, "x0", item_name, 8);
+		status.code += `add x0, x0, #1\n`;
+		emit_var_store(status, "x0", item_name, 8);
+
+		status.code += `b ${start_label}\n`;
+		status.code += `${end_label}:\n`;
 	} else {
 		const type = type_from_value_node(node.list);
 		const length = type.length ? (type.length as any).value : "0";
@@ -293,4 +337,12 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 
 	status.loop_labels.pop();
 	status.scoped_declarations = old_scoped_declarations;
+}
+
+function is_enumerable_type(node: any, status: BuildStatus): boolean {
+	if (node.node_type !== "value") return false;
+	const type_name = node.value;
+	const struct = status.structs.find((s) => s.name === type_name);
+	if (!struct) return false;
+	return struct.traits.includes("Enumerable");
 }

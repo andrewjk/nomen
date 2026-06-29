@@ -18,59 +18,49 @@ pub struct Map<TK, TV> {
 			cap = self.keys.cap
 		}
 		var int idx = self.find_slot(key, cap)
-		if idx < self.values.cap {
-			if idx < self.used.cap && self.used.load(idx) == 0 {
-				self.used.store(idx, 1)
-				self.keys.store_int(idx, key)
-				self.values.store_int(idx, value)
-				self.length = self.length + 1
-			} else {
-				self.values.store_int(idx, value)
-			}
+		if self.used.load(idx) == 0 {
+			self.used.store(idx, 1)
+			self.keys.store_int(idx, key)
+			self.values.store_int(idx, value)
+			self.length = self.length + 1
+		} else {
+			self.values.store_int(idx, value)
 		}
 	}
 
 	pub func get = (self, TK key, out TV) {
-		var int cap = 	self.keys.cap
+		var int cap = self.keys.cap
 		if cap == 0 {
 			return 0
 		}
 		var int idx = self.find_slot(key, cap)
-		if idx < self.used.cap && idx < self.values.cap {
-			if self.used.load(idx) == 0 {
-				return 0
-			}
-			return self.values.load_int(idx)
+		if self.used.load(idx) == 0 {
+			return 0
 		}
-		return 0
+		return self.values.load_int(idx)
 	}
 
 	pub func has = (self, TK key, out bool) {
-		var int cap = 	self.keys.cap
+		var int cap = self.keys.cap
 		if cap == 0 {
 			return false
 		}
 		var int idx = self.find_slot(key, cap)
-		if idx < self.used.cap {
-			return self.used.load(idx) != 0
-		}
-		return false
+		return self.used.load(idx) != 0
 	}
 
 	pub func remove = (ref self, TK key) {
-		var int cap = 	self.keys.cap
+		var int cap = self.keys.cap
 		if cap == 0 {
 			return
 		}
 		var int idx = self.find_slot(key, cap)
-		if idx < self.used.cap && idx < self.keys.cap && idx < self.values.cap {
-			if self.used.load(idx) == 0 {
-				return
-			}
-			self.used.store(idx, 0)
-			self.keys.store_int(idx, 0)
-			self.values.store_int(idx, 0)
+		if self.used.load(idx) == 0 {
+			return
 		}
+		self.used.store(idx, 0)
+		self.keys.store_int(idx, 0)
+		self.values.store_int(idx, 0)
 		self.length = self.length - 1
 		self.rehash(cap)
 	}

@@ -318,7 +318,9 @@ for x of "hi" {
   // ...
 }
 `;
-		const expected = [test_error(input, "For loop list must be an array, not string", 2, 10)];
+		const expected = [
+			test_error(input, "For loop list must be an array or Enumerable, not string", 2, 10),
+		];
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
 	});
@@ -329,7 +331,9 @@ for x of 5 {
   // ...
 }
 `;
-		const expected = [test_error(input, "For loop list must be an array, not int", 2, 10)];
+		const expected = [
+			test_error(input, "For loop list must be an array or Enumerable, not int", 2, 10),
+		];
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
 	});
@@ -351,7 +355,9 @@ for x of 0 {
   // ...
 }
 `;
-		const expected = [test_error(input, "For loop list must be an array, not int", 2, 10)];
+		const expected = [
+			test_error(input, "For loop list must be an array or Enumerable, not int", 2, 10),
+		];
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
 	});
@@ -416,7 +422,9 @@ for x of true {
   // ...
 }
 `;
-		const expected = [test_error(input, "For loop list must be an array, not bool", 2, 10)];
+		const expected = [
+			test_error(input, "For loop list must be an array or Enumerable, not bool", 2, 10),
+		];
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
 	});

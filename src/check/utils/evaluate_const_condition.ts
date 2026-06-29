@@ -45,6 +45,8 @@ function evaluate_operation(op: OperationNode, status: CheckStatus): boolean | u
 	// so `j < self.length` (where self = list) evaluates to true.
 	// Also handles field accesses: `self.length < self.items.cap` resolves
 	// "self.length" as a variable name and checks its bounds.
+	// Also handles literal < field access: `0 < self.values.cap` resolves
+	// the field access via buffer_caps and evaluates numerically.
 	if (op.op === "<" || op.op === "<=" || op.op === ">" || op.op === ">=") {
 		// Resolve left side to a variable name (handles both ValueNode and AccessNode)
 		let left_var: string | undefined;
@@ -79,6 +81,23 @@ function evaluate_operation(op: OperationNode, status: CheckStatus): boolean | u
 				if (decl?.lower_bound_expr && right_str) {
 					if (right_str === decl.lower_bound_expr) return true;
 				}
+			}
+		}
+
+		// Literal < field access: `0 < self.values.cap` — resolve the field
+		// access via buffer_caps and evaluate numerically.
+		const left_num = evaluate_numeric_or_bool(op.left_value, status);
+		const right_num = evaluate_numeric_or_bool(op.right_value, status);
+		if (typeof left_num === "number" && typeof right_num === "number") {
+			switch (op.op) {
+				case "<":
+					return left_num < right_num;
+				case "<=":
+					return left_num <= right_num;
+				case ">":
+					return left_num > right_num;
+				case ">=":
+					return left_num >= right_num;
 			}
 		}
 	}
@@ -228,6 +247,17 @@ export function evaluate_numeric_or_bool(
 				if (target_path) {
 					const cap = lookup_buffer_cap(target_path, status);
 					if (cap !== undefined) return cap;
+					// Fallback: inside struct methods, buffer_caps are recorded under
+					// the callee's "self.X" path, but the constraint evaluator resolves
+					// via the caller's alias (e.g. "list.X"). Try "self.X" as fallback.
+					if (target_path.includes(".")) {
+						const dot_idx = target_path.indexOf(".");
+						const fallback = "self" + target_path.slice(dot_idx);
+						if (fallback !== target_path) {
+							const cap2 = lookup_buffer_cap(fallback, status);
+							if (cap2 !== undefined) return cap2;
+						}
+					}
 				}
 			}
 		}

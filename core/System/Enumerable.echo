@@ -1,0 +1,7 @@
+// Trait for collection types that can be iterated with `for x of collection`.
+// The loop variable receives int indices 0..length-1; use .at(i) to access values.
+pub trait Enumerable {
+    func length = (self, out int) {
+        return 0
+    }
+}

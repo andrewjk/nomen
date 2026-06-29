@@ -32,6 +32,19 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 			status.code += "; ";
 			build_node(node.item, status);
 			status.code += "++)\n{\n";
+		} else if (is_enumerable_type(node.list, status)) {
+			// Enumerable type: call .length() and iterate 0..length
+			status.code += `${c_type("int")} `;
+			build_node(node.item, status);
+			status.code += ";\nfor (";
+			build_node(node.item, status);
+			status.code += " = 0; ";
+			build_node(node.item, status);
+			status.code += " < ";
+			build_node(node.list, status);
+			status.code += `.length(); `;
+			build_node(node.item, status);
+			status.code += "++)\n{\n";
 		} else if (status.traits.find((t) => t.name === node.item.type.name) !== undefined) {
 			// TODO: Handle index iterator variable
 			const length = type_from_value_node(node.list).length;
@@ -62,4 +75,12 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 	status.code += `}\n`;
 
 	status.scoped_declarations = old_scoped_declarations;
+}
+
+function is_enumerable_type(node: any, status: BuildStatus): boolean {
+	if (node.node_type !== "value") return false;
+	const type_name = node.value;
+	const struct = status.structs.find((s) => s.name === type_name);
+	if (!struct) return false;
+	return struct.traits.includes("Enumerable");
 }

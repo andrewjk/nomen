@@ -4,7 +4,7 @@ import Buffer
 // live in flat Buffers, so there is a single owner and cleanup is a flat free.
 // Node identifiers are stable int indices (read `count` before `add`); -1 means
 // "no child" / "no parent".
-pub struct Tree<T> {
+pub struct Tree<T>: Enumerable {
     var Buffer values = Buffer()
     var Buffer lefts = Buffer()
     var Buffer rights = Buffer()
@@ -25,50 +25,34 @@ pub struct Tree<T> {
         self.count = self.count + 1
     }
 
-    pub func set_left = (ref self, int idx, int left) {
-        if idx < self.lefts.cap {
-            self.lefts.store_int(idx, left)
-        }
-        if left != -1 && left < self.parents.cap {
-            self.parents.store_int(left, idx)
-        }
+    pub func set_left = (ref self, int idx: idx >= 0 && idx < self.lefts.cap, int left: left >= 0 && left < self.parents.cap) {
+        self.lefts.store_int(idx, left)
+        self.parents.store_int(left, idx)
     }
 
-    pub func set_right = (ref self, int idx, int right) {
-        if idx < self.rights.cap {
-            self.rights.store_int(idx, right)
-        }
-        if right != -1 && right < self.parents.cap {
-            self.parents.store_int(right, idx)
-        }
+    pub func set_right = (ref self, int idx: idx >= 0 && idx < self.rights.cap, int right: right >= 0 && right < self.parents.cap) {
+        self.rights.store_int(idx, right)
+        self.parents.store_int(right, idx)
     }
 
-    pub func left = (self, int idx, out int) {
-        if idx >= 0 && idx < self.lefts.cap {
-            return self.lefts.load_int(idx)
-        }
-        return -1
+    pub func left = (self, int idx: idx >= 0 && idx < self.lefts.cap, out int) {
+        return self.lefts.load_int(idx)
     }
 
-    pub func right = (self, int idx, out int) {
-        if idx >= 0 && idx < self.rights.cap {
-            return self.rights.load_int(idx)
-        }
-        return -1
+    pub func right = (self, int idx: idx >= 0 && idx < self.rights.cap, out int) {
+        return self.rights.load_int(idx)
     }
 
-    pub func parent_of = (self, int idx, out int) {
-        if idx >= 0 && idx < self.parents.cap {
-            return self.parents.load_int(idx)
-        }
-        return -1
+    pub func parent_of = (self, int idx: idx >= 0 && idx < self.parents.cap, out int) {
+        return self.parents.load_int(idx)
     }
 
-    pub func at = (self, int idx, out T) {
-        if idx >= 0 && idx < self.values.cap {
-            return self.values.load_int(idx)
-        }
-        return 0
+    pub func first = (self: self.values.cap > 0, out T) {
+        return self.values.load_int(0)
+    }
+
+    pub func at = (self, int idx: idx >= 0 && idx < self.values.cap, out T) {
+        return self.values.load_int(idx)
     }
 
     pub func count_nodes = (self, int idx, out int) {

@@ -12,6 +12,12 @@ import { evaluate_numeric_or_bool } from "./utils/evaluate_const_condition.ts";
 import { expr_to_string } from "./utils/flow_bounds.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 
+function has_trait(type_name: string, trait_name: string, status: CheckStatus): boolean {
+	const struct = status.structs.find((s) => s.name === type_name);
+	if (!struct) return false;
+	return struct.traits.includes(trait_name);
+}
+
 export default function check_for_loop_node(for_loop: ForLoopNode, status: CheckStatus) {
 	let for_status = clone_status(status);
 
@@ -19,16 +25,25 @@ export default function check_for_loop_node(for_loop: ForLoopNode, status: Check
 		check_node(for_loop.list, for_status);
 
 		const list_type = type_from_value_node(for_loop.list, for_status);
-		if (!list_type.is_array && list_type.name) {
+		const is_enumerable = list_type.name
+			? has_trait(list_type.name, "Enumerable", for_status)
+			: false;
+
+		if (!list_type.is_array && !is_enumerable && list_type.name) {
 			add_error(
 				for_status,
-				`For loop list must be an array, not ${list_type.name}`,
+				`For loop list must be an array or Enumerable, not ${list_type.name}`,
 				for_loop.list.start,
 			);
 		}
 
 		if (for_loop.item) {
-			for_loop.item.type = new Type(list_type.name);
+			if (is_enumerable) {
+				// Enumerable types iterate over indices; item type is int
+				for_loop.item.type = new Type("int", true);
+			} else {
+				for_loop.item.type = new Type(list_type.name);
+			}
 
 			let range_lower: number | undefined;
 			let range_upper: number | undefined;
@@ -48,6 +63,16 @@ export default function check_for_loop_node(for_loop: ForLoopNode, status: Check
 			let upper_bound_expr: string | undefined;
 			if (for_loop.list instanceof RangeNode && range_upper === undefined) {
 				upper_bound_expr = expr_to_string((for_loop.list as RangeNode).right_value, for_status);
+			}
+
+			// For Enumerable types, synthesize a range expression 0..container.length()
+			if (is_enumerable) {
+				range_lower = 0;
+				// Track the length expression for bounds checking
+				upper_bound_expr = expr_to_string(for_loop.list, for_status);
+				if (upper_bound_expr) {
+					upper_bound_expr = upper_bound_expr + ".length";
+				}
 			}
 
 			for_status.values.push({

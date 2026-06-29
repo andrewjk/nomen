@@ -173,6 +173,48 @@ function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: 
 		param.is_ref = true;
 		status.i += 2;
 		param.name = "self";
+
+		// ref self with constraint: ref self: constraint
+		if (accept(":", status)) {
+			param.constraint = parse_expression(status);
+		}
+
+		param.type_start = param.start;
+		param.type = new Type((parent as StructNode).name);
+		param.is_self_param = true;
+		if (func.name === "#init") {
+			param.declaration = "var";
+		}
+
+		if (accept(",", status)) {
+			parse_function_parameter(parent, func, status);
+		}
+
+		return;
+	} else if (
+		status.tokens[status.i]?.value === "self" &&
+		(parent.node_type === "struct" || parent.node_type === "trait")
+	) {
+		// self with optional constraint: self: constraint
+		status.i += 1;
+		param.name = "self";
+
+		if (accept(":", status)) {
+			param.constraint = parse_expression(status);
+		}
+
+		param.type_start = param.start;
+		param.type = new Type((parent as StructNode).name);
+		param.is_self_param = true;
+		if (func.name === "#init") {
+			param.declaration = "var";
+		}
+
+		if (accept(",", status)) {
+			parse_function_parameter(parent, func, status);
+		}
+
+		return;
 	} else {
 		if (accept("...", status)) {
 			param.is_variadic = true;
@@ -221,25 +263,6 @@ function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: 
 	// Parse parameter constraint: int x: x > 5
 	if (accept(":", status)) {
 		param.constraint = parse_expression(status);
-	}
-
-	if (
-		param.name === "self" &&
-		func.params.length === 1 &&
-		(parent.node_type === "struct" || parent.node_type === "trait")
-	) {
-		param.type_start = param.start;
-		param.type = new Type((parent as StructNode).name);
-		param.is_self_param = true;
-		if (func.name === "#init") {
-			param.declaration = "var";
-		}
-
-		if (accept(",", status)) {
-			parse_function_parameter(parent, func, status);
-		}
-
-		return;
 	}
 
 	if (accept("=", status)) {

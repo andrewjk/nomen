@@ -6,17 +6,17 @@ pub struct Set<T> {
 	var Buffer used = Buffer()
 
 	pub func add = (ref self, mov T value) {
-		var int cap = 	self.slots.cap
+		var int cap = self.slots.cap
 		if cap == 0 {
 			cap = self.slots.alloc_int(8)
 			self.used.alloc(8)
 		}
 		if self.length * 4 >= cap * 3 {
 			self.rehash(cap * 2)
-			cap = 	self.slots.cap
+			cap = self.slots.cap
 		}
 		var int idx = self.find_slot(value, cap)
-		if idx < self.used.cap && idx < self.slots.cap && self.used.load(idx) == 0 {
+		if self.used.load(idx) == 0 {
 			self.used.store(idx, 1)
 			self.slots.store_int(idx, value)
 			self.length = self.length + 1
@@ -24,39 +24,33 @@ pub struct Set<T> {
 	}
 
 	pub func has = (self, T value, out bool) {
-		var int cap = 	self.slots.cap
+		var int cap = self.slots.cap
 		if cap == 0 {
 			return false
 		}
 		var int idx = self.find_slot(value, cap)
-		if idx < self.used.cap {
-			return self.used.load(idx) != 0
-		}
-		return false
+		return self.used.load(idx) != 0
 	}
 
 	pub func get = (self, T key, out T) {
-		var int cap = 	self.slots.cap
+		var int cap = self.slots.cap
 		if cap == 0 {
 			return 0
 		}
 		var int idx = self.find_slot(key, cap)
-		if idx < self.used.cap && idx < self.slots.cap {
-			if self.used.load(idx) == 0 {
-				return 0
-			}
-			return self.slots.load_int(idx)
+		if self.used.load(idx) == 0 {
+			return 0
 		}
-		return 0
+		return self.slots.load_int(idx)
 	}
 
 	pub func remove = (ref self, T value) {
-		var int cap = 	self.slots.cap
+		var int cap = self.slots.cap
 		if cap == 0 {
 			return
 		}
 		var int idx = self.find_slot(value, cap)
-		if idx < self.used.cap && idx < self.slots.cap && self.used.load(idx) == 0 {
+		if self.used.load(idx) == 0 {
 			return
 		}
 		self.used.store(idx, 0)
