@@ -16,9 +16,15 @@ pub func main = () {
     var LinkedList<int> list = LinkedList<int>()
     list.add(1)
     list.add(2)
-    var int a = list.at(0)
-    var int b = list.at(1)
-    Console.write("a.value=\\{a} b.value=\\{b}\\n")
+    for i of 0 .. list.count {
+        var int v = list.at(i)
+        if i == 0 {
+            Console.write("a.value=\\{v} ")
+        }
+        if i == 1 {
+            Console.write("b.value=\\{v}\\n")
+        }
+    }
 }
 `;
 	const parsed = parse_with_imports(input);

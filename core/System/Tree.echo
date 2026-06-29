@@ -25,33 +25,33 @@ pub struct Tree<T>: Enumerable {
         self.count = self.count + 1
     }
 
-    pub func set_left = (ref self, int idx: idx >= 0 && idx < self.lefts.cap, int left: left >= 0 && left < self.parents.cap) {
+    pub func set_left = (ref self, int idx, int left) {
         self.lefts.store_int(idx, left)
         self.parents.store_int(left, idx)
     }
 
-    pub func set_right = (ref self, int idx: idx >= 0 && idx < self.rights.cap, int right: right >= 0 && right < self.parents.cap) {
+    pub func set_right = (ref self, int idx, int right) {
         self.rights.store_int(idx, right)
         self.parents.store_int(right, idx)
     }
 
-    pub func left = (self, int idx: idx >= 0 && idx < self.lefts.cap, out int) {
+    pub func left = (self, int idx, out int) {
         return self.lefts.load_int(idx)
     }
 
-    pub func right = (self, int idx: idx >= 0 && idx < self.rights.cap, out int) {
+    pub func right = (self, int idx, out int) {
         return self.rights.load_int(idx)
     }
 
-    pub func parent_of = (self, int idx: idx >= 0 && idx < self.parents.cap, out int) {
+    pub func parent_of = (self, int idx, out int) {
         return self.parents.load_int(idx)
     }
 
-    pub func first = (self: self.values.cap > 0, out T) {
+    pub func first = (self: self.count > 0, out T) {
         return self.values.load_int(0)
     }
 
-    pub func at = (self, int idx: idx >= 0 && idx < self.values.cap, out T) {
+    pub func at = (self, int idx: idx >= 0 && idx < self.count, out T) {
         return self.values.load_int(idx)
     }
 

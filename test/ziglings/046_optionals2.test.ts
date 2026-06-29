@@ -100,7 +100,7 @@ pub func main = () {
     elephants.set_next(b, c)
 
     var int cur = elephants.head
-    while cur != -1 {
+    while cur >= 0 && cur < elephants.count {
         Console.write("Elephant \\{letters.at(elephants.at(cur))}. ")
         cur = elephants.next_at(cur)
     }

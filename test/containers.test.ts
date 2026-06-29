@@ -23,7 +23,7 @@ list.set_next(a, b)
 list.set_next(b, c)
 var int sum = 0
 var int cur = list.head
-while cur != -1 {
+while cur >= 0 && cur < list.count {
   sum = sum + list.at(cur)
   cur = list.next_at(cur)
 }
@@ -72,7 +72,10 @@ g.add_edge(b, c)
 var int total = 0
 var int e = g.edges_of(a)
 while e != -1 {
-  total = total + g.at(g.edge_target(e))
+  var int target = g.edge_target(e)
+  if target >= 0 && target < g.node_count {
+    total = total + g.at(target)
+  }
   e = g.next_edge(e)
 }
 Console.write("nodes=\\{g.node_length()} edges_from_a=\\{total}\\n")
@@ -102,18 +105,18 @@ var int ic = list.count
 list.add(mov c)
 list.set_next(ia, ib)
 list.set_next(ib, ic)
-var Elephant cur = list.at(ia)
-cur.visited = true
-cur = list.at(ib)
-cur.visited = true
-cur = list.at(ic)
-cur.visited = true
-cur = list.at(ia)
-Console.write("\\{cur.letter} ")
-cur = list.at(ib)
-Console.write("\\{cur.letter} ")
-cur = list.at(ic)
-Console.write("\\{cur.letter}\\n")
+for i of 0 .. list.count {
+  var Elephant cur = list.at(i)
+  cur.visited = true
+}
+for i of 0 .. list.count {
+  var Elephant cur = list.at(i)
+  if i > 0 {
+    Console.write(" ")
+  }
+  Console.write("\\{cur.letter}")
+}
+Console.write("\\n")
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
@@ -141,18 +144,18 @@ var int right = t.count
 t.add(Elephant('R'))
 t.set_left(root, left)
 t.set_right(root, right)
-var Elephant e = t.at(root)
-e.visited = true
-e = t.at(left)
-e.visited = true
-e = t.at(right)
-e.visited = true
-e = t.at(root)
-Console.write("\\{e.letter} ")
-e = t.at(left)
-Console.write("\\{e.letter} ")
-e = t.at(right)
-Console.write("\\{e.letter}\\n")
+for i of 0 .. t.count {
+  var Elephant e = t.at(i)
+  e.visited = true
+}
+for i of 0 .. t.count {
+  var Elephant e = t.at(i)
+  if i > 0 {
+    Console.write(" ")
+  }
+  Console.write("\\{e.letter}")
+}
+Console.write("\\n")
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
@@ -176,18 +179,18 @@ var int c = g.node_count
 g.add_node(Elephant('C'))
 g.add_edge(a, b)
 g.add_edge(a, c)
-var Elephant e = g.at(a)
-e.visited = true
-e = g.at(b)
-e.visited = true
-e = g.at(c)
-e.visited = true
-e = g.at(a)
-Console.write("\\{e.letter} ")
-e = g.at(b)
-Console.write("\\{e.letter} ")
-e = g.at(c)
-Console.write("\\{e.letter}\\n")
+for i of 0 .. g.node_count {
+  var Elephant e = g.at(i)
+  e.visited = true
+}
+for i of 0 .. g.node_count {
+  var Elephant e = g.at(i)
+  if i > 0 {
+    Console.write(" ")
+  }
+  Console.write("\\{e.letter}")
+}
+Console.write("\\n")
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);

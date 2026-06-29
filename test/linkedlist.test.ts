@@ -9,8 +9,10 @@ describe("LinkedList<T> add and value", () => {
 		const input = `
 var LinkedList<int> list = LinkedList<int>()
 list.add(42)
-var int v = list.at(0)
-Console.write("\\{v}")
+if list.count > 0 {
+  var int v = list.first()
+  Console.write("\\{v}")
+}
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
@@ -24,10 +26,13 @@ var LinkedList<int> list = LinkedList<int>()
 list.add(10)
 list.add(20)
 list.add(30)
-var int a = list.at(0)
-var int b = list.at(1)
-var int c = list.at(2)
-Console.write("\\{a} \\{b} \\{c}")
+for i of 0 .. list.count {
+  var int v = list.at(i)
+  if i > 0 {
+    Console.write(" ")
+  }
+  Console.write("\\{v}")
+}
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
@@ -69,10 +74,13 @@ var LinkedList<int> list = LinkedList<int>()
 list.add(-1)
 list.add(-100)
 list.add(0)
-var int a = list.at(0)
-var int b = list.at(1)
-var int c = list.at(2)
-Console.write("\\{a} \\{b} \\{c}")
+for i of 0 .. list.count {
+  var int v = list.at(i)
+  if i > 0 {
+    Console.write(" ")
+  }
+  Console.write("\\{v}")
+}
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
@@ -95,7 +103,7 @@ list.set_next(a, b)
 list.set_next(b, c)
 var int sum = 0
 var int cur = list.head
-while cur != -1 {
+while cur >= 0 && cur < list.count {
   sum = sum + list.at(cur)
   cur = list.next_at(cur)
 }
@@ -156,7 +164,7 @@ list.add(3)
 list.set_next(a, c)
 var int sum = 0
 var int cur = a
-while cur != -1 {
+while cur >= 0 && cur < list.count {
   sum = sum + list.at(cur)
   cur = list.next_at(cur)
 }
@@ -177,9 +185,13 @@ var int idx0 = list.count
 list.add(100)
 var int idx1 = list.count
 list.add(200)
-var int v0 = list.at(idx0)
-var int v1 = list.at(idx1)
-Console.write("\\{v0} \\{v1}")
+for i of 0 .. list.count {
+  var int v = list.at(i)
+  if i > 0 {
+    Console.write(" ")
+  }
+  Console.write("\\{v}")
+}
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
