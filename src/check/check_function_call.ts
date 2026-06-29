@@ -20,6 +20,7 @@ import evaluate_const_condition, {
 } from "./utils/evaluate_const_condition.ts";
 import {
 	apply_bounds,
+	collect_return_bounds,
 	path_to_node,
 	record_buffer_cap,
 	substitute_constraint,
@@ -385,6 +386,23 @@ export default function check_function_call(
 				lower_bound_expr = decl.lower_bound_expr;
 			}
 		}
+		// Fold in bounds propagated from a nested call's return contract, so a
+		// parameter constraint can verify against an inline call result
+		// (e.g. `g.at(g.edge_target(e))`). Method calls arrive as an AccessNode
+		// wrapping an AccessFunctionCallNode; free calls arrive directly.
+		let nested_rb: { upper: string[]; lower: string[] } | undefined;
+		if (param.node_type === "func_call" || param.node_type === "access_func") {
+			nested_rb = (param as FunctionCallNode).return_bounds;
+		} else if (
+			param.node_type === "access" &&
+			(param as AccessNode).access.node_type === "access_func"
+		) {
+			nested_rb = ((param as AccessNode).access as AccessFunctionCallNode).return_bounds;
+		}
+		if (nested_rb) {
+			upper_bound_exprs = [...(upper_bound_exprs ?? []), ...nested_rb.upper];
+			lower_bound_exprs = [...(lower_bound_exprs ?? []), ...nested_rb.lower];
+		}
 		constraint_args.push({
 			name: func_param.name,
 			type: param_type,
@@ -550,25 +568,36 @@ export default function check_function_call(
 	// Walk up the stack to find the enclosing declaration/assignment so we
 	// know which variable to bind.
 	if (func.return_constraint) {
+		const param_to_arg = new Map<string, BaseNode>();
+		// Map `self` onto the caller's receiver path so return contracts that
+		// reference self.X (e.g. `out < self.count`) resolve at the call site
+		// (e.g. `cur < list.count`), giving the LHS variable a tracked bound.
+		if (self_path && self_path !== "?") {
+			param_to_arg.set("self", path_to_node(self_path));
+		}
+		for (let i = 0; i < node.params.length; i++) {
+			const fp = func.params[i + self_offset];
+			if (fp?.name) {
+				param_to_arg.set(fp.name, node.params[i]);
+			}
+		}
+		// `out` placeholder; the bound expressions are extracted regardless of
+		// the name used for the return value.
+		const substituted = substitute_constraint(func.return_constraint, "_return", param_to_arg);
+		// Always resolve the return contract to concrete bound expressions on
+		// the call node, so an enclosing call can verify a parameter constraint
+		// against this call's result even when it isn't captured in a variable
+		// (e.g. `g.at(g.edge_target(e))`).
+		node.return_bounds = collect_return_bounds(substituted, status);
+
 		const lhs_name = find_lhs_var_name(status);
 		if (lhs_name) {
-			const param_to_arg = new Map<string, BaseNode>();
-			// Map `self` onto the caller's receiver path so return contracts that
-			// reference self.X (e.g. `out < self.count`) resolve at the call site
-			// (e.g. `cur < list.count`), giving the LHS variable a tracked bound.
-			if (self_path && self_path !== "?") {
-				param_to_arg.set("self", path_to_node(self_path));
-			}
-			for (let i = 0; i < node.params.length; i++) {
-				const fp = func.params[i + self_offset];
-				if (fp?.name) {
-					param_to_arg.set(fp.name, node.params[i]);
-				}
-			}
-			const substituted = substitute_constraint(func.return_constraint, lhs_name, param_to_arg);
+			// Re-substitute with the real LHS name so the bound is keyed to the
+			// variable being assigned/declared.
+			const bound = substitute_constraint(func.return_constraint, lhs_name, param_to_arg);
 			if (status.values.some((v) => v.name === lhs_name)) {
 				// Assignment to an existing variable — bind immediately.
-				apply_bounds(substituted, status);
+				apply_bounds(bound, status);
 			} else {
 				// Declaration in progress: the variable isn't in scope yet, so
 				// stash the bound for check_declaration_node to apply once it
@@ -579,7 +608,7 @@ export default function check_function_call(
 					arr = [];
 					status.pending_return_bounds.set(lhs_name, arr);
 				}
-				arr.push(substituted);
+				arr.push(bound);
 			}
 		}
 	}

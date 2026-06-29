@@ -191,6 +191,42 @@ export function path_to_node(path: string): BaseNode {
 }
 
 /**
+ * Collect the upper/lower bound expressions from a (substituted) return
+ * contract, walking `&&`-combined comparisons. The left operand is assumed to
+ * be the return value (`out`); only the comparison operator and the right-hand
+ * expression are extracted. Used to propagate a call's return-contract bounds
+ * onto the call node so an enclosing call can verify its parameter constraint
+ * against the returned value (e.g. `g.at(g.edge_target(e))`).
+ */
+export function collect_return_bounds(
+	node: BaseNode,
+	status?: CheckStatus,
+): { upper: string[]; lower: string[] } {
+	const upper: string[] = [];
+	const lower: string[] = [];
+	function walk(n: BaseNode) {
+		if (n.node_type === "op") {
+			const op = n as OperationNode;
+			if (op.op === "&&") {
+				walk(op.left_value);
+				walk(op.right_value);
+				return;
+			}
+		}
+		const bound = extract_bound(n, status);
+		if (bound) {
+			if (bound.op === "<" || bound.op === "<=") {
+				if (!upper.includes(bound.expr)) upper.push(bound.expr);
+			} else if (bound.op === ">" || bound.op === ">=") {
+				if (!lower.includes(bound.expr)) lower.push(bound.expr);
+			}
+		}
+	}
+	walk(node);
+	return { upper, lower };
+}
+
+/**
  * Track flow-sensitive knowledge gained from a declaration/assignment.
  * Currently handles:
  *   - `var int x = Y.field`     → x becomes an alias for "Y.field"

@@ -107,3 +107,62 @@ Console.write("\\n")
 		await check_output("flow_nested", result, "010 020 110 120 \n");
 	});
 });
+
+// Return-contract propagation: a method whose return type carries a contract
+// (e.g. Graph.edge_target `out int: out >= 0 && out < self.node_count`) gives
+// the result a tracked bound. The bound flows both to a named variable and to
+// an inline (nested) call argument, so a downstream `.at(...)` constraint
+// verifies without a runtime guard.
+
+describe("return-contract propagation", () => {
+	test("return contract binds the LHS variable", async () => {
+		const input = `
+var Graph<int> g = Graph<int>()
+g.add_node(10)
+g.add_node(20)
+g.add_edge(0, 1)
+var int e = g.edges_of(0)
+var int target = g.edge_target(e)
+var int v = g.at(target)
+Console.write("\\{v}\\n")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		await check_output("rc_lhs", result, "20\n");
+	});
+
+	test("return contract propagates through a nested call argument", async () => {
+		const input = `
+var Graph<int> g = Graph<int>()
+g.add_node(10)
+g.add_node(20)
+g.add_edge(0, 1)
+var int e = g.edges_of(0)
+var int v = g.at(g.edge_target(e))
+Console.write("\\{v}\\n")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		await check_output("rc_nested", result, "20\n");
+	});
+
+	test("return contract does not cross different receivers", () => {
+		// edge_target's bound is on g1, but .at is called on g2 — the bound
+		// doesn't transfer, so this must error rather than silently pass.
+		const input = `
+var Graph<int> g1 = Graph<int>()
+var Graph<int> g2 = Graph<int>()
+g1.add_node(1)
+g1.add_node(2)
+g1.add_edge(0, 1)
+g2.add_node(3)
+var int e = g1.edges_of(0)
+var int v = g2.at(g1.edge_target(e))
+Console.write("\\{v}\\n")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors.some((m) => m.message.includes("cannot be verified"))).toBe(true);
+	});
+});
