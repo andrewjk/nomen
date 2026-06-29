@@ -16,14 +16,13 @@ pub func main = () {
     var LinkedList<int> list = LinkedList<int>()
     list.add(1)
     list.add(2)
-    for i of 0 .. list.count {
-        var int v = list.at(i)
-        if i == 0 {
-            Console.write("a.value=\\{v} ")
-        }
-        if i == 1 {
-            Console.write("b.value=\\{v}\\n")
-        }
+    if list.count > 0 {
+        var int a = list.at(0)
+        Console.write("a.value=\\{a} ")
+    }
+    if list.count > 1 {
+        var int b = list.at(1)
+        Console.write("b.value=\\{b} ")
     }
 }
 `;

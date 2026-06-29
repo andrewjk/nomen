@@ -40,7 +40,12 @@ Console.write("\\{count()}")
 
 	test("variadic with single arg", async () => {
 		const input = `
-func first = (...int nums, out int) => nums.at(0)
+func first = (...int nums, out int) {
+  if nums.length > 0 {
+    return nums.first()
+  }
+  return 0
+}
 Console.write("\\{first(42)}")
 `;
 		const parsed = parse_with_imports(input);

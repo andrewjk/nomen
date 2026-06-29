@@ -140,7 +140,10 @@ pub func main = () {
 
     var int cur = elephants.head
     while cur >= 0 && cur < elephants.count {
-        Console.write("\\{letters.at(elephants.at(cur))}  ")
+        var int idx = elephants.at(cur)
+        if idx >= 0 && idx < letters.length {
+            Console.write("\\{letters.at(idx)}  ")
+        }
         cur = elephants.next_at(cur)
     }
     Console.write("\\n")

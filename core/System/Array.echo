@@ -41,6 +41,18 @@ pub struct Array<T> {
         ```
     }
 
+    pub func first = (self: self.length > 0, out T) {
+        ```
+        #arch: c
+        return ((T*)&self)[0];
+        ```
+        ```
+        #arch: aarch64
+        // x19 = self (first elem)
+        ldr x0, [x19]
+        ```
+    }
+
     pub func set = (ref self, int index: index >= 0 && index < self.length, T value) {
         ```
         #arch: c

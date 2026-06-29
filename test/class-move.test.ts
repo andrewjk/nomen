@@ -86,7 +86,9 @@ func store = (mov Box b, out Box[]) {
 
 var Box a = Box(42)
 var Box[] result = store(mov a)
-Console.write("\\{result.at(0).value}")
+if result.length > 0 {
+  Console.write("\\{result.first().value}")
+}
 `;
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
@@ -130,7 +132,9 @@ func make_arr = (out Box[]) {
 }
 
 var Box[] result = make_arr()
-Console.write("\\{result.at(0).value}")
+if result.length > 0 {
+  Console.write("\\{result.first().value}")
+}
 `;
 		const parsed = parse_with_imports(input);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
@@ -342,7 +346,9 @@ func make_arr = (out Box[]) {
 
 if 1 == 1 {
   var Box[] result = make_arr()
-  Console.write("\\{result.at(0).value}\\{result.at(1).value}\\{result.at(2).value}")
+  for i of 0 .. result.length {
+    Console.write("\\{result.at(i).value}")
+  }
 }
 Console.write("done")
 `;
