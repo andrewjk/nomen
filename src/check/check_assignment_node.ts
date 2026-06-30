@@ -5,7 +5,7 @@ import AssignmentNode from "../nodes/AssignmentNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
-import { borrow_depth_of } from "./utils/borrow.ts";
+import { borrow_depth_of, borrow_owner_of } from "./utils/borrow.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
 import evaluate_const_condition from "./utils/evaluate_const_condition.ts";
 import { track_assignment_bounds } from "./utils/flow_bounds.ts";
@@ -191,9 +191,15 @@ export default function check_assignment_node(
 				);
 			} else {
 				left_value.borrow_depth = rhs_borrow_depth;
+				left_value.borrowed_from = borrow_owner_of(assign.right_value, status);
+				// Re-assigning a (possibly invalidated) borrow refreshes it: the
+				// new value is a fresh borrow rooted at its own owner.
+				left_value.borrow_invalidated = false;
 			}
 		} else {
 			left_value.borrow_depth = undefined;
+			left_value.borrowed_from = undefined;
+			left_value.borrow_invalidated = false;
 		}
 	}
 

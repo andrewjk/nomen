@@ -62,6 +62,20 @@ export default interface StackValue {
 	 */
 	borrow_depth?: number;
 	/**
+	 * For child-group borrows (a class reference taken from an owner's contents
+	 * — a container element via `.at`/`.pop`, or a class field): the ultimate
+	 * owner variable this borrow is rooted in. Used to invalidate the borrow
+	 * when the owner is mutated (ref self / var self call), since the mutation
+	 * may free or displace the contents the borrow points into.
+	 */
+	borrowed_from?: string;
+	/**
+	 * True once the owner named by `borrowed_from` has been mutated; reading the
+	 * borrow thereafter is rejected. Cleared when the variable is re-assigned
+	 * (re-borrowed or re-owned).
+	 */
+	borrow_invalidated?: boolean;
+	/**
 	 * For Buffer variables: the minimum guaranteed capacity, established by
 	 * calls to grow_int(N)/alloc_int(N)/alloc(N). Used to verify compile-time
 	 * `i < buf.cap` constraints after a known-size allocation.

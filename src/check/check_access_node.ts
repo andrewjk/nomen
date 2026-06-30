@@ -11,6 +11,7 @@ import check_function_call from "./check_function_call.ts";
 import { monomorphize } from "./check_function_call_node.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
+import { invalidate_borrows_of } from "./utils/borrow.ts";
 import { expr_to_string } from "./utils/flow_bounds.ts";
 import {
 	find_function_by_params,
@@ -335,6 +336,9 @@ function check_access_function_node(
 				add_error(status, `Update to const: ${target_name}`, node.start);
 				return false;
 			}
+			// A mutating call may free or displace the receiver's contents, so
+			// every live child-group borrow rooted at this receiver is now stale.
+			invalidate_borrows_of(status, target_name);
 		}
 	}
 

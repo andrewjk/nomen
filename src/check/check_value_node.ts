@@ -28,6 +28,15 @@ export default function check_value_node(node: ValueNode, status: CheckStatus): 
 	}
 
 	const decl_value = status.values.findLast((v) => v.name === node.value);
+	if (decl_value?.borrow_invalidated && !status.is_assignment_target) {
+		const owner = decl_value.borrowed_from ? ` of '${decl_value.borrowed_from}'` : "";
+		add_error(
+			status,
+			`Borrow '${node.value}' was invalidated by a mutation of its owner${owner}; re-fetch it after the mutation`,
+			node.start,
+		);
+		return false;
+	}
 	if (decl_value?.is_null && !status.allow_null_value && !status.is_assignment_target) {
 		add_error(status, `Variable '${node.value}' may be null`, node.start);
 		return false;
