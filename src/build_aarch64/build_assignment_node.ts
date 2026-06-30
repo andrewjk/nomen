@@ -13,6 +13,7 @@ import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free } from "./utils/audit.ts";
 import {
 	anchor_heap_pointer,
+	defer_anchor_destroy,
 	emit_destroy_for_decl,
 	find_anchor_slot,
 	mark_moved_if_struct,
@@ -193,7 +194,14 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 					(s) => s.name === func_call.name && !s.is_simple_type,
 				);
 				if (is_constructor) {
-					emit_destroy_for_decl(status, name, rhs_type.name);
+					// The old instance is replaced. Defer its cleanup (destroy +
+					// field frees) to scope exit rather than running it now, so
+					// that borrows of the old instance's fields stay valid for the
+					// rest of the scope. Falls back to eager cleanup when the old
+					// value isn't anchored (e.g. a borrowed reference).
+					if (!defer_anchor_destroy(status, name, rhs_type.name, rhs_type.type_args)) {
+						emit_destroy_for_decl(status, name, rhs_type.name);
+					}
 					mark_moved_if_struct(node.right_value, status);
 					build_node(node.right_value, status);
 					if (!status.code.endsWith("\n")) status.code += "\n";

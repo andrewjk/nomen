@@ -56,30 +56,67 @@ function evaluate_operation(op: OperationNode, status: CheckStatus): boolean | u
 			left_var = expr_to_string(op.left_value, status);
 		}
 
+		let left_decl: ReturnType<typeof status.values.findLast> | undefined;
 		if (left_var) {
-			let decl = status.values.findLast((v) => v.name === left_var);
+			left_decl = status.values.findLast((v) => v.name === left_var);
 			// For dotted names like "self.length", bounds are stored on the base
 			// variable "self" with key "self.length" in upper_bound_exprs.
-			if (!decl && left_var.includes(".")) {
+			if (!left_decl && left_var.includes(".")) {
 				const base = left_var.split(".")[0];
-				decl = status.values.findLast((v) => v.name === base);
+				left_decl = status.values.findLast((v) => v.name === base);
 			}
 			const right_str = expr_to_string(op.right_value, status);
 
 			if (op.op === "<" || op.op === "<=") {
-				if (decl?.upper_bound_exprs?.length && right_str) {
-					if (decl.upper_bound_exprs.includes(right_str)) return true;
+				if (left_decl?.upper_bound_exprs?.length && right_str) {
+					if (left_decl.upper_bound_exprs.includes(right_str)) return true;
 				}
-				if (decl?.upper_bound_expr && right_str) {
-					if (right_str === decl.upper_bound_expr) return true;
+				if (left_decl?.upper_bound_expr && right_str) {
+					if (right_str === left_decl.upper_bound_expr) return true;
 				}
 			}
 			if (op.op === ">" || op.op === ">=") {
-				if (decl?.lower_bound_exprs?.length && right_str) {
-					if (decl.lower_bound_exprs.includes(right_str)) return true;
+				if (left_decl?.lower_bound_exprs?.length && right_str) {
+					if (left_decl.lower_bound_exprs.includes(right_str)) return true;
 				}
-				if (decl?.lower_bound_expr && right_str) {
-					if (right_str === decl.lower_bound_expr) return true;
+				if (left_decl?.lower_bound_expr && right_str) {
+					if (right_str === left_decl.lower_bound_expr) return true;
+				}
+			}
+		}
+
+		// Symmetric case: literal OP variable/access (e.g. `0 < list.count`, or
+		// `idx < list.count` where idx is a compile-time constant). The left
+		// side is effectively a literal, so flip the operator and check the
+		// right side's flow bound: `0 < list.count` ⟺ `list.count > 0`,
+		// satisfied when `list.count` has a known lower bound of 0.
+		const left_const =
+			left_decl && typeof left_decl.const_value === "number"
+				? String(left_decl.const_value)
+				: !left_decl
+					? expr_to_string(op.left_value, status)
+					: undefined;
+		if (left_const !== undefined) {
+			let right_var: string | undefined;
+			if (op.right_value.node_type === "value") {
+				right_var = (op.right_value as ValueNode).value;
+			} else if (op.right_value.node_type === "access") {
+				right_var = expr_to_string(op.right_value, status);
+			}
+			if (right_var) {
+				let rdecl = status.values.findLast((v) => v.name === right_var);
+				if (!rdecl && right_var.includes(".")) {
+					rdecl = status.values.findLast((v) => v.name === right_var.split(".")[0]);
+				}
+				if (rdecl) {
+					const flipped = op.op === "<" ? ">" : op.op === "<=" ? ">=" : op.op === ">" ? "<" : "<=";
+					if (flipped === "<" || flipped === "<=") {
+						if (rdecl.upper_bound_exprs?.includes(left_const)) return true;
+						if (rdecl.upper_bound_expr === left_const) return true;
+					} else {
+						if (rdecl.lower_bound_exprs?.includes(left_const)) return true;
+						if (rdecl.lower_bound_expr === left_const) return true;
+					}
 				}
 			}
 		}

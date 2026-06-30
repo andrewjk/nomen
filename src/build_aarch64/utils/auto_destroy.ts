@@ -32,8 +32,7 @@ export function emit_heap_slots_cleanup_for_return(status: BuildStatus) {
 	for (const scope of status.heap_cleanup_stack ?? []) {
 		for (const slot of scope.heap_slots) {
 			if (slot.var_name && moved.has(slot.var_name)) continue;
-			status.code += `ldr x0, [x29, #${slot.offset}]\n`;
-			emit_free(status);
+			free_anchor_slot(status, slot);
 		}
 	}
 }
@@ -45,6 +44,130 @@ export function find_anchor_slot(status: BuildStatus, var_name: string) {
 		}
 	}
 	return undefined;
+}
+
+/**
+ * Defer reclamation of a class instance being replaced by reassignment. The
+ * instance's anchor slot is disowned (so the variable now resolves to the new
+ * instance) and tagged with its type, so that at scope/return/break exit the
+ * type's `#destroy` and field destroys run before the instance is freed. This
+ * keeps borrows of the old instance's fields valid until the scope ends.
+ *
+ * Returns true if deferred (an anchor slot was found and tagged), false if the
+ * old value wasn't anchored (caller should fall back to eager cleanup).
+ */
+export function defer_anchor_destroy(
+	status: BuildStatus,
+	var_name: string,
+	type_name: string,
+	type_args?: Type[],
+): boolean {
+	for (const scope of status.heap_cleanup_stack ?? []) {
+		for (let i = scope.heap_slots.length - 1; i >= 0; i--) {
+			const slot = scope.heap_slots[i];
+			if (slot.var_name === var_name) {
+				slot.var_name = undefined;
+				slot.destroy_type = type_name;
+				slot.destroy_type_args = type_args;
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+/**
+ * Emit `#destroy` + field destroys for a class/struct instance whose pointer
+ * lives in an anchor slot (offset from x29), reading the base pointer from the
+ * slot rather than a named variable. Does NOT free the instance itself — the
+ * caller frees the slot. Mirrors the field-destroy logic in emit_field_destroys
+ * but for anonymous (disowned) anchor slots.
+ */
+function emit_destroy_for_anchor_slot(
+	status: BuildStatus,
+	offset: number,
+	type_name: string,
+	type_args?: Type[],
+) {
+	const resolved_name = resolve_struct_name(type_name, type_args, status);
+	const struct_type = is_struct_type(resolved_name, status) || is_struct_type(type_name, status);
+	if (!struct_type) return;
+	if (has_destroy(struct_type)) {
+		status.code += `ldr x0, [x29, #${offset}]\n`;
+		status.code += `bl ${resolved_name}_destroy\n`;
+	}
+	emit_field_destroys_from_slot(status, struct_type, offset);
+}
+
+function emit_field_destroys_from_slot(
+	status: BuildStatus,
+	struct_type: StructNode,
+	base_offset: number,
+) {
+	let offset = 8;
+	for (const field of struct_type.fields) {
+		const field_struct = is_struct_type(field.type.name, status);
+		if (field_struct) {
+			if (field_struct.is_class && !field.type.is_ref) {
+				status.code += `ldr x0, [x29, #${base_offset}]\n`;
+				status.code += `ldr x0, [x0, #${offset}]\n`;
+				status.code += `str x0, [sp, #-16]!\n`;
+				const label_id = (status.label_counter = (status.label_counter ?? 0) + 1);
+				const skip_label = `.Lskip_defer_${label_id}`;
+				status.code += `cbz x0, ${skip_label}\n`;
+				status.code += `bl ${field_struct.name}_destroy\n`;
+				status.code += `${skip_label}:\n`;
+				status.code += `ldr x0, [sp], #16\n`;
+				emit_free(status);
+			} else if (has_destroy(field_struct)) {
+				status.code += `ldr x0, [x29, #${base_offset}]\n`;
+				status.code += `add x0, x0, #${offset}\n`;
+				status.code += `bl ${field_struct.name}_destroy\n`;
+			}
+			const field_size = get_type_size(field.type, status);
+			emit_nested_field_destroys_from_slot(status, field_struct, base_offset + offset);
+			offset += field_size;
+		} else {
+			offset += aarch64_size(field.type.name);
+		}
+	}
+}
+
+function emit_nested_field_destroys_from_slot(
+	status: BuildStatus,
+	struct_type: StructNode,
+	base_offset: number,
+) {
+	let offset = 8;
+	for (const field of struct_type.fields) {
+		const field_struct = is_struct_type(field.type.name, status);
+		if (field_struct) {
+			if (has_destroy(field_struct)) {
+				status.code += `ldr x0, [x29, #${base_offset}]\n`;
+				status.code += `add x0, x0, #${offset}\n`;
+				status.code += `bl ${field_struct.name}_destroy\n`;
+			}
+			const field_size = get_type_size(field.type, status);
+			emit_nested_field_destroys_from_slot(status, field_struct, base_offset + offset);
+			offset += field_size;
+		} else {
+			offset += aarch64_size(field.type.name);
+		}
+	}
+}
+
+/**
+ * Free an anchor slot, running its deferred destroy (if any) first.
+ */
+function free_anchor_slot(
+	status: BuildStatus,
+	slot: { offset: number; destroy_type?: string; destroy_type_args?: Type[] },
+) {
+	if (slot.destroy_type) {
+		emit_destroy_for_anchor_slot(status, slot.offset, slot.destroy_type, slot.destroy_type_args);
+	}
+	status.code += `ldr x0, [x29, #${slot.offset}]\n`;
+	emit_free(status);
 }
 
 export function track_struct_decl(
@@ -326,8 +449,7 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 		}
 		for (const slot of current_scope.heap_slots) {
 			if (slot.var_name && moved.has(slot.var_name)) continue;
-			status.code += `ldr x0, [x29, #${slot.offset}]\n`;
-			emit_free(status);
+			free_anchor_slot(status, slot);
 		}
 		return;
 	}
@@ -404,8 +526,7 @@ export function emit_cleanup_to_loop_depth(status: BuildStatus) {
 		const scope = status.heap_cleanup_stack[i];
 		if (scope.heap_slots.length) {
 			for (const slot of scope.heap_slots) {
-				status.code += `ldr x0, [x29, #${slot.offset}]\n`;
-				emit_free(status);
+				free_anchor_slot(status, slot);
 			}
 			continue;
 		}

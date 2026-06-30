@@ -108,6 +108,50 @@ Console.write("\\n")
 	});
 });
 
+// Literal-on-left bounds: `if list.count > 0` establishes a lower bound on
+// list.count, so a constraint like `idx < self.count` (i.e. `0 < list.count`
+// when idx is a literal/const) verifies via the symmetric (flipped) comparison.
+
+describe("literal-on-left bounds", () => {
+	test("list.at(0) verifies inside if list.count > 0", () => {
+		const input = `
+var LinkedList<int> list = LinkedList<int>()
+list.add(1)
+list.add(2)
+if list.count > 0 {
+	var int a = list.at(0)
+	Console.write("\\{a}")
+}
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+	});
+
+	test("list.at(1) verifies inside if list.count > 1", () => {
+		const input = `
+var LinkedList<int> list = LinkedList<int>()
+list.add(1)
+list.add(2)
+if list.count > 1 {
+	var int b = list.at(1)
+	Console.write("\\{b}")
+}
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+	});
+
+	test("list.at(0) still errors when count could be zero", () => {
+		const input = `
+var LinkedList<int> list = LinkedList<int()
+list.add(1)
+var int a = list.at(0)
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors.some((m) => m.message.includes("cannot be verified"))).toBe(true);
+	});
+});
+
 // Return-contract propagation: a method whose return type carries a contract
 // (e.g. Graph.edge_target `out int: out >= 0 && out < self.node_count`) gives
 // the result a tracked bound. The bound flows both to a named variable and to

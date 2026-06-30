@@ -22,7 +22,7 @@ pub func main = () {
     }
     if list.count > 1 {
         var int b = list.at(1)
-        Console.write("b.value=\\{b} ")
+        Console.write("b.value=\\{b}\\n")
     }
 }
 `;

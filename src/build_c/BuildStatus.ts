@@ -52,7 +52,19 @@ export default interface BuildStatus {
 	loop_labels?: { start: string; end: string; cleanup_depth?: number }[];
 	heap_cleanup_stack?: {
 		heap_strings: Set<string>;
-		heap_slots: { offset: number; var_name?: string }[];
+		heap_slots: {
+			offset: number;
+			var_name?: string;
+			/**
+			 * When set, freeing this anchor slot at scope/return/break exit
+			 * first runs the type's `#destroy` and field destroys (e.g. frees
+			 * owned class fields). Used to defer reclamation of a class
+			 * instance replaced by reassignment: the old instance stays alive
+			 * (so borrows of its fields remain valid) until the scope ends.
+			 */
+			destroy_type?: string;
+			destroy_type_args?: Type[];
+		}[];
 		struct_decls: { name: string; type_name: string; type_args?: Type[] }[];
 	}[];
 	struct_return_buffer?: string;
