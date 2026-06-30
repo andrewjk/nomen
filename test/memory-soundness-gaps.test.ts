@@ -78,6 +78,42 @@ Console.write("\\{b.v}\\n")
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
 	});
+
+	test("container element borrow cannot escape the container's scope", () => {
+		// `cur` borrows a pointer the list stores via pop(); assigning it to the
+		// outer `cur` would outlive the list. Rejected (instance method return
+		// is treated as a borrow of the receiver).
+		const input = `
+class Animal { var char letter }
+var Animal cur
+if true {
+    var List<Animal> list = List<Animal>()
+    list.push(mov Animal('Z'))
+    cur = list.pop()
+}
+Console.write("\\{cur.letter}\\n")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors.some((e) => e.message.includes("borrow escapes"))).toBe(true);
+	});
+
+	test("constructor and static factory returns are owned (escapable)", () => {
+		// Fresh allocations from constructors / static factories are owned, not
+		// borrows, so assigning them across scopes is fine.
+		const input = `
+class Box { var int v }
+func mk = (out Box) {
+    return Box(7)
+}
+var Box b
+if true {
+    b = mk()
+}
+Console.write("\\{b.v}\\n")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+	});
 });
 
 // Same-scope owner reassignment is sound via deferred reclamation: the old
@@ -104,24 +140,6 @@ Console.write("\\{b.v}\\n")
 // Still-open soundness gaps (these FAIL today):
 
 describe("open soundness gaps", () => {
-	test("container element borrow outlives the container", () => {
-		// `cur` borrows a pointer the list stores; when the list dies its
-		// buffer is freed and `cur` dangles. Not yet caught because method
-		// returns (pop) aren't tracked as borrows (only field access is).
-		const input = `
-class Animal { var char letter }
-var Animal cur
-if true {
-    var List<Animal> list = List<Animal>()
-    list.push(mov Animal('Z'))
-    cur = list.pop()
-}
-Console.write("\\{cur.letter}\\n")
-`;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors.length).toBeGreaterThan(0);
-	});
-
 	test("class reassignment inside a loop frees the live instance each iteration", () => {
 		// Distinct pre-existing bug: re-anchoring on `h = Holder(...)` adds the
 		// new anchor to the loop-body frame, so it is freed at each iteration's
