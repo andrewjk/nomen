@@ -6,6 +6,7 @@ import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
+import { borrow_depth_of } from "./utils/borrow.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
 import check_type_exists from "./utils/check_type_exists.ts";
 import evaluate_const_condition from "./utils/evaluate_const_condition.ts";
@@ -164,6 +165,8 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			is_null: decl.value?.node_type === "value" && (decl.value as any).value === "null",
 			const_value: decl.declaration === "const" ? extract_const_value(decl.value) : undefined,
 			constraint: decl.constraint,
+			decl_depth: status.scope_depth,
+			borrow_depth: decl.value ? borrow_depth_of(decl.value, status) : undefined,
 		});
 		if (decl.value) {
 			track_assignment_bounds(decl.name, decl.value, status);

@@ -5,6 +5,7 @@ import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
+import { borrow_depth_of } from "./utils/borrow.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
@@ -63,6 +64,17 @@ export default function check_return_node(ret: ReturnNode, status: CheckStatus) 
 				);
 			}
 		}
+	}
+
+	// A borrowed class reference must not be returned — it would escape the
+	// function scope and outlive the instance it points into. Use `mov` (with
+	// swap) to transfer ownership instead.
+	if (func && borrow_depth_of(ret.value, status) !== undefined) {
+		add_error(
+			status,
+			`cannot return a borrowed reference — use 'mov' (with swap) to transfer ownership`,
+			ret.value.start,
+		);
 	}
 
 	if (func) {

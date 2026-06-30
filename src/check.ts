@@ -7,6 +7,7 @@ import type CheckResult from "./types/CheckResult.ts";
 export default function check(root: BaseNode): CheckResult {
 	const status: CheckStatus = {
 		stack: [root],
+		scope_depth: 0,
 		values: [],
 		types: [...built_in_types],
 		structs: [],

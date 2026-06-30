@@ -51,6 +51,17 @@ export default interface StackValue {
 	 */
 	alias_of?: string;
 	/**
+	 * Block scope depth at which this variable was declared (status.scope_depth
+	 * when pushed). Used by borrow-lifetime checking.
+	 */
+	decl_depth?: number;
+	/**
+	 * For borrowed class references (taken from a field access): the scope depth
+	 * at which the borrow was created. The borrow may not be assigned/returned
+	 * to a variable declared at a shallower depth (decl_depth < borrow_depth).
+	 */
+	borrow_depth?: number;
+	/**
 	 * For Buffer variables: the minimum guaranteed capacity, established by
 	 * calls to grow_int(N)/alloc_int(N)/alloc(N). Used to verify compile-time
 	 * `i < buf.cap` constraints after a known-size allocation.

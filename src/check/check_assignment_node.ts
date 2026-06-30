@@ -5,6 +5,7 @@ import AssignmentNode from "../nodes/AssignmentNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
+import { borrow_depth_of } from "./utils/borrow.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
 import evaluate_const_condition from "./utils/evaluate_const_condition.ts";
 import { track_assignment_bounds } from "./utils/flow_bounds.ts";
@@ -172,6 +173,28 @@ export default function check_assignment_node(
 			`cannot assign class field '${rhs_type.name}' from another owner, use mov with swap`,
 			assign.right_value.start,
 		);
+	}
+
+	// Borrow-lifetime check: a borrowed class reference (a variable that holds
+	// a borrow) may not be assigned to a variable declared in an outer scope —
+	// that would let the borrow outlive the instance it points into. To move
+	// ownership out, use `mov` (with swap). Within the same/inner scope the
+	// target simply becomes a borrow too.
+	if (!assign.swap && left_value.declaration === "var") {
+		const rhs_borrow_depth = borrow_depth_of(assign.right_value, status);
+		if (rhs_borrow_depth !== undefined) {
+			if (left_value.decl_depth !== undefined && left_value.decl_depth < rhs_borrow_depth) {
+				add_error(
+					status,
+					`borrow escapes its scope — use 'mov' (with swap) to transfer ownership`,
+					assign.right_value.start,
+				);
+			} else {
+				left_value.borrow_depth = rhs_borrow_depth;
+			}
+		} else {
+			left_value.borrow_depth = undefined;
+		}
 	}
 
 	if (assign.swap) {

@@ -6,6 +6,7 @@ import type CheckStatus from "../CheckStatus.ts";
 export default function clone_status(status: CheckStatus): CheckStatus {
 	return {
 		stack: status.stack,
+		scope_depth: status.scope_depth,
 		types: status.types,
 		expected_type: status.expected_type,
 		// Clone values, so that we can check whether is_set is set in all branches

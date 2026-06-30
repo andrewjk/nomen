@@ -11,11 +11,13 @@ import type CheckStatus from "./CheckStatus.ts";
 export default function check_block_node(node: BlockNode, status: CheckStatus) {
 	gather_structs(node, status);
 
+	status.scope_depth++;
 	status.stack.push(node);
 	for (let child of node.statements) {
 		check_node(child, status);
 	}
 	status.stack.pop();
+	status.scope_depth--;
 }
 
 function gather_structs(block: BlockNode, status: CheckStatus) {

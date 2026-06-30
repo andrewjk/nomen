@@ -15,6 +15,13 @@ export default interface CheckStatus {
 	 */
 	stack: BaseNode[];
 	/**
+	 * Current block scope depth (0 at the root, incremented by each nested
+	 * block). Used by borrow-lifetime checking: a borrow taken at depth D may
+	 * not be assigned/returned to a variable declared at a shallower (outer)
+	 * scope.
+	 */
+	scope_depth: number;
+	/**
 	 * Types (values, structs and traits) in scope
 	 */
 	types: string[];

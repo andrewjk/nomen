@@ -419,6 +419,7 @@ function specialize_function(
 
 	const root_status: CheckStatus = {
 		stack: [root],
+		scope_depth: status.scope_depth,
 		types: status.types.slice(),
 		values: [],
 		structs: status.structs,
