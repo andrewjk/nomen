@@ -11,7 +11,7 @@ describe("custom init build", () => {
 struct Counter {
     var int count
 
-    #init = (self, int start) {
+    func #init = (self, int start) {
         self.count = start
     }
 }
@@ -32,7 +32,7 @@ struct Point {
     var int y
     var int sum
 
-    #init = (self, int x, int y) {
+    func #init = (self, int x, int y) {
         self.x = x
         self.y = y
         self.sum = x + y
@@ -54,7 +54,7 @@ struct Config {
     var int timeout = 30
     var int retries
 
-    #init = (self, int retries) {
+    func #init = (self, int retries) {
         self.retries = retries
     }
 }
@@ -73,7 +73,7 @@ Console.write("\\{cfg.timeout}")
 pub struct Widget {
     var string name
 
-    pub #init = (self, string name) {
+    pub func #init = (self, string name) {
         self.name = name
     }
 }
@@ -112,7 +112,7 @@ Console.write("\\{r.handle}")
 describe("#init and #destroy parse errors", () => {
 	test("#init outside struct", () => {
 		const input = `
-#init = (int x) {
+func #init = (int x) {
     Console.write(x)
 }
 `;

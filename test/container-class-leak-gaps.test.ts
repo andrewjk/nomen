@@ -183,7 +183,7 @@ class Animal { var char letter }
 struct Zoo {
 	var List<Animal> animals = List<Animal>()
 
-	#init = (self) {
+	func #init = (self) {
 		self.animals.push(mov Animal('Z'))
 	}
 }

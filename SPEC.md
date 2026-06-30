@@ -249,7 +249,7 @@ pub struct Point {
     pub int y
     pub int sum
 
-    #init = (self, int x, int y) {
+    func #init = (self, int x, int y) {
         self.x = x
         self.y = y
         self.sum = x + y
@@ -265,7 +265,7 @@ If a struct has a `#destroy` function, it runs automatically when the struct goe
 pub struct Transaction {
     pub int handle
 
-    #init = (self, int handle) {
+    func #init = (self, int handle) {
         self.handle = handle
     }
 
