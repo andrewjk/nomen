@@ -109,7 +109,7 @@ const CONTAINER_BUFFER_FIELDS: Record<string, string> = {
  * that stores class pointers (e.g. "items" for List, "values" for LinkedList)
  * along with the element class name. Otherwise return undefined.
  */
-function get_container_class_buffer_field(
+export function get_container_class_buffer_field(
 	type_name: string,
 	status: BuildStatus,
 ): { field: string; elem: string } | undefined {
@@ -129,7 +129,7 @@ function get_container_class_buffer_field(
  * `buffer_field` is the field name ("items" or "values"). `elem_type` is the
  * element class name, used to wire up the per-element destroy callback.
  */
-function emit_set_container_class_refs_for_type(
+export function emit_set_container_class_refs_for_type(
 	status: BuildStatus,
 	var_offset: number,
 	struct_type_name: string,

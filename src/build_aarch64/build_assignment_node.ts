@@ -8,6 +8,10 @@ import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import { emit_address_of } from "./build_access_node.ts";
+import {
+	emit_set_container_class_refs_for_type,
+	get_container_class_buffer_field,
+} from "./build_declaration_node.ts";
 import build_node from "./build_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free } from "./utils/audit.ts";
@@ -302,6 +306,36 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 				}
 			}
 			build_swap(node, status);
+			// When a generic container of class elements is (re)assigned, wire up the
+			// element-destroy callback on the freshly stored container's values buffer
+			// — the assignment path doesn't go through declaration-init, so without
+			// this its elements would leak on destroy. The LHS/RHS type names are the
+			// *generic* names here (e.g. "List"), so also try the constructor's
+			// monomorphized name (e.g. "List_Animal") and variable_types.
+			if (!paramReg && !is_local_ref_var(name, status)) {
+				const candidates: string[] = [lhs_type_name, rhs_type.name];
+				if (node.right_value.node_type === "func_call") {
+					candidates.push((node.right_value as FunctionCallNode).name);
+				}
+				const vt = status.variable_types?.get(name);
+				if (vt?.name) candidates.push(vt.name);
+				for (const cand of candidates) {
+					const buf_info = get_container_class_buffer_field(cand, status);
+					if (buf_info) {
+						const var_offset = status.stack_offsets?.get(name);
+						if (var_offset !== undefined) {
+							emit_set_container_class_refs_for_type(
+								status,
+								var_offset,
+								cand,
+								buf_info.field,
+								buf_info.elem,
+							);
+						}
+						break;
+					}
+				}
+			}
 			return;
 		}
 

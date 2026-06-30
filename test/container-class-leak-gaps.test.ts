@@ -92,4 +92,109 @@ Console.write("done\\n")
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		await check_output("gap_nested_owned_class", result, "done\n");
 	});
+
+	// #5 — has_class_refs/destroy_fn are wired only on declaration-init paths
+	// (build_declaration_node). A container obtained via reassignment is a fresh
+	// instance whose buffer carries no destroy callback, so its elements leak.
+	test("reassigned List<Animal> does not reclaim its elements", async () => {
+		const input = `
+class Animal { var char letter }
+if true {
+	var List<Animal> list = List<Animal>()
+	list = List<Animal>()
+	list.push(mov Animal('Z'))
+}
+Console.write("done\\n")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		await check_output("gap_reassign_container", result, "done\n");
+	});
+
+	// #6 — A container built inside and returned from a factory function. The
+	// returned struct should carry its destroy callback through to the caller.
+	test("List<Animal> returned from a factory is reclaimed (declaration)", async () => {
+		const input = `
+class Animal { var char letter }
+func make_list = (out List<Animal>) {
+	var List<Animal> result = List<Animal>()
+	result.push(mov Animal('Z'))
+	return result
+}
+if true {
+	var List<Animal> list = make_list()
+}
+Console.write("done\\n")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		await check_output("gap_factory_decl", result, "done\n");
+	});
+
+	test("List<Animal> returned from a factory is reclaimed (assignment)", async () => {
+		const input = `
+class Animal { var char letter }
+func make_list = (out List<Animal>) {
+	var List<Animal> result = List<Animal>()
+	result.push(mov Animal('Z'))
+	return result
+}
+if true {
+	var List<Animal> list = List<Animal>()
+	list = make_list()
+}
+Console.write("done\\n")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		await check_output("gap_factory_assign", result, "done\n");
+	});
+
+	// #8 — A container constructed via a struct field default initializer never
+	// passes through declaration/assignment/factory construction, so its buffer
+	// may carry no destroy callback.
+	test("List<Animal> as a struct field default is reclaimed", async () => {
+		const input = `
+class Animal { var char letter }
+struct Zoo {
+	var List<Animal> animals = List<Animal>()
+}
+if true {
+	var Zoo z = Zoo()
+	z.animals.push(mov Animal('Z'))
+}
+Console.write("done\\n")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		await check_output("gap_struct_field_container", result, "done\n");
+	});
+
+	// #9 — Same gap as #8 but via a custom #init: the container field is zeroed
+	// by the field-default handling and populated in the user init body, yet the
+	// destroy callback still must be wired up.
+	test("List<Animal> field populated in a custom #init is reclaimed", async () => {
+		const input = `
+class Animal { var char letter }
+struct Zoo {
+	var List<Animal> animals = List<Animal>()
+
+	#init = (self) {
+		self.animals.push(mov Animal('Z'))
+	}
+}
+if true {
+	var Zoo z = Zoo()
+}
+Console.write("done\\n")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		await check_output("gap_struct_field_custom_init", result, "done\n");
+	});
 });

@@ -4,12 +4,40 @@ import FunctionNode from "../nodes/FunctionNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_block_node from "./build_block_node.ts";
+import { get_container_class_buffer_field } from "./build_declaration_node.ts";
 import { check_c_fallback } from "./build_raw_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
-import { emit_field_destroys } from "./utils/auto_destroy.ts";
+import { emit_field_destroys, resolve_struct_name } from "./utils/auto_destroy.ts";
 import scan_force_heap_strings from "./utils/scan_force_heap_strings.ts";
 import { allocate_stack_space } from "./utils/stack_var.ts";
 import { get_field_offset, get_struct_size, get_type_size } from "./utils/struct_layout.ts";
+
+/**
+ * For each field of `node` whose type is a generic container of class elements,
+ * wire up the element-destroy callback on that field's values buffer. Used in
+ * struct initializers, where a container field (e.g. `var List<Animal> xs =
+ * List<Animal>()`) is zeroed in place and would otherwise never receive the
+ * callback — leaking its elements on destroy. `base_reg` is the register
+ * holding the struct instance address in the current init (`x0` for the
+ * auto init, `x19`/self for a custom `#init`).
+ */
+function emit_container_field_class_refs(status: BuildStatus, node: StructNode, base_reg: string) {
+	for (const field of node.fields) {
+		// Struct field types carry the *generic* name (e.g. "List") plus type
+		// args; resolve to the monomorphized name so the container check matches.
+		const mono = resolve_struct_name(field.type.name, field.type.type_args, status);
+		const buf_info = get_container_class_buffer_field(mono, status);
+		if (!buf_info) continue;
+		const field_offset = get_field_offset(node.name, field.name, status);
+		const buf_offset = get_field_offset(mono, buf_info.field, status);
+		status.code += `add x9, ${base_reg}, #${field_offset}\n`;
+		status.code += `add x9, x9, #${buf_offset}\n`;
+		status.code += `mov x1, #1\n`;
+		status.code += `str x1, [x9, #24]\n`;
+		status.code += `adr x1, ${buf_info.elem}_destroy\n`;
+		status.code += `str x1, [x9, #32]\n`;
+	}
+}
 
 function emit_typed_store(
 	status: BuildStatus,
@@ -278,6 +306,8 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 		}
 	}
 
+	emit_container_field_class_refs(status, node, "x0");
+
 	status.code += `.return_${func_name}:\n`;
 	status.code += `ldp x29, x30, [sp], #16\n`;
 	status.code += `ret\n`;
@@ -377,6 +407,8 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 	}
 
 	build_block_node(func, status);
+
+	emit_container_field_class_refs(status, node, "x19");
 
 	status.code += `${return_label}:\n`;
 
