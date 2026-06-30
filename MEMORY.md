@@ -107,10 +107,16 @@ Class values obtained from field access or accessor methods are **borrowed refer
 
 ```
 var Elephant a = Elephant('A')     // a owns this instance
-list.add(a)                        // list stores a copy of the pointer
-var Elephant cur = list.value(0)   // cur is a borrowed reference — NOT freed at scope exit
-// a is freed at scope exit (a owns the instance); cur is not freed
+list.push(mov a)                   // ownership moves into the list; a is invalidated
+var Elephant cur = list.at(0)      // cur is a borrowed reference — NOT freed at scope exit
+// the list owns the instance now (see "Known limitations" — it is not freed yet)
 ```
+
+> **Caveat — partial lifetime enforcement.** A borrowed reference taken from a
+> field access (`var Box b = h.c`) is scope-checked: it may not escape the scope
+> it was taken in (assigned to an outer-scope variable or returned). To extract
+> ownership, use `mov` (with swap). Method-return borrows (e.g. `list.pop()`)
+> are not yet tracked, so those can still escape — see "Known Soundness Gaps".
 
 #### Ownership Transfer with `mov`
 
@@ -135,7 +141,7 @@ pub struct List<T> {
     var int length = 0
     var Buffer items = Buffer()
 
-    pub func push = (ref self, T value) {
+    pub func push = (ref self, mov T value) {
         // ...
         var int v = value       // T coerces to int for storage
         self.items.store_int(self.length, v)
@@ -149,7 +155,15 @@ pub struct List<T> {
 }
 ```
 
-When `T` is a class type, the stored value is a pointer. Retrieving it returns a borrowed reference — the container does not own the instances, the original variables do.
+Mutators (`push`/`add`/`add_node`/`set`) take **`mov T value`**: ownership of a class instance transfers into the container and the caller's variable is invalidated. This prevents a class from being freed by its original owner while the container still holds the pointer.
+
+When `T` is a class type, the stored value is a pointer. Retrieving it (`.at(i)`, `.pop()`, `.first()`) returns a **borrowed reference** — the container holds the pointer, not the caller's variable.
+
+The arena containers (`LinkedList`, `Tree`, `Graph`) store values and child/edge indices in flat `Buffer`s with a single owner, so cleanup is a flat `free` of each buffer — no recursive pointer chasing. Node identifiers are stable `int` indices (`-1` means "none"/"end"); read `count`/`node_count` before `add` to obtain a node's index.
+
+#### Compile-time bounds checking
+
+`Array`/`Buffer`/`List` accessors carry parameter constraints (e.g. `at(index: index >= 0 && index < self.length)`, `Buffer.store_int(i: i >= 0 && i < self.cap)`). These are checked at every call site at compile time via flow-sensitive bounds analysis (loop ranges, `while`/`if` conditions, and return-contract propagation), so most out-of-bounds index access is rejected before running. Indices that the analyser cannot prove in bounds still error ("Parameter constraint cannot be verified") rather than silently compiling.
 
 ### Loops
 
@@ -163,6 +177,62 @@ Variables declared inside loop bodies are cleaned up at each iteration. `break` 
 | Reassignment         | Old value freed (strings and classes) or destroyed (structs with destroy) |
 | `return`             | All locals cleaned up; returned values are "moved" (not freed)            |
 | `break` / `continue` | All intermediate scopes cleaned up before jump                            |
+
+---
+
+## Known Soundness Gaps
+
+These are memory-safety holes that are **not** currently caught at compile time.
+Each is pinned by a failing test in `test/memory-soundness-gaps.test.ts`.
+
+### Borrowed references outliving their owner (use-after-free)
+
+Borrowed class references — obtained from a field access (`h.c`), an accessor
+return, or an intermediate variable — used to carry no lifetime information, so
+a borrow could outlive the instance it points into (UAF).
+
+**Field-access and method-return borrows are now lifetime-checked at compile
+time.** The default for extracting a class reference is a borrow tied to a
+scope; the compiler tracks a `scope_depth` per variable and rejects any borrow
+that would escape to a shallower (outer) scope:
+
+- `b = h.c` (direct field-access assignment) is rejected — use `mov` (with
+  swap) to take ownership.
+- `var Box tmp = p.a; stolen = tmp` (smuggling a borrow through an intermediate
+  variable to an outer scope) is rejected.
+- `cur = list.pop()` / `arr.first()` (an instance method returning a class) is
+  a borrow of the receiver, rooted at the receiver's lifetime — it can't be
+  assigned to a variable that outlives the receiver.
+- `return h.c` (returning a borrow from a function) is rejected.
+
+Constructors and static factories (`Box(1)`, `Array.with(...)`, free functions
+returning fresh allocations) produce owned values and may escape freely. (The
+container accessors sidestep this via type-erased `load_int`, whose result is
+an `int` coerced to `T` at the call site — not a class borrow.)
+
+To extract a field/element out of its owner, the user must use `mov` (with
+`swap` of a replacement in). In-scope borrows (used within the same scope) are
+allowed.
+
+**Same-scope owner reassignment is sound** via deferred reclamation: replacing
+the owner (`h = Holder(...)`) frees the old instance at scope exit, not at the
+reassignment, so a borrow in the same scope stays valid. The replacement
+instance is anchored in the variable's **declaration frame** (not the current
+frame), so reassigning inside a nested scope such as a loop body does not free
+the live instance each iteration — the variable keeps the last value and stays
+valid after the loop.
+
+The borrow-lifetime check is a scope-depth comparison, not full alias/lifetime
+tracking; deeper escapes through nested data structures aren't modelled.
+
+### Container-stored classes are leaked
+
+When `T` is a class, a `mov T` value stored in a generic container is never
+freed: the container's backing `Buffer`s are flat-freed on destroy, but the
+individual class instances they point to are not. The original caller variable
+is invalidated by `mov`, so nothing frees the instance. This is a known leak
+(the type-safety guarantee — no double-free / no premature free — is what the
+`mov`-into-container design preserves). See `test/uaf-via-container.test.ts`.
 
 ---
 
@@ -181,7 +251,7 @@ offset 8+sizeof(first): second field
 ...
 ```
 
-`get_struct_size` returns `VT_SIZE + sum(field_sizes)`. Classes are always stored as 8-byte pointers (the instance is heap-allocated; the variable holds a pointer to it). Ref fields (`ref T`) are also 8 bytes.
+`get_struct_size` returns `VT_SIZE + sum(field_sizes)`. Classes are always stored as 8-byte pointers (the instance is heap-allocated; the variable holds a pointer to it). `mov T` fields holding a class store the 8-byte pointer (and transfer ownership — see Move Semantics). Note: `ref T` struct/class fields are rejected at compile time (`fields cannot be 'ref'`) because a non-owning borrow field could outlive its target — use a value field (copied) or a `mov` field.
 
 Auto-generated `_init` functions use correctly-sized store instructions (`strb` for 1-byte fields like `char`/`bool`, `strh` for 2-byte, `str` for 4-byte, `str` with `x` register for 8-byte) to avoid heap buffer overflows on class instances malloc'd to exact size.
 
@@ -272,6 +342,10 @@ When reassigning a class variable, the compiler distinguishes between:
 
 This distinction prevents double-frees when retrieving class pointers from generic containers. The `last_result_is_heap` flag is set by `heap_returning_functions` membership at the call site.
 
+For **constructor reassignment** (`cur = Box(42)`), the old instance's cleanup is **deferred to scope exit** rather than run eagerly: the old anchor slot is disowned (its `var_name` cleared) and tagged with a `destroy_type`, and `defer_anchor_destroy` returns the declaration-frame index it lived in. The replacement is anchored in that same declaration frame (`anchor_heap_pointer` takes the frame index), so it survives nested scopes like loop bodies instead of being freed each iteration. At scope/return/break exit, `free_anchor_slot` runs the type's `#destroy` and field destroys before freeing the instance. This keeps borrows of the old instance's fields valid for the rest of the scope (e.g. `b = cur.field; cur = Box(...)` no longer dangles `b`). Cross-scope borrows are rejected by the borrow-lifetime check (see above).
+
+Other reassignment paths do not create a fresh anchor and so are unaffected: a heap-returning factory (`cur = mk()`) or a variable copy stores the new pointer into the variable's **existing** anchor slot (freeing the old eagerly), and string reassignment uses `heap_strings` rather than anchor slots. These are covered by `test/reassignment-loop.test.ts`.
+
 #### Borrowed Reference Detection
 
 Class-typed declarations initialized from field accesses (`is_borrowed_class_ref` in `build_declaration_node.ts`) are excluded from `scoped_declarations` and destroy tracking — they are treated as borrowed references, not owned instances.
@@ -351,3 +425,6 @@ At program exit, `echo_audit_check()` reports any remaining allocations as `LEAK
 | `test/memory-errors.test.ts`                     | Memory error detection tests                                                                                                                                                                                |
 | `test/class.test.ts` / `test/class-move.test.ts` | Class allocation, move semantics, destroy, cross-scope assignment (35 tests combined)                                                                                                                       |
 | `test/containers.test.ts`                        | Generic containers with class pointers (LinkedList, Tree, Graph)                                                                                                                                            |
+| `test/uaf-via-container.test.ts`                 | `mov`-into-container ownership transfer; container-stored-class leak limitation                                                                                                                             |
+| `test/reassignment-loop.test.ts`                 | Class/string reassignment inside loops across each codegen path (constructor, factory, ref-param, nested-if)                                                                                                |
+| `test/memory-soundness-gaps.test.ts`             | Borrow-lifetime rejection (field/method/function escapes) + deferred-reclamation regression tests                                                                                                           |
