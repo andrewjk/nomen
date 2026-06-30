@@ -198,14 +198,18 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 					// field frees) to scope exit rather than running it now, so
 					// that borrows of the old instance's fields stay valid for the
 					// rest of the scope. Falls back to eager cleanup when the old
-					// value isn't anchored (e.g. a borrowed reference).
-					if (!defer_anchor_destroy(status, name, rhs_type.name, rhs_type.type_args)) {
+					// value isn't anchored (e.g. a borrowed reference). The
+					// replacement is anchored in the variable's declaration frame
+					// (returned here) so it survives nested scopes such as loop
+					// bodies instead of being freed each iteration.
+					const decl_frame = defer_anchor_destroy(status, name, rhs_type.name, rhs_type.type_args);
+					if (decl_frame === undefined) {
 						emit_destroy_for_decl(status, name, rhs_type.name);
 					}
 					mark_moved_if_struct(node.right_value, status);
 					build_node(node.right_value, status);
 					if (!status.code.endsWith("\n")) status.code += "\n";
-					anchor_heap_pointer(status, name);
+					anchor_heap_pointer(status, name, decl_frame);
 					const offset = status.stack_offsets?.get(name);
 					if (offset !== undefined) {
 						status.code += `str x0, [x29, #${offset}]\n`;

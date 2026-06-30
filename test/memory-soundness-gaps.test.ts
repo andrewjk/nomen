@@ -118,7 +118,9 @@ Console.write("\\{b.v}\\n")
 
 // Same-scope owner reassignment is sound via deferred reclamation: the old
 // instance is freed at scope exit, not at the reassignment, so a borrow in the
-// same scope stays valid.
+// same scope stays valid. The replacement is anchored in the variable's
+// declaration frame, so reassigning inside a nested scope (e.g. a loop body)
+// does not free the live instance each iteration.
 
 describe("deferred reclamation across owner reassignment", () => {
 	test("borrowed reference kept valid across owner reassignment", async () => {
@@ -135,15 +137,8 @@ Console.write("\\{b.v}\\n")
 		const result = build(parsed.root, { arch: "aarch64" });
 		await check_output("defer_reassign_borrow", result, "1\n", { audit: true });
 	});
-});
 
-// Still-open soundness gaps (these FAIL today):
-
-describe("open soundness gaps", () => {
-	test("class reassignment inside a loop frees the live instance each iteration", () => {
-		// Distinct pre-existing bug: re-anchoring on `h = Holder(...)` adds the
-		// new anchor to the loop-body frame, so it is freed at each iteration's
-		// scope exit — leaving `h` dangling. Orthogonal codegen issue.
+	test("class reassignment inside a loop keeps the live instance", async () => {
 		const input = `
 class Box { var int v }
 class Holder { mov Box c }
@@ -157,6 +152,11 @@ while i <= 5 {
 Console.write("\\{h.c.v}\\n")
 `;
 		const parsed = parse_with_imports(input);
-		expect(parsed.errors.length).toBeGreaterThan(0);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64" });
+		// The replacement anchors in h's declaration frame, so it isn't freed
+		// at each iteration's scope exit; h holds the last value (5), audit
+		// balanced (old instances reclaimed at scope exit).
+		await check_output("defer_reassign_loop", result, "5\n", { audit: true });
 	});
 });

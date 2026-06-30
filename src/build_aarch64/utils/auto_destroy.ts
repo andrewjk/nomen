@@ -15,14 +15,24 @@ export function mark_heap_string(status: BuildStatus, name: string) {
 	}
 }
 
-export function anchor_heap_pointer(status: BuildStatus, var_name?: string): number {
+export function anchor_heap_pointer(
+	status: BuildStatus,
+	var_name?: string,
+	frame_index?: number,
+): number {
 	const offset = allocate_stack_space(status, 8, 8);
 	status.code += `str x0, [x29, #${offset}]\n`;
 	if (status.heap_cleanup_stack?.length) {
-		status.heap_cleanup_stack[status.heap_cleanup_stack.length - 1].heap_slots.push({
-			offset,
-			var_name,
-		});
+		// By default a fresh anchor belongs to the current scope. But when
+		// reassigning a variable declared in an outer scope (e.g. inside a loop
+		// body), the new instance must live as long as the variable — so anchor
+		// it in the variable's declaration frame, not the loop-body frame, or it
+		// would be freed each iteration and leave the variable dangling.
+		const frame =
+			frame_index !== undefined && frame_index < status.heap_cleanup_stack.length
+				? status.heap_cleanup_stack[frame_index]
+				: status.heap_cleanup_stack[status.heap_cleanup_stack.length - 1];
+		frame.heap_slots.push({ offset, var_name });
 	}
 	return offset;
 }
@@ -53,27 +63,30 @@ export function find_anchor_slot(status: BuildStatus, var_name: string) {
  * type's `#destroy` and field destroys run before the instance is freed. This
  * keeps borrows of the old instance's fields valid until the scope ends.
  *
- * Returns true if deferred (an anchor slot was found and tagged), false if the
- * old value wasn't anchored (caller should fall back to eager cleanup).
+ * Returns the index (in heap_cleanup_stack) of the frame the old slot lived
+ * in — i.e. the variable's declaration frame — so the caller can anchor the
+ * replacement there. Returns undefined if the old value wasn't anchored (caller
+ * should fall back to eager cleanup).
  */
 export function defer_anchor_destroy(
 	status: BuildStatus,
 	var_name: string,
 	type_name: string,
 	type_args?: Type[],
-): boolean {
-	for (const scope of status.heap_cleanup_stack ?? []) {
+): number | undefined {
+	for (let f = 0; f < (status.heap_cleanup_stack?.length ?? 0); f++) {
+		const scope = status.heap_cleanup_stack![f];
 		for (let i = scope.heap_slots.length - 1; i >= 0; i--) {
 			const slot = scope.heap_slots[i];
 			if (slot.var_name === var_name) {
 				slot.var_name = undefined;
 				slot.destroy_type = type_name;
 				slot.destroy_type_args = type_args;
-				return true;
+				return f;
 			}
 		}
 	}
-	return false;
+	return undefined;
 }
 
 /**
