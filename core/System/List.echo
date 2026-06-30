@@ -17,21 +17,23 @@ pub struct List<T> {
         self.length = self.length + 1
     }
 
-    pub func pop = (ref self, out T) {
-        if self.length <= 0 {
-            return 0
-        }
-        var int idx = self.length - 1
-        self.length = idx
-        return self.items.load_int(idx)
-    }
+	pub func pop = (ref self, out T) {
+		if self.length <= 0 {
+			return 0
+		}
+		var int idx = self.length - 1
+		self.length = idx
+		var int v = self.items.load_int(idx)
+		self.items.store_int(idx, 0)
+		return v
+	}
 
     pub func at = (self, int i: i >= 0 && i < self.length, out T) {
         return self.items.load_int(i)
     }
 
-    pub func set = (ref self, int i: i >= 0 && i < self.length, mov T value) {
-        var int v = value
-        self.items.store_int(i, v)
-    }
+	pub func set = (ref self, int i: i >= 0 && i < self.length, mov T value) {
+		var int v = value
+		self.items.replace_int(i, v)
+	}
 }
