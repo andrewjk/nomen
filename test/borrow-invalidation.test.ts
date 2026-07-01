@@ -76,4 +76,74 @@ Console.write("\\{y.value}")
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
 	});
+
+	test("field-path container borrow is invalidated (path receiver)", () => {
+		const input = `
+class Animal { var char letter }
+class Zoo {
+	var List<Animal> animals = List<Animal>()
+}
+var Zoo z = Zoo()
+z.animals.push(mov Animal('A'))
+var Animal a = z.animals.pop()
+z.animals.push(mov Animal('B'))
+Console.write("\\{a.letter}")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors.some((e) => e.message.includes("invalidated"))).toBe(true);
+	});
+
+	test("invalidation inside an if-body persists after the block", () => {
+		const input = `
+class Animal { var char letter }
+var List<Animal> list = List<Animal>()
+list.push(mov Animal('A'))
+var Animal a = list.pop()
+if true {
+	list.push(mov Animal('B'))
+}
+Console.write("\\{a.letter}")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors.some((e) => e.message.includes("invalidated"))).toBe(true);
+	});
+
+	test("invalidation inside a switch case persists after the switch", () => {
+		const input = `
+class Animal { var char letter }
+var List<Animal> list = List<Animal>()
+list.push(mov Animal('A'))
+var Animal a = list.pop()
+var int x = 1
+switch {
+	case x > 0 {
+		list.push(mov Animal('B'))
+	}
+}
+Console.write("\\{a.letter}")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors.some((e) => e.message.includes("invalidated"))).toBe(true);
+	});
+
+	test("invalidation inside a match case persists after the match", () => {
+		const input = `
+class Animal { var char letter }
+var List<Animal> list = List<Animal>()
+list.push(mov Animal('A'))
+var Animal a = list.pop()
+var int x = 1
+match x {
+	case 1 {
+		list.push(mov Animal('B'))
+	}
+	else {
+		Console.write("else")
+	}
+}
+Console.write("\\{a.letter}")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors.some((e) => e.message.includes("invalidated"))).toBe(true);
+	});
 });

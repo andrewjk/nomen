@@ -11,7 +11,7 @@ import check_function_call from "./check_function_call.ts";
 import { monomorphize } from "./check_function_call_node.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
-import { invalidate_borrows_of } from "./utils/borrow.ts";
+import { invalidate_borrows_of, receiver_owner_of } from "./utils/borrow.ts";
 import { expr_to_string } from "./utils/flow_bounds.ts";
 import {
 	find_function_by_params,
@@ -323,22 +323,25 @@ function check_access_function_node(
 
 	// Check for calling a mutating method on a const variable
 	// (detected by `ref self` on the first parameter)
-	if (
-		func.params[0]?.is_self_param &&
-		(func.params[0].is_ref || func.params[0].type?.is_ref) &&
-		target.node_type === "value"
-	) {
-		const target_name = (target as ValueNode).value;
-		// Skip 'self' — ref self methods can be called on self within other ref self methods
-		if (target_name !== "self") {
-			const decl = status.values.findLast((v) => v.name === target_name);
-			if (decl?.declaration === "const" && !decl?.type?.is_ref) {
-				add_error(status, `Update to const: ${target_name}`, node.start);
-				return false;
+	if (func.params[0]?.is_self_param && (func.params[0].is_ref || func.params[0].type?.is_ref)) {
+		// A mutating call may free or displace the receiver's contents, so every
+		// live child-group borrow rooted at this receiver is now stale. Resolve
+		// the ultimate owner so field-path receivers (e.g. z.animals.push) and
+		// borrows-of-borrows are invalidated transitively.
+		const owner = receiver_owner_of(target, status);
+		if (target.node_type === "value") {
+			const target_name = (target as ValueNode).value;
+			// Skip 'self' — ref self methods can be called on self within other ref self methods
+			if (target_name !== "self") {
+				const decl = status.values.findLast((v) => v.name === target_name);
+				if (decl?.declaration === "const" && !decl?.type?.is_ref) {
+					add_error(status, `Update to const: ${target_name}`, node.start);
+					return false;
+				}
 			}
-			// A mutating call may free or displace the receiver's contents, so
-			// every live child-group borrow rooted at this receiver is now stale.
-			invalidate_borrows_of(status, target_name);
+		}
+		if (owner) {
+			invalidate_borrows_of(status, owner);
 		}
 	}
 

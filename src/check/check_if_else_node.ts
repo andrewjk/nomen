@@ -118,6 +118,15 @@ export default function check_if_else_node(if_else: IfElseNode, status: CheckSta
 			value.is_null = else_status.values[i].is_null;
 		}
 		// If both fall through, keep original is_null (conservative)
+
+		// Borrow invalidation: a borrow invalidated in any branch that can fall
+		// through is invalidated afterwards (either path may have executed).
+		if (if_falls_through && if_status.values[i]?.borrow_invalidated) {
+			value.borrow_invalidated = true;
+		}
+		if (else_falls_through && else_status.values[i]?.borrow_invalidated) {
+			value.borrow_invalidated = true;
+		}
 	}
 
 	if (if_else.if_branch && !if_else.else_branch) {

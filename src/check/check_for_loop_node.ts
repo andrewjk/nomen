@@ -7,6 +7,7 @@ import ValueNode from "../nodes/ValueNode.ts";
 import check_block_node from "./check_block_node.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
+import { persist_invalidated } from "./utils/borrow.ts";
 import clone_status from "./utils/clone_status.ts";
 import { evaluate_numeric_or_bool } from "./utils/evaluate_const_condition.ts";
 import { expr_to_string } from "./utils/flow_bounds.ts";
@@ -93,6 +94,10 @@ export default function check_for_loop_node(for_loop: ForLoopNode, status: Check
 	if (for_loop.update) {
 		check_node(for_loop.update, for_status);
 	}
+
+	// The body may have executed before the post-loop code, so invalidations
+	// performed in it persist into the enclosing scope.
+	persist_invalidated(status, for_status);
 }
 
 function evaluate_range_bound_value(node: BaseNode, status: CheckStatus): number | undefined {

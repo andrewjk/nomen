@@ -84,7 +84,9 @@ export function borrow_owner_of(node: BaseNode, status: CheckStatus): string | u
 					}
 					return undefined;
 				}
-				return undefined;
+				// Access-path receiver (e.g. z.animals.pop()): an instance method
+				// on a field path — root the borrow at the ultimate owning var.
+				return ultimate_owner(access.target, status);
 			}
 		}
 	}
@@ -95,14 +97,43 @@ export function borrow_owner_of(node: BaseNode, status: CheckStatus): string | u
 	return undefined;
 }
 
-/** Resolve an access target down to its ultimate owning variable name. */
+/**
+ * Resolve an access target down to its ultimate owning variable name. Recurses
+ * through field paths so `z.animals` → `z` (and `a.b.c` → `a`).
+ */
 function ultimate_owner(target: BaseNode, status: CheckStatus): string | undefined {
 	if (target.node_type === "value") {
 		const name = (target as ValueNode).value;
 		const decl = status.values.findLast((v) => v.name === name);
 		return decl?.borrowed_from ?? name;
 	}
+	if (target.node_type === "access") {
+		return ultimate_owner((target as AccessNode).target, status);
+	}
 	return value_from_value_node(target) ?? undefined;
+}
+
+/**
+ * The owner whose child-group borrows a method-call receiver mutation
+ * invalidates. A bare variable receiver (`list`, or a borrow `x`) resolves to
+ * itself — mutating it threatens its own subtree, not its owner's siblings. A
+ * field-path receiver (`z.animals`) has no name of its own, so it roots at the
+ * base variable (`z`). Returns undefined for `self` and for static calls.
+ */
+export function receiver_owner_of(target: BaseNode, status: CheckStatus): string | undefined {
+	if (target.node_type === "value") {
+		const name = (target as ValueNode).value;
+		if (name === "self") return undefined;
+		// Static call (type name, not a tracked variable) → nothing to invalidate.
+		if (!status.values.findLast((v) => v.name === name)) return undefined;
+		return name;
+	}
+	if (target.node_type === "access") {
+		const owner = ultimate_owner(target, status);
+		if (!owner || owner === "self") return undefined;
+		return owner;
+	}
+	return undefined;
 }
 
 /**
@@ -115,6 +146,22 @@ export function invalidate_borrows_of(status: CheckStatus, owner: string) {
 	for (const v of status.values) {
 		if (v.borrowed_from === owner) {
 			v.borrow_invalidated = true;
+		}
+	}
+}
+
+/**
+ * Carry borrow invalidations performed inside a cloned branch status back into
+ * the enclosing status. A borrow invalidated in any branch that can fall
+ * through (or any loop-body iteration) is considered invalidated afterwards —
+ * a conservative union, since either path may have executed. Without this,
+ * invalidations vanish with the discarded branch clone and the borrow could be
+ * read after the block.
+ */
+export function persist_invalidated(status: CheckStatus, branch: CheckStatus) {
+	for (let i = 0; i < status.values.length; i++) {
+		if (branch.values[i]?.borrow_invalidated) {
+			status.values[i].borrow_invalidated = true;
 		}
 	}
 }

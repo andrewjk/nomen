@@ -61,6 +61,12 @@ export default function check_match_node(match_node: MatchNode, status: CheckSta
 				value.is_set = true;
 			}
 		}
+
+		// Borrow invalidation: a borrow invalidated in any case (or else) that
+		// can fall through is invalidated afterwards — either may have run.
+		if (branch_statuses.some((bs) => bs.values[i]?.borrow_invalidated)) {
+			value.borrow_invalidated = true;
+		}
 	}
 
 	if (!match_node.else_branch) {
