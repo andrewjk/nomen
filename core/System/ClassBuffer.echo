@@ -1,0 +1,90 @@
+// ClassBuffer<T>: a flat buffer of owned class pointers of type T. Unlike the
+// runtime-flagged Buffer, the class-ness is compile-time: #destroy calls the
+// monomorphized element destroy (`T_destroy` -> e.g. Animal_destroy) directly,
+// and store_int forbids 0 (you can't overwrite a pointer with null and leak it
+// — use move_int to relinquish a slot). The element type T must be a class.
+
+pub struct ClassBuffer<T> {
+	var uint64 data = 0
+	var int cap = 0
+
+	func alloc_int = (ref self, int size, out int: out >= size) {
+		```
+		#arch: c
+		self->cap = size;
+		self->data = (unsigned long long)(long*)calloc(size, sizeof(long));
+		return self->cap;
+		```
+		```
+		#arch: aarch64
+		str x1, [x19, #16]
+		mov x0, x1
+		mov x1, #8
+		bl _calloc
+		str x0, [x19, #8]
+		ldr x0, [x19, #16]
+		```
+	}
+
+	inline func store_int = (ref self, int i: i >= 0 && i < self.cap, int val: val != 0) {
+		```
+		#arch: c
+		((long*)(unsigned long long)self->data)[i] = val;
+		```
+		```
+		#arch: aarch64
+		ldr x0, [x19, #8]
+		lsl x3, x1, #3
+		add x0, x0, x3
+		str x2, [x0]
+		```
+	}
+
+	func #destroy = () {
+		```
+		#arch: c
+		if (self->data) {
+			long *slots = (long*)(unsigned long long)self->data;
+			for (int i = 0; i < self->cap; i++) {
+				if (slots[i]) {
+					T_destroy((void*)slots[i]);
+					free((void*)slots[i]);
+				}
+			}
+			free(slots);
+		}
+		```
+		```
+		#arch: aarch64
+		ldr x0, [x19, #8]
+		cbz x0, .Lcb_destroy_end
+		stp x20, x21, [sp, #-16]!
+		str x22, [sp, #-16]!
+		mov x20, x0
+		ldr x21, [x19, #16]
+		mov x22, #0
+		.Lcb_destroy_loop:
+		cmp x22, x21
+		b.ge .Lcb_destroy_done
+		ldr x0, [x20, x22, lsl #3]
+		cbz x0, .Lcb_destroy_skip
+		str x0, [sp, #-16]!
+		bl T_destroy
+		ldr x0, [sp], #16
+		bl _free
+		.Lcb_destroy_skip:
+		add x22, x22, #1
+		b .Lcb_destroy_loop
+		.Lcb_destroy_done:
+		ldr x22, [sp], #16
+		ldp x20, x21, [sp], #16
+		.Lcb_destroy_end:
+		ldr x0, [x19, #8]
+		cbz x0, .Lcb_destroy_free_done
+		bl _free
+		.Lcb_destroy_free_done:
+		str xzr, [x19, #8]
+		str xzr, [x19, #16]
+		```
+	}
+}

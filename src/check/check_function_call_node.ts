@@ -284,6 +284,9 @@ function substitute_raw_in_node(node: BaseNode, substitution: Map<string, string
 			// Also substitute T_SIZE placeholder with element byte size
 			const size = raw_type_size(type);
 			value = value.replace(new RegExp(`\\b${param}_SIZE\\b`, "g"), String(size));
+			// Substitute T_destroy placeholder with the monomorphized element's
+			// destroy symbol (e.g. ClassBuffer<Animal>.#destroy calls Animal_destroy).
+			value = value.replace(new RegExp(`\\b${param}_destroy\\b`, "g"), `${type}_destroy`);
 		}
 		raw.value = value;
 		return;
