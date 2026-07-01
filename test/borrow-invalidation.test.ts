@@ -3,22 +3,32 @@ import { describe, expect, test } from "vite-plus/test";
 import parse_with_imports from "./parse_with_imports";
 
 // Child-group borrow invalidation: a borrowed class reference taken from a
-// container element or a class field (a "child-group borrow") is invalidated
+// class field or container element (a "child-group borrow") is invalidated
 // when its owner is mutated via a `ref self` / `var self` method call — because
 // the mutation may free or displace the contents the borrow points into.
 // Object-level aliases (`var q = p`) are NOT child-group borrows, so mutating a
 // sibling does not invalidate them. This is the mutable-aliasing benefit over
 // Rust's aliasing-xor-mutability, made sound by invalidating on mutation.
+//
+// The borrow source here is a `mov` class field (`h.content`), which is a
+// child-group borrow rooted at the owner `h`, and avoids the container index
+// bounds checks that `.at(i)` would require.
 
 describe("child-group borrow invalidation on owner mutation", () => {
-	test("container element borrow invalidated by a later mutating call", () => {
+	test("field borrow invalidated by a later mutating call", () => {
 		const input = `
-class Animal { var char letter }
-var List<Animal> list = List<Animal>()
-list.push(mov Animal('A'))
-var Animal a = list.pop()
-list.push(mov Animal('B'))
-Console.write("\\{a.letter}")
+class Box { var int value }
+class Holder {
+	mov Box content
+	var int scratch
+	func poke = (ref self) {
+		self.scratch = self.scratch + 1
+	}
+}
+var Holder h = Holder(mov Box(1), 0)
+var Box b = h.content
+h.poke()
+Console.write("\\{b.value}")
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors.some((e) => e.message.includes("invalidated"))).toBe(true);
@@ -29,10 +39,12 @@ Console.write("\\{a.letter}")
 class Animal { var char letter }
 var List<Animal> list = List<Animal>()
 list.push(mov Animal('A'))
-var Animal a = list.pop()
-list.push(mov Animal('B'))
-a = list.pop()
-Console.write("\\{a.letter}")
+if list.length > 0 {
+	var Animal a = list.at(0)
+	list.push(mov Animal('B'))
+	a = list.at(0)
+	Console.write("\\{a.letter}")
+}
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
@@ -77,17 +89,17 @@ Console.write("\\{y.value}")
 		expect(parsed.errors).toEqual([]);
 	});
 
-	test("field-path container borrow is invalidated (path receiver)", () => {
+	test("mutation through a field-path receiver invalidates the owner's borrows", () => {
 		const input = `
-class Animal { var char letter }
+class Box { var int value }
 class Zoo {
-	var List<Animal> animals = List<Animal>()
+	mov Box badge
+	var List<int> animals = List<int>()
 }
-var Zoo z = Zoo()
-z.animals.push(mov Animal('A'))
-var Animal a = z.animals.pop()
-z.animals.push(mov Animal('B'))
-Console.write("\\{a.letter}")
+var Zoo z = Zoo(mov Box(1))
+var Box b = z.badge
+z.animals.push(5)
+Console.write("\\{b.value}")
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors.some((e) => e.message.includes("invalidated"))).toBe(true);
@@ -95,14 +107,20 @@ Console.write("\\{a.letter}")
 
 	test("invalidation inside an if-body persists after the block", () => {
 		const input = `
-class Animal { var char letter }
-var List<Animal> list = List<Animal>()
-list.push(mov Animal('A'))
-var Animal a = list.pop()
-if true {
-	list.push(mov Animal('B'))
+class Box { var int value }
+class Holder {
+	mov Box content
+	var int scratch
+	func poke = (ref self) {
+		self.scratch = self.scratch + 1
+	}
 }
-Console.write("\\{a.letter}")
+var Holder h = Holder(mov Box(1), 0)
+var Box b = h.content
+if true {
+	h.poke()
+}
+Console.write("\\{b.value}")
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors.some((e) => e.message.includes("invalidated"))).toBe(true);
@@ -110,17 +128,23 @@ Console.write("\\{a.letter}")
 
 	test("invalidation inside a switch case persists after the switch", () => {
 		const input = `
-class Animal { var char letter }
-var List<Animal> list = List<Animal>()
-list.push(mov Animal('A'))
-var Animal a = list.pop()
+class Box { var int value }
+class Holder {
+	mov Box content
+	var int scratch
+	func poke = (ref self) {
+		self.scratch = self.scratch + 1
+	}
+}
+var Holder h = Holder(mov Box(1), 0)
+var Box b = h.content
 var int x = 1
 switch {
 	case x > 0 {
-		list.push(mov Animal('B'))
+		h.poke()
 	}
 }
-Console.write("\\{a.letter}")
+Console.write("\\{b.value}")
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors.some((e) => e.message.includes("invalidated"))).toBe(true);
@@ -128,20 +152,26 @@ Console.write("\\{a.letter}")
 
 	test("invalidation inside a match case persists after the match", () => {
 		const input = `
-class Animal { var char letter }
-var List<Animal> list = List<Animal>()
-list.push(mov Animal('A'))
-var Animal a = list.pop()
+class Box { var int value }
+class Holder {
+	mov Box content
+	var int scratch
+	func poke = (ref self) {
+		self.scratch = self.scratch + 1
+	}
+}
+var Holder h = Holder(mov Box(1), 0)
+var Box b = h.content
 var int x = 1
 match x {
 	case 1 {
-		list.push(mov Animal('B'))
+		h.poke()
 	}
 	else {
 		Console.write("else")
 	}
 }
-Console.write("\\{a.letter}")
+Console.write("\\{b.value}")
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors.some((e) => e.message.includes("invalidated"))).toBe(true);

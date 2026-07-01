@@ -1,4 +1,5 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
+import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
@@ -762,6 +763,16 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 					if (!status.code.endsWith("\n")) {
 						status.code += "\n";
 					}
+				}
+				// A `mov out` method (e.g. List.pop) transfers ownership of its
+				// result to this variable — anchor it so it's freed at scope
+				// exit, otherwise the relinquished instance leaks.
+				if (
+					node.value.node_type === "access" &&
+					(node.value as AccessNode).access.node_type === "access_func" &&
+					((node.value as AccessNode).access as AccessFunctionCallNode).owned_return
+				) {
+					anchor_heap_pointer(status, node.name);
 				}
 				emit_var_store(status, "x0", node.name, 8);
 			}

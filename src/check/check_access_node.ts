@@ -321,6 +321,13 @@ function check_access_function_node(
 		node.mangled_name = mangled_label(func, struct.name);
 	}
 
+	// A `mov out T` method transfers ownership of its result to the caller
+	// (it's an owned value, not a borrow). Record that on the node so the
+	// borrow checker treats it as non-borrowed and the build anchors it.
+	if (func.returns_mov) {
+		node.owned_return = true;
+	}
+
 	// Check for calling a mutating method on a const variable
 	// (detected by `ref self` on the first parameter)
 	if (func.params[0]?.is_self_param && (func.params[0].is_ref || func.params[0].type?.is_ref)) {

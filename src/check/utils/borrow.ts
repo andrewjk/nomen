@@ -1,3 +1,4 @@
+import AccessFunctionCallNode from "../../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../../nodes/AccessNode.ts";
 import type BaseNode from "../../nodes/BaseNode.ts";
 import ValueNode from "../../nodes/ValueNode.ts";
@@ -31,6 +32,9 @@ export function borrow_depth_of(node: BaseNode, status: CheckStatus): number | u
 		} else if (access.access.node_type === "access_func") {
 			const t = type_from_value_node(access, status);
 			if (t?.name && is_class_type(t.name, status)) {
+				// A `mov out T` method transfers ownership — the result is an
+				// owned value, not a borrow.
+				if ((access.access as AccessFunctionCallNode).owned_return) return undefined;
 				// Instance method returning a class borrows from its receiver.
 				// Static calls (receiver is a type name, not a variable in
 				// scope) and constructors produce owned values — not borrows.
@@ -75,6 +79,9 @@ export function borrow_owner_of(node: BaseNode, status: CheckStatus): string | u
 		} else if (access.access.node_type === "access_func") {
 			const t = type_from_value_node(access, status);
 			if (t?.name && is_class_type(t.name, status)) {
+				// A `mov out T` method returns an owned value — no owner to root
+				// a borrow at (and it must not be invalidated by receiver mutation).
+				if ((access.access as AccessFunctionCallNode).owned_return) return undefined;
 				if (access.target.node_type === "value") {
 					const recv = status.values.findLast((v) => v.name === (access.target as ValueNode).value);
 					if (recv) {

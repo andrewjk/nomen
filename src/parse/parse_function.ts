@@ -15,6 +15,7 @@ import consume from "./utils/consume.ts";
 import expect from "./utils/expect.ts";
 import get_index from "./utils/get_index.ts";
 import peek_current from "./utils/peek_current.ts";
+import peek_next from "./utils/peek_next.ts";
 
 export default function parse_function(
 	visibility: "pub" | "private",
@@ -139,9 +140,17 @@ export default function parse_function(
 function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: ParseStatus) {
 	const param_start = get_index(status);
 
+	// `mov out TYPE` — an ownership-transferring (owned) return. Distinguished
+	// from a `mov TYPE name` parameter by the `out` that follows `mov`.
+	const returns_mov = peek_current(status) === "mov" && peek_next(status) === "out";
+	if (returns_mov) {
+		accept("mov", status);
+	}
+
 	if (accept("out", status)) {
 		func.return_type_start = get_index(status);
 		func.return_type = parse_type(status);
+		func.returns_mov = returns_mov;
 
 		// Optional return contract: `out TYPE: out >= 0 && out < cap`
 		// The placeholder `out` refers to the return value.

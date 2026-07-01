@@ -389,4 +389,43 @@ Console.write("\\{nums.at(2)}")
 		expect(parsed.errors).toEqual([]);
 		await check_output("leak_array_primitives", result, "123");
 	});
+
+	// pop() zeroes the slot so the container won't free the element, but the
+	// popped instance is returned as a borrow (not anchored) — so nobody frees
+	// it. It leaks.
+	test("LEAK: popped class element is never freed", async () => {
+		const input = `
+class Animal { var char letter }
+if true {
+	var List<Animal> list = List<Animal>()
+	list.push(mov Animal('A'))
+	var Animal a = list.pop()
+	Console.write("\\{a.letter}")
+}
+Console.write("done\\n")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		await check_output("leak_pop_element", result, "Adone\n");
+	});
+
+	// Struct assignment shallow-copies the backing Buffer, so two List variables
+	// share the same data pointer; destroying both double-frees the buffer and
+	// each stored element.
+	test("DOUBLE-FREE: struct copy of a container shares the buffer", async () => {
+		const input = `
+class Animal { var char letter }
+if true {
+	var List<Animal> a = List<Animal>()
+	a.push(mov Animal('A'))
+	var List<Animal> b = a
+}
+Console.write("done\\n")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		await check_output("double_free_struct_copy", result, "done\n");
+	});
 });

@@ -80,16 +80,19 @@ Console.write("\\{b.v}\\n")
 	});
 
 	test("container element borrow cannot escape the container's scope", () => {
-		// `cur` borrows a pointer the list stores via pop(); assigning it to the
+		// `cur` borrows a pointer the list exposes via .at(); assigning it to the
 		// outer `cur` would outlive the list. Rejected (instance method return
-		// is treated as a borrow of the receiver).
+		// is treated as a borrow of the receiver). (`.pop()` is now `mov out T` —
+		// an owned return — so it can escape freely; `.at()` is the borrow case.)
 		const input = `
 class Animal { var char letter }
 var Animal cur
 if true {
     var List<Animal> list = List<Animal>()
     list.push(mov Animal('Z'))
-    cur = list.pop()
+    if list.length > 0 {
+        cur = list.at(0)
+    }
 }
 Console.write("\\{cur.letter}\\n")
 `;

@@ -1,26 +1,8 @@
-import { exec } from "node:child_process";
-import path from "node:path";
-import util from "node:util";
-
 import { expect, describe, test } from "vite-plus/test";
 
 import build from "../src/build";
-import type BuildResult from "../src/types/BuildResult";
 import check_output from "./check_output";
 import parse_with_imports from "./parse_with_imports";
-
-async function compile_and_run(
-	name: string,
-	built: BuildResult,
-): Promise<{ ok: boolean; stdout: string; stderr: string }> {
-	const execPromise = util.promisify(exec);
-	try {
-		const result = await execPromise(path.join(".", "test", "out", name, "main.out"));
-		return { ok: true, stdout: result.stdout, stderr: result.stderr };
-	} catch (err: any) {
-		return { ok: false, stdout: err.stdout ?? "", stderr: err.stderr ?? "" };
-	}
-}
 
 function extract_main(asm: string): string {
 	const start = asm.indexOf("_main:\n");

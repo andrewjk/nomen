@@ -17,15 +17,13 @@ pub struct List<T> {
         self.length = self.length + 1
     }
 
-	pub func pop = (ref self, out T) {
+	pub func pop = (ref self, mov out T) {
 		if self.length <= 0 {
 			return 0
 		}
 		var int idx = self.length - 1
 		self.length = idx
-		var int v = self.items.load_int(idx)
-		self.items.store_int(idx, 0)
-		return v
+		return self.items.move_int(idx)
 	}
 
     pub func at = (self, int i: i >= 0 && i < self.length, out T) {

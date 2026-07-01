@@ -228,6 +228,28 @@ pub struct Buffer {
         ```
     }
 
+    // Move a value out of a slot: return it and clear the slot to 0. This is
+    // the ownership-extracting primitive (used by e.g. List.pop) — unlike
+    // load_int (a borrow read), it relinquishes the slot so the buffer no
+    // longer owns the value.
+    inline func move_int = (ref self, int i: i >= 0 && i < self.cap, out int) {
+        ```
+        #arch: c
+        long *slots = (long*)(unsigned long long)self->data;
+        long val = slots[i];
+        slots[i] = 0;
+        return val;
+        ```
+        ```
+        #arch: aarch64
+        ldr x0, [x19, #8]
+        lsl x3, x1, #3
+        add x3, x0, x3
+        ldr x0, [x3]
+        str xzr, [x3]
+        ```
+    }
+
     // Store into a slot, freeing the previous value when the buffer holds
     // owned class pointers (has_class_refs). For non-class buffers this is a
     // plain store, so it is safe to use anywhere store_int would be.

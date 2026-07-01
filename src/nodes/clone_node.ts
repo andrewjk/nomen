@@ -353,6 +353,7 @@ export default function clone_node(node: BaseNode): BaseNode {
 			c.scope = n.scope;
 			c.allocations = n.allocations?.map(clone_node);
 			c.return_constraint = n.return_constraint ? clone_node(n.return_constraint) : undefined;
+			c.returns_mov = n.returns_mov;
 			return c;
 		}
 		case "param": {

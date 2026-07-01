@@ -31,6 +31,13 @@ export default class FunctionNode extends BaseNode implements BlockNode, Returni
 	is_generic?: boolean;
 	checked?: boolean;
 	is_inline?: boolean;
+	/**
+	 * True for a `mov out T` return: the method transfers ownership of the
+	 * returned value to the caller (which must then free it), rather than
+	 * lending a borrow. The canonical example is `List.pop`. Symmetric to a
+	 * `mov T` parameter (ownership in), this is ownership out.
+	 */
+	returns_mov?: boolean;
 	type_params: string[] = [];
 	scope?: BaseNode;
 	/**

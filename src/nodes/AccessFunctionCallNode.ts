@@ -14,6 +14,13 @@ export default class AccessFunctionCallNode extends BaseNode {
 	variadic_param_index?: number;
 	mangled_name?: string;
 	/**
+	 * Set during checking when the called method has a `mov out T` return — the
+	 * call produces an owned value (not a borrow), so the caller must anchor and
+	 * free it. Read by the borrow checker (treats the result as non-borrowed)
+	 * and the build (anchors the result).
+	 */
+	owned_return?: boolean;
+	/**
 	 * Bounds inferred from the call's return contract (`out TYPE: out < X`),
 	 * resolved to the caller's receiver path. Populated during checking so that
 	 * when this call is used as an argument (e.g. `g.at(g.edge_target(e))`), the
