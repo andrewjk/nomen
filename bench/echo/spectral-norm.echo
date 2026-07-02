@@ -36,9 +36,9 @@ pub func main = (Init init) {
 		n = parse_int(init.args.at(1))
 	}
 
-	var Buffer u = Buffer()
-	var Buffer v = Buffer()
-	var Buffer scratch = Buffer()
+	var Buffer<float> u = Buffer<float>()
+	var Buffer<float> v = Buffer<float>()
+	var Buffer<float> scratch = Buffer<float>()
 	u.alloc_float(n)
 	v.alloc_float(n)
 	scratch.alloc_float(n)

@@ -1,0 +1,79 @@
+[package]
+name = "echo-bench"
+version = "0.0.0"
+edition = "2021"
+autobins = false
+autoexamples = false
+autotests = false
+
+[dependencies]
+num-bigint = "0.4"
+anyhow = "1"
+serde_json = "1"
+regex = "1"
+rayon = "1"
+hashbrown = "0.14"
+ibig = "0.3"
+md5 = "0.7"
+numeric-array = "0.6"
+generic-array = "0.14"
+
+[profile.release]
+lto = true
+codegen-units = 1
+
+[[bin]]
+name = "pidigits"
+path = "pidigits1.rs"
+
+[[bin]]
+name = "helloworld"
+path = "helloworld1.rs"
+
+[[bin]]
+name = "fannkuch-redux"
+path = "fannkuch-redux1.rs"
+
+[[bin]]
+name = "binarytrees"
+path = "binarytrees3.rs"
+
+[[bin]]
+name = "merkletrees"
+path = "merkletrees1.rs"
+
+[[bin]]
+name = "nsieve"
+path = "nsieve1.rs"
+
+[[bin]]
+name = "lru"
+path = "lru1.rs"
+
+[[bin]]
+name = "knucleotide"
+path = "knucleotide8.rs"
+
+[[bin]]
+name = "json-serde"
+path = "json-serde1.rs"
+
+[[bin]]
+name = "regex-redux"
+path = "regex-redux6.rs"
+
+[[bin]]
+name = "nbody"
+path = "nbody1.rs"
+
+[[bin]]
+name = "spectral-norm"
+path = "spectral-norm1.rs"
+
+[[bin]]
+name = "mandelbrot"
+path = "mandelbrot8.rs"
+
+[[bin]]
+name = "edigits"
+path = "edigits1.rs"

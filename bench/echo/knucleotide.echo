@@ -60,7 +60,7 @@ func pack = (string s, out int) {
 	return key
 }
 
-func count_seq = (ref Buffer data, int n, int target, int k, out int) {
+func count_seq = (ref Buffer<int> data, int n, int target, int k, out int) {
 	if n < k {
 		return 0
 	}
@@ -87,9 +87,9 @@ func count_seq = (ref Buffer data, int n, int target, int k, out int) {
 	return total
 }
 
-func write_freq = (ref Buffer data, int n, int k) {
+func write_freq = (ref Buffer<int> data, int n, int k) {
 	var int limit = 1 << (2 * k)
-	var Buffer freq = Buffer()
+	var Buffer<int> freq = Buffer<int>()
 	freq.alloc_int(limit)
 
 	if n >= k {
@@ -110,8 +110,8 @@ func write_freq = (ref Buffer data, int n, int k) {
 		}
 	}
 
-	var Buffer keys = Buffer()
-	var Buffer counts = Buffer()
+	var Buffer<int> keys = Buffer<int>()
+	var Buffer<int> counts = Buffer<int>()
 	keys.alloc_int(limit)
 	counts.alloc_int(limit)
 	var int found = 0
@@ -164,7 +164,7 @@ func write_freq = (ref Buffer data, int n, int k) {
 	}
 }
 
-func write_count = (ref Buffer data, int n, string query) {
+func write_count = (ref Buffer<int> data, int n, string query) {
 	var int k = query.length()
 	var int target = pack(query)
 	var int c = count_seq(ref data, n, target, k)
@@ -186,7 +186,7 @@ pub func main = (Init init) {
 	f.close()
 
 	var int textlen = text.length()
-	var Buffer data = Buffer()
+	var Buffer<int> data = Buffer<int>()
 	data.alloc_int(textlen)
 	var int n = 0
 

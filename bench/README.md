@@ -14,6 +14,14 @@ These benchmarks have been converted to Echo and are included in `benchmark.sh`.
 | nsieve         | ✅   | -   | -   | Sieve of Eratosthenes using Buffer (Go needs external `bitset` package) |
 | lru            | ✅   | ✅  | -   | LRU cache using Map and Buffer for access order tracking                |
 | knucleotide    | ✅   | ✅  | -   | DNA k-mer frequency counting using File I/O, Buffer, and bit-packing    |
+| json-serde     | ✅   | ✅  | ✅  | GeoJSON parse + serialize via `Json.parse`/`Json.stringify` (see note)  |
+| regex-redux    | ✅   | ✅  | -   | FASTA sequence regex counting and substitution                          |
+
+> **Note (json-serde):** the Echo version parses the GeoJSON document into a
+> `JsonNode` tree and re-serializes it, like the Go/Zig versions. It does **not**
+> md5-hash the output (Echo has no MD5 in the standard library yet); instead it
+> prints the serialized length as a verifiable checksum. The input is the
+> hard-coded `bench/sample.json`.
 
 ## Not Converted
 
@@ -43,22 +51,17 @@ The remaining Go benchmarks require language features or standard library suppor
 
 ### Needs hash maps (partially done)
 
-| Benchmark       | What's needed                                                                                                                | Status         |
-| --------------- | ---------------------------------------------------------------------------------------------------------------------------- | -------------- |
-| **lru**         | Hash map (`map[K]V`) and doubly-linked list (`container/list`). Would need a custom hash map implementation in Echo.         | ✅ Done        |
+| Benchmark | What's needed                                                                                                        | Status  |
+| --------- | -------------------------------------------------------------------------------------------------------------------- | ------- |
+| **lru**   | Hash map (`map[K]V`) and doubly-linked list (`container/list`). Would need a custom hash map implementation in Echo. | ✅ Done |
 
 ### Needs file I/O
 
-| Benchmark       | What's needed                                                                |
-| --------------- | ---------------------------------------------------------------------------- |
-| **regex-redux** | File reading for input, plus regex substitution engine.                      |
-| **json-serde**  | File reading for JSON input, JSON parser and serializer.                     |
+_No remaining benchmarks need only file I/O._
 
 ### Needs regex engine
 
-| Benchmark       | What's needed                                       |
-| --------------- | --------------------------------------------------- |
-| **regex-redux** | Full regex compilation, matching, and substitution. |
+_No remaining benchmarks need only a regex engine._
 
 ### Needs external libraries
 

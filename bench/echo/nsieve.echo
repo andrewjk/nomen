@@ -1,7 +1,7 @@
 import System
 
 func nsieve = (int n) {
-	var Buffer flags = Buffer()
+	var Buffer<uint32> flags = Buffer<uint32>()
 	flags.alloc(n)
 
 	var int count = 0

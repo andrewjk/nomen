@@ -6,3 +6,4 @@ dist/
 *.out
 main.s
 audit_runtime.o
+bench/rust/target/
