@@ -12,7 +12,8 @@ import parse_with_imports from "./parse_with_imports";
 // non-owning alias (like a field borrow) so #destroy/free runs exactly once,
 // without tripping the child-group borrow-invalidation machinery. These are
 // regression tests for that behaviour. (Reassigning an alias to a fresh
-// instance, and the owner-reassignment use-after-free, remain open gaps.)
+// instance remains an open gap — see the last describe block. Owner
+// reassignment and cross-scope aliasing are sound via deferred reclamation.)
 
 describe("class aliasing: double destroy / double free", () => {
 	// #1 — `var R q = p` aliases the same instance. At scope exit the compiler
@@ -86,5 +87,36 @@ Console.write("done\\n")
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		await check_output("alias_loop_double_destroy", result, "DDdone\n");
+	});
+});
+
+// Open gap: reassigning an object-level alias to a fresh instance. The build
+// treats the alias as untracked (so it isn't destroyed at scope exit), but the
+// assignment path still runs destroy/free on the alias's *old* value — which is
+// the shared instance the original owner still holds. So `q = R(3)` destroys
+// p's R(1) (and p destroys it again at scope exit → double destroy), while the
+// freshly allocated R(3) is never destroyed (leak, masked in the audit count by
+// the double free). Correct behaviour: the reassignment must not touch the
+// shared old value (p owns it), and q must take ownership of the new instance.
+describe("class aliasing: remaining gap — reassigning an alias", () => {
+	test("reassigning an alias does not destroy the shared old instance", async () => {
+		const input = `
+class R {
+	var int v
+	func #destroy = () {
+		Console.write("[D\\{self.v}]")
+	}
+}
+var R p = R(1)
+var R q = p
+q = R(3)
+Console.write("done\\n")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		// No destroy should fire on the reassignment — only at scope exit (and
+		// each instance exactly once). Currently prints "[D1]" before "done".
+		await check_output("alias_reassign_leak", result, "done\n");
 	});
 });
