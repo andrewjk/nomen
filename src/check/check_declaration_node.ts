@@ -221,6 +221,14 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 
 		check_constraint(decl, status);
 
+		// A plain class-variable copy (`var Box q = p`) is an object-level alias:
+		// it shares p's instance, so it must NOT be destroyed at scope exit (the
+		// build side skips it), but unlike a child-group borrow (field/container
+		// access) it is intentionally not invalidated by mutating the owner — p
+		// and q are the same object, so a mutation through one is visible through
+		// the other and the alias stays valid. We therefore leave borrow_depth /
+		// borrowed_from unset here (so the invalidation machinery does not fire)
+		// and let the build classify the alias syntactically.
 		status.values.push({
 			declaration: decl.declaration,
 			name: decl.name,

@@ -361,14 +361,25 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 	// Check if type is a struct
 	const struct_type = status.structs.find((s) => s.name === node.type.name && !s.is_simple_type);
 
-	// Don't track class variables initialized from field accesses on classes as owned
-	// (they are borrowed references, not owned instances)
-	const is_borrowed_class_ref =
+	// Don't track class variables that hold a borrowed reference (not an owned
+	// instance) as owned — they must not be destroyed/freed at scope exit.
+	// Borrows arise from a field access (`var Box b = h.c`) or a plain
+	// class-variable copy (`var Box q = p`); the latter would otherwise be
+	// destroyed alongside the original owner, double-freeing / double-destroying
+	// the instance. `mov p` (ownership transfer) and `null` stay owned.
+	const value_is_field_borrow =
+		node.value?.node_type === "access" &&
+		(node.value as AccessNode).access.node_type === "access_field";
+	const value_is_var_borrow =
+		node.value?.node_type === "value" &&
+		!(node.value as ValueNode).is_moved &&
+		(node.value as ValueNode).value !== "null";
+	const is_borrowed_class_ref = !!(
 		node.type?.name &&
 		struct_type &&
 		struct_type.is_class &&
-		node.value?.node_type === "access" &&
-		(node.value as AccessNode).access.node_type === "access_field";
+		(value_is_field_borrow || value_is_var_borrow)
+	);
 
 	if (!is_borrowed_class_ref) {
 		status.scoped_declarations.push(node);
