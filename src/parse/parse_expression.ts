@@ -151,6 +151,13 @@ function parse_primary(status: ParseStatus, value: string): BaseNode {
  */
 export default function parse_expression(status: ParseStatus, allow_assignment = true): BaseNode {
 	const start = get_index(status);
+	// A leading `mov` marks the whole expression as an ownership transfer
+	// (e.g. `b = mov a`, `var X b = mov a`) rather than a copy. `mov` is also a
+	// declaration keyword, but only at statement start (handled by parse_statement);
+	// here, inside an expression, it is unambiguously the move prefix. Function
+	// call parameters consume their own `mov` (parse_function_call_parameter)
+	// before calling parse_expression, so this never double-processes them.
+	const is_mov = accept("mov", status);
 	let value = peek_current(status) || "??";
 	let node = parse_primary(status, value);
 
@@ -300,7 +307,10 @@ export default function parse_expression(status: ParseStatus, allow_assignment =
 			case "+=":
 			case "-=":
 			case "*=": {
-				if (!allow_assignment) return node;
+				if (!allow_assignment) {
+					if (is_mov) node.is_moved = true;
+					return node;
+				}
 				const op = consume(status);
 				const rhs = parse_expression(status);
 				const assign = new AssignmentNode(start, node, rhs, op === "=" ? undefined : op);
@@ -312,6 +322,7 @@ export default function parse_expression(status: ParseStatus, allow_assignment =
 				break;
 			}
 			default: {
+				if (is_mov) node.is_moved = true;
 				return node;
 			}
 		}

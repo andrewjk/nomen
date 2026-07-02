@@ -57,7 +57,7 @@ var List<int> a = List<int>()
 a.push(1)
 var List<int> b = List<int>()
 b.push(2)
-b = a
+b = mov a
 const int v = a.pop()
 Console.write("\\{v}")
 `;
@@ -254,5 +254,50 @@ Console.write("\\{b.id}")
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		await check_output("copyable_destroy_runs", result, "7");
+	});
+});
+
+// An owning struct may not be byte-copied from a variable (the source and the
+// copy would both free the same backing data). The escape hatch is the `mov`
+// keyword, which transfers ownership instead of copying: the bytes still move
+// into the destination, but the source is marked moved and skipped at cleanup,
+// so only one owner frees. `mov` works in both copy sites:
+//
+//   - declaration:   `var List<int> b = mov a`
+//   - assignment:    `b = mov a`
+//
+// Requiring `mov` on both keeps the two sites consistent (previously an
+// assignment silently moved while a declaration was rejected). A struct whose
+// `#destroy` is benign (no raw block) is a value type and needs no `mov`.
+describe("owning-struct moves (mov keyword)", () => {
+	test("declaration `var X b = mov a` transfers ownership (no double-free)", async () => {
+		// b takes the list; a is moved (not freed). Only b is destroyed, so the
+		// backing Buffer is freed exactly once (audit clean).
+		const input = `
+var List<int> a = List<int>()
+a.push(1)
+a.push(2)
+var List<int> b = mov a
+const int v = b.pop()
+Console.write("\\{v}")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		await check_output("owning_decl_mov", result, "2");
+	});
+
+	test("assignment of an owning struct requires mov", () => {
+		// Plain `b = a` is rejected for owning structs -- use `b = mov a` (or
+		// `.copy()` for an independent copy). Mirrors the declaration-side rule.
+		const input = `
+var List<int> a = List<int>()
+var List<int> b = List<int>()
+b = a
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors.map((e) => e.message)).toContainEqual(
+			expect.stringContaining("cannot copy 'List'"),
+		);
 	});
 });

@@ -815,6 +815,12 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 					status.code += `ldr x3, [x1, #${i * 8}]\n`;
 					status.code += `str x3, [x2, #${i * 8}]\n`;
 				}
+				// `var X b = mov a`: the bytes are copied into b, then the source is
+				// marked moved so it is not destroyed at scope exit (b is now the sole
+				// owner). Without this, both a and b would free the same backing data.
+				if (node.value.is_moved) {
+					mark_moved_if_struct(node.value, status);
+				}
 			}
 		}
 	} else if (node.value) {

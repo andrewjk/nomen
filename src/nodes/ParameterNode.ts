@@ -12,7 +12,7 @@ export default class ParameterNode extends BaseNode {
 	default_value_start?: number;
 	is_self_param?: boolean;
 	is_copied?: boolean;
-	is_moved?: boolean;
+	// `is_moved` is inherited from BaseNode (a mov parameter / mov expression).
 	is_ref?: boolean;
 	is_variadic?: boolean;
 	/**

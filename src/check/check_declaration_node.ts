@@ -161,9 +161,9 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 		// bare-variable copy is rejected here; a fresh allocation (constructor /
 		// function return) is a move, not a copy, and member-access copies (e.g.
 		// `var Buffer old = self.field`) are left to the field machinery. Use
-		// .copy() for a deep copy or mov to transfer ownership. A struct whose
+		// .copy() for a deep copy or `mov` to transfer ownership. A struct whose
 		// #destroy only resets fields (no raw block) is NOT owning and may copy.
-		if (decl.value?.node_type === "value") {
+		if (decl.value?.node_type === "value" && !decl.value.is_moved) {
 			const val_type = type_from_value_node(decl.value, status);
 			if (val_type.name && is_owning_struct_type(val_type, status)) {
 				add_error(

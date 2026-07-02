@@ -9,7 +9,7 @@ import { borrow_depth_of, borrow_owner_of } from "./utils/borrow.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
 import evaluate_const_condition from "./utils/evaluate_const_condition.ts";
 import { track_assignment_bounds } from "./utils/flow_bounds.ts";
-import { is_class_type } from "./utils/ownership.ts";
+import { is_class_type, is_owning_struct_type } from "./utils/ownership.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
 
@@ -98,6 +98,29 @@ export default function check_assignment_node(
 		assign.right_value.start,
 		"assignment",
 	);
+
+	// Reject byte-copying a struct that transitively owns heap resources from
+	// another variable — both variables would free the same backing data
+	// (double-free). Use `mov` (`b = mov a`) to transfer ownership or `.copy()`
+	// for a deep copy. A `swap` assignment transfers ownership (the source is
+	// replaced), so it is allowed; fresh allocations (constructors / function
+	// returns) arrive as non-value nodes and are moves, not copies. This mirrors
+	// the declaration-side check so the two copy sites are consistent.
+	if (
+		!is_compound &&
+		!assign.swap &&
+		assign.right_value.node_type === "value" &&
+		!assign.right_value.is_moved
+	) {
+		const rhs_type = type_from_value_node(assign.right_value, status);
+		if (rhs_type.name && is_owning_struct_type(rhs_type, status)) {
+			add_error(
+				status,
+				`cannot copy '${rhs_type.name}' by value — it owns heap resources; use .copy() or mov`,
+				assign.right_value.start,
+			);
+		}
+	}
 
 	// Check field constraints on assignment (e.g. foo.x = value where x has a constraint)
 	if (assign.left_value.node_type === "access") {
