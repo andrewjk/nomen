@@ -169,9 +169,58 @@ var Holder h2 = h1
 				expect.stringContaining("cannot copy 'Holder'"),
 			);
 		});
+	});
+});
 
-		test("a struct with a benign #destroy (no heap) may be copied", () => {
-			const input = `
+// Echo has two kinds of `#destroy`, and only one makes a struct uncopyable:
+//
+//   - Owning (resource-releasing): the #destroy calls into a raw asm/C block to
+//     release a heap allocation or system handle (Buffer frees its `data`, File
+//     calls fclose, ClassBuffer frees each element). A byte-copy would duplicate
+//     that ownership, so both copies release the same resource on cleanup -- a
+//     double-free. These structs may not be copied from a variable.
+//
+//   - Copyable (benign): the #destroy only resets Echo fields (e.g. Token sets
+//     `self.id = 0`). The struct is a plain value type with a cleanup hook; each
+//     independent copy runs the harmless hook at its own scope exit. These copy
+//     freely.
+//
+// The detector (`is_owning_struct_type` in src/check/utils/ownership.ts) tells
+// them apart by whether the #destroy contains a `raw` node: every real resource
+// release in Echo is emitted through a raw block (free/fclose/release are C/asm
+// primitives), whereas a benign hook is pure Echo field assignment. Ownership is
+// also transitive -- a struct with an owning field (e.g. List owns a Buffer) is
+// itself owning even without its own #destroy.
+describe("owning vs copyable #destroy", () => {
+	test("a struct whose #destroy frees via a raw block is owning (copy rejected)", () => {
+		// Buffer.#destroy calls `free(self->data)` from a raw block.
+		const input = `
+var Buffer<int> a = Buffer<int>()
+var Buffer<int> b = a
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors.map((e) => e.message)).toContainEqual(
+			expect.stringContaining("cannot copy 'Buffer'"),
+		);
+	});
+
+	test("ownership is transitive through a struct field (List owns a Buffer)", () => {
+		// List has no #destroy of its own, but its Buffer field is owning, so a
+		// List is owning too -- copying would share the Buffer's backing data.
+		const input = `
+var List<int> a = List<int>()
+var List<int> b = a
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors.map((e) => e.message)).toContainEqual(
+			expect.stringContaining("cannot copy 'List'"),
+		);
+	});
+
+	test("a struct whose #destroy only resets fields is copyable", () => {
+		// Token's #destroy just sets self.id = 0 -- no resource release, so the
+		// struct is a copyable value type.
+		const input = `
 struct Token {
 	var int id
 
@@ -181,10 +230,29 @@ struct Token {
 }
 var Token a = Token(1)
 var Token b = a
-Console.write("\\{a.id}\\{b.id}")
 `;
-			const parsed = parse_with_imports(input);
-			expect(parsed.errors).toEqual([]);
-		});
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+	});
+
+	test("a copyable #destroy still runs on each independent copy", async () => {
+		// b is an independent copy of a; both are destroyed at scope exit and
+		// each resets its own id. No shared heap, so this is sound (audit clean).
+		const input = `
+struct Token {
+	var int id
+
+	func #destroy = () {
+		self.id = 0
+	}
+}
+var Token a = Token(7)
+var Token b = a
+Console.write("\\{b.id}")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		await check_output("copyable_destroy_runs", result, "7");
 	});
 });
