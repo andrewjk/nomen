@@ -163,3 +163,46 @@ Console.write("\\{h.c.v}\\n")
 		await check_output("defer_reassign_loop", result, "5\n", { audit: true });
 	});
 });
+
+// A struct that transitively owns heap resources may not be byte-copied from a
+// bare variable — that is caught (see memory-errors.test.ts, "cannot copy ...
+// by value"). But a copy via MEMBER ACCESS (`var Own x = obj.field`) is NOT yet
+// caught: the rejection only fires when the right-hand side is a bare variable.
+// Such a copy duplicates the backing pointer, so unless the source field is
+// immediately invalidated both the copy and the owner free the same data on
+// cleanup (double-free). The legitimate `Map`/`Set` `rehash` idiom
+// (`var Buffer old = self.keys` followed by overwriting `self.keys`) relies on
+// this not being blanket-rejected; the compiler cannot yet tell the two apart.
+// Pinned with `test.fails`: green while the gap is open, turns red (prompting a
+// flip to a plain `test`) once member-access owning-struct copies are rejected.
+describe("owning-struct member-access copy (known gap)", () => {
+	test.fails("member-access copy of an owning struct is rejected", () => {
+		const input = `
+struct Pair {
+	var List<int> first = List<int>()
+}
+func take = (ref Pair p) {
+	var List<int> leak = p.first
+}
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors.map((e) => e.message)).toContainEqual(
+			expect.stringContaining("cannot copy"),
+		);
+	});
+
+	test.fails("member-access copy of an owning struct (Buffer) is rejected", () => {
+		const input = `
+struct Holder {
+	var Buffer<int> buf = Buffer<int>()
+}
+func take = (ref Holder h) {
+	var Buffer<int> leak = h.buf
+}
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors.map((e) => e.message)).toContainEqual(
+			expect.stringContaining("cannot copy"),
+		);
+	});
+});
