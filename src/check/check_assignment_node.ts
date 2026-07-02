@@ -184,18 +184,38 @@ export default function check_assignment_node(
 	}
 
 	const rhs_type = type_from_value_node(assign.right_value, status);
-	if (
-		!assign.swap &&
+	const rhs_is_field_access =
 		assign.right_value.node_type === "access" &&
-		(assign.right_value as AccessNode).access.node_type === "access_field" &&
-		rhs_type.name &&
-		is_class_type(rhs_type.name, status)
-	) {
-		add_error(
-			status,
-			`cannot assign class field '${rhs_type.name}' from another owner, use mov with swap`,
-			assign.right_value.start,
-		);
+		(assign.right_value as AccessNode).access.node_type === "access_field";
+	if (rhs_is_field_access && rhs_type.name) {
+		if (is_class_type(rhs_type.name, status)) {
+			// A class field is a borrowed reference owned by its parent; extracting
+			// it requires mov+swap so the parent's slot is revalidated.
+			if (!assign.swap) {
+				add_error(
+					status,
+					`cannot assign class field '${rhs_type.name}' from another owner, use mov with swap`,
+					assign.right_value.start,
+				);
+			}
+		} else if (is_owning_struct_type(rhs_type, status)) {
+			// An owning struct field cannot be byte-copied out (double-free); move
+			// it out with a swap that revalidates the field.
+			if (!assign.right_value.is_moved) {
+				const field_name = (assign.right_value as AccessNode).access.name;
+				add_error(
+					status,
+					`cannot copy '${rhs_type.name}' out of field '${field_name}' by value — it owns heap resources; use mov with swap`,
+					assign.right_value.start,
+				);
+			} else if (!assign.swap) {
+				add_error(
+					status,
+					`mov out of a field requires a swap to revalidate it`,
+					assign.right_value.start,
+				);
+			}
+		}
 	}
 
 	// Borrow-lifetime check: a borrowed class reference (a variable that holds

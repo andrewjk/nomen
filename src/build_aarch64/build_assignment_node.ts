@@ -116,6 +116,13 @@ function build_swap(node: AssignmentNode, status: BuildStatus) {
 		const rhs_field = (rhs_access.access as AccessFieldNode).name;
 		const rhs_target_type = type_from_value_node(rhs_access.target);
 		const rhs_offset = get_field_offset(rhs_target_type.name, rhs_field, status);
+		// A struct field (e.g. Buffer) needs its bytes struct-copied back in;
+		// a class field is a single pointer store.
+		const field_type = type_from_value_node(rhs_access.access);
+		const field_struct = field_type.name
+			? status.structs.find((s) => s.name === field_type.name && !s.is_simple_type)
+			: undefined;
+		const field_is_struct = !!field_struct && !field_struct.is_class;
 
 		build_node(node.swap, status);
 		if (!status.code.endsWith("\n")) {
@@ -129,7 +136,12 @@ function build_swap(node: AssignmentNode, status: BuildStatus) {
 			status.code += "\n";
 		}
 		status.code += `ldr x1, [sp], #16\n`;
-		status.code += `str x1, [x0, #${rhs_offset}]\n`;
+		if (field_is_struct) {
+			const field_size = get_struct_size(field_type!.name, status);
+			emit_struct_copy("x1", "x0", rhs_offset, field_size, status);
+		} else {
+			status.code += `str x1, [x0, #${rhs_offset}]\n`;
+		}
 	} else if (rhs.node_type === "value") {
 		const rhs_value = rhs as ValueNode;
 		build_node(node.swap, status);

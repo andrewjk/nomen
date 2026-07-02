@@ -1,4 +1,6 @@
 import add_error from "../add_error.ts";
+import AccessFieldNode from "../nodes/AccessFieldNode.ts";
+import AccessNode from "../nodes/AccessNode.ts";
 import AnonStructNode from "../nodes/AnonStructNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
@@ -171,6 +173,42 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 					`cannot copy '${val_type.name}' by value — it owns heap resources; use .copy() or mov`,
 					decl.value.start,
 				);
+			}
+		}
+		// Copying an owning struct out of a field (`var X b = obj.field`)
+		// duplicates the backing pointer; the field must be moved out with a swap
+		// that revalidates it (`var X b = mov obj.field swap <replacement>`).
+		// `mov` without a swap would leave the field holding a moved-out value.
+		if (
+			decl.value?.node_type === "access" &&
+			(decl.value as AccessNode).access.node_type === "access_field"
+		) {
+			const field_type = type_from_value_node(decl.value, status);
+			if (field_type.name && is_owning_struct_type(field_type, status)) {
+				const field_name = ((decl.value as AccessNode).access as AccessFieldNode).name;
+				if (!decl.value.is_moved) {
+					add_error(
+						status,
+						`cannot copy '${field_type.name}' out of field '${field_name}' by value — it owns heap resources; use 'mov ... swap <replacement>'`,
+						decl.value.start,
+					);
+				} else if (!decl.swap) {
+					add_error(
+						status,
+						`mov out of a field requires a swap to revalidate it`,
+						decl.value.start,
+					);
+				} else {
+					check_node(decl.swap, status);
+					check_type_and_value_match(
+						field_type,
+						type_from_value_node(decl.swap, status),
+						undefined,
+						status,
+						decl.swap.start,
+						"swap",
+					);
+				}
 			}
 		}
 

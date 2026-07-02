@@ -1,4 +1,6 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
+import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
+import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
@@ -8,6 +10,7 @@ import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
 import RangeNode from "../nodes/RangeNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
+import { emit_address_of } from "./build_access_node.ts";
 import build_array_values_node, { resolve_static_value } from "./build_array_values_node.ts";
 import build_node from "./build_node.ts";
 import build_range_node from "./build_range_node.ts";
@@ -30,7 +33,12 @@ import {
 	emit_var_store,
 	is_local_ref_var,
 } from "./utils/stack_var.ts";
-import { emit_struct_copy, get_enum_size, get_struct_size } from "./utils/struct_layout.ts";
+import {
+	emit_struct_copy,
+	get_enum_size,
+	get_field_offset,
+	get_struct_size,
+} from "./utils/struct_layout.ts";
 
 /**
  * Pass a struct-typed param by address. For ValueNode (variable references)
@@ -820,6 +828,28 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 				// owner). Without this, both a and b would free the same backing data.
 				if (node.value.is_moved) {
 					mark_moved_if_struct(node.value, status);
+				}
+				// `var X b = mov obj.field swap <rep>`: the field's bytes were copied
+				// into b above; now struct-copy the replacement back into the moved-out
+				// field to revalidate it (so the owner never destroys a moved field).
+				if (node.swap && node.value.node_type === "access") {
+					const access = node.value as AccessNode;
+					build_node(node.swap, status);
+					if (!status.code.endsWith("\n")) {
+						status.code += "\n";
+					}
+					status.code += `str x0, [sp, #-16]!\n`;
+					emit_address_of(access.target, status);
+					if (!status.code.endsWith("\n")) {
+						status.code += "\n";
+					}
+					status.code += `ldr x1, [sp], #16\n`;
+					const field_name = (access.access as AccessFieldNode).name;
+					const target_type = type_from_value_node(access.target);
+					const field_type = type_from_value_node(access.access);
+					const offset = get_field_offset(target_type.name, field_name, status);
+					const field_size = get_struct_size(field_type.name, status);
+					emit_struct_copy("x1", "x0", offset, field_size, status);
 				}
 			}
 		}

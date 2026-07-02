@@ -78,6 +78,13 @@ export default function parse_declaration(
 			if (!decl.type.name && is_value_node(decl.value)) {
 				decl.type = decl.value.type;
 			}
+			// `var X b = mov obj.field swap <replacement>`: moving a field out
+			// invalidates it, so a swap replacement is required to revalidate the
+			// field (mirrors assignment/param swap).
+			if (peek_current(status) === "swap") {
+				accept("swap", status);
+				decl.swap = parse_expression(status);
+			}
 		}
 	}
 

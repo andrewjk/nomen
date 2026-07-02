@@ -164,19 +164,16 @@ Console.write("\\{h.c.v}\\n")
 	});
 });
 
-// A struct that transitively owns heap resources may not be byte-copied from a
-// bare variable — that is caught (see memory-errors.test.ts, "cannot copy ...
-// by value"). But a copy via MEMBER ACCESS (`var Own x = obj.field`) is NOT yet
-// caught: the rejection only fires when the right-hand side is a bare variable.
-// Such a copy duplicates the backing pointer, so unless the source field is
-// immediately invalidated both the copy and the owner free the same data on
-// cleanup (double-free). The legitimate `Map`/`Set` `rehash` idiom
-// (`var Buffer old = self.keys` followed by overwriting `self.keys`) relies on
-// this not being blanket-rejected; the compiler cannot yet tell the two apart.
-// Pinned with `test.fails`: green while the gap is open, turns red (prompting a
-// flip to a plain `test`) once member-access owning-struct copies are rejected.
-describe("owning-struct member-access copy (known gap)", () => {
-	test.fails("member-access copy of an owning struct is rejected", () => {
+// Copying an owning struct out of a field (`var Own x = obj.field`) duplicates
+// the backing pointer, so both the copy and the owner would free the same data
+// (double-free). This is now caught: the copy is rejected unless the field is
+// moved out with `mov` AND a `swap` that revalidates it
+// (`var Own x = mov obj.field swap <replacement>`). The `swap` is mandatory for
+// a field move because a field cannot be left holding a moved-out value -- the
+// replacement is stored back in so the owner never destroys a moved field. (The
+// `Map`/`Set` `rehash` functions use exactly this idiom.)
+describe("owning-struct member-access copy", () => {
+	test("member-access copy of an owning struct is rejected", () => {
 		const input = `
 struct Pair {
 	var List<int> first = List<int>()
@@ -191,7 +188,7 @@ func take = (ref Pair p) {
 		);
 	});
 
-	test.fails("member-access copy of an owning struct (Buffer) is rejected", () => {
+	test("member-access copy of an owning struct (Buffer) is rejected", () => {
 		const input = `
 struct Holder {
 	var Buffer<int> buf = Buffer<int>()
@@ -204,5 +201,34 @@ func take = (ref Holder h) {
 		expect(parsed.errors.map((e) => e.message)).toContainEqual(
 			expect.stringContaining("cannot copy"),
 		);
+	});
+
+	test("mov out of a field without a swap is rejected", () => {
+		// `mov` alone would leave the field holding a moved-out (invalid) value.
+		const input = `
+struct Holder {
+	var Buffer<int> buf = Buffer<int>()
+}
+func take = (ref Holder h) {
+	var Buffer<int> leak = mov h.buf
+}
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors.map((e) => e.message)).toContainEqual(
+			expect.stringContaining("requires a swap"),
+		);
+	});
+
+	test("mov out of a field with a swap is allowed", () => {
+		const input = `
+struct Holder {
+	var Buffer<int> buf = Buffer<int>()
+}
+func take = (ref Holder h) {
+	var Buffer<int> old = mov h.buf swap Buffer<int>()
+}
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
 	});
 });

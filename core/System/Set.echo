@@ -79,12 +79,10 @@ pub struct Set<T> {
 	}
 
 	func rehash = (ref self, int new_cap) {
-		var Buffer<T> old_slots = self.slots
-		var Buffer<int> old_used = self.used
+		var Buffer<T> old_slots = mov self.slots swap Buffer<T>()
+		var Buffer<int> old_used = mov self.used swap Buffer<int>()
 		var int old_cap = old_slots.cap
 
-		self.slots = Buffer<T>()
-		self.used = Buffer<int>()
 		self.slots.alloc_int(new_cap)
 		self.used.alloc(new_cap)
 		self.length = 0
