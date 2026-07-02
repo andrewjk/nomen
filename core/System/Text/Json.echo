@@ -99,7 +99,7 @@ pub struct Json {
 
 	// Parse a JSON document into a tree of JsonNode.
 	pub func parse = (string s, out JsonNode) {
-		var Buffer pos = Buffer()
+		var Buffer<int> pos = Buffer<int>()
 		pos.alloc_int(1)
 		pos.store_int(0, 0)
 		var int len = s.length()
@@ -124,7 +124,7 @@ class JsonNode {
 	mov JsonNode? val = null
 }
 
-func json_skip_ws = (string s, ref Buffer pos, int len) {
+func json_skip_ws = (string s, ref Buffer<int> pos, int len) {
 	while pos.load_int(0) < len {
 		var int i = pos.load_int(0)
 		var int code = s.at(i) as int
@@ -136,7 +136,7 @@ func json_skip_ws = (string s, ref Buffer pos, int len) {
 	}
 }
 
-func json_parse_string = (string s, ref Buffer pos, int len, out JsonNode) {
+func json_parse_string = (string s, ref Buffer<int> pos, int len, out JsonNode) {
 	var int i = pos.load_int(0)
 	i = i + 1
 	var string sbuf = ""
@@ -185,7 +185,7 @@ func json_parse_string = (string s, ref Buffer pos, int len, out JsonNode) {
 	return n
 }
 
-func json_parse_number = (string s, ref Buffer pos, int len, out JsonNode) {
+func json_parse_number = (string s, ref Buffer<int> pos, int len, out JsonNode) {
 	var int i = pos.load_int(0)
 	var int start = i
 	while i < len {
@@ -209,7 +209,7 @@ func json_parse_number = (string s, ref Buffer pos, int len, out JsonNode) {
 	return n
 }
 
-func json_parse_literal = (string s, ref Buffer pos, int len, out JsonNode) {
+func json_parse_literal = (string s, ref Buffer<int> pos, int len, out JsonNode) {
 	var int i = pos.load_int(0)
 	var int code = s.at(i) as int
 	var JsonNode n = JsonNode()
@@ -230,7 +230,7 @@ func json_parse_literal = (string s, ref Buffer pos, int len, out JsonNode) {
 	return n
 }
 
-func json_parse_value = (string s, ref Buffer pos, int len, out JsonNode) {
+func json_parse_value = (string s, ref Buffer<int> pos, int len, out JsonNode) {
 	json_skip_ws(s, ref pos, len)
 	var int i = pos.load_int(0)
 	if i >= len {
@@ -261,7 +261,7 @@ func json_parse_value = (string s, ref Buffer pos, int len, out JsonNode) {
 	return json_parse_number(s, ref pos, len)
 }
 
-func json_parse_elements = (string s, ref Buffer pos, int len, out JsonNode?) {
+func json_parse_elements = (string s, ref Buffer<int> pos, int len, out JsonNode?) {
 	json_skip_ws(s, ref pos, len)
 	var int i = pos.load_int(0)
 	if i >= len {
@@ -283,7 +283,7 @@ func json_parse_elements = (string s, ref Buffer pos, int len, out JsonNode?) {
 	return elem
 }
 
-func json_parse_pairs = (string s, ref Buffer pos, int len, out JsonNode?) {
+func json_parse_pairs = (string s, ref Buffer<int> pos, int len, out JsonNode?) {
 	json_skip_ws(s, ref pos, len)
 	var int i = pos.load_int(0)
 	if i >= len {

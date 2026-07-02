@@ -1,9 +1,10 @@
 import Buffer
+import ClassBuffer
 
 pub struct Set<T> {
 	var int length = 0
-	var Buffer slots = Buffer()
-	var Buffer used = Buffer()
+	var Buffer<T> slots = Buffer<T>()
+	var Buffer<int> used = Buffer<int>()
 
 	pub func add = (ref self, mov T value) {
 		var int cap = self.slots.cap
@@ -78,12 +79,12 @@ pub struct Set<T> {
 	}
 
 	func rehash = (ref self, int new_cap) {
-		var Buffer old_slots = self.slots
-		var Buffer old_used = self.used
+		var Buffer<T> old_slots = self.slots
+		var Buffer<int> old_used = self.used
 		var int old_cap = old_slots.cap
 
-		self.slots = Buffer()
-		self.used = Buffer()
+		self.slots = Buffer<T>()
+		self.used = Buffer<int>()
 		self.slots.alloc_int(new_cap)
 		self.used.alloc(new_cap)
 		self.length = 0

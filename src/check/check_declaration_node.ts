@@ -11,7 +11,7 @@ import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
 import check_type_exists from "./utils/check_type_exists.ts";
 import evaluate_const_condition from "./utils/evaluate_const_condition.ts";
 import { apply_bounds, track_assignment_bounds } from "./utils/flow_bounds.ts";
-import { is_class_type } from "./utils/ownership.ts";
+import { is_class_type, is_owning_struct_type } from "./utils/ownership.ts";
 import { materialize_tuple_type } from "./utils/tuple_struct.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
@@ -152,6 +152,26 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			}
 
 			status.stack.pop();
+		}
+
+		// A struct that transitively owns a heap resource (List/Map via a Buffer
+		// field, Buffer/File/ClassBuffer via a resource-releasing #destroy, or any
+		// struct with a class field) cannot be byte-copied from another variable —
+		// both copies would free the same backing data (double-free). Only a
+		// bare-variable copy is rejected here; a fresh allocation (constructor /
+		// function return) is a move, not a copy, and member-access copies (e.g.
+		// `var Buffer old = self.field`) are left to the field machinery. Use
+		// .copy() for a deep copy or mov to transfer ownership. A struct whose
+		// #destroy only resets fields (no raw block) is NOT owning and may copy.
+		if (decl.value?.node_type === "value") {
+			const val_type = type_from_value_node(decl.value, status);
+			if (val_type.name && is_owning_struct_type(val_type, status)) {
+				add_error(
+					status,
+					`cannot copy '${val_type.name}' by value — it owns heap resources; use .copy() or mov`,
+					decl.value.start,
+				);
+			}
 		}
 
 		check_constraint(decl, status);

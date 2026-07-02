@@ -128,10 +128,34 @@ export function monomorphize(
 			field.declaration,
 			field.name,
 			resolved_type,
-			field.value,
+			field.value ? (clone_node(field.value) as BaseNode) : undefined,
 		);
 		return mono_field;
 	});
+
+	// Compile-time class-ness: a `Buffer<Elem>` field resolves to ClassBuffer<Elem>
+	// when Elem is a class (frees elements on destroy, forbids store_int(0)), else
+	// Buffer<Elem>. The field type AND its default constructor are rewritten to
+	// the monomorphized name (e.g. ClassBuffer_Animal / Buffer_int) so types match
+	// and every build path resolves against the concrete buffer directly.
+	for (const field of mono_fields) {
+		const elem = field.type.name === "Buffer" ? field.type.type_args?.[0] : undefined;
+		if (!elem?.name) continue;
+		const elem_is_class = !!status.structs.find((s) => s.name === elem.name && s.is_class);
+		const generic = status.structs.find(
+			(s) => s.name === (elem_is_class ? "ClassBuffer" : "Buffer"),
+		);
+		if (!generic) continue;
+		const buf_mono = monomorphize(generic, [elem], status);
+		if (!buf_mono) continue;
+		field.type.name = buf_mono.name;
+		field.type.type_args = undefined;
+		if (field.value?.node_type === "func_call") {
+			const dv = field.value as FunctionCallNode;
+			dv.name = buf_mono.name;
+			dv.type_args = undefined;
+		}
+	}
 
 	const mono_struct = new StructNode(
 		generic_struct.start,
@@ -291,10 +315,31 @@ function substitute_raw_in_node(node: BaseNode, substitution: Map<string, string
 		raw.value = value;
 		return;
 	}
-	// Recursively walk common container nodes
+	// Substitute type arguments on call nodes (e.g. `Buffer<TK>()` inside a
+	// generic method) and rewrite a func_call constructor's name to its
+	// monomorphized symbol so the build keys `_init` correctly.
 	const any_node = node as any;
+	if (node.node_type === "func_call" && any_node.type_args?.length) {
+		any_node.type_args = any_node.type_args.map((t: Type) => substitute_type(t, substitution));
+		any_node.name = any_node.name + "_" + any_node.type_args.map((t: Type) => t.name).join("_");
+	} else if (node.node_type === "access_func" && any_node.type_args?.length) {
+		any_node.type_args = any_node.type_args.map((t: Type) => substitute_type(t, substitution));
+	}
+	if (node.node_type === "access" && any_node.access?.type_args?.length) {
+		any_node.access.type_args = any_node.access.type_args.map((t: Type) =>
+			substitute_type(t, substitution),
+		);
+	}
+	// Recursively walk common container nodes
 	if (any_node.statements && Array.isArray(any_node.statements)) {
 		for (const child of any_node.statements) {
+			if (child && typeof child === "object" && "node_type" in child) {
+				substitute_raw_in_node(child, substitution);
+			}
+		}
+	}
+	if (any_node.params && Array.isArray(any_node.params)) {
+		for (const child of any_node.params) {
 			if (child && typeof child === "object" && "node_type" in child) {
 				substitute_raw_in_node(child, substitution);
 			}
@@ -308,6 +353,12 @@ function substitute_raw_in_node(node: BaseNode, substitution: Map<string, string
 	}
 	if (any_node.right_value?.node_type) {
 		substitute_raw_in_node(any_node.right_value, substitution);
+	}
+	if (any_node.target?.node_type) {
+		substitute_raw_in_node(any_node.target, substitution);
+	}
+	if (any_node.access?.node_type) {
+		substitute_raw_in_node(any_node.access, substitution);
 	}
 }
 

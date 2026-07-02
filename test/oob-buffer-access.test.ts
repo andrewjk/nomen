@@ -13,7 +13,7 @@ import parse_with_imports from "./parse_with_imports";
 describe("buffer bounds checking", () => {
 	test("negative constant index is caught at compile time", () => {
 		const input = `
-var Buffer buf = Buffer()
+var Buffer<int> buf = Buffer<int>()
 buf.grow_int(4)
 buf.store_int(0, 111)
 var int neg = buf.load_int(-1)
@@ -26,7 +26,7 @@ Console.write("\\{neg}\\n")
 
 	test("index past capacity is caught at compile time", () => {
 		const input = `
-var Buffer buf = Buffer()
+var Buffer<int> buf = Buffer<int>()
 buf.grow_int(4)
 buf.store_int(0, 111)
 var int past = buf.load_int(100)
@@ -39,7 +39,7 @@ Console.write("past=\\{past}\\n")
 
 	test("write past capacity is caught at compile time", () => {
 		const input = `
-var Buffer buf = Buffer()
+var Buffer<int> buf = Buffer<int>()
 buf.grow_int(2)
 buf.store_int(0, 11)
 buf.store_int(1, 22)
@@ -53,7 +53,7 @@ Console.write("\\{buf.load_int(0)}\\n")
 
 	test("verifiable in-bounds access compiles clean", async () => {
 		const input = `
-var Buffer buf = Buffer()
+var Buffer<int> buf = Buffer<int>()
 buf.grow_int(4)
 buf.store_int(0, 111)
 buf.store_int(1, 222)
@@ -71,7 +71,7 @@ Console.write("\\{a} \\{b}\\n")
 
 	test("runtime index inside `if i < cap` verifies", async () => {
 		const input = `
-var Buffer buf = Buffer()
+var Buffer<int> buf = Buffer<int>()
 buf.grow_int(4)
 buf.store_int(0, 10)
 buf.store_int(1, 20)

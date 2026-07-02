@@ -148,7 +148,7 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 		status.code += `str x0, [sp, #-16]!\n`;
 		for (const decl of status.scoped_declarations) {
 			if (finalized.has(decl.name)) continue;
-			emit_destroy_for_decl(status, decl.name, decl.type.name);
+			emit_destroy_for_decl(status, decl.name, decl.type.name, undefined, decl.type.type_args);
 		}
 		emit_heap_slots_cleanup_for_return(status);
 		status.code += `ldr x0, [sp], #16\n`;

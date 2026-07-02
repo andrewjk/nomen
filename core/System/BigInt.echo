@@ -3,7 +3,7 @@ import Buffer
 pub struct BigInt {
     var int sign = 0
     var int len = 0
-    var Buffer digits = Buffer()
+    var Buffer<int> digits = Buffer<int>()
 
     pub func new = (self, int val, out BigInt) {
         self.sign = 1

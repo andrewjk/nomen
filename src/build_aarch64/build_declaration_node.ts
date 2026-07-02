@@ -30,12 +30,7 @@ import {
 	emit_var_store,
 	is_local_ref_var,
 } from "./utils/stack_var.ts";
-import {
-	emit_struct_copy,
-	get_enum_size,
-	get_field_offset,
-	get_struct_size,
-} from "./utils/struct_layout.ts";
+import { emit_struct_copy, get_enum_size, get_struct_size } from "./utils/struct_layout.ts";
 
 /**
  * Pass a struct-typed param by address. For ValueNode (variable references)
@@ -96,58 +91,6 @@ function alloc_array_with_prefix(
 }
 
 let string_array_counter = 0;
-
-const CONTAINER_BUFFER_FIELDS: Record<string, string> = {
-	List: "items",
-	LinkedList: "values",
-	Tree: "values",
-	Graph: "values",
-};
-
-/**
- * If `type_name` is a monomorphized generic container (List_X, LinkedList_X,
- * etc.) whose element type is a class, return the name of the Buffer field
- * that stores class pointers (e.g. "items" for List, "values" for LinkedList)
- * along with the element class name. Otherwise return undefined.
- */
-export function get_container_class_buffer_field(
-	type_name: string,
-	status: BuildStatus,
-): { field: string; elem: string } | undefined {
-	for (const [prefix, buffer_field] of Object.entries(CONTAINER_BUFFER_FIELDS)) {
-		if (type_name === prefix || !type_name.startsWith(prefix + "_")) continue;
-		const elem_name = type_name.slice(prefix.length + 1);
-		const elem_struct = status.structs.find((s) => s.name === elem_name && s.is_class);
-		if (elem_struct) return { field: buffer_field, elem: elem_name };
-	}
-	return undefined;
-}
-
-/**
- * Mark a container's values/items buffer so Buffer#destroy reclaims stored
- * class elements. `var_offset` is the stack offset of the container struct.
- * `struct_type_name` is the monomorphized container type name (e.g. "List_Animal").
- * `buffer_field` is the field name ("items" or "values"). `elem_type` is the
- * element class name, used to wire up the per-element destroy callback.
- */
-export function emit_set_container_class_refs_for_type(
-	status: BuildStatus,
-	var_offset: number,
-	struct_type_name: string,
-	buffer_field: string,
-	elem_type: string,
-) {
-	const buf_offset = get_field_offset(struct_type_name, buffer_field, status);
-	// has_class_refs is at offset 24 within Buffer (header:8 + data:8 + cap:8)
-	status.code += `add x0, x29, #${var_offset}\n`;
-	status.code += `add x0, x0, #${buf_offset}\n`;
-	status.code += `mov x1, #1\n`;
-	status.code += `str x1, [x0, #24]\n`;
-	// destroy_fn at offset 32 -> <elem>_destroy, so Buffer#destroy runs the
-	// element's full cleanup (user #destroy + owned-field destroys) before free.
-	status.code += `adr x1, ${elem_type}_destroy\n`;
-	status.code += `str x1, [x0, #32]\n`;
-}
 
 function emit_string_array_labels(values: BaseNode[], status: BuildStatus): Map<string, string> {
 	const labels = new Map<string, string>();
@@ -836,24 +779,6 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 						}
 					}
 					build_swap_params(func_call, status);
-					// If this is a generic container storing class elements,
-					// mark the values buffer so Buffer#destroy frees them.
-					const buf_info =
-						get_container_class_buffer_field(func_call.name, status) ??
-						get_container_class_buffer_field(node.type.name, status);
-					if (buf_info) {
-						const var_offset = status.stack_offsets!.get(node.name)!;
-						const resolved_type = status.structs.find((s) => s.name === func_call.name)
-							? func_call.name
-							: node.type.name;
-						emit_set_container_class_refs_for_type(
-							status,
-							var_offset,
-							resolved_type,
-							buf_info.field,
-							buf_info.elem,
-						);
-					}
 				} else {
 					const func_return_struct = status.structs.find(
 						(s) =>
@@ -871,24 +796,6 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 					} else {
 						build_node(node.value, status);
 						emit_var_store(status, "x0", node.name, struct_size);
-					}
-					// If this is a generic container storing class elements,
-					// mark the values buffer so Buffer#destroy frees them.
-					const buf_info2 =
-						get_container_class_buffer_field(func_call.name, status) ??
-						get_container_class_buffer_field(node.type.name, status);
-					if (buf_info2) {
-						const var_offset = status.stack_offsets!.get(node.name)!;
-						const resolved_type = status.structs.find((s) => s.name === func_call.name)
-							? func_call.name
-							: node.type.name;
-						emit_set_container_class_refs_for_type(
-							status,
-							var_offset,
-							resolved_type,
-							buf_info2.field,
-							buf_info2.elem,
-						);
 					}
 				}
 			} else if (node.value) {

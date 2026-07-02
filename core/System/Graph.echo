@@ -1,14 +1,15 @@
 import Buffer
+import ClassBuffer
 
 // Arena-backed directed graph. Node values and edges live in flat Buffers;
 // edges are stored as a per-node linked list of edge records (CSR-style), so
 // there is a single owner and cleanup is a flat free. Node and edge identifiers
 // are stable int indices; -1 means "none".
 pub struct Graph<T>: Enumerable {
-    var Buffer values = Buffer()
-    var Buffer head_edge = Buffer()
-    var Buffer edge_target = Buffer()
-    var Buffer edge_next = Buffer()
+    var Buffer<T> values = Buffer<T>()
+    var Buffer<int> head_edge = Buffer<int>()
+    var Buffer<int> edge_target = Buffer<int>()
+    var Buffer<int> edge_next = Buffer<int>()
     var int node_count = 0
     var int edge_count = 0
 

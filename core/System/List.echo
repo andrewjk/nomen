@@ -1,8 +1,9 @@
 import Buffer
+import ClassBuffer
 
 pub struct List<T> {
     var int length = 0
-    var Buffer items = Buffer()
+    var Buffer<T> items = Buffer<T>()
 
     pub func push = (ref self, mov T value) {
         if self.length >= self.items.cap {

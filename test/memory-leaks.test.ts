@@ -410,10 +410,11 @@ Console.write("done\\n")
 		await check_output("leak_pop_element", result, "Adone\n");
 	});
 
-	// Struct assignment shallow-copies the backing Buffer, so two List variables
-	// share the same data pointer; destroying both double-frees the buffer and
-	// each stored element.
-	test("DOUBLE-FREE: struct copy of a container shares the buffer", async () => {
+	// A struct that transitively owns heap resources (here List, via its Buffer
+	// field) cannot be byte-copied from another variable — both copies would
+	// free the same backing data (double-free). This is now rejected at compile
+	// time; copy with .copy() or transfer ownership with mov.
+	test("DOUBLE-FREE: struct copy of a container shares the buffer", () => {
 		const input = `
 class Animal { var char letter }
 if true {
@@ -424,8 +425,9 @@ if true {
 Console.write("done\\n")
 `;
 		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("double_free_struct_copy", result, "done\n");
+		expect(parsed.errors.length).toBeGreaterThan(0);
+		expect(parsed.errors.map((e) => e.message)).toContainEqual(
+			expect.stringContaining("cannot copy 'List'"),
+		);
 	});
 });

@@ -44,7 +44,7 @@ a.push(3)
 			const main_asm = extract_main(result.code);
 
 			const jumpIdx = main_asm.indexOf("b .return_0");
-			const destroyIdx = main_asm.indexOf("bl Buffer_destroy");
+			const destroyIdx = main_asm.indexOf("bl Buffer_int_destroy");
 			const auditIdx = main_asm.indexOf("bl _echo_audit_check");
 			expect(jumpIdx).toBeGreaterThan(0);
 			expect(destroyIdx).toBeGreaterThan(jumpIdx);
@@ -150,6 +150,41 @@ Console.write("\\{h.content.value}")
 			expect(parsed.errors).toEqual([]);
 			const result = build(parsed.root, { arch: "aarch64", audit: true });
 			await check_output("ok_read_field", result, "42");
+		});
+
+		test("cannot copy a struct that owns a class field by value", () => {
+			const input = `
+class Box {
+	var int value
+}
+struct Holder {
+	mov Box content
+}
+var Holder h1 = Holder(mov Box(1))
+var Holder h2 = h1
+`;
+			const parsed = parse_with_imports(input);
+			expect(parsed.errors.length).toBeGreaterThan(0);
+			expect(parsed.errors.map((e) => e.message)).toContainEqual(
+				expect.stringContaining("cannot copy 'Holder'"),
+			);
+		});
+
+		test("a struct with a benign #destroy (no heap) may be copied", () => {
+			const input = `
+struct Token {
+	var int id
+
+	func #destroy = () {
+		self.id = 0
+	}
+}
+var Token a = Token(1)
+var Token b = a
+Console.write("\\{a.id}\\{b.id}")
+`;
+			const parsed = parse_with_imports(input);
+			expect(parsed.errors).toEqual([]);
 		});
 	});
 });

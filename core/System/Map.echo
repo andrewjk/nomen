@@ -1,10 +1,11 @@
 import Buffer
+import ClassBuffer
 
 pub struct Map<TK, TV> {
 	var int length = 0
-	var Buffer keys = Buffer()
-	var Buffer values = Buffer()
-	var Buffer used = Buffer()
+	var Buffer<TK> keys = Buffer<TK>()
+	var Buffer<TV> values = Buffer<TV>()
+	var Buffer<int> used = Buffer<int>()
 
 	pub func set = (ref self, mov TK key, mov TV value) {
 		var int cap = self.keys.cap
@@ -84,14 +85,14 @@ pub struct Map<TK, TV> {
 	}
 
 	func rehash = (ref self, int new_cap) {
-		var Buffer old_keys = self.keys
-		var Buffer old_values = self.values
-		var Buffer old_used = self.used
+		var Buffer<TK> old_keys = self.keys
+		var Buffer<TV> old_values = self.values
+		var Buffer<int> old_used = self.used
 		var int old_cap = old_keys.cap
 
-		self.keys = Buffer()
-		self.values = Buffer()
-		self.used = Buffer()
+		self.keys = Buffer<TK>()
+		self.values = Buffer<TV>()
+		self.used = Buffer<int>()
 		self.keys.alloc_int(new_cap)
 		self.values.alloc_int(new_cap)
 		self.used.alloc(new_cap)

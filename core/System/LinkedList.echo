@@ -1,13 +1,14 @@
 import Buffer
+import ClassBuffer
 
 // Arena-backed doubly-linked list. Values and next/prev links live in flat
 // Buffers, so there is a single owner and cleanup is a flat free — no recursive
 // pointer chasing, no borrow lifetimes. Node identifiers are stable int indices
 // (read `count` before `add`); -1 means "no node" / "end".
 pub struct LinkedList<T>: Enumerable {
-	var Buffer values = Buffer()
-	var Buffer nexts = Buffer()
-	var Buffer prevs = Buffer()
+	var Buffer<T> values = Buffer<T>()
+	var Buffer<int> nexts = Buffer<int>()
+	var Buffer<int> prevs = Buffer<int>()
 	var int head = -1
 	var int count = 0
 

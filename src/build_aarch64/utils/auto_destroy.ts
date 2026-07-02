@@ -119,7 +119,9 @@ function emit_field_destroys_from_slot(
 ) {
 	let offset = 8;
 	for (const field of struct_type.fields) {
-		const field_struct = is_struct_type(field.type.name, status);
+		const field_struct =
+			is_struct_type(resolve_struct_name(field.type.name, field.type.type_args, status), status) ||
+			is_struct_type(field.type.name, status);
 		if (field_struct) {
 			if (field_struct.is_class && !field.type.is_ref) {
 				status.code += `ldr x0, [x29, #${base_offset}]\n`;
@@ -128,14 +130,14 @@ function emit_field_destroys_from_slot(
 				const label_id = (status.label_counter = (status.label_counter ?? 0) + 1);
 				const skip_label = `.Lskip_defer_${label_id}`;
 				status.code += `cbz x0, ${skip_label}\n`;
-				status.code += `bl ${field_struct.name}_destroy\n`;
+				status.code += `bl ${resolve_struct_name(field_struct.name, field.type.type_args, status)}_destroy\n`;
 				status.code += `${skip_label}:\n`;
 				status.code += `ldr x0, [sp], #16\n`;
 				emit_free(status);
 			} else if (has_destroy(field_struct)) {
 				status.code += `ldr x0, [x29, #${base_offset}]\n`;
 				status.code += `add x0, x0, #${offset}\n`;
-				status.code += `bl ${field_struct.name}_destroy\n`;
+				status.code += `bl ${resolve_struct_name(field_struct.name, field.type.type_args, status)}_destroy\n`;
 			}
 			const field_size = get_type_size(field.type, status);
 			emit_nested_field_destroys_from_slot(status, field_struct, base_offset + offset);
@@ -153,12 +155,14 @@ function emit_nested_field_destroys_from_slot(
 ) {
 	let offset = 8;
 	for (const field of struct_type.fields) {
-		const field_struct = is_struct_type(field.type.name, status);
+		const field_struct =
+			is_struct_type(resolve_struct_name(field.type.name, field.type.type_args, status), status) ||
+			is_struct_type(field.type.name, status);
 		if (field_struct) {
 			if (has_destroy(field_struct)) {
 				status.code += `ldr x0, [x29, #${base_offset}]\n`;
 				status.code += `add x0, x0, #${offset}\n`;
-				status.code += `bl ${field_struct.name}_destroy\n`;
+				status.code += `bl ${resolve_struct_name(field_struct.name, field.type.type_args, status)}_destroy\n`;
 			}
 			const field_size = get_type_size(field.type, status);
 			emit_nested_field_destroys_from_slot(status, field_struct, base_offset + offset);
@@ -244,10 +248,18 @@ export function emit_destroy_for_decl(
 	if (!struct_type) return;
 
 	if (has_destroy(struct_type)) {
-		if (addr_offset !== undefined) {
-			status.code += `add x0, x0, #${addr_offset}\n`;
+		if (struct_type.is_class) {
+			if (addr_offset !== undefined) {
+				status.code += `ldr x0, [x0, #${addr_offset}]\n`;
+			} else {
+				emit_var_load(status, "x0", decl_name, 8);
+			}
 		} else {
-			emit_var_address(status, "x0", decl_name);
+			if (addr_offset !== undefined) {
+				status.code += `add x0, x0, #${addr_offset}\n`;
+			} else {
+				emit_var_address(status, "x0", decl_name);
+			}
 		}
 		status.code += `bl ${resolved_name}_destroy\n`;
 	}
@@ -284,7 +296,9 @@ export function emit_field_destroys(
 ) {
 	let offset = 8;
 	for (const field of struct_type.fields) {
-		const field_struct = is_struct_type(field.type.name, status);
+		const resolved = resolve_struct_name(field.type.name, field.type.type_args, status);
+		const field_struct =
+			is_struct_type(resolved, status) || is_struct_type(field.type.name, status);
 		if (field_struct) {
 			if (field_struct.is_class && !field.type.is_ref) {
 				if (decl_name) {
@@ -297,7 +311,7 @@ export function emit_field_destroys(
 				const label_id = (status.label_counter = (status.label_counter ?? 0) + 1);
 				const skip_label = `.Lskip_destroy_${label_id}`;
 				status.code += `cbz x0, ${skip_label}\n`;
-				status.code += `bl ${field_struct.name}_destroy\n`;
+				status.code += `bl ${resolve_struct_name(field_struct.name, field.type.type_args, status)}_destroy\n`;
 				status.code += `${skip_label}:\n`;
 				status.code += `ldr x0, [sp], #16\n`;
 				emit_free(status);
@@ -308,7 +322,7 @@ export function emit_field_destroys(
 						emit_base_ptr(status, decl_name, is_class_parent);
 					}
 					status.code += `add x0, x0, #${actual_offset}\n`;
-					status.code += `bl ${field_struct.name}_destroy\n`;
+					status.code += `bl ${resolve_struct_name(field_struct.name, field.type.type_args, status)}_destroy\n`;
 				}
 				emit_nested_field_destroys(
 					status,
@@ -354,12 +368,14 @@ function emit_nested_field_destroys(
 ) {
 	let offset = 8;
 	for (const field of struct_type.fields) {
-		const field_struct = is_struct_type(field.type.name, status);
+		const field_struct =
+			is_struct_type(resolve_struct_name(field.type.name, field.type.type_args, status), status) ||
+			is_struct_type(field.type.name, status);
 		if (field_struct) {
 			if (has_destroy(field_struct)) {
 				emit_base_ptr(status, decl_name, is_class_parent);
 				status.code += `add x0, x0, #${base_offset + offset}\n`;
-				status.code += `bl ${field_struct.name}_destroy\n`;
+				status.code += `bl ${resolve_struct_name(field_struct.name, field.type.type_args, status)}_destroy\n`;
 			}
 			const field_size = get_type_size(field.type, status);
 			emit_nested_field_destroys(
@@ -390,7 +406,9 @@ function emit_destroy_for_array_elem(
 	}
 	let offset = 8;
 	for (const field of struct_type.fields) {
-		const field_struct = is_struct_type(field.type.name, status);
+		const field_struct =
+			is_struct_type(resolve_struct_name(field.type.name, field.type.type_args, status), status) ||
+			is_struct_type(field.type.name, status);
 		if (field_struct) {
 			const field_size = get_type_size(field.type, status);
 			emit_nested_field_destroys(
@@ -448,17 +466,17 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 				emit_free(status);
 				continue;
 			}
-			const struct_type = is_struct_type(decl.type.name, status);
+			const resolved = resolve_struct_name(decl.type.name, decl.type.type_args, status);
+			const struct_type =
+				is_struct_type(resolved, status) || is_struct_type(decl.type.name, status);
 			if (!struct_type) continue;
-			if (has_destroy(struct_type)) {
-				if (struct_type.is_class) {
-					emit_var_load(status, "x0", decl.name, 8);
-				} else {
-					emit_var_address(status, "x0", decl.name);
-				}
-				status.code += `bl ${struct_type.name}_destroy\n`;
-			}
-			emit_field_destroys(status, struct_type, decl.name, undefined, struct_type.is_class);
+			if (
+				!has_destroy(struct_type) &&
+				!has_struct_fields_with_destroy(struct_type, status) &&
+				!struct_type.is_class
+			)
+				continue;
+			emit_destroy_for_decl(status, decl.name, decl.type.name, undefined, decl.type.type_args);
 		}
 		for (const slot of current_scope.heap_slots) {
 			if (slot.var_name && moved.has(slot.var_name)) continue;
@@ -521,7 +539,9 @@ export function has_struct_fields_with_destroy(
 ): boolean {
 	for (const field of struct_type.fields) {
 		if (field.type.is_ref) continue;
-		const field_struct = is_struct_type(field.type.name, status);
+		const field_struct =
+			is_struct_type(resolve_struct_name(field.type.name, field.type.type_args, status), status) ||
+			is_struct_type(field.type.name, status);
 		if (field_struct) {
 			if (field_struct.is_class) return true;
 			if (has_destroy(field_struct)) return true;

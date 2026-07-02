@@ -21,7 +21,7 @@ pub func main = () {
 	var int rng1_state = 1
 
 	var Map<int, int> lru = Map<int, int>()
-	var Buffer order = Buffer()
+	var Buffer<int> order = Buffer<int>()
 	order.alloc_int(size)
 	var int order_len = 0
 
