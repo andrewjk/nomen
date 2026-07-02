@@ -463,8 +463,9 @@ export default function check_function_call(
 				// verified. Also allow silently when the call site is inside another core
 				// data structure's method — those types maintain their own invariants.
 				const base_name = target_type?.name?.split("_")[0] ?? "";
-				const core_types = ["Buffer", "BigInt"];
+				const core_types = ["Array", "Buffer", "BigInt"];
 				const is_core_method =
+					target_type?.is_array ||
 					target_type?.name === "string" ||
 					target_type?.name === "Buffer" ||
 					core_types.includes(base_name);
