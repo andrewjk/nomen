@@ -23,6 +23,17 @@ export default function check_assignment_node(
 	if (!is_compound) {
 		status.is_assignment_target = true;
 	}
+	// Reassigning a whole moved variable (`a = ...`, not `a.field = ...`)
+	// revalidates it: drop it from the moved set before the left value is
+	// checked, so the read of the target here is not itself flagged. A field
+	// assignment (`a.field = ...`) does NOT revalidate `a` and is left to error.
+	if (
+		!is_compound &&
+		assign.left_value.node_type === "value" &&
+		status.moved_variables?.has((assign.left_value as ValueNode).value)
+	) {
+		status.moved_variables.delete((assign.left_value as ValueNode).value);
+	}
 	if (!check_node(assign.left_value, status)) {
 		status.is_assignment_target = false;
 		return false;
@@ -120,6 +131,14 @@ export default function check_assignment_node(
 				assign.right_value.start,
 			);
 		}
+	}
+
+	// `b = mov a` (no swap) transfers ownership: the source `a` is moved and may
+	// not be used again until it is reassigned. (A swap revalidates the source,
+	// so it is not marked; func-call `mov` params are marked in check_function_call.)
+	if (assign.right_value.node_type === "value" && assign.right_value.is_moved && !assign.swap) {
+		if (!status.moved_variables) status.moved_variables = new Set();
+		status.moved_variables.add((assign.right_value as ValueNode).value);
 	}
 
 	// Check field constraints on assignment (e.g. foo.x = value where x has a constraint)

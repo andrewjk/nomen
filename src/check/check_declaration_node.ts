@@ -212,6 +212,13 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			}
 		}
 
+		// `var X b = mov a` (no swap) transfers ownership: the source `a` is moved
+		// and may not be used again until reassigned. (A swap revalidates it.)
+		if (decl.value?.node_type === "value" && decl.value.is_moved && !decl.swap) {
+			if (!status.moved_variables) status.moved_variables = new Set();
+			status.moved_variables.add((decl.value as ValueNode).value);
+		}
+
 		check_constraint(decl, status);
 
 		status.values.push({

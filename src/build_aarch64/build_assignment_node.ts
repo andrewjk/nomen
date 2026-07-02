@@ -161,10 +161,21 @@ function build_swap(node: AssignmentNode, status: BuildStatus) {
 			status.code += "\n";
 		}
 		status.code += `ldr x1, [sp], #16\n`;
-		status.code += `str x1, [x0]\n`;
-		const rhs_anchor = find_anchor_slot(status, rhs_name);
-		if (rhs_anchor !== undefined) {
-			status.code += `str x1, [x29, #${rhs_anchor}]\n`;
+		// A struct variable needs its bytes struct-copied back in; a class
+		// variable is a single pointer store (plus an anchor-slot update).
+		const rhs_type = type_from_value_node(rhs);
+		const rhs_struct = rhs_type.name
+			? status.structs.find((s) => s.name === rhs_type.name && !s.is_simple_type)
+			: undefined;
+		if (rhs_struct && !rhs_struct.is_class) {
+			const rhs_size = get_struct_size(rhs_type.name, status);
+			emit_struct_copy("x1", "x0", 0, rhs_size, status);
+		} else {
+			status.code += `str x1, [x0]\n`;
+			const rhs_anchor = find_anchor_slot(status, rhs_name);
+			if (rhs_anchor !== undefined) {
+				status.code += `str x1, [x29, #${rhs_anchor}]\n`;
+			}
 		}
 		status.moved?.delete(rhs_name);
 	}

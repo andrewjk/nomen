@@ -232,3 +232,53 @@ func take = (ref Holder h) {
 		expect(parsed.errors).toEqual([]);
 	});
 });
+
+// `mov` transfers ownership, so the source is invalidated and may not be used
+// again until it is reassigned (or revalidated by a swap). This is enforced at
+// compile time: a moved variable read afterward is a "used after move" error.
+describe("use-after-move", () => {
+	test("using a variable after it is moved out is rejected", () => {
+		const input = `
+var List<int> a = List<int>()
+a.push(1)
+var List<int> b = mov a
+a.push(2)
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors.map((e) => e.message)).toContainEqual(
+			expect.stringContaining("used after move"),
+		);
+	});
+
+	test("a moved variable is revalidated by reassignment", () => {
+		const input = `
+var List<int> a = List<int>()
+a.push(1)
+var List<int> b = mov a
+a = List<int>()
+a.push(2)
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+	});
+});
+
+// `b = mov a swap <replacement>` swaps an owning struct variable out: b takes
+// a's value, and the replacement is struct-copied back into a (which is then
+// un-marked moved, so it is destroyed normally). This mirrors the field-swap
+// path used by Map/Set rehash.
+describe("owning-struct variable swap", () => {
+	test("swapping an owning-struct variable revalidates the source", async () => {
+		const input = `
+var List<int> a = List<int>()
+a.push(1)
+var List<int> b = List<int>()
+b = mov a swap List<int>()
+const int v = b.pop()
+Console.write("\\{v}")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		await check_output("var_swap", build(parsed.root, { arch: "aarch64", audit: true }), "1");
+	});
+});

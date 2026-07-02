@@ -109,28 +109,49 @@ Class values obtained from field access or accessor methods are **borrowed refer
 var Elephant a = Elephant('A')     // a owns this instance
 list.push(mov a)                   // ownership moves into the list; a is invalidated
 var Elephant cur = list.at(0)      // cur is a borrowed reference — NOT freed at scope exit
-// the list owns the instance now (see "Known limitations" — it is not freed yet)
+// the list owns the instance; it is freed when the list is destroyed
 ```
 
 > **Caveat — partial lifetime enforcement.** A borrowed reference taken from a
 > field access (`var Box b = h.c`) is scope-checked: it may not escape the scope
 > it was taken in (assigned to an outer-scope variable or returned). To extract
-> ownership, use `mov` (with swap). Method-return borrows (e.g. `list.pop()`)
-> are not yet tracked, so those can still escape — see "Known Soundness Gaps".
+> ownership, use `mov` (with swap). Method-return borrows (e.g. `list.at(0)`)
+> are likewise rooted at the receiver's lifetime and can't outlive it.
+> (`list.pop()` is a `mov out T` — an owned return — so it can escape freely.)
 
 #### Ownership Transfer with `mov`
 
-The `mov` keyword explicitly transfers ownership of a class instance into a struct field or function parameter. The source variable is marked as "moved" and excluded from cleanup:
+The `mov` keyword explicitly transfers ownership. It works in three positions:
+
+- **struct field / parameter**: `Holder(mov b)` / `func take = (mov Box b)` — ownership moves into the field/param; the source is invalidated.
+- **assignment**: `b = mov a` — `a`'s value moves into `b`; `a` is invalidated (and `b`'s old value freed first).
+- **declaration**: `var Box b = mov a` — same, on initialization.
+
+A moved variable may not be used again until it is reassigned (which revalidates it):
 
 ```
 class Box { var int value }
-class Holder { mov Box content }
-
-var Box b = Box(42)
-var Holder h = Holder(mov b)   // ownership moves from b to h.content
-// b is moved — not freed at scope exit
-// h.content is freed when h is destroyed
+var Box a = Box(42)
+var Box b = mov a      // ownership moves from a to b; a is invalidated
+// a.value             // error: 'a' used after move
+a = Box(7)             // reassignment revalidates a
+a.value = 9            // ok again
 ```
+
+Because structs that own heap resources (containers, `Buffer`/`File`/`ClassBuffer`,
+or any struct with a class field) cannot be byte-copied without a double-free,
+moving is the only way to transfer one between variables — a plain `var List b = a`
+or `b = a` is rejected (`use .copy() or mov`).
+
+**Moving a field out requires a swap.** A field cannot be left moved-out, so
+extracting an owning field revalidates it with a replacement:
+
+```
+var Buffer<int> old = mov self.keys swap Buffer<int>()
+// old takes the previous self.keys; self.keys is revalidated with a fresh Buffer
+```
+
+This is the idiom `Map`/`Set` `rehash` use to retire their old backing buffers.
 
 ### Generic Containers
 
@@ -183,7 +204,8 @@ Variables declared inside loop bodies are cleaned up at each iteration. `break` 
 ## Known Soundness Gaps
 
 These are memory-safety holes that are **not** currently caught at compile time.
-Each is pinned by a failing test in `test/memory-soundness-gaps.test.ts`.
+Resolved gaps (owning-struct copies, use-after-move, container-stored class
+leaks) are listed at the end of the section.
 
 ### Borrowed references outliving their owner (use-after-free)
 
@@ -223,16 +245,23 @@ the live instance each iteration — the variable keeps the last value and stays
 valid after the loop.
 
 The borrow-lifetime check is a scope-depth comparison, not full alias/lifetime
-tracking; deeper escapes through nested data structures aren't modelled.
+tracking; deeper escapes through nested data structures aren't modelled. (The
+common cases — direct field access, smuggling through an intermediate variable,
+method returns, and `return` of a borrow — are all caught.)
 
-### Container-stored classes are leaked
+### Resolved
 
-When `T` is a class, a `mov T` value stored in a generic container is never
-freed: the container's backing `Buffer`s are flat-freed on destroy, but the
-individual class instances they point to are not. The original caller variable
-is invalidated by `mov`, so nothing frees the instance. This is a known leak
-(the type-safety guarantee — no double-free / no premature free — is what the
-`mov`-into-container design preserves). See `test/uaf-via-container.test.ts`.
+These were previously open gaps and are now enforced at compile time:
+
+- **Owning-struct copies** (`var Own b = a`, `b = a`, and copies out of a field)
+  are rejected — byte-copying a struct that owns heap resources would double-free.
+  Transfer ownership with `mov` (and `swap` for a field), or deep-copy via
+  `.copy()`.
+- **Use-after-move** is rejected: a variable moved with `mov` may not be read
+  again until it is reassigned (which revalidates it) or revalidated by a swap.
+- **Container-stored classes are freed.** When `T` is a class, a container's
+  backing storage is a `ClassBuffer`, whose `#destroy` frees each stored
+  instance — so `mov`-into-container no longer leaks.
 
 ---
 

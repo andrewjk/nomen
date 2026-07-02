@@ -58,7 +58,7 @@ a.push(1)
 var List<int> b = List<int>()
 b.push(2)
 b = mov a
-const int v = a.pop()
+const int v = b.pop()
 Console.write("\\{v}")
 `;
 			const parsed = parse_with_imports(input);
