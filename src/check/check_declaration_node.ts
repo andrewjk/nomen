@@ -228,7 +228,17 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 		// and q are the same object, so a mutation through one is visible through
 		// the other and the alias stays valid. We therefore leave borrow_depth /
 		// borrowed_from unset here (so the invalidation machinery does not fire)
-		// and let the build classify the alias syntactically.
+		// and let the build classify the alias syntactically. We do record
+		// class_alias_of so reassignment of the owner defers (not eager-frees)
+		// its old instance — otherwise the alias would dangle.
+		const class_alias_src =
+			decl.value?.node_type === "value" &&
+			!(decl.value as any).is_moved &&
+			(decl.value as any).value !== "null" &&
+			decl.type.name &&
+			is_class_type(decl.type.name, status)
+				? (decl.value as ValueNode).value
+				: undefined;
 		status.values.push({
 			declaration: decl.declaration,
 			name: decl.name,
@@ -241,6 +251,7 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			decl_depth: status.scope_depth,
 			borrow_depth: decl.value ? borrow_depth_of(decl.value, status) : undefined,
 			borrowed_from: decl.value ? borrow_owner_of(decl.value, status) : undefined,
+			class_alias_of: class_alias_src,
 		});
 		if (decl.value) {
 			track_assignment_bounds(decl.name, decl.value, status);

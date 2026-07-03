@@ -13,6 +13,7 @@ import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free } from "./utils/audit.ts";
 import {
 	anchor_heap_pointer,
+	consume_anchor_slot,
 	defer_anchor_destroy,
 	emit_destroy_for_decl,
 	find_anchor_slot,
@@ -218,32 +219,53 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 					(s) => s.name === func_call.name && !s.is_simple_type,
 				);
 				if (is_constructor) {
-					// An object-level alias (`var Box q = p`) is never added to
-					// scoped_declarations, so its anchored instances won't get a
-					// #destroy at scope exit via that path. On reassignment to a
-					// fresh instance: (a) the old value is shared with the
-					// original owner, so it must NOT be destroyed here, and (b)
-					// the new instance's anchor must be flagged to run #destroy at
-					// exit. A regular owner (in scoped_declarations) keeps its
-					// existing deferred-reclamation behaviour unchanged.
 					const is_alias = !!status.class_alias_vars?.has(name);
-					// The old instance is replaced. Defer its cleanup (destroy +
-					// field frees) to scope exit rather than running it now, so
-					// that borrows of the old instance's fields stay valid for the
-					// rest of the scope. Falls back to eager cleanup when the old
-					// value isn't anchored (e.g. a borrowed reference). The
-					// replacement is anchored in the variable's declaration frame
-					// (returned here) so it survives nested scopes such as loop
-					// bodies instead of being freed each iteration.
-					const decl_frame = defer_anchor_destroy(status, name, rhs_type.name, rhs_type.type_args);
-					if (decl_frame === undefined && !is_alias) {
+					// Does this variable own its current instance (have an anchor
+					// slot)? Owners always do; an object-level alias only does so
+					// after a previous reassignment gave it one (its initial value
+					// is shared with the original owner and must NOT be freed).
+					const owns_current = find_anchor_slot(status, name) !== undefined;
+					const decl_frame = status.class_decl_frame?.get(name);
+					if (node.has_live_borrow) {
+						// A live field/method borrow references the current
+						// instance, so keep it alive (deferred reclamation) until
+						// the borrow's scope ends. Disown the anchor (freed at
+						// exit) and anchor the replacement in the declaration
+						// frame so it survives nested scopes.
+						if (owns_current) {
+							defer_anchor_destroy(status, name, rhs_type.name, rhs_type.type_args);
+						}
+						mark_moved_if_struct(node.right_value, status);
+						build_node(node.right_value, status);
+						if (!status.code.endsWith("\n")) status.code += "\n";
+						anchor_heap_pointer(status, name, decl_frame);
+						if (is_alias) {
+							mark_anchor_destroy(status, name, rhs_type.name, rhs_type.type_args);
+						}
+						const offset = status.stack_offsets?.get(name);
+						if (offset !== undefined) {
+							status.code += `str x0, [x29, #${offset}]\n`;
+						}
+						build_swap(node, status);
+						return;
+					}
+					// No live borrow: reclaim the current instance eagerly. This
+					// is what makes reassignment sound inside a loop — the
+					// emitted code frees the current instance every iteration
+					// instead of deferring to a single scope-exit slot that gets
+					// overwritten. Skip the free when the variable doesn't own
+					// its current value (an alias's first reassignment: the old
+					// value is shared with the original owner).
+					if (owns_current) {
+						consume_anchor_slot(status, name);
 						emit_destroy_for_decl(status, name, rhs_type.name, undefined, rhs_type.type_args);
+						emit_var_load(status, "x0", name, 8);
+						emit_free(status);
 					}
 					mark_moved_if_struct(node.right_value, status);
 					build_node(node.right_value, status);
 					if (!status.code.endsWith("\n")) status.code += "\n";
-					const frame = decl_frame ?? status.class_decl_frame?.get(name);
-					anchor_heap_pointer(status, name, frame);
+					anchor_heap_pointer(status, name, decl_frame);
 					if (is_alias) {
 						mark_anchor_destroy(status, name, rhs_type.name, rhs_type.type_args);
 					}

@@ -51,6 +51,16 @@ export default interface StackValue {
 	 */
 	alias_of?: string;
 	/**
+	 * For an object-level alias (`var Box b = a`): the owner variable whose
+	 * instance b currently shares. Unlike `borrowed_from` (field/method borrows)
+	 * this does NOT trigger borrow-invalidation when the owner is mutated — the
+	 * alias and owner are the same object, so a mutation through one is visible
+	 * through the other and the alias stays valid. It only signals that the
+	 * owner's old instance must not be eagerly freed on reassignment (it would
+	 * dangle the alias); the build then defers it.
+	 */
+	class_alias_of?: string;
+	/**
 	 * Block scope depth at which this variable was declared (status.scope_depth
 	 * when pushed). Used by borrow-lifetime checking.
 	 */

@@ -80,6 +80,7 @@ export default function check_assignment_node(
 		left_value.upper_bound_exprs = undefined;
 		left_value.lower_bound_exprs = undefined;
 		left_value.alias_of = undefined;
+		left_value.class_alias_of = undefined;
 		// Re-track bounds if the RHS establishes new ones (e.g. cap = buf.get_cap()).
 		// Skip for compound assignments (+=, -=, etc.) since the RHS is a delta,
 		// not the new value.
@@ -263,6 +264,17 @@ export default function check_assignment_node(
 			left_value.borrowed_from = undefined;
 			left_value.borrow_invalidated = false;
 		}
+	}
+
+	// Record whether a live field/method borrow OR object-level alias of the lhs
+	// exists, so the build can decide between eager reclamation (no reference →
+	// safe to free the old instance immediately, which is what makes loop
+	// reassignment sound) and deferred reclamation (reference present → keep the
+	// old instance alive until that reference's scope ends).
+	if (!assign.swap) {
+		assign.has_live_borrow = status.values.some(
+			(v) => v.borrowed_from === left_value_name || v.class_alias_of === left_value_name,
+		);
 	}
 
 	if (assign.swap) {

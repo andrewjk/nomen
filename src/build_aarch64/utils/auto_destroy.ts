@@ -90,6 +90,27 @@ export function defer_anchor_destroy(
 }
 
 /**
+ * Find the anchor slot currently owned by `var_name`, remove it from the
+ * cleanup stack (so it is NOT freed at scope exit), and return its stack
+ * offset. Used for eager reclamation: the caller emits runtime code to
+ * destroy+free the instance now (via the variable), so the slot must not be
+ * freed again at exit. Returns undefined if the variable has no anchor.
+ */
+export function consume_anchor_slot(status: BuildStatus, var_name: string): number | undefined {
+	for (let f = 0; f < (status.heap_cleanup_stack?.length ?? 0); f++) {
+		const scope = status.heap_cleanup_stack![f];
+		for (let i = scope.heap_slots.length - 1; i >= 0; i--) {
+			if (scope.heap_slots[i].var_name === var_name) {
+				const offset = scope.heap_slots[i].offset;
+				scope.heap_slots.splice(i, 1);
+				return offset;
+			}
+		}
+	}
+	return undefined;
+}
+
+/**
  * Flag the anchor slot currently owned by `var_name` to run the type's
  * `#destroy` (and field destroys) when the slot is freed at scope exit. Used
  * when an object-level alias — which is NOT tracked via scoped_declarations —
