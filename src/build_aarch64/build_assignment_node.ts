@@ -299,6 +299,12 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 					// original value for its owner).
 					const alias_flag =
 						is_alias && !owns_current ? status.alias_owns_flag?.get(name) : undefined;
+					// For a nullable class var reassigned in a loop, owns_current is
+					// false at build time (no anchor from the null declaration), but
+					// at runtime the var may own an instance from a prior iteration.
+					// Emit a runtime-guarded reclaim so old instances don't leak.
+					// (variable_types persists across the loop body's scope swap.)
+					const decl_is_nullable = !!status.variable_types?.get(name)?.is_nullable;
 					if (owns_current) {
 						consume_anchor_slot(status, name);
 						emit_destroy_for_decl(
@@ -324,6 +330,15 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 							rhs_type.type_args,
 							rhs_type.is_nullable,
 						);
+						emit_var_load(status, "x0", name, 8);
+						emit_free(status);
+						status.code += `${no_free_label}:\n`;
+					} else if (decl_is_nullable) {
+						const label_id = (status.label_counter = (status.label_counter ?? 0) + 1);
+						const no_free_label = `.Lnullable_no_free_${label_id}`;
+						emit_var_load(status, "x0", name, 8);
+						status.code += `cbz x0, ${no_free_label}\n`;
+						emit_destroy_for_decl(status, name, rhs_type.name, undefined, rhs_type.type_args, true);
 						emit_var_load(status, "x0", name, 8);
 						emit_free(status);
 						status.code += `${no_free_label}:\n`;
@@ -508,6 +523,26 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 				status.last_result_is_heap = false;
 				build_node(node.right_value, status);
 				if (!status.code.endsWith("\n")) status.code += "\n";
+				// Reclaim a nullable class instance being overwritten by a non-
+				// constructor RHS (e.g. `a = null` or `a = other_nullable`).
+				// The constructor path above handles its own reclamation; this
+				// catches the value-typed RHS path that would otherwise just
+				// overwrite the slot and leak the old heap instance.
+				if (find_anchor_slot(status, name) !== undefined) {
+					status.code += `str x0, [sp, #-16]!\n`;
+					emit_destroy_for_decl(
+						status,
+						name,
+						lhs_type_name,
+						undefined,
+						lhs_decl?.type?.type_args,
+						lhs_decl?.type?.is_nullable,
+					);
+					emit_var_load(status, "x0", name, 8);
+					emit_free(status);
+					consume_anchor_slot(status, name);
+					status.code += `ldr x0, [sp], #16\n`;
+				}
 				// Only anchor when the RHS produced a fresh heap allocation
 				// (e.g. a factory function). Borrowed references returned by
 				// accessor methods must not be anchored — they are owned

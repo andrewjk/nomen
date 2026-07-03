@@ -588,9 +588,208 @@ func take = (Box? x) {
         Console.write("null")
     }
 }
-take(null)
+	take(null)
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
+	});
+});
+
+describe("nullable classes — memory reclamation", () => {
+	test("reassign nullable var with non-null value frees old instance", async () => {
+		const input = `
+class Box {
+    var int v
+}
+func test = () {
+    var Box? a = Box(1)
+    a = Box(2)
+    a = Box(3)
+}
+test()
+Console.write("done")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		await check_output("nullable_reassign_chain", result, "done");
+	});
+
+	test("nullable var: null then assign then null then assign", async () => {
+		const input = `
+class Box {
+    var int v
+}
+func test = () {
+    var Box? a = null
+    a = Box(1)
+    a = null
+    a = Box(2)
+    if a != null {
+        Console.write("\\{a.v}")
+    }
+}
+test()
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		await check_output("nullable_null_assign_cycle", result, "2");
+	});
+
+	test("return nullable class from function — caller frees", async () => {
+		const input = `
+class Box {
+    var int v
+}
+func make = (out Box?) {
+    return Box(5)
+}
+func test = () {
+    var Box? a = make()
+}
+test()
+Console.write("done")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		await check_output("nullable_return_from_func", result, "done");
+	});
+
+	test("nullable class in a loop — each iteration frees", async () => {
+		const input = `
+class Box {
+    var int v
+}
+func test = () {
+    var Box? a = null
+    var int i = 0
+    while i < 5 {
+        a = Box(i)
+        i = i + 1
+    }
+}
+test()
+Console.write("done")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		await check_output("nullable_loop_reclaim", result, "done");
+	});
+
+	test("nullable class owning class field, reassigned to null frees field", async () => {
+		const input = `
+class Box {
+    var int v
+}
+class Holder {
+    mov Box c
+}
+func test = () {
+    var Holder? h = Holder(mov Box(7))
+    h = null
+    h = Holder(mov Box(8))
+    h = null
+}
+test()
+Console.write("done")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		await check_output("nullable_field_owner_reassign", result, "done");
+	});
+
+	test("pass non-null nullable var to mov param — freed exactly once", async () => {
+		const input = `
+class Box {
+    var int v
+}
+func take = (mov Box? x) {
+    if x != null {
+        Console.write_line("\\{x.v}")
+    }
+}
+func test = () {
+    var Box? a = Box(5)
+    take(mov a)
+}
+test()
+Console.write("done")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		await check_output("nullable_mov_nonnull", result, "5\ndone");
+	});
+
+	test("pass null nullable var to mov param — no free, no crash", async () => {
+		const input = `
+class Box {
+    var int v
+}
+func take = (mov Box? x) {
+    if x == null {
+        Console.write_line("null")
+    }
+}
+func test = () {
+    var Box? a = null
+    take(mov a)
+}
+test()
+Console.write("done")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		await check_output("nullable_mov_null", result, "null\ndone");
+	});
+
+	test("nullable class with destroy owning class field, freed when non-null", async () => {
+		const input = `
+class Box {
+    var int v
+    func #destroy = () {
+        Console.write_line("box \\{self.v}")
+    }
+}
+class Holder {
+    mov Box c
+}
+func test = () {
+    var Holder? h = Holder(mov Box(7))
+}
+test()
+Console.write("done")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		await check_output("nullable_owner_destroy_non", result, "box 7\ndone");
+	});
+
+	test("nullable class returned from function and reassigned", async () => {
+		const input = `
+class Box {
+    var int v
+}
+func make = (int n, out Box?) {
+    return Box(n)
+}
+func test = () {
+    var Box? a = make(1)
+    a = make(2)
+    a = null
+}
+test()
+Console.write("done")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		await check_output("nullable_returned_reassigned", result, "done");
 	});
 });
