@@ -414,7 +414,13 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 		(struct_type.functions.find((f) => f.name === "#destroy") ||
 			has_struct_fields_with_destroy(struct_type, status))
 	) {
-		track_struct_decl(status, node.name, node.type.name, node.type.type_args);
+		track_struct_decl(
+			status,
+			node.name,
+			node.type.name,
+			node.type.type_args,
+			node.type.is_nullable,
+		);
 	}
 
 	// Check if type is an enum with associated data

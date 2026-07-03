@@ -46,6 +46,10 @@ export function emit_deref_var_address(status: BuildStatus, reg: string, name: s
 }
 
 export function emit_var_load(status: BuildStatus, reg: string, name: string, size: number) {
+	if (name === "null") {
+		status.code += `mov ${reg}, #0\n`;
+		return;
+	}
 	const alloc_reg = status.register_allocations?.get(name);
 	if (alloc_reg) {
 		if (reg !== alloc_reg) {

@@ -64,8 +64,14 @@ export default interface BuildStatus {
 			 */
 			destroy_type?: string;
 			destroy_type_args?: Type[];
+			/**
+			 * True when the slot holds a nullable class instance — the
+			 * instance pointer may be 0 (null), so destroy/free must be
+			 * guarded by a `cbz` to avoid dereferencing null.
+			 */
+			is_nullable?: boolean;
 		}[];
-		struct_decls: { name: string; type_name: string; type_args?: Type[] }[];
+		struct_decls: { name: string; type_name: string; type_args?: Type[]; is_nullable?: boolean }[];
 	}[];
 	struct_return_buffer?: string;
 	return_buffer_stack_offset?: number;

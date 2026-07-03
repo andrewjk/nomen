@@ -240,7 +240,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	// Save mov'd class param values for cleanup at return
 	let moved_param_save_slots: Map<
 		string,
-		{ offset: number; type_name: string; type_args?: Type[] }
+		{ offset: number; type_name: string; type_args?: Type[]; is_nullable?: boolean }
 	> = new Map();
 
 	if (has_body) {
@@ -325,6 +325,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 					offset: save_offset,
 					type_name: param.type.name,
 					type_args: param.type.type_args,
+					is_nullable: param.type.is_nullable,
 				});
 			}
 		}
@@ -406,7 +407,13 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 				status.code += `cmp x0, x1\n`;
 				status.code += `beq ${keep_prefix}_${name}\n`;
 			}
-			emit_destroy_for_anchor_slot(status, info.offset, info.type_name, info.type_args);
+			emit_destroy_for_anchor_slot(
+				status,
+				info.offset,
+				info.type_name,
+				info.type_args,
+				info.is_nullable,
+			);
 			status.code += `ldr x0, [x29, #${info.offset}]\n`;
 			emit_free(status);
 			if (need_guard) {

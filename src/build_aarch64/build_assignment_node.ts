@@ -242,7 +242,13 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 						status.code += `ldr x1, [x29, #${ref_slot}]\n`;
 						status.code += `ldr x0, [x1]\n`;
 						status.code += `str x0, [x29, #${tmp}]\n`;
-						emit_destroy_for_anchor_slot(status, tmp, rhs_type.name, rhs_type.type_args);
+						emit_destroy_for_anchor_slot(
+							status,
+							tmp,
+							rhs_type.name,
+							rhs_type.type_args,
+							rhs_type.is_nullable,
+						);
 						status.code += `ldr x0, [x29, #${tmp}]\n`;
 						emit_free(status);
 						mark_moved_if_struct(node.right_value, status);
@@ -295,7 +301,14 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 						is_alias && !owns_current ? status.alias_owns_flag?.get(name) : undefined;
 					if (owns_current) {
 						consume_anchor_slot(status, name);
-						emit_destroy_for_decl(status, name, rhs_type.name, undefined, rhs_type.type_args);
+						emit_destroy_for_decl(
+							status,
+							name,
+							rhs_type.name,
+							undefined,
+							rhs_type.type_args,
+							rhs_type.is_nullable,
+						);
 						emit_var_load(status, "x0", name, 8);
 						emit_free(status);
 					} else if (alias_flag !== undefined) {
@@ -303,7 +316,14 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 						const no_free_label = `.Lalias_no_free_${label_id}`;
 						status.code += `ldr x9, [x29, #${alias_flag}]\n`;
 						status.code += `cbz x9, ${no_free_label}\n`;
-						emit_destroy_for_decl(status, name, rhs_type.name, undefined, rhs_type.type_args);
+						emit_destroy_for_decl(
+							status,
+							name,
+							rhs_type.name,
+							undefined,
+							rhs_type.type_args,
+							rhs_type.is_nullable,
+						);
 						emit_var_load(status, "x0", name, 8);
 						emit_free(status);
 						status.code += `${no_free_label}:\n`;
@@ -346,7 +366,14 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 				!is_local_ref_var(name, status) &&
 				lhs_type_name;
 			if (needs_pre_destroy) {
-				emit_destroy_for_decl(status, name, lhs_type_name, undefined, lhs_decl?.type?.type_args);
+				emit_destroy_for_decl(
+					status,
+					name,
+					lhs_type_name,
+					undefined,
+					lhs_decl?.type?.type_args,
+					lhs_decl?.type?.is_nullable,
+				);
 			}
 			get_source_address(node.right_value, status);
 			if (!status.code.endsWith("\n")) {
@@ -370,7 +397,13 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 						// Destroy the old instance (#destroy + free owned fields)
 						// before freeing its memory, so a class with class fields
 						// doesn't leak them each reassignment (compounds in a loop).
-						emit_destroy_for_anchor_slot(status, anchor, rhs_type.name, rhs_type.type_args);
+						emit_destroy_for_anchor_slot(
+							status,
+							anchor,
+							rhs_type.name,
+							rhs_type.type_args,
+							rhs_type.is_nullable,
+						);
 						status.code += `ldr x0, [x29, #${anchor}]\n`;
 						emit_free(status);
 						status.code += `ldr x3, [sp], #16\n`;
@@ -399,7 +432,13 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 						// fields) before freeing its memory — a bare free here would
 						// leak the fields every reassignment, which compounds in a
 						// loop. emit_destroy_for_anchor_slot loads [anchor] itself.
-						emit_destroy_for_anchor_slot(status, anchor, rhs_type.name, rhs_type.type_args);
+						emit_destroy_for_anchor_slot(
+							status,
+							anchor,
+							rhs_type.name,
+							rhs_type.type_args,
+							rhs_type.is_nullable,
+						);
 						status.code += `ldr x0, [x29, #${anchor}]\n`;
 						emit_free(status);
 						status.code += `ldr x3, [sp], #16\n`;

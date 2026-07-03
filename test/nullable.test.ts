@@ -406,3 +406,191 @@ func test = (Thing? thing) {
 		expect(parsed.errors).toEqual([]);
 	});
 });
+
+describe("nullable classes — declaration and codegen", () => {
+	test("var Box? a = null does not emit adr x0, null", () => {
+		const input = `
+class Box {
+    var int v
+}
+var Box? a = null
+Console.write("ok")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		expect(result.code).not.toContain("adr x0, null");
+	});
+
+	test("var Box? a = null then if a != null / else branch", async () => {
+		const input = `
+class Box {
+    var int v
+}
+var Box? a = null
+if a != null {
+    Console.write("non")
+} else {
+    Console.write("null")
+}
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		await check_output("nullable_class_branch_null", result, "null");
+	});
+
+	test("var Box? a = Box(5) then if a != null branch", async () => {
+		const input = `
+class Box {
+    var int v
+}
+var Box? a = Box(5)
+if a != null {
+    Console.write("non")
+} else {
+    Console.write("null")
+}
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		await check_output("nullable_class_branch_non", result, "non");
+	});
+
+	test("nullable class with destroy reading self, freed when null", async () => {
+		const input = `
+class Box {
+    var int v
+    func #destroy = () {
+        Console.write_line("\\{self.v}")
+    }
+}
+func test = () {
+    var Box? a = null
+}
+test()
+Console.write("done")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		// Destroy must be skipped on null — no crash, no "destroyed" output.
+		await check_output("nullable_class_destroy_null", result, "done");
+	});
+
+	test("nullable class with destroy reading self, freed when non-null", async () => {
+		const input = `
+class Box {
+    var int v
+    func #destroy = () {
+        Console.write_line("\\{self.v}")
+    }
+}
+func test = () {
+    var Box? a = Box(5)
+}
+test()
+Console.write("done")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		// Destroy must run exactly once when non-null.
+		await check_output("nullable_class_destroy_non", result, "5\ndone");
+	});
+
+	test("nullable class owning a class field, reclaimed at scope exit", async () => {
+		const input = `
+class Box {
+    var int v
+}
+class Holder {
+    mov Box c
+}
+func test = () {
+    var Holder? h = Holder(Box(7))
+}
+test()
+Console.write("done")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		await check_output("nullable_class_owning_field", result, "done");
+	});
+
+	test("reassign nullable var: h = Box(...) then h = null", async () => {
+		const input = `
+class Box {
+    var int v
+}
+func test = () {
+    var Box? h = Box(1)
+    h = null
+}
+test()
+Console.write("done")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		await check_output("nullable_class_reassign_null", result, "done");
+	});
+});
+
+describe("nullable classes — function parameters", () => {
+	test("pass nullable var to nullable non-mov param", () => {
+		const input = `
+class Box {
+    var int v
+}
+func take = (Box? x) {
+    if x != null {
+        Console.write("non")
+    } else {
+        Console.write("null")
+    }
+}
+var Box? a = null
+take(a)
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+	});
+
+	test("pass nullable var to nullable mov param", () => {
+		const input = `
+class Box {
+    var int v
+}
+func take = (mov Box? x) {
+    if x != null {
+        Console.write("non")
+    } else {
+        Console.write("null")
+    }
+}
+var Box? a = null
+take(mov a)
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+	});
+
+	test("pass null literal to nullable non-mov param", () => {
+		const input = `
+class Box {
+    var int v
+}
+func take = (Box? x) {
+    if x == null {
+        Console.write("null")
+    }
+}
+take(null)
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+	});
+});

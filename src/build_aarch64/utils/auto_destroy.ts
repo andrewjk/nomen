@@ -19,6 +19,7 @@ export function anchor_heap_pointer(
 	status: BuildStatus,
 	var_name?: string,
 	frame_index?: number,
+	is_nullable?: boolean,
 ): number {
 	const offset = allocate_stack_space(status, 8, 8);
 	status.code += `str x0, [x29, #${offset}]\n`;
@@ -32,7 +33,7 @@ export function anchor_heap_pointer(
 			frame_index !== undefined && frame_index < status.heap_cleanup_stack.length
 				? status.heap_cleanup_stack[frame_index]
 				: status.heap_cleanup_stack[status.heap_cleanup_stack.length - 1];
-		frame.heap_slots.push({ offset, var_name });
+		frame.heap_slots.push({ offset, var_name, is_nullable });
 	}
 	return offset;
 }
@@ -149,15 +150,27 @@ export function emit_destroy_for_anchor_slot(
 	offset: number,
 	type_name: string,
 	type_args?: Type[],
+	is_nullable?: boolean,
 ) {
 	const resolved_name = resolve_struct_name(type_name, type_args, status);
 	const struct_type = is_struct_type(resolved_name, status) || is_struct_type(type_name, status);
 	if (!struct_type) return;
+	// Guard the destroy + field-destroy sequence for nullable instances — the
+	// slot may hold 0 (null), which owns nothing and must not be dereferenced.
+	let skip_label: string | undefined;
+	if (is_nullable && struct_type.is_class) {
+		status.code += `ldr x0, [x29, #${offset}]\n`;
+		skip_label = `.Lskip_na_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+		status.code += `cbz x0, ${skip_label}\n`;
+	}
 	if (has_destroy(struct_type)) {
 		status.code += `ldr x0, [x29, #${offset}]\n`;
 		status.code += `bl ${resolved_name}_destroy\n`;
 	}
 	emit_field_destroys_from_slot(status, struct_type, offset);
+	if (skip_label) {
+		status.code += `${skip_label}:\n`;
+	}
 }
 
 function emit_field_destroys_from_slot(
@@ -226,10 +239,21 @@ function emit_nested_field_destroys_from_slot(
  */
 function free_anchor_slot(
 	status: BuildStatus,
-	slot: { offset: number; destroy_type?: string; destroy_type_args?: Type[] },
+	slot: {
+		offset: number;
+		destroy_type?: string;
+		destroy_type_args?: Type[];
+		is_nullable?: boolean;
+	},
 ) {
 	if (slot.destroy_type) {
-		emit_destroy_for_anchor_slot(status, slot.offset, slot.destroy_type, slot.destroy_type_args);
+		emit_destroy_for_anchor_slot(
+			status,
+			slot.offset,
+			slot.destroy_type,
+			slot.destroy_type_args,
+			slot.is_nullable,
+		);
 	}
 	status.code += `ldr x0, [x29, #${slot.offset}]\n`;
 	emit_free(status);
@@ -240,12 +264,14 @@ export function track_struct_decl(
 	name: string,
 	type_name: string,
 	type_args?: Type[],
+	is_nullable?: boolean,
 ) {
 	if (status.heap_cleanup_stack?.length) {
 		status.heap_cleanup_stack[status.heap_cleanup_stack.length - 1].struct_decls.push({
 			name,
 			type_name,
 			type_args,
+			is_nullable,
 		});
 	}
 }
@@ -276,6 +302,7 @@ export function emit_destroy_for_decl(
 	decl_type_name: string,
 	addr_offset?: number,
 	type_args?: Type[],
+	is_nullable?: boolean,
 ) {
 	const moved = status.moved ?? new Set<string>();
 	if (moved.has(decl_name)) return;
@@ -294,6 +321,19 @@ export function emit_destroy_for_decl(
 	const struct_type =
 		is_struct_type(resolved_name, status) || is_struct_type(decl_type_name, status);
 	if (!struct_type) return;
+
+	// A nullable class instance is represented at runtime as a pointer that
+	// may be 0 (null). Guard the whole destroy + field-destroy sequence with
+	// a `cbz` so a null instance owns nothing and is never dereferenced.
+	// (addr_offset is for nested fields, which are always non-null here since
+	// the caller already loaded a live base pointer.)
+	const guard_null = !!is_nullable && struct_type.is_class && addr_offset === undefined;
+	let skip_label: string | undefined;
+	if (guard_null) {
+		emit_var_load(status, "x0", decl_name, 8);
+		skip_label = `.Lskip_nd_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+		status.code += `cbz x0, ${skip_label}\n`;
+	}
 
 	if (has_destroy(struct_type)) {
 		if (struct_type.is_class) {
@@ -324,6 +364,10 @@ export function emit_destroy_for_decl(
 		emit_field_destroys(status, struct_type, decl_name, addr_offset, true);
 	} else {
 		emit_field_destroys(status, struct_type, decl_name, addr_offset);
+	}
+
+	if (skip_label) {
+		status.code += `${skip_label}:\n`;
 	}
 }
 
@@ -524,7 +568,14 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 				!struct_type.is_class
 			)
 				continue;
-			emit_destroy_for_decl(status, decl.name, decl.type.name, undefined, decl.type.type_args);
+			emit_destroy_for_decl(
+				status,
+				decl.name,
+				decl.type.name,
+				undefined,
+				decl.type.type_args,
+				decl.type.is_nullable,
+			);
 		}
 		for (const slot of current_scope.heap_slots) {
 			if (slot.var_name && moved.has(slot.var_name)) continue;
@@ -577,7 +628,14 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 			!struct_type.is_class
 		)
 			continue;
-		emit_destroy_for_decl(status, decl.name, decl.type.name, undefined, decl.type.type_args);
+		emit_destroy_for_decl(
+			status,
+			decl.name,
+			decl.type.name,
+			undefined,
+			decl.type.type_args,
+			decl.type.is_nullable,
+		);
 	}
 }
 
@@ -614,7 +672,14 @@ export function emit_cleanup_to_loop_depth(status: BuildStatus) {
 		const moved = status.moved ?? new Set<string>();
 		for (const entry of scope.struct_decls) {
 			if (moved.has(entry.name)) continue;
-			emit_destroy_for_decl(status, entry.name, entry.type_name, undefined, entry.type_args);
+			emit_destroy_for_decl(
+				status,
+				entry.name,
+				entry.type_name,
+				undefined,
+				entry.type_args,
+				entry.is_nullable,
+			);
 		}
 		for (const name of scope.heap_strings) {
 			if (moved.has(name)) continue;

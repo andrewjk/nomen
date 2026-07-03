@@ -239,15 +239,24 @@ export default function check_function_call(
 		// untyped values (e.g. array literals) are inferred correctly,
 		// rather than leaking the outer declaration's expected_type.
 		const old_expected_type = status.expected_type;
+		// Permit passing a nullable var — or the `null` literal — when the
+		// parameter itself is nullable. Mirrors the save/restore pattern used
+		// in check_operation_node for == / != / ??.
+		const old_allow_null = status.allow_null_value;
 		if (func_param) {
 			status.expected_type = func_param.type;
+			if (func_param.type.is_nullable) {
+				status.allow_null_value = true;
+			}
 		}
 
 		if (!check_node(param, status)) {
 			status.expected_type = old_expected_type;
+			status.allow_null_value = old_allow_null;
 			continue;
 		}
 		status.expected_type = old_expected_type;
+		status.allow_null_value = old_allow_null;
 
 		const param_type = type_from_value_node(param, status);
 		const param_value = value_from_value_node(param);
