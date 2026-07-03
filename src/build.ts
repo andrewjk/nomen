@@ -33,6 +33,8 @@ export default function build(
 		strings: new Map(),
 		float_literals: new Map(),
 		string_literal_names: new Set(),
+		class_decl_frame: new Map(),
+		class_alias_vars: new Set(),
 		audit: options.audit,
 		platform: options.platform ?? default_platform(),
 	};

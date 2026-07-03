@@ -95,6 +95,23 @@ export default interface BuildStatus {
 	 * were never type-resolved by the check pass.
 	 */
 	variable_types?: Map<string, Type>;
+	/**
+	 * Maps a class-typed variable to the index (in heap_cleanup_stack) of the
+	 * frame it was declared in. Used when an object-level alias (which has no
+	 * anchor of its own) is reassigned to a fresh instance: the new instance
+	 * must be anchored in the variable's declaration frame so it survives
+	 * nested scopes (e.g. loop bodies) and is destroyed once at the right exit.
+	 */
+	class_decl_frame?: Map<string, number>;
+	/**
+	 * Class-typed variables that were declared as object-level aliases
+	 * (`var Box q = p`, or a field-borrow `var Box b = h.c`) — i.e. NOT tracked
+	 * via scoped_declarations. Such a variable never gets a #destroy at scope
+	 * exit through the scoped_declarations path, so any instance it comes to own
+	 * (via reassignment to a fresh value) must be flagged for destroy on its
+	 * anchor slot. Recorded once at declaration so it survives scoped resets.
+	 */
+	class_alias_vars?: Set<string>;
 	inline_functions?: Map<string, BaseNode>;
 	/**
 	 * Maps variable names to callee-saved registers (x23-x28) for loop register allocation.

@@ -90,6 +90,33 @@ export function defer_anchor_destroy(
 }
 
 /**
+ * Flag the anchor slot currently owned by `var_name` to run the type's
+ * `#destroy` (and field destroys) when the slot is freed at scope exit. Used
+ * when an object-level alias — which is NOT tracked via scoped_declarations —
+ * is reassigned to a fresh instance it now owns: without this, the anchored
+ * instance would be freed at exit without its destructor running. (For regular
+ * owners this is unnecessary: their #destroy runs via scoped_declarations, so
+ * their live anchor slot carries no destroy_type.)
+ */
+export function mark_anchor_destroy(
+	status: BuildStatus,
+	var_name: string,
+	type_name: string,
+	type_args?: Type[],
+) {
+	for (let f = (status.heap_cleanup_stack?.length ?? 0) - 1; f >= 0; f--) {
+		const scope = status.heap_cleanup_stack![f];
+		for (let i = scope.heap_slots.length - 1; i >= 0; i--) {
+			if (scope.heap_slots[i].var_name === var_name) {
+				scope.heap_slots[i].destroy_type = type_name;
+				scope.heap_slots[i].destroy_type_args = type_args;
+				return;
+			}
+		}
+	}
+}
+
+/**
  * Emit `#destroy` + field destroys for a class/struct instance whose pointer
  * lives in an anchor slot (offset from x29), reading the base pointer from the
  * slot rather than a named variable. Does NOT free the instance itself — the

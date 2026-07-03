@@ -384,6 +384,18 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 	if (!is_borrowed_class_ref) {
 		status.scoped_declarations.push(node);
 	}
+	// Record the declaration frame for every class-typed variable so that a
+	// later reassignment of an object-level alias can anchor its new instance
+	// in the right frame (the alias itself has no anchor to derive this from).
+	if (struct_type?.is_class) {
+		const top = (status.heap_cleanup_stack?.length ?? 1) - 1;
+		status.class_decl_frame?.set(node.name, top);
+	}
+	// Track class vars declared as aliases (not freed via scoped_declarations)
+	// so reassignment knows to flag their anchor for #destroy at scope exit.
+	if (is_borrowed_class_ref) {
+		status.class_alias_vars?.add(node.name);
+	}
 	if (
 		!is_borrowed_class_ref &&
 		struct_type &&

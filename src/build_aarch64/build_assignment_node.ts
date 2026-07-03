@@ -16,6 +16,7 @@ import {
 	defer_anchor_destroy,
 	emit_destroy_for_decl,
 	find_anchor_slot,
+	mark_anchor_destroy,
 	mark_moved_if_struct,
 } from "./utils/auto_destroy.ts";
 import {
@@ -217,6 +218,15 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 					(s) => s.name === func_call.name && !s.is_simple_type,
 				);
 				if (is_constructor) {
+					// An object-level alias (`var Box q = p`) is never added to
+					// scoped_declarations, so its anchored instances won't get a
+					// #destroy at scope exit via that path. On reassignment to a
+					// fresh instance: (a) the old value is shared with the
+					// original owner, so it must NOT be destroyed here, and (b)
+					// the new instance's anchor must be flagged to run #destroy at
+					// exit. A regular owner (in scoped_declarations) keeps its
+					// existing deferred-reclamation behaviour unchanged.
+					const is_alias = !!status.class_alias_vars?.has(name);
 					// The old instance is replaced. Defer its cleanup (destroy +
 					// field frees) to scope exit rather than running it now, so
 					// that borrows of the old instance's fields stay valid for the
@@ -226,13 +236,17 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 					// (returned here) so it survives nested scopes such as loop
 					// bodies instead of being freed each iteration.
 					const decl_frame = defer_anchor_destroy(status, name, rhs_type.name, rhs_type.type_args);
-					if (decl_frame === undefined) {
+					if (decl_frame === undefined && !is_alias) {
 						emit_destroy_for_decl(status, name, rhs_type.name, undefined, rhs_type.type_args);
 					}
 					mark_moved_if_struct(node.right_value, status);
 					build_node(node.right_value, status);
 					if (!status.code.endsWith("\n")) status.code += "\n";
-					anchor_heap_pointer(status, name, decl_frame);
+					const frame = decl_frame ?? status.class_decl_frame?.get(name);
+					anchor_heap_pointer(status, name, frame);
+					if (is_alias) {
+						mark_anchor_destroy(status, name, rhs_type.name, rhs_type.type_args);
+					}
 					const offset = status.stack_offsets?.get(name);
 					if (offset !== undefined) {
 						status.code += `str x0, [x29, #${offset}]\n`;

@@ -8,12 +8,15 @@ import parse_with_imports from "./parse_with_imports";
 // reference (MEMORY.md §Classes). Such an object-level alias must NOT be
 // destroyed/freed at scope exit — the original declaration is the sole owner —
 // but it must also stay valid across mutations of the owner (p and q are the
-// same object). The build now classifies a plain class-variable copy as a
-// non-owning alias (like a field borrow) so #destroy/free runs exactly once,
-// without tripping the child-group borrow-invalidation machinery. These are
-// regression tests for that behaviour. (Reassigning an alias to a fresh
-// instance remains an open gap — see the last describe block. Owner
-// reassignment and cross-scope aliasing are sound via deferred reclamation.)
+// same object). The build classifies a plain class-variable copy as a non-owning
+// alias (like a field borrow) so #destroy/free runs exactly once, without
+// tripping the child-group borrow-invalidation machinery; and reassigning an
+// alias to a fresh instance transfers ownership to it (the shared old value is
+// left untouched, the new instance is destroyed once at exit). These are
+// regression tests for that behaviour. (Owner reassignment and cross-scope
+// aliasing are sound via deferred reclamation. Reassignment *inside a loop* of
+// a class whose #destroy releases resources remains a pre-existing limitation
+// that affects owners and aliases alike — not specific to aliasing.)
 
 describe("class aliasing: double destroy / double free", () => {
 	// #1 — `var R q = p` aliases the same instance. At scope exit the compiler
@@ -90,15 +93,12 @@ Console.write("done\\n")
 	});
 });
 
-// Open gap: reassigning an object-level alias to a fresh instance. The build
-// treats the alias as untracked (so it isn't destroyed at scope exit), but the
-// assignment path still runs destroy/free on the alias's *old* value — which is
-// the shared instance the original owner still holds. So `q = R(3)` destroys
-// p's R(1) (and p destroys it again at scope exit → double destroy), while the
-// freshly allocated R(3) is never destroyed (leak, masked in the audit count by
-// the double free). Correct behaviour: the reassignment must not touch the
-// shared old value (p owns it), and q must take ownership of the new instance.
-describe("class aliasing: remaining gap — reassigning an alias", () => {
+// Reassigning an object-level alias to a fresh instance transfers ownership to
+// the alias: the shared old value is left for its original owner to reclaim, and
+// the new instance is anchored in the alias's declaration frame and flagged to
+// run #destroy at scope exit (the alias is not in scoped_declarations, so its
+// destroy can't go through that path). Regression tests for that behaviour.
+describe("class aliasing: reassigning an alias to a fresh instance", () => {
 	test("reassigning an alias does not destroy the shared old instance", async () => {
 		const input = `
 class R {
@@ -115,8 +115,29 @@ Console.write("done\\n")
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		// No destroy should fire on the reassignment — only at scope exit (and
-		// each instance exactly once). Currently prints "[D1]" before "done".
+		// No destroy fires on the reassignment; R(1) and R(3) each destroy once
+		// at scope exit (p owns R(1), q owns R(3)).
 		await check_output("alias_reassign_leak", result, "done\n");
+	});
+
+	test("repeated reassignment destroys each former instance once", async () => {
+		const input = `
+class R {
+	var int v
+	func #destroy = () {
+		Console.write("[D\\{self.v}]")
+	}
+}
+var R p = R(1)
+var R q = p
+q = R(3)
+q = R(4)
+Console.write("done\\n")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		// R(1) (p), R(3) (q's first), R(4) (q's second) each destroyed once.
+		await check_output("alias_reassign_twice", result, "done\n");
 	});
 });
