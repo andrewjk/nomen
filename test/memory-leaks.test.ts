@@ -5,7 +5,7 @@ import check_output from "./check_output";
 import parse_with_imports from "./parse_with_imports";
 
 describe("memory leaks", () => {
-	test("string interpolation leaks malloc'd buffer", async () => {
+	test("string interpolation frees malloc'd buffer", async () => {
 		const input = `
 var int x = 42
 Console.write("\\{x}")
@@ -16,7 +16,7 @@ Console.write("\\{x}")
 		await check_output("leak_interpolate", result, "42");
 	});
 
-	test("int.to_string leaks malloc'd buffer", async () => {
+	test("int.to_string frees malloc'd buffer", async () => {
 		const input = `
 var string s = 42.to_string()
 Console.write(s)
@@ -27,7 +27,7 @@ Console.write(s)
 		await check_output("leak_to_string", result, "42");
 	});
 
-	test("multiple interpolations leak each buffer", async () => {
+	test("multiple interpolations free each buffer", async () => {
 		const input = `
 var int a = 1
 var int b = 2
@@ -42,7 +42,7 @@ Console.write("\\{c}")
 		await check_output("leak_multiple_interpolate", result, "123");
 	});
 
-	test("struct destroy does not free string fields", async () => {
+	test("struct destroy frees string fields", async () => {
 		const input = `
 struct Named {
   var int id
@@ -59,7 +59,7 @@ Console.write("\\{n.id}")
 		await check_output("leak_struct_string_field", result, "1");
 	});
 
-	test("inner scope string is not freed", async () => {
+	test("inner scope string is freed", async () => {
 		const input = `
 if 1 == 1 {
   var string s = 42.to_string()
@@ -73,7 +73,7 @@ Console.write("done")
 		await check_output("leak_scope_string", result, "42done");
 	});
 
-	test("no leak: bare string literal (no malloc)", async () => {
+	test("bare string literal does not malloc", async () => {
 		const input = `
 var int x = 42
 Console.write("ok")
@@ -84,7 +84,7 @@ Console.write("ok")
 		await check_output("leak_no_leak", result, "ok");
 	});
 
-	test("class interpolation leaks malloc'd buffer", async () => {
+	test("class interpolation frees malloc'd buffer", async () => {
 		const input = `
 class Box {
   var int value
@@ -99,7 +99,7 @@ Console.write("\\{b.value}")
 		await check_output("leak_class_interpolate", result, "42");
 	});
 
-	test("multiple class instances leak each allocation", async () => {
+	test("multiple class instances free each allocation", async () => {
 		const input = `
 class Box {
   var int value
@@ -118,7 +118,7 @@ Console.write("\\{c.value}")
 		await check_output("leak_multiple_class", result, "123");
 	});
 
-	test("class destroy does not free string fields", async () => {
+	test("class destroy frees string fields", async () => {
 		const input = `
 class Named {
   var int id
@@ -135,7 +135,7 @@ Console.write("\\{n.id}")
 		await check_output("leak_class_string_field", result, "1");
 	});
 
-	test("inner scope class is not freed", async () => {
+	test("inner scope class is freed", async () => {
 		const input = `
 class Box {
   var int value
@@ -153,7 +153,7 @@ Console.write("done")
 		await check_output("leak_scope_class", result, "42done");
 	});
 
-	test("no leak: bare string literal (no class malloc)", async () => {
+	test("bare string literal does not class malloc", async () => {
 		const input = `
 var int x = 42
 Console.write("ok")
@@ -164,7 +164,7 @@ Console.write("ok")
 		await check_output("leak_class_no_leak", result, "ok");
 	});
 
-	test("BUG: array of strings from to_string leaks each element", async () => {
+	test("array of strings from to_string frees each element", async () => {
 		const input = `
 var parts = Array(1.to_string(), 2.to_string(), 3.to_string())
 Console.write("\\{parts.at(0)}")
@@ -177,7 +177,7 @@ Console.write("\\{parts.at(2)}")
 		await check_output("leak_array_to_string", result, "123");
 	});
 
-	test("array of classes leaks each element", async () => {
+	test("array of classes frees each element", async () => {
 		const input = `
 class Box {
   var int value
@@ -194,7 +194,7 @@ Console.write("\\{items.at(2).value}")
 		await check_output("leak_array_of_classes", result, "123");
 	});
 
-	test("array of classes with destroy leaks each element", async () => {
+	test("array of classes with destroy frees each element", async () => {
 		const input = `
 class Resource {
   var int handle
@@ -214,7 +214,7 @@ Console.write("\\{items.at(1).handle}")
 		await check_output("leak_array_class_destroy", result, "12");
 	});
 
-	test("BUG: inner scope array of strings leaks", async () => {
+	test("inner scope array of strings is freed", async () => {
 		const input = `
 if 1 == 1 {
   var parts = Array(42.to_string(), 99.to_string())
@@ -228,7 +228,7 @@ Console.write("done")
 		await check_output("leak_scope_array_strings", result, "42done");
 	});
 
-	test("inner scope array of classes leaks", async () => {
+	test("inner scope array of classes is freed", async () => {
 		const input = `
 class Box {
   var int value
@@ -246,7 +246,7 @@ Console.write("done")
 		await check_output("leak_scope_array_classes", result, "10done");
 	});
 
-	test("BUG: for-each over string array leaks elements", async () => {
+	test("for-each over string array frees elements", async () => {
 		const input = `
 var parts = Array(1.to_string(), 2.to_string())
 for s of parts {
@@ -259,7 +259,7 @@ for s of parts {
 		await check_output("leak_foreach_string_array", result, "12");
 	});
 
-	test("for-each over class array leaks elements", async () => {
+	test("for-each over class array frees elements", async () => {
 		const input = `
 class Box {
   var int value
@@ -276,7 +276,7 @@ for b of items {
 		await check_output("leak_foreach_class_array", result, "12");
 	});
 
-	test("BUG: break leaks array string elements in loop", async () => {
+	test("break does not leak array string elements in loop", async () => {
 		const input = `
 var int i = 0
 while i < 3 {
@@ -296,7 +296,7 @@ Console.write("done")
 		await check_output("leak_break_array_strings", result, "0done");
 	});
 
-	test("BUG: break leaks array class elements in loop", async () => {
+	test("break does not leak array class elements in loop", async () => {
 		const input = `
 class Box {
   var int value
@@ -320,7 +320,7 @@ Console.write("done")
 		await check_output("leak_break_array_classes", result, "0done");
 	});
 
-	test("BUG: continue leaks array string elements in loop", async () => {
+	test("continue does not leak array string elements in loop", async () => {
 		const input = `
 var int i = 0
 while i < 3 {
@@ -339,7 +339,7 @@ Console.write("done")
 		await check_output("leak_continue_array_strings", result, "02done");
 	});
 
-	test("BUG: continue leaks array class elements in loop", async () => {
+	test("continue does not leak array class elements in loop", async () => {
 		const input = `
 class Box {
   var int value
@@ -362,7 +362,7 @@ Console.write("done")
 		await check_output("leak_continue_array_classes", result, "02done");
 	});
 
-	test("BUG: struct field array of strings leaks elements", async () => {
+	test("struct field array of strings frees elements", async () => {
 		const input = `
 struct Container {
   var Array<string> items
@@ -377,7 +377,7 @@ Console.write("\\{c.items.at(0)}\\{c.items.at(1)}")
 		await check_output("leak_struct_field_string_array", result, "helloworld");
 	});
 
-	test("no leak: array of primitives (no heap allocation)", async () => {
+	test("array of primitives does not heap allocate", async () => {
 		const input = `
 var nums = Array(1, 2, 3)
 Console.write("\\{nums.at(0)}")
@@ -390,10 +390,9 @@ Console.write("\\{nums.at(2)}")
 		await check_output("leak_array_primitives", result, "123");
 	});
 
-	// pop() zeroes the slot so the container won't free the element, but the
-	// popped instance is returned as a borrow (not anchored) — so nobody frees
-	// it. It leaks.
-	test("LEAK: popped class element is never freed", async () => {
+	// pop() relinquishes the element: the slot is zeroed so the container
+	// won't free it, and the popped instance is freed by its own scope.
+	test("popped class element is freed", async () => {
 		const input = `
 class Animal { var char letter }
 if true {
@@ -412,9 +411,9 @@ Console.write("done\\n")
 
 	// A struct that transitively owns heap resources (here List, via its Buffer
 	// field) cannot be byte-copied from another variable — both copies would
-	// free the same backing data (double-free). This is now rejected at compile
+	// free the same backing data (double-free). This is rejected at compile
 	// time; copy with .copy() or transfer ownership with mov.
-	test("DOUBLE-FREE: struct copy of a container shares the buffer", () => {
+	test("struct copy of a container shares the buffer (rejected)", () => {
 		const input = `
 class Animal { var char letter }
 if true {

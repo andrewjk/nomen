@@ -5,7 +5,7 @@ import check_output from "./check_output";
 import parse_with_imports from "./parse_with_imports";
 
 describe("memory double free", () => {
-	test("BUG: assigning heap string to another causes double-free", async () => {
+	test("assigning heap string to another does not double-free", async () => {
 		const input = `
 var int x = 1
 var int y = 2
@@ -21,7 +21,7 @@ Console.write(t)
 		await check_output("dfree_assign_heap_string", result, "11");
 	});
 
-	test("BUG: returning heap string is use-after-free", async () => {
+	test("returning heap string is not use-after-free", async () => {
 		const input = `
 func make_greeting = (int x, out string) {
   var string s = x.to_string()
@@ -36,7 +36,7 @@ Console.write(result)
 		await check_output("dfree_return_heap_string", result, "42");
 	});
 
-	test("BUG: reassigning heap string to literal frees non-heap pointer", async () => {
+	test("reassigning heap string to literal does not free non-heap pointer", async () => {
 		const input = `
 var int x = 42
 var string s = x.to_string()
@@ -49,7 +49,7 @@ Console.write(s)
 		await check_output("dfree_reassign_to_literal", result, "literal");
 	});
 
-	test("BUG: reassigning heap string leaks old value", async () => {
+	test("reassigning heap string frees old value", async () => {
 		const input = `
 var int a = 1
 var int b = 2
@@ -63,7 +63,7 @@ Console.write(s)
 		await check_output("dfree_reassign_leaks_old", result, "2");
 	});
 
-	test("BUG: returning from nested scope leaks string", async () => {
+	test("returning string from nested scope does not leak", async () => {
 		const input = `
 func greet = (int x, out string) {
   var string s = x.to_string()
@@ -81,7 +81,7 @@ Console.write(result)
 		await check_output("dfree_return_nested_scope", result, "42");
 	});
 
-	test("BUG: struct with string field leaks on destroy", async () => {
+	test("struct with string field does not leak on destroy", async () => {
 		const input = `
 struct Named {
   var int id
@@ -99,7 +99,7 @@ Console.write("\\{n.id}")
 		await check_output("dfree_struct_string_field", result, "1");
 	});
 
-	test("BUG: break leaks heap string in loop body", async () => {
+	test("break does not leak heap string in loop body", async () => {
 		const input = `
 var int i = 0
 while i < 3 {
@@ -119,7 +119,7 @@ Console.write("done")
 		await check_output("leak_break_heap_string", result, "0done");
 	});
 
-	test("BUG: continue leaks heap string in loop body", async () => {
+	test("continue does not leak heap string in loop body", async () => {
 		const input = `
 var int i = 0
 while i < 3 {
@@ -138,7 +138,7 @@ Console.write("done")
 		await check_output("leak_continue_heap_string", result, "02done");
 	});
 
-	test("BUG: aliasing heap string via declaration then reassigning original is UAF", async () => {
+	test("aliasing heap string via declaration then reassigning original is not UAF", async () => {
 		const input = `
 var string a = 42.to_string()
 var string b = a
@@ -151,7 +151,7 @@ Console.write(b)
 		await check_output("uaf_alias_then_reassign", result, "42");
 	});
 
-	test("BUG: assigning heap string to another variable leaks old value", async () => {
+	test("assigning heap string to another variable does not leak old value", async () => {
 		const input = `
 var string s = 42.to_string()
 var string t = s
@@ -163,7 +163,7 @@ Console.write(t)
 		await check_output("leak_alias_declaration", result, "42");
 	});
 
-	test("BUG: while loop break leaks heap string", async () => {
+	test("while loop break does not leak heap string", async () => {
 		const input = `
 var int i = 0
 while i < 3 {
@@ -182,7 +182,7 @@ Console.write("done")
 		await check_output("leak_while_break", result, "0done");
 	});
 
-	test("BUG: break skips struct destroy in loop", async () => {
+	test("break runs struct destroy in loop", async () => {
 		const input = `
 struct Resource {
   var int handle
@@ -211,7 +211,7 @@ Console.write("done")
 		await check_output("leak_break_struct_destroy", result, "done");
 	});
 
-	test("BUG: continue skips struct destroy in loop", async () => {
+	test("continue runs struct destroy in loop", async () => {
 		const input = `
 struct Resource {
   var int handle
@@ -239,7 +239,7 @@ Console.write("done")
 		await check_output("leak_continue_struct_destroy", result, "done");
 	});
 
-	test("BUG: assigning class to another causes double-free", async () => {
+	test("assigning class to another does not double-free", async () => {
 		const input = `
 class Box {
   var int value
@@ -257,7 +257,7 @@ Console.write("\\{t.value}")
 		await check_output("dfree_assign_class", result, "11");
 	});
 
-	test("BUG: returning class is use-after-free", async () => {
+	test("returning class is not use-after-free", async () => {
 		const input = `
 class Box {
   var int value
@@ -276,7 +276,7 @@ Console.write("\\{result.value}")
 		await check_output("dfree_return_class", result, "42");
 	});
 
-	test("BUG: returning from nested scope leaks class", async () => {
+	test("returning class from nested scope does not leak", async () => {
 		const input = `
 class Box {
   var int value
@@ -298,7 +298,7 @@ Console.write("\\{result.value}")
 		await check_output("dfree_return_nested_class", result, "42");
 	});
 
-	test("BUG: reassigning class leaks old value", async () => {
+	test("reassigning class frees old value", async () => {
 		const input = `
 class Box {
   var int value
@@ -314,7 +314,7 @@ Console.write("\\{s.value}")
 		await check_output("dfree_reassign_class", result, "2");
 	});
 
-	test("BUG: returning from nested scope leaks class", async () => {
+	test("returning class from nested scope frees old instance", async () => {
 		const input = `
 class Box {
   var int value
@@ -338,7 +338,7 @@ Console.write("\\{result.value}")
 		await check_output("dfree_class_nested_scope_leaks", result, "42");
 	});
 
-	test("BUG: class with string field leaks on destroy", async () => {
+	test("class with string field does not leak on destroy", async () => {
 		const input = `
 class Named {
   var int id
@@ -356,7 +356,7 @@ Console.write("\\{n.id}")
 		await check_output("dfree_class_string_field", result, "1");
 	});
 
-	test("BUG: break leaks class in loop body", async () => {
+	test("break does not leak class in loop body", async () => {
 		const input = `
 class Box {
   var int value
@@ -380,7 +380,7 @@ Console.write("done")
 		await check_output("leak_break_class", result, "0done");
 	});
 
-	test("BUG: continue leaks class in loop body", async () => {
+	test("continue does not leak class in loop body", async () => {
 		const input = `
 class Box {
   var int value
@@ -403,7 +403,7 @@ Console.write("done")
 		await check_output("leak_continue_class", result, "02done");
 	});
 
-	test("BUG: aliasing class via declaration then reassigning original is UAF", async () => {
+	test("aliasing class via declaration then reassigning original is not UAF", async () => {
 		const input = `
 class Box {
   var int value
@@ -420,7 +420,7 @@ Console.write("\\{b.value}")
 		await check_output("uaf_class_alias_then_reassign", result, "42");
 	});
 
-	test("BUG: assigning class to another variable leaks old value", async () => {
+	test("assigning class to another variable does not leak old value", async () => {
 		const input = `
 class Box {
   var int value
@@ -436,7 +436,7 @@ Console.write("\\{t.value}")
 		await check_output("leak_class_alias_declaration", result, "42");
 	});
 
-	test("BUG: while loop break leaks class", async () => {
+	test("while loop break does not leak class", async () => {
 		const input = `
 class Box {
   var int value
@@ -459,7 +459,7 @@ Console.write("done")
 		await check_output("leak_while_break_class", result, "0done");
 	});
 
-	test("BUG: break skips class destroy in loop", async () => {
+	test("break runs class destroy in loop", async () => {
 		const input = `
 class Resource {
   var int handle
@@ -488,7 +488,7 @@ Console.write("done")
 		await check_output("leak_break_class_destroy", result, "done");
 	});
 
-	test("BUG: continue skips class destroy in loop", async () => {
+	test("continue runs class destroy in loop", async () => {
 		const input = `
 class Resource {
   var int handle
@@ -516,7 +516,7 @@ Console.write("done")
 		await check_output("leak_continue_class_destroy", result, "done");
 	});
 
-	test("BUG: reassigning struct from self method call double-frees buffer", async () => {
+	test("reassigning struct from self method call does not double-free buffer", async () => {
 		const input = `
 var BigInt k = BigInt()
 k = k.new(1)
@@ -532,7 +532,7 @@ Console.write(d.to_string())
 		await check_output("dfree_struct_self_method_reassign", result, "3");
 	});
 
-	test("BUG: struct reassignment in loop double-frees buffer", async () => {
+	test("struct reassignment in loop does not double-free buffer", async () => {
 		const input = `
 var BigInt k = BigInt()
 var int i = 0
@@ -549,7 +549,7 @@ while i < 3 {
 		await check_output("dfree_struct_loop_reassign", result, "012");
 	});
 
-	test("BUG: class field access creates borrowed reference that should not be destroyed", async () => {
+	test("class field access borrow is not destroyed", async () => {
 		const input = `
 class Box {
   var int value

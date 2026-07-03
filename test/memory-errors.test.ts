@@ -28,7 +28,7 @@ Console.write("\\{v}")
 			await check_output("leak_reassign", result, "3");
 		});
 
-		test("leak: early return skips Buffer.destroy and audit_check", async () => {
+		test("early return runs Buffer.destroy and audit_check", async () => {
 			const input = `
 var List<int> a = List<int>()
 a.push(1)
