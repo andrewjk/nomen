@@ -144,7 +144,7 @@ export function mark_anchor_destroy(
  * caller frees the slot. Mirrors the field-destroy logic in emit_field_destroys
  * but for anonymous (disowned) anchor slots.
  */
-function emit_destroy_for_anchor_slot(
+export function emit_destroy_for_anchor_slot(
 	status: BuildStatus,
 	offset: number,
 	type_name: string,

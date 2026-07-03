@@ -15,6 +15,7 @@ import {
 	anchor_heap_pointer,
 	consume_anchor_slot,
 	defer_anchor_destroy,
+	emit_destroy_for_anchor_slot,
 	emit_destroy_for_decl,
 	find_anchor_slot,
 	mark_anchor_destroy,
@@ -317,6 +318,10 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 					if (anchor !== undefined) {
 						const var_offset = status.stack_offsets?.get(name);
 						status.code += `str x0, [sp, #-16]!\n`;
+						// Destroy the old instance (#destroy + free owned fields)
+						// before freeing its memory, so a class with class fields
+						// doesn't leak them each reassignment (compounds in a loop).
+						emit_destroy_for_anchor_slot(status, anchor, rhs_type.name, rhs_type.type_args);
 						status.code += `ldr x0, [x29, #${anchor}]\n`;
 						emit_free(status);
 						status.code += `ldr x3, [sp], #16\n`;
@@ -341,6 +346,11 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 					if (anchor !== undefined) {
 						const var_offset = status.stack_offsets?.get(name);
 						status.code += `str x0, [sp, #-16]!\n`;
+						// Run the old instance's #destroy (and free its owned class
+						// fields) before freeing its memory — a bare free here would
+						// leak the fields every reassignment, which compounds in a
+						// loop. emit_destroy_for_anchor_slot loads [anchor] itself.
+						emit_destroy_for_anchor_slot(status, anchor, rhs_type.name, rhs_type.type_args);
 						status.code += `ldr x0, [x29, #${anchor}]\n`;
 						emit_free(status);
 						status.code += `ldr x3, [sp], #16\n`;
