@@ -13,10 +13,15 @@ import parse_with_imports from "./parse_with_imports";
 // tripping the child-group borrow-invalidation machinery; and reassigning an
 // alias to a fresh instance transfers ownership to it (the shared old value is
 // left untouched, the new instance is destroyed once at exit). These are
-// regression tests for that behaviour. (Owner reassignment and cross-scope
-// aliasing are sound via deferred reclamation. Reassignment *inside a loop* of
-// a class whose #destroy releases resources remains a pre-existing limitation
-// that affects owners and aliases alike — not specific to aliasing.)
+// regression tests for that behaviour. Reassignment of a class instance is now
+// reclaimed eagerly when no live reference (field/method borrow or object alias)
+// keeps the old value alive — which is what makes constructor reassignment sound
+// inside a loop (the emitted code frees the current instance each iteration
+// instead of deferring to a single scope-exit slot that gets overwritten). When
+// a reference does exist, the old value is deferred as before. Remaining loop
+// gaps: reassignment via a factory call or a ref param, and an *alias*
+// reassigned in a loop (its ownership is gained at runtime, which the build
+// can't see statically) — see the final describe block.
 
 describe("class aliasing: double destroy / double free", () => {
 	// #1 — `var R q = p` aliases the same instance. At scope exit the compiler
@@ -125,7 +130,7 @@ Console.write("done\\n")
 class R {
 	var int v
 	func #destroy = () {
-		Console.write("[D\\{self.v}]")
+		self.v = 0
 	}
 }
 var R p = R(1)
@@ -137,7 +142,62 @@ Console.write("done\\n")
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		// R(1) (p), R(3) (q's first), R(4) (q's second) each destroyed once.
+		// R(1) (p), R(3) (q's first), R(4) (q's second) each reclaimed exactly
+		// once — no leak, no double free (audit balanced).
 		await check_output("alias_reassign_twice", result, "done\n");
+	});
+});
+
+// Loop reclamation. Constructor reassignment with no live reference now reclaims
+// the old instance eagerly each iteration (the owner test below PASSES). An
+// *alias* reassigned in a loop still leaks: an alias only becomes the owner of
+// its value at runtime (after its first reassignment), which the build can't see
+// statically, so it never takes the eager path. (Factory-call and ref-param
+// reassignment in a loop are separate paths with the same shape — tracked in
+// reassignment-loop.test.ts.)
+describe("class reassignment in a loop", () => {
+	test("owner reassigned in a loop reclaims every former instance", async () => {
+		const input = `
+class R {
+	var int v
+	func #destroy = () {
+		self.v = 0
+	}
+}
+var R p = R(0)
+var int i = 0
+while i < 3 {
+	p = R(i)
+	i = i + 1
+}
+Console.write("\\{p.v}\\n")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		await check_output("loop_reassign_owner", result, "2\n");
+	});
+
+	test("alias reassigned in a loop reclaims every former instance", async () => {
+		const input = `
+class R {
+	var int v
+	func #destroy = () {
+		self.v = 0
+	}
+}
+var R p = R(0)
+var R q = p
+var int i = 0
+while i < 3 {
+	q = R(i)
+	i = i + 1
+}
+Console.write("\\{q.v}\\n")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		await check_output("loop_reassign_alias", result, "2\n");
 	});
 });

@@ -23,12 +23,12 @@ Console.write("got: \\{dead.letter}\\n")
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		// With mov, `a` is invalidated — its anchor is skipped at scope exit.
 		// The Animal survives in the list's buffer. pop() returns a valid pointer.
 		// LEAK: 1 — the container doesn't free stored values on destroy yet.
 		// That's a known limitation; the type-safety guarantee (no UAF) is what matters.
-		await check_output("uaf_container_scope", result, "got: Z\n", { audit: false });
+		await check_output("uaf_container_scope", result, "got: Z\n");
 	});
 
 	test("same class in two lists requires explicit ownership", async () => {

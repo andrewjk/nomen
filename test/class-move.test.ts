@@ -597,4 +597,27 @@ Console.write("\\{b.value}")
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		await check_output("return_class_via_call", result, "42");
 	});
+
+	test("returning a mov class param that owns a class field", async () => {
+		const input = `
+class Box {
+  var int v
+}
+class Holder {
+  mov Box c
+}
+
+func id = (mov Holder h, out Holder) {
+  return h
+}
+
+var Holder a = Holder(mov Box(5))
+var Holder b = id(mov a)
+Console.write("\\{b.c.v}")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		await check_output("return_mov_param_with_field", result, "5");
+	});
 });

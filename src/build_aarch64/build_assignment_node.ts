@@ -22,6 +22,7 @@ import {
 	mark_moved_if_struct,
 } from "./utils/auto_destroy.ts";
 import {
+	allocate_stack_space,
 	emit_deref_var_address,
 	emit_var_address,
 	emit_var_load,
@@ -227,6 +228,34 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 					// is shared with the original owner and must NOT be freed).
 					const owns_current = find_anchor_slot(status, name) !== undefined;
 					const decl_frame = status.class_decl_frame?.get(name);
+					// A `ref` class param's callee-saved register holds the
+					// instance (loaded at function entry); the ADDRESS of the
+					// caller's pointer slot is kept in ref_class_slots. Reassignment
+					// transfers the caller's ownership: destroy+free the caller's
+					// current instance, build the replacement, and store its pointer
+					// back through that slot. The replacement belongs to the caller
+					// — its anchor is synced at the call site — so it must NOT be
+					// anchored or freed in this frame.
+					const ref_slot = status.ref_class_slots?.get(name);
+					if (ref_slot !== undefined) {
+						const tmp = allocate_stack_space(status, 8, 8);
+						status.code += `ldr x1, [x29, #${ref_slot}]\n`;
+						status.code += `ldr x0, [x1]\n`;
+						status.code += `str x0, [x29, #${tmp}]\n`;
+						emit_destroy_for_anchor_slot(status, tmp, rhs_type.name, rhs_type.type_args);
+						status.code += `ldr x0, [x29, #${tmp}]\n`;
+						emit_free(status);
+						mark_moved_if_struct(node.right_value, status);
+						build_node(node.right_value, status);
+						if (!status.code.endsWith("\n")) status.code += "\n";
+						status.code += `ldr x1, [x29, #${ref_slot}]\n`;
+						status.code += `str x0, [x1]\n`;
+						if (paramReg) {
+							status.code += `mov ${paramReg}, x0\n`;
+						}
+						build_swap(node, status);
+						return;
+					}
 					if (node.has_live_borrow) {
 						// A live field/method borrow references the current
 						// instance, so keep it alive (deferred reclamation) until
@@ -254,14 +283,30 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 					// is what makes reassignment sound inside a loop — the
 					// emitted code frees the current instance every iteration
 					// instead of deferring to a single scope-exit slot that gets
-					// overwritten. Skip the free when the variable doesn't own
-					// its current value (an alias's first reassignment: the old
-					// value is shared with the original owner).
+					// overwritten. Owners always own their current value. An
+					// object-level alias only owns its value after its first
+					// reassignment; the build can't see that statically inside a
+					// loop (owns_current is evaluated once, before the alias has
+					// an anchor), so it decides at runtime via the alias ownership
+					// flag — freeing the current instance only once the alias has
+					// taken ownership (the first reassignment leaves the shared
+					// original value for its owner).
+					const alias_flag =
+						is_alias && !owns_current ? status.alias_owns_flag?.get(name) : undefined;
 					if (owns_current) {
 						consume_anchor_slot(status, name);
 						emit_destroy_for_decl(status, name, rhs_type.name, undefined, rhs_type.type_args);
 						emit_var_load(status, "x0", name, 8);
 						emit_free(status);
+					} else if (alias_flag !== undefined) {
+						const label_id = (status.label_counter = (status.label_counter ?? 0) + 1);
+						const no_free_label = `.Lalias_no_free_${label_id}`;
+						status.code += `ldr x9, [x29, #${alias_flag}]\n`;
+						status.code += `cbz x9, ${no_free_label}\n`;
+						emit_destroy_for_decl(status, name, rhs_type.name, undefined, rhs_type.type_args);
+						emit_var_load(status, "x0", name, 8);
+						emit_free(status);
+						status.code += `${no_free_label}:\n`;
 					}
 					mark_moved_if_struct(node.right_value, status);
 					build_node(node.right_value, status);
@@ -273,6 +318,10 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 					const offset = status.stack_offsets?.get(name);
 					if (offset !== undefined) {
 						status.code += `str x0, [x29, #${offset}]\n`;
+					}
+					if (alias_flag !== undefined) {
+						status.code += `mov x9, #1\n`;
+						status.code += `str x9, [x29, #${alias_flag}]\n`;
 					}
 					build_swap(node, status);
 					return;

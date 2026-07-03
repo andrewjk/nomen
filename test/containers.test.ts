@@ -118,12 +118,12 @@ Console.write("\\n")
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		// Elephants are mov'd into the list (ownership transfers), so they
 		// aren't freed at scope exit. The container doesn't free stored
 		// values on destroy yet — known limitation. Type safety (no UAF)
 		// is the guarantee; the leak is expected.
-		await check_output("linkedlist_class", result, "A B C\n", { audit: false });
+		await check_output("linkedlist_class", result, "A B C\n");
 	});
 
 	test("Tree<Elephant> store and traverse class pointers", async () => {

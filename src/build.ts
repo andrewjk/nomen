@@ -35,6 +35,8 @@ export default function build(
 		string_literal_names: new Set(),
 		class_decl_frame: new Map(),
 		class_alias_vars: new Set(),
+		alias_owns_flag: new Map(),
+		ref_class_slots: new Map(),
 		audit: options.audit,
 		platform: options.platform ?? default_platform(),
 	};

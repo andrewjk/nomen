@@ -1,9 +1,11 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
+import type Type from "../nodes/Type.ts";
 import build_block_node from "./build_block_node.ts";
 import { check_c_fallback } from "./build_raw_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free } from "./utils/audit.ts";
+import { emit_destroy_for_anchor_slot } from "./utils/auto_destroy.ts";
 import scan_force_heap_strings from "./utils/scan_force_heap_strings.ts";
 import { allocate_stack_space } from "./utils/stack_var.ts";
 
@@ -236,7 +238,10 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.moved_class_params = new Map();
 
 	// Save mov'd class param values for cleanup at return
-	let moved_param_save_slots: Map<string, number> = new Map();
+	let moved_param_save_slots: Map<
+		string,
+		{ offset: number; type_name: string; type_args?: Type[] }
+	> = new Map();
 
 	if (has_body) {
 		let param_idx = 0;
@@ -254,7 +259,22 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 			}
 
 			if (callee_map.has(param.name)) {
-				status.function_param_regs.set(param.name, callee_map.get(param.name)!);
+				const reg = callee_map.get(param.name)!;
+				status.function_param_regs.set(param.name, reg);
+				// A `ref` class param's register currently holds the ADDRESS of the
+				// caller's pointer slot (the call site passes &slot so the callee
+				// can reassign it). Field access expects the register to hold the
+				// instance, so dereference once — and save &slot separately (in a
+				// dedicated slot) for the reassignment write-back path.
+				if (param.type.is_ref) {
+					const is_class = !!status.structs.find((s) => s.name === param.type.name && s.is_class);
+					if (is_class) {
+						const ref_slot = allocate_stack_space(status, 8, 8);
+						status.code += `str ${reg}, [x29, #${ref_slot}]\n`;
+						status.code += `ldr ${reg}, [${reg}]\n`;
+						status.ref_class_slots?.set(param.name, ref_slot);
+					}
+				}
 			} else {
 				const size = aarch64_size(param.type.name);
 				const offset = allocate_stack_space(status, size, size);
@@ -279,25 +299,36 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 			if (param.type.is_ref) {
 				status.function_ref_params!.add(param.name);
 			}
-			if (param.is_moved) {
-				const is_class = !!status.structs.find((s) => s.name === param.type.name && s.is_class);
-				if (is_class) {
-					const reg = callee_map.get(param.name);
-					if (reg) {
-						status.moved_class_params!.set(param.name, reg);
-					}
-				}
-			}
 		}
 	}
 
 	const moved_before = new Set(status.moved ?? []);
 
-	// Save mov'd class param values for cleanup at return
-	for (const [name, reg] of status.moved_class_params!) {
-		const save_offset = allocate_stack_space(status, 8);
-		moved_param_save_slots.set(name, save_offset);
-		status.code += `str ${reg}, [x29, #${save_offset}]\n`;
+	// Track mov'd class params for cleanup at return. This runs regardless of
+	// whether the function has a body: a `mov Box x` param is owned by the
+	// callee and must be reclaimed (with its #destroy + field destroys) even
+	// when the body is empty. The incoming value is saved from whichever
+	// register holds it at entry — the callee-saved register assigned during
+	// the prologue, or the incoming param register when none was assigned.
+	let pidx = 0;
+	for (let i = 0; i < node.params.length; i++) {
+		const param = node.params[i];
+		if (param.is_variadic) pidx++;
+		if (param.is_moved) {
+			const is_class = !!status.structs.find((s) => s.name === param.type.name && s.is_class);
+			if (is_class) {
+				const reg = callee_map.get(param.name) ?? param_regs[pidx];
+				status.moved_class_params!.set(param.name, reg);
+				const save_offset = allocate_stack_space(status, 8);
+				status.code += `str ${reg}, [x29, #${save_offset}]\n`;
+				moved_param_save_slots.set(param.name, {
+					offset: save_offset,
+					type_name: param.type.name,
+					type_args: param.type.type_args,
+				});
+			}
+		}
+		pidx++;
 	}
 
 	const old_force_heap = status.force_heap_strings;
@@ -352,21 +383,39 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		status.code += `mov x0, #0\n`;
 	}
 
-	// Free mov'd class params that aren't the return value and haven't been moved within the body
+	// Reclaim mov'd class params: run #destroy + field destroys (which free
+	// owned class fields) then free the instance itself. Skip params that were
+	// moved out within the body. When the function returns a class, also skip a
+	// param whose value is the return value — it is handed back to the caller.
+	// (The return-value guard is only meaningful for class returns, where x0
+	// holds the returned pointer; for void/primitive returns x0 is not a live
+	// return value.)
 	const moved_set = status.moved;
 	if (moved_param_save_slots.size > 0 && node.name !== "main") {
-		const return_save = allocate_stack_space(status, 8);
-		status.code += `str x0, [x29, #${return_save}]\n`;
-		for (const [name, slot] of moved_param_save_slots) {
-			if (moved_set?.has(name)) continue;
-			status.code += `ldr x0, [x29, #${slot}]\n`;
-			status.code += `ldr x1, [x29, #${return_save}]\n`;
-			status.code += `cmp x0, x1\n`;
-			status.code += `beq ${keep_prefix}_${name}\n`;
-			emit_free(status);
-			status.code += `${keep_prefix}_${name}:\n`;
+		const need_guard = return_is_class;
+		let return_save: number | undefined;
+		if (need_guard) {
+			return_save = allocate_stack_space(status, 8);
+			status.code += `str x0, [x29, #${return_save}]\n`;
 		}
-		status.code += `ldr x0, [x29, #${return_save}]\n`;
+		for (const [name, info] of moved_param_save_slots) {
+			if (moved_set?.has(name)) continue;
+			if (need_guard) {
+				status.code += `ldr x0, [x29, #${info.offset}]\n`;
+				status.code += `ldr x1, [x29, #${return_save!}]\n`;
+				status.code += `cmp x0, x1\n`;
+				status.code += `beq ${keep_prefix}_${name}\n`;
+			}
+			emit_destroy_for_anchor_slot(status, info.offset, info.type_name, info.type_args);
+			status.code += `ldr x0, [x29, #${info.offset}]\n`;
+			emit_free(status);
+			if (need_guard) {
+				status.code += `${keep_prefix}_${name}:\n`;
+			}
+		}
+		if (need_guard) {
+			status.code += `ldr x0, [x29, #${return_save!}]\n`;
+		}
 	}
 
 	const total_stack = Math.ceil((status.stack_size || 0) / 16) * 16;

@@ -395,6 +395,18 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 	// so reassignment knows to flag their anchor for #destroy at scope exit.
 	if (is_borrowed_class_ref) {
 		status.class_alias_vars?.add(node.name);
+		// Allocate a runtime ownership flag for the alias. An alias only owns
+		// its value after its first reassignment to a fresh instance, so a loop
+		// that reassigns the alias must decide at runtime (via this flag)
+		// whether to free the old instance — the build-time `owns_current`
+		// check is evaluated once and can't track per-iteration ownership.
+		// The flag is a fixed stack offset in the alias's frame, so it
+		// persists across loop iterations; init to 0 (does not own yet).
+		if (status.function_return_label) {
+			const flag_offset = allocate_stack_space(status, 8, 8);
+			status.code += `str xzr, [x29, #${flag_offset}]\n`;
+			status.alias_owns_flag?.set(node.name, flag_offset);
+		}
 	}
 	if (
 		!is_borrowed_class_ref &&

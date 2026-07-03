@@ -527,9 +527,9 @@ var int d = k.to_digit()
 Console.write(d.to_string())
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: false });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
-		await check_output("dfree_struct_self_method_reassign", result, "3", { audit: false });
+		await check_output("dfree_struct_self_method_reassign", result, "3");
 	});
 
 	test("BUG: struct reassignment in loop double-frees buffer", async () => {
@@ -544,9 +544,9 @@ while i < 3 {
 }
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: false });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
-		await check_output("dfree_struct_loop_reassign", result, "012", { audit: false });
+		await check_output("dfree_struct_loop_reassign", result, "012");
 	});
 
 	test("BUG: class field access creates borrowed reference that should not be destroyed", async () => {

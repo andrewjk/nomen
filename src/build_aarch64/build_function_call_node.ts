@@ -6,12 +6,13 @@ import ValueNode from "../nodes/ValueNode.ts";
 import { emit_address_of } from "./build_access_node.ts";
 import build_node from "./build_node.ts";
 import { emit_malloc } from "./utils/audit.ts";
-import { mark_moved_if_struct } from "./utils/auto_destroy.ts";
+import { mark_moved_if_struct, find_anchor_slot } from "./utils/auto_destroy.ts";
 import { build_swap_params } from "./utils/build_swap.ts";
 import {
 	allocate_stack_space,
 	emit_deref_var_address,
 	emit_var_address,
+	emit_var_load,
 	is_local_ref_var,
 } from "./utils/stack_var.ts";
 import { get_struct_size } from "./utils/struct_layout.ts";
@@ -128,6 +129,9 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		status.code += `blr x8\n`;
 	} else {
 		const variadic_idx = (node as FunctionCallNode).variadic_param_index;
+		// Collect `ref` class args whose caller-side anchor must be re-synced to
+		// the (possibly reassigned) slot value after the call returns.
+		const ref_class_sync_names: string[] = [];
 
 		if (variadic_idx !== undefined) {
 			// Variadic call: pack variadic args into a stack array
@@ -246,13 +250,34 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 						status.code += `${label}: .quad ${values}\n.p2align 2\n`;
 					}
 					status.code += `adr x0, ${label}`;
+				} else if (is_ref_param) {
+					// A `ref` arg must pass the ADDRESS of the caller's slot so the
+					// callee can reassign it. A CLASS local's slot holds the heap
+					// pointer (it is an is_local_ref_var), so emit_address_of would
+					// dereference it — pass the raw slot address instead so the
+					// callee can store a new pointer back through it. A struct ref
+					// local (e.g. `var ref Point p = a`) also is_local_ref_var, but
+					// its slot holds a pointer to a struct that lives elsewhere; for
+					// it the existing dereference (the struct's address) is correct,
+					// so only divert class locals here.
+					const arg = node.params[i];
+					const arg_name = arg.node_type === "value" ? (arg as ValueNode).value : undefined;
+					let arg_is_class = false;
+					if (arg_name) {
+						const tn = (arg as any).type?.name ?? status.variable_types?.get(arg_name)?.name;
+						arg_is_class = !!tn && !!status.structs.find((s) => s.name === tn && s.is_class);
+					}
+					if (arg_name !== undefined && is_local_ref_var(arg_name, status) && arg_is_class) {
+						emit_var_address(status, "x0", arg_name);
+						ref_class_sync_names.push(arg_name);
+					} else {
+						emit_address_of(arg, status);
+					}
 				} else if (
 					is_struct_type(param_type, status) ||
 					is_enum_with_data_type(param_type, status)
 				) {
 					emit_struct_address(node.params[i], status);
-				} else if (is_ref_param) {
-					emit_address_of(node.params[i], status);
 				} else {
 					build_node(node.params[i], status);
 				}
@@ -288,6 +313,25 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		}
 
 		status.code += `bl ${func_name}\n`;
+
+		// A `ref` class arg may have been reassigned by the callee, which wrote
+		// the new pointer into the caller's slot. The caller's anchor slot (used
+		// for cleanup at scope exit) still holds the old pointer — sync it to the
+		// slot's current value so the new instance is freed once and the old one
+		// (already freed by the callee) is not double-freed. If the callee did
+		// not reassign, the slot is unchanged and this is a no-op. Preserve x0
+		// across the sync — it holds the call's return value.
+		if (ref_class_sync_names.some((n) => find_anchor_slot(status, n) !== undefined)) {
+			status.code += `str x0, [sp, #-16]!\n`;
+			for (const sync_name of ref_class_sync_names) {
+				const anchor = find_anchor_slot(status, sync_name);
+				if (anchor !== undefined) {
+					emit_var_load(status, "x0", sync_name, 8);
+					status.code += `str x0, [x29, #${anchor}]\n`;
+				}
+			}
+			status.code += `ldr x0, [sp], #16\n`;
+		}
 
 		if (!is_struct && node.type?.name && !status.struct_return_buffer) {
 			const return_struct = status.structs.find(

@@ -112,6 +112,28 @@ export default interface BuildStatus {
 	 * anchor slot. Recorded once at declaration so it survives scoped resets.
 	 */
 	class_alias_vars?: Set<string>;
+	/**
+	 * Maps an object-level alias var name (`var R q = p`, or a field borrow
+	 * `var Box b = h.c`) to the stack offset of a boolean flag that tracks at
+	 * runtime whether the alias currently *owns* its value. An alias only
+	 * becomes the owner of its value after its first reassignment to a fresh
+	 * instance — its initial value is shared with the original owner and must
+	 * NOT be freed. The build is static, so inside a loop the eager-free
+	 * decision can't key off a build-time `owns_current` check (it's evaluated
+	 * once, before the alias has an anchor); it must branch on this runtime
+	 * flag instead. The flag lives in the alias's declaration frame (a fixed
+	 * stack offset), so it persists across loop iterations.
+	 */
+	alias_owns_flag?: Map<string, number>;
+	/**
+	 * For a `ref` CLASS param, the call site passes the ADDRESS of the caller's
+	 * pointer slot (so the callee can reassign it). The callee loads the
+	 * instance into the param's callee-saved register (so field access works
+	 * unchanged) and stores that &slot address here (param name → stack offset),
+	 * so reassignment can free the caller's old instance and store the new one
+	 * back through the slot.
+	 */
+	ref_class_slots?: Map<string, number>;
 	inline_functions?: Map<string, BaseNode>;
 	/**
 	 * Maps variable names to callee-saved registers (x23-x28) for loop register allocation.

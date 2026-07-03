@@ -137,7 +137,7 @@ Console.write("\\{b.v}\\n")
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		await check_output("defer_reassign_borrow", result, "1\n", { audit: true });
 	});
 
@@ -156,7 +156,7 @@ Console.write("\\{h.c.v}\\n")
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		// The replacement anchors in h's declaration frame, so it isn't freed
 		// at each iteration's scope exit; h holds the last value (5), audit
 		// balanced (old instances reclaimed at scope exit).

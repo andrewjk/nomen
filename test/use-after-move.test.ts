@@ -113,8 +113,8 @@ Console.write("\\{b.value}")
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
-		await check_output("mov_use_other", result, "2", { audit: false });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		await check_output("mov_use_other", result, "2");
 	});
 
 	test("mov into struct then use other fields still works", async () => {
@@ -134,5 +134,45 @@ Console.write("\\{h.id}")
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		await check_output("mov_struct_other_field", result, "1");
+	});
+
+	test("unused mov class param with owned field is reclaimed", async () => {
+		const input = `
+class Box {
+	var int value
+}
+class Holder {
+	mov Box c
+}
+var Box a = Box(1)
+var Holder h = Holder(mov Box(2))
+func take = (mov Holder x) {
+	var int z = 1
+}
+take(mov h)
+Console.write("\\{a.value}")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		await check_output("mov_param_owned_field", result, "1");
+	});
+
+	test("unused mov class param with empty body is reclaimed", async () => {
+		const input = `
+class Box {
+	var int value
+}
+var Box a = Box(1)
+var Box b = Box(2)
+func take = (mov Box x) {
+}
+take(mov a)
+Console.write("\\{b.value}")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		await check_output("mov_param_empty_body", result, "2");
 	});
 });

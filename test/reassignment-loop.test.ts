@@ -27,7 +27,7 @@ Console.write("\\{h.c.v}\\n")
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		await check_output("loop_reassign_factory", result, "5\n", { audit: true });
 	});
 
@@ -48,8 +48,25 @@ Console.write("\\{h.c.v}\\n")
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		await check_output("loop_reassign_refparam", result, "5\n", { audit: true });
+	});
+
+	test("ref param reassignment outside a loop reclaims the old instance", async () => {
+		const input = `
+class Box { var int v }
+class Holder { mov Box c }
+func replace = (ref Holder h, int n) {
+    h = Holder(mov Box(n))
+}
+var Holder h = Holder(mov Box(0))
+replace(ref h, 7)
+Console.write("\\{h.c.v}\\n")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		await check_output("refparam_reassign_nonloop", result, "7\n", { audit: true });
 	});
 
 	test("string reassignment in a loop", async () => {
@@ -64,7 +81,7 @@ Console.write("\\{s}\\n")
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		await check_output("loop_reassign_string", result, "iter3\n", { audit: true });
 	});
 
@@ -84,7 +101,7 @@ Console.write("\\{h.c.v}\\n")
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		await check_output("loop_reassign_nested_if", result, "5\n", { audit: true });
 	});
 });
