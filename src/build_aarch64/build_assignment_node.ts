@@ -683,6 +683,27 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 					get_base_address(access, status, "x0");
 					status.code += `str x0, [sp, #-16]!\n`;
 					status.code += `ldr x0, [x0, #${offset}]\n`;
+					// Run #destroy + free on the old field value, not just a raw
+					// free — otherwise resources the instance owns (nested heap,
+					// handles) silently leak. For nullable fields, guard with cbz
+					// so a null (0) slot is skipped: free(null) is safe but
+					// calling #destroy on null would dereference it.
+					const field_has_destroy = !!field_struct.functions.find((f) => f.name === "#destroy");
+					if (field_type?.is_nullable) {
+						const label_id = (status.label_counter = (status.label_counter ?? 0) + 1);
+						const skip = `.Lskip_fd_${label_id}`;
+						status.code += `cbz x0, ${skip}\n`;
+						if (field_has_destroy) {
+							status.code += `str x0, [sp, #-16]!\n`;
+							status.code += `bl ${field_type!.name}_destroy\n`;
+							status.code += `ldr x0, [sp], #16\n`;
+						}
+						status.code += `${skip}:\n`;
+					} else if (field_has_destroy) {
+						status.code += `str x0, [sp, #-16]!\n`;
+						status.code += `bl ${field_type!.name}_destroy\n`;
+						status.code += `ldr x0, [sp], #16\n`;
+					}
 					emit_free(status);
 
 					build_node(node.right_value, status);

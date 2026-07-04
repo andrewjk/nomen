@@ -500,6 +500,18 @@ export default function check_function_call(
 				new DeclarationNode(param.start, "private", "const", declaration_name, param_type, param),
 			);
 			node.params.splice(i, 1, new ValueNode(param.start, declaration_name, param_type));
+			// A temporary (e.g. a class constructor result) passed to a
+			// signature-level `mov` param transfers ownership to the callee,
+			// exactly like an explicit `mov var` argument. Record the index so
+			// the build releases the hoisted temporary's anchor — otherwise the
+			// instance is freed twice (once by the new owner, once by the
+			// temporary's scope-exit cleanup).
+			if (func_param?.is_moved) {
+				if (!(node as FunctionCallNode).mov_param_indices)
+					(node as FunctionCallNode).mov_param_indices = [];
+				if (!(node as FunctionCallNode).mov_param_indices!.includes(i))
+					(node as FunctionCallNode).mov_param_indices!.push(i);
+			}
 		}
 	}
 	// Check for parameter aliasing: struct params are passed by pointer.

@@ -699,6 +699,41 @@ export function emit_cleanup_to_loop_depth(status: BuildStatus) {
 	}
 }
 
+/**
+ * When a heap-returning call's result is captured into an owned variable
+ * (e.g. `var Box a = make(Box(5))`), the result is anchored as a fresh owner.
+ * But if the call also received a same-type class temporary as a non-mov arg
+ * (the hoisted `_param_N` for `Box(5)`), that temporary is anchored too — and
+ * the function may return the very same instance (e.g. `return x ?? fallback`),
+ * so both anchors point at one allocation and one gets double-freed. The
+ * result variable supersedes the temporary, so release the temporary's anchor
+ * (mark it moved) to consolidate to a single owner.
+ */
+export function consolidate_temp_anchors(
+	status: BuildStatus,
+	call_node: { node_type?: string; params?: any[]; mov_param_indices?: number[] } | undefined,
+	result_type_name: string | undefined,
+) {
+	if (!call_node || call_node.node_type !== "func_call" || !call_node.params) return;
+	if (!result_type_name) return;
+	const is_class = !!status.structs.find((s) => s.name === result_type_name && s.is_class);
+	if (!is_class) return;
+	for (let i = 0; i < call_node.params.length; i++) {
+		const p = call_node.params[i];
+		if (p?.node_type !== "value") continue;
+		if (call_node.mov_param_indices?.includes(i)) continue;
+		const pname = p.value as string;
+		// Only hoisted call temporaries (_param_N) — plain variables may still
+		// be used after the call and must keep their own cleanup.
+		if (!pname.startsWith("_param_")) continue;
+		const ptype = p.type?.name;
+		if (ptype !== result_type_name) continue;
+		if (find_anchor_slot(status, pname) === undefined) continue;
+		if (!status.moved) status.moved = new Set<string>();
+		status.moved.add(pname);
+	}
+}
+
 export function mark_moved_if_struct(value: any, status: BuildStatus) {
 	if (value?.node_type !== "value") return;
 	const var_name = value.value;

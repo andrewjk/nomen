@@ -928,3 +928,53 @@ test()
 		await check_output("nullable_coalesce_class", result, "99\n");
 	});
 });
+
+describe("nullable class field assignment", () => {
+	test("nullable field assigned null→value — destroy runs at scope exit", async () => {
+		const input = `
+class Box {
+    var int v
+    func #destroy = () {
+        Console.write_line("\\{self.v}")
+    }
+}
+class Holder {
+    mov Box? maybe
+}
+func test = () {
+    var Holder h = Holder(mov null)
+    h.maybe = Box(5)
+}
+test()
+Console.write("done")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		await check_output("nullable_field_null_to_val", result, "5\ndone");
+	});
+
+	test("nullable field assigned value→null — old instance destroyed", async () => {
+		const input = `
+class Box {
+    var int v
+    func #destroy = () {
+        Console.write_line("\\{self.v}")
+    }
+}
+class Holder {
+    mov Box? maybe
+}
+func test = () {
+    var Holder h = Holder(mov Box(5))
+    h.maybe = null
+}
+test()
+Console.write("done")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		await check_output("nullable_field_val_to_null", result, "5\ndone");
+	});
+});

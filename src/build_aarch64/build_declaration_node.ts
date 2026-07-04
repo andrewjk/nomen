@@ -19,6 +19,7 @@ import aarch64_type from "./utils/aarch64_type.ts";
 import { emit_strdup, emit_malloc } from "./utils/audit.ts";
 import {
 	anchor_heap_pointer,
+	consolidate_temp_anchors,
 	mark_heap_string,
 	mark_moved_if_struct,
 	track_struct_decl,
@@ -324,6 +325,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 				if (struct_type) {
 					emit_var_load(status, "x0", node.name, 8);
 					anchor_heap_pointer(status, node.name);
+					consolidate_temp_anchors(status, node.value, node.type.name);
 				}
 			}
 		}
@@ -715,12 +717,12 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 					const struct_size = get_struct_size(node.type.name, status);
 					status.code += `mov x0, #${struct_size}\n`;
 					emit_malloc(status);
-					// _param_N temporaries are consumed by the callee function which
-					// takes ownership — do not anchor them or they'll be double-freed
-					// (once by the anchor cleanup at scope exit, once by the container).
-					if (!node.name.startsWith("_param_")) {
-						anchor_heap_pointer(status, node.name);
-					}
+					// Anchor the instance so it's freed at scope exit. For
+					// argument temporaries (_param_N) passed via `mov`, the
+					// callee takes ownership and mark_moved_if_struct adds
+					// them to status.moved — the cleanup paths (both decl
+					// and heap_slots) skip moved vars, so no double-free.
+					anchor_heap_pointer(status, node.name, undefined, node.type.is_nullable);
 					status.code += `str x0, [x29, #${status.stack_offsets!.get(node.name)}]\n`;
 					const param_regs = ["x1", "x2", "x3", "x4", "x5", "x6", "x7"];
 					for (let i = func_call.params.length - 1; i >= 0; i--) {

@@ -10,9 +10,11 @@ import { allocate_stack_space, emit_var_address } from "./utils/stack_var.ts";
 import { get_struct_size } from "./utils/struct_layout.ts";
 
 let string_counter = 0;
+let coalesce_counter = 0;
 
 export function reset_string_counter() {
 	string_counter = 0;
+	coalesce_counter = 0;
 }
 
 function is_comparison(op: string): boolean {
@@ -249,6 +251,25 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		return;
 	}
 
+	// `??` (null-coalescing) is lazy: the right operand is only evaluated when
+	// the left is null. This matters when the fallback allocates (e.g.
+	// `x ?? Box(99)`) — eagerly evaluating it would leak the unused instance.
+	if (node.op === "??") {
+		build_operand(node.left_value, "x0", status);
+		if (!status.code.endsWith("\n")) {
+			status.code += "\n";
+		}
+		status.code += `cmp x0, #0\n`;
+		const label = `.Lcoalesce_have_${coalesce_counter++}`;
+		status.code += `b.ne ${label}\n`;
+		build_operand(node.right_value, "x0", status);
+		if (!status.code.endsWith("\n")) {
+			status.code += "\n";
+		}
+		status.code += `${label}:\n`;
+		return;
+	}
+
 	if (node.operator_func) {
 		const left_type = type_from_value_node(node.left_value);
 		const is_array_op = node.operator_func.struct_name.startsWith("Array") && left_type.is_array;
@@ -397,9 +418,6 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		status.code += `cmp x2, #0\n`;
 		status.code += `cset x2, ne\n`;
 		status.code += `orr x0, x1, x2\n`;
-	} else if (node.op === "??") {
-		status.code += `cmp x1, #0\n`;
-		status.code += `csel x0, x2, x1, eq\n`;
 	} else if (is_comparison(node.op)) {
 		status.code += `cmp x1, x2\n`;
 		status.code += `cset x0, ${map_cmp(node.op, unsigned)}\n`;
