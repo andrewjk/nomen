@@ -4,8 +4,8 @@ import System/Controls
 const int PAD = 16
 const int WIN_W = 400
 const int WIN_H = 500
+const int MAX_TODOS = 6
 
-// Flip layout-Y (top-left origin) to NSView-Y (bottom-left origin).
 func flip_y = (int content_h, int ly, int lh, out int) {
 	return content_h - ly - lh - PAD
 }
@@ -13,109 +13,68 @@ func flip_y = (int content_h, int ly, int lh, out int) {
 pub func main = () {
 	var Window win = Window.create("Echo Todo", WIN_W, WIN_H)
 
-	// ── Todo data ──
-	var string text_0 = "Learn Echo"
-	var string text_1 = "Build a GUI app"
-	var string text_2 = "Ship it"
-	var bool done_0 = false
-	var bool done_1 = false
-	var bool done_2 = false
-	var bool prev_0 = false
-	var bool prev_1 = false
-	var bool prev_2 = false
-
-	// ── Create controls ──
 	var Text title = Text.create(win)
 	title.set_text("Todo List")
 
 	var CheckBox cb0 = CheckBox.create(win)
-	cb0.set_title(text_0)
 	var CheckBox cb1 = CheckBox.create(win)
-	cb1.set_title(text_1)
 	var CheckBox cb2 = CheckBox.create(win)
-	cb2.set_title(text_2)
+	var CheckBox cb3 = CheckBox.create(win)
+	var CheckBox cb4 = CheckBox.create(win)
+	var CheckBox cb5 = CheckBox.create(win)
+
+	cb0.set_title("Learn Echo")
+	cb1.set_title("Build a GUI app")
+	cb2.set_title("Ship it")
+	cb3.set_hidden(true)
+	cb4.set_hidden(true)
+	cb5.set_hidden(true)
+
+	var int todo_count = 3
 
 	var TextBox input = TextBox.create(win)
 	input.set_text("Type a new todo...")
-
 	var Button add_btn = Button.create(win, "Add")
 
-	// ── Build layout tree ──
 	var Layout l = Layout()
-	init_layout(ref l, 32)
-	var int root = add_vstack(ref l, -1, 8)
-	var int n_title = add_leaf(ref l, root, 200, 30)
-	var int n_cb0 = add_leaf(ref l, root, WIN_W - PAD * 2, 24)
-	var int n_cb1 = add_leaf(ref l, root, WIN_W - PAD * 2, 24)
-	var int n_cb2 = add_leaf(ref l, root, WIN_W - PAD * 2, 24)
-	var int n_input = add_leaf(ref l, root, WIN_W - PAD * 2 - 90, 24)
-	var int n_btn = add_leaf(ref l, root, 80, 32)
-
-	// ── Measure + arrange ──
 	var int avail_w = WIN_W - PAD * 2
 	var int avail_h = WIN_H - PAD * 2
-	run_layout(ref l, 7, root, avail_w, avail_h)
+	var int n_input = 0
+	var int n_btn = 0
+	var int total = 0
 
-	// ── Apply frames to native controls (flip Y for bottom-left origin) ──
+	// Build initial layout tree: vstack with title, todos, input, button
+	init_layout(ref l, 32)
+	add_leaf(ref l, add_vstack(ref l, -1, 8), 200, 30)
+	var int i = 0
+	while i < todo_count {
+		add_leaf(ref l, 0, avail_w, 24)
+		i = i + 1
+	}
+	n_input = add_leaf(ref l, 0, avail_w - 90, 24)
+	n_btn = add_leaf(ref l, 0, 80, 32)
+	total = 4 + todo_count
+	run_layout(ref l, total, 0, avail_w, avail_h)
+
+	// Apply frames
 	var int ch = win.content_height()
-	title.set_frame(l.rx.load_int(n_title) + PAD, flip_y(ch, l.ry.load_int(n_title), l.rh.load_int(n_title)), l.rw.load_int(n_title), l.rh.load_int(n_title))
-	cb0.set_frame(l.rx.load_int(n_cb0) + PAD, flip_y(ch, l.ry.load_int(n_cb0), l.rh.load_int(n_cb0)), l.rw.load_int(n_cb0), l.rh.load_int(n_cb0))
-	cb1.set_frame(l.rx.load_int(n_cb1) + PAD, flip_y(ch, l.ry.load_int(n_cb1), l.rh.load_int(n_cb1)), l.rw.load_int(n_cb1), l.rh.load_int(n_cb1))
-	cb2.set_frame(l.rx.load_int(n_cb2) + PAD, flip_y(ch, l.ry.load_int(n_cb2), l.rh.load_int(n_cb2)), l.rw.load_int(n_cb2), l.rh.load_int(n_cb2))
+	title.set_frame(l.rx.load_int(1) + PAD, flip_y(ch, l.ry.load_int(1), l.rh.load_int(1)), l.rw.load_int(1), l.rh.load_int(1))
+	cb0.set_frame(l.rx.load_int(2) + PAD, flip_y(ch, l.ry.load_int(2), l.rh.load_int(2)), l.rw.load_int(2), l.rh.load_int(2))
+	cb1.set_frame(l.rx.load_int(3) + PAD, flip_y(ch, l.ry.load_int(3), l.rh.load_int(3)), l.rw.load_int(3), l.rh.load_int(3))
+	cb2.set_frame(l.rx.load_int(4) + PAD, flip_y(ch, l.ry.load_int(4), l.rh.load_int(4)), l.rw.load_int(4), l.rh.load_int(4))
 	input.set_frame(l.rx.load_int(n_input) + PAD, flip_y(ch, l.ry.load_int(n_input), l.rh.load_int(n_input)), l.rw.load_int(n_input), l.rh.load_int(n_input))
 	add_btn.set_frame(l.rx.load_int(n_btn) + PAD, flip_y(ch, l.ry.load_int(n_btn), l.rh.load_int(n_btn)), l.rw.load_int(n_btn), l.rh.load_int(n_btn))
 
 	win.show()
 
-	// ── Event loop: poll states, manually re-layout on change ──
-	while true {
+	while win.is_visible() {
 		var int had_click = Window.process_events()
 
-		// Read current checkbox states
-		done_0 = cb0.is_checked()
-		done_1 = cb1.is_checked()
-		done_2 = cb2.is_checked()
-
-		// If any checkbox changed, update labels and re-layout
-		if done_0 != prev_0 || done_1 != prev_1 || done_2 != prev_2 {
-			if done_0 != prev_0 {
-				if done_0 {
-					cb0.set_title("[x] " + text_0)
-				} else {
-					cb0.set_title(text_0)
-				}
-				prev_0 = done_0
-			}
-			if done_1 != prev_1 {
-				if done_1 {
-					cb1.set_title("[x] " + text_1)
-				} else {
-					cb1.set_title(text_1)
-				}
-				prev_1 = done_1
-			}
-			if done_2 != prev_2 {
-				if done_2 {
-					cb2.set_title("[x] " + text_2)
-				} else {
-					cb2.set_title(text_2)
-				}
-				prev_2 = done_2
-			}
-
-			// Re-run layout and re-apply frames
-			run_layout(ref l, 7, root, avail_w, avail_h)
-			ch = win.content_height()
-			title.set_frame(l.rx.load_int(n_title) + PAD, flip_y(ch, l.ry.load_int(n_title), l.rh.load_int(n_title)), l.rw.load_int(n_title), l.rh.load_int(n_title))
-			cb0.set_frame(l.rx.load_int(n_cb0) + PAD, flip_y(ch, l.ry.load_int(n_cb0), l.rh.load_int(n_cb0)), l.rw.load_int(n_cb0), l.rh.load_int(n_cb0))
-			cb1.set_frame(l.rx.load_int(n_cb1) + PAD, flip_y(ch, l.ry.load_int(n_cb1), l.rh.load_int(n_cb1)), l.rw.load_int(n_cb1), l.rh.load_int(n_cb1))
-			cb2.set_frame(l.rx.load_int(n_cb2) + PAD, flip_y(ch, l.ry.load_int(n_cb2), l.rh.load_int(n_cb2)), l.rw.load_int(n_cb2), l.rh.load_int(n_cb2))
-			input.set_frame(l.rx.load_int(n_input) + PAD, flip_y(ch, l.ry.load_int(n_input), l.rh.load_int(n_input)), l.rw.load_int(n_input), l.rh.load_int(n_input))
-			add_btn.set_frame(l.rx.load_int(n_btn) + PAD, flip_y(ch, l.ry.load_int(n_btn), l.rh.load_int(n_btn)), l.rw.load_int(n_btn), l.rh.load_int(n_btn))
-		}
-
-		// Hit-test the Add button
+		// Re-layout on any click (checkbox toggle or otherwise)
 		if had_click == 1 {
+			run_layout(ref l, total, 0, avail_w, avail_h)
+
+			// Hit-test the Add button
 			var int cx = win.click_x()
 			var int cy = win.click_y()
 			var int bx = l.rx.load_int(n_btn) + PAD
@@ -126,10 +85,53 @@ pub func main = () {
 				if cx <= bx + bw {
 					if cy >= by {
 						if cy <= by + bh {
-							// Add button clicked — read textbox and update title
-							var string new_text = input.get_text()
-							title.set_text("Add: " + new_text)
-							input.set_text("")
+							if todo_count < MAX_TODOS {
+								var string new_text = input.get_text()
+								if todo_count == 3 {
+									cb3.set_title(new_text)
+									cb3.set_hidden(false)
+								}
+								if todo_count == 4 {
+									cb4.set_title(new_text)
+									cb4.set_hidden(false)
+								}
+								if todo_count == 5 {
+									cb5.set_title(new_text)
+									cb5.set_hidden(false)
+								}
+								todo_count = todo_count + 1
+								input.set_text("")
+
+								// Rebuild layout tree
+								l = Layout()
+								init_layout(ref l, 32)
+								add_leaf(ref l, add_vstack(ref l, -1, 8), 200, 30)
+								var int j = 0
+								while j < todo_count {
+									add_leaf(ref l, 0, avail_w, 24)
+									j = j + 1
+								}
+								n_input = add_leaf(ref l, 0, avail_w - 90, 24)
+								n_btn = add_leaf(ref l, 0, 80, 32)
+								total = 4 + todo_count
+								run_layout(ref l, total, 0, avail_w, avail_h)
+
+								// Re-apply all frames
+								ch = win.content_height()
+								title.set_frame(l.rx.load_int(1) + PAD, flip_y(ch, l.ry.load_int(1), l.rh.load_int(1)), l.rw.load_int(1), l.rh.load_int(1))
+								cb0.set_frame(l.rx.load_int(2) + PAD, flip_y(ch, l.ry.load_int(2), l.rh.load_int(2)), l.rw.load_int(2), l.rh.load_int(2))
+								cb1.set_frame(l.rx.load_int(3) + PAD, flip_y(ch, l.ry.load_int(3), l.rh.load_int(3)), l.rw.load_int(3), l.rh.load_int(3))
+								cb2.set_frame(l.rx.load_int(4) + PAD, flip_y(ch, l.ry.load_int(4), l.rh.load_int(4)), l.rw.load_int(4), l.rh.load_int(4))
+								cb3.set_frame(l.rx.load_int(5) + PAD, flip_y(ch, l.ry.load_int(5), l.rh.load_int(5)), l.rw.load_int(5), l.rh.load_int(5))
+								if todo_count > 4 {
+									cb4.set_frame(l.rx.load_int(6) + PAD, flip_y(ch, l.ry.load_int(6), l.rh.load_int(6)), l.rw.load_int(6), l.rh.load_int(6))
+								}
+								if todo_count > 5 {
+									cb5.set_frame(l.rx.load_int(7) + PAD, flip_y(ch, l.ry.load_int(7), l.rh.load_int(7)), l.rw.load_int(7), l.rh.load_int(7))
+								}
+								input.set_frame(l.rx.load_int(n_input) + PAD, flip_y(ch, l.ry.load_int(n_input), l.rh.load_int(n_input)), l.rw.load_int(n_input), l.rh.load_int(n_input))
+								add_btn.set_frame(l.rx.load_int(n_btn) + PAD, flip_y(ch, l.ry.load_int(n_btn), l.rh.load_int(n_btn)), l.rw.load_int(n_btn), l.rh.load_int(n_btn))
+							}
 						}
 					}
 				}

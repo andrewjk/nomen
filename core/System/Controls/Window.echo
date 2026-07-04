@@ -82,6 +82,7 @@ pub struct Window {
 	// Process pending events without blocking. Returns 1 if a left-mouse-down
 	// was among the events (i.e. a click happened), 0 otherwise. This lets a
 	// manual event loop detect clicks for re-layout without target/action.
+	// Also runs the run loop briefly to process Apple Events (e.g. dock Quit).
 	pub func process_events = (out int) {
 		```
 		#arch: c, aarch64_use_c
@@ -103,12 +104,32 @@ pub struct Window {
 			long type = ((long(*)(id, SEL))objc_msgSend)(event, sel_registerName("type"));
 			if (type == 1) had_click = 1; // NSLeftMouseDown = 1
 		}
+		// Process run loop sources (Apple Events, timers) so that dock Quit
+		// and other system interactions work without NSApplication.run().
+		CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0, 1);
 		return had_click;
 		```
 		```
 		#arch: c, aarch64_use_c
 		#platform: ios
 		return 0;
+		```
+	}
+
+	// Returns true if the window is still on screen. Use this to exit a
+	// manual event loop when the user closes the window.
+	pub func is_visible = (self, out bool) {
+		```
+		#arch: c, aarch64_use_c
+		#platform: macos
+		BOOL vis = ((BOOL(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("isVisible"));
+		return vis;
+		```
+		```
+		#arch: c, aarch64_use_c
+		#platform: ios
+		BOOL vis = ((BOOL(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("isKeyWindow"));
+		return vis;
 		```
 	}
 

@@ -126,7 +126,7 @@ id cb = ((id(*)(id, SEL, CGRect))objc_msgSend)(
 sel_registerName("initWithFrame:"),
 ((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 200, 24));
 ((void(*)(id, SEL, unsigned long))objc_msgSend)(
-cb, sel_registerName("setButtonType:"), 4); // NSSwitchButton = 4
+cb, sel_registerName("setButtonType:"), 3); // NSSwitchButton = 3
 ((void(*)(id, SEL, long))objc_msgSend)(
 cb, sel_registerName("setState:"), 0);       // NSControlStateValueOff = 0
 id contentView = ((id(*)(id, SEL))objc_msgSend)(
@@ -180,6 +180,16 @@ struct CheckBox _self = *self;
 long state = ((long(*)(id, SEL))objc_msgSend)(
 (id)self->handle, sel_registerName("state"));
 return state == 1; // NSControlStateValueOn = 1
+
+}
+
+// CheckBox_set_hidden
+void CheckBox_set_hidden(struct CheckBox *self, unsigned char hidden) __asm__("CheckBox_set_hidden");
+void CheckBox_set_hidden(struct CheckBox *self, unsigned char hidden)
+{
+struct CheckBox _self = *self;
+((void(*)(id, SEL, BOOL))objc_msgSend)(
+(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
 
 }
 
@@ -415,7 +425,20 @@ if (!event) break;
 long type = ((long(*)(id, SEL))objc_msgSend)(event, sel_registerName("type"));
 if (type == 1) had_click = 1; // NSLeftMouseDown = 1
 }
+// Process run loop sources (Apple Events, timers) so that dock Quit
+// and other system interactions work without NSApplication.run().
+CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0, 1);
 return had_click;
+
+}
+
+// Window_is_visible
+unsigned char Window_is_visible(struct Window *self) __asm__("Window_is_visible");
+unsigned char Window_is_visible(struct Window *self)
+{
+struct Window _self = *self;
+BOOL vis = ((BOOL(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("isVisible"));
+return vis;
 
 }
 

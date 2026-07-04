@@ -11,7 +11,7 @@ pub struct CheckBox {
 			sel_registerName("initWithFrame:"),
 			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 200, 24));
 		((void(*)(id, SEL, unsigned long))objc_msgSend)(
-			cb, sel_registerName("setButtonType:"), 4); // NSSwitchButton = 4
+			cb, sel_registerName("setButtonType:"), 3); // NSSwitchButton = 3
 		((void(*)(id, SEL, long))objc_msgSend)(
 			cb, sel_registerName("setState:"), 0);       // NSControlStateValueOff = 0
 		id contentView = ((id(*)(id, SEL))objc_msgSend)(
@@ -98,6 +98,15 @@ pub struct CheckBox {
 		BOOL on = ((BOOL(*)(id, SEL))objc_msgSend)(
 			(id)self->handle, sel_registerName("isOn"));
 		return on ? 1 : 0;
+		```
+	}
+
+	pub func set_hidden = (self, bool hidden) {
+		```
+		#arch: c, aarch64_use_c
+		#platform: macos
+		((void(*)(id, SEL, BOOL))objc_msgSend)(
+			(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
 		```
 	}
 
