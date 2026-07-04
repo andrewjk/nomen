@@ -1,0 +1,124 @@
+pub struct CheckBox {
+	var uint64 handle = 0
+
+	pub func create = (Window window, out CheckBox) {
+		```
+		#arch: c, aarch64_use_c
+		#platform: macos
+		struct CheckBox result;
+		id cb = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSButton"), sel_registerName("alloc")),
+			sel_registerName("initWithFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 200, 24));
+		((void(*)(id, SEL, unsigned long))objc_msgSend)(
+			cb, sel_registerName("setButtonType:"), 4); // NSSwitchButton = 4
+		((void(*)(id, SEL, long))objc_msgSend)(
+			cb, sel_registerName("setState:"), 0);       // NSControlStateValueOff = 0
+		id contentView = ((id(*)(id, SEL))objc_msgSend)(
+			(id)window->handle, sel_registerName("contentView"));
+		((void(*)(id, SEL, id))objc_msgSend)(
+			contentView, sel_registerName("addSubview:"), cb);
+		result.handle = (uint64_t)cb;
+		return result;
+		```
+		```
+		#arch: c, aarch64_use_c
+		#platform: ios
+		struct CheckBox result;
+		id cb = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("UISwitch"), sel_registerName("alloc")),
+			sel_registerName("initWithFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 100, 24));
+		id parentView = ((id(*)(id, SEL))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)(
+				(id)window->handle, sel_registerName("rootViewController")),
+			sel_registerName("view"));
+		((void(*)(id, SEL, id))objc_msgSend)(
+			parentView, sel_registerName("addSubview:"), cb);
+		result.handle = (uint64_t)cb;
+		return result;
+		```
+	}
+
+	pub func set_frame = (self, int x, int y, int width, int height) {
+		```
+		#arch: c, aarch64_use_c
+		#platform: macos
+		((void(*)(id, SEL, CGRect))objc_msgSend)(
+			(id)self->handle, sel_registerName("setFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+		```
+		```
+		#arch: c, aarch64_use_c
+		#platform: ios
+		((void(*)(id, SEL, CGRect))objc_msgSend)(
+			(id)self->handle, sel_registerName("setFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+		```
+	}
+
+	pub func set_title = (self, string title) {
+		```
+		#arch: c, aarch64_use_c
+		#platform: macos
+		((void(*)(id, SEL, id))objc_msgSend)(
+			(id)self->handle, sel_registerName("setTitle:"),
+			((id(*)(id, SEL, const char*))objc_msgSend)(
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title));
+		```
+	}
+
+	pub func set_checked = (self, bool checked) {
+		```
+		#arch: c, aarch64_use_c
+		#platform: macos
+		((void(*)(id, SEL, long))objc_msgSend)(
+			(id)self->handle, sel_registerName("setState:"),
+			checked ? 1 : 0); // NSControlStateValueOn = 1, Off = 0
+		```
+		```
+		#arch: c, aarch64_use_c
+		#platform: ios
+		((void(*)(id, SEL, BOOL))objc_msgSend)(
+			(id)self->handle, sel_registerName("setOn:"), checked ? 1 : 0);
+		```
+	}
+
+	pub func is_checked = (self, out bool) {
+		```
+		#arch: c, aarch64_use_c
+		#platform: macos
+		long state = ((long(*)(id, SEL))objc_msgSend)(
+			(id)self->handle, sel_registerName("state"));
+		return state == 1; // NSControlStateValueOn = 1
+		```
+		```
+		#arch: c, aarch64_use_c
+		#platform: ios
+		BOOL on = ((BOOL(*)(id, SEL))objc_msgSend)(
+			(id)self->handle, sel_registerName("isOn"));
+		return on ? 1 : 0;
+		```
+	}
+
+	func #destroy = () {
+		```
+		#arch: c, aarch64_use_c
+		#platform: macos
+		if (self->handle) {
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+			self->handle = 0;
+		}
+		```
+		```
+		#arch: c, aarch64_use_c
+		#platform: ios
+		if (self->handle) {
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+			self->handle = 0;
+		}
+		```
+	}
+}

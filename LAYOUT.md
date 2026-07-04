@@ -213,11 +213,13 @@ back.
 ## Per-container rules
 
 ### Block
+
 A single-child rect with optional padding. `measure`: passes constraints minus
 insets to the child, returns child size plus insets (or a fixed/percent size
 from its own params). `set_frame`: forwards content rect to child.
 
 ### VStack (vertical stack)
+
 Main axis = vertical, cross axis = horizontal.
 
 - **Measure**: each child gets the parent's width constraints (minus padding) and
@@ -227,15 +229,18 @@ Main axis = vertical, cross axis = horizontal.
   Cross-axis position from alignment.
 
 ### HStack (horizontal stack)
+
 Mirror of VStack. Main axis = horizontal.
 
 ### ZStack (overlap)
+
 Children stack on top of each other (like CSS z-index).
 
 - **Measure**: width = max child width, height = max child height.
 - **Arrange**: every child gets the full frame (minus alignment offset).
 
 ### Grid
+
 Fixed column count `cols`.
 
 - **Measure**: column width = `max_width / cols`. Each child measured with its
@@ -262,6 +267,7 @@ func mark_dirty = (ref Control node) {
 ```
 
 On relayout:
+
 1. Start from the root (or the lowest dirty ancestor).
 2. Remeasure the dirty subtree only.
 3. If the subtree's size changed, mark the parent dirty and repeat.
@@ -288,11 +294,14 @@ The compositor sits above the layout engine and manages the rendering pipeline:
 ```
 
 ### Render order
+
 ZStack children paint back-to-front. Other containers paint in child order.
 The compositor maintains a dirty-rect list; only dirty regions are repainted.
 
 ### Hit testing
+
 Given a touch/click at `(px, py)`, walk the frame tree front-to-back:
+
 1. If `px` is outside the control's frame, skip.
 2. For containers, test children in reverse order (frontmost first).
 3. If a child claims the hit, stop.
@@ -301,6 +310,7 @@ Given a touch/click at `(px, py)`, walk the frame tree front-to-back:
 This needs no platform code — it's pure rect math on the Frame tree.
 
 ### Animation
+
 An animatable property (position, size, opacity) has a current value and a
 target value. Each frame, the compositor interpolates: `current += (target -
 current) × easing`. Layout runs against the interpolated values, producing

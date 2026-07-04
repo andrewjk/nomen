@@ -1,0 +1,107 @@
+pub struct Button {
+	var uint64 handle = 0
+
+	pub func create = (Window window, string title, out Button) {
+		```
+		#arch: c, aarch64_use_c
+		#platform: macos
+		struct Button result;
+		id btn = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSButton"), sel_registerName("alloc")),
+			sel_registerName("initWithFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 100, 32));
+		((void(*)(id, SEL, unsigned long))objc_msgSend)(
+			btn, sel_registerName("setButtonType:"), 1); // NSPushInButton = 1 (momentary push)
+		((void(*)(id, SEL, id))objc_msgSend)(
+			btn, sel_registerName("setTitle:"),
+			((id(*)(id, SEL, const char*))objc_msgSend)(
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title));
+		id contentView = ((id(*)(id, SEL))objc_msgSend)(
+			(id)window->handle, sel_registerName("contentView"));
+		((void(*)(id, SEL, id))objc_msgSend)(
+			contentView, sel_registerName("addSubview:"), btn);
+		result.handle = (uint64_t)btn;
+		return result;
+		```
+		```
+		#arch: c, aarch64_use_c
+		#platform: ios
+		struct Button result;
+		id btn = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("UIButton"), sel_registerName("alloc")),
+			sel_registerName("initWithFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 100, 32));
+		((void(*)(id, SEL, unsigned long, id, id))objc_msgSend)(
+			btn, sel_registerName("setTitle:forState:"),
+			((id(*)(id, SEL, const char*))objc_msgSend)(
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title),
+			0); // UIControlStateNormal = 0
+		id parentView = ((id(*)(id, SEL))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)(
+				(id)window->handle, sel_registerName("rootViewController")),
+			sel_registerName("view"));
+		((void(*)(id, SEL, id))objc_msgSend)(
+			parentView, sel_registerName("addSubview:"), btn);
+		result.handle = (uint64_t)btn;
+		return result;
+		```
+	}
+
+	pub func set_frame = (self, int x, int y, int width, int height) {
+		```
+		#arch: c, aarch64_use_c
+		#platform: macos
+		((void(*)(id, SEL, CGRect))objc_msgSend)(
+			(id)self->handle, sel_registerName("setFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+		```
+		```
+		#arch: c, aarch64_use_c
+		#platform: ios
+		((void(*)(id, SEL, CGRect))objc_msgSend)(
+			(id)self->handle, sel_registerName("setFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+		```
+	}
+
+	pub func set_title = (self, string title) {
+		```
+		#arch: c, aarch64_use_c
+		#platform: macos
+		((void(*)(id, SEL, id))objc_msgSend)(
+			(id)self->handle, sel_registerName("setTitle:"),
+			((id(*)(id, SEL, const char*))objc_msgSend)(
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title));
+		```
+		```
+		#arch: c, aarch64_use_c
+		#platform: ios
+		((void(*)(id, SEL, unsigned long, id, id))objc_msgSend)(
+			(id)self->handle, sel_registerName("setTitle:forState:"),
+			((id(*)(id, SEL, const char*))objc_msgSend)(
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title),
+			0); // UIControlStateNormal = 0
+		```
+	}
+
+	func #destroy = () {
+		```
+		#arch: c, aarch64_use_c
+		#platform: macos
+		if (self->handle) {
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+			self->handle = 0;
+		}
+		```
+		```
+		#arch: c, aarch64_use_c
+		#platform: ios
+		if (self->handle) {
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+			self->handle = 0;
+		}
+		```
+	}
+}

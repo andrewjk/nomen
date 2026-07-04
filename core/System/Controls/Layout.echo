@@ -1,0 +1,198 @@
+import Buffer
+
+// All node data in flat Buffers. Buffer data pointers are shared even when
+// the struct is copied (value semantics copy the pointer, not the data).
+pub struct Layout {
+	var Buffer<int> kinds = Buffer<int>()    // 0=leaf, 1=vstack, 2=hstack
+	var Buffer<int> ws = Buffer<int>()       // intrinsic width (leaf) or 0
+	var Buffer<int> hs = Buffer<int>()       // intrinsic height (leaf) or 0
+	var Buffer<int> gaps = Buffer<int>()     // spacing between children (containers)
+	var Buffer<int> par = Buffer<int>()      // parent index (-1 = root)
+	var Buffer<int> rx = Buffer<int>()       // result x
+	var Buffer<int> ry = Buffer<int>()       // result y
+	var Buffer<int> rw = Buffer<int>()       // result width
+	var Buffer<int> rh = Buffer<int>()       // result height
+}
+
+pub func init_layout = (ref Layout l, int cap) {
+	l.kinds.grow_int(cap)
+	l.ws.grow_int(cap)
+	l.hs.grow_int(cap)
+	l.gaps.grow_int(cap)
+	l.par.grow_int(cap)
+	l.rx.grow_int(cap)
+	l.ry.grow_int(cap)
+	l.rw.grow_int(cap)
+	l.rh.grow_int(cap)
+}
+
+pub func add_leaf = (ref Layout l, int parent, int w, int h, out int) {
+	var int idx = 0
+	while l.par.load_int(idx) != 0 || idx == 0 {
+		if l.kinds.load_int(idx) == 0 && l.ws.load_int(idx) == 0 && l.hs.load_int(idx) == 0 && l.par.load_int(idx) == 0 {
+			break
+		}
+		idx = idx + 1
+	}
+	l.kinds.store_int(idx, 0)
+	l.ws.store_int(idx, w)
+	l.hs.store_int(idx, h)
+	l.gaps.store_int(idx, 0)
+	l.par.store_int(idx, parent + 1)
+	return idx
+}
+
+pub func add_vstack = (ref Layout l, int parent, int spacing, out int) {
+	var int idx = 0
+	while true {
+		if l.kinds.load_int(idx) == 0 && l.ws.load_int(idx) == 0 && l.hs.load_int(idx) == 0 && l.par.load_int(idx) == 0 {
+			break
+		}
+		idx = idx + 1
+	}
+	l.kinds.store_int(idx, 1)
+	l.ws.store_int(idx, 0)
+	l.hs.store_int(idx, 0)
+	l.gaps.store_int(idx, spacing)
+	l.par.store_int(idx, parent + 1)
+	return idx
+}
+
+pub func add_hstack = (ref Layout l, int parent, int spacing, out int) {
+	var int idx = 0
+	while true {
+		if l.kinds.load_int(idx) == 0 && l.ws.load_int(idx) == 0 && l.hs.load_int(idx) == 0 && l.par.load_int(idx) == 0 {
+			break
+		}
+		idx = idx + 1
+	}
+	l.kinds.store_int(idx, 2)
+	l.ws.store_int(idx, 0)
+	l.hs.store_int(idx, 0)
+	l.gaps.store_int(idx, spacing)
+	l.par.store_int(idx, parent + 1)
+	return idx
+}
+
+func first_child = (Layout l, int count, int parent, out int) {
+	var int p = parent + 1
+	var int i = 0
+	while i < count {
+		if l.par.load_int(i) == p { return i }
+		i = i + 1
+	}
+	return -1
+}
+
+func next_sibling = (Layout l, int count, int after, int parent, out int) {
+	var int p = parent + 1
+	var int i = after + 1
+	while i < count {
+		if l.par.load_int(i) == p { return i }
+		i = i + 1
+	}
+	return -1
+}
+
+// Returns Size via two out params (workaround: single out return).
+// Caller passes addresses; measure fills them.
+pub func measure_w = (Layout l, int count, int idx, int min_w, int max_w, int min_h, int max_h, out int) {
+	var int kind = l.kinds.load_int(idx)
+	if kind == 0 {
+		var int w = l.ws.load_int(idx)
+		var int h = l.hs.load_int(idx)
+		if w > max_w { w = max_w }
+		if h > max_h { h = max_h }
+		if w < min_w { w = min_w }
+		if h < min_h { h = min_h }
+		// Encode w and h: return w, store h into rh as side effect
+		l.rh.store_int(idx, h)
+		return w
+	}
+	if kind == 1 {
+		// vstack: sum heights, max widths
+		var int total_h = 0
+		var int max_child_w = 0
+		var int n = 0
+		var int ci = first_child(l, count, idx)
+		while ci != -1 {
+			var int cw = measure_w(l, count, ci, min_w, max_w, 0, 100000)
+			var int ch = l.rh.load_int(ci)
+			total_h = total_h + ch
+			if cw > max_child_w { max_child_w = cw }
+			n = n + 1
+			ci = next_sibling(l, count, ci, idx)
+		}
+		if n > 1 { total_h = total_h + l.gaps.load_int(idx) * (n - 1) }
+		if max_child_w < min_w { max_child_w = min_w }
+		if max_child_w > max_w { max_child_w = max_w }
+		if total_h < min_h { total_h = min_h }
+		if total_h > max_h { total_h = max_h }
+		l.rh.store_int(idx, total_h)
+		return max_child_w
+	}
+	// hstack: sum widths, max heights
+	var int total_w = 0
+	var int max_child_h = 0
+	var int n = 0
+	var int ci = first_child(l, count, idx)
+	while ci != -1 {
+		var int cw = measure_w(l, count, ci, 0, 100000, min_h, max_h)
+		var int ch = l.rh.load_int(ci)
+		total_w = total_w + cw
+		if ch > max_child_h { max_child_h = ch }
+		n = n + 1
+		ci = next_sibling(l, count, ci, idx)
+	}
+	if n > 1 { total_w = total_w + l.gaps.load_int(idx) * (n - 1) }
+	if total_w < min_w { total_w = min_w }
+	if total_w > max_w { total_w = max_w }
+	if max_child_h < min_h { max_child_h = min_h }
+	if max_child_h > max_h { max_child_h = max_h }
+	l.rh.store_int(idx, max_child_h)
+	return total_w
+}
+
+pub func arrange = (Layout l, int count, int idx, int x, int y, int w, int h) {
+	l.rx.store_int(idx, x)
+	l.ry.store_int(idx, y)
+	l.rw.store_int(idx, w)
+	l.rh.store_int(idx, h)
+	var int kind = l.kinds.load_int(idx)
+	if kind == 0 { return }
+
+	if kind == 1 {
+		// vstack: children top to bottom, full width
+		var int running_y = y
+		var int ci = first_child(l, count, idx)
+		while ci != -1 {
+			var int child_w = measure_w(l, count, ci, w, w, 0, 100000)
+			var int child_h = l.rh.load_int(ci)
+			arrange(l, count, ci, x, running_y, w, child_h)
+			running_y = running_y + child_h + l.gaps.load_int(idx)
+			ci = next_sibling(l, count, ci, idx)
+		}
+		return
+	}
+
+	// hstack: children left to right, full height
+	var int running_x = x
+	var int ci = first_child(l, count, idx)
+	while ci != -1 {
+		var int child_w = measure_w(l, count, ci, 0, 100000, h, h)
+		var int child_h = l.rh.load_int(ci)
+		arrange(l, count, ci, running_x, y, child_w, h)
+		running_x = running_x + child_w + l.gaps.load_int(idx)
+		ci = next_sibling(l, count, ci, idx)
+	}
+}
+
+pub func run_layout = (ref Layout l, int count, int root, int avail_w, int avail_h) {
+	var int root_w = measure_w(l, count, root, 0, avail_w, 0, avail_h)
+	var int root_h = l.rh.load_int(root)
+	arrange(l, count, root, 0, 0, root_w, root_h)
+}
+
+pub func fmt = (Layout l, int idx, out string) {
+	return "{" + l.rx.load_int(idx).to_string() + "," + l.ry.load_int(idx).to_string() + " " + l.rw.load_int(idx).to_string() + "x" + l.rh.load_int(idx).to_string() + "}"
+}

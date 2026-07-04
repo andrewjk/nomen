@@ -79,6 +79,105 @@ pub struct Window {
 		```
 	}
 
+	// Process pending events without blocking. Returns 1 if a left-mouse-down
+	// was among the events (i.e. a click happened), 0 otherwise. This lets a
+	// manual event loop detect clicks for re-layout without target/action.
+	pub func process_events = (out int) {
+		```
+		#arch: c, aarch64_use_c
+		#platform: macos
+		id app = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
+		id distant_past = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSDate"), sel_registerName("distantPast"));
+		id default_mode = ((id(*)(id, SEL, const char*))objc_msgSend)(
+			(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), "kCFRunLoopDefaultMode");
+		int had_click = 0;
+		while (1) {
+			id event = ((id(*)(id, SEL, unsigned long long, id, id, BOOL))objc_msgSend)(
+				app, sel_registerName("nextEventMatchingMask:untilDate:inMode:dequeue:"),
+				0xFFFFFFFFFFFFFFFFULL, // NSEventMaskAny
+				distant_past,          // untilDate — returns immediately if no events
+				default_mode,          // inMode
+				1);                    // dequeue
+			if (!event) break;
+			((void(*)(id, SEL, id))objc_msgSend)(app, sel_registerName("sendEvent:"), event);
+			long type = ((long(*)(id, SEL))objc_msgSend)(event, sel_registerName("type"));
+			if (type == 1) had_click = 1; // NSLeftMouseDown = 1
+		}
+		return had_click;
+		```
+		```
+		#arch: c, aarch64_use_c
+		#platform: ios
+		return 0;
+		```
+	}
+
+	// Returns the x coordinate (in the window's content view) of the most
+	// recent mouse-down. Call after process_events returned 1.
+	pub func click_x = (self, out int) {
+		```
+		#arch: c, aarch64_use_c
+		#platform: macos
+		id app = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
+		id event = ((id(*)(id, SEL))objc_msgSend)(app, sel_registerName("currentEvent"));
+		if (!event) return -1;
+		long type = ((long(*)(id, SEL))objc_msgSend)(event, sel_registerName("type"));
+		if (type != 1) return -1; // NSLeftMouseDown = 1
+		// locationInWindow is a CGPoint inside the event; read it via struct-return
+		CGPoint loc = ((CGPoint(*)(id, SEL))objc_msgSend)(event, sel_registerName("locationInWindow"));
+		return (int)loc.x;
+		```
+		```
+		#arch: c, aarch64_use_c
+		#platform: ios
+		return -1;
+		```
+	}
+
+	// Returns the y coordinate (flipped to top-left origin) of the most
+	// recent mouse-down, in the window's content view.
+	pub func click_y = (self, out int) {
+		```
+		#arch: c, aarch64_use_c
+		#platform: macos
+		id app = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
+		id event = ((id(*)(id, SEL))objc_msgSend)(app, sel_registerName("currentEvent"));
+		if (!event) return -1;
+		long type = ((long(*)(id, SEL))objc_msgSend)(event, sel_registerName("type"));
+		if (type != 1) return -1; // NSLeftMouseDown = 1
+		CGPoint loc = ((CGPoint(*)(id, SEL))objc_msgSend)(event, sel_registerName("locationInWindow"));
+		id cv = ((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("contentView"));
+		CGRect frame = ((CGRect(*)(id, SEL))objc_msgSend)(cv, sel_registerName("frame"));
+		// NSWindow coords are bottom-left origin; flip to top-left for layout math
+		return (int)(frame.size.height - loc.y);
+		```
+		```
+		#arch: c, aarch64_use_c
+		#platform: ios
+		return -1;
+		```
+	}
+
+	// Returns the height of the window's content view (for coordinate flipping).
+	pub func content_height = (self, out int) {
+		```
+		#arch: c, aarch64_use_c
+		#platform: macos
+		id cv = ((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("contentView"));
+		CGRect frame = ((CGRect(*)(id, SEL))objc_msgSend)(cv, sel_registerName("frame"));
+		return (int)frame.size.height;
+		```
+		```
+		#arch: c, aarch64_use_c
+		#platform: ios
+		id cv = ((id(*)(id, SEL))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("rootViewController")),
+			sel_registerName("view"));
+		CGRect frame = ((CGRect(*)(id, SEL))objc_msgSend)(cv, sel_registerName("frame"));
+		return (int)frame.size.height;
+		```
+	}
+
 	func #destroy = () {
 		```
 		#arch: c, aarch64_use_c

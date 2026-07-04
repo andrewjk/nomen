@@ -69,6 +69,23 @@ pub struct Text {
 		```
 	}
 
+	pub func set_frame = (self, int x, int y, int width, int height) {
+		```
+		#arch: c, aarch64_use_c
+		#platform: macos
+		((void(*)(id, SEL, CGRect))objc_msgSend)(
+			(id)self->handle, sel_registerName("setFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+		```
+		```
+		#arch: c, aarch64_use_c
+		#platform: ios
+		((void(*)(id, SEL, CGRect))objc_msgSend)(
+			(id)self->handle, sel_registerName("setFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+		```
+	}
+
 	func #destroy = () {
 		```
 		#arch: c, aarch64_use_c

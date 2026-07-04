@@ -61,11 +61,18 @@ export function generate_companion(functions: CompanionFunction[], status: Build
 	return out;
 }
 
+function field_c_type(typeName: string, status: BuildStatus): string {
+	// Generic structs (e.g. Buffer<int>) are stored as 8-byte pointers in C.
+	const struct = status.structs.find((s) => s.name === typeName);
+	if (struct?.is_generic) return "void *";
+	return c_type(typeName);
+}
+
 function generate_struct_typedef(struct: StructNode, status: BuildStatus): string {
 	let out = `typedef struct ${struct.name}\n{\n`;
 	out += `void *_vt;\n`;
 	for (const field of struct.fields) {
-		out += `${c_type(field.type.name)} ${field.name};\n`;
+		out += `${field_c_type(field.type.name, status)} ${field.name};\n`;
 	}
 	for (const traitName of struct.traits) {
 		const trait = status.traits.find((t) => t.name === traitName) as TraitNode | undefined;
@@ -73,7 +80,7 @@ function generate_struct_typedef(struct: StructNode, status: BuildStatus): strin
 		for (const field of trait.fields.filter(
 			(f) => !struct.fields.find((nf) => nf.name === f.name),
 		)) {
-			out += `${c_type(field.type.name)} ${field.name};\n`;
+			out += `${field_c_type(field.type.name, status)} ${field.name};\n`;
 		}
 	}
 	out += `} ${struct.name};\n`;
