@@ -307,16 +307,21 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 					const decl_is_nullable = !!status.variable_types?.get(name)?.is_nullable;
 					if (owns_current) {
 						consume_anchor_slot(status, name);
-						emit_destroy_for_decl(
-							status,
-							name,
-							rhs_type.name,
-							undefined,
-							rhs_type.type_args,
-							rhs_type.is_nullable,
-						);
-						emit_var_load(status, "x0", name, 8);
-						emit_free(status);
+						// Skip the reclaim when the var was moved (e.g. `take(mov a)`
+						// then `a = Box(...)`) — the callee already freed the old
+						// instance, so freeing again here would double-free.
+						if (!status.moved?.has(name)) {
+							emit_destroy_for_decl(
+								status,
+								name,
+								rhs_type.name,
+								undefined,
+								rhs_type.type_args,
+								rhs_type.is_nullable,
+							);
+							emit_var_load(status, "x0", name, 8);
+							emit_free(status);
+						}
 					} else if (alias_flag !== undefined) {
 						const label_id = (status.label_counter = (status.label_counter ?? 0) + 1);
 						const no_free_label = `.Lalias_no_free_${label_id}`;
@@ -333,7 +338,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 						emit_var_load(status, "x0", name, 8);
 						emit_free(status);
 						status.code += `${no_free_label}:\n`;
-					} else if (decl_is_nullable) {
+					} else if (decl_is_nullable && !status.moved?.has(name)) {
 						const label_id = (status.label_counter = (status.label_counter ?? 0) + 1);
 						const no_free_label = `.Lnullable_no_free_${label_id}`;
 						emit_var_load(status, "x0", name, 8);
@@ -344,6 +349,9 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 						status.code += `${no_free_label}:\n`;
 					}
 					mark_moved_if_struct(node.right_value, status);
+					// Reassignment gives the variable a new valid value — clear any
+					// stale moved flag so scope-exit cleanup frees this instance.
+					status.moved?.delete(name);
 					build_node(node.right_value, status);
 					if (!status.code.endsWith("\n")) status.code += "\n";
 					anchor_heap_pointer(status, name, decl_frame);
@@ -527,19 +535,23 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 				// constructor RHS (e.g. `a = null` or `a = other_nullable`).
 				// The constructor path above handles its own reclamation; this
 				// catches the value-typed RHS path that would otherwise just
-				// overwrite the slot and leak the old heap instance.
+				// overwrite the slot and leak the old heap instance. Skip the
+				// free when the var was moved — the callee already freed it.
+				const was_moved = !!status.moved?.has(name);
 				if (find_anchor_slot(status, name) !== undefined) {
 					status.code += `str x0, [sp, #-16]!\n`;
-					emit_destroy_for_decl(
-						status,
-						name,
-						lhs_type_name,
-						undefined,
-						lhs_decl?.type?.type_args,
-						lhs_decl?.type?.is_nullable,
-					);
-					emit_var_load(status, "x0", name, 8);
-					emit_free(status);
+					if (!was_moved) {
+						emit_destroy_for_decl(
+							status,
+							name,
+							lhs_type_name,
+							undefined,
+							lhs_decl?.type?.type_args,
+							lhs_decl?.type?.is_nullable,
+						);
+						emit_var_load(status, "x0", name, 8);
+						emit_free(status);
+					}
 					consume_anchor_slot(status, name);
 					status.code += `ldr x0, [sp], #16\n`;
 				}

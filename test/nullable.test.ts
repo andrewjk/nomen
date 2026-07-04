@@ -793,3 +793,138 @@ Console.write("done")
 		await check_output("nullable_returned_reassigned", result, "done");
 	});
 });
+
+describe("nullable classes — move semantics and fields", () => {
+	test("move nullable var then reassign null — no double free", async () => {
+		const input = `
+class Box {
+    var int v
+}
+func take = (mov Box? x) {
+}
+func test = () {
+    var Box? a = Box(1)
+    take(mov a)
+    a = null
+}
+test()
+Console.write("done")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		await check_output("nullable_mov_then_null", result, "done");
+	});
+
+	test("move nullable var then reassign new value — no double free", async () => {
+		const input = `
+class Box {
+    var int v
+}
+func take = (mov Box? x) {
+}
+func test = () {
+    var Box? a = Box(1)
+    take(mov a)
+    a = Box(2)
+}
+test()
+Console.write("done")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		await check_output("nullable_mov_then_new", result, "done");
+	});
+
+	test("nullable class field (mov) freed at scope exit when null", async () => {
+		const input = `
+class Box {
+    var int v
+    func #destroy = () {
+        Console.write_line("box \\{self.v}")
+    }
+}
+class Holder {
+    mov Box? maybe
+}
+func test = () {
+    var Holder h = Holder(mov null)
+}
+test()
+Console.write("done")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		await check_output("nullable_field_null", result, "done");
+	});
+
+	test("nullable class field (mov) freed at scope exit when non-null", async () => {
+		const input = `
+class Box {
+    var int v
+    func #destroy = () {
+        Console.write_line("box \\{self.v}")
+    }
+}
+class Holder {
+    mov Box? maybe
+}
+func test = () {
+    var Holder h = Holder(mov Box(7))
+}
+test()
+Console.write("done")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		await check_output("nullable_field_val", result, "box 7\ndone");
+	});
+
+	test("nullable class with destroy in a loop — destroy runs each iteration", async () => {
+		const input = `
+class Box {
+    var int v
+    func #destroy = () {
+        Console.write_line("d\\{self.v}")
+    }
+}
+func test = () {
+    var Box? a = null
+    var int i = 0
+    while i < 3 {
+        a = Box(i)
+        i = i + 1
+    }
+}
+test()
+Console.write("done")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		await check_output("nullable_destroy_loop", result, "d0\nd1\nd2\ndone");
+	});
+
+	test("?? coalescing on nullable class returns fallback when null", async () => {
+		const input = `
+class Box {
+    var int v
+}
+func make = (Box? x, out Box) {
+    return x ?? Box(99)
+}
+func test = () {
+    var Box a = make(null)
+    Console.write_line("\\{a.v}")
+}
+test()
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
+		await check_output("nullable_coalesce_class", result, "99\n");
+	});
+});
