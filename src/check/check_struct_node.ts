@@ -1,7 +1,9 @@
 import add_error from "../add_error.ts";
+import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import check_declaration_node from "./check_declaration_node.ts";
+import { monomorphize } from "./check_function_call_node.ts";
 import check_function_node from "./check_function_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import { is_class_type } from "./utils/ownership.ts";
@@ -65,6 +67,33 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 		}
 	}
 	status.values.length = values_length_before_fields;
+
+	// Resolve generic field types on non-generic structs (e.g. Buffer<T> →
+	// Buffer_T or ClassBuffer_T). Generic structs get this rewrite inside
+	// monomorphize(); non-generic structs need it here so that downstream
+	// build phases (especially the C companion typedef) see the concrete
+	// monomorphized name rather than the unresolved generic.
+	if (!struct.is_generic) {
+		for (const field of struct.fields) {
+			if (field.type.name !== "Buffer" || !field.type.type_args?.length) continue;
+			const elem = field.type.type_args[0];
+			if (!elem?.name) continue;
+			const elem_is_class = !!status.structs.find((s) => s.name === elem.name && s.is_class);
+			const generic = status.structs.find(
+				(s) => s.name === (elem_is_class ? "ClassBuffer" : "Buffer"),
+			);
+			if (!generic) continue;
+			const buf_mono = monomorphize(generic, [elem], status);
+			if (!buf_mono) continue;
+			field.type.name = buf_mono.name;
+			field.type.type_args = undefined;
+			if (field.value?.node_type === "func_call") {
+				const dv = field.value as FunctionCallNode;
+				dv.name = buf_mono.name;
+				dv.type_args = undefined;
+			}
+		}
+	}
 
 	struct.is_generic = struct.type_params.length > 0;
 

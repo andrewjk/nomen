@@ -169,13 +169,13 @@ export function monomorphize(
 	for (const func of generic_struct.functions) {
 		if (func.name === "#init") continue;
 		const cloned = clone_node(func) as FunctionNode;
-		substitute_raw_types(cloned, substitution);
+		substitute_raw_types(cloned, substitution, status.structs);
 		rename_local_labels(cloned, mono_name);
 		cloned.return_type = substitute_type(cloned.return_type, substitution);
 		for (const param of cloned.params) {
 			param.type = substitute_type(param.type, substitution);
 			if (param.constraint) {
-				substitute_raw_in_node(param.constraint, substitution);
+				substitute_raw_in_node(param.constraint, substitution, status.structs);
 			}
 		}
 		cloned.checked = true;
@@ -247,9 +247,13 @@ function substitute_type(type: Type, substitution: Map<string, string>): Type {
 	return new_type;
 }
 
-function substitute_raw_types(func: FunctionNode, substitution: Map<string, string>) {
+function substitute_raw_types(
+	func: FunctionNode,
+	substitution: Map<string, string>,
+	structs: StructNode[],
+) {
 	for (const stmt of func.statements) {
-		substitute_raw_in_node(stmt, substitution);
+		substitute_raw_in_node(stmt, substitution, structs);
 	}
 }
 
@@ -281,7 +285,7 @@ function rename_local_labels(node: BaseNode, prefix: string) {
 	}
 }
 
-function raw_type_size(name: string): number {
+function raw_type_size(name: string, structs: StructNode[]): number {
 	switch (name) {
 		case "bool":
 		case "int8":
@@ -294,19 +298,30 @@ function raw_type_size(name: string): number {
 		case "int32":
 		case "uint32":
 			return 4;
-		default:
-			return 8;
 	}
+	// User-defined value struct: VT_SIZE prefix (8) + sum of field sizes.
+	// Classes are always 8 (a heap pointer); simple types are 8 (word-aligned).
+	const struct = structs.find((s) => s.name === name);
+	if (!struct || struct.is_simple_type || struct.is_class) return 8;
+	let size = 8;
+	for (const field of struct.fields) {
+		size += raw_type_size(field.type.name, structs);
+	}
+	return size;
 }
 
-function substitute_raw_in_node(node: BaseNode, substitution: Map<string, string>) {
+function substitute_raw_in_node(
+	node: BaseNode,
+	substitution: Map<string, string>,
+	structs: StructNode[],
+) {
 	if (node.node_type === "raw") {
 		const raw = node as RawNode;
 		let value = raw.value;
 		for (const [param, type] of substitution) {
 			value = value.replace(new RegExp(`\\b${param}\\b`, "g"), type);
 			// Also substitute T_SIZE placeholder with element byte size
-			const size = raw_type_size(type);
+			const size = raw_type_size(type, structs);
 			value = value.replace(new RegExp(`\\b${param}_SIZE\\b`, "g"), String(size));
 			// Substitute T_destroy placeholder with the monomorphized element's
 			// destroy symbol (e.g. ClassBuffer<Animal>.#destroy calls Animal_destroy).
@@ -334,31 +349,31 @@ function substitute_raw_in_node(node: BaseNode, substitution: Map<string, string
 	if (any_node.statements && Array.isArray(any_node.statements)) {
 		for (const child of any_node.statements) {
 			if (child && typeof child === "object" && "node_type" in child) {
-				substitute_raw_in_node(child, substitution);
+				substitute_raw_in_node(child, substitution, structs);
 			}
 		}
 	}
 	if (any_node.params && Array.isArray(any_node.params)) {
 		for (const child of any_node.params) {
 			if (child && typeof child === "object" && "node_type" in child) {
-				substitute_raw_in_node(child, substitution);
+				substitute_raw_in_node(child, substitution, structs);
 			}
 		}
 	}
 	if (any_node.value && any_node.value.node_type) {
-		substitute_raw_in_node(any_node.value, substitution);
+		substitute_raw_in_node(any_node.value, substitution, structs);
 	}
 	if (any_node.left_value?.node_type) {
-		substitute_raw_in_node(any_node.left_value, substitution);
+		substitute_raw_in_node(any_node.left_value, substitution, structs);
 	}
 	if (any_node.right_value?.node_type) {
-		substitute_raw_in_node(any_node.right_value, substitution);
+		substitute_raw_in_node(any_node.right_value, substitution, structs);
 	}
 	if (any_node.target?.node_type) {
-		substitute_raw_in_node(any_node.target, substitution);
+		substitute_raw_in_node(any_node.target, substitution, structs);
 	}
 	if (any_node.access?.node_type) {
-		substitute_raw_in_node(any_node.access, substitution);
+		substitute_raw_in_node(any_node.access, substitution, structs);
 	}
 }
 

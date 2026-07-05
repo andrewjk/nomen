@@ -25,16 +25,18 @@ pub func main = (Init init) {
 	f.close()
 
 	// Parse once and serialize, like the Go version's first pass.
-	var JsonNode root = Json.parse(text)
-	Console.write(Json.stringify(root).length().to_string())
+	var JsonTree tree = JsonTree()
+	var int root = Json.parse(text, ref tree)
+	Console.write(Json.stringify(ref tree, root).length().to_string())
 	Console.write("\n")
 
 	// Re-parse and re-serialize n times, accumulating the serialized length.
+	// The tree pool is reset per iteration (no per-node malloc/free).
 	var int total = 0
 	var int i = 0
 	while i < n {
-		var JsonNode r = Json.parse(text)
-		total = total + Json.stringify(r).length()
+		var int r = Json.parse(text, ref tree)
+		total = total + Json.stringify(ref tree, r).length()
 		i = i + 1
 	}
 	Console.write(total.to_string())

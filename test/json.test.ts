@@ -89,15 +89,17 @@ Console.write(v.to_string())
 });
 
 describe("Json parse/stringify", () => {
-	// JsonNode trees aren't cascade-freed by the current auto-free pass, so
+	// Text strings stored in the tree pool (from StringBuilder.to_string) are
+	// heap-allocated and not individually freed by the pool's #destroy, so
 	// audit would report a leak. The output is still verified.
 	const parseOpts = { audit: false };
 
 	test("parse and stringify an array", async () => {
 		const input = `
 var string src = "[1, true, \\"hi\\", null]"
-var JsonNode n = Json.parse(src)
-Console.write(Json.stringify(n))
+var JsonTree tree = JsonTree()
+var int n = Json.parse(src, ref tree)
+Console.write(Json.stringify(ref tree, n))
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
@@ -108,8 +110,9 @@ Console.write(Json.stringify(n))
 	test("parse and stringify an object", async () => {
 		const input = `
 var string src = "{\\"type\\": \\"Feature\\", \\"count\\": 42}"
-var JsonNode n = Json.parse(src)
-Console.write(Json.stringify(n))
+var JsonTree tree = JsonTree()
+var int n = Json.parse(src, ref tree)
+Console.write(Json.stringify(ref tree, n))
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
@@ -120,8 +123,9 @@ Console.write(Json.stringify(n))
 	test("parse nested GeoJSON-like structure", async () => {
 		const input = `
 var string src = "{\\"name\\": \\"a\\", \\"coords\\": [[1, 2], [3, 4]]}"
-var JsonNode n = Json.parse(src)
-Console.write(Json.stringify(n))
+var JsonTree tree = JsonTree()
+var int n = Json.parse(src, ref tree)
+Console.write(Json.stringify(ref tree, n))
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);

@@ -42,14 +42,19 @@ export function generate_companion(functions: CompanionFunction[], status: Build
 	out += `#include <string.h>\n`;
 	out += `#include <regex.h>\n\n`;
 
-	// --- Struct typedefs ---
+	// --- Struct definitions ---
 	// Emit every non-simple struct so the function bodies can reference them.
+	// Definitions are ordered so that a struct's value-field dependencies are
+	// defined before it (e.g. Buffer_JsonNode before JsonTree, which contains
+	// it by value). Pointer fields (generics → void *) need no ordering.
+	const structs_to_emit = order_structs_by_dependency(
+		status.structs.filter((s) => !s.is_simple_type && !s.is_generic),
+	);
 	const emitted = new Set<string>();
-	for (const struct of status.structs) {
-		if (struct.is_simple_type || struct.is_generic) continue;
+	for (const struct of structs_to_emit) {
 		if (emitted.has(struct.name)) continue;
 		emitted.add(struct.name);
-		out += generate_struct_typedef(struct, status);
+		out += generate_struct_definition(struct, status);
 	}
 	out += "\n";
 
@@ -68,7 +73,42 @@ function field_c_type(typeName: string, status: BuildStatus): string {
 	return c_type(typeName);
 }
 
-function generate_struct_typedef(struct: StructNode, status: BuildStatus): string {
+/**
+ * Order structs so that value-field dependencies are defined first.
+ * A struct A that has a value field of type B (non-pointer, non-generic)
+ * requires B's full definition to precede A's. Pointer fields (generics
+ * rendered as void *) and primitive fields impose no ordering.
+ */
+function order_structs_by_dependency(structs: StructNode[]): StructNode[] {
+	const by_name = new Map(structs.map((s) => [s.name, s]));
+	const deps = new Map<string, Set<string>>();
+	for (const s of structs) {
+		const s_deps = new Set<string>();
+		for (const field of s.fields) {
+			const dep_struct = by_name.get(field.type.name);
+			if (dep_struct && !dep_struct.is_generic && !dep_struct.is_simple_type) {
+				s_deps.add(field.type.name);
+			}
+		}
+		deps.set(s.name, s_deps);
+	}
+	const result: StructNode[] = [];
+	const visited = new Set<string>();
+	const visiting = new Set<string>();
+	function visit(name: string) {
+		if (visited.has(name) || visiting.has(name)) return;
+		visiting.add(name);
+		for (const dep of deps.get(name) ?? []) visit(dep);
+		visiting.delete(name);
+		visited.add(name);
+		const s = by_name.get(name);
+		if (s) result.push(s);
+	}
+	for (const s of structs) visit(s.name);
+	return result;
+}
+
+function generate_struct_definition(struct: StructNode, status: BuildStatus): string {
 	let out = `typedef struct ${struct.name}\n{\n`;
 	out += `void *_vt;\n`;
 	for (const field of struct.fields) {

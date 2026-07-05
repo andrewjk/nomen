@@ -1,0 +1,121 @@
+// JsonTree: a flat pool of JSON tree nodes backed by a Buffer<JsonNode> slab.
+// Each node is a value struct stored at index N in the buffer; grow_T/store_T/
+// load_T handle the slab arithmetic. The caller creates a JsonTree once and
+// calls reset() per document to reuse the slab without reallocation.
+//
+// set_text is the one exception to the load/store pattern: it calls strdup
+// directly into the slab via raw code, because routing the strdup'd pointer
+// through an Echo local would subject it to auto-free at scope exit, leaving
+// the slab's text pointer dangling.
+
+import Buffer
+
+// A node in a parsed JSON tree, stored by value in the pool.
+//   kind: 0=null, 1=true, 2=number, 3=string, 4=array, 5=object, 6=false
+//   child/next/val are node indices, -1 = none.
+struct JsonNode {
+	var int kind = 0
+	var string text = ""
+	var int child = -1
+	var int next = -1
+	var int val = -1
+}
+
+pub struct JsonTree {
+	var Buffer<JsonNode> nodes = Buffer<JsonNode>()
+	var int count = 0
+
+	func alloc_node = (ref self, out int) {
+		var int idx = self.count
+		self.nodes.grow_T(idx + 1)
+		self.count = idx + 1
+		var JsonNode default = JsonNode()
+		self.nodes.store_T(idx, default)
+		return idx
+	}
+
+	func reset = (ref self) {
+		self.count = 0
+	}
+
+	// strdup directly into the slab — see file header for why this can't
+	// go through load_T/store_T.
+	func set_text = (ref self, int idx, string text) {
+		```
+		#arch: c
+		JsonNode *nodes = (JsonNode*)(unsigned long long)self->nodes.data;
+		nodes[idx].text = strdup(text);
+		```
+		```
+		#arch: aarch64
+		// x19 = self, x1 = idx, x2 = text
+		// nodes.data is at self+16 (JsonTree.vt[0] + Buffer.vt[8])
+		// text field is at offset 16 in JsonNode (vt[0] + kind[8])
+		// sizeof(JsonNode) = 48 (vt + 5 fields * 8)
+		sub sp, sp, #32
+		str x1, [sp, #0]
+		str x2, [sp, #8]
+		mov x0, x2
+		bl _strdup
+		str x0, [sp, #16]
+		ldr x0, [x19, #16]
+		ldr x1, [sp, #0]
+		mov x3, #48
+		madd x1, x1, x3, xzr
+		add x0, x0, x1
+		add x0, x0, #16
+		ldr x1, [sp, #16]
+		str x1, [x0]
+		add sp, sp, #32
+		```
+	}
+
+	func set_kind = (ref self, int idx, int val) {
+		var JsonNode n = self.nodes.load_T(idx)
+		n.kind = val
+		self.nodes.store_T(idx, n)
+	}
+
+	func set_child = (ref self, int idx, int val) {
+		var JsonNode n = self.nodes.load_T(idx)
+		n.child = val
+		self.nodes.store_T(idx, n)
+	}
+
+	func set_next = (ref self, int idx, int val) {
+		var JsonNode n = self.nodes.load_T(idx)
+		n.next = val
+		self.nodes.store_T(idx, n)
+	}
+
+	func set_val = (ref self, int idx, int val) {
+		var JsonNode n = self.nodes.load_T(idx)
+		n.val = val
+		self.nodes.store_T(idx, n)
+	}
+
+	func get_kind = (self, int idx, out int) {
+		var JsonNode n = self.nodes.load_T(idx)
+		return n.kind
+	}
+
+	func get_text = (self, int idx, out string) {
+		var JsonNode n = self.nodes.load_T(idx)
+		return n.text
+	}
+
+	func get_child = (self, int idx, out int) {
+		var JsonNode n = self.nodes.load_T(idx)
+		return n.child
+	}
+
+	func get_next = (self, int idx, out int) {
+		var JsonNode n = self.nodes.load_T(idx)
+		return n.next
+	}
+
+	func get_val = (self, int idx, out int) {
+		var JsonNode n = self.nodes.load_T(idx)
+		return n.val
+	}
+}

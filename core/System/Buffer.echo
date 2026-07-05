@@ -277,6 +277,146 @@ pub struct Buffer<T> {
         ```
     }
 
+    // T_SIZE-aware primitives for value-struct elements. Slab is sized in
+    // multiples of T_SIZE; load/store use memcpy so multi-word structs work
+    // correctly. Classes route to ClassBuffer<T> (per-element destroy), so T
+    // reaching here is always a value type (primitive or struct).
+
+    func alloc_T = (ref self, int size, out int: out >= size) {
+        ```
+        #arch: c
+        self->cap = size;
+        self->data = (unsigned long long)(T*)calloc(size, T_SIZE);
+        return self->cap;
+        ```
+        ```
+        #arch: aarch64
+        str x1, [x19, #16]
+        mov x0, x1
+        mov x1, #T_SIZE
+        bl _calloc
+        str x0, [x19, #8]
+        ldr x0, [x19, #16]
+        ```
+    }
+
+    func grow_T = (ref self, int needed, out int: out >= needed) {
+        ```
+        #arch: c
+        if (self->cap >= needed) return self->cap;
+        int new_cap = self->cap;
+        if (new_cap == 0) new_cap = 4;
+        while (new_cap < needed) new_cap *= 2;
+        self->data = (unsigned long long)(T*)realloc((T*)(unsigned long long)self->data, new_cap * T_SIZE);
+        memset((char*)(unsigned long long)self->data + self->cap * T_SIZE, 0, (new_cap - self->cap) * T_SIZE);
+        self->cap = new_cap;
+        return self->cap;
+        ```
+        ```
+        #arch: aarch64
+        ldr x2, [x19, #16]
+        cmp x2, x1
+        b.ge .Lbuffer_grow_T_end
+        mov x3, #4
+        cmp x2, #0
+        csel x3, x3, x2, eq
+        cmp x3, x1
+        b.ge .Lbuffer_grow_T_got
+        .Lbuffer_grow_T_loop:
+        lsl x3, x3, #1
+        cmp x3, x1
+        b.lt .Lbuffer_grow_T_loop
+        .Lbuffer_grow_T_got:
+        sub sp, sp, #32
+        str x2, [sp, #0]
+        str x3, [sp, #8]
+        mov x4, #T_SIZE
+        str x4, [sp, #16]
+        ldr x0, [x19, #8]
+        madd x1, x3, x4, xzr
+        bl _realloc
+        str x0, [x19, #8]
+        ldr x2, [sp, #0]
+        ldr x3, [sp, #8]
+        ldr x4, [sp, #16]
+        add sp, sp, #32
+        str x3, [x19, #16]
+        ldr x0, [x19, #8]
+        mul x5, x2, x4
+        add x0, x0, x5
+        sub x2, x3, x2
+        mul x2, x2, x4
+        mov x1, #0
+        bl _memset
+        .Lbuffer_grow_T_end:
+        ldr x0, [x19, #16]
+        ```
+    }
+
+    func load_T = (self, int i: i >= 0 && i < self.cap, out T) {
+        ```
+        #arch: c
+        return ((T*)(unsigned long long)self->data)[i];
+        ```
+        ```
+        #arch: aarch64
+        // x19 = self, x1 = i, x8 = return buf for structs
+        ldr x0, [x19, #8]
+        mov x3, #T_SIZE
+        madd x1, x1, x3, xzr
+        add x0, x0, x1
+        cmp x3, #8
+        b.gt .Lbuffer_load_T_copy
+        ldr x0, [x0]
+        b .Lbuffer_load_T_end
+        .Lbuffer_load_T_copy:
+        mov x1, x0
+        mov x0, x8
+        mov x2, x3
+        bl _memcpy
+        .Lbuffer_load_T_end:
+        ```
+    }
+
+    func store_T = (ref self, int i: i >= 0 && i < self.cap, T val) {
+        ```
+        #arch: c
+        ((T*)(unsigned long long)self->data)[i] = val;
+        ```
+        ```
+        #arch: aarch64
+        // x19 = self, x1 = i, x2 = val (value if T_SIZE<=8, address if struct)
+        ldr x0, [x19, #8]
+        mov x3, #T_SIZE
+        madd x1, x1, x3, xzr
+        add x0, x0, x1
+        cmp x3, #8
+        b.gt .Lbuffer_store_T_copy
+        str x2, [x0]
+        b .Lbuffer_store_T_end
+        .Lbuffer_store_T_copy:
+        mov x1, x2
+        mov x2, x3
+        bl _memcpy
+        .Lbuffer_store_T_end:
+        ```
+    }
+
+    inline func zero_T = (ref self, int len) {
+        ```
+        #arch: c
+        memset((T*)(unsigned long long)self->data, 0, len * T_SIZE);
+        ```
+        ```
+        #arch: aarch64
+        ldr x0, [x19, #8]
+        mov x2, #T_SIZE
+        mul x2, x1, x2
+        mov x1, #0
+        bl _memset
+        ```
+    }
+
     inline func store_or_int = (ref self, int i: i >= 0 && i < self.cap, int val) {
         ```
         #arch: c
