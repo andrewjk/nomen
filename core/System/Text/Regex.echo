@@ -4,6 +4,8 @@
 // returns the first matched substring (or "" when there is no match).
 // Patterns use POSIX Extended Regular Expression syntax.
 
+import StringBuilder
+
 pub struct Regex {
 	// Test whether pattern matches anywhere in input.
 	pub func test = (string pattern, string input, out bool) {
@@ -64,26 +66,26 @@ pub struct Regex {
 
 	// Replace all non-overlapping occurrences of pattern in input with replacement.
 	pub func replace_all = (string pattern, string input, string replacement, out string) {
-		var string replace_result = ""
+		var StringBuilder sb = StringBuilder()
 		var int pat_len = pattern.length()
 		var int len = input.length()
 		var int pos = 0
 		while pos < len {
 			var int end = match_here(pattern, 0, pat_len, input, pos)
 			if end >= 0 {
-				replace_result = replace_result + replacement
+				sb.append_string(replacement)
 				if end == pos {
-					replace_result = replace_result + "\{input.at(pos)}"
+					sb.append_char(input.at(pos))
 					pos = pos + 1
 				} else {
 					pos = end
 				}
 			} else {
-				replace_result = replace_result + "\{input.at(pos)}"
+				sb.append_char(input.at(pos))
 				pos = pos + 1
 			}
 		}
-		return replace_result
+		return sb.to_string()
 	}
 }
 

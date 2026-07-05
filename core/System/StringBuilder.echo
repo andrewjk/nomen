@@ -1,0 +1,246 @@
+// StringBuilder: a growable byte buffer for incrementally building strings.
+//
+// Appending is O(1) amortized (geometric growth), and `to_string` finalizes
+// the buffer in place (no extra copy). Used by Regex.replace_all and the
+// Json parse/stringify paths to avoid the O(n^2) cost of repeated `string +`
+// concatenation, where each `+` mallocs and copies the whole accumulator.
+
+pub struct StringBuilder {
+	var uint64 data = 0
+	var int len = 0
+	var int cap = 0
+
+	// Ensure capacity for at least `needed` bytes. Grows geometrically.
+	func ensure = (ref self, int needed) {
+		```
+		#arch: c
+		if (self->cap >= needed) return;
+		int new_cap = self->cap;
+		if (new_cap == 0) new_cap = 16;
+		while (new_cap < needed) new_cap *= 2;
+		self->data = (unsigned long long)realloc((void*)(unsigned long long)self->data, new_cap);
+		self->cap = new_cap;
+		```
+		```
+		#arch: aarch64
+		// x19 = self, x1 = needed
+		ldr x2, [x19, #24]        // cap
+		cmp x2, x1
+		b.ge .Lsb_ensure_end
+		// pick new_cap
+		mov x3, #16
+		cmp x2, #0
+		csel x3, x3, x2, eq
+		.Lsb_ensure_loop:
+		cmp x3, x1
+		b.ge .Lsb_ensure_grow
+		lsl x3, x3, #1
+		b .Lsb_ensure_loop
+		.Lsb_ensure_grow:
+		// save needed (x1) and new_cap (x3) across realloc
+		sub sp, sp, #32
+		str x1, [sp, #0]
+		str x3, [sp, #8]
+		str x2, [sp, #16]         // old cap (unused after, but keeps stack aligned)
+		ldr x0, [x19, #8]         // data
+		mov x1, x3
+		bl _realloc
+		str x0, [sp, #24]         // saved new data ptr
+		ldr x1, [sp, #8]          // new_cap
+		str x1, [x19, #24]        // cap = new_cap
+		ldr x0, [sp, #24]
+		str x0, [x19, #8]         // data = realloc result
+		add sp, sp, #32
+		.Lsb_ensure_end:
+		```
+	}
+
+	// Append a single byte (char).
+	func append_char = (ref self, char c) {
+		```
+		#arch: c
+		int idx = self->len;
+		if (idx + 1 >= self->cap) {
+			int nc = self->cap;
+			if (nc == 0) nc = 16;
+			while (nc < idx + 2) nc *= 2;
+			self->data = (unsigned long long)realloc((void*)(unsigned long long)self->data, nc);
+			self->cap = nc;
+		}
+		((unsigned char*)(unsigned long long)self->data)[idx] = (unsigned char)c;
+		self->len = idx + 1;
+		```
+		```
+		#arch: aarch64
+		// x19 = self, w1 = c (low byte)
+		// Save c across the ensure/grow call.
+		sub sp, sp, #16
+		str w1, [sp, #0]
+		ldr x1, [x19, #16]        // len
+		add x1, x1, #2            // need len + 2 bytes (char + null terminator room)
+		// inline ensure
+		ldr x2, [x19, #24]        // cap
+		cmp x2, x1
+		b.ge .Lsb_ac_store
+		mov x3, #16
+		cmp x2, #0
+		csel x3, x3, x2, eq
+		.Lsb_ac_loop:
+		cmp x3, x1
+		b.ge .Lsb_ac_grow
+		lsl x3, x3, #1
+		b .Lsb_ac_loop
+		.Lsb_ac_grow:
+		str x3, [x19, #24]        // cap = new_cap
+		ldr x0, [x19, #8]
+		mov x1, x3
+		bl _realloc
+		str x0, [x19, #8]
+		.Lsb_ac_store:
+		ldr w1, [sp, #0]          // c
+		ldr x0, [x19, #8]         // data
+		ldr x2, [x19, #16]        // len
+		strb w1, [x0, x2]
+		add x2, x2, #1
+		str x2, [x19, #16]        // len = len + 1
+		add sp, sp, #16
+		```
+	}
+
+	// Append a null-terminated string.
+	func append_string = (ref self, string s) {
+		```
+		#arch: c
+		int sl = strlen(s);
+		int needed = self->len + sl + 1;
+		if (needed > self->cap) {
+			int nc = self->cap;
+			if (nc == 0) nc = 16;
+			while (nc < needed) nc *= 2;
+			self->data = (unsigned long long)realloc((void*)(unsigned long long)self->data, nc);
+			self->cap = nc;
+		}
+		memcpy((unsigned char*)(unsigned long long)self->data + self->len, s, sl);
+		self->len = self->len + sl;
+		```
+		```
+		#arch: aarch64
+		// x19 = self, x1 = s
+		// Save s across strlen/realloc.
+		mov x0, x1
+		sub sp, sp, #32
+		str x0, [sp, #0]
+		bl _strlen
+		str x0, [sp, #8]          // sl
+		ldr x1, [x19, #16]        // len
+		add x1, x1, x0            // len + sl
+		add x1, x1, #1            // +1 for null room
+		// inline ensure(x1)
+		ldr x2, [x19, #24]
+		cmp x2, x1
+		b.ge .Lsb_as_copy
+		mov x3, #16
+		cmp x2, #0
+		csel x3, x3, x2, eq
+		.Lsb_as_loop:
+		cmp x3, x1
+		b.ge .Lsb_as_grow
+		lsl x3, x3, #1
+		b .Lsb_as_loop
+		.Lsb_as_grow:
+		str x3, [x19, #24]
+		ldr x0, [x19, #8]
+		mov x1, x3
+		bl _realloc
+		str x0, [x19, #8]
+		.Lsb_as_copy:
+		// memcpy(data + len, s, sl)
+		ldr x1, [sp, #8]          // sl
+		ldr x0, [x19, #8]         // data
+		ldr x2, [x19, #16]        // len
+		add x0, x0, x2            // dest = data + len
+		ldr x1, [sp, #0]          // src = s
+		ldr x2, [sp, #8]          // n = sl
+		bl _memcpy
+		// len = len + sl
+		ldr x0, [x19, #16]
+		ldr x1, [sp, #8]
+		add x0, x0, x1
+		str x0, [x19, #16]
+		add sp, sp, #32
+		```
+	}
+
+	// Finalize: null-terminate, return the byte buffer as a string, and
+	// release ownership (sets `data` to 0 so the destructor won't free it).
+	func to_string = (ref self, out string) {
+		```
+		#arch: c
+		int idx = self->len;
+		int needed = idx + 1;
+		if (needed > self->cap) {
+			int nc = self->cap;
+			if (nc == 0) nc = 16;
+			while (nc < needed) nc *= 2;
+			self->data = (unsigned long long)realloc((void*)(unsigned long long)self->data, nc);
+			self->cap = nc;
+		}
+		((unsigned char*)(unsigned long long)self->data)[idx] = 0;
+		unsigned long long result = self->data;
+		self->data = 0;
+		return (char*)result;
+		```
+		```
+		#arch: aarch64
+		// x19 = self
+		ldr x1, [x19, #16]        // len
+		add x1, x1, #1            // need len + 1
+		ldr x2, [x19, #24]
+		cmp x2, x1
+		b.ge .Lsb_ts_store
+		mov x3, #16
+		cmp x2, #0
+		csel x3, x3, x2, eq
+		.Lsb_ts_loop:
+		cmp x3, x1
+		b.ge .Lsb_ts_grow
+		lsl x3, x3, #1
+		b .Lsb_ts_loop
+		.Lsb_ts_grow:
+		str x3, [x19, #24]
+		ldr x0, [x19, #8]
+		mov x1, x3
+		bl _realloc
+		str x0, [x19, #8]
+		.Lsb_ts_store:
+		ldr x0, [x19, #8]         // x0 = data (this is what we return)
+		ldr x1, [x19, #16]        // len
+		strb wzr, [x0, x1]        // data[len] = 0
+		// transfer ownership: clear self->data. x0 retains the old ptr.
+		str xzr, [x19, #8]
+		```
+	}
+
+	// Drop the buffer without finalizing (free the byte buffer outright).
+	func #destroy = () {
+		```
+		#arch: c
+		if (self->data) {
+			free((void*)(unsigned long long)self->data);
+			self->data = 0;
+			self->len = 0;
+			self->cap = 0;
+		}
+		```
+		```
+		#arch: aarch64
+		ldr x0, [x19, #8]
+		cbz x0, .Lsb_destroy_end
+		bl _free
+		str xzr, [x19, #8]
+		str xzr, [x19, #16]
+		str xzr, [x19, #24]
+		.Lsb_destroy_end:
+		```
+	}
+}

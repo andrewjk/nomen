@@ -6,13 +6,14 @@
 // (see int.echo), so this struct only deals with JSON strings.
 
 import Buffer
+import StringBuilder
 
 pub struct Json {
 	// Serialize a string to a JSON string literal, escaping the special
 	// characters ", \, newline, tab and carriage return.
 	pub func serialize = (string value, out string) {
-		var string bs = "\x5c"
-		var string built = "\""
+		var StringBuilder sb = StringBuilder()
+		sb.append_char('"')
 		var int i = 0
 		var int len = value.length()
 		while i < len {
@@ -20,32 +21,33 @@ pub struct Json {
 			var int code = c as int
 			switch {
 				case code == 34 {
-					built = built + bs + "\""
+					sb.append_string("\x5c\"")
 				}
 				case code == 92 {
-					built = built + bs + bs
+					sb.append_string("\x5c\x5c")
 				}
 				case code == 10 {
-					built = built + bs + "n"
+					sb.append_string("\x5cn")
 				}
 				case code == 9 {
-					built = built + bs + "t"
+					sb.append_string("\x5ct")
 				}
 				case code == 13 {
-					built = built + bs + "r"
+					sb.append_string("\x5cr")
 				}
 				else {
-					built = built + "\{c}"
+					sb.append_char(c)
 				}
 			}
 			i = i + 1
 		}
-		return built + "\""
+		sb.append_char('"')
+		return sb.to_string()
 	}
 
 	// Deserialize a JSON string literal to the raw, unescaped value.
 	pub func deserialize = (string json, out string) {
-		var string parsed = ""
+		var StringBuilder sb = StringBuilder()
 		var int len = json.length()
 		var int i = 0
 		// skip up to the opening quote
@@ -70,31 +72,31 @@ pub struct Json {
 					var int ec = e as int
 					switch {
 						case ec == 110 {
-							parsed = parsed + "\n"
+							sb.append_string("\n")
 						}
 						case ec == 116 {
-							parsed = parsed + "\t"
+							sb.append_string("\t")
 						}
 						case ec == 114 {
-							parsed = parsed + "\r"
+							sb.append_string("\r")
 						}
 						case ec == 34 {
-							parsed = parsed + "\""
+							sb.append_char('"')
 						}
 						case ec == 92 {
-							parsed = parsed + "\x5c"
+							sb.append_string("\x5c")
 						}
 						else {
-							parsed = parsed + "\{e}"
+							sb.append_char(e)
 						}
 					}
 				}
-		} else {
-			parsed = parsed + "\{c}"
+			} else {
+				sb.append_char(c)
+			}
+			i = i + 1
 		}
-		i = i + 1
-	}
-	return parsed
+		return sb.to_string()
 	}
 
 	// Parse a JSON document into a tree of JsonNode.
@@ -108,7 +110,9 @@ pub struct Json {
 
 	// Serialize a JsonNode tree back to a JSON string.
 	pub func stringify = (JsonNode n, out string) {
-		return json_ser_value(n)
+		var StringBuilder sb = StringBuilder()
+		json_ser_value(n, ref sb)
+		return sb.to_string()
 	}
 }
 
@@ -139,7 +143,7 @@ func json_skip_ws = (string s, ref Buffer<int> pos, int len) {
 func json_parse_string = (string s, ref Buffer<int> pos, int len, out JsonNode) {
 	var int i = pos.load_int(0)
 	i = i + 1
-	var string sbuf = ""
+	var StringBuilder sb = StringBuilder()
 	while i < len {
 		var char c = s.at(i)
 		var int code = c as int
@@ -154,34 +158,34 @@ func json_parse_string = (string s, ref Buffer<int> pos, int len, out JsonNode) 
 				var int ec = e as int
 				switch {
 					case ec == 110 {
-						sbuf = sbuf + "\n"
+						sb.append_string("\n")
 					}
 					case ec == 116 {
-						sbuf = sbuf + "\t"
+						sb.append_string("\t")
 					}
 					case ec == 114 {
-						sbuf = sbuf + "\r"
+						sb.append_string("\r")
 					}
 					case ec == 34 {
-						sbuf = sbuf + "\""
+						sb.append_char('"')
 					}
 					case ec == 92 {
-						sbuf = sbuf + "\x5c"
+						sb.append_string("\x5c")
 					}
 					else {
-						sbuf = sbuf + "\{e}"
+						sb.append_char(e)
 					}
 				}
 			}
 		} else {
-			sbuf = sbuf + "\{c}"
+			sb.append_char(c)
 		}
 		i = i + 1
 	}
 	pos.store_int(0, i)
 	var JsonNode n = JsonNode()
 	n.kind = 3
-	n.text = sbuf
+	n.text = sb.to_string()
 	return n
 }
 
@@ -197,15 +201,15 @@ func json_parse_number = (string s, ref Buffer<int> pos, int len, out JsonNode) 
 		}
 	}
 	pos.store_int(0, i)
-	var string nbuf = ""
+	var StringBuilder sb = StringBuilder()
 	var int j = start
 	while j < i {
-		nbuf = nbuf + "\{s.at(j)}"
+		sb.append_char(s.at(j))
 		j = j + 1
 	}
 	var JsonNode n = JsonNode()
 	n.kind = 2
-	n.text = nbuf
+	n.text = sb.to_string()
 	return n
 }
 
@@ -315,51 +319,64 @@ func json_parse_pairs = (string s, ref Buffer<int> pos, int len, out JsonNode?) 
 	return key
 }
 
-func json_ser_list = (JsonNode first, out string) {
-	if first.next == null {
-		return json_ser_value(first)
+func json_ser_list = (JsonNode first, ref StringBuilder sb) {
+	json_ser_value(first, ref sb)
+	if first.next != null {
+		sb.append_char(',')
+		json_ser_list(first.next, ref sb)
 	}
-	return json_ser_value(first) + "," + json_ser_list(first.next)
 }
 
-func json_ser_pairs = (JsonNode first, out string) {
-	var string ppart = "\"" + first.text + "\":"
+func json_ser_pairs = (JsonNode first, ref StringBuilder sb) {
+	sb.append_char('"')
+	sb.append_string(first.text)
+	sb.append_string("\":")
 	if first.val == null {
-		ppart = ppart + "null"
+		sb.append_string("null")
 	} else {
-		ppart = ppart + json_ser_value(first.val)
+		json_ser_value(first.val, ref sb)
 	}
-	if first.next == null {
-		return ppart
+	if first.next != null {
+		sb.append_char(',')
+		json_ser_pairs(first.next, ref sb)
 	}
-	return ppart + "," + json_ser_pairs(first.next)
 }
 
-func json_ser_value = (JsonNode n, out string) {
+func json_ser_value = (JsonNode n, ref StringBuilder sb) {
 	var int k = n.kind
 	if k == 0 {
-		return "" + "null"
+		sb.append_string("null")
+		return
 	}
 	if k == 1 {
-		return "" + "true"
+		sb.append_string("true")
+		return
 	}
 	if k == 6 {
-		return "" + "false"
+		sb.append_string("false")
+		return
 	}
 	if k == 2 {
-		return n.text
+		sb.append_string(n.text)
+		return
 	}
 	if k == 3 {
-		return "\"" + n.text + "\""
+		sb.append_char('"')
+		sb.append_string(n.text)
+		sb.append_char('"')
+		return
 	}
 	if k == 4 {
-		if n.child == null {
-			return "[" + "]"
+		sb.append_char('[')
+		if n.child != null {
+			json_ser_list(n.child, ref sb)
 		}
-		return "[" + json_ser_list(n.child) + "]"
+		sb.append_char(']')
+		return
 	}
-	if n.child == null {
-		return "{" + "}"
+	sb.append_char('{')
+	if n.child != null {
+		json_ser_pairs(n.child, ref sb)
 	}
-	return "{" + json_ser_pairs(n.child) + "}"
+	sb.append_char('}')
 }
