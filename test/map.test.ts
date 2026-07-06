@@ -1,8 +1,6 @@
-import { expect, describe, test } from "vite-plus/test";
+import { describe, test } from "vite-plus/test";
 
-import build from "../src/build";
-import check_output from "./check_output";
-import parse_with_imports from "./parse_with_imports";
+import build_and_check_output from "./build_and_check_output";
 
 describe("Map set and get", () => {
 	test("set and get single value", async () => {
@@ -12,10 +10,7 @@ m.set(1, 100)
 const int v = m.get(1)
 Console.write("\\{v}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("map_set_single", result, "100");
+		await build_and_check_output(input, "map_set_single", "100");
 	});
 
 	test("get missing key returns 0", async () => {
@@ -25,10 +20,7 @@ m.set(1, 100)
 const int v = m.get(99)
 Console.write("\\{v}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("map_get_missing", result, "0");
+		await build_and_check_output(input, "map_get_missing", "0");
 	});
 
 	test("get on empty map returns 0", async () => {
@@ -37,10 +29,7 @@ var Map<int, int> m = Map<int, int>()
 const int v = m.get(1)
 Console.write("\\{v}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("map_get_empty", result, "0");
+		await build_and_check_output(input, "map_get_empty", "0");
 	});
 
 	test("set multiple key-value pairs", async () => {
@@ -54,10 +43,7 @@ const int b = m.get(2)
 const int c = m.get(3)
 Console.write("\\{a} \\{b} \\{c} \\{m.length}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("map_set_multi", result, "10 20 30 3");
+		await build_and_check_output(input, "map_set_multi", "10 20 30 3");
 	});
 
 	test("set same key updates value", async () => {
@@ -68,10 +54,7 @@ m.set(1, 99)
 const int v = m.get(1)
 Console.write("\\{v} \\{m.length}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("map_set_update", result, "99 1");
+		await build_and_check_output(input, "map_set_update", "99 1");
 	});
 });
 
@@ -82,10 +65,7 @@ var Map<int, int> m = Map<int, int>()
 m.set(1, 10)
 Console.write("\\{m.has(1)}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("map_has_existing", result, "true");
+		await build_and_check_output(input, "map_has_existing", "true");
 	});
 
 	test("has returns false for missing key", async () => {
@@ -94,10 +74,7 @@ var Map<int, int> m = Map<int, int>()
 m.set(1, 10)
 Console.write("\\{m.has(99)}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("map_has_missing", result, "false");
+		await build_and_check_output(input, "map_has_missing", "false");
 	});
 });
 
@@ -113,10 +90,7 @@ const int b = m.get(16)
 const int c = m.get(24)
 Console.write("\\{a} \\{b} \\{c}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("map_collisions", result, "100 200 300");
+		await build_and_check_output(input, "map_collisions", "100 200 300");
 	});
 
 	test("many entries triggers rehash", async () => {
@@ -137,10 +111,7 @@ m.set(12, 1200)
 const int total = m.get(1) + m.get(2) + m.get(3) + m.get(4) + m.get(5) + m.get(6) + m.get(7) + m.get(8) + m.get(9) + m.get(10) + m.get(11) + m.get(12)
 Console.write("\\{total} \\{m.length}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("map_rehash", result, "7800 12");
+		await build_and_check_output(input, "map_rehash", "7800 12");
 	});
 
 	test("negative keys", async () => {
@@ -152,10 +123,7 @@ const int a = m.get(-1)
 const int b = m.get(-100)
 Console.write("\\{a} \\{b}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("map_negative_keys", result, "10 20");
+		await build_and_check_output(input, "map_negative_keys", "10 20");
 	});
 
 	test("no false matches after rehash", async () => {
@@ -176,10 +144,7 @@ const int v25 = m.get(25)
 const int v99 = m.get(99)
 Console.write("\\{v15} \\{v25} \\{v99}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("map_no_false", result, "0 0 0");
+		await build_and_check_output(input, "map_no_false", "0 0 0");
 	});
 });
 
@@ -196,10 +161,7 @@ const bool b = m.has(2)
 const bool c = m.has(3)
 Console.write("\\{a} \\{b} \\{c} \\{m.length}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("map_remove", result, "true false true 2");
+		await build_and_check_output(input, "map_remove", "true false true 2");
 	});
 
 	test("remove non-existent key is no-op", async () => {
@@ -209,10 +171,7 @@ m.set(1, 10)
 m.remove(99)
 Console.write("\\{m.has(1)} \\{m.length}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("map_remove_missing", result, "true 1");
+		await build_and_check_output(input, "map_remove_missing", "true 1");
 	});
 
 	test("remove then re-add works", async () => {
@@ -225,9 +184,6 @@ m.set(1, 99)
 const int v = m.get(1)
 Console.write("\\{v} \\{m.length}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("map_remove_readd", result, "99 2");
+		await build_and_check_output(input, "map_remove_readd", "99 2");
 	});
 });

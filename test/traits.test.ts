@@ -1,9 +1,7 @@
 import { expect, describe, test } from "vite-plus/test";
 
-import build from "../src/build";
 import parse from "../src/parse";
-import check_output from "./check_output";
-import parse_with_imports from "./parse_with_imports";
+import build_and_check_output from "./build_and_check_output";
 import test_error from "./test_error";
 
 // BUILD
@@ -21,10 +19,7 @@ struct Frank: Person {
 const f = Frank()
 Console.write(f.name)
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("trait_field_access", result, "Frank");
+		await build_and_check_output(input, "trait_field_access", "Frank");
 	});
 
 	test("trait with struct method override", async () => {
@@ -44,10 +39,7 @@ struct Frank: Person {
 const f = Frank()
 Console.write(f.greet())
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("trait_method_override", result, "hello from Frank");
+		await build_and_check_output(input, "trait_method_override", "hello from Frank");
 	});
 
 	test("trait with default method implementation", async () => {
@@ -66,10 +58,7 @@ struct Frank: Person {
 const f = Frank()
 Console.write(f.greet())
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("trait_default_method", result, "hi");
+		await build_and_check_output(input, "trait_default_method", "hi");
 	});
 
 	test("trait with int field and default", async () => {
@@ -85,10 +74,7 @@ struct MyCounter: Counter {
 const c = MyCounter()
 Console.write("\\{c.count}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("trait_int_field", result, "5");
+		await build_and_check_output(input, "trait_int_field", "5");
 	});
 
 	test("struct with multiple traits", async () => {
@@ -114,10 +100,7 @@ struct Frank: Greeter, Dancer {
 const f = Frank()
 Console.write("\\{f.greet()} \\{f.dance()}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("trait_multiple", result, "hello dance");
+		await build_and_check_output(input, "trait_multiple", "hello dance");
 	});
 
 	test("trait method using struct fields", async () => {
@@ -136,10 +119,7 @@ struct Frank: Person {
 const f = Frank()
 Console.write(f.greet())
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("trait_method_using_fields", result, "Frank");
+		await build_and_check_output(input, "trait_method_using_fields", "Frank");
 	});
 
 	test("trait with int field and method", async () => {
@@ -158,10 +138,7 @@ struct MyCounter: Counter {
 const c = MyCounter()
 Console.write("\\{c.value()}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("trait_int_field_method", result, "42");
+		await build_and_check_output(input, "trait_int_field_method", "42");
 	});
 
 	test("multiple struct instances from same trait", async () => {
@@ -182,10 +159,7 @@ const a = Alice()
 const b = Bob()
 Console.write("\\{a.name} \\{b.name}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("trait_multi_instances", result, "Alice Bob");
+		await build_and_check_output(input, "trait_multi_instances", "Alice Bob");
 	});
 
 	test("trait with multiple fields", async () => {
@@ -203,10 +177,7 @@ struct Frank: Person {
 const f = Frank()
 Console.write("\\{f.name} \\{f.age}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("trait_multi_fields", result, "Frank 30");
+		await build_and_check_output(input, "trait_multi_fields", "Frank 30");
 	});
 
 	test("empty trait", async () => {
@@ -215,10 +186,7 @@ trait Empty {}
 
 struct Foo: Empty {}
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("trait_empty", result, "");
+		await build_and_check_output(input, "trait_empty", "");
 	});
 });
 
@@ -237,10 +205,7 @@ func get_name = (Alice a, out string) {
 }
 Console.write(get_name(Alice()))
 `;
-	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("trait_struct_in_func", result, "Alice");
+	await build_and_check_output(input, "trait_struct_in_func", "Alice");
 });
 
 test("trait struct method without self", async () => {
@@ -260,10 +225,7 @@ struct Frank: Person {
 const f = Frank()
 Console.write(f.hello())
 `;
-	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("trait_method_no_self", result, "hello from Frank");
+	await build_and_check_output(input, "trait_method_no_self", "hello from Frank");
 });
 
 test("trait struct field update", async () => {
@@ -280,10 +242,7 @@ var c = MyCounter()
 c.count = 10
 Console.write("\\{c.count}")
 `;
-	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("trait_field_update", result, "10");
+	await build_and_check_output(input, "trait_field_update", "10");
 });
 
 test("trait with bool field", async () => {
@@ -299,10 +258,7 @@ struct MyStatus: Status {
 const s = MyStatus()
 Console.write("\\{s.active}")
 `;
-	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("trait_bool_field", result, "true");
+	await build_and_check_output(input, "trait_bool_field", "true");
 });
 
 test("trait struct with method using fields", async () => {
@@ -323,10 +279,7 @@ struct Frank: Person {
 const f = Frank()
 Console.write(f.describe())
 `;
-	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("trait_struct_method_fields", result, "hello");
+	await build_and_check_output(input, "trait_struct_method_fields", "hello");
 });
 
 // ERRORS

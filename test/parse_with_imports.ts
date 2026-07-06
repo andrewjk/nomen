@@ -14,3 +14,7 @@ ${source}
 `;
 	return parse(source_to_parse, system);
 }
+
+export function parse_raw(source: string) {
+	return parse(source, system);
+}

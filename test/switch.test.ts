@@ -1,9 +1,7 @@
 import { expect, describe, test } from "vite-plus/test";
 
-import build from "../src/build";
 import parse from "../src/parse";
-import check_output from "./check_output";
-import parse_with_imports from "./parse_with_imports";
+import build_and_check_output from "./build_and_check_output";
 import test_error from "./test_error";
 
 // BUILD
@@ -17,11 +15,7 @@ switch {
 	}
 }
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("switch_single", result, "big");
+		await build_and_check_output(input, "switch_single", "big");
 	});
 
 	test("switch single case not matched", async () => {
@@ -35,11 +29,7 @@ switch {
 }
 Console.write("\\{result}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("switch_not_matched", result, "0");
+		await build_and_check_output(input, "switch_not_matched", "0");
 	});
 
 	test("switch multiple cases first matches", async () => {
@@ -57,11 +47,7 @@ switch {
 	}
 }
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("switch_first_matches", result, "big");
+		await build_and_check_output(input, "switch_first_matches", "big");
 	});
 
 	test("switch multiple cases second matches", async () => {
@@ -79,11 +65,7 @@ switch {
 	}
 }
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("switch_second_matches", result, "medium");
+		await build_and_check_output(input, "switch_second_matches", "medium");
 	});
 
 	test("switch multiple cases third matches", async () => {
@@ -101,11 +83,7 @@ switch {
 	}
 }
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("switch_third_matches", result, "small");
+		await build_and_check_output(input, "switch_third_matches", "small");
 	});
 
 	test("switch with else branch", async () => {
@@ -120,11 +98,7 @@ switch {
 	}
 }
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("switch_else", result, "small");
+		await build_and_check_output(input, "switch_else", "small");
 	});
 
 	test("switch expression", async () => {
@@ -138,11 +112,7 @@ const y = switch {
 }
 Console.write(y)
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("switch_expression", result, "big");
+		await build_and_check_output(input, "switch_expression", "big");
 	});
 
 	test("switch expression else branch", async () => {
@@ -156,11 +126,7 @@ const y = switch {
 }
 Console.write(y)
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("switch_expression_else", result, "nothing");
+		await build_and_check_output(input, "switch_expression_else", "nothing");
 	});
 
 	test("switch with variable assignment", async () => {
@@ -180,11 +146,7 @@ switch {
 }
 Console.write("\\{result}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("switch_var_assign", result, "2");
+		await build_and_check_output(input, "switch_var_assign", "2");
 	});
 
 	test("switch with comparison operators", async () => {
@@ -209,11 +171,7 @@ switch {
 }
 Console.write("\\{result}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("switch_comparisons", result, "2");
+		await build_and_check_output(input, "switch_comparisons", "2");
 	});
 
 	test("switch with logical operators", async () => {
@@ -230,11 +188,7 @@ switch {
 }
 Console.write("\\{result}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("switch_logical", result, "1");
+		await build_and_check_output(input, "switch_logical", "1");
 	});
 
 	test("nested switch", async () => {
@@ -259,11 +213,7 @@ switch {
 }
 Console.write("\\{result}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("switch_nested", result, "2");
+		await build_and_check_output(input, "switch_nested", "2");
 	});
 
 	test("switch expression with int result", async () => {
@@ -276,11 +226,7 @@ const y = switch {
 }
 Console.write("\\{y}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("switch_int_expression", result, "2");
+		await build_and_check_output(input, "switch_int_expression", "2");
 	});
 
 	test("switch inside for loop", async () => {
@@ -301,11 +247,7 @@ for i of 0..5 {
 }
 Console.write("\\{result}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("switch_in_for", result, "33");
+		await build_and_check_output(input, "switch_in_for", "33");
 	});
 
 	test("switch with negation", async () => {
@@ -322,11 +264,7 @@ switch {
 }
 Console.write("\\{result}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("switch_negation", result, "2");
+		await build_and_check_output(input, "switch_negation", "2");
 	});
 });
 

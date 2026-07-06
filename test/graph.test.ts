@@ -1,8 +1,6 @@
-import { expect, describe, test } from "vite-plus/test";
+import { describe, test } from "vite-plus/test";
 
-import build from "../src/build";
-import check_output from "./check_output";
-import parse_with_imports from "./parse_with_imports";
+import build_and_check_output from "./build_and_check_output";
 
 describe("Graph<T> add_node and value", () => {
 	test("add single node and read back", async () => {
@@ -14,10 +12,7 @@ if g.node_count > 0 {
   Console.write("\\{v}")
 }
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("graph_add_single", result, "42");
+		await build_and_check_output(input, "graph_add_single", "42");
 	});
 
 	test("add multiple nodes preserves order", async () => {
@@ -34,10 +29,7 @@ for i of 0 .. g.node_count {
   Console.write("\\{v}")
 }
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("graph_add_order", result, "10 20 30");
+		await build_and_check_output(input, "graph_add_order", "10 20 30");
 	});
 
 	test("node_length tracks additions", async () => {
@@ -51,10 +43,7 @@ g.add_node(3)
 var int n3 = g.node_length()
 Console.write("\\{n0} \\{n1} \\{n3}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("graph_node_length", result, "0 1 3");
+		await build_and_check_output(input, "graph_node_length", "0 1 3");
 	});
 
 	test("empty graph node_length is zero", async () => {
@@ -62,10 +51,7 @@ Console.write("\\{n0} \\{n1} \\{n3}")
 var Graph<int> g = Graph<int>()
 Console.write("\\{g.node_length()}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("graph_empty", result, "0");
+		await build_and_check_output(input, "graph_empty", "0");
 	});
 
 	test("add negative values", async () => {
@@ -81,10 +67,7 @@ for i of 0 .. g.node_count {
   Console.write("\\{v}")
 }
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("graph_negative", result, "-1 -100");
+		await build_and_check_output(input, "graph_negative", "-1 -100");
 	});
 });
 
@@ -100,10 +83,7 @@ var int target = g.edge_target(e)
 var int v = g.at(target)
 Console.write("\\{v}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("graph_single_edge", result, "2");
+		await build_and_check_output(input, "graph_single_edge", "2");
 	});
 
 	test("edge_length tracks edges", async () => {
@@ -120,10 +100,7 @@ g.add_edge(1, 2)
 var int e3 = g.edge_length()
 Console.write("\\{e0} \\{e1} \\{e3}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("graph_edge_length", result, "0 1 3");
+		await build_and_check_output(input, "graph_edge_length", "0 1 3");
 	});
 
 	test("first_edge of node with no edges is -1", async () => {
@@ -133,10 +110,7 @@ g.add_node(1)
 var int e = g.edges_of(0)
 Console.write("\\{e}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("graph_no_edges", result, "-1");
+		await build_and_check_output(input, "graph_no_edges", "-1");
 	});
 
 	test("multiple outgoing edges traversed in reverse order", async () => {
@@ -156,10 +130,7 @@ while e != -1 {
 }
 Console.write("\\{sum}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("graph_multi_edges", result, "30");
+		await build_and_check_output(input, "graph_multi_edges", "30");
 	});
 });
 
@@ -182,10 +153,7 @@ while e != -1 {
 }
 Console.write("\\{total}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("graph_walk", result, "5");
+		await build_and_check_output(input, "graph_walk", "5");
 	});
 
 	test("node with multiple edges to different nodes", async () => {
@@ -207,10 +175,7 @@ while e != -1 {
 }
 Console.write("\\{sum}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("graph_three_edges", result, "600");
+		await build_and_check_output(input, "graph_three_edges", "600");
 	});
 
 	test("disconnected nodes have no edges", async () => {
@@ -224,10 +189,7 @@ var int e1 = g.edges_of(1)
 var int e2 = g.edges_of(2)
 Console.write("\\{e0} \\{e1} \\{e2}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("graph_disconnected", result, "-1 -1 -1");
+		await build_and_check_output(input, "graph_disconnected", "-1 -1 -1");
 	});
 
 	test("chain of edges via node-by-node traversal", async () => {
@@ -253,9 +215,6 @@ while e != -1 {
 }
 Console.write("\\{sum}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("graph_chain", result, "5");
+		await build_and_check_output(input, "graph_chain", "5");
 	});
 });

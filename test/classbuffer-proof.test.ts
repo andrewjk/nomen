@@ -3,8 +3,7 @@ import path from "node:path";
 
 import { describe, expect, test } from "vite-plus/test";
 
-import build from "../src/build";
-import check_output from "./check_output";
+import build_and_check_output from "./build_and_check_output";
 import parse_with_imports from "./parse_with_imports";
 
 // Proof that the ClassBuffer<T> compile-time mechanism works: the element
@@ -22,13 +21,13 @@ if true {
 }
 Console.write("done\\n")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("classbuffer_proof", result, "done\n");
 		// The monomorphized ClassBuffer_Animal.#destroy must call Animal_destroy
 		// directly — i.e. the T_destroy -> Animal_destroy substitution happened.
-		const asm = fs.readFileSync(path.join("test", "out", "classbuffer_proof", "main.s"), "utf-8");
+		await build_and_check_output(input, "classbuffer_proof", "done\n");
+		const asm = fs.readFileSync(
+			path.join("test", "out", "aarch64", "classbuffer_proof", "main.s"),
+			"utf-8",
+		);
 		expect(asm).toContain("bl Animal_destroy");
 	});
 

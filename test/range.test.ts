@@ -1,9 +1,7 @@
 import { expect, describe, test } from "vite-plus/test";
 
-import build from "../src/build";
 import parse from "../src/parse";
-import check_output from "./check_output";
-import parse_with_imports from "./parse_with_imports";
+import build_and_check_output from "./build_and_check_output";
 import test_error from "./test_error";
 
 // BUILD
@@ -14,10 +12,7 @@ for i of 1..4 {
   Console.write("\\{i}")
 }
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("range_exclusive_for", result, "123");
+		await build_and_check_output(input, "range_exclusive_for", "123");
 	});
 
 	test("inclusive range with expression", async () => {
@@ -26,10 +21,7 @@ for i of 1..(4 + 1) {
   Console.write("\\{i}")
 }
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("range_inclusive_expr", result, "1234");
+		await build_and_check_output(input, "range_inclusive_expr", "1234");
 	});
 
 	test("range with negative start", async () => {
@@ -38,10 +30,7 @@ for i of -2..2 {
   Console.write("\\{i} ")
 }
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("range_negative_start", result, "-2 -1 0 1 ");
+		await build_and_check_output(input, "range_negative_start", "-2 -1 0 1 ");
 	});
 
 	test("range starting from zero", async () => {
@@ -50,10 +39,7 @@ for i of 0..3 {
   Console.write("\\{i}")
 }
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("range_from_zero", result, "012");
+		await build_and_check_output(input, "range_from_zero", "012");
 	});
 
 	test("range with sum in for loop", async () => {
@@ -64,10 +50,7 @@ for i of 1..5 {
 }
 Console.write("\\{total}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("range_sum", result, "10");
+		await build_and_check_output(input, "range_sum", "10");
 	});
 
 	test("nested range loops", async () => {
@@ -80,10 +63,7 @@ for i of 0..3 {
 }
 Console.write("\\{total}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("range_nested", result, "6");
+		await build_and_check_output(input, "range_nested", "6");
 	});
 
 	test("range with single element", async () => {
@@ -92,10 +72,7 @@ for i of 0..1 {
   Console.write("\\{i}")
 }
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("range_single_element", result, "0");
+		await build_and_check_output(input, "range_single_element", "0");
 	});
 
 	test("range with large bounds", async () => {
@@ -106,10 +83,7 @@ for i of 0..5 {
 }
 Console.write("\\{total}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("range_large_bounds", result, "10");
+		await build_and_check_output(input, "range_large_bounds", "10");
 	});
 
 	test("range as array literal", async () => {
@@ -117,10 +91,7 @@ Console.write("\\{total}")
 const x = 1..4
 Console.write("\\{x.at(0)}\\{x.at(1)}\\{x.at(2)}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("range_as_array", result, "123");
+		await build_and_check_output(input, "range_as_array", "123");
 	});
 
 	test("range used for index-based array access", async () => {
@@ -132,10 +103,7 @@ for i of 0..3 {
 }
 Console.write("\\{total}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("range_index_access", result, "60");
+		await build_and_check_output(input, "range_index_access", "60");
 	});
 });
 

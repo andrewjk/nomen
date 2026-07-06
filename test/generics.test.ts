@@ -3,7 +3,7 @@ import { expect, test } from "vite-plus/test";
 import build from "../src/build";
 import check from "../src/check";
 import parse from "../src/parse";
-import check_output from "./check_output";
+import build_and_check_output from "./build_and_check_output";
 import parse_with_imports from "./parse_with_imports";
 
 test("generics -- parse generic struct", () => {
@@ -256,7 +256,7 @@ printBox([ value = 99 ])
 	expect(parsed.errors).toEqual([]);
 	const built = build(parsed.root, { arch: "aarch64", audit: true });
 	expect(built.code).toContain("printBox_Box_int");
-	await check_output("gen_func_box", built, "99\n");
+	await build_and_check_output(input, "gen_func_box", "99\n");
 });
 
 test("generics -- generic function two types build aarch64", async () => {
@@ -279,7 +279,7 @@ printFirst([ first = 20, second = "b" ])
 	expect(parsed.errors).toEqual([]);
 	const built = build(parsed.root, { arch: "aarch64", audit: true });
 	expect(built.code).toContain("printFirst_Pair_int_string");
-	await check_output("gen_func_pair", built, "10\n20\n");
+	await build_and_check_output(input, "gen_func_pair", "10\n20\n");
 });
 
 test("generics -- explicit type params on function", () => {

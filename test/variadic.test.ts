@@ -1,9 +1,7 @@
 import { expect, describe, test } from "vite-plus/test";
 
-import build from "../src/build";
 import parse from "../src/parse";
-import check_output from "./check_output";
-import parse_with_imports from "./parse_with_imports";
+import build_and_check_output from "./build_and_check_output";
 import test_error from "./test_error";
 
 // BUILD
@@ -21,10 +19,7 @@ func sum = (...int nums, out int) {
 }
 Console.write("\\{sum(1, 2, 3)}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("variadic_sum", result, "6");
+		await build_and_check_output(input, "variadic_sum", "6");
 	});
 
 	test("variadic with zero args", async () => {
@@ -32,10 +27,7 @@ Console.write("\\{sum(1, 2, 3)}")
 func count = (...int nums, out int) => nums.length
 Console.write("\\{count()}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("variadic_zero_args", result, "0");
+		await build_and_check_output(input, "variadic_zero_args", "0");
 	});
 
 	test("variadic with single arg", async () => {
@@ -48,10 +40,7 @@ func first = (...int nums, out int) {
 }
 Console.write("\\{first(42)}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("variadic_single_arg", result, "42");
+		await build_and_check_output(input, "variadic_single_arg", "42");
 	});
 
 	test("variadic mixed with fixed params", async () => {
@@ -67,10 +56,7 @@ func add_to = (int base, ...int nums, out int) {
 }
 Console.write("\\{add_to(10, 1, 2, 3)}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("variadic_mixed", result, "16");
+		await build_and_check_output(input, "variadic_mixed", "16");
 	});
 
 	test("variadic string params", async () => {
@@ -79,10 +65,7 @@ func count_strings = (...string items, out int) => items.length
 var n = count_strings("a", "b", "c")
 Console.write("\\{n}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("variadic_strings", result, "3");
+		await build_and_check_output(input, "variadic_strings", "3");
 	});
 });
 

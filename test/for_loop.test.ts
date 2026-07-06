@@ -1,8 +1,7 @@
 import { expect, describe, test } from "vite-plus/test";
 
-import build from "../src/build";
 import parse from "../src/parse";
-import check_output from "./check_output";
+import build_and_check_output from "./build_and_check_output";
 import parse_with_imports from "./parse_with_imports";
 import test_error from "./test_error";
 
@@ -16,11 +15,7 @@ for n of nums {
 }
 Console.write("\\n")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("for_loop_array", result, "123\n");
+		await build_and_check_output(input, "for_loop_array", "123\n");
 	});
 
 	test("for loop with range", async () => {
@@ -30,11 +25,7 @@ for i of 0..3 {
 }
 Console.write("\\n")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("for_loop_range", result, "012\n");
+		await build_and_check_output(input, "for_loop_range", "012\n");
 	});
 
 	test("for loop with sum calculation", async () => {
@@ -46,11 +37,7 @@ for n of nums {
 }
 Console.write("\\{sum}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("for_loop_sum_calculation", result, "15");
+		await build_and_check_output(input, "for_loop_sum_calculation", "15");
 	});
 
 	test("for loop with multiplication", async () => {
@@ -62,11 +49,7 @@ for n of nums {
 }
 Console.write("\\{product}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("for_loop_multiplication", result, "24");
+		await build_and_check_output(input, "for_loop_multiplication", "24");
 	});
 
 	test("for loop with condition in body", async () => {
@@ -80,11 +63,7 @@ for n of nums {
 }
 Console.write("\\{count}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("for_loop_condition_body", result, "3");
+		await build_and_check_output(input, "for_loop_condition_body", "3");
 	});
 
 	test("for loop with single element", async () => {
@@ -94,11 +73,7 @@ for n of nums {
   Console.write("\\{n}")
 }
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("for_loop_single_element", result, "42");
+		await build_and_check_output(input, "for_loop_single_element", "42");
 	});
 
 	test("for loop with nested loops", async () => {
@@ -113,11 +88,7 @@ for r of rows {
 }
 Console.write("\\{total}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("for_loop_nested", result, "21");
+		await build_and_check_output(input, "for_loop_nested", "21");
 	});
 
 	test("for loop with index calculation", async () => {
@@ -129,11 +100,7 @@ for i of 0..3 {
 }
 Console.write("\\{total}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("for_loop_index_calculation", result, "60");
+		await build_and_check_output(input, "for_loop_index_calculation", "60");
 	});
 
 	test("for loop with decrement", async () => {
@@ -144,11 +111,7 @@ for i of 0..5 {
 }
 Console.write("\\{count}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("for_loop_decrement", result, "0");
+		await build_and_check_output(input, "for_loop_decrement", "0");
 	});
 
 	test("for loop with array access", async () => {
@@ -160,11 +123,7 @@ for i of 0..3 {
 }
 Console.write("\\{sum}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("for_loop_array_access", result, "600");
+		await build_and_check_output(input, "for_loop_array_access", "600");
 	});
 
 	test("for loop with comparison", async () => {
@@ -178,11 +137,7 @@ for n of nums {
 }
 Console.write("\\{max}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("for_loop_comparison", result, "7");
+		await build_and_check_output(input, "for_loop_comparison", "7");
 	});
 
 	test("for loop with modulo", async () => {
@@ -196,11 +151,7 @@ for n of nums {
 }
 Console.write("\\{sum}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("for_loop_modulo", result, "6");
+		await build_and_check_output(input, "for_loop_modulo", "6");
 	});
 
 	test("for loop with simple assignment in update", async () => {
@@ -213,11 +164,7 @@ for n of nums; i += 1 {
 }
 Console.write("\\{sum}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("for_loop_post_assignment", result, "9");
+		await build_and_check_output(input, "for_loop_post_assignment", "9");
 	});
 
 	test("for loop with range and update", async () => {
@@ -229,12 +176,8 @@ for n of 0..5; i += 2 {
 }
 Console.write("\\{sum}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
 		// 0 + 0 + 2 + 4 + 6 + 8
-		await check_output("for_loop_range_update", result, "20");
+		await build_and_check_output(input, "for_loop_range_update", "20");
 	});
 
 	test("for loop with update and condition", async () => {
@@ -249,12 +192,8 @@ for n of nums; i += 1 {
 }
 Console.write("\\{sum}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
 		// 0 + 0 + 0 + 1 + 3 + 2 + 6 + 3 + 9 + 4 + 12
-		await check_output("for_loop_update_condition", result, "10");
+		await build_and_check_output(input, "for_loop_update_condition", "10");
 	});
 
 	test("for loop with update accessing outer variable", async () => {
@@ -268,12 +207,8 @@ for n of nums; i += multiplier {
 }
 Console.write("\\{sum}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
 		// 0 + 1 + 0 + 2 + 2 + 3 + 4
-		await check_output("for_loop_update_outer_var", result, "12");
+		await build_and_check_output(input, "for_loop_update_outer_var", "12");
 	});
 
 	test("for loop with side effect in update", async () => {
@@ -285,11 +220,7 @@ for n of nums; counter += 1 {
 }
 Console.write("\\n")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("for_loop_update_side_effect", result, "1 2 3 \n");
+		await build_and_check_output(input, "for_loop_update_side_effect", "1 2 3 \n");
 	});
 
 	test("update with compound operator on range", async () => {
@@ -301,12 +232,8 @@ for n of 0..5; i += 3 {
 }
 Console.write("\\{sum}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
 		// 0 + 0 + 0 + 1 + 3 + 2 + 6 + 3 + 9 + 4 + 12
-		await check_output("for_loop_range_compound_update", result, "40");
+		await build_and_check_output(input, "for_loop_range_compound_update", "40");
 	});
 });
 

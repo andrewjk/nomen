@@ -1,9 +1,7 @@
 import { expect, describe, test } from "vite-plus/test";
 
-import build from "../src/build";
 import parse from "../src/parse";
-import check_output from "./check_output";
-import parse_with_imports from "./parse_with_imports";
+import build_and_check_output from "./build_and_check_output";
 import test_error from "./test_error";
 
 // BUILD
@@ -16,11 +14,7 @@ if x > 5 {
 }
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("if_else_if_statement", result, "15");
+		await build_and_check_output(input, "if_else_if_statement", "15");
 	});
 
 	test("if else statement", async () => {
@@ -33,11 +27,7 @@ if x > 5 {
 }
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("if_else_if_else_statement", result, "15");
+		await build_and_check_output(input, "if_else_if_else_statement", "15");
 	});
 
 	test("if else expression", async () => {
@@ -50,11 +40,7 @@ const y = if x > 5 {
 }
 Console.write("\\{y}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("if_else_if_else_expression", result, "50");
+		await build_and_check_output(input, "if_else_if_else_expression", "50");
 	});
 
 	test("if else expression with arrows", async () => {
@@ -67,11 +53,7 @@ const y = if x > 5 {
 }
 Console.write("\\{y}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("if_else_if_else_expression", result, "50");
+		await build_and_check_output(input, "if_else_if_else_expression", "50");
 	});
 
 	test("medium if else expression", async () => {
@@ -80,11 +62,7 @@ const x = 10
 const y = if x > 5 let 50 else let 0
 Console.write("\\{y}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("if_else_medium_if_else_expression", result, "50");
+		await build_and_check_output(input, "if_else_medium_if_else_expression", "50");
 	});
 
 	test("medium if else expression with statements", async () => {
@@ -93,11 +71,7 @@ const x = 10
 const y = if x > 5 let (x + 1) else let x - 1
 Console.write("\\{y}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("if_else_if_else_short_expression", result, "11");
+		await build_and_check_output(input, "if_else_if_else_short_expression", "11");
 	});
 
 	test("short if else expression", async () => {
@@ -106,11 +80,7 @@ const x = 10
 const y = if x > 5 -> 50 else -> 0
 Console.write("\\{y}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("if_else_short_if_else_expression", result, "50");
+		await build_and_check_output(input, "if_else_short_if_else_expression", "50");
 	});
 
 	test("short if else expression with statements", async () => {
@@ -119,11 +89,7 @@ const x = 10
 const y = if x > 5 -> x + 1 else -> (x - 1)
 Console.write("\\{y}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("if_else_if_else_short_expression", result, "11");
+		await build_and_check_output(input, "if_else_if_else_short_expression", "11");
 	});
 
 	test("nested if/else", async () => {
@@ -141,11 +107,7 @@ if x > 5 {
 }
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("if_else_nested", result, "15");
+		await build_and_check_output(input, "if_else_nested", "15");
 	});
 
 	test("less than", async () => {
@@ -156,11 +118,7 @@ if x < 5 {
 }
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("if_else_less_than", result, "10");
+		await build_and_check_output(input, "if_else_less_than", "10");
 	});
 
 	test("less than or equal", async () => {
@@ -171,11 +129,7 @@ if x <= 5 {
 }
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("if_else_less_than_equal", result, "10");
+		await build_and_check_output(input, "if_else_less_than_equal", "10");
 	});
 
 	test("greater than or equal", async () => {
@@ -186,11 +140,7 @@ if x >= 10 {
 }
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("if_else_greater_than_equal", result, "20");
+		await build_and_check_output(input, "if_else_greater_than_equal", "20");
 	});
 
 	test("equal", async () => {
@@ -201,11 +151,7 @@ if x == 5 {
 }
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("if_else_equal", result, "10");
+		await build_and_check_output(input, "if_else_equal", "10");
 	});
 
 	test("not equal", async () => {
@@ -216,11 +162,7 @@ if x != 3 {
 }
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("if_else_not_equal", result, "10");
+		await build_and_check_output(input, "if_else_not_equal", "10");
 	});
 
 	test("let in if, -> in else", async () => {
@@ -229,11 +171,7 @@ const x = 10
 const y = if x > 5 { let 50 } else { -> 0 }
 Console.write("\\{y}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("if_else_let_arrow_mixed", result, "50");
+		await build_and_check_output(input, "if_else_let_arrow_mixed", "50");
 	});
 
 	test("if else expression with false", async () => {
@@ -242,11 +180,7 @@ const x = 3
 const y = if x > 5 let 50 else let 0
 Console.write("\\{y}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("if_else_expression_false", result, "0");
+		await build_and_check_output(input, "if_else_expression_false", "0");
 	});
 
 	test("if else expression with parentheses", async () => {
@@ -255,11 +189,7 @@ const x = 10
 const y = if (x > 5) -> 50 else -> 0
 Console.write("\\{y}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("if_else_expression_parens", result, "50");
+		await build_and_check_output(input, "if_else_expression_parens", "50");
 	});
 });
 

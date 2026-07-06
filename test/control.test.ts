@@ -2,7 +2,7 @@ import { expect, describe, test } from "vite-plus/test";
 
 import build from "../src/build";
 import parse from "../src/parse";
-import check_output from "./check_output";
+import build_and_check_output from "./build_and_check_output";
 import parse_with_imports from "./parse_with_imports";
 import test_error from "./test_error";
 
@@ -16,10 +16,7 @@ if true {
 }
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("control_if_true", result, "1");
+		await build_and_check_output(input, "control_if_true", "1");
 	});
 
 	test("if false", async () => {
@@ -30,10 +27,7 @@ if false {
 }
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("control_if_false", result, "0");
+		await build_and_check_output(input, "control_if_false", "0");
 	});
 
 	test("if else true", async () => {
@@ -46,10 +40,7 @@ if true {
 }
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("control_if_else_true", result, "1");
+		await build_and_check_output(input, "control_if_else_true", "1");
 	});
 
 	test("if else false", async () => {
@@ -62,10 +53,7 @@ if false {
 }
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("control_if_else_false", result, "2");
+		await build_and_check_output(input, "control_if_else_false", "2");
 	});
 
 	test("if with condition", async () => {
@@ -77,10 +65,7 @@ if a > 3 {
 }
 Console.write("\\{result}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("control_if_condition", result, "1");
+		await build_and_check_output(input, "control_if_condition", "1");
 	});
 
 	test("if else with condition", async () => {
@@ -94,10 +79,7 @@ if a > 3 {
 }
 Console.write("\\{result}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("control_if_else_condition", result, "2");
+		await build_and_check_output(input, "control_if_else_condition", "2");
 	});
 
 	test("for loop with break", async () => {
@@ -111,10 +93,7 @@ for i of 0..10 {
 }
 Console.write("\\{sum}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("control_for_break", result, "10");
+		await build_and_check_output(input, "control_for_break", "10");
 	});
 
 	test("for loop with continue", async () => {
@@ -128,10 +107,7 @@ for i of 0..5 {
 }
 Console.write("\\{sum}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("control_for_continue", result, "8");
+		await build_and_check_output(input, "control_for_continue", "8");
 	});
 
 	test("while loop", async () => {
@@ -144,10 +120,7 @@ while x < 5 {
 }
 Console.write("\\{count}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("control_while", result, "5");
+		await build_and_check_output(input, "control_while", "5");
 	});
 
 	test("while loop with break", async () => {
@@ -161,10 +134,7 @@ while true {
 }
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("control_while_break", result, "3");
+		await build_and_check_output(input, "control_while_break", "3");
 	});
 
 	test("while loop with update clause", async () => {
@@ -176,10 +146,7 @@ while x < 5; x = x + 1 {
 }
 Console.write("\\{sum}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("control_while_update", result, "10");
+		await build_and_check_output(input, "control_while_update", "10");
 	});
 
 	test("for loop iterating array", async () => {
@@ -191,10 +158,7 @@ for item of arr {
 }
 Console.write("\\{sum}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("control_for_array", result, "60");
+		await build_and_check_output(input, "control_for_array", "60");
 	});
 
 	test("for loop with index array access", async () => {
@@ -206,10 +170,7 @@ for i of 0..3 {
 }
 Console.write("\\{sum}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("control_for_index_array", result, "60");
+		await build_and_check_output(input, "control_for_index_array", "60");
 	});
 
 	test("nested loops", async () => {
@@ -222,10 +183,7 @@ for i of 0..3 {
 }
 Console.write("\\{count}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("control_nested_loops", result, "6");
+		await build_and_check_output(input, "control_nested_loops", "6");
 	});
 
 	test("if else with comparison operators", async () => {
@@ -245,10 +203,7 @@ if 3 == 3 {
 }
 Console.write("\\{result}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("control_comparisons", result, "4");
+		await build_and_check_output(input, "control_comparisons", "4");
 	});
 
 	test("logical operators in conditions", async () => {
@@ -268,10 +223,7 @@ if false || false {
 }
 Console.write("\\{result}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("control_logical_ops", result, "2");
+		await build_and_check_output(input, "control_logical_ops", "2");
 	});
 
 	test("panic outputs message", () => {

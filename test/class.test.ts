@@ -1,8 +1,6 @@
-import { describe, expect, test } from "vite-plus/test";
+import { describe, test } from "vite-plus/test";
 
-import build from "../src/build";
-import check_output from "./check_output";
-import parse_with_imports from "./parse_with_imports";
+import build_and_check_output from "./build_and_check_output";
 
 describe("class build", () => {
 	test("class basic construction and field access", async () => {
@@ -15,10 +13,7 @@ class Point {
 var p = Point(1, 2)
 Console.write("\\{p.x},\\{p.y}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("class_basic", result, "1,2");
+		await build_and_check_output(input, "class_basic", "1,2");
 	});
 
 	test("class method call", async () => {
@@ -37,10 +32,7 @@ c.increment()
 c.increment()
 Console.write("\\{c.count}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("class_method", result, "3");
+		await build_and_check_output(input, "class_method", "3");
 	});
 
 	test("class assignment shares reference", async () => {
@@ -55,10 +47,7 @@ var q = p
 q.x = 99
 Console.write("\\{p.x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("class_shared", result, "99");
+		await build_and_check_output(input, "class_shared", "99");
 	});
 
 	test("class as function parameter", async () => {
@@ -76,10 +65,7 @@ var p = Point(42, 7)
 var result = getX(p)
 Console.write("\\{result}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("class_param", result, "42");
+		await build_and_check_output(input, "class_param", "42");
 	});
 
 	test("class with destroy", async () => {
@@ -100,10 +86,7 @@ var r = Resource(42)
 var v = getValue(r)
 Console.write("\\{v}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("class_destroy", result, "42");
+		await build_and_check_output(input, "class_destroy", "42");
 	});
 
 	test("class field assignment", async () => {
@@ -118,9 +101,6 @@ p.x = 10
 p.y = 20
 Console.write("\\{p.x},\\{p.y}\\n")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("class_field_assign", result, "10,20");
+		await build_and_check_output(input, "class_field_assign", "10,20");
 	});
 });

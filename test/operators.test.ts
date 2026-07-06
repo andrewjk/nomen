@@ -1,9 +1,7 @@
 import { expect, describe, test } from "vite-plus/test";
 
-import build from "../src/build";
 import parse from "../src/parse";
-import check_output from "./check_output";
-import parse_with_imports from "./parse_with_imports";
+import build_and_check_output from "./build_and_check_output";
 import test_error from "./test_error";
 
 // BUILD
@@ -22,10 +20,7 @@ const p2 = Point(3, 4)
 const p3 = p1 + p2
 Console.write("\\{p3.x} \\{p3.y}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("op_add_struct", result, "4 6");
+		await build_and_check_output(input, "op_add_struct", "4 6");
 	});
 
 	test("multiply operator on struct", async () => {
@@ -41,10 +36,7 @@ const p1 = Point(2, 3)
 const p2 = p1 * 4
 Console.write("\\{p2.x} \\{p2.y}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("op_mul_struct", result, "8 12");
+		await build_and_check_output(input, "op_mul_struct", "8 12");
 	});
 });
 

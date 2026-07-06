@@ -1,7 +1,6 @@
 import { expect, describe, test } from "vite-plus/test";
 
-import build from "../src/build";
-import check_output from "./check_output";
+import build_and_check_output from "./build_and_check_output";
 import parse_with_imports from "./parse_with_imports";
 
 // BUILD
@@ -11,10 +10,7 @@ describe("operations build", () => {
 const x = 5 + 3
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("operations_addition", result, "8");
+		await build_and_check_output(input, "operations_addition", "8");
 	});
 
 	test("subtraction", async () => {
@@ -22,10 +18,7 @@ Console.write("\\{x}")
 const x = 10 - 3
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("operations_subtraction", result, "7");
+		await build_and_check_output(input, "operations_subtraction", "7");
 	});
 
 	test("multiplication", async () => {
@@ -33,10 +26,7 @@ Console.write("\\{x}")
 const x = 4 * 3
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("operations_multiplication", result, "12");
+		await build_and_check_output(input, "operations_multiplication", "12");
 	});
 
 	test("division", async () => {
@@ -44,10 +34,7 @@ Console.write("\\{x}")
 const x = 10 / 2
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("operations_division", result, "5");
+		await build_and_check_output(input, "operations_division", "5");
 	});
 
 	test("modulo", async () => {
@@ -55,10 +42,7 @@ Console.write("\\{x}")
 const x = 10 % 3
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("operations_modulo", result, "1");
+		await build_and_check_output(input, "operations_modulo", "1");
 	});
 
 	test("operator precedence", async () => {
@@ -66,10 +50,7 @@ Console.write("\\{x}")
 const x = 1 + 2 * 3
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("operations_precedence", result, "7");
+		await build_and_check_output(input, "operations_precedence", "7");
 	});
 
 	test("grouped precedence", async () => {
@@ -77,10 +58,7 @@ Console.write("\\{x}")
 const x = (1 + 2) * 3
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("operations_grouped", result, "9");
+		await build_and_check_output(input, "operations_grouped", "9");
 	});
 
 	test("negative numbers in operations", async () => {
@@ -88,10 +66,7 @@ Console.write("\\{x}")
 const x = -5 + 3
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("operations_negative", result, "-2");
+		await build_and_check_output(input, "operations_negative", "-2");
 	});
 
 	test("multiple operations in expression", async () => {
@@ -99,10 +74,7 @@ Console.write("\\{x}")
 const x = 2 + 3 * 4 - 5 / 5
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("operations_multiple", result, "13");
+		await build_and_check_output(input, "operations_multiple", "13");
 	});
 
 	test("operations with variables", async () => {
@@ -112,10 +84,7 @@ const b = 3
 const c = a + b
 Console.write("\\{c}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("operations_variables", result, "8");
+		await build_and_check_output(input, "operations_variables", "8");
 	});
 
 	test("operations in assignment", async () => {
@@ -124,10 +93,7 @@ var x = 0
 x = x + 1
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("operations_assignment", result, "1");
+		await build_and_check_output(input, "operations_assignment", "1");
 	});
 
 	test("compound addition", async () => {
@@ -136,10 +102,7 @@ var x = 5
 x += 3
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("operations_compound_add", result, "8");
+		await build_and_check_output(input, "operations_compound_add", "8");
 	});
 
 	test("compound subtraction", async () => {
@@ -148,10 +111,7 @@ var x = 10
 x -= 3
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("operations_compound_sub", result, "7");
+		await build_and_check_output(input, "operations_compound_sub", "7");
 	});
 
 	test("compound multiplication", async () => {
@@ -160,10 +120,7 @@ var x = 4
 x *= 3
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("operations_compound_mul", result, "12");
+		await build_and_check_output(input, "operations_compound_mul", "12");
 	});
 
 	test("series of operations", async () => {
@@ -171,10 +128,7 @@ Console.write("\\{x}")
 const x = 1 + 2 - 3 + 4
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("operations_series", result, "4");
+		await build_and_check_output(input, "operations_series", "4");
 	});
 
 	test("operations in function call", async () => {
@@ -186,10 +140,7 @@ func add = (int a, int b, out int) {
 const result = add(5, 3)
 Console.write("\\{result}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("operations_function", result, "8");
+		await build_and_check_output(input, "operations_function", "8");
 	});
 
 	test("operations with zero", async () => {
@@ -197,10 +148,7 @@ Console.write("\\{result}")
 const x = 5 + 0
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("operations_zero", result, "5");
+		await build_and_check_output(input, "operations_zero", "5");
 	});
 
 	test("large number operations", async () => {
@@ -208,10 +156,7 @@ Console.write("\\{x}")
 const x = 1000000 + 2000000
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("operations_large", result, "3000000");
+		await build_and_check_output(input, "operations_large", "3000000");
 	});
 });
 
@@ -224,10 +169,7 @@ if x > 3 && x < 7 {
 }
 Console.write("\\{result}")
 `;
-	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("op_and_both_true", result, "1");
+	await build_and_check_output(input, "op_and_both_true", "1");
 });
 
 test("comparison with && (one false)", async () => {
@@ -239,10 +181,7 @@ if x > 3 && x < 7 {
 }
 Console.write("\\{result}")
 `;
-	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("op_and_one_false", result, "0");
+	await build_and_check_output(input, "op_and_one_false", "0");
 });
 
 test("comparison with || (both false)", async () => {
@@ -254,10 +193,7 @@ if x > 3 || x < 1 {
 }
 Console.write("\\{result}")
 `;
-	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("op_or_both_false", result, "0");
+	await build_and_check_output(input, "op_or_both_false", "0");
 });
 
 test("comparison with || (one true)", async () => {
@@ -269,10 +205,7 @@ if x > 3 || x < 7 {
 }
 Console.write("\\{result}")
 `;
-	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("op_or_one_true", result, "1");
+	await build_and_check_output(input, "op_or_one_true", "1");
 });
 
 test("chained && and ||", async () => {
@@ -284,10 +217,7 @@ if x > 0 && x < 10 || x == 20 {
 }
 Console.write("\\{result}")
 `;
-	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("op_chained_and_or", result, "1");
+	await build_and_check_output(input, "op_chained_and_or", "1");
 });
 
 test("equality with &&", async () => {
@@ -299,10 +229,7 @@ if x == 5 && x != 3 {
 }
 Console.write("\\{result}")
 `;
-	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("op_equality_and", result, "1");
+	await build_and_check_output(input, "op_equality_and", "1");
 });
 
 test(">= and <= with &&", async () => {
@@ -314,10 +241,7 @@ if x >= 5 && x <= 5 {
 }
 Console.write("\\{result}")
 `;
-	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("op_gte_lte_and", result, "1");
+	await build_and_check_output(input, "op_gte_lte_and", "1");
 });
 
 test("arithmetic with comparison and &&", async () => {
@@ -329,10 +253,7 @@ if x + 1 > 3 && x - 1 < 7 {
 }
 Console.write("\\{result}")
 `;
-	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("op_arith_cmp_and", result, "1");
+	await build_and_check_output(input, "op_arith_cmp_and", "1");
 });
 
 // ERRORS

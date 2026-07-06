@@ -1,9 +1,7 @@
 import { expect, describe, test } from "vite-plus/test";
 
-import build from "../src/build";
 import parse from "../src/parse";
-import check_output from "./check_output";
-import parse_with_imports from "./parse_with_imports";
+import build_and_check_output from "./build_and_check_output";
 import test_error from "./test_error";
 
 // BUILD
@@ -14,10 +12,7 @@ var int x
 x = 5
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("assign_to_var", result, "5");
+		await build_and_check_output(input, "assign_to_var", "5");
 	});
 
 	test("single assignment to const", async () => {
@@ -26,10 +21,7 @@ const int x
 x = 5
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("assign_to_const", result, "5");
+		await build_and_check_output(input, "assign_to_const", "5");
 	});
 
 	test("conditional assignment to const", async () => {
@@ -42,10 +34,7 @@ if true {
 }
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("assign_conditional_const", result, "5");
+		await build_and_check_output(input, "assign_conditional_const", "5");
 	});
 
 	test("conditional assignment to const false branch", async () => {
@@ -58,10 +47,7 @@ if false {
 }
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("assign_conditional_const_false", result, "10");
+		await build_and_check_output(input, "assign_conditional_const_false", "10");
 	});
 
 	test("assignment to var param", async () => {
@@ -73,10 +59,7 @@ func add_five = (var int x, out int) {
 const result = add_five(10)
 Console.write("\\{result}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("assign_var_param", result, "15");
+		await build_and_check_output(input, "assign_var_param", "15");
 	});
 
 	test("assignment with addition", async () => {
@@ -85,10 +68,7 @@ var x = 10
 x = x + 5
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("assign_addition", result, "15");
+		await build_and_check_output(input, "assign_addition", "15");
 	});
 
 	test("assignment with subtraction", async () => {
@@ -97,10 +77,7 @@ var x = 20
 x = x - 8
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("assign_subtraction", result, "12");
+		await build_and_check_output(input, "assign_subtraction", "12");
 	});
 
 	test("assignment with multiplication", async () => {
@@ -109,10 +86,7 @@ var x = 6
 x = x * 7
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("assign_multiplication", result, "42");
+		await build_and_check_output(input, "assign_multiplication", "42");
 	});
 
 	test("reassign var multiple times", async () => {
@@ -122,10 +96,7 @@ x = 2
 x = 3
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("assign_multiple", result, "3");
+		await build_and_check_output(input, "assign_multiple", "3");
 	});
 
 	test("reassign var with expression from other var", async () => {
@@ -135,10 +106,7 @@ var b = 20
 a = b + a
 Console.write("\\{a}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("assign_expr_other_var", result, "30");
+		await build_and_check_output(input, "assign_expr_other_var", "30");
 	});
 
 	test("assignment in if block", async () => {
@@ -149,10 +117,7 @@ if true {
 }
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("assign_in_if", result, "15");
+		await build_and_check_output(input, "assign_in_if", "15");
 	});
 
 	test("assignment in else block", async () => {
@@ -165,10 +130,7 @@ if false {
 }
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("assign_in_else", result, "25");
+		await build_and_check_output(input, "assign_in_else", "25");
 	});
 
 	test("var string assignment", async () => {
@@ -177,10 +139,7 @@ var name = "hello"
 name = "world"
 Console.write("\\{name}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("assign_string", result, "world");
+		await build_and_check_output(input, "assign_string", "world");
 	});
 
 	test("assignment with negative value", async () => {
@@ -189,10 +148,7 @@ var x = 10
 x = -3
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("assign_negative", result, "-3");
+		await build_and_check_output(input, "assign_negative", "-3");
 	});
 
 	test("assignment in loop", async () => {
@@ -203,10 +159,7 @@ for i of 0..5 {
 }
 Console.write("\\{total}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("assign_in_loop", result, "10");
+		await build_and_check_output(input, "assign_in_loop", "10");
 	});
 
 	test("const set in both branches then used", async () => {
@@ -219,10 +172,7 @@ if false {
 }
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("assign_const_both_branches", result, "200");
+		await build_and_check_output(input, "assign_const_both_branches", "200");
 	});
 });
 

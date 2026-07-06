@@ -1,8 +1,6 @@
-import { expect, describe, test } from "vite-plus/test";
+import { describe, test } from "vite-plus/test";
 
-import build from "../src/build";
-import check_output from "./check_output";
-import parse_with_imports from "./parse_with_imports";
+import build_and_check_output from "./build_and_check_output";
 
 // Mirrors the binarytrees benchmark using the arena Tree (single flat Buffer +
 // int child indices) instead of `mov`-owned node pointers. Same shape of work
@@ -40,9 +38,6 @@ while i < 20 {
 }
 Console.write("root=\\{root_count} loop=\\{total}\\n")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("arena_binarytrees", result, "root=15 loop=140\n");
+		await build_and_check_output(input, "arena_binarytrees", "root=15 loop=140\n");
 	});
 });

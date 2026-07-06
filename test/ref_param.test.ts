@@ -1,8 +1,6 @@
-import { expect, describe, test } from "vite-plus/test";
+import { describe, test } from "vite-plus/test";
 
-import build from "../src/build";
-import check_output from "./check_output";
-import parse_with_imports from "./parse_with_imports";
+import build_and_check_output from "./build_and_check_output";
 
 // BUILD
 describe("ref param dereference", () => {
@@ -15,10 +13,7 @@ func read_ref = (ref int x, out int) {
 var int num = 42
 Console.write("\\{read_ref(ref num)}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("ref_param_read", result, "42");
+		await build_and_check_output(input, "ref_param_read", "42");
 	});
 
 	test("ref int param used in comparison", async () => {
@@ -36,10 +31,7 @@ func count_up = (ref int limit, out int) {
 var int n = 5
 Console.write("\\{count_up(ref n)}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("ref_param_comparison", result, "5");
+		await build_and_check_output(input, "ref_param_comparison", "5");
 	});
 
 	test("ref int param used in arithmetic", async () => {
@@ -51,10 +43,7 @@ func add_one = (ref int x, out int) {
 var int num = 10
 Console.write("\\{add_one(ref num)}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("ref_param_arithmetic", result, "11");
+		await build_and_check_output(input, "ref_param_arithmetic", "11");
 	});
 
 	test("writing to ref int param modifies caller variable", async () => {
@@ -67,10 +56,7 @@ var int num = 1
 set_val(ref num)
 Console.write("\\{num}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("ref_param_write", result, "99");
+		await build_and_check_output(input, "ref_param_write", "99");
 	});
 
 	test("multiple ref params read correctly", async () => {
@@ -85,9 +71,6 @@ var int x = 3
 var int y = 7
 Console.write("\\{swap_check(ref x, ref y)}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("ref_param_multiple", result, "10");
+		await build_and_check_output(input, "ref_param_multiple", "10");
 	});
 });

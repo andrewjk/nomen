@@ -1,9 +1,7 @@
 import { expect, describe, test } from "vite-plus/test";
 
-import build from "../src/build";
 import parse from "../src/parse";
-import check_output from "./check_output";
-import parse_with_imports from "./parse_with_imports";
+import build_and_check_output from "./build_and_check_output";
 import test_error from "./test_error";
 
 // BUILD
@@ -14,11 +12,7 @@ var int8 x = 5
 var int y = x as int
 Console.write("\\{y}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("cast_int8_int", result, "5");
+		await build_and_check_output(input, "cast_int8_int", "5");
 	});
 
 	test("uint8 to int widening", async () => {
@@ -27,11 +21,7 @@ var uint8 x = 200
 var int y = x as int
 Console.write("\\{y}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("cast_uint8_int", result, "200");
+		await build_and_check_output(input, "cast_uint8_int", "200");
 	});
 
 	test("int to int8 truncation", async () => {
@@ -40,11 +30,7 @@ var int x = 258
 var int8 y = x as int8
 Console.write("\\{y}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("cast_int_int8", result, "2");
+		await build_and_check_output(input, "cast_int_int8", "2");
 	});
 
 	test("int to uint8 truncation", async () => {
@@ -53,11 +39,7 @@ var int x = 300
 var uint8 y = x as uint8
 Console.write("\\{y}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("cast_int_uint8", result, "44");
+		await build_and_check_output(input, "cast_int_uint8", "44");
 	});
 
 	test("int16 to int widening", async () => {
@@ -66,11 +48,7 @@ var int16 x = 1000
 var int y = x as int
 Console.write("\\{y}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("cast_int16_int", result, "1000");
+		await build_and_check_output(input, "cast_int16_int", "1000");
 	});
 
 	test("same type cast is no-op", async () => {
@@ -79,11 +57,7 @@ var int x = 42
 var int y = x as int
 Console.write("\\{y}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("cast_same_type", result, "42");
+		await build_and_check_output(input, "cast_same_type", "42");
 	});
 
 	test("cast in expression", async () => {
@@ -92,11 +66,7 @@ var int8 x = 10
 var int y = (x as int) + 5
 Console.write("\\{y}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("cast_in_expr", result, "15");
+		await build_and_check_output(input, "cast_in_expr", "15");
 	});
 
 	test("cast with declaration value", async () => {
@@ -105,11 +75,7 @@ var int8 x = 100
 const y = x as int
 Console.write("\\{y}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("cast_decl_value", result, "100");
+		await build_and_check_output(input, "cast_decl_value", "100");
 	});
 
 	test("uint to int cast", async () => {
@@ -118,11 +84,7 @@ var uint x = 42
 var int y = x as int
 Console.write("\\{y}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("cast_uint_int", result, "42");
+		await build_and_check_output(input, "cast_uint_int", "42");
 	});
 
 	test("int8 negative widening", async () => {
@@ -131,11 +93,7 @@ var int8 x = -1
 var int y = x as int
 Console.write("\\{y}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("cast_int8_neg", result, "-1");
+		await build_and_check_output(input, "cast_int8_neg", "-1");
 	});
 
 	test("cast in function", async () => {
@@ -147,11 +105,7 @@ var int8 x = 7
 const y = convert(x)
 Console.write("\\{y}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("cast_in_func", result, "7");
+		await build_and_check_output(input, "cast_in_func", "7");
 	});
 
 	test("chained cast", async () => {
@@ -161,11 +115,7 @@ var int y = x as int
 var int z2 = y as int
 Console.write("\\{z2}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("cast_chained", result, "5");
+		await build_and_check_output(input, "cast_chained", "5");
 	});
 });
 

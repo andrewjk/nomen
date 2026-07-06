@@ -1,7 +1,6 @@
 import { expect, describe, test } from "vite-plus/test";
 
-import build from "../src/build";
-import check_output from "./check_output";
+import build_and_check_output from "./build_and_check_output";
 import parse_with_imports from "./parse_with_imports";
 
 describe("use-after-move", () => {
@@ -111,10 +110,7 @@ func take = (mov Box x) {
 take(mov a)
 Console.write("\\{b.value}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("mov_use_other", result, "2");
+		await build_and_check_output(input, "mov_use_other", "2");
 	});
 
 	test("mov into struct then use other fields still works", async () => {
@@ -130,10 +126,7 @@ var Box b = Box(99)
 var Holder h = Holder(1, mov b)
 Console.write("\\{h.id}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("mov_struct_other_field", result, "1");
+		await build_and_check_output(input, "mov_struct_other_field", "1");
 	});
 
 	test("unused mov class param with owned field is reclaimed", async () => {
@@ -152,10 +145,7 @@ func take = (mov Holder x) {
 take(mov h)
 Console.write("\\{a.value}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("mov_param_owned_field", result, "1");
+		await build_and_check_output(input, "mov_param_owned_field", "1");
 	});
 
 	test("unused mov class param with empty body is reclaimed", async () => {
@@ -170,9 +160,6 @@ func take = (mov Box x) {
 take(mov a)
 Console.write("\\{b.value}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("mov_param_empty_body", result, "2");
+		await build_and_check_output(input, "mov_param_empty_body", "2");
 	});
 });

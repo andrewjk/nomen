@@ -1,8 +1,6 @@
-import { expect, describe, test } from "vite-plus/test";
+import { describe, test } from "vite-plus/test";
 
-import build from "../src/build";
-import check_output from "./check_output";
-import parse_with_imports from "./parse_with_imports";
+import build_and_check_output from "./build_and_check_output";
 
 describe("Set add and has", () => {
 	test("add single value and check has", async () => {
@@ -12,10 +10,7 @@ s.add(42)
 const bool has_it = s.has(42)
 Console.write("\\{has_it}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("set_add_single", result, "true");
+		await build_and_check_output(input, "set_add_single", "true");
 	});
 
 	test("has returns false for missing value", async () => {
@@ -25,10 +20,7 @@ s.add(1)
 const bool has_it = s.has(99)
 Console.write("\\{has_it}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("set_has_missing", result, "false");
+		await build_and_check_output(input, "set_has_missing", "false");
 	});
 
 	test("has on empty set returns false", async () => {
@@ -37,10 +29,7 @@ var Set<int> s = Set<int>()
 const bool has_it = s.has(1)
 Console.write("\\{has_it}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("set_has_empty", result, "false");
+		await build_and_check_output(input, "set_has_empty", "false");
 	});
 
 	test("add duplicate does not increase length", async () => {
@@ -51,10 +40,7 @@ s.add(5)
 s.add(5)
 Console.write("\\{s.length}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("set_add_dup", result, "1");
+		await build_and_check_output(input, "set_add_dup", "1");
 	});
 
 	test("add multiple distinct values", async () => {
@@ -69,10 +55,7 @@ const bool c = s.has(3)
 const bool d = s.has(4)
 Console.write("\\{a} \\{b} \\{c} \\{d} \\{s.length}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("set_add_multi", result, "true true true false 3");
+		await build_and_check_output(input, "set_add_multi", "true true true false 3");
 	});
 });
 
@@ -88,10 +71,7 @@ const bool b = s.has(16)
 const bool c = s.has(24)
 Console.write("\\{a} \\{b} \\{c} \\{s.length}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("set_collisions", result, "true true true 3");
+		await build_and_check_output(input, "set_collisions", "true true true 3");
 	});
 
 	test("add many values triggers rehash", async () => {
@@ -112,10 +92,7 @@ s.add(12)
 const bool has_all = s.has(1) && s.has(2) && s.has(3) && s.has(4) && s.has(5) && s.has(6) && s.has(7) && s.has(8) && s.has(9) && s.has(10) && s.has(11) && s.has(12)
 Console.write("\\{has_all} \\{s.length}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("set_rehash", result, "true 12");
+		await build_and_check_output(input, "set_rehash", "true 12");
 	});
 
 	test("negative values", async () => {
@@ -130,10 +107,7 @@ const bool c = s.has(-50)
 const bool d = s.has(1)
 Console.write("\\{a} \\{b} \\{c} \\{d}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("set_negative", result, "true true true false");
+		await build_and_check_output(input, "set_negative", "true true true false");
 	});
 
 	test("no false positives after rehash", async () => {
@@ -155,10 +129,7 @@ const bool has_35 = s.has(35)
 const bool has_99 = s.has(99)
 Console.write("\\{has_15} \\{has_25} \\{has_35} \\{has_99}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("set_no_false_pos", result, "false false false false");
+		await build_and_check_output(input, "set_no_false_pos", "false false false false");
 	});
 });
 
@@ -175,10 +146,7 @@ const bool b = s.has(2)
 const bool c = s.has(3)
 Console.write("\\{a} \\{b} \\{c} \\{s.length}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("set_remove", result, "true false true 2");
+		await build_and_check_output(input, "set_remove", "true false true 2");
 	});
 
 	test("remove non-existent value is no-op", async () => {
@@ -188,10 +156,7 @@ s.add(1)
 s.remove(99)
 Console.write("\\{s.has(1)} \\{s.length}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("set_remove_missing", result, "true 1");
+		await build_and_check_output(input, "set_remove_missing", "true 1");
 	});
 
 	test("remove then re-add works", async () => {
@@ -203,9 +168,6 @@ s.remove(1)
 s.add(1)
 Console.write("\\{s.has(1)} \\{s.has(2)} \\{s.length}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("set_remove_readd", result, "true true 2");
+		await build_and_check_output(input, "set_remove_readd", "true true 2");
 	});
 });

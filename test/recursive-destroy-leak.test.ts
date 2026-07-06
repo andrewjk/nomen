@@ -1,8 +1,6 @@
-import { expect, describe, test } from "vite-plus/test";
+import { describe, test } from "vite-plus/test";
 
-import build from "../src/build";
-import check_output from "./check_output";
-import parse_with_imports from "./parse_with_imports";
+import build_and_check_output from "./build_and_check_output";
 
 // KNOWN-FAILING leak test for the recursive-destroy bug.
 //
@@ -49,9 +47,6 @@ func check_tree = (TreeNode node, out int) {
 var TreeNode t = create_tree(3)
 Console.write("\\{check_tree(t)}\\n")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("recursive_destroy_leak", result, "15\n");
+		await build_and_check_output(input, "recursive_destroy_leak", "15\n");
 	});
 });

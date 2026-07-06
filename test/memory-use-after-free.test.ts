@@ -1,8 +1,6 @@
-import { expect, describe, test } from "vite-plus/test";
+import { describe, test } from "vite-plus/test";
 
-import build from "../src/build";
-import check_output from "./check_output";
-import parse_with_imports from "./parse_with_imports";
+import build_and_check_output from "./build_and_check_output";
 
 describe("memory UAF", () => {
 	test("struct with destroy: inner scope assigned to outer var", async () => {
@@ -22,10 +20,7 @@ if 1 == 1 {
 }
 Console.write("\\{c.count}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("uaf_struct_scope", result, "5");
+		await build_and_check_output(input, "uaf_struct_scope", "5");
 	});
 
 	test("struct alias with destroy copies fields correctly", async () => {
@@ -43,10 +38,7 @@ var Token b = a
 Console.write("\\{a.id}")
 Console.write("\\{b.id}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("uaf_struct_alias", result, "11");
+		await build_and_check_output(input, "uaf_struct_alias", "11");
 	});
 
 	test("class: inner scope assigned to outer var", async () => {
@@ -66,10 +58,7 @@ if 1 == 1 {
 }
 Console.write("\\{c.count}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("uaf_class_scope", result, "5");
+		await build_and_check_output(input, "uaf_class_scope", "5");
 	});
 
 	test("class alias with destroy copies fields correctly", async () => {
@@ -87,9 +76,6 @@ var Token b = a
 Console.write("\\{a.id}")
 Console.write("\\{b.id}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("uaf_class_alias", result, "11");
+		await build_and_check_output(input, "uaf_class_alias", "11");
 	});
 });

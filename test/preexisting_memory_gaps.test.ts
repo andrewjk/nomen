@@ -1,8 +1,6 @@
-import { expect, describe, test } from "vite-plus/test";
+import { describe, test } from "vite-plus/test";
 
-import build from "../src/build";
-import check_output from "./check_output";
-import parse_with_imports from "./parse_with_imports";
+import build_and_check_output from "./build_and_check_output";
 
 // Failing tests documenting pre-existing memory gaps (NOT nullable-specific).
 // These all leak and should be fixed eventually. The root cause for most is
@@ -19,10 +17,7 @@ func take = (Box x) {
 }
 take(Box(5))
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("gap_temp_nonmov_param", result, "5\n");
+		await build_and_check_output(input, "gap_temp_nonmov_param", "5\n");
 	});
 
 	test("class temporary passed to nullable non-mov param leaks", async () => {
@@ -37,10 +32,7 @@ func take = (Box? x) {
 }
 take(Box(5))
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("gap_temp_nullable_param", result, "5\n");
+		await build_and_check_output(input, "gap_temp_nullable_param", "5\n");
 	});
 
 	test("forwarding a non-mov param to another non-mov param leaks the temporary", async () => {
@@ -56,10 +48,7 @@ func outer = (Box y) {
 }
 outer(Box(5))
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("gap_forwarded_param", result, "5\n");
+		await build_and_check_output(input, "gap_forwarded_param", "5\n");
 	});
 
 	test("class temporary in a loop compounds leak", async () => {
@@ -79,10 +68,7 @@ func test = () {
 test()
 Console.write("done")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("gap_temp_loop", result, "done");
+		await build_and_check_output(input, "gap_temp_loop", "done");
 	});
 
 	test("?? eagerly evaluates fallback, leaking it when unused", async () => {
@@ -99,10 +85,7 @@ func test = () {
 }
 test()
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("gap_coalesce_eager", result, "5\n");
+		await build_and_check_output(input, "gap_coalesce_eager", "5\n");
 	});
 
 	test("class temporary field access leaks the instance", async () => {
@@ -115,10 +98,7 @@ func getV = (Box b, out int) {
 }
 Console.write_line("\\{getV(Box(5))}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("gap_temp_field_access", result, "5\n");
+		await build_and_check_output(input, "gap_temp_field_access", "5\n");
 	});
 
 	test("multiple class temporaries in one call all leak", async () => {
@@ -135,10 +115,7 @@ func test = () {
 test()
 Console.write("done")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("gap_multi_temp", result, "3\ndone");
+		await build_and_check_output(input, "gap_multi_temp", "3\ndone");
 	});
 
 	test("class temporary stored via field then owner leaks old", async () => {
@@ -163,9 +140,6 @@ func test = () {
 test()
 Console.write("done")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("gap_field_factory_reassign", result, "d0\nd1\nd2\ndone");
+		await build_and_check_output(input, "gap_field_factory_reassign", "d0\nd1\nd2\ndone");
 	});
 });

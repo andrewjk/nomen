@@ -1,7 +1,6 @@
 import { expect, describe, test } from "vite-plus/test";
 
-import build from "../src/build";
-import check_output from "./check_output";
+import build_and_check_output from "./build_and_check_output";
 import parse_with_imports from "./parse_with_imports";
 
 // Borrowed class references (from a field access, an intermediate variable, or
@@ -135,10 +134,7 @@ var Box b = h.c
 h = Holder(mov Box(2))
 Console.write("\\{b.v}\\n")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("defer_reassign_borrow", result, "1\n", { audit: true });
+		await build_and_check_output(input, "defer_reassign_borrow", "1\n");
 	});
 
 	test("class reassignment inside a loop keeps the live instance", async () => {
@@ -154,13 +150,10 @@ while i <= 5 {
 }
 Console.write("\\{h.c.v}\\n")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		// The replacement anchors in h's declaration frame, so it isn't freed
 		// at each iteration's scope exit; h holds the last value (5), audit
 		// balanced (old instances reclaimed at scope exit).
-		await check_output("defer_reassign_loop", result, "5\n", { audit: true });
+		await build_and_check_output(input, "defer_reassign_loop", "5\n");
 	});
 });
 
@@ -277,8 +270,6 @@ b = mov a swap List<int>()
 const int v = b.pop()
 Console.write("\\{v}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		await check_output("var_swap", build(parsed.root, { arch: "aarch64", audit: true }), "1");
+		await build_and_check_output(input, "var_swap", "1");
 	});
 });

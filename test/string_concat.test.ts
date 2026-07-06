@@ -1,8 +1,6 @@
-import { expect, describe, test } from "vite-plus/test";
+import { describe, test } from "vite-plus/test";
 
-import build from "../src/build";
-import check_output from "./check_output";
-import parse_with_imports from "./parse_with_imports";
+import build_and_check_output from "./build_and_check_output";
 
 // Runtime string concatenation. Literal + literal is constant-folded, but
 // concatenation involving variables or function results must run at runtime.
@@ -14,10 +12,7 @@ var string s = "hello"
 var string r = s + " world"
 Console.write(r)
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("concat_var_literal", result, "hello world");
+		await build_and_check_output(input, "concat_var_literal", "hello world");
 	});
 
 	test("concat two function results", async () => {
@@ -32,10 +27,7 @@ func nt = (int code, out string) {
 var string r = nt(0) + nt(1)
 Console.write(r)
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("concat_two_calls", result, "AC");
+		await build_and_check_output(input, "concat_two_calls", "AC");
 	});
 
 	test("concat reassigned in a loop", async () => {
@@ -48,10 +40,7 @@ while j < 5 {
 }
 Console.write(s)
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("concat_loop", result, "ababababab");
+		await build_and_check_output(input, "concat_loop", "ababababab");
 	});
 
 	test("concat chained and interleaved", async () => {
@@ -65,9 +54,6 @@ var string base = "x"
 var string r = base + nt(0) + "y" + nt(1)
 Console.write(r)
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("concat_chained", result, "xAyB");
+		await build_and_check_output(input, "concat_chained", "xAyB");
 	});
 });

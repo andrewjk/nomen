@@ -4,6 +4,8 @@ import build from "../src/build";
 import check_output from "./check_output";
 import parse_with_imports from "./parse_with_imports";
 
+const opts = { arch: "aarch64", audit: false } as const;
+
 describe("layout engine", () => {
 	test("single leaf gets its intrinsic size", async () => {
 		const input = `
@@ -16,7 +18,7 @@ Console.write(fmt(l, root) + "\\n")
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64" });
-		await check_output("layout_leaf", result, "{0,0 100x50}\n", { audit: false });
+		await check_output("layout_leaf", result, "{0,0 100x50}\n", opts);
 	});
 
 	test("leaf clamps to available space", async () => {
@@ -30,7 +32,7 @@ Console.write(fmt(l, root) + "\\n")
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64" });
-		await check_output("layout_clamp", result, "{0,0 200x100}\n", { audit: false });
+		await check_output("layout_clamp", result, "{0,0 200x100}\n", opts);
 	});
 
 	test("vstack stacks children vertically", async () => {
@@ -46,9 +48,7 @@ Console.write("a=" + fmt(l, a) + " b=" + fmt(l, b) + "\\n")
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64" });
-		await check_output("layout_vstack", result, "a={0,0 120x30} b={0,30 120x40}\n", {
-			audit: false,
-		});
+		await check_output("layout_vstack", result, "a={0,0 120x30} b={0,30 120x40}\n", opts);
 	});
 
 	test("vstack with spacing", async () => {
@@ -64,9 +64,7 @@ Console.write("a=" + fmt(l, a) + " b=" + fmt(l, b) + "\\n")
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64" });
-		await check_output("layout_vstack_spacing", result, "a={0,0 50x20} b={0,30 50x20}\n", {
-			audit: false,
-		});
+		await check_output("layout_vstack_spacing", result, "a={0,0 50x20} b={0,30 50x20}\n", opts);
 	});
 
 	test("hstack stacks children horizontally", async () => {
@@ -82,7 +80,7 @@ Console.write("a=" + fmt(l, a) + " b=" + fmt(l, b) + "\\n")
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64" });
-		await check_output("layout_hstack", result, "a={0,0 30x80} b={30,0 60x80}\n", { audit: false });
+		await check_output("layout_hstack", result, "a={0,0 30x80} b={30,0 60x80}\n", opts);
 	});
 
 	test("nested vstack inside hstack", async () => {
@@ -100,8 +98,11 @@ Console.write("a=" + fmt(l, a) + " b=" + fmt(l, b) + " s=" + fmt(l, sidebar) + "
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64" });
-		await check_output("layout_nested", result, "a={0,0 40x25} b={0,25 40x35} s={40,0 100x60}\n", {
-			audit: false,
-		});
+		await check_output(
+			"layout_nested",
+			result,
+			"a={0,0 40x25} b={0,25 40x35} s={40,0 100x60}\n",
+			opts,
+		);
 	});
 });

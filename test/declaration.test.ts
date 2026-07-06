@@ -1,9 +1,7 @@
 import { expect, describe, test } from "vite-plus/test";
 
-import build from "../src/build";
 import parse from "../src/parse";
-import check_output from "./check_output";
-import parse_with_imports from "./parse_with_imports";
+import build_and_check_output from "./build_and_check_output";
 import test_error from "./test_error";
 
 // BUILD
@@ -13,10 +11,7 @@ describe("declaration build", () => {
 const x = 5
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("decl_const_int", result, "5");
+		await build_and_check_output(input, "decl_const_int", "5");
 	});
 
 	test("const with explicit type", async () => {
@@ -24,10 +19,7 @@ Console.write("\\{x}")
 const int x = 42
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("decl_const_explicit_type", result, "42");
+		await build_and_check_output(input, "decl_const_explicit_type", "42");
 	});
 
 	test("var with value", async () => {
@@ -35,10 +27,7 @@ Console.write("\\{x}")
 var x = 10
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("decl_var_with_value", result, "10");
+		await build_and_check_output(input, "decl_var_with_value", "10");
 	});
 
 	test("var reassigned", async () => {
@@ -47,10 +36,7 @@ var x = 10
 x = 20
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("decl_var_reassigned", result, "20");
+		await build_and_check_output(input, "decl_var_reassigned", "20");
 	});
 
 	test("var with type and assignment", async () => {
@@ -59,10 +45,7 @@ var int x
 x = 99
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("decl_var_type_assign", result, "99");
+		await build_and_check_output(input, "decl_var_type_assign", "99");
 	});
 
 	test("const string declaration", async () => {
@@ -70,10 +53,7 @@ Console.write("\\{x}")
 const name = "world"
 Console.write("\\{name}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("decl_const_string", result, "world");
+		await build_and_check_output(input, "decl_const_string", "world");
 	});
 
 	test("const bool declaration", async () => {
@@ -81,10 +61,7 @@ Console.write("\\{name}")
 const flag = true
 Console.write("\\{flag}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("decl_const_bool", result, "true");
+		await build_and_check_output(input, "decl_const_bool", "true");
 	});
 
 	test("multiple declarations", async () => {
@@ -93,10 +70,7 @@ const a = 10
 const b = 20
 Console.write("\\{a + b}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("decl_multiple", result, "30");
+		await build_and_check_output(input, "decl_multiple", "30");
 	});
 
 	test("const with expression value", async () => {
@@ -104,10 +78,7 @@ Console.write("\\{a + b}")
 const x = 3 + 4
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("decl_const_expression", result, "7");
+		await build_and_check_output(input, "decl_const_expression", "7");
 	});
 
 	test("var updated in if block", async () => {
@@ -118,10 +89,7 @@ if true {
 }
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("decl_var_if_update", result, "15");
+		await build_and_check_output(input, "decl_var_if_update", "15");
 	});
 
 	test("const set in both branches", async () => {
@@ -134,10 +102,7 @@ if true {
 }
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("decl_const_branches", result, "1");
+		await build_and_check_output(input, "decl_const_branches", "1");
 	});
 
 	test("declaration with negative value", async () => {
@@ -145,10 +110,7 @@ Console.write("\\{x}")
 const x = -5
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("decl_negative", result, "-5");
+		await build_and_check_output(input, "decl_negative", "-5");
 	});
 
 	test("const with array type and value", async () => {
@@ -156,10 +118,7 @@ Console.write("\\{x}")
 const x = Array(10, 20, 30)
 Console.write("\\{x.at(1)}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("decl_const_array", result, "20");
+		await build_and_check_output(input, "decl_const_array", "20");
 	});
 });
 

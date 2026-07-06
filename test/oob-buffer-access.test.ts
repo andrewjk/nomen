@@ -1,7 +1,6 @@
 import { expect, describe, test } from "vite-plus/test";
 
-import build from "../src/build";
-import check_output from "./check_output";
+import build_and_check_output from "./build_and_check_output";
 import parse_with_imports from "./parse_with_imports";
 
 // Buffer bounds checking: load_int/store_int have an `i >= 0 && i < self.cap`
@@ -63,10 +62,7 @@ var int a = buf.load_int(0)
 var int b = buf.load_int(3)
 Console.write("\\{a} \\{b}\\n")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("oob_in_bounds", result, "111 444\n");
+		await build_and_check_output(input, "oob_in_bounds", "111 444\n");
 	});
 
 	test("runtime index inside `if i < cap` verifies", async () => {
@@ -85,9 +81,6 @@ while i < buf.cap {
 }
 Console.write("\\{sum}\\n")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("oob_runtime_bounded", result, "100\n");
+		await build_and_check_output(input, "oob_runtime_bounded", "100\n");
 	});
 });

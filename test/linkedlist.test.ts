@@ -1,8 +1,6 @@
-import { expect, describe, test } from "vite-plus/test";
+import { describe, test } from "vite-plus/test";
 
-import build from "../src/build";
-import check_output from "./check_output";
-import parse_with_imports from "./parse_with_imports";
+import build_and_check_output from "./build_and_check_output";
 
 describe("LinkedList<T> add and value", () => {
 	test("add single element and read back", async () => {
@@ -14,10 +12,7 @@ if list.count > 0 {
   Console.write("\\{v}")
 }
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("ll_add_single", result, "42");
+		await build_and_check_output(input, "ll_add_single", "42");
 	});
 
 	test("add multiple elements preserves order", async () => {
@@ -34,10 +29,7 @@ for i of 0 .. list.count {
   Console.write("\\{v}")
 }
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("ll_add_order", result, "10 20 30");
+		await build_and_check_output(input, "ll_add_order", "10 20 30");
 	});
 
 	test("length tracks additions", async () => {
@@ -51,10 +43,7 @@ list.add(3)
 var int l3 = list.length()
 Console.write("\\{l0} \\{l1} \\{l3}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("ll_length", result, "0 1 3");
+		await build_and_check_output(input, "ll_length", "0 1 3");
 	});
 
 	test("empty list length is zero", async () => {
@@ -62,10 +51,7 @@ Console.write("\\{l0} \\{l1} \\{l3}")
 var LinkedList<int> list = LinkedList<int>()
 Console.write("\\{list.length()}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("ll_empty_length", result, "0");
+		await build_and_check_output(input, "ll_empty_length", "0");
 	});
 
 	test("add negative values", async () => {
@@ -82,10 +68,7 @@ for i of 0 .. list.count {
   Console.write("\\{v}")
 }
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("ll_negative", result, "-1 -100 0");
+		await build_and_check_output(input, "ll_negative", "-1 -100 0");
 	});
 });
 
@@ -109,10 +92,7 @@ while cur >= 0 && cur < list.count {
 }
 Console.write("\\{sum}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("ll_traverse", result, "60");
+		await build_and_check_output(input, "ll_traverse", "60");
 	});
 
 	test("next of last element is -1", async () => {
@@ -123,10 +103,7 @@ list.add(2)
 var int n = list.next_at(1)
 Console.write("\\{n}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("ll_next_end", result, "-1");
+		await build_and_check_output(input, "ll_next_end", "-1");
 	});
 
 	test("head is 0 after first add", async () => {
@@ -135,10 +112,7 @@ var LinkedList<int> list = LinkedList<int>()
 list.add(99)
 Console.write("\\{list.head}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("ll_head", result, "0");
+		await build_and_check_output(input, "ll_head", "0");
 	});
 
 	test("head is -1 on empty list", async () => {
@@ -146,10 +120,7 @@ Console.write("\\{list.head}")
 var LinkedList<int> list = LinkedList<int>()
 Console.write("\\{list.head}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("ll_head_empty", result, "-1");
+		await build_and_check_output(input, "ll_head_empty", "-1");
 	});
 
 	test("partial traversal with gaps", async () => {
@@ -170,10 +141,7 @@ while cur >= 0 && cur < list.count {
 }
 Console.write("\\{sum}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("ll_skip", result, "4");
+		await build_and_check_output(input, "ll_skip", "4");
 	});
 });
 
@@ -193,9 +161,6 @@ for i of 0 .. list.count {
   Console.write("\\{v}")
 }
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("ll_index_pattern", result, "100 200");
+		await build_and_check_output(input, "ll_index_pattern", "100 200");
 	});
 });

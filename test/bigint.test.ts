@@ -1,7 +1,7 @@
 import { expect, test } from "vite-plus/test";
 
 import build from "../src/build";
-import check_output from "./check_output";
+import build_and_check_output from "./build_and_check_output";
 import parse_with_imports from "./parse_with_imports";
 
 // ==================== new ====================
@@ -18,10 +18,7 @@ Console.write(" digit=")
 Console.write((a.get(0) as int).to_string())
 Console.write("\\n")
 `;
-	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("bigint_new_zero", result, "sign=1 len=1 digit=0");
+	await build_and_check_output(input, "bigint_new_zero", "sign=1 len=1 digit=0");
 });
 
 test("new: positive", async () => {
@@ -36,10 +33,7 @@ Console.write(" digit=")
 Console.write((a.get(0) as int).to_string())
 Console.write("\\n")
 `;
-	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("bigint_new_positive", result, "sign=1 len=1 digit=42");
+	await build_and_check_output(input, "bigint_new_positive", "sign=1 len=1 digit=42");
 });
 
 test("new: negative", async () => {
@@ -54,10 +48,7 @@ Console.write(" digit=")
 Console.write((a.get(0) as int).to_string())
 Console.write("\\n")
 `;
-	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("bigint_new_negative", result, "sign=-1 len=1 digit=99");
+	await build_and_check_output(input, "bigint_new_negative", "sign=-1 len=1 digit=99");
 });
 
 // ==================== cmp ====================
@@ -70,10 +61,7 @@ a = a.new(100)
 b = b.new(100)
 Console.write(a.cmp(b).to_string())
 `;
-	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("bigint_cmp_equal", result, "0");
+	await build_and_check_output(input, "bigint_cmp_equal", "0");
 });
 
 test("cmp: less than", async () => {
@@ -84,10 +72,7 @@ a = a.new(10)
 b = b.new(20)
 Console.write(a.cmp(b).to_string())
 `;
-	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("bigint_cmp_lt", result, "-1");
+	await build_and_check_output(input, "bigint_cmp_lt", "-1");
 });
 
 test("cmp: greater than", async () => {
@@ -98,10 +83,7 @@ a = a.new(999)
 b = b.new(1)
 Console.write(a.cmp(b).to_string())
 `;
-	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("bigint_cmp_gt", result, "1");
+	await build_and_check_output(input, "bigint_cmp_gt", "1");
 });
 
 test("cmp: different limb counts", async () => {
@@ -119,10 +101,7 @@ Console.write(" small=")
 Console.write(s.cmp(a).to_string())
 Console.write("\\n")
 `;
-	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("bigint_cmp_diff_limbs", result, "big=1 small=-1");
+	await build_and_check_output(input, "bigint_cmp_diff_limbs", "big=1 small=-1");
 });
 
 // ==================== add_to ====================
@@ -136,10 +115,7 @@ b = b.new(12)
 a.add_to(a, b)
 Console.write((a.get(0) as int).to_string())
 `;
-	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("bigint_add_single", result, "42");
+	await build_and_check_output(input, "bigint_add_single", "42");
 });
 
 test("add_to: carry produces second limb", async () => {
@@ -160,10 +136,7 @@ Console.write(" l1=")
 Console.write((a.get(1) as int).to_string())
 Console.write("\\n")
 `;
-	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("bigint_add_carry", result, "len=2 l0=1 l1=1");
+	await build_and_check_output(input, "bigint_add_carry", "len=2 l0=1 l1=1");
 });
 
 test("add_to: no overflow", async () => {
@@ -175,10 +148,7 @@ b = b.new(500)
 a.add_to(a, b)
 Console.write((a.get(0) as int).to_string())
 `;
-	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("bigint_add_overflow", result, "1000");
+	await build_and_check_output(input, "bigint_add_overflow", "1000");
 });
 
 // ==================== sub_to ====================
@@ -192,10 +162,7 @@ b = b.new(18)
 a.sub_to(a, b)
 Console.write((a.get(0) as int).to_string())
 `;
-	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("bigint_sub_single", result, "32");
+	await build_and_check_output(input, "bigint_sub_single", "32");
 });
 
 test("sub_to: result is zero", async () => {
@@ -207,10 +174,7 @@ b = b.new(100)
 a.sub_to(a, b)
 Console.write((a.get(0) as int).to_string())
 `;
-	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("bigint_sub_zero", result, "0");
+	await build_and_check_output(input, "bigint_sub_zero", "0");
 });
 
 test("sub_to: borrow across limbs", async () => {
@@ -231,10 +195,7 @@ Console.write(" l1=")
 Console.write((a.get(1) as int).to_string())
 Console.write("\\n")
 `;
-	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("bigint_sub_borrow", result, "len=1 l0=-1 l1=0");
+	await build_and_check_output(input, "bigint_sub_borrow", "len=1 l0=-1 l1=0");
 });
 
 // ==================== mul_to ====================
@@ -249,10 +210,7 @@ b = b.new(6)
 a.mul_to(a, b, s)
 Console.write((a.get(0) as int).to_string())
 `;
-	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("bigint_mul_single", result, "42");
+	await build_and_check_output(input, "bigint_mul_single", "42");
 });
 
 test("mul_to: produces 2-limb result", async () => {
@@ -271,10 +229,7 @@ Console.write(" l1=")
 Console.write((a.get(1) as int).to_string())
 Console.write("\\n")
 `;
-	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("bigint_mul_two_limb", result, "len=2 l0=0 l1=1");
+	await build_and_check_output(input, "bigint_mul_two_limb", "len=2 l0=0 l1=1");
 });
 
 test("mul_to: multi-limb", async () => {
@@ -292,10 +247,7 @@ s = s.new(1000000000)
 b.mul_to(b, s, a)
 Console.write(b.len.to_string())
 `;
-	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("bigint_mul_multi", result, "2");
+	await build_and_check_output(input, "bigint_mul_multi", "2");
 });
 
 // ==================== div: single-limb ====================
@@ -315,10 +267,7 @@ Console.write(" r=")
 Console.write((rem.get(0) as int).to_string())
 Console.write("\\n")
 `;
-	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("bigint_div_single", result, "q=10 r=0");
+	await build_and_check_output(input, "bigint_div_single", "q=10 r=0");
 });
 
 test("div: single-limb with remainder", async () => {
@@ -336,10 +285,7 @@ Console.write(" r=")
 Console.write((rem.get(0) as int).to_string())
 Console.write("\\n")
 `;
-	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("bigint_div_single_rem", result, "q=14 r=2");
+	await build_and_check_output(input, "bigint_div_single_rem", "q=14 r=2");
 });
 
 test("div: single-limb divisor=1", async () => {
@@ -357,10 +303,7 @@ Console.write(" r=")
 Console.write((rem.get(0) as int).to_string())
 Console.write("\\n")
 `;
-	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("bigint_div_single_divisor", result, "q=123456789 r=0");
+	await build_and_check_output(input, "bigint_div_single_divisor", "q=123456789 r=0");
 });
 
 test("div: dividend equals divisor", async () => {
@@ -378,10 +321,7 @@ Console.write(" r=")
 Console.write((rem.get(0) as int).to_string())
 Console.write("\\n")
 `;
-	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("bigint_div_dividend", result, "q=1 r=0");
+	await build_and_check_output(input, "bigint_div_dividend", "q=1 r=0");
 });
 
 test("div: dividend less than divisor", async () => {
@@ -399,10 +339,7 @@ Console.write(" r=")
 Console.write((rem.get(0) as int).to_string())
 Console.write("\\n")
 `;
-	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("bigint_div_dividend_less", result, "q=0 r=5");
+	await build_and_check_output(input, "bigint_div_dividend_less", "q=0 r=5");
 });
 
 // ==================== div: multi-limb Knuth D ====================
@@ -425,10 +362,7 @@ Console.write(" r=")
 Console.write((rem.get(0) as int).to_string())
 Console.write("\\n")
 `;
-	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("bigint_div_two_one", result, "q=333333333333333333 r=1");
+	await build_and_check_output(input, "bigint_div_two_one", "q=333333333333333333 r=1");
 });
 
 test("div: 2-limb / 2-limb exact", async () => {
@@ -453,10 +387,7 @@ Console.write(" r=")
 Console.write((rem.get(0) as int).to_string())
 Console.write("\\n")
 `;
-	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("bigint_div_two_two_exact", result, "q=27 r=0");
+	await build_and_check_output(input, "bigint_div_two_two_exact", "q=27 r=0");
 });
 
 test("div: 2-limb / 2-limb with remainder", async () => {
@@ -483,10 +414,7 @@ Console.write(" r=")
 Console.write((rem.get(0) as int).to_string())
 Console.write("\\n")
 `;
-	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("bigint_div_two_two_remain", result, "q=3 r=1000000000000000000");
+	await build_and_check_output(input, "bigint_div_two_two_remain", "q=3 r=1000000000000000000");
 });
 
 test("div: 2-limb / 2-limb carry test", async () => {
@@ -516,10 +444,7 @@ Console.write("q=")
 Console.write((q.get(0) as int).to_string())
 Console.write("\\n")
 `;
-	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("bigint_div_two_two_carry", result, "q=27");
+	await build_and_check_output(input, "bigint_div_two_two_carry", "q=27");
 });
 
 // ==================== to_digit ====================
@@ -530,10 +455,7 @@ var BigInt a = BigInt()
 a = a.new(42)
 Console.write(a.to_digit().to_string())
 `;
-	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("bigint_to_digit_single", result, "42");
+	await build_and_check_output(input, "bigint_to_digit_single", "42");
 });
 
 test("to_digit: multi-limb returns -1", async () => {
@@ -546,10 +468,7 @@ b = b.new(4294967296)
 a.mul_to(a, b, s)
 Console.write(a.to_digit().to_string())
 `;
-	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("bigint_to_multi", result, "-1");
+	await build_and_check_output(input, "bigint_to_multi", "-1");
 });
 
 // ==================== copy_from ====================
@@ -567,10 +486,7 @@ Console.write(" b=")
 Console.write((b.get(0) as int).to_string())
 Console.write("\\n")
 `;
-	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("bigint_copy_independ", result, "a=99999 b=12345");
+	await build_and_check_output(input, "bigint_copy_independ", "a=99999 b=12345");
 });
 
 // ==================== mixed operation chains ====================
@@ -593,10 +509,7 @@ Console.write(" rem=")
 Console.write((rem.get(0) as int).to_string())
 Console.write("\\n")
 `;
-	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("bigint_chain_mul_div", result, "roundtrip=12345 rem=0");
+	await build_and_check_output(input, "bigint_chain_mul_div", "roundtrip=12345 rem=0");
 });
 
 test("chain: add then sub roundtrip", async () => {
@@ -612,10 +525,7 @@ Console.write("roundtrip=")
 Console.write((a.get(0) as int).to_string())
 Console.write("\\n")
 `;
-	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("bigint_chain_add_sub", result, "roundtrip=1000");
+	await build_and_check_output(input, "bigint_chain_add_sub", "roundtrip=1000");
 });
 
 test("chain: mul then sub", async () => {
@@ -632,10 +542,7 @@ Console.write("100*100-1=")
 Console.write((a.get(0) as int).to_string())
 Console.write("\\n")
 `;
-	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("bigint_chain_mul_sub", result, "100*100-1=9999");
+	await build_and_check_output(input, "bigint_chain_mul_sub", "100*100-1=9999");
 });
 
 test("chain: repeated mul", async () => {
@@ -652,10 +559,7 @@ Console.write("10^3=")
 Console.write((a.get(0) as int).to_string())
 Console.write("\\n")
 `;
-	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("bigint_chain_mul_mul", result, "10^3=1000");
+	await build_and_check_output(input, "bigint_chain_mul_mul", "10^3=1000");
 });
 
 // ==================== edge cases ====================
@@ -674,10 +578,7 @@ Console.write(" val=")
 Console.write((a.get(0) as int).to_string())
 Console.write("\\n")
 `;
-	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("bigint_edge_mul_zero", result, "len=1 val=0");
+	await build_and_check_output(input, "bigint_edge_mul_zero", "len=1 val=0");
 });
 
 test("edge: multiply by one", async () => {
@@ -690,10 +591,7 @@ b = b.new(1)
 a.mul_to(a, b, s)
 Console.write((a.get(0) as int).to_string())
 `;
-	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("bigint_edge_mul_one", result, "123456789");
+	await build_and_check_output(input, "bigint_edge_mul_one", "123456789");
 });
 
 test("edge: add zero", async () => {
@@ -705,10 +603,7 @@ b = b.new(0)
 a.add_to(a, b)
 Console.write((a.get(0) as int).to_string())
 `;
-	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("bigint_edge_add_zero", result, "42");
+	await build_and_check_output(input, "bigint_edge_add_zero", "42");
 });
 
 test("edge: sub zero", async () => {
@@ -720,10 +615,7 @@ b = b.new(0)
 a.sub_to(a, b)
 Console.write((a.get(0) as int).to_string())
 `;
-	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("bigint_edge_sub_zero", result, "42");
+	await build_and_check_output(input, "bigint_edge_sub_zero", "42");
 });
 
 // ==================== 3-limb operations ====================
@@ -746,10 +638,7 @@ Console.write("len=")
 Console.write(a.len.to_string())
 Console.write("\\n")
 `;
-	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("bigint_mul_three", result, "len=2");
+	await build_and_check_output(input, "bigint_mul_three", "len=2");
 });
 
 test("div: 3-limb / 2-limb", async () => {
@@ -776,10 +665,7 @@ Console.write(" r=")
 Console.write((rem.get(0) as int).to_string())
 Console.write("\\n")
 `;
-	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("bigint_div_three_two", result, "q=1000000000000 r=0");
+	await build_and_check_output(input, "bigint_div_three_two", "q=1000000000000 r=0");
 });
 
 // ==================== pidigits-like division ====================
@@ -808,10 +694,7 @@ i = i + 1
 }
 Console.write("\\n")
 `;
-	const parsed = parse_with_imports(input);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	expect(parsed.errors).toEqual([]);
-	await check_output("bigint_div_repeated", result, "3 3 3 3 3");
+	await build_and_check_output(input, "bigint_div_repeated", "3 3 3 3 3");
 });
 
 // ==================== aliasing bugs (now caught at compile time) ====================

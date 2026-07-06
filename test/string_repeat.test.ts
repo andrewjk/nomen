@@ -1,8 +1,6 @@
-import { expect, describe, test } from "vite-plus/test";
+import { describe, test } from "vite-plus/test";
 
-import build from "../src/build";
-import check_output from "./check_output";
-import parse_with_imports from "./parse_with_imports";
+import build_and_check_output from "./build_and_check_output";
 
 // Runtime string repetition: "abc" * int.
 // Literal * literal is constant-folded by build_declaration_node, but
@@ -17,10 +15,7 @@ var int n = 4
 var string r = s * n
 Console.write(r)
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("repeat_int_var", result, "abababab");
+		await build_and_check_output(input, "repeat_int_var", "abababab");
 	});
 
 	test("repeat with computed count", async () => {
@@ -31,10 +26,7 @@ var int b = 2
 var string r = s * (a + b)
 Console.write(r)
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("repeat_computed", result, "xyzxyzxyz");
+		await build_and_check_output(input, "repeat_computed", "xyzxyzxyz");
 	});
 
 	test("repeat reassigned in a loop", async () => {
@@ -48,10 +40,7 @@ while j < 3 {
 }
 Console.write(s)
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("repeat_loop", result, "xxxxxx");
+		await build_and_check_output(input, "repeat_loop", "xxxxxx");
 	});
 
 	test("repeat result used in concat", async () => {
@@ -61,9 +50,6 @@ var int n = 3
 var string r = s * n + "!"
 Console.write(r)
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("repeat_concat", result, "aaa!");
+		await build_and_check_output(input, "repeat_concat", "aaa!");
 	});
 });

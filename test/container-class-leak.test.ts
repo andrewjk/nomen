@@ -1,8 +1,6 @@
-import { describe, expect, test } from "vite-plus/test";
+import { describe, test } from "vite-plus/test";
 
-import build from "../src/build";
-import check_output from "./check_output";
-import parse_with_imports from "./parse_with_imports";
+import build_and_check_output from "./build_and_check_output";
 
 /*
  * Container-stored class leak
@@ -27,10 +25,7 @@ if true {
 }
 Console.write("done\\n")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("leak_list", result, "done");
+		await build_and_check_output(input, "leak_list", "done");
 	});
 
 	test("LinkedList<Animal> — stored class not freed on container destroy", async () => {
@@ -42,10 +37,7 @@ if true {
 }
 Console.write("done\\n")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("leak_ll", result, "done");
+		await build_and_check_output(input, "leak_ll", "done");
 	});
 
 	test("Tree<Animal> — stored class not freed on container destroy", async () => {
@@ -57,10 +49,7 @@ if true {
 }
 Console.write("done\\n")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("leak_tree", result, "done");
+		await build_and_check_output(input, "leak_tree", "done");
 	});
 
 	test("Graph<Animal> — stored class not freed on container destroy", async () => {
@@ -72,9 +61,6 @@ if true {
 }
 Console.write("done\\n")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("leak_graph", result, "done");
+		await build_and_check_output(input, "leak_graph", "done");
 	});
 });

@@ -1,7 +1,7 @@
 import { expect, describe, test } from "vite-plus/test";
 
 import build from "../src/build";
-import check_output from "./check_output";
+import build_and_check_output from "./build_and_check_output";
 import parse_with_imports from "./parse_with_imports";
 
 describe("memory double free", () => {
@@ -15,10 +15,7 @@ t = s
 Console.write(s)
 Console.write(t)
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("dfree_assign_heap_string", result, "11");
+		await build_and_check_output(input, "dfree_assign_heap_string", "11");
 	});
 
 	test("returning heap string is not use-after-free", async () => {
@@ -30,10 +27,7 @@ func make_greeting = (int x, out string) {
 var string result = make_greeting(42)
 Console.write(result)
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("dfree_return_heap_string", result, "42");
+		await build_and_check_output(input, "dfree_return_heap_string", "42");
 	});
 
 	test("reassigning heap string to literal does not free non-heap pointer", async () => {
@@ -43,10 +37,7 @@ var string s = x.to_string()
 s = "literal"
 Console.write(s)
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("dfree_reassign_to_literal", result, "literal");
+		await build_and_check_output(input, "dfree_reassign_to_literal", "literal");
 	});
 
 	test("reassigning heap string frees old value", async () => {
@@ -57,10 +48,7 @@ var string s = a.to_string()
 s = b.to_string()
 Console.write(s)
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("dfree_reassign_leaks_old", result, "2");
+		await build_and_check_output(input, "dfree_reassign_leaks_old", "2");
 	});
 
 	test("returning string from nested scope does not leak", async () => {
@@ -75,10 +63,7 @@ func greet = (int x, out string) {
 var string result = greet(42)
 Console.write(result)
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("dfree_return_nested_scope", result, "42");
+		await build_and_check_output(input, "dfree_return_nested_scope", "42");
 	});
 
 	test("struct with string field does not leak on destroy", async () => {
@@ -93,10 +78,7 @@ var string name = 42.to_string()
 var Named n = Named(id, name)
 Console.write("\\{n.id}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("dfree_struct_string_field", result, "1");
+		await build_and_check_output(input, "dfree_struct_string_field", "1");
 	});
 
 	test("break does not leak heap string in loop body", async () => {
@@ -113,10 +95,7 @@ while i < 3 {
 }
 Console.write("done")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("leak_break_heap_string", result, "0done");
+		await build_and_check_output(input, "leak_break_heap_string", "0done");
 	});
 
 	test("continue does not leak heap string in loop body", async () => {
@@ -132,10 +111,7 @@ while i < 3 {
 }
 Console.write("done")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("leak_continue_heap_string", result, "02done");
+		await build_and_check_output(input, "leak_continue_heap_string", "02done");
 	});
 
 	test("aliasing heap string via declaration then reassigning original is not UAF", async () => {
@@ -145,10 +121,7 @@ var string b = a
 a = "literal"
 Console.write(b)
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("uaf_alias_then_reassign", result, "42");
+		await build_and_check_output(input, "uaf_alias_then_reassign", "42");
 	});
 
 	test("assigning heap string to another variable does not leak old value", async () => {
@@ -157,10 +130,7 @@ var string s = 42.to_string()
 var string t = s
 Console.write(t)
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("leak_alias_declaration", result, "42");
+		await build_and_check_output(input, "leak_alias_declaration", "42");
 	});
 
 	test("while loop break does not leak heap string", async () => {
@@ -176,10 +146,7 @@ while i < 3 {
 }
 Console.write("done")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("leak_while_break", result, "0done");
+		await build_and_check_output(input, "leak_while_break", "0done");
 	});
 
 	test("break runs struct destroy in loop", async () => {
@@ -208,7 +175,7 @@ Console.write("done")
 		expect(parsed.errors).toEqual([]);
 		expect(result.code).toContain("bl Resource_destroy");
 		expect(result.code.match(/bl Resource_destroy/g)?.length).toBe(2);
-		await check_output("leak_break_struct_destroy", result, "done");
+		await build_and_check_output(input, "leak_break_struct_destroy", "done");
 	});
 
 	test("continue runs struct destroy in loop", async () => {
@@ -232,11 +199,12 @@ while i < 3 {
 Console.write("done")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(result.code).toContain("bl Resource_destroy");
 		expect(result.code.match(/bl Resource_destroy/g)?.length).toBe(2);
-		await check_output("leak_continue_struct_destroy", result, "done");
+
+		await build_and_check_output(input, "leak_continue_struct_destroy", "done");
 	});
 
 	test("assigning class to another does not double-free", async () => {
@@ -251,10 +219,7 @@ t = s
 Console.write("\\{s.value}")
 Console.write("\\{t.value}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("dfree_assign_class", result, "11");
+		await build_and_check_output(input, "dfree_assign_class", "11");
 	});
 
 	test("returning class is not use-after-free", async () => {
@@ -270,10 +235,7 @@ func make_box = (int x, out Box) {
 var Box result = make_box(42)
 Console.write("\\{result.value}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("dfree_return_class", result, "42");
+		await build_and_check_output(input, "dfree_return_class", "42");
 	});
 
 	test("returning class from nested scope does not leak", async () => {
@@ -292,10 +254,7 @@ func get_box = (int x, out Box) {
 var Box result = get_box(42)
 Console.write("\\{result.value}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("dfree_return_nested_class", result, "42");
+		await build_and_check_output(input, "dfree_return_nested_class", "42");
 	});
 
 	test("reassigning class frees old value", async () => {
@@ -308,10 +267,7 @@ var Box s = Box(1)
 s = Box(2)
 Console.write("\\{s.value}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("dfree_reassign_class", result, "2");
+		await build_and_check_output(input, "dfree_reassign_class", "2");
 	});
 
 	test("returning class from nested scope frees old instance", async () => {
@@ -331,11 +287,12 @@ var Box result = get_box(42)
 Console.write("\\{result.value}")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(result.code).toContain("bl _echo_free_wrap");
 		expect(result.code).toContain("bl Box_init");
-		await check_output("dfree_class_nested_scope_leaks", result, "42");
+
+		await build_and_check_output(input, "dfree_class_nested_scope_leaks", "42");
 	});
 
 	test("class with string field does not leak on destroy", async () => {
@@ -350,10 +307,7 @@ var string name = 42.to_string()
 var Named n = Named(id, name)
 Console.write("\\{n.id}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("dfree_class_string_field", result, "1");
+		await build_and_check_output(input, "dfree_class_string_field", "1");
 	});
 
 	test("break does not leak class in loop body", async () => {
@@ -374,10 +328,7 @@ while i < 3 {
 }
 Console.write("done")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("leak_break_class", result, "0done");
+		await build_and_check_output(input, "leak_break_class", "0done");
 	});
 
 	test("continue does not leak class in loop body", async () => {
@@ -397,10 +348,7 @@ while i < 3 {
 }
 Console.write("done")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("leak_continue_class", result, "02done");
+		await build_and_check_output(input, "leak_continue_class", "02done");
 	});
 
 	test("aliasing class via declaration then reassigning original is not UAF", async () => {
@@ -414,10 +362,7 @@ var Box b = a
 a = Box(99)
 Console.write("\\{b.value}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("uaf_class_alias_then_reassign", result, "42");
+		await build_and_check_output(input, "uaf_class_alias_then_reassign", "42");
 	});
 
 	test("assigning class to another variable does not leak old value", async () => {
@@ -430,10 +375,7 @@ var Box s = Box(42)
 var Box t = s
 Console.write("\\{t.value}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("leak_class_alias_declaration", result, "42");
+		await build_and_check_output(input, "leak_class_alias_declaration", "42");
 	});
 
 	test("while loop break does not leak class", async () => {
@@ -453,10 +395,7 @@ while i < 3 {
 }
 Console.write("done")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("leak_while_break_class", result, "0done");
+		await build_and_check_output(input, "leak_while_break_class", "0done");
 	});
 
 	test("break runs class destroy in loop", async () => {
@@ -481,11 +420,12 @@ while i < 3 {
 Console.write("done")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(result.code).toContain("bl _echo_free_wrap");
 		expect(result.code.match(/bl _echo_free_wrap/g)?.length).toBe(2);
-		await check_output("leak_break_class_destroy", result, "done");
+
+		await build_and_check_output(input, "leak_break_class_destroy", "done");
 	});
 
 	test("continue runs class destroy in loop", async () => {
@@ -509,11 +449,12 @@ while i < 3 {
 Console.write("done")
 `;
 		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(result.code).toContain("bl _echo_free_wrap");
 		expect(result.code.match(/bl _echo_free_wrap/g)?.length).toBe(2);
-		await check_output("leak_continue_class_destroy", result, "done");
+
+		await build_and_check_output(input, "leak_continue_class_destroy", "done");
 	});
 
 	test("reassigning struct from self method call does not double-free buffer", async () => {
@@ -526,10 +467,7 @@ k = k2.new(3)
 var int d = k.to_digit()
 Console.write(d.to_string())
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("dfree_struct_self_method_reassign", result, "3");
+		await build_and_check_output(input, "dfree_struct_self_method_reassign", "3");
 	});
 
 	test("struct reassignment in loop does not double-free buffer", async () => {
@@ -543,10 +481,7 @@ while i < 3 {
 	i += 1
 }
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("dfree_struct_loop_reassign", result, "012");
+		await build_and_check_output(input, "dfree_struct_loop_reassign", "012");
 	});
 
 	test("class field access borrow is not destroyed", async () => {
@@ -569,9 +504,6 @@ var Holder h = Holder(mov box)
 var int v = get_value(h)
 Console.write("\\{v}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("dfree_class_field_borrowed_ref", result, "42");
+		await build_and_check_output(input, "dfree_class_field_borrowed_ref", "42");
 	});
 });

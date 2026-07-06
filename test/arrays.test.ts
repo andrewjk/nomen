@@ -1,9 +1,7 @@
 import { expect, describe, test } from "vite-plus/test";
 
-import build from "../src/build";
 import parse from "../src/parse";
-import check_output from "./check_output";
-import parse_with_imports from "./parse_with_imports";
+import build_and_check_output from "./build_and_check_output";
 import test_error from "./test_error";
 
 // BUILD
@@ -15,10 +13,7 @@ for n of nums {
   Console.write("\\{n} ")
 }
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("array_for_loop", result, "10 20 30 ");
+		await build_and_check_output(input, "array_for_loop", "10 20 30 ");
 	});
 
 	test("array access by index", async () => {
@@ -26,10 +21,7 @@ for n of nums {
 const nums = Array(10, 20, 30)
 Console.write("\\{nums.at(0)}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("array_access_index_0", result, "10");
+		await build_and_check_output(input, "array_access_index_0", "10");
 	});
 
 	test("var string array with literals in function", async () => {
@@ -37,10 +29,7 @@ Console.write("\\{nums.at(0)}")
 var words = Array("hello", "world")
 Console.write("\\{words.at(0)}\\{words.at(1)}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("var_string_array_literals", result, "helloworld");
+		await build_and_check_output(input, "var_string_array_literals", "helloworld");
 	});
 
 	test("array access middle element", async () => {
@@ -48,10 +37,7 @@ Console.write("\\{words.at(0)}\\{words.at(1)}")
 const nums = Array(10, 20, 30)
 Console.write("\\{nums.at(1)}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("array_access_middle", result, "20");
+		await build_and_check_output(input, "array_access_middle", "20");
 	});
 
 	test("array access last element", async () => {
@@ -59,10 +45,7 @@ Console.write("\\{nums.at(1)}")
 const nums = Array(10, 20, 30)
 Console.write("\\{nums.at(2)}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("array_access_last", result, "30");
+		await build_and_check_output(input, "array_access_last", "30");
 	});
 
 	test("array with explicit type", async () => {
@@ -70,10 +53,7 @@ Console.write("\\{nums.at(2)}")
 const nums = Array(5, 10, 15)
 Console.write("\\{nums.at(0)} \\{nums.at(1)} \\{nums.at(2)}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("array_explicit_type", result, "5 10 15");
+		await build_and_check_output(input, "array_explicit_type", "5 10 15");
 	});
 
 	test("array sum with for loop", async () => {
@@ -85,10 +65,7 @@ for n of nums {
 }
 Console.write("\\{total}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("array_sum_loop", result, "15");
+		await build_and_check_output(input, "array_sum_loop", "15");
 	});
 
 	test("array with index-based access in loop", async () => {
@@ -100,10 +77,7 @@ for i of 0..3 {
 }
 Console.write("\\{total}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("array_index_loop", result, "600");
+		await build_and_check_output(input, "array_index_loop", "600");
 	});
 
 	test("array with single element", async () => {
@@ -111,10 +85,7 @@ Console.write("\\{total}")
 const nums = Array(42)
 Console.write("\\{nums.at(0)}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("array_single_element", result, "42");
+		await build_and_check_output(input, "array_single_element", "42");
 	});
 
 	test("array with negative values", async () => {
@@ -122,10 +93,7 @@ Console.write("\\{nums.at(0)}")
 const nums = Array(-1, -5, -10)
 Console.write("\\{nums.at(0)} \\{nums.at(1)} \\{nums.at(2)}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("array_negative_values", result, "-1 -5 -10");
+		await build_and_check_output(input, "array_negative_values", "-1 -5 -10");
 	});
 
 	test("multiple arrays", async () => {
@@ -134,10 +102,7 @@ const a = Array(1, 2, 3)
 const b = Array(4, 5, 6)
 Console.write("\\{a.at(1)} \\{b.at(1)}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("array_multiple", result, "2 5");
+		await build_and_check_output(input, "array_multiple", "2 5");
 	});
 
 	test("array access with expression index", async () => {
@@ -146,10 +111,7 @@ const nums = Array(10, 20, 30)
 const i = 2
 Console.write("\\{nums.at(i)}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("array_expr_index", result, "30");
+		await build_and_check_output(input, "array_expr_index", "30");
 	});
 
 	test("empty array with type", async () => {
@@ -157,10 +119,7 @@ Console.write("\\{nums.at(i)}")
 const Array<int> x
 Console.write("ok")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("array_empty_typed", result, "ok");
+		await build_and_check_output(input, "array_empty_typed", "ok");
 	});
 
 	test("nested array access in expression", async () => {
@@ -168,10 +127,7 @@ Console.write("ok")
 const nums = Array(10, 20, 30)
 Console.write("\\{nums.at(0) + nums.at(2)}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("array_access_in_expr", result, "40");
+		await build_and_check_output(input, "array_access_in_expr", "40");
 	});
 
 	test("array in function param", async () => {
@@ -186,10 +142,7 @@ func sum = (Array<int> nums, out int) {
 const n = sum(Array(2, 4, 6))
 Console.write("\\{n}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("array_func_param", result, "12");
+		await build_and_check_output(input, "array_func_param", "12");
 	});
 });
 

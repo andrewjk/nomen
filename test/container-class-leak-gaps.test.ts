@@ -1,8 +1,6 @@
-import { describe, expect, test } from "vite-plus/test";
+import { describe, test } from "vite-plus/test";
 
-import build from "../src/build";
-import check_output from "./check_output";
-import parse_with_imports from "./parse_with_imports";
+import build_and_check_output from "./build_and_check_output";
 
 // These tests probe the gaps left by the `has_class_refs` auto-free mechanism
 // added in the "Fix: leaks from collections" commit. Buffer#destroy now walks
@@ -25,10 +23,7 @@ var Animal x = l1.pop()
 l2.push(mov x)
 Console.write("ok\\n")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("gap_pop_double_free", result, "ok\n");
+		await build_and_check_output(input, "gap_pop_double_free", "ok\n");
 	});
 
 	// #2 — set() overwrites the slot without freeing the previous element, so
@@ -46,10 +41,7 @@ if true {
 }
 Console.write("\\n")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("gap_set_overwrite", result, "B\n");
+		await build_and_check_output(input, "gap_set_overwrite", "B\n");
 	});
 
 	// #3 — Buffer#destroy calls bare free() on each slot. A class #destroy that
@@ -68,10 +60,7 @@ if true {
 }
 Console.write("done\\n")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("gap_destroy_not_run", result, "destroyed\ndone\n");
+		await build_and_check_output(input, "gap_destroy_not_run", "destroyed\ndone\n");
 	});
 
 	// #4 — A class owning another class (mov Box) freed correctly when held as a
@@ -87,10 +76,7 @@ if true {
 }
 Console.write("done\\n")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("gap_nested_owned_class", result, "done\n");
+		await build_and_check_output(input, "gap_nested_owned_class", "done\n");
 	});
 
 	// #5 — has_class_refs/destroy_fn are wired only on declaration-init paths
@@ -106,10 +92,7 @@ if true {
 }
 Console.write("done\\n")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("gap_reassign_container", result, "done\n");
+		await build_and_check_output(input, "gap_reassign_container", "done\n");
 	});
 
 	// #6 — A container built inside and returned from a factory function. The
@@ -127,10 +110,7 @@ if true {
 }
 Console.write("done\\n")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("gap_factory_decl", result, "done\n");
+		await build_and_check_output(input, "gap_factory_decl", "done\n");
 	});
 
 	test("List<Animal> returned from a factory is reclaimed (assignment)", async () => {
@@ -147,10 +127,7 @@ if true {
 }
 Console.write("done\\n")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("gap_factory_assign", result, "done\n");
+		await build_and_check_output(input, "gap_factory_assign", "done\n");
 	});
 
 	// #8 — A container constructed via a struct field default initializer never
@@ -168,10 +145,7 @@ if true {
 }
 Console.write("done\\n")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("gap_struct_field_container", result, "done\n");
+		await build_and_check_output(input, "gap_struct_field_container", "done\n");
 	});
 
 	// #9 — Same gap as #8 but via a custom #init: the container field is zeroed
@@ -192,9 +166,6 @@ if true {
 }
 Console.write("done\\n")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("gap_struct_field_custom_init", result, "done\n");
+		await build_and_check_output(input, "gap_struct_field_custom_init", "done\n");
 	});
 });

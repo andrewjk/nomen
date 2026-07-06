@@ -1,8 +1,6 @@
-import { expect, describe, test } from "vite-plus/test";
+import { describe, test } from "vite-plus/test";
 
-import build from "../src/build";
-import check_output from "./check_output";
-import parse_with_imports from "./parse_with_imports";
+import build_and_check_output from "./build_and_check_output";
 
 describe("List push", () => {
 	test("push and read back via pop", async () => {
@@ -15,10 +13,7 @@ const int a = list.pop()
 const int b = list.pop()
 Console.write("\\{a} \\{b}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("list_push_pop", result, "30 20");
+		await build_and_check_output(input, "list_push_pop", "30 20");
 	});
 
 	test("push multiple and pop all", async () => {
@@ -36,10 +31,7 @@ const int d = list.pop()
 const int e = list.pop()
 Console.write("\\{a}\\{b}\\{c}\\{d}\\{e}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("list_push_pop_all", result, "54321");
+		await build_and_check_output(input, "list_push_pop_all", "54321");
 	});
 
 	test("push triggers resize", async () => {
@@ -56,10 +48,7 @@ list.push(8)
 list.push(9)
 Console.write("\\{list.length}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("list_resize", result, "9");
+		await build_and_check_output(input, "list_resize", "9");
 	});
 
 	test("push and pop interleaved", async () => {
@@ -72,10 +61,7 @@ list.push(30)
 const int b = list.pop()
 Console.write("\\{a} \\{b}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("list_interleaved", result, "10 30");
+		await build_and_check_output(input, "list_interleaved", "10 30");
 	});
 });
 
@@ -90,9 +76,6 @@ Console.write("\\{list.length}")
 const int x = list.pop()
 Console.write("\\{list.length}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("list_length", result, "32");
+		await build_and_check_output(input, "list_length", "32");
 	});
 });

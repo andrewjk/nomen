@@ -1,8 +1,6 @@
-import { expect, describe, test } from "vite-plus/test";
+import { describe, test } from "vite-plus/test";
 
-import build from "../src/build";
-import check_output from "./check_output";
-import parse_with_imports from "./parse_with_imports";
+import build_and_check_output from "./build_and_check_output";
 
 describe("memory var class param", () => {
 	test("passing class field to var class param should not double-free", async () => {
@@ -26,10 +24,7 @@ set_value(root)
 Console.write("\\{root.value}")
 Console.write("\\{child.value}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("var_class_param_borrowed_field", result, "4242");
+		await build_and_check_output(input, "var_class_param_borrowed_field", "4242");
 	});
 
 	test("recursive var class param with field access does not corrupt tree", async () => {
@@ -60,9 +55,6 @@ Console.write("\\{a.data}")
 Console.write("\\{b.data}")
 Console.write("\\{c.data}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("var_class_param_recursive_tree", result, "111");
+		await build_and_check_output(input, "var_class_param_recursive_tree", "111");
 	});
 });

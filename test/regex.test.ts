@@ -6,7 +6,7 @@ import parse_with_imports from "./parse_with_imports";
 
 // Companion-C allocations aren't tracked by the audit wrappers (which only
 // wrap assembly-side malloc/free), so audit would report a counter imbalance.
-const opts = { audit: false };
+const opts = { arch: "aarch64", audit: false } as const;
 
 describe("Regex test", () => {
 	test("literal substring matches", async () => {

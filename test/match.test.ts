@@ -2,7 +2,7 @@ import { expect, describe, test } from "vite-plus/test";
 
 import build from "../src/build";
 import parse from "../src/parse";
-import check_output from "./check_output";
+import build_and_check_output from "./build_and_check_output";
 import parse_with_imports from "./parse_with_imports";
 import test_error from "./test_error";
 
@@ -22,11 +22,7 @@ match x {
 	}
 }
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("match_single", result, "five");
+		await build_and_check_output(input, "match_single", "five");
 	});
 
 	test("match single case not matched", async () => {
@@ -43,11 +39,7 @@ match x {
 }
 Console.write("\\{result}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("match_not_matched", result, "0");
+		await build_and_check_output(input, "match_not_matched", "0");
 	});
 
 	test("match multiple cases first matches", async () => {
@@ -68,11 +60,7 @@ match x {
 	}
 }
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("match_first", result, "five");
+		await build_and_check_output(input, "match_first", "five");
 	});
 
 	test("match multiple cases second matches", async () => {
@@ -93,11 +81,7 @@ match x {
 	}
 }
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("match_second", result, "ten");
+		await build_and_check_output(input, "match_second", "ten");
 	});
 
 	test("match multiple cases third matches", async () => {
@@ -118,11 +102,7 @@ match x {
 	}
 }
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("match_third", result, "fifteen");
+		await build_and_check_output(input, "match_third", "fifteen");
 	});
 
 	test("match with else branch", async () => {
@@ -137,11 +117,7 @@ match x {
 	}
 }
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("match_else", result, "other");
+		await build_and_check_output(input, "match_else", "other");
 	});
 
 	test("match expression", async () => {
@@ -155,11 +131,7 @@ const y = match x {
 }
 Console.write(y)
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("match_expression", result, "two");
+		await build_and_check_output(input, "match_expression", "two");
 	});
 
 	test("match expression else branch", async () => {
@@ -172,11 +144,7 @@ const y = match x {
 }
 Console.write(y)
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("match_expression_else", result, "other");
+		await build_and_check_output(input, "match_expression_else", "other");
 	});
 
 	test("match with variable assignment", async () => {
@@ -199,11 +167,7 @@ match x {
 }
 Console.write("\\{result}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("match_var_assign", result, "2");
+		await build_and_check_output(input, "match_var_assign", "2");
 	});
 
 	test("match nested", async () => {
@@ -228,11 +192,7 @@ match x {
 }
 Console.write("\\{result}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("match_nested", result, "1");
+		await build_and_check_output(input, "match_nested", "1");
 	});
 
 	test("match inside for loop", async () => {
@@ -253,11 +213,7 @@ for i of 0..5 {
 }
 Console.write("\\{result}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("match_in_for", result, "33");
+		await build_and_check_output(input, "match_in_for", "33");
 	});
 
 	test("match expression with int result", async () => {
@@ -271,11 +227,7 @@ const y = match x {
 }
 Console.write("\\{y}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("match_int_expression", result, "30");
+		await build_and_check_output(input, "match_int_expression", "30");
 	});
 
 	test("match with 0 and 1 values", async () => {
@@ -295,11 +247,7 @@ match x {
 }
 Console.write("\\{result}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("match_01", result, "1");
+		await build_and_check_output(input, "match_01", "1");
 	});
 
 	test("match with negative values", async () => {
@@ -319,11 +267,7 @@ match x {
 }
 Console.write("\\{result}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("match_negative", result, "1");
+		await build_and_check_output(input, "match_negative", "1");
 	});
 
 	test("match with expression case values", async () => {
@@ -340,10 +284,7 @@ match x {
 }
 Console.write("\\{result}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("match_expr_case", result, "1");
+		await build_and_check_output(input, "match_expr_case", "1");
 	});
 
 	test("match on enum", async () => {
@@ -368,10 +309,7 @@ match direction {
 	}
 }
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("match_enum", result, "south");
+		await build_and_check_output(input, "match_enum", "south");
 	});
 
 	test("match on enum as expression", async () => {
@@ -389,10 +327,7 @@ const label = match direction {
 }
 Console.write(label)
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("match_enum_expr", result, "N");
+		await build_and_check_output(input, "match_enum_expr", "N");
 	});
 
 	test("match on bool", async () => {
@@ -407,10 +342,7 @@ match flag {
 	}
 }
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("match_bool", result, "yes");
+		await build_and_check_output(input, "match_bool", "yes");
 	});
 
 	test("match on enum C output", () => {

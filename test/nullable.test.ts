@@ -2,7 +2,7 @@ import { expect, describe, test } from "vite-plus/test";
 
 import build from "../src/build";
 import parse from "../src/parse";
-import check_output from "./check_output";
+import build_and_check_output from "./build_and_check_output";
 import parse_with_imports from "./parse_with_imports";
 
 describe("nullable parse errors", () => {
@@ -64,10 +64,7 @@ describe("nullable valid usage", () => {
 var int? x = 5
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("nullable_non_null", result, "5");
+		await build_and_check_output(input, "nullable_non_null", "5");
 	});
 
 	test("nullable variable declared without value", () => {
@@ -86,10 +83,7 @@ if x == null {
     Console.write("is null")
 }
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("nullable_eq_null", result, "is null");
+		await build_and_check_output(input, "nullable_eq_null", "is null");
 	});
 
 	test("nullable != null comparison", async () => {
@@ -99,10 +93,7 @@ if x != null {
     Console.write("\\{x}")
 }
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("nullable_neq_null", result, "5");
+		await build_and_check_output(input, "nullable_neq_null", "5");
 	});
 
 	test("null == nullable comparison", async () => {
@@ -112,10 +103,7 @@ if null == x {
     Console.write("is null")
 }
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("null_eq_nullable", result, "is null");
+		await build_and_check_output(input, "null_eq_nullable", "is null");
 	});
 
 	test("null != nullable comparison", async () => {
@@ -125,10 +113,7 @@ if null != x {
     Console.write("\\{x}")
 }
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("null_neq_nullable", result, "5");
+		await build_and_check_output(input, "null_neq_nullable", "5");
 	});
 
 	test("nullable variable usable after != null check", async () => {
@@ -138,10 +123,7 @@ if x != null {
     Console.write("\\{x}")
 }
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("nullable_narrowed_neq", result, "5");
+		await build_and_check_output(input, "nullable_narrowed_neq", "5");
 	});
 
 	test("nullable variable usable in else after == null check", async () => {
@@ -153,10 +135,7 @@ if x == null {
     Console.write("\\{x}")
 }
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("nullable_narrowed_eq_else", result, "5");
+		await build_and_check_output(input, "nullable_narrowed_eq_else", "5");
 	});
 
 	test("null-valued variable usable after != null check", async () => {
@@ -169,10 +148,7 @@ if x != null {
     Console.write("\\{x}")
 }
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("nullable_narrowed_func", result, "10");
+		await build_and_check_output(input, "nullable_narrowed_func", "10");
 	});
 });
 
@@ -183,10 +159,7 @@ var int? x = null
 var int y = x ?? 42
 Console.write("\\{y}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("coalesce_null", result, "42");
+		await build_and_check_output(input, "coalesce_null", "42");
 	});
 
 	test("?? with non-null value returns value", async () => {
@@ -195,10 +168,7 @@ var int? x = 5
 var int y = x ?? 42
 Console.write("\\{y}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("coalesce_non_null", result, "5");
+		await build_and_check_output(input, "coalesce_non_null", "5");
 	});
 
 	test("?? with function returning null", async () => {
@@ -209,10 +179,7 @@ func deepThought = (out int?) {
 var int answer = deepThought() ?? 42
 Console.write("\\{answer}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("coalesce_func_null", result, "42");
+		await build_and_check_output(input, "coalesce_func_null", "42");
 	});
 
 	test("?? with function returning value", async () => {
@@ -223,10 +190,7 @@ func deepThought = (out int?) {
 var int answer = deepThought() ?? 42
 Console.write("\\{answer}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("coalesce_func_val", result, "7");
+		await build_and_check_output(input, "coalesce_func_val", "7");
 	});
 
 	test("?? result is non-nullable", async () => {
@@ -235,10 +199,7 @@ var int? x = null
 var int y = x ?? 10
 Console.write("\\{y + 1}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("coalesce_non_nullable", result, "11");
+		await build_and_check_output(input, "coalesce_non_nullable", "11");
 	});
 });
 
@@ -434,10 +395,7 @@ if a != null {
     Console.write("null")
 }
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("nullable_class_branch_null", result, "null");
+		await build_and_check_output(input, "nullable_class_branch_null", "null");
 	});
 
 	test("var Box? a = Box(5) then if a != null branch", async () => {
@@ -452,10 +410,7 @@ if a != null {
     Console.write("null")
 }
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("nullable_class_branch_non", result, "non");
+		await build_and_check_output(input, "nullable_class_branch_non", "non");
 	});
 
 	test("nullable class with destroy reading self, freed when null", async () => {
@@ -472,11 +427,8 @@ func test = () {
 test()
 Console.write("done")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		// Destroy must be skipped on null — no crash, no "destroyed" output.
-		await check_output("nullable_class_destroy_null", result, "done");
+		await build_and_check_output(input, "nullable_class_destroy_null", "done");
 	});
 
 	test("nullable class with destroy reading self, freed when non-null", async () => {
@@ -493,11 +445,8 @@ func test = () {
 test()
 Console.write("done")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		// Destroy must run exactly once when non-null.
-		await check_output("nullable_class_destroy_non", result, "5\ndone");
+		await build_and_check_output(input, "nullable_class_destroy_non", "5\ndone");
 	});
 
 	test("nullable class owning a class field, reclaimed at scope exit", async () => {
@@ -514,10 +463,7 @@ func test = () {
 test()
 Console.write("done")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("nullable_class_owning_field", result, "done");
+		await build_and_check_output(input, "nullable_class_owning_field", "done");
 	});
 
 	test("reassign nullable var: h = Box(...) then h = null", async () => {
@@ -532,10 +478,7 @@ func test = () {
 test()
 Console.write("done")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("nullable_class_reassign_null", result, "done");
+		await build_and_check_output(input, "nullable_class_reassign_null", "done");
 	});
 });
 
@@ -609,10 +552,7 @@ func test = () {
 test()
 Console.write("done")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("nullable_reassign_chain", result, "done");
+		await build_and_check_output(input, "nullable_reassign_chain", "done");
 	});
 
 	test("nullable var: null then assign then null then assign", async () => {
@@ -631,10 +571,7 @@ func test = () {
 }
 test()
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("nullable_null_assign_cycle", result, "2");
+		await build_and_check_output(input, "nullable_null_assign_cycle", "2");
 	});
 
 	test("return nullable class from function — caller frees", async () => {
@@ -651,10 +588,7 @@ func test = () {
 test()
 Console.write("done")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("nullable_return_from_func", result, "done");
+		await build_and_check_output(input, "nullable_return_from_func", "done");
 	});
 
 	test("nullable class in a loop — each iteration frees", async () => {
@@ -673,10 +607,7 @@ func test = () {
 test()
 Console.write("done")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("nullable_loop_reclaim", result, "done");
+		await build_and_check_output(input, "nullable_loop_reclaim", "done");
 	});
 
 	test("nullable class owning class field, reassigned to null frees field", async () => {
@@ -696,10 +627,7 @@ func test = () {
 test()
 Console.write("done")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("nullable_field_owner_reassign", result, "done");
+		await build_and_check_output(input, "nullable_field_owner_reassign", "done");
 	});
 
 	test("pass non-null nullable var to mov param — freed exactly once", async () => {
@@ -719,10 +647,7 @@ func test = () {
 test()
 Console.write("done")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("nullable_mov_nonnull", result, "5\ndone");
+		await build_and_check_output(input, "nullable_mov_nonnull", "5\ndone");
 	});
 
 	test("pass null nullable var to mov param — no free, no crash", async () => {
@@ -742,10 +667,7 @@ func test = () {
 test()
 Console.write("done")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("nullable_mov_null", result, "null\ndone");
+		await build_and_check_output(input, "nullable_mov_null", "null\ndone");
 	});
 
 	test("nullable class with destroy owning class field, freed when non-null", async () => {
@@ -765,10 +687,7 @@ func test = () {
 test()
 Console.write("done")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("nullable_owner_destroy_non", result, "box 7\ndone");
+		await build_and_check_output(input, "nullable_owner_destroy_non", "box 7\ndone");
 	});
 
 	test("nullable class returned from function and reassigned", async () => {
@@ -787,10 +706,7 @@ func test = () {
 test()
 Console.write("done")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("nullable_returned_reassigned", result, "done");
+		await build_and_check_output(input, "nullable_returned_reassigned", "done");
 	});
 });
 
@@ -810,10 +726,7 @@ func test = () {
 test()
 Console.write("done")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("nullable_mov_then_null", result, "done");
+		await build_and_check_output(input, "nullable_mov_then_null", "done");
 	});
 
 	test("move nullable var then reassign new value — no double free", async () => {
@@ -831,10 +744,7 @@ func test = () {
 test()
 Console.write("done")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("nullable_mov_then_new", result, "done");
+		await build_and_check_output(input, "nullable_mov_then_new", "done");
 	});
 
 	test("nullable class field (mov) freed at scope exit when null", async () => {
@@ -854,10 +764,7 @@ func test = () {
 test()
 Console.write("done")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("nullable_field_null", result, "done");
+		await build_and_check_output(input, "nullable_field_null", "done");
 	});
 
 	test("nullable class field (mov) freed at scope exit when non-null", async () => {
@@ -877,10 +784,7 @@ func test = () {
 test()
 Console.write("done")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("nullable_field_val", result, "box 7\ndone");
+		await build_and_check_output(input, "nullable_field_val", "box 7\ndone");
 	});
 
 	test("nullable class with destroy in a loop — destroy runs each iteration", async () => {
@@ -902,10 +806,7 @@ func test = () {
 test()
 Console.write("done")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("nullable_destroy_loop", result, "d0\nd1\nd2\ndone");
+		await build_and_check_output(input, "nullable_destroy_loop", "d0\nd1\nd2\ndone");
 	});
 
 	test("?? coalescing on nullable class returns fallback when null", async () => {
@@ -922,10 +823,7 @@ func test = () {
 }
 test()
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("nullable_coalesce_class", result, "99\n");
+		await build_and_check_output(input, "nullable_coalesce_class", "99\n");
 	});
 });
 
@@ -948,10 +846,7 @@ func test = () {
 test()
 Console.write("done")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("nullable_field_null_to_val", result, "5\ndone");
+		await build_and_check_output(input, "nullable_field_null_to_val", "5\ndone");
 	});
 
 	test("nullable field assigned value→null — old instance destroyed", async () => {
@@ -972,9 +867,6 @@ func test = () {
 test()
 Console.write("done")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("nullable_field_val_to_null", result, "5\ndone");
+		await build_and_check_output(input, "nullable_field_val_to_null", "5\ndone");
 	});
 });

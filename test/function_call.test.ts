@@ -1,9 +1,7 @@
 import { expect, describe, test } from "vite-plus/test";
 
-import build from "../src/build";
 import parse from "../src/parse";
-import check_output from "./check_output";
-import parse_with_imports from "./parse_with_imports";
+import build_and_check_output from "./build_and_check_output";
 import test_error from "./test_error";
 
 // BUILD
@@ -15,10 +13,7 @@ func greet = () {
 }
 greet()
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("func_call_no_params", result, "hello");
+		await build_and_check_output(input, "func_call_no_params", "hello");
 	});
 
 	test("function with string params", async () => {
@@ -28,10 +23,7 @@ func greet = (string name, string title) {
 }
 greet("Andrew", "Manager")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("func_call_string_params", result, "Manager Andrew");
+		await build_and_check_output(input, "func_call_string_params", "Manager Andrew");
 	});
 
 	test("function call with return value", async () => {
@@ -40,10 +32,7 @@ func add = (int a, int b, out int) => a + b
 const x = add(1, 2)
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("func_call_return_value", result, "3");
+		await build_and_check_output(input, "func_call_return_value", "3");
 	});
 
 	test("function call with default param", async () => {
@@ -53,10 +42,7 @@ func greet = (string name, string greeting = "Hello") {
 }
 greet("Andrew")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("func_call_default_param", result, "Hello Andrew");
+		await build_and_check_output(input, "func_call_default_param", "Hello Andrew");
 	});
 
 	test("function call with all default params provided", async () => {
@@ -66,10 +52,7 @@ func greet = (string name, string greeting = "Hello") {
 }
 greet("Andrew", "Hi")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("func_call_override_default", result, "Hi Andrew");
+		await build_and_check_output(input, "func_call_override_default", "Hi Andrew");
 	});
 
 	test("chained function calls", async () => {
@@ -78,10 +61,7 @@ func double = (int x, out int) => x * 2
 func triple = (int x, out int) => x * 3
 Console.write("\\{triple(double(2))}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("func_call_chained", result, "12");
+		await build_and_check_output(input, "func_call_chained", "12");
 	});
 
 	test("function call in expression", async () => {
@@ -89,10 +69,7 @@ Console.write("\\{triple(double(2))}")
 func get_val = (out int) => 10
 Console.write("\\{get_val() + 5}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("func_call_in_expr", result, "15");
+		await build_and_check_output(input, "func_call_in_expr", "15");
 	});
 
 	test("function call with int params", async () => {
@@ -100,10 +77,7 @@ Console.write("\\{get_val() + 5}")
 func multiply = (int a, int b, out int) => a * b
 Console.write("\\{multiply(4, 7)}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("func_call_int_params", result, "28");
+		await build_and_check_output(input, "func_call_int_params", "28");
 	});
 
 	test("function call with function params", async () => {
@@ -112,10 +86,7 @@ func multiply = (int a, out int) => a * 5
 func apply_func_to_num = (int num, func (int, out int) f, out int) => f(num)
 Console.write("\\{apply_func_to_num(4, multiply)}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("func_call_func_param", result, "20");
+		await build_and_check_output(input, "func_call_func_param", "20");
 	});
 });
 

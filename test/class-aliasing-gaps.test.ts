@@ -1,8 +1,6 @@
-import { describe, expect, test } from "vite-plus/test";
+import { describe, test } from "vite-plus/test";
 
-import build from "../src/build";
-import check_output from "./check_output";
-import parse_with_imports from "./parse_with_imports";
+import build_and_check_output from "./build_and_check_output";
 
 // Classes are reference types: `var Box q = p` is documented to create a shared
 // reference (MEMORY.md §Classes). Such an object-level alias must NOT be
@@ -43,10 +41,7 @@ if true {
 }
 Console.write("done\\n")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("alias_double_destroy", result, "Ddone\n");
+		await build_and_check_output(input, "alias_double_destroy", "Ddone\n");
 	});
 
 	// #2 — A class that owns another class (`mov Inner c`) is aliased. Both
@@ -65,10 +60,7 @@ var Outer p = Outer(mov Inner(7))
 var Outer q = p
 Console.write("\\{p.c.v}\\n")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("alias_double_free_inner", result, "7\n");
+		await build_and_check_output(input, "alias_double_free_inner", "7\n");
 	});
 
 	// #3 — The double-destroy compounds across loop iterations: each iteration
@@ -91,10 +83,7 @@ while i < 2 {
 }
 Console.write("done\\n")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("alias_loop_double_destroy", result, "DDdone\n");
+		await build_and_check_output(input, "alias_loop_double_destroy", "DDdone\n");
 	});
 });
 
@@ -117,12 +106,9 @@ var R q = p
 q = R(3)
 Console.write("done\\n")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		// No destroy fires on the reassignment; R(1) and R(3) each destroy once
 		// at scope exit (p owns R(1), q owns R(3)).
-		await check_output("alias_reassign_leak", result, "done\n");
+		await build_and_check_output(input, "alias_reassign_leak", "done\n");
 	});
 
 	test("repeated reassignment destroys each former instance once", async () => {
@@ -139,12 +125,9 @@ q = R(3)
 q = R(4)
 Console.write("done\\n")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		// R(1) (p), R(3) (q's first), R(4) (q's second) each reclaimed exactly
 		// once — no leak, no double free (audit balanced).
-		await check_output("alias_reassign_twice", result, "done\n");
+		await build_and_check_output(input, "alias_reassign_twice", "done\n");
 	});
 });
 
@@ -172,10 +155,7 @@ while i < 3 {
 }
 Console.write("\\{p.v}\\n")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("loop_reassign_owner", result, "2\n");
+		await build_and_check_output(input, "loop_reassign_owner", "2\n");
 	});
 
 	test("alias reassigned in a loop reclaims every former instance", async () => {
@@ -195,9 +175,6 @@ while i < 3 {
 }
 Console.write("\\{q.v}\\n")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("loop_reassign_alias", result, "2\n");
+		await build_and_check_output(input, "loop_reassign_alias", "2\n");
 	});
 });

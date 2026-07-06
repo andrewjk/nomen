@@ -1,8 +1,6 @@
-import { describe, expect, test } from "vite-plus/test";
+import { describe, test } from "vite-plus/test";
 
-import build from "../src/build";
-import check_output from "./check_output";
-import parse_with_imports from "./parse_with_imports";
+import build_and_check_output from "./build_and_check_output";
 
 // A `ref` CLASS param is passed the ADDRESS of the caller's pointer slot (so the
 // callee can reassign it — see reassignment-loop.test.ts). The callee loads the
@@ -21,10 +19,7 @@ var Box a = Box(5)
 var int r = readv(ref a)
 Console.write("\\{r}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("ref_class_field_read", result, "5");
+		await build_and_check_output(input, "ref_class_field_read", "5");
 	});
 
 	test("write a field through a ref class param", async () => {
@@ -37,10 +32,7 @@ var Box a = Box(5)
 setv(ref a, 9)
 Console.write("\\{a.v}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("ref_class_field_write", result, "9");
+		await build_and_check_output(input, "ref_class_field_write", "9");
 	});
 
 	test("reassign a ref class param then read a field of the new instance", async () => {
@@ -55,10 +47,7 @@ replace(ref h, 7)
 replace(ref h, 8)
 Console.write("\\{h.c.v}\\n")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("ref_class_reassign_read", result, "8\n");
+		await build_and_check_output(input, "ref_class_reassign_read", "8\n");
 	});
 
 	test("ref class param with owned field reassigned in a loop", async () => {
@@ -76,9 +65,6 @@ while i <= 4 {
 }
 Console.write("\\{h.c.v}\\n")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("ref_class_field_loop", result, "4\n");
+		await build_and_check_output(input, "ref_class_field_loop", "4\n");
 	});
 });

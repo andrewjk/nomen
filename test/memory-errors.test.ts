@@ -1,7 +1,7 @@
 import { expect, describe, test } from "vite-plus/test";
 
 import build from "../src/build";
-import check_output from "./check_output";
+import build_and_check_output from "./build_and_check_output";
 import parse_with_imports from "./parse_with_imports";
 
 function extract_main(asm: string): string {
@@ -22,10 +22,7 @@ a.push(3)
 const int v = a.pop()
 Console.write("\\{v}")
 `;
-			const parsed = parse_with_imports(input);
-			expect(parsed.errors).toEqual([]);
-			const result = build(parsed.root, { arch: "aarch64", audit: true });
-			await check_output("leak_reassign", result, "3");
+			await build_and_check_output(input, "leak_reassign", "3");
 		});
 
 		test("early return runs Buffer.destroy and audit_check", async () => {
@@ -61,10 +58,7 @@ b = mov a
 const int v = b.pop()
 Console.write("\\{v}")
 `;
-			const parsed = parse_with_imports(input);
-			expect(parsed.errors).toEqual([]);
-			const result = build(parsed.root, { arch: "aarch64", audit: true });
-			await check_output("leak_field_assign", result, "1");
+			await build_and_check_output(input, "leak_field_assign", "1");
 		});
 
 		test("returning local struct with owned Buffer from function", async () => {
@@ -78,10 +72,7 @@ var List<int> a = make_list()
 const int v = a.pop()
 Console.write("\\{v}")
 `;
-			const parsed = parse_with_imports(input);
-			expect(parsed.errors).toEqual([]);
-			const result = build(parsed.root, { arch: "aarch64", audit: true });
-			await check_output("uaf_return_local_struct", result, "42");
+			await build_and_check_output(input, "uaf_return_local_struct", "42");
 		});
 	});
 
@@ -146,10 +137,7 @@ class Holder {
 var Holder h = Holder(mov Box(42))
 Console.write("\\{h.content.value}")
 `;
-			const parsed = parse_with_imports(input);
-			expect(parsed.errors).toEqual([]);
-			const result = build(parsed.root, { arch: "aarch64", audit: true });
-			await check_output("ok_read_field", result, "42");
+			await build_and_check_output(input, "ok_read_field", "42");
 		});
 
 		test("cannot copy a struct that owns a class field by value", () => {
@@ -250,10 +238,7 @@ var Token a = Token(7)
 var Token b = a
 Console.write("\\{b.id}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("copyable_destroy_runs", result, "7");
+		await build_and_check_output(input, "copyable_destroy_runs", "7");
 	});
 });
 
@@ -281,10 +266,7 @@ var List<int> b = mov a
 const int v = b.pop()
 Console.write("\\{v}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("owning_decl_mov", result, "2");
+		await build_and_check_output(input, "owning_decl_mov", "2");
 	});
 
 	test("assignment of an owning struct requires mov", () => {

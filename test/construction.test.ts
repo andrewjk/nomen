@@ -1,9 +1,7 @@
 import { expect, describe, test } from "vite-plus/test";
 
-import build from "../src/build";
 import parse from "../src/parse";
-import check_output from "./check_output";
-import parse_with_imports from "./parse_with_imports";
+import build_and_check_output from "./build_and_check_output";
 import test_error from "./test_error";
 
 // TODO: I think we should automatically create two constructors:
@@ -18,10 +16,7 @@ struct Empty {}
 var Empty e = Empty()
 Console.write("ok")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("construct_empty", result, "ok");
+		await build_and_check_output(input, "construct_empty", "ok");
 	});
 
 	test("construct struct with string param", async () => {
@@ -32,10 +27,7 @@ struct Person {
 var Person p = Person("Andrew")
 Console.write("\\{p.name}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("construct_string_param", result, "Andrew");
+		await build_and_check_output(input, "construct_string_param", "Andrew");
 	});
 
 	test("construct struct with default field", async () => {
@@ -47,10 +39,7 @@ struct Person {
 var Person p = Person("Bob")
 Console.write("\\{p.name} \\{p.age}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("construct_default_field", result, "Bob 0");
+		await build_and_check_output(input, "construct_default_field", "Bob 0");
 	});
 
 	test("construct struct with multiple required fields", async () => {
@@ -62,10 +51,7 @@ struct Point {
 var Point p = Point(3, 4)
 Console.write("\\{p.x} \\{p.y}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("construct_multi_param", result, "3 4");
+		await build_and_check_output(input, "construct_multi_param", "3 4");
 	});
 
 	test("construct struct and use field in expression", async () => {
@@ -78,10 +64,7 @@ var Point p = Point(10, 20)
 const sum = p.x + p.y
 Console.write("\\{sum}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("construct_field_expr", result, "30");
+		await build_and_check_output(input, "construct_field_expr", "30");
 	});
 
 	test("construct struct and modify field", async () => {
@@ -94,10 +77,7 @@ c.count = 5
 c.count = c.count + 10
 Console.write("\\{c.count}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("construct_modify_field", result, "15");
+		await build_and_check_output(input, "construct_modify_field", "15");
 	});
 
 	test("construct two instances independently", async () => {
@@ -111,10 +91,7 @@ a.value = 100
 b.value = 200
 Console.write("\\{a.value} \\{b.value}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("construct_two_instances", result, "100 200");
+		await build_and_check_output(input, "construct_two_instances", "100 200");
 	});
 });
 

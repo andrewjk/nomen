@@ -1,7 +1,6 @@
 import { expect, describe, test } from "vite-plus/test";
 
-import build from "../src/build";
-import check_output from "./check_output";
+import build_and_check_output from "./build_and_check_output";
 import parse_with_imports from "./parse_with_imports";
 
 describe("memory leaks", () => {
@@ -10,10 +9,7 @@ describe("memory leaks", () => {
 var int x = 42
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("leak_interpolate", result, "42");
+		await build_and_check_output(input, "leak_interpolate", "42");
 	});
 
 	test("int.to_string frees malloc'd buffer", async () => {
@@ -21,10 +17,7 @@ Console.write("\\{x}")
 var string s = 42.to_string()
 Console.write(s)
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("leak_to_string", result, "42");
+		await build_and_check_output(input, "leak_to_string", "42");
 	});
 
 	test("multiple interpolations free each buffer", async () => {
@@ -36,10 +29,7 @@ Console.write("\\{a}")
 Console.write("\\{b}")
 Console.write("\\{c}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("leak_multiple_interpolate", result, "123");
+		await build_and_check_output(input, "leak_multiple_interpolate", "123");
 	});
 
 	test("struct destroy frees string fields", async () => {
@@ -53,10 +43,7 @@ var int id = 1
 var Named n = Named(id, "Alice")
 Console.write("\\{n.id}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("leak_struct_string_field", result, "1");
+		await build_and_check_output(input, "leak_struct_string_field", "1");
 	});
 
 	test("inner scope string is freed", async () => {
@@ -67,10 +54,7 @@ if 1 == 1 {
 }
 Console.write("done")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("leak_scope_string", result, "42done");
+		await build_and_check_output(input, "leak_scope_string", "42done");
 	});
 
 	test("bare string literal does not malloc", async () => {
@@ -78,10 +62,7 @@ Console.write("done")
 var int x = 42
 Console.write("ok")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("leak_no_leak", result, "ok");
+		await build_and_check_output(input, "leak_no_leak", "ok");
 	});
 
 	test("class interpolation frees malloc'd buffer", async () => {
@@ -93,10 +74,7 @@ class Box {
 var Box b = Box(42)
 Console.write("\\{b.value}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("leak_class_interpolate", result, "42");
+		await build_and_check_output(input, "leak_class_interpolate", "42");
 	});
 
 	test("multiple class instances free each allocation", async () => {
@@ -112,10 +90,7 @@ Console.write("\\{a.value}")
 Console.write("\\{b.value}")
 Console.write("\\{c.value}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("leak_multiple_class", result, "123");
+		await build_and_check_output(input, "leak_multiple_class", "123");
 	});
 
 	test("class destroy frees string fields", async () => {
@@ -129,10 +104,7 @@ var int id = 1
 var Named n = Named(id, "Alice")
 Console.write("\\{n.id}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("leak_class_string_field", result, "1");
+		await build_and_check_output(input, "leak_class_string_field", "1");
 	});
 
 	test("inner scope class is freed", async () => {
@@ -147,10 +119,7 @@ if 1 == 1 {
 }
 Console.write("done")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("leak_scope_class", result, "42done");
+		await build_and_check_output(input, "leak_scope_class", "42done");
 	});
 
 	test("bare string literal does not class malloc", async () => {
@@ -158,10 +127,7 @@ Console.write("done")
 var int x = 42
 Console.write("ok")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("leak_class_no_leak", result, "ok");
+		await build_and_check_output(input, "leak_class_no_leak", "ok");
 	});
 
 	test("array of strings from to_string frees each element", async () => {
@@ -171,10 +137,7 @@ Console.write("\\{parts.at(0)}")
 Console.write("\\{parts.at(1)}")
 Console.write("\\{parts.at(2)}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("leak_array_to_string", result, "123");
+		await build_and_check_output(input, "leak_array_to_string", "123");
 	});
 
 	test("array of classes frees each element", async () => {
@@ -188,10 +151,7 @@ Console.write("\\{items.at(0).value}")
 Console.write("\\{items.at(1).value}")
 Console.write("\\{items.at(2).value}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("leak_array_of_classes", result, "123");
+		await build_and_check_output(input, "leak_array_of_classes", "123");
 	});
 
 	test("array of classes with destroy frees each element", async () => {
@@ -208,10 +168,7 @@ var items = Array(Resource(1), Resource(2))
 Console.write("\\{items.at(0).handle}")
 Console.write("\\{items.at(1).handle}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("leak_array_class_destroy", result, "12");
+		await build_and_check_output(input, "leak_array_class_destroy", "12");
 	});
 
 	test("inner scope array of strings is freed", async () => {
@@ -222,10 +179,7 @@ if 1 == 1 {
 }
 Console.write("done")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("leak_scope_array_strings", result, "42done");
+		await build_and_check_output(input, "leak_scope_array_strings", "42done");
 	});
 
 	test("inner scope array of classes is freed", async () => {
@@ -240,10 +194,7 @@ if 1 == 1 {
 }
 Console.write("done")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("leak_scope_array_classes", result, "10done");
+		await build_and_check_output(input, "leak_scope_array_classes", "10done");
 	});
 
 	test("for-each over string array frees elements", async () => {
@@ -253,10 +204,7 @@ for s of parts {
   Console.write(s)
 }
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("leak_foreach_string_array", result, "12");
+		await build_and_check_output(input, "leak_foreach_string_array", "12");
 	});
 
 	test("for-each over class array frees elements", async () => {
@@ -270,10 +218,7 @@ for b of items {
   Console.write("\\{b.value}")
 }
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("leak_foreach_class_array", result, "12");
+		await build_and_check_output(input, "leak_foreach_class_array", "12");
 	});
 
 	test("break does not leak array string elements in loop", async () => {
@@ -290,10 +235,7 @@ while i < 3 {
 }
 Console.write("done")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("leak_break_array_strings", result, "0done");
+		await build_and_check_output(input, "leak_break_array_strings", "0done");
 	});
 
 	test("break does not leak array class elements in loop", async () => {
@@ -314,10 +256,7 @@ while i < 3 {
 }
 Console.write("done")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("leak_break_array_classes", result, "0done");
+		await build_and_check_output(input, "leak_break_array_classes", "0done");
 	});
 
 	test("continue does not leak array string elements in loop", async () => {
@@ -333,10 +272,7 @@ while i < 3 {
 }
 Console.write("done")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("leak_continue_array_strings", result, "02done");
+		await build_and_check_output(input, "leak_continue_array_strings", "02done");
 	});
 
 	test("continue does not leak array class elements in loop", async () => {
@@ -356,10 +292,7 @@ while i < 3 {
 }
 Console.write("done")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("leak_continue_array_classes", result, "02done");
+		await build_and_check_output(input, "leak_continue_array_classes", "02done");
 	});
 
 	test("struct field array of strings frees elements", async () => {
@@ -371,10 +304,7 @@ struct Container {
 var c = Container(Array("hello", "world"))
 Console.write("\\{c.items.at(0)}\\{c.items.at(1)}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("leak_struct_field_string_array", result, "helloworld");
+		await build_and_check_output(input, "leak_struct_field_string_array", "helloworld");
 	});
 
 	test("array of primitives does not heap allocate", async () => {
@@ -384,10 +314,7 @@ Console.write("\\{nums.at(0)}")
 Console.write("\\{nums.at(1)}")
 Console.write("\\{nums.at(2)}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("leak_array_primitives", result, "123");
+		await build_and_check_output(input, "leak_array_primitives", "123");
 	});
 
 	// pop() relinquishes the element: the slot is zeroed so the container
@@ -403,10 +330,7 @@ if true {
 }
 Console.write("done\\n")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("leak_pop_element", result, "Adone\n");
+		await build_and_check_output(input, "leak_pop_element", "Adone\n");
 	});
 
 	// A struct that transitively owns heap resources (here List, via its Buffer

@@ -1,8 +1,7 @@
 import { expect, describe, test } from "vite-plus/test";
 
-import build from "../src/build";
 import parse from "../src/parse";
-import check_output from "./check_output";
+import build_and_check_output from "./build_and_check_output";
 import parse_with_imports from "./parse_with_imports";
 import test_error from "./test_error";
 
@@ -21,10 +20,7 @@ var Box a = Box(42)
 var Box b = identity(mov a)
 Console.write("\\{b.value}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("own_return_param", result, "42");
+		await build_and_check_output(input, "own_return_param", "42");
 	});
 
 	test("returning one of two class params only moves the returned one", async () => {
@@ -43,10 +39,7 @@ var Box z = pick(x, mov y)
 Console.write("\\{x.value}")
 Console.write("\\{z.value}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("own_return_one_of_two", result, "12");
+		await build_and_check_output(input, "own_return_one_of_two", "12");
 	});
 
 	test("class param returned through nested function with mov", async () => {
@@ -67,10 +60,7 @@ var Box a = Box(42)
 var Box result = outer(mov a)
 Console.write("\\{result.value}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("own_nested_return", result, "42");
+		await build_and_check_output(input, "own_nested_return", "42");
 	});
 
 	test("class param stored in returned array with mov", async () => {
@@ -90,10 +80,7 @@ if result.length > 0 {
   Console.write("\\{result.first().value}")
 }
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("own_param_in_array", result, "42");
+		await build_and_check_output(input, "own_param_in_array", "42");
 	});
 
 	test("class in struct field returned from function with mov", async () => {
@@ -114,10 +101,7 @@ var Box a = Box(42)
 var Holder h = wrap(mov a)
 Console.write("\\{h.content.value}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("own_class_in_struct_field", result, "42");
+		await build_and_check_output(input, "own_class_in_struct_field", "42");
 	});
 
 	test("class elements in heap-allocated returned arrays (make_arr)", async () => {
@@ -136,10 +120,7 @@ if result.length > 0 {
   Console.write("\\{result.first().value}")
 }
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("own_stack_array_return", result, "42");
+		await build_and_check_output(input, "own_stack_array_return", "42");
 	});
 
 	test("mov at call site requires mov in definition", async () => {
@@ -172,10 +153,7 @@ var Box a = Box(1)
 a = Box(2)
 Console.write("\\{a.value}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("class_reassign", result, "2");
+		await build_and_check_output(input, "class_reassign", "2");
 	});
 
 	test("class field mutation through shared reference", async () => {
@@ -189,10 +167,7 @@ var Box b = a
 b.value = 42
 Console.write("\\{a.value}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("class_shared_mutate", result, "42");
+		await build_and_check_output(input, "class_shared_mutate", "42");
 	});
 
 	test("class in if-scope freed on scope exit", async () => {
@@ -207,10 +182,7 @@ if 1 == 1 {
 }
 Console.write("done")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("class_if_scope", result, "42done");
+		await build_and_check_output(input, "class_if_scope", "42done");
 	});
 
 	test("destroy block runs on class going out of scope", async () => {
@@ -230,10 +202,7 @@ func use = () {
 use()
 Console.write("done")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("class_destroy_scope", result, "42done");
+		await build_and_check_output(input, "class_destroy_scope", "42done");
 	});
 
 	test("class returned from function and reassigned", async () => {
@@ -251,10 +220,7 @@ Console.write("\\{a.value}")
 a = make()
 Console.write("\\{a.value}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("class_return_reassign", result, "4242");
+		await build_and_check_output(input, "class_return_reassign", "4242");
 	});
 
 	test("class element in array freed when array goes out of scope", async () => {
@@ -269,10 +235,7 @@ if 1 == 1 {
 }
 Console.write("done")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("class_array_scope_free", result, "12done");
+		await build_and_check_output(input, "class_array_scope_free", "12done");
 	});
 
 	test("class assigned in inner scope freed after scope", async () => {
@@ -288,10 +251,7 @@ if 1 == 1 {
 }
 Console.write("\\{a.value}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("class_inner_assign", result, "2");
+		await build_and_check_output(input, "class_inner_assign", "2");
 	});
 
 	test("class stored in struct field freed with struct", async () => {
@@ -307,10 +267,7 @@ class Holder {
 var Holder h = Holder(mov Box(42))
 Console.write("\\{h.content.value}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("class_in_struct_field", result, "42");
+		await build_and_check_output(input, "class_in_struct_field", "42");
 	});
 
 	test("mov prevents double-free when class passed to function that returns it", async () => {
@@ -327,10 +284,7 @@ var Box a = Box(42)
 var Box b = identity(mov a)
 Console.write("\\{b.value}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("mov_prevents_double_free", result, "42");
+		await build_and_check_output(input, "mov_prevents_double_free", "42");
 	});
 
 	test("heap-returned array of classes freed at scope exit", async () => {
@@ -352,10 +306,7 @@ if 1 == 1 {
 }
 Console.write("done")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("heap_arr_class_scope", result, "123done");
+		await build_and_check_output(input, "heap_arr_class_scope", "123done");
 	});
 
 	test("class used after assignment to another variable shares reference", async () => {
@@ -368,10 +319,7 @@ var Box a = Box(10)
 var Box b = a
 Console.write("\\{a.value}\\{b.value}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("class_shared_ref", result, "1010");
+		await build_and_check_output(input, "class_shared_ref", "1010");
 	});
 
 	test("for-each over class array frees elements after loop", async () => {
@@ -385,10 +333,7 @@ for b of items {
   Console.write("\\{b.value}")
 }
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("foreach_class_free", result, "123");
+		await build_and_check_output(input, "foreach_class_free", "123");
 	});
 
 	test("break in while loop frees class elements in array", async () => {
@@ -409,10 +354,7 @@ while i < 3 {
 }
 Console.write("done")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("break_class_array", result, "0done");
+		await build_and_check_output(input, "break_class_array", "0done");
 	});
 
 	test("continue in while loop frees class elements in array", async () => {
@@ -432,10 +374,7 @@ while i < 3 {
 }
 Console.write("done")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("continue_class_array", result, "02done");
+		await build_and_check_output(input, "continue_class_array", "02done");
 	});
 
 	test("mov with struct (non-class) parameter", () => {
@@ -473,10 +412,7 @@ var Box y = Box(2)
 var Box z = pick(mov x, mov y)
 Console.write("\\{z.value}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("mov_multiple", result, "2");
+		await build_and_check_output(input, "mov_multiple", "2");
 	});
 
 	test("returning class from function without mov does not transfer ownership", async () => {
@@ -512,10 +448,7 @@ var Box a = Box(42)
 var Box b = share(mov a)
 Console.write("\\{b.value}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("mov_class_return", result, "42");
+		await build_and_check_output(input, "mov_class_return", "42");
 	});
 
 	test("returning class local var is allowed", async () => {
@@ -532,10 +465,7 @@ func make = (out Box) {
 var Box b = make()
 Console.write("\\{b.value}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("return_class_local", result, "42");
+		await build_and_check_output(input, "return_class_local", "42");
 	});
 
 	test("returning class param accessed through grouped expression", async () => {
@@ -568,10 +498,7 @@ var Point a = Point(1, 2)
 var Point b = identity(a)
 Console.write("\\{b.x}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("return_struct_param", result, "1");
+		await build_and_check_output(input, "return_struct_param", "1");
 	});
 
 	test("returning class param via function call is allowed", async () => {
@@ -592,10 +519,7 @@ var Box a = Box(42)
 var Box b = wrap(mov a)
 Console.write("\\{b.value}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("return_class_via_call", result, "42");
+		await build_and_check_output(input, "return_class_via_call", "42");
 	});
 
 	test("returning a mov class param that owns a class field", async () => {
@@ -615,9 +539,6 @@ var Holder a = Holder(mov Box(5))
 var Holder b = id(mov a)
 Console.write("\\{b.c.v}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("return_mov_param_with_field", result, "5");
+		await build_and_check_output(input, "return_mov_param_with_field", "5");
 	});
 });

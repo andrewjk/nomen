@@ -1,9 +1,7 @@
 import { expect, describe, test } from "vite-plus/test";
 
-import build from "../src/build";
 import parse from "../src/parse";
-import check_output from "./check_output";
-import parse_with_imports from "./parse_with_imports";
+import build_and_check_output from "./build_and_check_output";
 import test_error from "./test_error";
 
 // BUILD
@@ -30,11 +28,7 @@ const d = Dog(5)
 const c = d as Cat
 Console.write(c.to_string())
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("cast_struct_struct", result, "6");
+		await build_and_check_output(input, "cast_struct_struct", "6");
 	});
 
 	test("struct cast with field access", async () => {
@@ -59,11 +53,7 @@ const id = Id(5)
 const name = id as Name
 Console.write(name.to_string())
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("cast_field_access", result, "105");
+		await build_and_check_output(input, "cast_field_access", "105");
 	});
 
 	test("cast inside function", async () => {
@@ -93,11 +83,7 @@ const dog = Dog(9)
 const result = convert(dog)
 Console.write(result)
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("cast_inside_func", result, "10");
+		await build_and_check_output(input, "cast_inside_func", "10");
 	});
 
 	test("cast with same value", async () => {
@@ -122,11 +108,7 @@ const a = A(42)
 const b = a as B
 Console.write(b.to_string())
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("cast_same_value", result, "42");
+		await build_and_check_output(input, "cast_same_value", "42");
 	});
 
 	test("cast with int field directly", async () => {
@@ -143,11 +125,7 @@ const w = Wrapped(99)
 const v = w as int
 Console.write("\\{v}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("cast_to_int", result, "99");
+		await build_and_check_output(input, "cast_to_int", "99");
 	});
 });
 

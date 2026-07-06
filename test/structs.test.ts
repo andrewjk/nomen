@@ -1,9 +1,7 @@
 import { expect, describe, test } from "vite-plus/test";
 
-import build from "../src/build";
 import parse from "../src/parse";
-import check_output from "./check_output";
-import parse_with_imports from "./parse_with_imports";
+import build_and_check_output from "./build_and_check_output";
 import test_error from "./test_error";
 
 // BUILD
@@ -17,10 +15,7 @@ var Person p
 p.age = 25
 Console.write("\\{p.age}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("struct_int_field", result, "25");
+		await build_and_check_output(input, "struct_int_field", "25");
 	});
 
 	test("struct with string field", async () => {
@@ -32,10 +27,7 @@ struct Person {
 var Person p = Person("Alice")
 Console.write("\\{p.name}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("struct_string_field", result, "Alice");
+		await build_and_check_output(input, "struct_string_field", "Alice");
 	});
 
 	test("struct with string array field", async () => {
@@ -46,10 +38,7 @@ struct Container {
 var c = Container(["hello", "world"])
 Console.write("\\{c.items.at(0)}\\{c.items.at(1)}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("struct_string_array_field", result, "helloworld");
+		await build_and_check_output(input, "struct_string_array_field", "helloworld");
 	});
 
 	test("struct with string array field and explicit type", async () => {
@@ -60,10 +49,7 @@ struct Container {
 var Container c = Container(["hello", "world"])
 Console.write("\\{c.items.at(0)}\\{c.items.at(1)}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("struct_string_array_field_explicit", result, "helloworld");
+		await build_and_check_output(input, "struct_string_array_field_explicit", "helloworld");
 	});
 
 	// BROKEN: constructor stores a pointer instead of copying elements inline
@@ -76,10 +62,7 @@ struct Holder {
 var Holder h = Holder(0, ["first", "second"])
 Console.write("\\{h.args.at(0)}\\{h.args.at(1)}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("struct_fixed_size_string_array_field", result, "firstsecond");
+		await build_and_check_output(input, "struct_fixed_size_string_array_field", "firstsecond");
 	});
 
 	// BROKEN: same issue with int arrays
@@ -91,10 +74,7 @@ struct Nums {
 var Nums n = Nums([10, 20, 30])
 Console.write("\\{n.values.at(0)} \\{n.values.at(1)} \\{n.values.at(2)}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("struct_fixed_size_int_array_field", result, "10 20 30");
+		await build_and_check_output(input, "struct_fixed_size_int_array_field", "10 20 30");
 	});
 
 	// Regression: inlined .at() on a fixed-size array field of a struct *parameter*
@@ -117,10 +97,7 @@ var Nums n = Nums(7, [10, 20, 30])
 var int result = first_then_total(n)
 Console.write("\\{result}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("struct_param_array_field_register", result, "7");
+		await build_and_check_output(input, "struct_param_array_field_register", "7");
 	});
 
 	test("struct with default field value", async () => {
@@ -131,10 +108,7 @@ struct Counter {
 var Counter c = Counter()
 Console.write("\\{c.count}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("struct_default_field", result, "0");
+		await build_and_check_output(input, "struct_default_field", "0");
 	});
 
 	test("struct field get and set", async () => {
@@ -146,10 +120,7 @@ struct Point {
 var Point p = Point(10, 20)
 Console.write("\\{p.x} \\{p.y}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("struct_field_get_set", result, "10 20");
+		await build_and_check_output(input, "struct_field_get_set", "10 20");
 	});
 
 	test("struct method returning value", async () => {
@@ -165,10 +136,7 @@ p.age = 42
 const age = p.get_age()
 Console.write("\\{age}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("struct_method_return", result, "42");
+		await build_and_check_output(input, "struct_method_return", "42");
 	});
 
 	test("struct mutating method", async () => {
@@ -185,10 +153,7 @@ c.increment()
 c.increment()
 Console.write("\\{c.count}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("struct_mutating_method", result, "3");
+		await build_and_check_output(input, "struct_mutating_method", "3");
 	});
 
 	test("struct static function", async () => {
@@ -201,10 +166,7 @@ struct Calc {
 const result = Calc.add(3, 7)
 Console.write("\\{result}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("struct_static_func", result, "10");
+		await build_and_check_output(input, "struct_static_func", "10");
 	});
 
 	test("struct field update and read", async () => {
@@ -217,10 +179,7 @@ var Point p = Point(3, 4)
 p.x = 10
 Console.write("\\{p.x} \\{p.y}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("struct_field_update", result, "10 4");
+		await build_and_check_output(input, "struct_field_update", "10 4");
 	});
 
 	test("struct with method using field arithmetic", async () => {
@@ -237,10 +196,7 @@ r.width = 6
 r.height = 7
 Console.write("\\{r.area()}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("struct_method_arithmetic", result, "42");
+		await build_and_check_output(input, "struct_method_arithmetic", "42");
 	});
 
 	test("multiple struct instances", async () => {
@@ -253,10 +209,7 @@ var Point a = Point(10, 30)
 var Point b = Point(20, 40)
 Console.write("\\{a.x} \\{b.x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("struct_multiple_instances", result, "10 20");
+		await build_and_check_output(input, "struct_multiple_instances", "10 20");
 	});
 
 	test("struct constructed with required fields", async () => {
@@ -268,10 +221,7 @@ struct Point {
 var Point p = Point(3, 4)
 Console.write("\\{p.x} \\{p.y}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("struct_constructed_params", result, "3 4");
+		await build_and_check_output(input, "struct_constructed_params", "3 4");
 	});
 });
 

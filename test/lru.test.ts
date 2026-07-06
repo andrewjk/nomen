@@ -1,8 +1,6 @@
-import { expect, test } from "vite-plus/test";
+import { test } from "vite-plus/test";
 
-import build from "../src/build";
-import check_output from "./check_output";
-import parse_with_imports from "./ziglings/parse_with_imports";
+import build_and_check_output from "./build_and_check_output";
 
 test("lru -- build", async () => {
 	const input = `
@@ -102,8 +100,5 @@ pub func main = () {
 	Console.write("\\{missed}\\n")
 }
 `;
-	const parsed = parse_with_imports(input);
-	expect(parsed.errors).toEqual([]);
-	const result = build(parsed.root, { arch: "aarch64", audit: true });
-	await check_output("lru_small", result, "4\n96");
+	await build_and_check_output(input, "lru_small", "4\n96", true);
 });

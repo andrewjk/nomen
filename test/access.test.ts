@@ -1,9 +1,7 @@
 import { expect, describe, test } from "vite-plus/test";
 
-import build from "../src/build";
 import parse from "../src/parse";
-import check_output from "./check_output";
-import parse_with_imports from "./parse_with_imports";
+import build_and_check_output from "./build_and_check_output";
 import test_error from "./test_error";
 
 // BUILD
@@ -17,10 +15,7 @@ var Person p = Person()
 p.age = 25
 Console.write("\\{p.age}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("access_get_field", result, "25");
+		await build_and_check_output(input, "access_get_field", "25");
 	});
 
 	test("getting string field", async () => {
@@ -31,10 +26,7 @@ struct Person {
 var Person p = Person("Alice")
 Console.write("\\{p.name}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("access_get_string_field", result, "Alice");
+		await build_and_check_output(input, "access_get_string_field", "Alice");
 	});
 
 	test("setting int field", async () => {
@@ -46,10 +38,7 @@ var Person p = Person()
 p.age = 20
 Console.write("\\{p.age}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("access_set_field", result, "20");
+		await build_and_check_output(input, "access_set_field", "20");
 	});
 
 	test("getting and setting field", async () => {
@@ -62,43 +51,34 @@ p.age = 10
 p.age = 30
 Console.write("\\{p.age}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("access_get_set_field", result, "30");
+		await build_and_check_output(input, "access_get_set_field", "30");
 	});
 
 	test("field used in expression", async () => {
 		const input = `
-struct Point {
+struct MyPoint {
   var int x
   var int y
 }
-var Point p = Point(3, 4)
+var MyPoint p = MyPoint(3, 4)
 const sum = p.x + p.y
 Console.write("\\{sum}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("access_field_expr", result, "7");
+		await build_and_check_output(input, "access_field_expr", "7");
 	});
 
 	test("multiple instances independent", async () => {
 		const input = `
-struct Point {
+struct MyPoint {
   var int x
   var int y
 }
-var Point a = Point(10, 20)
-var Point b = Point(30, 40)
+var MyPoint a = MyPoint(10, 20)
+var MyPoint b = MyPoint(30, 40)
 a.x = 50
 Console.write("\\{a.x} \\{a.y} \\{b.x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("access_multi_fields", result, "50 20 30");
+		await build_and_check_output(input, "access_multi_fields", "50 20 30");
 	});
 
 	test("method returning value", async () => {
@@ -113,30 +93,24 @@ var Person p = Person()
 p.age = 42
 Console.write("\\{p.get_age()}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("access_method_return", result, "42");
+		await build_and_check_output(input, "access_method_return", "42");
 	});
 
 	test("method using field arithmetic", async () => {
 		const input = `
-struct Rect {
+struct MyRect {
   var int width = 0
   var int height = 0
   func area = (self, out int) {
     return self.width * self.height
   }
 }
-var Rect r = Rect()
+var MyRect r = MyRect()
 r.width = 5
 r.height = 6
 Console.write("\\{r.area()}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("access_method_arithmetic", result, "30");
+		await build_and_check_output(input, "access_method_arithmetic", "30");
 	});
 
 	test("static function on struct", async () => {
@@ -149,10 +123,8 @@ struct Calc {
 const result = Calc.double(21)
 Console.write("\\{result}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("access_static_func", result, "42");
+
+		await build_and_check_output(input, "access_static_func", "42");
 	});
 
 	test("array index access", async () => {
@@ -163,10 +135,7 @@ nums.set(1, 20)
 nums.set(2, 30)
 Console.write("\\{nums.at(0)} \\{nums.at(1)} \\{nums.at(2)}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("access_array_index", result, "10 20 30");
+		await build_and_check_output(input, "access_array_index", "10 20 30");
 	});
 
 	test("array index with variable", async () => {
@@ -178,10 +147,7 @@ nums.set(2, 300)
 var i = 1
 Console.write("\\{nums.at(i)}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("access_array_var_index", result, "200");
+		await build_and_check_output(input, "access_array_var_index", "200");
 	});
 
 	test("field update then method call", async () => {
@@ -198,10 +164,7 @@ c.increment()
 c.increment()
 Console.write("\\{c.count}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("access_field_update_method", result, "3");
+		await build_and_check_output(input, "access_field_update_method", "3");
 	});
 });
 

@@ -1,8 +1,7 @@
 import { expect, describe, test } from "vite-plus/test";
 
-import build from "../src/build";
 import parse from "../src/parse";
-import check_output from "./check_output";
+import build_and_check_output from "./build_and_check_output";
 import parse_with_imports from "./parse_with_imports";
 
 describe("custom init build", () => {
@@ -19,10 +18,7 @@ struct Counter {
 const c = Counter(5)
 Console.write("\\{c.count}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("custom_init", result, "5");
+		await build_and_check_output(input, "custom_init", "5");
 	});
 
 	test("struct with custom init and computed field", async () => {
@@ -42,10 +38,7 @@ struct Point {
 const p = Point(3, 4)
 Console.write("\\{p.sum}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("custom_init_computed", result, "7");
+		await build_and_check_output(input, "custom_init_computed", "7");
 	});
 
 	test("struct with custom init using default field", async () => {
@@ -62,10 +55,7 @@ struct Config {
 const cfg = Config(3)
 Console.write("\\{cfg.timeout}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("custom_init_default", result, "30");
+		await build_and_check_output(input, "custom_init_default", "30");
 	});
 
 	test("pub struct with pub init", async () => {
@@ -81,10 +71,7 @@ pub struct Widget {
 const w = Widget("test")
 Console.write(w.name)
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("pub_init", result, "test");
+		await build_and_check_output(input, "pub_init", "test");
 	});
 });
 
@@ -102,10 +89,7 @@ struct Resource {
 const r = Resource(42)
 Console.write("\\{r.handle}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("destroy_basic", result, "42");
+		await build_and_check_output(input, "destroy_basic", "42");
 	});
 });
 
@@ -135,10 +119,7 @@ struct Resource {
 const r = Resource(42)
 Console.write("\\{r.handle}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("auto_destroy_basic", result, "42");
+		await build_and_check_output(input, "auto_destroy_basic", "42");
 	});
 
 	test("auto-destroy on second instance", async () => {
@@ -155,10 +136,7 @@ const r1 = Resource(1)
 const r2 = Resource(2)
 Console.write("\\{r2.handle}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("auto_destroy_second", result, "2");
+		await build_and_check_output(input, "auto_destroy_second", "2");
 	});
 
 	test("struct without destroy block produces no error", () => {
@@ -197,10 +175,7 @@ func get_handle = (out int) {
 
 Console.write("\\{get_handle()}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("return_field_no_move", result, "42");
+		await build_and_check_output(input, "return_field_no_move", "42");
 	});
 });
 
@@ -224,10 +199,7 @@ var Outer outer
 outer.child = inner
 Console.write("\\{outer.child.value}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("assign_to_field", result, "42");
+		await build_and_check_output(input, "assign_to_field", "42");
 	});
 
 	test("recursive destroy of struct fields", async () => {
@@ -249,9 +221,6 @@ const f = File(10)
 const mgr = FileManager(1, f)
 Console.write("\\{mgr.id}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("recursive_destroy", result, "1");
+		await build_and_check_output(input, "recursive_destroy", "1");
 	});
 });

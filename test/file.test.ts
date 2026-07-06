@@ -1,8 +1,6 @@
-import { expect, describe, test } from "vite-plus/test";
+import { describe, test } from "vite-plus/test";
 
-import build from "../src/build";
-import check_output from "./check_output";
-import parse_with_imports from "./parse_with_imports";
+import build_and_check_output from "./build_and_check_output";
 
 describe("File write/read", () => {
 	test("writeLine then readLine", async () => {
@@ -19,10 +17,7 @@ const string a = r.readLine()
 const string b = r.readLine()
 Console.write("\\{a}|\\{b}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("file_write_read_line", result, "hello|world");
+		await build_and_check_output(input, "file_write_read_line", "hello|world");
 	});
 
 	test("writeAll then readAll", async () => {
@@ -37,10 +32,7 @@ r.open("filetest_all.txt", "r")
 const string content = r.readAll()
 Console.write(content)
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("file_write_read_all", result, "echo file io");
+		await build_and_check_output(input, "file_write_read_all", "echo file io");
 	});
 
 	test("eof is set after readAll", async () => {
@@ -57,10 +49,7 @@ if r.eof {
 	Console.write("done")
 }
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("file_eof", result, "done");
+		await build_and_check_output(input, "file_eof", "done");
 	});
 
 	test("readChunk and writeChunk", async () => {
@@ -75,9 +64,6 @@ r.open("filetest_chunk.txt", "r")
 const string part = r.readChunk(3)
 Console.write(part)
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("file_chunk", result, "abc");
+		await build_and_check_output(input, "file_chunk", "abc");
 	});
 });

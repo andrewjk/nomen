@@ -1,9 +1,7 @@
 import { expect, describe, test } from "vite-plus/test";
 
-import build from "../src/build";
 import parse from "../src/parse";
-import check_output from "./check_output";
-import parse_with_imports from "./parse_with_imports";
+import build_and_check_output from "./build_and_check_output";
 
 // PARSE
 describe("tuple parse", () => {
@@ -106,10 +104,7 @@ describe("tuple build and run", () => {
 var [int, string] things = [42, "answer"]
 Console.write("\\{things._0} \\{things._1}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("tuple_decl_access", result, "42 answer");
+		await build_and_check_output(input, "tuple_decl_access", "42 answer");
 	});
 
 	test("infer tuple type from heterogeneous value", async () => {
@@ -117,10 +112,7 @@ Console.write("\\{things._0} \\{things._1}")
 var things = [1, "first"]
 Console.write("\\{things._0} \\{things._1}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("tuple_infer_access", result, "1 first");
+		await build_and_check_output(input, "tuple_infer_access", "1 first");
 	});
 
 	test("tuple with three different types", async () => {
@@ -128,10 +120,7 @@ Console.write("\\{things._0} \\{things._1}")
 var triple = [42, "hello", true]
 Console.write("\\{triple._0} \\{triple._1} \\{triple._2}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("tuple_triple", result, "42 hello true");
+		await build_and_check_output(input, "tuple_triple", "42 hello true");
 	});
 
 	test("tuple returned from function", async () => {
@@ -142,10 +131,7 @@ func make_pair = (int a, int b, out [int, int]) {
 const p = make_pair(10, 20)
 Console.write("\\{p._0} \\{p._1}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("tuple_returned", result, "10 20");
+		await build_and_check_output(input, "tuple_returned", "10 20");
 	});
 
 	test("tuple reassignment", async () => {
@@ -154,10 +140,7 @@ var [int, string] things = [1, "old"]
 things = [2, "new"]
 Console.write("\\{things._0} \\{things._1}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("tuple_reassign", result, "2 new");
+		await build_and_check_output(input, "tuple_reassign", "2 new");
 	});
 });
 
@@ -171,10 +154,7 @@ func get_person = (int id, out [string, int]) {
 var [name, id] = get_person(12)
 Console.write("\\{name} \\{id}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("tuple_destructure_call", result, "Andrew 112");
+		await build_and_check_output(input, "tuple_destructure_call", "Andrew 112");
 	});
 
 	test("destructure three-element tuple", async () => {
@@ -185,10 +165,7 @@ func get_record = (int id, out [int, string, bool]) {
 var [num, label, active] = get_record(7)
 Console.write("\\{num} \\{label} \\{active}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("tuple_destructure_three", result, "7 rec true");
+		await build_and_check_output(input, "tuple_destructure_three", "7 rec true");
 	});
 
 	test("destructure tuple literal directly", async () => {
@@ -196,10 +173,7 @@ Console.write("\\{num} \\{label} \\{active}")
 var [a, b] = [11, "hello"]
 Console.write("\\{a} \\{b}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("tuple_destructure_literal", result, "11 hello");
+		await build_and_check_output(input, "tuple_destructure_literal", "11 hello");
 	});
 });
 
@@ -219,10 +193,7 @@ func sum_pairs = (...[int, int] pairs, out int) {
 const result = sum_pairs([1, 2], [3, 4])
 Console.write("\\{result}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("vtuple_sum", result, "10");
+		await build_and_check_output(input, "vtuple_sum", "10");
 	});
 
 	test("variadic tuple with mixed types", async () => {
@@ -239,10 +210,7 @@ func first_parts = (...[string, int] pairs, out string) {
 const out = first_parts(["count", 1], ["sum", 2])
 Console.write("\\{out}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("vtuple_mixed", result, ">countsum");
+		await build_and_check_output(input, "vtuple_mixed", ">countsum");
 	});
 
 	test("variadic tuple with zero args", async () => {
@@ -253,10 +221,7 @@ func count_pairs = (...[int, int] pairs, out int) {
 const n = count_pairs()
 Console.write("\\{n}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("vtuple_zero", result, "0");
+		await build_and_check_output(input, "vtuple_zero", "0");
 	});
 
 	test("variadic tuple mixed with fixed param", async () => {
@@ -273,10 +238,7 @@ func sum_with_base = (int base, ...[int, int] pairs, out int) {
 const result = sum_with_base(100, [1, 2], [3, 4])
 Console.write("\\{result}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("vtuple_with_base", result, "110");
+		await build_and_check_output(input, "vtuple_with_base", "110");
 	});
 });
 
@@ -290,10 +252,7 @@ func swap = ([int, int] pair, out [int, int]) {
 const p = swap([1, 2])
 Console.write("\\{p._0} \\{p._1}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("tuple_swap", result, "2 1");
+		await build_and_check_output(input, "tuple_swap", "2 1");
 	});
 
 	test("tuple as struct field", async () => {
@@ -304,9 +263,6 @@ struct Container {
 const c = Container([99, "bottles"])
 Console.write("\\{c.payload._0} \\{c.payload._1}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("tuple_as_field", result, "99 bottles");
+		await build_and_check_output(input, "tuple_as_field", "99 bottles");
 	});
 });

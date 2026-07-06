@@ -1,7 +1,6 @@
 import { expect, describe, test } from "vite-plus/test";
 
-import build from "../src/build";
-import check_output from "./check_output";
+import build_and_check_output from "./build_and_check_output";
 import parse_with_imports from "./parse_with_imports";
 
 // Generic containers now take `mov T value` on push/add/set. When T is a class,
@@ -21,14 +20,11 @@ if true {
 var Animal dead = list.pop()
 Console.write("got: \\{dead.letter}\\n")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		// With mov, `a` is invalidated — its anchor is skipped at scope exit.
 		// The Animal survives in the list's buffer. pop() returns a valid pointer.
 		// LEAK: 1 — the container doesn't free stored values on destroy yet.
 		// That's a known limitation; the type-safety guarantee (no UAF) is what matters.
-		await check_output("uaf_container_scope", result, "got: Z\n");
+		await build_and_check_output(input, "uaf_container_scope", "got: Z\n");
 	});
 
 	test("same class in two lists requires explicit ownership", async () => {

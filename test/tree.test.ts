@@ -1,8 +1,6 @@
-import { expect, describe, test } from "vite-plus/test";
+import { describe, test } from "vite-plus/test";
 
-import build from "../src/build";
-import check_output from "./check_output";
-import parse_with_imports from "./parse_with_imports";
+import build_and_check_output from "./build_and_check_output";
 
 describe("Tree<T> add and value", () => {
 	test("add single node and read back", async () => {
@@ -14,10 +12,7 @@ if t.count > 0 {
   Console.write("\\{v}")
 }
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("tree_add_single", result, "42");
+		await build_and_check_output(input, "tree_add_single", "42");
 	});
 
 	test("add multiple nodes preserves order", async () => {
@@ -34,10 +29,7 @@ for i of 0 .. t.count {
   Console.write("\\{v}")
 }
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("tree_add_order", result, "10 20 30");
+		await build_and_check_output(input, "tree_add_order", "10 20 30");
 	});
 
 	test("length tracks additions", async () => {
@@ -51,10 +43,7 @@ t.add(3)
 var int l3 = t.length()
 Console.write("\\{l0} \\{l1} \\{l3}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("tree_length", result, "0 1 3");
+		await build_and_check_output(input, "tree_length", "0 1 3");
 	});
 
 	test("empty tree length is zero", async () => {
@@ -62,10 +51,7 @@ Console.write("\\{l0} \\{l1} \\{l3}")
 var Tree<int> t = Tree<int>()
 Console.write("\\{t.length()}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("tree_empty_length", result, "0");
+		await build_and_check_output(input, "tree_empty_length", "0");
 	});
 
 	test("add negative values", async () => {
@@ -81,10 +67,7 @@ for i of 0 .. t.count {
   Console.write("\\{v}")
 }
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("tree_negative", result, "-5 -10");
+		await build_and_check_output(input, "tree_negative", "-5 -10");
 	});
 });
 
@@ -103,10 +86,7 @@ if left_idx >= 0 {
   Console.write("\\{lv}")
 }
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("tree_left", result, "10");
+		await build_and_check_output(input, "tree_left", "10");
 	});
 
 	test("set_right and read back", async () => {
@@ -123,10 +103,7 @@ if right_idx >= 0 {
   Console.write("\\{rv}")
 }
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("tree_right", result, "20");
+		await build_and_check_output(input, "tree_right", "20");
 	});
 
 	test("left of childless node is -1", async () => {
@@ -136,10 +113,7 @@ t.add(0)
 var int l = t.left(0)
 Console.write("\\{l}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("tree_no_left", result, "-1");
+		await build_and_check_output(input, "tree_no_left", "-1");
 	});
 
 	test("right of childless node is -1", async () => {
@@ -149,10 +123,7 @@ t.add(0)
 var int r = t.right(0)
 Console.write("\\{r}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("tree_no_right", result, "-1");
+		await build_and_check_output(input, "tree_no_right", "-1");
 	});
 
 	test("build binary tree with two children", async () => {
@@ -174,10 +145,7 @@ if li >= 0 && ri >= 0 {
   Console.write("\\{lv} \\{rv}")
 }
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("tree_binary", result, "2 3");
+		await build_and_check_output(input, "tree_binary", "2 3");
 	});
 });
 
@@ -188,10 +156,7 @@ var Tree<int> t = Tree<int>()
 t.add(0)
 Console.write("\\{t.count_nodes(0)}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("tree_count_single", result, "1");
+		await build_and_check_output(input, "tree_count_single", "1");
 	});
 
 	test("count empty subtree is 0", async () => {
@@ -199,10 +164,7 @@ Console.write("\\{t.count_nodes(0)}")
 var Tree<int> t = Tree<int>()
 Console.write("\\{t.count_nodes(-1)}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("tree_count_empty", result, "0");
+		await build_and_check_output(input, "tree_count_empty", "0");
 	});
 
 	test("count balanced tree", async () => {
@@ -218,10 +180,7 @@ t.set_left(root, lc)
 t.set_right(root, rc)
 Console.write("\\{t.count_nodes(root)}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("tree_count_balanced", result, "3");
+		await build_and_check_output(input, "tree_count_balanced", "3");
 	});
 
 	test("count left-heavy tree", async () => {
@@ -237,10 +196,7 @@ t.add(0)
 t.set_left(lc, llc)
 Console.write("\\{t.count_nodes(root)}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("tree_count_left_heavy", result, "3");
+		await build_and_check_output(input, "tree_count_left_heavy", "3");
 	});
 });
 
@@ -266,9 +222,6 @@ t.set_right(root, rc)
 var int total = sum_tree(t, root)
 Console.write("\\{total}")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("tree_sum_recursive", result, "60");
+		await build_and_check_output(input, "tree_sum_recursive", "60");
 	});
 });

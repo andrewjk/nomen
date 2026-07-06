@@ -1,8 +1,6 @@
-import { expect, describe, test } from "vite-plus/test";
+import { describe, test } from "vite-plus/test";
 
-import build from "../src/build";
-import check_output from "./check_output";
-import parse_with_imports from "./parse_with_imports";
+import build_and_check_output from "./build_and_check_output";
 
 // Regression coverage for class/string reassignment inside a loop across the
 // different codegen paths. The constructor path was fixed (anchor in the
@@ -25,10 +23,7 @@ while i <= 5 {
 }
 Console.write("\\{h.c.v}\\n")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("loop_reassign_factory", result, "5\n", { audit: true });
+		await build_and_check_output(input, "loop_reassign_factory", "5\n");
 	});
 
 	test("ref param reassigned by a function called in a loop", async () => {
@@ -46,10 +41,7 @@ while i <= 5 {
 }
 Console.write("\\{h.c.v}\\n")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("loop_reassign_refparam", result, "5\n", { audit: true });
+		await build_and_check_output(input, "loop_reassign_refparam", "5\n");
 	});
 
 	test("ref param reassignment outside a loop reclaims the old instance", async () => {
@@ -63,10 +55,7 @@ var Holder h = Holder(mov Box(0))
 replace(ref h, 7)
 Console.write("\\{h.c.v}\\n")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("refparam_reassign_nonloop", result, "7\n", { audit: true });
+		await build_and_check_output(input, "refparam_reassign_nonloop", "7\n");
 	});
 
 	test("string reassignment in a loop", async () => {
@@ -79,10 +68,7 @@ while i <= 3 {
 }
 Console.write("\\{s}\\n")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("loop_reassign_string", result, "iter3\n", { audit: true });
+		await build_and_check_output(input, "loop_reassign_string", "iter3\n");
 	});
 
 	test("constructor reassignment in a nested if inside a loop", async () => {
@@ -99,9 +85,6 @@ while i <= 5 {
 }
 Console.write("\\{h.c.v}\\n")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("loop_reassign_nested_if", result, "5\n", { audit: true });
+		await build_and_check_output(input, "loop_reassign_nested_if", "5\n");
 	});
 });

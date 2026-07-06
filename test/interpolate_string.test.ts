@@ -1,7 +1,6 @@
 import { expect, describe, test } from "vite-plus/test";
 
-import build from "../src/build";
-import check_output from "./check_output";
+import build_and_check_output from "./build_and_check_output";
 import parse_with_imports from "./parse_with_imports";
 
 // BUILD
@@ -11,10 +10,7 @@ describe("interpolate string build", () => {
 const x = 5
 Console.write("\\{x} is the value")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("interpolate_basic", result, "5 is the value");
+		await build_and_check_output(input, "interpolate_basic", "5 is the value");
 	});
 
 	test("multiple interpolations", async () => {
@@ -23,10 +19,7 @@ const x = 5
 const y = 10
 Console.write("\\{x} + \\{y} = \\{x + y}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("interpolate_multiple", result, "5 + 10 = 15");
+		await build_and_check_output(input, "interpolate_multiple", "5 + 10 = 15");
 	});
 
 	test("interpolation with expression", async () => {
@@ -34,10 +27,7 @@ Console.write("\\{x} + \\{y} = \\{x + y}")
 const x = 5
 Console.write("\\{x * 2} is double")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("interpolate_expression", result, "10 is double");
+		await build_and_check_output(input, "interpolate_expression", "10 is double");
 	});
 
 	test("interpolation with string variable", async () => {
@@ -45,10 +35,7 @@ Console.write("\\{x * 2} is double")
 const name = "world"
 Console.write("Hello \\{name}!")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("interpolate_string", result, "Hello world!");
+		await build_and_check_output(input, "interpolate_string", "Hello world!");
 	});
 
 	test("interpolation with negative number", async () => {
@@ -56,10 +43,7 @@ Console.write("Hello \\{name}!")
 const x = -5
 Console.write("Value: \\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("interpolate_negative", result, "Value: -5");
+		await build_and_check_output(input, "interpolate_negative", "Value: -5");
 	});
 
 	test("interpolation with zero", async () => {
@@ -67,10 +51,7 @@ Console.write("Value: \\{x}")
 const x = 0
 Console.write("Zero: \\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("interpolate_zero", result, "Zero: 0");
+		await build_and_check_output(input, "interpolate_zero", "Zero: 0");
 	});
 
 	test("interpolation in loop", async () => {
@@ -82,10 +63,7 @@ while i < 3 {
 }
 Console.write("\\n")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("interpolate_loop", result, "0 1 2 \n");
+		await build_and_check_output(input, "interpolate_loop", "0 1 2 \n");
 	});
 
 	test("interpolation with function call", async () => {
@@ -96,10 +74,7 @@ func get_value = (out int) {
 
 Console.write("Value: \\{get_value()}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("interpolate_function", result, "Value: 42");
+		await build_and_check_output(input, "interpolate_function", "Value: 42");
 	});
 
 	test("interpolation with boolean", async () => {
@@ -107,10 +82,7 @@ Console.write("Value: \\{get_value()}")
 const flag = true
 Console.write("Flag: \\{flag}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("interpolate_bool", result, "Flag: true");
+		await build_and_check_output(input, "interpolate_bool", "Flag: true");
 	});
 
 	test("interpolation with large number", async () => {
@@ -118,10 +90,7 @@ Console.write("Flag: \\{flag}")
 const big = 123456789
 Console.write("Big: \\{big}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("interpolate_large", result, "Big: 123456789");
+		await build_and_check_output(input, "interpolate_large", "Big: 123456789");
 	});
 
 	test("interpolation with array", async () => {
@@ -129,10 +98,7 @@ Console.write("Big: \\{big}")
 const arr = Array(1, 2, 3)
 Console.write("\\{arr}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("interpolate_with_array", result, "123");
+		await build_and_check_output(input, "interpolate_with_array", "123");
 	});
 });
 

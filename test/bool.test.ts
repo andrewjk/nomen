@@ -1,8 +1,6 @@
-import { expect, describe, test } from "vite-plus/test";
+import { describe, test } from "vite-plus/test";
 
-import build from "../src/build";
-import check_output from "./check_output";
-import parse_with_imports from "./parse_with_imports";
+import build_and_check_output from "./build_and_check_output";
 
 describe("bool build", () => {
 	test("const bool true in if", async () => {
@@ -14,10 +12,7 @@ if flag {
 }
 Console.write("\\{result}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("bool_const_true", result, "1");
+		await build_and_check_output(input, "bool_const_true", "1");
 	});
 
 	test("const bool false in if", async () => {
@@ -29,10 +24,7 @@ if flag {
 }
 Console.write("\\{result}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("bool_const_false", result, "0");
+		await build_and_check_output(input, "bool_const_false", "0");
 	});
 
 	test("comparison result stored in const bool", async () => {
@@ -45,10 +37,7 @@ if flag {
 }
 Console.write("\\{result}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("bool_cmp_stored", result, "1");
+		await build_and_check_output(input, "bool_cmp_stored", "1");
 	});
 
 	test("comparison false stored in const bool", async () => {
@@ -61,10 +50,7 @@ if flag {
 }
 Console.write("\\{result}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("bool_cmp_false_stored", result, "0");
+		await build_and_check_output(input, "bool_cmp_false_stored", "0");
 	});
 
 	test("bool passed to function", async () => {
@@ -80,10 +66,7 @@ const bool flag = true
 const result = check(flag)
 Console.write("\\{result}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("bool_func_param", result, "1");
+		await build_and_check_output(input, "bool_func_param", "1");
 	});
 
 	test("bool from comparison in function return", async () => {
@@ -99,10 +82,7 @@ if result {
 }
 Console.write("\\{output}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("bool_func_return", result, "1");
+		await build_and_check_output(input, "bool_func_return", "1");
 	});
 
 	test("negated bool", async () => {
@@ -114,10 +94,7 @@ if !flag {
 }
 Console.write("\\{result}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("bool_negated", result, "0");
+		await build_and_check_output(input, "bool_negated", "0");
 	});
 
 	test("bool equality comparison", async () => {
@@ -130,9 +107,6 @@ if a == b {
 }
 Console.write("\\{result}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("bool_equality", result, "1");
+		await build_and_check_output(input, "bool_equality", "1");
 	});
 });

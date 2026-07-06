@@ -2,7 +2,7 @@ import { expect, describe, test } from "vite-plus/test";
 
 import build from "../src/build";
 import parse from "../src/parse";
-import check_output from "./check_output";
+import build_and_check_output from "./build_and_check_output";
 import parse_with_imports from "./parse_with_imports";
 import test_error from "./test_error";
 
@@ -19,10 +19,7 @@ enum Direction {
 var direction = Direction.north
 Console.write("\\{direction}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("enum_simple", result, "0");
+		await build_and_check_output(input, "enum_simple", "0");
 	});
 
 	test("enum access different cases", async () => {
@@ -37,10 +34,7 @@ enum Direction {
 const d = Direction.south
 Console.write("\\{d}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("enum_different_case", result, "1");
+		await build_and_check_output(input, "enum_different_case", "1");
 	});
 
 	test("enum with associated data", async () => {
@@ -53,10 +47,7 @@ enum Result {
 var result = Result.error(42)
 Console.write("\\{result}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("enum_associated", result, "1");
+		await build_and_check_output(input, "enum_associated", "1");
 	});
 
 	test("reassign enum variable", async () => {
@@ -72,10 +63,7 @@ var direction = Direction.north
 direction = Direction.south
 Console.write("\\{direction}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("enum_reassign", result, "1");
+		await build_and_check_output(input, "enum_reassign", "1");
 	});
 
 	test("compare enum with equals", async () => {
@@ -94,10 +82,7 @@ if direction == Direction.north {
   Console.write("other")
 }
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("enum_compare_equals", result, "north");
+		await build_and_check_output(input, "enum_compare_equals", "north");
 	});
 
 	test("compare enum with not equals", async () => {
@@ -116,10 +101,7 @@ if direction != Direction.north {
   Console.write("north")
 }
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("enum_compare_not_equals", result, "not north");
+		await build_and_check_output(input, "enum_compare_not_equals", "not north");
 	});
 
 	test("enum in if else expression", async () => {
@@ -134,10 +116,7 @@ const label = if direction == Direction.north -> "N"
               else -> "S"
 Console.write(label)
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("enum_if_expression", result, "N");
+		await build_and_check_output(input, "enum_if_expression", "N");
 	});
 
 	test("multiple enums in same scope", async () => {
@@ -162,10 +141,7 @@ if size == Size.large {
   Console.write("large")
 }
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("enum_multiple", result, "greenlarge");
+		await build_and_check_output(input, "enum_multiple", "greenlarge");
 	});
 
 	test("pub enum", async () => {
@@ -178,10 +154,7 @@ pub enum Status {
 var s = Status.active
 Console.write("\\{s}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("enum_pub", result, "0");
+		await build_and_check_output(input, "enum_pub", "0");
 	});
 
 	test("enum with multiple associated data fields", async () => {
@@ -194,10 +167,7 @@ enum Shape {
 var shape = Shape.rect(10, 20)
 Console.write("\\{shape}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("enum_multi_associated", result, "1");
+		await build_and_check_output(input, "enum_multi_associated", "1");
 	});
 
 	test("enum with all cases having data", async () => {
@@ -211,10 +181,7 @@ enum Message {
 var msg = Message.quit
 Console.write("\\{msg}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("enum_all_data_cases", result, "0");
+		await build_and_check_output(input, "enum_all_data_cases", "0");
 	});
 
 	test("enum change and check", async () => {
@@ -235,10 +202,7 @@ if light == TrafficLight.green {
   Console.write("stop")
 }
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("enum_change_and_check", result, "go");
+		await build_and_check_output(input, "enum_change_and_check", "go");
 	});
 
 	test("enum shorthand in var declaration", async () => {
@@ -253,10 +217,7 @@ enum Direction {
 var Direction dir = .east
 Console.write("\\{dir}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("enum_shorthand_decl", result, "2");
+		await build_and_check_output(input, "enum_shorthand_decl", "2");
 	});
 
 	test("enum shorthand in assignment", async () => {
@@ -272,10 +233,7 @@ var direction = Direction.north
 direction = .south
 Console.write("\\{direction}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("enum_shorthand_assign", result, "1");
+		await build_and_check_output(input, "enum_shorthand_assign", "1");
 	});
 
 	test("enum shorthand in comparison", async () => {
@@ -294,10 +252,7 @@ if direction == .north {
   Console.write("other")
 }
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("enum_shorthand_compare", result, "north");
+		await build_and_check_output(input, "enum_shorthand_compare", "north");
 	});
 
 	test("enum shorthand in if expression", async () => {
@@ -312,10 +267,7 @@ const label = if direction == .north -> "N"
               else -> "S"
 Console.write(label)
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("enum_shorthand_if_expr", result, "N");
+		await build_and_check_output(input, "enum_shorthand_if_expr", "N");
 	});
 
 	test("enum shorthand C output", () => {

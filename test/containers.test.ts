@@ -1,8 +1,6 @@
-import { expect, describe, test } from "vite-plus/test";
+import { describe, test } from "vite-plus/test";
 
-import build from "../src/build";
-import check_output from "./check_output";
-import parse_with_imports from "./parse_with_imports";
+import build_and_check_output from "./build_and_check_output";
 
 // The arena adders are void (they mutate via `ref self`); a node's index is the
 // container's count read BEFORE the add. This sidesteps a compiler limitation
@@ -29,10 +27,7 @@ while cur >= 0 && cur < list.count {
 }
 Console.write("len=\\{list.length()} sum=\\{sum}\\n")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("arena_linkedlist", result, "len=3 sum=60\n");
+		await build_and_check_output(input, "arena_linkedlist", "len=3 sum=60\n");
 	});
 
 	test("Tree<int> build and count nodes", async () => {
@@ -51,10 +46,7 @@ t.add(0)
 t.set_left(root, l)
 Console.write("nodes=\\{t.length()} count=\\{t.count_nodes(root)}\\n")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("arena_tree", result, "nodes=4 count=4\n");
+		await build_and_check_output(input, "arena_tree", "nodes=4 count=4\n");
 	});
 
 	test("Graph<int> add nodes and edges", async () => {
@@ -78,10 +70,7 @@ while e != -1 {
 }
 Console.write("nodes=\\{g.node_length()} edges_from_a=\\{total}\\n")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("arena_graph", result, "nodes=3 edges_from_a=5\n");
+		await build_and_check_output(input, "arena_graph", "nodes=3 edges_from_a=5\n");
 	});
 
 	test("LinkedList<Elephant> store and retrieve class pointers", async () => {
@@ -116,14 +105,11 @@ for i of 0 .. list.count {
 }
 Console.write("\\n")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		// Elephants are mov'd into the list (ownership transfers), so they
 		// aren't freed at scope exit. The container doesn't free stored
 		// values on destroy yet — known limitation. Type safety (no UAF)
 		// is the guarantee; the leak is expected.
-		await check_output("linkedlist_class", result, "A B C\n");
+		await build_and_check_output(input, "linkedlist_class", "A B C\n");
 	});
 
 	test("Tree<Elephant> store and traverse class pointers", async () => {
@@ -155,10 +141,7 @@ for i of 0 .. t.count {
 }
 Console.write("\\n")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("tree_class", result, "R L R\n");
+		await build_and_check_output(input, "tree_class", "R L R\n");
 	});
 
 	test("Graph<Elephant> store and traverse class pointers", async () => {
@@ -190,9 +173,6 @@ for i of 0 .. g.node_count {
 }
 Console.write("\\n")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("graph_class", result, "A B C\n");
+		await build_and_check_output(input, "graph_class", "A B C\n");
 	});
 });

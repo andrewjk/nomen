@@ -2,7 +2,7 @@ import { expect, describe, test } from "vite-plus/test";
 
 import build from "../src/build";
 import parse from "../src/parse";
-import check_output from "./check_output";
+import build_and_check_output from "./build_and_check_output";
 import parse_with_imports from "./parse_with_imports";
 import test_error from "./test_error";
 
@@ -18,10 +18,7 @@ bitset Options {
 var options = Options.high
 Console.write("\\{options}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("bitset_single", result, "4");
+		await build_and_check_output(input, "bitset_single", "4");
 	});
 
 	test("combine bitset options with or", async () => {
@@ -35,10 +32,7 @@ bitset Flags {
 var flags = Flags.read | Flags.write
 Console.write("\\{flags}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("bitset_combine_or", result, "3");
+		await build_and_check_output(input, "bitset_combine_or", "3");
 	});
 
 	test("combine all bitset options", async () => {
@@ -52,10 +46,7 @@ bitset Perm {
 var p = Perm.read | Perm.write | Perm.exec
 Console.write("\\{p}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("bitset_combine_all", result, "7");
+		await build_and_check_output(input, "bitset_combine_all", "7");
 	});
 
 	test("add option to existing bitset", async () => {
@@ -69,10 +60,7 @@ var flags = Flags.read
 flags = flags | Flags.write
 Console.write("\\{flags}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("bitset_add_option", result, "3");
+		await build_and_check_output(input, "bitset_add_option", "3");
 	});
 
 	test("check if bitset has option set", async () => {
@@ -86,10 +74,7 @@ var flags = Flags.read | Flags.write
 const has_write = (flags & Flags.write) == Flags.write
 Console.write("\\{has_write}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("bitset_check_option", result, "true");
+		await build_and_check_output(input, "bitset_check_option", "true");
 	});
 
 	test("check if bitset option not set", async () => {
@@ -104,10 +89,7 @@ var flags = Flags.read | Flags.write
 const has_exec = (flags & Flags.exec) == Flags.exec
 Console.write("\\{has_exec}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("bitset_option_not_set", result, "false");
+		await build_and_check_output(input, "bitset_option_not_set", "false");
 	});
 
 	test("bitset with if condition", async () => {
@@ -124,10 +106,7 @@ if (flags & Flags.write) == Flags.write {
   Console.write("readonly")
 }
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("bitset_if_condition", result, "writable");
+		await build_and_check_output(input, "bitset_if_condition", "writable");
 	});
 
 	test("bitset toggle with xor", async () => {
@@ -141,10 +120,7 @@ var flags = Flags.read | Flags.write
 flags = flags ^ Flags.write
 Console.write("\\{flags}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("bitset_toggle_xor", result, "1");
+		await build_and_check_output(input, "bitset_toggle_xor", "1");
 	});
 
 	test("reassign bitset variable", async () => {
@@ -159,10 +135,7 @@ var opts = Options.low
 opts = Options.high
 Console.write("\\{opts}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("bitset_reassign", result, "4");
+		await build_and_check_output(input, "bitset_reassign", "4");
 	});
 
 	test("pub bitset", async () => {
@@ -175,10 +148,7 @@ pub bitset Mode {
 var m = Mode.fast | Mode.safe
 Console.write("\\{m}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("bitset_pub", result, "3");
+		await build_and_check_output(input, "bitset_pub", "3");
 	});
 
 	test("bitset and to narrow options", async () => {
@@ -193,10 +163,7 @@ var flags = Flags.read | Flags.write | Flags.exec
 var masked = flags & Flags.read
 Console.write("\\{masked}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("bitset_and_mask", result, "1");
+		await build_and_check_output(input, "bitset_and_mask", "1");
 	});
 
 	test("bitset shorthand in var declaration", async () => {
@@ -210,10 +177,7 @@ bitset Flags {
 var Flags f = .read
 Console.write("\\{f}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("bitset_shorthand_decl", result, "1");
+		await build_and_check_output(input, "bitset_shorthand_decl", "1");
 	});
 
 	test("bitset shorthand in assignment", async () => {
@@ -227,10 +191,7 @@ var flags = Flags.read
 flags = .write
 Console.write("\\{flags}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("bitset_shorthand_assign", result, "2");
+		await build_and_check_output(input, "bitset_shorthand_assign", "2");
 	});
 
 	test("bitset shorthand in comparison", async () => {
@@ -247,10 +208,7 @@ if (flags & .write) == .write {
   Console.write("readonly")
 }
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("bitset_shorthand_compare", result, "writable");
+		await build_and_check_output(input, "bitset_shorthand_compare", "writable");
 	});
 
 	test("bitset shorthand C output", () => {

@@ -1,9 +1,7 @@
 import { expect, describe, test } from "vite-plus/test";
 
-import build from "../src/build";
 import parse from "../src/parse";
-import check_output from "./check_output";
-import parse_with_imports from "./parse_with_imports";
+import build_and_check_output from "./build_and_check_output";
 import test_error from "./test_error";
 
 // BUILD
@@ -17,11 +15,7 @@ while x < 3 {
 }
 Console.write("\\n")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("while_loop_with_output", result, "0 1 2 \n");
+		await build_and_check_output(input, "while_loop_with_output", "0 1 2 \n");
 	});
 
 	test("while with greater than", async () => {
@@ -32,11 +26,7 @@ while x > 0 {
 }
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("while_loop_greater_than", result, "0");
+		await build_and_check_output(input, "while_loop_greater_than", "0");
 	});
 
 	test("while with equality", async () => {
@@ -47,11 +37,7 @@ while x != 3 {
 }
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("while_loop_equality", result, "3");
+		await build_and_check_output(input, "while_loop_equality", "3");
 	});
 
 	test("while with nested loops", async () => {
@@ -68,11 +54,7 @@ while i < 3 {
 }
 Console.write("\\{total}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("while_loop_nested", result, "6");
+		await build_and_check_output(input, "while_loop_nested", "6");
 	});
 
 	test("while with update clause", async () => {
@@ -84,11 +66,7 @@ while x < 3; counter += 1 {
 }
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("while_loop_update_clause", result, "3");
+		await build_and_check_output(input, "while_loop_update_clause", "3");
 	});
 
 	test("while with increment in update", async () => {
@@ -99,11 +77,7 @@ while x < 3; x += 1 {
 }
 Console.write("\\n")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-
-		expect(parsed.errors).toEqual([]);
-		await check_output("while_loop_increment_update", result, "0 1 2 \n");
+		await build_and_check_output(input, "while_loop_increment_update", "0 1 2 \n");
 	});
 
 	test("while with modulo", async () => {
@@ -118,10 +92,7 @@ while x < 10 {
 }
 Console.write("\\{sum}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("while_loop_modulo", result, "20");
+		await build_and_check_output(input, "while_loop_modulo", "20");
 	});
 
 	test("while with break", async () => {
@@ -135,10 +106,7 @@ while true {
 }
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("while_loop_break", result, "5");
+		await build_and_check_output(input, "while_loop_break", "5");
 	});
 
 	test("while with continue", async () => {
@@ -153,10 +121,7 @@ while x < 10 {
 }
 Console.write("\\{x}")
 `;
-		const parsed = parse_with_imports(input);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(parsed.errors).toEqual([]);
-		await check_output("while_loop_continue", result, "14");
+		await build_and_check_output(input, "while_loop_continue", "14");
 	});
 });
 

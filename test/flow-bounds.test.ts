@@ -1,7 +1,6 @@
 import { expect, describe, test } from "vite-plus/test";
 
-import build from "../src/build";
-import check_output from "./check_output";
+import build_and_check_output from "./build_and_check_output";
 import parse_with_imports from "./parse_with_imports";
 
 // Flow-sensitive bounds checking: when an enclosing if/while/for establishes
@@ -25,10 +24,7 @@ while j < list.length {
 }
 Console.write("\\{sum}\\n")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("flow_while", result, "60\n");
+		await build_and_check_output(input, "flow_while", "60\n");
 	});
 
 	test("list.at(i) inside for i of 0..list.length compiles clean", async () => {
@@ -43,10 +39,7 @@ for i of 0 .. list.length {
 }
 Console.write("\\{product}\\n")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("flow_for", result, "6\n");
+		await build_and_check_output(input, "flow_for", "6\n");
 	});
 
 	test("if j < list.length guard allows list.at(j)", async () => {
@@ -60,10 +53,7 @@ if j < list.length {
 	Console.write("\\{x}\\n")
 }
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("flow_if", result, "20\n");
+		await build_and_check_output(input, "flow_if", "20\n");
 	});
 
 	test("compound condition j >= 0 && j < list.length", async () => {
@@ -76,10 +66,7 @@ if j >= 0 && j < list.length {
 	Console.write("\\{list.at(j)}\\n")
 }
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("flow_compound", result, "20\n");
+		await build_and_check_output(input, "flow_compound", "20\n");
 	});
 
 	test("nested while loops with different containers", async () => {
@@ -101,10 +88,7 @@ while oi < outer.length {
 }
 Console.write("\\n")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("flow_nested", result, "010 020 110 120 \n");
+		await build_and_check_output(input, "flow_nested", "010 020 110 120 \n");
 	});
 });
 
@@ -170,10 +154,7 @@ var int target = g.edge_target(e)
 var int v = g.at(target)
 Console.write("\\{v}\\n")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("rc_lhs", result, "20\n");
+		await build_and_check_output(input, "rc_lhs", "20\n");
 	});
 
 	test("return contract propagates through a nested call argument", async () => {
@@ -186,10 +167,7 @@ var int e = g.edges_of(0)
 var int v = g.at(g.edge_target(e))
 Console.write("\\{v}\\n")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		await check_output("rc_nested", result, "20\n");
+		await build_and_check_output(input, "rc_nested", "20\n");
 	});
 
 	test("return contract does not cross different receivers", () => {
