@@ -1,9 +1,20 @@
+import BitsetNode from "../nodes/BitsetNode.ts";
+import type BlockNode from "../nodes/BlockNode.ts";
+import { is_function_node, is_struct_node, is_trait_node } from "../nodes/check_node_type.ts";
+import EnumNode from "../nodes/EnumNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
+import StructNode from "../nodes/StructNode.ts";
+import TraitNode from "../nodes/TraitNode.ts";
 import build_auto_free from "./build_auto_free.ts";
+import build_bitset_node from "./build_bitset_node.ts";
 import build_block_node from "./build_block_node.ts";
-import build_node from "./build_node.ts";
+import build_enum_node from "./build_enum_node.ts";
 import build_parameter_node from "./build_parameter_node.ts";
+import build_struct_body from "./build_struct_body.ts";
+import build_struct_node from "./build_struct_node.ts";
+import build_trait_node from "./build_trait_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
+import c_function_name from "./utils/c_function_name.ts";
 import c_type from "./utils/c_type.ts";
 
 export default function build_function_node(node: FunctionNode, status: BuildStatus) {
@@ -11,6 +22,23 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 
 	const old_scoped_declarations = status.scoped_declarations;
 	status.scoped_declarations = [];
+	const old_deferred_frees = status.deferred_frees;
+	status.deferred_frees = [];
+
+	// Emit nested struct/function definitions at file scope before the function
+	// signature, so the generated C code is valid (no nested function defs).
+	// Buffer the output so it appears before this function, not inside it.
+	const nested_buf_code = status.code;
+	const nested_buf_headers = status.headers;
+	status.code = "";
+	status.headers = "";
+	emit_nested_declarations(node, status);
+	const nested_code = status.code;
+	const nested_headers = status.headers;
+	status.code = nested_buf_code;
+	status.headers = nested_buf_headers;
+	status.headers += nested_headers;
+	status.code += nested_code;
 
 	// TODO: Only if top-level
 	status.headers += `// Func ${node.name}\n`;
@@ -21,28 +49,43 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		status.code += `int main(`;
 	} else {
 		if (node.return_type.name) {
-			// TODO: Set is_struct / is_trait on type when checking
-			if (
-				status.structs.find((s) => s.name === node.return_type.name) ||
-				status.traits.find((t) => t.name === node.return_type.name)
-			) {
-				status.code += `struct `;
-			}
-			status.code += `${c_type(node.return_type.name)} `;
-			if (status.traits.find((t) => t.name === node.return_type.name)) {
-				status.code += `*`;
-			}
 			if (node.return_type.is_array) {
-				status.code += `[`;
-				if (node.return_type.length) {
-					build_node(node.return_type.length, status);
+				// Arrays can't be returned by value in C. Return a pointer to
+				// the Array_<T> header struct (heap-allocated by build_return_node
+				// when the local stack array is copied to the heap at return).
+				status.code += `struct Array_${node.return_type.name}* `;
+			} else {
+				// Monomorphize generic return types: `List<int>` → `List_int`.
+				// The type_args are already present on node.return_type from the
+				// check pass; fold them into the C name so the signature matches
+				// the specialized struct definition.
+				const mono_return_name = node.return_type.type_args?.length
+					? `${node.return_type.name}_${node.return_type.type_args.map((t) => t.name).join("_")}`
+					: node.return_type.name;
+				// TODO: Set is_struct / is_trait on type when checking
+				const return_is_class = !!status.structs.find(
+					(s) => s.name === mono_return_name && s.is_class,
+				);
+				if (
+					status.structs.find((s) => s.name === mono_return_name && !s.is_simple_type) ||
+					status.structs.find((s) => s.name === node.return_type.name && !s.is_simple_type) ||
+					status.traits.find((t) => t.name === node.return_type.name)
+				) {
+					status.code += `struct `;
 				}
-				status.code += `] `;
+				status.code += `${c_type(mono_return_name)}`;
+				if (return_is_class) {
+					status.code += `*`;
+				}
+				status.code += ` `;
+				if (status.traits.find((t) => t.name === node.return_type.name)) {
+					status.code += `*`;
+				}
 			}
 		} else {
 			status.code += `void `;
 		}
-		status.code += `${node.name}(`;
+		status.code += `${c_function_name(node.name)}(`;
 	}
 	for (let i = 0; i < node.params.length; i++) {
 		if (i > 0) {
@@ -62,29 +105,51 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 
 	const old_ref_params = status.function_ref_params;
 	status.function_ref_params = new Set<string>();
+	const old_class_vars = status.class_vars;
+	status.class_vars = new Set<string>();
 	const old_variadic_params = status.function_variadic_params;
 	status.function_variadic_params = new Set<string>();
+	const old_return_type = status.function_return_type;
+	status.function_return_type = node.return_type;
 	for (let param of node.params) {
 		if (param.is_variadic) {
-			status.function_variadic_params.add(param.name);
+			status.function_variadic_params.add(c_function_name(param.name));
 		}
 		const param_struct = status.structs.find((s) => s.name === param.type.name);
 		const param_trait = status.traits.find((t) => t.name === param.type.name);
-		if (
-			param.is_self_param ||
-			(param_struct && !param_struct.is_simple_type) ||
-			param_trait ||
-			param.declaration === "var" ||
-			param.type.is_ref
-		) {
-			status.function_ref_params.add(param.name);
+		// `function_ref_params` tracks params that are emitted as pointers in
+		// the C signature (so uses must dereference, and the address is the
+		// param itself when forwarding). Only struct/trait/self/ref params and
+		// non-simple `var` params are pointers; a `var int x` is by-value.
+		// Variadic params are arrays (passed as `T *name` — pointer to first
+		// element), not pointers to a single struct, so they must NOT be in
+		// function_ref_params (no `*name` dereference at use sites).
+		// Class params go to `class_vars` instead — they're pointers but must
+		// NOT be dereferenced at value-use sites (the pointer IS the value).
+		const is_pointer_param =
+			!param.is_variadic &&
+			(param.is_self_param ||
+				(param_struct && !param_struct.is_simple_type) ||
+				param_trait ||
+				param.is_ref ||
+				param.type.is_ref ||
+				(param.declaration === "var" && param_struct && !param_struct.is_simple_type));
+		if (is_pointer_param) {
+			const pname = c_function_name(param.name);
+			if (param_struct?.is_class) {
+				status.class_vars.add(pname);
+			} else {
+				status.function_ref_params.add(pname);
+			}
 		}
 	}
 
-	build_block_node(node, status);
+	build_block_node(node, status, false);
 
 	status.function_ref_params = old_ref_params;
+	status.class_vars = old_class_vars;
 	status.function_variadic_params = old_variadic_params;
+	status.function_return_type = old_return_type;
 
 	if (!node.has_return) {
 		build_auto_free(status);
@@ -98,4 +163,81 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.code += `}\n\n`;
 
 	status.scoped_declarations = old_scoped_declarations;
+	status.deferred_frees = old_deferred_frees;
+}
+
+function emit_nested_declarations(node: FunctionNode, status: BuildStatus) {
+	const block = node as unknown as BlockNode;
+
+	// Gather structs, traits, enums, bitsets
+	for (let child of block.statements) {
+		switch (child.node_type) {
+			case "struct": {
+				const struct = child as StructNode;
+				status.structs.push(struct);
+				break;
+			}
+			case "trait": {
+				const trait = child as TraitNode;
+				status.traits.push(trait);
+				break;
+			}
+			case "enum": {
+				status.enums.push(child as EnumNode);
+				break;
+			}
+			case "bitset": {
+				status.bitsets.push(child as BitsetNode);
+				break;
+			}
+		}
+	}
+
+	// Emit struct forward declarations to headers
+	for (let child of block.statements) {
+		if (is_struct_node(child)) {
+			const struct = child as StructNode;
+			if (!struct.is_simple_type && !struct.is_generic) {
+				status.headers += `struct ${struct.name};\n`;
+			}
+		}
+	}
+
+	// Pass 1: Emit struct bodies (skipped if already emitted at root level)
+	for (let child of block.statements) {
+		if (is_struct_node(child)) {
+			build_struct_body(child as StructNode, status);
+		}
+	}
+
+	// Pass 2: Build traits, enums, bitsets, struct functions, then functions
+	for (let child of block.statements) {
+		if (is_trait_node(child)) {
+			build_trait_node(child, status);
+		}
+	}
+
+	for (let child of block.statements) {
+		if (child.node_type === "enum") {
+			build_enum_node(child as EnumNode, status);
+		}
+	}
+
+	for (let child of block.statements) {
+		if (child.node_type === "bitset") {
+			build_bitset_node(child as BitsetNode, status);
+		}
+	}
+
+	for (let child of block.statements) {
+		if (is_struct_node(child)) {
+			build_struct_node(child, status);
+		}
+	}
+
+	for (let child of block.statements) {
+		if (is_function_node(child)) {
+			build_function_node(child, status);
+		}
+	}
 }

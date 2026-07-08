@@ -23,6 +23,7 @@ import RawNode from "../nodes/RawNode.ts";
 import ReturnNode from "../nodes/ReturnNode.ts";
 import RootNode from "../nodes/RootNode.ts";
 import StructNode from "../nodes/StructNode.ts";
+import SwitchNode from "../nodes/SwitchNode.ts";
 import TodoNode from "../nodes/TodoNode.ts";
 import TraitNode from "../nodes/TraitNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
@@ -49,6 +50,7 @@ import build_raw_node from "./build_raw_node.ts";
 import build_return_node from "./build_return_node.ts";
 import build_root_node from "./build_root_node.ts";
 import build_struct_node from "./build_struct_node.ts";
+import build_switch_node from "./build_switch_node.ts";
 import build_todo_node from "./build_todo_node.ts";
 import build_trait_node from "./build_trait_node.ts";
 import build_value_node from "./build_value_node.ts";
@@ -130,6 +132,11 @@ export default function build_node(node: BaseNode, status: BuildStatus, with_sem
 		}
 		case "match": {
 			build_match_node(node as MatchNode, status);
+			with_semicolon = false;
+			break;
+		}
+		case "switch": {
+			build_switch_node(node as SwitchNode, status);
 			with_semicolon = false;
 			break;
 		}

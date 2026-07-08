@@ -34,11 +34,42 @@ export default interface BuildStatus {
 	 * Declarations that were made in the current scope and will need to be freed
 	 */
 	scoped_declarations: DeclarationNode[];
+	/**
+	 * Old class instances displaced by variable reassignment (`h = Holder(...)`)
+	 * whose reclamation is deferred to scope exit. Eagerly freeing them at the
+	 * reassignment would invalidate borrows of the old value's fields (e.g.
+	 * `var Box b = h.c; h = Holder(...)` must keep `b` valid until scope exit).
+	 * Mirrors aarch64's anchor-slot deferred reclamation. Each entry is a temp
+	 * C pointer (declared inline at the reassignment, in the same C block as
+	 * the scope-exit free) plus its class name and nullability. Saved/restored
+	 * per scope alongside scoped_declarations.
+	 */
+	deferred_frees?: { temp: string; struct_name: string; is_nullable: boolean }[];
 	interpolate_string_counts: Set<number>;
 	return_assign?: string;
 	function_param_regs?: Map<string, string>;
 	function_param_vars?: Set<string>;
 	function_ref_params?: Set<string>;
+	/**
+	 * Variables and parameters whose type is a `class` (heap-allocated).
+	 * Class-typed slots are emitted as pointers in C and use `->` for field
+	 * access, but — unlike `function_ref_params` entries — they must NOT be
+	 * dereferenced with `*` at value-use sites (the pointer itself IS the
+	 * value; `var q = p` copies the pointer to create an alias).
+	 */
+	class_vars?: Set<string>;
+	/**
+	 * When true, the next value-node build of a ref/var param should NOT be
+	 * prefixed with `*` (i.e. the caller needs the pointer itself, e.g. to
+	 * pass the address to another function or to a struct method).
+	 */
+	suppress_dereference?: boolean;
+	/**
+	 * When true, `self` refers to a local by-value variable (e.g. inside a
+	 * custom #init body), not a pointer param. Prevents the `self → _self`
+	 * rename in build_value_node.
+	 */
+	self_is_local?: boolean;
 	self_is_ref?: boolean;
 	function_array_params?: Set<string>;
 	function_variadic_params?: Set<string>;
@@ -119,6 +150,15 @@ export default interface BuildStatus {
 	 */
 	class_alias_vars?: Set<string>;
 	/**
+	 * Class variables that have been used as the source of an alias
+	 * (`var Box b = a`). When such a variable is later reassigned
+	 * (`a = Box(99)`), the old value must NOT be eagerly freed — the alias
+	 * `b` still references it. Instead the old value is left to leak (the
+	 * C backend has no deferred-reclamation mechanism like aarch64's anchor
+	 * slots). This is a conservative safety check to prevent use-after-free.
+	 */
+	aliased_class_sources?: Set<string>;
+	/**
 	 * Maps an object-level alias var name (`var R q = p`, or a field borrow
 	 * `var Box b = h.c`) to the stack offset of a boolean flag that tracks at
 	 * runtime whether the alias currently *owns* its value. An alias only
@@ -149,4 +189,9 @@ export default interface BuildStatus {
 	callee_saved_regs_used?: Set<string>;
 	platform: string;
 	label_counter?: number;
+	/**
+	 * Tracks which struct body typedefs have already been emitted to avoid
+	 * duplicate definitions when nested structs are also emitted at root level.
+	 */
+	emitted_struct_bodies?: Set<string>;
 }

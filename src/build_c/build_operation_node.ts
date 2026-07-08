@@ -26,9 +26,13 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		build_operand(node.right_value, status);
 		status.code += ")";
 	} else {
+		// Wrap binary operations in parens so C's precedence can't misinterpret
+		// them when they're nested as operands of other expressions.
+		status.code += `(`;
 		build_node(node.left_value, status);
 		status.code += ` ${node.op} `;
 		build_node(node.right_value, status);
+		status.code += `)`;
 	}
 }
 

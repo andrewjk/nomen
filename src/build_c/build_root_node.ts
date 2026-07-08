@@ -3,18 +3,6 @@ import build_block_node from "./build_block_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 
 export default function build_root_node(node: RootNode, status: BuildStatus) {
-	if (status.platform === "macos" || status.platform === "ios") {
-		status.headers += `#import <Foundation/Foundation.h>\n`;
-		status.headers += `#include <objc/runtime.h>\n`;
-		status.headers += `#include <objc/message.h>\n`;
-		if (status.platform === "macos") {
-			status.headers += `#import <Cocoa/Cocoa.h>\n`;
-		} else {
-			status.headers += `#import <UIKit/UIKit.h>\n`;
-		}
-	} else {
-		status.headers += `#include <stdint.h>\n`;
-	}
 	status.headers += `#include <stdint.h>\n`;
 	status.code += `
 #include <stdio.h>
@@ -29,6 +17,22 @@ int malloc_count;
 `.trimStart();
 
 	build_block_node(node, status);
+
+	// Apple ObjC framework imports (Foundation/Cocoa) pull in MacTypes.h, which
+	// defines `Point`, `Rect`, etc. and would collide with user-defined types
+	// of the same name. Only emit them when the generated code actually
+	// references ObjC runtime symbols (e.g. GUI code via `objc_msgSend`).
+	const needs_objc =
+		/\bobjc_msgSend\b|\bobjc_getClass\b|\bsel_registerName\b/.test(status.code) ||
+		/\bobjc_msgSend\b|\bobjc_getClass\b|\bsel_registerName\b/.test(status.headers);
+	if (needs_objc && (status.platform === "macos" || status.platform === "ios")) {
+		status.headers =
+			`#import <Foundation/Foundation.h>\n` +
+			`#include <objc/runtime.h>\n` +
+			`#include <objc/message.h>\n` +
+			(status.platform === "macos" ? `#import <Cocoa/Cocoa.h>\n` : `#import <UIKit/UIKit.h>\n`) +
+			status.headers;
+	}
 
 	status.headers += "void **_get_trait_func(void **obj, int trait_index, int func_index);\n";
 	status.code += `

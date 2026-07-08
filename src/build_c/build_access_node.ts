@@ -2,12 +2,28 @@ import built_in_types from "../built_in_types.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
+import BaseNode from "../nodes/BaseNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_node from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import c_type from "./utils/c_type.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
+
+/**
+ * Build a node for use as a vtable dispatch target. The vtable lives on the
+ * struct itself, so we need a POINTER to the struct. When the target is the
+ * implicit `self` parameter, the build normally renames it to `_self` (the
+ * local by-value copy made at function entry) — but for vtable dispatch we
+ * need the original `self` pointer param, so emit it directly.
+ */
+function build_vtable_target(node: BaseNode, status: BuildStatus) {
+	if (node.node_type === "value" && (node as ValueNode).value === "self") {
+		status.code += "self";
+	} else {
+		build_node(node, status);
+	}
+}
 
 export default function build_access_node(node: AccessNode, status: BuildStatus) {
 	// PERF:
@@ -42,12 +58,32 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				status.code += `_${(node.target as ValueNode).value}_len`;
 				return;
 			}
+			// Heap array .length → pointer field access (result->length)
+			if (
+				target_type.is_array &&
+				access_field.name === "length" &&
+				node.target.node_type === "value" &&
+				status.heap_array_vars?.has((node.target as ValueNode).value)
+			) {
+				build_node(node.target, status);
+				status.code += `->length`;
+				return;
+			}
 			// HACK:
 			if (target_type.is_array && access_field.name === "length") {
 				const type = c_type(target_type.name);
 				status.code += "(sizeof(";
 				build_node(node.target, status);
 				status.code += `) / sizeof(${type}))`;
+				return;
+			}
+			// string.length — computed property that the check pass types as int
+			// (see check_access_node). There's no `length` field on the C `char*`,
+			// so lower it to `strlen`.
+			if (target_type.name === "string" && access_field.name === "length") {
+				status.code += "((long)strlen(";
+				build_node(node.target, status);
+				status.code += "))";
 				return;
 			}
 			if (enum_node) {
@@ -76,26 +112,83 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				const type = c_type(traitField.type.name);
 				const cast = `(${type}(*)(void *))`;
 				status.code += `(${cast}_get_trait_func((void *)`;
-				build_node(node.target, status);
+				build_vtable_target(node.target, status);
 				const trait_index = status.traits.indexOf(trait);
 				const field_index = trait.functions.length + trait.fields.indexOf(traitField) * 2;
 				status.code += `, ${trait_index}, ${field_index}))(`;
-				build_node(node.target, status);
+				build_vtable_target(node.target, status);
 				status.code += `)`;
 				break;
 			} else {
 				const target_value =
 					node.target.node_type === "value" ? (node.target as ValueNode).value : "";
+				// `self` is always emitted as a pointer in the generated C
+				// (matching aarch64). It lives in function_ref_params whenever
+				// it's a pointer param (regular/var/ref self) and is absent
+				// only for a custom #init's local by-value `self`. So the
+				// generic function_ref_params check is correct for self too,
+				// without the old `self_is_ref` special-casing.
+				// For chained access (e.g. `h2.content.value`), the target
+				// (`h2.content`) may be a class pointer even though it's not a
+				// bare variable — check target_type too.
+				const target_type_is_class = !!status.structs.find(
+					(s) => s.name === target_type?.name && s.is_class,
+				);
 				const target_is_ref =
-					(target_value !== "self" || status.self_is_ref) &&
-					status.function_ref_params?.has(target_value);
+					!!status.function_ref_params?.has(target_value) ||
+					!!status.class_vars?.has(target_value) ||
+					target_type_is_class;
+				if (target_is_ref) {
+					// The target is a pointer param; `->` dereferences it, so
+					// don't let build_value_node emit `*target`.
+					status.suppress_dereference = true;
+				}
 				build_node(node.target, status);
+				status.suppress_dereference = false;
 				status.code += target_is_ref ? `->${access_field.name}` : `.${access_field.name}`;
 			}
 			break;
 		}
 		case "access_func": {
 			const access_func = node.access as AccessFunctionCallNode;
+			// Inline .at()/.set()/.first() on plain C arrays (target_type.is_array
+			// with a known length means a stack/local C array, not an Array_*
+			// struct). Variadic params are also plain C arrays (`T *name`),
+			// so they hit this path too. Heap arrays (returned from functions)
+			// must NOT inline — they use the Array_<T>_at/_first helpers.
+			const target_is_heap_array =
+				node.target.node_type === "value" &&
+				!!status.heap_array_vars?.has((node.target as ValueNode).value);
+			const wants_inline =
+				target_type.is_array &&
+				!target_is_heap_array &&
+				((access_func.name === "at" && access_func.params.length === 1) ||
+					(access_func.name === "set" && access_func.params.length === 2) ||
+					(access_func.name === "first" && access_func.params.length === 0));
+			if (wants_inline) {
+				if (access_func.name === "at") {
+					status.code += `(`;
+					build_node(node.target, status);
+					status.code += `[`;
+					build_node(access_func.params[0], status);
+					status.code += `])`;
+					break;
+				}
+				if (access_func.name === "set") {
+					build_node(node.target, status);
+					status.code += `[`;
+					build_node(access_func.params[0], status);
+					status.code += `] = `;
+					build_node(access_func.params[1], status);
+					break;
+				}
+				if (access_func.name === "first") {
+					status.code += `(`;
+					build_node(node.target, status);
+					status.code += `[0])`;
+					break;
+				}
+			}
 			if (enum_node) {
 				const enum_case = enum_node.cases.find((c) => c.name === access_func.name);
 				if (enum_case) {
@@ -110,14 +203,46 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 					break;
 				}
 			}
+			// string.length() — method-call form of the string.length property
+			// (check pass types both as int). Lower to `strlen` directly; there
+			// is no `string_length` function defined on the C `char*`.
+			if (
+				target_type.name === "string" &&
+				access_func.name === "length" &&
+				access_func.params.length === 0
+			) {
+				status.code += "((long)strlen(";
+				build_node(node.target, status);
+				status.code += "))";
+				break;
+			}
 			if (
 				access_func.name === "to_string" &&
 				(status.enums.find((e) => e.name === target_type.name) ||
 					status.bitsets.find((b) => b.name === target_type.name))
 			) {
+				const enum_node_for_ts = status.enums.find((e) => e.name === target_type.name);
 				status.code += `int_to_string(`;
 				build_node(node.target, status);
+				if (enum_node_for_ts?.has_associated_data) {
+					status.code += `.tag`;
+				}
 				status.code += ")";
+				break;
+			}
+			// to_string on a fixed-size C array (e.g. `Array(1, 2, 3)` which
+			// is lowered to `long arr[3] = {1, 2, 3}`). The array is NOT an
+			// Array<T> struct, so Array_int_to_string can't be called. Instead,
+			// inline a GCC statement expression that iterates the elements,
+			// calls `<elem>_to_string` on each, and concatenates the results.
+			if (access_func.name === "to_string" && target_type.is_array && target_type.length) {
+				const elem_name = target_type.name;
+				const to_string_fn = `${elem_name}_to_string`;
+				const len = (target_type.length as any).value || "0";
+				status.code += `({ char* _ts_r = (char*)malloc(1); _ts_r[0] = 0; long _ts_n = 0; for (long _i = 0; _i < ${len}; _i++) { char* _s = ${to_string_fn}(`;
+				build_node(node.target, status);
+				status.code += `[_i]); _ts_n += strlen(_s); _ts_r = (char*)realloc(_ts_r, _ts_n + 1); strcat(_ts_r, _s); free(_s); } _ts_r; })`;
+				status.last_result_is_heap = true;
 				break;
 			}
 			if (trait) {
@@ -129,62 +254,181 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				// TODO: Pass parameters
 				const cast = "(char *(*)(void *))";
 				status.code += `(${cast}_get_trait_func(`;
-				build_node(node.target, status);
+				build_vtable_target(node.target, status);
 				const trait_index = status.traits.indexOf(trait);
 				const func_index = trait.functions.indexOf(trait_func);
 				status.code += `, ${trait_index}, ${func_index}))(`;
-				build_node(node.target, status);
+				build_vtable_target(node.target, status);
 				status.code += `)`;
 			} else {
 				let method_type: Type | undefined = target_type;
 				if (!method_type?.name && node.target.node_type === "access") {
 					method_type = resolve_access_field_type(node.target as AccessNode, status);
 				}
-				const mono_struct_name = method_type?.is_array
+				// If the AccessFieldNode type is an unresolved generic (e.g.
+				// Buffer<T> inside a monomorphized method body whose node
+				// types were not substituted), try resolving from the struct
+				// definition directly — the field's type WAS rewritten during
+				// monomorphization (Buffer<T> → ClassBuffer_Animal).
+				if (
+					method_type?.type_args?.length &&
+					node.target.node_type === "access" &&
+					!status.structs.find(
+						(s) =>
+							s.name ===
+								`${method_type!.name}_${method_type!.type_args!.map((t) => t.name).join("_")}` &&
+							!s.is_generic,
+					)
+				) {
+					const resolved = resolve_access_field_type(node.target as AccessNode, status);
+					if (resolved?.name) method_type = resolved;
+				}
+				let mono_struct_name = method_type?.is_array
 					? "Array_" + method_type.name
 					: method_type?.type_args?.length
 						? method_type.name + "_" + method_type.type_args.map((t) => t.name).join("_")
 						: method_type?.name || "";
+				if (
+					!access_func.mangled_name &&
+					mono_struct_name &&
+					!status.structs.find((s) => s.name === mono_struct_name && !s.is_generic)
+				) {
+					const sname = mono_struct_name + "_";
+					const specialized = status.structs.find(
+						(s) =>
+							s.name.startsWith(sname) &&
+							!s.is_generic &&
+							s.functions.find((f) => f.name === access_func.name),
+					);
+					if (specialized) mono_struct_name = specialized.name;
+				}
+				// Look up the target method to detect type erasure (class
+				// pointer passed to a type-erased long parameter, e.g.
+				// ClassBuffer.store_int).
+				const target_struct_for_method = mono_struct_name
+					? status.structs.find((s) => s.name === mono_struct_name && !s.is_generic)
+					: undefined;
+				const target_method = target_struct_for_method?.functions.find(
+					(f) => f.name === access_func.name,
+				);
+				const self_offset = target_method?.params?.some((p) => p.is_self_param) ? 1 : 0;
+				// If the method doesn't exist on the struct, check if it's a
+				// trait default method inherited by this struct.
+				let trait_default_label = "";
+				if (mono_struct_name && !access_func.mangled_name) {
+					const struct_node = status.structs.find(
+						(s) => s.name === mono_struct_name && !s.is_generic,
+					);
+					if (struct_node && !struct_node.functions.find((f) => f.name === access_func.name)) {
+						for (const trait_name of struct_node.traits) {
+							const trait = status.traits.find((t) => t.name === trait_name);
+							if (trait) {
+								const trait_func = trait.functions.find(
+									(f) => f.name === access_func.name && f.has_body,
+								);
+								if (trait_func) {
+									trait_default_label = `${trait_name}_${access_func.name}`;
+									break;
+								}
+							}
+						}
+					}
+				}
 				const label =
-					access_func.mangled_name || `${mono_struct_name}_${access_func.name.replace(/#/g, "")}`;
+					access_func.mangled_name ||
+					trait_default_label ||
+					`${mono_struct_name}_${access_func.name.replace(/#/g, "")}`;
 				status.code += `${label}(`;
 				if (!access_func.is_static) {
 					// TODO: be more rigorous about this! Sometimes types should be passed by ref??
 					if (!built_in_types.includes(method_type?.name || "")) {
 						const target_value =
 							node.target.node_type === "value" ? (node.target as ValueNode).value : "";
+						// See field-access branch: self is a pointer whenever
+						// it's in function_ref_params, so the generic check
+						// covers it.
 						const target_is_ref_param =
-							(target_value !== "self" || status.self_is_ref) &&
-							status.function_ref_params?.has(target_value);
+							!!status.function_ref_params?.has(target_value) ||
+							!!status.class_vars?.has(target_value) ||
+							!!status.heap_array_vars?.has(target_value);
 						if (!target_is_ref_param) {
 							status.code += "&";
+						} else {
+							// target is already a pointer (var/ref param) — don't
+							// dereference it; we want the pointer itself.
+							status.suppress_dereference = true;
 						}
 					}
 					build_node(node.target, status);
+					status.suppress_dereference = false;
 				}
 				for (let i = 0; i < access_func.params.length; i++) {
 					if (!access_func.is_static || i > 0) {
 						status.code += ", ";
 					}
 					const param_type = type_from_value_node(access_func.params[i]);
-					if (
-						status.structs.find((s) => s.name === param_type.name && !s.is_simple_type) ||
-						status.traits.find((t) => t.name === param_type.name)
-					) {
-						const param_value =
-							access_func.params[i].node_type === "value"
-								? (access_func.params[i] as ValueNode).value
-								: "";
+					const param_value =
+						access_func.params[i].node_type === "value"
+							? (access_func.params[i] as ValueNode).value
+							: "";
+					// Also treat class_vars as struct/class args — ValueNode types
+					// inside monomorphized method bodies may still be unresolved
+					// generic param names (e.g. `T` instead of `Animal`).
+					const arg_is_struct_or_trait =
+						!!status.structs.find((s) => s.name === param_type.name && !s.is_simple_type) ||
+						!!status.traits.find((t) => t.name === param_type.name) ||
+						!!status.class_vars?.has(param_value);
+					// Type erasure: when a class pointer is passed to a
+					// type-erased long parameter (e.g. ClassBuffer.store_int
+					// takes `long val` but receives a `struct Animal *`),
+					// cast to (long). Only applies to class pointers — struct
+					// args use the normal &-pass-by-pointer path.
+					const arg_is_class =
+						!!status.class_vars?.has(param_value) ||
+						(!!param_type.name &&
+							!!status.structs.find((s) => s.name === param_type.name && s.is_class));
+					const target_param = target_method?.params[i + self_offset];
+					const target_param_is_erased =
+						arg_is_class &&
+						!!target_param &&
+						!status.structs.find((s) => s.name === target_param.type.name && !s.is_simple_type) &&
+						!status.traits.find((t) => t.name === target_param.type.name);
+					if (target_param_is_erased) {
+						if (status.class_vars?.has(param_value)) {
+							status.suppress_dereference = true;
+						}
+						status.code += `(long)`;
+						build_node(access_func.params[i], status);
+						status.suppress_dereference = false;
+					} else if (arg_is_struct_or_trait) {
 						const param_is_ref_param =
-							(param_value !== "self" || status.self_is_ref) &&
-							status.function_ref_params?.has(param_value);
+							!!status.function_ref_params?.has(param_value) ||
+							!!status.class_vars?.has(param_value);
 						if (!param_is_ref_param) {
 							status.code += "&";
+						} else {
+							status.suppress_dereference = true;
 						}
+						build_node(access_func.params[i], status);
+						status.suppress_dereference = false;
+					} else {
+						build_node(access_func.params[i], status);
 					}
-					build_node(access_func.params[i], status);
 				}
 				status.code += ")";
+			}
+			// mov parameter handling for method calls: same as
+			// build_function_call_node — remove moved class vars / temporaries
+			// from scoped_declarations so they won't be double-freed.
+			if (access_func.mov_param_indices) {
+				for (const idx of access_func.mov_param_indices) {
+					const param = access_func.params[idx];
+					if (param?.node_type === "value") {
+						const vname = (param as ValueNode).value;
+						const di = status.scoped_declarations.findIndex((d) => d.name === vname);
+						if (di !== -1) status.scoped_declarations.splice(di, 1);
+					}
+				}
 			}
 			break;
 		}

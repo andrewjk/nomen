@@ -80,6 +80,12 @@ export default function check_function_call_node(
 	}
 
 	if (!func) {
+		// Inside a generic struct's body, a constructor call like Buffer<T>()
+		// can't be monomorphized yet (T is unresolved). Defer it: the enclosing
+		// generic will be monomorphized later, which substitutes the field value.
+		if (status.type_params.length > 0) {
+			return false;
+		}
 		add_error(status, `Function not found: ${node.name}`, node.start);
 		return false;
 	}
@@ -110,6 +116,14 @@ export function monomorphize(
 		return null;
 	}
 
+	// If any type argument is an unresolved type parameter (e.g. we are inside
+	// the body of a generic struct like Tree<T> checking its Buffer<T> field),
+	// don't materialize a phantom `Buffer_T` — it will be created later when
+	// the enclosing generic is itself monomorphized with concrete type args.
+	if (type_args.some((t) => status.type_params.includes(t.name))) {
+		return null;
+	}
+
 	const mono_name = generic_struct.name + "_" + type_args.map((t) => t.name).join("_");
 
 	const existing = status.structs.find((s) => s.name === mono_name);
@@ -130,6 +144,11 @@ export function monomorphize(
 			resolved_type,
 			field.value ? (clone_node(field.value) as BaseNode) : undefined,
 		);
+		// Substitute type params in field default values (e.g. Buffer<T>()
+		// becomes Buffer_int() when Tree<T> is monomorphized to Tree_int).
+		if (mono_field.value) {
+			substitute_raw_in_node(mono_field.value, substitution, status.structs);
+		}
 		return mono_field;
 	});
 
@@ -252,8 +271,26 @@ function substitute_raw_types(
 	substitution: Map<string, string>,
 	structs: StructNode[],
 ) {
+	// Compute params whose type resolves to a non-simple struct: in the C
+	// backend those are passed by pointer (`struct T *value`), but raw C
+	// blocks were written assuming pass-by-value. Dereference them in raw
+	// blocks so `_data[i] = value` becomes `_data[i] = (*value)`.
+	const deref_params = new Set<string>();
+	for (const param of func.params) {
+		const resolved = substitution.get(param.type.name);
+		if (!resolved) continue;
+		if (param.is_self_param) continue;
+		const s = structs.find((x) => x.name === resolved);
+		// Dereference struct params in raw blocks (they're passed by pointer
+		// but the raw C code assumes pass-by-value). Skip class params —
+		// classes are heap pointers, so the pointer IS the value and must
+		// NOT be dereferenced.
+		if (s && !s.is_simple_type && !s.is_class) {
+			deref_params.add(param.name);
+		}
+	}
 	for (const stmt of func.statements) {
-		substitute_raw_in_node(stmt, substitution, structs);
+		substitute_raw_in_node(stmt, substitution, structs, deref_params);
 	}
 }
 
@@ -310,22 +347,61 @@ function raw_type_size(name: string, structs: StructNode[]): number {
 	return size;
 }
 
+/**
+ * Map an Echo type name to its C representation for substitution inside raw C
+ * blocks. `string` is not a C type, so it must become `char*` (making `T*`
+ * become `char**`). Other built-in scalars happen to share their C name.
+ */
+function raw_c_type_name(name: string): string {
+	switch (name) {
+		case "string":
+			return "char*";
+		default:
+			return name;
+	}
+}
+
 function substitute_raw_in_node(
 	node: BaseNode,
 	substitution: Map<string, string>,
 	structs: StructNode[],
+	deref_params: Set<string> = new Set(),
 ) {
 	if (node.node_type === "raw") {
 		const raw = node as RawNode;
 		let value = raw.value;
 		for (const [param, type] of substitution) {
-			value = value.replace(new RegExp(`\\b${param}\\b`, "g"), type);
+			// In raw C blocks, T must become a valid C type name.
+			// - `string` is not a C type → substitute `char*`
+			// - Non-simple struct types need `struct T` prefix (the typedef
+			//   may not be in scope, especially in headers)
+			// - Class types need `struct T*` (they're heap-allocated pointers)
+			const struct_node = structs.find((s) => s.name === type && !s.is_simple_type);
+			let c_type_name: string;
+			if (struct_node?.is_class) {
+				c_type_name = `struct ${type} *`;
+			} else if (struct_node) {
+				c_type_name = `struct ${type}`;
+			} else {
+				c_type_name = raw_c_type_name(type);
+			}
+			value = value.replace(new RegExp(`\\b${param}\\b`, "g"), c_type_name);
 			// Also substitute T_SIZE placeholder with element byte size
 			const size = raw_type_size(type, structs);
 			value = value.replace(new RegExp(`\\b${param}_SIZE\\b`, "g"), String(size));
 			// Substitute T_destroy placeholder with the monomorphized element's
 			// destroy symbol (e.g. ClassBuffer<Animal>.#destroy calls Animal_destroy).
 			value = value.replace(new RegExp(`\\b${param}_destroy\\b`, "g"), `${type}_destroy`);
+		}
+		// Dereference struct params: the C backend passes them as pointers,
+		// but raw blocks were written assuming pass-by-value. Replace bare
+		// param references with `(*param)`. Skip occurrences already prefixed
+		// with `&` or `*` to avoid `&(*x)` / `*(*x)`.
+		for (const pname of deref_params) {
+			value = value.replace(
+				new RegExp(`(?<![&*.>\\w])\\b${pname}\\b(?![\\w])`, "g"),
+				`(*${pname})`,
+			);
 		}
 		raw.value = value;
 		return;
@@ -345,35 +421,48 @@ function substitute_raw_in_node(
 			substitute_type(t, substitution),
 		);
 	}
+	// Substitute declared types on local declarations inside a generic body
+	// (e.g. `var Buffer<TK> old_keys` becomes `var Buffer_int old_keys` when
+	// the enclosing struct is monomorphized). Without this, the build resolves
+	// method calls on the local against the unresolved `Buffer_TK` symbol.
+	if (node.node_type === "declare" && any_node.type?.name) {
+		any_node.type = substitute_type(any_node.type, substitution);
+		if (any_node.func_return_type?.name) {
+			any_node.func_return_type = substitute_type(any_node.func_return_type, substitution);
+		}
+	}
 	// Recursively walk common container nodes
 	if (any_node.statements && Array.isArray(any_node.statements)) {
 		for (const child of any_node.statements) {
 			if (child && typeof child === "object" && "node_type" in child) {
-				substitute_raw_in_node(child, substitution, structs);
+				substitute_raw_in_node(child, substitution, structs, deref_params);
 			}
 		}
 	}
 	if (any_node.params && Array.isArray(any_node.params)) {
 		for (const child of any_node.params) {
 			if (child && typeof child === "object" && "node_type" in child) {
-				substitute_raw_in_node(child, substitution, structs);
+				substitute_raw_in_node(child, substitution, structs, deref_params);
 			}
 		}
 	}
 	if (any_node.value && any_node.value.node_type) {
-		substitute_raw_in_node(any_node.value, substitution, structs);
+		substitute_raw_in_node(any_node.value, substitution, structs, deref_params);
 	}
 	if (any_node.left_value?.node_type) {
-		substitute_raw_in_node(any_node.left_value, substitution, structs);
+		substitute_raw_in_node(any_node.left_value, substitution, structs, deref_params);
 	}
 	if (any_node.right_value?.node_type) {
-		substitute_raw_in_node(any_node.right_value, substitution, structs);
+		substitute_raw_in_node(any_node.right_value, substitution, structs, deref_params);
 	}
 	if (any_node.target?.node_type) {
-		substitute_raw_in_node(any_node.target, substitution, structs);
+		substitute_raw_in_node(any_node.target, substitution, structs, deref_params);
 	}
 	if (any_node.access?.node_type) {
-		substitute_raw_in_node(any_node.access, substitution, structs);
+		substitute_raw_in_node(any_node.access, substitution, structs, deref_params);
+	}
+	if (any_node.swap?.node_type) {
+		substitute_raw_in_node(any_node.swap, substitution, structs, deref_params);
 	}
 }
 

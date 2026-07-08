@@ -199,15 +199,20 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 						decl.value.start,
 					);
 				} else {
-					check_node(decl.swap, status);
-					check_type_and_value_match(
-						field_type,
-						type_from_value_node(decl.swap, status),
-						undefined,
-						status,
-						decl.swap.start,
-						"swap",
-					);
+					// Inside a generic struct's body, a swap like `Buffer<TK>()`
+					// can't be resolved yet (deferred until monomorphization), so
+					// only run the type match when the swap checked successfully.
+					const swap_ok = check_node(decl.swap, status);
+					if (swap_ok) {
+						check_type_and_value_match(
+							field_type,
+							type_from_value_node(decl.swap, status),
+							undefined,
+							status,
+							decl.swap.start,
+							"swap",
+						);
+					}
 				}
 			}
 		}

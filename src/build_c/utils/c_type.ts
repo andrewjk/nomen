@@ -40,6 +40,10 @@ export default function c_type(type: string): string {
 			return "char";
 		case "string":
 			return "char*";
+		case "func":
+			return "void*";
+		case "null":
+			return "void*";
 		default:
 			return type;
 	}

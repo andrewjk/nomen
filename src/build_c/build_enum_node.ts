@@ -17,32 +17,24 @@ export default function build_enum_node(node: EnumNode, status: BuildStatus) {
 }
 
 function build_simple_enum(node: EnumNode, status: BuildStatus) {
+	// Emit the typedef enum only in the header (which the .m includes), so the
+	// definition isn't duplicated between the two files.
 	status.headers += `typedef enum { ${node.cases.map((c) => `${node.name}_${c.name}`).join(", ")} } ${node.name};\n`;
-	status.code += `typedef enum {\n`;
-	for (const c of node.cases) {
-		status.code += `${node.name}_${c.name},\n`;
-	}
-	status.code += `} ${node.name};\n`;
 }
 
 function build_tagged_union_enum(node: EnumNode, status: BuildStatus) {
+	// Tagged-union enums: emit tag typedef + struct typedef only in the header
+	// (the .m includes it), avoiding duplicate definitions across files.
 	status.headers += `typedef enum { ${node.cases.map((c) => `${node.name}_${c.name}`).join(", ")} } ${node.name}_tag;\n`;
 	status.headers += `struct ${node.name};\n`;
-
-	status.code += `typedef enum {\n`;
+	status.headers += `typedef struct ${node.name}\n{\n`;
+	status.headers += `${node.name}_tag tag;\n`;
+	status.headers += `union {\n`;
 	for (const c of node.cases) {
-		status.code += `${node.name}_${c.name},\n`;
+		status.headers += `struct { ${c.params.map((p) => `${c_type(p.type.name)} ${p.name}`).join("; ")}${c.params.length ? ";" : ""} } _${c.name};\n`;
 	}
-	status.code += `} ${node.name}_tag;\n`;
-
-	status.code += `typedef struct ${node.name}\n{\n`;
-	status.code += `${node.name}_tag tag;\n`;
-	status.code += `union {\n`;
-	for (const c of node.cases) {
-		status.code += `struct { ${c.params.map((p) => `${c_type(p.type.name)} ${p.name}`).join("; ")}${c.params.length ? ";" : ""} } _${c.name};\n`;
-	}
-	status.code += `} _data;\n`;
-	status.code += `} ${node.name};\n`;
+	status.headers += `} _data;\n`;
+	status.headers += `} ${node.name};\n`;
 
 	for (const c of node.cases) {
 		const ctor_params = c.params.map((p) => `${c_type(p.type.name)} ${p.name}`).join(", ");

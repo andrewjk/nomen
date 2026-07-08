@@ -39,6 +39,7 @@ export default function build(
 		ref_class_slots: new Map(),
 		audit: options.audit,
 		platform: options.platform ?? default_platform(),
+		emitted_struct_bodies: new Set(),
 	};
 
 	if (options.arch === "aarch64") {
