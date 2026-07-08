@@ -1,0 +1,4 @@
+q=14 r=2
+
+
+Malloc balance: 0

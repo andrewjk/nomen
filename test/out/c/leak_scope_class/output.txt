@@ -1,0 +1,3 @@
+42done
+
+Malloc balance: 0

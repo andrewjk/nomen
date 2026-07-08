@@ -1,0 +1,4 @@
+got: Z
+
+
+Malloc balance: 1

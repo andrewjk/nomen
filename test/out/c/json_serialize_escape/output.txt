@@ -1,0 +1,3 @@
+"a\"b\nc"
+
+Malloc balance: 0

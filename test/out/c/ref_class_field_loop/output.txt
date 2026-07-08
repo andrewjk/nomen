@@ -1,0 +1,4 @@
+4
+
+
+Malloc balance: 4

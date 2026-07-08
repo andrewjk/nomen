@@ -1,0 +1,4 @@
+nodes=3 edges_from_a=5
+
+
+Malloc balance: 0

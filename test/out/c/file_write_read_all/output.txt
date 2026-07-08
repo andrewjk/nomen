@@ -1,0 +1,3 @@
+echo file io
+
+Malloc balance: 0

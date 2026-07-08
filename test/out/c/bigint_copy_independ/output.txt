@@ -1,0 +1,4 @@
+a=99999 b=12345
+
+
+Malloc balance: 0

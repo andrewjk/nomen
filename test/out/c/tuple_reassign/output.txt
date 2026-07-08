@@ -1,0 +1,3 @@
+2 new
+
+Malloc balance: -1

@@ -1,0 +1,3 @@
+north
+
+Malloc balance: 0

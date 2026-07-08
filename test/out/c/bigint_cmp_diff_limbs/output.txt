@@ -1,0 +1,4 @@
+big=1 small=-1
+
+
+Malloc balance: 0

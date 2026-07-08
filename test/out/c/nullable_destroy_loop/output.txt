@@ -1,0 +1,6 @@
+d0
+d1
+d2
+done
+
+Malloc balance: 0

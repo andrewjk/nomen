@@ -1,0 +1,4 @@
+sign=1 len=1 digit=0
+
+
+Malloc balance: 0

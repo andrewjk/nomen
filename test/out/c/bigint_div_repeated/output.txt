@@ -1,0 +1,4 @@
+3 3 3 3 3 
+
+
+Malloc balance: 0

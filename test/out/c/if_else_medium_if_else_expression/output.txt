@@ -1,0 +1,3 @@
+50
+
+Malloc balance: 0
