@@ -22,7 +22,7 @@ pub struct BigInt {
     inline func get = (self, int i, out uint64) {
         ```
         #arch: c
-        return ((unsigned long long*)((unsigned long long)((unsigned long long*)&self + 32)))[i];
+        return ((unsigned long long*)self->digits.data)[i];
         ```
         ```
         #arch: aarch64
@@ -36,7 +36,7 @@ pub struct BigInt {
     inline func set = (ref self, int i, uint64 val) {
         ```
         #arch: c
-        ((unsigned long long*)((unsigned long long)((unsigned long long*)self + 32)))[i] = val;
+        ((unsigned long long*)self->digits.data)[i] = val;
         ```
         ```
         #arch: aarch64

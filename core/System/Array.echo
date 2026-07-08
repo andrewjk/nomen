@@ -30,7 +30,8 @@ pub struct Array<T> {
     pub func at = (self, int index: index >= 0 && index < self.length, out T) {
         ```
         #arch: c
-        return ((T*)&self)[index];
+        T* _data = (T*)((char*)self + sizeof(*self));
+        return _data[index];
         ```
         ```
         #arch: aarch64
@@ -44,7 +45,8 @@ pub struct Array<T> {
     pub func first = (self: self.length > 0, out T) {
         ```
         #arch: c
-        return ((T*)&self)[0];
+        T* _data = (T*)((char*)self + sizeof(*self));
+        return _data[0];
         ```
         ```
         #arch: aarch64
@@ -56,7 +58,8 @@ pub struct Array<T> {
     pub func set = (ref self, int index: index >= 0 && index < self.length, T value) {
         ```
         #arch: c
-        ((T*)&self)[index] = value;
+        T* _data = (T*)((char*)self + sizeof(*self));
+        _data[index] = value;
         ```
         ```
         #arch: aarch64
@@ -70,7 +73,8 @@ pub struct Array<T> {
     pub func at_end = (self, out T) {
         ```
         #arch: c
-        return ((T*)&self)[self.length - 1];
+        T* _data = (T*)((char*)self + sizeof(*self));
+        return _data[self->length - 1];
         ```
         ```
         #arch: aarch64
@@ -86,11 +90,14 @@ pub struct Array<T> {
     pub func with = (T value, int count: count >= 0, out Array<T>) {
         ```
         #arch: c
-        T result[count];
-        for (int i = 0; i < count; i++) {
-            result[i] = value;
+        long _header = 16;
+        void* _result = malloc(_header + count * T_SIZE);
+        ((long*)_result)[1] = count;
+        T* _data = (T*)((char*)_result + _header);
+        for (long i = 0; i < count; i++) {
+            _data[i] = value;
         }
-        return result;
+        return _result;
         ```
         ```
         #arch: aarch64
@@ -144,10 +151,11 @@ pub struct Array<T> {
     pub func add = (self, Array other, out Array) {
         ```
         #arch: c
-        T result[self.length + other->length];
-        memcpy(result, &self, self.length * sizeof(T));
-        memcpy(&result[self.length], other, other->length * sizeof(T));
-        return result;
+        typeof(*self) _result;
+        _result.length = _self.length + other->length;
+        T* self_data = (T*)(self + 1);
+        T* other_data = (T*)(other + 1);
+        return _result;
         ```
         ```
         #arch: aarch64
@@ -198,12 +206,9 @@ pub struct Array<T> {
     pub func mul = (self, int other, out Array) {
         ```
         #arch: c
-        T result[self.length * other];
-        memcpy(result, &self, self.length * sizeof(T));
-        for (int i = 1; i < other; i++) {
-            memcpy(&result[self.length * i], &self, self.length * sizeof(T));
-        }
-        return result;
+        typeof(*self) _result;
+        _result.length = _self.length * other;
+        return _result;
         ```
         ```
         #arch: aarch64
