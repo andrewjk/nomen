@@ -4,7 +4,9 @@ dist/
 
 *.cache
 *.out
-main.s
+main.h
+main.m
 main.o
+main.s
 audit_runtime.o
 bench/rust/target/
