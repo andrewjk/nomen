@@ -44,10 +44,10 @@ The remaining Go benchmarks require language features or standard library suppor
 
 ### Needs concurrency primitives
 
-| Benchmark            | What's needed                                                                                                                                   |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| **coro-prime-sieve** | Goroutines and channels for the daisy-chain prime sieve. Would require a completely different single-threaded algorithm (e.g., trial division). |
-| **binarytrees (Go)** | The Go version uses `sync.WaitGroup` and goroutines for parallelism. The Echo version is single-threaded but produces identical results.        |
+| Benchmark            | What's needed                                                                                                                                                                                                                                                                                         |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **coro-prime-sieve** | Goroutines and channels for the daisy-chain prime sieve. Would require a completely different single-threaded algorithm (e.g., trial division).                                                                                                                                                       |
+| **binarytrees (Go)** | The Go version is the single-threaded PLB `1.go` (the parallel `2.go` would use `sync.WaitGroup` and goroutines across all cores, giving Go an unfair wall-clock advantage over the single-threaded Echo/Rust/Zig versions). The Echo version is also single-threaded and produces identical results. |
 
 ### Needs hash maps (partially done)
 

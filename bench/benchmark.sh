@@ -1,16 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Parse -n flags. If none are passed, run with n=500 AND n=2000.
-N_LIST=()
-while [ $# -gt 0 ]; do
-	case "$1" in
-		-n) N_LIST+=("$2"); shift 2 ;;
-		-n*) N_LIST+=("${1#-n}"); shift ;;
-		*) shift ;;
-	esac
-done
-[ ${#N_LIST[@]} -eq 0 ] && N_LIST=(500 2000)
+# Each benchmark runs twice with hardcoded per-benchmark sizes: "small" and
+# "large" (defined below in the BENCHES array). Sizes are tuned so the slowest
+# language (Echo) lands in a measurable range (~50ms-5s); they roughly follow
+# the Programming-Language-Benchmarks conventions where the workload allows.
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BENCH_DIR="$ROOT/bench"
@@ -31,24 +25,25 @@ to_ms() {
 }
 
 # ── Benchmark definitions ────────────────────────────────────────────────────
-# Format: name|args|zig_src|rust_src
-# `$N` in args stays literal and is expanded per run; `$BENCH_DIR` expands now.
+# Format: name|small_args|large_args|zig_src|rust_src
+# `$BENCH_DIR` in args expands now (at array-definition time).
+# NOTE: knucleotide/regex-redux only have one input file each, so small==large.
 
 BENCHES=(
-	"pidigits|\$N|pidigits1.zig|pidigits1.rs"
-	"helloworld|0|helloworld1.zig|helloworld1.rs"
-	"fannkuch-redux|10|fannkuch-redux1.zig|fannkuch-redux1.rs"
-	"binarytrees|15|binarytrees1.zig|binarytrees3.rs"
-	"merkletrees|15|merkletrees1.zig|merkletrees1.rs"
-	"nsieve|4|nsieve1.zig|nsieve1.rs"
-	"lru|\$N \$N|lru1.zig|lru1.rs"
-	"knucleotide|$BENCH_DIR/knucleotide_input.txt|knucleotide1.zig|knucleotide8.rs"
-	"json-serde|$BENCH_DIR/sample.json \$N|json-serde1.zig|json-serde1.rs"
-	"regex-redux|$BENCH_DIR/25000_in|regex-redux1.zig|regex-redux6.rs"
-	"nbody|\$N|nbody1.zig|nbody1.rs"
-	"spectral-norm|100|spectral-norm1.zig|spectral-norm1.rs"
-	"mandelbrot|200|mandelbrot1.zig|mandelbrot8.rs"
-	"edigits|27|edigits1.zig|edigits1.rs"
+	"pidigits|1000|4000|pidigits1.zig|pidigits1.rs"
+	"helloworld|0|0|helloworld1.zig|helloworld1.rs"
+	"fannkuch-redux|10|11|fannkuch-redux1.zig|fannkuch-redux1.rs"
+	"binarytrees|15|18|binarytrees1.zig|binarytrees5.rs"
+	"merkletrees|15|17|merkletrees1.zig|merkletrees1.rs"
+	"nsieve|10|12|nsieve1.zig|nsieve1.rs"
+	"lru|100 50000|100 200000|lru1.zig|lru1.rs"
+	"knucleotide|$BENCH_DIR/knucleotide_input.txt|$BENCH_DIR/knucleotide_input.txt|knucleotide1.zig|knucleotide8.rs"
+	"json-serde|$BENCH_DIR/sample.json 1000|$BENCH_DIR/sample.json 5000|json-serde1.zig|json-serde1.rs"
+	"regex-redux|$BENCH_DIR/25000_in|$BENCH_DIR/25000_in|regex-redux1.zig|regex-redux6.rs"
+	"nbody|500000|5000000|nbody1.zig|nbody1.rs"
+	"spectral-norm|500|1500|spectral-norm1.zig|spectral-norm1.rs"
+	"mandelbrot|1000|2000|mandelbrot1.zig|mandelbrot8.rs"
+	"edigits|2000|5000|edigits1.zig|edigits1.rs"
 )
 
 # ── Compile all ──────────────────────────────────────────────────────────────
@@ -65,7 +60,7 @@ printf "  %-22s  %7s  %7s  %7s  %7s\n" "" "compile" "compile" "compile" "compile
 printf "  %-22s  %7s  %7s  %7s  %7s\n" "----------------------" "-------" "-------" "-------" "-------"
 
 for entry in "${BENCHES[@]}"; do
-	IFS='|' read -r bench bn zig_src rust_src <<< "$entry"
+	IFS='|' read -r bench small_args large_args zig_src rust_src <<< "$entry"
 	echo_ms="-" go_ms="-" zig_ms="-" rust_ms="-"
 
 	# Echo compile
@@ -123,8 +118,8 @@ echo ""
 
 # ── Run all ──────────────────────────────────────────────────────────────────
 
-for N in "${N_LIST[@]}"; do
-	echo "=== Run times (n=$N) ==="
+for which in small large; do
+	echo "=== Run times ($which) ==="
 	echo ""
 
 	printf "  %-22s  %7s  %7s  %7s  %7s\n" "Benchmark" "Echo" "Go" "Zig" "Rust"
@@ -132,8 +127,8 @@ for N in "${N_LIST[@]}"; do
 	printf "  %-22s  %7s  %7s  %7s  %7s\n" "----------------------" "-------" "-------" "-------" "-------"
 
 	for entry in "${BENCHES[@]}"; do
-		IFS='|' read -r bench bn zig_src rust_src <<< "$entry"
-		bn=${bn//\$N/$N}
+		IFS='|' read -r bench small_args large_args zig_src rust_src <<< "$entry"
+		if [ "$which" = small ]; then bn="$small_args"; else bn="$large_args"; fi
 		echo_ms="-" go_ms="-" zig_ms="-" rust_ms="-"
 
 		# Echo run
@@ -157,12 +152,18 @@ for N in "${N_LIST[@]}"; do
 		fi
 
 		# Go run
+		# Run Go single-threaded via GOMAXPROCS=1 so goroutine-based
+		# benchmarks don't win on wall-clock just by spreading work across
+		# all cores. binarytrees uses the serial PLB 1.go and knucleotide
+		# honors this; fannkuch-redux overrides it in-source to
+		# GOMAXPROCS(4), matching the upstream PLB source, so it still runs
+		# multi-core.
 		bin_go="$GO_BUILD/$bench"
 		if [ -x "$bin_go" ]; then
-			"$bin_go" $bn > /dev/null 2>&1 || true
-			t1=$( { time "$bin_go" $bn > /dev/null 2>&1; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//' ) || true
-			t2=$( { time "$bin_go" $bn > /dev/null 2>&1; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//' ) || true
-			t3=$( { time "$bin_go" $bn > /dev/null 2>&1; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//' ) || true
+			GOMAXPROCS=1 "$bin_go" $bn > /dev/null 2>&1 || true
+			t1=$( { time GOMAXPROCS=1 "$bin_go" $bn > /dev/null 2>&1; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//' ) || true
+			t2=$( { time GOMAXPROCS=1 "$bin_go" $bn > /dev/null 2>&1; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//' ) || true
+			t3=$( { time GOMAXPROCS=1 "$bin_go" $bn > /dev/null 2>&1; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//' ) || true
 			if [ -n "$t1" ] && [ -n "$t2" ] && [ -n "$t3" ]; then
 				r1=$(to_ms "$t1") r2=$(to_ms "$t2") r3=$(to_ms "$t3")
 				go_ms=$r1
@@ -197,12 +198,15 @@ for N in "${N_LIST[@]}"; do
 		fi
 
 		# Rust run
+		# RAYON_NUM_THREADS=1 keeps rayon-based benchmarks (regex-redux
+		# uses rayon::join) single-threaded, matching the GOMAXPROCS=1
+		# treatment for Go. No-op for benchmarks that don't use rayon.
 		bin_rust="$RUST_DIR/target/release/$bench"
 		if [ -x "$bin_rust" ]; then
-			"$bin_rust" $bn > /dev/null 2>&1 || true
-			t1=$( { time "$bin_rust" $bn > /dev/null 2>&1; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//' ) || true
-			t2=$( { time "$bin_rust" $bn > /dev/null 2>&1; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//' ) || true
-			t3=$( { time "$bin_rust" $bn > /dev/null 2>&1; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//' ) || true
+			RAYON_NUM_THREADS=1 "$bin_rust" $bn > /dev/null 2>&1 || true
+			t1=$( { time RAYON_NUM_THREADS=1 "$bin_rust" $bn > /dev/null 2>&1; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//' ) || true
+			t2=$( { time RAYON_NUM_THREADS=1 "$bin_rust" $bn > /dev/null 2>&1; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//' ) || true
+			t3=$( { time RAYON_NUM_THREADS=1 "$bin_rust" $bn > /dev/null 2>&1; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//' ) || true
 			if [ -n "$t1" ] && [ -n "$t2" ] && [ -n "$t3" ]; then
 				r1=$(to_ms "$t1") r2=$(to_ms "$t2") r3=$(to_ms "$t3")
 				rust_ms=$r1
