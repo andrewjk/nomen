@@ -666,16 +666,14 @@ function build_access_method(
 				elem_type_name !== "int32";
 
 			// The inlined .at()/.set() below uses x19 as scratch for the array base.
-			// x19 is also the callee-saved home register for `self` and the first struct
-			// parameter, so when it is live we must preserve it — otherwise computing
-			// a field address (e.g. `h.items.at(0)` where `h` is held in x19) emits
-			// `add x19, x19, #offset`, corrupting the struct pointer for any later
-			// field read such as `h.count`.
-			const x19_live =
-				!!status.function_param_regs && [...status.function_param_regs.values()].includes("x19");
-			if (x19_live) {
-				status.code += `str x19, [sp, #-16]!\n`;
-			}
+			// x19 is callee-saved (AAPCS): it homes `self` / the first struct param of
+			// THIS function, and — crucially — the caller may also hold a live value in
+			// x19 (e.g. `main` keeps `&Init` there for `init.argc`/`init.args`). Since
+			// we unconditionally clobber x19 below, we must always save/restore it,
+			// regardless of whether this function itself homes a param in x19. Skipping
+			// the save corrupts the caller's x19 — a callee-saved violation — which
+			// previously made `init.argc` read as garbage after any `ref` array call.
+			status.code += `str x19, [sp, #-16]!\n`;
 
 			// Build target (array pointer) into x19
 			if (node.target.node_type === "value") {
@@ -798,9 +796,7 @@ function build_access_method(
 					}
 				}
 			}
-			if (x19_live) {
-				status.code += `ldr x19, [sp], #16\n`;
-			}
+			status.code += `ldr x19, [sp], #16\n`;
 			return;
 		}
 	}
