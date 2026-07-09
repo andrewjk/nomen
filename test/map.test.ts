@@ -186,4 +186,24 @@ Console.write("\\{v} \\{m.length}")
 `;
 		await build_and_check_output(input, "map_remove_readd", "99 2");
 	});
+
+	test("remove shifts a displaced entry past an unmoved neighbor", async () => {
+		// cap 8: key 2 -> slot 2, key 3 -> slot 3, key 10 (home 2) collides and
+		// lands at slot 4. Removing key 2 opens a gap at slot 2; key 3 is at its
+		// home so it must stay, but the gap has to advance past it and pull key 10
+		// forward into slot 2. If remove stops at the first non-moveable entry,
+		// key 10 gets stranded behind the empty slot and becomes unfindable.
+		const input = `
+var Map<int, int> m = Map<int, int>()
+m.set(2, 100)
+m.set(3, 200)
+m.set(10, 300)
+m.remove(2)
+const int v3 = m.get(3)
+const int v10 = m.get(10)
+const bool h2 = m.has(2)
+Console.write("\\{v3} \\{v10} \\{h2} \\{m.length}")
+`;
+		await build_and_check_output(input, "map_remove_shift_past", "200 300 false 2");
+	});
 });

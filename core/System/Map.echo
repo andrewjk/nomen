@@ -59,11 +59,49 @@ pub struct Map<TK, TV> {
 		if self.used.load(idx) == 0 {
 			return
 		}
-		self.used.store(idx, 0)
-		self.keys.store_int(idx, 0)
-		self.values.store_int(idx, 0)
+		// Backward-shift deletion for linear probing. `gap` is the empty slot
+		// walking forward through the cluster; `k` scans ahead of it. An entry
+		// at k shifts into the gap only if the gap still lies within its valid
+		// probe range ([home, k) cyclically); otherwise the entry stays put and
+		// we keep scanning, because a later entry may still belong behind the
+		// gap. This is the subtle point: k advances independently of the gap,
+		// so entries past a non-moveable one are not stranded behind an empty
+		// slot (which would make find_slot miss them). No tombstones, so
+		// find_slot/get/has/set are unchanged, and the cost is the local cluster
+		// length — not a full O(cap) rehash on every delete.
+		var int gap = idx
+		var int k = idx
+		while true {
+			k = k + 1
+			if k >= cap {
+				k = 0
+			}
+			if self.used.load(k) == 0 {
+				break
+			}
+			var int home = self.keys.load_int(k) % cap
+			if home < 0 {
+				home = home + cap
+			}
+			var int dgap = gap - home
+			if dgap < 0 {
+				dgap = dgap + cap
+			}
+			var int dk = k - home
+			if dk < 0 {
+				dk = dk + cap
+			}
+			if dgap < dk {
+				self.keys.store_int(gap, self.keys.load_int(k))
+				self.values.store_int(gap, self.values.load_int(k))
+				self.used.store(gap, 1)
+				gap = k
+			}
+		}
+		self.used.store(gap, 0)
+		self.keys.store_int(gap, 0)
+		self.values.store_int(gap, 0)
 		self.length = self.length - 1
-		self.rehash(cap)
 	}
 
 	func find_slot = (self, TK key, int cap, out int: out >= 0 && out < cap) {

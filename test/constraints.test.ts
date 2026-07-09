@@ -324,6 +324,73 @@ func ok = (int i: i >= 0 && i < 10) {
 			const parsed = parse(input, get_library(core));
 			expect(parsed.errors).toEqual([]);
 		});
+
+		// The next cases document a real limitation: the flow analysis that proves
+		// a buffer index is in bounds tracks while-loop conditions and direct
+		// reassignments, but it does NOT narrow a value inside an `if x != -1`
+		// branch (nor `if x > -1` / `if 0 <= x`). A linked-list container needs a
+		// `-1` null sentinel for its empty head/tail and would guard every
+		// dereference with `if head != -1`; because that guard is ignored, that
+		// natural form cannot be used. The workaround is to guard with
+		// `if head >= 0` instead — the checker narrows THAT form (it matches the
+		// constraint's `i >= 0` half), which is how an O(1) linked list can be
+		// written today.
+		test("buffer index guarded by `if x != -1` is still rejected", () => {
+			const input = `
+import System
+func caller = () {
+    var Buffer<int> data = Buffer<int>()
+    data.alloc_int(10)
+    var int head = -1
+    if head != -1 {
+        data.store_int(head, 1)
+    }
+}
+`;
+			const parsed = parse(input, get_library(core));
+			expect(parsed.errors.length).toBeGreaterThanOrEqual(1);
+			expect(parsed.errors.some((e) => e.message.includes("not satisfied"))).toBe(true);
+		});
+
+		test("buffer index guarded by `if x >= 0` is accepted", () => {
+			// The workaround for the case above: `>= 0` is narrowed by the flow
+			// analysis, so a -1-initialized local can be used as an index inside
+			// an `if x >= 0` branch. This is the form an O(1) linked-list container
+			// (head/tail null sentinels) must use.
+			const input = `
+import System
+func caller = () {
+    var Buffer<int> data = Buffer<int>()
+    data.alloc_int(10)
+    var int head = -1
+    if head >= 0 {
+        data.store_int(head, 1)
+    }
+}
+`;
+			const parsed = parse(input, get_library(core));
+			expect(parsed.errors).toEqual([]);
+		});
+
+		test("buffer index from a loaded value is accepted", () => {
+			// Data-dependent indices (a "pointer" loaded from another buffer) are
+			// also fine, so an index stored in a buffer and reloaded (rather than
+			// kept in a -1-capable local) needs no guard at all.
+			const input = `
+import System
+func caller = () {
+    var Buffer<int> data = Buffer<int>()
+    data.alloc_int(10)
+    var Buffer<int> ptrs = Buffer<int>()
+    ptrs.alloc_int(10)
+    ptrs.store_int(0, 5)
+    var int n = ptrs.load_int(0)
+    data.store_int(n, 1)
+}
+`;
+			const parsed = parse(input, get_library(core));
+			expect(parsed.errors).toEqual([]);
+		});
 	});
 
 	describe("field constraints", () => {
