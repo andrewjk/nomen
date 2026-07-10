@@ -62,11 +62,20 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 			status.code += " + i);\n";
 		} else {
 			const list_type = type_from_value_node(node.list);
-			const length = list_type.length;
 			const element_type = list_type.name || "int";
 			const idx_var = `_idx_${node.item.value}`;
+			// Heap-allocated arrays (e.g. from Array.with with a runtime count)
+			// have no compile-time length — read it from the Array_<T> header's
+			// `length` field, and index into the data region past the header.
+			const list_name = node.list!.node_type === "value" ? (node.list as any).value : undefined;
+			const is_heap = !!list_name && !!status.heap_array_vars?.has(list_name);
 			status.code += `for (int ${idx_var} = 0; ${idx_var} < `;
-			build_node(length!, status);
+			if (is_heap) {
+				build_node(node.list!, status);
+				status.code += `->length`;
+			} else {
+				build_node(list_type.length!, status);
+			}
 			status.code += `; ${idx_var}++)\n{\n`;
 			// Class-typed elements are pointers — emit `struct T *item`
 			// instead of `T item` (which would be a by-value struct).
@@ -80,8 +89,16 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 			} else {
 				status.code += `${c_type(element_type)} ${node.item.value} = `;
 			}
-			build_node(node.list!, status);
-			status.code += `[${idx_var}];\n`;
+			if (is_heap) {
+				// Data lives just past the Array_<T> header: index into it.
+				const elem_ptr = elem_struct ? `struct ${element_type} **` : `${c_type(element_type)} *`;
+				status.code += `((${elem_ptr})((char *)`;
+				build_node(node.list!, status);
+				status.code += ` + sizeof(struct Array_${element_type})))[${idx_var}];\n`;
+			} else {
+				build_node(node.list!, status);
+				status.code += `[${idx_var}];\n`;
+			}
 		}
 	}
 

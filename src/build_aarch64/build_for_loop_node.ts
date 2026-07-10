@@ -253,6 +253,28 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 			status.stack_offsets!.set(idx_name, idx_offset);
 		}
 
+		const list_name = node.list.node_type === "value" ? (node.list as any).value : "_list";
+		const list_type = type_from_value_node(node.list);
+		const list_is_pointer =
+			list_type.is_array &&
+			(!!status.function_array_params?.has(list_name) || !!status.heap_array_vars?.has(list_name));
+
+		// Dynamic-length arrays (heap-allocated via Array.with, or array params
+		// whose length isn't known at compile time) need the runtime length from
+		// the buffer prefix. When the type carries a compile-time length (e.g. a
+		// fixed-size literal passed to a function), use that instead.
+		let dyn_len_offset: number | undefined;
+		if (status.function_return_label && list_is_pointer && !type.length) {
+			dyn_len_offset = allocate_stack_space(status, 8);
+			emit_var_load(status, "x0", list_name, 8);
+			if (status.heap_array_vars?.has(list_name)) {
+				status.code += `ldr x0, [x0]\n`;
+			} else {
+				status.code += `ldr x0, [x0, #-8]\n`;
+			}
+			status.code += `str x0, [x29, #${dyn_len_offset}]\n`;
+		}
+
 		status.code += `ldr x0, =0\n`;
 		emit_var_store(status, "x0", idx_name, 8);
 
@@ -260,15 +282,14 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 
 		emit_var_load(status, "x0", idx_name, 8);
 		status.code += `mov x2, x0\n`;
-		status.code += `ldr x0, =${length}\n`;
+		if (dyn_len_offset !== undefined) {
+			status.code += `ldr x0, [x29, #${dyn_len_offset}]\n`;
+		} else {
+			status.code += `ldr x0, =${length}\n`;
+		}
 		status.code += `cmp x2, x0\n`;
 		status.code += `bge ${end_label}\n`;
 
-		const list_name = node.list.node_type === "value" ? (node.list as any).value : "_list";
-		const list_type = type_from_value_node(node.list);
-		const list_is_pointer =
-			list_type.is_array &&
-			(!!status.function_array_params?.has(list_name) || !!status.heap_array_vars?.has(list_name));
 		if (list_is_pointer) {
 			emit_var_load(status, "x3", list_name, 8);
 			if (status.heap_array_vars?.has(list_name)) {

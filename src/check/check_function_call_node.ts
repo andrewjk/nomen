@@ -349,13 +349,45 @@ function raw_type_size(name: string, structs: StructNode[]): number {
 
 /**
  * Map an Echo type name to its C representation for substitution inside raw C
- * blocks. `string` is not a C type, so it must become `char*` (making `T*`
- * become `char**`). Other built-in scalars happen to share their C name.
+ * blocks. This MUST agree with build_c/utils/c_type.ts so that, e.g., `T*`
+ * expands to `long*` for an `int` element (Echo `int` is 64-bit, i.e. C
+ * `long`, not C `int`). `string` is not a C type, so it becomes `char*`
+ * (making `T*` become `char**`).
  */
 function raw_c_type_name(name: string): string {
 	switch (name) {
 		case "string":
 			return "char*";
+		case "bool":
+			return "unsigned char";
+		case "int":
+			return "long";
+		case "uint":
+			return "unsigned long";
+		case "int8":
+			return "char";
+		case "uint8":
+			return "unsigned char";
+		case "int16":
+			return "short";
+		case "uint16":
+			return "unsigned short";
+		case "int32":
+			return "int";
+		case "uint32":
+			return "unsigned int";
+		case "int64":
+			return "long long";
+		case "uint64":
+			return "unsigned long long";
+		case "float":
+		case "ufloat32":
+			return "float";
+		case "float64":
+		case "ufloat":
+			return "double";
+		case "char":
+			return "char";
 		default:
 			return name;
 	}

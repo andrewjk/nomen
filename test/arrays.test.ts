@@ -130,6 +130,41 @@ Console.write("\\{nums.at(0) + nums.at(2)}")
 		await build_and_check_output(input, "array_access_in_expr", "40");
 	});
 
+	test("array from Array.with() with dynamic length filled with set() and read with at()", async () => {
+		const input = `
+var length = 3
+var result = Array.with(0, length)
+result.set(0, 10)
+result.set(1, 20)
+result.set(2, 30)
+Console.write("\\{result.at(0)} \\{result.at(1)} \\{result.at(2)}")
+`;
+		await build_and_check_output(input, "array_with_set_at", "10 20 30");
+	});
+
+	test("array from Array.with() reports its dynamic length", async () => {
+		const input = `
+var length = 7
+var result = Array.with(0, length)
+Console.write("\\{result.length}")
+`;
+		await build_and_check_output(input, "array_with_length", "7");
+	});
+
+	test("array from Array.with() filled in a loop and iterated", async () => {
+		const input = `
+var length = 5
+var result = Array.with(0, length)
+for i of 0 .. length {
+  result.set(i, i * i)
+}
+for n of result {
+  Console.write("\\{n} ")
+}
+`;
+		await build_and_check_output(input, "array_with_for_loop", "0 1 4 9 16 ");
+	});
+
 	test("array in function param", async () => {
 		const input = `
 func sum = (Array<int> nums, out int) {

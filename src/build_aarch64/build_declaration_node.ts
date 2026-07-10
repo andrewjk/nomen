@@ -641,7 +641,13 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			} else {
 				build_node(node.value, status);
 			}
-		} else if (node.value && node.value.node_type === "func_call") {
+		} else if (
+			node.value &&
+			(node.value.node_type === "func_call" ||
+				(node.value.node_type === "access" &&
+					(node.value as AccessNode).access.node_type === "access_func" &&
+					!node.type.length))
+		) {
 			if (!status.heap_array_vars) status.heap_array_vars = new Set();
 			status.heap_array_vars.add(node.name);
 			const class_element = status.structs.find((s) => s.name === node.type.name && s.is_class);

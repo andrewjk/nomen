@@ -801,11 +801,28 @@ function build_access_method(
 		}
 	}
 
-	const mono_struct_name = target_type.is_array
+	let mono_struct_name = target_type.is_array
 		? "Array_" + target_type.name
 		: target_type.type_args?.length
 			? target_type.name + "_" + target_type.type_args.map((t) => t.name).join("_")
 			: target_type.name;
+	// Static calls on a generic type without explicit type args (e.g.
+	// `Array.with(0, n)`) resolve to the generic name (`Array`), for which no
+	// monomorphized struct exists. Find the specialized struct that actually
+	// defines the method (e.g. `Array_int`), mirroring the C backend.
+	if (
+		!access_func.mangled_name &&
+		mono_struct_name &&
+		!status.structs.find((s) => s.name === mono_struct_name && !s.is_generic)
+	) {
+		const specialized = status.structs.find(
+			(s) =>
+				s.name.startsWith(mono_struct_name + "_") &&
+				!s.is_generic &&
+				s.functions.find((f) => f.name === access_func.name),
+		);
+		if (specialized) mono_struct_name = specialized.name;
+	}
 	const method_name =
 		access_func.mangled_name || `${mono_struct_name}_${access_func.name.replace(/#/g, "")}`;
 

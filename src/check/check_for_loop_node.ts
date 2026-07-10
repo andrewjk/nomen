@@ -1,5 +1,10 @@
 import add_error from "../add_error.ts";
+import AccessFieldNode from "../nodes/AccessFieldNode.ts";
+import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
+import AccessNode from "../nodes/AccessNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
+import clone_node from "../nodes/clone_node.ts";
+import DeclarationNode from "../nodes/DeclarationNode.ts";
 import ForLoopNode from "../nodes/ForLoopNode.ts";
 import RangeNode from "../nodes/RangeNode.ts";
 import Type from "../nodes/Type.ts";
@@ -20,6 +25,40 @@ function has_trait(type_name: string, trait_name: string, status: CheckStatus): 
 }
 
 export default function check_for_loop_node(for_loop: ForLoopNode, status: CheckStatus) {
+	// Desugar array value-iteration:
+	//   for x of arr        (arr is an Array<T>)
+	// becomes
+	//   for __idx of 0..arr.length { var x = arr.at(__idx) }
+	// so the element is obtained through `.at` (whose `index < self.length`
+	// constraint is satisfied by the loop bounds) and the body sees `x` as a
+	// value of type T. Only desugar simple (value) list expressions so the
+	// list isn't evaluated more than once; richer expressions fall through to
+	// the array path below.
+	if (
+		for_loop.list &&
+		!(for_loop.list instanceof RangeNode) &&
+		for_loop.list.node_type === "value"
+	) {
+		// type_from_value_node is read-only (no error side effects); the list is
+		// checked normally below (or by the recursive call after desugaring).
+		const list_type = type_from_value_node(for_loop.list, status);
+		const enumerable = list_type.name ? has_trait(list_type.name, "Enumerable", status) : false;
+		// Only desugar when the monomorphized Array struct (providing `.at`) is
+		// in scope — otherwise the generated `arr.at(i)` would be unresolved
+		// (e.g. bare parse without the System library).
+		const has_at =
+			list_type.name !== undefined &&
+			!!status.structs.find(
+				(s) => s.name === "Array_" + list_type.name && s.functions.some((f) => f.name === "at"),
+			);
+		if (list_type.is_array && !enumerable && has_at) {
+			desugar_array_for_loop(for_loop, list_type);
+			// The list is now a range; re-check with the normal range logic.
+			check_for_loop_node(for_loop, status);
+			return;
+		}
+	}
+
 	let for_status = clone_status(status);
 
 	if (for_loop.list) {
@@ -98,6 +137,41 @@ export default function check_for_loop_node(for_loop: ForLoopNode, status: Check
 	// The body may have executed before the post-loop code, so invalidations
 	// performed in it persist into the enclosing scope.
 	persist_invalidated(status, for_status);
+}
+
+/** Rewrite `for x of arr` in place into `for __idx of 0..arr.length { var x = arr.at(__idx) }`. */
+function desugar_array_for_loop(for_loop: ForLoopNode, array_type: Type) {
+	const list = for_loop.list;
+	const start = list.start;
+	const original_item = for_loop.item;
+	const idx_name = `__for_idx_${original_item.value}`;
+
+	// The loop variable becomes the hidden index.
+	for_loop.item = new ValueNode(original_item.start, idx_name);
+
+	// list := 0 .. <bound>, where <bound> is the array's compile-time length
+	// when known (e.g. `Array(1,2,3)`), otherwise `arr.length` (dynamic arrays
+	// such as those from `Array.with`).
+	const zero = new ValueNode(start, "0");
+	const bound = array_type.length
+		? clone_node(array_type.length)
+		: new AccessNode(start, clone_node(list), new AccessFieldNode(start, "length"));
+	for_loop.list = new RangeNode(start, zero, bound);
+
+	// Prepend to the body: var <original_item> = arr.at(__idx)
+	const at_call = new AccessFunctionCallNode(start, "at", new Type(""), [
+		new ValueNode(start, idx_name),
+	]);
+	const at_access = new AccessNode(start, clone_node(list), at_call);
+	const decl = new DeclarationNode(
+		original_item.start,
+		"private",
+		"var",
+		original_item.value,
+		new Type(array_type.name),
+		at_access,
+	);
+	for_loop.statements.unshift(decl);
 }
 
 function evaluate_range_bound_value(node: BaseNode, status: CheckStatus): number | undefined {

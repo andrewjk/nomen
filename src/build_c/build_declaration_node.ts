@@ -1,3 +1,4 @@
+import AccessNode from "../nodes/AccessNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
@@ -136,7 +137,12 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 		// apply this for function-call initializers; declarations with no value
 		// or other initializer types fall through to the generic pointer path.
 		const is_heap_array_from_call =
-			node.type.is_array && !is_stack_array && node.value?.node_type === "func_call";
+			node.type.is_array &&
+			!is_stack_array &&
+			(node.value?.node_type === "func_call" ||
+				(node.value?.node_type === "access" &&
+					(node.value as AccessNode).access.node_type === "access_func" &&
+					!node.type.length));
 		if (is_heap_array_from_call) {
 			status.code += `struct Array_${node.type.name}* ${safe_name}`;
 			if (!status.heap_array_vars) status.heap_array_vars = new Set();

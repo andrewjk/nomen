@@ -101,35 +101,45 @@ pub struct Array<T> {
         ```
         ```
         #arch: aarch64
-        // x0 = value (first elem or scalar), x1 = count, x8 = return buf (first elem)
-        // Save count and return buf
-        stp x1, x8, [sp, #-16]!
+        // x0 = value, x1 = count
+        // Returns x0 = heap-allocated array pointer ([ptr]=length, [ptr+8..]=data).
+        // This is a regular static function: the caller receives the pointer in x0,
+        // so no sret/x8 buffer is involved.
+        stp x19, x20, [sp, #-16]!
+        stp x1, x0, [sp, #-16]!        // [sp]=count, [sp+8]=value
 
-        // If count is 0, skip to end
+        // ptr = malloc(8 + count * T_SIZE)
+        mov x2, #T_SIZE
+        mul x0, x1, x2
+        add x0, x0, #8
+        bl _malloc
+        mov x19, x0                    // x19 = ptr
+
+        // Store the length prefix and set up the data area.
+        ldr x1, [sp]                   // count
+        str x1, [x19]                  // [ptr] = count
+        add x20, x19, #8               // x20 = data area
+
         cbz x1, .Larray_with_end
 
-        // For struct types, we need to copy T_SIZE bytes per element
-        // For simple types, we store the value directly
-        mov x2, #0              // i = 0
-
+        ldr x0, [sp, #8]               // value
+        mov x2, #0                     // i = 0
         .Larray_with_loop:
-        // Store value at return_buf[i]
         mov x3, #T_SIZE
-        mul x4, x2, x3          // offset = i * T_SIZE
-        add x5, x8, x4          // addr = return_buf + offset
+        mul x4, x2, x3                 // offset = i * T_SIZE
+        add x5, x20, x4                // addr = data + offset
 
         // Copy T_SIZE bytes from value to addr
-        // For simple types (T_SIZE <= 8), we can use a single store
         cmp x3, #8
         b.gt .Larray_with_copy_loop
 
-        // Simple type: single store
+        // Simple type (T_SIZE <= 8): single store
         str x0, [x5]
         b .Larray_with_next
 
         .Larray_with_copy_loop:
         // Complex type: copy byte by byte
-        mov x6, #0              // j = 0
+        mov x6, #0                     // j = 0
         .Larray_with_byte:
         ldrb w7, [x0, x6]
         strb w7, [x5, x6]
@@ -144,7 +154,9 @@ pub struct Array<T> {
         blt .Larray_with_loop
 
         .Larray_with_end:
+        mov x0, x19                    // return heap pointer
         add sp, sp, #16
+        ldp x19, x20, [sp], #16
         ```
     }
 

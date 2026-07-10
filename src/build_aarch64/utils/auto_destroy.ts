@@ -615,6 +615,15 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 			status.code += `ldr x19, [sp], #16\n`;
 			continue;
 		}
+		// Heap-allocated arrays (e.g. from Array.with with a runtime count):
+		// the variable holds a malloc'd buffer pointer ([ptr]=length, data
+		// follows). Free the buffer. Class/string element arrays are handled
+		// by heap_class_arrays/heap_string_arrays above (which `continue`).
+		if (status.heap_array_vars?.has(decl.name)) {
+			emit_var_load(status, "x0", decl.name, 8);
+			emit_free(status);
+			continue;
+		}
 		if (status.heap_strings?.has(decl.name)) {
 			emit_var_load(status, "x0", decl.name, 8);
 			emit_free(status);
