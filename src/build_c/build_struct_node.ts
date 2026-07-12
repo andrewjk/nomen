@@ -9,6 +9,7 @@ import build_parameter_node from "./build_parameter_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import c_function_name from "./utils/c_function_name.ts";
 import c_type from "./utils/c_type.ts";
+import { has_flag_name, is_nullable_struct_type } from "./utils/nullable_struct.ts";
 
 export default function build_struct_node(node: StructNode, status: BuildStatus) {
 	if (node.is_generic) return;
@@ -75,9 +76,23 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 		// field the init doesn't explicitly assign still gets its default.
 		for (const field of node.fields) {
 			if (field.value) {
-				status.code += `self${accessor}${field.name} = `;
-				build_node(field.value, status);
-				status.code += ";\n";
+				if (is_nullable_struct_type(field.type, status)) {
+					// Default is either `null` (flag 0, value untouched) or a
+					// struct value (copy it in, flag 1).
+					const is_null =
+						field.value.node_type === "value" && (field.value as any).value === "null";
+					if (is_null) {
+						status.code += `self${accessor}${has_flag_name(field.name)} = 0;\n`;
+					} else {
+						status.code += `self${accessor}${field.name} = `;
+						build_node(field.value, status);
+						status.code += `;\nself${accessor}${has_flag_name(field.name)} = 1;\n`;
+					}
+				} else {
+					status.code += `self${accessor}${field.name} = `;
+					build_node(field.value, status);
+					status.code += ";\n";
+				}
 			}
 		}
 
@@ -125,6 +140,16 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 			if (field.type.is_array && field.type.length) {
 				// Fixed-size array fields — use memcpy instead of assignment
 				status.code += `memcpy(${object_name}${accessor}${field.name}, ${field.name}, sizeof(${object_name}${accessor}${field.name}));\n`;
+			} else if (is_nullable_struct_type(field.type, status) && field.value) {
+				// Nullable struct field with a default (typically `= null`).
+				const is_null = field.value.node_type === "value" && (field.value as any).value === "null";
+				if (is_null) {
+					status.code += `${object_name}${accessor}${has_flag_name(field.name)} = 0;\n`;
+				} else {
+					status.code += `${object_name}${accessor}${field.name} = `;
+					build_node(field.value, status);
+					status.code += `;\n${object_name}${accessor}${has_flag_name(field.name)} = 1;\n`;
+				}
 			} else {
 				status.code += `${object_name}${accessor}${field.name} = `;
 				if (field.value) {

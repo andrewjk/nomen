@@ -219,8 +219,19 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 				}
 			}
 		} else {
-			// Non-variadic call: original logic
-			// Evaluate params right-to-left to avoid clobbering
+			// Non-variadic call.
+			// Evaluate each param into x0 and spill it to a dedicated stack
+			// slot, then load all slots into argument registers right before the
+			// call. Evaluating an argument expression can use x1..x7 as scratch
+			// (e.g. binary operators hardcode x1/x2), so storing a result
+			// directly into its target register would let a later argument
+			// clobber an earlier one (e.g. `[a+1, a+2]` lost the second value).
+			const has_args = node.params.length > 0;
+			let args_base = 0;
+			if (has_args) {
+				args_base = allocate_stack_space(status, node.params.length * 8, 16);
+			}
+			// Evaluate params right-to-left, spilling each result to its slot.
 			for (let i = node.params.length - 1; i >= 0; i--) {
 				const param = node.params[i];
 				const param_type = (param as any).type?.name || "";
@@ -284,9 +295,19 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 				if (!status.code.endsWith("\n")) {
 					status.code += "\n";
 				}
-				const reg = param_regs[start_reg + i];
-				if (reg !== "x0") {
-					status.code += `mov ${reg}, x0\n`;
+				status.code += `str x0, [x29, #${args_base + i * 8}]\n`;
+			}
+			// Load each spilled argument into its target register. For struct
+			// constructors x0 is the destination (set up below), so it's never a
+			// param target; for ordinary calls param 0 goes in x0.
+			if (has_args) {
+				for (let i = 0; i < node.params.length; i++) {
+					const reg = param_regs[start_reg + i];
+					if (reg === "x0") continue;
+					status.code += `ldr ${reg}, [x29, #${args_base + i * 8}]\n`;
+				}
+				if (!is_struct) {
+					status.code += `ldr x0, [x29, #${args_base}]\n`;
 				}
 			}
 		}

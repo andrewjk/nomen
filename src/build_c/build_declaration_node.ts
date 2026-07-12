@@ -8,6 +8,7 @@ import build_parameter_node from "./build_parameter_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import c_function_name from "./utils/c_function_name.ts";
 import c_type from "./utils/c_type.ts";
+import { has_flag_name, is_nullable_struct_type } from "./utils/nullable_struct.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 
 export default function build_declaration_node(node: DeclarationNode, status: BuildStatus) {
@@ -166,6 +167,23 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 				status.code += `1`;
 			}
 			status.code += `]`;
+		}
+		// Nullable struct value-type local: the struct value is stored normally
+		// (above), and a companion `<name>_has` flag tracks nullness. Handle its
+		// initialization here and skip the generic `= value` path below.
+		if (is_nullable_struct_type(node.type, status)) {
+			const flag = has_flag_name(safe_name);
+			status.code += `;\nunsigned char ${flag} = 0`;
+			if (node.value) {
+				const is_null =
+					node.value.node_type === "value" && (node.value as ValueNode).value === "null";
+				if (!is_null) {
+					status.code += `;\n${safe_name} = `;
+					build_node(node.value, status);
+					status.code += `;\n${flag} = 1`;
+				}
+			}
+			return;
 		}
 		if (node.value) {
 			// TODO: This should be in more places?? Or apply to more nodes?? Probably

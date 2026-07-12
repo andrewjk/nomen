@@ -5,6 +5,7 @@ import ValueNode from "../nodes/ValueNode.ts";
 import build_node from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import c_type from "./utils/c_type.ts";
+import { is_nullable_struct_type } from "./utils/nullable_struct.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 
 export default function build_assignment_node(node: AssignmentNode, status: BuildStatus) {
@@ -226,6 +227,25 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 	}
 
 	status.code += ``;
+
+	// Assignment to a nullable struct slot (local var or struct field): write
+	// the value (if non-null) and update the companion `<slot>_has` flag.
+	const lhs_nullable_type = lhs_nullable_struct_type(node, status);
+	if (!node.operator && lhs_nullable_type) {
+		const lhs_expr = capture_build(node.left_value, status);
+		const flag = `${lhs_expr}_has`;
+		const rhs_is_null =
+			node.right_value.node_type === "value" && (node.right_value as ValueNode).value === "null";
+		if (rhs_is_null) {
+			status.code += `${flag} = 0`;
+		} else {
+			status.code += `${lhs_expr} = `;
+			build_node(node.right_value, status);
+			status.code += `;\n${flag} = 1`;
+		}
+		return;
+	}
+
 	build_node(node.left_value, status);
 	if (node.operator) {
 		status.code += ` ${node.operator.slice(0, -1)}= `;
@@ -242,4 +262,31 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 		build_node(node.swap, status);
 		status.code += `; }\n`;
 	}
+}
+
+/** Build a node into status.code, then return the emitted text and roll back. */
+function capture_build(node: any, status: BuildStatus): string {
+	const before = status.code.length;
+	build_node(node, status);
+	const expr = status.code.substring(before);
+	status.code = status.code.substring(0, before);
+	return expr;
+}
+
+/** The nullable-struct type of an assignment LHS, or undefined if it isn't one. */
+function lhs_nullable_struct_type(node: AssignmentNode, status: BuildStatus): boolean {
+	if (node.left_value.node_type === "value") {
+		const name = (node.left_value as ValueNode).value;
+		const decl = status.scoped_declarations.find((d) => d.name === name);
+		const t = decl?.type || status.variable_types?.get(name);
+		return is_nullable_struct_type(t, status);
+	}
+	if (
+		node.left_value.node_type === "access" &&
+		(node.left_value as AccessNode).access.node_type === "access_field"
+	) {
+		const field_type = (node.left_value as AccessNode).access.type;
+		return is_nullable_struct_type(field_type, status);
+	}
+	return false;
 }

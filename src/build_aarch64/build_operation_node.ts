@@ -3,11 +3,14 @@ import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import BaseNode from "../nodes/BaseNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
+import { emit_address_of } from "./build_access_node.ts";
+import { get_source_address } from "./build_assignment_node.ts";
 import build_node from "./build_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free } from "./utils/audit.ts";
-import { allocate_stack_space, emit_var_address } from "./utils/stack_var.ts";
-import { get_struct_size } from "./utils/struct_layout.ts";
+import { has_flag_name, is_nullable_struct_type } from "./utils/nullable_struct.ts";
+import { allocate_stack_space, emit_var_address, emit_var_load } from "./utils/stack_var.ts";
+import { get_field_has_offset, get_struct_size } from "./utils/struct_layout.ts";
 
 let string_counter = 0;
 let coalesce_counter = 0;
@@ -237,6 +240,16 @@ function build_operator_operand(node: BaseNode, target_reg: string, status: Buil
 		emit_var_address(status, target_reg, name);
 		return;
 	}
+	// A struct/class field access operand (e.g. `self.funds`) must be passed by
+	// address — build_operand would load its first word as a value.
+	if (node.node_type === "access" && is_struct_type(node, status)) {
+		emit_address_of(node, status);
+		if (!status.code.endsWith("\n")) status.code += "\n";
+		if (target_reg !== "x0") {
+			status.code += `mov ${target_reg}, x0\n`;
+		}
+		return;
+	}
 	build_operand(node, target_reg, status);
 }
 
@@ -255,6 +268,18 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 	// the left is null. This matters when the fallback allocates (e.g.
 	// `x ?? Box(99)`) — eagerly evaluating it would leak the unused instance.
 	if (node.op === "??") {
+		// Nullable struct `??` checks the `_has` flag instead of the value.
+		if (is_nullable_struct_type(type_from_value_node(node.left_value), status)) {
+			load_nullable_has(node.left_value, "x0", status);
+			if (!status.code.endsWith("\n")) status.code += "\n";
+			status.code += `cmp x0, #0\n`;
+			const label = `.Lcoalesce_have_${coalesce_counter++}`;
+			status.code += `b.ne ${label}\n`;
+			build_operand(node.right_value, "x0", status);
+			if (!status.code.endsWith("\n")) status.code += "\n";
+			status.code += `${label}:\n`;
+			return;
+		}
 		build_operand(node.left_value, "x0", status);
 		if (!status.code.endsWith("\n")) {
 			status.code += "\n";
@@ -268,6 +293,25 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		}
 		status.code += `${label}:\n`;
 		return;
+	}
+
+	// `x == null` / `x != null` against a nullable struct: compare its
+	// companion `_has` flag rather than the struct value.
+	if (
+		(node.op === "==" || node.op === "!=") &&
+		is_null_literal(node.left_value) !== is_null_literal(node.right_value)
+	) {
+		const nullable_side = is_nullable_struct_type(type_from_value_node(node.left_value), status)
+			? node.left_value
+			: node.right_value;
+		if (is_nullable_struct_type(type_from_value_node(nullable_side), status)) {
+			load_nullable_has(nullable_side, "x1", status);
+			if (!status.code.endsWith("\n")) status.code += "\n";
+			// has==1 means non-null. `== null` → !has (eq 0); `!= null` → has (ne 0).
+			status.code += `cmp x1, #0\n`;
+			status.code += `cset x0, ${node.op === "==" ? "eq" : "ne"}\n`;
+			return;
+		}
 	}
 
 	if (node.operator_func) {
@@ -470,4 +514,44 @@ function is_owned_heap_temp(node: BaseNode, status?: BuildStatus): boolean {
 		return false;
 	}
 	return false;
+}
+
+function is_null_literal(node: BaseNode): boolean {
+	return node.node_type === "value" && (node as ValueNode).value === "null";
+}
+
+/**
+ * Load a nullable-struct lvalue's companion `_has` flag into `target_reg`.
+ * Handles a bare variable (flag at `has_flag_name(name)` stack offset) and a
+ * field access `obj.field` (flag at the field's has-offset within obj).
+ */
+function load_nullable_has(node: BaseNode, target_reg: string, status: BuildStatus) {
+	if (node.node_type === "value") {
+		const name = (node as ValueNode).value;
+		emit_var_load(status, target_reg, has_flag_name(name), 8);
+		return;
+	}
+	if (node.node_type === "access" && (node as any).access.node_type === "access_field") {
+		const access = node as any;
+		const target_type = type_from_value_node(access.target);
+		const field_name = access.access.name;
+		if (target_type?.name) {
+			const has_off = get_field_has_offset(target_type.name, field_name, status);
+			// Resolve the target object's base address into x0 (NOT its value —
+			// ref params must not be dereferenced here), then load the flag word.
+			get_source_address(access.target, status);
+			if (!status.code.endsWith("\n")) status.code += "\n";
+			if (target_reg !== "x0") {
+				status.code += `mov ${target_reg}, x0\n`;
+			}
+			if (has_off === 0) {
+				status.code += `ldr ${target_reg}, [${target_reg}]\n`;
+			} else {
+				status.code += `ldr ${target_reg}, [${target_reg}, #${has_off}]\n`;
+			}
+			return;
+		}
+	}
+	// Fallback: build the value (shouldn't happen for valid nullable lvalues).
+	build_operand(node, target_reg, status);
 }

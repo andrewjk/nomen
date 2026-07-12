@@ -12,6 +12,7 @@ import RangeNode from "../nodes/RangeNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import { emit_address_of } from "./build_access_node.ts";
 import build_array_values_node, { resolve_static_value } from "./build_array_values_node.ts";
+import { get_source_address } from "./build_assignment_node.ts";
 import build_node from "./build_node.ts";
 import build_range_node from "./build_range_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
@@ -26,6 +27,7 @@ import {
 	has_struct_fields_with_destroy,
 } from "./utils/auto_destroy.ts";
 import { build_swap_params } from "./utils/build_swap.ts";
+import { has_flag_name, is_nullable_struct_type } from "./utils/nullable_struct.ts";
 import {
 	allocate_stack_space,
 	emit_deref_var_address,
@@ -76,6 +78,12 @@ function emit_struct_address_param(node: BaseNode, status: BuildStatus) {
 	} else {
 		build_node(node, status);
 	}
+}
+
+/** Whether a node's type is a (non-simple) struct/class value type. */
+function is_struct_type_node(node: BaseNode, status: BuildStatus): boolean {
+	const t = type_from_value_node(node);
+	return !!t?.name && !!status.structs.find((s) => s.name === t.name && !s.is_simple_type);
 }
 
 function escape_asciz(value: string): string {
@@ -186,11 +194,7 @@ function emit_class_constructor_to_slot(
 	emit_malloc(status);
 	status.code += `str x0, [x29, #${slot_offset}]\n`;
 	anchor_heap_pointer(status, `${arr_name}_elem_${slot_offset}`);
-	for (let i = fc.params.length - 1; i >= 0; i--) {
-		build_node(fc.params[i], status);
-		if (!status.code.endsWith("\n")) status.code += "\n";
-		status.code += `mov ${param_regs[i]}, x0\n`;
-	}
+	build_constructor_params(fc, param_regs, status);
 	status.code += `ldr x0, [x29, #${slot_offset}]\n`;
 	status.code += `bl ${fc.name}_init\n`;
 }
@@ -201,13 +205,56 @@ function emit_struct_constructor_to_slot(
 	status: BuildStatus,
 ) {
 	const param_regs = ["x1", "x2", "x3", "x4", "x5", "x6", "x7"];
-	for (let i = fc.params.length - 1; i >= 0; i--) {
-		build_node(fc.params[i], status);
-		if (!status.code.endsWith("\n")) status.code += "\n";
-		status.code += `mov ${param_regs[i]}, x0\n`;
-	}
+	build_constructor_params(fc, param_regs, status);
 	status.code += slot_addr;
 	status.code += `bl ${fc.name}_init\n`;
+}
+
+/**
+ * Evaluate a constructor's params right-to-left into argument registers,
+ * spilling each to a stack slot first so a later arg's evaluation can't
+ * clobber an earlier arg's register. Struct/enum args are passed by address.
+ */
+function build_constructor_params(fc: FunctionCallNode, param_regs: string[], status: BuildStatus) {
+	const has_args = fc.params.length > 0;
+	let base = 0;
+	if (has_args) {
+		base = allocate_stack_space(status, fc.params.length * 8, 16);
+	}
+	for (let i = fc.params.length - 1; i >= 0; i--) {
+		const param = fc.params[i];
+		const param_type = (param as any).type?.name || "";
+		if (param.node_type === "array" && param_type === "string") {
+			// Static string-array arg: emit a .quad data label and pass its address.
+			const arr = param as ArrayValuesNode;
+			const str_labels: string[] = [];
+			arr.values.forEach((v, _idx) => {
+				const resolved = resolve_static_value(v, status);
+				if (resolved !== null && resolved.startsWith('"')) {
+					const label = `_arr_str_${string_array_counter++}`;
+					status.code += `${label}: .asciz ${escape_asciz(resolved)}\n.p2align 2\n`;
+					str_labels.push(label);
+				} else {
+					str_labels.push(resolved !== null ? resolved : "0");
+				}
+			});
+			const label = `_arr_param_${string_array_counter++}`;
+			status.code += `${label}: .quad ${str_labels.join(", ")}\n.p2align 2\n`;
+			status.code += `adr x0, ${label}\n`;
+		} else if (
+			!!status.structs.find((s) => s.name === param_type && !s.is_simple_type) ||
+			!!status.enums.find((e) => e.name === param_type && e.has_associated_data)
+		) {
+			emit_struct_address_param(param, status);
+		} else {
+			build_node(param, status);
+		}
+		if (!status.code.endsWith("\n")) status.code += "\n";
+		status.code += `str x0, [x29, #${base + i * 8}]\n`;
+	}
+	for (let i = 0; i < fc.params.length; i++) {
+		status.code += `ldr ${param_regs[i]}, [x29, #${base + i * 8}]\n`;
+	}
 }
 
 function emit_global_slot_addr(status: BuildStatus, name: string, offset: number) {
@@ -731,13 +778,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 					anchor_heap_pointer(status, node.name, undefined, node.type.is_nullable);
 					status.code += `str x0, [x29, #${status.stack_offsets!.get(node.name)}]\n`;
 					const param_regs = ["x1", "x2", "x3", "x4", "x5", "x6", "x7"];
-					for (let i = func_call.params.length - 1; i >= 0; i--) {
-						build_node(func_call.params[i], status);
-						if (!status.code.endsWith("\n")) {
-							status.code += "\n";
-						}
-						status.code += `mov ${param_regs[i]}, x0\n`;
-					}
+					build_constructor_params(func_call, param_regs, status);
 					emit_var_load(status, "x0", node.name, 8);
 					status.code += `bl ${func_call.name}_init\n`;
 					if (func_call.mov_param_indices?.length) {
@@ -778,12 +819,41 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			}
 		} else {
 			// Struct declaration
+			const nullable_struct = is_nullable_struct_type(node.type, status);
 			const struct_size = get_struct_size(node.type.name, status);
+			const total_size = nullable_struct ? struct_size + 8 : struct_size;
 			if (status.function_return_label) {
-				const offset = allocate_stack_space(status, struct_size);
+				const offset = allocate_stack_space(status, total_size);
 				status.stack_offsets!.set(node.name, offset);
+				if (nullable_struct) {
+					status.stack_offsets!.set(has_flag_name(node.name), offset + struct_size);
+				}
 			} else {
-				emit_data(status, `${node.name}: .space ${struct_size}\n`);
+				emit_data(status, `${node.name}: .space ${total_size}\n`);
+				if (nullable_struct) {
+					status.stack_offsets!.set(has_flag_name(node.name), -1);
+				}
+			}
+			// Initialize the companion flag for a nullable struct local:
+			// 0 for null/unset, 1 when a real value is assigned below.
+			if (nullable_struct) {
+				const is_null_init =
+					!node.value ||
+					(node.value.node_type === "value" && (node.value as ValueNode).value === "null");
+				const flag_off = status.stack_offsets!.get(has_flag_name(node.name));
+				if (status.function_return_label && flag_off !== undefined && flag_off >= 0) {
+					status.code += `str xzr, [x29, #${flag_off}]\n`;
+					if (!is_null_init) {
+						status.code += `mov x9, #1\n`;
+						status.code += `str x9, [x29, #${flag_off}]\n`;
+					}
+				}
+				// For a null initializer, the flag is 0 and there's no value to
+				// copy — skip the generic struct-value copy path below (it would
+				// try to copy bytes from the `null` literal).
+				if (is_null_init) {
+					return;
+				}
 			}
 			if (node.value && node.value.node_type === "func_call") {
 				const func_call = node.value as FunctionCallNode;
@@ -793,40 +863,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 				if (is_constructor) {
 					// Evaluate params into x1-x7 first (before setting x0)
 					const param_regs = ["x1", "x2", "x3", "x4", "x5", "x6", "x7"];
-					for (let i = func_call.params.length - 1; i >= 0; i--) {
-						const param = func_call.params[i];
-						if (param.node_type === "array" && (param as ArrayValuesNode).type?.name === "string") {
-							const arr = param as ArrayValuesNode;
-							const str_labels: string[] = [];
-							arr.values.forEach((v, _idx) => {
-								const resolved = resolve_static_value(v, status);
-								if (resolved !== null && resolved.startsWith('"')) {
-									const label = `_arr_str_${string_array_counter++}`;
-									status.code += `${label}: .asciz ${escape_asciz(resolved)}\n.p2align 2\n`;
-									str_labels.push(label);
-								} else {
-									str_labels.push(resolved !== null ? resolved : "0");
-								}
-							});
-							const label = `_arr_param_${string_array_counter++}`;
-							status.code += `${label}: .quad ${str_labels.join(", ")}\n.p2align 2\n`;
-							status.code += `adr x0, ${label}`;
-						} else if (
-							(param as any).type?.name &&
-							!!status.structs.find(
-								(s) => s.name === (param as any).type!.name && !s.is_simple_type,
-							)
-						) {
-							// Struct param: pass by address
-							emit_struct_address_param(param, status);
-						} else {
-							build_node(param, status);
-						}
-						if (!status.code.endsWith("\n")) {
-							status.code += "\n";
-						}
-						status.code += `mov ${param_regs[i]}, x0\n`;
-					}
+					build_constructor_params(func_call, param_regs, status);
 					// Pass declaration address in x0
 					emit_var_address(status, "x0", node.name);
 					status.code += `bl ${func_call.name}_init\n`;
@@ -860,7 +897,19 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 					const src_name = (node.value as ValueNode).value;
 					emit_var_address(status, "x1", src_name);
 				} else {
-					build_node(node.value, status);
+					// For a struct-typed source (e.g. a field access `self.funds`),
+					// copy from the source's ADDRESS, not its value — build_node
+					// would load the first word. emit_address_of yields the lvalue
+					// address for accesses; other struct expressions build to an
+					// address in x0 already.
+					const src_is_struct = is_struct_type_node(node.value, status);
+					if (src_is_struct && node.value.node_type === "access") {
+						emit_address_of(node.value, status);
+					} else if (src_is_struct) {
+						get_source_address(node.value, status);
+					} else {
+						build_node(node.value, status);
+					}
 					if (!status.code.endsWith("\n")) {
 						status.code += "\n";
 					}

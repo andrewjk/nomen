@@ -7,9 +7,15 @@ import build_block_node from "./build_block_node.ts";
 import { check_c_fallback } from "./build_raw_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_field_destroys } from "./utils/auto_destroy.ts";
+import { is_nullable_struct_type } from "./utils/nullable_struct.ts";
 import scan_force_heap_strings from "./utils/scan_force_heap_strings.ts";
 import { allocate_stack_space } from "./utils/stack_var.ts";
-import { get_field_offset, get_struct_size, get_type_size } from "./utils/struct_layout.ts";
+import {
+	get_field_has_offset,
+	get_field_offset,
+	get_struct_size,
+	get_type_size,
+} from "./utils/struct_layout.ts";
 
 function emit_typed_store(
 	status: BuildStatus,
@@ -29,6 +35,41 @@ function emit_typed_store(
 	} else {
 		status.code += `str ${src_reg}, ${addr}\n`;
 	}
+}
+
+/**
+ * Initialize a nullable struct field's default value, returning true if this
+ * field was handled (caller should `continue`). `base_reg` is the struct base
+ * register (`x0` for auto-init, `x19` for custom-init).
+ */
+function init_nullable_field_default(
+	node: StructNode,
+	field: any,
+	base_reg: string,
+	status: BuildStatus,
+): boolean {
+	if (!is_nullable_struct_type(field.type, status)) return false;
+	if (!field.value) return false;
+	const offset = get_field_offset(node.name, field.name, status);
+	const has_offset = get_field_has_offset(node.name, field.name, status);
+	const is_null = field.value.node_type === "value" && (field.value as any).value === "null";
+	if (is_null) {
+		status.code += `str xzr, [${base_reg}, #${has_offset}]\n`;
+		return true;
+	}
+	// Non-null default: build the value (a constructor) and copy it in.
+	build_node(field.value, status);
+	if (!status.code.endsWith("\n")) status.code += "\n";
+	// Result address in x0; copy word-by-word into the field.
+	const field_size = get_struct_size(field.type.name, status);
+	const words = Math.ceil(field_size / 8);
+	for (let w = 0; w < words; w++) {
+		status.code += `ldr x9, [x0, #${w * 8}]\n`;
+		status.code += `str x9, [${base_reg}, #${offset + w * 8}]\n`;
+	}
+	status.code += `mov x9, #1\n`;
+	status.code += `str x9, [${base_reg}, #${has_offset}]\n`;
+	return true;
 }
 
 export default function build_struct_node(node: StructNode, status: BuildStatus) {
@@ -244,6 +285,7 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 
 	for (const field of node.fields) {
 		if (field.value) {
+			if (init_nullable_field_default(node, field, "x0", status)) continue;
 			const offset = get_field_offset(node.name, field.name, status);
 			if (field.value.node_type === "value") {
 				const val = (field.value as any).value;
@@ -342,6 +384,7 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 	// Initialize default field values
 	for (const field of node.fields) {
 		if (field.value) {
+			if (init_nullable_field_default(node, field, "x19", status)) continue;
 			const offset = get_field_offset(node.name, field.name, status);
 			if (field.value.node_type === "value") {
 				const val = (field.value as any).value;

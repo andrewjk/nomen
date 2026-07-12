@@ -21,6 +21,7 @@ import {
 	mark_anchor_destroy,
 	mark_moved_if_struct,
 } from "./utils/auto_destroy.ts";
+import { has_flag_name, is_nullable_struct_type } from "./utils/nullable_struct.ts";
 import {
 	allocate_stack_space,
 	emit_deref_var_address,
@@ -29,7 +30,12 @@ import {
 	emit_var_store,
 	is_local_ref_var,
 } from "./utils/stack_var.ts";
-import { emit_struct_copy, get_field_offset, get_struct_size } from "./utils/struct_layout.ts";
+import {
+	emit_struct_copy,
+	get_field_has_offset,
+	get_field_offset,
+	get_struct_size,
+} from "./utils/struct_layout.ts";
 
 function is_mutable_param(name: string, status: BuildStatus): boolean {
 	return !!(status.function_param_vars?.has(name) || status.function_ref_params?.has(name));
@@ -112,6 +118,83 @@ function get_self_param(node: BaseNode): BaseNode | null {
 	return null;
 }
 
+/** Whether an assignment target is a nullable struct slot. */
+function is_nullable_struct_assignment(node: AssignmentNode, status: BuildStatus): boolean {
+	if (node.left_value.node_type === "value") {
+		const name = (node.left_value as ValueNode).value;
+		const decl = status.scoped_declarations.find((d) => d.name === name);
+		const t = decl?.type || status.variable_types?.get(name);
+		return is_nullable_struct_type(t, status);
+	}
+	if (
+		node.left_value.node_type === "access" &&
+		(node.left_value as AccessNode).access.node_type === "access_field"
+	) {
+		const field_type = (node.left_value as AccessNode).access.type;
+		return is_nullable_struct_type(field_type, status);
+	}
+	return false;
+}
+
+/**
+ * Build assignment to a nullable struct slot: for `= null`, clear the flag;
+ * otherwise copy the value in and set the flag to 1.
+ */
+function build_nullable_struct_assignment(node: AssignmentNode, status: BuildStatus) {
+	const rhs_is_null =
+		node.right_value.node_type === "value" && (node.right_value as ValueNode).value === "null";
+
+	if (node.left_value.node_type === "value") {
+		const name = (node.left_value as ValueNode).value;
+		const flag_name = has_flag_name(name);
+		if (rhs_is_null) {
+			emit_var_store(status, "xzr", flag_name, 8);
+			return;
+		}
+		// Build the value (a constructor or another struct value) → address in x0.
+		build_node(node.right_value, status);
+		if (!status.code.endsWith("\n")) status.code += "\n";
+		// Copy the struct value into the variable's slot, then set the flag.
+		const decl = status.scoped_declarations.find((d) => d.name === name);
+		const type_name = decl?.type?.name || status.variable_types?.get(name)?.name || "";
+		const struct_size = get_struct_size(type_name, status);
+		const dst_offset = status.stack_offsets?.get(name);
+		emit_struct_copy("x0", "x29", dst_offset ?? 0, struct_size, status);
+		status.code += `mov x9, #1\n`;
+		emit_var_store(status, "x9", flag_name, 8);
+		return;
+	}
+
+	// Field assignment: `obj.field = rhs`
+	const access = node.left_value as AccessNode;
+	const field_access = access.access as AccessFieldNode;
+	const target_type = type_from_value_node(access.target);
+	const field_name = field_access.name;
+	const type_name = field_access.type?.name || "";
+	const field_offset = get_field_offset(target_type.name, field_name, status);
+	const has_offset = get_field_has_offset(target_type.name, field_name, status);
+	const struct_size = get_struct_size(type_name, status);
+
+	// Resolve the target object's address into x9 (preserved across RHS build).
+	get_source_address(access.target, status);
+	if (!status.code.endsWith("\n")) status.code += "\n";
+	status.code += `str x0, [sp, #-16]!\n`;
+
+	if (rhs_is_null) {
+		status.code += `ldr x9, [sp], #16\n`;
+		status.code += `str xzr, [x9, #${has_offset}]\n`;
+		return;
+	}
+
+	build_node(node.right_value, status);
+	if (!status.code.endsWith("\n")) status.code += "\n";
+	status.code += `ldr x9, [sp], #16\n`;
+	// x0 = source address, x9 = object base. Copy value in, set flag.
+	emit_struct_copy("x0", "x9", field_offset, struct_size, status);
+	status.code += `mov x0, #1\n`;
+	status.code += `str x0, [x9, #${has_offset}]\n`;
+}
+
 function build_swap(node: AssignmentNode, status: BuildStatus) {
 	if (!node.swap) return;
 	const rhs = node.right_value;
@@ -185,7 +268,7 @@ function build_swap(node: AssignmentNode, status: BuildStatus) {
 	}
 }
 
-function get_source_address(value: BaseNode, status: BuildStatus) {
+export function get_source_address(value: BaseNode, status: BuildStatus) {
 	if (value.node_type === "value") {
 		const name = (value as ValueNode).value;
 		const paramReg = status.function_param_regs?.get(name);
@@ -207,6 +290,14 @@ function get_source_address(value: BaseNode, status: BuildStatus) {
 export default function build_assignment_node(node: AssignmentNode, status: BuildStatus) {
 	const rhs_type = type_from_value_node(node.right_value);
 	const rhs_is_struct = is_struct_type(rhs_type, status);
+
+	// Assignment to a nullable struct slot (local var or struct field): copy
+	// the value in (if non-null) and set the companion `_has` flag.
+	if (!node.operator && is_nullable_struct_assignment(node, status)) {
+		build_nullable_struct_assignment(node, status);
+		build_swap(node, status);
+		return;
+	}
 
 	if (node.left_value.node_type === "value") {
 		const name = (node.left_value as ValueNode).value;

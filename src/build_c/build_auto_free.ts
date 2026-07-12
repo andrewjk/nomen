@@ -2,6 +2,7 @@ import AccessNode from "../nodes/AccessNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import Type from "../nodes/Type.ts";
 import type BuildStatus from "./BuildStatus.ts";
+import { has_flag_name, is_nullable_struct_type } from "./utils/nullable_struct.ts";
 
 export default function build_auto_free(status: BuildStatus) {
 	// Add dispose calls, if applicable
@@ -107,6 +108,24 @@ export default function build_auto_free(status: BuildStatus) {
 				emit_struct_destroys(status, struct_type, dec.name);
 			}
 		}
+		// Nullable struct value-type local: destroy the inner value only when
+		// the companion `_has` flag is set (it may be null).
+		if (
+			!is_destructured_field_access &&
+			!is_class_var &&
+			!dec.type.is_array &&
+			is_nullable_struct_type(dec.type, status)
+		) {
+			const inner = status.structs.find((s) => s.name === dec.type.name);
+			if (inner && struct_needs_destroy(inner, status)) {
+				if (!commented) {
+					status.code += "\n// Auto-free\n";
+					commented = true;
+				}
+				const body = capture_destroys(status, inner, dec.name, ".");
+				status.code += `if (${has_flag_name(dec.name)}) { ${body} }\n`;
+			}
+		}
 		// Heap-allocated arrays (returned from functions / Array.with): free
 		// each class element (destroy + free), then free the buffer itself.
 		// Stack arrays (from literals) are NOT freed here — they're not malloc'd.
@@ -206,8 +225,57 @@ function emit_struct_destroys(status: BuildStatus, struct: StructNode, var_expr:
 			if (has_destroy(field_struct)) {
 				status.code += `if (${field_expr}) { ${field_struct.name}_destroy(${field_expr}); free(${field_expr}); malloc_count--; }\n`;
 			}
+		} else if (is_nullable_struct_type(field.type, status)) {
+			// Nullable struct field: guard on the companion `<field>_has` flag.
+			if (struct_needs_destroy(field_struct, status)) {
+				const body = capture_destroys(status, field_struct, field_expr, ".");
+				status.code += `if (${field_expr}_has) { ${body} }\n`;
+			}
 		} else {
 			emit_struct_destroys(status, field_struct, field_expr);
 		}
 	}
+}
+
+/**
+ * Capture the destroy calls for a struct value as a single line (no trailing
+ * newline) so it can be embedded inside an `if (...) { ... }` guard. Uses
+ * `accessor` (`.` or `->`) for nested field expressions — `.` for by-value
+ * locals/fields, `->` when the container is a class pointer.
+ */
+function capture_destroys(
+	status: BuildStatus,
+	struct: StructNode,
+	var_expr: string,
+	accessor: string,
+): string {
+	const before = status.code.length;
+	if (has_destroy(struct)) {
+		status.code += `${struct.name}_destroy(&${var_expr}); `;
+	}
+	for (const field of struct.fields) {
+		if (field.type.is_ref) continue;
+		const field_struct = resolve_struct(field.type, status);
+		if (!field_struct) continue;
+		const field_expr = `${var_expr}${accessor}${field.name}`;
+		if (field_struct.is_class) {
+			if (has_destroy(field_struct)) {
+				status.code += `if (${field_expr}) { ${field_struct.name}_destroy(${field_expr}); free(${field_expr}); malloc_count--; } `;
+			}
+		} else if (is_nullable_struct_type(field.type, status)) {
+			if (struct_needs_destroy(field_struct, status)) {
+				// Recurse into the nullable field's value, guarded by its flag.
+				const inner_before = status.code.length;
+				capture_destroys(status, field_struct, field_expr, accessor);
+				const inner_body = status.code.substring(inner_before).trim();
+				status.code = status.code.substring(0, inner_before);
+				status.code += `if (${field_expr}_has) { ${inner_body} } `;
+			}
+		} else {
+			capture_destroys(status, field_struct, field_expr, accessor);
+		}
+	}
+	const captured = status.code.substring(before).replace(/\s+/g, " ").trim();
+	status.code = status.code.substring(0, before);
+	return captured;
 }

@@ -1,7 +1,9 @@
 import type BuildStatus from "../../build_c/BuildStatus.ts";
 import DeclarationNode from "../../nodes/DeclarationNode.ts";
+import Type from "../../nodes/Type.ts";
 import ValueNode from "../../nodes/ValueNode.ts";
 import aarch64_size from "./aarch64_size.ts";
+import { is_nullable_struct_type } from "./nullable_struct.ts";
 
 const VT_SIZE = 8;
 
@@ -12,6 +14,8 @@ export function get_struct_size(name: string, status: BuildStatus): number {
 	let size = VT_SIZE;
 	for (const field of struct.fields) {
 		size += get_type_size(field.type, status);
+		// A nullable struct field carries a companion 8-byte `_has` flag.
+		if (is_nullable_struct_type(field.type, status)) size += 8;
 	}
 	return size;
 }
@@ -45,8 +49,36 @@ export function get_field_offset(
 	for (const field of struct.fields) {
 		if (field.name === field_name) return offset;
 		offset += get_type_size(field.type, status);
+		// Skip the companion `_has` flag word following a nullable struct field.
+		if (is_nullable_struct_type(field.type, status)) offset += 8;
 	}
 	return offset;
+}
+
+/**
+ * Offset of a nullable struct field's companion `_has` flag (the word
+ * immediately after the field's value storage).
+ */
+export function get_field_has_offset(
+	struct_name: string,
+	field_name: string,
+	status: BuildStatus,
+): number {
+	return (
+		get_field_offset(struct_name, field_name, status) +
+		get_type_size_for_field(struct_name, field_name, status)
+	);
+}
+
+function get_type_size_for_field(
+	struct_name: string,
+	field_name: string,
+	status: BuildStatus,
+): number {
+	const struct = status.structs.find((s) => s.name === struct_name);
+	const field = struct?.fields.find((f) => f.name === field_name);
+	if (!field) return 0;
+	return get_type_size(field.type, status);
 }
 
 export function get_field(

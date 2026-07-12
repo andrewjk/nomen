@@ -4,6 +4,7 @@ import Type from "../nodes/Type.ts";
 import build_node from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import c_type from "./utils/c_type.ts";
+import { has_flag_name, is_nullable_struct_type } from "./utils/nullable_struct.ts";
 
 export default function build_struct_body(node: StructNode, status: BuildStatus) {
 	if (node.is_generic) return;
@@ -25,6 +26,10 @@ export default function build_struct_body(node: StructNode, status: BuildStatus)
 			status.code += `];\n`;
 		} else {
 			status.code += `${field_c_type(field.type, status)} ${field.name};\n`;
+			// A nullable struct value field gets a companion `<field>_has` flag.
+			if (is_nullable_struct_type(field.type, status)) {
+				status.code += `unsigned char ${has_flag_name(field.name)};\n`;
+			}
 		}
 	}
 	// Default fields from traits
