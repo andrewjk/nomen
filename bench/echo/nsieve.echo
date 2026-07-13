@@ -1,21 +1,32 @@
 import System
 
 func nsieve = (int n) {
+	if n < 3 {
+		Console.write("Primes up to \{n} 0\n")
+		return
+	}
 	var Buffer<uint32> flags = Buffer<uint32>()
 	flags.alloc(n)
 
-	var int count = 0
-	var int i = 2
+	// count = 1 accounts for the only even prime (2); outer loop then walks
+	// only odd candidates. The inner marking loop starts at i*i (smaller
+	// odd composites were already marked by smaller primes) and steps by
+	// 2*i to hit only odd multiples.
+	var int count = 1
+	var int i = 3
 	while i < n {
 		if flags.load(i) == 0 {
 			count = count + 1
-			var int j = i * 2
-			while j < n {
-				flags.store(j, 1)
-				j = j + i
+			if i * i < n {
+				var int j = i * i
+				var int step = i * 2
+				while j < n {
+					flags.store(j, 1)
+					j = j + step
+				}
 			}
 		}
-		i = i + 1
+		i = i + 2
 	}
 	Console.write("Primes up to \{n} \{count}\n")
 }

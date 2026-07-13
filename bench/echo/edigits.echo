@@ -49,7 +49,11 @@ pub func main = (Init init) {
 	// Use extra precision: compute with n+10 digits, then truncate
 	var int precision = n + 10
 
-	// Compute 10^(precision-1)
+	// Compute 10^(precision-1).
+	// NOTE: Binary exponentiation would be O(log precision) multiplies, but
+	// it triggers a latent bug in BigInt.mul_to's Karatsuba path for
+	// self-multiplication (a == b) at large sizes. Until that's fixed,
+	// the linear O(precision) mul-by-10 loop is correct.
 	var BigInt power = BigInt()
 	power = power.new(1)
 	var int exp = 0
@@ -84,7 +88,7 @@ pub func main = (Init init) {
 		i = i + 1
 	}
 
-	// Truncate to n digits: divide by 10^(precision - n)
+	// Truncate to n digits: divide by 10^(precision - n).
 	var int trim = precision - n
 	var BigInt divisor = BigInt()
 	divisor = divisor.new(1)
@@ -98,27 +102,47 @@ pub func main = (Init init) {
 	var BigInt trimmed = BigInt()
 	trimmed = trimmed.div(answer, divisor, trim_rem)
 
-	// Extract digits from trimmed answer
+	// Extract digits from trimmed answer using bulk divmod by 10^18.
+	// Each iteration pulls 18 decimal digits in one long division instead
+	// of one digit per division. The digits buffer holds n digits plus up
+	// to 18 leading-zero padding from the final chunk.
 	var BigInt result = BigInt()
 	result.copy_from(trimmed)
-	var BigInt q_ten = BigInt()
-	q_ten = q_ten.new(10)
+	var BigInt q_e18 = BigInt()
+	q_e18 = q_e18.new(1000000000000000000)
 	var BigInt rem = BigInt()
-	var int[64] digits
+	var Buffer<int> digits = Buffer<int>()
+	digits.alloc_int(5020)
 	var int digit_count = 0
 
 	while result.cmp(one) >= 0 {
-		rem = rem.new(0)
 		var BigInt qq = BigInt()
-		qq = qq.div(result, q_ten, rem)
-		digits.set(digit_count, rem.to_digit())
-		digit_count = digit_count + 1
+		qq = qq.div(result, q_e18, rem)
+
+		// rem < 10^18, fits in one uint64 limb.
+		var uint64 chunk = rem.get(0)
+		var int c = 0
+		while c < 18 {
+			digits.store_int(digit_count + c, (chunk % 10) as int)
+			chunk = chunk / 10
+			c = c + 1
+		}
+		digit_count = digit_count + 18
+
 		result.copy_from(qq)
+	}
+
+	// Trim spurious leading zeros introduced by the final bulk chunk.
+	while digit_count > 1 {
+		if digits.load_int(digit_count - 1) != 0 {
+			break
+		}
+		digit_count = digit_count - 1
 	}
 
 	var int pos = digit_count - 1
 	while pos >= 0 {
-		Console.write(digits.at(pos).to_string())
+		Console.write(digits.load_int(pos).to_string())
 		if pos == digit_count - 1 && digit_count > 1 {
 			Console.write(".")
 		}

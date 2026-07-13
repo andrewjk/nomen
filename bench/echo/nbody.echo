@@ -17,6 +17,9 @@ func energy = (ref Body[5] bodies, out float) {
 	var float e = 0.0
 	var int i = 0
 	while i < 5 {
+		var float bi_x = bodies.at(i).x
+		var float bi_y = bodies.at(i).y
+		var float bi_z = bodies.at(i).z
 		var float vx = bodies.at(i).vx
 		var float vy = bodies.at(i).vy
 		var float vz = bodies.at(i).vz
@@ -25,9 +28,9 @@ func energy = (ref Body[5] bodies, out float) {
 
 		var int j = i + 1
 		while j < 5 {
-			var float dx = bodies.at(i).x - bodies.at(j).x
-			var float dy = bodies.at(i).y - bodies.at(j).y
-			var float dz = bodies.at(i).z - bodies.at(j).z
+			var float dx = bi_x - bodies.at(j).x
+			var float dy = bi_y - bodies.at(j).y
+			var float dz = bi_z - bodies.at(j).z
 			var float dist = Math.sqrt(dx * dx + dy * dy + dz * dz)
 			e = e - (mass * bodies.at(j).mass) / dist
 			j = j + 1
@@ -40,6 +43,9 @@ func energy = (ref Body[5] bodies, out float) {
 func advance = (ref Body[5] bodies, float dt) {
 	var int i = 0
 	while i < 5 {
+		var float bi_x = bodies.at(i).x
+		var float bi_y = bodies.at(i).y
+		var float bi_z = bodies.at(i).z
 		var float vx = bodies.at(i).vx
 		var float vy = bodies.at(i).vy
 		var float vz = bodies.at(i).vz
@@ -47,17 +53,18 @@ func advance = (ref Body[5] bodies, float dt) {
 
 		var int j = i + 1
 		while j < 5 {
-			var float dx = bodies.at(i).x - bodies.at(j).x
-			var float dy = bodies.at(i).y - bodies.at(j).y
-			var float dz = bodies.at(i).z - bodies.at(j).z
+			var float dx = bi_x - bodies.at(j).x
+			var float dy = bi_y - bodies.at(j).y
+			var float dz = bi_z - bodies.at(j).z
 
+			var float bj_mass = bodies.at(j).mass
 			var float d_sq = dx * dx + dy * dy + dz * dz
 			var float dist = Math.sqrt(d_sq)
 			var float mag = dt / (d_sq * dist)
 
-			vx = vx - dx * bodies.at(j).mass * mag
-			vy = vy - dy * bodies.at(j).mass * mag
-			vz = vz - dz * bodies.at(j).mass * mag
+			vx = vx - dx * bj_mass * mag
+			vy = vy - dy * bj_mass * mag
+			vz = vz - dz * bj_mass * mag
 
 			bodies.at(j).vx = bodies.at(j).vx + dx * mass_i * mag
 			bodies.at(j).vy = bodies.at(j).vy + dy * mass_i * mag
@@ -70,9 +77,9 @@ func advance = (ref Body[5] bodies, float dt) {
 		bodies.at(i).vy = vy
 		bodies.at(i).vz = vz
 
-		bodies.at(i).x = bodies.at(i).x + dt * vx
-		bodies.at(i).y = bodies.at(i).y + dt * vy
-		bodies.at(i).z = bodies.at(i).z + dt * vz
+		bodies.at(i).x = bi_x + dt * vx
+		bodies.at(i).y = bi_y + dt * vy
+		bodies.at(i).z = bi_z + dt * vz
 
 		i = i + 1
 	}

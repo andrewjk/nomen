@@ -24,7 +24,7 @@ pub struct Math {
         ```
     }
 
-    pub func sqrt = (float x, out float) {
+    inline func sqrt = (float x, out float) {
         ```
         #arch: aarch64
         fmov d0, x0

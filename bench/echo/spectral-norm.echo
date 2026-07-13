@@ -1,23 +1,29 @@
 import System
 
-func eval_a = (int i, int j, out float) {
-	var int denom = (i + j) * (i + j + 1) / 2 + i + 1
-	return 1.0 / (denom as float)
-}
-
 func eval_a_times_u = (ref Buffer au, ref Buffer u, int n, bool transpose) {
 	var int i = 0
 	while i < n {
 		var float a = 0.0
 		var int j = 0
+		// eval_a's denominator follows an additive recurrence along j:
+		//   denom(0)   = i*(i+1)/2 + i + 1     (transpose=false)
+		//               i*(i+1)/2 + 1         (transpose=true, since +j+1 with j=0)
+		//   denom(j+1) = denom(j) + i + j + 1 (transpose=false)
+		//               denom(j) + i + j + 2 (transpose=true)
+		// This avoids the per-element integer multiply and divide.
+		var int denom = i * (i + 1) / 2
+		if transpose {
+			denom = denom + 1
+		} else {
+			denom = denom + i + 1
+		}
 		while j < n {
-			var float coeff = 0.0
+			a = a + (1.0 / (denom as float)) * u.load_float(j)
 			if transpose {
-				coeff = eval_a(j, i)
+				denom = denom + i + j + 2
 			} else {
-				coeff = eval_a(i, j)
+				denom = denom + i + j + 1
 			}
-			a = a + coeff * u.load_float(j)
 			j = j + 1
 		}
 		au.store_float(i, a)
