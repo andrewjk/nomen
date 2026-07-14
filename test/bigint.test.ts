@@ -250,6 +250,39 @@ Console.write(b.len.to_string())
 	await build_and_check_output(input, "bigint_mul_multi", "2");
 });
 
+// ==================== Karatsuba self-multiply (squaring) ====================
+
+test("mul_to: Karatsuba self-multiply (a==b) at 32 limbs", async () => {
+	const input = `
+var BigInt ten = BigInt()
+ten = ten.new(10)
+var BigInt x = BigInt()
+x = x.new(1)
+var BigInt tmp = BigInt()
+var BigInt scratch = BigInt()
+var int i = 0
+while i < 608 {
+	tmp.mul_to(x, ten, scratch)
+	x.copy_from(tmp)
+	i = i + 1
+}
+var BigInt sq = BigInt()
+sq.mul_to(x, x, scratch)
+var BigInt y = BigInt()
+y.copy_from(x)
+var BigInt mu = BigInt()
+mu.mul_to(x, y, scratch)
+	Console.write("limbs=")
+	Console.write(x.len.to_string())
+	Console.write(" sq=")
+	Console.write((sq.get(0) as int).to_string())
+	Console.write(" cp=")
+	Console.write((mu.get(0) as int).to_string())
+	Console.write("\\n")
+`;
+	await build_and_check_output(input, "bigint_karatsuba_self_mul", "limbs=32 sq=0 cp=0");
+});
+
 // ==================== div: single-limb ====================
 
 test("div: single-limb exact", async () => {

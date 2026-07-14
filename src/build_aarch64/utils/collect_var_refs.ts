@@ -5,6 +5,57 @@ export interface VarRefInfo {
 	address_taken: boolean;
 }
 
+/**
+ * Collect all variable names declared (via `declare` nodes) within a subtree.
+ * Used by the loop register allocator to avoid promoting variables that are
+ * redeclared inside the loop body — their stack offset at promotion time
+ * belongs to a different scope's variable with the same name.
+ */
+export function collect_declared_names(node: BaseNode): Set<string> {
+	const names = new Set<string>();
+
+	function visit(n: BaseNode | null | undefined) {
+		if (!n) return;
+		const any_n = n as any;
+		if (n.node_type === "declare") {
+			if (any_n.name) names.add(any_n.name);
+		}
+		for (const key of [
+			"value",
+			"left",
+			"right",
+			"condition",
+			"body",
+			"true_statements",
+			"false_statements",
+			"else_statements",
+			"statements",
+			"update",
+			"list",
+			"item",
+			"args",
+			"left_value",
+			"right_value",
+			"target",
+			"index",
+		]) {
+			const child = any_n[key];
+			if (child && typeof child === "object") {
+				if (Array.isArray(child)) {
+					for (const c of child) {
+						if (c && typeof c === "object" && c.node_type) visit(c);
+					}
+				} else if (child.node_type) {
+					visit(child);
+				}
+			}
+		}
+	}
+
+	visit(node);
+	return names;
+}
+
 export default function collect_var_refs(node: BaseNode): Map<string, VarRefInfo> {
 	const info = new Map<string, VarRefInfo>();
 

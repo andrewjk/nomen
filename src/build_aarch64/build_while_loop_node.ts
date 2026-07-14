@@ -2,7 +2,7 @@ import type BuildStatus from "../build_c/BuildStatus.ts";
 import WhileLoopNode from "../nodes/WhileLoopNode.ts";
 import build_block_node from "./build_block_node.ts";
 import build_node from "./build_node.ts";
-import collect_var_refs from "./utils/collect_var_refs.ts";
+import collect_var_refs, { collect_declared_names } from "./utils/collect_var_refs.ts";
 
 const CALLEE_SAVED_REGS = ["x23", "x24", "x25", "x26", "x27", "x28"];
 const SCALAR_TYPES = new Set([
@@ -74,9 +74,11 @@ export default function build_while_loop_node(node: WhileLoopNode, status: Build
 		}
 
 		const eligible: { name: string; reads: number; offset: number }[] = [];
+		const redeclared = collect_declared_names({ node_type: "block", statements: node.statements } as any);
 		for (const [name, info] of all_refs) {
 			if (info.reads < 3) continue;
 			if (info.address_taken) continue;
+			if (redeclared.has(name)) continue;
 			const offset = status.stack_offsets?.get(name);
 			if (offset === undefined) continue;
 			if (status.register_allocations?.has(name)) continue;
