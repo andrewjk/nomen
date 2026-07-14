@@ -69,6 +69,7 @@ export default function build_inline_method(
 	const old_return_buffer_offset = status.return_buffer_stack_offset;
 	const old_function_return_type = status.function_return_type;
 	const old_register_allocations = status.register_allocations;
+	const old_buffer_data_cache = status.buffer_data_cache;
 
 	const return_label = `.inline_ret_${inline_counter++}`;
 	status.function_return_label = return_label;
@@ -77,6 +78,7 @@ export default function build_inline_method(
 	status.function_return_type = undefined;
 	status.struct_return_buffer = undefined;
 	status.return_buffer_stack_offset = undefined;
+	status.buffer_data_cache = undefined;
 
 	if (needs_x19) {
 		status.code += `str x19, [sp, #-16]!\n`;
@@ -171,4 +173,5 @@ export default function build_inline_method(
 	status.return_buffer_stack_offset = old_return_buffer_offset;
 	status.function_return_type = old_function_return_type;
 	status.register_allocations = old_register_allocations;
+	status.buffer_data_cache = old_buffer_data_cache;
 }

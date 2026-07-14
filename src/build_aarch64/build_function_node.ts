@@ -335,6 +335,11 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	const old_force_heap = status.force_heap_strings;
 	status.force_heap_strings = scan_force_heap_strings(node.statements);
 
+	// Each function body starts with a fresh Buffer data-pointer cache so a
+	// cache entry established while building an earlier function can't leak in
+	// and produce a bogus "hit" that skips the data-pointer load.
+	status.buffer_data_cache = undefined;
+
 	build_block_node(node, status);
 
 	status.force_heap_strings = old_force_heap;

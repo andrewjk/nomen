@@ -145,6 +145,7 @@ function build_destroy_function(node: StructNode, func: FunctionNode, status: Bu
 	status.code += `sub sp, sp, #${stack_placeholder}\n`;
 	status.code += `mov x29, sp\n`;
 
+	status.buffer_data_cache = undefined;
 	build_block_node(func, status);
 
 	// After the user body, recursively destroy all class-typed fields.
@@ -420,6 +421,7 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 		}
 	}
 
+	status.buffer_data_cache = undefined;
 	build_block_node(func, status);
 
 	status.code += `${return_label}:\n`;
@@ -571,6 +573,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		}
 
 		status.force_heap_strings = scan_force_heap_strings(func.statements);
+		status.buffer_data_cache = undefined;
 		build_block_node(func, status);
 
 		const loop_regs_used = status.callee_saved_regs_used
@@ -698,6 +701,7 @@ function build_trait_functions(node: StructNode, status: BuildStatus) {
 			status.code += `sub sp, sp, #${stack_placeholder}\n`;
 			status.code += `mov x29, sp\n`;
 
+			status.buffer_data_cache = undefined;
 			build_block_node(func, status);
 
 			status.code += `${return_label}:\n`;

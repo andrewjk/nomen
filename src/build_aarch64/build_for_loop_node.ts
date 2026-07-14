@@ -124,6 +124,12 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 			if (r.startsWith("d")) used_d.add(r);
 			else used_x.add(r);
 		}
+		// Avoid callee-saved registers already claimed by an enclosing loop's
+		// promoted variables or Buffer data-pointer caches — reusing one would
+		// clobber the outer loop's value across this loop's body.
+		if (status.callee_saved_regs_used) {
+			for (const r of status.callee_saved_regs_used) used_x.add(r);
+		}
 		let x_idx = 0;
 		let d_idx = 0;
 		for (const v of eligible) {

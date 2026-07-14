@@ -291,6 +291,25 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 	const rhs_type = type_from_value_node(node.right_value);
 	const rhs_is_struct = is_struct_type(rhs_type, status);
 
+	// Invalidate any cached Buffer.data pointer for the assigned target. A
+	// whole-buffer (or buffer-field) reassignment gives the name a new backing
+	// store, so a previously cached data pointer would be stale. The cache key
+	// mirrors buf_cache_key() in build_access_node (simple name or "obj.field").
+	if (status.buffer_data_cache) {
+		let target_key: string | null = null;
+		if (node.left_value.node_type === "value") {
+			target_key = (node.left_value as ValueNode).value;
+		} else if (
+			node.left_value.node_type === "access" &&
+			(node.left_value as AccessNode).access.node_type === "access_field" &&
+			(node.left_value as AccessNode).target.node_type === "value"
+		) {
+			const inner = node.left_value as AccessNode;
+			target_key = `${(inner.target as ValueNode).value}.${(inner.access as AccessFieldNode).name}`;
+		}
+		if (target_key) status.buffer_data_cache.delete(target_key);
+	}
+
 	// Assignment to a nullable struct slot (local var or struct field): copy
 	// the value in (if non-null) and set the companion `_has` flag.
 	if (!node.operator && is_nullable_struct_assignment(node, status)) {

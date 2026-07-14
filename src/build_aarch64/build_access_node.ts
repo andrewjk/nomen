@@ -956,7 +956,10 @@ function build_access_method(
 				return null;
 			}
 
-			// Try to allocate a callee-saved register for caching.
+			// Allocate a callee-saved register to cache the data pointer. We skip
+			// any register already claimed by promoted loop variables or another
+			// Buffer cache (both tracked in callee_saved_regs_used), so a nested
+			// loop can never reuse an outer loop's cached data-ptr register.
 			const CALLEE = ["x23", "x24", "x25", "x26", "x27", "x28"];
 			function alloc_cache_reg(): string | null {
 				const used = new Set(status.register_allocations?.values() ?? []);
@@ -978,11 +981,12 @@ function build_access_method(
 				// Compute the data pointer into x9
 				emit_buf_addr_to_x9();
 				status.code += `ldr x9, [x9, #8]\n`;
-				// LICM caching disabled — causes register conflicts in nested loops
-				// where inner-loop promoted vars / caches clobber the outer loop's
-				// cached data-ptr register. Needs proper save/restore of cache
-				// registers at loop boundaries. TODO: fix and re-enable.
-				if (false && key && status.function_return_label) {
+				// Cache the loop-invariant data pointer in a callee-saved register
+				// so later accesses to the same Buffer in this scope skip the
+				// address + load pair. Restricted to function bodies (where the
+				// callee-saved save/restore machinery in the prologue/epilogue is
+				// active) and to targets with a stable cache key.
+				if (key && status.function_return_label) {
 					const cache_reg = alloc_cache_reg();
 					if (cache_reg) {
 						status.code += `mov ${cache_reg}, x9\n`;
