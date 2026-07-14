@@ -15,6 +15,8 @@ import {
 import { get_struct_size } from "./utils/struct_layout.ts";
 
 const CALLEE_SAVED_REGS = ["x23", "x24", "x25", "x26", "x27", "x28"];
+const FLOAT_CALLEE_SAVED = ["d8", "d9", "d10", "d11", "d12", "d13", "d14", "d15"];
+const FLOAT_TYPES = new Set(["float", "ufloat", "float32", "ufloat32", "float64", "ufloat64"]);
 const SCALAR_TYPES = new Set([
 	"int",
 	"uint",
@@ -66,6 +68,8 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 	const saved_reg_allocs = status.register_allocations
 		? new Map(status.register_allocations)
 		: undefined;
+	const saved_buffer_cache = status.buffer_data_cache;
+	status.buffer_data_cache = undefined;
 
 	if (status.function_return_label && node.statements.length > 0) {
 		const all_refs = new Map<string, { reads: number; address_taken: boolean }>();
@@ -87,8 +91,11 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 			merge_refs(collect_var_refs(node.update));
 		}
 
-		const eligible: { name: string; reads: number; offset: number }[] = [];
-		const redeclared = collect_declared_names({ node_type: "block", statements: node.statements } as any);
+		const eligible: { name: string; reads: number; offset: number; type_name: string }[] = [];
+		const redeclared = collect_declared_names({
+			node_type: "block",
+			statements: node.statements,
+		} as any);
 		for (const [name, info] of all_refs) {
 			if (info.reads < 3) continue;
 			if (info.address_taken) continue;
@@ -97,11 +104,12 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 			if (offset === undefined) continue;
 			if (status.register_allocations?.has(name)) continue;
 			const decl = old_scoped_declarations.find((d) => d.name === name);
+			let type_name = "";
 			if (decl) {
-				const type_name = decl.type?.name || "";
+				type_name = decl.type?.name || "";
 				if (!SCALAR_TYPES.has(type_name)) continue;
 			}
-			eligible.push({ name, reads: info.reads, offset });
+			eligible.push({ name, reads: info.reads, offset, type_name });
 		}
 		eligible.sort((a, b) => b.reads - a.reads);
 
@@ -110,18 +118,39 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 		}
 
 		const used_regs = new Set(status.register_allocations.values());
-		let reg_idx = 0;
+		const used_x = new Set<string>();
+		const used_d = new Set<string>();
+		for (const r of used_regs) {
+			if (r.startsWith("d")) used_d.add(r);
+			else used_x.add(r);
+		}
+		let x_idx = 0;
+		let d_idx = 0;
 		for (const v of eligible) {
-			while (reg_idx < CALLEE_SAVED_REGS.length && used_regs.has(CALLEE_SAVED_REGS[reg_idx])) {
-				reg_idx++;
+			const is_float = FLOAT_TYPES.has(v.type_name);
+			if (is_float) {
+				while (d_idx < FLOAT_CALLEE_SAVED.length && used_d.has(FLOAT_CALLEE_SAVED[d_idx])) {
+					d_idx++;
+				}
+				if (d_idx >= FLOAT_CALLEE_SAVED.length) continue;
+				const reg = FLOAT_CALLEE_SAVED[d_idx];
+				status.register_allocations.set(v.name, reg);
+				used_d.add(reg);
+				promoted.push({ name: v.name, reg, offset: v.offset });
+				status.code += `ldr ${reg}, [x29, #${v.offset}]\n`;
+				d_idx++;
+			} else {
+				while (x_idx < CALLEE_SAVED_REGS.length && used_x.has(CALLEE_SAVED_REGS[x_idx])) {
+					x_idx++;
+				}
+				if (x_idx >= CALLEE_SAVED_REGS.length) continue;
+				const reg = CALLEE_SAVED_REGS[x_idx];
+				status.register_allocations.set(v.name, reg);
+				used_x.add(reg);
+				promoted.push({ name: v.name, reg, offset: v.offset });
+				status.code += `ldr ${reg}, [x29, #${v.offset}]\n`;
+				x_idx++;
 			}
-			if (reg_idx >= CALLEE_SAVED_REGS.length) break;
-			const reg = CALLEE_SAVED_REGS[reg_idx];
-			status.register_allocations.set(v.name, reg);
-			used_regs.add(reg);
-			promoted.push({ name: v.name, reg, offset: v.offset });
-			status.code += `ldr ${reg}, [x29, #${v.offset}]\n`;
-			reg_idx++;
 		}
 
 		if (promoted.length > 0) {
@@ -358,6 +387,7 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 		status.register_allocations = undefined;
 	}
 
+	status.buffer_data_cache = saved_buffer_cache;
 	status.loop_labels.pop();
 	status.scoped_declarations = old_scoped_declarations;
 }

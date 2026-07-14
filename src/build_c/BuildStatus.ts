@@ -187,6 +187,13 @@ export default interface BuildStatus {
 	 */
 	register_allocations?: Map<string, string>;
 	callee_saved_regs_used?: Set<string>;
+	/**
+	 * Loop-invariant cache: maps a Buffer target key (e.g. "flags" or
+	 * "self.digits") to the callee-saved register holding its pre-loaded
+	 * data pointer. Populated lazily on first Buffer access inside a loop;
+	 * cleared when the loop exits.
+	 */
+	buffer_data_cache?: Map<string, string>;
 	platform: string;
 	label_counter?: number;
 	/**

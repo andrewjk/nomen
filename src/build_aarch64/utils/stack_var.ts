@@ -52,7 +52,13 @@ export function emit_var_load(status: BuildStatus, reg: string, name: string, si
 	}
 	const alloc_reg = status.register_allocations?.get(name);
 	if (alloc_reg) {
-		if (reg !== alloc_reg) {
+		if (alloc_reg.startsWith("d") && reg.startsWith("d")) {
+			if (reg !== alloc_reg) {
+				status.code += `fmov ${reg}, ${alloc_reg}\n`;
+			}
+		} else if (alloc_reg.startsWith("d")) {
+			status.code += `fmov ${reg}, ${alloc_reg}\n`;
+		} else if (reg !== alloc_reg) {
 			status.code += `mov ${reg}, ${alloc_reg}\n`;
 		}
 		return;
@@ -88,7 +94,13 @@ export function emit_var_load(status: BuildStatus, reg: string, name: string, si
 export function emit_var_store(status: BuildStatus, reg: string, name: string, size: number) {
 	const alloc_reg = status.register_allocations?.get(name);
 	if (alloc_reg) {
-		if (reg !== alloc_reg) {
+		if (alloc_reg.startsWith("d") && reg.startsWith("d")) {
+			if (reg !== alloc_reg) {
+				status.code += `fmov ${alloc_reg}, ${reg}\n`;
+			}
+		} else if (alloc_reg.startsWith("d")) {
+			status.code += `fmov ${alloc_reg}, ${reg}\n`;
+		} else if (reg !== alloc_reg) {
 			status.code += `mov ${alloc_reg}, ${reg}\n`;
 		}
 		return;

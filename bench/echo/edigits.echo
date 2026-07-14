@@ -39,8 +39,6 @@ pub func main = (Init init) {
 	}
 	var int k = binary_search(n)
 
-	var BigInt ten = BigInt()
-	ten = ten.new(10)
 	var BigInt tmp = BigInt()
 	var BigInt scratch = BigInt()
 	var BigInt one = BigInt()
@@ -49,18 +47,20 @@ pub func main = (Init init) {
 	// Use extra precision: compute with n+10 digits, then truncate
 	var int precision = n + 10
 
-	// Compute 10^(precision-1).
-	// NOTE: Binary exponentiation would be O(log precision) multiplies, but
-	// it triggers a latent bug in BigInt.mul_to's Karatsuba path for
-	// self-multiplication (a == b) at large sizes. Until that's fixed,
-	// the linear O(precision) mul-by-10 loop is correct.
+	// Compute 10^(precision-1) via binary exponentiation: O(log precision) multiplies.
 	var BigInt power = BigInt()
 	power = power.new(1)
-	var int exp = 0
-	while exp < precision - 1 {
-		tmp.mul_to(power, ten, scratch)
-		power.copy_from(tmp)
-		exp = exp + 1
+	var BigInt sq_base = BigInt()
+	sq_base = sq_base.new(10)
+	var int exp = precision - 1
+	while exp > 0 {
+		if exp % 2 == 1 {
+			tmp.mul_to(power, sq_base, scratch)
+			power.copy_from(tmp)
+		}
+		tmp.mul_to(sq_base, sq_base, scratch)
+		sq_base.copy_from(tmp)
+		exp = exp / 2
 	}
 
 	// e = sum_{i=0}^{k-1} 1/i!
@@ -92,11 +92,16 @@ pub func main = (Init init) {
 	var int trim = precision - n
 	var BigInt divisor = BigInt()
 	divisor = divisor.new(1)
-	exp = 0
-	while exp < trim {
-		tmp.mul_to(divisor, ten, scratch)
-		divisor.copy_from(tmp)
-		exp = exp + 1
+	sq_base = sq_base.new(10)
+	exp = trim
+	while exp > 0 {
+		if exp % 2 == 1 {
+			tmp.mul_to(divisor, sq_base, scratch)
+			divisor.copy_from(tmp)
+		}
+		tmp.mul_to(sq_base, sq_base, scratch)
+		sq_base.copy_from(tmp)
+		exp = exp / 2
 	}
 	var BigInt trim_rem = BigInt()
 	var BigInt trimmed = BigInt()

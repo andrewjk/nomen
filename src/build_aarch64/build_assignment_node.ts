@@ -662,7 +662,11 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 			}
 			const alloc_reg_a = status.register_allocations?.get(name);
 			if (alloc_reg_a) {
-				status.code += `mov x2, ${alloc_reg_a}\n`;
+				if (alloc_reg_a.startsWith("d")) {
+					status.code += `fmov x2, ${alloc_reg_a}\n`;
+				} else {
+					status.code += `mov x2, ${alloc_reg_a}\n`;
+				}
 			} else {
 				const offset = status.stack_offsets?.get(name);
 				if (offset !== undefined) {
@@ -678,13 +682,21 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 		} else if (node.operator) {
 			const alloc_reg_op = status.register_allocations?.get(name);
 			if (alloc_reg_op) {
-				status.code += `mov x1, ${alloc_reg_op}\n`;
+				if (alloc_reg_op.startsWith("d")) {
+					status.code += `fmov x1, ${alloc_reg_op}\n`;
+				} else {
+					status.code += `mov x1, ${alloc_reg_op}\n`;
+				}
 				status.code += `str x1, [sp, #-16]!\n`;
 				build_node(node.right_value, status);
 				status.code += `\n`;
 				status.code += `ldr x1, [sp], #16\n`;
 				emit_compound_op(node.operator, status);
-				status.code += `mov ${alloc_reg_op}, x0\n`;
+				if (alloc_reg_op.startsWith("d")) {
+					status.code += `fmov ${alloc_reg_op}, x0\n`;
+				} else {
+					status.code += `mov ${alloc_reg_op}, x0\n`;
+				}
 			} else {
 				emit_var_address(status, "x1", name);
 				const load_op = get_load_instruction(size);

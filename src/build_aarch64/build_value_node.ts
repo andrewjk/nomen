@@ -179,7 +179,11 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 			}
 		} else {
 			if (alloc_reg !== "x0") {
-				status.code += `mov x0, ${alloc_reg}`;
+				if (alloc_reg.startsWith("d")) {
+					status.code += `fmov x0, ${alloc_reg}`;
+				} else {
+					status.code += `mov x0, ${alloc_reg}`;
+				}
 			}
 		}
 		return;

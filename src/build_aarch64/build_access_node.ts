@@ -665,14 +665,101 @@ function build_access_method(
 				elem_type_name !== "int16" &&
 				elem_type_name !== "int32";
 
-			// The inlined .at()/.set() below uses x19 as scratch for the array base.
-			// x19 is callee-saved (AAPCS): it homes `self` / the first struct param of
-			// THIS function, and — crucially — the caller may also hold a live value in
-			// x19 (e.g. `main` keeps `&Init` there for `init.argc`/`init.args`). Since
-			// we unconditionally clobber x19 below, we must always save/restore it,
-			// regardless of whether this function itself homes a param in x19. Skipping
-			// the save corrupts the caller's x19 — a callee-saved violation — which
-			// previously made `init.argc` read as garbage after any `ref` array call.
+			// The inlined .at()/.set() below uses x9 (caller-saved scratch) for
+			// the array base, avoiding the per-access x19 save/restore overhead.
+			// For .at() (loads), the index is evaluated first into x1, then the
+			// base is computed into x9 (doesn't clobber x1). For .set() (stores),
+			// we still need x19 save/restore because both index and value must be
+			// evaluated and expression evaluation can clobber caller-saved regs.
+			const use_fast_path = access_func.name === "at";
+
+			if (use_fast_path) {
+				// .at(): evaluate index → x1, compute base → x9, load
+				if (access_func.params.length > 0) {
+					build_node(access_func.params[0], status);
+					if (!status.code.endsWith("\n")) status.code += "\n";
+					status.code += `mov x1, x0\n`;
+				}
+				// Build target (array base) into x9
+				if (node.target.node_type === "value") {
+					const name = (node.target as ValueNode).value;
+					const paramReg = get_param_reg(name, status);
+					if (paramReg) {
+						status.code += `mov x9, ${paramReg}\n`;
+					} else if (is_local_ref_var(name, status)) {
+						emit_deref_var_address(status, "x9", name);
+					} else if (status.heap_array_vars?.has(name)) {
+						emit_var_address(status, "x9", name);
+						status.code += `ldr x9, [x9]\n`;
+						status.code += `add x9, x9, #8\n`;
+					} else if (
+						status.function_array_params?.has(name) ||
+						status.function_variadic_params?.has(name)
+					) {
+						emit_var_address(status, "x9", name);
+						status.code += `ldr x9, [x9]\n`;
+					} else {
+						emit_var_address(status, "x9", name);
+					}
+				} else if (is_fixed_size_field) {
+					const inner_access = node.target as AccessNode;
+					const inner_field = inner_access.access as AccessFieldNode;
+					const inner_base = inner_access.target;
+					const inner_target_type = type_from_value_node(inner_base);
+					const field_offset = get_field_offset(
+						inner_target_type?.name || "",
+						inner_field.name,
+						status,
+					);
+					if (inner_base.node_type === "value") {
+						const base_name = (inner_base as ValueNode).value;
+						const bpReg = get_param_reg(base_name, status);
+						if (bpReg) {
+							status.code += `mov x9, ${bpReg}\n`;
+						} else if (is_local_ref_var(base_name, status)) {
+							emit_deref_var_address(status, "x9", base_name);
+						} else {
+							emit_var_address(status, "x9", base_name);
+						}
+					} else {
+						build_node(inner_base, status);
+						if (!status.code.endsWith("\n")) status.code += "\n";
+						status.code += `mov x9, x0\n`;
+					}
+					if (field_offset > 0) {
+						status.code += `add x9, x9, #${field_offset}\n`;
+					}
+				}
+				// Load element
+				if (elem_struct) {
+					if (elem_size === 8) {
+						status.code += `add x0, x9, x1, lsl #3\n`;
+					} else {
+						status.code += `mov x2, #${elem_size}\n`;
+						status.code += `mul x1, x1, x2\n`;
+						status.code += `add x0, x9, x1\n`;
+					}
+				} else {
+					if (elem_size === 8) {
+						status.code += `ldr x0, [x9, x1, lsl #3]\n`;
+					} else {
+						status.code += `mov x2, #${elem_size}\n`;
+						status.code += `mul x1, x1, x2\n`;
+						if (elem_size === 1) {
+							status.code += elem_signed ? `ldrsb x0, [x9, x1]\n` : `ldrb w0, [x9, x1]\n`;
+						} else if (elem_size === 2) {
+							status.code += elem_signed ? `ldrsh x0, [x9, x1]\n` : `ldrh w0, [x9, x1]\n`;
+						} else if (elem_size === 4) {
+							status.code += elem_signed ? `ldrsw x0, [x9, x1]\n` : `ldr w0, [x9, x1]\n`;
+						} else {
+							status.code += `ldr x0, [x9, x1]\n`;
+						}
+					}
+				}
+				return;
+			}
+
+			// .set(): still uses x19 save/restore (both index and value params)
 			status.code += `str x19, [sp, #-16]!\n`;
 
 			// Build target (array pointer) into x19
@@ -797,6 +884,209 @@ function build_access_method(
 				}
 			}
 			status.code += `ldr x19, [sp], #16\n`;
+			return;
+		}
+	}
+
+	// Inline Buffer.load_int/store_int/load/store/load_float/store_float
+	// to direct strided loads/stores, bypassing the inline-method expansion
+	// overhead (self save/restore + x19 save/restore = ~5 extra instructions
+	// per access). This is the single biggest codegen win for array-heavy
+	// benchmarks (nsieve, knucleotide, spectral-norm, lru).
+	if (target_type.name === "Buffer") {
+		const method = access_func.name;
+
+		// Invalidate data-pointer cache when a resize/alloc method is called
+		// on a Buffer — realloc may move the data pointer, making any cached
+		// value in a callee-saved register stale.
+		const resize_methods = new Set([
+			"grow_int",
+			"grow",
+			"grow_T",
+			"grow_float",
+			"alloc_int",
+			"alloc",
+			"alloc_T",
+			"alloc_float",
+		]);
+		if (resize_methods.has(method) && status.buffer_data_cache) {
+			const t = node.target;
+			let key: string | null = null;
+			if (t.node_type === "value") {
+				key = (t as ValueNode).value;
+			} else if (
+				t.node_type === "access" &&
+				(t as AccessNode).access.node_type === "access_field"
+			) {
+				const inner = t as AccessNode;
+				if (inner.target.node_type === "value") {
+					key = `${(inner.target as ValueNode).value}.${(inner.access as AccessFieldNode).name}`;
+				}
+			}
+			if (key) status.buffer_data_cache.delete(key);
+		}
+
+		const buffer_load_methods = new Set(["load_int", "load", "load_float"]);
+		const buffer_store_methods = new Set(["store_int", "store", "store_float", "store_or_int"]);
+		const is_buf_load = buffer_load_methods.has(method);
+		const is_buf_store = buffer_store_methods.has(method);
+
+		if (is_buf_load || is_buf_store) {
+			// Element size: load/store = 4 bytes (uint32), load_int/store_int/load_float/store_float = 8 bytes
+			const elem_bytes =
+				method === "load" || method === "store" || method === "store_or_int" ? 4 : 8;
+			const shift = elem_bytes === 8 ? 3 : 2;
+			const is_float = method === "load_float" || method === "store_float";
+
+			// Compute a cache key for the Buffer target so we can reuse
+			// a loop-invariant data pointer across iterations.
+			function buf_cache_key(): string | null {
+				const t = node.target;
+				if (t.node_type === "value") {
+					return (t as ValueNode).value;
+				}
+				if (t.node_type === "access" && (t as AccessNode).access.node_type === "access_field") {
+					const inner = t as AccessNode;
+					const inner_field = inner.access as AccessFieldNode;
+					if (inner.target.node_type === "value") {
+						return `${(inner.target as ValueNode).value}.${inner_field.name}`;
+					}
+				}
+				return null;
+			}
+
+			// Try to allocate a callee-saved register for caching.
+			const CALLEE = ["x23", "x24", "x25", "x26", "x27", "x28"];
+			function alloc_cache_reg(): string | null {
+				const used = new Set(status.register_allocations?.values() ?? []);
+				const cached_regs = new Set(status.buffer_data_cache?.values() ?? []);
+				const fn_used = status.callee_saved_regs_used ?? new Set<string>();
+				for (const r of CALLEE) {
+					if (!used.has(r) && !cached_regs.has(r) && !fn_used.has(r)) return r;
+				}
+				return null;
+			}
+
+			// Returns the register holding the Buffer.data pointer,
+			// emitting code to load it if not cached.
+			function get_data_ptr_reg(): string {
+				const key = buf_cache_key();
+				if (key && status.buffer_data_cache?.has(key)) {
+					return status.buffer_data_cache.get(key)!;
+				}
+				// Compute the data pointer into x9
+				emit_buf_addr_to_x9();
+				status.code += `ldr x9, [x9, #8]\n`;
+				// LICM caching disabled — causes register conflicts in nested loops
+				// where inner-loop promoted vars / caches clobber the outer loop's
+				// cached data-ptr register. Needs proper save/restore of cache
+				// registers at loop boundaries. TODO: fix and re-enable.
+				if (false && key && status.function_return_label) {
+					const cache_reg = alloc_cache_reg();
+					if (cache_reg) {
+						status.code += `mov ${cache_reg}, x9\n`;
+						if (!status.buffer_data_cache) status.buffer_data_cache = new Map();
+						status.buffer_data_cache.set(key, cache_reg);
+						if (!status.callee_saved_regs_used) status.callee_saved_regs_used = new Set();
+						status.callee_saved_regs_used.add(cache_reg);
+						return cache_reg;
+					}
+				}
+				return "x9";
+			}
+
+			// Emit the Buffer struct address into x9.
+			function emit_buf_addr_to_x9() {
+				if (node.target.node_type === "value") {
+					const name = (node.target as ValueNode).value;
+					const paramReg = get_param_reg(name, status);
+					if (paramReg) {
+						status.code += `mov x9, ${paramReg}\n`;
+					} else if (is_local_ref_var(name, status)) {
+						emit_deref_var_address(status, "x9", name);
+					} else {
+						emit_var_address(status, "x9", name);
+					}
+				} else if (
+					node.target.node_type === "access" &&
+					(node.target as AccessNode).access.node_type === "access_field"
+				) {
+					const inner = node.target as AccessNode;
+					const inner_field = inner.access as AccessFieldNode;
+					const inner_base_type = type_from_value_node(inner.target);
+					const foff = get_field_offset(inner_base_type?.name || "", inner_field.name, status);
+					if (inner.target.node_type === "value") {
+						const bname = (inner.target as ValueNode).value;
+						const bpReg = get_param_reg(bname, status);
+						if (bpReg) {
+							status.code += `mov x9, ${bpReg}\n`;
+						} else if (is_local_ref_var(bname, status)) {
+							emit_deref_var_address(status, "x9", bname);
+						} else {
+							emit_var_address(status, "x9", bname);
+						}
+					} else {
+						build_node(inner.target, status);
+						if (!status.code.endsWith("\n")) status.code += "\n";
+						status.code += `mov x9, x0\n`;
+					}
+					if (foff > 0) {
+						status.code += `add x9, x9, #${foff}\n`;
+					}
+				} else {
+					build_node(node.target, status);
+					if (!status.code.endsWith("\n")) status.code += "\n";
+					status.code += `mov x9, x0\n`;
+				}
+			}
+
+			if (is_buf_load) {
+				// Evaluate index → x1
+				if (access_func.params.length > 0) {
+					build_node(access_func.params[0], status);
+					if (!status.code.endsWith("\n")) status.code += "\n";
+					status.code += `mov x1, x0\n`;
+				}
+				// Get data pointer (cached or freshly loaded)
+				const data_reg = get_data_ptr_reg();
+				// Strided load
+				if (is_float) {
+					status.code += `ldr d0, [${data_reg}, x1, lsl #${shift}]\n`;
+				} else if (elem_bytes === 8) {
+					status.code += `ldr x0, [${data_reg}, x1, lsl #3]\n`;
+				} else {
+					status.code += `ldr w0, [${data_reg}, x1, lsl #2]\n`;
+				}
+			} else {
+				// Store: evaluate index (push), value (→x2), pop index (→x1)
+				build_node(access_func.params[0], status);
+				if (!status.code.endsWith("\n")) status.code += "\n";
+				status.code += `str x0, [sp, #-16]!\n`;
+				build_node(access_func.params[1], status);
+				if (!status.code.endsWith("\n")) status.code += "\n";
+				status.code += `mov x2, x0\n`;
+				status.code += `ldr x1, [sp], #16\n`;
+				// Get data pointer (cached or freshly loaded)
+				const data_reg = get_data_ptr_reg();
+				// Strided store
+				if (method === "store_or_int") {
+					if (elem_bytes === 8) {
+						status.code += `ldr x0, [${data_reg}, x1, lsl #3]\n`;
+						status.code += `orr x2, x0, x2\n`;
+						status.code += `str x2, [${data_reg}, x1, lsl #3]\n`;
+					} else {
+						status.code += `ldr w0, [${data_reg}, x1, lsl #2]\n`;
+						status.code += `orr w2, w0, w2\n`;
+						status.code += `str w2, [${data_reg}, x1, lsl #2]\n`;
+					}
+				} else if (is_float) {
+					status.code += `str d0, [${data_reg}, x1, lsl #${shift}]\n`;
+				} else if (elem_bytes === 8) {
+					status.code += `str x2, [${data_reg}, x1, lsl #3]\n`;
+				} else {
+					status.code += `str w2, [${data_reg}, x1, lsl #2]\n`;
+				}
+			}
 			return;
 		}
 	}
