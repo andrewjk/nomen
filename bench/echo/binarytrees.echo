@@ -1,78 +1,32 @@
 import System
 
-// TreeNode: a single node in the binary tree. Stored by value in Buffer<TreeNode>.
-struct TreeNode {
-	var int left = -1
-	var int right = -1
+class TreeNode {
+	mov TreeNode? left = null
+	mov TreeNode? right = null
 }
 
-// TreePool: flat node pool backed by Buffer<TreeNode>. Node identifiers are
-// stable int indices; -1 = null child. restore() reclaims nodes by resetting
-// count, avoiding per-node malloc/free across iterations.
-struct TreePool {
-	var Buffer<TreeNode> nodes = Buffer<TreeNode>()
-	var int count = 0
-
-	func alloc_node = (ref self, out int) {
-		var int idx = self.count
-		self.nodes.grow_T(idx + 1)
-		self.count = idx + 1
-		var TreeNode n = TreeNode()
-		self.nodes.store_T(idx, n)
-		return idx
-	}
-
-	func restore = (ref self, int saved) {
-		self.count = saved
-	}
-
-	func set_left = (ref self, int idx, int val) {
-		var TreeNode n = self.nodes.load_T(idx)
-		n.left = val
-		self.nodes.store_T(idx, n)
-	}
-
-	func get_left = (self, int idx, out int) {
-		var TreeNode n = self.nodes.load_T(idx)
-		return n.left
-	}
-
-	func set_right = (ref self, int idx, int val) {
-		var TreeNode n = self.nodes.load_T(idx)
-		n.right = val
-		self.nodes.store_T(idx, n)
-	}
-
-	func get_right = (self, int idx, out int) {
-		var TreeNode n = self.nodes.load_T(idx)
-		return n.right
-	}
-}
-
-func create_tree = (int depth, ref TreePool pool, out int) {
+func create_tree = (int depth, out TreeNode) {
 	if depth > 1 {
-		var int left = create_tree(depth - 1, ref pool)
-		var int right = create_tree(depth - 1, ref pool)
-		var int node = pool.alloc_node()
-		pool.set_left(node, left)
-		pool.set_right(node, right)
+		var TreeNode left = create_tree(depth - 1)
+		var TreeNode right = create_tree(depth - 1)
+		var TreeNode node = TreeNode()
+		node.left = left
+		node.right = right
 		return node
 	}
-	var int node = pool.alloc_node()
-	pool.set_left(node, pool.alloc_node())
-	pool.set_right(node, pool.alloc_node())
+	var TreeNode node = TreeNode()
+	node.left = TreeNode()
+	node.right = TreeNode()
 	return node
 }
 
-func check_tree = (int node, ref TreePool pool, out int) {
+func check_tree = (TreeNode node, out int) {
 	var int sum = 1
-	var int left = pool.get_left(node)
-	if left >= 0 {
-		sum = sum + check_tree(left, ref pool)
+	if node.left != null {
+		sum = sum + check_tree(node.left)
 	}
-	var int right = pool.get_right(node)
-	if right >= 0 {
-		sum = sum + check_tree(right, ref pool)
+	if node.right != null {
+		sum = sum + check_tree(node.right)
 	}
 	return sum
 }
@@ -88,14 +42,10 @@ pub func main = (Init init) {
 		max_depth = min_depth + 2
 	}
 
-	var TreePool pool = TreePool()
+	var TreeNode stretch_tree = create_tree(max_depth + 1)
+	Console.write("stretch tree of depth \{max_depth + 1}\t check: \{check_tree(stretch_tree)}\n")
 
-	var int stretch = create_tree(max_depth + 1, ref pool)
-	Console.write("stretch tree of depth \{max_depth + 1}\t check: \{check_tree(stretch, ref pool)}\n")
-	pool.restore(0)
-
-	var int long_lived = create_tree(max_depth, ref pool)
-	var int saved = pool.count
+	var TreeNode long_lived_tree = create_tree(max_depth)
 
 	var int depth = min_depth
 	while depth <= max_depth {
@@ -103,14 +53,12 @@ pub func main = (Init init) {
 		var int sum = 0
 		var int i = 0
 		while i < iterations {
-			pool.restore(saved)
-			var int tree = create_tree(depth, ref pool)
-			sum = sum + check_tree(tree, ref pool)
+			sum = sum + check_tree(create_tree(depth))
 			i = i + 1
 		}
 		Console.write("\{iterations}\t trees of depth \{depth}\t check: \{sum}\n")
 		depth = depth + 2
 	}
 
-	Console.write("long lived tree of depth \{max_depth}\t check: \{check_tree(long_lived, ref pool)}\n")
+	Console.write("long lived tree of depth \{max_depth}\t check: \{check_tree(long_lived_tree)}\n")
 }

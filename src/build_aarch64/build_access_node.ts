@@ -932,9 +932,10 @@ function build_access_method(
 		const is_buf_store = buffer_store_methods.has(method);
 
 		if (is_buf_load || is_buf_store) {
-			// Element size: load/store = 4 bytes (uint32), load_int/store_int/load_float/store_float = 8 bytes
-			const elem_bytes =
-				method === "load" || method === "store" || method === "store_or_int" ? 4 : 8;
+			// Element size: load/store = 4 bytes (uint32), load_int/store_int/
+			// load_float/store_float/store_or_int = 8 bytes (long/double).
+			// store_or_int treats data as long* (8-byte stride, see Buffer.echo).
+			const elem_bytes = method === "load" || method === "store" ? 4 : 8;
 			const shift = elem_bytes === 8 ? 3 : 2;
 			const is_float = method === "load_float" || method === "store_float";
 

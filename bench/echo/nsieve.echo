@@ -5,23 +5,30 @@ func nsieve = (int n) {
 		Console.write("Primes up to \{n} 0\n")
 		return
 	}
-	var Buffer<uint32> flags = Buffer<uint32>()
-	flags.alloc(n)
+	// Bit-packed sieve using 64-bit slots (64 candidates per int). The
+	// store_or_int / load_int accessors are inlined by the codegen to single
+	// instructions; bit-packing shrinks the working set 64× so the flag array
+	// fits in L2/L3 cache (for n=10M this is ~1.25 MB instead of 80 MB).
+	// count = 1 accounts for the only even prime (2); the outer loop then
+	// walks only odd candidates, and the inner marking loop starts at i*i
+	// (smaller odd composites were already marked by smaller primes) and
+	// steps by 2*i to hit only odd multiples.
+	var int slot_count = (n + 63) / 64
+	var Buffer<int> flags = Buffer<int>()
+	flags.alloc_int(slot_count)
 
-	// count = 1 accounts for the only even prime (2); outer loop then walks
-	// only odd candidates. The inner marking loop starts at i*i (smaller
-	// odd composites were already marked by smaller primes) and steps by
-	// 2*i to hit only odd multiples.
 	var int count = 1
 	var int i = 3
 	while i < n {
-		if flags.load(i) == 0 {
+		var int slot = i >> 6
+		var int bit = 1 << (i & 63)
+		if (flags.load_int(slot) & bit) == 0 {
 			count = count + 1
 			if i * i < n {
 				var int j = i * i
 				var int step = i * 2
 				while j < n {
-					flags.store(j, 1)
+					flags.store_or_int(j >> 6, 1 << (j & 63))
 					j = j + step
 				}
 			}
