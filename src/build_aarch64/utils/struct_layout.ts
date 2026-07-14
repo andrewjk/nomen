@@ -1,6 +1,5 @@
 import type BuildStatus from "../../build_c/BuildStatus.ts";
 import DeclarationNode from "../../nodes/DeclarationNode.ts";
-import Type from "../../nodes/Type.ts";
 import ValueNode from "../../nodes/ValueNode.ts";
 import aarch64_size from "./aarch64_size.ts";
 import { is_nullable_struct_type } from "./nullable_struct.ts";
