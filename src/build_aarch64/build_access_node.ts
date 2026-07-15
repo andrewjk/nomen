@@ -669,9 +669,70 @@ function build_access_method(
 			// the array base, avoiding the per-access x19 save/restore overhead.
 			// For .at() (loads), the index is evaluated first into x1, then the
 			// base is computed into x9 (doesn't clobber x1). For .set() (stores),
-			// we still need x19 save/restore because both index and value must be
-			// evaluated and expression evaluation can clobber caller-saved regs.
+			// when both index and value are simple value nodes (literals/vars) on
+			// a value-target array, the same x9 fast path applies: the base is
+			// built into x9 first, then index→x1 and value→x2 (simple value builds
+			// only write x0, so x9/x1 survive). Otherwise .set() falls back to the
+			// x19 save/restore path because evaluating a non-simple value can
+			// clobber caller-saved registers.
 			const use_fast_path = access_func.name === "at";
+			const set_fast =
+				access_func.name === "set" &&
+				!elem_struct &&
+				access_func.params.length > 1 &&
+				access_func.params[0].node_type === "value" &&
+				access_func.params[1].node_type === "value" &&
+				node.target.node_type === "value";
+
+			if (set_fast) {
+				// .set() fast path: base → x9, index → x1, value → x2, store.
+				// Base is built first so a param-register base (e.g. an array
+				// passed in x1) is read before x1 is overwritten by the index.
+				const name = (node.target as ValueNode).value;
+				const paramReg = get_param_reg(name, status);
+				if (paramReg) {
+					status.code += `mov x9, ${paramReg}\n`;
+				} else if (is_local_ref_var(name, status)) {
+					emit_deref_var_address(status, "x9", name);
+				} else if (status.heap_array_vars?.has(name)) {
+					emit_var_address(status, "x9", name);
+					status.code += `ldr x9, [x9]\n`;
+					status.code += `add x9, x9, #8\n`;
+				} else if (
+					status.function_array_params?.has(name) ||
+					status.function_variadic_params?.has(name)
+				) {
+					emit_var_address(status, "x9", name);
+					status.code += `ldr x9, [x9]\n`;
+				} else {
+					emit_var_address(status, "x9", name);
+				}
+				// index → x1
+				build_node(access_func.params[0], status);
+				if (!status.code.endsWith("\n")) status.code += "\n";
+				status.code += `mov x1, x0\n`;
+				// value → x2 (simple value node: build only writes x0)
+				build_node(access_func.params[1], status);
+				if (!status.code.endsWith("\n")) status.code += "\n";
+				status.code += `mov x2, x0\n`;
+				// store
+				if (elem_size === 8) {
+					status.code += `str x2, [x9, x1, lsl #3]\n`;
+				} else {
+					status.code += `mov x3, #${elem_size}\n`;
+					status.code += `mul x1, x1, x3\n`;
+					if (elem_size === 1) {
+						status.code += `strb w2, [x9, x1]\n`;
+					} else if (elem_size === 2) {
+						status.code += `strh w2, [x9, x1]\n`;
+					} else if (elem_size === 4) {
+						status.code += `str w2, [x9, x1]\n`;
+					} else {
+						status.code += `str x2, [x9, x1]\n`;
+					}
+				}
+				return;
+			}
 
 			if (use_fast_path) {
 				// .at(): evaluate index → x1, compute base → x9, load

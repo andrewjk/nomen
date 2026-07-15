@@ -409,6 +409,82 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 	const is_float =
 		is_float_type(node) || is_float_type(node.left_value) || is_float_type(node.right_value);
 
+	// Constant folding: if both operands are literals, compute at compile time.
+	if (
+		!is_float &&
+		node.left_value.node_type === "value" &&
+		node.right_value.node_type === "value"
+	) {
+		const lv_raw = (node.left_value as ValueNode).value;
+		const rv_raw = (node.right_value as ValueNode).value;
+		if (/^(\+|-)*\d+$/.test(lv_raw) && /^(\+|-)*\d+$/.test(rv_raw)) {
+			const left = parseInt(lv_raw, 10);
+			const right = parseInt(rv_raw, 10);
+			let result: number | undefined;
+			switch (node.op) {
+				case "+":
+					result = left + right;
+					break;
+				case "-":
+					result = left - right;
+					break;
+				case "*":
+					result = left * right;
+					break;
+				case "/":
+					if (right !== 0) result = Math.trunc(left / right);
+					break;
+				case "%":
+					if (right !== 0) result = left - Math.trunc(left / right) * right;
+					break;
+				case "<<":
+					result = left << right;
+					break;
+				case ">>":
+					result = left >> right;
+					break;
+				case "&":
+					result = left & right;
+					break;
+				case "|":
+					result = left | right;
+					break;
+				case "^":
+					result = left ^ right;
+					break;
+				case "&&":
+					result = left !== 0 && right !== 0 ? 1 : 0;
+					break;
+				case "||":
+					result = left !== 0 || right !== 0 ? 1 : 0;
+					break;
+				case "==":
+					result = left === right ? 1 : 0;
+					break;
+				case "!=":
+					result = left !== right ? 1 : 0;
+					break;
+				case "<":
+					result = left < right ? 1 : 0;
+					break;
+				case ">":
+					result = left > right ? 1 : 0;
+					break;
+				case "<=":
+					result = left <= right ? 1 : 0;
+					break;
+				case ">=":
+					result = left >= right ? 1 : 0;
+					break;
+			}
+			if (result !== undefined) {
+				emit_immediate("x0", String(result), status);
+				if (!status.code.endsWith("\n")) status.code += "\n";
+				return;
+			}
+		}
+	}
+
 	if (is_float && !is_comparison(node.op)) {
 		const need_float_spill = !is_simple(node.left_value);
 		build_float_operand(node.right_value, "d1", status);

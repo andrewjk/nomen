@@ -2,8 +2,10 @@ import type BuildStatus from "../build_c/BuildStatus.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
+import FunctionNode from "../nodes/FunctionNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import { emit_address_of } from "./build_access_node.ts";
+import { build_inline_function } from "./build_inline_method.ts";
 import build_node from "./build_node.ts";
 import { emit_malloc } from "./utils/audit.ts";
 import { mark_moved_if_struct, find_anchor_slot } from "./utils/auto_destroy.ts";
@@ -331,6 +333,17 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 				status.stack_offsets!.set(temp_name, offset);
 				status.code += `add x8, x29, #${offset}\n`;
 			}
+		}
+
+		const inline_candidate = status.inline_functions?.get(func_name);
+		if (
+			inline_candidate &&
+			(inline_candidate as any).node_type === "func" &&
+			!is_struct &&
+			(node as any).variadic_param_index === undefined
+		) {
+			const inlined = build_inline_function(inline_candidate as FunctionNode, status);
+			if (inlined) return;
 		}
 
 		status.code += `bl ${func_name}\n`;

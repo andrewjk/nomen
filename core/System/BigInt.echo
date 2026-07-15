@@ -500,7 +500,7 @@ pub struct BigInt {
     }
     // self = quotient, a = dividend, b = divisor, remainder = remainder
     // Uses remainder's internal buffer as working space
-    pub func div = (self, BigInt a, BigInt b, var BigInt remainder, out BigInt) {
+    pub func div_to = (ref self, BigInt a, BigInt b, var BigInt remainder) {
         if b.len == 1 {
             var uint64 divisor = b.get(0)
             self.ensure(a.len)
@@ -550,7 +550,7 @@ pub struct BigInt {
             remainder.len = 1
             remainder.ensure(1)
             remainder.set(0, rem)
-            return self
+            return
         }
 
         // --- Knuth's Algorithm D for multi-limb division ---
@@ -571,7 +571,7 @@ pub struct BigInt {
                 ci = ci + 1
             }
             remainder.len = a.len
-            return self
+            return
         }
 
         // D1. Normalize
@@ -802,7 +802,6 @@ pub struct BigInt {
 		}
 		remainder.len = remainder.len - 1
 	}
-	return self
     }
 
     pub func to_digit = (self, out int) {
@@ -821,5 +820,24 @@ pub struct BigInt {
             self.set(i, other.get(i))
             i = i + 1
         }
+    }
+
+    pub func set_int = (ref self, int val) {
+        self.sign = 1
+        var int v = val
+        if v < 0 {
+            self.sign = -1
+            v = 0 - v
+        }
+        self.ensure(1)
+        self.digits.store_int(0, v)
+        self.len = 1
+    }
+
+    pub func set_u64 = (ref self, uint64 val) {
+        self.sign = 1
+        self.ensure(1)
+        self.set(0, val)
+        self.len = 1
     }
 }

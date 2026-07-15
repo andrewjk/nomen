@@ -36,8 +36,8 @@ pub func main = (Init init) {
     rem = rem.new(0)
 
     while true {
-        u = u.div(n1, d, rem)
-        v = v.div(n2, d, rem)
+        u.div_to(n1, d, rem)
+        v.div_to(n2, d, rem)
 
         if u.cmp(v) == 0 {
             Console.write(u.to_digit().to_string())

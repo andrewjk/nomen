@@ -108,6 +108,7 @@ function alloc_array_with_prefix(
 }
 
 let string_array_counter = 0;
+let decl_const_counter = 0;
 
 function emit_string_array_labels(values: BaseNode[], status: BuildStatus): Map<string, string> {
 	const labels = new Map<string, string>();
@@ -1010,21 +1011,21 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 						status.code += `str x0, [x29, #${offset}]\n`;
 					}
 				} else if (node.type.name === "float") {
-					const label = `_float_const_${node.name}`;
+					const label = `_float_const_${decl_const_counter++}`;
 					emit_data(status, `${label}: .double ${raw}\n.p2align 2\n`);
 					status.code += `adr x0, ${label}\n`;
 					status.code += `ldr d0, [x0]\n`;
 					status.code += `str d0, [x29, #${offset}]\n`;
 				} else if (node.type.name === "string" && raw.startsWith('"')) {
 					if (status.force_heap_strings?.has(node.name)) {
-						const label = `_str_init_${node.name}`;
+						const label = `_str_init_${decl_const_counter++}`;
 						emit_data(status, `${label}: .asciz ${escape_asciz(raw)}\n.p2align 2\n`);
 						status.code += `adr x0, ${label}\n`;
 						emit_strdup(status);
 						status.code += `str x0, [x29, #${offset}]\n`;
 						mark_heap_string(status, node.name);
 					} else {
-						const label = `_str_init_${node.name}`;
+						const label = `_str_init_${decl_const_counter++}`;
 						emit_data(status, `${label}: .asciz ${escape_asciz(raw)}\n.p2align 2\n`);
 						status.code += `adr x0, ${label}\n`;
 						status.code += `str x0, [x29, #${offset}]\n`;

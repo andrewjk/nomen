@@ -11,6 +11,7 @@ import { reset_label_counter as reset_while_label_counter } from "./build_aarch6
 import { emit_malloc } from "./build_aarch64/utils/audit.ts";
 import { generate_companion } from "./build_aarch64/utils/c_companion.ts";
 import { scan_heap_returning_functions } from "./build_aarch64/utils/scan_heap_returns.ts";
+import { scan_inline_candidates } from "./build_aarch64/utils/scan_inline_candidates.ts";
 import build_c_node from "./build_c/build_node.ts";
 import type BuildStatus from "./build_c/BuildStatus.ts";
 import BaseNode from "./nodes/BaseNode.ts";
@@ -53,6 +54,7 @@ export default function build(
 		reset_func_call_temp_counter();
 		reset_inline_counter();
 		status.heap_returning_functions = scan_heap_returning_functions(root);
+		status.inline_functions = scan_inline_candidates(root);
 		status.heap_returning_functions.add("int_to_string");
 		status.heap_returning_functions.add("uint_to_string");
 		status.heap_returning_functions.add("int8_to_string");

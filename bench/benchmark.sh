@@ -162,7 +162,7 @@ echo ""
 # ── Run all ──────────────────────────────────────────────────────────────────
 
 print_run_header() {
-	printf "  %-22s  %7s  %7s  %7s  %7s  %11s\n" "Benchmark" "Echo" "Go" "Zig" "Rust" "echo"
+	printf "  %-22s  %7s  %7s  %7s  %7s  %11s\n" "Benchmark" "Echo" "Go" "Zig" "Rust" "Echo"
 	printf "  %-22s  %7s  %7s  %7s  %7s  %11s\n" "" "run" "run" "run" "run" "compare"
 	printf "  %-22s  %7s  %7s  %7s  %7s  %11s\n" "----------------------" "-------" "-------" "-------" "-------" "-----------"
 }

@@ -32,6 +32,59 @@ func binary_search = (int n, out int) {
 	return b
 }
 
+// sum_terms(a, b) computes p/q = a! * sum_{i=a+1}^{b} 1/i!
+// via a divide-and-conquer product tree so that all multiplications
+// are balanced (Karatsuba-friendly) and only one final division is
+// needed.  Mirrors the Rust/Go/Zig reference implementations.
+func sum_terms = (int a, int b, var BigInt out_p, var BigInt out_q) {
+	if b == a + 1 {
+		out_p.set_int(1)
+		out_q.set_int(b)
+		return
+	}
+	var int mid = (a + b) / 2
+	var BigInt pl = BigInt()
+	var BigInt ql = BigInt()
+	sum_terms(a, mid, pl, ql)
+	var BigInt pr = BigInt()
+	var BigInt qr = BigInt()
+	sum_terms(mid, b, pr, qr)
+
+	// p = pl * qr + pr
+	var BigInt scratch = BigInt()
+	var BigInt product = BigInt()
+	product.mul_to(pl, qr, scratch)
+	out_p.add_to(product, pr)
+
+	// q = ql * qr
+	out_q.mul_to(ql, qr, scratch)
+
+	pl.digits.destroy()
+	ql.digits.destroy()
+	pr.digits.destroy()
+	qr.digits.destroy()
+	scratch.digits.destroy()
+	product.digits.destroy()
+}
+
+// Compute 10^exp via binary exponentiation (repeated squaring).
+func pow10 = (int exp, var BigInt result, var BigInt tmp, var BigInt scratch) {
+	result.set_int(1)
+	var BigInt sq_base = BigInt()
+	sq_base.set_int(10)
+	var int e = exp
+	while e > 0 {
+		if e % 2 == 1 {
+			tmp.mul_to(result, sq_base, scratch)
+			result.copy_from(tmp)
+		}
+		tmp.mul_to(sq_base, sq_base, scratch)
+		sq_base.copy_from(tmp)
+		e = e / 2
+	}
+	sq_base.digits.destroy()
+}
+
 pub func main = (Init init) {
 	var int n = 27
 	if init.argc > 1 {
@@ -39,93 +92,42 @@ pub func main = (Init init) {
 	}
 	var int k = binary_search(n)
 
+	// Compute e = sum_{i=0}^{k-1} 1/i! as a fraction p/q via product tree.
+	var BigInt p = BigInt()
+	var BigInt q = BigInt()
+	sum_terms(0, k - 1, p, q)
+
+	// Add the 1/0! = 1 term: (p + q) / q = p/q + 1.
+	var BigInt p_plus_q = BigInt()
+	p_plus_q.add_to(p, q)
+
+	// answer = (p + q) * 10^(n-1) / q
 	var BigInt tmp = BigInt()
 	var BigInt scratch = BigInt()
-	var BigInt one = BigInt()
-	one = one.new(1)
-
-	// Use extra precision: compute with n+10 digits, then truncate
-	var int precision = n + 10
-
-	// Compute 10^(precision-1) via binary exponentiation: O(log precision) multiplies.
 	var BigInt power = BigInt()
-	power = power.new(1)
-	var BigInt sq_base = BigInt()
-	sq_base = sq_base.new(10)
-	var int exp = precision - 1
-	while exp > 0 {
-		if exp % 2 == 1 {
-			tmp.mul_to(power, sq_base, scratch)
-			power.copy_from(tmp)
-		}
-		tmp.mul_to(sq_base, sq_base, scratch)
-		sq_base.copy_from(tmp)
-		exp = exp / 2
-	}
+	pow10(n - 1, power, tmp, scratch)
 
-	// e = sum_{i=0}^{k-1} 1/i!
-	// answer = sum_{i=0}^{k-1} 10^(precision-1) / i!
+	var BigInt numerator = BigInt()
+	numerator.mul_to(p_plus_q, power, scratch)
+
 	var BigInt answer = BigInt()
-	answer.copy_from(power)
-	var BigInt term = BigInt()
-	term.copy_from(power)
+	var BigInt div_rem = BigInt()
+	answer.div_to(numerator, q, div_rem)
 
-	var int i = 1
-	while i <= k - 1 {
-		var BigInt ii = BigInt()
-		ii = ii.new(i)
-		var BigInt rem = BigInt()
-		var BigInt newterm = BigInt()
-		newterm = newterm.div(term, ii, rem)
-		term.copy_from(newterm)
-
-		tmp.add_to(answer, term)
-		answer.copy_from(tmp)
-
-		if term.cmp(one) < 0 {
-			break
-		}
-		i = i + 1
-	}
-
-	// Truncate to n digits: divide by 10^(precision - n).
-	var int trim = precision - n
-	var BigInt divisor = BigInt()
-	divisor = divisor.new(1)
-	sq_base = sq_base.new(10)
-	exp = trim
-	while exp > 0 {
-		if exp % 2 == 1 {
-			tmp.mul_to(divisor, sq_base, scratch)
-			divisor.copy_from(tmp)
-		}
-		tmp.mul_to(sq_base, sq_base, scratch)
-		sq_base.copy_from(tmp)
-		exp = exp / 2
-	}
-	var BigInt trim_rem = BigInt()
-	var BigInt trimmed = BigInt()
-	trimmed = trimmed.div(answer, divisor, trim_rem)
-
-	// Extract digits from trimmed answer using bulk divmod by 10^18.
-	// Each iteration pulls 18 decimal digits in one long division instead
-	// of one digit per division. The digits buffer holds n digits plus up
-	// to 18 leading-zero padding from the final chunk.
-	var BigInt result = BigInt()
-	result.copy_from(trimmed)
-	var BigInt q_e18 = BigInt()
-	q_e18 = q_e18.new(1000000000000000000)
-	var BigInt rem = BigInt()
+	// Extract digits from answer using in-place bulk divmod by 10^18.
+	var BigInt one = BigInt()
+	one.set_int(1)
+	var BigInt work = BigInt()
+	work.copy_from(answer)
 	var Buffer<int> digits = Buffer<int>()
 	digits.alloc_int(5020)
 	var int digit_count = 0
+	var BigInt q_e18 = BigInt()
+	q_e18.set_u64(1000000000000000000)
 
-	while result.cmp(one) >= 0 {
-		var BigInt qq = BigInt()
-		qq = qq.div(result, q_e18, rem)
-
-		// rem < 10^18, fits in one uint64 limb.
-		var uint64 chunk = rem.get(0)
+	while work.cmp(one) >= 0 {
+		work.div_to(work, q_e18, div_rem)
+		var uint64 chunk = div_rem.get(0)
 		var int c = 0
 		while c < 18 {
 			digits.store_int(digit_count + c, (chunk % 10) as int)
@@ -133,8 +135,6 @@ pub func main = (Init init) {
 			c = c + 1
 		}
 		digit_count = digit_count + 18
-
-		result.copy_from(qq)
 	}
 
 	// Trim spurious leading zeros introduced by the final bulk chunk.
