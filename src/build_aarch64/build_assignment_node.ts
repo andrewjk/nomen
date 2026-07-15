@@ -743,6 +743,34 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 			}
 		} else {
 			const lhs_is_heap = status.heap_strings?.has(name);
+			// Fast path: assignment to a register-allocated float var from a
+			// float expression. The default assignment codegen builds the RHS
+			// into x0 (the float op emitting `fmov x0, d0`) then stores it
+			// back into the d-register (`fmov dN, x0`) — a d0→x0→dN round-trip
+			// that costs two `fmov` per assignment. By requesting the d0 fast
+			// path (`float_result_in_d0`), nested float operations in the RHS
+			// leave their result in d0 and we move directly d0→dN (one `fmov`).
+			// Non-float-op RHS (variables, literals, function calls, casts)
+			// don't consume the flag, so we fall back to the x0 path for them.
+			// This is the dominant remaining codegen cost in mandelbrot's
+			// mbrot inner loop (4 float assignments per iteration).
+			const alloc_reg_fast = status.register_allocations?.get(name);
+			if (alloc_reg_fast?.startsWith("d") && !node.operator && !lhs_is_heap) {
+				status.last_result_is_heap = false;
+				status.float_result_in_d0 = true;
+				build_node(node.right_value, status);
+				if (!status.code.endsWith("\n")) status.code += "\n";
+				if (!status.float_result_in_d0) {
+					if (alloc_reg_fast !== "d0") {
+						status.code += `fmov ${alloc_reg_fast}, d0\n`;
+					}
+				} else {
+					status.float_result_in_d0 = false;
+					status.code += `fmov ${alloc_reg_fast}, x0\n`;
+				}
+				build_swap(node, status);
+				return;
+			}
 			status.last_result_is_heap = false;
 			// Build the RHS first: it may read the current (old) value of `name`
 			// (e.g. `s = s + "x"`), so the old value must still be alive here.

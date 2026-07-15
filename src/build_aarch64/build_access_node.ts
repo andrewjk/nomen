@@ -1148,7 +1148,21 @@ function build_access_method(
 				const data_reg = get_buffer_data_ptr(node.target, status);
 				// Strided load
 				if (is_float) {
+					// `load_float` leaves its result in d0. The default Echo calling
+					// convention routes every value through x0, so for ordinary
+					// consumers (assignments, function args, comparisons, statement-
+					// level expressions) we must emit `fmov x0, d0`. Only when the
+					// immediate caller is `build_float_operand` requesting the d0
+					// fast path (`status.float_result_in_d0 == true`) can we leave
+					// the result in d0 and consume the flag — otherwise the caller
+					// would read a stale x0 (e.g. the index register) and silently
+					// produce `nan`, which was the pre-existing spectral-norm bug.
+					const caller_wants_d0 = status.float_result_in_d0 ?? false;
+					status.float_result_in_d0 = false;
 					status.code += `ldr d0, [${data_reg}, x1, lsl #${shift}]\n`;
+					if (!caller_wants_d0) {
+						status.code += `fmov x0, d0\n`;
+					}
 				} else if (elem_bytes === 8) {
 					status.code += `ldr x0, [${data_reg}, x1, lsl #3]\n`;
 				} else {
@@ -1177,7 +1191,12 @@ function build_access_method(
 						status.code += `str w2, [${data_reg}, x1, lsl #2]\n`;
 					}
 				} else if (is_float) {
-					status.code += `str d0, [${data_reg}, x1, lsl #${shift}]\n`;
+					// The value was built via build_node and moved to x2 as a raw
+					// 64-bit bit pattern (the default convention). Store from x2 —
+					// NOT d0, which holds whatever stale float a prior op left
+					// behind. (Pre-existing latent bug masked by d0 usually
+					// happening to still hold the right value.)
+					status.code += `str x2, [${data_reg}, x1, lsl #${shift}]\n`;
 				} else if (elem_bytes === 8) {
 					status.code += `str x2, [${data_reg}, x1, lsl #3]\n`;
 				} else {

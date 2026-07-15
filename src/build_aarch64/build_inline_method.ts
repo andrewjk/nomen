@@ -54,7 +54,16 @@ export default function build_inline_method(
 	const self_is_var = is_self_param && func.params[0]?.declaration === "var";
 	const needs_x19 = is_self_param && !self_is_var;
 
-	if (is_raw_only(func) && needs_x19) {
+	// Raw-only inline funcs (e.g. `Math.sqrt`) emit a fixed asm snippet that
+	// references the parameter registers (x0, x1, …) directly — the same
+	// registers `build_access_node` already loaded the args into. The general
+	// inline path below would needlessly shuffle each param into a callee-saved
+	// register (x19/x20/…) that the raw body never reads, adding a
+	// save/mov/restore triple per parameter. `build_naked_inline` just emits
+	// the raw asm verbatim (with an x19→x0 rewrite when the body references
+	// self), so prefer it for every raw-only inline func regardless of whether
+	// it has a self parameter.
+	if (is_raw_only(func)) {
 		build_naked_inline(struct_node, func, status);
 		return;
 	}
