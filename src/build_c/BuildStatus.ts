@@ -188,6 +188,16 @@ export default interface BuildStatus {
 	register_allocations?: Map<string, string>;
 	callee_saved_regs_used?: Set<string>;
 	/**
+	 * Set by build_float_operand before building a float-typed child expression.
+	 * When a float binary operation sees this flag at its result point, it skips
+	 * the `fmov x0, d0` (leaving the result in d0) and clears the flag. This
+	 * eliminates the redundant d0→x0→d0 round-trip for nested float expression
+	 * chains (e.g. `(zr+zr)*zi+ci`). Only consumed by the immediate child float
+	 * op: each float op saves+clears the flag before building its own operands,
+	 * so nested grandchildren can't steal it.
+	 */
+	float_result_in_d0?: boolean;
+	/**
 	 * Loop-invariant cache: maps a Buffer target key (e.g. "flags" or
 	 * "self.digits") to the callee-saved register holding its pre-loaded
 	 * data pointer. Populated lazily on first Buffer access inside a loop;

@@ -199,9 +199,20 @@ function build_float_operand(node: BaseNode, target_reg: string, status: BuildSt
 			return;
 		}
 	}
+	const child_is_float = is_float_type(node);
+	if (child_is_float) {
+		status.float_result_in_d0 = true;
+	}
 	build_node(node, status);
 	if (!status.code.endsWith("\n")) status.code += "\n";
-	status.code += `fmov ${target_reg}, x0\n`;
+	if (child_is_float && !status.float_result_in_d0) {
+		if (target_reg !== "d0") {
+			status.code += `fmov ${target_reg}, d0\n`;
+		}
+	} else {
+		status.float_result_in_d0 = false;
+		status.code += `fmov ${target_reg}, x0\n`;
+	}
 }
 
 function to_decimal_literal(value: string): string {
@@ -486,6 +497,8 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 	}
 
 	if (is_float && !is_comparison(node.op)) {
+		const caller_wants_d0 = status.float_result_in_d0 ?? false;
+		status.float_result_in_d0 = false;
 		const need_float_spill = !is_simple(node.left_value);
 		build_float_operand(node.right_value, "d1", status);
 		if (!status.code.endsWith("\n")) status.code += "\n";
@@ -498,7 +511,11 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 			status.code += `ldr d1, [sp], #16\n`;
 		}
 		status.code += `${map_float_op(node.op)} d0, d0, d1\n`;
-		status.code += `fmov x0, d0\n`;
+		if (caller_wants_d0) {
+			status.float_result_in_d0 = false;
+		} else {
+			status.code += `fmov x0, d0\n`;
+		}
 		return;
 	}
 

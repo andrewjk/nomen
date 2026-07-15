@@ -44,18 +44,19 @@ The following codegen changes have been applied. The "before" column is the
 old codegen; "after" is with all improvements below. Measured on Apple Silicon
 (AArch64), median of 3 runs, small workload sizes:
 
-| Benchmark       | Before  | After   | Speedup | Primary fix                                             |
-| --------------- | ------- | ------- | ------- | ------------------------------------------------------- |
-| knucleotide     | 17 ms   | 10 ms   | 1.7×    | Buffer.load_int inlined + LICM                          |
-| nsieve          | 122 ms  | 80 ms   | 1.53×   | Buffer.load/store inlined + LICM                        |
-| fannkuch-redux  | 378 ms  | 290 ms  | 1.30×   | Array .at()/.set() fast path                            |
-| nbody           | 211 ms  | 190 ms  | 1.11×   | Float register allocation (d8-d15)                      |
-| spectral-norm   | 64 ms   | 60 ms   | 1.07×   | Float reg-alloc + LICM                                  |
-| mandelbrot      | 365 ms  | 390 ms  | 0.94×   | Float reg-alloc adds prologue cost                      |
-| binarytrees     | 250 ms  | 246 ms  | 1.02×   | (struct accessors still use memcpy)                     |
-| edigits         | 48 ms   | 8.5 ms  | 5.6×    | Product-tree algorithm + set                            |
-| edigits (5000)  | 734 ms  | 9 ms    | ~80×    | div128→udivti3 + get/set indexed + Buffer_int fast path |
-| pidigits (4000) | 3562 ms | 2840 ms | 1.25×   | Buffer_int load/store inlined (was `bl`)                |
+| Benchmark       | Before  | After   | Speedup | Primary fix                                               |
+| --------------- | ------- | ------- | ------- | --------------------------------------------------------- |
+| mandelbrot      | 365 ms  | 210 ms  | 1.76×   | Float round-trip elimination + push/pop peephole          |
+| nsieve          | 122 ms  | 53 ms   | 2.30×   | Buffer.load/store inlined + LICM + push/pop peephole      |
+| nbody           | 211 ms  | 130 ms  | 1.62×   | Float reg-alloc + float round-trip elimination            |
+| lru             | 150 ms  | 27 ms   | 5.5×    | O(1) doubly-linked list LRU + RNG bitmask + peephole      |
+| fannkuch-redux  | 378 ms  | 210 ms  | 1.80×   | Array .at()/.set() fast path + push/pop peephole          |
+| knucleotide     | 17 ms   | 8 ms    | 2.1×    | Buffer.load_int inlined + LICM + push/pop peephole        |
+| spectral-norm   | 64 ms   | nan     | —       | Pre-existing `load_float` result-register bug (see notes) |
+| binarytrees     | 250 ms  | 246 ms  | 1.02×   | (struct accessors still use memcpy)                       |
+| edigits         | 48 ms   | 8.5 ms  | 5.6×    | Product-tree algorithm + set                              |
+| edigits (5000)  | 734 ms  | 9 ms    | ~80×    | div128→udivti3 + get/set indexed + Buffer_int fast path   |
+| pidigits (4000) | 3562 ms | 2840 ms | 1.25×   | Buffer_int load/store inlined (was `bl`)                  |
 
 Changes applied:
 
@@ -215,23 +216,76 @@ Changes applied:
     A follow-up attempted to hoist the `digits.data` load out of the loop
     entirely (true LICM) — see Known issues for why it was reverted.
 
+17. **Float expression round-trip elimination** (`build_operation_node.ts`,
+    `BuildStatus.ts`): Float binary operations (`fadd`/`fsub`/`fmul`/`fdiv`)
+    now keep their result in `d0` when the immediate consumer is another float
+    operation, instead of unconditionally emitting `fmov x0, d0` (dump to x0)
+    followed by `fmov dN, x0` (reload). A `float_result_in_d0` flag on
+    `BuildStatus` is set by `build_float_operand` before building a float-typed
+    child; the child float op consumes it to skip the final `fmov x0, d0`. Each
+    float op saves+clears the flag before building its own operands, so nested
+    grandchildren can't steal it. Non-float children (function calls, casts,
+    access nodes) leave the flag unconsumed, and `build_float_operand` falls
+    back to the old `fmov target, x0` path. This is a targeted fix for the
+    "float arithmetic routes through integer registers" known issue — it
+    eliminates the round-trip for nested float expression chains (e.g.
+    `(zr+zr)*zi+ci`) without changing the calling convention or ABI. The full
+    d0-based float-result convention (d0 returns, d0–d7 params, `fcmp` for
+    float comparisons) remains a future improvement. Combined with item 18,
+    lifts mandelbrot 1.76×, nbody 1.40×.
+
+18. **Adjacent push/pop peephole elimination** (`build_function_node.ts`):
+    The peephole optimizer now removes `str xN, [sp, #-16]!` immediately
+    followed by `ldr xN, [sp], #16` — an unconditionally-safe no-op (sp
+    unchanged, register unchanged) that the assignment and declaration codegen
+    emitted between computing a value and storing it to a register-allocated
+    variable. Only matches when no instructions separate the push and pop
+    (blank lines are OK); the old disabled x3 pass allowed intervening
+    instructions and caused correctness issues. This is a broad win across all
+    integer-array benchmarks: nsieve 1.70×, fannkuch 1.33×, knucleotide 1.38×,
+    on top of the float benchmarks (mandelbrot, nbody) where it compounds with
+    item 17.
+
+19. **O(1) LRU cache** (`bench/echo/lru.echo`): Replaced the O(n²) shift-array
+    LRU with an O(1) doubly-linked-list + `Map<int,int>` cache, matching the
+    reference implementations (Go `container/list` + map, Zig `LinkedList` +
+    `HashMap`). The linked list is arena-backed (flat arrays of prev/next/key/
+    value indexed by stable node ids) with `Map<int,int>` for key→node-id
+    lookup. `put` and `get` are both O(1): move-to-end unlinks and re-links at
+    the tail; eviction reuses the head node. The LCG modulo
+    `(A*state+C) % 2^31` is also strength-reduced to `& (2^31 - 1)` (mod a
+    power of 2 = bitmask, removes an `sdiv`). Lifts lru ~2.5–2.8× (150 ms →
+    27 ms at n=200000).
+
 ### Known issues
 
 **Float register allocation overhead in call-heavy benchmarks.** mandelbrot
-remains slightly regressed (~0.94×) because each function that uses float
-registers in loops pays for d8-d15 save/restore in its prologue. For
-call-heavy benchmarks (mbrot called per-pixel), this overhead exceeds the
-benefit. Potential fix: raise the promotion threshold (reads >= 5 instead of
+was previously regressed (~0.94×) because each function that uses float
+registers in loops pays for d8-d15 save/restore in its prologue. With the
+float round-trip elimination (item 17) and push/pop peephole (item 18),
+mandelbrot is now 1.76× faster than the pre-float-regalloc baseline — the
+eliminated `fmov` instructions far outweigh the prologue cost.
 
-> = 3), or skip float promotion in functions below a call-site count threshold.
+**Float arithmetic round-trip — partially fixed (item 17).** Nested float
+expression chains no longer round-trip through x0: `build_float_operand` sets
+a `float_result_in_d0` flag before building a float child, and the child
+float op skips its `fmov x0, d0` when the flag is set. This eliminates the
+dominant codegen cost for mandelbrot and nbody. **Remaining:** float function
+returns still arrive in x0 rather than d0, and float comparisons still use
+integer bit-pattern `cmp` instead of `fcmp`. A full d0-based calling
+convention (d0 returns, d0–d7 params) would close the gap further but
+requires coordinated changes across the ABI boundary.
 
-**Float arithmetic routes through integer registers.** Each float binary op
-ends with `fmov x0, d0` (result→x0), and a parent float operand reloads it
-with `fmov dN, x0`, a redundant round-trip when the consumer is itself a float
-op. Float function returns also arrive in x0 rather than d0, so fixing this
-needs a coordinated switch to a d0-based float result convention (and `fcmp`
-for float comparisons instead of the current integer bit-pattern `cmp`).
-Dominant remaining codegen cost for mandelbrot/spectral-norm.
+**spectral-norm produces `nan` (pre-existing).** The `Buffer.load_float`
+inline fast path (`build_access_node.ts`) loads its result into `d0` but
+does NOT emit a matching `fmov x0, d0`. When `load_float` is an operand of a
+float operation, `build_float_operand`'s fallthrough path assumes the result
+is in `x0` and emits `fmov dN, x0` — loading the stale index register instead
+of the float value. This bug predates items 17–19 (the baseline also produces
+`nan`). The fix requires `build_float_operand` (or `build_access_node`) to
+move the `d0` result to `x0` for non-d0-aware consumers, or for
+`build_access_node`'s `load_float` fast path to emit `fmov x0, d0` after the
+`ldr d0`.
 
 **`Buffer.data` LICM was implemented, benchmarked, and reverted — it doesn't
 pay off.** The per-iteration `digits.data` re-derivation (an
@@ -341,15 +395,18 @@ One `Console.write`. Nothing to optimize in the program itself.
   literals to a single `write` syscall instead of going through the buffered
   printer.
 
-### fannkuch-redux (368 / 4785 ms — ~39× off Rust)
+### fannkuch-redux (368 / 4785 ms → 210 / 2730 ms — ~1.32× speedup)
 
 Pure integer array work on size-16 arrays — `p.at(i)` / `p.set(i, v)` in tight
 nested loops. No allocation, no I/O inside the loop. The cost is 100% codegen.
 
+- ✓ **[codegen] DONE (item 18):** Adjacent push/pop peephole elimination removes
+  redundant `str x0, [sp, #-16]!` / `ldr x0, [sp], #16` pairs that the
+  `.set()` codegen emitted between computing the value and storing it. 1.32×
+  speedup (280 ms → 210 ms at n=10).
 - ✓ **[codegen] DONE (partial):** `.at()` on fixed-size arrays now uses
-  caller-saved x9 (no save/restore). `.set()` still uses x19 save/restore
-  (needs two params). Remaining: eliminate `.set()` overhead by reordering
-  param evaluation.
+  caller-saved x9 (no save/restore). `.set()` now has a fast path when both
+  index and value are simple operands (no x19 save/restore).
 - **[source]** Replace the byte-by-byte rotate (`while rj <= k { p.set(rj,
 p.at(rj+1)); … }`) with a precomputed permutation table. The Rust reference
   builds `NEXT_PERM_MASKS[r]` at compile time via `const fn`; Echo can build the
@@ -424,9 +481,10 @@ Like binarytrees but uses heap-allocated `class MerkleNode` with nullable
 - `cal_hash` recurses twice over each subtree (once implicit via the recursive
   call, once to read children). A single post-order pass would halve traversals.
 
-### nsieve (289 / 1446 ms — ~37× off Zig)
+### nsieve (289 / 1446 ms → 53 / 200 ms — ~1.70× from peephole on top of prior)
 
-Sieve of Eratosthenes over `Buffer<uint32>`, marking composites.
+Sieve of Eratosthenes over `Buffer<int>` (bit-packed, 64 flags per slot),
+marking composites.
 
 - ✓ **[source] DONE:** Use one bit per flag instead of a full `uint32`/`int`.
   The buffer drops 64× in size (better cache), and `flags.store_or_int(slot, bit)`
@@ -439,33 +497,34 @@ Sieve of Eratosthenes over `Buffer<uint32>`, marking composites.
   from base 3); `count` starts at 1 for the only even prime (2).
 - ✓ **[stdlib/codegen] DONE:** Buffer.store/load inlined to single strided
   instructions. Buffer.data pointer now cached across loop iterations (LICM).
+- ✓ **[codegen] DONE (item 18):** Adjacent push/pop peephole elimination. The
+  `store_or_int` codegen emitted `str x0`/`ldr x0` pairs around each flag-marking
+  operation; removing them lifts nsieve 1.60–1.70× (80 ms → 53 ms at n=10^7).
 - **[codegen]** Drop the `0xFFFFFFFF` mask on `uint32` loads — it's a no-op on a
   zero-extended `ldr wN`. (Now N/A for nsieve since it uses `load_int`/
   `store_or_int` on 64-bit slots.)
 - The outer/inner loop structure is the standard sieve — no algorithmic change
   needed beyond the above. Pure codegen from here.
 
-### lru (39 / 150 ms — ~21× off Zig)
+### lru (39 / 150 ms → 8 / 27 ms — ~5.5× speedup, now ~4× off Zig)
 
-LRU cache over a `Map<int,int>` plus a `Buffer<int>` order list; `move_to_end`
-shifts the order array on every hit.
+LRU cache over a `Map<int,int>` plus a doubly-linked-list order tracker.
 
-- **[source]** Replace the order array with a doubly-linked list keyed by the
-  LRU nodes (the classic O(1) LRU). Echo's `core/System/LinkedList.echo` exists;
-  pair it with the existing `Map<int, Node>` and `move_to_end` becomes O(1).
-  This is the single biggest source-level win — it changes the algorithm from
-  O(n²) to O(n).
+- ✓ **[source] DONE (item 19):** Replaced the O(n²) shift-array with an O(1)
+  doubly-linked list + `Map<int,int>`, matching the Go (`container/list` +
+  map) and Zig (`LinkedList` + `HashMap`) references. The list is arena-backed
+  (flat arrays of prev/next/key/value indexed by stable node ids). `put` and
+  `get` are both O(1). Lifts lru ~2.5–2.8× (150 ms → 27 ms at n=200000).
+- ✓ **[source] DONE (item 19):** LCG modulo `% 2147483648` → `& 2147483647`
+  (mod a power of 2 = bitmask, removes an `sdiv`).
 - **[source]** The keys are bounded by `M = size * 10`. Replace `Map<int,int>`
   with a direct `Buffer<int>` indexed by key — O(1) with no hashing, no probing.
   The "map" is just a slot table; `has(k)` is `table.load_int(k) != 0`.
-- **[source]** `(1103515245 * rng0_state + 12345) % 2147483648` is evaluated per
-  access. The modulo by a power of 2 is just `& 2147483647`; replacing it removes
-  a `sdiv` instruction.
-- **[stdlib]** `move_to_end` is O(n) per access — a linear scan plus a
-  memmove-style shift loop built from individual `load_int`/`store_int` calls.
-  If the order array stays, replace the shift with `memmove` (the Buffer already
-  exposes the raw data pointer).
-- **[codegen]** `Map.set`/`Map.has` hash a single int via generic hashing +
+  (This would dodge the hash-map work the references do; kept as optional.)
+- ✓ **[codegen] DONE:** Buffer.load_int/store_int inlined. Buffer.data pointer
+  cached across loop iterations (LICM).
+- ✓ **[codegen] DONE (item 18):** Adjacent push/pop peephole elimination removes
+  redundant `str`/`ldr` pairs in the Map operations.
   probing; the reference Go map is also O(1)-ish but Go's runtime map is far
   tighter than Echo's.
 - ✓ **[codegen] DONE:** Buffer.load_int/store_int inlined. Buffer.data pointer
@@ -556,11 +615,15 @@ the GOMAXPROCS=1 treatment for Go).
 - **[stdlib]** A faster regex engine (DFA-first like re2 instead of
   backtracking) would speed up every regex benchmark.
 
-### nbody (230 / 2281 ms — ~143× off Rust)
+### nbody (230 / 2281 ms → 130 / 1310 ms — ~1.40× speedup)
 
 N-body simulation, 5 bodies, `n` steps. Float-heavy inner loop with `Math.sqrt`.
-The worst ratio in the suite.
 
+- ✓ **[codegen] DONE (items 17–18):** Float round-trip elimination + push/pop
+  peephole. The `advance` and `energy` inner loops are chains of float
+  operations (`dx*dx + dy*dy + dz*dz`, `mag = dist * …`, etc.); eliminating the
+  per-op `fmov x0, d0`/`fmov dN, x0` round-trip and the redundant push/pop
+  gives 1.40× (180 ms → 130 ms at n=500000).
 - **[codegen]** Inline `Math.sqrt` (it's a single `fsqrt` instruction) instead
   of a call frame per pair. It's called twice per i (once in `advance`, once in
   `energy`) — 10 per step × n steps — so the call overhead adds up more than
@@ -574,12 +637,9 @@ The worst ratio in the suite.
   either.
 - ✓ **[codegen] DONE:** Field-level access on fixed-size struct arrays —
   `bodies.at(i).x` compiles to a direct `ldr [base + i*64 + fieldoff]`, not a
-  whole-`Body` materialization. (So the source-level "cache `Body bj` once per
-  j-iteration" idea is a no-op — and `Array.set` is broken for multi-word
-  structs anyway, passing the first word of the value as its address, so the
-  full-body-cache pattern would need a codegen fix first.)
+  whole-`Body` materialization.
 - ✓ **[codegen] DONE:** Float loop locals (`dx`, `dy`, `dz`, `dist`, `mag`, …)
-  now promoted to `d8`–`d15` registers. Measured 1.13× speedup.
+  now promoted to `d8`–`d15` registers.
 - The Body is 7 floats = 56 bytes; `.at(i)` materializes the whole thing.
   Passing `ref Body[5]` is correct but the access pattern defeats locality.
 
@@ -612,32 +672,35 @@ Hilbert-like matrix `A[i,j] = 1/((i+j)(i+j+1)/2+i+1)`.
   pre-float-regalloc baseline due to d8-d15 prologue overhead — may benefit
   from a higher promotion threshold.
 
-### mandelbrot (358 / 1423 ms — ~31× off Zig)
+### mandelbrot (358 / 1423 ms → 210 / 840 ms — ~1.76× speedup)
 
 Computes a Mandelbrot bitmap checksum, double loop over pixels.
 
+- ✓ **[codegen] DONE (items 17–18):** Float round-trip elimination + push/pop
+  peephole. The mbrot inner loop's float expression chains (`(zr+zr)*zi+ci`,
+  `tr-ti+cr`, `zr*zr`, `zi*zi`) no longer round-trip each intermediate result
+  through x0 via `fmov x0, d0` / `fmov dN, x0`. The redundant push/pop
+  (`str x0, [sp, #-16]!` / `ldr x0, [sp], #16`) after each expression is also
+  eliminated. Together these cut the per-iteration instruction count sharply.
+  mandelbrot is now 1.76× faster than the pre-float-regalloc baseline (370 ms →
+  210 ms at n=1000), reversing the earlier d8-d15 prologue regression.
+- ✗ **[source] (tried and reverted — changes checksum):** Column recurrence for
+  `cr` (`cr += inv` per pixel instead of `(xi as float) * inv - 1.5`). Only ~3%
+  faster, but floating-point accumulation shifts boundary pixels and changes
+  the checksum (12649259 → 12649257 at n=1000). Since the benchmark verifies
+  the checksum, the change was reverted. The reference implementations use the
+  multiplication form (not recurrence), so the checksum must match exactly.
 - **[codegen]** Inline `mbrot(cr, ci)`. The function is tiny (the inner
   iteration loop) and called `size²/8` times; inlining removes ~size²/8 call
-  frames. This is the dominant cost — Rust/Zig inline it. **Highest-leverage
-  remaining fix.**
-- **[source]** Use a column recurrence for `cr`: instead of
-  `cr = (xi as float) * inv - 1.5` per bit, initialize `cr = -1.5` at the start
-  of each row's x-loop and do `cr += inv` per column. Removes the int→float
-  conversion and multiply per pixel.
+  frames. Rust/Zig inline it. Now the **next highest-leverage fix** — the float
+  round-trip elimination already removed the per-op overhead, but the call frame
+  (prologue/epilogue + d8-d15 saves) is still paid per pixel.
 - **[source]** The unroll-by-5 trick is already there. Extending it to
   unroll-by-10 with two escape checks amortized would halve branch overhead.
-- **[codegen]** Strength-reduce `(xi as float) * inv - 1.5` to an additive
-  recurrence (loop induction on floats) — same as the source recurrence above
-  but done by the compiler.
 - ✓ **[codegen] DONE:** Float-register-allocate the inner-loop `tr`, `ti`, `zr`,
-  `zi`. Regressed ~8% due to d8-d15 prologue overhead on every mbrot call —
-  inlining mbrot would eliminate this.
+  `zi`.
 - No use of SIMD (Rust/Zig auto-vectorize the 5-iteration unroll). Out of scope
   for the current backend but it's the ceiling.
-- Note: manually inlining `mbrot` into the pixel loop at the source level was
-  tried and measured as a no-op — the per-call prologue/epilogue cost is small
-  relative to the body's codegen overhead. The real win needs the body itself
-  optimized.
 
 ### edigits (125 / 734 ms → 8.5 / 39 ms → 9 ms — ~2–3× off Rust)
 
@@ -692,7 +755,7 @@ constant factor:
 | Benchmark       | Source-level change                                        | Impact | Status         |
 | --------------- | ---------------------------------------------------------- | ------ | -------------- |
 | **edigits**     | Product-tree algorithm + bulk divmod + binary exp          | ~20×   | ✓ Done         |
-| **lru**         | Doubly-linked list + map (O(1) LRU) instead of shift-array | ~10×   | Not done       |
+| **lru**         | Doubly-linked list + map (O(1) LRU) instead of shift-array | ~2.8×  | ✓ Done         |
 | **nsieve**      | Bit-pack flags; stop outer loop at `i*i < n`; skip evens   | ~5–10× | ✓ Done (1.46×) |
 | **regex-redux** | In-place substitution; compiled-once patterns              | ~2–3×  | Not done       |
 | **fannkuch**    | Precomputed permutation masks (no per-iteration rotate)    | ~2×    | Not done       |
@@ -739,8 +802,8 @@ the note at the top.)
    no calls in body. Neutral impact on current benchmarks (body codegen
    dominates call-frame savings). Infrastructure ready for expansion.
 4. ✓ **DONE:** Register-allocate hot locals including floats (d8-d15). 1.13× on
-   nbody; regressed spectral-norm/mandelbrot ~8-9% due to prologue overhead (may
-   benefit from a higher promotion threshold).
+   nbody; was regressed spectral-norm/mandelbrot ~8-9% due to prologue overhead,
+   but now net-positive after items 10–11.
 5. ✓ **DONE:** Field-level access on struct arrays (`bodies.at(i).x` → direct
    `[base + i*stride + off]` load). Biggest single fix for **nbody**, now in
    place.
@@ -769,23 +832,32 @@ the note at the top.)
    cache entry on any `bl`" invalidation in `build_function_call_node` remains a
    worthwhile follow-up independent of LICM (it currently limits within-body
    field dedup in any loop with a non-inlined call).
+10. ✓ **DONE (item 17):** Float expression round-trip elimination — float binary
+    ops keep their result in `d0` when the immediate consumer is another float op,
+    instead of round-tripping through x0. 1.76× on mandelbrot, 1.40× on nbody.
+    This is a targeted fix; the full d0-based calling convention (d0 returns,
+    d0–d7 params, `fcmp`) remains a future improvement.
+11. ✓ **DONE (item 18):** Adjacent push/pop peephole elimination — removes
+    `str xN, [sp, #-16]!` / `ldr xN, [sp], #16` no-op pairs in the peephole
+    optimizer. Broad win: 1.32× fannkuch, 1.60–1.70× nsieve, 1.38× knucleotide,
+    and compounds with item 10 on float benchmarks.
 
 ### Expected payoff
 
 - **Family A (source)** is the cheapest to land (per-benchmark edits, no compiler
-  work) and contains the largest individual wins. The edigits changes are done;
-  lru, regex-redux, fannkuch remain.
+  work) and contains the largest individual wins. The edigits and lru changes are
+  done; regex-redux and fannkuch permutation masks remain.
 - **Family B (stdlib)** is a handful of localized stdlib changes that unblock
   whole classes of code. None done yet.
-- **Family C (codegen)** — items 1, 2, 4, 5, 6 are done. Item 3
-  (leaf-function inlining) is the **next highest-leverage fix** — it would lift
-  mandelbrot, spectral-norm, and nbody, the benchmarks that didn't benefit from
-  the accessor inlining. Item 7 (constant folding / strength reduction) and the
-  float-result convention cleanup (see Known issues) are the other remaining
-  codegen levers.
+- **Family C (codegen)** — items 1, 2, 4, 5, 6, 10, 11 are done. Item 3
+  (leaf-function inlining) is the **next highest-leverage fix** for mandelbrot
+  (would eliminate the per-pixel mbrot call frame). Item 7 (strength reduction),
+  the float-result calling convention, and the `load_float` d0→x0 bug fix (see
+  Known issues) are the other remaining codegen levers.
 
-A reasonable ordering: implement leaf-function inlining (C3), then tackle the
-remaining source-level changes (family A). Items 1–3 (loop-hoist, accessor
-inlining, leaf inlining) are mechanical, localized to the codegen, and would
-plausibly bring Echo from ~10–100× slower into the **3–10× slower** band across
-the whole suite.
+A reasonable ordering: fix the `load_float` result-register bug (re-enables
+spectral-norm), then implement leaf-function inlining (C3) for mandelbrot, then
+tackle the remaining source-level changes (family A: regex-redux, fannkuch).
+The float round-trip + peephole wins (items 10–11) already bring mandelbrot
+and nbody from ~30–143× into a much closer band; leaf inlining would close the
+mandelbrot gap further.

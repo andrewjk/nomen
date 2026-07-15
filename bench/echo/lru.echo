@@ -1,20 +1,91 @@
 import System
 
-func move_to_end = (ref Buffer order, ref int order_len, int key) {
-	var int i = 0
-	while i < order_len {
-		if order.load_int(i) == key {
-			if i < order_len - 1 {
-				var int j = i
-				while j < order_len - 1 {
-					order.store_int(j, order.load_int(j + 1))
-					j = j + 1
-				}
-			}
-			order.store_int(order_len - 1, key)
-			return
+// O(1) LRU cache: a doubly-linked list (arena-backed flat arrays indexed by
+// stable node ids) paired with a Map<int,int> (key -> node id). Mirrors the
+// reference implementations (Go container/list + map, Zig LinkedList +
+// HashMap): move_to_end and eviction are O(1) instead of the O(n) shift the
+// order-array version paid on every access.
+
+struct LRU {
+	var int size = 0
+	var Map<int, int> keys = Map<int, int>()
+	var Buffer<int> nkeys = Buffer<int>()
+	var Buffer<int> nvals = Buffer<int>()
+	var Buffer<int> prevs = Buffer<int>()
+	var Buffer<int> nexts = Buffer<int>()
+	var int head = -1
+	var int tail = -1
+	var int count = 0
+
+	func setup = (ref self, int sz) {
+		self.size = sz
+		self.nkeys.alloc_int(sz)
+		self.nvals.alloc_int(sz)
+		self.prevs.alloc_int(sz)
+		self.nexts.alloc_int(sz)
+	}
+
+	func unlink = (ref self, int id) {
+		var int p = self.prevs.load_int(id)
+		var int n = self.nexts.load_int(id)
+		if p >= 0 {
+			self.nexts.store_int(p, n)
+		} else {
+			self.head = n
 		}
-		i = i + 1
+		if n >= 0 {
+			self.prevs.store_int(n, p)
+		} else {
+			self.tail = p
+		}
+	}
+
+	func link_tail = (ref self, int id) {
+		self.prevs.store_int(id, self.tail)
+		self.nexts.store_int(id, -1)
+		if self.tail >= 0 {
+			self.nexts.store_int(self.tail, id)
+		} else {
+			self.head = id
+		}
+		self.tail = id
+	}
+
+	func put = (ref self, int key, int value) {
+		if self.keys.has(key) {
+			var int id = self.keys.get(key)
+			self.nvals.store_int(id, value)
+			self.unlink(id)
+			self.link_tail(id)
+		} else {
+			if self.count >= self.size {
+				var int id = self.head
+				var int old_key = self.nkeys.load_int(id)
+				self.keys.remove(old_key)
+				self.unlink(id)
+				self.nkeys.store_int(id, key)
+				self.nvals.store_int(id, value)
+				self.link_tail(id)
+				self.keys.set(key, id)
+			} else {
+				var int id = self.count
+				self.count = self.count + 1
+				self.nkeys.store_int(id, key)
+				self.nvals.store_int(id, value)
+				self.link_tail(id)
+				self.keys.set(key, id)
+			}
+		}
+	}
+
+	func get = (ref self, int key, out int) {
+		if self.keys.has(key) {
+			var int id = self.keys.get(key)
+			self.unlink(id)
+			self.link_tail(id)
+			return self.nvals.load_int(id)
+		}
+		return -1
 	}
 }
 
@@ -32,48 +103,24 @@ pub func main = (Init init) {
 	var int rng0_state = 0
 	var int rng1_state = 1
 
-	var Map<int, int> lru = Map<int, int>()
-	var Buffer<int> order = Buffer<int>()
-	order.alloc_int(size)
-	var int order_len = 0
+	var LRU lru = LRU()
+	lru.setup(size)
 
 	var int hit = 0
 	var int missed = 0
 
 	var int i = 0
 	while i < n {
-		rng0_state = (1103515245 * rng0_state + 12345) % 2147483648
+		rng0_state = (1103515245 * rng0_state + 12345) & 2147483647
 		var int n0 = rng0_state % M
 
-		switch {
-			case lru.has(n0) {
-				lru.set(n0, n0)
-			move_to_end(ref order, ref order_len, n0)
-		}
-		case order_len >= size {
-				var int oldest = order.load_int(0)
-				lru.remove(oldest)
-				var int j = 0
-				while j < order_len - 1 {
-					order.store_int(j, order.load_int(j + 1))
-					j = j + 1
-				}
-				order.store_int(order_len - 1, n0)
-				lru.set(n0, n0)
-			}
-			else {
-				order.store_int(order_len, n0)
-				order_len = order_len + 1
-				lru.set(n0, n0)
-			}
-		}
+		lru.put(n0, n0)
 
-		rng1_state = (1103515245 * rng1_state + 12345) % 2147483648
+		rng1_state = (1103515245 * rng1_state + 12345) & 2147483647
 		var int n1 = rng1_state % M
 
-		if lru.has(n1) {
+		if lru.get(n1) >= 0 {
 			hit = hit + 1
-			move_to_end(ref order, ref order_len, n1)
 		} else {
 			missed = missed + 1
 		}

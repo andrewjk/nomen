@@ -73,7 +73,35 @@ function peephole_optimize(code: string): string {
 		lines.push(...out);
 	}
 
-	// Pass 2: eliminate str x3, [sp, #-16]! ... ldr x3, [sp], #16 when safe
+	// Pass 2: eliminate immediately-adjacent str xN, [sp, #-16]! / ldr xN, [sp], #16
+	// A push immediately followed by a pop of the same register is unconditionally a
+	// no-op (sp unchanged, register unchanged). Only matches when no instructions
+	// separate them (blank lines are OK). This removes the redundant spill/reload
+	// that the assignment and declaration codegen inserts between computing a
+	// value and storing it to a register-allocated variable.
+	{
+		const out: string[] = [];
+		for (let i = 0; i < lines.length; i++) {
+			const push_match = lines[i].match(/^\s*str (x\d+|d\d+), \[sp, #-16\]!\s*$/);
+			if (push_match) {
+				const reg = push_match[1];
+				let j = i + 1;
+				while (j < lines.length && lines[j].trim() === "") j++;
+				if (j < lines.length) {
+					const esc_reg = reg.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+					const pop_re = new RegExp(`^\\s*ldr ${esc_reg}, \\[sp\\], #16\\s*$`);
+					if (pop_re.test(lines[j])) {
+						i = j;
+						continue;
+					}
+				}
+			}
+			out.push(lines[i]);
+		}
+		lines.length = 0;
+		lines.push(...out);
+	}
+
 	// Disabled - causes incorrect code generation for some patterns
 	// {
 	// 	const out: string[] = [];
