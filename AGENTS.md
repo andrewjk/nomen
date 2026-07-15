@@ -163,6 +163,23 @@ tests/
     parse.test.ts - Parsing tests
 ```
 
+### Inline code blocks (`#arch:` directives)
+
+Raw code blocks let a function bypass the Echo codegen and emit assembly or C
+directly. Use the directive that matches the backend:
+
+- `#arch: c` — C source, used by the C backend (`build_c`).
+- `#arch: aarch64` — raw AArch64 assembly, emitted inline by the aarch64
+  backend. This is the mechanism to use for performance-critical primitives
+  (e.g. `umulh`, `get`/`set` limb accessors). The build links with `clang`, so
+  compiler-rt builtins are available — a `bl ___udivti3` (or similar) call
+  resolves at link time.
+- `#arch: aarch64_use_c` — C source compiled via the companion file. **This is
+  reserved for interfacing with UI/AppKit/UIKit code only** (see
+  `core/System/Controls/`). Do **not** use `aarch64_use_c` to optimize
+  non-UI hot paths — use `#arch: aarch64` raw asm (or a `bl` to a builtin)
+  instead.
+
 ### When Making Changes
 
 1. Always run `npm run check` after changes to verify type correctness
