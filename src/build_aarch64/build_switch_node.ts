@@ -12,6 +12,7 @@ export function reset_label_counter() {
 export default function build_switch_node(node: SwitchNode, status: BuildStatus) {
 	const label = label_counter++;
 	const old_scoped_declarations = status.scoped_declarations;
+	const pre_cache = status.buffer_data_cache;
 
 	for (let i = 0; i < node.cases.length; i++) {
 		status.scoped_declarations = [];
@@ -25,6 +26,7 @@ export default function build_switch_node(node: SwitchNode, status: BuildStatus)
 			status.code += `beq end_switch_${label}\n`;
 		}
 
+		status.buffer_data_cache = new Map(pre_cache);
 		build_block_node(node.cases[i].branch, status);
 		status.code += `b end_switch_${label}\n`;
 
@@ -33,8 +35,11 @@ export default function build_switch_node(node: SwitchNode, status: BuildStatus)
 
 	if (node.else_branch) {
 		status.scoped_declarations = [];
+		status.buffer_data_cache = new Map(pre_cache);
 		build_block_node(node.else_branch, status);
 	}
+
+	status.buffer_data_cache = pre_cache;
 
 	status.code += `end_switch_${label}:\n`;
 

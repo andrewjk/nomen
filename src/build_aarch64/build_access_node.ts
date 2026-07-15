@@ -162,6 +162,137 @@ function get_param_reg(name: string, status: BuildStatus): string | undefined {
 	return status.function_param_regs?.get(name);
 }
 
+// Callee-saved register pool used to cache loop-invariant Buffer.data
+// pointers across loop iterations.
+const BUFFER_DATA_CACHE_REGS = ["x23", "x24", "x25", "x26", "x27", "x28"];
+
+// Compute a syntactic cache key for a Buffer access target so that repeated
+// accesses to the same Buffer (local variable `b` or struct field `o.f`)
+// reuse one cached data pointer. Returns null for targets we can't key
+// (nested accesses, computed bases, …) — those are never cached/hoisted.
+export function buffer_cache_key(target: BaseNode): string | null {
+	if (target.node_type === "value") {
+		return (target as ValueNode).value;
+	}
+	if (target.node_type === "access" && (target as AccessNode).access.node_type === "access_field") {
+		const inner = target as AccessNode;
+		const inner_field = inner.access as AccessFieldNode;
+		if (inner.target.node_type === "value") {
+			return `${(inner.target as ValueNode).value}.${inner_field.name}`;
+		}
+	}
+	return null;
+}
+
+// Emit the address of a Buffer VALUE (the Buffer struct itself, not its
+// .data pointer) into x9. Handles local variables, params, `self`, and
+// `obj.field` targets. This is the former `emit_buf_addr_to_x9` closure,
+// lifted to module scope so the loop-invariant hoist (loop_buffer_licm) can
+// call it from the loop preheader.
+function emit_buffer_struct_addr(target: BaseNode, status: BuildStatus) {
+	if (target.node_type === "value") {
+		const name = (target as ValueNode).value;
+		const paramReg = get_param_reg(name, status);
+		if (paramReg) {
+			status.code += `mov x9, ${paramReg}\n`;
+		} else if (is_local_ref_var(name, status)) {
+			emit_deref_var_address(status, "x9", name);
+		} else {
+			emit_var_address(status, "x9", name);
+		}
+	} else if (
+		target.node_type === "access" &&
+		(target as AccessNode).access.node_type === "access_field"
+	) {
+		const inner = target as AccessNode;
+		const inner_field = inner.access as AccessFieldNode;
+		// Resolve the base type, handling `self` and locals — type_from_value_node
+		// returns undefined for `self` (not a declared variable), which would make
+		// get_field_offset look up an empty struct name and fall back to the
+		// default VT_SIZE (8) for every field.
+		let inner_base_type: Type | undefined = type_from_value_node(inner.target);
+		if (!inner_base_type?.name && inner.target.node_type === "value") {
+			const bname = (inner.target as ValueNode).value;
+			if (bname === "self" && status.current_struct) {
+				inner_base_type = new Type(status.current_struct.name);
+			} else if (status.variable_types?.has(bname)) {
+				inner_base_type = status.variable_types.get(bname);
+			} else {
+				const decl = status.scoped_declarations.findLast((d) => d.name === bname);
+				if (decl?.type?.name) inner_base_type = decl.type;
+			}
+		}
+		const foff = get_field_offset(inner_base_type?.name || "", inner_field.name, status);
+		if (inner.target.node_type === "value") {
+			const bname = (inner.target as ValueNode).value;
+			const bpReg = get_param_reg(bname, status);
+			if (bpReg) {
+				status.code += `mov x9, ${bpReg}\n`;
+			} else if (is_local_ref_var(bname, status)) {
+				emit_deref_var_address(status, "x9", bname);
+			} else {
+				emit_var_address(status, "x9", bname);
+			}
+		} else {
+			build_node(inner.target, status);
+			if (!status.code.endsWith("\n")) status.code += "\n";
+			status.code += `mov x9, x0\n`;
+		}
+		if (foff > 0) {
+			status.code += `add x9, x9, #${foff}\n`;
+		}
+	} else {
+		build_node(target, status);
+		if (!status.code.endsWith("\n")) status.code += "\n";
+		status.code += `mov x9, x0\n`;
+	}
+}
+
+// Allocate a callee-saved register to cache a Buffer data pointer, for the
+// inlined Buffer load/store fast path's within-body dedup. Draws from the
+// x23-x28 pool, excluding registers bound to a promoted variable
+// (register_allocations) or already holding a cached pointer
+// (buffer_data_cache). On exhaustion, evicts the first pooled register's
+// owner and reuses it (the evicted key reloads on its next access).
+export function alloc_buffer_cache_reg(status: BuildStatus): string | null {
+	const used = new Set(status.register_allocations?.values() ?? []);
+	const cached_regs = new Set(status.buffer_data_cache?.values() ?? []);
+	for (const r of BUFFER_DATA_CACHE_REGS) {
+		if (used.has(r) || cached_regs.has(r)) continue;
+		if (status.buffer_data_cache) {
+			for (const [k, v] of status.buffer_data_cache) {
+				if (v === r) status.buffer_data_cache.delete(k);
+			}
+		}
+		return r;
+	}
+	return null;
+}
+
+// Return the register holding a Buffer's data pointer for `target`, emitting
+// a load (and caching it) on a miss. Used by the inlined Buffer load/store
+// fast path. On a cache hit, emits nothing and returns the cached register.
+function get_buffer_data_ptr(target: BaseNode, status: BuildStatus): string {
+	const key = buffer_cache_key(target);
+	if (key && status.buffer_data_cache?.has(key)) {
+		return status.buffer_data_cache.get(key)!;
+	}
+	emit_buffer_struct_addr(target, status);
+	status.code += `ldr x9, [x9, #8]\n`;
+	if (key && status.function_return_label) {
+		const cache_reg = alloc_buffer_cache_reg(status);
+		if (cache_reg) {
+			status.code += `mov ${cache_reg}, x9\n`;
+			if (!status.buffer_data_cache) status.buffer_data_cache = new Map();
+			status.buffer_data_cache.set(key, cache_reg);
+			if (!status.callee_saved_regs_used) status.callee_saved_regs_used = new Set();
+			status.callee_saved_regs_used.add(cache_reg);
+			return cache_reg;
+		}
+	}
+	return "x9";
+}
+
 function build_access_field(node: AccessNode, status: BuildStatus) {
 	let target_type = type_from_value_node(node.target);
 	if (!target_type?.name && node.target.node_type === "value") {
@@ -954,7 +1085,13 @@ function build_access_method(
 	// overhead (self save/restore + x19 save/restore = ~5 extra instructions
 	// per access). This is the single biggest codegen win for array-heavy
 	// benchmarks (nsieve, knucleotide, spectral-norm, lru).
-	if (target_type.name === "Buffer") {
+	//
+	// Match both the generic name ("Buffer") and monomorphized names
+	// ("Buffer_int", "Buffer_uint32", ...): a `Buffer<T>` field's resolved
+	// type is the specialized struct, so checking only "Buffer" would miss
+	// every `Buffer<int>` access and emit a `bl Buffer_int_load_int` call
+	// instead of an inlined strided load (a major slowdown for BigInt).
+	if (target_type.name === "Buffer" || target_type.name.startsWith("Buffer_")) {
 		const method = access_func.name;
 
 		// Invalidate data-pointer cache when a resize/alloc method is called
@@ -1000,112 +1137,6 @@ function build_access_method(
 			const shift = elem_bytes === 8 ? 3 : 2;
 			const is_float = method === "load_float" || method === "store_float";
 
-			// Compute a cache key for the Buffer target so we can reuse
-			// a loop-invariant data pointer across iterations.
-			function buf_cache_key(): string | null {
-				const t = node.target;
-				if (t.node_type === "value") {
-					return (t as ValueNode).value;
-				}
-				if (t.node_type === "access" && (t as AccessNode).access.node_type === "access_field") {
-					const inner = t as AccessNode;
-					const inner_field = inner.access as AccessFieldNode;
-					if (inner.target.node_type === "value") {
-						return `${(inner.target as ValueNode).value}.${inner_field.name}`;
-					}
-				}
-				return null;
-			}
-
-			// Allocate a callee-saved register to cache the data pointer. We skip
-			// any register already claimed by promoted loop variables or another
-			// Buffer cache (both tracked in callee_saved_regs_used), so a nested
-			// loop can never reuse an outer loop's cached data-ptr register.
-			const CALLEE = ["x23", "x24", "x25", "x26", "x27", "x28"];
-			function alloc_cache_reg(): string | null {
-				const used = new Set(status.register_allocations?.values() ?? []);
-				const cached_regs = new Set(status.buffer_data_cache?.values() ?? []);
-				const fn_used = status.callee_saved_regs_used ?? new Set<string>();
-				for (const r of CALLEE) {
-					if (!used.has(r) && !cached_regs.has(r) && !fn_used.has(r)) return r;
-				}
-				return null;
-			}
-
-			// Returns the register holding the Buffer.data pointer,
-			// emitting code to load it if not cached.
-			function get_data_ptr_reg(): string {
-				const key = buf_cache_key();
-				if (key && status.buffer_data_cache?.has(key)) {
-					return status.buffer_data_cache.get(key)!;
-				}
-				// Compute the data pointer into x9
-				emit_buf_addr_to_x9();
-				status.code += `ldr x9, [x9, #8]\n`;
-				// Cache the loop-invariant data pointer in a callee-saved register
-				// so later accesses to the same Buffer in this scope skip the
-				// address + load pair. Restricted to function bodies (where the
-				// callee-saved save/restore machinery in the prologue/epilogue is
-				// active) and to targets with a stable cache key.
-				if (key && status.function_return_label) {
-					const cache_reg = alloc_cache_reg();
-					if (cache_reg) {
-						status.code += `mov ${cache_reg}, x9\n`;
-						if (!status.buffer_data_cache) status.buffer_data_cache = new Map();
-						status.buffer_data_cache.set(key, cache_reg);
-						if (!status.callee_saved_regs_used) status.callee_saved_regs_used = new Set();
-						status.callee_saved_regs_used.add(cache_reg);
-						return cache_reg;
-					}
-				}
-				return "x9";
-			}
-
-			// Emit the Buffer struct address into x9.
-			function emit_buf_addr_to_x9() {
-				if (node.target.node_type === "value") {
-					const name = (node.target as ValueNode).value;
-					const paramReg = get_param_reg(name, status);
-					if (paramReg) {
-						status.code += `mov x9, ${paramReg}\n`;
-					} else if (is_local_ref_var(name, status)) {
-						emit_deref_var_address(status, "x9", name);
-					} else {
-						emit_var_address(status, "x9", name);
-					}
-				} else if (
-					node.target.node_type === "access" &&
-					(node.target as AccessNode).access.node_type === "access_field"
-				) {
-					const inner = node.target as AccessNode;
-					const inner_field = inner.access as AccessFieldNode;
-					const inner_base_type = type_from_value_node(inner.target);
-					const foff = get_field_offset(inner_base_type?.name || "", inner_field.name, status);
-					if (inner.target.node_type === "value") {
-						const bname = (inner.target as ValueNode).value;
-						const bpReg = get_param_reg(bname, status);
-						if (bpReg) {
-							status.code += `mov x9, ${bpReg}\n`;
-						} else if (is_local_ref_var(bname, status)) {
-							emit_deref_var_address(status, "x9", bname);
-						} else {
-							emit_var_address(status, "x9", bname);
-						}
-					} else {
-						build_node(inner.target, status);
-						if (!status.code.endsWith("\n")) status.code += "\n";
-						status.code += `mov x9, x0\n`;
-					}
-					if (foff > 0) {
-						status.code += `add x9, x9, #${foff}\n`;
-					}
-				} else {
-					build_node(node.target, status);
-					if (!status.code.endsWith("\n")) status.code += "\n";
-					status.code += `mov x9, x0\n`;
-				}
-			}
-
 			if (is_buf_load) {
 				// Evaluate index → x1
 				if (access_func.params.length > 0) {
@@ -1114,7 +1145,7 @@ function build_access_method(
 					status.code += `mov x1, x0\n`;
 				}
 				// Get data pointer (cached or freshly loaded)
-				const data_reg = get_data_ptr_reg();
+				const data_reg = get_buffer_data_ptr(node.target, status);
 				// Strided load
 				if (is_float) {
 					status.code += `ldr d0, [${data_reg}, x1, lsl #${shift}]\n`;
@@ -1133,7 +1164,7 @@ function build_access_method(
 				status.code += `mov x2, x0\n`;
 				status.code += `ldr x1, [sp], #16\n`;
 				// Get data pointer (cached or freshly loaded)
-				const data_reg = get_data_ptr_reg();
+				const data_reg = get_buffer_data_ptr(node.target, status);
 				// Strided store
 				if (method === "store_or_int") {
 					if (elem_bytes === 8) {

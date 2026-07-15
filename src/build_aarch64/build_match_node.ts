@@ -43,6 +43,11 @@ export default function build_match_node(node: MatchNode, status: BuildStatus) {
 		status.code += `mov x19, x0\n`;
 	}
 
+	// Snapshot the Buffer data-pointer cache before the match so each case
+	// starts from the dominating (pre-match) state and a cache entry loaded in
+	// one case is dropped on restore (sound: not valid in a sibling case).
+	const pre_cache = status.buffer_data_cache;
+
 	for (let i = 0; i < node.cases.length; i++) {
 		status.scoped_declarations = [];
 
@@ -63,9 +68,11 @@ export default function build_match_node(node: MatchNode, status: BuildStatus) {
 				status.function_param_regs = new Map(old_param_regs);
 				status.function_param_regs.set(param_name, "x20");
 			}
+			status.buffer_data_cache = new Map(pre_cache);
 			build_block_node(node.cases[i].branch, status);
 			status.function_param_regs = old_param_regs;
 		} else {
+			status.buffer_data_cache = new Map(pre_cache);
 			build_block_node(node.cases[i].branch, status);
 		}
 		status.code += `b end_match_${label}\n`;
@@ -75,8 +82,11 @@ export default function build_match_node(node: MatchNode, status: BuildStatus) {
 
 	if (node.else_branch) {
 		status.scoped_declarations = [];
+		status.buffer_data_cache = new Map(pre_cache);
 		build_block_node(node.else_branch, status);
 	}
+
+	status.buffer_data_cache = pre_cache;
 
 	status.code += `end_match_${label}:\n`;
 	if (enum_with_data) {

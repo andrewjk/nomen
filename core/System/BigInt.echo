@@ -27,9 +27,7 @@ pub struct BigInt {
         ```
         #arch: aarch64
         ldr x0, [x0, #32]
-        lsl x1, x1, #3
-        add x0, x0, x1
-        ldr x0, [x0]
+        ldr x0, [x0, x1, lsl #3]
         ```
     }
 
@@ -41,9 +39,7 @@ pub struct BigInt {
         ```
         #arch: aarch64
         ldr x0, [x19, #32]
-        lsl x1, x1, #3
-        add x0, x0, x1
-        str x2, [x0]
+        str x2, [x0, x1, lsl #3]
         ```
     }
 
@@ -142,23 +138,41 @@ pub struct BigInt {
         }
     }
 
-    func div128 = (self, uint64 hi, uint64 lo, uint64 d, out uint64) {
-        var uint64 remainder = hi
-        var uint64 quotient = 0
-        var uint64 bit_mask = 9223372036854775808
-        var int bit = 63
-        while bit >= 0 {
-            var uint64 msb = remainder >> 63
-            var uint64 lo_bit = (lo / bit_mask) & 1
-            remainder = (remainder << 1) | lo_bit
-            if msb == 1 || remainder >= d {
-                remainder = remainder - d
-                quotient = quotient | bit_mask
-            }
-            bit_mask = bit_mask >> 1
-            bit = bit - 1
-        }
-        return quotient
+    // (hi:lo) / d with the quotient truncated to 64 bits.
+    // Callers guarantee hi <= d (the running remainder is always < divisor,
+    // and Knuth-D q_hat estimation has u_hi <= v_top). When hi == d the true
+    // quotient is 2^64 + (lo/d), which saturates to UINT64_MAX (== B-1) — the
+    // value Knuth-D expects so its correction step brings q_hat back down.
+    // When hi < d the quotient fits in 64 bits and is exact.
+    //
+    // AArch64 has no 128/64 divide instruction, so this calls compiler-rt's
+    // ___udivti3 (linked via clang) instead of a 64-iteration bit loop — ~30x
+    // faster. The unsigned compare (b.hs) is required: hi/d can have their
+    // sign bit set.
+    inline func div128 = (self, uint64 hi, uint64 lo, uint64 d, out uint64) {
+        ```
+        #arch: c
+        if (hi >= d) return 18446744073709551615ULL;
+        unsigned __int128 n = ((unsigned __int128)hi << 64) | lo;
+        return (unsigned long long)(n / d);
+        ```
+        ```
+        #arch: aarch64
+        // x0=self(unused) x1=hi x2=lo x3=d  ->  x0 = quotient
+        // ___udivti3(a=x0:x1, b=x2:x3) -> x0:x1 ; we need a=(hi:lo), b=(d:0)
+        cmp x1, x3
+        b.hs 1f
+        mov x0, x2
+        mov x2, x3
+        mov x3, #0
+        str x30, [sp, #-16]!
+        bl ___udivti3
+        ldr x30, [sp], #16
+        b 2f
+        1:
+        mov x0, #-1
+        2:
+        ```
     }
 
     inline func mul_wide_hi = (self, uint64 a, uint64 b, out uint64) {

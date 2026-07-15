@@ -295,19 +295,31 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 	// whole-buffer (or buffer-field) reassignment gives the name a new backing
 	// store, so a previously cached data pointer would be stale. The cache key
 	// mirrors buf_cache_key() in build_access_node (simple name or "obj.field").
+	//
+	// This also covers `mov self.fld swap X` swaps: the swapped-OUT field is the
+	// assignment's RHS (e.g. `self.keys` in `var old = mov self.keys swap ...`),
+	// and the swap stores the replacement into it — so that field's buffer (and
+	// its cached data pointer) is reassigned. Invalidating the RHS field key is
+	// what keeps field-buffer caching sound across Map.rehash and friends.
 	if (status.buffer_data_cache) {
-		let target_key: string | null = null;
-		if (node.left_value.node_type === "value") {
-			target_key = (node.left_value as ValueNode).value;
-		} else if (
-			node.left_value.node_type === "access" &&
-			(node.left_value as AccessNode).access.node_type === "access_field" &&
-			(node.left_value as AccessNode).target.node_type === "value"
-		) {
-			const inner = node.left_value as AccessNode;
-			target_key = `${(inner.target as ValueNode).value}.${(inner.access as AccessFieldNode).name}`;
+		const keys_to_invalidate: string[] = [];
+		for (const side of [node.left_value, node.right_value]) {
+			if (side.node_type === "value") {
+				keys_to_invalidate.push((side as ValueNode).value);
+			} else if (
+				side.node_type === "access" &&
+				(side as AccessNode).access.node_type === "access_field" &&
+				(side as AccessNode).target.node_type === "value"
+			) {
+				const inner = side as AccessNode;
+				keys_to_invalidate.push(
+					`${(inner.target as ValueNode).value}.${(inner.access as AccessFieldNode).name}`,
+				);
+			}
 		}
-		if (target_key) status.buffer_data_cache.delete(target_key);
+		for (const k of keys_to_invalidate) {
+			status.buffer_data_cache.delete(k);
+		}
 	}
 
 	// Assignment to a nullable struct slot (local var or struct field): copy

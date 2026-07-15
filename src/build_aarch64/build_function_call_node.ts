@@ -348,6 +348,20 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 
 		status.code += `bl ${func_name}\n`;
 
+		// A non-inlined call may (transitively, via a `ref`/`var`/`mov` receiver
+		// or argument) reallocate any Buffer reachable from its parameters,
+		// including a cached field buffer such as `obj.field`. The emitter can't
+		// see through the callee, so conservatively drop every field-buffer
+		// cache entry here (local-variable entries, which have no ".", are left
+		// alone — they are only reassigned by the explicit paths above). This
+		// keeps field-aware Buffer.data hoisting sound without sacrificing the
+		// local-buffer wins (nsieve, lru, …).
+		if (status.buffer_data_cache) {
+			for (const k of Array.from(status.buffer_data_cache.keys())) {
+				if (k.includes(".")) status.buffer_data_cache.delete(k);
+			}
+		}
+
 		// A `ref` class arg may have been reassigned by the callee, which wrote
 		// the new pointer into the caller's slot. The caller's anchor slot (used
 		// for cleanup at scope exit) still holds the old pointer — sync it to the
