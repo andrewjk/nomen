@@ -91,6 +91,7 @@ export default function parse_function(
 			if (accept("=>", status)) {
 				func.has_body = true;
 				func.has_return = true;
+				func.is_arrow_body = true;
 				const return_expr = parse_expression(status);
 				func.statements.push(new ReturnNode(return_expr.start, return_expr));
 			} else {

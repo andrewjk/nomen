@@ -348,6 +348,7 @@ export default function clone_node(node: BaseNode): BaseNode {
 				n.statements.map(clone_node),
 			);
 			c.has_return = n.has_return;
+			c.is_arrow_body = n.is_arrow_body;
 			c.return_type_start = n.return_type_start;
 			c.is_static = n.is_static;
 			c.scope = n.scope;

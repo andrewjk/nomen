@@ -44,6 +44,14 @@ Console.write("\\{double(6)}")
 		await build_and_check_output(input, "function_arrow", "12");
 	});
 
+	test("arrow function infers return type without out", async () => {
+		const input = `
+func double = (int x) => x * 2
+Console.write("\\{double(6)}")
+`;
+		await build_and_check_output(input, "function_arrow_inferred", "12");
+	});
+
 	test("function called multiple times", async () => {
 		const input = `
 func square = (int x, out int) => x * x
@@ -290,6 +298,19 @@ func add = (out int) {
 func add = (out int) {}
 `;
 		const expected = [test_error(input, "Missing return", 2, 22)];
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual(expected);
+	});
+
+	test("return value without out return type", () => {
+		const input = `
+func add = (int a, int b) {
+  return a + b
+}
+`;
+		const expected = [
+			test_error(input, "Function returns a value but has no 'out' return type", 3, 3),
+		];
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
 	});

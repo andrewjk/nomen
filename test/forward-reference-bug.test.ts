@@ -11,15 +11,15 @@ const system = get_library(path.resolve(import.meta.dirname, "../core"));
 
 // Regression test for the forward-reference bug.
 //
-// A struct's method with an *inferred* return type (no explicit `out T`) gets
-// that type during body-checking. Previously, check_block_node checked
-// statements in source order, so a struct defined textually AFTER a function
-// that calls it (which is always the case for library structs, since library
-// source is appended after user code) had its methods checked after the caller
-// -- leaving the return type unknown and producing "unknown value ..." errors.
+// A struct's method return type is declared with `out`. Previously,
+// check_block_node checked statements in source order, so a struct defined
+// textually AFTER a function that calls it (which is always the case for
+// library structs, since library source is appended after user code) had its
+// methods checked after the caller -- leaving the return type unknown and
+// producing "unknown value ..." errors.
 //
 // The fix: check type definitions (struct/trait/enum/bitset) before functions
-// in each block, so method return types are inferred before any caller is
+// in each block, so method return types are resolved before any caller is
 // checked. Both orderings below now compile and run identically.
 
 describe("forward references", () => {
@@ -33,7 +33,7 @@ pub func main = () {
 	const STRUCT = `
 struct Thing {
     var int n = 0
-    func make = (ref self, int v) {
+    func make = (ref self, int v, out int) {
         self.n = v
         return self.n
     }

@@ -26,6 +26,7 @@ export default class FunctionNode extends BaseNode implements BlockNode, Returni
 	statements: BaseNode[];
 	has_body?: boolean;
 	has_return?: boolean;
+	is_arrow_body?: boolean;
 	return_type_start?: number;
 	is_static?: boolean;
 	is_generic?: boolean;

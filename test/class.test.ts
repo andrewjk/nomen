@@ -57,7 +57,7 @@ class Point {
     var int y
 }
 
-func getX = (Point p) {
+func getX = (Point p, out int) {
     return p.x
 }
 
@@ -78,7 +78,7 @@ class Resource {
     }
 }
 
-func getValue = (Resource r) {
+func getValue = (Resource r, out int) {
     return r.value
 }
 

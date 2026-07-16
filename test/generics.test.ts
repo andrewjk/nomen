@@ -107,7 +107,7 @@ struct Box<T> {
     var T value
 }
 
-func unwrap<T> = (Box<T> box) {
+func unwrap<T> = (Box<T> box, out T) {
     return box.value
 }
 
@@ -123,7 +123,7 @@ struct Box<T> {
     var T value
 }
 
-func unwrap<T> = (Box<T> box) {
+func unwrap<T> = (Box<T> box, out T) {
     return box.value
 }
 
@@ -229,7 +229,7 @@ struct Point<T> {
     var T y
 }
 
-func sum<T> = (Point<T> p) {
+func sum<T> = (Point<T> p, out T) {
     return p.x + p.y
 }
 
@@ -289,7 +289,7 @@ struct Box<T> {
     var T value
 }
 
-func identity<T> = (Box<T> box) {
+func identity<T> = (Box<T> box, out T) {
     return box.value
 }
 
@@ -343,7 +343,7 @@ struct Box<T> {
     var T value
 }
 
-func identity<T> = (Box<T> box) {
+func identity<T> = (Box<T> box, out T) {
     return box.value
 }
 
@@ -370,7 +370,7 @@ struct Box<T> {
     var T value
 }
 
-func identity<T> = (Box<T> box) {
+func identity<T> = (Box<T> box, out T) {
     return box.value
 }
 
@@ -394,7 +394,7 @@ struct Point<T> {
     var T y
 }
 
-func sumCoords<T> = (Point<T> p) {
+func sumCoords<T> = (Point<T> p, out T) {
     return p.x + p.y
 }
 
@@ -419,6 +419,21 @@ func addX<T> = (Vec<T> a, Vec<T> b) {
 var Vec<int> a = Vec<int>(1, 2)
 var Vec<int> b = Vec<int>(3, 4)
 addX(a, b)
+`;
+	const parsed = parse(input);
+	expect(parsed.errors).toEqual([]);
+});
+
+test("generics -- arrow function infers return type without out", () => {
+	const input = `
+struct Box<T> {
+    var T value
+}
+
+func unwrap<T> = (Box<T> box) => box.value
+
+var Box<int> b = Box<int>(42)
+var int v = unwrap(b)
 `;
 	const parsed = parse(input);
 	expect(parsed.errors).toEqual([]);

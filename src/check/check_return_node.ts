@@ -93,6 +93,9 @@ export default function check_return_node(ret: ReturnNode, status: CheckStatus) 
 				);
 				func.return_type.is_static = return_type.is_static;
 			}
+		} else if (!(func as import("../nodes/FunctionNode.ts").default).is_arrow_body) {
+			add_error(status, `Function returns a value but has no 'out' return type`, ret.start);
+			func.return_type = ret.type;
 		} else {
 			func.return_type = ret.type;
 		}
