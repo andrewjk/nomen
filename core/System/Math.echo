@@ -26,6 +26,10 @@ pub struct Math {
 
     inline func sqrt = (float x, out float) {
         ```
+        #arch: c
+        return sqrt(x);
+        ```
+        ```
         #arch: aarch64
         fmov d0, x0
         fsqrt d0, d0

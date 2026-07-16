@@ -23,18 +23,20 @@ export default function c_type(type: string): string {
 		case "uint64":
 			return "unsigned long long";
 		case "float":
-			return "float";
+			// Echo `float` is 8 bytes on aarch64 (see aarch64_size.ts), so the C
+			// backend must use `double` to match struct layout and arithmetic
+			// precision. Using C `float` (4 bytes) causes checksum/energy drift.
+			return "double";
 		case "ufloat":
-			// TODO: Uh
-			return "unsigned float";
+			return "double";
 		case "float32":
-			return "float";
+			return "double";
 		case "ufloat32":
-			return "unsigned float";
+			return "double";
 		case "float64":
 			return "double";
 		case "ufloat64":
-			return "unsigned double";
+			return "double";
 		case "char":
 			// TODO:
 			return "char";

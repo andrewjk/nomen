@@ -5,9 +5,11 @@ import type BuildStatus from "./BuildStatus.ts";
 export default function build_root_node(node: RootNode, status: BuildStatus) {
 	status.headers += `#include <stdint.h>\n`;
 	status.code += `
+#pragma STDC FP_CONTRACT OFF
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include "main.h"

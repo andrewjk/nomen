@@ -1,6 +1,7 @@
 import BitsetNode from "../nodes/BitsetNode.ts";
 import type BlockNode from "../nodes/BlockNode.ts";
 import { is_function_node, is_struct_node, is_trait_node } from "../nodes/check_node_type.ts";
+import DeclarationNode from "../nodes/DeclarationNode.ts";
 import EnumNode from "../nodes/EnumNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import StructNode from "../nodes/StructNode.ts";
@@ -13,6 +14,8 @@ import build_struct_body from "./build_struct_body.ts";
 import build_struct_node from "./build_struct_node.ts";
 import build_trait_node from "./build_trait_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
+import c_function_name from "./utils/c_function_name.ts";
+import c_type from "./utils/c_type.ts";
 import emit_allocations from "./utils/emit_allocations.ts";
 
 export default function build_block_node(
@@ -71,6 +74,40 @@ export default function build_block_node(
 		for (let child of node.statements) {
 			if (is_struct_node(child)) {
 				build_struct_node(child, status);
+			}
+		}
+
+		// Emit forward declarations for top-level primitive constants (e.g.
+		// `const float ln10 = ...`) so function bodies can reference them.
+		// The actual definitions remain after functions in the remaining loop.
+		// Only run at the root level — inner blocks (if/while/for bodies) also
+		// default to with_declarations=true but their locals must not be
+		// forward-declared as globals.
+		if (node.node_type === "root") {
+			const SIMPLE_TYPES = new Set([
+				"int",
+				"uint",
+				"int8",
+				"uint8",
+				"int16",
+				"uint16",
+				"int32",
+				"uint32",
+				"int64",
+				"uint64",
+				"float",
+				"float32",
+				"float64",
+				"bool",
+				"char",
+			]);
+			for (let child of node.statements) {
+				if (child.node_type === "declare") {
+					const decl = child as DeclarationNode;
+					if (!decl.func_params && SIMPLE_TYPES.has(decl.type.name)) {
+						status.headers += `extern ${c_type(decl.type.name)} ${c_function_name(decl.name)};\n`;
+					}
+				}
 			}
 		}
 
@@ -137,10 +174,15 @@ function emit_struct_in_order(struct: StructNode, status: BuildStatus, emitted: 
 	emitted.add(struct);
 
 	// Emit dependencies first: any by-value struct field needs the referenced
-	// struct to be fully defined beforehand.
+	// struct to be fully defined beforehand. Generic field types (e.g.
+	// Map<int,int>) are monomorphized to concrete names (Map_int_int), so
+	// resolve the monomorphized name when looking up the dependency.
 	for (const field of struct.fields) {
+		const mono_name = field.type.type_args?.length
+			? `${field.type.name}_${field.type.type_args.map((t) => t.name).join("_")}`
+			: field.type.name;
 		const dep = status.structs.find(
-			(s) => s.name === field.type.name && !s.is_simple_type && !s.is_generic,
+			(s) => s.name === mono_name && !s.is_simple_type && !s.is_generic,
 		);
 		if (dep && !emitted.has(dep)) {
 			emit_struct_in_order(dep, status, emitted);

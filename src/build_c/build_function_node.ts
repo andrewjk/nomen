@@ -44,8 +44,15 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.headers += `// Func ${node.name}\n`;
 	status.code += `// Func ${node.name}\n`;
 
+	const is_main_with_init =
+		node.name.toLocaleLowerCase() === "main" &&
+		node.params.length > 0 &&
+		node.params[0].type.name === "Init";
+
 	const func_start = status.code.length;
-	if (node.name.toLocaleLowerCase() === "main") {
+	if (is_main_with_init) {
+		status.code += `int main(int argc, char **argv)`;
+	} else if (node.name.toLocaleLowerCase() === "main") {
 		status.code += `int main(`;
 	} else {
 		if (node.return_type.name) {
@@ -87,21 +94,32 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		}
 		status.code += `${c_function_name(node.name)}(`;
 	}
-	for (let i = 0; i < node.params.length; i++) {
-		if (i > 0) {
-			status.code += ", ";
+	if (!is_main_with_init) {
+		for (let i = 0; i < node.params.length; i++) {
+			if (i > 0) {
+				status.code += ", ";
+			}
+			if (node.params[i].is_variadic) {
+				status.code += `long _${node.params[i].name}_len, `;
+			}
+			build_parameter_node(node.params[i], status);
 		}
-		if (node.params[i].is_variadic) {
-			status.code += `long _${node.params[i].name}_len, `;
-		}
-		build_parameter_node(node.params[i], status);
+		status.code += `)`;
 	}
-	status.code += `)`;
 
 	// TODO: Only if top-level
 	status.headers += `${status.code.substring(func_start)};\n\n`;
 
 	status.code += `\n{\n`;
+
+	if (is_main_with_init) {
+		const pname = c_function_name(node.params[0].name);
+		status.code += `struct Init _echo_init_data;\n`;
+		status.code += `struct Init *${pname} = &_echo_init_data;\n`;
+		status.code += `${pname}->_vt = 0;\n`;
+		status.code += `${pname}->argc = argc;\n`;
+		status.code += `for (int _echo_i = 0; _echo_i < argc && _echo_i < 16; _echo_i++) ${pname}->args[_echo_i] = argv[_echo_i];\n`;
+	}
 
 	const old_ref_params = status.function_ref_params;
 	status.function_ref_params = new Set<string>();

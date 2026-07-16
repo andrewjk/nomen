@@ -160,9 +160,20 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 					struct_name: lhs_struct.name,
 					is_nullable: !!lhs_type?.is_nullable,
 				});
-			} else {
-				status.code += `free(${lhs_name});\nmalloc_count--;\n`;
+		} else {
+			// For a string with a non-bare RHS that may reference the LHS
+			// (e.g. `s = f(s)` or `s = s + "x"`), compute the RHS into a
+			// temp BEFORE freeing the old value to avoid use-after-free.
+			if (lhs_is_string && !rhs_is_bare_value) {
+				const id = (status.label_counter = (status.label_counter ?? 0) + 1);
+				const temp = `_reassign_${id}`;
+				status.code += `char* ${temp} = `;
+				build_node(node.right_value, status);
+				status.code += `;\nfree(${lhs_name});\nmalloc_count--;\n${lhs_name} = ${temp};\n`;
+				return;
 			}
+			status.code += `free(${lhs_name});\nmalloc_count--;\n`;
+		}
 
 			if (rhs_is_bare_value) {
 				// RHS is a bare variable (alias). For classes, transfer

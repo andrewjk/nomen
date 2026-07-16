@@ -168,14 +168,18 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 			if (wants_inline) {
 				if (access_func.name === "at") {
 					status.code += `(`;
+					status.suppress_dereference = true;
 					build_node(node.target, status);
+					status.suppress_dereference = false;
 					status.code += `[`;
 					build_node(access_func.params[0], status);
 					status.code += `])`;
 					break;
 				}
 				if (access_func.name === "set") {
+					status.suppress_dereference = true;
 					build_node(node.target, status);
+					status.suppress_dereference = false;
 					status.code += `[`;
 					build_node(access_func.params[0], status);
 					status.code += `] = `;
@@ -184,7 +188,9 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				}
 				if (access_func.name === "first") {
 					status.code += `(`;
+					status.suppress_dereference = true;
 					build_node(node.target, status);
+					status.suppress_dereference = false;
 					status.code += `[0])`;
 					break;
 				}

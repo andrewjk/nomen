@@ -1,6 +1,6 @@
-Primes up to 160000 7660
-Primes up to 80000 3972
-Primes up to 40000 2068
+Primes up to 160000 14683
+Primes up to 80000 7837
+Primes up to 40000 4203
 
 
 Malloc balance: 9
