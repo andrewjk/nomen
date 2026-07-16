@@ -1,0 +1,5 @@
+-inf
+nan
+
+
+Malloc balance: 0
