@@ -7,17 +7,8 @@ import check_type_exists from "./utils/check_type_exists.ts";
 import clone_status from "./utils/clone_status.ts";
 import { materialize_tuple_type } from "./utils/tuple_struct.ts";
 
-function is_generic_func(func: FunctionNode, status: CheckStatus): boolean {
-	if (func.type_params.length > 0) return true;
-	for (const param of func.params) {
-		if (param.type.type_args?.length) continue;
-		const struct = status.structs.findLast((s) => s.name === param.type.name);
-		if (!struct?.is_generic) continue;
-		const all_registered = struct.type_params.every((tp) => status.type_params.includes(tp));
-		if (all_registered) continue;
-		return true;
-	}
-	return false;
+function is_generic_func(func: FunctionNode): boolean {
+	return func.type_params.length > 0;
 }
 
 export default function check_function_node(func: FunctionNode, status: CheckStatus) {
@@ -26,7 +17,7 @@ export default function check_function_node(func: FunctionNode, status: CheckSta
 
 	status.functions.push(func);
 
-	if (is_generic_func(func, status)) {
+	if (is_generic_func(func)) {
 		func.is_generic = true;
 		return;
 	}

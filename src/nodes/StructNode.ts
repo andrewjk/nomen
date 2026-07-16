@@ -2,6 +2,7 @@ import built_in_types from "../built_in_types.ts";
 import BaseNode from "./BaseNode.ts";
 import DeclarationNode from "./DeclarationNode.ts";
 import FunctionNode from "./FunctionNode.ts";
+import Type from "./Type.ts";
 
 export default class StructNode extends BaseNode {
 	visibility: "pub" | "private";
@@ -14,6 +15,7 @@ export default class StructNode extends BaseNode {
 	is_generic?: boolean;
 	is_class?: boolean;
 	scope?: BaseNode;
+	source_type_args?: Type[];
 
 	constructor(
 		start: number,

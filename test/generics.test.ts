@@ -5,6 +5,7 @@ import check from "../src/check";
 import parse from "../src/parse";
 import build_and_check_output from "./build_and_check_output";
 import parse_with_imports from "./parse_with_imports";
+import test_error from "./test_error";
 
 test("generics -- parse generic struct", () => {
 	const input = `
@@ -106,7 +107,7 @@ struct Box<T> {
     var T value
 }
 
-func unwrap = (Box box) {
+func unwrap<T> = (Box<T> box) {
     return box.value
 }
 
@@ -122,7 +123,7 @@ struct Box<T> {
     var T value
 }
 
-func unwrap = (Box box) {
+func unwrap<T> = (Box<T> box) {
     return box.value
 }
 
@@ -157,7 +158,7 @@ struct Box<T> {
     var T value
 }
 
-func printBox = (Box box) {
+func printBox<T> = (Box<T> box) {
     return
 }
 
@@ -187,7 +188,7 @@ struct Box<T> {
     var T value
 }
 
-func use = (Box box) {
+func use<T> = (Box<T> box) {
     return
 }
 
@@ -210,7 +211,7 @@ struct Box<T> {
     var T value
 }
 
-func getValue = (Box box) {
+func getValue<T> = (Box<T> box) {
     var int v = box.value
     Console.write(v.to_string())
 }
@@ -228,7 +229,7 @@ struct Point<T> {
     var T y
 }
 
-func sum = (Point p) {
+func sum<T> = (Point<T> p) {
     return p.x + p.y
 }
 
@@ -244,7 +245,7 @@ struct Box<T> {
     var T value
 }
 
-func printBox = (Box box) {
+func printBox<T> = (Box<T> box) {
     var int v = box.value
     Console.write(v.to_string())
     Console.write("\\n")
@@ -266,7 +267,7 @@ struct Pair<T, U> {
     var U second
 }
 
-func printFirst = (Pair p) {
+func printFirst<T, U> = (Pair<T, U> p) {
     var int f = p.first
     Console.write(f.to_string())
     Console.write("\\n")
@@ -418,6 +419,106 @@ func addX<T> = (Vec<T> a, Vec<T> b) {
 var Vec<int> a = Vec<int>(1, 2)
 var Vec<int> b = Vec<int>(3, 4)
 addX(a, b)
+`;
+	const parsed = parse(input);
+	expect(parsed.errors).toEqual([]);
+});
+
+test("generics -- bare generic in struct field errors", () => {
+	const input = `
+struct Box<T> {
+    var T value
+}
+
+struct Holder {
+    var Box field
+}
+`;
+	const expected = [
+		test_error(input, "Generic type 'Box' requires type arguments (expected <T>)", 7, 9),
+	];
+	const parsed = parse(input);
+	expect(parsed.errors).toEqual(expected);
+});
+
+test("generics -- bare generic in class field errors", () => {
+	const input = `
+struct Box<T> {
+    var T value
+}
+
+class Holder {
+    var Box field
+}
+`;
+	const expected = [
+		test_error(input, "Generic type 'Box' requires type arguments (expected <T>)", 7, 9),
+	];
+	const parsed = parse(input);
+	expect(parsed.errors).toEqual(expected);
+});
+
+test("generics -- bare generic in function parameter errors", () => {
+	const input = `
+struct Box<T> {
+    var T value
+}
+
+func use = (Box b) {
+    return
+}
+`;
+	const expected = [
+		test_error(input, "Generic type 'Box' requires type arguments (expected <T>)", 6, 13),
+	];
+	const parsed = parse(input);
+	expect(parsed.errors).toEqual(expected);
+});
+
+test("generics -- bare generic in return type errors", () => {
+	const input = `
+struct Box<T> {
+    var T value
+}
+
+func make = (out Box) {
+    return Box<int>(1)
+}
+`;
+	const expected = [
+		test_error(input, "Generic type 'Box' requires type arguments (expected <T>)", 6, 18),
+	];
+	const parsed = parse(input);
+	expect(parsed.errors).toEqual(expected);
+});
+
+test("generics -- bare generic in local variable errors", () => {
+	const input = `
+struct Box<T> {
+    var T value
+}
+
+func make = () {
+    var Box b = Box<int>(1)
+    return
+}
+`;
+	const expected = [
+		test_error(input, "Generic type 'Box' requires type arguments (expected <T>)", 7, 9),
+	];
+	const parsed = parse(input);
+	expect(parsed.errors).toEqual(expected);
+});
+
+test("generics -- bare generic resolves once type params are in scope (self-reference)", () => {
+	const input = `
+struct Box<T> {
+    var T value
+
+    func pair = (self, out Box) {
+        return self
+    }
+}
 `;
 	const parsed = parse(input);
 	expect(parsed.errors).toEqual([]);

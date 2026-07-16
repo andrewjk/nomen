@@ -1,6 +1,6 @@
 import System
 
-func eval_a_times_u = (ref Buffer au, ref Buffer u, int n, bool transpose) {
+func eval_a_times_u<T> = (ref Buffer<T> au, ref Buffer<T> u, int n, bool transpose) {
 	var int i = 0
 	while i < n {
 		var float a = 0.0
@@ -31,7 +31,7 @@ func eval_a_times_u = (ref Buffer au, ref Buffer u, int n, bool transpose) {
 	}
 }
 
-func eval_ata_times_u = (ref Buffer atau, ref Buffer u, ref Buffer scratch, int n) {
+func eval_ata_times_u<T> = (ref Buffer<T> atau, ref Buffer<T> u, ref Buffer<T> scratch, int n) {
 	eval_a_times_u(ref scratch, ref u, n, false)
 	eval_a_times_u(ref atau, ref scratch, n, true)
 }

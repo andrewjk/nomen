@@ -21,7 +21,7 @@ struct Circle<T> {
     var T radius
 }
 
-func printCircle = (Circle circle) {
+func printCircle<T> = (Circle<T> circle) {
     Console.write("[\\{circle.name}: \\{circle.center_x},\\{circle.center_y},\\{circle.radius}]\\n")
 }
 
@@ -45,7 +45,7 @@ struct Circle<T> {
     var T radius
 }
 
-func printCircle = (Circle circle) {
+func printCircle<T> = (Circle<T> circle) {
     Console.write("[\\{circle.name}: \\{circle.center_x},\\{circle.center_y},\\{circle.radius}]\\n")
 }
 
@@ -70,7 +70,7 @@ struct Circle<T> {
     var T radius
 }
 
-func printCircle = (Circle circle) {
+func printCircle<T> = (Circle<T> circle) {
     Console.write("[\\{circle.name}: \\{circle.center_x},\\{circle.center_y},\\{circle.radius}]\\n")
 }
 

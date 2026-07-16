@@ -38,6 +38,7 @@ function gather_structs(block: BlockNode, status: CheckStatus) {
 				} else {
 					names_in_block.structs.add(struct.name);
 					struct.scope = status.stack.at(-1) || block;
+					struct.is_generic = struct.type_params.length > 0;
 					status.types.push(struct.name);
 					status.structs.push(struct);
 				}

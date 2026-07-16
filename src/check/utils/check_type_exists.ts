@@ -26,6 +26,18 @@ export default function check_type_exists(type: Type, status: CheckStatus, start
 		for (const arg of type.type_args) {
 			check_type_exists(arg, status, start);
 		}
+	} else {
+		const struct = status.structs.findLast((s) => s.name === type.name);
+		if (struct?.is_generic) {
+			const all_registered = struct.type_params.every((tp) => status.type_params.includes(tp));
+			if (!all_registered) {
+				add_error(
+					status,
+					`Generic type '${type.name}' requires type arguments (expected <${struct.type_params.join(", ")}>)`,
+					start,
+				);
+			}
+		}
 	}
 	return true;
 }

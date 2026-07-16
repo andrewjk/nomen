@@ -184,6 +184,7 @@ export function monomorphize(
 		mono_fields,
 		[],
 	);
+	mono_struct.source_type_args = type_args;
 
 	for (const func of generic_struct.functions) {
 		if (func.name === "#init") continue;
@@ -541,11 +542,21 @@ function specialize_function(
 				}
 			} else if (arg_type.name !== param.type.name) {
 				const mono_struct = status.structs.findLast((s) => s.name === arg_type.name);
-				if (mono_struct) {
+				if (mono_struct?.source_type_args?.length) {
+					type_args_for_struct = mono_struct.source_type_args;
 					for (let j = 0; j < generic_struct.type_params.length; j++) {
-						const field = mono_struct.fields[j];
-						if (field) {
-							substitution.set(generic_struct.type_params[j], field.type.name);
+						if (j < mono_struct.source_type_args.length) {
+							substitution.set(generic_struct.type_params[j], mono_struct.source_type_args[j].name);
+						}
+					}
+					if (param.type.type_args?.length) {
+						for (let j = 0; j < param.type.type_args.length; j++) {
+							if (j < mono_struct.source_type_args.length) {
+								substitution.set(
+									param.type.type_args[j].name,
+									mono_struct.source_type_args[j].name,
+								);
+							}
 						}
 					}
 				}
