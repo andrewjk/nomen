@@ -163,6 +163,24 @@ tests/
     parse.test.ts - Parsing tests
 ```
 
+### SPEC Coverage Tests (`test/spec/`)
+
+`test/spec/` holds one test file per SPEC.md section, with a test for (almost)
+every fenced code block in `SPEC.md`. These encode the language contract: each
+valid example must compile with **no errors**, and each error example must
+produce its documented error.
+
+- **Keep these in sync with `SPEC.md`.** Whenever a code block in `SPEC.md` is
+  added, changed, or removed, update the corresponding test in `test/spec/`
+  (add/modify/delete the test) so the suite continues to reflect the spec.
+- **Known SPEC/impl gaps** (features the spec documents but the compiler does
+  not yet implement) are written as *negative* tests that currently **fail**:
+  they assert `errors` is empty and carry a `// TODO: enabled once ... (SPEC
+  gap)` comment. When the feature lands, the test turns green automatically —
+  do not delete or loosen it. Treat a newly-passing `test/spec/` test as a
+  signal that the gap was closed.
+- Run them with `npm test test/spec/` (or `npx vp test test/spec/`).
+
 ### Inline code blocks (`#arch:` directives)
 
 Raw code blocks let a function bypass the Echo codegen and emit assembly or C

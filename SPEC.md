@@ -124,7 +124,7 @@ restricted(2)    // Error: Parameter constraint not satisfied: x
 Constraints can reference other parameters, including array properties like `.length`:
 
 ```
-func safe_index = (string[] source, int i: i >= 0 && i < source.length) {
+func safe_index = (string[] source, int i: i >= 0 && i < source.length, out string) {
     return source.at(i)
 }
 

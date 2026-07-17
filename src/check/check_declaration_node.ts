@@ -315,6 +315,32 @@ function check_constraint(decl: DeclarationNode, status: CheckStatus) {
 		type: decl.type,
 		is_set: true,
 	});
+	// Make sibling struct fields visible so a field constraint can reference an
+	// earlier field (e.g. `var int y: x < 100`). They're not yet initialized with
+	// concrete values at definition time, so only mark them set (no const_value);
+	// the constraint then evaluates to `undefined` (unverifiable) rather than a
+	// false "not initialized" error. The real check happens at the constructor
+	// call site, where each argument is a known value.
+	if (decl.scope && (decl.scope as any).node_type === "struct") {
+		const sibling_struct = decl.scope as any;
+		for (const field of sibling_struct.fields) {
+			if (field.name === decl.name) continue;
+			let const_value: number | boolean | undefined;
+			if (field.value?.node_type === "value") {
+				const vn = field.value as ValueNode;
+				if (/^[+-]?\d+$/.test(vn.value)) const_value = parseInt(vn.value, 10);
+				else if (vn.value === "true") const_value = true;
+				else if (vn.value === "false") const_value = false;
+			}
+			status.values.push({
+				declaration: "const",
+				name: field.name,
+				type: field.type,
+				is_set: true,
+				const_value,
+			});
+		}
+	}
 	check_node(decl.constraint, status);
 	const constraint_type = type_from_value_node(decl.constraint, status);
 	if (constraint_type.name && constraint_type.name !== "bool") {
