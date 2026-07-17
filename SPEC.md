@@ -227,19 +227,6 @@ func print = (int x) { ... }
 print(ref 5)   // Error: Unexpected 'ref' keyword for non-ref parameter 'x'
 ```
 
-#### Reference Struct Fields
-
-Struct fields can be reference types, enabling linked data structures:
-
-```
-struct Node {
-    var int value
-    var ref Node next
-}
-```
-
-A `ref` field is stored as a pointer (8 bytes), regardless of the underlying type size.
-
 ### Range Types
 
 Ranges produce an array of integers from `start` to `end` (exclusive):

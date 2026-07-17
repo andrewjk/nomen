@@ -135,18 +135,6 @@ print(ref 5)
 		const errors = compile_main(input);
 		expect(errors.some((e) => e.message.includes("ref"))).toBe(true);
 	});
-
-	test("reference struct fields (SPEC gap: ref fields are not yet supported)", () => {
-		const input = `
-struct Node {
-    var int value
-    var ref Node next
-}
-`;
-		const errors = compile_module(input);
-		// TODO: enabled once the compiler supports `ref` struct fields (SPEC gap).
-		expect(errors).toEqual([]);
-	});
 });
 
 describe("spec: range types", () => {

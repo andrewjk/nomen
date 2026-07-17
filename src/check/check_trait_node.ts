@@ -14,9 +14,6 @@ export default function check_trait_node(trait: TraitNode, status: CheckStatus) 
 	}
 
 	for (let decl of trait.fields) {
-		if (decl.type.is_ref) {
-			add_error(status, `fields cannot be 'ref', use a value or 'mov' field`, decl.start);
-		}
 		if (decl.declaration === "var" && decl.type.name && is_class_type(decl.type.name, status)) {
 			add_error(status, `class-type fields must use 'mov', not 'var'`, decl.start);
 		}

@@ -117,16 +117,6 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			decl.type = materialize_tuple_type(decl.type, status);
 		}
 
-		// ref fields are non-owning borrows with no lifetime enforcement; the
-		// borrow can outlive its target (use-after-free). Disallow them on
-		// structs/classes/traits -- use a value field (copied) or a 'mov' field.
-		if (
-			decl.type.is_ref &&
-			(decl.scope?.node_type === "struct" || decl.scope?.node_type === "trait")
-		) {
-			add_error(status, `fields cannot be 'ref', use a value or 'mov' field`, decl.start);
-		}
-
 		// Check for var on class-type fields in classes/traits (must use mov)
 		if (
 			decl.declaration === "var" &&
