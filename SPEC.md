@@ -46,6 +46,34 @@ Array length can be accessed via `.length`:
 const len = numbers.length
 ```
 
+### `Array<T>` Type
+
+`Array<T>` is a generic alias for the array type `T[]`. It provides the same
+storage and operations as `T[]` but makes the element type explicit, which is
+useful for type inference and for passing arrays through generic boundaries:
+
+```
+const ints = Array<int>(1, 2, 3)   // equivalent to [1, 2, 3] as int[]
+var Array<string> names = ["a", "b"]
+
+// Type args can be supplied at the constructor for clarity
+const nums = Array<int>(0, 1, 2)
+```
+
+`Array<T>` supports static methods such as `Array.with(...)` to build an array
+from repeated or variadic elements. When the type argument is omitted, `T` is
+inferred from the first argument:
+
+```
+const zeros = Array.with(0, 3)      // Array<int> of [0, 0, 0] (inferred int)
+const strs = Array<string>.with("x", 2)  // Array<string> of ["x", "x"]
+```
+
+Internally `Array<T>` is identical to `T[]`; casts, indexing (`.at`/`.set`),
+and `.length` behave the same. `Array<T>` is the canonical spelled-out form
+used throughout this document wherever a typed array is needed (e.g. tuples vs.
+arrays at line 422).
+
 ### Nullable Types
 
 Any type can be made nullable by appending `?`:
@@ -877,43 +905,144 @@ func process = (int value, out int) {
 import ModuleName
 ```
 
+Imports can also specify a namespace path using `/` to pull in a sub-namespace
+of a module:
+
+```
+import System/Controls   // imports the Controls namespace from System
+import System/Collections/List
+```
+
+Imports must appear at the top level (root scope) — an `import` inside a
+function, struct, or other scope is a compile error.
+
+### Method/Function Calls as Expressions
+
+`match`, `switch`, and `if`/`else` can all be used as expressions (assigned to
+a `const`/`var` or returned). When used as an expression, the `else` branch is
+required for `match` (on non-exhaustive types) and `switch`, and the branch
+types must be compatible:
+
+```
+const label = match x {
+    case 1 -> "one"
+    case 2 -> "two"
+    else -> "other"
+}
+
+const size = switch {
+    case x > 100 -> "big"
+    case x > 10 -> "medium"
+    else -> "small"
+}
+
+const verdict = if ok -> "yes"
+                else -> "no"
+```
+
+Exhaustiveness rules (see [Match Statement](#match-statement) and
+[Switch Statement](#switch-statement)) apply identically whether the construct
+is used as a statement or as an expression. `let` and `->` are interchangeable
+for the branch value (see [Let and Arrow Shorthand](#let-and-arrow-shorthand)).
+
 ### Structs
 
-```
-pub struct Console {
-    pub func write = (string line) {
-        // Inline code for built-in functions
-        #arch: c
-        printf("%s", line);
-        #endarch
+Structs group related data and behavior. Fields are declared with `var` (or
+`const` for compile-time-known values) and methods are declared as functions
+whose first parameter is `self`. A `#init` function is auto-generated from the
+non-private fields that have no default value, so a struct can be constructed by
+calling its name as a function:
 
-        #arch: aarch64
-        sub sp, sp, #16
-        mov x1, x0
-        str x1, [sp]
-        adr x0, .Lfmt_console_s
-        bl _printf
-        add sp, sp, #16
-        #endarch
+```
+pub struct Point {
+    pub var int x
+    pub var int y
+
+    pub func translate = (self, int dx, int dy) {
+        self.x = self.x + dx
+        self.y = self.y + dy
+    }
+
+    pub func distance_from_origin = (self, out int) {
+        return (self.x * self.x + self.y * self.y)
     }
 }
+
+const p = Point(3, 4)     // auto-generated #init
+p.translate(1, 1)
+const d = p.distance_from_origin()   // 3*3 + 4*4 = 25
 ```
 
+Fields without default values that have constraints propagate those
+constraints to the generated `#init` parameters (see
+[Field Constraints](#field-constraints)). You can also define a custom `#init`
+to take full control of construction (see [Initializers](#initializers)). A
+struct is a value type: assigning it copies the fields. For shared-reference
+semantics, use a [Class](#class-types).
+
 ### Traits
+
+Traits declare a set of method signatures that implementing structs must
+provide. A trait method listed without a body is a declaration — the struct that
+implements the trait supplies the implementation. Traits enable polymorphic
+behavior: a value of a concrete struct can be assigned to a variable typed as
+the trait.
 
 ```
 pub trait Printable {
     func to_string = (self, out string)
 }
+
+pub struct Point {
+    pub var int x
+    pub var int y
+
+    // Implements Printable.to_string
+    pub func to_string = (self, out string) {
+        return "Point(\{self.x}, \{self.y})"
+    }
+}
+
+// Assign a concrete struct to a trait-typed variable
+const Printable p = Point(1, 2)
+const s = p.to_string()   // "Point(1, 2)"
 ```
+
+A struct implements one or more traits with `:` syntax, separating multiple
+traits by commas (see [Trait Types](#trait-types)). Trait-typed variables can
+only call methods declared by the trait; fields and non-trait methods of the
+underlying struct are not accessible through the trait reference.
 
 ## Statements
 
 ### If/Else
 
+The condition must be a `bool`. The `else` branch is optional. Both branches may
+be a single expression (using `->` or `let`) or a block (`{ }`):
+
 ```
 if x > 0 {
     Console.write("positive")
+} else {
+    Console.write("zero")
+}
+```
+
+An `if`/`else` with no `else` used as an expression yields `void` when taken and
+`null`-like when skipped, so an `else` is required for a non-`void` result:
+
+```
+const result = if x > 0 -> "positive"
+               else -> "zero"
+```
+
+Nested and chained conditions use `else if`:
+
+```
+if x > 0 {
+    Console.write("positive")
+} else if x < 0 {
+    Console.write("negative")
 } else {
     Console.write("zero")
 }
@@ -1062,6 +1191,25 @@ while true {
 return value
 ```
 
+### `let` vs `->` Outside Expressions
+
+`let` and `->` are interchangeable in expression position (if/match/switch
+branches, see [Let and Arrow Shorthand](#let-and-arrow-shorthand)). `let` can
+also be used as a standalone statement in function bodies to return a value,
+behaving like `return` but reading more naturally in pipeline-style code:
+
+```
+func build = (int x, out string) {
+    let "value is \{x}"
+}
+// equivalent to: return "value is \{x}"
+```
+
+When `let` (or `->`) appears in a function whose return type is `void`, the
+value is discarded. `let` in a non-returning scope (e.g. the top level or a
+plain block) is a compile error, since there is no enclosing function to return
+from.
+
 ### Let and Arrow Shorthand
 
 Both `let` and `->` can be used as alternatives to `return` in expression position (e.g. in `if`, `match`, or `switch` branches):
@@ -1192,6 +1340,46 @@ struct Vec2 {
 ```
 
 Supported operator functions: `#op_add` (+), `#op_sub` (-), `#op_mul` (\*), `#op_div` (/), `#op_mod` (%).
+
+Each maps to the corresponding infix operator and compound-assignment form:
+
+```
+struct Vec2 {
+    var int x
+    var int y
+
+    func #op_add = (self, Vec2 other, out Vec2) {
+        return Vec2(self.x + other.x, self.y + other.y)
+    }
+
+    func #op_sub = (self, Vec2 other, out Vec2) {
+        return Vec2(self.x - other.x, self.y - other.y)
+    }
+
+    func #op_mul = (self, Vec2 other, out Vec2) {
+        return Vec2(self.x * other.x, self.y * other.y)
+    }
+
+    func #op_div = (self, Vec2 other, out Vec2) {
+        return Vec2(self.x / other.x, self.y / other.y)
+    }
+
+    func #op_mod = (self, Vec2 other, out Vec2) {
+        return Vec2(self.x % other.x, self.y % other.y)
+    }
+}
+
+const a = Vec2(4, 6)
+const b = Vec2(1, 2)
+const sum = a + b   // Vec2(5, 8)
+const diff = a - b  // Vec2(3, 4)
+const prod = a * b  // Vec2(4, 12)
+const quot = a / b  // Vec2(4, 3)
+const rem = a % b   // Vec2(0, 0)
+```
+
+Compound assignment (`+=`, `-=`, `*=`, `/=`, `%=`) routes to the same operator
+functions when the left operand is a struct with the matching `#op_*` defined.
 
 ### Cast Operator (`as`)
 
@@ -1332,61 +1520,26 @@ Rules:
 - Unsigned can coerce to signed if target is larger
 - Signed cannot coerce to unsigned
 
-## Inline Code
-
-Built-in functions can use architecture-specific inline code:
-
-```
-#arch: c
-// C code
-#endarch
-
-#arch: aarch64
-// AArch64 assembly
-#endarch
-```
-
-Raw code can also be written using backtick blocks or the `raw` keyword:
-
-```
-raw "inline code here"
-```
-
-### Conditional Compilation
-
-Each raw block can carry `#arch:` and `#platform:` directives at the top. A
-block is emitted only when its target matches the build configuration (or when
-no directive is given).
-
-Supported platforms: `macos`, `ios`, `linux`, `android`, `windows`, `web`.
-
-````
-pub struct Console {
-    pub func platform = (out string) {
-        ```
-        #arch: c
-        #platform: macos
-        return strdup("macos");
-        ```
-        ```
-        #arch: c
-        #platform: linux
-        return strdup("linux");
-        ```
-        return ""
-    }
-}
-````
-
-The platform is selected with `--platform` (defaults to the host platform).
-
 ## Auto-free
 
 At the end of each scope, the compiler automatically:
 
-- Calls destroy functions on structs and classes going out of scope
+- Calls `#destroy` functions on structs and classes going out of scope
 - Frees heap-allocated strings and class instances
 - Cleans up all intermediate scopes on `break`, `continue`, and `return`
+
+Auto-free applies only to types that own heap resources:
+
+- **Structs** with a `#destroy` function (see [Destroy Functions](#destroy-functions))
+- **Classes** (always heap-allocated; `#destroy` runs if defined — see
+  [Destroy Functions](#destroy-functions-1))
+- **Strings** (heap-allocated character buffers)
+
+Value types with no heap ownership are not cleaned up: **enums**, **bitsets**,
+**tuples**, **arrays of value types**, integers, floats, bools, and chars hold
+no independently-owned memory, so going out of scope requires no action. An
+enum or bitset that wraps a string field still relies on the auto-free of that
+field's string value, not on any destroy logic of its own.
 
 See [MEMORY.md](MEMORY.md) for the full memory model description.
 
