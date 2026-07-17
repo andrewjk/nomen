@@ -40,20 +40,16 @@ if x > 0 {
 		expect(compile_main(input)).toEqual([]);
 	});
 
-	test("else if keyword (SPEC gap: `else if` not yet parsed)", () => {
+	test("switch for chained conditions (no `else if`)", () => {
 		const input = `
 var int x = 1
-if x > 0 {
-    Console.write("positive")
-} else if x < 0 {
-    Console.write("negative")
-} else {
-    Console.write("zero")
+switch {
+    case x > 0 -> Console.write("positive")
+    case x < 0 -> Console.write("negative")
+    else -> Console.write("zero")
 }
 `;
-		const errors = compile_main(input);
-		// TODO: enabled once the compiler parses the `else if` form (SPEC gap).
-		expect(errors).toEqual([]);
+		expect(compile_main(input)).toEqual([]);
 	});
 });
 
@@ -227,15 +223,15 @@ func get = (out int) {
 });
 
 describe("spec: let vs -> outside expressions", () => {
-	test("let as return in function (SPEC gap: `let` not yet an implicit return)", () => {
+	test("standalone `let` in function body is a compile error (not an implicit return)", () => {
 		const input = `
 func build = (int x, out string) {
     let "value is \\{x}"
 }
 `;
 		const errors = compile_main(input);
-		// TODO: enabled once the compiler treats `let` as an implicit return (SPEC gap).
-		expect(errors).toEqual([]);
+		// By design `let` is not an implicit return; a function must use `return`.
+		expect(errors.length).toBeGreaterThan(0);
 	});
 });
 

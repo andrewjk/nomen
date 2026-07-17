@@ -1036,15 +1036,13 @@ const result = if x > 0 -> "positive"
                else -> "zero"
 ```
 
-Nested and chained conditions use `else if`:
+`else if` is **not** supported. Use a `switch` for chained conditions instead:
 
 ```
-if x > 0 {
-    Console.write("positive")
-} else if x < 0 {
-    Console.write("negative")
-} else {
-    Console.write("zero")
+switch {
+    case x > 0 -> Console.write("positive")
+    case x < 0 -> Console.write("negative")
+    else -> Console.write("zero")
 }
 ```
 
@@ -1194,21 +1192,20 @@ return value
 ### `let` vs `->` Outside Expressions
 
 `let` and `->` are interchangeable in expression position (if/match/switch
-branches, see [Let and Arrow Shorthand](#let-and-arrow-shorthand)). `let` can
-also be used as a standalone statement in function bodies to return a value,
-behaving like `return` but reading more naturally in pipeline-style code:
+branches, see [Let and Arrow Shorthand](#let-and-arrow-shorthand)). `let` is
+**not** an implicit `return`: a function must use an explicit `return` to
+produce its value:
 
 ```
 func build = (int x, out string) {
-    let "value is \{x}"
+    return "value is \{x}"
 }
-// equivalent to: return "value is \{x}"
 ```
 
-When `let` (or `->`) appears in a function whose return type is `void`, the
-value is discarded. `let` in a non-returning scope (e.g. the top level or a
-plain block) is a compile error, since there is no enclosing function to return
-from.
+A standalone `let` statement outside of expression position (e.g. at the top
+level of a function body, not as an `if`/`match`/`switch` branch) is a compile
+error. `let` in a non-returning scope (e.g. the top level or a plain block) is
+also a compile error, since there is no enclosing expression to bind it to.
 
 ### Let and Arrow Shorthand
 

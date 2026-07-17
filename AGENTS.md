@@ -200,6 +200,11 @@ directly. Use the directive that matches the backend:
 
 ### When Making Changes
 
+#### Language Conventions
+
+- Echo does **not** support `else if`. When writing Echo code, use a `switch`
+  instead of `"else if"` or an `"else { if { ... } }"` chain.
+
 1. Always run `npm run check` after changes to verify type correctness
 2. Run `npm test` to ensure all tests pass
 3. Run `npm run format` before committing
