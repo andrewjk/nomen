@@ -2,6 +2,7 @@ import add_error from "../add_error.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import AssignmentNode from "../nodes/AssignmentNode.ts";
+import FunctionNode from "../nodes/FunctionNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
@@ -39,6 +40,29 @@ export default function check_assignment_node(
 		return false;
 	}
 	status.is_assignment_target = false;
+
+	// If the RHS is a lambda and the LHS is a function-typed variable, infer the
+	// lambda's parameter and return types from the declared function signature.
+	const lhs_value_name = value_from_value_node(assign.left_value);
+	const lhs_value = status.values.find((v) => v.name === lhs_value_name);
+	if (
+		assign.right_value.node_type === "func" &&
+		lhs_value?.func_params &&
+		lhs_value.func_params.length
+	) {
+		const rhs_func = assign.right_value as FunctionNode;
+		rhs_func.name = lhs_value_name;
+		if (rhs_func.params.length === lhs_value.func_params.length) {
+			for (let i = 0; i < rhs_func.params.length; i++) {
+				if (!rhs_func.params[i].type.name && lhs_value.func_params[i].type.name) {
+					rhs_func.params[i].type = lhs_value.func_params[i].type;
+				}
+			}
+		}
+		if (lhs_value.func_return_type && !rhs_func.return_type.name) {
+			rhs_func.return_type = lhs_value.func_return_type;
+		}
+	}
 
 	const old_expected_type = status.expected_type;
 	status.expected_type = type_from_value_node(assign.left_value, status);

@@ -5,6 +5,7 @@ import ArrayValuesNode from "../../nodes/ArrayValuesNode.ts";
 import BaseNode from "../../nodes/BaseNode.ts";
 import CastNode from "../../nodes/CastNode.ts";
 import FunctionCallNode from "../../nodes/FunctionCallNode.ts";
+import FunctionNode from "../../nodes/FunctionNode.ts";
 import GroupedNode from "../../nodes/GroupedNode.ts";
 import IfElseNode from "../../nodes/IfElseNode.ts";
 import MatchNode from "../../nodes/MatchNode.ts";
@@ -65,6 +66,9 @@ export default function type_from_value_node(node: BaseNode, status: CheckStatus
 		}
 		case "anon_struct": {
 			return (node as import("../../nodes/AnonStructNode.ts").default).type || new Type("");
+		}
+		case "func": {
+			return (node as FunctionNode).return_type;
 		}
 	}
 	return new Type("");

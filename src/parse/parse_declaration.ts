@@ -180,7 +180,7 @@ function parse_function_type_params(params: ParameterNode[], status: ParseStatus
 		param.type.is_return_type = true;
 		params.push(param);
 
-		if (accept(",", status)) {
+		if (accept(",", status) && peek_current(status) !== ")") {
 			parse_function_type_params(params, status);
 		}
 		return;
@@ -189,11 +189,18 @@ function parse_function_type_params(params: ParameterNode[], status: ParseStatus
 	const param = new ParameterNode(param_start, "");
 	param.type_start = get_index(status);
 	param.type = parse_type(status);
-	param.name_start = get_index(status);
-	param.name = consume(status);
+
+	// In a function-type signature the parameters are bare types, so a token
+	// following a type is only treated as the parameter name when it is not
+	// the end of the parameter list or the start of the return type.
+	const next = peek_current(status);
+	if (next !== ")" && next !== "," && next !== "out" && status.i < status.tokens.length) {
+		param.name_start = get_index(status);
+		param.name = consume(status);
+	}
 	params.push(param);
 
-	if (accept(",", status)) {
+	if (accept(",", status) && peek_current(status) !== ")") {
 		parse_function_type_params(params, status);
 	}
 }
@@ -207,7 +214,10 @@ function extract_return_type(params: ParameterNode[]): Type | undefined {
 	return undefined;
 }
 
-function parse_anonymous_function(name: string, status: ParseStatus): FunctionNode | undefined {
+export function parse_anonymous_function(
+	name: string,
+	status: ParseStatus,
+): FunctionNode | undefined {
 	const start = get_index(status);
 	if (!accept("(", status)) {
 		return undefined;
@@ -321,8 +331,10 @@ function parse_anon_function_parameter(func: FunctionNode, status: ParseStatus) 
 		param.default_value = parse_expression(status);
 	}
 
-	// Check type or value has been set
-	if (!param.type.name && !param.default_value) {
+	// Check type or value has been set. In an anonymous function the parameters
+	// are bare names whose types are inferred from the assigned function type,
+	// so an untyped parameter with a name is allowed here.
+	if (!param.type.name && !param.default_value && !param.name) {
 		add_error(status, `Expected type or default value`, param.start);
 	}
 

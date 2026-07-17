@@ -91,4 +91,14 @@ export default interface StackValue {
 	 * `i < buf.cap` constraints after a known-size allocation.
 	 */
 	known_min_cap?: number;
+	/**
+	 * For function-typed variables: the parameter types from the declared
+	 * function signature. Used to infer parameter types on a lambda assigned
+	 * later (e.g. `adder = (a, b) => a + b`).
+	 */
+	func_params?: { name: string; type: Type }[];
+	/**
+	 * For function-typed variables: the declared return type.
+	 */
+	func_return_type?: Type;
 }

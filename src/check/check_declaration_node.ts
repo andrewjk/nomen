@@ -4,6 +4,7 @@ import AccessNode from "../nodes/AccessNode.ts";
 import AnonStructNode from "../nodes/AnonStructNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
+import FunctionNode from "../nodes/FunctionNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import check_node from "./check_node.ts";
@@ -36,14 +37,25 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 		}
 
 		if (decl.value && decl.value.node_type === "func") {
-			for (const param of decl.func_params) {
-				status.values.push({
-					declaration: param.declaration,
-					name: param.name,
-					type: param.type,
-					is_set: true,
-				});
+			// The function-type signature on the left (decl.func_params) supplies
+			// the parameter types; the anonymous function on the right
+			// (decl.value) supplies the parameter names. Merge the left-hand
+			// types into the right-hand params by position when the right-hand
+			// param has no type of its own.
+			const value_func = decl.value as FunctionNode;
+			const lhs_params = decl.func_params;
+			if (value_func.params.length === lhs_params.length) {
+				for (let i = 0; i < value_func.params.length; i++) {
+					if (!value_func.params[i].type.name && lhs_params[i].type.name) {
+						value_func.params[i].type = lhs_params[i].type;
+						value_func.params[i].type_start = lhs_params[i].type_start;
+					}
+				}
 			}
+			if (decl.func_return_type && !value_func.return_type.name) {
+				value_func.return_type = decl.func_return_type;
+			}
+
 			status.stack.push(decl);
 			check_node(decl.value, status);
 			status.stack.pop();
@@ -90,6 +102,8 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			is_null: decl.value?.node_type === "value" && (decl.value as any).value === "null",
 			const_value: decl.declaration === "const" ? extract_const_value(decl.value) : undefined,
 			constraint: decl.constraint,
+			func_params: decl.func_params?.map((p) => ({ name: p.name, type: p.type })),
+			func_return_type: decl.func_return_type,
 		});
 		if (decl.value) {
 			track_assignment_bounds(decl.name, decl.value, status);

@@ -148,13 +148,71 @@ const scaled = a + 3
 		expect(compile_main(input)).toEqual([]);
 	});
 
-	test("anonymous functions (lambdas) (SPEC gap: func-typed vars not yet supported)", () => {
+	test("function-typed variable (lambda)", () => {
 		const input = `
 var func (int, int, out int) adder = (a, b, out int) => a + b
 `;
-		const errors = compile_main(input);
-		// TODO: enabled once the compiler supports function-typed local variables / lambdas (SPEC gap).
-		expect(errors).toEqual([]);
+		expect(compile_main(input)).toEqual([]);
+	});
+
+	test("function-typed variable with named types", () => {
+		const input = `
+var func (int a, int b, out int) adder = (a, b, out int) => a + b
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+
+	test("function-typed variable called with arguments", () => {
+		const input = `
+var func (int, int, out int) adder = (a, b, out int) => a + b
+const int sum = adder(2, 3)
+`;
+		expect(compile_module(input)).toEqual([]);
+	});
+
+	test("function-typed variable passed as parameter", () => {
+		const input = `
+func apply = (int num, func (int, out int) f, out int) => f(num)
+var func (int, out int) doubler = (n, out int) => n * 2
+const int result = apply(5, doubler)
+`;
+		expect(compile_module(input)).toEqual([]);
+	});
+
+	test("function-typed variable block body", () => {
+		const input = `
+var func (int, out int) square = (n, out int) {
+	return n * n
+}
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+
+	test("function-typed variable declared then assigned later", () => {
+		const input = `
+var func (int a, int b, out int) adder
+adder = (a, b, out int) => a + b
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+
+	test("function-typed variable declared then assigned and called", () => {
+		const input = `
+var func (int, int, out int) adder
+adder = (a, b, out int) => a + b
+const int sum = adder(2, 3)
+`;
+		expect(compile_module(input)).toEqual([]);
+	});
+
+	test("function-typed variable reassigned to a different lambda", () => {
+		const input = `
+var func (int a, int b, out int) adder
+adder = (a, b, out int) => a + b
+adder = (x, y, out int) => x - y
+const int sum = adder(5, 2)
+`;
+		expect(compile_module(input)).toEqual([]);
 	});
 
 	test("nested functions and structs", () => {

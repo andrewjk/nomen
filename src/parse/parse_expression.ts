@@ -12,6 +12,7 @@ import RangeNode from "../nodes/RangeNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import parse_access from "./parse_access.ts";
 import parse_array_value from "./parse_array_value.ts";
+import { parse_anonymous_function } from "./parse_declaration.ts";
 import parse_function_call_parameter from "./parse_function_call_parameter.ts";
 import parse_if_else from "./parse_if_else.ts";
 import parse_match from "./parse_match.ts";
@@ -69,6 +70,23 @@ function find_matching_close(tokens: { value: string }[], start: number): number
 	return -1;
 }
 
+// Does the `(` at the current position start a lambda `(params) => body`
+// rather than a parenthesized expression? Look for a `=>` after the matching `)`.
+function is_anonymous_function(status: ParseStatus): boolean {
+	let depth = 0;
+	for (let i = status.i; i < status.tokens.length; i++) {
+		const v = status.tokens[i].value;
+		if (v === "(") depth++;
+		else if (v === ")") {
+			depth--;
+			if (depth === 0) {
+				return status.tokens[i + 1]?.value === "=>";
+			}
+		}
+	}
+	return false;
+}
+
 function parse_anon_struct(start: number, status: ParseStatus): AnonStructNode {
 	const fields: { name: string; value: BaseNode }[] = [];
 	while (peek_current(status) !== "]") {
@@ -116,6 +134,12 @@ function parse_primary(status: ParseStatus, value: string): BaseNode {
 			return node;
 		}
 		case "(": {
+			// A `(params) => body` group is an anonymous function value;
+			// otherwise it is a parenthesized expression.
+			if (is_anonymous_function(status)) {
+				const func = parse_anonymous_function("", status);
+				if (func) return func;
+			}
 			consume(status);
 			const node = new GroupedNode(start, parse_expression(status));
 			expect(")", status);
