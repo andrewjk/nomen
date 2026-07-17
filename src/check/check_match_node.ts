@@ -1,6 +1,8 @@
 import add_error from "../add_error.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
+import BaseNode from "../nodes/BaseNode.ts";
+import BranchNode from "../nodes/BranchNode.ts";
 import MatchNode from "../nodes/MatchNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import check_block_node from "./check_block_node.ts";
@@ -13,6 +15,7 @@ import type_name from "./utils/type_name.ts";
 export default function check_match_node(match_node: MatchNode, status: CheckStatus) {
 	check_node(match_node.value, status);
 	const match_type = type_from_value_node(match_node.value, status);
+	match_node.value_type = match_type.name;
 
 	status.stack.push(match_node);
 
@@ -33,6 +36,37 @@ export default function check_match_node(match_node: MatchNode, status: CheckSta
 		}
 
 		let case_status = clone_status(status);
+
+		// Bind associated-data payloads as locals in the branch scope so the
+		// bound names (e.g. `code` in `case .error(code)`) resolve.
+		if (matchCaseHasParams(match_case) && match_type.name) {
+			const enum_node = status.enums.find((e) => e.name === match_type.name);
+			const case_name = extract_enum_case_name(match_case.match_value, match_type.name);
+			const enum_case = enum_node?.cases.find((c) => c.name === case_name);
+			if (!enum_case) {
+				add_error(
+					status,
+					`Unknown enum case: ${case_name} on ${match_type.name}`,
+					match_case.match_value.start,
+				);
+			} else if (enum_case.params.length !== match_case.params!.length) {
+				add_error(
+					status,
+					`Case ${case_name} expects ${enum_case.params.length} binding(s), got ${match_case.params!.length}`,
+					match_case.match_value.start,
+				);
+			} else {
+				for (let i = 0; i < match_case.params!.length; i++) {
+					case_status.values.push({
+						declaration: "var",
+						name: match_case.params![i],
+						type: enum_case.params[i].type,
+						is_set: true,
+					});
+				}
+			}
+		}
+
 		check_block_node(match_case.branch, case_status);
 		branch_statuses.push(case_status);
 	}
@@ -121,6 +155,14 @@ function check_exhaustiveness(
 	}
 
 	add_error(status, `Non-exhaustive match: missing else branch`, match_node.start);
+}
+
+function matchCaseHasParams(match_case: {
+	match_value: BaseNode;
+	branch: BranchNode;
+	params?: string[];
+}): boolean {
+	return !!match_case.params && match_case.params.length > 0;
 }
 
 function extract_enum_case_name(

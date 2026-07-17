@@ -5,15 +5,16 @@ import Type from "./Type.ts";
 
 export default class MatchNode extends BaseNode implements ReturningNode {
 	value: BaseNode;
-	cases: { match_value: BaseNode; branch: BranchNode }[];
+	cases: { match_value: BaseNode; branch: BranchNode; params?: string[] }[];
 	else_branch?: BranchNode;
 	return_type: Type;
 	has_return?: boolean;
+	value_type?: string;
 
 	constructor(
 		start: number,
 		value: BaseNode,
-		cases: { match_value: BaseNode; branch: BranchNode }[] = [],
+		cases: { match_value: BaseNode; branch: BranchNode; params?: string[] }[] = [],
 		else_branch?: BranchNode,
 		return_type?: Type,
 	) {
