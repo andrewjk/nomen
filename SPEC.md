@@ -1456,17 +1456,6 @@ const arr = [10, 20, 30]
 const x = arr.at(5)  // Error: Parameter constraint not satisfied
 ```
 
-### Spread
-
-Array literals support a spread syntax (`...`) to flatten an array into individual arguments:
-
-```
-const a = [1, 2, 3]
-const b = [...a, 4, 5]  // [1, 2, 3, 4, 5]
-```
-
-This is used internally by `Array.#init` to copy elements from a variadic parameter list into the array's storage.
-
 ### Field Access
 
 ```

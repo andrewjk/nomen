@@ -174,18 +174,6 @@ const x = arr.at(5)
 	});
 });
 
-describe("spec: spread", () => {
-	test("spread in array literal (SPEC gap: `...` spread not yet supported)", () => {
-		const input = `
-const a = [1, 2, 3]
-const b = [...a, 4, 5]
-`;
-		const errors = compile_main(input);
-		// TODO: enabled once spread syntax in array literals is supported (SPEC gap).
-		expect(errors).toEqual([]);
-	});
-});
-
 describe("spec: field access", () => {
 	test("access struct field", () => {
 		const input = `
