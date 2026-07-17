@@ -92,25 +92,36 @@ unset _entry _b _small _large _z _r
 echo "=== Compile times ==="
 echo ""
 
-printf "  %-22s  %7s  %7s  %7s  %7s  %11s\n" "Benchmark" "Echo" "Go" "Zig" "Rust" "Echo"
-printf "  %-22s  %7s  %7s  %7s  %7s  %11s\n" "" "compile" "compile" "compile" "compile" "compare"
-printf "  %-22s  %7s  %7s  %7s  %7s  %11s\n" "----------------------" "-------" "-------" "-------" "-------" "-----------"
+printf "  %-22s  %7s  %7s  %7s  %7s  %7s  %11s\n" "Benchmark" "Echo" "Echo/C" "Go" "Zig" "Rust" "Echo"
+printf "  %-22s  %7s  %7s  %7s  %7s  %7s  %11s\n" "" "compile" "compile" "compile" "compile" "compile" "compare"
+printf "  %-22s  %7s  %7s  %7s  %7s  %7s  %11s\n" "----------------------" "-------" "-------" "-------" "-------" "-------" "-----------"
 
 for entry in "${BENCHES[@]}"; do
 	IFS='|' read -r bench small_args large_args zig_src rust_src <<< "$entry"
-	echo_ms="-" go_ms="-" zig_ms="-" rust_ms="-"
-	echo_num="" go_num="" zig_num="" rust_num=""
+	echo_ms="-" echo_c_ms="-" go_ms="-" zig_ms="-" rust_ms="-"
+	echo_num="" echo_c_num="" go_num="" zig_num="" rust_num=""
 
-	# Echo compile
+	# Echo compile (aarch64 backend)
 	if [ -f "$BENCH_DIR/echo/$bench.echo" ]; then
 		cp "$BENCH_DIR/echo/package.jsonc" "$TMPDIR/package.jsonc" 2>/dev/null || true
-		if raw=$( { time "$TSX" "$BENCH_DIR/compile_echo.ts" "$BENCH_DIR/echo/$bench.echo" "$TMPDIR/echo_${bench}" "$ROOT/core" 2>/dev/null; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//'); then
+		if raw=$( { time "$TSX" "$BENCH_DIR/compile_echo.ts" "$BENCH_DIR/echo/$bench.echo" "$TMPDIR/echo_${bench}" "$ROOT/core" aarch64 2>/dev/null; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//'); then
 			echo_num=$(to_ms "$raw"); echo_ms="${echo_num}ms"
 		else
 			echo_ms="FAIL"
 		fi
 	else
 		echo_ms="SKIP"
+	fi
+
+	# Echo compile (C backend)
+	if [ -f "$BENCH_DIR/echo/$bench.echo" ]; then
+		if raw=$( { time "$TSX" "$BENCH_DIR/compile_echo.ts" "$BENCH_DIR/echo/$bench.echo" "$TMPDIR/echo_c_${bench}" "$ROOT/core" c 2>/dev/null; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//'); then
+			echo_c_num=$(to_ms "$raw"); echo_c_ms="${echo_c_num}ms"
+		else
+			echo_c_ms="FAIL"
+		fi
+	else
+		echo_c_ms="SKIP"
 	fi
 
 	# Go compile
@@ -154,7 +165,7 @@ for entry in "${BENCHES[@]}"; do
 	[ -n "$zig_num" ] && nums+=("$zig_num")
 	[ -n "$rust_num" ] && nums+=("$rust_num")
 	compare=$(echo_compare "$echo_num" "${nums[@]}")
-	printf "  %-22s  %7s  %7s  %7s  %7s  %11s\n" "$bench" "$echo_ms" "$go_ms" "$zig_ms" "$rust_ms" "$compare"
+	printf "  %-22s  %7s  %7s  %7s  %7s  %7s  %11s\n" "$bench" "$echo_ms" "$echo_c_ms" "$go_ms" "$zig_ms" "$rust_ms" "$compare"
 done
 
 echo ""
@@ -162,9 +173,9 @@ echo ""
 # ── Run all ──────────────────────────────────────────────────────────────────
 
 print_run_header() {
-	printf "  %-22s  %7s  %7s  %7s  %7s  %11s\n" "Benchmark" "Echo" "Go" "Zig" "Rust" "Echo"
-	printf "  %-22s  %7s  %7s  %7s  %7s  %11s\n" "" "run" "run" "run" "run" "compare"
-	printf "  %-22s  %7s  %7s  %7s  %7s  %11s\n" "----------------------" "-------" "-------" "-------" "-------" "-----------"
+	printf "  %-22s  %7s  %7s  %7s  %7s  %7s  %11s\n" "Benchmark" "Echo" "Echo/C" "Go" "Zig" "Rust" "Echo"
+	printf "  %-22s  %7s  %7s  %7s  %7s  %7s  %11s\n" "" "run" "run" "run" "run" "run" "compare"
+	printf "  %-22s  %7s  %7s  %7s  %7s  %7s  %11s\n" "----------------------" "-------" "-------" "-------" "-------" "-------" "-----------"
 }
 
 # Run one benchmark row: best-of-3 per language, then the "Echo compare"
@@ -173,15 +184,16 @@ print_run_header() {
 print_run_row() {
 	local bench="$1"
 	local bn="$2"
-	local echo_ms="-" go_ms="-" zig_ms="-" rust_ms="-"
-	local echo_num="" go_num="" zig_num="" rust_num=""
+	local echo_ms="-" echo_c_ms="-" go_ms="-" zig_ms="-" rust_ms="-"
+	local echo_num="" echo_c_num="" go_num="" zig_num="" rust_num=""
 	local bin_echo="$TMPDIR/echo_${bench}"
+	local bin_echo_c="$TMPDIR/echo_c_${bench}"
 	local bin_go="$GO_BUILD/$bench"
 	local bin_zig="$TMPDIR/zig_${bench}"
 	local bin_rust="$RUST_DIR/target/release/$bench"
 	local t1 t2 t3 r1 r2 r3
 
-	# Echo run
+	# Echo run (aarch64 backend)
 	if [ -x "$bin_echo" ]; then
 		{ "$bin_echo" $bn > /dev/null 2>&1; } 2>/dev/null || true
 		t1=$( { time "$bin_echo" $bn > /dev/null 2>&1; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//' ) 2>/dev/null || true
@@ -198,6 +210,25 @@ print_run_row() {
 		fi
 	else
 		echo_ms="FAIL"
+	fi
+
+	# Echo run (C backend)
+	if [ -x "$bin_echo_c" ]; then
+		{ "$bin_echo_c" $bn > /dev/null 2>&1; } 2>/dev/null || true
+		t1=$( { time "$bin_echo_c" $bn > /dev/null 2>&1; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//' ) 2>/dev/null || true
+		t2=$( { time "$bin_echo_c" $bn > /dev/null 2>&1; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//' ) 2>/dev/null || true
+		t3=$( { time "$bin_echo_c" $bn > /dev/null 2>&1; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//' ) 2>/dev/null || true
+		if [ -n "$t1" ] && [ -n "$t2" ] && [ -n "$t3" ]; then
+			r1=$(to_ms "$t1") r2=$(to_ms "$t2") r3=$(to_ms "$t3")
+			echo_c_num=$r1
+			[ "$r2" -lt "$echo_c_num" ] && echo_c_num=$r2
+			[ "$r3" -lt "$echo_c_num" ] && echo_c_num=$r3
+			echo_c_ms="${echo_c_num}ms"
+		else
+			echo_c_ms="FAIL"
+		fi
+	else
+		echo_c_ms="FAIL"
 	fi
 
 	# Go run
@@ -272,7 +303,7 @@ print_run_row() {
 	[ -n "$rust_num" ] && nums+=("$rust_num")
 	local compare
 	compare=$(echo_compare "$echo_num" "${nums[@]}")
-	printf "  %-22s  %7s  %7s  %7s  %7s  %11s\n" "$bench" "$echo_ms" "$go_ms" "$zig_ms" "$rust_ms" "$compare"
+	printf "  %-22s  %7s  %7s  %7s  %7s  %7s  %11s\n" "$bench" "$echo_ms" "$echo_c_ms" "$go_ms" "$zig_ms" "$rust_ms" "$compare"
 }
 
 # Single-size benchmarks (small == large) get their own table, shown first.

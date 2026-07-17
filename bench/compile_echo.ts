@@ -10,9 +10,12 @@ import parse from "../src/parse.ts";
 const input_file = process.argv[2];
 const output_file = process.argv[3];
 const lib_arg = process.argv[4];
+const arch = (process.argv[5] as "c" | "aarch64") ?? "aarch64";
 
 if (!input_file || !output_file) {
-	console.error("Usage: tsx compile_echo.ts <input.echo> <output_binary> [lib_path]");
+	console.error(
+		"Usage: tsx compile_echo.ts <input.echo> <output_binary> [lib_path] [arch=c|aarch64]",
+	);
 	process.exit(1);
 }
 
@@ -60,32 +63,48 @@ if (parsed.errors.length) {
 	process.exit(1);
 }
 
-const result = build(parsed.root, { arch: "aarch64" });
-
-let code = result.code;
-code = code.replace(/\bbl printf\b/g, "bl _printf");
-code = code.replace(/\bbl snprintf\b/g, "bl _snprintf");
-code = code.replace(/\bbl malloc\b/g, "bl _malloc");
-code = code.replace(/\bbl exit\b/g, "bl _exit");
-code = code.replace(/\bbl realloc\b/g, "bl _realloc");
-code = code.replace(/\bbl free\b/g, "bl _free");
-code = code.replace(/\bbl strdup\b/g, "bl _strdup");
-code = code.replace(/\bbl log\b/g, "bl _log");
-code = code.replace(/\bbl atoi\b/g, "bl _atoi");
-code = code.replace(/\bmain:\n/g, ".globl _main\n_main:\n");
+const result = build(parsed.root, { arch });
 
 const out = path.resolve(output_file);
 const folder = path.dirname(out);
 fs.mkdirSync(folder, { recursive: true });
-fs.writeFileSync(out + ".s", code);
 
-let link_inputs = `${out}.s`;
-if (result.companion) {
-	// The companion file includes Foundation/Cocoa headers on apple platforms,
-	// so it must be compiled as Objective-C (.m) there.
-	const comp_ext = process.platform === "darwin" ? ".m" : ".c";
-	const companion_file = `${out}_companion${comp_ext}`;
-	fs.writeFileSync(companion_file, result.companion);
-	link_inputs += ` ${companion_file}`;
+// The companion file includes Foundation/Cocoa headers on apple platforms,
+// so it must be compiled as Objective-C (.m) there.
+const comp_ext = process.platform === "darwin" ? ".m" : ".c";
+
+if (arch === "c") {
+	// C backend: emit headers to main.h (so the generated #include "main.h"
+	// resolves) and the program to a .c/.m file, then compile + link.
+	fs.writeFileSync(path.join(folder, "main.h"), result.headers);
+	const codefile = `${out}${comp_ext}`;
+	fs.writeFileSync(codefile, result.code);
+	let link_inputs = codefile;
+	if (result.companion) {
+		const companion_file = `${out}_companion${comp_ext}`;
+		fs.writeFileSync(companion_file, result.companion);
+		link_inputs += ` ${companion_file}`;
+	}
+	execSync(`clang ${link_inputs} -o ${out} -lm`);
+} else {
+	let code = result.code;
+	code = code.replace(/\bbl printf\b/g, "bl _printf");
+	code = code.replace(/\bbl snprintf\b/g, "bl _snprintf");
+	code = code.replace(/\bbl malloc\b/g, "bl _malloc");
+	code = code.replace(/\bbl exit\b/g, "bl _exit");
+	code = code.replace(/\bbl realloc\b/g, "bl _realloc");
+	code = code.replace(/\bbl free\b/g, "bl _free");
+	code = code.replace(/\bbl strdup\b/g, "bl _strdup");
+	code = code.replace(/\bbl log\b/g, "bl _log");
+	code = code.replace(/\bbl atoi\b/g, "bl _atoi");
+	code = code.replace(/\bmain:\n/g, ".globl _main\n_main:\n");
+	fs.writeFileSync(out + ".s", code);
+
+	let link_inputs = `${out}.s`;
+	if (result.companion) {
+		const companion_file = `${out}_companion${comp_ext}`;
+		fs.writeFileSync(companion_file, result.companion);
+		link_inputs += ` ${companion_file}`;
+	}
+	execSync(`clang ${link_inputs} -o ${out}`);
 }
-execSync(`clang ${link_inputs} -o ${out}`);
