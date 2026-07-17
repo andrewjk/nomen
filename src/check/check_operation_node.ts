@@ -261,6 +261,8 @@ function operator_to_func_name(op: string): string | undefined {
 			return "mul";
 		case "/":
 			return "div";
+		case "%":
+			return "mod";
 		default:
 			return undefined;
 	}
