@@ -1,3 +1,1 @@
 SET OK
-
-Malloc balance: 0

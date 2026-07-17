@@ -1,3 +1,1 @@
 10 is double
-
-Malloc balance: 0

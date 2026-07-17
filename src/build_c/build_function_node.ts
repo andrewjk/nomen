@@ -1,6 +1,7 @@
 import BitsetNode from "../nodes/BitsetNode.ts";
 import type BlockNode from "../nodes/BlockNode.ts";
 import { is_function_node, is_struct_node, is_trait_node } from "../nodes/check_node_type.ts";
+import DeclarationNode from "../nodes/DeclarationNode.ts";
 import EnumNode from "../nodes/EnumNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import StructNode from "../nodes/StructNode.ts";
@@ -15,15 +16,19 @@ import build_struct_node from "./build_struct_node.ts";
 import build_trait_node from "./build_trait_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import c_function_name from "./utils/c_function_name.ts";
+import { enter_c_scope, leave_c_scope } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
+import scan_borrow_only_strings from "./utils/scan_borrow_only_strings.ts";
 
 export default function build_function_node(node: FunctionNode, status: BuildStatus) {
 	if (node.is_generic) return;
 
 	const old_scoped_declarations = status.scoped_declarations;
-	status.scoped_declarations = [];
+	status.scoped_declarations = enter_c_scope(status);
 	const old_deferred_frees = status.deferred_frees;
 	status.deferred_frees = [];
+	const old_borrow_only = status.c_borrow_only_strings;
+	status.c_borrow_only_strings = scan_borrow_only_strings(node);
 
 	// Emit nested struct/function definitions at file scope before the function
 	// signature, so the generated C code is valid (no nested function defs).
@@ -125,6 +130,10 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.function_ref_params = new Set<string>();
 	const old_class_vars = status.class_vars;
 	status.class_vars = new Set<string>();
+	const old_ref_class_params = status.ref_class_params;
+	status.ref_class_params = new Set<string>();
+	const old_ref_class_param_types = status.ref_class_param_types;
+	status.ref_class_param_types = new Map();
 	const old_variadic_params = status.function_variadic_params;
 	status.function_variadic_params = new Set<string>();
 	const old_return_type = status.function_return_type;
@@ -156,8 +165,30 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 			const pname = c_function_name(param.name);
 			if (param_struct?.is_class) {
 				status.class_vars.add(pname);
+				// A `ref` class param is emitted as a double pointer
+				// (`struct T **`). Track it so use sites dereference once
+				// (`(*name)`) and reassignments write back through it.
+				if ((param.is_ref || param.type.is_ref) && !param.is_self_param) {
+					status.ref_class_params.add(pname);
+					status.ref_class_param_types!.set(pname, param.type);
+				}
 			} else {
 				status.function_ref_params.add(pname);
+			}
+			// A `mov` class param transfers ownership to the callee. Register
+			// it as a scoped declaration so build_auto_free destroys+frees it
+			// at function exit — unless the body further moves it out (the mov
+			// param handling in build_function_call_node splices it), or it is
+			// returned (handled in build_return_node). Mirrors aarch64's
+			// moved_param_save_slots cleanup.
+			if (
+				param.is_moved &&
+				param_struct?.is_class &&
+				node.name !== "main" &&
+				!param_is_consumed(node, param.name)
+			) {
+				const decl = new DeclarationNode(param.start, "private", "mov", pname, param.type);
+				status.scoped_declarations.push(decl);
 			}
 		}
 	}
@@ -166,22 +197,35 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 
 	status.function_ref_params = old_ref_params;
 	status.class_vars = old_class_vars;
+	status.ref_class_params = old_ref_class_params;
+	status.ref_class_param_types = old_ref_class_param_types;
 	status.function_variadic_params = old_variadic_params;
 	status.function_return_type = old_return_type;
 
-	if (!node.has_return) {
-		build_auto_free(status);
-	}
+	// Always run auto_free at function exit. Functions with explicit returns
+	// already call build_auto_free at each return (which clears
+	// scoped_declarations), so this is a no-op for those paths — but a void
+	// function that has a CONDITIONAL early return still falls through to here,
+	// and its fall-through declarations must be reclaimed. Without this, such
+	// functions leak every declaration on the fall-through path.
+	build_auto_free(status);
 
-	// Print out the number of mallocs less the number of frees, which should be 0!
-	if (node.name.toLocaleLowerCase() === "main") {
-		status.code += `\nprintf("\\n\\nMalloc balance: %d\\n", malloc_count);\n`;
+	// In audit mode, call echo_audit_check (from audit_runtime.c) at main exit.
+	// It prints "LEAK: N allocation(s)" when the balanced malloc/free counter
+	// (maintained by the echo_*_wrap allocators) is non-zero, which
+	// check_output asserts against. Mirrors the aarch64 backend's audit hook.
+	// The ad-hoc "Malloc balance" printf is gone — the C backend now routes
+	// through the same audit_runtime.c as aarch64 instead of its own counter.
+	if (node.name.toLocaleLowerCase() === "main" && status.audit) {
+		status.code += `\necho_audit_check();\n`;
 	}
 
 	status.code += `}\n\n`;
 
+	leave_c_scope(status);
 	status.scoped_declarations = old_scoped_declarations;
 	status.deferred_frees = old_deferred_frees;
+	status.c_borrow_only_strings = old_borrow_only;
 }
 
 function emit_nested_declarations(node: FunctionNode, status: BuildStatus) {
@@ -258,4 +302,53 @@ function emit_nested_declarations(node: FunctionNode, status: BuildStatus) {
 			build_function_node(child, status);
 		}
 	}
+}
+
+// Determine whether a `mov` class parameter's ownership escapes the function
+// body — i.e. it is passed (as an argument or receiver) into some call/
+// constructor whose result may outlive the function (stored into a returned
+// container/struct), or it is a bare value used as an argument. In those
+// cases the callee must NOT destroy it at exit (it would double-free / leave a
+// dangling pointer in the escaping value). A bare reference that is only read
+// (e.g. field access `x.value` or interpolation) does NOT consume it.
+function param_is_consumed(root: any, name: string): boolean {
+	let consumed = false;
+	const refs_name = (n: any): boolean => !!n && n.node_type === "value" && n.value === name;
+	// A `mov` class param's ownership escapes the function only when it is
+	// placed into a value that can outlive the call: passed as a call/
+	// constructor argument, used as a method-call RECEIVER (the callee may
+	// store `self`), placed into an array literal, used as an assignment RHS,
+	// or returned. Reads (field access `x.v`, comparisons `x != null`,
+	// interpolation) do NOT consume it.
+	const walk = (n: any): void => {
+		if (!n || typeof n !== "object" || consumed) return;
+		if (n.node_type === "func_call") {
+			for (const p of n.params ?? []) if (refs_name(p)) consumed = true;
+		}
+		if (n.node_type === "access") {
+			// Method call on the param (`x.foo(...)`) — the receiver may be
+			// stored by the callee, so treat as consuming.
+			if (n.access?.node_type === "access_func" && refs_name(n.target)) {
+				consumed = true;
+			}
+			for (const p of n.access?.params ?? []) if (refs_name(p)) consumed = true;
+		}
+		if (n.node_type === "array") {
+			for (const v of n.values ?? []) if (refs_name(v)) consumed = true;
+		}
+		if (n.node_type === "return" && refs_name(n.value)) consumed = true;
+		if (n.node_type === "assign" && refs_name(n.right_value)) consumed = true;
+		if (n.node_type === "declare" && refs_name(n.value)) consumed = true;
+		for (const key of Object.keys(n)) {
+			if (key === "node_type") continue;
+			const v = (n as any)[key];
+			if (Array.isArray(v)) {
+				for (const item of v) walk(item);
+			} else if (v && typeof v === "object") {
+				walk(v);
+			}
+		}
+	};
+	for (const stmt of root.statements ?? []) walk(stmt);
+	return consumed;
 }

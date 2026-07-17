@@ -14,8 +14,6 @@ export default function build_root_node(node: RootNode, status: BuildStatus) {
 #include <sys/types.h>
 #include "main.h"
 
-int malloc_count;
-
 `.trimStart();
 
 	build_block_node(node, status);
@@ -55,7 +53,6 @@ void **_get_trait_func(void **obj, int trait_index, int func_index)
 {
     int length = snprintf(NULL, 0, pattern, ${range.map((n) => `arg${n + 1}`).join(", ")});
     char *str = malloc(length + 1);
-    malloc_count++;
     snprintf(str, length + 1, pattern, ${range.map((n) => `arg${n + 1}`).join(", ")});
     return str;
 }

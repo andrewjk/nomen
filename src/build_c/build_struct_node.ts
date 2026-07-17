@@ -8,8 +8,10 @@ import build_node from "./build_node.ts";
 import build_parameter_node from "./build_parameter_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import c_function_name from "./utils/c_function_name.ts";
+import { enter_c_scope, leave_c_scope } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
 import { has_flag_name, is_nullable_struct_type } from "./utils/nullable_struct.ts";
+import scan_borrow_only_strings from "./utils/scan_borrow_only_strings.ts";
 
 export default function build_struct_node(node: StructNode, status: BuildStatus) {
 	if (node.is_generic) return;
@@ -64,7 +66,7 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 		// then return it.
 		status.code += `${ctor}\n{\n`;
 		if (is_class) {
-			status.code += `struct ${node.name}* self = malloc(sizeof(struct ${node.name}));\nmalloc_count++;\n`;
+			status.code += `struct ${node.name}* self = malloc(sizeof(struct ${node.name}));\n`;
 		} else {
 			status.code += `struct ${node.name} self;\n`;
 		}
@@ -128,7 +130,7 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 		const object_name = node.name.substring(0, 1).toLocaleLowerCase();
 		status.code += `${ctor}\n{\n`;
 		if (is_class) {
-			status.code += `struct ${node.name}* ${object_name} = malloc(sizeof(struct ${node.name}));\nmalloc_count++;\n`;
+			status.code += `struct ${node.name}* ${object_name} = malloc(sizeof(struct ${node.name}));\n`;
 		} else {
 			status.code += `${node.name} ${object_name};\n`;
 		}
@@ -283,10 +285,12 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 		const old_self_is_ref = status.self_is_ref;
 		const old_class_vars = status.class_vars;
 		const old_scoped_declarations = status.scoped_declarations;
+		const old_borrow_only = status.c_borrow_only_strings;
 		const old_return_type = status.function_return_type;
 		status.function_ref_params = new Set<string>();
 		status.class_vars = new Set<string>();
-		status.scoped_declarations = [];
+		status.scoped_declarations = enter_c_scope(status);
+		status.c_borrow_only_strings = scan_borrow_only_strings(func);
 		status.function_return_type = func.return_type;
 		const self_param = func.params[0]?.is_self_param ? func.params[0] : null;
 		status.self_is_ref = !!self_param?.is_ref || self_param?.declaration === "var";
@@ -387,14 +391,17 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 		for (let child of func.statements) {
 			build_node(child, status, true);
 		}
-		if (!func.has_return) {
-			build_auto_free(status);
-		}
+		// Always run auto_free at function exit (see build_function_node): a
+		// conditional early return still falls through, and those fall-through
+		// declarations must be reclaimed.
+		build_auto_free(status);
 		status.code += `}\n`;
 		status.function_ref_params = old_ref_params;
 		status.class_vars = old_class_vars;
 		status.self_is_ref = old_self_is_ref;
+		leave_c_scope(status);
 		status.scoped_declarations = old_scoped_declarations;
+		status.c_borrow_only_strings = old_borrow_only;
 		status.function_return_type = old_return_type;
 	}
 	status.current_struct = old_current_struct;
@@ -450,12 +457,10 @@ function build_auto_destroy(node: StructNode, status: BuildStatus) {
 					status.code += `if (self->${field.name}) {\n`;
 					status.code += `${field_struct.name}_destroy(self->${field.name});\n`;
 					status.code += `free(self->${field.name});\n`;
-					status.code += `malloc_count--;\n`;
 					status.code += `}\n`;
 				} else {
 					status.code += `${field_struct.name}_destroy(self->${field.name});\n`;
 					status.code += `free(self->${field.name});\n`;
-					status.code += `malloc_count--;\n`;
 				}
 			}
 		} else if (field_struct.functions.find((f) => f.name === "#destroy")) {

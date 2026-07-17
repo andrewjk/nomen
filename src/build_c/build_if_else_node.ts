@@ -3,11 +3,12 @@ import build_auto_free from "./build_auto_free.ts";
 import build_block_node from "./build_block_node.ts";
 import build_node from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
+import { enter_c_scope, leave_c_scope } from "./utils/c_scope.ts";
 import emit_allocations from "./utils/emit_allocations.ts";
 
 export default function build_if_else_node(node: IfElseNode, status: BuildStatus) {
 	const old_scoped_declarations = status.scoped_declarations;
-	status.scoped_declarations = [];
+	status.scoped_declarations = enter_c_scope(status);
 	const old_deferred_frees = status.deferred_frees;
 	status.deferred_frees = [];
 
@@ -24,10 +25,14 @@ export default function build_if_else_node(node: IfElseNode, status: BuildStatus
 		build_block_node(node.if_branch, status);
 		build_auto_free(status);
 	}
+	leave_c_scope(status);
 	if (node.else_branch) {
+		status.scoped_declarations = enter_c_scope(status);
+		status.deferred_frees = [];
 		status.code += `} else {\n`;
 		build_block_node(node.else_branch, status);
 		build_auto_free(status);
+		leave_c_scope(status);
 	}
 	status.code += `}\n`;
 

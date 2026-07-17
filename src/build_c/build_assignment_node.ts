@@ -1,10 +1,13 @@
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import AssignmentNode from "../nodes/AssignmentNode.ts";
+import DeclarationNode from "../nodes/DeclarationNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
+import { emit_struct_destroys, struct_needs_destroy_by_name } from "./build_auto_free.ts";
 import build_node from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import c_type from "./utils/c_type.ts";
+import is_string_borrow from "./utils/is_string_borrow.ts";
 import { is_nullable_struct_type } from "./utils/nullable_struct.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 
@@ -74,9 +77,9 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 				const field_access = status.code.substring(before_len);
 				status.code = status.code.substring(0, before_len);
 				if (field_type?.is_nullable) {
-					status.code += `if (${field_access}) { ${field_struct.name}_destroy(${field_access}); free(${field_access}); malloc_count--; }\n`;
+					status.code += `if (${field_access}) { ${field_struct.name}_destroy(${field_access}); free(${field_access}); }\n`;
 				} else {
-					status.code += `${field_struct.name}_destroy(${field_access}); free(${field_access}); malloc_count--;\n`;
+					status.code += `${field_struct.name}_destroy(${field_access}); free(${field_access});\n`;
 				}
 				// Ownership transfer: assigning a bare variable to an owned
 				// (`mov`) class field moves ownership from the source variable
@@ -92,6 +95,41 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 				}
 			}
 		}
+	}
+
+	// Borrowed string RHS (e.g. `filename = init.args.at(1)`): the LHS gives up
+	// ownership — `args.at()` returns a pointer into argv (or a container's
+	// storage), which must not be freed. Record the LHS in string_borrow_vars so
+	// auto_free — which runs in the variable's *declaration* scope, possibly an
+	// outer scope we can't reach from here — skips it. Reclaim the LHS's OLD
+	// owned value now (its current pointer, before the overwrite) so it doesn't
+	// leak — but only if the LHS isn't already itself a borrow (a second borrow
+	// reassignment must not free the prior borrow).
+	if (
+		!node.operator &&
+		node.left_value.node_type === "value" &&
+		is_string_borrow(node.right_value)
+	) {
+		const lhs_name = (node.left_value as ValueNode).value;
+		const lhs_decl = status.scoped_declarations.find((d) => d.name === lhs_name);
+		const lhs_type = lhs_decl?.type || status.variable_types?.get(lhs_name);
+		// Only string-typed LHS need borrow handling — an int/struct element
+		// access like `first = p.at(0)` (int array) is a plain value copy with
+		// no ownership to manage, and freeing it would be invalid.
+		if (lhs_type?.name === "string") {
+			const was_borrow = !!status.string_borrow_vars?.has(lhs_name);
+			if (!status.string_borrow_vars) status.string_borrow_vars = new Set();
+			status.string_borrow_vars.add(lhs_name);
+			if (!was_borrow) {
+				if (lhs_decl) {
+					const idx = status.scoped_declarations.indexOf(lhs_decl);
+					if (idx !== -1) status.scoped_declarations.splice(idx, 1);
+				}
+				status.code += `free(${lhs_name});\n`;
+			}
+		}
+
+		// Fall through to the generic `lhs = rhs` emission below.
 	}
 
 	// String/class variable reassignment: eagerly free the old heap value
@@ -114,7 +152,67 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 		const lhs_struct = lhs_type ? status.structs.find((s) => s.name === lhs_type.name) : null;
 		const lhs_is_string = lhs_type?.name === "string";
 		const lhs_is_class = !!lhs_struct?.is_class || lhs_in_class_vars;
-		if ((lhs_decl || lhs_in_class_vars) && (lhs_is_string || lhs_is_class)) {
+		// An owned string may be declared in an outer scope (`var s = ""`) and
+		// reassigned inside a loop body, where scoped_declarations has been
+		// reset (so lhs_decl is undefined). owned_string_vars persists across
+		// scope resets, so use it to still reclaim the displaced value.
+		const lhs_is_owned_string =
+			lhs_is_string &&
+			!!status.owned_string_vars?.has(lhs_name) &&
+			!status.string_borrow_vars?.has(lhs_name);
+		// `ref` class param reassignment (`h = Holder(...)` where h is a
+		// double-pointer `struct T **`): eagerly destroy+free the caller's OLD
+		// instance (`*h`), then write the new instance back through the slot
+		// (`*h = ...`). Mirrors aarch64's ref_class_slots write-back. This is
+		// the caller's memory; no borrows of the old value survive across the
+		// call boundary, so eager reclamation is safe.
+		const ref_param_type = status.ref_class_param_types?.get(lhs_name);
+		if (status.ref_class_params?.has(lhs_name) && ref_param_type) {
+			const mono = ref_param_type.type_args?.length
+				? `${ref_param_type.name}_${ref_param_type.type_args.map((t) => t.name).join("_")}`
+				: ref_param_type.name;
+			const destroy_struct =
+				status.structs.find((s) => s.name === mono && !s.is_generic) ??
+				status.structs.find((s) => s.name === ref_param_type.name);
+			if (!destroy_struct) {
+				status.code += `*${lhs_name} = `;
+				build_node(node.right_value, status);
+				status.code += `;\n`;
+				return;
+			}
+			if (ref_param_type.is_nullable) {
+				status.code += `if (*${lhs_name}) { ${destroy_struct.name}_destroy(*${lhs_name}); free(*${lhs_name}); }\n`;
+			} else {
+				status.code += `${destroy_struct.name}_destroy(*${lhs_name}); free(*${lhs_name});\n`;
+			}
+			status.code += `*${lhs_name} = `;
+			build_node(node.right_value, status);
+			status.code += `;\n`;
+			return;
+		}
+		// If the LHS was previously moved out (`take(mov a)`), its old value is
+		// owned by the callee and must NOT be reclaimed here. Just overwrite —
+		// the fall-through path emits `a = <rhs>` — and clear the moved flag so
+		// the new value is tracked normally again.
+		if (status.moved?.has(lhs_name) && lhs_is_class) {
+			status.moved.delete(lhs_name);
+			// Re-register the slot so the NEW value is reclaimed at scope exit,
+			// unless the RHS is `null` or a bare alias (both are value-nodes and
+			// don't create a new owned instance here). The original decl was
+			// spliced when the var was moved out, so reconstruct one from the
+			// known LHS type.
+			if (node.right_value.node_type !== "value" && lhs_type) {
+				const decl =
+					lhs_decl ?? new DeclarationNode(node.start, "private", "var", lhs_name, lhs_type);
+				if (!status.scoped_declarations.some((d) => d.name === lhs_name)) {
+					status.scoped_declarations.push(decl);
+				}
+			}
+			// Fall through to the normal `lhs = rhs` emission below.
+		} else if (
+			(lhs_decl || lhs_in_class_vars || lhs_is_owned_string) &&
+			(lhs_is_string || lhs_is_class)
+		) {
 			const rhs = node.right_value;
 			const rhs_is_bare_value = rhs.node_type === "value";
 
@@ -140,7 +238,18 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 			const lhs_is_alias = !!status.class_alias_vars?.has(lhs_name);
 			const lhs_has_alias = !!status.aliased_class_sources?.has(lhs_name);
 			if (lhs_has_alias) {
-				// Skip free — alias still references the old value.
+				// The old value is still referenced by an alias (`var Box b =
+				// a; a = Box(99)`), so it must NOT be freed here. Transfer
+				// ownership of the old instance to the alias(es): re-add their
+				// declarations to scoped_declarations so the old value is
+				// destroyed/freed exactly once at scope exit (the alias, being
+				// in class_alias_vars, is otherwise never freed). Mirrors
+				// aarch64's mark_anchor_destroy on the alias.
+				const aliases = status.class_alias_source_map?.get(lhs_name) ?? [];
+				for (const alias_decl of aliases) {
+					const already = status.scoped_declarations.some((d) => d.name === alias_decl.name);
+					if (!already) status.scoped_declarations.push(alias_decl);
+				}
 			} else if (lhs_is_class && lhs_struct && !lhs_is_alias && (lhs_decl || lhs_in_class_vars)) {
 				// Deferred reclamation: capture the old instance into a temp
 				// and destroy+free it at scope exit (build_auto_free emits the
@@ -160,20 +269,20 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 					struct_name: lhs_struct.name,
 					is_nullable: !!lhs_type?.is_nullable,
 				});
-		} else {
-			// For a string with a non-bare RHS that may reference the LHS
-			// (e.g. `s = f(s)` or `s = s + "x"`), compute the RHS into a
-			// temp BEFORE freeing the old value to avoid use-after-free.
-			if (lhs_is_string && !rhs_is_bare_value) {
-				const id = (status.label_counter = (status.label_counter ?? 0) + 1);
-				const temp = `_reassign_${id}`;
-				status.code += `char* ${temp} = `;
-				build_node(node.right_value, status);
-				status.code += `;\nfree(${lhs_name});\nmalloc_count--;\n${lhs_name} = ${temp};\n`;
-				return;
+			} else {
+				// For a string with a non-bare RHS that may reference the LHS
+				// (e.g. `s = f(s)` or `s = s + "x"`), compute the RHS into a
+				// temp BEFORE freeing the old value to avoid use-after-free.
+				if (lhs_is_string && !rhs_is_bare_value) {
+					const id = (status.label_counter = (status.label_counter ?? 0) + 1);
+					const temp = `_reassign_${id}`;
+					status.code += `char* ${temp} = `;
+					build_node(node.right_value, status);
+					status.code += `;\nfree(${lhs_name});\n${lhs_name} = ${temp};\n`;
+					return;
+				}
+				status.code += `free(${lhs_name});\n`;
 			}
-			status.code += `free(${lhs_name});\nmalloc_count--;\n`;
-		}
 
 			if (rhs_is_bare_value) {
 				// RHS is a bare variable (alias). For classes, transfer
@@ -182,9 +291,16 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 				// For strings, remove the LHS so it won't be freed (string
 				// aliases don't own — the source does via its own copy).
 				if (lhs_is_class) {
-					const rhs_name = (rhs as ValueNode).value;
-					const rhs_idx = status.scoped_declarations.findIndex((d) => d.name === rhs_name);
-					if (rhs_idx !== -1) status.scoped_declarations.splice(rhs_idx, 1);
+					// `a = b swap Box(0)`: `b`'s current value transfers to `a`,
+					// but `b` is revalidated with a fresh instance (the swap
+					// expr), so it KEEPS ownership of that new value and must
+					// stay registered for reclamation. Only remove the source
+					// when there is no swap (a plain alias-move `a = b`).
+					if (!node.swap) {
+						const rhs_name = (rhs as ValueNode).value;
+						const rhs_idx = status.scoped_declarations.findIndex((d) => d.name === rhs_name);
+						if (rhs_idx !== -1) status.scoped_declarations.splice(rhs_idx, 1);
+					}
 				} else {
 					// String: LHS is now an alias, remove it
 					if (lhs_decl) {
@@ -226,12 +342,82 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 			if (lhs_struct || lhs_mono_struct) {
 				const rhs = node.right_value;
 				if (rhs.node_type === "value" && (rhs as ValueNode).is_moved) {
+					// `b = mov a` — ownership transfers from `a` to `b`. The OLD
+					// `b` value is being discarded, so eagerly reclaim its
+					// resources (e.g. `b`'s old Buffer) first. Then remove the
+					// SOURCE `a` from scoped_declarations so it won't be freed at
+					// its own scope exit (b owns the data now and is freed
+					// instead). Mirrors aarch64's mov-ownership transfer.
+					const mov_struct_type = lhs_mono_struct ?? lhs_struct;
+					if (mov_struct_type && struct_needs_destroy_by_name(mov_struct_type.name, status)) {
+						emit_struct_destroys(status, mov_struct_type, lhs_name);
+					}
 					const rhs_name = (rhs as ValueNode).value;
 					const rhs_idx = status.scoped_declarations.findIndex((d) => d.name === rhs_name);
 					if (rhs_idx !== -1) status.scoped_declarations.splice(rhs_idx, 1);
 				} else {
-					const idx = status.scoped_declarations.indexOf(lhs_decl);
-					if (idx !== -1) status.scoped_declarations.splice(idx, 1);
+					// Non-mov struct reassignment.
+					//
+					// When the RHS is a FRESH constructor (`a = List<int>()`,
+					// `Box(5)`) — a call that allocates a brand-new instance and
+					// does NOT alias another variable's buffer — the OLD value is
+					// genuinely discarded, so eagerly reclaim its resources here
+					// and KEEP the variable in scoped_declarations so its (new)
+					// final value is freed at scope exit. This mirrors aarch64's
+					// eager reclaim on non-borrow reassignment and fixes the
+					// cross-instance replacement leak.
+					//
+					// Otherwise (method calls, including `a = a.new(...)` and
+					// `k = k2.new(3)`) the returned struct is a by-value copy of
+					// the receiver's buffer, which ALIASES that variable's
+					// backing store. Freeing it at scope exit would double-free
+					// the shared buffer, so DROP the variable from
+					// scoped_declarations (the original safe behaviour): the
+					// aliased source owns and frees the buffer, and the method's
+					// internal realloc frees any intermediate block. This trades
+					// a (safe) leak for avoiding a crash.
+					const struct_type = lhs_mono_struct ?? lhs_struct;
+					const needs_destroy = struct_type
+						? struct_needs_destroy_by_name(struct_type.name, status)
+						: false;
+					// A plain free-function call (`list = make_list()`) — a
+					// func_call node with no receiver — returns a FRESH owned
+					// value (a factory result), not an alias of another
+					// variable's buffer. Treat it like a fresh constructor:
+					// eagerly reclaim the discarded old value and KEEP the
+					// variable so its new value is freed at scope exit.
+					const rhs_is_free_factory =
+						node.right_value.node_type === "func_call" && !rhs_references_var(node, lhs_name);
+					if (is_fresh_constructor(node, status) || rhs_is_free_factory) {
+						// Fresh constructor / factory: eagerly reclaim the
+						// discarded old value, then keep the variable for a
+						// scope-exit free of the new value.
+						if (needs_destroy) emit_struct_destroys(status, struct_type!, lhs_name);
+					} else if (is_self_method_call(node, lhs_name)) {
+						// `a = a.new(...)`: the method reuses/reallocs the
+						// variable's own buffer in place, so KEEP the variable
+						// (no eager free — that would be a use-after-free) and
+						// let scope-exit free the final buffer once.
+					} else if (!rhs_references_var(node, lhs_name)) {
+						// Method/func call on ANOTHER variable whose result does
+						// NOT reference `lhs` (`k = k2.new(3)`): the old `lhs`
+						// value is genuinely discarded (the new value aliases the
+						// OTHER variable's buffer), so eagerly reclaim the old
+						// value, then DROP `lhs` from scoped_declarations so
+						// scope-exit doesn't double-free the shared (aliased)
+						// buffer.
+						if (needs_destroy) emit_struct_destroys(status, struct_type!, lhs_name);
+						const idx = status.scoped_declarations.indexOf(lhs_decl);
+						if (idx !== -1) status.scoped_declarations.splice(idx, 1);
+					} else {
+						// Method/func call that references `lhs` as an argument
+						// (`k = f(k)` returning `k` by value): eagerly freeing the
+						// old value would be a use-after-free (the RHS reads it).
+						// Drop the variable (original safe behaviour) — the
+						// result aliases `lhs`'s buffer, so no scope-exit free.
+						const idx = status.scoped_declarations.indexOf(lhs_decl);
+						if (idx !== -1) status.scoped_declarations.splice(idx, 1);
+					}
 				}
 			}
 		}
@@ -298,6 +484,85 @@ function lhs_nullable_struct_type(node: AssignmentNode, status: BuildStatus): bo
 	) {
 		const field_type = (node.left_value as AccessNode).access.type;
 		return is_nullable_struct_type(field_type, status);
+	}
+	return false;
+}
+
+/**
+ * Whether a reassignment's RHS is a FRESH constructor call — one that
+ * allocates a brand-new instance and does NOT alias another variable's buffer
+ * (`a = List<int>()`, `Box(5)`, `BigInt()`). Such a call discards the old
+ * value, so it is safe to eagerly reclaim the old value AND keep the variable
+ * in scoped_declarations for a scope-exit free of the fresh value.
+ *
+ * Returns false for method calls (`a.new(...)`, `k2.new(3)`) and access
+ * results, whose by-value return aliases the receiver's backing store — those
+ * must NOT be eagerly freed (would be a use-after-free) nor kept for scope-exit
+ * free (would double-free the shared buffer).
+ */
+/** Whether a reassignment's RHS references the named variable (as a self
+ * receiver, an access target, or an argument), so eagerly freeing the old LHS
+ * value before building the RHS would be a use-after-free. */
+function rhs_references_var(node: AssignmentNode, name: string): boolean {
+	const rhs = node.right_value;
+	if (rhs.node_type === "access") {
+		const target = (rhs as AccessNode).target;
+		if (target.node_type === "value" && (target as ValueNode).value === name) return true;
+	}
+	if (rhs.node_type === "func_call") {
+		const call = rhs as import("../nodes/FunctionCallNode.ts").default;
+		for (const p of call.params ?? []) {
+			if (p.node_type === "value" && (p as ValueNode).value === name) return true;
+			if (p.node_type === "access") {
+				const target = (p as AccessNode).target;
+				if (target.node_type === "value" && (target as ValueNode).value === name) return true;
+			}
+		}
+	}
+	return false;
+}
+
+function is_fresh_constructor(node: AssignmentNode, status: BuildStatus): boolean {
+	const rhs = node.right_value;
+	if (rhs.node_type !== "func_call") return false;
+	const call = rhs as import("../nodes/FunctionCallNode.ts").default;
+	// The called function must be a struct constructor (not a free function).
+	const is_ctor = !!status.structs.find((s) => s.name === call.name && !s.is_simple_type);
+	if (!is_ctor) return false;
+	// No parameter may reference a variable (access on a var, or a bare var
+	// name) — a `ref self`/borrow param means the result aliases that
+	// variable's buffer. A plain literal arg (e.g. `Box(5)`) is fine.
+	for (const p of call.params ?? []) {
+		if (p.node_type === "access") return false;
+		if (p.node_type === "value" && status.variable_types?.has((p as ValueNode).value)) return false;
+	}
+	return true;
+}
+
+/**
+ * Whether a reassignment's RHS is a method call on the SAME variable
+ * (`a = a.new(...)`, `a = a.method()`). Such a call takes `ref self` and
+ * reuses/reallocs the variable's existing buffer in place, so the variable
+ * must be KEPT in scoped_declarations (scope-exit frees the final buffer) and
+ * must NOT be eagerly freed (would be a use-after-free).
+ */
+function is_self_method_call(node: AssignmentNode, lhs_name: string): boolean {
+	const rhs = node.right_value;
+	if (rhs.node_type === "access") {
+		const target = (rhs as AccessNode).target;
+		return target.node_type === "value" && (target as ValueNode).value === lhs_name;
+	}
+	if (rhs.node_type === "func_call") {
+		const call = rhs as import("../nodes/FunctionCallNode.ts").default;
+		const first = call.params?.[0];
+		if (!first) return false;
+		if (first.node_type === "access") {
+			const target = (first as AccessNode).target;
+			return target.node_type === "value" && (target as ValueNode).value === lhs_name;
+		}
+		if (first.node_type === "value") {
+			return (first as ValueNode).value === lhs_name;
+		}
 	}
 	return false;
 }

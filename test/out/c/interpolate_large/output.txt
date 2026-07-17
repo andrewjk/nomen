@@ -1,3 +1,1 @@
 Big: 123456789
-
-Malloc balance: 0

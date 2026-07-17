@@ -1,5 +1,2 @@
 73196
 Pfannkuchen(10) = 38
-
-
-Malloc balance: 0

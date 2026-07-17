@@ -1,3 +1,1 @@
 Hello Alice!
-
-Malloc balance: -2

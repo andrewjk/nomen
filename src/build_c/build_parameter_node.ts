@@ -68,7 +68,16 @@ export default function build_parameter_node(node: ParameterNode, status: BuildS
 		node.type.is_ref ||
 		node.type.is_array ||
 		(!is_simple && node.declaration === "var");
-	if (wants_pointer) {
+	// A `ref` CLASS param is a double pointer (`struct T **`): the call site
+	// passes the address of the caller's pointer slot so the callee can
+	// reassign the caller's variable (write-back) and reclaim the old instance.
+	// Mirrors the aarch64 backend's ref_class_slots. Regular class params stay
+	// single pointers.
+	const is_ref_class =
+		(node.is_ref || node.type.is_ref) && !!struct_type?.is_class && !node.is_self_param;
+	if (is_ref_class) {
+		status.code += ` **`;
+	} else if (wants_pointer) {
 		status.code += ` *`;
 	} else {
 		status.code += ` `;

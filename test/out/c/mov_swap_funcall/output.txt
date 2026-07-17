@@ -1,3 +1,1 @@
 990
-
-Malloc balance: 1

@@ -40,6 +40,24 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		// value). They must NOT be passed by address — `&h1->content` would
 		// produce a `struct Box**` instead of the intended `struct Box*`.
 		const param_is_class = !!status.structs.find((s) => s.name === param_type.name && s.is_class);
+		// A `ref` class param is a double pointer: pass the address of the
+		// caller's pointer slot so the callee can reassign it (write-back).
+		if (is_ref_param && param_is_class) {
+			const arg = node.params[i];
+			if (arg.node_type === "value" && status.ref_class_params?.has((arg as ValueNode).value)) {
+				// Caller's arg is itself a ref class param (already `T **`);
+				// forward as-is without re-taking its address.
+				status.suppress_dereference = true;
+				build_node(arg, status);
+				status.suppress_dereference = false;
+				continue;
+			}
+			status.code += `&`;
+			status.suppress_dereference = true;
+			build_node(arg, status);
+			status.suppress_dereference = false;
+			continue;
+		}
 		const wants_address =
 			(!param_is_class &&
 				!!status.structs.find((s) => s.name === param_type.name && !s.is_simple_type)) ||
@@ -117,6 +135,11 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 				const vname = (param as ValueNode).value;
 				const di = status.scoped_declarations.findIndex((d) => d.name === vname);
 				if (di !== -1) status.scoped_declarations.splice(di, 1);
+				// Record that this variable's value has been moved out. A later
+				// reassignment (`a = null` / `a = Box(2)`) must NOT reclaim the
+				// old (already-transferred) value — the callee now owns it.
+				if (!status.moved) status.moved = new Set();
+				status.moved.add(vname);
 			}
 		}
 	}

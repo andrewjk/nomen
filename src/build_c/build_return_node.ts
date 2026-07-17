@@ -1,3 +1,4 @@
+import AccessNode from "../nodes/AccessNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import ReturnNode from "../nodes/ReturnNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
@@ -59,7 +60,6 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 		const elem_is_class = !!elem_struct?.is_class;
 		const elem_c_type = elem_is_class ? `struct ${elem_name}*` : c_type(elem_name);
 		status.code += `struct ${array_struct}* _return_val = malloc(sizeof(struct ${array_struct}) + ${return_array_len} * sizeof(${elem_c_type}));\n`;
-		status.code += `malloc_count++;\n`;
 		status.code += `_return_val->length = ${return_array_len};\n`;
 		status.code += `${elem_c_type}* _return_data = (${elem_c_type}*)((char*)_return_val + sizeof(struct ${array_struct}));\n`;
 		status.code += `for (long _i = 0; _i < ${return_array_len}; _i++) _return_data[_i] = ${return_array_var}[_i];\n`;
@@ -125,7 +125,30 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 		// This also covers trait method bodies (`return self.field` inside a
 		// trait method), which compile to vtable dispatches that ultimately
 		// return borrowed struct fields.
-		const returns_borrowed_string = ret_type.name === "string" && node.value.node_type === "access";
+		// Only a FIELD access (`return self.name`) borrows the struct's storage
+		// and must be strdup'd. A METHOD call that returns a string (e.g.
+		// `return sb.to_string()`, or any owned_return/heap-returning method)
+		// already produces a fresh owned heap string — strdup'ing it copies the
+		// result and LEAKS the original. Detect the access kind and skip the
+		// strdup for owned-string-returning method calls.
+		let returns_borrowed_string = ret_type.name === "string" && node.value.node_type === "access";
+		if (returns_borrowed_string) {
+			const access = (node.value as AccessNode).access;
+			if (access.node_type === "access_func") {
+				const fn = access as unknown as {
+					name?: string;
+					mangled_name?: string;
+					owned_return?: boolean;
+				};
+				const nm = fn.mangled_name || fn.name || "";
+				const returns_owned_string =
+					fn.owned_return ||
+					(fn.name === "to_string" && nm !== "string_to_string") ||
+					nm.startsWith("_string_interpolate_") ||
+					!!status.heap_returning_functions?.has(nm);
+				if (returns_owned_string) returns_borrowed_string = false;
+			}
+		}
 		if (returns_borrowed_string) {
 			status.code += `strdup(`;
 		}
@@ -144,7 +167,7 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 		}
 		build_node(node.value, status);
 		if (returns_borrowed_string) {
-			status.code += `); malloc_count++`;
+			status.code += `)`;
 		}
 		status.code += `;\n`;
 		build_auto_free(status);

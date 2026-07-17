@@ -1,3 +1,1 @@
 is null
-
-Malloc balance: 0

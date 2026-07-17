@@ -42,7 +42,6 @@ pub struct File {
 		long size = ftell(f);
 		fseek(f, 0, SEEK_SET);
 		char *buf = (char*)malloc(size + 1);
-		malloc_count++;
 		fread(buf, 1, size, f);
 		buf[size] = 0;
 		self->eof = 1;
@@ -104,7 +103,6 @@ pub struct File {
 		int cap = 16;
 		int len = 0;
 		char *buf = (char*)malloc(cap);
-		malloc_count++;
 		int c = fgetc(f);
 		while (c != EOF && c != '\n') {
 			if (len + 1 >= cap) {
@@ -199,7 +197,6 @@ pub struct File {
 		#arch: c
 		FILE *f = (FILE*)(unsigned long long)self->handle;
 		char *buf = (char*)malloc(size + 1);
-		malloc_count++;
 		long n = fread(buf, 1, size, f);
 		buf[n] = 0;
 		if (n < size) self->eof = 1;

@@ -1,3 +1,1 @@
 go
-
-Malloc balance: 0

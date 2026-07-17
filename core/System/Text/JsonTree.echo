@@ -31,10 +31,77 @@ pub struct JsonTree {
 		self.count = idx + 1
 		var JsonNode default = JsonNode()
 		self.nodes.store_T(idx, default)
+		// The default node's `text` points at the shared empty-string literal.
+		// NULL it in the slab so reset() can safely free only strdup'd texts
+		// (set_text writes a heap pointer; unset nodes stay NULL). idx is x1.
+		```
+		#arch: c
+		JsonNode *nodes = (JsonNode*)(unsigned long long)self->nodes.data;
+		nodes[idx].text = 0;
+		```
+		```
+		#arch: aarch64
+		// x19 = self. count is at self+32 and already equals idx+1 here, so
+		// idx = count - 1. nodes.data at self+16, JsonNode size 48, text at +16.
+		ldr x0, [x19, #16]
+		ldr x1, [x19, #32]
+		sub x1, x1, #1
+		mov x3, #48
+		madd x1, x1, x3, xzr
+		add x0, x0, x1
+		add x0, x0, #16
+		str xzr, [x0]
+		```
 		return idx
 	}
 
+	// Free a node's strdup'd text pointer (set_text writes a heap pointer via
+	// raw strdup; this mirrors it). idx is x1, following set_text's layout.
+	func free_text = (ref self, int idx) {
+		```
+		#arch: c
+		JsonNode *nodes = (JsonNode*)(unsigned long long)self->nodes.data;
+		if (nodes[idx].text) { free(nodes[idx].text); nodes[idx].text = 0; }
+		```
+		```
+		#arch: aarch64
+		// x19 = self, x1 = idx. Compute &nodes[idx].text.
+		ldr x0, [x19, #16]
+		mov x3, #48
+		madd x1, x1, x3, xzr
+		add x0, x0, x1
+		add x0, x0, #16
+		ldr x2, [x0]
+		cbz x2, .Ljsontree_free_text_skip
+		str x0, [sp, #-16]!
+		mov x0, x2
+		bl _free
+		ldr x0, [sp], #16
+		str xzr, [x0]
+		.Ljsontree_free_text_skip:
+		```
+	}
+
+	// Free every strdup'd text pointer before reusing the slab, otherwise
+	// re-parsing a document leaks the previous document's string/number texts.
 	func reset = (ref self) {
+		var int i = 0
+		while i < self.count {
+			self.free_text(i)
+			i = i + 1
+		}
+		self.count = 0
+	}
+
+	// Runs when the tree instance is destroyed (before its `nodes` buffer field
+	// is freed): release the current document's strdup'd node texts, which live
+	// raw in the slab and are otherwise invisible to the auto-destroy pass.
+	func #destroy = () {
+		var int i = 0
+		while i < self.count {
+			self.free_text(i)
+			i = i + 1
+		}
 		self.count = 0
 	}
 

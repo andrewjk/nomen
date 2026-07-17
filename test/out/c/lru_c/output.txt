@@ -1,5 +1,2 @@
 952
 9048
-
-
-Malloc balance: 0

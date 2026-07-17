@@ -1,4 +1,1 @@
 sign=1 len=1 digit=42
-
-
-Malloc balance: 0

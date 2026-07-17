@@ -1,3 +1,1 @@
 ten
-
-Malloc balance: 0

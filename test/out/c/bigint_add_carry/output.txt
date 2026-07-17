@@ -1,4 +1,1 @@
 len=2 l0=1 l1=1
-
-
-Malloc balance: 0

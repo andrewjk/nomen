@@ -1,4 +1,2 @@
 5
 done
-
-Malloc balance: 1

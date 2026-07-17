@@ -1,3 +1,1 @@
 big
-
-Malloc balance: 0

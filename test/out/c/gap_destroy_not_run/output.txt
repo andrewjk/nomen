@@ -1,5 +1,2 @@
 destroyed
 done
-
-
-Malloc balance: 1

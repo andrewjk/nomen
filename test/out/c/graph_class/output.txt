@@ -1,4 +1,1 @@
 A B C
-
-
-Malloc balance: 3

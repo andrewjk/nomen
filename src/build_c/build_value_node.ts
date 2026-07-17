@@ -34,5 +34,12 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 	if (value !== "self" && status.function_ref_params?.has(value) && !status.suppress_dereference) {
 		status.code += `*`;
 	}
+	// A `ref` class param is a double pointer (`struct T **`); a value-use
+	// reads the underlying instance pointer, so dereference once. Callers that
+	// need the address (`&h` write-back, forwarding) set suppress_dereference.
+	if (value !== "self" && status.ref_class_params?.has(value) && !status.suppress_dereference) {
+		status.code += `(*${value})`;
+		return;
+	}
 	status.code += value;
 }

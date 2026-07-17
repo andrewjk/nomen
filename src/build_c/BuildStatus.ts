@@ -35,6 +35,33 @@ export default interface BuildStatus {
 	 */
 	scoped_declarations: DeclarationNode[];
 	/**
+	 * Stack of every active scope's `scoped_declarations` frame (bottom = the
+	 * enclosing function). Each scope-creating construct (function, if/else,
+	 * while, for, switch-case) pushes the fresh `[]` it assigns to
+	 * scoped_declarations, and pops it on exit. This lets break/continue
+	 * reclaim declarations from the current scope AND all enclosing scopes up
+	 * to the loop body before jumping — mirroring aarch64's
+	 * emit_cleanup_to_loop_depth. Without it, `break` would leak every
+	 * declaration in scopes it jumps out of (the scope-exit auto_free runs
+	 * after the jump and is dead code).
+	 */
+	c_scope_stack?: DeclarationNode[][];
+	/**
+	 * Stack of frame indices (into c_scope_stack) marking each enclosing loop's
+	 * BODY frame. break/continue free frames from the top down to (and
+	 * including) the topmost entry here, then jump.
+	 */
+	c_loop_frame_depth?: number[];
+	/**
+	 * Per-function set of string variable names that are reassigned ONLY to
+	 * borrowed values (e.g. `filename = init.args.at(1)`). For such a
+	 * variable, `var string x = "literal"` skips strdup'ing the literal — the
+	 * variable never owns a heap value, so a pre-emptive copy would leak when
+	 * the borrow branch isn't taken. Populated by scan_borrow_only_strings at
+	 * function entry; reset per function.
+	 */
+	c_borrow_only_strings?: Set<string>;
+	/**
 	 * Old class instances displaced by variable reassignment (`h = Holder(...)`)
 	 * whose reclamation is deferred to scope exit. Eagerly freeing them at the
 	 * reassignment would invalidate borrows of the old value's fields (e.g.
@@ -59,6 +86,16 @@ export default interface BuildStatus {
 	 */
 	class_vars?: Set<string>;
 	/**
+	 * `ref` class parameters, emitted as double pointers (`struct T **`). The
+	 * call site passes the address of the caller's pointer slot so the callee
+	 * can reassign the caller's variable and reclaim the old instance. Use
+	 * sites dereference once (`(*name)`); reassignments write `*name = ...`.
+	 * Mirrors the aarch64 backend's `ref_class_slots`.
+	 */
+	ref_class_params?: Set<string>;
+	/** Type of each `ref` class param, keyed by C name (see ref_class_params). */
+	ref_class_param_types?: Map<string, import("../nodes/Type.ts").default>;
+	/**
 	 * When true, the next value-node build of a ref/var param should NOT be
 	 * prefixed with `*` (i.e. the caller needs the pointer itself, e.g. to
 	 * pass the address to another function or to a struct method).
@@ -76,6 +113,20 @@ export default interface BuildStatus {
 	function_return_label?: string;
 	moved_class_params?: Map<string, string>;
 	heap_array_vars?: Set<string>;
+	/**
+	 * Stack (fixed-size) C arrays whose elements own heap data — i.e. the
+	 * element type is `string`, a `class`, or a struct that needs destroying.
+	 * The backing array itself is not malloc'd (it's a local C array), but each
+	 * element was, so they must be freed element-by-element at scope exit.
+	 */
+	stack_array_vars?: Set<string>;
+	/**
+	 * For each registered stack array (see `stack_array_vars`), the C text of
+	 * the element-count expression (e.g. `3L`), captured at declaration time so
+	 * build_auto_free can emit a correct `for` bound without rebuilding the
+	 * type's length node.
+	 */
+	stack_array_lengths?: Map<string, string>;
 	heap_class_arrays?: Map<string, number>;
 	function_return_type?: Type;
 	strings?: Map<string, string>;
@@ -121,6 +172,25 @@ export default interface BuildStatus {
 	 * heap-allocated too, so reassignment can always free the old value.
 	 */
 	force_heap_strings?: Set<string>;
+	/**
+	 * String variables that have been reassigned a BORROWED value (e.g.
+	 * `filename = init.args.at(1)`, where `args.at()` returns a pointer into
+	 * argv). Such variables no longer own their value and must NOT be freed at
+	 * scope exit — freeing them would reclaim argv/container memory. Recorded
+	 * at the reassignment (which may be in a nested scope) so auto_free, which
+	 * runs in the declaration's scope, can skip them. Mirrors aarch64's
+	 * `heap_strings` ownership tracking, which only frees freshly-allocated
+	 * strings.
+	 */
+	string_borrow_vars?: Set<string>;
+	/**
+	 * Owned (heap) string variables, tracked in a set that persists across
+	 * scope resets (unlike scoped_declarations). A reassignment inside a loop
+	 * body (`s = s + "x"`) needs to know the outer-scope `s` is an owned string
+	 * so it can free the displaced old value each iteration (otherwise it
+	 * leaks — auto_free only runs once, at the declaration scope's exit).
+	 */
+	owned_string_vars?: Set<string>;
 	heap_string_arrays?: Map<string, number>;
 	last_result_is_heap?: boolean;
 	match_save_size?: number;
@@ -158,6 +228,15 @@ export default interface BuildStatus {
 	 * slots). This is a conservative safety check to prevent use-after-free.
 	 */
 	aliased_class_sources?: Set<string>;
+	/**
+	 * Maps a class variable used as an alias SOURCE (`var Box b = a`) to the
+	 * declaration node(s) of the alias(es) pointing at it. When the source is
+	 * reassigned (`a = Box(99)`), ownership of the old instance transfers to
+	 * its alias(es): their declarations are (re)added to scoped_declarations so
+	 * they are destroyed/freed exactly once at scope exit. Mirrors aarch64's
+	 * `mark_anchor_destroy` on the alias when its owner is reassigned.
+	 */
+	class_alias_source_map?: Map<string, import("../nodes/DeclarationNode.ts").default[]>;
 	/**
 	 * Maps an object-level alias var name (`var R q = p`, or a field borrow
 	 * `var Box b = h.c`) to the stack offset of a boolean flag that tracks at

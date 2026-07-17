@@ -1,4 +1,1 @@
 012
-
-
-Malloc balance: 0

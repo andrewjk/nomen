@@ -8,6 +8,3 @@ Spent:     2000.00
 Progress:  100
 Status:    in the black
 Projected savings (12w): 600.00
-
-
-Malloc balance: -5

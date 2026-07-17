@@ -1,3 +1,1 @@
 hello dance
-
-Malloc balance: -2

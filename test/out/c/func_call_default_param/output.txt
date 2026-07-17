@@ -1,3 +1,1 @@
 Hello Andrew
-
-Malloc balance: -2

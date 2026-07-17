@@ -22,6 +22,28 @@ import {
 import { get_enum_size } from "./utils/struct_layout.ts";
 import { get_field_offset, get_struct_size } from "./utils/struct_layout.ts";
 
+// Emit strlen(target) leaving the length in x0. If the target expression
+// produces an owned heap string temporary (e.g. Json.stringify(...) or an
+// operator/interpolation result), free it after measuring so it does not leak.
+function emit_string_length(target: BaseNode, status: BuildStatus) {
+	status.last_result_is_heap = false;
+	build_node(target, status);
+	if (!status.code.endsWith("\n")) status.code += "\n";
+	if (status.last_result_is_heap) {
+		// x0 = owned heap string pointer. Save it, strlen, save length, free, restore.
+		status.code += `str x0, [sp, #-16]!\n`;
+		status.code += `bl _strlen\n`;
+		status.code += `mov x1, x0\n`;
+		status.code += `ldr x0, [sp], #16\n`;
+		status.code += `str x1, [sp, #-16]!\n`;
+		emit_free(status);
+		status.code += `ldr x0, [sp], #16\n`;
+	} else {
+		status.code += `bl _strlen\n`;
+	}
+	status.last_result_is_heap = false;
+}
+
 export function emit_address_of(node: BaseNode, status: BuildStatus) {
 	if (node.node_type === "value") {
 		const name = (node as ValueNode).value;
@@ -458,9 +480,7 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 
 	// String.length → strlen(self)
 	if (target_type.name === "string" && access_field.name === "length") {
-		build_node(node.target, status);
-		if (!status.code.endsWith("\n")) status.code += "\n";
-		status.code += `bl _strlen\n`;
+		emit_string_length(node.target, status);
 		return;
 	}
 
@@ -764,9 +784,7 @@ function build_access_method(
 		access_func.name === "length" &&
 		access_func.params.length === 0
 	) {
-		build_node(node.target, status);
-		if (!status.code.endsWith("\n")) status.code += "\n";
-		status.code += `bl _strlen\n`;
+		emit_string_length(node.target, status);
 		return;
 	}
 

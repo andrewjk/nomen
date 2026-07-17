@@ -4,6 +4,3 @@ stretch tree of depth 11	 check: 4095
 64	 trees of depth 8	 check: 32704
 16	 trees of depth 10	 check: 32752
 long lived tree of depth 10	 check: 2047
-
-
-Malloc balance: 0

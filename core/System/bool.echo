@@ -5,7 +5,6 @@ pub struct bool: Stringable {
         #arch: c
         int length = snprintf(NULL, 0, "%s", self ? "true" : "false");
         char* str = malloc(length + 1);
-        malloc_count++;
         snprintf(str, length + 1, "%s", self ? "true" : "false");
         return str;
         ```

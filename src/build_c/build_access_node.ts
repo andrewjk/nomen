@@ -6,6 +6,7 @@ import BaseNode from "../nodes/BaseNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_node from "./build_node.ts";
+import { is_owned_heap_temp } from "./build_operation_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import c_type from "./utils/c_type.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
@@ -81,9 +82,7 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 			// (see check_access_node). There's no `length` field on the C `char*`,
 			// so lower it to `strlen`.
 			if (target_type.name === "string" && access_field.name === "length") {
-				status.code += "((long)strlen(";
-				build_node(node.target, status);
-				status.code += "))";
+				emit_string_length(node.target, status);
 				return;
 			}
 			if (enum_node) {
@@ -138,6 +137,12 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 					!!status.function_ref_params?.has(target_value) ||
 					!!status.class_vars?.has(target_value) ||
 					target_type_is_class;
+				// A `ref` class param is a double pointer (`struct T **`); a
+				// field read needs `(*target)->field`.
+				if (status.ref_class_params?.has(target_value)) {
+					status.code += `(*${target_value})->${access_field.name}`;
+					break;
+				}
 				if (target_is_ref) {
 					// The target is a pointer param; `->` dereferences it, so
 					// don't let build_value_node emit `*target`.
@@ -217,9 +222,7 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				access_func.name === "length" &&
 				access_func.params.length === 0
 			) {
-				status.code += "((long)strlen(";
-				build_node(node.target, status);
-				status.code += "))";
+				emit_string_length(node.target, status);
 				break;
 			}
 			if (
@@ -464,4 +467,22 @@ function resolve_access_field_type(node: AccessNode, status: BuildStatus): Type 
 	const struct = status.structs.find((s) => s.name === base_type!.name && !s.is_simple_type);
 	const field = struct?.fields.find((f) => f.name === field_name);
 	return field?.type;
+}
+
+// Emit `string.length` / `.length()` as `strlen(target)`. When the target is
+// an OWNED heap string temporary (e.g. `Json.stringify(...).length()`), the
+// intermediate string would otherwise leak — the caller keeps only the length.
+// Wrap in a clang statement-expression that frees the temp after measuring it.
+function emit_string_length(target: BaseNode, status: BuildStatus) {
+	if (is_owned_heap_temp(target, status)) {
+		const id = (status.label_counter = (status.label_counter ?? 0) + 1);
+		const tmp = `_slen_${id}`;
+		status.code += `({ char* ${tmp} = `;
+		build_node(target, status);
+		status.code += `; long _slr_${id} = (long)strlen(${tmp}); free(${tmp}); _slr_${id}; })`;
+		return;
+	}
+	status.code += "((long)strlen(";
+	build_node(target, status);
+	status.code += "))";
 }

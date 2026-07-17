@@ -1,3 +1,1 @@
 1000
-
-Malloc balance: 0

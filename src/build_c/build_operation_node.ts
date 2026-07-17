@@ -48,14 +48,95 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		const label =
 			node.operator_func.mangled_name ||
 			`${node.operator_func.struct_name}_${node.operator_func.func_name}`;
-		status.code += `${label}(`;
-		build_operand(node.left_value, status);
-		status.code += ", ";
-		build_operand(node.right_value, status);
-		status.code += ")";
+		// String concat/repeat (`a + b`, `s * n`): if an operand is itself a
+		// freshly-allocated heap string temp (a nested string op or a
+		// heap-returning call), it is never bound to a variable and would leak
+		// once the operator has consumed it. Emit a statement-expression that
+		// captures each such temp, runs the operator, frees the temps, and
+		// yields the result. Mirrors the aarch64 backend's is_owned_heap_temp
+		// spill-and-free. (Builds link with clang, which supports GNU
+		// statement expressions.)
+		const is_string_op = node.type?.name === "string";
+		const left_temp = is_string_op && is_owned_heap_temp(node.left_value, status);
+		const right_temp = is_string_op && is_owned_heap_temp(node.right_value, status);
+		if (left_temp || right_temp) {
+			const id = (status.label_counter = (status.label_counter ?? 0) + 1);
+			const lt = `_ltmp_${id}`;
+			const rt = `_rtmp_${id}`;
+			status.code += `({ `;
+			status.code += `char* ${lt} = `;
+			build_operand(node.left_value, status);
+			status.code += `; char* ${rt} = `;
+			build_operand(node.right_value, status);
+			status.code += `; char* _cres_${id} = ${label}(${lt}, ${rt}); `;
+			if (left_temp) status.code += `echo_free_wrap(${lt}); `;
+			if (right_temp) status.code += `echo_free_wrap(${rt}); `;
+			status.code += `_cres_${id}; })`;
+		} else {
+			status.code += `${label}(`;
+			build_operand(node.left_value, status);
+			status.code += ", ";
+			build_operand(node.right_value, status);
+			status.code += ")";
+		}
 	} else {
 		build_default_binary(node, status);
 	}
+}
+
+/**
+ * Whether an operand produces a fresh heap string that is safe to free once a
+ * string operator has consumed it: a nested string op (`a + b`), a string
+ * interpolation, a `*_to_string` call, or a call registered in
+ * heap_returning_functions. Variables, literals and arbitrary calls are NOT
+ * freed here — they may be static or owned elsewhere. Mirrors the aarch64
+ * backend's is_owned_heap_temp.
+ */
+export function is_owned_heap_temp(
+	node: import("../nodes/BaseNode.ts").default,
+	status: BuildStatus,
+): boolean {
+	let check_node = node;
+	let target_value: string | undefined;
+	let target_type_name: string | undefined;
+	let type_name = (node as { type?: { name?: string } }).type?.name;
+	if (node.node_type === "access") {
+		const access = node as unknown as {
+			access?: { node_type?: string; type?: { name?: string }; name?: string };
+			target?: { value?: string; type?: { name?: string } };
+		};
+		if (access.access?.node_type !== "access_func") return false;
+		target_value = access.target?.value;
+		target_type_name = access.target?.type?.name;
+		if (!target_type_name && (node as any).target) {
+			try {
+				target_type_name = type_from_value_node((node as any).target)?.name;
+			} catch {
+				target_type_name = undefined;
+			}
+		}
+		check_node = access.access as unknown as import("../nodes/BaseNode.ts").default;
+		// The result type may be recorded on the inner access_func node or on
+		// the outer AccessNode — fall back to the latter.
+		type_name = access.access?.type?.name || type_name;
+	}
+	if (type_name !== "string") return false;
+	if (check_node.node_type === "op") return true;
+	if (check_node.node_type === "func_call" || check_node.node_type === "access_func") {
+		const raw_name = (check_node as unknown as { name: string }).name;
+		const mangled = (check_node as unknown as { mangled_name?: string }).mangled_name || raw_name;
+		if (mangled.startsWith("_string_interpolate_")) return true;
+		if (mangled.endsWith("_to_string") && mangled !== "string_to_string") return true;
+		// A bare `.to_string()` on a non-string target (emitted as
+		// `<type>_to_string`) returns a fresh owned heap string; the AST method
+		// name lacks the type prefix, so match via the target's type.
+		if (raw_name === "to_string" && target_type_name && target_type_name !== "string") return true;
+		const heap_set = status.heap_returning_functions;
+		if (heap_set?.has(mangled)) return true;
+		if (heap_set && target_value && heap_set.has(`${target_value}_${raw_name}`)) return true;
+		return false;
+	}
+	return false;
 }
 
 function build_default_binary(node: OperationNode, status: BuildStatus) {

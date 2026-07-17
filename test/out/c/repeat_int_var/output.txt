@@ -1,3 +1,1 @@
 abababab
-
-Malloc balance: -1

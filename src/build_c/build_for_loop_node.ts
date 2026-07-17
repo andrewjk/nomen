@@ -4,14 +4,21 @@ import build_auto_free from "./build_auto_free.ts";
 import build_block_node from "./build_block_node.ts";
 import build_node from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
+import {
+	enter_c_scope,
+	leave_c_scope,
+	pop_c_loop_frame,
+	push_c_loop_frame,
+} from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 
 export default function build_for_loop_node(node: ForLoopNode, status: BuildStatus) {
 	const old_scoped_declarations = status.scoped_declarations;
-	status.scoped_declarations = [];
+	status.scoped_declarations = enter_c_scope(status);
 	const old_deferred_frees = status.deferred_frees;
 	status.deferred_frees = [];
+	push_c_loop_frame(status);
 
 	if (node.item && node.list) {
 		if (node.list.node_type == "range") {
@@ -120,6 +127,8 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 		status.code += `}\n`;
 	}
 
+	pop_c_loop_frame(status);
+	leave_c_scope(status);
 	status.scoped_declarations = old_scoped_declarations;
 	status.deferred_frees = old_deferred_frees;
 }

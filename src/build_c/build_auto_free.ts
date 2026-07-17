@@ -1,14 +1,45 @@
 import AccessNode from "../nodes/AccessNode.ts";
+import DeclarationNode from "../nodes/DeclarationNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import Type from "../nodes/Type.ts";
 import type BuildStatus from "./BuildStatus.ts";
+import is_string_borrow from "./utils/is_string_borrow.ts";
 import { has_flag_name, is_nullable_struct_type } from "./utils/nullable_struct.ts";
 
 export default function build_auto_free(status: BuildStatus) {
+	free_scoped_declarations(status, status.scoped_declarations);
+
+	// Deferred reclamation: class instances displaced by variable reassignment
+	// (`h = Holder(...)`) are kept alive until scope exit so borrows of the old
+	// value's fields remain valid. Destroy + free them now (after the scoped
+	// declarations of this scope have been processed). Mirrors aarch64's
+	// anchor-slot deferred reclamation.
+	if (status.deferred_frees?.length) {
+		status.code += "\n// Deferred frees\n";
+		for (const d of status.deferred_frees) {
+			if (d.is_nullable) {
+				status.code += `if (${d.temp}) { ${d.struct_name}_destroy(${d.temp}); free(${d.temp}); }\n`;
+			} else {
+				status.code += `${d.struct_name}_destroy(${d.temp}); free(${d.temp});\n`;
+			}
+		}
+		status.deferred_frees.length = 0;
+	}
+	status.scoped_declarations = [];
+}
+
+/**
+ * Emit scope-exit free/destroy code for a list of declarations. Extracted from
+ * build_auto_free so that break/continue can reclaim declarations from the
+ * current scope AND enclosing scopes (up to the loop body) before jumping —
+ * see build_break_node. Does NOT process deferred_frees or clear the list
+ * (those are scope-exit-only concerns handled by build_auto_free).
+ */
+export function free_scoped_declarations(status: BuildStatus, decls: DeclarationNode[]) {
 	// Add dispose calls, if applicable
 	// TODO: free() if it's on the heap
 	let commented = false;
-	for (const dec of status.scoped_declarations) {
+	for (const dec of decls) {
 		// Call dispose() if it has the Disposable trait
 		const struct = status.structs.find((s) => s.name === dec.type.name);
 		if (struct && struct.traits.includes("Disposable")) {
@@ -34,14 +65,51 @@ export default function build_auto_free(status: BuildStatus) {
 		// pointer (e.g. a string literal stored in the tuple) that must not be
 		// freed. The temporary owns the tuple's contents; the destructured
 		// bindings are non-owning views.
+		// A `mov` field access (`var Buffer b = mov self.slots swap ...`)
+		// transfers OWNERSHIP of the field's data to `b`, so `b` must be
+		// destroyed at scope exit — it is NOT a non-owning view.
 		const is_destructured_field_access =
 			dec.value?.node_type === "access" &&
-			(dec.value as AccessNode).access.node_type === "access_field";
+			(dec.value as AccessNode).access.node_type === "access_field" &&
+			!dec.value.is_moved;
+		// A string declaration initialized from an array element access
+		// (`args.at(n)`, `list.first()`) is a BORROW into the container's
+		// storage — including the hoisted `_param_N` temp for a call like
+		// `parse_int(init.args.at(1))`. Freeing it would free argv/container
+		// memory. Skip it.
+		const is_borrowed_string =
+			is_string_borrow(dec.value) || !!status.string_borrow_vars?.has(dec.name);
+		// A string temp whose value is a fresh heap allocation (e.g. an array
+		// `to_string()` hoisted as an interpolation arg) is owned and MUST be
+		// freed even when its inherited type is `static` (the static-ness came
+		// from the source expression, not the freshly-allocated result).
+		const value_is_heap_string =
+			dec.type.name === "string" &&
+			((dec.value?.node_type === "access" &&
+				(dec.value as AccessNode).access.node_type === "access_func" &&
+				(dec.value as AccessNode).access &&
+				(() => {
+					const fn = (dec.value as AccessNode).access as {
+						name?: string;
+						mangled_name?: string;
+						owned_return?: boolean;
+					};
+					const nm = fn.mangled_name || fn.name || "";
+					if (fn.name === "to_string" && nm !== "string_to_string") return true;
+					if (nm.startsWith("_string_interpolate_")) return true;
+					if (nm && status.heap_returning_functions?.has(nm)) return true;
+					return false;
+				})()) ||
+				// A direct call to a user function that returns an owned heap
+				// string (`const out = first_parts(...)`).
+				(dec.value?.node_type === "func_call" &&
+					!!status.heap_returning_functions?.has((dec.value as { name?: string }).name ?? "")));
 		const dec_struct = status.structs.find((s) => s.name === dec.type.name);
 		const is_class_var = !!dec_struct?.is_class;
 		if (
 			!is_destructured_field_access &&
-			!dec.type.is_static &&
+			!is_borrowed_string &&
+			(!dec.type.is_static || value_is_heap_string) &&
 			dec.type.name === "string" &&
 			!dec.type.is_array
 		) {
@@ -50,14 +118,13 @@ export default function build_auto_free(status: BuildStatus) {
 				commented = true;
 			}
 			status.code += `free(${dec.name});\n`;
-			status.code += `malloc_count--;\n`;
 		}
 		// Class-typed variables are heap-allocated (malloc'd in the
 		// constructor). Free them at scope exit. Aliases (var q = p) are
 		// already excluded from scoped_declarations by build_declaration_node.
-		// Nullable class vars may be null — guard with `if (x)` so we don't
-		// decrement malloc_count for a NULL free (free(NULL) is safe but
-		// the count would go negative).
+		// Nullable class vars may be null — guard with `if (x)` so a NULL
+		// instance isn't passed to destroy (free(NULL) is safe but destroy
+		// would dereference it).
 		// Every class has a `<Class>_destroy` function — either a user-defined
 		// `#destroy` or an auto-generated one (see build_struct_node) that
 		// recursively frees owned class-typed fields. Always call it before
@@ -72,14 +139,12 @@ export default function build_auto_free(status: BuildStatus) {
 			if (cls) {
 				const destroy_call = `${cls.name}_destroy(${dec.name}); `;
 				if (dec.type.is_nullable) {
-					status.code += `if (${dec.name}) { ${destroy_call}free(${dec.name}); malloc_count--; }\n`;
+					status.code += `if (${dec.name}) { ${destroy_call}free(${dec.name}); }\n`;
 				} else {
 					status.code += `${destroy_call}free(${dec.name});\n`;
-					status.code += `malloc_count--;\n`;
 				}
 			} else {
 				status.code += `free(${dec.name});\n`;
-				status.code += `malloc_count--;\n`;
 			}
 		}
 		// Struct-typed variables (non-class, non-array, non-string) that own
@@ -149,28 +214,44 @@ export default function build_auto_free(status: BuildStatus) {
 				status.code += `}\n`;
 			}
 			status.code += `free(${dec.name});\n`;
-			status.code += `malloc_count--;\n`;
 		}
-	}
-	// Deferred reclamation: class instances displaced by variable reassignment
-	// (`h = Holder(...)`) are kept alive until scope exit so borrows of the old
-	// value's fields remain valid. Destroy + free them now (after the scoped
-	// declarations of this scope have been processed). Mirrors aarch64's
-	// anchor-slot deferred reclamation.
-	if (status.deferred_frees?.length) {
-		if (!commented) {
-			status.code += "\n// Deferred frees\n";
-		}
-		for (const d of status.deferred_frees) {
-			if (d.is_nullable) {
-				status.code += `if (${d.temp}) { ${d.struct_name}_destroy(${d.temp}); free(${d.temp}); malloc_count--; }\n`;
-			} else {
-				status.code += `${d.struct_name}_destroy(${d.temp}); free(${d.temp}); malloc_count--;\n`;
+		// Stack (fixed-size) C arrays: the backing array is not malloc'd, but
+		// each element may own heap data (string / class / struct needing
+		// destroy). Free each element element-by-element at scope exit. The
+		// array is contiguous (`T name[N]`), so index directly into `name[_i]`
+		// — no header offset like the heap Array_<T> buffer.
+		if (
+			!is_destructured_field_access &&
+			dec.type.is_array &&
+			status.stack_array_vars?.has(dec.name)
+		) {
+			if (!commented) {
+				status.code += "\n// Auto-free\n";
+				commented = true;
+			}
+			const elem_name = dec.type.name;
+			const elem_struct = status.structs.find((s) => s.name === elem_name);
+			const elem_is_class = !!elem_struct?.is_class;
+			const elem_is_string = elem_name === "string";
+			const elem_struct_type = status.structs.find(
+				(s) => s.name === elem_name && !s.is_simple_type && !s.is_generic,
+			);
+			const arr_len = status.stack_array_lengths?.get(dec.name) ?? "0";
+			if (elem_is_string) {
+				status.code += `for (long _i = 0; _i < ${arr_len}; _i++) { free(${dec.name}[_i]); }\n`;
+			} else if (elem_is_class) {
+				if (has_destroy(elem_struct!)) {
+					status.code += `for (long _i = 0; _i < ${arr_len}; _i++) { if (${dec.name}[_i]) { ${elem_name}_destroy(${dec.name}[_i]); free(${dec.name}[_i]); } }\n`;
+				} else {
+					status.code += `for (long _i = 0; _i < ${arr_len}; _i++) { free(${dec.name}[_i]); }\n`;
+				}
+			} else if (elem_struct_type && struct_needs_destroy(elem_struct_type, status)) {
+				status.code += `for (long _i = 0; _i < ${arr_len}; _i++) {\n`;
+				emit_struct_destroys(status, elem_struct_type, `${dec.name}[_i]`);
+				status.code += `}\n`;
 			}
 		}
-		status.deferred_frees.length = 0;
 	}
-	status.scoped_declarations.length = 0;
 }
 
 function mono_type_name(type: Type): string {
@@ -186,6 +267,13 @@ function resolve_struct(type: Type, status: BuildStatus): StructNode | undefined
 
 function has_destroy(struct: StructNode): boolean {
 	return !!struct.functions.find((f) => f.name === "#destroy");
+}
+
+/** Name-based variant of struct_needs_destroy for callers without the StructNode. */
+export function struct_needs_destroy_by_name(name: string, status: BuildStatus): boolean {
+	const struct = status.structs.find((s) => s.name === name && !s.is_simple_type && !s.is_generic);
+	if (!struct) return false;
+	return struct_needs_destroy(struct, status);
 }
 
 /**
@@ -212,7 +300,11 @@ function struct_needs_destroy(struct: StructNode, status: BuildStatus): boolean 
  * destroyed via their own `#destroy`. Mirrors aarch64's
  * `emit_destroy_for_decl` + `emit_field_destroys`.
  */
-function emit_struct_destroys(status: BuildStatus, struct: StructNode, var_expr: string): void {
+export function emit_struct_destroys(
+	status: BuildStatus,
+	struct: StructNode,
+	var_expr: string,
+): void {
 	if (has_destroy(struct)) {
 		status.code += `${struct.name}_destroy(&${var_expr});\n`;
 	}
@@ -223,7 +315,7 @@ function emit_struct_destroys(status: BuildStatus, struct: StructNode, var_expr:
 		const field_expr = `${var_expr}.${field.name}`;
 		if (field_struct.is_class) {
 			if (has_destroy(field_struct)) {
-				status.code += `if (${field_expr}) { ${field_struct.name}_destroy(${field_expr}); free(${field_expr}); malloc_count--; }\n`;
+				status.code += `if (${field_expr}) { ${field_struct.name}_destroy(${field_expr}); free(${field_expr}); }\n`;
 			}
 		} else if (is_nullable_struct_type(field.type, status)) {
 			// Nullable struct field: guard on the companion `<field>_has` flag.
@@ -260,7 +352,7 @@ function capture_destroys(
 		const field_expr = `${var_expr}${accessor}${field.name}`;
 		if (field_struct.is_class) {
 			if (has_destroy(field_struct)) {
-				status.code += `if (${field_expr}) { ${field_struct.name}_destroy(${field_expr}); free(${field_expr}); malloc_count--; } `;
+				status.code += `if (${field_expr}) { ${field_struct.name}_destroy(${field_expr}); free(${field_expr}); } `;
 			}
 		} else if (is_nullable_struct_type(field.type, status)) {
 			if (struct_needs_destroy(field_struct, status)) {

@@ -1,4 +1,1 @@
 5
-
-
-Malloc balance: 0

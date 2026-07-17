@@ -1,3 +1,1 @@
 33
-
-Malloc balance: 0

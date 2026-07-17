@@ -24,10 +24,10 @@ export async function build_and_check_bench(name: string, expected: string) {
 	const parsed = parse_bench(name);
 	expect(parsed.errors).toEqual([]);
 	for (const arch of ["aarch64", "c"] as const) {
-		const result = build(parsed.root, { arch, audit: false });
+		const result = build(parsed.root, { arch, audit: true });
 		await check_output(`${name}_${arch}`, result, expected, {
 			arch,
-			audit: false,
+			audit: true,
 		});
 	}
 }
@@ -49,10 +49,10 @@ export async function build_and_check_bench_with_files(
 			fs.mkdirSync(path.dirname(dest), { recursive: true });
 			fs.copyFileSync(path.resolve(import.meta.dirname, `../../bench/${src}`), dest);
 		}
-		const result = build(parsed.root, { arch, audit: false });
+		const result = build(parsed.root, { arch, audit: true });
 		await check_output(`${name}_${arch}`, result, expected, {
 			arch,
-			audit: false,
+			audit: true,
 		});
 	}
 }

@@ -84,6 +84,7 @@ export default function clone_node(node: BaseNode): BaseNode {
 		case "access": {
 			const n = node as AccessNode;
 			const c = new AccessNode(n.start, clone_node(n.target), clone_node(n.access) as any);
+			c.is_moved = n.is_moved;
 			c.allocations = n.allocations?.map(clone_node);
 			return c;
 		}
@@ -124,6 +125,7 @@ export default function clone_node(node: BaseNode): BaseNode {
 			);
 			c.name_start = n.name_start;
 			c.type_start = n.type_start;
+			c.swap = n.swap ? clone_node(n.swap) : undefined;
 			c.func_params = n.func_params?.map((p) => clone_node(p) as ParameterNode);
 			c.func_return_type = n.func_return_type ? clone_type(n.func_return_type) : undefined;
 			c.scope = n.scope;

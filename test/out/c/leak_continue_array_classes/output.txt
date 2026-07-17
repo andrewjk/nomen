@@ -1,3 +1,1 @@
 02done
-
-Malloc balance: 3

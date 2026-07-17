@@ -1,4 +1,1 @@
 010 020 110 120 
-
-
-Malloc balance: 0

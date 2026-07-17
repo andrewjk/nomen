@@ -1,3 +1,1 @@
 5 is the value
-
-Malloc balance: 0

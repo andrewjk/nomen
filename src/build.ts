@@ -131,6 +131,22 @@ export default function build(
 		}
 	} else {
 		build_c_node(root, status);
+		if (options.audit) {
+			// Route the C backend through audit_runtime.c (the same runtime
+			// aarch64 uses): wrap every malloc/calloc/realloc/free/strdup so
+			// the balanced counter in echo_*_wrap tracks allocations, and
+			// declare the wrappers + echo_audit_check (which main calls at
+			// exit — see build_function_node). check_output links
+			// audit_runtime.o and fails the test on any "LEAK:" output.
+			status.code = wrap_c_allocators(status.code);
+			status.headers +=
+				`void *echo_malloc_wrap(unsigned long);\n` +
+				`void *echo_calloc_wrap(unsigned long, unsigned long);\n` +
+				`void *echo_realloc_wrap(void *, unsigned long);\n` +
+				`void echo_free_wrap(void *);\n` +
+				`void *echo_strdup_wrap(const char *);\n` +
+				`void echo_audit_check(void);\n`;
+		}
 	}
 
 	let companion: string | undefined;
@@ -158,4 +174,21 @@ export function default_platform(): string {
 		default:
 			return process.platform;
 	}
+}
+
+/**
+ * Wrap every allocator/deallocator call in generated C so the audit runtime's
+ * balanced counter (echo_malloc_count) tracks them. `\b` word boundaries make
+ * this safe to run as a single pass: `echo_malloc_wrap(` already has a `_`
+ * (a word char) before `malloc`, so the regex won't re-match the substituted
+ * text, and `calloc(`/`realloc(` don't contain `malloc(`. Used only under
+ * audit — without it the C backend emits raw malloc/free (no counting).
+ */
+function wrap_c_allocators(code: string): string {
+	return code
+		.replace(/\bmalloc\(/g, "echo_malloc_wrap(")
+		.replace(/\bcalloc\(/g, "echo_calloc_wrap(")
+		.replace(/\brealloc\(/g, "echo_realloc_wrap(")
+		.replace(/\bfree\(/g, "echo_free_wrap(")
+		.replace(/\bstrdup\(/g, "echo_strdup_wrap(");
 }

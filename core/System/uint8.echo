@@ -5,7 +5,6 @@ pub struct uint8: Stringable {
         #arch: c
         int length = snprintf(NULL, 0, "%d", self);
         char* str = malloc(length + 1);
-        malloc_count++;
         snprintf(str, length + 1, "%d", self);
         return str;
         ```

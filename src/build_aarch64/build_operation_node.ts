@@ -580,15 +580,24 @@ function is_owned_heap_temp(node: BaseNode, status?: BuildStatus): boolean {
 	// and pull the result type off the access_func since the wrapping access
 	// node doesn't always carry it.
 	let target_value: string | undefined;
+	let target_type_name: string | undefined;
 	let check_node = node;
 	let check_type_name = (node as { type?: { name?: string } }).type?.name;
 	if (node.node_type === "access") {
 		const access_node = node as unknown as {
 			access?: { node_type?: string; type?: { name?: string } };
-			target?: { value?: string };
+			target?: { value?: string; type?: { name?: string } };
 		};
 		if (access_node.access?.node_type !== "access_func") return false;
 		target_value = access_node.target?.value;
+		target_type_name = access_node.target?.type?.name;
+		if (!target_type_name && (node as any).target) {
+			try {
+				target_type_name = type_from_value_node((node as any).target)?.name;
+			} catch {
+				target_type_name = undefined;
+			}
+		}
 		check_node = access_node.access as unknown as BaseNode;
 		check_type_name = access_node.access?.type?.name;
 	}
@@ -599,6 +608,11 @@ function is_owned_heap_temp(node: BaseNode, status?: BuildStatus): boolean {
 		const mangled = (check_node as unknown as { mangled_name?: string }).mangled_name || raw_name;
 		if (mangled.startsWith("_string_interpolate_")) return true;
 		if (mangled.endsWith("_to_string") && mangled !== "string_to_string") return true;
+		// A bare `.to_string()` on a non-string target (e.g. `n.to_string()`,
+		// emitted as `int_to_string`) returns a fresh owned heap string. The
+		// AST method name is just `to_string` with no type prefix, so match it
+		// via the target's type rather than the mangled label.
+		if (raw_name === "to_string" && target_type_name && target_type_name !== "string") return true;
 		const heap_set = status?.heap_returning_functions;
 		if (heap_set?.has(mangled)) return true;
 		// Non-overloaded struct methods don't carry a precomputed mangled_name on

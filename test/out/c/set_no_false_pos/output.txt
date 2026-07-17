@@ -1,3 +1,1 @@
 false false false false
-
-Malloc balance: 0

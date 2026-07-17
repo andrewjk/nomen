@@ -1,8 +1,10 @@
+import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
+import { struct_needs_destroy_by_name } from "./build_auto_free.ts";
 import build_node from "./build_node.ts";
 import build_parameter_node from "./build_parameter_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
@@ -70,13 +72,49 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 		// the container, not by this variable. Such borrows must not be freed
 		// either. (Constructor calls and factory functions are `func_call`
 		// nodes, which do transfer ownership.)
+		// An `access` that is an ownership-transferring method (`mov out T`,
+		// e.g. `list.pop()`) returns a fresh owned instance — it is NOT a borrow,
+		// so the variable genuinely owns it and must be freed at scope exit.
+		// Only treat a non-`owned_return` access as an alias/borrow.
+		const val_is_owned_return =
+			node.value?.node_type === "access" &&
+			(node.value as AccessNode).access.node_type === "access_func" &&
+			!!((node.value as AccessNode).access as AccessFunctionCallNode).owned_return;
 		const val_is_class_alias =
 			is_class_type &&
 			((node.value?.node_type === "value" &&
 				!!status.class_vars?.has((node.value as ValueNode).value)) ||
-				node.value?.node_type === "access");
-		if (!val_is_class_alias) {
+				(node.value?.node_type === "access" && !val_is_owned_return));
+		// A `var string x = "literal"` where x is later reassigned ONLY to
+		// borrowed values (e.g. `filename = init.args.at(1)`) must not strdup
+		// the literal: x never owns a heap value, so a pre-emptive copy would
+		// leak when the borrow branch isn't taken (auto_free can't tell at
+		// scope exit whether the borrow happened). Treat the initial literal
+		// like a borrow from the start — don't track it for free.
+		const val_is_string_literal =
+			node.value?.node_type === "value" &&
+			(node.value as ValueNode).value.length >= 2 &&
+			(node.value as ValueNode).value.startsWith('"') &&
+			(node.value as ValueNode).value.endsWith('"');
+		const is_borrow_only_string =
+			node.declaration === "var" &&
+			node.type.name === "string" &&
+			val_is_string_literal &&
+			!!status.c_borrow_only_strings?.has(safe_name);
+		if (is_borrow_only_string) {
+			if (!status.string_borrow_vars) status.string_borrow_vars = new Set();
+			status.string_borrow_vars.add(safe_name);
+		}
+		if (!val_is_class_alias && !is_borrow_only_string) {
 			status.scoped_declarations.push(node);
+			// Track owned string vars in a set that persists across scope
+			// resets (unlike scoped_declarations). A reassignment inside a
+			// loop body (`s = s + "x"`) needs to know the outer `s` is an
+			// owned string so it can free the old value each iteration.
+			if (node.type?.name === "string" && !node.type.is_array) {
+				if (!status.owned_string_vars) status.owned_string_vars = new Set();
+				status.owned_string_vars.add(safe_name);
+			}
 		} else {
 			// Record this as an object-level alias (`var R q = p`): it does
 			// not own its current value until reassigned, so a later
@@ -93,6 +131,13 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 				if (status.class_vars?.has(src_name)) {
 					if (!status.aliased_class_sources) status.aliased_class_sources = new Set();
 					status.aliased_class_sources.add(src_name);
+					// Record which alias declaration(s) point at this source, so
+					// a later reassignment of the source can transfer ownership
+					// of the old instance to the alias (freed once at scope exit).
+					if (!status.class_alias_source_map) status.class_alias_source_map = new Map();
+					const list = status.class_alias_source_map.get(src_name) ?? [];
+					list.push(node);
+					status.class_alias_source_map.set(src_name, list);
 				}
 			}
 		}
@@ -154,6 +199,20 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			status.code += `struct ${mono_name} ${safe_name}`;
 		} else if (node.type.is_array && !is_stack_array) {
 			status.code += `${c_type(node.type.name)} *${safe_name}`;
+			// A heap array emitted as a plain `T*` pointer (e.g. from
+			// `Array.with(v, n)`, whose inferred type carries a runtime length
+			// so it doesn't take the struct-header path above) is still
+			// malloc'd and must be freed at scope exit. Register it for a plain
+			// `free()`. Only do this when the initializer is a call (owned heap
+			// result), not a borrow/reference.
+			const is_call_init =
+				node.value?.node_type === "func_call" ||
+				(node.value?.node_type === "access" &&
+					(node.value as AccessNode).access.node_type === "access_func");
+			if (is_call_init) {
+				if (!status.heap_array_vars) status.heap_array_vars = new Set();
+				status.heap_array_vars.add(safe_name);
+			}
 		} else {
 			status.code += `${c_type(node.type.name)} ${safe_name}`;
 		}
@@ -167,6 +226,40 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 				status.code += `1`;
 			}
 			status.code += `]`;
+		}
+		// Register stack (fixed-size) C arrays whose elements own heap data
+		// (string / class / struct needing destroy) so build_auto_free frees
+		// each element at scope exit. The backing array itself is not malloc'd,
+		// but each element was. The declaration above already emitted the
+		// correct C form (`char*`, `struct Box*`, or a primitive `long`).
+		if (is_stack_array) {
+			const elem_name = node.type.name;
+			const elem_struct = status.structs.find((s) => s.name === elem_name);
+			const elem_is_class = !!elem_struct?.is_class;
+			const elem_is_string = elem_name === "string";
+			const elem_struct_needs_destroy =
+				!elem_is_class &&
+				!elem_is_string &&
+				!!status.structs.find((s) => s.name === elem_name && !s.is_simple_type && !s.is_generic) &&
+				struct_needs_destroy_by_name(elem_name, status);
+			if (elem_is_string || elem_is_class || elem_struct_needs_destroy) {
+				if (!status.stack_array_vars) status.stack_array_vars = new Set();
+				status.stack_array_vars.add(safe_name);
+				if (!status.stack_array_lengths) status.stack_array_lengths = new Map();
+				// Capture the element-count expression text. `node.type.length`
+				// is set for array-literal-backed stack arrays (e.g. the `3` in
+				// `char* parts[3L]`); if absent, fall back to the value count.
+				let len_text = "0";
+				if (node.type.length) {
+					const before = status.code.length;
+					build_node(node.type.length, status);
+					len_text = status.code.substring(before);
+					status.code = status.code.substring(0, before);
+				} else if (node.value?.node_type === "array") {
+					len_text = String((node.value as ArrayValuesNode).values.length);
+				}
+				status.stack_array_lengths.set(safe_name, len_text);
+			}
 		}
 		// Nullable struct value-type local: the struct value is stored normally
 		// (above), and a companion `<name>_has` flag tracks nullness. Handle its
@@ -222,11 +315,12 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 				if (
 					node.declaration === "var" &&
 					node.type.name === "string" &&
-					(val_is_string_literal || val_is_heap_string_var)
+					(val_is_string_literal || val_is_heap_string_var) &&
+					!is_borrow_only_string
 				) {
 					status.code += `strdup(`;
 					build_node(node.value, status);
-					status.code += `); malloc_count++`;
+					status.code += `)`;
 				} else {
 					// Type erasure: when a class pointer is assigned to a
 					// simple-typed variable (e.g. `var int v = value` in
@@ -251,6 +345,23 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 						build_node(node.value, status);
 					}
 				}
+			}
+			// `var X b = mov obj.field swap <rep>`: the field's bytes were
+			// copied into `b` above (transferring ownership). Now write the
+			// replacement value back into the moved-out field so the field is
+			// revalidated — otherwise the field still aliases `b`'s data and
+			// the owner would double-free / corrupt it. Mirrors the aarch64
+			// backend's decl-swap handling.
+			if (node.swap && node.value.node_type === "access") {
+				status.code += `;\n`;
+				// Re-emit the field-access expression (e.g. `self->slots`) by
+				// building the access node into status.code.
+				const before_len = status.code.length;
+				build_node(node.value, status);
+				const field_access = status.code.substring(before_len);
+				status.code = status.code.substring(0, before_len);
+				status.code += `${field_access} = `;
+				build_node(node.swap, status);
 			}
 		}
 	}

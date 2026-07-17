@@ -1,4 +1,1 @@
 iter3
-
-
-Malloc balance: 2

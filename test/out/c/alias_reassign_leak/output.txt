@@ -1,4 +1,2 @@
 done
 [D3]
-
-Malloc balance: 0

@@ -46,7 +46,6 @@ pub struct Console {
         int cap = 16;
         int len = 0;
         char *buf = (char*)malloc(cap);
-        malloc_count++;
         int c = getchar();
         while (c != EOF && c != '\n') {
             if (len + 1 >= cap) {

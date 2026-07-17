@@ -1,3 +1,1 @@
 99 bottles
-
-Malloc balance: -1

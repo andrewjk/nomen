@@ -26,6 +26,13 @@ export default function build_block_node(
 	// Gather structs, traits and funcs that might be used before they are declared
 	gather_structs(node, status);
 
+	// Pre-pass: record every user function that returns an OWNED heap string
+	// (a computed/concatenated result, not a borrowed field). Callers use this
+	// (build_auto_free / build_return_node) to free the result at scope exit
+	// and to avoid redundant strdup. Runs before any function body is built so
+	// a call is correctly classified even when the callee is defined later.
+	gather_heap_returning_functions(node, status);
+
 	// When called from inside a function body (e.g. main), skip struct/function
 	// declarations — they're already emitted at file scope by the root's
 	// build_block_node call and would produce invalid C if nested inside a function.
@@ -163,6 +170,97 @@ function gather_structs(block: BlockNode, status: BuildStatus) {
 					gather_structs(func, status);
 				}
 				break;
+			}
+		}
+	}
+}
+
+// Whether a returned expression produces a fresh owned heap string (the caller
+// must free) vs. a borrowed field, a static literal, or a match/switch that
+// only yields literals. Recurses through match/switch branches.
+function value_is_owned_string(v: any): boolean {
+	if (!v || typeof v !== "object") return false;
+	if (v.node_type === "value") {
+		const isLiteral = typeof v.value === "string" && v.value.startsWith('"');
+		return !isLiteral;
+	}
+	if (v.node_type === "op") return true;
+	if (v.node_type === "access") {
+		if (v.access?.node_type === "access_field") return false;
+		if (v.access?.node_type === "access_func") {
+			const raw = v.access.name as string;
+			const mangled = (v.access.mangled_name as string) || raw;
+			if (mangled.startsWith("_string_interpolate_")) return true;
+			if (mangled.endsWith("_to_string") && mangled !== "string_to_string") return true;
+			if (raw === "to_string" && v.target?.type?.name && v.target.type.name !== "string")
+				return true;
+			return true;
+		}
+		return false;
+	}
+	if (v.node_type === "func_call") return true;
+	if (v.node_type === "match" || v.node_type === "switch") {
+		const branches: any[] = [];
+		if (Array.isArray(v.cases)) for (const c of v.cases) if (c?.branch) branches.push(c.branch);
+		if (v.else_branch) branches.push(v.else_branch);
+		if (Array.isArray(v.branches)) for (const b of v.branches) branches.push(b);
+		for (const b of branches) {
+			const stmts = b?.statements ?? [];
+			for (const s of stmts) {
+				if (s?.node_type === "let" || s?.node_type === "return") {
+					if (value_is_owned_string(s.value)) return true;
+				} else if (value_is_owned_string(s)) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+	return true;
+}
+
+function gather_heap_returning_functions(block: BlockNode, status: BuildStatus) {
+	if (!status.heap_returning_functions) status.heap_returning_functions = new Set();
+	const func_returns_owned = (func: FunctionNode): boolean => {
+		let has_owned_return = false;
+		const walk = (n: any): void => {
+			if (!n || typeof n !== "object") return;
+			if (n.node_type === "return" && n.value) {
+				if (value_is_owned_string(n.value)) has_owned_return = true;
+			}
+			if (n.node_type === "func") return;
+			for (const key of Object.keys(n)) {
+				if (key === "node_type") continue;
+				const val = (n as any)[key];
+				if (Array.isArray(val)) for (const item of val) walk(item);
+				else if (val && typeof val === "object") walk(val);
+			}
+		};
+		for (const stmt of func.statements ?? []) walk(stmt);
+		return has_owned_return;
+	};
+	const visit = (func: FunctionNode) => {
+		if (func.return_type?.name === "string" && func.name && func_returns_owned(func)) {
+			status.heap_returning_functions!.add(c_function_name(func.name));
+		}
+		for (const stmt of func.statements ?? []) {
+			if (is_function_node(stmt)) visit(stmt as FunctionNode);
+		}
+	};
+	const visit_method = (struct_name: string, func: FunctionNode) => {
+		if (func.return_type?.name !== "string" || !func.name) return;
+		if (func_returns_owned(func)) {
+			const method_c_name = func.name.replace(/#/g, "");
+			status.heap_returning_functions!.add(`${struct_name}_${method_c_name}`);
+		}
+	};
+	for (const node of block.statements) {
+		if (is_function_node(node)) {
+			visit(node as FunctionNode);
+		} else if (is_struct_node(node)) {
+			const struct = node as StructNode;
+			for (const fn of struct.functions ?? []) {
+				visit_method(struct.name, fn as FunctionNode);
 			}
 		}
 	}

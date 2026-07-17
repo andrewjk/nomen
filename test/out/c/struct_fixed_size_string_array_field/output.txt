@@ -1,3 +1,1 @@
 firstsecond
-
-Malloc balance: -2
