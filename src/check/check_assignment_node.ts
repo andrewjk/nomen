@@ -2,14 +2,16 @@ import add_error from "../add_error.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import AssignmentNode from "../nodes/AssignmentNode.ts";
+import type BaseNode from "../nodes/BaseNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
+import OperationNode from "../nodes/OperationNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import { borrow_depth_of, borrow_owner_of } from "./utils/borrow.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
 import evaluate_const_condition from "./utils/evaluate_const_condition.ts";
-import { track_assignment_bounds } from "./utils/flow_bounds.ts";
+import { snapshot_bounds, track_assignment_bounds } from "./utils/flow_bounds.ts";
 import { is_class_type, is_owning_struct_type } from "./utils/ownership.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
@@ -95,6 +97,15 @@ export default function check_assignment_node(
 		}
 	} else if (left_value.declaration === "var") {
 		left_value.is_set = true;
+		// If the RHS is a shifted bound referencing the LHS itself (e.g.
+		// `i = i + 6`), snapshot the LHS's current bounds BEFORE clearing so
+		// track_assignment_bounds can propagate them (e.g. `i >= 0` ⇒ `i >= 6`).
+		const self_snapshot =
+			!is_compound &&
+			left_value_name === left_value.name &&
+			is_self_shifted(assign.right_value, left_value.name)
+				? snapshot_bounds(left_value.name, status)
+				: undefined;
 		// Clear range bounds: assignment invalidates for-loop range knowledge
 		left_value.range_lower = undefined;
 		left_value.range_upper = undefined;
@@ -103,13 +114,15 @@ export default function check_assignment_node(
 		left_value.lower_bound_expr = undefined;
 		left_value.upper_bound_exprs = undefined;
 		left_value.lower_bound_exprs = undefined;
+		left_value.upper_bound_inclusive_exprs = undefined;
+		left_value.lower_bound_inclusive_exprs = undefined;
 		left_value.alias_of = undefined;
 		left_value.class_alias_of = undefined;
 		// Re-track bounds if the RHS establishes new ones (e.g. cap = buf.get_cap()).
 		// Skip for compound assignments (+=, -=, etc.) since the RHS is a delta,
 		// not the new value.
 		if (!is_compound && left_value_name === left_value.name) {
-			track_assignment_bounds(left_value.name, assign.right_value, status);
+			track_assignment_bounds(left_value.name, assign.right_value, status, self_snapshot);
 		}
 	}
 
@@ -309,4 +322,23 @@ export default function check_assignment_node(
 	}
 
 	return true;
+}
+
+/**
+ * Returns true iff `value` is a shifted bound `name + N`, `N + name`,
+ * `name - N`, or `N - name` for some integer N — i.e. an expression whose
+ * flow-sensitive bounds can be derived by shifting `name`'s existing bounds.
+ * Used to decide whether to snapshot the LHS's bounds before clearing them.
+ */
+function is_self_shifted(value: AssignmentNode["right_value"], name: string): boolean {
+	if (value.node_type !== "op") return false;
+	const op = value as OperationNode;
+	if (op.op !== "+" && op.op !== "-") return false;
+	const is_int_literal = (n: BaseNode) =>
+		n.node_type === "value" && /^[+-]?\d+$/.test((n as ValueNode).value);
+	const is_name = (n: BaseNode) => n.node_type === "value" && (n as ValueNode).value === name;
+	return (
+		(is_int_literal(op.left_value) && is_name(op.right_value)) ||
+		(is_name(op.left_value) && is_int_literal(op.right_value))
+	);
 }

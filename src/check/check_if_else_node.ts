@@ -7,7 +7,7 @@ import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import clone_status from "./utils/clone_status.ts";
 import evaluate_const_condition from "./utils/evaluate_const_condition.ts";
-import { apply_bounds } from "./utils/flow_bounds.ts";
+import { apply_bounds, intersect_strs, union_max, union_min } from "./utils/flow_bounds.ts";
 import get_null_check_var from "./utils/get_null_check_var.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import type_name from "./utils/type_name.ts";
@@ -127,6 +127,61 @@ export default function check_if_else_node(if_else: IfElseNode, status: CheckSta
 		if (else_falls_through && else_status.values[i]?.borrow_invalidated) {
 			value.borrow_invalidated = true;
 		}
+
+		// Bounds/range reconciliation: a `var` reassigned in any fall-through
+		// branch must not keep its pre-if bounds in the parent — otherwise
+		// `if c { i = 100 } arr.at(i)` would wrongly prove `i < arr.length`
+		// using the stale pre-if range. The sound merge is:
+		//   - ranges: union (MIN lower, MAX upper); undefined if EITHER side is
+		//     undefined (i.e. the branch cleared it via reassignment).
+		//   - bound exprs: intersection (only keep exprs that hold in BOTH
+		//     branches); undefined if either side is undefined.
+		// When only one branch falls through, copy its bounds verbatim.
+		const if_v = if_status.values[i];
+		const else_v = else_status.values[i];
+		if (value.declaration === "var") {
+			if (if_falls_through && else_falls_through && has_else) {
+				value.range_lower = union_min(if_v?.range_lower, else_v?.range_lower);
+				value.range_upper = union_max(if_v?.range_upper, else_v?.range_upper);
+				value.upper_bound_exprs = intersect_strs(
+					if_v?.upper_bound_exprs,
+					else_v?.upper_bound_exprs,
+				);
+				value.lower_bound_exprs = intersect_strs(
+					if_v?.lower_bound_exprs,
+					else_v?.lower_bound_exprs,
+				);
+				value.upper_bound_inclusive_exprs = intersect_strs(
+					if_v?.upper_bound_inclusive_exprs,
+					else_v?.upper_bound_inclusive_exprs,
+				);
+				value.lower_bound_inclusive_exprs = intersect_strs(
+					if_v?.lower_bound_inclusive_exprs,
+					else_v?.lower_bound_inclusive_exprs,
+				);
+				value.known_length = union_known(if_v?.known_length, else_v?.known_length);
+			} else if (if_falls_through) {
+				value.range_lower = if_v?.range_lower;
+				value.range_upper = if_v?.range_upper;
+				value.upper_bound_exprs = if_v?.upper_bound_exprs?.slice();
+				value.lower_bound_exprs = if_v?.lower_bound_exprs?.slice();
+				value.upper_bound_inclusive_exprs = if_v?.upper_bound_inclusive_exprs?.slice();
+				value.lower_bound_inclusive_exprs = if_v?.lower_bound_inclusive_exprs?.slice();
+				value.upper_bound_expr = if_v?.upper_bound_expr;
+				value.lower_bound_expr = if_v?.lower_bound_expr;
+				value.known_length = if_v?.known_length;
+			} else if (else_falls_through) {
+				value.range_lower = else_v?.range_lower;
+				value.range_upper = else_v?.range_upper;
+				value.upper_bound_exprs = else_v?.upper_bound_exprs?.slice();
+				value.lower_bound_exprs = else_v?.lower_bound_exprs?.slice();
+				value.upper_bound_inclusive_exprs = else_v?.upper_bound_inclusive_exprs?.slice();
+				value.lower_bound_inclusive_exprs = else_v?.lower_bound_inclusive_exprs?.slice();
+				value.upper_bound_expr = else_v?.upper_bound_expr;
+				value.lower_bound_expr = else_v?.lower_bound_expr;
+				value.known_length = else_v?.known_length;
+			}
+		}
 	}
 
 	if (if_else.if_branch && !if_else.else_branch) {
@@ -135,4 +190,14 @@ export default function check_if_else_node(if_else: IfElseNode, status: CheckSta
 			add_error(status, "If expression must have an else branch", if_else.start);
 		}
 	}
+}
+
+/**
+ * Merge two `known_length` flow facts: a value survives only if BOTH branches
+ * agree on the same length. undefined if either side is undefined (the branch
+ * re-assigned the array, or didn't establish the fact).
+ */
+function union_known(a: number | undefined, b: number | undefined): number | undefined {
+	if (a === undefined || b === undefined) return undefined;
+	return a === b ? a : undefined;
 }

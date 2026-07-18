@@ -25,7 +25,7 @@ import System
 func isPangram = (string str, out bool) {
     var int bits = 0
     var int i = 0
-    while i < 44 {
+    while i < str.length; i += 1 {
         var int c = str.at(i) as int
         if c >= 65 && c <= 90 {
             c = c + 32
@@ -34,7 +34,6 @@ func isPangram = (string str, out bool) {
             var int bit = 1 << (c - 97)
             bits = bits | bit
         }
-        i = i + 1
     }
     return bits == 0
 }
@@ -59,7 +58,7 @@ import System
 func isPangram = (string str, out bool) {
     var int bits = 0
     var int i = 0
-    while i < 44 {
+    while i < str.length; i += 1 {
         var int c = str.at(i) as int
         if c >= 65 && c <= 90 {
             c = c + 32
@@ -68,7 +67,6 @@ func isPangram = (string str, out bool) {
             var int bit = 1 << (c - 97)
             bits = bits | bit
         }
-        i = i + 1
     }
     return bits == 67108863
 }
@@ -93,7 +91,7 @@ import System
 func isPangram = (string str, out bool) {
     var int bits = 0
     var int i = 0
-    while i < 44 {
+    while i < str.length; i += 1 {
         var int c = str.at(i) as int
         if c >= 65 && c <= 90 {
             c = c + 32
@@ -102,8 +100,7 @@ func isPangram = (string str, out bool) {
             var int bit = 1 << (c - 97)
             bits = bits | bit
         }
-        i = i + 1
-    }
+        }
     return bits == 67108863
 }
 

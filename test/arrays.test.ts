@@ -134,10 +134,12 @@ Console.write("\\{nums.at(0) + nums.at(2)}")
 		const input = `
 var length = 3
 var result = Array.with(0, length)
-result.set(0, 10)
-result.set(1, 20)
-result.set(2, 30)
-Console.write("\\{result.at(0)} \\{result.at(1)} \\{result.at(2)}")
+if result.length == 3 {
+	result.set(0, 10)
+	result.set(1, 20)
+	result.set(2, 30)
+	Console.write("\\{result.at(0)} \\{result.at(1)} \\{result.at(2)}")
+}
 `;
 		await build_and_check_output(input, "array_with_set_at", "10 20 30");
 	});
@@ -155,7 +157,7 @@ Console.write("\\{result.length}")
 		const input = `
 var length = 5
 var result = Array.with(0, length)
-for i of 0 .. length {
+for i of 0 .. result.length {
   result.set(i, i * i)
 }
 for n of result {

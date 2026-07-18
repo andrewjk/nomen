@@ -8,6 +8,7 @@ import type BaseNode from "../nodes/BaseNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
+import OperationNode from "../nodes/OperationNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
@@ -40,6 +41,34 @@ import value_from_value_node from "./utils/value_from_value_node.ts";
 const CORE_DATA_STRUCTURES = new Set(["Buffer", "BigInt"]);
 
 /**
+ * Shift a bound expression string (`base`, `base - a`, `base + a`) by a
+ * constant `c`, combining offsets numerically: `(base - a) + c` → `base - (a - c)`.
+ * This keeps bounds in a canonical `base ± offset` form so symbolic
+ * implication (evaluate_const_condition.ts) can compare them.
+ */
+function shift_offset_expr(expr: string, c: number): string {
+	if (c === 0) return expr;
+	// Parse to a SIGNED offset so shifting combines correctly:
+	// "base - 5" → -5; "base + 3" → +3; "base" → 0.
+	let signed = 0;
+	let base = expr;
+	let m = expr.match(/^(\w+(?:\.\w+)*)\s*-\s*(\d+)$/);
+	if (m) {
+		base = m[1];
+		signed = -parseInt(m[2], 10);
+	} else {
+		m = expr.match(/^(\w+(?:\.\w+)*)\s*\+\s*(\d+)$/);
+		if (m) {
+			base = m[1];
+			signed = parseInt(m[2], 10);
+		}
+	}
+	const off = signed + c;
+	if (off === 0) return base;
+	return `${base} ${off > 0 ? "+" : "-"} ${Math.abs(off)}`;
+}
+
+/**
  * Walk the checking stack to find the nearest enclosing FunctionNode and check
  * whether its scope is a method of a core data structure.
  */
@@ -48,6 +77,9 @@ function is_inside_core_method(status: CheckStatus): boolean {
 		const node = status.stack[i];
 		if (node.node_type === "func") {
 			const func = node as FunctionNode;
+			// Trust all code defined in the appended System library source — it
+			// maintains its own bounds invariants (e.g. Json, Regex, ziglings).
+			if (func.is_library) return true;
 			const scope = func.scope as StructNode | undefined;
 			if (scope && scope.node_type === "struct" && CORE_DATA_STRUCTURES.has(scope.name)) {
 				return true;
@@ -228,6 +260,8 @@ export default function check_function_call(
 		range_upper?: number;
 		upper_bound_exprs?: string[];
 		lower_bound_exprs?: string[];
+		upper_bound_inclusive_exprs?: string[];
+		lower_bound_inclusive_exprs?: string[];
 		upper_bound_expr?: string;
 		lower_bound_expr?: string;
 	}[] = [];
@@ -382,6 +416,8 @@ export default function check_function_call(
 		let range_upper: number | undefined;
 		let upper_bound_exprs: string[] | undefined;
 		let lower_bound_exprs: string[] | undefined;
+		let upper_bound_inclusive_exprs: string[] | undefined;
+		let lower_bound_inclusive_exprs: string[] | undefined;
 		let upper_bound_expr: string | undefined;
 		let lower_bound_expr: string | undefined;
 		if (param.node_type === "value") {
@@ -391,8 +427,52 @@ export default function check_function_call(
 				range_upper = decl.range_upper;
 				upper_bound_exprs = decl.upper_bound_exprs;
 				lower_bound_exprs = decl.lower_bound_exprs;
+				upper_bound_inclusive_exprs = decl.upper_bound_inclusive_exprs;
+				lower_bound_inclusive_exprs = decl.lower_bound_inclusive_exprs;
 				upper_bound_expr = decl.upper_bound_expr;
 				lower_bound_expr = decl.lower_bound_expr;
+			}
+		} else if (param.node_type === "op") {
+			// Offset access like `arr.at(i - 1)` / `arr.at(i + 1)`: take the
+			// base variable's proven bounds and shift them by the constant.
+			const pop = param as OperationNode;
+			if (pop.op === "+" || pop.op === "-") {
+				let base_name: string | undefined;
+				let c = 0;
+				if (
+					pop.left_value.node_type === "value" &&
+					/^[+-]?\d+$/.test((pop.left_value as ValueNode).value)
+				) {
+					c = parseInt((pop.left_value as ValueNode).value, 10);
+					if (pop.right_value.node_type === "value")
+						base_name = (pop.right_value as ValueNode).value;
+					if (pop.op === "-") c = -c;
+				} else if (
+					pop.right_value.node_type === "value" &&
+					/^[+-]?\d+$/.test((pop.right_value as ValueNode).value)
+				) {
+					c = parseInt((pop.right_value as ValueNode).value, 10);
+					if (pop.op === "-") c = -c;
+					if (pop.left_value.node_type === "value") base_name = (pop.left_value as ValueNode).value;
+				}
+				if (base_name) {
+					const decl = status.values.findLast((v) => v.name === base_name);
+					if (decl) {
+						const shift = (exprs?: string[]) => exprs?.map((e) => shift_offset_expr(e, c));
+						range_lower = decl.range_lower !== undefined ? decl.range_lower + c : undefined;
+						range_upper = decl.range_upper !== undefined ? decl.range_upper + c : undefined;
+						upper_bound_exprs = shift(decl.upper_bound_exprs);
+						lower_bound_exprs = shift(decl.lower_bound_exprs);
+						upper_bound_inclusive_exprs = shift(decl.upper_bound_inclusive_exprs);
+						lower_bound_inclusive_exprs = shift(decl.lower_bound_inclusive_exprs);
+						upper_bound_expr = decl.upper_bound_expr
+							? shift_offset_expr(decl.upper_bound_expr, c)
+							: undefined;
+						lower_bound_expr = decl.lower_bound_expr
+							? shift_offset_expr(decl.lower_bound_expr, c)
+							: undefined;
+					}
+				}
 			}
 		}
 		// Fold in bounds propagated from a nested call's return contract, so a
@@ -420,6 +500,8 @@ export default function check_function_call(
 			range_upper,
 			upper_bound_exprs,
 			lower_bound_exprs,
+			upper_bound_inclusive_exprs,
+			lower_bound_inclusive_exprs,
 			upper_bound_expr,
 			lower_bound_expr,
 		});
@@ -438,6 +520,8 @@ export default function check_function_call(
 					range_upper: ca.range_upper,
 					upper_bound_exprs: ca.upper_bound_exprs,
 					lower_bound_exprs: ca.lower_bound_exprs,
+					upper_bound_inclusive_exprs: ca.upper_bound_inclusive_exprs,
+					lower_bound_inclusive_exprs: ca.lower_bound_inclusive_exprs,
 					upper_bound_expr: ca.upper_bound_expr,
 					lower_bound_expr: ca.lower_bound_expr,
 				});
@@ -464,28 +548,41 @@ export default function check_function_call(
 				add_error(status, `Parameter constraint not satisfied: ${func_param.name}`, param.start);
 			} else if (satisfied === undefined) {
 				// Constraint can't be verified at compile time (e.g. runtime variable index).
-				// For self constraints on core library types (arrays, strings, Buffer), allow
-				// silently since the constraint references self.length/self.cap which may
-				// legitimately be unknown. The flow analysis (flow_bounds.ts) verifies these
-				// when possible (e.g. `while i < buf.get_cap()` inside the loop body).
-				// For user-defined functions, emit an error since the constraint can't be
-				// verified. Also allow silently when the call site is inside another core
-				// data structure's method — those types maintain their own invariants.
+				// For self constraints on the Buffer/BigInt core types, allow silently since
+				// the constraint references self.cap which may legitimately be unknown; the
+				// flow analysis (flow_bounds.ts) verifies these when possible. For ARRAY and
+				// STRING index access, however, an unverifiable index is a real out-of-bounds
+				// risk — the backends emit UNCHECKED strided loads — so we REQUIRE the caller
+				// to prove the bound (e.g. a `while i < arr.length` loop or `if i < arr.length`
+				// guard). Only code inside a trusted core library method is exempt (those
+				// maintain their own invariants).
 				const base_name = target_type?.name?.split("_")[0] ?? "";
-				const core_types = ["Array", "Buffer", "BigInt"];
-				const is_core_method =
-					target_type?.is_array ||
-					target_type?.name === "string" ||
-					target_type?.name === "Buffer" ||
-					core_types.includes(base_name);
+				const silent_core =
+					target_type?.name === "Buffer" || base_name === "Buffer" || base_name === "BigInt";
+				const is_index_access = target_type?.is_array || target_type?.name === "string";
 				const inside_core = is_inside_core_method(status);
-				if (!is_core_method && !inside_core) {
+				if (is_index_access) {
+					if (!inside_core) {
+						add_error(
+							status,
+							`Parameter constraint cannot be verified: ${func_param.name}`,
+							param.start,
+						);
+					}
+				} else if (!silent_core && !inside_core) {
 					add_error(
 						status,
 						`Parameter constraint cannot be verified: ${func_param.name}`,
 						param.start,
 					);
 				}
+			} else if (satisfied === "unsafe") {
+				// The index is bounded by an INCLUSIVE upper bound that coincides
+				// with the constraint's upper limit (e.g. `while i <= arr.length`
+				// guarding `arr.at(i)`). That bound does NOT guarantee `i < length`,
+				// so the access can read/write one element past the end. This is a
+				// provable off-by-one, so reject it for every type (core or not).
+				add_error(status, `Parameter constraint not satisfied: ${func_param.name}`, param.start);
 			}
 		}
 

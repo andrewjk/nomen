@@ -8,6 +8,7 @@ import type CompileError from "./types/CompileError.ts";
 import type ParseResult from "./types/ParseResult.ts";
 
 export default function parse(source: string, library?: Library): ParseResult {
+	const user_source_length = source.length;
 	if (library) {
 		source = resolve_linked_types(source, library);
 	}
@@ -27,6 +28,13 @@ export default function parse(source: string, library?: Library): ParseResult {
 
 	parse_statement(status);
 
+	// Mark nodes defined in the appended System library source so the checker
+	// can trust library internals (which maintain their own bounds invariants)
+	// while still requiring user code to satisfy (or guard) index constraints.
+	if (library) {
+		mark_library_nodes(root, user_source_length);
+	}
+
 	// No point type checking if the syntax is busted
 	if (status.errors.length) {
 		return {
@@ -43,6 +51,34 @@ export default function parse(source: string, library?: Library): ParseResult {
 		root,
 		errors: format_errors(source, checked.errors),
 	};
+}
+
+function mark_library_nodes(root: RootNode, boundary: number): void {
+	// The System library source is appended after the user source, so any
+	// declaration starting at or past `boundary` belongs to the library.
+	// Walk the tree and flag functions (including struct methods) and structs.
+	function walk(node: any): void {
+		if (!node || typeof node !== "object") return;
+		if (Array.isArray(node)) {
+			for (const child of node) walk(child);
+			return;
+		}
+		const type = node.node_type as string | undefined;
+		if (type === "func") {
+			if ((node.start as number) >= boundary) node.is_library = true;
+			if (node.statements) walk(node.statements);
+			if (node.allocations) walk(node.allocations);
+			return;
+		}
+		if (type === "struct") {
+			if ((node.start as number) >= boundary) node.is_library = true;
+			if (node.functions) for (const f of node.functions) walk(f);
+			if (node.fields) walk(node.fields);
+		}
+		if (node.statements) walk(node.statements);
+		if (node.allocations) walk(node.allocations);
+	}
+	walk(root);
 }
 
 function resolve_linked_types(source: string, library: Library): string {

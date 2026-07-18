@@ -41,6 +41,15 @@ export default interface StackValue {
 	upper_bound_exprs?: string[];
 	lower_bound_exprs?: string[];
 	/**
+	 * Inclusive variants: the variable is known to be `<= expr` (upper) or
+	 * `>= expr` (lower). Unlike `upper_bound_exprs` (strict `<`) these do
+	 * NOT satisfy a strict constraint (`x < expr`) on their own, since
+	 * `x <= expr` allows `x == expr`. They only satisfy the matching
+	 * inclusive constraint (`x <= expr`).
+	 */
+	upper_bound_inclusive_exprs?: string[];
+	lower_bound_inclusive_exprs?: string[];
+	/**
 	 * @deprecated use upper_bound_exprs / lower_bound_exprs
 	 */
 	upper_bound_expr?: string;
@@ -91,6 +100,13 @@ export default interface StackValue {
 	 * `i < buf.cap` constraints after a known-size allocation.
 	 */
 	known_min_cap?: number;
+	/**
+	 * Flow-sensitive known length for an array/string variable, established
+	 * by a guard like `if arr.length == 3`. When set, `numeric_interval`
+	 * resolves `arr.length` to this value (overriding the static type length,
+	 * which may be unknown for `Array.with(...)`). Cleared on scope exit.
+	 */
+	known_length?: number;
 	/**
 	 * For function-typed variables: the parameter types from the declared
 	 * function signature. Used to infer parameter types on a lambda assigned

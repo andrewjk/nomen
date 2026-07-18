@@ -16,6 +16,8 @@ export default class StructNode extends BaseNode {
 	is_class?: boolean;
 	scope?: BaseNode;
 	source_type_args?: Type[];
+	/** True when this struct is defined in the appended System library source. */
+	is_library?: boolean;
 
 	constructor(
 		start: number,

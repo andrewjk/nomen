@@ -32,7 +32,7 @@ export default function check_while_loop_node(while_loop: WhileLoopNode, status:
 	}
 
 	// Establish flow-sensitive bounds from condition (e.g. while j < list.length)
-	apply_bounds(while_loop.condition, while_status);
+	apply_bounds(while_loop.condition, while_status, true);
 
 	check_block_node(while_loop, while_status);
 

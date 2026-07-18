@@ -160,6 +160,22 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			status.stack.pop();
 		}
 
+		// A string literal bound to a const has a known, invariant length.
+		// Record it on the type so the bounds verifier can prove
+		// `i < str.length` for `str.at(i)` (mirrors array-literal length).
+		if (
+			decl.declaration === "const" &&
+			decl.type.name === "string" &&
+			decl.value &&
+			decl.value.node_type === "value" &&
+			(decl.value as any).value.startsWith('"') &&
+			(decl.value as any).value.endsWith('"')
+		) {
+			const lit = (decl.value as any).value;
+			const len = lit.length - 2; // strip surrounding quotes
+			decl.type.length = new ValueNode(decl.value.start, len.toString(), new Type("int"));
+		}
+
 		// A struct that transitively owns a heap resource (List/Map via a Buffer
 		// field, Buffer/File/ClassBuffer via a resource-releasing #destroy, or any
 		// struct with a class field) cannot be byte-copied from another variable —

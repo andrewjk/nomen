@@ -32,6 +32,8 @@ export default class FunctionNode extends BaseNode implements BlockNode, Returni
 	is_generic?: boolean;
 	checked?: boolean;
 	is_inline?: boolean;
+	/** True when this function is defined in the appended System library source. */
+	is_library?: boolean;
 	/**
 	 * True for a `mov out T` return: the method transfers ownership of the
 	 * returned value to the caller (which must then free it), rather than

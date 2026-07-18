@@ -5,7 +5,15 @@ pub func main = (Init init) {
 	if init.argc > 1 {
 		n = parse_int(init.args.at(1))
 	}
+	// The algorithm uses int[16] arrays indexed by [0, n], so n must be in
+	// [1, 15] (fact.at(n) reads index n; valid indices are 0..15). The
+	// constraint on `run` lets the verifier prove every inner access safe.
+	if n >= 1 && n <= 15 {
+		run(n)
+	}
+}
 
+func run = (int n: n >= 1 && n <= 15) {
 	var int[16] fact = [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 	var int i = 1
 	while i <= n {
@@ -20,9 +28,8 @@ pub func main = (Init init) {
 	var int[16] count = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 
 	i = 0
-	while i < n {
+	while i < n; i += 1 {
 		p.set(i, i)
-		i = i + 1
 	}
 
 	var int idx = 0
@@ -32,41 +39,53 @@ pub func main = (Init init) {
 	while true {
 		var int first = p.at(0)
 
-		if first != 0 {
-			var int flips = 1
-			if p.at(first) != 0 {
-				var int ci = 0
-				while ci < n {
-					pp.set(ci, p.at(ci))
-					ci = ci + 1
-				}
-				var int p0 = first
-				while true {
-					flips = flips + 1
-					var int lo = 1
-					var int hi = p0 - 1
-					while lo < hi {
-						var int tmp = pp.at(lo)
-						pp.set(lo, pp.at(hi))
-						pp.set(hi, tmp)
-						lo = lo + 1
-						hi = hi - 1
+		// Bounds-hoist guards: `first` is loaded from `p` (a permutation of
+		// [0, n) with n <= 16), so it is always in [0, p.length). Likewise
+		// `p0` starts at `first` and is only ever reassigned to a value
+		// loaded from `pp`, so it stays in [0, pp.length). The `if`/`while`
+		// guards below are always true at runtime — they exist to let the
+		// compile-time bounds verifier prove the inner `at`/`set` calls safe.
+		if first >= 0 && first < p.length {
+			if first != 0 {
+				var int flips = 1
+				if p.at(first) != 0 {
+					var int ci = 0
+					while ci < n {
+						pp.set(ci, p.at(ci))
+						ci = ci + 1
 					}
-					var int t = pp.at(p0)
-					pp.set(p0, p0)
-					p0 = t
-					if pp.at(p0) == 0 {
-						break
+					var int p0 = first
+					while p0 >= 0 && p0 < pp.length {
+						flips = flips + 1
+						var int lo = 1
+						var int hi = p0 - 1
+						while lo < hi {
+							var int tmp = pp.at(lo)
+							pp.set(lo, pp.at(hi))
+							pp.set(hi, tmp)
+							lo = lo + 1
+							hi = hi - 1
+						}
+						var int t = pp.at(p0)
+						pp.set(p0, p0)
+						p0 = t
+						// `p0` was just reassigned to `t = pp.at(p0)`, which the
+						// verifier can't prove stays in [0, pp.length) — re-guard.
+						if p0 >= 0 && p0 < pp.length {
+							if pp.at(p0) == 0 {
+								break
+							}
+						}
 					}
 				}
-			}
-			if flips > max_flips {
-				max_flips = flips
-			}
-			if sign == 1 {
-				check_sum = check_sum + flips
-			} else {
-				check_sum = check_sum - flips
+				if flips > max_flips {
+					max_flips = flips
+				}
+				if sign == 1 {
+					check_sum = check_sum + flips
+				} else {
+					check_sum = check_sum - flips
+				}
 			}
 		}
 

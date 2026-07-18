@@ -43,6 +43,43 @@ pub struct BigInt {
         ```
     }
 
+    // Raw data-pointer accessors. The limb loops below hoist `digits.data`
+    // into a local once (before the loop) and index through it via get_at /
+    // set_at, so each limb access is a single strided load/store instead of
+    // re-reading self->digits.data every iteration. ptr is held in a uint64.
+    inline func data_ptr = (self, out uint64) {
+        ```
+        #arch: c
+        return (unsigned long long)self->digits.data;
+        ```
+        ```
+        #arch: aarch64
+        ldr x0, [x0, #32]
+        ```
+    }
+
+    inline func get_at = (self, uint64 ptr, int i, out uint64) {
+        ```
+        #arch: c
+        return ((unsigned long long*)ptr)[i];
+        ```
+        ```
+        #arch: aarch64
+        ldr x0, [x1, x2, lsl #3]
+        ```
+    }
+
+    inline func set_at = (ref self, uint64 ptr, int i, uint64 val) {
+        ```
+        #arch: c
+        ((unsigned long long*)ptr)[i] = val;
+        ```
+        ```
+        #arch: aarch64
+        str x3, [x1, x2, lsl #3]
+        ```
+    }
+
     func ensure = (ref self, int needed) {
         self.digits.grow_int(needed)
     }
@@ -194,10 +231,12 @@ pub struct BigInt {
             }
             return -1
         }
+        var uint64 sp = self.data_ptr()
+        var uint64 op = other.data_ptr()
         var int i = self.len - 1
         while i >= 0 {
-            var uint64 a = self.get(i)
-            var uint64 b = other.get(i)
+            var uint64 a = self.get_at(sp, i)
+            var uint64 b = other.get_at(op, i)
             if a != b {
                 if a > b {
                     return 1
@@ -231,17 +270,20 @@ pub struct BigInt {
             max_len = b_len
         }
         self.ensure(max_len + 2)
+        var uint64 ap = a.data_ptr()
+        var uint64 bp = b.data_ptr()
+        var uint64 sp = self.data_ptr()
         var int carry = 0
         var int i = 0
         var int last_nonzero = 1
         while i < max_len || carry != 0 {
             var uint64 a_val = 0
             if i < a_len {
-                a_val = a.get(i)
+                a_val = a.get_at(ap, i)
             }
             var uint64 b_val = 0
             if i < b_len {
-                b_val = b.get(i)
+                b_val = b.get_at(bp, i)
             }
             var uint64 sum = a_val + b_val
             var int c1 = 0
@@ -253,7 +295,7 @@ pub struct BigInt {
             if sum2 < sum {
                 c2 = 1
             }
-            self.set(i, sum2)
+            self.set_at(sp, i, sum2)
             if sum2 != 0 {
                 last_nonzero = i + 1
             }
@@ -277,14 +319,17 @@ pub struct BigInt {
             return
         }
         self.ensure(a.len)
+        var uint64 ap = a.data_ptr()
+        var uint64 bp = b.data_ptr()
+        var uint64 sp = self.data_ptr()
         var int borrow = 0
         var int i = 0
         var int last_nonzero = 1
         while i < a.len {
-            var uint64 a_val = a.get(i)
+            var uint64 a_val = a.get_at(ap, i)
             var uint64 b_val = 0
             if i < b.len {
-                b_val = b.get(i)
+                b_val = b.get_at(bp, i)
             }
             var uint64 diff = a_val - borrow
             var int new_borrow = 0
@@ -297,7 +342,7 @@ pub struct BigInt {
             } else {
                 borrow = new_borrow
             }
-            self.set(i, diff2)
+            self.set_at(sp, i, diff2)
             if diff2 != 0 {
                 last_nonzero = i + 1
             }
@@ -324,14 +369,16 @@ pub struct BigInt {
                 other_len = a.len
             }
             self.ensure(other_len + 1)
+            var uint64 sp = self.data_ptr()
             var uint64 carry = 0
             var int i = 0
             var int last_nonzero = 0
             if a.len == 1 {
+                var uint64 bp = b.data_ptr()
                 while i < other_len || carry != 0 {
                     var uint64 ov = 0
                     if i < other_len {
-                        ov = b.get(i)
+                        ov = b.get_at(bp, i)
                     }
                     var uint64 lo_prod = sv * ov
                     var uint64 hi_prod = self.mul_wide_hi(sv, ov)
@@ -341,17 +388,18 @@ pub struct BigInt {
                         c1 = 1
                     }
                     carry = hi_prod + c1
-                    self.set(i, result)
+                    self.set_at(sp, i, result)
                     if result != 0 {
                         last_nonzero = i + 1
                     }
                     i = i + 1
                 }
             } else {
+                var uint64 ap = a.data_ptr()
                 while i < other_len || carry != 0 {
                     var uint64 ov = 0
                     if i < other_len {
-                        ov = a.get(i)
+                        ov = a.get_at(ap, i)
                     }
                     var uint64 lo_prod = sv * ov
                     var uint64 hi_prod = self.mul_wide_hi(sv, ov)
@@ -361,7 +409,7 @@ pub struct BigInt {
                         c1 = 1
                     }
                     carry = hi_prod + c1
-                    self.set(i, result)
+                    self.set_at(sp, i, result)
                     if result != 0 {
                         last_nonzero = i + 1
                     }
@@ -385,17 +433,20 @@ pub struct BigInt {
             scratch.ensure(new_len)
             scratch.clear(new_len)
             scratch.len = new_len
+            var uint64 ap = a.data_ptr()
+            var uint64 bp = b.data_ptr()
+            var uint64 scratchp = scratch.data_ptr()
             var int i = 0
             while i < a.len {
-                var uint64 ai = a.get(i)
+                var uint64 ai = a.get_at(ap, i)
                 var uint64 carry = 0
                 var int j = 0
                 while j < b.len || carry != 0 {
                     var uint64 bj = 0
                     if j < b.len {
-                        bj = b.get(j)
+                        bj = b.get_at(bp, j)
                     }
-                    var uint64 old = scratch.get(j + i)
+                    var uint64 old = scratch.get_at(scratchp, j + i)
                     var uint64 lo_prod = ai * bj
                     var uint64 hi_prod = scratch.mul_wide_hi(ai, bj)
                     var uint64 cur = old + carry
@@ -409,17 +460,18 @@ pub struct BigInt {
                         c2 = 1
                     }
                     carry = c1 + c2 + hi_prod as int
-                    scratch.set(j + i, cur2)
+                    scratch.set_at(scratchp, j + i, cur2)
                     j = j + 1
                 }
                 i = i + 1
             }
             self.ensure(new_len)
+            var uint64 sp = self.data_ptr()
             var int last_nonzero = 1
             var int k = 0
             while k < new_len {
-                var uint64 val = scratch.get(k)
-                self.set(k, val)
+                var uint64 val = scratch.get_at(scratchp, k)
+                self.set_at(sp, k, val)
                 if val != 0 {
                     last_nonzero = k + 1
                 }
