@@ -1,0 +1,95 @@
+// Channel — thread-safe single-direction queue for passing values between
+// tasks. Unbounded, FIFO, blocking receive.
+//
+// Stores uint64 values (Echo values are pointer-sized on every target we
+// care about). A typed Channel<T> wrapper can come later — the storage story
+// is identical, only the call-site types change.
+//
+// Default stance in Echo is "no shared mutable state" — channels are the
+// preferred way for tasks to communicate. See ASYNC.md.
+
+pub class Channel : Sendable {
+	pub var uint64 mu = 0
+	pub var uint64 not_empty_cv = 0
+	pub var uint64 head = 0
+	pub var uint64 tail = 0
+
+	pub func #init = (self) {
+		```
+		#arch: c
+		#scope: file
+		#include <pthread.h>
+		struct echo_channel_node {
+			unsigned long long value;
+			struct echo_channel_node *next;
+		};
+		```
+		```
+		#arch: c
+		self->mu = (unsigned long long)malloc(sizeof(pthread_mutex_t));
+		self->not_empty_cv = (unsigned long long)malloc(sizeof(pthread_cond_t));
+		pthread_mutex_init((pthread_mutex_t *)self->mu, NULL);
+		pthread_cond_init((pthread_cond_t *)self->not_empty_cv, NULL);
+		self->head = 0;
+		self->tail = 0;
+		```
+	}
+
+	pub func send = (self, uint64 value) {
+		```
+		#arch: c
+		struct echo_channel_node *n = (struct echo_channel_node *)malloc(sizeof(struct echo_channel_node));
+		n->value = value;
+		n->next = NULL;
+		pthread_mutex_lock((pthread_mutex_t *)self->mu);
+		if (self->tail) {
+			((struct echo_channel_node *)self->tail)->next = n;
+		} else {
+			self->head = (unsigned long long)n;
+		}
+		self->tail = (unsigned long long)n;
+		pthread_cond_signal((pthread_cond_t *)self->not_empty_cv);
+		pthread_mutex_unlock((pthread_mutex_t *)self->mu);
+		```
+	}
+
+	pub func receive = (self, out uint64) {
+		```
+		#arch: c
+		pthread_mutex_lock((pthread_mutex_t *)self->mu);
+		while (!self->head) {
+			pthread_cond_wait((pthread_cond_t *)self->not_empty_cv, (pthread_mutex_t *)self->mu);
+		}
+		struct echo_channel_node *n = (struct echo_channel_node *)self->head;
+		self->head = (unsigned long long)n->next;
+		if (!self->head) self->tail = 0;
+		unsigned long long v = n->value;
+		free(n);
+		pthread_mutex_unlock((pthread_mutex_t *)self->mu);
+		return v;
+		```
+	}
+
+	pub func #destroy = () {
+		```
+		#arch: c
+		if (self->mu) {
+			// Drain any pending nodes.
+			struct echo_channel_node *n = (struct echo_channel_node *)self->head;
+			while (n) {
+				struct echo_channel_node *next = n->next;
+				free(n);
+				n = next;
+			}
+			pthread_mutex_destroy((pthread_mutex_t *)self->mu);
+			pthread_cond_destroy((pthread_cond_t *)self->not_empty_cv);
+			free((void *)self->mu);
+			free((void *)self->not_empty_cv);
+			self->mu = 0;
+			self->not_empty_cv = 0;
+			self->head = 0;
+			self->tail = 0;
+		}
+		```
+	}
+}

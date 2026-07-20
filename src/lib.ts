@@ -44,6 +44,8 @@ const FILE_ORDER = [
 	"Stringable",
 	"Sendable",
 	"Task",
+	"Mutex",
+	"Channel",
 	"int",
 	"uint",
 	"int8",
@@ -71,6 +73,14 @@ function extract_deps(source: string): string[] {
 		if (trimmed.startsWith("import ")) {
 			deps.push(trimmed.slice(7).trim());
 		} else if (trimmed.startsWith("pub struct ") || trimmed.startsWith("struct ")) {
+			const colon_idx = trimmed.indexOf(":");
+			if (colon_idx >= 0) {
+				const after_colon = trimmed.slice(colon_idx + 1).trim();
+				const trait_name = after_colon.split(/\s|<|{/)[0];
+				if (trait_name) deps.push(trait_name);
+			}
+			break;
+		} else if (trimmed.startsWith("pub class ") || trimmed.startsWith("class ")) {
 			const colon_idx = trimmed.indexOf(":");
 			if (colon_idx >= 0) {
 				const after_colon = trimmed.slice(colon_idx + 1).trim();

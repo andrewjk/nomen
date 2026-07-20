@@ -7,17 +7,25 @@
 // See ASYNC.md for the design. C backend only for now; aarch64 will follow
 // once the API stabilizes.
 
-pub struct Task {
+pub struct Task : Sendable {
 	pub var uint64 handle = 0
+	pub var bool done = false
+	pub var uint64 result_slot = 0
+	pub var uint64 cancel_flag = 0
 
-	// Spawn a thread that calls `work(arg)`. Fire-and-forget for v1 — `work`
-	// takes one uint64 (pack a struct pointer or primitive), returns nothing.
-	// Result-returning tasks come with the `spawn` syntax + `Task<T>`.
+	// Spawn a thread that calls `work(arg)`. The returned Task can be waited
+	// on via `wait()`. For fire-and-forget, just don't call `wait()` (the
+	// thread runs to completion; the handle is detached at the build level
+	// when the spawn is not captured — see build_spawn_node).
 	pub func #init = (self, func (uint64) work, uint64 arg) {
 		```
 		#arch: c
 		#scope: file
 		#include <pthread.h>
+		// Thread-local pointer to the currently-running task's cancel flag.
+		// Set by the spawn trampoline at entry, cleared at exit. NULL when
+		// not running on a spawned task (e.g. on the main thread).
+		static __thread unsigned long long *__echo_current_cancel_flag = NULL;
 		typedef void (*echo_task_fn)(unsigned long long);
 		struct echo_task_args {
 			echo_task_fn fn;
@@ -39,15 +47,54 @@ pub struct Task {
 		```
 	}
 
-	// Block until the task finishes. No-op if already joined or never spawned.
-	pub func wait = (self) {
+	// Block until the task finishes. Idempotent — calling twice is safe.
+	// No-op if the task was never spawned (handle == 0) or already joined.
+	pub func wait = (ref self) {
 		```
 		#arch: c
-		if (self->handle) {
+		if (self->handle && !self->done) {
 			void *ret;
 			pthread_join((pthread_t)self->handle, &ret);
 			self->handle = 0;
+			self->done = 1;
 		}
+		```
+	}
+
+	// Block until the task finishes, then return its result as a uint64.
+	// The spawn build phase allocates a heap slot and the trampoline writes
+	// the function's return value (cast to uint64) there before exiting.
+	// For tasks with no return value, returns 0.
+	pub func result_uint64 = (ref self, out uint64) {
+		```
+		#arch: c
+		if (self->handle && !self->done) {
+			void *ret;
+			pthread_join((pthread_t)self->handle, &ret);
+			self->handle = 0;
+			self->done = 1;
+		}
+		return *(unsigned long long *)self->result_slot;
+		```
+	}
+
+	// Request that the task stop. Cooperative — the task observes this via
+	// `Task.current_cancelled()` at its own checkpoints. No preemption.
+	pub func cancel = (ref self) {
+		```
+		#arch: c
+		if (self->cancel_flag) {
+			*(unsigned long long *)self->cancel_flag = 1;
+		}
+		```
+	}
+
+	// Has the currently-running task been asked to cancel? Returns false
+	// when called from outside any spawned task (e.g. main thread).
+	pub func current_cancelled = (out bool) {
+		```
+		#arch: c
+		return __echo_current_cancel_flag && *__echo_current_cancel_flag;
 		```
 	}
 }

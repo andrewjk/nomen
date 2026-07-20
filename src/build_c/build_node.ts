@@ -203,6 +203,9 @@ export default function build_node(node: BaseNode, status: BuildStatus, with_sem
 		}
 		case "spawn": {
 			build_spawn_node(node as SpawnNode, status);
+			// Spawn emits a statement expression `({...})`. Add a semicolon so
+			// it forms a valid statement when used standalone.
+			status.code += ";\n";
 			with_semicolon = false;
 			break;
 		}

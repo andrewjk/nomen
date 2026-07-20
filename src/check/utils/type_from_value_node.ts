@@ -11,6 +11,7 @@ import IfElseNode from "../../nodes/IfElseNode.ts";
 import MatchNode from "../../nodes/MatchNode.ts";
 import OperationNode from "../../nodes/OperationNode.ts";
 import RangeNode from "../../nodes/RangeNode.ts";
+import SpawnNode from "../../nodes/SpawnNode.ts";
 import SwitchNode from "../../nodes/SwitchNode.ts";
 import Type from "../../nodes/Type.ts";
 import ValueNode from "../../nodes/ValueNode.ts";
@@ -69,6 +70,10 @@ export default function type_from_value_node(node: BaseNode, status: CheckStatus
 		}
 		case "func": {
 			return (node as FunctionNode).return_type;
+		}
+		case "spawn": {
+			// spawn yields a Task handle (see check_spawn_node).
+			return (node as SpawnNode).call.type;
 		}
 	}
 	return new Type("");

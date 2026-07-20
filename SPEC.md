@@ -1550,6 +1550,199 @@ Foreground colours: `black`, `red`, `green`, `yellow`, `blue`, `magenta`,
 foreground colour. Styles: `bold`, `dim`, `italic`, `underline`, `blink`,
 `reverse`, `hidden`, `strikethrough`.
 
+### Task
+
+A handle to a spawned unit of work running on a separate thread. Spawned via
+`spawn` (preferred) or constructed directly for low-level use:
+
+```
+func work = (uint64 arg) {
+    Console.write_line("running")
+}
+
+var t = Task(work, 0)
+t.wait()
+```
+
+`wait()` blocks the caller until the task finishes. Idempotent — calling twice
+is safe. No-op if the task was never spawned or already joined.
+
+```
+var t = spawn compute(42)
+t.wait()
+```
+
+### Mutex
+
+pthread-backed lock for shared mutable state. The default stance in Echo is
+"no shared mutable state" — communicate by moving Sendable values (directly
+or via `Channel`). `Mutex` exists for when you genuinely need shared
+mutability:
+
+```
+var Mutex mu = Mutex()
+
+func worker = (Mutex m) {
+    m.lock()
+    // critical section
+    m.unlock()
+}
+
+async {
+    spawn worker(mu)
+}
+```
+
+`Mutex` is a class with `#destroy` that releases the pthread resource
+automatically at scope exit.
+
+### Channel
+
+Thread-safe unbounded FIFO queue for passing values between tasks. Blocking
+receive — `receive()` blocks the caller until a value is available.
+
+```
+var Channel ch = Channel()
+
+func producer = (Channel c) {
+    c.send(101)
+    c.send(202)
+}
+
+async {
+    spawn producer(ch)
+}
+
+var v = ch.receive()   // blocks until ready
+```
+
+`Channel` stores `uint64` values (Echo values are pointer-sized on every
+target we care about). A typed `Channel<T>` wrapper can come later.
+
+## Concurrency
+
+Echo's concurrency model is **structured concurrency via nurseries**: every
+concurrent split must rejoin before its lexical scope exits. See
+[ASYNC.md](ASYNC.md) for the full design and rationale.
+
+### Sendable
+
+Marker trait for types whose values are safe to move across a task boundary:
+
+```
+pub trait Sendable {
+}
+```
+
+- Primitives (`int`, `uint`, `float`, `bool`, `char`, `string`, etc.) are
+  always Sendable.
+- Structs are Sendable if explicitly marked `: Sendable` OR all their fields
+  are Sendable (auto-derive).
+- Classes must explicitly declare `: Sendable` (they're mutable shared
+  references — auto-derive would be unsafe by default).
+
+```
+pub struct Point {          // auto-Sendable: two int fields
+    var int x
+    var int y
+}
+
+pub class Counter {        // NOT Sendable: classes must opt in
+    var int count = 0
+}
+
+pub class SafeCounter : Sendable {   // Sendable: explicitly marked
+    var int count = 0
+}
+```
+
+Every value passed to `spawn` must be Sendable.
+
+### spawn
+
+`spawn` runs a function call on a separate thread. It can be used as a
+statement (fire-and-forget) or an expression (capture the resulting `Task`):
+
+```
+func bg = (uint64 arg) {
+    Console.write_line("from task")
+}
+
+spawn bg(0)                 // statement form
+
+var t = spawn bg(0)         // expression form
+t.wait()
+```
+
+The expression yields a `Task` handle. Outside an `async` block, the caller
+owns the handle and must `wait()` (otherwise the thread leaks). Inside an
+`async` block, the nursery takes ownership of the handle (joins it at block
+exit); the returned `Task` is a placeholder with `done = true`.
+
+Arguments to spawn must be `Sendable`. The spawned function's arguments are
+type-erased to `uint64` for the thread boundary, then cast back at the call
+site — primitives by value, classes/traits by pointer.
+
+### async block (nursery)
+
+`async { ... }` defines a nursery: a scope in which `spawn` can be used. The
+block cannot exit until all tasks spawned within it have finished (implicit
+join at scope exit). This is the structured-concurrency primitive.
+
+```
+func fetch = (uint64 id) {
+    // ...
+}
+
+async {
+    spawn fetch(1)
+    spawn fetch(2)
+    spawn fetch(3)
+    // block does not exit until all three fetches finish
+}
+```
+
+### Task
+
+The handle returned by `spawn`. Tracks one running task:
+
+```
+pub struct Task : Sendable {
+    func wait = (ref self)
+    func result_uint64 = (ref self, out uint64)
+    func cancel = (ref self)
+    func current_cancelled = (out bool)   // static
+}
+```
+
+- `wait()` blocks until the task finishes. Idempotent.
+- `result_uint64()` blocks, then returns the spawned function's return value
+  cast to `uint64`. For void-returning functions, returns 0.
+- `cancel()` requests cooperative cancellation — sets a flag the task
+  observes at its own checkpoints.
+- `current_cancelled()` (static) returns whether the currently-running task
+  has been asked to cancel. Returns `false` when called from outside any
+  spawned task (e.g. the main thread).
+
+Cancellation is cooperative — the runtime never preempts. Long-running tasks
+poll `current_cancelled()` at their own checkpoints:
+
+```
+func long_running = (uint64 arg) {
+    var int i = 0
+    while i < 1000000 {
+        if Task.current_cancelled() {
+            return
+        }
+        i = i + 1
+    }
+}
+
+var t = spawn long_running(0)
+t.cancel()
+t.wait()
+```
+
 ## Calling Conventions
 
 ### C Backend

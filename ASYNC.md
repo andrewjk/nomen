@@ -2,6 +2,41 @@
 
 Work in progress. Captures conclusions as the design evolves.
 
+## Implementation status
+
+What's currently shipped (C backend; aarch64 backend pending):
+
+- **`Sendable` trait** — marker, enforced on every spawn arg.
+  Auto-derived for structs whose fields are all Sendable. Classes must
+  explicitly opt in.
+- **`Task`** — pthread-backed handle. `wait()` (idempotent),
+  `result_uint64()` (blocks + returns the spawned function's return value
+  cast to uint64), `cancel()`, `current_cancelled()` (static, thread-local).
+- **`Mutex`** — pthread-backed lock, `#destroy` cleans up.
+- **`Channel`** — blocking FIFO queue (`send` / `receive`).
+- **`spawn`** — statement (fire-and-forget) or expression
+  (`let t = spawn fn(args)`). Args packed via per-site trampoline.
+- **`async { ... }`** — nursery block, joins all spawns at exit.
+
+Still on the phasing list:
+
+- **Real worker pool** — currently pthread-per-task; pool would reuse
+  threads across tasks. Same `Task` API, requires a future-based wait
+  mechanism instead of `pthread_join`.
+- **Generic `Task<T>`** — `result_uint64()` is the current escape hatch;
+  `Task<T>.result()` returning T needs monomorphization in the build phase.
+- **`#destroy` on Task** — currently leaks two heap slots (result, cancel
+  flag) per spawn. Properly freeing them requires either making Task a
+  class (reference semantics) or `mov`-only transfer semantics to avoid
+  double-free on copy.
+- **aarch64 backend** — every `#arch: c` block in `Task.echo` /
+  `Mutex.echo` / `Channel.echo` needs an equivalent `#arch: aarch64`
+  raw-asm block. So far only the C backend is exercised.
+- **Cancellation scope semantics** (Trio-style lexically-scoped timeouts)
+  — depends on having cancellation checkpoints beyond manual polling.
+
+See SPEC.md's "Concurrency" section for the user-facing contract.
+
 ## Foundations
 
 Echo's concurrency model is **structured concurrency via nurseries**, drawing on

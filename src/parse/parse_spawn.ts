@@ -8,7 +8,11 @@ import get_index from "./utils/get_index.ts";
 import parse_function_call_parameter from "./parse_function_call_parameter.ts";
 import peek_current from "./utils/peek_current.ts";
 
-export default function parse_spawn(status: ParseStatus) {
+/**
+ * Parse `spawn <call>` and return the SpawnNode. Caller decides whether to
+ * add the node to the parent (statement form) or use it as an expression.
+ */
+export function parse_spawn_node(status: ParseStatus): SpawnNode {
 	const start = get_index(status);
 	consume(status); // consume "spawn"
 
@@ -21,6 +25,10 @@ export default function parse_spawn(status: ParseStatus) {
 	}
 	expect(")", status);
 
-	const node = new SpawnNode(start, call);
+	return new SpawnNode(start, call);
+}
+
+export default function parse_spawn(status: ParseStatus) {
+	const node = parse_spawn_node(status);
 	add_to_parent(node, "Spawn expression", status);
 }
