@@ -26,52 +26,65 @@ struct LRU {
 	}
 
 	func unlink = (ref self, int id) {
-		var int p = self.prevs.load_int(id)
-		var int n = self.nexts.load_int(id)
-		if p >= 0 {
-			self.nexts.store_int(p, n)
-		} else {
-			self.head = n
-		}
-		if n >= 0 {
-			self.prevs.store_int(n, p)
-		} else {
-			self.tail = p
+		if id >= 0 && id < self.prevs.cap && id < self.nexts.cap {
+			var int p = self.prevs.load_int(id)
+			var int n = self.nexts.load_int(id)
+			if p >= 0 && p < self.nexts.cap {
+				self.nexts.store_int(p, n)
+			} else {
+				self.head = n
+			}
+			if n >= 0 && n < self.prevs.cap {
+				self.prevs.store_int(n, p)
+			} else {
+				self.tail = p
+			}
 		}
 	}
 
 	func link_tail = (ref self, int id) {
-		self.prevs.store_int(id, self.tail)
-		self.nexts.store_int(id, -1)
-		if self.tail >= 0 {
-			self.nexts.store_int(self.tail, id)
-		} else {
-			self.head = id
+		if id >= 0 && id < self.prevs.cap && id < self.nexts.cap {
+			self.prevs.store_int(id, self.tail)
+			self.nexts.store_int(id, -1)
+			var int t = self.tail
+			if t >= 0 && t < self.nexts.cap {
+				self.nexts.store_int(t, id)
+			} else {
+				self.head = id
+			}
+			self.tail = id
 		}
-		self.tail = id
 	}
 
 	func put = (ref self, int key, int value) {
 		if self.keys.has(key) {
 			var int id = self.keys.get(key)
-			self.nvals.store_int(id, value)
+			if id >= 0 && id < self.nvals.cap {
+				self.nvals.store_int(id, value)
+			}
 			self.unlink(id)
 			self.link_tail(id)
 		} else {
 			if self.count >= self.size {
 				var int id = self.head
-				var int old_key = self.nkeys.load_int(id)
-				self.keys.remove(old_key)
-				self.unlink(id)
-				self.nkeys.store_int(id, key)
-				self.nvals.store_int(id, value)
-				self.link_tail(id)
-				self.keys.set(key, id)
+				if id >= 0 && id < self.nkeys.cap {
+					var int old_key = self.nkeys.load_int(id)
+					self.keys.remove(old_key)
+					self.unlink(id)
+					if id < self.nvals.cap {
+						self.nkeys.store_int(id, key)
+						self.nvals.store_int(id, value)
+					}
+					self.link_tail(id)
+					self.keys.set(key, id)
+				}
 			} else {
 				var int id = self.count
 				self.count = self.count + 1
-				self.nkeys.store_int(id, key)
-				self.nvals.store_int(id, value)
+				if id >= 0 && id < self.nkeys.cap && id < self.nvals.cap {
+					self.nkeys.store_int(id, key)
+					self.nvals.store_int(id, value)
+				}
 				self.link_tail(id)
 				self.keys.set(key, id)
 			}
@@ -83,7 +96,9 @@ struct LRU {
 			var int id = self.keys.get(key)
 			self.unlink(id)
 			self.link_tail(id)
-			return self.nvals.load_int(id)
+			if id >= 0 && id < self.nvals.cap {
+				return self.nvals.load_int(id)
+			}
 		}
 		return -1
 	}

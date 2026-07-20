@@ -165,6 +165,14 @@ function evaluate_operation(
 							if (vdecl?.upper_bound_inclusive_exprs?.includes(target_str!) && op.op === "<=") {
 								return true;
 							}
+							// Transitive through inclusive: `i < n` (strict) and
+							// `n <= target` together imply `i < target` (since
+							// i < n <= target ⇒ i < target). This lets a hoisted
+							// `if n <= buf.cap { while i < n { buf.load(i) } }`
+							// verify without per-iteration guards.
+							if (op.op === "<" && vdecl?.upper_bound_inclusive_exprs?.includes(target_str!)) {
+								return true;
+							}
 						}
 					}
 				}

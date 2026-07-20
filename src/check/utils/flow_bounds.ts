@@ -754,6 +754,25 @@ export function numeric_interval(
 						}
 					}
 				}
+			} else if (field.name === "cap") {
+				// Resolve `buf.cap` (or `self.cap` inside a method) to the
+				// minimum known capacity from a recent grow/alloc. Returns
+				// an interval [cap, cap+1) so callers can compare numerically.
+				const target_path = expr_to_string(access.target, status);
+				if (target_path) {
+					const cap = lookup_buffer_cap(target_path, status);
+					if (cap !== undefined) return { lower: cap, upper: cap + 1 };
+					// Inside a struct method, buffer_caps are keyed by the
+					// callee's "self.X" path; resolve via the caller's alias.
+					if (target_path.includes(".")) {
+						const dot_idx = target_path.indexOf(".");
+						const fallback = "self" + target_path.slice(dot_idx);
+						if (fallback !== target_path) {
+							const cap2 = lookup_buffer_cap(fallback, status);
+							if (cap2 !== undefined) return { lower: cap2, upper: cap2 + 1 };
+						}
+					}
+				}
 			}
 		}
 		return undefined;

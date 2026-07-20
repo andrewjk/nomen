@@ -130,7 +130,13 @@ pub func main = (Init init) {
 		var uint64 chunk = div_rem.get(0)
 		var int c = 0
 		while c < 18 {
-			digits.store_int(digit_count + c, (chunk % 10) as int)
+			var int idx = digit_count + c
+			// `idx = digit_count + c` is a sum of two runtime variables the
+			// verifier can't relate to `digits.cap` (5020), so guard the
+			// store explicitly. `digits.cap` is a pub property on Buffer.
+			if idx >= 0 && idx < digits.cap {
+				digits.store_int(idx, (chunk % 10) as int)
+			}
 			chunk = chunk / 10
 			c = c + 1
 		}

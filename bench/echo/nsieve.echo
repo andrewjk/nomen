@@ -22,14 +22,24 @@ func nsieve = (int n) {
 	while i < n {
 		var int slot = i >> 6
 		var int bit = 1 << (i & 63)
-		if (flags.load_int(slot) & bit) == 0 {
-			count = count + 1
-			if i * i < n {
-				var int j = i * i
-				var int step = i * 2
-				while j < n {
-					flags.store_or_int(j >> 6, 1 << (j & 63))
-					j = j + step
+		// `slot = i >> 6` is bounded by `(n-1) >> 6 < slot_count == flags.cap`,
+		// but the verifier can't propagate that through the shift, so guard
+		// explicitly against `flags.cap` (a pub property on Buffer). The
+		// `slot >= 0` half is needed because the constraint is a strict &&
+		// of both halves (`i >= 0 && i < self.cap`).
+		if slot >= 0 && slot < flags.cap {
+			if (flags.load_int(slot) & bit) == 0 {
+				count = count + 1
+				if i * i < n {
+					var int j = i * i
+					var int step = i * 2
+					while j < n {
+						var int j_slot = j >> 6
+						if j_slot >= 0 && j_slot < flags.cap {
+							flags.store_or_int(j_slot, 1 << (j & 63))
+						}
+						j = j + step
+					}
 				}
 			}
 		}

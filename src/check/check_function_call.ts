@@ -22,6 +22,7 @@ import evaluate_const_condition, {
 import {
 	apply_bounds,
 	collect_return_bounds,
+	numeric_interval,
 	path_to_node,
 	record_buffer_cap,
 	substitute_constraint,
@@ -548,28 +549,17 @@ export default function check_function_call(
 				add_error(status, `Parameter constraint not satisfied: ${func_param.name}`, param.start);
 			} else if (satisfied === undefined) {
 				// Constraint can't be verified at compile time (e.g. runtime variable index).
-				// For self constraints on the Buffer/BigInt core types, allow silently since
-				// the constraint references self.cap which may legitimately be unknown; the
-				// flow analysis (flow_bounds.ts) verifies these when possible. For ARRAY and
-				// STRING index access, however, an unverifiable index is a real out-of-bounds
-				// risk — the backends emit UNCHECKED strided loads — so we REQUIRE the caller
-				// to prove the bound (e.g. a `while i < arr.length` loop or `if i < arr.length`
-				// guard). Only code inside a trusted core library method is exempt (those
-				// maintain their own invariants).
-				const base_name = target_type?.name?.split("_")[0] ?? "";
-				const silent_core =
-					target_type?.name === "Buffer" || base_name === "Buffer" || base_name === "BigInt";
-				const is_index_access = target_type?.is_array || target_type?.name === "string";
+				// For ARRAY, STRING, and BUFFER index access, an unverifiable index is a
+				// real out-of-bounds risk — the backends emit UNCHECKED strided loads
+				// (`load_int`/`store_int`/`load`/`store`) — so we REQUIRE the caller
+				// to prove the bound (e.g. a `while i < buf.cap` loop or `if i < buf.cap`
+				// guard). `Buffer.cap` is a normal pub property, so the programmer can
+				// hoist the guard outside the loop when the bound is loop-invariant.
+				// Other unverifiable constraints (e.g. on a List/LinkedList/Graph `.at`
+				// accessor whose bound references `self.count`) also error unless the
+				// call is inside a trusted core library method.
 				const inside_core = is_inside_core_method(status);
-				if (is_index_access) {
-					if (!inside_core) {
-						add_error(
-							status,
-							`Parameter constraint cannot be verified: ${func_param.name}`,
-							param.start,
-						);
-					}
-				} else if (!silent_core && !inside_core) {
+				if (!inside_core) {
 					add_error(
 						status,
 						`Parameter constraint cannot be verified: ${func_param.name}`,
@@ -670,12 +660,20 @@ export default function check_function_call(
 	}
 
 	// Record known minimum capacity for Buffer after grow/alloc calls.
-	// This lets subsequent `buf.store_int(0, …)` verify `0 < buf.cap`.
-	// Covers void-style calls where the return value isn't captured.
+	// This lets subsequent `buf.store_int(0, …)` verify `0 < buf.cap`, and
+	// also lets a hoisted `if i < buf.cap` guard discharge at compile time.
+	// Covers void-style calls where the return value isn't captured. Resolve
+	// the size argument through `numeric_interval` so that a `var` holding a
+	// literal (e.g. `var int slot_count = 10; buf.alloc_int(slot_count)`)
+	// propagates its numeric value — `const_value` is reserved for `const`
+	// declarations, but a `var` initialized with a literal still gets a
+	// point range `[n, n+1)` via `track_assignment_bounds`.
 	if (self_path && self_path !== "?" && target_type?.name === "Buffer" && func.return_constraint) {
 		const size_param = node.params[0];
 		if (size_param) {
-			const size_val = evaluate_numeric_or_bool(size_param, status);
+			const from_const = evaluate_numeric_or_bool(size_param, status);
+			const size_val =
+				typeof from_const === "number" ? from_const : numeric_interval(size_param, status)?.lower;
 			if (typeof size_val === "number" && size_val > 0) {
 				record_buffer_cap(self_path, size_val, status);
 			}

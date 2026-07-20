@@ -372,10 +372,11 @@ func caller = () {
 			expect(parsed.errors).toEqual([]);
 		});
 
-		test("buffer index from a loaded value is accepted", () => {
-			// Data-dependent indices (a "pointer" loaded from another buffer) are
-			// also fine, so an index stored in a buffer and reloaded (rather than
-			// kept in a -1-capable local) needs no guard at all.
+		test("buffer index from a loaded value requires a guard", () => {
+			// Data-dependent indices (a "pointer" loaded from another buffer)
+			// can't be proven in bounds at compile time. Now that Buffer no
+			// longer has the silent_core carve-out, this is a real OOB risk
+			// and must be guarded explicitly (`if n >= 0 && n < data.cap`).
 			const input = `
 import System
 func caller = () {
@@ -386,6 +387,28 @@ func caller = () {
     ptrs.store_int(0, 5)
     var int n = ptrs.load_int(0)
     data.store_int(n, 1)
+}
+`;
+			const parsed = parse(input, get_library(core));
+			expect(parsed.errors.length).toBeGreaterThanOrEqual(1);
+			expect(parsed.errors.some((e) => e.message.includes("cannot be verified"))).toBe(true);
+		});
+
+		test("buffer index from a loaded value with guard is accepted", () => {
+			// Guard the data-dependent index with an explicit range check
+			// against `data.cap` — the bound then verifies at compile time.
+			const input = `
+import System
+func caller = () {
+    var Buffer<int> data = Buffer<int>()
+    data.alloc_int(10)
+    var Buffer<int> ptrs = Buffer<int>()
+    ptrs.alloc_int(10)
+    ptrs.store_int(0, 5)
+    var int n = ptrs.load_int(0)
+    if n >= 0 && n < data.cap {
+        data.store_int(n, 1)
+    }
 }
 `;
 			const parsed = parse(input, get_library(core));

@@ -1,33 +1,39 @@
 import System
 
 func eval_a_times_u<T> = (ref Buffer<T> au, ref Buffer<T> u, int n, bool transpose) {
-	var int i = 0
-	while i < n {
-		var float a = 0.0
-		var int j = 0
-		// eval_a's denominator follows an additive recurrence along j:
-		//   denom(0)   = i*(i+1)/2 + i + 1     (transpose=false)
-		//               i*(i+1)/2 + 1         (transpose=true, since +j+1 with j=0)
-		//   denom(j+1) = denom(j) + i + j + 1 (transpose=false)
-		//               denom(j) + i + j + 2 (transpose=true)
-		// This avoids the per-element integer multiply and divide.
-		var int denom = i * (i + 1) / 2
-		if transpose {
-			denom = denom + 1
-		} else {
-			denom = denom + i + 1
-		}
-		while j < n {
-			a = a + (1.0 / (denom as float)) * u.load_float(j)
+	// `au` and `u` are sized to `n` by the caller, but that fact doesn't
+	// propagate through `ref` parameters — guard once so the inner loops'
+	// `i < n` / `j < n` bounds imply `i < au.cap` / `j < u.cap` via
+	// transitive bound propagation (`i < n <= cap ⇒ i < cap`).
+	if n <= au.cap && n <= u.cap {
+		var int i = 0
+		while i < n {
+			var float a = 0.0
+			var int j = 0
+			// eval_a's denominator follows an additive recurrence along j:
+			//   denom(0)   = i*(i+1)/2 + i + 1     (transpose=false)
+			//               i*(i+1)/2 + 1         (transpose=true, since +j+1 with j=0)
+			//   denom(j+1) = denom(j) + i + j + 1 (transpose=false)
+			//               denom(j) + i + j + 2 (transpose=true)
+			// This avoids the per-element integer multiply and divide.
+			var int denom = i * (i + 1) / 2
 			if transpose {
-				denom = denom + i + j + 2
+				denom = denom + 1
 			} else {
-				denom = denom + i + j + 1
+				denom = denom + i + 1
 			}
-			j = j + 1
+			while j < n {
+				a = a + (1.0 / (denom as float)) * u.load_float(j)
+				if transpose {
+					denom = denom + i + j + 2
+				} else {
+					denom = denom + i + j + 1
+				}
+				j = j + 1
+			}
+			au.store_float(i, a)
+			i = i + 1
 		}
-		au.store_float(i, a)
-		i = i + 1
 	}
 }
 
@@ -49,30 +55,36 @@ pub func main = (Init init) {
 	v.alloc_float(n)
 	scratch.alloc_float(n)
 
-	var int i = 0
-	while i < n {
-		u.store_float(i, 1.0)
-		v.store_float(i, 1.0)
-		i = i + 1
-	}
+	// The buffers were just allocated to `n`, but the verifier can't see
+	// that cap == n (the alloc call returns a numeric cap to callers, not a
+	// symbolic fact). Hoist the equivalence once so the inner `i < n` loops
+	// discharge against `u.cap` / `v.cap` without per-iteration guards.
+	if n <= u.cap && n <= v.cap {
+		var int i = 0
+		while i < n {
+			u.store_float(i, 1.0)
+			v.store_float(i, 1.0)
+			i = i + 1
+		}
 
-	i = 0
-	while i < 10 {
-		eval_ata_times_u(ref v, ref u, ref scratch, n)
-		eval_ata_times_u(ref u, ref v, ref scratch, n)
-		i = i + 1
-	}
+		i = 0
+		while i < 10 {
+			eval_ata_times_u(ref v, ref u, ref scratch, n)
+			eval_ata_times_u(ref u, ref v, ref scratch, n)
+			i = i + 1
+		}
 
-	var float vbv = 0.0
-	var float vv = 0.0
-	i = 0
-	while i < n {
-		vbv = vbv + u.load_float(i) * v.load_float(i)
-		vv = vv + v.load_float(i) * v.load_float(i)
-		i = i + 1
-	}
+		var float vbv = 0.0
+		var float vv = 0.0
+		i = 0
+		while i < n {
+			vbv = vbv + u.load_float(i) * v.load_float(i)
+			vv = vv + v.load_float(i) * v.load_float(i)
+			i = i + 1
+		}
 
-	var float result = Math.sqrt(vbv / vv)
-	Console.write(result.to_string())
-	Console.write("\n")
+		var float result = Math.sqrt(vbv / vv)
+		Console.write(result.to_string())
+		Console.write("\n")
+	}
 }

@@ -27,7 +27,11 @@ pub func main = () {
 	var int missed = 0
 
 	var int i = 0
-	while i < n {
+	// order was just allocated to size; hoist the equivalence so the
+	// inner accesses (indexed by order_len <= size) verify against
+	// order.cap without per-iteration guards.
+	if size <= order.cap {
+		while i < n {
 		rng0_state = (1103515245 * rng0_state + 12345) % 2147483648
 		var int n0 = rng0_state % M
 
@@ -35,15 +39,19 @@ pub func main = () {
 			lru.set(n0, n0)
 			var int find = 0
 			while find < order_len {
-				if order.load_int(find) == n0 {
+				if find >= 0 && find < order.cap && order.load_int(find) == n0 {
 					if find < order_len - 1 {
 						var int sh = find
 						while sh < order_len - 1 {
-							order.store_int(sh, order.load_int(sh + 1))
+							if sh >= 0 && sh < order.cap && sh + 1 < order.cap {
+								order.store_int(sh, order.load_int(sh + 1))
+							}
 							sh = sh + 1
 						}
 					}
-					order.store_int(order_len - 1, n0)
+					if order_len - 1 >= 0 && order_len - 1 < order.cap {
+						order.store_int(order_len - 1, n0)
+					}
 					break
 				}
 				find = find + 1
@@ -55,14 +63,20 @@ pub func main = () {
 					lru.remove(oldest)
 					var int j = 0
 					while j < order_len - 1 {
-						order.store_int(j, order.load_int(j + 1))
+						if j >= 0 && j < order.cap && j + 1 < order.cap {
+							order.store_int(j, order.load_int(j + 1))
+						}
 						j = j + 1
 					}
-					order.store_int(order_len - 1, n0)
+					if order_len - 1 >= 0 && order_len - 1 < order.cap {
+						order.store_int(order_len - 1, n0)
+					}
 					lru.set(n0, n0)
 				}
 				else {
-					order.store_int(order_len, n0)
+					if order_len >= 0 && order_len < order.cap {
+						order.store_int(order_len, n0)
+					}
 					order_len = order_len + 1
 					lru.set(n0, n0)
 				}
@@ -76,15 +90,19 @@ pub func main = () {
 			hit = hit + 1
 			var int find2 = 0
 			while find2 < order_len {
-				if order.load_int(find2) == n1 {
+				if find2 >= 0 && find2 < order.cap && order.load_int(find2) == n1 {
 					if find2 < order_len - 1 {
 						var int sh2 = find2
 						while sh2 < order_len - 1 {
-							order.store_int(sh2, order.load_int(sh2 + 1))
+							if sh2 >= 0 && sh2 < order.cap && sh2 + 1 < order.cap {
+								order.store_int(sh2, order.load_int(sh2 + 1))
+							}
 							sh2 = sh2 + 1
 						}
 					}
-					order.store_int(order_len - 1, n1)
+					if order_len - 1 >= 0 && order_len - 1 < order.cap {
+						order.store_int(order_len - 1, n1)
+					}
 					break
 				}
 				find2 = find2 + 1
@@ -94,6 +112,7 @@ pub func main = () {
 		}
 
 		i = i + 1
+	}
 	}
 
 	Console.write("\\{hit}\\n")
