@@ -91,16 +91,20 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 		// leak when the borrow branch isn't taken (auto_free can't tell at
 		// scope exit whether the borrow happened). Treat the initial literal
 		// like a borrow from the start — don't track it for free.
+		// A `const string x = "literal"` is likewise never reassigned, so its
+		// bare literal is never owned and must not be freed (freeing a string
+		// literal is an invalid free / crash). Treat const literals as
+		// borrow-only unconditionally.
 		const val_is_string_literal =
 			node.value?.node_type === "value" &&
 			(node.value as ValueNode).value.length >= 2 &&
 			(node.value as ValueNode).value.startsWith('"') &&
 			(node.value as ValueNode).value.endsWith('"');
 		const is_borrow_only_string =
-			node.declaration === "var" &&
 			node.type.name === "string" &&
 			val_is_string_literal &&
-			!!status.c_borrow_only_strings?.has(safe_name);
+			(node.declaration === "const" ||
+				(node.declaration === "var" && !!status.c_borrow_only_strings?.has(safe_name)));
 		if (is_borrow_only_string) {
 			if (!status.string_borrow_vars) status.string_borrow_vars = new Set();
 			status.string_borrow_vars.add(safe_name);

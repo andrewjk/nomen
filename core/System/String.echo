@@ -70,8 +70,8 @@ pub struct string: Stringable {
     pub func #op_mul = (self, int count, out string) {
         ```
         #arch: c
-        int str_len = strlen(self);
-        int total = str_len * count + 1;
+        size_t str_len = strlen(self);
+        size_t total = str_len * (size_t)count + 1;
         char* buf = malloc(total);
         char* p = buf;
         for (int i = 0; i < count; i++) {
