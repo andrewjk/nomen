@@ -10,12 +10,11 @@ import type_from_value_node from "./utils/type_from_value_node.ts";
  * expression) so spawn can be used either as a statement (value discarded)
  * or as an expression (`let t = spawn fn(args)`).
  *
- * Behavior:
- * - Outside a nursery: the returned Task owns the pthread handle. Caller
- *   must `wait()` to join (otherwise the handle leaks).
- * - Inside a nursery: the nursery takes ownership of the handle (joins it
- *   at block exit). The returned Task is a placeholder with handle=0 —
- *   calling `wait()` on it is a safe no-op.
+ * The Task's future is reference-counted and shared: the running trampoline
+ * holds one ref, the returned Task holds one, and the enclosing nursery (if
+ * any) holds one. Waiting is idempotent (join-once), so the returned handle
+ * is fully usable both inside and outside a nursery — a nursery spawn can
+ * be waited on explicitly and is still joined by the nursery at block exit.
  */
 export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 	const call = node.call;
@@ -32,36 +31,47 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 	const tramp_name = `__echo_spawn_${id}_trampoline`;
 
 	// Resolve each arg's C type. Classes/traits are pointers; primitives and
-	// by-value structs use c_type's output directly.
+	// by-value structs use c_type's output directly. Generic instantiations
+	// (e.g. Channel<uint64>) use the monomorphized C name (`Channel_uint64`).
 	const arg_c_types: string[] = [];
 	for (let i = 0; i < call.params.length; i++) {
 		const arg_type = type_from_value_node(call.params[i]);
-		const is_class = !!status.structs.find((s) => s.name === arg_type.name && s.is_class);
-		const is_trait = !!status.traits.find((t) => t.name === arg_type.name);
-		arg_c_types.push(
-			is_class || is_trait ? `struct ${arg_type.name} *` : c_type(arg_type.name),
-		);
+		const mono_name = arg_type.type_args?.length
+			? `${arg_type.name}_${arg_type.type_args.map((t) => t.name).join("_")}`
+			: arg_type.name;
+		const is_class = !!status.structs.find((s) => s.name === mono_name && s.is_class);
+		const is_trait = !!status.traits.find((t) => t.name === mono_name);
+		arg_c_types.push(is_class || is_trait ? `struct ${mono_name} *` : c_type(mono_name));
 	}
 
 	// Emit the arg struct + trampoline to headers (file scope).
 	// The args struct also carries a result slot pointer that the trampoline
-	// writes the function's return value to (cast to uint64), and a cancel
-	// flag pointer that the trampoline publishes to a thread-local so the
-	// spawned function can poll Task.current_cancelled().
+	// writes the function's return value to (cast to uint64), a cancel flag
+	// pointer that the trampoline publishes to a thread-local so the
+	// spawned function can poll Task.current_cancelled(), and a future
+	// pointer that the trampoline signals on completion.
 	let header = `struct ${struct_name} {\n`;
 	for (let i = 0; i < arg_c_types.length; i++) {
 		header += `\t${arg_c_types[i]} arg${i};\n`;
 	}
 	header += `\tunsigned long long *result_slot;\n`;
 	header += `\tunsigned long long *cancel_flag;\n`;
+	header += `\tstruct echo_future *future;\n`;
 	header += `};\n`;
-	header += `static void *${tramp_name}(void *p) {\n`;
+	// Pool trampoline: signature is `void (*)(void*)` (no return). The pool
+	// worker calls it; the trampoline calls the user function and signals
+	// the future when done.
+	header += `static void ${tramp_name}(void *p) {\n`;
 	header += `\tstruct ${struct_name} *a = (struct ${struct_name} *)p;\n`;
 	header += `\t__echo_current_cancel_flag = a->cancel_flag;\n`;
 	// Determine if the function returns a value. We approximate by checking
 	// the captured function_return_type — empty name means void/no return.
 	const return_type_name = node.function_return_type?.name;
-	const returns_value = !!(return_type_name && return_type_name !== "void" && return_type_name !== "?");
+	const returns_value = !!(
+		return_type_name &&
+		return_type_name !== "void" &&
+		return_type_name !== "?"
+	);
 	if (returns_value) {
 		const is_class_ret = !!status.structs.find((s) => s.name === return_type_name && s.is_class);
 		const is_trait_ret = !!status.traits.find((t) => t.name === return_type_name);
@@ -80,13 +90,20 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 		header += `\t*(a->result_slot) = (unsigned long long)_r;\n`;
 	}
 	header += `\t__echo_current_cancel_flag = NULL;\n`;
+	header += `\tpthread_mutex_lock(&a->future->mu);\n`;
+	header += `\ta->future->done = 1;\n`;
+	header += `\tpthread_cond_broadcast(&a->future->cv);\n`;
+	header += `\tpthread_mutex_unlock(&a->future->mu);\n`;
+	// The trampoline holds one future reference for the duration of the run —
+	// release it only after signaling, so the future (and the result slot it
+	// owns) is guaranteed alive while the result is written.
+	header += `\t__echo_future_release(a->future);\n`;
 	header += `\tfree(a);\n`;
-	header += `\treturn NULL;\n`;
 	header += `}\n`;
 	status.headers += header;
 
-	// Statement-expression that sets up the args, spawns, and yields a Task.
-	// GCC statement expressions (`({ ... })`) are supported by clang.
+	// Statement-expression that sets up the args, allocates the future,
+	// submits to the pool, and yields a Task.
 	status.code += `({\n`;
 	status.code += `\tstruct ${struct_name} *_args = (struct ${struct_name} *)malloc(sizeof(struct ${struct_name}));\n`;
 	for (let i = 0; i < call.params.length; i++) {
@@ -100,17 +117,33 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 	status.code += `\tunsigned long long *_cancel_ptr = (unsigned long long *)malloc(sizeof(unsigned long long));\n`;
 	status.code += `\t*_cancel_ptr = 0;\n`;
 	status.code += `\t_args->cancel_flag = _cancel_ptr;\n`;
-	status.code += `\tpthread_t _handle;\n`;
-	status.code += `\tpthread_create(&_handle, NULL, ${tramp_name}, _args);\n`;
+	status.code += `\tstruct echo_future *_future = (struct echo_future *)malloc(sizeof(struct echo_future));\n`;
+	status.code += `\tpthread_mutex_init(&_future->mu, NULL);\n`;
+	status.code += `\tpthread_cond_init(&_future->cv, NULL);\n`;
+	status.code += `\t_future->done = 0;\n`;
+	// The future owns the cancel flag and result slot.
+	status.code += `\t_future->cancel_flag = _cancel_ptr;\n`;
+	status.code += `\t_future->result_slot = _result_ptr;\n`;
+	status.code += `\t_args->future = _future;\n`;
 
-	// Inside a nursery: nursery takes ownership of the handle. Outside: the
-	// returned Task owns it (caller must wait).
+	// Inside a nursery: the nursery holds its own future reference (waits +
+	// releases at block exit). Outside: only the trampoline and the returned
+	// Task hold references.
 	const nursery_id = status.nursery_stack?.at(-1);
+	status.code += `\t_future->refs = ${nursery_id !== undefined ? 3 : 2};\n`;
+	status.code += `\t__echo_pool_submit(${tramp_name}, _args);\n`;
 	if (nursery_id !== undefined) {
-		status.code += `\t__echo_nursery_${nursery_id}_handles[__echo_nursery_${nursery_id}_count++] = _handle;\n`;
-		status.code += `\t(struct Task){.handle = 0, .done = 1, .result_slot = (unsigned long long)_result_ptr, .cancel_flag = (unsigned long long)_cancel_ptr};\n`;
-	} else {
-		status.code += `\t(struct Task){.handle = (unsigned long long)_handle, .done = 0, .result_slot = (unsigned long long)_result_ptr, .cancel_flag = (unsigned long long)_cancel_ptr};\n`;
+		status.code += `\t__echo_nursery_${nursery_id}_futures[__echo_nursery_${nursery_id}_count++] = (unsigned long long)_future;\n`;
 	}
+	// Task is a class (heap-allocated). Construct via malloc + field assigns
+	// and yield the pointer. The handle is fully usable whether or not a
+	// nursery also tracks the future (join-once semantics).
+	status.code += `\tstruct Task *_task = (struct Task *)malloc(sizeof(struct Task));\n`;
+	status.code += `\t_task->handle = 0;\n`;
+	status.code += `\t_task->done = 0;\n`;
+	status.code += `\t_task->result_slot = (unsigned long long)_result_ptr;\n`;
+	status.code += `\t_task->cancel_flag = (unsigned long long)_cancel_ptr;\n`;
+	status.code += `\t_task->future = (unsigned long long)_future;\n`;
+	status.code += `\t_task;\n`;
 	status.code += `})\n`;
 }

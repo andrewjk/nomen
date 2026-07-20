@@ -27,4 +27,3 @@ export default class SpawnNode extends BaseNode {
 		this.call = call;
 	}
 }
-

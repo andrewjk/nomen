@@ -52,4 +52,3 @@ export default function is_sendable_type(
 	visited.add(type_name);
 	return struct.fields.every((f) => is_sendable_type(f.type.name, status, visited));
 }
-

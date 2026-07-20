@@ -1674,10 +1674,23 @@ var t = spawn bg(0)         // expression form
 t.wait()
 ```
 
-The expression yields a `Task` handle. Outside an `async` block, the caller
-owns the handle and must `wait()` (otherwise the thread leaks). Inside an
-`async` block, the nursery takes ownership of the handle (joins it at block
-exit); the returned `Task` is a placeholder with `done = true`.
+The expression yields a `Task` handle. The handle is usable whether or not
+the spawn happened inside a nursery: waiting is idempotent (join-once), and
+the nursery's implicit join at block exit shares the same underlying future.
+So a Task captured inside an `async` block can be waited on explicitly, and
+the nursery's join at block exit simply observes the task is already done:
+
+```
+async {
+    var t = spawn fetch(1)   // usable handle, even inside a nursery
+    t.wait()                  // explicit join
+    // nursery joins t again at block exit — a no-op
+}
+```
+
+The nursery's join runs before block-scoped locals are destroyed, so a
+running task can safely hold pointers to values declared in the nursery
+(e.g. a `Channel`).
 
 Arguments to spawn must be `Sendable`. The spawned function's arguments are
 type-erased to `uint64` for the thread boundary, then cast back at the call
@@ -1742,6 +1755,22 @@ var t = spawn long_running(0)
 t.cancel()
 t.wait()
 ```
+
+### Worker pool
+
+Spawned tasks run on a fixed-size thread pool (default: 4 workers). The pool
+grows on demand when every worker is busy — a worker blocked joining its own
+spawned children can't starve the queue, because the pool starts an extra
+worker up to a cap of 64. This prevents deadlocks from nested spawns.
+
+```
+Task.set_pool_size(8)  // must be called before the first spawn
+```
+
+The pool shuts down automatically at process exit: every queued task is
+drained and joined before the process exits. `Task.shutdown_pool()` does
+this explicitly — after it returns every outstanding fire-and-forget task
+has completed. The pool re-initializes on the next spawn.
 
 ## Calling Conventions
 

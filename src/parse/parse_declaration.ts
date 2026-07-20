@@ -102,7 +102,8 @@ export default function parse_declaration(
 		case "func":
 		case "for":
 		case "while":
-		case "branch": {
+		case "branch":
+		case "async_block": {
 			(parent as BlockNode).statements.push(decl);
 			break;
 		}
@@ -397,7 +398,8 @@ function parse_destructuring(
 			case "func":
 			case "for":
 			case "while":
-			case "branch": {
+			case "branch":
+			case "async_block": {
 				(parent as BlockNode).statements.push(node);
 				break;
 			}

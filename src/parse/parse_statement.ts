@@ -161,19 +161,19 @@ export default function parse_statement(status: ParseStatus) {
 				parse_return(status);
 				break;
 			}
-		case "raw": {
-			parse_raw(status);
-			break;
-		}
-		case "spawn": {
-			parse_spawn(status);
-			break;
-		}
-		case "async": {
-			parse_async_block(status);
-			break;
-		}
-		case "}": {
+			case "raw": {
+				parse_raw(status);
+				break;
+			}
+			case "spawn": {
+				parse_spawn(status);
+				break;
+			}
+			case "async": {
+				parse_async_block(status);
+				break;
+			}
+			case "}": {
 				return;
 			}
 			default: {

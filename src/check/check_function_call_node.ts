@@ -185,6 +185,7 @@ export function monomorphize(
 		[],
 	);
 	mono_struct.source_type_args = type_args;
+	mono_struct.is_class = generic_struct.is_class;
 
 	for (const func of generic_struct.functions) {
 		if (func.name === "#init") continue;

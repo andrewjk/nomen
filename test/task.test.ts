@@ -182,6 +182,258 @@ t.wait()
 		const result = build(parsed.root, options);
 		await check_output("spawn_cancel", result, "cancelled\n", options);
 	});
+
+	test("worker pool handles more tasks than workers", async () => {
+		// Spawn 10 tasks (more than the 4-worker pool). They should all
+		// execute and the nursery should join them all. Each task sends its
+		// id on the shared channel; main receives 10 and sums them.
+		const input = `
+import System
+
+func work = (Channel ch, uint64 n) {
+	ch.send(n)
+}
+
+pub func main = () {
+	var Channel ch = Channel()
+
+	async {
+		spawn work(ch, 0)
+		spawn work(ch, 1)
+		spawn work(ch, 2)
+		spawn work(ch, 3)
+		spawn work(ch, 4)
+		spawn work(ch, 5)
+		spawn work(ch, 6)
+		spawn work(ch, 7)
+		spawn work(ch, 8)
+		spawn work(ch, 9)
+	}
+
+	var int sum = 0
+	var int i = 0
+	while i < 10 {
+		var uint64 v = ch.receive()
+		sum = sum + (v as int)
+		i = i + 1
+	}
+	if sum == 45 {
+		Console.write_line("all ran")
+	} else {
+		Console.write_line("missing")
+	}
+}
+`;
+		const parsed = parse_raw(input);
+		expect(parsed.errors).toEqual([]);
+
+		const options = { arch: "c" as const, audit: false };
+		const result = build(parsed.root, options);
+		await check_output("pool_many_tasks", result, "all ran\n", options);
+	});
+
+	test("producer/filter/consumer pipeline via channels", async () => {
+		// Three-stage pipeline: producer emits 0..4, filter doubles each,
+		// consumer sums them. Tests channel handoff between concurrent tasks.
+		const input = `
+import System
+
+func producer = (Channel out) {
+	var int i = 0
+	while i < 5 {
+		out.send(i as uint64)
+		i = i + 1
+	}
+}
+
+func filter = (Channel in_ch, Channel out) {
+	var int i = 0
+	while i < 5 {
+		var uint64 v = in_ch.receive()
+		out.send(v + v)
+		i = i + 1
+	}
+}
+
+pub func main = () {
+	var Channel a = Channel()
+	var Channel b = Channel()
+
+	async {
+		spawn producer(a)
+		spawn filter(a, b)
+	}
+
+	// Consume from b in main
+	var int sum = 0
+	var int i = 0
+	while i < 5 {
+		var uint64 v = b.receive()
+		sum = sum + (v as int)
+		i = i + 1
+	}
+	// 0*2 + 1*2 + 2*2 + 3*2 + 4*2 = 20
+	if sum == 20 {
+		Console.write_line("pipeline ok")
+	} else {
+		Console.write_line("wrong")
+	}
+}
+`;
+		const parsed = parse_raw(input);
+		expect(parsed.errors).toEqual([]);
+
+		const options = { arch: "c" as const, audit: false };
+		const result = build(parsed.root, options);
+		await check_output("pipeline", result, "pipeline ok\n", options);
+	});
+
+	test("Task.set_pool_size configures the pool before first spawn", async () => {
+		// Set pool size to 8, spawn 8 tasks (each sends its id), verify all run.
+		const input = `
+import System
+
+func work = (Channel ch, uint64 n) {
+	ch.send(n)
+}
+
+pub func main = () {
+	var int ok = Task.set_pool_size(8)
+	if ok == 1 {
+		var Channel ch = Channel()
+
+		async {
+			spawn work(ch, 0)
+			spawn work(ch, 1)
+			spawn work(ch, 2)
+			spawn work(ch, 3)
+			spawn work(ch, 4)
+			spawn work(ch, 5)
+			spawn work(ch, 6)
+			spawn work(ch, 7)
+		}
+
+		var int sum = 0
+		var int i = 0
+		while i < 8 {
+			var uint64 v = ch.receive()
+			sum = sum + (v as int)
+			i = i + 1
+		}
+		// sum of 0..7 = 28
+		if sum == 28 {
+			Console.write_line("ok")
+		} else {
+			Console.write_line("wrong")
+		}
+	} else {
+		Console.write_line("set failed")
+	}
+}
+`;
+		const parsed = parse_raw(input);
+		expect(parsed.errors).toEqual([]);
+
+		const options = { arch: "c" as const, audit: false };
+		const result = build(parsed.root, options);
+		await check_output("pool_size_configurable", result, "ok\n", options);
+	});
+
+	test("nested spawns do not deadlock the pool", async () => {
+		// Four outer tasks fill the default 4-worker pool, and each blocks on
+		// its own nursery waiting for two inner tasks. Without pool growth the
+		// inner tasks would starve in the queue (every worker busy joining) —
+		// a deadlock. The pool must start extra workers on demand.
+		const input = `
+import System
+
+func inner = (Channel ch, uint64 n) {
+	ch.send(n)
+}
+
+func outer = (Channel ch, uint64 n) {
+	var uint64 m = n + 10
+	async {
+		spawn inner(ch, n)
+		spawn inner(ch, m)
+	}
+}
+
+pub func main = () {
+	var Channel ch = Channel()
+
+	async {
+		spawn outer(ch, 0)
+		spawn outer(ch, 1)
+		spawn outer(ch, 2)
+		spawn outer(ch, 3)
+	}
+
+	// 8 inner results: 0, 10, 1, 11, 2, 12, 3, 13 = 52
+	var int sum = 0
+	var int i = 0
+	while i < 8 {
+		var uint64 v = ch.receive()
+		sum = sum + (v as int)
+		i = i + 1
+	}
+	if sum == 52 {
+		Console.write_line("no deadlock")
+	} else {
+		Console.write_line("wrong")
+	}
+}
+`;
+		const parsed = parse_raw(input);
+		expect(parsed.errors).toEqual([]);
+
+		const options = { arch: "c" as const, audit: false };
+		const result = build(parsed.root, options);
+		await check_output("pool_nested_spawn", result, "no deadlock\n", options);
+	});
+
+	test("fire-and-forget tasks are joined at process exit", async () => {
+		// No spin-wait and no explicit join: the pool's atexit shutdown drains
+		// the queue and joins the workers, so bg still prints before exit.
+		const input = `
+func bg = (uint64 arg) {
+	Console.write_line("from background")
+}
+
+spawn bg(0)
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+
+		const options = { arch: "c" as const, audit: false };
+		const result = build(parsed.root, options);
+		await check_output("pool_joined_at_exit", result, "from background\n", options);
+	});
+
+	test("Task.shutdown_pool joins outstanding tasks explicitly", async () => {
+		// Deterministic: after shutdown_pool returns, every queued task has
+		// finished, so "after shutdown" always comes last.
+		const input = `
+func bg = (uint64 arg) {
+	Console.write_line("from background")
+}
+
+spawn bg(0)
+Task.shutdown_pool()
+Console.write_line("after shutdown")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+
+		const options = { arch: "c" as const, audit: false };
+		const result = build(parsed.root, options);
+		await check_output(
+			"pool_explicit_shutdown",
+			result,
+			"from background\nafter shutdown\n",
+			options,
+		);
+	});
 });
 
 describe("async nursery", () => {
@@ -234,6 +486,56 @@ Console.write_line("done")
 		await check_output("async_nursery_multiple", result, "", options);
 		// Sanity: the binary ran without crashing — check_output asserts no stderr.
 	});
+
+	test("spawn inside a nursery returns a usable Task", async () => {
+		// The nursery tracks the future, but the returned handle is fully
+		// usable: result_uint64() blocks on the shared future and returns
+		// the value, even though the nursery will join the same task again
+		// at block exit (join-once).
+		const input = `
+func compute = (uint64 n) => n + 1
+
+async {
+	var t = spawn compute(41)
+	var uint64 r = t.result_uint64()
+	if r == 42 {
+		Console.write_line("usable")
+	} else {
+		Console.write_line("wrong")
+	}
+}
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+
+		const options = { arch: "c" as const, audit: false };
+		const result = build(parsed.root, options);
+		await check_output("async_spawn_usable_task", result, "usable\n", options);
+	});
+
+	test("nursery join after an explicit wait is a no-op", async () => {
+		// Explicitly waiting on a nursery Task, then letting the nursery
+		// join it again at block exit, must not hang or crash.
+		const input = `
+func bg = (uint64 arg) {
+	Console.write_line("ran")
+}
+
+async {
+	var t = spawn bg(0)
+	t.wait()
+	Console.write_line("waited")
+}
+
+Console.write_line("after")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+
+		const options = { arch: "c" as const, audit: false };
+		const result = build(parsed.root, options);
+		await check_output("async_join_after_wait", result, "ran\nwaited\nafter\n", options);
+	});
 });
 
 describe("Mutex", () => {
@@ -262,6 +564,23 @@ async {
 		const options = { arch: "c" as const, audit: false };
 		const result = build(parsed.root, options);
 		await check_output("mutex_shared_spawn", result, "", options);
+	});
+
+	test("Mutex lock/unlock works on aarch64 backend", async () => {
+		// Single-threaded smoke test for the aarch64 asm blocks in Mutex.echo.
+		// Just verifies the asm assembles, links, and runs without crashing.
+		const input = `
+var Mutex mu = Mutex()
+mu.lock()
+mu.unlock()
+Console.write_line("ok")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+
+		const options = { arch: "aarch64" as const, audit: false };
+		const result = build(parsed.root, options);
+		await check_output("mutex_aarch64_smoke", result, "ok\n", options);
 	});
 });
 
@@ -393,4 +712,3 @@ pub func main = () {
 		expect(parsed.errors.some((e) => e.message.includes("not Sendable"))).toBe(true);
 	});
 });
-

@@ -40,4 +40,3 @@ export default function check_spawn_node(node: SpawnNode, status: CheckStatus): 
 	node.call.type = new Type("Task");
 	return true;
 }
-

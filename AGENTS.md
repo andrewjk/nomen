@@ -174,9 +174,9 @@ produce its documented error.
   added, changed, or removed, update the corresponding test in `test/spec/`
   (add/modify/delete the test) so the suite continues to reflect the spec.
 - **Known SPEC/impl gaps** (features the spec documents but the compiler does
-  not yet implement) are written as *negative* tests that currently **fail**:
+  not yet implement) are written as _negative_ tests that currently **fail**:
   they assert `errors` is empty and carry a `// TODO: enabled once ... (SPEC
-  gap)` comment. When the feature lands, the test turns green automatically —
+gap)` comment. When the feature lands, the test turns green automatically —
   do not delete or loosen it. Treat a newly-passing `test/spec/` test as a
   signal that the gap was closed.
 - Run them with `npm test test/spec/` (or `npx vp test test/spec/`).
