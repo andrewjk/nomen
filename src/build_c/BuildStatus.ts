@@ -286,6 +286,16 @@ export default interface BuildStatus {
 	platform: string;
 	label_counter?: number;
 	/**
+	 * Counter for generating unique spawn-site IDs (struct + trampoline names).
+	 */
+	spawn_counter?: number;
+	/**
+	 * Stack of active async-nursery IDs. When non-empty, build_spawn_node
+	 * pushes the pthread handle into the topmost nursery's handle array
+	 * instead of detaching; build_async_block_node joins them all at exit.
+	 */
+	nursery_stack?: number[];
+	/**
 	 * Tracks which struct body typedefs have already been emitted to avoid
 	 * duplicate definitions when nested structs are also emitted at root level.
 	 */

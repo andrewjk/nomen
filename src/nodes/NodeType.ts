@@ -32,5 +32,7 @@ export type NodeType =
 	| "todo"
 	| "return"
 	| "let"
+	| "spawn"
+	| "async_block"
 	| "raw"
 	| "anon_struct";

@@ -6,6 +6,7 @@ import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import LetNode from "../nodes/LetNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import parse_access from "./parse_access.ts";
+import parse_async_block from "./parse_async_block.ts";
 import parse_bitset from "./parse_bitset.ts";
 import parse_break_or_continue from "./parse_break_or_continue.ts";
 import parse_declaration from "./parse_declaration.ts";
@@ -21,6 +22,7 @@ import parse_match from "./parse_match.ts";
 import parse_panic_or_todo from "./parse_panic_or_todo.ts";
 import parse_raw from "./parse_raw.ts";
 import parse_return from "./parse_return.ts";
+import parse_spawn from "./parse_spawn.ts";
 import parse_struct from "./parse_struct.ts";
 import parse_switch from "./parse_switch.ts";
 import parse_trait from "./parse_trait.ts";
@@ -159,11 +161,19 @@ export default function parse_statement(status: ParseStatus) {
 				parse_return(status);
 				break;
 			}
-			case "raw": {
-				parse_raw(status);
-				break;
-			}
-			case "}": {
+		case "raw": {
+			parse_raw(status);
+			break;
+		}
+		case "spawn": {
+			parse_spawn(status);
+			break;
+		}
+		case "async": {
+			parse_async_block(status);
+			break;
+		}
+		case "}": {
 				return;
 			}
 			default: {

@@ -1,0 +1,5 @@
+// Marker trait for types whose values are safe to move across task boundaries.
+// See ASYNC.md for the design. Auto-derivable in a follow-up; for now, structs
+// opt in explicitly with `: Sendable`.
+pub trait Sendable {
+}

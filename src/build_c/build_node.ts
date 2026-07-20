@@ -2,6 +2,7 @@ import AccessNode from "../nodes/AccessNode.ts";
 import AnonStructNode from "../nodes/AnonStructNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import AssignmentNode from "../nodes/AssignmentNode.ts";
+import AsyncBlockNode from "../nodes/AsyncBlockNode.ts";
 import BaseNode from "../nodes/BaseNode.ts";
 import BitsetNode from "../nodes/BitsetNode.ts";
 import BreakNode from "../nodes/BreakNode.ts";
@@ -22,6 +23,7 @@ import RangeNode from "../nodes/RangeNode.ts";
 import RawNode from "../nodes/RawNode.ts";
 import ReturnNode from "../nodes/ReturnNode.ts";
 import RootNode from "../nodes/RootNode.ts";
+import SpawnNode from "../nodes/SpawnNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import SwitchNode from "../nodes/SwitchNode.ts";
 import TodoNode from "../nodes/TodoNode.ts";
@@ -31,6 +33,7 @@ import WhileLoopNode from "../nodes/WhileLoopNode.ts";
 import build_access_node from "./build_access_node.ts";
 import build_array_values_node from "./build_array_values_node.ts";
 import build_assignment_node from "./build_assignment_node.ts";
+import build_async_block_node from "./build_async_block_node.ts";
 import build_bitset_node from "./build_bitset_node.ts";
 import build_break_node from "./build_break_node.ts";
 import build_cast_node from "./build_cast_node.ts";
@@ -49,6 +52,7 @@ import build_range_node from "./build_range_node.ts";
 import build_raw_node from "./build_raw_node.ts";
 import build_return_node from "./build_return_node.ts";
 import build_root_node from "./build_root_node.ts";
+import build_spawn_node from "./build_spawn_node.ts";
 import build_struct_node from "./build_struct_node.ts";
 import build_switch_node from "./build_switch_node.ts";
 import build_todo_node from "./build_todo_node.ts";
@@ -194,6 +198,16 @@ export default function build_node(node: BaseNode, status: BuildStatus, with_sem
 		}
 		case "raw": {
 			build_raw_node(node as RawNode, status);
+			with_semicolon = false;
+			break;
+		}
+		case "spawn": {
+			build_spawn_node(node as SpawnNode, status);
+			with_semicolon = false;
+			break;
+		}
+		case "async_block": {
+			build_async_block_node(node as AsyncBlockNode, status);
 			with_semicolon = false;
 			break;
 		}

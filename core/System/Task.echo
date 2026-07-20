@@ -1,0 +1,53 @@
+// Task runtime — thread-pool-backed execution primitive.
+//
+// v1: simple pthread_create-per-task. The Task API (spawn + wait) is the same
+// shape a real worker pool would expose; pooling is an internal optimization
+// we can add later without changing call sites.
+//
+// See ASYNC.md for the design. C backend only for now; aarch64 will follow
+// once the API stabilizes.
+
+pub struct Task {
+	pub var uint64 handle = 0
+
+	// Spawn a thread that calls `work(arg)`. Fire-and-forget for v1 — `work`
+	// takes one uint64 (pack a struct pointer or primitive), returns nothing.
+	// Result-returning tasks come with the `spawn` syntax + `Task<T>`.
+	pub func #init = (self, func (uint64) work, uint64 arg) {
+		```
+		#arch: c
+		#scope: file
+		#include <pthread.h>
+		typedef void (*echo_task_fn)(unsigned long long);
+		struct echo_task_args {
+			echo_task_fn fn;
+			unsigned long long arg;
+		};
+		static void *echo_task_trampoline(void *p) {
+			struct echo_task_args *a = (struct echo_task_args *)p;
+			a->fn(a->arg);
+			free(a);
+			return NULL;
+		}
+		```
+		```
+		#arch: c
+		struct echo_task_args *a = (struct echo_task_args *)malloc(sizeof(struct echo_task_args));
+		a->fn = (echo_task_fn)work;
+		a->arg = arg;
+		pthread_create((pthread_t *)&self.handle, NULL, echo_task_trampoline, a);
+		```
+	}
+
+	// Block until the task finishes. No-op if already joined or never spawned.
+	pub func wait = (self) {
+		```
+		#arch: c
+		if (self->handle) {
+			void *ret;
+			pthread_join((pthread_t)self->handle, &ret);
+			self->handle = 0;
+		}
+		```
+	}
+}

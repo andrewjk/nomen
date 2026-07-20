@@ -3,6 +3,7 @@ import AccessNode from "../nodes/AccessNode.ts";
 import AnonStructNode from "../nodes/AnonStructNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import AssignmentNode from "../nodes/AssignmentNode.ts";
+import AsyncBlockNode from "../nodes/AsyncBlockNode.ts";
 import BaseNode from "../nodes/BaseNode.ts";
 import BitsetNode from "../nodes/BitsetNode.ts";
 import BreakNode from "../nodes/BreakNode.ts";
@@ -22,12 +23,14 @@ import OperationNode from "../nodes/OperationNode.ts";
 import RangeNode from "../nodes/RangeNode.ts";
 import ReturnNode from "../nodes/ReturnNode.ts";
 import RootNode from "../nodes/RootNode.ts";
+import SpawnNode from "../nodes/SpawnNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import SwitchNode from "../nodes/SwitchNode.ts";
 import TraitNode from "../nodes/TraitNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import WhileLoopNode from "../nodes/WhileLoopNode.ts";
 import check_access_node from "./check_access_node.ts";
+import check_async_block_node from "./check_async_block_node.ts";
 import check_array_values_node from "./check_array_values_node.ts";
 import check_assignment_node from "./check_assignment_node.ts";
 import check_bitset_node from "./check_bitset_node.ts";
@@ -45,6 +48,7 @@ import check_match_node from "./check_match_node.ts";
 import check_operation_node from "./check_operation_node.ts";
 import check_range_node from "./check_range_node.ts";
 import check_return_node from "./check_return_node.ts";
+import check_spawn_node from "./check_spawn_node.ts";
 import check_struct_node from "./check_struct_node.ts";
 import check_switch_node from "./check_switch_node.ts";
 import check_trait_node from "./check_trait_node.ts";
@@ -163,6 +167,14 @@ export default function check_node(node: BaseNode, status: CheckStatus): boolean
 		}
 		case "raw": {
 			// Anything can go in here
+			break;
+		}
+		case "spawn": {
+			result = check_spawn_node(node as SpawnNode, status);
+			break;
+		}
+		case "async_block": {
+			check_async_block_node(node as AsyncBlockNode, status);
 			break;
 		}
 		case "anon_struct": {
