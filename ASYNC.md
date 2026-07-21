@@ -35,6 +35,13 @@ What's currently shipped (C and aarch64 backends):
   grows on demand up to 64 workers when every worker is busy, preventing
   deadlocks from nested spawns. The pool drains and joins all workers at
   process exit; `Task.shutdown_pool()` does this explicitly.
+- **Cancellation scope semantics** — `async(timeout: N)` syntax where N is
+  milliseconds. The deadline is computed before the nursery body runs, and
+  `__echo_future_timedwait()` uses `pthread_cond_timedwait` with an absolute
+  deadline. When the deadline expires, remaining tasks are cancelled (their
+  `cancel_flag` is set to 1), and the nursery waits briefly for them to
+  observe the cancellation before joining. Both C and aarch64 backends
+  support this.
 
 Still on the phasing list:
 
@@ -43,8 +50,6 @@ Still on the phasing list:
   blocks. `spawn` and `async` build phases emit aarch64 assembly + C
   companion (pool submit, trampolines, futures array, join loop).
   Both backends (C and aarch64) are end-to-end usable for concurrency.
-- **Cancellation scope semantics** (Trio-style lexically-scoped timeouts)
-  — depends on having cancellation checkpoints beyond manual polling.
 
 See SPEC.md's "Concurrency" section for the user-facing contract.
 

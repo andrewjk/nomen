@@ -7,12 +7,18 @@ import type BlockNode from "./BlockNode.ts";
  * Spawns inside the block are tracked; the block cannot exit until all
  * spawned tasks have finished (implicit join at scope exit). This is the
  * structured-concurrency primitive — see ASYNC.md.
+ *
+ * Optional `timeout` (milliseconds): if set, all tasks in the nursery are
+ * cancelled when the deadline expires. The nursery join loop uses timed
+ * waits so it can enforce the deadline.
  */
 export default class AsyncBlockNode extends BaseNode implements BlockNode {
 	statements: BaseNode[];
+	timeout?: BaseNode;
 
-	constructor(start: number, statements: BaseNode[] = []) {
+	constructor(start: number, statements: BaseNode[] = [], timeout?: BaseNode) {
 		super("async_block", start);
 		this.statements = statements;
+		this.timeout = timeout;
 	}
 }

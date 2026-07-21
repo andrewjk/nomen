@@ -1,6 +1,7 @@
 import AsyncBlockNode from "../nodes/AsyncBlockNode.ts";
 import build_auto_free from "./build_auto_free.ts";
 import build_block_node from "./build_block_node.ts";
+import build_node from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import { enter_c_scope, leave_c_scope } from "./utils/c_scope.ts";
 
@@ -17,6 +18,10 @@ import { enter_c_scope, leave_c_scope } from "./utils/c_scope.ts";
  * task may hold pointers into those locals (e.g. a Channel declared in the
  * nursery), so they must stay alive until every task has finished.
  *
+ * If a timeout is specified (`async(timeout: N) { ... }`), the join loop
+ * uses timed waits. When the deadline expires, remaining tasks are cancelled
+ * and the nursery exits.
+ *
  * v1: fixed capacity (64 tasks per nursery). Exceeding it is undefined
  * behavior — a real implementation would grow or use a linked list.
  */
@@ -32,6 +37,21 @@ export default function build_async_block_node(node: AsyncBlockNode, status: Bui
 	status.code += `\tunsigned long long ${futures_name}[64];\n`;
 	status.code += `\tint ${count_name} = 0;\n`;
 
+	// If timeout is specified, compute deadline (absolute ms since epoch).
+	let deadline_var = "";
+	if (node.timeout) {
+		deadline_var = `_deadline_ms_${id}`;
+		status.code += `\tlong long ${deadline_var};\n`;
+		status.code += `\t{\n`;
+		status.code += `\t\tstruct timespec _ts;\n`;
+		status.code += `\t\tclock_gettime(CLOCK_REALTIME, &_ts);\n`;
+		status.code += `\t\tlong long _now_ms = (long long)_ts.tv_sec * 1000 + _ts.tv_nsec / 1000000;\n`;
+		status.code += `\t\t${deadline_var} = _now_ms + (long long)`;
+		build_node(node.timeout, status);
+		status.code += `;\n`;
+		status.code += `\t}\n`;
+	}
+
 	const old_scoped_declarations = status.scoped_declarations;
 	status.scoped_declarations = enter_c_scope(status);
 	const old_deferred_frees = status.deferred_frees;
@@ -46,7 +66,16 @@ export default function build_async_block_node(node: AsyncBlockNode, status: Bui
 
 	status.code += `\tfor (int ${idx_name} = 0; ${idx_name} < ${count_name}; ${idx_name}++) {\n`;
 	status.code += `\t\tstruct echo_future *_f = (struct echo_future *)${futures_name}[${idx_name}];\n`;
-	status.code += `\t\t__echo_future_wait(_f);\n`;
+	if (deadline_var) {
+		status.code += `\t\tint _done = __echo_future_timedwait(_f, ${deadline_var});\n`;
+		status.code += `\t\tif (!_done) {\n`;
+		// Timeout expired — cancel this task and any remaining tasks.
+		status.code += `\t\t\tif (_f->cancel_flag) *(_f->cancel_flag) = 1;\n`;
+		status.code += `\t\t\t__echo_future_timedwait(_f, ${deadline_var} + 1000);\n`;
+		status.code += `\t\t}\n`;
+	} else {
+		status.code += `\t\t__echo_future_wait(_f);\n`;
+	}
 	status.code += `\t\t__echo_future_release(_f);\n`;
 	status.code += `\t}\n`;
 

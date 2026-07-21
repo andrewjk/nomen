@@ -13,6 +13,14 @@ typedef struct Console
 {
 void *_vt;
 } Console;
+typedef struct Channel
+{
+void *_vt;
+unsigned long long mu;
+unsigned long long not_empty_cv;
+unsigned long long head;
+unsigned long long tail;
+} Channel;
 typedef struct Task_uint64
 {
 void *_vt;
@@ -23,6 +31,8 @@ unsigned long long cancel_flag;
 unsigned long long future;
 } Task_uint64;
 
+unsigned long long __echo_nursery_0_futures[64];
+int __echo_nursery_0_count = 0;
 
 #include <pthread.h>
 #include <time.h>
@@ -177,18 +187,18 @@ void __echo_pool_submit(void (*fn)(void *), void *arg) {
 	pthread_cond_signal(&__echo_pool_cv);
 	pthread_mutex_unlock(&__echo_pool_mu);
 }
-// --- spawn site 0 trampoline ---
-void bg(int);
-struct __echo_spawn_0_args {
-	int arg0;
+// --- spawn site 1 trampoline ---
+void producer(struct Channel *);
+struct __echo_spawn_1_args {
+	struct Channel * arg0;
 	unsigned long long *result_slot;
 	unsigned long long *cancel_flag;
 	struct echo_future *future;
 };
-static void __echo_spawn_0_trampoline(void *p) {
-	struct __echo_spawn_0_args *a = (struct __echo_spawn_0_args *)p;
+static void __echo_spawn_1_trampoline(void *p) {
+	struct __echo_spawn_1_args *a = (struct __echo_spawn_1_args *)p;
 	__echo_current_cancel_flag = a->cancel_flag;
-	bg(a->arg0);
+	producer(a->arg0);
 	__echo_current_cancel_flag = NULL;
 	pthread_mutex_lock(&a->future->mu);
 	a->future->done = 1;
@@ -197,8 +207,8 @@ static void __echo_spawn_0_trampoline(void *p) {
 	__echo_future_release(a->future);
 	free(a);
 }
-void *echo_spawn_0_submit(int arg0) {
-	struct __echo_spawn_0_args *a = (struct __echo_spawn_0_args *)malloc(sizeof(struct __echo_spawn_0_args));
+void *echo_spawn_1_submit(struct Channel * arg0) {
+	struct __echo_spawn_1_args *a = (struct __echo_spawn_1_args *)malloc(sizeof(struct __echo_spawn_1_args));
 	a->arg0 = arg0;
 	a->result_slot = (unsigned long long *)malloc(sizeof(unsigned long long));
 	*(a->result_slot) = 0;
@@ -208,11 +218,12 @@ void *echo_spawn_0_submit(int arg0) {
 	pthread_mutex_init(&f->mu, NULL);
 	pthread_cond_init(&f->cv, NULL);
 	f->done = 0;
-	f->refs = 2;
+	f->refs = 3;
 	f->cancel_flag = a->cancel_flag;
 	f->result_slot = a->result_slot;
 	a->future = f;
-	__echo_pool_submit(__echo_spawn_0_trampoline, a);
+	__echo_pool_submit(__echo_spawn_1_trampoline, a);
+	__echo_nursery_0_futures[__echo_nursery_0_count++] = (unsigned long long)f;
 	struct Task_uint64 *t = (struct Task_uint64 *)malloc(sizeof(struct Task_uint64));
 	t->handle = 0;
 	t->done = 0;

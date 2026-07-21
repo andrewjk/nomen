@@ -1711,6 +1711,19 @@ async {
 }
 ```
 
+A nursery can have a timeout: `async(timeout: N) { ... }` where `N` is the
+timeout in milliseconds. The deadline is computed before the nursery body
+runs. When the deadline expires, remaining tasks are cancelled cooperatively
+(their `cancel_flag` is set), and the nursery waits briefly for them to observe
+the cancellation before joining.
+
+```
+async(timeout: 500) {
+    spawn long_running(0)
+    // if long_running doesn't finish within 500ms, it is cancelled
+}
+```
+
 ### Task
 
 The handle returned by `spawn`. Generic — `T` is inferred from the spawned

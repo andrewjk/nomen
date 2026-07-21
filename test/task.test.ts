@@ -183,6 +183,34 @@ t.wait()
 		await check_output("spawn_cancel", result, "cancelled\n", options);
 	});
 
+	test("async timeout cancels long-running task", async () => {
+		// A task that takes ~500ms in a busy loop. The nursery has a 50ms
+		// timeout, so the task should be cancelled before it finishes printing.
+		const input = `
+func busy = (uint64 arg) {
+	var int i = 0
+	while i < 10000000 {
+		if Task.current_cancelled() {
+			Console.write_line("cancelled")
+			return
+		}
+		i = i + 1
+	}
+	Console.write_line("done")
+}
+
+async(timeout: 50) {
+	spawn busy(0)
+}
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+
+		const options = { arch: "c" as const, audit: false };
+		const result = build(parsed.root, options);
+		await check_output("async_timeout", result, "cancelled\n", options);
+	});
+
 	test("worker pool handles more tasks than workers", async () => {
 		// Spawn 10 tasks (more than the 4-worker pool). They should all
 		// execute and the nursery should join them all. Each task sends its

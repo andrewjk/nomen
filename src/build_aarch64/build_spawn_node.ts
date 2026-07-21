@@ -11,6 +11,7 @@ import build_node from "./build_node.ts";
  */
 const POOL_HEADER_C = `
 #include <pthread.h>
+#include <time.h>
 static __thread unsigned long long *__echo_current_cancel_flag = NULL;
 struct echo_future {
 	pthread_mutex_t mu;
@@ -23,9 +24,47 @@ struct echo_future {
 void __echo_future_wait(struct echo_future *f) {
 	pthread_mutex_lock(&f->mu);
 	while (!f->done) {
+		if (__echo_current_cancel_flag && *__echo_current_cancel_flag) {
+			pthread_mutex_unlock(&f->mu);
+			return;
+		}
 		pthread_cond_wait(&f->cv, &f->mu);
 	}
 	pthread_mutex_unlock(&f->mu);
+}
+int __echo_future_timedwait(struct echo_future *f, long long deadline_ms) {
+	pthread_mutex_lock(&f->mu);
+	if (deadline_ms < 0) {
+		while (!f->done) {
+			if (__echo_current_cancel_flag && *__echo_current_cancel_flag) {
+				pthread_mutex_unlock(&f->mu);
+				return 0;
+			}
+			pthread_cond_wait(&f->cv, &f->mu);
+		}
+		pthread_mutex_unlock(&f->mu);
+		return 1;
+	}
+	struct timespec ts;
+	clock_gettime(CLOCK_REALTIME, &ts);
+	long long now_ms = (long long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+	long long remaining = deadline_ms - now_ms;
+	if (remaining < 0) remaining = 0;
+	ts.tv_sec = (time_t)(remaining / 1000);
+	ts.tv_nsec = (long)((remaining % 1000) * 1000000);
+	while (!f->done) {
+		if (__echo_current_cancel_flag && *__echo_current_cancel_flag) {
+			pthread_mutex_unlock(&f->mu);
+			return 0;
+		}
+		int rc = pthread_cond_timedwait(&f->cv, &f->mu, &ts);
+		if (rc != 0) {
+			pthread_mutex_unlock(&f->mu);
+			return 0;
+		}
+	}
+	pthread_mutex_unlock(&f->mu);
+	return 1;
 }
 void __echo_future_release(struct echo_future *f) {
 	pthread_mutex_lock(&f->mu);

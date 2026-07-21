@@ -180,3 +180,54 @@ pub func main = () {
 		expect(compile_module(input)).toEqual([]);
 	});
 });
+
+describe("spec: concurrency - timeout", () => {
+	test("async with timeout compiles", () => {
+		const input = `
+func work = (uint64 arg) {
+	var int i = 0
+	while i < 1000000 {
+		i = i + 1
+	}
+}
+
+pub func main = () {
+	async(timeout: 500) {
+		spawn work(0)
+	}
+}
+`;
+		expect(compile_module(input)).toEqual([]);
+	});
+
+	test("async with timeout expression compiles", () => {
+		const input = `
+func work = (uint64 arg) {
+}
+
+pub func main = () {
+	var uint64 ms = 100
+	async(timeout: ms * 2) {
+		spawn work(0)
+	}
+}
+`;
+		expect(compile_module(input)).toEqual([]);
+	});
+
+	test("async with timeout and multiple tasks compiles", () => {
+		const input = `
+func work = (uint64 arg) {
+}
+
+pub func main = () {
+	async(timeout: 1000) {
+		spawn work(1)
+		spawn work(2)
+		spawn work(3)
+	}
+}
+`;
+		expect(compile_module(input)).toEqual([]);
+	});
+});
