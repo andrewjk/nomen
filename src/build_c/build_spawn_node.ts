@@ -6,6 +6,129 @@ import c_type from "./utils/c_type.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 
 /**
+ * Pool infrastructure emitted as file-scope C on the first spawn.
+ * Extracted from Task.#init so Task can be generic without duplicating
+ * the pool per instantiation. Deduplicated by build_raw_node's
+ * emitted_file_scope_blocks set (matched by content).
+ */
+const POOL_HEADER = `
+#include <pthread.h>
+static __thread unsigned long long *__echo_current_cancel_flag = NULL;
+struct echo_future {
+	pthread_mutex_t mu;
+	pthread_cond_t cv;
+	int done;
+	int refs;
+	unsigned long long *cancel_flag;
+	void *result_slot;
+};
+static void __echo_future_wait(struct echo_future *f) {
+	pthread_mutex_lock(&f->mu);
+	while (!f->done) {
+		pthread_cond_wait(&f->cv, &f->mu);
+	}
+	pthread_mutex_unlock(&f->mu);
+}
+static void __echo_future_release(struct echo_future *f) {
+	pthread_mutex_lock(&f->mu);
+	int last = --f->refs == 0;
+	pthread_mutex_unlock(&f->mu);
+	if (last) {
+		pthread_mutex_destroy(&f->mu);
+		pthread_cond_destroy(&f->cv);
+		free(f->cancel_flag);
+		free(f->result_slot);
+		free(f);
+	}
+}
+struct echo_pool_task {
+	void (*fn)(void *);
+	void *arg;
+	struct echo_pool_task *next;
+};
+static pthread_mutex_t __echo_pool_mu = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t __echo_pool_cv = PTHREAD_COND_INITIALIZER;
+static struct echo_pool_task *__echo_pool_head = NULL;
+static struct echo_pool_task *__echo_pool_tail = NULL;
+#define ECHO_POOL_DEFAULT_SIZE 4
+#define ECHO_POOL_MAX_SIZE 64
+static int __echo_pool_size = ECHO_POOL_DEFAULT_SIZE;
+static pthread_t *__echo_pool_workers = NULL;
+static int __echo_pool_nworkers = 0;
+static int __echo_pool_busy = 0;
+static int __echo_pool_init = 0;
+static int __echo_pool_quitting = 0;
+static void *__echo_pool_worker(void *arg) {
+	(void)arg;
+	while (1) {
+		pthread_mutex_lock(&__echo_pool_mu);
+		while (!__echo_pool_head && !__echo_pool_quitting) {
+			pthread_cond_wait(&__echo_pool_cv, &__echo_pool_mu);
+		}
+		if (__echo_pool_quitting && !__echo_pool_head) {
+			pthread_mutex_unlock(&__echo_pool_mu);
+			return NULL;
+		}
+		struct echo_pool_task *t = __echo_pool_head;
+		__echo_pool_head = t->next;
+		if (!__echo_pool_head) __echo_pool_tail = NULL;
+		__echo_pool_busy++;
+		pthread_mutex_unlock(&__echo_pool_mu);
+		t->fn(t->arg);
+		free(t);
+		pthread_mutex_lock(&__echo_pool_mu);
+		__echo_pool_busy--;
+		pthread_mutex_unlock(&__echo_pool_mu);
+	}
+	return NULL;
+}
+static void __echo_pool_shutdown(void) {
+	if (!__echo_pool_init) return;
+	pthread_mutex_lock(&__echo_pool_mu);
+	__echo_pool_quitting = 1;
+	pthread_cond_broadcast(&__echo_pool_cv);
+	pthread_mutex_unlock(&__echo_pool_mu);
+	for (int i = 0; i < __echo_pool_nworkers; i++) {
+		pthread_join(__echo_pool_workers[i], NULL);
+	}
+	free(__echo_pool_workers);
+	__echo_pool_workers = NULL;
+	__echo_pool_nworkers = 0;
+	__echo_pool_busy = 0;
+	__echo_pool_init = 0;
+	__echo_pool_quitting = 0;
+}
+static void __echo_pool_submit(void (*fn)(void *), void *arg) {
+	if (!__echo_pool_init) {
+		__echo_pool_init = 1;
+		__echo_pool_workers = (pthread_t *)malloc(sizeof(pthread_t) * ECHO_POOL_MAX_SIZE);
+		for (int i = 0; i < __echo_pool_size; i++) {
+			pthread_create(&__echo_pool_workers[__echo_pool_nworkers], NULL, __echo_pool_worker, NULL);
+			__echo_pool_nworkers++;
+		}
+		atexit(__echo_pool_shutdown);
+	}
+	struct echo_pool_task *t = (struct echo_pool_task *)malloc(sizeof(struct echo_pool_task));
+	t->fn = fn;
+	t->arg = arg;
+	t->next = NULL;
+	pthread_mutex_lock(&__echo_pool_mu);
+	if (__echo_pool_busy >= __echo_pool_nworkers && __echo_pool_nworkers < ECHO_POOL_MAX_SIZE) {
+		pthread_create(&__echo_pool_workers[__echo_pool_nworkers], NULL, __echo_pool_worker, NULL);
+		__echo_pool_nworkers++;
+	}
+	if (__echo_pool_tail) {
+		__echo_pool_tail->next = t;
+	} else {
+		__echo_pool_head = t;
+	}
+	__echo_pool_tail = t;
+	pthread_cond_signal(&__echo_pool_cv);
+	pthread_mutex_unlock(&__echo_pool_mu);
+}
+`;
+
+/**
  * Build a `spawn <call>` node. Returns a Task value (via GCC statement
  * expression) so spawn can be used either as a statement (value discarded)
  * or as an expression (`let t = spawn fn(args)`).
@@ -22,9 +145,9 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 	const id = status.spawn_counter ?? 0;
 	status.spawn_counter = id + 1;
 
-	// pthread.h has include guards, so re-adding across multiple spawns is fine.
-	if (!status.headers.includes("#include <pthread.h>")) {
-		status.headers = `#include <pthread.h>\n` + status.headers;
+	// Emit pool infrastructure on first spawn (file scope, deduped).
+	if (!status.headers.includes("__echo_pool_submit")) {
+		status.headers += POOL_HEADER;
 	}
 
 	const struct_name = `__echo_spawn_${id}_args`;
@@ -102,6 +225,13 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 	header += `}\n`;
 	status.headers += header;
 
+	// Resolve the monomorphized Task struct name for the allocation.
+	// call.type is Task<T> — e.g. Task_uint64, Task<int>, etc.
+	const task_type_args = call.type?.type_args;
+	const mono_task_name = task_type_args?.length
+		? `Task_${task_type_args.map((t) => t.name).join("_")}`
+		: "Task";
+
 	// Statement-expression that sets up the args, allocates the future,
 	// submits to the pool, and yields a Task.
 	status.code += `({\n`;
@@ -138,7 +268,7 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 	// Task is a class (heap-allocated). Construct via malloc + field assigns
 	// and yield the pointer. The handle is fully usable whether or not a
 	// nursery also tracks the future (join-once semantics).
-	status.code += `\tstruct Task *_task = (struct Task *)malloc(sizeof(struct Task));\n`;
+	status.code += `\tstruct ${mono_task_name} *_task = (struct ${mono_task_name} *)malloc(sizeof(struct ${mono_task_name}));\n`;
 	status.code += `\t_task->handle = 0;\n`;
 	status.code += `\t_task->done = 0;\n`;
 	status.code += `\t_task->result_slot = (unsigned long long)_result_ptr;\n`;

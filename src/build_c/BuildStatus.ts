@@ -300,4 +300,11 @@ export default interface BuildStatus {
 	 * duplicate definitions when nested structs are also emitted at root level.
 	 */
 	emitted_struct_bodies?: Set<string>;
+	/**
+	 * Tracks which file-scope raw C blocks have already been emitted to
+	 * headers. When a generic struct (e.g. Task<T>) is monomorphized, its
+	 * #init file-scope block (pool infrastructure, type defs, etc.) would be
+	 * emitted once per instantiation. This set deduplicates by content hash.
+	 */
+	emitted_file_scope_blocks?: Set<string>;
 }

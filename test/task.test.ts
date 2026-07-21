@@ -15,7 +15,7 @@ func work = (uint64 arg) {
 	Console.write_line("hello from task")
 }
 
-var t = Task(work, 0)
+var t = spawn work(0)
 t.wait()
 Console.write_line("done")
 `;
@@ -37,7 +37,7 @@ func work = (uint64 arg) {
 	}
 }
 
-var t = Task(work, 42)
+var t = spawn work(42)
 t.wait()
 `;
 		const parsed = parse_with_imports(input);
@@ -58,8 +58,8 @@ func work_b = (uint64 arg) {
 	Console.write_line("b")
 }
 
-var t1 = Task(work_a, 0)
-var t2 = Task(work_b, 0)
+var t1 = spawn work_a(0)
+var t2 = spawn work_b(0)
 t1.wait()
 t2.wait()
 `;

@@ -9,24 +9,27 @@ What's currently shipped (C backend; aarch64 backend pending):
 - **`Sendable` trait** — marker, enforced on every spawn arg.
   Auto-derived for structs whose fields are all Sendable. Classes must
   explicitly opt in.
-- **`Task`** (class, heap-allocated with `#destroy` cleanup) — pthread-backed
-  handle. `wait()` (idempotent), `result_uint64()` (blocks + returns the
-  spawned function's return value cast to uint64), `cancel()`,
-  `current_cancelled()` (static, thread-local).
+- **`Task<T>`** (generic class, heap-allocated with `#destroy` cleanup) —
+  pthread-backed handle parameterised by the spawned function's return type.
+  `wait()` (idempotent), `result()` (blocks + returns `T`),
+  `result_uint64()` (blocks + returns the return value cast to uint64),
+  `cancel()`, `current_cancelled()` (static, thread-local).
+  Monomorphized per instantiation (e.g. `Task_uint64`).
 - **`Mutex`** — pthread-backed lock, `#destroy` cleans up.
 - **`Channel`** — blocking FIFO queue (`send` / `receive`).
 - **`spawn`** — statement (fire-and-forget) or expression
-  (`let t = spawn fn(args)`). Args packed via per-site trampoline, submitted
-  to a global worker pool (4 workers, FIFO queue, mutex+condvar protected).
+  (`var t = spawn fn(args)`). Returns `Task<T>` where T is the function's
+  return type. Args packed via per-site trampoline, submitted to a global
+  worker pool (4 workers, FIFO queue, mutex+condvar protected).
 - **`async { ... }`** — nursery block, waits on every spawned future at
   scope exit. The join runs before block-scoped locals are destroyed, so a
   running task can safely hold pointers to nursery-local values.
-- **Unified `Task` handle** — the future behind every spawn is
+- **Unified `Task<T>` handle** — the future behind every spawn is
   reference-counted and shared between the trampoline, the returned Task,
   and the tracking nursery. Waiting is idempotent (join-once), so a Task
   captured inside a nursery is fully usable (explicit `wait()` /
-  `result_uint64()`), and the nursery's join at block exit is a no-op if
-  the user already joined.
+  `result()` / `result_uint64()`), and the nursery's join at block exit is
+  a no-op if the user already joined.
 - **Bounded pool / shutdown** — pool starts at a configurable size
   (default 4, via `Task.set_pool_size(n)` before the first spawn) and
   grows on demand up to 64 workers when every worker is busy, preventing
@@ -35,10 +38,6 @@ What's currently shipped (C backend; aarch64 backend pending):
 
 Still on the phasing list:
 
-- **Generic `Task<T>`** — `result_uint64()` is the current escape hatch;
-  `Task<T>.result()` returning T needs monomorphization in the build phase
-  (and a story for `Task<void>` since Echo doesn't expose `void` as a
-  regular type).
 - **aarch64 backend** — partial. `Mutex` has full aarch64 raw-asm blocks
   (lock/unlock/#init/#destroy). Still pending: `Task` (5 methods + the
   worker pool plumbing), `Channel` (4 methods including linked-list

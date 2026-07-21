@@ -1,203 +1,29 @@
 // Task runtime — thread-pool-backed execution primitive.
 //
-// v1: simple pthread_create-per-task. The Task API (spawn + wait) is the same
-// shape a real worker pool would expose; pooling is an internal optimization
-// we can add later without changing call sites.
+// Spawned tasks run on a shared worker pool. The pool starts at a
+// configurable size (default 4, via Task.set_pool_size before the first
+// spawn) and grows on demand up to 64 workers when every worker is busy,
+// preventing deadlocks from nested spawns. The pool drains and joins all
+// workers at process exit; Task.shutdown_pool does this explicitly.
+//
+// The pool infrastructure (types, worker loop, submit, shutdown, cancel
+// thread-local) lives in build_spawn_node and is emitted as file-scope C
+// on the first spawn — not in Task's own methods — so that Task can be
+// generic without duplicating the pool per instantiation.
 //
 // See ASYNC.md for the design. C backend only for now; aarch64 will follow
 // once the API stabilizes.
 
-pub class Task : Sendable {
+pub class Task<T> : Sendable {
 	pub var uint64 handle = 0
 	pub var bool done = false
 	pub var uint64 result_slot = 0
 	pub var uint64 cancel_flag = 0
 	pub var uint64 future = 0
 
-	// Spawn a thread that calls `work(arg)`. The returned Task can be waited
-	// on via `wait()`. For fire-and-forget, just don't call `wait()` (the
-	// thread runs to completion; the handle is detached at the build level
-	// when the spawn is not captured — see build_spawn_node).
-	//
-	// Note: this is the low-level constructor. It bypasses the worker pool
-	// (always spawns a fresh pthread) and doesn't allocate a future. Use
-	// `spawn fn(args)` for the recommended path that goes through the pool.
-	pub func #init = (self, func (uint64) work, uint64 arg) {
-		```
-		#arch: c
-		#scope: file
-		#include <pthread.h>
-		// Thread-local pointer to the currently-running task's cancel flag.
-		// Set by the spawn trampoline at entry, cleared at exit. NULL when
-		// not running on a spawned task (e.g. on the main thread).
-		static __thread unsigned long long *__echo_current_cancel_flag = NULL;
-		typedef void (*echo_task_fn)(unsigned long long);
-		struct echo_task_args {
-			echo_task_fn fn;
-			unsigned long long arg;
-		};
-		static void *echo_task_trampoline(void *p) {
-			struct echo_task_args *a = (struct echo_task_args *)p;
-			a->fn(a->arg);
-			free(a);
-			return NULL;
-		}
-
-		// --- Worker pool ---
-		// A small fixed-size pool that reuses threads across spawned tasks.
-		// Tasks sit in a mutex+condvar-protected FIFO queue; workers pop and
-		// execute. The pool is initialized lazily on first submit.
-		//
-		// A future is the shared completion state of one spawned task. It is
-		// reference-counted: the running trampoline holds one ref, each Task
-		// handle pointing at it holds one, and a nursery tracking it holds
-		// one. Waiting is idempotent (join-once), so a Task captured from a
-		// nursery spawn can be waited on explicitly AND joined by the nursery
-		// at block exit. The future owns the cancel flag and result slot;
-		// they are freed only when the last reference is released.
-		struct echo_future {
-			pthread_mutex_t mu;
-			pthread_cond_t cv;
-			int done;
-			int refs;
-			unsigned long long *cancel_flag;
-			void *result_slot;
-		};
-		// Block until the future completes. Idempotent — returns immediately
-		// once the done flag is set.
-		static void __echo_future_wait(struct echo_future *f) {
-			pthread_mutex_lock(&f->mu);
-			while (!f->done) {
-				pthread_cond_wait(&f->cv, &f->mu);
-			}
-			pthread_mutex_unlock(&f->mu);
-		}
-		// Drop one reference to the future. The last release destroys the
-		// mutex/condvar and frees the future and the slots it owns.
-		static void __echo_future_release(struct echo_future *f) {
-			pthread_mutex_lock(&f->mu);
-			int last = --f->refs == 0;
-			pthread_mutex_unlock(&f->mu);
-			if (last) {
-				pthread_mutex_destroy(&f->mu);
-				pthread_cond_destroy(&f->cv);
-				free(f->cancel_flag);
-				free(f->result_slot);
-				free(f);
-			}
-		}
-		struct echo_pool_task {
-			void (*fn)(void *);
-			void *arg;
-			struct echo_pool_task *next;
-		};
-		static pthread_mutex_t __echo_pool_mu = PTHREAD_MUTEX_INITIALIZER;
-		static pthread_cond_t __echo_pool_cv = PTHREAD_COND_INITIALIZER;
-		static struct echo_pool_task *__echo_pool_head = NULL;
-		static struct echo_pool_task *__echo_pool_tail = NULL;
-		#define ECHO_POOL_DEFAULT_SIZE 4
-		// Hard cap on live workers. The pool starts at __echo_pool_size and
-		// grows on demand when every worker is busy — a worker blocked joining
-		// its own spawned children would otherwise starve the queue and
-		// deadlock. Bounded so a pathological task graph can't exhaust OS
-		// threads.
-		#define ECHO_POOL_MAX_SIZE 64
-		static int __echo_pool_size = ECHO_POOL_DEFAULT_SIZE;
-		static pthread_t *__echo_pool_workers = NULL;
-		static int __echo_pool_nworkers = 0;
-		static int __echo_pool_busy = 0;
-		static int __echo_pool_init = 0;
-		static int __echo_pool_quitting = 0;
-		static void *__echo_pool_worker(void *arg) {
-			while (1) {
-				pthread_mutex_lock(&__echo_pool_mu);
-				while (!__echo_pool_head && !__echo_pool_quitting) {
-					pthread_cond_wait(&__echo_pool_cv, &__echo_pool_mu);
-				}
-				if (__echo_pool_quitting && !__echo_pool_head) {
-					pthread_mutex_unlock(&__echo_pool_mu);
-					return NULL;
-				}
-				struct echo_pool_task *t = __echo_pool_head;
-				__echo_pool_head = t->next;
-				if (!__echo_pool_head) __echo_pool_tail = NULL;
-				__echo_pool_busy++;
-				pthread_mutex_unlock(&__echo_pool_mu);
-				t->fn(t->arg);
-				free(t);
-				pthread_mutex_lock(&__echo_pool_mu);
-				__echo_pool_busy--;
-				pthread_mutex_unlock(&__echo_pool_mu);
-			}
-			return NULL;
-		}
-		// Drain the queue, join every worker, and tear the pool down.
-		// Idempotent; the pool re-initializes on the next submit. Registered
-		// with atexit on first submit, so outstanding fire-and-forget tasks
-		// complete before the process exits. Do NOT call from a spawned task
-		// (a worker joining its coworkers deadlocks).
-		static void __echo_pool_shutdown(void) {
-			if (!__echo_pool_init) return;
-			pthread_mutex_lock(&__echo_pool_mu);
-			__echo_pool_quitting = 1;
-			pthread_cond_broadcast(&__echo_pool_cv);
-			pthread_mutex_unlock(&__echo_pool_mu);
-			for (int i = 0; i < __echo_pool_nworkers; i++) {
-				pthread_join(__echo_pool_workers[i], NULL);
-			}
-			free(__echo_pool_workers);
-			__echo_pool_workers = NULL;
-			__echo_pool_nworkers = 0;
-			__echo_pool_busy = 0;
-			__echo_pool_init = 0;
-			__echo_pool_quitting = 0;
-		}
-		static void __echo_pool_submit(void (*fn)(void *), void *arg) {
-			if (!__echo_pool_init) {
-				__echo_pool_init = 1;
-				__echo_pool_workers = (pthread_t *)malloc(sizeof(pthread_t) * ECHO_POOL_MAX_SIZE);
-				for (int i = 0; i < __echo_pool_size; i++) {
-					pthread_create(&__echo_pool_workers[__echo_pool_nworkers], NULL, __echo_pool_worker, NULL);
-					__echo_pool_nworkers++;
-				}
-				atexit(__echo_pool_shutdown);
-			}
-			struct echo_pool_task *t = (struct echo_pool_task *)malloc(sizeof(struct echo_pool_task));
-			t->fn = fn;
-			t->arg = arg;
-			t->next = NULL;
-			pthread_mutex_lock(&__echo_pool_mu);
-			// Grow on demand: if every worker is busy running a task, queued
-			// work can starve (a worker may be blocked joining tasks of its
-			// own). Start another worker, up to the cap.
-			if (__echo_pool_busy >= __echo_pool_nworkers && __echo_pool_nworkers < ECHO_POOL_MAX_SIZE) {
-				pthread_create(&__echo_pool_workers[__echo_pool_nworkers], NULL, __echo_pool_worker, NULL);
-				__echo_pool_nworkers++;
-			}
-			if (__echo_pool_tail) {
-				__echo_pool_tail->next = t;
-			} else {
-				__echo_pool_head = t;
-			}
-			__echo_pool_tail = t;
-			pthread_cond_signal(&__echo_pool_cv);
-			pthread_mutex_unlock(&__echo_pool_mu);
-		}
-		```
-		```
-		#arch: c
-		struct echo_task_args *a = (struct echo_task_args *)malloc(sizeof(struct echo_task_args));
-		a->fn = (echo_task_fn)work;
-		a->arg = arg;
-		pthread_create((pthread_t *)&self->handle, NULL, echo_task_trampoline, a);
-		```
-	}
-
 	// Block until the task finishes. Idempotent — calling twice is safe, and
 	// a Task captured from a nursery spawn can be waited on here AND joined
 	// by the nursery at block exit (both wait on the same shared future).
-	// For Tasks constructed directly via #init (no future), falls back to
-	// pthread_join on the handle.
 	pub func wait = (ref self) {
 		```
 		#arch: c
@@ -212,10 +38,27 @@ pub class Task : Sendable {
 		```
 	}
 
-	// Block until the task finishes, then return its result as a uint64.
+	// Block until the task finishes, then return its result as T.
 	// The spawn build phase allocates a heap slot (owned by the future) and
-	// the trampoline writes the function's return value (cast to uint64)
-	// there before exiting. For tasks with no return value, returns 0.
+	// the trampoline writes the function's return value there before exiting.
+	// For tasks with no return value (void functions), returns the zero value.
+	pub func result = (ref self, out T) {
+		```
+		#arch: c
+		if (self->future) {
+			__echo_future_wait((struct echo_future *)self->future);
+		} else if (self->handle && !self->done) {
+			void *ret;
+			pthread_join((pthread_t)self->handle, &ret);
+			self->handle = 0;
+			self->done = 1;
+		}
+		return *(T *)self->result_slot;
+		```
+	}
+
+	// Block until the task finishes, then return its result as a uint64.
+	// Convenience for the common case; same as result() for uint64 tasks.
 	pub func result_uint64 = (ref self, out uint64) {
 		```
 		#arch: c

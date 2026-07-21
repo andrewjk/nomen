@@ -136,8 +136,9 @@ export function free_scoped_declarations(status: BuildStatus, decls: Declaration
 				commented = true;
 			}
 			const cls = struct ?? dec_struct;
+			const mono_cls_name = cls ? mono_type_name(dec.type) : undefined;
 			if (cls) {
-				const destroy_call = `${cls.name}_destroy(${dec.name}); `;
+				const destroy_call = `${mono_cls_name}_destroy(${dec.name}); `;
 				if (dec.type.is_nullable) {
 					status.code += `if (${dec.name}) { ${destroy_call}free(${dec.name}); }\n`;
 				} else {

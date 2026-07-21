@@ -1,7 +1,7 @@
 import add_error from "../add_error.ts";
 import SpawnNode from "../nodes/SpawnNode.ts";
 import Type from "../nodes/Type.ts";
-import check_function_call_node from "./check_function_call_node.ts";
+import check_function_call_node, { monomorphize } from "./check_function_call_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import is_sendable_type from "./utils/is_sendable_type.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
@@ -33,10 +33,25 @@ export default function check_spawn_node(node: SpawnNode, status: CheckStatus): 
 		}
 	}
 
-	// The expression yields a Task handle. Capture the wrapped function's
-	// return type first — build_spawn_node reads it off SpawnNode to decide
-	// whether to emit a result-capturing trampoline.
-	node.function_return_type = node.call.type;
-	node.call.type = new Type("Task");
+	// The expression yields a Task<T> handle where T is the spawned function's
+	// return type. For void-returning functions, T defaults to uint64 (the
+	// result slot exists but is never read via result()).
+	const return_type = node.call.type;
+	const result_type_arg =
+		return_type && return_type.name && return_type.name !== "void" && return_type.name !== "?"
+			? new Type(return_type.name)
+			: new Type("uint64");
+	const task_type = new Type("Task");
+	task_type.type_args = [result_type_arg];
+	node.function_return_type = return_type;
+	node.call.type = task_type;
+
+	// Trigger monomorphization of Task<T> so the struct body (Task_uint64 etc.)
+	// is added to root.statements and emitted by the build phase.
+	const task_struct = status.structs.find((s) => s.name === "Task");
+	if (task_struct && task_struct.type_params.length > 0) {
+		monomorphize(task_struct, [result_type_arg], status);
+	}
+
 	return true;
 }

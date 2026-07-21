@@ -1552,16 +1552,12 @@ foreground colour. Styles: `bold`, `dim`, `italic`, `underline`, `blink`,
 
 ### Task
 
-A handle to a spawned unit of work running on a separate thread. Spawned via
-`spawn` (preferred) or constructed directly for low-level use:
+A handle to a spawned unit of work running on a separate thread. `Task` is
+generic — `spawn` infers the type parameter from the function's return type:
 
 ```
-func work = (uint64 arg) {
-    Console.write_line("running")
-}
-
-var t = Task(work, 0)
-t.wait()
+var t = spawn compute(42)
+var uint64 r = t.result()
 ```
 
 `wait()` blocks the caller until the task finishes. Idempotent — calling twice
@@ -1717,11 +1713,14 @@ async {
 
 ### Task
 
-The handle returned by `spawn`. Tracks one running task:
+The handle returned by `spawn`. Generic — `T` is inferred from the spawned
+function's return type (`Task<uint64>` for uint64-returning functions,
+`Task<uint64>` for void functions):
 
 ```
-pub struct Task : Sendable {
+pub class Task<T> : Sendable {
     func wait = (ref self)
+    func result = (ref self, out T)
     func result_uint64 = (ref self, out uint64)
     func cancel = (ref self)
     func current_cancelled = (out bool)   // static
@@ -1729,8 +1728,9 @@ pub struct Task : Sendable {
 ```
 
 - `wait()` blocks until the task finishes. Idempotent.
+- `result()` blocks, then returns the spawned function's return value as `T`.
 - `result_uint64()` blocks, then returns the spawned function's return value
-  cast to `uint64`. For void-returning functions, returns 0.
+  cast to `uint64`. Convenience for the common case.
 - `cancel()` requests cooperative cancellation — sets a flag the task
   observes at its own checkpoints.
 - `current_cancelled()` (static) returns whether the currently-running task
