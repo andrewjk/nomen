@@ -563,6 +563,110 @@ Console.write_line("after")
 	});
 });
 
+describe("async race mode", () => {
+	test("async(mode: race) exits on first completion and cancels the rest", async () => {
+		const input = `
+import System
+
+func quick = (Channel ch) {
+	ch.send(1)
+}
+
+func slow = (Channel ch) {
+	var int i = 0
+	while i < 100000000 {
+		if Task.current_cancelled() {
+			return
+		}
+		i = i + 1
+	}
+	ch.send(99)
+}
+
+pub func main = () {
+	var Channel ch = Channel()
+
+	async(mode: race) {
+		spawn slow(ch)
+		spawn quick(ch)
+	}
+
+	var uint64 v = ch.receive()
+	if v == 1 {
+		Console.write_line("quick won")
+	} else {
+		Console.write_line("slow won")
+	}
+}
+`;
+		for (const arch of ARCHITECTURES) {
+			const parsed = parse_raw(input);
+			expect(parsed.errors).toEqual([]);
+			const options = { arch, ...OPTIONS };
+			const result = build(parsed.root, options);
+			await check_output(`async_race_first_${arch}`, result, "quick won\n", options);
+		}
+	});
+
+	test("async(mode: race, timeout: N) exits on first completion or timeout", async () => {
+		const input = `
+import System
+
+func slow = (Channel ch) {
+	var int i = 0
+	while i < 100000000 {
+		if Task.current_cancelled() {
+			return
+		}
+		i = i + 1
+	}
+	ch.send(99)
+}
+
+pub func main = () {
+	var Channel ch = Channel()
+
+	async(mode: race, timeout: 50) {
+		spawn slow(ch)
+	}
+
+	// Both paths (slow cancels before sending) leave the channel empty.
+	// Use a sentinel send after the nursery so receive always has a value.
+	ch.send(7)
+	var uint64 v = ch.receive()
+	if v == 7 {
+		Console.write_line("ok")
+	} else {
+		Console.write_line("wrong")
+	}
+}
+`;
+		for (const arch of ARCHITECTURES) {
+			const parsed = parse_raw(input);
+			expect(parsed.errors).toEqual([]);
+			const options = { arch, ...OPTIONS };
+			const result = build(parsed.root, options);
+			await check_output(`async_race_timeout_${arch}`, result, "ok\n", options);
+		}
+	});
+
+	test("async(mode: race) with no tasks is a no-op", async () => {
+		const input = `
+async(mode: race) {
+}
+
+Console.write_line("done")
+`;
+		for (const arch of ARCHITECTURES) {
+			const parsed = parse_with_imports(input);
+			expect(parsed.errors).toEqual([]);
+			const options = { arch, ...OPTIONS };
+			const result = build(parsed.root, options);
+			await check_output(`async_race_empty_${arch}`, result, "done\n", options);
+		}
+	});
+});
+
 describe("Mutex", () => {
 	test("Mutex can be shared between spawned tasks", async () => {
 		const input = `

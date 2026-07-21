@@ -2,6 +2,7 @@ import AsyncBlockNode from "../nodes/AsyncBlockNode.ts";
 import build_auto_free from "./build_auto_free.ts";
 import build_block_node from "./build_block_node.ts";
 import build_node from "./build_node.ts";
+import { POOL_HEADER } from "./build_spawn_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import { enter_c_scope, leave_c_scope } from "./utils/c_scope.ts";
 
@@ -28,6 +29,15 @@ import { enter_c_scope, leave_c_scope } from "./utils/c_scope.ts";
 export default function build_async_block_node(node: AsyncBlockNode, status: BuildStatus) {
 	const id = status.spawn_counter ?? 0;
 	status.spawn_counter = id + 1;
+
+	// In race mode the join loop references the cancel/timedwait/release
+	// helpers (and the race_wait helper) directly. The pool header that
+	// defines them is normally emitted on the first spawn — but a race
+	// nursery with no spawns wouldn't otherwise pull it in. Emit the pool
+	// header eagerly so the symbols always resolve.
+	if (node.mode === "race" && !status.headers.includes("__echo_pool_submit")) {
+		status.headers += POOL_HEADER;
+	}
 
 	const futures_name = `__echo_nursery_${id}_futures`;
 	const count_name = `__echo_nursery_${id}_count`;
@@ -64,9 +74,23 @@ export default function build_async_block_node(node: AsyncBlockNode, status: Bui
 
 	status.nursery_stack.pop();
 
+	const is_race = node.mode === "race";
+
+	if (is_race) {
+		// Race mode: wait until any future completes (or the deadline hits),
+		// then cancel the remaining tasks, then join + release every future
+		// (the join is a no-op for tasks already finished; cancelled tasks
+		// get a brief grace period via the deadline-extended wait below).
+		status.code += `\t__echo_nursery_race_wait((struct echo_future **)${futures_name}, ${count_name}, ${deadline_var ? deadline_var : "0"});\n`;
+	}
 	status.code += `\tfor (int ${idx_name} = 0; ${idx_name} < ${count_name}; ${idx_name}++) {\n`;
 	status.code += `\t\tstruct echo_future *_f = (struct echo_future *)${futures_name}[${idx_name}];\n`;
-	if (deadline_var) {
+	if (is_race) {
+		// Cancel anything still running, then wait+release with a generous
+		// extended deadline so cancelled tasks actually exit before release.
+		status.code += `\t\t__echo_future_cancel(_f);\n`;
+		status.code += `\t\t__echo_future_timedwait(_f, ${deadline_var ? deadline_var : "0"} + 1000);\n`;
+	} else if (deadline_var) {
 		status.code += `\t\tint _done = __echo_future_timedwait(_f, ${deadline_var});\n`;
 		status.code += `\t\tif (!_done) {\n`;
 		// Timeout expired — cancel this task and any remaining tasks.

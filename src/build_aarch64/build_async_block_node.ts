@@ -2,6 +2,7 @@ import type BuildStatus from "../build_c/BuildStatus.ts";
 import AsyncBlockNode from "../nodes/AsyncBlockNode.ts";
 import build_block_node from "./build_block_node.ts";
 import build_node from "./build_node.ts";
+import { POOL_HEADER_C } from "./build_spawn_node.ts";
 import { allocate_stack_space } from "./utils/stack_var.ts";
 
 /**
@@ -25,6 +26,15 @@ import { allocate_stack_space } from "./utils/stack_var.ts";
 export default function build_async_block_node(node: AsyncBlockNode, status: BuildStatus) {
 	const id = status.spawn_counter ?? 0;
 	status.spawn_counter = id + 1;
+
+	// In race mode the join loop calls the cancel/race_wait/release helpers
+	// directly. The pool infrastructure that defines them is normally emitted
+	// on the first spawn — but a race nursery with no spawns wouldn't pull it
+	// in. Emit eagerly so the link always resolves.
+	if (node.mode === "race" && !status.file_scope_c?.includes("__echo_pool_submit")) {
+		if (!status.file_scope_c) status.file_scope_c = "";
+		status.file_scope_c += POOL_HEADER_C;
+	}
 
 	// Allocate per-invocation nursery state on this function's stack frame.
 	// 64 futures × 8 bytes = 512 bytes for the array, 8 bytes for the count,
@@ -88,12 +98,41 @@ export default function build_async_block_node(node: AsyncBlockNode, status: Bui
 	const loop_start = `__nursery_${id}_join_start`;
 	const loop_end = `__nursery_${id}_join_end`;
 	const loop_release = `__nursery_${id}_release`;
+
+	const is_race = node.mode === "race";
+
+	if (is_race) {
+		// Race mode: poll until any future completes (or the deadline hits),
+		// then fall through to the per-future cancel+wait+release loop.
+		// __echo_nursery_race_wait(futures_ptr, count, deadline_ms_or_0).
+		status.code += `mov x0, x20\n`;
+		status.code += `mov x1, x22\n`;
+		if (deadline_off !== undefined) {
+			status.code += `ldr x2, [x29, #${deadline_off}]\n`;
+		} else {
+			status.code += `mov x2, #0\n`;
+		}
+		status.code += `bl ___echo_nursery_race_wait\n`;
+	}
+
 	status.code += `${loop_start}:\n`;
 	status.code += `cmp x23, x22\n`;
 	status.code += `b.ge ${loop_end}\n`;
 	// Load futures[i] into x0.
 	status.code += `ldr x0, [x20, x23, lsl #3]\n`;
-	if (deadline_off !== undefined) {
+	if (is_race) {
+		// Cancel the task (no-op if already done) and wait once more with an
+		// extended deadline so a cancelled task actually exits before release.
+		status.code += `bl ___echo_future_cancel\n`;
+		status.code += `ldr x0, [x20, x23, lsl #3]\n`;
+		if (deadline_off !== undefined) {
+			status.code += `ldr x1, [x29, #${deadline_off}]\n`;
+		} else {
+			status.code += `mov x1, #0\n`;
+		}
+		status.code += `add x1, x1, #1000\n`;
+		status.code += `bl ___echo_future_timedwait\n`;
+	} else if (deadline_off !== undefined) {
 		status.code += `ldr x1, [x29, #${deadline_off}]\n`;
 		status.code += `bl ___echo_future_timedwait\n`;
 		// x0 = 1 if done, 0 if timed out.

@@ -161,8 +161,14 @@ export default function build(
 	}
 
 	let companion: string | undefined;
-	if (status.c_companion_functions && status.c_companion_functions.length > 0) {
-		companion = generate_companion(status.c_companion_functions, status);
+	// Generate the companion file when there's anything to put in it:
+	// either aarch64_use_c raw-block functions, or file-scope C (pool
+	// infrastructure, race-mode helpers) that the asm references via bl.
+	if (
+		(status.c_companion_functions && status.c_companion_functions.length > 0) ||
+		status.file_scope_c
+	) {
+		companion = generate_companion(status.c_companion_functions ?? [], status);
 	}
 	// The companion C file contains the pool infrastructure (file_scope_c)
 	// which uses raw malloc/free. Wrap them for audit so the counter stays

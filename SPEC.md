@@ -1724,6 +1724,20 @@ async(timeout: 500) {
 }
 ```
 
+A nursery can also run in race mode: `async(mode: race) { ... }`. The nursery
+exits as soon as the _first_ spawned task completes (or the timeout fires);
+the remaining tasks are cancelled cooperatively and joined before the block
+exits. The default mode is `all`, which waits for every task. Options may be
+combined: `async(mode: race, timeout: 500)`.
+
+```
+async(mode: race) {
+    spawn fetch_from_cache(key)
+    spawn fetch_from_db(key)
+    // exits as soon as either task completes; the loser is cancelled
+}
+```
+
 ### Task
 
 The handle returned by `spawn`. Generic — `T` is inferred from the spawned

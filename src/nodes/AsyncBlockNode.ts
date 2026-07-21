@@ -11,10 +11,17 @@ import type BlockNode from "./BlockNode.ts";
  * Optional `timeout` (milliseconds): if set, all tasks in the nursery are
  * cancelled when the deadline expires. The nursery join loop uses timed
  * waits so it can enforce the deadline.
+ *
+ * Optional `mode`: `"all"` (default — wait for every spawned task) or
+ * `"race"` — wait for the first task to complete (or the deadline), then
+ * cancel the rest.
  */
+export type AsyncMode = "all" | "race";
+
 export default class AsyncBlockNode extends BaseNode implements BlockNode {
 	statements: BaseNode[];
 	timeout?: BaseNode;
+	mode?: AsyncMode;
 
 	constructor(start: number, statements: BaseNode[] = [], timeout?: BaseNode) {
 		super("async_block", start);

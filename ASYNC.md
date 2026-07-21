@@ -42,6 +42,12 @@ What's currently shipped (C and aarch64 backends):
   `cancel_flag` is set to 1), and the nursery waits briefly for them to
   observe the cancellation before joining. Both C and aarch64 backends
   support this.
+- **Race mode** — `async(mode: race) { ... }` exits as soon as the first
+  spawned task completes (or the timeout fires); remaining tasks are
+  cancelled and joined. Default mode is `all` (wait for every task).
+  Implemented via `__echo_nursery_race_wait`, which polls each future's
+  done flag every 1ms (latency/cost tradeoff favors simplicity over a
+  signaling mechanism). Both backends support this.
 
 Still on the phasing list:
 

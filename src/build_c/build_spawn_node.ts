@@ -11,7 +11,7 @@ import type_from_value_node from "./utils/type_from_value_node.ts";
  * the pool per instantiation. Deduplicated by build_raw_node's
  * emitted_file_scope_blocks set (matched by content).
  */
-const POOL_HEADER = `
+export const POOL_HEADER = `
 #include <pthread.h>
 #include <time.h>
 static __thread unsigned long long *__echo_current_cancel_flag = NULL;
@@ -167,6 +167,35 @@ static void __echo_pool_submit(void (*fn)(void *), void *arg) {
 	__echo_pool_tail = t;
 	pthread_cond_signal(&__echo_pool_cv);
 	pthread_mutex_unlock(&__echo_pool_mu);
+}
+// Race-mode helpers: used by async(mode: race) to wait until any one future
+// in a nursery completes (or the deadline expires). Returns 1 if any future
+// is done, 0 if the deadline hit. Polls every 1ms — the latency/cost
+// tradeoff favors simplicity over a signaling mechanism.
+static void __echo_future_cancel(struct echo_future *f) {
+	if (f->cancel_flag) *(f->cancel_flag) = 1;
+}
+static int __echo_future_is_done(struct echo_future *f) {
+	pthread_mutex_lock(&f->mu);
+	int d = f->done;
+	pthread_mutex_unlock(&f->mu);
+	return d;
+}
+static int __echo_nursery_race_wait(struct echo_future **futures, int count, long long deadline_ms) {
+	if (count <= 0) return 0;
+	struct timespec sleep_ts = {0, 1000000}; // 1ms
+	while (1) {
+		for (int i = 0; i < count; i++) {
+			if (__echo_future_is_done(futures[i])) return 1;
+		}
+		if (deadline_ms > 0) {
+			struct timespec ts;
+			clock_gettime(CLOCK_REALTIME, &ts);
+			long long now_ms = (long long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+			if (now_ms >= deadline_ms) return 0;
+		}
+		nanosleep(&sleep_ts, NULL);
+	}
 }
 `;
 

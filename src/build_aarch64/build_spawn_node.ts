@@ -9,7 +9,7 @@ import build_node from "./build_node.ts";
  * Same as the C backend's POOL_HEADER — compiled as C in the companion file
  * and linked with the aarch64 assembly output.
  */
-const POOL_HEADER_C = `
+export const POOL_HEADER_C = `
 #include <pthread.h>
 #include <time.h>
 static __thread unsigned long long *__echo_current_cancel_flag = NULL;
@@ -165,6 +165,29 @@ void __echo_pool_submit(void (*fn)(void *), void *arg) {
 }
 void __echo_future_cancel(struct echo_future *f) {
 	if (f->cancel_flag) *(f->cancel_flag) = 1;
+}
+// Race-mode helpers — see build_c POOL_HEADER for semantics.
+int __echo_future_is_done(struct echo_future *f) {
+	pthread_mutex_lock(&f->mu);
+	int d = f->done;
+	pthread_mutex_unlock(&f->mu);
+	return d;
+}
+int __echo_nursery_race_wait(struct echo_future **futures, int count, long long deadline_ms) {
+	if (count <= 0) return 0;
+	struct timespec sleep_ts = {0, 1000000};
+	while (1) {
+		for (int i = 0; i < count; i++) {
+			if (__echo_future_is_done(futures[i])) return 1;
+		}
+		if (deadline_ms > 0) {
+			struct timespec ts;
+			clock_gettime(CLOCK_REALTIME, &ts);
+			long long now_ms = (long long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+			if (now_ms >= deadline_ms) return 0;
+		}
+		nanosleep(&sleep_ts, NULL);
+	}
 }
 `;
 

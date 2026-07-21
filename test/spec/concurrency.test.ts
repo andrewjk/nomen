@@ -231,3 +231,35 @@ pub func main = () {
 		expect(compile_module(input)).toEqual([]);
 	});
 });
+
+describe("spec: concurrency - race mode", () => {
+	test("async(mode: race) compiles", () => {
+		const input = `
+func work = (uint64 arg) {
+}
+
+pub func main = () {
+	async(mode: race) {
+		spawn work(0)
+		spawn work(1)
+	}
+}
+`;
+		expect(compile_module(input)).toEqual([]);
+	});
+
+	test("async(mode: race, timeout: N) compiles", () => {
+		const input = `
+func work = (uint64 arg) {
+}
+
+pub func main = () {
+	async(mode: race, timeout: 500) {
+		spawn work(0)
+		spawn work(1)
+	}
+}
+`;
+		expect(compile_module(input)).toEqual([]);
+	});
+});
