@@ -1738,6 +1738,57 @@ async(mode: race) {
 }
 ```
 
+### Nursery (escape hatch)
+
+`spawn` normally targets its lexically enclosing `async` block. A function that
+needs to spawn into its _caller's_ nursery takes the nursery explicitly — the
+Trio escape hatch. This is a _capability_, not a required parameter: most
+functions just `return`/compute and never need it.
+
+Inside an `async` block, the magic `nursery` expression refers to the enclosing
+nursery. Pass it with `ref`:
+
+```
+func handle_connection = (uint64 conn, ref Nursery nursery) {
+    nursery.spawn(parse, conn)
+    nursery.spawn(respond, conn)
+}
+
+async {
+    handle_connection(conn, ref nursery)
+    // block does not exit until parse and respond finish
+}
+```
+
+`nursery.spawn(fn, args...)` spawns `fn(args...)` into the referenced nursery.
+The first argument is the function name; the rest are its arguments (which must
+be `Sendable`, exactly like a bare `spawn`). It may be used as a statement
+(fire-and-forget) or as an expression yielding a `Task<T>`.
+
+```
+func compute = (uint64 n) => n + 1
+
+func spawn_one = (uint64 n, ref Nursery nursery) {
+    var t = nursery.spawn(compute, n)
+    var uint64 r = t.result_uint64()
+}
+```
+
+`Nursery` is a `Sendable` struct wrapping the nursery's per-invocation tracking
+state. It is only valid for the lifetime of its enclosing `async` block — the
+block cannot exit until every task spawned through a passed `Nursery` has
+finished, so a running task can safely hold the `Nursery` (and pointers into
+nursery-local values).
+
+`nursery.spawn` may also be used directly inside an `async` block (equivalent to
+a bare `spawn`):
+
+```
+async {
+    nursery.spawn(parse, conn)
+}
+```
+
 ### Task
 
 The handle returned by `spawn`. Generic — `T` is inferred from the spawned

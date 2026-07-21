@@ -105,4 +105,12 @@ export default interface CheckStatus {
 	 * the variable is pushed.
 	 */
 	pending_return_bounds?: Map<string, BaseNode[]>;
+
+	/**
+	 * Depth of nested `async { }` nursery blocks currently being checked.
+	 * When > 0, the magic `nursery` identifier resolves to the enclosing
+	 * Nursery (see type_from_value). Used by the escape hatch — see ASYNC.md,
+	 * "Escape hatch: passing the nursery".
+	 */
+	async_depth?: number;
 }

@@ -42,10 +42,17 @@ export default function build_async_block_node(node: AsyncBlockNode, status: Bui
 	const futures_name = `__echo_nursery_${id}_futures`;
 	const count_name = `__echo_nursery_${id}_count`;
 	const idx_name = `__echo_nursery_${id}_i`;
+	const nursery_name = `__echo_nursery_${id}_nursery`;
 
 	status.code += `{\n`;
 	status.code += `\tunsigned long long ${futures_name}[64];\n`;
 	status.code += `\tint ${count_name} = 0;\n`;
+	// Build the Nursery capability value pointing at this block's futures
+	// array + count slot, so the escape hatch (`ref nursery` / nursery.spawn)
+	// can register spawned futures with this nursery at runtime.
+	status.code += `\tstruct Nursery ${nursery_name};\n`;
+	status.code += `\t${nursery_name}.futures_ptr = (unsigned long long)${futures_name};\n`;
+	status.code += `\t${nursery_name}.count_ptr = (unsigned long long)&${count_name};\n`;
 
 	// If timeout is specified, compute deadline (absolute ms since epoch).
 	let deadline_var = "";
@@ -69,10 +76,13 @@ export default function build_async_block_node(node: AsyncBlockNode, status: Bui
 
 	status.nursery_stack ??= [];
 	status.nursery_stack.push(id);
+	status.nursery_ref_stack ??= [];
+	status.nursery_ref_stack.push(nursery_name);
 
 	build_block_node(node, status);
 
 	status.nursery_stack.pop();
+	status.nursery_ref_stack.pop();
 
 	const is_race = node.mode === "race";
 

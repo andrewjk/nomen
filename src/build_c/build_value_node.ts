@@ -11,6 +11,13 @@ const INT_LITERAL_SUFFIX: Record<string, string> = {
 
 export default function build_value_node(node: ValueNode, status: BuildStatus) {
 	let value = node.value;
+	// Magic `nursery` identifier: resolves to the enclosing async block's
+	// Nursery struct local (an lvalue), enabling `ref nursery` and direct
+	// `nursery.spawn(...)`. See ASYNC.md escape hatch.
+	if (value === "nursery" && status.nursery_ref_stack?.length) {
+		status.code += status.nursery_ref_stack.at(-1);
+		return;
+	}
 	if (value === "null") value = "0";
 	else if (value === "true") value = "1";
 	else if (value === "false") value = "0";

@@ -1,4 +1,5 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
+import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import AnonStructNode from "../nodes/AnonStructNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
@@ -148,7 +149,12 @@ export default function build_node(node: BaseNode, status: BuildStatus, with_sem
 			break;
 		}
 		case "access": {
-			build_access_node(node as AccessNode, status);
+			const access = node as AccessNode;
+			if (with_semicolon && access.access.node_type === "access_func") {
+				const afn = access.access as AccessFunctionCallNode;
+				if (afn.is_nursery_spawn) afn.is_statement = true;
+			}
+			build_access_node(access, status);
 			break;
 		}
 		case "panic": {

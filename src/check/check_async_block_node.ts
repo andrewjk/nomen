@@ -15,6 +15,7 @@ import clone_status from "./utils/clone_status.ts";
  */
 export default function check_async_block_node(node: AsyncBlockNode, status: CheckStatus) {
 	const block_status = clone_status(status);
+	block_status.async_depth = (status.async_depth ?? 0) + 1;
 	if (node.timeout) {
 		check_node(node.timeout, block_status);
 	}

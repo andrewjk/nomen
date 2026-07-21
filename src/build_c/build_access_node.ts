@@ -6,10 +6,37 @@ import BaseNode from "../nodes/BaseNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_node from "./build_node.ts";
+import build_nursery_spawn from "./build_nursery_spawn.ts";
 import { is_owned_heap_temp } from "./build_operation_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import c_type from "./utils/c_type.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
+
+/**
+ * Compute a C expression that yields a `struct Nursery *` for the receiver of
+ * a `nursery.spawn(...)` escape-hatch call. A `ref Nursery` parameter is
+ * already a pointer; the magic `nursery` identifier (and any other Nursery
+ * lvalue) needs its address taken.
+ */
+function nursery_pointer_expr(target: BaseNode, status: BuildStatus): string {
+	if (target.node_type === "value") {
+		const name = (target as ValueNode).value;
+		// ref Nursery param — emitted as `struct Nursery *name`.
+		if (status.function_ref_params?.has(name)) return name;
+		// Magic `nursery` identifier — the enclosing async block's struct local.
+		if (name === "nursery" && status.nursery_ref_stack?.length) {
+			return "&" + (status.nursery_ref_stack.at(-1) as string);
+		}
+	}
+	// Any other Nursery lvalue: build it and take its address.
+	const before = status.code.length;
+	status.suppress_dereference = true;
+	build_node(target, status);
+	status.suppress_dereference = false;
+	const expr = status.code.substring(before);
+	status.code = status.code.substring(0, before);
+	return "&" + expr;
+}
 
 /**
  * Build a node for use as a vtable dispatch target. The vtable lives on the
@@ -156,6 +183,14 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 		}
 		case "access_func": {
 			const access_func = node.access as AccessFunctionCallNode;
+			// Escape hatch: `nursery.spawn(fn, args...)` — emit the spawn
+			// trampoline against the receiver Nursery's runtime futures/count
+			// pointers. See ASYNC.md.
+			if (access_func.is_nursery_spawn) {
+				const nursery_ptr = nursery_pointer_expr(node.target, status);
+				build_nursery_spawn(access_func, nursery_ptr, status);
+				return;
+			}
 			// Inline .at()/.set()/.first() on plain C arrays (target_type.is_array
 			// with a known length means a stack/local C array, not an Array_*
 			// struct). Variadic params are also plain C arrays (`T *name`),

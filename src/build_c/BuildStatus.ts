@@ -302,6 +302,15 @@ export default interface BuildStatus {
 	 */
 	nursery_stack?: number[];
 	/**
+	 * C-backend only: stack of C variable names for the per-invocation
+	 * `struct Nursery` local emitted by each active `async { }` block. The
+	 * magic `nursery` identifier (build_value_node) resolves to the top entry,
+	 * so `ref nursery` passes its address and `nursery.spawn(...)` (via the
+	 * escape hatch) reads the futures/count pointers from it. See ASYNC.md,
+	 * "Escape hatch: passing the nursery".
+	 */
+	nursery_ref_stack?: string[];
+	/**
 	 * aarch64-only: per-nursery stack frame offsets for the futures array,
 	 * count slot, and (if timeout) deadline slot. Spawns inside a nursery
 	 * pass these addresses to the submit helper so concurrent nursery
@@ -314,6 +323,13 @@ export default interface BuildStatus {
 			futures_off: number;
 			count_off: number;
 			deadline_off?: number;
+			/**
+			 * aarch64-only: stack offset of the per-invocation `struct Nursery`
+			 * local (the escape-hatch capability value). The magic `nursery`
+			 * identifier resolves to its address; nursery.spawn reads the
+			 * futures/count pointers from it.
+			 */
+			nursery_off?: number;
 		}
 	>;
 	/**

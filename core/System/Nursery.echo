@@ -1,0 +1,20 @@
+// Nursery — the capability passed to a function that needs to spawn into its
+// caller's nursery (the Trio escape hatch). See ASYNC.md, "Escape hatch:
+// passing the nursery".
+//
+// A Nursery is a lightweight wrapper around the per-invocation tracking state
+// of an `async { }` block: a pointer to the futures array and a pointer to
+// the count slot. Both live on the async block's stack frame, so a Nursery
+// value is only valid for the lifetime of its enclosing `async` block (which
+// is exactly the structured-concurrency invariant — the block cannot exit
+// until every spawned task, including those spawned through a passed Nursery,
+// has finished).
+//
+// `nursery.spawn(fn, args...)` is special-cased by the compiler (it needs the
+// spawn trampoline machinery), so it is NOT a regular method declared here.
+// The two fields are the full runtime contract.
+
+pub struct Nursery : Sendable {
+	pub var uint64 futures_ptr = 0
+	pub var uint64 count_ptr = 0
+}

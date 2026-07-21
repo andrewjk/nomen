@@ -4,11 +4,12 @@ import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import BaseNode from "../nodes/BaseNode.ts";
 import type DeclarationNode from "../nodes/DeclarationNode.ts";
+import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import check_function_call from "./check_function_call.ts";
-import { monomorphize } from "./check_function_call_node.ts";
+import check_function_call_node, { monomorphize } from "./check_function_call_node.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import { invalidate_borrows_of, receiver_owner_of } from "./utils/borrow.ts";
@@ -18,6 +19,7 @@ import {
 	is_overloaded,
 	mangled_label,
 } from "./utils/function_overload.ts";
+import is_sendable_type from "./utils/is_sendable_type.ts";
 import is_visible from "./utils/is_visible.ts";
 import { is_class_type } from "./utils/ownership.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
@@ -193,6 +195,15 @@ function check_access_function_node(
 	node: AccessFunctionCallNode,
 	status: CheckStatus,
 ): boolean {
+	// Escape hatch: `nursery.spawn(fn, args...)` spawns `fn(args...)` into the
+	// nursery referenced by the receiver. The first param is the function name;
+	// the rest are its arguments. See ASYNC.md, "Escape hatch: passing the
+	// nursery". Special-cased (rather than a real method on Nursery) because the
+	// spawn needs the per-site trampoline machinery.
+	if (target_type.name === "Nursery" && node.name === "spawn") {
+		return check_nursery_spawn(node, status);
+	}
+
 	// For array types, route method calls to the Array struct
 	let effective_type = target_type;
 	if (target_type.is_array) {
@@ -572,4 +583,83 @@ function returns_value(node: BaseNode, visited: Set<BaseNode> = new Set()): bool
 		}
 	}
 	return false;
+}
+
+/**
+ * Check a `nursery.spawn(fn, args...)` escape-hatch call. The first parameter
+ * names the function to spawn; the remaining parameters are its arguments.
+ * Reuses check_function_call_node by building a synthetic call, then enforces
+ * Sendable on every argument and types the expression as `Task<T>` (mirroring
+ * check_spawn_node). See ASYNC.md.
+ */
+function check_nursery_spawn(node: AccessFunctionCallNode, status: CheckStatus): boolean {
+	if (node.params.length < 1) {
+		add_error(status, "nursery.spawn requires a function name", node.start);
+		return false;
+	}
+	const fn_arg = node.params[0];
+	if (fn_arg.node_type !== "value") {
+		add_error(status, "nursery.spawn requires a function name as the first argument", node.start);
+		return false;
+	}
+	const fn_name = (fn_arg as ValueNode).value;
+
+	// Build a synthetic call so check_function_call_node resolves the function,
+	// checks/matches argument types, and computes the return type. The arg
+	// nodes themselves are shared (checked in place), so their resolved types
+	// are visible to the build phase.
+	const call = new FunctionCallNode(fn_arg.start, fn_name);
+	call.params = node.params.slice(1);
+	// Forward ref/mov markers (offset unchanged — the function name is param 0
+	// of the spawn, but the args' own indices within `call.params` line up
+	// 1:1 with their position in node.params minus the leading fn name).
+	if (node.ref_param_indices) {
+		call.ref_param_indices = node.ref_param_indices.filter((i) => i > 0).map((i) => i - 1);
+	}
+	if (node.mov_param_indices) {
+		call.mov_param_indices = node.mov_param_indices.filter((i) => i > 0).map((i) => i - 1);
+	}
+
+	const ok = check_function_call_node(call, status);
+	if (!ok) {
+		add_error(status, `Spawned call '${fn_name}' did not resolve`, node.start);
+		return false;
+	}
+
+	// Every argument moved into the spawned task must be Sendable.
+	for (const param of call.params) {
+		const arg_type = type_from_value_node(param, status);
+		if (!is_sendable_type(arg_type.name, status)) {
+			add_error(
+				status,
+				`Spawn argument of type ${arg_type.name || "<unknown>"} is not Sendable`,
+				param.start,
+			);
+		}
+	}
+
+	// Type the expression as Task<T> where T is the spawned function's return
+	// type (uint64 for void functions — the result slot exists but is unused).
+	const return_type = call.type;
+	const result_type_arg =
+		return_type && return_type.name && return_type.name !== "void" && return_type.name !== "?"
+			? new Type(return_type.name)
+			: new Type("uint64");
+	const task_type = new Type("Task");
+	task_type.type_args = [result_type_arg];
+	node.function_return_type = return_type;
+	node.type = task_type;
+	node.is_nursery_spawn = true;
+	// The Task a nursery.spawn yields is a fresh heap allocation (not a borrow),
+	// so a capturing declaration owns and must free it. Without this, the
+	// declaration would be treated as a class alias and leak.
+	node.owned_return = true;
+
+	// Trigger monomorphization of Task<T> so the struct body is emitted.
+	const task_struct = status.structs.find((s) => s.name === "Task");
+	if (task_struct && task_struct.type_params.length > 0) {
+		monomorphize(task_struct, [result_type_arg], status);
+	}
+
+	return true;
 }

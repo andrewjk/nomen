@@ -9,6 +9,7 @@ import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_inline_method from "./build_inline_method.ts";
 import build_node from "./build_node.ts";
+import build_nursery_spawn from "./build_nursery_spawn.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free, emit_malloc } from "./utils/audit.ts";
 import { mark_moved_if_struct } from "./utils/auto_destroy.ts";
@@ -47,6 +48,16 @@ function emit_string_length(target: BaseNode, status: BuildStatus) {
 export function emit_address_of(node: BaseNode, status: BuildStatus) {
 	if (node.node_type === "value") {
 		const name = (node as ValueNode).value;
+		// Magic `nursery` identifier — the enclosing async block's Nursery
+		// struct local. Its address IS the capability value passed by `ref`.
+		if (name === "nursery" && status.nursery_stack?.length) {
+			const id = status.nursery_stack.at(-1);
+			const off = id !== undefined ? status.nursery_offsets?.get(id)?.nursery_off : undefined;
+			if (off !== undefined) {
+				status.code += `add x0, x29, #${off}\n`;
+				return;
+			}
+		}
 		if (is_local_ref_var(name, status)) {
 			emit_deref_var_address(status, "x0", name);
 		} else if (status.heap_array_vars?.has(name)) {
@@ -127,6 +138,11 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 		}
 		case "access_func": {
 			const access_func = node.access as AccessFunctionCallNode;
+			// Escape hatch: `nursery.spawn(fn, args...)`. See ASYNC.md.
+			if (access_func.is_nursery_spawn) {
+				build_nursery_spawn(node, access_func, status);
+				return;
+			}
 			build_access_method(node, access_func, status);
 			break;
 		}

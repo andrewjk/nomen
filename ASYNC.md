@@ -48,6 +48,12 @@ What's currently shipped (C and aarch64 backends):
   Implemented via `__echo_nursery_race_wait`, which polls each future's
   done flag every 1ms (latency/cost tradeoff favors simplicity over a
   signaling mechanism). Both backends support this.
+- **Nursery escape hatch** — `nursery.spawn(fn, args...)` and the magic
+  `nursery` identifier (yields the enclosing `async` block's `Nursery`, passed
+  with `ref`). A function that takes `ref Nursery nursery` can spawn into its
+  caller's nursery; the futures register with the same per-invocation array +
+  count the enclosing block joins at scope exit. Both backends support this
+  (statement fire-and-forget and expression `Task<T>` forms).
 
 Still on the phasing list:
 

@@ -1,3 +1,4 @@
+import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import AnonStructNode from "../nodes/AnonStructNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
@@ -112,7 +113,14 @@ export default function build_node(node: BaseNode, status: BuildStatus, with_sem
 			break;
 		}
 		case "access": {
-			build_access_node(node as AccessNode, status);
+			const access = node as AccessNode;
+			// A nursery.spawn used as a top-level statement discards its Task
+			// → fire-and-forget (mirrors SpawnNode.is_statement).
+			if (with_semicolon && access.access.node_type === "access_func") {
+				const afn = access.access as AccessFunctionCallNode;
+				if (afn.is_nursery_spawn) afn.is_statement = true;
+			}
+			build_access_node(access, status);
 			break;
 		}
 		case "grouped": {

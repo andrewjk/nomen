@@ -64,6 +64,17 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 	const original_value = node.value;
 	let value = node.value.replace("self", "_self");
 
+	// Magic `nursery` identifier: resolves to the enclosing async block's
+	// Nursery struct address (the escape-hatch capability). See ASYNC.md.
+	if (original_value === "nursery" && status.nursery_stack?.length) {
+		const id = status.nursery_stack.at(-1);
+		const off = id !== undefined ? status.nursery_offsets?.get(id)?.nursery_off : undefined;
+		if (off !== undefined) {
+			status.code += `add x0, x29, #${off}\n`;
+			return;
+		}
+	}
+
 	if (node.is_enum_shorthand) {
 		const enum_node = status.enums.find((e) => value.startsWith(e.name + "_"));
 		if (enum_node) {

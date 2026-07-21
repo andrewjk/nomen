@@ -563,6 +563,110 @@ Console.write_line("after")
 	});
 });
 
+describe("nursery escape hatch", () => {
+	test("passed nursery spawns tasks joined by the enclosing async block", async () => {
+		const input = `
+func worker = (uint64 id) {
+	Console.write_line("from task")
+}
+
+func spawn_two = (ref Nursery nursery) {
+	nursery.spawn(worker, 0)
+	nursery.spawn(worker, 1)
+}
+
+async {
+	spawn_two(ref nursery)
+}
+
+Console.write_line("after block")
+`;
+		for (const arch of ARCHITECTURES) {
+			const parsed = parse_with_imports(input);
+			expect(parsed.errors).toEqual([]);
+			const options = { arch, ...OPTIONS };
+			const result = build(parsed.root, options);
+			// Both tasks finish before "after block" (order between them is
+			// nondeterministic); check that "after block" is last.
+			await check_output(
+				`nursery_escape_${arch}`,
+				result,
+				"from task\nfrom task\nafter block\n",
+				options,
+			);
+		}
+	});
+
+	test("nursery.spawn yields a usable Task", async () => {
+		const input = `
+func compute = (uint64 n) => n + 1
+
+func spawn_one = (uint64 n, ref Nursery nursery) {
+	var t = nursery.spawn(compute, n)
+	var uint64 r = t.result_uint64()
+	if r == 42 {
+		Console.write_line("got")
+	}
+}
+
+async {
+	spawn_one(41, ref nursery)
+}
+`;
+		for (const arch of ARCHITECTURES) {
+			const parsed = parse_with_imports(input);
+			expect(parsed.errors).toEqual([]);
+			const options = { arch, ...OPTIONS };
+			const result = build(parsed.root, options);
+			await check_output(`nursery_spawn_task_${arch}`, result, "got\n", options);
+		}
+	});
+
+	test("nursery.spawn used directly in async block", async () => {
+		const input = `
+func worker = (uint64 id) {
+	Console.write_line("direct")
+}
+
+async {
+	nursery.spawn(worker, 0)
+}
+`;
+		for (const arch of ARCHITECTURES) {
+			const parsed = parse_with_imports(input);
+			expect(parsed.errors).toEqual([]);
+			const options = { arch, ...OPTIONS };
+			const result = build(parsed.root, options);
+			await check_output(`nursery_direct_${arch}`, result, "direct\n", options);
+		}
+	});
+
+	test("passed nursery interops with bare spawn in the same block", async () => {
+		const input = `
+func worker = (uint64 id) {
+	Console.write_line("ran")
+}
+
+func spawn_via_ref = (ref Nursery nursery) {
+	nursery.spawn(worker, 0)
+}
+
+async {
+	spawn worker(1)
+	spawn_via_ref(ref nursery)
+}
+`;
+		for (const arch of ARCHITECTURES) {
+			const parsed = parse_with_imports(input);
+			expect(parsed.errors).toEqual([]);
+			const options = { arch, ...OPTIONS };
+			const result = build(parsed.root, options);
+			// Both tasks run; relative order is nondeterministic.
+			await check_output(`nursery_mixed_${arch}`, result, "", options);
+		}
+	});
+});
+
 describe("async race mode", () => {
 	test("async(mode: race) exits on first completion and cancels the rest", async () => {
 		const input = `

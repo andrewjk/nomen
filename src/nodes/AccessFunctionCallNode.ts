@@ -27,6 +27,25 @@ export default class AccessFunctionCallNode extends BaseNode {
 	 * outer call's parameter constraint can verify against the returned value.
 	 */
 	return_bounds?: { upper: string[]; lower: string[] };
+	/**
+	 * Set during checking when this is a `nursery.spawn(fn, args...)` escape-
+	 * hatch call (target type is `Nursery`, method name is `spawn`). The build
+	 * phase reads `function_return_type` and emits the spawn trampoline against
+	 * the passed Nursery's runtime futures/count pointers. See ASYNC.md.
+	 */
+	is_nursery_spawn?: boolean;
+	/**
+	 * For `nursery.spawn`: the spawned function's return type, captured during
+	 * checking (mirrors SpawnNode.function_return_type). Used by the build to
+	 * decide whether the trampoline captures a result and to type the Task.
+	 */
+	function_return_type?: Type;
+	/**
+	 * For `nursery.spawn`: set by the build when the call appears as a
+	 * top-level statement (its Task result is discarded). Mirrors
+	 * SpawnNode.is_statement — fire-and-forget spawns skip Task allocation.
+	 */
+	is_statement?: boolean;
 
 	constructor(start: number, name: string, type?: Type, params?: BaseNode[], is_static?: boolean) {
 		super("access_func", start);

@@ -107,6 +107,84 @@ pub func main = () {
 	});
 });
 
+describe("spec: concurrency - Nursery escape hatch", () => {
+	test("passed nursery spawns into the caller's nursery", () => {
+		const input = `
+func parse = (uint64 conn) {
+}
+
+func respond = (uint64 conn) {
+}
+
+func handle_connection = (uint64 conn, ref Nursery nursery) {
+	nursery.spawn(parse, conn)
+	nursery.spawn(respond, conn)
+}
+
+pub func main = () {
+	var uint64 conn = 0
+	async {
+		handle_connection(conn, ref nursery)
+	}
+}
+`;
+		expect(compile_module(input)).toEqual([]);
+	});
+
+	test("nursery.spawn returns a Task handle", () => {
+		const input = `
+func compute = (uint64 n) => n + 1
+
+func spawn_one = (uint64 n, ref Nursery nursery) {
+	var t = nursery.spawn(compute, n)
+	var uint64 r = t.result_uint64()
+}
+
+pub func main = () {
+	async {
+		spawn_one(41, ref nursery)
+	}
+}
+`;
+		expect(compile_module(input)).toEqual([]);
+	});
+
+	test("nursery.spawn directly in async block", () => {
+		const input = `
+func parse = (uint64 conn) {
+}
+
+pub func main = () {
+	var uint64 conn = 0
+	async {
+		nursery.spawn(parse, conn)
+	}
+}
+`;
+		expect(compile_module(input)).toEqual([]);
+	});
+
+	test("non-Sendable nursery.spawn arg is rejected", () => {
+		const input = `
+pub class Counter {
+	var int count = 0
+}
+
+func work = (Counter c) {
+}
+
+pub func main = () {
+	var Counter c = Counter()
+	async {
+		nursery.spawn(work, c)
+	}
+}
+`;
+		const errors = compile_module(input);
+		expect(errors.some((e) => e.message.includes("not Sendable"))).toBe(true);
+	});
+});
+
 describe("spec: concurrency - Task", () => {
 	test("Task wait and result_uint64", () => {
 		const input = `
