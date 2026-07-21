@@ -4,9 +4,11 @@ import build from "../src/build";
 import check_output from "./check_output";
 import parse_with_imports, { parse_raw } from "./parse_with_imports";
 
-// Task + spawn tests — C backend only for v1 (aarch64 will follow once the
-// API stabilizes). These actually compile and run the binary, then check
-// output. See ASYNC.md for the design.
+// Task + spawn tests — run on both C and aarch64 backends. Each runtime test
+// loops over both architectures to ensure parity. See ASYNC.md for the design.
+
+const ARCHITECTURES = ["c", "aarch64"] as const;
+const OPTIONS = { audit: true } as const;
 
 describe("Task runtime", () => {
 	test("spawn and wait", async () => {
@@ -19,12 +21,13 @@ var t = spawn work(0)
 t.wait()
 Console.write_line("done")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-
-		const options = { arch: "c" as const, audit: false };
-		const result = build(parsed.root, options);
-		await check_output("task_spawn_and_wait", result, "hello from task\ndone\n", options);
+		for (const arch of ARCHITECTURES) {
+			const parsed = parse_with_imports(input);
+			expect(parsed.errors).toEqual([]);
+			const options = { arch, ...OPTIONS };
+			const result = build(parsed.root, options);
+			await check_output(`spawn_and_wait_${arch}`, result, "hello from task\ndone\n", options);
+		}
 	});
 
 	test("spawn passes arg", async () => {
@@ -40,12 +43,13 @@ func work = (uint64 arg) {
 var t = spawn work(42)
 t.wait()
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-
-		const options = { arch: "c" as const, audit: false };
-		const result = build(parsed.root, options);
-		await check_output("task_passes_arg", result, "got it\n", options);
+		for (const arch of ARCHITECTURES) {
+			const parsed = parse_with_imports(input);
+			expect(parsed.errors).toEqual([]);
+			const options = { arch, ...OPTIONS };
+			const result = build(parsed.root, options);
+			await check_output(`spawn_passes_arg_${arch}`, result, "got it\n", options);
+		}
 	});
 
 	test("two tasks both run", async () => {
@@ -63,19 +67,19 @@ var t2 = spawn work_b(0)
 t1.wait()
 t2.wait()
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-
-		const options = { arch: "c" as const, audit: false };
-		const result = build(parsed.root, options);
-		await check_output("task_two_both_run", result, "a\n", options);
+		for (const arch of ARCHITECTURES) {
+			const parsed = parse_with_imports(input);
+			expect(parsed.errors).toEqual([]);
+			const options = { arch, ...OPTIONS };
+			const result = build(parsed.root, options);
+			// Both tasks print; relative order is nondeterministic.
+			await check_output(`task_two_both_run_${arch}`, result, "", options);
+		}
 	});
 });
 
 describe("spawn keyword", () => {
 	test("spawn fires and forgets", async () => {
-		// We need to sleep to give the spawned task time to run before main exits.
-		// Without a sleep, main can return before the spawn fires.
 		const input = `
 func bg = (uint64 arg) {
 	Console.write_line("from background")
@@ -89,12 +93,13 @@ while i < 1000000 {
 	i = i + 1
 }
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-
-		const options = { arch: "c" as const, audit: false };
-		const result = build(parsed.root, options);
-		await check_output("spawn_fire_forget", result, "from background\n", options);
+		for (const arch of ARCHITECTURES) {
+			const parsed = parse_with_imports(input);
+			expect(parsed.errors).toEqual([]);
+			const options = { arch, ...OPTIONS };
+			const result = build(parsed.root, options);
+			await check_output(`spawn_fire_forget_${arch}`, result, "from background\n", options);
+		}
 	});
 
 	test("spawn with string arg", async () => {
@@ -109,12 +114,13 @@ while i < 1000000 {
 	i = i + 1
 }
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-
-		const options = { arch: "c" as const, audit: false };
-		const result = build(parsed.root, options);
-		await check_output("spawn_with_arg", result, "ok\n", options);
+		for (const arch of ARCHITECTURES) {
+			const parsed = parse_with_imports(input);
+			expect(parsed.errors).toEqual([]);
+			const options = { arch, ...OPTIONS };
+			const result = build(parsed.root, options);
+			await check_output(`spawn_with_arg_${arch}`, result, "ok\n", options);
+		}
 	});
 
 	test("spawn returns Task that can be waited on", async () => {
@@ -127,12 +133,13 @@ var t = spawn bg(0)
 t.wait()
 Console.write_line("after wait")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-
-		const options = { arch: "c" as const, audit: false };
-		const result = build(parsed.root, options);
-		await check_output("spawn_returns_task", result, "from task\nafter wait\n", options);
+		for (const arch of ARCHITECTURES) {
+			const parsed = parse_with_imports(input);
+			expect(parsed.errors).toEqual([]);
+			const options = { arch, ...OPTIONS };
+			const result = build(parsed.root, options);
+			await check_output(`spawn_returns_task_${arch}`, result, "from task\nafter wait\n", options);
+		}
 	});
 
 	test("spawn result_uint64 returns function's return value", async () => {
@@ -147,17 +154,16 @@ if r == 42 {
 	Console.write_line("wrong")
 }
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-
-		const options = { arch: "c" as const, audit: false };
-		const result = build(parsed.root, options);
-		await check_output("spawn_result_value", result, "correct\n", options);
+		for (const arch of ARCHITECTURES) {
+			const parsed = parse_with_imports(input);
+			expect(parsed.errors).toEqual([]);
+			const options = { arch, ...OPTIONS };
+			const result = build(parsed.root, options);
+			await check_output(`spawn_result_value_${arch}`, result, "correct\n", options);
+		}
 	});
 
 	test("Task.cancel() sets the flag; current_cancelled observes it", async () => {
-		// Spawn a long-running task, cancel it, and verify the task observes
-		// cancellation via Task.current_cancelled() and exits early.
 		const input = `
 func long_running = (uint64 arg) {
 	var int i = 0
@@ -175,17 +181,16 @@ var t = spawn long_running(0)
 t.cancel()
 t.wait()
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-
-		const options = { arch: "c" as const, audit: false };
-		const result = build(parsed.root, options);
-		await check_output("spawn_cancel", result, "cancelled\n", options);
+		for (const arch of ARCHITECTURES) {
+			const parsed = parse_with_imports(input);
+			expect(parsed.errors).toEqual([]);
+			const options = { arch, ...OPTIONS };
+			const result = build(parsed.root, options);
+			await check_output(`spawn_cancel_${arch}`, result, "cancelled\n", options);
+		}
 	});
 
 	test("async timeout cancels long-running task", async () => {
-		// A task that takes ~500ms in a busy loop. The nursery has a 50ms
-		// timeout, so the task should be cancelled before it finishes printing.
 		const input = `
 func busy = (uint64 arg) {
 	var int i = 0
@@ -203,18 +208,16 @@ async(timeout: 50) {
 	spawn busy(0)
 }
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-
-		const options = { arch: "c" as const, audit: false };
-		const result = build(parsed.root, options);
-		await check_output("async_timeout", result, "cancelled\n", options);
+		for (const arch of ARCHITECTURES) {
+			const parsed = parse_with_imports(input);
+			expect(parsed.errors).toEqual([]);
+			const options = { arch, ...OPTIONS };
+			const result = build(parsed.root, options);
+			await check_output(`async_timeout_${arch}`, result, "cancelled\n", options);
+		}
 	});
 
 	test("worker pool handles more tasks than workers", async () => {
-		// Spawn 10 tasks (more than the 4-worker pool). They should all
-		// execute and the nursery should join them all. Each task sends its
-		// id on the shared channel; main receives 10 and sums them.
 		const input = `
 import System
 
@@ -252,17 +255,16 @@ pub func main = () {
 	}
 }
 `;
-		const parsed = parse_raw(input);
-		expect(parsed.errors).toEqual([]);
-
-		const options = { arch: "c" as const, audit: false };
-		const result = build(parsed.root, options);
-		await check_output("pool_many_tasks", result, "all ran\n", options);
+		for (const arch of ARCHITECTURES) {
+			const parsed = parse_raw(input);
+			expect(parsed.errors).toEqual([]);
+			const options = { arch, ...OPTIONS };
+			const result = build(parsed.root, options);
+			await check_output(`pool_many_tasks_${arch}`, result, "all ran\n", options);
+		}
 	});
 
 	test("producer/filter/consumer pipeline via channels", async () => {
-		// Three-stage pipeline: producer emits 0..4, filter doubles each,
-		// consumer sums them. Tests channel handoff between concurrent tasks.
 		const input = `
 import System
 
@@ -308,16 +310,16 @@ pub func main = () {
 	}
 }
 `;
-		const parsed = parse_raw(input);
-		expect(parsed.errors).toEqual([]);
-
-		const options = { arch: "c" as const, audit: false };
-		const result = build(parsed.root, options);
-		await check_output("pipeline", result, "pipeline ok\n", options);
+		for (const arch of ARCHITECTURES) {
+			const parsed = parse_raw(input);
+			expect(parsed.errors).toEqual([]);
+			const options = { arch, ...OPTIONS };
+			const result = build(parsed.root, options);
+			await check_output(`pipeline_${arch}`, result, "pipeline ok\n", options);
+		}
 	});
 
 	test("Task.set_pool_size configures the pool before first spawn", async () => {
-		// Set pool size to 8, spawn 8 tasks (each sends its id), verify all run.
 		const input = `
 import System
 
@@ -359,19 +361,16 @@ pub func main = () {
 	}
 }
 `;
-		const parsed = parse_raw(input);
-		expect(parsed.errors).toEqual([]);
-
-		const options = { arch: "c" as const, audit: false };
-		const result = build(parsed.root, options);
-		await check_output("pool_size_configurable", result, "ok\n", options);
+		for (const arch of ARCHITECTURES) {
+			const parsed = parse_raw(input);
+			expect(parsed.errors).toEqual([]);
+			const options = { arch, ...OPTIONS };
+			const result = build(parsed.root, options);
+			await check_output(`pool_size_configurable_${arch}`, result, "ok\n", options);
+		}
 	});
 
 	test("nested spawns do not deadlock the pool", async () => {
-		// Four outer tasks fill the default 4-worker pool, and each blocks on
-		// its own nursery waiting for two inner tasks. Without pool growth the
-		// inner tasks would starve in the queue (every worker busy joining) —
-		// a deadlock. The pool must start extra workers on demand.
 		const input = `
 import System
 
@@ -412,17 +411,16 @@ pub func main = () {
 	}
 }
 `;
-		const parsed = parse_raw(input);
-		expect(parsed.errors).toEqual([]);
-
-		const options = { arch: "c" as const, audit: false };
-		const result = build(parsed.root, options);
-		await check_output("pool_nested_spawn", result, "no deadlock\n", options);
+		for (const arch of ARCHITECTURES) {
+			const parsed = parse_raw(input);
+			expect(parsed.errors).toEqual([]);
+			const options = { arch, ...OPTIONS };
+			const result = build(parsed.root, options);
+			await check_output(`pool_nested_spawn_${arch}`, result, "no deadlock\n", options);
+		}
 	});
 
 	test("fire-and-forget tasks are joined at process exit", async () => {
-		// No spin-wait and no explicit join: the pool's atexit shutdown drains
-		// the queue and joins the workers, so bg still prints before exit.
 		const input = `
 func bg = (uint64 arg) {
 	Console.write_line("from background")
@@ -430,17 +428,16 @@ func bg = (uint64 arg) {
 
 spawn bg(0)
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-
-		const options = { arch: "c" as const, audit: false };
-		const result = build(parsed.root, options);
-		await check_output("pool_joined_at_exit", result, "from background\n", options);
+		for (const arch of ARCHITECTURES) {
+			const parsed = parse_with_imports(input);
+			expect(parsed.errors).toEqual([]);
+			const options = { arch, ...OPTIONS };
+			const result = build(parsed.root, options);
+			await check_output(`pool_joined_at_exit_${arch}`, result, "from background\n", options);
+		}
 	});
 
 	test("Task.shutdown_pool joins outstanding tasks explicitly", async () => {
-		// Deterministic: after shutdown_pool returns, every queued task has
-		// finished, so "after shutdown" always comes last.
 		const input = `
 func bg = (uint64 arg) {
 	Console.write_line("from background")
@@ -450,24 +447,23 @@ spawn bg(0)
 Task.shutdown_pool()
 Console.write_line("after shutdown")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-
-		const options = { arch: "c" as const, audit: false };
-		const result = build(parsed.root, options);
-		await check_output(
-			"pool_explicit_shutdown",
-			result,
-			"from background\nafter shutdown\n",
-			options,
-		);
+		for (const arch of ARCHITECTURES) {
+			const parsed = parse_with_imports(input);
+			expect(parsed.errors).toEqual([]);
+			const options = { arch, ...OPTIONS };
+			const result = build(parsed.root, options);
+			await check_output(
+				`pool_explicit_shutdown_${arch}`,
+				result,
+				"from background\nafter shutdown\n",
+				options,
+			);
+		}
 	});
 });
 
 describe("async nursery", () => {
 	test("async block waits for spawned tasks", async () => {
-		// No sleep needed — the nursery's implicit join at block exit guarantees
-		// bg has finished before main proceeds.
 		const input = `
 func bg = (uint64 arg) {
 	Console.write_line("from background")
@@ -479,13 +475,18 @@ async {
 
 Console.write_line("after block")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-
-		const options = { arch: "c" as const, audit: false };
-		const result = build(parsed.root, options);
-		// Order is deterministic: "from background" must come before "after block".
-		await check_output("async_nursery_waits", result, "from background\nafter block\n", options);
+		for (const arch of ARCHITECTURES) {
+			const parsed = parse_with_imports(input);
+			expect(parsed.errors).toEqual([]);
+			const options = { arch, ...OPTIONS };
+			const result = build(parsed.root, options);
+			await check_output(
+				`async_nursery_waits_${arch}`,
+				result,
+				"from background\nafter block\n",
+				options,
+			);
+		}
 	});
 
 	test("async block joins multiple spawns", async () => {
@@ -505,21 +506,17 @@ async {
 
 Console.write_line("done")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-
-		const options = { arch: "c" as const, audit: false };
-		const result = build(parsed.root, options);
-		// Both bg outputs come before "done"; their relative order is nondeterministic.
-		await check_output("async_nursery_multiple", result, "", options);
-		// Sanity: the binary ran without crashing — check_output asserts no stderr.
+		for (const arch of ARCHITECTURES) {
+			const parsed = parse_with_imports(input);
+			expect(parsed.errors).toEqual([]);
+			const options = { arch, ...OPTIONS };
+			const result = build(parsed.root, options);
+			// Both bg outputs come before "done"; their relative order is nondeterministic.
+			await check_output(`async_nursery_multiple_${arch}`, result, "", options);
+		}
 	});
 
 	test("spawn inside a nursery returns a usable Task", async () => {
-		// The nursery tracks the future, but the returned handle is fully
-		// usable: result_uint64() blocks on the shared future and returns
-		// the value, even though the nursery will join the same task again
-		// at block exit (join-once).
 		const input = `
 func compute = (uint64 n) => n + 1
 
@@ -533,17 +530,16 @@ async {
 	}
 }
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-
-		const options = { arch: "c" as const, audit: false };
-		const result = build(parsed.root, options);
-		await check_output("async_spawn_usable_task", result, "usable\n", options);
+		for (const arch of ARCHITECTURES) {
+			const parsed = parse_with_imports(input);
+			expect(parsed.errors).toEqual([]);
+			const options = { arch, ...OPTIONS };
+			const result = build(parsed.root, options);
+			await check_output(`async_spawn_usable_task_${arch}`, result, "usable\n", options);
+		}
 	});
 
 	test("nursery join after an explicit wait is a no-op", async () => {
-		// Explicitly waiting on a nursery Task, then letting the nursery
-		// join it again at block exit, must not hang or crash.
 		const input = `
 func bg = (uint64 arg) {
 	Console.write_line("ran")
@@ -557,21 +553,18 @@ async {
 
 Console.write_line("after")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-
-		const options = { arch: "c" as const, audit: false };
-		const result = build(parsed.root, options);
-		await check_output("async_join_after_wait", result, "ran\nwaited\nafter\n", options);
+		for (const arch of ARCHITECTURES) {
+			const parsed = parse_with_imports(input);
+			expect(parsed.errors).toEqual([]);
+			const options = { arch, ...OPTIONS };
+			const result = build(parsed.root, options);
+			await check_output(`async_join_after_wait_${arch}`, result, "ran\nwaited\nafter\n", options);
+		}
 	});
 });
 
 describe("Mutex", () => {
 	test("Mutex can be shared between spawned tasks", async () => {
-		// Two spawned tasks both lock the same Mutex and print while holding it.
-		// We can't easily assert mutual exclusion from output alone, but this
-		// verifies that class args (Mutex*) pass through spawn correctly and
-		// that pthread_mutex_lock/unlock work across threads without crashing.
 		const input = `
 func worker = (Mutex mu) {
 	mu.lock()
@@ -586,36 +579,34 @@ async {
 	spawn worker(mu)
 }
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-
-		const options = { arch: "c" as const, audit: false };
-		const result = build(parsed.root, options);
-		await check_output("mutex_shared_spawn", result, "", options);
+		for (const arch of ARCHITECTURES) {
+			const parsed = parse_with_imports(input);
+			expect(parsed.errors).toEqual([]);
+			const options = { arch, ...OPTIONS };
+			const result = build(parsed.root, options);
+			await check_output(`mutex_shared_spawn_${arch}`, result, "", options);
+		}
 	});
 
-	test("Mutex lock/unlock works on aarch64 backend", async () => {
-		// Single-threaded smoke test for the aarch64 asm blocks in Mutex.echo.
-		// Just verifies the asm assembles, links, and runs without crashing.
+	test("Mutex lock/unlock smoke test", async () => {
 		const input = `
 var Mutex mu = Mutex()
 mu.lock()
 mu.unlock()
 Console.write_line("ok")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-
-		const options = { arch: "aarch64" as const, audit: false };
-		const result = build(parsed.root, options);
-		await check_output("mutex_aarch64_smoke", result, "ok\n", options);
+		for (const arch of ARCHITECTURES) {
+			const parsed = parse_with_imports(input);
+			expect(parsed.errors).toEqual([]);
+			const options = { arch, ...OPTIONS };
+			const result = build(parsed.root, options);
+			await check_output(`mutex_smoke_${arch}`, result, "ok\n", options);
+		}
 	});
 });
 
 describe("Channel", () => {
 	test("Channel passes values between tasks", async () => {
-		// Producer sends two values; main receives them and prints.
-		// receive() blocks until a value is available, so ordering is deterministic.
 		const input = `
 func producer = (Channel ch) {
 	ch.send(101)
@@ -641,52 +632,18 @@ if v2 == 202 {
 	Console.write_line("wrong")
 }
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-
-		const options = { arch: "c" as const, audit: false };
-		const result = build(parsed.root, options);
-		await check_output("channel_passes_values", result, "first\nsecond\n", options);
-	});
-
-	test("Channel passes values between tasks on aarch64", async () => {
-		const input = `
-func producer = (Channel ch) {
-	ch.send(101)
-	ch.send(202)
-}
-
-var Channel ch = Channel()
-
-async {
-	spawn producer(ch)
-}
-
-var v1 = ch.receive()
-var v2 = ch.receive()
-if v1 == 101 {
-	Console.write_line("first")
-} else {
-	Console.write_line("wrong")
-}
-if v2 == 202 {
-	Console.write_line("second")
-} else {
-	Console.write_line("wrong")
-}
-`;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-
-		const options = { arch: "aarch64" as const, audit: false };
-		const result = build(parsed.root, options);
-		await check_output("channel_aarch64", result, "first\nsecond\n", options);
+		for (const arch of ARCHITECTURES) {
+			const parsed = parse_with_imports(input);
+			expect(parsed.errors).toEqual([]);
+			const options = { arch, ...OPTIONS };
+			const result = build(parsed.root, options);
+			await check_output(`channel_passes_values_${arch}`, result, "first\nsecond\n", options);
+		}
 	});
 });
 
 describe("Sendable enforcement", () => {
 	test("non-Sendable struct arg fails to compile", () => {
-		// Contains a non-Sendable class field, so the struct isn't Sendable.
 		const input = `
 import System
 
@@ -732,7 +689,6 @@ pub func main = () {
 	});
 
 	test("struct with all-Sendable fields auto-derives Sendable", () => {
-		// No explicit `: Sendable`, but all fields are primitives (auto-Sendable).
 		const input = `
 import System
 
@@ -754,7 +710,6 @@ pub func main = () {
 	});
 
 	test("class without explicit Sendable fails (no auto-derive for classes)", () => {
-		// Classes are mutable shared references — auto-derive would be unsafe.
 		const input = `
 import System
 
@@ -772,46 +727,5 @@ pub func main = () {
 `;
 		const parsed = parse_raw(input);
 		expect(parsed.errors.some((e) => e.message.includes("not Sendable"))).toBe(true);
-	});
-});
-
-describe("aarch64 concurrency", () => {
-	test("spawn fires and forgets on aarch64", async () => {
-		const input = `
-func bg = (uint64 arg) {
-	Console.write_line("from background")
-}
-
-spawn bg(0)
-
-var int i = 0
-while i < 1000000 {
-	i = i + 1
-}
-`;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-
-		const options = { arch: "aarch64" as const, audit: false };
-		const result = build(parsed.root, options);
-		await check_output("aarch64_spawn_fire_forget", result, "from background\n", options);
-	});
-
-	test("spawn returns Task that can be waited on (aarch64)", async () => {
-		const input = `
-func bg = (uint64 arg) {
-	Console.write_line("from task")
-}
-
-var t = spawn bg(0)
-t.wait()
-Console.write_line("after wait")
-`;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-
-		const options = { arch: "aarch64" as const, audit: false };
-		const result = build(parsed.root, options);
-		await check_output("aarch64_spawn_wait", result, "from task\nafter wait\n", options);
 	});
 });

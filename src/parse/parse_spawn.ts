@@ -30,5 +30,6 @@ export function parse_spawn_node(status: ParseStatus): SpawnNode {
 
 export default function parse_spawn(status: ParseStatus) {
 	const node = parse_spawn_node(status);
+	node.is_statement = true;
 	add_to_parent(node, "Spawn expression", status);
 }

@@ -15,12 +15,17 @@ import Type from "./Type.ts";
  *   capture a result.
  * - `call.type` is overwritten to `Task` during check so the spawn expression
  *   as a whole has type Task.
+ * - `is_statement`: set by the parser when `spawn` appears as a top-level
+ *   statement (not captured into a variable). The build phase uses this to
+ *   skip the Task allocation: fire-and-forget spawns only need the future,
+ *   not the user-facing handle.
  *
  * See ASYNC.md for the design.
  */
 export default class SpawnNode extends BaseNode {
 	call: FunctionCallNode;
 	function_return_type?: Type;
+	is_statement?: boolean;
 
 	constructor(start: number, call: FunctionCallNode) {
 		super("spawn", start);

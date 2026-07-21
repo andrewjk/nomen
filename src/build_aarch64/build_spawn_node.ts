@@ -163,6 +163,9 @@ void __echo_pool_submit(void (*fn)(void *), void *arg) {
 	pthread_cond_signal(&__echo_pool_cv);
 	pthread_mutex_unlock(&__echo_pool_mu);
 }
+void __echo_future_cancel(struct echo_future *f) {
+	if (f->cancel_flag) *(f->cancel_flag) = 1;
+}
 `;
 
 /**
@@ -220,10 +223,6 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 			? return_type_name
 			: "void";
 
-	// Nursery state.
-	const nursery_id = status.nursery_stack?.at(-1);
-	const refs = nursery_id !== undefined ? 3 : 2;
-
 	// --- Emit trampoline + submit helper as C companion ---
 
 	let tramp_c = `// --- spawn site ${id} trampoline ---\n`;
@@ -269,13 +268,34 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 	tramp_c += `\tfree(a);\n`;
 	tramp_c += `}\n`;
 
+	// Nursery state + fire-and-forget detection.
+	const nursery_id = status.nursery_stack?.at(-1);
+	const nursery_off =
+		nursery_id !== undefined ? status.nursery_offsets?.get(nursery_id) : undefined;
+	const fire_and_forget = !!node.is_statement;
+	const refs = fire_and_forget
+		? nursery_id !== undefined
+			? 2
+			: 1
+		: nursery_id !== undefined
+			? 3
+			: 2;
+
 	// Submit helper: allocates args struct, copies fields from asm values,
-	// allocates future, submits to pool, allocates Task, returns Task ptr.
+	// allocates future, submits to pool. For captured spawns, also allocates
+	// Task and returns its pointer. For fire-and-forget, returns NULL.
+	// When inside a nursery, the asm spawn site passes the nursery's stack
+	// futures/count addresses as the last two args; the helper pushes the
+	// future to that per-invocation state.
 	// Called from asm with: x0=arg0, x1=arg1, ... (up to 6 args in regs).
 	tramp_c += `void *${submit_name}(`;
 	for (let i = 0; i < arg_c_types.length; i++) {
 		if (i > 0) tramp_c += ", ";
 		tramp_c += `${arg_c_types[i]} arg${i}`;
+	}
+	if (nursery_id !== undefined) {
+		if (arg_c_types.length > 0) tramp_c += ", ";
+		tramp_c += `unsigned long long *__echo_nursery_futures, int *__echo_nursery_count`;
 	}
 	tramp_c += `) {\n`;
 	tramp_c += `\tstruct ${struct_name} *a = (struct ${struct_name} *)malloc(sizeof(struct ${struct_name}));\n`;
@@ -296,19 +316,25 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 	tramp_c += `\ta->future = f;\n`;
 	tramp_c += `\t__echo_pool_submit(${tramp_name}, a);\n`;
 	if (nursery_id !== undefined) {
-		tramp_c += `\t__echo_nursery_${nursery_id}_futures[__echo_nursery_${nursery_id}_count++] = (unsigned long long)f;\n`;
+		tramp_c += `\t__echo_nursery_futures[(*__echo_nursery_count)++] = (unsigned long long)f;\n`;
 	}
-	// Allocate Task and return pointer.
-	const mono_task_name = call.type?.type_args?.length
-		? `Task_${call.type.type_args.map((t) => t.name).join("_")}`
-		: "Task";
-	tramp_c += `\tstruct ${mono_task_name} *t = (struct ${mono_task_name} *)malloc(sizeof(struct ${mono_task_name}));\n`;
-	tramp_c += `\tt->handle = 0;\n`;
-	tramp_c += `\tt->done = 0;\n`;
-	tramp_c += `\tt->result_slot = (unsigned long long)a->result_slot;\n`;
-	tramp_c += `\tt->cancel_flag = (unsigned long long)a->cancel_flag;\n`;
-	tramp_c += `\tt->future = (unsigned long long)f;\n`;
-	tramp_c += `\treturn t;\n`;
+	if (fire_and_forget) {
+		// Fire-and-forget: no Task handle needed. The trampoline (and nursery,
+		// if any) manage the future lifetime.
+		tramp_c += `\treturn (void *)0;\n`;
+	} else {
+		// Allocate Task and return pointer.
+		const mono_task_name = call.type?.type_args?.length
+			? `Task_${call.type.type_args.map((t) => t.name).join("_")}`
+			: "Task";
+		tramp_c += `\tstruct ${mono_task_name} *t = (struct ${mono_task_name} *)malloc(sizeof(struct ${mono_task_name}));\n`;
+		tramp_c += `\tt->handle = 0;\n`;
+		tramp_c += `\tt->done = 0;\n`;
+		tramp_c += `\tt->result_slot = (unsigned long long)a->result_slot;\n`;
+		tramp_c += `\tt->cancel_flag = (unsigned long long)a->cancel_flag;\n`;
+		tramp_c += `\tt->future = (unsigned long long)f;\n`;
+		tramp_c += `\treturn t;\n`;
+	}
 	tramp_c += `}\n`;
 
 	if (!status.file_scope_c) status.file_scope_c = "";
@@ -339,12 +365,18 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 	status.code = status.code.substring(0, status.code.lastIndexOf(`// spawn site ${id}\n`));
 	status.code += `// spawn site ${id}\n`;
 
-	if (call.params.length === 0) {
+	// When inside a nursery, two extra trailing args carry the addresses of
+	// the nursery's per-invocation futures array and count slot (on the
+	// caller's stack). They occupy the last two arg slots.
+	const nursery_extra = nursery_off ? 2 : 0;
+	const total_arg_slots = call.params.length + nursery_extra;
+
+	if (total_arg_slots === 0) {
 		status.code += `bl ${submit_name}\n`;
 	} else {
 		// Build each arg and store to stack (args are 8 bytes each).
 		// ARM64 requires 16-byte stack alignment.
-		const raw_stack_size = call.params.length * 8;
+		const raw_stack_size = total_arg_slots * 8;
 		const stack_size = raw_stack_size + ((16 - (raw_stack_size % 16)) % 16);
 		status.code += `sub sp, sp, #${stack_size}\n`;
 		for (let i = 0; i < call.params.length; i++) {
@@ -354,8 +386,15 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 			if (!status.code.endsWith("\n")) status.code += "\n";
 			status.code += `str x0, [sp, #${i * 8}]\n`;
 		}
+		if (nursery_off) {
+			// Compute addresses of nursery futures array and count slot.
+			status.code += `add x0, x29, #${nursery_off.futures_off}\n`;
+			status.code += `str x0, [sp, #${call.params.length * 8}]\n`;
+			status.code += `add x0, x29, #${nursery_off.count_off}\n`;
+			status.code += `str x0, [sp, #${(call.params.length + 1) * 8}]\n`;
+		}
 		// Pop args into registers x0, x1, x2, ...
-		for (let i = call.params.length - 1; i >= 0; i--) {
+		for (let i = total_arg_slots - 1; i >= 0; i--) {
 			status.code += `ldr x${i}, [sp, #${i * 8}]\n`;
 		}
 		status.code += `add sp, sp, #${stack_size}\n`;

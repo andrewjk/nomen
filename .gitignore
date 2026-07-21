@@ -9,4 +9,6 @@ main.m
 main.o
 main.s
 audit_runtime.o
+main_companion.m
+main_companion.o
 bench/rust/target/

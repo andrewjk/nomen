@@ -816,6 +816,12 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 				) {
 					anchor_heap_pointer(status, node.name);
 				}
+				// A captured `spawn` expression allocates a Task on the heap;
+				// anchor it so it's freed at scope exit. (Statement-form
+				// spawns never reach a declaration.)
+				if (node.value.node_type === "spawn") {
+					anchor_heap_pointer(status, node.name);
+				}
 				emit_var_store(status, "x0", node.name, 8);
 			}
 		} else {

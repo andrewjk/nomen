@@ -300,22 +300,34 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 
 	// Inside a nursery: the nursery holds its own future reference (waits +
 	// releases at block exit). Outside: only the trampoline and the returned
-	// Task hold references.
+	// Task hold references. For fire-and-forget spawns (is_statement), no
+	// Task is allocated — only the trampoline (and nursery, if any) hold refs.
 	const nursery_id = status.nursery_stack?.at(-1);
-	status.code += `\t_future->refs = ${nursery_id !== undefined ? 3 : 2};\n`;
+	const fire_and_forget = !!node.is_statement;
+	if (fire_and_forget) {
+		status.code += `\t_future->refs = ${nursery_id !== undefined ? 2 : 1};\n`;
+	} else {
+		status.code += `\t_future->refs = ${nursery_id !== undefined ? 3 : 2};\n`;
+	}
 	status.code += `\t__echo_pool_submit(${tramp_name}, _args);\n`;
 	if (nursery_id !== undefined) {
 		status.code += `\t__echo_nursery_${nursery_id}_futures[__echo_nursery_${nursery_id}_count++] = (unsigned long long)_future;\n`;
 	}
-	// Task is a class (heap-allocated). Construct via malloc + field assigns
-	// and yield the pointer. The handle is fully usable whether or not a
-	// nursery also tracks the future (join-once semantics).
-	status.code += `\tstruct ${mono_task_name} *_task = (struct ${mono_task_name} *)malloc(sizeof(struct ${mono_task_name}));\n`;
-	status.code += `\t_task->handle = 0;\n`;
-	status.code += `\t_task->done = 0;\n`;
-	status.code += `\t_task->result_slot = (unsigned long long)_result_ptr;\n`;
-	status.code += `\t_task->cancel_flag = (unsigned long long)_cancel_ptr;\n`;
-	status.code += `\t_task->future = (unsigned long long)_future;\n`;
-	status.code += `\t_task;\n`;
+	if (fire_and_forget) {
+		// Fire-and-forget: no Task handle needed. The trampoline (and nursery,
+		// if any) manage the future lifetime. Yield 0 (discarded value).
+		status.code += `\t(void)0;\n`;
+	} else {
+		// Task is a class (heap-allocated). Construct via malloc + field assigns
+		// and yield the pointer. The handle is fully usable whether or not a
+		// nursery also tracks the future (join-once semantics).
+		status.code += `\tstruct ${mono_task_name} *_task = (struct ${mono_task_name} *)malloc(sizeof(struct ${mono_task_name}));\n`;
+		status.code += `\t_task->handle = 0;\n`;
+		status.code += `\t_task->done = 0;\n`;
+		status.code += `\t_task->result_slot = (unsigned long long)_result_ptr;\n`;
+		status.code += `\t_task->cancel_flag = (unsigned long long)_cancel_ptr;\n`;
+		status.code += `\t_task->future = (unsigned long long)_future;\n`;
+		status.code += `\t_task;\n`;
+	}
 	status.code += `})\n`;
 }

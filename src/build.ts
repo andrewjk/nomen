@@ -123,9 +123,12 @@ export default function build(
 			status.code += `ret\n`;
 		}
 		if (options.audit) {
-			status.code = status.code.replace(".return_0:\n", "bl _echo_audit_check\n.return_0:\n");
-			// Raw assembly blocks in the library (e.g. int_to_string) call _malloc/_free
-			// directly. Wrap them so the audit counter stays balanced.
+			// The main-function audit_check + pool shutdown hook is emitted
+			// directly by build_function_node (it knows main's return label).
+			//
+			// Raw assembly blocks in the library (e.g. int_to_string) call
+			// _malloc/_free directly. Wrap them so the audit counter stays
+			// balanced.
 			status.code = status.code.replaceAll("bl _malloc\n", "bl _echo_malloc_wrap\n");
 			status.code = status.code.replaceAll("bl _free\n", "bl _echo_free_wrap\n");
 		}
@@ -138,20 +141,35 @@ export default function build(
 			// declare the wrappers + echo_audit_check (which main calls at
 			// exit — see build_function_node). check_output links
 			// audit_runtime.o and fails the test on any "LEAK:" output.
+			//
+			// Both status.code AND status.headers must be wrapped: the pool
+			// infrastructure (emitted by build_spawn_node) lives in headers
+			// and uses raw malloc/free. Without wrapping those, the audit
+			// counter would be unbalanced (pool frees wouldn't decrement).
 			status.code = wrap_c_allocators(status.code);
-			status.headers +=
+			// Prepend declarations so they appear before the pool code that
+			// uses them, then wrap the rest of the headers.
+			status.headers =
 				`void *echo_malloc_wrap(unsigned long);\n` +
 				`void *echo_calloc_wrap(unsigned long, unsigned long);\n` +
 				`void *echo_realloc_wrap(void *, unsigned long);\n` +
 				`void echo_free_wrap(void *);\n` +
 				`void *echo_strdup_wrap(const char *);\n` +
-				`void echo_audit_check(void);\n`;
+				`void echo_audit_check(void);\n` +
+				wrap_c_allocators(status.headers);
 		}
 	}
 
 	let companion: string | undefined;
 	if (status.c_companion_functions && status.c_companion_functions.length > 0) {
 		companion = generate_companion(status.c_companion_functions, status);
+	}
+	// The companion C file contains the pool infrastructure (file_scope_c)
+	// which uses raw malloc/free. Wrap them for audit so the counter stays
+	// balanced. Must happen after companion generation (the pool code isn't
+	// in status.code — it's in file_scope_c → companion).
+	if (companion && options.audit) {
+		companion = wrap_c_allocators(companion);
 	}
 
 	return {

@@ -302,6 +302,21 @@ export default interface BuildStatus {
 	 */
 	nursery_stack?: number[];
 	/**
+	 * aarch64-only: per-nursery stack frame offsets for the futures array,
+	 * count slot, and (if timeout) deadline slot. Spawns inside a nursery
+	 * pass these addresses to the submit helper so concurrent nursery
+	 * invocations (e.g. nested async blocks running in parallel tasks) don't
+	 * share state. Each entry is the offset from FP at the async-block frame.
+	 */
+	nursery_offsets?: Map<
+		number,
+		{
+			futures_off: number;
+			count_off: number;
+			deadline_off?: number;
+		}
+	>;
+	/**
 	 * Tracks which struct body typedefs have already been emitted to avoid
 	 * duplicate definitions when nested structs are also emitted at root level.
 	 */

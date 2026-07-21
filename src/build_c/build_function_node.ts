@@ -216,7 +216,16 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	// check_output asserts against. Mirrors the aarch64 backend's audit hook.
 	// The ad-hoc "Malloc balance" printf is gone — the C backend now routes
 	// through the same audit_runtime.c as aarch64 instead of its own counter.
+	//
+	// If the pool was used (spawn was emitted), shut it down first so the
+	// workers array is freed before the audit runs. Without this, the pool's
+	// atexit handler fires after audit_check, and the workers array shows up
+	// as a false positive leak.
 	if (node.name.toLocaleLowerCase() === "main" && status.audit) {
+		const has_pool = status.headers.includes("__echo_pool_submit");
+		if (has_pool) {
+			status.code += `\n__echo_pool_shutdown();\n`;
+		}
 		status.code += `\necho_audit_check();\n`;
 	}
 
