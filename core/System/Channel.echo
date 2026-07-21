@@ -33,6 +33,21 @@ pub class Channel : Sendable {
 		self->head = 0;
 		self->tail = 0;
 		```
+		```
+		#arch: aarch64
+		mov x0, #64
+		bl _malloc
+		str x0, [x19, #8]
+		mov x1, #0
+		bl _pthread_mutex_init
+		mov x0, #64
+		bl _malloc
+		str x0, [x19, #16]
+		mov x1, #0
+		bl _pthread_cond_init
+		str xzr, [x19, #24]
+		str xzr, [x19, #32]
+		```
 	}
 
 	pub func send = (self, uint64 value) {
@@ -51,6 +66,32 @@ pub class Channel : Sendable {
 		pthread_cond_signal((pthread_cond_t *)self->not_empty_cv);
 		pthread_mutex_unlock((pthread_mutex_t *)self->mu);
 		```
+		```
+		#arch: aarch64
+		// x19 = self (set by prologue), x1 = value
+		str x1, [sp, #-16]!       // save value on stack
+		mov x0, #16
+		bl _malloc                // x0 = node
+		ldr x1, [sp], #16         // restore value
+		str x1, [x0, #0]          // node->value = value
+		str xzr, [x0, #8]         // node->next = NULL
+		str x0, [sp, #-16]!       // save node on stack
+		ldr x0, [x19, #8]         // self->mu
+		bl _pthread_mutex_lock
+		ldr x2, [sp], #16         // restore node
+		ldr x1, [x19, #32]        // tail
+		cbz x1, .Lchannel_send_empty
+		str x2, [x1, #8]          // tail->next = node
+		b .Lchannel_send_enqueued
+		.Lchannel_send_empty:
+		str x2, [x19, #24]        // head = node
+		.Lchannel_send_enqueued:
+		str x2, [x19, #32]        // tail = node
+		ldr x0, [x19, #16]        // not_empty_cv
+		bl _pthread_cond_signal
+		ldr x0, [x19, #8]         // self->mu
+		bl _pthread_mutex_unlock
+		```
 	}
 
 	pub func receive = (self, out uint64) {
@@ -67,6 +108,33 @@ pub class Channel : Sendable {
 		free(n);
 		pthread_mutex_unlock((pthread_mutex_t *)self->mu);
 		return v;
+		```
+		```
+		#arch: aarch64
+		// x19 = self (set by prologue)
+		ldr x0, [x19, #8]         // self->mu
+		bl _pthread_mutex_lock
+		.Lchannel_receive_wait:
+		ldr x1, [x19, #24]        // head
+		cbnz x1, .Lchannel_receive_got
+		ldr x0, [x19, #16]        // not_empty_cv
+		ldr x1, [x19, #8]         // mu
+		bl _pthread_cond_wait
+		b .Lchannel_receive_wait
+		.Lchannel_receive_got:
+		// x1 = node
+		ldr x2, [x1, #8]          // node->next
+		str x2, [x19, #24]        // head = node->next
+		cbnz x2, .Lchannel_receive_not_empty
+		str xzr, [x19, #32]       // tail = 0
+		.Lchannel_receive_not_empty:
+		ldr x0, [x1, #0]          // x0 = value
+		str x0, [sp, #-16]!       // push value
+		mov x0, x1                // x0 = node (for free)
+		bl _free
+		ldr x0, [x19, #8]         // self->mu
+		bl _pthread_mutex_unlock
+		ldr x0, [sp], #16         // pop value → x0 (return)
 		```
 	}
 
@@ -90,6 +158,38 @@ pub class Channel : Sendable {
 			self->head = 0;
 			self->tail = 0;
 		}
+		```
+		```
+		#arch: aarch64
+		// x19 = self (set by prologue)
+		ldr x0, [x19, #8]         // self->mu
+		cbz x0, .Lchannel_destroy_done
+		// Drain nodes
+		ldr x1, [x19, #24]        // head
+		.Lchannel_destroy_drain:
+		cbz x1, .Lchannel_destroy_drained
+		ldr x2, [x1, #8]          // next (before free clobbers it)
+		str x2, [sp, #-16]!       // save next on stack
+		bl _free
+		ldr x1, [sp], #16         // restore next
+		b .Lchannel_destroy_drain
+		.Lchannel_destroy_drained:
+		// Destroy mutex and condvar
+		ldr x0, [x19, #8]
+		bl _pthread_mutex_destroy
+		ldr x0, [x19, #16]
+		bl _pthread_cond_destroy
+		// Free mutex and condvar allocations
+		ldr x0, [x19, #8]
+		bl _free
+		ldr x0, [x19, #16]
+		bl _free
+		// Zero all fields
+		str xzr, [x19, #8]
+		str xzr, [x19, #16]
+		str xzr, [x19, #24]
+		str xzr, [x19, #32]
+		.Lchannel_destroy_done:
 		```
 	}
 }

@@ -26,6 +26,7 @@ import WhileLoopNode from "../nodes/WhileLoopNode.ts";
 import build_access_node from "./build_access_node.ts";
 import build_array_values_node from "./build_array_values_node.ts";
 import build_assignment_node from "./build_assignment_node.ts";
+import build_async_block_node from "./build_async_block_node.ts";
 import build_block_node from "./build_block_node.ts";
 import build_break_node from "./build_break_node.ts";
 import build_cast_node from "./build_cast_node.ts";
@@ -42,6 +43,7 @@ import build_panic_node from "./build_panic_node.ts";
 import build_range_node from "./build_range_node.ts";
 import build_raw_node from "./build_raw_node.ts";
 import build_return_node from "./build_return_node.ts";
+import build_spawn_node from "./build_spawn_node.ts";
 import build_switch_node from "./build_switch_node.ts";
 import build_todo_node from "./build_todo_node.ts";
 import build_value_node from "./build_value_node.ts";
@@ -159,6 +161,16 @@ export default function build_node(node: BaseNode, status: BuildStatus, with_sem
 		}
 		case "raw": {
 			build_raw_node(node as RawNode, status);
+			with_semicolon = false;
+			break;
+		}
+		case "spawn": {
+			build_spawn_node(node as any, status);
+			with_semicolon = false;
+			break;
+		}
+		case "async_block": {
+			build_async_block_node(node as any, status);
 			with_semicolon = false;
 			break;
 		}

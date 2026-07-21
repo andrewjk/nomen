@@ -6,14 +6,23 @@ import { check_raw_arch_coverage, parse_raw_directives } from "../raw_directives
 import { get_struct_size } from "./utils/struct_layout.ts";
 
 export default function build_raw_node(node: RawNode, status: BuildStatus) {
-	const { should_emit, code, is_c } = parse_raw_directives(node.value, "aarch64", status.platform);
+	const { should_emit, code, is_c, scope } = parse_raw_directives(
+		node.value,
+		"aarch64",
+		status.platform,
+	);
 	if (!should_emit || !code) return;
 
 	if (is_c) {
-		// C companion code — collected for the companion .m/.c file, not
-		// emitted inline as assembly.
-		if (!status.c_companion) status.c_companion = "";
-		status.c_companion += `${code}\n`;
+		if (scope === "file") {
+			// File-scope C: emit to file_scope_c (companion file, before functions).
+			if (!status.file_scope_c) status.file_scope_c = "";
+			status.file_scope_c += `${code}\n`;
+		} else {
+			// Block-scope C companion code.
+			if (!status.c_companion) status.c_companion = "";
+			status.c_companion += `${code}\n`;
+		}
 	} else {
 		status.code += `${code}\n`;
 	}

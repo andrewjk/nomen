@@ -11,8 +11,7 @@
 // on the first spawn — not in Task's own methods — so that Task can be
 // generic without duplicating the pool per instantiation.
 //
-// See ASYNC.md for the design. C backend only for now; aarch64 will follow
-// once the API stabilizes.
+// See ASYNC.md for the design.
 
 pub class Task<T> : Sendable {
 	pub var uint64 handle = 0
@@ -36,6 +35,30 @@ pub class Task<T> : Sendable {
 			self->done = 1;
 		}
 		```
+		```
+		#arch: aarch64
+		// if (self->future) goto wait_future
+		ldr x0, [x19, #40]
+		cbz x0, .Lwait_handle
+		bl ___echo_future_wait
+		b .Lwait_done
+		.Lwait_handle:
+		// else if (self->handle && !self->done)
+		ldr x0, [x19, #8]
+		cbz x0, .Lwait_done
+		ldrb w1, [x19, #16]
+		cbnz w1, .Lwait_done
+		// pthread_join((pthread_t)self->handle, &ret)
+		sub sp, sp, #16
+		mov x1, sp
+		bl _pthread_join
+		add sp, sp, #16
+		// self->handle = 0; self->done = 1
+		str xzr, [x19, #8]
+		mov w0, #1
+		strb w0, [x19, #16]
+		.Lwait_done:
+		```
 	}
 
 	// Block until the task finishes, then return its result as T.
@@ -55,6 +78,30 @@ pub class Task<T> : Sendable {
 		}
 		return *(T *)self->result_slot;
 		```
+		```
+		#arch: aarch64
+		// Wait for completion (same as wait method)
+		ldr x0, [x19, #40]
+		cbz x0, .Lresult_handle
+		bl ___echo_future_wait
+		b .Lresult_read
+		.Lresult_handle:
+		ldr x0, [x19, #8]
+		cbz x0, .Lresult_read
+		ldrb w1, [x19, #16]
+		cbnz w1, .Lresult_read
+		sub sp, sp, #16
+		mov x1, sp
+		bl _pthread_join
+		add sp, sp, #16
+		str xzr, [x19, #8]
+		mov w0, #1
+		strb w0, [x19, #16]
+		.Lresult_read:
+		// return *(T *)self->result_slot
+		ldr x0, [x19, #24]
+		ldr x0, [x0]
+		```
 	}
 
 	// Block until the task finishes, then return its result as a uint64.
@@ -72,6 +119,30 @@ pub class Task<T> : Sendable {
 		}
 		return *(unsigned long long *)self->result_slot;
 		```
+		```
+		#arch: aarch64
+		// Wait for completion
+		ldr x0, [x19, #40]
+		cbz x0, .Lru64_handle
+		bl ___echo_future_wait
+		b .Lru64_read
+		.Lru64_handle:
+		ldr x0, [x19, #8]
+		cbz x0, .Lru64_read
+		ldrb w1, [x19, #16]
+		cbnz w1, .Lru64_read
+		sub sp, sp, #16
+		mov x1, sp
+		bl _pthread_join
+		add sp, sp, #16
+		str xzr, [x19, #8]
+		mov w0, #1
+		strb w0, [x19, #16]
+		.Lru64_read:
+		// return *(unsigned long long *)self->result_slot
+		ldr x0, [x19, #24]
+		ldr x0, [x0]
+		```
 	}
 
 	// Request that the task stop. Cooperative — the task observes this via
@@ -83,6 +154,15 @@ pub class Task<T> : Sendable {
 			*(unsigned long long *)self->cancel_flag = 1;
 		}
 		```
+		```
+		#arch: aarch64
+		// if (self->cancel_flag) *(self->cancel_flag) = 1
+		ldr x0, [x19, #32]
+		cbz x0, .Lcancel_done
+		mov x1, #1
+		str x1, [x0]
+		.Lcancel_done:
+		```
 	}
 
 	// Has the currently-running task been asked to cancel? Returns false
@@ -90,6 +170,10 @@ pub class Task<T> : Sendable {
 	pub func current_cancelled = (out bool) {
 		```
 		#arch: c
+		return __echo_current_cancel_flag && *__echo_current_cancel_flag;
+		```
+		```
+		#arch: aarch64_use_c
 		return __echo_current_cancel_flag && *__echo_current_cancel_flag;
 		```
 	}
@@ -106,6 +190,26 @@ pub class Task<T> : Sendable {
 		__echo_pool_size = n;
 		return 1;
 		```
+		```
+		#arch: aarch64
+		// x0 = n (first arg)
+		// if (__echo_pool_init || n <= 0) return 0
+		adrp x1, ___echo_pool_init@PAGE
+		add x1, x1, ___echo_pool_init@PAGEOFF
+		ldr w2, [x1]
+		cbnz w2, .Lsps_zero
+		cmp x0, #0
+		b.le .Lsps_zero
+		// __echo_pool_size = n
+		adrp x1, ___echo_pool_size@PAGE
+		add x1, x1, ___echo_pool_size@PAGEOFF
+		str w0, [x1]
+		mov x0, #1
+		b .Lsps_done
+		.Lsps_zero:
+		mov x0, #0
+		.Lsps_done:
+		```
 	}
 
 	// Shut the worker pool down: drain the queue, join every worker, and
@@ -119,6 +223,10 @@ pub class Task<T> : Sendable {
 		```
 		#arch: c
 		__echo_pool_shutdown();
+		```
+		```
+		#arch: aarch64
+		bl ___echo_pool_shutdown
 		```
 	}
 
@@ -136,6 +244,17 @@ pub class Task<T> : Sendable {
 			self->result_slot = 0;
 			self->cancel_flag = 0;
 		}
+		```
+		```
+		#arch: aarch64
+		// if (self->future) { release; zero fields }
+		ldr x0, [x19, #40]
+		cbz x0, .Ldestroy_done
+		bl ___echo_future_release
+		str xzr, [x19, #40]
+		str xzr, [x19, #24]
+		str xzr, [x19, #32]
+		.Ldestroy_done:
 		```
 	}
 }

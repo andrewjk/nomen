@@ -21,6 +21,12 @@ export default interface BuildStatus {
 	 */
 	c_companion?: string;
 	/**
+	 * File-scope C code emitted to the companion file before function bodies.
+	 * Used for pool infrastructure, type definitions, and `#scope: file` raw
+	 * blocks that need to appear at file scope rather than inline.
+	 */
+	file_scope_c?: string;
+	/**
 	 * Functions whose bodies are compiled as C (via `aarch64_use_c`).
 	 * Each entry records the function node, owning struct (if any), and the
 	 * concatenated raw C code — used to generate the companion file.

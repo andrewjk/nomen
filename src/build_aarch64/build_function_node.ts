@@ -187,8 +187,21 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	if (node.name === "main") {
 		status.code += `.globl _main\n`;
 	}
+	// Make user functions visible to the companion C file (spawn trampolines
+	// call user functions defined in assembly). On macOS, C symbols have a
+	// leading _ prefix, so we define both the bare label (for bl references
+	// from other assembly) and the _-prefixed label (for C linkage).
 	const label_name = node.name.replace(/#/g, "");
-	status.code += `${node.name === "main" ? "_" : ""}${label_name}:\n`;
+	if (node.name === "main") {
+		status.code += `_main:\n`;
+	} else {
+		status.code += `.globl ${label_name}\n`;
+		status.code += `${label_name}:\n`;
+		if (status.platform !== "windows") {
+			status.code += `.globl _${label_name}\n`;
+			status.code += `_${label_name} = ${label_name}\n`;
+		}
+	}
 	status.code += `stp x29, x30, [sp, #-16]!\n`;
 
 	const is_main_with_init =

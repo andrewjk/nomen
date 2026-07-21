@@ -620,6 +620,40 @@ if v2 == 202 {
 		const result = build(parsed.root, options);
 		await check_output("channel_passes_values", result, "first\nsecond\n", options);
 	});
+
+	test("Channel passes values between tasks on aarch64", async () => {
+		const input = `
+func producer = (Channel ch) {
+	ch.send(101)
+	ch.send(202)
+}
+
+var Channel ch = Channel()
+
+async {
+	spawn producer(ch)
+}
+
+var v1 = ch.receive()
+var v2 = ch.receive()
+if v1 == 101 {
+	Console.write_line("first")
+} else {
+	Console.write_line("wrong")
+}
+if v2 == 202 {
+	Console.write_line("second")
+} else {
+	Console.write_line("wrong")
+}
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+
+		const options = { arch: "aarch64" as const, audit: false };
+		const result = build(parsed.root, options);
+		await check_output("channel_aarch64", result, "first\nsecond\n", options);
+	});
 });
 
 describe("Sendable enforcement", () => {
@@ -710,5 +744,46 @@ pub func main = () {
 `;
 		const parsed = parse_raw(input);
 		expect(parsed.errors.some((e) => e.message.includes("not Sendable"))).toBe(true);
+	});
+});
+
+describe("aarch64 concurrency", () => {
+	test("spawn fires and forgets on aarch64", async () => {
+		const input = `
+func bg = (uint64 arg) {
+	Console.write_line("from background")
+}
+
+spawn bg(0)
+
+var int i = 0
+while i < 1000000 {
+	i = i + 1
+}
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+
+		const options = { arch: "aarch64" as const, audit: false };
+		const result = build(parsed.root, options);
+		await check_output("aarch64_spawn_fire_forget", result, "from background\n", options);
+	});
+
+	test("spawn returns Task that can be waited on (aarch64)", async () => {
+		const input = `
+func bg = (uint64 arg) {
+	Console.write_line("from task")
+}
+
+var t = spawn bg(0)
+t.wait()
+Console.write_line("after wait")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+
+		const options = { arch: "aarch64" as const, audit: false };
+		const result = build(parsed.root, options);
+		await check_output("aarch64_spawn_wait", result, "from task\nafter wait\n", options);
 	});
 });

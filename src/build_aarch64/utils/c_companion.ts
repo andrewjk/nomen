@@ -40,7 +40,11 @@ export function generate_companion(functions: CompanionFunction[], status: Build
 	// without the type definitions.
 	out += `#include <stdio.h>\n`;
 	out += `#include <string.h>\n`;
-	out += `#include <regex.h>\n\n`;
+	out += `#include <regex.h>\n`;
+	if (status.file_scope_c?.includes("pthread")) {
+		out += `#include <pthread.h>\n`;
+	}
+	out += "\n";
 
 	// --- Struct definitions ---
 	// Emit every non-simple struct so the function bodies can reference them.
@@ -57,6 +61,12 @@ export function generate_companion(functions: CompanionFunction[], status: Build
 		out += generate_struct_definition(struct, status);
 	}
 	out += "\n";
+
+	// --- File-scope C code (pool infrastructure, #scope: file blocks) ---
+	if (status.file_scope_c) {
+		out += status.file_scope_c;
+		out += "\n";
+	}
 
 	// --- Function definitions ---
 	for (const entry of functions) {

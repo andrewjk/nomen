@@ -4,7 +4,7 @@ Work in progress. Captures conclusions as the design evolves.
 
 ## Implementation status
 
-What's currently shipped (C backend; aarch64 backend pending):
+What's currently shipped (C and aarch64 backends):
 
 - **`Sendable` trait** — marker, enforced on every spawn arg.
   Auto-derived for structs whose fields are all Sendable. Classes must
@@ -38,11 +38,11 @@ What's currently shipped (C backend; aarch64 backend pending):
 
 Still on the phasing list:
 
-- **aarch64 backend** — partial. `Mutex` has full aarch64 raw-asm blocks
-  (lock/unlock/#init/#destroy). Still pending: `Task` (5 methods + the
-  worker pool plumbing), `Channel` (4 methods including linked-list
-  manipulation), and the `spawn` / `async` build phases. So far only
-  the C backend is end-to-end usable for concurrency.
+- **aarch64 backend** — full. `Mutex`, `Task` (all methods + worker pool),
+  and `Channel` (send/receive/init/destroy) all have `#arch: aarch64` raw-asm
+  blocks. `spawn` and `async` build phases emit aarch64 assembly + C
+  companion (pool submit, trampolines, futures array, join loop).
+  Both backends (C and aarch64) are end-to-end usable for concurrency.
 - **Cancellation scope semantics** (Trio-style lexically-scoped timeouts)
   — depends on having cancellation checkpoints beyond manual polling.
 
