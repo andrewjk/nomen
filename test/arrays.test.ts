@@ -167,6 +167,29 @@ for n of result {
 		await build_and_check_output(input, "array_with_for_loop", "0 1 4 9 16 ");
 	});
 
+	test("Array.with() with literal count is heap-allocated (string elements)", async () => {
+		const input = `
+var result = Array.with("x", 3)
+result.set(0, "ab")
+result.set(1, "cd")
+result.set(2, "ef")
+Console.write("\\{result.at(0)}\\{result.at(1)}\\{result.at(2)}")
+`;
+		await build_and_check_output(input, "array_with_literal_count_strings", "abcdef");
+	});
+
+	test("Array.with() with literal count is heap-allocated (int elements)", async () => {
+		const input = `
+var result = Array.with(0, 4)
+result.set(0, 10)
+result.set(1, 20)
+result.set(2, 30)
+result.set(3, 40)
+Console.write("\\{result.at(0)} \\{result.at(1)} \\{result.at(2)} \\{result.at(3)}")
+`;
+		await build_and_check_output(input, "array_with_literal_count_ints", "10 20 30 40");
+	});
+
 	test("array in function param", async () => {
 		const input = `
 func sum = (Array<int> nums, out int) {
@@ -206,18 +229,7 @@ pub func main = () {
 		await build_and_check_output(input, "array_global_at_in_func", "10 20 30", true);
 	});
 
-	// TODO(aarch64): returning a string[] literal works end-to-end on the C
-	// backend (heap array, strdup'd elements freed at scope exit). On aarch64,
-	// `.at()` on a heap string array mis-compiles inside multi-arg string
-	// interpolation — a pre-existing gap that also affects Array.with (not
-	// specific to returns). To enable: fix the aarch64 access/interpolation
-	// path so a string returned from `.at()` on a heap (function-returned /
-	// Array.with) array is hoisted as a value, not treated as a static label
-	// (the bug surfaces as `adr x0, _param_N` against an undefined label in
-	// `_main`). The C-backend auto_free already frees heap-string-array
-	// elements (build_auto_free.ts); aarch64 uses rodata labels so it needs no
-	// per-element free once codegen is corrected.
-	test.skip("function returning out string[] with array literal", async () => {
+	test("function returning out string[] with array literal", async () => {
 		const input = `
 func make_words = (out string[]) {
   return ["a", "b", "c"]

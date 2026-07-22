@@ -59,14 +59,32 @@ pub struct Array<T> {
         ```
         #arch: c
         T* _data = (T*)((char*)self + sizeof(*self));
-        _data[index] = value;
+        // T_NEEDS_STRDUP is 1 when T is string: the slot must own a heap copy
+        // (free the outgoing string, strdup the incoming one) so auto_free can
+        // soundly free every slot at scope exit and reassigning a slot doesn't
+        // leak the previous value. 0 for all other T (plain assignment).
+        #if T_NEEDS_STRDUP
+            free(_data[index]);
+            _data[index] = (T)strdup(value);
+        #else
+            _data[index] = value;
+        #endif
         ```
         ```
         #arch: aarch64
         // x19 = self (first elem), x1 = index, x2 = value
         mov x3, #T_SIZE
         mul x1, x1, x3
+        // Only use the 8-byte store when T_SIZE is exactly 8 (int/string/ptr).
+        // For smaller types (char/bool/int8/etc.) strb/strh/str w/ would
+        // clobber adjacent slots, so fall through to a size-aware store.
+        cmp x3, #8
+        b.ne .L_set_byte
         str x2, [x19, x1]
+        b .L_set_done
+        .L_set_byte:
+        strb w2, [x19, x1]
+        .L_set_done:
         ```
     }
 
@@ -95,7 +113,15 @@ pub struct Array<T> {
         ((long*)_result)[1] = count;
         T* _data = (T*)((char*)_result + _header);
         for (long i = 0; i < count; i++) {
-            _data[i] = value;
+            // T_NEEDS_STRDUP is 1 when T is string (a `char*` pointer whose
+            // backing bytes must be heap-copied per slot — otherwise all n
+            // slots would share one pointer and auto_free would n-free it).
+            // For all other T it is 0 and the plain assignment runs.
+            #if T_NEEDS_STRDUP
+                _data[i] = (T)strdup(value);
+            #else
+                _data[i] = value;
+            #endif
         }
         return _result;
         ```
@@ -129,16 +155,34 @@ pub struct Array<T> {
         mul x4, x2, x3                 // offset = i * T_SIZE
         add x5, x20, x4                // addr = data + offset
 
-        // Copy T_SIZE bytes from value to addr
+        // Store the value (in x0) into [x5] using a width that matches
+        // T_SIZE. For T_SIZE <= 8 the value is in x0 directly (char/int/
+        // pointer); for T_SIZE > 8 (struct) x0 is a pointer to the bytes
+        // and we copy them one by one.
         cmp x3, #8
         b.gt .Larray_with_copy_loop
-
-        // Simple type (T_SIZE <= 8): single store
+        cmp x3, #4
+        b.eq .Larray_with_store4
+        cmp x3, #2
+        b.eq .Larray_with_store2
+        cmp x3, #1
+        b.eq .Larray_with_store1
+        // T_SIZE == 8 (int/string-ptr/class-ptr): single 8-byte store
         str x0, [x5]
+        b .Larray_with_next
+        .Larray_with_store4:
+        str w0, [x5]
+        b .Larray_with_next
+        .Larray_with_store2:
+        strh w0, [x5]
+        b .Larray_with_next
+        .Larray_with_store1:
+        strb w0, [x5]
         b .Larray_with_next
 
         .Larray_with_copy_loop:
-        // Complex type: copy byte by byte
+        // Struct element (T_SIZE > 8): x0 is a pointer to the bytes — copy
+        // them one by one so adjacent slots aren't clobbered.
         mov x6, #0                     // j = 0
         .Larray_with_byte:
         ldrb w7, [x0, x6]

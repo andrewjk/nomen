@@ -1477,6 +1477,14 @@ function build_int_array_to_string(node: AccessNode, target_type: Type, status: 
 			if (paramReg !== "x0") {
 				status.code += `mov x0, ${paramReg}\n`;
 			}
+		} else if (status.heap_array_vars?.has(name)) {
+			// Heap-allocated array: the variable holds a pointer to a malloc'd
+			// buffer with an 8-byte length prefix, then the data. Dereference
+			// and skip the prefix so x19 ends up at the first element (matching
+			// the inline storage a stack array would have).
+			emit_var_address(status, "x0", name);
+			status.code += `ldr x0, [x0]\n`;
+			status.code += `add x0, x0, #8\n`;
 		} else {
 			emit_var_address(status, "x0", name);
 		}
@@ -1541,6 +1549,14 @@ function build_char_array_to_string(node: AccessNode, length: string, status: Bu
 			if (paramReg !== "x0") {
 				status.code += `mov x0, ${paramReg}\n`;
 			}
+		} else if (status.heap_array_vars?.has(name)) {
+			// Heap-allocated array: the variable holds a pointer to a malloc'd
+			// buffer with an 8-byte length prefix, then the data. Dereference
+			// and skip the prefix so x19 ends up pointing at the first char
+			// (matching the inline storage a stack array would have).
+			emit_var_address(status, "x0", name);
+			status.code += `ldr x0, [x0]\n`;
+			status.code += `add x0, x0, #8\n`;
 		} else {
 			emit_var_address(status, "x0", name);
 		}

@@ -697,8 +697,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			node.value &&
 			(node.value.node_type === "func_call" ||
 				(node.value.node_type === "access" &&
-					(node.value as AccessNode).access.node_type === "access_func" &&
-					!node.type.length))
+					(node.value as AccessNode).access.node_type === "access_func"))
 		) {
 			if (!status.heap_array_vars) status.heap_array_vars = new Set();
 			status.heap_array_vars.add(node.name);

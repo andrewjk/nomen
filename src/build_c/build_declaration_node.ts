@@ -186,13 +186,16 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 		// heap-allocated Array_<T> buffer pointer — not a stack C array. Only
 		// apply this for function-call initializers; declarations with no value
 		// or other initializer types fall through to the generic pointer path.
+		// Note: a stack array is identified by `is_stack_array` (initializer is
+		// an `array`/`range` literal) — not by the presence of a `length`, since
+		// `Array.with(v, LITERAL_N)` also carries a compile-time length but is
+		// still heap-allocated.
 		const is_heap_array_from_call =
 			node.type.is_array &&
 			!is_stack_array &&
 			(node.value?.node_type === "func_call" ||
 				(node.value?.node_type === "access" &&
-					(node.value as AccessNode).access.node_type === "access_func" &&
-					!node.type.length));
+					(node.value as AccessNode).access.node_type === "access_func"));
 		if (is_heap_array_from_call) {
 			status.code += `struct Array_${node.type.name}* ${safe_name}`;
 			if (!status.heap_array_vars) status.heap_array_vars = new Set();

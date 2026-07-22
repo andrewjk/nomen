@@ -426,6 +426,15 @@ function substitute_raw_in_node(
 			// Substitute T_destroy placeholder with the monomorphized element's
 			// destroy symbol (e.g. ClassBuffer<Animal>.#destroy calls Animal_destroy).
 			value = value.replace(new RegExp(`\\b${param}_destroy\\b`, "g"), `${type}_destroy`);
+			// T_NEEDS_STRDUP: 1 when T is `string` (a `char*` literal pointer that
+			// must be heap-copied per slot when stored into an owning container,
+			// e.g. `Array.with("x", n)` storing the literal in n slots), 0
+			// otherwise. Raw blocks use it to guard a per-element strdup so the
+			// scope-exit auto_free can soundly free each slot.
+			value = value.replace(
+				new RegExp(`\\b${param}_NEEDS_STRDUP\\b`, "g"),
+				type === "string" ? "1" : "0",
+			);
 		}
 		// Dereference struct params: the C backend passes them as pointers,
 		// but raw blocks were written assuming pass-by-value. Replace bare
