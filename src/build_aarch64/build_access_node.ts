@@ -48,16 +48,6 @@ function emit_string_length(target: BaseNode, status: BuildStatus) {
 export function emit_address_of(node: BaseNode, status: BuildStatus) {
 	if (node.node_type === "value") {
 		const name = (node as ValueNode).value;
-		// Magic `nursery` identifier — the enclosing async block's Nursery
-		// struct local. Its address IS the capability value passed by `ref`.
-		if (name === "nursery" && status.nursery_stack?.length) {
-			const id = status.nursery_stack.at(-1);
-			const off = id !== undefined ? status.nursery_offsets?.get(id)?.nursery_off : undefined;
-			if (off !== undefined) {
-				status.code += `add x0, x29, #${off}\n`;
-				return;
-			}
-		}
 		if (is_local_ref_var(name, status)) {
 			emit_deref_var_address(status, "x0", name);
 		} else if (status.heap_array_vars?.has(name)) {

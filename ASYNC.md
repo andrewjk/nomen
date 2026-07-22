@@ -48,10 +48,11 @@ What's currently shipped (C and aarch64 backends):
   Implemented via `__echo_nursery_race_wait`, which polls each future's
   done flag every 1ms (latency/cost tradeoff favors simplicity over a
   signaling mechanism). Both backends support this.
-- **Nursery escape hatch** — `nursery.spawn(fn, args...)` and the magic
-  `nursery` identifier (yields the enclosing `async` block's `Nursery`, passed
-  with `ref`). A function that takes `ref Nursery nursery` can spawn into its
-  caller's nursery; the futures register with the same per-invocation array +
+- **Nursery escape hatch** — a named `async` block (`async pool { }`) binds a
+  `Nursery`-typed variable the caller passes with `ref`; `name.spawn(fn(args))`
+  spawns into that nursery using the same call-expression shape as bare
+  `spawn`. Config rides on the declaration: `async pool = Nursery(timeout: N,
+mode: race) { }`. The futures register with the same per-invocation array +
   count the enclosing block joins at scope exit. Both backends support this
   (statement fire-and-forget and expression `Task<T>` forms).
 
@@ -136,18 +137,23 @@ function could be called sync or async. Rejected because:
 
 A function that genuinely needs to spawn into its caller's scope takes the
 nursery explicitly (the Trio escape hatch). This is a _capability_, not a
-required parameter:
+required parameter. An `async` block names its nursery — the name binds a
+`Nursery`-typed variable the caller passes with `ref`:
 
 ```
-func handle_connection = (Connection conn, ref Nursery nursery) {
-    nursery.spawn(parse, conn)
-    nursery.spawn(respond, conn)
+func handle_connection = (Connection conn, ref Nursery pool) {
+    pool.spawn(parse(conn))
+    pool.spawn(respond(conn))
 }
 
-async {
-    handle_connection(conn, ref nursery)
+async pool {
+    handle_connection(conn, ref pool)
 }
 ```
+
+`name.spawn(fn(args))` uses the same call-expression shape as a bare
+`spawn fn(args)`. The name is arbitrary (`async nursery { }`, `async pool { }`),
+and may carry config: `async pool = Nursery(timeout: 2000) { }`.
 
 ## Primitives
 

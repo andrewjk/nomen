@@ -592,37 +592,27 @@ function returns_value(node: BaseNode, visited: Set<BaseNode> = new Set()): bool
  * Sendable on every argument and types the expression as `Task<T>` (mirroring
  * check_spawn_node). See ASYNC.md.
  */
+/**
+ * Check a `name.spawn(fn(args))` escape-hatch call. The single parameter is the
+ * call expression to spawn (same shape as bare `spawn fn(args)`); checking it
+ * via check_function_call_node resolves the function, matches argument types,
+ * and computes the return type. Enforces Sendable on every argument and types
+ * the expression as `Task<T>` (mirroring check_spawn_node). See ASYNC.md.
+ */
 function check_nursery_spawn(node: AccessFunctionCallNode, status: CheckStatus): boolean {
-	if (node.params.length < 1) {
-		add_error(status, "nursery.spawn requires a function name", node.start);
+	if (node.params.length !== 1 || node.params[0].node_type !== "func_call") {
+		add_error(
+			status,
+			"nursery.spawn expects a single call expression, e.g. .spawn(work(n))",
+			node.start,
+		);
 		return false;
 	}
-	const fn_arg = node.params[0];
-	if (fn_arg.node_type !== "value") {
-		add_error(status, "nursery.spawn requires a function name as the first argument", node.start);
-		return false;
-	}
-	const fn_name = (fn_arg as ValueNode).value;
-
-	// Build a synthetic call so check_function_call_node resolves the function,
-	// checks/matches argument types, and computes the return type. The arg
-	// nodes themselves are shared (checked in place), so their resolved types
-	// are visible to the build phase.
-	const call = new FunctionCallNode(fn_arg.start, fn_name);
-	call.params = node.params.slice(1);
-	// Forward ref/mov markers (offset unchanged — the function name is param 0
-	// of the spawn, but the args' own indices within `call.params` line up
-	// 1:1 with their position in node.params minus the leading fn name).
-	if (node.ref_param_indices) {
-		call.ref_param_indices = node.ref_param_indices.filter((i) => i > 0).map((i) => i - 1);
-	}
-	if (node.mov_param_indices) {
-		call.mov_param_indices = node.mov_param_indices.filter((i) => i > 0).map((i) => i - 1);
-	}
+	const call = node.params[0] as FunctionCallNode;
 
 	const ok = check_function_call_node(call, status);
 	if (!ok) {
-		add_error(status, `Spawned call '${fn_name}' did not resolve`, node.start);
+		add_error(status, `Spawned call '${call.name}' did not resolve`, node.start);
 		return false;
 	}
 

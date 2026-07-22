@@ -116,15 +116,15 @@ func parse = (uint64 conn) {
 func respond = (uint64 conn) {
 }
 
-func handle_connection = (uint64 conn, ref Nursery nursery) {
-	nursery.spawn(parse, conn)
-	nursery.spawn(respond, conn)
+func handle_connection = (uint64 conn, ref Nursery pool) {
+	pool.spawn(parse(conn))
+	pool.spawn(respond(conn))
 }
 
 pub func main = () {
 	var uint64 conn = 0
-	async {
-		handle_connection(conn, ref nursery)
+	async pool {
+		handle_connection(conn, ref pool)
 	}
 }
 `;
@@ -135,14 +135,14 @@ pub func main = () {
 		const input = `
 func compute = (uint64 n) => n + 1
 
-func spawn_one = (uint64 n, ref Nursery nursery) {
-	var t = nursery.spawn(compute, n)
+func spawn_one = (uint64 n, ref Nursery pool) {
+	var t = pool.spawn(compute(n))
 	var uint64 r = t.result_uint64()
 }
 
 pub func main = () {
-	async {
-		spawn_one(41, ref nursery)
+	async pool {
+		spawn_one(41, ref pool)
 	}
 }
 `;
@@ -156,8 +156,22 @@ func parse = (uint64 conn) {
 
 pub func main = () {
 	var uint64 conn = 0
-	async {
-		nursery.spawn(parse, conn)
+	async pool {
+		pool.spawn(parse(conn))
+	}
+}
+`;
+		expect(compile_module(input)).toEqual([]);
+	});
+
+	test("named nursery with config", () => {
+		const input = `
+func work = (uint64 arg) {
+}
+
+pub func main = () {
+	async pool = Nursery(timeout: 500, mode: race) {
+		spawn work(0)
 	}
 }
 `;
@@ -175,8 +189,8 @@ func work = (Counter c) {
 
 pub func main = () {
 	var Counter c = Counter()
-	async {
-		nursery.spawn(work, c)
+	async pool {
+		pool.spawn(work(c))
 	}
 }
 `;

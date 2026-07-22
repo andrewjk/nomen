@@ -22,6 +22,15 @@ export default class AsyncBlockNode extends BaseNode implements BlockNode {
 	statements: BaseNode[];
 	timeout?: BaseNode;
 	mode?: AsyncMode;
+	/**
+	 * The user-chosen name for this nursery, e.g. `async nursery { }` or
+	 * `async pool = Nursery(timeout: 2000) { }`. When set, a `Nursery`-typed
+	 * variable of this name is in scope inside the block — it is the
+	 * capability passed to functions that spawn into this nursery (the escape
+	 * hatch) and the receiver of `name.spawn(fn(args))`. When unset (`async { }`),
+	 * only lexical `spawn` is usable. See ASYNC.md.
+	 */
+	nursery_name?: string;
 
 	constructor(start: number, statements: BaseNode[] = [], timeout?: BaseNode) {
 		super("async_block", start);

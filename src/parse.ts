@@ -140,9 +140,9 @@ function resolve_linked_types(source: string, library: Library): string {
 		needed.add("Task");
 		needed.add("Sendable");
 	}
-	// `async { }` exposes the magic `nursery` identifier (the escape-hatch
-	// capability), which yields a Nursery value without naming the type — pull
-	// the Nursery struct in so its body is emitted. See ASYNC.md.
+	// A named `async` block (`async pool { }`) binds a Nursery variable in
+	// scope without naming the type, so pull the Nursery struct in whenever
+	// `async` is used. See ASYNC.md escape hatch.
 	if (tokens.some((t) => t.value === "async")) {
 		needed.add("Nursery");
 	}

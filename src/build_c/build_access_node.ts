@@ -14,19 +14,15 @@ import type_from_value_node from "./utils/type_from_value_node.ts";
 
 /**
  * Compute a C expression that yields a `struct Nursery *` for the receiver of
- * a `nursery.spawn(...)` escape-hatch call. A `ref Nursery` parameter is
- * already a pointer; the magic `nursery` identifier (and any other Nursery
- * lvalue) needs its address taken.
+ * a `name.spawn(...)` escape-hatch call. A `ref Nursery` parameter is already a
+ * pointer; any other Nursery lvalue (the async block's named local, etc.)
+ * needs its address taken.
  */
 function nursery_pointer_expr(target: BaseNode, status: BuildStatus): string {
 	if (target.node_type === "value") {
 		const name = (target as ValueNode).value;
 		// ref Nursery param — emitted as `struct Nursery *name`.
 		if (status.function_ref_params?.has(name)) return name;
-		// Magic `nursery` identifier — the enclosing async block's struct local.
-		if (name === "nursery" && status.nursery_ref_stack?.length) {
-			return "&" + (status.nursery_ref_stack.at(-1) as string);
-		}
 	}
 	// Any other Nursery lvalue: build it and take its address.
 	const before = status.code.length;

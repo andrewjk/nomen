@@ -570,13 +570,13 @@ func worker = (uint64 id) {
 	Console.write_line("from task")
 }
 
-func spawn_two = (ref Nursery nursery) {
-	nursery.spawn(worker, 0)
-	nursery.spawn(worker, 1)
+func spawn_two = (ref Nursery pool) {
+	pool.spawn(worker(0))
+	pool.spawn(worker(1))
 }
 
-async {
-	spawn_two(ref nursery)
+async pool {
+	spawn_two(ref pool)
 }
 
 Console.write_line("after block")
@@ -601,16 +601,16 @@ Console.write_line("after block")
 		const input = `
 func compute = (uint64 n) => n + 1
 
-func spawn_one = (uint64 n, ref Nursery nursery) {
-	var t = nursery.spawn(compute, n)
+func spawn_one = (uint64 n, ref Nursery pool) {
+	var t = pool.spawn(compute(n))
 	var uint64 r = t.result_uint64()
 	if r == 42 {
 		Console.write_line("got")
 	}
 }
 
-async {
-	spawn_one(41, ref nursery)
+async pool {
+	spawn_one(41, ref pool)
 }
 `;
 		for (const arch of ARCHITECTURES) {
@@ -628,8 +628,8 @@ func worker = (uint64 id) {
 	Console.write_line("direct")
 }
 
-async {
-	nursery.spawn(worker, 0)
+async pool {
+	pool.spawn(worker(0))
 }
 `;
 		for (const arch of ARCHITECTURES) {
@@ -647,13 +647,13 @@ func worker = (uint64 id) {
 	Console.write_line("ran")
 }
 
-func spawn_via_ref = (ref Nursery nursery) {
-	nursery.spawn(worker, 0)
+func spawn_via_ref = (ref Nursery pool) {
+	pool.spawn(worker(0))
 }
 
-async {
+async pool {
 	spawn worker(1)
-	spawn_via_ref(ref nursery)
+	spawn_via_ref(ref pool)
 }
 `;
 		for (const arch of ARCHITECTURES) {
@@ -663,6 +663,25 @@ async {
 			const result = build(parsed.root, options);
 			// Both tasks run; relative order is nondeterministic.
 			await check_output(`nursery_mixed_${arch}`, result, "", options);
+		}
+	});
+
+	test("named nursery with config compiles and runs", async () => {
+		const input = `
+func work = (uint64 arg) {
+	Console.write_line("ran")
+}
+
+async pool = Nursery(timeout: 1000) {
+	spawn work(0)
+}
+`;
+		for (const arch of ARCHITECTURES) {
+			const parsed = parse_with_imports(input);
+			expect(parsed.errors).toEqual([]);
+			const options = { arch, ...OPTIONS };
+			const result = build(parsed.root, options);
+			await check_output(`nursery_config_${arch}`, result, "ran\n", options);
 		}
 	});
 });

@@ -3,13 +3,14 @@ import c_function_name from "../build_c/utils/c_function_name.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
+import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_node from "./build_node.ts";
 import { POOL_HEADER_C } from "./build_spawn_node.ts";
-import { emit_deref_var_address } from "./utils/stack_var.ts";
+import { emit_deref_var_address, emit_var_address } from "./utils/stack_var.ts";
 
 /**
- * Build a `nursery.spawn(fn, args...)` escape-hatch call for aarch64.
+ * Build a `name.spawn(fn(args))` escape-hatch call for aarch64.
  *
  * Mirrors build_spawn_node (aarch64): the per-site trampoline + submit helper
  * are emitted as C in the companion file; the assembly builds the arg struct
@@ -18,18 +19,18 @@ import { emit_deref_var_address } from "./utils/stack_var.ts";
  * than compile-time-known stack offsets), since the spawn may happen inside a
  * function that received the nursery as a `ref Nursery` parameter.
  *
- * `fn` is `params[0]` (a function name); the spawn arguments are the rest.
- * See ASYNC.md, "Escape hatch: passing the nursery".
+ * The single parameter is the call expression to spawn (same shape as bare
+ * `spawn fn(args)`). See ASYNC.md, "Escape hatch: passing the nursery".
  */
 export default function build_nursery_spawn(
 	node: AccessNode,
 	access_func: AccessFunctionCallNode,
 	status: BuildStatus,
 ) {
-	if (access_func.params.length < 1) return;
-	const fn_arg = access_func.params[0] as ValueNode;
-	const func_name = c_function_name(fn_arg.value);
-	const args = access_func.params.slice(1);
+	if (access_func.params.length !== 1 || access_func.params[0].node_type !== "func_call") return;
+	const call = access_func.params[0] as FunctionCallNode;
+	const func_name = c_function_name(call.name);
+	const args = call.params;
 
 	const id = status.spawn_counter ?? 0;
 	status.spawn_counter = id + 1;
@@ -199,25 +200,24 @@ export default function build_nursery_spawn(
 
 /**
  * Emit assembly that loads the address of the Nursery struct (the receiver of
- * a nursery.spawn) into x0. The magic `nursery` identifier resolves to the
- * enclosing async block's stack-local struct; a `ref Nursery` parameter holds
- * the struct address (emit_deref_var_address yields it); any other Nursery
- * lvalue falls back to build_node.
+ * a name.spawn) into x0. A `ref Nursery` parameter holds the struct address
+ * (emit_deref_var_address yields it); the async block's named local lives on
+ * the stack (emit_var_address yields its address); any other Nursery lvalue
+ * falls back to build_node.
  */
 function load_nursery_struct_address(target: AccessNode["target"], status: BuildStatus) {
 	if (target.node_type === "value") {
 		const name = (target as ValueNode).value;
-		if (name === "nursery" && status.nursery_stack?.length) {
-			const id = status.nursery_stack.at(-1);
-			const off = id !== undefined ? status.nursery_offsets?.get(id)?.nursery_off : undefined;
-			if (off !== undefined) {
-				status.code += `add x0, x29, #${off}\n`;
-				return;
-			}
-		}
 		// ref Nursery param: the pointer it holds IS the struct address.
-		emit_deref_var_address(status, "x0", name);
-		return;
+		if (status.function_ref_params?.has(name)) {
+			emit_deref_var_address(status, "x0", name);
+			return;
+		}
+		// Named nursery local declared by the enclosing async block.
+		if (status.stack_offsets?.has(name)) {
+			emit_var_address(status, "x0", name);
+			return;
+		}
 	}
 	build_node(target, status);
 }

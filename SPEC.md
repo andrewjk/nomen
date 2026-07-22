@@ -1745,32 +1745,49 @@ needs to spawn into its _caller's_ nursery takes the nursery explicitly — the
 Trio escape hatch. This is a _capability_, not a required parameter: most
 functions just `return`/compute and never need it.
 
-Inside an `async` block, the magic `nursery` expression refers to the enclosing
-nursery. Pass it with `ref`:
+An `async` block may name its nursery. The name binds a `Nursery`-typed variable
+in the block's scope, which can be passed to functions (with `ref`) and used as
+the receiver of `.spawn`:
 
 ```
-func handle_connection = (uint64 conn, ref Nursery nursery) {
-    nursery.spawn(parse, conn)
-    nursery.spawn(respond, conn)
+func handle_connection = (uint64 conn, ref Nursery pool) {
+    pool.spawn(parse(conn))
+    pool.spawn(respond(conn))
 }
 
-async {
-    handle_connection(conn, ref nursery)
+async pool {
+    handle_connection(conn, ref pool)
     // block does not exit until parse and respond finish
 }
 ```
 
-`nursery.spawn(fn, args...)` spawns `fn(args...)` into the referenced nursery.
-The first argument is the function name; the rest are its arguments (which must
-be `Sendable`, exactly like a bare `spawn`). It may be used as a statement
-(fire-and-forget) or as an expression yielding a `Task<T>`.
+`name.spawn(fn(args))` spawns `fn(args)` into the referenced nursery — the same
+call-expression shape as a bare `spawn fn(args)`. The arguments must be
+`Sendable`, exactly like a bare `spawn`. It may be used as a statement
+(fire-and-forget) or as an expression yielding a `Task<T>`:
 
 ```
 func compute = (uint64 n) => n + 1
 
-func spawn_one = (uint64 n, ref Nursery nursery) {
-    var t = nursery.spawn(compute, n)
+func spawn_one = (uint64 n, ref Nursery pool) {
+    var t = pool.spawn(compute(n))
     var uint64 r = t.result_uint64()
+}
+```
+
+The name is arbitrary — pick whatever reads best:
+
+```
+async nursery { … }
+async pool { … }
+```
+
+A named nursery may be configured (timeout, race mode) with `= Nursery(...)`:
+
+```
+async pool = Nursery(timeout: 2000, mode: race) {
+    pool.spawn(fetch_from_cache(key))
+    pool.spawn(fetch_from_db(key))
 }
 ```
 
@@ -1780,14 +1797,8 @@ block cannot exit until every task spawned through a passed `Nursery` has
 finished, so a running task can safely hold the `Nursery` (and pointers into
 nursery-local values).
 
-`nursery.spawn` may also be used directly inside an `async` block (equivalent to
-a bare `spawn`):
-
-```
-async {
-    nursery.spawn(parse, conn)
-}
-```
+An unnamed `async { }` block supports only lexical `spawn` (no escape hatch) —
+naming the nursery is what makes it referenceable.
 
 ### Task
 

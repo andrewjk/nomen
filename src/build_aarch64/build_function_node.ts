@@ -270,6 +270,14 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		status.return_buffer_stack_offset = return_buffer_stack_offset;
 	}
 
+	// Save the enclosing function's param-tracking sets so a nested function
+	// build doesn't leak its params into the enclosing scope's statement
+	// phase (e.g. a nested `ref Nursery pool` colliding with a same-named
+	// local in the enclosing body). Restored after the body is built.
+	const old_function_param_regs = status.function_param_regs;
+	const old_function_param_vars = status.function_param_vars;
+	const old_function_array_params = status.function_array_params;
+	const old_function_ref_params = status.function_ref_params;
 	status.function_param_regs = new Map();
 	status.function_param_vars = new Set();
 	status.function_array_params = new Set();
@@ -533,8 +541,10 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.current_function_name = old_function_name;
 	status.stack_size = old_stack_size;
 	status.stack_offsets = old_stack_offsets;
-	status.function_param_regs = undefined;
-	status.function_param_vars = undefined;
+	status.function_param_regs = old_function_param_regs;
+	status.function_param_vars = old_function_param_vars;
+	status.function_array_params = old_function_array_params;
+	status.function_ref_params = old_function_ref_params;
 	status.function_variadic_params = old_variadic_params_aarch64;
 	status.function_return_label = old_return_label;
 	status.struct_return_buffer = undefined;

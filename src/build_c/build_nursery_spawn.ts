@@ -1,5 +1,5 @@
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
-import ValueNode from "../nodes/ValueNode.ts";
+import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import build_node from "./build_node.ts";
 import { POOL_HEADER } from "./build_spawn_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
@@ -8,7 +8,7 @@ import c_type from "./utils/c_type.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 
 /**
- * Build a `nursery.spawn(fn, args...)` escape-hatch call (C backend).
+ * Build a `name.spawn(fn(args))` escape-hatch call (C backend).
  *
  * Mirrors build_spawn_node, but the future is registered with the nursery
  * referenced by the receiver (`nursery_ptr`, a `struct Nursery *`) at runtime
@@ -17,18 +17,18 @@ import type_from_value_node from "./utils/type_from_value_node.ts";
  * and count slots, so futures spawned through a passed Nursery are joined at
  * the block's scope exit exactly like direct spawns.
  *
- * `fn` is `params[0]` (a function name); the spawn arguments are the remaining
- * params. See ASYNC.md, "Escape hatch: passing the nursery".
+ * The single parameter is the call expression to spawn (same shape as bare
+ * `spawn fn(args)`). See ASYNC.md, "Escape hatch: passing the nursery".
  */
 export default function build_nursery_spawn(
 	node: AccessFunctionCallNode,
 	nursery_ptr: string,
 	status: BuildStatus,
 ) {
-	if (node.params.length < 1) return;
-	const fn_name = (node.params[0] as ValueNode).value;
-	const func_name = c_function_name(fn_name);
-	const args = node.params.slice(1);
+	if (node.params.length !== 1 || node.params[0].node_type !== "func_call") return;
+	const call = node.params[0] as FunctionCallNode;
+	const func_name = c_function_name(call.name);
+	const args = call.params;
 
 	const id = status.spawn_counter ?? 0;
 	status.spawn_counter = id + 1;

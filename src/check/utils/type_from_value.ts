@@ -2,14 +2,6 @@ import Type from "../../nodes/Type.ts";
 import type CheckStatus from "../CheckStatus.ts";
 
 export default function type_from_value(value: string, status: CheckStatus): Type {
-	// The magic `nursery` identifier refers to the enclosing async block's
-	// Nursery (the escape-hatch capability). Only valid inside an `async`
-	// block; outside, fall through so it's treated as an unknown value (a
-	// `nursery` parameter on a user function shadows this via status.values).
-	if (value === "nursery" && (status.async_depth ?? 0) > 0) {
-		return new Type("Nursery", true);
-	}
-
 	// Is it a value that's been declared in a var/const or param?
 	const decl_value = status.values.findLast((v) => v.name === value);
 	if (decl_value) {

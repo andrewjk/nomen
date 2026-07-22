@@ -38,19 +38,26 @@ export default function build_async_block_node(node: AsyncBlockNode, status: Bui
 
 	// Allocate per-invocation nursery state on this function's stack frame.
 	// 64 futures × 8 bytes = 512 bytes for the array, 8 bytes for the count,
-	// 16 bytes for the Nursery capability struct (futures_ptr + count_ptr), and
-	// (if timeout) 8 bytes for the deadline.
+	// and (if the block names its nursery) 16 bytes for the Nursery capability
+	// struct (futures_ptr + count_ptr) the user references by name.
 	const futures_off = allocate_stack_space(status, 512, 16);
 	const count_off = allocate_stack_space(status, 8, 8);
-	const nursery_off = allocate_stack_space(status, 16, 8);
 	status.code += `str xzr, [x29, #${count_off}]\n`; // count = 0
-	// Build the Nursery capability struct pointing at this block's futures
-	// array + count slot, so the escape hatch (`ref nursery` / nursery.spawn)
-	// can register spawned futures with this nursery at runtime.
-	status.code += `add x0, x29, #${futures_off}\n`;
-	status.code += `str x0, [x29, #${nursery_off}]\n`; // futures_ptr
-	status.code += `add x0, x29, #${count_off}\n`;
-	status.code += `str x0, [x29, #${nursery_off + 8}]\n`; // count_ptr
+	let nursery_off: number | undefined;
+	if (node.nursery_name) {
+		nursery_off = allocate_stack_space(status, 16, 8);
+		// Build the Nursery capability struct pointing at this block's futures
+		// array + count slot, so the escape hatch (`ref name` / name.spawn)
+		// can register spawned futures with this nursery at runtime.
+		status.code += `add x0, x29, #${futures_off}\n`;
+		status.code += `str x0, [x29, #${nursery_off}]\n`; // futures_ptr
+		status.code += `add x0, x29, #${count_off}\n`;
+		status.code += `str x0, [x29, #${nursery_off + 8}]\n`; // count_ptr
+		// Register the name as a stack local so build_value_node /
+		// emit_address_of resolve it like any other struct variable.
+		if (!status.stack_offsets) status.stack_offsets = new Map();
+		status.stack_offsets.set(node.nursery_name, nursery_off);
+	}
 	let deadline_off: number | undefined;
 	if (node.timeout) {
 		deadline_off = allocate_stack_space(status, 8, 8);
@@ -60,7 +67,7 @@ export default function build_async_block_node(node: AsyncBlockNode, status: Bui
 	}
 
 	if (!status.nursery_offsets) status.nursery_offsets = new Map();
-	status.nursery_offsets.set(id, { futures_off, count_off, deadline_off, nursery_off });
+	status.nursery_offsets.set(id, { futures_off, count_off, deadline_off });
 
 	status.nursery_stack ??= [];
 	status.nursery_stack.push(id);
