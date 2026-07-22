@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vite-plus/test";
 
-import { compile_main, compile_module } from "./_helpers.ts";
+import { compile_module } from "./_helpers.ts";
 
 // Tests for the concurrency features documented in SPEC.md (see "Concurrency"
 // section). The C-backend runtime tests live in test/task.test.ts; these
