@@ -3,6 +3,7 @@ import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import ReturnNode from "../nodes/ReturnNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import { resolve_static_value } from "./build_array_values_node.ts";
+import { emit_string_array_labels, resolve_array_element } from "./build_declaration_node.ts";
 import build_node from "./build_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_malloc } from "./utils/audit.ts";
@@ -80,10 +81,20 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 		status.code += `mov x0, #${array_literal_len}\n`;
 		status.code += `str x0, [x29, #${start}]\n`;
 		array_literal_offset = start + 8;
+		// String elements are stored as pointers to static (.asciz) labels —
+		// matching how a `var words = ["a", "b"]` declaration lays them out
+		// (rodata, not heap, so the audit stays balanced without per-element frees).
+		const is_string_array = return_type_top.name === "string";
+		const str_labels = is_string_array
+			? emit_string_array_labels(arr.values, status)
+			: new Map<string, string>();
 		arr.values.forEach((value, i) => {
 			const slot = array_literal_offset + i * element_size;
 			const raw = resolve_static_value(value, status);
-			if (raw !== null) {
+			if (raw !== null && is_string_array) {
+				status.code += `adr x0, ${resolve_array_element(raw, str_labels)}\n`;
+				status.code += `str x0, [x29, #${slot}]\n`;
+			} else if (raw !== null) {
 				status.code += `mov x0, #${raw}\n`;
 				if (element_size === 1) {
 					status.code += `strb w0, [x29, #${slot}]\n`;

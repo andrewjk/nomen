@@ -207,11 +207,19 @@ export function free_scoped_declarations(status: BuildStatus, decls: Declaration
 			const elem_name = dec.type.name;
 			const elem_struct = status.structs.find((s) => s.name === elem_name);
 			const elem_is_class = !!elem_struct?.is_class;
+			const elem_is_string = elem_name === "string";
 			const elem_c_type = elem_is_class ? `struct ${elem_name}*` : elem_name;
 			if (elem_is_class) {
 				status.code += `for (long _i = 0; _i < ${dec.name}->length; _i++) {\n`;
 				status.code += `\t${elem_c_type}* _data = (${elem_c_type}*)((char*)${dec.name} + sizeof(struct Array_${elem_name}));\n`;
 				status.code += `\t${elem_name}_destroy(_data[_i]); free(_data[_i]);\n`;
+				status.code += `}\n`;
+			} else if (elem_is_string) {
+				// Function-returned string arrays strdup each element into a
+				// distinct heap copy, so free every slot before the buffer.
+				status.code += `for (long _i = 0; _i < ${dec.name}->length; _i++) {\n`;
+				status.code += `\tchar** _data = (char**)((char*)${dec.name} + sizeof(struct Array_string));\n`;
+				status.code += `\tfree(_data[_i]);\n`;
 				status.code += `}\n`;
 			}
 			status.code += `free(${dec.name});\n`;

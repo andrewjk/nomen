@@ -123,6 +123,8 @@ function emit_string_array_labels(values: BaseNode[], status: BuildStatus): Map<
 	return labels;
 }
 
+export { emit_string_array_labels };
+
 function needs_runtime_array_init(values: BaseNode[], status: BuildStatus): boolean {
 	return values.some((value) => {
 		const resolved = resolve_static_value(value, status);
@@ -136,6 +138,8 @@ function resolve_array_element(raw: string, labels: Map<string, string>): string
 	}
 	return raw;
 }
+
+export { resolve_array_element };
 
 function get_raw_value(node: ValueNode, status?: BuildStatus): string {
 	let val = node.value;

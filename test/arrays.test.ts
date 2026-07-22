@@ -205,6 +205,30 @@ pub func main = () {
 `;
 		await build_and_check_output(input, "array_global_at_in_func", "10 20 30", true);
 	});
+
+	// TODO(aarch64): returning a string[] literal works end-to-end on the C
+	// backend (heap array, strdup'd elements freed at scope exit). On aarch64,
+	// `.at()` on a heap string array mis-compiles inside multi-arg string
+	// interpolation — a pre-existing gap that also affects Array.with (not
+	// specific to returns). To enable: fix the aarch64 access/interpolation
+	// path so a string returned from `.at()` on a heap (function-returned /
+	// Array.with) array is hoisted as a value, not treated as a static label
+	// (the bug surfaces as `adr x0, _param_N` against an undefined label in
+	// `_main`). The C-backend auto_free already frees heap-string-array
+	// elements (build_auto_free.ts); aarch64 uses rodata labels so it needs no
+	// per-element free once codegen is corrected.
+	test.skip("function returning out string[] with array literal", async () => {
+		const input = `
+func make_words = (out string[]) {
+  return ["a", "b", "c"]
+}
+var words = make_words()
+if words.length == 3 {
+  Console.write("\\{words.at(0)}\\{words.at(1)}\\{words.at(2)}")
+}
+`;
+		await build_and_check_output(input, "array_func_return_string_literal", "abc");
+	});
 });
 
 // ERRORS
