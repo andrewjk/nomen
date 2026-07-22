@@ -2,6 +2,7 @@ import AccessNode from "../nodes/AccessNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import ReturnNode from "../nodes/ReturnNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
+import build_array_values_node from "./build_array_values_node.ts";
 import build_auto_free from "./build_auto_free.ts";
 import build_node from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
@@ -27,7 +28,22 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 	const ret_type = status.function_return_type || node.type;
 	let return_array_len = 0;
 	let return_array_var = "";
-	if (ret_type?.is_array && node.value.node_type === "value") {
+	if (ret_type?.is_array && node.value.node_type === "array") {
+		// Returning an array literal directly (e.g. `return [1, 2, 3]`).
+		// C can't return arrays by value, so materialize the literal into a
+		// temp stack array; the heap-allocate-and-copy path below then moves
+		// it into an Array_<T> buffer and returns the pointer (mirrors how a
+		// `var nums = [1, 2, 3]` declaration lowers to `long nums[3]`).
+		const arr = node.value as ArrayValuesNode;
+		return_array_len = arr.values.length;
+		return_array_var = "_return_array";
+		const elem_struct = status.structs.find((s) => s.name === ret_type.name && !s.is_simple_type);
+		const elem_is_class = !!elem_struct?.is_class;
+		const elem_c_type = elem_is_class ? `struct ${ret_type.name}*` : c_type(ret_type.name);
+		status.code += `${elem_c_type} ${return_array_var}[${return_array_len}] = `;
+		build_array_values_node(arr, status);
+		status.code += ";\n";
+	} else if (ret_type?.is_array && node.value.node_type === "value") {
 		return_array_var = (node.value as ValueNode).value;
 		const decl = status.scoped_declarations.find((d) => d.name === return_array_var);
 		if (decl?.value?.node_type === "array") {

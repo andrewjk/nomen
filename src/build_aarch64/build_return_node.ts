@@ -1,6 +1,8 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
+import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import ReturnNode from "../nodes/ReturnNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
+import { resolve_static_value } from "./build_array_values_node.ts";
 import build_node from "./build_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_malloc } from "./utils/audit.ts";
@@ -9,7 +11,7 @@ import {
 	emit_heap_slots_cleanup_for_return,
 	mark_moved_if_struct,
 } from "./utils/auto_destroy.ts";
-import { emit_var_address, emit_var_store } from "./utils/stack_var.ts";
+import { allocate_stack_space, emit_var_address, emit_var_store } from "./utils/stack_var.ts";
 import { emit_struct_copy, get_struct_size } from "./utils/struct_layout.ts";
 
 function find_var_size(name: string, status: BuildStatus): number {
@@ -56,7 +58,55 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 		return;
 	}
 
-	build_node(node.value, status);
+	// Array literal return (e.g. `return [1, 2, 3]`): arrays can't be returned
+	// by value, so materialize the literal into a stack buffer first. The
+	// generic array-return path below then heap-allocates an Array_<T> buffer
+	// and copies the stack data into it (mirrors a `var nums = [1, 2, 3]` decl).
+	const return_type_top = status.function_return_type;
+	let array_literal_len = 0;
+	let array_literal_offset = 0;
+	if (return_type_top?.is_array && node.value.node_type === "array") {
+		const arr = node.value as ArrayValuesNode;
+		array_literal_len = arr.values.length;
+		const struct_element = status.structs.find(
+			(s) => s.name === return_type_top.name && !s.is_simple_type,
+		);
+		const element_size = struct_element
+			? struct_element.is_class
+				? 8
+				: get_struct_size(return_type_top.name, status)
+			: aarch64_size(return_type_top.name);
+		const start = allocate_stack_space(status, 8 + array_literal_len * element_size, element_size);
+		status.code += `mov x0, #${array_literal_len}\n`;
+		status.code += `str x0, [x29, #${start}]\n`;
+		array_literal_offset = start + 8;
+		arr.values.forEach((value, i) => {
+			const slot = array_literal_offset + i * element_size;
+			const raw = resolve_static_value(value, status);
+			if (raw !== null) {
+				status.code += `mov x0, #${raw}\n`;
+				if (element_size === 1) {
+					status.code += `strb w0, [x29, #${slot}]\n`;
+				} else if (element_size === 4) {
+					status.code += `str w0, [x29, #${slot}]\n`;
+				} else {
+					status.code += `str x0, [x29, #${slot}]\n`;
+				}
+			} else {
+				build_node(value, status);
+				if (!status.code.endsWith("\n")) {
+					status.code += "\n";
+				}
+				status.code += `str x0, [x29, #${slot}]\n`;
+			}
+		});
+	}
+
+	if (array_literal_len > 0) {
+		status.code += `add x0, x29, #${array_literal_offset}\n`;
+	} else {
+		build_node(node.value, status);
+	}
 	if (!status.code.endsWith("\n")) {
 		status.code += "\n";
 	}
@@ -113,16 +163,28 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 					? 8
 					: get_struct_size(return_type.name, status)
 				: aarch64_size(return_type.name);
-			const var_name = node.value?.node_type === "value" ? (node.value as any).value : undefined;
-			const decl = var_name
-				? status.scoped_declarations?.find((d) => d.name === var_name)
-				: undefined;
+			const var_name =
+				array_literal_len > 0
+					? "_return_array"
+					: node.value?.node_type === "value"
+						? (node.value as any).value
+						: undefined;
+			const decl =
+				var_name && array_literal_len === 0
+					? status.scoped_declarations?.find((d) => d.name === var_name)
+					: undefined;
 			const array_len =
-				decl?.value?.node_type === "array"
-					? (decl.value as any).values.length
-					: decl?.type?.length
-						? parseInt((decl.type.length as any).value || "0")
-						: 0;
+				array_literal_len > 0
+					? array_literal_len
+					: decl?.value?.node_type === "array"
+						? (decl.value as any).values.length
+						: decl?.type?.length
+							? parseInt((decl.type.length as any).value || "0")
+							: 0;
+			if (array_literal_len > 0 && !status.stack_offsets?.has("_return_array")) {
+				if (!status.stack_offsets) status.stack_offsets = new Map();
+				status.stack_offsets.set("_return_array", array_literal_offset);
+			}
 			const total_size = array_len * element_size;
 			if (total_size > 0) {
 				status.code += `str x0, [sp, #-16]!\n`;

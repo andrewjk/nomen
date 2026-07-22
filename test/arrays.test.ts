@@ -181,6 +181,30 @@ Console.write("\\{n}")
 `;
 		await build_and_check_output(input, "array_func_param", "12");
 	});
+
+	test("function returning out int[] with array literal, consumed via .at()", async () => {
+		const input = `
+func make_nums = (out int[]) {
+  return [1, 2, 3]
+}
+var nums = make_nums()
+if nums.length == 3 {
+  Console.write("\\{nums.at(0)}\\{nums.at(1)}\\{nums.at(2)}")
+}
+`;
+		await build_and_check_output(input, "array_func_return_literal_at", "123");
+	});
+
+	test("global (root-scope) array .at() inside main", async () => {
+		const input = `
+import System
+const nums = Array(10, 20, 30)
+pub func main = () {
+  Console.write("\\{nums.at(0)} \\{nums.at(1)} \\{nums.at(2)}")
+}
+`;
+		await build_and_check_output(input, "array_global_at_in_func", "10 20 30", true);
+	});
 });
 
 // ERRORS

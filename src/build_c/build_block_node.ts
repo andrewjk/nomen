@@ -112,7 +112,18 @@ export default function build_block_node(
 				if (child.node_type === "declare") {
 					const decl = child as DeclarationNode;
 					if (!decl.func_params && SIMPLE_TYPES.has(decl.type.name)) {
-						status.headers += `extern ${c_type(decl.type.name)} ${c_function_name(decl.name)};\n`;
+						if (decl.type.is_array) {
+							// A global fixed-size array (e.g. `const nums = Array(1, 2, 3)`
+							// lowered to `long nums[3] = {...}`) is defined after the
+							// functions (see the statement loop below). Forward-declare it
+							// as an incomplete array so functions compiled earlier can
+							// subscript it (e.g. `nums.at(0)` → `nums[0]`).
+							status.headers += `extern ${c_type(decl.type.name)} ${c_function_name(
+								decl.name,
+							)}[];\n`;
+						} else {
+							status.headers += `extern ${c_type(decl.type.name)} ${c_function_name(decl.name)};\n`;
+						}
 					}
 				}
 			}
