@@ -508,7 +508,9 @@ export default function check_function_call(
 		});
 
 		// Evaluate constraints that reference this or earlier parameters
-		if (func_param.constraint) {
+		// (skipped for array-destructuring `.at(i)` calls — the index is a
+		// compile-time constant the programmer chose positionally).
+		if (func_param.constraint && !(node as AccessFunctionCallNode).skip_bounds_check) {
 			const saved_values_length = status.values.length;
 			for (const ca of constraint_args) {
 				status.values.push({

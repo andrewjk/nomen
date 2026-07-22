@@ -452,7 +452,8 @@ Console.write("\\{things._0} \\{things._1}")  // "42 answer"
 
 #### Destructuring
 
-Tuples can be destructured into individual variables:
+Tuples can be destructured into individual variables. See [Destructuring](#destructuring)
+for the full set of forms (arrays, structs, and classes are also supported):
 
 ```
 func get_person = (int id, out [string, int]) {
@@ -546,6 +547,89 @@ func first_parts = (...[string, int] pairs, out string) {
 
 first_parts(["count", 1], ["sum", 2])  // ">countsum"
 ```
+
+### Destructuring
+
+The `var [ ... ] = expr` (or `const [ ... ] = expr`) form binds one or more
+names by pulling values out of the right-hand side. The kind of value on the
+right determines how the brackets are interpreted — no extra syntax is needed
+to distinguish them:
+
+- **Tuple** — bind positionally via `_0`, `_1`, ... (see [Tuple Types](#tuple-types))
+- **Array** — bind positionally by index (`.at(i)`)
+- **Struct / class** — bind by field name
+
+#### Array Destructuring
+
+A bracket-enclosed list of names on the left of an array binds each element by
+position:
+
+```
+const int[] arr = [1, 2, 3]
+var [a, b, c] = arr
+Console.write("\\{a} \\{b} \\{c}")  // "1 2 3"
+```
+
+Array destructuring is positional — the first name binds to index 0, the
+second to index 1, and so on. Renaming (`[0 = first]`) is not supported for
+arrays.
+
+#### Struct and Class Destructuring
+
+A struct or class on the right-hand side is destructured **by field name**. A
+bare name binds a field of the same name:
+
+```
+struct Point {
+    var int x
+    var int y
+}
+
+const p = Point(3, 4)
+var [x, y] = p
+Console.write("\\{x} \\{y}")  // "3 4"
+```
+
+To bind a field to a differently named variable, use `[ field = name ]`:
+
+```
+const p = Point(3, 4)
+var [x = px, y = py] = p
+Console.write("\\{px} \\{py}")  // "3 4"
+```
+
+Fields can be destructured partially — only the named fields are bound, in any
+order:
+
+```
+struct Box {
+    var int width
+    var int height
+    var int depth
+}
+
+const b = Box(2, 4, 6)
+var [width = w, depth = d] = b
+Console.write("\\{w} \\{d}")  // "2 6"
+```
+
+Classes work identically (the right-hand side is a class instance):
+
+```
+class Counter {
+    var int count
+    var int total
+}
+
+var c = Counter(5, 50)
+var [count = n, total = t] = c
+Console.write("\\{n} \\{t}")  // "5 50"
+```
+
+Referencing a field that does not exist on the struct or class is a compile
+error. The destructured bindings are non-owning views into the right-hand
+side value, so they are not freed at scope exit (the right-hand side retains
+ownership).
 
 ### Trait Types
 

@@ -36,6 +36,51 @@ export default function check_access_node(node: AccessNode, status: CheckStatus)
 		return false;
 	}
 
+	// Resolve destructuring placeholders (`var [a, b] = expr`) from the RHS
+	// type. A positional binding becomes a tuple field (`._i`), an array
+	// element (direct index), or a struct/class field (`.name`). See
+	// parse_destructuring.
+	if (node.access.node_type === "access_field") {
+		const af = node.access as AccessFieldNode;
+		if (af.is_destructure) {
+			const i = af.destructure_index!;
+			if (target_type.is_array) {
+				if (af.is_destructure_rename) {
+					add_error(status, `Cannot rename elements when destructuring an array`, node.start);
+					return false;
+				}
+				// Array: rewrite to `.at(i)` and dispatch as a method call.
+				// The index is a compile-time constant, so skip the bounds
+				// constraint check (the programmer chose the position).
+				const idx = new ValueNode(node.start, String(i), new Type("int"));
+				const fc = new AccessFunctionCallNode(node.start, "at", new Type(""), [idx]);
+				fc.skip_bounds_check = true;
+				node.access = fc;
+				return check_access_function_node(target_type, node.target, fc, status);
+			}
+			// Struct/class or tuple: if the target has a field matching the
+			// binding name, treat it as named field access; otherwise rewrite
+			// to the tuple's positional `._i` field.
+			const struct = status.structs.find((s) => s.name === target_type.name);
+			const has_named_field = !!struct?.fields.find((f) => f.name === af.name);
+			if (has_named_field) {
+				af.is_destructure = undefined;
+				// fall through to normal field access below
+			} else if (struct) {
+				if (af.is_destructure_rename) {
+					add_error(status, `Field '${af.name}' not found on ${target_type.name}`, node.start);
+					return false;
+				}
+				af.name = `_${i}`;
+				af.is_destructure = undefined;
+				// fall through to normal field access below
+			} else {
+				add_error(status, `Cannot destructure value of type ${target_type.name}`, node.start);
+				return false;
+			}
+		}
+	}
+
 	// Check that class-type variables are initialized before field/method access
 	if (
 		node.target.node_type === "value" &&

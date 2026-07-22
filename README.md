@@ -19,6 +19,7 @@ structured concurrency and deterministic memory management.
 - ✅ **Operator Overloading** — Custom behavior for arithmetic operators
 - ✅ **Constraints** — Compile-time assertions on parameters, fields, and variables
 - ✅ **Tuples** — Anonymous positional structs with destructuring
+- ✅ **Destructuring** — Tuple, array, struct, and class destructuring in one form
 - ✅ **Higher-Order Functions** — First-class functions, lambdas, and closures
 - ✅ **Structured Concurrency** — Nurseries, `spawn`, `Task`, `Channel`, `Mutex`
 - ✅ **Sendable** — Marker trait for safe cross-task value movement
@@ -354,17 +355,35 @@ var [name2, age2] = get_person(12)
 
 ### Destructuring
 
-Tuples destructure into individual variables in one step (the only form of
-destructuring Echo supports today):
+The `var [ ... ] = expr` form binds names by pulling values out of the
+right-hand side. Tuples, arrays, structs, and classes are all supported — the
+kind of value determines how the brackets are read:
 
 ```echo
+// Tuples — bind positionally
 func get_person = (int id, out [string, int]) {
     return ["Andrew", id + 100]
 }
-
 var [pname, page] = get_person(12)
 var [a, b] = [11, "hello"]
+
+// Arrays — bind positionally by index
+const int[] nums = [1, 2, 3]
+var [first, second, third] = nums
+
+// Structs and classes — bind by field name (bare name or `field = name`)
+struct Point {
+    var int x
+    var int y
+}
+const p = Point(3, 4)
+var [x, y] = p
+var [x = px, y = py] = p
 ```
+
+Struct fields can be renamed with `[ field = name ]` and bound partially (only
+the named fields, in any order). See [SPEC.md](SPEC.md#destructuring) for
+details.
 
 ## Standard Library
 

@@ -46,6 +46,13 @@ export default class AccessFunctionCallNode extends BaseNode {
 	 * SpawnNode.is_statement — fire-and-forget spawns skip Task allocation.
 	 */
 	is_statement?: boolean;
+	/**
+	 * Set when this `.at(i)` call was synthesized by array destructuring
+	 * (`var [a, b] = arr`). The index is a compile-time constant chosen by
+	 * the programmer, so the parameter constraint (bounds check) is skipped —
+	 * the programmer is asserting the array is long enough positionally.
+	 */
+	skip_bounds_check?: boolean;
 
 	constructor(start: number, name: string, type?: Type, params?: BaseNode[], is_static?: boolean) {
 		super("access_func", start);

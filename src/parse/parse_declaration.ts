@@ -371,8 +371,15 @@ function looks_like_destructuring(status: ParseStatus, start_idx: number): boole
 
 /**
  * Parse `var [a, b, ...] = expr` — produces a temp declaration holding the
- * RHS value, plus one declaration per destructured name accessing fields
- * `_0`, `_1`, ... on the temp.
+ * RHS value, plus one declaration per destructured binding. Each binding's
+ * value is an `AccessFieldNode` marked `is_destructure`; the check pass
+ * resolves it to a tuple field (`_i`), an array element (`.at(i)`), or a
+ * struct/class field (`.name`) based on the right-hand side's type.
+ *
+ * Two binding forms are accepted:
+ *   - bare name: `a` — positional (tuples/arrays) or same-named field (structs)
+ *   - rename:    `field = name` — struct/class field accessed as `field`,
+ *     bound to `name`
  */
 function parse_destructuring(
 	visibility: "pub" | "private",
@@ -381,10 +388,22 @@ function parse_destructuring(
 	status: ParseStatus,
 ) {
 	expect("[", status);
-	const names: string[] = [];
+	const bindings: { name: string; field: string; rename: boolean }[] = [];
+	let index = 0;
 	while (peek_current(status) !== "]" && status.i < status.tokens.length) {
-		const name = consume(status);
-		names.push(name);
+		const first = consume(status);
+		let field = first;
+		let name = first;
+		let rename = false;
+		// `[field = name]` rename form (struct/class destructuring only)
+		if (peek_current(status) === "=") {
+			accept("=", status);
+			name = consume(status);
+			field = first;
+			rename = true;
+		}
+		bindings.push({ name, field, rename });
+		index++;
 		if (!accept(",", status)) break;
 	}
 	expect("]", status);
@@ -431,14 +450,22 @@ function parse_destructuring(
 		base_node = new ValueNode(start, temp_name);
 	}
 
-	for (let i = 0; i < names.length; i++) {
-		const access_field = new AccessFieldNode(start, `_${i}`);
+	for (let i = 0; i < bindings.length; i++) {
+		const binding = bindings[i];
+		const access_field = new AccessFieldNode(start, binding.field);
+		// Marker resolved by check_access_node from the RHS type:
+		//   tuple  -> `._i`      (field rewrite)
+		//   array  -> `.at(i)`   (rewrite to access_func)
+		//   struct -> `.field`   (as-is)
+		access_field.is_destructure = true;
+		access_field.destructure_index = i;
+		access_field.is_destructure_rename = binding.rename;
 		const access = new AccessNode(start, base_node, access_field);
 		const name_decl = new DeclarationNode(
 			start,
 			visibility,
 			declaration,
-			names[i],
+			binding.name,
 			new Type(""),
 			access,
 		);
