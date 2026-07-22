@@ -231,7 +231,7 @@ loop."
    available for genuinely low-level cases (implementing the actor's own
    queue, lock-free structures, FFI) but is no longer the documented default.
 2. **Promote to a first-class `actor` type only if needed.** A keyword earns
-   its keep only when we want the *compiler* to enforce isolation — reject
+   its keep only when we want the _compiler_ to enforce isolation — reject
    direct field access from outside the actor, guarantee all mutation goes
    through the mailbox. That's the real value of Swift-style actors, and also
    the real cost (a new type kind, isolated vs. nonisolated reasoning). The
@@ -242,10 +242,10 @@ loop."
 
 - **No-await means actor calls block.** In a thread-pool runtime, calling an
   actor method is a synchronous RPC — the caller blocks until the actor
-  processes the message. Fine and deadlock-free *as long as the actor never
-  synchronously calls back into a caller that is waiting on it* (reentrancy).
+  processes the message. Fine and deadlock-free _as long as the actor never
+  synchronously calls back into a caller that is waiting on it_ (reentrancy).
   Swift's actor reentrancy rules exist for exactly this; Echo would need an
   equivalent rule, or a documented "don't call back synchronously" contract.
 - **`Mutex` stays regardless.** Even actor-first languages need a lock for
-  low-level cases. Actors replace `Mutex` as the *default* for shared mutable
+  low-level cases. Actors replace `Mutex` as the _default_ for shared mutable
   state, not as a primitive.

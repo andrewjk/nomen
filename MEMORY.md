@@ -249,6 +249,31 @@ tracking; deeper escapes through nested data structures aren't modelled. (The
 common cases — direct field access, smuggling through an intermediate variable,
 method returns, and `return` of a borrow — are all caught.)
 
+### Tagged-union type confusion (not reachable)
+
+The classic tagged-union memory-safety hazard — take a reference into an enum's
+payload, overwrite the enum with a different case (changing the tag and the
+overlapping payload bytes), then dereference the stale reference — cannot arise
+in Echo, because the language offers no way to create an interior reference into
+an enum's payload:
+
+- Enum case definitions accept only `Type name` payload fields — no `ref`
+  modifier (`src/parse/parse_enum.ts`).
+- `match` case bindings (`case .error(code)`) are **by-value copies** of the
+  payload bytes into a fresh local, not aliases into the enum's storage
+  (`src/build_c/build_match_node.ts`, `src/build_aarch64/build_access_node.ts`).
+  The parser accepts only bare identifiers as bindings — there is no `ref`
+  binding syntax for match arms (`src/parse/parse_match.ts`).
+- Direct payload field access outside `match` (`e.code`) also loads by value.
+
+The compiler's borrow machinery (`src/check/utils/borrow.ts`) does not model
+enum payloads — it only tracks class field/method borrows. Echo is safe here
+solely because the front end never lets an interior reference into an enum
+payload come into existence. **If `ref` bindings in `match`, an address-of
+operator, or `ref` enum payload fields are ever added, an enum-aware
+invalidation pass (analogous to `invalidate_borrows_of` for class field
+borrows) will be required.**
+
 ### Resolved
 
 These were previously open gaps and are now enforced at compile time:
