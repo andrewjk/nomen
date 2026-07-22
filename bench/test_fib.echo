@@ -9,10 +9,10 @@ pub func main = (Init init) {
     }
   }
   var a = 0
-  var b = 0
-  var sum =0
+  var b = 1
+  var sum = 0
   var result = Array.with(0, length)
-  for i of 0..length {
+  for i  of 0..result.length {
     switch {
       case i == 0 {
         result.set(i, a)

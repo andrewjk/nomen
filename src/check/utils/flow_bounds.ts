@@ -218,7 +218,7 @@ export function apply_bounds(condition: BaseNode, status: CheckStatus, is_loop =
 		// Numeric upper bound for the verifier's arithmetic path. A strict
 		// `j < E` means j's max (exclusive) is E; an inclusive `j <= E`
 		// means j's max is E + 1.
-		const num = numeric_interval(string_to_node(bound.expr, status), status);
+		const num = numeric_interval(string_to_node(bound.expr), status);
 		if (num) {
 			// For a loop body the condition is re-checked every iteration and
 			// the variable is reassigned inside, so the bound ESTABLISHES the
@@ -248,7 +248,7 @@ export function apply_bounds(condition: BaseNode, status: CheckStatus, is_loop =
 		var_decl.lower_bound_expr = bound.expr;
 		// Numeric lower bound: `j > E` means j's min (inclusive) is E + 1;
 		// `j >= E` means j's min is E.
-		const num = numeric_interval(string_to_node(bound.expr, status), status);
+		const num = numeric_interval(string_to_node(bound.expr), status);
 		if (num) {
 			const lo = bound.op === ">=" ? num.lower : num.upper;
 			if (var_decl.range_lower === undefined || lo > var_decl.range_lower)
@@ -314,7 +314,7 @@ type StackValueLike = {
  * "n", "self.items.cap") so numeric_interval can resolve it. Handles a bare
  * variable name and a dotted field access.
  */
-function string_to_node(expr: string, status: CheckStatus): BaseNode {
+function string_to_node(expr: string): BaseNode {
 	const parts = expr.split(".");
 	let node: BaseNode = new ValueNode(0, parts[0]);
 	for (let i = 1; i < parts.length; i++) {
@@ -663,6 +663,35 @@ export function track_assignment_bounds(
 					if (base_decl.range_upper !== undefined)
 						decl.range_upper = base_decl.range_upper + offset;
 				}
+			}
+		}
+	}
+
+	// 5) Variable-to-variable: `var int x = y` / `x = y` — copy y's
+	//    flow-sensitive bounds onto x. This lets `if y > 0 { x = y }`
+	//    propagate y's lower bound onto x so subsequent uses of x carry
+	//    the bound (e.g. proving `x >= 0` for `Array.with(0, x)`).
+	if (value.node_type === "value") {
+		const vn = value as ValueNode;
+		if (!/^[+-]?\d+$/.test(vn.value)) {
+			const src = status.values.findLast((v) => v.name === vn.value);
+			if (src) {
+				if (decl.range_lower === undefined && src.range_lower !== undefined)
+					decl.range_lower = src.range_lower;
+				if (decl.range_upper === undefined && src.range_upper !== undefined)
+					decl.range_upper = src.range_upper;
+				if (!decl.lower_bound_exprs?.length && src.lower_bound_exprs?.length)
+					decl.lower_bound_exprs = src.lower_bound_exprs.slice();
+				if (!decl.upper_bound_exprs?.length && src.upper_bound_exprs?.length)
+					decl.upper_bound_exprs = src.upper_bound_exprs.slice();
+				if (!decl.lower_bound_inclusive_exprs?.length && src.lower_bound_inclusive_exprs?.length)
+					decl.lower_bound_inclusive_exprs = src.lower_bound_inclusive_exprs.slice();
+				if (!decl.upper_bound_inclusive_exprs?.length && src.upper_bound_inclusive_exprs?.length)
+					decl.upper_bound_inclusive_exprs = src.upper_bound_inclusive_exprs.slice();
+				if (!decl.lower_bound_expr && src.lower_bound_expr)
+					decl.lower_bound_expr = src.lower_bound_expr;
+				if (!decl.upper_bound_expr && src.upper_bound_expr)
+					decl.upper_bound_expr = src.upper_bound_expr;
 			}
 		}
 	}

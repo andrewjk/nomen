@@ -136,6 +136,40 @@ var int a = list.at(0)
 	});
 });
 
+// Variable-to-variable bound propagation: assigning `x = y` should copy y's
+// flow-sensitive bounds onto x, so downstream uses of x can verify against
+// those bounds (e.g. proving `x >= 0` for `Array.with(0, x)`).
+
+describe("variable-to-variable bound propagation", () => {
+	test("bounds propagate from source to target on assignment", () => {
+		const input = `
+var int y = 0
+if y > 0 {
+	var int x = y
+	var Array<int> a = Array.with(0, x)
+}
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+	});
+
+	test("bounds propagate through reassignment in a loop", async () => {
+		const input = `
+var List<int> list = List<int>()
+list.push(10)
+list.push(20)
+list.push(30)
+var int j = 0
+while j < list.length {
+	var int k = j
+	Console.write("\\{list.at(k)}\\n")
+	j = j + 1
+}
+`;
+		await build_and_check_output(input, "flow_var_to_var", "10\n20\n30\n");
+	});
+});
+
 // Return-contract propagation: a method whose return type carries a contract
 // (e.g. Graph.edge_target `out int: out >= 0 && out < self.node_count`) gives
 // the result a tracked bound. The bound flows both to a named variable and to

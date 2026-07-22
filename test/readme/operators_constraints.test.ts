@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vite-plus/test";
 
-import { compile_main, compile_module } from "./_helpers.ts";
+import { compile_main } from "./_helpers.ts";
 
 describe("readme: operator overloading", () => {
 	test("struct #op_add used with +", () => {
