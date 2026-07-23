@@ -1,7 +1,7 @@
 import { expect, test } from "vite-plus/test";
 
-import build_and_check_output from "../build_and_check_output";
-import parse_with_imports from "./parse_with_imports";
+import build_and_check_output from "./build_and_check_output";
+import parse_with_imports from "./ziglings/parse_with_imports";
 
 test("local ref var -- field access and assignment", async () => {
 	const input = `
