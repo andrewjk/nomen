@@ -245,8 +245,7 @@ function build_operand(node: any, status: BuildStatus) {
 function build_array_operand_for_call(node: any, status: BuildStatus) {
 	const param_type = type_from_value_node(node);
 	const is_heap_array =
-		node.node_type === "value" &&
-		status.heap_array_vars?.has((node as ValueNode).value);
+		node.node_type === "value" && status.heap_array_vars?.has((node as ValueNode).value);
 	if (is_heap_array) {
 		build_operand(node, status);
 		return;

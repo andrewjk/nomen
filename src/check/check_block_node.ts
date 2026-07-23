@@ -1,10 +1,14 @@
 import add_error from "../add_error.ts";
+import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
+import AccessNode from "../nodes/AccessNode.ts";
 import BitsetNode from "../nodes/BitsetNode.ts";
 import type BlockNode from "../nodes/BlockNode.ts";
+import DeclarationNode from "../nodes/DeclarationNode.ts";
 import EnumNode from "../nodes/EnumNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import TraitNode from "../nodes/TraitNode.ts";
+import Type from "../nodes/Type.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 
@@ -18,6 +22,80 @@ export default function check_block_node(node: BlockNode, status: CheckStatus) {
 	}
 	status.stack.pop();
 	status.scope_depth--;
+
+	hoist_discarded_class_results(node, status);
+}
+
+/**
+ * A bare statement that constructs (or obtains) a class instance without
+ * binding it to a variable would leak: classes are heap-allocated and freed
+ * by the owning variable's scope-exit cleanup, so an unbound instance is
+ * never reclaimed. Hoist such a statement into an anonymous
+ * `var T _disc_N = <call>` so the existing scope-exit reclamation frees it
+ * (running its `#destroy` and field destroys first).
+ *
+ * Free functions and constructors returning a class always yield an owned
+ * value. Method calls are hoisted only when they have an owned (`mov out T`)
+ * return — a borrowed return (e.g. `list.at(0)`) is owned by its receiver and
+ * must NOT be freed here.
+ */
+function hoist_discarded_class_results(block: BlockNode, status: CheckStatus) {
+	for (let i = 0; i < block.statements.length; i++) {
+		const child = block.statements[i];
+		const result_type = discarded_class_result_type(child, status);
+		if (!result_type) continue;
+		const original = child as DeclarationNode["value"] & { allocations?: DeclarationNode[] };
+		const decl = new DeclarationNode(
+			child.start,
+			"private",
+			"var",
+			`_disc_${status.var_name_counter.value++}`,
+			clone_type(result_type),
+			original,
+		);
+		// The call's hoisted param temporaries (if any) were attached to it by
+		// promote_allocations (its parent was this block). Move them onto the
+		// wrapping declaration so build_node emits them first — the constructor
+		// declaration path doesn't recurse through build_node on its value, so
+		// leaving them on the call would drop them.
+		if (original.allocations) {
+			decl.allocations = original.allocations;
+			original.allocations = undefined;
+		}
+		block.statements[i] = decl;
+	}
+}
+
+function discarded_class_result_type(
+	child: BlockNode["statements"][number],
+	status: CheckStatus,
+): Type | undefined {
+	// The call's result type lives on the call node itself: a free function
+	// call carries it as `node.type`, while a method call (`access`/access_func)
+	// carries it on the inner `access.type` (the wrapping AccessNode has none).
+	const t =
+		child.node_type === "access"
+			? ((child as AccessNode).access as { type?: Type })?.type
+			: (child as { type?: Type }).type;
+	if (!t?.name) return undefined;
+	if (!status.structs.find((s) => s.name === t.name && s.is_class)) return undefined;
+	if (child.node_type === "func_call") return t;
+	if (
+		child.node_type === "access" &&
+		(child as AccessNode).access.node_type === "access_func" &&
+		((child as AccessNode).access as AccessFunctionCallNode).owned_return
+	) {
+		return t;
+	}
+	return undefined;
+}
+
+function clone_type(t: Type): Type {
+	const c = new Type(t.name, t.is_static, t.is_array, t.length);
+	c.is_ref = t.is_ref;
+	c.is_nullable = t.is_nullable;
+	c.type_args = t.type_args;
+	return c;
 }
 
 function gather_structs(block: BlockNode, status: CheckStatus) {

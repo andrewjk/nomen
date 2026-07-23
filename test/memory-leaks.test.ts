@@ -353,4 +353,62 @@ Console.write("done\\n")
 			expect.stringContaining("cannot copy 'List'"),
 		);
 	});
+
+	test("bare class construction (not assigned) is freed", async () => {
+		const input = `
+class Box {
+  var int value
+}
+
+Box(42)
+Console.write("done")
+`;
+		await build_and_check_output(input, "leak_bare_class", "done");
+	});
+
+	test("bare class construction with destroy (not assigned) is freed", async () => {
+		const input = `
+class Resource {
+  var int handle
+
+  func #destroy = (ref self) {
+    self.handle = -1
+  }
+}
+
+Resource(7)
+Console.write("done")
+`;
+		await build_and_check_output(input, "leak_bare_class_destroy", "done");
+	});
+
+	test("bare function call returning a class is freed", async () => {
+		const input = `
+class Box {
+  var int value
+}
+
+func make_box = (out Box) {
+  return Box(42)
+}
+
+make_box()
+Console.write("done")
+`;
+		await build_and_check_output(input, "leak_bare_func_class", "done");
+	});
+
+	test("bare method call with owned return is freed", async () => {
+		const input = `
+class Box {
+  var int value
+}
+
+var List<Box> list = List<Box>()
+list.push(mov Box(1))
+list.pop()
+Console.write("done")
+`;
+		await build_and_check_output(input, "leak_bare_method_owned", "done");
+	});
 });
