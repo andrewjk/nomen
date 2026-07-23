@@ -219,8 +219,108 @@ function emit_struct_constructor_to_slot(
  * Evaluate a constructor's params right-to-left into argument registers,
  * spilling each to a stack slot first so a later arg's evaluation can't
  * clobber an earlier arg's register. Struct/enum args are passed by address.
+ *
+ * Variadic-tuple constructors (e.g. Map<K,V>'s `#init(self, ...[K,V] pairs)`)
+ * are packed: the variadic args go into a stack array, and the callee receives
+ * a (count, pointer) pair in the two register slots the variadic param
+ * occupies — mirroring the regular call convention in build_function_call_node.
  */
 function build_constructor_params(fc: FunctionCallNode, param_regs: string[], status: BuildStatus) {
+	const variadic_idx = fc.variadic_param_index;
+	if (
+		variadic_idx !== undefined &&
+		fc.params[variadic_idx] &&
+		fc.params[variadic_idx].node_type === "array"
+	) {
+		const arr = fc.params[variadic_idx] as ArrayValuesNode;
+		const elem_type_name = arr.type.name || "int";
+		const elem_struct = status.structs.find(
+			(s) => s.name === elem_type_name && !s.is_simple_type,
+		);
+		const elem_size = elem_struct ? get_struct_size(elem_type_name, status) : 8;
+		const count = arr.values.length;
+		// Always reserve at least one element so the pointer we pass is a valid,
+		// uniquely-owned stack address even when there are zero variadic args.
+		const arr_offset = allocate_stack_space(status, Math.max(count, 1) * elem_size, 16);
+
+		// Evaluate each variadic arg into its slot (right-to-left).
+		for (let j = count - 1; j >= 0; j--) {
+			const arg = arr.values[j];
+			const slot_offset = arr_offset + j * elem_size;
+			if (elem_struct && arg.node_type === "func_call") {
+				// Tuple/struct constructor: eval params into x1..x7, then call _init
+				// with x0 pointing at this slot.
+				const tfc = arg as FunctionCallNode;
+				const fc_param_regs = ["x1", "x2", "x3", "x4", "x5", "x6", "x7"];
+				for (let k = tfc.params.length - 1; k >= 0; k--) {
+					build_node(tfc.params[k], status);
+					if (!status.code.endsWith("\n")) status.code += "\n";
+					status.code += `mov ${fc_param_regs[k]}, x0\n`;
+				}
+				status.code += `add x0, x29, #${slot_offset}\n`;
+				status.code += `bl ${tfc.name}_init\n`;
+			} else if (elem_struct) {
+				emit_struct_address_param(arg, status);
+				if (!status.code.endsWith("\n")) status.code += "\n";
+				status.code += `mov x1, x0\n`;
+				status.code += `add x0, x29, #${slot_offset}\n`;
+				for (let b = 0; b < elem_size; b += 8) {
+					status.code += `ldr x2, [x1, #${b}]\n`;
+					status.code += `str x2, [x0, #${b}]\n`;
+				}
+			} else {
+				build_node(arg, status);
+				if (!status.code.endsWith("\n")) status.code += "\n";
+				status.code += `str x0, [x29, #${slot_offset}]\n`;
+			}
+		}
+
+		// Non-variadic params (everything except the packed array). They occupy
+		// the register slots before the variadic count/pointer.
+		const non_variadic: { node: BaseNode; by_address: boolean }[] = [];
+		for (let i = 0; i < fc.params.length; i++) {
+			if (i === variadic_idx) continue;
+			const param = fc.params[i];
+			const param_type = (param as any).type?.name || "";
+			const by_address =
+				!!status.structs.find((s) => s.name === param_type && !s.is_simple_type) ||
+				!!status.enums.find((e) => e.name === param_type && e.has_associated_data);
+			non_variadic.push({ node: param, by_address });
+		}
+		const nv = non_variadic.length;
+		const count_reg = param_regs[nv];
+		const ptr_reg = param_regs[nv + 1];
+
+		// Spill non-variadic params first, while count/ptr registers are still
+		// untouched (their evaluation may clobber any register).
+		let nv_base = 0;
+		if (nv > 0) {
+			nv_base = allocate_stack_space(status, nv * 8, 16);
+			for (let i = nv - 1; i >= 0; i--) {
+				const ep = non_variadic[i];
+				if (ep.by_address) {
+					emit_struct_address_param(ep.node, status);
+				} else {
+					build_node(ep.node, status);
+				}
+				if (!status.code.endsWith("\n")) status.code += "\n";
+				status.code += `str x0, [x29, #${nv_base + i * 8}]\n`;
+			}
+		}
+
+		// Set up the variadic pointer and count (after spills so they survive).
+		status.code += `add x0, x29, #${arr_offset}\n`;
+		if (ptr_reg !== "x0") status.code += `mov ${ptr_reg}, x0\n`;
+		emit_int_immediate(status, String(count));
+		if (count_reg !== "x0") status.code += `mov ${count_reg}, x0\n`;
+
+		// Load non-variadic params into their target registers.
+		for (let i = 0; i < nv; i++) {
+			status.code += `ldr ${param_regs[i]}, [x29, #${nv_base + i * 8}]\n`;
+		}
+		return;
+	}
+
 	const has_args = fc.params.length > 0;
 	let base = 0;
 	if (has_args) {

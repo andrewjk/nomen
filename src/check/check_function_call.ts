@@ -131,6 +131,7 @@ export default function check_function_call(
 	node.is_static = func.is_static;
 
 	const variadic_param_index = func.params.findIndex((p) => p.is_variadic);
+	const self_offset = func.params[0]?.is_self_param ? 1 : 0;
 
 	let required_param_count = 0;
 	for (const param of func.params) {
@@ -143,14 +144,18 @@ export default function check_function_call(
 		required_param_count -= 1;
 	}
 
-	const non_variadic_param_count = func.params.filter((p) => !p.is_variadic).length;
+	// Count non-variadic params EXCLUDING self: the call site doesn't pass
+	// self, so its arg list aligns with func params minus the self slot.
+	const non_variadic_param_count = func.params.filter(
+		(p) => !p.is_variadic && !p.is_self_param,
+	).length;
 	const variadic_arg_count =
 		variadic_param_index >= 0 ? node.params.length - non_variadic_param_count : 0;
 
 	if (variadic_param_index >= 0 && variadic_arg_count < 0) {
 		add_error(status, `Parameters missing for function: ${node.name}`, node.start);
 		return false;
-	} else if (variadic_param_index < 0 && node.params.length > func.params.length) {
+	} else if (variadic_param_index < 0 && node.params.length > func.params.length - self_offset) {
 		add_error(status, `Too many parameters for function: ${node.name}`, node.start);
 		return false;
 	} else if (node.params.length < required_param_count) {
@@ -160,13 +165,16 @@ export default function check_function_call(
 
 	if (variadic_param_index >= 0) {
 		const variadic_elem_type = func.params[variadic_param_index].type;
-		const variadic_args = node.params.splice(variadic_param_index, variadic_arg_count);
+		// Variadic args begin at variadic_param_index - self_offset in the
+		// call's param list (self is implicit, not passed by the caller).
+		const variadic_start = variadic_param_index - self_offset;
+		const variadic_args = node.params.splice(variadic_start, variadic_arg_count);
 		const array_node = new ArrayValuesNode(variadic_args[0]?.start ?? 0, variadic_args);
 		array_node.type = new Type(variadic_elem_type.name);
 		array_node.type.is_array = true;
-		node.params.splice(variadic_param_index, 0, array_node);
+		node.params.splice(variadic_start, 0, array_node);
 		node.variadic_param_name = func.params[variadic_param_index].name;
-		(node as FunctionCallNode).variadic_param_index = variadic_param_index;
+		(node as FunctionCallNode).variadic_param_index = variadic_start;
 	}
 
 	while (node.params.length < func.params.length) {
@@ -179,8 +187,6 @@ export default function check_function_call(
 	}
 
 	status.stack.push(node);
-
-	const self_offset = func.params[0]?.is_self_param ? 1 : 0;
 
 	for (let i = 0; i < node.params.length; i++) {
 		const param = node.params[i];

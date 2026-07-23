@@ -49,7 +49,17 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 	const ctor_params = custom_init
 		? custom_init.params
 				.filter((p) => !p.is_self_param)
-				.map((p) => c_param_decl(p.type, p.name, status))
+				.map((p) => {
+					// Variadic params are emitted as `long _name_len, T *name`
+					// (mirroring build_function_node), so the body can read
+					// `name[i]` and `_name_len`.
+					let decl = "";
+					if (p.is_variadic) {
+						decl += `long _${p.name}_len, `;
+					}
+					decl += c_param_decl(p.type, p.name, status);
+					return decl;
+				})
 				.join(", ")
 		: node.fields
 				.filter((f) => f.value == null)
@@ -107,17 +117,25 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 		const old_self_is_local = status.self_is_local;
 		const old_current_struct = status.current_struct;
 		const old_return_type = status.function_return_type;
+		const old_variadic_params = status.function_variadic_params;
 		status.function_ref_params = new Set<string>();
+		status.function_variadic_params = new Set<string>();
 		status.self_is_ref = is_class;
 		status.self_is_local = !is_class;
 		status.current_struct = node;
 		status.function_return_type = custom_init.return_type;
+		for (const p of custom_init.params) {
+			if (p.is_variadic) {
+				status.function_variadic_params!.add(c_function_name(p.name));
+			}
+		}
 		for (let child of custom_init.statements) {
 			build_node(child, status, true);
 		}
 		status.code += `return self;\n`;
 		status.code += `}\n`;
 		status.function_ref_params = old_ref_params;
+		status.function_variadic_params = old_variadic_params;
 		status.self_is_ref = old_self_is_ref;
 		status.self_is_local = old_self_is_local;
 		status.current_struct = old_current_struct;

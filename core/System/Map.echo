@@ -7,6 +7,17 @@ pub struct Map<TK, TV> {
 	var Buffer<TV> values = Buffer<TV>()
 	var Buffer<int> used = Buffer<int>()
 
+	// Variadic-tuple constructor: Map<string, int>(["a", 1], ["b", 2]) or
+	// Map(["a", 1], ["b", 2]) (type args inferred from the first pair).
+	// Zero pairs yields an empty Map, so this also covers Map<K, V>().
+	pub func #init = (self, ...[TK, TV] pairs) {
+		var int i = 0
+		while i < pairs.length {
+			self.set(pairs.at(i)._0, pairs.at(i)._1)
+			i = i + 1
+		}
+	}
+
 	pub func set = (ref self, mov TK key, mov TV value) {
 		var int cap = self.keys.cap
 		if cap == 0 {

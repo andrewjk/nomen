@@ -46,6 +46,7 @@ export function clone_type(type: Type): Type {
 	t.is_return_type = type.is_return_type;
 	t.is_nullable = type.is_nullable;
 	t.type_args = type.type_args?.map(clone_type);
+	t.tuple_types = type.tuple_types?.map(clone_type);
 	t.func_params = type.func_params?.map((p) => clone_node(p) as ParameterNode);
 	t.func_return_type = type.func_return_type ? clone_type(type.func_return_type) : undefined;
 	return t;

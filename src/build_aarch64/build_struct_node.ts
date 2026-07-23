@@ -358,26 +358,42 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 
 	status.function_param_regs = new Map();
 	status.function_param_vars = new Set();
+	const old_variadic_params = status.function_variadic_params;
+	status.function_variadic_params = new Set();
 
 	status.function_param_regs.set("self", "x19");
 
 	for (let i = 0; i < func.params.length; i++) {
 		const param = func.params[i];
 		if (param.is_self_param) continue;
+		if (param.is_variadic) continue;
 		status.function_param_vars.add(param.name);
 	}
 
 	status.code += `sub sp, sp, #${stack_placeholder}\n`;
 	status.code += `mov x29, sp\n`;
 
+	// self occupies x0 (moved to x19 above); custom-init params arrive in
+	// x1, x2, ... Variadic params consume two register slots — a hidden
+	// `_name_len` count followed by the array pointer — mirroring the
+	// regular function-call convention.
+	const param_regs = ["x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7"];
+	let param_idx = 1;
 	for (let i = 0; i < func.params.length; i++) {
 		const param = func.params[i];
 		if (param.is_self_param) continue;
+		if (param.is_variadic) {
+			status.function_variadic_params!.add(param.name);
+			const len_offset = allocate_stack_space(status, 8, 8);
+			status.stack_offsets!.set(`_${param.name}_len`, len_offset);
+			status.code += `str ${param_regs[param_idx]}, [x29, #${len_offset}]\n`;
+			param_idx++;
+		}
 		const size = aarch64_size(param.type.name);
 		const offset = allocate_stack_space(status, size, size);
 		status.stack_offsets!.set(param.name, offset);
-		const param_regs = ["x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7"];
-		status.code += `str ${param_regs[i]}, [x29, #${offset}]\n`;
+		status.code += `str ${param_regs[param_idx]}, [x29, #${offset}]\n`;
+		param_idx++;
 	}
 
 	// Zero the struct memory
@@ -442,6 +458,7 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 	status.scoped_declarations = old_scoped_declarations;
 	status.function_param_regs = old_param_regs;
 	status.function_param_vars = old_param_vars;
+	status.function_variadic_params = old_variadic_params;
 	status.function_return_label = old_return_label;
 	status.stack_size = old_stack_size;
 	status.stack_offsets = old_stack_offsets;

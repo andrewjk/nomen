@@ -100,6 +100,15 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 
 	for (let func of struct.functions) {
 		func.scope = struct;
+		// A generic struct's custom #init is a template: its variadic tuple
+		// params reference type params (e.g. `...[TK, TV]`) that can't be
+		// materialized until monomorphization. Skip checking it here — the
+		// cloned init is checked inside monomorphize() once the concrete type
+		// args are known.
+		if (struct.is_generic && func.name === "#init" && func.has_body) {
+			func.checked = true;
+			continue;
+		}
 		check_function_node(func, status);
 	}
 

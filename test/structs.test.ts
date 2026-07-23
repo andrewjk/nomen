@@ -283,4 +283,57 @@ const x = p.name
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
 	});
+
+	test("self used in method body without being declared as a parameter", () => {
+		// `read`'s body references `self.x` but its param list has no `self`.
+		// This must surface as a clean error (not a hang/crash) — `self` is
+		// not an implicit receiver; methods that use it must declare it.
+		const input = `
+struct P {
+	var int x
+	pub func read = (out int) {
+		return self.x
+	}
+}
+`;
+		const parsed = parse(input);
+		const messages = parsed.errors.map((e) => e.message);
+		expect(messages).toContain("Unknown value: self");
+	});
+
+	test("self used in generic #init body without being declared as a parameter", () => {
+		// Same contract on a generic struct's custom #init: using `self`
+		// without declaring it must error cleanly, not hang the checker
+		// (regression guard — generic custom #init used to loop forever here).
+		const input = `
+struct Bag<T> {
+	var T item
+	pub func #init = (...T items) {
+		self.item = items.at(0)
+	}
+}
+func main = () {
+	var Bag<int> b = Bag<int>(1)
+}
+`;
+		const parsed = parse(input);
+		const messages = parsed.errors.map((e) => e.message);
+		expect(messages).toContain("Unknown value: self");
+	});
+
+	test("immutable self param cannot be mutated", () => {
+		// A bare `self` (not `var self`/`ref self`) is an immutable borrow.
+		// Assigning to one of its fields must be rejected.
+		const input = `
+struct P {
+	var int x
+	pub func set_x = (self, int v) {
+		self.x = v
+	}
+}
+`;
+		const parsed = parse(input);
+		const messages = parsed.errors.map((e) => e.message);
+		expect(messages.some((m) => m.includes("self") && m.includes("mutat"))).toBe(true);
+	});
 });

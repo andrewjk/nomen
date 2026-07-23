@@ -34,6 +34,34 @@ export default function check_function_call_node(
 						node.name = mono.name;
 					}
 				}
+			} else if (
+				struct.type_params.length > 0 &&
+				struct.functions.some((f) => f.name === "#init" && f.has_body)
+			) {
+				// Generic struct with a custom #init, called without explicit
+				// type args (e.g. `Map(["a", 1], ["b", 2])`). Infer the type
+				// args from the variadic-tuple constructor's first argument.
+				const inferred = infer_init_type_args(struct, node, status);
+				if (inferred) {
+					const mono = monomorphize(struct, inferred, status);
+					if (mono) {
+						func = mono.functions.find((f) => f.name === "#init");
+						if (func) {
+							const type = new Type(struct.name);
+							type.type_args = inferred;
+							node.type = type;
+							node.name = mono.name;
+							node.type_args = inferred;
+						}
+					}
+				}
+				if (!func) {
+					func = struct.functions.find((f) => f.name === "#init");
+					if (func) {
+						const type = new Type(struct.name);
+						node.type = type;
+					}
+				}
 			} else {
 				func = struct.functions.find((f) => f.name === "#init");
 				if (func) {
@@ -203,24 +231,6 @@ export function monomorphize(
 		mono_struct.functions.push(cloned);
 	}
 
-	const init_params: ParameterNode[] = [];
-	for (const field of mono_fields) {
-		if (!field.value) {
-			const param = new ParameterNode(field.start, field.name, field.type);
-			// For mov fields: keep mov only if resolved type is class, otherwise convert to var
-			if (field.declaration === "mov") {
-				const field_is_class = !!status.structs.find(
-					(s) => s.name === field.type.name && s.is_class,
-				);
-				if (field_is_class) {
-					param.is_moved = true;
-				} else {
-					param.declaration = "var";
-				}
-			}
-			init_params.push(param);
-		}
-	}
 	const init_return_type = new Type(generic_struct.name);
 	init_return_type.type_args = type_args.map((t) => {
 		const copy = new Type(t.name, t.is_static, t.is_array, t.length);
@@ -228,17 +238,97 @@ export function monomorphize(
 		copy.is_nullable = t.is_nullable;
 		return copy;
 	});
-	const init_func = new FunctionNode(
-		generic_struct.start,
-		"pub",
-		"#init",
-		init_return_type,
-		init_params,
-	);
-	mono_struct.functions.push(init_func);
 
-	status.structs.push(mono_struct);
-	status.types.push(mono_name);
+	const custom_init = generic_struct.functions.find((f) => f.name === "#init" && f.has_body);
+	// Only treat a custom #init as the monomorphized constructor when its
+	// body is real Echo code. A raw-`#arch`-only #init (e.g. Array<T>'s) is
+	// a hand-written primitive that assumes a pointer `self` and is never
+	// invoked through the normal constructor path — keep the old behaviour
+	// of synthesizing a field-based #init for those.
+	const custom_init_is_echo =
+		!!custom_init && custom_init.statements.some((s) => s.node_type !== "raw");
+	if (custom_init && custom_init_is_echo) {
+		// A generic struct with a custom #init (e.g. Map<K,V>'s variadic-tuple
+		// constructor) is cloned + type-substituted + re-checked here, so its
+		// variadic tuple param materializes against the concrete type args and
+		// its body resolves self.method() against the monomorphized struct.
+		const cloned = clone_node(custom_init) as FunctionNode;
+		substitute_raw_types(cloned, substitution, status.structs);
+		rename_local_labels(cloned, mono_name);
+		cloned.return_type = new Type(mono_name);
+		cloned.type_params = [];
+		for (const param of cloned.params) {
+			param.type = substitute_type(param.type, substitution);
+			if (param.constraint) {
+				substitute_raw_in_node(param.constraint, substitution, status.structs);
+			}
+		}
+		// The self param's type was the generic struct name (e.g. "Map"); it
+		// must resolve to the monomorphized struct so the body's
+		// self.method() calls bind to the cloned methods instead of
+		// re-triggering monomorphization of the same generic struct.
+		const cloned_self = cloned.params.find((p) => p.is_self_param);
+		if (cloned_self) {
+			cloned_self.type = new Type(mono_name);
+		}
+		// Register the mono struct BEFORE re-checking the cloned #init body,
+		// so lookups (self's type, method resolution) find it instead of
+		// recursing through monomorphize again.
+		status.structs.push(mono_struct);
+		status.types.push(mono_name);
+		mono_struct.functions.push(cloned);
+		const root_status: CheckStatus = {
+			stack: status.stack,
+			scope_depth: status.scope_depth,
+			types: status.types,
+			values: [],
+			structs: status.structs,
+			traits: status.traits,
+			enums: status.enums,
+			bitsets: status.bitsets,
+			functions: status.functions,
+			allocations: [],
+			var_name_counter: status.var_name_counter,
+			type_params: [],
+			errors: status.errors,
+		};
+		check_function_node(cloned, root_status);
+	} else {
+		const init_params: ParameterNode[] = [];
+		for (const field of mono_fields) {
+			if (!field.value) {
+				const param = new ParameterNode(field.start, field.name, field.type);
+				// For mov fields: keep mov only if resolved type is class, otherwise convert to var
+				if (field.declaration === "mov") {
+					const field_is_class = !!status.structs.find(
+						(s) => s.name === field.type.name && s.is_class,
+					);
+					if (field_is_class) {
+						param.is_moved = true;
+					} else {
+						param.declaration = "var";
+					}
+				}
+				init_params.push(param);
+			}
+		}
+		const init_func = new FunctionNode(
+			generic_struct.start,
+			"pub",
+			"#init",
+			init_return_type,
+			init_params,
+		);
+		mono_struct.functions.push(init_func);
+	}
+
+	// Note: when the generic struct has a custom Echo #init, the mono struct
+	// was already pushed to status.structs/types before re-checking the clone
+	// (see custom_init branch above). Otherwise push it now.
+	if (!custom_init_is_echo) {
+		status.structs.push(mono_struct);
+		status.types.push(mono_name);
+	}
 
 	const root = status.stack[0] as RootNode;
 	const already_in_root = root.statements.some(
@@ -265,6 +355,11 @@ function substitute_type(type: Type, substitution: Map<string, string>): Type {
 	new_type.func_return_type = type.func_return_type
 		? substitute_type(type.func_return_type, substitution)
 		: undefined;
+	// Substitute type params inside tuple types (e.g. `...[TK, TV]` →
+	// `...[string, int]` when monomorphizing Map<string, int>). Keep
+	// tuple_types on the (still-unmaterialized) tuple type so the re-check
+	// in monomorphize can materialize the now-concrete tuple struct.
+	new_type.tuple_types = type.tuple_types?.map((t) => substitute_type(t, substitution));
 	return new_type;
 }
 
@@ -663,6 +758,105 @@ function infer_arg_type(node: import("../nodes/BaseNode.ts").default, status: Ch
 		const inner = access.access;
 		if (inner.node_type === "access_field") {
 			return (inner as import("../nodes/AccessFieldNode.ts").default).type || new Type("");
+		}
+	}
+	return new Type("");
+}
+
+/**
+ * Infer the type arguments for a generic struct's custom #init when the
+ * constructor is called without explicit type args (e.g.
+ * `Map(["a", 1], ["b", 2])` → `<string, int>`). Only handles a custom #init
+ * whose signature is a single variadic tuple param (`...[TK, TV]`); the type
+ * args are read off the first variadic argument's inferred tuple element
+ * types. Returns null if inference isn't possible (no args, non-tuple arg,
+ * or the type params can't all be resolved).
+ *
+ * Read-only: it must not mutate the call args, since check_function_call
+ * re-checks them afterwards against the materialized param types.
+ */
+function infer_init_type_args(
+	struct: StructNode,
+	node: FunctionCallNode,
+	status: CheckStatus,
+): Type[] | null {
+	const init = struct.functions.find((f) => f.name === "#init" && f.has_body);
+	if (!init) return null;
+	const variadic_idx = init.params.findIndex((p) => p.is_variadic);
+	if (variadic_idx < 0) return null;
+	const tuple_types = init.params[variadic_idx].type.tuple_types;
+	if (!tuple_types?.length) return null;
+
+	const variadic_args = node.params.slice(variadic_idx);
+	if (variadic_args.length === 0) return null;
+
+	const elem_types = infer_tuple_element_types(variadic_args[0], status);
+	if (!elem_types) return null;
+
+	const substitution = new Map<string, string>();
+	for (let i = 0; i < tuple_types.length && i < elem_types.length; i++) {
+		if (struct.type_params.includes(tuple_types[i].name) && elem_types[i].name) {
+			substitution.set(tuple_types[i].name, elem_types[i].name);
+		}
+	}
+	if (substitution.size === 0) return null;
+
+	const type_args = struct.type_params.map((tp) => new Type(substitution.get(tp) || tp));
+	// Refuse if any type param went unresolved.
+	if (type_args.some((t) => !t.name || struct.type_params.includes(t.name))) return null;
+	return type_args;
+}
+
+/**
+ * Best-effort, read-only inference of a tuple value's element types, used to
+ * drive generic-struct constructor inference. Recognizes:
+ *  - heterogeneous array literals (`["a", 1]` → [string, int])
+ *  - values already carrying a tuple struct type (`_Tuple_...`)
+ */
+function infer_tuple_element_types(
+	arg: import("../nodes/BaseNode.ts").default,
+	status: CheckStatus,
+): Type[] | null {
+	const any_arg = arg as any;
+	if (any_arg.node_type === "array") {
+		const values: BaseNode[] = any_arg.values ?? [];
+		if (!values.length) return null;
+		const types = values.map((v) => infer_scalar_type(v, status));
+		if (types.some((t) => !t.name)) return null;
+		return types;
+	}
+	const t = infer_scalar_type(arg, status);
+	if (t.tuple_types?.length) return t.tuple_types;
+	if (t.name?.startsWith("_Tuple_")) {
+		const s = status.structs.findLast((s) => s.name === t.name);
+		if (s) return s.fields.map((f) => f.type);
+	}
+	return null;
+}
+
+function infer_scalar_type(node: BaseNode, status: CheckStatus): Type {
+	const any_node = node as any;
+	if (any_node.node_type === "value") {
+		if (any_node.type?.name) return any_node.type;
+		return type_from_value(any_node.value, status);
+	}
+	if (any_node.node_type === "func_call") {
+		return any_node.type?.name ? any_node.type : new Type("");
+	}
+	if (any_node.node_type === "access") {
+		const inner = any_node.access;
+		if (inner?.node_type === "access_field") {
+			return inner.type?.name ? inner.type : new Type("");
+		}
+	}
+	if (any_node.node_type === "array") {
+		// Nested array literal: infer a sub-tuple's element types and surface
+		// the materialized tuple type via its tuple_types payload.
+		const sub = infer_tuple_element_types(node, status);
+		if (sub) {
+			const t = new Type("tuple");
+			t.tuple_types = sub;
+			return t;
 		}
 	}
 	return new Type("");
