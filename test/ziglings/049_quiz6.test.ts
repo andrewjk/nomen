@@ -1,7 +1,6 @@
 import { expect, test } from "vite-plus/test";
 
-import build from "../../src/build";
-import check_output_aarch64 from "./check_output_aarch64";
+import build_and_check_output from "../build_and_check_output";
 import parse_with_imports from "./parse_with_imports";
 
 // The original Zig exercise uses a doubly-linked list with tail/trunk pointers,
@@ -119,6 +118,5 @@ pub func main = () {
 `;
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual([]);
-	const built = build(parsed.root, { arch: "aarch64" });
-	await check_output_aarch64("0496", built, "A  B  C  Cv Bv Av \n");
+	await build_and_check_output(input, "ziglings_0496", "A  B  C  Cv Bv Av \n", true);
 });

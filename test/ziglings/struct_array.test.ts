@@ -1,8 +1,7 @@
 import { expect, test } from "vite-plus/test";
 
-import build from "../../src/build";
+import build_and_check_output from "../build_and_check_output";
 import parse_with_imports from "./parse_with_imports";
-import check_output from "./check_output";
 
 test("struct array -- build", async () => {
 	const input = `
@@ -22,6 +21,5 @@ pub func main = () {
 `;
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual([]);
-	const built = build(parsed.root, { arch: "aarch64" });
-	await check_output("struct_array", built, "1 2\n3 4\n5 6");
+	await build_and_check_output(input, "ziglings_struct_array", "1 2\n3 4\n5 6", true);
 });

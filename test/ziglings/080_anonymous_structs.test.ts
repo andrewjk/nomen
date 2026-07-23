@@ -1,7 +1,6 @@
 import { expect, test } from "vite-plus/test";
 
-import build from "../../src/build";
-import check_output_aarch64 from "./check_output_aarch64";
+import build_and_check_output from "../build_and_check_output";
 import parse_with_imports from "./parse_with_imports";
 
 // INCOMPATIBILITIES:
@@ -82,6 +81,10 @@ pub func main = () {
 `;
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual([]);
-	const built = build(parsed.root, { arch: "aarch64" });
-	await check_output_aarch64("080", built, "[Circle: 25,70,15]\n[Circle: 205,187,12]\n");
+	await build_and_check_output(
+		input,
+		"ziglings_080",
+		"[Circle: 25,70,15]\n[Circle: 205,187,12]\n",
+		true,
+	);
 });

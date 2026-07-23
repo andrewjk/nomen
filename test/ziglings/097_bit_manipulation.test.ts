@@ -1,7 +1,6 @@
 import { expect, test } from "vite-plus/test";
 
-import build from "../../src/build";
-import check_output_aarch64 from "./check_output_aarch64";
+import build_and_check_output from "../build_and_check_output";
 import parse_with_imports from "./parse_with_imports";
 
 // 097: XOR swap — swap two integer variables using only XOR.
@@ -61,6 +60,5 @@ pub func main = () {
 `;
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual([]);
-	const built = build(parsed.root, { arch: "aarch64" });
-	await check_output_aarch64("097", built, "x = 0; y = 1\n");
+	await build_and_check_output(input, "ziglings_097", "x = 0; y = 1\n", true);
 });

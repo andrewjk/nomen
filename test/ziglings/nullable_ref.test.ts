@@ -1,7 +1,6 @@
 import { expect, test } from "vite-plus/test";
 
-import build from "../../src/build";
-import check_output_aarch64 from "./check_output_aarch64";
+import build_and_check_output from "../build_and_check_output";
 import parse_with_imports from "./parse_with_imports";
 
 // Originally used `ref Node?` fields (now disallowed for soundness). Rewritten
@@ -28,8 +27,7 @@ pub func main = () {
 `;
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual([]);
-	const result = build(parsed.root, { arch: "aarch64" });
-	await check_output_aarch64("nullable_ref_basic", result, "a.value=1 b.value=2\n");
+	await build_and_check_output(input, "nullable_ref_basic", "a.value=1 b.value=2\n", true);
 });
 
 test("arena linked list - empty next is -1", async () => {
@@ -46,8 +44,7 @@ pub func main = () {
 `;
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual([]);
-	const result = build(parsed.root, { arch: "aarch64" });
-	await check_output_aarch64("nullable_ref_null_check", result, "next is null\n");
+	await build_and_check_output(input, "nullable_ref_null_check", "next is null\n", true);
 });
 
 test("ref struct param field access", async () => {
@@ -70,8 +67,7 @@ pub func main = () {
 `;
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual([]);
-	const result = build(parsed.root, { arch: "aarch64" });
-	await check_output_aarch64("ref_struct_param", result, "5");
+	await build_and_check_output(input, "ref_struct_param", "5", true);
 });
 
 test("ref struct param field assignment", async () => {
@@ -95,8 +91,7 @@ pub func main = () {
 `;
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual([]);
-	const result = build(parsed.root, { arch: "aarch64" });
-	await check_output_aarch64("ref_struct_assign", result, "42");
+	await build_and_check_output(input, "ref_struct_assign", "42", true);
 });
 
 test("ref struct param bool field in while", async () => {
@@ -122,6 +117,5 @@ pub func main = () {
 `;
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual([]);
-	const result = build(parsed.root, { arch: "aarch64" });
-	await check_output_aarch64("ref_struct_bool", result, "7");
+	await build_and_check_output(input, "ref_struct_bool", "7", true);
 });

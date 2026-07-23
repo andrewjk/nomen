@@ -1,7 +1,6 @@
 import { expect, test } from "vite-plus/test";
 
-import build from "../../src/build";
-import check_output_aarch64 from "./check_output_aarch64";
+import build_and_check_output from "../build_and_check_output";
 import parse_with_imports from "./parse_with_imports";
 
 // 057: In Zig, you can use union(enum) to infer the tag type.
@@ -92,10 +91,10 @@ pub func main = () {
 `;
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual([]);
-	const built = build(parsed.root, { arch: "aarch64" });
-	await check_output_aarch64(
+	await build_and_check_output(
+		input,
 		"057",
-		built,
 		"Insect report! Ant alive is: true. Bee visited 17 flowers. \n",
+		true,
 	);
 });

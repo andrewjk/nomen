@@ -1,7 +1,6 @@
 import { expect, test } from "vite-plus/test";
 
-import build from "../../src/build";
-import check_output_aarch64 from "./check_output_aarch64";
+import build_and_check_output from "../build_and_check_output";
 import parse_with_imports from "./parse_with_imports";
 
 test("ziglings 042 pointers4 -- errors", () => {
@@ -59,6 +58,5 @@ func makeFive = (ref int x) {
 `;
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual([]);
-	const built = build(parsed.root, { arch: "aarch64" });
-	await check_output_aarch64("042", built, "num: 5\n");
+	await build_and_check_output(input, "ziglings_042", "num: 5\n", true);
 });

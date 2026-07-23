@@ -1,7 +1,6 @@
 import { expect, test } from "vite-plus/test";
 
-import build from "../../src/build";
-import check_output_aarch64 from "./check_output_aarch64";
+import build_and_check_output from "../build_and_check_output";
 import parse_with_imports from "./parse_with_imports";
 
 // 060: Zig float types and arithmetic.
@@ -54,6 +53,10 @@ pub func main = () {
 `;
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual([]);
-	const built = build(parsed.root, { arch: "aarch64" });
-	await check_output_aarch64("060", built, "Shuttle liftoff weight: 2032092.160000kg\n");
+	await build_and_check_output(
+		input,
+		"ziglings_060",
+		"Shuttle liftoff weight: 2032092.160000kg\n",
+		true,
+	);
 });

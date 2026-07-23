@@ -1,7 +1,6 @@
 import { expect, test } from "vite-plus/test";
 
-import build from "../../src/build";
-import check_output_aarch64 from "./check_output_aarch64";
+import build_and_check_output from "../build_and_check_output";
 import parse_with_imports from "./parse_with_imports";
 
 // 055: Zig plain unions store different types at the same address. Nomen enums
@@ -86,10 +85,10 @@ pub func main = () {
 `;
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual([]);
-	const built = build(parsed.root, { arch: "aarch64" });
-	await check_output_aarch64(
+	await build_and_check_output(
+		input,
 		"055",
-		built,
 		"Insect report! Ant alive is: true. Bee visited 15 flowers. \n",
+		true,
 	);
 });

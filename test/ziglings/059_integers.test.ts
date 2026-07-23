@@ -1,7 +1,6 @@
 import { expect, test } from "vite-plus/test";
 
-import build from "../../src/build";
-import check_output_aarch64 from "./check_output_aarch64";
+import build_and_check_output from "../build_and_check_output";
 import parse_with_imports from "./parse_with_imports";
 
 // 059: Integer literal formats — decimal, hex (0x), octal (0o), binary (0b).
@@ -57,6 +56,5 @@ pub func main = () {
 `;
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual([]);
-	const built = build(parsed.root, { arch: "aarch64" });
-	await check_output_aarch64("059", built, "Zig is cool.\n");
+	await build_and_check_output(input, "ziglings_059", "Zig is cool.\n", true);
 });

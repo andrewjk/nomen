@@ -1,8 +1,7 @@
 import { expect, test } from "vite-plus/test";
 
-import build from "../../src/build";
+import build_and_check_output from "../build_and_check_output";
 import test_error from "../test_error";
-import check_output_aarch64 from "./check_output_aarch64";
 import parse_with_imports from "./parse_with_imports";
 
 test("ziglings 002 import -- errors", () => {
@@ -40,7 +39,6 @@ pub func main = () {
 `;
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual([]);
-	const built = build(parsed.root, { arch: "aarch64" });
 	const expected_output = "Standard Library.";
-	await check_output_aarch64("002", built, expected_output);
+	await build_and_check_output(input, "ziglings_002", expected_output, true);
 });

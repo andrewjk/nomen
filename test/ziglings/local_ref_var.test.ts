@@ -1,7 +1,6 @@
 import { expect, test } from "vite-plus/test";
 
-import build from "../../src/build";
-import check_output_aarch64 from "./check_output_aarch64";
+import build_and_check_output from "../build_and_check_output";
 import parse_with_imports from "./parse_with_imports";
 
 test("local ref var -- field access and assignment", async () => {
@@ -44,11 +43,11 @@ pub func main = () {
 `;
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual([]);
-	const built = build(parsed.root, { arch: "aarch64" });
-	await check_output_aarch64(
+	await build_and_check_output(
+		input,
 		"local_ref1",
-		built,
 		"1:false!. 2:true!. 3:true!. XP before:0, after:200.\n",
+		true,
 	);
 });
 
@@ -78,8 +77,7 @@ pub func main = () {
 `;
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual([]);
-	const built = build(parsed.root, { arch: "aarch64" });
-	await check_output_aarch64("local_ref2", built, "A B A:true B:true\n");
+	await build_and_check_output(input, "local_ref2", "A B A:true B:true\n", true);
 });
 
 test("local ref var -- passed to function", async () => {
@@ -112,6 +110,5 @@ pub func main = () {
 `;
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual([]);
-	const built = build(parsed.root, { arch: "aarch64" });
-	await check_output_aarch64("local_ref3", built, "a:6,1 b:11,1\n");
+	await build_and_check_output(input, "local_ref3", "a:6,1 b:11,1\n", true);
 });

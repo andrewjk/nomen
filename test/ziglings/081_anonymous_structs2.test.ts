@@ -1,7 +1,6 @@
 import { expect, test } from "vite-plus/test";
 
-import build from "../../src/build";
-import check_output_aarch64 from "./check_output_aarch64";
+import build_and_check_output from "../build_and_check_output";
 import parse_with_imports from "./parse_with_imports";
 
 // INCOMPATIBILITIES:
@@ -25,7 +24,6 @@ func printCircle = (Circle circle) {
 
 pub func main = () {
     printCircle([ center_x = ???, center_y = 187, radius = 12 ])
-    return
 }
 `;
 	const parsed = parse_with_imports(input);
@@ -76,6 +74,5 @@ pub func main = () {
 `;
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual([]);
-	const built = build(parsed.root, { arch: "aarch64" });
-	await check_output_aarch64("0812", built, "x:205 y:187 radius:12\n");
+	await build_and_check_output(input, "ziglings_0812", "x:205 y:187 radius:12\n", true);
 });

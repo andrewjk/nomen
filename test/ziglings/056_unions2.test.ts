@@ -1,7 +1,6 @@
 import { expect, test } from "vite-plus/test";
 
-import build from "../../src/build";
-import check_output_aarch64 from "./check_output_aarch64";
+import build_and_check_output from "../build_and_check_output";
 import parse_with_imports from "./parse_with_imports";
 
 // 056: Zig tagged unions use switch to capture the active field's value.
@@ -107,10 +106,10 @@ pub func main = () {
 `;
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual([]);
-	const built = build(parsed.root, { arch: "aarch64" });
-	await check_output_aarch64(
+	await build_and_check_output(
+		input,
 		"056",
-		built,
 		"Insect report! Ant alive is: true. Bee visited 16 flowers. \n",
+		true,
 	);
 });

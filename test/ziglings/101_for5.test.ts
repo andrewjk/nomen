@@ -1,7 +1,6 @@
 import { expect, test } from "vite-plus/test";
 
-import build from "../../src/build";
-import check_output_aarch64 from "./check_output_aarch64";
+import build_and_check_output from "../build_and_check_output";
 import parse_with_imports from "./parse_with_imports";
 
 // INCOMPATIBILITIES:
@@ -118,13 +117,13 @@ pub func main = () {
 `;
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual([]);
-	const built = build(parsed.root, { arch: "aarch64" });
-	await check_output_aarch64(
+	await build_and_check_output(
+		input,
 		"101",
-		built,
 		"1. Wizard (Gold: 25, XP: 40)\n" +
 			"2. Bard (Gold: 11, XP: 17)\n" +
 			"3. Bard (Gold: 5, XP: 55)\n" +
 			"4. Warrior (Gold: 7392, XP: 21)\n",
+		true,
 	);
 });

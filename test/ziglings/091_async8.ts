@@ -1,8 +1,7 @@
 import { expect, test } from "vite-plus/test";
 
-import build from "../../src/build";
 //import test_error from "../test_error";
-import check_output_aarch64 from "./check_output_aarch64";
+import build_and_check_output from "../build_and_check_output";
 import parse_with_imports from "./parse_with_imports";
 
 // TODO: convert zig code to nomen
@@ -60,6 +59,5 @@ test.skip("ziglings 091 async8 -- build", async () => {
 	const input = zig_source;
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual([]);
-	const built = build(parsed.root, { arch: "aarch64" });
-	await check_output_aarch64("0918", built, "");
+	await build_and_check_output(input, "0918", "");
 });

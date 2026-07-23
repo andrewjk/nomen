@@ -1,7 +1,6 @@
 import { expect, test } from "vite-plus/test";
 
-import build from "../../src/build";
-import check_output_aarch64 from "./check_output_aarch64";
+import build_and_check_output from "../build_and_check_output";
 import parse_with_imports from "./parse_with_imports";
 
 test("ziglings 019 functions2 -- errors", () => {
@@ -50,6 +49,5 @@ func twoToThe = (int my_number, out int) {
 `;
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual([]);
-	const built = build(parsed.root, { arch: "aarch64" });
-	await check_output_aarch64("019", built, "Powers of two: 2 4 8 16");
+	await build_and_check_output(input, "ziglings_019", "Powers of two: 2 4 8 16", true);
 });

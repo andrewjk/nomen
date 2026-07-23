@@ -1,7 +1,6 @@
 import { expect, test } from "vite-plus/test";
 
-import build from "../../src/build";
-import check_output_aarch64 from "./check_output_aarch64";
+import build_and_check_output from "../build_and_check_output";
 import parse_with_imports from "./parse_with_imports";
 
 // The original Zig exercise teaches struct methods on an Elephant linked list.
@@ -18,7 +17,7 @@ struct Elephant {
     var ref Elephant? tail = null
     var bool visited = false
 
-    func visit = (var self) {
+    func visit = (ref self) {
         self.visited = true
     }
 
@@ -93,6 +92,5 @@ pub func main = () {
 `;
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual([]);
-	const built = build(parsed.root, { arch: "aarch64" });
-	await check_output_aarch64("0482", built, "A  B  C  \n");
+	await build_and_check_output(input, "ziglings_0482", "A  B  C  \n", true);
 });
