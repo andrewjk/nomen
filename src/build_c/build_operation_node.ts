@@ -1,7 +1,9 @@
+import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_node from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
+import c_type from "./utils/c_type.ts";
 import { is_nullable_struct_type } from "./utils/nullable_struct.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 
@@ -73,11 +75,23 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 			if (right_temp) status.code += `nomen_free_wrap(${rt}); `;
 			status.code += `_cres_${id}; })`;
 		} else {
-			status.code += `${label}(`;
-			build_operand(node.left_value, status);
-			status.code += ", ";
-			build_operand(node.right_value, status);
-			status.code += ")";
+			const is_array_op =
+				node.operator_func.struct_name.startsWith("Array") &&
+				(type_from_value_node(node.left_value).is_array ||
+					type_from_value_node(node.right_value).is_array);
+			if (is_array_op) {
+				status.code += `${label}(`;
+				build_array_operand_for_call(node.left_value, status);
+				status.code += ", ";
+				build_array_operand_for_call(node.right_value, status);
+				status.code += ")";
+			} else {
+				status.code += `${label}(`;
+				build_operand(node.left_value, status);
+				status.code += ", ";
+				build_operand(node.right_value, status);
+				status.code += ")";
+			}
 		}
 	} else {
 		build_default_binary(node, status);
@@ -134,7 +148,23 @@ export function is_owned_heap_temp(
 		const heap_set = status.heap_returning_functions;
 		if (heap_set?.has(mangled)) return true;
 		if (heap_set && target_value && heap_set.has(`${target_value}_${raw_name}`)) return true;
-		return false;
+		// A method call `obj.method()` is mangled as `<StructType>_method`
+		// (e.g. `Frank_hello`) in heap_returning_functions. The receiver's
+		// struct type name lets us reconstruct that mangled name.
+		if (heap_set && target_type_name && heap_set.has(`${target_type_name}_${raw_name}`))
+			return true;
+		// The C backend strdup's EVERY string return (see build_return_node),
+		// so any string-returning call produces an owned heap string — even
+		// when the mangled name couldn't be matched (e.g. a trait default
+		// method resolved as `<Trait>_<method>` rather than
+		// `<Struct>_<method>`). The only string calls that are NOT owned are
+		// borrows: `.at()`/`.first()` return a pointer into the receiver's
+		// storage rather than a fresh allocation.
+		const is_borrow =
+			check_node.node_type === "access_func" &&
+			(raw_name === "at" || raw_name === "first") &&
+			!(check_node as unknown as { owned_return?: boolean }).owned_return;
+		return !is_borrow;
 	}
 	return false;
 }
@@ -204,4 +234,59 @@ function build_operand(node: any, status: BuildStatus) {
 		build_node(node, status);
 		status.code += `; &_op_tmp; })`;
 	}
+}
+
+/**
+ * Build an operand for an Array operator call. Stack arrays and inline array
+ * literals are wrapped in a temporary `struct Array_int` header so the
+ * monomorphized C function receives a proper `struct Array_int*` pointer.
+ * Heap arrays (already `struct Array_int*`) are passed by address as usual.
+ */
+function build_array_operand_for_call(node: any, status: BuildStatus) {
+	const param_type = type_from_value_node(node);
+	const is_heap_array =
+		node.node_type === "value" &&
+		status.heap_array_vars?.has((node as ValueNode).value);
+	if (is_heap_array) {
+		build_operand(node, status);
+		return;
+	}
+	const is_stack_array =
+		param_type.is_array &&
+		node.node_type === "value" &&
+		!status.heap_array_vars?.has((node as ValueNode).value);
+	const is_inline_literal = node.node_type === "array";
+	if (!is_stack_array && !is_inline_literal) {
+		build_operand(node, status);
+		return;
+	}
+	const elem_c_type = c_type(param_type.name);
+	let length: string;
+	if (is_stack_array) {
+		length = status.stack_array_lengths?.get((node as ValueNode).value) || "1";
+	} else {
+		length = String((node as ArrayValuesNode).values.length);
+	}
+	// Fallback: use compile-time type length if available
+	if (length === "1" && param_type.length) {
+		const before = status.code.length;
+		build_node(param_type.length, status);
+		length = status.code.substring(before);
+		status.code = status.code.substring(0, before);
+	}
+	const id = (status.label_counter = (status.label_counter ?? 0) + 1);
+	const wrap = `_arrwrap_${id}`;
+	status.code += `({ struct { struct Array_int _h; ${elem_c_type} _d[${length}]; } ${wrap}; `;
+	status.code += `${wrap}._h._vt = 0; ${wrap}._h.length = ${length}; `;
+	if (is_stack_array) {
+		status.code += `memcpy(${wrap}._d, ${(node as ValueNode).value}, ${length} * sizeof(${elem_c_type})); `;
+	} else {
+		const values = (node as ArrayValuesNode).values;
+		for (let i = 0; i < values.length; i++) {
+			status.code += `${wrap}._d[${i}] = `;
+			build_node(values[i], status);
+			status.code += `; `;
+		}
+	}
+	status.code += `(struct Array_int*)&${wrap}; })`;
 }

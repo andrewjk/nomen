@@ -138,6 +138,8 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.function_variadic_params = new Set<string>();
 	const old_return_type = status.function_return_type;
 	status.function_return_type = node.return_type;
+	const old_function_name = status.current_function_name;
+	status.current_function_name = node.name;
 	for (let param of node.params) {
 		if (param.is_variadic) {
 			status.function_variadic_params.add(c_function_name(param.name));
@@ -201,6 +203,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.ref_class_param_types = old_ref_class_param_types;
 	status.function_variadic_params = old_variadic_params;
 	status.function_return_type = old_return_type;
+	status.current_function_name = old_function_name;
 
 	// Always run auto_free at function exit. Functions with explicit returns
 	// already call build_auto_free at each return (which clears
@@ -227,6 +230,12 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 			status.code += `\n__nomen_pool_shutdown();\n`;
 		}
 		status.code += `\nnomen_audit_check();\n`;
+	}
+
+	// C's main returns int. A Nomen main with no explicit return falls through
+	// to here; emit `return 0;` so clang doesn't reject the fall-through.
+	if (node.name.toLocaleLowerCase() === "main") {
+		status.code += `return 0;\n`;
 	}
 
 	status.code += `}\n\n`;

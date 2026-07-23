@@ -21,17 +21,22 @@ export default function build_while_loop_node(node: WhileLoopNode, status: Build
 	// Hoist allocation declarations from the condition to before the `while`.
 	emit_allocations(node.condition, status);
 
-	status.code += `while (`;
-	build_node(node.condition, status);
-	status.code += `) {\n`;
+	// When there's an update clause (e.g. `while n <= 20; n += 1`), emit a
+	// C `for` loop so that `continue` inside the body still runs the update
+	// before re-checking the condition — matching the language's semantics.
+	if (node.update) {
+		status.code += `for (; `;
+		build_node(node.condition, status);
+		status.code += `; `;
+		build_node(node.update, status);
+		status.code += `) {\n`;
+	} else {
+		status.code += `while (`;
+		build_node(node.condition, status);
+		status.code += `) {\n`;
+	}
 
 	build_block_node(node, status);
-
-	if (node.update) {
-		status.code += `\t`;
-		build_node(node.update, status);
-		status.code += ";\n";
-	}
 
 	build_auto_free(status);
 

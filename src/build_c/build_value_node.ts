@@ -31,6 +31,11 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 	// address is needed (`&x` for forwarding to another ref param, `self` as a
 	// pointer for method dispatch) prefix `&` themselves; `&*x` is valid C and
 	// simplifies to `x`, so those callers stay correct.
+	// Escape raw control characters in string literals so they are valid C
+	// (multi-line Nomen strings have actual newlines that C rejects inside "...").
+	if (value.startsWith('"')) {
+		value = escape_c_string(value);
+	}
 	if (value !== "self" && status.function_ref_params?.has(value) && !status.suppress_dereference) {
 		status.code += `*`;
 	}
@@ -42,4 +47,11 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 		return;
 	}
 	status.code += value;
+}
+
+function escape_c_string(s: string): string {
+	// Only escape RAW control characters (from multi-line strings). Source-level
+	// escape sequences like \n are already correct for C, so backslashes are
+	// left untouched.
+	return s.replace(/\n/g, "\\n").replace(/\r/g, "\\r").replace(/\t/g, "\\t");
 }

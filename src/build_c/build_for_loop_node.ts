@@ -87,18 +87,23 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 			// Class-typed elements are pointers — emit `struct T *item`
 			// instead of `T item` (which would be a by-value struct).
 			const elem_struct = status.structs.find((s) => s.name === element_type && !s.is_simple_type);
-			if (elem_struct) {
+			const elem_is_class = !!elem_struct?.is_class;
+			if (elem_is_class) {
 				status.code += `struct ${element_type} *${node.item.value} = `;
-				if (elem_struct.is_class) {
-					if (!status.class_vars) status.class_vars = new Set();
-					status.class_vars.add(node.item.value);
-				}
+				if (!status.class_vars) status.class_vars = new Set();
+				status.class_vars.add(node.item.value);
+			} else if (elem_struct) {
+				status.code += `struct ${element_type} ${node.item.value} = `;
 			} else {
 				status.code += `${c_type(element_type)} ${node.item.value} = `;
 			}
 			if (is_heap) {
 				// Data lives just past the Array_<T> header: index into it.
-				const elem_ptr = elem_struct ? `struct ${element_type} **` : `${c_type(element_type)} *`;
+				// Class elements are stored as pointers (struct T **); struct
+				// and primitive elements are stored by-value (T *).
+				const elem_ptr = elem_is_class
+					? `struct ${element_type} **`
+					: `${elem_struct ? `struct ${element_type}` : c_type(element_type)} *`;
 				status.code += `((${elem_ptr})((char *)`;
 				build_node(node.list!, status);
 				status.code += ` + sizeof(struct Array_${element_type})))[${idx_var}];\n`;

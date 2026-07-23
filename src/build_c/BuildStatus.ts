@@ -101,6 +101,9 @@ export default interface BuildStatus {
 	ref_class_params?: Set<string>;
 	/** Type of each `ref` class param, keyed by C name (see ref_class_params). */
 	ref_class_param_types?: Map<string, import("../nodes/Type.ts").default>;
+	/** Local variables declared as `var ref` (mutable aliases via pointer).
+	 *  Reassigning one repoints the pointer rather than writing through it. */
+	ref_local_vars?: Set<string>;
 	/**
 	 * When true, the next value-node build of a ref/var param should NOT be
 	 * prefixed with `*` (i.e. the caller needs the pointer itself, e.g. to

@@ -1,4 +1,9 @@
+import AccessFieldNode from "../nodes/AccessFieldNode.ts";
+import AccessNode from "../nodes/AccessNode.ts";
+import BaseNode from "../nodes/BaseNode.ts";
 import MatchNode from "../nodes/MatchNode.ts";
+import ValueNode from "../nodes/ValueNode.ts";
+import build_auto_free from "./build_auto_free.ts";
 import build_block_node from "./build_block_node.ts";
 import build_node from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
@@ -7,6 +12,26 @@ import c_type from "./utils/c_type.ts";
 function enum_case_tag_name(match_value: string, enum_name: string): string | null {
 	if (match_value.startsWith(enum_name + "_")) {
 		return match_value.substring(enum_name.length + 1);
+	}
+	return null;
+}
+
+/** Extract the case tag from a match pattern node.
+ *  Handles `Enum.caseName` (AccessNode) and mangled/bare value forms. */
+function extract_case_tag(match_value: BaseNode, enum_name: string): string | null {
+	if (match_value.node_type === "access") {
+		const access = (match_value as AccessNode).access;
+		if (access.node_type === "access_field") {
+			return (access as AccessFieldNode).name;
+		}
+		return null;
+	}
+	if (match_value.node_type === "value") {
+		const v = (match_value as ValueNode).value;
+		// `.caseName` form
+		if (v.startsWith(".")) return v.substring(1);
+		// `Enum_caseName` mangled form
+		return enum_case_tag_name(v, enum_name);
 	}
 	return null;
 }
@@ -38,15 +63,19 @@ export default function build_match_node(node: MatchNode, status: BuildStatus) {
 			status.code += "case ";
 			build_node(match_case.match_value, status);
 			status.code += ":\n";
+			status.code += "{\n";
 			build_block_node(match_case.branch, status);
-			status.code += "break;\n";
+			build_auto_free(status);
+			status.code += "break;\n}\n";
 		}
 
 		if (node.else_branch) {
 			status.scoped_declarations = [];
 			status.code += "default:\n";
+			status.code += "{\n";
 			build_block_node(node.else_branch, status);
-			status.code += "break;\n";
+			build_auto_free(status);
+			status.code += "break;\n}\n";
 		}
 
 		status.code += "}\n";
@@ -58,7 +87,7 @@ export default function build_match_node(node: MatchNode, status: BuildStatus) {
 	// each case's payload fields to the local names declared in the branch.
 	let first = true;
 	for (const match_case of node.cases) {
-		const case_tag = enum_case_tag_name((match_case.match_value as any).value, enum_node!.name);
+		const case_tag = extract_case_tag(match_case.match_value, enum_node!.name);
 		if (!case_tag) continue;
 
 		status.code += first ? "if (" : "} else if (";
@@ -77,12 +106,14 @@ export default function build_match_node(node: MatchNode, status: BuildStatus) {
 
 		status.scoped_declarations = [];
 		build_block_node(match_case.branch, status);
+		build_auto_free(status);
 	}
 
 	if (node.else_branch) {
 		status.code += first ? "{\n" : "} else {\n";
 		status.scoped_declarations = [];
 		build_block_node(node.else_branch, status);
+		build_auto_free(status);
 	}
 	status.code += "}\n";
 

@@ -119,9 +119,47 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 					return;
 				}
 			}
+			// Enum payload field access (e.g. `insect.alive` where `alive` is
+			// a field of the `still_alive` case): lower to the union path
+			// `target._data._case_name.field_name`.
+			if (enum_node?.has_associated_data) {
+				for (const c of enum_node.cases) {
+					const param = c.params?.find((p) => p.name === access_field.name);
+					if (param) {
+						const target_value =
+							node.target.node_type === "value" ? (node.target as ValueNode).value : "";
+						const target_is_ref = !!status.function_ref_params?.has(target_value);
+						if (target_is_ref) status.suppress_dereference = true;
+						build_node(node.target, status);
+						status.suppress_dereference = false;
+						status.code += target_is_ref
+							? `->_data._${c.name}.${access_field.name}`
+							: `._data._${c.name}.${access_field.name}`;
+						return;
+					}
+				}
+			}
 			if (bitset_node) {
 				if (bitset_node.cases.includes(access_field.name)) {
 					status.code += `${bitset_node.name}_${access_field.name}`;
+					return;
+				}
+			}
+			// Static function reference (e.g. `Console.write` used as a value,
+			// not called). Emit the mangled C function name instead of the
+			// dotted Nomen name. A struct field with the same name as a method
+			// (e.g. Graph.edge_target) takes precedence — only treat this as a
+			// function reference when there is no colliding field.
+			if (target_type.name) {
+				const target_struct = status.structs.find(
+					(s) =>
+						s.name === target_type.name &&
+						s.functions?.some((f) => f.name === access_field.name) &&
+						!s.fields?.some((f) => f.name === access_field.name),
+				);
+				if (target_struct) {
+					const fn_c_name = access_field.name.replace(/#/g, "");
+					status.code += `${target_type.name}_${fn_c_name}`;
 					return;
 				}
 			}
@@ -256,6 +294,26 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				emit_string_length(node.target, status);
 				break;
 			}
+			// `.to_string()` on a string-typed receiver compiles to
+			// `string_to_string(receiver)`, which strdups its argument and
+			// returns a fresh owned copy. When the receiver is itself an owned
+			// heap temporary (e.g. a method call like `f.greet().to_string()`
+			// used inside a string interpolation), the strdup'd input leaks —
+			// nobody frees it. Wrap in a clang statement-expression that frees
+			// the temporary after string_to_string has copied it, mirroring
+			// emit_string_length.
+			if (
+				access_func.name === "to_string" &&
+				target_type.name === "string" &&
+				is_owned_heap_temp(node.target, status)
+			) {
+				const id = (status.label_counter = (status.label_counter ?? 0) + 1);
+				const tmp = `_sts_${id}`;
+				status.code += `({ char* ${tmp} = `;
+				build_node(node.target, status);
+				status.code += `; char* _sto_${id} = string_to_string(${tmp}); nomen_free_wrap(${tmp}); _sto_${id}; })`;
+				break;
+			}
 			if (
 				access_func.name === "to_string" &&
 				(status.enums.find((e) => e.name === target_type.name) ||
@@ -279,9 +337,21 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				const elem_name = target_type.name;
 				const to_string_fn = `${elem_name}_to_string`;
 				const len = (target_type.length as any).value || "0";
-				status.code += `({ char* _ts_r = (char*)malloc(1); _ts_r[0] = 0; long _ts_n = 0; for (long _i = 0; _i < ${len}; _i++) { char* _s = ${to_string_fn}(`;
-				build_node(node.target, status);
-				status.code += `[_i]); _ts_n += strlen(_s); _ts_r = (char*)realloc(_ts_r, _ts_n + 1); strcat(_ts_r, _s); free(_s); } _ts_r; })`;
+				// Heap arrays (struct Array_T*) store data past the header struct;
+				// fixed-size C arrays (T arr[N]) index directly.
+				const target_name =
+					node.target.node_type === "value" ? (node.target as ValueNode).value : "";
+				const is_heap = !!target_name && !!status.heap_array_vars?.has(target_name);
+				status.code += `({ char* _ts_r = (char*)nomen_malloc_wrap(1); _ts_r[0] = 0; long _ts_n = 0; for (long _i = 0; _i < ${len}; _i++) { char* _s = ${to_string_fn}(`;
+				if (is_heap) {
+					status.code += `((${c_type(elem_name)}*)((char*)`;
+					build_node(node.target, status);
+					status.code += ` + sizeof(struct Array_${elem_name})))[_i]`;
+				} else {
+					build_node(node.target, status);
+					status.code += `[_i]`;
+				}
+				status.code += `); _ts_n += strlen(_s); _ts_r = (char*)nomen_realloc_wrap(_ts_r, _ts_n + 1); strcat(_ts_r, _s); nomen_free_wrap(_s); } _ts_r; })`;
 				status.last_result_is_heap = true;
 				break;
 			}

@@ -3,6 +3,7 @@ import AccessNode from "../nodes/AccessNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
+import OperationNode from "../nodes/OperationNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import { struct_needs_destroy_by_name } from "./build_auto_free.ts";
 import build_node from "./build_node.ts";
@@ -16,8 +17,10 @@ import type_from_value_node from "./utils/type_from_value_node.ts";
 export default function build_declaration_node(node: DeclarationNode, status: BuildStatus) {
 	// TODO: malloc() if it's on the heap
 
-	// Function type declaration
-	if (node.func_params) {
+	// Function type declaration (explicit `var func (...) f = ...` or inferred
+	// `var f = Console.write` where the checker resolved the type to "func"
+	// with func_params/func_return_type on node.type).
+	if (node.func_params || node.type.name === "func") {
 		build_function_type_declaration(node, status);
 		return;
 	}
@@ -63,6 +66,31 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			(s) => s.name === mono_name && !s.is_simple_type && !s.is_generic,
 		);
 		const is_class_type = !!mono_struct?.is_class;
+		// `var ref T x = y` declares x as a pointer to y (mutable alias).
+		// Emit `T *x = &y` and track x in function_ref_params so accesses
+		// use `->` and value-uses dereference. Ref locals don't own data,
+		// so they are NOT added to scoped_declarations.
+		if (node.type.is_ref && !node.type.is_array) {
+			if (mono_struct) {
+				status.code += `struct ${mono_name} *${safe_name}`;
+			} else {
+				status.code += `${c_type(node.type.name)} *${safe_name}`;
+			}
+			if (node.value) {
+				status.code += ` = &`;
+				build_node(node.value, status);
+			}
+			status.code += `;\n`;
+			if (!status.function_ref_params) status.function_ref_params = new Set();
+			status.function_ref_params.add(safe_name);
+			if (!status.ref_local_vars) status.ref_local_vars = new Set();
+			status.ref_local_vars.add(safe_name);
+			if (node.type?.name) {
+				if (!status.variable_types) status.variable_types = new Map();
+				status.variable_types.set(safe_name, node.type);
+			}
+			return;
+		}
 		// `var q = p` where p is a class variable creates an ALIAS (pointer
 		// copy), not a fresh owner. Aliases must not be freed at scope exit —
 		// the original declaration owns the instance. Detect this by checking
@@ -195,7 +223,9 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			!is_stack_array &&
 			(node.value?.node_type === "func_call" ||
 				(node.value?.node_type === "access" &&
-					(node.value as AccessNode).access.node_type === "access_func"));
+					(node.value as AccessNode).access.node_type === "access_func") ||
+				(node.value?.node_type === "op" &&
+					!!(node.value as OperationNode).operator_func?.struct_name?.startsWith("Array")));
 		if (is_heap_array_from_call) {
 			status.code += `struct Array_${node.type.name}* ${safe_name}`;
 			if (!status.heap_array_vars) status.heap_array_vars = new Set();
@@ -413,14 +443,18 @@ function build_function_type_declaration(node: DeclarationNode, status: BuildSta
 		return;
 	}
 
-	// Otherwise, generate a function pointer declaration
-	const return_type_name = node.func_return_type?.name || "void";
+	// Otherwise, generate a function pointer declaration.
+	// Explicit syntax (`var func (string,) f`) stores params on the decl;
+	// inferred type (`var f = Console.write`) stores them on node.type.
+	const func_params = node.func_params || node.type.func_params || [];
+	const func_return_type = node.func_return_type || node.type.func_return_type;
+	const return_type_name = func_return_type?.name || "void";
 	status.code += `${c_type(return_type_name)} (*${node.name})(`;
-	for (let i = 0; i < node.func_params!.length; i++) {
+	for (let i = 0; i < func_params.length; i++) {
 		if (i > 0) {
 			status.code += ", ";
 		}
-		build_parameter_node(node.func_params![i], status);
+		build_parameter_node(func_params[i], status);
 	}
 	status.code += `)`;
 	if (node.value) {

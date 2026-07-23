@@ -83,27 +83,15 @@ export function free_scoped_declarations(status: BuildStatus, decls: Declaration
 		// `to_string()` hoisted as an interpolation arg) is owned and MUST be
 		// freed even when its inherited type is `static` (the static-ness came
 		// from the source expression, not the freshly-allocated result).
+		// The C backend strdup's EVERY string return (literals, borrows, and
+		// already-owned values alike — see build_return_node), so any function
+		// or method call that yields a string produces a fresh heap allocation
+		// the caller owns and must free.
 		const value_is_heap_string =
 			dec.type.name === "string" &&
 			((dec.value?.node_type === "access" &&
-				(dec.value as AccessNode).access.node_type === "access_func" &&
-				(dec.value as AccessNode).access &&
-				(() => {
-					const fn = (dec.value as AccessNode).access as {
-						name?: string;
-						mangled_name?: string;
-						owned_return?: boolean;
-					};
-					const nm = fn.mangled_name || fn.name || "";
-					if (fn.name === "to_string" && nm !== "string_to_string") return true;
-					if (nm.startsWith("_string_interpolate_")) return true;
-					if (nm && status.heap_returning_functions?.has(nm)) return true;
-					return false;
-				})()) ||
-				// A direct call to a user function that returns an owned heap
-				// string (`const out = first_parts(...)`).
-				(dec.value?.node_type === "func_call" &&
-					!!status.heap_returning_functions?.has((dec.value as { name?: string }).name ?? "")));
+				(dec.value as AccessNode).access.node_type === "access_func") ||
+				dec.value?.node_type === "func_call");
 		const dec_struct = status.structs.find((s) => s.name === dec.type.name);
 		const is_class_var = !!dec_struct?.is_class;
 		if (

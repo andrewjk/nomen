@@ -191,42 +191,13 @@ function gather_structs(block: BlockNode, status: BuildStatus) {
 // only yields literals. Recurses through match/switch branches.
 function value_is_owned_string(v: any): boolean {
 	if (!v || typeof v !== "object") return false;
-	if (v.node_type === "value") {
-		const isLiteral = typeof v.value === "string" && v.value.startsWith('"');
-		return !isLiteral;
-	}
-	if (v.node_type === "op") return true;
-	if (v.node_type === "access") {
-		if (v.access?.node_type === "access_field") return false;
-		if (v.access?.node_type === "access_func") {
-			const raw = v.access.name as string;
-			const mangled = (v.access.mangled_name as string) || raw;
-			if (mangled.startsWith("_string_interpolate_")) return true;
-			if (mangled.endsWith("_to_string") && mangled !== "string_to_string") return true;
-			if (raw === "to_string" && v.target?.type?.name && v.target.type.name !== "string")
-				return true;
-			return true;
-		}
-		return false;
-	}
-	if (v.node_type === "func_call") return true;
-	if (v.node_type === "match" || v.node_type === "switch") {
-		const branches: any[] = [];
-		if (Array.isArray(v.cases)) for (const c of v.cases) if (c?.branch) branches.push(c.branch);
-		if (v.else_branch) branches.push(v.else_branch);
-		if (Array.isArray(v.branches)) for (const b of v.branches) branches.push(b);
-		for (const b of branches) {
-			const stmts = b?.statements ?? [];
-			for (const s of stmts) {
-				if (s?.node_type === "let" || s?.node_type === "return") {
-					if (value_is_owned_string(s.value)) return true;
-				} else if (value_is_owned_string(s)) {
-					return true;
-				}
-			}
-		}
-		return false;
-	}
+	// The C backend strdup's EVERY string return before handing it to the
+	// caller: literals (`return "x"` → strdup), borrowed field accesses
+	// (`return self.name` → strdup), method/func calls already produce a
+	// fresh heap string, and match/switch/if returns are strdup'd too (see
+	// build_return_node). So any path through a string-returning function
+	// transfers ownership of a heap string to the caller — register the
+	// function unconditionally so callers know to free the result.
 	return true;
 }
 

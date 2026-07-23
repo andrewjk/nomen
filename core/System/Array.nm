@@ -207,10 +207,18 @@ pub struct Array<T> {
     pub func add = (self, Array other, out Array) {
         ```
         #arch: c
-        typeof(*self) _result;
-        _result.length = _self.length + other->length;
-        T* self_data = (T*)(self + 1);
-        T* other_data = (T*)(other + 1);
+        long _self_len = self->length;
+        long _other_len = other->length;
+        long _result_len = _self_len + _other_len;
+        long _header = sizeof(*self);
+        void* _result = nomen_malloc_wrap(_header + _result_len * T_SIZE);
+        ((long*)_result)[0] = 0;
+        ((long*)_result)[1] = _result_len;
+        T* _data = (T*)((char*)_result + _header);
+        T* self_data = (T*)((char*)self + _header);
+        T* other_data = (T*)((char*)other + _header);
+        memcpy(_data, self_data, _self_len * T_SIZE);
+        memcpy(_data + _self_len, other_data, _other_len * T_SIZE);
         return _result;
         ```
         ```
@@ -262,8 +270,17 @@ pub struct Array<T> {
     pub func mul = (self, int other, out Array) {
         ```
         #arch: c
-        typeof(*self) _result;
-        _result.length = _self.length * other;
+        long _self_len = self->length;
+        long _result_len = _self_len * other;
+        long _header = sizeof(*self);
+        void* _result = nomen_malloc_wrap(_header + _result_len * T_SIZE);
+        ((long*)_result)[0] = 0;
+        ((long*)_result)[1] = _result_len;
+        T* _data = (T*)((char*)_result + _header);
+        T* self_data = (T*)((char*)self + _header);
+        for (long i = 0; i < other; i++) {
+            memcpy(_data + i * _self_len, self_data, _self_len * T_SIZE);
+        }
         return _result;
         ```
         ```

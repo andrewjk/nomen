@@ -14,6 +14,9 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 		build_auto_free(status);
 		if (status.return_assign) {
 			status.code += `${status.return_assign} = 0;\n`;
+		} else if (status.current_function_name?.toLocaleLowerCase() === "main") {
+			// C's main returns int; a bare Nomen `return` (void) lowers to `return 0;`
+			status.code += `return 0;\n`;
 		} else {
 			status.code += `return;\n`;
 		}
@@ -118,6 +121,27 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 				? `struct ${mono_type_name}* `
 				: `struct ${mono_type_name} `
 			: c_type(ret_type.name || "int");
+		// Match/switch/if are statements in C, not expressions — `_return_val
+		// = switch(...)` is invalid. Declare _return_val uninitialised, set
+		// return_assign so each branch's LetNode/ReturnNode assigns to it,
+		// then return it.
+		if (
+			node.value.node_type === "match" ||
+			node.value.node_type === "switch" ||
+			node.value.node_type === "if"
+		) {
+			status.code += `${type_prefix} _return_val;\n`;
+			status.return_assign = "_return_val";
+			build_node(node.value, status);
+			status.return_assign = old_return_assign;
+			build_auto_free(status);
+			if (ret_type.name === "string") {
+				status.code += `return strdup(_return_val);\n`;
+			} else {
+				status.code += `return _return_val;\n`;
+			}
+			return;
+		}
 		status.code += `${type_prefix} _return_val = `;
 		// `return self` where self is a pointer param (any non-local self):
 		// dereference the pointer so the by-value return copies the struct.
@@ -148,6 +172,14 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 		// result and LEAKS the original. Detect the access kind and skip the
 		// strdup for owned-string-returning method calls.
 		let returns_borrowed_string = ret_type.name === "string" && node.value.node_type === "access";
+		// A bare string literal return (`return "Wizard"`) is not heap-allocated;
+		// the caller's auto_free would crash freeing it. strdup to make it owned.
+		const returns_string_literal =
+			ret_type.name === "string" &&
+			node.value.node_type === "value" &&
+			(node.value as ValueNode).value.length >= 2 &&
+			(node.value as ValueNode).value.startsWith('"') &&
+			(node.value as ValueNode).value.endsWith('"');
 		if (returns_borrowed_string) {
 			const access = (node.value as AccessNode).access;
 			if (access.node_type === "access_func") {
@@ -165,7 +197,7 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 				if (returns_owned_string) returns_borrowed_string = false;
 			}
 		}
-		if (returns_borrowed_string) {
+		if (returns_borrowed_string || returns_string_literal) {
 			status.code += `strdup(`;
 		}
 		// Type erasure: when the function returns a class/struct pointer but
@@ -182,7 +214,7 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 			status.code += return_is_class ? `(struct ${mono_type_name}*)` : `(struct ${mono_type_name})`;
 		}
 		build_node(node.value, status);
-		if (returns_borrowed_string) {
+		if (returns_borrowed_string || returns_string_literal) {
 			status.code += `)`;
 		}
 		status.code += `;\n`;

@@ -12,6 +12,7 @@ export default function build_root_node(node: RootNode, status: BuildStatus) {
 #include <math.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <unistd.h>
 #include "main.h"
 
 `.trimStart();

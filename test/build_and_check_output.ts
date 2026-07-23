@@ -1,4 +1,4 @@
-import { expect } from "vitest";
+import { expect } from "vite-plus/test";
 
 import build from "../src/build";
 import check_output from "./check_output";

@@ -234,9 +234,7 @@ function build_constructor_params(fc: FunctionCallNode, param_regs: string[], st
 	) {
 		const arr = fc.params[variadic_idx] as ArrayValuesNode;
 		const elem_type_name = arr.type.name || "int";
-		const elem_struct = status.structs.find(
-			(s) => s.name === elem_type_name && !s.is_simple_type,
-		);
+		const elem_struct = status.structs.find((s) => s.name === elem_type_name && !s.is_simple_type);
 		const elem_size = elem_struct ? get_struct_size(elem_type_name, status) : 8;
 		const count = arr.values.length;
 		// Always reserve at least one element so the pointer we pass is a valid,

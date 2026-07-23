@@ -443,6 +443,21 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 		return;
 	}
 
+	// Ref-local reassignment (`current = otherVar`): repoint the pointer
+	// rather than writing through it. A `var ref` local is emitted as a C
+	// pointer, so `current = &otherVar` makes it alias the new variable.
+	if (
+		!node.operator &&
+		node.left_value.node_type === "value" &&
+		status.ref_local_vars?.has((node.left_value as ValueNode).value)
+	) {
+		const lhs_name = (node.left_value as ValueNode).value;
+		status.code += `${lhs_name} = &`;
+		build_node(node.right_value, status);
+		status.code += `;\n`;
+		return;
+	}
+
 	build_node(node.left_value, status);
 	if (node.operator) {
 		status.code += ` ${node.operator.slice(0, -1)}= `;

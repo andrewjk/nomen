@@ -342,6 +342,12 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 		// HACK: Need to map names to types
 		const func_start = status.code.length;
 		let return_type = func.return_type.name || "void";
+		// For methods of specialized generic structs (e.g. Array_int),
+		// replace generic return type (e.g. Array) with the specialized name
+		// so downstream checks can detect array return types.
+		if (return_type !== node.name && node.name.startsWith(return_type + "_")) {
+			return_type = node.name;
+		}
 		const returns_array_data =
 			(func.return_type.type_args?.length ?? 0) > 0 && return_type === "Array";
 		const func_label_name = is_overloaded(node, func.name)
@@ -355,12 +361,11 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 			// Returning Array<T> data — use T* (e.g. with returns int*)
 			const elem_type = c_type(func.return_type.type_args![0].name);
 			status.code += `${elem_type}* ${func_label_name}(`;
+		} else if (return_type.startsWith("Array_")) {
+			// Array struct types (e.g. Array_int) return void* (pointer to heap buffer
+			// with header + data layout). The #arch: c block allocates the buffer.
+			status.code += `void* ${func_label_name}(`;
 		} else {
-			// HACK: For methods of specialized generic structs (e.g. Array_int),
-			// replace generic return type (e.g. Array) with the specialized name
-			if (return_type !== node.name && node.name.startsWith(return_type + "_")) {
-				return_type = node.name;
-			}
 			const return_struct = status.structs.find((s) => s.name === return_type && !s.is_simple_type);
 			if (return_struct) {
 				status.code += `struct `;
