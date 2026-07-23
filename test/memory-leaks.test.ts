@@ -159,7 +159,7 @@ Console.write("\\{items.at(2).value}")
 class Resource {
   var int handle
 
-  func #destroy = () {
+  func #destroy = (ref self) {
     self.handle = -1
   }
 }

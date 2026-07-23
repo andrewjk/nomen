@@ -144,7 +144,7 @@ Console.write("\\{r2.handle}")
 struct Counter {
     var int count
 
-    func reset = (var self) {
+    func reset = (ref self) {
         self.count = 0
     }
 }

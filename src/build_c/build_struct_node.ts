@@ -394,7 +394,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 
 		// HACK: Dereference the `self` pointer arg to a local variable with a random name
 		// (`_self` for now, but we could automate it)
-		// Skip for `ref self` and `var self` — mutations should propagate through the pointer directly
+		// Skip for `ref self` and `ref self` — mutations should propagate through the pointer directly
 		if (
 			!node.is_simple_type &&
 			func.params[0]?.is_self_param &&

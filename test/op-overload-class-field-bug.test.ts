@@ -64,7 +64,7 @@ struct Money {
 }
 class Wallet {
 	var Money funds = Money(0)
-	func add = (var self, Money amount) {
+	func add = (ref self, Money amount) {
 		self.funds = self.funds + amount
 	}
 }

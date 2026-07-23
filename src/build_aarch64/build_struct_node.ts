@@ -573,7 +573,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 			status.return_buffer_stack_offset = return_buffer_stack_offset;
 		}
 
-		// Save non-struct params and var self to stack now that x29 is set
+		// Save non-struct params and ref self to stack now that x29 is set
 		for (let i = 0; i < func.params.length; i++) {
 			const param = func.params[i];
 			if (param.is_self_param && !self_is_var) continue;

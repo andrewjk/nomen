@@ -112,16 +112,16 @@ apply(inc, 5)
 struct Vec2 {
     var int x
     var int y
-    pub func scale = (self, int s) {
+    pub func scale = (ref self, int s) {
         self.x = self.x * s
         self.y = self.y * s
     }
-    pub func scale = (self, Vec2 other) {
+    pub func scale = (ref self, Vec2 other) {
         self.x = self.x * other.x
         self.y = self.y * other.y
     }
 }
-const v = Vec2(2, 3)
+var v = Vec2(2, 3)
 v.scale(4)
 v.scale(v)
 `;

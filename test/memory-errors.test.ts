@@ -212,7 +212,7 @@ var List<int> b = a
 struct Token {
 	var int id
 
-	func #destroy = () {
+	func #destroy = (ref self) {
 		self.id = 0
 	}
 }
@@ -230,7 +230,7 @@ var Token b = a
 struct Token {
 	var int id
 
-	func #destroy = () {
+	func #destroy = (ref self) {
 		self.id = 0
 	}
 }

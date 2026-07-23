@@ -59,7 +59,7 @@ trait Person {
 		const input = `
 struct Counter {
   private var int count = 0
-  func increment = (self) {
+  func increment = (ref self) {
     self.count = self.count + 1
   }
   func get = (self, out int) {
@@ -169,7 +169,7 @@ struct Outer {
 }
 struct Inner {
   var Outer outer
-  func doStuff = (self) {
+  func doStuff = (ref self) {
     self.outer.value = 5
   }
 }
@@ -282,7 +282,7 @@ struct Foo {
 struct Widget {
   private var int id = 0
   private var string label = ""
-  private func reset = (self) {
+  private func reset = (ref self) {
     self.id = 0
     self.label = ""
   }
@@ -312,7 +312,7 @@ func create = (out Container) {
 		const input = `
 struct Counter {
   private var int count = 0
-  func decrement = (self) {
+  func decrement = (ref self) {
     self.count = self.count - 1
   }
 }

@@ -9,7 +9,7 @@ pub struct Point {
     pub var int x
     pub var int y
 
-    pub func add = (self, Point other, out Point) {
+    pub func add = (ref self, Point other, out Point) {
         return Point(self.x + other.x, self.y + other.y)
     }
 }
@@ -27,7 +27,7 @@ pub struct Point {
     pub var int y
     pub var int sum
 
-    func #init = (self, int x, int y) {
+    func #init = (ref self, int x, int y) {
         self.x = x
         self.y = y
         self.sum = x + y
@@ -45,7 +45,7 @@ describe("spec: destroy functions", () => {
 pub struct Transaction {
     pub var int handle
 
-    func #init = (self, int handle) {
+    func #init = (ref self, int handle) {
         self.handle = handle
     }
 
@@ -82,12 +82,12 @@ q.x = 99
 		expect(compile_main(input)).toEqual([]);
 	});
 
-	test("class methods with var self", () => {
+	test("class methods with ref self", () => {
 		const input = `
 class Counter {
     var int count
 
-    func increment = (var self) {
+    func increment = (ref self) {
         self.count = self.count + 1
     }
 }
@@ -102,7 +102,7 @@ c.increment()
 class Resource {
     var int handle
 
-    func #destroy = () {
+    func #destroy = (ref self) {
         self.handle = -1
     }
 }
@@ -132,7 +132,7 @@ pub struct List<T> {
     var int capacity = 0
     var T elem
 
-    pub func push = (self, T value) {
+    pub func push = (ref self, T value) {
         self.elem = value
     }
     pub func pop = (self, out T) {
@@ -150,7 +150,7 @@ pub struct List<T> {
     var int capacity = 0
     var T elem
 
-    pub func push = (self, T value) {
+    pub func push = (ref self, T value) {
         self.elem = value
     }
     pub func pop = (self, out T) {

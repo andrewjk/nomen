@@ -368,21 +368,21 @@ behavior-preserving refactor that lifted the cache helpers to module scope in
 ## Original baseline table
 
 | Benchmark      | Nomen (small / large) | Best other (lang) | Ratio (large) |
-| -------------- | -------------------- | ----------------- | ------------- |
-| pidigits       | 196 / 3562 ms        | 126 ms (Go)       | ~28×          |
-| fannkuch-redux | 368 / 4785 ms        | 122 ms (Rust)     | ~39×          |
-| binarytrees    | 241 / 2559 ms        | 99 ms (Rust)      | ~26×          |
-| merkletrees    | 194 / 907 ms         | 121 ms (Zig)      | ~7×           |
-| nsieve         | 289 / 1446 ms        | 39 ms (Zig)       | ~37×          |
-| lru            | 39 / 150 ms          | 7 ms (Zig)        | ~21×          |
-| knucleotide    | 18 / 18 ms           | 6 ms (Zig)        | ~3×           |
-| json-serde     | 46 / 219 ms          | 4 ms (Go)         | ~55×          |
-| regex-redux    | 62 / 62 ms           | 4 ms (Rust)       | ~15×          |
-| nbody          | 230 / 2281 ms        | 16 ms (Rust)      | ~143×         |
-| spectral-norm  | 97 / 875 ms          | 58 ms (Rust)      | ~15×          |
-| mandelbrot     | 358 / 1423 ms        | 46 ms (Zig/Rust)  | ~31×          |
-| edigits        | 125 / 734 ms         | 3 ms (Go)         | ~245×         |
-| helloworld     | 4 / 2 ms             | — (I/O bound)     | —             |
+| -------------- | --------------------- | ----------------- | ------------- |
+| pidigits       | 196 / 3562 ms         | 126 ms (Go)       | ~28×          |
+| fannkuch-redux | 368 / 4785 ms         | 122 ms (Rust)     | ~39×          |
+| binarytrees    | 241 / 2559 ms         | 99 ms (Rust)      | ~26×          |
+| merkletrees    | 194 / 907 ms          | 121 ms (Zig)      | ~7×           |
+| nsieve         | 289 / 1446 ms         | 39 ms (Zig)       | ~37×          |
+| lru            | 39 / 150 ms           | 7 ms (Zig)        | ~21×          |
+| knucleotide    | 18 / 18 ms            | 6 ms (Zig)        | ~3×           |
+| json-serde     | 46 / 219 ms           | 4 ms (Go)         | ~55×          |
+| regex-redux    | 62 / 62 ms            | 4 ms (Rust)       | ~15×          |
+| nbody          | 230 / 2281 ms         | 16 ms (Rust)      | ~143×         |
+| spectral-norm  | 97 / 875 ms           | 58 ms (Rust)      | ~15×          |
+| mandelbrot     | 358 / 1423 ms         | 46 ms (Zig/Rust)  | ~31×          |
+| edigits        | 125 / 734 ms          | 3 ms (Go)         | ~245×         |
+| helloworld     | 4 / 2 ms              | — (I/O bound)     | —             |
 
 ---
 

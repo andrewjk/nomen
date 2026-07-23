@@ -139,7 +139,7 @@ pub trait Control {
 
     // Apply a concrete rectangle. For native controls this calls setFrame:
     // on the platform handle. For containers this also arranges children.
-    func set_frame = (var self, int x, int y, int width, int height)
+    func set_frame = (ref self, int x, int y, int width, int height)
 
     // What size would you be with unbounded space? (Used by parents to
     // decide wrapping, scrolling, etc. Default: call measure with infinity.)
@@ -341,12 +341,12 @@ pub struct Container : Control {
     pub var int spacing = 0
     pub var Alignment align = .start     // default cross-axis alignment for children
 
-    pub func add = (var self, Control child) {
+    pub func add = (ref self, Control child) {
         self.children = self.children.add(child)
         self.params = self.params.add(DEFAULT_PARAMS)
     }
 
-    pub func add = (var self, Control child, LayoutParams p) {
+    pub func add = (ref self, Control child, LayoutParams p) {
         self.children = self.children.add(child)
         self.params = self.params.add(p)
     }

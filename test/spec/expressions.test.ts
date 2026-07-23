@@ -240,7 +240,7 @@ describe("spec: structs (overview)", () => {
 pub struct Point {
     pub var int x
     pub var int y
-    pub func translate = (self, int dx, int dy) {
+    pub func translate = (ref self, int dx, int dy) {
         self.x = self.x + dx
         self.y = self.y + dy
     }
@@ -248,7 +248,7 @@ pub struct Point {
         return (self.x * self.x + self.y * self.y)
     }
 }
-const p = Point(3, 4)
+var p = Point(3, 4)
 p.translate(1, 1)
 const d = p.distance_from_origin()
 `;

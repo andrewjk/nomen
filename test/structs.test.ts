@@ -143,7 +143,7 @@ Console.write("\\{age}")
 		const input = `
 struct Counter {
   var int count = 0
-  func increment = (var self) {
+  func increment = (ref self) {
     self.count = self.count + 1
   }
 }

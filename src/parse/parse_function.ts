@@ -68,14 +68,23 @@ export default function parse_function(
 	if (expect("=", status) && expect("(", status)) {
 		const parent = status.stack.at(-1)!;
 
-		if (name === "#destroy" && parent.node_type === "struct") {
-			const self_param = new ParameterNode(start, "self", new Type((parent as StructNode).name));
-			self_param.is_self_param = true;
-			func.params.push(self_param);
-		}
-
 		if (peek_current(status) !== ")") {
 			parse_function_parameter(parent, func, status);
+		}
+
+		// `#destroy` may be written with no parameter list (`func #destroy = ()`)
+		// or with an explicit `self`/`ref self`. Only auto-inject a mutable self
+		// when the author didn't supply one — otherwise a duplicate "self"
+		// parameter is created and the author's (mutable) declaration is lost.
+		if (
+			name === "#destroy" &&
+			parent.node_type === "struct" &&
+			!func.params.some((p) => p.is_self_param)
+		) {
+			const self_param = new ParameterNode(start, "self", new Type((parent as StructNode).name));
+			self_param.is_self_param = true;
+			self_param.declaration = "var";
+			func.params.unshift(self_param);
 		}
 
 		// Validate: variadic params must be last

@@ -264,7 +264,7 @@ pub struct Point {
     pub int y
     pub int sum
 
-    func #init = (self, int x, int y) {
+    func #init = (ref self, int x, int y) {
         self.x = x
         self.y = y
         self.sum = x + y
@@ -280,7 +280,7 @@ If a struct has a `#destroy` function, it runs automatically when the struct goe
 pub struct Transaction {
     pub int handle
 
-    func #init = (self, int handle) {
+    func #init = (ref self, int handle) {
         self.handle = handle
     }
 
@@ -320,13 +320,13 @@ q.x = 99
 
 #### Methods
 
-Class methods use `var self` to declare mutable access to the instance:
+Class methods use `ref self` to declare mutable access to the instance:
 
 ```
 class Counter {
     var int count
 
-    func increment = (var self) {
+    func increment = (ref self) {
         self.count = self.count + 1
     }
 }
@@ -347,7 +347,7 @@ Like structs, classes support `#destroy` functions that run automatically when t
 class Resource {
     var int handle
 
-    func #destroy = () {
+    func #destroy = (ref self) {
         self.handle = -1
     }
 }
@@ -901,12 +901,12 @@ struct Vec2 {
     var int x
     var int y
 
-    pub func scale = (self, int s) {
+    pub func scale = (ref self, int s) {
         self.x = self.x * s
         self.y = self.y * s
     }
 
-    pub func scale = (self, Vec2 other) {
+    pub func scale = (ref self, Vec2 other) {
         self.x = self.x * other.x
         self.y = self.y * other.y
     }
@@ -1029,12 +1029,12 @@ pub struct Point {
     pub var int x
     pub var int y
 
-    pub func translate = (self, int dx, int dy) {
+    pub func translate = (ref self, int dx, int dy) {
         self.x = self.x + dx
         self.y = self.y + dy
     }
 
-    pub func distance_from_origin = (self, out int) {
+    pub func distance_from_origin = (ref self, out int) {
         return (self.x * self.x + self.y * self.y)
     }
 }

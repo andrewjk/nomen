@@ -5,17 +5,17 @@
 These benchmarks have been converted to Nomen and are included in `benchmark.sh`.
 
 | Benchmark      | Nomen | Go  | Zig | Notes                                                                   |
-| -------------- | ---- | --- | --- | ----------------------------------------------------------------------- |
-| pidigits       | ✅   | ✅  | ✅  | BigInt digit computation                                                |
-| helloworld     | ✅   | ✅  | -   | Trivial startup test                                                    |
-| fannkuch-redux | ✅   | ✅  | -   | Permutation/flip counting (single-threaded)                             |
-| binarytrees    | ✅   | ✅  | -   | Recursive tree allocation using classes                                 |
-| merkletrees    | ✅   | ✅  | -   | Merkle tree hash computation using classes                              |
-| nsieve         | ✅   | -   | -   | Sieve of Eratosthenes using Buffer (Go needs external `bitset` package) |
-| lru            | ✅   | ✅  | -   | LRU cache using Map and Buffer for access order tracking                |
-| knucleotide    | ✅   | ✅  | -   | DNA k-mer frequency counting using File I/O, Buffer, and bit-packing    |
-| json-serde     | ✅   | ✅  | ✅  | GeoJSON parse + serialize via `Json.parse`/`Json.stringify` (see note)  |
-| regex-redux    | ✅   | ✅  | -   | FASTA sequence regex counting and substitution                          |
+| -------------- | ----- | --- | --- | ----------------------------------------------------------------------- |
+| pidigits       | ✅    | ✅  | ✅  | BigInt digit computation                                                |
+| helloworld     | ✅    | ✅  | -   | Trivial startup test                                                    |
+| fannkuch-redux | ✅    | ✅  | -   | Permutation/flip counting (single-threaded)                             |
+| binarytrees    | ✅    | ✅  | -   | Recursive tree allocation using classes                                 |
+| merkletrees    | ✅    | ✅  | -   | Merkle tree hash computation using classes                              |
+| nsieve         | ✅    | -   | -   | Sieve of Eratosthenes using Buffer (Go needs external `bitset` package) |
+| lru            | ✅    | ✅  | -   | LRU cache using Map and Buffer for access order tracking                |
+| knucleotide    | ✅    | ✅  | -   | DNA k-mer frequency counting using File I/O, Buffer, and bit-packing    |
+| json-serde     | ✅    | ✅  | ✅  | GeoJSON parse + serialize via `Json.parse`/`Json.stringify` (see note)  |
+| regex-redux    | ✅    | ✅  | -   | FASTA sequence regex counting and substitution                          |
 
 > **Note (json-serde):** the Nomen version parses the GeoJSON document into a
 > `JsonNode` tree and re-serializes it, like the Go/Zig versions. It does **not**
@@ -44,15 +44,15 @@ The remaining Go benchmarks require language features or standard library suppor
 
 ### Needs concurrency primitives
 
-| Benchmark            | What's needed                                                                                                                                                                                                                                                                                         |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **coro-prime-sieve** | Goroutines and channels for the daisy-chain prime sieve. Would require a completely different single-threaded algorithm (e.g., trial division).                                                                                                                                                       |
+| Benchmark            | What's needed                                                                                                                                                                                                                                                                                           |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **coro-prime-sieve** | Goroutines and channels for the daisy-chain prime sieve. Would require a completely different single-threaded algorithm (e.g., trial division).                                                                                                                                                         |
 | **binarytrees (Go)** | The Go version is the single-threaded PLB `1.go` (the parallel `2.go` would use `sync.WaitGroup` and goroutines across all cores, giving Go an unfair wall-clock advantage over the single-threaded Nomen/Rust/Zig versions). The Nomen version is also single-threaded and produces identical results. |
 
 ### Needs hash maps (partially done)
 
-| Benchmark | What's needed                                                                                                        | Status  |
-| --------- | -------------------------------------------------------------------------------------------------------------------- | ------- |
+| Benchmark | What's needed                                                                                                         | Status  |
+| --------- | --------------------------------------------------------------------------------------------------------------------- | ------- |
 | **lru**   | Hash map (`map[K]V`) and doubly-linked list (`container/list`). Would need a custom hash map implementation in Nomen. | ✅ Done |
 
 ### Needs file I/O

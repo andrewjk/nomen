@@ -5,7 +5,7 @@ pub struct BigInt {
     var int len = 0
     var Buffer<int> digits = Buffer<int>()
 
-    pub func new = (self, int val, out BigInt) {
+    pub func new = (ref self, int val, out BigInt) {
         self.sign = 1
         var int v = val
         if v < 0 {

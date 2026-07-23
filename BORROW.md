@@ -94,7 +94,7 @@ A **child-group borrow** is a class reference taken from a class field or a
 container element (e.g. `var Box b = h.content`, or `var Animal a =
 list.at(0)`). It is rooted at the owner (`h`, `list`).
 
-When the owner is mutated — typically through a `ref self` / `var self` method
+When the owner is mutated — typically through a `ref self` method
 call, which may free or displace the contents the borrow points into — all
 live child-group borrows rooted at that owner are **invalidated**. Using one
 after that point is a compile error:
@@ -137,7 +137,7 @@ h1.content = h2.content swap Box(0)
 - `swap` without `mov` is a compile error ("swap requires mov").
 - The replacement value's type must match the field's type.
 
-## `var self` vs `ref self` vs `self`
+## `ref self` vs `var self` vs `self`
 
 | Form       | Mutates instance  | Notes                                                                    |
 | ---------- | ----------------- | ------------------------------------------------------------------------ |

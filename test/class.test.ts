@@ -21,7 +21,7 @@ Console.write("\\{p.x},\\{p.y}")
 class Counter {
     var int count
 
-    func increment = (var self) {
+    func increment = (ref self) {
         self.count = self.count + 1
     }
 }

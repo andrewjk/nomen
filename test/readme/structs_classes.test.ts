@@ -9,7 +9,7 @@ pub struct Point {
     pub var int x
     pub var int y
 
-    pub func translate = (var self, int dx, int dy) {
+    pub func translate = (ref self, int dx, int dy) {
         self.x = self.x + dx
         self.y = self.y + dy
     }
@@ -19,7 +19,7 @@ pub struct Point {
     }
 }
 
-const p = Point(3, 4)
+var p = Point(3, 4)
 p.translate(1, 1)
 const d = p.distance_from_origin()
 `;
@@ -48,12 +48,12 @@ print_circle([ name = "C", center_x = 25, center_y = 70, radius = 15 ])
 });
 
 describe("readme: classes", () => {
-	test("class with var self method", () => {
+	test("class with ref self method", () => {
 		const input = `
 class Counter {
     var int count = 0
 
-    func increment = (var self) {
+    func increment = (ref self) {
         self.count = self.count + 1
     }
 }

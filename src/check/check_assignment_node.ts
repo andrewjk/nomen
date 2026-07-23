@@ -87,6 +87,20 @@ export default function check_assignment_node(
 	} else if (
 		left_value.declaration !== "var" &&
 		!left_value.type.is_ref &&
+		left_value_name === "self"
+	) {
+		// A bare `self` (not `var self` / `ref self`) is an immutable borrow;
+		// mutating one of its fields must be rejected. Methods that need to
+		// write must declare `var self` (owned) or `ref self` (mutable borrow).
+		// But `var self` is pretty pointless, so let's just advise `ref self`
+		add_error(
+			status,
+			`Cannot mutate 'self' — it is immutable; declare as 'ref self' to allow mutation`,
+			assign.left_value!.start,
+		);
+	} else if (
+		left_value.declaration !== "var" &&
+		!left_value.type.is_ref &&
 		left_value_name !== "self"
 	) {
 		if (left_value.is_set) {
