@@ -1,5 +1,6 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
+import { is_int_literal, to_decimal_string } from "../int_literal.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
@@ -156,12 +157,7 @@ function get_raw_value(node: ValueNode, status?: BuildStatus): string {
 			if (case_index >= 0) return String(case_index);
 		}
 	}
-	if (val.startsWith("0x") || val.startsWith("0X"))
-		return String(parseInt(val.replace(/_/g, ""), 16));
-	if (val.startsWith("0o") || val.startsWith("0O"))
-		return String(parseInt(val.replace(/_/g, ""), 8));
-	if (val.startsWith("0b") || val.startsWith("0B"))
-		return String(parseInt(val.replace(/_/g, ""), 2));
+	if (is_int_literal(val)) return to_decimal_string(val);
 	return val;
 }
 

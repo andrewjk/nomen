@@ -1,0 +1,40 @@
+
+pub struct uint64: Stringable {
+    pub func to_string = (self, out string) {
+        ```
+        #arch: c
+        int length = snprintf(NULL, 0, "%llu", self);
+        char* str = malloc(length + 1);
+        snprintf(str, length + 1, "%llu", self);
+        return str;
+        ```
+        ```
+        #arch: aarch64
+        sub sp, sp, #128
+        str x0, [sp, #0]
+        str x1, [sp, #8]
+        str x2, [sp, #16]
+        str x3, [sp, #24]
+        mov x0, xzr
+        mov x1, xzr
+        adr x2, .Lfmt_uint64_llu
+        mov x3, x19
+        bl _snprintf
+        add x0, x0, #1
+        str x0, [sp, #64]
+        bl _malloc
+        str x0, [sp, #72]
+        ldr x0, [sp, #72]
+        ldr x1, [sp, #64]
+        adr x2, .Lfmt_uint64_llu
+        mov x3, x19
+        bl _snprintf
+        ldr x0, [sp, #72]
+        add sp, sp, #128
+        b .Lend_uint64_to_string
+        .Lfmt_uint64_llu: .asciz "%llu"
+        .p2align 2
+        .Lend_uint64_to_string:
+        ```
+    }
+}

@@ -1,4 +1,5 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
+import { is_int_literal, to_decimal_string } from "../int_literal.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
@@ -47,12 +48,7 @@ function get_raw_value(node: ValueNode, status?: BuildStatus): string {
 			if (case_index >= 0) return String(case_index);
 		}
 	}
-	if (val.startsWith("0x") || val.startsWith("0X"))
-		return String(parseInt(val.replace(/_/g, ""), 16));
-	if (val.startsWith("0o") || val.startsWith("0O"))
-		return String(parseInt(val.replace(/_/g, ""), 8));
-	if (val.startsWith("0b") || val.startsWith("0B"))
-		return String(parseInt(val.replace(/_/g, ""), 2));
+	if (is_int_literal(val)) return to_decimal_string(val);
 	return val;
 }
 

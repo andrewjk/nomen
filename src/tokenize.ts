@@ -104,39 +104,58 @@ export default function tokenize(input: string, preserve_source = false): Token[
 				} else if (value === "+" || value === "-") {
 					// It might be a sign, include any numbers afterwards
 					let j = status.i + 1;
-					for (; j < input.length; j++) {
-						if (!is_number_char(input, j)) {
-							break;
+					// A sign may precede a hex/octal/binary literal: `-0xFF`, `+0b101`.
+					const prefix = input.substring(j, j + 2);
+					if (prefix === "0x" || prefix === "0X") {
+						j += 2;
+						for (; j < input.length; j++) {
+							if (!is_hex_char(input, j)) break;
 						}
-					}
-					// Check for decimal part
-					if (
-						j < input.length &&
-						input[j] === "." &&
-						j + 1 < input.length &&
-						is_number_char(input, j + 1)
-					) {
-						j++;
+					} else if (prefix === "0o" || prefix === "0O") {
+						j += 2;
+						for (; j < input.length; j++) {
+							if (!is_octal_char(input, j)) break;
+						}
+					} else if (prefix === "0b" || prefix === "0B") {
+						j += 2;
+						for (; j < input.length; j++) {
+							if (!is_binary_char(input, j)) break;
+						}
+					} else {
 						for (; j < input.length; j++) {
 							if (!is_number_char(input, j)) {
 								break;
 							}
 						}
-						// Check for scientific notation
+						// Check for decimal part
 						if (
 							j < input.length &&
-							(input[j] === "e" || input[j] === "E") &&
+							input[j] === "." &&
 							j + 1 < input.length &&
-							(is_number_char(input, j + 1) ||
-								((input[j + 1] === "+" || input[j + 1] === "-") &&
-									j + 2 < input.length &&
-									is_number_char(input, j + 2)))
+							is_number_char(input, j + 1)
 						) {
 							j++;
-							if (input[j] === "+" || input[j] === "-") j++;
 							for (; j < input.length; j++) {
 								if (!is_number_char(input, j)) {
 									break;
+								}
+							}
+							// Check for scientific notation
+							if (
+								j < input.length &&
+								(input[j] === "e" || input[j] === "E") &&
+								j + 1 < input.length &&
+								(is_number_char(input, j + 1) ||
+									((input[j + 1] === "+" || input[j + 1] === "-") &&
+										j + 2 < input.length &&
+										is_number_char(input, j + 2)))
+							) {
+								j++;
+								if (input[j] === "+" || input[j] === "-") j++;
+								for (; j < input.length; j++) {
+									if (!is_number_char(input, j)) {
+										break;
+									}
 								}
 							}
 						}
@@ -338,6 +357,31 @@ function is_number_char(input: string, i: number) {
 		// 0-9
 		(code > 47 && code < 58) || code === 95
 	);
+}
+
+function is_hex_char(input: string, i: number) {
+	let code = input.charCodeAt(i);
+	return (
+		// 0-9
+		(code > 47 && code < 58) ||
+		// A-F
+		(code > 64 && code < 71) ||
+		// a-f
+		(code > 96 && code < 103) ||
+		code === 95
+	);
+}
+
+function is_octal_char(input: string, i: number) {
+	let code = input.charCodeAt(i);
+	// 0-7
+	return (code > 47 && code < 56) || code === 95;
+}
+
+function is_binary_char(input: string, i: number) {
+	let code = input.charCodeAt(i);
+	// 0-1
+	return code === 48 || code === 49 || code === 95;
 }
 
 function normalize_multiline_string(value: string): string {

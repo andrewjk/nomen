@@ -1,5 +1,6 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
+import { to_decimal_string } from "../int_literal.ts";
 import BaseNode from "../nodes/BaseNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
@@ -184,7 +185,7 @@ function build_float_operand(node: BaseNode, target_reg: string, status: BuildSt
 			return;
 		}
 		if (/^(\+|-)*\d+$/.test(value)) {
-			status.code += `ldr x3, =${to_decimal_literal(value)}\n`;
+			status.code += `ldr x3, =${to_decimal_string(value)}\n`;
 			status.code += `scvtf ${target_reg}, x3\n`;
 			return;
 		}
@@ -213,16 +214,6 @@ function build_float_operand(node: BaseNode, target_reg: string, status: BuildSt
 		status.float_result_in_d0 = false;
 		status.code += `fmov ${target_reg}, x0\n`;
 	}
-}
-
-function to_decimal_literal(value: string): string {
-	if (value.startsWith("0x") || value.startsWith("0X"))
-		return String(parseInt(value.replace(/_/g, ""), 16));
-	if (value.startsWith("0o") || value.startsWith("0O"))
-		return String(parseInt(value.replace(/_/g, ""), 8));
-	if (value.startsWith("0b") || value.startsWith("0B"))
-		return String(parseInt(value.replace(/_/g, ""), 2));
-	return value;
 }
 
 function map_float_op(op: string): string {

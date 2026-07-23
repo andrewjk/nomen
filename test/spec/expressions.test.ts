@@ -26,6 +26,25 @@ var int? nothing = null
 `;
 		expect(compile_main(input)).toEqual([]);
 	});
+
+	test("hex, octal, and binary integer literals", () => {
+		const input = `
+const int hex = 0xFF
+const int oct = 0o377
+const int bin = 0b11111111
+const int grouped = 0xCAFE_F00D
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+
+	test("integer literal bases inferred as int", () => {
+		const input = `
+const mask = 0xFF00FF00
+const perms = 0o755
+const flags = 0b101010
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
 });
 
 describe("spec: arrays", () => {
@@ -217,6 +236,21 @@ const uint8 y = 255
 	test("out-of-range literal is an error", () => {
 		const input = `
 const int8 z = 256
+`;
+		const errors = compile_main(input);
+		expect(errors.length).toBeGreaterThan(0);
+	});
+
+	test("non-decimal literals coerce when in range", () => {
+		const input = `
+const uint8 byte = 0xFF
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+
+	test("non-decimal literal out of range is an error", () => {
+		const input = `
+const uint8 overflow = 0x100
 `;
 		const errors = compile_main(input);
 		expect(errors.length).toBeGreaterThan(0);

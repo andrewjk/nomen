@@ -1,4 +1,5 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
+import { is_int_literal, to_decimal_string } from "../int_literal.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 
 let string_counter = 0;
@@ -37,27 +38,11 @@ function emit_immediate(reg: string, value: string, status: BuildStatus) {
 
 function is_literal(value: string): boolean {
 	return (
-		/^(\+|-)*\d+$/.test(value) ||
+		is_int_literal(value) ||
 		/^(\+|-)*\d+.\d+([eE](\+|-)?\d+)?$/.test(value) ||
-		/^0x[0-9a-fA-F_]+$/.test(value) ||
-		/^0o[0-7_]+$/.test(value) ||
-		/^0b[01_]+$/.test(value) ||
 		value === "true" ||
 		value === "false"
 	);
-}
-
-function to_decimal(value: string): string {
-	if (value.startsWith("0x") || value.startsWith("0X")) {
-		return String(parseInt(value.replace(/_/g, ""), 16));
-	}
-	if (value.startsWith("0o") || value.startsWith("0O")) {
-		return String(parseInt(value.replace(/_/g, ""), 8));
-	}
-	if (value.startsWith("0b") || value.startsWith("0B")) {
-		return String(parseInt(value.replace(/_/g, ""), 2));
-	}
-	return value;
 }
 
 export default function build_value_node(node: ValueNode, status: BuildStatus) {
@@ -132,7 +117,7 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 	}
 
 	if (is_literal(value)) {
-		emit_immediate("x0", to_decimal(value), status);
+		emit_immediate("x0", to_decimal_string(value), status);
 		return;
 	}
 

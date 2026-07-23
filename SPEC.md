@@ -1355,6 +1355,12 @@ const int a = 42
 const float b = 3.14
 const int c = -5
 
+// Integer literals in other bases
+const int hex = 0xFF            // hexadecimal (255)
+const int oct = 0o377           // octal      (255)
+const int bin = 0b11111111      // binary     (255)
+const int group = 0xCAFE_F00D   // underscores are digit separators
+
 // Strings (multiline supported - start continuation lines with ")
 const string s = "Hello, World!"
 const string multi =
@@ -1369,6 +1375,25 @@ const bool flag = true
 
 // Null
 var int? nothing = null
+```
+
+Integer literals may be written in four bases. Hexadecimal literals use a `0x`
+prefix, octal a `0o` prefix, and binary a `0b` prefix; all are case-insensitive
+and type-inferred as `int`:
+
+```
+const int mask = 0xFF00FF00
+const int perms = 0o755
+const int flags = 0b101010
+```
+
+Underscores may be used as digit separators in any base (`1_000`, `0xCAFE_F00D`,
+`0b1010_1010`); they are ignored. Non-decimal literals coerce to any integer
+type whose range fits, just like decimal literals (see [Type Coercion](#type-coercion)):
+
+```
+const uint8 byte = 0xFF         // Valid: 255 fits in uint8
+const uint8 overflow = 0x100    // Error: 256 out of range
 ```
 
 ### Arrays

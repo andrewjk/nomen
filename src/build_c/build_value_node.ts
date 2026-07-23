@@ -1,3 +1,4 @@
+import { is_int_literal } from "../int_literal.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import c_function_name from "./utils/c_function_name.ts";
@@ -15,11 +16,14 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 	else if (value === "true") value = "1";
 	else if (value === "false") value = "0";
 	else if (value === "default") value = "_nomen_default";
-	else if (/^[+-]?\d+$/.test(value)) {
+	else if (is_int_literal(value)) {
 		// Nomen integer literals default to `int` (C `long`, 64-bit). Emit the
 		// matching C suffix so the literal is the right width: a bare `1` in C
-		// is `int` (32-bit), making `1 << 63` undefined behavior.
-		value += INT_LITERAL_SUFFIX[node.type?.name ?? "int"] ?? "";
+		// is `int` (32-bit), making `1 << 63` undefined behavior. Hex/octal/
+		// binary literals are passed through to C verbatim — C accepts the same
+		// `0x`/`0o`/`0b` prefixes — with the width suffix appended. Underscore
+		// digit separators are stripped (C uses `'`, not `_`).
+		value = value.replace(/_/g, "") + (INT_LITERAL_SUFFIX[node.type?.name ?? "int"] ?? "");
 	} else value = c_function_name(value);
 	// `self` is always a pointer in the generated C (matching aarch64):
 	// regular methods receive `struct T *self`, and a custom #init uses a

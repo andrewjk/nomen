@@ -1,4 +1,5 @@
 import add_error from "../../add_error.ts";
+import { parse_int_literal, parse_int_literal_bigint } from "../../int_literal.ts";
 import Type from "../../nodes/Type.ts";
 import type CheckStatus from "../CheckStatus.ts";
 import { is_class_type } from "./ownership.ts";
@@ -100,7 +101,7 @@ function can_coerce(target_type: string, value_type: string, value: string | und
 	if (value === undefined) {
 		return can_coerce_type(target_type, value_type);
 	}
-	const num = parseInt(value);
+	const num = parse_int_literal(value);
 	if (!Number.isNaN(num)) {
 		switch (target_type) {
 			case "bool":
@@ -122,12 +123,26 @@ function can_coerce(target_type: string, value_type: string, value: string | und
 			case "uint32":
 				return uint_is_valid(num, 32);
 			case "int64":
-				return int_is_valid(num, 64);
+				return int64_is_valid(value);
 			case "uint64":
-				return uint_is_valid(num, 64);
+				return uint64_is_valid(value);
 		}
 	}
 	return can_coerce_type(target_type, value_type);
+}
+
+// 64-bit range checks use BigInt so values near 2^63/2^64 (e.g.
+// 0xFFFFFFFFFFFFFFFF) aren't rounded by JS's double and wrongly rejected.
+function int64_is_valid(value: string): boolean {
+	const n = parse_int_literal_bigint(value);
+	if (n === null) return false;
+	return n > -(2n ** 63n) && n < 2n ** 63n;
+}
+
+function uint64_is_valid(value: string): boolean {
+	const n = parse_int_literal_bigint(value);
+	if (n === null) return false;
+	return n >= 0n && n < 2n ** 64n;
 }
 
 function int_is_valid(int: number, bits: number) {

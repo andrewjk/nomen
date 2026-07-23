@@ -1,4 +1,5 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
+import { is_int_literal, to_decimal_string } from "../int_literal.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
@@ -16,27 +17,17 @@ function get_raw_value(node: ValueNode, status: BuildStatus): string {
 			if (case_index >= 0) return String(case_index);
 		}
 	}
-	if (val.startsWith("0x") || val.startsWith("0X"))
-		return String(parseInt(val.replace(/_/g, ""), 16));
-	if (val.startsWith("0o") || val.startsWith("0O"))
-		return String(parseInt(val.replace(/_/g, ""), 8));
-	if (val.startsWith("0b") || val.startsWith("0B"))
-		return String(parseInt(val.replace(/_/g, ""), 2));
+	if (is_int_literal(val)) return to_decimal_string(val);
 	return val;
 }
 
 function is_literal_value(raw: string): boolean {
 	return (
+		is_int_literal(raw) ||
 		/^(\+|-)?\d+(\.\d+)?$/.test(raw) ||
 		raw === "true" ||
 		raw === "false" ||
-		raw.startsWith('"') ||
-		raw.startsWith("0x") ||
-		raw.startsWith("0X") ||
-		raw.startsWith("0o") ||
-		raw.startsWith("0O") ||
-		raw.startsWith("0b") ||
-		raw.startsWith("0B")
+		raw.startsWith('"')
 	);
 }
 

@@ -50,6 +50,8 @@ const FILE_ORDER = [
 	"uint",
 	"int8",
 	"uint8",
+	"int64",
+	"uint64",
 	"float",
 	"char",
 	"String",
