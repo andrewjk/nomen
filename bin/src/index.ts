@@ -16,10 +16,10 @@ import type Config from "./types/Config.ts";
 
 const SUPPORTED_EXTENSION = ".nm";
 
-console.log("\n~ ECHO ~\n");
+console.log("\n~ NOMEN ~\n");
 
 const options = yargs(hideBin(process.argv))
-	.usage("Usage: lang --in [file/folder]")
+	.usage("Usage: nomen --in [file/folder]")
 	.option("in", {
 		alias: "i",
 		describe: "Input file or folder",
