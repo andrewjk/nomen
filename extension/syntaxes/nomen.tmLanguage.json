@@ -1,6 +1,6 @@
 {
-	"scopeName": "source.echo",
-	"name": "Echo",
+	"scopeName": "source.nm",
+	"name": "Nomen",
 	"patterns": [
 		{ "include": "#comments" },
 		{ "include": "#raw-block" },
@@ -20,59 +20,59 @@
 		"comments": {
 			"patterns": [
 				{
-					"name": "comment.line.double-slash.echo",
+					"name": "comment.line.double-slash.nm",
 					"match": "//.*$"
 				},
 				{
-					"name": "comment.block.echo",
+					"name": "comment.block.nm",
 					"begin": "/\\*",
 					"end": "\\*/",
 					"captures": {
-						"0": { "name": "punctuation.definition.comment.echo" }
+						"0": { "name": "punctuation.definition.comment.nm" }
 					}
 				}
 			]
 		},
 		"raw-block": {
-			"name": "string.other.echo",
-			"contentName": "meta.embedded.block.c.echo",
+			"name": "string.other.nm",
+			"contentName": "meta.embedded.block.c.nm",
 			"begin": "```",
 			"end": "```",
 			"beginCaptures": {
-				"0": { "name": "punctuation.definition.raw.echo" }
+				"0": { "name": "punctuation.definition.raw.nm" }
 			},
 			"endCaptures": {
-				"0": { "name": "punctuation.definition.raw.echo" }
+				"0": { "name": "punctuation.definition.raw.nm" }
 			},
 			"patterns": [{ "include": "source.c" }]
 		},
 		"strings": {
-			"name": "string.quoted.double.echo",
+			"name": "string.quoted.double.nm",
 			"begin": "\"",
 			"end": "\"",
 			"beginCaptures": {
-				"0": { "name": "punctuation.definition.string.begin.echo" }
+				"0": { "name": "punctuation.definition.string.begin.nm" }
 			},
 			"endCaptures": {
-				"0": { "name": "punctuation.definition.string.end.echo" }
+				"0": { "name": "punctuation.definition.string.end.nm" }
 			},
 			"patterns": [
 				{ "include": "#string-interpolation" },
 				{
-					"name": "constant.character.escape.echo",
+					"name": "constant.character.escape.nm",
 					"match": "\\\\."
 				}
 			]
 		},
 		"string-interpolation": {
-			"name": "meta.interpolation.echo",
+			"name": "meta.interpolation.nm",
 			"begin": "\\\\\\{",
 			"end": "\\}",
 			"beginCaptures": {
-				"0": { "name": "punctuation.section.interpolation.begin.echo" }
+				"0": { "name": "punctuation.section.interpolation.begin.nm" }
 			},
 			"endCaptures": {
-				"0": { "name": "punctuation.section.interpolation.end.echo" }
+				"0": { "name": "punctuation.section.interpolation.end.nm" }
 			},
 			"patterns": [
 				{ "include": "#constants" },
@@ -84,14 +84,14 @@
 			]
 		},
 		"chars": {
-			"name": "string.quoted.single.echo",
+			"name": "string.quoted.single.nm",
 			"match": "'(?:\\\\.|[^'\\\\])'"
 		},
 		"annotations": {
-			"name": "meta.annotation.echo",
+			"name": "meta.annotation.nm",
 			"match": "@[A-Za-z_][A-Za-z0-9_]*",
 			"captures": {
-				"0": { "name": "variable.annotation.echo" }
+				"0": { "name": "variable.annotation.nm" }
 			}
 		},
 		"function-decl": {
@@ -99,15 +99,15 @@
 				{
 					"match": "\\b(func)\\s+(#(?:init|destroy|op_\\w+))\\b",
 					"captures": {
-						"1": { "name": "storage.type.function.echo" },
-						"2": { "name": "entity.name.function.echo" }
+						"1": { "name": "storage.type.function.nm" },
+						"2": { "name": "entity.name.function.nm" }
 					}
 				},
 				{
 					"match": "\\b(func)\\s+([A-Za-z_][A-Za-z0-9_]*)",
 					"captures": {
-						"1": { "name": "storage.type.function.echo" },
-						"2": { "name": "entity.name.function.echo" }
+						"1": { "name": "storage.type.function.nm" },
+						"2": { "name": "entity.name.function.nm" }
 					}
 				}
 			]
@@ -115,71 +115,71 @@
 		"lifecycle-decl": {
 			"match": "(#(?:init|destroy))\\s*=",
 			"captures": {
-				"1": { "name": "entity.name.function.echo" }
+				"1": { "name": "entity.name.function.nm" }
 			}
 		},
 		"keywords": {
 			"patterns": [
 				{
-					"name": "keyword.control.echo",
+					"name": "keyword.control.nm",
 					"match": "\\b(?:if|else|while|for|of|in|break|continue|return|switch|case|match)\\b"
 				},
 				{
-					"name": "storage.type.echo",
+					"name": "storage.type.nm",
 					"match": "\\b(?:func|struct|class|trait|enum|bitset)\\b"
 				},
 				{
-					"name": "keyword.other.echo",
+					"name": "keyword.other.nm",
 					"match": "\\b(?:var|const|let|mov|cp|import|panic|todo)\\b"
 				},
 				{
-					"name": "storage.modifier.echo",
+					"name": "storage.modifier.nm",
 					"match": "\\b(?:pub|private|inline|out|ref)\\b"
 				},
 				{
-					"name": "keyword.operator.word.echo",
+					"name": "keyword.operator.word.nm",
 					"match": "\\b(?:as)\\b"
 				},
 				{
-					"name": "variable.language.echo",
+					"name": "variable.language.nm",
 					"match": "\\b(?:self)\\b"
 				},
 				{
-					"name": "constant.language.echo",
+					"name": "constant.language.nm",
 					"match": "\\b(?:true|false|null|void)\\b"
 				}
 			]
 		},
 		"numbers": {
-			"name": "constant.numeric.echo",
+			"name": "constant.numeric.nm",
 			"match": "\\b\\d[\\d_]*(?:\\.\\d+)?(?:[eE][+-]?\\d+)?\\b"
 		},
 		"types": {
 			"patterns": [
 				{
-					"name": "support.type.primitive.echo",
+					"name": "support.type.primitive.nm",
 					"match": "\\b(?:int|uint|int8|int16|int32|int64|uint8|uint16|uint32|uint64|float|float16|float32|float64|string|char|bool)\\b"
 				},
 				{
-					"name": "entity.name.type.echo",
+					"name": "entity.name.type.nm",
 					"match": "\\b[A-Z][A-Za-z0-9_]*\\b"
 				}
 			]
 		},
 		"function-call": {
-			"name": "meta.function-call.echo",
+			"name": "meta.function-call.nm",
 			"match": "\\b([A-Za-z_][A-Za-z0-9_]*)\\s*(\\()",
 			"captures": {
-				"1": { "name": "entity.name.function.echo" },
-				"2": { "name": "punctuation.section.parens.begin.echo" }
+				"1": { "name": "entity.name.function.nm" },
+				"2": { "name": "punctuation.section.parens.begin.nm" }
 			}
 		},
 		"constants": {
-			"name": "entity.name.constant.echo",
+			"name": "entity.name.constant.nm",
 			"match": "\\b[A-Z]{2,}[A-Z0-9_]*\\b"
 		},
 		"operators": {
-			"name": "keyword.operator.echo",
+			"name": "keyword.operator.nm",
 			"match": "->|=>|==|!=|>=|<=|<<|>>|&&|\\|\\||\\?\\?|\\+=|-=|\\*=|\\.\\."
 		}
 	}

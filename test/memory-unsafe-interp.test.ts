@@ -8,7 +8,7 @@ import parse_with_imports from "./parse_with_imports";
 // backend.
 //
 // `src/build_c/build_root_node.ts` emits `_string_interpolate_N` with every
-// argument typed `char *argN` and a `%s` format. But Echo lets you
+// argument typed `char *argN` and a `%s` format. But Nomen lets you
 // interpolate non-string values (e.g. an `int` field/method result) directly
 // into a string literal — `"...\{some_int}..."`. The compiler is supposed to
 // convert that int to its string form first. When it doesn't, the C helper

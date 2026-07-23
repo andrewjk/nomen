@@ -2,7 +2,7 @@ import { describe, test, expect } from "vite-plus/test";
 
 import { parse_bench, build_and_check_bench_with_files } from "./helpers";
 
-describe("bench/echo/regex-redux.echo", () => {
+describe("bench/nomen/regex-redux.nm", () => {
 	test("parses without errors", () => {
 		expect(parse_bench("regex-redux").errors).toEqual([]);
 	});

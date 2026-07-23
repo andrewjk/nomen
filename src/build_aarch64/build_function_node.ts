@@ -435,17 +435,17 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 
 	status.code += `${return_label}:\n`;
 	if (node.name === "main") {
-		// In audit mode, call echo_audit_check at main exit (linked from
+		// In audit mode, call nomen_audit_check at main exit (linked from
 		// audit_runtime.c). If the pool was used (spawn was emitted), shut
 		// it down first so workers are joined and freed — otherwise the
 		// pool's atexit handler runs after audit_check and the workers
 		// array shows up as a false-positive leak. (Run before `mov x0, #0`
 		// so the void audit_check doesn't clobber main's return value.)
 		if (status.audit) {
-			if (status.file_scope_c?.includes("__echo_pool_submit")) {
-				status.code += `bl ___echo_pool_shutdown\n`;
+			if (status.file_scope_c?.includes("__nomen_pool_submit")) {
+				status.code += `bl ___nomen_pool_shutdown\n`;
 			}
-			status.code += `bl _echo_audit_check\n`;
+			status.code += `bl _nomen_audit_check\n`;
 		}
 		status.code += `mov x0, #0\n`;
 	}

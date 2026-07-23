@@ -2,7 +2,7 @@ import { describe, test, expect } from "vite-plus/test";
 
 import { parse_bench, build_and_check_bench } from "./helpers";
 
-describe("bench/echo/merkletrees.echo", () => {
+describe("bench/nomen/merkletrees.nm", () => {
 	test("parses without errors", () => {
 		expect(parse_bench("merkletrees").errors).toEqual([]);
 	});

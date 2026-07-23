@@ -33,7 +33,7 @@ export function resolve_export_files(lib_dir: string, pattern: string): string[]
 	if (!fs.existsSync(src_dir)) return [];
 	const files = fs
 		.readdirSync(src_dir)
-		.filter((f) => f.endsWith(".echo"))
+		.filter((f) => f.endsWith(".nm"))
 		.sort()
 		.map((f) => path.join(src_dir, f));
 	return files;
@@ -60,7 +60,7 @@ const FILE_ORDER = [
 ];
 
 function get_file_priority(file_path: string): number {
-	const name = path.basename(file_path, ".echo");
+	const name = path.basename(file_path, ".nm");
 	const idx = FILE_ORDER.indexOf(name);
 	if (idx >= 0) return idx;
 	return FILE_ORDER.length;

@@ -241,13 +241,13 @@ export function monomorphize(
 
 	const custom_init = generic_struct.functions.find((f) => f.name === "#init" && f.has_body);
 	// Only treat a custom #init as the monomorphized constructor when its
-	// body is real Echo code. A raw-`#arch`-only #init (e.g. Array<T>'s) is
+	// body is real Nomen code. A raw-`#arch`-only #init (e.g. Array<T>'s) is
 	// a hand-written primitive that assumes a pointer `self` and is never
 	// invoked through the normal constructor path — keep the old behaviour
 	// of synthesizing a field-based #init for those.
-	const custom_init_is_echo =
+	const custom_init_is_nomen =
 		!!custom_init && custom_init.statements.some((s) => s.node_type !== "raw");
-	if (custom_init && custom_init_is_echo) {
+	if (custom_init && custom_init_is_nomen) {
 		// A generic struct with a custom #init (e.g. Map<K,V>'s variadic-tuple
 		// constructor) is cloned + type-substituted + re-checked here, so its
 		// variadic tuple param materializes against the concrete type args and
@@ -322,10 +322,10 @@ export function monomorphize(
 		mono_struct.functions.push(init_func);
 	}
 
-	// Note: when the generic struct has a custom Echo #init, the mono struct
+	// Note: when the generic struct has a custom Nomen #init, the mono struct
 	// was already pushed to status.structs/types before re-checking the clone
 	// (see custom_init branch above). Otherwise push it now.
-	if (!custom_init_is_echo) {
+	if (!custom_init_is_nomen) {
 		status.structs.push(mono_struct);
 		status.types.push(mono_name);
 	}
@@ -445,9 +445,9 @@ function raw_type_size(name: string, structs: StructNode[]): number {
 }
 
 /**
- * Map an Echo type name to its C representation for substitution inside raw C
+ * Map an Nomen type name to its C representation for substitution inside raw C
  * blocks. This MUST agree with build_c/utils/c_type.ts so that, e.g., `T*`
- * expands to `long*` for an `int` element (Echo `int` is 64-bit, i.e. C
+ * expands to `long*` for an `int` element (Nomen `int` is 64-bit, i.e. C
  * `long`, not C `int`). `string` is not a C type, so it becomes `char*`
  * (making `T*` become `char**`).
  */

@@ -5,7 +5,7 @@ import build from "../../src/build";
 import check_output_aarch64 from "./check_output_aarch64";
 import parse_with_imports from "./parse_with_imports";
 
-// TODO: convert zig code to echo
+// TODO: convert zig code to nomen
 const zig_source = `//
 // In most of the examples so far, the inputs are known at compile
 // time, thus the amount of memory used by the program is fixed.

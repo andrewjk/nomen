@@ -2,7 +2,7 @@ import { describe, test, expect } from "vite-plus/test";
 
 import { parse_bench, build_and_check_bench } from "./helpers";
 
-describe("bench/echo/fannkuch-redux.echo", () => {
+describe("bench/nomen/fannkuch-redux.nm", () => {
 	test("parses without errors", () => {
 		expect(parse_bench("fannkuch-redux").errors).toEqual([]);
 	});

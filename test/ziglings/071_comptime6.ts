@@ -5,7 +5,7 @@ import build from "../../src/build";
 import check_output_aarch64 from "./check_output_aarch64";
 import parse_with_imports from "./parse_with_imports";
 
-// TODO: convert zig code to echo
+// TODO: convert zig code to nomen
 const zig_source = `//
 // There have been several instances where it would have been
 // nice to use loops in our programs, but we couldn't because the
@@ -33,7 +33,7 @@ const print = @import("std").debug.print;
 const Narcissus = struct {
     me: *Narcissus = undefined,
     myself: *Narcissus = undefined,
-    echo: void = undefined,
+    nomen: void = undefined,
 };
 
 pub fn main() void {

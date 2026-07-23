@@ -13,11 +13,11 @@ import parse_with_imports from "./parse_with_imports";
 // The fix is making levelUp() take a pointer so it can modify the caller's data.
 //
 // INCOMPATIBILITIES:
-// - Echo has no function variable assignment (no `const print = std.debug.print`).
+// - Nomen has no function variable assignment (no `const print = std.debug.print`).
 //   Uses `Console.write` directly.
-// - Echo has no distinction between `*T` (mutable pointer) and `*const T`
+// - Nomen has no distinction between `*T` (mutable pointer) and `*const T`
 //   (const pointer). Access patterns 2 and 3 both use `var ref`.
-// - Echo does not have compound assignment on struct fields through ref params
+// - Nomen does not have compound assignment on struct fields through ref params
 //   (`c.experience += xp`), so `c.experience = c.experience + xp` is used.
 
 test("ziglings 051 values -- errors", () => {

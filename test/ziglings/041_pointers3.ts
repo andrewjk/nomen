@@ -5,7 +5,7 @@ import build from "../../src/build";
 import check_output_aarch64 from "./check_output_aarch64";
 import parse_with_imports from "./parse_with_imports";
 
-// TODO: convert zig code to echo
+// TODO: convert zig code to nomen
 const zig_source = `//
 // The tricky part is that the pointer's mutability (var vs const) refers
 // to the ability to change what the pointer POINTS TO, not the ability

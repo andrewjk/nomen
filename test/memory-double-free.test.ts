@@ -289,7 +289,7 @@ Console.write("\\{result.value}")
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(result.code).toContain("bl _echo_free_wrap");
+		expect(result.code).toContain("bl _nomen_free_wrap");
 		expect(result.code).toContain("bl Box_init");
 
 		await build_and_check_output(input, "dfree_class_nested_scope_leaks", "42");
@@ -422,8 +422,8 @@ Console.write("done")
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(result.code).toContain("bl _echo_free_wrap");
-		expect(result.code.match(/bl _echo_free_wrap/g)?.length).toBe(2);
+		expect(result.code).toContain("bl _nomen_free_wrap");
+		expect(result.code.match(/bl _nomen_free_wrap/g)?.length).toBe(2);
 
 		await build_and_check_output(input, "leak_break_class_destroy", "done");
 	});
@@ -451,8 +451,8 @@ Console.write("done")
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
-		expect(result.code).toContain("bl _echo_free_wrap");
-		expect(result.code.match(/bl _echo_free_wrap/g)?.length).toBe(2);
+		expect(result.code).toContain("bl _nomen_free_wrap");
+		expect(result.code.match(/bl _nomen_free_wrap/g)?.length).toBe(2);
 
 		await build_and_check_output(input, "leak_continue_class_destroy", "done");
 	});

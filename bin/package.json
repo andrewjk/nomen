@@ -1,12 +1,12 @@
 {
-	"name": "echo-cli",
-	"version": "1.0.0",
+	"name": "nomen-lang",
+	"version": "0.0.1",
 	"description": "",
 	"keywords": [],
 	"license": "ISC",
 	"author": "",
 	"bin": {
-		"lang": "./dist/index.mjs"
+		"nomen": "./dist/index.mjs"
 	},
 	"type": "module",
 	"scripts": {

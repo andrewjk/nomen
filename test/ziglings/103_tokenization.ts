@@ -5,7 +5,7 @@ import build from "../../src/build";
 import check_output_aarch64 from "./check_output_aarch64";
 import parse_with_imports from "./parse_with_imports";
 
-// TODO: convert zig code to echo
+// TODO: convert zig code to nomen
 const zig_source = `//
 // The functionality of the standard library is becoming increasingly
 // important in Zig. First of all, it is helpful to take a look at how

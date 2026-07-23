@@ -14,8 +14,8 @@ import type_from_value_node from "./utils/type_from_value_node.ts";
 export const POOL_HEADER = `
 #include <pthread.h>
 #include <time.h>
-static __thread unsigned long long *__echo_current_cancel_flag = NULL;
-struct echo_future {
+static __thread unsigned long long *__nomen_current_cancel_flag = NULL;
+struct nomen_future {
 	pthread_mutex_t mu;
 	pthread_cond_t cv;
 	int done;
@@ -23,10 +23,10 @@ struct echo_future {
 	unsigned long long *cancel_flag;
 	void *result_slot;
 };
-static void __echo_future_wait(struct echo_future *f) {
+static void __nomen_future_wait(struct nomen_future *f) {
 	pthread_mutex_lock(&f->mu);
 	while (!f->done) {
-		if (__echo_current_cancel_flag && *__echo_current_cancel_flag) {
+		if (__nomen_current_cancel_flag && *__nomen_current_cancel_flag) {
 			pthread_mutex_unlock(&f->mu);
 			return;
 		}
@@ -35,12 +35,12 @@ static void __echo_future_wait(struct echo_future *f) {
 	pthread_mutex_unlock(&f->mu);
 }
 // Timed wait: returns 1 if the future completed, 0 if the deadline expired.
-// deadline_ms == -1 means wait forever (same as __echo_future_wait).
-static int __echo_future_timedwait(struct echo_future *f, long long deadline_ms) {
+// deadline_ms == -1 means wait forever (same as __nomen_future_wait).
+static int __nomen_future_timedwait(struct nomen_future *f, long long deadline_ms) {
 	pthread_mutex_lock(&f->mu);
 	if (deadline_ms < 0) {
 		while (!f->done) {
-			if (__echo_current_cancel_flag && *__echo_current_cancel_flag) {
+			if (__nomen_current_cancel_flag && *__nomen_current_cancel_flag) {
 				pthread_mutex_unlock(&f->mu);
 				return 0;
 			}
@@ -57,7 +57,7 @@ static int __echo_future_timedwait(struct echo_future *f, long long deadline_ms)
 	ts.tv_sec = (time_t)(remaining / 1000);
 	ts.tv_nsec = (long)((remaining % 1000) * 1000000);
 	while (!f->done) {
-		if (__echo_current_cancel_flag && *__echo_current_cancel_flag) {
+		if (__nomen_current_cancel_flag && *__nomen_current_cancel_flag) {
 			pthread_mutex_unlock(&f->mu);
 			return 0;
 		}
@@ -71,7 +71,7 @@ static int __echo_future_timedwait(struct echo_future *f, long long deadline_ms)
 	pthread_mutex_unlock(&f->mu);
 	return 1;
 }
-static void __echo_future_release(struct echo_future *f) {
+static void __nomen_future_release(struct nomen_future *f) {
 	pthread_mutex_lock(&f->mu);
 	int last = --f->refs == 0;
 	pthread_mutex_unlock(&f->mu);
@@ -83,110 +83,110 @@ static void __echo_future_release(struct echo_future *f) {
 		free(f);
 	}
 }
-struct echo_pool_task {
+struct nomen_pool_task {
 	void (*fn)(void *);
 	void *arg;
-	struct echo_pool_task *next;
+	struct nomen_pool_task *next;
 };
-static pthread_mutex_t __echo_pool_mu = PTHREAD_MUTEX_INITIALIZER;
-static pthread_cond_t __echo_pool_cv = PTHREAD_COND_INITIALIZER;
-static struct echo_pool_task *__echo_pool_head = NULL;
-static struct echo_pool_task *__echo_pool_tail = NULL;
+static pthread_mutex_t __nomen_pool_mu = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t __nomen_pool_cv = PTHREAD_COND_INITIALIZER;
+static struct nomen_pool_task *__nomen_pool_head = NULL;
+static struct nomen_pool_task *__nomen_pool_tail = NULL;
 #define ECHO_POOL_DEFAULT_SIZE 4
 #define ECHO_POOL_MAX_SIZE 64
-static int __echo_pool_size = ECHO_POOL_DEFAULT_SIZE;
-static pthread_t *__echo_pool_workers = NULL;
-static int __echo_pool_nworkers = 0;
-static int __echo_pool_busy = 0;
-static int __echo_pool_init = 0;
-static int __echo_pool_quitting = 0;
-static void *__echo_pool_worker(void *arg) {
+static int __nomen_pool_size = ECHO_POOL_DEFAULT_SIZE;
+static pthread_t *__nomen_pool_workers = NULL;
+static int __nomen_pool_nworkers = 0;
+static int __nomen_pool_busy = 0;
+static int __nomen_pool_init = 0;
+static int __nomen_pool_quitting = 0;
+static void *__nomen_pool_worker(void *arg) {
 	(void)arg;
 	while (1) {
-		pthread_mutex_lock(&__echo_pool_mu);
-		while (!__echo_pool_head && !__echo_pool_quitting) {
-			pthread_cond_wait(&__echo_pool_cv, &__echo_pool_mu);
+		pthread_mutex_lock(&__nomen_pool_mu);
+		while (!__nomen_pool_head && !__nomen_pool_quitting) {
+			pthread_cond_wait(&__nomen_pool_cv, &__nomen_pool_mu);
 		}
-		if (__echo_pool_quitting && !__echo_pool_head) {
-			pthread_mutex_unlock(&__echo_pool_mu);
+		if (__nomen_pool_quitting && !__nomen_pool_head) {
+			pthread_mutex_unlock(&__nomen_pool_mu);
 			return NULL;
 		}
-		struct echo_pool_task *t = __echo_pool_head;
-		__echo_pool_head = t->next;
-		if (!__echo_pool_head) __echo_pool_tail = NULL;
-		__echo_pool_busy++;
-		pthread_mutex_unlock(&__echo_pool_mu);
+		struct nomen_pool_task *t = __nomen_pool_head;
+		__nomen_pool_head = t->next;
+		if (!__nomen_pool_head) __nomen_pool_tail = NULL;
+		__nomen_pool_busy++;
+		pthread_mutex_unlock(&__nomen_pool_mu);
 		t->fn(t->arg);
 		free(t);
-		pthread_mutex_lock(&__echo_pool_mu);
-		__echo_pool_busy--;
-		pthread_mutex_unlock(&__echo_pool_mu);
+		pthread_mutex_lock(&__nomen_pool_mu);
+		__nomen_pool_busy--;
+		pthread_mutex_unlock(&__nomen_pool_mu);
 	}
 	return NULL;
 }
-static void __echo_pool_shutdown(void) {
-	if (!__echo_pool_init) return;
-	pthread_mutex_lock(&__echo_pool_mu);
-	__echo_pool_quitting = 1;
-	pthread_cond_broadcast(&__echo_pool_cv);
-	pthread_mutex_unlock(&__echo_pool_mu);
-	for (int i = 0; i < __echo_pool_nworkers; i++) {
-		pthread_join(__echo_pool_workers[i], NULL);
+static void __nomen_pool_shutdown(void) {
+	if (!__nomen_pool_init) return;
+	pthread_mutex_lock(&__nomen_pool_mu);
+	__nomen_pool_quitting = 1;
+	pthread_cond_broadcast(&__nomen_pool_cv);
+	pthread_mutex_unlock(&__nomen_pool_mu);
+	for (int i = 0; i < __nomen_pool_nworkers; i++) {
+		pthread_join(__nomen_pool_workers[i], NULL);
 	}
-	free(__echo_pool_workers);
-	__echo_pool_workers = NULL;
-	__echo_pool_nworkers = 0;
-	__echo_pool_busy = 0;
-	__echo_pool_init = 0;
-	__echo_pool_quitting = 0;
+	free(__nomen_pool_workers);
+	__nomen_pool_workers = NULL;
+	__nomen_pool_nworkers = 0;
+	__nomen_pool_busy = 0;
+	__nomen_pool_init = 0;
+	__nomen_pool_quitting = 0;
 }
-static void __echo_pool_submit(void (*fn)(void *), void *arg) {
-	if (!__echo_pool_init) {
-		__echo_pool_init = 1;
-		__echo_pool_workers = (pthread_t *)malloc(sizeof(pthread_t) * ECHO_POOL_MAX_SIZE);
-		for (int i = 0; i < __echo_pool_size; i++) {
-			pthread_create(&__echo_pool_workers[__echo_pool_nworkers], NULL, __echo_pool_worker, NULL);
-			__echo_pool_nworkers++;
+static void __nomen_pool_submit(void (*fn)(void *), void *arg) {
+	if (!__nomen_pool_init) {
+		__nomen_pool_init = 1;
+		__nomen_pool_workers = (pthread_t *)malloc(sizeof(pthread_t) * ECHO_POOL_MAX_SIZE);
+		for (int i = 0; i < __nomen_pool_size; i++) {
+			pthread_create(&__nomen_pool_workers[__nomen_pool_nworkers], NULL, __nomen_pool_worker, NULL);
+			__nomen_pool_nworkers++;
 		}
-		atexit(__echo_pool_shutdown);
+		atexit(__nomen_pool_shutdown);
 	}
-	struct echo_pool_task *t = (struct echo_pool_task *)malloc(sizeof(struct echo_pool_task));
+	struct nomen_pool_task *t = (struct nomen_pool_task *)malloc(sizeof(struct nomen_pool_task));
 	t->fn = fn;
 	t->arg = arg;
 	t->next = NULL;
-	pthread_mutex_lock(&__echo_pool_mu);
-	if (__echo_pool_busy >= __echo_pool_nworkers && __echo_pool_nworkers < ECHO_POOL_MAX_SIZE) {
-		pthread_create(&__echo_pool_workers[__echo_pool_nworkers], NULL, __echo_pool_worker, NULL);
-		__echo_pool_nworkers++;
+	pthread_mutex_lock(&__nomen_pool_mu);
+	if (__nomen_pool_busy >= __nomen_pool_nworkers && __nomen_pool_nworkers < ECHO_POOL_MAX_SIZE) {
+		pthread_create(&__nomen_pool_workers[__nomen_pool_nworkers], NULL, __nomen_pool_worker, NULL);
+		__nomen_pool_nworkers++;
 	}
-	if (__echo_pool_tail) {
-		__echo_pool_tail->next = t;
+	if (__nomen_pool_tail) {
+		__nomen_pool_tail->next = t;
 	} else {
-		__echo_pool_head = t;
+		__nomen_pool_head = t;
 	}
-	__echo_pool_tail = t;
-	pthread_cond_signal(&__echo_pool_cv);
-	pthread_mutex_unlock(&__echo_pool_mu);
+	__nomen_pool_tail = t;
+	pthread_cond_signal(&__nomen_pool_cv);
+	pthread_mutex_unlock(&__nomen_pool_mu);
 }
 // Race-mode helpers: used by async(mode: race) to wait until any one future
 // in a nursery completes (or the deadline expires). Returns 1 if any future
 // is done, 0 if the deadline hit. Polls every 1ms — the latency/cost
 // tradeoff favors simplicity over a signaling mechanism.
-static void __echo_future_cancel(struct echo_future *f) {
+static void __nomen_future_cancel(struct nomen_future *f) {
 	if (f->cancel_flag) *(f->cancel_flag) = 1;
 }
-static int __echo_future_is_done(struct echo_future *f) {
+static int __nomen_future_is_done(struct nomen_future *f) {
 	pthread_mutex_lock(&f->mu);
 	int d = f->done;
 	pthread_mutex_unlock(&f->mu);
 	return d;
 }
-static int __echo_nursery_race_wait(struct echo_future **futures, int count, long long deadline_ms) {
+static int __nomen_nursery_race_wait(struct nomen_future **futures, int count, long long deadline_ms) {
 	if (count <= 0) return 0;
 	struct timespec sleep_ts = {0, 1000000}; // 1ms
 	while (1) {
 		for (int i = 0; i < count; i++) {
-			if (__echo_future_is_done(futures[i])) return 1;
+			if (__nomen_future_is_done(futures[i])) return 1;
 		}
 		if (deadline_ms > 0) {
 			struct timespec ts;
@@ -217,12 +217,12 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 	status.spawn_counter = id + 1;
 
 	// Emit pool infrastructure on first spawn (file scope, deduped).
-	if (!status.headers.includes("__echo_pool_submit")) {
+	if (!status.headers.includes("__nomen_pool_submit")) {
 		status.headers += POOL_HEADER;
 	}
 
-	const struct_name = `__echo_spawn_${id}_args`;
-	const tramp_name = `__echo_spawn_${id}_trampoline`;
+	const struct_name = `__nomen_spawn_${id}_args`;
+	const tramp_name = `__nomen_spawn_${id}_trampoline`;
 
 	// Resolve each arg's C type. Classes/traits are pointers; primitives and
 	// by-value structs use c_type's output directly. Generic instantiations
@@ -250,14 +250,14 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 	}
 	header += `\tunsigned long long *result_slot;\n`;
 	header += `\tunsigned long long *cancel_flag;\n`;
-	header += `\tstruct echo_future *future;\n`;
+	header += `\tstruct nomen_future *future;\n`;
 	header += `};\n`;
 	// Pool trampoline: signature is `void (*)(void*)` (no return). The pool
 	// worker calls it; the trampoline calls the user function and signals
 	// the future when done.
 	header += `static void ${tramp_name}(void *p) {\n`;
 	header += `\tstruct ${struct_name} *a = (struct ${struct_name} *)p;\n`;
-	header += `\t__echo_current_cancel_flag = a->cancel_flag;\n`;
+	header += `\t__nomen_current_cancel_flag = a->cancel_flag;\n`;
 	// Determine if the function returns a value. We approximate by checking
 	// the captured function_return_type — empty name means void/no return.
 	const return_type_name = node.function_return_type?.name;
@@ -283,7 +283,7 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 	if (returns_value) {
 		header += `\t*(a->result_slot) = (unsigned long long)_r;\n`;
 	}
-	header += `\t__echo_current_cancel_flag = NULL;\n`;
+	header += `\t__nomen_current_cancel_flag = NULL;\n`;
 	header += `\tpthread_mutex_lock(&a->future->mu);\n`;
 	header += `\ta->future->done = 1;\n`;
 	header += `\tpthread_cond_broadcast(&a->future->cv);\n`;
@@ -291,7 +291,7 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 	// The trampoline holds one future reference for the duration of the run —
 	// release it only after signaling, so the future (and the result slot it
 	// owns) is guaranteed alive while the result is written.
-	header += `\t__echo_future_release(a->future);\n`;
+	header += `\t__nomen_future_release(a->future);\n`;
 	header += `\tfree(a);\n`;
 	header += `}\n`;
 	status.headers += header;
@@ -318,7 +318,7 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 	status.code += `\tunsigned long long *_cancel_ptr = (unsigned long long *)malloc(sizeof(unsigned long long));\n`;
 	status.code += `\t*_cancel_ptr = 0;\n`;
 	status.code += `\t_args->cancel_flag = _cancel_ptr;\n`;
-	status.code += `\tstruct echo_future *_future = (struct echo_future *)malloc(sizeof(struct echo_future));\n`;
+	status.code += `\tstruct nomen_future *_future = (struct nomen_future *)malloc(sizeof(struct nomen_future));\n`;
 	status.code += `\tpthread_mutex_init(&_future->mu, NULL);\n`;
 	status.code += `\tpthread_cond_init(&_future->cv, NULL);\n`;
 	status.code += `\t_future->done = 0;\n`;
@@ -338,9 +338,9 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 	} else {
 		status.code += `\t_future->refs = ${nursery_id !== undefined ? 3 : 2};\n`;
 	}
-	status.code += `\t__echo_pool_submit(${tramp_name}, _args);\n`;
+	status.code += `\t__nomen_pool_submit(${tramp_name}, _args);\n`;
 	if (nursery_id !== undefined) {
-		status.code += `\t__echo_nursery_${nursery_id}_futures[__echo_nursery_${nursery_id}_count++] = (unsigned long long)_future;\n`;
+		status.code += `\t__nomen_nursery_${nursery_id}_futures[__nomen_nursery_${nursery_id}_count++] = (unsigned long long)_future;\n`;
 	}
 	if (fire_and_forget) {
 		// Fire-and-forget: no Task handle needed. The trampoline (and nursery,

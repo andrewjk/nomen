@@ -10,11 +10,11 @@ import parse_with_imports from "./parse_with_imports";
 // set the bit with OR and shift. Compare final bits to 0x3FFFFFF (26 bits set).
 //
 // INCOMPATIBILITIES:
-// - Echo doesn't have string iteration (for c of str) or string .length.
+// - Nomen doesn't have string iteration (for c of str) or string .length.
 //   We use a while loop with hardcoded string length and index-based char access.
-// - Echo doesn't have compound XOR/OR assignments (^=, |=). Use `a = a ^ b` form.
-// - Echo doesn't have `and` keyword for logical AND. Use `&&` instead.
-// - Echo doesn't have @as(), @truncate(), or std.ascii helpers. Manual char checks used.
+// - Nomen doesn't have compound XOR/OR assignments (^=, |=). Use `a = a ^ b` form.
+// - Nomen doesn't have `and` keyword for logical AND. Use `&&` instead.
+// - Nomen doesn't have @as(), @truncate(), or std.ascii helpers. Manual char checks used.
 //
 // Zig output: "Is this a pangram? true!\n"
 

@@ -5,7 +5,7 @@ import build from "../../src/build";
 import check_output_aarch64 from "./check_output_aarch64";
 import parse_with_imports from "./parse_with_imports";
 
-// TODO: convert zig code to echo
+// TODO: convert zig code to nomen
 const zig_source = `//
 // Because they can suspend and resume, async Zig functions are
 // an example of a more general programming concept called

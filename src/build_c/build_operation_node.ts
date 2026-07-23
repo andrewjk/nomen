@@ -69,8 +69,8 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 			status.code += `; char* ${rt} = `;
 			build_operand(node.right_value, status);
 			status.code += `; char* _cres_${id} = ${label}(${lt}, ${rt}); `;
-			if (left_temp) status.code += `echo_free_wrap(${lt}); `;
-			if (right_temp) status.code += `echo_free_wrap(${rt}); `;
+			if (left_temp) status.code += `nomen_free_wrap(${lt}); `;
+			if (right_temp) status.code += `nomen_free_wrap(${rt}); `;
 			status.code += `_cres_${id}; })`;
 		} else {
 			status.code += `${label}(`;

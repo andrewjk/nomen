@@ -27,7 +27,7 @@ pub class Task<T> : Sendable {
 		```
 		#arch: c
 		if (self->future) {
-			__echo_future_wait((struct echo_future *)self->future);
+			__nomen_future_wait((struct nomen_future *)self->future);
 		} else if (self->handle && !self->done) {
 			void *ret;
 			pthread_join((pthread_t)self->handle, &ret);
@@ -40,7 +40,7 @@ pub class Task<T> : Sendable {
 		// if (self->future) goto wait_future
 		ldr x0, [x19, #40]
 		cbz x0, .Lwait_handle
-		bl ___echo_future_wait
+		bl ___nomen_future_wait
 		b .Lwait_done
 		.Lwait_handle:
 		// else if (self->handle && !self->done)
@@ -69,7 +69,7 @@ pub class Task<T> : Sendable {
 		```
 		#arch: c
 		if (self->future) {
-			__echo_future_wait((struct echo_future *)self->future);
+			__nomen_future_wait((struct nomen_future *)self->future);
 		} else if (self->handle && !self->done) {
 			void *ret;
 			pthread_join((pthread_t)self->handle, &ret);
@@ -83,7 +83,7 @@ pub class Task<T> : Sendable {
 		// Wait for completion (same as wait method)
 		ldr x0, [x19, #40]
 		cbz x0, .Lresult_handle
-		bl ___echo_future_wait
+		bl ___nomen_future_wait
 		b .Lresult_read
 		.Lresult_handle:
 		ldr x0, [x19, #8]
@@ -110,7 +110,7 @@ pub class Task<T> : Sendable {
 		```
 		#arch: c
 		if (self->future) {
-			__echo_future_wait((struct echo_future *)self->future);
+			__nomen_future_wait((struct nomen_future *)self->future);
 		} else if (self->handle && !self->done) {
 			void *ret;
 			pthread_join((pthread_t)self->handle, &ret);
@@ -124,7 +124,7 @@ pub class Task<T> : Sendable {
 		// Wait for completion
 		ldr x0, [x19, #40]
 		cbz x0, .Lru64_handle
-		bl ___echo_future_wait
+		bl ___nomen_future_wait
 		b .Lru64_read
 		.Lru64_handle:
 		ldr x0, [x19, #8]
@@ -170,11 +170,11 @@ pub class Task<T> : Sendable {
 	pub func current_cancelled = (out bool) {
 		```
 		#arch: c
-		return __echo_current_cancel_flag && *__echo_current_cancel_flag;
+		return __nomen_current_cancel_flag && *__nomen_current_cancel_flag;
 		```
 		```
 		#arch: aarch64_use_c
-		return __echo_current_cancel_flag && *__echo_current_cancel_flag;
+		return __nomen_current_cancel_flag && *__nomen_current_cancel_flag;
 		```
 	}
 
@@ -186,23 +186,23 @@ pub class Task<T> : Sendable {
 	pub func set_pool_size = (int n, out int) {
 		```
 		#arch: c
-		if (__echo_pool_init || n <= 0) return 0;
-		__echo_pool_size = n;
+		if (__nomen_pool_init || n <= 0) return 0;
+		__nomen_pool_size = n;
 		return 1;
 		```
 		```
 		#arch: aarch64
 		// x0 = n (first arg)
-		// if (__echo_pool_init || n <= 0) return 0
-		adrp x1, ___echo_pool_init@PAGE
-		add x1, x1, ___echo_pool_init@PAGEOFF
+		// if (__nomen_pool_init || n <= 0) return 0
+		adrp x1, ___nomen_pool_init@PAGE
+		add x1, x1, ___nomen_pool_init@PAGEOFF
 		ldr w2, [x1]
 		cbnz w2, .Lsps_zero
 		cmp x0, #0
 		b.le .Lsps_zero
-		// __echo_pool_size = n
-		adrp x1, ___echo_pool_size@PAGE
-		add x1, x1, ___echo_pool_size@PAGEOFF
+		// __nomen_pool_size = n
+		adrp x1, ___nomen_pool_size@PAGE
+		add x1, x1, ___nomen_pool_size@PAGEOFF
 		str w0, [x1]
 		mov x0, #1
 		b .Lsps_done
@@ -222,11 +222,11 @@ pub class Task<T> : Sendable {
 	pub func shutdown_pool = () {
 		```
 		#arch: c
-		__echo_pool_shutdown();
+		__nomen_pool_shutdown();
 		```
 		```
 		#arch: aarch64
-		bl ___echo_pool_shutdown
+		bl ___nomen_pool_shutdown
 		```
 	}
 
@@ -239,7 +239,7 @@ pub class Task<T> : Sendable {
 		```
 		#arch: c
 		if (self->future) {
-			__echo_future_release((struct echo_future *)self->future);
+			__nomen_future_release((struct nomen_future *)self->future);
 			self->future = 0;
 			self->result_slot = 0;
 			self->cancel_flag = 0;
@@ -250,7 +250,7 @@ pub class Task<T> : Sendable {
 		// if (self->future) { release; zero fields }
 		ldr x0, [x19, #40]
 		cbz x0, .Ldestroy_done
-		bl ___echo_future_release
+		bl ___nomen_future_release
 		str xzr, [x19, #40]
 		str xzr, [x19, #24]
 		str xzr, [x19, #32]

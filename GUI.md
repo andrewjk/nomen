@@ -1,6 +1,6 @@
 # Layout & Compositor
 
-A layout engine and compositor for the Echo `core/System/Controls` UI layer.
+A layout engine and compositor for the Nomen `core/System/Controls` UI layer.
 
 ## Overview
 

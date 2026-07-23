@@ -1,8 +1,8 @@
 # Memory Management
 
-Echo uses automatic memory management with deterministic cleanup at scope boundaries. No garbage collector or reference counting is needed — the compiler inserts allocation and deallocation code at compile time.
+Nomen uses automatic memory management with deterministic cleanup at scope boundaries. No garbage collector or reference counting is needed — the compiler inserts allocation and deallocation code at compile time.
 
-This document describes memory behavior at two levels: what Echo programmers can expect (user-facing semantics), and how the aarch64 backend generates code to achieve it (code generation internals).
+This document describes memory behavior at two levels: what Nomen programmers can expect (user-facing semantics), and how the aarch64 backend generates code to achieve it (code generation internals).
 
 ## User-Facing Semantics
 
@@ -254,7 +254,7 @@ method returns, and `return` of a borrow — are all caught.)
 The classic tagged-union memory-safety hazard — take a reference into an enum's
 payload, overwrite the enum with a different case (changing the tag and the
 overlapping payload bytes), then dereference the stale reference — cannot arise
-in Echo, because the language offers no way to create an interior reference into
+in Nomen, because the language offers no way to create an interior reference into
 an enum's payload:
 
 - Enum case definitions accept only `Type name` payload fields — no `ref`
@@ -267,7 +267,7 @@ an enum's payload:
 - Direct payload field access outside `match` (`e.code`) also loads by value.
 
 The compiler's borrow machinery (`src/check/utils/borrow.ts`) does not model
-enum payloads — it only tracks class field/method borrows. Echo is safe here
+enum payloads — it only tracks class field/method borrows. Nomen is safe here
 solely because the front end never lets an interior reference into an enum
 payload come into existence. **If `ref` bindings in `match`, an address-of
 operator, or `ref` enum payload fields are ever added, an enum-aware
@@ -352,10 +352,10 @@ build_block_node:
 
 ```asm
 ldr x0, [x29, #<var_offset>]    // load string pointer
-bl _echo_free_wrap                // free it
+bl _nomen_free_wrap                // free it
 ```
 
-**Reassignment**: The old string is freed before storing the new one. The new value is preserved across the free call via push/pop because `_echo_free_wrap` clobbers caller-saved registers.
+**Reassignment**: The old string is freed before storing the new one. The new value is preserved across the free call via push/pop because `_nomen_free_wrap` clobbers caller-saved registers.
 
 ### Classes
 
@@ -367,7 +367,7 @@ Every `malloc` for a class instance stores the pointer in a dedicated 8-byte **a
 
 ```asm
 mov x0, #<struct_size>          // class size (VT_SIZE + fields)
-bl _echo_malloc_wrap             // malloc → x0 = heap pointer
+bl _nomen_malloc_wrap             // malloc → x0 = heap pointer
 str x0, [x29, #<anchor>]        // anchor: save pointer for cleanup
 str x0, [x29, #<var>]           // variable: also store for access
 // ... call ClassName_init ...
@@ -447,11 +447,11 @@ bl _malloc
 bl _free
 
 // Audit mode
-bl _echo_malloc_wrap     // increments counter
-bl _echo_free_wrap       // decrements counter
+bl _nomen_malloc_wrap     // increments counter
+bl _nomen_free_wrap       // decrements counter
 ```
 
-At program exit, `echo_audit_check()` reports any remaining allocations as `LEAK: N allocation(s)`. This is used by memory tests to verify no memory is leaked.
+At program exit, `nomen_audit_check()` reports any remaining allocations as `LEAK: N allocation(s)`. This is used by memory tests to verify no memory is leaked.
 
 ### Implementation Files
 

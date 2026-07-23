@@ -1,6 +1,6 @@
 // Mutex — pthread-backed lock for shared mutable state.
 //
-// Default stance in Echo is "no shared mutable state" — communicate by moving
+// Default stance in Nomen is "no shared mutable state" — communicate by moving
 // Sendable values (or via Channel<T>). Mutex exists for when you genuinely
 // need shared mutability. See ASYNC.md.
 

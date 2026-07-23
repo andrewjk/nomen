@@ -40,7 +40,7 @@ function get_func_label(
 		}
 		return `${struct_name}_${func.name.replace(/#/g, "")}`;
 	}
-	return func.name === "main" ? "_echo_main" : func.name;
+	return func.name === "main" ? "_nomen_main" : func.name;
 }
 
 /**

@@ -1,5 +1,5 @@
 [package]
-name = "echo-bench"
+name = "nomen-bench"
 version = "0.0.0"
 edition = "2021"
 autobins = false

@@ -35,13 +35,13 @@ export default function build_async_block_node(node: AsyncBlockNode, status: Bui
 	// defines them is normally emitted on the first spawn — but a race
 	// nursery with no spawns wouldn't otherwise pull it in. Emit the pool
 	// header eagerly so the symbols always resolve.
-	if (node.mode === "race" && !status.headers.includes("__echo_pool_submit")) {
+	if (node.mode === "race" && !status.headers.includes("__nomen_pool_submit")) {
 		status.headers += POOL_HEADER;
 	}
 
-	const futures_name = `__echo_nursery_${id}_futures`;
-	const count_name = `__echo_nursery_${id}_count`;
-	const idx_name = `__echo_nursery_${id}_i`;
+	const futures_name = `__nomen_nursery_${id}_futures`;
+	const count_name = `__nomen_nursery_${id}_count`;
+	const idx_name = `__nomen_nursery_${id}_i`;
 
 	status.code += `{\n`;
 	status.code += `\tunsigned long long ${futures_name}[64];\n`;
@@ -89,26 +89,26 @@ export default function build_async_block_node(node: AsyncBlockNode, status: Bui
 		// then cancel the remaining tasks, then join + release every future
 		// (the join is a no-op for tasks already finished; cancelled tasks
 		// get a brief grace period via the deadline-extended wait below).
-		status.code += `\t__echo_nursery_race_wait((struct echo_future **)${futures_name}, ${count_name}, ${deadline_var ? deadline_var : "0"});\n`;
+		status.code += `\t__nomen_nursery_race_wait((struct nomen_future **)${futures_name}, ${count_name}, ${deadline_var ? deadline_var : "0"});\n`;
 	}
 	status.code += `\tfor (int ${idx_name} = 0; ${idx_name} < ${count_name}; ${idx_name}++) {\n`;
-	status.code += `\t\tstruct echo_future *_f = (struct echo_future *)${futures_name}[${idx_name}];\n`;
+	status.code += `\t\tstruct nomen_future *_f = (struct nomen_future *)${futures_name}[${idx_name}];\n`;
 	if (is_race) {
 		// Cancel anything still running, then wait+release with a generous
 		// extended deadline so cancelled tasks actually exit before release.
-		status.code += `\t\t__echo_future_cancel(_f);\n`;
-		status.code += `\t\t__echo_future_timedwait(_f, ${deadline_var ? deadline_var : "0"} + 1000);\n`;
+		status.code += `\t\t__nomen_future_cancel(_f);\n`;
+		status.code += `\t\t__nomen_future_timedwait(_f, ${deadline_var ? deadline_var : "0"} + 1000);\n`;
 	} else if (deadline_var) {
-		status.code += `\t\tint _done = __echo_future_timedwait(_f, ${deadline_var});\n`;
+		status.code += `\t\tint _done = __nomen_future_timedwait(_f, ${deadline_var});\n`;
 		status.code += `\t\tif (!_done) {\n`;
 		// Timeout expired — cancel this task and any remaining tasks.
 		status.code += `\t\t\tif (_f->cancel_flag) *(_f->cancel_flag) = 1;\n`;
-		status.code += `\t\t\t__echo_future_timedwait(_f, ${deadline_var} + 1000);\n`;
+		status.code += `\t\t\t__nomen_future_timedwait(_f, ${deadline_var} + 1000);\n`;
 		status.code += `\t\t}\n`;
 	} else {
-		status.code += `\t\t__echo_future_wait(_f);\n`;
+		status.code += `\t\t__nomen_future_wait(_f);\n`;
 	}
-	status.code += `\t\t__echo_future_release(_f);\n`;
+	status.code += `\t\t__nomen_future_release(_f);\n`;
 	status.code += `\t}\n`;
 
 	build_auto_free(status);

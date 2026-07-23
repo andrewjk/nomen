@@ -8,7 +8,7 @@ import parse_with_imports from "./parse_with_imports";
 // The broken code has wrong values: 0o131='Y', 0b1101000='h', 0x66='f'.
 // The fix: 0o132='Z', 0b1101001='i', 0x67='g' → spells "Zig".
 //
-// Note: Zig prints byte arrays as strings with {s}. Echo doesn't support
+// Note: Zig prints byte arrays as strings with {s}. Nomen doesn't support
 // that directly, so we use a string literal instead. The exercise still
 // teaches integer literal formats.
 

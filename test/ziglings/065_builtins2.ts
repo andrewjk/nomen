@@ -5,7 +5,7 @@ import build from "../../src/build";
 import check_output_aarch64 from "./check_output_aarch64";
 import parse_with_imports from "./parse_with_imports";
 
-// TODO: convert zig code to echo
+// TODO: convert zig code to nomen
 const zig_source = `//
 // Zig has builtins for mathematical operations such as...
 //
@@ -53,7 +53,7 @@ const print = @import("std").debug.print;
 const Narcissus = struct {
     me: *Narcissus = undefined,
     myself: *Narcissus = undefined,
-    echo: void = undefined, // Alas, poor Echo!
+    nomen: void = undefined, // Alas, poor Nomen!
 
     fn fetchTheMostBeautifulType() type {
         return @This();
@@ -93,7 +93,7 @@ pub fn main() void {
     //   The place gave every word back in reply.
     //   He cried:
     //            "Farewell."
-    //   And Echo called:
+    //   And Nomen called:
     //                   "Farewell!"
     //
     //     --Ovid, The Metamorphoses

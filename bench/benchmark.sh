@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Each benchmark has hardcoded per-benchmark sizes: "small" and "large"
 # (defined below in the BENCHES array). Sizes are tuned so the slowest language
-# (Echo) lands in a measurable range (~50ms-5s); they roughly follow the
+# (Nomen) lands in a measurable range (~50ms-5s); they roughly follow the
 # Programming-Language-Benchmarks conventions where the workload allows.
 # Benchmarks whose small/large args are identical run once (single-size table);
 # the rest are measured at both sizes.
@@ -14,35 +14,35 @@ TSX="$ROOT/bin/node_modules/.bin/tsx"
 GO_BUILD="$BENCH_DIR/go/build"
 RUST_DIR="$BENCH_DIR/rust"
 CARGO="cargo"
-TMPDIR="${TMPDIR:-/tmp}/echo_bench_$$"
+TMPDIR="${TMPDIR:-/tmp}/nomen_bench_$$"
 mkdir -p "$TMPDIR" "$GO_BUILD"
 
 trap 'rm -rf "$TMPDIR"' EXIT
 
 to_ms() {
 	local t="$1"
-	local min=$(echo "$t" | sed 's/m.*//')
-	local sec=$(echo "$t" | sed 's/.*m//' | sed 's/s$//')
-	echo "$min * 60000 + $sec * 1000" | bc | cut -d. -f1
+	local min=$(nomen "$t" | sed 's/m.*//')
+	local sec=$(nomen "$t" | sed 's/.*m//' | sed 's/s$//')
+	nomen "$min * 60000 + $sec * 1000" | bc | cut -d. -f1
 }
 
-# "Echo compare" column: Echo's time as a ratio of the slowest and fastest of
-# the OTHER languages, formatted "<echo/slowest>-<echo/fastest>". A value >1.0
-# means Echo is slower than that end of the field, <1.0 means Echo is faster.
+# "Nomen compare" column: Nomen's time as a ratio of the slowest and fastest of
+# the OTHER languages, formatted "<nomen/slowest>-<nomen/fastest>". A value >1.0
+# means Nomen is slower than that end of the field, <1.0 means Nomen is faster.
 # "-" when there are no competitor times or it would divide by zero.
-echo_compare() {
-	local echo_num="$1"; shift
+nomen_compare() {
+	local nomen_num="$1"; shift
 	local fastest="" slowest="" v
 	for v in "$@"; do
 		if [ -z "$fastest" ]; then fastest=$v; slowest=$v; fi
 		[ "$v" -lt "$fastest" ] && fastest=$v
 		[ "$v" -gt "$slowest" ] && slowest=$v
 	done
-	if [ -z "$echo_num" ] || [ -z "$fastest" ] || [ "$fastest" -le 0 ]; then
-		echo "-"
+	if [ -z "$nomen_num" ] || [ -z "$fastest" ] || [ "$fastest" -le 0 ]; then
+		nomen "-"
 		return 0
 	fi
-	awk -v e="$echo_num" -v lo="$slowest" -v hi="$fastest" \
+	awk -v e="$nomen_num" -v lo="$slowest" -v hi="$fastest" \
 		'BEGIN { printf "%.1f-%.1f", e/lo, e/hi }'
 }
 
@@ -89,39 +89,39 @@ unset _entry _b _small _large _z _r
 # times reflect compiling each benchmark's own code, not its dependencies.
 ( cd "$RUST_DIR" && $CARGO build --release --quiet 2>/dev/null ) || true
 
-echo "=== Compile times ==="
-echo ""
+nomen "=== Compile times ==="
+nomen ""
 
-printf "  %-22s  %7s  %7s  %7s  %7s  %7s  %11s\n" "Benchmark" "Echo" "Echo/C" "Go" "Zig" "Rust" "Echo"
-printf "  %-22s  %7s  %7s  %7s  %7s  %7s  %11s\n" "" "compile" "compile" "compile" "compile" "compile" "compare"
-printf "  %-22s  %7s  %7s  %7s  %7s  %7s  %11s\n" "----------------------" "-------" "-------" "-------" "-------" "-------" "-----------"
+printf "  %-22s  %8s  %8s  %8s  %8s  %8s  %11s\n" "Benchmark" "Nomen" "Nomen/C" "Go" "Zig" "Rust" "Nomen"
+printf "  %-22s  %8s  %8s  %8s  %8s  %8s  %11s\n" "" "compile" "compile" "compile" "compile" "compile" "compare"
+printf "  %-22s  %8s  %8s  %8s  %8s  %8s  %11s\n" "----------------------" "-------" "-------" "-------" "-------" "-------" "-----------"
 
 for entry in "${BENCHES[@]}"; do
 	IFS='|' read -r bench small_args large_args zig_src rust_src <<< "$entry"
-	echo_ms="-" echo_c_ms="-" go_ms="-" zig_ms="-" rust_ms="-"
-	echo_num="" echo_c_num="" go_num="" zig_num="" rust_num=""
+	nomen_ms="-" nomen_c_ms="-" go_ms="-" zig_ms="-" rust_ms="-"
+	nomen_num="" nomen_c_num="" go_num="" zig_num="" rust_num=""
 
-	# Echo compile (aarch64 backend)
-	if [ -f "$BENCH_DIR/echo/$bench.echo" ]; then
-		cp "$BENCH_DIR/echo/package.jsonc" "$TMPDIR/package.jsonc" 2>/dev/null || true
-		if raw=$( { time "$TSX" "$BENCH_DIR/compile_echo.ts" "$BENCH_DIR/echo/$bench.echo" "$TMPDIR/echo_${bench}" "$ROOT/core" aarch64 2>/dev/null; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//'); then
-			echo_num=$(to_ms "$raw"); echo_ms="${echo_num}ms"
+	# Nomen compile (aarch64 backend)
+	if [ -f "$BENCH_DIR/nomen/$bench.nm" ]; then
+		cp "$BENCH_DIR/nomen/package.jsonc" "$TMPDIR/package.jsonc" 2>/dev/null || true
+		if raw=$( { time "$TSX" "$BENCH_DIR/compile_nomen.ts" "$BENCH_DIR/nomen/$bench.nm" "$TMPDIR/nomen_${bench}" "$ROOT/core" aarch64 2>/dev/null; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//'); then
+			nomen_num=$(to_ms "$raw"); nomen_ms="${nomen_num}ms"
 		else
-			echo_ms="FAIL"
+			nomen_ms="FAIL"
 		fi
 	else
-		echo_ms="SKIP"
+		nomen_ms="SKIP"
 	fi
 
-	# Echo compile (C backend)
-	if [ -f "$BENCH_DIR/echo/$bench.echo" ]; then
-		if raw=$( { time "$TSX" "$BENCH_DIR/compile_echo.ts" "$BENCH_DIR/echo/$bench.echo" "$TMPDIR/echo_c_${bench}" "$ROOT/core" c 2>/dev/null; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//'); then
-			echo_c_num=$(to_ms "$raw"); echo_c_ms="${echo_c_num}ms"
+	# Nomen compile (C backend)
+	if [ -f "$BENCH_DIR/nomen/$bench.nm" ]; then
+		if raw=$( { time "$TSX" "$BENCH_DIR/compile_nomen.ts" "$BENCH_DIR/nomen/$bench.nm" "$TMPDIR/nomen_c_${bench}" "$ROOT/core" c 2>/dev/null; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//'); then
+			nomen_c_num=$(to_ms "$raw"); nomen_c_ms="${nomen_c_num}ms"
 		else
-			echo_c_ms="FAIL"
+			nomen_c_ms="FAIL"
 		fi
 	else
-		echo_c_ms="SKIP"
+		nomen_c_ms="SKIP"
 	fi
 
 	# Go compile
@@ -164,71 +164,71 @@ for entry in "${BENCHES[@]}"; do
 	[ -n "$go_num" ] && nums+=("$go_num")
 	[ -n "$zig_num" ] && nums+=("$zig_num")
 	[ -n "$rust_num" ] && nums+=("$rust_num")
-	compare=$(echo_compare "$echo_num" "${nums[@]}")
-	printf "  %-22s  %7s  %7s  %7s  %7s  %7s  %11s\n" "$bench" "$echo_ms" "$echo_c_ms" "$go_ms" "$zig_ms" "$rust_ms" "$compare"
+	compare=$(nomen_compare "$nomen_num" "${nums[@]}")
+	printf "  %-22s  %8s  %8s  %8s  %8s  %8s  %11s\n" "$bench" "$nomen_ms" "$nomen_c_ms" "$go_ms" "$zig_ms" "$rust_ms" "$compare"
 done
 
-echo ""
+nomen ""
 
 # ── Run all ──────────────────────────────────────────────────────────────────
 
 print_run_header() {
-	printf "  %-22s  %7s  %7s  %7s  %7s  %7s  %11s\n" "Benchmark" "Echo" "Echo/C" "Go" "Zig" "Rust" "Echo"
-	printf "  %-22s  %7s  %7s  %7s  %7s  %7s  %11s\n" "" "run" "run" "run" "run" "run" "compare"
-	printf "  %-22s  %7s  %7s  %7s  %7s  %7s  %11s\n" "----------------------" "-------" "-------" "-------" "-------" "-------" "-----------"
+	printf "  %-22s  %8s  %8s  %8s  %8s  %8s  %11s\n" "Benchmark" "Nomen" "Nomen/C" "Go" "Zig" "Rust" "Nomen"
+	printf "  %-22s  %8s  %8s  %8s  %8s  %8s  %11s\n" "" "run" "run" "run" "run" "run" "compare"
+	printf "  %-22s  %8s  %8s  %8s  %8s  %8s  %11s\n" "----------------------" "-------" "-------" "-------" "-------" "-------" "-----------"
 }
 
-# Run one benchmark row: best-of-3 per language, then the "Echo compare"
+# Run one benchmark row: best-of-3 per language, then the "Nomen compare"
 # spread column. `$bn` is intentionally unquoted when invoking binaries so
 # multi-token arg strings (e.g. "100 50000") word-split as expected.
 print_run_row() {
 	local bench="$1"
 	local bn="$2"
-	local echo_ms="-" echo_c_ms="-" go_ms="-" zig_ms="-" rust_ms="-"
-	local echo_num="" echo_c_num="" go_num="" zig_num="" rust_num=""
-	local bin_echo="$TMPDIR/echo_${bench}"
-	local bin_echo_c="$TMPDIR/echo_c_${bench}"
+	local nomen_ms="-" nomen_c_ms="-" go_ms="-" zig_ms="-" rust_ms="-"
+	local nomen_num="" nomen_c_num="" go_num="" zig_num="" rust_num=""
+	local bin_nomen="$TMPDIR/nomen_${bench}"
+	local bin_nomen_c="$TMPDIR/nomen_c_${bench}"
 	local bin_go="$GO_BUILD/$bench"
 	local bin_zig="$TMPDIR/zig_${bench}"
 	local bin_rust="$RUST_DIR/target/release/$bench"
 	local t1 t2 t3 r1 r2 r3
 
-	# Echo run (aarch64 backend)
-	if [ -x "$bin_echo" ]; then
-		{ "$bin_echo" $bn > /dev/null 2>&1; } 2>/dev/null || true
-		t1=$( { time "$bin_echo" $bn > /dev/null 2>&1; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//' ) 2>/dev/null || true
-		t2=$( { time "$bin_echo" $bn > /dev/null 2>&1; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//' ) 2>/dev/null || true
-		t3=$( { time "$bin_echo" $bn > /dev/null 2>&1; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//' ) 2>/dev/null || true
+	# Nomen run (aarch64 backend)
+	if [ -x "$bin_nomen" ]; then
+		{ "$bin_nomen" $bn > /dev/null 2>&1; } 2>/dev/null || true
+		t1=$( { time "$bin_nomen" $bn > /dev/null 2>&1; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//' ) 2>/dev/null || true
+		t2=$( { time "$bin_nomen" $bn > /dev/null 2>&1; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//' ) 2>/dev/null || true
+		t3=$( { time "$bin_nomen" $bn > /dev/null 2>&1; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//' ) 2>/dev/null || true
 		if [ -n "$t1" ] && [ -n "$t2" ] && [ -n "$t3" ]; then
 			r1=$(to_ms "$t1") r2=$(to_ms "$t2") r3=$(to_ms "$t3")
-			echo_num=$r1
-			[ "$r2" -lt "$echo_num" ] && echo_num=$r2
-			[ "$r3" -lt "$echo_num" ] && echo_num=$r3
-			echo_ms="${echo_num}ms"
+			nomen_num=$r1
+			[ "$r2" -lt "$nomen_num" ] && nomen_num=$r2
+			[ "$r3" -lt "$nomen_num" ] && nomen_num=$r3
+			nomen_ms="${nomen_num}ms"
 		else
-			echo_ms="FAIL"
+			nomen_ms="FAIL"
 		fi
 	else
-		echo_ms="FAIL"
+		nomen_ms="FAIL"
 	fi
 
-	# Echo run (C backend)
-	if [ -x "$bin_echo_c" ]; then
-		{ "$bin_echo_c" $bn > /dev/null 2>&1; } 2>/dev/null || true
-		t1=$( { time "$bin_echo_c" $bn > /dev/null 2>&1; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//' ) 2>/dev/null || true
-		t2=$( { time "$bin_echo_c" $bn > /dev/null 2>&1; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//' ) 2>/dev/null || true
-		t3=$( { time "$bin_echo_c" $bn > /dev/null 2>&1; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//' ) 2>/dev/null || true
+	# Nomen run (C backend)
+	if [ -x "$bin_nomen_c" ]; then
+		{ "$bin_nomen_c" $bn > /dev/null 2>&1; } 2>/dev/null || true
+		t1=$( { time "$bin_nomen_c" $bn > /dev/null 2>&1; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//' ) 2>/dev/null || true
+		t2=$( { time "$bin_nomen_c" $bn > /dev/null 2>&1; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//' ) 2>/dev/null || true
+		t3=$( { time "$bin_nomen_c" $bn > /dev/null 2>&1; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//' ) 2>/dev/null || true
 		if [ -n "$t1" ] && [ -n "$t2" ] && [ -n "$t3" ]; then
 			r1=$(to_ms "$t1") r2=$(to_ms "$t2") r3=$(to_ms "$t3")
-			echo_c_num=$r1
-			[ "$r2" -lt "$echo_c_num" ] && echo_c_num=$r2
-			[ "$r3" -lt "$echo_c_num" ] && echo_c_num=$r3
-			echo_c_ms="${echo_c_num}ms"
+			nomen_c_num=$r1
+			[ "$r2" -lt "$nomen_c_num" ] && nomen_c_num=$r2
+			[ "$r3" -lt "$nomen_c_num" ] && nomen_c_num=$r3
+			nomen_c_ms="${nomen_c_num}ms"
 		else
-			echo_c_ms="FAIL"
+			nomen_c_ms="FAIL"
 		fi
 	else
-		echo_c_ms="FAIL"
+		nomen_c_ms="FAIL"
 	fi
 
 	# Go run
@@ -302,31 +302,31 @@ print_run_row() {
 	[ -n "$zig_num" ] && nums+=("$zig_num")
 	[ -n "$rust_num" ] && nums+=("$rust_num")
 	local compare
-	compare=$(echo_compare "$echo_num" "${nums[@]}")
-	printf "  %-22s  %7s  %7s  %7s  %7s  %7s  %11s\n" "$bench" "$echo_ms" "$echo_c_ms" "$go_ms" "$zig_ms" "$rust_ms" "$compare"
+	compare=$(nomen_compare "$nomen_num" "${nums[@]}")
+	printf "  %-22s  %8s  %8s  %8s  %8s  %8s  %11s\n" "$bench" "$nomen_ms" "$nomen_c_ms" "$go_ms" "$zig_ms" "$rust_ms" "$compare"
 }
 
 # Single-size benchmarks (small == large) get their own table, shown first.
 if [ "${#SINGLE_BENCHES[@]}" -gt 0 ]; then
-	echo "=== Run times (single-size) ==="
-	echo ""
+	nomen "=== Run times (single-size) ==="
+	nomen ""
 	print_run_header
 	for entry in "${SINGLE_BENCHES[@]}"; do
 		IFS='|' read -r bench small_args large_args zig_src rust_src <<< "$entry"
 		print_run_row "$bench" "$small_args"
 	done
-	echo ""
+	nomen ""
 fi
 
 # Remaining benchmarks measured at both sizes.
 for which in small large; do
-	echo "=== Run times ($which) ==="
-	echo ""
+	nomen "=== Run times ($which) ==="
+	nomen ""
 	print_run_header
 	for entry in "${DUAL_BENCHES[@]}"; do
 		IFS='|' read -r bench small_args large_args zig_src rust_src <<< "$entry"
 		if [ "$which" = small ]; then bn="$small_args"; else bn="$large_args"; fi
 		print_run_row "$bench" "$bn"
 	done
-	echo ""
+	nomen ""
 done

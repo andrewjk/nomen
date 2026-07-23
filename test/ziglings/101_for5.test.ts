@@ -6,11 +6,11 @@ import parse_with_imports from "./parse_with_imports";
 
 // INCOMPATIBILITIES:
 // - Zig uses `for (roles, gold, experience, 1..) |c, g, e, i|` (multi-object for
-//   with index range starting at 1). Echo doesn't support multi-object for loops.
+//   with index range starting at 1). Nomen doesn't support multi-object for loops.
 //   Workaround: for-of with manual index counter, `(i + 1)` for 1-based numbering.
-// - Zig uses `switch (c) { .wizard => "Wizard", ... }`. Echo uses match with
+// - Zig uses `switch (c) { .wizard => "Wizard", ... }`. Nomen uses match with
 //   return from case blocks.
-// - Zig uses `const Role = enum { ... }`. Echo uses `enum Role { case ... }`.
+// - Zig uses `const Role = enum { ... }`. Nomen uses `enum Role { case ... }`.
 
 test("ziglings 101 for5 -- errors", () => {
 	const input = `

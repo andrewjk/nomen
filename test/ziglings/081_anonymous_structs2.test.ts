@@ -6,8 +6,8 @@ import parse_with_imports from "./parse_with_imports";
 
 // INCOMPATIBILITIES:
 // - Zig uses `.field = value` anonymous struct literal syntax with `anytype` params.
-//   Echo uses `[ field = value ]` syntax with named struct params.
-// - Zig's `@as(u32, 205)` for explicit type coercion. Echo infers types from struct fields.
+//   Nomen uses `[ field = value ]` syntax with named struct params.
+// - Zig's `@as(u32, 205)` for explicit type coercion. Nomen infers types from struct fields.
 
 test("ziglings 081 anonymous structs2 -- errors", () => {
 	const input = `

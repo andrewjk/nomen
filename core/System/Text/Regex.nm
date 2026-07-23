@@ -1,4 +1,4 @@
-// Regular expression support implemented in pure Echo.
+// Regular expression support implemented in pure Nomen.
 //
 // `test` reports whether a pattern matches anywhere in the input; `match`
 // returns the first matched substring (or "" when there is no match).

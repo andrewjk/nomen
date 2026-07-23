@@ -6,8 +6,8 @@ import parse_with_imports from "./parse_with_imports";
 
 // INCOMPATIBILITIES:
 // - Zig uses comptime generics (Circle(comptime T: type) type) to create struct types
-//   parameterized by type. Echo uses struct generics with type params.
-// - Zig uses @typeName to print struct type names at runtime. Echo uses a string field instead.
+//   parameterized by type. Nomen uses struct generics with type params.
+// - Zig uses @typeName to print struct type names at runtime. Nomen uses a string field instead.
 // - Float struct init in aarch64 has a pre-existing bug, so the second circle uses int too.
 
 test("ziglings 080 anonymous structs -- errors", () => {

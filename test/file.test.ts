@@ -24,7 +24,7 @@ Console.write("\\{a}|\\{b}")
 		const input = `
 var File w = File()
 w.open("filetest_all.txt", "w")
-w.writeAll("echo file io")
+w.writeAll("nomen file io")
 w.close()
 
 var File r = File()
@@ -32,7 +32,7 @@ r.open("filetest_all.txt", "r")
 const string content = r.readAll()
 Console.write(content)
 `;
-		await build_and_check_output(input, "file_write_read_all", "echo file io");
+		await build_and_check_output(input, "file_write_read_all", "nomen file io");
 	});
 
 	test("eof is set after readAll", async () => {

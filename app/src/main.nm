@@ -11,7 +11,7 @@ func flip_y = (int content_h, int ly, int lh, out int) {
 }
 
 pub func main = () {
-	var Window win = Window.create("Echo Todo", WIN_W, WIN_H)
+	var Window win = Window.create("Nomen Todo", WIN_W, WIN_H)
 
 	var Text title = Text.create(win)
 	title.set_text("Todo List")
@@ -23,7 +23,7 @@ pub func main = () {
 	var CheckBox cb4 = CheckBox.create(win)
 	var CheckBox cb5 = CheckBox.create(win)
 
-	cb0.set_title("Learn Echo")
+	cb0.set_title("Learn Nomen")
 	cb1.set_title("Build a GUI app")
 	cb2.set_title("Ship it")
 	cb3.set_hidden(true)

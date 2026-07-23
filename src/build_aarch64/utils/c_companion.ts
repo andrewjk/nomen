@@ -47,15 +47,15 @@ export function generate_companion(functions: CompanionFunction[], status: Build
 	out += "\n";
 
 	// Forward-declare the audit wrapper functions when audit mode is on.
-	// The pool infrastructure uses echo_malloc_wrap/echo_free_wrap (after
+	// The pool infrastructure uses nomen_malloc_wrap/nomen_free_wrap (after
 	// wrapping in build.ts), but they're defined in a separate audit_runtime.o.
 	if (status.audit) {
-		out += `void *echo_malloc_wrap(unsigned long);\n`;
-		out += `void *echo_calloc_wrap(unsigned long, unsigned long);\n`;
-		out += `void *echo_realloc_wrap(void *, unsigned long);\n`;
-		out += `void echo_free_wrap(void *);\n`;
-		out += `void *echo_strdup_wrap(const char *);\n`;
-		out += `void echo_audit_check(void);\n`;
+		out += `void *nomen_malloc_wrap(unsigned long);\n`;
+		out += `void *nomen_calloc_wrap(unsigned long, unsigned long);\n`;
+		out += `void *nomen_realloc_wrap(void *, unsigned long);\n`;
+		out += `void nomen_free_wrap(void *);\n`;
+		out += `void *nomen_strdup_wrap(const char *);\n`;
+		out += `void nomen_audit_check(void);\n`;
 		out += "\n";
 	}
 
@@ -166,7 +166,7 @@ function generate_c_function(
 			func_label = `${struct_name}_${func.name.replace(/#/g, "")}`;
 		}
 	} else {
-		func_label = func.name === "main" ? "_echo_main" : func.name;
+		func_label = func.name === "main" ? "_nomen_main" : func.name;
 	}
 
 	// --- Build return type prefix ---

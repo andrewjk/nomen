@@ -35,13 +35,13 @@ export default function build_nursery_spawn(
 	const id = status.spawn_counter ?? 0;
 	status.spawn_counter = id + 1;
 
-	if (!status.file_scope_c?.includes("__echo_pool_submit")) {
+	if (!status.file_scope_c?.includes("__nomen_pool_submit")) {
 		status.file_scope_c = (status.file_scope_c ?? "") + POOL_HEADER_C;
 	}
 
-	const struct_name = `__echo_spawn_${id}_args`;
-	const tramp_name = `__echo_spawn_${id}_trampoline`;
-	const submit_name = `echo_spawn_${id}_submit`;
+	const struct_name = `__nomen_spawn_${id}_args`;
+	const tramp_name = `__nomen_spawn_${id}_trampoline`;
+	const submit_name = `nomen_spawn_${id}_submit`;
 
 	// Resolve each arg's C type.
 	const arg_c_types: string[] = [];
@@ -86,12 +86,12 @@ export default function build_nursery_spawn(
 	}
 	tramp_c += `\tunsigned long long *result_slot;\n`;
 	tramp_c += `\tunsigned long long *cancel_flag;\n`;
-	tramp_c += `\tstruct echo_future *future;\n`;
+	tramp_c += `\tstruct nomen_future *future;\n`;
 	tramp_c += `};\n`;
 
 	tramp_c += `static void ${tramp_name}(void *p) {\n`;
 	tramp_c += `\tstruct ${struct_name} *a = (struct ${struct_name} *)p;\n`;
-	tramp_c += `\t__echo_current_cancel_flag = a->cancel_flag;\n`;
+	tramp_c += `\t__nomen_current_cancel_flag = a->cancel_flag;\n`;
 	if (returns_value) {
 		tramp_c += `\t${c_ret_type} _r = ${func_name}(`;
 	} else {
@@ -105,12 +105,12 @@ export default function build_nursery_spawn(
 	if (returns_value) {
 		tramp_c += `\t*(a->result_slot) = (unsigned long long)_r;\n`;
 	}
-	tramp_c += `\t__echo_current_cancel_flag = NULL;\n`;
+	tramp_c += `\t__nomen_current_cancel_flag = NULL;\n`;
 	tramp_c += `\tpthread_mutex_lock(&a->future->mu);\n`;
 	tramp_c += `\ta->future->done = 1;\n`;
 	tramp_c += `\tpthread_cond_broadcast(&a->future->cv);\n`;
 	tramp_c += `\tpthread_mutex_unlock(&a->future->mu);\n`;
-	tramp_c += `\t__echo_future_release(a->future);\n`;
+	tramp_c += `\t__nomen_future_release(a->future);\n`;
 	tramp_c += `\tfree(a);\n`;
 	tramp_c += `}\n`;
 
@@ -125,7 +125,7 @@ export default function build_nursery_spawn(
 		tramp_c += `${arg_c_types[i]} arg${i}`;
 	}
 	if (arg_c_types.length > 0) tramp_c += ", ";
-	tramp_c += `unsigned long long *__echo_nursery_futures, int *__echo_nursery_count`;
+	tramp_c += `unsigned long long *__nomen_nursery_futures, int *__nomen_nursery_count`;
 	tramp_c += `) {\n`;
 	tramp_c += `\tstruct ${struct_name} *a = (struct ${struct_name} *)malloc(sizeof(struct ${struct_name}));\n`;
 	for (let i = 0; i < arg_c_types.length; i++) {
@@ -135,7 +135,7 @@ export default function build_nursery_spawn(
 	tramp_c += `\t*(a->result_slot) = 0;\n`;
 	tramp_c += `\ta->cancel_flag = (unsigned long long *)malloc(sizeof(unsigned long long));\n`;
 	tramp_c += `\t*(a->cancel_flag) = 0;\n`;
-	tramp_c += `\tstruct echo_future *f = (struct echo_future *)malloc(sizeof(struct echo_future));\n`;
+	tramp_c += `\tstruct nomen_future *f = (struct nomen_future *)malloc(sizeof(struct nomen_future));\n`;
 	tramp_c += `\tpthread_mutex_init(&f->mu, NULL);\n`;
 	tramp_c += `\tpthread_cond_init(&f->cv, NULL);\n`;
 	tramp_c += `\tf->done = 0;\n`;
@@ -143,8 +143,8 @@ export default function build_nursery_spawn(
 	tramp_c += `\tf->cancel_flag = a->cancel_flag;\n`;
 	tramp_c += `\tf->result_slot = a->result_slot;\n`;
 	tramp_c += `\ta->future = f;\n`;
-	tramp_c += `\t__echo_pool_submit(${tramp_name}, a);\n`;
-	tramp_c += `\t__echo_nursery_futures[(*__echo_nursery_count)++] = (unsigned long long)f;\n`;
+	tramp_c += `\t__nomen_pool_submit(${tramp_name}, a);\n`;
+	tramp_c += `\t__nomen_nursery_futures[(*__nomen_nursery_count)++] = (unsigned long long)f;\n`;
 	if (fire_and_forget) {
 		tramp_c += `\treturn (void *)0;\n`;
 	} else {

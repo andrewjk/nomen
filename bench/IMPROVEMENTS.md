@@ -1,29 +1,29 @@
 # Benchmark Performance Improvements
 
-Results from `sh benchmark.sh` (Echo vs Go / Zig / Rust). Echo is compiled to
+Results from `sh benchmark.sh` (Nomen vs Go / Zig / Rust). Nomen is compiled to
 AArch64 assembly via a non-optimizing code generator, then linked with `clang`.
 Run times are the median of three runs; the workload sizes are set per-benchmark
 in `benchmark.sh`.
 
-Echo is consistently the slowest language, often by 10–100×. The causes are
+Nomen is consistently the slowest language, often by 10–100×. The causes are
 almost entirely **compiler-level** (no optimization passes) rather than
-algorithmic — the Echo sources mirror the reference implementations. The notes
+algorithmic — the Nomen sources mirror the reference implementations. The notes
 below cover, per benchmark, where the time goes and the highest-leverage fixes.
 A cross-cutting summary is at the end.
 
 Fixes are tagged by where they live:
 
-- **[source]** — change the `.echo` program (algorithm or data-structure choice)
+- **[source]** — change the `.nm` program (algorithm or data-structure choice)
 - **[stdlib]** — change the `core/System` library
 - **[codegen]** — change the compiler / code generator
 
 **✓ DONE** items have been implemented (see "Codegen improvements landed" for
 measured results). **✗ unfair** items are excluded — see the note below.
 
-> **Keeping the comparisons fair.** The Echo sources are written to **mirror
+> **Keeping the comparisons fair.** The Nomen sources are written to **mirror
 > the reference Go/Zig/Rust implementations** — same algorithm, same memory
 > strategy — so the timing gap reflects compiler/runtime maturity, not a
-> cleverer algorithm. Source changes that let Echo dodge the work the benchmark
+> cleverer algorithm. Source changes that let Nomen dodge the work the benchmark
 > measures are out of scope, even when they'd be a big win:
 >
 > - A flat node **pool/arena for binarytrees or merkletrees** is **excluded** —
@@ -34,7 +34,7 @@ measured results). **✗ unfair** items are excluded — see the note below.
 > - **nsieve bit-packing** is kept: same algorithm, denser flag representation,
 >   and the Go reference already uses a `bitset`. Constant-factor data
 >   representations are fair; algorithmic dodges are not.
-> - **edigits** bulk divmod + binary exponentiation are kept: they bring Echo's
+> - **edigits** bulk divmod + binary exponentiation are kept: they bring Nomen's
 >   hand-rolled `BigInt` to parity with `math/big` (Go) and `ibig` (Rust), which
 >   use the same techniques internally.
 
@@ -103,7 +103,7 @@ Changes applied:
    skipped the data-pointer load — segfault in json-serde). Lifts nsieve
    (~10%), knucleotide (~9%), lru (large ~47%), and spectral-norm (~14%).
 
-6. **Binary exponentiation for edigits** (`bench/echo/edigits.echo`): The
+6. **Binary exponentiation for edigits** (`bench/nomen/edigits.nm`): The
    `10^precision` computation now uses binary exponentiation (O(log precision)
    multiplies via repeated squaring) instead of a linear mul-by-10 loop
    (O(precision)). This was previously blocked by the Karatsuba
@@ -112,19 +112,19 @@ Changes applied:
 7. **`store_or_int` inliner stride fix** (`build_access_node.ts`): The
    special-cased inliner for `Buffer.store_or_int` was using a 4-byte stride
    (uint32) instead of the correct 8-byte stride (`long*`). The inline-asm
-   definition in `Buffer.echo` uses `lsl #3`, but the codegen fast path was
+   definition in `Buffer.nm` uses `lsl #3`, but the codegen fast path was
    emitting `lsl #2`, causing silent memory corruption (writes landing in the
    wrong slot). `store_or_int` had never been exercised before, so the bug
    was latent.
 
-8. **nsieve: bit-packed sieve** (`bench/echo/nsieve.echo`): Flags are now
+8. **nsieve: bit-packed sieve** (`bench/nomen/nsieve.nm`): Flags are now
    packed 64 per slot (`Buffer<int>` with `load_int`/`store_or_int`),
    shrinking the working set 64× so the flag array fits in L2/L3 cache
    (for n=40M: ~5 MB instead of ~160 MB). Measured 1.46× at n=40M; the
    speedup grows with n as the original's working set exceeds cache.
 
-9. **edigits: product-tree algorithm** (`bench/echo/edigits.echo`,
-   `core/System/BigInt.echo`): Replaced the naive iterative term-division
+9. **edigits: product-tree algorithm** (`bench/nomen/edigits.nm`,
+   `core/System/BigInt.nm`): Replaced the naive iterative term-division
    (`O(k·n)` sequential BigInt÷small-int divisions) with Tczajka's
    divide-and-conquer product tree — the same algorithm used by the Rust
    (`ibig`), Go (`math/big`), and Zig (`std.math.big`) references. `sum_terms`
@@ -160,16 +160,16 @@ Changes applied:
     name, preventing duplicate-symbol errors when a function is both emitted
     standalone and inlined.
 
-13. **`div128` → `___udivti3`** (`core/System/BigInt.echo`): The 128÷64
+13. **`div128` → `___udivti3`** (`core/System/BigInt.nm`): The 128÷64
     divide used by every BigInt division was a 64-iteration shift-and-subtract
-    Echo loop (`div128`). It's now an `inline func` with a raw AArch64 block that
+    Nomen loop (`div128`). It's now an `inline func` with a raw AArch64 block that
     calls compiler-rt's `___udivti3` (linked via `clang`) — ~30× faster (3.7ns
     vs 120ns per call measured in isolation). The body saturates to `UINT64_MAX`
     (== B-1) when `hi >= d`, matching Knuth-D's `q_hat` convention so the
     existing correction step still works. Dominant win for the final big divide
     - base conversion in **edigits**.
 
-14. **Indexed addressing in `BigInt.get`/`set`** (`core/System/BigInt.echo`):
+14. **Indexed addressing in `BigInt.get`/`set`** (`core/System/BigInt.nm`):
     Each limb accessor was `ldr data; lsl i,#3; add; ldr/str` (4 instructions).
     Using AArch64 indexed addressing (`ldr x0, [x0, x1, lsl #3]`) cuts it to
     `ldr data; ldr/str [data, i, lsl #3]` (2 instructions). Helps every BigInt
@@ -246,7 +246,7 @@ Changes applied:
     on top of the float benchmarks (mandelbrot, nbody) where it compounds with
     item 17.
 
-19. **O(1) LRU cache** (`bench/echo/lru.echo`): Replaced the O(n²) shift-array
+19. **O(1) LRU cache** (`bench/nomen/lru.nm`): Replaced the O(n²) shift-array
     LRU with an O(1) doubly-linked-list + `Map<int,int>` cache, matching the
     reference implementations (Go `container/list` + map, Zig `LinkedList` +
     `HashMap`). The linked list is arena-backed (flat arrays of prev/next/key/
@@ -367,7 +367,7 @@ behavior-preserving refactor that lifted the cache helpers to module scope in
 
 ## Original baseline table
 
-| Benchmark      | Echo (small / large) | Best other (lang) | Ratio (large) |
+| Benchmark      | Nomen (small / large) | Best other (lang) | Ratio (large) |
 | -------------- | -------------------- | ----------------- | ------------- |
 | pidigits       | 196 / 3562 ms        | 126 ms (Go)       | ~28×          |
 | fannkuch-redux | 368 / 4785 ms        | 122 ms (Rust)     | ~39×          |
@@ -412,7 +412,7 @@ Spigot-algorithm π computed with `BigInt`. The whole runtime is `BigInt.div_to`
   the repeated `ldr` of their addresses. (Register allocation now exists for
   integer loop vars — see codegen item 3.)
 - **[source]/[stdlib] An in-place `div_to(out self, a, b, rem)`** already landed
-  (item 9 / item 16), so the Echo source no longer copies a fresh `BigInt` back
+  (item 9 / item 16), so the Nomen source no longer copies a fresh `BigInt` back
   into `u` every digit.
 - **[source]** All 12 `BigInt` locals (`k`, `n1`, `d`, `one`, …) are allocated
   with `BigInt()` then re-bound with `= .new(...)`. The intermediate empty
@@ -427,7 +427,7 @@ Spigot-algorithm π computed with `BigInt`. The whole runtime is `BigInt.div_to`
 
 One `Console.write`. Nothing to optimize in the program itself.
 
-- **[codegen]** Reduce static-init and runtime-startup cost. The 2–4 ms Echo
+- **[codegen]** Reduce static-init and runtime-startup cost. The 2–4 ms Nomen
   startup vs. sub-millisecond Go startup is pure runtime overhead (init,
   segment setup, etc.). A leaner `_main` prologue matters only for trivially
   short programs.
@@ -449,7 +449,7 @@ nested loops. No allocation, no I/O inside the loop. The cost is 100% codegen.
   index and value are simple operands (no x19 save/restore).
 - **[source]** Replace the byte-by-byte rotate (`while rj <= k { p.set(rj,
 p.at(rj+1)); … }`) with a precomputed permutation table. The Rust reference
-  builds `NEXT_PERM_MASKS[r]` at compile time via `const fn`; Echo can build the
+  builds `NEXT_PERM_MASKS[r]` at compile time via `const fn`; Nomen can build the
   same tables once at startup and apply each permutation with a fixed 16-element
   copy. This removes the inner rotate loop entirely.
 - **[source]** Hoist `fact.at(n)` into a local before the `while true` loop —
@@ -462,7 +462,7 @@ p.at(rj+1)); … }`) with a precomputed permutation table. The Rust reference
   existing SSA-less IR would move them out of the loop body (Buffer.data LICM
   is done; general LICM of array bases/bounds is not).
 - **[codegen]** The `rj <= k` memmove-style rotate is a byte loop; for small `k`
-  an optimizing compiler unrolls it. Echo doesn't.
+  an optimizing compiler unrolls it. Nomen doesn't.
 
 ### binarytrees (241 / 2559 ms — ~26× off Rust)
 
@@ -472,12 +472,12 @@ strategy as the Rust (`Box`), Zig (`allocator.create`), and Go (`&Node{}`)
 references.
 
 - **The benchmark is an allocation/GC stress test.** The whole point is
-  per-node allocate/free churn, so the gap is dominated by Echo's allocator and
+  per-node allocate/free churn, so the gap is dominated by Nomen's allocator and
   the non-optimizing codegen, not anything algorithmic.
 - ✗ **[source] (unfair — excluded):** Pool the nodes in a flat `Buffer` and
   reclaim them with a counter reset (`pool.restore(saved)`) instead of freeing.
   It's a big speedup, but binarytrees is an allocation benchmark — pooling only
-  Echo removes exactly the work it measures, and no reference does it. (Tried
+  Nomen removes exactly the work it measures, and no reference does it. (Tried
   and reverted.)
 - **[codegen]** Inline the `create_tree` / `check_tree` recursion, or use a
   lighter calling convention. Each node currently pays a full
@@ -566,13 +566,13 @@ LRU cache over a `Map<int,int>` plus a doubly-linked-list order tracker.
 - ✓ **[codegen] DONE (item 18):** Adjacent push/pop peephole elimination removes
   redundant `str`/`ldr` pairs in the Map operations.
   probing; the reference Go map is also O(1)-ish but Go's runtime map is far
-  tighter than Echo's.
+  tighter than Nomen's.
 - ✓ **[codegen] DONE:** Buffer.load_int/store_int inlined. Buffer.data pointer
   cached across loop iterations (LICM).
 
 ### knucleotide (18 / 18 ms — ~3× off Zig)
 
-Reads FASTA, packs bases 2-bit, counts k-mers. Already Echo's closest-to-par
+Reads FASTA, packs bases 2-bit, counts k-mers. Already Nomen's closest-to-par
 benchmark because the hot loop is a tight sliding-window hash with no
 allocation.
 
@@ -602,8 +602,8 @@ prints the length.
 
 > **Fairness flag (needs review).** Two structural mismatches vs the references
 > make this comparison rougher than the others: (1) the Go reference
-> `json.Unmarshal`s into a **typed `GeoData` struct** (schema-aware), while Echo
-> parses into a **generic `JsonNode` DOM**; (2) Echo **resets the `JsonTree`
+> `json.Unmarshal`s into a **typed `GeoData` struct** (schema-aware), while Nomen
+> parses into a **generic `JsonNode` DOM**; (2) Nomen **resets the `JsonTree`
 > pool between parses** (no per-node malloc/free), the same reuse pattern that
 > was unfair in binarytrees. Unlike binarytrees this is a _parsing_ benchmark so
 > the pool is defensible (production JSON parsers commonly arena-allocate), but
@@ -624,7 +624,7 @@ prints the length.
   currently a struct memcpy plus string pointer chases.
 - **[stdlib]** String handling is a dominant cost: every `+` concatenation and
   tokenize allocates and copies. Go's `encoding/json` is also allocation-heavy
-  but Go's allocator and string copy are far faster than Echo's per-call
+  but Go's allocator and string copy are far faster than Nomen's per-call
   `malloc`/`strdup` + manual free at scope exit.
 - **[source]** The first parse + serialize is done outside the loop and
   discarded after printing length; the same work is then done N more times.
@@ -700,7 +700,7 @@ Hilbert-like matrix `A[i,j] = 1/((i+j)(i+j+1)/2+i+1)`.
   `(i+j)` to `(i+j+1)` adds `2*(i+j)+1` to the `(i+j)(i+j+1)/2` term.
   Maintaining the denominator as a running variable removes the multiply and
   divide from the inner loop. (The reference implementations exploit this.)
-  — **Already done in the Echo source** (`denom` running variable in
+  — **Already done in the Nomen source** (`denom` running variable in
   `eval_a_times_u`).
 - **[source]** `eval_a_times_u` reads `u` and writes `au` via Buffers. Cache
   `u.data` and `au.data` in locals once at the top of the function (the Buffers
@@ -752,7 +752,7 @@ Computes a Mandelbrot bitmap checksum, double loop over pixels.
 
 ### edigits (125 / 734 ms → 8.5 / 39 ms → 9 ms — ~2–3× off Rust)
 
-Computes _e_ to `n` digits via BigInt, then prints. Previously Echo's _worst_
+Computes _e_ to `n` digits via BigInt, then prints. Previously Nomen's _worst_
 ratio (~245×); within ~15× after the product-tree algorithm; now ~2–3× off
 Rust (9 ms vs ~4 ms at n=5000, both dwarfed by the 734 ms starting point).
 
@@ -795,7 +795,7 @@ Rust (9 ms vs ~4 ms at n=5000, both dwarfed by the 734 ms starting point).
 The per-benchmark notes point to the same handful of root causes. They fall into
 three families.
 
-### A. Algorithmic / data-structure changes in the Echo source
+### A. Algorithmic / data-structure changes in the Nomen source
 
 These are the **biggest single wins** because they change the work, not just the
 constant factor:

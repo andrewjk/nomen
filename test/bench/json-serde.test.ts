@@ -2,7 +2,7 @@ import { describe, test, expect } from "vite-plus/test";
 
 import { parse_bench, build_and_check_bench_with_files } from "./helpers";
 
-describe("bench/echo/json-serde.echo", () => {
+describe("bench/nomen/json-serde.nm", () => {
 	test("parses without errors", () => {
 		expect(parse_bench("json-serde").errors).toEqual([]);
 	});

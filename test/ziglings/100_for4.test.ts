@@ -6,7 +6,7 @@ import parse_with_imports from "./parse_with_imports";
 
 // INCOMPATIBILITIES:
 // - Zig uses `for (hex_nums, dec_nums) |hn, dn|` (parallel iteration).
-//   Echo doesn't support multi-object for loops.
+//   Nomen doesn't support multi-object for loops.
 //   Workaround: for-of over one array with a manual index counter (`; i += 1`).
 
 test("ziglings 100 for4 -- errors", () => {

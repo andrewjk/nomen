@@ -8,8 +8,8 @@ import type { Library } from "../../src/lib.ts";
 import parse from "../../src/parse.ts";
 import type CompileError from "../../src/types/CompileError.ts";
 
-const ECHO_LANGUAGE = "echo";
-const TERMINAL_NAME = "Echo";
+const ECHO_LANGUAGE = "nomen";
+const TERMINAL_NAME = "Nomen";
 const DEBOUNCE_MS = 350;
 
 // Matches `func main` at the start of a line, optionally preceded by `pub`.
@@ -23,15 +23,15 @@ const debounce_timers = new Map<string, ReturnType<typeof setTimeout>>();
 
 export function activate(context: vscode.ExtensionContext): void {
 	terminal = undefined;
-	diagnostics = vscode.languages.createDiagnosticCollection("echo");
+	diagnostics = vscode.languages.createDiagnosticCollection("nomen");
 
 	context.subscriptions.push(
 		vscode.languages.registerCodeLensProvider(
 			{ language: ECHO_LANGUAGE },
-			new EchoCodeLensProvider(),
+			new NomenCodeLensProvider(),
 		),
-		vscode.commands.registerCommand("echo.run", (uri?: vscode.Uri) => runEcho(uri, false)),
-		vscode.commands.registerCommand("echo.audit", (uri?: vscode.Uri) => runEcho(uri, true)),
+		vscode.commands.registerCommand("nomen.run", (uri?: vscode.Uri) => runNomen(uri, false)),
+		vscode.commands.registerCommand("nomen.audit", (uri?: vscode.Uri) => runNomen(uri, true)),
 		vscode.window.onDidCloseTerminal((t) => {
 			if (t === terminal) terminal = undefined;
 		}),
@@ -50,7 +50,7 @@ export function activate(context: vscode.ExtensionContext): void {
 			clear_timer(document.uri);
 		}),
 		vscode.workspace.onDidChangeConfiguration((event) => {
-			if (event.affectsConfiguration("echo.diagnostics")) {
+			if (event.affectsConfiguration("nomen.diagnostics")) {
 				for (const doc of vscode.workspace.textDocuments) maybe_update_diagnostics(doc);
 			}
 		}),
@@ -63,7 +63,7 @@ export function deactivate(): void {
 	terminal = undefined;
 }
 
-class EchoCodeLensProvider implements vscode.CodeLensProvider {
+class NomenCodeLensProvider implements vscode.CodeLensProvider {
 	provideCodeLenses(document: vscode.TextDocument): vscode.CodeLens[] {
 		const lenses: vscode.CodeLens[] = [];
 		for (let i = 0; i < document.lineCount; i++) {
@@ -73,12 +73,12 @@ class EchoCodeLensProvider implements vscode.CodeLensProvider {
 				lenses.push(
 					new vscode.CodeLens(range, {
 						title: "Run",
-						command: "echo.run",
+						command: "nomen.run",
 						arguments: [document.uri],
 					}),
 					new vscode.CodeLens(range, {
 						title: "Audit",
-						command: "echo.audit",
+						command: "nomen.audit",
 						arguments: [document.uri],
 					}),
 				);
@@ -88,10 +88,10 @@ class EchoCodeLensProvider implements vscode.CodeLensProvider {
 	}
 }
 
-async function runEcho(uri: vscode.Uri | undefined, audit: boolean): Promise<void> {
+async function runNomen(uri: vscode.Uri | undefined, audit: boolean): Promise<void> {
 	const document = resolveDocument(uri);
 	if (!document) {
-		vscode.window.showErrorMessage("Echo: No active Echo file to run.");
+		vscode.window.showErrorMessage("Nomen: No active Nomen file to run.");
 		return;
 	}
 
@@ -186,7 +186,7 @@ function get_terminal(): vscode.Terminal {
 }
 
 function get_config<T>(key: string, fallback: T): T {
-	const value = vscode.workspace.getConfiguration("echo").get<T>(key);
+	const value = vscode.workspace.getConfiguration("nomen").get<T>(key);
 	return value === undefined ? fallback : value;
 }
 
@@ -200,7 +200,7 @@ function diagnostics_mode(): "onType" | "onSave" | "off" {
 	return get_config<"onType" | "onSave" | "off">("diagnostics", "onType");
 }
 
-function is_echo(document: vscode.TextDocument): boolean {
+function is_nomen(document: vscode.TextDocument): boolean {
 	return document.languageId === ECHO_LANGUAGE;
 }
 
@@ -209,11 +209,11 @@ function maybe_update_diagnostics(document: vscode.TextDocument): void {
 		diagnostics.delete(document.uri);
 		return;
 	}
-	if (is_echo(document)) update_diagnostics(document);
+	if (is_nomen(document)) update_diagnostics(document);
 }
 
 function schedule_diagnostics(document: vscode.TextDocument, delay: number): void {
-	if (!is_echo(document)) return;
+	if (!is_nomen(document)) return;
 	const key = document.uri.toString();
 	const existing = debounce_timers.get(key);
 	if (existing) clearTimeout(existing);
@@ -235,7 +235,7 @@ function clear_timer(uri: vscode.Uri): void {
 }
 
 function update_diagnostics(document: vscode.TextDocument): void {
-	if (!is_echo(document)) return;
+	if (!is_nomen(document)) return;
 
 	const text = document.getText();
 	const library = load_library(document.uri);
@@ -246,7 +246,7 @@ function update_diagnostics(document: vscode.TextDocument): void {
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
 		diagnostics.set(document.uri, [
-			new vscode.Diagnostic(zero_range(), `Echo: ${message}`, vscode.DiagnosticSeverity.Error),
+			new vscode.Diagnostic(zero_range(), `Nomen: ${message}`, vscode.DiagnosticSeverity.Error),
 		]);
 		return;
 	}

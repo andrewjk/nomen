@@ -5,9 +5,9 @@ import check_output_aarch64 from "./check_output_aarch64";
 import parse_with_imports from "./parse_with_imports";
 
 // The original Zig exercise teaches the `orelse` operator for unwrapping
-// nullable types with a default value. Echo uses `??` instead of `orelse`.
+// nullable types with a default value. Nomen uses `??` instead of `orelse`.
 // Zig:  const answer: u8 = result orelse 42;
-// Echo: var int answer = result ?? 42
+// Nomen: var int answer = result ?? 42
 
 test("ziglings 045 optionals -- errors", () => {
 	const input = `

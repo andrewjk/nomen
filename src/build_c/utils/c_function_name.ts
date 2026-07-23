@@ -1,7 +1,7 @@
 /**
- * Maps an Echo function/variable name to a C-safe name. Echo allows names that
+ * Maps an Nomen function/variable name to a C-safe name. Nomen allows names that
  * collide with C keywords (e.g. `double`, `abs`) or C stdlib symbols, so we
- * prefix them with `_echo_` to avoid conflicts.
+ * prefix them with `_nomen_` to avoid conflicts.
  */
 const C_CONFLICTS = new Set([
 	// C keywords
@@ -74,7 +74,7 @@ const C_CONFLICTS = new Set([
 
 export default function c_function_name(name: string): string {
 	if (C_CONFLICTS.has(name)) {
-		return `_echo_${name}`;
+		return `_nomen_${name}`;
 	}
 	return name;
 }

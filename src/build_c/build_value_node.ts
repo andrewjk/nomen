@@ -14,9 +14,9 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 	if (value === "null") value = "0";
 	else if (value === "true") value = "1";
 	else if (value === "false") value = "0";
-	else if (value === "default") value = "_echo_default";
+	else if (value === "default") value = "_nomen_default";
 	else if (/^[+-]?\d+$/.test(value)) {
-		// Echo integer literals default to `int` (C `long`, 64-bit). Emit the
+		// Nomen integer literals default to `int` (C `long`, 64-bit). Emit the
 		// matching C suffix so the literal is the right width: a bare `1` in C
 		// is `int` (32-bit), making `1 << 63` undefined behavior.
 		value += INT_LITERAL_SUFFIX[node.type?.name ?? "int"] ?? "";

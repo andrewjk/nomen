@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document captures lessons learned, gotchas, and strategies discovered while building and converting the Echo compiler's aarch64 backend.
+This document captures lessons learned, gotchas, and strategies discovered while building and converting the Nomen compiler's aarch64 backend.
 
 ---
 
@@ -134,7 +134,7 @@ A `check_output_aarch64.ts` helper was created that:
 
 ### Raw Block Support
 
-The `build_raw_node.ts` supports `#arch: aarch64` blocks, allowing inline assembly to be emitted only for the aarch64 backend. This is used in `System.echo` for the `to_string` methods.
+The `build_raw_node.ts` supports `#arch: aarch64` blocks, allowing inline assembly to be emitted only for the aarch64 backend. This is used in `System.nm` for the `to_string` methods.
 
 ### Label Counter Reset
 

@@ -1,11 +1,11 @@
 // Channel — thread-safe single-direction queue for passing values between
 // tasks. Unbounded, FIFO, blocking receive.
 //
-// Stores uint64 values (Echo values are pointer-sized on every target we
+// Stores uint64 values (Nomen values are pointer-sized on every target we
 // care about). A typed Channel<T> wrapper can come later — the storage story
 // is identical, only the call-site types change.
 //
-// Default stance in Echo is "no shared mutable state" — channels are the
+// Default stance in Nomen is "no shared mutable state" — channels are the
 // preferred way for tasks to communicate. See ASYNC.md.
 
 pub class Channel : Sendable {
@@ -19,9 +19,9 @@ pub class Channel : Sendable {
 		#arch: c
 		#scope: file
 		#include <pthread.h>
-		struct echo_channel_node {
+		struct nomen_channel_node {
 			unsigned long long value;
-			struct echo_channel_node *next;
+			struct nomen_channel_node *next;
 		};
 		```
 		```
@@ -53,12 +53,12 @@ pub class Channel : Sendable {
 	pub func send = (self, uint64 value) {
 		```
 		#arch: c
-		struct echo_channel_node *n = (struct echo_channel_node *)malloc(sizeof(struct echo_channel_node));
+		struct nomen_channel_node *n = (struct nomen_channel_node *)malloc(sizeof(struct nomen_channel_node));
 		n->value = value;
 		n->next = NULL;
 		pthread_mutex_lock((pthread_mutex_t *)self->mu);
 		if (self->tail) {
-			((struct echo_channel_node *)self->tail)->next = n;
+			((struct nomen_channel_node *)self->tail)->next = n;
 		} else {
 			self->head = (unsigned long long)n;
 		}
@@ -101,7 +101,7 @@ pub class Channel : Sendable {
 		while (!self->head) {
 			pthread_cond_wait((pthread_cond_t *)self->not_empty_cv, (pthread_mutex_t *)self->mu);
 		}
-		struct echo_channel_node *n = (struct echo_channel_node *)self->head;
+		struct nomen_channel_node *n = (struct nomen_channel_node *)self->head;
 		self->head = (unsigned long long)n->next;
 		if (!self->head) self->tail = 0;
 		unsigned long long v = n->value;
@@ -143,9 +143,9 @@ pub class Channel : Sendable {
 		#arch: c
 		if (self->mu) {
 			// Drain any pending nodes.
-			struct echo_channel_node *n = (struct echo_channel_node *)self->head;
+			struct nomen_channel_node *n = (struct nomen_channel_node *)self->head;
 			while (n) {
-				struct echo_channel_node *next = n->next;
+				struct nomen_channel_node *next = n->next;
 				free(n);
 				n = next;
 			}

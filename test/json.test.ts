@@ -40,11 +40,11 @@ Console.write(s)
 
 	test("round-trip serialize then deserialize", async () => {
 		const input = `
-const string j = Json.serialize("echo")
+const string j = Json.serialize("nomen")
 const string r = Json.deserialize(j)
 Console.write(r)
 `;
-		await build_and_check_output(input, "json_roundtrip", "echo");
+		await build_and_check_output(input, "json_roundtrip", "nomen");
 	});
 
 	test("int.to_string and int.parse round-trip", async () => {

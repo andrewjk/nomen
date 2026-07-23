@@ -5,10 +5,10 @@ import check_output_aarch64 from "./check_output_aarch64";
 import parse_with_imports from "./parse_with_imports";
 
 // The original Zig exercise teaches struct methods (static and instance).
-// Echo uses `func name = (self, ...) ` for instance methods (self is a copy)
+// Nomen uses `func name = (self, ...) ` for instance methods (self is a copy)
 // and `func name = (Type arg, out Ret)` for static methods.
-// Echo requires `ref` keyword at both definition and call site for mutation.
-// The Zig version uses arrays with pointer iteration; Echo uses individual
+// Nomen requires `ref` keyword at both definition and call site for mutation.
+// The Zig version uses arrays with pointer iteration; Nomen uses individual
 // variables since for-of iterates by value (mutations to copies don't
 // propagate back to the array).
 

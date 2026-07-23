@@ -37,14 +37,14 @@ assembly + C companion). End-to-end usable for concurrency on both targets.
   spawns. Drains and joins all workers at process exit;
   `Task.shutdown_pool()` does this explicitly.
 - **Cancellation scopes** — `async(timeout: N)` where N is milliseconds.
-  Deadline computed before the nursery body runs; `__echo_future_timedwait()`
+  Deadline computed before the nursery body runs; `__nomen_future_timedwait()`
   uses `pthread_cond_timedwait` with an absolute deadline. On expiry,
   remaining tasks are cancelled (cancel_flag set) and briefly waited on
   before joining.
 - **Race mode** — `async(mode: race) { ... }` exits as soon as the first
   spawned task completes (or the timeout fires); remaining tasks are
   cancelled and joined. Default mode is `all`. Implemented via
-  `__echo_nursery_race_wait`, which polls each future's done flag every 1ms.
+  `__nomen_nursery_race_wait`, which polls each future's done flag every 1ms.
 - **Nursery escape hatch** — a named `async` block (`async pool { }`) binds a
   `Nursery`-typed variable the caller passes with `ref`;
   `name.spawn(fn(args))` spawns into that nursery. Config rides on the
@@ -52,11 +52,11 @@ assembly + C companion). End-to-end usable for concurrency on both targets.
 
 ## Foundations
 
-Echo's concurrency model is **structured concurrency via nurseries**, drawing on
+Nomen's concurrency model is **structured concurrency via nurseries**, drawing on
 https://vorpus.org/blog/notes-on-structured-concurrency-or-go-statement-considered-harmful/.
 
-The fit with Echo is clean because the invariants structured concurrency
-requires are the ones Echo already enforces:
+The fit with Nomen is clean because the invariants structured concurrency
+requires are the ones Nomen already enforces:
 
 - **Black-box control flow.** Every existing construct (if/while/for/func) has
   one arrow in, one arrow out. The nursery requires the same of concurrent
@@ -96,7 +96,7 @@ async {
 - `Task<T>.result` blocks the current thread until the task finishes. No
   `await` keyword is required for the thread-pool model (see "Next steps").
 
-This works because Echo's runtime is **thread-pool based**, not
+This works because Nomen's runtime is **thread-pool based**, not
 state-machine/coroutine based — there is no function-body transform that would
 require an annotation. A `TaskRunner` parameter was considered and rejected:
 it reintroduces coloring via return-type ambiguity (`User[]` vs `Task<User[]>`)
@@ -153,7 +153,7 @@ func fetch_users = (int id, out User[]) {
 the same shape as how `return` knows which function to return from. Go's
 `context.Context` threads cancellation through every signature and is widely
 considered a mistake; Trio (cancellation scopes) and Swift (`Task.isCancelled`)
-both use ambient cancellation, and so does Echo.
+both use ambient cancellation, and so does Nomen.
 
 ### Responsibilities
 
@@ -183,7 +183,7 @@ Sendable values (directly or through channels).
 
 Open questions, intentionally not yet in scope:
 
-- **`await` / suspension.** Needed only if Echo adds cooperative async I/O
+- **`await` / suspension.** Needed only if Nomen adds cooperative async I/O
   (state-machine or stack-switching transform). Not required for thread-pool
   tasks, where `Task<T>.result` just blocks. Revisit when there's a real I/O
   story.
@@ -193,7 +193,7 @@ Open questions, intentionally not yet in scope:
 - **Coroutine-scale concurrency (if ever needed).** The v1 thread-pool model
   caps out at thousands of concurrent tasks (~MB per OS thread). If
   millions-of-tasks scale is ever required, the preferred path is **Go-style
-  stack-switching** — colorless, matches Echo's philosophy, but requires a
+  stack-switching** — colorless, matches Nomen's philosophy, but requires a
   heavy runtime (M:N scheduler, stack copier, syscall interception). The
   **state-machine path** (Rust/Swift-style `async fn` + coloring) should be
   avoided: it trades a permanent language tax for a lighter runtime, a bad
@@ -214,12 +214,12 @@ Open questions, intentionally not yet in scope:
 
 `Mutex` is the current tier-3 escape hatch for shared mutable state. It is
 error-prone (deadlocks, forgotten unlock, no compiler help) and is really a
-low-level primitive, not a recommended default. Echo's stated stance is "no
+low-level primitive, not a recommended default. Nomen's stated stance is "no
 shared mutable state," and **actors fit that stance better than `Mutex` does.**
 
 An actor serializes access to its state by construction: a task drains a
 mailbox and is the only thing that touches the state. No locks, no discipline
-required from the caller. Echo already has the building blocks — an actor is
+required from the caller. Nomen already has the building blocks — an actor is
 essentially "a `class` holding state + a `Channel` + a `spawn`ed processor
 loop."
 
@@ -244,7 +244,7 @@ loop."
   actor method is a synchronous RPC — the caller blocks until the actor
   processes the message. Fine and deadlock-free _as long as the actor never
   synchronously calls back into a caller that is waiting on it_ (reentrancy).
-  Swift's actor reentrancy rules exist for exactly this; Echo would need an
+  Swift's actor reentrancy rules exist for exactly this; Nomen would need an
   equivalent rule, or a documented "don't call back synchronously" contract.
 - **`Mutex` stays regardless.** Even actor-first languages need a lock for
   low-level cases. Actors replace `Mutex` as the _default_ for shared mutable

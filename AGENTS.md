@@ -1,8 +1,8 @@
 # AGENTS.md
 
-This document provides guidelines for agentic coding agents working on the Echo programming language compiler.
+This document provides guidelines for agentic coding agents working on the Nomen programming language compiler.
 
-## The Echo Language
+## The Nomen Language
 
 The language's syntax and capabilites are documented in SPEC.md.
 
@@ -135,7 +135,7 @@ Status objects track compilation state across passes:
 - Common test structure:
   ```typescript
   test("test name", () => {
-  	const input = `echo code`;
+  	const input = `nomen code`;
   	const parsed = parse(input);
   	const result = build(parsed.root);
   	expect(parsed.errors).toEqual([]);
@@ -183,7 +183,7 @@ gap)` comment. When the feature lands, the test turns green automatically —
 
 ### Inline code blocks (`#arch:` directives)
 
-Raw code blocks let a function bypass the Echo codegen and emit assembly or C
+Raw code blocks let a function bypass the Nomen codegen and emit assembly or C
 directly. Use the directive that matches the backend:
 
 - `#arch: c` — C source, used by the C backend (`build_c`).
@@ -202,7 +202,7 @@ directly. Use the directive that matches the backend:
 
 #### Language Conventions
 
-- Echo does **not** support `else if`. When writing Echo code, use a `switch`
+- Nomen does **not** support `else if`. When writing Nomen code, use a `switch`
   instead of `"else if"` or an `"else { if { ... } }"` chain.
 
 1. Always run `npm run check` after changes to verify type correctness

@@ -8,7 +8,7 @@ import parse_with_imports from "./parse_with_imports";
 // The broken code uses f16 which overflows for 4,480,000 * 0.453592 ≈ 2M kg.
 // The fix uses a larger float type. Also 4480e6 (4.48 billion) should be 4480e3 (4.48 million).
 //
-// Note: Echo does not have f16 (half-precision float). All float types in Echo
+// Note: Nomen does not have f16 (half-precision float). All float types in Nomen
 // are stored as .double (f64) in the aarch64 backend, so the f16 overflow issue
 // from the Zig exercise doesn't apply. The exercise still teaches float arithmetic.
 //

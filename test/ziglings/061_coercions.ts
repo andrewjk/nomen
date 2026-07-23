@@ -8,14 +8,14 @@ import parse_with_imports from "./parse_with_imports";
 //
 // INCOMPATIBILITY: This exercise is fundamentally about Zig's type coercion
 // system — coercing between pointer types (*u8 → *const u8, &letter → ?*[1]u8),
-// integer widening (u8 → u16), optional wrapping, etc. Echo does not have:
+// integer widening (u8 → u16), optional wrapping, etc. Nomen does not have:
 //   - Pointer type coercions (*T vs *const T)
 //   - Implicit integer widening (uint8 → uint16)
 //   - Optional pointer to array (?*[1]u8)
 //   - Error union types
 //
 // This exercise cannot be meaningfully converted. The concept (type coercion)
-// doesn't exist in Echo's type system. Skipped.
+// doesn't exist in Nomen's type system. Skipped.
 
 test.skip("ziglings 061 coercions -- errors", () => {
 	const input = `

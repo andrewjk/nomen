@@ -19,8 +19,8 @@ import { allocate_stack_space } from "./utils/stack_var.ts";
  * join loop uses timed waits; when the deadline expires, remaining tasks are
  * cancelled.
  *
- * The pool helpers (__echo_future_wait, __echo_future_timedwait,
- * __echo_future_release, __echo_future_cancel) are C functions in the
+ * The pool helpers (__nomen_future_wait, __nomen_future_timedwait,
+ * __nomen_future_release, __nomen_future_cancel) are C functions in the
  * companion file, called via `bl` from assembly.
  */
 export default function build_async_block_node(node: AsyncBlockNode, status: BuildStatus) {
@@ -31,7 +31,7 @@ export default function build_async_block_node(node: AsyncBlockNode, status: Bui
 	// directly. The pool infrastructure that defines them is normally emitted
 	// on the first spawn — but a race nursery with no spawns wouldn't pull it
 	// in. Emit eagerly so the link always resolves.
-	if (node.mode === "race" && !status.file_scope_c?.includes("__echo_pool_submit")) {
+	if (node.mode === "race" && !status.file_scope_c?.includes("__nomen_pool_submit")) {
 		if (!status.file_scope_c) status.file_scope_c = "";
 		status.file_scope_c += POOL_HEADER_C;
 	}
@@ -120,7 +120,7 @@ export default function build_async_block_node(node: AsyncBlockNode, status: Bui
 	if (is_race) {
 		// Race mode: poll until any future completes (or the deadline hits),
 		// then fall through to the per-future cancel+wait+release loop.
-		// __echo_nursery_race_wait(futures_ptr, count, deadline_ms_or_0).
+		// __nomen_nursery_race_wait(futures_ptr, count, deadline_ms_or_0).
 		status.code += `mov x0, x20\n`;
 		status.code += `mov x1, x22\n`;
 		if (deadline_off !== undefined) {
@@ -128,7 +128,7 @@ export default function build_async_block_node(node: AsyncBlockNode, status: Bui
 		} else {
 			status.code += `mov x2, #0\n`;
 		}
-		status.code += `bl ___echo_nursery_race_wait\n`;
+		status.code += `bl ___nomen_nursery_race_wait\n`;
 	}
 
 	status.code += `${loop_start}:\n`;
@@ -139,7 +139,7 @@ export default function build_async_block_node(node: AsyncBlockNode, status: Bui
 	if (is_race) {
 		// Cancel the task (no-op if already done) and wait once more with an
 		// extended deadline so a cancelled task actually exits before release.
-		status.code += `bl ___echo_future_cancel\n`;
+		status.code += `bl ___nomen_future_cancel\n`;
 		status.code += `ldr x0, [x20, x23, lsl #3]\n`;
 		if (deadline_off !== undefined) {
 			status.code += `ldr x1, [x29, #${deadline_off}]\n`;
@@ -147,10 +147,10 @@ export default function build_async_block_node(node: AsyncBlockNode, status: Bui
 			status.code += `mov x1, #0\n`;
 		}
 		status.code += `add x1, x1, #1000\n`;
-		status.code += `bl ___echo_future_timedwait\n`;
+		status.code += `bl ___nomen_future_timedwait\n`;
 	} else if (deadline_off !== undefined) {
 		status.code += `ldr x1, [x29, #${deadline_off}]\n`;
-		status.code += `bl ___echo_future_timedwait\n`;
+		status.code += `bl ___nomen_future_timedwait\n`;
 		// x0 = 1 if done, 0 if timed out.
 		status.code += `cbnz x0, ${loop_release}\n`;
 		// Timed out — cancel this task via the C helper (avoids hardcoding
@@ -158,18 +158,18 @@ export default function build_async_block_node(node: AsyncBlockNode, status: Bui
 		// once more (with an extended deadline) so the task actually gets
 		// to observe the flag and exit before the nursery tears down.
 		status.code += `ldr x0, [x20, x23, lsl #3]\n`; // reload future
-		status.code += `bl ___echo_future_cancel\n`;
+		status.code += `bl ___nomen_future_cancel\n`;
 		status.code += `ldr x0, [x20, x23, lsl #3]\n`;
 		status.code += `ldr x1, [x29, #${deadline_off}]\n`;
 		status.code += `add x1, x1, #1000\n`; // extend deadline by 1s
-		status.code += `bl ___echo_future_timedwait\n`;
+		status.code += `bl ___nomen_future_timedwait\n`;
 	} else {
-		status.code += `bl ___echo_future_wait\n`;
+		status.code += `bl ___nomen_future_wait\n`;
 	}
 	status.code += `${loop_release}:\n`;
 	// Load future pointer again for release.
 	status.code += `ldr x0, [x20, x23, lsl #3]\n`;
-	status.code += `bl ___echo_future_release\n`;
+	status.code += `bl ___nomen_future_release\n`;
 	status.code += `add x23, x23, #1\n`;
 	status.code += `b ${loop_start}\n`;
 	status.code += `${loop_end}:\n`;

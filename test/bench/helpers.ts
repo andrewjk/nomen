@@ -11,7 +11,7 @@ const lib = get_library(path.resolve(import.meta.dirname, "../../core"));
 
 export function read_bench(name: string): string {
 	return fs.readFileSync(
-		path.resolve(import.meta.dirname, `../../bench/echo/${name}.echo`),
+		path.resolve(import.meta.dirname, `../../bench/nomen/${name}.nm`),
 		"utf-8",
 	);
 }

@@ -1,8 +1,8 @@
-# Echo Language Specification
+# Nomen Language Specification
 
 ## Overview
 
-Echo is a statically-typed, compiled language that compiles to C or AArch64 assembly. It supports features from imperative, object-oriented, and functional paradigms.
+Nomen is a statically-typed, compiled language that compiles to C or AArch64 assembly. It supports features from imperative, object-oriented, and functional paradigms.
 
 ## Comments
 
@@ -1654,7 +1654,7 @@ t.wait()
 
 ### Mutex
 
-pthread-backed lock for shared mutable state. The default stance in Echo is
+pthread-backed lock for shared mutable state. The default stance in Nomen is
 "no shared mutable state" — communicate by moving Sendable values (directly
 or via `Channel`). `Mutex` exists for when you genuinely need shared
 mutability:
@@ -1696,12 +1696,12 @@ async {
 var v = ch.receive()   // blocks until ready
 ```
 
-`Channel` stores `uint64` values (Echo values are pointer-sized on every
+`Channel` stores `uint64` values (Nomen values are pointer-sized on every
 target we care about). A typed `Channel<T>` wrapper can come later.
 
 ## Concurrency
 
-Echo's concurrency model is **structured concurrency via nurseries**: every
+Nomen's concurrency model is **structured concurrency via nurseries**: every
 concurrent split must rejoin before its lexical scope exits. See
 [ASYNC.md](ASYNC.md) for the full design and rationale.
 

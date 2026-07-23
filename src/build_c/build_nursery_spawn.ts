@@ -34,12 +34,12 @@ export default function build_nursery_spawn(
 	status.spawn_counter = id + 1;
 
 	// Emit pool infrastructure on first spawn (file scope, deduped).
-	if (!status.headers.includes("__echo_pool_submit")) {
+	if (!status.headers.includes("__nomen_pool_submit")) {
 		status.headers += POOL_HEADER;
 	}
 
-	const struct_name = `__echo_spawn_${id}_args`;
-	const tramp_name = `__echo_spawn_${id}_trampoline`;
+	const struct_name = `__nomen_spawn_${id}_args`;
+	const tramp_name = `__nomen_spawn_${id}_trampoline`;
 
 	// Resolve each arg's C type (classes/traits are pointers).
 	const arg_c_types: string[] = [];
@@ -61,11 +61,11 @@ export default function build_nursery_spawn(
 	}
 	header += `\tunsigned long long *result_slot;\n`;
 	header += `\tunsigned long long *cancel_flag;\n`;
-	header += `\tstruct echo_future *future;\n`;
+	header += `\tstruct nomen_future *future;\n`;
 	header += `};\n`;
 	header += `static void ${tramp_name}(void *p) {\n`;
 	header += `\tstruct ${struct_name} *a = (struct ${struct_name} *)p;\n`;
-	header += `\t__echo_current_cancel_flag = a->cancel_flag;\n`;
+	header += `\t__nomen_current_cancel_flag = a->cancel_flag;\n`;
 	const return_type_name = node.function_return_type?.name;
 	const returns_value = !!(
 		return_type_name &&
@@ -89,12 +89,12 @@ export default function build_nursery_spawn(
 	if (returns_value) {
 		header += `\t*(a->result_slot) = (unsigned long long)_r;\n`;
 	}
-	header += `\t__echo_current_cancel_flag = NULL;\n`;
+	header += `\t__nomen_current_cancel_flag = NULL;\n`;
 	header += `\tpthread_mutex_lock(&a->future->mu);\n`;
 	header += `\ta->future->done = 1;\n`;
 	header += `\tpthread_cond_broadcast(&a->future->cv);\n`;
 	header += `\tpthread_mutex_unlock(&a->future->mu);\n`;
-	header += `\t__echo_future_release(a->future);\n`;
+	header += `\t__nomen_future_release(a->future);\n`;
 	header += `\tfree(a);\n`;
 	header += `}\n`;
 	status.headers += header;
@@ -125,7 +125,7 @@ export default function build_nursery_spawn(
 	status.code += `\tunsigned long long *_cancel_ptr = (unsigned long long *)malloc(sizeof(unsigned long long));\n`;
 	status.code += `\t*_cancel_ptr = 0;\n`;
 	status.code += `\t_args->cancel_flag = _cancel_ptr;\n`;
-	status.code += `\tstruct echo_future *_future = (struct echo_future *)malloc(sizeof(struct echo_future));\n`;
+	status.code += `\tstruct nomen_future *_future = (struct nomen_future *)malloc(sizeof(struct nomen_future));\n`;
 	status.code += `\tpthread_mutex_init(&_future->mu, NULL);\n`;
 	status.code += `\tpthread_cond_init(&_future->cv, NULL);\n`;
 	status.code += `\t_future->done = 0;\n`;
@@ -133,7 +133,7 @@ export default function build_nursery_spawn(
 	status.code += `\t_future->result_slot = _result_ptr;\n`;
 	status.code += `\t_future->refs = ${refs};\n`;
 	status.code += `\t_args->future = _future;\n`;
-	status.code += `\t__echo_pool_submit(${tramp_name}, _args);\n`;
+	status.code += `\t__nomen_pool_submit(${tramp_name}, _args);\n`;
 	// Register the future with the nursery via its runtime pointers. The
 	// enclosing async block's join loop reads the same array + count. The
 	// pointer expression is parenthesized so `&struct` (the magic-identifier

@@ -5,7 +5,7 @@ import check_output_aarch64 from "./check_output_aarch64";
 import parse_with_imports from "./parse_with_imports";
 
 // 057: In Zig, you can use union(enum) to infer the tag type.
-// In Echo, enums with associated data already ARE tagged unions —
+// In Nomen, enums with associated data already ARE tagged unions —
 // no separate enum declaration needed.
 // The fix: the error version references a deleted type InsectStat.
 // The fixed version uses the Insect enum directly.

@@ -119,11 +119,11 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 
 	if (is_main_with_init) {
 		const pname = c_function_name(node.params[0].name);
-		status.code += `struct Init _echo_init_data;\n`;
-		status.code += `struct Init *${pname} = &_echo_init_data;\n`;
+		status.code += `struct Init _nomen_init_data;\n`;
+		status.code += `struct Init *${pname} = &_nomen_init_data;\n`;
 		status.code += `${pname}->_vt = 0;\n`;
 		status.code += `${pname}->argc = argc;\n`;
-		status.code += `for (int _echo_i = 0; _echo_i < argc && _echo_i < 16; _echo_i++) ${pname}->args[_echo_i] = argv[_echo_i];\n`;
+		status.code += `for (int _nomen_i = 0; _nomen_i < argc && _nomen_i < 16; _nomen_i++) ${pname}->args[_nomen_i] = argv[_nomen_i];\n`;
 	}
 
 	const old_ref_params = status.function_ref_params;
@@ -210,9 +210,9 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	// functions leak every declaration on the fall-through path.
 	build_auto_free(status);
 
-	// In audit mode, call echo_audit_check (from audit_runtime.c) at main exit.
+	// In audit mode, call nomen_audit_check (from audit_runtime.c) at main exit.
 	// It prints "LEAK: N allocation(s)" when the balanced malloc/free counter
-	// (maintained by the echo_*_wrap allocators) is non-zero, which
+	// (maintained by the nomen_*_wrap allocators) is non-zero, which
 	// check_output asserts against. Mirrors the aarch64 backend's audit hook.
 	// The ad-hoc "Malloc balance" printf is gone — the C backend now routes
 	// through the same audit_runtime.c as aarch64 instead of its own counter.
@@ -222,11 +222,11 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	// atexit handler fires after audit_check, and the workers array shows up
 	// as a false positive leak.
 	if (node.name.toLocaleLowerCase() === "main" && status.audit) {
-		const has_pool = status.headers.includes("__echo_pool_submit");
+		const has_pool = status.headers.includes("__nomen_pool_submit");
 		if (has_pool) {
-			status.code += `\n__echo_pool_shutdown();\n`;
+			status.code += `\n__nomen_pool_shutdown();\n`;
 		}
-		status.code += `\necho_audit_check();\n`;
+		status.code += `\nnomen_audit_check();\n`;
 	}
 
 	status.code += `}\n\n`;

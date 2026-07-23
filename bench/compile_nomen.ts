@@ -14,7 +14,7 @@ const arch = (process.argv[5] as "c" | "aarch64") ?? "aarch64";
 
 if (!input_file || !output_file) {
 	console.error(
-		"Usage: tsx compile_echo.ts <input.echo> <output_binary> [lib_path] [arch=c|aarch64]",
+		"Usage: tsx compile_nomen.ts <input.nm> <output_binary> [lib_path] [arch=c|aarch64]",
 	);
 	process.exit(1);
 }

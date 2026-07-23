@@ -5,7 +5,7 @@
 //
 // set_text is the one exception to the load/store pattern: it calls strdup
 // directly into the slab via raw code, because routing the strdup'd pointer
-// through an Echo local would subject it to auto-free at scope exit, leaving
+// through an Nomen local would subject it to auto-free at scope exit, leaving
 // the slab's text pointer dangling.
 
 import Buffer

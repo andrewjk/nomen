@@ -1,9 +1,9 @@
-// JSON serialize / deserialize for Echo string values, written in pure Echo.
+// JSON serialize / deserialize for Nomen string values, written in pure Nomen.
 //
 // `serialize` quotes and escapes a string into a JSON string literal;
 // `deserialize` parses a JSON string literal back into the raw value.
 // Integer (de)serialization is handled by int.to_string() and int.parse()
-// (see int.echo), so this struct only deals with JSON strings.
+// (see int.nm), so this struct only deals with JSON strings.
 //
 // `parse` / `stringify` use a JsonTree pool (flat Buffer-backed slot array)
 // instead of per-node heap allocation, avoiding O(nodes) malloc/free per

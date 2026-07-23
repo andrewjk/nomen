@@ -129,16 +129,16 @@ export default function build(
 			// Raw assembly blocks in the library (e.g. int_to_string) call
 			// _malloc/_free directly. Wrap them so the audit counter stays
 			// balanced.
-			status.code = status.code.replaceAll("bl _malloc\n", "bl _echo_malloc_wrap\n");
-			status.code = status.code.replaceAll("bl _free\n", "bl _echo_free_wrap\n");
+			status.code = status.code.replaceAll("bl _malloc\n", "bl _nomen_malloc_wrap\n");
+			status.code = status.code.replaceAll("bl _free\n", "bl _nomen_free_wrap\n");
 		}
 	} else {
 		build_c_node(root, status);
 		if (options.audit) {
 			// Route the C backend through audit_runtime.c (the same runtime
 			// aarch64 uses): wrap every malloc/calloc/realloc/free/strdup so
-			// the balanced counter in echo_*_wrap tracks allocations, and
-			// declare the wrappers + echo_audit_check (which main calls at
+			// the balanced counter in nomen_*_wrap tracks allocations, and
+			// declare the wrappers + nomen_audit_check (which main calls at
 			// exit — see build_function_node). check_output links
 			// audit_runtime.o and fails the test on any "LEAK:" output.
 			//
@@ -150,12 +150,12 @@ export default function build(
 			// Prepend declarations so they appear before the pool code that
 			// uses them, then wrap the rest of the headers.
 			status.headers =
-				`void *echo_malloc_wrap(unsigned long);\n` +
-				`void *echo_calloc_wrap(unsigned long, unsigned long);\n` +
-				`void *echo_realloc_wrap(void *, unsigned long);\n` +
-				`void echo_free_wrap(void *);\n` +
-				`void *echo_strdup_wrap(const char *);\n` +
-				`void echo_audit_check(void);\n` +
+				`void *nomen_malloc_wrap(unsigned long);\n` +
+				`void *nomen_calloc_wrap(unsigned long, unsigned long);\n` +
+				`void *nomen_realloc_wrap(void *, unsigned long);\n` +
+				`void nomen_free_wrap(void *);\n` +
+				`void *nomen_strdup_wrap(const char *);\n` +
+				`void nomen_audit_check(void);\n` +
 				wrap_c_allocators(status.headers);
 		}
 	}
@@ -202,17 +202,17 @@ export function default_platform(): string {
 
 /**
  * Wrap every allocator/deallocator call in generated C so the audit runtime's
- * balanced counter (echo_malloc_count) tracks them. `\b` word boundaries make
- * this safe to run as a single pass: `echo_malloc_wrap(` already has a `_`
+ * balanced counter (nomen_malloc_count) tracks them. `\b` word boundaries make
+ * this safe to run as a single pass: `nomen_malloc_wrap(` already has a `_`
  * (a word char) before `malloc`, so the regex won't re-match the substituted
  * text, and `calloc(`/`realloc(` don't contain `malloc(`. Used only under
  * audit — without it the C backend emits raw malloc/free (no counting).
  */
 function wrap_c_allocators(code: string): string {
 	return code
-		.replace(/\bmalloc\(/g, "echo_malloc_wrap(")
-		.replace(/\bcalloc\(/g, "echo_calloc_wrap(")
-		.replace(/\brealloc\(/g, "echo_realloc_wrap(")
-		.replace(/\bfree\(/g, "echo_free_wrap(")
-		.replace(/\bstrdup\(/g, "echo_strdup_wrap(");
+		.replace(/\bmalloc\(/g, "nomen_malloc_wrap(")
+		.replace(/\bcalloc\(/g, "nomen_calloc_wrap(")
+		.replace(/\brealloc\(/g, "nomen_realloc_wrap(")
+		.replace(/\bfree\(/g, "nomen_free_wrap(")
+		.replace(/\bstrdup\(/g, "nomen_strdup_wrap(");
 }

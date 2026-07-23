@@ -7,8 +7,8 @@ import parse_with_imports from "./parse_with_imports";
 // The original Zig exercise teaches interacting with the file system:
 // create a directory, open a file in it, and write to the file.
 //
-// Echo mirrors this with Directory.create (System/Stream/Directory.echo)
-// and File (System/Stream/File.echo) which opens a path for a given mode.
+// Nomen mirrors this with Directory.create (System/Stream/Directory.nm)
+// and File (System/Stream/File.nm) which opens a path for a given mode.
 // `writeChunk(data, size)` writes exactly `size` bytes, so the byte count
 // reported is the size we asked to write.
 

@@ -21,7 +21,7 @@ export default function build_array_values_node(node: ArrayValuesNode, status: B
 			(value as ValueNode).value.startsWith('"') &&
 			(value as ValueNode).value.endsWith('"');
 		if (is_string_literal) {
-			status.code += `echo_strdup_wrap(`;
+			status.code += `nomen_strdup_wrap(`;
 			build_node(value, status);
 			status.code += `)`;
 		} else {

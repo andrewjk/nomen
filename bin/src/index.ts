@@ -14,7 +14,7 @@ import parse from "../../src/parse.ts";
 import render_errors from "./format_errors.ts";
 import type Config from "./types/Config.ts";
 
-const SUPPORTED_EXTENSION = ".echo";
+const SUPPORTED_EXTENSION = ".nm";
 
 console.log("\n~ ECHO ~\n");
 
@@ -238,7 +238,7 @@ function processFile(filename: string, config: Config) {
 	}
 
 	const dir = path.dirname(filename);
-	const basename = path.basename(filename, ".echo");
+	const basename = path.basename(filename, ".nm");
 	const buildDir = path.join(dir, "build");
 	if (!fs.existsSync(buildDir)) {
 		fs.mkdirSync(buildDir, { recursive: true });

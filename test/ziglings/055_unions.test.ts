@@ -4,7 +4,7 @@ import build from "../../src/build";
 import check_output_aarch64 from "./check_output_aarch64";
 import parse_with_imports from "./parse_with_imports";
 
-// 055: Zig plain unions store different types at the same address. Echo enums
+// 055: Zig plain unions store different types at the same address. Nomen enums
 // with associated data are tagged unions (always track the active case), so the
 // manual AntOrBee tracking from the Zig version is unnecessary.
 // The fix: change `AntOrBee.c` to `AntOrBee.a` and `AntOrBee.b`.

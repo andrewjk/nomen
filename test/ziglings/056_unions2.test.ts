@@ -5,7 +5,7 @@ import check_output_aarch64 from "./check_output_aarch64";
 import parse_with_imports from "./parse_with_imports";
 
 // 056: Zig tagged unions use switch to capture the active field's value.
-// In Echo, enums with associated data are tagged unions, and match with
+// In Nomen, enums with associated data are tagged unions, and match with
 // payload field access gives us the same thing.
 // The fix: pass ant/bee to printInsect, match on insect and use the
 // captured values via field access.

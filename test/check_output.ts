@@ -145,11 +145,11 @@ function postprocess_macos(code: string, audit = false, arch: string = "c"): str
 		code = code.replace(/\bbl free\b/g, "bl _free");
 		code = code.replace(/\bbl strdup\b/g, "bl _strdup");
 		if (audit) {
-			code = code.replace(/\bbl _malloc\b/g, "bl _echo_malloc_wrap");
-			code = code.replace(/\bbl _calloc\b/g, "bl _echo_calloc_wrap");
-			code = code.replace(/\bbl _realloc\b/g, "bl _echo_realloc_wrap");
-			code = code.replace(/\bbl _free\b/g, "bl _echo_free_wrap");
-			code = code.replace(/\bbl _strdup\b/g, "bl _echo_strdup_wrap");
+			code = code.replace(/\bbl _malloc\b/g, "bl _nomen_malloc_wrap");
+			code = code.replace(/\bbl _calloc\b/g, "bl _nomen_calloc_wrap");
+			code = code.replace(/\bbl _realloc\b/g, "bl _nomen_realloc_wrap");
+			code = code.replace(/\bbl _free\b/g, "bl _nomen_free_wrap");
+			code = code.replace(/\bbl _strdup\b/g, "bl _nomen_strdup_wrap");
 		}
 		code = code.replace(/\bmain:\n/g, ".globl _main\n_main:\n");
 	}

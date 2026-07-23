@@ -8,7 +8,7 @@ describe("readme: GUI", () => {
 import System/Controls
 
 pub func main = () {
-    var Window win = Window.create("Echo", 400, 300)
+    var Window win = Window.create("Nomen", 400, 300)
     var Text title = Text.create(win)
     title.set_text("Hello")
     win.show()

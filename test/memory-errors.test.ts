@@ -42,7 +42,7 @@ a.push(3)
 
 			const jumpIdx = main_asm.indexOf("b .return_0");
 			const destroyIdx = main_asm.indexOf("bl Buffer_int_destroy");
-			const auditIdx = main_asm.indexOf("bl _echo_audit_check");
+			const auditIdx = main_asm.indexOf("bl _nomen_audit_check");
 			expect(jumpIdx).toBeGreaterThan(0);
 			expect(destroyIdx).toBeGreaterThan(jumpIdx);
 			expect(auditIdx).toBeGreaterThan(jumpIdx);
@@ -160,7 +160,7 @@ var Holder h2 = h1
 	});
 });
 
-// Echo has two kinds of `#destroy`, and only one makes a struct uncopyable:
+// Nomen has two kinds of `#destroy`, and only one makes a struct uncopyable:
 //
 //   - Owning (resource-releasing): the #destroy calls into a raw asm/C block to
 //     release a heap allocation or system handle (Buffer frees its `data`, File
@@ -168,15 +168,15 @@ var Holder h2 = h1
 //     that ownership, so both copies release the same resource on cleanup -- a
 //     double-free. These structs may not be copied from a variable.
 //
-//   - Copyable (benign): the #destroy only resets Echo fields (e.g. Token sets
+//   - Copyable (benign): the #destroy only resets Nomen fields (e.g. Token sets
 //     `self.id = 0`). The struct is a plain value type with a cleanup hook; each
 //     independent copy runs the harmless hook at its own scope exit. These copy
 //     freely.
 //
 // The detector (`is_owning_struct_type` in src/check/utils/ownership.ts) tells
 // them apart by whether the #destroy contains a `raw` node: every real resource
-// release in Echo is emitted through a raw block (free/fclose/release are C/asm
-// primitives), whereas a benign hook is pure Echo field assignment. Ownership is
+// release in Nomen is emitted through a raw block (free/fclose/release are C/asm
+// primitives), whereas a benign hook is pure Nomen field assignment. Ownership is
 // also transitive -- a struct with an owning field (e.g. List owns a Buffer) is
 // itself owning even without its own #destroy.
 describe("owning vs copyable #destroy", () => {

@@ -1,8 +1,8 @@
-# The Echo Programming Language
+# The Nomen Programming Language
 
 **Statically typed. Compiled to native. Memory-safe by default.**
 
-Echo is a statically-typed, compiled language that targets C and AArch64 assembly. It
+Nomen is a statically-typed, compiled language that targets C and AArch64 assembly. It
 draws from imperative, object-oriented, and functional paradigms, and ships with
 structured concurrency and deterministic memory management.
 
@@ -28,7 +28,7 @@ structured concurrency and deterministic memory management.
 
 ### Hello, World!
 
-```echo
+```nomen
 import System
 
 pub func main = () {
@@ -39,21 +39,21 @@ pub func main = () {
 ### Run a Program
 
 ```bash
-lang --in path/to/program.echo
+lang --in path/to/program.nm
 ```
 
 Target a specific backend:
 
 ```bash
-lang --in path/to/program.echo --arch c         # emit C
-lang --in path/to/program.echo --arch aarch64   # emit AArch64 assembly (default)
+lang --in path/to/program.nm --arch c         # emit C
+lang --in path/to/program.nm --arch aarch64   # emit AArch64 assembly (default)
 ```
 
 ## Language Overview
 
 ### Data Types
 
-```echo
+```nomen
 const int i = 1
 const uint u = 2
 const int8 small = 3
@@ -67,7 +67,7 @@ var int? maybe = null
 
 ### Variables
 
-```echo
+```nomen
 const string name = "Alice"
 var int age = 30
 var count = 10  // Type inference
@@ -75,7 +75,7 @@ var count = 10  // Type inference
 
 ### Functions
 
-```echo
+```nomen
 func add = (int a, int b, out int) {
     return a + b
 }
@@ -107,9 +107,9 @@ sum(1, 2, 3)
 
 ### Control Flow
 
-Echo has **no `else if`** — use a `switch` for chained conditions:
+Nomen has **no `else if`** — use a `switch` for chained conditions:
 
-```echo
+```nomen
 enum Direction {
     case north
     case south
@@ -153,7 +153,7 @@ for item of items {
 Structs are value types — assignment copies the fields. Construction calls a
 struct's auto-generated `#init`:
 
-```echo
+```nomen
 pub struct Point {
     pub var int x
     pub var int y
@@ -178,7 +178,7 @@ const d = p.distance_from_origin()
 An inline `[ field = value ]` literal can be passed wherever a struct is
 expected — handy for calls without spelling out the type:
 
-```echo
+```nomen
 struct Circle {
     var string name
     var int center_x
@@ -200,7 +200,7 @@ All fields must be provided, by name.
 Classes are reference types — always heap-allocated and shared on assignment.
 Methods use `var self` for mutable access:
 
-```echo
+```nomen
 class Counter {
     var int count = 0
 
@@ -218,7 +218,7 @@ c.increment()
 Enums are sum types. Cases can carry associated data, and shorthand `.case`
 syntax works where the type is known:
 
-```echo
+```nomen
 pub enum Direction {
     case north
     case south
@@ -241,7 +241,7 @@ const shape = Shape.rect(10, 20)
 match on an enum is checked for exhaustiveness — cover every case, or add an
 `else`:
 
-```echo
+```nomen
 const message = match shape {
     case .circle(r) -> "radius \{r}"
     case .rect(w, h) -> "\{w}x\{h}"
@@ -252,7 +252,7 @@ const message = match shape {
 
 A `bitset` defines flags meant to be combined with bitwise operators:
 
-```echo
+```nomen
 pub bitset Permissions {
     case read
     case write
@@ -269,7 +269,7 @@ flags = flags ^ Permissions.execute
 Traits declare method signatures that implementing structs provide. A concrete
 struct assigned to a trait-typed variable is callable through the trait's interface:
 
-```echo
+```nomen
 pub trait Printable {
     func to_string = (self, out string)
 }
@@ -291,7 +291,7 @@ const s = p.to_string()
 
 Structs define custom operator behavior with `#`-prefixed function names:
 
-```echo
+```nomen
 struct Vec2 {
     var int x
     var int y
@@ -309,7 +309,7 @@ const sum = Vec2(1, 2) + Vec2(3, 4)
 Constraints are compile-time assertions on parameters, fields, and variables.
 They are checked whenever the value is a compile-time constant:
 
-```echo
+```nomen
 func restricted = (int x: x > 5) {
     Console.write("\{x}")
 }
@@ -320,7 +320,7 @@ restricted(2)    // Error: Parameter constraint not satisfied
 
 ### Strings
 
-```echo
+```nomen
 const greeting = "Hello, " + name
 const dashes = "-" * 10
 Console.write("You are \{age} years old.")
@@ -328,7 +328,7 @@ Console.write("You are \{age} years old.")
 
 ### Arrays
 
-```echo
+```nomen
 var numbers = [1, 2, 3, 4, 5]
 const first = numbers.at(0)
 numbers.set(1, 99)
@@ -342,7 +342,7 @@ const repeated = [1, 2] * 3
 Tuples are anonymous structs with positional fields `_0`, `_1`, ... and support
 destructuring:
 
-```echo
+```nomen
 var things = [1, "first"]
 Console.write("\{things._0} \{things._1}")
 
@@ -359,7 +359,7 @@ The `var [ ... ] = expr` form binds names by pulling values out of the
 right-hand side. Tuples, arrays, structs, and classes are all supported — the
 kind of value determines how the brackets are read:
 
-```echo
+```nomen
 // Tuples — bind positionally
 func get_person = (int id, out [string, int]) {
     return ["Andrew", id + 100]
@@ -391,7 +391,7 @@ The `System` library (in `core/System/`) is imported with `import System`.
 
 ### Console
 
-```echo
+```nomen
 Console.write("no newline")
 Console.write_line("with newline")
 
@@ -405,18 +405,18 @@ const string p = Console.platform()
 ANSI escape helpers for styling terminal output. Each helper wraps a string with
 the relevant SGR sequence and a trailing reset:
 
-```echo
+```nomen
 Console.write("\{Ansi.bg_red("ERROR")}: it didn't work")
 Console.write_line(Ansi.bold(Ansi.green("success")))
 ```
 
 ## Concurrency
 
-Echo uses **structured concurrency via nurseries**: every concurrent split
+Nomen uses **structured concurrency via nurseries**: every concurrent split
 rejoins before its lexical scope exits. See [ASYNC.md](ASYNC.md) for the full
 design.
 
-```echo
+```nomen
 func fetch = (uint64 id) {
     Console.write_line("ok")
 }
@@ -433,7 +433,7 @@ pub func main = () {
 
 A `Task` handle lets you wait on or cancel a spawned call:
 
-```echo
+```nomen
 func compute = (uint64 n) => n + 1
 
 pub func main = () {
@@ -447,11 +447,11 @@ pub func main = () {
 
 ## Memory Management
 
-Echo cleans up automatically at scope exit — no garbage collector, no reference
+Nomen cleans up automatically at scope exit — no garbage collector, no reference
 counting. The compiler inserts the frees for you. Two hooks let types
 participate:
 
-```echo
+```nomen
 struct Transaction {
     var int handle
 
@@ -474,9 +474,9 @@ See [MEMORY.md](MEMORY.md) for the full model.
 ## Ownership & Borrows
 
 Class instances are heap-allocated and, by default, shared on assignment. To
-express single ownership, Echo borrows a few ideas from move semantics:
+express single ownership, Nomen borrows a few ideas from move semantics:
 
-```echo
+```nomen
 class Box {
     var int value
 }
@@ -505,16 +505,16 @@ See [BORROW.md](BORROW.md) for the rules and the borrow-invalidation checks.
 
 ## GUI
 
-Echo ships a native UI layer in `core/System/Controls/`: windows, text,
+Nomen ships a native UI layer in `core/System/Controls/`: windows, text,
 buttons, checkboxes, and a layout engine + compositor. The example app in
 `app/` is a small todo-list GUI built with it.
 
-```echo
+```nomen
 import System
 import System/Controls
 
 pub func main = () {
-    var Window win = Window.create("Echo", 400, 300)
+    var Window win = Window.create("Nomen", 400, 300)
     var Text title = Text.create(win)
     title.set_text("Hello")
     win.show()
@@ -548,10 +548,10 @@ layout and compositor design.
 
 ```
 src/        — Compiler: tokenizer, parser, checker, builder
-core/       — Standard library written in Echo (the System module)
+core/       — Standard library written in Nomen (the System module)
 bin/        — CLI entry point (the `lang` command)
 app/        — Example GUI application
-bench/      — Benchmarks (Echo alongside Go, Rust, Zig)
+bench/      — Benchmarks (Nomen alongside Go, Rust, Zig)
 test/       — Test suite
 test/spec/  — SPEC.md coverage tests
 test/readme — README.md coverage tests

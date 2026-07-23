@@ -1,6 +1,6 @@
 import { expect, test } from "vite-plus/test";
 // TODO: The original Zig exercise uses @intFromEnum with {x:0>6} hex formatting
-// to print HTML like <span style="color: #ff0000">Red</span>. Echo has neither
+// to print HTML like <span style="color: #ff0000">Red</span>. Nomen has neither
 // @intFromEnum nor hex formatting, so we print the hex color codes directly
 // per enum variant instead. The exercise still tests enum exhaustiveness.
 

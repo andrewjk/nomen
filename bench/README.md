@@ -1,10 +1,10 @@
-# Echo Benchmark Suite
+# Nomen Benchmark Suite
 
 ## Converted Benchmarks
 
-These benchmarks have been converted to Echo and are included in `benchmark.sh`.
+These benchmarks have been converted to Nomen and are included in `benchmark.sh`.
 
-| Benchmark      | Echo | Go  | Zig | Notes                                                                   |
+| Benchmark      | Nomen | Go  | Zig | Notes                                                                   |
 | -------------- | ---- | --- | --- | ----------------------------------------------------------------------- |
 | pidigits       | ✅   | ✅  | ✅  | BigInt digit computation                                                |
 | helloworld     | ✅   | ✅  | -   | Trivial startup test                                                    |
@@ -17,15 +17,15 @@ These benchmarks have been converted to Echo and are included in `benchmark.sh`.
 | json-serde     | ✅   | ✅  | ✅  | GeoJSON parse + serialize via `Json.parse`/`Json.stringify` (see note)  |
 | regex-redux    | ✅   | ✅  | -   | FASTA sequence regex counting and substitution                          |
 
-> **Note (json-serde):** the Echo version parses the GeoJSON document into a
+> **Note (json-serde):** the Nomen version parses the GeoJSON document into a
 > `JsonNode` tree and re-serializes it, like the Go/Zig versions. It does **not**
-> md5-hash the output (Echo has no MD5 in the standard library yet); instead it
+> md5-hash the output (Nomen has no MD5 in the standard library yet); instead it
 > prints the serialized length as a verifiable checksum. The input is the
 > hard-coded `bench/sample.json`.
 
 ## Not Converted
 
-The remaining Go benchmarks require language features or standard library support that Echo does not currently have.
+The remaining Go benchmarks require language features or standard library support that Nomen does not currently have.
 
 ### Needs floating-point arrays and/or math functions
 
@@ -47,13 +47,13 @@ The remaining Go benchmarks require language features or standard library suppor
 | Benchmark            | What's needed                                                                                                                                                                                                                                                                                         |
 | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **coro-prime-sieve** | Goroutines and channels for the daisy-chain prime sieve. Would require a completely different single-threaded algorithm (e.g., trial division).                                                                                                                                                       |
-| **binarytrees (Go)** | The Go version is the single-threaded PLB `1.go` (the parallel `2.go` would use `sync.WaitGroup` and goroutines across all cores, giving Go an unfair wall-clock advantage over the single-threaded Echo/Rust/Zig versions). The Echo version is also single-threaded and produces identical results. |
+| **binarytrees (Go)** | The Go version is the single-threaded PLB `1.go` (the parallel `2.go` would use `sync.WaitGroup` and goroutines across all cores, giving Go an unfair wall-clock advantage over the single-threaded Nomen/Rust/Zig versions). The Nomen version is also single-threaded and produces identical results. |
 
 ### Needs hash maps (partially done)
 
 | Benchmark | What's needed                                                                                                        | Status  |
 | --------- | -------------------------------------------------------------------------------------------------------------------- | ------- |
-| **lru**   | Hash map (`map[K]V`) and doubly-linked list (`container/list`). Would need a custom hash map implementation in Echo. | ✅ Done |
+| **lru**   | Hash map (`map[K]V`) and doubly-linked list (`container/list`). Would need a custom hash map implementation in Nomen. | ✅ Done |
 
 ### Needs file I/O
 

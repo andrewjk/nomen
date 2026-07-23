@@ -27,7 +27,7 @@ function resolve_struct(type: Type, status: CheckStatus): StructNode | undefined
 /**
  * Recursively determine whether an AST subtree contains a `raw` node (an inline
  * asm/C block). Used to tell apart a `#destroy` that actually releases a
- * resource (free/fclose/release are always emitted via raw blocks in Echo) from
+ * resource (free/fclose/release are always emitted via raw blocks in Nomen) from
  * a benign cleanup hook that only resets fields (e.g. `self.id = 0`). The walk
  * skips `scope`/`parent` back-edges and is cycle-guarded.
  */

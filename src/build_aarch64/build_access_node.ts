@@ -1156,7 +1156,7 @@ function build_access_method(
 		if (is_buf_load || is_buf_store) {
 			// Element size: load/store = 4 bytes (uint32), load_int/store_int/
 			// load_float/store_float/store_or_int = 8 bytes (long/double).
-			// store_or_int treats data as long* (8-byte stride, see Buffer.echo).
+			// store_or_int treats data as long* (8-byte stride, see Buffer.nm).
 			const elem_bytes = method === "load" || method === "store" ? 4 : 8;
 			const shift = elem_bytes === 8 ? 3 : 2;
 			const is_float = method === "load_float" || method === "store_float";
@@ -1172,7 +1172,7 @@ function build_access_method(
 				const data_reg = get_buffer_data_ptr(node.target, status);
 				// Strided load
 				if (is_float) {
-					// `load_float` leaves its result in d0. The default Echo calling
+					// `load_float` leaves its result in d0. The default Nomen calling
 					// convention routes every value through x0, so for ordinary
 					// consumers (assignments, function args, comparisons, statement-
 					// level expressions) we must emit `fmov x0, d0`. Only when the

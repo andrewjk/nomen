@@ -1,7 +1,7 @@
 # Ownership & Borrows
 
-Echo's memory is cleaned up automatically at scope exit (see
-[MEMORY.md](MEMORY.md)). On top of that, Echo has a small ownership system for
+Nomen's memory is cleaned up automatically at scope exit (see
+[MEMORY.md](MEMORY.md)). On top of that, Nomen has a small ownership system for
 **class instances** — the only heap-allocated, mutable values — to make
 single-ownership and borrowing explicit and statically checked.
 
@@ -19,7 +19,7 @@ moving it transfers ownership (the previous binding becomes invalid).
 A class-typed field must be declared with `mov`. Value-type fields use `var` as
 usual.
 
-```echo
+```nomen
 class Box {
     var int value
 }
@@ -42,7 +42,7 @@ class Holder {
 A `mov` parameter takes ownership from the caller. The caller must mark the
 argument with `mov` too, and the moved binding is invalid afterwards:
 
-```echo
+```nomen
 func take = (mov Box b) {
     Console.write("\{b.value}")
 }
@@ -54,7 +54,7 @@ take(mov b)
 
 Moving the same value twice is a compile error:
 
-```echo
+```nomen
 take(mov b)
 take(mov b)   // Error: b was already moved
 ```
@@ -66,7 +66,7 @@ variable. Unlike `mov`, the caller keeps ownership. The `ref` keyword is
 required at **both** the definition and the call site, so mutation is never
 silent:
 
-```echo
+```nomen
 func make_five = (ref int x) {
     x = 5
 }
@@ -78,7 +78,7 @@ make_five(ref n)
 
 `ref self` lets a method mutate the instance it is called on:
 
-```echo
+```nomen
 class Holder {
     mov Box content
     var int scratch
@@ -99,7 +99,7 @@ call, which may free or displace the contents the borrow points into — all
 live child-group borrows rooted at that owner are **invalidated**. Using one
 after that point is a compile error:
 
-```echo
+```nomen
 var Holder h = Holder(mov Box(1), 0)
 var Box b = h.content      // child-group borrow rooted at h
 h.poke()                   // mutates h → b is invalidated
@@ -108,7 +108,7 @@ Console.write("\{b.value}") // Error: borrow invalidated
 
 Re-fetching the borrow after the mutation is fine:
 
-```echo
+```nomen
 h.poke()
 var Box b2 = h.content     // fresh borrow — allowed
 ```
@@ -116,7 +116,7 @@ var Box b2 = h.content     // fresh borrow — allowed
 Object-level aliases (`var q = p`, where both are the same class instance) are
 **not** child-group borrows, so mutating one does not invalidate the other.
 This is the mutable-aliasing benefit over Rust's "aliasing xor mutability":
-Echo allows multiple references, and keeps it sound by invalidating borrows
+Nomen allows multiple references, and keeps it sound by invalidating borrows
 **on mutation** rather than forbidding the alias.
 
 ## `swap` — move out, replace in place
@@ -124,7 +124,7 @@ Echo allows multiple references, and keeps it sound by invalidating borrows
 `swap` atomically moves an owned value out of a field and substitutes a fresh
 one, so the field is never left empty. It requires `mov`:
 
-```echo
+```nomen
 class Box { var int value }
 class Holder { mov Box content }
 

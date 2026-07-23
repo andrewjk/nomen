@@ -7,12 +7,12 @@ import parse_with_imports from "./parse_with_imports";
 // Regression tests for unsafe memory operations that were previously present
 // in the hand-written `#arch: c` blocks in core/System. Both were fixed:
 //
-//   1. String.#op_mul (core/System/String.echo) used 32-bit `int` arithmetic
+//   1. String.#op_mul (core/System/String.nm) used 32-bit `int` arithmetic
 //      for `str_len * count + 1`, so large multiplications overflowed,
 //      `malloc` got a far-too-small size, and the `memcpy` loop wrote past
 //      the buffer (heap overflow / crash). Now computed with `size_t`.
 //
-//   2. Console.read_line (core/System/Console.echo) grew its buffer only when
+//   2. Console.read_line (core/System/Console.nm) grew its buffer only when
 //      `len + 1 >= cap`, leaving no room for the trailing NUL; the final
 //      `buf[len] = 0` terminator wrote one byte past the allocation on the
 //      exact-cap boundary. Now it reserves room for the terminator

@@ -1,13 +1,13 @@
 {
-	"name": "echo",
-	"displayName": "Echo",
+	"name": "nomen",
+	"displayName": "Nomen",
 	"version": "0.0.1",
-	"description": "Run and Audit support for the Echo programming language.",
+	"description": "Run and Audit support for the Nomen programming language.",
 	"categories": [
 		"Programming Languages"
 	],
 	"license": "ISC",
-	"publisher": "echo-lang",
+	"publisher": "nomen-lang",
 	"main": "./dist/extension.js",
 	"scripts": {
 		"build": "node esbuild.mjs",
@@ -24,44 +24,44 @@
 	"contributes": {
 		"languages": [
 			{
-				"id": "echo",
+				"id": "nomen",
 				"extensions": [
-					".echo"
+					".nm"
 				],
 				"aliases": [
-					"Echo"
+					"Nomen"
 				],
 				"configuration": "./language-configuration.json"
 			}
 		],
 		"grammars": [
 			{
-				"language": "echo",
-				"scopeName": "source.echo",
-				"path": "./syntaxes/echo.tmLanguage.json"
+				"language": "nomen",
+				"scopeName": "source.nm",
+				"path": "./syntaxes/nomen.tmLanguage.json"
 			}
 		],
 		"commands": [
 			{
-				"command": "echo.run",
-				"title": "Echo: Run File",
-				"enablement": "resourceLangId == echo"
+				"command": "nomen.run",
+				"title": "Nomen: Run File",
+				"enablement": "resourceLangId == nomen"
 			},
 			{
-				"command": "echo.audit",
-				"title": "Echo: Audit File",
-				"enablement": "resourceLangId == echo"
+				"command": "nomen.audit",
+				"title": "Nomen: Audit File",
+				"enablement": "resourceLangId == nomen"
 			}
 		],
 		"configuration": {
-			"title": "Echo",
+			"title": "Nomen",
 			"properties": {
-				"echo.executable": {
+				"nomen.executable": {
 					"type": "string",
 					"default": "lang",
-					"markdownDescription": "The command used to invoke the Echo CLI. Supports `${workspaceFolder}`. Defaults to auto-detecting `bin/dist/index.mjs` in the workspace, falling back to `lang` on your PATH."
+					"markdownDescription": "The command used to invoke the Nomen CLI. Supports `${workspaceFolder}`. Defaults to auto-detecting `bin/dist/index.mjs` in the workspace, falling back to `lang` on your PATH."
 				},
-				"echo.arch": {
+				"nomen.arch": {
 					"type": "string",
 					"enum": [
 						"aarch64",
@@ -70,30 +70,30 @@
 					"default": "aarch64",
 					"description": "Target architecture passed to the compiler via --arch."
 				},
-				"echo.auditRuntime": {
+				"nomen.auditRuntime": {
 					"type": "string",
 					"default": "",
 					"markdownDescription": "Path to `audit_runtime.c`, linked in when running Audit. Supports `${workspaceFolder}`. Defaults to `${workspaceFolder}/src/audit_runtime.c`."
 				},
-				"echo.saveBeforeRun": {
+				"nomen.saveBeforeRun": {
 					"type": "boolean",
 					"default": true,
 					"description": "Save the file before running."
 				},
-				"echo.terminal": {
+				"nomen.terminal": {
 					"type": "string",
 					"enum": [
 						"dedicated",
 						"new"
 					],
 					"enumDescriptions": [
-						"Reuse a single Echo terminal across runs.",
+						"Reuse a single Nomen terminal across runs.",
 						"Create a fresh terminal for each run."
 					],
 					"default": "dedicated",
 					"description": "How to manage the terminal used for runs."
 				},
-				"echo.diagnostics": {
+				"nomen.diagnostics": {
 					"type": "string",
 					"enum": [
 						"onType",
@@ -106,13 +106,13 @@
 						"Disable error diagnostics."
 					],
 					"default": "onType",
-					"description": "When to compute Echo error diagnostics."
+					"description": "When to compute Nomen error diagnostics."
 				}
 			}
 		}
 	},
 	"activationEvents": [
-		"onLanguage:echo"
+		"onLanguage:nomen"
 	],
 	"engines": {
 		"vscode": "^1.85.0"
