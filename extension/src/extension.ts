@@ -129,8 +129,8 @@ function resolveDocument(uri: vscode.Uri | undefined): vscode.TextDocument | und
 function resolve_executable(uri: vscode.Uri): string {
 	const workspace_folder = workspace_folder_of(uri);
 
-	const setting = get_config<string>("executable", "lang").trim();
-	if (setting && setting !== "lang") {
+	const setting = get_config<string>("executable", "nomen").trim();
+	if (setting && setting !== "nomen") {
 		return substitute_workspace(setting, workspace_folder);
 	}
 
@@ -141,7 +141,7 @@ function resolve_executable(uri: vscode.Uri): string {
 		}
 	}
 
-	return "lang";
+	return "nomen";
 }
 
 function resolve_audit_runtime(uri: vscode.Uri): string | undefined {

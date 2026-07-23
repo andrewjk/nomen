@@ -1,19 +1,28 @@
 {
 	"name": "nomen",
 	"displayName": "Nomen",
-	"version": "0.0.1",
 	"description": "Run and Audit support for the Nomen programming language.",
+	"version": "0.0.1",
+	"icon": "logo.png",
 	"categories": [
 		"Programming Languages"
 	],
 	"license": "ISC",
-	"publisher": "nomen-lang",
+	"publisher": "nomen",
 	"main": "./dist/extension.js",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/andrewjk/nomen"
+	},
 	"scripts": {
 		"build": "node esbuild.mjs",
 		"dev": "node esbuild.mjs --watch",
 		"check": "tsc --noEmit",
-		"package": "node esbuild.mjs --minify && vsce package"
+		"package": "node esbuild.mjs --minify && vsce package --allow-package-all-secrets --allow-package-env-file",
+		"publish": "vsce publish --allow-package-all-secrets --allow-package-env-file",
+		"publish:patch": "vsce publish patch --allow-package-all-secrets --allow-package-env-file",
+		"publish:minor": "vsce publish minor --allow-package-all-secrets --allow-package-env-file",
+		"publish:major": "vsce publish major --allow-package-all-secrets --allow-package-env-file"
 	},
 	"devDependencies": {
 		"@types/node": "^25.9.2",
@@ -58,8 +67,8 @@
 			"properties": {
 				"nomen.executable": {
 					"type": "string",
-					"default": "lang",
-					"markdownDescription": "The command used to invoke the Nomen CLI. Supports `${workspaceFolder}`. Defaults to auto-detecting `bin/dist/index.mjs` in the workspace, falling back to `lang` on your PATH."
+					"default": "nomen",
+					"markdownDescription": "The command used to invoke the Nomen CLI. Supports `${workspaceFolder}`. Defaults to auto-detecting `bin/dist/index.mjs` in the workspace, falling back to `nomen` on your PATH."
 				},
 				"nomen.arch": {
 					"type": "string",
@@ -111,9 +120,6 @@
 			}
 		}
 	},
-	"activationEvents": [
-		"onLanguage:nomen"
-	],
 	"engines": {
 		"vscode": "^1.85.0"
 	}
