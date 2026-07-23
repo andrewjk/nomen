@@ -300,7 +300,7 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				const tmp = `_sts_${id}`;
 				status.code += `({ char* ${tmp} = `;
 				build_node(node.target, status);
-				status.code += `; char* _sto_${id} = string_to_string(${tmp}); nomen_free_wrap(${tmp}); _sto_${id}; })`;
+				status.code += `; char* _sto_${id} = string_to_string(${tmp}); free(${tmp}); _sto_${id}; })`;
 				break;
 			}
 			if (
@@ -331,7 +331,7 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				const target_name =
 					node.target.node_type === "value" ? (node.target as ValueNode).value : "";
 				const is_heap = !!target_name && !!status.heap_array_vars?.has(target_name);
-				status.code += `({ char* _ts_r = (char*)nomen_malloc_wrap(1); _ts_r[0] = 0; long _ts_n = 0; for (long _i = 0; _i < ${len}; _i++) { char* _s = ${to_string_fn}(`;
+				status.code += `({ char* _ts_r = (char*)malloc(1); _ts_r[0] = 0; long _ts_n = 0; for (long _i = 0; _i < ${len}; _i++) { char* _s = ${to_string_fn}(`;
 				if (is_heap) {
 					status.code += `((${c_type(elem_name)}*)((char*)`;
 					build_node(node.target, status);
@@ -340,7 +340,7 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 					build_node(node.target, status);
 					status.code += `[_i]`;
 				}
-				status.code += `); _ts_n += strlen(_s); _ts_r = (char*)nomen_realloc_wrap(_ts_r, _ts_n + 1); strcat(_ts_r, _s); nomen_free_wrap(_s); } _ts_r; })`;
+				status.code += `); _ts_n += strlen(_s); _ts_r = (char*)realloc(_ts_r, _ts_n + 1); strcat(_ts_r, _s); free(_s); } _ts_r; })`;
 				status.last_result_is_heap = true;
 				break;
 			}

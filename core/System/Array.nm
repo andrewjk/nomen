@@ -211,7 +211,7 @@ pub struct Array<T> {
         long _other_len = other->length;
         long _result_len = _self_len + _other_len;
         long _header = sizeof(*self);
-        void* _result = nomen_malloc_wrap(_header + _result_len * T_SIZE);
+        void* _result = malloc(_header + _result_len * T_SIZE);
         ((long*)_result)[0] = 0;
         ((long*)_result)[1] = _result_len;
         T* _data = (T*)((char*)_result + _header);
@@ -273,7 +273,7 @@ pub struct Array<T> {
         long _self_len = self->length;
         long _result_len = _self_len * other;
         long _header = sizeof(*self);
-        void* _result = nomen_malloc_wrap(_header + _result_len * T_SIZE);
+        void* _result = malloc(_header + _result_len * T_SIZE);
         ((long*)_result)[0] = 0;
         ((long*)_result)[1] = _result_len;
         T* _data = (T*)((char*)_result + _header);
