@@ -559,6 +559,15 @@ to distinguish them:
 - **Array** — bind positionally by index (`.at(i)`)
 - **Struct / class** — bind by field name
 
+A binding name of `_` discards that position for arrays and tuples (no
+variable is introduced):
+
+```
+const int[] nums = [1, 2, 3]
+var [first, _, last] = nums
+Console.write("\\{first} \\{last}")  // "1 3"
+```
+
 #### Array Destructuring
 
 A bracket-enclosed list of names on the left of an array binds each element by
@@ -573,6 +582,34 @@ Console.write("\\{a} \\{b} \\{c}")  // "1 2 3"
 Array destructuring is positional — the first name binds to index 0, the
 second to index 1, and so on. Renaming (`[0 = first]`) is not supported for
 arrays.
+
+Because each position is a compile-time constant, arrays may only be
+destructured when their length is **known at compile time** (literals, constant
+ranges, `Array.with`, etc.). Destructuring more values than the array holds is a
+compile error:
+
+```
+var [a, b, c] = [1, 2]  // error: cannot destructure index 2 of an array with length 2
+```
+
+Destructuring an array whose length is not statically known (for example a
+function parameter typed `int[]`) is also a compile error.
+
+#### Tuple Destructuring
+
+A tuple on the right-hand side is bound positionally — the first name binds to
+`_0`, the second to `_1`, and so on:
+
+```
+var [a, b] = [11, "hello"]
+Console.write("\\{a} \\{b}")  // "11 hello"
+```
+
+Binding more names than the tuple has elements is a compile error:
+
+```
+var [a, b, c] = [1, "two"]  // error: cannot destructure index 2 of a tuple with 2 elements
+```
 
 #### Struct and Class Destructuring
 

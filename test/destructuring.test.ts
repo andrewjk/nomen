@@ -95,6 +95,30 @@ var [missing = m] = p
 		expect(parsed.errors.length).toBeGreaterThanOrEqual(1);
 		expect(parsed.errors.some((e) => e.message.includes("Field 'missing' not found"))).toBe(true);
 	});
+
+	test("array destructure out of bounds is an error", () => {
+		const input = `
+var [a, b, c] = [1, 2]
+`;
+		const parsed = parse(input);
+		expect(parsed.errors.length).toBeGreaterThanOrEqual(1);
+		expect(
+			parsed.errors.some((e) => e.message.includes("Cannot destructure index 2 of an array")),
+		).toBe(true);
+	});
+
+	test("array destructure of unknown-length array is an error", () => {
+		const input = `
+func take = (int[] nums) {
+	var [a, b] = nums
+}
+`;
+		const parsed = parse(input);
+		expect(parsed.errors.length).toBeGreaterThanOrEqual(1);
+		expect(
+			parsed.errors.some((e) => e.message.includes("length is not known at compile time")),
+		).toBe(true);
+	});
 });
 
 // BUILD & RUN — ARRAY
@@ -133,6 +157,24 @@ var [a, b, c] = range
 Console.write("\\{a} \\{b} \\{c}")
 `;
 		await build_and_check_output(input, "arr_destructure_range", "5 6 7");
+	});
+
+	test("discard array element with underscore", async () => {
+		const input = `
+const int[] nums = [1, 2, 3]
+var [first, _, last] = nums
+Console.write("\\{first} \\{last}")
+`;
+		await build_and_check_output(input, "arr_destructure_discard", "1 3");
+	});
+
+	test("discard trailing array element with underscore", async () => {
+		const input = `
+const int[] nums = [10, 20, 30]
+var [a, b, _] = nums
+Console.write("\\{a} \\{b}")
+`;
+		await build_and_check_output(input, "arr_destructure_discard_end", "10 20");
 	});
 });
 

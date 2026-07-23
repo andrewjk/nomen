@@ -49,9 +49,32 @@ export default function check_access_node(node: AccessNode, status: CheckStatus)
 					add_error(status, `Cannot rename elements when destructuring an array`, node.start);
 					return false;
 				}
-				// Array: rewrite to `.at(i)` and dispatch as a method call.
-				// The index is a compile-time constant, so skip the bounds
-				// constraint check (the programmer chose the position).
+				// Arrays may only be destructured when their length is known
+				// at compile time (literals, constant ranges, Array.with, ...).
+				const len_node = target_type.length;
+				const known_len =
+					len_node && len_node.node_type === "value"
+						? parseInt((len_node as ValueNode).value, 10)
+						: NaN;
+				if (Number.isNaN(known_len)) {
+					add_error(
+						status,
+						`Cannot destructure an array whose length is not known at compile time`,
+						node.start,
+					);
+					return false;
+				}
+				if (i >= known_len) {
+					add_error(
+						status,
+						`Cannot destructure index ${i} of an array with length ${known_len}`,
+						node.start,
+					);
+					return false;
+				}
+				// Rewrite to `.at(i)` and dispatch as a method call. The index
+				// is a compile-time constant within bounds (validated above), so
+				// skip the `.at` parameter constraint (bounds) check.
 				const idx = new ValueNode(node.start, String(i), new Type("int"));
 				const fc = new AccessFunctionCallNode(node.start, "at", new Type(""), [idx]);
 				fc.skip_bounds_check = true;
@@ -69,6 +92,16 @@ export default function check_access_node(node: AccessNode, status: CheckStatus)
 			} else if (struct) {
 				if (af.is_destructure_rename) {
 					add_error(status, `Field '${af.name}' not found on ${target_type.name}`, node.start);
+					return false;
+				}
+				// Tuple positional destructure: validate the index against the
+				// tuple's arity (the auto-generated fields `_0`..`_(N-1)`).
+				if (struct.name.startsWith("_Tuple_") && i >= struct.fields.length) {
+					add_error(
+						status,
+						`Cannot destructure index ${i} of a tuple with ${struct.fields.length} elements`,
+						node.start,
+					);
 					return false;
 				}
 				af.name = `_${i}`;

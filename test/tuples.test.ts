@@ -78,6 +78,17 @@ var [int, string] things = [42, "hi", true]
 		expect(parsed.errors.length).toBeGreaterThan(0);
 	});
 
+	test("reject tuple destructure out of bounds", () => {
+		const input = `
+var [a, b, c] = [1, "two"]
+`;
+		const parsed = parse(input);
+		expect(parsed.errors.length).toBeGreaterThanOrEqual(1);
+		expect(
+			parsed.errors.some((e) => e.message.includes("Cannot destructure index 2 of a tuple")),
+		).toBe(true);
+	});
+
 	test("homogeneous array still works as array (not tuple)", () => {
 		const input = `
 var Array<int> nums = [1, 2, 3]
@@ -174,6 +185,14 @@ var [a, b] = [11, "hello"]
 Console.write("\\{a} \\{b}")
 `;
 		await build_and_check_output(input, "tuple_destructure_literal", "11 hello");
+	});
+
+	test("discard tuple element with underscore", async () => {
+		const input = `
+var [a, _, c] = [10, "mid", true]
+Console.write("\\{a} \\{c}")
+`;
+		await build_and_check_output(input, "tuple_destructure_discard", "10 true");
 	});
 });
 

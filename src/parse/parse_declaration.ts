@@ -452,6 +452,12 @@ function parse_destructuring(
 
 	for (let i = 0; i < bindings.length; i++) {
 		const binding = bindings[i];
+		// `_` discards a positional binding (array/tuple) without emitting a
+		// declaration. The loop index is preserved so later bindings keep
+		// correct positions (e.g. `var [first, _, last] = arr`).
+		if (binding.name === "_") {
+			continue;
+		}
 		const access_field = new AccessFieldNode(start, binding.field);
 		// Marker resolved by check_access_node from the RHS type:
 		//   tuple  -> `._i`      (field rewrite)

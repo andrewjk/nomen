@@ -54,6 +54,24 @@ Console.write("\\{a} \\{b}")
 		expect(compile_main(input)).toEqual([]);
 	});
 
+	test("destructuring too many names is an error", () => {
+		const input = `
+var [a, b, c] = [1, "two"]
+`;
+		const errors = compile_main(input);
+		expect(errors.some((e) => e.message.includes("Cannot destructure index 2 of a tuple"))).toBe(
+			true,
+		);
+	});
+
+	test("discard a tuple position with underscore", () => {
+		const input = `
+var [a, _, c] = [10, "mid", true]
+Console.write("\\{a} \\{c}")
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+
 	test("tuple return types", () => {
 		const input = `
 func make_pair = (int a, int b, out [int, int]) {
