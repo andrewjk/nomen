@@ -784,16 +784,6 @@ function build_access_method(
 		return;
 	}
 
-	// String.length() — method call form of the string.length property → strlen
-	if (
-		target_type.name === "string" &&
-		access_func.name === "length" &&
-		access_func.params.length === 0
-	) {
-		emit_string_length(node.target, status);
-		return;
-	}
-
 	// Inline array .at() and .set() to use element-size-aware load/store
 	// Only inline for: value targets (not class arrays) and fixed-size struct field targets
 	if (target_type.is_array && (access_func.name === "at" || access_func.name === "set")) {

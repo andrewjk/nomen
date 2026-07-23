@@ -283,17 +283,6 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 					break;
 				}
 			}
-			// string.length() — method-call form of the string.length property
-			// (check pass types both as int). Lower to `strlen` directly; there
-			// is no `string_length` function defined on the C `char*`.
-			if (
-				target_type.name === "string" &&
-				access_func.name === "length" &&
-				access_func.params.length === 0
-			) {
-				emit_string_length(node.target, status);
-				break;
-			}
 			// `.to_string()` on a string-typed receiver compiles to
 			// `string_to_string(receiver)`, which strdups its argument and
 			// returns a fresh owned copy. When the receiver is itself an owned
@@ -570,8 +559,8 @@ function resolve_access_field_type(node: AccessNode, status: BuildStatus): Type 
 	return field?.type;
 }
 
-// Emit `string.length` / `.length()` as `strlen(target)`. When the target is
-// an OWNED heap string temporary (e.g. `Json.stringify(...).length()`), the
+// Emit `string.length` as `strlen(target)`. When the target is
+// an OWNED heap string temporary (e.g. `Json.stringify(...).length`), the
 // intermediate string would otherwise leak — the caller keeps only the length.
 // Wrap in a clang statement-expression that frees the temp after measuring it.
 function emit_string_length(target: BaseNode, status: BuildStatus) {

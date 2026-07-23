@@ -27,7 +27,7 @@ pub func main = (Init init) {
 	// Parse once and serialize, like the Go version's first pass.
 	var JsonTree tree = JsonTree()
 	var int root = Json.parse(text, ref tree)
-	Console.write(Json.stringify(ref tree, root).length().to_string())
+	Console.write(Json.stringify(ref tree, root).length.to_string())
 	Console.write("\n")
 
 	// Re-parse and re-serialize n times, accumulating the serialized length.
@@ -36,7 +36,7 @@ pub func main = (Init init) {
 	var int i = 0
 	while i < n {
 		var int r = Json.parse(text, ref tree)
-		total = total + Json.stringify(ref tree, r).length()
+		total = total + Json.stringify(ref tree, r).length
 		i = i + 1
 	}
 	Console.write(total.to_string())

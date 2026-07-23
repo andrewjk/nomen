@@ -81,7 +81,7 @@ Console.write(m)
 	test("returns empty string when no match", async () => {
 		const input = `
 const string m = Regex.match("xyz", "hello")
-if m.length() == 0 {
+if m.length == 0 {
 	Console.write("empty")
 } else {
 	Console.write(m)

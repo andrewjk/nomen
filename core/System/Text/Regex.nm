@@ -9,10 +9,10 @@ import StringBuilder
 pub struct Regex {
 	// Test whether pattern matches anywhere in input.
 	pub func test = (string pattern, string input, out bool) {
-		var int pat_len = pattern.length()
-		var int len = input.length()
+		var int pat_len = pattern.length
+		var int len = input.length
 		var string charset = first_byte_set(pattern, pat_len)
-		var int clen = charset.length()
+		var int clen = charset.length
 		var int i = 0
 		while i <= len {
 			if clen > 0 && i < len {
@@ -32,10 +32,10 @@ pub struct Regex {
 	// Return the first substring of input matching pattern, or "" if none.
 	pub func match = (string pattern, string input, out string) {
 		var string match_result = ""
-		var int pat_len = pattern.length()
-		var int len = input.length()
+		var int pat_len = pattern.length
+		var int len = input.length
 		var string charset = first_byte_set(pattern, pat_len)
-		var int clen = charset.length()
+		var int clen = charset.length
 		var int i = 0
 		while i <= len {
 			if clen > 0 && i < len {
@@ -60,10 +60,10 @@ pub struct Regex {
 
 	// Count the number of non-overlapping occurrences of pattern in input.
 	pub func count = (string pattern, string input, out int) {
-		var int pat_len = pattern.length()
-		var int len = input.length()
+		var int pat_len = pattern.length
+		var int len = input.length
 		var string charset = first_byte_set(pattern, pat_len)
-		var int clen = charset.length()
+		var int clen = charset.length
 		var int total = 0
 		var int pos = 0
 		while pos < len {
@@ -91,10 +91,10 @@ pub struct Regex {
 	// Replace all non-overlapping occurrences of pattern in input with replacement.
 	pub func replace_all = (string pattern, string input, string replacement, out string) {
 		var StringBuilder sb = StringBuilder()
-		var int pat_len = pattern.length()
-		var int len = input.length()
+		var int pat_len = pattern.length
+		var int len = input.length
 		var string charset = first_byte_set(pattern, pat_len)
-		var int clen = charset.length()
+		var int clen = charset.length
 		var int pos = 0
 		while pos < len {
 			if clen > 0 {

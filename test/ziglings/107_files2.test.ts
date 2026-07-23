@@ -4,7 +4,7 @@ import build_and_check_output from "../build_and_check_output";
 import parse_with_imports from "./parse_with_imports";
 
 // The original Zig exercise reads back the file written in 106_files and
-// reports the number of bytes read. string.length() (strlen) gives us that
+// reports the number of bytes read. string.length (strlen) gives us that
 // count. To keep the test self-contained, it creates the directory, writes
 // the file, then reads it back.
 
@@ -23,7 +23,7 @@ pub func main = () {
     var File r = File()
     r.open("output/zigling.txt")
     const string content = r.readAll()
-    Console.write("Successfully Read \\{content.length()} bytes: \\{content}\\n")
+    Console.write("Successfully Read \\{content.length} bytes: \\{content}\\n")
 }
 `;
 	const parsed = parse_with_imports(input);
@@ -44,7 +44,7 @@ pub func main = () {
     var File r = File()
     r.open("output/zigling.txt", "r")
     const string content = r.readAll()
-    Console.write("Successfully Read \\{content.length()} bytes: \\{content}\\n")
+    Console.write("Successfully Read \\{content.length} bytes: \\{content}\\n")
 }
 `;
 	const parsed = parse_with_imports(input);
@@ -65,7 +65,7 @@ pub func main = () {
     var File r = File()
     r.open("output/zigling.txt", "r")
     const string content = r.readAll()
-    Console.write("Successfully Read \\{content.length()} bytes: \\{content}\\n")
+    Console.write("Successfully Read \\{content.length} bytes: \\{content}\\n")
 }
 `;
 	const parsed = parse_with_imports(input);

@@ -609,7 +609,7 @@ prints the length.
 > the pool is defensible (production JSON parsers commonly arena-allocate), but
 > both points should be reconciled before trusting the ratio here.
 
-- **[source]** The benchmark calls `Json.stringify(...).length()` — building a
+- **[source]** The benchmark calls `Json.stringify(...).length` — building a
   full string just to measure it. Add a `Json.serialized_length(tree, root)`
   that walks the tree and accumulates lengths without allocating. Removes the
   largest per-iteration allocation.

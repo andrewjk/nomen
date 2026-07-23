@@ -20,7 +20,7 @@ pub struct Json {
 		var StringBuilder sb = StringBuilder()
 		sb.append_char('"')
 		var int i = 0
-		var int len = value.length()
+		var int len = value.length
 		while i < len {
 			var char c = value.at(i)
 			var int code = c as int
@@ -53,7 +53,7 @@ pub struct Json {
 	// Deserialize a JSON string literal to the raw, unescaped value.
 	pub func deserialize = (string json, out string) {
 		var StringBuilder sb = StringBuilder()
-		var int len = json.length()
+		var int len = json.length
 		var int i = 0
 		// skip up to the opening quote
 		while i < len {
@@ -111,7 +111,7 @@ pub struct Json {
 		var Buffer<int> pos = Buffer<int>()
 		pos.alloc_int(1)
 		pos.store_int(0, 0)
-		var int len = s.length()
+		var int len = s.length
 		return json_parse_value(s, ref pos, len, ref tree)
 	}
 

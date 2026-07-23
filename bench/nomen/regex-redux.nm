@@ -17,11 +17,11 @@ pub func main = (Init init) {
 	var string text = f.readAll()
 	f.close()
 
-	var int original_len = text.length()
+	var int original_len = text.length
 
 	// Clean: remove FASTA headers (>...) and all newlines
 	var string cleaned = Regex.replace_all("(>[^\n]+)?\n", text, "")
-	var int cleaned_len = cleaned.length()
+	var int cleaned_len = cleaned.length
 
 	// Count variants
 	var string v1 = "agggtaaa|tttaccct"
@@ -65,6 +65,6 @@ pub func main = (Init init) {
 	Console.write("\n")
 	Console.write(cleaned_len.to_string())
 	Console.write("\n")
-	Console.write(cleaned.length().to_string())
+	Console.write(cleaned.length.to_string())
 	Console.write("\n")
 }
