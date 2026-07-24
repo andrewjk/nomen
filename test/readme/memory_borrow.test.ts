@@ -43,4 +43,27 @@ pub func main = () {
 `;
 		expect(compile_module(input)).toEqual([]);
 	});
+
+	test("view string slice borrows from source", () => {
+		const input = `
+pub func main = () {
+    var string s = "hello world"
+    var view string v = s.slice(0, 5)
+    Console.write(v.to_string())
+}
+`;
+		expect(compile_module(input)).toEqual([]);
+	});
+
+	test("using a view after reassigning its source is rejected", () => {
+		const input = `
+pub func main = () {
+    var string s = "hello world"
+    var view string v = s.slice(0, 5)
+    s = "changed"
+    Console.write("\\{v.length}")
+}
+`;
+		expect(compile_module(input).some((e) => e.message.includes("invalidat"))).toBe(true);
+	});
 });

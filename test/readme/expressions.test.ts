@@ -13,6 +13,17 @@ Console.write("You are \\{age} years old.")
 `;
 		expect(compile_main(input)).toEqual([]);
 	});
+
+	test("view string slice returns a non-owning view", () => {
+		const input = `
+const string greeting = "Hello, world"
+if greeting.length >= 5 {
+    var view string hi = greeting.slice(0, 5)
+    Console.write(hi.to_string())
+}
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
 });
 
 describe("readme: arrays", () => {

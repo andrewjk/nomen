@@ -181,6 +181,17 @@ gap)` comment. When the feature lands, the test turns green automatically —
   signal that the gap was closed.
 - Run them with `npm test test/spec/` (or `npx vp test test/spec/`).
 
+### README Coverage Tests (`test/readme/`)
+
+`test/readme/` holds one test file per README.md section, with a test for (almost)
+every fenced code block in `README.md`. These encode the language contract: each
+valid example must compile with **no errors**.
+
+- **Keep these in sync with `README.md`.** Whenever a code block in `README.md` is
+  added, changed, or removed, update the corresponding test in `test/readme/`
+  (add/modify/delete the test) so the suite continues to reflect the spec.
+- Run them with `npm test test/readme/` (or `npx vp test test/readme/`).
+
 ### Inline code blocks (`#arch:` directives)
 
 Raw code blocks let a function bypass the Nomen codegen and emit assembly or C
