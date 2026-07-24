@@ -22,6 +22,7 @@ import evaluate_const_condition, {
 import {
 	apply_bounds,
 	collect_return_bounds,
+	collect_return_length,
 	numeric_interval,
 	path_to_node,
 	record_buffer_cap,
@@ -713,6 +714,14 @@ export default function check_function_call(
 		// against this call's result even when it isn't captured in a variable
 		// (e.g. `g.at(g.edge_target(e))`).
 		node.return_bounds = collect_return_bounds(substituted, status);
+
+		// If the contract pins the result length to a literal (e.g.
+		// `Array.with(elem, 5)` → `out.length == 5`), stash it so the array
+		// method-call type transform can set the result type's `.length` for
+		// the build's inline `to_string` paths. (Bounds checking is handled
+		// separately via known_length; this is purely for codegen.)
+		const ret_len = collect_return_length(substituted);
+		if (ret_len !== undefined) node.inferred_array_length = ret_len;
 
 		const lhs_name = find_lhs_var_name(status);
 		if (lhs_name) {

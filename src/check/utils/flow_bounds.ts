@@ -553,6 +553,46 @@ export function collect_return_bounds(
 }
 
 /**
+ * Extract a compile-time length from a return contract clause of the form
+ * `out.length == <int literal>` (after substitution, e.g. `_return.length == 5`).
+ * Walks `&&`-combined contracts. Returns the literal as a string, or undefined.
+ * This powers the BUILD path: an `Array.with(elem, 5)` result needs its type to
+ * carry `.length = 5` so the inline `to_string` paths (which unroll a literal
+ * number of elements) fire instead of emitting a call to a never-emitted
+ * `Array_T_to_string`. The bounds-check half is handled separately by
+ * `known_length`; this is purely for codegen.
+ */
+export function collect_return_length(node: BaseNode): string | undefined {
+	let result: string | undefined;
+	function walk(n: BaseNode) {
+		if (result !== undefined) return;
+		if (n.node_type !== "op") return;
+		const op = n as OperationNode;
+		if (op.op === "&&") {
+			walk(op.left_value);
+			walk(op.right_value);
+			return;
+		}
+		if (op.op !== "==") return;
+		for (const [len_side, val_side] of [
+			[op.left_value, op.right_value],
+			[op.right_value, op.left_value],
+		]) {
+			if (len_side.node_type !== "access") continue;
+			const access = len_side as AccessNode;
+			if (access.access.node_type !== "access_field") continue;
+			if ((access.access as AccessFieldNode).name !== "length") continue;
+			if (val_side.node_type !== "value") continue;
+			if (!/^[+-]?\d+$/.test((val_side as ValueNode).value)) continue;
+			result = (val_side as ValueNode).value;
+			return;
+		}
+	}
+	walk(node);
+	return result;
+}
+
+/**
  * Track flow-sensitive knowledge gained from a declaration/assignment.
  * Currently handles:
  *   - `var int x = Y.field`     → x becomes an alias for "Y.field"

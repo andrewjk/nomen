@@ -28,6 +28,13 @@ export default class AccessFunctionCallNode extends BaseNode {
 	 */
 	return_bounds?: { upper: string[]; lower: string[] };
 	/**
+	 * A compile-time length derived from the call's return contract
+	 * (`out Array<T>: out.length == N`), when N is a literal. Consumed by the
+	 * array method-call type transform to set the result type's `.length` so
+	 * the build's inline `to_string` paths fire. Stored as a string.
+	 */
+	inferred_array_length?: string;
+	/**
 	 * Set during checking when this is a `nursery.spawn(fn, args...)` escape-
 	 * hatch call (target type is `Nursery`, method name is `spawn`). The build
 	 * phase reads `function_return_type` and emits the spawn trampoline against

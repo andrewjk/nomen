@@ -1,7 +1,5 @@
 import BaseNode from "./BaseNode.ts";
 
-// TODO: Remove is_array and length, add generic arguments
-
 export default class Type {
 	name: string;
 	is_static?: boolean;

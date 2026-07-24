@@ -105,7 +105,7 @@ pub struct Array<T> {
         ```
     }
 
-    pub func with = (T value, int count: count >= 0, out Array<T>) {
+    pub func with = (T value, int count: count >= 0, out Array<T>: out.length == count) {
         ```
         #arch: c
         long _header = 16;

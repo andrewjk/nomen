@@ -485,23 +485,16 @@ function check_access_function_node(
 		expr_to_string(target, status),
 	);
 
-	// Convert Array struct return type back to array type for array method calls
+	// Convert Array struct return type back to array type for array method calls.
+	// Also carry a literal length derived from the call's return contract
+	// (`out Array<T>: out.length == N`) onto the result type, so the build's
+	// inline to_string/n paths fire (they unroll a literal element count and
+	// only engage when the array type has a known `.length`).
 	if (result && node.type) {
 		const return_is_array_struct =
 			node.type.name === "Array" || node.type.name?.startsWith("Array_");
 		const return_is_array_type = node.type.is_array;
 		if (return_is_array_struct || return_is_array_type) {
-			// For with, try to determine result length from the count argument (second param)
-			let result_length: ValueNode | undefined;
-			if (node.name === "with" && node.params.length > 1) {
-				const count_param = node.params[1];
-				if (count_param.node_type === "value") {
-					const val = parseInt((count_param as ValueNode).value, 10);
-					if (!isNaN(val)) {
-						result_length = new ValueNode(-1, String(val), new Type("int"));
-					}
-				}
-			}
 			if (return_is_array_struct) {
 				// Determine element type: from target array, from explicit type_args, from mono name, or from return type_args
 				const elem_name = target_type.is_array
@@ -516,14 +509,17 @@ function check_access_function_node(
 				if (elem_name) {
 					node.type = new Type(elem_name);
 					node.type.is_array = true;
-					if (result_length) {
-						node.type.length = result_length;
-					}
 				}
-			} else if (return_is_array_type && result_length) {
-				// Return type is already in internal array form (e.g. Type("char", is_array=true))
-				// Just set the length
-				node.type.length = result_length;
+			} else if (node.inferred_array_length) {
+				// Already in internal array form (e.g. Type("char", is_array=true)).
+				// Clone so we don't mutate the shared monomorphized return_type.
+				const t = node.type;
+				node.type = new Type(t.name, t.is_static, t.is_array, t.length);
+				node.type.is_ref = t.is_ref;
+				node.type.type_args = t.type_args;
+			}
+			if (node.inferred_array_length && node.type.is_array) {
+				node.type.length = new ValueNode(-1, node.inferred_array_length, new Type("int"));
 			}
 		}
 	}
