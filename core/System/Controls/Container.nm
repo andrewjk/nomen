@@ -1,0 +1,401 @@
+import Buffer
+import Window
+
+// A handle-based layout container. Users create a Grid/VStack/HStack, add child
+// controls by their native handle, and call `grid.layout(win)` — the container
+// measures, arranges, and applies frames (flipping the y axis against the
+// window's content height) so callers never compute coordinates themselves.
+//
+// All node data lives in flat Buffer<int> arrays (structure-of-arrays). Because
+// this is trusted core library code, the runtime-indexed Buffer accesses here do
+// not trip the "constraint cannot be verified" rule that bites user code.
+//
+// Children are leaves (native controls). A leaf stores its native handle and an
+// intrinsic size; width 0 means "fill available width", height 0 means "fill
+// available height". Grid children additionally carry a column `span`. Children
+// flow left-to-right, top-to-bottom; a child whose span won't fit in the
+// remaining columns wraps to the next row. A hidden native control (isHidden)
+// is skipped automatically, so toggling visibility and re-laying-out just works.
+
+const int KIND_LEAF = 0
+const int KIND_VSTACK = 1
+const int KIND_HSTACK = 2
+const int KIND_GRID = 3
+
+const int INF = 100000000
+
+// Defined before the struct so their return types are resolved when the engine
+// methods below reference them (free functions aren't forward-inferred).
+
+func is_visible = (uint64 handle, out bool) {
+	if handle == 0 { return true }
+	```
+	#arch: c, aarch64_use_c
+	#platform: macos
+	BOOL hidden = ((BOOL(*)(id, SEL))objc_msgSend)((id)handle, sel_registerName("isHidden"));
+	return !hidden;
+	```
+	```
+	#arch: c, aarch64_use_c
+	#platform: ios
+	return true;
+	```
+}
+
+func apply_frame = (uint64 handle, int x, int y, int w, int h, int content_h) {
+	```
+	#arch: c, aarch64_use_c
+	#platform: macos
+	((void(*)(id, SEL, CGRect))objc_msgSend)(
+		(id)handle, sel_registerName("setFrame:"),
+		((CGRect(*)(double, double, double, double))CGRectMake)(
+			(double)x, (double)(content_h - y - h), (double)w, (double)h));
+	```
+	```
+	#arch: c, aarch64_use_c
+	#platform: ios
+	((void(*)(id, SEL, CGRect))objc_msgSend)(
+		(id)handle, sel_registerName("setFrame:"),
+		((CGRect(*)(double, double, double, double))CGRectMake)(
+			(double)x, (double)y, (double)w, (double)h));
+	```
+}
+
+pub struct Container {
+	var Buffer<int> kinds = Buffer<int>()
+	var Buffer<int> ws = Buffer<int>()        // leaf intrinsic width (0 = fill)
+	var Buffer<int> hs = Buffer<int>()        // leaf intrinsic height (0 = fill)
+	var Buffer<int> gaps = Buffer<int>()      // container spacing
+	var Buffer<int> pars = Buffer<int>()      // parent index, encoded as parent + 1 (0 = root)
+	var Buffer<int> spans = Buffer<int>()     // grid column span
+	var Buffer<int> cols = Buffer<int>()      // grid column count (on grid nodes)
+	var Buffer<int> handles = Buffer<int>()   // leaf native handle (0 = none/container)
+	var Buffer<int> rx = Buffer<int>()
+	var Buffer<int> ry = Buffer<int>()
+	var Buffer<int> rw = Buffer<int>()
+	var Buffer<int> rh = Buffer<int>()
+	var int root = 0
+	var int count = 0
+	var int padding = 0
+
+	func init_buffers = (ref self, int cap) {
+		self.kinds.grow_int(cap)
+		self.ws.grow_int(cap)
+		self.hs.grow_int(cap)
+		self.gaps.grow_int(cap)
+		self.pars.grow_int(cap)
+		self.spans.grow_int(cap)
+		self.cols.grow_int(cap)
+		self.handles.grow_int(cap)
+		self.rx.grow_int(cap)
+		self.ry.grow_int(cap)
+		self.rw.grow_int(cap)
+		self.rh.grow_int(cap)
+	}
+
+	func make_root = (ref self, int kind, int gap, int col_count) {
+		self.init_buffers(32)
+		self.kinds.store_int(0, kind)
+		self.gaps.store_int(0, gap)
+		self.cols.store_int(0, col_count)
+		self.spans.store_int(0, 1)
+		self.pars.store_int(0, 0)
+		self.handles.store_int(0, 0)
+		self.root = 0
+		self.count = 1
+	}
+
+	func first_child = (self, int parent, out int) {
+		var int p = parent + 1
+		var int i = 0
+		while i < self.count {
+			if self.pars.load_int(i) == p { return i }
+			i = i + 1
+		}
+		return -1
+	}
+
+	func next_sibling = (self, int after, int parent, out int) {
+		var int p = parent + 1
+		var int i = after + 1
+		while i < self.count {
+			if self.pars.load_int(i) == p { return i }
+			i = i + 1
+		}
+		return -1
+	}
+
+	// Add a leaf child (a native control by handle). `w`/`h` of 0 mean "fill" on
+	// that axis; `span` is the grid column span (use 1 for VStack/HStack).
+	pub func add = (ref self, uint64 handle, int w, int h, int span) {
+		if self.kinds.cap < self.count + 1 {
+			self.init_buffers(self.count + 1)
+		}
+		var int idx = self.count
+		self.kinds.store_int(idx, KIND_LEAF)
+		self.ws.store_int(idx, w)
+		self.hs.store_int(idx, h)
+		self.gaps.store_int(idx, 0)
+		self.spans.store_int(idx, span)
+		self.cols.store_int(idx, 0)
+		self.handles.store_int(idx, handle as int)
+		self.pars.store_int(idx, self.root + 1)
+		self.count = self.count + 1
+	}
+
+	// Measure a node against box constraints. Returns the resolved width and
+	// stores the resolved height in rh[idx] (and the width in rw[idx]).
+	func measure = (self, int idx, int min_w, int max_w, int min_h, int max_h, out int) {
+		var int kind = self.kinds.load_int(idx)
+
+		if kind == KIND_LEAF {
+			var int w = self.ws.load_int(idx)
+			var int h = self.hs.load_int(idx)
+			if w == 0 { w = max_w }
+			if h == 0 { h = max_h }
+			if w > max_w { w = max_w }
+			if w < min_w { w = min_w }
+			if h > max_h { h = max_h }
+			if h < min_h { h = min_h }
+			self.rw.store_int(idx, w)
+			self.rh.store_int(idx, h)
+			return w
+		}
+
+		if kind == KIND_VSTACK {
+			var int total_h = 0
+			var int max_child_w = 0
+			var int n = 0
+			var int ci = self.first_child(idx)
+			while ci != -1 {
+				if is_visible(self.handles.load_int(ci) as uint64) {
+					var int cw = self.measure(ci, min_w, max_w, 0, INF)
+					var int ch = self.rh.load_int(ci)
+					total_h = total_h + ch
+					if cw > max_child_w { max_child_w = cw }
+					n = n + 1
+				}
+				ci = self.next_sibling(ci, idx)
+			}
+			if n > 1 { total_h = total_h + self.gaps.load_int(idx) * (n - 1) }
+			if total_h < min_h { total_h = min_h }
+			if total_h > max_h { total_h = max_h }
+			if max_child_w < min_w { max_child_w = min_w }
+			if max_child_w > max_w { max_child_w = max_w }
+			self.rw.store_int(idx, max_child_w)
+			self.rh.store_int(idx, total_h)
+			return max_child_w
+		}
+
+		if kind == KIND_HSTACK {
+			var int total_w = 0
+			var int max_child_h = 0
+			var int n = 0
+			var int ci = self.first_child(idx)
+			while ci != -1 {
+				if is_visible(self.handles.load_int(ci) as uint64) {
+					var int cw = self.measure(ci, 0, INF, min_h, max_h)
+					var int ch = self.rh.load_int(ci)
+					total_w = total_w + cw
+					if ch > max_child_h { max_child_h = ch }
+					n = n + 1
+				}
+				ci = self.next_sibling(ci, idx)
+			}
+			if n > 1 { total_w = total_w + self.gaps.load_int(idx) * (n - 1) }
+			if total_w < min_w { total_w = min_w }
+			if total_w > max_w { total_w = max_w }
+			if max_child_h < min_h { max_child_h = min_h }
+			if max_child_h > max_h { max_child_h = max_h }
+			self.rw.store_int(idx, total_w)
+			self.rh.store_int(idx, max_child_h)
+			return total_w
+		}
+
+		// KIND_GRID: children flow into cells; each may span columns.
+		var int cols = self.cols.load_int(idx)
+		var int col_w = max_w / cols
+		var int total_h = 0
+		var int row_h = 0
+		var int col_cursor = 0
+		var int any = 0
+		var int ci = self.first_child(idx)
+		while ci != -1 {
+			if is_visible(self.handles.load_int(ci) as uint64) {
+				var int span = self.spans.load_int(ci)
+				if span < 1 { span = 1 }
+				if span > cols { span = cols }
+				if col_cursor + span > cols {
+					total_h = total_h + row_h
+					if any > 0 { total_h = total_h + self.gaps.load_int(idx) }
+					row_h = 0
+					col_cursor = 0
+				}
+				var int cell_w = span * col_w
+				self.measure(ci, cell_w, cell_w, 0, INF)
+				var int ch = self.rh.load_int(ci)
+				if ch > row_h { row_h = ch }
+				col_cursor = col_cursor + span
+				any = any + 1
+			}
+			ci = self.next_sibling(ci, idx)
+		}
+		if any > 0 {
+			total_h = total_h + row_h
+		}
+		if total_h < min_h { total_h = min_h }
+		if total_h > max_h { total_h = max_h }
+		self.rw.store_int(idx, cols * col_w)
+		self.rh.store_int(idx, total_h)
+		return cols * col_w
+	}
+
+	func arrange = (self, int idx, int x, int y, int w, int h) {
+		self.rx.store_int(idx, x)
+		self.ry.store_int(idx, y)
+		self.rw.store_int(idx, w)
+		self.rh.store_int(idx, h)
+
+		var int kind = self.kinds.load_int(idx)
+		if kind == KIND_LEAF { return }
+
+		if kind == KIND_VSTACK {
+			var int running_y = y
+			var int ci = self.first_child(idx)
+			while ci != -1 {
+				if is_visible(self.handles.load_int(ci) as uint64) {
+					var int ch = self.rh.load_int(ci)
+					self.arrange(ci, x, running_y, w, ch)
+					running_y = running_y + ch + self.gaps.load_int(idx)
+				}
+				ci = self.next_sibling(ci, idx)
+			}
+			return
+		}
+
+		if kind == KIND_HSTACK {
+			var int running_x = x
+			var int ci = self.first_child(idx)
+			while ci != -1 {
+				if is_visible(self.handles.load_int(ci) as uint64) {
+					var int cw = self.rw.load_int(ci)
+					self.arrange(ci, running_x, y, cw, h)
+					running_x = running_x + cw + self.gaps.load_int(idx)
+				}
+				ci = self.next_sibling(ci, idx)
+			}
+			return
+		}
+
+		// KIND_GRID
+		var int cols = self.cols.load_int(idx)
+		var int col_w = w / cols
+		var int running_y = y
+		var int row_h = 0
+		var int col_cursor = 0
+		var int ci = self.first_child(idx)
+		while ci != -1 {
+			if is_visible(self.handles.load_int(ci) as uint64) {
+				var int span = self.spans.load_int(ci)
+				if span < 1 { span = 1 }
+				if span > cols { span = cols }
+				if col_cursor + span > cols {
+					running_y = running_y + row_h + self.gaps.load_int(idx)
+					row_h = 0
+					col_cursor = 0
+				}
+				var int child_x = x + col_cursor * col_w
+				var int child_w = span * col_w
+				var int child_h = self.rh.load_int(ci)
+				self.arrange(ci, child_x, running_y, child_w, child_h)
+				if child_h > row_h { row_h = child_h }
+				col_cursor = col_cursor + span
+			}
+			ci = self.next_sibling(ci, idx)
+		}
+	}
+
+	func apply = (self, int content_h) {
+		var int i = 0
+		while i < self.count {
+			if self.kinds.load_int(i) == KIND_LEAF {
+				var uint64 handle = self.handles.load_int(i) as uint64
+				if handle != 0 {
+					apply_frame(handle, self.rx.load_int(i), self.ry.load_int(i), self.rw.load_int(i), self.rh.load_int(i), content_h)
+				}
+			}
+			i = i + 1
+		}
+	}
+
+	// Pure measure + arrange against a size (no native calls). For testing.
+	pub func compute = (ref self, int avail_w, int avail_h) {
+		var int root_w = self.measure(self.root, 0, avail_w, 0, avail_h)
+		var int root_h = self.rh.load_int(self.root)
+		self.arrange(self.root, 0, 0, root_w, root_h)
+	}
+
+	// Measure + arrange against the window's content rect (minus padding) and
+	// apply frames to every leaf, flipping y against the content height.
+	pub func layout = (ref self, Window win) {
+		var int cw = win.content_width()
+		var int ch = win.content_height()
+		var int avail_w = cw - self.padding * 2
+		var int avail_h = ch - self.padding * 2
+		var int root_w = self.measure(self.root, 0, avail_w, 0, avail_h)
+		var int root_h = self.rh.load_int(self.root)
+		self.arrange(self.root, self.padding, self.padding, root_w, root_h)
+		self.apply(ch)
+	}
+
+	// Hit test: is point (cx, cy) (top-left origin, as returned by click_x/
+	// click_y) inside the leaf with the given handle?
+	pub func contains = (self, uint64 handle, int cx, int cy, out bool) {
+		var int needle = handle as int
+		var int i = 0
+		while i < self.count {
+			if self.kinds.load_int(i) == KIND_LEAF {
+				if self.handles.load_int(i) == needle {
+					var int x = self.rx.load_int(i)
+					var int y = self.ry.load_int(i)
+					var int w = self.rw.load_int(i)
+					var int h = self.rh.load_int(i)
+					if cx >= x {
+						if cx <= x + w {
+							if cy >= y {
+								if cy <= y + h {
+									return true
+								}
+							}
+						}
+					}
+				}
+			}
+			i = i + 1
+		}
+		return false
+	}
+
+	// Format a child's resolved frame as "x,y,w,h" (root is 0; children start at 1).
+	pub func fmt_frame = (self, int i, out string) {
+		return self.rx.load_int(i).to_string() + "," + self.ry.load_int(i).to_string() + "," + self.rw.load_int(i).to_string() + "," + self.rh.load_int(i).to_string()
+	}
+}
+
+pub func VStack = (int spacing, out Container) {
+	var Container c = Container()
+	c.make_root(KIND_VSTACK, spacing, 0)
+	return c
+}
+
+pub func HStack = (int spacing, out Container) {
+	var Container c = Container()
+	c.make_root(KIND_HSTACK, spacing, 0)
+	return c
+}
+
+pub func Grid = (int cols: cols > 0, int spacing, out Container) {
+	var Container c = Container()
+	c.make_root(KIND_GRID, spacing, cols)
+	return c
+}

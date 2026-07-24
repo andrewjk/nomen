@@ -20,6 +20,86 @@ Window (800×600)
     └── Button("OK")           ← intrinsic: 60×32, grow=1 (fills remaining)
 ```
 
+## Implemented: handle-based container (v1)
+
+`core/System/Controls/Container.nm` ships a working, ergonomic layout layer
+**today**. The full `Control`-trait design below is the target, but it depends on
+compiler work that isn't done yet (see [Next steps](#next-steps--compiler-prerequisites)),
+so v1 is **handle-based** rather than trait-based.
+
+```
+import System
+import System/Controls
+
+pub func main = () {
+	var Window win = Window.create("Nomen Todo", 400, 500)
+	var Text title = Text.create(win)
+	var CheckBox cb0 = CheckBox.create(win)
+	var TextBox input = TextBox.create(win)
+	var Button add_btn = Button.create(win, "Add")
+
+	// Add child controls to a 2-column grid; no coordinates, no y-flipping.
+	var Container grid = Grid(2, 8)
+	grid.padding = 16
+	grid.add(title.handle, 0, 30, 2)     // span 2 → full-width row
+	grid.add(cb0.handle, 0, 24, 2)
+	grid.add(input.handle, 0, 24, 1)     // col 0 of last row
+	grid.add(add_btn.handle, 0, 32, 1)   // col 1 of last row
+	grid.layout(win)                      // measure + arrange + apply (flips y)
+
+	if grid.contains(add_btn.handle, win.click_x(), win.click_y()) { ... }
+}
+```
+
+What `Container` provides:
+
+- **`Grid(cols, spacing)` / `VStack(spacing)` / `HStack(spacing)`** factory
+  functions returning a `Container`.
+- **`add(handle, w, h, span)`** — append a leaf control by its native `handle`.
+  `w`/`h` of `0` mean "fill" on that axis; `span` is the grid column count
+  (use `1` for stacks).
+- **`layout(win)`** — measures against the window's content rect (minus
+  `padding`), arranges, and applies frames to every leaf, **flipping y against
+  the content height internally** so callers never do coordinate math.
+- **`contains(handle, cx, cy)`** — top-left-origin hit test (matches
+  `click_x`/`click_y`).
+- **`compute(w, h)`** + **`fmt_frame(i)`** — pure-math entry points for
+  headless geometry tests (no native calls).
+- **Hidden controls are skipped automatically** — a leaf whose native view
+  `isHidden` takes no space, so toggling visibility and re-laying-out just works.
+
+Children flow left→right, top→bottom; a child whose `span` won't fit in the
+remaining columns wraps to the next row. Geometry is validated by
+`test/layout_container.test.ts` (vstack, hstack, grid span/row/mixed).
+
+### Why handle-based, not trait-based (for now)
+
+Every native control is `struct { uint64 handle }`, and the y-flip needs the
+window's content height — both are handle-level concerns. But the decisive
+reason is the compiler: the `Container : Control` / `Array<Control>` design
+below requires three things the compiler does **not** yet do —
+
+1. **aarch64 has no vtable dispatch** (`build_aarch64/build_struct_node.ts:657`
+   emits only default-method forwarding stubs; there is no `_get_trait_func`
+   equivalent). Calling `child.measure(...)` through a `Control`-typed value
+   lowers to nothing on aarch64.
+2. **No heterogeneous container storage** — value structs aren't auto-boxed
+   into trait-typed slots, and `monomorphize` doesn't route trait-`T` to
+   `ClassBuffer`.
+3. Trait conformance with type arguments isn't parsed yet (`Viewable.nm:8`).
+
+So v1 stores child handles in flat `Buffer<int>` arrays (structure-of-arrays,
+mirroring the legacy `Layout.nm`) and applies frames via a native
+`apply_frame(handle, …)` helper. The measure/arrange **algorithm** is identical
+to what the trait version will use, so migrating later only swaps the
+storage/dispatch shim, not the math.
+
+> Note: `Container.nm` lives in trusted core, so its runtime-indexed
+> `Buffer.load_int`/`store_int` calls do not trip the "constraint cannot be
+> verified" rule (`check_function_call.ts:585`) that broke the old
+> index-juggling app code.
+
+
 ## Core principles
 
 1. **Constraints down, sizes up.** A parent hands each child a `BoxConstraints`
@@ -373,17 +453,73 @@ cannot be verified headlessly, but the **layout math** can:
 
 ## Implementation phases
 
-1. **Smoke test.** Confirm `Array<Control>` + trait dispatch + struct
-   arguments/returns work. Fix the compiler if not — everything depends on this.
-2. **Geometry types.** `Size`, `Frame`, `Insets`, `BoxConstraints`,
-   `LayoutLength`, `LayoutParams`, `Alignment`, `Control` trait. Trivial tests.
-3. **Block + Spacer leaf.** A `Spacer(int w, int h)` leaf control with a fixed
-   intrinsic size. Implement measure/arrange and the `Layout.run` entry point.
-   First real math tests.
-4. **VStack then HStack.** With grow/shrink, percent, fill, alignment, padding,
-   spacing. This is where the algorithm gets exercised — add the bulk of tests.
-5. **ZStack, then Grid.**
-6. **Refactor Window/Text** to conform to `Control`. Wire native `setFrame:`.
-7. **End-to-end sample.** A window with a VStack of texts, laid out, run on macOS.
-8. **Invalidation.** Add dirty tracking and incremental relayout.
-9. **Compositor features.** Hit testing, dirty-rect repaint, basic animation.
+1. **Smoke test.** ✅ Skipped the trait route — `Container.nm` ships a
+   handle-based v1 instead (see above). Trait smoke test is deferred to phase 9.
+2. **Geometry types.** ⚠️ Deferred. v1 uses raw `int` width/height + the
+   `Container`'s flat buffers; the `Size`/`Frame`/`Insets`/`BoxConstraints`/
+   `LayoutLength`/`LayoutParams` types are part of the trait migration.
+3. **Block + Spacer leaf.** ⚠️ Deferred (needs the trait model).
+4. **VStack then HStack.** ✅ Implemented handle-based, with padding/spacing and
+   fill semantics (no grow/shrink/percent/alignment yet).
+5. **ZStack, then Grid.** ✅ Grid done (flow + column `span`); ZStack deferred.
+6. **Refactor Window/Text** to conform to `Control`. ⚠️ Partial: `Window` gained
+   `content_width`; controls still expose `handle` for the handle-based API.
+   Wiring native `setFrame:` is done inside `Container.apply_frame`.
+7. **End-to-end sample.** ✅ `app/src/main.nm` (the todo app) builds and runs on
+   the C/macOS backend using a 2-column `Grid`.
+8. **Invalidation.** ⚠️ Deferred. v1 does a full re-measure on every
+   `layout(win)` call (cheap for small UIs; fine for the todo app).
+9. **Compositor features.** ⚠️ Deferred (hit testing, dirty-rect, animation).
+
+## Next steps & compiler prerequisites
+
+To move from the handle-based v1 toward the full `Control`-trait design below,
+the compiler needs these (tracked here, not in `SPEC.md`, since they're pre-spec
+UI infrastructure):
+
+### Trait system gaps (unblock `Array<Control>` polymorphism)
+
+- **aarch64 vtable dispatch.** Generate per-struct trait function-pointer tables
+  and a `_get_trait_func(obj, trait, func)` resolver, mirroring the C backend
+  (`build_c/build_struct_node.ts:228`, `build_c/build_root_node.ts:38`). Until
+  this exists, trait-typed dispatch is C-backend-only and compile-tested at best.
+- **Auto-box value structs into trait-typed container slots**, and make
+  `monomorphize` route trait-`T` to `ClassBuffer` (currently only `class` `T` is
+  recognized — `check_function_call_node.ts:188`). Otherwise `Array<Control>`
+  cannot store heterogeneous value structs.
+- **Parse trait conformance with type arguments** (`Viewable.nm:8-11`), so
+  `Container<T: Control>`-style generics become possible.
+- **Trait-typed destroy propagation** in containers, so owned controls in a
+  trait collection are freed correctly.
+
+### Smaller compiler bugs hit while building v1
+
+- **Default parameter on a struct method crashes the checker**
+  (`check_function_call.ts:307`, `func_param.type` undefined). Default params on
+  free functions work; on methods they don't. Worked around with overloads.
+- **Tuple return from a struct method doesn't propagate its type** to the
+  caller (`returns_value` doesn't flag tuple returns for forward inference, so
+  `var f = m.frame(); f._0` → "Field not found: _0"). Worked around with a
+  `fmt_frame` string accessor.
+- **Overload resolution can't type field-access arguments**
+  (`type_from_value_node` returns empty for `a.b`), so count-based overloads
+  fall through to the last candidate. Avoided by making `span` required.
+
+### Layout features still owed (once traits land)
+
+- `BoxConstraints` / `Size` / `Frame` / `Insets` / `LayoutLength` /
+  `LayoutParams` with `grow`/`shrink`/`percent`/`fill`/`align`.
+- Intrinsic-size measurement (query each native control's
+  `intrinsicContentSize`/`fittingSize`) so `add` needs no size hints.
+- `ZStack`, nested containers (v1 is flat — nesting needs either the trait model
+  or class-based containers with tag dispatch), and incremental/dirty relayout.
+
+### Cleanup
+
+- `core/System/Controls/Layout.nm` is the **legacy** SoA engine (integer-index
+  tree API). It is superseded by `Container.nm` and no longer used by the app,
+  but is kept (and tested by `test/layout.test.ts`) until consumers migrate.
+  Remove it once `Container` covers its use cases.
+- The aarch64 backend's companion-file path fails to link a full GUI app
+  (`_main`/`Window_create_c` symbol issues) — the app currently targets the
+  C/macOS backend. Worth investigating before aarch64 GUI is shippable.

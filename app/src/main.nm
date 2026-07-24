@@ -1,14 +1,9 @@
 import System
 import System/Controls
 
-const int PAD = 16
 const int WIN_W = 400
 const int WIN_H = 500
 const int MAX_TODOS = 6
-
-func flip_y = (int content_h, int ly, int lh, out int) {
-	return content_h - ly - lh - PAD
-}
 
 pub func main = () {
 	var Window win = Window.create("Nomen Todo", WIN_W, WIN_H)
@@ -36,104 +31,52 @@ pub func main = () {
 	input.set_text("Type a new todo...")
 	var Button add_btn = Button.create(win, "Add")
 
-	var Layout l = Layout()
-	var int avail_w = WIN_W - PAD * 2
-	var int avail_h = WIN_H - PAD * 2
-	var int n_input = 0
-	var int n_btn = 0
-	var int total = 0
-
-	// Build initial layout tree: vstack with title, todos, input, button
-	init_layout(ref l, 32)
-	add_leaf(ref l, add_vstack(ref l, -1, 8), 200, 30)
-	var int i = 0
-	while i < todo_count {
-		add_leaf(ref l, 0, avail_w, 24)
-		i = i + 1
-	}
-	n_input = add_leaf(ref l, 0, avail_w - 90, 24)
-	n_btn = add_leaf(ref l, 0, 80, 32)
-	total = 4 + todo_count
-	run_layout(ref l, total, 0, avail_w, avail_h)
-
-	// Apply frames
-	var int ch = win.content_height()
-	title.set_frame(l.rx.load_int(1) + PAD, flip_y(ch, l.ry.load_int(1), l.rh.load_int(1)), l.rw.load_int(1), l.rh.load_int(1))
-	cb0.set_frame(l.rx.load_int(2) + PAD, flip_y(ch, l.ry.load_int(2), l.rh.load_int(2)), l.rw.load_int(2), l.rh.load_int(2))
-	cb1.set_frame(l.rx.load_int(3) + PAD, flip_y(ch, l.ry.load_int(3), l.rh.load_int(3)), l.rw.load_int(3), l.rh.load_int(3))
-	cb2.set_frame(l.rx.load_int(4) + PAD, flip_y(ch, l.ry.load_int(4), l.rh.load_int(4)), l.rw.load_int(4), l.rh.load_int(4))
-	input.set_frame(l.rx.load_int(n_input) + PAD, flip_y(ch, l.ry.load_int(n_input), l.rh.load_int(n_input)), l.rw.load_int(n_input), l.rh.load_int(n_input))
-	add_btn.set_frame(l.rx.load_int(n_btn) + PAD, flip_y(ch, l.ry.load_int(n_btn), l.rh.load_int(n_btn)), l.rw.load_int(n_btn), l.rh.load_int(n_btn))
+	// A two-column grid. The title and each checkbox span both columns (full
+	// width); the input and Add button share the final row.
+	var Container grid = Grid(2, 8)
+	grid.padding = 16
+	grid.add(title.handle, 0, 30, 2)
+	grid.add(cb0.handle, 0, 24, 2)
+	grid.add(cb1.handle, 0, 24, 2)
+	grid.add(cb2.handle, 0, 24, 2)
+	grid.add(cb3.handle, 0, 24, 2)
+	grid.add(cb4.handle, 0, 24, 2)
+	grid.add(cb5.handle, 0, 24, 2)
+	grid.add(input.handle, 0, 24, 1)
+	grid.add(add_btn.handle, 0, 32, 1)
+	grid.layout(win)
 
 	win.show()
 
 	while win.is_visible() {
 		var int had_click = Window.process_events()
 
-		// Re-layout on any click (checkbox toggle or otherwise)
 		if had_click == 1 {
-			run_layout(ref l, total, 0, avail_w, avail_h)
+			// Re-layout on any click (checkbox toggle or otherwise). Hidden
+			// controls are skipped by the grid automatically.
+			grid.layout(win)
 
-			// Hit-test the Add button
+			// Hit-test the Add button.
 			var int cx = win.click_x()
 			var int cy = win.click_y()
-			var int bx = l.rx.load_int(n_btn) + PAD
-			var int by = l.ry.load_int(n_btn) + PAD
-			var int bw = l.rw.load_int(n_btn)
-			var int bh = l.rh.load_int(n_btn)
-			if cx >= bx {
-				if cx <= bx + bw {
-					if cy >= by {
-						if cy <= by + bh {
-							if todo_count < MAX_TODOS {
-								var string new_text = input.get_text()
-								if todo_count == 3 {
-									cb3.set_title(new_text)
-									cb3.set_hidden(false)
-								}
-								if todo_count == 4 {
-									cb4.set_title(new_text)
-									cb4.set_hidden(false)
-								}
-								if todo_count == 5 {
-									cb5.set_title(new_text)
-									cb5.set_hidden(false)
-								}
-								todo_count = todo_count + 1
-								input.set_text("")
-
-								// Rebuild layout tree
-								l = Layout()
-								init_layout(ref l, 32)
-								add_leaf(ref l, add_vstack(ref l, -1, 8), 200, 30)
-								var int j = 0
-								while j < todo_count {
-									add_leaf(ref l, 0, avail_w, 24)
-									j = j + 1
-								}
-								n_input = add_leaf(ref l, 0, avail_w - 90, 24)
-								n_btn = add_leaf(ref l, 0, 80, 32)
-								total = 4 + todo_count
-								run_layout(ref l, total, 0, avail_w, avail_h)
-
-								// Re-apply all frames
-								ch = win.content_height()
-								title.set_frame(l.rx.load_int(1) + PAD, flip_y(ch, l.ry.load_int(1), l.rh.load_int(1)), l.rw.load_int(1), l.rh.load_int(1))
-								cb0.set_frame(l.rx.load_int(2) + PAD, flip_y(ch, l.ry.load_int(2), l.rh.load_int(2)), l.rw.load_int(2), l.rh.load_int(2))
-								cb1.set_frame(l.rx.load_int(3) + PAD, flip_y(ch, l.ry.load_int(3), l.rh.load_int(3)), l.rw.load_int(3), l.rh.load_int(3))
-								cb2.set_frame(l.rx.load_int(4) + PAD, flip_y(ch, l.ry.load_int(4), l.rh.load_int(4)), l.rw.load_int(4), l.rh.load_int(4))
-								cb3.set_frame(l.rx.load_int(5) + PAD, flip_y(ch, l.ry.load_int(5), l.rh.load_int(5)), l.rw.load_int(5), l.rh.load_int(5))
-								if todo_count > 4 {
-									cb4.set_frame(l.rx.load_int(6) + PAD, flip_y(ch, l.ry.load_int(6), l.rh.load_int(6)), l.rw.load_int(6), l.rh.load_int(6))
-								}
-								if todo_count > 5 {
-									cb5.set_frame(l.rx.load_int(7) + PAD, flip_y(ch, l.ry.load_int(7), l.rh.load_int(7)), l.rw.load_int(7), l.rh.load_int(7))
-								}
-								input.set_frame(l.rx.load_int(n_input) + PAD, flip_y(ch, l.ry.load_int(n_input), l.rh.load_int(n_input)), l.rw.load_int(n_input), l.rh.load_int(n_input))
-								add_btn.set_frame(l.rx.load_int(n_btn) + PAD, flip_y(ch, l.ry.load_int(n_btn), l.rh.load_int(n_btn)), l.rw.load_int(n_btn), l.rh.load_int(n_btn))
-							}
-						}
+			if grid.contains(add_btn.handle, cx, cy) {
+				if todo_count < MAX_TODOS {
+					var string new_text = input.get_text()
+					if todo_count == 3 {
+						cb3.set_title(new_text)
+						cb3.set_hidden(false)
 					}
+					if todo_count == 4 {
+						cb4.set_title(new_text)
+						cb4.set_hidden(false)
+					}
+					if todo_count == 5 {
+						cb5.set_title(new_text)
+						cb5.set_hidden(false)
+					}
+					todo_count = todo_count + 1
+					input.set_text("")
+					grid.layout(win)
 				}
 			}
 		}
