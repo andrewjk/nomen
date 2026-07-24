@@ -40,6 +40,12 @@ function is_inline_candidate(func: FunctionNode): boolean {
 	if (func.is_inline) return false;
 	if (func.statements.length === 0 || func.statements.length > MAX_STATEMENTS) return false;
 	if (func.returns_mov) return false;
+	// Raw-block (FFI) functions have arch-specific bodies (`#arch: c`,
+	// `aarch64_use_c`, raw `aarch64`, …) that the general inline path can't
+	// splice in: a companion-C body emits nothing inline, leaving the call a
+	// no-op (the args get set up then discarded). Such functions are already
+	// emitted as standalone callable symbols, so force a real `bl` instead.
+	if (func.statements.some((s) => s.node_type === "raw")) return false;
 
 	for (const param of func.params) {
 		if (param.is_variadic || param.is_variadic_tuple) return false;

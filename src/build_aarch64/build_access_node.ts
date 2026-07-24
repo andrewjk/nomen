@@ -1366,10 +1366,14 @@ function build_access_method(
 
 	if (!access_func.is_static) {
 		// Instance method: load target into x0 (self)
-		// For simple types, pass value; for structs, pass address
-		const target_is_simple = !status.structs.find(
-			(s) => s.name === target_type.name && !s.is_simple_type,
-		);
+		// For simple types, pass value; for structs/traits, pass address.
+		// A trait-typed receiver is treated like a struct: its concrete storage
+		// (local) is addressed, and a trait param (saved in a callee-saved reg)
+		// already holds the struct pointer — either way x0 ends up pointing at
+		// the struct whose vtable lives at offset 0.
+		const target_is_simple =
+			!status.structs.find((s) => s.name === target_type.name && !s.is_simple_type) &&
+			!status.traits.find((t) => t.name === target_type.name);
 		if (node.target.node_type === "value") {
 			const name = (node.target as ValueNode).value;
 			const paramReg = get_param_reg(name, status);
@@ -1532,7 +1536,43 @@ function build_access_method(
 				: true),
 	);
 
-	if (inline_func) {
+	const trait_target = status.traits.find((t) => t.name === target_type.name);
+	const trait_func = trait_target?.functions.find((f) => f.name === access_func.name);
+
+	if (trait_target && trait_func) {
+		// Trait-typed dispatch: resolve the concrete function via the vtable
+		// (obj->_vt → [1 + trait_index] → [func_index]) and call it. Slot 0
+		// of _<Struct>_traits is the destroy-funcs pointer (reserved so a
+		// trait-typed collection can dispatch destroy polymorphically), so
+		// real trait tables start at index 1. The lookup uses scratch
+		// registers x9/x10 only, so the argument registers x0-x7 — set up
+		// above (self for instance methods, the args themselves for
+		// `static`/no-self trait methods) — survive untouched into the blr.
+		// This handles trait methods whether or not they declare `self`: a
+		// no-self method is flagged `is_static` (so the instance path skipped
+		// self-loading and args start at x0), but it still must dispatch
+		// through the vtable when the receiver is trait-typed.
+		const trait_index = status.traits.indexOf(trait_target);
+		const func_index = trait_target.functions.indexOf(trait_func);
+		if (node.target.node_type === "value") {
+			const name = (node.target as ValueNode).value;
+			const paramReg = get_param_reg(name, status);
+			if (paramReg) {
+				status.code += `mov x9, ${paramReg}\n`;
+			} else {
+				emit_var_address(status, "x9", name);
+			}
+		} else {
+			build_node(node.target, status);
+			if (!status.code.endsWith("\n")) status.code += "\n";
+			status.code += `mov x9, x0\n`;
+		}
+		status.code += `ldr x10, [x9]\n`;
+		// +1 to skip the destroy slot at vtable[0].
+		status.code += `ldr x10, [x10, #${(trait_index + 1) * 8}]\n`;
+		status.code += `ldr x10, [x10, #${func_index * 8}]\n`;
+		status.code += `blr x10\n`;
+	} else if (inline_func) {
 		build_inline_method(target_struct!, inline_func, status);
 	} else {
 		status.code += `bl ${method_name}\n`;
@@ -1550,6 +1590,12 @@ function build_access_method(
 	if (method_name.endsWith("_to_string") && method_name !== "string_to_string") {
 		status.last_result_is_heap = true;
 	}
+
+	// Note: a dispatched trait method that returns a string hands back a
+	// string-literal address (adr x0, _str_N), not a heap allocation — unlike
+	// the C backend, which strdup's literals. So we deliberately do NOT set
+	// last_result_is_heap here; the concrete-call path treats such returns the
+	// same way (the literal lives in static data and is never freed).
 
 	if (status.heap_returning_functions?.has(method_name)) {
 		status.last_result_is_heap = true;

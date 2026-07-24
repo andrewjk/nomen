@@ -180,17 +180,21 @@ export function monomorphize(
 		return mono_field;
 	});
 
-	// Compile-time class-ness: a `Buffer<Elem>` field resolves to ClassBuffer<Elem>
-	// when Elem is a class (frees elements on destroy, forbids store_int(0)), else
-	// Buffer<Elem>. The field type AND its default constructor are rewritten to
-	// the monomorphized name (e.g. ClassBuffer_Animal / Buffer_int) so types match
-	// and every build path resolves against the concrete buffer directly.
+	// Compile-time class-ness OR trait-ness: a `Buffer<Elem>` field resolves
+	// to ClassBuffer<Elem> when Elem is a class OR a trait (both are stored as
+	// 8-byte owned pointers and freed per-element on destroy — a trait-typed
+	// slot dispatches destroy via the vtable). Otherwise Elem is a value type
+	// and we keep Buffer<Elem>. The field type AND its default constructor are
+	// rewritten to the monomorphized name (e.g. ClassBuffer_Animal /
+	// ClassBuffer_Speaker / Buffer_int) so types match and every build path
+	// resolves against the concrete buffer directly.
 	for (const field of mono_fields) {
 		const elem = field.type.name === "Buffer" ? field.type.type_args?.[0] : undefined;
 		if (!elem?.name) continue;
 		const elem_is_class = !!status.structs.find((s) => s.name === elem.name && s.is_class);
+		const elem_is_trait = !!status.traits.find((t) => t.name === elem.name);
 		const generic = status.structs.find(
-			(s) => s.name === (elem_is_class ? "ClassBuffer" : "Buffer"),
+			(s) => s.name === (elem_is_class || elem_is_trait ? "ClassBuffer" : "Buffer"),
 		);
 		if (!generic) continue;
 		const buf_mono = monomorphize(generic, [elem], status);

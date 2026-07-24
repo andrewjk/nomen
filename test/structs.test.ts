@@ -156,6 +156,20 @@ Console.write("\\{c.count}")
 		await build_and_check_output(input, "struct_mutating_method", "3");
 	});
 
+	test("struct method with default param", async () => {
+		const input = `
+struct Adder {
+  var int base = 0
+  pub func add = (self, int n = 3, out int) {
+    return self.base + n
+  }
+}
+var Adder a = Adder()
+Console.write("\\{a.add()} \\{a.add(10)}")
+`;
+		await build_and_check_output(input, "struct_method_default_param", "3 10");
+	});
+
 	test("struct static function", async () => {
 		const input = `
 struct Calc {

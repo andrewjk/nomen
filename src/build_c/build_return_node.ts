@@ -115,15 +115,23 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 		);
 		const is_struct = !!return_struct;
 		const return_is_class = !!return_struct?.is_class;
+		const return_trait = status.traits.find((t) => t.name === ret_type.name);
 		// Class returns are pointers; struct returns are by-value. A `view T`
-		// return is the universal nomen_view (ptr, len) struct, by value.
+		// return is the universal nomen_view (ptr, len) struct, by value. A
+		// trait-typed return is a pointer to a heap-allocated, vtable-bearing
+		// struct (a class instance or a boxed value struct that conforms to
+		// the trait) — without the `*`, the bare typedef would be initialised
+		// as a value from `0L` or `load_int()`'s long, neither of which is a
+		// struct value.
 		const type_prefix = ret_type.is_view
 			? "nomen_view "
 			: is_struct
 				? return_is_class
 					? `struct ${mono_type_name}* `
 					: `struct ${mono_type_name} `
-				: c_type(ret_type.name || "int");
+				: return_trait
+					? `struct ${ret_type.name}* `
+					: c_type(ret_type.name || "int");
 		// Match/switch/if are statements in C, not expressions — `_return_val
 		// = switch(...)` is invalid. Declare _return_val uninitialised, set
 		// return_assign so each branch's LetNode/ReturnNode assigns to it,
@@ -158,6 +166,17 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 			!return_is_class;
 		if (returns_bare_self) {
 			status.code += `*`;
+		}
+		// A trait-typed return inside a monomorphized container method (e.g.
+		// `T List_T_at(...) { return self.items.load_int(i); }`) wraps a raw
+		// `long`-returning storage primitive (ClassBuffer.load_int/move_int).
+		// The declared return type is `struct <Trait> *`, so cast the int
+		// expression to the pointer type. Without this, `struct Speaker *_x =
+		// long_expr` is an integer-to-pointer conversion error. Skip when the
+		// return type is `view T` — that's the universal nomen_view struct,
+		// not a pointer.
+		if (return_trait && !ret_type.is_view) {
+			status.code += `(struct ${ret_type.name} *)`;
 		}
 		// A string returned via field access (e.g. `return self.name` or
 		// `return a.field`) is a BORROW — the storage belongs to the struct.

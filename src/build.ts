@@ -41,6 +41,7 @@ export default function build(
 		audit: options.audit,
 		platform: options.platform ?? default_platform(),
 		emitted_struct_bodies: new Set(),
+		vtable_data: "",
 	};
 
 	if (options.arch === "aarch64") {
@@ -71,6 +72,44 @@ export default function build(
 		status.heap_returning_functions.add("bool_to_string");
 		status.heap_returning_functions.add("char_to_string");
 		build_aarch64_node(root, status);
+		// For every trait, emit a `<Trait>_destroy` shim that dispatches
+		// through the destroy slot at index 0 of the struct's vtable. This
+		// makes the T_destroy reference inside ClassBuffer<Trait>'s raw
+		// #destroy block (substituted to `<Trait>_destroy`) resolve to a real
+		// symbol that reaches the actual conforming struct's destroy. Without
+		// it, a trait-typed heterogeneous collection (e.g. ClassBuffer<Speaker>
+		// of `Dog`/`Cat`) would fail to link. Dedupe by name —
+		// status.traits can carry duplicates today (gather_structs pushes per-
+		// block, and conformance by multiple structs to the same trait can
+		// re-add it via different paths).
+		const emitted_trait_destroys = new Set<string>();
+		for (const trait of status.traits) {
+			if (emitted_trait_destroys.has(trait.name)) continue;
+			emitted_trait_destroys.add(trait.name);
+			const label = `${trait.name}_destroy`;
+			const end_label = `.L${label}_end`;
+			status.code += `\n.p2align 2\n`;
+			status.code += `${label}:\n`;
+			status.code += `stp x29, x30, [sp, #-16]!\n`;
+			status.code += `ldr x9, [x0]\n`; // x9 = *obj = vtable
+			status.code += `ldr x9, [x9]\n`; // x9 = vtable[0] = destroy_funcs ptr
+			status.code += `cbz x9, ${end_label}\n`;
+			status.code += `ldr x9, [x9]\n`; // x9 = destroy_funcs[0] = destroy fn ptr
+			status.code += `cbz x9, ${end_label}\n`;
+			status.code += `blr x9\n`; // call destroy(obj); x0 still holds obj
+			status.code += `${end_label}:\n`;
+			status.code += `ldp x29, x30, [sp], #16\n`;
+			status.code += `ret\n`;
+		}
+		if (status.vtable_data) {
+			// Vtable data holds absolute relocations (`.quad function_symbol`),
+			// which macOS arm64 forbids in the read-only __TEXT segment. Emit
+			// it in the __DATA segment and switch back to __TEXT afterwards so
+			// the trailing string literals and interpolate helpers stay in code.
+			status.code += ".data\n";
+			status.code += status.vtable_data;
+			status.code += ".text\n";
+		}
 		if (status.strings && status.strings.size > 0) {
 			status.code += "\n";
 			for (const [label, value] of status.strings) {

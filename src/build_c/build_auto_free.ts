@@ -278,7 +278,7 @@ export function struct_needs_destroy_by_name(name: string, status: BuildStatus):
  * a destroy call at scope exit — i.e. it has a `#destroy`, a class-typed
  * field, or a nested struct field that itself needs destroying.
  */
-function struct_needs_destroy(struct: StructNode, status: BuildStatus): boolean {
+export function struct_needs_destroy(struct: StructNode, status: BuildStatus): boolean {
 	if (has_destroy(struct)) return true;
 	for (const field of struct.fields) {
 		if (field.type.is_ref) continue;

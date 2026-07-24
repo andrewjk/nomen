@@ -154,13 +154,20 @@ export default function check_assignment_node(
 		}
 		// If the RHS is a string literal, record its length on the type so
 		// subsequent constraint checks (e.g. slice bounds) can verify it.
-		if (!is_compound && left_value.type.name === "string" &&
+		if (
+			!is_compound &&
+			left_value.type.name === "string" &&
 			assign.right_value.node_type === "value" &&
 			(assign.right_value as any).value.startsWith('"') &&
-			(assign.right_value as any).value.endsWith('"')) {
+			(assign.right_value as any).value.endsWith('"')
+		) {
 			const lit = (assign.right_value as any).value;
 			const len = lit.length - 2; // strip surrounding quotes
-			left_value.type.length = new ValueNode(assign.right_value.start, len.toString(), new Type("int"));
+			left_value.type.length = new ValueNode(
+				assign.right_value.start,
+				len.toString(),
+				new Type("int"),
+			);
 		}
 	}
 

@@ -79,8 +79,9 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 			const elem = field.type.type_args[0];
 			if (!elem?.name) continue;
 			const elem_is_class = !!status.structs.find((s) => s.name === elem.name && s.is_class);
+			const elem_is_trait = !!status.traits.find((t) => t.name === elem.name);
 			const generic = status.structs.find(
-				(s) => s.name === (elem_is_class ? "ClassBuffer" : "Buffer"),
+				(s) => s.name === (elem_is_class || elem_is_trait ? "ClassBuffer" : "Buffer"),
 			);
 			if (!generic) continue;
 			const buf_mono = monomorphize(generic, [elem], status);

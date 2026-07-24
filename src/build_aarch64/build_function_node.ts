@@ -253,10 +253,18 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 			const is_struct_type = !!status.structs.find(
 				(s) => s.name === param.type.name && !s.is_simple_type,
 			);
+			// A trait-typed param arrives as a pointer to the concrete struct
+			// (whose vtable lives at offset 0), so save it in a callee-saved
+			// register like a struct param — trait-typed dispatch reads the
+			// receiver pointer from there.
+			const is_trait_type = !!status.traits.find((t) => t.name === param.type.name);
 			const is_enum_with_data = !!status.enums.find(
 				(e) => e.name === param.type.name && e.has_associated_data,
 			);
-			if ((is_struct_type || is_enum_with_data) && callee_idx < callee_saved.length) {
+			if (
+				(is_struct_type || is_trait_type || is_enum_with_data) &&
+				callee_idx < callee_saved.length
+			) {
 				const saved_reg = callee_saved[callee_idx++];
 				status.code += `str ${saved_reg}, [sp, #-16]!\n`;
 				status.code += `mov ${saved_reg}, ${param_regs[i]}\n`;

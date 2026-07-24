@@ -9,6 +9,7 @@ import build_node from "./build_node.ts";
 import build_nursery_spawn from "./build_nursery_spawn.ts";
 import { is_owned_heap_temp } from "./build_operation_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
+import c_function_name from "./utils/c_function_name.ts";
 import c_type from "./utils/c_type.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 
@@ -47,18 +48,37 @@ function nursery_pointer_expr(target: BaseNode, status: BuildStatus): string {
 }
 
 /**
- * Build a node for use as a vtable dispatch target. The vtable lives on the
- * struct itself, so we need a POINTER to the struct. When the target is the
- * implicit `self` parameter, the build normally renames it to `_self` (the
- * local by-value copy made at function entry) — but for vtable dispatch we
- * need the original `self` pointer param, so emit it directly.
+ * Build a node for use as a vtable dispatch target. The vtable lives at offset
+ * 0 of the struct (`_vt`), so `_get_trait_func` needs a POINTER to the struct
+ * (not the by-value struct). When the target is the implicit `self` parameter,
+ * the build normally renames it to `_self` (the local by-value copy made at
+ * function entry) — but for vtable dispatch we need the original `self` pointer
+ * param, so emit it directly. A ref/trait/class param is already a pointer; any
+ * other lvalue (local variable) gets its address taken. `&*x` is valid C and
+ * simplifies to `x`, so a ref param that slipped through still lands on its
+ * pointer.
  */
 function build_vtable_target(node: BaseNode, status: BuildStatus) {
-	if (node.node_type === "value" && (node as ValueNode).value === "self") {
-		status.code += "self";
-	} else {
-		build_node(node, status);
+	if (node.node_type === "value") {
+		const name = (node as ValueNode).value;
+		if (name === "self") {
+			status.code += "self";
+			return;
+		}
+		// ref/trait/class param — emitted as `struct T *name`, already a pointer.
+		if (status.function_ref_params?.has(name) || status.class_vars?.has(name)) {
+			status.code += c_function_name(name);
+			return;
+		}
 	}
+	// Any other lvalue: build it without the ref-param deref and take its address.
+	const before = status.code.length;
+	status.suppress_dereference = true;
+	build_node(node, status);
+	status.suppress_dereference = false;
+	const expr = status.code.substring(before);
+	status.code = status.code.substring(0, before);
+	status.code += "&" + expr;
 }
 
 export default function build_access_node(node: AccessNode, status: BuildStatus) {
@@ -422,19 +442,80 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				break;
 			}
 			if (trait) {
-				// If the target is a trait, we need to find the correct function to
-				// call from the vtable
+				// Dispatch through the vtable: resolve the concrete function
+				// pointer via _get_trait_func(obj, trait_index, func_index),
+				// then call it. The function-pointer cast is derived from the
+				// trait method's declared signature so the call type-checks for
+				// any return type or arity. The vtable entry conforms to that
+				// signature: `self` (a struct pointer) appears only when the
+				// trait method declares it, followed by each real parameter.
+				// Struct/trait parameters are passed by pointer, matching how
+				// concrete methods lower them.
 				const trait_func = trait.functions.find((f) => f.name == access_func.name)!;
-				// TODO: Cast to the correct function definition
-				// TODO: Use the correct variable name
-				// TODO: Pass parameters
-				const cast = "(char *(*)(void *))";
-				status.code += `(${cast}_get_trait_func(`;
-				build_vtable_target(node.target, status);
 				const trait_index = status.traits.indexOf(trait);
 				const func_index = trait.functions.indexOf(trait_func);
-				status.code += `, ${trait_index}, ${func_index}))(`;
+				const has_self = trait_func.params.some((p) => p.is_self_param);
+
+				const ret_is_struct =
+					!!trait_func.return_type?.name &&
+					!!status.structs.find(
+						(s) => s.name === trait_func.return_type!.name && !s.is_simple_type,
+					);
+				const ret_c = !trait_func.return_type?.name
+					? "void"
+					: ret_is_struct
+						? `struct ${trait_func.return_type.name}`
+						: c_type(trait_func.return_type.name);
+
+				const cast_params: string[] = [];
+				if (has_self) cast_params.push("void *");
+				for (const p of trait_func.params) {
+					if (p.is_self_param) continue;
+					const is_struct_or_trait =
+						!!status.structs.find((s) => s.name === p.type.name && !s.is_simple_type) ||
+						!!status.traits.find((t) => t.name === p.type.name);
+					cast_params.push(is_struct_or_trait ? "void *" : c_type(p.type.name));
+				}
+				const cast = `(${ret_c} (*)(${cast_params.join(", ") || "void"}))`;
+
+				status.code += `(${cast}_get_trait_func(`;
 				build_vtable_target(node.target, status);
+				status.code += `, ${trait_index}, ${func_index}))(`;
+
+				// Receiver pointer is the first call argument only when the
+				// method declares self.
+				let need_comma = false;
+				if (has_self) {
+					build_vtable_target(node.target, status);
+					need_comma = true;
+				}
+				for (let i = 0; i < access_func.params.length; i++) {
+					if (need_comma) status.code += ", ";
+					need_comma = true;
+					const param_type = type_from_value_node(access_func.params[i]);
+					const param_value =
+						access_func.params[i].node_type === "value"
+							? (access_func.params[i] as ValueNode).value
+							: "";
+					const arg_is_struct_or_trait =
+						!!status.structs.find((s) => s.name === param_type.name && !s.is_simple_type) ||
+						!!status.traits.find((t) => t.name === param_type.name) ||
+						!!status.class_vars?.has(param_value);
+					if (arg_is_struct_or_trait) {
+						const param_is_ref_param =
+							!!status.function_ref_params?.has(param_value) ||
+							!!status.class_vars?.has(param_value);
+						if (!param_is_ref_param) {
+							status.code += "&";
+						} else {
+							status.suppress_dereference = true;
+						}
+						build_node(access_func.params[i], status);
+						status.suppress_dereference = false;
+					} else {
+						build_node(access_func.params[i], status);
+					}
+				}
 				status.code += `)`;
 			} else {
 				let method_type: Type | undefined = target_type;

@@ -66,6 +66,24 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			(s) => s.name === mono_name && !s.is_simple_type && !s.is_generic,
 		);
 		const is_class_type = !!mono_struct?.is_class;
+		// A trait-typed local holds a concrete struct value (the initializer's
+		// actual type). Declare it with the concrete struct's C type so the
+		// by-value storage has the correct layout for vtable dispatch and the
+		// generated field accessors (`get_<Concrete>_<field>` expect a
+		// `struct Concrete *`). The Nomen type remains the trait (stored in
+		// variable_types) so accesses are recognized as trait dispatch.
+		let concrete_struct_name = "";
+		const storage_is_trait_concrete =
+			!mono_struct && !!status.traits.find((t) => t.name === node.type.name) && !!node.value;
+		if (storage_is_trait_concrete && node.value) {
+			const val_type = type_from_value_node(node.value);
+			const val_struct = status.structs.find(
+				(s) => s.name === val_type?.name && !s.is_simple_type && !s.is_generic,
+			);
+			if (val_struct) {
+				concrete_struct_name = val_struct.name;
+			}
+		}
 		// `var ref T x = y` declares x as a pointer to y (mutable alias).
 		// Emit `T *x = &y` and track x in function_ref_params so accesses
 		// use `->` and value-uses dereference. Ref locals don't own data,
@@ -137,7 +155,12 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			if (!status.string_borrow_vars) status.string_borrow_vars = new Set();
 			status.string_borrow_vars.add(safe_name);
 		}
-		if (!val_is_class_alias && !is_borrow_only_string && !node.type.is_view) {
+		if (
+			!val_is_class_alias &&
+			!is_borrow_only_string &&
+			!node.type.is_view &&
+			!concrete_struct_name
+		) {
 			status.scoped_declarations.push(node);
 			// Track owned string vars in a set that persists across scope
 			// resets (unlike scoped_declarations). A reassignment inside a
@@ -232,6 +255,8 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			status.heap_array_vars.add(safe_name);
 		} else if (is_class_type) {
 			status.code += `struct ${mono_name} *${safe_name}`;
+		} else if (concrete_struct_name) {
+			status.code += `struct ${concrete_struct_name} ${safe_name}`;
 		} else if (mono_struct) {
 			status.code += `struct ${mono_name} ${safe_name}`;
 		} else if (node.type.is_view) {

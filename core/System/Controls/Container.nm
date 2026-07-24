@@ -21,6 +21,7 @@ const int KIND_LEAF = 0
 const int KIND_VSTACK = 1
 const int KIND_HSTACK = 2
 const int KIND_GRID = 3
+const int KIND_ZSTACK = 4
 
 const int INF = 100000000
 
@@ -125,22 +126,70 @@ pub struct Container {
 		return -1
 	}
 
-	// Add a leaf child (a native control by handle). `w`/`h` of 0 mean "fill" on
-	// that axis; `span` is the grid column span (use 1 for VStack/HStack).
-	pub func add = (ref self, uint64 handle, int w, int h, int span) {
+	// Core append: store a node (leaf or container) as a child of `parent`
+	// (a node index; use root_index() for the top level), returning the new
+	// node's index. All the public add* helpers route through here.
+	//
+	// `w`/`h` are intentionally NOT parameters: only leaves have intrinsic
+	// dimensions, so the leaf helpers store them after this returns. Keeping
+	// the parameter list at <=8 also stays within the aarch64 register-arg ABI
+	// (the backend does not yet spill args 9+ to the stack).
+	func append_node = (ref self, int parent, int kind, int handle, int gap, int cols, int span, out int) {
 		if self.kinds.cap < self.count + 1 {
 			self.init_buffers(self.count + 1)
 		}
 		var int idx = self.count
-		self.kinds.store_int(idx, KIND_LEAF)
+		self.kinds.store_int(idx, kind)
+		self.ws.store_int(idx, 0)
+		self.hs.store_int(idx, 0)
+		self.gaps.store_int(idx, gap)
+		self.spans.store_int(idx, span)
+		self.cols.store_int(idx, cols)
+		self.handles.store_int(idx, handle)
+		self.pars.store_int(idx, parent + 1)
+		self.count = self.count + 1
+		return idx
+	}
+
+	// Index of the root node — pass this as `parent` to add children to the
+	// top level (the plain `add` helper already does this for leaves).
+	pub func root_index = (self, out int) {
+		return self.root
+	}
+
+	// Add a leaf child (a native control by handle) under the root. `w`/`h` of
+	// 0 mean "fill" on that axis; `span` is the grid column span (use 1 for
+	// VStack/HStack).
+	pub func add = (ref self, uint64 handle, int w, int h, int span) {
+		var int idx = self.append_node(self.root, KIND_LEAF, handle as int, 0, 0, span)
 		self.ws.store_int(idx, w)
 		self.hs.store_int(idx, h)
-		self.gaps.store_int(idx, 0)
-		self.spans.store_int(idx, span)
-		self.cols.store_int(idx, 0)
-		self.handles.store_int(idx, handle as int)
-		self.pars.store_int(idx, self.root + 1)
-		self.count = self.count + 1
+	}
+
+	// Add a leaf child under an explicit `parent` (a node index returned by an
+	// add_vstack/add_hstack/add_grid/add_zstack call).
+	pub func add_to = (ref self, int parent, uint64 handle, int w, int h, int span) {
+		var int idx = self.append_node(parent, KIND_LEAF, handle as int, 0, 0, span)
+		self.ws.store_int(idx, w)
+		self.hs.store_int(idx, h)
+	}
+
+	// Add a nested container under `parent`; returns the new node's index so
+	// children can be added to it via add_to (or another nested container).
+	pub func add_vstack = (ref self, int parent, int spacing, int span, out int) {
+		return self.append_node(parent, KIND_VSTACK, 0, spacing, 0, span)
+	}
+
+	pub func add_hstack = (ref self, int parent, int spacing, int span, out int) {
+		return self.append_node(parent, KIND_HSTACK, 0, spacing, 0, span)
+	}
+
+	pub func add_grid = (ref self, int parent, int cols: cols > 0, int spacing, int span, out int) {
+		return self.append_node(parent, KIND_GRID, 0, spacing, cols, span)
+	}
+
+	pub func add_zstack = (ref self, int parent, int span, out int) {
+		return self.append_node(parent, KIND_ZSTACK, 0, 0, 0, span)
 	}
 
 	// Measure a node against box constraints. Returns the resolved width and
@@ -212,6 +261,29 @@ pub struct Container {
 			return total_w
 		}
 
+		if kind == KIND_ZSTACK {
+			var int best_w = 0
+			var int best_h = 0
+			var int ci = self.first_child(idx)
+			while ci != -1 {
+				if is_visible(self.handles.load_int(ci) as uint64) {
+					self.measure(ci, min_w, max_w, min_h, max_h)
+					var int cw = self.rw.load_int(ci)
+					var int ch = self.rh.load_int(ci)
+					if cw > best_w { best_w = cw }
+					if ch > best_h { best_h = ch }
+				}
+				ci = self.next_sibling(ci, idx)
+			}
+			if best_w < min_w { best_w = min_w }
+			if best_w > max_w { best_w = max_w }
+			if best_h < min_h { best_h = min_h }
+			if best_h > max_h { best_h = max_h }
+			self.rw.store_int(idx, best_w)
+			self.rh.store_int(idx, best_h)
+			return best_w
+		}
+
 		// KIND_GRID: children flow into cells; each may span columns.
 		var int cols = self.cols.load_int(idx)
 		var int col_w = max_w / cols
@@ -281,6 +353,17 @@ pub struct Container {
 					var int cw = self.rw.load_int(ci)
 					self.arrange(ci, running_x, y, cw, h)
 					running_x = running_x + cw + self.gaps.load_int(idx)
+				}
+				ci = self.next_sibling(ci, idx)
+			}
+			return
+		}
+
+		if kind == KIND_ZSTACK {
+			var int ci = self.first_child(idx)
+			while ci != -1 {
+				if is_visible(self.handles.load_int(ci) as uint64) {
+					self.arrange(ci, x, y, w, h)
 				}
 				ci = self.next_sibling(ci, idx)
 			}
@@ -391,6 +474,12 @@ pub func VStack = (int spacing, out Container) {
 pub func HStack = (int spacing, out Container) {
 	var Container c = Container()
 	c.make_root(KIND_HSTACK, spacing, 0)
+	return c
+}
+
+pub func ZStack = (out Container) {
+	var Container c = Container()
+	c.make_root(KIND_ZSTACK, 0, 0)
 	return c
 }
 

@@ -3,7 +3,7 @@ import FunctionNode from "../nodes/FunctionNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import TraitNode from "../nodes/TraitNode.ts";
 import Type from "../nodes/Type.ts";
-import build_auto_free from "./build_auto_free.ts";
+import build_auto_free, { struct_needs_destroy } from "./build_auto_free.ts";
 import build_node from "./build_node.ts";
 import build_parameter_node from "./build_parameter_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
@@ -219,6 +219,20 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 	// returns — the caller (e.g. ClassBuffer) calls free() afterwards.
 	if (is_class && !node.functions.find((f) => f.name === "#destroy")) {
 		build_auto_destroy(node, status);
+	} else if (
+		!is_class &&
+		node.traits.length > 0 &&
+		!node.functions.find((f) => f.name === "#destroy") &&
+		struct_needs_destroy(node, status)
+	) {
+		// A trait-conforming value struct that owns heap data through its
+		// fields (e.g. `struct Dog : Speaker { var string name }`) needs an
+		// auto-generated <Struct>_destroy too: when such a struct is boxed
+		// into a ClassBuffer<Trait> slot, the per-element destroy dispatches
+		// through the vtable to this function, which frees the owning fields.
+		// Without it, the destroy slot in the vtable would point to a missing
+		// symbol and trait-typed heterogeneous storage would leak.
+		build_auto_destroy(node, status);
 	}
 
 	status.headers += "\n";
@@ -226,7 +240,9 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 }
 
 function build_struct_traits(node: StructNode, status: BuildStatus) {
-	// Build the vtable that points to the struct's traits' methods by index
+	// Build the per-trait function-pointer tables (one entry per trait method —
+	// the struct's override if present, else the trait's default body — then a
+	// get/set pair per trait field).
 	for (let traitName of node.traits) {
 		// E.g. int* _Dog_Animal_vtable_[4];
 		status.code += `void *_${node.name}_${traitName}_funcs[] = {`;
@@ -246,17 +262,44 @@ function build_struct_traits(node: StructNode, status: BuildStatus) {
 		status.code += `};\n`;
 	}
 
-	// Build the vtable that points to the above table by index
-	// E.g. int* _Dog_vtable_[];
+	// Per-struct destroy function-pointer table, or NULL if the struct has
+	// no destroy function. Slot [0] of _<Struct>_traits (below) holds the
+	// address of this table (or NULL); a trait-typed collection
+	// (ClassBuffer<Trait>) dispatches destroy polymorphically by loading
+	// [obj] → [vtable, #0] → [destroy_funcs, #0] → the concrete destroy.
+	// This is independent of which trait the collection is typed by — every
+	// trait-conforming struct has the same vtable prefix layout. The destroy
+	// fn exists when the struct has a user #destroy, is a class
+	// (auto-destroy), or is a trait-conforming value struct with owning
+	// fields (auto-destroy). For structs without any of these, the slot is
+	// NULL and the dispatcher's NULL check short-circuits.
+	const has_destroy_fn =
+		!!node.functions.find((f) => f.name === "#destroy") ||
+		!!node.is_class ||
+		(node.traits.length > 0 && struct_needs_destroy(node, status));
+	if (has_destroy_fn) {
+		const destroy_label = `${node.name}_destroy`;
+		status.headers += `void ${destroy_label}(struct ${node.name} *);\n`;
+		status.code += `void *_${node.name}_destroy_funcs[] = {${destroy_label}};\n`;
+	}
+	const destroy_slot = has_destroy_fn ? `&_${node.name}_destroy_funcs` : `NULL`;
+
+	// Build the vtable that points to the above table by index. The destroy
+	// slot at index 0 is present (NULL when the struct has no destroy); real
+	// trait tables follow at indices 1..traits.length, so _get_trait_func
+	// shifts trait_index by 1 to skip the destroy slot.
+	// E.g. void *_Dog_traits[] = {&_Dog_destroy_funcs, NULL, NULL, &_<...>_funcs};
 	status.code += `void *_${node.name}_traits[] = {`;
-	status.code += status.traits
-		.map((t) => {
-			if (node.traits.includes(t.name)) {
-				return `&_${node.name}_${t.name}_funcs`;
-			} else {
-				return "NULL";
-			}
-		})
+	status.code += [destroy_slot]
+		.concat(
+			status.traits.map((t) => {
+				if (node.traits.includes(t.name)) {
+					return `&_${node.name}_${t.name}_funcs`;
+				} else {
+					return "NULL";
+				}
+			}),
+		)
 		.join(", ");
 	status.code += `};\n`;
 }
@@ -327,10 +370,14 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 				(param.declaration === "var" && param_struct && !param_struct.is_simple_type);
 			if (is_pointer_param) {
 				const pname = c_function_name(param.name);
-				if (param_struct?.is_class) {
-					// Class params are pointers but must NOT be dereferenced at
-					// value-use sites (the pointer IS the value). Track them in
-					// class_vars instead of function_ref_params.
+				if (param_struct?.is_class || param_trait) {
+					// Class params AND trait-typed params are pointers but must
+					// NOT be dereferenced at value-use sites — the pointer IS
+					// the value. A trait-typed param is a pointer to a
+					// heap-allocated, vtable-bearing struct (a class instance
+					// or a boxed value struct), so `value` (not `*value`)
+					// flows into raw `T`-typed slots like Buffer.store_int.
+					// Track them in class_vars instead of function_ref_params.
 					status.class_vars.add(pname);
 				} else {
 					status.function_ref_params.add(pname);
@@ -371,12 +418,19 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 			status.code += `nomen_view ${func_label_name}(`;
 		} else {
 			const return_struct = status.structs.find((s) => s.name === return_type && !s.is_simple_type);
-			if (return_struct) {
+			const return_trait = status.traits.find((t) => t.name === return_type);
+			if (return_struct || return_trait) {
 				status.code += `struct `;
 			}
 			status.code += `${c_type(return_type)}`;
-			// Class return types are pointers (heap-allocated)
-			if (return_struct?.is_class) {
+			// Class return types are pointers (heap-allocated). Trait-typed
+			// return types are also pointers — every trait-typed value in a
+			// monomorphized container context (e.g. `T List_T_at(...)`) is a
+			// pointer to a heap-allocated, vtable-bearing struct (a class
+			// instance or a boxed value struct). Emitting the bare typedef
+			// would treat it as a value type, which can't be initialised from
+			// `0L` (null) or from `load_int()`'s long return.
+			if (return_struct?.is_class || return_trait) {
 				status.code += `*`;
 			}
 			status.code += ` ${func_label_name}(`;

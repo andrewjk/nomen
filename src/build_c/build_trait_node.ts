@@ -15,16 +15,17 @@ export default function build_trait_node(node: TraitNode, status: BuildStatus) {
 	status.headers += `// Trait ${node.name}\n`;
 	status.code += `// Trait ${node.name}\n`;
 
-	// Declare the trait as a struct
+	// Declare the trait as an opaque struct (forward-declared in headers).
+	// Trait-typed values in C are always POINTERS to this struct — either a
+	// class instance (already heap-allocated) or a boxed value struct that
+	// conforms to the trait. Function return types, parameter types, and
+	// locals that reference a trait emit `struct <Trait> *` explicitly (see
+	// build_struct_functions / build_parameter_node / c_param_decl), so the
+	// typedef itself just needs to exist as an incomplete type. The full
+	// struct body is never emitted — there are no trait-typed values stored
+	// by value (they're always boxed behind a pointer).
 	status.headers += `struct ${node.name};\n`;
 	status.code += `typedef struct ${node.name}\n{\n`;
-
-	// Build the trait's fields
-	// Fields from the struct
-	//for (let field of node.fields) {
-	//  status.code += `${c_type(field.type.name)} ${field.name};\n`;
-	//}
-
 	status.code += `} ${node.name};\n`;
 
 	// Build the trait's default functions

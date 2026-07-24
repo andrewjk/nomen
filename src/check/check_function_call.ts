@@ -178,9 +178,15 @@ export default function check_function_call(
 		(node as FunctionCallNode).variadic_param_index = variadic_start;
 	}
 
-	while (node.params.length < func.params.length) {
-		const missing_param = func.params[node.params.length];
-		if (missing_param.default_value) {
+	// Fill in defaults for trailing params the caller omitted. The call's
+	// arg list (`node.params`) aligns with `func.params` MINUS the implicit
+	// `self` slot, so both the bound and the index must skip `self` — otherwise
+	// a method call that omits a defaulted param pushes one default too many
+	// and the later per-arg pass indexes past the end of `func.params`.
+	const non_self_param_count = func.params.length - self_offset;
+	while (node.params.length < non_self_param_count) {
+		const missing_param = func.params[node.params.length + self_offset];
+		if (missing_param?.default_value) {
 			node.params.push(missing_param.default_value);
 		} else {
 			break;

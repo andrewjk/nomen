@@ -53,11 +53,19 @@ pub func main = () {
 
 What `Container` provides:
 
-- **`Grid(cols, spacing)` / `VStack(spacing)` / `HStack(spacing)`** factory
+- **`Grid(cols, spacing)` / `VStack(spacing)` / `HStack(spacing)` / `ZStack()`** factory
   functions returning a `Container`.
-- **`add(handle, w, h, span)`** — append a leaf control by its native `handle`.
+- **`add(handle, w, h, span)`** — append a leaf control by its native handle.
   `w`/`h` of `0` mean "fill" on that axis; `span` is the grid column count
   (use `1` for stacks).
+- **`add_to(parent, handle, w, h, span)`** — append a leaf under an explicit
+  parent node (returned by one of the `add_*` container helpers below).
+- **`add_vstack/add_hstack(parent, spacing, span)` / `add_grid(parent, cols, spacing, span)` /
+  `add_zstack(parent, span)`** — append a **nested** container under `parent`,
+  returning the new node's index so children can be added to it. `root_index()`
+  yields the top-level parent. This makes the tree composable without the trait
+  model — the SoA `kinds` buffer is the tag, and `measure`/`arrange` already
+  recurse through `first_child`/`next_sibling`.
 - **`layout(win)`** — measures against the window's content rect (minus
   `padding`), arranges, and applies frames to every leaf, **flipping y against
   the content height internally** so callers never do coordinate math.
@@ -69,20 +77,22 @@ What `Container` provides:
   `isHidden` takes no space, so toggling visibility and re-laying-out just works.
 
 Children flow left→right, top→bottom; a child whose `span` won't fit in the
-remaining columns wraps to the next row. Geometry is validated by
-`test/layout_container.test.ts` (vstack, hstack, grid span/row/mixed).
+remaining columns wraps to the next row. `ZStack` overlaps its children (each
+gets the stack's full frame; the stack sizes to its largest child). Geometry is
+validated by `test/layout_container.test.ts` (vstack, hstack, zstack, grid
+span/row/mixed, and nested stacks/grids).
 
 ### Why handle-based, not trait-based (for now)
 
 Every native control is `struct { uint64 handle }`, and the y-flip needs the
 window's content height — both are handle-level concerns. But the decisive
 reason is the compiler: the `Container : Control` / `Array<Control>` design
-below requires three things the compiler does **not** yet do —
+below requires things the compiler does **not** all do yet —
 
-1. **aarch64 has no vtable dispatch** (`build_aarch64/build_struct_node.ts:657`
-   emits only default-method forwarding stubs; there is no `_get_trait_func`
-   equivalent). Calling `child.measure(...)` through a `Control`-typed value
-   lowers to nothing on aarch64.
+1. ~~**aarch64 has no vtable dispatch**~~ ✅ **Done.** Both backends now generate
+   a per-struct trait vtable and resolve trait-typed calls through it at
+   runtime (see [Trait dispatch](#trait-dispatch-polymorphic-calls)). The
+   remaining blockers are storage/parsing, below.
 2. **No heterogeneous container storage** — value structs aren't auto-boxed
    into trait-typed slots, and `monomorphize` doesn't route trait-`T` to
    `ClassBuffer`.
@@ -98,7 +108,6 @@ storage/dispatch shim, not the math.
 > `Buffer.load_int`/`store_int` calls do not trip the "constraint cannot be
 > verified" rule (`check_function_call.ts:585`) that broke the old
 > index-juggling app code.
-
 
 ## Core principles
 
@@ -455,18 +464,29 @@ cannot be verified headlessly, but the **layout math** can:
 
 1. **Smoke test.** ✅ Skipped the trait route — `Container.nm` ships a
    handle-based v1 instead (see above). Trait smoke test is deferred to phase 9.
+   **Trait polymorphic dispatch now works on both backends** (C + aarch64) and
+   is runtime-tested in `test/trait_dispatch.test.ts` — see
+   [Trait dispatch](#trait-dispatch-polymorphic-calls).
 2. **Geometry types.** ⚠️ Deferred. v1 uses raw `int` width/height + the
    `Container`'s flat buffers; the `Size`/`Frame`/`Insets`/`BoxConstraints`/
    `LayoutLength`/`LayoutParams` types are part of the trait migration.
 3. **Block + Spacer leaf.** ⚠️ Deferred (needs the trait model).
 4. **VStack then HStack.** ✅ Implemented handle-based, with padding/spacing and
    fill semantics (no grow/shrink/percent/alignment yet).
-5. **ZStack, then Grid.** ✅ Grid done (flow + column `span`); ZStack deferred.
+5. **ZStack, then Grid.** ✅ Grid done (flow + column `span`); ZStack done
+   (children overlap, each gets the stack's full frame, stack sizes to its
+   largest child). Nested containers (VStack/HStack/Grid/ZStack inside any
+   other) are also done via the `add_*` helpers — the SoA `kinds` buffer is the
+   tag, so `measure`/`arrange` recurse through the tree without the trait model.
 6. **Refactor Window/Text** to conform to `Control`. ⚠️ Partial: `Window` gained
    `content_width`; controls still expose `handle` for the handle-based API.
    Wiring native `setFrame:` is done inside `Container.apply_frame`.
 7. **End-to-end sample.** ✅ `app/src/main.nm` (the todo app) builds and runs on
-   the C/macOS backend using a 2-column `Grid`.
+   **both** the C/macOS and aarch64 backends using a 2-column `Grid`. (The
+   aarch64 path had been silently broken by a >8-param function overflowing the
+   register-arg ABI — see
+   [Smaller compiler bugs](#smaller-compiler-bugs-hit-while-building-v1); fixed
+   by keeping `Container`'s helpers at ≤8 register params.)
 8. **Invalidation.** ⚠️ Deferred. v1 does a full re-measure on every
    `layout(win)` call (cheap for small UIs; fine for the todo app).
 9. **Compositor features.** ⚠️ Deferred (hit testing, dirty-rect, animation).
@@ -479,10 +499,10 @@ UI infrastructure):
 
 ### Trait system gaps (unblock `Array<Control>` polymorphism)
 
-- **aarch64 vtable dispatch.** Generate per-struct trait function-pointer tables
-  and a `_get_trait_func(obj, trait, func)` resolver, mirroring the C backend
-  (`build_c/build_struct_node.ts:228`, `build_c/build_root_node.ts:38`). Until
-  this exists, trait-typed dispatch is C-backend-only and compile-tested at best.
+- ~~**aarch64 vtable dispatch.** Generate per-struct trait function-pointer
+  tables and a `_get_trait_func(obj, trait, func)` resolver, mirroring the C
+  backend.~~ ✅ **Done** on both backends — see
+  [Trait dispatch (polymorphic calls)](#trait-dispatch-polymorphic-calls).
 - **Auto-box value structs into trait-typed container slots**, and make
   `monomorphize` route trait-`T` to `ClassBuffer` (currently only `class` `T` is
   recognized — `check_function_call_node.ts:188`). Otherwise `Array<Control>`
@@ -492,18 +512,95 @@ UI infrastructure):
 - **Trait-typed destroy propagation** in containers, so owned controls in a
   trait collection are freed correctly.
 
+## Trait dispatch (polymorphic calls)
+
+Calling a method or reading a field through a _trait-typed_ receiver (a
+variable or parameter declared as the trait) routes through a runtime vtable.
+Both backends now implement this end-to-end and are exercised by
+`test/trait_dispatch.test.ts`, which compiles + runs on **both** `c` and
+`aarch64` (previously the path had _no_ runtime coverage on either backend).
+
+- **C backend** (`build_c/build_struct_node.ts:228`,
+  `build_c/build_root_node.ts:38`): the `_Struct_traits` vtable +
+  `_get_trait_func(obj, trait_index, func_index)` resolver were already
+  present but **broken** at the call site. `build_vtable_target` emitted the
+  by-value struct instead of a pointer, the function-pointer cast was
+  hard-coded to `char *(*)(void *)` (string return, no params), and trait-typed
+  locals generated invalid C (`Speaker s = Dog_init()`). Fixed: the target now
+  yields a pointer; the cast is derived from the trait method's real signature
+  (return type, `self`, arbitrary params); trait-typed locals are declared with
+  the concrete struct's storage.
+- **aarch64 backend** (`build_aarch64/build_struct_node.ts` `build_struct_traits`,
+  `build_aarch64/build_access_node.ts`): new. Emits, per trait-conforming
+  struct, a `_<Struct>_<Trait>_funcs` table (overrides, else trait defaults,
+  then per-field `get`/`set` pairs) and a `_<Struct>_traits` array indexed by
+  global trait order. The struct's init stores `&_<Struct>_traits` at offset 0
+  (the `VT_SIZE` slot reserved since v1). Trait-typed dispatch loads
+  `[obj] → [vtable, #trait*8] → [trait, #func*8]` into a scratch pair (`x9`/`x10`)
+  and `blr`s, leaving the argument registers untouched. The lookup uses scratch
+  registers so it works whether or not the trait method declares `self` (a
+  no-self method is flagged `is_static` and skips self-loading, but still
+  dispatches). Vtable data lives in the `__DATA` segment (absolute `.quad`
+  relocations are illegal in `__TEXT` on macOS arm64) and is addressed via
+  `adrp`+`add` (`@PAGE`/`@PAGEOFF`).
+
+### Remaining dispatch limitations (pre-spec, follow-up)
+
+- Trait-typed locals use the **concrete** storage of their initializer, so a
+  `var Speaker s = Dog(); s = Cat()` reassignment to a _different_ concrete
+  type does not yet work (the storage is sized for the first type).
+- Trait field accessors handle scalar/string (single-word) fields only;
+  multi-word struct trait fields are not yet supported through dispatch.
+- Trait-typed locals are not auto-destroyed at scope exit (no `#destroy`
+  propagation through the trait view).
+
 ### Smaller compiler bugs hit while building v1
 
-- **Default parameter on a struct method crashes the checker**
+- **aarch64 backend does not spill function args 9+ to the stack.** The
+  prologue (`build_aarch64/build_function_node.ts`) spills each incoming param
+  with `str ${param_regs[idx]}`, but `param_regs` only covers `x0`–`x7`; the
+  9th parameter indexes past the array and emits `str undefined, [...]`, and
+  the matching call site concatenates the overflow arg onto the previous
+  instruction (`ldr x0, [x29, #24]mov x0, #0`). The malformed assembly then
+  fails to assemble. This was latent until `Container.append_node` (10 params)
+  became the first function in the codebase to exceed the 8-register ABI limit
+  — which silently broke `app/src/main.nm` on `--arch aarch64`. Worked around
+  by refactoring `append_node` to drop `w`/`h` (leaves store them after the
+  call), keeping every function at ≤8 register params. A real fix needs full
+  AAPCS64 stack-arg passing at both the prologue and the call site.
+- ~~**Default parameter on a struct method crashes the checker**
   (`check_function_call.ts:307`, `func_param.type` undefined). Default params on
-  free functions work; on methods they don't. Worked around with overloads.
-- **Tuple return from a struct method doesn't propagate its type** to the
+  free functions work; on methods they don't. Worked around with overloads.~~ ✅
+  **Fixed.** The default-fill loop indexed `func.params[node.params.length]`
+  without skipping the implicit `self` slot, so a method call that omitted a
+  defaulted param pushed one default too many and the per-arg pass read past the
+  end of `func.params`. The loop now bounds against `func.params.length -
+self_offset` and indexes with `+ self_offset`. Runtime-tested in
+  `test/structs.test.ts` ("struct method with default param").
+- ~~**Tuple return from a struct method doesn't propagate its type** to the
   caller (`returns_value` doesn't flag tuple returns for forward inference, so
   `var f = m.frame(); f._0` → "Field not found: _0"). Worked around with a
-  `fmt_frame` string accessor.
-- **Overload resolution can't type field-access arguments**
+  `fmt_frame` string accessor.~~ ✅ **Fixed** (verified: a method with
+  `out [int, int]` returning `[self.x, self.y]` infers a tuple-typed result on
+  both backends; `var f = s.frame(); f._0` / `f._1` type-check and build).
+- ~~**Overload resolution can't type field-access arguments**
   (`type_from_value_node` returns empty for `a.b`), so count-based overloads
-  fall through to the last candidate. Avoided by making `span` required.
+  fall through to the last candidate. Avoided by making `span` required.~~ ✅
+  **Fixed** (verified: a count-based method overload `g(int)` / `g(int, int)`
+  resolves `p.g(p.a, p.b)` to the two-arg variant).
+- **aarch64 inlined `aarch64_use_c` FFI helpers into no-ops** (the bug behind
+  "every control renders at the bottom of the screen"). `scan_inline_candidates`
+  marked raw-block free functions like `apply_frame`/`is_visible` as inlineable;
+  at the call site `build_inline_function` set up the argument registers then ran
+  the body — but an `aarch64_use_c` body is C source for the companion file, not
+  inline asm, so it emitted nothing inline and returned `true`, suppressing the
+  `bl apply_frame`. `setFrame:` therefore never ran and every native control kept
+  its creation frame (`0,0` / `10,10` = bottom-left). **Fixed** in
+  `scan_inline_candidates.ts`: any function with a `raw` statement is excluded
+  from inline candidacy, so it lowers to a real `bl` to the standalone companion
+  symbol. (The C backend was never affected — it has no inline pass.) Verified by
+  reading native frames back on both backends: `title` resolves to `y=454` in a
+  500-tall window (top area) on both `c` and `aarch64`.
 
 ### Layout features still owed (once traits land)
 
@@ -511,8 +608,14 @@ UI infrastructure):
   `LayoutParams` with `grow`/`shrink`/`percent`/`fill`/`align`.
 - Intrinsic-size measurement (query each native control's
   `intrinsicContentSize`/`fittingSize`) so `add` needs no size hints.
-- `ZStack`, nested containers (v1 is flat — nesting needs either the trait model
-  or class-based containers with tag dispatch), and incremental/dirty relayout.
+- Incremental/dirty relayout (v1 does a full re-measure on every
+  `layout(win)`/`compute` call; cheap for small UIs).
+
+> `ZStack` and nested containers (VStack/HStack/Grid/ZStack composed to any
+> depth) now ship in the handle-based v1 — see `Container.add_*` /
+> `root_index`. They were doable without the trait model because the SoA
+> `kinds` buffer already provides tag dispatch and `measure`/`arrange` already
+> recurse through the parent/child tree.
 
 ### Cleanup
 
@@ -520,6 +623,8 @@ UI infrastructure):
   tree API). It is superseded by `Container.nm` and no longer used by the app,
   but is kept (and tested by `test/layout.test.ts`) until consumers migrate.
   Remove it once `Container` covers its use cases.
-- The aarch64 backend's companion-file path fails to link a full GUI app
-  (`_main`/`Window_create_c` symbol issues) — the app currently targets the
-  C/macOS backend. Worth investigating before aarch64 GUI is shippable.
+- The aarch64 backend's companion-file path now links and runs a full GUI app
+  (`app/src/main.nm` builds and displays correctly on `--arch aarch64`). The
+  earlier `_main`/`Window_create_c` symbol issues are resolved, and the inline
+  bug above is fixed, so aarch64 GUI is shippable. (The C/macOS backend remains
+  the faster path for development.)

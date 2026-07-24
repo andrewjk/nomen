@@ -331,4 +331,11 @@ export default interface BuildStatus {
 	 * emitted once per instantiation. This set deduplicates by content hash.
 	 */
 	emitted_file_scope_blocks?: Set<string>;
+	/**
+	 * aarch64-only: read-only vtable data (per-struct trait function-pointer
+	 * tables + the per-struct traits array), accumulated during struct build
+	 * and appended after all code so the addresses are reachable via the
+	 * literal pool. Mirrors the C backend's `_Struct_traits` / `_get_trait_func`.
+	 */
+	vtable_data?: string;
 }

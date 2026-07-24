@@ -7,7 +7,7 @@ import build_block_node from "./build_block_node.ts";
 import build_node from "./build_node.ts";
 import { check_c_fallback } from "./build_raw_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
-import { emit_field_destroys } from "./utils/auto_destroy.ts";
+import { emit_field_destroys, has_struct_fields_with_destroy } from "./utils/auto_destroy.ts";
 import { is_nullable_struct_type } from "./utils/nullable_struct.ts";
 import scan_force_heap_strings from "./utils/scan_force_heap_strings.ts";
 import { allocate_stack_space } from "./utils/stack_var.ts";
@@ -95,12 +95,21 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 		}
 		build_struct_functions(node, status);
 		build_trait_functions(node, status);
+		build_struct_traits(node, status);
 		const destroy_func = node.functions.find((f) => f.name === "#destroy");
 		if (destroy_func) {
 			if (!check_c_fallback(destroy_func, node.name, status)) {
 				build_destroy_function(node, destroy_func, status);
 			}
 		} else if (node.is_class) {
+			build_auto_destroy_function(node, status);
+		} else if (node.traits.length > 0 && has_struct_fields_with_destroy(node, status)) {
+			// A trait-conforming value struct that owns heap data through its
+			// fields (e.g. `struct Dog : Speaker { var string name }`) needs
+			// an auto-generated <Struct>_destroy: when such a struct is boxed
+			// into a ClassBuffer<Trait> slot, the per-element destroy
+			// dispatches through the vtable to this function. Without it, the
+			// destroy slot in the vtable would point to a missing symbol.
 			build_auto_destroy_function(node, status);
 		}
 		status.current_struct = undefined;
@@ -252,6 +261,18 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 
 	status.code += `str xzr, [x0]\n`;
 
+	// If the struct conforms to any trait, install its vtable pointer at
+	// offset 0 (the reserved VT_SIZE slot) so trait-typed dispatch can resolve
+	// the concrete methods/fields. Mirrors the C backend's `self._vt =
+	// &_Struct_traits`.
+	if (node.traits.length > 0) {
+		// adrp+add (not adr): the vtable lives in the __DATA segment, so the
+		// cross-section address needs page-relative addressing on Mach-O.
+		status.code += `adrp x9, _${node.name}_traits@PAGE\n`;
+		status.code += `add x9, x9, _${node.name}_traits@PAGEOFF\n`;
+		status.code += `str x9, [x0]\n`;
+	}
+
 	const param_regs = ["x1", "x2", "x3", "x4", "x5", "x6", "x7"];
 	for (let i = 0; i < required_fields.length; i++) {
 		const field = required_fields[i];
@@ -398,6 +419,13 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 
 	// Zero the struct memory
 	status.code += `str xzr, [x19]\n`;
+
+	// Install the vtable pointer at offset 0 for trait-conforming structs.
+	if (node.traits.length > 0) {
+		status.code += `adrp x9, _${node.name}_traits@PAGE\n`;
+		status.code += `add x9, x9, _${node.name}_traits@PAGEOFF\n`;
+		status.code += `str x9, [x19]\n`;
+	}
 
 	// Initialize default field values
 	for (const field of node.fields) {
@@ -744,6 +772,94 @@ function build_trait_functions(node: StructNode, status: BuildStatus) {
 			status.function_return_label = old_return_label;
 			status.stack_size = old_stack_size;
 			status.stack_offsets = old_stack_offsets;
+		}
+	}
+}
+
+/**
+ * Emit read-only vtable data for a trait-conforming struct, mirroring the C
+ * backend's `_Struct_traits` / `_get_trait_func`. For each trait the struct
+ * conforms to we emit a function-pointer table (trait methods — the struct's
+ * override if present, else the trait's default body — followed by get/set
+ * pairs for each trait field), then a per-struct `_<Struct>_traits` array with
+ * one slot per trait in global order (the table address for conformed traits,
+ * 0 otherwise). The struct's init stores `&_<Struct>_traits` at offset 0, so a
+ * trait-typed dispatch reads `[obj]` → vtable → `[vtable, #trait_index*8]` →
+ * trait table → `[trait, #func_index*8]` → the concrete function.
+ *
+ * Trait field get/set accessors are also emitted here (the C backend emits them
+ * in build_struct_functions). They handle scalar/string (single-word) fields;
+ * multi-word struct trait fields are not yet supported through dispatch.
+ */
+function build_struct_traits(node: StructNode, status: BuildStatus) {
+	if (node.traits.length === 0) return;
+
+	for (const trait_name of node.traits) {
+		const trait = status.traits.find((t) => t.name === trait_name);
+		if (!trait) continue;
+
+		status.vtable_data += `.p2align 3\n`;
+		status.vtable_data += `_${node.name}_${trait_name}_funcs:\n`;
+		for (const f of trait.functions) {
+			if (f.name === "#init") continue;
+			const label = node.functions.find((nf) => nf.name === f.name)
+				? `${node.name}_${f.name.replace(/#/g, "")}`
+				: `${trait_name}_${f.name.replace(/#/g, "")}`;
+			status.vtable_data += `.quad ${label}\n`;
+		}
+		for (const field of trait.fields) {
+			status.vtable_data += `.quad get_${node.name}_${field.name}\n`;
+			status.vtable_data += `.quad set_${node.name}_${field.name}\n`;
+		}
+	}
+
+	// 1-element destroy-funcs table, or NULL if the struct has no destroy
+	// function. Slot [0] of _<Struct>_traits (below) holds the address of
+	// this table (or 0); the synthesized `<Trait>_destroy` shim loads
+	// [obj] → [vtable, #0] → [destroy_funcs, #0] → the concrete destroy fn,
+	// so a ClassBuffer<Trait> reclaims heterogeneous boxed elements
+	// polymorphically. The destroy fn exists when the struct has a user
+	// #destroy, is a class (auto-destroy), or is a trait-conforming value
+	// struct with owning fields (auto-destroy). For structs without any of
+	// these, slot [0] is 0 and the shim's NULL check short-circuits.
+	const has_destroy_fn =
+		!!node.functions.find((f) => f.name === "#destroy") ||
+		!!node.is_class ||
+		(node.traits.length > 0 && has_struct_fields_with_destroy(node, status));
+	if (has_destroy_fn) {
+		status.vtable_data += `.p2align 3\n`;
+		status.vtable_data += `_${node.name}_destroy_funcs:\n`;
+		status.vtable_data += `.quad ${node.name}_destroy\n`;
+	}
+	const destroy_slot = has_destroy_fn ? `_${node.name}_destroy_funcs` : `0`;
+
+	status.vtable_data += `.p2align 3\n`;
+	status.vtable_data += `_${node.name}_traits:\n`;
+	// Slot [0] = destroy funcs (or 0); slots [1..traits.length] = per-trait
+	// funcs. The trait dispatch site in build_access_node.ts shifts
+	// trait_index by +1 to skip the destroy slot.
+	status.vtable_data += `.quad ${destroy_slot}\n`;
+	for (const t of status.traits) {
+		if (node.traits.includes(t.name)) {
+			status.vtable_data += `.quad _${node.name}_${t.name}_funcs\n`;
+		} else {
+			status.vtable_data += `.quad 0\n`;
+		}
+	}
+
+	for (const trait_name of node.traits) {
+		const trait = status.traits.find((t) => t.name === trait_name);
+		if (!trait) continue;
+		for (const field of trait.fields) {
+			const offset = get_field_offset(node.name, field.name, status);
+			status.vtable_data += `.p2align 2\n`;
+			status.vtable_data += `get_${node.name}_${field.name}:\n`;
+			status.vtable_data += `ldr x0, [x0, #${offset}]\n`;
+			status.vtable_data += `ret\n`;
+			status.vtable_data += `.p2align 2\n`;
+			status.vtable_data += `set_${node.name}_${field.name}:\n`;
+			status.vtable_data += `str x1, [x0, #${offset}]\n`;
+			status.vtable_data += `ret\n`;
 		}
 	}
 }

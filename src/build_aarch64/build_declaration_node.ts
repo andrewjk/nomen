@@ -526,6 +526,54 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 	// Check if type is a struct
 	const struct_type = status.structs.find((s) => s.name === node.type.name && !s.is_simple_type);
 
+	// A trait-typed local stores the concrete struct value (the initializer's
+	// actual type) so its vtable (offset 0) and field layout are correct for
+	// trait-typed dispatch and the generated field accessors. Allocate the
+	// concrete struct's size and run its constructor into that storage. The
+	// Nomen type stays the trait (set above) so method/field accesses dispatch
+	// through the vtable rather than lowering to a direct call.
+	if (
+		!struct_type &&
+		!!status.traits.find((t) => t.name === node.type.name) &&
+		node.value &&
+		node.value.node_type === "func_call"
+	) {
+		const val_type = type_from_value_node(node.value);
+		const concrete = status.structs.find(
+			(s) => s.name === val_type?.name && !s.is_simple_type && !s.is_generic,
+		);
+		if (concrete) {
+			const func_call = node.value as FunctionCallNode;
+			const struct_size = get_struct_size(concrete.name, status);
+			if (status.function_return_label) {
+				const offset = allocate_stack_space(status, struct_size);
+				status.stack_offsets!.set(node.name, offset);
+			} else {
+				emit_data(status, `${node.name}: .space ${struct_size}\n`);
+			}
+			if (func_call.name === concrete.name) {
+				const param_regs = ["x1", "x2", "x3", "x4", "x5", "x6", "x7"];
+				build_constructor_params(func_call, param_regs, status);
+				emit_var_address(status, "x0", node.name);
+				status.code += `bl ${func_call.name}_init\n`;
+				if (func_call.mov_param_indices?.length) {
+					for (const idx of func_call.mov_param_indices) {
+						mark_moved_if_struct(func_call.params[idx], status);
+					}
+				}
+				build_swap_params(func_call, status);
+			} else {
+				// Struct-returning function: pass the destination address via x8.
+				const old_buffer = status.struct_return_buffer;
+				emit_var_address(status, "x8", node.name);
+				status.struct_return_buffer = "x8";
+				build_node(node.value, status);
+				status.struct_return_buffer = old_buffer;
+			}
+			return;
+		}
+	}
+
 	// Don't track class variables that hold a borrowed reference (not an owned
 	// instance) as owned — they must not be destroyed/freed at scope exit.
 	// Borrows arise from a field access (`var Box b = h.c`) or a plain
