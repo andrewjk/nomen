@@ -24,7 +24,6 @@ Most types of memory corruption (use before initialization, use after free, doub
 - **GUI System** - a top-down/bottom-up layout system and a few different native controls (WIP)
 - **VS Code Extension** - with syntax highlighting for `.nm` files
 
-
 ## Quick Start
 
 ### Installation
@@ -618,3 +617,9 @@ The layout engine is constraints-down, sizes-up (like Flutter/SwiftUI): parents
 hand each child a size range, children report their intrinsic size, and the
 engine resolves it into pixel frames. See [GUI.md](GUI.md) for the full
 layout and compositor design.
+
+## Questions
+
+**Why create a new language?** I'm hoping to find the sweet spot between the ease of use of garbage collected languages and the power of manual memory allocated languages, which I don't think anyone has found yet.
+
+**Was AI used in the development of this programming language?** Yes, at the start of 2026 this was a much smaller hand-developed language with a half implemented C backend. Since then it has gained a fully implemented C backend, fully implemented AArch64 backend, and many features, all produced by AI under human guidance.
