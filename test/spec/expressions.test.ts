@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vite-plus/test";
 
-import { compile_main } from "./_helpers.ts";
+import { compile_main, compile_module } from "./_helpers.ts";
 
 describe("spec: variables", () => {
 	test("basic declarations", () => {
@@ -190,6 +190,44 @@ const x = arr.at(5)
 `;
 		const errors = compile_main(input);
 		expect(errors.some((e) => e.message.includes("not satisfied"))).toBe(true);
+	});
+});
+
+describe("spec: slicing", () => {
+	test("slice, to_string, length, and at", () => {
+		const input = `
+const str = "hello world"
+if str.length == 11 {
+	var view string v = str.slice(0, 5)
+	Console.write(v.to_string())
+	Console.write("\\{v.length}")
+	Console.write(v.at(1).to_string())
+}
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+
+	test("returning a view is an error", () => {
+		const errors = compile_module(`
+func bad = (string s: s.length >= 3, out view string) {
+	return s.slice(0, 3)
+}
+pub func main = () { Console.write("x") }
+`);
+		expect(errors.some((e) => e.message.includes("borrowed reference"))).toBe(true);
+	});
+
+	test("using a view after reassigning its source is an error", () => {
+		const input = `
+var string s = "hello"
+if s.length == 5 {
+	var view string v = s.slice(0, 3)
+	s = "world"
+	Console.write("\\{v.length}")
+}
+`;
+		const errors = compile_main(input);
+		expect(errors.some((e) => e.message.includes("invalidat"))).toBe(true);
 	});
 });
 

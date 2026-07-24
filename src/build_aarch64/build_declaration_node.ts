@@ -503,6 +503,23 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 		status.variable_types.set(node.name, node.type);
 	}
 
+	// `view string` local: a non-owning (ptr, len) value occupying two stack
+	// slots. It is produced by string.slice() in the x0/x1 register pair and is
+	// never auto-freed (it owns no heap). Handle it up front, before the
+	// struct/primitive routing below.
+	if (node.type.is_view && node.type.name === "string") {
+		const base = allocate_stack_space(status, 16, 16);
+		status.stack_offsets!.set(node.name, base);
+		if (node.value) {
+			build_node(node.value, status);
+			if (!status.code.endsWith("\n")) status.code += "\n";
+			// slice returns (ptr, len) in x0/x1 — spill both into the local.
+			status.code += `str x0, [x29, #${base}]\n`;
+			status.code += `str x1, [x29, #${base + 8}]\n`;
+		}
+		return;
+	}
+
 	const directive = aarch64_type(node.type.name);
 	const size = aarch64_size(node.type.name);
 

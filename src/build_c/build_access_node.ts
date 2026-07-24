@@ -65,6 +65,18 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 			}
 		}
 	}
+	// A bare variable's ValueNode.type may not carry `is_view` (the checker
+	// stores the full declared type on the declaration, not always on each
+	// use-site ValueNode). Recover it from variable_types so view access ops
+	// (`.length`, `.at`, `.to_string`) are recognized.
+	if (
+		!target_type.is_view &&
+		node.target.node_type === "value" &&
+		status.variable_types?.has((node.target as ValueNode).value)
+	) {
+		const vt = status.variable_types.get((node.target as ValueNode).value)!;
+		if (vt.is_view) target_type = vt;
+	}
 	const trait = status.traits.find((t) => t.name === target_type.name);
 	const enum_node = status.enums.find((e) => e.name === target_type.name);
 	const bitset_node = status.bitsets.find((b) => b.name === target_type.name);
@@ -99,6 +111,14 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				status.code += "(sizeof(";
 				build_node(node.target, status);
 				status.code += `) / sizeof(${type}))`;
+				return;
+			}
+			// view string.length — the slice's stored length (a real field on the
+			// view_string struct, no strlen). Must precede the string.length
+			// case: a view string also has name "string".
+			if (target_type.is_view && target_type.name === "string" && access_field.name === "length") {
+				build_node(node.target, status);
+				status.code += `.len`;
 				return;
 			}
 			// string.length — computed property that the check pass types as int
@@ -224,6 +244,31 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				const nursery_ptr = nursery_pointer_expr(node.target, status);
 				build_nursery_spawn(access_func, nursery_ptr, status);
 				return;
+			}
+			// `view string` builtins operate on the (ptr, len) slice directly:
+			//   v.at(i)       →  v.ptr[i]
+			//   v.to_string() →  malloc(len+1); memcpy; null-terminate (owned copy)
+			if (target_type.is_view && target_type.name === "string") {
+				if (access_func.name === "at" && access_func.params.length === 1) {
+					status.code += `(`;
+					status.suppress_dereference = true;
+					build_node(node.target, status);
+					status.suppress_dereference = false;
+					status.code += `.ptr)[`;
+					build_node(access_func.params[0], status);
+					status.code += `]`;
+					return;
+				}
+				if (access_func.name === "to_string") {
+					// GCC statement-expression: evaluate the receiver once into a
+					// temporary, then malloc/copy/null-terminate its bytes.
+					const id = (status.label_counter = (status.label_counter ?? 0) + 1);
+					const tmp = `_vts_${id}`;
+					status.code += `({ view_string ${tmp} = `;
+					build_node(node.target, status);
+					status.code += `; char* _r = malloc(${tmp}.len + 1); memcpy(_r, ${tmp}.ptr, ${tmp}.len); _r[${tmp}.len] = 0; _r; })`;
+					return;
+				}
 			}
 			// Inline .at()/.set()/.first() on plain C arrays (target_type.is_array
 			// with a known length means a stack/local C array, not an Array_*

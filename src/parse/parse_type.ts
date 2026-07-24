@@ -31,8 +31,10 @@ export default function parse_type(status: ParseStatus): Type {
 		return type;
 	}
 
+	const is_view = accept("view", status);
 	const is_ref = accept("ref", status);
 	const type = new Type(consume(status));
+	if (is_view) type.is_view = true;
 	if (is_ref) type.is_ref = true;
 	if (accept("<", status)) {
 		type.type_args = [parse_type(status)];

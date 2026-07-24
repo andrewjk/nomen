@@ -224,6 +224,11 @@ function check_access_field_node(
 			node.type = new Type("int");
 			return true;
 		}
+		// view string.length → the slice's stored length (no strlen, no field)
+		if (target_type.is_view && target_type.name === "string" && node.name === "length") {
+			node.type = new Type("int");
+			return true;
+		}
 	}
 	if (!field) {
 		const struct = status.structs.find((s) => s.name === target_type.name);
@@ -280,6 +285,23 @@ function check_access_function_node(
 	// spawn needs the per-site trampoline machinery.
 	if (target_type.name === "Nursery" && node.name === "spawn") {
 		return check_nursery_spawn(node, status);
+	}
+
+	// `view string` builtins: .at and .to_string are compiler intrinsics that
+	// operate on the (ptr, len) slice directly. They must NOT resolve to the
+	// `string` struct's methods (whose #arch bodies expect a `char*` self).
+	if (target_type.is_view && target_type.name === "string") {
+		if (node.name === "at") {
+			for (const param of node.params) {
+				check_node(param, status);
+			}
+			node.type = new Type("char");
+			return true;
+		}
+		if (node.name === "to_string") {
+			node.type = new Type("string");
+			return true;
+		}
 	}
 
 	// For array types, route method calls to the Array struct

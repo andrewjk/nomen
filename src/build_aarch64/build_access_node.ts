@@ -45,6 +45,59 @@ function emit_string_length(target: BaseNode, status: BuildStatus) {
 	status.last_result_is_heap = false;
 }
 
+/**
+ * `view string` builtins, operating on the (ptr, len) slice stored in two
+ * stack slots ([base]=ptr, [base+8]=len):
+ *   v.at(i)        →  byte at ptr[i], left in x0
+ *   v.to_string()  →  malloc(len+1); memcpy; null-terminate; owned copy in x0
+ * Returns true if handled (caller skips struct-method dispatch).
+ */
+function build_view_string_op(
+	node: AccessNode,
+	access_func: AccessFunctionCallNode,
+	status: BuildStatus,
+): boolean {
+	let t = type_from_value_node(node.target);
+	if (!t?.is_view && node.target.node_type === "value") {
+		const vt = status.variable_types?.get((node.target as ValueNode).value);
+		if (vt?.is_view) t = vt;
+	}
+	if (!t?.is_view || t.name !== "string") return false;
+	if (node.target.node_type !== "value") return false;
+	const base = status.stack_offsets?.get((node.target as ValueNode).value);
+	if (base === undefined) return false;
+
+	if (access_func.name === "at" && access_func.params.length === 1) {
+		// index → x0, then x1=index, x0=ptr, w0 = ptr[index]
+		build_node(access_func.params[0], status);
+		if (!status.code.endsWith("\n")) status.code += "\n";
+		status.code += `mov x1, x0\n`;
+		status.code += `ldr x0, [x29, #${base}]\n`;
+		status.code += `ldrb w0, [x0, x1]\n`;
+		return true;
+	}
+	if (access_func.name === "to_string") {
+		// Load ptr/len, save them, malloc(len+1), memcpy(dst,ptr,len), null-term.
+		status.code += `ldr x0, [x29, #${base}]\n`;
+		status.code += `ldr x1, [x29, #${base + 8}]\n`;
+		status.code += `stp x0, x1, [sp, #-16]!\n`; // [sp]=ptr, [sp+8]=len
+		status.code += `add x0, x1, #1\n`; // len+1
+		emit_malloc(status); // x0 = dst
+		status.code += `str x0, [sp, #-16]!\n`; // [sp]=dst (now -32)
+		status.code += `ldr x1, [sp, #16]\n`; // ptr
+		status.code += `ldr x2, [sp, #24]\n`; // len
+		status.code += `ldr x0, [sp]\n`; // dst
+		status.code += `bl _memcpy\n`;
+		status.code += `ldr x0, [sp]\n`; // dst (don't trust memcpy's return)
+		status.code += `ldr x1, [sp, #24]\n`; // len
+		status.code += `strb wzr, [x0, x1]\n`; // dst[len] = 0
+		status.code += `add sp, sp, #32\n`;
+		status.last_result_is_heap = true;
+		return true;
+	}
+	return false;
+}
+
 export function emit_address_of(node: BaseNode, status: BuildStatus) {
 	if (node.node_type === "value") {
 		const name = (node as ValueNode).value;
@@ -131,6 +184,11 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 			// Escape hatch: `nursery.spawn(fn, args...)`. See ASYNC.md.
 			if (access_func.is_nursery_spawn) {
 				build_nursery_spawn(node, access_func, status);
+				return;
+			}
+			// `view string` builtins (.at, .to_string) operate on the (ptr, len)
+			// slice directly — emit inline and skip struct-method dispatch.
+			if (build_view_string_op(node, access_func, status)) {
 				return;
 			}
 			build_access_method(node, access_func, status);
@@ -481,6 +539,24 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 			return;
 		}
 		status.code += `mov x0, #0\n`;
+		return;
+	}
+
+	// view string.length → the slice's stored length (second word of the local).
+	// Must precede the string.length case: a view string also has name "string".
+	if (
+		target_type.is_view &&
+		target_type.name === "string" &&
+		access_field.name === "length" &&
+		node.target.node_type === "value"
+	) {
+		const name = (node.target as ValueNode).value;
+		const offset = status.stack_offsets?.get(name);
+		if (offset !== undefined) {
+			status.code += `ldr x0, [x29, #${offset + 8}]\n`;
+		} else {
+			status.code += `mov x0, #0\n`;
+		}
 		return;
 	}
 

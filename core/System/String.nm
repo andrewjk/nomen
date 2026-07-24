@@ -23,6 +23,27 @@ pub struct string: Stringable {
         ```
     }
 
+    // A non-owning slice [start, end) into self's buffer. Returns a `view
+    // string` (ptr, len) that borrows from self: it may not outlive self's
+    // scope and is invalidated if self is reassigned. Use .to_string() to
+    // materialize an owned copy.
+    pub func slice = (self, int start: start >= 0 && start <= self.length, int end: end >= start && end <= self.length, out view string) {
+        ```
+        #arch: c
+        view_string _r;
+        _r.ptr = self + start;
+        _r.len = (long)(end - start);
+        return _r;
+        ```
+        ```
+        #arch: aarch64
+        // view string is (ptr, len), returned in the x0/x1 register pair.
+        // x19 = self (char*), x1 = start, x2 = end (retained through prologue).
+        add x0, x19, x1     // ptr = self + start
+        sub x1, x2, x1      // len = end - start
+        ```
+    }
+
 	pub func set = (ref self, int index: index >= 0 && index < self.length, char value) {
 		```
 		#arch: c

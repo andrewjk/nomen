@@ -7,6 +7,13 @@ export default class Type {
 	is_static?: boolean;
 	is_array?: boolean;
 	is_ref?: boolean;
+	/**
+	 * A non-owning, non-escaping borrow view of a container's contents
+	 * (e.g. `view string` = a (ptr, len) slice into a string's buffer).
+	 * Views are not auto-freed (they own no heap) and may not escape the
+	 * scope of their source — enforced by the existing borrow machinery.
+	 */
+	is_view?: boolean;
 
 	length?: BaseNode;
 	is_return_type?: boolean;

@@ -1,6 +1,7 @@
 import AccessFunctionCallNode from "../../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../../nodes/AccessNode.ts";
 import type BaseNode from "../../nodes/BaseNode.ts";
+import Type from "../../nodes/Type.ts";
 import ValueNode from "../../nodes/ValueNode.ts";
 import type CheckStatus from "../CheckStatus.ts";
 import { is_class_type } from "./ownership.ts";
@@ -15,6 +16,8 @@ import value_from_value_node from "./value_from_value_node.ts";
  *  - class field access (`p.a`) — borrow of `p`, taken in the current scope;
  *  - an instance method call returning a class (`list.pop()`, `arr.first()`)
  *    — borrow of the receiver, rooted at the receiver's lifetime;
+ *  - an instance method call returning a `view T` (e.g. `s.slice(0, 3)`)
+ *    — a non-owning slice that borrows from the receiver;
  *  - a variable that already holds one of the above.
  *
  * Constructors and static factories (`Box(1)`, `Array.with(...)`) produce owned
@@ -31,13 +34,13 @@ export function borrow_depth_of(node: BaseNode, status: CheckStatus): number | u
 			}
 		} else if (access.access.node_type === "access_func") {
 			const t = type_from_value_node(access, status);
-			if (t?.name && is_class_type(t.name, status)) {
+			if (is_borrowed_return(t, status)) {
 				// A `mov out T` method transfers ownership — the result is an
 				// owned value, not a borrow.
 				if ((access.access as AccessFunctionCallNode).owned_return) return undefined;
-				// Instance method returning a class borrows from its receiver.
-				// Static calls (receiver is a type name, not a variable in
-				// scope) and constructors produce owned values — not borrows.
+				// Instance method returning a class/view borrows from its
+				// receiver. Static calls (receiver is a type name, not a
+				// variable in scope) and constructors produce owned values.
 				if (access.target.node_type === "value") {
 					const recv = status.values.findLast((v) => v.name === (access.target as ValueNode).value);
 					if (recv) {
@@ -78,7 +81,7 @@ export function borrow_owner_of(node: BaseNode, status: CheckStatus): string | u
 			}
 		} else if (access.access.node_type === "access_func") {
 			const t = type_from_value_node(access, status);
-			if (t?.name && is_class_type(t.name, status)) {
+			if (is_borrowed_return(t, status)) {
 				// A `mov out T` method returns an owned value — no owner to root
 				// a borrow at (and it must not be invalidated by receiver mutation).
 				if ((access.access as AccessFunctionCallNode).owned_return) return undefined;
@@ -102,6 +105,17 @@ export function borrow_owner_of(node: BaseNode, status: CheckStatus): string | u
 		return decl?.borrowed_from;
 	}
 	return undefined;
+}
+
+/**
+ * Whether a method-call result type is a borrow of its receiver (rather than an
+ * owned value). True for class-typed returns and for `view T` returns; false for
+ * primitives, constructors, and `mov out T` (owned) returns.
+ */
+function is_borrowed_return(t: Type | undefined, status: CheckStatus): boolean {
+	if (!t) return false;
+	if (t.is_view) return true;
+	return !!t.name && is_class_type(t.name, status);
 }
 
 /**
@@ -141,6 +155,25 @@ export function receiver_owner_of(target: BaseNode, status: CheckStatus): string
 		return owner;
 	}
 	return undefined;
+}
+
+/**
+ * Mark every live VIEW borrow rooted at `owner` as invalidated. Used when a
+ * bare variable is reassigned: a `view string`/`view T[]` slice points into
+ * the old buffer, which is freed at the reassignment, so the view dangles.
+ *
+ * This is intentionally NARROWER than `invalidate_borrows_of`: class
+ * child-group borrows are kept valid across owner reassignment by deferred
+ * reclamation (the old instance is freed at scope exit, after the borrow's
+ * own scope ends), so they must NOT be invalidated here. Only views — whose
+ * backing buffer is reclaimed immediately on reassignment — need this.
+ */
+export function invalidate_view_borrows_of(status: CheckStatus, owner: string) {
+	for (const v of status.values) {
+		if (v.borrowed_from === owner && v.type?.is_view) {
+			v.borrow_invalidated = true;
+		}
+	}
 }
 
 /**

@@ -1589,6 +1589,44 @@ const arr = [10, 20, 30]
 const x = arr.at(5)  // Error: Parameter constraint not satisfied
 ```
 
+### Slicing
+
+`string.slice(start, end)` returns a non-owning `view string` — a `(ptr, len)`
+borrow of the half-open range `[start, end)` into the source's buffer. It is
+O(1): no bytes are copied. Use `.to_string()` to materialize an owned copy,
+and `.at(i)` / `.length` to read the slice in place.
+
+```
+const str = "hello world"
+if str.length == 11 {
+    var view string v = str.slice(0, 5)
+    Console.write(v.to_string())   // "hello"
+    Console.write("\\{v.length}")      // 5
+    Console.write(v.at(1).to_string()) // "e"
+}
+```
+
+A `view` borrows from its source, so the borrow checker enforces two rules:
+
+- **Non-escaping.** A view may not be returned from a function or assigned to a
+  variable in an outer scope — it must not outlive its source.
+- **Invalidation.** Reassigning the source (`str = "other"`) frees the buffer
+  the view points into, so the view is invalidated; reading it afterwards is a
+  compile error. Re-fetch the slice after the source changes.
+
+```
+func bad = (string s: s.length >= 3, out view string) {
+    return s.slice(0, 3)   // Error: cannot return a borrowed reference
+}
+
+var string s = "hello"
+if s.length == 5 {
+    var view string v = s.slice(0, 3)
+    s = "world"
+    Console.write("\\{v.length}")  // Error: borrow invalidated by source reassignment
+}
+```
+
 ### Field Access
 
 ```

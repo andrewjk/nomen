@@ -8,7 +8,7 @@ import OperationNode from "../nodes/OperationNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
-import { borrow_depth_of, borrow_owner_of } from "./utils/borrow.ts";
+import { borrow_depth_of, borrow_owner_of, invalidate_view_borrows_of } from "./utils/borrow.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
 import evaluate_const_condition from "./utils/evaluate_const_condition.ts";
 import { snapshot_bounds, track_assignment_bounds } from "./utils/flow_bounds.ts";
@@ -132,6 +132,17 @@ export default function check_assignment_node(
 		left_value.lower_bound_inclusive_exprs = undefined;
 		left_value.alias_of = undefined;
 		left_value.class_alias_of = undefined;
+		// Reassigning a bare variable reclaims its old value. For a `view`
+		// borrow rooted here (a string/array slice into the old buffer), that
+		// backing storage is freed at the reassignment, so the view dangles —
+		// invalidate view borrows so a later read is rejected. Class
+		// child-group borrows are intentionally left valid: deferred
+		// reclamation keeps the old instance (and thus the borrow) alive until
+		// scope exit, after the borrow's own scope ends. Object-level aliases
+		// (class_alias_of) are likewise unaffected.
+		if (assign.left_value.node_type === "value") {
+			invalidate_view_borrows_of(status, left_value.name);
+		}
 		// Re-track bounds if the RHS establishes new ones (e.g. cap = buf.get_cap()).
 		// Skip for compound assignments (+=, -=, etc.) since the RHS is a delta,
 		// not the new value.
