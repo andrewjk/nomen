@@ -165,9 +165,14 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		status.code = "";
 	}
 
-	const return_struct = status.structs.find(
-		(s) => s.name === node.return_type.name && !s.is_simple_type && !s.is_class,
-	);
+	// A `view T` return is a (ptr, len) pair in x0/x1 — never a sret struct,
+	// even when the element T is itself a struct. Exclude views here so a
+	// `view User` slice return isn't misclassified as a struct return.
+	const return_struct =
+		!node.return_type.is_view &&
+		!!status.structs.find(
+			(s) => s.name === node.return_type.name && !s.is_simple_type && !s.is_class,
+		);
 	if (return_struct) {
 		status.struct_return_buffer = "x8";
 	}

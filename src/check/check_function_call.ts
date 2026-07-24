@@ -692,7 +692,14 @@ export default function check_function_call(
 	// propagates its numeric value — `const_value` is reserved for `const`
 	// declarations, but a `var` initialized with a literal still gets a
 	// point range `[n, n+1)` via `track_assignment_bounds`.
-	if (self_path && self_path !== "?" && target_type?.name === "Buffer" && func.return_constraint) {
+	// Match the generic `Buffer` (checked pre-mono on generic containers like
+	// List<T>) as well as monomorphized names (Buffer_int, ClassBuffer_Animal)
+	// seen on non-generic structs whose Buffer<T> fields are already rewritten.
+	const is_bufferish =
+		target_type?.name === "Buffer" ||
+		!!target_type?.name?.startsWith("Buffer_") ||
+		!!target_type?.name?.startsWith("ClassBuffer_");
+	if (self_path && self_path !== "?" && is_bufferish && func.return_constraint) {
 		const size_param = node.params[0];
 		if (size_param) {
 			const from_const = evaluate_numeric_or_bool(size_param, status);

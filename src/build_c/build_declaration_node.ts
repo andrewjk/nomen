@@ -234,10 +234,10 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			status.code += `struct ${mono_name} *${safe_name}`;
 		} else if (mono_struct) {
 			status.code += `struct ${mono_name} ${safe_name}`;
-		} else if (node.type.is_view && node.type.name === "string") {
-			// A `view string` local is a non-owning (ptr, len) value on the
-			// stack. It borrows from its source and is never auto-freed.
-			status.code += `view_string ${safe_name}`;
+		} else if (node.type.is_view) {
+			// A `view T` local is a non-owning (ptr, len) slice on the stack.
+			// It borrows from its source and is never auto-freed.
+			status.code += `nomen_view ${safe_name}`;
 		} else if (node.type.is_array && !is_stack_array) {
 			status.code += `${c_type(node.type.name)} *${safe_name}`;
 			// A heap array emitted as a plain `T*` pointer (e.g. from

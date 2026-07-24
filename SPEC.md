@@ -1591,40 +1591,73 @@ const x = arr.at(5)  // Error: Parameter constraint not satisfied
 
 ### Slicing
 
-`string.slice(start, end)` returns a non-owning `view string` — a `(ptr, len)`
-borrow of the half-open range `[start, end)` into the source's buffer. It is
-O(1): no bytes are copied. Use `.to_string()` to materialize an owned copy,
-and `.at(i)` / `.length` to read the slice in place.
+`slice(start, end)` returns a non-owning `view T` — a `(ptr, len)` borrow of
+the half-open range `[start, end)` into the source's buffer. It is O(1): no
+elements are copied. The element type `T` is the container's element (`char`
+for `string`, `T` for `Array<T>` / `List<T>`). Use `.at(i)` / `.length` to read
+the slice in place, and `.to_string()` (string views only) to materialize an
+owned copy.
+
+`string`, `Array<T>`, and `List<T>` all have `slice`:
 
 ```
 const str = "hello world"
-if str.length == 11 {
-    var view string v = str.slice(0, 5)
-    Console.write(v.to_string())   // "hello"
-    Console.write("\\{v.length}")      // 5
-    Console.write(v.at(1).to_string()) // "e"
+var view string v = str.slice(0, 5)
+Console.write(v.to_string())      // "hello"
+Console.write("\\{v.length}")         // 5
+
+const int[] nums = [10, 20, 30, 40, 50]
+var view int s = nums.slice(1, 4)
+Console.write("\\{s.length}")          // 3
+Console.write("\\{s.at(0)}")           // 20
+Console.write("\\{s.at(2)}")           // 40
+
+var List<int> list = List<int>()
+list.push(1); list.push(2); list.push(3)
+var view int t = list.slice(0, 2)  // delegates to the backing Buffer's slice
+Console.write("\\{t.at(1)}")           // 2
+```
+
+#### User-defined sliceable containers
+
+Slicing is a **convention**, not a builtin. Any struct can expose `slice` by
+conforming to the `Viewable` trait and implementing a `slice(start, end, out
+view T)` method. In practice a container just delegates to its backing
+`Buffer`'s `slice` — pure Nomen, no inline architecture code:
+
+```
+pub struct UserList: Viewable {
+    var int length = 0
+    var Buffer<User> items = Buffer<User>()
+    pub func slice = (self, int start: start >= 0, int end: end >= start, out view User) {
+        return self.items.slice(start, end)
+    }
 }
+var view User sub = users.slice(10, 20)   // borrows from `users`
+sub.at(3)        // a User
+sub.length       // 10
 ```
 
 A `view` borrows from its source, so the borrow checker enforces two rules:
 
-- **Non-escaping.** A view may not be returned from a function or assigned to a
-  variable in an outer scope — it must not outlive its source.
-- **Invalidation.** Reassigning the source (`str = "other"`) frees the buffer
-  the view points into, so the view is invalidated; reading it afterwards is a
+- **Non-escaping.** A view may not be assigned to a variable in an outer scope —
+  it must not outlive its source. A view may be _returned_ only when it borrows
+  from `self` (the receiver): that is exactly how a `slice` method hands its
+  result back to the caller, where it is re-rooted at the call-site receiver.
+  Returning a view that borrows from a plain parameter is rejected.
+- **Invalidation.** Reassigning the source (`nums = [...]`) frees the buffer the
+  view points into, so the view is invalidated; reading it afterwards is a
   compile error. Re-fetch the slice after the source changes.
 
 ```
-func bad = (string s: s.length >= 3, out view string) {
-    return s.slice(0, 3)   // Error: cannot return a borrowed reference
+func bad = (int[] a: a.length >= 2, out view int) {
+    return a.slice(0, 2)   // Error: cannot return a view borrowing from a parameter
 }
 
-var string s = "hello"
-if s.length == 5 {
-    var view string v = s.slice(0, 3)
-    s = "world"
-    Console.write("\\{v.length}")  // Error: borrow invalidated by source reassignment
-}
+var int[] arr = [1, 2, 3]
+var view int v = arr.slice(0, 2)
+arr = [9, 9, 9]
+Console.write("\\{v.length}")  // Error: borrow invalidated by source reassignment
 ```
 
 ### Field Access

@@ -1,4 +1,4 @@
-pub struct Array<T> {
+pub struct Array<T>: Viewable {
     pub const int length
 
     pub func #init = (...T items) {
@@ -102,6 +102,28 @@ pub struct Array<T> {
         mov x1, #T_SIZE
         mul x0, x0, x1
         ldr x0, [x19, x0]
+        ```
+    }
+
+    // A non-owning (ptr, len) slice [start, end) over self's inline element
+    // storage, returned as a `view T`. Borrows from self (may not outlive it,
+    // invalidated on reassignment). Element access via view.at / view.length.
+    pub func slice = (self, int start: start >= 0 && start <= self.length, int end: end >= start && end <= self.length, out view T) {
+        ```
+        #arch: c
+        nomen_view _r;
+        T* _data = (T*)((char*)self + sizeof(*self));
+        _r.ptr = (void*)(_data + start);
+        _r.len = (long)(end - start);
+        return _r;
+        ```
+        ```
+        #arch: aarch64
+        // x19 = self (first elem), x1 = start, x2 = end.
+        // Return (ptr, len) in x0/x1.
+        mov x3, #T_SIZE
+        madd x0, x1, x3, x19
+        sub x1, x2, x1
         ```
     }
 

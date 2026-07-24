@@ -345,6 +345,7 @@ function substitute_type(type: Type, substitution: Map<string, string>): Type {
 	const resolved_name = substitution.get(type.name) || type.name;
 	const new_type = new Type(resolved_name, type.is_static, type.is_array, type.length);
 	new_type.is_ref = type.is_ref;
+	new_type.is_view = type.is_view;
 	new_type.is_nullable = type.is_nullable;
 	if (resolved_name !== type.name) {
 		new_type.type_args = undefined;

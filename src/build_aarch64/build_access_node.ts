@@ -46,13 +46,15 @@ function emit_string_length(target: BaseNode, status: BuildStatus) {
 }
 
 /**
- * `view string` builtins, operating on the (ptr, len) slice stored in two
- * stack slots ([base]=ptr, [base+8]=len):
- *   v.at(i)        →  byte at ptr[i], left in x0
+ * `view T` builtins, operating on the (ptr, len) slice stored in two stack
+ * slots ([base]=ptr, [base+8]=len):
+ *   v.at(i)        →  element at ptr[i], left in x0 (or a sret temp for a
+ *                     struct element, with x0 = temp address)
  *   v.to_string()  →  malloc(len+1); memcpy; null-terminate; owned copy in x0
+ *                     (string views only)
  * Returns true if handled (caller skips struct-method dispatch).
  */
-function build_view_string_op(
+function build_view_op(
 	node: AccessNode,
 	access_func: AccessFunctionCallNode,
 	status: BuildStatus,
@@ -62,21 +64,49 @@ function build_view_string_op(
 		const vt = status.variable_types?.get((node.target as ValueNode).value);
 		if (vt?.is_view) t = vt;
 	}
-	if (!t?.is_view || t.name !== "string") return false;
+	if (!t?.is_view) return false;
 	if (node.target.node_type !== "value") return false;
 	const base = status.stack_offsets?.get((node.target as ValueNode).value);
 	if (base === undefined) return false;
 
+	const elem_name = t.name === "string" ? "char" : t.name;
+
 	if (access_func.name === "at" && access_func.params.length === 1) {
-		// index → x0, then x1=index, x0=ptr, w0 = ptr[index]
+		// index → x0, then x1=index, x0=ptr
 		build_node(access_func.params[0], status);
 		if (!status.code.endsWith("\n")) status.code += "\n";
 		status.code += `mov x1, x0\n`;
 		status.code += `ldr x0, [x29, #${base}]\n`;
-		status.code += `ldrb w0, [x0, x1]\n`;
+		const elem_struct = status.structs.find((s) => s.name === elem_name && !s.is_simple_type);
+		if (elem_struct) {
+			// Struct element: addr = ptr + index*size; memcpy into a sret temp;
+			// leave x0 = temp address (matches struct-returning method calls).
+			const size = get_struct_size(elem_name, status);
+			status.code += `mov x2, #${size}\n`;
+			status.code += `madd x0, x1, x2, x0\n`; // x0 = ptr + index*size
+			const temp_offset = allocate_stack_space(status, size);
+			status.code += `mov x1, x0\n`; // x1 = elem addr (src)
+			status.code += `add x0, x29, #${temp_offset}\n`; // x0 = temp (dst)
+			status.code += `mov x2, #${size}\n`;
+			status.code += `bl _memcpy\n`;
+			status.code += `add x0, x29, #${temp_offset}\n`; // reload dst
+			return true;
+		}
+		// Primitive element: scaled load based on element width.
+		const size = aarch64_size(elem_name);
+		const signed = elem_name.startsWith("int") || elem_name === "char";
+		if (size === 1) {
+			status.code += signed ? `ldrsb x0, [x0, x1]\n` : `ldrb w0, [x0, x1]\n`;
+		} else if (size === 2) {
+			status.code += signed ? `ldrsh x0, [x0, x1, lsl #1]\n` : `ldrh w0, [x0, x1, lsl #1]\n`;
+		} else if (size === 4) {
+			status.code += signed ? `ldrsw x0, [x0, x1, lsl #2]\n` : `ldr w0, [x0, x1, lsl #2]\n`;
+		} else {
+			status.code += `ldr x0, [x0, x1, lsl #3]\n`;
+		}
 		return true;
 	}
-	if (access_func.name === "to_string") {
+	if (access_func.name === "to_string" && t.name === "string") {
 		// Load ptr/len, save them, malloc(len+1), memcpy(dst,ptr,len), null-term.
 		status.code += `ldr x0, [x29, #${base}]\n`;
 		status.code += `ldr x1, [x29, #${base + 8}]\n`;
@@ -186,9 +216,9 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				build_nursery_spawn(node, access_func, status);
 				return;
 			}
-			// `view string` builtins (.at, .to_string) operate on the (ptr, len)
+			// `view T` builtins (.at, .to_string) operate on the (ptr, len)
 			// slice directly — emit inline and skip struct-method dispatch.
-			if (build_view_string_op(node, access_func, status)) {
+			if (build_view_op(node, access_func, status)) {
 				return;
 			}
 			build_access_method(node, access_func, status);
@@ -542,14 +572,9 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 		return;
 	}
 
-	// view string.length → the slice's stored length (second word of the local).
+	// view T.length → the slice's stored length (second word of the local).
 	// Must precede the string.length case: a view string also has name "string".
-	if (
-		target_type.is_view &&
-		target_type.name === "string" &&
-		access_field.name === "length" &&
-		node.target.node_type === "value"
-	) {
+	if (target_type.is_view && access_field.name === "length" && node.target.node_type === "value") {
 		const name = (node.target as ValueNode).value;
 		const offset = status.stack_offsets?.get(name);
 		if (offset !== undefined) {
@@ -1322,10 +1347,13 @@ function build_access_method(
 	const method_name =
 		access_func.mangled_name || `${mono_struct_name}_${access_func.name.replace(/#/g, "")}`;
 
-	// Check if method returns a struct
-	const return_struct = status.structs.find(
-		(s) => s.name === access_func.type.name && !s.is_simple_type && !s.is_class,
-	);
+	// Check if method returns a struct. A `view T` return is a (ptr, len) pair
+	// in x0/x1, not a sret struct — exclude views even when T is a struct.
+	const return_struct =
+		!access_func.type.is_view &&
+		!!status.structs.find(
+			(s) => s.name === access_func.type.name && !s.is_simple_type && !s.is_class,
+		);
 
 	let temp_addr = "";
 	let temp_offset = 0;
@@ -1380,6 +1408,7 @@ function build_access_method(
 					status.code += `ldr x0, [x0]\n`;
 				} else if (
 					target_is_simple &&
+					!target_type.is_array &&
 					(target_type.name !== "string" || has_stack_offset) &&
 					!is_local_ref_var(name, status)
 				) {

@@ -13,6 +13,18 @@ import c_type from "./utils/c_type.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 
 /**
+ * The C type of a single element of a `view T` slice, used to cast the
+ * universal `nomen_view.ptr` for `.at`/`.set`. `view string`'s element is a
+ * `char`; every other view's element is its own type name.
+ */
+function view_element_c_type(view_type: Type, status: BuildStatus): string {
+	const elem_name = view_type.name === "string" ? "char" : view_type.name;
+	const is_struct = !!status.structs.find((s) => s.name === elem_name && !s.is_simple_type);
+	if (is_struct) return `struct ${elem_name}`;
+	return c_type(elem_name);
+}
+
+/**
  * Compute a C expression that yields a `struct Nursery *` for the receiver of
  * a `name.spawn(...)` escape-hatch call. A `ref Nursery` parameter is already a
  * pointer; any other Nursery lvalue (the async block's named local, etc.)
@@ -113,10 +125,10 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				status.code += `) / sizeof(${type}))`;
 				return;
 			}
-			// view string.length — the slice's stored length (a real field on the
-			// view_string struct, no strlen). Must precede the string.length
-			// case: a view string also has name "string".
-			if (target_type.is_view && target_type.name === "string" && access_field.name === "length") {
+			// view T.length — the slice's stored length (a real field on the
+			// universal nomen_view struct, no strlen). Must precede the
+			// string.length case: a view string also has name "string".
+			if (target_type.is_view && access_field.name === "length") {
 				build_node(node.target, status);
 				status.code += `.len`;
 				return;
@@ -245,12 +257,15 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				build_nursery_spawn(access_func, nursery_ptr, status);
 				return;
 			}
-			// `view string` builtins operate on the (ptr, len) slice directly:
-			//   v.at(i)       →  v.ptr[i]
+			// `view T` builtins operate on the universal (ptr, len) slice directly:
+			//   v.at(i)       →  ((Elem*)v.ptr)[i]
 			//   v.to_string() →  malloc(len+1); memcpy; null-terminate (owned copy)
-			if (target_type.is_view && target_type.name === "string") {
+			//     (to_string is string-only: it materializes a char slice.)
+			// Views are read-only — there is no `.set`.
+			if (target_type.is_view) {
 				if (access_func.name === "at" && access_func.params.length === 1) {
-					status.code += `(`;
+					const elem = view_element_c_type(target_type, status);
+					status.code += `((${elem}*)`;
 					status.suppress_dereference = true;
 					build_node(node.target, status);
 					status.suppress_dereference = false;
@@ -259,12 +274,12 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 					status.code += `]`;
 					return;
 				}
-				if (access_func.name === "to_string") {
+				if (access_func.name === "to_string" && target_type.name === "string") {
 					// GCC statement-expression: evaluate the receiver once into a
 					// temporary, then malloc/copy/null-terminate its bytes.
 					const id = (status.label_counter = (status.label_counter ?? 0) + 1);
 					const tmp = `_vts_${id}`;
-					status.code += `({ view_string ${tmp} = `;
+					status.code += `({ nomen_view ${tmp} = `;
 					build_node(node.target, status);
 					status.code += `; char* _r = malloc(${tmp}.len + 1); memcpy(_r, ${tmp}.ptr, ${tmp}.len); _r[${tmp}.len] = 0; _r; })`;
 					return;
@@ -283,7 +298,8 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				!target_is_heap_array &&
 				((access_func.name === "at" && access_func.params.length === 1) ||
 					(access_func.name === "set" && access_func.params.length === 2) ||
-					(access_func.name === "first" && access_func.params.length === 0));
+					(access_func.name === "first" && access_func.params.length === 0) ||
+					(access_func.name === "slice" && access_func.params.length === 2));
 			if (wants_inline) {
 				if (access_func.name === "at") {
 					status.code += `(`;
@@ -311,6 +327,22 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 					build_node(node.target, status);
 					status.suppress_dereference = false;
 					status.code += `[0])`;
+					break;
+				}
+				// slice on a plain C array: build a nomen_view (ptr, len) over
+				// [start, end) using C pointer arithmetic (the element width is
+				// implicit in the array's type). Statement-expression so each
+				// operand evaluates once.
+				if (access_func.name === "slice") {
+					status.code += `({ nomen_view _r; long _s = `;
+					build_node(access_func.params[0], status);
+					status.code += `; _r.ptr = (void*)(`;
+					status.suppress_dereference = true;
+					build_node(node.target, status);
+					status.suppress_dereference = false;
+					status.code += ` + _s); _r.len = (long)(`;
+					build_node(access_func.params[1], status);
+					status.code += ` - _s); _r; })`;
 					break;
 				}
 			}

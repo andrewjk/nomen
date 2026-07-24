@@ -115,12 +115,15 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 		);
 		const is_struct = !!return_struct;
 		const return_is_class = !!return_struct?.is_class;
-		// Class returns are pointers; struct returns are by-value.
-		const type_prefix = is_struct
-			? return_is_class
-				? `struct ${mono_type_name}* `
-				: `struct ${mono_type_name} `
-			: c_type(ret_type.name || "int");
+		// Class returns are pointers; struct returns are by-value. A `view T`
+		// return is the universal nomen_view (ptr, len) struct, by value.
+		const type_prefix = ret_type.is_view
+			? "nomen_view "
+			: is_struct
+				? return_is_class
+					? `struct ${mono_type_name}* `
+					: `struct ${mono_type_name} `
+				: c_type(ret_type.name || "int");
 		// Match/switch/if are statements in C, not expressions — `_return_val
 		// = switch(...)` is invalid. Declare _return_val uninitialised, set
 		// return_assign so each branch's LetNode/ReturnNode assigns to it,
@@ -135,7 +138,7 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 			build_node(node.value, status);
 			status.return_assign = old_return_assign;
 			build_auto_free(status);
-			if (ret_type.name === "string") {
+			if (ret_type.name === "string" && !ret_type.is_view) {
 				status.code += `return strdup(_return_val);\n`;
 			} else {
 				status.code += `return _return_val;\n`;
@@ -171,11 +174,13 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 		// already produces a fresh owned heap string — strdup'ing it copies the
 		// result and LEAKS the original. Detect the access kind and skip the
 		// strdup for owned-string-returning method calls.
-		let returns_borrowed_string = ret_type.name === "string" && node.value.node_type === "access";
+		let returns_borrowed_string =
+			ret_type.name === "string" && !ret_type.is_view && node.value.node_type === "access";
 		// A bare string literal return (`return "Wizard"`) is not heap-allocated;
 		// the caller's auto_free would crash freeing it. strdup to make it owned.
 		const returns_string_literal =
 			ret_type.name === "string" &&
+			!ret_type.is_view &&
 			node.value.node_type === "value" &&
 			(node.value as ValueNode).value.length >= 2 &&
 			(node.value as ValueNode).value.startsWith('"') &&
@@ -209,7 +214,11 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 			(s) => s.name === expr_type_name && !s.is_simple_type,
 		);
 		const needs_type_erasure_cast =
-			is_struct && expr_is_simple && !returns_bare_self && !returns_borrowed_string;
+			is_struct &&
+			expr_is_simple &&
+			!returns_bare_self &&
+			!returns_borrowed_string &&
+			!ret_type.is_view;
 		if (needs_type_erasure_cast) {
 			status.code += return_is_class ? `(struct ${mono_type_name}*)` : `(struct ${mono_type_name})`;
 		}

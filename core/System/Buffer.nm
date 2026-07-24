@@ -402,6 +402,30 @@ pub struct Buffer<T> {
         ```
     }
 
+    // A non-owning (ptr, len) slice [start, end) over this buffer's element
+    // storage, returned as a `view T`. It borrows from self: it may not outlive
+    // self's scope and is invalidated if self is reassigned. This is the single
+    // primitive every other slice (Array<T>, List<T>, user containers) builds
+    // on — higher layers just `return self.items.slice(start, end)`.
+    func slice = (self, int start: start >= 0, int end: end >= start, out view T) {
+        ```
+        #arch: c
+        nomen_view _r;
+        _r.ptr = (void*)((T*)(unsigned long long)self->data + start);
+        _r.len = (long)(end - start);
+        return _r;
+        ```
+        ```
+        #arch: aarch64
+        // x19 = self (Buffer struct ptr), x1 = start, x2 = end.
+        // self->data lives at [x19, #8]. Return (ptr, len) in x0/x1.
+        ldr x0, [x19, #8]
+        mov x3, #T_SIZE
+        madd x0, x1, x3, x0
+        sub x1, x2, x1
+        ```
+    }
+
     inline func zero_T = (ref self, int len) {
         ```
         #arch: c

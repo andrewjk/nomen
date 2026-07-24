@@ -30,8 +30,8 @@ pub struct string: Stringable {
     pub func slice = (self, int start: start >= 0 && start <= self.length, int end: end >= start && end <= self.length, out view string) {
         ```
         #arch: c
-        view_string _r;
-        _r.ptr = self + start;
+        nomen_view _r;
+        _r.ptr = (void*)(self + start);
         _r.len = (long)(end - start);
         return _r;
         ```

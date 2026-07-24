@@ -43,6 +43,7 @@ export function clone_type(type: Type): Type {
 		type.length ? clone_node(type.length) : undefined,
 	);
 	t.is_ref = type.is_ref;
+	t.is_view = type.is_view;
 	t.is_return_type = type.is_return_type;
 	t.is_nullable = type.is_nullable;
 	t.type_args = type.type_args?.map(clone_type);

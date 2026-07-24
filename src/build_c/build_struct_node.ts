@@ -365,11 +365,10 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 			// Array struct types (e.g. Array_int) return void* (pointer to heap buffer
 			// with header + data layout). The #arch: c block allocates the buffer.
 			status.code += `void* ${func_label_name}(`;
-		} else if (func.return_type.is_view && return_type === "string") {
-			// A `view string` return is a non-owning (ptr, len) value returned
-			// by value (e.g. string_slice). The #arch: c block returns a
-			// view_string struct.
-			status.code += `view_string ${func_label_name}(`;
+		} else if (func.return_type.is_view) {
+			// A `view T` return is a non-owning (ptr, len) slice returned by
+			// value. Every view lowers to the universal nomen_view struct.
+			status.code += `nomen_view ${func_label_name}(`;
 		} else {
 			const return_struct = status.structs.find((s) => s.name === return_type && !s.is_simple_type);
 			if (return_struct) {

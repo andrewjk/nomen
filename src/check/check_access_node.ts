@@ -224,8 +224,8 @@ function check_access_field_node(
 			node.type = new Type("int");
 			return true;
 		}
-		// view string.length → the slice's stored length (no strlen, no field)
-		if (target_type.is_view && target_type.name === "string" && node.name === "length") {
+		// view T.length — the slice's stored element count (no strlen, no field)
+		if (target_type.is_view && node.name === "length") {
 			node.type = new Type("int");
 			return true;
 		}
@@ -287,18 +287,22 @@ function check_access_function_node(
 		return check_nursery_spawn(node, status);
 	}
 
-	// `view string` builtins: .at and .to_string are compiler intrinsics that
-	// operate on the (ptr, len) slice directly. They must NOT resolve to the
-	// `string` struct's methods (whose #arch bodies expect a `char*` self).
-	if (target_type.is_view && target_type.name === "string") {
-		if (node.name === "at") {
+	// `view T` builtins: .at is a compiler intrinsic that operates on the
+	// (ptr, len) slice directly. It must NOT resolve to the underlying struct's
+	// methods (whose #arch bodies expect a pointer self, not a view). The
+	// element type is `char` for `view string`, else the view's own name.
+	// `.to_string` is string-only (it materializes a char slice into a string).
+	// Views are read-only — there is no `.set`.
+	if (target_type.is_view) {
+		const elem_name = target_type.name === "string" ? "char" : target_type.name;
+		if (node.name === "at" && node.params.length === 1) {
 			for (const param of node.params) {
 				check_node(param, status);
 			}
-			node.type = new Type("char");
+			node.type = new Type(elem_name);
 			return true;
 		}
-		if (node.name === "to_string") {
+		if (node.name === "to_string" && target_type.name === "string") {
 			node.type = new Type("string");
 			return true;
 		}

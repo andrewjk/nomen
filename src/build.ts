@@ -134,6 +134,13 @@ export default function build(
 		}
 	} else {
 		build_c_node(root, status);
+		// A `view T` is a non-owning, non-escaping (ptr, len) slice into a
+		// container's buffer. Every view — `view string`, `view int`, `view
+		// User`, ... — lowers to the same C struct; the element type lives in
+		// the Nomen `Type` (used to cast `ptr` on `.at`), not in the struct.
+		// Defined up front so any view reference (notably a slice method's
+		// #arch body, emitted whenever System is imported) compiles.
+		status.code = `typedef struct { void* ptr; long len; } nomen_view;\n` + status.code;
 		if (options.audit) {
 			// Route the C backend through audit_runtime.c (the same runtime
 			// aarch64 uses): wrap every malloc/calloc/realloc/free/strdup so

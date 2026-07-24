@@ -153,6 +153,29 @@ pub struct ClassBuffer<T> {
 		```
 	}
 
+	// A non-owning (ptr, len) slice [start, end) over this buffer's class
+	// pointers, returned as a `view T` (T is a class, so each element is an
+	// 8-byte pointer). Borrows from self — invalidated on reassignment. Mirrors
+	// Buffer.slice; ClassBuffer stores 8-byte slots, so the element width is 8.
+	func slice = (self, int start: start >= 0, int end: end >= start, out view T) {
+		```
+		#arch: c
+		nomen_view _r;
+		_r.ptr = (void*)((long*)(unsigned long long)self->data + start);
+		_r.len = (long)(end - start);
+		return _r;
+		```
+		```
+		#arch: aarch64
+		// x19 = self (ClassBuffer struct ptr), x1 = start, x2 = end.
+		// self->data at [x19, #8]. Return (ptr, len) in x0/x1.
+		ldr x0, [x19, #8]
+		mov x3, #8
+		madd x0, x1, x3, x0
+		sub x1, x2, x1
+		```
+	}
+
 	func #destroy = () {
 		```
 		#arch: c

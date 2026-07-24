@@ -11,7 +11,8 @@ Most types of memory corruption (use before initialization, use after free, doub
 - **Typed Values** - bools, ints, strings and so forth
 - **Structs & Classes** — value-type structs and reference-type classes
 - **Automatic Memory Management** — `#init` functions to allocate resources, `#destroy` functions to clear them at scope exit
-- **Ownership** — `mov` single-ownership and `ref` borrows for class instances
+- **Ownership** — `mov` instances to a new owner, or share instances by `ref`
+- **Borrowed Slices** — `view` instances are non-owning, zero-copy slices that can't outlive their source
 - **Traits** — interface-based polymorphism
 - **Enums & Bitsets** — sum types with associated data, plus composable bit flags
 - **Operator Overloading** — custom behavior for arithmetic operators
@@ -21,6 +22,8 @@ Most types of memory corruption (use before initialization, use after free, doub
 - **Structured Concurrency** — run concurrent tasks via OS threads
 - **Core System Library** - small but growing, with data structures that remove the need for you to fight with the borrow checker
 - **GUI System** - a top-down/bottom-up layout system and a few different native controls (WIP)
+- **VS Code Extension** - with syntax highlighting for `.nm` files
+
 
 ## Quick Start
 
@@ -90,6 +93,16 @@ var int? maybe = null
 const greeting = "Hello, " + name
 const dashes = "-" * 10
 Console.write("You are \{age} years old.")
+const multiline =
+    "Multiline strings start
+    "with a double quote
+    "on each line
+
+// slice(start, end) returns a non-owning view string over [start, end)
+if greeting.length >= 5 {
+    var view string hi = greeting.slice(0, 5)
+    Console.write(hi.to_string())   // "Hello"
+}
 ```
 
 ### Functions
@@ -565,6 +578,21 @@ take(mov b)   // b is invalid after this
 - `mov` marks a class-typed field or parameter as owned (moved in).
 - `ref` passes a value by reference
 - `swap` atomically moves a value out and replaces it with a fresh one
+
+The same borrow machinery backs **non-owning slices**. `string.slice(start, end)`
+returns a `view string` — an O(1) `(ptr, len)` borrow of the source's buffer.
+The checker guarantees a view can't outlive its source and is invalidated once
+the source is reassigned (which frees the buffer it points into):
+
+```nomen
+var string s = "hello world"
+if s.length == 11 {
+    var view string v = s.slice(0, 5)   // borrows from s
+    Console.write(v.to_string())        // "hello" — materializes an owned copy
+    s = "changed"                       // frees s's old buffer → v dangles
+    Console.write("\{v.length}")        // Error: borrow invalidated
+}
+```
 
 See [BORROW.md](BORROW.md) for the rules and the borrow-invalidation checks.
 

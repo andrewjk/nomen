@@ -207,10 +207,53 @@ if str.length == 11 {
 		expect(compile_main(input)).toEqual([]);
 	});
 
+	test("array and list slices return a view of elements", () => {
+		const input = `
+const int[] nums = [10, 20, 30, 40, 50]
+var view int s = nums.slice(1, 4)
+Console.write("\\{s.length}")
+Console.write("\\{s.at(0)}")
+Console.write("\\{s.at(2)}")
+
+var List<int> list = List<int>()
+list.push(1)
+list.push(2)
+list.push(3)
+var view int t = list.slice(0, 2)
+Console.write("\\{t.at(1)}")
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+
+	test("user-defined Viewable container delegates slice to its Buffer", () => {
+		const input = `
+pub struct UserList: Viewable {
+	var int length = 0
+	var Buffer<int> items = Buffer<int>()
+	pub func slice = (self, int start: start >= 0, int end: end >= start, out view int) {
+		return self.items.slice(start, end)
+	}
+}
+`;
+		// The struct declares a slice that returns a view borrowing from self —
+		// sound and allowed (the caller re-roots it at the receiver).
+		expect(compile_module(input)).toEqual([]);
+	});
+
 	test("returning a view is an error", () => {
 		const errors = compile_module(`
 func bad = (string s: s.length >= 3, out view string) {
 	return s.slice(0, 3)
+}
+pub func main = () { Console.write("x") }
+`);
+		expect(errors.some((e) => e.message.includes("borrowed reference"))).toBe(true);
+	});
+
+	test("returning a view that borrows from a parameter is an error", () => {
+		const errors = compile_module(`
+func bad = (int[] a: a.length >= 2, out view int) {
+	return a.slice(0, 2)
 }
 pub func main = () { Console.write("x") }
 `);

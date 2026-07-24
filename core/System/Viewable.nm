@@ -1,0 +1,19 @@
+// Marker trait for containers that can be borrowed as a non-owning `view T`
+// slice via a `slice(start, end, out view T)` method. Conforming types
+// implement slice — almost always by delegating to an internal Buffer's slice
+// (`return self.items.slice(start, end)`), so no #arch code is needed in user
+// types. The resulting view supports `.length` and `.at(i)`; the element type
+// is the one named in the view (e.g. `view User`).
+//
+// The element type is not a trait parameter today (trait conformance with
+// type arguments isn't parsed yet), so a type writes `: Viewable` and declares
+// slice with its concrete element view:
+//
+//   pub struct UserList: Viewable {
+//       var Buffer<User> items = Buffer<User>()
+//       pub func slice = (self, int start, int end, out view User) {
+//           return self.items.slice(start, end)
+//       }
+//   }
+pub trait Viewable {
+}

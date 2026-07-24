@@ -1,7 +1,7 @@
 import Buffer
 import ClassBuffer
 
-pub struct List<T> {
+pub struct List<T>: Viewable {
     var int length = 0
     var Buffer<T> items = Buffer<T>()
 
@@ -29,6 +29,12 @@ pub struct List<T> {
 
     pub func at = (self, int i: i >= 0 && i < self.length, out T) {
         return self.items.load_int(i)
+    }
+
+    // A non-owning `view T` over [start, end). Delegates to the backing Buffer's
+    // #arch slice primitive — no #arch code here. Borrows from self.
+    pub func slice = (self, int start: start >= 0, int end: end >= start, out view T) {
+        return self.items.slice(start, end)
     }
 
 	pub func set = (ref self, int i: i >= 0 && i < self.length, mov T value) {

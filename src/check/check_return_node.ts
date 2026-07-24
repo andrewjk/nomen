@@ -5,7 +5,7 @@ import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
-import { borrow_depth_of } from "./utils/borrow.ts";
+import { borrow_depth_of, borrow_owner_of } from "./utils/borrow.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
@@ -68,13 +68,21 @@ export default function check_return_node(ret: ReturnNode, status: CheckStatus) 
 
 	// A borrowed class reference must not be returned — it would escape the
 	// function scope and outlive the instance it points into. Use `mov` (with
-	// swap) to transfer ownership instead.
+	// swap) to transfer ownership instead. The one exception is a `view T`
+	// return that borrows from `self` (the receiver): a slice method hands back
+	// a non-owning borrow that the caller re-roots at the call-site receiver
+	// (see borrow_depth_of), so returning it is sound. A view borrowing from a
+	// non-self param/local still escapes and is rejected.
 	if (func && borrow_depth_of(ret.value, status) !== undefined) {
-		add_error(
-			status,
-			`cannot return a borrowed reference — use 'mov' (with swap) to transfer ownership`,
-			ret.value.start,
-		);
+		const safe_view_from_self =
+			!!func.return_type?.is_view && borrow_owner_of(ret.value, status) === "self";
+		if (!safe_view_from_self) {
+			add_error(
+				status,
+				`cannot return a borrowed reference — use 'mov' (with swap) to transfer ownership`,
+				ret.value.start,
+			);
+		}
 	}
 
 	if (func) {
