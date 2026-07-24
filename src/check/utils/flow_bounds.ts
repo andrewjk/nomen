@@ -523,21 +523,50 @@ export function path_to_node(path: string): BaseNode {
  * expression are extracted. Used to propagate a call's return-contract bounds
  * onto the call node so an enclosing call can verify its parameter constraint
  * against the returned value (e.g. `g.at(g.edge_target(e))`).
+ *
+ * Strict inequalities (`<`, `>`) and their inclusive cousins (`<=`, `>=`) are
+ * both funneled into the strict `upper`/`lower` arrays (matching pre-existing
+ * behavior). Equality (`==`) is exact, so it is reported on the separate
+ * `upper_inclusive`/`lower_inclusive` arrays instead — `out.X == expr` means the
+ * result is both `<= expr` and `>= expr`, and only the inclusive bound arrays
+ * can carry that without collapsing to a contradiction.
+ * (`extract_bound` only covers `<`/`<=`/`>`/`>=`, so `==` is handled here.)
  */
 export function collect_return_bounds(
 	node: BaseNode,
 	status?: CheckStatus,
-): { upper: string[]; lower: string[] } {
+): {
+	upper: string[];
+	lower: string[];
+	upper_inclusive: string[];
+	lower_inclusive: string[];
+} {
 	const upper: string[] = [];
 	const lower: string[] = [];
+	const upper_inclusive: string[] = [];
+	const lower_inclusive: string[] = [];
 	function walk(n: BaseNode) {
-		if (n.node_type === "op") {
-			const op = n as OperationNode;
-			if (op.op === "&&") {
-				walk(op.left_value);
-				walk(op.right_value);
-				return;
+		if (n.node_type !== "op") return;
+		const op = n as OperationNode;
+		if (op.op === "&&") {
+			walk(op.left_value);
+			walk(op.right_value);
+			return;
+		}
+		if (op.op === "==") {
+			// Symmetric: prefer the left operand as the return-value side
+			// (the `out` convention), fall back to the right.
+			let expr: string | undefined;
+			if (op.left_value.node_type === "value" || op.left_value.node_type === "access") {
+				expr = expr_to_string(op.right_value, status);
+			} else if (op.right_value.node_type === "value" || op.right_value.node_type === "access") {
+				expr = expr_to_string(op.left_value, status);
 			}
+			if (expr) {
+				if (!upper_inclusive.includes(expr)) upper_inclusive.push(expr);
+				if (!lower_inclusive.includes(expr)) lower_inclusive.push(expr);
+			}
+			return;
 		}
 		const bound = extract_bound(n, status);
 		if (bound) {
@@ -549,7 +578,7 @@ export function collect_return_bounds(
 		}
 	}
 	walk(node);
-	return { upper, lower };
+	return { upper, lower, upper_inclusive, lower_inclusive };
 }
 
 /**

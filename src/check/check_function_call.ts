@@ -487,7 +487,14 @@ export default function check_function_call(
 		// parameter constraint can verify against an inline call result
 		// (e.g. `g.at(g.edge_target(e))`). Method calls arrive as an AccessNode
 		// wrapping an AccessFunctionCallNode; free calls arrive directly.
-		let nested_rb: { upper: string[]; lower: string[] } | undefined;
+		let nested_rb:
+			| {
+					upper: string[];
+					lower: string[];
+					upper_inclusive: string[];
+					lower_inclusive: string[];
+			  }
+			| undefined;
 		if (param.node_type === "func_call" || param.node_type === "access_func") {
 			nested_rb = (param as FunctionCallNode).return_bounds;
 		} else if (
@@ -499,6 +506,14 @@ export default function check_function_call(
 		if (nested_rb) {
 			upper_bound_exprs = [...(upper_bound_exprs ?? []), ...nested_rb.upper];
 			lower_bound_exprs = [...(lower_bound_exprs ?? []), ...nested_rb.lower];
+			upper_bound_inclusive_exprs = [
+				...(upper_bound_inclusive_exprs ?? []),
+				...nested_rb.upper_inclusive,
+			];
+			lower_bound_inclusive_exprs = [
+				...(lower_bound_inclusive_exprs ?? []),
+				...nested_rb.lower_inclusive,
+			];
 		}
 		constraint_args.push({
 			name: func_param.name,

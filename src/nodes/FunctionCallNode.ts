@@ -20,7 +20,12 @@ export default class FunctionCallNode extends BaseNode {
 	 * when this call is used as an argument (e.g. `g.at(g.edge_target(e))`), the
 	 * outer call's parameter constraint can verify against the returned value.
 	 */
-	return_bounds?: { upper: string[]; lower: string[] };
+	return_bounds?: {
+		upper: string[];
+		lower: string[];
+		upper_inclusive: string[];
+		lower_inclusive: string[];
+	};
 	/**
 	 * A compile-time length derived from the call's return contract
 	 * (`out Array<T>: out.length == N`), when N is a literal. Consumed by the

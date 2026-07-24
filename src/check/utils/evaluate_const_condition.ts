@@ -289,6 +289,46 @@ function evaluate_operation(
 		}
 	}
 
+	// Equality against a pinned value: `x == target` is provably satisfied
+	// when x is pinned by matching inclusive bounds (`x <= target && x >=
+	// target`). This is how a return contract `out == 0` propagated onto a
+	// parameter (via collect_return_bounds → upper/lower_bound_inclusive_exprs)
+	// verifies a downstream `i == 0` constraint — strict `<`/`>` bounds can't
+	// express an exact value, only the inclusive pair can.
+	if (op.op === "==" || op.op === "!=") {
+		const pinned_by = (
+			decl: ReturnType<typeof status.values.findLast>,
+			target: string | undefined,
+		): boolean =>
+			!!decl &&
+			!!target &&
+			(decl.upper_bound_inclusive_exprs?.includes(target) ?? false) &&
+			(decl.lower_bound_inclusive_exprs?.includes(target) ?? false);
+
+		const resolve_var = (n: import("../../nodes/BaseNode.ts").default): string | undefined => {
+			if (n.node_type === "value") return (n as ValueNode).value;
+			if (n.node_type === "access") return expr_to_string(n, status);
+			return undefined;
+		};
+		const lookup = (var_name: string) => {
+			let decl = status.values.findLast((v) => v.name === var_name);
+			if (!decl && var_name.includes(".")) {
+				decl = status.values.findLast((v) => v.name === var_name.split(".")[0]);
+			}
+			return decl;
+		};
+
+		const left_var = resolve_var(op.left_value);
+		if (left_var && pinned_by(lookup(left_var), expr_to_string(op.right_value, status))) {
+			return op.op === "==";
+		}
+		// Symmetric: literal/const on the left, variable on the right.
+		const right_var = resolve_var(op.right_value);
+		if (right_var && pinned_by(lookup(right_var), expr_to_string(op.left_value, status))) {
+			return op.op === "==";
+		}
+	}
+
 	// Three-valued logic for && and ||: only need both sides resolved for true &&
 	// true; a single false makes && false; a single true makes || true.
 	// A provable off-by-one ("unsafe") on either side propagates out,

@@ -204,6 +204,28 @@ Console.write("\\{v}\\n")
 		await build_and_check_output(input, "rc_nested", "20\n");
 	});
 
+	test("return contract with == pins an exact value (both bounds)", async () => {
+		// `zero` declares `out int: out == 0`. Propagated as an inclusive
+		// two-sided bound, that satisfies `slot`'s `i >= 0 && i <= 0` (i.e. i
+		// must be exactly 0) — something a strict `<`/`>` contract couldn't.
+		// Before `==` return contracts were handled, the bound was dropped and
+		// this failed with "cannot be verified".
+		const input = `
+struct Const {
+  func zero = (out int: out == 0) {
+    return 0
+  }
+  func slot = (int i: i == 0, out int) {
+    return i
+  }
+}
+var Const c = Const()
+var int v = c.slot(c.zero())
+Console.write("\\{v}")
+`;
+		await build_and_check_output(input, "rc_eq", "0");
+	});
+
 	test("return contract does not cross different receivers", () => {
 		// edge_target's bound is on g1, but .at is called on g2 — the bound
 		// doesn't transfer, so this must error rather than silently pass.
