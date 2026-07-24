@@ -622,3 +622,66 @@ layout and compositor design.
 **Why create a new language?** I'm hoping to find the sweet spot between the ease of use of garbage collected languages and the power of manual memory allocated languages, which I don't think anyone has found yet.
 
 **Was AI used in the development of this programming language?** Yes, at the start of 2026 this was a much smaller hand-developed language with a half implemented C backend. Since then it has gained a fully implemented C backend, fully implemented AArch64 backend, and many features, all produced by AI under human guidance.
+
+## Benchmarks
+
+Adapted from [Programming Language Benchmarks](https://github.com/hanabi1224/Programming-Language-Benchmarks). Run on my laptop. Any errors in adaptation are my fault.
+
+### Run times (single-size)
+
+| Benchmark   | Nomen/A | Nomen/C |   Go |  Zig | Rust |  Compare |
+| ----------- | ------: | ------: | ---: | ---: | ---: | -------: |
+| helloworld  |     3ms |     3ms |  3ms |  3ms |  3ms | 1.0-1.0x |
+| knucleotide |    12ms |    12ms | 19ms |  6ms | 10ms | 0.6-2.0x |
+| regex-redux |    56ms |    40ms | 16ms | 18ms |  6ms | 3.1-9.3x |
+
+### Run times (small)
+
+| Benchmark      | Nomen/A | Nomen/C |    Go |   Zig |  Rust |   Compare |
+| -------------- | ------: | ------: | ----: | ----: | ----: | --------: |
+| pidigits       |   105ms |   232ms |  11ms |  33ms |  20ms |  3.2-9.5x |
+| fannkuch-redux |   232ms |   274ms |  32ms | 201ms | 120ms |  1.2-7.2x |
+| binarytrees    |   163ms |   142ms | 143ms | 125ms | 100ms |  1.1-1.6x |
+| merkletrees    |   192ms |   174ms | 271ms | 125ms | 133ms |  0.7-1.5x |
+| nsieve         |    70ms |    75ms |  FAIL |  40ms |  41ms |  1.7-1.8x |
+| lru            |    10ms |    10ms |   7ms |   5ms |   7ms |  1.4-2.0x |
+| json-serde     |    33ms |    29ms |   4ms |   9ms |  11ms |  3.0-8.2x |
+| nbody          |   133ms |    83ms |  36ms |  20ms |  14ms |  3.7-9.5x |
+| spectral-norm  |    44ms |    55ms |  12ms |  12ms |  10ms |  3.7-4.4x |
+| mandelbrot     |   142ms |   194ms |  97ms |  14ms |  14ms | 1.5-10.1x |
+| edigits        |     4ms |     5ms |   4ms |   4ms |   4ms |  1.0-1.0x |
+
+### Run times (large)
+
+| Benchmark      | Nomen/A | Nomen/C |     Go |    Zig |   Rust |   Compare |
+| -------------- | ------: | ------: | -----: | -----: | -----: | --------: |
+| pidigits       |  1908ms |  4005ms |  128ms |  560ms |  303ms | 3.4-14.9x |
+| fannkuch-redux |  2869ms |  3379ms |  346ms | 2398ms | 1437ms |  1.2-8.3x |
+| binarytrees    |  1724ms |  1517ms | 1766ms | 1329ms | 1068ms |  1.0-1.6x |
+| merkletrees    |   901ms |   810ms | 1370ms |  568ms |  618ms |  0.7-1.6x |
+| nsieve         |   280ms |   307ms |   FAIL |  283ms |  277ms |  1.0-1.0x |
+| lru            |    29ms |    28ms |   17ms |    7ms |   13ms |  1.7-4.1x |
+| json-serde     |   152ms |   136ms |    4ms |   27ms |   37ms | 4.1-38.0x |
+| nbody          |  1305ms |   814ms |  329ms |  178ms |  125ms | 4.0-10.4x |
+| spectral-norm  |   371ms |   483ms |   82ms |   82ms |   59ms |  4.5-6.3x |
+| mandelbrot     |   562ms |   774ms |  371ms |   47ms |   47ms | 1.5-12.0x |
+| edigits        |     8ms |    11ms |    3ms |    4ms |    3ms |  2.0-2.7x |
+
+### Compile times
+
+| Benchmark      | Nomen/A | Nomen/C |    Go |    Zig |   Rust |  Compare |
+| -------------- | ------: | ------: | ----: | -----: | -----: | -------: |
+| pidigits       |   614ms |   326ms | 207ms | 5254ms | 2943ms | 0.1-3.0x |
+| helloworld     |   263ms |   266ms |  89ms | 4635ms | 1913ms | 0.1-3.0x |
+| fannkuch-redux |   277ms |   280ms |  47ms | 4691ms | 1934ms | 0.1-5.9x |
+| binarytrees    |   278ms |   274ms |  44ms | 4711ms | 1909ms | 0.1-6.3x |
+| merkletrees    |   328ms |   276ms |  44ms | 4720ms | 1921ms | 0.1-7.5x |
+| nsieve         |   281ms |   278ms |  FAIL | 4614ms | 1910ms | 0.1-0.1x |
+| lru            |   304ms |   292ms |  69ms | 4733ms | 2091ms | 0.1-4.4x |
+| knucleotide    |   307ms |   292ms |  70ms | 5353ms | 2307ms | 0.1-4.4x |
+| json-serde     |   352ms |   311ms |  54ms | 5829ms | 2447ms | 0.1-6.5x |
+| regex-redux    |   333ms |   300ms |  45ms | 5435ms | 6713ms | 0.0-7.4x |
+| nbody          |   381ms |   300ms | 186ms | 4775ms | 2035ms | 0.1-2.0x |
+| spectral-norm  |   283ms |   281ms |  45ms | 4775ms | 2194ms | 0.1-6.3x |
+| mandelbrot     |   274ms |   274ms |  57ms | 4744ms | 2020ms | 0.1-4.8x |
+| edigits        |   387ms |   323ms |  49ms | 5119ms | 2878ms | 0.1-7.9x |

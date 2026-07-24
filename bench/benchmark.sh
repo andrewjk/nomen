@@ -21,9 +21,9 @@ trap 'rm -rf "$TMPDIR"' EXIT
 
 to_ms() {
 	local t="$1"
-	local min=$(nomen "$t" | sed 's/m.*//')
-	local sec=$(nomen "$t" | sed 's/.*m//' | sed 's/s$//')
-	nomen "$min * 60000 + $sec * 1000" | bc | cut -d. -f1
+	local min=$(echo "$t" | sed 's/m.*//')
+	local sec=$(echo "$t" | sed 's/.*m//' | sed 's/s$//')
+	echo "$min * 60000 + $sec * 1000" | bc | cut -d. -f1
 }
 
 # "Nomen compare" column: Nomen's time as a ratio of the slowest and fastest of
@@ -39,11 +39,11 @@ nomen_compare() {
 		[ "$v" -gt "$slowest" ] && slowest=$v
 	done
 	if [ -z "$nomen_num" ] || [ -z "$fastest" ] || [ "$fastest" -le 0 ]; then
-		nomen "-"
+		echo "-"
 		return 0
 	fi
 	awk -v e="$nomen_num" -v lo="$slowest" -v hi="$fastest" \
-		'BEGIN { printf "%.1f-%.1f", e/lo, e/hi }'
+		'BEGIN { printf "%.1f-%.1fx", e/lo, e/hi }'
 }
 
 # ── Benchmark definitions ────────────────────────────────────────────────────
@@ -89,12 +89,11 @@ unset _entry _b _small _large _z _r
 # times reflect compiling each benchmark's own code, not its dependencies.
 ( cd "$RUST_DIR" && $CARGO build --release --quiet 2>/dev/null ) || true
 
-nomen "=== Compile times ==="
-nomen ""
+echo "### Compile times"
+echo ""
 
-printf "  %-22s  %8s  %8s  %8s  %8s  %8s  %11s\n" "Benchmark" "Nomen" "Nomen/C" "Go" "Zig" "Rust" "Nomen"
-printf "  %-22s  %8s  %8s  %8s  %8s  %8s  %11s\n" "" "compile" "compile" "compile" "compile" "compile" "compare"
-printf "  %-22s  %8s  %8s  %8s  %8s  %8s  %11s\n" "----------------------" "-------" "-------" "-------" "-------" "-------" "-----------"
+printf "| %-22s | %7s | %7s | %7s | %7s | %7s | %11s |\n" "Benchmark" "Nomen/A" "Nomen/C" "Go" "Zig" "Rust" "Compare"
+printf "| %-22s | %7s | %7s | %7s | %7s | %7s | %11s |\n" "----------------------" "------:" "------:" "------:" "------:" "------:" "----------:"
 
 for entry in "${BENCHES[@]}"; do
 	IFS='|' read -r bench small_args large_args zig_src rust_src <<< "$entry"
@@ -165,17 +164,16 @@ for entry in "${BENCHES[@]}"; do
 	[ -n "$zig_num" ] && nums+=("$zig_num")
 	[ -n "$rust_num" ] && nums+=("$rust_num")
 	compare=$(nomen_compare "$nomen_num" "${nums[@]}")
-	printf "  %-22s  %8s  %8s  %8s  %8s  %8s  %11s\n" "$bench" "$nomen_ms" "$nomen_c_ms" "$go_ms" "$zig_ms" "$rust_ms" "$compare"
+	printf "| %-22s | %7s | %7s | %7s | %7s | %7s | %11s |\n" "$bench" "$nomen_ms" "$nomen_c_ms" "$go_ms" "$zig_ms" "$rust_ms" "$compare"
 done
 
-nomen ""
+echo ""
 
 # ── Run all ──────────────────────────────────────────────────────────────────
 
 print_run_header() {
-	printf "  %-22s  %8s  %8s  %8s  %8s  %8s  %11s\n" "Benchmark" "Nomen" "Nomen/C" "Go" "Zig" "Rust" "Nomen"
-	printf "  %-22s  %8s  %8s  %8s  %8s  %8s  %11s\n" "" "run" "run" "run" "run" "run" "compare"
-	printf "  %-22s  %8s  %8s  %8s  %8s  %8s  %11s\n" "----------------------" "-------" "-------" "-------" "-------" "-------" "-----------"
+	printf "| %-22s | %7s | %7s | %7s | %7s | %7s | %11s |\n" "Benchmark" "Nomen/A" "Nomen/C" "Go" "Zig" "Rust" "Compare"
+	printf "| %-22s | %7s | %7s | %7s | %7s | %7s | %11s |\n" "----------------------" "------:" "------:" "------:" "------:" "------:" "----------:"
 }
 
 # Run one benchmark row: best-of-3 per language, then the "Nomen compare"
@@ -303,30 +301,30 @@ print_run_row() {
 	[ -n "$rust_num" ] && nums+=("$rust_num")
 	local compare
 	compare=$(nomen_compare "$nomen_num" "${nums[@]}")
-	printf "  %-22s  %8s  %8s  %8s  %8s  %8s  %11s\n" "$bench" "$nomen_ms" "$nomen_c_ms" "$go_ms" "$zig_ms" "$rust_ms" "$compare"
+	printf "| %-22s | %7s | %7s | %7s | %7s | %7s | %11s |\n" "$bench" "$nomen_ms" "$nomen_c_ms" "$go_ms" "$zig_ms" "$rust_ms" "$compare"
 }
 
 # Single-size benchmarks (small == large) get their own table, shown first.
 if [ "${#SINGLE_BENCHES[@]}" -gt 0 ]; then
-	nomen "=== Run times (single-size) ==="
-	nomen ""
+	echo "### Run times (single-size)"
+	echo ""
 	print_run_header
 	for entry in "${SINGLE_BENCHES[@]}"; do
 		IFS='|' read -r bench small_args large_args zig_src rust_src <<< "$entry"
 		print_run_row "$bench" "$small_args"
 	done
-	nomen ""
+	echo ""
 fi
 
 # Remaining benchmarks measured at both sizes.
 for which in small large; do
-	nomen "=== Run times ($which) ==="
-	nomen ""
+	echo "### Run times ($which)"
+	echo ""
 	print_run_header
 	for entry in "${DUAL_BENCHES[@]}"; do
 		IFS='|' read -r bench small_args large_args zig_src rust_src <<< "$entry"
 		if [ "$which" = small ]; then bn="$small_args"; else bn="$large_args"; fi
 		print_run_row "$bench" "$bn"
 	done
-	nomen ""
+	echo ""
 done
