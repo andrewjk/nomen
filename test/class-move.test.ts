@@ -116,9 +116,7 @@ func make_arr = (out Box[]) {
 }
 
 var Box[] result = make_arr()
-if result.length > 0 {
-  Console.write("\\{result.first().value}")
-}
+Console.write("\\{result.first().value}")
 `;
 		await build_and_check_output(input, "own_stack_array_return", "42");
 	});

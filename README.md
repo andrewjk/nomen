@@ -92,6 +92,7 @@ var int? maybe = null
 const greeting = "Hello, " + name
 const dashes = "-" * 10
 Console.write("You are \{age} years old.")
+
 const multiline =
     "Multiline strings start
     "with a double quote
@@ -585,12 +586,10 @@ the source is reassigned (which frees the buffer it points into):
 
 ```nomen
 var string s = "hello world"
-if s.length == 11 {
-    var view string v = s.slice(0, 5)   // borrows from s
-    Console.write(v.to_string())        // "hello" — materializes an owned copy
-    s = "changed"                       // frees s's old buffer → v dangles
-    Console.write("\{v.length}")        // Error: borrow invalidated
-}
+var view string v = s.slice(0, 5)   // borrows from s
+Console.write(v.to_string())        // "hello" — materializes an owned copy
+s = "changed"                       // frees s's old buffer → v dangles
+Console.write("\{v.length}")        // Error: borrow invalidated
 ```
 
 See [BORROW.md](BORROW.md) for the rules and the borrow-invalidation checks.

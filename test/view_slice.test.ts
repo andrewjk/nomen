@@ -18,10 +18,9 @@ describe("view string slice (runtime, both backends)", () => {
 		await build_and_check_output(
 			`
 var string s = "hello world"
-if s.length == 11 {
-	var view string v = s.slice(0, 5)
-	Console.write("\\{v.length}")
-}`,
+var view string v = s.slice(0, 5)
+Console.write("\\{v.length}")
+`,
 			"view_slice_length",
 			"5",
 		);
@@ -91,10 +90,10 @@ pub func main = () { Console.write("x") }`).some((m) => m.includes("borrowed ref
 		expect(
 			errors(`
 import System
-pub func main = () {
+pub func main = (int n) {
 	var view string outer
 	var string s = "hello"
-	if s.length == 5 {
+	if n > 0 {
 		outer = s.slice(0, 3)
 	}
 	Console.write("\\{outer.length}")
@@ -114,6 +113,48 @@ pub func main = () {
 		Console.write("\\{v.length}")
 	}
 }`).some((m) => m.includes("invalidat")),
+		).toBe(true);
+	});
+
+	test("var string length tracks literal reassignment", () => {
+		// Reassigning to a shorter literal updates the known length.
+		expect(
+			errors(`
+import System
+pub func main = () {
+	var string s = "hello"
+	s = "hi"
+	var view string v = s.slice(0, 2)
+	Console.write("\\{v.length}")
+}`).length,
+		).toEqual(0);
+	});
+
+	test("var string length rejects slice beyond new length after reassignment", () => {
+		// After reassigning to "hi" (length 2), slicing to 5 should fail.
+		expect(
+			errors(`
+import System
+pub func main = () {
+	var string s = "hello"
+	s = "hi"
+	var view string v = s.slice(0, 5)
+	Console.write("\\{v.length}")
+}`).length,
+		).toBeGreaterThan(0);
+	});
+
+	test("var string length is unknown after compound assignment", () => {
+		// s += y makes the length unknowable at compile time.
+		expect(
+			errors(`
+import System
+pub func main = (string y) {
+	var string s = "hello"
+	s += y
+	var view string v = s.slice(0, 2)
+	Console.write("\\{v.length}")
+}`).some((m) => m.includes("cannot be verified")),
 		).toBe(true);
 	});
 });

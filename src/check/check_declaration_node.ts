@@ -163,8 +163,10 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 		// A string literal bound to a const has a known, invariant length.
 		// Record it on the type so the bounds verifier can prove
 		// `i < str.length` for `str.at(i)` (mirrors array-literal length).
+		// For var declarations the length is also known at declaration time,
+		// but can change on reassignment — the constraint checker only uses
+		// it during the current call, before any reassignment.
 		if (
-			decl.declaration === "const" &&
 			decl.type.name === "string" &&
 			decl.value &&
 			decl.value.node_type === "value" &&

@@ -5,6 +5,7 @@ import AssignmentNode from "../nodes/AssignmentNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
+import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
@@ -132,6 +133,8 @@ export default function check_assignment_node(
 		left_value.lower_bound_inclusive_exprs = undefined;
 		left_value.alias_of = undefined;
 		left_value.class_alias_of = undefined;
+		// Clear compile-time string/array length: reassignment may change it.
+		left_value.type.length = undefined;
 		// Reassigning a bare variable reclaims its old value. For a `view`
 		// borrow rooted here (a string/array slice into the old buffer), that
 		// backing storage is freed at the reassignment, so the view dangles —
@@ -148,6 +151,16 @@ export default function check_assignment_node(
 		// not the new value.
 		if (!is_compound && left_value_name === left_value.name) {
 			track_assignment_bounds(left_value.name, assign.right_value, status, self_snapshot);
+		}
+		// If the RHS is a string literal, record its length on the type so
+		// subsequent constraint checks (e.g. slice bounds) can verify it.
+		if (!is_compound && left_value.type.name === "string" &&
+			assign.right_value.node_type === "value" &&
+			(assign.right_value as any).value.startsWith('"') &&
+			(assign.right_value as any).value.endsWith('"')) {
+			const lit = (assign.right_value as any).value;
+			const len = lit.length - 2; // strip surrounding quotes
+			left_value.type.length = new ValueNode(assign.right_value.start, len.toString(), new Type("int"));
 		}
 	}
 
