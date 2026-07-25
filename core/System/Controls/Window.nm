@@ -1,7 +1,7 @@
-pub struct Window {
+pub class Window {
 	var uint64 handle = 0
 
-	pub func create = (string title, int width, int height, out Window) {
+	pub func #init = (self, string title, int width, int height) {
 		```
 		#arch: c, aarch64_use_c
 		#platform: macos
@@ -23,21 +23,17 @@ pub struct Window {
 		((void(*)(id, SEL, double, double))objc_msgSend)(
 			win, sel_registerName("setFrameTopLeftPoint:"), 100.0, 100.0);
 		((void(*)(id, SEL, id))objc_msgSend)(win, sel_registerName("makeKeyAndOrderFront:"), (id)0);
-		struct Window result;
-		result.handle = (uint64_t)win;
-		return result;
+		self->handle = (uint64_t)win;
 		```
 		```
 		#arch: c, aarch64_use_c
 		#platform: ios
-		struct Window result;
 		id win = ((id(*)(id, SEL))objc_msgSend)(
 			((id(*)(id, SEL))objc_msgSend)(objc_getClass("UIWindow"), sel_registerName("alloc")),
 			sel_registerName("initWithFrame:"),
 			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, (double)width, (double)height));
 		((void(*)(id, SEL))objc_msgSend)(win, sel_registerName("makeKeyAndVisible"));
-		result.handle = (uint64_t)win;
-		return result;
+		self->handle = (uint64_t)win;
 		```
 	}
 

@@ -1,11 +1,10 @@
-pub struct CheckBox {
+pub class CheckBox {
 	var uint64 handle = 0
 
-	pub func create = (Window window, out CheckBox) {
+	pub func #init = (self, Window window) {
 		```
 		#arch: c, aarch64_use_c
 		#platform: macos
-		struct CheckBox result;
 		id cb = ((id(*)(id, SEL, CGRect))objc_msgSend)(
 			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSButton"), sel_registerName("alloc")),
 			sel_registerName("initWithFrame:"),
@@ -18,13 +17,11 @@ pub struct CheckBox {
 			(id)window->handle, sel_registerName("contentView"));
 		((void(*)(id, SEL, id))objc_msgSend)(
 			contentView, sel_registerName("addSubview:"), cb);
-		result.handle = (uint64_t)cb;
-		return result;
+		self->handle = (uint64_t)cb;
 		```
 		```
 		#arch: c, aarch64_use_c
 		#platform: ios
-		struct CheckBox result;
 		id cb = ((id(*)(id, SEL, CGRect))objc_msgSend)(
 			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("UISwitch"), sel_registerName("alloc")),
 			sel_registerName("initWithFrame:"),
@@ -35,8 +32,7 @@ pub struct CheckBox {
 			sel_registerName("view"));
 		((void(*)(id, SEL, id))objc_msgSend)(
 			parentView, sel_registerName("addSubview:"), cb);
-		result.handle = (uint64_t)cb;
-		return result;
+		self->handle = (uint64_t)cb;
 		```
 	}
 

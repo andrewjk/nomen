@@ -613,9 +613,34 @@ export default function check_function_call(
 			!(i === (node as FunctionCallNode).variadic_param_index && param.node_type === "array")
 		) {
 			const declaration_name = `_param_${status.var_name_counter.value++}`;
-			status.allocations.push(
-				new DeclarationNode(param.start, "private", "const", declaration_name, param_type, param),
+			// A value struct cannot be used through a trait type: trait-typed
+			// parameters (and ClassBuffer<Trait> slots) hold heap-allocated,
+			// vtable-bearing pointers, and the only way a value struct could
+			// meet that was an implicit heap allocation ("boxing") at the call
+			// site — the one place the language hid an allocation. Boxing is
+			// gone now: declare the type as a `class` to use it polymorphically.
+			// (Trait-typed *locals* with concrete struct storage still work —
+			// they don't heap-allocate, so `var Speaker s = Dog()` is fine.)
+			const param_is_trait = !!status.traits.find((t) => t.name === func_param.type.name);
+			const arg_is_value_struct = !!status.structs.find(
+				(s) => s.name === param_type.name && !s.is_class && !s.is_simple_type,
 			);
+			if (param_is_trait && arg_is_value_struct) {
+				add_error(
+					status,
+					`value struct '${param_type.name}' cannot be used as trait '${func_param.type.name}'; declare '${param_type.name}' as a class`,
+					param.start,
+				);
+			}
+			const hoisted = new DeclarationNode(
+				param.start,
+				"private",
+				"const",
+				declaration_name,
+				param_type,
+				param,
+			);
+			status.allocations.push(hoisted);
 			node.params.splice(i, 1, new ValueNode(param.start, declaration_name, param_type));
 			// A temporary (e.g. a class constructor result) passed to a
 			// signature-level `mov` param transfers ownership to the callee,

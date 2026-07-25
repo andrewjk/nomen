@@ -17,7 +17,6 @@ export default class DeclarationNode extends BaseNode {
 	/** Optional swap replacement for `var X b = mov obj.field swap <expr>`: the
 	 *  expression stored back into the moved-out field to revalidate it. */
 	swap?: BaseNode;
-
 	constructor(
 		start: number,
 		visibility: "pub" | "private",

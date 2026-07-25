@@ -1,11 +1,10 @@
-pub struct Button {
+pub class Button {
 	var uint64 handle = 0
 
-	pub func create = (Window window, string title, out Button) {
+	pub func #init = (self, Window window, string title) {
 		```
 		#arch: c, aarch64_use_c
 		#platform: macos
-		struct Button result;
 		id btn = ((id(*)(id, SEL, CGRect))objc_msgSend)(
 			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSButton"), sel_registerName("alloc")),
 			sel_registerName("initWithFrame:"),
@@ -20,13 +19,11 @@ pub struct Button {
 			(id)window->handle, sel_registerName("contentView"));
 		((void(*)(id, SEL, id))objc_msgSend)(
 			contentView, sel_registerName("addSubview:"), btn);
-		result.handle = (uint64_t)btn;
-		return result;
+		self->handle = (uint64_t)btn;
 		```
 		```
 		#arch: c, aarch64_use_c
 		#platform: ios
-		struct Button result;
 		id btn = ((id(*)(id, SEL, CGRect))objc_msgSend)(
 			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("UIButton"), sel_registerName("alloc")),
 			sel_registerName("initWithFrame:"),
@@ -42,8 +39,7 @@ pub struct Button {
 			sel_registerName("view"));
 		((void(*)(id, SEL, id))objc_msgSend)(
 			parentView, sel_registerName("addSubview:"), btn);
-		result.handle = (uint64_t)btn;
-		return result;
+		self->handle = (uint64_t)btn;
 		```
 	}
 

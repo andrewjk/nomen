@@ -169,9 +169,20 @@ function generate_c_function(
 		func_label = func.name === "main" ? "_nomen_main" : func.name;
 	}
 
+	// A class `#init` follows the aarch64 constructor convention: the caller
+	// mallocs the instance and passes it as `self` in x0; the init function is
+	// void and mutates `self` in place (the body writes `self->field = ...`).
+	// So it must NOT be treated as a struct-returning function (no `_c` suffix,
+	// no thunk) — it emits under the bare `X_init` name that the asm `bl` targets.
+	const is_class_init =
+		func.name === "#init" &&
+		!!(struct_name && status.structs.find((s) => s.name === struct_name)?.is_class);
+
 	// --- Build return type prefix ---
-	const return_type = func.return_type?.name || "void";
-	const return_struct = status.structs.find((s) => s.name === return_type && !s.is_simple_type);
+	const return_type = is_class_init ? "void" : func.return_type?.name || "void";
+	const return_struct = is_class_init
+		? undefined
+		: status.structs.find((s) => s.name === return_type && !s.is_simple_type);
 	let return_prefix = "";
 	if (return_struct) {
 		return_prefix += `struct `;
@@ -207,9 +218,15 @@ function generate_c_function(
 	// --- Function definition ---
 	out += `${return_prefix}${symbol_label}(${param_list})\n{\n`;
 
-	// --- _self copy for struct methods (non-ref, non-destroy) ---
+	// --- _self copy for struct methods (non-ref, non-destroy, non-init) ---
 	const self_param = params[0];
-	if (struct_name && self_param?.is_self_param && !self_param?.is_ref && func.name !== "#destroy") {
+	if (
+		struct_name &&
+		self_param?.is_self_param &&
+		!self_param?.is_ref &&
+		func.name !== "#destroy" &&
+		func.name !== "#init"
+	) {
 		const struct = status.structs.find((s) => s.name === struct_name);
 		if (struct && !struct.is_simple_type) {
 			out += `struct ${struct_name} _self = *self;\n`;

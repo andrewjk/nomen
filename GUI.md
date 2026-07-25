@@ -32,11 +32,11 @@ import System
 import System/Controls
 
 pub func main = () {
-	var Window win = Window.create("Nomen Todo", 400, 500)
-	var Text title = Text.create(win)
-	var CheckBox cb0 = CheckBox.create(win)
-	var TextBox input = TextBox.create(win)
-	var Button add_btn = Button.create(win, "Add")
+	var Window win = Window("Nomen Todo", 400, 500)
+	var Text title = Text(win)
+	var CheckBox cb0 = CheckBox(win)
+	var TextBox input = TextBox(win)
+	var Button add_btn = Button(win, "Add")
 
 	// Add child controls to a 2-column grid; no coordinates, no y-flipping.
 	var Container grid = Grid(2, 8)
@@ -84,7 +84,7 @@ span/row/mixed, and nested stacks/grids).
 
 ### Why handle-based, not trait-based (for now)
 
-Every native control is `struct { uint64 handle }`, and the y-flip needs the
+Every native control is `class { uint64 handle }`, and the y-flip needs the
 window's content height — both are handle-level concerns. But the decisive
 reason is the compiler: the `Container : Control` / `Array<Control>` design
 below requires things the compiler does **not** all do yet —
@@ -93,10 +93,15 @@ below requires things the compiler does **not** all do yet —
    a per-struct trait vtable and resolve trait-typed calls through it at
    runtime (see [Trait dispatch](#trait-dispatch-polymorphic-calls)). The
    remaining blockers are storage/parsing, below.
-2. **No heterogeneous container storage** — value structs aren't auto-boxed
-   into trait-typed slots, and `monomorphize` doesn't route trait-`T` to
-   `ClassBuffer`.
-3. Trait conformance with type arguments isn't parsed yet (`Viewable.nm:8`).
+2. ~~**No heterogeneous container storage**~~ ✅ **Done.** `monomorphize`
+   routes trait-`T` to `ClassBuffer`, the per-element destroy dispatches
+   through the trait vtable, and the native controls are `class`es (reference
+   types) so they slot straight into `ClassBuffer<Control>` without any
+   boxing — see [Next steps](#next-steps--compiler-prerequisites)). (Value
+   structs can no longer be implicitly boxed into trait-typed slots; they
+   must be declared `class` to be used polymorphically.)
+3. Trait conformance with type arguments isn't parsed yet
+   (`core/System/Viewable.nm:8`).
 
 So v1 stores child handles in flat `Buffer<int>` arrays (structure-of-arrays,
 mirroring the legacy `Layout.nm`) and applies frames via a native
@@ -503,14 +508,50 @@ UI infrastructure):
   tables and a `_get_trait_func(obj, trait, func)` resolver, mirroring the C
   backend.~~ ✅ **Done** on both backends — see
   [Trait dispatch (polymorphic calls)](#trait-dispatch-polymorphic-calls).
-- **Auto-box value structs into trait-typed container slots**, and make
-  `monomorphize` route trait-`T` to `ClassBuffer` (currently only `class` `T` is
-  recognized — `check_function_call_node.ts:188`). Otherwise `Array<Control>`
-  cannot store heterogeneous value structs.
-- **Parse trait conformance with type arguments** (`Viewable.nm:8-11`), so
-  `Container<T: Control>`-style generics become possible.
-- **Trait-typed destroy propagation** in containers, so owned controls in a
-  trait collection are freed correctly.
+- ~~**`monomorphize` routes trait-`T` to `ClassBuffer`.**~~ ✅ **Done.**
+  `check_function_call_node.ts:183-209` now recognizes a `Buffer<Elem>` field
+  whose `Elem` is a trait (not just a class) and rewrites both the field type
+  and its default constructor to the monomorphized `ClassBuffer_<Trait>` so
+  every build path resolves against the concrete buffer. Runtime-tested on
+  both backends in `test/trait_collection_destroy.test.ts` (homogeneous and
+  heterogeneous `List<Speaker>`).
+- ~~**Trait-typed destroy propagation in containers.**~~ ✅ **Done.**
+  `ClassBuffer<Trait>#destroy` walks each slot and dispatches `<Trait>_destroy`
+  through the vtable (`core/System/ClassBuffer.nm:179-225`), with the
+  vtable-shim symbols synthesized in `src/build.ts:75-103` (aarch64) and
+  `src/build_c/build_root_node.ts:97-121` (C). Verified end-to-end on both
+  backends by `test/trait_collection_destroy.test.ts`.
+- **Value structs are not boxed into trait-typed slots — use a class.**
+  Trait-typed parameters and `ClassBuffer<Trait>` slots hold heap-allocated,
+  vtable-bearing pointers. A value `struct : Trait` can't meet that without
+  an implicit heap allocation ("boxing") at the call site — the one place the
+  language hid an allocation — so boxing has been **removed**. Passing a value
+  struct to a trait-typed parameter now errors (`value struct 'X' cannot be
+  used as trait 'T'; declare 'X' as a class`). The native controls are
+  `class`es, so they slot straight into `ClassBuffer<Control>` with no boxing.
+  (Trait-typed *locals* with concrete struct storage — `var Speaker s = Dog()`
+  — still work; they keep the struct on the stack and dispatch through its
+  vtable, so there's no hidden allocation.) The `is_boxed` declaration flag,
+  the `build_boxed_declaration` helpers, and the boxed-var branch in
+  `build_auto_free` are all gone.
+- **Parse trait conformance with type arguments** (`core/System/Viewable.nm:8-11`,
+  not `Controls/Viewable.nm`), so `Container<T: Control>`-style generics
+  become possible. `TraitNode` has no `type_params` field, `parse_trait.ts`
+  doesn't accept `<...>` after the trait name, and `parse_struct.ts:36-40`
+  parses trait conformance as a bare name only.
+- ~~**Trait-typed destroy propagation for local variables.**~~ ✅ **Done.**
+  A trait-typed local (e.g. `var Speaker s = Dog("Rex")`) now runs the
+  concrete struct's `#destroy` and reclaims its owned fields at scope exit on
+  both backends. Previously the auto-free passes looked up `dec.type.name`
+  (the trait) in `status.structs`, found nothing, and silently skipped the
+  local — leaking owned heap data and dropping `#destroy` side effects. The
+  fix recovers the concrete struct from the initializer
+  (`type_from_value_node(dec.value)`) and dispatches destroy through it:
+  `build_c/build_auto_free.ts` for the C backend, and
+  `build_aarch64/utils/auto_destroy.ts` (`resolve_decl_struct` helper in
+  `emit_destroy_for_scope`) for aarch64. Runtime-tested on both backends in
+  `test/trait_local_destroy.test.ts` (user `#destroy` side effects, auto
+  destroy of owning fields, multiple owning fields).
 
 ## Trait dispatch (polymorphic calls)
 
@@ -551,8 +592,6 @@ Both backends now implement this end-to-end and are exercised by
   type does not yet work (the storage is sized for the first type).
 - Trait field accessors handle scalar/string (single-word) fields only;
   multi-word struct trait fields are not yet supported through dispatch.
-- Trait-typed locals are not auto-destroyed at scope exit (no `#destroy`
-  propagation through the trait view).
 
 ### Smaller compiler bugs hit while building v1
 
@@ -602,7 +641,14 @@ self_offset` and indexes with `+ self_offset`. Runtime-tested in
   reading native frames back on both backends: `title` resolves to `y=454` in a
   500-tall window (top area) on both `c` and `aarch64`.
 
-### Layout features still owed (once traits land)
+### Layout features still owed (now unblocked)
+
+With the native controls now `class`es and `ClassBuffer<Trait>` polymorphic
+storage in place, the trait-based `Container : Control` / `Array<Control>`
+design is now reachable — the remaining work is Nomen-side (library) rather
+than compiler-side. The features below can be implemented in one of two
+places: on the existing handle-based v1 (no trait model needed), or on a new
+trait-based Container once the geometry types below are in place.
 
 - `BoxConstraints` / `Size` / `Frame` / `Insets` / `LayoutLength` /
   `LayoutParams` with `grow`/`shrink`/`percent`/`fill`/`align`.
@@ -610,6 +656,12 @@ self_offset` and indexes with `+ self_offset`. Runtime-tested in
   `intrinsicContentSize`/`fittingSize`) so `add` needs no size hints.
 - Incremental/dirty relayout (v1 does a full re-measure on every
   `layout(win)`/`compute` call; cheap for small UIs).
+- **Trait-typed retrieval from a `ClassBuffer<Trait>`** — `var Speaker p =
+  pets.at(0)` (where the local's initializer is a method-call return rather
+  than a constructor) still falls through the trait-typed-local path today
+  (only constructor initializers are handled). Once that local-init path is
+  generalised the round-trip will work — the slot already stores a correct
+  vtable-bearing class pointer.
 
 > `ZStack` and nested containers (VStack/HStack/Grid/ZStack composed to any
 > depth) now ship in the handle-based v1 — see `Container.add_*` /

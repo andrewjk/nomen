@@ -13,8 +13,9 @@ import parse_with_imports from "./parse_with_imports";
 // (b) dispatches trait-typed destroy through a per-struct vtable slot so
 // the per-element reclaim in ClassBuffer<T>.#destroy reaches the actual
 // conforming struct's destroy. Together these unblock the storage /
-// destroy half of `Array<Control>`-style heterogeneous trait collections
-// (boxing of value-struct elements into the slots is a follow-up).
+// destroy half of `Array<Control>`-style heterogeneous trait collections.
+// (Elements must be classes — value structs can no longer be implicitly
+// boxed into trait-typed slots; declare them as classes instead.)
 
 describe("ClassBuffer<Trait> polymorphic destroy (Milestone 1)", () => {
 	test("Buffer<Speaker> field type routes to ClassBuffer_Speaker", async () => {

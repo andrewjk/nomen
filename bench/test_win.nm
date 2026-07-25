@@ -2,8 +2,8 @@ import System
 import System/Controls
 
 pub func main = () {
-  var win = Window.create("My App", 800, 600)
-  var text = Text.create(win)
+  var win = Window("My App", 800, 600)
+  var text = Text(win)
   text.set_text("Hello, World!")
   win.show()
   Window.run()

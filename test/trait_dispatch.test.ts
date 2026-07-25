@@ -44,7 +44,7 @@ trait Adder {
   func add = (self, int n, out int)
 }
 
-struct Count: Adder {
+class Count: Adder {
   var int value = 10
   func add = (self, int n, out int) {
     return self.value + n
@@ -101,11 +101,11 @@ trait Speaker {
   func speak = (out int)
 }
 
-struct Dog: Speaker {
+class Dog: Speaker {
   func speak = (out int) { return 1 }
 }
 
-struct Cat: Speaker {
+class Cat: Speaker {
   func speak = (out int) { return 2 }
 }
 

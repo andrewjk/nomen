@@ -155,12 +155,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			if (!status.string_borrow_vars) status.string_borrow_vars = new Set();
 			status.string_borrow_vars.add(safe_name);
 		}
-		if (
-			!val_is_class_alias &&
-			!is_borrow_only_string &&
-			!node.type.is_view &&
-			!concrete_struct_name
-		) {
+		if (!val_is_class_alias && !is_borrow_only_string && !node.type.is_view) {
 			status.scoped_declarations.push(node);
 			// Track owned string vars in a set that persists across scope
 			// resets (unlike scoped_declarations). A reassignment inside a

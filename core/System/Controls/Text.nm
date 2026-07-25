@@ -1,11 +1,10 @@
-pub struct Text {
+pub class Text {
 	var uint64 handle = 0
 
-	pub func create = (Window window, out Text) {
+	pub func #init = (self, Window window) {
 		```
 		#arch: c, aarch64_use_c
 		#platform: macos
-		struct Text result;
 		id label = ((id(*)(id, SEL, CGRect))objc_msgSend)(
 			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSTextField"), sel_registerName("alloc")),
 			sel_registerName("initWithFrame:"),
@@ -22,14 +21,12 @@ pub struct Text {
 			(id)window->handle, sel_registerName("contentView"));
 		((void(*)(id, SEL, id))objc_msgSend)(
 			contentView, sel_registerName("addSubview:"), label);
-		result.handle = (uint64_t)label;
-		return result;
+		self->handle = (uint64_t)label;
 		```
 		```
 		#arch: c, aarch64_use_c
 		#platform: ios
-		struct Text result;
-		id label = ((id(*)(id, SEL))objc_msgSend)(
+		id label = ((id(*)(id, SEL, CGRect))objc_msgSend)(
 			((id(*)(id, SEL))objc_msgSend)(objc_getClass("UILabel"), sel_registerName("alloc")),
 			sel_registerName("initWithFrame:"),
 			((CGRect(*)(double, double, double, double))CGRectMake)(10, 10, 200, 30));
@@ -45,8 +42,7 @@ pub struct Text {
 			sel_registerName("view"));
 		((void(*)(id, SEL, id))objc_msgSend)(
 			parentView, sel_registerName("addSubview:"), label);
-		result.handle = (uint64_t)label;
-		return result;
+		self->handle = (uint64_t)label;
 		```
 	}
 

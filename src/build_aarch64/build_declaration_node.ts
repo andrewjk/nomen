@@ -543,6 +543,20 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			(s) => s.name === val_type?.name && !s.is_simple_type && !s.is_generic,
 		);
 		if (concrete) {
+			// Track the trait-typed local for scope-exit destroy: push to
+			// scoped_declarations (emit_destroy_for_scope recovers the
+			// concrete struct from the initializer — node.type.name stays the
+			// trait so method/field accesses still dispatch through the
+			// vtable) and record it with the concrete type name so
+			// break/continue cleanup (emit_cleanup_to_loop_depth) destroys it
+			// correctly too.
+			status.scoped_declarations.push(node);
+			if (
+				concrete.functions.find((f) => f.name === "#destroy") ||
+				has_struct_fields_with_destroy(concrete, status)
+			) {
+				track_struct_decl(status, node.name, concrete.name, undefined, node.type.is_nullable);
+			}
 			const func_call = node.value as FunctionCallNode;
 			const struct_size = get_struct_size(concrete.name, status);
 			if (status.function_return_label) {

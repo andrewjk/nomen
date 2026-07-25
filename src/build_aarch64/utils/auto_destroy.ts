@@ -1,4 +1,5 @@
 import type BuildStatus from "../../build_c/BuildStatus.ts";
+import type_from_value_node from "../../build_c/utils/type_from_value_node.ts";
 import StructNode from "../../nodes/StructNode.ts";
 import Type from "../../nodes/Type.ts";
 import aarch64_size from "./aarch64_size.ts";
@@ -517,6 +518,36 @@ function emit_destroy_for_array_elem(
 	}
 }
 
+/**
+ * Resolve the StructNode for a scoped declaration. For a normal struct/class
+ * local this is just `decl.type.name`. For a trait-typed local (concrete
+ * storage), the declared type is a trait and the actual storage is the
+ * concrete struct from the initializer — recover it so destroy dispatches
+ * correctly. Returns `{ struct_type, type_name, type_args }` or undefined.
+ */
+function resolve_decl_struct(
+	decl: { type: { name: string; type_args?: Type[]; is_nullable?: boolean }; value?: any },
+	status: BuildStatus,
+): { struct_type: StructNode; type_name: string; type_args?: Type[] } | undefined {
+	const resolved = resolve_struct_name(decl.type.name, decl.type.type_args, status);
+	const direct = is_struct_type(resolved, status) || is_struct_type(decl.type.name, status);
+	if (direct) {
+		return { struct_type: direct, type_name: resolved, type_args: decl.type.type_args };
+	}
+	// Trait-typed local with concrete storage: recover the concrete struct
+	// from the initializer's type.
+	if (status.traits.find((t) => t.name === decl.type.name) && decl.value) {
+		const val_type = type_from_value_node(decl.value);
+		if (val_type?.name) {
+			const concrete = is_struct_type(val_type.name, status);
+			if (concrete) {
+				return { struct_type: concrete, type_name: val_type.name, type_args: val_type.type_args };
+			}
+		}
+	}
+	return undefined;
+}
+
 export function emit_destroy_for_scope(status: BuildStatus, declarations_before: number) {
 	const moved = status.moved ?? new Set();
 	const current_scope = status.heap_cleanup_stack?.[status.heap_cleanup_stack.length - 1];
@@ -558,10 +589,9 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 				emit_free(status);
 				continue;
 			}
-			const resolved = resolve_struct_name(decl.type.name, decl.type.type_args, status);
-			const struct_type =
-				is_struct_type(resolved, status) || is_struct_type(decl.type.name, status);
-			if (!struct_type) continue;
+			const resolved_decl = resolve_decl_struct(decl, status);
+			if (!resolved_decl) continue;
+			const struct_type = resolved_decl.struct_type;
 			if (
 				!has_destroy(struct_type) &&
 				!has_struct_fields_with_destroy(struct_type, status) &&
@@ -571,9 +601,9 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 			emit_destroy_for_decl(
 				status,
 				decl.name,
-				decl.type.name,
+				resolved_decl.type_name,
 				undefined,
-				decl.type.type_args,
+				resolved_decl.type_args,
 				decl.type.is_nullable,
 			);
 		}
@@ -629,8 +659,9 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 			emit_free(status);
 			continue;
 		}
-		const struct_type = is_struct_type(decl.type.name, status);
-		if (!struct_type) continue;
+		const resolved_decl = resolve_decl_struct(decl, status);
+		if (!resolved_decl) continue;
+		const struct_type = resolved_decl.struct_type;
 		if (
 			!has_destroy(struct_type) &&
 			!has_struct_fields_with_destroy(struct_type, status) &&
@@ -640,9 +671,9 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 		emit_destroy_for_decl(
 			status,
 			decl.name,
-			decl.type.name,
+			resolved_decl.type_name,
 			undefined,
-			decl.type.type_args,
+			resolved_decl.type_args,
 			decl.type.is_nullable,
 		);
 	}

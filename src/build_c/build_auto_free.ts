@@ -5,6 +5,7 @@ import Type from "../nodes/Type.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import is_string_borrow from "./utils/is_string_borrow.ts";
 import { has_flag_name, is_nullable_struct_type } from "./utils/nullable_struct.ts";
+import type_from_value_node from "./utils/type_from_value_node.ts";
 
 export default function build_auto_free(status: BuildStatus) {
 	free_scoped_declarations(status, status.scoped_declarations);
@@ -125,8 +126,14 @@ export function free_scoped_declarations(status: BuildStatus, decls: Declaration
 			}
 			const cls = struct ?? dec_struct;
 			const mono_cls_name = cls ? mono_type_name(dec.type) : undefined;
+			// Every class has a `<Class>_destroy` function — either a user
+			// `#destroy` or an auto-generated one (build_struct_node) that
+			// recursively frees owned class-typed fields. Always call it
+			// before free so class fields (and their #destroy side effects)
+			// are reclaimed at scope exit.
+			const has_destroy_fn = !!cls?.functions.find((f) => f.name === "#destroy") || !!cls?.is_class;
 			if (cls) {
-				const destroy_call = `${mono_cls_name}_destroy(${dec.name}); `;
+				const destroy_call = has_destroy_fn ? `${mono_cls_name}_destroy(${dec.name}); ` : "";
 				if (dec.type.is_nullable) {
 					status.code += `if (${dec.name}) { ${destroy_call}free(${dec.name}); }\n`;
 				} else {
@@ -160,6 +167,27 @@ export function free_scoped_declarations(status: BuildStatus, decls: Declaration
 					commented = true;
 				}
 				emit_struct_destroys(status, struct_type, dec.name);
+			}
+		}
+		// Trait-typed local with concrete storage (e.g.
+		// `var Speaker s = Dog("Rex")`): the declared type is a trait but the
+		// storage is the concrete struct (recovered from the initializer).
+		// Emit destroy calls for the concrete struct — both the struct's own
+		// `#destroy` (user side effects) and its owned fields (recursively via
+		// emit_struct_destroys). Without this, a trait-typed local's #destroy
+		// side effects were silently dropped and owned fields leaked.
+		const is_trait_typed = !!status.traits.find((t) => t.name === dec.type.name);
+		if (is_trait_typed && !is_destructured_field_access && !dec.type.is_array && dec.value) {
+			const val_type = type_from_value_node(dec.value);
+			const concrete = val_type?.name
+				? status.structs.find((s) => s.name === val_type.name && !s.is_simple_type && !s.is_generic)
+				: undefined;
+			if (concrete && struct_needs_destroy(concrete, status)) {
+				if (!commented) {
+					status.code += "\n// Auto-free\n";
+					commented = true;
+				}
+				emit_struct_destroys(status, concrete, dec.name);
 			}
 		}
 		// Nullable struct value-type local: destroy the inner value only when
