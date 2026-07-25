@@ -117,4 +117,70 @@ Console.write("\\{code(Dog())}\\{code(Cat())}")
 `;
 		await build_and_check_output(input, "trait_dispatch_two", "12");
 	});
+
+	test("self method returning string, dispatched through trait type, cleans up", async () => {
+		// A class conforming to a trait whose `self` method returns a string,
+		// routed through a trait-typed parameter, must not abort at cleanup.
+		// The dispatched method returns a borrow of an owning field (self.name),
+		// so the caller must NOT free the result — doing so frees the field's
+		// storage (or a static literal) and crashes on aarch64 / leaks on C.
+		const input = `
+trait Speaker {
+  func speak = (self, out string)
+}
+
+class Dog: Speaker {
+  var string name
+  func speak = (self, out string) {
+    return self.name
+  }
+  func #destroy = (ref self) {
+    Console.write("destroying " + self.name)
+  }
+}
+
+func describe = (Speaker s, out string) {
+  return s.speak()
+}
+
+if true {
+  var Dog d = Dog("Rex")
+  Console.write(describe(d))
+}
+Console.write("\\ndone")
+`;
+		await build_and_check_output(input, "trait_dispatch_string_return", "Rexdestroying Rex\ndone");
+	});
+
+	test("self method returning string field, dispatched through concrete type, cleans up", async () => {
+		// Non-trait analogue: a free function wrapping a concrete class method
+		// that returns a string field. Same borrow-vs-own classification issue
+		// — the wrapper's caller must not free the borrowed field pointer.
+		const input = `
+class Dog {
+  var string name
+  func speak = (self, out string) {
+    return self.name
+  }
+  func #destroy = (ref self) {
+    Console.write("destroying " + self.name)
+  }
+}
+
+func describe = (Dog d, out string) {
+  return d.speak()
+}
+
+if true {
+  var Dog d = Dog("Rex")
+  Console.write(describe(d))
+}
+Console.write("\\ndone")
+`;
+		await build_and_check_output(
+			input,
+			"concrete_dispatch_string_return",
+			"Rexdestroying Rex\ndone",
+		);
+	});
 });

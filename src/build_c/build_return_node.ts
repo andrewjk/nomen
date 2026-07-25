@@ -8,6 +8,7 @@ import build_node from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import c_type from "./utils/c_type.ts";
 import emit_allocations from "./utils/emit_allocations.ts";
+import type_from_value_node from "./utils/type_from_value_node.ts";
 
 export default function build_return_node(node: ReturnNode, status: BuildStatus) {
 	if (!node.value) {
@@ -213,10 +214,42 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 					owned_return?: boolean;
 				};
 				const nm = fn.mangled_name || fn.name || "";
+				const recv_type = type_from_value_node((node.value as AccessNode).target);
+				const recv_name = recv_type?.name;
+				// A trait-dispatched method call (`s.speak()` on a trait-typed
+				// receiver) routes through the vtable to a conforming method,
+				// which on this backend already strdup's its string return. So
+				// the dispatched result is a fresh owned heap string — strdup'ing
+				// it again leaks the inner copy. Treat it as owned (don't strdup).
+				const recv_is_trait = !!recv_name && !!status.traits.find((t) => t.name === recv_name);
+				// A concrete method call (`d.speak()`) is owned iff the resolved
+				// method strdup's its return — on this backend that is any method
+				// with a body whose return type is `string` (every string return
+				// is strdup'd). Resolve via the AST (receiver type → struct →
+				// method) rather than the heap_returning_functions set, which is
+				// not yet populated for methods of structs nested inside a
+				// function body (e.g. `main`) at the point this return is built.
+				// `to_string` is handled by the dedicated clause below (and
+				// `string_to_string` is the identity exception that stays a borrow).
+				let concrete_method_owned = false;
+				if (recv_name && !recv_is_trait && fn.name && fn.name !== "to_string") {
+					let struct_name = recv_name;
+					if (recv_type?.type_args?.length) {
+						const mono = recv_name + "_" + recv_type.type_args.map((t) => t.name).join("_");
+						if (status.structs.find((s) => s.name === mono)) struct_name = mono;
+					}
+					const struct = status.structs.find((s) => s.name === struct_name);
+					const m = (struct?.functions ?? []).find((f) => f.name === fn.name);
+					if (m && (m as any).has_body && (m as any).return_type?.name === "string") {
+						concrete_method_owned = true;
+					}
+				}
 				const returns_owned_string =
 					fn.owned_return ||
 					(fn.name === "to_string" && nm !== "string_to_string") ||
 					nm.startsWith("_string_interpolate_") ||
+					recv_is_trait ||
+					concrete_method_owned ||
 					!!status.heap_returning_functions?.has(nm);
 				if (returns_owned_string) returns_borrowed_string = false;
 			}
