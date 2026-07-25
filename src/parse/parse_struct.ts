@@ -3,6 +3,7 @@ import ParameterNode from "../nodes/ParameterNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import Type from "../nodes/Type.ts";
 import parse_statement from "./parse_statement.ts";
+import parse_type from "./parse_type.ts";
 import type ParseStatus from "./ParseStatus.ts";
 import accept from "./utils/accept.ts";
 import add_to_parent from "./utils/add_to_parent.ts";
@@ -34,9 +35,15 @@ export default function parse_struct(
 	status.namespace += `.${name}`;
 
 	if (accept(":", status)) {
+		// Each conformance is a trait name optionally followed by concrete
+		// type arguments (`struct Users: Viewable<User>`). The base name is
+		// stored in `traits` (used for vtable dispatch); the args land in the
+		// parallel `trait_args` array and are arity-checked later.
 		struct.traits.push(consume(status));
+		struct.trait_args.push(parse_optional_trait_args(status));
 		while (accept(",", status)) {
 			struct.traits.push(consume(status));
+			struct.trait_args.push(parse_optional_trait_args(status));
 		}
 	}
 
@@ -67,4 +74,17 @@ export default function parse_struct(
 	}
 
 	status.namespace = old_namespace;
+}
+
+// Parse optional `<arg1, arg2, ...>` type arguments on a trait conformance.
+// Returns undefined when no `<...>` follows, so non-generic conformance
+// (`struct Foo: Disposable`) is unchanged.
+function parse_optional_trait_args(status: ParseStatus): Type[] | undefined {
+	if (!accept("<", status)) return undefined;
+	const args: Type[] = [parse_type(status)];
+	while (accept(",", status)) {
+		args.push(parse_type(status));
+	}
+	expect(">", status);
+	return args;
 }

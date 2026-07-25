@@ -7,6 +7,12 @@ export default class TraitNode extends BaseNode {
 	name: string;
 	fields: DeclarationNode[];
 	functions: FunctionNode[];
+	/**
+	 * Generic trait type parameters, e.g. `trait Viewable<T>` → ["T"].
+	 * Trait methods/fields may reference these; conforming structs supply
+	 * concrete type arguments (`struct Users: Viewable<User>`).
+	 */
+	type_params: string[];
 
 	constructor(
 		start: number,
@@ -20,5 +26,6 @@ export default class TraitNode extends BaseNode {
 		this.name = name;
 		this.fields = fields || [];
 		this.functions = functions || [];
+		this.type_params = [];
 	}
 }

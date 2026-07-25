@@ -19,9 +19,30 @@ function params_differ(a: FunctionNode, b: FunctionNode): boolean {
 }
 
 export default function check_struct_node(struct: StructNode, status: CheckStatus) {
-	for (let trait of struct.traits) {
-		if (!status.traits.find((t) => t.name === trait)) {
-			add_error(status, `Unknown trait: ${trait}`, struct.start);
+	for (let i = 0; i < struct.traits.length; i++) {
+		const trait_name = struct.traits[i];
+		const trait = status.traits.find((t) => t.name === trait_name);
+		if (!trait) {
+			add_error(status, `Unknown trait: ${trait_name}`, struct.start);
+			continue;
+		}
+		// Validate generic-trait conformance arity: `struct Users: Viewable<User>`
+		// must supply exactly as many type args as the trait declares type
+		// params. Missing args on a generic trait, or extra args on a plain
+		// trait, are compile errors.
+		const args = struct.trait_args[i];
+		if (trait.type_params.length > 0 && !args) {
+			add_error(
+				status,
+				`Trait '${trait_name}' expects ${trait.type_params.length} type argument(s) <${trait.type_params.join(", ")}>, got none`,
+				struct.start,
+			);
+		} else if (args && args.length !== trait.type_params.length) {
+			add_error(
+				status,
+				`Trait '${trait_name}' expects ${trait.type_params.length} type argument(s), got ${args.length}`,
+				struct.start,
+			);
 		}
 	}
 

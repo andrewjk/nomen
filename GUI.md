@@ -100,8 +100,10 @@ below requires things the compiler does **not** all do yet —
    boxing — see [Next steps](#next-steps--compiler-prerequisites)). (Value
    structs can no longer be implicitly boxed into trait-typed slots; they
    must be declared `class` to be used polymorphically.)
-3. Trait conformance with type arguments isn't parsed yet
-   (`core/System/Viewable.nm:8`).
+3. ~~**Trait conformance with type arguments isn't parsed yet**
+   (`core/System/Viewable.nm:8`).~~ ✅ **Done.** `trait Foo<T>` declarations and
+   `struct C: Foo<ConcreteType>` conformance now parse, arity-check, and build
+   on both backends — see [Next steps](#next-steps--compiler-prerequisites).
 
 So v1 stores child handles in flat `Buffer<int>` arrays (structure-of-arrays,
 mirroring the legacy `Layout.nm`) and applies frames via a native
@@ -527,18 +529,44 @@ UI infrastructure):
   an implicit heap allocation ("boxing") at the call site — the one place the
   language hid an allocation — so boxing has been **removed**. Passing a value
   struct to a trait-typed parameter now errors (`value struct 'X' cannot be
-  used as trait 'T'; declare 'X' as a class`). The native controls are
+used as trait 'T'; declare 'X' as a class`). The native controls are
   `class`es, so they slot straight into `ClassBuffer<Control>` with no boxing.
-  (Trait-typed *locals* with concrete struct storage — `var Speaker s = Dog()`
+  (Trait-typed _locals_ with concrete struct storage — `var Speaker s = Dog()`
   — still work; they keep the struct on the stack and dispatch through its
   vtable, so there's no hidden allocation.) The `is_boxed` declaration flag,
   the `build_boxed_declaration` helpers, and the boxed-var branch in
   `build_auto_free` are all gone.
-- **Parse trait conformance with type arguments** (`core/System/Viewable.nm:8-11`,
+- ~~**Parse trait conformance with type arguments** (`core/System/Viewable.nm:8-11`,
   not `Controls/Viewable.nm`), so `Container<T: Control>`-style generics
   become possible. `TraitNode` has no `type_params` field, `parse_trait.ts`
   doesn't accept `<...>` after the trait name, and `parse_struct.ts:36-40`
-  parses trait conformance as a bare name only.
+  parses trait conformance as a bare name only.~~ ✅ **Done.**
+  - `TraitNode` gained a `type_params: string[]` field (`src/nodes/TraitNode.ts`),
+    cloned in `src/nodes/clone_node.ts`.
+  - `parse_trait.ts` now accepts `<T, U, …>` after the trait name; conformance
+    in `parse_struct.ts` is parsed as `Name` optionally followed by `<args>`
+    (each arg via `parse_type`). The base trait name still lives in
+    `StructNode.traits` (vtable dispatch keys on the name), with the args kept
+    in a parallel `StructNode.trait_args: (Type[] | undefined)[]`.
+  - The checker registers a generic trait's `type_params`
+    (`check_trait_node.ts`) so its own method/field signatures may reference
+    them, and `check_struct_node.ts` arity-validates each conformance against
+    the trait's `type_params` (missing/extra/`0-arg-trait-with-args` all error).
+  - **No build changes were needed**: vtable layout is keyed by trait name, so
+    type args don't change `_Struct_traits` / `_get_trait_func` / the aarch64
+    per-struct `_<Struct>_traits` array — a generic trait dispatches exactly
+    like its non-generic counterpart. Verified end-to-end on **both** backends
+    in `test/trait_generic.test.ts` (marker trait, abstract-method override,
+    multi-param trait, parametric `struct Wrap<T>: Greetable<T>`, and
+    heterogeneous `ClassBuffer<Greetable>` destroy dispatch with two conformers
+    carrying different type args).
+  - **Still out of scope** (follow-ups): (a) trait **bounds on struct type
+    params** — `struct Container<T: Control>` (`:` constraining `T`, not
+    conformance) is a separate feature; (b) **generic trait default-method
+    bodies that reference `T`** need per-conformer monomorphization (abstract
+    methods with no body + concrete overrides already work); (c) nested type
+    args in conformance like `Greetable<Wrap<int>>` hit the pre-existing `>>`
+    tokenizer edge case.
 - ~~**Trait-typed destroy propagation for local variables.**~~ ✅ **Done.**
   A trait-typed local (e.g. `var Speaker s = Dog("Rex")`) now runs the
   concrete struct's `#destroy` and reclaims its owned fields at scope exit on
@@ -657,7 +685,7 @@ trait-based Container once the geometry types below are in place.
 - Incremental/dirty relayout (v1 does a full re-measure on every
   `layout(win)`/`compute` call; cheap for small UIs).
 - **Trait-typed retrieval from a `ClassBuffer<Trait>`** — `var Speaker p =
-  pets.at(0)` (where the local's initializer is a method-call return rather
+pets.at(0)` (where the local's initializer is a method-call return rather
   than a constructor) still falls through the trait-typed-local path today
   (only constructor initializers are handled). Once that local-init path is
   generalised the round-trip will work — the slot already stores a correct

@@ -14,6 +14,16 @@ export default function parse_trait(visibility: "pub" | "private", status: Parse
 	const name = consume(status);
 	const trait = new TraitNode(start, visibility, name);
 
+	// Generic trait: `trait Viewable<T>` — type params may be referenced by
+	// trait method/field signatures; conforming structs supply concrete args.
+	if (accept("<", status)) {
+		trait.type_params.push(consume(status));
+		while (accept(",", status)) {
+			trait.type_params.push(consume(status));
+		}
+		expect(">", status);
+	}
+
 	if (expect("{", status)) {
 		status.stack.push(trait);
 		parse_statement(status);

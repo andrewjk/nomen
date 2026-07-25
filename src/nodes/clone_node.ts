@@ -337,6 +337,7 @@ export default function clone_node(node: BaseNode): BaseNode {
 			);
 			c.type_params = n.type_params.slice();
 			c.is_generic = n.is_generic;
+			c.trait_args = n.trait_args.map((args) => args?.map(clone_type));
 			c.scope = n.scope;
 			c.allocations = n.allocations?.map(clone_node);
 			return c;
@@ -417,6 +418,7 @@ export default function clone_node(node: BaseNode): BaseNode {
 				n.functions.map((f) => clone_node(f) as FunctionNode),
 			);
 			c.allocations = n.allocations?.map(clone_node);
+			c.type_params = n.type_params.slice();
 			return c;
 		}
 		default: {

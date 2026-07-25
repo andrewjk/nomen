@@ -13,6 +13,14 @@ export default function check_trait_node(trait: TraitNode, status: CheckStatus) 
 		status.traits.push(trait);
 	}
 
+	// Register generic trait type params (e.g. `trait Viewable<T>`) so the
+	// trait's own method/field signatures may reference them. Mirrors how
+	// check_struct_node scopes a generic struct's type params.
+	const types_length_before = status.types.length;
+	status.types.push(...trait.type_params);
+	const type_params_length_before = status.type_params.length;
+	status.type_params.push(...trait.type_params);
+
 	for (let decl of trait.fields) {
 		if (decl.declaration === "var" && decl.type.name && is_class_type(decl.type.name, status)) {
 			add_error(status, `class-type fields must use 'mov', not 'var'`, decl.start);
@@ -23,4 +31,7 @@ export default function check_trait_node(trait: TraitNode, status: CheckStatus) 
 	for (let func of trait.functions) {
 		check_function_node(func, status);
 	}
+
+	status.type_params.length = type_params_length_before;
+	status.types.length = types_length_before;
 }

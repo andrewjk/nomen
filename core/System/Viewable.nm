@@ -5,9 +5,13 @@
 // types. The resulting view supports `.length` and `.at(i)`; the element type
 // is the one named in the view (e.g. `view User`).
 //
-// The element type is not a trait parameter today (trait conformance with
-// type arguments isn't parsed yet), so a type writes `: Viewable` and declares
-// slice with its concrete element view:
+// Generic trait conformance is now parsed and checked by the compiler
+// (`trait Foo<T>` + `struct C: Foo<ConcreteType>`), so a type MAY parameterise
+// the trait and name its element type: `pub struct UserList: Viewable<User>`.
+// `Viewable` itself stays a plain marker today — the core `Array<T>` and
+// `List<T>` conformers and the SPEC examples all use the bare `: Viewable`
+// form, and migrating them to `: Viewable<Elem>` is a separate library/spec
+// change. The slice method is still declared with its concrete element view:
 //
 //   pub struct UserList: Viewable {
 //       var Buffer<User> items = Buffer<User>()

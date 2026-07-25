@@ -8,6 +8,15 @@ export default class StructNode extends BaseNode {
 	visibility: "pub" | "private";
 	name: string;
 	traits: string[];
+	/**
+	 * Type arguments supplied for each trait conformance, parallel to
+	 * `traits`. `trait_args[i]` holds the args for `traits[i]`
+	 * (e.g. `struct Users: Viewable<User>` → trait_args[0] = [Type(User)];
+	 * `undefined` when the trait is non-generic or conformance omits args).
+	 * Vtable dispatch keys on the trait name, so args don't affect layout —
+	 * they're validated for arity against the trait's `type_params`.
+	 */
+	trait_args: (Type[] | undefined)[];
 	fields: DeclarationNode[];
 	functions: FunctionNode[];
 	type_params: string[];
@@ -31,6 +40,7 @@ export default class StructNode extends BaseNode {
 		this.visibility = visibility;
 		this.name = name;
 		this.traits = traits || [];
+		this.trait_args = (traits || []).map(() => undefined);
 		this.fields = fields || [];
 		this.functions = functions || [];
 		this.type_params = [];
