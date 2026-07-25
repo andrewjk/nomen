@@ -155,19 +155,10 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 			return;
 		}
 		status.code += `${type_prefix} _return_val = `;
-		// `return self` where self is a pointer param (any non-local self):
-		// dereference the pointer so the by-value return copies the struct.
-		// Custom #init's self is a local by-value variable, so no deref.
-		// Class returns don't deref — the class pointer IS the return value.
-		const returns_bare_self =
-			node.value.node_type === "value" &&
-			(node.value as ValueNode).value === "self" &&
-			!status.self_is_local &&
-			is_struct &&
-			!return_is_class;
-		if (returns_bare_self) {
-			status.code += `*`;
-		}
+		// `return self` from a value method: build_value_node dereferences
+		// the `self` pointer uniformly (so `var T c = self` and `return self`
+		// both copy the struct), so no special-case `*` is needed here.
+		const returns_bare_self = false;
 		// A trait-typed return inside a monomorphized container method (e.g.
 		// `T List_T_at(...) { return self.items.load_int(i); }`) wraps a raw
 		// `long`-returning storage primitive (ClassBuffer.load_int/move_int).

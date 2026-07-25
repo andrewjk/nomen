@@ -139,6 +139,26 @@ Console.write("\\{age}")
 		await build_and_check_output(input, "struct_method_return", "42");
 	});
 
+	test("value method copies self into a local", async () => {
+		// `var T c = self` in a by-value method must dereference the self
+		// pointer and copy the struct (regression test for the GUI geometry
+		// `tighten_*` helpers, which use exactly this pattern).
+		const input = `
+struct Box {
+  var int x
+  var int y
+  pub func copy = (self, out Box) {
+    var Box c = self
+    return c
+  }
+}
+var Box b = Box(1, 2)
+var Box c = b.copy()
+Console.write("\\{c.x} \\{c.y}")
+`;
+		await build_and_check_output(input, "struct_value_method_copy_self", "1 2");
+	});
+
 	test("struct mutating method", async () => {
 		const input = `
 struct Counter {

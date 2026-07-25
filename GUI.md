@@ -477,6 +477,8 @@ cannot be verified headlessly, but the **layout math** can:
 2. **Geometry types.** ⚠️ Deferred. v1 uses raw `int` width/height + the
    `Container`'s flat buffers; the `Size`/`Frame`/`Insets`/`BoxConstraints`/
    `LayoutLength`/`LayoutParams` types are part of the trait migration.
+   Implementing them as specified is currently blocked by compiler gaps — see
+   [Geometry types (Phase 2) blockers](#geometry-types-phase-2-blockers).
 3. **Block + Spacer leaf.** ⚠️ Deferred (needs the trait model).
 4. **VStack then HStack.** ✅ Implemented handle-based, with padding/spacing and
    fill semantics (no grow/shrink/percent/alignment yet).
@@ -669,6 +671,70 @@ self_offset` and indexes with `+ self_offset`. Runtime-tested in
   reading native frames back on both backends: `title` resolves to `y=454` in a
   500-tall window (top area) on both `c` and `aarch64`.
 
+### Geometry types (Phase 2) blockers
+
+Implementing the geometry types in [Data types](#data-types) as specified —
+flat structs plus the `LayoutLength` / `Alignment` enums — surfaces several
+compiler gaps. Each was isolated to a minimal repro compiled on **both** `c`
+and `aarch64` via `build_and_check_output`; none are worked around in core yet,
+so the spec'd forms stay unusable until fixed. The handle-based v1 sidesteps all
+of them by using flat `Buffer<int>` arrays + `int` tag constants, which is also
+why `test/layout_container.test.ts` only runs on the `c` backend today.
+
+Struct / initialisation:
+
+- ~~**`var T c = self` in a by-value method miscompiles.** `self` is passed as a
+  pointer even in `(self, …)` methods, so `var Box c = self` lowers to
+  `struct Box c = self;` in C ("initializing 'struct Box' with an expression of
+  type 'struct Box *'"). The `tighten_*` helpers in [Data types](#data-types)
+  use exactly this copy pattern; today they must build a fresh struct and copy
+  fields one at a time. Fix: dereference `self` for value methods, or lower
+  struct value-copy correctly on both backends.~~ ✅ **Fixed.** `build_value_node`
+  now dereferences `self` uniformly when it's a pointer param (i.e. not a
+  custom `#init`'s local-by-value `self`), so `var T c = self` and `return self`
+  both copy the struct. Callers that need the pointer (field access, method
+  dispatch, ref-param forwarding) set `suppress_dereference` and get the bare
+  pointer. Runtime-tested on both backends (`struct_value_method_copy_self`).
+- **Named-field struct literals don't parse.** `const LP DEF = [ grow = 2,
+  shrink = 3 ]` fails with "Type mismatch in declaration: unknown value ?". The
+  `[ field = val, … ]` construction form used for `DEFAULT_PARAMS` in
+  [Data types](#data-types) is unrecognised — only `Type()` (defaults) +
+  per-field assignment works today.
+- **Struct field of struct type loses its defaults.** `pub var Inner child =
+  Inner()` reads the inner's fields back as `0`, not `Inner`'s declared
+  defaults. Nested-struct default initialisation doesn't propagate, so a
+  `LayoutParams` holding two `LayoutLength` fields can't rely on field defaults.
+- **Module-level `const int` as a struct field default is illegal on aarch64.**
+  `pub var int hi = INF` (with `const int INF = 2147483647`) produces "Illegal
+  text-relocations … to 'INF'" — the field-init load references the global
+  symbol from `__TEXT`. Works on `c`; this went uncaught because the container
+  tests are `c`-only. Field defaults must currently be literals.
+
+Enums:
+
+- **Shorthand enum-with-args assignment doesn't resolve.** `w = .fixed(50)`
+  errors "Function not found: ." Shorthand is only wired for no-arg cases in
+  assignment context; cases with associated data must use the full form. The
+  spec's `LayoutLength` (`.fixed`, `.percent`) leans on this.
+- **Reassigning an enum local to a different associated-data case corrupts it.**
+  `var Len w = .auto; w = Len.fixed(50)` then prints `61`, not the `fixed` case
+  index `1`, on the `c` backend — the tag/payload get garbled on case change.
+- **`match` associated-data extraction is broken on aarch64.**
+  `match w { case .fixed(n) -> n }` fails `clang -c` with "unknown AArch64
+  fixup kind! `adr x0, n`" — the bound variable `n` is emitted as a symbol
+  address instead of the extracted payload. Works on `c`; this alone rules out
+  `LayoutLength`-style enums until fixed.
+- **No-arg enum case as a struct field default is broken on aarch64.**
+  `pub var Align a = .stretch` fails to link: "Undefined symbols for
+  architecture arm64: `_Align_stretch`, referenced from: int_to_string". So even
+  the caseless `Alignment` enum can't be used as a field default on `aarch64`
+  (works on `c`).
+
+Resolution: until these land, geometry types must either (a) stay as flat
+`int`-field structs + `int` tag constants (mirroring `Container.nm`'s SoA
+buffers), or (b) wait for the compiler fixes above. The math in
+[The algorithm](#the-algorithm) is independent of the representation.
+
 ### Layout features still owed (now unblocked)
 
 With the native controls now `class`es and `ClassBuffer<Trait>` polymorphic
@@ -679,7 +745,11 @@ places: on the existing handle-based v1 (no trait model needed), or on a new
 trait-based Container once the geometry types below are in place.
 
 - `BoxConstraints` / `Size` / `Frame` / `Insets` / `LayoutLength` /
-  `LayoutParams` with `grow`/`shrink`/`percent`/`fill`/`align`.
+  `LayoutParams` with `grow`/`shrink`/`percent`/`fill`/`align` — **blocked** on
+  the language gaps in
+  [Geometry types (Phase 2) blockers](#geometry-types-phase-2-blockers)
+  (enum associated-data, named-field struct literals, and const/nested/enum
+  field defaults all miscompile; several only on `aarch64`).
 - Intrinsic-size measurement (query each native control's
   `intrinsicContentSize`/`fittingSize`) so `add` needs no size hints.
 - Incremental/dirty relayout (v1 does a full re-measure on every

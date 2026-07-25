@@ -43,6 +43,20 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 	if (value !== "self" && status.function_ref_params?.has(value) && !status.suppress_dereference) {
 		status.code += `*`;
 	}
+	// `self` is emitted as a pointer in regular methods (it lives in
+	// function_ref_params — see build_struct_node). A value-use (e.g. the
+	// RHS of `var T c = self`) must dereference it; callers that need the
+	// address (field access `self.x` → `self->x`, method dispatch, ref-param
+	// forwarding) set suppress_dereference, so they get the bare pointer.
+	// A custom #init uses a local by-value `self` (self_is_local), which is
+	// never in function_ref_params, so this branch is skipped there.
+	if (
+		value === "self" &&
+		status.function_ref_params?.has("self") &&
+		!status.suppress_dereference
+	) {
+		status.code += `*`;
+	}
 	// A `ref` class param is a double pointer (`struct T **`); a value-use
 	// reads the underlying instance pointer, so dereference once. Callers that
 	// need the address (`&h` write-back, forwarding) set suppress_dereference.
