@@ -494,8 +494,9 @@ cannot be verified headlessly, but the **layout math** can:
    **both** the C/macOS and aarch64 backends using a 2-column `Grid`. (The
    aarch64 path had been silently broken by a >8-param function overflowing the
    register-arg ABI — see
-   [Smaller compiler bugs](#smaller-compiler-bugs-hit-while-building-v1); fixed
-   by keeping `Container`'s helpers at ≤8 register params.)
+   [Smaller compiler bugs](#smaller-compiler-bugs-hit-while-building-v1); since
+   fixed, so `Container`'s helpers no longer need to stay at ≤8 register
+   params.)
 8. **Invalidation.** ⚠️ Deferred. v1 does a full re-measure on every
    `layout(win)` call (cheap for small UIs; fine for the todo app).
 9. **Compositor features.** ⚠️ Deferred (hit testing, dirty-rect, animation).
@@ -625,7 +626,7 @@ Both backends now implement this end-to-end and are exercised by
 
 ### Smaller compiler bugs hit while building v1
 
-- **aarch64 backend does not spill function args 9+ to the stack.** The
+- ~~**aarch64 backend does not spill function args 9+ to the stack.** The
   prologue (`build_aarch64/build_function_node.ts`) spills each incoming param
   with `str ${param_regs[idx]}`, but `param_regs` only covers `x0`–`x7`; the
   9th parameter indexes past the array and emits `str undefined, [...]`, and
@@ -636,7 +637,28 @@ Both backends now implement this end-to-end and are exercised by
   — which silently broke `app/src/main.nm` on `--arch aarch64`. Worked around
   by refactoring `append_node` to drop `w`/`h` (leaves store them after the
   call), keeping every function at ≤8 register params. A real fix needs full
-  AAPCS64 stack-arg passing at both the prologue and the call site.
+  AAPCS64 stack-arg passing at both the prologue and the call site.~~ ✅
+  **Fixed.** All four aarch64 prologue paths (regular functions, struct
+  auto-`#init`, struct methods, custom `#init`) and all three call-site paths
+  (free-function calls, method calls via `build_access_node`, and constructor
+  calls in declarations) now implement AAPCS64 stack-arg passing. Incoming
+  overflow args (slot 8+k) are loaded from `[x29, #(16 + 16*callee_saved_pushes
+  + STACK_SIZE + k*8)]` via text placeholders patched once the local frame
+  size is known (`src/build_aarch64/utils/stack_args.ts`); outgoing overflow
+  args are spilled to a temporary outgoing area below `sp`, freed immediately
+  after the `bl`. The variadic-tuple + overflow combination is the remaining
+  gap (only the count/ptr slot pair is supported in registers today).
+  Regression-tested on both backends in `test/many_params.test.ts` (9-, 10-,
+  11-, 12-arg free functions; 10-field struct auto-`#init`; 9-arg instance
+  method; nested overflow call).
+- **C backend auto-`#init` local name collides with a same-named field.**
+  `build_c/build_struct_node.ts:148` derives the constructor's local instance
+  variable from the struct name's first letter lowercased (`Big` → `b`); if
+  the struct has a field with that name, the local shadows the parameter and
+  the field self-assigns (`b.b = b;`). Surfaces for any struct whose name's
+  first letter (lowercased) matches one of its field names (e.g. `struct Big {
+  var int b }`). Workaround: rename either the struct or the field. A real fix
+  should use a non-colliding local name (e.g. `_self` or `__self`).
 - ~~**Default parameter on a struct method crashes the checker**
   (`check_function_call.ts:307`, `func_param.type` undefined). Default params on
   free functions work; on methods they don't. Worked around with overloads.~~ ✅

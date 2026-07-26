@@ -10,6 +10,11 @@ import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_field_destroys, has_struct_fields_with_destroy } from "./utils/auto_destroy.ts";
 import { is_nullable_struct_type } from "./utils/nullable_struct.ts";
 import scan_force_heap_strings from "./utils/scan_force_heap_strings.ts";
+import {
+	NUM_REG_ARGS,
+	overflow_placeholder,
+	patch_overflow_placeholders,
+} from "./utils/stack_args.ts";
 import { allocate_stack_space } from "./utils/stack_var.ts";
 import {
 	get_field_has_offset,
@@ -277,32 +282,45 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 	for (let i = 0; i < required_fields.length; i++) {
 		const field = required_fields[i];
 		const offset = get_field_offset(node.name, field.name, status);
+		// x0 is the destination (self pointer); field i arrives in slot i+1
+		// (x1, x2, …). Slots past x7 arrive in the caller's outgoing stack
+		// area at [x29, #(16 + k*8)] (this init has no local frame, so the
+		// only thing between the args and x29 is the stp x29, x30 pair).
+		const slot = i + 1;
+		let src_reg: string;
+		if (slot < NUM_REG_ARGS) {
+			src_reg = param_regs[i];
+		} else {
+			const k = slot - NUM_REG_ARGS;
+			status.code += `ldr x10, [x29, #${16 + k * 8}]\n`;
+			src_reg = "x10";
+		}
 		if (field.type.is_array && field.type.length && (field.type.length.start ?? -1) >= 0) {
 			const element_size = aarch64_size(field.type.name);
 			const length = parseInt((field.type.length as ValueNode).value || "0");
 			for (let e = 0; e < length; e++) {
 				const byte_offset = e * element_size;
-				status.code += load_element(param_regs[i], byte_offset, element_size);
+				status.code += load_element(src_reg, byte_offset, element_size);
 				status.code += store_element("x0", offset + byte_offset, element_size);
 			}
 		} else if (
 			!field.type.is_ref &&
 			status.structs.find((s) => s.name === field.type.name && !s.is_simple_type && !s.is_class)
 		) {
-			// Struct/tuple field: copy word-by-word from param register (which
-			// holds a pointer to the struct value). Use x9 as a scratch so we
-			// don't clobber the source pointer in param_regs[i].
+			// Struct/tuple field: copy word-by-word from the param register
+			// (which holds a pointer to the struct value). x9 is the copy
+			// scratch so we don't clobber the source pointer in src_reg.
 			// (Class fields hold a pointer and are handled by the plain store
 			// path below.)
 			const field_size = get_struct_size(field.type.name, status);
 			const words = Math.ceil(field_size / 8);
 			for (let w = 0; w < words; w++) {
-				status.code += `ldr x9, [${param_regs[i]}, #${w * 8}]\n`;
+				status.code += `ldr x9, [${src_reg}, #${w * 8}]\n`;
 				status.code += `str x9, [x0, #${offset + w * 8}]\n`;
 			}
 		} else {
 			const field_size = get_type_size(field.type, status);
-			emit_typed_store(status, param_regs[i], "x0", offset, field_size);
+			emit_typed_store(status, src_reg, "x0", offset, field_size);
 		}
 	}
 
@@ -397,7 +415,10 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 	// self occupies x0 (moved to x19 above); custom-init params arrive in
 	// x1, x2, ... Variadic params consume two register slots — a hidden
 	// `_name_len` count followed by the array pointer — mirroring the
-	// regular function-call convention.
+	// regular function-call convention. Params beyond slot 7 (the 8th
+	// register slot, since x0 is reserved for self) arrive in the caller's
+	// outgoing stack area and are loaded here via per-arg placeholders
+	// patched once the local frame size is known.
 	const param_regs = ["x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7"];
 	let param_idx = 1;
 	for (let i = 0; i < func.params.length; i++) {
@@ -407,13 +428,31 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 			status.function_variadic_params!.add(param.name);
 			const len_offset = allocate_stack_space(status, 8, 8);
 			status.stack_offsets!.set(`_${param.name}_len`, len_offset);
-			status.code += `str ${param_regs[param_idx]}, [x29, #${len_offset}]\n`;
+			if (param_idx < NUM_REG_ARGS) {
+				status.code += `str ${param_regs[param_idx]}, [x29, #${len_offset}]\n`;
+			} else {
+				const k = param_idx - NUM_REG_ARGS;
+				status.code += `ldr x9, [x29, #${overflow_placeholder(func_name, k)}]\n`;
+				status.code += `str x9, [x29, #${len_offset}]\n`;
+			}
 			param_idx++;
 		}
 		const size = aarch64_size(param.type.name);
 		const offset = allocate_stack_space(status, size, size);
 		status.stack_offsets!.set(param.name, offset);
-		status.code += `str ${param_regs[param_idx]}, [x29, #${offset}]\n`;
+		if (param_idx < NUM_REG_ARGS) {
+			status.code += `str ${param_regs[param_idx]}, [x29, #${offset}]\n`;
+		} else {
+			const k = param_idx - NUM_REG_ARGS;
+			status.code += `ldr x9, [x29, #${overflow_placeholder(func_name, k)}]\n`;
+			if (size === 1) {
+				status.code += `strb w9, [x29, #${offset}]\n`;
+			} else if (size === 4) {
+				status.code += `str w9, [x29, #${offset}]\n`;
+			} else {
+				status.code += `str x9, [x29, #${offset}]\n`;
+			}
+		}
 		param_idx++;
 	}
 
@@ -475,6 +514,10 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 		`sub sp, sp, #${stack_placeholder}`,
 		total_stack > 0 ? `sub sp, sp, #${total_stack}` : `// no stack needed`,
 	);
+	// Patch per-overflow-arg placeholders emitted in the param-loading loop
+	// above. self's x19 save is the only `str xN, [sp, #-16]!` between
+	// `stp x29, x30` and `sub sp, sp, #STACK_SIZE`, so N = 1.
+	status.code = patch_overflow_placeholders(status.code, func_name, 1, total_stack);
 	if (total_stack > 0) {
 		status.code += `add sp, sp, #${total_stack}\n`;
 	}
@@ -564,9 +607,26 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 			status.function_param_regs.set("self", "x19");
 		}
 
+		// Track the AAPCS64 register slot index. self takes slot 0 (whether
+		// moved to x19 or, for `var self`, treated as a regular struct param);
+		// variadics take 2 slots (count + ptr); every other param takes 1.
+		let slot_idx = 0;
 		for (let i = 0; i < func.params.length; i++) {
 			const param = func.params[i];
-			if (param.is_self_param && !self_is_var) continue;
+			if (param.is_self_param && !self_is_var) {
+				slot_idx++;
+				continue;
+			}
+			if (param.is_variadic) {
+				slot_idx += 2;
+				if (param.declaration === "var") {
+					status.function_param_vars.add(param.name);
+				}
+				if (param.type.is_ref) {
+					status.function_ref_params!.add(param.name);
+				}
+				continue;
+			}
 			const is_struct_type = !!status.structs.find(
 				(s) => s.name === param.type.name && !s.is_simple_type,
 			);
@@ -575,7 +635,17 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 				if (saved_reg !== "x19" || !needs_x19) {
 					status.code += `str ${saved_reg}, [sp, #-16]!\n`;
 				}
-				status.code += `mov ${saved_reg}, ${param_regs[i]}\n`;
+				if (slot_idx < NUM_REG_ARGS) {
+					status.code += `mov ${saved_reg}, ${param_regs[slot_idx]}\n`;
+				} else {
+					// Overflow: arg arrived in the caller's outgoing stack
+					// area. After the push above, sp = caller_sp - 16 -
+					// 16*callee_idx (callee_idx already counts the self/x19
+					// push when needs_x19), so the k-th stack arg (slot 8+k)
+					// lives at [sp, #(16 + 16*callee_idx + k*8)].
+					const k = slot_idx - NUM_REG_ARGS;
+					status.code += `ldr ${saved_reg}, [sp, #${16 + 16 * callee_idx + k * 8}]\n`;
+				}
 				status.function_param_regs.set(param.name, saved_reg);
 			} else {
 				// Non-struct params will be saved after stack allocation
@@ -590,6 +660,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 			if (param_struct) {
 				status.function_ref_params!.add(param.name);
 			}
+			slot_idx++;
 		}
 
 		status.code += `sub sp, sp, #${stack_placeholder}\n`;
@@ -601,10 +672,21 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 			status.return_buffer_stack_offset = return_buffer_stack_offset;
 		}
 
-		// Save non-struct params and ref self to stack now that x29 is set
+		// Save non-struct params and ref self to stack now that x29 is set.
+		// Re-walk the param list with the same slot accounting as the first
+		// pass so overflow args (slot >= 8) are pulled from the caller's
+		// outgoing stack area via per-arg placeholders.
+		let second_slot_idx = 0;
 		for (let i = 0; i < func.params.length; i++) {
 			const param = func.params[i];
-			if (param.is_self_param && !self_is_var) continue;
+			if (param.is_self_param && !self_is_var) {
+				second_slot_idx++;
+				continue;
+			}
+			if (param.is_variadic) {
+				second_slot_idx += 2;
+				continue;
+			}
 			const is_struct_type = !!status.structs.find(
 				(s) => s.name === param.type.name && !s.is_simple_type,
 			);
@@ -612,9 +694,32 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 				const size = aarch64_size(param.type.name);
 				const offset = allocate_stack_space(status, size, size);
 				status.stack_offsets!.set(param.name, offset);
-				const save_reg = param.is_self_param ? (needs_x19 ? "x19" : param_regs[i]) : param_regs[i];
-				status.code += `str ${save_reg}, [x29, #${offset}]\n`;
+				if (param.is_self_param) {
+					// `var self`: self takes slot 0 (in x0) — not a stack arg.
+					const save_reg = needs_x19 ? "x19" : param_regs[second_slot_idx];
+					status.code += `str ${save_reg}, [x29, #${offset}]\n`;
+				} else if (second_slot_idx < NUM_REG_ARGS) {
+					const reg = param_regs[second_slot_idx];
+					if (size === 1) {
+						status.code += `strb ${reg.replace("x", "w")}, [x29, #${offset}]\n`;
+					} else if (size === 4) {
+						status.code += `str ${reg.replace("x", "w")}, [x29, #${offset}]\n`;
+					} else {
+						status.code += `str ${reg}, [x29, #${offset}]\n`;
+					}
+				} else {
+					const k = second_slot_idx - NUM_REG_ARGS;
+					status.code += `ldr x9, [x29, #${overflow_placeholder(func_label, k)}]\n`;
+					if (size === 1) {
+						status.code += `strb w9, [x29, #${offset}]\n`;
+					} else if (size === 4) {
+						status.code += `str w9, [x29, #${offset}]\n`;
+					} else {
+						status.code += `str x9, [x29, #${offset}]\n`;
+					}
+				}
 			}
+			second_slot_idx++;
 		}
 
 		status.force_heap_strings = scan_force_heap_strings(func.statements);
@@ -649,6 +754,16 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		status.code = status.code.replace(
 			`sub sp, sp, #${stack_placeholder}`,
 			total_stack > 0 ? `sub sp, sp, #${total_stack}` : `// no stack needed`,
+		);
+		// Resolve overflow-arg placeholders emitted in the second pass. The
+		// count of `str xN, [sp, #-16]!` pushes between `stp x29, x30` and
+		// `sub sp, sp, #STACK_SIZE` is `callee_idx + loop_regs_used.length`
+		// (callee_idx already includes the self/x19 push when needs_x19).
+		status.code = patch_overflow_placeholders(
+			status.code,
+			func_label,
+			callee_idx + loop_regs_used.length,
+			total_stack,
 		);
 		if (total_stack > 0) {
 			status.code += `add sp, sp, #${total_stack}\n`;

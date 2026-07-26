@@ -13,6 +13,7 @@ import build_nursery_spawn from "./build_nursery_spawn.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free, emit_malloc } from "./utils/audit.ts";
 import { mark_moved_if_struct } from "./utils/auto_destroy.ts";
+import { NUM_REG_ARGS } from "./utils/stack_args.ts";
 import {
 	allocate_stack_space,
 	emit_deref_var_address,
@@ -1476,11 +1477,18 @@ function build_access_method(
 		status.code += `str x0, [sp, #-16]!\n`;
 	}
 
-	// Evaluate params
+	// Evaluate params. For an instance method, x0 holds self (saved above)
+	// and args go in x1..x7; for a static method args go in x0..x7. Args past
+	// slot 7 arrive in the caller's outgoing stack area.
+	const start_reg = access_func.is_static ? 0 : 1;
 	const param_regs = access_func.is_static
 		? ["x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7"]
 		: ["x1", "x2", "x3", "x4", "x5", "x6", "x7"];
-	const start_idx = 0;
+	const overflow_count = Math.max(0, access_func.params.length - (NUM_REG_ARGS - start_reg));
+	let overflow_base = 0;
+	if (overflow_count > 0) {
+		overflow_base = allocate_stack_space(status, overflow_count * 8, 16);
+	}
 	for (let i = access_func.params.length - 1; i >= 0; i--) {
 		const param = access_func.params[i];
 		const is_ref_param = access_func.ref_param_indices?.includes(i);
@@ -1510,12 +1518,19 @@ function build_access_method(
 		} else {
 			build_node(param, status);
 		}
-		const reg = param_regs[start_idx + i];
-		if (reg && reg !== "x0") {
-			if (!status.code.endsWith("\n")) {
-				status.code += "\n";
+		const slot = start_reg + i;
+		if (!status.code.endsWith("\n")) {
+			status.code += "\n";
+		}
+		if (slot >= NUM_REG_ARGS) {
+			// Overflow: spill to a local slot; copied to the outgoing area
+			// once self has been restored to x0 below.
+			status.code += `str x0, [x29, #${overflow_base + (slot - NUM_REG_ARGS) * 8}]\n`;
+		} else {
+			const reg = param_regs[i];
+			if (reg && reg !== "x0") {
+				status.code += `mov ${reg}, x0\n`;
 			}
-			status.code += `mov ${reg}, x0\n`;
 		}
 	}
 
@@ -1524,6 +1539,20 @@ function build_access_method(
 	}
 	if (needs_self_save) {
 		status.code += `ldr x0, [sp], #16\n`;
+	}
+
+	// AAPCS64: args past x0..x7 go in the caller's outgoing stack area at
+	// [sp] at the moment of the bl/blr. Lower sp by the outgoing area size
+	// and copy each overflow arg from its spill slot. Restored right after
+	// the call.
+	let outgoing_size = 0;
+	if (overflow_count > 0) {
+		outgoing_size = Math.ceil((overflow_count * 8) / 16) * 16;
+		status.code += `sub sp, sp, #${outgoing_size}\n`;
+		for (let k = 0; k < overflow_count; k++) {
+			status.code += `ldr x9, [x29, #${overflow_base + k * 8}]\n`;
+			status.code += `str x9, [sp, #${k * 8}]\n`;
+		}
 	}
 
 	const target_struct = status.structs.find((s) => s.name === mono_struct_name);
@@ -1572,10 +1601,18 @@ function build_access_method(
 		status.code += `ldr x10, [x10, #${(trait_index + 1) * 8}]\n`;
 		status.code += `ldr x10, [x10, #${func_index * 8}]\n`;
 		status.code += `blr x10\n`;
-	} else if (inline_func) {
+	} else if (inline_func && overflow_count === 0) {
+		// Inline candidates are small functions; the inline path can't accept
+		// a pre-lowered outgoing-arg area, so skip inlining when this call
+		// has overflow args and fall through to the regular bl.
 		build_inline_method(target_struct!, inline_func, status);
 	} else {
 		status.code += `bl ${method_name}\n`;
+	}
+
+	// Free the outgoing stack-arg area now that the call has read it.
+	if (outgoing_size > 0) {
+		status.code += `add sp, sp, #${outgoing_size}\n`;
 	}
 
 	if (access_func.mov_param_indices?.length) {

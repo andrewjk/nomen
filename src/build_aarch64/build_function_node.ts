@@ -7,6 +7,11 @@ import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free } from "./utils/audit.ts";
 import { emit_destroy_for_anchor_slot } from "./utils/auto_destroy.ts";
 import scan_force_heap_strings from "./utils/scan_force_heap_strings.ts";
+import {
+	NUM_REG_ARGS,
+	overflow_placeholder,
+	patch_overflow_placeholders,
+} from "./utils/stack_args.ts";
 import { allocate_stack_space } from "./utils/stack_var.ts";
 
 let label_counter = 0;
@@ -245,11 +250,23 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	}
 
 	if (has_body) {
+		// Track the AAPCS64 register slot index (variadic = 2 slots, array = 1,
+		// everything else = 1). The previous loop used the raw params index,
+		// which under-counted in the presence of a variadic param and so read
+		// the wrong register for a struct param that followed one.
+		let first_pass_slot = 0;
 		for (let i = 0; i < node.params.length; i++) {
 			const param = node.params[i];
 			// Array-typed params (including variadic) hold a pointer, not a
 			// struct value — don't classify them as struct params.
-			if (param.type.is_array || param.is_variadic) continue;
+			if (param.is_variadic) {
+				first_pass_slot += 2;
+				continue;
+			}
+			if (param.type.is_array) {
+				first_pass_slot += 1;
+				continue;
+			}
 			const is_struct_type = !!status.structs.find(
 				(s) => s.name === param.type.name && !s.is_simple_type,
 			);
@@ -267,9 +284,19 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 			) {
 				const saved_reg = callee_saved[callee_idx++];
 				status.code += `str ${saved_reg}, [sp, #-16]!\n`;
-				status.code += `mov ${saved_reg}, ${param_regs[i]}\n`;
+				if (first_pass_slot < NUM_REG_ARGS) {
+					status.code += `mov ${saved_reg}, ${param_regs[first_pass_slot]}\n`;
+				} else {
+					// Overflow: this arg arrived in the caller's outgoing stack
+					// area. After the push above, sp = caller_sp - 16 -
+					// 16*callee_idx, so the k-th stack arg (slot 8+k) lives at
+					// [sp, #(16 + 16*callee_idx + k*8)].
+					const k = first_pass_slot - NUM_REG_ARGS;
+					status.code += `ldr ${saved_reg}, [sp, #${16 + 16 * callee_idx + k * 8}]\n`;
+				}
 				callee_map.set(param.name, saved_reg);
 			}
+			first_pass_slot++;
 		}
 	}
 
@@ -315,8 +342,14 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 				// Hidden _name_len param (takes a register slot before the array ptr)
 				const len_offset = allocate_stack_space(status, 8, 8);
 				status.stack_offsets!.set(`_${param.name}_len`, len_offset);
-				const len_reg = param_regs[param_idx];
-				status.code += `str ${len_reg}, [x29, #${len_offset}]\n`;
+				if (param_idx < NUM_REG_ARGS) {
+					const len_reg = param_regs[param_idx];
+					status.code += `str ${len_reg}, [x29, #${len_offset}]\n`;
+				} else {
+					const k = param_idx - NUM_REG_ARGS;
+					status.code += `ldr x9, [x29, #${overflow_placeholder(node.name, k)}]\n`;
+					status.code += `str x9, [x29, #${len_offset}]\n`;
+				}
 				param_idx++;
 			}
 
@@ -341,13 +374,29 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 				const size = aarch64_size(param.type.name);
 				const offset = allocate_stack_space(status, size, size);
 				status.stack_offsets!.set(param.name, offset);
-				const reg = param_regs[param_idx];
-				if (size === 1) {
-					status.code += `strb ${reg.replace("x", "w")}, [x29, #${offset}]\n`;
-				} else if (size === 4) {
-					status.code += `str ${reg.replace("x", "w")}, [x29, #${offset}]\n`;
+				if (param_idx < NUM_REG_ARGS) {
+					const reg = param_regs[param_idx];
+					if (size === 1) {
+						status.code += `strb ${reg.replace("x", "w")}, [x29, #${offset}]\n`;
+					} else if (size === 4) {
+						status.code += `str ${reg.replace("x", "w")}, [x29, #${offset}]\n`;
+					} else {
+						status.code += `str ${reg}, [x29, #${offset}]\n`;
+					}
 				} else {
-					status.code += `str ${reg}, [x29, #${offset}]\n`;
+					// Overflow: arg arrived on the caller's stack. Load via x9
+					// (caller-saved scratch — free at the prologue) and store
+					// with the param's declared width so the local slot matches
+					// what the register path would have produced.
+					const k = param_idx - NUM_REG_ARGS;
+					status.code += `ldr x9, [x29, #${overflow_placeholder(node.name, k)}]\n`;
+					if (size === 1) {
+						status.code += `strb w9, [x29, #${offset}]\n`;
+					} else if (size === 4) {
+						status.code += `str w9, [x29, #${offset}]\n`;
+					} else {
+						status.code += `str x9, [x29, #${offset}]\n`;
+					}
 				}
 			}
 			param_idx++;
@@ -509,9 +558,25 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		`sub sp, sp, #${stack_placeholder}`,
 		total_stack > 0 ? `sub sp, sp, #${total_stack}` : `// no stack needed`,
 	);
+	// Now that the local frame size is known, resolve the per-overflow-arg
+	// placeholders emitted in the second prologue pass to their concrete x29
+	// offsets. Each `str xN, [sp, #-16]!` between `stp x29, x30, [sp, #-16]!`
+	// and `sub sp, sp, #STACK_SIZE` pushes sp 16 bytes further below the
+	// caller's outgoing stack args, so the offset from x29 to slot 8+k grows
+	// by 16 per push: 16 + 16*(callee_idx + loop_regs_used.length) +
+	// total_stack + k*8. (loop_regs_used saves are inserted just above
+	// `sub sp, sp, #STACK_SIZE` after the body is built, but they sit in the
+	// emitted instruction stream between the first-pass saves and the sub, so
+	// they count here.)
 	if (total_stack > 0) {
 		status.code += `add sp, sp, #${total_stack}\n`;
 	}
+	status.code = patch_overflow_placeholders(
+		status.code,
+		node.name,
+		callee_idx + loop_regs_used.length,
+		total_stack,
+	);
 
 	for (let i = loop_regs_used.length - 1; i >= 0; i--) {
 		status.code += `ldr ${loop_regs_used[i]}, [sp], #16\n`;

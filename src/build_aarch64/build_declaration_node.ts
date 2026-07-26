@@ -29,6 +29,7 @@ import {
 } from "./utils/auto_destroy.ts";
 import { build_swap_params } from "./utils/build_swap.ts";
 import { has_flag_name, is_nullable_struct_type } from "./utils/nullable_struct.ts";
+import { NUM_REG_ARGS } from "./utils/stack_args.ts";
 import {
 	allocate_stack_space,
 	emit_deref_var_address,
@@ -195,9 +196,10 @@ function emit_class_constructor_to_slot(
 	emit_malloc(status);
 	status.code += `str x0, [x29, #${slot_offset}]\n`;
 	anchor_heap_pointer(status, `${arr_name}_elem_${slot_offset}`);
-	build_constructor_params(fc, param_regs, status);
+	const outgoing = build_constructor_params(fc, param_regs, status);
 	status.code += `ldr x0, [x29, #${slot_offset}]\n`;
 	status.code += `bl ${fc.name}_init\n`;
+	if (outgoing > 0) status.code += `add sp, sp, #${outgoing}\n`;
 }
 
 function emit_struct_constructor_to_slot(
@@ -206,9 +208,10 @@ function emit_struct_constructor_to_slot(
 	status: BuildStatus,
 ) {
 	const param_regs = ["x1", "x2", "x3", "x4", "x5", "x6", "x7"];
-	build_constructor_params(fc, param_regs, status);
+	const outgoing = build_constructor_params(fc, param_regs, status);
 	status.code += slot_addr;
 	status.code += `bl ${fc.name}_init\n`;
+	if (outgoing > 0) status.code += `add sp, sp, #${outgoing}\n`;
 }
 
 /**
@@ -220,8 +223,17 @@ function emit_struct_constructor_to_slot(
  * are packed: the variadic args go into a stack array, and the callee receives
  * a (count, pointer) pair in the two register slots the variadic param
  * occupies — mirroring the regular call convention in build_function_call_node.
+ *
+ * Returns the outgoing stack-arg area size (0 if no overflow). When > 0, the
+ * caller has had sp lowered by that amount and must `add sp, sp, #outgoing`
+ * after the `bl`. Constructor calls reserve x0 for the destination pointer,
+ * so register slots start at x1 — overflow begins at the 8th arg (slot 8).
  */
-function build_constructor_params(fc: FunctionCallNode, param_regs: string[], status: BuildStatus) {
+function build_constructor_params(
+	fc: FunctionCallNode,
+	param_regs: string[],
+	status: BuildStatus,
+): number {
 	const variadic_idx = fc.variadic_param_index;
 	if (
 		variadic_idx !== undefined &&
@@ -312,7 +324,7 @@ function build_constructor_params(fc: FunctionCallNode, param_regs: string[], st
 		for (let i = 0; i < nv; i++) {
 			status.code += `ldr ${param_regs[i]}, [x29, #${nv_base + i * 8}]\n`;
 		}
-		return;
+		return 0;
 	}
 
 	const has_args = fc.params.length > 0;
@@ -351,9 +363,29 @@ function build_constructor_params(fc: FunctionCallNode, param_regs: string[], st
 		if (!status.code.endsWith("\n")) status.code += "\n";
 		status.code += `str x0, [x29, #${base + i * 8}]\n`;
 	}
+	// `param_regs` is ["x1".."x7"] — slot index for arg i is i+1 (x0 is the
+	// destination pointer). Load each in-register arg, skipping args whose
+	// slot falls past x7 (those are spilled to the outgoing area below).
 	for (let i = 0; i < fc.params.length; i++) {
+		const slot = i + 1;
+		if (slot >= NUM_REG_ARGS) continue;
 		status.code += `ldr ${param_regs[i]}, [x29, #${base + i * 8}]\n`;
 	}
+	// AAPCS64: args past slot 7 go in the caller's outgoing area at [sp] at
+	// the moment of the bl. Lower sp by the outgoing area size and copy each
+	// overflow arg from its spill slot; the caller restores sp after the bl.
+	const overflow_count = Math.max(0, fc.params.length - (NUM_REG_ARGS - 1));
+	if (overflow_count > 0) {
+		const outgoing_size = Math.ceil((overflow_count * 8) / 16) * 16;
+		status.code += `sub sp, sp, #${outgoing_size}\n`;
+		const overflow_first = NUM_REG_ARGS - 1;
+		for (let k = 0; k < overflow_count; k++) {
+			status.code += `ldr x9, [x29, #${base + (overflow_first + k) * 8}]\n`;
+			status.code += `str x9, [sp, #${k * 8}]\n`;
+		}
+		return outgoing_size;
+	}
+	return 0;
 }
 
 function emit_global_slot_addr(status: BuildStatus, name: string, offset: number) {
@@ -567,9 +599,10 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			}
 			if (func_call.name === concrete.name) {
 				const param_regs = ["x1", "x2", "x3", "x4", "x5", "x6", "x7"];
-				build_constructor_params(func_call, param_regs, status);
+				const outgoing = build_constructor_params(func_call, param_regs, status);
 				emit_var_address(status, "x0", node.name);
 				status.code += `bl ${func_call.name}_init\n`;
+				if (outgoing > 0) status.code += `add sp, sp, #${outgoing}\n`;
 				if (func_call.mov_param_indices?.length) {
 					for (const idx of func_call.mov_param_indices) {
 						mark_moved_if_struct(func_call.params[idx], status);
@@ -955,9 +988,10 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 					anchor_heap_pointer(status, node.name, undefined, node.type.is_nullable);
 					status.code += `str x0, [x29, #${status.stack_offsets!.get(node.name)}]\n`;
 					const param_regs = ["x1", "x2", "x3", "x4", "x5", "x6", "x7"];
-					build_constructor_params(func_call, param_regs, status);
+					const outgoing = build_constructor_params(func_call, param_regs, status);
 					emit_var_load(status, "x0", node.name, 8);
 					status.code += `bl ${func_call.name}_init\n`;
+					if (outgoing > 0) status.code += `add sp, sp, #${outgoing}\n`;
 					if (func_call.mov_param_indices?.length) {
 						for (const idx of func_call.mov_param_indices) {
 							mark_moved_if_struct(func_call.params[idx], status);
@@ -1046,10 +1080,11 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 				if (is_constructor) {
 					// Evaluate params into x1-x7 first (before setting x0)
 					const param_regs = ["x1", "x2", "x3", "x4", "x5", "x6", "x7"];
-					build_constructor_params(func_call, param_regs, status);
+					const outgoing = build_constructor_params(func_call, param_regs, status);
 					// Pass declaration address in x0
 					emit_var_address(status, "x0", node.name);
 					status.code += `bl ${func_call.name}_init\n`;
+					if (outgoing > 0) status.code += `add sp, sp, #${outgoing}\n`;
 					if (func_call.mov_param_indices?.length) {
 						for (const idx of func_call.mov_param_indices) {
 							mark_moved_if_struct(func_call.params[idx], status);

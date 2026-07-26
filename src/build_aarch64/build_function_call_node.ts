@@ -11,6 +11,7 @@ import build_node from "./build_node.ts";
 import { emit_malloc } from "./utils/audit.ts";
 import { mark_moved_if_struct, find_anchor_slot } from "./utils/auto_destroy.ts";
 import { build_swap_params } from "./utils/build_swap.ts";
+import { NUM_REG_ARGS } from "./utils/stack_args.ts";
 import {
 	allocate_stack_space,
 	emit_deref_var_address,
@@ -130,6 +131,12 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		// Collect `ref` class args whose caller-side anchor must be re-synced to
 		// the (possibly reassigned) slot value after the call returns.
 		const ref_class_sync_names: string[] = [];
+
+		// Outgoing stack-arg area size (0 unless this call passes more args
+		// than fit in x0..x7). Set below for non-variadic calls; variadic
+		// calls with overflow are not yet supported.
+		let outgoing_size = 0;
+		let overflow_count = 0;
 
 		if (variadic_idx !== undefined) {
 			// Variadic call: pack variadic args into a stack array
@@ -297,15 +304,34 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			}
 			// Load each spilled argument into its target register. For struct
 			// constructors x0 is the destination (set up below), so it's never a
-			// param target; for ordinary calls param 0 goes in x0.
+			// param target; for ordinary calls param 0 goes in x0. Arguments
+			// beyond the 8 register slots (slot >= 8) are spilled to the
+			// outgoing stack-arg area below, not to a register.
 			if (has_args) {
 				for (let i = 0; i < node.params.length; i++) {
-					const reg = param_regs[start_reg + i];
+					const slot = start_reg + i;
+					if (slot >= NUM_REG_ARGS) continue;
+					const reg = param_regs[slot];
 					if (reg === "x0") continue;
 					status.code += `ldr ${reg}, [x29, #${args_base + i * 8}]\n`;
 				}
 				if (!is_struct) {
 					status.code += `ldr x0, [x29, #${args_base}]\n`;
+				}
+			}
+			// AAPCS64: arguments past x0..x7 go in the caller's outgoing area,
+			// which must be at [sp] at the moment of the bl. Lower sp by the
+			// outgoing area size and copy each overflow arg from its spill slot
+			// into the outgoing area; restore sp right after the call. Skip
+			// when there's no overflow (the common case).
+			overflow_count = Math.max(0, node.params.length - (NUM_REG_ARGS - start_reg));
+			if (overflow_count > 0) {
+				outgoing_size = Math.ceil((overflow_count * 8) / 16) * 16;
+				status.code += `sub sp, sp, #${outgoing_size}\n`;
+				const overflow_first = NUM_REG_ARGS - start_reg;
+				for (let k = 0; k < overflow_count; k++) {
+					status.code += `ldr x9, [x29, #${args_base + (overflow_first + k) * 8}]\n`;
+					status.code += `str x9, [sp, #${k * 8}]\n`;
 				}
 			}
 		}
@@ -332,17 +358,29 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		}
 
 		const inline_candidate = status.inline_functions?.get(func_name);
+		// Inline candidates are small functions and don't expect > 8 params;
+		// the inline path also can't accept a pre-lowered outgoing-arg area,
+		// so disable inlining when this call has overflow args.
 		if (
 			inline_candidate &&
 			(inline_candidate as any).node_type === "func" &&
 			!is_struct &&
-			(node as any).variadic_param_index === undefined
+			(node as any).variadic_param_index === undefined &&
+			overflow_count === 0
 		) {
 			const inlined = build_inline_function(inline_candidate as FunctionNode, status);
 			if (inlined) return;
 		}
 
 		status.code += `bl ${func_name}\n`;
+
+		// Free the outgoing stack-arg area now that the call has read it.
+		// Restoring sp here (before any post-call code that uses sp — e.g.
+		// popping the class-constructor pointer below) keeps the rest of the
+		// path unchanged.
+		if (outgoing_size > 0) {
+			status.code += `add sp, sp, #${outgoing_size}\n`;
+		}
 
 		// A non-inlined call may (transitively, via a `ref`/`var`/`mov` receiver
 		// or argument) reallocate any Buffer reachable from its parameters,
