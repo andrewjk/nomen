@@ -1,3 +1,4 @@
+import emit_field_overrides from "../build/emit_field_overrides.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
@@ -424,6 +425,15 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 				status.code = status.code.substring(0, before_len);
 				status.code += `${field_access} = `;
 				build_node(node.swap, status);
+			}
+			// Named-field struct literal overrides (e.g. `[ grow = 2 ]` on a
+			// struct whose `grow` field has a declared default) are applied as
+			// post-construction field assignments after the constructor call
+			// returned. Routing through build_assignment_node means value
+			// structs, classes, struct-typed fields, and strings all reuse
+			// the existing assignment path.
+			if (node.value?.node_type === "func_call") {
+				emit_field_overrides(safe_name, node.value, build_node, status, ";\n", ";\n");
 			}
 		}
 	}

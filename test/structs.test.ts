@@ -111,6 +111,36 @@ Console.write("\\{c.count}")
 		await build_and_check_output(input, "struct_default_field", "0");
 	});
 
+	test("named-field struct literal overrides defaults", async () => {
+		// `[ field = val, … ]` routes through #init: the call runs with no
+		// args (every field has a default), then the named fields are applied
+		// as post-construction overrides. Mirrors the GUI geometry
+		// `DEFAULT_PARAMS` form.
+		const input = `
+struct LP {
+  var int grow = 0
+  var int shrink = 0
+}
+const LP DEF = [ grow = 2, shrink = 3 ]
+const LP ONE = [ grow = 7 ]
+Console.write("\\{DEF.grow} \\{DEF.shrink} \\{ONE.grow} \\{ONE.shrink}")
+`;
+		await build_and_check_output(input, "struct_named_field_literal_defaults", "2 3 7 0");
+	});
+
+	test("named-field struct literal with required and defaulted fields", async () => {
+		const input = `
+struct Mixed {
+  var int a
+  var int b = 5
+}
+const Mixed M = [ a = 1, b = 9 ]
+const Mixed N = [ a = 4 ]
+Console.write("\\{M.a} \\{M.b} \\{N.a} \\{N.b}")
+`;
+		await build_and_check_output(input, "struct_named_field_literal_mixed", "1 9 4 5");
+	});
+
 	test("struct field get and set", async () => {
 		const input = `
 struct Point {

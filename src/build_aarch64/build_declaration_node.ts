@@ -1,3 +1,4 @@
+import emit_field_overrides from "../build/emit_field_overrides.ts";
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import { is_int_literal, to_decimal_string } from "../int_literal.ts";
@@ -1414,6 +1415,13 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 				emit_data(status, `.p2align 2\n`);
 			}
 		}
+	}
+	// Named-field struct literal overrides (e.g. `[ grow = 2 ]` on a struct
+	// whose `grow` field has a declared default) are applied as post-
+	// construction field assignments after the constructor returned. The
+	// synthetic AssignmentNodes reuse the existing assignment build path.
+	if (node.value?.node_type === "func_call") {
+		emit_field_overrides(node.name, node.value, build_node, status);
 	}
 }
 

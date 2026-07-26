@@ -15,6 +15,13 @@ export default class FunctionCallNode extends BaseNode {
 	variadic_param_name?: string;
 	variadic_param_index?: number;
 	/**
+	 * Named-field struct literal overrides that target defaulted fields
+	 * (fields not exposed as `#init` params). Each entry is applied as a
+	 * post-construction field assignment after the call returns. Populated
+	 * by `convert_anon_struct` and consumed by the build backends.
+	 */
+	field_overrides?: { name: string; value: BaseNode; type: Type }[];
+	/**
 	 * Bounds inferred from the call's return contract (`out TYPE: out < X`),
 	 * resolved to the caller's receiver path. Populated during checking so that
 	 * when this call is used as an argument (e.g. `g.at(g.edge_target(e))`), the

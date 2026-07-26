@@ -248,18 +248,27 @@ export default function check_function_call(
 				add_error(status, `Missing field '${init_param.name}' in anonymous struct`, param.start);
 			}
 		}
+		// Defaulted struct fields that aren't #init params become post-
+		// construction field overrides (mirrors convert_anon_struct in
+		// check_declaration_node). Unknown fields are rejected.
+		const field_overrides: { name: string; value: BaseNode; type: Type }[] = [];
 		for (const field of anon.fields) {
-			if (!init_func.params.find((p) => p.name === field.name)) {
+			if (init_func.params.find((p) => p.name === field.name)) continue;
+			const struct_field = struct.fields.find((f) => f.name === field.name);
+			if (!struct_field) {
 				add_error(
 					status,
 					`Unknown field '${field.name}' in anonymous struct for ${struct.name}`,
 					param.start,
 				);
+				continue;
 			}
+			field_overrides.push({ name: field.name, value: field.value, type: struct_field.type });
 		}
 		const constructor = new FunctionCallNode(param.start, struct.name);
 		constructor.params = args;
 		constructor.type = new Type(struct.name);
+		if (field_overrides.length) constructor.field_overrides = field_overrides;
 		node.params.splice(i, 1, constructor);
 	}
 

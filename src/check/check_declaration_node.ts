@@ -311,14 +311,34 @@ function convert_anon_struct(decl: DeclarationNode, status: CheckStatus) {
 			args.push(init_param.default_value);
 		}
 	}
+	// Anon fields that don't correspond to an #init param are field
+	// overrides: applied as post-construction assignments to defaulted
+	// struct fields. The literal `[ grow = 2 ]` against a struct whose
+	// `grow` field has a declared default becomes `T_init()` followed by
+	// `.grow = 2`. Unknown fields (not a param, not a struct field) are
+	// rejected with an error so typos don't silently slip through.
+	const field_overrides: {
+		name: string;
+		value: import("../nodes/BaseNode.ts").default;
+		type: Type;
+	}[] = [];
 	for (const field of anon.fields) {
-		if (!init_func.params.find((p) => p.name === field.name)) {
-			return;
+		if (init_func.params.find((p) => p.name === field.name)) continue;
+		const struct_field = struct.fields.find((f) => f.name === field.name);
+		if (!struct_field) {
+			add_error(
+				status,
+				`Unknown field '${field.name}' in anonymous struct for ${struct.name}`,
+				field.value.start,
+			);
+			continue;
 		}
+		field_overrides.push({ name: field.name, value: field.value, type: struct_field.type });
 	}
 	const constructor = new FunctionCallNode(anon.start, struct.name);
 	constructor.params = args;
 	constructor.type = new Type(struct.name);
+	if (field_overrides.length) constructor.field_overrides = field_overrides;
 	decl.value = constructor;
 }
 
