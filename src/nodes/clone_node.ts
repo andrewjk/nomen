@@ -80,6 +80,7 @@ export default function clone_node(node: BaseNode): BaseNode {
 				: undefined;
 			c.variadic_param_name = n.variadic_param_name;
 			c.variadic_param_index = n.variadic_param_index;
+			c.is_enum_shorthand = n.is_enum_shorthand;
 			c.allocations = n.allocations?.map(clone_node);
 			return c;
 		}

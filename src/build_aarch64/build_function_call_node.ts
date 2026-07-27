@@ -8,6 +8,7 @@ import ValueNode from "../nodes/ValueNode.ts";
 import { emit_address_of } from "./build_access_node.ts";
 import { build_inline_function } from "./build_inline_method.ts";
 import build_node from "./build_node.ts";
+import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_malloc } from "./utils/audit.ts";
 import { mark_moved_if_struct, find_anchor_slot } from "./utils/auto_destroy.ts";
 import { build_swap_params } from "./utils/build_swap.ts";
@@ -19,7 +20,7 @@ import {
 	emit_var_load,
 	is_local_ref_var,
 } from "./utils/stack_var.ts";
-import { get_struct_size } from "./utils/struct_layout.ts";
+import { get_enum_size, get_struct_size } from "./utils/struct_layout.ts";
 
 let temp_counter = 0;
 
@@ -77,6 +78,44 @@ function emit_struct_address(node: BaseNode, status: BuildStatus) {
 }
 
 export default function build_function_call_node(node: FunctionCallNode, status: BuildStatus) {
+	// Shorthand enum-with-args constructor `.case(args)` (rewritten by the
+	// checker to `Enum_case` with is_enum_shorthand=true). Allocate a tag+payload
+	// temp, store the case index at +0, then each arg at its payload offset.
+	// Mirrors the AccessFunctionCallNode path in build_access_node.
+	if (node.is_enum_shorthand && node.params.length > 0) {
+		const enum_node = status.enums.find((e) => node.name.startsWith(e.name + "_"));
+		if (enum_node && enum_node.has_associated_data) {
+			const case_name = node.name.substring(enum_node.name.length + 1);
+			const enum_case = enum_node.cases.find((c) => c.name === case_name);
+			if (enum_case) {
+				const case_index = enum_node.cases.indexOf(enum_case);
+				const enum_size = get_enum_size(enum_node.name, status);
+				const temp_offset = allocate_stack_space(status, enum_size);
+				status.code += `add x0, x29, #${temp_offset}\n`;
+				status.code += `mov x1, #${case_index}\n`;
+				status.code += `str x1, [x0]\n`;
+				let payload_offset = 8;
+				for (let i = node.params.length - 1; i >= 0; i--) {
+					build_node(node.params[i], status);
+					if (!status.code.endsWith("\n")) status.code += "\n";
+					const param_size = aarch64_size(enum_case.params[i].type.name);
+					const abs_offset = temp_offset + payload_offset;
+					if (param_size === 1) {
+						status.code += `strb w0, [x29, #${abs_offset}]\n`;
+					} else if (param_size === 4) {
+						status.code += `str w0, [x29, #${abs_offset}]\n`;
+					} else {
+						status.code += `str x0, [x29, #${abs_offset}]\n`;
+					}
+					payload_offset += param_size;
+				}
+				status.code += `add x0, x29, #${temp_offset}\n`;
+				build_swap_params(node, status);
+				return;
+			}
+		}
+	}
+
 	const is_struct = status.structs.find((s) => s.name === node.name && !s.is_simple_type);
 	const func_name = is_struct ? `${node.name}_init` : node.name;
 	const param_regs = ["x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7"];

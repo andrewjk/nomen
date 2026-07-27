@@ -11,6 +11,7 @@ import StructNode from "../nodes/StructNode.ts";
 import Type from "../nodes/Type.ts";
 import check_function_call from "./check_function_call.ts";
 import check_function_node from "./check_function_node.ts";
+import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import type_from_value from "./utils/type_from_value.ts";
 
@@ -113,6 +114,52 @@ export default function check_function_call_node(
 		// generic will be monomorphized later, which substitutes the field value.
 		if (status.type_params.length > 0) {
 			return false;
+		}
+		// Shorthand enum case constructor with args: `.case(arg1, arg2)`.
+		// Resolve via the expected type (an enum), rewrite the call's name to
+		// the mangled `Enum_case` form, and mark it so the build lowers it as
+		// an enum constructor (mirroring `Enum.case(args)` access calls).
+		if (node.name.startsWith(".") && node.name.length > 1) {
+			const case_name = node.name.substring(1);
+			const expected = status.expected_type;
+			if (!expected?.name) {
+				add_error(status, `Cannot resolve .${case_name} without a type hint`, node.start);
+				return false;
+			}
+			const enum_node = status.enums.find((e) => e.name === expected.name);
+			if (!enum_node) {
+				add_error(status, `Type ${expected.name} is not an enum`, node.start);
+				return false;
+			}
+			const enum_case = enum_node.cases.find((c) => c.name === case_name);
+			if (!enum_case) {
+				add_error(status, `Unknown enum case: .${case_name} on ${expected.name}`, node.start);
+				return false;
+			}
+			if (enum_case.params.length !== node.params.length) {
+				add_error(
+					status,
+					`Enum case .${case_name} expects ${enum_case.params.length} arguments, got ${node.params.length}`,
+					node.start,
+				);
+				return false;
+			}
+			for (const param of node.params) {
+				const old_expected = status.expected_type;
+				// Bind each call arg against the corresponding case param type
+				// so e.g. `.fixed(int pixels)` checks `50` against `int`.
+				const idx = node.params.indexOf(param);
+				if (enum_case.params[idx]) {
+					status.expected_type = enum_case.params[idx].type;
+				}
+				check_node(param, status);
+				status.expected_type = old_expected;
+			}
+			node.type = new Type(enum_node.name);
+			node.is_static = true;
+			node.name = `${enum_node.name}_${case_name}`;
+			node.is_enum_shorthand = true;
+			return true;
 		}
 		add_error(status, `Function not found: ${node.name}`, node.start);
 		return false;

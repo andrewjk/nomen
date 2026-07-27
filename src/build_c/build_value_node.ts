@@ -12,6 +12,22 @@ const INT_LITERAL_SUFFIX: Record<string, string> = {
 
 export default function build_value_node(node: ValueNode, status: BuildStatus) {
 	let value = node.value;
+	// Shorthand enum case `.case` (rewritten by the checker to `Enum_case`
+	// with is_enum_shorthand=true). For an enum with associated data, the
+	// no-arg case must still construct the tagged-union struct via its
+	// `_init()` (matching `Enum.case` access calls); a simple enum emits the
+	// tag constant directly.
+	if (node.is_enum_shorthand) {
+		const enum_node = status.enums.find((e) => value.startsWith(e.name + "_"));
+		if (enum_node) {
+			if (enum_node.has_associated_data) {
+				status.code += `${value}_init()`;
+			} else {
+				status.code += value;
+			}
+			return;
+		}
+	}
 	if (value === "null") value = "0";
 	else if (value === "true") value = "1";
 	else if (value === "false") value = "0";

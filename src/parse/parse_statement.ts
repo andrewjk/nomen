@@ -199,7 +199,10 @@ function parse_statement_start(status: ParseStatus) {
 			}
 			case "(": {
 				accept("(", status);
-				const func = new FunctionCallNode(node.start, value);
+				// Use the parsed ValueNode's value as the call name when it
+				// differs from the initial peek (e.g. shorthand `.fixed(50)`).
+				const call_name = node.node_type === "value" ? (node as ValueNode).value : value;
+				const func = new FunctionCallNode(node.start, call_name);
 				if (peek_current(status) !== ")") {
 					parse_function_call_parameter(func, status);
 				}

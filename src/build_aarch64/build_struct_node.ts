@@ -19,6 +19,8 @@ import {
 } from "./utils/stack_args.ts";
 import { allocate_stack_space } from "./utils/stack_var.ts";
 import {
+	get_enum_case_index,
+	get_enum_size,
 	get_field_has_offset,
 	get_field_offset,
 	get_struct_size,
@@ -43,6 +45,53 @@ function emit_typed_store(
 	} else {
 		status.code += `str ${src_reg}, ${addr}\n`;
 	}
+}
+
+/**
+ * Initialize a struct field whose default is an enum shorthand `.case`
+ * (rewritten by the checker to `Enum_case` with is_enum_shorthand=true).
+ * Returns true if handled. For a simple enum, emit the case index directly;
+ * for an enum with associated data (a no-arg case), allocate a tag+payload
+ * temp and struct-copy it into the field. Without this, the field-init
+ * fallback would emit `adr xN, Enum_case`, which is an illegal text
+ * relocation on macOS arm64.
+ */
+function init_enum_shorthand_field_default(
+	node: StructNode,
+	field: any,
+	base_reg: string,
+	status: BuildStatus,
+): boolean {
+	if (field.value?.node_type !== "value" || !field.value?.is_enum_shorthand) return false;
+	const val = field.value.value;
+	const enum_node = status.enums.find((e) => val.startsWith(e.name + "_"));
+	if (!enum_node) return false;
+	const case_name = val.substring(enum_node.name.length + 1);
+	const case_index = get_enum_case_index(enum_node.name, case_name, status);
+	if (case_index < 0) return false;
+	const offset = get_field_offset(node.name, field.name, status);
+	if (enum_node.has_associated_data) {
+		// Build a tag+payload temp (tag at +0, zeroed payload) and copy it
+		// word-by-word into the field slot.
+		const enum_size = get_enum_size(enum_node.name, status);
+		const temp_offset = (status.stack_size || 0) + 16;
+		status.stack_size = (status.stack_size || 0) + 16 + enum_size;
+		status.code += `mov x9, #${case_index}\n`;
+		status.code += `str x9, [x29, #${temp_offset}]\n`;
+		for (let off = 8; off < enum_size; off += 8) {
+			status.code += `str xzr, [x29, #${temp_offset + off}]\n`;
+		}
+		const words = Math.ceil(enum_size / 8);
+		for (let w = 0; w < words; w++) {
+			status.code += `ldr x9, [x29, #${temp_offset + w * 8}]\n`;
+			status.code += `str x9, [${base_reg}, #${offset + w * 8}]\n`;
+		}
+	} else {
+		// Simple enum: case index is the whole value (8 bytes).
+		status.code += `mov x1, #${case_index}\n`;
+		emit_typed_store(status, "x1", base_reg, offset, 8);
+	}
+	return true;
 }
 
 /**
@@ -365,6 +414,7 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 	for (const field of node.fields) {
 		if (field.value) {
 			if (init_nullable_field_default(node, field, "x19", status)) continue;
+			if (init_enum_shorthand_field_default(node, field, "x19", status)) continue;
 			const offset = get_field_offset(node.name, field.name, status);
 			if (field.value.node_type === "value") {
 				const val = (field.value as any).value;
@@ -550,6 +600,7 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 	for (const field of node.fields) {
 		if (field.value) {
 			if (init_nullable_field_default(node, field, "x19", status)) continue;
+			if (init_enum_shorthand_field_default(node, field, "x19", status)) continue;
 			const offset = get_field_offset(node.name, field.name, status);
 			if (field.value.node_type === "value") {
 				const val = (field.value as any).value;

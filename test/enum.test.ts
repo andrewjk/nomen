@@ -292,6 +292,72 @@ func main = () {
 		expect(result.code).toContain("Direction_east");
 		expect(result.code).toContain("Direction_south");
 	});
+
+	test("shorthand enum-with-args assignment (.fixed(50))", async () => {
+		const input = `
+enum Len {
+  case auto
+  case fixed(int pixels)
+}
+
+var Len w = .auto
+w = .fixed(50)
+Console.write("\\{w}")
+`;
+		await build_and_check_output(input, "enum_shorthand_with_args_assign", "1");
+	});
+
+	test("reassign enum local to a different associated-data case", async () => {
+		const input = `
+enum Len {
+  case auto
+  case fixed(int pixels)
+}
+
+var Len w = .auto
+w = Len.fixed(50)
+Console.write("\\{w}")
+`;
+		await build_and_check_output(input, "enum_reassign_associated_case", "1");
+	});
+
+	test("reassign enum and read payload via match", async () => {
+		const input = `
+enum Len {
+  case auto
+  case fixed(int pixels)
+}
+
+var Len w = .auto
+w = Len.fixed(50)
+Console.write("\\{w}")
+var int n = match w {
+  case .fixed(x) -> x
+  else -> 0
+}
+Console.write("\\{n}")
+`;
+		await build_and_check_output(input, "enum_reassign_match_payload", "150");
+	});
+
+	test("enum with associated data as struct field default", async () => {
+		const input = `
+enum Align {
+  case start
+  case center
+  case end
+  case stretch
+}
+
+struct Box {
+  pub var Align a = .stretch
+}
+
+var Box b = Box()
+Console.write("\\{b.a}")
+`;
+		await build_and_check_output(input, "enum_field_default", "3");
+	});
 });
 
 describe("enum errors", () => {

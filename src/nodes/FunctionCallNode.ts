@@ -41,6 +41,14 @@ export default class FunctionCallNode extends BaseNode {
 	 * literal text), not a ValueNode, to keep this node type-agnostic.
 	 */
 	inferred_array_length?: string;
+	/**
+	 * Set when this call was rewritten from a shorthand enum-with-args
+	 * constructor `.case(args)` (the parser yields a FunctionCallNode whose
+	 * name is `.case`; the checker rewrites it to `Enum_case` and sets this
+	 * flag). The build lowers it as an enum case constructor (allocating a
+	 * tag+payload temp), mirroring `Enum.case(args)` access calls.
+	 */
+	is_enum_shorthand?: boolean;
 
 	constructor(start: number, name: string, type?: Type, params?: BaseNode[], is_static?: boolean) {
 		super("func_call", start);

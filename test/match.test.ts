@@ -371,6 +371,40 @@ func main = () {
 		expect(result.code).toContain("Direction_north");
 		expect(result.code).toContain("Direction_south");
 	});
+
+	test("match associated-data extraction (enum with data)", async () => {
+		const input = `
+enum Len {
+  case auto
+  case fixed(int pixels)
+}
+
+var Len w = Len.fixed(50)
+var int n = match w {
+  case .fixed(x) -> x
+  else -> 0
+}
+Console.write("\\{n}")
+`;
+		await build_and_check_output(input, "match_associated_data_extract", "50");
+	});
+
+	test("match associated-data extraction, multiple cases", async () => {
+		const input = `
+enum Shape {
+  case circle(int radius)
+  case rect(int width, int height)
+}
+
+var Shape s = Shape.rect(10, 20)
+var int area = match s {
+  case .circle(r) -> 3 * r * r
+  case .rect(w, h) -> w * h
+}
+Console.write("\\{area}")
+`;
+		await build_and_check_output(input, "match_associated_data_multi", "200");
+	});
 });
 
 // ERRORS

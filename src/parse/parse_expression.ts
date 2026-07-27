@@ -211,7 +211,11 @@ export default function parse_expression(status: ParseStatus, allow_assignment =
 					node = arr;
 					break;
 				}
-				const func = new FunctionCallNode(start, value);
+				// Use the parsed ValueNode's value as the call name when the
+				// initial peek was a leading `.` (e.g. `.fixed(50)`), so the
+				// FunctionCallNode carries `.fixed` rather than the bare `.`.
+				const call_name = node.node_type === "value" ? (node as ValueNode).value : value;
+				const func = new FunctionCallNode(start, call_name);
 				if (peek_current(status) !== ")") {
 					parse_function_call_parameter(func, status);
 				}

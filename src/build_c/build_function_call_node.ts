@@ -10,6 +10,21 @@ import c_type from "./utils/c_type.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 
 export default function build_function_call_node(node: FunctionCallNode, status: BuildStatus) {
+	// Shorthand enum-with-args constructor `.case(args)` (rewritten by the
+	// checker to `Enum_case` with is_enum_shorthand=true). Lower to the same
+	// `Enum_case_init(args)` call that `Enum.case(args)` access calls emit.
+	if (node.is_enum_shorthand) {
+		status.code += `${node.name}_init(`;
+		for (let i = 0; i < node.params.length; i++) {
+			if (i > 0) {
+				status.code += ", ";
+			}
+			build_node(node.params[i], status);
+		}
+		status.code += ")";
+		return;
+	}
+
 	const is_struct = status.structs.find((s) => s.name === node.name && !s.is_simple_type);
 	const func_name = is_struct ? `${node.name}_init` : c_function_name(node.name);
 	status.code += `${func_name}(`;

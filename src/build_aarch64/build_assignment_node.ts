@@ -32,6 +32,7 @@ import {
 } from "./utils/stack_var.ts";
 import {
 	emit_struct_copy,
+	get_enum_size,
 	get_field_has_offset,
 	get_field_offset,
 	get_struct_size,
@@ -102,6 +103,12 @@ function get_base_address(access: AccessNode, status: BuildStatus, reg: string) 
 function is_struct_type(type: Type | undefined, status: BuildStatus): boolean {
 	if (!type?.name) return false;
 	return !!status.structs.find((s) => s.name === type.name && !s.is_simple_type);
+}
+
+function is_enum_with_data_type(type: Type | undefined, status: BuildStatus): boolean {
+	if (!type?.name) return false;
+	const e = status.enums.find((e) => e.name === type.name);
+	return !!e && !!e.has_associated_data;
 }
 
 function get_self_param(node: BaseNode): BaseNode | null {
@@ -290,6 +297,10 @@ export function get_source_address(value: BaseNode, status: BuildStatus) {
 export default function build_assignment_node(node: AssignmentNode, status: BuildStatus) {
 	const rhs_type = type_from_value_node(node.right_value);
 	const rhs_is_struct = is_struct_type(rhs_type, status);
+	// An enum with associated data is multi-word (tag + payload) and lives on
+	// the stack like a struct: assignment must struct-copy the whole value,
+	// not just store a pointer. Treat it as a struct for assignment purposes.
+	const rhs_is_enum_with_data = is_enum_with_data_type(rhs_type, status);
 
 	// Invalidate any cached Buffer.data pointer for the assigned target. A
 	// whole-buffer (or buffer-field) reassignment gives the name a new backing
@@ -603,6 +614,19 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 					emit_struct_copy("x0", "x1", 0, struct_size, status);
 				}
 			}
+			build_swap(node, status);
+			return;
+		}
+
+		// Enum with associated data is multi-word (tag + payload). The RHS
+		// builds to a temp address in x0; copy the full enum bytes into the
+		// variable's stack slot (a plain `str` would only store the address).
+		if (rhs_is_enum_with_data && !node.operator) {
+			const enum_size = get_enum_size(rhs_type.name, status);
+			build_node(node.right_value, status);
+			if (!status.code.endsWith("\n")) status.code += "\n";
+			emit_var_address(status, "x1", name);
+			emit_struct_copy("x0", "x1", 0, enum_size, status);
 			build_swap(node, status);
 			return;
 		}

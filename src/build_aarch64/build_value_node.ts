@@ -1,6 +1,8 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import { is_int_literal, to_decimal_string } from "../int_literal.ts";
 import ValueNode from "../nodes/ValueNode.ts";
+import { allocate_stack_space } from "./utils/stack_var.ts";
+import { get_enum_size } from "./utils/struct_layout.ts";
 
 let string_counter = 0;
 
@@ -55,7 +57,22 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 			const case_name = value.substring(enum_node.name.length + 1);
 			const case_index = enum_node.cases.findIndex((c) => c.name === case_name);
 			if (case_index >= 0) {
-				status.code += `mov x0, #${case_index}\n`;
+				// For an enum with associated data, even a no-arg case must
+				// produce a multi-word temp (tag at +0, zeroed payload) so the
+				// caller can struct-copy the full value. A simple enum emits
+				// the tag immediate directly.
+				if (enum_node.has_associated_data) {
+					const enum_size = get_enum_size(enum_node.name, status);
+					const temp_offset = allocate_stack_space(status, enum_size);
+					status.code += `mov x9, #${case_index}\n`;
+					status.code += `str x9, [x29, #${temp_offset}]\n`;
+					for (let off = 8; off < enum_size; off += 8) {
+						status.code += `str xzr, [x29, #${temp_offset + off}]\n`;
+					}
+					status.code += `add x0, x29, #${temp_offset}\n`;
+				} else {
+					status.code += `mov x0, #${case_index}\n`;
+				}
 				return;
 			}
 		}

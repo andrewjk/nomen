@@ -698,7 +698,12 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 		if (node.value) {
 			build_node(node.value, status);
 			if (!status.code.endsWith("\n")) status.code += "\n";
-			if (node.value.node_type === "access") {
+			if (
+				node.value.node_type === "access" ||
+				(node.value.node_type === "value" &&
+					(node.value as ValueNode).is_enum_shorthand &&
+					status.enums.find((e) => e.name === node.type.name && e.has_associated_data))
+			) {
 				emit_var_address(status, "x1", node.name);
 				emit_struct_copy("x0", "x1", 0, enum_size, status);
 			} else {

@@ -720,44 +720,78 @@ Struct / initialisation:
 
 Enums:
 
-- **Shorthand enum-with-args assignment doesn't resolve.** `w = .fixed(50)`
+- ~~**Shorthand enum-with-args assignment doesn't resolve.** `w = .fixed(50)`
   errors "Function not found: ." Shorthand is only wired for no-arg cases in
   assignment context; cases with associated data must use the full form. The
-  spec's `LayoutLength` (`.fixed`, `.percent`) leans on this.
-- **Reassigning an enum local to a different associated-data case corrupts it.**
+  spec's `LayoutLength` (`.fixed`, `.percent`) leans on this.~~ ✅ **Fixed.**
+  The parser now passes the parsed ValueNode's value (e.g. `.fixed`) as the
+  FunctionCallNode's name rather than the leading `.` peek; the checker
+  resolves `.case(args)` against `expected_type`'s enum, rewrites it to the
+  mangled `Enum_case` form with `is_enum_shorthand = true`, and the C and
+  aarch64 backends lower it as `Enum_case_init(args)` / a tag+payload temp.
+  Runtime-tested on both backends (`enum_shorthand_with_args_assign`).
+- ~~**Reassigning an enum local to a different associated-data case corrupts it.**
   `var Len w = .auto; w = Len.fixed(50)` then prints `61`, not the `fixed` case
-  index `1`, on the `c` backend — the tag/payload get garbled on case change.
-- **`match` associated-data extraction is broken on aarch64.**
+  index `1`, on the `c` backend — the tag/payload get garbled on case change.~~
+  ✅ **Fixed.** Root cause was two-fold: (a) the aarch64 assignment path stored
+  only the constructor temp's address (`str x0, [x29, #0]`) instead of
+  struct-copying the multi-word tag+payload, so the variable's tag became a
+  stack-pointer; (b) the aarch64 `build_value_node` emitted only the case
+  index for a no-arg case of an associated-data enum, leaving the payload
+  uninitialised. The assignment path now struct-copies the full enum bytes
+  (`is_enum_with_data_type` branch in `build_assignment_node`), and
+  `build_value_node` allocates a tag+payload temp (tag at +0, zeroed payload)
+  for associated-data enums. The C backend's value node likewise emits
+  `Enum_case_init()` for no-arg cases of associated-data enums. Runtime-tested
+  on both backends (`enum_reassign_associated_case`,
+  `enum_reassign_match_payload`).
+- ~~**`match` associated-data extraction is broken on aarch64.**
   `match w { case .fixed(n) -> n }` fails `clang -c` with "unknown AArch64
   fixup kind! `adr x0, n`" — the bound variable `n` is emitted as a symbol
   address instead of the extracted payload. Works on `c`; this alone rules out
-  `LayoutLength`-style enums until fixed.
-- **No-arg enum case as a struct field default is broken on aarch64.**
+  `LayoutLength`-style enums until fixed.~~ ✅ **Fixed.** `build_match_node`
+  (aarch64) now extracts the payload for cases that bind associated data
+  (`case .fixed(x) -> …`): for each binding it allocates a stack slot, loads
+  the field value from the matched enum (base `x20` + payload offset via
+  `get_enum_payload_offset`), and binds the slot to the param name. The
+  scrutinee is built with `emit_address_of` (so x20 holds the enum address,
+  not just the tag word), and each case's match pattern is emitted as a bare
+  case-index `mov` (not the full enum temp). Runtime-tested on both backends
+  (`match_associated_data_extract`, `match_associated_data_multi`).
+- ~~**No-arg enum case as a struct field default is broken on aarch64.**
   `pub var Align a = .stretch` fails to link: "Undefined symbols for
   architecture arm64: `_Align_stretch`, referenced from: int_to_string". So even
   the caseless `Alignment` enum can't be used as a field default on `aarch64`
-  (works on `c`).
+  (works on `c`).~~ ✅ **Fixed.** `build_struct_node` (aarch64) recognises
+  `is_enum_shorthand` field defaults (both auto-`#init` and custom-`#init`
+  paths) and emits the case index immediate directly for simple enums, or a
+  tag+payload temp + word-by-word copy for no-arg cases of associated-data
+  enums. Previously the field-init fallback emitted `adr xN, Enum_case`, an
+  illegal text relocation on macOS arm64. Runtime-tested on both backends
+  (`enum_field_default`).
 
-Resolution: until these land, geometry types must either (a) stay as flat
-`int`-field structs + `int` tag constants (mirroring `Container.nm`'s SoA
-buffers), or (b) wait for the compiler fixes above. The math in
-[The algorithm](#the-algorithm) is independent of the representation.
+Resolution: with the enum blockers above fixed, the `LayoutLength` /
+`Alignment` enums and enum-field defaults are now usable on both backends.
+Geometry types can be implemented as specified (flat structs + these enums);
+the remaining gap is named-field struct literals (e.g.
+`[ width = .auto, grow = 1 ]`), which still require a typed struct literal.
+The math in [The algorithm](#the-algorithm) is independent of the
+representation.
 
 ### Layout features still owed (now unblocked)
 
-With the native controls now `class`es and `ClassBuffer<Trait>` polymorphic
-storage in place, the trait-based `Container : Control` / `Array<Control>`
-design is now reachable — the remaining work is Nomen-side (library) rather
-than compiler-side. The features below can be implemented in one of two
-places: on the existing handle-based v1 (no trait model needed), or on a new
-trait-based Container once the geometry types below are in place.
+With the native controls now `class`es, `ClassBuffer<Trait>` polymorphic
+storage in place, and the enum geometry-type blockers fixed, the trait-based
+`Container : Control` / `Array<Control>` design is now reachable — the
+remaining work is Nomen-side (library) rather than compiler-side. The features
+below can be implemented in one of two places: on the existing handle-based v1
+(no trait model needed), or on a new trait-based Container.
 
 - `BoxConstraints` / `Size` / `Frame` / `Insets` / `LayoutLength` /
-  `LayoutParams` with `grow`/`shrink`/`percent`/`fill`/`align` — **blocked** on
-  the language gaps in
-  [Geometry types (Phase 2) blockers](#geometry-types-phase-2-blockers)
-  (enum associated-data, named-field struct literals, and enum
-  field defaults all miscompile; several only on `aarch64`).
+  `LayoutParams` with `grow`/`shrink`/`percent`/`fill`/`align` — enum
+  associated-data, enum reassignment, `match` payload extraction, and enum
+  field defaults all work on both backends now. The remaining gap is
+  named-field struct literals (`[ width = .auto, grow = 1 ]`).
 - Intrinsic-size measurement (query each native control's
   `intrinsicContentSize`/`fittingSize`) so `add` needs no size hints.
 - Incremental/dirty relayout (v1 does a full re-measure on every
