@@ -1062,7 +1062,8 @@ function build_trait_functions(node: StructNode, status: BuildStatus) {
  *
  * Trait field get/set accessors are also emitted here (the C backend emits them
  * in build_struct_functions). They handle scalar/string (single-word) fields;
- * multi-word struct trait fields are not yet supported through dispatch.
+ * on aarch64 trait field access reads through the concrete storage directly
+ * (build_access_field), so multi-word struct trait fields work via that path.
  */
 function build_struct_traits(node: StructNode, status: BuildStatus) {
 	if (node.traits.length === 0) return;

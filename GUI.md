@@ -623,11 +623,27 @@ Both backends now implement this end-to-end and are exercised by
 
 ### Remaining dispatch limitations (pre-spec, follow-up)
 
-- Trait-typed locals use the **concrete** storage of their initializer, so a
-  `var Speaker s = Dog(); s = Cat()` reassignment to a _different_ concrete
-  type does not yet work (the storage is sized for the first type).
-- Trait field accessors handle scalar/string (single-word) fields only;
-  multi-word struct trait fields are not yet supported through dispatch.
+- ~~**Trait-typed locals use the **concrete** storage of their initializer, so
+  a `var Speaker s = Dog(); s = Cat()` reassignment to a _different_ concrete
+  type does not yet work (the storage is sized for the first type).~~ ✅
+  **Fixed.** A trait-typed local whose concrete storage is a `class` now holds
+  a pointer to the heap instance (not the inline struct), so it can be
+  reassigned to any other class conforming to the same trait. Dispatch reads
+  the vtable through the stored pointer, and both reassignment and scope-exit
+  reclaim the instance via the trait's `<Trait>_destroy` shim (the concrete
+  type at runtime may differ from the initializer's after a reassignment, so
+  destroy dispatches polymorphically). Runtime-tested on both backends in
+  `test/trait_dispatch_gaps.test.ts`. (Value-struct trait-typed locals keep
+  their inline stack storage and still cannot be reassigned across concrete
+  types — that would require boxing, which was removed; declare the type as a
+  `class` to use it polymorphically.)
+- ~~**Trait field accessors handle scalar/string (single-word) fields only;
+  multi-word struct trait fields are not yet supported through dispatch.~~ ✅
+  **Fixed.** The generated get/set accessors now use the full field type
+  (`struct Point`, not `Point`) and copy the complete value, so a trait field
+  whose type is a struct wider than one word reads and writes correctly
+  through a trait-typed receiver. Runtime-tested on both backends in
+  `test/trait_dispatch_gaps.test.ts`.
 
 ### Smaller compiler bugs hit while building v1
 

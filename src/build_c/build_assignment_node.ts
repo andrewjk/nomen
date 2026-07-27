@@ -3,6 +3,7 @@ import AccessNode from "../nodes/AccessNode.ts";
 import AssignmentNode from "../nodes/AssignmentNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
+import { build_vtable_target } from "./build_access_node.ts";
 import { emit_struct_destroys, struct_needs_destroy_by_name } from "./build_auto_free.ts";
 import build_node from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
@@ -22,18 +23,24 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 			const trait = status.traits.find((t) => t.name === traitName);
 			if (trait) {
 				const traitField = trait.fields.find((f) => f.name == accessNode.access.name)!;
-				// TODO: Cast to the correct function definition
-				// TODO: Use the correct variable name
-				// TODO: Pass parameters
-				const type = c_type(traitField.type.name);
+				// Struct field types need the `struct` tag in C; scalars/strings
+				// lower via c_type directly. Multi-word struct trait fields are
+				// passed by value to the set accessor.
+				const field_is_struct = !!status.structs.find(
+					(s) => s.name === traitField.type.name && !s.is_simple_type,
+				);
+				const type = `${field_is_struct ? "struct " : ""}${c_type(traitField.type.name)}`;
 				const cast = `(void (*)(void *, ${type}))`;
-				// TODO: Figure out when to use & here (pass need_pointer into build_node?):
+				// The vtable lives at offset 0 of the struct, so _get_trait_func
+				// and the accessor both need a POINTER to the receiver. Use
+				// build_vtable_target so a value-struct trait-typed local is
+				// passed as `&p` (a ref/class/trait param is already a pointer).
 				status.code += `(${cast}_get_trait_func((void *)`;
-				build_node(accessNode.target, status);
+				build_vtable_target(accessNode.target, status);
 				const traitIndex = status.traits.indexOf(trait);
 				const fieldIndex = trait.functions.length + trait.fields.indexOf(traitField) * 2 + 1;
 				status.code += `, ${traitIndex}, ${fieldIndex}))(`;
-				build_node(accessNode.target, status);
+				build_vtable_target(accessNode.target, status);
 				status.code += `, `;
 				build_node(node.right_value, status);
 				status.code += `)`;
@@ -152,6 +159,41 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 		const lhs_struct = lhs_type ? status.structs.find((s) => s.name === lhs_type.name) : null;
 		const lhs_is_string = lhs_type?.name === "string";
 		const lhs_is_class = !!lhs_struct?.is_class || lhs_in_class_vars;
+		// A trait-typed class local (`var Speaker s = Dog(); s = Cat()`)
+		// reclaims its old instance via the trait's `<Trait>_destroy` shim
+		// (the concrete type at runtime may differ from the initializer's
+		// after a prior reassignment), then stores the new pointer. The RHS
+		// is cast to `void *` so any conforming class pointer assigns.
+		const lhs_trait_class = status.trait_class_locals?.get(lhs_name);
+		if (lhs_trait_class !== undefined && !node.operator) {
+			const rhs = node.right_value;
+			const rhs_is_bare_value = rhs.node_type === "value";
+			// Compute a non-bare RHS into a temp first to avoid use-after-free
+			// when it references the LHS.
+			if (!rhs_is_bare_value) {
+				const id = (status.label_counter = (status.label_counter ?? 0) + 1);
+				const temp = `_treassign_${id}`;
+				status.code += `void *${temp} = (void *)`;
+				build_node(rhs, status);
+				status.code += `;\n`;
+				if (lhs_type?.is_nullable) {
+					status.code += `if (${lhs_name}) { ${lhs_trait_class}_destroy(${lhs_name}); free(${lhs_name}); }\n`;
+				} else {
+					status.code += `${lhs_trait_class}_destroy(${lhs_name}); free(${lhs_name});\n`;
+				}
+				status.code += `${lhs_name} = ${temp};\n`;
+			} else {
+				if (lhs_type?.is_nullable) {
+					status.code += `if (${lhs_name}) { ${lhs_trait_class}_destroy(${lhs_name}); free(${lhs_name}); }\n`;
+				} else {
+					status.code += `${lhs_trait_class}_destroy(${lhs_name}); free(${lhs_name});\n`;
+				}
+				status.code += `${lhs_name} = (void *)`;
+				build_node(rhs, status);
+				status.code += `;\n`;
+			}
+			return;
+		}
 		// An owned string may be declared in an outer scope (`var s = ""`) and
 		// reassigned inside a loop body, where scoped_declarations has been
 		// reset (so lhs_decl is undefined). owned_string_vars persists across

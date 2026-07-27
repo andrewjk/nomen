@@ -101,6 +101,18 @@ export default interface BuildStatus {
 	 */
 	class_vars?: Set<string>;
 	/**
+	 * Trait-typed LOCAL variables whose concrete storage is a `class` (e.g.
+	 * `var Speaker s = Dog()` where Dog is a class). Such a local stores a
+	 * pointer to the heap-allocated instance (not the inline struct value),
+	 * so it can be reassigned to a different conforming class
+	 * (`s = Cat()`). Keyed by variable name → the trait name. Dispatch and
+	 * field access read the vtable through the stored pointer (the local is
+	 * also tracked in `class_vars` so build_vtable_target passes it by
+	 * value); scope-exit and reassignment reclaim it via the trait's
+	 * `<Trait>_destroy` shim + free.
+	 */
+	trait_class_locals?: Map<string, string>;
+	/**
 	 * `ref` class parameters, emitted as double pointers (`struct T **`). The
 	 * call site passes the address of the caller's pointer slot so the callee
 	 * can reassign the caller's variable and reclaim the old instance. Use

@@ -155,6 +155,27 @@ export function emit_destroy_for_anchor_slot(
 ) {
 	const resolved_name = resolve_struct_name(type_name, type_args, status);
 	const struct_type = is_struct_type(resolved_name, status) || is_struct_type(type_name, status);
+	// A trait-typed anchor (a trait-typed class local): dispatch destroy
+	// through the trait's `<Trait>_destroy` shim, which reads the destroy slot
+	// from the instance's vtable. The concrete type at runtime may differ from
+	// the initializer's (after a reassignment), so destroy must dispatch
+	// polymorphically rather than call a fixed concrete fn. The shim
+	// dereferences obj, so guard a nullable slot. Does NOT free — the caller
+	// frees the slot (mirroring the struct path below).
+	if (!struct_type && status.traits.find((t) => t.name === type_name)) {
+		let skip_label: string | undefined;
+		if (is_nullable) {
+			status.code += `ldr x0, [x29, #${offset}]\n`;
+			skip_label = `.Lskip_na_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+			status.code += `cbz x0, ${skip_label}\n`;
+		}
+		status.code += `ldr x0, [x29, #${offset}]\n`;
+		status.code += `bl ${type_name}_destroy\n`;
+		if (skip_label) {
+			status.code += `${skip_label}:\n`;
+		}
+		return;
+	}
 	if (!struct_type) return;
 	// Guard the destroy + field-destroy sequence for nullable instances — the
 	// slot may hold 0 (null), which owns nothing and must not be dereferenced.

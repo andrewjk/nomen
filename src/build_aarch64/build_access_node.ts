@@ -1590,6 +1590,14 @@ function build_access_method(
 				status.code += `mov x9, ${paramReg}\n`;
 			} else {
 				emit_var_address(status, "x9", name);
+				// A trait-typed class local stores a POINTER to the heap
+				// instance (not the inline struct), so [&local] is the
+				// instance pointer — dereference once so x9 holds the
+				// instance whose vtable lives at offset 0, matching how a
+				// trait param arrives (the pointer directly in its register).
+				if (status.trait_class_locals?.has(name)) {
+					status.code += `ldr x9, [x9]\n`;
+				}
 			}
 		} else {
 			build_node(node.target, status);

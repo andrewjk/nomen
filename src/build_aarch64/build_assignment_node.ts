@@ -355,6 +355,39 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 				);
 				if (is_constructor) {
 					const is_alias = !!status.class_alias_vars?.has(name);
+					// A trait-typed class local (`var Speaker s = Dog(); s = Cat()`)
+					// reclaims its old instance via the trait's `<Trait>_destroy`
+					// shim — the concrete type at runtime may differ from the
+					// initializer's after a prior reassignment — then builds the
+					// replacement and re-anchors it tagged with the trait name so
+					// every later cleanup path dispatches destroy polymorphically.
+					const trait_class_trait = status.trait_class_locals?.get(name);
+					if (trait_class_trait !== undefined) {
+						const decl_frame = status.class_decl_frame?.get(name);
+						consume_anchor_slot(status, name);
+						if (!status.moved?.has(name)) {
+							const label_id = (status.label_counter = (status.label_counter ?? 0) + 1);
+							const no_free_label = `.Ltrait_no_free_${label_id}`;
+							emit_var_load(status, "x0", name, 8);
+							status.code += `cbz x0, ${no_free_label}\n`;
+							status.code += `bl ${trait_class_trait}_destroy\n`;
+							emit_var_load(status, "x0", name, 8);
+							emit_free(status);
+							status.code += `${no_free_label}:\n`;
+						}
+						mark_moved_if_struct(node.right_value, status);
+						status.moved?.delete(name);
+						build_node(node.right_value, status);
+						if (!status.code.endsWith("\n")) status.code += "\n";
+						anchor_heap_pointer(status, name, decl_frame);
+						mark_anchor_destroy(status, name, trait_class_trait);
+						const offset = status.stack_offsets?.get(name);
+						if (offset !== undefined) {
+							status.code += `str x0, [x29, #${offset}]\n`;
+						}
+						build_swap(node, status);
+						return;
+					}
 					// Does this variable own its current instance (have an anchor
 					// slot)? Owners always do; an object-level alias only does so
 					// after a previous reassignment gave it one (its initial value

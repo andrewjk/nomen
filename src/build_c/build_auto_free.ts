@@ -95,6 +95,24 @@ export function free_scoped_declarations(status: BuildStatus, decls: Declaration
 				dec.value?.node_type === "func_call");
 		const dec_struct = status.structs.find((s) => s.name === dec.type.name);
 		const is_class_var = !!dec_struct?.is_class;
+		// A trait-typed local whose concrete storage is a class holds a
+		// pointer to a heap instance whose concrete type may change across
+		// reassignment. Reclaim it via the trait's `<Trait>_destroy` shim
+		// (dispatches through the vtable's destroy slot) then free. This
+		// must precede the class_var / trait-typed-concrete branches below,
+		// which would assume a fixed concrete type.
+		const trait_class_trait = status.trait_class_locals?.get(dec.name);
+		if (trait_class_trait !== undefined && !is_destructured_field_access) {
+			if (!commented) {
+				status.code += "\n// Auto-free\n";
+				commented = true;
+			}
+			if (dec.type.is_nullable) {
+				status.code += `if (${dec.name}) { ${trait_class_trait}_destroy(${dec.name}); free(${dec.name}); }\n`;
+			} else {
+				status.code += `${trait_class_trait}_destroy(${dec.name}); free(${dec.name});\n`;
+			}
+		}
 		if (
 			!is_destructured_field_access &&
 			!is_borrowed_string &&

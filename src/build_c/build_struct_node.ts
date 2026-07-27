@@ -492,10 +492,18 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 	for (let traitName of node.traits) {
 		const trait = status.traits.find((n) => n.name === traitName) as TraitNode;
 		for (let field of trait.fields) {
-			const get_signature = `${c_type(field.type.name)} get_${node.name}_${field.name}(struct ${node.name} *self)`;
+			// A struct field type needs the `struct` tag in C (e.g. `struct Point`,
+			// not `Point`); scalar/string fields lower via c_type directly. This
+			// matters for multi-word struct trait fields, which are returned/passed
+			// by value through the get/set accessors.
+			const field_is_struct = !!status.structs.find(
+				(s) => s.name === field.type.name && !s.is_simple_type,
+			);
+			const field_c_type = `${field_is_struct ? "struct " : ""}${c_type(field.type.name)}`;
+			const get_signature = `${field_c_type} get_${node.name}_${field.name}(struct ${node.name} *self)`;
 			status.headers += `${get_signature};\n`;
 			status.code += `${get_signature} { return self->${field.name}; }\n`;
-			const set_signature = `void set_${node.name}_${field.name}(struct ${node.name} *self, ${c_type(field.type.name)} value)`;
+			const set_signature = `void set_${node.name}_${field.name}(struct ${node.name} *self, ${field_c_type} value)`;
 			status.headers += `${set_signature};\n`;
 			status.code += `${set_signature} { self->${field.name} = value; }\n`;
 		}

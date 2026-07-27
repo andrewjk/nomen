@@ -85,6 +85,38 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 				concrete_struct_name = val_struct.name;
 			}
 		}
+		// A trait-typed local whose concrete storage is a `class` holds a
+		// pointer to the heap-allocated instance (not the inline struct).
+		// Declare it as `void *` so it can be reassigned to any other class
+		// conforming to the same trait. The vtable dispatch and field access
+		// read through the stored pointer (the local is tracked in
+		// class_vars so build_vtable_target passes it by value, not &name).
+		// Scope-exit and reassignment reclaim via the trait's
+		// `<Trait>_destroy` shim + free (the concrete type at runtime may
+		// differ from the initializer's after reassignment, so destroy must
+		// dispatch through the vtable rather than call a fixed concrete fn).
+		if (
+			storage_is_trait_concrete &&
+			concrete_struct_name &&
+			status.structs.find((s) => s.name === concrete_struct_name)?.is_class
+		) {
+			if (!status.class_vars) status.class_vars = new Set();
+			status.class_vars.add(safe_name);
+			if (!status.trait_class_locals) status.trait_class_locals = new Map();
+			status.trait_class_locals.set(safe_name, node.type.name);
+			if (node.type?.name) {
+				if (!status.variable_types) status.variable_types = new Map();
+				status.variable_types.set(safe_name, node.type);
+			}
+			status.scoped_declarations.push(node);
+			status.code += `void *${safe_name}`;
+			if (node.value) {
+				status.code += ` = (void *)`;
+				build_node(node.value, status);
+			}
+			status.code += `;\n`;
+			return;
+		}
 		// `var ref T x = y` declares x as a pointer to y (mutable alias).
 		// Emit `T *x = &y` and track x in function_ref_params so accesses
 		// use `->` and value-uses dereference. Ref locals don't own data,

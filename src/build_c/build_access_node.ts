@@ -58,7 +58,7 @@ function nursery_pointer_expr(target: BaseNode, status: BuildStatus): string {
  * simplifies to `x`, so a ref param that slipped through still lands on its
  * pointer.
  */
-function build_vtable_target(node: BaseNode, status: BuildStatus) {
+export function build_vtable_target(node: BaseNode, status: BuildStatus) {
 	if (node.node_type === "value") {
 		const name = (node as ValueNode).value;
 		if (name === "self") {
@@ -218,10 +218,13 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 			if (trait) {
 				// If the target is a trait, we need to call the get/set method
 				const traitField = trait.fields.find((f) => f.name == access_field.name)!;
-				// TODO: Cast to the correct function definition
-				// TODO: Use the correct variable name
-				// TODO: Pass parameters
-				const type = c_type(traitField.type.name);
+				// Struct field types need the `struct` tag in C; scalars/strings
+				// lower via c_type directly. Multi-word struct trait fields are
+				// returned by value through the get accessor.
+				const field_is_struct = !!status.structs.find(
+					(s) => s.name === traitField.type.name && !s.is_simple_type,
+				);
+				const type = `${field_is_struct ? "struct " : ""}${c_type(traitField.type.name)}`;
 				const cast = `(${type}(*)(void *))`;
 				status.code += `(${cast}_get_trait_func((void *)`;
 				build_vtable_target(node.target, status);

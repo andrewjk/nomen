@@ -23,6 +23,7 @@ import { emit_strdup, emit_malloc } from "./utils/audit.ts";
 import {
 	anchor_heap_pointer,
 	consolidate_temp_anchors,
+	mark_anchor_destroy,
 	mark_heap_string,
 	mark_moved_if_struct,
 	track_struct_decl,
@@ -586,6 +587,54 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			(s) => s.name === val_type?.name && !s.is_simple_type && !s.is_generic,
 		);
 		if (concrete) {
+			// A trait-typed local whose concrete storage is a `class` holds a
+			// pointer to the heap instance (not the inline struct), so it can
+			// be reassigned to a different conforming class. Malloc the
+			// instance, store the pointer, and run the constructor into it.
+			// Track in trait_class_locals so method dispatch dereferences the
+			// stored pointer to reach the vtable. The instance is anchored
+			// with destroy_type = trait name, so every cleanup path
+			// (scope-exit / return / break) reclaims it via the trait's
+			// `<Trait>_destroy` shim + free — the concrete type at runtime may
+			// differ from the initializer's after reassignment, so destroy
+			// must dispatch polymorphically.
+			if (concrete.is_class) {
+				if (!status.trait_class_locals) status.trait_class_locals = new Map();
+				status.trait_class_locals.set(node.name, node.type.name);
+				const struct_size = get_struct_size(concrete.name, status);
+				if (status.function_return_label) {
+					const offset = allocate_stack_space(status, 8);
+					status.stack_offsets!.set(node.name, offset);
+				} else {
+					emit_data(status, `${node.name}: .space 8\n`);
+				}
+				const func_call = node.value as FunctionCallNode;
+				if (func_call.name === concrete.name) {
+					status.code += `mov x0, #${struct_size}\n`;
+					emit_malloc(status);
+					emit_var_store(status, "x0", node.name, 8);
+					anchor_heap_pointer(status, node.name, undefined, node.type.is_nullable);
+					mark_anchor_destroy(status, node.name, node.type.name);
+					const param_regs = ["x1", "x2", "x3", "x4", "x5", "x6", "x7"];
+					const outgoing = build_constructor_params(func_call, param_regs, status);
+					emit_var_load(status, "x0", node.name, 8);
+					status.code += `bl ${func_call.name}_init\n`;
+					if (outgoing > 0) status.code += `add sp, sp, #${outgoing}\n`;
+					if (func_call.mov_param_indices?.length) {
+						for (const idx of func_call.mov_param_indices) {
+							mark_moved_if_struct(func_call.params[idx], status);
+						}
+					}
+					build_swap_params(func_call, status);
+				} else {
+					build_node(node.value, status);
+					if (!status.code.endsWith("\n")) status.code += "\n";
+					emit_var_store(status, "x0", node.name, 8);
+					anchor_heap_pointer(status, node.name, undefined, node.type.is_nullable);
+					mark_anchor_destroy(status, node.name, node.type.name);
+				}
+				return;
+			}
 			// Track the trait-typed local for scope-exit destroy: push to
 			// scoped_declarations (emit_destroy_for_scope recovers the
 			// concrete struct from the initializer — node.type.name stays the
