@@ -643,7 +643,7 @@ Both backends now implement this end-to-end and are exercised by
   (free-function calls, method calls via `build_access_node`, and constructor
   calls in declarations) now implement AAPCS64 stack-arg passing. Incoming
   overflow args (slot 8+k) are loaded from `[x29, #(16 + 16*callee_saved_pushes
-  + STACK_SIZE + k*8)]` via text placeholders patched once the local frame
+\+ STACK_SIZE + k*8)]` via text placeholders patched once the local frame
   size is known (`src/build_aarch64/utils/stack_args.ts`); outgoing overflow
   args are spilled to a temporary outgoing area below `sp`, freed immediately
   after the `bl`. The variadic-tuple + overflow combination is the remaining
@@ -657,7 +657,7 @@ Both backends now implement this end-to-end and are exercised by
   the struct has a field with that name, the local shadows the parameter and
   the field self-assigns (`b.b = b;`). Surfaces for any struct whose name's
   first letter (lowercased) matches one of its field names (e.g. `struct Big {
-  var int b }`). Workaround: rename either the struct or the field. A real fix
+var int b }`). Workaround: rename either the struct or the field. A real fix
   should use a non-colliding local name (e.g. `_self` or `__self`).
 - ~~**Default parameter on a struct method crashes the checker**
   (`check_function_call.ts:307`, `func_param.type` undefined). Default params on

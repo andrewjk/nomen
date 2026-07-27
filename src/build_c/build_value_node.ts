@@ -50,11 +50,7 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 	// forwarding) set suppress_dereference, so they get the bare pointer.
 	// A custom #init uses a local by-value `self` (self_is_local), which is
 	// never in function_ref_params, so this branch is skipped there.
-	if (
-		value === "self" &&
-		status.function_ref_params?.has("self") &&
-		!status.suppress_dereference
-	) {
+	if (value === "self" && status.function_ref_params?.has("self") && !status.suppress_dereference) {
 		status.code += `*`;
 	}
 	// A `ref` class param is a double pointer (`struct T **`); a value-use
