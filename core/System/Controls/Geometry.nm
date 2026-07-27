@@ -1,0 +1,111 @@
+// Layout geometry types for the Nomen `core/System/Controls` UI layer.
+//
+// These are the pure-data types that flow through the layout engine: a parent
+// hands each child a `BoxConstraints` (min/max per axis) during the measure
+// phase, each child reports a `Size` back, and the engine assigns each node a
+// `Frame` (x, y, width, height) during the arrange phase. `Insets` are the
+// padding subtracted from a container's content rect. The `LayoutLength` /
+// `Alignment` enums describe how a child sits in its parent (see `LayoutParams`).
+//
+// The measure/arrange math is independent of the storage representation — these
+// flat structs are the trait-based `Container : Control` design's data model,
+// but the same types work with the handle-based v1 container.
+
+const int MAX_DIM = 2147483647
+
+// ── Geometry ──
+
+pub struct Size {
+	pub var int width = 0
+	pub var int height = 0
+}
+
+pub struct Frame {
+	pub var int x = 0
+	pub var int y = 0
+	pub var int width = 0
+	pub var int height = 0
+}
+
+pub struct Insets {
+	pub var int top = 0
+	pub var int right = 0
+	pub var int bottom = 0
+	pub var int left = 0
+}
+
+// ── Constraints (flow DOWN) ──
+
+pub struct BoxConstraints {
+	pub var int min_width = 0
+	pub var int min_height = 0
+	pub var int max_width = MAX_DIM
+	pub var int max_height = MAX_DIM
+
+	pub func tighten_width = (self, int min, int max, out BoxConstraints) {
+		var BoxConstraints c = self
+		c.min_width = self.min_width
+		if min > c.min_width { c.min_width = min }
+		c.max_width = self.max_width
+		if max < c.max_width { c.max_width = max }
+		return c
+	}
+
+	pub func tighten_height = (self, int min, int max, out BoxConstraints) {
+		var BoxConstraints c = self
+		c.min_height = self.min_height
+		if min > c.min_height { c.min_height = min }
+		c.max_height = self.max_height
+		if max < c.max_height { c.max_height = max }
+		return c
+	}
+
+	pub func clamp_width = (self, int value, out int) {
+		if value < self.min_width { return self.min_width }
+		if value > self.max_width { return self.max_width }
+		return value
+	}
+
+	pub func clamp_height = (self, int value, out int) {
+		if value < self.min_height { return self.min_height }
+		if value > self.max_height { return self.max_height }
+		return value
+	}
+
+	pub func is_width_bounded = (self, out bool) {
+		return self.max_width < MAX_DIM
+	}
+
+	pub func is_height_bounded = (self, out bool) {
+		return self.max_height < MAX_DIM
+	}
+}
+
+// ── Requested size (user-facing, on LayoutParams) ──
+
+pub enum LayoutLength {
+	case auto                     // size to content (intrinsic measurement)
+	case fixed(int pixels)        // exact size
+	case percent(int numerator)   // numerator/100 of available space (e.g. 50 = 50%)
+	case fill                     // fill all available space (same as grow=1)
+}
+
+pub enum Alignment {
+	case start
+	case center
+	case end
+	case stretch
+}
+
+// ── Per-child layout parameters ──
+
+pub struct LayoutParams {
+	pub var LayoutLength width = .auto
+	pub var LayoutLength height = .auto
+	pub var int grow = 0           // flex weight for distributing surplus space
+	pub var int shrink = 0         // flex weight for distributing deficit
+	pub var Alignment align_self = .stretch   // cross-axis alignment override
+}
+
+// Sensible defaults so most children just work
+const LayoutParams DEFAULT_PARAMS = [ width = .auto, height = .auto, grow = 0, shrink = 1, align_self = .stretch ]

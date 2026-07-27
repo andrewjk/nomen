@@ -3,6 +3,7 @@ import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import BitsetNode from "../nodes/BitsetNode.ts";
 import type BlockNode from "../nodes/BlockNode.ts";
 import { is_function_node, is_struct_node, is_trait_node } from "../nodes/check_node_type.ts";
+import DeclarationNode from "../nodes/DeclarationNode.ts";
 import EnumNode from "../nodes/EnumNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import StructNode from "../nodes/StructNode.ts";
@@ -12,8 +13,49 @@ import build_node from "./build_node.ts";
 import build_struct_node from "./build_struct_node.ts";
 import { emit_destroy_for_scope } from "./utils/auto_destroy.ts";
 
+/** Primitive types whose `const` initializers are valid aarch64 file-scope data. */
+const SIMPLE_TYPES = new Set([
+	"int",
+	"uint",
+	"int8",
+	"uint8",
+	"int16",
+	"uint16",
+	"int32",
+	"uint32",
+	"int64",
+	"uint64",
+	"float",
+	"float32",
+	"float64",
+	"bool",
+	"char",
+]);
+
 export default function build_block_node(node: BlockNode, status: BuildStatus) {
 	gather_structs(node, status);
+
+	// Top-level (root-scope) non-primitive `const` declarations (e.g. geometry
+	// constants like `DEFAULT_PARAMS`) are inlined at every use site by
+	// `build_value_node` rather than emitted as a module-scope global — the
+	// initializer is typically a struct constructor call, which would emit
+	// bare instructions at module scope that never run. The statement loop
+	// below skips these declarations; uses resolve them through
+	// `status.top_level_consts`.
+	const inlined_const_names = new Set<string>();
+	if (node.node_type === "root") {
+		for (const child of node.statements) {
+			if (child.node_type !== "declare") continue;
+			const decl = child as DeclarationNode;
+			if (decl.declaration !== "const") continue;
+			if (!decl.type?.name || !decl.value) continue;
+			if (SIMPLE_TYPES.has(decl.type.name)) continue;
+			if (decl.type.is_array) continue;
+			inlined_const_names.add(decl.name);
+			if (!status.top_level_consts) status.top_level_consts = new Map();
+			status.top_level_consts.set(decl.name, decl);
+		}
+	}
 
 	// Pre-pass: record every user function/method that returns an OWNED heap
 	// string, so a call is classified correctly even when the callee is defined
@@ -48,7 +90,8 @@ export default function build_block_node(node: BlockNode, status: BuildStatus) {
 			!is_struct_node(child) &&
 			!is_function_node(child) &&
 			child.node_type !== "enum" &&
-			child.node_type !== "bitset"
+			child.node_type !== "bitset" &&
+			!(child.node_type === "declare" && inlined_const_names.has((child as DeclarationNode).name))
 		)
 			build_node(child, status, true);
 	}

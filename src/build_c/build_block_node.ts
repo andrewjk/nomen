@@ -18,6 +18,25 @@ import c_function_name from "./utils/c_function_name.ts";
 import c_type from "./utils/c_type.ts";
 import emit_allocations from "./utils/emit_allocations.ts";
 
+/** Primitive types whose `const` initializers are valid C file-scope globals. */
+const SIMPLE_TYPES = new Set([
+	"int",
+	"uint",
+	"int8",
+	"uint8",
+	"int16",
+	"uint16",
+	"int32",
+	"uint32",
+	"int64",
+	"uint64",
+	"float",
+	"float32",
+	"float64",
+	"bool",
+	"char",
+]);
+
 export default function build_block_node(
 	node: BlockNode,
 	status: BuildStatus,
@@ -25,6 +44,28 @@ export default function build_block_node(
 ) {
 	// Gather structs, traits and funcs that might be used before they are declared
 	gather_structs(node, status);
+
+	// Names of top-level non-primitive `const` declarations (e.g. geometry
+	// type constants like `DEFAULT_PARAMS`) that are inlined at every use site
+	// by `build_value_node` rather than emitted as a file-scope global — the
+	// initializer is typically a struct constructor call, which is not a
+	// valid file-scope constant expression in C. The statement loop below
+	// skips these declarations; uses resolve them through
+	// `status.top_level_consts`.
+	const inlined_const_names = new Set<string>();
+	if (node.node_type === "root") {
+		for (const child of node.statements) {
+			if (child.node_type !== "declare") continue;
+			const decl = child as DeclarationNode;
+			if (decl.declaration !== "const") continue;
+			if (!decl.type?.name || !decl.value) continue;
+			if (SIMPLE_TYPES.has(decl.type.name)) continue;
+			if (decl.type.is_array) continue;
+			inlined_const_names.add(decl.name);
+			if (!status.top_level_consts) status.top_level_consts = new Map();
+			status.top_level_consts.set(decl.name, decl);
+		}
+	}
 
 	// Pre-pass: record every user function that returns an OWNED heap string
 	// (a computed/concatenated result, not a borrowed field). Callers use this
@@ -89,25 +130,10 @@ export default function build_block_node(
 		// The actual definitions remain after functions in the remaining loop.
 		// Only run at the root level — inner blocks (if/while/for bodies) also
 		// default to with_declarations=true but their locals must not be
-		// forward-declared as globals.
+		// forward-declared as globals. Non-primitive `const` declarations are
+		// NOT forward-declared here — they're inlined at use sites (see
+		// `inlined_const_names` above) so they have no file-scope global.
 		if (node.node_type === "root") {
-			const SIMPLE_TYPES = new Set([
-				"int",
-				"uint",
-				"int8",
-				"uint8",
-				"int16",
-				"uint16",
-				"int32",
-				"uint32",
-				"int64",
-				"uint64",
-				"float",
-				"float32",
-				"float64",
-				"bool",
-				"char",
-			]);
 			for (let child of node.statements) {
 				if (child.node_type === "declare") {
 					const decl = child as DeclarationNode;
@@ -143,7 +169,8 @@ export default function build_block_node(
 			!is_struct_node(child) &&
 			!is_function_node(child) &&
 			child.node_type !== "enum" &&
-			child.node_type !== "bitset"
+			child.node_type !== "bitset" &&
+			!(child.node_type === "declare" && inlined_const_names.has((child as DeclarationNode).name))
 		) {
 			emit_allocations(child, status);
 			build_node(child, status, true);

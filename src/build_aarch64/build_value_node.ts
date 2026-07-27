@@ -1,6 +1,7 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import { is_int_literal, to_decimal_string } from "../int_literal.ts";
 import ValueNode from "../nodes/ValueNode.ts";
+import build_node from "./build_node.ts";
 import { allocate_stack_space } from "./utils/stack_var.ts";
 import { get_enum_size } from "./utils/struct_layout.ts";
 
@@ -50,6 +51,18 @@ function is_literal(value: string): boolean {
 export default function build_value_node(node: ValueNode, status: BuildStatus) {
 	const original_value = node.value;
 	let value = node.value.replace("self", "_self");
+
+	// A top-level non-primitive `const` (e.g. geometry-type constants like
+	// `DEFAULT_PARAMS`) is inlined at every use site rather than emitted as a
+	// module-scope global — the initializer is typically a struct constructor
+	// call, which would emit bare instructions at module scope that never run.
+	// Build the const's initializer in place; named-field overrides are
+	// applied by the caller via `emit_field_overrides`.
+	const inlined = status.top_level_consts?.get(original_value);
+	if (inlined?.value) {
+		build_node(inlined.value, status);
+		return;
+	}
 
 	if (node.is_enum_shorthand) {
 		const enum_node = status.enums.find((e) => value.startsWith(e.name + "_"));

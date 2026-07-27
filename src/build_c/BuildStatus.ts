@@ -13,6 +13,15 @@ export default interface BuildStatus {
 	traits: TraitNode[];
 	enums: EnumNode[];
 	bitsets: BitsetNode[];
+	/**
+	 * Top-level (root-scope) non-primitive `const` declarations, keyed by
+	 * name. These are inlined at every use site by `build_value_node` rather
+	 * than emitted as file-scope globals — the initializer is typically a
+	 * struct constructor call, which is not a valid file-scope constant
+	 * expression in C and would be bare instructions at module scope in
+	 * aarch64. Populated once at root build.
+	 */
+	top_level_consts?: Map<string, DeclarationNode>;
 	headers: string;
 	code: string;
 	/**

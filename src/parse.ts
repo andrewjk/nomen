@@ -170,6 +170,7 @@ const BASE_TYPES = [
 
 function resolve_types_with_deps(needed: Set<string>, library: Library): string {
 	const resolved = new Set<string>();
+	const pushed = new Set<string>();
 	const result: string[] = [];
 
 	function resolve(name: string) {
@@ -180,7 +181,12 @@ function resolve_types_with_deps(needed: Set<string>, library: Library): string 
 			resolve(dep);
 		}
 		resolved.add(name);
-		result.push(entry.source);
+		// A file declaring multiple types contributes the same source for each;
+		// push it only once to avoid duplicate definitions.
+		if (!pushed.has(entry.source)) {
+			pushed.add(entry.source);
+			result.push(entry.source);
+		}
 	}
 
 	for (const name of needed) {

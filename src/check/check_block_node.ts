@@ -15,6 +15,18 @@ import type CheckStatus from "./CheckStatus.ts";
 export default function check_block_node(node: BlockNode, status: CheckStatus) {
 	gather_structs(node, status);
 
+	// At the root, pre-register every top-level `const` so its name is visible
+	// to functions compiled earlier in statement order — mirroring how
+	// `gather_structs` exposes types. Without this, a `const` declared in an
+	// imported library (appended after the user source) is unreachable from
+	// `main`, surfacing as "Unknown value: NAME". The full entry (borrow info,
+	// flow bounds, …) is recomputed when the declaration is checked in
+	// statement order; this placeholder only carries the type so the name
+	// resolves.
+	if (node.node_type === "root") {
+		gather_top_level_consts(node, status);
+	}
+
 	status.scope_depth++;
 	status.stack.push(node);
 	for (let child of node.statements) {
@@ -24,6 +36,63 @@ export default function check_block_node(node: BlockNode, status: CheckStatus) {
 	status.scope_depth--;
 
 	hoist_discarded_class_results(node, status);
+}
+
+/**
+ * Push placeholder `status.values` entries for non-primitive top-level
+ * `const` declarations (e.g. geometry-type constants like `DEFAULT_PARAMS`).
+ *
+ * These are the same declarations the build pass inlines at every use site
+ * (see `top_level_consts` in `BuildStatus`); without this pre-registration
+ * they would be unreachable from `main`, which is compiled before the
+ * library source that declares them. Primitive-typed module-level
+ * declarations (ints, floats, …) are left for the normal statement-order walk
+ * — they were already reachable as forward-declared file-scope globals, and
+ * pre-registering them would falsely trip the "Parameter already declared"
+ * guard when a function param shadows the module-level name.
+ *
+ * `is_set` matches the entry the statement-order walk would later push (true
+ * iff the declaration has an initializer) because some lookups
+ * (`check_assignment_node`'s const-assignment guard) use `Array.find` rather
+ * than `findLast` and would otherwise see the placeholder.
+ */
+function gather_top_level_consts(block: BlockNode, status: CheckStatus) {
+	const SIMPLE_TYPES = new Set([
+		"int",
+		"uint",
+		"int8",
+		"uint8",
+		"int16",
+		"uint16",
+		"int32",
+		"uint32",
+		"int64",
+		"uint64",
+		"float",
+		"float32",
+		"float64",
+		"bool",
+		"char",
+		"string",
+	]);
+	const seen = new Set<string>();
+	for (const child of block.statements) {
+		if (child.node_type !== "declare") continue;
+		const decl = child as DeclarationNode;
+		if (decl.declaration !== "const") continue;
+		if (!decl.name || !decl.type?.name) continue;
+		if (SIMPLE_TYPES.has(decl.type.name)) continue;
+		if (decl.type.is_array) continue;
+		if (seen.has(decl.name)) continue;
+		seen.add(decl.name);
+		status.values.push({
+			declaration: decl.declaration,
+			name: decl.name,
+			type: decl.type,
+			is_set: !!decl.value,
+			start: decl.start,
+		});
+	}
 }
 
 /**

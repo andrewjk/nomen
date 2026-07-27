@@ -474,11 +474,16 @@ cannot be verified headlessly, but the **layout math** can:
    **Trait polymorphic dispatch now works on both backends** (C + aarch64) and
    is runtime-tested in `test/trait_dispatch.test.ts` — see
    [Trait dispatch](#trait-dispatch-polymorphic-calls).
-2. **Geometry types.** ⚠️ Deferred. v1 uses raw `int` width/height + the
-   `Container`'s flat buffers; the `Size`/`Frame`/`Insets`/`BoxConstraints`/
-   `LayoutLength`/`LayoutParams` types are part of the trait migration.
-   Implementing them as specified is currently blocked by compiler gaps — see
-   [Geometry types (Phase 2) blockers](#geometry-types-phase-2-blockers).
+2. **Geometry types.** ✅ Shipped as `core/System/Controls/Geometry.nm` — the
+   flat `Size`/`Frame`/`Insets`/`BoxConstraints` structs, the `LayoutLength`/
+   `Alignment` enums, and `LayoutParams` + a `DEFAULT_PARAMS` constant, all
+   as specified in [Data types](#data-types). Compile + run on both `c` and
+   `aarch64` backends (verified by `test/geometry_types.test.ts`). The
+   compiler gaps that previously blocked them are closed (see
+   [Geometry types (Phase 2) blockers](#geometry-types-phase-2-blockers)).
+   Wiring them into the layout engine's measure/arrange math is the remaining
+   library-side work — the math above is independent of the storage
+   representation, so the handle-based v1 keeps working until that migration.
 3. **Block + Spacer leaf.** ⚠️ Deferred (needs the trait model).
 4. **VStack then HStack.** ✅ Implemented handle-based, with padding/spacing and
    fill semantics (no grow/shrink/percent/alignment yet).
@@ -797,8 +802,30 @@ Resolution: with the enum blockers above fixed, the `LayoutLength` /
 `Alignment` enums and enum-field defaults are now usable on both backends, and
 named-field struct literals whose override values are enum shorthands
 (`[ width = .fixed(50), grow = 1 ]`) resolve and lay out correctly. Geometry
-types can be implemented as specified (flat structs + these enums). The math
-in [The algorithm](#the-algorithm) is independent of the representation.
+types are shipped as `core/System/Controls/Geometry.nm` (see
+[test/geometry_types.test.ts]); the math in [The algorithm](#the-algorithm)
+is independent of the representation.
+
+Two compiler fixes were needed to ship the geometry types themselves (over
+and above the enum blockers above):
+
+- **`const` name collision with C `math.h` macros.** A Nomen `const int
+INFINITY = 2147483647` lowered to `extern long INFINITY;` and
+  `long INFINITY = …;`, which the C preprocessor expanded to
+  `__builtin_huge_valf` (a macro from `<math.h>`) and rejected. The geometry
+  module renamed its private sentinel to `MAX_DIM`.
+- **Top-level non-primitive `const` declarations didn't lower to file scope.**
+  `const LayoutParams DEFAULT_PARAMS = [ width = .auto, … ]` became
+  `struct LayoutParams DEFAULT_PARAMS = LayoutParams_init();` plus bare
+  field-assignment statements at C file scope (invalid: not a constant
+  expression) and bare instructions at aarch64 module scope (unreachable).
+  Both backends now treat a non-primitive top-level `const` as **inlined at
+  every use site**: `build_value_node` substitutes the const's initializer,
+  `build_declaration_node` substitutes the value at the slot-filling fast
+  path, the root `build_block_node` skips emitting the declaration, and the
+  checker pre-registers the name (via a `gather_top_level_consts` pass) so
+  it's visible to `main`, which is compiled before the library source that
+  declares it.
 
 ### Layout features still owed (now unblocked)
 

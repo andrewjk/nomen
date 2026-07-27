@@ -484,6 +484,16 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 	status.last_result_is_heap = false;
 	const prev_heap = status.last_result_is_heap;
 
+	// Substitute a top-level non-primitive `const` reference (e.g.
+	// `var LayoutParams p = DEFAULT_PARAMS`) with the const's initializer.
+	// The const is inlined at every use site (see build_block_node +
+	// build_value_node); without this, the struct-copy fast path below would
+	// emit `adr x1, DEFAULT_PARAMS` against a global that no longer exists.
+	if (node.value?.node_type === "value") {
+		const inlined = status.top_level_consts?.get((node.value as ValueNode).value);
+		if (inlined?.value) node.value = inlined.value;
+	}
+
 	function check_heap() {
 		if (status.last_result_is_heap) {
 			if (node.type.name === "string" && !node.type.is_array) {

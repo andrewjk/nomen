@@ -1,5 +1,6 @@
 import { is_int_literal } from "../int_literal.ts";
 import ValueNode from "../nodes/ValueNode.ts";
+import build_node from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import c_function_name from "./utils/c_function_name.ts";
 
@@ -12,6 +13,18 @@ const INT_LITERAL_SUFFIX: Record<string, string> = {
 
 export default function build_value_node(node: ValueNode, status: BuildStatus) {
 	let value = node.value;
+	// A top-level non-primitive `const` (e.g. geometry-type constants like
+	// `DEFAULT_PARAMS`) is inlined at every use site rather than emitted as a
+	// file-scope global — the initializer is typically a struct constructor
+	// call, which is not a valid C file-scope constant expression. Build the
+	// const's initializer in place; named-field overrides are applied by the
+	// caller (build_declaration_node / build_assignment_node) via
+	// `emit_field_overrides` once the destination slot is known.
+	const inlined = status.top_level_consts?.get(value);
+	if (inlined?.value) {
+		build_node(inlined.value, status);
+		return;
+	}
 	// Shorthand enum case `.case` (rewritten by the checker to `Enum_case`
 	// with is_enum_shorthand=true). For an enum with associated data, the
 	// no-arg case must still construct the tagged-union struct via its

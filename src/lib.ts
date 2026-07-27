@@ -99,17 +99,19 @@ function extract_deps(source: string): string[] {
 	return deps;
 }
 
-function extract_type_name(source: string): string | null {
+// A single .nm file may declare several top-level types (e.g. a geometry
+// module that groups Size/Frame/Insets/BoxConstraints/…). Register every
+// `pub` type so the dependency resolver can pull the file in when any one of
+// them is referenced — otherwise only the first type in the file is exposed
+// and the rest become "unknown type" at the use site.
+function extract_type_names(source: string): string[] {
+	const names: string[] = [];
 	for (let line of source.split("\n")) {
 		const trimmed = line.trim();
-		const struct_match = trimmed.match(/^pub struct (\w+)/);
-		if (struct_match) return struct_match[1];
-		const class_match = trimmed.match(/^pub class (\w+)/);
-		if (class_match) return class_match[1];
-		const trait_match = trimmed.match(/^pub trait (\w+)/);
-		if (trait_match) return trait_match[1];
+		const m = trimmed.match(/^pub (?:struct|class|trait|enum|bitset) (\w+)/);
+		if (m) names.push(m[1]);
 	}
-	return null;
+	return names;
 }
 
 function build_type_map(files: string[], lib_dir: string): Map<string, LibraryType> {
@@ -117,11 +119,10 @@ function build_type_map(files: string[], lib_dir: string): Map<string, LibraryTy
 	for (const f of files) {
 		const source = fs.readFileSync(f, "utf8");
 		const deps = extract_deps(source);
-		const name = extract_type_name(source);
-		if (name) {
-			const rel = path.relative(path.resolve(lib_dir, "System"), f);
-			const parts = rel.split(path.sep);
-			const namespace = parts.length > 1 ? parts[0] : undefined;
+		const rel = path.relative(path.resolve(lib_dir, "System"), f);
+		const parts = rel.split(path.sep);
+		const namespace = parts.length > 1 ? parts[0] : undefined;
+		for (const name of extract_type_names(source)) {
 			types.set(name, { name, source, deps, namespace });
 		}
 	}
@@ -130,6 +131,7 @@ function build_type_map(files: string[], lib_dir: string): Map<string, LibraryTy
 
 export function resolve_types(needed: Set<string>, types: Map<string, LibraryType>): string {
 	const resolved = new Set<string>();
+	const pushed = new Set<string>();
 	const result: string[] = [];
 
 	function resolve(name: string) {
@@ -140,7 +142,10 @@ export function resolve_types(needed: Set<string>, types: Map<string, LibraryTyp
 			resolve(dep);
 		}
 		resolved.add(name);
-		result.push(entry.source);
+		if (!pushed.has(entry.source)) {
+			pushed.add(entry.source);
+			result.push(entry.source);
+		}
 	}
 
 	const ordered = [...needed].sort((a, b) => {
