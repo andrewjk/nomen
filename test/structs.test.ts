@@ -169,6 +169,60 @@ Console.write("\\{age}")
 		await build_and_check_output(input, "struct_method_return", "42");
 	});
 
+	test("nested struct field defaults propagate", async () => {
+		// `var Inner child = Inner()` must run the inner's constructor and
+		// copy the result into the field, so the inner's declared defaults
+		// (x=5, y=7) survive (regression test for the GUI geometry
+		// `LayoutParams`-style nested struct defaults, which previously
+		// zeroed the field on aarch64 instead of calling the constructor).
+		const input = `
+struct Inner {
+  var int x = 5
+  var int y = 7
+}
+struct Outer {
+  var Inner child = Inner()
+}
+var Outer o = Outer()
+Console.write("\\{o.child.x} \\{o.child.y}")
+`;
+		await build_and_check_output(input, "struct_nested_field_defaults", "5 7");
+	});
+
+	test("nested struct field defaults with constructor args", async () => {
+		const input = `
+struct Point {
+  var int x
+  var int y
+}
+struct Box {
+  var Point p = Point(3, 4)
+  var int z = 9
+}
+var Box b = Box()
+Console.write("\\{b.p.x} \\{b.p.y} \\{b.z}")
+`;
+		await build_and_check_output(input, "struct_nested_field_defaults_args", "3 4 9");
+	});
+
+	test("deeply nested struct field defaults", async () => {
+		const input = `
+struct Leaf {
+  var int v = 1
+}
+struct Mid {
+  var Leaf a = Leaf()
+  var Leaf b = Leaf()
+}
+struct Top {
+  var Mid m = Mid()
+}
+var Top t = Top()
+Console.write("\\{t.m.a.v} \\{t.m.b.v}")
+`;
+		await build_and_check_output(input, "struct_nested_field_defaults_deep", "1 1");
+	});
+
 	test("value method copies self into a local", async () => {
 		// `var T c = self` in a by-value method must dereference the self
 		// pointer and copy the struct (regression test for the GUI geometry

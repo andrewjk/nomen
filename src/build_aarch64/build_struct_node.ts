@@ -259,12 +259,21 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 	status.stack_size = 0;
 	status.stack_offsets = new Map();
 
+	const stack_placeholder = `STACK_SIZE_${func_name}`;
+
 	status.code += `.p2align 2\n`;
 	status.code += `${func_name}:\n`;
 	status.code += `stp x29, x30, [sp, #-16]!\n`;
+	// self lives in x19 across the whole init so a defaulted struct field
+	// (e.g. `var Inner child = Inner()`) can run a constructor call without
+	// losing the destination pointer — the call sequence clobbers x0 with
+	// the return-temp address.
+	status.code += `str x19, [sp, #-16]!\n`;
+	status.code += `mov x19, x0\n`;
+	status.code += `sub sp, sp, #${stack_placeholder}\n`;
 	status.code += `mov x29, sp\n`;
 
-	status.code += `str xzr, [x0]\n`;
+	status.code += `str xzr, [x19]\n`;
 
 	// If the struct conforms to any trait, install its vtable pointer at
 	// offset 0 (the reserved VT_SIZE slot) so trait-typed dispatch can resolve
@@ -275,24 +284,25 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 		// cross-section address needs page-relative addressing on Mach-O.
 		status.code += `adrp x9, _${node.name}_traits@PAGE\n`;
 		status.code += `add x9, x9, _${node.name}_traits@PAGEOFF\n`;
-		status.code += `str x9, [x0]\n`;
+		status.code += `str x9, [x19]\n`;
 	}
 
 	const param_regs = ["x1", "x2", "x3", "x4", "x5", "x6", "x7"];
 	for (let i = 0; i < required_fields.length; i++) {
 		const field = required_fields[i];
 		const offset = get_field_offset(node.name, field.name, status);
-		// x0 is the destination (self pointer); field i arrives in slot i+1
+		// x19 is the destination (self pointer); field i arrives in slot i+1
 		// (x1, x2, …). Slots past x7 arrive in the caller's outgoing stack
-		// area at [x29, #(16 + k*8)] (this init has no local frame, so the
-		// only thing between the args and x29 is the stp x29, x30 pair).
+		// area; with one callee-saved push (x19) between `stp x29, x30` and
+		// `sub sp, sp, #STACK_SIZE`, slot (8+k) lives at the per-arg
+		// placeholder offset patched once the local frame size is known.
 		const slot = i + 1;
 		let src_reg: string;
 		if (slot < NUM_REG_ARGS) {
 			src_reg = param_regs[i];
 		} else {
 			const k = slot - NUM_REG_ARGS;
-			status.code += `ldr x10, [x29, #${16 + k * 8}]\n`;
+			status.code += `ldr x10, [x29, #${overflow_placeholder(func_name, k)}]\n`;
 			src_reg = "x10";
 		}
 		if (field.type.is_array && field.type.length && (field.type.length.start ?? -1) >= 0) {
@@ -301,7 +311,7 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 			for (let e = 0; e < length; e++) {
 				const byte_offset = e * element_size;
 				status.code += load_element(src_reg, byte_offset, element_size);
-				status.code += store_element("x0", offset + byte_offset, element_size);
+				status.code += store_element("x19", offset + byte_offset, element_size);
 			}
 		} else if (
 			!field.type.is_ref &&
@@ -316,17 +326,17 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 			const words = Math.ceil(field_size / 8);
 			for (let w = 0; w < words; w++) {
 				status.code += `ldr x9, [${src_reg}, #${w * 8}]\n`;
-				status.code += `str x9, [x0, #${offset + w * 8}]\n`;
+				status.code += `str x9, [x19, #${offset + w * 8}]\n`;
 			}
 		} else {
 			const field_size = get_type_size(field.type, status);
-			emit_typed_store(status, src_reg, "x0", offset, field_size);
+			emit_typed_store(status, src_reg, "x19", offset, field_size);
 		}
 	}
 
 	for (const field of node.fields) {
 		if (field.value) {
-			if (init_nullable_field_default(node, field, "x0", status)) continue;
+			if (init_nullable_field_default(node, field, "x19", status)) continue;
 			const offset = get_field_offset(node.name, field.name, status);
 			if (field.value.node_type === "value") {
 				const val = (field.value as any).value;
@@ -345,16 +355,23 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 				} else {
 					status.code += `ldr x1, =${val}\n`;
 				}
-				emit_typed_store(status, "x1", "x0", offset, get_type_size(field.type, status));
+				emit_typed_store(status, "x1", "x19", offset, get_type_size(field.type, status));
 			} else if (field.value.node_type === "func_call") {
 				const field_struct = status.structs.find(
 					(s) => s.name === field.type.name && !s.is_simple_type,
 				);
 				if (field_struct) {
+					// Run the constructor (e.g. `Inner()`); the call sequence
+					// leaves x0 pointing at the return-value temp. Copy the
+					// result word-by-word into the field slot. self lives in
+					// x19, so it survives the call.
+					build_node(field.value, status);
+					if (!status.code.endsWith("\n")) status.code += "\n";
 					const field_size = get_struct_size(field.type.name, status);
 					const words = Math.ceil(field_size / 8);
 					for (let w = 0; w < words; w++) {
-						status.code += `str xzr, [x0, #${offset + w * 8}]\n`;
+						status.code += `ldr x9, [x0, #${w * 8}]\n`;
+						status.code += `str x9, [x19, #${offset + w * 8}]\n`;
 					}
 				}
 			}
@@ -362,6 +379,20 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 	}
 
 	status.code += `.return_${func_name}:\n`;
+
+	const total_stack = Math.ceil((status.stack_size || 0) / 16) * 16;
+	status.code = status.code.replace(
+		`sub sp, sp, #${stack_placeholder}`,
+		total_stack > 0 ? `sub sp, sp, #${total_stack}` : `// no stack needed`,
+	);
+	// Resolve overflow-arg placeholders. The only `str xN, [sp, #-16]!`
+	// between `stp x29, x30` and `sub sp, sp, #STACK_SIZE` is the x19 push, so
+	// callee_saved_pushes = 1.
+	status.code = patch_overflow_placeholders(status.code, func_name, 1, total_stack);
+	if (total_stack > 0) {
+		status.code += `add sp, sp, #${total_stack}\n`;
+	}
+	status.code += `ldr x19, [sp], #16\n`;
 	status.code += `ldp x29, x30, [sp], #16\n`;
 	status.code += `ret\n`;
 
@@ -494,10 +525,16 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 					(s) => s.name === field.type.name && !s.is_simple_type,
 				);
 				if (field_struct) {
+					// Run the constructor and copy the return-value temp into
+					// the field slot. self lives in x19, so it survives the
+					// call (which clobbers x0 with the temp address).
+					build_node(field.value, status);
+					if (!status.code.endsWith("\n")) status.code += "\n";
 					const field_size = get_struct_size(field.type.name, status);
 					const words = Math.ceil(field_size / 8);
 					for (let w = 0; w < words; w++) {
-						status.code += `str xzr, [x19, #${offset + w * 8}]\n`;
+						status.code += `ldr x9, [x0, #${w * 8}]\n`;
+						status.code += `str x9, [x19, #${offset + w * 8}]\n`;
 					}
 				}
 			}

@@ -717,15 +717,6 @@ Struct / initialisation:
   both copy the struct. Callers that need the pointer (field access, method
   dispatch, ref-param forwarding) set `suppress_dereference` and get the bare
   pointer. Runtime-tested on both backends (`struct_value_method_copy_self`).
-- **Named-field struct literals don't parse.** `const LP DEF = [ grow = 2,
-  shrink = 3 ]` fails with "Type mismatch in declaration: unknown value ?". The
-  `[ field = val, … ]` construction form used for `DEFAULT_PARAMS` in
-  [Data types](#data-types) is unrecognised — only `Type()` (defaults) +
-  per-field assignment works today.
-- **Struct field of struct type loses its defaults.** `pub var Inner child =
-  Inner()` reads the inner's fields back as `0`, not `Inner`'s declared
-  defaults. Nested-struct default initialisation doesn't propagate, so a
-  `LayoutParams` holding two `LayoutLength` fields can't rely on field defaults.
 - **Module-level `const int` as a struct field default is illegal on aarch64.**
   `pub var int hi = INF` (with `const int INF = 2147483647`) produces "Illegal
   text-relocations … to 'INF'" — the field-init load references the global
@@ -770,7 +761,7 @@ trait-based Container once the geometry types below are in place.
   `LayoutParams` with `grow`/`shrink`/`percent`/`fill`/`align` — **blocked** on
   the language gaps in
   [Geometry types (Phase 2) blockers](#geometry-types-phase-2-blockers)
-  (enum associated-data, named-field struct literals, and const/nested/enum
+  (enum associated-data, named-field struct literals, and const/enum
   field defaults all miscompile; several only on `aarch64`).
 - Intrinsic-size measurement (query each native control's
   `intrinsicContentSize`/`fittingSize`) so `add` needs no size hints.
