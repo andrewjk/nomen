@@ -405,6 +405,28 @@ Console.write("\\{area}")
 `;
 		await build_and_check_output(input, "match_associated_data_multi", "200");
 	});
+
+	test("match on struct field that is an enum with data", async () => {
+		// Assigning a wide (multi-word) enum value to a struct field must
+		// struct-copy the full value, not just store the RHS temp's address;
+		// otherwise matching the field reads a garbage tag.
+		const input = `
+enum Len {
+  case auto
+  case fixed(int pixels)
+}
+struct LP {
+  var Len width = .auto
+}
+var LP p = LP()
+p.width = Len.fixed(50)
+match p.width {
+  case .auto -> Console.write("auto")
+  case .fixed(n) -> Console.write("fixed \\{n}")
+}
+`;
+		await build_and_check_output(input, "match_field_enum_with_data", "fixed 50");
+	});
 });
 
 // ERRORS

@@ -251,7 +251,11 @@ export default function check_function_call(
 		// Defaulted struct fields that aren't #init params become post-
 		// construction field overrides (mirrors convert_anon_struct in
 		// check_declaration_node). Unknown fields are rejected.
+		// Each override value is checked with the struct field's type as
+		// `expected_type` so shorthand forms (`.auto`) resolve to the
+		// mangled enum case with `is_enum_shorthand = true`.
 		const field_overrides: { name: string; value: BaseNode; type: Type }[] = [];
+		const saved_expected = status.expected_type;
 		for (const field of anon.fields) {
 			if (init_func.params.find((p) => p.name === field.name)) continue;
 			const struct_field = struct.fields.find((f) => f.name === field.name);
@@ -263,8 +267,11 @@ export default function check_function_call(
 				);
 				continue;
 			}
+			status.expected_type = struct_field.type;
+			check_node(field.value, status);
 			field_overrides.push({ name: field.name, value: field.value, type: struct_field.type });
 		}
+		status.expected_type = saved_expected;
 		const constructor = new FunctionCallNode(param.start, struct.name);
 		constructor.params = args;
 		constructor.type = new Type(struct.name);

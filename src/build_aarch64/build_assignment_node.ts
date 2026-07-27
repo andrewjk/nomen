@@ -926,6 +926,27 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 
 					emit_struct_copy("x1", "x0", offset, struct_size, status);
 				}
+			} else if (rhs_is_enum_with_data && !node.operator) {
+				// Enum with associated data is multi-word (tag + payload) and
+				// lives on the stack like a struct; assignment to a field must
+				// struct-copy the whole value (the RHS builds to a temp address
+				// in x0), not just store that address. Mirrors the variable
+				// assignment path above and the struct-field branch beside it.
+				const offset = get_field_offset(target_type.name, field_name, status);
+				const enum_size = get_enum_size(rhs_type.name, status);
+				mark_moved_if_struct(node.right_value, status);
+
+				get_base_address(access, status, "x0");
+				status.code += `str x0, [sp, #-16]!\n`;
+
+				build_node(node.right_value, status);
+				if (!status.code.endsWith("\n")) {
+					status.code += "\n";
+				}
+				status.code += `mov x1, x0\n`;
+				status.code += `ldr x0, [sp], #16\n`;
+
+				emit_struct_copy("x1", "x0", offset, enum_size, status);
 			} else {
 				const offset = get_field_offset(target_type.name, field_name, status);
 

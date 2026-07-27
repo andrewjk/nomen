@@ -769,14 +769,36 @@ Enums:
   enums. Previously the field-init fallback emitted `adr xN, Enum_case`, an
   illegal text relocation on macOS arm64. Runtime-tested on both backends
   (`enum_field_default`).
+- ~~**Named-field struct literal with an enum shorthand value, and field
+  assignment of an enum-with-data, break on aarch64.** `[ width = .fixed(50),
+grow = 1 ]` and `p.width = Len.fixed(50)` both misbehave: the override/field
+  value reaches the build pass with the enum shorthand unresolved (`adr x0,
+.auto`, an illegal text relocation), and the field assignment stores the RHS
+  temp's _address_ instead of struct-copying the 16-byte value, so matching the
+  field reads a garbage tag. Two coupled root causes: (a) the `field_overrides`
+  of a named-field struct literal are never run through `check_node`, so
+  `.auto`/`.fixed(50)` aren't rewritten to the mangled enum case with
+  `is_enum_shorthand`; (b) `get_type_size` (`struct_layout.ts`) sizes every
+  enum as 8 bytes via `aarch64_size`'s default, so a 16-byte enum-with-data
+  field is under-counted and the next field's offset overlaps its payload, and
+  field assignment of such an enum fell through to a plain `str` of the RHS temp
+  address.~~ ✅ **Fixed.** (a) `convert_anon_struct` (`check_declaration_node.ts`)
+  and the parallel field-override loop in `check_function_call.ts` now walk each
+  override value through `check_node` with the struct field's type as
+  `expected_type`, so shorthand enum values resolve to `Enum_case` with
+  `is_enum_shorthand = true`. (b) `get_type_size` now returns `get_enum_size`
+  for enums (16 bytes for enums-with-data) so `get_field_offset` /
+  `get_struct_size` lay fields out correctly; and the aarch64 field-assignment
+  path gained an `is_enum_with_data_type` branch that `emit_struct_copy`s the
+  full value (mirroring the variable-assignment path). Runtime-tested on both
+  backends (`struct_named_field_literal_enum`, `match_field_enum_with_data`).
 
 Resolution: with the enum blockers above fixed, the `LayoutLength` /
-`Alignment` enums and enum-field defaults are now usable on both backends.
-Geometry types can be implemented as specified (flat structs + these enums);
-the remaining gap is named-field struct literals (e.g.
-`[ width = .auto, grow = 1 ]`), which still require a typed struct literal.
-The math in [The algorithm](#the-algorithm) is independent of the
-representation.
+`Alignment` enums and enum-field defaults are now usable on both backends, and
+named-field struct literals whose override values are enum shorthands
+(`[ width = .fixed(50), grow = 1 ]`) resolve and lay out correctly. Geometry
+types can be implemented as specified (flat structs + these enums). The math
+in [The algorithm](#the-algorithm) is independent of the representation.
 
 ### Layout features still owed (now unblocked)
 
@@ -789,9 +811,9 @@ below can be implemented in one of two places: on the existing handle-based v1
 
 - `BoxConstraints` / `Size` / `Frame` / `Insets` / `LayoutLength` /
   `LayoutParams` with `grow`/`shrink`/`percent`/`fill`/`align` — enum
-  associated-data, enum reassignment, `match` payload extraction, and enum
-  field defaults all work on both backends now. The remaining gap is
-  named-field struct literals (`[ width = .auto, grow = 1 ]`).
+  associated-data, enum reassignment, `match` payload extraction, enum field
+  defaults, and named-field struct literals with enum shorthand values all work
+  on both backends now.
 - Intrinsic-size measurement (query each native control's
   `intrinsicContentSize`/`fittingSize`) so `add` needs no size hints.
 - Incremental/dirty relayout (v1 does a full re-measure on every

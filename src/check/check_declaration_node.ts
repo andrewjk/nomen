@@ -317,11 +317,18 @@ function convert_anon_struct(decl: DeclarationNode, status: CheckStatus) {
 	// `grow` field has a declared default becomes `T_init()` followed by
 	// `.grow = 2`. Unknown fields (not a param, not a struct field) are
 	// rejected with an error so typos don't silently slip through.
+	//
+	// Each override value is checked with the struct field's type as
+	// `expected_type` so that shorthand forms (`.auto`, `.center`) resolve
+	// to the mangled enum/bitset case with `is_enum_shorthand = true` —
+	// without this, the raw `.auto` reaches the build pass and emits an
+	// illegal text relocation on aarch64 (`adr x0, .auto`).
 	const field_overrides: {
 		name: string;
 		value: import("../nodes/BaseNode.ts").default;
 		type: Type;
 	}[] = [];
+	const saved_expected = status.expected_type;
 	for (const field of anon.fields) {
 		if (init_func.params.find((p) => p.name === field.name)) continue;
 		const struct_field = struct.fields.find((f) => f.name === field.name);
@@ -333,8 +340,11 @@ function convert_anon_struct(decl: DeclarationNode, status: CheckStatus) {
 			);
 			continue;
 		}
+		status.expected_type = struct_field.type;
+		check_node(field.value, status);
 		field_overrides.push({ name: field.name, value: field.value, type: struct_field.type });
 	}
+	status.expected_type = saved_expected;
 	const constructor = new FunctionCallNode(anon.start, struct.name);
 	constructor.params = args;
 	constructor.type = new Type(struct.name);

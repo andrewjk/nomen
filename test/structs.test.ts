@@ -144,6 +144,29 @@ Console.write("\\{M.a} \\{M.b} \\{N.a} \\{N.b}")
 		await build_and_check_output(input, "struct_named_field_literal_mixed", "1 9 4 5");
 	});
 
+	test("named-field struct literal with enum shorthand values", async () => {
+		// The geometry types need `[ width = .auto, grow = 1 ]`-style literals
+		// whose override values are enum shorthands. These must resolve to the
+		// mangled enum case (with is_enum_shorthand) at check time, else the
+		// aarch64 build emits an illegal text relocation (`adr x0, .auto`).
+		const input = `
+enum Len {
+  case auto
+  case fixed(int pixels)
+}
+struct LP {
+  var Len width = .auto
+  var int grow = 0
+}
+const LP DEF = [ width = .fixed(50), grow = 1 ]
+match DEF.width {
+  case .auto -> Console.write("auto \\{DEF.grow}")
+  case .fixed(n) -> Console.write("fixed \\{n} \\{DEF.grow}")
+}
+`;
+		await build_and_check_output(input, "struct_named_field_literal_enum", "fixed 50 1");
+	});
+
 	test("struct field get and set", async () => {
 		const input = `
 struct Point {

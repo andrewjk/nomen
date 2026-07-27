@@ -29,6 +29,14 @@ export function get_type_size(
 		if (struct.is_class) return 8;
 		return get_struct_size(type.name, status);
 	}
+	// Enums: an enum with associated data is multi-word (tag + payload), so its
+	// size must come from get_enum_size, not the default 8 — otherwise struct
+	// field offsets and struct sizes under-count a 16-byte enum and the next
+	// field overlaps its payload.
+	const enum_node = status.enums.find((e) => e.name === type.name);
+	if (enum_node) {
+		return get_enum_size(type.name, status);
+	}
 	const element_size = aarch64_size(type.name);
 	if (type.is_array && type.length && (type.length.start ?? -1) >= 0) {
 		const length = parseInt((type.length as ValueNode).value || "0");
