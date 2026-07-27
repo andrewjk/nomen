@@ -70,7 +70,7 @@ export default async function check_output(
 			steps.push(`clang -c ${audit_runtime} -o ${audit_obj}`);
 			link_inputs += ` ${audit_obj}`;
 		}
-		steps.push(`clang ${link_inputs} -o ${outfile}`);
+		steps.push(`clang ${link_inputs} -o ${outfile}${framework_flags}`);
 		compileCmd = steps.join(" && ");
 	} else {
 		let link_inputs = codefile;

@@ -1,6 +1,8 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import { is_overloaded, mangled_label } from "../check/utils/function_overload.ts";
+import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
+import RootNode from "../nodes/RootNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_block_node from "./build_block_node.ts";
@@ -76,6 +78,32 @@ function init_nullable_field_default(
 	status.code += `mov x9, #1\n`;
 	status.code += `str x9, [${base_reg}, #${has_offset}]\n`;
 	return true;
+}
+
+/**
+ * Resolve a module-level `const` declaration's literal value (e.g.
+ * `const int INF = 2147483647` → `"2147483647"`). Returns undefined when the
+ * name isn't a top-level const or its initializer isn't a simple literal.
+ *
+ * Field-default initialization runs inline in `*_init` (`ldr xN, =SYM`), and
+ * `=SYM` loads the symbol's ADDRESS while creating an illegal text-relocation
+ * on macOS arm64 — resolving the value at compile time sidesteps both issues.
+ */
+function resolve_global_const_value(name: string, status: BuildStatus): string | undefined {
+	const root = status.root as RootNode;
+	for (const stmt of root?.statements ?? []) {
+		if (stmt.node_type !== "declare") continue;
+		const decl = stmt as DeclarationNode;
+		if (decl.declaration !== "const" || decl.name !== name) continue;
+		if (decl.value?.node_type === "value") {
+			const val = (decl.value as ValueNode).value;
+			if (/^(\+|-)?\d+$/.test(val) || val === "true" || val === "false") {
+				return val;
+			}
+		}
+		return undefined;
+	}
+	return undefined;
 }
 
 export default function build_struct_node(node: StructNode, status: BuildStatus) {
@@ -353,7 +381,28 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 					status.strings!.set(label, val);
 					status.code += `adr x1, ${label}\n`;
 				} else {
-					status.code += `ldr x1, =${val}\n`;
+					// Non-literal default: a module-level const reference
+					// (e.g. `var int hi = INF` with `const int INF = …`).
+					// `ldr xN, =SYM` loads the symbol's ADDRESS and creates an
+					// illegal text-relocation on macOS arm64; resolve the
+					// const's value at compile time, falling back to
+					// PC-relative adr + typed load of the stored value.
+					const resolved = resolve_global_const_value(val, status);
+					if (resolved !== undefined) {
+						status.code += `ldr x1, =${resolved}\n`;
+					} else {
+						const vsize = get_type_size(field.type, status);
+						status.code += `adr x1, ${val}\n`;
+						if (vsize <= 1) {
+							status.code += `ldrb w1, [x1]\n`;
+						} else if (vsize <= 2) {
+							status.code += `ldrh w1, [x1]\n`;
+						} else if (vsize <= 4) {
+							status.code += `ldr w1, [x1]\n`;
+						} else {
+							status.code += `ldr x1, [x1]\n`;
+						}
+					}
 				}
 				emit_typed_store(status, "x1", "x19", offset, get_type_size(field.type, status));
 			} else if (field.value.node_type === "func_call") {
@@ -517,7 +566,28 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 					status.strings!.set(label, val);
 					status.code += `adr x1, ${label}\n`;
 				} else {
-					status.code += `ldr x1, =${val}\n`;
+					// Non-literal default: a module-level const reference
+					// (e.g. `var int hi = INF` with `const int INF = …`).
+					// `ldr xN, =SYM` loads the symbol's ADDRESS and creates an
+					// illegal text-relocation on macOS arm64; resolve the
+					// const's value at compile time, falling back to
+					// PC-relative adr + typed load of the stored value.
+					const resolved = resolve_global_const_value(val, status);
+					if (resolved !== undefined) {
+						status.code += `ldr x1, =${resolved}\n`;
+					} else {
+						const vsize = get_type_size(field.type, status);
+						status.code += `adr x1, ${val}\n`;
+						if (vsize <= 1) {
+							status.code += `ldrb w1, [x1]\n`;
+						} else if (vsize <= 2) {
+							status.code += `ldrh w1, [x1]\n`;
+						} else if (vsize <= 4) {
+							status.code += `ldr w1, [x1]\n`;
+						} else {
+							status.code += `ldr x1, [x1]\n`;
+						}
+					}
 				}
 				emit_typed_store(status, "x1", "x19", offset, get_type_size(field.type, status));
 			} else if (field.value.node_type === "func_call") {

@@ -1,7 +1,10 @@
 import { expect, describe, test } from "vite-plus/test";
 
+import build from "../src/build";
 import parse from "../src/parse";
 import build_and_check_output from "./build_and_check_output";
+import check_output from "./check_output";
+import { parse_raw } from "./parse_with_imports";
 import test_error from "./test_error";
 
 // BUILD
@@ -221,6 +224,34 @@ var Top t = Top()
 Console.write("\\{t.m.a.v} \\{t.m.b.v}")
 `;
 		await build_and_check_output(input, "struct_nested_field_defaults_deep", "1 1");
+	});
+
+	test("module-level const int as struct field default", async () => {
+		// `var int hi = INF` (with `const int INF = …` at module scope) must
+		// resolve the const's value at compile time on aarch64 — `ldr xN, =SYM`
+		// would load the symbol's ADDRESS and create an illegal text-relocation
+		// in __TEXT on macOS arm64. Uses parse_raw so the const is truly
+		// module-level (not a local inside main).
+		const source = `
+import System
+const int INF = 2147483647
+struct Box {
+  var int hi = INF
+}
+pub func main = () {
+  var Box b = Box()
+  Console.write("\\{b.hi}")
+}
+`;
+		for (const arch of ["aarch64", "c"] as const) {
+			const parsed = parse_raw(source);
+			expect(parsed.errors).toEqual([]);
+			const result = build(parsed.root, { arch, audit: true });
+			await check_output(`struct_const_field_default_${arch}`, result, "2147483647", {
+				arch,
+				audit: true,
+			});
+		}
 	});
 
 	test("value method copies self into a local", async () => {

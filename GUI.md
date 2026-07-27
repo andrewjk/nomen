@@ -700,8 +700,8 @@ flat structs plus the `LayoutLength` / `Alignment` enums — surfaces several
 compiler gaps. Each was isolated to a minimal repro compiled on **both** `c`
 and `aarch64` via `build_and_check_output`; none are worked around in core yet,
 so the spec'd forms stay unusable until fixed. The handle-based v1 sidesteps all
-of them by using flat `Buffer<int>` arrays + `int` tag constants, which is also
-why `test/layout_container.test.ts` only runs on the `c` backend today.
+of them by using flat `Buffer<int>` arrays + `int` tag constants.
+`test/layout_container.test.ts` runs on both backends.
 
 Struct / initialisation:
 
@@ -717,11 +717,6 @@ Struct / initialisation:
   both copy the struct. Callers that need the pointer (field access, method
   dispatch, ref-param forwarding) set `suppress_dereference` and get the bare
   pointer. Runtime-tested on both backends (`struct_value_method_copy_self`).
-- **Module-level `const int` as a struct field default is illegal on aarch64.**
-  `pub var int hi = INF` (with `const int INF = 2147483647`) produces "Illegal
-  text-relocations … to 'INF'" — the field-init load references the global
-  symbol from `__TEXT`. Works on `c`; this went uncaught because the container
-  tests are `c`-only. Field defaults must currently be literals.
 
 Enums:
 
@@ -761,7 +756,7 @@ trait-based Container once the geometry types below are in place.
   `LayoutParams` with `grow`/`shrink`/`percent`/`fill`/`align` — **blocked** on
   the language gaps in
   [Geometry types (Phase 2) blockers](#geometry-types-phase-2-blockers)
-  (enum associated-data, named-field struct literals, and const/enum
+  (enum associated-data, named-field struct literals, and enum
   field defaults all miscompile; several only on `aarch64`).
 - Intrinsic-size measurement (query each native control's
   `intrinsicContentSize`/`fittingSize`) so `add` needs no size hints.
