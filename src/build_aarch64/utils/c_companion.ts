@@ -1,6 +1,7 @@
 import type BuildStatus from "../../build_c/BuildStatus.ts";
 import c_type from "../../build_c/utils/c_type.ts";
 import { is_overloaded, mangled_label } from "../../check/utils/function_overload.ts";
+import EnumNode from "../../nodes/EnumNode.ts";
 import FunctionNode from "../../nodes/FunctionNode.ts";
 import ParameterNode from "../../nodes/ParameterNode.ts";
 import StructNode from "../../nodes/StructNode.ts";
@@ -59,11 +60,27 @@ export function generate_companion(functions: CompanionFunction[], status: Build
 		out += "\n";
 	}
 
+	// --- Enum definitions ---
+	// Emit every enum before the structs: a struct may have a field of enum
+	// type (e.g. LayoutParams.width: LayoutLength), and the typedef must be in
+	// scope. Enum case names keep the `Enum_case` form (they're only referenced
+	// by index from assembly, never by name in companion bodies). Type names are
+	// `nm_`-prefixed (see `nm`) to avoid collisions with system typedefs pulled
+	// in by the framework imports above (e.g. macOS MacTypes.h defines `Size`).
+	const emitted_enums = new Set<string>();
+	for (const e of status.enums) {
+		if (emitted_enums.has(e.name)) continue;
+		emitted_enums.add(e.name);
+		out += generate_enum_definition(e, status);
+	}
+	out += "\n";
+
 	// --- Struct definitions ---
 	// Emit every non-simple struct so the function bodies can reference them.
 	// Definitions are ordered so that a struct's value-field dependencies are
 	// defined before it (e.g. Buffer_JsonNode before JsonTree, which contains
-	// it by value). Pointer fields (generics → void *) need no ordering.
+	// it by value). Pointer fields (generics → void *) need no ordering. Type
+	// names are `nm_`-prefixed (see `nm`) to dodge system-header collisions.
 	const structs_to_emit = order_structs_by_dependency(
 		status.structs.filter((s) => !s.is_simple_type && !s.is_generic),
 	);
@@ -89,11 +106,67 @@ export function generate_companion(functions: CompanionFunction[], status: Build
 	return out;
 }
 
-function field_c_type(typeName: string, status: BuildStatus): string {
-	// Generic structs (e.g. Buffer<int>) are stored as 8-byte pointers in C.
+/**
+ * Prefix a Nomen type's C TYPEDEF name with `nm_`. The companion file `#import`s
+ * the platform frameworks (Foundation/Cocoa/UIKit), which drag in a large set of
+ * system typedefs (e.g. macOS `MacTypes.h` defines `typedef long Size`). If we
+ * emitted Nomen's own `typedef struct Size {...} Size;` the typedef name would
+ * collide; mangling only the typedef (`typedef struct Size {...} nm_Size;`)
+ * sidesteps it while leaving the struct TAG (`Size`) untouched.
+ *
+ * Keeping the original tag matters: generated C (spawn/trampoline infra in
+ * build_spawn_node / build_nursery_spawn) and `#arch: aarch64_use_c` raw bodies
+ * reference Nomen types as `struct Foo` (the tag), so an unchanged tag means
+ * none of that code needs to know about mangling. Codegen-generated references
+ * here (fields, params, returns) use the mangled typedef instead.
+ *
+ * `nm_` (no leading underscore: the C standard reserves `_`+lowercase
+ * identifiers at file scope). This is purely cosmetic — the aarch64 assembly
+ * never references type names (only function labels, bridged via `__asm__`).
+ */
+function nm(name: string): string {
+	return "nm_" + name;
+}
+
+/**
+ * The C type for a field/param/return of the given Nomen type, applying `nm_`
+ * to user-defined struct/enum types and falling back to `c_type` for primitives.
+ * Generic structs lower to opaque 8-byte pointers (their element type lives in
+ * the Nomen `Type`, not in the C layout).
+ */
+function companion_type(typeName: string, status: BuildStatus): string {
 	const struct = status.structs.find((s) => s.name === typeName);
 	if (struct?.is_generic) return "void *";
+	if (struct && !struct.is_simple_type) return nm(typeName);
+	if (!struct && status.enums.find((e) => e.name === typeName)) return nm(typeName);
 	return c_type(typeName);
+}
+
+/**
+ * Emit an enum's C type definition. Mirrors the C backend's `build_enum_node`
+ * (typedef for simple enums; tag + tagged-union struct for enums with associated
+ * data) but with `nm_`-prefixed TYPEDEF names and no constructor functions (those
+ * are emitted as assembly in the aarch64 path; the companion only needs types so
+ * struct fields / function signatures can reference them). The struct tag keeps
+ * the original Nomen name (see `nm`).
+ */
+function generate_enum_definition(node: EnumNode, _status: BuildStatus): string {
+	let out = "";
+	if (node.has_associated_data) {
+		out += `typedef enum { ${node.cases.map((c) => `${node.name}_${c.name}`).join(", ")} } ${nm(node.name)}_tag;\n`;
+		out += `struct ${node.name};\n`;
+		out += `typedef struct ${node.name}\n{\n`;
+		out += `${nm(node.name)}_tag tag;\n`;
+		out += `union {\n`;
+		for (const c of node.cases) {
+			out += `struct { ${c.params.map((p) => `${c_type(p.type.name)} ${p.name}`).join("; ")}${c.params.length ? ";" : ""} } _${c.name};\n`;
+		}
+		out += `} _data;\n`;
+		out += `} ${nm(node.name)};\n`;
+	} else {
+		out += `typedef enum { ${node.cases.map((c) => `${node.name}_${c.name}`).join(", ")} } ${nm(node.name)};\n`;
+	}
+	return out;
 }
 
 /**
@@ -135,7 +208,7 @@ function generate_struct_definition(struct: StructNode, status: BuildStatus): st
 	let out = `typedef struct ${struct.name}\n{\n`;
 	out += `void *_vt;\n`;
 	for (const field of struct.fields) {
-		out += `${field_c_type(field.type.name, status)} ${field.name};\n`;
+		out += `${companion_type(field.type.name, status)} ${field.name};\n`;
 	}
 	for (const traitName of struct.traits) {
 		const trait = status.traits.find((t) => t.name === traitName) as TraitNode | undefined;
@@ -143,10 +216,10 @@ function generate_struct_definition(struct: StructNode, status: BuildStatus): st
 		for (const field of trait.fields.filter(
 			(f) => !struct.fields.find((nf) => nf.name === f.name),
 		)) {
-			out += `${field_c_type(field.type.name, status)} ${field.name};\n`;
+			out += `${companion_type(field.type.name, status)} ${field.name};\n`;
 		}
 	}
-	out += `} ${struct.name};\n`;
+	out += `} ${nm(struct.name)};\n`;
 	return out;
 }
 
@@ -183,11 +256,10 @@ function generate_c_function(
 	const return_struct = is_class_init
 		? undefined
 		: status.structs.find((s) => s.name === return_type && !s.is_simple_type);
-	let return_prefix = "";
-	if (return_struct) {
-		return_prefix += `struct `;
-	}
-	return_prefix += c_type(return_type);
+	// Use the mangled typedef (`nm_Foo`) for struct/enum returns; primitives pass
+	// through `companion_type` unchanged. The typedef is always in scope here
+	// (every struct/enum is defined above the function bodies).
+	let return_prefix = return_struct ? nm(return_type) : companion_type(return_type, status);
 	return_prefix += ` `;
 
 	// Struct-returning functions get a `_c` suffix because the aarch64
@@ -229,7 +301,7 @@ function generate_c_function(
 	) {
 		const struct = status.structs.find((s) => s.name === struct_name);
 		if (struct && !struct.is_simple_type) {
-			out += `struct ${struct_name} _self = *self;\n`;
+			out += `${nm(struct_name)} _self = *self;\n`;
 		}
 	}
 
@@ -250,10 +322,9 @@ function generate_c_param(param: ParameterNode, status: BuildStatus): string {
 	if (param.is_variadic) {
 		out += `long _${param.name}_len, `;
 	}
-	if (is_struct) {
-		out += `struct `;
-	}
-	out += c_type(param.type.name);
+	// Struct/enum params use the mangled typedef (`nm_Foo`); the typedef is in
+	// scope above the function bodies. Pointer-ness is decided separately below.
+	out += companion_type(param.type.name, status);
 	if (is_struct || param.declaration === "var" || param.type.is_ref || param.type.is_array) {
 		out += ` *`;
 	} else {
