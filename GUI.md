@@ -807,14 +807,19 @@ Both backends now implement this end-to-end and are exercised by
   Regression-tested on both backends in `test/many_params.test.ts` (9-, 10-,
   11-, 12-arg free functions; 10-field struct auto-`#init`; 9-arg instance
   method; nested overflow call).
-- **C backend auto-`#init` local name collides with a same-named field.**
+- ~~**C backend auto-`#init` local name collides with a same-named field.**
   `build_c/build_struct_node.ts:148` derives the constructor's local instance
   variable from the struct name's first letter lowercased (`Big` → `b`); if
   the struct has a field with that name, the local shadows the parameter and
   the field self-assigns (`b.b = b;`). Surfaces for any struct whose name's
   first letter (lowercased) matches one of its field names (e.g. `struct Big {
 var int b }`). Workaround: rename either the struct or the field. A real fix
-  should use a non-colliding local name (e.g. `_self` or `__self`).
+  should use a non-colliding local name (e.g. `_self` or `__self`).~~ ✅
+  **Fixed.** The auto-generated `#init` now uses `_self` as the local instance
+  variable name (matching the convention already used by the method-build
+  path for dereferenced `self`), so it can no longer collide with a
+  field-derived parameter. Runtime-tested on both backends in
+  `test/structs.test.ts` ("auto-init local does not collide with field name").
 - ~~**Default parameter on a struct method crashes the checker**
   (`check_function_call.ts:307`, `func_param.type` undefined). Default params on
   free functions work; on methods they don't. Worked around with overloads.~~ ✅

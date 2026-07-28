@@ -114,6 +114,22 @@ Console.write("\\{c.count}")
 		await build_and_check_output(input, "struct_default_field", "0");
 	});
 
+	test("auto-init local does not collide with field name", async () => {
+		// The auto-generated #init named its local after the struct's first
+		// letter (`Big` → `b`). Since params are derived from field names, a
+		// struct whose first letter matches a field name (e.g. `Big { var int b }`)
+		// had the local shadow the param and self-assign garbage (`b.b = b`).
+		const input = `
+struct Big {
+  var int b
+  var int c
+}
+var Big s = Big(42, 99)
+Console.write("\\{s.b} \\{s.c}")
+`;
+		await build_and_check_output(input, "struct_auto_init_name_collision", "42 99");
+	});
+
 	test("named-field struct literal overrides defaults", async () => {
 		// `[ field = val, … ]` routes through #init: the call runs with no
 		// args (every field has a default), then the named fields are applied

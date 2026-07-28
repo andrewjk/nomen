@@ -144,8 +144,12 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 		// Build all other struct functions (skip #init — handled above)
 		build_struct_functions(node, status, true);
 	} else {
-		// Auto-generated init
-		const object_name = node.name.substring(0, 1).toLocaleLowerCase();
+		// Auto-generated init. The local instance variable must not collide
+		// with any field parameter (params are derived from field names), or
+		// the local shadows the param and the field self-assigns garbage
+		// (e.g. `struct Big { var int b }` → `Big b; … b.b = b;`). `_self`
+		// matches the convention used by the method-build path above.
+		const object_name = "_self";
 		status.code += `${ctor}\n{\n`;
 		if (is_class) {
 			status.code += `struct ${node.name}* ${object_name} = malloc(sizeof(struct ${node.name}));\n`;
