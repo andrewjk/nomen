@@ -31,6 +31,7 @@ const int KIND_VSTACK = 1
 const int KIND_HSTACK = 2
 const int KIND_GRID = 3
 const int KIND_ZSTACK = 4
+const int KIND_BLOCK = 5
 
 // Cross-axis alignment for a child within its parent stack. The indices match
 // the `Alignment` enum case order in Geometry.nm (start, center, end, stretch).
@@ -108,6 +109,7 @@ pub struct Container {
 	var Buffer<int> spans = Buffer<int>()     // grid column span
 	var Buffer<int> cols = Buffer<int>()      // grid column count (on grid nodes)
 	var Buffer<int> handles = Buffer<int>()   // leaf native handle (0 = none/container)
+	var Buffer<int> pads = Buffer<int>()      // per-node inset (padding) for Block
 	var Buffer<int> grows = Buffer<int>()     // flex weight: absorbs surplus on the main axis
 	var Buffer<int> shrinks = Buffer<int>()   // flex weight: absorbs deficit on the main axis
 	var Buffer<int> aligns = Buffer<int>()    // cross-axis alignment (ALIGN_*)
@@ -143,6 +145,7 @@ pub struct Container {
 		self.spans.grow_int(cap)
 		self.cols.grow_int(cap)
 		self.handles.grow_int(cap)
+		self.pads.grow_int(cap)
 		self.grows.grow_int(cap)
 		self.shrinks.grow_int(cap)
 		self.aligns.grow_int(cap)
@@ -169,6 +172,7 @@ pub struct Container {
 		self.spans.store_int(0, 1)
 		self.pars.store_int(0, 0)
 		self.handles.store_int(0, 0)
+		self.pads.store_int(0, 0)
 		self.grows.store_int(0, 0)
 		self.shrinks.store_int(0, 0)
 		self.aligns.store_int(0, ALIGN_STRETCH)
@@ -229,6 +233,7 @@ pub struct Container {
 		self.shrinks.store_int(idx, shrink)
 		self.aligns.store_int(idx, align)
 		self.pars.store_int(idx, parent + 1)
+		self.pads.store_int(idx, 0)
 		self.prx.store_int(idx, -1)
 		self.pry.store_int(idx, -1)
 		self.prw.store_int(idx, -1)
@@ -331,12 +336,46 @@ pub struct Container {
 		return self.append_node(parent, KIND_HSTACK, 0, spacing, 0, span, grow, shrink, align)
 	}
 
+	// Add a spacer: a flexible empty leaf (no native handle) that simply
+	// occupies layout space. With `grow > 0` it absorbs the surplus on the
+	// parent's main axis — the classic "push the rest of the row/column to the
+	// far edge" glue; with `shrink > 0` it yields space in a deficit. It sizes
+	// to 0 on an unbounded axis (so it has no intrinsic opinion) and fills the
+	// cross axis by default. Because it carries no handle, `apply` never calls
+	// `setFrame:` for it and `hit_test` reports it as "no control" (handle 0).
+	pub func add_spacer = (ref self, int span, int grow = 0, int shrink = 0, int align = 3) {
+		self.append_node(self.root, KIND_LEAF, 0, 0, 0, span, grow, shrink, align)
+	}
+
+	pub func add_spacer_to = (ref self, int parent, int span, int grow = 0, int shrink = 0, int align = 3) {
+		self.append_node(parent, KIND_LEAF, 0, 0, 0, span, grow, shrink, align)
+	}
+
 	pub func add_grid = (ref self, int parent, int cols: cols > 0, int spacing, int span, int grow = 0, int align = 3, int shrink = 0, out int) {
 		return self.append_node(parent, KIND_GRID, 0, spacing, cols, span, grow, shrink, align)
 	}
 
 	pub func add_zstack = (ref self, int parent, int span, int grow = 0, int align = 3, int shrink = 0, out int) {
 		return self.append_node(parent, KIND_ZSTACK, 0, 0, 0, span, grow, shrink, align)
+	}
+
+	// Add a Block: a single-child container with insets (padding) on all four
+	// sides. It forwards its content rect (frame minus 2·padding) to its one
+	// child via `add_to(block, …)`. `measure` subtracts the insets from the
+	// constraints and returns the child size plus the insets; `arrange` places
+	// the child inside the inset content rect. Like the other containers this
+	// is a node in the SoA tree, so it needs no trait model — it recurses
+	// through `first_child`/`next_sibling` like everything else.
+	pub func add_block = (ref self, int padding, int span, int grow = 0, int align = 3, int shrink = 0, out int) {
+		var int idx = self.append_node(self.root, KIND_BLOCK, 0, 0, 0, span, grow, shrink, align)
+		self.pads.store_int(idx, padding)
+		return idx
+	}
+
+	pub func add_block_to = (ref self, int parent, int padding, int span, int grow = 0, int align = 3, int shrink = 0, out int) {
+		var int idx = self.append_node(parent, KIND_BLOCK, 0, 0, 0, span, grow, shrink, align)
+		self.pads.store_int(idx, padding)
+		return idx
 	}
 
 	// Measure a node against box constraints. Returns the resolved width and
@@ -453,6 +492,38 @@ pub struct Container {
 			self.rw.store_int(idx, best_w)
 			self.rh.store_int(idx, best_h)
 			return best_w
+		}
+
+		// KIND_BLOCK: a single-child rect with insets. Subtract the padding from
+		// the constraints, measure the (first) child into the inner box, and
+		// return the child size plus the insets on both axes. A Block with no
+		// child resolves to just its padding (2·pad on each axis).
+		if kind == KIND_BLOCK {
+			var int pad = self.pads.load_int(idx)
+			var int inner_min_w = min_w - pad * 2
+			if inner_min_w < 0 { inner_min_w = 0 }
+			var int inner_max_w = max_w - pad * 2
+			if inner_max_w < 0 { inner_max_w = 0 }
+			var int inner_min_h = min_h - pad * 2
+			if inner_min_h < 0 { inner_min_h = 0 }
+			var int inner_max_h = max_h - pad * 2
+			if inner_max_h < 0 { inner_max_h = 0 }
+			var int cw = 0
+			var int ch = 0
+			var int ci = self.first_child(idx)
+			if ci != -1 {
+				cw = self.measure(ci, inner_min_w, inner_max_w, inner_min_h, inner_max_h)
+				ch = self.rh.load_int(ci)
+			}
+			var int total_w = cw + pad * 2
+			var int total_h = ch + pad * 2
+			if total_w < min_w { total_w = min_w }
+			if total_w > max_w { total_w = max_w }
+			if total_h < min_h { total_h = min_h }
+			if total_h > max_h { total_h = max_h }
+			self.rw.store_int(idx, total_w)
+			self.rh.store_int(idx, total_h)
+			return total_w
 		}
 
 		// KIND_GRID: children flow into cells; each may span columns.
@@ -670,6 +741,17 @@ pub struct Container {
 					self.arrange(ci, x, y, w, h)
 				}
 				ci = self.next_sibling(ci, idx)
+			}
+			return
+		}
+
+		// KIND_BLOCK: forward the content rect (frame minus insets) to the single
+		// child. The node's own frame is already stored above.
+		if kind == KIND_BLOCK {
+			var int bpad = self.pads.load_int(idx)
+			var int ci = self.first_child(idx)
+			if ci != -1 {
+				self.arrange(ci, x + bpad, y + bpad, w - bpad * 2, h - bpad * 2)
 			}
 			return
 		}

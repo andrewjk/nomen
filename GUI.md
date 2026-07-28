@@ -532,7 +532,16 @@ cannot be verified headlessly, but the **layout math** can:
    Wiring them into the layout engine's measure/arrange math is the remaining
    library-side work — the math above is independent of the storage
    representation, so the handle-based v1 keeps working until that migration.
-3. **Block + Spacer leaf.** ⚠️ Deferred (needs the trait model).
+3. **Block + Spacer leaf.** ✅ Both shipped handle-based (no trait model
+   needed). `Container.add_spacer` / `add_spacer_to` is a flexible empty leaf
+   (handle 0) with a `grow`/`shrink` weight that absorbs main-axis
+   surplus/deficit and pushes real controls apart. `Container.add_block` /
+   `add_block_to` is a single-child container with insets (`KIND_BLOCK`):
+   `measure` subtracts the padding from the constraints and returns the child
+   size plus the insets; `arrange` forwards the content rect to the child
+   (width/height-affects-padding tested on both backends in
+   `test/layout_container.test.ts`). Both recurse through the SoA tree like the
+   other containers, so the trait model isn't required for the layout math.
 4. **VStack then HStack.** ✅ Implemented handle-based, with padding/spacing,
    fill semantics, **`grow` (flex) surplus distribution on the main axis, and
    cross-axis `align`ment** (`start`/`center`/`end`/`stretch`), **plus

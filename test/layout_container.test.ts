@@ -439,4 +439,55 @@ Console.write(v.dirty_count().to_string() + " " + v.dirty_rect(0) + "\\n")
 			"2\n0\n1 0,30,800,270\n",
 		);
 	});
+
+	// Spacer: a flexible empty leaf (no handle) that, with grow, absorbs the
+	// main-axis surplus and pushes the real controls apart. Here a VStack with
+	// a grow spacer between two fixed-height leaves pins the leaves to the top
+	// and bottom edges (the spacer fills the middle 540px).
+	test("spacer: a grow spacer pushes siblings to opposite edges", async () => {
+		await run(
+			"container_spacer",
+			`
+var Container v = VStack(0)
+v.add(0, 0, 30, 1)
+v.add_spacer(1, 1)
+v.add(0, 0, 30, 1)
+v.compute(800, 600)
+Console.write(v.fmt_frame(1) + " " + v.fmt_frame(2) + " " + v.fmt_frame(3) + "\\n")
+`,
+			"0,0,800,30 0,30,800,540 0,570,800,30\n",
+		);
+	});
+
+	// Block: a single-child container with insets. The child is measured into
+	// the inner box (frame minus 2·padding) and placed at the inset origin. With
+	// align=start the block keeps its content size (child + insets) rather than
+	// stretching to the cross axis.
+	test("block: insets the single child by the padding on all sides", async () => {
+		await run(
+			"container_block",
+			`
+var Container v = VStack(0)
+var int b = v.add_block(10, 1, 0, ALIGN_START)
+v.add_to_kind(b, 0, LEN_FIXED, 100, LEN_FIXED, 40, 1)
+v.compute(800, 600)
+Console.write(v.fmt_frame(1) + " " + v.fmt_frame(2) + "\\n")
+`,
+			"0,0,120,60 10,10,100,40\n",
+		);
+	});
+
+	// A block with no child resolves to just its padding on each axis.
+	test("block: empty block resolves to 2·padding on both axes", async () => {
+		await run(
+			"container_block_empty",
+			`
+var Container v = VStack(0)
+var int b = v.add_block(10, 1, 0, ALIGN_START)
+v.compute(800, 600)
+Console.write(v.fmt_frame(1) + "\\n")
+`,
+			"0,0,20,20\n",
+		);
+	});
 });
