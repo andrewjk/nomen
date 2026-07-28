@@ -113,6 +113,15 @@ pub struct Container {
 	var Buffer<int> grows = Buffer<int>()     // flex weight: absorbs surplus on the main axis
 	var Buffer<int> shrinks = Buffer<int>()   // flex weight: absorbs deficit on the main axis
 	var Buffer<int> aligns = Buffer<int>()    // cross-axis alignment (ALIGN_*)
+	// Per-node dirty flag for incremental relayout: a dirty node (and its
+	// descendants) is re-measured on the next `compute`/`layout`; a clean node
+	// returns its cached size. `mark_dirty` sets a node, walks up to the root
+	// (ancestors must re-flow) and down through descendants (their constraints
+	// may change), so a clean node always has unchanged constraints.
+	var Buffer<int> dirty = Buffer<int>()
+	// How many times a node's `measure` body actually ran — purely for tests
+	// that want to observe which subtrees were re-measured.
+	var Buffer<int> measured_count = Buffer<int>()
 	var Buffer<int> rx = Buffer<int>()
 	var Buffer<int> ry = Buffer<int>()
 	var Buffer<int> rw = Buffer<int>()
@@ -133,6 +142,11 @@ pub struct Container {
 	var int root = 0
 	var int count = 0
 	var int padding = 0
+	// Last available size passed to `compute`/`layout`. When it changes the
+	// whole tree is marked dirty (the external constraint changed); when it's
+	// the same, only explicitly `mark_dirty`'d subtrees are re-measured.
+	var int last_w = -1
+	var int last_h = -1
 
 	func init_buffers = (ref self, int cap) {
 		self.kinds.grow_int(cap)
@@ -149,6 +163,8 @@ pub struct Container {
 		self.grows.grow_int(cap)
 		self.shrinks.grow_int(cap)
 		self.aligns.grow_int(cap)
+		self.dirty.grow_int(cap)
+		self.measured_count.grow_int(cap)
 		self.rx.grow_int(cap)
 		self.ry.grow_int(cap)
 		self.rw.grow_int(cap)
@@ -176,6 +192,7 @@ pub struct Container {
 		self.grows.store_int(0, 0)
 		self.shrinks.store_int(0, 0)
 		self.aligns.store_int(0, ALIGN_STRETCH)
+		self.dirty.store_int(0, 1)
 		self.prx.store_int(0, -1)
 		self.pry.store_int(0, -1)
 		self.prw.store_int(0, -1)
@@ -234,6 +251,15 @@ pub struct Container {
 		self.aligns.store_int(idx, align)
 		self.pars.store_int(idx, parent + 1)
 		self.pads.store_int(idx, 0)
+		self.dirty.store_int(idx, 1)
+		self.measured_count.store_int(idx, 0)
+		// A new child changes the parent's subtree, so mark the parent chain
+		// (and the new node itself) dirty so the next measure re-flows them.
+		var int p = parent
+		while p != -1 {
+			self.dirty.store_int(p, 1)
+			p = self.pars.load_int(p) - 1
+		}
 		self.prx.store_int(idx, -1)
 		self.pry.store_int(idx, -1)
 		self.prw.store_int(idx, -1)
@@ -382,6 +408,15 @@ pub struct Container {
 	// stores the resolved height in rh[idx] (and the width in rw[idx]).
 	func measure = (self, int idx, int min_w, int max_w, int min_h, int max_h, out int) {
 		var int kind = self.kinds.load_int(idx)
+		// Incremental relayout: a clean node's constraints are unchanged, so
+		// reuse its cached size instead of re-measuring the subtree. The cached
+		// height is already in rh[idx] from the previous pass, so the caller's
+		// `self.rh.load_int(ci)` picks it up without a re-measure.
+		if self.dirty.load_int(idx) == 0 {
+			var int cached = self.rw.load_int(idx)
+			return cached
+		}
+		self.measured_count.store_int(idx, self.measured_count.load_int(idx) + 1)
 
 		if kind == KIND_LEAF {
 			// Resolve the per-axis `LayoutLength` (kind, value) against the
@@ -418,6 +453,7 @@ pub struct Container {
 			if h < min_h { h = min_h }
 			self.rw.store_int(idx, w)
 			self.rh.store_int(idx, h)
+			self.dirty.store_int(idx, 0)
 			return w
 		}
 
@@ -443,6 +479,7 @@ pub struct Container {
 			if max_child_w > max_w { max_child_w = max_w }
 			self.rw.store_int(idx, max_child_w)
 			self.rh.store_int(idx, total_h)
+			self.dirty.store_int(idx, 0)
 			return max_child_w
 		}
 
@@ -468,6 +505,7 @@ pub struct Container {
 			if max_child_h > max_h { max_child_h = max_h }
 			self.rw.store_int(idx, total_w)
 			self.rh.store_int(idx, max_child_h)
+			self.dirty.store_int(idx, 0)
 			return total_w
 		}
 
@@ -491,6 +529,7 @@ pub struct Container {
 			if best_h > max_h { best_h = max_h }
 			self.rw.store_int(idx, best_w)
 			self.rh.store_int(idx, best_h)
+			self.dirty.store_int(idx, 0)
 			return best_w
 		}
 
@@ -523,6 +562,7 @@ pub struct Container {
 			if total_h > max_h { total_h = max_h }
 			self.rw.store_int(idx, total_w)
 			self.rh.store_int(idx, total_h)
+			self.dirty.store_int(idx, 0)
 			return total_w
 		}
 
@@ -561,6 +601,7 @@ pub struct Container {
 		if total_h > max_h { total_h = max_h }
 		self.rw.store_int(idx, cols * col_w)
 		self.rh.store_int(idx, total_h)
+		self.dirty.store_int(idx, 0)
 		return cols * col_w
 	}
 
@@ -832,6 +873,31 @@ pub struct Container {
 		return self.rx.load_int(idx).to_string() + "," + self.ry.load_int(idx).to_string() + "," + self.rw.load_int(idx).to_string() + "," + self.rh.load_int(idx).to_string()
 	}
 
+	// Mark a node dirty for incremental relayout: the node, its ancestors (their
+	// size may change as a result), and its descendants (their constraints flow
+	// down from this node) are all re-measured on the next `compute`/`layout`.
+	// A node left clean is known to have unchanged constraints, so its cached
+	// size is reused.
+	pub func mark_dirty = (ref self, int idx) {
+		self.dirty.store_int(idx, 1)
+		var int ci = self.first_child(idx)
+		while ci != -1 {
+			self.mark_dirty(ci)
+			ci = self.next_sibling(ci, idx)
+		}
+		var int p = self.pars.load_int(idx) - 1
+		while p != -1 {
+			self.dirty.store_int(p, 1)
+			p = self.pars.load_int(p) - 1
+		}
+	}
+
+	// How many times a node's `measure` body has actually run (incremental
+	// relayout lets this stay put for clean subtrees). Test/observability aid.
+	pub func measure_count = (self, int i, out int) {
+		return self.measured_count.load_int(i)
+	}
+
 	func apply = (self, int content_h) {
 		// Only repaint the dirty leaves — the compositor's dirty-rect win.
 		var int k = 0
@@ -851,6 +917,12 @@ pub struct Container {
 	// the measured content size, preserving child alignment. Grid/ZStack roots
 	// keep both axes at content.
 	pub func compute = (ref self, int avail_w, int avail_h) {
+		// External constraint changed → the whole tree must re-measure.
+		if self.last_w != avail_w || self.last_h != avail_h {
+			self.mark_dirty(self.root)
+			self.last_w = avail_w
+			self.last_h = avail_h
+		}
 		var int root_w = self.measure(self.root, 0, avail_w, 0, avail_h)
 		var int root_h = self.rh.load_int(self.root)
 		var int frame_w = root_w
@@ -874,6 +946,12 @@ pub struct Container {
 		var int ch = win.content_height()
 		var int avail_w = cw - self.padding * 2
 		var int avail_h = ch - self.padding * 2
+		// External constraint changed → the whole tree must re-measure.
+		if self.last_w != avail_w || self.last_h != avail_h {
+			self.mark_dirty(self.root)
+			self.last_w = avail_w
+			self.last_h = avail_h
+		}
 		var int root_w = self.measure(self.root, 0, avail_w, 0, avail_h)
 		var int root_h = self.rh.load_int(self.root)
 		var int frame_w = root_w

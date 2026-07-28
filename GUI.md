@@ -571,8 +571,19 @@ cannot be verified headlessly, but the **layout math** can:
    [Smaller compiler bugs](#smaller-compiler-bugs-hit-while-building-v1); since
    fixed, so `Container`'s helpers no longer need to stay at ≤8 register
    params.)
-8. **Invalidation.** ⚠️ Deferred. v1 does a full re-measure on every
-   `layout(win)` call (cheap for small UIs; fine for the todo app).
+8. **Invalidation.** ✅ **Incremental/dirty relayout** is implemented in
+   `Container` on both backends — a per-node `dirty` flag with `mark_dirty`
+   (propagates up to the root and down through descendants), `measure` skips
+   clean subtrees (reusing the cached size), `compute`/`layout` mark the whole
+   tree dirty only when the available size changes, and `measure_count` lets
+   tests observe which subtrees were re-measured. `app/src/main.nm` calls
+   `grid.mark_dirty(grid.root_index())` before `layout(win)` so visibility or
+   content changes are picked up. The early `return` of a cached size inside
+   the recursive `measure` previously miscompiled on aarch64 — a
+   buffer-cache register-reuse bug that collapsed ZStack children to height 0
+   (width survived); now fixed (see [Smaller compiler bugs](#smaller-compiler-bugs-hit-while-building-v1)).
+   Verified on both backends by the incremental tests in
+   `test/layout_container.test.ts`.
 9. **Compositor features.** ⚠️ Partial: **hit testing** shipped as `Container.hit_test` /
    `hit_test_index` — a pure-rect-math, front-to-back walk of the frame tree that
    returns the frontmost leaf containing a point (verified on both backends in
@@ -837,6 +848,27 @@ self_offset` and indexes with `+ self_offset`. Runtime-tested in
   symbol. (The C backend was never affected — it has no inline pass.) Verified by
   reading native frames back on both backends: `title` resolves to `y=454` in a
   500-tall window (top area) on both `c` and `aarch64`.
+- **aarch64 buffer-cache register reuse collapsed ZStack children to height 0.**
+  The inlined `Buffer.load_int`/`store_int` fast path caches each Buffer's data
+  pointer in a callee-saved register (x23-x28), tracked by the per-function
+  `buffer_data_cache` Map. That Map is snapshotted/restored across if/switch/
+  match/loop bodies (a sub-scope gets a copy; on exit the outer Map is brought
+  back), but the registers themselves are physical state shared across the whole
+  function. `alloc_buffer_cache_reg` only excluded registers claimed in the
+  _current_ scope's Map, so a sub-scope (the ZStack loop body, which needed two
+  cached buffers — `rw` and `rh`) could reassign a register that an outer
+  scope's Map still referenced (`dirty`). The post-loop `dirty.store_int` then
+  wrote through the now-stale register, landing on `rh` and zeroing the cached
+  heights (width survived because it used a different buffer). Symptomatic only
+  on ZStack because VStack/HStack loop bodies happened to need just one cached
+  buffer at a time. Fixed in `src/build_aarch64/build_access_node.ts`:
+  `alloc_buffer_cache_reg` now also excludes `callee_saved_regs_used`, the same
+  function-wide set used to pick prologue saves and to protect loop-promoted
+  variables. Once a register has been claimed anywhere in the function it stays
+  claimed for the function's duration, so no sub-scope can clobber an outer
+  cache entry. Runtime-tested on both backends by `test/layout_container.test.ts`
+  (the `aarch64 measure-skip regression (fixed)` block — formerly a known-failure
+  regression for the misdiagnosed "label collision" form of this bug).
 
 ### Geometry types (Phase 2) blockers
 
@@ -1018,8 +1050,14 @@ below can be implemented in one of two places: on the existing handle-based v1
   blocked — see below).
 - Intrinsic-size measurement (query each native control's
   `intrinsicContentSize`/`fittingSize`) so `add` needs no size hints.
-- Incremental/dirty relayout (v1 does a full re-measure on every
-  `layout(win)`/`compute` call; cheap for small UIs).
+- ~~Incremental/dirty relayout (v1 does a full re-measure on every
+  `layout(win)`/`compute` call; cheap for small UIs).~~ ✅ Shipped on both
+  backends: `Container.mark_dirty` propagates up to the root and down through
+  descendants, `measure` skips clean subtrees (reusing the cached size), and
+  `measure_count` lets tests observe which subtrees were re-measured (see
+  [Implementation phases](#implementation-phases) 8). The aarch64 codegen gap
+  that previously blocked this is fixed (see [Smaller compiler
+  bugs](#smaller-compiler-bugs-hit-while-building-v1)).
 - **Trait-typed retrieval from a `ClassBuffer<Trait>`** — `var Speaker p =
 pets.at(0)` (where the local's initializer is a method-call return rather
   than a constructor) still falls through the trait-typed-local path today

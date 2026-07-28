@@ -368,14 +368,29 @@ function emit_buffer_struct_addr(target: BaseNode, status: BuildStatus) {
 // Allocate a callee-saved register to cache a Buffer data pointer, for the
 // inlined Buffer load/store fast path's within-body dedup. Draws from the
 // x23-x28 pool, excluding registers bound to a promoted variable
-// (register_allocations) or already holding a cached pointer
-// (buffer_data_cache). On exhaustion, evicts the first pooled register's
-// owner and reuses it (the evicted key reloads on its next access).
+// (register_allocations), already holding a cached pointer
+// (buffer_data_cache), OR claimed earlier in the function
+// (callee_saved_regs_used).
+//
+// That last exclusion is the subtle one: the cache Map is logical state that
+// gets snapshotted/restored across if/switch/match/loop bodies, but the
+// registers it references are physical state shared across the whole
+// function. A register claimed in an OUTER scope (and still referenced by
+// the outer's cache Map) MUST NOT be reassigned in a sub-scope — otherwise
+// on restore, the outer Map points at a register whose contents were
+// overwritten by the sub-scope. Once a register has been claimed anywhere
+// in the function it stays claimed for the function's duration, which is
+// what `callee_saved_regs_used` already tracks (it's the same set used to
+// decide which regs to save in the prologue). Loop variable promotion
+// (build_for_loop_node / build_while_loop_node) uses the same set the same
+// way, so this also prevents buffer-cache allocation from clobbering a
+// loop's promoted variables.
 export function alloc_buffer_cache_reg(status: BuildStatus): string | null {
 	const used = new Set(status.register_allocations?.values() ?? []);
 	const cached_regs = new Set(status.buffer_data_cache?.values() ?? []);
+	const claimed = new Set(status.callee_saved_regs_used ?? []);
 	for (const r of BUFFER_DATA_CACHE_REGS) {
-		if (used.has(r) || cached_regs.has(r)) continue;
+		if (used.has(r) || cached_regs.has(r) || claimed.has(r)) continue;
 		if (status.buffer_data_cache) {
 			for (const [k, v] of status.buffer_data_cache) {
 				if (v === r) status.buffer_data_cache.delete(k);

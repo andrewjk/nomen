@@ -490,4 +490,77 @@ Console.write(v.fmt_frame(1) + "\\n")
 			"0,0,20,20\n",
 		);
 	});
+
+	// Incremental relayout: after the first `compute` every node has been
+	// measured once. Marking only leaf 1 (and its ancestor, the root) dirty and
+	// re-computing at the same size re-measures just that subtree — leaf 2's
+	// measure count stays at 1, proving the clean subtree was skipped while the
+	// frames remain correct.
+	test("incremental: only the dirty subtree is re-measured", async () => {
+		await run(
+			"container_incremental",
+			`
+var Container v = VStack(0)
+v.add(0, 0, 30, 1)       // leaf 1
+v.add(0, 0, 30, 1, 1)    // leaf 2 (grow)
+v.compute(800, 600)
+v.mark_dirty(1)          // leaf 1 + root (up); not leaf 2
+v.compute(800, 600)
+Console.write(v.measure_count(0).to_string() + " ")
+Console.write(v.measure_count(1).to_string() + " ")
+Console.write(v.measure_count(2).to_string() + " ")
+Console.write(v.fmt_frame(1) + " " + v.fmt_frame(2) + "\\n")
+`,
+			"2 2 1 0,0,800,30 0,30,800,570\n",
+		);
+	});
+
+	// mark_dirty on the root re-measures the whole tree (down-propagation to
+	// descendants), so every node's measure count advances again.
+	test("incremental: mark_dirty on root re-measures the entire tree", async () => {
+		await run(
+			"container_incremental_root",
+			`
+var Container v = VStack(0)
+v.add(0, 0, 30, 1)
+v.add(0, 0, 30, 1, 1)
+v.compute(800, 600)
+v.mark_dirty(0)          // root + all descendants
+v.compute(800, 600)
+Console.write(v.measure_count(0).to_string() + " ")
+Console.write(v.measure_count(1).to_string() + " ")
+Console.write(v.measure_count(2).to_string() + "\\n")
+`,
+			"2 2 2\n",
+		);
+	});
+});
+
+// ── REGRESSION: aarch64 buffer-cache register reuse ────────────────────────
+// The incremental-relayout skip in `measure` (early `return` of a cached size
+// when a node is clean) was long miscompiled on the aarch64 backend. The root
+// cause was NOT a label collision (an early hypothesis) but a register-cache
+// bug: `alloc_buffer_cache_reg` drew from the x23-x28 pool excluding only the
+// *current* scope's claimed registers, so a sub-scope (the ZStack loop body)
+// could reassign a register that an outer scope's `buffer_data_cache` Map
+// still referenced. On cache-Map restore the outer scope believed the
+// register still held its buffer pointer, when at runtime the sub-scope had
+// overwritten it — collapsing the post-loop `dirty` store onto `rh`, zeroing
+// out children's heights (width survived because it used a different buffer).
+// Fixed in `src/build_aarch64/build_access_node.ts` by treating
+// `callee_saved_regs_used` (a function-wide set) as permanently claimed.
+describe("aarch64 measure-skip regression (fixed)", () => {
+	test("regression: zstack children keep their measured height", async () => {
+		await run(
+			"aarch64_bug_zstack",
+			`
+var Container z = ZStack()
+z.add(0, 100, 50, 1)
+z.add(0, 200, 80, 1)
+z.compute(800, 600)
+Console.write(z.fmt_frame(1) + " " + z.fmt_frame(2) + "\\n")
+`,
+			"0,0,200,80 0,0,200,80\n",
+		);
+	});
 });

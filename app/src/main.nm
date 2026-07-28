@@ -53,7 +53,10 @@ pub func main = () {
 
 		if had_click == 1 {
 			// Re-layout on any click (checkbox toggle or otherwise). Hidden
-			// controls are skipped by the grid automatically.
+			// controls are skipped by the grid automatically. The window size
+			// is unchanged, so mark the tree dirty to pick up any content or
+			// visibility change before measuring.
+			grid.mark_dirty(grid.root_index())
 			grid.layout(win)
 
 			// Hit-test the Add button.
@@ -74,9 +77,10 @@ pub func main = () {
 						cb5.set_title(new_text)
 						cb5.set_hidden(false)
 					}
-					todo_count = todo_count + 1
-					input.set_text("")
-					grid.layout(win)
+				todo_count = todo_count + 1
+				input.set_text("")
+				grid.mark_dirty(grid.root_index())
+				grid.layout(win)
 				}
 			}
 		}
