@@ -55,11 +55,18 @@ What `Container` provides:
 
 - **`Grid(cols, spacing)` / `VStack(spacing)` / `HStack(spacing)` / `ZStack()`** factory
   functions returning a `Container`.
-- **`add(handle, w, h, span)`** — append a leaf control by its native handle.
-  `w`/`h` of `0` mean "fill" on that axis; `span` is the grid column count
-  (use `1` for stacks).
+- **`add(handle, w, h, span)`** / **`add(handle, w, h, span, grow)`** /
+  **`add(handle, w, h, span, grow, align)`** — append a leaf control by its
+  native handle. `w`/`h` of `0` mean "fill" on the cross axis (and "no intrinsic
+  opinion" on the main axis, where `grow` then absorbs the surplus); `span` is
+  the grid column count (use `1` for stacks). `grow` (default `0`) is the flex
+  weight for sharing surplus space on the parent's main axis; `align` (default
+  `ALIGN_STRETCH`) is the cross-axis alignment (`ALIGN_START`/`ALIGN_CENTER`/
+  `ALIGN_END`/`ALIGN_STRETCH`). The trailing params default, so existing
+  4-arg `add` calls keep working.
 - **`add_to(parent, handle, w, h, span)`** — append a leaf under an explicit
-  parent node (returned by one of the `add_*` container helpers below).
+  parent node (returned by one of the `add_*` container helpers below); accepts
+  the same optional `grow`/`align` trailing params as `add`.
 - **`add_vstack/add_hstack(parent, spacing, span)` / `add_grid(parent, cols, spacing, span)` /
   `add_zstack(parent, span)`** — append a **nested** container under `parent`,
   returning the new node's index so children can be added to it. `root_index()`
@@ -75,12 +82,20 @@ What `Container` provides:
   headless geometry tests (no native calls).
 - **Hidden controls are skipped automatically** — a leaf whose native view
   `isHidden` takes no space, so toggling visibility and re-laying-out just works.
+- **Flex (`grow`) + cross-axis alignment** — `VStack`/`HStack` distribute any
+  surplus on their main axis between children weighted by `grow` (e.g. a button
+  with `grow = 1` fills the remaining height/width), and position each child on
+  the cross axis by `align` (`start`/`center`/`end`/`stretch`, default stretch =
+  the original "fill the cross axis" behavior). The root stack fills its main
+  axis to the available size so `grow` has surplus to absorb; nested stacks get
+  the same treatment automatically because `arrange` runs recursively. Defaults
+  preserve the old layout, so every existing `add`/`compute` result is unchanged.
 
 Children flow left→right, top→bottom; a child whose `span` won't fit in the
 remaining columns wraps to the next row. `ZStack` overlaps its children (each
 gets the stack's full frame; the stack sizes to its largest child). Geometry is
 validated by `test/layout_container.test.ts` (vstack, hstack, zstack, grid
-span/row/mixed, and nested stacks/grids).
+span/row/mixed, nested stacks/grids, **and grow/align distribution**).
 
 ### Why handle-based, not trait-based (for now)
 
@@ -485,8 +500,12 @@ cannot be verified headlessly, but the **layout math** can:
    library-side work — the math above is independent of the storage
    representation, so the handle-based v1 keeps working until that migration.
 3. **Block + Spacer leaf.** ⚠️ Deferred (needs the trait model).
-4. **VStack then HStack.** ✅ Implemented handle-based, with padding/spacing and
-   fill semantics (no grow/shrink/percent/alignment yet).
+4. **VStack then HStack.** ✅ Implemented handle-based, with padding/spacing,
+   fill semantics, **`grow` (flex) surplus distribution on the main axis, and
+   cross-axis `align`ment** (`start`/`center`/`end`/`stretch`). Defaults preserve
+   the original layout, so existing `add`/`compute` results are unchanged
+   (verified on both backends by `test/layout_container.test.ts`). `shrink`
+   (deficit distribution) and `percent`/explicit `LayoutLength` sizing remain.
 5. **ZStack, then Grid.** ✅ Grid done (flow + column `span`); ZStack done
    (children overlap, each gets the stack's full frame, stack sizes to its
    largest child). Nested containers (VStack/HStack/Grid/ZStack inside any
@@ -835,13 +854,28 @@ INFINITY = 2147483647` lowered to `extern long INFINITY;` and
   `struct LayoutParams DEFAULT_PARAMS = LayoutParams_init();` plus bare
   field-assignment statements at C file scope (invalid: not a constant
   expression) and bare instructions at aarch64 module scope (unreachable).
-  Both backends now treat a non-primitive top-level `const` as **inlined at
+  both backends now treat a non-primitive top-level `const` as **inlined at
   every use site**: `build_value_node` substitutes the const's initializer,
   `build_declaration_node` substitutes the value at the slot-filling fast
   path, the root `build_block_node` skips emitting the declaration, and the
   checker pre-registers the name (via a `gather_top_level_consts` pass) so
   it's visible to `main`, which is compiled before the library source that
   declares it.
+- **Primitive top-level `const`s were invisible to `main` at check time.** The
+  build pass already forward-declared them as `extern` file-scope globals
+  (`build_c/build_block_node`), but the checker's `gather_top_level_consts`
+  deliberately skipped primitive-typed consts to avoid tripping the "Parameter
+  already declared" guard when a function param shadows a module-level name.
+  So referencing an imported primitive const (e.g. `Container`'s `ALIGN_CENTER`)
+  from `main` errored with "Unknown value: ALIGN_CENTER" — meaning a public
+  primitive-const API was unusable across modules. Fixed: `gather_top_level_consts`
+  now pre-registers **all** top-level consts (carrying just the type, like the
+  non-primitive path), and the "Parameter already declared" guard in
+  `check_function_parameter_node` ignores `const` entries, so a parameter may
+  legitimately shadow a module-level const (correct scoping) while duplicate
+  params / `var` collisions still error. Verified across the full suite and by
+  `test/layout_container.test.ts`, which references `ALIGN_*` from `main` on
+  both backends.
 
 ### Layout features still owed (now unblocked)
 
@@ -852,11 +886,20 @@ remaining work is Nomen-side (library) rather than compiler-side. The features
 below can be implemented in one of two places: on the existing handle-based v1
 (no trait model needed), or on a new trait-based Container.
 
-- `BoxConstraints` / `Size` / `Frame` / `Insets` / `LayoutLength` /
+- ~~`BoxConstraints` / `Size` / `Frame` / `Insets` / `LayoutLength` /
   `LayoutParams` with `grow`/`shrink`/`percent`/`fill`/`align` — enum
   associated-data, enum reassignment, `match` payload extraction, enum field
   defaults, and named-field struct literals with enum shorthand values all work
-  on both backends now.
+  on both backends now.~~ ✅ The **types** ship as `Geometry.nm`, and the
+  **`grow` (flex) + cross-axis `align`ment** math is now wired into the
+  handle-based v1 `VStack`/`HStack` arrange pass (root stack fills its main axis
+  to the available size so `grow` has surplus to absorb; children weighted by
+  `grow` share it; `align` positions each child on the cross axis; defaults
+  preserve the old layout). Verified on both backends in
+  `test/layout_container.test.ts` (grow-one, grow-split, fixed+flex+grow mix,
+  start/center/end/stretch, and grow composed through nesting). Remaining from
+  this set: `shrink` (deficit distribution), `percent`, and explicit
+  `LayoutLength`-driven sizing.
 - Intrinsic-size measurement (query each native control's
   `intrinsicContentSize`/`fittingSize`) so `add` needs no size hints.
 - Incremental/dirty relayout (v1 does a full re-measure on every

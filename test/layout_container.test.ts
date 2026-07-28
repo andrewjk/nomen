@@ -139,4 +139,105 @@ Console.write(g.fmt_frame(1) + " " + g.fmt_frame(2) + " " + g.fmt_frame(3) + " "
 			"0,0,200,54 0,0,200,20 0,24,200,30 200,0,200,50\n",
 		);
 	});
+
+	// grow (flex): the root stack fills its main axis (the available space), and
+	// any surplus is shared between children weighted by `grow`. Children with
+	// grow=0 hold at their intrinsic size.
+	test("vstack grow: one flex child absorbs the vertical surplus", async () => {
+		await run(
+			"container_vstack_grow_one",
+			`
+var Container v = VStack(0)
+v.add(0, 0, 30, 1, 0)
+v.add(0, 0, 30, 1, 1)
+v.compute(800, 600)
+Console.write(v.fmt_frame(1) + " " + v.fmt_frame(2) + "\\n")
+`,
+			"0,0,800,30 0,30,800,570\n",
+		);
+	});
+
+	test("vstack grow: surplus split by weight (1 and 2)", async () => {
+		await run(
+			"container_vstack_grow_split",
+			`
+var Container v = VStack(0)
+v.add(0, 0, 30, 1, 1)
+v.add(0, 0, 30, 1, 2)
+v.compute(800, 600)
+Console.write(v.fmt_frame(1) + " " + v.fmt_frame(2) + "\\n")
+`,
+			"0,0,800,210 0,210,800,390\n",
+		);
+	});
+
+	test("hstack grow: fixed + pure-flex + fixed-with-grow share width", async () => {
+		await run(
+			"container_hstack_grow",
+			`
+var Container h = HStack(0)
+h.add(0, 50, 30, 1, 0)
+h.add(0, 0, 30, 1, 1)
+h.add(0, 50, 30, 1, 1)
+h.compute(800, 600)
+Console.write(h.fmt_frame(1) + " " + h.fmt_frame(2) + " " + h.fmt_frame(3) + "\\n")
+`,
+			"0,0,50,30 50,0,350,30 400,0,400,30\n",
+		);
+	});
+
+	// Cross-axis alignment: a child smaller than the stack's cross axis is
+	// positioned by align (start/center/end); stretch (the default) fills it.
+	test("hstack align: start/center/end/stretch position children vertically", async () => {
+		await run(
+			"container_hstack_align",
+			`
+var Container h = HStack(0)
+h.add(0, 50, 30, 1, 0, ALIGN_START)
+h.add(0, 50, 30, 1, 0, ALIGN_CENTER)
+h.add(0, 50, 30, 1, 0, ALIGN_END)
+h.add(0, 50, 80, 1, 0, ALIGN_STRETCH)
+h.compute(800, 600)
+Console.write(h.fmt_frame(1) + " " + h.fmt_frame(2) + " " + h.fmt_frame(3) + " " + h.fmt_frame(4) + "\\n")
+`,
+			"0,0,50,30 50,25,50,30 100,50,50,30 150,0,50,80\n",
+		);
+	});
+
+	test("vstack align: narrow children align within the widest child's width", async () => {
+		// The VStack's content width is the max child width (300, set by the
+		// first child). The 100px children are then positioned within that 300
+		// by their cross-axis alignment.
+		await run(
+			"container_vstack_align",
+			`
+var Container v = VStack(0)
+v.add(0, 300, 30, 1, 0, ALIGN_START)
+v.add(0, 100, 30, 1, 0, ALIGN_CENTER)
+v.add(0, 100, 30, 1, 0, ALIGN_END)
+v.compute(800, 600)
+Console.write(v.fmt_frame(1) + " " + v.fmt_frame(2) + " " + v.fmt_frame(3) + "\\n")
+`,
+			"0,0,300,30 100,30,100,30 200,60,100,30\n",
+		);
+	});
+
+	// grow + alignment compose through nesting: a VStack arranges a nested
+	// HStack at the full row width (cross stretch), and the HStack then shares
+	// that width between its own grow children.
+	test("nested hstack with a grow child fills the row width", async () => {
+		await run(
+			"container_nested_hstack_grow",
+			`
+var Container v = VStack(8)
+var int row = v.add_hstack(v.root_index(), 0, 1)
+v.add_to(row, 0, 50, 30, 1, 0)
+v.add_to(row, 0, 0, 30, 1, 1)
+v.add(0, 0, 40, 1)
+v.compute(800, 600)
+Console.write(v.fmt_frame(1) + " " + v.fmt_frame(2) + " " + v.fmt_frame(3) + " " + v.fmt_frame(4) + "\\n")
+`,
+			"0,0,800,30 0,0,50,30 50,0,750,30 0,38,800,40\n",
+		);
+	});
 });

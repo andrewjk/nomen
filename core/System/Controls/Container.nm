@@ -11,17 +11,28 @@ import Window
 // not trip the "constraint cannot be verified" rule that bites user code.
 //
 // Children are leaves (native controls). A leaf stores its native handle and an
-// intrinsic size; width 0 means "fill available width", height 0 means "fill
-// available height". Grid children additionally carry a column `span`. Children
-// flow left-to-right, top-to-bottom; a child whose span won't fit in the
-// remaining columns wraps to the next row. A hidden native control (isHidden)
-// is skipped automatically, so toggling visibility and re-laying-out just works.
+// intrinsic size: on a bounded (cross) axis, 0 means "fill"; on an unbounded
+// (main) axis, 0 means "no intrinsic opinion" and a `grow` weight then decides
+// how much surplus it absorbs. Grid children additionally carry a column
+// `span`. Children flow left-to-right, top-to-bottom; a child whose span won't
+// fit in the remaining columns wraps to the next row. A hidden native control
+// (isHidden) is skipped automatically, so toggling visibility and re-laying-out
+// just works.
 
 const int KIND_LEAF = 0
 const int KIND_VSTACK = 1
 const int KIND_HSTACK = 2
 const int KIND_GRID = 3
 const int KIND_ZSTACK = 4
+
+// Cross-axis alignment for a child within its parent stack. The indices match
+// the `Alignment` enum case order in Geometry.nm (start, center, end, stretch).
+// The default is stretch, which preserves the original "fill the cross axis"
+// behavior every child had before grow/align landed.
+pub const int ALIGN_START = 0
+pub const int ALIGN_CENTER = 1
+pub const int ALIGN_END = 2
+pub const int ALIGN_STRETCH = 3
 
 const int INF = 100000000
 
@@ -71,6 +82,8 @@ pub struct Container {
 	var Buffer<int> spans = Buffer<int>()     // grid column span
 	var Buffer<int> cols = Buffer<int>()      // grid column count (on grid nodes)
 	var Buffer<int> handles = Buffer<int>()   // leaf native handle (0 = none/container)
+	var Buffer<int> grows = Buffer<int>()     // flex weight: absorbs surplus on the main axis
+	var Buffer<int> aligns = Buffer<int>()    // cross-axis alignment (ALIGN_*)
 	var Buffer<int> rx = Buffer<int>()
 	var Buffer<int> ry = Buffer<int>()
 	var Buffer<int> rw = Buffer<int>()
@@ -88,6 +101,8 @@ pub struct Container {
 		self.spans.grow_int(cap)
 		self.cols.grow_int(cap)
 		self.handles.grow_int(cap)
+		self.grows.grow_int(cap)
+		self.aligns.grow_int(cap)
 		self.rx.grow_int(cap)
 		self.ry.grow_int(cap)
 		self.rw.grow_int(cap)
@@ -102,6 +117,8 @@ pub struct Container {
 		self.spans.store_int(0, 1)
 		self.pars.store_int(0, 0)
 		self.handles.store_int(0, 0)
+		self.grows.store_int(0, 0)
+		self.aligns.store_int(0, ALIGN_STRETCH)
 		self.root = 0
 		self.count = 1
 	}
@@ -131,10 +148,12 @@ pub struct Container {
 	// node's index. All the public add* helpers route through here.
 	//
 	// `w`/`h` are intentionally NOT parameters: only leaves have intrinsic
-	// dimensions, so the leaf helpers store them after this returns. Keeping
-	// the parameter list at <=8 also stays within the aarch64 register-arg ABI
-	// (the backend does not yet spill args 9+ to the stack).
-	func append_node = (ref self, int parent, int kind, int handle, int gap, int cols, int span, out int) {
+	// dimensions, so the leaf helpers store them after this returns. `grow`
+	// is the flex weight (surplus on the main axis is shared weighted by it);
+	// `align` is the cross-axis alignment (one of the ALIGN_ constants).
+	// (The aarch64 backend now spills args past the 8-register ABI limit, so
+	// this signature no longer has to stay within 8 register params.)
+	func append_node = (ref self, int parent, int kind, int handle, int gap, int cols, int span, int grow, int align, out int) {
 		if self.kinds.cap < self.count + 1 {
 			self.init_buffers(self.count + 1)
 		}
@@ -146,6 +165,8 @@ pub struct Container {
 		self.spans.store_int(idx, span)
 		self.cols.store_int(idx, cols)
 		self.handles.store_int(idx, handle)
+		self.grows.store_int(idx, grow)
+		self.aligns.store_int(idx, align)
 		self.pars.store_int(idx, parent + 1)
 		self.count = self.count + 1
 		return idx
@@ -158,38 +179,42 @@ pub struct Container {
 	}
 
 	// Add a leaf child (a native control by handle) under the root. `w`/`h` of
-	// 0 mean "fill" on that axis; `span` is the grid column span (use 1 for
-	// VStack/HStack).
-	pub func add = (ref self, uint64 handle, int w, int h, int span) {
-		var int idx = self.append_node(self.root, KIND_LEAF, handle as int, 0, 0, span)
+	// 0 mean "fill" on the cross axis (or "no intrinsic opinion" on the main
+	// axis, where `grow` then absorbs the surplus); `span` is the grid column
+	// span (use 1 for VStack/HStack). `grow` is the flex weight for sharing
+	// surplus space on the parent's main axis (0 = hold at intrinsic size);
+	// `align` is the cross-axis alignment (default ALIGN_STRETCH = 3, the
+	// original "fill the cross axis" behavior).
+	pub func add = (ref self, uint64 handle, int w, int h, int span, int grow = 0, int align = 3) {
+		var int idx = self.append_node(self.root, KIND_LEAF, handle as int, 0, 0, span, grow, align)
 		self.ws.store_int(idx, w)
 		self.hs.store_int(idx, h)
 	}
 
 	// Add a leaf child under an explicit `parent` (a node index returned by an
 	// add_vstack/add_hstack/add_grid/add_zstack call).
-	pub func add_to = (ref self, int parent, uint64 handle, int w, int h, int span) {
-		var int idx = self.append_node(parent, KIND_LEAF, handle as int, 0, 0, span)
+	pub func add_to = (ref self, int parent, uint64 handle, int w, int h, int span, int grow = 0, int align = 3) {
+		var int idx = self.append_node(parent, KIND_LEAF, handle as int, 0, 0, span, grow, align)
 		self.ws.store_int(idx, w)
 		self.hs.store_int(idx, h)
 	}
 
 	// Add a nested container under `parent`; returns the new node's index so
 	// children can be added to it via add_to (or another nested container).
-	pub func add_vstack = (ref self, int parent, int spacing, int span, out int) {
-		return self.append_node(parent, KIND_VSTACK, 0, spacing, 0, span)
+	pub func add_vstack = (ref self, int parent, int spacing, int span, int grow = 0, int align = 3, out int) {
+		return self.append_node(parent, KIND_VSTACK, 0, spacing, 0, span, grow, align)
 	}
 
-	pub func add_hstack = (ref self, int parent, int spacing, int span, out int) {
-		return self.append_node(parent, KIND_HSTACK, 0, spacing, 0, span)
+	pub func add_hstack = (ref self, int parent, int spacing, int span, int grow = 0, int align = 3, out int) {
+		return self.append_node(parent, KIND_HSTACK, 0, spacing, 0, span, grow, align)
 	}
 
-	pub func add_grid = (ref self, int parent, int cols: cols > 0, int spacing, int span, out int) {
-		return self.append_node(parent, KIND_GRID, 0, spacing, cols, span)
+	pub func add_grid = (ref self, int parent, int cols: cols > 0, int spacing, int span, int grow = 0, int align = 3, out int) {
+		return self.append_node(parent, KIND_GRID, 0, spacing, cols, span, grow, align)
 	}
 
-	pub func add_zstack = (ref self, int parent, int span, out int) {
-		return self.append_node(parent, KIND_ZSTACK, 0, 0, 0, span)
+	pub func add_zstack = (ref self, int parent, int span, int grow = 0, int align = 3, out int) {
+		return self.append_node(parent, KIND_ZSTACK, 0, 0, 0, span, grow, align)
 	}
 
 	// Measure a node against box constraints. Returns the resolved width and
@@ -200,8 +225,16 @@ pub struct Container {
 		if kind == KIND_LEAF {
 			var int w = self.ws.load_int(idx)
 			var int h = self.hs.load_int(idx)
-			if w == 0 { w = max_w }
-			if h == 0 { h = max_h }
+			// 0 = "no intrinsic opinion". On a bounded axis it fills to the
+			// max (cross-axis stretch); on an unbounded axis (a stack passes
+			// INF for the main axis) it stays 0 so the parent's `grow` weight,
+			// not a phantom INF, decides how much space it gets.
+			if w == 0 {
+				if max_w < INF { w = max_w }
+			}
+			if h == 0 {
+				if max_h < INF { h = max_h }
+			}
 			if w > max_w { w = max_w }
 			if w < min_w { w = min_w }
 			if h > max_h { h = max_h }
@@ -332,29 +365,112 @@ pub struct Container {
 		if kind == KIND_LEAF { return }
 
 		if kind == KIND_VSTACK {
-			var int running_y = y
+			var int gap = self.gaps.load_int(idx)
+			// Tally children's measured heights and total grow weight so we can
+			// share any surplus on the main (vertical) axis between flex children.
+			var int total_h = 0
+			var int total_grow = 0
+			var int n = 0
 			var int ci = self.first_child(idx)
 			while ci != -1 {
 				if is_visible(self.handles.load_int(ci) as uint64) {
-					var int ch = self.rh.load_int(ci)
-					self.arrange(ci, x, running_y, w, ch)
-					running_y = running_y + ch + self.gaps.load_int(idx)
+					total_h = total_h + self.rh.load_int(ci)
+					var int g = self.grows.load_int(ci)
+					if g > 0 { total_grow = total_grow + g }
+					n = n + 1
 				}
 				ci = self.next_sibling(ci, idx)
+			}
+			if n > 1 { total_h = total_h + gap * (n - 1) }
+			var int surplus = h - total_h
+			if total_grow > 0 && surplus > 0 {
+				var int ci2 = self.first_child(idx)
+				while ci2 != -1 {
+					if is_visible(self.handles.load_int(ci2) as uint64) {
+						var int g = self.grows.load_int(ci2)
+						if g > 0 {
+							self.rh.store_int(ci2, self.rh.load_int(ci2) + surplus * g / total_grow)
+						}
+					}
+					ci2 = self.next_sibling(ci2, idx)
+				}
+			}
+			// Place children top-to-bottom; cross (width) axis per alignment.
+			var int running_y = y
+			var int ci3 = self.first_child(idx)
+			while ci3 != -1 {
+				if is_visible(self.handles.load_int(ci3) as uint64) {
+					var int ch = self.rh.load_int(ci3)
+					var int cw = self.rw.load_int(ci3)
+					var int cx = x
+					var int align = self.aligns.load_int(ci3)
+					if align == ALIGN_STRETCH {
+						cw = w
+					}
+					if align == ALIGN_CENTER {
+						cx = x + (w - cw) / 2
+					}
+					if align == ALIGN_END {
+						cx = x + w - cw
+					}
+					self.arrange(ci3, cx, running_y, cw, ch)
+					running_y = running_y + ch + gap
+				}
+				ci3 = self.next_sibling(ci3, idx)
 			}
 			return
 		}
 
 		if kind == KIND_HSTACK {
-			var int running_x = x
+			var int gap = self.gaps.load_int(idx)
+			var int total_w = 0
+			var int total_grow = 0
+			var int n = 0
 			var int ci = self.first_child(idx)
 			while ci != -1 {
 				if is_visible(self.handles.load_int(ci) as uint64) {
-					var int cw = self.rw.load_int(ci)
-					self.arrange(ci, running_x, y, cw, h)
-					running_x = running_x + cw + self.gaps.load_int(idx)
+					total_w = total_w + self.rw.load_int(ci)
+					var int g = self.grows.load_int(ci)
+					if g > 0 { total_grow = total_grow + g }
+					n = n + 1
 				}
 				ci = self.next_sibling(ci, idx)
+			}
+			if n > 1 { total_w = total_w + gap * (n - 1) }
+			var int surplus = w - total_w
+			if total_grow > 0 && surplus > 0 {
+				var int ci2 = self.first_child(idx)
+				while ci2 != -1 {
+					if is_visible(self.handles.load_int(ci2) as uint64) {
+						var int g = self.grows.load_int(ci2)
+						if g > 0 {
+							self.rw.store_int(ci2, self.rw.load_int(ci2) + surplus * g / total_grow)
+						}
+					}
+					ci2 = self.next_sibling(ci2, idx)
+				}
+			}
+			var int running_x = x
+			var int ci3 = self.first_child(idx)
+			while ci3 != -1 {
+				if is_visible(self.handles.load_int(ci3) as uint64) {
+					var int cw = self.rw.load_int(ci3)
+					var int ch = self.rh.load_int(ci3)
+					var int cy = y
+					var int align = self.aligns.load_int(ci3)
+					if align == ALIGN_STRETCH {
+						ch = h
+					}
+					if align == ALIGN_CENTER {
+						cy = y + (h - ch) / 2
+					}
+					if align == ALIGN_END {
+						cy = y + h - ch
+					}
+					self.arrange(ci3, running_x, cy, cw, ch)
+					running_x = running_x + cw + gap
+				}
+				ci3 = self.next_sibling(ci3, idx)
 			}
 			return
 		}
@@ -412,14 +528,28 @@ pub struct Container {
 	}
 
 	// Pure measure + arrange against a size (no native calls). For testing.
+	// The root fills its main axis (VStack → height, HStack → width) so that
+	// children with `grow > 0` have surplus to absorb; the cross axis stays at
+	// the measured content size, preserving child alignment. Grid/ZStack roots
+	// keep both axes at content.
 	pub func compute = (ref self, int avail_w, int avail_h) {
 		var int root_w = self.measure(self.root, 0, avail_w, 0, avail_h)
 		var int root_h = self.rh.load_int(self.root)
-		self.arrange(self.root, 0, 0, root_w, root_h)
+		var int frame_w = root_w
+		var int frame_h = root_h
+		var int kind = self.kinds.load_int(self.root)
+		if kind == KIND_VSTACK {
+			frame_h = avail_h
+		}
+		if kind == KIND_HSTACK {
+			frame_w = avail_w
+		}
+		self.arrange(self.root, 0, 0, frame_w, frame_h)
 	}
 
 	// Measure + arrange against the window's content rect (minus padding) and
-	// apply frames to every leaf, flipping y against the content height.
+	// apply frames to every leaf, flipping y against the content height. The
+	// root fills its main axis (see `compute`).
 	pub func layout = (ref self, Window win) {
 		var int cw = win.content_width()
 		var int ch = win.content_height()
@@ -427,7 +557,16 @@ pub struct Container {
 		var int avail_h = ch - self.padding * 2
 		var int root_w = self.measure(self.root, 0, avail_w, 0, avail_h)
 		var int root_h = self.rh.load_int(self.root)
-		self.arrange(self.root, self.padding, self.padding, root_w, root_h)
+		var int frame_w = root_w
+		var int frame_h = root_h
+		var int kind = self.kinds.load_int(self.root)
+		if kind == KIND_VSTACK {
+			frame_h = avail_h
+		}
+		if kind == KIND_HSTACK {
+			frame_w = avail_w
+		}
+		self.arrange(self.root, self.padding, self.padding, frame_w, frame_h)
 		self.apply(ch)
 	}
 

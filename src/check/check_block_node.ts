@@ -56,32 +56,37 @@ export default function check_block_node(node: BlockNode, status: CheckStatus) {
  * (`check_assignment_node`'s const-assignment guard) use `Array.find` rather
  * than `findLast` and would otherwise see the placeholder.
  */
+/**
+ * Push placeholder `status.values` entries for every top-level `const`
+ * declaration (e.g. geometry-type constants like `DEFAULT_PARAMS`, or
+ * primitive sentinels like `ALIGN_CENTER` / `INF`).
+ *
+ * These are the same declarations the build pass either inlines at every use
+ * site (non-primitives; see `top_level_consts` in `BuildStatus`) or
+ * forward-declares as `extern` file-scope globals (primitives; see
+ * `build_block_node`). Without this pre-registration they would be
+ * unreachable from `main`, which is compiled before the library source that
+ * declares them — surfacing as "Unknown value: NAME". The full entry (borrow
+ * info, flow bounds, `const_value`, …) is recomputed when the declaration is
+ * checked in statement order; this placeholder only carries the type so the
+ * name resolves.
+ *
+ * A function parameter may legitimately shadow a module-level `const`; the
+ * "Parameter already declared" guard in `check_function_parameter_node`
+ * ignores `const` entries, so pre-registering them is safe.
+ *
+ * `is_set` matches the entry the statement-order walk would later push (true
+ * iff the declaration has an initializer) because some lookups
+ * (`check_assignment_node`'s const-assignment guard) use `Array.find` rather
+ * than `findLast` and would otherwise see the placeholder.
+ */
 function gather_top_level_consts(block: BlockNode, status: CheckStatus) {
-	const SIMPLE_TYPES = new Set([
-		"int",
-		"uint",
-		"int8",
-		"uint8",
-		"int16",
-		"uint16",
-		"int32",
-		"uint32",
-		"int64",
-		"uint64",
-		"float",
-		"float32",
-		"float64",
-		"bool",
-		"char",
-		"string",
-	]);
 	const seen = new Set<string>();
 	for (const child of block.statements) {
 		if (child.node_type !== "declare") continue;
 		const decl = child as DeclarationNode;
 		if (decl.declaration !== "const") continue;
 		if (!decl.name || !decl.type?.name) continue;
-		if (SIMPLE_TYPES.has(decl.type.name)) continue;
 		if (decl.type.is_array) continue;
 		if (seen.has(decl.name)) continue;
 		seen.add(decl.name);

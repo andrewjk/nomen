@@ -69,7 +69,11 @@ export default function check_function_parameter_node(param: ParameterNode, stat
 		}
 	}
 
-	if (status.values.some((v) => v.name === param.name)) {
+	// A parameter may legitimately shadow a module-level `const` (those are
+	// pre-registered at the root by `gather_top_level_consts`), so only flag a
+	// clash with a non-const name — i.e. a duplicate parameter, or a collision
+	// with an in-scope `var`.
+	if (status.values.some((v) => v.name === param.name && v.declaration !== "const")) {
 		add_error(status, `Parameter already declared: ${param.name}`, param.start);
 	}
 
