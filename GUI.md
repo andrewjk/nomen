@@ -1063,12 +1063,33 @@ below can be implemented in one of two places: on the existing handle-based v1
   [Implementation phases](#implementation-phases) 8). The aarch64 codegen gap
   that previously blocked this is fixed (see [Smaller compiler
   bugs](#smaller-compiler-bugs-hit-while-building-v1)).
-- **Trait-typed retrieval from a `ClassBuffer<Trait>`** — `var Speaker p =
-pets.at(0)` (where the local's initializer is a method-call return rather
+- ~~**Trait-typed retrieval from a `ClassBuffer<Trait>`** — `var Speaker p =
+  pets.at(0)` (where the local's initializer is a method-call return rather
   than a constructor) still falls through the trait-typed-local path today
   (only constructor initializers are handled). Once that local-init path is
   generalised the round-trip will work — the slot already stores a correct
-  vtable-bearing class pointer.
+  vtable-bearing class pointer.~~ ✅ **Done.** A trait-typed local whose
+  initializer is a method-call return (`access`/`access_func` node) now
+  takes the trait-class-local path on both backends
+  (`build_c/build_declaration_node.ts`,
+  `build_aarch64/build_declaration_node.ts`): it stores the callee-returned
+  vtable-bearing class pointer as `void *` / an 8-byte slot, registers it
+  in `class_vars` + `trait_class_locals` (so dispatch routes through the
+  trait vtable), and follows the callee's ownership convention — a `mov
+  out T` method (`owned_return`, e.g. `list.pop()`) transfers ownership
+  (destroy + free at scope exit via the trait's `<Trait>_destroy` shim),
+  while a plain borrow (e.g. `.at(i)`) does not (the container still owns
+  the element). Also fixed a latent aarch64 bug this surfaced: trait-typed
+  method dispatch was passing `self = &local` instead of the instance
+  pointer for class trait-typed locals, so any trait method that read a
+  `self` field returned garbage (masked until now because every existing
+  class-trait test used literal-returning methods); `build_access_node`
+  now dereferences `&local` into `x0` for `trait_class_locals` so the
+  callee receives the instance (value-struct trait locals are unaffected
+  — `&local` is already their inline instance). Runtime-tested on both
+  backends in `test/trait_collection_retrieve.test.ts` (`.at` borrow,
+  `pop` owned, and heterogeneous `Dog`/`Cat` round-trip through
+  `ClassBuffer<Speaker>`).
 
 > `ZStack` and nested containers (VStack/HStack/Grid/ZStack composed to any
 > depth) now ship in the handle-based v1 — see `Container.add_*` /

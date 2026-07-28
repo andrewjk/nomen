@@ -1612,6 +1612,16 @@ function build_access_method(
 				// trait param arrives (the pointer directly in its register).
 				if (status.trait_class_locals?.has(name)) {
 					status.code += `ldr x9, [x9]\n`;
+					// The callee's self argument must likewise be the instance
+					// pointer, not &local. The target build left x0 = &local;
+					// overwrite it with the dereferenced instance so an
+					// instance method that reads self fields dispatches
+					// correctly. (Value-struct trait locals aren't tracked
+					// here — for them &local IS the inline instance. Static /
+					// no-self methods keep x0 as their first real argument.)
+					if (!access_func.is_static) {
+						status.code += `mov x0, x9\n`;
+					}
 				}
 			}
 		} else {

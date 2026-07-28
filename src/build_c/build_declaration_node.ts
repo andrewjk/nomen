@@ -117,6 +117,51 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			status.code += `;\n`;
 			return;
 		}
+		// A trait-typed local initialized from a method-call return (e.g.
+		// `var Speaker p = pets.at(i)` or `var Speaker p = pets.pop()`)
+		// holds a vtable-bearing class pointer the callee already
+		// allocated — the concrete struct isn't statically known (the
+		// method's declared return type is the trait), so storage must be
+		// a pointer (`void *`) dispatched through the trait vtable. The
+		// ClassBuffer<Trait> slot already stores a correct vtable-bearing
+		// class pointer, so dispatch works once the local is tracked in
+		// class_vars (build_vtable_target passes it by value, not &name)
+		// and variable_types (so accesses are recognized as trait
+		// dispatch). Ownership follows the callee's return convention: a
+		// `mov out T` method (`owned_return`, e.g. `list.pop()`) transfers
+		// ownership (destroy + free at scope exit via trait_class_locals);
+		// a plain borrow (e.g. `.at(i)`) does not (the container still
+		// owns the element), so the local is recorded as an alias and
+		// never freed.
+		const val_is_trait_method_return =
+			storage_is_trait_concrete &&
+			!concrete_struct_name &&
+			node.value?.node_type === "access" &&
+			(node.value as AccessNode).access.node_type === "access_func";
+		if (val_is_trait_method_return) {
+			const inner = (node.value as AccessNode).access as AccessFunctionCallNode;
+			if (!status.class_vars) status.class_vars = new Set();
+			status.class_vars.add(safe_name);
+			if (!status.trait_class_locals) status.trait_class_locals = new Map();
+			status.trait_class_locals.set(safe_name, node.type.name);
+			if (node.type?.name) {
+				if (!status.variable_types) status.variable_types = new Map();
+				status.variable_types.set(safe_name, node.type);
+			}
+			if (inner.owned_return) {
+				status.scoped_declarations.push(node);
+			} else {
+				if (!status.class_alias_vars) status.class_alias_vars = new Set();
+				status.class_alias_vars.add(safe_name);
+			}
+			status.code += `void *${safe_name}`;
+			if (node.value) {
+				status.code += ` = (void *)`;
+				build_node(node.value, status);
+			}
+			status.code += `;\n`;
+			return;
+		}
 		// `var ref T x = y` declares x as a pointer to y (mutable alias).
 		// Emit `T *x = &y` and track x in function_ref_params so accesses
 		// use `->` and value-uses dereference. Ref locals don't own data,

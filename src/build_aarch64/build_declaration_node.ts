@@ -680,6 +680,45 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			return;
 		}
 	}
+	// A trait-typed local initialized from a method-call return (e.g.
+	// `var Speaker p = pets.at(i)` or `var Speaker p = pets.pop()`)
+	// holds a vtable-bearing class pointer the callee already allocated
+	// — the concrete struct isn't statically known (the method's
+	// declared return type is the trait), so storage must be an 8-byte
+	// pointer dispatched through the trait vtable. The
+	// ClassBuffer<Trait> slot already stores a correct vtable-bearing
+	// class pointer, so dispatch works once the local is tracked in
+	// trait_class_locals (build_access_node dereferences [&local] to
+	// reach the instance whose vtable lives at offset 0). Ownership
+	// follows the callee's return convention: a `mov out T` method
+	// (`owned_return`, e.g. `list.pop()`) transfers ownership (anchor
+	// for destroy + free at scope exit via the trait's `<Trait>_destroy`
+	// shim); a plain borrow (e.g. `.at(i)`) does not (the container
+	// still owns the element), so the local is not anchored for destroy.
+	if (
+		!struct_type &&
+		!!status.traits.find((t) => t.name === node.type.name) &&
+		node.value?.node_type === "access" &&
+		(node.value as AccessNode).access.node_type === "access_func"
+	) {
+		const inner = (node.value as AccessNode).access as AccessFunctionCallNode;
+		if (!status.trait_class_locals) status.trait_class_locals = new Map();
+		status.trait_class_locals.set(node.name, node.type.name);
+		if (status.function_return_label) {
+			const offset = allocate_stack_space(status, 8);
+			status.stack_offsets!.set(node.name, offset);
+		} else {
+			emit_data(status, `${node.name}: .space 8\n`);
+		}
+		build_node(node.value, status);
+		if (!status.code.endsWith("\n")) status.code += "\n";
+		emit_var_store(status, "x0", node.name, 8);
+		if (inner.owned_return) {
+			anchor_heap_pointer(status, node.name, undefined, node.type.is_nullable);
+			mark_anchor_destroy(status, node.name, node.type.name);
+		}
+		return;
+	}
 
 	// Don't track class variables that hold a borrowed reference (not an owned
 	// instance) as owned — they must not be destroyed/freed at scope exit.
