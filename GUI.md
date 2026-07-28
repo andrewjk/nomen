@@ -1053,8 +1053,41 @@ below can be implemented in one of two places: on the existing handle-based v1
   `add_kind`/`add_to_kind` accept any `LEN_*` case via a `(kind, value)` int
   pair (the ergonomic `add_len(.percent(50), …)` form is the only piece still
   blocked — see below).
-- Intrinsic-size measurement (query each native control's
-  `intrinsicContentSize`/`fittingSize`) so `add` needs no size hints.
+- ~~Intrinsic-size measurement (query each native control's
+  `intrinsicContentSize`/`fittingSize`) so `add` needs no size hints.~~ ✅
+  **Done.** A new opt-in `LEN_INTRINSIC` sizing kind (and `add_intrinsic` /
+  `add_to_intrinsic` helpers) queries the leaf's native control's
+  `intrinsicContentSize` via a new `intrinsic_size(handle)` FFI helper
+  (`core/System/Controls/Container.nm`) that returns the full `[width, height]`
+  in one call, so a control can be added with no size hints and size to its
+  content. The measure pass resolves it per-axis (composable with the other
+  kinds, e.g. `add_kind(handle, LEN_FILL, 0, LEN_INTRINSIC, 0, span)` fills the
+  cross axis and uses intrinsic height); the result is clamped to the box
+  constraints like any other size.
+
+  **Design note:** the trait-based spec maps `.auto` → "size to content
+  (intrinsic measurement)", but the handle-based v1 had long overloaded
+  `LEN_AUTO` (= `0`) to mean "fill the bounded axis" — a default the live app
+  (`add(handle, 0, h, span)` for full-width grid rows) and ~20 geometry tests
+  rely on. Repurposing `LEN_AUTO` to mean intrinsic would silently shrink those
+  controls to their content width and break every one of those callers, so v1
+  keeps `LEN_AUTO` = fill and introduces `LEN_INTRINSIC` (= `4`) as a distinct,
+  opt-in fifth kind. The migration to the trait-based model (where `.auto`
+  folds in intrinsic measurement) only swaps the storage/dispatch shim, not the
+  measure math. `intrinsic_size` returns `[0, 0]` for handle `0` (no native
+  view) and for views without intrinsic content size (AppKit's `NSNotFound`
+  sentinel), so the pure-math `compute`/`fmt_frame` tests exercise the wiring on
+  both backends without native calls; the native path is verified by build/link
+  success (verified on both `c` and `aarch64` in `test/layout_container.test.ts`).
+
+  (The raw `#arch: c, aarch64_use_c` body references the auto-generated tuple
+  struct by its unmangled TAG (`struct _Tuple_int_int`): the `c` backend emits
+  the bare typedef name while the aarch64 companion mangles it to
+  `nm__Tuple_int_int`, so the shared tag is the only spelling that compiles on
+  both backends. `intrinsic_size` returns the `[width, height]` tuple directly,
+  so a `LEN_INTRINSIC` leaf makes at most one native call per dirty measure
+  pass. Regression-tested on both backends in `test/tuple_raw_block.test.ts`.)
+
 - ~~Incremental/dirty relayout (v1 does a full re-measure on every
   `layout(win)`/`compute` call; cheap for small UIs).~~ ✅ Shipped on both
   backends: `Container.mark_dirty` propagates up to the root and down through
@@ -1064,7 +1097,7 @@ below can be implemented in one of two places: on the existing handle-based v1
   that previously blocked this is fixed (see [Smaller compiler
   bugs](#smaller-compiler-bugs-hit-while-building-v1)).
 - ~~**Trait-typed retrieval from a `ClassBuffer<Trait>`** — `var Speaker p =
-  pets.at(0)` (where the local's initializer is a method-call return rather
+pets.at(0)` (where the local's initializer is a method-call return rather
   than a constructor) still falls through the trait-typed-local path today
   (only constructor initializers are handled). Once that local-init path is
   generalised the round-trip will work — the slot already stores a correct
@@ -1076,7 +1109,7 @@ below can be implemented in one of two places: on the existing handle-based v1
   vtable-bearing class pointer as `void *` / an 8-byte slot, registers it
   in `class_vars` + `trait_class_locals` (so dispatch routes through the
   trait vtable), and follows the callee's ownership convention — a `mov
-  out T` method (`owned_return`, e.g. `list.pop()`) transfers ownership
+out T` method (`owned_return`, e.g. `list.pop()`) transfers ownership
   (destroy + free at scope exit via the trait's `<Trait>_destroy` shim),
   while a plain borrow (e.g. `.at(i)`) does not (the container still owns
   the element). Also fixed a latent aarch64 bug this surfaced: trait-typed

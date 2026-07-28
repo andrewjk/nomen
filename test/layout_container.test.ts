@@ -359,6 +359,62 @@ Console.write(v.fmt_frame(1) + " " + v.fmt_frame(2) + "\\n")
 		);
 	});
 
+	// Intrinsic sizing (LEN_INTRINSIC) queries the native control's
+	// `intrinsicContentSize` so a leaf can be added with no size hints. These
+	// geometry tests use handle 0 (no native view → intrinsic reports 0), which
+	// exercises the measure-branch wiring + the intrinsic_size(0) early return
+	// on both backends without native calls; the native path is verified by
+	// build/link success. The key behavioural point: LEN_INTRINSIC resolves to
+	// the content size (0 here) rather than filling the axis like LEN_AUTO.
+	test("intrinsic: LEN_INTRINSIC resolves to 0 (not fill) for handle 0, unlike LEN_AUTO", async () => {
+		// HStack, ALIGN_START so children keep their measured cross (height)
+		// instead of stretching. Child 1 height = LEN_INTRINSIC → 0; child 2
+		// height = LEN_AUTO → fills the bounded 600. Both fixed 100px wide.
+		await run(
+			"container_intrinsic_vs_auto",
+			`
+var Container h = HStack(0)
+h.add_kind(0, LEN_FIXED, 100, LEN_INTRINSIC, 0, 1, 0, ALIGN_START)
+h.add_kind(0, LEN_FIXED, 100, LEN_AUTO, 0, 1, 0, ALIGN_START)
+h.compute(800, 600)
+Console.write(h.fmt_frame(1) + " " + h.fmt_frame(2) + "\\n")
+`,
+			"0,0,100,0 100,0,100,600\n",
+		);
+	});
+
+	test("intrinsic: add_intrinsic sizes both axes to content (0 for handle 0)", async () => {
+		// VStack, ALIGN_START. Child 1 = add_intrinsic → 0×0. Child 2 = legacy
+		// add → fills width (800), fixed height 30.
+		await run(
+			"container_add_intrinsic",
+			`
+var Container v = VStack(0)
+v.add_intrinsic(0, 1, 0, ALIGN_START)
+v.add(0, 0, 30, 1)
+v.compute(800, 600)
+Console.write(v.fmt_frame(1) + " " + v.fmt_frame(2) + "\\n")
+`,
+			"0,0,0,0 0,0,800,30\n",
+		);
+	});
+
+	test("intrinsic: per-axis — fill width, intrinsic height", async () => {
+		// VStack child: LEN_FILL width (fills 800), LEN_INTRINSIC height (0).
+		// With ALIGN_START the height isn't stretched, so it stays 0 — proving
+		// the two axes resolve independently via add_kind.
+		await run(
+			"container_intrinsic_per_axis",
+			`
+var Container v = VStack(0)
+v.add_kind(0, LEN_FILL, 0, LEN_INTRINSIC, 0, 1, 0, ALIGN_START)
+v.compute(800, 600)
+Console.write(v.fmt_frame(1) + "\\n")
+`,
+			"0,0,800,0\n",
+		);
+	});
+
 	// Compositor hit test: pure rect math on the frame tree (no native calls).
 	// Walks children front-to-back and returns the frontmost leaf containing
 	// the point — here the three VStack rows stack top-to-bottom, so a point in
