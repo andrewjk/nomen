@@ -56,17 +56,36 @@ What `Container` provides:
 - **`Grid(cols, spacing)` / `VStack(spacing)` / `HStack(spacing)` / `ZStack()`** factory
   functions returning a `Container`.
 - **`add(handle, w, h, span)`** / **`add(handle, w, h, span, grow)`** /
-  **`add(handle, w, h, span, grow, align)`** — append a leaf control by its
-  native handle. `w`/`h` of `0` mean "fill" on the cross axis (and "no intrinsic
-  opinion" on the main axis, where `grow` then absorbs the surplus); `span` is
-  the grid column count (use `1` for stacks). `grow` (default `0`) is the flex
-  weight for sharing surplus space on the parent's main axis; `align` (default
-  `ALIGN_STRETCH`) is the cross-axis alignment (`ALIGN_START`/`ALIGN_CENTER`/
-  `ALIGN_END`/`ALIGN_STRETCH`). The trailing params default, so existing
-  4-arg `add` calls keep working.
+  **`add(handle, w, h, span, grow, align)`** / **`add(handle, w, h, span, grow, align, shrink)`** —
+  append a leaf control by its native handle. `w`/`h` of `0` mean "fill" on the
+  cross axis (and "no intrinsic opinion" on the main axis, where `grow` then
+  absorbs the surplus); `span` is the grid column count (use `1` for stacks).
+  `grow` (default `0`) is the flex weight for sharing surplus space on the
+  parent's main axis; `align` (default `ALIGN_STRETCH`) is the cross-axis
+  alignment (`ALIGN_START`/`ALIGN_CENTER`/`ALIGN_END`/`ALIGN_STRETCH`);
+  `shrink` (default `0`, the original "hold at intrinsic size" behaviour) is
+  the flex weight for sharing a **deficit** when the children's main-axis total
+  exceeds the available space. The trailing params default, so existing 4/5/6-arg
+  `add` calls keep working.
+- **`add_kind(handle, w_kind, w_val, h_kind, h_val, span, …)`** /
+  **`add_to_kind(parent, handle, w_kind, w_val, h_kind, h_val, span, …)`** —
+  append a leaf with an explicit per-axis size kind: `w_kind`/`h_kind` are
+  `LEN_*` constants (`LEN_AUTO`/`LEN_FIXED`/`LEN_PERCENT`/`LEN_FILL`, matching
+  the `LayoutLength` enum case order in `Geometry.nm`); `w_val`/`h_val` are the
+  pixel count for `LEN_FIXED` or the percent numerator (0–100) for `LEN_PERCENT`
+  (ignored for `LEN_AUTO`/`LEN_FILL`). The legacy `add(handle, w, h, …)` is the
+  special case where non-zero `w`/`h` map to `LEN_FIXED` and `0` maps to
+  `LEN_AUTO`. Use `add_kind` for `LEN_PERCENT` (e.g.
+  `add_kind(0, LEN_PERCENT, 50, LEN_FIXED, 30, 1)` asks for 50% of the cross
+  axis and a fixed 30 px on the main axis) or for an explicit `LEN_FILL`.
+  (Passing `LayoutLength` enum values directly —
+  `add_len(handle, .percent(50), .fixed(30), …)` — is the ergonomic form this
+  API intends, but is held back by an aarch64 codegen gap: 16-byte
+  enum-with-data values aren't yet passed by value across the call ABI. See
+  [Layout features still owed](#layout-features-still-owed-now-unblocked).)
 - **`add_to(parent, handle, w, h, span)`** — append a leaf under an explicit
   parent node (returned by one of the `add_*` container helpers below); accepts
-  the same optional `grow`/`align` trailing params as `add`.
+  the same optional `grow`/`align`/`shrink` trailing params as `add`.
 - **`add_vstack/add_hstack(parent, spacing, span)` / `add_grid(parent, cols, spacing, span)` /
   `add_zstack(parent, span)`** — append a **nested** container under `parent`,
   returning the new node's index so children can be added to it. `root_index()`
@@ -90,12 +109,26 @@ What `Container` provides:
   axis to the available size so `grow` has surplus to absorb; nested stacks get
   the same treatment automatically because `arrange` runs recursively. Defaults
   preserve the old layout, so every existing `add`/`compute` result is unchanged.
+- **`shrink` (deficit distribution) + `percent` / explicit `LEN_*` sizing** —
+  the mirror of `grow`: when the children's main-axis total exceeds the
+  available space, the deficit is shared between shrinkable children weighted by
+  `shrink` (default `0`, so by default children hold at their intrinsic size and
+  the overflow surfaces as before; an over-weighted sibling is floored at 0
+  rather than dragging others negative). Per-axis requested size is now stored
+  as a `(kind, value)` pair mirroring the `LayoutLength` enum
+  (`LEN_AUTO`/`LEN_FIXED`/`LEN_PERCENT`/`LEN_FILL`); the legacy `add`/`add_to`
+  helpers translate their int `w`/`h` (`0` → auto, non-zero → fixed), and
+  `add_kind`/`add_to_kind` accept any case directly so a child can ask for, say,
+  `LEN_PERCENT 50` of the cross axis. `LEN_PERCENT` resolves to `p%` of the
+  bounded axis (0 on an unbounded axis, where `grow`/`shrink` keep driving the
+  layout).
 
 Children flow left→right, top→bottom; a child whose `span` won't fit in the
 remaining columns wraps to the next row. `ZStack` overlaps its children (each
 gets the stack's full frame; the stack sizes to its largest child). Geometry is
 validated by `test/layout_container.test.ts` (vstack, hstack, zstack, grid
-span/row/mixed, nested stacks/grids, **and grow/align distribution**).
+span/row/mixed, nested stacks/grids, **grow/align distribution, shrink deficit
+distribution, and `LEN_PERCENT`/explicit `LEN_*` sizing**).
 
 ### Why handle-based, not trait-based (for now)
 
@@ -502,10 +535,18 @@ cannot be verified headlessly, but the **layout math** can:
 3. **Block + Spacer leaf.** ⚠️ Deferred (needs the trait model).
 4. **VStack then HStack.** ✅ Implemented handle-based, with padding/spacing,
    fill semantics, **`grow` (flex) surplus distribution on the main axis, and
-   cross-axis `align`ment** (`start`/`center`/`end`/`stretch`). Defaults preserve
-   the original layout, so existing `add`/`compute` results are unchanged
-   (verified on both backends by `test/layout_container.test.ts`). `shrink`
-   (deficit distribution) and `percent`/explicit `LayoutLength` sizing remain.
+   cross-axis `align`ment** (`start`/`center`/`end`/`stretch`), **plus
+   `shrink` (deficit distribution), `LEN_PERCENT`, and explicit `LEN_*`-driven
+   sizing via `add_kind`/`add_to_kind`**. Per-axis requested size is now stored
+   as a `(kind, value)` pair mirroring the `LayoutLength` enum
+   (`LEN_AUTO`/`LEN_FIXED`/`LEN_PERCENT`/`LEN_FILL`); the legacy `add`/`add_to`
+   helpers translate their int `w`/`h` (`0` → auto, non-zero → fixed), so
+   existing `add`/`compute` results are unchanged (verified on both backends by
+   `test/layout_container.test.ts`). Passing `LayoutLength` enum values
+   directly (`add_len(handle, .percent(50), …)`) is the one ergonomic form still
+   blocked — by an aarch64 codegen gap (16-byte enum-with-data isn't yet passed
+   by value across the call ABI); see
+   [Layout features still owed](#layout-features-still-owed-now-unblocked).
 5. **ZStack, then Grid.** ✅ Grid done (flow + column `span`); ZStack done
    (children overlap, each gets the stack's full frame, stack sizes to its
    largest child). Nested containers (VStack/HStack/Grid/ZStack inside any
@@ -663,6 +704,53 @@ Both backends now implement this end-to-end and are exercised by
   whose type is a struct wider than one word reads and writes correctly
   through a trait-typed receiver. Runtime-tested on both backends in
   `test/trait_dispatch_gaps.test.ts`.
+- **16-byte enum-with-data (and struct) values aren't passed by value on
+  aarch64.** When a `LayoutLength` (a 16-byte enum-with-data: 8-byte tag + 8-byte
+  payload) is passed by value as a function parameter, the aarch64 call-site
+  codegen stores only the first 8 bytes of the argument into the per-arg spill
+  slot (`build_aarch64/build_function_call_node.ts`: `args_base + i * 8`) and
+  loads a single word into the target register, so the callee sees a garbled
+  value (the case index only — the payload is dropped). Symptomatic as
+  `add_len(handle, .fixed(100), .fixed(30), …)` resolving every `LayoutLength`
+  arg to `LEN_AUTO` on aarch64 while working on `c`. The C backend passes the
+  struct by value correctly (the C compiler handles the 16-byte copy). Worked
+  around in `Container.nm` by exposing `add_kind`/`add_to_kind`, which take the
+  `(kind, value)` pair as plain `int` parameters (`LEN_*` constants) and so
+  never trip the gap; the ergonomic `add_len(LayoutLength, LayoutLength, …)`
+  form stays unimplemented until the aarch64 call ABI handles multi-word
+  by-value parameters (either two registers per 16-byte arg per AAPCS64, or an
+  indirect-by-pointer convention matched on both sides).
+
+  Two related aarch64 fixes landed alongside the layout work above (neither
+  fixes the by-value gap, but both were unblocked by it):
+
+  - **Switch labels collided with match labels.** `build_switch_node` and
+    `build_match_node` both used the same `case_next_${label}_${i}` prefix with
+    independent module-level counters that were never reset in `build.ts`. As
+    soon as a function had both a `match` and a `switch` (the new leaf-measure
+    code has two switches, plus `length_kind`/`length_val` were matches), the
+    numeric `label`s collided and the assembler rejected the duplicate symbol
+    definitions. Fixed: switch labels are now `sw_next_${label}_${i}` and both
+    counters are reset per build alongside the for/if/while/func counters
+    (`src/build.ts`).
+  - **The aarch64 backend never emitted hoisted `_param_N` call-arg
+    temporaries.** The checker hoists complex call args (anything that isn't a
+    bare `value` node — e.g. an inline `.fixed(100)` enum value, an
+    interpolated-string helper result, a `self.count + 1` arithmetic arg) into
+    local `_param_N` declarations attached to the consuming node, then rewrites
+    the call site to reference the local by name. The C backend surfaces these
+    via `emit_allocations` (called per statement from `build_block_node`),
+    which recursively collects them and emits them before the consuming
+    statement; the aarch64 `build_block_node` had no equivalent, so the
+    declarations were never emitted and the assembler saw `adr x0, _param_N`
+    relocations against undefined labels. Fixed: aarch64 now has its own
+    `utils/emit_allocations.ts`, wired into `build_block_node` the same way.
+    Because the AST is shared across the aarch64 and C builds (the test
+    harness parses once, builds twice), the aarch64 version deliberately does
+    NOT mutate `node.allocations` (the C version clears-as-it-goes); instead,
+    both `emit_allocations` and the inline `if (node.allocations)` path in
+    `build_node` consult a per-build `status.emitted_allocations` set so an
+    allocation is emitted at most once per backend.
 
 ### Smaller compiler bugs hit while building v1
 
@@ -837,9 +925,11 @@ Resolution: with the enum blockers above fixed, the `LayoutLength` /
 `Alignment` enums and enum-field defaults are now usable on both backends, and
 named-field struct literals whose override values are enum shorthands
 (`[ width = .fixed(50), grow = 1 ]`) resolve and lay out correctly. Geometry
-types are shipped as `core/System/Controls/Geometry.nm` (see
-[test/geometry_types.test.ts]); the math in [The algorithm](#the-algorithm)
-is independent of the representation.
+types are shipped as `core/System/Controls/Geometry.nm` (with `LayoutLength` /
+`Alignment` / `LayoutParams` / `DEFAULT_PARAMS` split into the sibling
+`LayoutParams.nm` — see [Layout features still owed](#layout-features-still-owed-now-unblocked)
+for why); see [test/geometry_types.test.ts]. The math in
+[The algorithm](#the-algorithm) is independent of the representation.
 
 Two compiler fixes were needed to ship the geometry types themselves (over
 and above the enum blockers above):
@@ -890,16 +980,25 @@ below can be implemented in one of two places: on the existing handle-based v1
   `LayoutParams` with `grow`/`shrink`/`percent`/`fill`/`align` — enum
   associated-data, enum reassignment, `match` payload extraction, enum field
   defaults, and named-field struct literals with enum shorthand values all work
-  on both backends now.~~ ✅ The **types** ship as `Geometry.nm`, and the
-  **`grow` (flex) + cross-axis `align`ment** math is now wired into the
-  handle-based v1 `VStack`/`HStack` arrange pass (root stack fills its main axis
-  to the available size so `grow` has surplus to absorb; children weighted by
-  `grow` share it; `align` positions each child on the cross axis; defaults
-  preserve the old layout). Verified on both backends in
+  on both backends now.~~ ✅ The **types** ship as `Geometry.nm` (with
+  `LayoutLength`/`Alignment`/`LayoutParams`/`DEFAULT_PARAMS` split out into
+  `LayoutParams.nm` so a module that only needs the length model — e.g.
+  `Container.nm` — can pull it in without dragging `Size`/`Frame` along; those
+  collide with macOS `MacTypes.h` typedefs once any Cocoa-using module joins
+  the build), and the **`grow` (flex) + cross-axis `align`ment** math is now
+  wired into the handle-based v1 `VStack`/`HStack` arrange pass (root stack
+  fills its main axis to the available size so `grow` has surplus to absorb;
+  children weighted by `grow` share it; `align` positions each child on the
+  cross axis; defaults preserve the old layout). Verified on both backends in
   `test/layout_container.test.ts` (grow-one, grow-split, fixed+flex+grow mix,
-  start/center/end/stretch, and grow composed through nesting). Remaining from
-  this set: `shrink` (deficit distribution), `percent`, and explicit
-  `LayoutLength`-driven sizing.
+  start/center/end/stretch, and grow composed through nesting). ~~Remaining
+  from this set: `shrink` (deficit distribution), `percent`, and explicit
+  `LayoutLength`-driven sizing.~~ ✅ Also wired in: `shrink` distributes a
+  main-axis deficit weighted by `shrink` (default `0` = hold at intrinsic, the
+  original behaviour), `LEN_PERCENT` resolves against the bounded axis, and
+  `add_kind`/`add_to_kind` accept any `LEN_*` case via a `(kind, value)` int
+  pair (the ergonomic `add_len(.percent(50), …)` form is the only piece still
+  blocked — see below).
 - Intrinsic-size measurement (query each native control's
   `intrinsicContentSize`/`fittingSize`) so `add` needs no size hints.
 - Incremental/dirty relayout (v1 does a full re-measure on every

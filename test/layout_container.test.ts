@@ -240,4 +240,122 @@ Console.write(v.fmt_frame(1) + " " + v.fmt_frame(2) + " " + v.fmt_frame(3) + " "
 			"0,0,800,30 0,0,50,30 50,0,750,30 0,38,800,40\n",
 		);
 	});
+
+	// shrink (deficit distribution): the mirror of grow. When the children's
+	// main-axis total exceeds the available space, the deficit is shared
+	// between shrinkable children weighted by `shrink`. The HStack root fills
+	// its main axis to the available width, so a too-wide child set produces a
+	// deficit the engine then carves off each shrinkable child.
+	test("hstack shrink: equal-weight children share the deficit evenly", async () => {
+		// 3 children × 400px = 1200 total. Available = 800. Deficit = 400.
+		// shrink=1 each → total_shrink=3 → each loses 400/3 = 133 → 267 each.
+		await run(
+			"container_hstack_shrink_even",
+			`
+var Container h = HStack(0)
+h.add(0, 400, 30, 1, 0, 3, 1)
+h.add(0, 400, 30, 1, 0, 3, 1)
+h.add(0, 400, 30, 1, 0, 3, 1)
+h.compute(800, 600)
+Console.write(h.fmt_frame(1) + " " + h.fmt_frame(2) + " " + h.fmt_frame(3) + "\\n")
+`,
+			"0,0,267,30 267,0,267,30 534,0,267,30\n",
+		);
+	});
+
+	test("hstack shrink: deficit split by weight (1 and 3)", async () => {
+		// 2 children × 500px = 1000 total. Available = 600. Deficit = 400.
+		// shrink=1 + shrink=3 → total_shrink=4. Child 1 loses 400/4 = 100
+		// (→ 400). Child 2 loses 400*3/4 = 300 (→ 200).
+		await run(
+			"container_hstack_shrink_weighted",
+			`
+var Container h = HStack(0)
+h.add(0, 500, 30, 1, 0, 3, 1)
+h.add(0, 500, 30, 1, 0, 3, 3)
+h.compute(600, 100)
+Console.write(h.fmt_frame(1) + " " + h.fmt_frame(2) + "\\n")
+`,
+			"0,0,400,30 400,0,200,30\n",
+		);
+	});
+
+	test("vstack shrink: children with shrink=0 hold at intrinsic size", async () => {
+		// Same deficit as the weighted test, but the first child has shrink=0
+		// so it keeps its 500px width and the second absorbs the entire 400px
+		// deficit (shrink=1, total_shrink=1).
+		await run(
+			"container_vstack_shrink_skip",
+			`
+var Container v = VStack(0)
+v.add(0, 0, 500, 1, 0, 3, 0)
+v.add(0, 0, 500, 1, 0, 3, 1)
+v.compute(800, 600)
+Console.write(v.fmt_frame(1) + " " + v.fmt_frame(2) + "\\n")
+`,
+			"0,0,800,500 0,500,800,100\n",
+		);
+	});
+
+	// percent sizing: LEN_PERCENT resolves to p% of the bounded cross axis
+	// (the parent's available width for a VStack child). On an unbounded axis
+	// (a stack's main axis during measure) it stays 0 so grow/shrink still
+	// drive the layout. `add_kind` is the explicit-size escape hatch taking
+	// `LEN_*` constants directly (the ergonomic `add_len(.percent(50), …)`
+	// form is blocked by an aarch64 codegen gap — see GUI.md).
+	test("vstack percent: 50% and 25% of the available width", async () => {
+		// Available width = 800. Child 1 → 400px (50%), child 2 → 200px (25%).
+		// Heights are fixed. align=start (0) positions both at the left edge.
+		await run(
+			"container_vstack_percent",
+			`
+var Container v = VStack(0)
+v.add_kind(0, LEN_PERCENT, 50, LEN_FIXED, 30, 1, 0, 0)
+v.add_kind(0, LEN_PERCENT, 25, LEN_FIXED, 30, 1, 0, 0)
+v.compute(800, 600)
+Console.write(v.fmt_frame(1) + " " + v.fmt_frame(2) + "\\n")
+`,
+			"0,0,400,30 0,30,200,30\n",
+		);
+	});
+
+	// Explicit LEN_* driven sizing via add_kind: each of the four cases
+	// (LEN_AUTO, LEN_FIXED, LEN_PERCENT, LEN_FILL) resolves against the bounded
+	// cross axis (VStack width = 800). On the unbounded main axis (height),
+	// LEN_AUTO/LEN_FILL stay 0 so a flex weight would absorb the surplus; here
+	// every child has a fixed height to keep the test deterministic.
+	test("vstack add_kind: LEN_FIXED / LEN_PERCENT / LEN_AUTO / LEN_FILL on the cross axis", async () => {
+		// Child 1 (LEN_FIXED 100) → 100px. Child 2 (LEN_PERCENT 50) → 400px.
+		// Child 3 (LEN_AUTO) and child 4 (LEN_FILL) both fill the bounded axis.
+		await run(
+			"container_vstack_add_kind",
+			`
+var Container v = VStack(0)
+v.add_kind(0, LEN_FIXED, 100, LEN_FIXED, 30, 1, 0, 0)
+v.add_kind(0, LEN_PERCENT, 50, LEN_FIXED, 40, 1, 0, 0)
+v.add_kind(0, LEN_AUTO, 0, LEN_FIXED, 50, 1, 0, 0)
+v.add_kind(0, LEN_FILL, 0, LEN_FIXED, 60, 1, 0, 0)
+v.compute(800, 600)
+Console.write(v.fmt_frame(1) + " " + v.fmt_frame(2) + " " + v.fmt_frame(3) + " " + v.fmt_frame(4) + "\\n")
+`,
+			"0,0,100,30 0,30,400,40 0,70,800,50 0,120,800,60\n",
+		);
+	});
+
+	// Legacy int-based `add` and `add_kind(LEN_FIXED, …)` produce identical
+	// frames for the same logical size — `add(handle, w, h, …)` is just
+	// `add_kind(handle, LEN_FIXED, w, LEN_FIXED, h, …)` when w/h are non-zero.
+	test("add_kind LEN_FIXED matches legacy add for the same pixel size", async () => {
+		await run(
+			"container_add_kind_matches_legacy",
+			`
+var Container v = VStack(0)
+v.add(0, 100, 30, 1)
+v.add_kind(0, LEN_FIXED, 100, LEN_FIXED, 30, 1)
+v.compute(800, 600)
+Console.write(v.fmt_frame(1) + " " + v.fmt_frame(2) + "\\n")
+`,
+			"0,0,100,30 0,30,100,30\n",
+		);
+	});
 });

@@ -175,12 +175,14 @@ function resolve_types_with_deps(needed: Set<string>, library: Library): string 
 
 	function resolve(name: string) {
 		if (resolved.has(name)) return;
+		resolved.add(name);
 		const entry = library.types.get(name);
 		if (!entry) return;
+		// Mark this node visited *before* descending so mutual deps
+		// (Container ↔ LayoutLength, etc.) terminate instead of recursing.
 		for (const dep of entry.deps) {
 			resolve(dep);
 		}
-		resolved.add(name);
 		// A file declaring multiple types contributes the same source for each;
 		// push it only once to avoid duplicate definitions.
 		if (!pushed.has(entry.source)) {

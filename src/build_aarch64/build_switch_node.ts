@@ -21,7 +21,7 @@ export default function build_switch_node(node: SwitchNode, status: BuildStatus)
 		status.code += `\ncmp x0, #0\n`;
 
 		if (i < node.cases.length - 1 || node.else_branch) {
-			status.code += `beq case_next_${label}_${i}\n`;
+			status.code += `beq sw_next_${label}_${i}\n`;
 		} else {
 			status.code += `beq end_switch_${label}\n`;
 		}
@@ -30,7 +30,7 @@ export default function build_switch_node(node: SwitchNode, status: BuildStatus)
 		build_block_node(node.cases[i].branch, status);
 		status.code += `b end_switch_${label}\n`;
 
-		status.code += `case_next_${label}_${i}:\n`;
+		status.code += `sw_next_${label}_${i}:\n`;
 	}
 
 	if (node.else_branch) {

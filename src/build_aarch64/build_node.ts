@@ -51,8 +51,21 @@ import build_value_node from "./build_value_node.ts";
 import build_while_loop_node from "./build_while_loop_node.ts";
 
 export default function build_node(node: BaseNode, status: BuildStatus, with_semicolon = false) {
+	// Build any associated declarations first, e.g. for function call params
+	// that will later be freed. The C backend relies on `emit_allocations`
+	// (called per-statement from build_block_node) to surface these before
+	// the consuming statement runs; aarch64 needs that path too (for cases
+	// like LayoutLength-by-value params whose allocations live on a nested
+	// call arg), but emit_allocations doesn't recurse into every node kind
+	// (match branches, if bodies, …). Both paths therefore check
+	// `status.emitted_allocations` so an allocation is emitted at most once
+	// per build — and the AST is shared across the aarch64 and C builds, so
+	// we can't clear-as-we-go.
 	if (node.allocations) {
+		if (!status.emitted_allocations) status.emitted_allocations = new Set();
 		for (let decl of node.allocations) {
+			if (status.emitted_allocations.has(decl)) continue;
+			status.emitted_allocations.add(decl);
 			build_node(decl, status, true);
 		}
 	}

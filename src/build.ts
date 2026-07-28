@@ -4,8 +4,10 @@ import { reset_temp_counter as reset_func_call_temp_counter } from "./build_aarc
 import { reset_label_counter as reset_func_label_counter } from "./build_aarch64/build_function_node.ts";
 import { reset_label_counter as reset_if_label_counter } from "./build_aarch64/build_if_else_node.ts";
 import { reset_inline_counter } from "./build_aarch64/build_inline_method.ts";
+import { reset_label_counter as reset_match_label_counter } from "./build_aarch64/build_match_node.ts";
 import build_aarch64_node from "./build_aarch64/build_node.ts";
 import { reset_string_counter as reset_op_string_counter } from "./build_aarch64/build_operation_node.ts";
+import { reset_label_counter as reset_switch_label_counter } from "./build_aarch64/build_switch_node.ts";
 import { reset_string_counter as reset_value_string_counter } from "./build_aarch64/build_value_node.ts";
 import { reset_label_counter as reset_while_label_counter } from "./build_aarch64/build_while_loop_node.ts";
 import { emit_malloc } from "./build_aarch64/utils/audit.ts";
@@ -51,6 +53,8 @@ export default function build(
 		reset_for_label_counter();
 		reset_while_label_counter();
 		reset_func_label_counter();
+		reset_match_label_counter();
+		reset_switch_label_counter();
 		reset_access_temp_counter();
 		reset_func_call_temp_counter();
 		reset_inline_counter();

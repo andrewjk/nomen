@@ -10,14 +10,21 @@ import Window
 // this is trusted core library code, the runtime-indexed Buffer accesses here do
 // not trip the "constraint cannot be verified" rule that bites user code.
 //
-// Children are leaves (native controls). A leaf stores its native handle and an
-// intrinsic size: on a bounded (cross) axis, 0 means "fill"; on an unbounded
-// (main) axis, 0 means "no intrinsic opinion" and a `grow` weight then decides
-// how much surplus it absorbs. Grid children additionally carry a column
-// `span`. Children flow left-to-right, top-to-bottom; a child whose span won't
-// fit in the remaining columns wraps to the next row. A hidden native control
-// (isHidden) is skipped automatically, so toggling visibility and re-laying-out
-// just works.
+// Children are leaves (native controls). A leaf stores its native handle and a
+// per-axis requested size as a (kind, value) pair mirroring the `LayoutLength`
+// enum in Geometry.nm (`.auto`/`.fixed(n)`/`.percent(p)`/`.fill`). The legacy
+// `add`/`add_to` helpers take plain int `w`/`h` (0 → `.auto`, non-zero →
+// `.fixed`); `add_len`/`add_to_len` take `LayoutLength` directly, so a child
+// can ask for, say, `.percent(50)` of the cross axis or `.fill`. On a bounded
+// (cross) axis, `.auto`/`.fill` fill the available space; on an unbounded
+// (main) axis they're 0 so a `grow` weight then decides how much surplus the
+// child absorbs. `shrink` is the mirror weight: when the children's total
+// exceeds the main-axis content size, the deficit is shared between shrinkable
+// children weighted by `shrink` (default 0 = never shrink, the original
+// behavior). Grid children additionally carry a column `span`. Children flow
+// left-to-right, top-to-bottom; a child whose span won't fit in the remaining
+// columns wraps to the next row. A hidden native control (isHidden) is skipped
+// automatically, so toggling visibility and re-laying-out just works.
 
 const int KIND_LEAF = 0
 const int KIND_VSTACK = 1
@@ -33,6 +40,18 @@ pub const int ALIGN_START = 0
 pub const int ALIGN_CENTER = 1
 pub const int ALIGN_END = 2
 pub const int ALIGN_STRETCH = 3
+
+// Per-axis requested size for a leaf, matching the `LayoutLength` enum case
+// order in Geometry.nm (auto, fixed, percent, fill). The legacy `add`/`add_to`
+// helpers translate their int `w`/`h` arguments into a (kind, value) pair:
+// `0` → `.auto` (no intrinsic; fills a bounded axis, stays 0 on an unbounded
+// axis so `grow` decides), non-zero → `.fixed(w)`. `add_len`/`add_to_len` let
+// callers spell out any case directly, including `.percent(p)` (p% of the
+// available axis) and `.fill`.
+pub const int LEN_AUTO = 0
+pub const int LEN_FIXED = 1
+pub const int LEN_PERCENT = 2
+pub const int LEN_FILL = 3
 
 const int INF = 100000000
 
@@ -75,14 +94,22 @@ func apply_frame = (uint64 handle, int x, int y, int w, int h, int content_h) {
 
 pub struct Container {
 	var Buffer<int> kinds = Buffer<int>()
-	var Buffer<int> ws = Buffer<int>()        // leaf intrinsic width (0 = fill)
-	var Buffer<int> hs = Buffer<int>()        // leaf intrinsic height (0 = fill)
+	// Per-leaf requested size, stored as a (kind, value) pair per axis. The
+	// kind is one of LEN_* (auto/fixed/percent/fill); the value is the pixel
+	// count for `fixed` or the percent numerator for `percent` (0 otherwise).
+	// The legacy int-based `add`/`add_to` translate `w`/`h` into these pairs
+	// (non-zero → fixed, 0 → auto); `add_len`/`add_to_len` store any case.
+	var Buffer<int> w_kinds = Buffer<int>()
+	var Buffer<int> w_vals = Buffer<int>()
+	var Buffer<int> h_kinds = Buffer<int>()
+	var Buffer<int> h_vals = Buffer<int>()
 	var Buffer<int> gaps = Buffer<int>()      // container spacing
 	var Buffer<int> pars = Buffer<int>()      // parent index, encoded as parent + 1 (0 = root)
 	var Buffer<int> spans = Buffer<int>()     // grid column span
 	var Buffer<int> cols = Buffer<int>()      // grid column count (on grid nodes)
 	var Buffer<int> handles = Buffer<int>()   // leaf native handle (0 = none/container)
 	var Buffer<int> grows = Buffer<int>()     // flex weight: absorbs surplus on the main axis
+	var Buffer<int> shrinks = Buffer<int>()   // flex weight: absorbs deficit on the main axis
 	var Buffer<int> aligns = Buffer<int>()    // cross-axis alignment (ALIGN_*)
 	var Buffer<int> rx = Buffer<int>()
 	var Buffer<int> ry = Buffer<int>()
@@ -94,14 +121,17 @@ pub struct Container {
 
 	func init_buffers = (ref self, int cap) {
 		self.kinds.grow_int(cap)
-		self.ws.grow_int(cap)
-		self.hs.grow_int(cap)
+		self.w_kinds.grow_int(cap)
+		self.w_vals.grow_int(cap)
+		self.h_kinds.grow_int(cap)
+		self.h_vals.grow_int(cap)
 		self.gaps.grow_int(cap)
 		self.pars.grow_int(cap)
 		self.spans.grow_int(cap)
 		self.cols.grow_int(cap)
 		self.handles.grow_int(cap)
 		self.grows.grow_int(cap)
+		self.shrinks.grow_int(cap)
 		self.aligns.grow_int(cap)
 		self.rx.grow_int(cap)
 		self.ry.grow_int(cap)
@@ -112,12 +142,17 @@ pub struct Container {
 	func make_root = (ref self, int kind, int gap, int col_count) {
 		self.init_buffers(32)
 		self.kinds.store_int(0, kind)
+		self.w_kinds.store_int(0, LEN_AUTO)
+		self.w_vals.store_int(0, 0)
+		self.h_kinds.store_int(0, LEN_AUTO)
+		self.h_vals.store_int(0, 0)
 		self.gaps.store_int(0, gap)
 		self.cols.store_int(0, col_count)
 		self.spans.store_int(0, 1)
 		self.pars.store_int(0, 0)
 		self.handles.store_int(0, 0)
 		self.grows.store_int(0, 0)
+		self.shrinks.store_int(0, 0)
 		self.aligns.store_int(0, ALIGN_STRETCH)
 		self.root = 0
 		self.count = 1
@@ -147,25 +182,29 @@ pub struct Container {
 	// (a node index; use root_index() for the top level), returning the new
 	// node's index. All the public add* helpers route through here.
 	//
-	// `w`/`h` are intentionally NOT parameters: only leaves have intrinsic
-	// dimensions, so the leaf helpers store them after this returns. `grow`
-	// is the flex weight (surplus on the main axis is shared weighted by it);
-	// `align` is the cross-axis alignment (one of the ALIGN_ constants).
+	// `w_kind`/`w_val`/`h_kind`/`h_val` are the per-axis requested size as a
+	// (LEN_*, value) pair; only leaves use them (containers size to content),
+	// so the leaf helpers set them after this returns. `grow` is the flex
+	// weight (surplus on the main axis is shared weighted by it); `shrink` is
+	// the deficit weight; `align` is the cross-axis alignment (ALIGN_*).
 	// (The aarch64 backend now spills args past the 8-register ABI limit, so
 	// this signature no longer has to stay within 8 register params.)
-	func append_node = (ref self, int parent, int kind, int handle, int gap, int cols, int span, int grow, int align, out int) {
+	func append_node = (ref self, int parent, int kind, int handle, int gap, int cols, int span, int grow, int shrink, int align, out int) {
 		if self.kinds.cap < self.count + 1 {
 			self.init_buffers(self.count + 1)
 		}
 		var int idx = self.count
 		self.kinds.store_int(idx, kind)
-		self.ws.store_int(idx, 0)
-		self.hs.store_int(idx, 0)
+		self.w_kinds.store_int(idx, LEN_AUTO)
+		self.w_vals.store_int(idx, 0)
+		self.h_kinds.store_int(idx, LEN_AUTO)
+		self.h_vals.store_int(idx, 0)
 		self.gaps.store_int(idx, gap)
 		self.spans.store_int(idx, span)
 		self.cols.store_int(idx, cols)
 		self.handles.store_int(idx, handle)
 		self.grows.store_int(idx, grow)
+		self.shrinks.store_int(idx, shrink)
 		self.aligns.store_int(idx, align)
 		self.pars.store_int(idx, parent + 1)
 		self.count = self.count + 1
@@ -180,41 +219,98 @@ pub struct Container {
 
 	// Add a leaf child (a native control by handle) under the root. `w`/`h` of
 	// 0 mean "fill" on the cross axis (or "no intrinsic opinion" on the main
-	// axis, where `grow` then absorbs the surplus); `span` is the grid column
-	// span (use 1 for VStack/HStack). `grow` is the flex weight for sharing
-	// surplus space on the parent's main axis (0 = hold at intrinsic size);
-	// `align` is the cross-axis alignment (default ALIGN_STRETCH = 3, the
-	// original "fill the cross axis" behavior).
-	pub func add = (ref self, uint64 handle, int w, int h, int span, int grow = 0, int align = 3) {
-		var int idx = self.append_node(self.root, KIND_LEAF, handle as int, 0, 0, span, grow, align)
-		self.ws.store_int(idx, w)
-		self.hs.store_int(idx, h)
+	// axis, where `grow` then absorbs the surplus); a non-zero `w`/`h` is an
+	// exact pixel size. `span` is the grid column span (use 1 for
+	// VStack/HStack). `grow` is the flex weight for sharing surplus space on
+	// the parent's main axis (0 = hold at intrinsic size); `align` is the
+	// cross-axis alignment (default ALIGN_STRETCH = 3, the original "fill the
+	// cross axis" behavior); `shrink` is the flex weight for sharing a deficit
+	// when the children's total exceeds the main-axis content size (0 = never
+	// shrink, the original behavior). For `.percent` / `.fill` / mixed sizing,
+	// use `add_len`.
+	pub func add = (ref self, uint64 handle, int w, int h, int span, int grow = 0, int align = 3, int shrink = 0) {
+		var int idx = self.append_node(self.root, KIND_LEAF, handle as int, 0, 0, span, grow, shrink, align)
+		self.set_leaf_size(idx, w, h)
 	}
 
 	// Add a leaf child under an explicit `parent` (a node index returned by an
 	// add_vstack/add_hstack/add_grid/add_zstack call).
-	pub func add_to = (ref self, int parent, uint64 handle, int w, int h, int span, int grow = 0, int align = 3) {
-		var int idx = self.append_node(parent, KIND_LEAF, handle as int, 0, 0, span, grow, align)
-		self.ws.store_int(idx, w)
-		self.hs.store_int(idx, h)
+	pub func add_to = (ref self, int parent, uint64 handle, int w, int h, int span, int grow = 0, int align = 3, int shrink = 0) {
+		var int idx = self.append_node(parent, KIND_LEAF, handle as int, 0, 0, span, grow, shrink, align)
+		self.set_leaf_size(idx, w, h)
+	}
+
+	// Add a leaf child under the root with an explicit per-axis size kind.
+	// `w_kind`/`h_kind` are `LEN_*` constants (LEN_AUTO/LEN_FIXED/LEN_PERCENT/
+	// LEN_FILL); `w_val`/`h_val` are the pixel count for LEN_FIXED or the
+	// percent numerator (0-100) for LEN_PERCENT — ignored for LEN_AUTO/
+	// LEN_FILL. This is the explicit-size escape hatch when neither `add`
+	// (which only expresses fixed/auto) nor a future LayoutLength-taking
+	// helper fits; e.g. `add_kind(0, LEN_PERCENT, 50, LEN_FIXED, 30, 1)`
+	// asks for 50% of the cross axis and a fixed 30px on the main axis.
+	// `span`/`grow`/`align`/`shrink` match `add`.
+	//
+	// (The ergonomic `add_len(handle, .percent(50), .fixed(30), …)` form —
+	// passing `LayoutLength` values directly — is held back by an aarch64
+	// codegen gap: 16-byte enum-with-data values aren't yet passed by value
+	// across the call ABI. The `LEN_*` int encoding sidesteps that without
+	// losing any expressiveness.)
+	pub func add_kind = (ref self, uint64 handle, int w_kind, int w_val, int h_kind, int h_val, int span, int grow = 0, int align = 3, int shrink = 0) {
+		var int idx = self.append_node(self.root, KIND_LEAF, handle as int, 0, 0, span, grow, shrink, align)
+		self.set_leaf_kind(idx, w_kind, w_val, h_kind, h_val)
+	}
+
+	// Add a leaf child with explicit per-axis size kinds under an explicit
+	// `parent` (a node index returned by an add_* container helper).
+	pub func add_to_kind = (ref self, int parent, uint64 handle, int w_kind, int w_val, int h_kind, int h_val, int span, int grow = 0, int align = 3, int shrink = 0) {
+		var int idx = self.append_node(parent, KIND_LEAF, handle as int, 0, 0, span, grow, shrink, align)
+		self.set_leaf_kind(idx, w_kind, w_val, h_kind, h_val)
+	}
+
+	// Translate the legacy int (w, h) into a (kind, value) pair: 0 → auto
+	// (no intrinsic; fills a bounded axis, stays 0 on an unbounded axis so
+	// `grow` decides), non-zero → fixed.
+	func set_leaf_size = (ref self, int idx, int w, int h) {
+		if w == 0 {
+			self.w_kinds.store_int(idx, LEN_AUTO)
+			self.w_vals.store_int(idx, 0)
+		} else {
+			self.w_kinds.store_int(idx, LEN_FIXED)
+			self.w_vals.store_int(idx, w)
+		}
+		if h == 0 {
+			self.h_kinds.store_int(idx, LEN_AUTO)
+			self.h_vals.store_int(idx, 0)
+		} else {
+			self.h_kinds.store_int(idx, LEN_FIXED)
+			self.h_vals.store_int(idx, h)
+		}
+	}
+
+	// Store the per-axis (kind, value) pair directly.
+	func set_leaf_kind = (ref self, int idx, int w_kind, int w_val, int h_kind, int h_val) {
+		self.w_kinds.store_int(idx, w_kind)
+		self.w_vals.store_int(idx, w_val)
+		self.h_kinds.store_int(idx, h_kind)
+		self.h_vals.store_int(idx, h_val)
 	}
 
 	// Add a nested container under `parent`; returns the new node's index so
 	// children can be added to it via add_to (or another nested container).
-	pub func add_vstack = (ref self, int parent, int spacing, int span, int grow = 0, int align = 3, out int) {
-		return self.append_node(parent, KIND_VSTACK, 0, spacing, 0, span, grow, align)
+	pub func add_vstack = (ref self, int parent, int spacing, int span, int grow = 0, int align = 3, int shrink = 0, out int) {
+		return self.append_node(parent, KIND_VSTACK, 0, spacing, 0, span, grow, shrink, align)
 	}
 
-	pub func add_hstack = (ref self, int parent, int spacing, int span, int grow = 0, int align = 3, out int) {
-		return self.append_node(parent, KIND_HSTACK, 0, spacing, 0, span, grow, align)
+	pub func add_hstack = (ref self, int parent, int spacing, int span, int grow = 0, int align = 3, int shrink = 0, out int) {
+		return self.append_node(parent, KIND_HSTACK, 0, spacing, 0, span, grow, shrink, align)
 	}
 
-	pub func add_grid = (ref self, int parent, int cols: cols > 0, int spacing, int span, int grow = 0, int align = 3, out int) {
-		return self.append_node(parent, KIND_GRID, 0, spacing, cols, span, grow, align)
+	pub func add_grid = (ref self, int parent, int cols: cols > 0, int spacing, int span, int grow = 0, int align = 3, int shrink = 0, out int) {
+		return self.append_node(parent, KIND_GRID, 0, spacing, cols, span, grow, shrink, align)
 	}
 
-	pub func add_zstack = (ref self, int parent, int span, int grow = 0, int align = 3, out int) {
-		return self.append_node(parent, KIND_ZSTACK, 0, 0, 0, span, grow, align)
+	pub func add_zstack = (ref self, int parent, int span, int grow = 0, int align = 3, int shrink = 0, out int) {
+		return self.append_node(parent, KIND_ZSTACK, 0, 0, 0, span, grow, shrink, align)
 	}
 
 	// Measure a node against box constraints. Returns the resolved width and
@@ -223,18 +319,34 @@ pub struct Container {
 		var int kind = self.kinds.load_int(idx)
 
 		if kind == KIND_LEAF {
-			var int w = self.ws.load_int(idx)
-			var int h = self.hs.load_int(idx)
-			// 0 = "no intrinsic opinion". On a bounded axis it fills to the
-			// max (cross-axis stretch); on an unbounded axis (a stack passes
-			// INF for the main axis) it stays 0 so the parent's `grow` weight,
-			// not a phantom INF, decides how much space it gets.
-			if w == 0 {
-				if max_w < INF { w = max_w }
+			// Resolve the per-axis `LayoutLength` (kind, value) against the
+			// constraints: `.fixed` is exact, `.percent` is p% of the bounded
+			// max (0 on an unbounded axis), `.fill`/`.auto` fill a bounded axis
+			// and stay 0 on an unbounded one (so `grow` then absorbs surplus
+			// rather than a phantom INF). All results are then clamped to the
+			// min/max range. (Nomen has no `else if` — the four cases are a
+			// `switch`.)
+			var int wk = self.w_kinds.load_int(idx)
+			var int wv = self.w_vals.load_int(idx)
+			var int hk = self.h_kinds.load_int(idx)
+			var int hv = self.h_vals.load_int(idx)
+
+			var int w = 0
+			switch {
+				case wk == LEN_FIXED -> w = wv
+				case wk == LEN_PERCENT -> if max_w < INF { w = max_w * wv / 100 }
+				case wk == LEN_FILL -> if max_w < INF { w = max_w }
+				case wk == LEN_AUTO -> if max_w < INF { w = max_w }
 			}
-			if h == 0 {
-				if max_h < INF { h = max_h }
+
+			var int h = 0
+			switch {
+				case hk == LEN_FIXED -> h = hv
+				case hk == LEN_PERCENT -> if max_h < INF { h = max_h * hv / 100 }
+				case hk == LEN_FILL -> if max_h < INF { h = max_h }
+				case hk == LEN_AUTO -> if max_h < INF { h = max_h }
 			}
+
 			if w > max_w { w = max_w }
 			if w < min_w { w = min_w }
 			if h > max_h { h = max_h }
@@ -366,10 +478,12 @@ pub struct Container {
 
 		if kind == KIND_VSTACK {
 			var int gap = self.gaps.load_int(idx)
-			// Tally children's measured heights and total grow weight so we can
-			// share any surplus on the main (vertical) axis between flex children.
+			// Tally children's measured heights, total grow weight, and total
+			// shrink weight so we can share any surplus (grow) or deficit
+			// (shrink) on the main (vertical) axis between flex children.
 			var int total_h = 0
 			var int total_grow = 0
+			var int total_shrink = 0
 			var int n = 0
 			var int ci = self.first_child(idx)
 			while ci != -1 {
@@ -377,12 +491,17 @@ pub struct Container {
 					total_h = total_h + self.rh.load_int(ci)
 					var int g = self.grows.load_int(ci)
 					if g > 0 { total_grow = total_grow + g }
+					var int s = self.shrinks.load_int(ci)
+					if s > 0 { total_shrink = total_shrink + s }
 					n = n + 1
 				}
 				ci = self.next_sibling(ci, idx)
 			}
 			if n > 1 { total_h = total_h + gap * (n - 1) }
 			var int surplus = h - total_h
+			// Surplus (grow) and deficit (shrink) are mutually exclusive — at
+			// most one of `surplus > 0` / `surplus < 0` holds — so they're two
+			// independent top-level ifs rather than an else-if chain.
 			if total_grow > 0 && surplus > 0 {
 				var int ci2 = self.first_child(idx)
 				while ci2 != -1 {
@@ -390,6 +509,24 @@ pub struct Container {
 						var int g = self.grows.load_int(ci2)
 						if g > 0 {
 							self.rh.store_int(ci2, self.rh.load_int(ci2) + surplus * g / total_grow)
+						}
+					}
+					ci2 = self.next_sibling(ci2, idx)
+				}
+			}
+			// Distribute the deficit weighted by `shrink`. Each shrinkable child
+			// loses `deficit * shrink / total_shrink` pixels, floored at 0 so
+			// an over-weighted sibling can't drag another negative.
+			if total_shrink > 0 && surplus < 0 {
+				var int deficit = 0 - surplus
+				var int ci2 = self.first_child(idx)
+				while ci2 != -1 {
+					if is_visible(self.handles.load_int(ci2) as uint64) {
+						var int s = self.shrinks.load_int(ci2)
+						if s > 0 {
+							var int new_h = self.rh.load_int(ci2) - deficit * s / total_shrink
+							if new_h < 0 { new_h = 0 }
+							self.rh.store_int(ci2, new_h)
 						}
 					}
 					ci2 = self.next_sibling(ci2, idx)
@@ -423,8 +560,12 @@ pub struct Container {
 
 		if kind == KIND_HSTACK {
 			var int gap = self.gaps.load_int(idx)
+			// Tally children's measured widths, total grow weight, and total
+			// shrink weight so we can share any surplus (grow) or deficit
+			// (shrink) on the main (horizontal) axis between flex children.
 			var int total_w = 0
 			var int total_grow = 0
+			var int total_shrink = 0
 			var int n = 0
 			var int ci = self.first_child(idx)
 			while ci != -1 {
@@ -432,12 +573,16 @@ pub struct Container {
 					total_w = total_w + self.rw.load_int(ci)
 					var int g = self.grows.load_int(ci)
 					if g > 0 { total_grow = total_grow + g }
+					var int s = self.shrinks.load_int(ci)
+					if s > 0 { total_shrink = total_shrink + s }
 					n = n + 1
 				}
 				ci = self.next_sibling(ci, idx)
 			}
 			if n > 1 { total_w = total_w + gap * (n - 1) }
 			var int surplus = w - total_w
+			// Surplus (grow) and deficit (shrink) are mutually exclusive — see
+			// the VStack branch above for the rationale.
 			if total_grow > 0 && surplus > 0 {
 				var int ci2 = self.first_child(idx)
 				while ci2 != -1 {
@@ -445,6 +590,23 @@ pub struct Container {
 						var int g = self.grows.load_int(ci2)
 						if g > 0 {
 							self.rw.store_int(ci2, self.rw.load_int(ci2) + surplus * g / total_grow)
+						}
+					}
+					ci2 = self.next_sibling(ci2, idx)
+				}
+			}
+			// Mirror of the VStack path: distribute the deficit weighted by
+			// `shrink`, floored at 0.
+			if total_shrink > 0 && surplus < 0 {
+				var int deficit = 0 - surplus
+				var int ci2 = self.first_child(idx)
+				while ci2 != -1 {
+					if is_visible(self.handles.load_int(ci2) as uint64) {
+						var int s = self.shrinks.load_int(ci2)
+						if s > 0 {
+							var int new_w = self.rw.load_int(ci2) - deficit * s / total_shrink
+							if new_w < 0 { new_w = 0 }
+							self.rw.store_int(ci2, new_w)
 						}
 					}
 					ci2 = self.next_sibling(ci2, idx)

@@ -51,14 +51,17 @@ typedef struct Container
 {
 void *_vt;
 nm_Buffer_int kinds;
-nm_Buffer_int ws;
-nm_Buffer_int hs;
+nm_Buffer_int w_kinds;
+nm_Buffer_int w_vals;
+nm_Buffer_int h_kinds;
+nm_Buffer_int h_vals;
 nm_Buffer_int gaps;
 nm_Buffer_int pars;
 nm_Buffer_int spans;
 nm_Buffer_int cols;
 nm_Buffer_int handles;
 nm_Buffer_int grows;
+nm_Buffer_int shrinks;
 nm_Buffer_int aligns;
 nm_Buffer_int rx;
 nm_Buffer_int ry;
@@ -98,15 +101,6 @@ long min_height;
 long max_width;
 long max_height;
 } nm_BoxConstraints;
-typedef struct LayoutParams
-{
-void *_vt;
-nm_LayoutLength width;
-nm_LayoutLength height;
-long grow;
-long shrink;
-nm_Alignment align_self;
-} nm_LayoutParams;
 typedef struct Layout
 {
 void *_vt;
@@ -120,6 +114,15 @@ nm_Buffer_int ry;
 nm_Buffer_int rw;
 nm_Buffer_int rh;
 } nm_Layout;
+typedef struct LayoutParams
+{
+void *_vt;
+nm_LayoutLength width;
+nm_LayoutLength height;
+long grow;
+long shrink;
+nm_Alignment align_self;
+} nm_LayoutParams;
 typedef struct Text
 {
 void *_vt;

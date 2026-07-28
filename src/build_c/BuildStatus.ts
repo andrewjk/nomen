@@ -346,6 +346,16 @@ export default interface BuildStatus {
 	 */
 	emitted_struct_bodies?: Set<string>;
 	/**
+	 * Per-build set of allocation declarations (hoisted `_param_N` temps)
+	 * that have already been emitted, so the inline `if (node.allocations)`
+	 * path in `build_node` and the per-statement `emit_allocations` helper
+	 * don't double-emit on a single backend. The AST is shared across the
+	 * aarch64 and C builds (the test harness parses once, builds twice), so
+	 * we can't mutate `node.allocations` to clear-as-we-go; this set is the
+	 * per-build idempotency guard.
+	 */
+	emitted_allocations?: Set<unknown>;
+	/**
 	 * Tracks which file-scope raw C blocks have already been emitted to
 	 * headers. When a generic struct (e.g. Task<T>) is monomorphized, its
 	 * #init file-scope block (pool infrastructure, type defs, etc.) would be

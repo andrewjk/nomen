@@ -12,6 +12,7 @@ import build_function_node from "./build_function_node.ts";
 import build_node from "./build_node.ts";
 import build_struct_node from "./build_struct_node.ts";
 import { emit_destroy_for_scope } from "./utils/auto_destroy.ts";
+import emit_allocations from "./utils/emit_allocations.ts";
 
 /** Primitive types whose `const` initializers are valid aarch64 file-scope data. */
 const SIMPLE_TYPES = new Set([
@@ -92,8 +93,10 @@ export default function build_block_node(node: BlockNode, status: BuildStatus) {
 			child.node_type !== "enum" &&
 			child.node_type !== "bitset" &&
 			!(child.node_type === "declare" && inlined_const_names.has((child as DeclarationNode).name))
-		)
+		) {
+			emit_allocations(child, status);
 			build_node(child, status, true);
+		}
 	}
 
 	emit_destroy_for_scope(status, declarations_before);
