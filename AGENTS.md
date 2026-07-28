@@ -214,7 +214,10 @@ directly. Use the directive that matches the backend:
 #### Language Conventions
 
 - Nomen does **not** support `else if`. When writing Nomen code, use a `switch`
-  instead of `"else if"` or an `"else { if { ... } }"` chain.
+  instead of `"else if"` or an `"else { if { ... } }"` chain. Nested `else`
+  blocks containing another `if` (`else { if … { } }`) are also forbidden —
+  pull the inner condition out into its own top-level `if` (when the
+  conditions are independent) or fold the whole chain into a single `switch`.
 
 1. Always run `npm run check` after changes to verify type correctness
 2. Run `npm test` to ensure all tests pass
