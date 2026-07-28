@@ -205,7 +205,7 @@ func greet = (string name, string greeting = "Hello") {
 }
 greet("Alice")
 `;
-		await build_and_check_output(input, "function_default_param", "Hello Alice!");
+		await build_and_check_output(input, "function_default_param_set", "Hello Alice!");
 	});
 });
 
