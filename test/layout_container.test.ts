@@ -358,4 +358,85 @@ Console.write(v.fmt_frame(1) + " " + v.fmt_frame(2) + "\\n")
 			"0,0,100,30 0,30,100,30\n",
 		);
 	});
+
+	// Compositor hit test: pure rect math on the frame tree (no native calls).
+	// Walks children front-to-back and returns the frontmost leaf containing
+	// the point — here the three VStack rows stack top-to-bottom, so a point in
+	// the middle row hits the middle leaf, and a point off-tree misses (-1).
+	// `hit_test_index` returns the leaf's node index (root is 0); we use it with
+	// zero handles so the geometry-only path is exercised without native views.
+	test("hit_test: returns the frontmost leaf index containing the point", async () => {
+		await run(
+			"container_hit_test",
+			`
+var Container v = VStack(0)
+v.add(0, 0, 30, 1)
+v.add(0, 0, 30, 1)
+v.add(0, 0, 30, 1)
+v.compute(800, 600)
+Console.write(v.hit_test_index(400, 10).to_string() + " ")
+Console.write(v.hit_test_index(400, 45).to_string() + " ")
+Console.write(v.hit_test_index(400, 999).to_string() + "\\n")
+`,
+			"1 2 -1\n",
+		);
+	});
+
+	// Hit test resolves nested containers: the point is inside a leaf nested in
+	// a row, and `hit_test_index` recurses through to that leaf's node index.
+	test("hit_test: recurses through nested containers to the leaf", async () => {
+		await run(
+			"container_hit_test_nested",
+			`
+var Container v = VStack(8)
+var int row = v.add_hstack(v.root_index(), 0, 1)
+v.add_to(row, 0, 50, 30, 1)
+v.add_to(row, 0, 60, 30, 1)
+v.add(0, 0, 40, 1)
+v.compute(800, 600)
+// point inside the second child of the nested row (x in 50..110, y in 0..30)
+Console.write(v.hit_test_index(80, 15).to_string() + "\\n")
+`,
+			"3\n",
+		);
+	});
+
+	// ZStack paints children back-to-front, so the frontmost (last) child wins
+	// a hit anywhere in the overlapping frame.
+	test("hit_test: zstack returns the frontmost (last) overlapping child", async () => {
+		await run(
+			"container_hit_test_zstack",
+			`
+var Container z = ZStack()
+z.add(0, 200, 80, 1)
+z.add(0, 200, 80, 1)
+z.compute(800, 600)
+Console.write(z.hit_test_index(100, 40).to_string() + "\\n")
+`,
+			"2\n",
+		);
+	});
+
+	// Dirty-rect tracking: a leaf enters the dirty list only when its resolved
+	// frame changed since the last layout. The first `compute` marks every leaf
+	// dirty (baseline is -1); an identical `compute` marks none; a resize that
+	// moves/resizes a grow child marks just that child.
+	test("dirty-rect: only changed leaves are flagged across layout passes", async () => {
+		await run(
+			"container_dirty_rect",
+			`
+var Container v = VStack(0)
+v.add(0, 0, 30, 1)       // fixed-height leaf (index 1)
+v.add(0, 0, 30, 1, 1)    // grow leaf (index 2)
+v.compute(800, 600)
+Console.write(v.dirty_count().to_string() + "\\n")   // first pass: both dirty
+v.compute(800, 600)
+Console.write(v.dirty_count().to_string() + "\\n")   // unchanged: none dirty
+v.compute(800, 300)
+// grow leaf shrinks (570 -> 270), fixed leaf stays put: only leaf 2 dirty
+Console.write(v.dirty_count().to_string() + " " + v.dirty_rect(0) + "\\n")
+`,
+			"2\n0\n1 0,30,800,270\n",
+		);
+	});
 });

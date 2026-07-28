@@ -564,7 +564,15 @@ cannot be verified headlessly, but the **layout math** can:
    params.)
 8. **Invalidation.** ⚠️ Deferred. v1 does a full re-measure on every
    `layout(win)` call (cheap for small UIs; fine for the todo app).
-9. **Compositor features.** ⚠️ Deferred (hit testing, dirty-rect, animation).
+9. **Compositor features.** ⚠️ Partial: **hit testing** shipped as `Container.hit_test` /
+   `hit_test_index` — a pure-rect-math, front-to-back walk of the frame tree that
+   returns the frontmost leaf containing a point (verified on both backends in
+   `test/layout_container.test.ts`). **Dirty-rect tracking** shipped as
+   `Container.dirty_count` / `dirty_rect`: a leaf enters the dirty list only when
+   its resolved frame differs from its previously-applied baseline, and `apply`
+   repaints only those leaves (a repeat layout at the same size is a no-op).
+   Verified on both backends in `test/layout_container.test.ts`. Deferred:
+   animation.
 
 ## Next steps & compiler prerequisites
 

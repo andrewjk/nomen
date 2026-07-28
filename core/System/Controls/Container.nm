@@ -115,6 +115,19 @@ pub struct Container {
 	var Buffer<int> ry = Buffer<int>()
 	var Buffer<int> rw = Buffer<int>()
 	var Buffer<int> rh = Buffer<int>()
+	// Previously-applied frame per node (leaf only), used by the dirty-rect
+	// tracker: a leaf enters the dirty list only when its resolved frame
+	// differs from this baseline. Initialised to -1 so the first layout marks
+	// every leaf dirty.
+	var Buffer<int> prx = Buffer<int>()
+	var Buffer<int> pry = Buffer<int>()
+	var Buffer<int> prw = Buffer<int>()
+	var Buffer<int> prh = Buffer<int>()
+	// Dirty-rect list: the node indices (leaves) whose frame changed in the
+	// most recent `compute`/`layout`, in the order discovered. `dirty_count`
+	// / `dirty_rect` expose it; `apply` repaints only these.
+	var Buffer<int> dirty_idx = Buffer<int>()
+	var int dirty_n = 0
 	var int root = 0
 	var int count = 0
 	var int padding = 0
@@ -137,6 +150,11 @@ pub struct Container {
 		self.ry.grow_int(cap)
 		self.rw.grow_int(cap)
 		self.rh.grow_int(cap)
+		self.prx.grow_int(cap)
+		self.pry.grow_int(cap)
+		self.prw.grow_int(cap)
+		self.prh.grow_int(cap)
+		self.dirty_idx.grow_int(cap)
 	}
 
 	func make_root = (ref self, int kind, int gap, int col_count) {
@@ -154,6 +172,10 @@ pub struct Container {
 		self.grows.store_int(0, 0)
 		self.shrinks.store_int(0, 0)
 		self.aligns.store_int(0, ALIGN_STRETCH)
+		self.prx.store_int(0, -1)
+		self.pry.store_int(0, -1)
+		self.prw.store_int(0, -1)
+		self.prh.store_int(0, -1)
 		self.root = 0
 		self.count = 1
 	}
@@ -207,6 +229,10 @@ pub struct Container {
 		self.shrinks.store_int(idx, shrink)
 		self.aligns.store_int(idx, align)
 		self.pars.store_int(idx, parent + 1)
+		self.prx.store_int(idx, -1)
+		self.pry.store_int(idx, -1)
+		self.prw.store_int(idx, -1)
+		self.prh.store_int(idx, -1)
 		self.count = self.count + 1
 		return idx
 	}
@@ -676,16 +702,64 @@ pub struct Container {
 		}
 	}
 
-	func apply = (self, int content_h) {
+	// Recompute the dirty-rect list: any leaf whose resolved frame differs
+	// from its previously-applied frame is appended to `dirty_idx` (in tree
+	// order) and its baseline is advanced. Hidden leaves keep a stable
+	// (0,0,0,0) frame, so toggling visibility and re-laying-out marks them
+	// dirty exactly once, like any other frame change.
+	func collect_dirty = (ref self) {
+		self.dirty_n = 0
 		var int i = 0
 		while i < self.count {
 			if self.kinds.load_int(i) == KIND_LEAF {
-				var uint64 handle = self.handles.load_int(i) as uint64
-				if handle != 0 {
-					apply_frame(handle, self.rx.load_int(i), self.ry.load_int(i), self.rw.load_int(i), self.rh.load_int(i), content_h)
+				var int x = self.rx.load_int(i)
+				var int y = self.ry.load_int(i)
+				var int w = self.rw.load_int(i)
+				var int h = self.rh.load_int(i)
+				var int px = self.prx.load_int(i)
+				var int py = self.pry.load_int(i)
+				var int pw = self.prw.load_int(i)
+				var int ph = self.prh.load_int(i)
+				if x != px || y != py || w != pw || h != ph {
+					if self.dirty_idx.cap < self.dirty_n + 1 {
+						self.dirty_idx.grow_int(self.dirty_n + 1)
+					}
+					self.dirty_idx.store_int(self.dirty_n, i)
+					self.dirty_n = self.dirty_n + 1
+					self.prx.store_int(i, x)
+					self.pry.store_int(i, y)
+					self.prw.store_int(i, w)
+					self.prh.store_int(i, h)
 				}
 			}
 			i = i + 1
+		}
+	}
+
+	// Number of leaves whose frame changed in the most recent `compute`/
+	// `layout` (the current dirty-rect list length).
+	pub func dirty_count = (self, out int) {
+		return self.dirty_n
+	}
+
+	// The i-th dirty rectangle (new frame) as "x,y,w,h", where i is in
+	// [0, dirty_count). The rect is the leaf's current resolved frame — the
+	// region the compositor must repaint.
+	pub func dirty_rect = (self, int i, out string) {
+		var int idx = self.dirty_idx.load_int(i)
+		return self.rx.load_int(idx).to_string() + "," + self.ry.load_int(idx).to_string() + "," + self.rw.load_int(idx).to_string() + "," + self.rh.load_int(idx).to_string()
+	}
+
+	func apply = (self, int content_h) {
+		// Only repaint the dirty leaves — the compositor's dirty-rect win.
+		var int k = 0
+		while k < self.dirty_n {
+			var int i = self.dirty_idx.load_int(k)
+			var uint64 handle = self.handles.load_int(i) as uint64
+			if handle != 0 {
+				apply_frame(handle, self.rx.load_int(i), self.ry.load_int(i), self.rw.load_int(i), self.rh.load_int(i), content_h)
+			}
+			k = k + 1
 		}
 	}
 
@@ -707,6 +781,7 @@ pub struct Container {
 			frame_w = avail_w
 		}
 		self.arrange(self.root, 0, 0, frame_w, frame_h)
+		self.collect_dirty()
 	}
 
 	// Measure + arrange against the window's content rect (minus padding) and
@@ -729,6 +804,7 @@ pub struct Container {
 			frame_w = avail_w
 		}
 		self.arrange(self.root, self.padding, self.padding, frame_w, frame_h)
+		self.collect_dirty()
 		self.apply(ch)
 	}
 
@@ -758,6 +834,59 @@ pub struct Container {
 			i = i + 1
 		}
 		return false
+	}
+
+	// Compositor hit test: walk the frame tree front-to-back and return the
+	// frontmost leaf whose frame contains (cx, cy) (top-left origin, matching
+	// `click_x`/`click_y` and `contains`). For every container we test children
+	// in paint order (front-to-back) and keep the last hit — a later child paints
+	// on top of earlier ones, so the frontmost claimant wins. Hidden leaves are
+	// skipped, as in measure/arrange. Returns the leaf's native handle (0 = no
+	// hit). This needs no platform code — it's pure rect math on the frame tree.
+	pub func hit_test = (self, int cx, int cy, out uint64) {
+		var int idx = self.hit_test_node(self.root, cx, cy)
+		if idx == -1 { return 0 }
+		return self.handles.load_int(idx) as uint64
+	}
+
+	// Same as `hit_test` but returns the frontmost leaf's node index (root is 0;
+	// -1 = no hit). Handy for callers that want the node rather than the handle
+	// (e.g. to read the resolved frame via `fmt_frame`).
+	pub func hit_test_index = (self, int cx, int cy, out int) {
+		return self.hit_test_node(self.root, cx, cy)
+	}
+
+	func hit_test_node = (self, int idx, int cx, int cy, out int) {
+		var int kind = self.kinds.load_int(idx)
+		if kind == KIND_LEAF {
+			if is_visible(self.handles.load_int(idx) as uint64) {
+				var int x = self.rx.load_int(idx)
+				var int y = self.ry.load_int(idx)
+				var int w = self.rw.load_int(idx)
+				var int h = self.rh.load_int(idx)
+				if cx >= x {
+					if cx <= x + w {
+						if cy >= y {
+							if cy <= y + h {
+								return idx
+							}
+						}
+					}
+				}
+			}
+			return -1
+		}
+		// Container: iterate children in paint order; keep the last (frontmost) hit.
+		var int result = -1
+		var int ci = self.first_child(idx)
+		while ci != -1 {
+			if is_visible(self.handles.load_int(ci) as uint64) {
+				var int hit = self.hit_test_node(ci, cx, cy)
+				if hit != -1 { result = hit }
+			}
+			ci = self.next_sibling(ci, idx)
+		}
+		return result
 	}
 
 	// Format a child's resolved frame as "x,y,w,h" (root is 0; children start at 1).
