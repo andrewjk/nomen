@@ -188,8 +188,10 @@ struct Window;
 void Container_set_resize_callback(struct Container *self, struct Window *win);
 struct Container;
 struct Window;
-// Forward decl: Container_layout is defined later in this TU.
-extern void Container_layout(struct Container*, struct Window*);
+// nomen_layout_thunk is a free function (defined in Nomen below) that
+// forwards to Container.layout — exported for C linkage on both
+// backends, unlike the layout method itself.
+extern void nomen_layout_thunk(struct Container*, struct Window*);
 static void *g_resize_grid = 0;
 static void *g_resize_win = 0;
 void nomen_set_resize_target(void *grid, void *win) {
@@ -199,7 +201,7 @@ g_resize_win = win;
 void nomen_window_did_resize(id self, SEL cmd, id notification) {
 (void)self; (void)cmd; (void)notification;
 if (g_resize_grid && g_resize_win) {
-Container_layout((struct Container*)g_resize_grid, (struct Window*)g_resize_win);
+nomen_layout_thunk((struct Container*)g_resize_grid, (struct Window*)g_resize_win);
 }
 }
 unsigned char Container_contains(struct Container *self, unsigned long long handle, long cx, long cy);
@@ -302,6 +304,9 @@ void apply_frame(unsigned long long handle, long x, long y, long w, long h, long
 
 // Func intrinsic_size
 struct _Tuple_int_int intrinsic_size(unsigned long long handle);
+
+// Func nomen_layout_thunk
+void nomen_layout_thunk(struct Container *grid, struct Window *win);
 
 // Func VStack
 struct Container VStack(long spacing);

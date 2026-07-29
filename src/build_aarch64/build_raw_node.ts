@@ -74,19 +74,32 @@ export function check_c_fallback(
 		return false;
 	}
 
-	// Collect C-fallback code if present.
+	// Collect C-fallback code if present. `#scope: file` blocks are routed
+	// to the companion's file scope (file_scope_c) rather than inlined into
+	// the function body — in-body they'd become nested functions/globals, so
+	// a delegate IMP (which needs a stable file-scope address) couldn't be
+	// registered. Block-scope code becomes the function body as before.
 	let raw_code = "";
+	let file_scope_code = "";
 	let is_c_fallback = false;
 	for (const stmt of func.statements) {
 		if (stmt.node_type !== "raw") continue;
 		const parsed = parse_raw_directives((stmt as RawNode).value, "aarch64", status.platform);
 		if (parsed.should_emit && parsed.is_c && parsed.code) {
 			is_c_fallback = true;
-			raw_code += parsed.code + "\n";
+			if (parsed.scope === "file") {
+				file_scope_code += parsed.code + "\n";
+			} else {
+				raw_code += parsed.code + "\n";
+			}
 		}
 	}
 
 	if (is_c_fallback) {
+		if (file_scope_code) {
+			if (!status.file_scope_c) status.file_scope_c = "";
+			status.file_scope_c += file_scope_code;
+		}
 		if (!status.c_companion_functions) status.c_companion_functions = [];
 		status.c_companion_functions.push({ func, struct_name, raw_code });
 

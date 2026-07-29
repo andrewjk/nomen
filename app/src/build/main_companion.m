@@ -152,6 +152,25 @@ long _0;
 long _1;
 } nm__Tuple_int_int;
 
+struct Container;
+struct Window;
+// nomen_layout_thunk is a free function (defined in Nomen below) that
+// forwards to Container.layout — exported for C linkage on both
+// backends, unlike the layout method itself.
+extern void nomen_layout_thunk(struct Container*, struct Window*);
+static void *g_resize_grid = 0;
+static void *g_resize_win = 0;
+void nomen_set_resize_target(void *grid, void *win) {
+g_resize_grid = grid;
+g_resize_win = win;
+}
+void nomen_window_did_resize(id self, SEL cmd, id notification) {
+(void)self; (void)cmd; (void)notification;
+if (g_resize_grid && g_resize_win) {
+nomen_layout_thunk((struct Container*)g_resize_grid, (struct Window*)g_resize_win);
+}
+}
+
 // Button_init
 void Button_init(nm_Button *self, nm_Window *window, char* title) __asm__("Button_init");
 void Button_init(nm_Button *self, nm_Window *window, char* title)
@@ -477,7 +496,20 @@ self->handle = 0;
 void Container_set_resize_callback(nm_Container *self, nm_Window *win) __asm__("Container_set_resize_callback");
 void Container_set_resize_callback(nm_Container *self, nm_Window *win)
 {
-// c-backend only — no-op on aarch64.
+nomen_set_resize_target(self, win);
+Class Dc = objc_getClass("NomenResizeDelegate");
+if (!Dc) {
+Dc = objc_allocateClassPair(objc_getClass("NSObject"), "NomenResizeDelegate", 0);
+if (Dc) {
+class_addMethod(Dc, sel_registerName("windowDidResize:"), (IMP)nomen_window_did_resize, "v@:@");
+objc_registerClassPair(Dc);
+}
+}
+if (Dc) {
+id delegate = ((id(*)(id, SEL))objc_msgSend)((id)Dc, sel_registerName("alloc"));
+delegate = ((id(*)(id, SEL))objc_msgSend)(delegate, sel_registerName("init"));
+((void(*)(id, SEL, id))objc_msgSend)((id)win->handle, sel_registerName("setDelegate:"), delegate);
+}
 
 }
 

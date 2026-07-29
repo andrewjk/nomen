@@ -1098,20 +1098,23 @@ pub struct Container {
 	// live window resize. AppKit runs its own blocking tracking loop for the
 	// whole drag (our manual event loop is stuck inside sendEvent: and can't
 	// re-layout mid-drag), but it calls windowDidResize: on the delegate at
-	// each step — so re-running Container_layout there keeps every control,
+	// each step — so re-running the layout there keeps every control,
 	// including sub-full-width grid cells that autoresizing masks can't
 	// express, sized and positioned live. Call once after the first layout().
-	// (c backend only: the aarch64 backend emits layout fns as local asm
-	// symbols its C companion can't call back into, so it's a no-op there.)
+	// The callback calls nomen_layout_thunk (a free function) rather than the
+	// layout method directly: free functions are exported for C linkage on
+	// both backends, methods are not.
 	pub func set_resize_callback = (ref self, Window win) {
 		```
-		#arch: c
+		#arch: c, aarch64_use_c
 		#platform: macos
 		#scope: file
 		struct Container;
 		struct Window;
-		// Forward decl: Container_layout is defined later in this TU.
-		extern void Container_layout(struct Container*, struct Window*);
+		// nomen_layout_thunk is a free function (defined in Nomen below) that
+		// forwards to Container.layout — exported for C linkage on both
+		// backends, unlike the layout method itself.
+		extern void nomen_layout_thunk(struct Container*, struct Window*);
 		static void *g_resize_grid = 0;
 		static void *g_resize_win = 0;
 		void nomen_set_resize_target(void *grid, void *win) {
@@ -1121,12 +1124,12 @@ pub struct Container {
 		void nomen_window_did_resize(id self, SEL cmd, id notification) {
 			(void)self; (void)cmd; (void)notification;
 			if (g_resize_grid && g_resize_win) {
-				Container_layout((struct Container*)g_resize_grid, (struct Window*)g_resize_win);
+				nomen_layout_thunk((struct Container*)g_resize_grid, (struct Window*)g_resize_win);
 			}
 		}
 		```
 		```
-		#arch: c
+		#arch: c, aarch64_use_c
 		#platform: macos
 		nomen_set_resize_target(self, win);
 		Class Dc = objc_getClass("NomenResizeDelegate");
@@ -1142,10 +1145,6 @@ pub struct Container {
 			delegate = ((id(*)(id, SEL))objc_msgSend)(delegate, sel_registerName("init"));
 			((void(*)(id, SEL, id))objc_msgSend)((id)win->handle, sel_registerName("setDelegate:"), delegate);
 		}
-		```
-		```
-		#arch: aarch64_use_c
-		// c-backend only — no-op on aarch64.
 		```
 	}
 
@@ -1234,6 +1233,13 @@ pub struct Container {
 	pub func fmt_frame = (self, int i, out string) {
 		return self.rx.load_int(i).to_string() + "," + self.ry.load_int(i).to_string() + "," + self.rw.load_int(i).to_string() + "," + self.rh.load_int(i).to_string()
 	}
+}
+
+// Free-function wrapper around Container.layout so the C delegate callback
+// (nomen_window_did_resize) can trigger a live relayout: free functions are
+// exported for C linkage on both backends, methods are not.
+pub func nomen_layout_thunk = (ref Container grid, Window win) {
+	grid.layout(win)
 }
 
 pub func VStack = (int spacing, out Container) {
