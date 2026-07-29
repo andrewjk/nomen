@@ -223,7 +223,6 @@ export default interface BuildStatus {
 	owned_string_vars?: Set<string>;
 	heap_string_arrays?: Map<string, number>;
 	last_result_is_heap?: boolean;
-	match_save_size?: number;
 	current_struct?: StructNode;
 	current_function_name?: string;
 	/**

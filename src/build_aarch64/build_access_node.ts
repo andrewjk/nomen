@@ -186,6 +186,11 @@ function is_struct_type(type_name: string, status: BuildStatus): boolean {
 	return !!status.structs.find((s) => s.name === type_name && !s.is_simple_type);
 }
 
+function is_enum_with_data_type(type_name: string, status: BuildStatus): boolean {
+	const e = status.enums.find((e) => e.name === type_name);
+	return !!e && !!e.has_associated_data;
+}
+
 function resolve_field_type(
 	access_field: AccessFieldNode,
 	target_type_name: string | undefined,
@@ -1508,7 +1513,11 @@ function build_access_method(
 		const param = access_func.params[i];
 		const is_ref_param = access_func.ref_param_indices?.includes(i);
 		const param_type = (param as any).type?.name || "";
-		const is_struct = is_struct_type(param_type, status);
+		// Enum-with-data values (tag + payload, 16 bytes) use the same
+		// pass-by-address convention as structs — mirrors the plain-function
+		// call path in build_function_call_node.
+		const is_struct =
+			is_struct_type(param_type, status) || is_enum_with_data_type(param_type, status);
 		if (is_ref_param) {
 			emit_address_of(param, status);
 		} else if (is_struct) {

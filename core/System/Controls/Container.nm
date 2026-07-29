@@ -1,4 +1,5 @@
 import Buffer
+import LayoutParams
 import Window
 
 // A handle-based layout container. Users create a Grid/VStack/HStack, add child
@@ -68,6 +69,30 @@ pub const int LEN_FILL = 3
 pub const int LEN_INTRINSIC = 4
 
 const int INF = 100000000
+
+// Translate a `LayoutLength` enum case into the internal (kind, value) int
+// pair stored in the SoA buffers. `.auto` maps to LEN_AUTO (v1 semantics:
+// fill the bounded axis — see the LEN_INTRINSIC note above), so `add_len`
+// composes with the existing measure math unchanged.
+func length_kind = (LayoutLength len, out int) {
+	var int k = match len {
+		case .auto -> LEN_AUTO
+		case .fixed(px) -> LEN_FIXED
+		case .percent(num) -> LEN_PERCENT
+		case .fill -> LEN_FILL
+	}
+	return k
+}
+
+func length_val = (LayoutLength len, out int) {
+	var int v = match len {
+		case .auto -> 0
+		case .fixed(px) -> px
+		case .percent(num) -> num
+		case .fill -> 0
+	}
+	return v
+}
 
 // Defined before the struct so their return types are resolved when the engine
 // methods below reference them (free functions aren't forward-inferred).
@@ -352,12 +377,6 @@ pub struct Container {
 	// helper fits; e.g. `add_kind(0, LEN_PERCENT, 50, LEN_FIXED, 30, 1)`
 	// asks for 50% of the cross axis and a fixed 30px on the main axis.
 	// `span`/`grow`/`align`/`shrink` match `add`.
-	//
-	// (The ergonomic `add_len(handle, .percent(50), .fixed(30), …)` form —
-	// passing `LayoutLength` values directly — is held back by an aarch64
-	// codegen gap: 16-byte enum-with-data values aren't yet passed by value
-	// across the call ABI. The `LEN_*` int encoding sidesteps that without
-	// losing any expressiveness.)
 	pub func add_kind = (ref self, uint64 handle, int w_kind, int w_val, int h_kind, int h_val, int span, int grow = 0, int align = 3, int shrink = 0) {
 		var int idx = self.append_node(self.root, KIND_LEAF, handle as int, 0, 0, span, grow, shrink, align)
 		self.set_leaf_kind(idx, w_kind, w_val, h_kind, h_val)
@@ -368,6 +387,23 @@ pub struct Container {
 	pub func add_to_kind = (ref self, int parent, uint64 handle, int w_kind, int w_val, int h_kind, int h_val, int span, int grow = 0, int align = 3, int shrink = 0) {
 		var int idx = self.append_node(parent, KIND_LEAF, handle as int, 0, 0, span, grow, shrink, align)
 		self.set_leaf_kind(idx, w_kind, w_val, h_kind, h_val)
+	}
+
+	// Add a leaf child under the root, passing `LayoutLength` values directly:
+	// `v.add_len(handle, LayoutLength.percent(50), LayoutLength.fixed(30), 1)`.
+	// The ergonomic form of `add_kind` — each axis's enum case is translated
+	// to the internal (kind, value) pair. `span`/`grow`/`align`/`shrink`
+	// match `add`.
+	pub func add_len = (ref self, uint64 handle, LayoutLength w, LayoutLength h, int span, int grow = 0, int align = 3, int shrink = 0) {
+		var int idx = self.append_node(self.root, KIND_LEAF, handle as int, 0, 0, span, grow, shrink, align)
+		self.set_leaf_kind(idx, length_kind(w), length_val(w), length_kind(h), length_val(h))
+	}
+
+	// Add a leaf child with `LayoutLength` sizes under an explicit `parent`
+	// (a node index returned by an add_* container helper).
+	pub func add_to_len = (ref self, int parent, uint64 handle, LayoutLength w, LayoutLength h, int span, int grow = 0, int align = 3, int shrink = 0) {
+		var int idx = self.append_node(parent, KIND_LEAF, handle as int, 0, 0, span, grow, shrink, align)
+		self.set_leaf_kind(idx, length_kind(w), length_val(w), length_kind(h), length_val(h))
 	}
 
 	// Add a leaf that sizes to its native control's `intrinsicContentSize` on

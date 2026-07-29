@@ -301,8 +301,7 @@ Console.write(v.fmt_frame(1) + " " + v.fmt_frame(2) + "\\n")
 	// (the parent's available width for a VStack child). On an unbounded axis
 	// (a stack's main axis during measure) it stays 0 so grow/shrink still
 	// drive the layout. `add_kind` is the explicit-size escape hatch taking
-	// `LEN_*` constants directly (the ergonomic `add_len(.percent(50), …)`
-	// form is blocked by an aarch64 codegen gap — see GUI.md).
+	// `LEN_*` constants directly; `add_len` takes `LayoutLength` enum values.
 	test("vstack percent: 50% and 25% of the available width", async () => {
 		// Available width = 800. Child 1 → 400px (50%), child 2 → 200px (25%).
 		// Heights are fixed. align=start (0) positions both at the left edge.
@@ -339,6 +338,44 @@ v.compute(800, 600)
 Console.write(v.fmt_frame(1) + " " + v.fmt_frame(2) + " " + v.fmt_frame(3) + " " + v.fmt_frame(4) + "\\n")
 `,
 			"0,0,100,30 0,30,400,40 0,70,800,50 0,120,800,60\n",
+		);
+	});
+
+	// The ergonomic `add_len` form: LayoutLength enum values passed by value
+	// (16-byte tag+payload across the call ABI — the aarch64 gap that
+	// previously blocked this is fixed). Must produce the same frames as the
+	// equivalent add_kind calls.
+	test("vstack add_len: LayoutLength enum values passed directly", async () => {
+		// Child 1 .fixed(100) → 100px. Child 2 .percent(50) → 400px.
+		// Child 3 .auto and child 4 .fill both fill the bounded axis.
+		await run(
+			"container_vstack_add_len",
+			`
+var Container v = VStack(0)
+v.add_len(0, LayoutLength.fixed(100), LayoutLength.fixed(30), 1, 0, 0)
+v.add_len(0, LayoutLength.percent(50), LayoutLength.fixed(40), 1, 0, 0)
+v.add_len(0, LayoutLength.auto, LayoutLength.fixed(50), 1, 0, 0)
+v.add_len(0, LayoutLength.fill, LayoutLength.fixed(60), 1, 0, 0)
+v.compute(800, 600)
+Console.write(v.fmt_frame(1) + " " + v.fmt_frame(2) + " " + v.fmt_frame(3) + " " + v.fmt_frame(4) + "\\n")
+`,
+			"0,0,100,30 0,30,400,40 0,70,800,50 0,120,800,60\n",
+		);
+	});
+
+	// add_to_len: LayoutLength sizing under an explicit parent container.
+	test("add_to_len sizes children of a nested hstack", async () => {
+		await run(
+			"container_add_to_len",
+			`
+var Container v = VStack(0)
+var int row = v.add_hstack(0, 0, 1)
+v.add_to_len(row, 0, LayoutLength.fixed(100), LayoutLength.fixed(30), 1, 0, 0)
+v.add_to_len(row, 0, LayoutLength.fixed(200), LayoutLength.fixed(40), 1, 0, 0)
+v.compute(800, 600)
+Console.write(v.fmt_frame(2) + " " + v.fmt_frame(3) + "\\n")
+`,
+			"0,0,100,30 100,0,200,40\n",
 		);
 	});
 

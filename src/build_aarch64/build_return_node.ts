@@ -48,12 +48,6 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 			}
 			emit_heap_slots_cleanup_for_return(status);
 			status.code += `mov x0, #0\n`;
-			const match_saves = status.match_save_size || 0;
-			if (match_saves > 0) {
-				for (let i = 0; i < match_saves; i += 16) {
-					status.code += `ldr x19, [sp], #16\n`;
-				}
-			}
 			status.code += `b ${status.function_return_label}\n`;
 		}
 		return;
@@ -239,12 +233,6 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 		}
 		emit_heap_slots_cleanup_for_return(status);
 		status.code += `ldr x0, [sp], #16\n`;
-		const match_saves = status.match_save_size || 0;
-		if (match_saves > 0) {
-			for (let i = 0; i < match_saves; i += 16) {
-				status.code += `ldr x19, [sp], #16\n`;
-			}
-		}
 		status.code += `b ${status.function_return_label}\n`;
 	}
 }

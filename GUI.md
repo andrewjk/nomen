@@ -78,11 +78,15 @@ What `Container` provides:
   `LEN_AUTO`. Use `add_kind` for `LEN_PERCENT` (e.g.
   `add_kind(0, LEN_PERCENT, 50, LEN_FIXED, 30, 1)` asks for 50% of the cross
   axis and a fixed 30 px on the main axis) or for an explicit `LEN_FILL`.
-  (Passing `LayoutLength` enum values directly —
-  `add_len(handle, .percent(50), .fixed(30), …)` — is the ergonomic form this
-  API intends, but is held back by an aarch64 codegen gap: 16-byte
-  enum-with-data values aren't yet passed by value across the call ABI. See
-  [Layout features still owed](#layout-features-still-owed-now-unblocked).)
+- **`add_len(handle, w, h, span)` / `add_to_len(parent, handle, w, h, span)`** —
+  the ergonomic form of `add_kind`: pass `LayoutLength` enum values directly
+  (`add_len(handle, LayoutLength.percent(50), LayoutLength.fixed(30), 1)`).
+  The aarch64 codegen gap that used to block this (16-byte enum-with-data
+  values weren't passed by value across the call ABI) is fixed — enums with
+  associated data now use the same pass-by-address convention as structs on
+  every call path (plain functions, struct methods, inline methods). Verified
+  on both backends in `test/layout_container.test.ts` and
+  `test/enum_byval_param.test.ts`.
 - **`add_to(parent, handle, w, h, span)`** — append a leaf under an explicit
   parent node (returned by one of the `add_*` container helpers below); accepts
   the same optional `grow`/`align`/`shrink` trailing params as `add`.
@@ -552,9 +556,9 @@ cannot be verified headlessly, but the **layout math** can:
    helpers translate their int `w`/`h` (`0` → auto, non-zero → fixed), so
    existing `add`/`compute` results are unchanged (verified on both backends by
    `test/layout_container.test.ts`). Passing `LayoutLength` enum values
-   directly (`add_len(handle, .percent(50), …)`) is the one ergonomic form still
-   blocked — by an aarch64 codegen gap (16-byte enum-with-data isn't yet passed
-   by value across the call ABI); see
+   directly (`add_len(handle, LayoutLength.percent(50), …)` /
+   `add_to_len(parent, …)`) also ships now — the aarch64 enum-with-data
+   call-ABI gap that blocked it is fixed; see
    [Layout features still owed](#layout-features-still-owed-now-unblocked).
 5. **ZStack, then Grid.** ✅ Grid done (flow + column `span`); ZStack done
    (children overlap, each gets the stack's full frame, stack sizes to its
@@ -732,22 +736,32 @@ Both backends now implement this end-to-end and are exercised by
   whose type is a struct wider than one word reads and writes correctly
   through a trait-typed receiver. Runtime-tested on both backends in
   `test/trait_dispatch_gaps.test.ts`.
-- **16-byte enum-with-data (and struct) values aren't passed by value on
-  aarch64.** When a `LayoutLength` (a 16-byte enum-with-data: 8-byte tag + 8-byte
-  payload) is passed by value as a function parameter, the aarch64 call-site
-  codegen stores only the first 8 bytes of the argument into the per-arg spill
-  slot (`build_aarch64/build_function_call_node.ts`: `args_base + i * 8`) and
-  loads a single word into the target register, so the callee sees a garbled
-  value (the case index only — the payload is dropped). Symptomatic as
-  `add_len(handle, .fixed(100), .fixed(30), …)` resolving every `LayoutLength`
-  arg to `LEN_AUTO` on aarch64 while working on `c`. The C backend passes the
-  struct by value correctly (the C compiler handles the 16-byte copy). Worked
-  around in `Container.nm` by exposing `add_kind`/`add_to_kind`, which take the
-  `(kind, value)` pair as plain `int` parameters (`LEN_*` constants) and so
-  never trip the gap; the ergonomic `add_len(LayoutLength, LayoutLength, …)`
-  form stays unimplemented until the aarch64 call ABI handles multi-word
-  by-value parameters (either two registers per 16-byte arg per AAPCS64, or an
-  indirect-by-pointer convention matched on both sides).
+- ~~**16-byte enum-with-data (and struct) values aren't passed by value on
+  aarch64.**~~ ✅ **Fixed.** Enum-with-data values (16-byte tag + payload) now
+  use the same pass-by-address convention as structs on **every** aarch64 call
+  path. Plain function calls already did this
+  (`build_function_call_node.ts` routes enum-with-data args through
+  `emit_struct_address` and `build_function_node.ts` saves the incoming
+  pointer in a callee-saved register); the gap was the **method** paths:
+  `build_access_node`'s method-arg loop loaded only the tag word (the callee
+  then dereferenced the tag as a pointer → SIGSEGV or garbage payload), and
+  `build_struct_node`'s method prologue treated the param as a scalar. Both
+  now classify enum-with-data params like struct params (as does
+  `build_inline_method`). A third bug surfaced by the fix: `build_match_node`
+  stashed the scrutinee tag/address in x19/x20, clobbering `self` (x19) and
+  struct/enum params (x19–x22) inside match arms in methods — any
+  `self.field` read in an arm dereferenced the enum tag. The scrutinee now
+  lives in stack slots (scratch regs x9/x10 for compares/payload loads), and
+  the old push/pop + `match_save_size` early-return machinery is gone.
+  Runtime-tested on both backends in `test/enum_byval_param.test.ts` (plain
+  fn, method, inline method, two-enum-param `add_len` shape, and
+  `self`-field-in-match-arm). The ergonomic `add_len`/`add_to_len`
+  (`LayoutLength`-taking) helpers now ship in `Container.nm` alongside
+  `add_kind`/`add_to_kind`, tested in `test/layout_container.test.ts`.
+  (16-byte **struct** values keep their existing pass-by-address convention —
+  both sides of every call path already agreed on it. True AAPCS64
+  two-register passing is only needed for C interop, which goes through the
+  companion-file thunks instead.)
 
   Two related aarch64 fixes landed alongside the layout work above (neither
   fixes the by-value gap, but both were unblocked by it):
@@ -1051,8 +1065,13 @@ below can be implemented in one of two places: on the existing handle-based v1
   main-axis deficit weighted by `shrink` (default `0` = hold at intrinsic, the
   original behaviour), `LEN_PERCENT` resolves against the bounded axis, and
   `add_kind`/`add_to_kind` accept any `LEN_*` case via a `(kind, value)` int
-  pair (the ergonomic `add_len(.percent(50), …)` form is the only piece still
-  blocked — see below).
+  pair. ✅ And the ergonomic `add_len(handle, LayoutLength.percent(50), …)` /
+  `add_to_len(parent, …)` form now ships too — the aarch64 enum-with-data
+  call-ABI gap that blocked it is fixed (see
+  [Remaining dispatch limitations](#remaining-dispatch-limitations-pre-spec-follow-up)),
+  with `length_kind`/`length_val` translating each enum case to the internal
+  `(kind, value)` pair. Verified on both backends in
+  `test/layout_container.test.ts`.
 - ~~Intrinsic-size measurement (query each native control's
   `intrinsicContentSize`/`fittingSize`) so `add` needs no size hints.~~ ✅
   **Done.** A new opt-in `LEN_INTRINSIC` sizing kind (and `add_intrinsic` /

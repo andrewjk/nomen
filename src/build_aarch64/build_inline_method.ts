@@ -115,9 +115,11 @@ export default function build_inline_method(
 	for (let i = 0; i < func.params.length; i++) {
 		const param = func.params[i];
 		if (param.is_self_param && !self_is_var) continue;
-		const is_struct_type = !!status.structs.find(
-			(s) => s.name === param.type.name && !s.is_simple_type,
-		);
+		// Enum-with-data args arrive as a pointer to the tag+payload blob —
+		// same convention as struct args.
+		const is_struct_type =
+			!!status.structs.find((s) => s.name === param.type.name && !s.is_simple_type) ||
+			!!status.enums.find((e) => e.name === param.type.name && e.has_associated_data);
 		if (is_struct_type && callee_idx < callee_saved.length) {
 			const saved_reg = callee_saved[callee_idx++];
 			if (saved_reg !== "x19" || !needs_x19) {

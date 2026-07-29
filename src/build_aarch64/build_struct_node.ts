@@ -785,9 +785,12 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 				}
 				continue;
 			}
-			const is_struct_type = !!status.structs.find(
-				(s) => s.name === param.type.name && !s.is_simple_type,
-			);
+			// Enum-with-data params arrive as a pointer to the 16-byte
+			// tag+payload blob (same convention as struct params) — mirrors
+			// the is_enum_with_data handling in build_function_node.
+			const is_struct_type =
+				!!status.structs.find((s) => s.name === param.type.name && !s.is_simple_type) ||
+				!!status.enums.find((e) => e.name === param.type.name && e.has_associated_data);
 			if (is_struct_type && callee_idx < callee_saved.length) {
 				const saved_reg = callee_saved[callee_idx++];
 				if (saved_reg !== "x19" || !needs_x19) {
@@ -845,9 +848,9 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 				second_slot_idx += 2;
 				continue;
 			}
-			const is_struct_type = !!status.structs.find(
-				(s) => s.name === param.type.name && !s.is_simple_type,
-			);
+			const is_struct_type =
+				!!status.structs.find((s) => s.name === param.type.name && !s.is_simple_type) ||
+				!!status.enums.find((e) => e.name === param.type.name && e.has_associated_data);
 			if (!is_struct_type) {
 				const size = aarch64_size(param.type.name);
 				const offset = allocate_stack_space(status, size, size);
