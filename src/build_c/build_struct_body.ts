@@ -3,7 +3,7 @@ import TraitNode from "../nodes/TraitNode.ts";
 import Type from "../nodes/Type.ts";
 import build_node from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
-import c_type from "./utils/c_type.ts";
+import c_type, { c_typedef_name } from "./utils/c_type.ts";
 import { has_flag_name, is_nullable_struct_type } from "./utils/nullable_struct.ts";
 
 export default function build_struct_body(node: StructNode, status: BuildStatus) {
@@ -12,7 +12,10 @@ export default function build_struct_body(node: StructNode, status: BuildStatus)
 	if (status.emitted_struct_bodies?.has(node.name)) return;
 	status.emitted_struct_bodies?.add(node.name);
 
-	// Emit the struct typedef (body only, no functions)
+	// Emit the struct typedef (body only, no functions). The struct TAG
+	// (`struct Foo`) stays the plain Nomen name (raw #arch blocks and field
+	// layouts reference it); only the TYPEDEF name is mangled when a GUI build
+	// pulls in MacTypes.h (see set_c_typedef_mangling).
 	status.code += `typedef struct ${node.name}\n{\n`;
 	status.code += `void *_vt;\n`;
 	// Fields from the struct
@@ -41,7 +44,7 @@ export default function build_struct_body(node: StructNode, status: BuildStatus)
 			}
 		}
 	}
-	status.code += `} ${node.name};\n`;
+	status.code += `} ${c_typedef_name(node.name)};\n`;
 }
 
 function field_c_type(type: Type, status: BuildStatus): string {

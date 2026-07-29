@@ -83,9 +83,14 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 					status.structs.find((s) => s.name === node.return_type.name && !s.is_simple_type) ||
 					status.traits.find((t) => t.name === node.return_type.name)
 				) {
-					status.code += `struct `;
+					// Struct/trait return uses the `struct Tag` form (the tag is
+					// never mangled, only the typedef is); emit the plain name
+					// rather than `struct ` + c_type (which would mangle the tag
+					// on GUI builds).
+					status.code += `struct ${mono_return_name}`;
+				} else {
+					status.code += `${c_type(mono_return_name)}`;
 				}
-				status.code += `${c_type(mono_return_name)}`;
 				if (return_is_class) {
 					status.code += `*`;
 				}

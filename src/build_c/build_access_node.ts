@@ -220,11 +220,14 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				const traitField = trait.fields.find((f) => f.name == access_field.name)!;
 				// Struct field types need the `struct` tag in C; scalars/strings
 				// lower via c_type directly. Multi-word struct trait fields are
-				// returned by value through the get accessor.
+				// returned by value through the get accessor. The tag (plain
+				// name) is never mangled — only the typedef is.
 				const field_is_struct = !!status.structs.find(
 					(s) => s.name === traitField.type.name && !s.is_simple_type,
 				);
-				const type = `${field_is_struct ? "struct " : ""}${c_type(traitField.type.name)}`;
+				const type = field_is_struct
+					? `struct ${traitField.type.name}`
+					: c_type(traitField.type.name);
 				const cast = `(${type}(*)(void *))`;
 				status.code += `(${cast}_get_trait_func((void *)`;
 				build_vtable_target(node.target, status);

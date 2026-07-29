@@ -16,7 +16,9 @@ import { scan_heap_returning_functions } from "./build_aarch64/utils/scan_heap_r
 import { scan_inline_candidates } from "./build_aarch64/utils/scan_inline_candidates.ts";
 import build_c_node from "./build_c/build_node.ts";
 import type BuildStatus from "./build_c/BuildStatus.ts";
+import { set_c_typedef_mangling } from "./build_c/utils/c_type.ts";
 import BaseNode from "./nodes/BaseNode.ts";
+import RawNode from "./nodes/RawNode.ts";
 import type BuildResult from "./types/BuildResult.ts";
 
 export default function build(
@@ -45,6 +47,12 @@ export default function build(
 		emitted_struct_bodies: new Set(),
 		vtable_data: "",
 	};
+
+	// Reset per build so the C-backend-only typedef-mangling flag never leaks
+	// across build() calls (e.g. a prior GUI C build leaving it on for a later
+	// aarch64 build, which would corrupt the companion's primitive c_type
+	// lookups). The C branch below re-enables it when this build pulls in ObjC.
+	set_c_typedef_mangling(false);
 
 	if (options.arch === "aarch64") {
 		reset_value_string_counter();
@@ -176,6 +184,14 @@ export default function build(
 			status.code = status.code.replaceAll("bl _free\n", "bl _nomen_free_wrap\n");
 		}
 	} else {
+		// GUI builds `#import` Apple frameworks (Cocoa/UIKit) which drag in
+		// MacTypes.h, whose typedefs (`Size`, `Point`, …) collide with Nomen's
+		// own struct/enum typedefs. Detect that situation up front (it depends
+		// only on raw `#arch` blocks referencing the objc runtime) and mangle
+		// user typedef names with `nm_` for this build, keeping struct tags
+		// unchanged. See `set_c_typedef_mangling` / `c_typedef_name`. Mirrors
+		// the aarch64 companion's strategy. Off for every non-GUI program.
+		set_c_typedef_mangling(build_needs_objc(root, status.platform));
 		build_c_node(root, status);
 		// A `view T` is a non-owning, non-escaping (ptr, len) slice into a
 		// container's buffer. Every view — `view string`, `view int`, `view
@@ -236,7 +252,9 @@ export default function build(
 	};
 }
 
-/** Derive a default target platform from the host when none is supplied. */
+/**
+ * Derive a default target platform from the host when none is supplied.
+ */
 export function default_platform(): string {
 	switch (process.platform) {
 		case "darwin":
@@ -265,4 +283,43 @@ function wrap_c_allocators(code: string): string {
 		.replace(/\brealloc\(/g, "nomen_realloc_wrap(")
 		.replace(/\bfree\(/g, "nomen_free_wrap(")
 		.replace(/\bstrdup\(/g, "nomen_strdup_wrap(");
+}
+
+/**
+ * Whether the C backend's single translation unit will end up `#import`ing
+ * Apple's ObjC frameworks (Foundation/Cocoa/UIKit), matching the
+ * `needs_objc` gate in build_c/build_root_node.ts. That gate keys off objc
+ * runtime symbols (`objc_msgSend`/`objc_getClass`/`sel_registerName`) in the
+ * emitted code — and those symbols only ever originate from raw `#arch: c`
+ * blocks (the codegen never synthesises objc calls), so scanning the AST's
+ * raw nodes before building is equivalent. Used to decide whether to mangle
+ * user typedef names (see set_c_typedef_mangling) so they don't collide with
+ * MacTypes.h.
+ */
+function build_needs_objc(root: BaseNode, platform: string): boolean {
+	if (platform !== "macos" && platform !== "ios") return false;
+	return ast_uses_objc(root);
+}
+
+const OBJC_RE = /\bobjc_msgSend\b|\bobjc_getClass\b|\bsel_registerName\b/;
+
+function ast_uses_objc(node: BaseNode | undefined | null): boolean {
+	if (!node) return false;
+	if (node.node_type === "raw" && OBJC_RE.test((node as RawNode).value)) {
+		return true;
+	}
+	for (const key of Object.keys(node)) {
+		if (key === "parent" || key === "scope") continue; // skip back-refs
+		const v = (node as unknown as Record<string, unknown>)[key];
+		if (Array.isArray(v)) {
+			for (const item of v) {
+				if (item && typeof item === "object" && "node_type" in item) {
+					if (ast_uses_objc(item as BaseNode)) return true;
+				}
+			}
+		} else if (v && typeof v === "object" && "node_type" in v) {
+			if (ast_uses_objc(v as BaseNode)) return true;
+		}
+	}
+	return false;
 }

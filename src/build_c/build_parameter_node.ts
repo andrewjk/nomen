@@ -48,10 +48,15 @@ export default function build_parameter_node(node: ParameterNode, status: BuildS
 	const trait_type = status.traits.find((t) => t.name === type_name);
 	const is_struct =
 		(node.is_self_param || struct_type || trait_type) && !struct_type?.is_simple_type;
+	// A struct/trait parameter uses the `struct Tag *` form: the TAG (plain
+	// name) is never mangled, only the typedef is — and a parameter is a
+	// pointer to the struct, not a typedef value. Emit the tag directly rather
+	// than `c_type`, which would yield the (possibly mangled) typedef.
 	if (is_struct) {
-		status.code += `struct `;
+		status.code += `struct ${type_name}`;
+	} else {
+		status.code += c_type(type_name);
 	}
-	status.code += c_type(type_name);
 	// Pointer rules:
 	//   - struct / trait params: always `struct T *` (by reference)
 	//   - `ref` / array params: pass by pointer (modifications propagate)

@@ -25,11 +25,14 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 				const traitField = trait.fields.find((f) => f.name == accessNode.access.name)!;
 				// Struct field types need the `struct` tag in C; scalars/strings
 				// lower via c_type directly. Multi-word struct trait fields are
-				// passed by value to the set accessor.
+				// passed by value to the set accessor. The tag (plain name) is
+				// never mangled — only the typedef is.
 				const field_is_struct = !!status.structs.find(
 					(s) => s.name === traitField.type.name && !s.is_simple_type,
 				);
-				const type = `${field_is_struct ? "struct " : ""}${c_type(traitField.type.name)}`;
+				const type = field_is_struct
+					? `struct ${traitField.type.name}`
+					: c_type(traitField.type.name);
 				const cast = `(void (*)(void *, ${type}))`;
 				// The vtable lives at offset 0 of the struct, so _get_trait_func
 				// and the accessor both need a POINTER to the receiver. Use

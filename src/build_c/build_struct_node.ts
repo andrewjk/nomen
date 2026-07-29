@@ -65,9 +65,14 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 				.filter((f) => f.value == null)
 				.map((f) => c_param_decl(f.type, f.name, status))
 				.join(", ");
-	const ctor_return = is_class ? `${node.name}*` : node.name;
+	// The constructor returns by tag (`struct Foo` / `struct Foo*`): the tag is
+	// never mangled (only the typedef is), so the signature stays valid whether
+	// or not a GUI build mangles the typedef name. The forward declaration
+	// below used to prepend `struct ` to a bare-name return; with the tag
+	// baked in here it's emitted as-is.
+	const ctor_return = is_class ? `struct ${node.name}*` : `struct ${node.name}`;
 	const ctor = `${ctor_return} ${node.name}_init(${ctor_params})`;
-	status.headers += `struct ${ctor};\n`;
+	status.headers += `${ctor};\n`;
 
 	if (custom_init) {
 		// Custom init — generate a constructor function with the user-facing
@@ -154,7 +159,7 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 		if (is_class) {
 			status.code += `struct ${node.name}* ${object_name} = malloc(sizeof(struct ${node.name}));\n`;
 		} else {
-			status.code += `${node.name} ${object_name};\n`;
+			status.code += `struct ${node.name} ${object_name};\n`;
 		}
 		if (node.traits.length) {
 			status.code += `${object_name}${accessor}_vt = &_${node.name}_traits;\n`;
@@ -321,10 +326,13 @@ function c_param_decl(type: Type, name: string, status: BuildStatus): string {
 	const is_simple = !!struct_type?.is_simple_type;
 	const is_ptr = type.is_array || (!is_simple && (is_struct || !!trait_type));
 	let out = "";
+	// Struct/trait params use the `struct Tag` form (the tag is never mangled,
+	// only the typedef is) — emit the plain name, not c_type's typedef.
 	if (is_struct || trait_type) {
-		out += `struct `;
+		out += `struct ${type.name}`;
+	} else {
+		out += c_type(type.name);
 	}
-	out += c_type(type.name);
 	if (is_ptr) {
 		out += ` *`;
 	} else {
@@ -423,10 +431,13 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 		} else {
 			const return_struct = status.structs.find((s) => s.name === return_type && !s.is_simple_type);
 			const return_trait = status.traits.find((t) => t.name === return_type);
+			// A struct/trait return uses the `struct Tag` form (tag never
+			// mangled); otherwise emit the typedef/primitive via c_type.
 			if (return_struct || return_trait) {
-				status.code += `struct `;
+				status.code += `struct ${return_type}`;
+			} else {
+				status.code += `${c_type(return_type)}`;
 			}
-			status.code += `${c_type(return_type)}`;
 			// Class return types are pointers (heap-allocated). Trait-typed
 			// return types are also pointers — every trait-typed value in a
 			// monomorphized container context (e.g. `T List_T_at(...)`) is a
@@ -499,11 +510,13 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 			// A struct field type needs the `struct` tag in C (e.g. `struct Point`,
 			// not `Point`); scalar/string fields lower via c_type directly. This
 			// matters for multi-word struct trait fields, which are returned/passed
-			// by value through the get/set accessors.
+			// by value through the get/set accessors. The tag (plain name) is never
+			// mangled — only the typedef is — so emit it directly for the struct
+			// case rather than `struct ` + c_type (which would mangle the tag).
 			const field_is_struct = !!status.structs.find(
 				(s) => s.name === field.type.name && !s.is_simple_type,
 			);
-			const field_c_type = `${field_is_struct ? "struct " : ""}${c_type(field.type.name)}`;
+			const field_c_type = field_is_struct ? `struct ${field.type.name}` : c_type(field.type.name);
 			const get_signature = `${field_c_type} get_${node.name}_${field.name}(struct ${node.name} *self)`;
 			status.headers += `${get_signature};\n`;
 			status.code += `${get_signature} { return self->${field.name}; }\n`;
