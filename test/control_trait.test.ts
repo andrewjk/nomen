@@ -1,5 +1,7 @@
-import { describe, expect, test } from "vite-plus/test";
 import path from "node:path";
+
+import { describe, expect, test } from "vite-plus/test";
+
 import { get_library } from "../src/lib.ts";
 import parse from "../src/parse.ts";
 import build_and_check_output from "./build_and_check_output";
@@ -55,6 +57,5 @@ pub func main = () {
 			expect(parsed.errors).toEqual([]);
 			await build_and_check_output(input, "control_runtime", "30 12 30 12 99 88", true);
 		},
-		{ timeout: 60000 },
 	);
 });

@@ -8,6 +8,44 @@ import { expect } from "vite-plus/test";
 
 import type BuildResult from "../src/types/BuildResult";
 
+const execPromise = util.promisify(exec);
+
+// Apple ObjC runtime symbols only ever appear in raw `#arch: c`/`aarch64_use_c`
+// blocks (the codegen never synthesises them). Their presence is the same signal
+// build_c/build_root_node uses to gate Foundation/Cocoa imports, so reuse it to
+// decide whether to link the (expensive) Apple frameworks at all.
+const OBJC_RE = /\bobjc_msgSend\b|\bobjc_getClass\b|\bsel_registerName\b/;
+
+// audit_runtime.c is byte-for-byte identical for every test, so compile it once
+// into a shared object keyed by its content hash and reuse it across the whole
+// suite (the per-test recompile was ~0.06s × 200+ cold-cache misses).
+// Parallel-safe: each contender writes a uniquely-suffixed temp file then
+// renames it into place atomically; the bytes are deterministic, so a lost race
+// just overwrites identical content.
+let cached_audit_hash: string | null = null;
+
+async function ensure_audit_obj(): Promise<string | null> {
+	const audit_runtime = path.join(".", "src", "audit_runtime.c");
+	if (!fs.existsSync(audit_runtime)) return null;
+	const source = fs.readFileSync(audit_runtime, "utf8");
+	let hash = cached_audit_hash;
+	if (hash === null) {
+		const h = crypto.createHash("sha256");
+		h.update(source);
+		hash = h.digest("hex").substring(0, 16);
+		cached_audit_hash = hash;
+	}
+	const out_dir = path.resolve(".", "test", "out");
+	if (!fs.existsSync(out_dir)) fs.mkdirSync(out_dir, { recursive: true });
+	const audit_obj = path.join(out_dir, `audit_runtime_${hash}.o`);
+	if (!fs.existsSync(audit_obj)) {
+		const tmp = `${audit_obj}.tmp.${process.pid}.${crypto.randomBytes(6).toString("hex")}`;
+		await execPromise(`clang -c ${audit_runtime} -o ${tmp}`);
+		fs.renameSync(tmp, audit_obj);
+	}
+	return audit_obj;
+}
+
 export default async function check_output(
 	name: string,
 	built: BuildResult,
@@ -48,11 +86,17 @@ export default async function check_output(
 	let stdout: string;
 	let stderr: string;
 
-	const audit_runtime = path.join(".", "src", "audit_runtime.c");
-	const audit_obj = path.join(folder, "audit_runtime.o");
-	const execPromise = util.promisify(exec);
+	const audit_obj = options.audit ? await ensure_audit_obj() : null;
+	// Only link Apple frameworks when the generated code actually uses the ObjC
+	// runtime (GUI builds). The previous unconditional flags added ~0.23s of
+	// pure link overhead to every macOS test — a 5-10x tax that ~99% of tests
+	// never need.
+	const uses_objc =
+		OBJC_RE.test(code) ||
+		OBJC_RE.test(built.headers || "") ||
+		(!!built.companion && OBJC_RE.test(built.companion));
 	const framework_flags =
-		process.platform === "darwin"
+		process.platform === "darwin" && uses_objc
 			? " -framework CoreGraphics -framework Foundation -framework AppKit -lobjc"
 			: "";
 	let compileCmd: string;
@@ -66,8 +110,7 @@ export default async function check_output(
 			steps.push(`clang -c ${companionfile} -o ${comp_obj}`);
 			link_inputs += ` ${comp_obj}`;
 		}
-		if (options.audit) {
-			steps.push(`clang -c ${audit_runtime} -o ${audit_obj}`);
+		if (options.audit && audit_obj) {
 			link_inputs += ` ${audit_obj}`;
 		}
 		steps.push(`clang ${link_inputs} -o ${outfile}${framework_flags}`);
@@ -75,10 +118,8 @@ export default async function check_output(
 	} else {
 		let link_inputs = codefile;
 		if (has_companion) link_inputs += ` ${companionfile}`;
-		if (options.audit) link_inputs += ` ${audit_obj}`;
-		compileCmd = options.audit
-			? `clang -c ${audit_runtime} -o ${audit_obj} && clang -o ${outfile} ${link_inputs}${framework_flags}`
-			: `clang -o ${outfile} ${link_inputs}${framework_flags}`;
+		if (options.audit && audit_obj) link_inputs += ` ${audit_obj}`;
+		compileCmd = `clang -o ${outfile} ${link_inputs}${framework_flags}`;
 	}
 
 	const cached_key = fs.existsSync(cachefile) ? fs.readFileSync(cachefile, "utf-8") : null;
