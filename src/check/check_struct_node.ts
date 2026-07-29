@@ -78,6 +78,20 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 	const type_params_length_before = status.type_params.length;
 	status.type_params.push(...struct.type_params);
 
+	// Validate trait bounds on type params: `struct Container<T: Control>`
+	// requires each named bound to be a known trait. The actual conformance
+	// check (that a concrete type arg conforms to the bound) happens at
+	// monomorphization, once the type args are known.
+	const bounds_parallel = struct.type_param_bounds.length === struct.type_params.length;
+	for (let i = 0; i < struct.type_params.length; i++) {
+		const bounds = bounds_parallel ? struct.type_param_bounds[i] : [];
+		for (const bound of bounds) {
+			if (!status.traits.find((t) => t.name === bound)) {
+				add_error(status, `Unknown trait bound: ${bound}`, struct.start);
+			}
+		}
+	}
+
 	const values_length_before_fields = status.values.length;
 	for (let decl of struct.fields) {
 		decl.scope = struct;

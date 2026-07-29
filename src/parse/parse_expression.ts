@@ -9,6 +9,7 @@ import GroupedNode from "../nodes/GroupedNode.ts";
 import { is_operation_node } from "../nodes/is_node_type.ts";
 import OperationNode, { type Operator } from "../nodes/OperationNode.ts";
 import RangeNode from "../nodes/RangeNode.ts";
+import type Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import parse_access from "./parse_access.ts";
 import parse_array_value from "./parse_array_value.ts";
@@ -24,6 +25,7 @@ import type ParseStatus from "./ParseStatus.ts";
 import accept from "./utils/accept.ts";
 import consume from "./utils/consume.ts";
 import expect from "./utils/expect.ts";
+import expect_close_angle from "./utils/expect_close_angle.ts";
 import get_index from "./utils/get_index.ts";
 import peek_current from "./utils/peek_current.ts";
 
@@ -59,16 +61,50 @@ function restructure_op(
 	return new OperationNode(start, current_op, current_node, expression);
 }
 
-function find_matching_close(tokens: { value: string }[], start: number): number {
-	let depth = 0;
-	for (let i = start; i < tokens.length; i++) {
-		if (tokens[i].value === "<") depth++;
-		else if (tokens[i].value === ">") {
-			depth--;
-			if (depth === 0) return i;
+// Attempt to parse a generic argument list `Name<...>` at the current position,
+// where `node` is the `Name` value that preceded the `<`.
+//
+// The tokenizer greedily lexes `>>` (and `>>>`) as the shift operator, so nested
+// generic closes like `Map<int, Wrap<int>>` arrive as a single `>>` token; the
+// type-arg parser peels one angle off at a time (see expect_close_angle) so the
+// closing is handled correctly.
+//
+// Returns the parsed type arguments when the `<` really opens a generic list
+// that is properly closed and immediately followed by `(` (a typed constructor
+// or call, e.g. `Array<int>(...)`) or `.` (method access on a generic type, e.g.
+// `Vec<int>.new`). Otherwise returns null after fully restoring parser state —
+// including any in-place `>>`-peeling mutations performed on tokens, and any
+// errors appended while probing — so the caller can treat the `<` as a
+// comparison/shift operator instead. This avoids the old greedy scan, which
+// matched a comparison `<` against a distant shift `>>` and produced false
+// "Expected >" errors (see e.g. `while i < other_len || ...`).
+function try_parse_generic_args(status: ParseStatus): Type[] | null {
+	const saved_i = status.i;
+	const saved_values = status.tokens.map((t) => t.value);
+	const saved_errors = status.errors.length;
+	accept("<", status);
+	const type_args: Type[] = [];
+	try {
+		type_args.push(parse_type(status));
+		while (peek_current(status) === ",") {
+			accept(",", status);
+			type_args.push(parse_type(status));
 		}
+		if (!expect_close_angle(status)) throw new Error("no close angle");
+	} catch {
+		status.i = saved_i;
+		status.tokens.forEach((t, i) => (t.value = saved_values[i]));
+		status.errors.length = saved_errors;
+		return null;
 	}
-	return -1;
+	const follow = peek_current(status);
+	if (follow !== "(" && follow !== ".") {
+		status.i = saved_i;
+		status.tokens.forEach((t, i) => (t.value = saved_values[i]));
+		status.errors.length = saved_errors;
+		return null;
+	}
+	return type_args;
 }
 
 // Does the `(` at the current position start a lambda `(params) => body`
@@ -249,20 +285,8 @@ export default function parse_expression(status: ParseStatus, allow_assignment =
 			}
 			case "<": {
 				if (node.node_type === "value") {
-					const close_idx = find_matching_close(status.tokens, status.i);
-					if (
-						close_idx !== -1 &&
-						close_idx + 1 < status.tokens.length &&
-						(status.tokens[close_idx + 1]?.value === "(" ||
-							status.tokens[close_idx + 1]?.value === ".")
-					) {
-						accept("<", status);
-						const type_args = [parse_type(status)];
-						while (peek_current(status) === ",") {
-							accept(",", status);
-							type_args.push(parse_type(status));
-						}
-						expect(">", status);
+					const type_args = try_parse_generic_args(status);
+					if (type_args !== null) {
 						const name = (node as ValueNode).value;
 						// Attach type_args to the value node so subsequent .method() access
 						// can route to the correctly monomorphized struct

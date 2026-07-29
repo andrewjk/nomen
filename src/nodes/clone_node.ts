@@ -337,6 +337,7 @@ export default function clone_node(node: BaseNode): BaseNode {
 				n.functions.map((f) => clone_node(f) as FunctionNode),
 			);
 			c.type_params = n.type_params.slice();
+			c.type_param_bounds = n.type_param_bounds.map((bounds) => bounds.slice());
 			c.is_generic = n.is_generic;
 			c.trait_args = n.trait_args.map((args) => args?.map(clone_type));
 			c.scope = n.scope;

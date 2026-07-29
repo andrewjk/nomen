@@ -4,6 +4,7 @@ import type ParseStatus from "./ParseStatus.ts";
 import accept from "./utils/accept.ts";
 import consume from "./utils/consume.ts";
 import expect from "./utils/expect.ts";
+import expect_close_angle from "./utils/expect_close_angle.ts";
 import get_index from "./utils/get_index.ts";
 import peek_current from "./utils/peek_current.ts";
 
@@ -41,7 +42,7 @@ export default function parse_type(status: ParseStatus): Type {
 		while (accept(",", status)) {
 			type.type_args.push(parse_type(status));
 		}
-		expect(">", status);
+		expect_close_angle(status);
 	}
 	if (accept("?", status)) {
 		type.is_nullable = true;

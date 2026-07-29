@@ -209,6 +209,30 @@ export function monomorphize(
 		substitution.set(generic_struct.type_params[i], type_args[i].name);
 	}
 
+	// Enforce trait bounds on type params (`struct Container<T: Control>`):
+	// each concrete type arg must conform to every bound declared on its
+	// param. A bound is satisfied when the arg is a struct/class whose
+	// `traits` include the bound trait name. Primitives and non-conforming
+	// structs are rejected here, at the point the generic is instantiated.
+	const bounds_parallel =
+		generic_struct.type_param_bounds.length === generic_struct.type_params.length;
+	for (let i = 0; i < generic_struct.type_params.length; i++) {
+		const bounds = bounds_parallel ? generic_struct.type_param_bounds[i] : [];
+		if (!bounds || bounds.length === 0) continue;
+		const arg_name = type_args[i].name;
+		const arg_struct = status.structs.findLast((s) => s.name === arg_name);
+		for (const bound of bounds) {
+			const conforms = !!arg_struct && arg_struct.traits.includes(bound);
+			if (!conforms) {
+				add_error(
+					status,
+					`Type argument '${arg_name}' does not conform to bound '${bound}' for type parameter '${generic_struct.type_params[i]}' of ${generic_struct.name}`,
+					generic_struct.start,
+				);
+			}
+		}
+	}
+
 	const mono_fields = generic_struct.fields.map((field) => {
 		const resolved_type = substitute_type(field.type, substitution);
 		const mono_field = new DeclarationNode(

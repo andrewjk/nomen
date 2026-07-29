@@ -20,6 +20,15 @@ export default class StructNode extends BaseNode {
 	fields: DeclarationNode[];
 	functions: FunctionNode[];
 	type_params: string[];
+	/**
+	 * Trait bounds for each type param, parallel to `type_params`.
+	 * `type_param_bounds[i]` lists the trait names that `type_params[i]` must
+	 * conform to (e.g. `struct Container<T: Control>` →
+	 * `type_param_bounds[0] = ["Control"]`). An empty array means the param
+	 * is unbounded. Validated against the concrete type args at
+	 * monomorphization.
+	 */
+	type_param_bounds: string[][];
 	is_simple_type: boolean;
 	is_generic?: boolean;
 	is_class?: boolean;
@@ -44,6 +53,7 @@ export default class StructNode extends BaseNode {
 		this.fields = fields || [];
 		this.functions = functions || [];
 		this.type_params = [];
+		this.type_param_bounds = [];
 		// TODO: String shouldn't be a simple type in all circumstances (e.g. if it is growable)
 		this.is_simple_type = built_in_types.includes(name);
 	}

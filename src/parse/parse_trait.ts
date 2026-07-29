@@ -5,6 +5,7 @@ import accept from "./utils/accept.ts";
 import add_to_parent from "./utils/add_to_parent.ts";
 import consume from "./utils/consume.ts";
 import expect from "./utils/expect.ts";
+import expect_close_angle from "./utils/expect_close_angle.ts";
 import get_index from "./utils/get_index.ts";
 
 export default function parse_trait(visibility: "pub" | "private", status: ParseStatus) {
@@ -21,7 +22,7 @@ export default function parse_trait(visibility: "pub" | "private", status: Parse
 		while (accept(",", status)) {
 			trait.type_params.push(consume(status));
 		}
-		expect(">", status);
+		expect_close_angle(status);
 	}
 
 	if (expect("{", status)) {

@@ -660,13 +660,71 @@ used as trait 'T'; declare 'X' as a class`). The native controls are
     multi-param trait, parametric `struct Wrap<T>: Greetable<T>`, and
     heterogeneous `ClassBuffer<Greetable>` destroy dispatch with two conformers
     carrying different type args).
-  - **Still out of scope** (follow-ups): (a) trait **bounds on struct type
+  - **Still out of scope** (follow-ups): (a) ~~trait **bounds on struct type
     params** — `struct Container<T: Control>` (`:` constraining `T`, not
-    conformance) is a separate feature; (b) **generic trait default-method
-    bodies that reference `T`** need per-conformer monomorphization (abstract
-    methods with no body + concrete overrides already work); (c) nested type
-    args in conformance like `Greetable<Wrap<int>>` hit the pre-existing `>>`
-    tokenizer edge case.
+    conformance) is a separate feature~~ ✅ **Done**; (b) **generic trait
+    default-method bodies that reference `T`** need per-conformer
+    monomorphization (abstract methods with no body + concrete overrides
+    already work) — see below; (c) ~~nested type args in conformance like
+    `Greetable<Wrap<int>>` hit the pre-existing `>>` tokenizer edge case~~ ✅
+    **Done**.
+
+  - **(a) Trait bounds on struct type params — done.** `struct Container<T:
+Bound>` (and multiple bounds `T: A + B`) now parse, are stored, and are
+    validated. `StructNode` gained a parallel `type_param_bounds: string[][]`
+    (`src/nodes/StructNode.ts`), populated by `parse_optional_type_param_bound`
+    in `parse_struct.ts` (each param may carry `: Bound` / `: A + B`), and
+    cloned in `src/nodes/clone_node.ts`. `check_struct_node.ts` rejects unknown
+    bound traits at the declaration, and `monomorphize`
+    (`check_function_call_node.ts`) enforces each bound at instantiation: a
+    concrete type arg must be a struct/class whose `traits` include the bound
+    (primitives and non-conforming types error with `Type argument 'X' does
+not conform to bound 'B' for type parameter 'T' of C`). Verified on both
+    backends in `test/trait_bounds.test.ts` (conforming build, `+`-multi-bound
+    build, mixed bounded/unbounded parse, non-conforming-arg and
+    unknown-bound errors). Calling bound methods on `T` _inside the struct
+    body_ (treating `T` as its bound trait for dispatch) remains a deeper
+    future feature; what ships here is the syntax + conformance validation.
+
+  - **(c) Nested type args (`>>` tokenizer edge case) — done.** The lexer
+    greedily matches `>>` as the bitwise-shift operator, so abutting generic
+    closes (`Greetable<Wrap<int>>` lexes as `… >>`) defeated every generic-
+    close site. Fixed at the parser layer with a new
+    `src/parse/utils/expect_close_angle.ts` helper: it peels one `>` off a
+    `>>` token in place (leaving the remaining `>` at the current index, so
+    arbitrarily deep nesting like `A<B<C<int>>>` lexed as `>>` + `>` drains
+    correctly across three calls). All generic-close `expect(">")` sites now
+    use it (`parse_type.ts`, `parse_struct.ts` type-param + trait-args,
+    `parse_trait.ts`, `parse_function.ts`, `parse_expression.ts`), and
+    `find_matching_close` (`parse_expression.ts`) now counts a `>>` token as
+    two angle closes so the expression-context generic-args lookahead finds
+    the match. Genuine `a >> b` shift operators are unaffected — the helper
+    only runs at generic-close positions. Verified on both backends in
+    `test/trait_generic.test.ts` (`Greetable<Wrap<int>>` and triple-nested
+    `Greetable<List<List<int>>>` build; value/type-context `>>` split asserts
+    at parse level; `>> 1` shift after a generic close still works).
+
+  - **(b) Generic trait default-method bodies that reference `T` — deferred.**
+    The motivating case is a generic trait with a default method returning /
+    operating on `T` (e.g. `trait Box<T> { var T item; func get = (self, out
+T) { return self.item } }`) inherited unmodified by a conformer. This needs
+    per-conformer monomorphization: clone the trait default body, substitute
+    the trait's `type_params` for the conformer's concrete `trait_args`, and
+    emit it as a synthesized struct-method override (so the existing
+    struct-method + vtable-override machinery emits it on both backends, and
+    the per-conformer aarch64 `Trait_func` default-body emission is skipped
+    for generic traits). It is **deliberately not implemented yet**: every
+    non-trivial default body (the getter that returns a `T`-typed field, the
+    Container use case) also depends on the **pre-existing
+    generic-struct-storage / field-access gaps** — instantiating a generic
+    struct whose field type is itself a struct/class is broken today
+    (`struct Box<T>{var T item}` monomorphized to `Box_Dog` mis-lays the field
+    and `box.item.field` returns wrong values; see `test/generics.test.ts`),
+    so a synthesized default getter couldn't produce correct results
+    regardless of the trait work. Land the generic-storage fix first, then (b)
+    is a contained follow-on via the synthesized-override route above.
+    Abstract methods with no body + concrete struct overrides already work
+    (verified in `test/trait_generic.test.ts`).
 - ~~**Trait-typed destroy propagation for local variables.**~~ ✅ **Done.**
   A trait-typed local (e.g. `var Speaker s = Dog("Rex")`) now runs the
   concrete struct's `#destroy` and reclaims its owned fields at scope exit on

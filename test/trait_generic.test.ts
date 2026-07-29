@@ -124,6 +124,91 @@ Console.write(" done")
 	});
 });
 
+describe("nested type arguments (the `>>` tokenizer edge case)", () => {
+	// `Greetable<Wrap<int>>` lexes as `Greetable < Wrap < int >>` because the
+	// tokenizer greedily matches `>>` (the bitwise-shift operator). The parser
+	// must split it back into two closing angles at the generic-close sites.
+	test("nested type args in trait conformance: Greetable<Wrap<int>>", async () => {
+		const input = `
+trait Greetable<T> {
+	func code = (self, out int)
+}
+
+struct Wrap {
+	var int inner = 0
+}
+
+class W: Greetable<Wrap<int>> {
+	func code = (self, out int) {
+		return 9
+	}
+}
+
+func code_of = (Greetable v, out int) {
+	return v.code()
+}
+
+Console.write("\\{code_of(W())}")
+`;
+		await build_and_check_output(input, "generic_trait_nested_args", "9");
+	});
+
+	test("nested type args split `>>` in a value/type context (parse-level)", () => {
+		// The tokenizer emits `>>` for the two abutting closes; the parser
+		// must split it on both the type annotation and the constructor
+		// literal. Asserted at the parse level because instantiating a
+		// generic struct whose argument is itself generic (Box<Box<int>>)
+		// exercises a separate nested-mononmorphization path; the `>>` split
+		// itself is a parser concern.
+		const input = `
+struct Box<T> {
+	pub var T value
+}
+var Box<int> inner = Box<int>(7)
+var Box<Box<int>> outer = Box<Box<int>>(inner)
+`;
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual([]);
+	});
+
+	test("triple-nested type args: Tree<Node<Node<int>>>", async () => {
+		// `>>>` lexes as `>>` + `>`; three successive close-angle peels must
+		// drain both tokens.
+		const input = `
+trait Greetable<T> {
+	func code = (self, out int)
+}
+
+struct A {}
+struct B {}
+struct C {}
+
+class Triple: Greetable<List<List<int>>> {
+	func code = (self, out int) {
+		return 3
+	}
+}
+
+func code_of = (Greetable v, out int) {
+	return v.code()
+}
+
+Console.write("\\{code_of(Triple())}")
+`;
+		await build_and_check_output(input, "generic_trait_triple_nested", "3");
+	});
+
+	test("genuine shift operator still works after a generic close", async () => {
+		// `Buffer<int>` closes with a single `>`, then `>> 1` is a real shift.
+		const input = `
+var int v = 8
+var int shifted = v >> 1
+Console.write("\\{shifted}")
+`;
+		await build_and_check_output(input, "shift_after_generic", "4");
+	});
+});
+
 describe("generic trait conformance errors", () => {
 	test("missing type arguments on a generic trait conformance", () => {
 		const input = `

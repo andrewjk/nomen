@@ -9,6 +9,7 @@ import accept from "./utils/accept.ts";
 import add_to_parent from "./utils/add_to_parent.ts";
 import consume from "./utils/consume.ts";
 import expect from "./utils/expect.ts";
+import expect_close_angle from "./utils/expect_close_angle.ts";
 import get_index from "./utils/get_index.ts";
 
 export default function parse_struct(
@@ -25,10 +26,12 @@ export default function parse_struct(
 
 	if (accept("<", status)) {
 		struct.type_params.push(consume(status));
+		struct.type_param_bounds.push(parse_optional_type_param_bound(status));
 		while (accept(",", status)) {
 			struct.type_params.push(consume(status));
+			struct.type_param_bounds.push(parse_optional_type_param_bound(status));
 		}
-		expect(">", status);
+		expect_close_angle(status);
 	}
 
 	const old_namespace = status.namespace;
@@ -85,6 +88,20 @@ function parse_optional_trait_args(status: ParseStatus): Type[] | undefined {
 	while (accept(",", status)) {
 		args.push(parse_type(status));
 	}
-	expect(">", status);
+	expect_close_angle(status);
 	return args;
+}
+
+// Parse an optional trait bound on a struct type parameter: the `: Control`
+// in `struct Container<T: Control>`. Returns the bound trait name, or empty
+// string when the param is unbounded. Multiple bounds may be listed,
+// `+`-separated (`<T: A + B>`); each is stored so the checker can validate
+// conformance at monomorphization.
+function parse_optional_type_param_bound(status: ParseStatus): string[] {
+	if (!accept(":", status)) return [];
+	const bounds: string[] = [consume(status)];
+	while (accept("+", status)) {
+		bounds.push(consume(status));
+	}
+	return bounds;
 }
