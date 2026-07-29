@@ -95,6 +95,20 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 	const values_length_before_fields = status.values.length;
 	for (let decl of struct.fields) {
 		decl.scope = struct;
+		// A `ref`/`view` field would be a non-owning borrow stored in a struct,
+		// which could outlive its target (UAF). Reject it at the field level —
+		// this matches `MEMORY.md` and closes the gap where a `ref` field with a
+		// default value or custom `#init` was accepted (cve-rs probe).
+		if (decl.type.is_ref || decl.type.is_view) {
+			add_error(
+				status,
+				`${struct.is_class ? "class" : "struct"} fields cannot be '${
+					decl.type.is_view ? "view" : "ref"
+				}'`,
+				decl.start,
+			);
+			continue;
+		}
 		if (!struct.is_class && is_class_type(decl.type.name, status)) {
 			add_error(status, `struct fields cannot be class types, use a class instead`, decl.start);
 		} else {

@@ -66,6 +66,19 @@ export default function check_cast_node(node: CastNode, status: CheckStatus) {
 		add_error(status, "Cannot cast to unknown type", node.start);
 		return;
 	}
+	// `as` is a closed numeric/bool/char allowlist — it is a value conversion,
+	// never a way to fabricate a reference. Reject any `ref`/`view` target
+	// outright so an integer value cannot be (mis)typed as a pointer (cve-rs
+	// probe: `int as ref int`). Without this the checker compares only `.name`
+	// ("int"), letting the cast slip through as an int→int conversion.
+	if (node.target_type.is_ref || node.target_type.is_view) {
+		add_error(
+			status,
+			`Cannot cast to ${type_name(node.target_type)}: 'as' cannot produce a reference`,
+			node.start,
+		);
+		return;
+	}
 	if (from === to) return;
 
 	const from_idx = ALL_INT_TYPES.indexOf(from);
