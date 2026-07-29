@@ -112,10 +112,23 @@ func is_visible = (uint64 handle, out bool) {
 	```
 }
 
-func apply_frame = (uint64 handle, int x, int y, int w, int h, int content_h) {
+func apply_frame = (uint64 handle, int x, int y, int w, int h, int content_w, int content_h) {
 	```
 	#arch: c, aarch64_use_c
 	#platform: macos
+	// AppKit runs its own blocking tracking loop during a live window resize,
+	// so the manual event loop can't re-layout mid-drag. Give the control an
+	// autoresizing mask so AppKit repositions it live: pin to the nearest
+	// vertical edge (top=NSViewMinYMargin 8 / bottom=NSViewMaxYMargin 32) to
+	// respect the top-left-origin layout instead of AppKit's default
+	// bottom-left pin, and let wide controls grow with the content width
+	// (NSViewWidthSizable 2). Never set NSViewHeightSizable (16): control
+	// heights come from the layout pass, not the window. AppKit's result
+	// matches what layout() computes, so the post-drag relayout only fixes up
+	// cells AppKit can't (column reflow for sub-full-width children).
+	unsigned long mask = (y * 2 < content_h) ? 8UL : 32UL;
+	if (w * 10 >= content_w * 8) mask |= 2UL;
+	((void(*)(id, SEL, unsigned long))objc_msgSend)((id)handle, sel_registerName("setAutoresizingMask:"), mask);
 	((void(*)(id, SEL, CGRect))objc_msgSend)(
 		(id)handle, sel_registerName("setFrame:"),
 		((CGRect(*)(double, double, double, double))CGRectMake)(
@@ -1011,14 +1024,14 @@ pub struct Container {
 		return self.measured_count.load_int(i)
 	}
 
-	func apply = (self, int content_h) {
+	func apply = (self, int content_w, int content_h) {
 		// Only repaint the dirty leaves — the compositor's dirty-rect win.
 		var int k = 0
 		while k < self.dirty_n {
 			var int i = self.dirty_idx.load_int(k)
 			var uint64 handle = self.handles.load_int(i) as uint64
 			if handle != 0 {
-				apply_frame(handle, self.rx.load_int(i), self.ry.load_int(i), self.rw.load_int(i), self.rh.load_int(i), content_h)
+				apply_frame(handle, self.rx.load_int(i), self.ry.load_int(i), self.rw.load_int(i), self.rh.load_int(i), content_w, content_h)
 			}
 			k = k + 1
 		}
@@ -1078,7 +1091,62 @@ pub struct Container {
 		}
 		self.arrange(self.root, self.padding, self.padding, frame_w, frame_h)
 		self.collect_dirty()
-		self.apply(ch)
+		self.apply(cw, ch)
+	}
+
+	// Install a windowDidResize: delegate so the layout re-runs *during* a
+	// live window resize. AppKit runs its own blocking tracking loop for the
+	// whole drag (our manual event loop is stuck inside sendEvent: and can't
+	// re-layout mid-drag), but it calls windowDidResize: on the delegate at
+	// each step — so re-running Container_layout there keeps every control,
+	// including sub-full-width grid cells that autoresizing masks can't
+	// express, sized and positioned live. Call once after the first layout().
+	// (c backend only: the aarch64 backend emits layout fns as local asm
+	// symbols its C companion can't call back into, so it's a no-op there.)
+	pub func set_resize_callback = (ref self, Window win) {
+		```
+		#arch: c
+		#platform: macos
+		#scope: file
+		struct Container;
+		struct Window;
+		// Forward decl: Container_layout is defined later in this TU.
+		extern void Container_layout(struct Container*, struct Window*);
+		static void *g_resize_grid = 0;
+		static void *g_resize_win = 0;
+		void nomen_set_resize_target(void *grid, void *win) {
+			g_resize_grid = grid;
+			g_resize_win = win;
+		}
+		void nomen_window_did_resize(id self, SEL cmd, id notification) {
+			(void)self; (void)cmd; (void)notification;
+			if (g_resize_grid && g_resize_win) {
+				Container_layout((struct Container*)g_resize_grid, (struct Window*)g_resize_win);
+			}
+		}
+		```
+		```
+		#arch: c
+		#platform: macos
+		nomen_set_resize_target(self, win);
+		Class Dc = objc_getClass("NomenResizeDelegate");
+		if (!Dc) {
+			Dc = objc_allocateClassPair(objc_getClass("NSObject"), "NomenResizeDelegate", 0);
+			if (Dc) {
+				class_addMethod(Dc, sel_registerName("windowDidResize:"), (IMP)nomen_window_did_resize, "v@:@");
+				objc_registerClassPair(Dc);
+			}
+		}
+		if (Dc) {
+			id delegate = ((id(*)(id, SEL))objc_msgSend)((id)Dc, sel_registerName("alloc"));
+			delegate = ((id(*)(id, SEL))objc_msgSend)(delegate, sel_registerName("init"));
+			((void(*)(id, SEL, id))objc_msgSend)((id)win->handle, sel_registerName("setDelegate:"), delegate);
+		}
+		```
+		```
+		#arch: aarch64_use_c
+		// c-backend only — no-op on aarch64.
+		```
 	}
 
 	// Hit test: is point (cx, cy) (top-left origin, as returned by click_x/

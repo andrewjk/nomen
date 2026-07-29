@@ -26,6 +26,12 @@ pub class Window : Control {
 		((void(*)(id, SEL, double, double))objc_msgSend)(
 			win, sel_registerName("setFrameTopLeftPoint:"), 100.0, 100.0);
 		((void(*)(id, SEL, id))objc_msgSend)(win, sel_registerName("makeKeyAndOrderFront:"), (id)0);
+		// The content view must resize with the window and autoresize its
+		// subviews so each control's autoresizingMask takes effect during a
+		// live resize (AppKit's blocking drag loop bypasses our event loop).
+		id cv = ((id(*)(id, SEL))objc_msgSend)(win, sel_registerName("contentView"));
+		((void(*)(id, SEL, unsigned long))objc_msgSend)(cv, sel_registerName("setAutoresizingMask:"), 18UL);
+		((void(*)(id, SEL, BOOL))objc_msgSend)(cv, sel_registerName("setAutoresizesSubviews:"), 1);
 		self->handle = (uint64_t)win;
 		```
 		```

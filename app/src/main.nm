@@ -45,11 +45,29 @@ pub func main = () {
 	grid.add(input.handle, 0, 24, 1)
 	grid.add(add_btn.handle, 0, 32, 1)
 	grid.layout(win)
+	grid.set_resize_callback(win)
 
 	win.show()
 
+	// Re-layout live while the window is resized. Native controls keep their
+	// absolute frames (AppKit pins them to the bottom-left origin), so without
+	// this they appear anchored to the bottom as the window grows. Re-running
+	// layout on every content-size change re-flips y against the new height
+	// (anchoring the grid to the top) and updates intermediate sizes during
+	// the drag instead of only when it ends.
+	var int prev_w = win.content_width()
+	var int prev_h = win.content_height()
+
 	while win.is_visible() {
 		var int had_click = Window.process_events()
+
+		var int cur_w = win.content_width()
+		var int cur_h = win.content_height()
+		if cur_w != prev_w || cur_h != prev_h {
+			prev_w = cur_w
+			prev_h = cur_h
+			grid.layout(win)
+		}
 
 		if had_click == 1 {
 			// Re-layout on any click (checkbox toggle or otherwise). Hidden

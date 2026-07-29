@@ -318,6 +318,12 @@ win, sel_registerName("setTitle:"),
 ((void(*)(id, SEL, double, double))objc_msgSend)(
 win, sel_registerName("setFrameTopLeftPoint:"), 100.0, 100.0);
 ((void(*)(id, SEL, id))objc_msgSend)(win, sel_registerName("makeKeyAndOrderFront:"), (id)0);
+// The content view must resize with the window and autoresize its
+// subviews so each control's autoresizingMask takes effect during a
+// live resize (AppKit's blocking drag loop bypasses our event loop).
+id cv = ((id(*)(id, SEL))objc_msgSend)(win, sel_registerName("contentView"));
+((void(*)(id, SEL, unsigned long))objc_msgSend)(cv, sel_registerName("setAutoresizingMask:"), 18UL);
+((void(*)(id, SEL, BOOL))objc_msgSend)(cv, sel_registerName("setAutoresizesSubviews:"), 1);
 self->handle = (uint64_t)win;
 
 }
@@ -467,6 +473,14 @@ self->handle = 0;
 
 }
 
+// Container_set_resize_callback
+void Container_set_resize_callback(nm_Container *self, nm_Window *win) __asm__("Container_set_resize_callback");
+void Container_set_resize_callback(nm_Container *self, nm_Window *win)
+{
+// c-backend only — no-op on aarch64.
+
+}
+
 // Text_init
 void Text_init(nm_Text *self, nm_Window *window) __asm__("Text_init");
 void Text_init(nm_Text *self, nm_Window *window)
@@ -612,9 +626,22 @@ return !hidden;
 }
 
 // apply_frame
-void apply_frame(unsigned long long handle, long x, long y, long w, long h, long content_h) __asm__("apply_frame");
-void apply_frame(unsigned long long handle, long x, long y, long w, long h, long content_h)
+void apply_frame(unsigned long long handle, long x, long y, long w, long h, long content_w, long content_h) __asm__("apply_frame");
+void apply_frame(unsigned long long handle, long x, long y, long w, long h, long content_w, long content_h)
 {
+// AppKit runs its own blocking tracking loop during a live window resize,
+// so the manual event loop can't re-layout mid-drag. Give the control an
+// autoresizing mask so AppKit repositions it live: pin to the nearest
+// vertical edge (top=NSViewMinYMargin 8 / bottom=NSViewMaxYMargin 32) to
+// respect the top-left-origin layout instead of AppKit's default
+// bottom-left pin, and let wide controls grow with the content width
+// (NSViewWidthSizable 2). Never set NSViewHeightSizable (16): control
+// heights come from the layout pass, not the window. AppKit's result
+// matches what layout() computes, so the post-drag relayout only fixes up
+// cells AppKit can't (column reflow for sub-full-width children).
+unsigned long mask = (y * 2 < content_h) ? 8UL : 32UL;
+if (w * 10 >= content_w * 8) mask |= 2UL;
+((void(*)(id, SEL, unsigned long))objc_msgSend)((id)handle, sel_registerName("setAutoresizingMask:"), mask);
 ((void(*)(id, SEL, CGRect))objc_msgSend)(
 (id)handle, sel_registerName("setFrame:"),
 ((CGRect(*)(double, double, double, double))CGRectMake)(
