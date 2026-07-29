@@ -4,6 +4,7 @@ import RawNode from "../nodes/RawNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import { parse_raw_directives } from "../raw_directives.ts";
 import build_block_node from "./build_block_node.ts";
+import { allocate_stack_space } from "./utils/stack_var.ts";
 
 let inline_counter = 0;
 
@@ -151,6 +152,13 @@ export default function build_inline_method(
 	if (return_struct) {
 		status.function_return_type = func.return_type;
 		status.struct_return_buffer = "x8";
+		// x8 (the caller's sret destination) is caller-saved: any struct-
+		// returning call inside the inline body sets its own x8, so spill the
+		// incoming value to a frame slot — the return path reloads it before
+		// the final struct copy (mirrors the standalone-function prologue).
+		const return_buffer_stack_offset = allocate_stack_space(status, 8, 8);
+		status.code += `str x8, [x29, #${return_buffer_stack_offset}]\n`;
+		status.return_buffer_stack_offset = return_buffer_stack_offset;
 	}
 
 	build_block_node(func, status);
@@ -260,6 +268,11 @@ export function build_inline_function(func: FunctionNode, status: BuildStatus) {
 	if (return_struct) {
 		status.function_return_type = func.return_type;
 		status.struct_return_buffer = "x8";
+		// See build_inline_method: spill the caller's x8 sret pointer so an
+		// inner struct-returning call can't clobber it before the return copy.
+		const return_buffer_stack_offset = allocate_stack_space(status, 8, 8);
+		status.code += `str x8, [x29, #${return_buffer_stack_offset}]\n`;
+		status.return_buffer_stack_offset = return_buffer_stack_offset;
 	}
 
 	build_block_node(func, status);
