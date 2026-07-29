@@ -1,4 +1,7 @@
-pub class Window {
+import System/Controls/Control
+import System/Controls/Geometry
+
+pub class Window : Control {
 	var uint64 handle = 0
 
 	pub func #init = (self, string title, int width, int height) {
@@ -212,6 +215,41 @@ pub class Window {
 			sel_registerName("view"));
 		CGRect frame = ((CGRect(*)(id, SEL))objc_msgSend)(cv, sel_registerName("frame"));
 		return (int)frame.size.height;
+		```
+	}
+
+	// ── Control trait conformance ──
+	// The window is the layout root: it measures to its content-view size and
+	// applies a frame to the native NSWindow/UIWindow.
+
+	pub func measure = (self, BoxConstraints constraints, out Size) {
+		var Size s = Size()
+		s.width = self.content_width()
+		s.height = self.content_height()
+		return s
+	}
+
+	pub func intrinsic_size = (self, out Size) {
+		var Size s = Size()
+		s.width = self.content_width()
+		s.height = self.content_height()
+		return s
+	}
+
+	pub func set_frame = (ref self, int x, int y, int width, int height) {
+		```
+		#arch: c, aarch64_use_c
+		#platform: macos
+		((void(*)(id, SEL, CGRect))objc_msgSend)(
+			(id)self->handle, sel_registerName("setFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+		```
+		```
+		#arch: c, aarch64_use_c
+		#platform: ios
+		((void(*)(id, SEL, CGRect))objc_msgSend)(
+			(id)self->handle, sel_registerName("setFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
 		```
 	}
 

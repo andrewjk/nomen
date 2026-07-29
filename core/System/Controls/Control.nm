@@ -1,0 +1,27 @@
+import System/Controls/Geometry
+
+// The `Control` trait is the polymorphic interface the layout engine uses to
+// talk to every node in the UI tree. A control reports its desired size given a
+// set of constraints (measure), applies a concrete rectangle (set_frame), and can
+// report how big it would be with unbounded space (intrinsic_size).
+//
+// Native controls (Window, Text, …) and containers conform to it. See GUI.md
+// ("The Control trait") for the contract. The measure/arrange math is the same
+// regardless of storage: the handle-based `Container` applies frames directly via
+// native `setFrame:` today, but a control that also conforms to `Control` can be
+// driven through the trait interface (and slotted into `Array<Control>` /
+// `ClassBuffer<Control>` once the container migrates).
+
+pub trait Control {
+	// Given these constraints, report the size you want to be.
+	// Must satisfy min_width ≤ result.width ≤ max_width (ditto height).
+	func measure = (self, BoxConstraints constraints, out Size)
+
+	// Apply a concrete rectangle. For native controls this calls setFrame: on the
+	// platform handle. For containers this also arranges children.
+	func set_frame = (ref self, int x, int y, int width, int height)
+
+	// What size would you be with unbounded space? (Used by parents to decide
+	// wrapping, scrolling, etc. Default: call measure with infinity.)
+	func intrinsic_size = (self, out Size)
+}

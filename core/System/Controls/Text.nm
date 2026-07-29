@@ -1,5 +1,9 @@
-pub class Text {
+import System/Controls/Control
+import System/Controls/Geometry
+
+pub class Text : Control {
 	var uint64 handle = 0
+	var string text = ""
 
 	pub func #init = (self, Window window) {
 		```
@@ -46,7 +50,8 @@ pub class Text {
 		```
 	}
 
-	pub func set_text = (self, string text) {
+	pub func set_text = (ref self, string text) {
+		self.text = text
 		```
 		#arch: c, aarch64_use_c
 		#platform: macos
@@ -65,7 +70,26 @@ pub class Text {
 		```
 	}
 
-	pub func set_frame = (self, int x, int y, int width, int height) {
+	// ── Control trait conformance ──
+	// A text control sizes to its content. v1 assumes an 8px monospace font, so a
+	// line is `text.length × 8` wide and 8px tall (see GUI.md "Native control
+	// refactor"). The default frame is 0,0,0,0; layout drives the real rectangle.
+
+	pub func measure = (self, BoxConstraints constraints, out Size) {
+		var Size s = Size()
+		s.width = self.text.length * 8
+		s.height = 8
+		return s
+	}
+
+	pub func intrinsic_size = (self, out Size) {
+		var Size s = Size()
+		s.width = self.text.length * 8
+		s.height = 8
+		return s
+	}
+
+	pub func set_frame = (ref self, int x, int y, int width, int height) {
 		```
 		#arch: c, aarch64_use_c
 		#platform: macos

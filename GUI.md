@@ -565,9 +565,28 @@ cannot be verified headlessly, but the **layout math** can:
    largest child). Nested containers (VStack/HStack/Grid/ZStack inside any
    other) are also done via the `add_*` helpers — the SoA `kinds` buffer is the
    tag, so `measure`/`arrange` recurse through the tree without the trait model.
-6. **Refactor Window/Text** to conform to `Control`. ⚠️ Partial: `Window` gained
-   `content_width`; controls still expose `handle` for the handle-based API.
-   Wiring native `setFrame:` is done inside `Container.apply_frame`.
+6. **Refactor Window/Text** to conform to `Control`. ✅ `core/System/Controls/Control.nm`
+   now defines the `Control` trait (`measure` / `set_frame` / `intrinsic_size`), and both
+   `Window` and `Text` declare `: Control` and implement it:
+   - `Window.measure` / `intrinsic_size` report the content-view size
+     (`content_width` × `content_height`); `Window.set_frame` calls `setFrame:` on the
+     NSWindow/UIWindow handle.
+   - `Text` stores its string (`text` field, updated by `set_text`), and `measure` /
+     `intrinsic_size` return `Size(text.length × 8, 8)` under the v1 8px-monospace
+     assumption; `Text.set_frame` calls `setFrame:` on the label. The `handle` is still
+     exposed, so the existing handle-based `Container` API keeps working unchanged.
+   - The handle-based `Container` itself is **not** yet `Container : Control` (that's the
+     trait smoke test, phase 9); phase 6 only makes the native leaf controls trait-conformant
+     so they can later slot into `Array<Control>` / `ClassBuffer<Control>`.
+   - Enabling this surfaced a compiler gap in the import/dependency walker
+     (`src/parse.ts:resolve_types_with_deps`): module-path imports whose module name doesn't
+     match one of their own type names (e.g. `import System/Controls/Geometry`, which
+     declares `Size`/`Frame`/`…`) were silently dropped, so `Window`/`Text` couldn't see
+     `Size`/`BoxConstraints`. Fixed by expanding module-path imports to the module's declared
+     types during dependency resolution (the `Control` trait's `Size`/`BoxConstraints`
+     references now resolve correctly). Verified by `test/control_trait.test.ts` (runtime
+     `Control` dispatch on both backends) and the existing `test/layout_container.test.ts` /
+     `test/readme/gui.test.ts`.
 7. **End-to-end sample.** ✅ `app/src/main.nm` (the todo app) builds and runs on
    **both** the C/macOS and aarch64 backends using a 2-column `Grid`. (The
    aarch64 path had been silently broken by a >8-param function overflowing the

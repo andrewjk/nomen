@@ -16,6 +16,7 @@ export interface Library {
 export interface LibraryType {
 	name: string;
 	source: string;
+	path: string;
 	deps: string[];
 	namespace?: string;
 }
@@ -123,7 +124,7 @@ function build_type_map(files: string[], lib_dir: string): Map<string, LibraryTy
 		const parts = rel.split(path.sep);
 		const namespace = parts.length > 1 ? parts[0] : undefined;
 		for (const name of extract_type_names(source)) {
-			types.set(name, { name, source, deps, namespace });
+			types.set(name, { name, source, path: f, deps, namespace });
 		}
 	}
 	return types;

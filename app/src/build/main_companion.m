@@ -36,41 +36,15 @@ typedef struct CheckBox
 void *_vt;
 unsigned long long handle;
 } nm_CheckBox;
-typedef struct Window
+typedef struct LayoutParams
 {
 void *_vt;
-unsigned long long handle;
-} nm_Window;
-typedef struct Buffer_int
-{
-void *_vt;
-unsigned long long data;
-long cap;
-} nm_Buffer_int;
-typedef struct Container
-{
-void *_vt;
-nm_Buffer_int kinds;
-nm_Buffer_int w_kinds;
-nm_Buffer_int w_vals;
-nm_Buffer_int h_kinds;
-nm_Buffer_int h_vals;
-nm_Buffer_int gaps;
-nm_Buffer_int pars;
-nm_Buffer_int spans;
-nm_Buffer_int cols;
-nm_Buffer_int handles;
-nm_Buffer_int grows;
-nm_Buffer_int shrinks;
-nm_Buffer_int aligns;
-nm_Buffer_int rx;
-nm_Buffer_int ry;
-nm_Buffer_int rw;
-nm_Buffer_int rh;
-long root;
-long count;
-long padding;
-} nm_Container;
+nm_LayoutLength width;
+nm_LayoutLength height;
+long grow;
+long shrink;
+nm_Alignment align_self;
+} nm_LayoutParams;
 typedef struct Size
 {
 void *_vt;
@@ -101,6 +75,52 @@ long min_height;
 long max_width;
 long max_height;
 } nm_BoxConstraints;
+typedef struct Window
+{
+void *_vt;
+unsigned long long handle;
+} nm_Window;
+typedef struct Buffer_int
+{
+void *_vt;
+unsigned long long data;
+long cap;
+} nm_Buffer_int;
+typedef struct Container
+{
+void *_vt;
+nm_Buffer_int kinds;
+nm_Buffer_int w_kinds;
+nm_Buffer_int w_vals;
+nm_Buffer_int h_kinds;
+nm_Buffer_int h_vals;
+nm_Buffer_int gaps;
+nm_Buffer_int pars;
+nm_Buffer_int spans;
+nm_Buffer_int cols;
+nm_Buffer_int handles;
+nm_Buffer_int pads;
+nm_Buffer_int grows;
+nm_Buffer_int shrinks;
+nm_Buffer_int aligns;
+nm_Buffer_int dirty;
+nm_Buffer_int measured_count;
+nm_Buffer_int rx;
+nm_Buffer_int ry;
+nm_Buffer_int rw;
+nm_Buffer_int rh;
+nm_Buffer_int prx;
+nm_Buffer_int pry;
+nm_Buffer_int prw;
+nm_Buffer_int prh;
+nm_Buffer_int dirty_idx;
+long dirty_n;
+long root;
+long count;
+long padding;
+long last_w;
+long last_h;
+} nm_Container;
 typedef struct Layout
 {
 void *_vt;
@@ -114,25 +134,23 @@ nm_Buffer_int ry;
 nm_Buffer_int rw;
 nm_Buffer_int rh;
 } nm_Layout;
-typedef struct LayoutParams
-{
-void *_vt;
-nm_LayoutLength width;
-nm_LayoutLength height;
-long grow;
-long shrink;
-nm_Alignment align_self;
-} nm_LayoutParams;
 typedef struct Text
 {
 void *_vt;
 unsigned long long handle;
+char* text;
 } nm_Text;
 typedef struct TextBox
 {
 void *_vt;
 unsigned long long handle;
 } nm_TextBox;
+typedef struct _Tuple_int_int
+{
+void *_vt;
+long _0;
+long _1;
+} nm__Tuple_int_int;
 
 // Button_init
 void Button_init(nm_Button *self, nm_Window *window, char* title) __asm__("Button_init");
@@ -428,6 +446,16 @@ return (int)frame.size.height;
 
 }
 
+// Window_set_frame
+void Window_set_frame(nm_Window *self, long x, long y, long width, long height) __asm__("Window_set_frame");
+void Window_set_frame(nm_Window *self, long x, long y, long width, long height)
+{
+((void(*)(id, SEL, CGRect))objc_msgSend)(
+(id)self->handle, sel_registerName("setFrame:"),
+((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+
+}
+
 // Window_destroy
 void Window_destroy(nm_Window *self) __asm__("Window_destroy");
 void Window_destroy(nm_Window *self)
@@ -467,7 +495,6 @@ self->handle = (uint64_t)label;
 void Text_set_text(nm_Text *self, char* text) __asm__("Text_set_text");
 void Text_set_text(nm_Text *self, char* text)
 {
-nm_Text _self = *self;
 ((void(*)(id, SEL, id))objc_msgSend)(
 (id)self->handle, sel_registerName("setStringValue:"),
 ((id(*)(id, SEL, const char*))objc_msgSend)(
@@ -479,7 +506,6 @@ nm_Text _self = *self;
 void Text_set_frame(nm_Text *self, long x, long y, long width, long height) __asm__("Text_set_frame");
 void Text_set_frame(nm_Text *self, long x, long y, long width, long height)
 {
-nm_Text _self = *self;
 ((void(*)(id, SEL, CGRect))objc_msgSend)(
 (id)self->handle, sel_registerName("setFrame:"),
 ((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
@@ -593,6 +619,20 @@ void apply_frame(unsigned long long handle, long x, long y, long w, long h, long
 (id)handle, sel_registerName("setFrame:"),
 ((CGRect(*)(double, double, double, double))CGRectMake)(
 (double)x, (double)(content_h - y - h), (double)w, (double)h));
+
+}
+
+// intrinsic_size
+nm__Tuple_int_int intrinsic_size(unsigned long long handle) __asm__("intrinsic_size");
+nm__Tuple_int_int intrinsic_size(unsigned long long handle)
+{
+CGSize sz = ((CGSize(*)(id, SEL))objc_msgSend)((id)handle, sel_registerName("intrinsicContentSize"));
+int w = (sz.width < 0 || sz.width > 100000) ? 0 : (int)sz.width;
+int h = (sz.height < 0 || sz.height > 100000) ? 0 : (int)sz.height;
+struct _Tuple_int_int r;
+r._0 = w;
+r._1 = h;
+return r;
 
 }
 

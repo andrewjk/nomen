@@ -168,6 +168,21 @@ const BASE_TYPES = [
 	"bool",
 ];
 
+// Map a module-path import (e.g. `System/Controls/Geometry`) to the type names
+// declared in that module, so the dependency walker can pull the module's source
+// in. The library indexes types by *type name*, not module path, so an imported
+// module whose name doesn't match one of its own types (e.g. `Geometry`, which
+// declares `Size`/`Frame`/…) would otherwise never be pulled in.
+function module_type_names(dep: string, library: Library): string[] | undefined {
+	const base = dep.includes("/") ? dep.split("/").pop()! : dep;
+	const found: string[] = [];
+	for (const [name, entry] of library.types) {
+		const src_base = entry.path.split("/").pop()!.replace(/\.nm$/, "");
+		if (src_base === base) found.push(name);
+	}
+	return found.length ? found : undefined;
+}
+
 function resolve_types_with_deps(needed: Set<string>, library: Library): string {
 	const resolved = new Set<string>();
 	const pushed = new Set<string>();
@@ -177,7 +192,15 @@ function resolve_types_with_deps(needed: Set<string>, library: Library): string 
 		if (resolved.has(name)) return;
 		resolved.add(name);
 		const entry = library.types.get(name);
-		if (!entry) return;
+		if (!entry) {
+			// `name` may be a module-path import rather than a type name. Expand
+			// it to the module's declared types so its source gets pulled in.
+			const mod_types = module_type_names(name, library);
+			if (mod_types) {
+				for (const t of mod_types) resolve(t);
+			}
+			return;
+		}
 		// Mark this node visited *before* descending so mutual deps
 		// (Container ↔ LayoutLength, etc.) terminate instead of recursing.
 		for (const dep of entry.deps) {
