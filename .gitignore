@@ -4,11 +4,8 @@ dist/
 
 *.cache
 *.out
-main.h
-main.m
-main.o
-main.s
-audit_runtime.o
-main_companion.m
-main_companion.o
+*.h
+*.m
+*.o
+*.s
 bench/rust/target/
