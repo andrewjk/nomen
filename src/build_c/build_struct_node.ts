@@ -507,6 +507,13 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 	for (let traitName of node.traits) {
 		const trait = status.traits.find((n) => n.name === traitName) as TraitNode;
 		for (let field of trait.fields) {
+			// A generic trait's field type is an unresolved type param (e.g.
+			// `T`); the conforming struct redeclares the field with the concrete
+			// type, so prefer the struct's own field type for the accessor
+			// signature. Falls back to the trait field for non-generic traits
+			// whose conformer may inherit the field.
+			const own_field = node.fields.find((nf) => nf.name === field.name);
+			const field_type = own_field ? own_field.type : field.type;
 			// A struct field type needs the `struct` tag in C (e.g. `struct Point`,
 			// not `Point`); scalar/string fields lower via c_type directly. This
 			// matters for multi-word struct trait fields, which are returned/passed
@@ -514,9 +521,9 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 			// mangled — only the typedef is — so emit it directly for the struct
 			// case rather than `struct ` + c_type (which would mangle the tag).
 			const field_is_struct = !!status.structs.find(
-				(s) => s.name === field.type.name && !s.is_simple_type,
+				(s) => s.name === field_type.name && !s.is_simple_type,
 			);
-			const field_c_type = field_is_struct ? `struct ${field.type.name}` : c_type(field.type.name);
+			const field_c_type = field_is_struct ? `struct ${field_type.name}` : c_type(field_type.name);
 			const get_signature = `${field_c_type} get_${node.name}_${field.name}(struct ${node.name} *self)`;
 			status.headers += `${get_signature};\n`;
 			status.code += `${get_signature} { return self->${field.name}; }\n`;

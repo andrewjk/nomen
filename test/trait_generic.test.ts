@@ -124,6 +124,217 @@ Console.write(" done")
 	});
 });
 
+describe("generic trait default-method bodies that reference T", () => {
+	// A generic trait's default-method body references its type params (e.g.
+	// `trait Box<T> { var T item; func get = (self, out T) { return self.item } }`),
+	// so the default can't be emitted once at the trait level — `T` is
+	// unresolved. Instead each conformer gets a synthesized, monomorphized
+	// override (the body cloned with T→concrete, `self` retyped to the struct),
+	// and the existing struct-method + vtable machinery emits it. This is the
+	// (b) follow-on from the trait-system gap list.
+
+	test("trait Box<T> default getter inherited unmodified by a conformer", async () => {
+		// The motivating example: the conformer redeclares the field with the
+		// concrete type but supplies NO override — the trait's `get` default
+		// body is synthesized onto the struct with T→int.
+		const input = `
+trait Box<T> {
+	var T item
+	func get = (self, out T) {
+		return self.item
+	}
+}
+
+struct IntBox: Box<int> {
+	var int item = 0
+}
+
+func go = (out int) {
+	var IntBox b = IntBox()
+	b.item = 99
+	return b.get()
+}
+
+Console.write("\\{go()}")
+`;
+		await build_and_check_output(input, "generic_trait_default_get", "99");
+	});
+
+	test("default body with string T", async () => {
+		const input = `
+trait Box<T> {
+	var T item
+	func get = (self, out T) {
+		return self.item
+	}
+}
+
+struct StrBox: Box<string> {
+	var string item = ""
+}
+
+func go = (out string) {
+	var StrBox b = StrBox()
+	b.item = "hi"
+	return b.get()
+}
+
+Console.write(go())
+`;
+		await build_and_check_output(input, "generic_trait_default_string", "hi");
+	});
+
+	test("default body with struct-typed T (exercises generic-struct field access)", async () => {
+		// The doc noted this case depends on the generic-struct-storage fix
+		// (now landed): `box.item.field` must return correct values.
+		const input = `
+struct Point {
+	var int x
+	var int y
+}
+
+trait Box<T> {
+	var T item
+	func get = (self, out T) {
+		return self.item
+	}
+}
+
+struct PtBox: Box<Point> {
+	var Point item = Point(0, 0)
+}
+
+func go = (out int) {
+	var PtBox b = PtBox()
+	b.item = Point(31, 42)
+	return b.get().x
+}
+
+Console.write("\\{go()}")
+`;
+		await build_and_check_output(input, "generic_trait_default_struct", "31");
+	});
+
+	test("two conformers with different type args each synthesize their own override", async () => {
+		const input = `
+trait Box<T> {
+	var T item
+	func get = (self, out T) {
+		return self.item
+	}
+}
+
+struct IB: Box<int> {
+	var int item = 0
+}
+
+struct SB: Box<string> {
+	var string item = ""
+}
+
+func go = (out int) {
+	var IB a = IB()
+	a.item = 7
+	var SB b = SB()
+	b.item = "ignored"
+	return a.get()
+}
+
+Console.write("\\{go()}")
+`;
+		await build_and_check_output(input, "generic_trait_default_two_conformers", "7");
+	});
+
+	test("default method dispatched through a trait-typed receiver (vtable)", async () => {
+		// Calling the default through a trait-typed class local must route
+		// through the vtable and land on the per-conformer synthesized body.
+		const input = `
+trait Box<T> {
+	var T item
+	func get = (self, out T) {
+		return self.item
+	}
+}
+
+class IB: Box<int> {
+	var int item = 0
+}
+
+func fetch = (Box v, out int) {
+	return v.get()
+}
+
+func go = (out int) {
+	var IB b = IB()
+	b.item = 55
+	return fetch(b)
+}
+
+Console.write("\\{go()}")
+`;
+		await build_and_check_output(input, "generic_trait_default_dispatch", "55");
+	});
+
+	test("default method taking a T-typed parameter (not just returning T)", async () => {
+		// `replace` consumes a T arg and stores it — exercises param-type
+		// substitution in the synthesized signature.
+		const input = `
+trait Box<T> {
+	var T item
+	func replace = (ref self, T value) {
+		self.item = value
+		return
+	}
+	func get = (self, out T) {
+		return self.item
+	}
+}
+
+struct IB: Box<int> {
+	var int item = 0
+}
+
+func go = (out int) {
+	var IB b = IB()
+	b.replace(123)
+	return b.get()
+}
+
+Console.write("\\{go()}")
+`;
+		await build_and_check_output(input, "generic_trait_default_param", "123");
+	});
+
+	test("conformer's own override still takes precedence over the trait default", async () => {
+		// The synthesizer must skip a default when the struct already provides
+		// a same-named method (regression for the abstract+override path).
+		const input = `
+trait Box<T> {
+	var T item
+	func get = (self, out T) {
+		return self.item
+	}
+}
+
+struct IB: Box<int> {
+	var int item = 0
+	func get = (self, out int) {
+		return self.item + 1
+	}
+}
+
+func go = (out int) {
+	var IB b = IB()
+	b.item = 40
+	return b.get()
+}
+
+Console.write("\\{go()}")
+`;
+		await build_and_check_output(input, "generic_trait_default_override", "41");
+	});
+});
+
 describe("nested type arguments (the `>>` tokenizer edge case)", () => {
 	// `Greetable<Wrap<int>>` lexes as `Greetable < Wrap < int >>` because the
 	// tokenizer greedily matches `>>` (the bitwise-shift operator). The parser

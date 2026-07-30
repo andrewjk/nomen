@@ -794,8 +794,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 			const is_struct_type =
 				!!status.structs.find(
 					(s) => s.name === param.type.name && !s.is_simple_type && !s.is_class,
-				) ||
-				!!status.enums.find((e) => e.name === param.type.name && e.has_associated_data);
+				) || !!status.enums.find((e) => e.name === param.type.name && e.has_associated_data);
 			if (is_struct_type && callee_idx < callee_saved.length) {
 				const saved_reg = callee_saved[callee_idx++];
 				if (saved_reg !== "x19" || !needs_x19) {
@@ -861,8 +860,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 			const is_struct_type =
 				!!status.structs.find(
 					(s) => s.name === param.type.name && !s.is_simple_type && !s.is_class,
-				) ||
-				!!status.enums.find((e) => e.name === param.type.name && e.has_associated_data);
+				) || !!status.enums.find((e) => e.name === param.type.name && e.has_associated_data);
 			if (!is_struct_type) {
 				const size = aarch64_size(param.type.name);
 				const offset = allocate_stack_space(status, size, size);
@@ -994,6 +992,12 @@ function build_trait_functions(node: StructNode, status: BuildStatus) {
 
 		for (const func of trait.functions) {
 			if (!func.has_body) continue;
+			// A generic trait's default bodies reference its type params (e.g.
+			// `T`), unresolved at the trait level. They are cloned + substituted
+			// per conformer into struct methods (synthesize_generic_trait_defaults),
+			// so skip emitting the broken trait-level body here. Non-generic
+			// traits keep the shared default-body emission.
+			if (trait.type_params.length > 0) continue;
 
 			const old_scoped_declarations = status.scoped_declarations;
 			const old_stack_size = status.stack_size;

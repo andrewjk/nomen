@@ -33,6 +33,13 @@ export default function build_trait_node(node: TraitNode, status: BuildStatus) {
 		if (!func.has_body) {
 			continue;
 		}
+		// A generic trait's default bodies reference its type params (e.g. `T`),
+		// which are unresolved at the trait level. They are instead cloned +
+		// substituted per conformer (synthesize_generic_trait_defaults) and
+		// emitted as struct methods, so skip the broken trait-level emission.
+		if (node.type_params.length > 0) {
+			continue;
+		}
 
 		const old_self_is_ref = status.self_is_ref;
 		const self_param = func.params[0]?.is_self_param ? func.params[0] : null;

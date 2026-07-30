@@ -416,7 +416,135 @@ export function monomorphize(
 	return mono_struct;
 }
 
-function substitute_type(type: Type, substitution: Map<string, string>): Type {
+/**
+ * Synthesize per-conformer default-method overrides for generic traits.
+ *
+ * A generic trait's default-method body references its type params (e.g.
+ * `trait Box<T> { var T item; func get = (self, out T) { return self.item } }`),
+ * so a single trait-level emission can't work — `T` is unresolved. Instead,
+ * for each conforming struct we clone the trait's default bodies, substitute
+ * the trait's `type_params` for the struct's concrete `trait_args`, retype
+ * `self` to the struct, and append the clone as a struct method. The existing
+ * struct-method + vtable-override machinery then emits it on both backends,
+ * and the per-trait default-body emission is skipped for generic traits
+ * (build_trait_node.ts / build_aarch64 build_trait_functions).
+ *
+ * Abstract methods (no body) are left alone — conformers must override them
+ * (validated elsewhere), and concrete overrides already work. Methods the
+ * struct already provides are likewise skipped.
+ */
+export function synthesize_generic_trait_defaults(struct: StructNode, status: CheckStatus) {
+	for (let i = 0; i < struct.traits.length; i++) {
+		const trait = status.traits.find((t) => t.name === struct.traits[i]);
+		if (!trait || trait.type_params.length === 0) continue;
+		const args = struct.trait_args[i];
+		if (!args || args.length !== trait.type_params.length) continue;
+
+		const substitution = new Map<string, string>();
+		for (let j = 0; j < trait.type_params.length; j++) {
+			substitution.set(trait.type_params[j], args[j].name);
+		}
+
+		for (const trait_func of trait.functions) {
+			// Only default bodies need per-conformer synthesis; abstract
+			// methods are fulfilled by the struct's own override.
+			if (!trait_func.has_body) continue;
+			if (trait_func.name === "#init" || trait_func.name === "#destroy") continue;
+			// Skip if the struct already provides an override.
+			if (struct.functions.find((f) => f.name === trait_func.name)) continue;
+
+			const cloned = clone_node(trait_func) as FunctionNode;
+			// The trait default is `private` (trait functions default to
+			// private), but as a struct method it must be callable through the
+			// struct like any other method (struct methods default to pub).
+			// The later `func.scope = struct` assignment in check_struct_node
+			// would otherwise gate a private trait-clone to struct-local scope.
+			cloned.visibility = "pub";
+			cloned.return_type = substitute_type(cloned.return_type, substitution);
+			for (const param of cloned.params) {
+				param.type = substitute_type(param.type, substitution);
+			}
+			// The trait's `self` param is typed as the trait name (e.g. `Box`);
+			// the synthesized method belongs to the struct, so field access on
+			// `self` must resolve against the struct's storage.
+			const self_param = cloned.params.find((p) => p.is_self_param);
+			if (self_param) {
+				self_param.type = new Type(struct.name);
+			}
+			substitute_body_types(cloned.statements, substitution);
+			// The cloned body's `self` ValueNodes retain the trait's type (e.g.
+			// `Box`) from when the default body was checked against the trait.
+			// The builder reads ValueNode.type directly to decide struct-vs-
+			// trait field access, so without retying, `self.item` would route
+			// through the trait vtable with an unresolved `T`. Repoint every
+			// `self` reference at the conforming struct so field access lowers
+			// directly (and matches a hand-written struct method).
+			retype_self_references(cloned.statements, struct.name);
+			// Leave `scope` undefined (as on the trait function): a trait default
+			// method is callable wherever the trait is visible, and the
+			// visibility check treats an undefined scope as globally visible.
+			// The builder keys field access off `status.current_struct`, not
+			// `func.scope`, so the synthesized override resolves `self.field`
+			// against the struct regardless.
+			cloned.checked = true;
+			struct.functions.push(cloned);
+		}
+	}
+}
+
+/**
+ * Recursively retype every `self` ValueNode in `nodes` to `struct_name`. The
+ * trait default body was checked with `self` typed as the trait; the builder
+ * reads ValueNode.type verbatim, so a stale trait type would send field access
+ * through the vtable. Used only by synthesize_generic_trait_defaults.
+ */
+function retype_self_references(nodes: BaseNode[], struct_name: string) {
+	for (const node of nodes) {
+		retype_self_in_node(node, struct_name);
+	}
+}
+
+function retype_self_in_node(node: BaseNode | undefined | null, struct_name: string) {
+	if (!node) return;
+	const any_node = node as any;
+	if (node.node_type === "value" && any_node.value === "self") {
+		any_node.type = new Type(struct_name);
+	}
+	if (any_node.statements && Array.isArray(any_node.statements)) {
+		for (const child of any_node.statements) {
+			if (child && typeof child === "object" && "node_type" in child) {
+				retype_self_in_node(child, struct_name);
+			}
+		}
+	}
+	if (any_node.params && Array.isArray(any_node.params)) {
+		for (const child of any_node.params) {
+			if (child && typeof child === "object" && "node_type" in child) {
+				retype_self_in_node(child, struct_name);
+			}
+		}
+	}
+	if (any_node.cases && Array.isArray(any_node.cases)) {
+		for (const c of any_node.cases) {
+			if (c.branch?.statements) retype_self_in_node(c.branch, struct_name);
+			if (c.match_value) retype_self_in_node(c.match_value, struct_name);
+			if (c.condition) retype_self_in_node(c.condition, struct_name);
+		}
+	}
+	if (any_node.value?.node_type) retype_self_in_node(any_node.value, struct_name);
+	if (any_node.left_value?.node_type) retype_self_in_node(any_node.left_value, struct_name);
+	if (any_node.right_value?.node_type) retype_self_in_node(any_node.right_value, struct_name);
+	if (any_node.target?.node_type) retype_self_in_node(any_node.target, struct_name);
+	if (any_node.access?.node_type) retype_self_in_node(any_node.access, struct_name);
+	if (any_node.condition?.node_type) retype_self_in_node(any_node.condition, struct_name);
+	if (any_node.if_branch?.node_type) retype_self_in_node(any_node.if_branch, struct_name);
+	if (any_node.else_branch?.node_type) retype_self_in_node(any_node.else_branch, struct_name);
+	if (any_node.item?.node_type) retype_self_in_node(any_node.item, struct_name);
+	if (any_node.list?.node_type) retype_self_in_node(any_node.list, struct_name);
+	if (any_node.constraint?.node_type) retype_self_in_node(any_node.constraint, struct_name);
+}
+
+export function substitute_type(type: Type, substitution: Map<string, string>): Type {
 	const resolved_name = substitution.get(type.name) || type.name;
 	const new_type = new Type(resolved_name, type.is_static, type.is_array, type.length);
 	new_type.is_ref = type.is_ref;
@@ -958,7 +1086,7 @@ function infer_from_anon_struct(
 	return generic_struct.type_params.map((tp) => new Type(substitution.get(tp) || tp));
 }
 
-function substitute_body_types(
+export function substitute_body_types(
 	statements: import("../nodes/BaseNode.ts").default[],
 	substitution: Map<string, string>,
 ) {

@@ -681,10 +681,10 @@ used as trait 'T'; declare 'X' as a class`). The native controls are
     carrying different type args).
   - **Still out of scope** (follow-ups): (a) ~~trait **bounds on struct type
     params** — `struct Container<T: Control>` (`:` constraining `T`, not
-    conformance) is a separate feature~~ ✅ **Done**; (b) **generic trait
+    conformance) is a separate feature~~ ✅ **Done**; (b) ~~**generic trait
     default-method bodies that reference `T`** need per-conformer
     monomorphization (abstract methods with no body + concrete overrides
-    already work) — see below; (c) ~~nested type args in conformance like
+    already work) — see below~~ ✅ **Done**; (c) ~~nested type args in conformance like
     `Greetable<Wrap<int>>` hit the pre-existing `>>` tokenizer edge case~~ ✅
     **Done**.
 
@@ -723,27 +723,33 @@ not conform to bound 'B' for type parameter 'T' of C`). Verified on both
     `Greetable<List<List<int>>>` build; value/type-context `>>` split asserts
     at parse level; `>> 1` shift after a generic close still works).
 
-  - **(b) Generic trait default-method bodies that reference `T` — deferred.**
+  - **(b) Generic trait default-method bodies that reference `T` — done.**
     The motivating case is a generic trait with a default method returning /
     operating on `T` (e.g. `trait Box<T> { var T item; func get = (self, out
-T) { return self.item } }`) inherited unmodified by a conformer. This needs
-    per-conformer monomorphization: clone the trait default body, substitute
-    the trait's `type_params` for the conformer's concrete `trait_args`, and
-    emit it as a synthesized struct-method override (so the existing
-    struct-method + vtable-override machinery emits it on both backends, and
-    the per-conformer aarch64 `Trait_func` default-body emission is skipped
-    for generic traits). It is **deliberately not implemented yet**: every
-    non-trivial default body (the getter that returns a `T`-typed field, the
-    Container use case) also depends on the **pre-existing
-    generic-struct-storage / field-access gaps** — instantiating a generic
-    struct whose field type is itself a struct/class is broken today
-    (`struct Box<T>{var T item}` monomorphized to `Box_Dog` mis-lays the field
-    and `box.item.field` returns wrong values; see `test/generics.test.ts`),
-    so a synthesized default getter couldn't produce correct results
-    regardless of the trait work. Land the generic-storage fix first, then (b)
-    is a contained follow-on via the synthesized-override route above.
-    Abstract methods with no body + concrete struct overrides already work
-    (verified in `test/trait_generic.test.ts`).
+    T) { return self.item } }`) inherited unmodified by a conformer. It is now
+    implemented via per-conformer monomorphization: the checker clones the
+    trait default body, substitutes the trait's `type_params` for the
+    conformer's concrete `trait_args`, retypes `self` to the conforming struct,
+    and appends the clone as a struct-method override
+    (`synthesize_generic_trait_defaults` in `check_function_call_node.ts`,
+    called from `check_struct_node.ts` after arity validation). The existing
+    struct-method + vtable-override machinery then emits it on both backends,
+    so the per-trait default-body emission is skipped for generic traits
+    (`build_trait_node.ts` and aarch64 `build_trait_functions` both gate on
+    `trait.type_params.length > 0`). Two concomitant build fixes: the C
+    backend's trait-field get/set accessors now prefer the conforming struct's
+    own concrete field type over the trait's unresolved `T`
+    (`build_struct_node.ts`), and the C backend's trait-method dispatch cast
+    substitutes `T` from the receiver's type args (falling back to the erased
+    word type `long` for a bare erased trait receiver) so a polymorphic
+    `var Box v; v.get()` call type-checks (`build_access_node.ts`). The
+    synthesized override is `pub` (matching struct-method defaults) so it
+    stays callable once scoped to the struct. Verified on both backends in
+    `test/trait_generic.test.ts` (`Box<T>` getter inherited unmodified; string
+    T; struct-typed T; two conformers with different args; default dispatched
+    through a trait-typed receiver; default taking a `T`-typed param; and a
+    struct's own override still taking precedence). Abstract methods with no
+    body + concrete struct overrides continue to work.
 - ~~**Trait-typed destroy propagation for local variables.**~~ ✅ **Done.**
   A trait-typed local (e.g. `var Speaker s = Dog("Rex")`) now runs the
   concrete struct's `#destroy` and reclaims its owned fields at scope exit on

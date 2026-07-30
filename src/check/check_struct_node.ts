@@ -3,7 +3,7 @@ import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import check_declaration_node from "./check_declaration_node.ts";
-import { monomorphize } from "./check_function_call_node.ts";
+import { monomorphize, synthesize_generic_trait_defaults } from "./check_function_call_node.ts";
 import check_function_node from "./check_function_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import { is_class_type } from "./utils/ownership.ts";
@@ -45,6 +45,13 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 			);
 		}
 	}
+
+	// Synthesize per-conformer default-method overrides for generic traits
+	// (e.g. `trait Box<T> { func get = (self, out T) { return self.item } }`
+	// cloned with T→int onto each `struct IB: Box<int>`). Must run after the
+	// arity validation above so an invalid conformance doesn't synthesize
+	// against missing args.
+	synthesize_generic_trait_defaults(struct, status);
 
 	for (let i = 0; i < struct.fields.length; i++) {
 		for (let j = i + 1; j < struct.fields.length; j++) {

@@ -462,25 +462,47 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				const func_index = trait.functions.indexOf(trait_func);
 				const has_self = trait_func.params.some((p) => p.is_self_param);
 
+				// A generic trait's method signature references its type params
+				// (e.g. `out T`), which are unresolved at the trait level. The
+				// per-conformer default bodies are synthesized + substituted, so
+				// the vtable entry returns the concrete type — but this dispatch
+				// cast is derived from the trait's declared signature, so it
+				// would emit an unknown C type (`T`). Resolve each type param
+				// against the receiver's declared type args when present
+				// (`Box<int>` → T=int), falling back to the erased word type
+				// (`long`) for a bare erased trait receiver.
+				const trait_subst = new Map<string, string>();
+				if (trait.type_params.length > 0) {
+					for (let k = 0; k < trait.type_params.length; k++) {
+						const arg = target_type?.type_args?.[k]?.name;
+						trait_subst.set(trait.type_params[k], arg || "long");
+					}
+				}
+				const subst_c_type = (name: string): string => {
+					const resolved = trait_subst.get(name) || name;
+					const is_struct = !!status.structs.find((s) => s.name === resolved && !s.is_simple_type);
+					return is_struct ? `struct ${resolved}` : c_type(resolved);
+				};
+
+				const ret_name =
+					trait_subst.get(trait_func.return_type?.name || "") || trait_func.return_type?.name;
 				const ret_is_struct =
-					!!trait_func.return_type?.name &&
-					!!status.structs.find(
-						(s) => s.name === trait_func.return_type!.name && !s.is_simple_type,
-					);
+					!!ret_name && !!status.structs.find((s) => s.name === ret_name && !s.is_simple_type);
 				const ret_c = !trait_func.return_type?.name
 					? "void"
 					: ret_is_struct
-						? `struct ${trait_func.return_type.name}`
-						: c_type(trait_func.return_type.name);
+						? `struct ${ret_name}`
+						: c_type(ret_name);
 
 				const cast_params: string[] = [];
 				if (has_self) cast_params.push("void *");
 				for (const p of trait_func.params) {
 					if (p.is_self_param) continue;
+					const resolved_p = trait_subst.get(p.type.name) || p.type.name;
 					const is_struct_or_trait =
-						!!status.structs.find((s) => s.name === p.type.name && !s.is_simple_type) ||
-						!!status.traits.find((t) => t.name === p.type.name);
-					cast_params.push(is_struct_or_trait ? "void *" : c_type(p.type.name));
+						!!status.structs.find((s) => s.name === resolved_p && !s.is_simple_type) ||
+						!!status.traits.find((t) => t.name === resolved_p);
+					cast_params.push(is_struct_or_trait ? "void *" : subst_c_type(p.type.name));
 				}
 				const cast = `(${ret_c} (*)(${cast_params.join(", ") || "void"}))`;
 
