@@ -172,8 +172,8 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		const ref_class_sync_names: string[] = [];
 
 		// Outgoing stack-arg area size (0 unless this call passes more args
-		// than fit in x0..x7). Set below for non-variadic calls; variadic
-		// calls with overflow are not yet supported.
+		// than fit in x0..x7). Set below for both the non-variadic and the
+		// variadic-tuple paths (the latter counts the hidden count/ptr pair).
 		let outgoing_size = 0;
 		let overflow_count = 0;
 
@@ -234,19 +234,24 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 					is_ref: !!is_ref_param,
 				});
 			}
-			// Set up array pointer
-			status.code += `add x0, x29, #${arr_offset}\n`;
-			const ptr_reg = param_regs[start_reg + non_variadic.length + 1];
-			if (ptr_reg !== "x0") {
-				status.code += `mov ${ptr_reg}, x0\n`;
-			}
+			// The non-variadic params plus the hidden (count, pointer) pair
+			// occupy `nv + 2` consecutive AAPCS64 register/stack slots: the
+			// non-variadic params first (slots 0..nv-1), then the count (slot
+			// nv) and the array pointer (slot nv+1). When the total exceeds
+			// the 8 register slots the surplus overflows into the caller's
+			// outgoing stack area, so mirror the non-variadic path: spill
+			// every slot to a dedicated area first (evaluating an arg can
+			// clobber any register), then load the in-register slots and copy
+			// the overflow slots to the outgoing area below `sp`.
+			const nv = non_variadic.length;
+			const total_slots = nv + 2;
+			const slots_base = allocate_stack_space(status, total_slots * 8, 16);
+			const count_slot = slots_base + nv * 8;
+			const ptr_slot = count_slot + 8;
 
-			// Set up count (after pointer to avoid clobbering x0)
-			const count_reg = param_regs[start_reg + non_variadic.length];
-			status.code += `mov ${count_reg}, #${arr.values.length}\n`;
-
-			// Evaluate non-variadic params right-to-left (after count/pointer so they go into x0, x1, etc. without being clobbered)
-			for (let i = non_variadic.length - 1; i >= 0; i--) {
+			// Evaluate non-variadic params right-to-left, spilling each to
+			// its slot.
+			for (let i = nv - 1; i >= 0; i--) {
 				const ep = non_variadic[i];
 				if (ep.is_struct) {
 					emit_struct_address(ep.node, status);
@@ -256,10 +261,41 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 					build_node(ep.node, status);
 				}
 				if (!status.code.endsWith("\n")) status.code += "\n";
-				const reg_idx = start_reg + i;
-				const reg = param_regs[reg_idx];
-				if (reg && reg !== "x0") {
-					status.code += `mov ${reg}, x0\n`;
+				status.code += `str x0, [x29, #${slots_base + i * 8}]\n`;
+			}
+
+			// Store the count and array pointer into their slots.
+			status.code += `mov x0, #${arr.values.length}\n`;
+			status.code += `str x0, [x29, #${count_slot}]\n`;
+			status.code += `add x0, x29, #${arr_offset}\n`;
+			status.code += `str x0, [x29, #${ptr_slot}]\n`;
+
+			// Load each in-register slot into its argument register. Slot 0
+			// maps to x0 unless this is a struct-constructor call (x0 is the
+			// destination pointer, set up below); overflow slots are skipped
+			// here and copied to the outgoing area below.
+			for (let s = 0; s < total_slots; s++) {
+				const slot = start_reg + s;
+				if (slot >= NUM_REG_ARGS) continue;
+				const reg = param_regs[slot];
+				if (reg === "x0") continue;
+				status.code += `ldr ${reg}, [x29, #${slots_base + s * 8}]\n`;
+			}
+			if (start_reg === 0) {
+				status.code += `ldr x0, [x29, #${slots_base}]\n`;
+			}
+
+			// AAPCS64: slots past x0..x7 go in the caller's outgoing area at
+			// [sp] at the moment of the bl. Lower sp, copy each overflow slot
+			// down; sp is restored after the call (handled below).
+			overflow_count = Math.max(0, total_slots - (NUM_REG_ARGS - start_reg));
+			if (overflow_count > 0) {
+				outgoing_size = Math.ceil((overflow_count * 8) / 16) * 16;
+				status.code += `sub sp, sp, #${outgoing_size}\n`;
+				const overflow_first = NUM_REG_ARGS - start_reg;
+				for (let k = 0; k < overflow_count; k++) {
+					status.code += `ldr x9, [x29, #${slots_base + (overflow_first + k) * 8}]\n`;
+					status.code += `str x9, [sp, #${k * 8}]\n`;
 				}
 			}
 		} else {

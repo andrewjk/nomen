@@ -117,4 +117,65 @@ Console.write("\\{caller()}")
 `;
 		await build_and_check_output(input, "many_params_nested", "550");
 	});
+
+	// Variadic-tuple calls pack the trailing `...T` args into a hidden
+	// (count, pointer) slot pair. With enough fixed params that pair (and the
+	// fixed params themselves) spill past the 8 register slots into the
+	// caller's outgoing stack area — the combination that was the last
+	// remaining AAPCS64 gap.
+	test("variadic call where the pointer slot overflows", async () => {
+		const input = `
+func varsum7 = (int a, int b, int c, int d, int e, int f, int g, ...int nums, out int) {
+  var int total = a + b + c + d + e + f + g
+  var int i = 0
+  while i < nums.length {
+    total = total + nums.at(i)
+    i = i + 1
+  }
+  return total
+}
+Console.write("\\{varsum7(1, 2, 3, 4, 5, 6, 7, 100, 200)}")
+`;
+		await build_and_check_output(input, "many_params_variadic_ptr_overflow", "328");
+	});
+
+	test("variadic call where both count and pointer overflow", async () => {
+		const input = `
+func varsum8 = (
+  int a, int b, int c, int d, int e, int f, int g, int h, ...int nums, out int
+) {
+  var int total = a + b + c + d + e + f + g + h
+  var int i = 0
+  while i < nums.length {
+    total = total + nums.at(i)
+    i = i + 1
+  }
+  return total
+}
+Console.write("\\{varsum8(1, 2, 3, 4, 5, 6, 7, 8, 1000, 2000, 3000)}")
+`;
+		await build_and_check_output(input, "many_params_variadic_count_ptr_overflow", "6036");
+	});
+
+	test("variadic constructor #init with overflow (count/ptr past x7)", async () => {
+		const input = `
+struct VSum {
+  var int fixed_total
+  var int var_count
+  var int var_first
+
+  func #init = (self, int a, int b, int c, int d, int e, int f, int g, ...int rest) {
+    self.fixed_total = a + b + c + d + e + f + g
+    self.var_count = rest.length
+    if rest.length > 0 {
+      self.var_first = rest.at(0)
+    }
+  }
+}
+
+var VSum v = VSum(1, 2, 3, 4, 5, 6, 7, 100, 200, 300)
+Console.write("\\{v.fixed_total}|\\{v.var_count}|\\{v.var_first}")
+`;
+		await build_and_check_output(input, "many_params_variadic_ctor_overflow", "28|3|100");
+	});
 });

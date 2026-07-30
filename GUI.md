@@ -726,7 +726,7 @@ not conform to bound 'B' for type parameter 'T' of C`). Verified on both
   - **(b) Generic trait default-method bodies that reference `T` — done.**
     The motivating case is a generic trait with a default method returning /
     operating on `T` (e.g. `trait Box<T> { var T item; func get = (self, out
-    T) { return self.item } }`) inherited unmodified by a conformer. It is now
+T) { return self.item } }`) inherited unmodified by a conformer. It is now
     implemented via per-conformer monomorphization: the checker clones the
     trait default body, substitutes the trait's `type_params` for the
     conformer's concrete `trait_args`, retypes `self` to the conforming struct,
@@ -904,6 +904,20 @@ Both backends now implement this end-to-end and are exercised by
   Regression-tested on both backends in `test/many_params.test.ts` (9-, 10-,
   11-, 12-arg free functions; 10-field struct auto-`#init`; 9-arg instance
   method; nested overflow call).
+  ~~The variadic-tuple + overflow combination is the remaining gap (only the
+  count/ptr slot pair is supported in registers today).~~ ✅ **Fixed.** The
+  variadic call sites (`build_function_call_node` for free-function calls and
+  `build_constructor_params` for variadic-tuple constructors like `Map`) now
+  treat the hidden `(count, pointer)` pair as two trailing AAPCS64 slots and
+  spill every slot (non-variadic params + count + ptr) to a dedicated area
+  before loading the in-register slots and copying the surplus to the outgoing
+  stack area — mirroring the non-variadic overflow path. The callee prologues
+  already loaded overflow count/ptr via the placeholder mechanism, so only the
+  two call sites needed work (they previously indexed `param_regs[idx]` past
+  x7, emitting `undefined`). Regression-tested on both backends in
+  `test/many_params.test.ts` (variadic call where the pointer slot overflows;
+  variadic call where both count and pointer overflow; variadic constructor
+  `#init` with count/ptr past x7).
 - ~~**C backend auto-`#init` local name collides with a same-named field.**
   `build_c/build_struct_node.ts:148` derives the constructor's local instance
   variable from the struct name's first letter lowercased (`Big` → `b`); if

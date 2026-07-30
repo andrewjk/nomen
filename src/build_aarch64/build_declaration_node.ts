@@ -296,35 +296,57 @@ function build_constructor_params(
 			non_variadic.push({ node: param, by_address });
 		}
 		const nv = non_variadic.length;
-		const count_reg = param_regs[nv];
-		const ptr_reg = param_regs[nv + 1];
+		// The non-variadic params plus the hidden (count, pointer) pair occupy
+		// `nv + 2` slots: non-variadic first (param_regs indices 0..nv-1, i.e.
+		// x1..), then the count (index nv) and array pointer (index nv+1).
+		// x0 is reserved for the destination pointer, so register slots run
+		// x1..x7 (7 slots); anything past slot 7 (slot 8+) overflows into the
+		// caller's outgoing stack area. Spill every slot first, then load the
+		// in-register slots and copy the overflow slots to the outgoing area.
+		const total_slots = nv + 2;
+		const slots_base = allocate_stack_space(status, total_slots * 8, 16);
+		const count_slot = slots_base + nv * 8;
+		const ptr_slot = count_slot + 8;
 
-		// Spill non-variadic params first, while count/ptr registers are still
-		// untouched (their evaluation may clobber any register).
-		let nv_base = 0;
-		if (nv > 0) {
-			nv_base = allocate_stack_space(status, nv * 8, 16);
-			for (let i = nv - 1; i >= 0; i--) {
-				const ep = non_variadic[i];
-				if (ep.by_address) {
-					emit_struct_address_param(ep.node, status);
-				} else {
-					build_node(ep.node, status);
-				}
-				if (!status.code.endsWith("\n")) status.code += "\n";
-				status.code += `str x0, [x29, #${nv_base + i * 8}]\n`;
+		// Spill non-variadic params right-to-left (their evaluation may
+		// clobber any register).
+		for (let i = nv - 1; i >= 0; i--) {
+			const ep = non_variadic[i];
+			if (ep.by_address) {
+				emit_struct_address_param(ep.node, status);
+			} else {
+				build_node(ep.node, status);
 			}
+			if (!status.code.endsWith("\n")) status.code += "\n";
+			status.code += `str x0, [x29, #${slots_base + i * 8}]\n`;
 		}
 
-		// Set up the variadic pointer and count (after spills so they survive).
-		status.code += `add x0, x29, #${arr_offset}\n`;
-		if (ptr_reg !== "x0") status.code += `mov ${ptr_reg}, x0\n`;
+		// Store the count and array pointer into their slots.
 		emit_int_immediate(status, String(count));
-		if (count_reg !== "x0") status.code += `mov ${count_reg}, x0\n`;
+		if (!status.code.endsWith("\n")) status.code += "\n";
+		status.code += `str x0, [x29, #${count_slot}]\n`;
+		status.code += `add x0, x29, #${arr_offset}\n`;
+		status.code += `str x0, [x29, #${ptr_slot}]\n`;
 
-		// Load non-variadic params into their target registers.
-		for (let i = 0; i < nv; i++) {
-			status.code += `ldr ${param_regs[i]}, [x29, #${nv_base + i * 8}]\n`;
+		// Load in-register slots (x1..x7). param_regs index i maps to slot
+		// i+1; indices past slot 7 are overflow.
+		const reg_slots = Math.min(total_slots, NUM_REG_ARGS - 1);
+		for (let i = 0; i < reg_slots; i++) {
+			status.code += `ldr ${param_regs[i]}, [x29, #${slots_base + i * 8}]\n`;
+		}
+
+		// AAPCS64: slots past x7 go in the caller's outgoing area at [sp] at
+		// the moment of the bl. The caller restores sp after the bl.
+		const overflow_count = Math.max(0, total_slots - (NUM_REG_ARGS - 1));
+		if (overflow_count > 0) {
+			const outgoing_size = Math.ceil((overflow_count * 8) / 16) * 16;
+			status.code += `sub sp, sp, #${outgoing_size}\n`;
+			const overflow_first = NUM_REG_ARGS - 1;
+			for (let k = 0; k < overflow_count; k++) {
+				status.code += `ldr x9, [x29, #${slots_base + (overflow_first + k) * 8}]\n`;
+				status.code += `str x9, [sp, #${k * 8}]\n`;
+			}
+			return outgoing_size;
 		}
 		return 0;
 	}

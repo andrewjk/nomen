@@ -591,4 +591,3 @@ Console.write("\\{go()}")
 `;
 	await build_and_check_output(input, "generic_struct_field_access", "[x=31,y=42]0");
 });
-

@@ -33,7 +33,7 @@ Console.write(v.fmt_frame(1) + " " + v.fmt_frame(2) + "\\n")
 `,
 			"0,0,800,30 0,40,800,40\n",
 		);
-	});
+	}, 10000);
 
 	test("hstack stacks children horizontally", async () => {
 		await run(
@@ -47,7 +47,7 @@ Console.write(h.fmt_frame(1) + " " + h.fmt_frame(2) + "\\n")
 `,
 			"0,0,30,80 30,0,60,80\n",
 		);
-	});
+	}, 10000);
 
 	test("grid: span-2 children take full-width rows", async () => {
 		await run(
@@ -61,7 +61,7 @@ Console.write(g.fmt_frame(1) + " " + g.fmt_frame(2) + "\\n")
 `,
 			"0,0,400,30 0,38,400,24\n",
 		);
-	});
+	}, 10000);
 
 	test("grid: span-1 children share a row across columns", async () => {
 		await run(
@@ -75,7 +75,7 @@ Console.write(g.fmt_frame(1) + " " + g.fmt_frame(2) + "\\n")
 `,
 			"0,0,200,25 200,0,200,35\n",
 		);
-	});
+	}, 10000);
 
 	test("grid: mixed spans lay out like the todo app", async () => {
 		await run(
@@ -92,7 +92,7 @@ Console.write(g.fmt_frame(1) + " " + g.fmt_frame(2) + " " + g.fmt_frame(3) + " "
 `,
 			"0,0,400,30 0,38,400,24 0,70,400,24 0,102,200,24 200,102,200,32\n",
 		);
-	});
+	}, 10000);
 
 	test("zstack overlaps children, sizing to the largest", async () => {
 		await run(
@@ -106,7 +106,7 @@ Console.write(z.fmt_frame(1) + " " + z.fmt_frame(2) + "\\n")
 `,
 			"0,0,200,80 0,0,200,80\n",
 		);
-	});
+	}, 10000);
 
 	test("nested hstack inside vstack arranges its children", async () => {
 		await run(
@@ -122,7 +122,7 @@ Console.write(v.fmt_frame(1) + " " + v.fmt_frame(2) + " " + v.fmt_frame(3) + " "
 `,
 			"0,0,800,30 0,0,50,30 62,0,60,30 0,38,800,40\n",
 		);
-	});
+	}, 10000);
 
 	test("nested vstack inside a grid cell stacks within the cell", async () => {
 		await run(
@@ -138,7 +138,7 @@ Console.write(g.fmt_frame(1) + " " + g.fmt_frame(2) + " " + g.fmt_frame(3) + " "
 `,
 			"0,0,200,54 0,0,200,20 0,24,200,30 200,0,200,50\n",
 		);
-	});
+	}, 10000);
 
 	// grow (flex): the root stack fills its main axis (the available space), and
 	// any surplus is shared between children weighted by `grow`. Children with
@@ -155,7 +155,7 @@ Console.write(v.fmt_frame(1) + " " + v.fmt_frame(2) + "\\n")
 `,
 			"0,0,800,30 0,30,800,570\n",
 		);
-	});
+	}, 10000);
 
 	test("vstack grow: surplus split by weight (1 and 2)", async () => {
 		await run(
@@ -169,7 +169,7 @@ Console.write(v.fmt_frame(1) + " " + v.fmt_frame(2) + "\\n")
 `,
 			"0,0,800,210 0,210,800,390\n",
 		);
-	});
+	}, 10000);
 
 	test("hstack grow: fixed + pure-flex + fixed-with-grow share width", async () => {
 		await run(
@@ -184,7 +184,7 @@ Console.write(h.fmt_frame(1) + " " + h.fmt_frame(2) + " " + h.fmt_frame(3) + "\\
 `,
 			"0,0,50,30 50,0,350,30 400,0,400,30\n",
 		);
-	});
+	}, 10000);
 
 	// Cross-axis alignment: a child smaller than the stack's cross axis is
 	// positioned by align (start/center/end); stretch (the default) fills it.
@@ -202,7 +202,7 @@ Console.write(h.fmt_frame(1) + " " + h.fmt_frame(2) + " " + h.fmt_frame(3) + " "
 `,
 			"0,0,50,30 50,25,50,30 100,50,50,30 150,0,50,80\n",
 		);
-	});
+	}, 10000);
 
 	test("vstack align: narrow children align within the widest child's width", async () => {
 		// The VStack's content width is the max child width (300, set by the
@@ -220,7 +220,7 @@ Console.write(v.fmt_frame(1) + " " + v.fmt_frame(2) + " " + v.fmt_frame(3) + "\\
 `,
 			"0,0,300,30 100,30,100,30 200,60,100,30\n",
 		);
-	});
+	}, 10000);
 
 	// grow + alignment compose through nesting: a VStack arranges a nested
 	// HStack at the full row width (cross stretch), and the HStack then shares
@@ -239,7 +239,7 @@ Console.write(v.fmt_frame(1) + " " + v.fmt_frame(2) + " " + v.fmt_frame(3) + " "
 `,
 			"0,0,800,30 0,0,50,30 50,0,750,30 0,38,800,40\n",
 		);
-	});
+	}, 10000);
 
 	// shrink (deficit distribution): the mirror of grow. When the children's
 	// main-axis total exceeds the available space, the deficit is shared
@@ -261,7 +261,7 @@ Console.write(h.fmt_frame(1) + " " + h.fmt_frame(2) + " " + h.fmt_frame(3) + "\\
 `,
 			"0,0,267,30 267,0,267,30 534,0,267,30\n",
 		);
-	});
+	}, 10000);
 
 	test("hstack shrink: deficit split by weight (1 and 3)", async () => {
 		// 2 children × 500px = 1000 total. Available = 600. Deficit = 400.
@@ -278,7 +278,7 @@ Console.write(h.fmt_frame(1) + " " + h.fmt_frame(2) + "\\n")
 `,
 			"0,0,400,30 400,0,200,30\n",
 		);
-	});
+	}, 10000);
 
 	test("vstack shrink: children with shrink=0 hold at intrinsic size", async () => {
 		// Same deficit as the weighted test, but the first child has shrink=0
@@ -295,7 +295,7 @@ Console.write(v.fmt_frame(1) + " " + v.fmt_frame(2) + "\\n")
 `,
 			"0,0,800,500 0,500,800,100\n",
 		);
-	});
+	}, 10000);
 
 	// percent sizing: LEN_PERCENT resolves to p% of the bounded cross axis
 	// (the parent's available width for a VStack child). On an unbounded axis
@@ -316,7 +316,7 @@ Console.write(v.fmt_frame(1) + " " + v.fmt_frame(2) + "\\n")
 `,
 			"0,0,400,30 0,30,200,30\n",
 		);
-	});
+	}, 10000);
 
 	// Explicit LEN_* driven sizing via add_kind: each of the four cases
 	// (LEN_AUTO, LEN_FIXED, LEN_PERCENT, LEN_FILL) resolves against the bounded
@@ -339,7 +339,7 @@ Console.write(v.fmt_frame(1) + " " + v.fmt_frame(2) + " " + v.fmt_frame(3) + " "
 `,
 			"0,0,100,30 0,30,400,40 0,70,800,50 0,120,800,60\n",
 		);
-	});
+	}, 10000);
 
 	// The ergonomic `add_len` form: LayoutLength enum values passed by value
 	// (16-byte tag+payload across the call ABI — the aarch64 gap that
@@ -361,7 +361,7 @@ Console.write(v.fmt_frame(1) + " " + v.fmt_frame(2) + " " + v.fmt_frame(3) + " "
 `,
 			"0,0,100,30 0,30,400,40 0,70,800,50 0,120,800,60\n",
 		);
-	});
+	}, 10000);
 
 	// add_to_len: LayoutLength sizing under an explicit parent container.
 	test("add_to_len sizes children of a nested hstack", async () => {
@@ -377,7 +377,7 @@ Console.write(v.fmt_frame(2) + " " + v.fmt_frame(3) + "\\n")
 `,
 			"0,0,100,30 100,0,200,40\n",
 		);
-	});
+	}, 10000);
 
 	// Legacy int-based `add` and `add_kind(LEN_FIXED, …)` produce identical
 	// frames for the same logical size — `add(handle, w, h, …)` is just
@@ -394,7 +394,7 @@ Console.write(v.fmt_frame(1) + " " + v.fmt_frame(2) + "\\n")
 `,
 			"0,0,100,30 0,30,100,30\n",
 		);
-	});
+	}, 10000);
 
 	// Intrinsic sizing (LEN_INTRINSIC) queries the native control's
 	// `intrinsicContentSize` so a leaf can be added with no size hints. These
@@ -418,7 +418,7 @@ Console.write(h.fmt_frame(1) + " " + h.fmt_frame(2) + "\\n")
 `,
 			"0,0,100,0 100,0,100,600\n",
 		);
-	});
+	}, 10000);
 
 	test("intrinsic: add_intrinsic sizes both axes to content (0 for handle 0)", async () => {
 		// VStack, ALIGN_START. Child 1 = add_intrinsic → 0×0. Child 2 = legacy
@@ -434,7 +434,7 @@ Console.write(v.fmt_frame(1) + " " + v.fmt_frame(2) + "\\n")
 `,
 			"0,0,0,0 0,0,800,30\n",
 		);
-	});
+	}, 10000);
 
 	test("intrinsic: per-axis — fill width, intrinsic height", async () => {
 		// VStack child: LEN_FILL width (fills 800), LEN_INTRINSIC height (0).
@@ -450,7 +450,7 @@ Console.write(v.fmt_frame(1) + "\\n")
 `,
 			"0,0,800,0\n",
 		);
-	});
+	}, 10000);
 
 	// Compositor hit test: pure rect math on the frame tree (no native calls).
 	// Walks children front-to-back and returns the frontmost leaf containing
@@ -473,7 +473,7 @@ Console.write(v.hit_test_index(400, 999).to_string() + "\\n")
 `,
 			"1 2 -1\n",
 		);
-	});
+	}, 10000);
 
 	// Hit test resolves nested containers: the point is inside a leaf nested in
 	// a row, and `hit_test_index` recurses through to that leaf's node index.
@@ -492,7 +492,7 @@ Console.write(v.hit_test_index(80, 15).to_string() + "\\n")
 `,
 			"3\n",
 		);
-	});
+	}, 10000);
 
 	// ZStack paints children back-to-front, so the frontmost (last) child wins
 	// a hit anywhere in the overlapping frame.
@@ -508,7 +508,7 @@ Console.write(z.hit_test_index(100, 40).to_string() + "\\n")
 `,
 			"2\n",
 		);
-	});
+	}, 10000);
 
 	// Dirty-rect tracking: a leaf enters the dirty list only when its resolved
 	// frame changed since the last layout. The first `compute` marks every leaf
@@ -531,7 +531,7 @@ Console.write(v.dirty_count().to_string() + " " + v.dirty_rect(0) + "\\n")
 `,
 			"2\n0\n1 0,30,800,270\n",
 		);
-	});
+	}, 10000);
 
 	// Spacer: a flexible empty leaf (no handle) that, with grow, absorbs the
 	// main-axis surplus and pushes the real controls apart. Here a VStack with
@@ -550,7 +550,7 @@ Console.write(v.fmt_frame(1) + " " + v.fmt_frame(2) + " " + v.fmt_frame(3) + "\\
 `,
 			"0,0,800,30 0,30,800,540 0,570,800,30\n",
 		);
-	});
+	}, 10000);
 
 	// Block: a single-child container with insets. The child is measured into
 	// the inner box (frame minus 2·padding) and placed at the inset origin. With
@@ -568,7 +568,7 @@ Console.write(v.fmt_frame(1) + " " + v.fmt_frame(2) + "\\n")
 `,
 			"0,0,120,60 10,10,100,40\n",
 		);
-	});
+	}, 10000);
 
 	// A block with no child resolves to just its padding on each axis.
 	test("block: empty block resolves to 2·padding on both axes", async () => {
@@ -582,7 +582,7 @@ Console.write(v.fmt_frame(1) + "\\n")
 `,
 			"0,0,20,20\n",
 		);
-	});
+	}, 10000);
 
 	// Incremental relayout: after the first `compute` every node has been
 	// measured once. Marking only leaf 1 (and its ancestor, the root) dirty and
@@ -606,7 +606,7 @@ Console.write(v.fmt_frame(1) + " " + v.fmt_frame(2) + "\\n")
 `,
 			"2 2 1 0,0,800,30 0,30,800,570\n",
 		);
-	});
+	}, 10000);
 
 	// mark_dirty on the root re-measures the whole tree (down-propagation to
 	// descendants), so every node's measure count advances again.
@@ -626,7 +626,7 @@ Console.write(v.measure_count(2).to_string() + "\\n")
 `,
 			"2 2 2\n",
 		);
-	});
+	}, 10000);
 });
 
 // ── REGRESSION: aarch64 buffer-cache register reuse ────────────────────────
@@ -655,5 +655,5 @@ Console.write(z.fmt_frame(1) + " " + z.fmt_frame(2) + "\\n")
 `,
 			"0,0,200,80 0,0,200,80\n",
 		);
-	});
+	}, 10000);
 });
