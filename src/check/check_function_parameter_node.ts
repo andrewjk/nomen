@@ -32,6 +32,28 @@ export default function check_function_parameter_node(param: ParameterNode, stat
 		}
 	}
 
+	// `var`/`cp` parameters are not supported: a `var` param mutates the
+	// caller's value (for classes, the shared instance) WITHOUT requiring any
+	// acknowledgment at the call site, so a `const` can be silently mutated
+	// through it. Mutation that the caller observes must go through `ref`,
+	// which forces an explicit `ref` at the call site. For a mutable scratch
+	// copy that the caller never sees, take the param read-only and declare a
+	// local `var` inside the body. (`mov`, `ref`, and `self` params set
+	// declaration="var" too but are distinguished by is_moved / type.is_ref /
+	// is_self_param and are excluded here.)
+	if (
+		param.declaration === "var" &&
+		!param.is_moved &&
+		!param.is_self_param &&
+		!param.type.is_ref
+	) {
+		add_error(
+			status,
+			`'var' parameters are not allowed — use 'ref' to mutate the caller's value (with 'ref' at the call site), or take it read-only and make a local 'var' copy`,
+			param.start,
+		);
+	}
+
 	// mov is only for class types, but type parameters (T, U, …) are allowed
 	// since the actual type isn't known until monomorphization. When a generic
 	// is instantiated with a non-class, mov silently becomes a no-op.

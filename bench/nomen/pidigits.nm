@@ -36,8 +36,8 @@ pub func main = (Init init) {
     rem = rem.new(0)
 
     while true {
-        u.div_to(n1, d, rem)
-        v.div_to(n2, d, rem)
+        u.div_to(n1, d, ref rem)
+        v.div_to(n2, d, ref rem)
 
         if u.cmp(v) == 0 {
             Console.write(u.to_digit().to_string())
@@ -48,25 +48,25 @@ pub func main = (Init init) {
                 break
             }
 
-            n1.mul_to(n1, ten, rem)
-            n2.mul_to(n2, ten, rem)
-            tmp.mul_to(u, d, rem)
-            tmp.mul_to(tmp, ten, rem)
+            n1.mul_to(n1, ten, ref rem)
+            n2.mul_to(n2, ten, ref rem)
+            tmp.mul_to(u, d, ref rem)
+            tmp.mul_to(tmp, ten, ref rem)
             n1.sub_to(n1, tmp)
             n2.sub_to(n2, tmp)
         } else {
-            k2.mul_to(k, two, rem)
+            k2.mul_to(k, two, ref rem)
             tmp.sub_to(k2, one)
-            u.mul_to(tmp, n1, rem)
-            v.mul_to(n2, two, rem)
+            u.mul_to(tmp, n1, ref rem)
+            v.mul_to(n2, two, ref rem)
             tmp.sub_to(k, one)
-            w.mul_to(tmp, n1, rem)
+            w.mul_to(tmp, n1, ref rem)
             n1.add_to(u, v)
             tmp.add_to(k, two)
-            u.mul_to(tmp, n2, rem)
+            u.mul_to(tmp, n2, ref rem)
             n2.add_to(w, u)
             tmp.add_to(k2, one)
-            d.mul_to(tmp, d, rem)
+            d.mul_to(tmp, d, ref rem)
             k.add_to(k, one)
         }
     }

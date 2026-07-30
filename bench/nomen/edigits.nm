@@ -36,7 +36,7 @@ func binary_search = (int n, out int) {
 // via a divide-and-conquer product tree so that all multiplications
 // are balanced (Karatsuba-friendly) and only one final division is
 // needed.  Mirrors the Rust/Go/Zig reference implementations.
-func sum_terms = (int a, int b, var BigInt out_p, var BigInt out_q) {
+func sum_terms = (int a, int b, ref BigInt out_p, ref BigInt out_q) {
 	if b == a + 1 {
 		out_p.set_int(1)
 		out_q.set_int(b)
@@ -45,19 +45,19 @@ func sum_terms = (int a, int b, var BigInt out_p, var BigInt out_q) {
 	var int mid = (a + b) / 2
 	var BigInt pl = BigInt()
 	var BigInt ql = BigInt()
-	sum_terms(a, mid, pl, ql)
+	sum_terms(a, mid, ref pl, ref ql)
 	var BigInt pr = BigInt()
 	var BigInt qr = BigInt()
-	sum_terms(mid, b, pr, qr)
+	sum_terms(mid, b, ref pr, ref qr)
 
 	// p = pl * qr + pr
 	var BigInt scratch = BigInt()
 	var BigInt product = BigInt()
-	product.mul_to(pl, qr, scratch)
+	product.mul_to(pl, qr, ref scratch)
 	out_p.add_to(product, pr)
 
 	// q = ql * qr
-	out_q.mul_to(ql, qr, scratch)
+	out_q.mul_to(ql, qr, ref scratch)
 
 	pl.digits.destroy()
 	ql.digits.destroy()
@@ -68,17 +68,17 @@ func sum_terms = (int a, int b, var BigInt out_p, var BigInt out_q) {
 }
 
 // Compute 10^exp via binary exponentiation (repeated squaring).
-func pow10 = (int exp, var BigInt result, var BigInt tmp, var BigInt scratch) {
+func pow10 = (int exp, ref BigInt result, ref BigInt tmp, ref BigInt scratch) {
 	result.set_int(1)
 	var BigInt sq_base = BigInt()
 	sq_base.set_int(10)
 	var int e = exp
 	while e > 0 {
 		if e % 2 == 1 {
-			tmp.mul_to(result, sq_base, scratch)
+			tmp.mul_to(result, sq_base, ref scratch)
 			result.copy_from(tmp)
 		}
-		tmp.mul_to(sq_base, sq_base, scratch)
+		tmp.mul_to(sq_base, sq_base, ref scratch)
 		sq_base.copy_from(tmp)
 		e = e / 2
 	}
@@ -95,7 +95,7 @@ pub func main = (Init init) {
 	// Compute e = sum_{i=0}^{k-1} 1/i! as a fraction p/q via product tree.
 	var BigInt p = BigInt()
 	var BigInt q = BigInt()
-	sum_terms(0, k - 1, p, q)
+	sum_terms(0, k - 1, ref p, ref q)
 
 	// Add the 1/0! = 1 term: (p + q) / q = p/q + 1.
 	var BigInt p_plus_q = BigInt()
@@ -105,14 +105,14 @@ pub func main = (Init init) {
 	var BigInt tmp = BigInt()
 	var BigInt scratch = BigInt()
 	var BigInt power = BigInt()
-	pow10(n - 1, power, tmp, scratch)
+	pow10(n - 1, ref power, ref tmp, ref scratch)
 
 	var BigInt numerator = BigInt()
-	numerator.mul_to(p_plus_q, power, scratch)
+	numerator.mul_to(p_plus_q, power, ref scratch)
 
 	var BigInt answer = BigInt()
 	var BigInt div_rem = BigInt()
-	answer.div_to(numerator, q, div_rem)
+	answer.div_to(numerator, q, ref div_rem)
 
 	// Extract digits from answer using in-place bulk divmod by 10^18.
 	var BigInt one = BigInt()
@@ -126,7 +126,7 @@ pub func main = (Init init) {
 	q_e18.set_u64(1000000000000000000)
 
 	while work.cmp(one) >= 0 {
-		work.div_to(work, q_e18, div_rem)
+		work.div_to(work, q_e18, ref div_rem)
 		var uint64 chunk = div_rem.get(0)
 		var int c = 0
 		while c < 18 {

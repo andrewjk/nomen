@@ -227,6 +227,17 @@ func print = (int x) { ... }
 print(ref 5)   // Error: Unexpected 'ref' keyword for non-ref parameter 'x'
 ```
 
+A `const` value cannot be passed to a `ref` parameter — a mutable borrow requires
+a mutable value. Declare the caller's binding as `var` first:
+
+```
+const int fixed = 1
+makeFive(ref fixed)   // Error: Cannot pass const 'fixed' to ref parameter 'x'
+
+var int mutable = 1
+makeFive(ref mutable) // OK — mutable is now 5
+```
+
 ### Range Types
 
 Ranges produce an array of integers from `start` to `end` (exclusive):
@@ -355,13 +366,32 @@ class Resource {
 
 #### Passing to Functions
 
-Classes passed as function parameters share the same heap instance. Modifications inside the function are visible to the caller:
+Function parameters are **read-only by default**: a plain `(Point p)` parameter
+cannot be mutated inside the body. This holds for both structs (an immutable
+copy) and classes (a shared instance you may read but not write):
 
 ```
 func getX = (Point p) {
     return p.x
 }
 ```
+
+To mutate a parameter's value, declare it with `ref` (a mutable borrow the
+caller must acknowledge at the call site). See [Reference Parameters](#reference-parameters).
+
+For a mutable scratch value that the caller never observes, take the parameter
+read-only and make a local `var` copy inside the body:
+
+```
+func add_five = (int x, out int) {
+    var int y = x      // mutable local copy
+    y = y + 5
+    return y
+}
+```
+
+`var`/`cp` parameters are not supported — mutation that the caller observes must
+go through `ref`, and mutation that only the callee needs uses a local `var`.
 
 ### Generic Structs
 

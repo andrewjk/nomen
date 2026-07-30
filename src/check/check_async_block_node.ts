@@ -21,7 +21,10 @@ export default function check_async_block_node(node: AsyncBlockNode, status: Che
 	const block_status = clone_status(status);
 	if (node.nursery_name) {
 		block_status.values.push({
-			declaration: "const",
+			// The nursery is a mutable capability: tasks are spawned into it
+			// (pool.spawn) and it is borrowed (ref pool) by functions that
+			// spawn on the caller's behalf, so it must be a `var`, not `const`.
+			declaration: "var",
 			name: node.nursery_name,
 			type: new Type("Nursery"),
 			is_set: true,

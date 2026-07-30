@@ -122,6 +122,17 @@ func getX = (Point p, out int) {
 `;
 		expect(compile_module(input)).toEqual([]);
 	});
+
+	test("read-only param with local var copy", () => {
+		const input = `
+func add_five = (int x, out int) {
+    var int y = x
+    y = y + 5
+    return y
+}
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
 });
 
 describe("spec: generic structs", () => {

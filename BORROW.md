@@ -88,6 +88,17 @@ class Holder {
 }
 ```
 
+A `const` binding cannot be borrowed mutably — `ref` requires a mutable value, so
+the caller's binding must be `var`:
+
+```nomen
+var int n = 1
+make_five(ref n)   // OK
+
+const int c = 1
+make_five(ref c)   // Error: Cannot pass const 'c' to ref parameter 'x'
+```
+
 ## Borrow invalidation
 
 A **child-group borrow** is a class reference taken from a class field or a
@@ -137,13 +148,15 @@ h1.content = h2.content swap Box(0)
 - `swap` without `mov` is a compile error ("swap requires mov").
 - The replacement value's type must match the field's type.
 
-## `ref self` vs `var self` vs `self`
+## `ref self` vs `self`
 
 | Form       | Mutates instance  | Notes                                                                    |
 | ---------- | ----------------- | ------------------------------------------------------------------------ |
 | `self`     | read-only         | default for struct/trait methods                                         |
-| `var self` | local copy        | mutations are not visible to the caller (value types)                    |
 | `ref self` | through reference | mutations are visible to the caller; participates in borrow invalidation |
+
+Methods that need to write the instance declare `ref self`. A bare `self` is an
+immutable borrow — assigning to its fields is a compile error.
 
 ## Implementation status
 

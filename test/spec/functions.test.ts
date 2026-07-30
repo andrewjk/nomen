@@ -81,11 +81,12 @@ count("a", "b", "c")
 		expect(compile_main(input)).toEqual([]);
 	});
 
-	test("var and ref parameters", () => {
+	test("ref parameters and local var copies", () => {
 		const input = `
-func increment = (var int x, out int) {
-    x = x + 1
-    return x
+func increment = (int x, out int) {
+    var int y = x
+    y = y + 1
+    return y
 }
 func makeFive = (ref int x) {
     x = 5

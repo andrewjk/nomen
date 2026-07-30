@@ -60,11 +60,12 @@ Console.write("\\{square(3)} \\{square(5)}")
 		await build_and_check_output(input, "function_called_multi", "9 25");
 	});
 
-	test("function with var param", async () => {
+	test("function with local var copied from param", async () => {
 		const input = `
-func increment = (var int x, out int) {
-  x = x + 1
-  return x
+func increment = (int x, out int) {
+  var int y = x
+  y = y + 1
+  return y
 }
 Console.write("\\{increment(10)}")
 `;

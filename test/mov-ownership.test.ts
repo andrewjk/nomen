@@ -186,7 +186,7 @@ struct Container<T> {
 	describe("mov at call site", () => {
 		test("mov with value type at call site to non-mov param", () => {
 			const input = `
-func identity = (var int x, out int) {
+func identity = (int x, out int) {
   return x
 }
 var int x = 5

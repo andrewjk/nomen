@@ -50,11 +50,12 @@ Console.write("\\{x}")
 		await build_and_check_output(input, "assign_conditional_const_false", "10");
 	});
 
-	test("assignment to var param", async () => {
+	test("assignment to local var copied from param", async () => {
 		const input = `
-func add_five = (var int x, out int) {
-  x = x + 5
-  return x
+func add_five = (int x, out int) {
+  var int y = x
+  y = y + 5
+  return y
 }
 const result = add_five(10)
 Console.write("\\{result}")

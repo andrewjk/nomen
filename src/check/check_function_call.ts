@@ -339,6 +339,22 @@ export default function check_function_call(
 				param.start,
 			);
 		}
+		// A `ref` parameter receives a mutable borrow, so the argument must be
+		// a mutable lvalue. A bare `const` variable is immutable and cannot be
+		// borrowed mutably — passing one would let the callee silently mutate
+		// the caller's supposedly-constant value. (`var` locals and existing
+		// `ref`/borrow values are mutable; temporaries are non-`value` nodes
+		// and are skipped here.)
+		if (func_param.type.is_ref && has_ref_keyword && param.node_type === "value") {
+			const arg_decl = status.values.findLast((v) => v.name === param_value);
+			if (arg_decl && arg_decl.declaration === "const" && !arg_decl.type.is_ref) {
+				add_error(
+					status,
+					`Cannot pass const '${param_value}' to ref parameter '${func_param.name}' — declare it 'var' or pass a mutable value`,
+					param.start,
+				);
+			}
+		}
 		// Only require explicit 'mov' keyword at the call site when the
 		// parameter is a class type AND the argument is a variable (has a
 		// name to invalidate). For temporaries (function call results,

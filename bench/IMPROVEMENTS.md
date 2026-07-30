@@ -771,7 +771,7 @@ Rust (9 ms vs ~4 ms at n=5000, both dwarfed by the 734 ms starting point).
   sequential BigInt÷int divisions). 19× speedup at n=5000 (734 ms → 39 ms).
 - ✓ **[stdlib] DONE:** `BigInt.set(ref self, int val)` and
   `BigInt.set(ref self, uint64 val)` — in-place init without realloc.
-  `BigInt.div_to(ref self, BigInt a, BigInt b, var BigInt remainder)` —
+  `BigInt.div_to(ref self, BigInt a, BigInt b, ref BigInt remainder)` —
   in-place division following the `_to` pattern (replaces the old `div` with
   `out BigInt` return). The single-limb fast path is internal to `div_to`.
 - ✓ **[stdlib/codegen] DONE (item 13):** `div128` was a 64-iteration bit-by-bit

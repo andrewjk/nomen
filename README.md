@@ -576,7 +576,10 @@ take(mov b)   // b is invalid after this
 ```
 
 - `mov` marks a class-typed field or parameter as owned (moved in).
-- `ref` passes a value by reference
+- `ref` passes a value by reference so the callee can mutate it; the caller must
+  write `ref` at the call site, and a `const` value can't be borrowed mutably.
+- Plain parameters are read-only — take them by value and make a local `var`
+  copy if you need a mutable scratch value the caller never sees.
 - `swap` atomically moves a value out and replaces it with a fresh one
 
 The same borrow machinery backs **non-owning slices**. `string.slice(start, end)`

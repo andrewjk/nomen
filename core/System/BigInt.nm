@@ -357,7 +357,7 @@ pub struct BigInt {
         }
     }
 
-    pub func mul_to = (ref self, BigInt a, BigInt b, var BigInt scratch) {
+    pub func mul_to = (ref self, BigInt a, BigInt b, ref BigInt scratch) {
         if a.len == 1 || b.len == 1 {
             var uint64 sv
             var int other_len
@@ -517,13 +517,13 @@ pub struct BigInt {
         // z0 = a0 * b0
         var BigInt z0 = BigInt()
         var BigInt s0 = BigInt()
-        z0.mul_to(a0, b0, s0)
+	z0.mul_to(a0, b0, ref s0)
 
         // z2 = a1 * b1 (only if both have high parts)
         var BigInt z2 = BigInt()
         var BigInt s2 = BigInt()
         if a1_len > 0 && b1_len > 0 {
-            z2.mul_to(a1, b1, s2)
+		z2.mul_to(a1, b1, ref s2)
         }
 
         // z1 = (a0+a1)*(b0+b1) - z0 - z2
@@ -533,7 +533,7 @@ pub struct BigInt {
         var BigInt s1 = BigInt()
         aa.add_to(a0, a1)
         bb.add_to(b0, b1)
-        z1.mul_to(aa, bb, s1)
+	z1.mul_to(aa, bb, ref s1)
         z1.sub_at(z0, 0)
         z1.sub_at(z2, 0)
 
@@ -566,7 +566,7 @@ pub struct BigInt {
     }
     // self = quotient, a = dividend, b = divisor, remainder = remainder
     // Uses remainder's internal buffer as working space
-    pub func div_to = (ref self, BigInt a, BigInt b, var BigInt remainder) {
+    pub func div_to = (ref self, BigInt a, BigInt b, ref BigInt remainder) {
         if b.len == 1 {
             var uint64 divisor = b.get(0)
             self.ensure(a.len)

@@ -135,6 +135,29 @@ print(ref 5)
 		const errors = compile_main(input);
 		expect(errors.some((e) => e.message.includes("ref"))).toBe(true);
 	});
+
+	test("const value cannot be passed to ref parameter", () => {
+		const input = `
+func makeFive = (ref int x) {
+    x = 5
+}
+const int fixed = 1
+makeFive(ref fixed)
+`;
+		const errors = compile_main(input);
+		expect(errors.some((e) => e.message.includes("const"))).toBe(true);
+	});
+
+	test("var value can be passed to ref parameter", () => {
+		const input = `
+func makeFive = (ref int x) {
+    x = 5
+}
+var int mutable = 1
+makeFive(ref mutable)
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
 });
 
 describe("spec: range types", () => {
