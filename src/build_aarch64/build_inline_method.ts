@@ -116,9 +116,12 @@ export default function build_inline_method(
 		const param = func.params[i];
 		if (param.is_self_param && !self_is_var) continue;
 		// Enum-with-data args arrive as a pointer to the tag+payload blob —
-		// same convention as struct args.
+		// same convention as struct args. A class arg is a reference type
+		// (heap pointer by value), so exclude it.
 		const is_struct_type =
-			!!status.structs.find((s) => s.name === param.type.name && !s.is_simple_type) ||
+			!!status.structs.find(
+				(s) => s.name === param.type.name && !s.is_simple_type && !s.is_class,
+			) ||
 			!!status.enums.find((e) => e.name === param.type.name && e.has_associated_data);
 		if (is_struct_type && callee_idx < callee_saved.length) {
 			const saved_reg = callee_saved[callee_idx++];
@@ -149,7 +152,7 @@ export default function build_inline_method(
 	}
 
 	const return_struct = status.structs.find(
-		(s) => s.name === func.return_type?.name && !s.is_simple_type,
+		(s) => s.name === func.return_type?.name && !s.is_simple_type && !s.is_class,
 	);
 	if (return_struct) {
 		status.function_return_type = func.return_type;
@@ -265,7 +268,7 @@ export function build_inline_function(func: FunctionNode, status: BuildStatus) {
 	}
 
 	const return_struct = status.structs.find(
-		(s) => s.name === func.return_type?.name && !s.is_simple_type,
+		(s) => s.name === func.return_type?.name && !s.is_simple_type && !s.is_class,
 	);
 	if (return_struct) {
 		status.function_return_type = func.return_type;

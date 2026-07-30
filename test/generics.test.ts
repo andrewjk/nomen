@@ -538,3 +538,57 @@ struct Box<T> {
 	const parsed = parse(input);
 	expect(parsed.errors).toEqual([]);
 });
+
+test("generics -- struct-typed field monomorphizes with correct layout", () => {
+	const input = `
+struct Point {
+    var int x
+    var int y
+}
+
+struct Box<T> {
+    var T item
+}
+
+func make = () {
+    var Point p = Point(31, 42)
+    var Box<Point> b = Box<Point>(p)
+    return
+}
+`;
+	const parsed = parse(input);
+	expect(parsed.errors).toEqual([]);
+	const checked = check(parsed.root);
+	const errors = checked.errors.filter((e) => !e.message.includes("void"));
+	expect(errors).toEqual([]);
+	const built = build(parsed.root);
+	expect(built.code).toContain("Box_Point_init");
+});
+
+test("generics -- struct-typed field access returns correct values (both backends)", async () => {
+	const input = `
+struct Point {
+	var int x
+	var int y
+}
+
+struct Box<T> {
+	var T item
+}
+
+func go = (out int) {
+	var Point p = Point(31, 42)
+	var Box<Point> b = Box<Point>(p)
+	Console.write("[x=")
+	Console.write(b.item.x.to_string())
+	Console.write(",y=")
+	Console.write(b.item.y.to_string())
+	Console.write("]")
+	return 0
+}
+
+Console.write("\\{go()}")
+`;
+	await build_and_check_output(input, "generic_struct_field_access", "[x=31,y=42]0");
+});
+

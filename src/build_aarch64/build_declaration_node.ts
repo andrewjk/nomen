@@ -567,8 +567,19 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 	const directive = aarch64_type(node.type.name);
 	const size = aarch64_size(node.type.name);
 
+	// Resolve a generic-typed declaration (e.g. `var Box<Point> b`) to its
+	// monomorphized struct name (Box_Point) so the struct lookup, size
+	// computation, and field layout all key against the concrete struct.
+	// Mirrors the C backend's mono_name resolution. The Nomen type is left
+	// unchanged (the AST is shared across backends).
+	const resolved_struct_name = node.type.type_args?.length
+		? `${node.type.name}_${node.type.type_args.map((t) => t.name).join("_")}`
+		: node.type.name;
+
 	// Check if type is a struct
-	const struct_type = status.structs.find((s) => s.name === node.type.name && !s.is_simple_type);
+	const struct_type = status.structs.find(
+		(s) => s.name === resolved_struct_name && !s.is_simple_type,
+	);
 
 	// A trait-typed local stores the concrete struct value (the initializer's
 	// actual type) so its vtable (offset 0) and field layout are correct for
@@ -1141,7 +1152,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 		} else {
 			// Struct declaration
 			const nullable_struct = is_nullable_struct_type(node.type, status);
-			const struct_size = get_struct_size(node.type.name, status);
+			const struct_size = get_struct_size(resolved_struct_name, status);
 			const total_size = nullable_struct ? struct_size + 8 : struct_size;
 			if (status.function_return_label) {
 				const offset = allocate_stack_space(status, total_size);

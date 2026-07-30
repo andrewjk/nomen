@@ -753,7 +753,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		status.struct_return_buffer = undefined;
 
 		const return_struct = status.structs.find(
-			(s) => s.name === func.return_type?.name && !s.is_simple_type,
+			(s) => s.name === func.return_type?.name && !s.is_simple_type && !s.is_class,
 		);
 		let return_buffer_stack_offset: number | undefined;
 		if (return_struct) {
@@ -787,9 +787,14 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 			}
 			// Enum-with-data params arrive as a pointer to the 16-byte
 			// tag+payload blob (same convention as struct params) — mirrors
-			// the is_enum_with_data handling in build_function_node.
+			// the is_enum_with_data handling in build_function_node. A class
+			// param is a reference type (heap pointer by value), so exclude
+			// it — it must take the scalar pointer path, not be callee-saved
+			// and dereferenced.
 			const is_struct_type =
-				!!status.structs.find((s) => s.name === param.type.name && !s.is_simple_type) ||
+				!!status.structs.find(
+					(s) => s.name === param.type.name && !s.is_simple_type && !s.is_class,
+				) ||
 				!!status.enums.find((e) => e.name === param.type.name && e.has_associated_data);
 			if (is_struct_type && callee_idx < callee_saved.length) {
 				const saved_reg = callee_saved[callee_idx++];
@@ -820,6 +825,11 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 			const param_struct = status.structs.find((s) => s.name === param.type.name && s.is_class);
 			if (param_struct) {
 				status.function_ref_params!.add(param.name);
+				// Register class params in class_vars so value-access recognises
+				// them as classes and does NOT dereference the pointer (the
+				// pointer IS the value). Mirrors the C backend's prologue.
+				if (!status.class_vars) status.class_vars = new Set();
+				status.class_vars.add(param.name);
 			}
 			slot_idx++;
 		}
@@ -849,7 +859,9 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 				continue;
 			}
 			const is_struct_type =
-				!!status.structs.find((s) => s.name === param.type.name && !s.is_simple_type) ||
+				!!status.structs.find(
+					(s) => s.name === param.type.name && !s.is_simple_type && !s.is_class,
+				) ||
 				!!status.enums.find((e) => e.name === param.type.name && e.has_associated_data);
 			if (!is_struct_type) {
 				const size = aarch64_size(param.type.name);

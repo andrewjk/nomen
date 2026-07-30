@@ -321,7 +321,7 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		const is_array_op = node.operator_func.struct_name.startsWith("Array") && left_type.is_array;
 
 		const return_struct = status.structs.find(
-			(s) => s.name === node.type?.name && !s.is_simple_type,
+			(s) => s.name === node.type?.name && !s.is_simple_type && !s.is_class,
 		);
 		let return_temp_offset: number | undefined;
 		if (return_struct) {

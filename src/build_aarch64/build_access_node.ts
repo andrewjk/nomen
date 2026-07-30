@@ -183,7 +183,10 @@ export function emit_address_of(node: BaseNode, status: BuildStatus) {
 let access_temp_counter = 0;
 
 function is_struct_type(type_name: string, status: BuildStatus): boolean {
-	return !!status.structs.find((s) => s.name === type_name && !s.is_simple_type);
+	// A class is a reference type (heap pointer passed by value), not a value
+	// struct passed by address — exclude it so class args/fields take the
+	// scalar pointer path instead of being emitted by address + dereferenced.
+	return !!status.structs.find((s) => s.name === type_name && !s.is_simple_type && !s.is_class);
 }
 
 function is_enum_with_data_type(type_name: string, status: BuildStatus): boolean {

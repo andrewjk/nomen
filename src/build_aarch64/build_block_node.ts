@@ -319,6 +319,19 @@ function gather_structs(block: BlockNode, status: BuildStatus) {
 				status.bitsets.push(node as BitsetNode);
 				break;
 			}
+			case "func": {
+				// Recurse into function bodies: user-defined types nested inside
+				// a function (commonly `main`) must be in status.structs before
+				// monomorphized generics that reference them are built (e.g.
+				// `struct Box<T> { var T item }` monomorphized to `Box_Point`,
+				// where `Point` is declared inside `main`). Mirrors the C
+				// backend's gather_structs.
+				const func = node as FunctionNode;
+				if (func.statements?.length) {
+					gather_structs(func, status);
+				}
+				break;
+			}
 		}
 	}
 }

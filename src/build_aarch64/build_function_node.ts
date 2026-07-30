@@ -267,8 +267,12 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 				first_pass_slot += 1;
 				continue;
 			}
+			// A class param is a reference type (a heap pointer passed by
+			// value), not a value struct passed by address — exclude it so it
+			// takes the scalar pointer path instead of being callee-saved and
+			// dereferenced.
 			const is_struct_type = !!status.structs.find(
-				(s) => s.name === param.type.name && !s.is_simple_type,
+				(s) => s.name === param.type.name && !s.is_simple_type && !s.is_class,
 			);
 			// A trait-typed param arrives as a pointer to the concrete struct
 			// (whose vtable lives at offset 0), so save it in a callee-saved

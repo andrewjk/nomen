@@ -80,14 +80,27 @@ export default function build_block_node(
 	if (with_declarations) {
 		// Emit all struct forward declarations to headers before building anything,
 		// so that function declarations can reference struct types not yet built.
-		for (let child of node.statements) {
-			if (is_struct_node(child)) {
-				const struct = child as StructNode;
-				if (!struct.is_simple_type && !struct.is_generic) {
-					status.headers += `struct ${struct.name};\n`;
+		// Recurse into function bodies (commonly `main`) so that a type nested
+		// inside a function is forward-declared before a monomorphized struct
+		// hoisted to root scope references it (e.g. `struct Box<T>{var T item}`
+		// monomorphized to `Box_Point`, where `Point` lives inside `main`).
+		// Mirrors the recursion in gather_structs.
+		const forward_declared = new Set<string>();
+		const forward_declare = (block: BlockNode) => {
+			for (let child of block.statements) {
+				if (is_struct_node(child)) {
+					const struct = child as StructNode;
+					if (!struct.is_simple_type && !struct.is_generic && !forward_declared.has(struct.name)) {
+						forward_declared.add(struct.name);
+						status.headers += `struct ${struct.name};\n`;
+					}
+				} else if ((child as any).node_type === "func") {
+					const func = child as FunctionNode;
+					if (func.statements?.length) forward_declare(func);
 				}
 			}
-		}
+		};
+		forward_declare(node);
 
 		// Pass 1: Emit all struct bodies first so that all types are fully defined
 		// before any struct functions are emitted (which may access fields of other structs).
