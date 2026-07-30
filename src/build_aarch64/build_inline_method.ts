@@ -116,12 +116,11 @@ export default function build_inline_method(
 		const param = func.params[i];
 		if (param.is_self_param && !self_is_var) continue;
 		// Enum-with-data args arrive as a pointer to the tag+payload blob —
-		// same convention as struct args. A class arg is a reference type
-		// (heap pointer by value), so exclude it.
+		// same convention as struct args. A class arg is a heap pointer the
+		// body reads as a value, so it stays in the callee-saved register path
+		// (don't exclude it — see build_function_node for the full rationale).
 		const is_struct_type =
-			!!status.structs.find(
-				(s) => s.name === param.type.name && !s.is_simple_type && !s.is_class,
-			) ||
+			!!status.structs.find((s) => s.name === param.type.name && !s.is_simple_type) ||
 			!!status.enums.find((e) => e.name === param.type.name && e.has_associated_data);
 		if (is_struct_type && callee_idx < callee_saved.length) {
 			const saved_reg = callee_saved[callee_idx++];

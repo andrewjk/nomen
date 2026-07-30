@@ -267,12 +267,15 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 				first_pass_slot += 1;
 				continue;
 			}
-			// A class param is a reference type (a heap pointer passed by
-			// value), not a value struct passed by address — exclude it so it
-			// takes the scalar pointer path instead of being callee-saved and
-			// dereferenced.
+			// A class param is a reference type (a heap pointer), but the body
+			// accesses it as a pointer VALUE — so it still belongs in the
+			// callee-saved register path (saved like a struct param and read
+			// back as a value). Excluding it here would spill it to a stack
+			// slot that the method-receiver load treats as a by-address struct
+			// (address-of instead of load), corrupting class params. See
+			// trait_dispatch / class-move / memory-var-class-param tests.
 			const is_struct_type = !!status.structs.find(
-				(s) => s.name === param.type.name && !s.is_simple_type && !s.is_class,
+				(s) => s.name === param.type.name && !s.is_simple_type,
 			);
 			// A trait-typed param arrives as a pointer to the concrete struct
 			// (whose vtable lives at offset 0), so save it in a callee-saved
