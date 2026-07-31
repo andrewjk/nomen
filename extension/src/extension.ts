@@ -20,6 +20,7 @@ let diagnostics: vscode.DiagnosticCollection;
 
 const library_cache = new Map<string, Library>();
 const debounce_timers = new Map<string, ReturnType<typeof setTimeout>>();
+const doc_index_cache = new Map<string, { version: number; index: Map<string, DocEntry> }>();
 
 export function activate(context: vscode.ExtensionContext): void {
 	terminal = undefined;
@@ -30,6 +31,7 @@ export function activate(context: vscode.ExtensionContext): void {
 			{ language: ECHO_LANGUAGE },
 			new NomenCodeLensProvider(),
 		),
+		vscode.languages.registerHoverProvider({ language: ECHO_LANGUAGE }, new NomenHoverProvider()),
 		vscode.commands.registerCommand("nomen.run", (uri?: vscode.Uri) => runNomen(uri, false)),
 		vscode.commands.registerCommand("nomen.audit", (uri?: vscode.Uri) => runNomen(uri, true)),
 		vscode.window.onDidCloseTerminal((t) => {
@@ -48,6 +50,7 @@ export function activate(context: vscode.ExtensionContext): void {
 		vscode.workspace.onDidCloseTextDocument((document) => {
 			diagnostics.delete(document.uri);
 			clear_timer(document.uri);
+			doc_index_cache.delete(document.uri.toString());
 		}),
 		vscode.workspace.onDidChangeConfiguration((event) => {
 			if (event.affectsConfiguration("nomen.diagnostics")) {
@@ -61,6 +64,92 @@ export function activate(context: vscode.ExtensionContext): void {
 
 export function deactivate(): void {
 	terminal = undefined;
+}
+
+class NomenHoverProvider implements vscode.HoverProvider {
+	provideHover(document: vscode.TextDocument, position: vscode.Position): vscode.Hover | undefined {
+		const range = document.getWordRangeAtPosition(position, /[A-Za-z_][A-Za-z0-9_]*/);
+		if (!range) return undefined;
+		const word = document.getText(range);
+		const index = get_doc_index(document);
+
+		// Try a qualified lookup first: hovering over `bar` in `foo.bar` should
+		// resolve to foo's `bar` method, not any other `bar`.
+		let entry: DocEntry | undefined;
+		const before = document.lineAt(position.line).text.slice(0, range.start.character);
+		const qualified = before.match(/([A-Za-z_][A-Za-z0-9_]*)\s*\.\s*$/);
+		if (qualified) entry = index.get(`${qualified[1]}.${word}`);
+		if (!entry) entry = index.get(word);
+		if (!entry?.doc) return undefined;
+
+		const md = new vscode.MarkdownString();
+		md.isTrusted = true;
+		md.appendMarkdown(`**\`${entry.label}\`**\n\n`);
+		md.appendMarkdown(entry.doc);
+		return new vscode.Hover(md, range);
+	}
+}
+
+interface DocEntry {
+	label: string;
+	doc?: string;
+}
+
+// Parse the document and index every `pub` declaration's doc comment by name
+// (and, for methods, by `Type.method`). Cached per document version.
+function get_doc_index(document: vscode.TextDocument): Map<string, DocEntry> {
+	const key = document.uri.toString();
+	const cached = doc_index_cache.get(key);
+	if (cached && cached.version === document.version) return cached.index;
+
+	const library = load_library(document.uri);
+	let index = new Map<string, DocEntry>();
+	try {
+		const parsed = parse(build_parse_source(document), library, document.uri.fsPath);
+		index = build_doc_index(parsed.root as unknown as BaseNodeLike);
+	} catch {
+		// leave the index empty
+	}
+	doc_index_cache.set(key, { version: document.version, index });
+	return index;
+}
+
+interface BaseNodeLike {
+	node_type: string;
+	name?: string;
+	visibility?: string;
+	doc?: string;
+	is_class?: boolean;
+	functions?: BaseNodeLike[];
+	fields?: BaseNodeLike[];
+	statements?: BaseNodeLike[];
+}
+
+function build_doc_index(root: BaseNodeLike): Map<string, DocEntry> {
+	const index = new Map<string, DocEntry>();
+	const visit = (node: BaseNodeLike, parent?: BaseNodeLike) => {
+		const t = node.node_type;
+		if (t === "struct" || t === "trait" || t === "enum" || t === "bitset") {
+			if (node.visibility === "pub") {
+				const kind = t === "struct" && node.is_class ? "class" : t;
+				index.set(node.name!, { label: `${kind} ${node.name}`, doc: node.doc });
+			}
+			for (const f of node.functions || []) visit(f, node);
+			for (const field of node.fields || []) {
+				if (field.visibility === "pub" && field.doc) {
+					index.set(field.name!, { label: field.name!, doc: field.doc });
+				}
+			}
+		} else if (t === "func") {
+			if (node.visibility === "pub" && node.name && !node.name.startsWith("#")) {
+				const entry: DocEntry = { label: `func ${node.name}`, doc: node.doc };
+				if (parent?.name) index.set(`${parent.name}.${node.name}`, entry);
+				else index.set(node.name, entry);
+			}
+		}
+	};
+	for (const stmt of root.statements || []) visit(stmt);
+	return index;
 }
 
 class NomenCodeLensProvider implements vscode.CodeLensProvider {
@@ -234,24 +323,26 @@ function clear_timer(uri: vscode.Uri): void {
 	}
 }
 
+// Build the source string to parse for `document`: the live text plus, for
+// non-library files, the sibling module sources so cross-file `pub`
+// declarations resolve. Library files resolve via the library linker instead
+// (see parse's library-file handling), so they must not also get sibling
+// inlining — that would duplicate the declarations the linker already pulls in.
+function build_parse_source(document: vscode.TextDocument): string {
+	const text = document.getText();
+	const library = load_library(document.uri);
+	const is_library_file = !!library && !!library.dir && is_within(document.uri.fsPath, library.dir);
+	if (is_library_file) return text;
+	const siblings = read_sibling_sources(document.uri.fsPath);
+	return siblings ? text + "\n" + siblings : text;
+}
+
 function update_diagnostics(document: vscode.TextDocument): void {
 	if (!is_nomen(document)) return;
 
 	const text = document.getText();
 	const library = load_library(document.uri);
-
-	// Files in the same folder form a module: a file can reference every other
-	// file's `pub` declarations without an explicit import. Append the sibling
-	// files' source so those declarations resolve. Library files resolve via
-	// the library linker instead (see parse's library-file handling), so they
-	// must not also get sibling inlining — that would duplicate the
-	// declarations the linker already pulls in.
-	let source = text;
-	const is_library_file = !!library && !!library.dir && is_within(document.uri.fsPath, library.dir);
-	if (!is_library_file) {
-		const siblings = read_sibling_sources(document.uri.fsPath);
-		if (siblings) source = text + "\n" + siblings;
-	}
+	const source = build_parse_source(document);
 
 	let errors: CompileError[];
 	try {
