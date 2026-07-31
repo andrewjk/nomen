@@ -11,6 +11,7 @@ import build, { default_platform } from "../../src/build.ts";
 import join from "../../src/join.ts";
 import { get_library } from "../../src/lib.ts";
 import parse from "../../src/parse.ts";
+import { run_docs } from "./docs.ts";
 import render_errors from "./format_errors.ts";
 import type Config from "./types/Config.ts";
 
@@ -24,7 +25,7 @@ let build_root: string | undefined;
 console.log("\n~ NOMEN ~\n");
 
 const options = yargs(hideBin(process.argv))
-	.usage("Usage: nomen --in [file/folder]")
+	.usage("Usage: nomen --in [file/folder] | nomen docs")
 	.option("in", {
 		alias: "i",
 		describe: "Input file or folder",
@@ -73,6 +74,12 @@ const options = yargs(hideBin(process.argv))
 	.parseSync();
 
 try {
+	// `nomen docs` generates markdown documentation instead of compiling.
+	if (options._[0] === "docs") {
+		run_docs(typeof options.in === "string" ? options.in : undefined);
+		process.exit(0);
+	}
+
 	// An explicit --in wins; otherwise discover what to compile from the
 	// working folder — a package.jsonc `entry`, or a lone .nm file.
 	options.in = options.in ?? resolve_input();
