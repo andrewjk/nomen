@@ -9,62 +9,62 @@ import ClassBuffer
  * A graph of values connected by edges
  **/
 pub struct Graph<T>: Enumerable {
-    var Buffer<T> values = Buffer<T>()
-    var Buffer<int> head_edge = Buffer<int>()
-    var Buffer<int> edge_target = Buffer<int>()
-    var Buffer<int> edge_next = Buffer<int>()
-    var int node_count = 0
-    var int edge_count = 0
+	var Buffer<T> values = Buffer<T>()
+	var head_edge = Buffer<int>()
+	var edge_target = Buffer<int>()
+	var edge_next = Buffer<int>()
+	var node_count = 0
+	var edge_count = 0
 
-    pub func add_node = (ref self, mov T value) {
-        var int idx = self.node_count
-        self.values.grow_int(idx + 1)
-        var int v = value
-        self.values.store_int(idx, v)
-        self.head_edge.grow_int(idx + 1)
-        self.head_edge.store_int(idx, -1)
-        self.node_count = self.node_count + 1
-    }
+	pub func add_node = (ref self, mov T value) {
+		var int idx = self.node_count
+		self.values.grow_int(idx + 1)
+		var int v = value
+		self.values.store_int(idx, v)
+		self.head_edge.grow_int(idx + 1)
+		self.head_edge.store_int(idx, -1)
+		self.node_count = self.node_count + 1
+	}
 
-    pub func add_edge = (ref self, int from, int to) {
-        var int e = self.edge_count
-        self.edge_target.grow_int(e + 1)
-        self.edge_target.store_int(e, to)
-        self.edge_next.grow_int(e + 1)
-        if from >= 0 && from < self.head_edge.cap {
-            self.edge_next.store_int(e, self.head_edge.load_int(from))
-        }
-        if from >= 0 && from < self.head_edge.cap {
-            self.head_edge.store_int(from, e)
-        }
-        self.edge_count = self.edge_count + 1
-    }
+	pub func add_edge = (ref self, int from, int to) {
+		var int e = self.edge_count
+		self.edge_target.grow_int(e + 1)
+		self.edge_target.store_int(e, to)
+		self.edge_next.grow_int(e + 1)
+		if from >= 0 && from < self.head_edge.cap {
+			self.edge_next.store_int(e, self.head_edge.load_int(from))
+		}
+		if from >= 0 && from < self.head_edge.cap {
+			self.head_edge.store_int(from, e)
+		}
+		self.edge_count = self.edge_count + 1
+	}
 
-    pub func edges_of = (self, int node, out int: out >= -1 && out < self.edge_count) {
-        return self.head_edge.load_int(node)
-    }
+	pub func edges_of = (self, int node, out int: out >= -1 && out < self.edge_count) {
+		return self.head_edge.load_int(node)
+	}
 
-    pub func edge_target = (self, int e, out int: out >= 0 && out < self.node_count) {
-        return self.edge_target.load_int(e)
-    }
+	pub func edge_target = (self, int e, out int: out >= 0 && out < self.node_count) {
+		return self.edge_target.load_int(e)
+	}
 
-    pub func next_edge = (self, int e, out int: out >= -1 && out < self.edge_count) {
-        return self.edge_next.load_int(e)
-    }
+	pub func next_edge = (self, int e, out int: out >= -1 && out < self.edge_count) {
+		return self.edge_next.load_int(e)
+	}
 
-    pub func first = (self: self.node_count > 0, out T) {
-        return self.values.load_int(0)
-    }
+	pub func first = (self: self.node_count > 0, out T) {
+		return self.values.load_int(0)
+	}
 
-    pub func at = (self, int idx: idx >= 0 && idx < self.node_count, out T) {
-        return self.values.load_int(idx)
-    }
+	pub func at = (self, int idx: idx >= 0 && idx < self.node_count, out T) {
+		return self.values.load_int(idx)
+	}
 
-    pub func node_length = (self, out int) {
-        return self.node_count
-    }
+	pub func node_length = (self, out int) {
+		return self.node_count
+	}
 
-    pub func edge_length = (self, out int) {
-        return self.edge_count
-    }
+	pub func edge_length = (self, out int) {
+		return self.edge_count
+	}
 }

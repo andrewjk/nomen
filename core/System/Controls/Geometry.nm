@@ -11,7 +11,7 @@
 // flat structs are the trait-based `Container : Control` design's data model,
 // but the same types work with the handle-based v1 container.
 
-const int MAX_DIM = 2147483647
+const MAX_DIM = 2147483647
 
 // ── Geometry ──
 
@@ -19,28 +19,28 @@ const int MAX_DIM = 2147483647
  * A 2D size (width and height)
  **/
 pub struct Size {
-	pub var int width = 0
-	pub var int height = 0
+	pub var width = 0
+	pub var height = 0
 }
 
 /**
  * A rectangle (x, y, width, height) — a control's assigned position and size
  **/
 pub struct Frame {
-	pub var int x = 0
-	pub var int y = 0
-	pub var int width = 0
-	pub var int height = 0
+	pub var x = 0
+	pub var y = 0
+	pub var width = 0
+	pub var height = 0
 }
 
 /**
  * Per-edge padding (top, right, bottom, left)
  **/
 pub struct Insets {
-	pub var int top = 0
-	pub var int right = 0
-	pub var int bottom = 0
-	pub var int left = 0
+	pub var top = 0
+	pub var right = 0
+	pub var bottom = 0
+	pub var left = 0
 }
 
 // ── Constraints (flow DOWN) ──
@@ -49,8 +49,8 @@ pub struct Insets {
  * Min/max size bounds a parent passes to a child during the layout measure phase
  **/
 pub struct BoxConstraints {
-	pub var int min_width = 0
-	pub var int min_height = 0
+	pub var min_width = 0
+	pub var min_height = 0
 	pub var int max_width = MAX_DIM
 	pub var int max_height = MAX_DIM
 

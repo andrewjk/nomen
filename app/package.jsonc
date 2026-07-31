@@ -3,5 +3,12 @@
 	"imports": {
 		"System": "../core"
 	},
-	"entry": "src/main.nm"
+	"entry": "src/main.nm",
+	"format": {
+		"print_width": 100,
+		"sort_imports": true,
+		"use_tabs": true,
+		"trailing_comma": true,
+		"strip_redundant_types": true
+	}
 }

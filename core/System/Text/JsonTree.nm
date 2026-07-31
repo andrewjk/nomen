@@ -14,8 +14,8 @@ import Buffer
 //   kind: 0=null, 1=true, 2=number, 3=string, 4=array, 5=object, 6=false
 //   child/next/val are node indices, -1 = none.
 struct JsonNode {
-	var int kind = 0
-	var string text = ""
+	var kind = 0
+	var text = ""
 	var int child = -1
 	var int next = -1
 	var int val = -1
@@ -26,13 +26,13 @@ struct JsonNode {
  **/
 pub struct JsonTree {
 	var Buffer<JsonNode> nodes = Buffer<JsonNode>()
-	var int count = 0
+	var count = 0
 
 	func alloc_node = (ref self, out int) {
 		var int idx = self.count
 		self.nodes.grow_T(idx + 1)
 		self.count = idx + 1
-		var JsonNode default = JsonNode()
+		var default = JsonNode()
 		self.nodes.store_T(idx, default)
 		// The default node's `text` points at the shared empty-string literal.
 		// NULL it in the slab so reset() can safely free only strdup'd texts
@@ -88,7 +88,7 @@ pub struct JsonTree {
 	// Free every strdup'd text pointer before reusing the slab, otherwise
 	// re-parsing a document leaks the previous document's string/number texts.
 	func reset = (ref self) {
-		var int i = 0
+		var i = 0
 		while i < self.count {
 			self.free_text(i)
 			i = i + 1
@@ -100,7 +100,7 @@ pub struct JsonTree {
 	// is freed): release the current document's strdup'd node texts, which live
 	// raw in the slab and are otherwise invisible to the auto-destroy pass.
 	func #destroy = () {
-		var int i = 0
+		var i = 0
 		while i < self.count {
 			self.free_text(i)
 			i = i + 1

@@ -9,19 +9,19 @@ func create_tree = (int depth, out TreeNode) {
 	if depth > 1 {
 		var TreeNode left = create_tree(depth - 1)
 		var TreeNode right = create_tree(depth - 1)
-		var TreeNode node = TreeNode()
+		var node = TreeNode()
 		node.left = left
 		node.right = right
 		return node
 	}
-	var TreeNode node = TreeNode()
+	var node = TreeNode()
 	node.left = TreeNode()
 	node.right = TreeNode()
 	return node
 }
 
 func check_tree = (TreeNode node, out int) {
-	var int sum = 1
+	var sum = 1
 	if node.left != null {
 		sum = sum + check_tree(node.left)
 	}
@@ -32,11 +32,11 @@ func check_tree = (TreeNode node, out int) {
 }
 
 pub func main = (Init init) {
-	var int n = 10
+	var n = 10
 	if init.argc > 1 {
 		n = parse_int(init.args.at(1))
 	}
-	var int min_depth = 4
+	var min_depth = 4
 	var int max_depth = n
 	if min_depth + 2 > max_depth {
 		max_depth = min_depth + 2
@@ -50,8 +50,8 @@ pub func main = (Init init) {
 	var int depth = min_depth
 	while depth <= max_depth {
 		var int iterations = 1 << (max_depth - depth + min_depth)
-		var int sum = 0
-		var int i = 0
+		var sum = 0
+		var i = 0
 		while i < iterations {
 			sum = sum + check_tree(create_tree(depth))
 			i = i + 1

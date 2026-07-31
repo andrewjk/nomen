@@ -4,9 +4,9 @@ import System/Controls/Geometry
 /**
  * A read-only text label control
  **/
-pub class Text : Control {
+pub class Text: Control {
 	var uint64 handle = 0
-	var string text = ""
+	var text = ""
 
 	pub func #init = (self, Window window) {
 		```
@@ -79,14 +79,14 @@ pub class Text : Control {
 	// refactor"). The default frame is 0,0,0,0; layout drives the real rectangle.
 
 	pub func measure = (self, BoxConstraints constraints, out Size) {
-		var Size s = Size()
+		var s = Size()
 		s.width = self.text.length * 8
 		s.height = 8
 		return s
 	}
 
 	pub func intrinsic_size = (self, out Size) {
-		var Size s = Size()
+		var s = Size()
 		s.width = self.text.length * 8
 		s.height = 8
 		return s

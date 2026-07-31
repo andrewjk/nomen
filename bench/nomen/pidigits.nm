@@ -1,73 +1,73 @@
 import System
 
 pub func main = (Init init) {
-    var int n = 2000
-    if init.argc > 1 {
-        n = parse_int(init.args.at(1))
-    }
-    var int digits_printed = 0
+	var n = 2000
+	if init.argc > 1 {
+		n = parse_int(init.args.at(1))
+	}
+	var digits_printed = 0
 
-    var BigInt k = BigInt()
-    var BigInt n1 = BigInt()
-    var BigInt n2 = BigInt()
-    var BigInt d = BigInt()
-    var BigInt one = BigInt()
-    var BigInt two = BigInt()
-    var BigInt ten = BigInt()
-    var BigInt u = BigInt()
-    var BigInt v = BigInt()
-    var BigInt w = BigInt()
-    var BigInt k2 = BigInt()
-    var BigInt tmp = BigInt()
-    var BigInt rem = BigInt()
+	var k = BigInt()
+	var n1 = BigInt()
+	var n2 = BigInt()
+	var d = BigInt()
+	var one = BigInt()
+	var two = BigInt()
+	var ten = BigInt()
+	var u = BigInt()
+	var v = BigInt()
+	var w = BigInt()
+	var k2 = BigInt()
+	var tmp = BigInt()
+	var rem = BigInt()
 
-    k = k.new(1)
-    n1 = n1.new(4)
-    n2 = n2.new(3)
-    d = d.new(1)
-    one = one.new(1)
-    two = two.new(2)
-    ten = ten.new(10)
-    u = u.new(0)
-    v = v.new(0)
-    w = w.new(0)
-    k2 = k2.new(0)
-    tmp = tmp.new(0)
-    rem = rem.new(0)
+	k = k.new(1)
+	n1 = n1.new(4)
+	n2 = n2.new(3)
+	d = d.new(1)
+	one = one.new(1)
+	two = two.new(2)
+	ten = ten.new(10)
+	u = u.new(0)
+	v = v.new(0)
+	w = w.new(0)
+	k2 = k2.new(0)
+	tmp = tmp.new(0)
+	rem = rem.new(0)
 
-    while true {
-        u.div_to(n1, d, ref rem)
-        v.div_to(n2, d, ref rem)
+	while true {
+		u.div_to(n1, d, ref rem)
+		v.div_to(n2, d, ref rem)
 
-        if u.cmp(v) == 0 {
-            Console.write(u.to_digit().to_string())
-            digits_printed = digits_printed + 1
+		if u.cmp(v) == 0 {
+			Console.write(u.to_digit().to_string())
+			digits_printed = digits_printed + 1
 
-            if digits_printed >= n {
-                Console.write("\t:\{digits_printed}")
-                break
-            }
+			if digits_printed >= n {
+				Console.write("\t:\{digits_printed}")
+				break
+			}
 
-            n1.mul_to(n1, ten, ref rem)
-            n2.mul_to(n2, ten, ref rem)
-            tmp.mul_to(u, d, ref rem)
-            tmp.mul_to(tmp, ten, ref rem)
-            n1.sub_to(n1, tmp)
-            n2.sub_to(n2, tmp)
-        } else {
-            k2.mul_to(k, two, ref rem)
-            tmp.sub_to(k2, one)
-            u.mul_to(tmp, n1, ref rem)
-            v.mul_to(n2, two, ref rem)
-            tmp.sub_to(k, one)
-            w.mul_to(tmp, n1, ref rem)
-            n1.add_to(u, v)
-            tmp.add_to(k, two)
-            u.mul_to(tmp, n2, ref rem)
-            n2.add_to(w, u)
-            tmp.add_to(k2, one)
-            d.mul_to(tmp, d, ref rem)
-            k.add_to(k, one)
-        }
-    }
+			n1.mul_to(n1, ten, ref rem)
+			n2.mul_to(n2, ten, ref rem)
+			tmp.mul_to(u, d, ref rem)
+			tmp.mul_to(tmp, ten, ref rem)
+			n1.sub_to(n1, tmp)
+			n2.sub_to(n2, tmp)
+		} else {
+			k2.mul_to(k, two, ref rem)
+			tmp.sub_to(k2, one)
+			u.mul_to(tmp, n1, ref rem)
+			v.mul_to(n2, two, ref rem)
+			tmp.sub_to(k, one)
+			w.mul_to(tmp, n1, ref rem)
+			n1.add_to(u, v)
+			tmp.add_to(k, two)
+			u.mul_to(tmp, n2, ref rem)
+			n2.add_to(w, u)
+			tmp.add_to(k2, one)
+			d.mul_to(tmp, d, ref rem)
+			k.add_to(k, one)
+		}
+	}
 }

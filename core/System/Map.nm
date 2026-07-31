@@ -5,16 +5,16 @@ import ClassBuffer
  * An ordered key-value map with `set`/`get`/`has`/`remove`
  **/
 pub struct Map<TK, TV> {
-	var int length = 0
+	var length = 0
 	var Buffer<TK> keys = Buffer<TK>()
 	var Buffer<TV> values = Buffer<TV>()
-	var Buffer<int> used = Buffer<int>()
+	var used = Buffer<int>()
 
 	// Variadic-tuple constructor: Map<string, int>(["a", 1], ["b", 2]) or
 	// Map(["a", 1], ["b", 2]) (type args inferred from the first pair).
 	// Zero pairs yields an empty Map, so this also covers Map<K, V>().
 	pub func #init = (self, ...[TK, TV] pairs) {
-		var int i = 0
+		var i = 0
 		while i < pairs.length {
 			self.set(pairs.at(i)._0, pairs.at(i)._1)
 			i = i + 1
@@ -147,7 +147,7 @@ pub struct Map<TK, TV> {
 		self.used.alloc(new_cap)
 		self.length = 0
 
-		var int i = 0
+		var i = 0
 		while i < old_cap {
 			if old_used.load(i) != 0 {
 				self.set(old_keys.load_int(i), old_values.load_int(i))

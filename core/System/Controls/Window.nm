@@ -4,7 +4,7 @@ import System/Controls/Geometry
 /**
  * A top-level native window that hosts controls and dispatches events
  **/
-pub class Window : Control {
+pub class Window: Control {
 	var uint64 handle = 0
 
 	pub func #init = (self, string title, int width, int height) {
@@ -232,14 +232,14 @@ pub class Window : Control {
 	// applies a frame to the native NSWindow/UIWindow.
 
 	pub func measure = (self, BoxConstraints constraints, out Size) {
-		var Size s = Size()
+		var s = Size()
 		s.width = self.content_width()
 		s.height = self.content_height()
 		return s
 	}
 
 	pub func intrinsic_size = (self, out Size) {
-		var Size s = Size()
+		var s = Size()
 		s.width = self.content_width()
 		s.height = self.content_height()
 		return s

@@ -1,13 +1,13 @@
 import System
 
 func mbrot = (float cr, float ci, out int) {
-	var float zr = 0.0
-	var float zi = 0.0
-	var float tr = 0.0
-	var float ti = 0.0
-	var int outer = 0
+	var zr = 0.0
+	var zi = 0.0
+	var tr = 0.0
+	var ti = 0.0
+	var outer = 0
 	while outer < 10 {
-		var int inner = 0
+		var inner = 0
 		while inner < 5 {
 			zi = (zr + zr) * zi + ci
 			zr = tr - ti + cr
@@ -24,7 +24,7 @@ func mbrot = (float cr, float ci, out int) {
 }
 
 pub func main = (Init init) {
-	var int n = 200
+	var n = 200
 	if init.argc > 1 {
 		n = parse_int(init.args.at(1))
 	}
@@ -32,14 +32,14 @@ pub func main = (Init init) {
 	var int chunk_size = size / 8
 	var float inv = 2.0 / (size as float)
 
-	var int checksum = 0
-	var int y = 0
+	var checksum = 0
+	var y = 0
 	while y < size {
 		var float ci = (y as float) * inv - 1.0
-		var int x = 0
+		var x = 0
 		while x < chunk_size {
-			var int byte_val = 0
-			var int bit = 0
+			var byte_val = 0
+			var bit = 0
 			while bit < 8 {
 				var int xi = x * 8 + bit
 				var float cr = (xi as float) * inv - 1.5

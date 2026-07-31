@@ -1,57 +1,57 @@
 import System
 
 class Thing {
-    var int value
+	var int value
 }
 
 pub func main = () {
-    const xx = 5
-    //xx = 12
-    print_thing(xx + 5)
+	const xx = 5
+	//xx = 12
+	print_thing(xx + 5)
 
-    const thing = Thing(4)
-    do_thing(mov thing)
+	const thing = Thing(4)
+	do_thing(mov thing)
 
-    //Console.write("bad \{thing}\n")
+	//Console.write("bad \{thing}\n")
 
-    var int y
-    if xx < 12 {
-        y = (22)
-    }
-    var int z = 2 + y
-    Console.write("z is \{z}\n")
-    null_check(null)
+	var int y
+	if xx < 12 {
+		y = (22)
+	}
+	var int z = 2 + y
+	Console.write("z is \{z}\n")
+	null_check(null)
 
-    var things = ["a", "b", "c"]
-    //Console.write("The second thing: \{things[4]}\n")
-    restricted(things, 2)
+	var things = ["a", "b", "c"]
+	//Console.write("The second thing: \{things[4]}\n")
+	restricted(things, 2)
 
-    for i of 0 .. things.length {
-        restricted(things, i)
-    }
+	for i of 0 .. things.length {
+		restricted(things, i)
+	}
 
-    // var k = 0
-    // while k < things.length; k += 1 {
-    //     restricted(things, k)
-    // }
+	// var k = 0
+	// while k < things.length; k += 1 {
+	//     restricted(things, k)
+	// }
 }
 
 func print_thing = (int xx) {
-    Console.write("hi, x is \{xx}!\n")
+	Console.write("hi, x is \{xx}!\n")
 }
 
 func do_thing = (mov Thing thing) {
-    Console.write("we got the moved thing\n")
+	Console.write("we got the moved thing\n")
 }
 
 func restricted = (string[] source, int i: i >= 0 && i < source.length) {
-    Console.write("uh oh \{source[i]}")
+	Console.write("uh oh \{source[i]}")
 }
 
 func null_check = (Thing? thing) {
-    if thing == null {
-        return
-    }
-    const x = thing.value
-    Console.write("we can use thing here: \{x}\n")
+	if thing == null {
+		return
+	}
+	const x = thing.value
+	Console.write("we can use thing here: \{x}\n")
 }

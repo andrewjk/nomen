@@ -10,12 +10,12 @@ struct Body {
 	var float mass
 }
 
-const float solar_mass = 39.47841760435743447534
-const float days_per_year = 365.24
+const solar_mass = 39.47841760435743447534
+const days_per_year = 365.24
 
 func energy = (ref Body[5] bodies, out float) {
-	var float e = 0.0
-	var int i = 0
+	var e = 0.0
+	var i = 0
 	while i < 5 {
 		var float bi_x = bodies.at(i).x
 		var float bi_y = bodies.at(i).y
@@ -41,7 +41,7 @@ func energy = (ref Body[5] bodies, out float) {
 }
 
 func advance = (ref Body[5] bodies, float dt) {
-	var int i = 0
+	var i = 0
 	while i < 5 {
 		var float bi_x = bodies.at(i).x
 		var float bi_y = bodies.at(i).y
@@ -86,11 +86,11 @@ func advance = (ref Body[5] bodies, float dt) {
 }
 
 func offset_momentum = (ref Body[5] bodies) {
-	var float px = 0.0
-	var float py = 0.0
-	var float pz = 0.0
+	var px = 0.0
+	var py = 0.0
+	var pz = 0.0
 
-	var int i = 0
+	var i = 0
 	while i < 5 {
 		px = px - bodies.at(i).vx * bodies.at(i).mass
 		py = py - bodies.at(i).vy * bodies.at(i).mass
@@ -150,11 +150,11 @@ pub func main = (Init init) {
 	Console.write(e.to_string())
 	Console.write("\n")
 
-	var int n = 1000
+	var n = 1000
 	if init.argc > 1 {
 		n = parse_int(init.args.at(1))
 	}
-	var int step = 0
+	var step = 0
 	while step < n {
 		advance(ref bodies, 0.01)
 		step = step + 1

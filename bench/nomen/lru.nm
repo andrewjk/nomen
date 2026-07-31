@@ -7,15 +7,15 @@ import System
 // order-array version paid on every access.
 
 struct LRU {
-	var int size = 0
-	var Map<int, int> keys = Map<int, int>()
-	var Buffer<int> nkeys = Buffer<int>()
-	var Buffer<int> nvals = Buffer<int>()
-	var Buffer<int> prevs = Buffer<int>()
-	var Buffer<int> nexts = Buffer<int>()
+	var size = 0
+	var keys = Map<int, int>()
+	var nkeys = Buffer<int>()
+	var nvals = Buffer<int>()
+	var prevs = Buffer<int>()
+	var nexts = Buffer<int>()
 	var int head = -1
 	var int tail = -1
-	var int count = 0
+	var count = 0
 
 	func setup = (ref self, int sz) {
 		self.size = sz
@@ -105,26 +105,26 @@ struct LRU {
 }
 
 pub func main = (Init init) {
-	var int size = 100
+	var size = 100
 	if init.argc > 1 {
 		size = parse_int(init.args.at(1))
 	}
-	var int n = 10000
+	var n = 10000
 	if init.argc > 2 {
 		n = parse_int(init.args.at(2))
 	}
 
 	var int M = size * 10
-	var int rng0_state = 0
-	var int rng1_state = 1
+	var rng0_state = 0
+	var rng1_state = 1
 
-	var LRU lru = LRU()
+	var lru = LRU()
 	lru.setup(size)
 
-	var int hit = 0
-	var int missed = 0
+	var hit = 0
+	var missed = 0
 
-	var int i = 0
+	var i = 0
 	while i < n {
 		rng0_state = (1103515245 * rng0_state + 12345) & 2147483647
 		var int n0 = rng0_state % M

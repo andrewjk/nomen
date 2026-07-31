@@ -3,7 +3,7 @@
  **/
 pub struct File {
 	var uint64 handle = 0
-	pub var bool eof = false
+	pub var eof = false
 
 	pub func open = (ref self, string path, string mode) {
 		```

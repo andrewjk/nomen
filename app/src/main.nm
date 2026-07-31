@@ -1,22 +1,22 @@
 import System
 import System/Controls
 
-const int WIN_W = 400
-const int WIN_H = 500
-const int MAX_TODOS = 6
+const WIN_W = 400
+const WIN_H = 500
+const MAX_TODOS = 6
 
 pub func main = () {
-	var Window win = Window("Nomen Todo", WIN_W, WIN_H)
+	var win = Window("Nomen Todo", WIN_W, WIN_H)
 
-	var Text title = Text(win)
+	var title = Text(win)
 	title.set_text("Todo List")
 
-	var CheckBox cb0 = CheckBox(win)
-	var CheckBox cb1 = CheckBox(win)
-	var CheckBox cb2 = CheckBox(win)
-	var CheckBox cb3 = CheckBox(win)
-	var CheckBox cb4 = CheckBox(win)
-	var CheckBox cb5 = CheckBox(win)
+	var cb0 = CheckBox(win)
+	var cb1 = CheckBox(win)
+	var cb2 = CheckBox(win)
+	var cb3 = CheckBox(win)
+	var cb4 = CheckBox(win)
+	var cb5 = CheckBox(win)
 
 	cb0.set_title("Learn Nomen")
 	cb1.set_title("Build a GUI app")
@@ -25,11 +25,11 @@ pub func main = () {
 	cb4.set_hidden(true)
 	cb5.set_hidden(true)
 
-	var int todo_count = 3
+	var todo_count = 3
 
-	var TextBox input = TextBox(win)
+	var input = TextBox(win)
 	input.set_text("Type a new todo...")
-	var Button add_btn = Button(win, "Add")
+	var add_btn = Button(win, "Add")
 
 	// A two-column grid. The title and each checkbox span both columns (full
 	// width); the input and Add button share the final row.
@@ -95,10 +95,10 @@ pub func main = () {
 						cb5.set_title(new_text)
 						cb5.set_hidden(false)
 					}
-				todo_count = todo_count + 1
-				input.set_text("")
-				grid.mark_dirty(grid.root_index())
-				grid.layout(win)
+					todo_count = todo_count + 1
+					input.set_text("")
+					grid.mark_dirty(grid.root_index())
+					grid.layout(win)
 				}
 			}
 		}

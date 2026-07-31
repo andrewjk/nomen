@@ -1,24 +1,24 @@
 import System
 
 class MerkleNode {
-	var int hash = 0
-	var int value = 0
-	var bool has_hash = false
-	var bool has_value = false
+	var hash = 0
+	var value = 0
+	var has_hash = false
+	var has_value = false
 	mov MerkleNode? left = null
 	mov MerkleNode? right = null
 }
 
 func make_merkle = (int depth, out MerkleNode) {
 	if depth <= 0 {
-		var MerkleNode node = MerkleNode()
+		var node = MerkleNode()
 		node.value = 1
 		node.has_value = true
 		return node
 	}
 	var MerkleNode left = make_merkle(depth - 1)
 	var MerkleNode right = make_merkle(depth - 1)
-	var MerkleNode node = MerkleNode()
+	var node = MerkleNode()
 	node.left = left
 	node.right = right
 	return node
@@ -39,11 +39,11 @@ func cal_hash = (ref MerkleNode node) {
 	if node.right != null {
 		cal_hash(ref node.right)
 	}
-	var int left_hash = 0
+	var left_hash = 0
 	if node.left != null {
 		left_hash = node.left.hash
 	}
-	var int right_hash = 0
+	var right_hash = 0
 	if node.right != null {
 		right_hash = node.right.hash
 	}
@@ -58,8 +58,8 @@ func check_merkle = (MerkleNode node, out int) {
 	if node.has_value {
 		return 1
 	}
-	var int left_ok = 1
-	var int right_ok = 1
+	var left_ok = 1
+	var right_ok = 1
 	if node.left != null {
 		left_ok = check_merkle(node.left)
 	}
@@ -73,11 +73,11 @@ func check_merkle = (MerkleNode node, out int) {
 }
 
 pub func main = (Init init) {
-	var int n = 5
+	var n = 5
 	if init.argc > 1 {
 		n = parse_int(init.args.at(1))
 	}
-	var int min_depth = 4
+	var min_depth = 4
 	var int max_depth = n
 	if min_depth + 2 > max_depth {
 		max_depth = min_depth + 2
@@ -93,8 +93,8 @@ pub func main = (Init init) {
 	var int depth = min_depth
 	while depth <= max_depth {
 		var int iterations = 1 << (max_depth - depth + min_depth)
-		var int sum = 0
-		var int i = 1
+		var sum = 0
+		var i = 1
 		while i <= iterations {
 			var MerkleNode tree = make_merkle(depth)
 			cal_hash(ref tree)

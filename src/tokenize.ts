@@ -1,6 +1,6 @@
 import type Token from "./types/Token.ts";
 
-const COMPOUND_SYMBOLS = [
+export const COMPOUND_SYMBOLS = [
 	// Relational
 	"==",
 	"!=",
@@ -25,7 +25,7 @@ const COMPOUND_SYMBOLS = [
 	"=>",
 ];
 
-const LONG_COMPOUND_SYMBOLS = [
+export const LONG_COMPOUND_SYMBOLS = [
 	// Variadic
 	"...",
 	// Emphasis (mostly for ziglings, can be removed if necessary)

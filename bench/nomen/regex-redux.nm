@@ -7,12 +7,12 @@ import System
 // Usage: regex-redux <filename>
 
 pub func main = (Init init) {
-	var string filename = "25000_in"
+	var filename = "25000_in"
 	if init.argc > 1 {
 		filename = init.args.at(1)
 	}
 
-	var File f = File()
+	var f = File()
 	f.open(filename, "r")
 	var string text = f.readAll()
 	f.close()
@@ -24,15 +24,15 @@ pub func main = (Init init) {
 	var int cleaned_len = cleaned.length
 
 	// Count variants
-	var string v1 = "agggtaaa|tttaccct"
-	var string v2 = "[cgt]gggtaaa|tttaccc[acg]"
-	var string v3 = "a[act]ggtaaa|tttacc[agt]t"
-	var string v4 = "ag[act]gtaaa|tttac[agt]ct"
-	var string v5 = "agg[act]taaa|ttta[agt]cct"
-	var string v6 = "aggg[acg]aaa|ttt[cgt]ccct"
-	var string v7 = "agggt[cgt]aa|tt[acg]accct"
-	var string v8 = "agggta[cgt]a|t[acg]taccct"
-	var string v9 = "agggtaa[cgt]|[acg]ttaccct"
+	var v1 = "agggtaaa|tttaccct"
+	var v2 = "[cgt]gggtaaa|tttaccc[acg]"
+	var v3 = "a[act]ggtaaa|tttacc[agt]t"
+	var v4 = "ag[act]gtaaa|tttac[agt]ct"
+	var v5 = "agg[act]taaa|ttta[agt]cct"
+	var v6 = "aggg[acg]aaa|ttt[cgt]ccct"
+	var v7 = "agggt[cgt]aa|tt[acg]accct"
+	var v8 = "agggta[cgt]a|t[acg]taccct"
+	var v9 = "agggtaa[cgt]|[acg]ttaccct"
 
 	Console.write(v1 + " " + Regex.count(v1, cleaned).to_string())
 	Console.write("\n")

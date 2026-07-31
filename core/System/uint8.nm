@@ -1,9 +1,8 @@
-
 /**
  * An 8-bit unsigned integer
  **/
 pub struct uint8: Stringable {
-    pub func to_string = (self, out string) {
+	pub func to_string = (self, out string) {
         ```
         #arch: c
         int length = snprintf(NULL, 0, "%d", self);
@@ -39,5 +38,5 @@ pub struct uint8: Stringable {
         .p2align 2
         .Lend_uint8_to_string:
         ```
-    }
+	}
 }

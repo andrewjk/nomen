@@ -14,11 +14,11 @@ func nsieve = (int n) {
 	// (smaller odd composites were already marked by smaller primes) and
 	// steps by 2*i to hit only odd multiples.
 	var int slot_count = (n + 63) / 64
-	var Buffer<int> flags = Buffer<int>()
+	var flags = Buffer<int>()
 	flags.alloc_int(slot_count)
 
-	var int count = 1
-	var int i = 3
+	var count = 1
+	var i = 3
 	while i < n {
 		var int slot = i >> 6
 		var int bit = 1 << (i & 63)
@@ -49,7 +49,7 @@ func nsieve = (int n) {
 }
 
 pub func main = (Init init) {
-	var int n = 4
+	var n = 4
 	if init.argc > 1 {
 		n = parse_int(init.args.at(1))
 	}

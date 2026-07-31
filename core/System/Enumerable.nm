@@ -4,7 +4,7 @@
  * A trait for collections that can be iterated with `for x of collection`
  **/
 pub trait Enumerable {
-    func length = (self, out int) {
-        return 0
-    }
+	func length = (self, out int) {
+		return 0
+	}
 }

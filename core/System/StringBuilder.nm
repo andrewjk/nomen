@@ -10,8 +10,8 @@
  **/
 pub struct StringBuilder {
 	var uint64 data = 0
-	var int len = 0
-	var int cap = 0
+	var len = 0
+	var cap = 0
 
 	// Ensure capacity for at least `needed` bytes. Grows geometrically.
 	func ensure = (ref self, int needed) {

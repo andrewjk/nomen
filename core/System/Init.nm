@@ -2,8 +2,8 @@
  * Program startup state — the argument count and argument list passed to `main`
  **/
 pub struct Init {
-    var int argc
-    var string[16] args
+	var int argc
+	var string[16] args
 }
 
 /**

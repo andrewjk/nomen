@@ -16,7 +16,7 @@ pub struct Regex {
 		var int len = input.length
 		var string charset = first_byte_set(pattern, pat_len)
 		var int clen = charset.length
-		var int i = 0
+		var i = 0
 		while i <= len {
 			if clen > 0 && i < len {
 				i = find_next_byte(input, i, len, charset)
@@ -34,12 +34,12 @@ pub struct Regex {
 
 	// Return the first substring of input matching pattern, or "" if none.
 	pub func match = (string pattern, string input, out string) {
-		var string match_result = ""
+		var match_result = ""
 		var int pat_len = pattern.length
 		var int len = input.length
 		var string charset = first_byte_set(pattern, pat_len)
 		var int clen = charset.length
-		var int i = 0
+		var i = 0
 		while i <= len {
 			if clen > 0 && i < len {
 				i = find_next_byte(input, i, len, charset)
@@ -67,8 +67,8 @@ pub struct Regex {
 		var int len = input.length
 		var string charset = first_byte_set(pattern, pat_len)
 		var int clen = charset.length
-		var int total = 0
-		var int pos = 0
+		var total = 0
+		var pos = 0
 		while pos < len {
 			if clen > 0 {
 				pos = find_next_byte(input, pos, len, charset)
@@ -93,12 +93,12 @@ pub struct Regex {
 
 	// Replace all non-overlapping occurrences of pattern in input with replacement.
 	pub func replace_all = (string pattern, string input, string replacement, out string) {
-		var StringBuilder sb = StringBuilder()
+		var sb = StringBuilder()
 		var int pat_len = pattern.length
 		var int len = input.length
 		var string charset = first_byte_set(pattern, pat_len)
 		var int clen = charset.length
-		var int pos = 0
+		var pos = 0
 		while pos < len {
 			if clen > 0 {
 				var int next = find_next_byte(input, pos, len, charset)
@@ -169,7 +169,7 @@ func first_byte_set = (string pattern, int pat_len, out string) {
 	if pat_len == 0 {
 		return ""
 	}
-	var StringBuilder sb = StringBuilder()
+	var sb = StringBuilder()
 	collect_first_bytes(pattern, 0, pat_len, ref sb)
 	return sb.to_string()
 }
@@ -177,7 +177,7 @@ func first_byte_set = (string pattern, int pat_len, out string) {
 // Walk top-level alternatives of pattern[pat_pos..pat_end), appending the first
 // byte(s) of each alternative to sb. Alternations at depth 0 are split on '|'.
 func collect_first_bytes = (string pattern, int pat_pos, int pat_end, ref StringBuilder sb) {
-	var int depth = 0
+	var depth = 0
 	var int i = pat_pos
 	var int alt_start = pat_pos
 	while i < pat_end {
@@ -254,11 +254,19 @@ func add_class_chars = (string pattern, int start, int end, ref StringBuilder sb
 
 // Match pattern[pat_pos..pat_end) against input starting at in_pos.
 // Returns the end position in input after a successful match, or -1.
-func match_here = (string pattern, int pat_pos, int pat_end, string input, int in_pos, int in_len, out int) {
+func match_here = (
+	string pattern,
+	int pat_pos,
+	int pat_end,
+	string input,
+	int in_pos,
+	int in_len,
+	out int
+) {
 	// Handle top-level alternation: a '|' at bracket/paren depth 0 splits the
 	// range into alternatives. Char classes and escapes are skipped so a '|' or
 	// '\|' inside them is not mistaken for an alternation operator.
-	var int depth = 0
+	var depth = 0
 	var int i = pat_pos
 	while i < pat_end {
 		var char c = pattern.at(i)
@@ -356,7 +364,7 @@ func atom_end_pos = (string pattern, int pat_pos, int pat_end, out int) {
 		return pat_end
 	}
 	if pc == '(' {
-		var int d = 1
+		var d = 1
 		var int j = pat_pos + 1
 		while j < pat_end {
 			var char c = pattern.at(j)
@@ -384,7 +392,15 @@ func atom_end_pos = (string pattern, int pat_pos, int pat_end, out int) {
 
 // Match the atom [atom_start..atom_end) exactly once at in_pos.
 // Returns the new input position after consuming the atom, or -1.
-func match_single_atom = (string pattern, int atom_start, int atom_end, string input, int in_pos, int in_len, out int) {
+func match_single_atom = (
+	string pattern,
+	int atom_start,
+	int atom_end,
+	string input,
+	int in_pos,
+	int in_len,
+	out int
+) {
 	var char pc = pattern.at(atom_start)
 
 	if pc == '.' {
@@ -428,7 +444,15 @@ func match_single_atom = (string pattern, int atom_start, int atom_end, string i
 
 // Report whether input.at(pos) matches the single-character atom at
 // [atom_start..atom_end). Used by the greedy star matcher.
-func char_matches_atom = (string pattern, int atom_start, int atom_end, string input, int pos, int in_len, out bool) {
+func char_matches_atom = (
+	string pattern,
+	int atom_start,
+	int atom_end,
+	string input,
+	int pos,
+	int in_len,
+	out bool
+) {
 	var char pc = pattern.at(atom_start)
 	var char ic = input.at(pos)
 	if pc == '.' {
@@ -452,10 +476,29 @@ func char_matches_atom = (string pattern, int atom_start, int atom_end, string i
 // Greedily match the atom [atom_start..atom_end) followed by the rest of the
 // pattern pattern[atom_end+1..pat_end). min_count is 0 for '*' and 1 for '+'.
 // Single-character atoms are handled iteratively; groups recurse.
-func match_star = (string pattern, int atom_start, int atom_end, int pat_end, string input, int in_pos, int min_count, int in_len, out int) {
+func match_star = (
+	string pattern,
+	int atom_start,
+	int atom_end,
+	int pat_end,
+	string input,
+	int in_pos,
+	int min_count,
+	int in_len,
+	out int
+) {
 	var char pc = pattern.at(atom_start)
 	if pc == '(' {
-		return match_star_group(pattern, atom_start, atom_end, pat_end, input, in_pos, min_count, in_len)
+		return match_star_group(
+			pattern,
+			atom_start,
+			atom_end,
+			pat_end,
+			input,
+			in_pos,
+			min_count,
+			in_len,
+		)
 	}
 
 	// Greedily consume the longest run of matching characters.
@@ -480,16 +523,35 @@ func match_star = (string pattern, int atom_start, int atom_end, int pat_end, st
 }
 
 // Recursive greedy backtracking for group atoms quantified with '*' or '+'.
-func match_star_group = (string pattern, int atom_start, int atom_end, int pat_end, string input, int in_pos, int min_count, int in_len, out int) {
+func match_star_group = (
+	string pattern,
+	int atom_start,
+	int atom_end,
+	int pat_end,
+	string input,
+	int in_pos,
+	int min_count,
+	int in_len,
+	out int
+) {
 	// Try matching the group one more time (greedy).
 	var int next = match_single_atom(pattern, atom_start, atom_end, input, in_pos, in_len)
 	if next >= 0 {
 		if next != in_pos {
-			var int new_min = 0
+			var new_min = 0
 			if min_count > 0 {
 				new_min = min_count - 1
 			}
-			var int r = match_star_group(pattern, atom_start, atom_end, pat_end, input, next, new_min, in_len)
+			var int r = match_star_group(
+				pattern,
+				atom_start,
+				atom_end,
+				pat_end,
+				input,
+				next,
+				new_min,
+				in_len,
+			)
 			if r >= 0 {
 				return r
 			}
@@ -503,7 +565,16 @@ func match_star_group = (string pattern, int atom_start, int atom_end, int pat_e
 }
 
 // Match the atom optionally ('?'), preferring to include it.
-func match_optional = (string pattern, int atom_start, int atom_end, int pat_end, string input, int in_pos, int in_len, out int) {
+func match_optional = (
+	string pattern,
+	int atom_start,
+	int atom_end,
+	int pat_end,
+	string input,
+	int in_pos,
+	int in_len,
+	out int
+) {
 	var int next = match_single_atom(pattern, atom_start, atom_end, input, in_pos, in_len)
 	if next >= 0 {
 		var int r = match_here(pattern, atom_end + 1, pat_end, input, next, in_len)
@@ -516,14 +587,22 @@ func match_optional = (string pattern, int atom_start, int atom_end, int pat_end
 
 // Report whether input.at(in_pos) belongs to the character class whose '[' is
 // at open_pos and whose ']' is at atom_end - 1 (atom_end is just after ']').
-func char_in_class = (string pattern, int open_pos, int atom_end, string input, int in_pos, int in_len, out bool) {
+func char_in_class = (
+	string pattern,
+	int open_pos,
+	int atom_end,
+	string input,
+	int in_pos,
+	int in_len,
+	out bool
+) {
 	if in_pos >= in_len {
 		return false
 	}
 	var char ic = input.at(in_pos)
 
 	var int content_start = open_pos + 1
-	var bool negated = false
+	var negated = false
 	if content_start < atom_end {
 		if pattern.at(content_start) == '^' {
 			negated = true
@@ -532,7 +611,7 @@ func char_in_class = (string pattern, int open_pos, int atom_end, string input, 
 	}
 	var int content_end = atom_end - 1
 
-	var bool found = false
+	var found = false
 	var int i = content_start
 	while i < content_end {
 		var char c = pattern.at(i)

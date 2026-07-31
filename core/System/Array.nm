@@ -2,9 +2,9 @@
  * A fixed-length array of values, created with a literal (`[1, 2, 3]`) and addressable by index
  **/
 pub struct Array<T>: Viewable {
-    pub const int length
+	pub const int length
 
-    pub func #init = (...T items) {
+	pub func #init = (...T items) {
         ```
         #arch: c
         self->length = _items_len;
@@ -28,9 +28,9 @@ pub struct Array<T>: Viewable {
         ldr x1, [x29, #8]
         bl _memcpy
         ```
-    }
+	}
 
-    pub func at = (self, int index: index >= 0 && index < self.length, out T) {
+	pub func at = (self, int index: index >= 0 && index < self.length, out T) {
         ```
         #arch: c
         T* _data = (T*)((char*)self + sizeof(*self));
@@ -43,9 +43,9 @@ pub struct Array<T>: Viewable {
         mul x1, x1, x2
         ldr x0, [x19, x1]
         ```
-    }
+	}
 
-    pub func first = (self: self.length > 0, out T) {
+	pub func first = (self: self.length > 0, out T) {
         ```
         #arch: c
         T* _data = (T*)((char*)self + sizeof(*self));
@@ -56,9 +56,9 @@ pub struct Array<T>: Viewable {
         // x19 = self (first elem)
         ldr x0, [x19]
         ```
-    }
+	}
 
-    pub func set = (ref self, int index: index >= 0 && index < self.length, T value) {
+	pub func set = (ref self, int index: index >= 0 && index < self.length, T value) {
         ```
         #arch: c
         T* _data = (T*)((char*)self + sizeof(*self));
@@ -89,9 +89,9 @@ pub struct Array<T>: Viewable {
         strb w2, [x19, x1]
         .L_set_done:
         ```
-    }
+	}
 
-    pub func at_end = (self, out T) {
+	pub func at_end = (self, out T) {
         ```
         #arch: c
         T* _data = (T*)((char*)self + sizeof(*self));
@@ -106,12 +106,17 @@ pub struct Array<T>: Viewable {
         mul x0, x0, x1
         ldr x0, [x19, x0]
         ```
-    }
+	}
 
-    // A non-owning (ptr, len) slice [start, end) over self's inline element
-    // storage, returned as a `view T`. Borrows from self (may not outlive it,
-    // invalidated on reassignment). Element access via view.at / view.length.
-    pub func slice = (self, int start: start >= 0 && start <= self.length, int end: end >= start && end <= self.length, out view T) {
+	// A non-owning (ptr, len) slice [start, end) over self's inline element
+	// storage, returned as a `view T`. Borrows from self (may not outlive it,
+	// invalidated on reassignment). Element access via view.at / view.length.
+	pub func slice = (
+		self,
+		int start: start >= 0 && start <= self.length,
+		int end: end >= start && end <= self.length,
+		out view T
+	) {
         ```
         #arch: c
         nomen_view _r;
@@ -128,9 +133,9 @@ pub struct Array<T>: Viewable {
         madd x0, x1, x3, x19
         sub x1, x2, x1
         ```
-    }
+	}
 
-    pub func with = (T value, int count: count >= 0, out Array<T>: out.length == count) {
+	pub func with = (T value, int count: count >= 0, out Array<T>: out.length == count) {
         ```
         #arch: c
         long _header = 16;
@@ -227,9 +232,9 @@ pub struct Array<T>: Viewable {
         add sp, sp, #16
         ldp x19, x20, [sp], #16
         ```
-    }
+	}
 
-    pub func add = (self, Array other, out Array) {
+	pub func add = (self, Array other, out Array) {
         ```
         #arch: c
         long _self_len = self->length;
@@ -290,9 +295,9 @@ pub struct Array<T>: Viewable {
 
         add sp, sp, #16
         ```
-    }
+	}
 
-    pub func mul = (self, int other, out Array) {
+	pub func mul = (self, int other, out Array) {
         ```
         #arch: c
         long _self_len = self->length;
@@ -349,5 +354,5 @@ pub struct Array<T>: Viewable {
         .Larray_mul_end:
         add sp, sp, #16
         ```
-    }
+	}
 }

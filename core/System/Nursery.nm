@@ -21,8 +21,7 @@
 /**
  * The capability for spawning into a caller's `async` block; owns and tracks its tasks
  **/
-pub struct Nursery : Sendable {
+pub struct Nursery: Sendable {
 	pub var uint64 futures_ptr = 0
 	pub var uint64 count_ptr = 0
 }
-

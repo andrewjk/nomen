@@ -8,6 +8,7 @@ import { hideBin } from "yargs/helpers";
 import yargs from "yargs/yargs";
 
 import build, { default_platform } from "../../src/build.ts";
+import { format_source, type FormatOptions } from "../../src/format.ts";
 import join from "../../src/join.ts";
 import { get_library } from "../../src/lib.ts";
 import parse from "../../src/parse.ts";
@@ -17,6 +18,51 @@ import type Config from "./types/Config.ts";
 
 const SUPPORTED_EXTENSION = ".nm";
 
+// Strip `//` line and `/* */` block comments so a .jsonc file parses as JSON.
+function parse_jsonc(text: string): any {
+	return JSON.parse(text.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, ""));
+}
+
+/** Read the `format` options from the nearest package.jsonc above `start`. */
+function load_format_options(start: string): Partial<FormatOptions> {
+	let dir = fs.lstatSync(start).isDirectory() ? start : path.dirname(start);
+	for (let i = 0; i < 20; i++) {
+		const config_path = path.join(dir, "package.jsonc");
+		if (fs.existsSync(config_path)) {
+			try {
+				const parsed = parse_jsonc(fs.readFileSync(config_path, "utf8"));
+				if (parsed.format) return parsed.format as Partial<FormatOptions>;
+			} catch {
+				// ignore malformed package.jsonc and keep searching
+			}
+		}
+		const lib_config = path.join(dir, "core", "package.jsonc");
+		if (fs.existsSync(lib_config)) {
+			try {
+				const parsed = parse_jsonc(fs.readFileSync(lib_config, "utf8"));
+				if (parsed.format) return parsed.format as Partial<FormatOptions>;
+			} catch {
+				// ignore
+			}
+		}
+		const parent = path.dirname(dir);
+		if (parent === dir) break;
+		dir = parent;
+	}
+	return {};
+}
+
+/** Recursively collect every `.nm` file under `folder`. */
+function collect_nm_files(folder: string): string[] {
+	const out: string[] = [];
+	for (const entry of fs.readdirSync(folder, { withFileTypes: true })) {
+		const full = path.join(folder, entry.name);
+		if (entry.isDirectory()) out.push(...collect_nm_files(full));
+		else if (shouldProcessFile(entry.name)) out.push(full);
+	}
+	return out;
+}
+
 // The folder whose `build/` subdirectory receives compiler output. Set during
 // input resolution: the --in folder, the .nm file's folder, or — for
 // package.jsonc discovery — the package folder (cwd), not the entry's folder.
@@ -25,7 +71,7 @@ let build_root: string | undefined;
 console.log("\n~ NOMEN ~\n");
 
 const options = yargs(hideBin(process.argv))
-	.usage("Usage: nomen --in [file/folder] | nomen docs")
+	.usage("Usage: nomen --in [file/folder] | nomen docs | nomen format [--in folder]")
 	.option("in", {
 		alias: "i",
 		describe: "Input file or folder",
@@ -70,6 +116,10 @@ const options = yargs(hideBin(process.argv))
 		describe: "Path to audit_runtime.c, linked in when --audit is set",
 		type: "string",
 	})
+	.option("check", {
+		describe: "For `nomen format`: report files that would change without writing them",
+		type: "boolean",
+	})
 	.help(true)
 	.parseSync();
 
@@ -77,6 +127,29 @@ try {
 	// `nomen docs` generates markdown documentation instead of compiling.
 	if (options._[0] === "docs") {
 		run_docs(typeof options.in === "string" ? options.in : undefined);
+		process.exit(0);
+	}
+
+	// `nomen format` re-indents and tidies every .nm file under a folder.
+	if (options._[0] === "format") {
+		const root = options.in ?? process.cwd();
+		const format_options = load_format_options(root);
+		const files = collect_nm_files(root);
+		let changed = 0;
+		for (const file of files) {
+			const source = fs.readFileSync(file, "utf8");
+			const result = format_source(source, format_options);
+			if (result.unsafe) {
+				console.log(`Skipped ${file}: ${result.unsafe}`);
+				continue;
+			}
+			if (result.changed) {
+				if (!options.check) fs.writeFileSync(file, result.code);
+				changed += 1;
+				console.log(`Formatted ${file}`);
+			}
+		}
+		console.log(`\nFormatted ${changed} of ${files.length} file(s).`);
 		process.exit(0);
 	}
 

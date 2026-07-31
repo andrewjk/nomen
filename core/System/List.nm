@@ -5,21 +5,21 @@ import ClassBuffer
  * A growable, ordered list of values (`push`/`pop`/`at`)
  **/
 pub struct List<T>: Viewable {
-    var int length = 0
-    var Buffer<T> items = Buffer<T>()
+	var length = 0
+	var Buffer<T> items = Buffer<T>()
 
-    pub func push = (ref self, mov T value) {
-        if self.length >= self.items.cap {
-            var int new_cap = 4
-            var int old_cap = self.items.cap
-            if old_cap >= 4 {
-                new_cap = old_cap * 2
-            }
-            self.items.grow_int(new_cap)
-        }
-        self.items.store_int(self.length, value)
-        self.length = self.length + 1
-    }
+	pub func push = (ref self, mov T value) {
+		if self.length >= self.items.cap {
+			var new_cap = 4
+			var int old_cap = self.items.cap
+			if old_cap >= 4 {
+				new_cap = old_cap * 2
+			}
+			self.items.grow_int(new_cap)
+		}
+		self.items.store_int(self.length, value)
+		self.length = self.length + 1
+	}
 
 	pub func pop = (ref self, mov out T) {
 		if self.length <= 0 {
@@ -30,15 +30,15 @@ pub struct List<T>: Viewable {
 		return self.items.move_int(idx)
 	}
 
-    pub func at = (self, int i: i >= 0 && i < self.length, out T) {
-        return self.items.load_int(i)
-    }
+	pub func at = (self, int i: i >= 0 && i < self.length, out T) {
+		return self.items.load_int(i)
+	}
 
-    // A non-owning `view T` over [start, end). Delegates to the backing Buffer's
-    // #arch slice primitive — no #arch code here. Borrows from self.
-    pub func slice = (self, int start: start >= 0, int end: end >= start, out view T) {
-        return self.items.slice(start, end)
-    }
+	// A non-owning `view T` over [start, end). Delegates to the backing Buffer's
+	// #arch slice primitive — no #arch code here. Borrows from self.
+	pub func slice = (self, int start: start >= 0, int end: end >= start, out view T) {
+		return self.items.slice(start, end)
+	}
 
 	pub func set = (ref self, int i: i >= 0 && i < self.length, mov T value) {
 		var int v = value

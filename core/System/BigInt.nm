@@ -4,25 +4,25 @@ import Buffer
  * An arbitrary-precision integer
  **/
 pub struct BigInt {
-    var int sign = 0
-    var int len = 0
-    var Buffer<int> digits = Buffer<int>()
+	var sign = 0
+	var len = 0
+	var digits = Buffer<int>()
 
-    pub func new = (ref self, int val, out BigInt) {
-        self.sign = 1
-        var int v = val
-        if v < 0 {
-            self.sign = -1
-            v = 0 - v
-        }
-        self.digits.grow_int(4)
-        self.digits.zero_int(self.digits.cap)
-        self.digits.store_int(0, v)
-        self.len = 1
-        return self
-    }
+	pub func new = (ref self, int val, out BigInt) {
+		self.sign = 1
+		var int v = val
+		if v < 0 {
+			self.sign = -1
+			v = 0 - v
+		}
+		self.digits.grow_int(4)
+		self.digits.zero_int(self.digits.cap)
+		self.digits.store_int(0, v)
+		self.len = 1
+		return self
+	}
 
-    inline func get = (self, int i, out uint64) {
+	inline func get = (self, int i, out uint64) {
         ```
         #arch: c
         return ((unsigned long long*)self->digits.data)[i];
@@ -32,9 +32,9 @@ pub struct BigInt {
         ldr x0, [x0, #32]
         ldr x0, [x0, x1, lsl #3]
         ```
-    }
+	}
 
-    inline func set = (ref self, int i, uint64 val) {
+	inline func set = (ref self, int i, uint64 val) {
         ```
         #arch: c
         ((unsigned long long*)self->digits.data)[i] = val;
@@ -44,13 +44,13 @@ pub struct BigInt {
         ldr x0, [x19, #32]
         str x2, [x0, x1, lsl #3]
         ```
-    }
+	}
 
-    // Raw data-pointer accessors. The limb loops below hoist `digits.data`
-    // into a local once (before the loop) and index through it via get_at /
-    // set_at, so each limb access is a single strided load/store instead of
-    // re-reading self->digits.data every iteration. ptr is held in a uint64.
-    inline func data_ptr = (self, out uint64) {
+	// Raw data-pointer accessors. The limb loops below hoist `digits.data`
+	// into a local once (before the loop) and index through it via get_at /
+	// set_at, so each limb access is a single strided load/store instead of
+	// re-reading self->digits.data every iteration. ptr is held in a uint64.
+	inline func data_ptr = (self, out uint64) {
         ```
         #arch: c
         return (unsigned long long)self->digits.data;
@@ -59,9 +59,9 @@ pub struct BigInt {
         #arch: aarch64
         ldr x0, [x0, #32]
         ```
-    }
+	}
 
-    inline func get_at = (self, uint64 ptr, int i, out uint64) {
+	inline func get_at = (self, uint64 ptr, int i, out uint64) {
         ```
         #arch: c
         return ((unsigned long long*)ptr)[i];
@@ -70,9 +70,9 @@ pub struct BigInt {
         #arch: aarch64
         ldr x0, [x1, x2, lsl #3]
         ```
-    }
+	}
 
-    inline func set_at = (ref self, uint64 ptr, int i, uint64 val) {
+	inline func set_at = (ref self, uint64 ptr, int i, uint64 val) {
         ```
         #arch: c
         ((unsigned long long*)ptr)[i] = val;
@@ -81,115 +81,115 @@ pub struct BigInt {
         #arch: aarch64
         str x3, [x1, x2, lsl #3]
         ```
-    }
+	}
 
-    func ensure = (ref self, int needed) {
-        self.digits.grow_int(needed)
-    }
+	func ensure = (ref self, int needed) {
+		self.digits.grow_int(needed)
+	}
 
-    func clear = (ref self, int len) {
-        self.digits.zero_int(len)
-    }
+	func clear = (ref self, int len) {
+		self.digits.zero_int(len)
+	}
 
-    func copy_range_from = (ref self, BigInt src, int start, int count) {
-        self.ensure(count)
-        var int i = 0
-        while i < count {
-            self.set(i, src.get(start + i))
-            i = i + 1
-        }
-        self.len = count
-        while self.len > 1 {
-            if self.get(self.len - 1) != 0 {
-                break
-            }
-            self.len = self.len - 1
-        }
-    }
+	func copy_range_from = (ref self, BigInt src, int start, int count) {
+		self.ensure(count)
+		var i = 0
+		while i < count {
+			self.set(i, src.get(start + i))
+			i = i + 1
+		}
+		self.len = count
+		while self.len > 1 {
+			if self.get(self.len - 1) != 0 {
+				break
+			}
+			self.len = self.len - 1
+		}
+	}
 
-    func add_at = (ref self, BigInt other, int shift) {
-        self.ensure(other.len + shift + 1)
-        var int carry = 0
-        var int i = 0
-        while i < other.len || carry != 0 {
-            var uint64 a_val = 0
-            if i + shift < self.len {
-                a_val = self.get(i + shift)
-            }
-            var uint64 b_val = 0
-            if i < other.len {
-                b_val = other.get(i)
-            }
-            var uint64 sum = a_val + b_val
-            var int c1 = 0
-            if sum < a_val {
-                c1 = 1
-            }
-            var uint64 sum2 = sum + carry
-            var int c2 = 0
-            if sum2 < sum {
-                c2 = 1
-            }
-            self.set(i + shift, sum2)
-            carry = c1 + c2
-            i = i + 1
-        }
-        if i + shift > self.len {
-            self.len = i + shift
-        }
-    }
+	func add_at = (ref self, BigInt other, int shift) {
+		self.ensure(other.len + shift + 1)
+		var carry = 0
+		var i = 0
+		while i < other.len || carry != 0 {
+			var uint64 a_val = 0
+			if i + shift < self.len {
+				a_val = self.get(i + shift)
+			}
+			var uint64 b_val = 0
+			if i < other.len {
+				b_val = other.get(i)
+			}
+			var uint64 sum = a_val + b_val
+			var c1 = 0
+			if sum < a_val {
+				c1 = 1
+			}
+			var uint64 sum2 = sum + carry
+			var c2 = 0
+			if sum2 < sum {
+				c2 = 1
+			}
+			self.set(i + shift, sum2)
+			carry = c1 + c2
+			i = i + 1
+		}
+		if i + shift > self.len {
+			self.len = i + shift
+		}
+	}
 
-    func sub_at = (ref self, BigInt other, int shift) {
-        var int borrow = 0
-        var int i = 0
-        while i < other.len {
-            var uint64 a_val = self.get(i + shift)
-            var uint64 b_val = other.get(i)
-            var uint64 diff = a_val - borrow
-            var int new_borrow = 0
-            if diff > a_val {
-                new_borrow = 1
-            }
-            var uint64 diff2 = diff - b_val
-            if diff2 > diff {
-                borrow = new_borrow + 1
-            } else {
-                borrow = new_borrow
-            }
-            self.set(i + shift, diff2)
-            i = i + 1
-        }
-        while borrow != 0 {
-            var uint64 a_val = self.get(i + shift)
-            var uint64 diff = a_val - borrow
-            if diff > a_val {
-                borrow = 1
-            } else {
-                borrow = 0
-            }
-            self.set(i + shift, diff)
-            i = i + 1
-        }
-        while self.len > 1 {
-            if self.get(self.len - 1) != 0 {
-                break
-            }
-            self.len = self.len - 1
-        }
-    }
+	func sub_at = (ref self, BigInt other, int shift) {
+		var borrow = 0
+		var i = 0
+		while i < other.len {
+			var uint64 a_val = self.get(i + shift)
+			var uint64 b_val = other.get(i)
+			var uint64 diff = a_val - borrow
+			var new_borrow = 0
+			if diff > a_val {
+				new_borrow = 1
+			}
+			var uint64 diff2 = diff - b_val
+			if diff2 > diff {
+				borrow = new_borrow + 1
+			} else {
+				borrow = new_borrow
+			}
+			self.set(i + shift, diff2)
+			i = i + 1
+		}
+		while borrow != 0 {
+			var uint64 a_val = self.get(i + shift)
+			var uint64 diff = a_val - borrow
+			if diff > a_val {
+				borrow = 1
+			} else {
+				borrow = 0
+			}
+			self.set(i + shift, diff)
+			i = i + 1
+		}
+		while self.len > 1 {
+			if self.get(self.len - 1) != 0 {
+				break
+			}
+			self.len = self.len - 1
+		}
+	}
 
-    // (hi:lo) / d with the quotient truncated to 64 bits.
-    // Callers guarantee hi <= d (the running remainder is always < divisor,
-    // and Knuth-D q_hat estimation has u_hi <= v_top). When hi == d the true
-    // quotient is 2^64 + (lo/d), which saturates to UINT64_MAX (== B-1) — the
-    // value Knuth-D expects so its correction step brings q_hat back down.
-    // When hi < d the quotient fits in 64 bits and is exact.
-    //
-    // AArch64 has no 128/64 divide instruction, so this calls compiler-rt's
-    // ___udivti3 (linked via clang) instead of a 64-iteration bit loop — ~30x
-    // faster. The unsigned compare (b.hs) is required: hi/d can have their
-    // sign bit set.
-    inline func div128 = (self, uint64 hi, uint64 lo, uint64 d, out uint64) {
+	// (hi:lo) / d with the quotient truncated to 64 bits.
+	// Callers guarantee hi <= d (the running remainder is always < divisor,
+	// and Knuth-D q_hat estimation has u_hi <= v_top). When hi == d the true
+	// quotient is 2^64 + (lo/d), which saturates to UINT64_MAX (== B-1) — the
+	// value Knuth-D expects so its correction step brings q_hat back down.
+	// When hi < d the quotient fits in 64 bits and is exact.
+	//
+	// AArch64 has no 128/64 divide instruction, so this calls compiler-rt's
+	// ___udivti3 (linked via clang) instead of a 64-iteration bit loop — ~30x
+	// faster. The unsigned compare (b.hs) is required: hi/d can have their
+	// sign bit set.
+	inline func div128 = (self, uint64 hi, uint64 lo, uint64 d, out uint64) {
         ```
         #arch: c
         if (hi >= d) return 18446744073709551615ULL;
@@ -213,9 +213,9 @@ pub struct BigInt {
         mov x0, #-1
         2:
         ```
-    }
+	}
 
-    inline func mul_wide_hi = (self, uint64 a, uint64 b, out uint64) {
+	inline func mul_wide_hi = (self, uint64 a, uint64 b, out uint64) {
         ```
         #arch: c
         unsigned __int128 product = (unsigned __int128)(unsigned long long)a * (unsigned long long)b;
@@ -225,688 +225,688 @@ pub struct BigInt {
         #arch: aarch64
         umulh x0, x1, x2
         ```
-    }
+	}
 
-    pub func cmp = (self, BigInt other, out int) {
-        if self.len != other.len {
-            if self.len > other.len {
-                return 1
-            }
-            return -1
-        }
-        var uint64 sp = self.data_ptr()
-        var uint64 op = other.data_ptr()
-        var int i = self.len - 1
-        while i >= 0 {
-            var uint64 a = self.get_at(sp, i)
-            var uint64 b = other.get_at(op, i)
-            if a != b {
-                if a > b {
-                    return 1
-                }
-                return -1
-            }
-            i = i - 1
-        }
-        return 0
-    }
-
-    pub func add_to = (ref self, BigInt a, BigInt b) {
-        if a.len == 1 && b.len == 1 {
-            var uint64 a_val = a.get(0)
-            var uint64 b_val = b.get(0)
-            var uint64 sum = a_val + b_val
-            var int carry = 0
-            if sum < a_val {
-                carry = 1
-            }
-            self.ensure(2)
-            self.set(0, sum)
-            self.set(1, carry)
-            self.len = 1 + carry
-            return
-        }
-        var int a_len = a.len
-        var int b_len = b.len
-        var int max_len = a_len
-        if b_len > max_len {
-            max_len = b_len
-        }
-        self.ensure(max_len + 2)
-        var uint64 ap = a.data_ptr()
-        var uint64 bp = b.data_ptr()
-        var uint64 sp = self.data_ptr()
-        var int carry = 0
-        var int i = 0
-        var int last_nonzero = 1
-        while i < max_len || carry != 0 {
-            var uint64 a_val = 0
-            if i < a_len {
-                a_val = a.get_at(ap, i)
-            }
-            var uint64 b_val = 0
-            if i < b_len {
-                b_val = b.get_at(bp, i)
-            }
-            var uint64 sum = a_val + b_val
-            var int c1 = 0
-            if sum < a_val {
-                c1 = 1
-            }
-            var uint64 sum2 = sum + carry
-            var int c2 = 0
-            if sum2 < sum {
-                c2 = 1
-            }
-            self.set_at(sp, i, sum2)
-            if sum2 != 0 {
-                last_nonzero = i + 1
-            }
-            carry = c1 + c2
-            i = i + 1
-        }
-        self.len = i
-        if last_nonzero < self.len {
-            self.len = last_nonzero
-        }
-        if self.len == 0 {
-            self.len = 1
-        }
-    }
-
-    pub func sub_to = (ref self, BigInt a, BigInt b) {
-        if a.len == 1 && b.len == 1 {
-            self.ensure(1)
-            self.set(0, a.get(0) - b.get(0))
-            self.len = 1
-            return
-        }
-        self.ensure(a.len)
-        var uint64 ap = a.data_ptr()
-        var uint64 bp = b.data_ptr()
-        var uint64 sp = self.data_ptr()
-        var int borrow = 0
-        var int i = 0
-        var int last_nonzero = 1
-        while i < a.len {
-            var uint64 a_val = a.get_at(ap, i)
-            var uint64 b_val = 0
-            if i < b.len {
-                b_val = b.get_at(bp, i)
-            }
-            var uint64 diff = a_val - borrow
-            var int new_borrow = 0
-            if diff > a_val {
-                new_borrow = 1
-            }
-            var uint64 diff2 = diff - b_val
-            if diff2 > diff {
-                borrow = new_borrow + 1
-            } else {
-                borrow = new_borrow
-            }
-            self.set_at(sp, i, diff2)
-            if diff2 != 0 {
-                last_nonzero = i + 1
-            }
-            i = i + 1
-        }
-        self.len = a.len
-        if last_nonzero < self.len {
-            self.len = last_nonzero
-        }
-        if self.len == 0 {
-            self.len = 1
-        }
-    }
-
-    pub func mul_to = (ref self, BigInt a, BigInt b, ref BigInt scratch) {
-        if a.len == 1 || b.len == 1 {
-            var uint64 sv
-            var int other_len
-            if a.len == 1 {
-                sv = a.get(0)
-                other_len = b.len
-            } else {
-                sv = b.get(0)
-                other_len = a.len
-            }
-            self.ensure(other_len + 1)
-            var uint64 sp = self.data_ptr()
-            var uint64 carry = 0
-            var int i = 0
-            var int last_nonzero = 0
-            if a.len == 1 {
-                var uint64 bp = b.data_ptr()
-                while i < other_len || carry != 0 {
-                    var uint64 ov = 0
-                    if i < other_len {
-                        ov = b.get_at(bp, i)
-                    }
-                    var uint64 lo_prod = sv * ov
-                    var uint64 hi_prod = self.mul_wide_hi(sv, ov)
-                    var uint64 result = lo_prod + carry
-                    var int c1 = 0
-                    if result < lo_prod {
-                        c1 = 1
-                    }
-                    carry = hi_prod + c1
-                    self.set_at(sp, i, result)
-                    if result != 0 {
-                        last_nonzero = i + 1
-                    }
-                    i = i + 1
-                }
-            } else {
-                var uint64 ap = a.data_ptr()
-                while i < other_len || carry != 0 {
-                    var uint64 ov = 0
-                    if i < other_len {
-                        ov = a.get_at(ap, i)
-                    }
-                    var uint64 lo_prod = sv * ov
-                    var uint64 hi_prod = self.mul_wide_hi(sv, ov)
-                    var uint64 result = lo_prod + carry
-                    var int c1 = 0
-                    if result < lo_prod {
-                        c1 = 1
-                    }
-                    carry = hi_prod + c1
-                    self.set_at(sp, i, result)
-                    if result != 0 {
-                        last_nonzero = i + 1
-                    }
-                    i = i + 1
-                }
-            }
-            self.len = i
-            if last_nonzero < self.len {
-                self.len = last_nonzero
-            }
-            if self.len == 0 {
-                self.len = 1
-            }
-            return
-        }
-
-        // Multi-limb × multi-limb: Karatsuba for large operands, schoolbook for small
-        var int new_len = a.len + b.len
-        if a.len < 32 && b.len < 32 {
-            // Schoolbook for small operands
-            scratch.ensure(new_len)
-            scratch.clear(new_len)
-            scratch.len = new_len
-            var uint64 ap = a.data_ptr()
-            var uint64 bp = b.data_ptr()
-            var uint64 scratchp = scratch.data_ptr()
-            var int i = 0
-            while i < a.len {
-                var uint64 ai = a.get_at(ap, i)
-                var uint64 carry = 0
-                var int j = 0
-                while j < b.len || carry != 0 {
-                    var uint64 bj = 0
-                    if j < b.len {
-                        bj = b.get_at(bp, j)
-                    }
-                    var uint64 old = scratch.get_at(scratchp, j + i)
-                    var uint64 lo_prod = ai * bj
-                    var uint64 hi_prod = scratch.mul_wide_hi(ai, bj)
-                    var uint64 cur = old + carry
-                    var int c1 = 0
-                    if cur < old {
-                        c1 = 1
-                    }
-                    var uint64 cur2 = cur + lo_prod
-                    var int c2 = 0
-                    if cur2 < cur {
-                        c2 = 1
-                    }
-                    carry = c1 + c2 + hi_prod as int
-                    scratch.set_at(scratchp, j + i, cur2)
-                    j = j + 1
-                }
-                i = i + 1
-            }
-            self.ensure(new_len)
-            var uint64 sp = self.data_ptr()
-            var int last_nonzero = 1
-            var int k = 0
-            while k < new_len {
-                var uint64 val = scratch.get_at(scratchp, k)
-                self.set_at(sp, k, val)
-                if val != 0 {
-                    last_nonzero = k + 1
-                }
-                k = k + 1
-            }
-            self.len = last_nonzero
-            return
-        }
-
-        // Karatsuba: split a = a1*B^m + a0, b = b1*B^m + b0
-        // result = z2*B^(2m) + z1*B^m + z0
-        // z0 = a0*b0, z2 = a1*b1, z1 = (a0+a1)*(b0+b1) - z0 - z2
-        var int m = a.len
-        if b.len > m {
-            m = b.len
-        }
-        m = m / 2
-
-        var int a0_len = m
-        if a0_len > a.len {
-            a0_len = a.len
-        }
-        var int b0_len = m
-        if b0_len > b.len {
-            b0_len = b.len
-        }
-        var int a1_len = a.len - a0_len
-        var int b1_len = b.len - b0_len
-
-        var BigInt a0 = BigInt()
-        var BigInt a1 = BigInt()
-        var BigInt b0 = BigInt()
-        var BigInt b1 = BigInt()
-        a0.copy_range_from(a, 0, a0_len)
-        b0.copy_range_from(b, 0, b0_len)
-        if a1_len > 0 {
-            a1.copy_range_from(a, m, a1_len)
-        }
-        if b1_len > 0 {
-            b1.copy_range_from(b, m, b1_len)
-        }
-
-        // z0 = a0 * b0
-        var BigInt z0 = BigInt()
-        var BigInt s0 = BigInt()
-	z0.mul_to(a0, b0, ref s0)
-
-        // z2 = a1 * b1 (only if both have high parts)
-        var BigInt z2 = BigInt()
-        var BigInt s2 = BigInt()
-        if a1_len > 0 && b1_len > 0 {
-		z2.mul_to(a1, b1, ref s2)
-        }
-
-        // z1 = (a0+a1)*(b0+b1) - z0 - z2
-        var BigInt aa = BigInt()
-        var BigInt bb = BigInt()
-        var BigInt z1 = BigInt()
-        var BigInt s1 = BigInt()
-        aa.add_to(a0, a1)
-        bb.add_to(b0, b1)
-	z1.mul_to(aa, bb, ref s1)
-        z1.sub_at(z0, 0)
-        z1.sub_at(z2, 0)
-
-        // Combine: self = z0 + z1 << m + z2 << (2*m)
-        self.ensure(new_len)
-        self.clear(new_len)
-        self.len = new_len
-        self.add_at(z0, 0)
-        self.add_at(z1, m)
-        self.add_at(z2, m + m)
-        while self.len > 1 {
-            if self.get(self.len - 1) != 0 {
-                break
-            }
-            self.len = self.len - 1
-        }
-
-        a0.digits.destroy()
-        a1.digits.destroy()
-        b0.digits.destroy()
-        b1.digits.destroy()
-        z0.digits.destroy()
-        z2.digits.destroy()
-        aa.digits.destroy()
-        bb.digits.destroy()
-        z1.digits.destroy()
-        s0.digits.destroy()
-        s1.digits.destroy()
-        s2.digits.destroy()
-    }
-    // self = quotient, a = dividend, b = divisor, remainder = remainder
-    // Uses remainder's internal buffer as working space
-    pub func div_to = (ref self, BigInt a, BigInt b, ref BigInt remainder) {
-        if b.len == 1 {
-            var uint64 divisor = b.get(0)
-            self.ensure(a.len)
-            self.len = a.len
-		var uint64 rem = 0
-		var int last_nonzero = 0
-		var int i = a.len - 1
+	pub func cmp = (self, BigInt other, out int) {
+		if self.len != other.len {
+			if self.len > other.len {
+				return 1
+			}
+			return -1
+		}
+		var uint64 sp = self.data_ptr()
+		var uint64 op = other.data_ptr()
+		var int i = self.len - 1
 		while i >= 0 {
-			var uint64 ai = a.get(i)
-			var uint64 q_val = self.div128(rem, ai, divisor)
-			var uint64 d_lo = divisor & 4294967295
-			var uint64 d_hi = divisor >> 32
-			var uint64 q_lo = q_val & 4294967295
-			var uint64 q_hi = q_val >> 32
-			var uint64 p_ll = q_lo * d_lo
-			var uint64 p_lh = q_lo * d_hi
-			var uint64 p_hl = q_hi * d_lo
-			var uint64 p_hh = q_hi * d_hi
-			var uint64 p_mid = p_lh + p_hl
-			var int p_mc = 0
-			if p_mid < p_lh {
-				p_mc = 1
-			}
-			var uint64 p_lo_val = p_ll + (p_mid << 32)
-			var int p_lo_c = 0
-			if p_lo_val < p_ll {
-				p_lo_c = 1
-			}
-			var uint64 p_hi_val = p_hh + (p_mid >> 32) + (p_mc as uint64 * 4294967296) + p_lo_c as uint64
-			var uint64 sub_lo = ai - p_lo_val
-			rem = sub_lo
-			self.set(i, q_val)
-			if q_val != 0 && last_nonzero == 0 {
-				last_nonzero = i + 1
+			var uint64 a = self.get_at(sp, i)
+			var uint64 b = other.get_at(op, i)
+			if a != b {
+				if a > b {
+					return 1
+				}
+				return -1
 			}
 			i = i - 1
 		}
-		if last_nonzero == 0 {
-			last_nonzero = 1
+		return 0
+	}
+
+	pub func add_to = (ref self, BigInt a, BigInt b) {
+		if a.len == 1 && b.len == 1 {
+			var uint64 a_val = a.get(0)
+			var uint64 b_val = b.get(0)
+			var uint64 sum = a_val + b_val
+			var carry = 0
+			if sum < a_val {
+				carry = 1
+			}
+			self.ensure(2)
+			self.set(0, sum)
+			self.set(1, carry)
+			self.len = 1 + carry
+			return
 		}
+		var int a_len = a.len
+		var int b_len = b.len
+		var int max_len = a_len
+		if b_len > max_len {
+			max_len = b_len
+		}
+		self.ensure(max_len + 2)
+		var uint64 ap = a.data_ptr()
+		var uint64 bp = b.data_ptr()
+		var uint64 sp = self.data_ptr()
+		var carry = 0
+		var i = 0
+		var last_nonzero = 1
+		while i < max_len || carry != 0 {
+			var uint64 a_val = 0
+			if i < a_len {
+				a_val = a.get_at(ap, i)
+			}
+			var uint64 b_val = 0
+			if i < b_len {
+				b_val = b.get_at(bp, i)
+			}
+			var uint64 sum = a_val + b_val
+			var c1 = 0
+			if sum < a_val {
+				c1 = 1
+			}
+			var uint64 sum2 = sum + carry
+			var c2 = 0
+			if sum2 < sum {
+				c2 = 1
+			}
+			self.set_at(sp, i, sum2)
+			if sum2 != 0 {
+				last_nonzero = i + 1
+			}
+			carry = c1 + c2
+			i = i + 1
+		}
+		self.len = i
 		if last_nonzero < self.len {
 			self.len = last_nonzero
 		}
 		if self.len == 0 {
 			self.len = 1
 		}
-            remainder.len = 1
-            remainder.ensure(1)
-            remainder.set(0, rem)
-            return
-        }
-
-        // --- Knuth's Algorithm D for multi-limb division ---
-        // Uses remainder's digits buffer as working space:
-        // [0..n-1] = working divisor (normalized b)
-        // [n..n+a.len+1] = working dividend (normalized a)
-        var int n = b.len
-        var int m = a.len - n
-        if m < 0 {
-            self.ensure(1)
-            self.set(0, 0)
-            self.len = 1
-            remainder.ensure(a.len)
-            remainder.clear(remainder.digits.cap)
-            var int ci = 0
-            while ci < a.len {
-                remainder.set(ci, a.get(ci))
-                ci = ci + 1
-            }
-            remainder.len = a.len
-            return
-        }
-
-        // D1. Normalize
-        var uint64 v_top = b.get(n - 1)
-        var int shift = 0
-        var uint64 clz_mask = 9223372036854775808
-        while (clz_mask & v_top) == 0 {
-            shift = shift + 1
-            clz_mask = clz_mask >> 1
-            if shift >= 64 {
-                break
-            }
-        }
-
-        // Ensure remainder buffer is big enough for working divisor + working dividend
-        var int working_size = 2 * n + a.len + 3
-        remainder.ensure(working_size)
-        remainder.clear(working_size)
-        var int wd_off = n
-
-        // Shift b left by shift into remainder[0..n-1]
-        var uint64 carry = 0
-        var int si = 0
-        while si < n {
-            var uint64 b_val = b.get(si)
-            var uint64 shifted = (b_val << shift) | carry
-            remainder.digits.store_int(si, shifted as int)
-            if shift > 0 {
-                carry = b_val >> (64 - shift)
-            } else {
-                carry = 0
-            }
-            si = si + 1
-        }
-
-        // Shift a left by shift into remainder[wd_off..wd_off+a.len]
-        carry = 0
-        si = 0
-        while si < a.len {
-            var uint64 a_val = a.get(si)
-            var uint64 shifted = (a_val << shift) | carry
-            remainder.digits.store_int(wd_off + si, shifted as int)
-            if shift > 0 {
-                carry = a_val >> (64 - shift)
-            } else {
-                carry = 0
-            }
-            si = si + 1
-        }
-        remainder.digits.store_int(wd_off + si, carry as int)
-        var int u_len = a.len + 1
-
-        // D2. Main loop: for j = m down to 0
-        self.ensure(m + 2)
-        var int j = m
-        while j >= 0 {
-            // D3. Calculate q_hat
-            var uint64 u_hi = remainder.digits.load_int(wd_off + j + n) as uint64
-            var uint64 u_lo = remainder.digits.load_int(wd_off + j + n - 1) as uint64
-            var uint64 v_n1 = remainder.digits.load_int(n - 1) as uint64
-
-            var uint64 q_hat = self.div128(u_hi, u_lo, v_n1)
-
-            // q_hat correction: try q_hat, decrement if too large
-            if n >= 2 {
-                var int try_count = 0
-                while try_count < 3 {
-                    // compute q_hat * v and compare with u[j+n..j]
-                    var uint64 hv_carry = 0
-                    var int pi = 0
-                    while pi < n {
-                        var uint64 vv = remainder.digits.load_int(pi) as uint64
-                        var uint64 lo_prod = q_hat * vv
-                        var uint64 hi_prod = self.mul_wide_hi(q_hat, vv)
-                        var uint64 p_lo = lo_prod + hv_carry
-                        hv_carry = hi_prod
-                        if p_lo < lo_prod {
-                            hv_carry = hv_carry + 1
-                        }
-                        remainder.digits.store_int(wd_off + u_len + 1 + pi, p_lo as int)
-                        pi = pi + 1
-                    }
-
-                    // Compare hv_carry with u[j+n]
-                    var uint64 u_at_jn = remainder.digits.load_int(wd_off + j + n) as uint64
-                    if hv_carry > u_at_jn {
-                        q_hat = q_hat - 1
-                        try_count = try_count + 1
-                        continue
-                    }
-                    if hv_carry < u_at_jn {
-                        break
-                    }
-
-                    // hv_carry == u_at_jn, compare lower limbs
-                    var int cmp_i = n - 1
-                    var int q_too_big = 0
-                    while cmp_i >= 0 {
-                        var uint64 prod_limb = remainder.digits.load_int(wd_off + u_len + 1 + cmp_i) as uint64
-                        var uint64 u_limb = remainder.digits.load_int(wd_off + j + cmp_i) as uint64
-                        if prod_limb > u_limb {
-                            q_too_big = 1
-                            break
-                        }
-                        if prod_limb < u_limb {
-                            break
-                        }
-                        cmp_i = cmp_i - 1
-                    }
-                    if q_too_big != 0 {
-                        q_hat = q_hat - 1
-                        try_count = try_count + 1
-                        continue
-                    }
-                    break
-                }
-            }
-
-            // D4. Multiply and subtract: u[j+n..j] -= q_hat * v
-            // Step 1: Compute q_hat * v into scratch[0..n]
-            var uint64 mul_carry = 0
-            var int mi = 0
-            while mi < n {
-                var uint64 vv = remainder.digits.load_int(mi) as uint64
-                var uint64 lo_prod = q_hat * vv
-                var uint64 hi_prod = self.mul_wide_hi(q_hat, vv)
-                var uint64 prod = lo_prod + mul_carry
-                mul_carry = hi_prod
-                if prod < lo_prod {
-                    mul_carry = mul_carry + 1
-                }
-                remainder.digits.store_int(wd_off + u_len + 1 + mi, prod as int)
-                mi = mi + 1
-            }
-            remainder.digits.store_int(wd_off + u_len + 1 + n, mul_carry as int)
-
-            // Step 2: Subtract prod[0..n] from u[j..j+n]
-            var uint64 sub_borrow = 0
-            var int si2 = 0
-            while si2 <= n {
-                var uint64 u_val = remainder.digits.load_int(wd_off + j + si2) as uint64
-                var uint64 p_val = remainder.digits.load_int(wd_off + u_len + 1 + si2) as uint64
-                var uint64 diff = u_val - p_val
-                var int borrow1 = 0
-                if diff > u_val {
-                    borrow1 = 1
-                }
-                var uint64 diff2 = diff - sub_borrow
-                var int borrow2 = 0
-                if diff2 > diff {
-                    borrow2 = 1
-                }
-                sub_borrow = (borrow1 + borrow2) as uint64
-                remainder.digits.store_int(wd_off + j + si2, diff2 as int)
-                si2 = si2 + 1
-            }
-
-            // D5. Test remainder - if borrow was nonzero (negative result), add back
-            if sub_borrow != 0 {
-                q_hat = q_hat - 1
-                var uint64 add_carry = 0
-                var int ai = 0
-                while ai < n {
-                    var uint64 v_add = remainder.digits.load_int(ai) as uint64
-                    var uint64 u_add = remainder.digits.load_int(wd_off + j + ai) as uint64
-                    var uint64 sum = u_add + v_add + add_carry
-                    var int new_carry = 0
-                    if sum < u_add {
-                        new_carry = 1
-                    } else {
-                        if sum == u_add {
-                            new_carry = add_carry as int
-                        }
-                    }
-                    remainder.digits.store_int(wd_off + j + ai, sum as int)
-                    add_carry = new_carry as uint64
-                    ai = ai + 1
-                }
-                var int carry_idx = 0
-                while add_carry != 0 {
-                    var uint64 u_carry = remainder.digits.load_int(wd_off + j + n + carry_idx) as uint64
-                    var uint64 new_u = u_carry + add_carry
-                    remainder.digits.store_int(wd_off + j + n + carry_idx, new_u as int)
-                    if new_u >= u_carry {
-                        add_carry = 0
-                    }
-                    carry_idx = carry_idx + 1
-                }
-            }
-
-	    // Store quotient digit
-	    self.ensure(j + 1)
-	    self.set(j, q_hat)
-	    j = j - 1
-	}
-	self.len = m + 1
-	while self.len > 1 {
-		if self.get(self.len - 1) != 0 {
-			break
-		}
-		self.len = self.len - 1
 	}
 
-	// Extract remainder from working dividend (normalized at wd_off..wd_off+n-1)
-	// Shift right by 'shift' to un-normalize
-	remainder.ensure(n)
-	remainder.len = n
-	if shift > 0 {
-		var uint64 r_carry = 0
-		var int ri = n - 1
-		while ri >= 0 {
-			var uint64 val = remainder.digits.load_int(wd_off + ri) as uint64
-			remainder.set(ri, ((val >> shift) | r_carry))
-			r_carry = val << (64 - shift)
-			ri = ri - 1
+	pub func sub_to = (ref self, BigInt a, BigInt b) {
+		if a.len == 1 && b.len == 1 {
+			self.ensure(1)
+			self.set(0, a.get(0) - b.get(0))
+			self.len = 1
+			return
 		}
-	} else {
-		var int ri = 0
-		while ri < n {
-			var uint64 val = remainder.digits.load_int(wd_off + ri) as uint64
-			remainder.set(ri, val)
-			ri = ri + 1
+		self.ensure(a.len)
+		var uint64 ap = a.data_ptr()
+		var uint64 bp = b.data_ptr()
+		var uint64 sp = self.data_ptr()
+		var borrow = 0
+		var i = 0
+		var last_nonzero = 1
+		while i < a.len {
+			var uint64 a_val = a.get_at(ap, i)
+			var uint64 b_val = 0
+			if i < b.len {
+				b_val = b.get_at(bp, i)
+			}
+			var uint64 diff = a_val - borrow
+			var new_borrow = 0
+			if diff > a_val {
+				new_borrow = 1
+			}
+			var uint64 diff2 = diff - b_val
+			if diff2 > diff {
+				borrow = new_borrow + 1
+			} else {
+				borrow = new_borrow
+			}
+			self.set_at(sp, i, diff2)
+			if diff2 != 0 {
+				last_nonzero = i + 1
+			}
+			i = i + 1
+		}
+		self.len = a.len
+		if last_nonzero < self.len {
+			self.len = last_nonzero
+		}
+		if self.len == 0 {
+			self.len = 1
 		}
 	}
-	while remainder.len > 1 {
-		if remainder.get(remainder.len - 1) != 0 {
-			break
+
+	pub func mul_to = (ref self, BigInt a, BigInt b, ref BigInt scratch) {
+		if a.len == 1 || b.len == 1 {
+			var uint64 sv
+			var int other_len
+			if a.len == 1 {
+				sv = a.get(0)
+				other_len = b.len
+			} else {
+				sv = b.get(0)
+				other_len = a.len
+			}
+			self.ensure(other_len + 1)
+			var uint64 sp = self.data_ptr()
+			var uint64 carry = 0
+			var i = 0
+			var last_nonzero = 0
+			if a.len == 1 {
+				var uint64 bp = b.data_ptr()
+				while i < other_len || carry != 0 {
+					var uint64 ov = 0
+					if i < other_len {
+						ov = b.get_at(bp, i)
+					}
+					var uint64 lo_prod = sv * ov
+					var uint64 hi_prod = self.mul_wide_hi(sv, ov)
+					var uint64 result = lo_prod + carry
+					var c1 = 0
+					if result < lo_prod {
+						c1 = 1
+					}
+					carry = hi_prod + c1
+					self.set_at(sp, i, result)
+					if result != 0 {
+						last_nonzero = i + 1
+					}
+					i = i + 1
+				}
+			} else {
+				var uint64 ap = a.data_ptr()
+				while i < other_len || carry != 0 {
+					var uint64 ov = 0
+					if i < other_len {
+						ov = a.get_at(ap, i)
+					}
+					var uint64 lo_prod = sv * ov
+					var uint64 hi_prod = self.mul_wide_hi(sv, ov)
+					var uint64 result = lo_prod + carry
+					var c1 = 0
+					if result < lo_prod {
+						c1 = 1
+					}
+					carry = hi_prod + c1
+					self.set_at(sp, i, result)
+					if result != 0 {
+						last_nonzero = i + 1
+					}
+					i = i + 1
+				}
+			}
+			self.len = i
+			if last_nonzero < self.len {
+				self.len = last_nonzero
+			}
+			if self.len == 0 {
+				self.len = 1
+			}
+			return
 		}
-		remainder.len = remainder.len - 1
+
+		// Multi-limb × multi-limb: Karatsuba for large operands, schoolbook for small
+		var int new_len = a.len + b.len
+		if a.len < 32 && b.len < 32 {
+			// Schoolbook for small operands
+			scratch.ensure(new_len)
+			scratch.clear(new_len)
+			scratch.len = new_len
+			var uint64 ap = a.data_ptr()
+			var uint64 bp = b.data_ptr()
+			var uint64 scratchp = scratch.data_ptr()
+			var i = 0
+			while i < a.len {
+				var uint64 ai = a.get_at(ap, i)
+				var uint64 carry = 0
+				var j = 0
+				while j < b.len || carry != 0 {
+					var uint64 bj = 0
+					if j < b.len {
+						bj = b.get_at(bp, j)
+					}
+					var uint64 old = scratch.get_at(scratchp, j + i)
+					var uint64 lo_prod = ai * bj
+					var uint64 hi_prod = scratch.mul_wide_hi(ai, bj)
+					var uint64 cur = old + carry
+					var c1 = 0
+					if cur < old {
+						c1 = 1
+					}
+					var uint64 cur2 = cur + lo_prod
+					var c2 = 0
+					if cur2 < cur {
+						c2 = 1
+					}
+					carry = c1 + c2 + hi_prod as int
+					scratch.set_at(scratchp, j + i, cur2)
+					j = j + 1
+				}
+				i = i + 1
+			}
+			self.ensure(new_len)
+			var uint64 sp = self.data_ptr()
+			var last_nonzero = 1
+			var k = 0
+			while k < new_len {
+				var uint64 val = scratch.get_at(scratchp, k)
+				self.set_at(sp, k, val)
+				if val != 0 {
+					last_nonzero = k + 1
+				}
+				k = k + 1
+			}
+			self.len = last_nonzero
+			return
+		}
+
+		// Karatsuba: split a = a1*B^m + a0, b = b1*B^m + b0
+		// result = z2*B^(2m) + z1*B^m + z0
+		// z0 = a0*b0, z2 = a1*b1, z1 = (a0+a1)*(b0+b1) - z0 - z2
+		var int m = a.len
+		if b.len > m {
+			m = b.len
+		}
+		m = m / 2
+
+		var int a0_len = m
+		if a0_len > a.len {
+			a0_len = a.len
+		}
+		var int b0_len = m
+		if b0_len > b.len {
+			b0_len = b.len
+		}
+		var int a1_len = a.len - a0_len
+		var int b1_len = b.len - b0_len
+
+		var a0 = BigInt()
+		var a1 = BigInt()
+		var b0 = BigInt()
+		var b1 = BigInt()
+		a0.copy_range_from(a, 0, a0_len)
+		b0.copy_range_from(b, 0, b0_len)
+		if a1_len > 0 {
+			a1.copy_range_from(a, m, a1_len)
+		}
+		if b1_len > 0 {
+			b1.copy_range_from(b, m, b1_len)
+		}
+
+		// z0 = a0 * b0
+		var z0 = BigInt()
+		var s0 = BigInt()
+		z0.mul_to(a0, b0, ref s0)
+
+		// z2 = a1 * b1 (only if both have high parts)
+		var z2 = BigInt()
+		var s2 = BigInt()
+		if a1_len > 0 && b1_len > 0 {
+			z2.mul_to(a1, b1, ref s2)
+		}
+
+		// z1 = (a0+a1)*(b0+b1) - z0 - z2
+		var aa = BigInt()
+		var bb = BigInt()
+		var z1 = BigInt()
+		var s1 = BigInt()
+		aa.add_to(a0, a1)
+		bb.add_to(b0, b1)
+		z1.mul_to(aa, bb, ref s1)
+		z1.sub_at(z0, 0)
+		z1.sub_at(z2, 0)
+
+		// Combine: self = z0 + z1 << m + z2 << (2*m)
+		self.ensure(new_len)
+		self.clear(new_len)
+		self.len = new_len
+		self.add_at(z0, 0)
+		self.add_at(z1, m)
+		self.add_at(z2, m + m)
+		while self.len > 1 {
+			if self.get(self.len - 1) != 0 {
+				break
+			}
+			self.len = self.len - 1
+		}
+
+		a0.digits.destroy()
+		a1.digits.destroy()
+		b0.digits.destroy()
+		b1.digits.destroy()
+		z0.digits.destroy()
+		z2.digits.destroy()
+		aa.digits.destroy()
+		bb.digits.destroy()
+		z1.digits.destroy()
+		s0.digits.destroy()
+		s1.digits.destroy()
+		s2.digits.destroy()
 	}
-    }
+	// self = quotient, a = dividend, b = divisor, remainder = remainder
+	// Uses remainder's internal buffer as working space
+	pub func div_to = (ref self, BigInt a, BigInt b, ref BigInt remainder) {
+		if b.len == 1 {
+			var uint64 divisor = b.get(0)
+			self.ensure(a.len)
+			self.len = a.len
+			var uint64 rem = 0
+			var last_nonzero = 0
+			var int i = a.len - 1
+			while i >= 0 {
+				var uint64 ai = a.get(i)
+				var uint64 q_val = self.div128(rem, ai, divisor)
+				var uint64 d_lo = divisor & 4294967295
+				var uint64 d_hi = divisor >> 32
+				var uint64 q_lo = q_val & 4294967295
+				var uint64 q_hi = q_val >> 32
+				var uint64 p_ll = q_lo * d_lo
+				var uint64 p_lh = q_lo * d_hi
+				var uint64 p_hl = q_hi * d_lo
+				var uint64 p_hh = q_hi * d_hi
+				var uint64 p_mid = p_lh + p_hl
+				var p_mc = 0
+				if p_mid < p_lh {
+					p_mc = 1
+				}
+				var uint64 p_lo_val = p_ll + (p_mid << 32)
+				var p_lo_c = 0
+				if p_lo_val < p_ll {
+					p_lo_c = 1
+				}
+				var uint64 p_hi_val = p_hh + (p_mid >> 32) + (p_mc as uint64 * 4294967296) + p_lo_c as uint64
+				var uint64 sub_lo = ai - p_lo_val
+				rem = sub_lo
+				self.set(i, q_val)
+				if q_val != 0 && last_nonzero == 0 {
+					last_nonzero = i + 1
+				}
+				i = i - 1
+			}
+			if last_nonzero == 0 {
+				last_nonzero = 1
+			}
+			if last_nonzero < self.len {
+				self.len = last_nonzero
+			}
+			if self.len == 0 {
+				self.len = 1
+			}
+			remainder.len = 1
+			remainder.ensure(1)
+			remainder.set(0, rem)
+			return
+		}
 
-    pub func to_digit = (self, out int) {
-        if self.len == 1 {
-            return self.get(0) as int
-        }
-        return -1
-    }
+		// --- Knuth's Algorithm D for multi-limb division ---
+		// Uses remainder's digits buffer as working space:
+		// [0..n-1] = working divisor (normalized b)
+		// [n..n+a.len+1] = working dividend (normalized a)
+		var int n = b.len
+		var int m = a.len - n
+		if m < 0 {
+			self.ensure(1)
+			self.set(0, 0)
+			self.len = 1
+			remainder.ensure(a.len)
+			remainder.clear(remainder.digits.cap)
+			var ci = 0
+			while ci < a.len {
+				remainder.set(ci, a.get(ci))
+				ci = ci + 1
+			}
+			remainder.len = a.len
+			return
+		}
 
-    pub func copy_from = (ref self, BigInt other) {
-        self.ensure(other.len)
-        self.len = other.len
-        self.sign = other.sign
-        var int i = 0
-        while i < other.len {
-            self.set(i, other.get(i))
-            i = i + 1
-        }
-    }
+		// D1. Normalize
+		var uint64 v_top = b.get(n - 1)
+		var shift = 0
+		var uint64 clz_mask = 9223372036854775808
+		while (clz_mask & v_top) == 0 {
+			shift = shift + 1
+			clz_mask = clz_mask >> 1
+			if shift >= 64 {
+				break
+			}
+		}
 
-    pub func set_int = (ref self, int val) {
-        self.sign = 1
-        var int v = val
-        if v < 0 {
-            self.sign = -1
-            v = 0 - v
-        }
-        self.ensure(1)
-        self.digits.store_int(0, v)
-        self.len = 1
-    }
+		// Ensure remainder buffer is big enough for working divisor + working dividend
+		var int working_size = 2 * n + a.len + 3
+		remainder.ensure(working_size)
+		remainder.clear(working_size)
+		var int wd_off = n
 
-    pub func set_u64 = (ref self, uint64 val) {
-        self.sign = 1
-        self.ensure(1)
-        self.set(0, val)
-        self.len = 1
-    }
+		// Shift b left by shift into remainder[0..n-1]
+		var uint64 carry = 0
+		var si = 0
+		while si < n {
+			var uint64 b_val = b.get(si)
+			var uint64 shifted = (b_val << shift) | carry
+			remainder.digits.store_int(si, shifted as int)
+			if shift > 0 {
+				carry = b_val >> (64 - shift)
+			} else {
+				carry = 0
+			}
+			si = si + 1
+		}
+
+		// Shift a left by shift into remainder[wd_off..wd_off+a.len]
+		carry = 0
+		si = 0
+		while si < a.len {
+			var uint64 a_val = a.get(si)
+			var uint64 shifted = (a_val << shift) | carry
+			remainder.digits.store_int(wd_off + si, shifted as int)
+			if shift > 0 {
+				carry = a_val >> (64 - shift)
+			} else {
+				carry = 0
+			}
+			si = si + 1
+		}
+		remainder.digits.store_int(wd_off + si, carry as int)
+		var int u_len = a.len + 1
+
+		// D2. Main loop: for j = m down to 0
+		self.ensure(m + 2)
+		var int j = m
+		while j >= 0 {
+			// D3. Calculate q_hat
+			var uint64 u_hi = remainder.digits.load_int(wd_off + j + n) as uint64
+			var uint64 u_lo = remainder.digits.load_int(wd_off + j + n - 1) as uint64
+			var uint64 v_n1 = remainder.digits.load_int(n - 1) as uint64
+
+			var uint64 q_hat = self.div128(u_hi, u_lo, v_n1)
+
+			// q_hat correction: try q_hat, decrement if too large
+			if n >= 2 {
+				var try_count = 0
+				while try_count < 3 {
+					// compute q_hat * v and compare with u[j+n..j]
+					var uint64 hv_carry = 0
+					var pi = 0
+					while pi < n {
+						var uint64 vv = remainder.digits.load_int(pi) as uint64
+						var uint64 lo_prod = q_hat * vv
+						var uint64 hi_prod = self.mul_wide_hi(q_hat, vv)
+						var uint64 p_lo = lo_prod + hv_carry
+						hv_carry = hi_prod
+						if p_lo < lo_prod {
+							hv_carry = hv_carry + 1
+						}
+						remainder.digits.store_int(wd_off + u_len + 1 + pi, p_lo as int)
+						pi = pi + 1
+					}
+
+					// Compare hv_carry with u[j+n]
+					var uint64 u_at_jn = remainder.digits.load_int(wd_off + j + n) as uint64
+					if hv_carry > u_at_jn {
+						q_hat = q_hat - 1
+						try_count = try_count + 1
+						continue
+					}
+					if hv_carry < u_at_jn {
+						break
+					}
+
+					// hv_carry == u_at_jn, compare lower limbs
+					var int cmp_i = n - 1
+					var q_too_big = 0
+					while cmp_i >= 0 {
+						var uint64 prod_limb = remainder.digits.load_int(wd_off + u_len + 1 + cmp_i) as uint64
+						var uint64 u_limb = remainder.digits.load_int(wd_off + j + cmp_i) as uint64
+						if prod_limb > u_limb {
+							q_too_big = 1
+							break
+						}
+						if prod_limb < u_limb {
+							break
+						}
+						cmp_i = cmp_i - 1
+					}
+					if q_too_big != 0 {
+						q_hat = q_hat - 1
+						try_count = try_count + 1
+						continue
+					}
+					break
+				}
+			}
+
+			// D4. Multiply and subtract: u[j+n..j] -= q_hat * v
+			// Step 1: Compute q_hat * v into scratch[0..n]
+			var uint64 mul_carry = 0
+			var mi = 0
+			while mi < n {
+				var uint64 vv = remainder.digits.load_int(mi) as uint64
+				var uint64 lo_prod = q_hat * vv
+				var uint64 hi_prod = self.mul_wide_hi(q_hat, vv)
+				var uint64 prod = lo_prod + mul_carry
+				mul_carry = hi_prod
+				if prod < lo_prod {
+					mul_carry = mul_carry + 1
+				}
+				remainder.digits.store_int(wd_off + u_len + 1 + mi, prod as int)
+				mi = mi + 1
+			}
+			remainder.digits.store_int(wd_off + u_len + 1 + n, mul_carry as int)
+
+			// Step 2: Subtract prod[0..n] from u[j..j+n]
+			var uint64 sub_borrow = 0
+			var si2 = 0
+			while si2 <= n {
+				var uint64 u_val = remainder.digits.load_int(wd_off + j + si2) as uint64
+				var uint64 p_val = remainder.digits.load_int(wd_off + u_len + 1 + si2) as uint64
+				var uint64 diff = u_val - p_val
+				var borrow1 = 0
+				if diff > u_val {
+					borrow1 = 1
+				}
+				var uint64 diff2 = diff - sub_borrow
+				var borrow2 = 0
+				if diff2 > diff {
+					borrow2 = 1
+				}
+				sub_borrow = (borrow1 + borrow2) as uint64
+				remainder.digits.store_int(wd_off + j + si2, diff2 as int)
+				si2 = si2 + 1
+			}
+
+			// D5. Test remainder - if borrow was nonzero (negative result), add back
+			if sub_borrow != 0 {
+				q_hat = q_hat - 1
+				var uint64 add_carry = 0
+				var ai = 0
+				while ai < n {
+					var uint64 v_add = remainder.digits.load_int(ai) as uint64
+					var uint64 u_add = remainder.digits.load_int(wd_off + j + ai) as uint64
+					var uint64 sum = u_add + v_add + add_carry
+					var new_carry = 0
+					if sum < u_add {
+						new_carry = 1
+					} else {
+						if sum == u_add {
+							new_carry = add_carry as int
+						}
+					}
+					remainder.digits.store_int(wd_off + j + ai, sum as int)
+					add_carry = new_carry as uint64
+					ai = ai + 1
+				}
+				var carry_idx = 0
+				while add_carry != 0 {
+					var uint64 u_carry = remainder.digits.load_int(wd_off + j + n + carry_idx) as uint64
+					var uint64 new_u = u_carry + add_carry
+					remainder.digits.store_int(wd_off + j + n + carry_idx, new_u as int)
+					if new_u >= u_carry {
+						add_carry = 0
+					}
+					carry_idx = carry_idx + 1
+				}
+			}
+
+			// Store quotient digit
+			self.ensure(j + 1)
+			self.set(j, q_hat)
+			j = j - 1
+		}
+		self.len = m + 1
+		while self.len > 1 {
+			if self.get(self.len - 1) != 0 {
+				break
+			}
+			self.len = self.len - 1
+		}
+
+		// Extract remainder from working dividend (normalized at wd_off..wd_off+n-1)
+		// Shift right by 'shift' to un-normalize
+		remainder.ensure(n)
+		remainder.len = n
+		if shift > 0 {
+			var uint64 r_carry = 0
+			var int ri = n - 1
+			while ri >= 0 {
+				var uint64 val = remainder.digits.load_int(wd_off + ri) as uint64
+				remainder.set(ri, ((val >> shift) | r_carry))
+				r_carry = val << (64 - shift)
+				ri = ri - 1
+			}
+		} else {
+			var ri = 0
+			while ri < n {
+				var uint64 val = remainder.digits.load_int(wd_off + ri) as uint64
+				remainder.set(ri, val)
+				ri = ri + 1
+			}
+		}
+		while remainder.len > 1 {
+			if remainder.get(remainder.len - 1) != 0 {
+				break
+			}
+			remainder.len = remainder.len - 1
+		}
+	}
+
+	pub func to_digit = (self, out int) {
+		if self.len == 1 {
+			return self.get(0) as int
+		}
+		return -1
+	}
+
+	pub func copy_from = (ref self, BigInt other) {
+		self.ensure(other.len)
+		self.len = other.len
+		self.sign = other.sign
+		var i = 0
+		while i < other.len {
+			self.set(i, other.get(i))
+			i = i + 1
+		}
+	}
+
+	pub func set_int = (ref self, int val) {
+		self.sign = 1
+		var int v = val
+		if v < 0 {
+			self.sign = -1
+			v = 0 - v
+		}
+		self.ensure(1)
+		self.digits.store_int(0, v)
+		self.len = 1
+	}
+
+	pub func set_u64 = (ref self, uint64 val) {
+		self.sign = 1
+		self.ensure(1)
+		self.set(0, val)
+		self.len = 1
+	}
 }

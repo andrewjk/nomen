@@ -5,9 +5,9 @@ import ClassBuffer
  * An ordered set of unique values (`add`/`has`/`get`/`remove`)
  **/
 pub struct Set<T> {
-	var int length = 0
+	var length = 0
 	var Buffer<T> slots = Buffer<T>()
-	var Buffer<int> used = Buffer<int>()
+	var used = Buffer<int>()
 
 	pub func add = (ref self, mov T value) {
 		var int cap = self.slots.cap
@@ -90,7 +90,7 @@ pub struct Set<T> {
 		self.used.alloc(new_cap)
 		self.length = 0
 
-		var int i = 0
+		var i = 0
 		while i < old_cap {
 			if old_used.load(i) != 0 {
 				self.add(old_slots.load_int(i))

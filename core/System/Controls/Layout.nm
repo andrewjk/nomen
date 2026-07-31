@@ -6,15 +6,15 @@ import Buffer
  * A flat, buffer-backed layout tree — nodes stored in parallel arrays for the layout engine
  **/
 pub struct Layout {
-	var Buffer<int> kinds = Buffer<int>()    // 0=leaf, 1=vstack, 2=hstack
-	var Buffer<int> ws = Buffer<int>()       // intrinsic width (leaf) or 0
-	var Buffer<int> hs = Buffer<int>()       // intrinsic height (leaf) or 0
-	var Buffer<int> gaps = Buffer<int>()     // spacing between children (containers)
-	var Buffer<int> par = Buffer<int>()      // parent index (-1 = root)
-	var Buffer<int> rx = Buffer<int>()       // result x
-	var Buffer<int> ry = Buffer<int>()       // result y
-	var Buffer<int> rw = Buffer<int>()       // result width
-	var Buffer<int> rh = Buffer<int>()       // result height
+	var kinds = Buffer<int>() // 0=leaf, 1=vstack, 2=hstack
+	var ws = Buffer<int>() // intrinsic width (leaf) or 0
+	var hs = Buffer<int>() // intrinsic height (leaf) or 0
+	var gaps = Buffer<int>() // spacing between children (containers)
+	var par = Buffer<int>() // parent index (-1 = root)
+	var rx = Buffer<int>() // result x
+	var ry = Buffer<int>() // result y
+	var rw = Buffer<int>() // result width
+	var rh = Buffer<int>() // result height
 }
 
 /**
@@ -36,7 +36,7 @@ pub func init_layout = (ref Layout l, int cap) {
  * Appends a leaf node (a sized control) under `parent` and returns its index
  **/
 pub func add_leaf = (ref Layout l, int parent, int w, int h, out int) {
-	var int idx = 0
+	var idx = 0
 	while l.par.load_int(idx) != 0 || idx == 0 {
 		if l.kinds.load_int(idx) == 0 && l.ws.load_int(idx) == 0 && l.hs.load_int(idx) == 0 && l.par.load_int(idx) == 0 {
 			break
@@ -55,7 +55,7 @@ pub func add_leaf = (ref Layout l, int parent, int w, int h, out int) {
  * Appends a vertical stack container under `parent` and returns its index
  **/
 pub func add_vstack = (ref Layout l, int parent, int spacing, out int) {
-	var int idx = 0
+	var idx = 0
 	while true {
 		if l.kinds.load_int(idx) == 0 && l.ws.load_int(idx) == 0 && l.hs.load_int(idx) == 0 && l.par.load_int(idx) == 0 {
 			break
@@ -74,7 +74,7 @@ pub func add_vstack = (ref Layout l, int parent, int spacing, out int) {
  * Appends a horizontal stack container under `parent` and returns its index
  **/
 pub func add_hstack = (ref Layout l, int parent, int spacing, out int) {
-	var int idx = 0
+	var idx = 0
 	while true {
 		if l.kinds.load_int(idx) == 0 && l.ws.load_int(idx) == 0 && l.hs.load_int(idx) == 0 && l.par.load_int(idx) == 0 {
 			break
@@ -91,7 +91,7 @@ pub func add_hstack = (ref Layout l, int parent, int spacing, out int) {
 
 func first_child = (Layout l, int count, int parent, out int) {
 	var int p = parent + 1
-	var int i = 0
+	var i = 0
 	while i < count {
 		if l.par.load_int(i) == p { return i }
 		i = i + 1
@@ -114,7 +114,16 @@ func next_sibling = (Layout l, int count, int after, int parent, out int) {
 /**
  * Measures node widths against the given constraints (layout measure phase)
  **/
-pub func measure_w = (Layout l, int count, int idx, int min_w, int max_w, int min_h, int max_h, out int) {
+pub func measure_w = (
+	Layout l,
+	int count,
+	int idx,
+	int min_w,
+	int max_w,
+	int min_h,
+	int max_h,
+	out int
+) {
 	var int kind = l.kinds.load_int(idx)
 	if kind == 0 {
 		var int w = l.ws.load_int(idx)
@@ -129,9 +138,9 @@ pub func measure_w = (Layout l, int count, int idx, int min_w, int max_w, int mi
 	}
 	if kind == 1 {
 		// vstack: sum heights, max widths
-		var int total_h = 0
-		var int max_child_w = 0
-		var int n = 0
+		var total_h = 0
+		var max_child_w = 0
+		var n = 0
 		var int ci = first_child(l, count, idx)
 		while ci != -1 {
 			var int cw = measure_w(l, count, ci, min_w, max_w, 0, 100000)
@@ -150,9 +159,9 @@ pub func measure_w = (Layout l, int count, int idx, int min_w, int max_w, int mi
 		return max_child_w
 	}
 	// hstack: sum widths, max heights
-	var int total_w = 0
-	var int max_child_h = 0
-	var int n = 0
+	var total_w = 0
+	var max_child_h = 0
+	var n = 0
 	var int ci = first_child(l, count, idx)
 	while ci != -1 {
 		var int cw = measure_w(l, count, ci, 0, 100000, min_h, max_h)

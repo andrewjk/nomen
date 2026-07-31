@@ -8,6 +8,7 @@ import { resolve_lib_dir, workspace_folder_of } from "./library.ts";
 import {
 	NomenCompletionProvider,
 	NomenDefinitionProvider,
+	NomenDocumentFormattingProvider,
 	NomenHoverProvider,
 	NomenReferenceProvider,
 } from "./providers.ts";
@@ -35,6 +36,10 @@ export function activate(context: vscode.ExtensionContext): void {
 		vscode.languages.registerHoverProvider(selector, new NomenHoverProvider()),
 		vscode.languages.registerDefinitionProvider(selector, new NomenDefinitionProvider()),
 		vscode.languages.registerReferenceProvider(selector, new NomenReferenceProvider()),
+		vscode.languages.registerDocumentFormattingEditProvider(
+			selector,
+			new NomenDocumentFormattingProvider(),
+		),
 		vscode.languages.registerCompletionItemProvider(selector, new NomenCompletionProvider(), "."),
 		vscode.commands.registerCommand("nomen.run", (uri?: vscode.Uri) => runNomen(uri, false)),
 		vscode.commands.registerCommand("nomen.audit", (uri?: vscode.Uri) => runNomen(uri, true)),

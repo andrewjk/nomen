@@ -6,10 +6,10 @@ func eval_a_times_u<T> = (ref Buffer<T> au, ref Buffer<T> u, int n, bool transpo
 	// `i < n` / `j < n` bounds imply `i < au.cap` / `j < u.cap` via
 	// transitive bound propagation (`i < n <= cap ⇒ i < cap`).
 	if n <= au.cap && n <= u.cap {
-		var int i = 0
+		var i = 0
 		while i < n {
-			var float a = 0.0
-			var int j = 0
+			var a = 0.0
+			var j = 0
 			// eval_a's denominator follows an additive recurrence along j:
 			//   denom(0)   = i*(i+1)/2 + i + 1     (transpose=false)
 			//               i*(i+1)/2 + 1         (transpose=true, since +j+1 with j=0)
@@ -43,14 +43,14 @@ func eval_ata_times_u<T> = (ref Buffer<T> atau, ref Buffer<T> u, ref Buffer<T> s
 }
 
 pub func main = (Init init) {
-	var int n = 100
+	var n = 100
 	if init.argc > 1 {
 		n = parse_int(init.args.at(1))
 	}
 
-	var Buffer<float> u = Buffer<float>()
-	var Buffer<float> v = Buffer<float>()
-	var Buffer<float> scratch = Buffer<float>()
+	var u = Buffer<float>()
+	var v = Buffer<float>()
+	var scratch = Buffer<float>()
 	u.alloc_float(n)
 	v.alloc_float(n)
 	scratch.alloc_float(n)
@@ -60,7 +60,7 @@ pub func main = (Init init) {
 	// symbolic fact). Hoist the equivalence once so the inner `i < n` loops
 	// discharge against `u.cap` / `v.cap` without per-iteration guards.
 	if n <= u.cap && n <= v.cap {
-		var int i = 0
+		var i = 0
 		while i < n {
 			u.store_float(i, 1.0)
 			v.store_float(i, 1.0)
@@ -74,8 +74,8 @@ pub func main = (Init init) {
 			i = i + 1
 		}
 
-		var float vbv = 0.0
-		var float vv = 0.0
+		var vbv = 0.0
+		var vv = 0.0
 		i = 0
 		while i < n {
 			vbv = vbv + u.load_float(i) * v.load_float(i)

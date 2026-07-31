@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 
+import { format_source } from "../../src/format.ts";
 import {
 	all_members,
 	def_at,
@@ -10,6 +11,7 @@ import {
 	symbol_at,
 } from "./analysis.ts";
 import type { Analysis, Def, TypeInfo } from "./analysis.ts";
+import { load_format_options } from "./config.ts";
 import { get_analysis, get_fallback_analysis } from "./documents.ts";
 import type { DocumentAnalysis } from "./documents.ts";
 import { map_offset } from "./source_map.ts";
@@ -182,4 +184,15 @@ function to_location(
 		vscode.Uri.file(position.path),
 		new vscode.Range(position.line, position.character, position.end_line, position.end_character),
 	);
+}
+
+export class NomenDocumentFormattingProvider implements vscode.DocumentFormattingEditProvider {
+	provideDocumentFormattingEdits(document: vscode.TextDocument): vscode.TextEdit[] {
+		const source = document.getText();
+		const options = load_format_options(document.uri.fsPath);
+		const result = format_source(source, options);
+		if (!result.changed) return [];
+		const full_range = new vscode.Range(document.positionAt(0), document.positionAt(source.length));
+		return [vscode.TextEdit.replace(full_range, result.code)];
+	}
 }

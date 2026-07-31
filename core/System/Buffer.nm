@@ -5,10 +5,10 @@
  * A flat, low-level buffer of value slots of type T — the backing store for arrays and collections
  **/
 pub struct Buffer<T> {
-    var uint64 data = 0
-    var int cap = 0
+	var uint64 data = 0
+	var cap = 0
 
-    func alloc = (ref self, int size, out int: out >= size) {
+	func alloc = (ref self, int size, out int: out >= size) {
         ```
         #arch: c
         self->cap = size;
@@ -24,9 +24,9 @@ pub struct Buffer<T> {
         str x0, [x19, #8]
         ldr x0, [x19, #16]
         ```
-    }
+	}
 
-    func grow = (ref self, int needed, out int: out >= needed) {
+	func grow = (ref self, int needed, out int: out >= needed) {
         ```
         #arch: c
         if (self->cap >= needed) return self->cap;
@@ -72,9 +72,9 @@ pub struct Buffer<T> {
         .Lbuffer_grow_end:
         ldr x0, [x19, #16]
         ```
-    }
+	}
 
-    func zero = (ref self, int len) {
+	func zero = (ref self, int len) {
         ```
         #arch: c
         memset((unsigned int*)(unsigned long long)self->data, 0, len * sizeof(unsigned int));
@@ -86,9 +86,9 @@ pub struct Buffer<T> {
         mov x1, #0
         bl _memset
         ```
-    }
+	}
 
-    inline func load = (self, int i: i >= 0 && i < self.cap, out uint32) {
+	inline func load = (self, int i: i >= 0 && i < self.cap, out uint32) {
         ```
         #arch: c
         return ((unsigned int*)(unsigned long long)self->data)[i];
@@ -101,9 +101,9 @@ pub struct Buffer<T> {
         ldr w0, [x0]
         and x0, x0, #0xFFFFFFFF
         ```
-    }
+	}
 
-    inline func store = (ref self, int i: i >= 0 && i < self.cap, uint32 val) {
+	inline func store = (ref self, int i: i >= 0 && i < self.cap, uint32 val) {
         ```
         #arch: c
         ((unsigned int*)(unsigned long long)self->data)[i] = val;
@@ -115,9 +115,9 @@ pub struct Buffer<T> {
         add x0, x0, x3
         str w2, [x0]
         ```
-    }
+	}
 
-    inline func store_or = (ref self, int i: i >= 0 && i < self.cap, uint32 val) {
+	inline func store_or = (ref self, int i: i >= 0 && i < self.cap, uint32 val) {
         ```
         #arch: c
         ((unsigned int*)(unsigned long long)self->data)[i] |= val;
@@ -131,9 +131,9 @@ pub struct Buffer<T> {
         orr w3, w3, w2
         str w3, [x0]
         ```
-    }
+	}
 
-    func alloc_int = (ref self, int size, out int: out >= size) {
+	func alloc_int = (ref self, int size, out int: out >= size) {
         ```
         #arch: c
         self->cap = size;
@@ -149,9 +149,9 @@ pub struct Buffer<T> {
         str x0, [x19, #8]
         ldr x0, [x19, #16]
         ```
-    }
+	}
 
-    func grow_int = (ref self, int needed, out int: out >= needed) {
+	func grow_int = (ref self, int needed, out int: out >= needed) {
         ```
         #arch: c
         if (self->cap >= needed) return self->cap;
@@ -197,9 +197,9 @@ pub struct Buffer<T> {
         .Lbuffer_grow_int_end:
         ldr x0, [x19, #16]
         ```
-    }
+	}
 
-    inline func load_int = (self, int i: i >= 0 && i < self.cap, out int) {
+	inline func load_int = (self, int i: i >= 0 && i < self.cap, out int) {
         ```
         #arch: c
         return ((long*)(unsigned long long)self->data)[i];
@@ -211,9 +211,9 @@ pub struct Buffer<T> {
         add x0, x0, x1
         ldr x0, [x0]
         ```
-    }
+	}
 
-    inline func store_int = (ref self, int i: i >= 0 && i < self.cap, int val) {
+	inline func store_int = (ref self, int i: i >= 0 && i < self.cap, int val) {
         ```
         #arch: c
         ((long*)(unsigned long long)self->data)[i] = val;
@@ -225,13 +225,13 @@ pub struct Buffer<T> {
         add x0, x0, x3
         str x2, [x0]
         ```
-    }
+	}
 
-    // Move a value out of a slot: return it and clear the slot to 0. This is
-    // the ownership-extracting primitive (used by e.g. List.pop) — unlike
-    // load_int (a borrow read), it relinquishes the slot so the buffer no
-    // longer owns the value.
-    inline func move_int = (ref self, int i: i >= 0 && i < self.cap, out int) {
+	// Move a value out of a slot: return it and clear the slot to 0. This is
+	// the ownership-extracting primitive (used by e.g. List.pop) — unlike
+	// load_int (a borrow read), it relinquishes the slot so the buffer no
+	// longer owns the value.
+	inline func move_int = (ref self, int i: i >= 0 && i < self.cap, out int) {
         ```
         #arch: c
         long *slots = (long*)(unsigned long long)self->data;
@@ -247,12 +247,12 @@ pub struct Buffer<T> {
         ldr x0, [x3]
         str xzr, [x3]
         ```
-    }
+	}
 
-    // Store into a slot, freeing the previous value when the buffer holds
-    // owned class pointers (has_class_refs). For non-class buffers this is a
-    // plain store, so it is safe to use anywhere store_int would be.
-    inline func replace_int = (ref self, int i: i >= 0 && i < self.cap, int val) {
+	// Store into a slot, freeing the previous value when the buffer holds
+	// owned class pointers (has_class_refs). For non-class buffers this is a
+	// plain store, so it is safe to use anywhere store_int would be.
+	inline func replace_int = (ref self, int i: i >= 0 && i < self.cap, int val) {
         ```
         #arch: c
         ((long*)(unsigned long long)self->data)[i] = val;
@@ -264,9 +264,9 @@ pub struct Buffer<T> {
         add x0, x0, x3
         str x2, [x0]
         ```
-    }
+	}
 
-    inline func zero_int = (ref self, int len) {
+	inline func zero_int = (ref self, int len) {
         ```
         #arch: c
         memset((long*)(unsigned long long)self->data, 0, len * sizeof(long));
@@ -278,14 +278,14 @@ pub struct Buffer<T> {
         mov x1, #0
         bl _memset
         ```
-    }
+	}
 
-    // T_SIZE-aware primitives for value-struct elements. Slab is sized in
-    // multiples of T_SIZE; load/store use memcpy so multi-word structs work
-    // correctly. Classes route to ClassBuffer<T> (per-element destroy), so T
-    // reaching here is always a value type (primitive or struct).
+	// T_SIZE-aware primitives for value-struct elements. Slab is sized in
+	// multiples of T_SIZE; load/store use memcpy so multi-word structs work
+	// correctly. Classes route to ClassBuffer<T> (per-element destroy), so T
+	// reaching here is always a value type (primitive or struct).
 
-    func alloc_T = (ref self, int size, out int: out >= size) {
+	func alloc_T = (ref self, int size, out int: out >= size) {
         ```
         #arch: c
         self->cap = size;
@@ -301,9 +301,9 @@ pub struct Buffer<T> {
         str x0, [x19, #8]
         ldr x0, [x19, #16]
         ```
-    }
+	}
 
-    func grow_T = (ref self, int needed, out int: out >= needed) {
+	func grow_T = (ref self, int needed, out int: out >= needed) {
         ```
         #arch: c
         if (self->cap >= needed) return self->cap;
@@ -354,9 +354,9 @@ pub struct Buffer<T> {
         .Lbuffer_grow_T_end:
         ldr x0, [x19, #16]
         ```
-    }
+	}
 
-    func load_T = (self, int i: i >= 0 && i < self.cap, out T) {
+	func load_T = (self, int i: i >= 0 && i < self.cap, out T) {
         ```
         #arch: c
         return ((T*)(unsigned long long)self->data)[i];
@@ -379,9 +379,9 @@ pub struct Buffer<T> {
         bl _memcpy
         .Lbuffer_load_T_end:
         ```
-    }
+	}
 
-    func store_T = (ref self, int i: i >= 0 && i < self.cap, T val) {
+	func store_T = (ref self, int i: i >= 0 && i < self.cap, T val) {
         ```
         #arch: c
         ((T*)(unsigned long long)self->data)[i] = val;
@@ -403,14 +403,14 @@ pub struct Buffer<T> {
         bl _memcpy
         .Lbuffer_store_T_end:
         ```
-    }
+	}
 
-    // A non-owning (ptr, len) slice [start, end) over this buffer's element
-    // storage, returned as a `view T`. It borrows from self: it may not outlive
-    // self's scope and is invalidated if self is reassigned. This is the single
-    // primitive every other slice (Array<T>, List<T>, user containers) builds
-    // on — higher layers just `return self.items.slice(start, end)`.
-    func slice = (self, int start: start >= 0, int end: end >= start, out view T) {
+	// A non-owning (ptr, len) slice [start, end) over this buffer's element
+	// storage, returned as a `view T`. It borrows from self: it may not outlive
+	// self's scope and is invalidated if self is reassigned. This is the single
+	// primitive every other slice (Array<T>, List<T>, user containers) builds
+	// on — higher layers just `return self.items.slice(start, end)`.
+	func slice = (self, int start: start >= 0, int end: end >= start, out view T) {
         ```
         #arch: c
         nomen_view _r;
@@ -427,9 +427,9 @@ pub struct Buffer<T> {
         madd x0, x1, x3, x0
         sub x1, x2, x1
         ```
-    }
+	}
 
-    inline func zero_T = (ref self, int len) {
+	inline func zero_T = (ref self, int len) {
         ```
         #arch: c
         memset((T*)(unsigned long long)self->data, 0, len * T_SIZE);
@@ -442,9 +442,9 @@ pub struct Buffer<T> {
         mov x1, #0
         bl _memset
         ```
-    }
+	}
 
-    inline func store_or_int = (ref self, int i: i >= 0 && i < self.cap, int val) {
+	inline func store_or_int = (ref self, int i: i >= 0 && i < self.cap, int val) {
         ```
         #arch: c
         ((long*)(unsigned long long)self->data)[i] |= val;
@@ -458,9 +458,9 @@ pub struct Buffer<T> {
         orr x3, x3, x2
         str x3, [x0]
         ```
-    }
+	}
 
-    func alloc_float = (ref self, int size, out int: out >= size) {
+	func alloc_float = (ref self, int size, out int: out >= size) {
         ```
         #arch: c
         self->cap = size;
@@ -476,9 +476,9 @@ pub struct Buffer<T> {
         str x0, [x19, #8]
         ldr x0, [x19, #16]
         ```
-    }
+	}
 
-    inline func load_float = (self, int i: i >= 0 && i < self.cap, out float) {
+	inline func load_float = (self, int i: i >= 0 && i < self.cap, out float) {
         ```
         #arch: c
         return ((double*)(unsigned long long)self->data)[i];
@@ -490,9 +490,9 @@ pub struct Buffer<T> {
         add x0, x0, x1
         ldr x0, [x0]
         ```
-    }
+	}
 
-    inline func store_float = (ref self, int i: i >= 0 && i < self.cap, float val) {
+	inline func store_float = (ref self, int i: i >= 0 && i < self.cap, float val) {
         ```
         #arch: c
         ((double*)(unsigned long long)self->data)[i] = val;
@@ -504,9 +504,9 @@ pub struct Buffer<T> {
         add x0, x0, x3
         str x2, [x0]
         ```
-    }
+	}
 
-    func #destroy = () {
+	func #destroy = () {
         ```
         #arch: c
         if (self->data) free((unsigned int*)(unsigned long long)self->data);
@@ -522,5 +522,5 @@ pub struct Buffer<T> {
         str xzr, [x19, #8]
         str xzr, [x19, #16]
         ```
-    }
+	}
 }

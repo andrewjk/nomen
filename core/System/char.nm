@@ -1,9 +1,8 @@
-
 /**
  * A single character
  **/
 pub struct char: Stringable {
-    pub func to_string = (self, out string) {
+	pub func to_string = (self, out string) {
         ```
         #arch: c
         int length = snprintf(NULL, 0, "%c", self);
@@ -39,5 +38,5 @@ pub struct char: Stringable {
         .p2align 2
         .Lend_char_to_string:
         ```
-    }
+	}
 }

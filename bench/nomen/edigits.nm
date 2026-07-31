@@ -1,7 +1,7 @@
 import System
 
-const float ln10 = 2.3025850929940455
-const float two_pi = 6.283185307179586
+const ln10 = 2.3025850929940455
+const two_pi = 6.283185307179586
 
 func test_k = (int n, int k, out bool) {
 	if k < 0 {
@@ -15,8 +15,8 @@ func test_k = (int n, int k, out bool) {
 }
 
 func binary_search = (int n, out int) {
-	var int a = 0
-	var int b = 1
+	var a = 0
+	var b = 1
 	while test_k(n, b) == false {
 		a = b
 		b = b * 2
@@ -43,16 +43,16 @@ func sum_terms = (int a, int b, ref BigInt out_p, ref BigInt out_q) {
 		return
 	}
 	var int mid = (a + b) / 2
-	var BigInt pl = BigInt()
-	var BigInt ql = BigInt()
+	var pl = BigInt()
+	var ql = BigInt()
 	sum_terms(a, mid, ref pl, ref ql)
-	var BigInt pr = BigInt()
-	var BigInt qr = BigInt()
+	var pr = BigInt()
+	var qr = BigInt()
 	sum_terms(mid, b, ref pr, ref qr)
 
 	// p = pl * qr + pr
-	var BigInt scratch = BigInt()
-	var BigInt product = BigInt()
+	var scratch = BigInt()
+	var product = BigInt()
 	product.mul_to(pl, qr, ref scratch)
 	out_p.add_to(product, pr)
 
@@ -70,7 +70,7 @@ func sum_terms = (int a, int b, ref BigInt out_p, ref BigInt out_q) {
 // Compute 10^exp via binary exponentiation (repeated squaring).
 func pow10 = (int exp, ref BigInt result, ref BigInt tmp, ref BigInt scratch) {
 	result.set_int(1)
-	var BigInt sq_base = BigInt()
+	var sq_base = BigInt()
 	sq_base.set_int(10)
 	var int e = exp
 	while e > 0 {
@@ -86,49 +86,49 @@ func pow10 = (int exp, ref BigInt result, ref BigInt tmp, ref BigInt scratch) {
 }
 
 pub func main = (Init init) {
-	var int n = 27
+	var n = 27
 	if init.argc > 1 {
 		n = parse_int(init.args.at(1))
 	}
 	var int k = binary_search(n)
 
 	// Compute e = sum_{i=0}^{k-1} 1/i! as a fraction p/q via product tree.
-	var BigInt p = BigInt()
-	var BigInt q = BigInt()
+	var p = BigInt()
+	var q = BigInt()
 	sum_terms(0, k - 1, ref p, ref q)
 
 	// Add the 1/0! = 1 term: (p + q) / q = p/q + 1.
-	var BigInt p_plus_q = BigInt()
+	var p_plus_q = BigInt()
 	p_plus_q.add_to(p, q)
 
 	// answer = (p + q) * 10^(n-1) / q
-	var BigInt tmp = BigInt()
-	var BigInt scratch = BigInt()
-	var BigInt power = BigInt()
+	var tmp = BigInt()
+	var scratch = BigInt()
+	var power = BigInt()
 	pow10(n - 1, ref power, ref tmp, ref scratch)
 
-	var BigInt numerator = BigInt()
+	var numerator = BigInt()
 	numerator.mul_to(p_plus_q, power, ref scratch)
 
-	var BigInt answer = BigInt()
-	var BigInt div_rem = BigInt()
+	var answer = BigInt()
+	var div_rem = BigInt()
 	answer.div_to(numerator, q, ref div_rem)
 
 	// Extract digits from answer using in-place bulk divmod by 10^18.
-	var BigInt one = BigInt()
+	var one = BigInt()
 	one.set_int(1)
-	var BigInt work = BigInt()
+	var work = BigInt()
 	work.copy_from(answer)
-	var Buffer<int> digits = Buffer<int>()
+	var digits = Buffer<int>()
 	digits.alloc_int(5020)
-	var int digit_count = 0
-	var BigInt q_e18 = BigInt()
+	var digit_count = 0
+	var q_e18 = BigInt()
 	q_e18.set_u64(1000000000000000000)
 
 	while work.cmp(one) >= 0 {
 		work.div_to(work, q_e18, ref div_rem)
 		var uint64 chunk = div_rem.get(0)
-		var int c = 0
+		var c = 0
 		while c < 18 {
 			var int idx = digit_count + c
 			// `idx = digit_count + c` is a sum of two runtime variables the

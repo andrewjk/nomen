@@ -1,9 +1,8 @@
-
 /**
  * A signed integer — the default integer type
  **/
 pub struct int: Stringable {
-    pub func to_string = (self, out string) {
+	pub func to_string = (self, out string) {
         ```
         #arch: c
         int length = snprintf(NULL, 0, "%ld", self);
@@ -39,10 +38,10 @@ pub struct int: Stringable {
         .p2align 2
         .Lend_int_to_string:
         ```
-    }
+	}
 
-    // Parse a base-10 integer from a string.
-    pub func parse = (string s, out int) {
+	// Parse a base-10 integer from a string.
+	pub func parse = (string s, out int) {
         ```
         #arch: c
         return atoi(s);
@@ -51,5 +50,5 @@ pub struct int: Stringable {
         #arch: aarch64
         bl _atoi
         ```
-    }
+	}
 }

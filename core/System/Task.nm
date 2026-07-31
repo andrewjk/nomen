@@ -18,7 +18,7 @@
  **/
 pub class Task<T> : Sendable {
 	pub var uint64 handle = 0
-	pub var bool done = false
+	pub var done = false
 	pub var uint64 result_slot = 0
 	pub var uint64 cancel_flag = 0
 	pub var uint64 future = 0

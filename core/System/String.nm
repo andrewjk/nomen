@@ -1,9 +1,8 @@
-
 /**
  * A UTF-8 text string — a heap-owned, length-tracked sequence of bytes
  **/
 pub struct string: Stringable {
-    pub func to_string = (self, out string) {
+	pub func to_string = (self, out string) {
         ```
         #arch: c
         return strdup(self);
@@ -12,9 +11,9 @@ pub struct string: Stringable {
         #arch: aarch64
         mov x0, x19
         ```
-    }
+	}
 
-    pub func at = (self, int index: index >= 0 && index < self.length, out char) {
+	pub func at = (self, int index: index >= 0 && index < self.length, out char) {
         ```
         #arch: c
         return self[index];
@@ -24,13 +23,18 @@ pub struct string: Stringable {
         // x19 = self (pointer), x1 = index
         ldrb w0, [x19, x1]
         ```
-    }
+	}
 
-    // A non-owning slice [start, end) into self's buffer. Returns a `view
-    // string` (ptr, len) that borrows from self: it may not outlive self's
-    // scope and is invalidated if self is reassigned. Use .to_string() to
-    // materialize an owned copy.
-    pub func slice = (self, int start: start >= 0 && start <= self.length, int end: end >= start && end <= self.length, out view string) {
+	// A non-owning slice [start, end) into self's buffer. Returns a `view
+	// string` (ptr, len) that borrows from self: it may not outlive self's
+	// scope and is invalidated if self is reassigned. Use .to_string() to
+	// materialize an owned copy.
+	pub func slice = (
+		self,
+		int start: start >= 0 && start <= self.length,
+		int end: end >= start && end <= self.length,
+		out view string
+	) {
         ```
         #arch: c
         nomen_view _r;
@@ -45,7 +49,7 @@ pub struct string: Stringable {
         add x0, x19, x1     // ptr = self + start
         sub x1, x2, x1      // len = end - start
         ```
-    }
+	}
 
 	pub func set = (ref self, int index: index >= 0 && index < self.length, char value) {
 		```
@@ -57,9 +61,9 @@ pub struct string: Stringable {
         // x19 = self (pointer), x1 = index, w2 = value
         strb w2, [x19, x1]
         ```
-    }
+	}
 
-    pub func #op_add = (self, string other, out string) {
+	pub func #op_add = (self, string other, out string) {
         ```
         #arch: c
         int left_len = strlen(self);
@@ -89,9 +93,9 @@ pub struct string: Stringable {
         mov x0, x21
         ldp x20, x21, [sp], #16
         ```
-    }
+	}
 
-    pub func #op_mul = (self, int count, out string) {
+	pub func #op_mul = (self, int count, out string) {
         ```
         #arch: c
         size_t str_len = strlen(self);
@@ -132,5 +136,5 @@ pub struct string: Stringable {
         ldp x22, xzr, [sp], #16
         ldp x20, x21, [sp], #16
         ```
-    }
+	}
 }

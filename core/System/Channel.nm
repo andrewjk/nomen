@@ -11,7 +11,7 @@
 /**
  * A thread-safe, blocking FIFO queue for passing values between tasks
  **/
-pub class Channel : Sendable {
+pub class Channel: Sendable {
 	pub var uint64 mu = 0
 	pub var uint64 not_empty_cv = 0
 	pub var uint64 head = 0

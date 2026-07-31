@@ -1,9 +1,8 @@
-
 /**
  * The standard console — writing text to, and reading input from, the terminal
  **/
 pub struct Console {
-    pub func write = (string line) {
+	pub func write = (string line) {
         ```
         #arch: c
         printf("%s", line);
@@ -21,9 +20,9 @@ pub struct Console {
         .p2align 2
         .Lend_Console_write:
         ```
-    }
+	}
 
-    pub func write_line = (string line) {
+	pub func write_line = (string line) {
         ```
         #arch: c
         printf("%s\n", line);
@@ -41,9 +40,9 @@ pub struct Console {
         .p2align 2
         .Lend_Console_write_line:
         ```
-    }
+	}
 
-    pub func read_line = (out string) {
+	pub func read_line = (out string) {
         ```
         #arch: c
         int cap = 16;
@@ -108,10 +107,10 @@ pub struct Console {
         add sp, sp, #32
         b .return_Console_read_line
         ```
-        return ""
-    }
+		return ""
+	}
 
-    pub func read_char = (out char) {
+	pub func read_char = (out char) {
         ```
         #arch: c
         return (char)getchar();
@@ -120,9 +119,9 @@ pub struct Console {
         #arch: aarch64
         bl _getchar
         ```
-    }
+	}
 
-    pub func platform = (out string) {
+	pub func platform = (out string) {
         ```
         #arch: c
         #platform: macos
@@ -207,6 +206,6 @@ pub struct Console {
         .Lconsole_plat_web: .asciz "web"
         .p2align 2
         ```
-        return ""
-    }
+		return ""
+	}
 }

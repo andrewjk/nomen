@@ -10,10 +10,10 @@ import ClassBuffer
  **/
 pub struct LinkedList<T>: Enumerable {
 	var Buffer<T> values = Buffer<T>()
-	var Buffer<int> nexts = Buffer<int>()
-	var Buffer<int> prevs = Buffer<int>()
+	var nexts = Buffer<int>()
+	var prevs = Buffer<int>()
 	var int head = -1
-	var int count = 0
+	var count = 0
 
 	pub func add = (ref self, mov T value) {
 		var int idx = self.count

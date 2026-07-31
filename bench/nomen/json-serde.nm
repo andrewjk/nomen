@@ -10,30 +10,30 @@ import System
 // as a verifiable checksum instead.
 
 pub func main = (Init init) {
-	var string filename = "bench/sample.json"
+	var filename = "bench/sample.json"
 	if init.argc > 1 {
 		filename = init.args.at(1)
 	}
-	var int n = 10
+	var n = 10
 	if init.argc > 2 {
 		n = parse_int(init.args.at(2))
 	}
 
-	var File f = File()
+	var f = File()
 	f.open(filename, "r")
 	var string text = f.readAll()
 	f.close()
 
 	// Parse once and serialize, like the Go version's first pass.
-	var JsonTree tree = JsonTree()
+	var tree = JsonTree()
 	var int root = Json.parse(text, ref tree)
 	Console.write(Json.stringify(ref tree, root).length.to_string())
 	Console.write("\n")
 
 	// Re-parse and re-serialize n times, accumulating the serialized length.
 	// The tree pool is reset per iteration (no per-node malloc/free).
-	var int total = 0
-	var int i = 0
+	var total = 0
+	var i = 0
 	while i < n {
 		var int r = Json.parse(text, ref tree)
 		total = total + Json.stringify(ref tree, r).length

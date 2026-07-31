@@ -25,7 +25,7 @@ func nt = (int code, out string) {
 
 // write the nucleotides of a packed key, left to right
 func write_nucleotides = (int key, int k) {
-	var int j = 0
+	var j = 0
 	while j < k {
 		var int code = (key >> (2 * (k - 1 - j))) & 3
 		Console.write(nt(code))
@@ -50,8 +50,8 @@ func write_number = (int val) {
 
 // pack a nucleotide string into a key
 func pack = (string s, out int) {
-	var int key = 0
-	var int i = 0
+	var key = 0
+	var i = 0
 	var int len = s.length
 	while i < len {
 		key = (key << 2) | (((s.at(i) as int) >> 1) & 3)
@@ -68,17 +68,17 @@ func count_seq = (ref Buffer<int> data, int n, int target, int k, out int) {
 	// `i + k - 1` (variable offset) to `data.cap`.
 	if k <= data.cap && n <= data.cap {
 		var int mask = (1 << (2 * k)) - 1
-		var int key = 0
-		var int j = 0
+		var key = 0
+		var j = 0
 		while j < k {
 			key = (key << 2) | data.load_int(j)
 			j = j + 1
 		}
-		var int total = 0
+		var total = 0
 		if key == target {
 			total = total + 1
 		}
-		var int i = 1
+		var i = 1
 		var int end = n - k
 		while i <= end {
 			var int next = i + k - 1
@@ -97,7 +97,7 @@ func count_seq = (ref Buffer<int> data, int n, int target, int k, out int) {
 
 func write_freq = (ref Buffer<int> data, int n, int k) {
 	var int limit = 1 << (2 * k)
-	var Buffer<int> freq = Buffer<int>()
+	var freq = Buffer<int>()
 	freq.alloc_int(limit)
 
 	// Guard the data accesses once: `k <= data.cap` covers `j < k`, and
@@ -106,8 +106,8 @@ func write_freq = (ref Buffer<int> data, int n, int k) {
 	if k <= data.cap && n <= data.cap {
 		if n >= k {
 			var int mask = limit - 1
-			var int key = 0
-			var int j = 0
+			var key = 0
+			var j = 0
 			while j < k {
 				key = (key << 2) | data.load_int(j)
 				j = j + 1
@@ -115,7 +115,7 @@ func write_freq = (ref Buffer<int> data, int n, int k) {
 			if key >= 0 && key < freq.cap {
 				freq.store_int(key, freq.load_int(key) + 1)
 			}
-			var int i = 1
+			var i = 1
 			var int end = n - k
 			while i <= end {
 				var int next = i + k - 1
@@ -130,17 +130,17 @@ func write_freq = (ref Buffer<int> data, int n, int k) {
 		}
 	}
 
-	var Buffer<int> keys = Buffer<int>()
-	var Buffer<int> counts = Buffer<int>()
+	var keys = Buffer<int>()
+	var counts = Buffer<int>()
 	keys.alloc_int(limit)
 	counts.alloc_int(limit)
-	var int found = 0
+	var found = 0
 	// Hoist the cap check once: `freq.cap`, `keys.cap`, `counts.cap` were
 	// all just set to `limit`, but the verifier can't see that fact
 	// symbolically, so establish it explicitly. Then `kk < limit <= cap`
 	// propagates transitively to the inner accesses.
 	if limit <= freq.cap && limit <= keys.cap && limit <= counts.cap {
-		var int kk = 0
+		var kk = 0
 		while kk < limit {
 			var int c = freq.load_int(kk)
 			if c > 0 {
@@ -154,7 +154,7 @@ func write_freq = (ref Buffer<int> data, int n, int k) {
 		}
 	}
 
-	var int a = 0
+	var a = 0
 	while a < found {
 		var int best = a
 		var int b = a + 1
@@ -183,7 +183,7 @@ func write_freq = (ref Buffer<int> data, int n, int k) {
 	if sum < 1 {
 		sum = 1
 	}
-	var int idx = 0
+	var idx = 0
 	while idx < found {
 		if idx >= 0 && idx < keys.cap && idx < counts.cap {
 			var int code = keys.load_int(idx)
@@ -209,23 +209,23 @@ func write_count = (ref Buffer<int> data, int n, string query) {
 }
 
 pub func main = (Init init) {
-	var string filename = "25000_in"
+	var filename = "25000_in"
 	if init.argc > 1 {
 		filename = init.args.at(1)
 	}
 
-	var File f = File()
+	var f = File()
 	f.open(filename, "r")
 	var string text = f.readAll()
 	f.close()
 
-	var Buffer<int> data = Buffer<int>()
+	var data = Buffer<int>()
 	var int text_len = text.length
 	data.alloc_int(text_len)
-	var int n = 0
+	var n = 0
 
-	var int i = 0
-	var int started = 0
+	var i = 0
+	var started = 0
 	while i < text_len {
 		var int c = text.at(i) as int
 		if started == 1 {
@@ -239,7 +239,7 @@ pub func main = (Init init) {
 			}
 			i = i + 1
 		} else {
-			var int matched = 0
+			var matched = 0
 			if c == 62 {
 				if i + 5 < text_len {
 					if (text.at(i + 1) as int) == 84 {

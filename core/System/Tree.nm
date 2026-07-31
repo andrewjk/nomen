@@ -9,64 +9,64 @@ import ClassBuffer
  * A tree of values connected by parent/child links
  **/
 pub struct Tree<T>: Enumerable {
-    var Buffer<T> values = Buffer<T>()
-    var Buffer<int> lefts = Buffer<int>()
-    var Buffer<int> rights = Buffer<int>()
-    var Buffer<int> parents = Buffer<int>()
-    var int count = 0
+	var Buffer<T> values = Buffer<T>()
+	var lefts = Buffer<int>()
+	var rights = Buffer<int>()
+	var parents = Buffer<int>()
+	var count = 0
 
-    pub func add = (ref self, mov T value) {
-        var int idx = self.count
-        self.values.grow_int(idx + 1)
-        var int v = value
-        self.values.store_int(idx, v)
-        self.lefts.grow_int(idx + 1)
-        self.lefts.store_int(idx, -1)
-        self.rights.grow_int(idx + 1)
-        self.rights.store_int(idx, -1)
-        self.parents.grow_int(idx + 1)
-        self.parents.store_int(idx, -1)
-        self.count = self.count + 1
-    }
+	pub func add = (ref self, mov T value) {
+		var int idx = self.count
+		self.values.grow_int(idx + 1)
+		var int v = value
+		self.values.store_int(idx, v)
+		self.lefts.grow_int(idx + 1)
+		self.lefts.store_int(idx, -1)
+		self.rights.grow_int(idx + 1)
+		self.rights.store_int(idx, -1)
+		self.parents.grow_int(idx + 1)
+		self.parents.store_int(idx, -1)
+		self.count = self.count + 1
+	}
 
-    pub func set_left = (ref self, int idx, int left) {
-        self.lefts.store_int(idx, left)
-        self.parents.store_int(left, idx)
-    }
+	pub func set_left = (ref self, int idx, int left) {
+		self.lefts.store_int(idx, left)
+		self.parents.store_int(left, idx)
+	}
 
-    pub func set_right = (ref self, int idx, int right) {
-        self.rights.store_int(idx, right)
-        self.parents.store_int(right, idx)
-    }
+	pub func set_right = (ref self, int idx, int right) {
+		self.rights.store_int(idx, right)
+		self.parents.store_int(right, idx)
+	}
 
-    pub func left = (self, int idx, out int: out >= -1 && out < self.count) {
-        return self.lefts.load_int(idx)
-    }
+	pub func left = (self, int idx, out int: out >= -1 && out < self.count) {
+		return self.lefts.load_int(idx)
+	}
 
-    pub func right = (self, int idx, out int: out >= -1 && out < self.count) {
-        return self.rights.load_int(idx)
-    }
+	pub func right = (self, int idx, out int: out >= -1 && out < self.count) {
+		return self.rights.load_int(idx)
+	}
 
-    pub func parent_of = (self, int idx, out int: out >= -1 && out < self.count) {
-        return self.parents.load_int(idx)
-    }
+	pub func parent_of = (self, int idx, out int: out >= -1 && out < self.count) {
+		return self.parents.load_int(idx)
+	}
 
-    pub func first = (self: self.count > 0, out T) {
-        return self.values.load_int(0)
-    }
+	pub func first = (self: self.count > 0, out T) {
+		return self.values.load_int(0)
+	}
 
-    pub func at = (self, int idx: idx >= 0 && idx < self.count, out T) {
-        return self.values.load_int(idx)
-    }
+	pub func at = (self, int idx: idx >= 0 && idx < self.count, out T) {
+		return self.values.load_int(idx)
+	}
 
-    pub func count_nodes = (self, int idx, out int) {
-        if idx == -1 {
-            return 0
-        }
-        return 1 + self.count_nodes(self.left(idx)) + self.count_nodes(self.right(idx))
-    }
+	pub func count_nodes = (self, int idx, out int) {
+		if idx == -1 {
+			return 0
+		}
+		return 1 + self.count_nodes(self.left(idx)) + self.count_nodes(self.right(idx))
+	}
 
-    pub func length = (self, out int) {
-        return self.count
-    }
+	pub func length = (self, out int) {
+		return self.count
+	}
 }

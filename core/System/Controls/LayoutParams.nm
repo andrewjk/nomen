@@ -11,10 +11,10 @@
  * How a child dimension is sized: auto (to content), fixed, percent, or fill
  **/
 pub enum LayoutLength {
-	case auto                     // size to content (intrinsic measurement)
-	case fixed(int pixels)        // exact size
-	case percent(int numerator)   // numerator/100 of available space (e.g. 50 = 50%)
-	case fill                     // fill all available space (same as grow=1)
+	case auto // size to content (intrinsic measurement)
+	case fixed(int pixels) // exact size
+	case percent(int numerator) // numerator/100 of available space (e.g. 50 = 50%)
+	case fill // fill all available space (same as grow=1)
 }
 
 /**
@@ -35,10 +35,16 @@ pub enum Alignment {
 pub struct LayoutParams {
 	pub var LayoutLength width = .auto
 	pub var LayoutLength height = .auto
-	pub var int grow = 0           // flex weight for distributing surplus space
-	pub var int shrink = 0         // flex weight for distributing deficit
-	pub var Alignment align_self = .stretch   // cross-axis alignment override
+	pub var grow = 0 // flex weight for distributing surplus space
+	pub var shrink = 0 // flex weight for distributing deficit
+	pub var Alignment align_self = .stretch // cross-axis alignment override
 }
 
 // Sensible defaults so most children just work
-const LayoutParams DEFAULT_PARAMS = [ width = .auto, height = .auto, grow = 0, shrink = 1, align_self = .stretch ]
+const LayoutParams DEFAULT_PARAMS = [
+	width = .auto,
+	height = .auto,
+	grow = 0,
+	shrink = 1,
+	align_self = .stretch,
+]

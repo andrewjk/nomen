@@ -9,7 +9,7 @@
  **/
 pub struct ClassBuffer<T> {
 	var uint64 data = 0
-	var int cap = 0
+	var cap = 0
 
 	func alloc_int = (ref self, int size, out int: out >= size) {
 		```

@@ -20,9 +20,9 @@ pub struct Json {
 	// Serialize a string to a JSON string literal, escaping the special
 	// characters ", \, newline, tab and carriage return.
 	pub func serialize = (string value, out string) {
-		var StringBuilder sb = StringBuilder()
+		var sb = StringBuilder()
 		sb.append_char('"')
-		var int i = 0
+		var i = 0
 		var int len = value.length
 		while i < len {
 			var char c = value.at(i)
@@ -55,9 +55,9 @@ pub struct Json {
 
 	// Deserialize a JSON string literal to the raw, unescaped value.
 	pub func deserialize = (string json, out string) {
-		var StringBuilder sb = StringBuilder()
+		var sb = StringBuilder()
 		var int len = json.length
-		var int i = 0
+		var i = 0
 		// skip up to the opening quote
 		while i < len {
 			if (json.at(i) as int) == 34 {
@@ -111,7 +111,7 @@ pub struct Json {
 	// which is reset and filled. Returns the index of the root node.
 	pub func parse = (string s, ref JsonTree tree, out int) {
 		tree.reset()
-		var Buffer<int> pos = Buffer<int>()
+		var pos = Buffer<int>()
 		pos.alloc_int(1)
 		pos.store_int(0, 0)
 		var int len = s.length
@@ -120,7 +120,7 @@ pub struct Json {
 
 	// Serialize a node in the tree back to a JSON string.
 	pub func stringify = (ref JsonTree tree, int root, out string) {
-		var StringBuilder sb = StringBuilder()
+		var sb = StringBuilder()
 		json_ser_value(ref tree, root, ref sb)
 		return sb.to_string()
 	}
@@ -141,7 +141,7 @@ func json_skip_ws = (string s, ref Buffer<int> pos, int len) {
 func json_parse_string = (string s, ref Buffer<int> pos, int len, ref JsonTree tree, out int) {
 	var int i = pos.load_int(0)
 	i = i + 1
-	var StringBuilder sb = StringBuilder()
+	var sb = StringBuilder()
 	while i < len {
 		var char c = s.at(i)
 		var int code = c as int
@@ -199,7 +199,7 @@ func json_parse_number = (string s, ref Buffer<int> pos, int len, ref JsonTree t
 		}
 	}
 	pos.store_int(0, i)
-	var StringBuilder sb = StringBuilder()
+	var sb = StringBuilder()
 	var int j = start
 	while j < i {
 		sb.append_char(s.at(j))
@@ -215,7 +215,7 @@ func json_parse_literal = (string s, ref Buffer<int> pos, int len, ref JsonTree 
 	var int i = pos.load_int(0)
 	var int code = s.at(i) as int
 	var int n = tree.alloc_node()
-	var int adv = 4
+	var adv = 4
 	if code == 116 {
 		tree.set_kind(n, 1)
 		adv = 4

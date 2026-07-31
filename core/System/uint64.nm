@@ -1,9 +1,8 @@
-
 /**
  * A 64-bit unsigned integer
  **/
 pub struct uint64: Stringable {
-    pub func to_string = (self, out string) {
+	pub func to_string = (self, out string) {
         ```
         #arch: c
         int length = snprintf(NULL, 0, "%llu", self);
@@ -39,5 +38,5 @@ pub struct uint64: Stringable {
         .p2align 2
         .Lend_uint64_to_string:
         ```
-    }
+	}
 }
