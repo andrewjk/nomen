@@ -10,6 +10,7 @@ import StructNode from "../nodes/StructNode.ts";
 import TraitNode from "../nodes/TraitNode.ts";
 import Type from "../nodes/Type.ts";
 import check_node from "./check_node.ts";
+import { resolve_struct_field_types } from "./check_struct_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 
 export default function check_block_node(node: BlockNode, status: CheckStatus) {
@@ -25,6 +26,10 @@ export default function check_block_node(node: BlockNode, status: CheckStatus) {
 	// resolves.
 	if (node.node_type === "root") {
 		gather_top_level_consts(node, status);
+		// Resolve inferred struct field types upfront so they're visible to
+		// functions checked before the struct that declares them (notably user
+		// code that runs before the appended System library).
+		resolve_struct_field_types(status);
 	}
 
 	status.scope_depth++;

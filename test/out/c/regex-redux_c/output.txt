@@ -11,4 +11,3 @@ agggtaa[cgt]|[acg]ttaccct 2
 25447
 25000
 11705
-LEAK: 9 allocation(s)

@@ -2,11 +2,14 @@ import add_error from "../add_error.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import StructNode from "../nodes/StructNode.ts";
+import Type from "../nodes/Type.ts";
+import ValueNode from "../nodes/ValueNode.ts";
 import check_declaration_node from "./check_declaration_node.ts";
 import { monomorphize, synthesize_generic_trait_defaults } from "./check_function_call_node.ts";
 import check_function_node from "./check_function_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import { is_class_type } from "./utils/ownership.ts";
+import type_from_value from "./utils/type_from_value.ts";
 
 function params_differ(a: FunctionNode, b: FunctionNode): boolean {
 	const a_params = a.params.filter((p) => !p.is_self_param);
@@ -129,28 +132,7 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 	// monomorphize(); non-generic structs need it here so that downstream
 	// build phases (especially the C companion typedef) see the concrete
 	// monomorphized name rather than the unresolved generic.
-	if (!struct.is_generic) {
-		for (const field of struct.fields) {
-			if (field.type.name !== "Buffer" || !field.type.type_args?.length) continue;
-			const elem = field.type.type_args[0];
-			if (!elem?.name) continue;
-			const elem_is_class = !!status.structs.find((s) => s.name === elem.name && s.is_class);
-			const elem_is_trait = !!status.traits.find((t) => t.name === elem.name);
-			const generic = status.structs.find(
-				(s) => s.name === (elem_is_class || elem_is_trait ? "ClassBuffer" : "Buffer"),
-			);
-			if (!generic) continue;
-			const buf_mono = monomorphize(generic, [elem], status);
-			if (!buf_mono) continue;
-			field.type.name = buf_mono.name;
-			field.type.type_args = undefined;
-			if (field.value?.node_type === "func_call") {
-				const dv = field.value as FunctionCallNode;
-				dv.name = buf_mono.name;
-				dv.type_args = undefined;
-			}
-		}
-	}
+	rewrite_generic_buffer_fields(struct, status);
 
 	status.types.push(struct.name);
 	status.structs.push(struct);
@@ -172,4 +154,95 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 	status.type_params.length = type_params_length_before;
 	status.types.length = types_length_before;
 	status.types.push(struct.name);
+}
+
+/**
+ * Rewrite `Buffer<Elem>` field types on a non-generic struct to their
+ * monomorphized name (Buffer_Elem / ClassBuffer_Elem), including the field's
+ * default constructor call. Generic structs get this rewrite inside
+ * monomorphize() instead. Shared between check_struct_node (statement-order)
+ * and the upfront resolve_struct_field_types pass so the rewrite runs exactly
+ * once regardless of which fires first.
+ */
+function rewrite_generic_buffer_fields(struct: StructNode, status: CheckStatus) {
+	if (struct.is_generic) return;
+	for (const field of struct.fields) {
+		if (field.type.name !== "Buffer" || !field.type.type_args?.length) continue;
+		const elem = field.type.type_args[0];
+		if (!elem?.name) continue;
+		const elem_is_class = !!status.structs.find((s) => s.name === elem.name && s.is_class);
+		const elem_is_trait = !!status.traits.find((t) => t.name === elem.name);
+		const generic = status.structs.find(
+			(s) => s.name === (elem_is_class || elem_is_trait ? "ClassBuffer" : "Buffer"),
+		);
+		if (!generic) continue;
+		const buf_mono = monomorphize(generic, [elem], status);
+		if (!buf_mono) continue;
+		field.type.name = buf_mono.name;
+		field.type.type_args = undefined;
+		if (field.value?.node_type === "func_call") {
+			const dv = field.value as FunctionCallNode;
+			dv.name = buf_mono.name;
+			dv.type_args = undefined;
+		}
+	}
+}
+
+/**
+ * Infer the type of a struct-field initializer whose annotation was elided
+ * (e.g. `var digits = Buffer<int>()`). Constructor calls resolve to the named
+ * struct (plus any type args); literals resolve via type_from_value. Returns
+ * null for initializers that can't be typed structurally (free-function calls,
+ * complex expressions) — those fall back to the lazy inference inside
+ * check_struct_node.
+ */
+function infer_field_type_from_value(
+	value: import("../nodes/BaseNode.ts").default,
+	status: CheckStatus,
+): Type | null {
+	if (value.node_type === "func_call") {
+		const call = value as FunctionCallNode;
+		// Only infer when the call names a registered struct (a constructor);
+		// a free-function initializer can't be typed without checking it.
+		if (status.structs.find((s) => s.name === call.name)) {
+			const t = new Type(call.name);
+			if (call.type_args?.length) t.type_args = call.type_args;
+			return t;
+		}
+		return null;
+	}
+	if (value.node_type === "value") {
+		return type_from_value((value as ValueNode).value, status);
+	}
+	return null;
+}
+
+/**
+ * Eagerly resolve inferred struct field types (e.g. `var buf = Buffer<int>()`)
+ * before any function bodies are checked.
+ *
+ * Field type inference normally happens lazily inside check_struct_node, which
+ * runs in statement order. The System library source is appended after user
+ * code, so user functions are checked BEFORE library structs — a field whose
+ * type is inferred from its initializer (no explicit annotation) would still
+ * have an empty type when user code accesses it, surfacing as "Unknown target".
+ * Resolving inferred field types upfront (right after gather_structs registers
+ * every struct) makes them visible regardless of declaration order.
+ *
+ * Only non-generic structs are handled here, mirroring check_struct_node's own
+ * field-type rewrite. The inference is structural to avoid re-running the full
+ * declaration check and its side effects; check_struct_node later skips
+ * already-resolved fields, so each field is resolved exactly once.
+ */
+export function resolve_struct_field_types(status: CheckStatus) {
+	for (const struct of status.structs) {
+		if (struct.is_generic) continue;
+		for (const field of struct.fields) {
+			if (field.type.name) continue;
+			if (!field.value) continue;
+			const t = infer_field_type_from_value(field.value, status);
+			if (t?.name) field.type = t;
+		}
+		rewrite_generic_buffer_fields(struct, status);
+	}
 }
