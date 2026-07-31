@@ -59,6 +59,25 @@ pub func main = () {
 }
 ```
 
+## Command-Line Interface
+
+The `nomen` CLI has five commands: `run`, `build`, `check`, `format`, and `docs`. Top-level options:
+
+| Option              | Alias | Description                                                                |
+| ------------------- | ----- | -------------------------------------------------------------------------- |
+| `--in <path>`       | `-i`  | Input `.nm` file or folder (auto-discovered if omitted).                   |
+| `--out <path>`      | `-o`  | Declared but currently unused; output goes to `<root>/build/`.             |
+| `--config <path>`   | `-c`  | Path to a JSON build config file.                                          |
+| `--watch`           | `-w`  | Re-run the pipeline on file changes.                                       |
+| `--arch <a>`        | `-a`  | Backend: `aarch64` (default) or `c`.                                       |
+| `--platform <p>`    | `-p`  | Target: `macos`, `ios`, `linux`, `android`, `windows`, `web` (host-derived default). |
+| `--lib <path>`      | `-l`  | Path to the `System` library directory.                                    |
+| `--audit`           |       | Enable memory auditing of the generated program.                           |
+| `--audit-runtime`   |       | Path to `audit_runtime.c` (used with `--audit`).                           |
+| `--check`           |       | `format` dry-run: report changes without writing.                          |
+
+See [CLI.md](CLI.md) for the full reference (commands, input resolution, build output, config files, and examples).
+
 ## Language Overview
 
 See [SPEC.md](SPEC.md) for the full language specification.
