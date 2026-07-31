@@ -16,6 +16,11 @@ import type Config from "./types/Config.ts";
 
 const SUPPORTED_EXTENSION = ".nm";
 
+// The folder whose `build/` subdirectory receives compiler output. Set during
+// input resolution: the --in folder, the .nm file's folder, or — for
+// package.jsonc discovery — the package folder (cwd), not the entry's folder.
+let build_root: string | undefined;
+
 console.log("\n~ NOMEN ~\n");
 
 const options = yargs(hideBin(process.argv))
@@ -65,17 +70,19 @@ const options = yargs(hideBin(process.argv))
 		type: "string",
 	})
 	.help(true)
-	.check((argv) => {
-		if (!argv._.length && !argv.in) {
-			throw new Error("Missing required argument: in");
-		}
-		return true;
-	})
 	.parseSync();
 
 try {
+	// An explicit --in wins; otherwise discover what to compile from the
+	// working folder — a package.jsonc `entry`, or a lone .nm file.
+	options.in = options.in ?? resolve_input();
 	if (!options.in) {
 		process.exit(0);
+	}
+	// For an explicit --in, build next to whatever was passed (the folder
+	// itself, or the file's folder). Discovery cases set build_root themselves.
+	if (!build_root) {
+		build_root = fs.lstatSync(options.in).isDirectory() ? options.in : path.dirname(options.in);
 	}
 
 	if (fs.existsSync(options.in)) {
@@ -121,6 +128,50 @@ try {
 	}
 } catch (err) {
 	console.log("UH", err);
+}
+
+function resolve_input(): string | undefined {
+	const cwd = process.cwd();
+
+	// a) A package.jsonc with an `entry` field (the project's main file).
+	const config_path = path.join(cwd, "package.jsonc");
+	if (fs.existsSync(config_path)) {
+		try {
+			const raw = fs.readFileSync(config_path, "utf8");
+			const json = raw.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
+			const parsed = JSON.parse(json);
+			if (parsed.entry) {
+				build_root = cwd;
+				return path.resolve(cwd, parsed.entry);
+			}
+		} catch {
+			// ignore malformed package.jsonc and fall through
+		}
+	}
+
+	// b) A single .nm file directly in the working folder.
+	let nm_files: string[] = [];
+	try {
+		nm_files = fs.readdirSync(cwd).filter((f) => f.endsWith(".nm"));
+	} catch {
+		// unreadable working folder
+	}
+	if (nm_files.length === 1) {
+		build_root = cwd;
+		return path.resolve(cwd, nm_files[0]);
+	}
+	if (nm_files.length > 1) {
+		console.log(
+			`Found ${nm_files.length} .nm files in ${cwd}. Specify which to run with --in:\n  ` +
+				nm_files.join("\n  "),
+		);
+		return undefined;
+	}
+
+	console.log(
+		"Nothing to compile. Pass --in <file/folder>, or run inside a folder with a package.jsonc or a .nm file.",
+	);
+	return undefined;
 }
 
 function resolve_lib(file_path: string): string | undefined {
@@ -237,9 +288,8 @@ function processFile(filename: string, config: Config) {
 		return;
 	}
 
-	const dir = path.dirname(filename);
 	const basename = path.basename(filename, ".nm");
-	const buildDir = path.join(dir, "build");
+	const buildDir = path.join(build_root ?? path.dirname(filename), "build");
 	if (!fs.existsSync(buildDir)) {
 		fs.mkdirSync(buildDir, { recursive: true });
 	}
