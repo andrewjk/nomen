@@ -1,4 +1,6 @@
 import Buffer
+import Control
+import Geometry
 import LayoutParams
 import Window
 
@@ -151,7 +153,10 @@ func apply_frame = (uint64 handle, int x, int y, int w, int h, int content_w, in
 // + chrome). Returns `[0, 0]` for handle 0 (no native view, so the pure-math
 // geometry tests exercise the wiring without native calls) and for views that
 // report no intrinsic size (AppKit returns `NSNotFound` for a generic `NSView`).
-func intrinsic_size = (uint64 handle, out [int, int]) {
+// Also the shared backing query for the native leaf controls' `Control`
+// conformance (`Button`/`CheckBox`/`TextBox`), so each leaf's `intrinsic_size`
+// doesn't need its own raw-block FFI.
+pub func native_intrinsic = (uint64 handle, out [int, int]) {
 	if handle == 0 { return [0, 0] }
 	```
 	#arch: c, aarch64_use_c
@@ -178,9 +183,16 @@ func intrinsic_size = (uint64 handle, out [int, int]) {
 }
 
 /**
- * A flexbox-style container that measures and arranges its child controls
+ * A flexbox-style container that measures and arranges its child controls.
+ *
+ * Conforms to `Control`: `measure(BoxConstraints)` measures the whole subtree,
+ * `set_frame` arranges it into a rectangle, and `intrinsic_size` reports the
+ * unbounded-content size. The handle-based `add` API and the SoA engine are
+ * unchanged — the trait methods are thin entry points over the existing math,
+ * so a `Container` can also be driven polymorphically as a `Control` (passed to
+ * a `Control`-taking function, stored in a `ClassBuffer<Control>`, etc.).
  **/
-pub struct Container {
+pub class Container : Control {
 	var kinds = Buffer<int>()
 	// Per-leaf requested size, stored as a (kind, value) pair per axis. The
 	// kind is one of LEN_* (auto/fixed/percent/fill); the value is the pixel
@@ -749,7 +761,7 @@ pub struct Container {
 
 	// Measure a node against box constraints. Returns the resolved width and
 	// stores the resolved height in rh[idx] (and the width in rw[idx]).
-	func measure = (self, int idx, int min_w, int max_w, int min_h, int max_h, out int) {
+	func measure_node = (self, int idx, int min_w, int max_w, int min_h, int max_h, out int) {
 		var int kind = self.kinds.load_int(idx)
 		// Incremental relayout: a clean node's constraints are unchanged, so
 		// reuse its cached size instead of re-measuring the subtree. The cached
@@ -781,7 +793,7 @@ pub struct Container {
 			var intr_w = 0
 			var intr_h = 0
 			if wk == LEN_INTRINSIC || hk == LEN_INTRINSIC {
-				var [iw, ih2] = intrinsic_size(ih)
+				var [iw, ih2] = native_intrinsic(ih)
 				intr_w = iw
 				intr_h = ih2
 			}
@@ -821,7 +833,7 @@ pub struct Container {
 			var int ci = self.first_child(idx)
 			while ci != -1 {
 				if is_visible(self.handles.load_int(ci) as uint64) {
-					var int cw = self.measure(ci, min_w, max_w, 0, INF)
+					var int cw = self.measure_node(ci, min_w, max_w, 0, INF)
 					var int ch = self.rh.load_int(ci)
 					total_h = total_h + ch
 					if cw > max_child_w { max_child_w = cw }
@@ -847,7 +859,7 @@ pub struct Container {
 			var int ci = self.first_child(idx)
 			while ci != -1 {
 				if is_visible(self.handles.load_int(ci) as uint64) {
-					var int cw = self.measure(ci, 0, INF, min_h, max_h)
+					var int cw = self.measure_node(ci, 0, INF, min_h, max_h)
 					var int ch = self.rh.load_int(ci)
 					total_w = total_w + cw
 					if ch > max_child_h { max_child_h = ch }
@@ -872,7 +884,7 @@ pub struct Container {
 			var int ci = self.first_child(idx)
 			while ci != -1 {
 				if is_visible(self.handles.load_int(ci) as uint64) {
-					self.measure(ci, min_w, max_w, min_h, max_h)
+					self.measure_node(ci, min_w, max_w, min_h, max_h)
 					var int cw = self.rw.load_int(ci)
 					var int ch = self.rh.load_int(ci)
 					if cw > best_w { best_w = cw }
@@ -908,7 +920,7 @@ pub struct Container {
 			var ch = 0
 			var int ci = self.first_child(idx)
 			if ci != -1 {
-				cw = self.measure(ci, inner_min_w, inner_max_w, inner_min_h, inner_max_h)
+				cw = self.measure_node(ci, inner_min_w, inner_max_w, inner_min_h, inner_max_h)
 				ch = self.rh.load_int(ci)
 			}
 			var int total_w = cw + pad * 2
@@ -943,7 +955,7 @@ pub struct Container {
 					col_cursor = 0
 				}
 				var int cell_w = span * col_w
-				self.measure(ci, cell_w, cell_w, 0, INF)
+				self.measure_node(ci, cell_w, cell_w, 0, INF)
 				var int ch = self.rh.load_int(ci)
 				if ch > row_h { row_h = ch }
 				col_cursor = col_cursor + span
@@ -962,7 +974,7 @@ pub struct Container {
 		return cols * col_w
 	}
 
-	func arrange = (self, int idx, int x, int y, int w, int h) {
+	func arrange_node = (self, int idx, int x, int y, int w, int h) {
 		self.rx.store_int(idx, x)
 		self.ry.store_int(idx, y)
 		self.rw.store_int(idx, w)
@@ -1045,7 +1057,7 @@ pub struct Container {
 					if align == ALIGN_END {
 						cx = x + w - cw
 					}
-					self.arrange(ci3, cx, running_y, cw, ch)
+					self.arrange_node(ci3, cx, running_y, cw, ch)
 					running_y = running_y + ch + gap
 				}
 				ci3 = self.next_sibling(ci3, idx)
@@ -1124,7 +1136,7 @@ pub struct Container {
 					if align == ALIGN_END {
 						cy = y + h - ch
 					}
-					self.arrange(ci3, running_x, cy, cw, ch)
+					self.arrange_node(ci3, running_x, cy, cw, ch)
 					running_x = running_x + cw + gap
 				}
 				ci3 = self.next_sibling(ci3, idx)
@@ -1136,7 +1148,7 @@ pub struct Container {
 			var int ci = self.first_child(idx)
 			while ci != -1 {
 				if is_visible(self.handles.load_int(ci) as uint64) {
-					self.arrange(ci, x, y, w, h)
+					self.arrange_node(ci, x, y, w, h)
 				}
 				ci = self.next_sibling(ci, idx)
 			}
@@ -1149,7 +1161,7 @@ pub struct Container {
 			var int bpad = self.pads.load_int(idx)
 			var int ci = self.first_child(idx)
 			if ci != -1 {
-				self.arrange(ci, x + bpad, y + bpad, w - bpad * 2, h - bpad * 2)
+				self.arrange_node(ci, x + bpad, y + bpad, w - bpad * 2, h - bpad * 2)
 			}
 			return
 		}
@@ -1174,7 +1186,7 @@ pub struct Container {
 				var int child_x = x + col_cursor * col_w
 				var int child_w = span * col_w
 				var int child_h = self.rh.load_int(ci)
-				self.arrange(ci, child_x, running_y, child_w, child_h)
+				self.arrange_node(ci, child_x, running_y, child_w, child_h)
 				if child_h > row_h { row_h = child_h }
 				col_cursor = col_cursor + span
 			}
@@ -1276,6 +1288,43 @@ pub struct Container {
 		}
 	}
 
+	// ── Control trait conformance ──
+	// The trait entry points delegate to the SoA engine: `measure` runs the
+	// recursive measure against the constraints and returns the resolved content
+	// size; `set_frame` arranges the whole subtree into the given rectangle
+	// (top-left origin); `intrinsic_size` measures against unbounded space. The
+	// `compute`/`layout` helpers below layer window integration, the root
+	// main-axis fill, dirty tracking, and native `apply` on top of this same
+	// math. A `Container` passed as a `Control` dispatches through these.
+
+	pub func measure = (self, BoxConstraints constraints, out Size) {
+		var int w = self.measure_node(
+			self.root,
+			constraints.min_width,
+			constraints.max_width,
+			constraints.min_height,
+			constraints.max_height,
+		)
+		var int h = self.rh.load_int(self.root)
+		var Size s = Size()
+		s.width = w
+		s.height = h
+		return s
+	}
+
+	pub func set_frame = (ref self, int x, int y, int width, int height) {
+		self.arrange_node(self.root, x, y, width, height)
+	}
+
+	pub func intrinsic_size = (self, out Size) {
+		var int w = self.measure_node(self.root, 0, INF, 0, INF)
+		var int h = self.rh.load_int(self.root)
+		var Size s = Size()
+		s.width = w
+		s.height = h
+		return s
+	}
+
 	// Pure measure + arrange against a size (no native calls). For testing.
 	// The root fills its main axis (VStack → height, HStack → width) so that
 	// children with `grow > 0` have surplus to absorb; the cross axis stays at
@@ -1288,7 +1337,7 @@ pub struct Container {
 			self.last_w = avail_w
 			self.last_h = avail_h
 		}
-		var int root_w = self.measure(self.root, 0, avail_w, 0, avail_h)
+		var int root_w = self.measure_node(self.root, 0, avail_w, 0, avail_h)
 		var int root_h = self.rh.load_int(self.root)
 		var int frame_w = root_w
 		var int frame_h = root_h
@@ -1299,7 +1348,7 @@ pub struct Container {
 		if kind == KIND_HSTACK {
 			frame_w = avail_w
 		}
-		self.arrange(self.root, 0, 0, frame_w, frame_h)
+		self.arrange_node(self.root, 0, 0, frame_w, frame_h)
 		self.collect_dirty()
 	}
 
@@ -1317,7 +1366,7 @@ pub struct Container {
 			self.last_w = avail_w
 			self.last_h = avail_h
 		}
-		var int root_w = self.measure(self.root, 0, avail_w, 0, avail_h)
+		var int root_w = self.measure_node(self.root, 0, avail_w, 0, avail_h)
 		var int root_h = self.rh.load_int(self.root)
 		var int frame_w = root_w
 		var int frame_h = root_h
@@ -1328,7 +1377,7 @@ pub struct Container {
 		if kind == KIND_HSTACK {
 			frame_w = avail_w
 		}
-		self.arrange(self.root, self.padding, self.padding, frame_w, frame_h)
+		self.arrange_node(self.root, self.padding, self.padding, frame_w, frame_h)
 		self.collect_dirty()
 		self.apply(cw, ch)
 	}
@@ -1352,8 +1401,11 @@ pub struct Container {
 		struct Window;
 		// nomen_layout_thunk is a free function (defined in Nomen below) that
 		// forwards to Container.layout — exported for C linkage on both
-		// backends, unlike the layout method itself.
-		extern void nomen_layout_thunk(struct Container*, struct Window*);
+		// backends, unlike the layout method itself. It takes the Container by
+		// `ref` (mutable reference): as a `class`, `ref Container` lowers to
+		// `struct Container **` (reference to the instance pointer), so the
+		// callback passes the address of the stored instance pointer.
+		extern void nomen_layout_thunk(struct Container**, struct Window*);
 		static void *g_resize_grid = 0;
 		static void *g_resize_win = 0;
 		void nomen_set_resize_target(void *grid, void *win) {
@@ -1363,7 +1415,7 @@ pub struct Container {
 		void nomen_window_did_resize(id self, SEL cmd, id notification) {
 			(void)self; (void)cmd; (void)notification;
 			if (g_resize_grid && g_resize_win) {
-				nomen_layout_thunk((struct Container*)g_resize_grid, (struct Window*)g_resize_win);
+				nomen_layout_thunk((struct Container**)&g_resize_grid, (struct Window*)g_resize_win);
 			}
 		}
 		```

@@ -1,7 +1,11 @@
+import System/Controls/Container
+import System/Controls/Control
+import System/Controls/Geometry
+
 /**
  * A push-button control that triggers an action when clicked
  **/
-pub class Button {
+pub class Button : Control {
 	var uint64 handle = 0
 
 	pub func #init = (self, Window window, string title) {
@@ -46,7 +50,7 @@ pub class Button {
 		```
 	}
 
-	pub func set_frame = (self, int x, int y, int width, int height) {
+	pub func set_frame = (ref self, int x, int y, int width, int height) {
 		```
 		#arch: c, aarch64_use_c
 		#platform: macos
@@ -81,6 +85,38 @@ pub class Button {
 				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title),
 			0); // UIControlStateNormal = 0
 		```
+	}
+
+	// ── Control trait conformance ──
+	// A button sizes to its native intrinsic content size (title + chrome);
+	// `measure` clamps that to the box constraints. The native query goes
+	// through the shared `native_intrinsic` FFI (see Container.nm), which works
+	// on both backends — a per-control raw block couldn't return a `Size` from
+	// the aarch64 companion (struct-name mangling) nor mutate a Nomen local.
+
+	pub func intrinsic_size = (self, out Size) {
+		var [w, h] = native_intrinsic(self.handle)
+		var Size s = Size()
+		s.width = w
+		s.height = h
+		return s
+	}
+
+	pub func measure = (self, BoxConstraints constraints, out Size) {
+		var Size s = self.intrinsic_size()
+		if s.width > constraints.max_width {
+			s.width = constraints.max_width
+		}
+		if s.width < constraints.min_width {
+			s.width = constraints.min_width
+		}
+		if s.height > constraints.max_height {
+			s.height = constraints.max_height
+		}
+		if s.height < constraints.min_height {
+			s.height = constraints.min_height
+		}
+		return s
 	}
 
 	func #destroy = () {

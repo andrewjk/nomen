@@ -1,7 +1,11 @@
+import System/Controls/Container
+import System/Controls/Control
+import System/Controls/Geometry
+
 /**
  * A toggle control with a title and checked/hidden state
  **/
-pub class CheckBox {
+pub class CheckBox : Control {
 	var uint64 handle = 0
 
 	pub func #init = (self, Window window) {
@@ -39,7 +43,7 @@ pub class CheckBox {
 		```
 	}
 
-	pub func set_frame = (self, int x, int y, int width, int height) {
+	pub func set_frame = (ref self, int x, int y, int width, int height) {
 		```
 		#arch: c, aarch64_use_c
 		#platform: macos
@@ -107,6 +111,32 @@ pub class CheckBox {
 		((void(*)(id, SEL, BOOL))objc_msgSend)(
 			(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
 		```
+	}
+
+	// ── Control trait conformance ──
+	pub func intrinsic_size = (self, out Size) {
+		var [w, h] = native_intrinsic(self.handle)
+		var Size s = Size()
+		s.width = w
+		s.height = h
+		return s
+	}
+
+	pub func measure = (self, BoxConstraints constraints, out Size) {
+		var Size s = self.intrinsic_size()
+		if s.width > constraints.max_width {
+			s.width = constraints.max_width
+		}
+		if s.width < constraints.min_width {
+			s.width = constraints.min_width
+		}
+		if s.height > constraints.max_height {
+			s.height = constraints.max_height
+		}
+		if s.height < constraints.min_height {
+			s.height = constraints.min_height
+		}
+		return s
 	}
 
 	func #destroy = () {

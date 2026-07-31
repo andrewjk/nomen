@@ -1,7 +1,11 @@
+import System/Controls/Container
+import System/Controls/Control
+import System/Controls/Geometry
+
 /**
  * An editable single-line text input control
  **/
-pub class TextBox {
+pub class TextBox : Control {
 	var uint64 handle = 0
 
 	pub func #init = (self, Window window) {
@@ -51,7 +55,7 @@ pub class TextBox {
 		```
 	}
 
-	pub func set_frame = (self, int x, int y, int width, int height) {
+	pub func set_frame = (ref self, int x, int y, int width, int height) {
 		```
 		#arch: c, aarch64_use_c
 		#platform: macos
@@ -106,6 +110,32 @@ pub class TextBox {
 			str, sel_registerName("UTF8String"));
 		return strdup(cstr);
 		```
+	}
+
+	// ── Control trait conformance ──
+	pub func intrinsic_size = (self, out Size) {
+		var [w, h] = native_intrinsic(self.handle)
+		var Size s = Size()
+		s.width = w
+		s.height = h
+		return s
+	}
+
+	pub func measure = (self, BoxConstraints constraints, out Size) {
+		var Size s = self.intrinsic_size()
+		if s.width > constraints.max_width {
+			s.width = constraints.max_width
+		}
+		if s.width < constraints.min_width {
+			s.width = constraints.min_width
+		}
+		if s.height > constraints.max_height {
+			s.height = constraints.max_height
+		}
+		if s.height < constraints.min_height {
+			s.height = constraints.min_height
+		}
+		return s
 	}
 
 	func #destroy = () {

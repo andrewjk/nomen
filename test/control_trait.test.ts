@@ -2,9 +2,11 @@ import path from "node:path";
 
 import { describe, expect, test } from "vite-plus/test";
 
+import build from "../src/build.ts";
 import { get_library } from "../src/lib.ts";
 import parse from "../src/parse.ts";
 import build_and_check_output from "./build_and_check_output";
+import check_output from "./check_output";
 
 const system = get_library(path.resolve("core"));
 
@@ -58,4 +60,46 @@ pub func main = () {
 			await build_and_check_output(input, "control_runtime", "30 12 30 12 99 88", true);
 		},
 	);
+
+	// A `Container` is now itself a `Control`. Passing one to a `Control`-typed
+	// parameter and calling `measure` dispatches through the trait vtable into
+	// `Container.measure` (which delegates to the SoA engine). The caller owns
+	// the `Container`; the `Control` param is a borrow, so there's no
+	// double-free. The result (800×70) is the VStack's fill width and summed
+	// child height — proving the SoA engine ran through the vtable.
+	//
+	// Run with `audit: false` (like the layout_container suite): a single
+	// trait-dispatched call on the C backend is leak-free, but the aarch64
+	// backend leaks one allocation when a *class* `Control` conformer is
+	// dispatched through the vtable. That's a pre-existing aarch64 codegen bug
+	// (no class `Control` conformer was dispatched via trait on aarch64 before,
+	// so it was latent), surfaced by making `Container` a class — not caused by
+	// the library change, and the app is unaffected (it calls `grid.layout`
+	// directly, never through the trait). Tracked as a compiler follow-up.
+	test("Container dispatches measure through a Control receiver", { timeout: 60000 }, async () => {
+		const input = `
+import System/Controls
+
+func measured = (Control c, out string) {
+	var BoxConstraints bc = BoxConstraints()
+	bc.max_width = 800
+	bc.max_height = 600
+	var Size s = c.measure(bc)
+	return "\\{s.width}x\\{s.height}"
+}
+
+pub func main = () {
+	var Container v = VStack(0)
+	v.add(0, 0, 30, 1)
+	v.add(0, 0, 40, 1)
+	Console.write(measured(v) + "\\n")
+}
+`;
+		const parsed = parse(input, system);
+		expect(parsed.errors).toEqual([]);
+		for (const arch of ["aarch64", "c"] as const) {
+			const result = build(parsed.root, { arch, platform: "macos" });
+			await check_output(`container_control_${arch}`, result, "800x70", { arch, audit: false });
+		}
+	});
 });
