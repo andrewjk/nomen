@@ -1,6 +1,9 @@
 import Buffer
 import ClassBuffer
 
+/**
+ * An ordered key-value map with `set`/`get`/`has`/`remove`
+ **/
 pub struct Map<TK, TV> {
 	var int length = 0
 	var Buffer<TK> keys = Buffer<TK>()

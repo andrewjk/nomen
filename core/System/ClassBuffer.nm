@@ -4,6 +4,9 @@
 // forbid 0 (you can't overwrite a pointer with null and leak it — use move_int
 // to relinquish a slot). T must be a class. Buffer<T> is the value counterpart.
 
+/**
+ * A flat buffer of owned class pointers of type T — the backing store for collections of classes
+ **/
 pub struct ClassBuffer<T> {
 	var uint64 data = 0
 	var int cap = 0

@@ -5,6 +5,9 @@
 // Json parse/stringify paths to avoid the O(n^2) cost of repeated `string +`
 // concatenation, where each `+` mallocs and copies the whole accumulator.
 
+/**
+ * A growable byte buffer for incrementally building strings (O(1) amortized append)
+ **/
 pub struct StringBuilder {
 	var uint64 data = 0
 	var int len = 0

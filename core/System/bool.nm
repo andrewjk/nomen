@@ -1,5 +1,14 @@
 
+/**
+ * A boolean value (`true` or `false`)
+ **/
 pub struct bool: Stringable {
+    /** 
+     * Converts this boolean to a string value (`"true"` or `"false"`)
+     * 
+     * @param self: the boolean
+     * @out string: the boolean as a string value (`"true"` or `"false"`)
+     **/
     pub func to_string = (self, out string) {
         ```
         #arch: c

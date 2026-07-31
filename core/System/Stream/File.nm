@@ -1,3 +1,6 @@
+/**
+ * A file handle for reading and writing (`open`/`close`/`readAll`/`writeLine`/…)
+ **/
 pub struct File {
 	var uint64 handle = 0
 	pub var bool eof = false

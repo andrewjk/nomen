@@ -1,4 +1,7 @@
 
+/**
+ * A single character
+ **/
 pub struct char: Stringable {
     pub func to_string = (self, out string) {
         ```

@@ -13,6 +13,9 @@
 // xterm, Windows Terminal/PowerShell 7, etc.) render them. On the web platform
 // you would typically render to the DOM rather than use Ansi.
 
+/**
+ * Helpers for styling terminal output with ANSI escape codes
+ **/
 pub struct Ansi {
     // Styles
     pub func bold = (string s, out string) {

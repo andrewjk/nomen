@@ -1,4 +1,7 @@
 
+/**
+ * A 64-bit signed integer
+ **/
 pub struct int64: Stringable {
     pub func to_string = (self, out string) {
         ```

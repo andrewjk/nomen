@@ -5,6 +5,9 @@ import ClassBuffer
 // Buffers, so there is a single owner and cleanup is a flat free — no recursive
 // pointer chasing, no borrow lifetimes. Node identifiers are stable int indices
 // (read `count` before `add`); -1 means "no node" / "end".
+/**
+ * A doubly-linked list of values
+ **/
 pub struct LinkedList<T>: Enumerable {
 	var Buffer<T> values = Buffer<T>()
 	var Buffer<int> nexts = Buffer<int>()

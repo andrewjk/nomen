@@ -15,11 +15,17 @@ const int MAX_DIM = 2147483647
 
 // ── Geometry ──
 
+/**
+ * A 2D size (width and height)
+ **/
 pub struct Size {
 	pub var int width = 0
 	pub var int height = 0
 }
 
+/**
+ * A rectangle (x, y, width, height) — a control's assigned position and size
+ **/
 pub struct Frame {
 	pub var int x = 0
 	pub var int y = 0
@@ -27,6 +33,9 @@ pub struct Frame {
 	pub var int height = 0
 }
 
+/**
+ * Per-edge padding (top, right, bottom, left)
+ **/
 pub struct Insets {
 	pub var int top = 0
 	pub var int right = 0
@@ -36,6 +45,9 @@ pub struct Insets {
 
 // ── Constraints (flow DOWN) ──
 
+/**
+ * Min/max size bounds a parent passes to a child during the layout measure phase
+ **/
 pub struct BoxConstraints {
 	pub var int min_width = 0
 	pub var int min_height = 0

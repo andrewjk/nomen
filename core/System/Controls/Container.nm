@@ -177,6 +177,9 @@ func intrinsic_size = (uint64 handle, out [int, int]) {
 	```
 }
 
+/**
+ * A flexbox-style container that measures and arranges its child controls
+ **/
 pub struct Container {
 	var Buffer<int> kinds = Buffer<int>()
 	// Per-leaf requested size, stored as a (kind, value) pair per axis. The
@@ -1238,28 +1241,43 @@ pub struct Container {
 // Free-function wrapper around Container.layout so the C delegate callback
 // (nomen_window_did_resize) can trigger a live relayout: free functions are
 // exported for C linkage on both backends, methods are not.
+/**
+ * Entry point the layout engine calls to lay out a Container's tree
+ **/
 pub func nomen_layout_thunk = (ref Container grid, Window win) {
 	grid.layout(win)
 }
 
+/**
+ * Creates a vertical stack container with the given spacing
+ **/
 pub func VStack = (int spacing, out Container) {
 	var Container c = Container()
 	c.make_root(KIND_VSTACK, spacing, 0)
 	return c
 }
 
+/**
+ * Creates a horizontal stack container with the given spacing
+ **/
 pub func HStack = (int spacing, out Container) {
 	var Container c = Container()
 	c.make_root(KIND_HSTACK, spacing, 0)
 	return c
 }
 
+/**
+ * Creates a Z-stack container (children layered on top of one another)
+ **/
 pub func ZStack = (out Container) {
 	var Container c = Container()
 	c.make_root(KIND_ZSTACK, 0, 0)
 	return c
 }
 
+/**
+ * Creates a grid container with `cols` columns and the given spacing
+ **/
 pub func Grid = (int cols: cols > 0, int spacing, out Container) {
 	var Container c = Container()
 	c.make_root(KIND_GRID, spacing, cols)

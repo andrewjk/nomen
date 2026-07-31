@@ -2,6 +2,9 @@ import Buffer
 
 // All node data in flat Buffers. Buffer data pointers are shared even when
 // the struct is copied (value semantics copy the pointer, not the data).
+/**
+ * A flat, buffer-backed layout tree — nodes stored in parallel arrays for the layout engine
+ **/
 pub struct Layout {
 	var Buffer<int> kinds = Buffer<int>()    // 0=leaf, 1=vstack, 2=hstack
 	var Buffer<int> ws = Buffer<int>()       // intrinsic width (leaf) or 0
@@ -14,6 +17,9 @@ pub struct Layout {
 	var Buffer<int> rh = Buffer<int>()       // result height
 }
 
+/**
+ * Initializes a Layout tree with capacity for `cap` nodes
+ **/
 pub func init_layout = (ref Layout l, int cap) {
 	l.kinds.grow_int(cap)
 	l.ws.grow_int(cap)
@@ -26,6 +32,9 @@ pub func init_layout = (ref Layout l, int cap) {
 	l.rh.grow_int(cap)
 }
 
+/**
+ * Appends a leaf node (a sized control) under `parent` and returns its index
+ **/
 pub func add_leaf = (ref Layout l, int parent, int w, int h, out int) {
 	var int idx = 0
 	while l.par.load_int(idx) != 0 || idx == 0 {
@@ -42,6 +51,9 @@ pub func add_leaf = (ref Layout l, int parent, int w, int h, out int) {
 	return idx
 }
 
+/**
+ * Appends a vertical stack container under `parent` and returns its index
+ **/
 pub func add_vstack = (ref Layout l, int parent, int spacing, out int) {
 	var int idx = 0
 	while true {
@@ -58,6 +70,9 @@ pub func add_vstack = (ref Layout l, int parent, int spacing, out int) {
 	return idx
 }
 
+/**
+ * Appends a horizontal stack container under `parent` and returns its index
+ **/
 pub func add_hstack = (ref Layout l, int parent, int spacing, out int) {
 	var int idx = 0
 	while true {
@@ -96,6 +111,9 @@ func next_sibling = (Layout l, int count, int after, int parent, out int) {
 
 // Returns Size via two out params (workaround: single out return).
 // Caller passes addresses; measure fills them.
+/**
+ * Measures node widths against the given constraints (layout measure phase)
+ **/
 pub func measure_w = (Layout l, int count, int idx, int min_w, int max_w, int min_h, int max_h, out int) {
 	var int kind = l.kinds.load_int(idx)
 	if kind == 0 {
@@ -153,6 +171,9 @@ pub func measure_w = (Layout l, int count, int idx, int min_w, int max_w, int mi
 	return total_w
 }
 
+/**
+ * Assigns concrete frames to nodes (layout arrange phase)
+ **/
 pub func arrange = (Layout l, int count, int idx, int x, int y, int w, int h) {
 	l.rx.store_int(idx, x)
 	l.ry.store_int(idx, y)
@@ -187,12 +208,18 @@ pub func arrange = (Layout l, int count, int idx, int x, int y, int w, int h) {
 	}
 }
 
+/**
+ * Runs a full measure-then-arrange pass from `root` within the available space
+ **/
 pub func run_layout = (ref Layout l, int count, int root, int avail_w, int avail_h) {
 	var int root_w = measure_w(l, count, root, 0, avail_w, 0, avail_h)
 	var int root_h = l.rh.load_int(root)
 	arrange(l, count, root, 0, 0, root_w, root_h)
 }
 
+/**
+ * Formats a node and its subtree as a string (for debugging)
+ **/
 pub func fmt = (Layout l, int idx, out string) {
 	return "{" + l.rx.load_int(idx).to_string() + "," + l.ry.load_int(idx).to_string() + " " + l.rw.load_int(idx).to_string() + "x" + l.rh.load_int(idx).to_string() + "}"
 }

@@ -1,6 +1,9 @@
 import Buffer
 import ClassBuffer
 
+/**
+ * A growable, ordered list of values (`push`/`pop`/`at`)
+ **/
 pub struct List<T>: Viewable {
     var int length = 0
     var Buffer<T> items = Buffer<T>()

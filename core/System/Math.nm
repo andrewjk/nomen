@@ -1,4 +1,7 @@
 
+/**
+ * Mathematical helper functions
+ **/
 pub struct Math {
     pub func power = (int base, int exp, out int) {
         ```

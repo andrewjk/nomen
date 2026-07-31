@@ -1,4 +1,7 @@
 
+/**
+ * A trait for values that can be converted to a string via `to_string`
+ **/
 pub trait Stringable {
     func to_string = (self, out string) {
         return ""

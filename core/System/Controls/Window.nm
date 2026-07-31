@@ -1,6 +1,9 @@
 import System/Controls/Control
 import System/Controls/Geometry
 
+/**
+ * A top-level native window that hosts controls and dispatches events
+ **/
 pub class Window : Control {
 	var uint64 handle = 0
 

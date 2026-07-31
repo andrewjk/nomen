@@ -1,6 +1,9 @@
 // Buffer<T>: a flat buffer of value slots of type T. The value counterpart to
 // ClassBuffer<T>: no per-element freeing, store_int unconstrained. When T is a
 // class, the monomorphizer rewrites a Buffer<T> field to ClassBuffer<T>.
+/**
+ * A flat, low-level buffer of value slots of type T — the backing store for arrays and collections
+ **/
 pub struct Buffer<T> {
     var uint64 data = 0
     var int cap = 0

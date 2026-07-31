@@ -7,6 +7,9 @@
 
 // ── Requested size (user-facing, on LayoutParams) ──
 
+/**
+ * How a child dimension is sized: auto (to content), fixed, percent, or fill
+ **/
 pub enum LayoutLength {
 	case auto                     // size to content (intrinsic measurement)
 	case fixed(int pixels)        // exact size
@@ -14,6 +17,9 @@ pub enum LayoutLength {
 	case fill                     // fill all available space (same as grow=1)
 }
 
+/**
+ * How a child is positioned within available space (start / center / end / stretch)
+ **/
 pub enum Alignment {
 	case start
 	case center
@@ -23,6 +29,9 @@ pub enum Alignment {
 
 // ── Per-child layout parameters ──
 
+/**
+ * Per-child layout preferences: requested dimensions, flex grow/shrink weights, and alignment
+ **/
 pub struct LayoutParams {
 	pub var LayoutLength width = .auto
 	pub var LayoutLength height = .auto

@@ -4,6 +4,9 @@
 // Sendable values (or via Channel<T>). Mutex exists for when you genuinely
 // need shared mutability. See ASYNC.md.
 
+/**
+ * A pthread-backed mutual-exclusion lock for protecting shared mutable state
+ **/
 pub class Mutex : Sendable {
 	pub var uint64 handle = 0
 

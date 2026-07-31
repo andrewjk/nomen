@@ -1,3 +1,6 @@
+/**
+ * An editable single-line text input control
+ **/
 pub class TextBox {
 	var uint64 handle = 0
 

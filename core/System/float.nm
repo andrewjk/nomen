@@ -1,4 +1,7 @@
 
+/**
+ * A double-precision (64-bit) floating-point number
+ **/
 pub struct float: Stringable {
     pub func to_string = (self, out string) {
         ```

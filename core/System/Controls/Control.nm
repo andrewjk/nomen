@@ -12,6 +12,9 @@ import System/Controls/Geometry
 // driven through the trait interface (and slotted into `Array<Control>` /
 // `ClassBuffer<Control>` once the container migrates).
 
+/**
+ * The polymorphic interface every UI node implements (measure / set_frame / intrinsic_size)
+ **/
 pub trait Control {
 	// Given these constraints, report the size you want to be.
 	// Must satisfy min_width ≤ result.width ≤ max_width (ditto height).

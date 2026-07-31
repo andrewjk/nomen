@@ -1,6 +1,9 @@
 import System/Controls/Control
 import System/Controls/Geometry
 
+/**
+ * A read-only text label control
+ **/
 pub class Text : Control {
 	var uint64 handle = 0
 	var string text = ""

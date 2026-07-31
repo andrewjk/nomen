@@ -1,4 +1,7 @@
 
+/**
+ * A trait for resources that must be explicitly cleaned up via `dispose`
+ **/
 pub trait Disposable {
     func dispose = (self) {
         Console.write("\nboom!")

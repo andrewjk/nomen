@@ -1,3 +1,6 @@
+/**
+ * A toggle control with a title and checked/hidden state
+ **/
 pub class CheckBox {
 	var uint64 handle = 0
 

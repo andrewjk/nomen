@@ -13,6 +13,9 @@
 //
 // See ASYNC.md for the design.
 
+/**
+ * A handle to an asynchronously-running computation, backed by a shared thread pool
+ **/
 pub class Task<T> : Sendable {
 	pub var uint64 handle = 0
 	pub var bool done = false

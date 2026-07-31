@@ -1,4 +1,7 @@
 
+/**
+ * A 64-bit unsigned integer
+ **/
 pub struct uint64: Stringable {
     pub func to_string = (self, out string) {
         ```

@@ -13,6 +13,9 @@ import Buffer
 import JsonTree
 import StringBuilder
 
+/**
+ * JSON serialization helpers — `serialize`/`deserialize` strings, `parse`/`stringify` via a JsonTree
+ **/
 pub struct Json {
 	// Serialize a string to a JSON string literal, escaping the special
 	// characters ", \, newline, tab and carriage return.

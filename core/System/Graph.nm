@@ -5,6 +5,9 @@ import ClassBuffer
 // edges are stored as a per-node linked list of edge records (CSR-style), so
 // there is a single owner and cleanup is a flat free. Node and edge identifiers
 // are stable int indices; -1 means "none".
+/**
+ * A graph of values connected by edges
+ **/
 pub struct Graph<T>: Enumerable {
     var Buffer<T> values = Buffer<T>()
     var Buffer<int> head_edge = Buffer<int>()

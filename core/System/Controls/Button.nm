@@ -1,3 +1,6 @@
+/**
+ * A push-button control that triggers an action when clicked
+ **/
 pub class Button {
 	var uint64 handle = 0
 

@@ -21,6 +21,9 @@ struct JsonNode {
 	var int val = -1
 }
 
+/**
+ * A flat, buffer-backed pool of JSON tree nodes — the parsed representation `Json.parse` produces
+ **/
 pub struct JsonTree {
 	var Buffer<JsonNode> nodes = Buffer<JsonNode>()
 	var int count = 0

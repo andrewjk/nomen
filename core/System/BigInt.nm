@@ -1,5 +1,8 @@
 import Buffer
 
+/**
+ * An arbitrary-precision integer
+ **/
 pub struct BigInt {
     var int sign = 0
     var int len = 0

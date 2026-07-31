@@ -1,4 +1,7 @@
 
+/**
+ * An unsigned integer
+ **/
 pub struct uint: Stringable {
     pub func to_string = (self, out string) {
         ```

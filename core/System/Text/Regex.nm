@@ -6,6 +6,9 @@
 
 import StringBuilder
 
+/**
+ * Regular-expression helpers (`test`/`match`/`count`/`replace_all`) using POSIX ERE syntax
+ **/
 pub struct Regex {
 	// Test whether pattern matches anywhere in input.
 	pub func test = (string pattern, string input, out bool) {

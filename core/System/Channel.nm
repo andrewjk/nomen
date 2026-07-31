@@ -8,6 +8,9 @@
 // Default stance in Nomen is "no shared mutable state" — channels are the
 // preferred way for tasks to communicate. See ASYNC.md.
 
+/**
+ * A thread-safe, blocking FIFO queue for passing values between tasks
+ **/
 pub class Channel : Sendable {
 	pub var uint64 mu = 0
 	pub var uint64 not_empty_cv = 0

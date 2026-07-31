@@ -1,4 +1,7 @@
 
+/**
+ * The standard console — writing text to, and reading input from, the terminal
+ **/
 pub struct Console {
     pub func write = (string line) {
         ```

@@ -1,4 +1,7 @@
 
+/**
+ * An 8-bit signed integer
+ **/
 pub struct int8: Stringable {
     pub func to_string = (self, out string) {
         ```
