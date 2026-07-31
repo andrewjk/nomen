@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import check from "./check.ts";
 import type { Library } from "./lib.ts";
 import RootNode from "./nodes/RootNode.ts";
@@ -7,10 +9,10 @@ import tokenize from "./tokenize.ts";
 import type CompileError from "./types/CompileError.ts";
 import type ParseResult from "./types/ParseResult.ts";
 
-export default function parse(source: string, library?: Library): ParseResult {
+export default function parse(source: string, library?: Library, file_path?: string): ParseResult {
 	const user_source_length = source.length;
 	if (library) {
-		source = resolve_linked_types(source, library);
+		source = resolve_linked_types(source, library, file_path);
 	}
 
 	const tokens = tokenize(source);
@@ -81,7 +83,7 @@ function mark_library_nodes(root: RootNode, boundary: number): void {
 	walk(root);
 }
 
-function resolve_linked_types(source: string, library: Library): string {
+function resolve_linked_types(source: string, library: Library, file_path?: string): string {
 	const tokens = tokenize(source);
 
 	let has_system_import = false;
@@ -99,7 +101,15 @@ function resolve_linked_types(source: string, library: Library): string {
 			}
 		}
 	}
-	if (!has_system_import) return source;
+
+	// A file that lives inside the library package is itself part of the
+	// library: at build time every library file is concatenated together, so
+	// each one can reference every other one's `pub` declarations without an
+	// explicit `import System`. Treat such files the same as an imported
+	// module, but never re-inline the file being edited (that would duplicate
+	// its own definitions).
+	const is_library_file = !!file_path && is_within(file_path, library.dir);
+	if (!has_system_import && !is_library_file) return source;
 
 	// User-defined types shadow library types of the same name, so the library
 	// version must not be pulled in (otherwise duplicate symbols at build time).
@@ -147,10 +157,20 @@ function resolve_linked_types(source: string, library: Library): string {
 		needed.add("Nursery");
 	}
 
-	const resolved = resolve_types_with_deps(needed, library);
+	const resolved = resolve_types_with_deps(
+		needed,
+		library,
+		is_library_file ? file_path : undefined,
+	);
 	if (!resolved) return source;
 
 	return source + "\n" + resolved;
+}
+
+// Is `child` located inside `parent` (inclusive)? Both should be absolute.
+function is_within(child: string, parent: string): boolean {
+	const rel = path.relative(parent, child);
+	return !!rel && !rel.startsWith("..") && !path.isAbsolute(rel);
 }
 
 const BASE_TYPES = [
@@ -183,7 +203,11 @@ function module_type_names(dep: string, library: Library): string[] | undefined 
 	return found.length ? found : undefined;
 }
 
-function resolve_types_with_deps(needed: Set<string>, library: Library): string {
+function resolve_types_with_deps(
+	needed: Set<string>,
+	library: Library,
+	self_path?: string,
+): string {
 	const resolved = new Set<string>();
 	const pushed = new Set<string>();
 	const result: string[] = [];
@@ -206,6 +230,10 @@ function resolve_types_with_deps(needed: Set<string>, library: Library): string 
 		for (const dep of entry.deps) {
 			resolve(dep);
 		}
+		// The file currently being edited already provides its own declarations
+		// (as the live source), so never append its on-disk source — that would
+		// duplicate every struct/func it defines.
+		if (self_path && path.resolve(entry.path) === path.resolve(self_path)) return;
 		// A file declaring multiple types contributes the same source for each;
 		// push it only once to avoid duplicate definitions.
 		if (!pushed.has(entry.source)) {

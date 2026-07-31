@@ -11,6 +11,11 @@ export interface Library {
 	source: string;
 	types: Map<string, LibraryType>;
 	namespaces: Map<string, Set<string>>;
+	// Absolute path of the directory passed to `build_library` (the package
+	// root that owns `source`). Used to tell whether a given file is itself
+	// part of this library, so library files can resolve sibling declarations
+	// without an explicit `import System`.
+	dir: string;
 }
 
 export interface LibraryType {
@@ -192,6 +197,7 @@ export function build_library(lib_dir: string): Library {
 		source,
 		types,
 		namespaces,
+		dir: path.resolve(lib_dir),
 	};
 }
 

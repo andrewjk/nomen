@@ -13,7 +13,33 @@ export default function join(entry_file_path: string, lib_path?: string): string
 	const inputs = new Map();
 	const resolved_lib_path = lib_path ? path.resolve(lib_path, "src") : DEFAULT_LIB_PATH;
 	add_source(folder_path, file_path, inputs, resolved_lib_path);
+	// A folder is a module: every sibling `.nm` file's `pub` declarations are
+	// visible to the entry without an explicit `import`, mirroring how the
+	// System library concatenates its own files. Pull in every other file in
+	// the entry's folder so cross-file references resolve.
+	gather_module_siblings(folder_path, file_path, inputs, resolved_lib_path);
 	return Array.from(inputs.values()).join("\n\n") + "\n";
+}
+
+function gather_module_siblings(
+	folder_path: string,
+	entry_file: string,
+	inputs: Map<string, string>,
+	lib_path: string,
+): void {
+	let names: string[];
+	try {
+		names = fs.readdirSync(folder_path);
+	} catch {
+		return;
+	}
+	for (const name of names.sort()) {
+		if (!name.endsWith(".nm")) continue;
+		if (name === entry_file) continue;
+		const import_file_path = `./${name}`;
+		if (inputs.has(import_file_path)) continue;
+		add_source(folder_path, import_file_path, inputs, lib_path);
+	}
 }
 
 function add_source(

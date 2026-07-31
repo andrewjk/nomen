@@ -240,9 +240,22 @@ function update_diagnostics(document: vscode.TextDocument): void {
 	const text = document.getText();
 	const library = load_library(document.uri);
 
+	// Files in the same folder form a module: a file can reference every other
+	// file's `pub` declarations without an explicit import. Append the sibling
+	// files' source so those declarations resolve. Library files resolve via
+	// the library linker instead (see parse's library-file handling), so they
+	// must not also get sibling inlining — that would duplicate the
+	// declarations the linker already pulls in.
+	let source = text;
+	const is_library_file = !!library && !!library.dir && is_within(document.uri.fsPath, library.dir);
+	if (!is_library_file) {
+		const siblings = read_sibling_sources(document.uri.fsPath);
+		if (siblings) source = text + "\n" + siblings;
+	}
+
 	let errors: CompileError[];
 	try {
-		errors = parse(text, library).errors;
+		errors = parse(source, library, document.uri.fsPath).errors;
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
 		diagnostics.set(document.uri, [
@@ -261,6 +274,36 @@ function update_diagnostics(document: vscode.TextDocument): void {
 			),
 	);
 	diagnostics.set(document.uri, diags);
+}
+
+// Concatenate every other `.nm` file in the same folder as `file_path`, so a
+// module's sibling `pub` declarations are visible while editing one file. The
+// edited file itself is excluded (its live text is parsed instead).
+function read_sibling_sources(file_path: string): string {
+	const dir = path.dirname(file_path);
+	let names: string[];
+	try {
+		names = fs.readdirSync(dir);
+	} catch {
+		return "";
+	}
+	const self = path.basename(file_path);
+	const parts: string[] = [];
+	for (const name of names.sort()) {
+		if (!name.endsWith(".nm")) continue;
+		if (name === self) continue;
+		try {
+			parts.push(fs.readFileSync(path.join(dir, name), "utf8"));
+		} catch {
+			// ignore unreadable siblings
+		}
+	}
+	return parts.join("\n");
+}
+
+function is_within(child: string, parent: string): boolean {
+	const rel = path.relative(parent, child);
+	return !!rel && !rel.startsWith("..") && !path.isAbsolute(rel);
 }
 
 function load_library(uri: vscode.Uri): Library | undefined {
