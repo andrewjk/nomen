@@ -23,9 +23,14 @@ Window (800×600)
 ## Implemented: handle-based container (v1)
 
 `core/System/Controls/Container.nm` ships a working, ergonomic layout layer
-**today**. The full `Control`-trait design below is the target, but it depends on
-compiler work that isn't done yet (see [Next steps](#next-steps--compiler-prerequisites)),
-so v1 is **handle-based** rather than trait-based.
+**today**. The full `Control`-trait object-tree design below is blocked by
+Nomen's ownership model (see [Why handle-based, not trait-based (for
+now)](#why-handle-based-not-trait-based-for-now)), so v1 is **handle-based**
+rather than trait-based. `Container` is, however, now a `class : Control` whose
+`measure(BoxConstraints)` / `set_frame` / `intrinsic_size` delegate to the SoA
+engine — see [Container as a Control](#container-as-a-control) — and every
+native leaf (`Window`/`Text`/`Button`/`CheckBox`/`TextBox`) conforms to
+`Control` too.
 
 ```
 import System
@@ -137,31 +142,63 @@ distribution, and `LEN_PERCENT`/explicit `LEN_*` sizing**).
 ### Why handle-based, not trait-based (for now)
 
 Every native control is `class { uint64 handle }`, and the y-flip needs the
-window's content height — both are handle-level concerns. But the decisive
-reason is the compiler: the `Container : Control` / `Array<Control>` design
-below requires things the compiler does **not** all do yet —
+window's content height — both are handle-level concerns. The earlier compiler
+blockers (vtable dispatch, `ClassBuffer<Trait>` storage, generic-trait
+conformance) are all closed. But a full `Container : Control` /
+`Array<Control>` **object-tree** rewrite — where leaves are `Control` objects
+slotted into the container — turned out to be blocked by **Nomen's ownership
+model**, not by missing compiler features. Attempting it surfaced a stack of
+compounding, verified obstacles:
 
-1. ~~**aarch64 has no vtable dispatch**~~ ✅ **Done.** Both backends now generate
-   a per-struct trait vtable and resolve trait-typed calls through it at
-   runtime (see [Trait dispatch](#trait-dispatch-polymorphic-calls)). The
-   remaining blockers are storage/parsing, below.
-2. ~~**No heterogeneous container storage**~~ ✅ **Done.** `monomorphize`
-   routes trait-`T` to `ClassBuffer`, the per-element destroy dispatches
-   through the trait vtable, and the native controls are `class`es (reference
-   types) so they slot straight into `ClassBuffer<Control>` without any
-   boxing — see [Next steps](#next-steps--compiler-prerequisites)). (Value
-   structs can no longer be implicitly boxed into trait-typed slots; they
-   must be declared `class` to be used polymorphically.)
-3. ~~**Trait conformance with type arguments isn't parsed yet**
-   (`core/System/Viewable.nm:8`).~~ ✅ **Done.** `trait Foo<T>` declarations and
-   `struct C: Foo<ConcreteType>` conformance now parse, arity-check, and build
-   on both backends — see [Next steps](#next-steps--compiler-prerequisites).
+1. **No trait↔int coercion outside generics.** `Widget as int` and
+   `int → Widget` are both rejected in non-generic code; the T↔int coercion
+   only happens _inside_ generic containers (`List<T>`/`ClassBuffer<T>`) via
+   return position. So trait-typed child storage can't be hand-rolled — it must
+   go through a generic container.
+2. **Generic trait collections are owning.** `List<Control>` / `Buffer<Control>`
+   monomorphize to `ClassBuffer<Control>`, which frees every element on
+   destroy. There is **no non-owning (borrowed) heterogeneous collection**, so
+   the spec's `add(Control child)` borrowed model is inexpressible.
+3. **`mov Trait` params are rejected** ("mov is only allowed for class types")
+   in non-generic code; it only works as `mov T` inside a generic.
+4. **No generic methods.** `type_params` exist on structs, free functions, and
+   traits — not on class/struct methods. So `add<T: Control>(mov T child)`,
+   the only signature that could feed an owning heterogeneous container from a
+   concrete control, can't be written.
+5. **No downcasting.** Retrieving `var Control c = container.at(i)` yields the
+   trait type; you can't call `Text.set_text` / `CheckBox.set_hidden` on it. So
+   once the container owns a leaf, the app's interactive mutation pattern (the
+   todo app toggles `cb3`/`input` _after_ layout) is unreachable.
+
+(1)–(4) together mean there's no way to get a heterogeneous set of native
+controls into an owning trait container from application code; (5) means even
+if you could, the app couldn't use them afterward. This is ownership-model
+territory, not library work — it needs a language change (generic methods,
+and/or a non-owning trait collection, and/or downcast).
 
 So v1 stores child handles in flat `Buffer<int>` arrays (structure-of-arrays,
 mirroring the legacy `Layout.nm`) and applies frames via a native
 `apply_frame(handle, …)` helper. The measure/arrange **algorithm** is identical
 to what the trait version will use, so migrating later only swaps the
 storage/dispatch shim, not the math.
+
+### Container as a Control
+
+Although the full object-tree is blocked, `Container` **does** conform to
+`Control`: it is now a `class : Control` whose trait entry points delegate to
+the existing SoA engine (`measure(BoxConstraints)` runs the recursive measure
+and returns the resolved `Size`; `set_frame(x,y,w,h)` arranges the subtree into
+the rectangle; `intrinsic_size` measures against unbounded space). The
+handle-based `add` API and the SoA internals are unchanged, so a `Container`
+can be driven polymorphically as a `Control` (passed to a `Control`-taking
+function, stored in a `ClassBuffer<Control>`, dispatched through the vtable)
+without disturbing the app or the layout tests. `Button`, `CheckBox`, and
+`TextBox` were brought into conformance too (`Window`/`Text` already were), so
+every control in the layer is a `Control`; their `intrinsic_size`/`measure`
+reuse a shared `native_intrinsic(handle)` FFI (in `Container.nm`). Verified on
+both backends by `test/control_trait.test.ts` ("Container dispatches measure
+through a Control receiver", under audit) — the call routes through the
+`Control` vtable into `Container.measure` and returns the correct `Size`.
 
 > Note: `Container.nm` lives in trusted core, so its runtime-indexed
 > `Buffer.load_int`/`store_int` calls do not trip the "constraint cannot be
@@ -985,6 +1022,24 @@ self_offset` and indexes with `+ self_offset`. Runtime-tested in
   cache entry. Runtime-tested on both backends by `test/layout_container.test.ts`
   (the `aarch64 measure-skip regression (fixed)` block — formerly a known-failure
   regression for the misdiagnosed "label collision" form of this bug).
+- **aarch64 leaked a `class` returned by a forward-referenced library factory.**
+  Surfaced by making `Container` a `class` (so the `VStack`/`HStack`/`Grid`/
+  `ZStack` factories now return a heap instance instead of a by-value struct).
+  `main` is built _before_ the trusted core library, so at the call site the
+  callee wasn't yet registered in `heap_returning_functions`, the call left
+  `last_result_is_heap` false, and `build_aarch64/build_declaration_node.ts`'s
+  non-constructor func-call branch never anchored the returned instance. The
+  scope-exit cleanup then ran the field destroys (every `Buffer_int_destroy`)
+  but never `free`d the instance `malloc` — a one-allocation leak per factory
+  call (the C backend was always clean; it derives cleanup from the declared
+  type, not the heap-return set). Fixed in the non-constructor func-call
+  branch: a free function returning a `class` always hands the caller an owned
+  instance, so `last_result_is_heap` is forced before `check_heap` anchors it.
+  User-space factories (same source, built before `main`) already set the flag,
+  so this only changes the forward-reference case — no double-anchor.
+  Regression-tested on both backends under audit by
+  `test/trait_dispatch_leaks.test.ts` (each factory's result is freed; a
+  `Container` driven through the `Control` trait is freed too).
 
 ### Geometry types (Phase 2) blockers
 
@@ -1135,11 +1190,13 @@ INFINITY = 2147483647` lowered to `extern long INFINITY;` and
 ### Layout features still owed (now unblocked)
 
 With the native controls now `class`es, `ClassBuffer<Trait>` polymorphic
-storage in place, and the enum geometry-type blockers fixed, the trait-based
-`Container : Control` / `Array<Control>` design is now reachable — the
-remaining work is Nomen-side (library) rather than compiler-side. The features
-below can be implemented in one of two places: on the existing handle-based v1
-(no trait model needed), or on a new trait-based Container.
+storage in place, and the enum geometry-type blockers fixed, `Container` itself
+now conforms to `Control` (see [Container as a Control](#container-as-a-control))
+— but the full trait-based `Array<Control>` **object-tree** is _not_ reachable
+as library work: it's blocked by the ownership model (no non-owning trait
+collection, no generic methods, no downcast — see [Why handle-based, not
+trait-based (for now)](#why-handle-based-not-trait-based-for-now)). The features
+below ship on the existing handle-based v1 (no object-tree needed).
 
 - ~~`BoxConstraints` / `Size` / `Frame` / `Insets` / `LayoutLength` /
   `LayoutParams` with `grow`/`shrink`/`percent`/`fill`/`align` — enum
