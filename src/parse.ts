@@ -88,7 +88,12 @@ function mark_library_nodes(root: RootNode, boundary: number): void {
 	walk(root);
 }
 
-function resolve_linked_types(source: string, library: Library, file_path?: string): string {
+/**
+ * Append the library source that `source` needs, exactly as `parse` does.
+ * Exported so tooling (e.g. the editor extension) can reproduce the combined
+ * source that node offsets refer to.
+ */
+export function resolve_linked_types(source: string, library: Library, file_path?: string): string {
 	const tokens = tokenize(source);
 
 	let has_system_import = false;

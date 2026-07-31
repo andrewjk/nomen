@@ -3,10 +3,14 @@ import path from "node:path";
 
 import * as vscode from "vscode";
 
-import { get_library } from "../../src/lib.ts";
-import type { Library } from "../../src/lib.ts";
-import parse from "../../src/parse.ts";
-import type CompileError from "../../src/types/CompileError.ts";
+import { forget_document, get_analysis } from "./documents.ts";
+import { resolve_lib_dir, workspace_folder_of } from "./library.ts";
+import {
+	NomenCompletionProvider,
+	NomenDefinitionProvider,
+	NomenHoverProvider,
+	NomenReferenceProvider,
+} from "./providers.ts";
 
 const ECHO_LANGUAGE = "nomen";
 const TERMINAL_NAME = "Nomen";
@@ -18,20 +22,20 @@ const MAIN_FUNC = /^\s*(?:pub\s+)?func\s+main\b/;
 let terminal: vscode.Terminal | undefined;
 let diagnostics: vscode.DiagnosticCollection;
 
-const library_cache = new Map<string, Library>();
 const debounce_timers = new Map<string, ReturnType<typeof setTimeout>>();
-const doc_index_cache = new Map<string, { version: number; index: Map<string, DocEntry> }>();
 
 export function activate(context: vscode.ExtensionContext): void {
 	terminal = undefined;
 	diagnostics = vscode.languages.createDiagnosticCollection("nomen");
 
+	const selector = { language: ECHO_LANGUAGE };
+
 	context.subscriptions.push(
-		vscode.languages.registerCodeLensProvider(
-			{ language: ECHO_LANGUAGE },
-			new NomenCodeLensProvider(),
-		),
-		vscode.languages.registerHoverProvider({ language: ECHO_LANGUAGE }, new NomenHoverProvider()),
+		vscode.languages.registerCodeLensProvider(selector, new NomenCodeLensProvider()),
+		vscode.languages.registerHoverProvider(selector, new NomenHoverProvider()),
+		vscode.languages.registerDefinitionProvider(selector, new NomenDefinitionProvider()),
+		vscode.languages.registerReferenceProvider(selector, new NomenReferenceProvider()),
+		vscode.languages.registerCompletionItemProvider(selector, new NomenCompletionProvider(), "."),
 		vscode.commands.registerCommand("nomen.run", (uri?: vscode.Uri) => runNomen(uri, false)),
 		vscode.commands.registerCommand("nomen.audit", (uri?: vscode.Uri) => runNomen(uri, true)),
 		vscode.window.onDidCloseTerminal((t) => {
@@ -50,7 +54,7 @@ export function activate(context: vscode.ExtensionContext): void {
 		vscode.workspace.onDidCloseTextDocument((document) => {
 			diagnostics.delete(document.uri);
 			clear_timer(document.uri);
-			doc_index_cache.delete(document.uri.toString());
+			forget_document(document.uri);
 		}),
 		vscode.workspace.onDidChangeConfiguration((event) => {
 			if (event.affectsConfiguration("nomen.diagnostics")) {
@@ -64,92 +68,6 @@ export function activate(context: vscode.ExtensionContext): void {
 
 export function deactivate(): void {
 	terminal = undefined;
-}
-
-class NomenHoverProvider implements vscode.HoverProvider {
-	provideHover(document: vscode.TextDocument, position: vscode.Position): vscode.Hover | undefined {
-		const range = document.getWordRangeAtPosition(position, /[A-Za-z_][A-Za-z0-9_]*/);
-		if (!range) return undefined;
-		const word = document.getText(range);
-		const index = get_doc_index(document);
-
-		// Try a qualified lookup first: hovering over `bar` in `foo.bar` should
-		// resolve to foo's `bar` method, not any other `bar`.
-		let entry: DocEntry | undefined;
-		const before = document.lineAt(position.line).text.slice(0, range.start.character);
-		const qualified = before.match(/([A-Za-z_][A-Za-z0-9_]*)\s*\.\s*$/);
-		if (qualified) entry = index.get(`${qualified[1]}.${word}`);
-		if (!entry) entry = index.get(word);
-		if (!entry?.doc) return undefined;
-
-		const md = new vscode.MarkdownString();
-		md.isTrusted = true;
-		md.appendMarkdown(`**\`${entry.label}\`**\n\n`);
-		md.appendMarkdown(entry.doc);
-		return new vscode.Hover(md, range);
-	}
-}
-
-interface DocEntry {
-	label: string;
-	doc?: string;
-}
-
-// Parse the document and index every `pub` declaration's doc comment by name
-// (and, for methods, by `Type.method`). Cached per document version.
-function get_doc_index(document: vscode.TextDocument): Map<string, DocEntry> {
-	const key = document.uri.toString();
-	const cached = doc_index_cache.get(key);
-	if (cached && cached.version === document.version) return cached.index;
-
-	const library = load_library(document.uri);
-	let index = new Map<string, DocEntry>();
-	try {
-		const parsed = parse(build_parse_source(document), library, document.uri.fsPath);
-		index = build_doc_index(parsed.root as unknown as BaseNodeLike);
-	} catch {
-		// leave the index empty
-	}
-	doc_index_cache.set(key, { version: document.version, index });
-	return index;
-}
-
-interface BaseNodeLike {
-	node_type: string;
-	name?: string;
-	visibility?: string;
-	doc?: string;
-	is_class?: boolean;
-	functions?: BaseNodeLike[];
-	fields?: BaseNodeLike[];
-	statements?: BaseNodeLike[];
-}
-
-function build_doc_index(root: BaseNodeLike): Map<string, DocEntry> {
-	const index = new Map<string, DocEntry>();
-	const visit = (node: BaseNodeLike, parent?: BaseNodeLike) => {
-		const t = node.node_type;
-		if (t === "struct" || t === "trait" || t === "enum" || t === "bitset") {
-			if (node.visibility === "pub") {
-				const kind = t === "struct" && node.is_class ? "class" : t;
-				index.set(node.name!, { label: `${kind} ${node.name}`, doc: node.doc });
-			}
-			for (const f of node.functions || []) visit(f, node);
-			for (const field of node.fields || []) {
-				if (field.visibility === "pub" && field.doc) {
-					index.set(field.name!, { label: field.name!, doc: field.doc });
-				}
-			}
-		} else if (t === "func") {
-			if (node.visibility === "pub" && node.name && !node.name.startsWith("#")) {
-				const entry: DocEntry = { label: `func ${node.name}`, doc: node.doc };
-				if (parent?.name) index.set(`${parent.name}.${node.name}`, entry);
-				else index.set(node.name, entry);
-			}
-		}
-	};
-	for (const stmt of root.statements || []) visit(stmt);
-	return index;
 }
 
 class NomenCodeLensProvider implements vscode.CodeLensProvider {
@@ -250,10 +168,6 @@ function resolve_audit_runtime(uri: vscode.Uri): string | undefined {
 	return undefined;
 }
 
-function workspace_folder_of(uri: vscode.Uri): string {
-	return vscode.workspace.getWorkspaceFolder(uri)?.uri.fsPath ?? "";
-}
-
 function substitute_workspace(value: string, workspace_folder: string): string {
 	return value
 		.split("${workspaceFolder}")
@@ -323,39 +237,21 @@ function clear_timer(uri: vscode.Uri): void {
 	}
 }
 
-// Build the source string to parse for `document`: the live text plus, for
-// non-library files, the sibling module sources so cross-file `pub`
-// declarations resolve. Library files resolve via the library linker instead
-// (see parse's library-file handling), so they must not also get sibling
-// inlining — that would duplicate the declarations the linker already pulls in.
-function build_parse_source(document: vscode.TextDocument): string {
-	const text = document.getText();
-	const library = load_library(document.uri);
-	const is_library_file = !!library && !!library.dir && is_within(document.uri.fsPath, library.dir);
-	if (is_library_file) return text;
-	const siblings = read_sibling_sources(document.uri.fsPath);
-	return siblings ? text + "\n" + siblings : text;
-}
-
 function update_diagnostics(document: vscode.TextDocument): void {
 	if (!is_nomen(document)) return;
 
-	const text = document.getText();
-	const library = load_library(document.uri);
-	const source = build_parse_source(document);
+	const state = get_analysis(document);
+	if (!state) return;
 
-	let errors: CompileError[];
-	try {
-		errors = parse(source, library, document.uri.fsPath).errors;
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
+	if (state.fatal) {
 		diagnostics.set(document.uri, [
-			new vscode.Diagnostic(zero_range(), `Nomen: ${message}`, vscode.DiagnosticSeverity.Error),
+			new vscode.Diagnostic(zero_range(), `Nomen: ${state.fatal}`, vscode.DiagnosticSeverity.Error),
 		]);
 		return;
 	}
 
-	const in_file = errors.filter((e) => e.start >= 0 && e.start < text.length);
+	const text = document.getText();
+	const in_file = state.errors.filter((e) => e.start >= 0 && e.start < text.length);
 	const diags = in_file.map(
 		(e) =>
 			new vscode.Diagnostic(
@@ -365,82 +261,6 @@ function update_diagnostics(document: vscode.TextDocument): void {
 			),
 	);
 	diagnostics.set(document.uri, diags);
-}
-
-// Concatenate every other `.nm` file in the same folder as `file_path`, so a
-// module's sibling `pub` declarations are visible while editing one file. The
-// edited file itself is excluded (its live text is parsed instead).
-function read_sibling_sources(file_path: string): string {
-	const dir = path.dirname(file_path);
-	let names: string[];
-	try {
-		names = fs.readdirSync(dir);
-	} catch {
-		return "";
-	}
-	const self = path.basename(file_path);
-	const parts: string[] = [];
-	for (const name of names.sort()) {
-		if (!name.endsWith(".nm")) continue;
-		if (name === self) continue;
-		try {
-			parts.push(fs.readFileSync(path.join(dir, name), "utf8"));
-		} catch {
-			// ignore unreadable siblings
-		}
-	}
-	return parts.join("\n");
-}
-
-function is_within(child: string, parent: string): boolean {
-	const rel = path.relative(parent, child);
-	return !!rel && !rel.startsWith("..") && !path.isAbsolute(rel);
-}
-
-function load_library(uri: vscode.Uri): Library | undefined {
-	const lib_dir = resolve_lib_dir(uri);
-	if (!lib_dir) return undefined;
-	const cached = library_cache.get(lib_dir);
-	if (cached) return cached;
-	try {
-		const library = get_library(lib_dir);
-		library_cache.set(lib_dir, library);
-		return library;
-	} catch {
-		return undefined;
-	}
-}
-
-function resolve_lib_dir(uri: vscode.Uri): string | undefined {
-	let dir = path.dirname(uri.fsPath);
-	for (let i = 0; i < 20; i++) {
-		const config_path = path.join(dir, "package.jsonc");
-		if (fs.existsSync(config_path)) {
-			try {
-				const raw = fs
-					.readFileSync(config_path, "utf8")
-					.replace(/\/\/.*$/gm, "")
-					.replace(/\/\*[\s\S]*?\*\//g, "");
-				const parsed = JSON.parse(raw);
-				if (parsed.imports?.System) return path.resolve(dir, parsed.imports.System);
-			} catch {
-				// ignore malformed package.jsonc and keep searching
-			}
-		}
-		// Also check for a `core/` directory at this level (the standard library itself).
-		const lib_config = path.join(dir, "core", "package.jsonc");
-		if (fs.existsSync(lib_config)) return path.join(dir, "core");
-		const parent = path.dirname(dir);
-		if (parent === dir) break;
-		dir = parent;
-	}
-
-	const workspace_folder = workspace_folder_of(uri);
-	if (workspace_folder) {
-		const fallback = path.join(workspace_folder, "core");
-		if (fs.existsSync(path.join(fallback, "package.jsonc"))) return fallback;
-	}
-	return undefined;
 }
 
 function error_range(document: vscode.TextDocument, text: string, start: number): vscode.Range {
