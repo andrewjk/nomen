@@ -1,6 +1,7 @@
 import path from "node:path";
 
 import check from "./check.ts";
+import { attach_doc_comments } from "./doc_comments.ts";
 import type { Library } from "./lib.ts";
 import RootNode from "./nodes/RootNode.ts";
 import parse_statement from "./parse/parse_statement.ts";
@@ -29,6 +30,10 @@ export default function parse(source: string, library?: Library, file_path?: str
 	};
 
 	parse_statement(status);
+
+	// Attach `/** ... **/` doc comments to the declarations they precede, so
+	// downstream tools (doc generation, editor hovers) can reach them.
+	attach_doc_comments(root, source);
 
 	// Mark nodes defined in the appended System library source so the checker
 	// can trust library internals (which maintain their own bounds invariants)

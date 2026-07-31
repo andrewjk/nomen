@@ -98,11 +98,18 @@ function extract_deps(source: string): string[] {
 			break;
 		} else if (trimmed.startsWith("pub trait ") || trimmed.startsWith("trait ")) {
 			break;
-		} else if (trimmed.length > 0 && !trimmed.startsWith("//")) {
+		} else if (trimmed.length > 0 && !is_comment_line(trimmed)) {
 			break;
 		}
 	}
 	return deps;
+}
+
+// A line that extract_deps should skip over while looking for the first
+// declaration: line comments, block/doc-comment opens, and the ` * ` body of a
+// doc comment (including its `**/` close).
+function is_comment_line(trimmed: string): boolean {
+	return trimmed.startsWith("//") || trimmed.startsWith("/*") || trimmed.startsWith("*");
 }
 
 // A single .nm file may declare several top-level types (e.g. a geometry
