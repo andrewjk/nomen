@@ -19,16 +19,13 @@
 		"go": "tsx src/index.ts",
 		"register": "pnpm build && pnpm add -g ."
 	},
-	"dependencies": {
-		"chokidar": "^5.0.0",
-		"yargs": "^18.0.0"
-	},
 	"devDependencies": {
-		"@types/node": "^26.1.1",
+		"@types/node": "^26.1.2",
 		"@types/yargs": "^17.0.35",
+		"chokidar": "^5.0.0",
 		"tsx": "^4.23.1",
 		"typescript": "^7.0.2",
 		"vite-plus": "catalog:",
-		"vitest": "catalog:"
+		"yargs": "^18.1.0"
 	}
 }
