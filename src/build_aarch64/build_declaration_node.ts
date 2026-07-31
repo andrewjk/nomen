@@ -1141,6 +1141,18 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 						status.code += "\n";
 					}
 					emit_var_store(status, "x0", node.name, 8);
+					// A free function (non-constructor) returning a class hands the
+					// caller a fresh owned instance (e.g. VStack/HStack/Grid/ZStack
+					// → Container). Force the heap flag so `check_heap` anchors the
+					// result for scope-exit cleanup. Without this, a forward-
+					// referenced library factory leaks: main is built before the
+					// library, so the callee isn't in `heap_returning_functions` at
+					// the call site and `last_result_is_heap` stays false. A free-
+					// function call returning a class is always an owned result, so
+					// anchoring unconditionally here is sound (user-space factories
+					// already set the flag, so this only changes the forward-ref
+					// case — no double-anchor).
+					status.last_result_is_heap = true;
 					check_heap();
 				}
 			} else if (node.value) {

@@ -2,11 +2,9 @@ import path from "node:path";
 
 import { describe, expect, test } from "vite-plus/test";
 
-import build from "../src/build.ts";
 import { get_library } from "../src/lib.ts";
 import parse from "../src/parse.ts";
 import build_and_check_output from "./build_and_check_output";
-import check_output from "./check_output";
 
 const system = get_library(path.resolve("core"));
 
@@ -97,9 +95,6 @@ pub func main = () {
 `;
 		const parsed = parse(input, system);
 		expect(parsed.errors).toEqual([]);
-		for (const arch of ["aarch64", "c"] as const) {
-			const result = build(parsed.root, { arch, platform: "macos" });
-			await check_output(`container_control_${arch}`, result, "800x70", { arch, audit: false });
-		}
+		await build_and_check_output(input, "container_control_runtime", "800x70", true);
 	});
 });
