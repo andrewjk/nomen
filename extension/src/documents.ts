@@ -15,6 +15,7 @@ export interface DocumentAnalysis {
 	map: SourceMap;
 	analysis: Analysis;
 	errors: CompileError[];
+	warnings: CompileError[];
 	/** Set when parsing threw outright, rather than reporting errors. */
 	fatal?: string;
 }
@@ -37,11 +38,13 @@ export function get_analysis(document: vscode.TextDocument): DocumentAnalysis | 
 	const map = build_source_map(document.uri.fsPath, document.getText(), library);
 
 	let errors: CompileError[] = [];
+	let warnings: CompileError[] = [];
 	let analysis: Analysis = { defs: [], refs: [], types: new Map() };
 	let fatal: string | undefined;
 	try {
 		const parsed = parse(map.source.slice(0, map.user_end), library, document.uri.fsPath);
 		errors = parsed.errors;
+		warnings = parsed.warnings;
 		analysis = analyze(parsed.root, map.source);
 	} catch (err) {
 		fatal = err instanceof Error ? err.message : String(err);
@@ -54,6 +57,7 @@ export function get_analysis(document: vscode.TextDocument): DocumentAnalysis | 
 		map,
 		analysis,
 		errors,
+		warnings,
 		fatal,
 	};
 	cache.set(key, state);

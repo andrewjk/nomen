@@ -48,6 +48,7 @@ export default function parse(source: string, library?: Library, file_path?: str
 			ok: false,
 			root,
 			errors: format_errors(source, status.errors),
+			warnings: [],
 		};
 	}
 
@@ -57,6 +58,7 @@ export default function parse(source: string, library?: Library, file_path?: str
 		ok: !checked.errors.length,
 		root,
 		errors: format_errors(source, checked.errors),
+		warnings: format_errors(source, checked.warnings),
 	};
 }
 

@@ -47,32 +47,46 @@ function visual_start(line_text: string, col: number): number {
 }
 
 export default function render_errors(source: string, errors: CompileError[]): string {
+	return render_messages(source, errors, "Error");
+}
+
+/** Render `messages` with a `Warning:`/`Error:` label and matching summary. */
+export function render_warnings(source: string, warnings: CompileError[]): string {
+	return render_messages(source, warnings, "Warning");
+}
+
+function render_messages(
+	source: string,
+	messages: CompileError[],
+	severity: "Error" | "Warning",
+): string {
+	if (!messages.length) return "";
 	const lines = source.split("\n");
 	const markers = find_file_markers(source);
 
 	const blocks: string[] = [];
-	for (const error of errors) {
-		const line_text = lines[error.line - 1] ?? "";
+	for (const message of messages) {
+		const line_text = lines[message.line - 1] ?? "";
 
 		// Map the joined-source line back to the originating file + in-file line.
 		let rel_path = "";
-		let file_line = error.line;
+		let file_line = message.line;
 		for (let m = markers.length - 1; m >= 0; m--) {
-			if (markers[m].joined_line < error.line) {
-				file_line = error.line - markers[m].joined_line;
+			if (markers[m].joined_line < message.line) {
+				file_line = message.line - markers[m].joined_line;
 				rel_path = path.relative(process.cwd(), markers[m].abs_path) || markers[m].abs_path;
 				break;
 			}
 		}
 
 		const gutter = " ".repeat(String(file_line).length);
-		const col = Math.max(1, error.column);
+		const col = Math.max(1, message.column);
 		const display_line = line_text.replace(/\t/g, " ".repeat(TAB_WIDTH));
 		const squiggle = "~".repeat(token_width(line_text, col - 1));
 
 		blocks.push(
 			[
-				`Error: ${error.message}`,
+				`${severity}: ${message.message}`,
 				` File: ${rel_path}:${file_line}:${col}`,
 				`${gutter} |`,
 				`${file_line} | ${display_line}`,
@@ -81,6 +95,6 @@ export default function render_errors(source: string, errors: CompileError[]): s
 		);
 	}
 
-	const label = errors.length === 1 ? "error" : "errors";
-	return `\n${blocks.join("\n\n")}\n\n${errors.length} ${label} found.\n`;
+	const label = messages.length === 1 ? severity.toLowerCase() : `${severity.toLowerCase()}s`;
+	return `\n${blocks.join("\n\n")}\n\n${messages.length} ${label} found.\n`;
 }

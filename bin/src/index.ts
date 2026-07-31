@@ -13,10 +13,12 @@ import join from "../../src/join.ts";
 import { get_library } from "../../src/lib.ts";
 import parse from "../../src/parse.ts";
 import { run_docs } from "./docs.ts";
-import render_errors from "./format_errors.ts";
+import render_errors, { render_warnings } from "./format_errors.ts";
 import type Config from "./types/Config.ts";
 
 const SUPPORTED_EXTENSION = ".nm";
+
+type Mode = "check" | "build" | "run";
 
 // Strip `//` line and `/* */` block comments so a .jsonc file parses as JSON.
 function parse_jsonc(text: string): any {
@@ -70,8 +72,20 @@ let build_root: string | undefined;
 
 console.log("\n~ NOMEN ~\n");
 
-const options = yargs(hideBin(process.argv))
-	.usage("Usage: nomen --in [file/folder] | nomen docs | nomen format [--in folder]")
+const parser = yargs(hideBin(process.argv))
+	.usage(
+		"Usage:\n" +
+			"  nomen run --in [file/folder]    Parse, check, build and run a program\n" +
+			"  nomen build --in [file/folder]   Parse, check and build (no run)\n" +
+			"  nomen check --in [file/folder]   Parse and check only\n" +
+			"  nomen format [--in folder]       Reformat every .nm file\n" +
+			"  nomen docs [--in file]           Generate markdown documentation",
+	)
+	.command("run", "Parse, check, build and run a program")
+	.command("build", "Parse, check and build (compile and link, but do not run)")
+	.command("check", "Parse and check only")
+	.command("format", "Reformat every .nm file")
+	.command("docs", "Generate markdown documentation")
 	.option("in", {
 		alias: "i",
 		describe: "Input file or folder",
@@ -120,18 +134,21 @@ const options = yargs(hideBin(process.argv))
 		describe: "For `nomen format`: report files that would change without writing them",
 		type: "boolean",
 	})
-	.help(true)
-	.parseSync();
+	.help(true);
+
+const options = parser.parseSync();
+
+const command = options._[0];
 
 try {
 	// `nomen docs` generates markdown documentation instead of compiling.
-	if (options._[0] === "docs") {
+	if (command === "docs") {
 		run_docs(typeof options.in === "string" ? options.in : undefined);
 		process.exit(0);
 	}
 
 	// `nomen format` re-indents and tidies every .nm file under a folder.
-	if (options._[0] === "format") {
+	if (command === "format") {
 		const root = options.in ?? process.cwd();
 		const format_options = load_format_options(root);
 		const files = collect_nm_files(root);
@@ -151,6 +168,19 @@ try {
 		}
 		console.log(`\nFormatted ${changed} of ${files.length} file(s).`);
 		process.exit(0);
+	}
+
+	// `run`, `build` and `check` all start from parsed + checked source; `run`
+	// also links and executes, `build` stops after linking, `check` stops after
+	// checking. An unknown (or missing) command prints the help instead.
+	let mode: Mode | undefined;
+	if (command === "run") mode = "run";
+	else if (command === "build") mode = "build";
+	else if (command === "check") mode = "check";
+
+	if (!mode) {
+		parser.showHelp("log");
+		process.exit(1);
 	}
 
 	// An explicit --in wins; otherwise discover what to compile from the
@@ -180,24 +210,21 @@ try {
 
 		// Is the --in path a folder
 		if (fs.lstatSync(options.in).isDirectory()) {
-			// Loop through files in the folder
-			//processFolder(options.in);
 			if (options.watch) {
-				watchPath(options.in, config);
+				watchPath(options.in, config, mode);
 			} else {
-				processFolder(options.in, config);
+				processFolder(options.in, config, mode);
 			}
 		} else {
 			// Process the supplied file
 			const extname = path.extname(options.in);
 			if (shouldProcessFile(options.in)) {
-				//processFile(options.in);
 				// NOTE: We get add notifications for all watched files immediately
 				// TODO: Is this the case on Windows etc too?
 				if (options.watch) {
-					watchPath(options.in, config);
+					watchPath(options.in, config, mode);
 				} else {
-					processFile(options.in, config);
+					processFile(options.in, config, mode);
 				}
 			} else {
 				console.log("Unsupported file type: " + extname);
@@ -307,20 +334,20 @@ function compile_audit_runtime(config: Config, input_path: string, buildDir: str
 	return audit_obj;
 }
 
-function watchPath(p: string, config: Config) {
+function watchPath(p: string, config: Config, mode: Mode) {
 	chokidar.watch(p).on("all", (event, filePath) => {
 		if (shouldProcessFile(filePath)) {
-			processFile(filePath, config);
+			processFile(filePath, config, mode);
 		}
 	});
 }
 
-function processFolder(folder: string, config: Config) {
+function processFolder(folder: string, config: Config, mode: Mode) {
 	const dir = fs.opendirSync(folder);
 	let dirent;
 	while ((dirent = dir.readSync()) !== null) {
 		if (shouldProcessFile(dirent.name)) {
-			processFile(path.join(folder, dirent.name), config);
+			processFile(path.join(folder, dirent.name), config, mode);
 			// @ts-ignore
 			let _ = fs.watch;
 		}
@@ -332,7 +359,7 @@ function shouldProcessFile(filename: string) {
 	return path.extname(filename) === SUPPORTED_EXTENSION;
 }
 
-function processFile(filename: string, config: Config) {
+function processFile(filename: string, config: Config, mode: Mode) {
 	console.log("Processing", filename);
 
 	const arch = config.arch || "aarch64";
@@ -348,19 +375,24 @@ function processFile(filename: string, config: Config) {
 	let input = join(path.resolve(filename), config.lib);
 	const library = config.lib ? get_library(config.lib) : undefined;
 	const parsed = parse(input, library);
-	// TODO: If verbose flag
-	// console.log("Parsed");
 
 	let errors = parsed.errors;
-	const ok = !errors.length;
 
-	if (!ok) {
+	if (errors.length) {
 		console.log(render_errors(input, errors));
 		return;
 	}
 
-	// TODO: If verbose flag
-	// console.log("Built");
+	// Warnings come out of the parse/check phase, so every mode reports them.
+	if (parsed.warnings.length) console.log(render_warnings(input, parsed.warnings));
+
+	// `check` stops after parsing and checking — no building, linking or running.
+	if (mode === "check") {
+		const checkTime = performance.now();
+		console.log(`Checked in ${(checkTime - startTime).toFixed(2)}ms`);
+		return;
+	}
+
 	const result = build(parsed.root, { arch, platform, audit: config.audit });
 
 	if (result.errors && result.errors.length > 0) {
@@ -391,6 +423,7 @@ function processFile(filename: string, config: Config) {
 	console.log(`Created ${codefile} in ${(compileTime - startTime).toFixed(2)}ms`);
 	console.log("");
 
+	// `build` links the executable but does not run it; `run` links and runs.
 	startTime = performance.now();
 
 	const audit_obj = config.audit ? compile_audit_runtime(config, resolved, buildDir) : undefined;
@@ -402,6 +435,13 @@ function processFile(filename: string, config: Config) {
 			? " -framework CoreGraphics -framework Foundation -framework AppKit -lobjc"
 			: "";
 	execSync(`clang -o ${outfile} ${link_inputs}${framework_flags}`);
+
+	if (mode === "build") {
+		const buildTime = performance.now();
+		console.log(`Built ${outfile} in ${(buildTime - startTime).toFixed(2)}ms`);
+		return;
+	}
+
 	execSync(outfile, { stdio: "inherit" });
 
 	const runTime = performance.now();

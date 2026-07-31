@@ -5,4 +5,5 @@ export default interface ParseResult {
 	ok: boolean;
 	root: RootNode;
 	errors: CompileError[];
+	warnings: CompileError[];
 }

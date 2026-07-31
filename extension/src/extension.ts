@@ -114,7 +114,7 @@ async function runNomen(uri: vscode.Uri | undefined, audit: boolean): Promise<vo
 	const executable = resolve_executable(document.uri);
 	const arch = get_config<"aarch64" | "c">("arch", "aarch64");
 	const file_arg = shell_quote(document.uri.fsPath);
-	const flags = ["--in", file_arg, "--arch", arch];
+	const flags = ["run", "--in", file_arg, "--arch", arch];
 	const lib_dir = resolve_lib_dir(document.uri);
 	if (lib_dir) flags.push("--lib", shell_quote(lib_dir));
 	if (audit) {
@@ -265,6 +265,19 @@ function update_diagnostics(document: vscode.TextDocument): void {
 				vscode.DiagnosticSeverity.Error,
 			),
 	);
+	// Surface lint warnings (unused declarations, var-never-changed) as hints so
+	// they're visible without competing with real errors. Only those that fall
+	// within the document itself (not the inlined library source).
+	for (const w of state.warnings) {
+		if (w.start < 0 || w.start >= text.length) continue;
+		diags.push(
+			new vscode.Diagnostic(
+				error_range(document, text, w.start),
+				w.message,
+				vscode.DiagnosticSeverity.Warning,
+			),
+		);
+	}
 	diagnostics.set(document.uri, diags);
 }
 

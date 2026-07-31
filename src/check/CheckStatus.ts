@@ -88,6 +88,12 @@ export default interface CheckStatus {
 	errors: CompileError[];
 
 	/**
+	 * Warnings (e.g. unused declarations, var never changed) collected by the
+	 * post-check analysis pass. Only populated on the root status.
+	 */
+	warnings?: CompileError[];
+
+	/**
 	 * Map from buffer access path (e.g. "buf", "self.items") to the minimum
 	 * guaranteed capacity, established by recent calls to grow_int(N)/alloc(N)/
 	 * alloc_int(N). Used by the constraint evaluator to verify
