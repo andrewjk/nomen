@@ -467,4 +467,67 @@ class Dog: Speaker<int> {
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
 	});
+
+	test("missing required method on a generic trait", () => {
+		const input = `
+trait Greetable<T> {
+	func code = (self, out T)
+}
+
+class G: Greetable<int> {
+}
+`;
+		const expected = [
+			test_error(
+				input,
+				"Type 'G' does not conform to trait 'Greetable': missing required method 'code'",
+				6,
+				1,
+			),
+		];
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual(expected);
+	});
+
+	test("override that ignores the substituted type arg does not conform", () => {
+		// `trait Box<T> { func get = (self, out T) }` conformed by `Box<int>`
+		// must implement `get` returning int, not string.
+		const input = `
+trait Box<T> {
+	func get = (self, out T)
+}
+
+struct B: Box<int> {
+	func get = (self, out string) {
+		return ""
+	}
+}
+`;
+		const expected = [
+			test_error(
+				input,
+				"Type 'B' does not conform to trait 'Box': method 'get' does not match the trait signature",
+				7,
+				2,
+			),
+		];
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual(expected);
+	});
+
+	test("override matching the substituted type arg conforms", () => {
+		const input = `
+trait Box<T> {
+	func get = (self, out T)
+}
+
+struct B: Box<int> {
+	func get = (self, out int) {
+		return 0
+	}
+}
+`;
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual([]);
+	});
 });

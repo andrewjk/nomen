@@ -326,3 +326,133 @@ struct Frank: Person {
 		expect(parsed.errors).toEqual(expected);
 	});
 });
+
+// CONFORMANCE
+describe("trait conformance", () => {
+	test("missing required (bodyless) method", () => {
+		const input = `
+trait Drawable {
+  func draw = (self)
+}
+
+struct Circle: Drawable {
+}
+`;
+		const expected = [
+			test_error(
+				input,
+				"Type 'Circle' does not conform to trait 'Drawable': missing required method 'draw'",
+				6,
+				1,
+			),
+		];
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual(expected);
+	});
+
+	test("override with wrong parameter type does not conform", () => {
+		const input = `
+trait Speaker {
+  func say = (self, int n)
+}
+
+struct Parrot: Speaker {
+  func say = (self, string n) {
+    return
+  }
+}
+`;
+		const expected = [
+			test_error(
+				input,
+				"Type 'Parrot' does not conform to trait 'Speaker': method 'say' does not match the trait signature",
+				7,
+				3,
+			),
+		];
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual(expected);
+	});
+
+	test("override with wrong return type does not conform", () => {
+		const input = `
+trait Counter {
+  func value = (self, out int)
+}
+
+struct C: Counter {
+  func value = (self, out string) {
+    return ""
+  }
+}
+`;
+		const expected = [
+			test_error(
+				input,
+				"Type 'C' does not conform to trait 'Counter': method 'value' does not match the trait signature",
+				7,
+				3,
+			),
+		];
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual(expected);
+	});
+
+	test("override with wrong parameter count does not conform", () => {
+		const input = `
+trait Adder {
+  func add = (self, int a, int b)
+}
+
+struct A: Adder {
+  func add = (self, int a) {
+    return
+  }
+}
+`;
+		const expected = [
+			test_error(
+				input,
+				"Type 'A' does not conform to trait 'Adder': method 'add' does not match the trait signature",
+				7,
+				3,
+			),
+		];
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual(expected);
+	});
+
+	test("an overload matching the trait signature satisfies conformance", () => {
+		const input = `
+trait Speaker {
+  func say = (self, int n)
+}
+
+struct Parrot: Speaker {
+  func say = (self, int n) {
+    return
+  }
+  func say = (self, string n) {
+    return
+  }
+}
+`;
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual([]);
+	});
+
+	test("inheriting a default body without overriding is allowed", () => {
+		const input = `
+trait Greeter {
+  func hello = (out string) {
+    return "hi"
+  }
+}
+
+struct G: Greeter {
+}
+`;
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual([]);
+	});
+});

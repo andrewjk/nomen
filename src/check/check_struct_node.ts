@@ -5,7 +5,11 @@ import StructNode from "../nodes/StructNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import check_declaration_node from "./check_declaration_node.ts";
-import { monomorphize, synthesize_generic_trait_defaults } from "./check_function_call_node.ts";
+import {
+	monomorphize,
+	substitute_type,
+	synthesize_generic_trait_defaults,
+} from "./check_function_call_node.ts";
 import check_function_node from "./check_function_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import { is_class_type } from "./utils/ownership.ts";
@@ -55,6 +59,13 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 	// arity validation above so an invalid conformance doesn't synthesize
 	// against missing args.
 	synthesize_generic_trait_defaults(struct, status);
+
+	// Enforce trait conformance: every required (bodyless) trait method must
+	// be implemented, and any override must match the trait's signature.
+	// Runs after synthesize_generic_trait_defaults (so generic-trait default
+	// clones are present) and after the block-level auto-derive pre-pass
+	// (so auto-derived to_string/eq/hash satisfy their traits).
+	check_trait_conformance(struct, status);
 
 	for (let i = 0; i < struct.fields.length; i++) {
 		for (let j = i + 1; j < struct.fields.length; j++) {
@@ -245,4 +256,101 @@ export function resolve_struct_field_types(status: CheckStatus) {
 		}
 		rewrite_generic_buffer_fields(struct, status);
 	}
+}
+
+/**
+ * Enforce trait conformance for a struct. For each declared trait:
+ *
+ *  - A required (bodyless) trait method must be implemented by the struct.
+ *  - Any struct method that overrides a trait method (required or default)
+ *    must match the trait's signature — parameter count, parameter types
+ *    and return type — after substituting a generic trait's type params
+ *    with the struct's conformance type args.
+ *
+ * A trait method with a default body need not be overridden; if it isn't,
+ * the default is inherited (and, for generic traits, already synthesized
+ * onto the struct by synthesize_generic_trait_defaults). `#init` and
+ * `#destroy` are lifecycle hooks, not contract methods, so they're skipped.
+ */
+function check_trait_conformance(struct: StructNode, status: CheckStatus) {
+	for (let i = 0; i < struct.traits.length; i++) {
+		const trait = status.traits.find((t) => t.name === struct.traits[i]);
+		if (!trait) continue;
+
+		const args = struct.trait_args[i];
+		// A generic trait whose conformance arity is wrong already produced
+		// an error above; skip it here to avoid a cascade of spurious
+		// signature mismatches from the unresolved type params.
+		if (trait.type_params.length > 0 && (!args || args.length !== trait.type_params.length)) {
+			continue;
+		}
+		const substitution = new Map<string, string>();
+		if (args && trait.type_params.length === args.length) {
+			for (let j = 0; j < trait.type_params.length; j++) {
+				substitution.set(trait.type_params[j], args[j].name);
+			}
+		}
+
+		for (const trait_func of trait.functions) {
+			if (trait_func.name === "#init" || trait_func.name === "#destroy") continue;
+
+			const overrides = struct.functions.filter((f) => f.name === trait_func.name);
+
+			if (overrides.length === 0) {
+				if (!trait_func.has_body) {
+					add_error(
+						status,
+						`Type '${struct.name}' does not conform to trait '${trait.name}': missing required method '${trait_func.name}'`,
+						struct.start,
+					);
+				}
+				continue;
+			}
+
+			// An override exists — at least one overload must satisfy the
+			// trait signature.
+			const matches = overrides.some((ov) => signature_matches(ov, trait_func, substitution));
+			if (!matches) {
+				add_error(
+					status,
+					`Type '${struct.name}' does not conform to trait '${trait.name}': method '${trait_func.name}' does not match the trait signature`,
+					overrides[0].start,
+				);
+			}
+		}
+	}
+}
+
+/**
+ * Compare a struct method against a trait method signature, ignoring `self`
+ * (which is trait-typed on the trait and struct-typed on the conformer).
+ * The trait method's types are substituted with `substitution` first, so a
+ * generic trait like `trait Box<T> { func get = (self, out T) }` is compared
+ * against `func get = (self, out int)` once T→int is applied.
+ */
+function signature_matches(
+	struct_func: FunctionNode,
+	trait_func: FunctionNode,
+	substitution: Map<string, string>,
+): boolean {
+	const trait_params = trait_func.params.filter((p) => !p.is_self_param);
+	const struct_params = struct_func.params.filter((p) => !p.is_self_param);
+	if (trait_params.length !== struct_params.length) return false;
+	for (let k = 0; k < trait_params.length; k++) {
+		const expected = substitute_type(trait_params[k].type, substitution);
+		if (!types_match(expected, struct_params[k].type)) return false;
+	}
+	return types_match(
+		substitute_type(trait_func.return_type, substitution),
+		struct_func.return_type,
+	);
+}
+
+function types_match(a: Type, b: Type): boolean {
+	return (
+		a.name === b.name &&
+		!!a.is_ref === !!b.is_ref &&
+		!!a.is_view === !!b.is_view &&
+		!!a.is_array === !!b.is_array
+	);
 }
