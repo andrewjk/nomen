@@ -1,8 +1,19 @@
 # Container
 
-## `struct Container`
+## `func native_intrinsicnative_intrinsic(uint64 handle) -> _Tuple_int_int`
 
-A flexbox-style container that measures and arranges its child controls
+_No documentation._
+
+## `class Container`
+
+A flexbox-style container that measures and arranges its child controls.
+
+Conforms to `Control`: `measure(BoxConstraints)` measures the whole subtree,
+`set_frame` arranges it into a rectangle, and `intrinsic_size` reports the
+unbounded-content size. The handle-based `add` API and the SoA engine are
+unchanged — the trait methods are thin entry points over the existing math,
+so a `Container` can also be driven polymorphically as a `Control` (passed to
+a `Control`-taking function, stored in a `ClassBuffer<Control>`, etc.).
 
 **Members:**
 
@@ -30,14 +41,17 @@ A flexbox-style container that measures and arranges its child controls
 - `add_zstack(int parent, int span, int grow, int align, int shrink) -> int`
 - `add_block(int padding, int span, int grow, int align, int shrink) -> int`
 - `add_block_to(int parent, int padding, int span, int grow, int align, int shrink) -> int`
-- `measure(int idx, int min_w, int max_w, int min_h, int max_h) -> int`
-- `arrange(int idx, int x, int y, int w, int h) -> void`
+- `measure_node(int idx, int min_w, int max_w, int min_h, int max_h) -> int`
+- `arrange_node(int idx, int x, int y, int w, int h) -> void`
 - `collect_dirty()`
 - `dirty_count() -> int`
 - `dirty_rect(int i) -> string`
 - `mark_dirty(int idx)`
 - `measure_count(int i) -> int`
 - `apply(int content_w, int content_h)`
+- `measure(BoxConstraints constraints) -> Size`
+- `set_frame(int x, int y, int width, int height)`
+- `intrinsic_size() -> Size`
 - `compute(int avail_w, int avail_h)`
 - `layout(Window win)`
 - `set_resize_callback(Window win)`

@@ -8,3 +8,5 @@ A push-button control that triggers an action when clicked
 
 - `set_frame(int x, int y, int width, int height)`
 - `set_title(string title)`
+- `intrinsic_size() -> Size`
+- `measure(BoxConstraints constraints) -> Size`

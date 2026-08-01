@@ -11,3 +11,5 @@ A toggle control with a title and checked/hidden state
 - `set_checked(bool checked)`
 - `is_checked() -> bool`
 - `set_hidden(bool hidden)`
+- `intrinsic_size() -> Size`
+- `measure(BoxConstraints constraints) -> Size`

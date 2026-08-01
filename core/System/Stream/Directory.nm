@@ -1,7 +1,15 @@
 /**
- * Helpers for working with filesystem directories (`create`/`remove`/`exists`/`list`)
+ * Helpers for working with filesystem directories.
+ *
+ * `Directory` is a namespace of static helpers — no instance is constructed.
+ *
+ *	Directory.create("scratch")
+ *	const string names = Directory.list("scratch")
+ *	const bool has     = Directory.exists("scratch")
+ *	Directory.remove("scratch")
  **/
 pub struct Directory {
+	// (static) Create a directory at `path`.
 	pub func create = (string path) {
 		```
 		#arch: c
@@ -14,6 +22,7 @@ pub struct Directory {
 		```
 	}
 
+	// (static) Remove the (empty) directory at `path`.
 	pub func remove = (string path) {
 		```
 		#arch: c
@@ -25,6 +34,7 @@ pub struct Directory {
 		```
 	}
 
+	// (static) Whether a directory exists at `path`.
 	pub func exists = (string path, out bool) {
 		```
 		#arch: c

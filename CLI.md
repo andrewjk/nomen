@@ -17,13 +17,13 @@ When no `--in` is given, the CLI discovers what to compile from the current work
 
 ## Commands
 
-| Command    | Description                                                              |
-| ---------- | ----------------------------------------------------------------------- |
-| `run`      | Parse, check, build, link, **and execute** the program.                  |
-| `build`    | Parse, check, build, **and link** the executable, but do not run it.     |
-| `check`    | **Parse and check only** — no code generation, linking, or execution.   |
-| `format`   | Reformat every `.nm` file under `--in` (or the current folder).          |
-| `docs`     | Generate markdown documentation into a `docs/` folder.                   |
+| Command  | Description                                                           |
+| -------- | --------------------------------------------------------------------- |
+| `run`    | Parse, check, build, link, **and execute** the program.               |
+| `build`  | Parse, check, build, **and link** the executable, but do not run it.  |
+| `check`  | **Parse and check only** — no code generation, linking, or execution. |
+| `format` | Reformat every `.nm` file under `--in` (or the current folder).       |
+| `docs`   | Generate markdown documentation into a `docs/` folder.                |
 
 An unknown or missing command prints the help text and exits with code `1`.
 
@@ -143,7 +143,7 @@ All options are global and accepted by every command (though only a subset are m
 
 - **Type:** boolean
 - **Applies to:** `format`
-- **Description:** Dry-run formatter mode. Files are scanned and any that *would* be reformatted are reported as changed, but **no files are written**. (Note: this is a separate flag from the `check` *command*.)
+- **Description:** Dry-run formatter mode. Files are scanned and any that _would_ be reformatted are reported as changed, but **no files are written**. (Note: this is a separate flag from the `check` _command_.)
 
 ### Help
 
@@ -164,15 +164,15 @@ When `--in` **is** supplied, the build root is that path (the folder itself, or 
 
 All generated artifacts are written to `<build_root>/build/` (created if missing), regardless of `--out`:
 
-| Artifact                         | When emitted                                            |
-| -------------------------------- | ------------------------------------------------------- |
-| `main.h`                         | Always (for `run` / `build`).                           |
-| `<basename>.s`                   | `--arch aarch64` (the default).                         |
-| `<basename>.m`                   | `--arch c` on `macos` / `ios`.                          |
-| `<basename>.c`                   | `--arch c` on other platforms.                          |
-| `<basename>`                     | The linked executable (`run` / `build`).                |
-| `<basename>_companion.m` / `.c`  | Only when the backend emits a companion file (UI interop). |
-| `audit_runtime.o`                | When `--audit` is set.                                  |
+| Artifact                        | When emitted                                               |
+| ------------------------------- | ---------------------------------------------------------- |
+| `main.h`                        | Always (for `run` / `build`).                              |
+| `<basename>.s`                  | `--arch aarch64` (the default).                            |
+| `<basename>.m`                  | `--arch c` on `macos` / `ios`.                             |
+| `<basename>.c`                  | `--arch c` on other platforms.                             |
+| `<basename>`                    | The linked executable (`run` / `build`).                   |
+| `<basename>_companion.m` / `.c` | Only when the backend emits a companion file (UI interop). |
+| `audit_runtime.o`               | When `--audit` is set.                                     |
 
 `<basename>` is the `--in` filename without its `.nm` extension.
 
@@ -196,25 +196,25 @@ CLI flags (`--arch`, `--platform`, `--lib`, `--audit`, `--audit-runtime`) overri
 
 Several behaviors key off a JSON-with-comments `package.jsonc` discovered by walking up from the input file (or cwd):
 
-| Field              | Used by                                   | Meaning                                                                 |
-| ------------------ | ----------------------------------------- | ----------------------------------------------------------------------- |
-| `entry`            | input resolution (`run`/`build`/`check`)  | Path to the project's main `.nm` file.                                  |
-| `imports.System`   | library resolution                        | Path to the `System` library folder.                                    |
-| `exports`          | `docs`, library detection                 | Map of name → glob pattern; a package with `exports` is treated as a library. |
-| `format`           | `format` command                          | A [Format Options](#format-options) block.                              |
+| Field            | Used by                                  | Meaning                                                                       |
+| ---------------- | ---------------------------------------- | ----------------------------------------------------------------------------- |
+| `entry`          | input resolution (`run`/`build`/`check`) | Path to the project's main `.nm` file.                                        |
+| `imports.System` | library resolution                       | Path to the `System` library folder.                                          |
+| `exports`        | `docs`, library detection                | Map of name → glob pattern; a package with `exports` is treated as a library. |
+| `format`         | `format` command                         | A [Format Options](#format-options) block.                                    |
 
 ### Format Options
 
 The `format` block (also readable from a `core/package.jsonc`) controls `nomen format`. Any omitted field falls back to the built-in default:
 
-| Field                  | Type    | Default | Description                                                          |
-| ---------------------- | ------- | ------- | -------------------------------------------------------------------- |
-| `print_width`          | number  | `100`   | Column to wrap argument lists at.                                    |
-| `sort_imports`         | boolean | `true`  | Sort each run of `import` lines alphabetically.                      |
-| `use_tabs`             | boolean | `true`  | Indent with tabs rather than spaces.                                 |
-| `trailing_comma`       | boolean | `true`  | Keep a trailing comma on multi-line array literals.                  |
-| `strip_redundant_types`| boolean | `true`  | Drop declared types the value already states (e.g. `var Text t = Text(w)`). |
-| `tab_width`            | number  | `4`     | How wide a tab is, when measuring against `print_width`.             |
+| Field                   | Type    | Default | Description                                                                 |
+| ----------------------- | ------- | ------- | --------------------------------------------------------------------------- |
+| `print_width`           | number  | `100`   | Column to wrap argument lists at.                                           |
+| `sort_imports`          | boolean | `true`  | Sort each run of `import` lines alphabetically.                             |
+| `use_tabs`              | boolean | `true`  | Indent with tabs rather than spaces.                                        |
+| `trailing_comma`        | boolean | `true`  | Keep a trailing comma on multi-line array literals.                         |
+| `strip_redundant_types` | boolean | `true`  | Drop declared types the value already states (e.g. `var Text t = Text(w)`). |
+| `tab_width`             | number  | `4`     | How wide a tab is, when measuring against `print_width`.                    |
 
 Example:
 
@@ -222,8 +222,8 @@ Example:
 {
 	"format": {
 		"print_width": 120,
-		"use_tabs": true
-	}
+		"use_tabs": true,
+	},
 }
 ```
 
@@ -274,8 +274,8 @@ nomen run
 
 ## Exit Codes
 
-| Code | Meaning                                            |
-| ---- | -------------------------------------------------- |
+| Code | Meaning                                             |
+| ---- | --------------------------------------------------- |
 | `0`  | Success (`docs`/`format` complete, or pipeline ok). |
 | `1`  | Unknown/missing command, or no input discovered.    |
 

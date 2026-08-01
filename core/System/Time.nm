@@ -1,7 +1,14 @@
 /**
- * Wall-clock time and sleeping (`now_ms`/`now_unix`/`sleep_ms`)
+ * Wall-clock time and sleeping.
+ *
+ * All members are static — no instance is constructed.
+ *
+ *	const uint64 started = Time.now_ms()       // wall-clock ms since the epoch
+ *	const uint64 unix    = Time.now_unix()     // Unix seconds
+ *	Time.sleep_ms(50)                          // sleep 50 ms
  **/
 pub struct Time {
+	// (static) Wall-clock milliseconds since the Unix epoch.
 	pub func now_ms = (out uint64) {
 		```
 		#arch: c
@@ -33,6 +40,7 @@ pub struct Time {
 		return 0
 	}
 
+	// (static) Wall-clock seconds since the Unix epoch.
 	pub func now_unix = (out uint64) {
 		```
 		#arch: c
@@ -45,6 +53,8 @@ pub struct Time {
 		```
 	}
 
+	// (static) Block the calling task for `ms` milliseconds. Uses nanosleep,
+	// so it is not capped at the 32-bit usleep range.
 	pub func sleep_ms = (uint64 ms) {
 		```
 		#arch: c

@@ -1,11 +1,33 @@
 /**
- * A file handle for reading and writing (`open`/`close`/`readAll`/`writeLine`/…),
- * plus static one-shot helpers `exists`, `delete`, `read_all`, `write_all`
+ * A file handle for reading and writing, plus static one-shot helpers.
+ *
+ * `File` is a handle opened with a mode string (`"r"`, `"w"`, …) and closed
+ * automatically by its `#destroy` when it goes out of scope. Read methods set
+ * the `eof` flag when the end of the file is reached.
+ *
+ *	var File w = File()
+ *	w.open("notes.txt", "w")
+ *	w.writeLine("hello")
+ *	w.writeLine("world")
+ *	w.close()
+ *
+ *	var File r = File()
+ *	r.open("notes.txt", "r")
+ *	const string first = r.readLine()    // "hello"
+ *	const string rest  = r.readAll()     // read the remaining bytes
+ *
+ * Static one-shot helpers do the open/read/close in one call:
+ *
+ *	File.write_all("out.txt", "payload")
+ *	const string body = File.read_all("out.txt")
+ *	const bool ok     = File.exists("out.txt")
+ *	File.delete("out.txt")
  **/
 pub struct File {
 	var uint64 handle = 0
 	pub var eof = false
 
+	// Open the file at `path` with a C mode string ("r", "w", "a", …).
 	pub func open = (ref self, string path, string mode) {
 		```
 		#arch: c
@@ -20,6 +42,8 @@ pub struct File {
 		```
 	}
 
+	// Close the handle. Also performed automatically by #destroy; calling
+	// close explicitly releases the resource early.
 	pub func close = (ref self) {
 		```
 		#arch: c
@@ -38,6 +62,8 @@ pub struct File {
 		```
 	}
 
+	// Read every byte from the current position to EOF and return it. Sets
+	// `eof`.
 	pub func readAll = (ref self, out string) {
 		```
 		#arch: c
@@ -86,6 +112,7 @@ pub struct File {
 		return ""
 	}
 
+	// Write a string at the current position.
 	pub func writeAll = (self, string data) {
 		```
 		#arch: c
@@ -100,6 +127,8 @@ pub struct File {
 		```
 	}
 
+	// Read up to the next '\n' (the newline is not included). Sets `eof`
+	// when the end of the file is reached.
 	pub func readLine = (ref self, out string) {
 		```
 		#arch: c
@@ -178,6 +207,7 @@ pub struct File {
 		return ""
 	}
 
+	// Write a string followed by '\n'.
 	pub func writeLine = (self, string data) {
 		```
 		#arch: c
@@ -196,6 +226,8 @@ pub struct File {
 		```
 	}
 
+	// Read up to `size` bytes from the current position. Sets `eof` if fewer
+	// than `size` bytes remain.
 	pub func readChunk = (ref self, int size, out string) {
 		```
 		#arch: c
@@ -234,6 +266,7 @@ pub struct File {
 		return ""
 	}
 
+	// Write the first `size` bytes of `data` at the current position.
 	pub func writeChunk = (self, string data, int size) {
 		```
 		#arch: c
@@ -249,6 +282,7 @@ pub struct File {
 		```
 	}
 
+	// (static) Whether a file exists at `path`.
 	pub func exists = (string path, out bool) {
 		```
 		#arch: c
@@ -268,6 +302,7 @@ pub struct File {
 		return false
 	}
 
+	// (static) Remove the file at `path`.
 	pub func delete = (string path) {
 		```
 		#arch: c
@@ -279,6 +314,8 @@ pub struct File {
 		```
 	}
 
+	// (static) Read the entire contents of `path` in one open/read/close.
+	// Returns an empty string if the file cannot be opened.
 	pub func read_all = (string path, out string) {
 		```
 		#arch: c
@@ -341,6 +378,8 @@ pub struct File {
 		return ""
 	}
 
+	// (static) Write `data` to `path` (replacing any existing contents) in
+	// one open/write/close.
 	pub func write_all = (string path, string data) {
 		```
 		#arch: c
@@ -371,6 +410,8 @@ pub struct File {
 		```
 	}
 
+	// Closes the handle if still open (no-op after close). Runs automatically
+	// at scope exit, so an unclosed `File` never leaks.
 	func #destroy = () {
 		```
 		#arch: c
