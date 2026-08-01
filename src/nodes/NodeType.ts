@@ -4,6 +4,7 @@ export type NodeType =
 	| "struct"
 	| "class"
 	| "trait"
+	| "extend"
 	| "func"
 	| "param"
 	| "declare"

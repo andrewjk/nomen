@@ -5,6 +5,7 @@ import BitsetNode from "../nodes/BitsetNode.ts";
 import type BlockNode from "../nodes/BlockNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
 import EnumNode from "../nodes/EnumNode.ts";
+import ExtendNode from "../nodes/ExtendNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import TraitNode from "../nodes/TraitNode.ts";
@@ -15,6 +16,14 @@ import type CheckStatus from "./CheckStatus.ts";
 
 export default function check_block_node(node: BlockNode, status: CheckStatus) {
 	gather_structs(node, status);
+
+	// Merge each `extend struct/class Name { ... }` block's methods into the
+	// named target struct, so the upcoming statement-order walk checks them
+	// (and the build emits them) exactly like methods declared in the body.
+	// Runs after gather_structs so the target is registered regardless of
+	// source order, and regardless of whether the extend sits before or after
+	// the struct (or extends a library type appended after user source).
+	apply_extensions(node, status);
 
 	// At the root, pre-register every top-level `const` so its name is visible
 	// to functions compiled earlier in statement order — mirroring how
@@ -245,6 +254,45 @@ function gather_structs(block: BlockNode, status: CheckStatus) {
 				}
 				break;
 			}
+		}
+	}
+}
+
+/**
+ * Merge each top-level `extend struct Name { ... }` / `extend class Name`
+ * block's methods into the named target struct.
+ *
+ * The target must already be registered (gather_structs ran first), and the
+ * extend's `is_class` flag must match the target's — `extend class` is only
+ * valid on a class, `extend struct` only on a struct. After merging, the
+ * methods are indistinguishable from methods declared in the original body:
+ * check_struct_node checks them (including its duplicate-name guard, so an
+ * extend that redeclares an existing method errors), and the build emits them
+ * as `<Struct>_<method>`.
+ *
+ * Methods added here are also reachable through trait dispatch when the
+ * struct conforms — nothing else needs to know they came from an extend.
+ */
+function apply_extensions(block: BlockNode, status: CheckStatus) {
+	for (const node of block.statements) {
+		if (node.node_type !== "extend") continue;
+		const ext = node as ExtendNode;
+		const target = status.structs.find((s) => s.name === ext.name);
+		if (!target) {
+			add_error(status, `Cannot extend unknown type: ${ext.name}`, ext.start);
+			continue;
+		}
+		if (!!target.is_class !== !!ext.is_class) {
+			add_error(
+				status,
+				`Cannot extend ${target.is_class ? "class" : "struct"} '${ext.name}' with extend ${ext.is_class ? "class" : "struct"}`,
+				ext.start,
+			);
+			continue;
+		}
+		ext.scope = target;
+		for (const func of ext.functions) {
+			target.functions.push(func);
 		}
 	}
 }

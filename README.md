@@ -63,18 +63,18 @@ pub func main = () {
 
 The `nomen` CLI has five commands: `run`, `build`, `check`, `format`, and `docs`. Top-level options:
 
-| Option              | Alias | Description                                                                |
-| ------------------- | ----- | -------------------------------------------------------------------------- |
-| `--in <path>`       | `-i`  | Input `.nm` file or folder (auto-discovered if omitted).                   |
-| `--out <path>`      | `-o`  | Declared but currently unused; output goes to `<root>/build/`.             |
-| `--config <path>`   | `-c`  | Path to a JSON build config file.                                          |
-| `--watch`           | `-w`  | Re-run the pipeline on file changes.                                       |
-| `--arch <a>`        | `-a`  | Backend: `aarch64` (default) or `c`.                                       |
-| `--platform <p>`    | `-p`  | Target: `macos`, `ios`, `linux`, `android`, `windows`, `web` (host-derived default). |
-| `--lib <path>`      | `-l`  | Path to the `System` library directory.                                    |
-| `--audit`           |       | Enable memory auditing of the generated program.                           |
-| `--audit-runtime`   |       | Path to `audit_runtime.c` (used with `--audit`).                           |
-| `--check`           |       | `format` dry-run: report changes without writing.                          |
+| Option            | Alias | Description                                                                          |
+| ----------------- | ----- | ------------------------------------------------------------------------------------ |
+| `--in <path>`     | `-i`  | Input `.nm` file or folder (auto-discovered if omitted).                             |
+| `--out <path>`    | `-o`  | Declared but currently unused; output goes to `<root>/build/`.                       |
+| `--config <path>` | `-c`  | Path to a JSON build config file.                                                    |
+| `--watch`         | `-w`  | Re-run the pipeline on file changes.                                                 |
+| `--arch <a>`      | `-a`  | Backend: `aarch64` (default) or `c`.                                                 |
+| `--platform <p>`  | `-p`  | Target: `macos`, `ios`, `linux`, `android`, `windows`, `web` (host-derived default). |
+| `--lib <path>`    | `-l`  | Path to the `System` library directory.                                              |
+| `--audit`         |       | Enable memory auditing of the generated program.                                     |
+| `--audit-runtime` |       | Path to `audit_runtime.c` (used with `--audit`).                                     |
+| `--check`         |       | `format` dry-run: report changes without writing.                                    |
 
 See [CLI.md](CLI.md) for the full reference (commands, input resolution, build output, config files, and examples).
 
@@ -354,6 +354,32 @@ pub struct Point : Printable {
 const Printable p = Point(1, 2)
 const s = p.to_string()
 ```
+
+### Extension Methods
+
+Add methods to an existing struct or class with an `extend` block. The keyword
+must match the type (`extend struct` for a struct, `extend class` for a class),
+and only methods may be added:
+
+```nomen
+struct Point {
+    var int x
+    var int y
+}
+
+extend struct Point {
+    pub func manhattan = (self, out int) {
+        return self.x + self.y
+    }
+}
+
+const p = Point(3, 4)
+const m = p.manhattan()
+```
+
+Extended methods behave exactly like methods declared in the body — same
+dispatch, visibility, and overloading. `extend` blocks may sit before or after
+the type, and may target types from another module.
 
 ### Operator Overloading
 

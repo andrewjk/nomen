@@ -9,6 +9,7 @@ export const KEYWORDS = new Set([
 	"trait",
 	"enum",
 	"bitset",
+	"extend",
 	"func",
 	"var",
 	"const",

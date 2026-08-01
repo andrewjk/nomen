@@ -64,3 +64,24 @@ c.increment()
 		expect(compile_module(input)).toEqual([]);
 	});
 });
+
+describe("readme: extension methods", () => {
+	test("extend struct adds a method", () => {
+		const input = `
+struct Point {
+    var int x
+    var int y
+}
+
+extend struct Point {
+    pub func manhattan = (self, out int) {
+        return self.x + self.y
+    }
+}
+
+const p = Point(3, 4)
+const m = p.manhattan()
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+});

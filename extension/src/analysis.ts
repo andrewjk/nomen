@@ -11,6 +11,7 @@ import type BranchNode from "../../src/nodes/BranchNode.ts";
 import type CastNode from "../../src/nodes/CastNode.ts";
 import type DeclarationNode from "../../src/nodes/DeclarationNode.ts";
 import type EnumNode from "../../src/nodes/EnumNode.ts";
+import type ExtendNode from "../../src/nodes/ExtendNode.ts";
 import type ForLoopNode from "../../src/nodes/ForLoopNode.ts";
 import type FunctionCallNode from "../../src/nodes/FunctionCallNode.ts";
 import type FunctionNode from "../../src/nodes/FunctionNode.ts";
@@ -252,6 +253,18 @@ class Builder {
 			case "declare": {
 				const def = this.variable_def(node as DeclarationNode, "variable");
 				if (def) this.globals.set(def.name, def);
+				break;
+			}
+			case "extend": {
+				// An extend's methods belong to the named target struct/class, so
+				// index them under that type — editor completion/hover then sees
+				// them exactly like in-body methods.
+				const ext = node as ExtendNode;
+				const info = this.type_info(ext.name);
+				for (const func of ext.functions || []) {
+					const func_def = this.function_def(func, ext.name);
+					if (func_def) info.methods.set(func_def.name, func_def);
+				}
 				break;
 			}
 		}
@@ -501,6 +514,11 @@ class Builder {
 					this.add_type_ref(field.type, field.type_start);
 				}
 				for (const func of type_node.functions || []) this.walk_function(func, type_node.name);
+				return;
+			}
+			case "extend": {
+				const ext = node as ExtendNode;
+				for (const func of ext.functions || []) this.walk_function(func, ext.name);
 				return;
 			}
 			case "func":

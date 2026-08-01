@@ -13,6 +13,7 @@ import parse_declaration from "./parse_declaration.ts";
 import parse_destroy from "./parse_destroy.ts";
 import parse_enum from "./parse_enum.ts";
 import parse_expression from "./parse_expression.ts";
+import parse_extend from "./parse_extend.ts";
 import parse_for_loop from "./parse_for_loop.ts";
 import parse_function from "./parse_function.ts";
 import parse_function_call_parameter from "./parse_function_call_parameter.ts";
@@ -68,6 +69,10 @@ export default function parse_statement(status: ParseStatus) {
 			}
 			case "class": {
 				parse_struct(default_visibility(status), status, true);
+				break;
+			}
+			case "extend": {
+				parse_extend(default_visibility(status), status);
 				break;
 			}
 			case "enum": {

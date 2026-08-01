@@ -2,6 +2,7 @@ import add_error from "../add_error.ts";
 import parse_bitset from "./parse_bitset.ts";
 import parse_declaration from "./parse_declaration.ts";
 import parse_enum from "./parse_enum.ts";
+import parse_extend from "./parse_extend.ts";
 import parse_function from "./parse_function.ts";
 import parse_struct from "./parse_struct.ts";
 import parse_trait from "./parse_trait.ts";
@@ -36,6 +37,10 @@ export default function parse_visibility(visibility: "pub" | "private", status: 
 		}
 		case "class": {
 			parse_struct(visibility, status, true);
+			break;
+		}
+		case "extend": {
+			parse_extend(visibility, status);
 			break;
 		}
 		case "enum": {

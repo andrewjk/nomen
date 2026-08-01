@@ -201,7 +201,10 @@ export default function build_node(node: BaseNode, status: BuildStatus, with_sem
 			break;
 		}
 		case "enum":
-		case "bitset": {
+		case "bitset":
+		case "extend": {
+			// `extend` methods were merged into the target struct during check
+			// and are emitted by build_struct_node; nothing to emit here.
 			break;
 		}
 		default: {

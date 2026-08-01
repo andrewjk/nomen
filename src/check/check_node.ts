@@ -68,6 +68,13 @@ export default function check_node(node: BaseNode, status: CheckStatus): boolean
 			check_struct_node(node as StructNode, status);
 			break;
 		}
+		case "extend": {
+			// An `extend struct/class Name { ... }` only adds methods. They
+			// were merged into the target struct's `functions` array during
+			// the gather pass (apply_extensions), so check_struct_node checks
+			// them; nothing to do here.
+			break;
+		}
 		case "trait": {
 			check_trait_node(node as TraitNode, status);
 			break;

@@ -84,6 +84,12 @@ function mark_library_nodes(root: RootNode, boundary: number): void {
 			if (node.functions) for (const f of node.functions) walk(f);
 			if (node.fields) walk(node.fields);
 		}
+		if (type === "extend") {
+			// An extend's methods are merged into the target struct during
+			// check (after this pass), so walk them here to set is_library on
+			// library-defined extension methods.
+			if (node.functions) for (const f of node.functions) walk(f);
+		}
 		if (node.statements) walk(node.statements);
 		if (node.allocations) walk(node.allocations);
 	}

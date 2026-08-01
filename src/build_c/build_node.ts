@@ -92,6 +92,12 @@ export default function build_node(node: BaseNode, status: BuildStatus, with_sem
 			build_struct_node(node as StructNode, status);
 			break;
 		}
+		case "extend": {
+			// Methods on `extend struct/class Name { ... }` were merged into
+			// the target struct's functions during check and are emitted by
+			// build_struct_node; the extend node itself carries no code.
+			break;
+		}
 		case "trait": {
 			build_trait_node(node as TraitNode, status);
 			break;

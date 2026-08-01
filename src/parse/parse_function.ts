@@ -52,7 +52,10 @@ export default function parse_function(
 	}
 	const parent_for_type = status.stack.at(-1);
 	let return_type = new Type("");
-	if (name === "#init" && parent_for_type?.node_type === "struct") {
+	if (
+		name === "#init" &&
+		(parent_for_type?.node_type === "struct" || parent_for_type?.node_type === "extend")
+	) {
 		return_type = new Type((parent_for_type as StructNode).name);
 	}
 	const func = new FunctionNode(start, visibility, name, return_type);
@@ -136,7 +139,8 @@ export default function parse_function(
 					break;
 				}
 				case "struct":
-				case "trait": {
+				case "trait":
+				case "extend": {
 					(parent as StructNode).functions.push(func);
 					break;
 				}
@@ -213,7 +217,7 @@ function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: 
 		return;
 	} else if (
 		status.tokens[status.i]?.value === "self" &&
-		(parent.node_type === "struct" || parent.node_type === "trait")
+		(parent.node_type === "struct" || parent.node_type === "trait" || parent.node_type === "extend")
 	) {
 		// `var self` / `cp self` / `mov self` are rejected: use `ref self`
 		// for mutation (visible to the caller) or bare `self` (read-only; in

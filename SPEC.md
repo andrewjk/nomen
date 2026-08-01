@@ -730,6 +730,28 @@ pub trait Printable {
 }
 ```
 
+### Extension Methods
+
+Methods may be added to an existing struct or class outside its body with an `extend` block. `extend struct Name` adds to a struct, `extend class Name` to a class (the keyword must match the type). Only methods may be added — fields would change the type's layout, which a value-type language cannot do out of line. Once merged, the methods are indistinguishable from ones declared in the original body: same dispatch, same visibility, same name-overloading rules.
+
+```
+struct Point {
+    var int x
+    var int y
+}
+
+extend struct Point {
+    pub func manhattan = (self, out int) {
+        return self.x + self.y
+    }
+}
+
+const p = Point(3, 4)
+const int m = p.manhattan()
+```
+
+`extend` blocks may appear before or after the type they target, and may target a type from another module (including standard-library types). A method that redeclares an existing method name with the same parameter types is a duplicate error; overloads with differing parameter types are allowed. A method declared `extend` can call an in-body method on the same type, and vice versa.
+
 ## Enums
 
 Enums are used to define a restricted set of options:

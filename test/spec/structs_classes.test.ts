@@ -195,3 +195,24 @@ printCircle([ name = "c", center_x = 25, center_y = 70, radius = 15 ])
 		expect(compile_main(input)).toEqual([]);
 	});
 });
+
+describe("spec: extension methods", () => {
+	test("extend struct adds a method", () => {
+		const input = `
+struct Point {
+    var int x
+    var int y
+}
+
+extend struct Point {
+    pub func manhattan = (self, out int) {
+        return self.x + self.y
+    }
+}
+
+const p = Point(3, 4)
+const int m = p.manhattan()
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+});
