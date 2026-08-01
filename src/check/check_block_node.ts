@@ -13,6 +13,7 @@ import Type from "../nodes/Type.ts";
 import check_node from "./check_node.ts";
 import { resolve_struct_field_types } from "./check_struct_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
+import { synthesize_auto_derived_methods } from "./utils/auto_derive.ts";
 
 export default function check_block_node(node: BlockNode, status: CheckStatus) {
 	gather_structs(node, status);
@@ -40,6 +41,14 @@ export default function check_block_node(node: BlockNode, status: CheckStatus) {
 		// code that runs before the appended System library).
 		resolve_struct_field_types(status);
 	}
+
+	// Auto-derive `to_string`, `#op_eq`, and `hash` for structs that conform
+	// to the matching trait but don't supply the method. Runs in every block
+	// (after gather_structs) so structs declared inside a function body are
+	// derived too. Like the auto `#init`, a hand-written method always wins,
+	// and the "already has function" guard makes this idempotent across nested
+	// blocks.
+	synthesize_auto_derived_methods(status);
 
 	status.scope_depth++;
 	status.stack.push(node);

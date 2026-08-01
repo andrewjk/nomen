@@ -1,0 +1,13 @@
+/**
+ * A trait for values that can be hashed to an unsigned integer. A struct that
+ * conforms to `Hashable` and does not define its own `hash` method gets one
+ * derived automatically by combining each field's value (integer fields are
+ * cast to `uint`, and `Hashable` struct fields call their own `hash`). The
+ * derivation only fires when every field is hashable; otherwise the default
+ * body (which returns `0`) is used.
+ **/
+pub trait Hashable {
+	func hash = (self, out uint) {
+		return 0
+	}
+}

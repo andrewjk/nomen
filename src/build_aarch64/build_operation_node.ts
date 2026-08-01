@@ -401,6 +401,13 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 			status.code += `ldr x0, [x29, #${result_spill}]\n`;
 		}
 
+		// `!=` dispatched to a struct's `eq` (or `==` to `ne`): invert the
+		// boolean call result in x0.
+		if (node.operator_func.invert) {
+			status.code += `cmp x0, #0\n`;
+			status.code += `cset x0, eq\n`;
+		}
+
 		// Operator functions that return strings produce heap-allocated results.
 		if (node.type?.name === "string") {
 			status.last_result_is_heap = true;

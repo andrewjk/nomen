@@ -996,6 +996,13 @@ function build_trait_functions(node: StructNode, status: BuildStatus) {
 			// traits keep the shared default-body emission.
 			if (trait.type_params.length > 0) continue;
 
+			const trait_func_label = `${trait_name}_${func.name}`;
+			// The trait-level default body is shared across every conforming
+			// struct; emit it once (the first conformer), not once per struct.
+			if (!status.emitted_trait_funcs) status.emitted_trait_funcs = new Set();
+			if (status.emitted_trait_funcs.has(trait_func_label)) continue;
+			status.emitted_trait_funcs.add(trait_func_label);
+
 			const old_scoped_declarations = status.scoped_declarations;
 			const old_stack_size = status.stack_size;
 			const old_stack_offsets = status.stack_offsets;
@@ -1007,7 +1014,6 @@ function build_trait_functions(node: StructNode, status: BuildStatus) {
 			status.stack_size = 0;
 			status.stack_offsets = new Map();
 
-			const trait_func_label = `${trait_name}_${func.name}`;
 			const return_label = `.return_${trait_name}_${func.name}`;
 			status.function_return_label = return_label;
 

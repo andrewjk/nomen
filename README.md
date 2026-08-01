@@ -381,6 +381,26 @@ Extended methods behave exactly like methods declared in the body — same
 dispatch, visibility, and overloading. `extend` blocks may sit before or after
 the type, and may target types from another module.
 
+### Auto-Derived Methods
+
+Conforming to `Stringable`, `Equatable`, or `Hashable` auto-generates the
+matching method — the same way a struct gets an auto-generated `#init`. A
+hand-written method always wins, and the derivation only fires when every field
+is itself derivable:
+
+```nomen
+pub struct Point : Equatable, Stringable {
+    pub var int x
+    pub var int y
+}
+
+const a = Point(1, 2)
+const b = Point(1, 2)
+const bool same = a == b            // true  — derived #op_eq
+const bool diff = a != b            // false — derived from #op_eq
+const string s = a.to_string()      // "Point(x=1, y=2)" — derived to_string
+```
+
 ### Operator Overloading
 
 Structs define custom operator behavior with `#`-prefixed function names:

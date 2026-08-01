@@ -216,3 +216,44 @@ const int m = p.manhattan()
 		expect(compile_main(input)).toEqual([]);
 	});
 });
+
+describe("spec: auto-derived methods", () => {
+	test("Equatable derives == and !=", () => {
+		const input = `
+pub struct Point: Equatable {
+    pub var int x
+    pub var int y
+}
+const a = Point(1, 2)
+const b = Point(1, 2)
+const c = Point(3, 4)
+const bool same = a == b
+const bool diff = a != c
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+
+	test("Stringable derives to_string", () => {
+		const input = `
+pub struct Point: Stringable {
+    pub var int x
+    pub var int y
+}
+const p = Point(3, 4)
+const string s = p.to_string()
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+
+	test("Hashable derives hash", () => {
+		const input = `
+pub struct Point: Hashable {
+    pub var int x
+    pub var int y
+}
+const p = Point(1, 2)
+const uint h = p.hash()
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+});

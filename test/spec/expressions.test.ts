@@ -120,6 +120,22 @@ const rem = a % b
 		// TODO: enabled once the % operator overload (#op_mod) is supported (SPEC gap).
 		expect(errors).toEqual([]);
 	});
+
+	test("equality operator functions (#op_eq / #op_ne)", () => {
+		const input = `
+struct Vec2 {
+    var int x
+    var int y
+    func #op_eq = (self, Vec2 other, out bool) { return self.x == other.x && self.y == other.y }
+}
+const a = Vec2(1, 2)
+const b = Vec2(1, 2)
+const c = Vec2(3, 4)
+const bool same = a == b
+const bool diff = a != c
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
 });
 
 describe("spec: cast operator", () => {

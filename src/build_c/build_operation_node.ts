@@ -79,6 +79,9 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 				node.operator_func.struct_name.startsWith("Array") &&
 				(type_from_value_node(node.left_value).is_array ||
 					type_from_value_node(node.right_value).is_array);
+			// `!=` dispatched to a struct's `eq` (or `==` to `ne`): wrap the
+			// call result in a logical NOT.
+			if (node.operator_func.invert) status.code += `(!`;
 			if (is_array_op) {
 				status.code += `${label}(`;
 				build_array_operand_for_call(node.left_value, status);
@@ -92,6 +95,7 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 				build_operand(node.right_value, status);
 				status.code += ")";
 			}
+			if (node.operator_func.invert) status.code += `)`;
 		}
 	} else {
 		build_default_binary(node, status);

@@ -1,0 +1,10 @@
+/**
+ * Marker trait for value equality. A struct that conforms to `Equatable` and
+ * does not define its own `#op_eq` gets a field-by-field equality method
+ * derived automatically, so `==` and `!=` work between two instances. The
+ * derivation only fires when every field is itself equatable (a primitive or
+ * another `Equatable` type); otherwise the struct must supply `#op_eq` by
+ * hand.
+ **/
+pub trait Equatable {
+}

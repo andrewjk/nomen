@@ -98,6 +98,7 @@ export default function check_operation_node(op: OperationNode, status: CheckSta
 				struct_node && is_overloaded(struct_node, func_name)
 					? mangled_label(func, struct_name)
 					: undefined,
+			invert: custom_op.invert,
 		};
 
 		// Propagate array length for + and * operations
@@ -188,7 +189,7 @@ function find_custom_operator(
 	left_type: Type,
 	right_type: Type,
 	status: CheckStatus,
-): { func: FunctionNode; mono_struct_name?: string } | undefined {
+): { func: FunctionNode; mono_struct_name?: string; invert?: boolean } | undefined {
 	// For array types, look up operators on the Array struct
 	const struct_name = left_type.is_array ? "Array" : left_type.name;
 	if (!struct_name) {
@@ -216,7 +217,19 @@ function find_custom_operator(
 		}
 	}
 
-	const func = find_function_by_params(struct.functions, func_name, [right_type]);
+	let func = find_function_by_params(struct.functions, func_name, [right_type]);
+	let invert = false;
+	// Equality operators are duals: if the struct defines `eq` but not `ne`
+	// (or vice versa), the missing one is derived as the logical negation of
+	// the present one. So writing only `#op_eq` gives you both `==` and `!=`.
+	if (!func && (op.op === "==" || op.op === "!=")) {
+		const dual_name = op.op === "==" ? "ne" : "eq";
+		const dual = find_function_by_params(struct.functions, dual_name, [right_type]);
+		if (dual) {
+			func = dual;
+			invert = true;
+		}
+	}
 	if (!func) {
 		return undefined;
 	}
@@ -248,7 +261,7 @@ function find_custom_operator(
 		);
 	}
 
-	return { func, mono_struct_name };
+	return { func, mono_struct_name, invert };
 }
 
 function operator_to_func_name(op: string): string | undefined {
@@ -263,6 +276,10 @@ function operator_to_func_name(op: string): string | undefined {
 			return "div";
 		case "%":
 			return "mod";
+		case "==":
+			return "eq";
+		case "!=":
+			return "ne";
 		default:
 			return undefined;
 	}

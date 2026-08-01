@@ -48,6 +48,8 @@ export function resolve_export_files(lib_dir: string, pattern: string): string[]
 const FILE_ORDER = [
 	"Disposable",
 	"Stringable",
+	"Equatable",
+	"Hashable",
 	"Sendable",
 	"Task",
 	"Mutex",

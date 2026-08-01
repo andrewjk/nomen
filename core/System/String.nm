@@ -63,6 +63,20 @@ pub struct string: Stringable {
         ```
 	}
 
+	pub func #op_eq = (self, string other, out bool) {
+		```
+		#arch: c
+		return strcmp(self, other) == 0;
+		```
+		```
+		#arch: aarch64
+		// x0 = self, x1 = other on entry
+		bl _strcmp
+		cmp x0, #0
+		cset x0, eq
+		```
+	}
+
 	pub func #op_add = (self, string other, out string) {
         ```
         #arch: c

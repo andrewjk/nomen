@@ -1173,6 +1173,32 @@ traits by commas (see [Trait Types](#trait-types)). Trait-typed variables can
 only call methods declared by the trait; fields and non-trait methods of the
 underlying struct are not accessible through the trait reference.
 
+### Auto-Derived Methods
+
+Conforming to `Stringable`, `Equatable`, or `Hashable` auto-generates the
+matching method when the struct does not supply it itself — the same way a
+struct gets an auto-generated `#init`. A hand-written method always wins. The
+derivation only fires when every field is itself derivable (a primitive or a
+conforming struct); otherwise the struct must provide the method by hand.
+
+```
+pub struct Point: Equatable, Stringable {
+    pub var int x
+    pub var int y
+}
+
+const a = Point(1, 2)
+const b = Point(1, 2)
+const bool same = a == b            // true  — derived #op_eq
+const bool diff = a != b            // false — derived from #op_eq
+const string s = a.to_string()      // "Point(x=1, y=2)" — derived to_string
+```
+
+`Stringable` derives a `to_string` that lists each field as `name=value`.
+`Equatable` derives `#op_eq` (and `!=` as its negation) by comparing fields with
+`==`. `Hashable` derives a `hash` method (returning `uint`) by combining field
+values. Nested structs participate as long as they conform to the same trait.
+
 ## Statements
 
 ### If/Else
@@ -1521,7 +1547,27 @@ struct Vec2 {
 }
 ```
 
-Supported operator functions: `#op_add` (+), `#op_sub` (-), `#op_mul` (\*), `#op_div` (/), `#op_mod` (%).
+Supported operator functions: `#op_add` (+), `#op_sub` (-), `#op_mul` (\*), `#op_div` (/), `#op_mod` (%), `#op_eq` (==), `#op_ne` (!=).
+
+`#op_eq` and `#op_ne` are duals: defining either one gives you both `==` and
+`!=`. A struct with `#op_eq` but no `#op_ne` gets `!=` as the logical negation
+of `==` (and vice versa):
+
+```
+struct Vec2 {
+    var int x
+    var int y
+
+    func #op_eq = (self, Vec2 other, out bool) {
+        return self.x == other.x && self.y == other.y
+    }
+}
+
+const a = Vec2(1, 2)
+const b = Vec2(1, 2)
+const bool same = a == b   // true
+const bool diff = a != b   // false
+```
 
 Each maps to the corresponding infix operator and compound-assignment form:
 

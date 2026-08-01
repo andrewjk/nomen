@@ -368,4 +368,13 @@ export default interface BuildStatus {
 	 * literal pool. Mirrors the C backend's `_Struct_traits` / `_get_trait_func`.
 	 */
 	vtable_data?: string;
+	/**
+	 * aarch64-only: trait default-method bodies (`<Trait>_<method>`) that have
+	 * already been emitted. The aarch64 struct builder walks each conforming
+	 * struct's traits and would otherwise re-emit the same trait-level default
+	 * body once per conformer; this set deduplicates so the symbol is defined
+	 * exactly once (mirroring the C backend, which emits trait defaults from
+	 * build_trait_node, called once per trait).
+	 */
+	emitted_trait_funcs?: Set<string>;
 }

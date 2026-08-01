@@ -194,6 +194,8 @@ function is_within(child: string, parent: string): boolean {
 const BASE_TYPES = [
 	"Disposable",
 	"Stringable",
+	"Equatable",
+	"Hashable",
 	"int",
 	"uint",
 	"int8",

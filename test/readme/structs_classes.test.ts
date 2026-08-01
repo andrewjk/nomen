@@ -85,3 +85,21 @@ const m = p.manhattan()
 		expect(compile_main(input)).toEqual([]);
 	});
 });
+
+describe("readme: auto-derived methods", () => {
+	test("Equatable and Stringable derive methods", () => {
+		const input = `
+pub struct Point : Equatable, Stringable {
+    pub var int x
+    pub var int y
+}
+
+const a = Point(1, 2)
+const b = Point(1, 2)
+const bool same = a == b
+const bool diff = a != b
+const string s = a.to_string()
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+});

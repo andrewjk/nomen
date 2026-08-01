@@ -36,7 +36,17 @@ export default class OperationNode extends BaseNode {
 	left_value: BaseNode;
 	right_value: BaseNode;
 	type: Type;
-	operator_func?: { struct_name: string; func_name: string; mangled_name?: string };
+	operator_func?: {
+		struct_name: string;
+		func_name: string;
+		mangled_name?: string;
+		/**
+		 * Set when the operator is the logical inverse of the resolved function
+		 * — e.g. `!=` dispatched to `eq` (or `==` dispatched to `ne`). The
+		 * build backends wrap the call result in a logical NOT.
+		 */
+		invert?: boolean;
+	};
 
 	constructor(
 		start: number,

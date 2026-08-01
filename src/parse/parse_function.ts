@@ -46,6 +46,8 @@ export default function parse_function(
 		"#op_div": "div",
 		"#op_mod": "mod",
 		"#op_as": "as",
+		"#op_eq": "eq",
+		"#op_ne": "ne",
 	};
 	if (op_internal[name]) {
 		name = op_internal[name];
