@@ -25,6 +25,7 @@ const KNOWN_HEAP_RETURNING = new Set([
 	"File_readChunk",
 	"File_read_all",
 	"Directory_list",
+	"Http_exchange",
 	"Console_read_line",
 	"Console_platform",
 	"Json_serialize",
