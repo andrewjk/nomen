@@ -1,5 +1,6 @@
 /**
- * A file handle for reading and writing (`open`/`close`/`readAll`/`writeLine`/…)
+ * A file handle for reading and writing (`open`/`close`/`readAll`/`writeLine`/…),
+ * plus static one-shot helpers `exists`, `delete`, `read_all`, `write_all`
  **/
 pub struct File {
 	var uint64 handle = 0
@@ -245,6 +246,128 @@ pub struct File {
 		mov x1, #1
 		ldr x3, [x19, #8]
 		bl _fwrite
+		```
+	}
+
+	pub func exists = (string path, out bool) {
+		```
+		#arch: c
+		struct stat st;
+		return stat(path, &st) == 0 ? 1 : 0;
+		```
+		```
+		#arch: aarch64
+		sub sp, sp, #160
+		mov x1, sp
+		bl _stat
+		cmp x0, #0
+		cset x0, eq
+		add sp, sp, #160
+		b .return_File_exists
+		```
+		return false
+	}
+
+	pub func delete = (string path) {
+		```
+		#arch: c
+		remove(path);
+		```
+		```
+		#arch: aarch64
+		bl _remove
+		```
+	}
+
+	pub func read_all = (string path, out string) {
+		```
+		#arch: c
+		FILE *f = fopen(path, "r");
+		if (!f) return strdup("");
+		fseek(f, 0, SEEK_END);
+		long size = ftell(f);
+		fseek(f, 0, SEEK_SET);
+		char *buf = (char*)malloc(size + 1);
+		fread(buf, 1, size, f);
+		buf[size] = 0;
+		fclose(f);
+		return buf;
+		```
+		```
+		#arch: aarch64
+		sub sp, sp, #48
+		str x0, [sp, #0]
+		adr x1, .Lfile_read_all_mode
+		bl _fopen
+		str x0, [sp, #8]
+		cbz x0, .Lfile_read_all_empty
+		ldr x0, [sp, #8]
+		mov x1, #0
+		mov x2, #2
+		bl _fseek
+		ldr x0, [sp, #8]
+		bl _ftell
+		str x0, [sp, #16]
+		ldr x0, [sp, #8]
+		mov x1, #0
+		mov x2, #0
+		bl _fseek
+		ldr x0, [sp, #16]
+		add x0, x0, #1
+		bl _malloc
+		str x0, [sp, #24]
+		ldr x0, [sp, #24]
+		mov x1, #1
+		ldr x2, [sp, #16]
+		ldr x3, [sp, #8]
+		bl _fread
+		ldr x0, [sp, #24]
+		ldr x1, [sp, #16]
+		strb wzr, [x0, x1]
+		ldr x0, [sp, #8]
+		bl _fclose
+		ldr x0, [sp, #24]
+		add sp, sp, #48
+		b .return_File_read_all
+		.Lfile_read_all_empty:
+		adr x0, .Lfile_read_all_empty_str
+		bl _strdup
+		add sp, sp, #48
+		b .return_File_read_all
+		.Lfile_read_all_mode: .asciz "r"
+		.Lfile_read_all_empty_str: .asciz ""
+		.p2align 2
+		```
+		return ""
+	}
+
+	pub func write_all = (string path, string data) {
+		```
+		#arch: c
+		FILE *f = fopen(path, "w");
+		if (!f) return;
+		fputs(data, f);
+		fclose(f);
+		```
+		```
+		#arch: aarch64
+		sub sp, sp, #32
+		str x0, [sp, #0]
+		str x1, [sp, #8]
+		adr x1, .Lfile_write_all_mode
+		bl _fopen
+		str x0, [sp, #16]
+		cbz x0, .Lfile_write_all_done
+		ldr x0, [sp, #8]
+		ldr x1, [sp, #16]
+		bl _fputs
+		ldr x0, [sp, #16]
+		bl _fclose
+		.Lfile_write_all_done:
+		add sp, sp, #32
+		b .return_File_write_all
+		.Lfile_write_all_mode: .asciz "w"
+		.p2align 2
 		```
 	}
 

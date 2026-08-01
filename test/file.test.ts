@@ -67,3 +67,53 @@ Console.write(part)
 		await build_and_check_output(input, "file_chunk", "abc");
 	});
 });
+
+describe("File static helpers", () => {
+	test("File.write_all and File.read_all round-trip", async () => {
+		const input = `
+File.write_all("filetest_static.txt", "static io")
+const string body = File.read_all("filetest_static.txt")
+Console.write(body)
+`;
+		await build_and_check_output(input, "file_static_read_write", "static io");
+	});
+
+	test("File.exists is true for present and false for absent", async () => {
+		const input = `
+File.write_all("filetest_exists.txt", "x")
+if File.exists("filetest_exists.txt") {
+	if File.exists("filetest_no_such_xyz.txt") {
+		Console.write("both")
+	} else {
+		Console.write("one")
+	}
+} else {
+	Console.write("none")
+}
+`;
+		await build_and_check_output(input, "file_exists", "one");
+	});
+
+	test("File.delete removes the file", async () => {
+		const input = `
+File.write_all("filetest_delete.txt", "x")
+File.delete("filetest_delete.txt")
+if File.exists("filetest_delete.txt") {
+	Console.write("still here")
+} else {
+	Console.write("gone")
+}
+`;
+		await build_and_check_output(input, "file_delete", "gone");
+	});
+
+	test("File.read_all on missing file yields empty string", async () => {
+		const input = `
+const string body = File.read_all("filetest_no_such_xyz.txt")
+if body.length == 0 {
+	Console.write("empty")
+}
+`;
+		await build_and_check_output(input, "file_read_all_missing", "empty");
+	});
+});

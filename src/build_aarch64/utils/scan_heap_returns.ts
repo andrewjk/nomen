@@ -23,6 +23,8 @@ const KNOWN_HEAP_RETURNING = new Set([
 	"File_readAll",
 	"File_readLine",
 	"File_readChunk",
+	"File_read_all",
+	"Directory_list",
 	"Console_read_line",
 	"Console_platform",
 	"Json_serialize",
