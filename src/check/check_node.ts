@@ -30,6 +30,7 @@ import TraitNode from "../nodes/TraitNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import WhileLoopNode from "../nodes/WhileLoopNode.ts";
 import check_access_node from "./check_access_node.ts";
+import check_anon_struct from "./check_anon_struct.ts";
 import check_array_values_node from "./check_array_values_node.ts";
 import check_assignment_node from "./check_assignment_node.ts";
 import check_async_block_node from "./check_async_block_node.ts";
@@ -185,10 +186,7 @@ export default function check_node(node: BaseNode, status: CheckStatus): boolean
 			break;
 		}
 		case "anon_struct": {
-			const anon = node as AnonStructNode;
-			for (const field of anon.fields) {
-				result = check_node(field.value, status) && result;
-			}
+			result = check_anon_struct(node as AnonStructNode, status);
 			break;
 		}
 		default: {

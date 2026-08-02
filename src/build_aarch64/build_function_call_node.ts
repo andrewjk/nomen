@@ -1,5 +1,5 @@
-import type BuildStatus from "../build_c/BuildStatus.ts";
 import emit_field_overrides from "../build/emit_field_overrides.ts";
+import type BuildStatus from "../build_c/BuildStatus.ts";
 import { is_int_literal, to_decimal_string } from "../int_literal.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";

@@ -426,25 +426,36 @@ Within the struct body, type parameters match any concrete type during type chec
 
 ### Anonymous Structs
 
-Anonymous structs are inline struct literals created with `[ field = value ]` syntax. They're used when calling functions that expect a specific struct type:
+An anonymous struct is an inline collection of named fields written `[ field = value, ... ]`. It has no declared name — the compiler generates one, and every literal with the same field names and types shares a single generated type, regardless of the order the fields are written in.
+
+#### As standalone values
+
+Used as a value, an anonymous struct is materialized into a generated struct so its fields can be read and destructured like any struct:
 
 ```
-struct Circle {
-    var string name
-    var int center_x
-    var int center_y
-    var int radius
-}
+const p = [ name = "bob", age = 5 ]
+Console.write("\\{p.name} \\{p.age}")    // bob 5
 
-func printCircle = (Circle circle) {
-    Console.write("[\\{circle.name}: \\{circle.center_x},\\{circle.center_y},\\{circle.radius}]\\n")
-}
-
-printCircle([ center_x = 25, center_y = 70, radius = 15 ])
-// Output: [Circle: 25,70,15]
+var [name, age] = p                       // destructure by field name
 ```
 
-All fields must be provided. The anonymous struct must match the expected struct's field names and types.
+The type is inferred from the literal and has no source-level name, so an anonymous struct can only be used where its type can be inferred — a `const`/`var` initializer, a reassignment, or a return value. It is not implicitly coerced to a named struct; to build a named struct, call its constructor.
+
+#### Overriding fields on construction
+
+Appending the same `[ field = value, ... ]` form to a constructor with `+` overrides fields that have declared defaults, applied after `#init` runs. Required (non-defaulted) fields are set positionally by the constructor call:
+
+```
+struct LayoutParams {
+    var int grow = 0
+    var int shrink = 0
+}
+
+const LayoutParams DEF = LayoutParams() + [ grow = 2, shrink = 3 ]
+const LayoutParams ONE = LayoutParams() + [ grow = 7 ]
+```
+
+`T(...) + [ ... ]` is an ordinary expression and works in declarations, assignments, return values, and call arguments. Overrides may only target fields with a declared default.
 
 ### Tuple Types
 

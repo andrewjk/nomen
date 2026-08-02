@@ -214,6 +214,30 @@ show(Mixed(5) + [ b = 50 ])
 		);
 	});
 
+	test("standalone anonymous struct: field access", async () => {
+		// A `[ field = value, ... ]` literal used as a value is materialized
+		// into an auto-generated struct (`_Anon_...`), so its fields can be
+		// read like any struct. Both backends.
+		const input = `
+const p = [ name = "bob", age = 5 ]
+Console.write("\\{p.name} \\{p.age}")
+`;
+		await build_and_check_output(input, "anon_struct_field_access", "bob 5");
+	});
+
+	test("standalone anonymous struct: structural identity, reassignment, destructuring", async () => {
+		// Two literals with the same field names and types share one generated
+		// type (order-independent), so an inferred variable can be reassigned a
+		// differently-ordered literal and then destructured by field name.
+		const input = `
+var p = [ name = "a", age = 1 ]
+p = [ age = 2, name = "b" ]
+var [name, age] = p
+Console.write("\\{name} \\{age}")
+`;
+		await build_and_check_output(input, "anon_struct_reassign_destructure", "b 2");
+	});
+
 	test("struct field get and set", async () => {
 		const input = `
 struct Point {

@@ -1,10 +1,10 @@
+import emit_field_overrides from "../build/emit_field_overrides.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import AssignmentNode from "../nodes/AssignmentNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
-import emit_field_overrides from "../build/emit_field_overrides.ts";
 import { build_vtable_target } from "./build_access_node.ts";
 import { emit_struct_destroys, struct_needs_destroy_by_name } from "./build_auto_free.ts";
 import build_node from "./build_node.ts";

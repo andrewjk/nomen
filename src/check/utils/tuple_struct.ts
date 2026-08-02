@@ -14,7 +14,7 @@ export function tuple_struct_name(tuple_types: Type[]): string {
 	return "_Tuple_" + tuple_types.map((t) => sanitize_type_name(t)).join("_");
 }
 
-function sanitize_type_name(t: Type): string {
+export function sanitize_type_name(t: Type): string {
 	if (t.is_array) {
 		return "Arr_" + sanitize_type_name(new Type(t.name));
 	}

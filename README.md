@@ -488,8 +488,15 @@ var [name2, age2] = get_person(12)
 
 ### Anonymous Structs
 
-An inline `[ field = value ]` literal can be used rather than creating a new struct, and can be passed wherever a struct is
-expected:
+An inline `[ field = value, ... ]` literal is an anonymous struct — a temporary collection of named values. Used as a value it is inferred as a struct, so its fields can be read and destructured:
+
+```nomen
+const p = [ name = "C", x = 25, y = 70 ]
+Console.write("\{p.name} \{p.x} \{p.y}")
+var [name, x, y] = p
+```
+
+To build a _named_ struct, call its constructor. Append `[ field = value, ... ]` with `+` to override fields that have declared defaults, applied after construction:
 
 ```nomen
 struct Circle {
@@ -503,12 +510,17 @@ func print_circle = (Circle c) {
     Console.write("\{c.center_x},\{c.center_y},\{c.radius}")
 }
 
-const c1 = [ name = "C", center_x = 25, center_y = 70, radius = 15 ]
+print_circle(Circle("C", 25, 70, 15))
 
-print_circle(c1)
+struct Layout {
+    var int grow = 0
+    var int shrink = 0
+}
+
+const Layout big = Layout() + [ grow = 2, shrink = 3 ]
 ```
 
-All fields must be provided, by name.
+The anonymous-struct type is inferred and has no source-level name, so it can only be used where its type can be inferred. Overrides may only target fields with a declared default; required fields are set positionally by the constructor call.
 
 ### Destructuring
 
