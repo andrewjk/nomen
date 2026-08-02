@@ -73,6 +73,10 @@ function warn_unused_function(
 ): void {
 	if (func.is_library || (struct && struct.is_library)) return;
 	if (func.name === "main" || is_discard(func.name) || func.name.startsWith("#")) return;
+	// A generic function is instantiated at each call site under a mangled
+	// (monomorphized) name, so its generic definition can't be proven unused
+	// by matching call names — never warn it.
+	if (func.is_generic) return;
 	// A trait conformance makes methods reachable through vtable dispatch.
 	if (struct && struct.traits.length > 0) return;
 	if (referenced.has(func.name)) return;
@@ -94,8 +98,10 @@ interface Locals {
 
 function analyse_function(func: FunctionNode, status: CheckStatus): void {
 	// Library internals maintain their own invariants and are trusted, so don't
-	// lint them.
-	if (func.is_library) return;
+	// lint them. A method's library-ness may live on its enclosing struct (e.g.
+	// monomorphized clones whose own flag wasn't copied), so check both.
+	const scope = func.scope as StructNode | undefined;
+	if (func.is_library || scope?.is_library) return;
 
 	const locals: Locals = { decls: [], reads: new Set(), assigned: new Set() };
 
@@ -140,9 +146,13 @@ function warn_var_not_changed(decl: DeclarationNode, locals: Locals, status: Che
 	// an uninitialised `var` that is later assigned *is* changed, and one that
 	// is never set is already a different error.
 	if (decl.declaration !== "var" || !decl.value) return;
+	if (decl.is_loop_iterator) return;
 	if (decl.type?.is_ref) return;
 	if (is_discard(decl.name)) return;
 	if (locals.assigned.has(decl.name)) return;
+	// A `ref self` method call mutates the receiver even though the binding is
+	// never reassigned, so `const` would fail — don't recommend it.
+	if (status.mutated_local_names?.has(decl.name)) return;
 	add_warning(
 		status,
 		`Variable '${decl.name}' is never changed, consider using const`,

@@ -17,21 +17,21 @@ func energy = (ref Body[5] bodies, out float) {
 	var e = 0.0
 	var i = 0
 	while i < 5 {
-		var float bi_x = bodies.at(i).x
-		var float bi_y = bodies.at(i).y
-		var float bi_z = bodies.at(i).z
-		var float vx = bodies.at(i).vx
-		var float vy = bodies.at(i).vy
-		var float vz = bodies.at(i).vz
-		var float mass = bodies.at(i).mass
+		const float bi_x = bodies.at(i).x
+		const float bi_y = bodies.at(i).y
+		const float bi_z = bodies.at(i).z
+		const float vx = bodies.at(i).vx
+		const float vy = bodies.at(i).vy
+		const float vz = bodies.at(i).vz
+		const float mass = bodies.at(i).mass
 		e = e + 0.5 * mass * (vx * vx + vy * vy + vz * vz)
 
 		var int j = i + 1
 		while j < 5 {
-			var float dx = bi_x - bodies.at(j).x
-			var float dy = bi_y - bodies.at(j).y
-			var float dz = bi_z - bodies.at(j).z
-			var float dist = Math.sqrt(dx * dx + dy * dy + dz * dz)
+			const float dx = bi_x - bodies.at(j).x
+			const float dy = bi_y - bodies.at(j).y
+			const float dz = bi_z - bodies.at(j).z
+			const float dist = Math.sqrt(dx * dx + dy * dy + dz * dz)
 			e = e - (mass * bodies.at(j).mass) / dist
 			j = j + 1
 		}
@@ -43,24 +43,24 @@ func energy = (ref Body[5] bodies, out float) {
 func advance = (ref Body[5] bodies, float dt) {
 	var i = 0
 	while i < 5 {
-		var float bi_x = bodies.at(i).x
-		var float bi_y = bodies.at(i).y
-		var float bi_z = bodies.at(i).z
+		const float bi_x = bodies.at(i).x
+		const float bi_y = bodies.at(i).y
+		const float bi_z = bodies.at(i).z
 		var float vx = bodies.at(i).vx
 		var float vy = bodies.at(i).vy
 		var float vz = bodies.at(i).vz
-		var float mass_i = bodies.at(i).mass
+		const float mass_i = bodies.at(i).mass
 
 		var int j = i + 1
 		while j < 5 {
-			var float dx = bi_x - bodies.at(j).x
-			var float dy = bi_y - bodies.at(j).y
-			var float dz = bi_z - bodies.at(j).z
+			const float dx = bi_x - bodies.at(j).x
+			const float dy = bi_y - bodies.at(j).y
+			const float dz = bi_z - bodies.at(j).z
 
-			var float bj_mass = bodies.at(j).mass
-			var float d_sq = dx * dx + dy * dy + dz * dz
-			var float dist = Math.sqrt(d_sq)
-			var float mag = dt / (d_sq * dist)
+			const float bj_mass = bodies.at(j).mass
+			const float d_sq = dx * dx + dy * dy + dz * dz
+			const float dist = Math.sqrt(d_sq)
+			const float mag = dt / (d_sq * dist)
 
 			vx = vx - dx * bj_mass * mag
 			vy = vy - dy * bj_mass * mag

@@ -24,5 +24,8 @@ export default function clone_status(status: CheckStatus): CheckStatus {
 		errors: status.errors,
 		// Buffer cap tracking: share the same map (writes propagate to parent)
 		buffer_caps: status.buffer_caps,
+		// Mutating-call tracking: share the same set so records in cloned
+		// (block/function) scopes propagate to the root warning pass.
+		mutated_local_names: status.mutated_local_names,
 	};
 }

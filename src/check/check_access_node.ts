@@ -450,6 +450,9 @@ function check_access_function_node(
 			const target_name = (target as ValueNode).value;
 			// Skip 'self' — ref self methods can be called on self within other ref self methods
 			if (target_name !== "self") {
+				// Record that this local is mutated through a ref-self call,
+				// so the warning pass doesn't recommend `const` for it.
+				status.mutated_local_names?.add(target_name);
 				const decl = status.values.findLast((v) => v.name === target_name);
 				if (decl?.declaration === "const" && !decl?.type?.is_ref) {
 					add_error(status, `Update to const: ${target_name}`, node.start);

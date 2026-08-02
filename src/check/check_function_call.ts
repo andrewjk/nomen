@@ -346,6 +346,10 @@ export default function check_function_call(
 		// `ref`/borrow values are mutable; temporaries are non-`value` nodes
 		// and are skipped here.)
 		if (func_param.type.is_ref && has_ref_keyword && param.node_type === "value") {
+			// The callee may mutate a `ref` argument, so the caller's binding is
+			// not safely `const` — record it so the warning pass doesn't
+			// recommend `const` for it.
+			status.mutated_local_names?.add(param_value);
 			const arg_decl = status.values.findLast((v) => v.name === param_value);
 			if (arg_decl && arg_decl.declaration === "const" && !arg_decl.type.is_ref) {
 				add_error(

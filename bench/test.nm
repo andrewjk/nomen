@@ -18,11 +18,11 @@ pub func main = () {
 	if xx < 12 {
 		y = (22)
 	}
-	var int z = 2 + y
+	const int z = 2 + y
 	Console.write("z is \{z}\n")
 	null_check(null)
 
-	var things = ["a", "b", "c"]
+	const things = ["a", "b", "c"]
 	//Console.write("The second thing: \{things[4]}\n")
 	restricted(things, 2)
 

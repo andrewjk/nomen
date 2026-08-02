@@ -6,17 +6,17 @@ const WIN_H = 500
 const MAX_TODOS = 6
 
 pub func main = () {
-	var win = Window("Nomen Todo", WIN_W, WIN_H)
+	const win = Window("Nomen Todo", WIN_W, WIN_H)
 
 	var title = Text(win)
 	title.set_text("Todo List")
 
-	var cb0 = CheckBox(win)
-	var cb1 = CheckBox(win)
-	var cb2 = CheckBox(win)
-	var cb3 = CheckBox(win)
-	var cb4 = CheckBox(win)
-	var cb5 = CheckBox(win)
+	const cb0 = CheckBox(win)
+	const cb1 = CheckBox(win)
+	const cb2 = CheckBox(win)
+	const cb3 = CheckBox(win)
+	const cb4 = CheckBox(win)
+	const cb5 = CheckBox(win)
 
 	cb0.set_title("Learn Nomen")
 	cb1.set_title("Build a GUI app")
@@ -27,9 +27,9 @@ pub func main = () {
 
 	var todo_count = 3
 
-	var input = TextBox(win)
+	const input = TextBox(win)
 	input.set_text("Type a new todo...")
-	var add_btn = Button(win, "Add")
+	const add_btn = Button(win, "Add")
 
 	// A two-column grid. The title and each checkbox span both columns (full
 	// width); the input and Add button share the final row.
@@ -59,10 +59,10 @@ pub func main = () {
 	var int prev_h = win.content_height()
 
 	while win.is_visible() {
-		var int had_click = Window.process_events()
+		const int had_click = Window.process_events()
 
-		var int cur_w = win.content_width()
-		var int cur_h = win.content_height()
+		const int cur_w = win.content_width()
+		const int cur_h = win.content_height()
 		if cur_w != prev_w || cur_h != prev_h {
 			prev_w = cur_w
 			prev_h = cur_h
@@ -78,11 +78,11 @@ pub func main = () {
 			grid.layout(win)
 
 			// Hit-test the Add button.
-			var int cx = win.click_x()
-			var int cy = win.click_y()
+			const int cx = win.click_x()
+			const int cy = win.click_y()
 			if grid.contains(add_btn.handle, cx, cy) {
 				if todo_count < MAX_TODOS {
-					var string new_text = input.get_text()
+					const string new_text = input.get_text()
 					if todo_count == 3 {
 						cb3.set_title(new_text)
 						cb3.set_hidden(false)

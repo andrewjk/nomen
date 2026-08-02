@@ -12,7 +12,10 @@ export default function join(entry_file_path: string, lib_path?: string): string
 	const file_path = path.basename(entry_file_path);
 	const inputs = new Map();
 	const resolved_lib_path = lib_path ? path.resolve(lib_path, "src") : DEFAULT_LIB_PATH;
-	add_source(folder_path, file_path, inputs, resolved_lib_path);
+	// Key the entry as `./<name>` so that a sibling's `import <name>` (which
+	// resolves to the same key) finds it already inlined instead of re-reading
+	// and duplicating the entry's declarations.
+	add_source(folder_path, `./${file_path}`, inputs, resolved_lib_path);
 	// A folder is a module: every sibling `.nm` file's `pub` declarations are
 	// visible to the entry without an explicit `import`, mirroring how the
 	// System library concatenates its own files. Pull in every other file in
@@ -33,13 +36,31 @@ function gather_module_siblings(
 	} catch {
 		return;
 	}
+	// A folder is a module whose sibling `.nm` files are visible to the entry
+	// without explicit imports. But when the entry is itself a standalone
+	// program (declares `func main`), siblings that ALSO declare `func main`
+	// are independent programs sharing a directory, not part of the same
+	// module — merging them would collide on `main`. Skip those siblings.
+	const entry_is_program = has_main(inputs.get(`./${entry_file}`) ?? "");
 	for (const name of names.sort()) {
 		if (!name.endsWith(".nm")) continue;
 		if (name === entry_file) continue;
 		const import_file_path = `./${name}`;
 		if (inputs.has(import_file_path)) continue;
+		if (entry_is_program) {
+			const sibling_path = path.resolve(folder_path, name);
+			try {
+				if (has_main(fs.readFileSync(sibling_path, "utf8"))) continue;
+			} catch {
+				// unreadable sibling — fall through and let add_source handle it
+			}
+		}
 		add_source(folder_path, import_file_path, inputs, lib_path);
 	}
+}
+
+function has_main(source: string): boolean {
+	return /\bfunc\s+main\b/.test(source);
 }
 
 function add_source(

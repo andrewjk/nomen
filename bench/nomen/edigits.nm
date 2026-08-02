@@ -7,10 +7,10 @@ func test_k = (int n, int k, out bool) {
 	if k < 0 {
 		return false
 	}
-	var float fk = k as float
-	var float fn = n as float
-	var float ln_k_fact = fk * (Math.log(fk) - 1.0) + 0.5 * Math.log(two_pi)
-	var float log10_k_fact = ln_k_fact / ln10
+	const float fk = k as float
+	const float fn = n as float
+	const float ln_k_fact = fk * (Math.log(fk) - 1.0) + 0.5 * Math.log(two_pi)
+	const float log10_k_fact = ln_k_fact / ln10
 	return log10_k_fact >= fn + 50.0
 }
 
@@ -22,7 +22,7 @@ func binary_search = (int n, out int) {
 		b = b * 2
 	}
 	while b - a > 1 {
-		var int m = (a + b) / 2
+		const int m = (a + b) / 2
 		if test_k(n, m) {
 			b = m
 		} else {
@@ -42,7 +42,7 @@ func sum_terms = (int a, int b, ref BigInt out_p, ref BigInt out_q) {
 		out_q.set_int(b)
 		return
 	}
-	var int mid = (a + b) / 2
+	const int mid = (a + b) / 2
 	var pl = BigInt()
 	var ql = BigInt()
 	sum_terms(a, mid, ref pl, ref ql)
@@ -90,7 +90,7 @@ pub func main = (Init init) {
 	if init.argc > 1 {
 		n = parse_int(init.args.at(1))
 	}
-	var int k = binary_search(n)
+	const int k = binary_search(n)
 
 	// Compute e = sum_{i=0}^{k-1} 1/i! as a fraction p/q via product tree.
 	var p = BigInt()
@@ -130,7 +130,7 @@ pub func main = (Init init) {
 		var uint64 chunk = div_rem.get(0)
 		var c = 0
 		while c < 18 {
-			var int idx = digit_count + c
+			const int idx = digit_count + c
 			// `idx = digit_count + c` is a sum of two runtime variables the
 			// verifier can't relate to `digits.cap` (5020), so guard the
 			// store explicitly. `digits.cap` is a pub property on Buffer.

@@ -27,8 +27,8 @@ struct LRU {
 
 	func unlink = (ref self, int id) {
 		if id >= 0 && id < self.prevs.cap && id < self.nexts.cap {
-			var int p = self.prevs.load_int(id)
-			var int n = self.nexts.load_int(id)
+			const int p = self.prevs.load_int(id)
+			const int n = self.nexts.load_int(id)
 			if p >= 0 && p < self.nexts.cap {
 				self.nexts.store_int(p, n)
 			} else {
@@ -46,7 +46,7 @@ struct LRU {
 		if id >= 0 && id < self.prevs.cap && id < self.nexts.cap {
 			self.prevs.store_int(id, self.tail)
 			self.nexts.store_int(id, -1)
-			var int t = self.tail
+			const int t = self.tail
 			if t >= 0 && t < self.nexts.cap {
 				self.nexts.store_int(t, id)
 			} else {
@@ -58,7 +58,7 @@ struct LRU {
 
 	func put = (ref self, int key, int value) {
 		if self.keys.has(key) {
-			var int id = self.keys.get(key)
+			const int id = self.keys.get(key)
 			if id >= 0 && id < self.nvals.cap {
 				self.nvals.store_int(id, value)
 			}
@@ -66,9 +66,9 @@ struct LRU {
 			self.link_tail(id)
 		} else {
 			if self.count >= self.size {
-				var int id = self.head
+				const int id = self.head
 				if id >= 0 && id < self.nkeys.cap {
-					var int old_key = self.nkeys.load_int(id)
+					const int old_key = self.nkeys.load_int(id)
 					self.keys.remove(old_key)
 					self.unlink(id)
 					if id < self.nvals.cap {
@@ -79,7 +79,7 @@ struct LRU {
 					self.keys.set(key, id)
 				}
 			} else {
-				var int id = self.count
+				const int id = self.count
 				self.count = self.count + 1
 				if id >= 0 && id < self.nkeys.cap && id < self.nvals.cap {
 					self.nkeys.store_int(id, key)
@@ -93,7 +93,7 @@ struct LRU {
 
 	func get = (ref self, int key, out int) {
 		if self.keys.has(key) {
-			var int id = self.keys.get(key)
+			const int id = self.keys.get(key)
 			self.unlink(id)
 			self.link_tail(id)
 			if id >= 0 && id < self.nvals.cap {
@@ -114,7 +114,7 @@ pub func main = (Init init) {
 		n = parse_int(init.args.at(2))
 	}
 
-	var int M = size * 10
+	const int M = size * 10
 	var rng0_state = 0
 	var rng1_state = 1
 
@@ -127,12 +127,12 @@ pub func main = (Init init) {
 	var i = 0
 	while i < n {
 		rng0_state = (1103515245 * rng0_state + 12345) & 2147483647
-		var int n0 = rng0_state % M
+		const int n0 = rng0_state % M
 
 		lru.put(n0, n0)
 
 		rng1_state = (1103515245 * rng1_state + 12345) & 2147483647
-		var int n1 = rng1_state % M
+		const int n1 = rng1_state % M
 
 		if lru.get(n1) >= 0 {
 			hit = hit + 1

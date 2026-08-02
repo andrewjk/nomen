@@ -17,6 +17,11 @@ export default class DeclarationNode extends BaseNode {
 	/** Optional swap replacement for `var X b = mov obj.field swap <expr>`: the
 	 *  expression stored back into the moved-out field to revalidate it. */
 	swap?: BaseNode;
+	/** True for the synthesized loop-iterator binding (`var <item> = arr.at(i)`)
+	 *  the for-of desugaring prepends to the loop body. It is rebound every
+	 *  iteration by the loop, not by user code, so the `var`-never-changed
+	 *  warning must not fire for it. */
+	is_loop_iterator?: boolean;
 	constructor(
 		start: number,
 		visibility: "pub" | "private",

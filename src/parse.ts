@@ -11,9 +11,18 @@ import type CompileError from "./types/CompileError.ts";
 import type ParseResult from "./types/ParseResult.ts";
 
 export default function parse(source: string, library?: Library, file_path?: string): ParseResult {
-	const user_source_length = source.length;
+	let user_source_length = source.length;
 	if (library) {
 		source = resolve_linked_types(source, library, file_path);
+		// When the file being checked is itself part of the System library,
+		// treat ALL of its declarations as trusted library internals.
+		// Otherwise checking a core data-structure file directly spuriously
+		// flags its own Buffer index accesses ("constraint cannot be
+		// verified") and re-warns on its methods — the same code is trusted
+		// when pulled in as a dependency of a user program.
+		if (file_path && is_within(file_path, library.dir)) {
+			user_source_length = 0;
+		}
 	}
 
 	const tokens = tokenize(source);
@@ -81,6 +90,10 @@ function mark_library_nodes(root: RootNode, boundary: number): void {
 		}
 		if (type === "struct") {
 			if ((node.start as number) >= boundary) node.is_library = true;
+			if (node.functions) for (const f of node.functions) walk(f);
+			if (node.fields) walk(node.fields);
+		}
+		if (type === "trait") {
 			if (node.functions) for (const f of node.functions) walk(f);
 			if (node.fields) walk(node.fields);
 		}
@@ -252,8 +265,15 @@ function resolve_types_with_deps(
 		}
 		// The file currently being edited already provides its own declarations
 		// (as the live source), so never append its on-disk source — that would
-		// duplicate every struct/func it defines.
-		if (self_path && path.resolve(entry.path) === path.resolve(self_path)) return;
+		// duplicate every struct/func it defines. Likewise, a library file's
+		// same-folder siblings are already inlined by `join` (which also pulls
+		// in free functions resolve doesn't track), so never re-append those —
+		// doing so would duplicate every sibling declaration.
+		if (self_path) {
+			const entry_path = path.resolve(entry.path);
+			if (entry_path === path.resolve(self_path)) return;
+			if (path.dirname(entry_path) === path.dirname(path.resolve(self_path))) return;
+		}
 		// A file declaring multiple types contributes the same source for each;
 		// push it only once to avoid duplicate definitions.
 		if (!pushed.has(entry.source)) {

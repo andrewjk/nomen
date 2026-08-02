@@ -14,25 +14,25 @@ pub func main = (Init init) {
 
 	var f = File()
 	f.open(filename, "r")
-	var string text = f.readAll()
+	const string text = f.readAll()
 	f.close()
 
-	var int original_len = text.length
+	const int original_len = text.length
 
 	// Clean: remove FASTA headers (>...) and all newlines
 	var string cleaned = Regex.replace_all("(>[^\n]+)?\n", text, "")
-	var int cleaned_len = cleaned.length
+	const int cleaned_len = cleaned.length
 
 	// Count variants
-	var v1 = "agggtaaa|tttaccct"
-	var v2 = "[cgt]gggtaaa|tttaccc[acg]"
-	var v3 = "a[act]ggtaaa|tttacc[agt]t"
-	var v4 = "ag[act]gtaaa|tttac[agt]ct"
-	var v5 = "agg[act]taaa|ttta[agt]cct"
-	var v6 = "aggg[acg]aaa|ttt[cgt]ccct"
-	var v7 = "agggt[cgt]aa|tt[acg]accct"
-	var v8 = "agggta[cgt]a|t[acg]taccct"
-	var v9 = "agggtaa[cgt]|[acg]ttaccct"
+	const v1 = "agggtaaa|tttaccct"
+	const v2 = "[cgt]gggtaaa|tttaccc[acg]"
+	const v3 = "a[act]ggtaaa|tttacc[agt]t"
+	const v4 = "ag[act]gtaaa|tttac[agt]ct"
+	const v5 = "agg[act]taaa|ttta[agt]cct"
+	const v6 = "aggg[acg]aaa|ttt[cgt]ccct"
+	const v7 = "agggt[cgt]aa|tt[acg]accct"
+	const v8 = "agggta[cgt]a|t[acg]taccct"
+	const v9 = "agggtaa[cgt]|[acg]ttaccct"
 
 	Console.write(v1 + " " + Regex.count(v1, cleaned).to_string())
 	Console.write("\n")

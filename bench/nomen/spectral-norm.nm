@@ -83,7 +83,7 @@ pub func main = (Init init) {
 			i = i + 1
 		}
 
-		var float result = Math.sqrt(vbv / vv)
+		const float result = Math.sqrt(vbv / vv)
 		Console.write(result.to_string())
 		Console.write("\n")
 	}

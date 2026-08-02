@@ -372,9 +372,10 @@ function processFile(filename: string, config: Config, mode: Mode) {
 
 	let startTime = performance.now();
 
-	let input = join(path.resolve(filename), config.lib);
+	const resolved_path = path.resolve(filename);
+	const input = join(resolved_path, config.lib);
 	const library = config.lib ? get_library(config.lib) : undefined;
-	const parsed = parse(input, library);
+	const parsed = parse(input, library, resolved_path);
 
 	let errors = parsed.errors;
 

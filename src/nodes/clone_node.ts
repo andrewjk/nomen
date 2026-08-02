@@ -340,6 +340,7 @@ export default function clone_node(node: BaseNode): BaseNode {
 			c.type_param_bounds = n.type_param_bounds.map((bounds) => bounds.slice());
 			c.is_generic = n.is_generic;
 			c.trait_args = n.trait_args.map((args) => args?.map(clone_type));
+			c.is_library = n.is_library;
 			c.scope = n.scope;
 			c.allocations = n.allocations?.map(clone_node);
 			return c;
@@ -362,6 +363,7 @@ export default function clone_node(node: BaseNode): BaseNode {
 			c.allocations = n.allocations?.map(clone_node);
 			c.return_constraint = n.return_constraint ? clone_node(n.return_constraint) : undefined;
 			c.returns_mov = n.returns_mov;
+			c.is_library = n.is_library;
 			return c;
 		}
 		case "param": {

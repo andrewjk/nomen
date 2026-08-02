@@ -28,22 +28,22 @@ pub func main = (Init init) {
 	if init.argc > 1 {
 		n = parse_int(init.args.at(1))
 	}
-	var int size = (n + 7) / 8 * 8
-	var int chunk_size = size / 8
-	var float inv = 2.0 / (size as float)
+	const int size = (n + 7) / 8 * 8
+	const int chunk_size = size / 8
+	const float inv = 2.0 / (size as float)
 
 	var checksum = 0
 	var y = 0
 	while y < size {
-		var float ci = (y as float) * inv - 1.0
+		const float ci = (y as float) * inv - 1.0
 		var x = 0
 		while x < chunk_size {
 			var byte_val = 0
 			var bit = 0
 			while bit < 8 {
-				var int xi = x * 8 + bit
-				var float cr = (xi as float) * inv - 1.5
-				var int r = mbrot(cr, ci)
+				const int xi = x * 8 + bit
+				const float cr = (xi as float) * inv - 1.5
+				const int r = mbrot(cr, ci)
 				if r == 1 {
 					byte_val = byte_val + (128 >> bit)
 				}

@@ -21,12 +21,12 @@ pub func main = (Init init) {
 
 	var f = File()
 	f.open(filename, "r")
-	var string text = f.readAll()
+	const string text = f.readAll()
 	f.close()
 
 	// Parse once and serialize, like the Go version's first pass.
 	var tree = JsonTree()
-	var int root = Json.parse(text, ref tree)
+	const int root = Json.parse(text, ref tree)
 	Console.write(Json.stringify(ref tree, root).length.to_string())
 	Console.write("\n")
 
@@ -35,7 +35,7 @@ pub func main = (Init init) {
 	var total = 0
 	var i = 0
 	while i < n {
-		var int r = Json.parse(text, ref tree)
+		const int r = Json.parse(text, ref tree)
 		total = total + Json.stringify(ref tree, r).length
 		i = i + 1
 	}

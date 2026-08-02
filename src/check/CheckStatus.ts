@@ -111,4 +111,14 @@ export default interface CheckStatus {
 	 * the variable is pushed.
 	 */
 	pending_return_bounds?: Map<string, BaseNode[]>;
+
+	/**
+	 * Names of locals/params that cannot safely be `const` — either the
+	 * receiver of a mutating (`ref self`) method call, or passed as a `ref`
+	 * argument a callee may mutate. Populated during checking so the post-check
+	 * warning pass avoids recommending `const` for them: even when the binding
+	 * itself is never reassigned, `const` would fail ("Update to const" /
+	 * "Cannot pass const to ref parameter").
+	 */
+	mutated_local_names?: Set<string>;
 }

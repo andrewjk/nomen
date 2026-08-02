@@ -171,6 +171,7 @@ function desugar_array_for_loop(for_loop: ForLoopNode, array_type: Type) {
 		new Type(array_type.name),
 		at_access,
 	);
+	decl.is_loop_iterator = true;
 	for_loop.statements.unshift(decl);
 }
 

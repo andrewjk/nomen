@@ -7,8 +7,8 @@ class TreeNode {
 
 func create_tree = (int depth, out TreeNode) {
 	if depth > 1 {
-		var TreeNode left = create_tree(depth - 1)
-		var TreeNode right = create_tree(depth - 1)
+		const TreeNode left = create_tree(depth - 1)
+		const TreeNode right = create_tree(depth - 1)
 		var node = TreeNode()
 		node.left = left
 		node.right = right
@@ -36,20 +36,20 @@ pub func main = (Init init) {
 	if init.argc > 1 {
 		n = parse_int(init.args.at(1))
 	}
-	var min_depth = 4
+	const min_depth = 4
 	var int max_depth = n
 	if min_depth + 2 > max_depth {
 		max_depth = min_depth + 2
 	}
 
-	var TreeNode stretch_tree = create_tree(max_depth + 1)
+	const TreeNode stretch_tree = create_tree(max_depth + 1)
 	Console.write("stretch tree of depth \{max_depth + 1}\t check: \{check_tree(stretch_tree)}\n")
 
-	var TreeNode long_lived_tree = create_tree(max_depth)
+	const TreeNode long_lived_tree = create_tree(max_depth)
 
 	var int depth = min_depth
 	while depth <= max_depth {
-		var int iterations = 1 << (max_depth - depth + min_depth)
+		const int iterations = 1 << (max_depth - depth + min_depth)
 		var sum = 0
 		var i = 0
 		while i < iterations {

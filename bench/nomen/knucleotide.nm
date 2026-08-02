@@ -27,7 +27,7 @@ func nt = (int code, out string) {
 func write_nucleotides = (int key, int k) {
 	var j = 0
 	while j < k {
-		var int code = (key >> (2 * (k - 1 - j))) & 3
+		const int code = (key >> (2 * (k - 1 - j))) & 3
 		Console.write(nt(code))
 		j = j + 1
 	}
@@ -35,8 +35,8 @@ func write_nucleotides = (int key, int k) {
 
 // write a value (already scaled by 1000) as whole.frac with 3 decimals
 func write_number = (int val) {
-	var int whole = val / 1000
-	var int frac = val % 1000
+	const int whole = val / 1000
+	const int frac = val % 1000
 	Console.write(whole.to_string())
 	Console.write(".")
 	if frac < 100 {
@@ -52,7 +52,7 @@ func write_number = (int val) {
 func pack = (string s, out int) {
 	var key = 0
 	var i = 0
-	var int len = s.length
+	const int len = s.length
 	while i < len {
 		key = (key << 2) | (((s.at(i) as int) >> 1) & 3)
 		i = i + 1
@@ -67,7 +67,7 @@ func count_seq = (ref Buffer<int> data, int n, int target, int k, out int) {
 	// additional per-iteration guard because the verifier can't relate
 	// `i + k - 1` (variable offset) to `data.cap`.
 	if k <= data.cap && n <= data.cap {
-		var int mask = (1 << (2 * k)) - 1
+		const int mask = (1 << (2 * k)) - 1
 		var key = 0
 		var j = 0
 		while j < k {
@@ -79,9 +79,9 @@ func count_seq = (ref Buffer<int> data, int n, int target, int k, out int) {
 			total = total + 1
 		}
 		var i = 1
-		var int end = n - k
+		const int end = n - k
 		while i <= end {
-			var int next = i + k - 1
+			const int next = i + k - 1
 			if next >= 0 && next < data.cap {
 				key = ((key << 2) | data.load_int(next)) & mask
 			}
@@ -96,7 +96,7 @@ func count_seq = (ref Buffer<int> data, int n, int target, int k, out int) {
 }
 
 func write_freq = (ref Buffer<int> data, int n, int k) {
-	var int limit = 1 << (2 * k)
+	const int limit = 1 << (2 * k)
 	var freq = Buffer<int>()
 	freq.alloc_int(limit)
 
@@ -105,7 +105,7 @@ func write_freq = (ref Buffer<int> data, int n, int k) {
 	// per-iteration guard since the verifier can't fold `i + k - 1`).
 	if k <= data.cap && n <= data.cap {
 		if n >= k {
-			var int mask = limit - 1
+			const int mask = limit - 1
 			var key = 0
 			var j = 0
 			while j < k {
@@ -116,9 +116,9 @@ func write_freq = (ref Buffer<int> data, int n, int k) {
 				freq.store_int(key, freq.load_int(key) + 1)
 			}
 			var i = 1
-			var int end = n - k
+			const int end = n - k
 			while i <= end {
-				var int next = i + k - 1
+				const int next = i + k - 1
 				if next >= 0 && next < data.cap {
 					key = ((key << 2) | data.load_int(next)) & mask
 				}
@@ -142,7 +142,7 @@ func write_freq = (ref Buffer<int> data, int n, int k) {
 	if limit <= freq.cap && limit <= keys.cap && limit <= counts.cap {
 		var kk = 0
 		while kk < limit {
-			var int c = freq.load_int(kk)
+			const int c = freq.load_int(kk)
 			if c > 0 {
 				if found >= 0 && found < keys.cap && found < counts.cap {
 					keys.store_int(found, kk)
@@ -168,8 +168,8 @@ func write_freq = (ref Buffer<int> data, int n, int k) {
 		}
 		if best != a {
 			if a >= 0 && a < keys.cap && a < counts.cap && best >= 0 && best < keys.cap && best < counts.cap {
-				var int tk = keys.load_int(a)
-				var int tc = counts.load_int(a)
+				const int tk = keys.load_int(a)
+				const int tc = counts.load_int(a)
 				keys.store_int(a, keys.load_int(best))
 				counts.store_int(a, counts.load_int(best))
 				keys.store_int(best, tk)
@@ -186,9 +186,9 @@ func write_freq = (ref Buffer<int> data, int n, int k) {
 	var idx = 0
 	while idx < found {
 		if idx >= 0 && idx < keys.cap && idx < counts.cap {
-			var int code = keys.load_int(idx)
-			var int c = counts.load_int(idx)
-			var int pct = (c * 100000 + sum / 2) / sum
+			const int code = keys.load_int(idx)
+			const int c = counts.load_int(idx)
+			const int pct = (c * 100000 + sum / 2) / sum
 			write_nucleotides(code, k)
 			Console.write(" ")
 			write_number(pct)
@@ -199,9 +199,9 @@ func write_freq = (ref Buffer<int> data, int n, int k) {
 }
 
 func write_count = (ref Buffer<int> data, int n, string query) {
-	var int k = query.length
-	var int target = pack(query)
-	var int c = count_seq(ref data, n, target, k)
+	const int k = query.length
+	const int target = pack(query)
+	const int c = count_seq(ref data, n, target, k)
 	Console.write(c.to_string())
 	Console.write("\t")
 	Console.write(query)
@@ -216,18 +216,18 @@ pub func main = (Init init) {
 
 	var f = File()
 	f.open(filename, "r")
-	var string text = f.readAll()
+	const string text = f.readAll()
 	f.close()
 
 	var data = Buffer<int>()
-	var int text_len = text.length
+	const int text_len = text.length
 	data.alloc_int(text_len)
 	var n = 0
 
 	var i = 0
 	var started = 0
 	while i < text_len {
-		var int c = text.at(i) as int
+		const int c = text.at(i) as int
 		if started == 1 {
 			if c != 10 {
 				if c != 13 {
