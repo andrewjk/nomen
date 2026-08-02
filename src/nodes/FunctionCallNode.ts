@@ -20,7 +20,7 @@ export default class FunctionCallNode extends BaseNode {
 	 * post-construction field assignment after the call returns. Populated
 	 * by `convert_anon_struct` and consumed by the build backends.
 	 */
-	field_overrides?: { name: string; value: BaseNode; type: Type }[];
+	field_overrides?: { name: string; value: BaseNode; type?: Type }[];
 	/**
 	 * Bounds inferred from the call's return contract (`out TYPE: out < X`),
 	 * resolved to the caller's receiver path. Populated during checking so that

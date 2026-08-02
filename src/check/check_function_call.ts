@@ -2,7 +2,6 @@ import add_error from "../add_error.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
-import AnonStructNode from "../nodes/AnonStructNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
@@ -12,7 +11,6 @@ import OperationNode from "../nodes/OperationNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
-import { monomorphize } from "./check_function_call_node.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
@@ -194,90 +192,6 @@ export default function check_function_call(
 	}
 
 	status.stack.push(node);
-
-	for (let i = 0; i < node.params.length; i++) {
-		const param = node.params[i];
-		if (param.node_type !== "anon_struct") continue;
-		const func_param = func.params[i + self_offset];
-		if (!func_param) continue;
-		let struct = status.structs.findLast((s) => s.name === func_param.type.name);
-		if (!struct) {
-			add_error(status, `Unknown struct type: ${func_param.type.name}`, param.start);
-			continue;
-		}
-		const anon = param as AnonStructNode;
-
-		if (struct.is_generic && !func_param.type.type_args?.length) {
-			const type_map = new Map<string, Type>();
-			for (const af of anon.fields) {
-				if (!check_node(af.value, status)) continue;
-				const val_type = type_from_value_node(af.value, status);
-				const struct_field = struct.fields.find((f) => f.name === af.name);
-				if (struct_field && struct.type_params.includes(struct_field.type.name)) {
-					if (!type_map.has(struct_field.type.name)) {
-						type_map.set(struct_field.type.name, val_type);
-					}
-				}
-			}
-			if (type_map.size > 0) {
-				const inferred_args = struct.type_params.map((tp) => type_map.get(tp) || new Type(tp));
-				const mono_name = struct.name + "_" + inferred_args.map((t) => t.name).join("_");
-				let mono = status.structs.find((s) => s.name === mono_name);
-				if (!mono) {
-					mono = monomorphize(struct, inferred_args, status) ?? undefined;
-				}
-				if (mono) {
-					struct = mono;
-				}
-			}
-		}
-
-		const init_func = struct.functions.find((f) => f.name === "#init");
-		if (!init_func) {
-			add_error(status, `Struct ${struct.name} has no init`, param.start);
-			continue;
-		}
-		const args: BaseNode[] = [];
-		for (const init_param of init_func.params) {
-			const field = anon.fields.find((f) => f.name === init_param.name);
-			if (field) {
-				args.push(field.value);
-			} else if (init_param.default_value) {
-				args.push(init_param.default_value);
-			} else {
-				add_error(status, `Missing field '${init_param.name}' in anonymous struct`, param.start);
-			}
-		}
-		// Defaulted struct fields that aren't #init params become post-
-		// construction field overrides (mirrors convert_anon_struct in
-		// check_declaration_node). Unknown fields are rejected.
-		// Each override value is checked with the struct field's type as
-		// `expected_type` so shorthand forms (`.auto`) resolve to the
-		// mangled enum case with `is_enum_shorthand = true`.
-		const field_overrides: { name: string; value: BaseNode; type: Type }[] = [];
-		const saved_expected = status.expected_type;
-		for (const field of anon.fields) {
-			if (init_func.params.find((p) => p.name === field.name)) continue;
-			const struct_field = struct.fields.find((f) => f.name === field.name);
-			if (!struct_field) {
-				add_error(
-					status,
-					`Unknown field '${field.name}' in anonymous struct for ${struct.name}`,
-					param.start,
-				);
-				continue;
-			}
-			status.expected_type = struct_field.type;
-			check_node(field.value, status);
-			field_overrides.push({ name: field.name, value: field.value, type: struct_field.type });
-		}
-		status.expected_type = saved_expected;
-		const constructor = new FunctionCallNode(param.start, struct.name);
-		constructor.params = args;
-		constructor.type = new Type(struct.name);
-		if (field_overrides.length) constructor.field_overrides = field_overrides;
-		node.params.splice(i, 1, constructor);
-	}
 
 	// Collect argument values for constraint evaluation (all params, not just current)
 	// Collect argument values for constraint evaluation

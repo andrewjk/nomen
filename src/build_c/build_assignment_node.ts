@@ -2,7 +2,9 @@ import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import AssignmentNode from "../nodes/AssignmentNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
+import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
+import emit_field_overrides from "../build/emit_field_overrides.ts";
 import { build_vtable_target } from "./build_access_node.ts";
 import { emit_struct_destroys, struct_needs_destroy_by_name } from "./build_auto_free.ts";
 import build_node from "./build_node.ts";
@@ -510,6 +512,17 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 		status.code += " = ";
 	}
 	build_node(node.right_value, status);
+	// `x = T(...) + [ ... ]`: apply the named-field overrides to the LHS
+	// after the construction. Only a simple variable LHS is handled here;
+	// field-target overrides in assignment are an edge case.
+	if (
+		node.left_value.node_type === "value" &&
+		node.right_value.node_type === "func_call" &&
+		(node.right_value as FunctionCallNode).field_overrides?.length
+	) {
+		const lname = (node.left_value as ValueNode).value;
+		emit_field_overrides(lname, node.right_value, build_node, status, ";\n", ";\n");
+	}
 
 	if (node.swap) {
 		status.code += `;\n`;

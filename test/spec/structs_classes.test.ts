@@ -176,8 +176,8 @@ const int top = numbers.pop()
 	});
 });
 
-describe("spec: anonymous structs", () => {
-	test("anonymous struct literal passed to function", () => {
+describe("spec: construction overrides", () => {
+	test("struct constructed and passed to function", () => {
 		const input = `
 struct Circle {
     var string name
@@ -190,7 +190,7 @@ func printCircle = (Circle circle) {
     Console.write("\\{circle.name}: \\{circle.center_x},\\{circle.center_y},\\{circle.radius}\\n")
 }
 
-printCircle([ name = "c", center_x = 25, center_y = 70, radius = 15 ])
+printCircle(Circle("c", 25, 70, 15))
 `;
 		expect(compile_main(input)).toEqual([]);
 	});

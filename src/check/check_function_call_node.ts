@@ -74,6 +74,25 @@ export default function check_function_call_node(
 		}
 	}
 
+	// `T(args) + [ field = value, ... ]` is collapsed onto the call at parse
+	// time as `field_overrides`. Validate them against the struct's fields:
+	// each must name a real field that is NOT an #init param (set positionally)
+	// and HAS a declared default (required fields are owned by #init). This
+	// keeps the overlay from becoming a back door around construction.
+	if (node.field_overrides?.length) {
+		const override_struct = status.structs.findLast((s) => s.name === node.name);
+		if (override_struct && func) {
+			validate_field_overrides(node, override_struct, func, status);
+		} else {
+			add_error(
+				status,
+				"`[ ... ]` field overrides can only follow a struct constructor call",
+				node.start,
+			);
+			node.field_overrides = undefined;
+		}
+	}
+
 	if (!func && node.name.startsWith("_string_interpolate_")) {
 		const length = parseInt(node.name.substring("_string_interpolate_".length));
 		func = new FunctionNode(0, "pub", node.name, node.type, [
@@ -827,46 +846,34 @@ function specialize_function(
 
 		let type_args_for_struct: Type[] = [];
 
-		if (arg.node_type === "anon_struct") {
-			type_args_for_struct = infer_from_anon_struct(
-				arg as import("../nodes/AnonStructNode.ts").default,
-				generic_struct,
-				status,
-				substitution,
-			);
-		} else {
-			const arg_type = infer_arg_type(arg, status);
-			if (arg_type.type_args?.length) {
-				type_args_for_struct = arg_type.type_args;
-				for (let j = 0; j < generic_struct.type_params.length; j++) {
+		const arg_type = infer_arg_type(arg, status);
+		if (arg_type.type_args?.length) {
+			type_args_for_struct = arg_type.type_args;
+			for (let j = 0; j < generic_struct.type_params.length; j++) {
+				if (j < arg_type.type_args.length) {
+					substitution.set(generic_struct.type_params[j], arg_type.type_args[j].name);
+				}
+			}
+			if (param.type.type_args?.length) {
+				for (let j = 0; j < param.type.type_args.length; j++) {
 					if (j < arg_type.type_args.length) {
-						substitution.set(generic_struct.type_params[j], arg_type.type_args[j].name);
+						substitution.set(param.type.type_args[j].name, arg_type.type_args[j].name);
+					}
+				}
+			}
+		} else if (arg_type.name !== param.type.name) {
+			const mono_struct = status.structs.findLast((s) => s.name === arg_type.name);
+			if (mono_struct?.source_type_args?.length) {
+				type_args_for_struct = mono_struct.source_type_args;
+				for (let j = 0; j < generic_struct.type_params.length; j++) {
+					if (j < mono_struct.source_type_args.length) {
+						substitution.set(generic_struct.type_params[j], mono_struct.source_type_args[j].name);
 					}
 				}
 				if (param.type.type_args?.length) {
 					for (let j = 0; j < param.type.type_args.length; j++) {
-						if (j < arg_type.type_args.length) {
-							substitution.set(param.type.type_args[j].name, arg_type.type_args[j].name);
-						}
-					}
-				}
-			} else if (arg_type.name !== param.type.name) {
-				const mono_struct = status.structs.findLast((s) => s.name === arg_type.name);
-				if (mono_struct?.source_type_args?.length) {
-					type_args_for_struct = mono_struct.source_type_args;
-					for (let j = 0; j < generic_struct.type_params.length; j++) {
 						if (j < mono_struct.source_type_args.length) {
-							substitution.set(generic_struct.type_params[j], mono_struct.source_type_args[j].name);
-						}
-					}
-					if (param.type.type_args?.length) {
-						for (let j = 0; j < param.type.type_args.length; j++) {
-							if (j < mono_struct.source_type_args.length) {
-								substitution.set(
-									param.type.type_args[j].name,
-									mono_struct.source_type_args[j].name,
-								);
-							}
+							substitution.set(param.type.type_args[j].name, mono_struct.source_type_args[j].name);
 						}
 					}
 				}
@@ -956,7 +963,18 @@ function infer_arg_type(node: import("../nodes/BaseNode.ts").default, status: Ch
 		return type_from_value(vn.value, status);
 	}
 	if (node.node_type === "func_call") {
-		return (node as FunctionCallNode).type;
+		const fc = node as FunctionCallNode;
+		if (fc.type?.name) return fc.type;
+		// A constructor call with explicit type args (e.g. `Box<int>(42)`)
+		// may be used as an argument to a generic function before it has been
+		// checked, so its `.type` is still empty. Synthesize the type from the
+		// call's explicit type_args so generic inference can substitute T.
+		if (fc.type_args?.length) {
+			const t = new Type(fc.name);
+			t.type_args = fc.type_args;
+			return t;
+		}
+		return fc.type;
 	}
 	if (node.node_type === "access") {
 		const access = node as import("../nodes/AccessNode.ts").default;
@@ -1067,24 +1085,61 @@ function infer_scalar_type(node: BaseNode, status: CheckStatus): Type {
 	return new Type("");
 }
 
-function infer_from_anon_struct(
-	anon: import("../nodes/AnonStructNode.ts").default,
-	generic_struct: StructNode,
+function validate_field_overrides(
+	node: FunctionCallNode,
+	struct: StructNode,
+	init_func: FunctionNode,
 	status: CheckStatus,
-	substitution: Map<string, string>,
-): Type[] {
-	for (const field of anon.fields) {
-		const struct_field = generic_struct.fields.find((f) => f.name === field.name);
-		if (!struct_field) continue;
-		const type_param_name = struct_field.type.name;
-		if (!generic_struct.type_params.includes(type_param_name)) continue;
-		if (substitution.has(type_param_name)) continue;
-		const val_type = infer_arg_type(field.value, status);
-		if (val_type.name) {
-			substitution.set(type_param_name, val_type.name);
+) {
+	const validated: { name: string; value: BaseNode; type: Type }[] = [];
+	const seen = new Set<string>();
+	const saved_expected = status.expected_type;
+	for (const override of node.field_overrides!) {
+		if (seen.has(override.name)) {
+			add_error(
+				status,
+				`Duplicate field '${override.name}' in [ ... ] overrides`,
+				override.value.start,
+			);
+			continue;
 		}
+		seen.add(override.name);
+		// #init params are supplied positionally — repeating one here is a
+		// likely typo, not an override.
+		if (init_func.params.some((p) => p.name === override.name)) {
+			add_error(
+				status,
+				`'${override.name}' is a ${struct.name}(...) parameter, not a [ ... ] override`,
+				override.value.start,
+			);
+			continue;
+		}
+		const field = struct.fields.find((f) => f.name === override.name);
+		if (!field) {
+			add_error(
+				status,
+				`Unknown field '${override.name}' in [ ... ] overrides for ${struct.name}`,
+				override.value.start,
+			);
+			continue;
+		}
+		// Only defaulted fields may be overridden: a field without a default
+		// is established by #init (possibly computed, e.g. `sum = x + y`) and
+		// must not be clobbered after construction.
+		if (!field.value) {
+			add_error(
+				status,
+				`Field '${override.name}' has no default; set it in ${struct.name}(...)`,
+				override.value.start,
+			);
+			continue;
+		}
+		status.expected_type = field.type;
+		check_node(override.value, status);
+		validated.push({ name: override.name, value: override.value, type: field.type });
 	}
-	return generic_struct.type_params.map((tp) => new Type(substitution.get(tp) || tp));
+	status.expected_type = saved_expected;
+	node.field_overrides = validated;
 }
 
 export function substitute_body_types(

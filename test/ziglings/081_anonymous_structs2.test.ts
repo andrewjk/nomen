@@ -5,8 +5,8 @@ import parse_with_imports from "./parse_with_imports";
 
 // INCOMPATIBILITIES:
 // - Zig uses `.field = value` anonymous struct literal syntax with `anytype` params.
-//   Nomen uses `[ field = value ]` syntax with named struct params.
-// - Zig's `@as(u32, 205)` for explicit type coercion. Nomen infers types from struct fields.
+//   Nomen constructs with a positional `Circle(...)` call.
+// - Zig's `@as(u32, 205)` for explicit type coercion. Nomen infers types from constructor args.
 
 test("ziglings 081 anonymous structs2 -- errors", () => {
 	const input = `
@@ -23,7 +23,7 @@ func printCircle = (Circle circle) {
 }
 
 pub func main = () {
-    printCircle([ center_x = ???, center_y = 187, radius = 12 ])
+    printCircle(Circle(???, 187, 12))
 }
 `;
 	const parsed = parse_with_imports(input);
@@ -45,7 +45,7 @@ func printCircle = (Circle circle) {
 }
 
 pub func main = () {
-    printCircle([ center_x = 205, center_y = 187, radius = 12 ])
+    printCircle(Circle(205, 187, 12))
     return
 }
 `;
@@ -68,7 +68,7 @@ func printCircle = (Circle circle) {
 }
 
 pub func main = () {
-    printCircle([ center_x = 205, center_y = 187, radius = 12 ])
+    printCircle(Circle(205, 187, 12))
     return
 }
 `;

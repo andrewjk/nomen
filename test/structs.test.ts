@@ -131,17 +131,16 @@ Console.write("\\{s.b} \\{s.c}")
 	});
 
 	test("named-field struct literal overrides defaults", async () => {
-		// `[ field = val, … ]` routes through #init: the call runs with no
-		// args (every field has a default), then the named fields are applied
-		// as post-construction overrides. Mirrors the GUI geometry
-		// `DEFAULT_PARAMS` form.
+		// `T() + [ field = val, … ]` runs #init (no args — every field has a
+		// default), then applies the named fields as post-construction
+		// overrides. Mirrors the GUI geometry `DEFAULT_PARAMS` form.
 		const input = `
 struct LP {
   var int grow = 0
   var int shrink = 0
 }
-const LP DEF = [ grow = 2, shrink = 3 ]
-const LP ONE = [ grow = 7 ]
+const LP DEF = LP() + [ grow = 2, shrink = 3 ]
+const LP ONE = LP() + [ grow = 7 ]
 Console.write("\\{DEF.grow} \\{DEF.shrink} \\{ONE.grow} \\{ONE.shrink}")
 `;
 		await build_and_check_output(input, "struct_named_field_literal_defaults", "2 3 7 0");
@@ -153,16 +152,16 @@ struct Mixed {
   var int a
   var int b = 5
 }
-const Mixed M = [ a = 1, b = 9 ]
-const Mixed N = [ a = 4 ]
+const Mixed M = Mixed(1) + [ b = 9 ]
+const Mixed N = Mixed(4)
 Console.write("\\{M.a} \\{M.b} \\{N.a} \\{N.b}")
 `;
 		await build_and_check_output(input, "struct_named_field_literal_mixed", "1 9 4 5");
 	});
 
 	test("named-field struct literal with enum shorthand values", async () => {
-		// The geometry types need `[ width = .auto, grow = 1 ]`-style literals
-		// whose override values are enum shorthands. These must resolve to the
+		// The geometry types need `LayoutParams() + [ width = .auto, grow = 1 ]`-style
+		// overlays whose override values are enum shorthands. These must resolve to the
 		// mangled enum case (with is_enum_shorthand) at check time, else the
 		// aarch64 build emits an illegal text relocation (`adr x0, .auto`).
 		const input = `
@@ -174,13 +173,45 @@ struct LP {
   var Len width = .auto
   var int grow = 0
 }
-const LP DEF = [ width = .fixed(50), grow = 1 ]
+const LP DEF = LP() + [ width = .fixed(50), grow = 1 ]
 match DEF.width {
   case .auto -> Console.write("auto \\{DEF.grow}")
   case .fixed(n) -> Console.write("fixed \\{n} \\{DEF.grow}")
 }
 `;
 		await build_and_check_output(input, "struct_named_field_literal_enum", "fixed 50 1");
+	});
+
+	test("named-field overrides in assignment, return, and call-arg positions", async () => {
+		// `T(...) + [ ... ]` must work as a general expression, not only as the
+		// value of a declaration: reassignment, a return value, and an inline
+		// call argument all need to apply the overrides after construction.
+		const input = `
+struct Mixed {
+  var int a
+  var int b = 5
+}
+
+func show = (Mixed m) {
+  Console.write("\\{m.a} \\{m.b}\\n")
+}
+
+func make = (int a, out Mixed) {
+  return Mixed(a) + [ b = a + 100 ]
+}
+
+var Mixed m = Mixed(1) + [ b = 9 ]
+m = Mixed(2) + [ b = 7 ]
+show(m)
+var Mixed n = make(3)
+show(n)
+show(Mixed(5) + [ b = 50 ])
+`;
+		await build_and_check_output(
+			input,
+			"struct_named_field_literal_positions",
+			"2 7\n3 103\n5 50\n",
+		);
 	});
 
 	test("struct field get and set", async () => {

@@ -1,9 +1,7 @@
 import add_error from "../add_error.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
-import AnonStructNode from "../nodes/AnonStructNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
-import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
@@ -62,8 +60,6 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			return;
 		} else if (decl.value) {
 			status.stack.push(decl);
-
-			convert_anon_struct(decl, status);
 
 			const old_expected_type = status.expected_type;
 			status.expected_type = decl.type;
@@ -129,8 +125,6 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 
 		if (decl.value) {
 			status.stack.push(decl);
-
-			convert_anon_struct(decl, status);
 
 			const old_expected_type = status.expected_type;
 			status.expected_type = decl.type;
@@ -293,63 +287,6 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			}
 		}
 	}
-}
-
-function convert_anon_struct(decl: DeclarationNode, status: CheckStatus) {
-	if (decl.value?.node_type !== "anon_struct") return;
-	const struct = status.structs.findLast((s) => s.name === decl.type.name);
-	if (!struct) return;
-	const anon = decl.value as AnonStructNode;
-	const init_func = struct.functions.find((f) => f.name === "#init");
-	if (!init_func) return;
-	const args: import("../nodes/BaseNode.ts").default[] = [];
-	for (const init_param of init_func.params) {
-		const field = anon.fields.find((f) => f.name === init_param.name);
-		if (field) {
-			args.push(field.value);
-		} else if (init_param.default_value) {
-			args.push(init_param.default_value);
-		}
-	}
-	// Anon fields that don't correspond to an #init param are field
-	// overrides: applied as post-construction assignments to defaulted
-	// struct fields. The literal `[ grow = 2 ]` against a struct whose
-	// `grow` field has a declared default becomes `T_init()` followed by
-	// `.grow = 2`. Unknown fields (not a param, not a struct field) are
-	// rejected with an error so typos don't silently slip through.
-	//
-	// Each override value is checked with the struct field's type as
-	// `expected_type` so that shorthand forms (`.auto`, `.center`) resolve
-	// to the mangled enum/bitset case with `is_enum_shorthand = true` —
-	// without this, the raw `.auto` reaches the build pass and emits an
-	// illegal text relocation on aarch64 (`adr x0, .auto`).
-	const field_overrides: {
-		name: string;
-		value: import("../nodes/BaseNode.ts").default;
-		type: Type;
-	}[] = [];
-	const saved_expected = status.expected_type;
-	for (const field of anon.fields) {
-		if (init_func.params.find((p) => p.name === field.name)) continue;
-		const struct_field = struct.fields.find((f) => f.name === field.name);
-		if (!struct_field) {
-			add_error(
-				status,
-				`Unknown field '${field.name}' in anonymous struct for ${struct.name}`,
-				field.value.start,
-			);
-			continue;
-		}
-		status.expected_type = struct_field.type;
-		check_node(field.value, status);
-		field_overrides.push({ name: field.name, value: field.value, type: struct_field.type });
-	}
-	status.expected_type = saved_expected;
-	const constructor = new FunctionCallNode(anon.start, struct.name);
-	constructor.params = args;
-	constructor.type = new Type(struct.name);
-	if (field_overrides.length) constructor.field_overrides = field_overrides;
-	decl.value = constructor;
 }
 
 /**

@@ -27,8 +27,8 @@ const d = p.distance_from_origin()
 	});
 });
 
-describe("readme: anonymous structs", () => {
-	test("inline struct literal passed to a function", () => {
+describe("readme: construction overrides", () => {
+	test("struct constructed and passed to a function", () => {
 		const input = `
 struct Circle {
     var string name
@@ -41,7 +41,7 @@ func print_circle = (Circle c) {
     Console.write("\\{c.center_x},\\{c.center_y},\\{c.radius}")
 }
 
-print_circle([ name = "C", center_x = 25, center_y = 70, radius = 15 ])
+print_circle(Circle("C", 25, 70, 15))
 `;
 		expect(compile_main(input)).toEqual([]);
 	});

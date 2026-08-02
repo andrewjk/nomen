@@ -1,5 +1,6 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
+import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import ReturnNode from "../nodes/ReturnNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import { resolve_static_value } from "./build_array_values_node.ts";
@@ -110,7 +111,18 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 	if (array_literal_len > 0) {
 		status.code += `add x0, x29, #${array_literal_offset}\n`;
 	} else {
+		// `return T(...) + [ ... ]`: the constructor would normally write
+		// straight into the return buffer (struct_return_buffer), bypassing
+		// the temp where field overrides are applied. Force the temp path for
+		// override constructors so the overrides land on the temp, then the
+		// copy below (x0 → return buffer) carries them through.
+		const override_ctor =
+			node.value?.node_type === "func_call" &&
+			!!(node.value as FunctionCallNode).field_overrides?.length;
+		const saved_buffer = override_ctor ? status.struct_return_buffer : undefined;
+		if (override_ctor) status.struct_return_buffer = undefined;
 		build_node(node.value, status);
+		if (override_ctor) status.struct_return_buffer = saved_buffer;
 	}
 	if (!status.code.endsWith("\n")) {
 		status.code += "\n";

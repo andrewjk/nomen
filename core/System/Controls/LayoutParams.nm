@@ -41,7 +41,7 @@ pub struct LayoutParams {
 }
 
 // Sensible defaults so most children just work
-const LayoutParams DEFAULT_PARAMS = [
+const LayoutParams DEFAULT_PARAMS = LayoutParams() + [
 	width = .auto,
 	height = .auto,
 	grow = 0,

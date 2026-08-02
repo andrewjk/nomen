@@ -1,4 +1,5 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
+import emit_field_overrides from "../build/emit_field_overrides.ts";
 import { is_int_literal, to_decimal_string } from "../int_literal.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
@@ -135,6 +136,10 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			const struct_size = get_struct_size(node.name, status);
 			const offset = allocate_stack_space(status, struct_size);
 			status.stack_offsets!.set(dest_addr, offset);
+			// Register the temp's type so field overrides applied to it
+			// (e.g. `f(T() + [ field = v ])`) resolve field offsets correctly.
+			if (!status.variable_types) status.variable_types = new Map();
+			status.variable_types.set(dest_addr, node.type);
 		}
 		start_reg = 1;
 	}
@@ -512,6 +517,14 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			const temp_addr = `_temp_${temp_counter - 1}`;
 			const offset = status.stack_offsets!.get(temp_addr)!;
 			status.code += `add x0, x29, #${offset}\n`;
+			// `T(...) + [ ... ]` in an expression position (e.g. a call arg or
+			// return value) lands in the temp above; apply the named-field
+			// overrides to that same temp, then restore x0 (building the
+			// override values may have clobbered it).
+			if (node.field_overrides?.length) {
+				emit_field_overrides(temp_addr, node, build_node, status);
+				status.code += `add x0, x29, #${offset}\n`;
+			}
 		}
 	}
 

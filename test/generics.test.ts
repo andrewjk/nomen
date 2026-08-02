@@ -146,7 +146,7 @@ func usePair<T, U> = (Pair<T, U> p) {
     return
 }
 
-usePair([ first = 1, second = "hello" ])
+usePair(Pair<int, string>(1, "hello"))
 `;
 	const parsed = parse(input);
 	expect(parsed.errors).toEqual([]);
@@ -216,7 +216,7 @@ func getValue<T> = (Box<T> box) {
     Console.write(v.to_string())
 }
 
-getValue([ value = 42 ])
+getValue(Box<int>(42))
 `;
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual([]);
@@ -233,7 +233,7 @@ func sum<T> = (Point<T> p, out T) {
     return p.x + p.y
 }
 
-var int total = sum([ x = 10, y = 20 ])
+var int total = sum(Point<int>(10, 20))
 `;
 	const parsed = parse(input);
 	expect(parsed.errors).toEqual([]);
@@ -251,7 +251,7 @@ func printBox<T> = (Box<T> box) {
     Console.write("\\n")
 }
 
-printBox([ value = 99 ])
+printBox(Box<int>(99))
 `;
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual([]);
@@ -273,8 +273,8 @@ func printFirst<T, U> = (Pair<T, U> p) {
     Console.write("\\n")
 }
 
-printFirst([ first = 10, second = "a" ])
-printFirst([ first = 20, second = "b" ])
+printFirst(Pair<int, string>(10, "a"))
+printFirst(Pair<int, string>(20, "b"))
 `;
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual([]);
@@ -398,7 +398,7 @@ func sumCoords<T> = (Point<T> p, out T) {
     return p.x + p.y
 }
 
-var total = sumCoords([ x = 10, y = 20 ])
+var total = sumCoords(Point<int>(10, 20))
 `;
 	const parsed = parse(input);
 	expect(parsed.errors).toEqual([]);

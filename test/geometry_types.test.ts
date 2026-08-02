@@ -55,7 +55,7 @@ Console.write("\\{gw} \\{sh}")
 			"geometry_layout_params_literal",
 			`
 
-var LayoutParams p = [ width = .fixed(120), height = .percent(50), align_self = .center, grow = 2 ]
+var LayoutParams p = LayoutParams() + [ width = .fixed(120), height = .percent(50), align_self = .center, grow = 2 ]
 match p.width {
 	case .auto -> Console.write("auto ")
 	case .fixed(n) -> Console.write("fixed \\{n} ")

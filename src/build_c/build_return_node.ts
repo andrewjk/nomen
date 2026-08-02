@@ -1,7 +1,9 @@
 import AccessNode from "../nodes/AccessNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
+import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import ReturnNode from "../nodes/ReturnNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
+import emit_field_overrides from "../build/emit_field_overrides.ts";
 import build_array_values_node from "./build_array_values_node.ts";
 import build_auto_free from "./build_auto_free.ts";
 import build_node from "./build_node.ts";
@@ -270,6 +272,14 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 			status.code += `)`;
 		}
 		status.code += `;\n`;
+		// `return T(...) + [ ... ]`: apply the named-field overrides to the
+		// _return_val temp before returning it.
+		if (
+			node.value.node_type === "func_call" &&
+			(node.value as FunctionCallNode).field_overrides?.length
+		) {
+			emit_field_overrides("_return_val", node.value, build_node, status, "", ";\n");
+		}
 		build_auto_free(status);
 		status.code += `return _return_val;\n`;
 	}

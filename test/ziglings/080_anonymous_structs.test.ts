@@ -25,7 +25,7 @@ func printCircle<T> = (Circle<T> circle) {
 }
 
 pub func main = () {
-    printCircle([ center_x = 25, center_y = 70 ])
+    printCircle(Circle<int>(25, 70))
     return
 }
 `;
@@ -49,8 +49,8 @@ func printCircle<T> = (Circle<T> circle) {
 }
 
 pub func main = () {
-    printCircle([ center_x = 25, center_y = 70, radius = 15 ])
-    printCircle([ center_x = 205, center_y = 187, radius = 12 ])
+    printCircle(Circle<int>(25, 70, 15))
+    printCircle(Circle<int>(205, 187, 12))
     return
 }
 `;
@@ -74,8 +74,8 @@ func printCircle<T> = (Circle<T> circle) {
 }
 
 pub func main = () {
-    printCircle([ center_x = 25, center_y = 70, radius = 15 ])
-    printCircle([ center_x = 205, center_y = 187, radius = 12 ])
+    printCircle(Circle<int>(25, 70, 15))
+    printCircle(Circle<int>(205, 187, 12))
     return
 }
 `;

@@ -270,6 +270,22 @@ export default function parse_expression(status: ParseStatus, allow_assignment =
 			case ">=": {
 				consume(status);
 				const expression = parse_expression(status, allow_assignment);
+				// `T(args) + [ field = value, ... ]`: a struct constructor
+				// extended with named-field overrides for defaulted fields.
+				// Merge the literal onto the call as field_overrides (the
+				// checker validates them against the struct's fields). The
+				// anon struct is otherwise not a legal value, so this collapse
+				// is the only place it can attach.
+				if (
+					current_value === "+" &&
+					node.node_type === "func_call" &&
+					expression.node_type === "anon_struct"
+				) {
+					const fc = node as FunctionCallNode;
+					const anon = expression as AnonStructNode;
+					fc.field_overrides = anon.fields.map((f) => ({ name: f.name, value: f.value }));
+					break;
+				}
 				if (is_operation_node(expression)) {
 					node = restructure_op(
 						start,
