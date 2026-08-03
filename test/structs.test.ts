@@ -238,6 +238,24 @@ Console.write("\\{name} \\{age}")
 		await build_and_check_output(input, "anon_struct_reassign_destructure", "b 2");
 	});
 
+	test("nested anonymous struct: field access", async () => {
+		// An anon struct containing another anon struct. Both backends.
+		const input = `
+const p = [ name = "bob", info = [age = 5, active = true] ]
+Console.write("\\{p.name} \\{p.info.age} \\{p.info.active}")
+`;
+		await build_and_check_output(input, "nested_anon_struct_access", "bob 5 true");
+	});
+
+	test("nested anonymous struct: reassign inner field", async () => {
+		const input = `
+var p = [ name = "bob", info = [age = 5, active = true] ]
+p.info.age = 99
+Console.write("\\{p.name} \\{p.info.age}")
+`;
+		await build_and_check_output(input, "nested_anon_struct_reassign", "bob 99");
+	});
+
 	test("struct field get and set", async () => {
 		const input = `
 struct Point {

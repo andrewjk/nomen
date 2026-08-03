@@ -343,6 +343,10 @@ function is_number(input: string) {
 	let start = 0;
 	if (input[0] === "-" || input[0] === "+") start = 1;
 	if (start >= input.length) return false;
+	// A valid number must start with an actual digit (0-9), not just an
+	// underscore — otherwise identifiers like `_0` are mistaken for numbers
+	// and `._0` after them is tokenized as a float extension.
+	if (input.charCodeAt(start) < 48 || input.charCodeAt(start) > 57) return false;
 	for (let i = start; i < input.length; i++) {
 		if (!is_number_char(input, i)) {
 			return false;

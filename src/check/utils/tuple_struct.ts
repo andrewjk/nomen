@@ -58,10 +58,16 @@ export function get_or_create_tuple_struct(tuple_types: Type[], status: CheckSta
 	const existing = status.structs.find((s) => s.name === name);
 	if (existing) return existing;
 
-	// Create fields `_0`, `_1`, ... with cloned element types
-	const fields = tuple_types.map(
-		(t, i) => new DeclarationNode(0, "pub", "var", `_${i}`, clone_type(t)),
-	);
+	// Create fields `_0`, `_1`, ... with materialized element types.
+	// Nested tuple elements must be materialized so the generated struct
+	// has concrete field types (e.g. `_Tuple_int_string`, not `tuple`).
+	const fields = tuple_types.map((t, i) => {
+		const field_type =
+			t.name === "tuple" && t.tuple_types?.length
+				? materialize_tuple_type(t, status)
+				: clone_type(t);
+		return new DeclarationNode(0, "pub", "var", `_${i}`, field_type);
+	});
 
 	const struct = new StructNode(0, "private", name, [], fields, []);
 
@@ -100,7 +106,10 @@ export function materialize_tuple_type(type: Type, status: CheckStatus): Type {
 	new_type.is_nullable = type.is_nullable;
 	new_type.is_array = type.is_array;
 	new_type.is_ref = type.is_ref;
-	// Preserve tuple_types for callers that need to know element types
-	new_type.tuple_types = type.tuple_types;
+	// Preserve tuple_types (materialized) for callers that need element types.
+	// Recursively materialize nested tuple element types so that downstream
+	// checks (e.g. tuple value matching) compare materialized struct names
+	// instead of raw "tuple" types.
+	new_type.tuple_types = type.tuple_types.map((t) => materialize_tuple_type(t, status));
 	return new_type;
 }

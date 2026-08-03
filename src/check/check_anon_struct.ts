@@ -6,6 +6,7 @@ import Type from "../nodes/Type.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import { get_or_create_anon_struct } from "./utils/anon_struct.ts";
+import hoist_struct_params from "./utils/hoist_struct_params.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 
 /**
@@ -56,6 +57,7 @@ export default function check_anon_struct(node: AnonStructNode, status: CheckSta
 	const constructor = new FunctionCallNode(node.start, struct.name);
 	constructor.params = params;
 	constructor.type = new Type(struct.name);
+	hoist_struct_params(constructor, status);
 
 	replace_in_place(node, constructor);
 	return result;

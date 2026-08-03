@@ -5,6 +5,7 @@ import ValueNode from "../nodes/ValueNode.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
+import hoist_struct_params from "./utils/hoist_struct_params.ts";
 import { get_or_create_tuple_struct, tuple_struct_name } from "./utils/tuple_struct.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
@@ -108,6 +109,7 @@ function check_as_tuple(
 
 	const constructor = new FunctionCallNode(array.start, struct_name);
 	constructor.params = array.values.slice();
+	hoist_struct_params(constructor, status);
 	const new_type = new Type(struct_name);
 	new_type.tuple_types = tuple_element_types;
 	constructor.type = new_type;
@@ -268,6 +270,7 @@ function check_as_array_or_inferred_tuple(
 
 			const constructor = new FunctionCallNode(array.start, struct_name);
 			constructor.params = array.values.slice();
+			hoist_struct_params(constructor, status);
 			const new_type = new Type(struct_name);
 			new_type.tuple_types = elem_types;
 			constructor.type = new_type;

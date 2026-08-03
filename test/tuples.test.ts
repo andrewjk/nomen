@@ -285,3 +285,61 @@ Console.write("\\{c.payload._0} \\{c.payload._1}")
 		await build_and_check_output(input, "tuple_as_field", "99 bottles");
 	});
 });
+
+// NESTED TUPLES
+describe("nested tuples", () => {
+	test("nested tuple in var declaration", async () => {
+		const input = `
+var [[int, string], bool] x = [[1, "a"], true]
+Console.write("\\{x._0._0} \\{x._0._1} \\{x._1}")
+`;
+		await build_and_check_output(input, "nested_tuple_var", "1 a true");
+	});
+
+	test("nested tuple as struct field", async () => {
+		const input = `
+struct Container {
+	var [[int, string], bool] payload
+}
+const c = Container([[99, "bottles"], true])
+Console.write("\\{c.payload._0._0} \\{c.payload._0._1} \\{c.payload._1}")
+`;
+		await build_and_check_output(input, "nested_tuple_field", "99 bottles true");
+	});
+
+	test("triple nested tuple", async () => {
+		const input = `
+var [[[int, string], bool], float] deep = [[[1, "a"], true], 3.14]
+Console.write("\\{deep._0._0._0} \\{deep._0._0._1} \\{deep._0._1} \\{deep._1}")
+`;
+		await build_and_check_output(input, "triple_nested_tuple", "1 a true 3.14");
+	});
+
+	test("nested tuple as function return type", async () => {
+		const input = `
+func make_nested = (out [[int, string], bool]) {
+	return [[42, "nested"], false]
+}
+const r = make_nested()
+Console.write("\\{r._0._0} \\{r._0._1} \\{r._1}")
+`;
+		await build_and_check_output(input, "nested_tuple_return", "42 nested false");
+	});
+
+	test("nested tuple two-step access", async () => {
+		const input = `
+var [[int, string], bool] x = [[1, "a"], true]
+var inner = x._0
+Console.write("\\{inner._0} \\{inner._1} \\{x._1}")
+`;
+		await build_and_check_output(input, "nested_tuple_two_step", "1 a true");
+	});
+
+	test("anon struct inside tuple", async () => {
+		const input = `
+var t = [[ name = "x", n = 1 ], true]
+Console.write("\\{t._0.name} \\{t._0.n} \\{t._1}")
+`;
+		await build_and_check_output(input, "anon_in_tuple", "x 1 true");
+	});
+});
