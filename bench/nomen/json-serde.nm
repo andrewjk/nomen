@@ -34,10 +34,9 @@ pub func main = (Init init) {
 	// The tree pool is reset per iteration (no per-node malloc/free).
 	var total = 0
 	var i = 0
-	while i < n {
+	while i < n; i += 1 {
 		const int r = Json.parse(text, ref tree)
 		total = total + Json.stringify(ref tree, r).length
-		i = i + 1
 	}
 	Console.write(total.to_string())
 	Console.write("\n")

@@ -16,7 +16,7 @@ const days_per_year = 365.24
 func energy = (ref Body[5] bodies, out float) {
 	var e = 0.0
 	var i = 0
-	while i < 5 {
+	while i < 5; i += 1 {
 		const float bi_x = bodies.at(i).x
 		const float bi_y = bodies.at(i).y
 		const float bi_z = bodies.at(i).z
@@ -27,22 +27,20 @@ func energy = (ref Body[5] bodies, out float) {
 		e = e + 0.5 * mass * (vx * vx + vy * vy + vz * vz)
 
 		var int j = i + 1
-		while j < 5 {
+		while j < 5; j += 1 {
 			const float dx = bi_x - bodies.at(j).x
 			const float dy = bi_y - bodies.at(j).y
 			const float dz = bi_z - bodies.at(j).z
 			const float dist = Math.sqrt(dx * dx + dy * dy + dz * dz)
 			e = e - (mass * bodies.at(j).mass) / dist
-			j = j + 1
 		}
-		i = i + 1
 	}
 	return e
 }
 
 func advance = (ref Body[5] bodies, float dt) {
 	var i = 0
-	while i < 5 {
+	while i < 5; i += 1 {
 		const float bi_x = bodies.at(i).x
 		const float bi_y = bodies.at(i).y
 		const float bi_z = bodies.at(i).z
@@ -52,7 +50,7 @@ func advance = (ref Body[5] bodies, float dt) {
 		const float mass_i = bodies.at(i).mass
 
 		var int j = i + 1
-		while j < 5 {
+		while j < 5; j += 1 {
 			const float dx = bi_x - bodies.at(j).x
 			const float dy = bi_y - bodies.at(j).y
 			const float dz = bi_z - bodies.at(j).z
@@ -69,8 +67,6 @@ func advance = (ref Body[5] bodies, float dt) {
 			bodies.at(j).vx = bodies.at(j).vx + dx * mass_i * mag
 			bodies.at(j).vy = bodies.at(j).vy + dy * mass_i * mag
 			bodies.at(j).vz = bodies.at(j).vz + dz * mass_i * mag
-
-			j = j + 1
 		}
 
 		bodies.at(i).vx = vx
@@ -80,8 +76,6 @@ func advance = (ref Body[5] bodies, float dt) {
 		bodies.at(i).x = bi_x + dt * vx
 		bodies.at(i).y = bi_y + dt * vy
 		bodies.at(i).z = bi_z + dt * vz
-
-		i = i + 1
 	}
 }
 
@@ -91,11 +85,10 @@ func offset_momentum = (ref Body[5] bodies) {
 	var pz = 0.0
 
 	var i = 0
-	while i < 5 {
+	while i < 5; i += 1 {
 		px = px - bodies.at(i).vx * bodies.at(i).mass
 		py = py - bodies.at(i).vy * bodies.at(i).mass
 		pz = pz - bodies.at(i).vz * bodies.at(i).mass
-		i = i + 1
 	}
 
 	bodies.at(0).vx = px / solar_mass
@@ -155,9 +148,8 @@ pub func main = (Init init) {
 		n = parse_int(init.args.at(1))
 	}
 	var step = 0
-	while step < n {
+	while step < n; step += 1 {
 		advance(ref bodies, 0.01)
-		step = step + 1
 	}
 
 	e = energy(ref bodies)

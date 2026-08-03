@@ -95,11 +95,10 @@ pub func main = (Init init) {
 		const int iterations = 1 << (max_depth - depth + min_depth)
 		var sum = 0
 		var i = 1
-		while i <= iterations {
+		while i <= iterations; i += 1 {
 			var MerkleNode tree = make_merkle(depth)
 			cal_hash(ref tree)
 			sum = sum + tree.hash
-			i = i + 1
 		}
 		Console.write("\{iterations}\t trees of depth \{depth}\t root hash sum: \{sum}\n")
 		depth = depth + 2

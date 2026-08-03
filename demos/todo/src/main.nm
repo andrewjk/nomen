@@ -95,7 +95,7 @@ pub func main = () {
 						cb5.set_title(new_text)
 						cb5.set_hidden(false)
 					}
-					todo_count = todo_count + 1
+					todo_count += 1
 					input.set_text("")
 					grid.mark_dirty(grid.root_index())
 					grid.layout(win)

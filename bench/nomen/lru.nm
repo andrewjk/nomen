@@ -80,7 +80,7 @@ struct LRU {
 				}
 			} else {
 				const int id = self.count
-				self.count = self.count + 1
+				self.count += 1
 				if id >= 0 && id < self.nkeys.cap && id < self.nvals.cap {
 					self.nkeys.store_int(id, key)
 					self.nvals.store_int(id, value)
@@ -125,7 +125,7 @@ pub func main = (Init init) {
 	var missed = 0
 
 	var i = 0
-	while i < n {
+	while i < n; i += 1 {
 		rng0_state = (1103515245 * rng0_state + 12345) & 2147483647
 		const int n0 = rng0_state % M
 
@@ -135,12 +135,10 @@ pub func main = (Init init) {
 		const int n1 = rng1_state % M
 
 		if lru.get(n1) >= 0 {
-			hit = hit + 1
+			hit += 1
 		} else {
-			missed = missed + 1
+			missed += 1
 		}
-
-		i = i + 1
 	}
 
 	Console.write("\{hit}\n")

@@ -129,7 +129,7 @@ pub func main = (Init init) {
 		work.div_to(work, q_e18, ref div_rem)
 		var uint64 chunk = div_rem.get(0)
 		var c = 0
-		while c < 18 {
+		while c < 18; c += 1 {
 			const int idx = digit_count + c
 			// `idx = digit_count + c` is a sum of two runtime variables the
 			// verifier can't relate to `digits.cap` (5020), so guard the
@@ -138,7 +138,6 @@ pub func main = (Init init) {
 				digits.store_int(idx, (chunk % 10) as int)
 			}
 			chunk = chunk / 10
-			c = c + 1
 		}
 		digit_count = digit_count + 18
 	}
@@ -157,7 +156,7 @@ pub func main = (Init init) {
 		if pos == digit_count - 1 && digit_count > 1 {
 			Console.write(".")
 		}
-		pos = pos - 1
+		pos -= 1
 		if (digit_count - 1 - pos) % 10 == 0 && pos >= 0 {
 			Console.write("\t:")
 			Console.write((digit_count - 1 - pos).to_string())

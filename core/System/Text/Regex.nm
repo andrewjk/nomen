@@ -17,7 +17,7 @@ pub struct Regex {
 		var string charset = first_byte_set(pattern, pat_len)
 		var int clen = charset.length
 		var i = 0
-		while i <= len {
+		while i <= len; i += 1 {
 			if clen > 0 && i < len {
 				i = find_next_byte(input, i, len, charset)
 				if i > len {
@@ -27,7 +27,6 @@ pub struct Regex {
 			if match_here(pattern, 0, pat_len, input, i, len) >= 0 {
 				return true
 			}
-			i = i + 1
 		}
 		return false
 	}
@@ -40,7 +39,7 @@ pub struct Regex {
 		var string charset = first_byte_set(pattern, pat_len)
 		var int clen = charset.length
 		var i = 0
-		while i <= len {
+		while i <= len; i += 1 {
 			if clen > 0 && i < len {
 				i = find_next_byte(input, i, len, charset)
 				if i > len {
@@ -50,13 +49,11 @@ pub struct Regex {
 			var int end = match_here(pattern, 0, pat_len, input, i, len)
 			if end >= 0 {
 				var int j = i
-				while j < end {
+				while j < end; j += 1 {
 					match_result = match_result + "\{input.at(j)}"
-					j = j + 1
 				}
 				break
 			}
-			i = i + 1
 		}
 		return match_result
 	}
@@ -78,14 +75,14 @@ pub struct Regex {
 			}
 			var int end = match_here(pattern, 0, pat_len, input, pos, len)
 			if end >= 0 {
-				total = total + 1
+				total += 1
 				if end == pos {
-					pos = pos + 1
+					pos += 1
 				} else {
 					pos = end
 				}
 			} else {
-				pos = pos + 1
+				pos += 1
 			}
 		}
 		return total
@@ -105,7 +102,7 @@ pub struct Regex {
 				// Copy the bytes we're skipping over.
 				while pos < next {
 					sb.append_char(input.at(pos))
-					pos = pos + 1
+					pos += 1
 				}
 				if pos >= len {
 					break
@@ -116,13 +113,13 @@ pub struct Regex {
 				sb.append_string(replacement)
 				if end == pos {
 					sb.append_char(input.at(pos))
-					pos = pos + 1
+					pos += 1
 				} else {
 					pos = end
 				}
 			} else {
 				sb.append_char(input.at(pos))
-				pos = pos + 1
+				pos += 1
 			}
 		}
 		return sb.to_string()
@@ -189,7 +186,7 @@ func collect_first_bytes = (string pattern, int pat_pos, int pat_end, ref String
 					sb.append_char(pattern.at(i + 1))
 				}
 			}
-			i = i + 2
+			i += 2
 		} else {
 			if c == '[' {
 				if i == alt_start {
@@ -203,7 +200,7 @@ func collect_first_bytes = (string pattern, int pat_pos, int pat_end, ref String
 				}
 				if c == ')' {
 					if depth > 0 {
-						depth = depth - 1
+						depth -= 1
 					}
 				}
 				if (c as int) == 124 {
@@ -215,7 +212,7 @@ func collect_first_bytes = (string pattern, int pat_pos, int pat_end, ref String
 						sb.append_char(c)
 					}
 				}
-				i = i + 1
+				i += 1
 			}
 		}
 	}
@@ -227,7 +224,7 @@ func add_class_chars = (string pattern, int start, int end, ref StringBuilder sb
 	var int cs = start
 	if cs < end {
 		if pattern.at(cs) == '^' {
-			cs = cs + 1
+			cs += 1
 		}
 	}
 	var int i = cs
@@ -238,16 +235,16 @@ func add_class_chars = (string pattern, int start, int end, ref StringBuilder sb
 				var int hi = pattern.at(i + 2) as int
 				while lo <= hi {
 					sb.append_char(lo as char)
-					lo = lo + 1
+					lo += 1
 				}
-				i = i + 3
+				i += 3
 			} else {
 				sb.append_char(pattern.at(i))
-				i = i + 1
+				i += 1
 			}
 		} else {
 			sb.append_char(pattern.at(i))
-			i = i + 1
+				i += 1
 		}
 	}
 }
@@ -271,17 +268,17 @@ func match_here = (
 	while i < pat_end {
 		var char c = pattern.at(i)
 		if (c as int) == 92 {
-			i = i + 2
+			i += 2
 		} else {
 			if c == '[' {
 				i = atom_end_pos(pattern, i, pat_end)
 			} else {
 				if c == '(' {
-					depth = depth + 1
+					depth += 1
 				}
 				if c == ')' {
 					if depth > 0 {
-						depth = depth - 1
+						depth -= 1
 					}
 				}
 				if (c as int) == 124 {
@@ -293,7 +290,7 @@ func match_here = (
 						return match_here(pattern, i + 1, pat_end, input, in_pos, in_len)
 					}
 				}
-				i = i + 1
+				i += 1
 			}
 		}
 	}
@@ -352,32 +349,30 @@ func atom_end_pos = (string pattern, int pat_pos, int pat_end, out int) {
 		var int cs = pat_pos + 1
 		if cs < pat_end {
 			if pattern.at(cs) == '^' {
-				cs = cs + 1
+				cs += 1
 			}
 		}
-		while cs < pat_end {
+		while cs < pat_end; cs += 1 {
 			if pattern.at(cs) == ']' {
 				return cs + 1
 			}
-			cs = cs + 1
 		}
 		return pat_end
 	}
 	if pc == '(' {
 		var d = 1
 		var int j = pat_pos + 1
-		while j < pat_end {
+		while j < pat_end; j += 1 {
 			var char c = pattern.at(j)
 			if c == '(' {
-				d = d + 1
+				d += 1
 			}
 			if c == ')' {
-				d = d - 1
+				d -= 1
 				if d == 0 {
 					return j + 1
 				}
 			}
-			j = j + 1
 		}
 		return pat_end
 	}
@@ -505,19 +500,18 @@ func match_star = (
 	var int max_pos = in_pos
 	while max_pos < in_len {
 		if char_matches_atom(pattern, atom_start, atom_end, input, max_pos, in_len) {
-			max_pos = max_pos + 1
+			max_pos += 1
 		} else {
 			break
 		}
 	}
 	// Backtrack from the longest match down to the minimum, trying the rest.
 	var int try_pos = max_pos
-	while try_pos >= in_pos + min_count {
+	while try_pos >= in_pos + min_count; try_pos -= 1 {
 		var int r = match_here(pattern, atom_end + 1, pat_end, input, try_pos, in_len)
 		if r >= 0 {
 			return r
 		}
-		try_pos = try_pos - 1
 	}
 	return -1
 }
@@ -606,7 +600,7 @@ func char_in_class = (
 	if content_start < atom_end {
 		if pattern.at(content_start) == '^' {
 			negated = true
-			content_start = content_start + 1
+			content_start += 1
 		}
 	}
 	var int content_end = atom_end - 1
@@ -632,18 +626,18 @@ func char_in_class = (
 							found = true
 						}
 					}
-					i = i + 3
+					i += 3
 				} else {
 					if ic == c {
 						found = true
 					}
-					i = i + 1
+					i += 1
 				}
 			} else {
 				if ic == c {
 					found = true
 				}
-				i = i + 1
+				i += 1
 			}
 		}
 	}

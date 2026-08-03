@@ -89,9 +89,8 @@ pub struct JsonTree {
 	// re-parsing a document leaks the previous document's string/number texts.
 	func reset = (ref self) {
 		var i = 0
-		while i < self.count {
+		while i < self.count; i += 1 {
 			self.free_text(i)
-			i = i + 1
 		}
 		self.count = 0
 	}
@@ -101,9 +100,8 @@ pub struct JsonTree {
 	// raw in the slab and are otherwise invisible to the auto-destroy pass.
 	func #destroy = () {
 		var i = 0
-		while i < self.count {
+		while i < self.count; i += 1 {
 			self.free_text(i)
-			i = i + 1
 		}
 		self.count = 0
 	}

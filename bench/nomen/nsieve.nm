@@ -29,7 +29,7 @@ func nsieve = (int n) {
 		// of both halves (`i >= 0 && i < self.cap`).
 		if slot >= 0 && slot < flags.cap {
 			if (flags.load_int(slot) & bit) == 0 {
-				count = count + 1
+				count += 1
 				if i * i < n {
 					var int j = i * i
 					const int step = i * 2

@@ -303,9 +303,8 @@ pub class Container : Control {
 	func first_child = (self, int parent, out int) {
 		var int p = parent + 1
 		var i = 0
-		while i < self.count {
+		while i < self.count; i += 1 {
 			if self.pars.load_int(i) == p { return i }
-			i = i + 1
 		}
 		return -1
 	}
@@ -313,9 +312,8 @@ pub class Container : Control {
 	func next_sibling = (self, int after, int parent, out int) {
 		var int p = parent + 1
 		var int i = after + 1
-		while i < self.count {
+		while i < self.count; i += 1 {
 			if self.pars.load_int(i) == p { return i }
-			i = i + 1
 		}
 		return -1
 	}
@@ -837,7 +835,7 @@ pub class Container : Control {
 					var int ch = self.rh.load_int(ci)
 					total_h = total_h + ch
 					if cw > max_child_w { max_child_w = cw }
-					n = n + 1
+					n += 1
 				}
 				ci = self.next_sibling(ci, idx)
 			}
@@ -863,7 +861,7 @@ pub class Container : Control {
 					var int ch = self.rh.load_int(ci)
 					total_w = total_w + cw
 					if ch > max_child_h { max_child_h = ch }
-					n = n + 1
+					n += 1
 				}
 				ci = self.next_sibling(ci, idx)
 			}
@@ -959,7 +957,7 @@ pub class Container : Control {
 				var int ch = self.rh.load_int(ci)
 				if ch > row_h { row_h = ch }
 				col_cursor = col_cursor + span
-				any = any + 1
+				any += 1
 			}
 			ci = self.next_sibling(ci, idx)
 		}
@@ -1000,7 +998,7 @@ pub class Container : Control {
 					if g > 0 { total_grow = total_grow + g }
 					var int s = self.shrinks.load_int(ci)
 					if s > 0 { total_shrink = total_shrink + s }
-					n = n + 1
+					n += 1
 				}
 				ci = self.next_sibling(ci, idx)
 			}
@@ -1082,7 +1080,7 @@ pub class Container : Control {
 					if g > 0 { total_grow = total_grow + g }
 					var int s = self.shrinks.load_int(ci)
 					if s > 0 { total_shrink = total_shrink + s }
-					n = n + 1
+					n += 1
 				}
 				ci = self.next_sibling(ci, idx)
 			}
@@ -1202,7 +1200,7 @@ pub class Container : Control {
 	func collect_dirty = (ref self) {
 		self.dirty_n = 0
 		var i = 0
-		while i < self.count {
+		while i < self.count; i += 1 {
 			if self.kinds.load_int(i) == KIND_LEAF {
 				var int x = self.rx.load_int(i)
 				var int y = self.ry.load_int(i)
@@ -1224,7 +1222,6 @@ pub class Container : Control {
 					self.prh.store_int(i, h)
 				}
 			}
-			i = i + 1
 		}
 	}
 
@@ -1270,7 +1267,7 @@ pub class Container : Control {
 	func apply = (self, int content_w, int content_h) {
 		// Only repaint the dirty leaves — the compositor's dirty-rect win.
 		var k = 0
-		while k < self.dirty_n {
+		while k < self.dirty_n; k += 1 {
 			var int i = self.dirty_idx.load_int(k)
 			var uint64 handle = self.handles.load_int(i) as uint64
 			if handle != 0 {
@@ -1284,7 +1281,6 @@ pub class Container : Control {
 					content_h,
 				)
 			}
-			k = k + 1
 		}
 	}
 
@@ -1444,7 +1440,7 @@ pub class Container : Control {
 	pub func contains = (self, uint64 handle, int cx, int cy, out bool) {
 		var int needle = handle as int
 		var i = 0
-		while i < self.count {
+		while i < self.count; i += 1 {
 			if self.kinds.load_int(i) == KIND_LEAF {
 				if self.handles.load_int(i) == needle {
 					var int x = self.rx.load_int(i)
@@ -1462,7 +1458,6 @@ pub class Container : Control {
 					}
 				}
 			}
-			i = i + 1
 		}
 		return false
 	}

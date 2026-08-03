@@ -26,10 +26,9 @@ func nt = (int code, out string) {
 // write the nucleotides of a packed key, left to right
 func write_nucleotides = (int key, int k) {
 	var j = 0
-	while j < k {
+	while j < k; j += 1 {
 		const int code = (key >> (2 * (k - 1 - j))) & 3
 		Console.write(nt(code))
-		j = j + 1
 	}
 }
 
@@ -53,9 +52,8 @@ func pack = (string s, out int) {
 	var key = 0
 	var i = 0
 	const int len = s.length
-	while i < len {
+	while i < len; i += 1 {
 		key = (key << 2) | (((s.at(i) as int) >> 1) & 3)
-		i = i + 1
 	}
 	return key
 }
@@ -70,25 +68,23 @@ func count_seq = (ref Buffer<int> data, int n, int target, int k, out int) {
 		const int mask = (1 << (2 * k)) - 1
 		var key = 0
 		var j = 0
-		while j < k {
+		while j < k; j += 1 {
 			key = (key << 2) | data.load_int(j)
-			j = j + 1
 		}
 		var total = 0
 		if key == target {
-			total = total + 1
+			total += 1
 		}
 		var i = 1
 		const int end = n - k
-		while i <= end {
+		while i <= end; i += 1 {
 			const int next = i + k - 1
 			if next >= 0 && next < data.cap {
 				key = ((key << 2) | data.load_int(next)) & mask
 			}
 			if key == target {
-				total = total + 1
+				total += 1
 			}
-			i = i + 1
 		}
 		return total
 	}
@@ -108,16 +104,15 @@ func write_freq = (ref Buffer<int> data, int n, int k) {
 			const int mask = limit - 1
 			var key = 0
 			var j = 0
-			while j < k {
+			while j < k; j += 1 {
 				key = (key << 2) | data.load_int(j)
-				j = j + 1
 			}
 			if key >= 0 && key < freq.cap {
 				freq.store_int(key, freq.load_int(key) + 1)
 			}
 			var i = 1
 			const int end = n - k
-			while i <= end {
+			while i <= end; i += 1 {
 				const int next = i + k - 1
 				if next >= 0 && next < data.cap {
 					key = ((key << 2) | data.load_int(next)) & mask
@@ -125,7 +120,6 @@ func write_freq = (ref Buffer<int> data, int n, int k) {
 				if key >= 0 && key < freq.cap {
 					freq.store_int(key, freq.load_int(key) + 1)
 				}
-				i = i + 1
 			}
 		}
 	}
@@ -141,30 +135,28 @@ func write_freq = (ref Buffer<int> data, int n, int k) {
 	// propagates transitively to the inner accesses.
 	if limit <= freq.cap && limit <= keys.cap && limit <= counts.cap {
 		var kk = 0
-		while kk < limit {
+		while kk < limit; kk += 1 {
 			const int c = freq.load_int(kk)
 			if c > 0 {
 				if found >= 0 && found < keys.cap && found < counts.cap {
 					keys.store_int(found, kk)
 					counts.store_int(found, c)
 				}
-				found = found + 1
+				found += 1
 			}
-			kk = kk + 1
 		}
 	}
 
 	var a = 0
-	while a < found {
+	while a < found; a += 1 {
 		var int best = a
 		var int b = a + 1
-		while b < found {
+		while b < found; b += 1 {
 			if b >= 0 && b < counts.cap && best >= 0 && best < counts.cap {
 				if counts.load_int(b) > counts.load_int(best) {
 					best = b
 				}
 			}
-			b = b + 1
 		}
 		if best != a {
 			if a >= 0 && a < keys.cap && a < counts.cap && best >= 0 && best < keys.cap && best < counts.cap {
@@ -176,7 +168,6 @@ func write_freq = (ref Buffer<int> data, int n, int k) {
 				counts.store_int(best, tc)
 			}
 		}
-		a = a + 1
 	}
 
 	var int sum = n - k + 1
@@ -184,7 +175,7 @@ func write_freq = (ref Buffer<int> data, int n, int k) {
 		sum = 1
 	}
 	var idx = 0
-	while idx < found {
+	while idx < found; idx += 1 {
 		if idx >= 0 && idx < keys.cap && idx < counts.cap {
 			const int code = keys.load_int(idx)
 			const int c = counts.load_int(idx)
@@ -194,7 +185,6 @@ func write_freq = (ref Buffer<int> data, int n, int k) {
 			write_number(pct)
 			Console.write("\n")
 		}
-		idx = idx + 1
 	}
 }
 
@@ -234,10 +224,10 @@ pub func main = (Init init) {
 					if n >= 0 && n < data.cap {
 						data.store_int(n, base_code(c))
 					}
-					n = n + 1
+					n += 1
 				}
 			}
-			i = i + 1
+			i += 1
 		} else {
 			var matched = 0
 			if c == 62 {
@@ -256,16 +246,16 @@ pub func main = (Init init) {
 				}
 			}
 			if matched == 1 {
-				i = i + 6
+				i += 6
 				while i < text_len; i += 1 {
 					if (text.at(i) as int) == 10 {
-						i = i + 1
+						i += 1
 						break
 					}
 				}
 				started = 1
 			} else {
-				i = i + 1
+				i += 1
 			}
 		}
 	}

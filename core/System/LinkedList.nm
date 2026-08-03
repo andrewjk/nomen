@@ -24,7 +24,7 @@ pub struct LinkedList<T>: Enumerable {
 		self.nexts.store_int(idx, -1)
 		self.prevs.grow_int(idx + 1)
 		self.prevs.store_int(idx, -1)
-		self.count = self.count + 1
+		self.count += 1
 		if self.head == -1 {
 			self.head = idx
 		}

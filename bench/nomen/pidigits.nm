@@ -41,7 +41,7 @@ pub func main = (Init init) {
 
 		if u.cmp(v) == 0 {
 			Console.write(u.to_digit().to_string())
-			digits_printed = digits_printed + 1
+			digits_printed += 1
 
 			if digits_printed >= n {
 				Console.write("\t:\{digits_printed}")

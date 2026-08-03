@@ -52,9 +52,8 @@ pub func main = (Init init) {
 		const int iterations = 1 << (max_depth - depth + min_depth)
 		var sum = 0
 		var i = 0
-		while i < iterations {
+		while i < iterations; i += 1 {
 			sum = sum + check_tree(create_tree(depth))
-			i = i + 1
 		}
 		Console.write("\{iterations}\t trees of depth \{depth}\t check: \{sum}\n")
 		depth = depth + 2

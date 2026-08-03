@@ -37,11 +37,10 @@ pub func init_layout = (ref Layout l, int cap) {
  **/
 pub func add_leaf = (ref Layout l, int parent, int w, int h, out int) {
 	var idx = 0
-	while l.par.load_int(idx) != 0 || idx == 0 {
+	while l.par.load_int(idx) != 0 || idx == 0; idx += 1 {
 		if l.kinds.load_int(idx) == 0 && l.ws.load_int(idx) == 0 && l.hs.load_int(idx) == 0 && l.par.load_int(idx) == 0 {
 			break
 		}
-		idx = idx + 1
 	}
 	l.kinds.store_int(idx, 0)
 	l.ws.store_int(idx, w)
@@ -56,11 +55,10 @@ pub func add_leaf = (ref Layout l, int parent, int w, int h, out int) {
  **/
 pub func add_vstack = (ref Layout l, int parent, int spacing, out int) {
 	var idx = 0
-	while true {
+	while true; idx += 1 {
 		if l.kinds.load_int(idx) == 0 && l.ws.load_int(idx) == 0 && l.hs.load_int(idx) == 0 && l.par.load_int(idx) == 0 {
 			break
 		}
-		idx = idx + 1
 	}
 	l.kinds.store_int(idx, 1)
 	l.ws.store_int(idx, 0)
@@ -75,11 +73,10 @@ pub func add_vstack = (ref Layout l, int parent, int spacing, out int) {
  **/
 pub func add_hstack = (ref Layout l, int parent, int spacing, out int) {
 	var idx = 0
-	while true {
+	while true; idx += 1 {
 		if l.kinds.load_int(idx) == 0 && l.ws.load_int(idx) == 0 && l.hs.load_int(idx) == 0 && l.par.load_int(idx) == 0 {
 			break
 		}
-		idx = idx + 1
 	}
 	l.kinds.store_int(idx, 2)
 	l.ws.store_int(idx, 0)
@@ -92,9 +89,8 @@ pub func add_hstack = (ref Layout l, int parent, int spacing, out int) {
 func first_child = (Layout l, int count, int parent, out int) {
 	var int p = parent + 1
 	var i = 0
-	while i < count {
+	while i < count; i += 1 {
 		if l.par.load_int(i) == p { return i }
-		i = i + 1
 	}
 	return -1
 }
@@ -102,9 +98,8 @@ func first_child = (Layout l, int count, int parent, out int) {
 func next_sibling = (Layout l, int count, int after, int parent, out int) {
 	var int p = parent + 1
 	var int i = after + 1
-	while i < count {
+	while i < count; i += 1 {
 		if l.par.load_int(i) == p { return i }
-		i = i + 1
 	}
 	return -1
 }
@@ -147,7 +142,7 @@ pub func measure_w = (
 			var int ch = l.rh.load_int(ci)
 			total_h = total_h + ch
 			if cw > max_child_w { max_child_w = cw }
-			n = n + 1
+			n += 1
 			ci = next_sibling(l, count, ci, idx)
 		}
 		if n > 1 { total_h = total_h + l.gaps.load_int(idx) * (n - 1) }
@@ -168,7 +163,7 @@ pub func measure_w = (
 		var int ch = l.rh.load_int(ci)
 		total_w = total_w + cw
 		if ch > max_child_h { max_child_h = ch }
-		n = n + 1
+		n += 1
 		ci = next_sibling(l, count, ci, idx)
 	}
 	if n > 1 { total_w = total_w + l.gaps.load_int(idx) * (n - 1) }

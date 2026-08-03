@@ -18,7 +18,7 @@ pub struct List<T>: Viewable {
 			self.items.grow_int(new_cap)
 		}
 		self.items.store_int(self.length, value)
-		self.length = self.length + 1
+		self.length += 1
 	}
 
 	pub func pop = (ref self, mov out T) {

@@ -7,7 +7,7 @@ func eval_a_times_u<T> = (ref Buffer<T> au, ref Buffer<T> u, int n, bool transpo
 	// transitive bound propagation (`i < n <= cap ⇒ i < cap`).
 	if n <= au.cap && n <= u.cap {
 		var i = 0
-		while i < n {
+		while i < n; i += 1 {
 			var a = 0.0
 			var j = 0
 			// eval_a's denominator follows an additive recurrence along j:
@@ -18,21 +18,19 @@ func eval_a_times_u<T> = (ref Buffer<T> au, ref Buffer<T> u, int n, bool transpo
 			// This avoids the per-element integer multiply and divide.
 			var int denom = i * (i + 1) / 2
 			if transpose {
-				denom = denom + 1
+				denom += 1
 			} else {
-				denom = denom + i + 1
+				denom += i + 1
 			}
-			while j < n {
+			while j < n; j += 1 {
 				a = a + (1.0 / (denom as float)) * u.load_float(j)
 				if transpose {
-					denom = denom + i + j + 2
+					denom += i + j + 2
 				} else {
-					denom = denom + i + j + 1
+					denom += i + j + 1
 				}
-				j = j + 1
 			}
 			au.store_float(i, a)
-			i = i + 1
 		}
 	}
 }
@@ -61,17 +59,15 @@ pub func main = (Init init) {
 	// discharge against `u.cap` / `v.cap` without per-iteration guards.
 	if n <= u.cap && n <= v.cap {
 		var i = 0
-		while i < n {
+		while i < n; i += 1 {
 			u.store_float(i, 1.0)
 			v.store_float(i, 1.0)
-			i = i + 1
 		}
 
 		i = 0
-		while i < 10 {
+		while i < 10; i += 1 {
 			eval_ata_times_u(ref v, ref u, ref scratch, n)
 			eval_ata_times_u(ref u, ref v, ref scratch, n)
-			i = i + 1
 		}
 
 		var vbv = 0.0

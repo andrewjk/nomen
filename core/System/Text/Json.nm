@@ -24,7 +24,7 @@ pub struct Json {
 		sb.append_char('"')
 		var i = 0
 		var int len = value.length
-		while i < len {
+		while i < len; i += 1 {
 			var char c = value.at(i)
 			var int code = c as int
 			switch {
@@ -47,7 +47,6 @@ pub struct Json {
 					sb.append_char(c)
 				}
 			}
-			i = i + 1
 		}
 		sb.append_char('"')
 		return sb.to_string()
@@ -59,22 +58,21 @@ pub struct Json {
 		var int len = json.length
 		var i = 0
 		// skip up to the opening quote
-		while i < len {
+		while i < len; i += 1 {
 			if (json.at(i) as int) == 34 {
-				i = i + 1
+				i += 1
 				break
 			}
-			i = i + 1
 		}
 		// read until the unescaped closing quote, unescaping as we go
-		while i < len {
+		while i < len; i += 1 {
 			var char c = json.at(i)
 			var int code = c as int
 			if code == 34 {
 				break
 			}
 			if code == 92 {
-				i = i + 1
+				i += 1
 				if i < len {
 					var char e = json.at(i)
 					var int ec = e as int
@@ -102,7 +100,6 @@ pub struct Json {
 			} else {
 				sb.append_char(c)
 			}
-			i = i + 1
 		}
 		return sb.to_string()
 	}
@@ -140,17 +137,17 @@ func json_skip_ws = (string s, ref Buffer<int> pos, int len) {
 
 func json_parse_string = (string s, ref Buffer<int> pos, int len, ref JsonTree tree, out int) {
 	var int i = pos.load_int(0)
-	i = i + 1
+	i += 1
 	var sb = StringBuilder()
-	while i < len {
+	while i < len; i += 1 {
 		var char c = s.at(i)
 		var int code = c as int
 		if code == 34 {
-			i = i + 1
+			i += 1
 			break
 		}
 		if code == 92 {
-			i = i + 1
+			i += 1
 			if i < len {
 				var char e = s.at(i)
 				var int ec = e as int
@@ -178,7 +175,6 @@ func json_parse_string = (string s, ref Buffer<int> pos, int len, ref JsonTree t
 		} else {
 			sb.append_char(c)
 		}
-		i = i + 1
 	}
 	pos.store_int(0, i)
 	var int n = tree.alloc_node()
@@ -193,7 +189,7 @@ func json_parse_number = (string s, ref Buffer<int> pos, int len, ref JsonTree t
 	while i < len {
 		var int code = s.at(i) as int
 		if code == 45 || code == 43 || code == 46 || code == 101 || code == 69 || (code >= 48 && code <= 57) {
-			i = i + 1
+			i += 1
 		} else {
 			break
 		}
@@ -201,9 +197,8 @@ func json_parse_number = (string s, ref Buffer<int> pos, int len, ref JsonTree t
 	pos.store_int(0, i)
 	var sb = StringBuilder()
 	var int j = start
-	while j < i {
+	while j < i; j += 1 {
 		sb.append_char(s.at(j))
-		j = j + 1
 	}
 	var int n = tree.alloc_node()
 	tree.set_kind(n, 2)

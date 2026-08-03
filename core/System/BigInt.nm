@@ -94,9 +94,8 @@ pub struct BigInt {
 	func copy_range_from = (ref self, BigInt src, int start, int count) {
 		self.ensure(count)
 		var i = 0
-		while i < count {
+		while i < count; i += 1 {
 			self.set(i, src.get(start + i))
-			i = i + 1
 		}
 		self.len = count
 		while self.len > 1 {
@@ -111,7 +110,7 @@ pub struct BigInt {
 		self.ensure(other.len + shift + 1)
 		var carry = 0
 		var i = 0
-		while i < other.len || carry != 0 {
+		while i < other.len || carry != 0; i += 1 {
 			var uint64 a_val = 0
 			if i + shift < self.len {
 				a_val = self.get(i + shift)
@@ -132,7 +131,6 @@ pub struct BigInt {
 			}
 			self.set(i + shift, sum2)
 			carry = c1 + c2
-			i = i + 1
 		}
 		if i + shift > self.len {
 			self.len = i + shift
@@ -142,7 +140,7 @@ pub struct BigInt {
 	func sub_at = (ref self, BigInt other, int shift) {
 		var borrow = 0
 		var i = 0
-		while i < other.len {
+		while i < other.len; i += 1 {
 			const uint64 a_val = self.get(i + shift)
 			const uint64 b_val = other.get(i)
 			const uint64 diff = a_val - borrow
@@ -157,9 +155,8 @@ pub struct BigInt {
 				borrow = new_borrow
 			}
 			self.set(i + shift, diff2)
-			i = i + 1
 		}
-		while borrow != 0 {
+		while borrow != 0; i += 1 {
 			const uint64 a_val = self.get(i + shift)
 			const uint64 diff = a_val - borrow
 			if diff > a_val {
@@ -168,7 +165,6 @@ pub struct BigInt {
 				borrow = 0
 			}
 			self.set(i + shift, diff)
-			i = i + 1
 		}
 		while self.len > 1 {
 			if self.get(self.len - 1) != 0 {
@@ -237,7 +233,7 @@ pub struct BigInt {
 		const uint64 sp = self.data_ptr()
 		const uint64 op = other.data_ptr()
 		var int i = self.len - 1
-		while i >= 0 {
+		while i >= 0; i -= 1 {
 			var uint64 a = self.get_at(sp, i)
 			var uint64 b = other.get_at(op, i)
 			if a != b {
@@ -246,7 +242,6 @@ pub struct BigInt {
 				}
 				return -1
 			}
-			i = i - 1
 		}
 		return 0
 	}
@@ -279,7 +274,7 @@ pub struct BigInt {
 		var carry = 0
 		var i = 0
 		var last_nonzero = 1
-		while i < max_len || carry != 0 {
+		while i < max_len || carry != 0; i += 1 {
 			var uint64 a_val = 0
 			if i < a_len {
 				a_val = a.get_at(ap, i)
@@ -303,7 +298,6 @@ pub struct BigInt {
 				last_nonzero = i + 1
 			}
 			carry = c1 + c2
-			i = i + 1
 		}
 		self.len = i
 		if last_nonzero < self.len {
@@ -328,7 +322,7 @@ pub struct BigInt {
 		var borrow = 0
 		var i = 0
 		var last_nonzero = 1
-		while i < a.len {
+		while i < a.len; i += 1 {
 			const uint64 a_val = a.get_at(ap, i)
 			var uint64 b_val = 0
 			if i < b.len {
@@ -349,7 +343,6 @@ pub struct BigInt {
 			if diff2 != 0 {
 				last_nonzero = i + 1
 			}
-			i = i + 1
 		}
 		self.len = a.len
 		if last_nonzero < self.len {
@@ -378,7 +371,7 @@ pub struct BigInt {
 			var last_nonzero = 0
 			if a.len == 1 {
 				const uint64 bp = b.data_ptr()
-				while i < other_len || carry != 0 {
+				while i < other_len || carry != 0; i += 1 {
 					var uint64 ov = 0
 					if i < other_len {
 						ov = b.get_at(bp, i)
@@ -395,11 +388,10 @@ pub struct BigInt {
 					if result != 0 {
 						last_nonzero = i + 1
 					}
-					i = i + 1
 				}
 			} else {
 				var uint64 ap = a.data_ptr()
-				while i < other_len || carry != 0 {
+				while i < other_len || carry != 0; i += 1 {
 					var uint64 ov = 0
 					if i < other_len {
 						ov = a.get_at(ap, i)
@@ -416,7 +408,6 @@ pub struct BigInt {
 					if result != 0 {
 						last_nonzero = i + 1
 					}
-					i = i + 1
 				}
 			}
 			self.len = i
@@ -440,11 +431,11 @@ pub struct BigInt {
 			const uint64 bp = b.data_ptr()
 			const uint64 scratchp = scratch.data_ptr()
 			var i = 0
-			while i < a.len {
+			while i < a.len; i += 1 {
 				const uint64 ai = a.get_at(ap, i)
 				var uint64 carry = 0
 				var j = 0
-				while j < b.len || carry != 0 {
+				while j < b.len || carry != 0; j += 1 {
 					var uint64 bj = 0
 					if j < b.len {
 						bj = b.get_at(bp, j)
@@ -464,21 +455,18 @@ pub struct BigInt {
 					}
 					carry = c1 + c2 + hi_prod as int
 					scratch.set_at(scratchp, j + i, cur2)
-					j = j + 1
 				}
-				i = i + 1
 			}
 			self.ensure(new_len)
 			const uint64 sp = self.data_ptr()
 			var last_nonzero = 1
 			var k = 0
-			while k < new_len {
+			while k < new_len; k += 1 {
 				const uint64 val = scratch.get_at(scratchp, k)
 				self.set_at(sp, k, val)
 				if val != 0 {
 					last_nonzero = k + 1
 				}
-				k = k + 1
 			}
 			self.len = last_nonzero
 			return
@@ -577,7 +565,7 @@ pub struct BigInt {
 			var uint64 rem = 0
 			var last_nonzero = 0
 			var int i = a.len - 1
-			while i >= 0 {
+			while i >= 0; i -= 1 {
 				var uint64 ai = a.get(i)
 				const uint64 q_val = self.div128(rem, ai, divisor)
 				const uint64 d_lo = divisor & 4294967295
@@ -605,7 +593,6 @@ pub struct BigInt {
 				if q_val != 0 && last_nonzero == 0 {
 					last_nonzero = i + 1
 				}
-				i = i - 1
 			}
 			if last_nonzero == 0 {
 				last_nonzero = 1
@@ -635,9 +622,8 @@ pub struct BigInt {
 			remainder.ensure(a.len)
 			remainder.clear(remainder.digits.cap)
 			var ci = 0
-			while ci < a.len {
+			while ci < a.len; ci += 1 {
 				remainder.set(ci, a.get(ci))
-				ci = ci + 1
 			}
 			remainder.len = a.len
 			return
@@ -648,7 +634,7 @@ pub struct BigInt {
 		var shift = 0
 		var uint64 clz_mask = 9223372036854775808
 		while (clz_mask & v_top) == 0 {
-			shift = shift + 1
+			shift += 1
 			clz_mask = clz_mask >> 1
 			if shift >= 64 {
 				break
@@ -664,7 +650,7 @@ pub struct BigInt {
 		// Shift b left by shift into remainder[0..n-1]
 		var uint64 carry = 0
 		var si = 0
-		while si < n {
+		while si < n; si += 1 {
 			const uint64 b_val = b.get(si)
 			const uint64 shifted = (b_val << shift) | carry
 			remainder.digits.store_int(si, shifted as int)
@@ -673,13 +659,12 @@ pub struct BigInt {
 			} else {
 				carry = 0
 			}
-			si = si + 1
 		}
 
 		// Shift a left by shift into remainder[wd_off..wd_off+a.len]
 		carry = 0
 		si = 0
-		while si < a.len {
+		while si < a.len; si += 1 {
 			const uint64 a_val = a.get(si)
 			const uint64 shifted = (a_val << shift) | carry
 			remainder.digits.store_int(wd_off + si, shifted as int)
@@ -688,7 +673,6 @@ pub struct BigInt {
 			} else {
 				carry = 0
 			}
-			si = si + 1
 		}
 		remainder.digits.store_int(wd_off + si, carry as int)
 		const int u_len = a.len + 1
@@ -696,7 +680,7 @@ pub struct BigInt {
 		// D2. Main loop: for j = m down to 0
 		self.ensure(m + 2)
 		var int j = m
-		while j >= 0 {
+		while j >= 0; j -= 1 {
 			// D3. Calculate q_hat
 			const uint64 u_hi = remainder.digits.load_int(wd_off + j + n) as uint64
 			const uint64 u_lo = remainder.digits.load_int(wd_off + j + n - 1) as uint64
@@ -711,24 +695,23 @@ pub struct BigInt {
 					// compute q_hat * v and compare with u[j+n..j]
 					var uint64 hv_carry = 0
 					var pi = 0
-					while pi < n {
+					while pi < n; pi += 1 {
 						const uint64 vv = remainder.digits.load_int(pi) as uint64
 						const uint64 lo_prod = q_hat * vv
 						const uint64 hi_prod = self.mul_wide_hi(q_hat, vv)
 						const uint64 p_lo = lo_prod + hv_carry
 						hv_carry = hi_prod
 						if p_lo < lo_prod {
-							hv_carry = hv_carry + 1
+							hv_carry += 1
 						}
 						remainder.digits.store_int(wd_off + u_len + 1 + pi, p_lo as int)
-						pi = pi + 1
 					}
 
 					// Compare hv_carry with u[j+n]
 					const uint64 u_at_jn = remainder.digits.load_int(wd_off + j + n) as uint64
 					if hv_carry > u_at_jn {
-						q_hat = q_hat - 1
-						try_count = try_count + 1
+						q_hat -= 1
+						try_count += 1
 						continue
 					}
 					if hv_carry < u_at_jn {
@@ -748,11 +731,11 @@ pub struct BigInt {
 						if prod_limb < u_limb {
 							break
 						}
-						cmp_i = cmp_i - 1
+						cmp_i -= 1
 					}
 					if q_too_big != 0 {
-						q_hat = q_hat - 1
-						try_count = try_count + 1
+						q_hat -= 1
+						try_count += 1
 						continue
 					}
 					break
@@ -763,24 +746,23 @@ pub struct BigInt {
 			// Step 1: Compute q_hat * v into scratch[0..n]
 			var uint64 mul_carry = 0
 			var mi = 0
-			while mi < n {
+			while mi < n; mi += 1 {
 				const uint64 vv = remainder.digits.load_int(mi) as uint64
 				const uint64 lo_prod = q_hat * vv
 				const uint64 hi_prod = self.mul_wide_hi(q_hat, vv)
 				const uint64 prod = lo_prod + mul_carry
 				mul_carry = hi_prod
 				if prod < lo_prod {
-					mul_carry = mul_carry + 1
+					mul_carry += 1
 				}
 				remainder.digits.store_int(wd_off + u_len + 1 + mi, prod as int)
-				mi = mi + 1
 			}
 			remainder.digits.store_int(wd_off + u_len + 1 + n, mul_carry as int)
 
 			// Step 2: Subtract prod[0..n] from u[j..j+n]
 			var uint64 sub_borrow = 0
 			var si2 = 0
-			while si2 <= n {
+			while si2 <= n; si2 += 1 {
 				const uint64 u_val = remainder.digits.load_int(wd_off + j + si2) as uint64
 				const uint64 p_val = remainder.digits.load_int(wd_off + u_len + 1 + si2) as uint64
 				const uint64 diff = u_val - p_val
@@ -795,15 +777,14 @@ pub struct BigInt {
 				}
 				sub_borrow = (borrow1 + borrow2) as uint64
 				remainder.digits.store_int(wd_off + j + si2, diff2 as int)
-				si2 = si2 + 1
 			}
 
 			// D5. Test remainder - if borrow was nonzero (negative result), add back
 			if sub_borrow != 0 {
-				q_hat = q_hat - 1
+				q_hat -= 1
 				var uint64 add_carry = 0
 				var ai = 0
-				while ai < n {
+				while ai < n; ai += 1 {
 					const uint64 v_add = remainder.digits.load_int(ai) as uint64
 					const uint64 u_add = remainder.digits.load_int(wd_off + j + ai) as uint64
 					const uint64 sum = u_add + v_add + add_carry
@@ -817,7 +798,6 @@ pub struct BigInt {
 					}
 					remainder.digits.store_int(wd_off + j + ai, sum as int)
 					add_carry = new_carry as uint64
-					ai = ai + 1
 				}
 				var carry_idx = 0
 				while add_carry != 0 {
@@ -827,21 +807,20 @@ pub struct BigInt {
 					if new_u >= u_carry {
 						add_carry = 0
 					}
-					carry_idx = carry_idx + 1
+					carry_idx += 1
 				}
 			}
 
 			// Store quotient digit
 			self.ensure(j + 1)
 			self.set(j, q_hat)
-			j = j - 1
 		}
 		self.len = m + 1
 		while self.len > 1 {
 			if self.get(self.len - 1) != 0 {
 				break
 			}
-			self.len = self.len - 1
+			self.len -= 1
 		}
 
 		// Extract remainder from working dividend (normalized at wd_off..wd_off+n-1)
@@ -851,18 +830,16 @@ pub struct BigInt {
 		if shift > 0 {
 			var uint64 r_carry = 0
 			var int ri = n - 1
-			while ri >= 0 {
+			while ri >= 0; ri -= 1 {
 				const uint64 val = remainder.digits.load_int(wd_off + ri) as uint64
 				remainder.set(ri, ((val >> shift) | r_carry))
 				r_carry = val << (64 - shift)
-				ri = ri - 1
 			}
 		} else {
 			var ri = 0
-			while ri < n {
+			while ri < n; ri += 1 {
 				const uint64 val = remainder.digits.load_int(wd_off + ri) as uint64
 				remainder.set(ri, val)
-				ri = ri + 1
 			}
 		}
 		while remainder.len > 1 {
@@ -885,9 +862,8 @@ pub struct BigInt {
 		self.len = other.len
 		self.sign = other.sign
 		var i = 0
-		while i < other.len {
+		while i < other.len; i += 1 {
 			self.set(i, other.get(i))
-			i = i + 1
 		}
 	}
 

@@ -1,7 +1,7 @@
 {
 	"name": "App",
 	"imports": {
-		"System": "../core"
+		"System": "../../core"
 	},
 	"entry": "src/main.nm",
 	"format": {
