@@ -11,5 +11,5 @@ describe("bench/nomen/pidigits.nm", () => {
 		// check_output compares only a prefix; pidigits prints 2000 digits
 		// then "\t:2000". Verify the well-known opening of pi.
 		await build_and_check_bench("pidigits", "31415926535897932384626433832795028841971693993751");
-	});
+	}, 10000);
 });

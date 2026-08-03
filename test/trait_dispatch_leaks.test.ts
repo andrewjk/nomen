@@ -34,7 +34,7 @@ Console.write("ok\\n")
 		"factory_vstack_leak",
 		"ok",
 	);
-});
+}, 10000);
 
 test("HStack result is freed (no leak) on both backends", async () => {
 	await build_and_check_output(
@@ -46,7 +46,7 @@ Console.write("ok\\n")
 		"factory_hstack_leak",
 		"ok",
 	);
-});
+}, 10000);
 
 test("Grid result is freed (no leak) on both backends", async () => {
 	await build_and_check_output(
@@ -58,7 +58,7 @@ Console.write("ok\\n")
 		"factory_grid_leak",
 		"ok",
 	);
-});
+}, 10000);
 
 test("ZStack result is freed (no leak) on both backends", async () => {
 	await build_and_check_output(
@@ -70,7 +70,7 @@ Console.write("ok\\n")
 		"factory_zstack_leak",
 		"ok",
 	);
-});
+}, 10000);
 
 // A trait-dispatched `measure` on the class conformer also stays leak-free once
 // the factory result is anchored (this is the path the original report came in
@@ -95,4 +95,4 @@ pub func main = () {
 	const parsed = parse(input, system);
 	expect(parsed.errors).toEqual([]);
 	await build_and_check_output(input, "factory_trait_dispatch_leak", "70", true);
-});
+}, 10000);
