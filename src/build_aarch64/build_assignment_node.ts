@@ -982,27 +982,63 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 				emit_struct_copy("x1", "x0", offset, enum_size, status);
 			} else {
 				const offset = get_field_offset(target_type.name, field_name, status);
-
-				get_base_address(access, status, "x0");
-				status.code += `str x0, [sp, #-16]!\n`;
-
-				build_node(node.right_value, status);
-				if (!status.code.endsWith("\n")) {
-					status.code += "\n";
-				}
-				mark_moved_if_struct(node.right_value, status);
-				status.code += `mov x2, x0\n`;
-				status.code += `ldr x0, [sp], #16\n`;
-
 				const field_size = aarch64_size(field_type?.name ?? "int");
-				if (field_size === 1) {
-					status.code += `strb w2, [x0, #${offset}]\n`;
-				} else if (field_size === 2) {
-					status.code += `strh w2, [x0, #${offset}]\n`;
-				} else if (field_size === 4) {
-					status.code += `str w2, [x0, #${offset}]\n`;
+
+				if (node.operator) {
+					// Compound assignment to a scalar struct field (e.g.
+					// `self.count += 1`): load the current value, build the RHS,
+					// apply the operator, and store the result back. Both the
+					// base address and the current value must survive the RHS
+					// build, so they are spilled to the stack.
+					get_base_address(access, status, "x0");
+					if (field_size === 1) {
+						status.code += `ldrb w1, [x0, #${offset}]\n`;
+					} else if (field_size === 2) {
+						status.code += `ldrh w1, [x0, #${offset}]\n`;
+					} else if (field_size === 4) {
+						status.code += `ldr w1, [x0, #${offset}]\n`;
+					} else {
+						status.code += `ldr x1, [x0, #${offset}]\n`;
+					}
+					status.code += `str x0, [sp, #-16]!\n`;
+					status.code += `str x1, [sp, #-16]!\n`;
+					build_node(node.right_value, status);
+					if (!status.code.endsWith("\n")) {
+						status.code += "\n";
+					}
+					status.code += `ldr x1, [sp], #16\n`;
+					emit_compound_op(node.operator, status);
+					status.code += `ldr x1, [sp], #16\n`;
+					if (field_size === 1) {
+						status.code += `strb w0, [x1, #${offset}]\n`;
+					} else if (field_size === 2) {
+						status.code += `strh w0, [x1, #${offset}]\n`;
+					} else if (field_size === 4) {
+						status.code += `str w0, [x1, #${offset}]\n`;
+					} else {
+						status.code += `str x0, [x1, #${offset}]\n`;
+					}
 				} else {
-					status.code += `str x2, [x0, #${offset}]\n`;
+					get_base_address(access, status, "x0");
+					status.code += `str x0, [sp, #-16]!\n`;
+
+					build_node(node.right_value, status);
+					if (!status.code.endsWith("\n")) {
+						status.code += "\n";
+					}
+					mark_moved_if_struct(node.right_value, status);
+					status.code += `mov x2, x0\n`;
+					status.code += `ldr x0, [sp], #16\n`;
+
+					if (field_size === 1) {
+						status.code += `strb w2, [x0, #${offset}]\n`;
+					} else if (field_size === 2) {
+						status.code += `strh w2, [x0, #${offset}]\n`;
+					} else if (field_size === 4) {
+						status.code += `str w2, [x0, #${offset}]\n`;
+					} else {
+						status.code += `str x2, [x0, #${offset}]\n`;
+					}
 				}
 			}
 		} else {

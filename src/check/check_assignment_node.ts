@@ -112,13 +112,17 @@ export default function check_assignment_node(
 		}
 	} else if (left_value.declaration === "var") {
 		left_value.is_set = true;
-		// If the RHS is a shifted bound referencing the LHS itself (e.g.
-		// `i = i + 6`), snapshot the LHS's current bounds BEFORE clearing so
-		// track_assignment_bounds can propagate them (e.g. `i >= 0` ⇒ `i >= 6`).
+		// For `i = i + 6` and the equivalent compound form `i += 6`, snapshot
+		// the LHS's current bounds BEFORE clearing so track_assignment_bounds
+		// can propagate them (e.g. `i >= 0` ⇒ `i >= 6`). Compound `+=`/`-=`
+		// behave like `i = i ± N` for bounds purposes.
+		const compound_op =
+			is_compound && assign.operator ? assign.operator.replace(/=$/, "") : undefined;
+		const is_trackable_compound = is_compound && (compound_op === "+" || compound_op === "-");
 		const self_snapshot =
-			!is_compound &&
 			left_value_name === left_value.name &&
-			is_self_shifted(assign.right_value, left_value.name)
+			((!is_compound && is_self_shifted(assign.right_value, left_value.name)) ||
+				is_trackable_compound)
 				? snapshot_bounds(left_value.name, status)
 				: undefined;
 		// Clear range bounds: assignment invalidates for-loop range knowledge
@@ -148,9 +152,26 @@ export default function check_assignment_node(
 		}
 		// Re-track bounds if the RHS establishes new ones (e.g. cap = buf.get_cap()).
 		// Skip for compound assignments (+=, -=, etc.) since the RHS is a delta,
-		// not the new value.
-		if (!is_compound && left_value_name === left_value.name) {
-			track_assignment_bounds(left_value.name, assign.right_value, status, self_snapshot);
+		// not the new value — except `+=`/`-=` with a literal RHS, which we
+		// rewrite as `i + N` / `i - N` so the shifted bound propagates (mirroring
+		// `i = i + N`).
+		let synthetic_rhs: BaseNode | undefined;
+		if (is_trackable_compound) {
+			synthetic_rhs = new OperationNode(
+				assign.right_value.start,
+				compound_op as "+" | "-",
+				assign.left_value,
+				assign.right_value,
+				left_value.type,
+			);
+		}
+		if ((!is_compound || synthetic_rhs) && left_value_name === left_value.name) {
+			track_assignment_bounds(
+				left_value.name,
+				synthetic_rhs ?? assign.right_value,
+				status,
+				self_snapshot,
+			);
 		}
 		// If the RHS is a string literal, record its length on the type so
 		// subsequent constraint checks (e.g. slice bounds) can verify it.

@@ -145,7 +145,16 @@ func caller = () {
 `;
 			const parsed = parse(input, get_library(core));
 			expect(parsed.errors.length).toBeGreaterThanOrEqual(1);
-			expect(parsed.errors.some((e) => e.message.includes("cannot be verified"))).toBe(true);
+			// `i += 1` shifts the loop's range bound (`i < things.length`) to
+			// `i < things.length + 1`. With precise bounds tracking this is
+			// provably false at the upper end ("not satisfied"); without it,
+			// the check falls back to "cannot be verified". Either is a correct
+			// rejection — the test asserts the call is rejected, not how.
+			expect(
+				parsed.errors.some(
+					(e) => e.message.includes("cannot be verified") || e.message.includes("not satisfied"),
+				),
+			).toBe(true);
 		});
 
 		test("for-loop variable with non-literal range fails constraint", () => {
