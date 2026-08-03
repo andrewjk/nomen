@@ -20,6 +20,48 @@ const sum = Vec2(1, 2) + Vec2(3, 4)
 	});
 });
 
+describe("readme: generics", () => {
+	test("generic struct instantiated with concrete type args", () => {
+		const input = `
+struct Box<T> {
+    var T value
+}
+
+var Box<int> b = Box<int>(42)
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+
+	test("type param with trait bound (declaration only)", () => {
+		const input = `
+trait Named {
+    func id = (self, out int)
+}
+
+struct Holder<T: Named> {
+    var T item
+}
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+
+	test("generic free function infers T from the call site", () => {
+		const input = `
+struct Box<T> {
+    var T value
+}
+
+func unwrap<T> = (Box<T> box, out T) {
+    return box.value
+}
+
+var Box<int> b = Box<int>(42)
+var int v = unwrap(b)
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+});
+
 describe("readme: constraints", () => {
 	test("parameter constraint — ok call compiles", () => {
 		const input = `

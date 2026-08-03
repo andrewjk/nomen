@@ -418,6 +418,49 @@ struct Vec2 {
 const sum = Vec2(1, 2) + Vec2(3, 4)
 ```
 
+### Generics
+
+Structs, classes, and free functions can declare type parameters. Instantiate
+a generic by passing concrete type arguments in angle brackets:
+
+```nomen
+struct Box<T> {
+    var T value
+}
+
+var Box<int> b = Box<int>(42)
+```
+
+Type parameters may carry trait bounds (`<T: Named>`, multiple with `+`);
+each concrete type argument must conform to its bound:
+
+```nomen
+trait Named {
+    func id = (self, out int)
+}
+
+struct Holder<T: Named> {
+    var T item
+}
+```
+
+Generic free functions infer their type arguments from the call site, so `T`
+is never written explicitly:
+
+```nomen
+func unwrap<T> = (Box<T> box, out T) {
+    return box.value
+}
+
+var Box<int> b = Box<int>(42)
+var int v = unwrap(b)   // T inferred as int
+```
+
+Type parameters are type-erased at the storage level — all values are 8 bytes
+on aarch64, so `T` exists only for compile-time checking. The compiler emits
+one specialized copy per concrete instantiation (`Box<int>` → `Box_int`). See
+[GENERICS.md](GENERICS.md) for the full design.
+
 ### Constraints
 
 Constraints are compile-time assertions on parameters, fields, and variables.
