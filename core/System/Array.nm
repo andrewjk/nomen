@@ -5,107 +5,107 @@ pub struct Array<T>: Viewable {
 	pub const int length
 
 	pub func #init = (...T items) {
-        ```
-        #arch: c
-        self->length = _items_len;
-        T* data = (T*)((char*)self + sizeof(*self));
-        for (int i = 0; i < _items_len; i++) data[i] = items[i];
-        ```
-        ```
-        #arch: aarch64
-        // x19 = self (struct pointer), variadic items packed at call site
-        // _items_len at [x29, #0], items ptr at [x29, #8]
+		```
+		#arch: c
+		self->length = _items_len;
+		T* data = (T*)((char*)self + sizeof(*self));
+		for (int i = 0; i < _items_len; i++) data[i] = items[i];
+		```
+		```
+		#arch: aarch64
+		// x19 = self (struct pointer), variadic items packed at call site
+		// _items_len at [x29, #0], items ptr at [x29, #8]
 
-        // Store length
-        ldr x0, [x29, #0]
-        str x0, [x19, #8]
+		// Store length
+		ldr x0, [x29, #0]
+		str x0, [x19, #8]
 
-        // Copy items: memcpy(self + 16, items, len * T_SIZE)
-        ldr x2, [x29, #0]
-        mov x3, #T_SIZE
-        mul x2, x2, x3
-        add x0, x19, #16
-        ldr x1, [x29, #8]
-        bl _memcpy
-        ```
+		// Copy items: memcpy(self + 16, items, len * T_SIZE)
+		ldr x2, [x29, #0]
+		mov x3, #T_SIZE
+		mul x2, x2, x3
+		add x0, x19, #16
+		ldr x1, [x29, #8]
+		bl _memcpy
+		```
 	}
 
 	pub func at = (self, int index: index >= 0 && index < self.length, out T) {
-        ```
-        #arch: c
-        T* _data = (T*)((char*)self + sizeof(*self));
-        return _data[index];
-        ```
-        ```
-        #arch: aarch64
-        // x19 = self (first elem), x1 = index
-        mov x2, #T_SIZE
-        mul x1, x1, x2
-        ldr x0, [x19, x1]
-        ```
+		```
+		#arch: c
+		T* _data = (T*)((char*)self + sizeof(*self));
+		return _data[index];
+		```
+		```
+		#arch: aarch64
+		// x19 = self (first elem), x1 = index
+		mov x2, #T_SIZE
+		mul x1, x1, x2
+		ldr x0, [x19, x1]
+		```
 	}
 
 	pub func first = (self: self.length > 0, out T) {
-        ```
-        #arch: c
-        T* _data = (T*)((char*)self + sizeof(*self));
-        return _data[0];
-        ```
-        ```
-        #arch: aarch64
-        // x19 = self (first elem)
-        ldr x0, [x19]
-        ```
+		```
+		#arch: c
+		T* _data = (T*)((char*)self + sizeof(*self));
+		return _data[0];
+		```
+		```
+		#arch: aarch64
+		// x19 = self (first elem)
+		ldr x0, [x19]
+		```
 	}
 
 	pub func set = (ref self, int index: index >= 0 && index < self.length, T value) {
-        ```
-        #arch: c
-        T* _data = (T*)((char*)self + sizeof(*self));
-        // T_NEEDS_STRDUP is 1 when T is string: the slot must own a heap copy
-        // (free the outgoing string, strdup the incoming one) so auto_free can
-        // soundly free every slot at scope exit and reassigning a slot doesn't
-        // leak the previous value. 0 for all other T (plain assignment).
-        #if T_NEEDS_STRDUP
-            free(_data[index]);
-            _data[index] = (T)strdup(value);
-        #else
-            _data[index] = value;
-        #endif
-        ```
-        ```
-        #arch: aarch64
-        // x19 = self (first elem), x1 = index, x2 = value
-        mov x3, #T_SIZE
-        mul x1, x1, x3
-        // Only use the 8-byte store when T_SIZE is exactly 8 (int/string/ptr).
-        // For smaller types (char/bool/int8/etc.) strb/strh/str w/ would
-        // clobber adjacent slots, so fall through to a size-aware store.
-        cmp x3, #8
-        b.ne .L_set_byte
-        str x2, [x19, x1]
-        b .L_set_done
-        .L_set_byte:
-        strb w2, [x19, x1]
-        .L_set_done:
-        ```
+		```
+		#arch: c
+		T* _data = (T*)((char*)self + sizeof(*self));
+		// T_NEEDS_STRDUP is 1 when T is string: the slot must own a heap copy
+		// (free the outgoing string, strdup the incoming one) so auto_free can
+		// soundly free every slot at scope exit and reassigning a slot doesn't
+		// leak the previous value. 0 for all other T (plain assignment).
+		#if T_NEEDS_STRDUP
+			free(_data[index]);
+			_data[index] = (T)strdup(value);
+		#else
+			_data[index] = value;
+		#endif
+		```
+		```
+		#arch: aarch64
+		// x19 = self (first elem), x1 = index, x2 = value
+		mov x3, #T_SIZE
+		mul x1, x1, x3
+		// Only use the 8-byte store when T_SIZE is exactly 8 (int/string/ptr).
+		// For smaller types (char/bool/int8/etc.) strb/strh/str w/ would
+		// clobber adjacent slots, so fall through to a size-aware store.
+		cmp x3, #8
+		b.ne .L_set_byte
+		str x2, [x19, x1]
+		b .L_set_done
+		.L_set_byte:
+		strb w2, [x19, x1]
+		.L_set_done:
+		```
 	}
 
 	pub func at_end = (self, out T) {
-        ```
-        #arch: c
-        T* _data = (T*)((char*)self + sizeof(*self));
-        return _data[self->length - 1];
-        ```
-        ```
-        #arch: aarch64
-        // x19 = self (first elem), length at [x19 - 8]
-        ldr x0, [x19, #-8]
-        sub x0, x0, #1
-        mov x1, #T_SIZE
-        mul x0, x0, x1
-        ldr x0, [x19, x0]
-        ```
+		```
+		#arch: c
+		T* _data = (T*)((char*)self + sizeof(*self));
+		return _data[self->length - 1];
+		```
+		```
+		#arch: aarch64
+		// x19 = self (first elem), length at [x19 - 8]
+		ldr x0, [x19, #-8]
+		sub x0, x0, #1
+		mov x1, #T_SIZE
+		mul x0, x0, x1
+		ldr x0, [x19, x0]
+		```
 	}
 
 	// A non-owning (ptr, len) slice [start, end) over self's inline element
@@ -117,242 +117,242 @@ pub struct Array<T>: Viewable {
 		int end: end >= start && end <= self.length,
 		out view T
 	) {
-        ```
-        #arch: c
-        nomen_view _r;
-        T* _data = (T*)((char*)self + sizeof(*self));
-        _r.ptr = (void*)(_data + start);
-        _r.len = (long)(end - start);
-        return _r;
-        ```
-        ```
-        #arch: aarch64
-        // x19 = self (first elem), x1 = start, x2 = end.
-        // Return (ptr, len) in x0/x1.
-        mov x3, #T_SIZE
-        madd x0, x1, x3, x19
-        sub x1, x2, x1
-        ```
+		```
+		#arch: c
+		nomen_view _r;
+		T* _data = (T*)((char*)self + sizeof(*self));
+		_r.ptr = (void*)(_data + start);
+		_r.len = (long)(end - start);
+		return _r;
+		```
+		```
+		#arch: aarch64
+		// x19 = self (first elem), x1 = start, x2 = end.
+		// Return (ptr, len) in x0/x1.
+		mov x3, #T_SIZE
+		madd x0, x1, x3, x19
+		sub x1, x2, x1
+		```
 	}
 
 	pub func with = (T value, int count: count >= 0, out Array<T>: out.length == count) {
-        ```
-        #arch: c
-        long _header = 16;
-        void* _result = malloc(_header + count * T_SIZE);
-        ((long*)_result)[1] = count;
-        T* _data = (T*)((char*)_result + _header);
-        for (long i = 0; i < count; i++) {
-            // T_NEEDS_STRDUP is 1 when T is string (a `char*` pointer whose
-            // backing bytes must be heap-copied per slot — otherwise all n
-            // slots would share one pointer and auto_free would n-free it).
-            // For all other T it is 0 and the plain assignment runs.
-            #if T_NEEDS_STRDUP
-                _data[i] = (T)strdup(value);
-            #else
-                _data[i] = value;
-            #endif
-        }
-        return _result;
-        ```
-        ```
-        #arch: aarch64
-        // x0 = value, x1 = count
-        // Returns x0 = heap-allocated array pointer ([ptr]=length, [ptr+8..]=data).
-        // This is a regular static function: the caller receives the pointer in x0,
-        // so no sret/x8 buffer is involved.
-        stp x19, x20, [sp, #-16]!
-        stp x1, x0, [sp, #-16]!        // [sp]=count, [sp+8]=value
+		```
+		#arch: c
+		long _header = 16;
+		void* _result = malloc(_header + count * T_SIZE);
+		((long*)_result)[1] = count;
+		T* _data = (T*)((char*)_result + _header);
+		for (long i = 0; i < count; i++) {
+			// T_NEEDS_STRDUP is 1 when T is string (a `char*` pointer whose
+			// backing bytes must be heap-copied per slot — otherwise all n
+			// slots would share one pointer and auto_free would n-free it).
+			// For all other T it is 0 and the plain assignment runs.
+			#if T_NEEDS_STRDUP
+				_data[i] = (T)strdup(value);
+			#else
+				_data[i] = value;
+			#endif
+		}
+		return _result;
+		```
+		```
+		#arch: aarch64
+		// x0 = value, x1 = count
+		// Returns x0 = heap-allocated array pointer ([ptr]=length, [ptr+8..]=data).
+		// This is a regular static function: the caller receives the pointer in x0,
+		// so no sret/x8 buffer is involved.
+		stp x19, x20, [sp, #-16]!
+		stp x1, x0, [sp, #-16]!		// [sp]=count, [sp+8]=value
 
-        // ptr = malloc(8 + count * T_SIZE)
-        mov x2, #T_SIZE
-        mul x0, x1, x2
-        add x0, x0, #8
-        bl _malloc
-        mov x19, x0                    // x19 = ptr
+		// ptr = malloc(8 + count * T_SIZE)
+		mov x2, #T_SIZE
+		mul x0, x1, x2
+		add x0, x0, #8
+		bl _malloc
+		mov x19, x0                 // x19 = ptr
 
-        // Store the length prefix and set up the data area.
-        ldr x1, [sp]                   // count
-        str x1, [x19]                  // [ptr] = count
-        add x20, x19, #8               // x20 = data area
+		// Store the length prefix and set up the data area.
+		ldr x1, [sp]                // count
+		str x1, [x19]               // [ptr] = count
+		add x20, x19, #8            // x20 = data area
 
-        cbz x1, .Larray_with_end
+		cbz x1, .Larray_with_end
 
-        ldr x0, [sp, #8]               // value
-        mov x2, #0                     // i = 0
-        .Larray_with_loop:
-        mov x3, #T_SIZE
-        mul x4, x2, x3                 // offset = i * T_SIZE
-        add x5, x20, x4                // addr = data + offset
+		ldr x0, [sp, #8]            // value
+		mov x2, #0                  // i = 0
+		.Larray_with_loop:
+		mov x3, #T_SIZE
+		mul x4, x2, x3              // offset = i * T_SIZE
+		add x5, x20, x4             // addr = data + offset
 
-        // Store the value (in x0) into [x5] using a width that matches
-        // T_SIZE. For T_SIZE <= 8 the value is in x0 directly (char/int/
-        // pointer); for T_SIZE > 8 (struct) x0 is a pointer to the bytes
-        // and we copy them one by one.
-        cmp x3, #8
-        b.gt .Larray_with_copy_loop
-        cmp x3, #4
-        b.eq .Larray_with_store4
-        cmp x3, #2
-        b.eq .Larray_with_store2
-        cmp x3, #1
-        b.eq .Larray_with_store1
-        // T_SIZE == 8 (int/string-ptr/class-ptr): single 8-byte store
-        str x0, [x5]
-        b .Larray_with_next
-        .Larray_with_store4:
-        str w0, [x5]
-        b .Larray_with_next
-        .Larray_with_store2:
-        strh w0, [x5]
-        b .Larray_with_next
-        .Larray_with_store1:
-        strb w0, [x5]
-        b .Larray_with_next
+		// Store the value (in x0) into [x5] using a width that matches
+		// T_SIZE. For T_SIZE <= 8 the value is in x0 directly (char/int/
+		// pointer); for T_SIZE > 8 (struct) x0 is a pointer to the bytes
+		// and we copy them one by one.
+		cmp x3, #8
+		b.gt .Larray_with_copy_loop
+		cmp x3, #4
+		b.eq .Larray_with_store4
+		cmp x3, #2
+		b.eq .Larray_with_store2
+		cmp x3, #1
+		b.eq .Larray_with_store1
+		// T_SIZE == 8 (int/string-ptr/class-ptr): single 8-byte store
+		str x0, [x5]
+		b .Larray_with_next
+		.Larray_with_store4:
+		str w0, [x5]
+		b .Larray_with_next
+		.Larray_with_store2:
+		strh w0, [x5]
+		b .Larray_with_next
+		.Larray_with_store1:
+		strb w0, [x5]
+		b .Larray_with_next
 
-        .Larray_with_copy_loop:
-        // Struct element (T_SIZE > 8): x0 is a pointer to the bytes — copy
-        // them one by one so adjacent slots aren't clobbered.
-        mov x6, #0                     // j = 0
-        .Larray_with_byte:
-        ldrb w7, [x0, x6]
-        strb w7, [x5, x6]
-        add x6, x6, #1
-        cmp x6, x3
-        blt .Larray_with_byte
+		.Larray_with_copy_loop:
+		// Struct element (T_SIZE > 8): x0 is a pointer to the bytes — copy
+		// them one by one so adjacent slots aren't clobbered.
+		mov x6, #0                  // j = 0
+		.Larray_with_byte:
+		ldrb w7, [x0, x6]
+		strb w7, [x5, x6]
+		add x6, x6, #1
+		cmp x6, x3
+		blt .Larray_with_byte
 
-        .Larray_with_next:
-        add x2, x2, #1
-        ldr x1, [sp]
-        cmp x2, x1
-        blt .Larray_with_loop
+		.Larray_with_next:
+		add x2, x2, #1
+		ldr x1, [sp]
+		cmp x2, x1
+		blt .Larray_with_loop
 
-        .Larray_with_end:
-        mov x0, x19                    // return heap pointer
-        add sp, sp, #16
-        ldp x19, x20, [sp], #16
-        ```
+		.Larray_with_end:
+		mov x0, x19                 // return heap pointer
+		add sp, sp, #16
+		ldp x19, x20, [sp], #16
+		```
 	}
 
 	pub func add = (self, Array other, out Array) {
-        ```
-        #arch: c
-        long _self_len = self->length;
-        long _other_len = other->length;
-        long _result_len = _self_len + _other_len;
-        long _header = sizeof(*self);
-        void* _result = malloc(_header + _result_len * T_SIZE);
-        ((long*)_result)[0] = 0;
-        ((long*)_result)[1] = _result_len;
-        T* _data = (T*)((char*)_result + _header);
-        T* self_data = (T*)((char*)self + _header);
-        T* other_data = (T*)((char*)other + _header);
-        memcpy(_data, self_data, _self_len * T_SIZE);
-        memcpy(_data + _self_len, other_data, _other_len * T_SIZE);
-        return _result;
-        ```
-        ```
-        #arch: aarch64
-        // x19 = self (first elem), x20 = other (first elem), x8 = return buf (first elem)
-        // Length prefix is at [base - 8]
+		```
+		#arch: c
+		long _self_len = self->length;
+		long _other_len = other->length;
+		long _result_len = _self_len + _other_len;
+		long _header = sizeof(*self);
+		void* _result = malloc(_header + _result_len * T_SIZE);
+		((long*)_result)[0] = 0;
+		((long*)_result)[1] = _result_len;
+		T* _data = (T*)((char*)_result + _header);
+		T* self_data = (T*)((char*)self + _header);
+		T* other_data = (T*)((char*)other + _header);
+		memcpy(_data, self_data, _self_len * T_SIZE);
+		memcpy(_data + _self_len, other_data, _other_len * T_SIZE);
+		return _result;
+		```
+		```
+		#arch: aarch64
+		// x19 = self (first elem), x20 = other (first elem), x8 = return buf (first elem)
+		// Length prefix is at [base - 8]
 
-        // Save return buffer (clobbered by _memcpy)
-        str x8, [sp, #-16]!
+		// Save return buffer (clobbered by _memcpy)
+		str x8, [sp, #-16]!
 
-        // Load lengths and store result length
-        ldr x2, [x19, #-8]
-        ldr x3, [x20, #-8]
-        add x4, x2, x3
-        ldr x8, [sp]
-        str x4, [x8, #-8]
+		// Load lengths and store result length
+		ldr x2, [x19, #-8]
+		ldr x3, [x20, #-8]
+		add x4, x2, x3
+		ldr x8, [sp]
+		str x4, [x8, #-8]
 
-        // self_bytes = self_len * T_SIZE
-        mov x5, #T_SIZE
-        mul x5, x2, x5
+		// self_bytes = self_len * T_SIZE
+		mov x5, #T_SIZE
+		mul x5, x2, x5
 
-        // memcpy(return_buf, self, self_bytes)
-        mov x0, x8
-        mov x1, x19
-        mov x2, x5
-        bl _memcpy
+		// memcpy(return_buf, self, self_bytes)
+		mov x0, x8
+		mov x1, x19
+		mov x2, x5
+		bl _memcpy
 
-        // Reload return buf and self_len (clobbered by memcpy)
-        ldr x8, [sp]
-        ldr x2, [x19, #-8]
-        mov x5, #T_SIZE
-        mul x5, x2, x5
+		// Reload return buf and self_len (clobbered by memcpy)
+		ldr x8, [sp]
+		ldr x2, [x19, #-8]
+		mov x5, #T_SIZE
+		mul x5, x2, x5
 
-        // other_bytes
-        ldr x3, [x20, #-8]
-        mov x6, #T_SIZE
-        mul x6, x3, x6
+		// other_bytes
+		ldr x3, [x20, #-8]
+		mov x6, #T_SIZE
+		mul x6, x3, x6
 
-        // memcpy(return_buf + self_bytes, other, other_bytes)
-        add x0, x8, x5
-        mov x1, x20
-        mov x2, x6
-        bl _memcpy
+		// memcpy(return_buf + self_bytes, other, other_bytes)
+		add x0, x8, x5
+		mov x1, x20
+		mov x2, x6
+		bl _memcpy
 
-        add sp, sp, #16
-        ```
+		add sp, sp, #16
+		```
 	}
 
 	pub func mul = (self, int other, out Array) {
-        ```
-        #arch: c
-        long _self_len = self->length;
-        long _result_len = _self_len * other;
-        long _header = sizeof(*self);
-        void* _result = malloc(_header + _result_len * T_SIZE);
-        ((long*)_result)[0] = 0;
-        ((long*)_result)[1] = _result_len;
-        T* _data = (T*)((char*)_result + _header);
-        T* self_data = (T*)((char*)self + _header);
-        for (long i = 0; i < other; i++) {
-            memcpy(_data + i * _self_len, self_data, _self_len * T_SIZE);
-        }
-        return _result;
-        ```
-        ```
-        #arch: aarch64
-        // x19 = self (first elem), x1 = multiplier, x8 = return buf (first elem)
+		```
+		#arch: c
+		long _self_len = self->length;
+		long _result_len = _self_len * other;
+		long _header = sizeof(*self);
+		void* _result = malloc(_header + _result_len * T_SIZE);
+		((long*)_result)[0] = 0;
+		((long*)_result)[1] = _result_len;
+		T* _data = (T*)((char*)_result + _header);
+		T* self_data = (T*)((char*)self + _header);
+		for (long i = 0; i < other; i++) {
+			memcpy(_data + i * _self_len, self_data, _self_len * T_SIZE);
+		}
+		return _result;
+		```
+		```
+		#arch: aarch64
+		// x19 = self (first elem), x1 = multiplier, x8 = return buf (first elem)
 
-        // Save return buf and multiplier
-        stp x8, x1, [sp, #-16]!
+		// Save return buf and multiplier
+		stp x8, x1, [sp, #-16]!
 
-        // self_len and self_bytes
-        ldr x2, [x19, #-8]
-        mov x5, #T_SIZE
-        mul x5, x2, x5
+		// self_len and self_bytes
+		ldr x2, [x19, #-8]
+		mov x5, #T_SIZE
+		mul x5, x2, x5
 
-        // result_len = self_len * multiplier
-        mul x3, x2, x1
-        ldr x8, [sp]
-        str x3, [x8, #-8]
+		// result_len = self_len * multiplier
+		mul x3, x2, x1
+		ldr x8, [sp]
+		str x3, [x8, #-8]
 
-        // Loop: copy self to result multiplier times
-        mov x4, #0
+		// Loop: copy self to result multiplier times
+		mov x4, #0
 
-        .Larray_mul_loop:
-        ldr x1, [sp, #8]
-        cmp x4, x1
-        b.ge .Larray_mul_end
+		.Larray_mul_loop:
+		ldr x1, [sp, #8]
+		cmp x4, x1
+		b.ge .Larray_mul_end
 
-        // dest = return_buf + x4 * self_bytes
-        ldr x8, [sp]
-        mul x6, x4, x5
-        add x0, x8, x6
+		// dest = return_buf + x4 * self_bytes
+		ldr x8, [sp]
+		mul x6, x4, x5
+		add x0, x8, x6
 
-        // memcpy(dest, self, self_bytes)
-        mov x1, x19
-        mov x2, x5
-        bl _memcpy
+		// memcpy(dest, self, self_bytes)
+		mov x1, x19
+		mov x2, x5
+		bl _memcpy
 
-        add x4, x4, #1
-        b .Larray_mul_loop
+		add x4, x4, #1
+		b .Larray_mul_loop
 
-        .Larray_mul_end:
-        add sp, sp, #16
-        ```
+		.Larray_mul_end:
+		add sp, sp, #16
+		```
 	}
 }

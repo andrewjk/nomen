@@ -9,58 +9,58 @@ pub struct bool: Stringable {
 	 * @out string: the boolean as a string value (`"true"` or `"false"`)
 	 **/
 	pub func to_string = (self, out string) {
-        ```
-        #arch: c
-        int length = snprintf(NULL, 0, "%s", self ? "true" : "false");
-        char* str = malloc(length + 1);
-        snprintf(str, length + 1, "%s", self ? "true" : "false");
-        return str;
-        ```
-        ```
-        #arch: aarch64
-        sub sp, sp, #128
-        str x0, [sp, #0]
-        str x1, [sp, #8]
-        str x2, [sp, #16]
-        str x3, [sp, #24]
-        mov x0, xzr
-        mov x1, xzr
-        cbz x19, .Lfalse_bool
-        adr x2, .Lfmt_bool_true
-        mov x3, x19
-        bl _snprintf
-        add x0, x0, #1
-        str x0, [sp, #64]
-        bl _malloc
-        str x0, [sp, #72]
-        ldr x0, [sp, #72]
-        ldr x1, [sp, #64]
-        adr x2, .Lfmt_bool_true
-        mov x3, x19
-        bl _snprintf
-        ldr x0, [sp, #72]
-        add sp, sp, #128
-        b .Lend_bool_to_string
-        .Lfalse_bool:
-        adr x2, .Lfmt_bool_false
-        mov x3, x19
-        bl _snprintf
-        add x0, x0, #1
-        str x0, [sp, #64]
-        bl _malloc
-        str x0, [sp, #72]
-        ldr x0, [sp, #72]
-        ldr x1, [sp, #64]
-        adr x2, .Lfmt_bool_false
-        mov x3, x19
-        bl _snprintf
-        ldr x0, [sp, #72]
-        add sp, sp, #128
-        b .Lend_bool_to_string
-        .Lfmt_bool_true: .asciz "true"
-        .Lfmt_bool_false: .asciz "false"
-        .p2align 2
-        .Lend_bool_to_string:
-        ```
+		```
+		#arch: c
+		int length = snprintf(NULL, 0, "%s", self ? "true" : "false");
+		char* str = malloc(length + 1);
+		snprintf(str, length + 1, "%s", self ? "true" : "false");
+		return str;
+		```
+		```
+		#arch: aarch64
+		sub sp, sp, #128
+		str x0, [sp, #0]
+		str x1, [sp, #8]
+		str x2, [sp, #16]
+		str x3, [sp, #24]
+		mov x0, xzr
+		mov x1, xzr
+		cbz x19, .Lfalse_bool
+		adr x2, .Lfmt_bool_true
+		mov x3, x19
+		bl _snprintf
+		add x0, x0, #1
+		str x0, [sp, #64]
+		bl _malloc
+		str x0, [sp, #72]
+		ldr x0, [sp, #72]
+		ldr x1, [sp, #64]
+		adr x2, .Lfmt_bool_true
+		mov x3, x19
+		bl _snprintf
+		ldr x0, [sp, #72]
+		add sp, sp, #128
+		b .Lend_bool_to_string
+		.Lfalse_bool:
+		adr x2, .Lfmt_bool_false
+		mov x3, x19
+		bl _snprintf
+		add x0, x0, #1
+		str x0, [sp, #64]
+		bl _malloc
+		str x0, [sp, #72]
+		ldr x0, [sp, #72]
+		ldr x1, [sp, #64]
+		adr x2, .Lfmt_bool_false
+		mov x3, x19
+		bl _snprintf
+		ldr x0, [sp, #72]
+		add sp, sp, #128
+		b .Lend_bool_to_string
+		.Lfmt_bool_true: .asciz "true"
+		.Lfmt_bool_false: .asciz "false"
+		.p2align 2
+		.Lend_bool_to_string:
+		```
 	}
 }

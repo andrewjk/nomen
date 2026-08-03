@@ -16,9 +16,9 @@ pub struct Tree<T>: Enumerable {
 	var count = 0
 
 	pub func add = (ref self, mov T value) {
-		var int idx = self.count
+		const int idx = self.count
 		self.values.grow_int(idx + 1)
-		var int v = value
+		const int v = value
 		self.values.store_int(idx, v)
 		self.lefts.grow_int(idx + 1)
 		self.lefts.store_int(idx, -1)

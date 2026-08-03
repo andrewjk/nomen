@@ -3,52 +3,52 @@
  **/
 pub struct Math {
 	pub func power = (int base, int exp, out int) {
-        ```
-        #arch: c
-        int result = 1;
-        for (int i = 0; i < exp; i++) {
-            result *= base;
-        }
-        return result;
-        ```
-        ```
-        #arch: aarch64
-        mov x2, #1
-        mov x3, #0
-        b .Lchk_Math_power
-        .Lloop_Math_power:
-        mul x2, x2, x0
-        add x3, x3, #1
-        .Lchk_Math_power:
-        cmp x3, x1
-        blt .Lloop_Math_power
-        mov x0, x2
-        ```
+		```
+		#arch: c
+		int result = 1;
+		for (int i = 0; i < exp; i++) {
+			result *= base;
+		}
+		return result;
+		```
+		```
+		#arch: aarch64
+		mov x2, #1
+		mov x3, #0
+		b .Lchk_Math_power
+		.Lloop_Math_power:
+		mul x2, x2, x0
+		add x3, x3, #1
+		.Lchk_Math_power:
+		cmp x3, x1
+		blt .Lloop_Math_power
+		mov x0, x2
+		```
 	}
 
 	inline func sqrt = (float x, out float) {
-        ```
-        #arch: c
-        return sqrt(x);
-        ```
-        ```
-        #arch: aarch64
-        fmov d0, x0
-        fsqrt d0, d0
-        fmov x0, d0
-        ```
+		```
+		#arch: c
+		return sqrt(x);
+		```
+		```
+		#arch: aarch64
+		fmov d0, x0
+		fsqrt d0, d0
+		fmov x0, d0
+		```
 	}
 
 	pub func log = (float x, out float) {
-        ```
-        #arch: c
-        return log(x);
-        ```
-        ```
-        #arch: aarch64
-        fmov d0, x0
-        bl _log
-        fmov x0, d0
-        ```
+		```
+		#arch: c
+		return log(x);
+		```
+		```
+		#arch: aarch64
+		fmov d0, x0
+		bl _log
+		fmov x0, d0
+		```
 	}
 }

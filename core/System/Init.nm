@@ -10,12 +10,12 @@ pub struct Init {
  * Parses a decimal string into an int
  **/
 pub func parse_int = (string s, out int) {
-    ```
-    #arch: c
-    return atoi(s);
-    ```
-    ```
-    #arch: aarch64
-    bl _atoi
-    ```
+	```
+	#arch: c
+	return atoi(s);
+	```
+	```
+	#arch: aarch64
+	bl _atoi
+	```
 }
