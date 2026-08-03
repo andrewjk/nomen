@@ -258,9 +258,14 @@ class Builder {
 			case "extend": {
 				// An extend's methods belong to the named target struct/class, so
 				// index them under that type — editor completion/hover then sees
-				// them exactly like in-body methods.
+				// them exactly like in-body methods. Out-of-line trait
+				// conformances (`extend struct S: Trait`) are surfaced the same
+				// way so the editor reports S as conforming.
 				const ext = node as ExtendNode;
 				const info = this.type_info(ext.name);
+				for (const trait of ext.traits || []) {
+					if (!info.traits.includes(trait)) info.traits.push(trait);
+				}
 				for (const func of ext.functions || []) {
 					const func_def = this.function_def(func, ext.name);
 					if (func_def) info.methods.set(func_def.name, func_def);

@@ -763,6 +763,28 @@ const int m = p.manhattan()
 
 `extend` blocks may appear before or after the type they target, and may target a type from another module (including standard-library types). A method that redeclares an existing method name with the same parameter types is a duplicate error; overloads with differing parameter types are allowed. A method declared `extend` can call an in-body method on the same type, and vice versa.
 
+An `extend` may also make an existing type conform to one or more traits out of line by listing them after `:`. The required trait methods may be supplied in the same extend's body, another extend, or the original body:
+
+```
+trait Stringable {
+    func to_string = (out string)
+}
+
+struct Circle {
+    var int radius
+}
+
+extend struct Circle : Stringable {
+    func to_string = (out string) {
+        return "Circle"
+    }
+}
+
+const Stringable s = Circle(5)
+```
+
+A trait the target already conforms to (from its body or a prior `extend`) is a duplicate error. Out-of-line conformance is indistinguishable from body-declared conformance: same vtable dispatch, same generic-trait argument handling, same auto-derived methods.
+
 ## Enums
 
 Enums are used to define a restricted set of options:

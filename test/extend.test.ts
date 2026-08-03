@@ -128,6 +128,94 @@ Console.write("\\{a.double_balance()}")
 `;
 		await build_and_check_output(input, "extend_calls_body_method", "30");
 	});
+
+	test("extend adds out-of-line trait conformance", async () => {
+		const input = `
+trait Speaker {
+	func speak = (out string)
+}
+struct Dog {
+}
+extend struct Dog : Speaker {
+	func speak = (out string) {
+		return "woof"
+	}
+}
+const Speaker a = Dog()
+Console.write(a.speak())
+`;
+		await build_and_check_output(input, "extend_trait_conformance", "woof");
+	});
+
+	test("extend conformance supplies required self method", async () => {
+		const input = `
+trait Adder {
+	func add = (self, int n, out int)
+}
+class Count {
+	var int value = 10
+}
+extend class Count : Adder {
+	func add = (self, int n, out int) {
+		return self.value + n
+	}
+}
+func combine = (Adder a, int n, out int) {
+	return a.add(n)
+}
+Console.write("\\{combine(Count(), 5)}")
+`;
+		await build_and_check_output(input, "extend_trait_required", "15");
+	});
+
+	test("extend conformance with multiple traits", async () => {
+		const input = `
+trait Named {
+	func name = (out string)
+}
+trait Priced {
+	func price = (out int)
+}
+class Product {
+	var int unused = 0
+}
+extend class Product : Named, Priced {
+	func name = (out string) {
+		return "w"
+	}
+	func price = (out int) {
+		return 9
+	}
+}
+const Named n = Product()
+const Priced p = Product()
+Console.write("\\{n.name()}\\{p.price()}")
+`;
+		await build_and_check_output(input, "extend_multi_trait", "w9");
+	});
+
+	test("extend conformance with generic trait args", async () => {
+		const input = `
+trait Box<T> {
+	var T item
+	func get = (self, out T) {
+		return self.item
+	}
+}
+struct IntBox {
+	var int item = 0
+}
+extend struct IntBox : Box<int> {
+}
+func go = (out int) {
+	var IntBox b = IntBox()
+	b.item = 99
+	return b.get()
+}
+Console.write("\\{go()}")
+`;
+		await build_and_check_output(input, "extend_generic_trait", "99");
+	});
 });
 
 // ERROR HANDLING
@@ -223,5 +311,46 @@ extend struct S {
 `;
 		const parsed = parse_raw(source);
 		expect(parsed.errors).toEqual([]);
+	});
+
+	test("out-of-line conformance missing the required method is an error", () => {
+		const source = `
+trait Greetable {
+	func greet = (self, out string)
+}
+struct S {
+	var int x = 0
+}
+extend struct S : Greetable {
+}
+`;
+		const parsed = parse_raw(source);
+		expect(
+			parsed.errors.some(
+				(e) =>
+					e.message ===
+					"Type 'S' does not conform to trait 'Greetable': missing required method 'greet'",
+			),
+		).toBe(true);
+	});
+
+	test("duplicate out-of-line conformance is an error", () => {
+		const source = `
+trait Greetable {
+	func greet = (self, out string)
+}
+struct S : Greetable {
+	var int x = 0
+	func greet = (self, out string) {
+		return "hi"
+	}
+}
+extend struct S : Greetable {
+}
+`;
+		const parsed = parse_raw(source);
+		expect(
+			parsed.errors.some((e) => e.message === "Type 'S' already conforms to trait 'Greetable'"),
+		).toBe(true);
 	});
 });

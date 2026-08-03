@@ -81,8 +81,9 @@ export default function parse_struct(
 
 // Parse optional `<arg1, arg2, ...>` type arguments on a trait conformance.
 // Returns undefined when no `<...>` follows, so non-generic conformance
-// (`struct Foo: Disposable`) is unchanged.
-function parse_optional_trait_args(status: ParseStatus): Type[] | undefined {
+// (`struct Foo: Disposable`) is unchanged. Shared with parse_extend for
+// out-of-line conformance (`extend struct Foo: Disposable<T> { ... }`).
+export function parse_optional_trait_args(status: ParseStatus): Type[] | undefined {
 	if (!accept("<", status)) return undefined;
 	const args: Type[] = [parse_type(status)];
 	while (accept(",", status)) {

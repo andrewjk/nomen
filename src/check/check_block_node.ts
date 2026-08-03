@@ -269,7 +269,8 @@ function gather_structs(block: BlockNode, status: CheckStatus) {
 
 /**
  * Merge each top-level `extend struct Name { ... }` / `extend class Name`
- * block's methods into the named target struct.
+ * block's methods — and any `: Trait1, Trait2` out-of-line conformances —
+ * into the named target struct.
  *
  * The target must already be registered (gather_structs ran first), and the
  * extend's `is_class` flag must match the target's — `extend class` is only
@@ -281,6 +282,14 @@ function gather_structs(block: BlockNode, status: CheckStatus) {
  *
  * Methods added here are also reachable through trait dispatch when the
  * struct conforms — nothing else needs to know they came from an extend.
+ *
+ * Traits declared on the extend (`extend struct S: Trait { ... }`) are
+ * appended to the target's `traits` / `trait_args` arrays. A trait the
+ * target already conforms to (whether from its body or a prior extend) is a
+ * duplicate error rather than a silent re-merge, since it would otherwise
+ * trip duplicate-vtable emission in the build. The merged traits flow into
+ * the same conformance check, generic-default synthesis, and vtable build
+ * as body-declared traits, so out-of-line conformance is first-class.
  */
 function apply_extensions(block: BlockNode, status: CheckStatus) {
 	for (const node of block.statements) {
@@ -302,6 +311,18 @@ function apply_extensions(block: BlockNode, status: CheckStatus) {
 		ext.scope = target;
 		for (const func of ext.functions) {
 			target.functions.push(func);
+		}
+		for (let i = 0; i < ext.traits.length; i++) {
+			if (target.traits.includes(ext.traits[i])) {
+				add_error(
+					status,
+					`Type '${ext.name}' already conforms to trait '${ext.traits[i]}'`,
+					ext.start,
+				);
+				continue;
+			}
+			target.traits.push(ext.traits[i]);
+			target.trait_args.push(ext.trait_args[i]);
 		}
 	}
 }

@@ -84,6 +84,27 @@ const m = p.manhattan()
 `;
 		expect(compile_main(input)).toEqual([]);
 	});
+
+	test("extend adds out-of-line trait conformance", () => {
+		const input = `
+trait Stringable {
+    func to_string = (out string)
+}
+
+struct Circle {
+    var int radius
+}
+
+extend struct Circle : Stringable {
+    func to_string = (out string) {
+        return "Circle"
+    }
+}
+
+const Stringable s = Circle(5)
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
 });
 
 describe("readme: auto-derived methods", () => {

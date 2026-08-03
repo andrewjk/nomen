@@ -342,7 +342,7 @@ pub trait Printable {
     func to_string = (self, out string)
 }
 
-pub struct Point : Printable {
+pub struct Point: Printable {
     pub var int x
     pub var int y
 
@@ -381,6 +381,28 @@ Extended methods behave exactly like methods declared in the body — same
 dispatch, visibility, and overloading. `extend` blocks may sit before or after
 the type, and may target types from another module.
 
+An `extend` may also make an existing type conform to one or more traits out
+of line by listing them after `:`. The required trait methods can live in the
+same extend, another extend, or the body:
+
+```nomen
+trait Stringable {
+    func to_string = (out string)
+}
+
+struct Circle {
+    var int radius
+}
+
+extend struct Circle: Stringable {
+    func to_string = (out string) {
+        return "Circle"
+    }
+}
+
+const Stringable s = Circle(5)
+```
+
 ### Auto-Derived Methods
 
 Conforming to `Stringable`, `Equatable`, or `Hashable` auto-generates the
@@ -389,7 +411,7 @@ hand-written method always wins, and the derivation only fires when every field
 is itself derivable:
 
 ```nomen
-pub struct Point : Equatable, Stringable {
+pub struct Point: Equatable, Stringable {
     pub var int x
     pub var int y
 }
