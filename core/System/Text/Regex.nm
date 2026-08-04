@@ -177,39 +177,44 @@ func collect_first_bytes = (string pattern, int pat_pos, int pat_end, ref String
 	var int alt_start = pat_pos
 	while i < pat_end {
 		var char c = pattern.at(i)
-		if (c as int) == 92 {
-			// escaped literal: '\x' → first byte is x
-			if i == alt_start {
-				if i + 1 < pat_end {
-					sb.append_char(pattern.at(i + 1))
+		switch {
+			case (c as int) == 92 {
+				// escaped literal: '\x' → first byte is x
+				if i == alt_start {
+					if i + 1 < pat_end {
+						sb.append_char(pattern.at(i + 1))
+					}
 				}
+				i += 2
 			}
-			i += 2
-		} else {
-			if c == '[' {
+			case c == '[' {
 				if i == alt_start {
 					var int a_end = atom_end_pos(pattern, i, pat_end)
 					add_class_chars(pattern, i + 1, a_end - 1, ref sb)
 				}
 				i = atom_end_pos(pattern, i, pat_end)
-			} else {
-				if c == '(' {
-					depth = depth + 1
+			}
+			case c == '(' {
+				depth = depth + 1
+				i += 1
+			}
+			case c == ')' {
+				if depth > 0 {
+					depth -= 1
 				}
-				if c == ')' {
-					if depth > 0 {
-						depth -= 1
-					}
+				i += 1
+			}
+			case (c as int) == 124 {
+				if depth == 0 {
+					alt_start = i + 1
 				}
-				if (c as int) == 124 {
-					if depth == 0 {
-						alt_start = i + 1
-					}
-				} else {
-					if i == alt_start && depth == 0 && c != '^' && c != '$' && c != '.' {
-						sb.append_char(c)
-					}
-				}
+				i += 1
+			}
+			case i == alt_start && depth == 0 && c != '^' && c != '$' && c != '.' {
+				sb.append_char(c)
+				i += 1
+			}
+			else {
 				i += 1
 			}
 		}

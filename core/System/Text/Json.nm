@@ -207,14 +207,16 @@ func json_parse_literal = (string s, ref Buffer<int> pos, int len, ref JsonTree 
 	var int code = s.at(i) as int
 	var int n = tree.alloc_node()
 	var adv = 4
-	if code == 116 {
-		tree.set_kind(n, 1)
-		adv = 4
-	} else {
-		if code == 102 {
+	switch {
+		case code == 116 {
+			tree.set_kind(n, 1)
+			adv = 4
+		}
+		case code == 102 {
 			tree.set_kind(n, 6)
 			adv = 5
-		} else {
+		}
+		else {
 			tree.set_kind(n, 0)
 			adv = 4
 		}

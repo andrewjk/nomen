@@ -57,15 +57,16 @@ struct LRU {
 	}
 
 	func put = (ref self, int key, int value) {
-		if self.keys.has(key) {
-			const int id = self.keys.get(key)
-			if id >= 0 && id < self.nvals.cap {
-				self.nvals.store_int(id, value)
+		switch {
+			case self.keys.has(key) {
+				const int id = self.keys.get(key)
+				if id >= 0 && id < self.nvals.cap {
+					self.nvals.store_int(id, value)
+				}
+				self.unlink(id)
+				self.link_tail(id)
 			}
-			self.unlink(id)
-			self.link_tail(id)
-		} else {
-			if self.count >= self.size {
+			case self.count >= self.size {
 				const int id = self.head
 				if id >= 0 && id < self.nkeys.cap {
 					const int old_key = self.nkeys.load_int(id)
@@ -78,7 +79,8 @@ struct LRU {
 					self.link_tail(id)
 					self.keys.set(key, id)
 				}
-			} else {
+			}
+			else {
 				const int id = self.count
 				self.count += 1
 				if id >= 0 && id < self.nkeys.cap && id < self.nvals.cap {
