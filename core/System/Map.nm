@@ -1,6 +1,3 @@
-import Buffer
-import ClassBuffer
-
 /**
  * An ordered key-value map with `set`/`get`/`has`/`remove`
  **/

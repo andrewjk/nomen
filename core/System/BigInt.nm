@@ -1,5 +1,3 @@
-import Buffer
-
 /**
  * An arbitrary-precision integer
  **/

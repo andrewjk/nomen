@@ -1,10 +1,8 @@
-import Buffer
-import ClassBuffer
-
 // Arena-backed doubly-linked list. Values and next/prev links live in flat
 // Buffers, so there is a single owner and cleanup is a flat free — no recursive
 // pointer chasing, no borrow lifetimes. Node identifiers are stable int indices
 // (read `count` before `add`); -1 means "no node" / "end".
+
 /**
  * A doubly-linked list of values
  **/

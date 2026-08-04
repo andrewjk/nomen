@@ -14,6 +14,7 @@ import check_node from "./check_node.ts";
 import { resolve_struct_field_types } from "./check_struct_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import { synthesize_auto_derived_methods } from "./utils/auto_derive.ts";
+import { materialize_tuple_type } from "./utils/tuple_struct.ts";
 
 export default function check_block_node(node: BlockNode, status: CheckStatus) {
 	gather_structs(node, status);
@@ -237,6 +238,13 @@ function gather_structs(block: BlockNode, status: CheckStatus) {
 				} else {
 					names_in_block.functions.add(func.name);
 					func.scope = status.stack.at(-1) || block;
+					// Materialize tuple return types upfront so callers that
+					// are checked before this function (e.g. a sibling file
+					// earlier in the concatenation) see the resolved struct
+					// type, not the unmaterialized `tuple` placeholder.
+					if (func.return_type.name === "tuple" && func.return_type.tuple_types?.length) {
+						func.return_type = materialize_tuple_type(func.return_type, status);
+					}
 					status.functions.push(func);
 				}
 				break;

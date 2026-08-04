@@ -1,6 +1,3 @@
-import Buffer
-import ClassBuffer
-
 /**
  * An ordered set of unique values (`add`/`has`/`get`/`remove`)
  **/

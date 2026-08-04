@@ -33,9 +33,9 @@ export interface FilePosition {
  * Build the source that `parse` will see for `document`, along with a map from
  * offsets in that source back to the files they came from.
  *
- * The layout mirrors `parse`: the document's live text, then (for non-library
- * files) its sibling modules, then the library source resolved by
- * `resolve_linked_types`.
+ * The layout mirrors `parse`: the document's live text, then its sibling
+ * modules (and, for user code, the parent folder's modules too), then the
+ * library source resolved by `resolve_linked_types`.
  */
 export function build_source_map(
 	file_path: string,
@@ -45,13 +45,10 @@ export function build_source_map(
 	const segments: SourceSegment[] = [{ start: 0, end: text.length, path: file_path }];
 
 	let user_source = text;
-	const is_library_file = !!library?.dir && is_within(file_path, library.dir);
-	if (!is_library_file) {
-		for (const sibling of read_siblings(file_path)) {
-			const start = user_source.length + 1;
-			user_source += "\n" + sibling.text;
-			segments.push({ start, end: start + sibling.text.length, path: sibling.path });
-		}
+	for (const sibling of read_siblings(file_path, library)) {
+		const start = user_source.length + 1;
+		user_source += "\n" + sibling.text;
+		segments.push({ start, end: start + sibling.text.length, path: sibling.path });
 	}
 
 	let source = user_source;
@@ -134,25 +131,45 @@ interface SiblingSource {
 	text: string;
 }
 
-// Every other `.nm` file in the same folder, in the order `parse` sees them.
-function read_siblings(file_path: string): SiblingSource[] {
-	const dir = path.dirname(file_path);
+// Every other `.nm` file in the same folder, so editor features see the same
+// declarations the compiler sees when it concatenates a folder. For user code
+// (files outside the resolved library), the parent folder's `.nm` files are
+// pulled in too — library files resolve their parent folder through the
+// library dependency walker (`resolve_linked_types`) instead, so reading them
+// here would only duplicate declarations parse already inlines.
+function read_siblings(file_path: string, library: Library | undefined): SiblingSource[] {
+	const self_dir = path.dirname(file_path);
+	const self_base = path.basename(file_path);
+	const seen = new Set<string>([file_path]);
+
+	const siblings: SiblingSource[] = [];
+	add_dir(siblings, self_dir, self_base, seen);
+
+	const parent_dir = path.dirname(self_dir);
+	const is_library_file = !!library?.dir && is_within(file_path, library.dir);
+	if (parent_dir !== self_dir && !is_library_file) {
+		add_dir(siblings, parent_dir, "", seen);
+	}
+	return siblings;
+}
+
+function add_dir(out: SiblingSource[], dir: string, exclude_base: string, seen: Set<string>): void {
 	let names: string[];
 	try {
 		names = fs.readdirSync(dir);
 	} catch {
-		return [];
+		return;
 	}
-	const self = path.basename(file_path);
-	const siblings: SiblingSource[] = [];
 	for (const name of names.sort()) {
 		if (!name.endsWith(".nm")) continue;
-		if (name === self) continue;
+		if (name === exclude_base) continue;
 		const full = path.join(dir, name);
+		if (seen.has(full)) continue;
 		const text = read_file(full);
-		if (text !== undefined) siblings.push({ path: full, text });
+		if (text === undefined) continue;
+		seen.add(full);
+		out.push({ path: full, text });
 	}
-	return siblings;
 }
 
 const file_cache = new Map<string, { mtime: number; text: string }>();

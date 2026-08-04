@@ -1,7 +1,6 @@
-import Buffer
-
 // All node data in flat Buffers. Buffer data pointers are shared even when
 // the struct is copied (value semantics copy the pointer, not the data).
+
 /**
  * A flat, buffer-backed layout tree — nodes stored in parallel arrays for the layout engine
  **/

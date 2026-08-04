@@ -9,10 +9,6 @@
 // instead of per-node heap allocation, avoiding O(nodes) malloc/free per
 // parse cycle. The caller creates a JsonTree once and resets it per document.
 
-import Buffer
-import JsonTree
-import StringBuilder
-
 /**
  * JSON serialization helpers — `serialize`/`deserialize` strings, `parse`/`stringify` via a JsonTree
  **/

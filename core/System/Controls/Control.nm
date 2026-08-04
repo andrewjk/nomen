@@ -1,5 +1,3 @@
-import System/Controls/Geometry
-
 // The `Control` trait is the polymorphic interface the layout engine uses to
 // talk to every node in the UI tree. A control reports its desired size given a
 // set of constraints (measure), applies a concrete rectangle (set_frame), and can

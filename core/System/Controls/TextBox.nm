@@ -1,7 +1,3 @@
-import System/Controls/Container
-import System/Controls/Control
-import System/Controls/Geometry
-
 /**
  * An editable single-line text input control
  **/

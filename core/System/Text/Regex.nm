@@ -4,8 +4,6 @@
 // returns the first matched substring (or "" when there is no match).
 // Patterns use POSIX Extended Regular Expression syntax.
 
-import StringBuilder
-
 /**
  * Regular-expression helpers (`test`/`match`/`count`/`replace_all`) using POSIX ERE syntax
  **/

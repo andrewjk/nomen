@@ -1,6 +1,3 @@
-import System/Controls/Control
-import System/Controls/Geometry
-
 /**
  * A read-only text label control
  **/

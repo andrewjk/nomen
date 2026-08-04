@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import tokenize from "./tokenize.ts";
+
 export interface LibraryConfig {
 	name: string;
 	exports: Record<string, string>;
@@ -129,11 +131,60 @@ function extract_type_names(source: string): string[] {
 	return names;
 }
 
+// Top-level `pub func` declarations (no leading whitespace, so methods inside
+// a struct body are excluded). Used to map free function names to a type in
+// the same file, so the dependency resolver can pull in the file when another
+// file calls the function without an explicit `import`.
+function extract_free_func_names(source: string): string[] {
+	const names: string[] = [];
+	for (let line of source.split("\n")) {
+		const m = line.match(/^pub\s+func\s+(\w+)/);
+		if (m) names.push(m[1]);
+	}
+	return names;
+}
+
 function build_type_map(files: string[], lib_dir: string): Map<string, LibraryType> {
-	const types = new Map<string, LibraryType>();
+	// First pass: collect every declared type name. A library is concatenated
+	// into a single compilation unit at build time, so each file can reference
+	// any other library type — and any top-level free function in a sibling
+	// file — without an explicit `import`. We body-scan to record those
+	// implicit dependencies.
+	const all_type_names = new Set<string>();
+	const file_sources = new Map<string, string>();
+	// Map each top-level `pub func` name to a type declared in the same file,
+	// so body-scanning a file that *calls* the function pulls in the file that
+	// *declares* it (free functions aren't tracked by name in the type map).
+	const func_to_type = new Map<string, string>();
 	for (const f of files) {
 		const source = fs.readFileSync(f, "utf8");
+		file_sources.set(f, source);
+		const type_names = extract_type_names(source);
+		for (const name of type_names) all_type_names.add(name);
+		const first_type = type_names[0];
+		if (first_type) {
+			for (const fname of extract_free_func_names(source)) {
+				if (!func_to_type.has(fname)) func_to_type.set(fname, first_type);
+			}
+		}
+	}
+
+	const types = new Map<string, LibraryType>();
+	for (const f of files) {
+		const source = file_sources.get(f)!;
 		const deps = extract_deps(source);
+		for (const token of tokenize(source)) {
+			if (deps.includes(token.value)) continue;
+			if (all_type_names.has(token.value)) {
+				deps.push(token.value);
+				continue;
+			}
+			// A reference to a free function declared in another file: pull in
+			// a type from that file so its source (including the function) is
+			// inlined.
+			const dep_type = func_to_type.get(token.value);
+			if (dep_type && !deps.includes(dep_type)) deps.push(dep_type);
+		}
 		const rel = path.relative(path.resolve(lib_dir, "System"), f);
 		const parts = rel.split(path.sep);
 		const namespace = parts.length > 1 ? parts[0] : undefined;
@@ -141,6 +192,20 @@ function build_type_map(files: string[], lib_dir: string): Map<string, LibraryTy
 			types.set(name, { name, source, path: f, deps, namespace });
 		}
 	}
+
+	// The monomorphizer rewrites Buffer<T> fields to ClassBuffer<T> when T is
+	// a class or trait (see check_function_call_node.ts). That pairing isn't
+	// visible in source text, so ensure ClassBuffer is resolved whenever
+	// Buffer is (and vice versa).
+	for (const [, entry] of types) {
+		if (entry.deps.includes("Buffer") && !entry.deps.includes("ClassBuffer")) {
+			entry.deps.push("ClassBuffer");
+		}
+		if (entry.deps.includes("ClassBuffer") && !entry.deps.includes("Buffer")) {
+			entry.deps.push("Buffer");
+		}
+	}
+
 	return types;
 }
 

@@ -1,10 +1,8 @@
-import Buffer
-import ClassBuffer
-
 // Arena-backed directed graph. Node values and edges live in flat Buffers;
 // edges are stored as a per-node linked list of edge records (CSR-style), so
 // there is a single owner and cleanup is a flat free. Node and edge identifiers
 // are stable int indices; -1 means "none".
+
 /**
  * A graph of values connected by edges
  **/

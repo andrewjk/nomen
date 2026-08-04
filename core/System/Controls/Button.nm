@@ -1,7 +1,3 @@
-import System/Controls/Container
-import System/Controls/Control
-import System/Controls/Geometry
-
 /**
  * A push-button control that triggers an action when clicked
  **/

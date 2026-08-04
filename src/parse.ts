@@ -266,9 +266,10 @@ function resolve_types_with_deps(
 		// The file currently being edited already provides its own declarations
 		// (as the live source), so never append its on-disk source — that would
 		// duplicate every struct/func it defines. Likewise, a library file's
-		// same-folder siblings are already inlined by `join` (which also pulls
-		// in free functions resolve doesn't track), so never re-append those —
-		// doing so would duplicate every sibling declaration.
+		// same-folder siblings are already inlined by the editor extension's
+		// source map (which also pulls in free functions resolve doesn't
+		// track), so never re-append those — doing so would duplicate every
+		// sibling declaration.
 		if (self_path) {
 			const entry_path = path.resolve(entry.path);
 			if (entry_path === path.resolve(self_path)) return;
