@@ -1,7 +1,11 @@
 import Type from "../../nodes/Type.ts";
 
 export default function type_name(type: Type): string {
-	if (type.tuple_types?.length && type.name === "tuple") {
+	// A materialized tuple (see `materialize_tuple_type`) keeps its element
+	// types in `tuple_types` but renames itself to `_Tuple_T1_T2_…`. Render
+	// those back as the source-level `[T1, T2]` so hovers / errors don't leak
+	// the synthesized struct name.
+	if (type.tuple_types?.length && (type.name === "tuple" || type.name.startsWith("_Tuple_"))) {
 		return `[${type.tuple_types.map((t) => type_name(t)).join(", ")}]${type.is_nullable ? "?" : ""}`;
 	}
 	if (type.is_array) {

@@ -513,7 +513,14 @@ class Builder {
 			case "struct":
 			case "trait": {
 				const type_node = node as StructNode | TraitNode;
-				if (this.find_name(type_node.start, type_node.name) < 0) return;
+				const name_start = this.find_name(type_node.start, type_node.name);
+				if (name_start < 0) return;
+				if (type_node.node_type === "struct") {
+					this.add_conformance_refs(
+						name_start + type_node.name.length,
+						(type_node as StructNode).traits,
+					);
+				}
 				for (const field of type_node.fields || []) {
 					this.walk(field.value);
 					this.add_type_ref(field.type, field.type_start);
@@ -523,6 +530,10 @@ class Builder {
 			}
 			case "extend": {
 				const ext = node as ExtendNode;
+				const name_start = this.find_name(ext.start, ext.name);
+				if (name_start >= 0) {
+					this.add_conformance_refs(name_start + ext.name.length, ext.traits);
+				}
 				for (const func of ext.functions || []) this.walk_function(func, ext.name);
 				return;
 			}
@@ -712,6 +723,21 @@ class Builder {
 		if (!name) return;
 		const def = this.types.get(name)?.def;
 		if (def) this.add_ref(start, name.length, def);
+	}
+
+	/**
+	 * Register references for each conformed-to trait name (the `: Trait1, Trait2`
+	 * clause on a struct/class/extend). The parser only stores the names, so we
+	 * locate each in source order after the type's own name and resolve it
+	 * against the registered types — making go-to-definition work on them.
+	 */
+	private add_conformance_refs(search_from: number, traits: string[]): void {
+		for (const trait of traits) {
+			const trait_start = this.find_name(search_from, trait);
+			if (trait_start < 0) break;
+			this.add_type_ref({ name: trait } as Type, trait_start);
+			search_from = trait_start + trait.length;
+		}
 	}
 
 	private define_binding(node: ValueNode | undefined, type?: Type): void {

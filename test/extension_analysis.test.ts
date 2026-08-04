@@ -110,6 +110,31 @@ struct Point {
 		expect(point.methods.get("shift")?.signature).toEqual("pub func shift = (ref self, int by)");
 	});
 
+	test("resolves trait conformance refs on a struct", () => {
+		const source = `
+trait Drawable {}
+struct Button : Drawable {}
+`;
+		const { analysis } = index(source);
+		// The `Drawable` in `: Drawable` is the 2nd occurrence.
+		const use = ref_at(analysis, at(source, "Drawable", 2));
+		expect(use?.def.kind).toEqual("trait");
+		expect(use?.def.start).toEqual(at(source, "Drawable"));
+	});
+
+	test("resolves trait conformance refs on an extend", () => {
+		const source = `
+trait Countable {}
+struct List {}
+extend struct List : Countable {}
+`;
+		const { analysis } = index(source);
+		// The `Countable` in `: Countable` is the 2nd occurrence.
+		const use = ref_at(analysis, at(source, "Countable", 2));
+		expect(use?.def.kind).toEqual("trait");
+		expect(use?.def.start).toEqual(at(source, "Countable"));
+	});
+
 	test("resolves a field access through the receiver's type", () => {
 		const source = `
 struct Point {
