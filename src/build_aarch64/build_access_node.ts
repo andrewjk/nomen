@@ -1512,6 +1512,10 @@ function build_access_method(
 	if (overflow_count > 0) {
 		overflow_base = allocate_stack_space(status, overflow_count * 8, 16);
 	}
+	// `ref` class PARAMS forwarded to a method's `ref` param: tracked so their
+	// callee-saved registers can be reloaded from the caller's slot once the
+	// call returns (the callee may have reassigned it).
+	const ref_class_param_reload: string[] = [];
 	for (let i = access_func.params.length - 1; i >= 0; i--) {
 		const param = access_func.params[i];
 		const is_ref_param = access_func.ref_param_indices?.includes(i);
@@ -1522,7 +1526,18 @@ function build_access_method(
 		const is_struct =
 			is_struct_type(param_type, status) || is_enum_with_data_type(param_type, status);
 		if (is_ref_param) {
-			emit_address_of(param, status);
+			const rp_name = param.node_type === "value" ? (param as ValueNode).value : undefined;
+			const rp_slot = rp_name !== undefined ? status.ref_class_slots?.get(rp_name) : undefined;
+			if (rp_slot !== undefined) {
+				// Forwarding a `ref` class PARAM: its callee-saved register
+				// holds the instance, but the callee dereferences its ref-param
+				// argument at entry — pass the caller's slot address stored in
+				// ref_class_slots instead (mirrors the plain-call path).
+				status.code += `ldr x0, [x29, #${rp_slot}]\n`;
+				ref_class_param_reload.push(rp_name!);
+			} else {
+				emit_address_of(param, status);
+			}
 		} else if (is_struct) {
 			if (param.node_type === "value") {
 				const name = (param as ValueNode).value;
@@ -1658,6 +1673,24 @@ function build_access_method(
 	// Free the outgoing stack-arg area now that the call has read it.
 	if (outgoing_size > 0) {
 		status.code += `add sp, sp, #${outgoing_size}\n`;
+	}
+
+	// A forwarded `ref` class PARAM may have been reassigned by the callee,
+	// which wrote the new instance into the caller's slot. The param's
+	// callee-saved register still holds the pre-call instance (possibly already
+	// freed) — reload it from the slot so subsequent uses target the live
+	// instance. x9 is caller-saved scratch; x0 (return value) is preserved.
+	if (ref_class_param_reload.length > 0) {
+		status.code += `str x0, [sp, #-16]!\n`;
+		for (const reload_name of ref_class_param_reload) {
+			const slot = status.ref_class_slots?.get(reload_name);
+			const reg = status.function_param_regs?.get(reload_name);
+			if (slot !== undefined && reg) {
+				status.code += `ldr x9, [x29, #${slot}]\n`;
+				status.code += `ldr ${reg}, [x9]\n`;
+			}
+		}
+		status.code += `ldr x0, [sp], #16\n`;
 	}
 
 	if (access_func.mov_param_indices?.length) {

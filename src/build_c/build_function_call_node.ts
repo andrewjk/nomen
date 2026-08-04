@@ -96,8 +96,17 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			}
 		} else if (param_is_class) {
 			// Class-typed arg: the value is already a pointer. Suppress the
-			// `*` deref that build_value_node would add for ref params.
-			status.suppress_dereference = true;
+			// `*` deref that build_value_node would add for ref params — unless
+			// the arg is itself a `ref` class param (a double pointer `T **`),
+			// whose single-pointer callee param needs one deref (`(*t)`).
+			if (
+				!(
+					node.params[i].node_type === "value" &&
+					status.ref_class_params?.has((node.params[i] as ValueNode).value)
+				)
+			) {
+				status.suppress_dereference = true;
+			}
 		}
 
 		build_node(node.params[i], status);

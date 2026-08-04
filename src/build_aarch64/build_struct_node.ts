@@ -746,10 +746,12 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		}
 
 		const old_ref_params = status.function_ref_params;
+		const old_ref_class_slots = status.ref_class_slots;
 
 		status.function_param_regs = new Map();
 		status.function_param_vars = new Set();
 		status.function_ref_params = new Set();
+		status.ref_class_slots = new Map();
 		status.struct_return_buffer = undefined;
 
 		const return_struct = status.structs.find(
@@ -886,6 +888,23 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 						status.code += `str x9, [x29, #${offset}]\n`;
 					}
 				}
+			} else if (param.type.is_ref) {
+				// A `ref` class param's callee-saved register (assigned in the
+				// first pass) currently holds the ADDRESS of the caller's
+				// pointer slot. Field access expects the register to hold the
+				// instance, so dereference once — and save &slot separately (in
+				// a dedicated slot) for the reassignment write-back path.
+				// Mirrors build_function_node's top-level prologue.
+				const is_class = !!status.structs.find((s) => s.name === param.type.name && s.is_class);
+				if (is_class) {
+					const reg = status.function_param_regs.get(param.name);
+					if (reg) {
+						const ref_slot = allocate_stack_space(status, 8, 8);
+						status.code += `str ${reg}, [x29, #${ref_slot}]\n`;
+						status.code += `ldr ${reg}, [${reg}]\n`;
+						status.ref_class_slots!.set(param.name, ref_slot);
+					}
+				}
 			}
 			second_slot_idx++;
 		}
@@ -955,6 +974,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		status.function_param_regs = old_param_regs;
 		status.function_param_vars = old_param_vars;
 		status.function_ref_params = old_ref_params;
+		status.ref_class_slots = old_ref_class_slots;
 		status.function_return_label = old_return_label;
 		status.force_heap_strings = old_force_heap;
 		status.struct_return_buffer = undefined;

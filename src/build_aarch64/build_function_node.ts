@@ -325,10 +325,12 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	const old_function_param_vars = status.function_param_vars;
 	const old_function_array_params = status.function_array_params;
 	const old_function_ref_params = status.function_ref_params;
+	const old_ref_class_slots = status.ref_class_slots;
 	status.function_param_regs = new Map();
 	status.function_param_vars = new Set();
 	status.function_array_params = new Set();
 	status.function_ref_params = new Set();
+	status.ref_class_slots = new Map();
 	const old_variadic_params_aarch64 = status.function_variadic_params;
 	status.function_variadic_params = new Set();
 	status.moved_class_params = new Map();
@@ -630,6 +632,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.function_param_vars = old_function_param_vars;
 	status.function_array_params = old_function_array_params;
 	status.function_ref_params = old_function_ref_params;
+	status.ref_class_slots = old_ref_class_slots;
 	status.function_variadic_params = old_variadic_params_aarch64;
 	status.function_return_label = old_return_label;
 	status.struct_return_buffer = undefined;

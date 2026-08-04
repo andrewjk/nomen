@@ -39,6 +39,21 @@ function is_enum_with_data_type(type_name: string, status: BuildStatus): boolean
 	return !!e && !!e.has_associated_data;
 }
 
+// Forward a `ref` class PARAM to another `ref` param. The param's
+// callee-saved register holds the instance, but the ADDRESS of the caller's
+// pointer slot — what the callee dereferences at entry and writes back through
+// on reassignment — lives in `ref_class_slots[name]`. Load that slot address
+// into x0 and record the name so its register can be reloaded post-call.
+function emit_ref_class_param_slot(
+	status: BuildStatus,
+	ref_param_slot: number,
+	name: string,
+	reload: string[],
+) {
+	status.code += `ldr x0, [x29, #${ref_param_slot}]\n`;
+	reload.push(name);
+}
+
 function get_raw_value(node: ValueNode, status?: BuildStatus): string {
 	let val = node.value;
 	if (val === "true") return "1";
@@ -175,6 +190,11 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		// Collect `ref` class args whose caller-side anchor must be re-synced to
 		// the (possibly reassigned) slot value after the call returns.
 		const ref_class_sync_names: string[] = [];
+		// Collect `ref` class PARAMS forwarded to another `ref` param. The
+		// callee may have reassigned the caller's slot, so the param's
+		// callee-saved register (which still holds the pre-call instance) must
+		// be reloaded from the slot once the call returns.
+		const ref_class_param_reload: string[] = [];
 
 		// Outgoing stack-arg area size (0 unless this call passes more args
 		// than fit in x0..x7). Set below for both the non-variadic and the
@@ -261,7 +281,14 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 				if (ep.is_struct) {
 					emit_struct_address(ep.node, status);
 				} else if (ep.is_ref) {
-					emit_address_of(ep.node, status);
+					const ep_name = ep.node.node_type === "value" ? (ep.node as ValueNode).value : undefined;
+					const ref_param_slot =
+						ep_name !== undefined ? status.ref_class_slots?.get(ep_name) : undefined;
+					if (ref_param_slot !== undefined) {
+						emit_ref_class_param_slot(status, ref_param_slot, ep_name!, ref_class_param_reload);
+					} else {
+						emit_address_of(ep.node, status);
+					}
 				} else {
 					build_node(ep.node, status);
 				}
@@ -355,7 +382,11 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 					// local (e.g. `var ref Point p = a`) also is_local_ref_var, but
 					// its slot holds a pointer to a struct that lives elsewhere; for
 					// it the existing dereference (the struct's address) is correct,
-					// so only divert class locals here.
+					// so only divert class locals here. A `ref` class PARAM is
+					// neither: its callee-saved register holds the instance while
+					// the caller's slot address lives in ref_class_slots — pass that
+					// slot address (otherwise the callee dereferences the instance
+					// pointer and corrupts memory).
 					const arg = node.params[i];
 					const arg_name = arg.node_type === "value" ? (arg as ValueNode).value : undefined;
 					let arg_is_class = false;
@@ -363,7 +394,11 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 						const tn = (arg as any).type?.name ?? status.variable_types?.get(arg_name)?.name;
 						arg_is_class = !!tn && !!status.structs.find((s) => s.name === tn && s.is_class);
 					}
-					if (arg_name !== undefined && is_local_ref_var(arg_name, status) && arg_is_class) {
+					const ref_param_slot =
+						arg_name !== undefined ? status.ref_class_slots?.get(arg_name) : undefined;
+					if (ref_param_slot !== undefined) {
+						emit_ref_class_param_slot(status, ref_param_slot, arg_name!, ref_class_param_reload);
+					} else if (arg_name !== undefined && is_local_ref_var(arg_name, status) && arg_is_class) {
 						emit_var_address(status, "x0", arg_name);
 						ref_class_sync_names.push(arg_name);
 					} else {
@@ -490,6 +525,26 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 				if (anchor !== undefined) {
 					emit_var_load(status, "x0", sync_name, 8);
 					status.code += `str x0, [x29, #${anchor}]\n`;
+				}
+			}
+			status.code += `ldr x0, [sp], #16\n`;
+		}
+
+		// A forwarded `ref` class PARAM may have been reassigned by the callee,
+		// which wrote the new instance into the caller's slot. The param's
+		// callee-saved register still holds the pre-call instance (possibly
+		// already freed by the callee) — reload it from the slot so subsequent
+		// field access / method calls target the live instance. x9 is
+		// caller-saved scratch (free right after the call); x0 (return value) is
+		// preserved across the reload.
+		if (ref_class_param_reload.length > 0) {
+			status.code += `str x0, [sp, #-16]!\n`;
+			for (const reload_name of ref_class_param_reload) {
+				const slot = status.ref_class_slots?.get(reload_name);
+				const reg = status.function_param_regs?.get(reload_name);
+				if (slot !== undefined && reg) {
+					status.code += `ldr x9, [x29, #${slot}]\n`;
+					status.code += `ldr ${reg}, [x9]\n`;
 				}
 			}
 			status.code += `ldr x0, [sp], #16\n`;

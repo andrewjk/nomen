@@ -357,11 +357,15 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 		const old_ref_params = status.function_ref_params;
 		const old_self_is_ref = status.self_is_ref;
 		const old_class_vars = status.class_vars;
+		const old_ref_class_params = status.ref_class_params;
+		const old_ref_class_param_types = status.ref_class_param_types;
 		const old_scoped_declarations = status.scoped_declarations;
 		const old_borrow_only = status.c_borrow_only_strings;
 		const old_return_type = status.function_return_type;
 		status.function_ref_params = new Set<string>();
 		status.class_vars = new Set<string>();
+		status.ref_class_params = new Set<string>();
+		status.ref_class_param_types = new Map();
 		status.scoped_declarations = enter_c_scope(status);
 		status.c_borrow_only_strings = scan_borrow_only_strings(func);
 		status.function_return_type = func.return_type;
@@ -391,6 +395,18 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 					// flows into raw `T`-typed slots like Buffer.store_int.
 					// Track them in class_vars instead of function_ref_params.
 					status.class_vars.add(pname);
+					// A `ref` class param is emitted as a double pointer
+					// (`struct T **`), mirroring top-level functions. Track it
+					// so use sites dereference once (`(*name)`) and call sites
+					// forward the double pointer as-is to another ref param.
+					if (
+						param_struct?.is_class &&
+						(param.is_ref || param.type.is_ref) &&
+						!param.is_self_param
+					) {
+						status.ref_class_params.add(pname);
+						status.ref_class_param_types!.set(pname, param.type);
+					}
 				} else {
 					status.function_ref_params.add(pname);
 				}
@@ -494,6 +510,8 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 		status.code += `}\n`;
 		status.function_ref_params = old_ref_params;
 		status.class_vars = old_class_vars;
+		status.ref_class_params = old_ref_class_params;
+		status.ref_class_param_types = old_ref_class_param_types;
 		status.self_is_ref = old_self_is_ref;
 		leave_c_scope(status);
 		status.scoped_declarations = old_scoped_declarations;

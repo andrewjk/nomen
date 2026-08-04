@@ -625,19 +625,28 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 					`${mono_struct_name}_${access_func.name.replace(/#/g, "")}`;
 				status.code += `${label}(`;
 				if (!access_func.is_static) {
-					// TODO: be more rigorous about this! Sometimes types should be passed by ref??
+					// Emit the receiver (`self`) for a method call. A plain local
+					// instance is passed by address (`&`); a pointer param/var is
+					// forwarded as-is; a `ref` class param (`struct T **`) is
+					// dereferenced once to yield the single pointer `self` expects.
 					if (!built_in_types.includes(method_type?.name || "")) {
 						const target_value =
 							node.target.node_type === "value" ? (node.target as ValueNode).value : "";
 						// See field-access branch: self is a pointer whenever
 						// it's in function_ref_params, so the generic check
 						// covers it.
+						const target_is_ref_class_param = !!status.ref_class_params?.has(target_value);
 						const target_is_ref_param =
 							!!status.function_ref_params?.has(target_value) ||
 							!!status.class_vars?.has(target_value) ||
 							!!status.heap_array_vars?.has(target_value);
 						if (!target_is_ref_param) {
 							status.code += "&";
+						} else if (target_is_ref_class_param) {
+							// A `ref` class param is a double pointer (`struct T **`),
+							// but the method's `self` is a single pointer. Leave
+							// suppress_dereference off so build_value_node emits
+							// `(*t)`, yielding the instance pointer self expects.
 						} else {
 							// target is already a pointer (var/ref param) — don't
 							// dereference it; we want the pointer itself.
@@ -679,18 +688,30 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 						!status.structs.find((s) => s.name === target_param.type.name && !s.is_simple_type) &&
 						!status.traits.find((t) => t.name === target_param.type.name);
 					if (target_param_is_erased) {
-						if (status.class_vars?.has(param_value)) {
+						if (status.class_vars?.has(param_value) && !status.ref_class_params?.has(param_value)) {
 							status.suppress_dereference = true;
 						}
 						status.code += `(long)`;
 						build_node(access_func.params[i], status);
 						status.suppress_dereference = false;
 					} else if (arg_is_struct_or_trait) {
+						const callee_param_is_ref = access_func.ref_param_indices?.includes(i);
+						const param_is_ref_class_param = !!status.ref_class_params?.has(param_value);
 						const param_is_ref_param =
 							!!status.function_ref_params?.has(param_value) ||
 							!!status.class_vars?.has(param_value);
-						if (!param_is_ref_param) {
+						if (callee_param_is_ref && param_is_ref_class_param) {
+							// Forwarding a `ref` class param to another `ref` param:
+							// the arg is already a double pointer (`struct T **`),
+							// which is exactly what the callee's ref param expects —
+							// forward it as-is (no `&`, no dereference).
+							status.suppress_dereference = true;
+						} else if (!param_is_ref_param) {
 							status.code += "&";
+						} else if (param_is_ref_class_param) {
+							// A `ref` class param is a double pointer (`struct T **`);
+							// a struct/trait/class param wants the single pointer, so
+							// let build_value_node dereference once (`(*t)`).
 						} else {
 							status.suppress_dereference = true;
 						}
