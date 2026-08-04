@@ -230,6 +230,13 @@ directly. Use the directive that matches the backend:
    - Create build function in `src/build/`
    - Add tests in `tests/<feature>/`
 
+#### Follow-Ups
+
+- When you decide **not** to fix a bug or issue inline (e.g. it's out of scope
+  for the current task), record it for later by adding a section to
+  `FOLLOWUP.md` describing the issue (what you saw, where, and any relevant
+  context). Create the file if it does not yet exist.
+
 <!--VITE PLUS START-->
 
 # Using Vite+, the Unified Toolchain for the Web
