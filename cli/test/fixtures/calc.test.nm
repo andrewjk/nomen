@@ -1,0 +1,32 @@
+import System
+import System/Test
+
+func add = (int a, int b, out int) => a + b
+func mul = (int a, int b, out int) => a * b
+
+// The function under test.
+func add_once = () {
+	const int r = add(1, 1)
+}
+
+pub func test_add = (ref Tester t) {
+	t.expect(add(1, 1) == 2, "1 + 1 should be 2")
+	t.expect(add(2, 3) == 5, "2 + 3 should be 5")
+	t.expect(add(100, 1) == 101, "100 + 1 should be 101")
+}
+
+pub func test_mul = (ref Tester t) {
+	t.expect(mul(2, 2) == 4, "2 * 2 should be 4")
+	t.expect(mul(3, 3) == 10, "3 * 3 should be 9 (this fails on purpose)")
+}
+
+pub func test_assert_not_null = (ref Tester t) {
+	var int? maybe = 42
+	t.assert(maybe, "maybe should hold a value")
+	var string? none = null
+	t.assert(none, "none should be null (this fails on purpose)")
+}
+
+pub func bench_add = (ref Tester t) {
+	t.bench("add", add_once)
+}

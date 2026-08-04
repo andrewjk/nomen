@@ -23,6 +23,7 @@ When no `--in` is given, the CLI discovers what to compile from the current work
 | `build`  | Parse, check, build, **and link** the executable, but do not run it.  |
 | `check`  | **Parse and check only** — no code generation, linking, or execution. |
 | `format` | Reformat every `.nm` file under `--in` (or the current folder).       |
+| `test`   | Discover and run `*.test.nm` files with the `Tester` harness.         |
 | `docs`   | Generate markdown documentation into a `docs/` folder.                |
 
 An unknown or missing command prints the help text and exits with code `1`.
@@ -75,6 +76,28 @@ The set of files documented depends on the target:
 - A `package.jsonc` with an `exports` map → a **library**: every exported file is documented, using that package's resolved library.
 - Otherwise → an **app / single-file**: the `.nm` files alongside the resolved input (or in the target folder) are documented together with their module siblings.
 
+### `test`
+
+```bash
+nomen test                         # run every *.test.nm under the cwd
+nomen test --in src                # run every *.test.nm under src/
+nomen test --filter list           # only files whose path matches /list/
+nomen test --arch c                # use the C backend instead of AArch64
+```
+
+Discovers every `*.test.nm` file under `--in` (or the cwd), and for each one generates a `main` + per-benchmark timing harness, compiles and links it with `clang`, runs it, and renders vitest-style output from the records the binary streams back. See [TESTING.md](TESTING.md) for the full design.
+
+A **test function** is any `pub func <name> = (ref Tester t)`; a **benchmark** is a test function whose body calls `t.bench(...)` / `t.bench_n(...)`. Files are compiled and run serially. Unlike the other commands, `test` exits **`1`** when any test fails or any file fails to build, and **`0`** only when everything passes — so it works as a CI gate. Each file's artifacts land in a `build/` folder next to it.
+
+```nomen
+import System
+import System/Test
+
+pub func test_add = (ref Tester t) {
+	t.expect(add(1, 1) == 2, "1 + 1 should be 2")
+}
+```
+
 ## Options
 
 All options are global and accepted by every command (though only a subset are meaningful for each one).
@@ -82,8 +105,8 @@ All options are global and accepted by every command (though only a subset are m
 ### `--in`, `-i`
 
 - **Type:** string
-- **Applies to:** `run`, `build`, `check`, `format`, `docs`
-- **Description:** The input `.nm` file **or** a folder of `.nm` files to process. If omitted, the CLI tries to discover the entry from the current folder (see [Input Resolution](#input-resolution)). Only `.nm` files are processed; other extensions are skipped with an "Unsupported file type" notice.
+- **Applies to:** `run`, `build`, `check`, `format`, `docs`, `test`
+- **Description:** The input `.nm` file **or** a folder of `.nm` files to process. For `test`, the folder to search recursively for `*.test.nm` files. If omitted, the CLI tries to discover the entry from the current folder (see [Input Resolution](#input-resolution)). Only `.nm` files are processed; other extensions are skipped with an "Unsupported file type" notice.
 
 ### `--out`, `-o`
 
@@ -103,11 +126,17 @@ All options are global and accepted by every command (though only a subset are m
 - **Applies to:** `run`, `build`, `check`
 - **Description:** Watch the `--in` path for changes and re-run the pipeline on every file event. Only meaningful when `--in` points at a file or folder (it has no effect in discovery mode). Uses `chokidar`.
 
+### `--filter`, `-f`
+
+- **Type:** string (regex)
+- **Applies to:** `test`
+- **Description:** Only run `*.test.nm` files whose path matches this regex. Useful for running a single file (`--filter calc`) or a subtree (`--filter 'math/'`) during development.
+
 ### `--arch`, `-a`
 
 - **Type:** string
 - **Default:** `aarch64`
-- **Applies to:** `run`, `build`
+- **Applies to:** `run`, `build`, `test`
 - **Choices:** `aarch64` | `c`
 - **Description:** Target backend.
   - `aarch64` — emit AArch64 assembly (a `.s` file). **Default.** See [AARCH64.md](AARCH64.md).
@@ -124,7 +153,7 @@ All options are global and accepted by every command (though only a subset are m
 ### `--lib`, `-l`
 
 - **Type:** string
-- **Applies to:** `run`, `build`, `check`
+- **Applies to:** `run`, `build`, `check`, `test`
 - **Description:** Path to the `System` library directory (the one containing a `package.jsonc`). If omitted, the CLI walks parent folders looking for either a `package.jsonc` with an `imports.System` entry or a `core/` subfolder containing a `package.jsonc`.
 
 ### `--audit`
@@ -274,9 +303,9 @@ nomen run
 
 ## Exit Codes
 
-| Code | Meaning                                             |
-| ---- | --------------------------------------------------- |
-| `0`  | Success (`docs`/`format` complete, or pipeline ok). |
-| `1`  | Unknown/missing command, or no input discovered.    |
+| Code | Meaning                                                                             |
+| ---- | ----------------------------------------------------------------------------------- |
+| `0`  | Success (`docs`/`format` complete, pipeline ok, or all tests passed).               |
+| `1`  | Unknown/missing command, no input discovered, or (for `test`) a test/build failure. |
 
-Compile/check errors do **not** set a non-zero exit code — they are rendered to the console and the file is skipped, but the process still exits `0`. Treat the presence of rendered errors in the output as the failure signal in CI.
+Compile/check errors do **not** set a non-zero exit code for `run`/`build`/`check` — they are rendered to the console and the file is skipped, but the process still exits `0`. Treat the presence of rendered errors in the output as the failure signal in CI. The `test` command is the exception: it exits `1` on any test failure or build error so it can gate CI.

@@ -1,0 +1,241 @@
+// The runtime half of `nomen test`.
+//
+// `Tester` is handed to every `pub func <name> = (ref Tester t)` in a
+// `*.test.nm` file by a `main` that the CLI generates. It records assertion
+// results and benchmark statistics, and streams them to stdout as
+// machine-readable records that the CLI parses back and renders.
+//
+// Record grammar — one record per line. Every record begins with the literal
+// prefix "\nomen|" (backslash + "nomen|") so the CLI can recognise it, and its
+// fields are separated by "|":
+//
+//	\nomen|start|<test>
+//	\nomen|fail|<test>|<message>
+//	\nomen|done|<test>|<passed>|<failed>|<ns>
+//	\nomen|bench|<label>|<n>|<min>|<median>|<max>|<mean>|<stddev>
+//
+// A leading backslash was chosen over a control character because the C and
+// aarch64 backends both mis-parse a "\x1f" escape that is immediately followed
+// by an ASCII letter. "|" can still appear inside a <message>, but the CLI
+// only splits fields up to the fixed arity of each record kind, so the
+// message is taken verbatim from the remainder. Anything a test prints that
+// does not start with "\nomen|" is forwarded verbatim and shown beneath the
+// file when it fails.
+//
+// Escaping note: Nomen string escapes pass through to the target language
+// (the C compiler / assembler), which then interpret them. So to emit a
+// LITERAL backslash at runtime the source must write a doubled "\\": a single
+// "\" would have "\n" read as a newline. The record strings below therefore
+// use "\\nomen|", which the backend emits as "\\nomen|" and the C/assembler
+// collapses to the runtime "\nomen|".
+//
+// See TESTING.md for the full design.
+
+/**
+ * Records assertions and benchmarks for one test file.
+ *
+ * A test function receives the tester by mutable reference:
+ *
+ *	import System/Test
+ *
+ *	pub func test_add = (ref Tester t) {
+ *		t.expect(add(1, 1) == 2, "1 + 1 should be 2")
+ *	}
+ *
+ * Once an assertion in a test fails the remaining assertions in that test are
+ * skipped, so a single root cause reports as a single failure. Check
+ * `t.has_failed` to bail out of expensive follow-up work yourself.
+ **/
+pub class Tester {
+	// Has the *current* test recorded a failure? Reset by `begin_test`.
+	pub var bool has_failed = false
+
+	// Assertion tallies for the current test.
+	var int passed = 0
+	var int failed = 0
+
+	// Tallies for the whole file, so `done` records stay per-test while the
+	// process still knows whether anything failed overall.
+	var int total_failed = 0
+
+	var string current = ""
+	var uint64 started = 0
+
+	// Benchmark capture state. `bench`/`bench_n` record the label and sample
+	// count here; the `nomen test` harness reads them after running the test
+	// function and drives the actual timing loop (Nomen can't store or call a
+	// function pointer, so the harness measures `bench_fn` itself). `bench_fn`
+	// is reconstructed by the harness from the call site, not stored here.
+	var bool bench_pending = false
+	var string bench_label = ""
+	var int bench_samples = 1000
+
+	// (harness) Start timing `name` and clear the per-test state. Called by
+	// the `main` that `nomen test` generates — not by test code.
+	pub func begin_test = (ref self, string name) {
+		self.has_failed = false
+		self.passed = 0
+		self.failed = 0
+		self.current = name
+		Console.write_line("\\nomen|start|" + name)
+		self.started = Time.now_ns()
+	}
+
+	// (harness) Close the current test and emit its `done` record.
+	pub func end_test = (ref self) {
+		const uint64 elapsed = Time.now_ns() - self.started
+		Console.write_line(
+			"\\nomen|done|" + self.current + "|\{self.passed}|\{self.failed}|\{elapsed}",
+		)
+	}
+
+	// (harness) Did anything in this file fail?
+	pub func any_failed = (self, out bool) {
+		return self.total_failed > 0
+	}
+
+	/**
+	 * Record a passing or failing assertion. Does nothing once the current
+	 * test has already failed.
+	 *
+	 *	t.expect(result == 2, "add(1, 1) should be 2")
+	 **/
+	pub func expect = (ref self, bool condition, string message) {
+		if self.has_failed {
+			return
+		}
+		if condition {
+			self.passed += 1
+			return
+		}
+		self.record_failure(message)
+	}
+
+	/**
+	 * Record an unconditional failure. Useful for branches that should be
+	 * unreachable.
+	 *
+	 *	if !found {
+	 *		t.fail("expected to find the key")
+	 *	}
+	 **/
+	pub func fail = (ref self, string message) {
+		if self.has_failed {
+			return
+		}
+		self.record_failure(message)
+	}
+
+	// Assert that a nullable value holds a value.
+	//
+	// Nomen has no generic methods, so there is one overload per nullable
+	// type the compiler can compare against `null`. Nullable *struct* values
+	// (`Point?`) are not supported by the backend yet — use
+	// `t.expect(p != null, "...")` once that gap closes.
+	pub func assert = (ref self, int? value, string message) {
+		self.expect(value != null, message)
+	}
+
+	pub func assert = (ref self, uint? value, string message) {
+		self.expect(value != null, message)
+	}
+
+	pub func assert = (ref self, int64? value, string message) {
+		self.expect(value != null, message)
+	}
+
+	pub func assert = (ref self, uint64? value, string message) {
+		self.expect(value != null, message)
+	}
+
+	pub func assert = (ref self, int8? value, string message) {
+		self.expect(value != null, message)
+	}
+
+	pub func assert = (ref self, uint8? value, string message) {
+		self.expect(value != null, message)
+	}
+
+	pub func assert = (ref self, float? value, string message) {
+		self.expect(value != null, message)
+	}
+
+	pub func assert = (ref self, bool? value, string message) {
+		self.expect(value != null, message)
+	}
+
+	pub func assert = (ref self, char? value, string message) {
+		self.expect(value != null, message)
+	}
+
+	pub func assert = (ref self, string? value, string message) {
+		self.expect(value != null, message)
+	}
+
+	/**
+	 * Register a benchmark. The timing itself is run by the `nomen test`
+	 * harness — Nomen cannot call a function pointer from a parameter (the C
+	 * backend has no way to emit it), so `bench` only *captures* the function
+	 * and the harness measures it and reports the result via `record_bench`.
+	 *
+	 *	func add_once = () {
+	 *		const _ = add(1, 1)
+	 *	}
+	 *
+	 *	pub func bench_add = (ref Tester t) {
+	 *		t.bench("add", add_once)
+	 *	}
+	 *
+	 * The harness warms up, then runs the function `t.bench_samples` times
+	 * (default 1000, override with `bench_n`) and computes min / median /
+	 * mean / max / stddev over the per-iteration durations.
+	 **/
+	pub func bench = (ref self, string label, func () body) {
+		if self.has_failed {
+			return
+		}
+		self.bench_pending = true
+		self.bench_label = label
+		self.bench_samples = 1000
+	}
+
+	/**
+	 * Like `bench`, but the harness runs exactly `samples` iterations. Use it
+	 * for slow functions (where the default 1000 would dominate the suite) or
+	 * for reproducible sample counts.
+	 **/
+	pub func bench_n = (ref self, string label, func () body, int samples) {
+		if self.has_failed {
+			return
+		}
+		self.bench_pending = true
+		self.bench_label = label
+		self.bench_samples = samples
+	}
+
+	/**
+	 * Emit a benchmark record. Called by the `nomen test` harness after it
+	 * has measured `bench_fn` itself — durations are nanoseconds and the
+	 * harness passes the summary statistics it computed.
+	 *
+	 * If a test has already recorded a failure, benchmarks are skipped and
+	 * this is a no-op.
+	 **/
+	pub func record_bench = (ref self, string label, int n, int min, int median, int max, float mean, float stddev) {
+		if self.has_failed {
+			return
+		}
+		Console.write_line(
+			"\\nomen|bench|" +
+				label +
+				"|\{n}|\{min}|\{median}|\{max}|\{mean}|\{stddev}",
+		)
+	}
+
+	func record_failure = (ref self, string message) {
+		self.failed += 1
+		self.total_failed += 1
+		self.has_failed = true
+		Console.write_line("\\nomen|fail|" + self.current + "|" + message)
+	}
+}

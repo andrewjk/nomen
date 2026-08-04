@@ -14,6 +14,7 @@ import { get_library } from "../../src/lib.ts";
 import parse from "../../src/parse.ts";
 import { run_docs } from "./docs.ts";
 import render_errors, { render_warnings } from "./format_errors.ts";
+import { runTests } from "./test.ts";
 import type Config from "./types/Config.ts";
 
 const SUPPORTED_EXTENSION = ".nm";
@@ -86,6 +87,7 @@ const parser = yargs(hideBin(process.argv))
 	.command("check", "Parse and check only")
 	.command("format", "Reformat every .nm file")
 	.command("docs", "Generate markdown documentation")
+	.command("test", "Discover and run *.test.nm files with the Tester harness")
 	.option("in", {
 		alias: "i",
 		describe: "Input file or folder",
@@ -105,6 +107,11 @@ const parser = yargs(hideBin(process.argv))
 		alias: "w",
 		describe: "Whether to watch for file changes",
 		type: "boolean",
+	})
+	.option("filter", {
+		alias: "f",
+		describe: "Only run test files whose path matches this regex",
+		type: "string",
 	})
 	.option("arch", {
 		alias: "a",
@@ -145,6 +152,16 @@ try {
 	if (command === "docs") {
 		run_docs(typeof options.in === "string" ? options.in : undefined);
 		process.exit(0);
+	}
+
+	// `nomen test` discovers and runs every `*.test.nm` file under --in (or
+	// the cwd), compiling each into a Tester harness and reporting results.
+	if (command === "test") {
+		const root = options.in ?? process.cwd();
+		const filter = typeof options.filter === "string" ? new RegExp(options.filter) : undefined;
+		const arch = (options.arch as string | undefined) ?? "aarch64";
+		const ok = runTests(root, { arch, filter });
+		process.exit(ok ? 0 : 1);
 	}
 
 	// `nomen format` re-indents and tidies every .nm file under a folder.

@@ -5,6 +5,7 @@
  *
  *	const uint64 started = Time.now_ms()       // wall-clock ms since the epoch
  *	const uint64 unix    = Time.now_unix()     // Unix seconds
+ *	const uint64 t       = Time.now_ns()       // wall-clock ns since the epoch
  *	Time.sleep_ms(50)                          // sleep 50 ms
  **/
 pub struct Time {
@@ -36,6 +37,35 @@ pub struct Time {
 		add x0, x0, x1
 		add sp, sp, #160
 		b .return_Time_now_ms
+		```
+		return 0
+	}
+
+	// (static) Wall-clock nanoseconds since the Unix epoch. Uses the same
+	// CLOCK_REALTIME source as `now_ms` (portable across macOS and Linux,
+	// where the CLOCK_MONOTONIC id differs) but keeps the full nanosecond
+	// resolution, which `Tester.bench` needs to time short function bodies.
+	// Seconds since the epoch times 1e9 stays well inside uint64 range.
+	pub func now_ns = (out uint64) {
+		```
+		#arch: c
+		struct timespec ts;
+		clock_gettime(CLOCK_REALTIME, &ts);
+		return (uint64_t)ts.tv_sec * 1000000000 + (uint64_t)ts.tv_nsec;
+		```
+		```
+		#arch: aarch64
+		sub sp, sp, #160
+		mov x0, #0
+		mov x1, sp
+		bl _clock_gettime
+		ldr x0, [sp, #0]
+		ldr x1, =1000000000
+		mul x0, x0, x1
+		ldr x1, [sp, #8]
+		add x0, x0, x1
+		add sp, sp, #160
+		b .return_Time_now_ns
 		```
 		return 0
 	}

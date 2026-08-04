@@ -1,0 +1,113 @@
+// Template for one benchmark's timing loop. The CLI substitutes __NAME__,
+// __TARGET__ and __N__ and concatenates this after the test file's source
+// (so it is user code and can call the test file's functions). Kept as a
+// separate .nm file (not a TS template literal) because Nomen's generic syntax
+// (List<int>) is not valid TypeScript and would break the CLI's own build.
+//
+// Placeholders use the leading-AND-trailing `__NAME__` convention so they don't
+// collide with the `__w` / `__i` / `__samples` locals (leading-only).
+//
+// min / max / sum / sum-of-squares are tracked as running aggregates during
+// sampling, so mean and stddev need no `List.at` calls at all. Only the median
+// needs sorted data, so the samples are insertion-sorted afterwards. Every
+// `List.at` / `List.set` is guarded by `idx >= 0 && idx < __samples.length` —
+// the exact bound `List.at`'s constraint requires — because the constraint
+// checker treats an unverifiable index as an out-of-bounds risk (the backends
+// emit unchecked strided loads).
+func bench_loop___NAME__ = (ref Tester t) {
+	// Warm up so the first samples don't pay for cold caches / lazy binding.
+	var int __w = 0
+	while __w < 8 {
+		__TARGET__()
+		__w += 1
+	}
+	// Collect __N__ samples, tracking running aggregates for every statistic
+	// except the median (which needs sorted data).
+	var List<int> __samples = List<int>()
+	var int __sum = 0
+	var float __sum_sq = 0.0
+	var int __min = 0
+	var int __max = 0
+	var int __i = 0
+	while __i < __N__ {
+		const uint64 __t0 = Time.now_ns()
+		__TARGET__()
+		const uint64 __t1 = Time.now_ns()
+		const int __dt = (__t1 - __t0) as int
+		__samples.push(__dt)
+		__sum += __dt
+		__sum_sq = __sum_sq + (__dt as float) * (__dt as float)
+		if __i == 0 {
+			__min = __dt
+			__max = __dt
+		}
+		if __i > 0 {
+			if __dt < __min {
+				__min = __dt
+			}
+			if __dt > __max {
+				__max = __dt
+			}
+		}
+		__i += 1
+	}
+	const int __n = __samples.length
+	if __n > 0 {
+		const float __fn = __n as float
+		const float __mean = (__sum as float) / __fn
+		var float __variance = __sum_sq / __fn - __mean * __mean
+		if __variance < 0.0 {
+			__variance = 0.0
+		}
+		const float __stddev = Math.sqrt(__variance)
+		// Insertion sort the samples so we can pick a median. `length` is
+		// stable throughout (only `set` mutates), so every access is guarded
+		// against `__samples.length` directly.
+		var int __s = 1
+		while __s < __n {
+			if __s >= 0 && __s < __samples.length {
+				const int __v = __samples.at(__s)
+				var int __j = __s
+				var bool __more = true
+				while __more {
+					var int __pm1 = __j - 1
+					if __pm1 >= 0 && __pm1 < __samples.length {
+						const int __prev = __samples.at(__pm1)
+						if __prev > __v {
+							if __j >= 0 && __j < __samples.length {
+								__samples.set(__j, __prev)
+							}
+							__j -= 1
+						} else {
+							__more = false
+						}
+					} else {
+						__more = false
+					}
+				}
+				if __j >= 0 && __j < __samples.length {
+					__samples.set(__j, __v)
+				}
+			}
+			__s += 1
+		}
+		// Median of the sorted samples. Indices are precomputed into locals so
+		// the guards are simple variable bounds.
+		var int __median = __min
+		var int __hi = __n / 2
+		if __hi >= 0 && __hi < __samples.length {
+			__median = __samples.at(__hi)
+		}
+		if __n % 2 == 0 {
+			var int __lo = __n / 2 - 1
+			if __lo >= 0 && __lo < __samples.length {
+				if __hi >= 0 && __hi < __samples.length {
+					var int __a = __samples.at(__lo)
+					var int __b = __samples.at(__hi)
+					__median = (__a + __b) / 2
+				}
+			}
+		}
+		t.record_bench(t.bench_label, __n, __min, __median, __max, __mean, __stddev)
+	}
+}

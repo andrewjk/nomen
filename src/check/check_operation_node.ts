@@ -190,6 +190,15 @@ function find_custom_operator(
 	right_type: Type,
 	status: CheckStatus,
 ): { func: FunctionNode; mono_struct_name?: string; invert?: boolean } | undefined {
+	// `x == null` / `x != null` is a null test, never user-defined equality.
+	// Routing it through `#op_eq` would type-check the `null` literal against
+	// the operand type (`string.#op_eq(string other)`) and reject it, so a
+	// `string?` could never be compared to null. Fall through to the built-in
+	// nullable comparison instead.
+	if ((op.op === "==" || op.op === "!=") && is_null_literal(op)) {
+		return undefined;
+	}
+
 	// For array types, look up operators on the Array struct
 	const struct_name = left_type.is_array ? "Array" : left_type.name;
 	if (!struct_name) {
@@ -262,6 +271,15 @@ function find_custom_operator(
 	}
 
 	return { func, mono_struct_name, invert };
+}
+
+/** Is either side of `op` the literal `null`? */
+function is_null_literal(op: OperationNode): boolean {
+	const left = op.left_value;
+	const right = op.right_value;
+	if (right.node_type === "value" && (right as ValueNode).value === "null") return true;
+	if (left.node_type === "value" && (left as ValueNode).value === "null") return true;
+	return false;
 }
 
 function operator_to_func_name(op: string): string | undefined {
