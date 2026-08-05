@@ -10,7 +10,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BENCH_DIR="$ROOT/bench"
-TSX="$ROOT/bin/node_modules/.bin/tsx"
+TSX="$ROOT/cli/node_modules/.bin/tsx"
 GO_BUILD="$BENCH_DIR/go/build"
 RUST_DIR="$BENCH_DIR/rust"
 CARGO="cargo"
