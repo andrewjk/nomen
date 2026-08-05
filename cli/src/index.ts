@@ -4,14 +4,13 @@ import fs from "node:fs";
 import path from "node:path";
 
 import chokidar from "chokidar";
-import { hideBin } from "yargs/helpers";
-import yargs from "yargs/yargs";
 
 import build, { default_platform } from "../../src/build.ts";
 import { format_source, type FormatOptions } from "../../src/format.ts";
 import join from "../../src/join.ts";
 import { get_library } from "../../src/lib.ts";
 import parse from "../../src/parse.ts";
+import { parse_args, print_help, type Args } from "./args.ts";
 import { run_docs } from "./docs.ts";
 import render_errors, { render_warnings } from "./format_errors.ts";
 import { runTests } from "./test.ts";
@@ -73,100 +72,29 @@ let build_root: string | undefined;
 
 console.log("\n~ NOMEN ~\n");
 
-const parser = yargs(hideBin(process.argv))
-	.usage(
-		"Usage:\n" +
-			"  nomen run --in [file/folder]    Parse, check, build and run a program\n" +
-			"  nomen build --in [file/folder]   Parse, check and build (no run)\n" +
-			"  nomen check --in [file/folder]   Parse and check only\n" +
-			"  nomen format [--in folder]       Reformat every .nm file\n" +
-			"  nomen docs [--in file]           Generate markdown documentation",
-	)
-	.command("run", "Parse, check, build and run a program")
-	.command("build", "Parse, check and build (compile and link, but do not run)")
-	.command("check", "Parse and check only")
-	.command("format", "Reformat every .nm file")
-	.command("docs", "Generate markdown documentation")
-	.command("test", "Discover and run *.test.nm files with the Tester harness")
-	.option("in", {
-		alias: "i",
-		describe: "Input file or folder",
-		type: "string",
-	})
-	.option("out", {
-		alias: "o",
-		describe: "Output file",
-		type: "string",
-	})
-	.option("config", {
-		alias: "c",
-		describe: "The path to a config file",
-		type: "string",
-	})
-	.option("watch", {
-		alias: "w",
-		describe: "Whether to watch for file changes",
-		type: "boolean",
-	})
-	.option("filter", {
-		alias: "f",
-		describe: "Only run test files whose path matches this regex",
-		type: "string",
-	})
-	.option("arch", {
-		alias: "a",
-		describe: "Target architecture (aarch64 or c)",
-		type: "string",
-		default: "aarch64",
-	})
-	.option("platform", {
-		alias: "p",
-		describe: "Target platform (macos, ios, linux, android, windows, web)",
-		type: "string",
-	})
-	.option("lib", {
-		alias: "l",
-		describe: "Path to System library directory (containing package.jsonc)",
-		type: "string",
-	})
-	.option("audit", {
-		describe: "Whether to audit the generated program for memory issues",
-		type: "boolean",
-	})
-	.option("audit-runtime", {
-		describe: "Path to audit_runtime.c, linked in when --audit is set",
-		type: "string",
-	})
-	.option("check", {
-		describe: "For `nomen format`: report files that would change without writing them",
-		type: "boolean",
-	})
-	.help(true);
-
-const options = parser.parseSync();
-
-const command = options._[0];
+const args: Args = parse_args();
+const command = args.command;
 
 try {
 	// `nomen docs` generates markdown documentation instead of compiling.
 	if (command === "docs") {
-		run_docs(typeof options.in === "string" ? options.in : undefined);
+		run_docs(args.in);
 		process.exit(0);
 	}
 
 	// `nomen test` discovers and runs every `*.test.nm` file under --in (or
 	// the cwd), compiling each into a Tester harness and reporting results.
 	if (command === "test") {
-		const root = options.in ?? process.cwd();
-		const filter = typeof options.filter === "string" ? new RegExp(options.filter) : undefined;
-		const arch = (options.arch as string | undefined) ?? "aarch64";
+		const root = args.in ?? process.cwd();
+		const filter = args.filter ? new RegExp(args.filter) : undefined;
+		const arch = args.arch ?? "aarch64";
 		const ok = runTests(root, { arch, filter });
 		process.exit(ok ? 0 : 1);
 	}
 
 	// `nomen format` re-indents and tidies every .nm file under a folder.
 	if (command === "format") {
-		const root = options.in ?? process.cwd();
+		const root = args.in ?? process.cwd();
 		const format_options = load_format_options(root);
 		const files = collect_nm_files(root);
 		let changed = 0;
@@ -178,7 +106,7 @@ try {
 				continue;
 			}
 			if (result.changed) {
-				if (!options.check) fs.writeFileSync(file, result.code);
+				if (!args.check) fs.writeFileSync(file, result.code);
 				changed += 1;
 				console.log(`Formatted ${file}`);
 			}
@@ -196,59 +124,59 @@ try {
 	else if (command === "check") mode = "check";
 
 	if (!mode) {
-		parser.showHelp("log");
+		print_help();
 		process.exit(1);
 	}
 
 	// An explicit --in wins; otherwise discover what to compile from the
 	// working folder — a package.jsonc `entry`, or a lone .nm file.
-	options.in = options.in ?? resolve_input();
-	if (!options.in) {
+	args.in = args.in ?? resolve_input();
+	if (!args.in) {
 		process.exit(0);
 	}
 	// For an explicit --in, build next to whatever was passed (the folder
 	// itself, or the file's folder). Discovery cases set build_root themselves.
 	if (!build_root) {
-		build_root = fs.lstatSync(options.in).isDirectory() ? options.in : path.dirname(options.in);
+		build_root = fs.lstatSync(args.in).isDirectory() ? args.in : path.dirname(args.in);
 	}
 
-	if (fs.existsSync(options.in)) {
+	if (fs.existsSync(args.in)) {
 		let config: Config = { arch: "aarch64", platform: default_platform() };
 		// Load the config from a file
-		if (options.config && fs.existsSync(options.config)) {
-			config = JSON.parse(fs.readFileSync(options.config, "utf-8"));
+		if (args.config && fs.existsSync(args.config)) {
+			config = JSON.parse(fs.readFileSync(args.config, "utf-8"));
 		}
 		// Overwrite with args
-		if (options.arch) config.arch = options.arch as "aarch64" | "c";
-		if (options.platform) config.platform = options.platform as string;
-		if (options.lib) config.lib = options.lib;
-		if (options.audit) config.audit = options.audit;
-		if (options["audit-runtime"]) config.audit_runtime = options["audit-runtime"];
+		if (args.arch) config.arch = args.arch as "aarch64" | "c";
+		if (args.platform) config.platform = args.platform;
+		if (args.lib) config.lib = args.lib;
+		if (args.audit) config.audit = args.audit;
+		if (args.audit_runtime) config.audit_runtime = args.audit_runtime;
 
 		// Is the --in path a folder
-		if (fs.lstatSync(options.in).isDirectory()) {
-			if (options.watch) {
-				watchPath(options.in, config, mode);
+		if (fs.lstatSync(args.in).isDirectory()) {
+			if (args.watch) {
+				watchPath(args.in, config, mode);
 			} else {
-				processFolder(options.in, config, mode);
+				processFolder(args.in, config, mode);
 			}
 		} else {
 			// Process the supplied file
-			const extname = path.extname(options.in);
-			if (shouldProcessFile(options.in)) {
+			const extname = path.extname(args.in);
+			if (shouldProcessFile(args.in)) {
 				// NOTE: We get add notifications for all watched files immediately
 				// TODO: Is this the case on Windows etc too?
-				if (options.watch) {
-					watchPath(options.in, config, mode);
+				if (args.watch) {
+					watchPath(args.in, config, mode);
 				} else {
-					processFile(options.in, config, mode);
+					processFile(args.in, config, mode);
 				}
 			} else {
 				console.log("Unsupported file type: " + extname);
 			}
 		}
 	} else {
-		console.log("Path not found: " + options.in);
+		console.log("Path not found: " + args.in);
 	}
 } catch (err) {
 	console.log("UH", err);
