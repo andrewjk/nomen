@@ -8,6 +8,19 @@ import type { Library } from "../../src/lib.ts";
 
 const library_cache = new Map<string, Library>();
 
+// Path to the System library bundled with the CLI, discovered once on
+// activation by shelling out to `nomen lib-path`. Undefined until then; null
+// after a failed lookup so we don't keep retrying.
+let bundled_lib_dir: string | undefined | null = undefined;
+
+export function set_bundled_lib_dir(dir: string | undefined): void {
+	bundled_lib_dir = dir;
+}
+
+export function bundled_lib_resolved(): boolean {
+	return bundled_lib_dir !== undefined;
+}
+
 export function workspace_folder_of(uri: vscode.Uri): string {
 	return vscode.workspace.getWorkspaceFolder(uri)?.uri.fsPath ?? "";
 }
@@ -54,6 +67,11 @@ export function resolve_lib_dir(uri: vscode.Uri): string | undefined {
 	if (workspace_folder) {
 		const fallback = path.join(workspace_folder, "core");
 		if (fs.existsSync(path.join(fallback, "package.jsonc"))) return fallback;
+	}
+	// Last resort: the System library bundled with the CLI. `bundled_lib_dir`
+	// is populated once on activation by running `nomen lib-path`.
+	if (bundled_lib_dir && fs.existsSync(path.join(bundled_lib_dir, "package.jsonc"))) {
+		return bundled_lib_dir;
 	}
 	return undefined;
 }

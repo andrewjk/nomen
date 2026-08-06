@@ -76,3 +76,10 @@ export function forget_document(uri: vscode.Uri): void {
 	cache.delete(uri.toString());
 	clean_cache.delete(uri.toString());
 }
+
+/** Drop every cached analysis so the next read recomputes (e.g. after the
+ *  bundled System library is resolved). */
+export function invalidate_all(): void {
+	cache.clear();
+	clean_cache.clear();
+}

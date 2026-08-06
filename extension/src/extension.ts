@@ -1,10 +1,15 @@
 import fs from "node:fs";
 import path from "node:path";
+import { execSync, execFileSync } from "node:child_process";
 
 import * as vscode from "vscode";
 
-import { forget_document, get_analysis } from "./documents.ts";
-import { resolve_lib_dir, workspace_folder_of } from "./library.ts";
+import { forget_document, get_analysis, invalidate_all } from "./documents.ts";
+import {
+	resolve_lib_dir,
+	set_bundled_lib_dir,
+	workspace_folder_of,
+} from "./library.ts";
 import {
 	NomenCompletionProvider,
 	NomenDefinitionProvider,
@@ -69,10 +74,81 @@ export function activate(context: vscode.ExtensionContext): void {
 	);
 
 	for (const doc of vscode.workspace.textDocuments) maybe_update_diagnostics(doc);
+
+	// Locate the System library bundled with the CLI, so editor features
+	// (completion, hover, diagnostics) work for projects without a local
+	// `core/`. Deferred so we don't block activation; the error fires once.
+	setTimeout(discover_bundled_lib, 0);
 }
 
 export function deactivate(): void {
 	terminal = undefined;
+}
+
+// Run `nomen lib-path` to find the System library bundled with the CLI. If
+// the CLI isn't installed (or the lookup fails), surface a one-time error so
+// the user knows editor features will be limited.
+function discover_bundled_lib(): void {
+	resolve_shell_path();
+	const dummy_uri = vscode.window.activeTextEditor?.document.uri ?? vscode.Uri.file("/");
+	const executable = resolve_executable(dummy_uri);
+	try {
+		const result = execSync(`${executable} lib-path`, {
+			encoding: "utf8",
+			stdio: ["ignore", "pipe", "ignore"],
+			timeout: 5000,
+		}).trim();
+		// The path is the last non-empty line of output, so older CLIs that
+		// print a banner to stdout still resolve correctly.
+		const lines = result.split("\n").filter((line) => line.trim().length > 0);
+		const lib_dir = lines.length > 0 ? lines[lines.length - 1].trim() : "";
+		if (lib_dir && fs.existsSync(path.join(lib_dir, "package.jsonc"))) {
+			set_bundled_lib_dir(lib_dir);
+			// The initial diagnostic pass ran before the lib was discovered,
+			// so open files may be reporting stale errors. Recompute them.
+			invalidate_all();
+			for (const doc of vscode.workspace.textDocuments) maybe_update_diagnostics(doc);
+			return;
+		}
+	} catch {
+		// CLI missing, on PATH under a different name, or errored.
+	}
+	set_bundled_lib_dir(undefined);
+	vscode.window.showErrorMessage(
+		"Nomen: CLI not found. Editor features (completion, hover, diagnostics) need the Nomen CLI — install it with `npm i -g nomen-lang`.",
+	);
+}
+
+// GUI-launched VS Code on macOS/Linux inherits a minimal PATH that excludes
+// installer-specific global bin dirs (npm, pnpm, yarn, bun, volta, fnm, asdf,
+// …). Spawn the user's login+interactive shell once and prepend its PATH so
+// `nomen` is discoverable regardless of how it was installed.
+let shell_path_resolved = false;
+function resolve_shell_path(): void {
+	if (shell_path_resolved) return;
+	shell_path_resolved = true;
+	// Windows GUI launches inherit the system PATH (npm's global bin is there
+	// by default), so no shell trick is needed.
+	if (process.platform === "win32") return;
+	const shell =
+		process.env.SHELL ?? (process.platform === "darwin" ? "/bin/zsh" : "/bin/bash");
+	try {
+		// `-i -l` sources both .zprofile/.bash_profile (login) AND .zshrc/.bashrc
+		// (interactive) — the latter is where most users add their PATH entries.
+		// stdin from /dev/null and stderr suppressed to avoid hangs/noise.
+		const result = execSync(`${shell} -i -l -c "echo $PATH"`, {
+			encoding: "utf8",
+			stdio: ["ignore", "pipe", "ignore"],
+			timeout: 3000,
+			env: { ...process.env, TERM: "dumb" },
+		}).trim();
+		if (result && result !== process.env.PATH) {
+			process.env.PATH = result + path.delimiter + (process.env.PATH ?? "");
+		}
+	} catch {
+		// Shell failed or timed out — leave PATH untouched and let the caller
+		// surface the "CLI not found" error if applicable.
+	}
 }
 
 class NomenCodeLensProvider implements vscode.CodeLensProvider {
