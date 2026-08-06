@@ -1,0 +1,5 @@
+# Build-time copies of repo assets (see scripts/bundle-assets.mjs).
+# These are excluded from git but included in the npm package via the
+# `files` field in package.json.
+core/
+NOMEN_AGENTS.md

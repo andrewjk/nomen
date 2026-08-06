@@ -1,6 +1,6 @@
 {
 	"name": "nomen-lang",
-	"version": "0.0.7",
+	"version": "0.0.8",
 	"description": "The CLI for the Nomen programming language.",
 	"keywords": [],
 	"license": "ISC",
@@ -8,10 +8,16 @@
 	"bin": {
 		"nomen": "dist/index.mjs"
 	},
+	"files": [
+		"dist",
+		"src",
+		"core",
+		"NOMEN_AGENTS.md"
+	],
 	"type": "module",
 	"scripts": {
-		"build": "vp pack",
-		"dev": "vp pack --watch",
+		"build": "node scripts/bundle-assets.mjs && vp pack",
+		"dev": "node scripts/bundle-assets.mjs && vp pack --watch",
 		"test": "vp test",
 		"check": "vp check",
 		"format": "vp check --fix",

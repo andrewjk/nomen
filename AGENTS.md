@@ -2,6 +2,11 @@
 
 This document provides guidelines for agentic coding agents working on the Nomen programming language compiler.
 
+> **Working on Nomen _code_** (not the compiler itself)? Read
+> [`NOMEN_AGENTS.md`](./NOMEN_AGENTS.md) instead — it's a tight, agent-focused
+> reference covering commands, language directives, and a compressed spec.
+> `nomen init <name>` copies it into new projects as `AGENTS.md`.
+
 ## The Nomen Language
 
 The language's syntax and capabilites are documented in SPEC.md.

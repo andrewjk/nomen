@@ -13,6 +13,7 @@ import parse from "../../src/parse.ts";
 import { parse_args, print_help, type Args } from "./args.ts";
 import { run_docs } from "./docs.ts";
 import render_errors, { render_warnings } from "./format_errors.ts";
+import { find_bundled, run_init } from "./init.ts";
 import { runTests } from "./test.ts";
 import type Config from "./types/Config.ts";
 
@@ -70,12 +71,31 @@ function collect_nm_files(folder: string): string[] {
 // package.jsonc discovery — the package folder (cwd), not the entry's folder.
 let build_root: string | undefined;
 
-console.log("\n~ NOMEN ~\n");
+console.error("\n~ NOMEN ~\n");
 
 const args: Args = parse_args();
 const command = args.command;
 
 try {
+	// `nomen init <name>` scaffolds a new project under ./<name>.
+	if (command === "init") {
+		run_init(args.name);
+		process.exit(0);
+	}
+
+	// `nomen lib-path` prints the absolute path to the System library
+	// bundled with this CLI. Used by tooling (e.g. the VS Code extension)
+	// to locate the standard library for projects without a local one.
+	if (command === "lib-path") {
+		const lib = find_bundled("core");
+		if (lib) {
+			process.stdout.write(lib + "\n");
+			process.exit(0);
+		}
+		console.log("No bundled System library found alongside the CLI.");
+		process.exit(1);
+	}
+
 	// `nomen docs` generates markdown documentation instead of compiling.
 	if (command === "docs") {
 		run_docs(args.in);
@@ -248,7 +268,8 @@ function resolve_lib(file_path: string): string | undefined {
 		if (parent === dir) break;
 		dir = parent;
 	}
-	return undefined;
+	// Nothing local — fall back to the System library bundled with the CLI.
+	return find_bundled("core");
 }
 
 function resolve_audit_runtime(config: Config, input_path: string): string | undefined {

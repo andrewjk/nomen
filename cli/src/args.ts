@@ -1,5 +1,6 @@
 export interface Args {
 	command: string | undefined;
+	name?: string;
 	in?: string;
 	out?: string;
 	config?: string;
@@ -135,6 +136,7 @@ export function parse_args(argv: string[] = process.argv.slice(2)): Args {
 	}
 
 	args.command = positional[0];
+	args.name = positional[1];
 	return args;
 }
 
@@ -148,6 +150,8 @@ export function print_help(): void {
 			"  nomen format [--in folder]        Reformat every .nm file",
 			"  nomen docs [--in file]            Generate markdown documentation",
 			"  nomen test [--in folder]          Discover and run *.test.nm files",
+			"  nomen init <name>                 Scaffold a new project in ./<name>",
+			"  nomen lib-path                    Print the bundled System library path",
 			"",
 			"Options:",
 			"  --in, -i <path>         Input file or folder",

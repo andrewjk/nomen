@@ -7,6 +7,7 @@ import build from "../../src/build.ts";
 import join from "../../src/join.ts";
 import { get_library } from "../../src/lib.ts";
 import parse from "../../src/parse.ts";
+import { find_bundled } from "./init.ts";
 
 const RECORD_PREFIX = "\\nomen|";
 
@@ -433,7 +434,8 @@ export function runTests(root: string, options: RunTestsOptions = {}): boolean {
 	const lib = resolve_lib_for(root);
 	const files = collect_test_files(root).filter((f) => !options.filter || options.filter.test(f));
 
-	console.log(`\n~ NOMEN TEST ~ ${files.length} file(s)\n`);
+	console.log(`Found ${files.length} test file(s)\n`);
+
 	const startTime = performance.now();
 
 	const results: TestFileResult[] = [];
@@ -455,14 +457,14 @@ export function runTests(root: string, options: RunTestsOptions = {}): boolean {
 
 	console.log("");
 	console.log(
-		` ${C.bold("Files ")} ${totalFiles} ${anyFailed ? C.red("failed") : C.green("passed")} (${totalFiles})`,
+		` ${C.dim("Files ")} ${totalFiles} ${anyFailed ? C.red("failed") : C.green("passed")} (${totalFiles})`,
 	);
 	console.log(
-		` ${C.bold("Tests ")} ${totalPassed} ${C.green("passed")}` +
-			(totalFailed ? ` | ${C.red(`${totalFailed} failed`)}` : "") +
+		` ${C.dim("Tests ")} ${C.green(`${totalPassed} passed`)}` +
+			(totalFailed ? ` ${C.dim("|")} ${C.red(`${totalFailed} failed`)}` : "") +
 			` (${totalTests})`,
 	);
-	console.log(` ${C.bold("Time  ")} ${format_duration(elapsed)}`);
+	console.log(` ${C.dim(" Time ")} ${format_duration(elapsed)}`);
 	console.log("");
 
 	return !anyFailed;
@@ -504,8 +506,10 @@ function resolve_lib_for(root: string): string | undefined {
 				}
 			}
 		}
+		// A bare `<dir>/System` is only the library if it has a package.jsonc;
+		// otherwise we'd match macOS's `/System` on the way to the root.
 		const systemDir = path.join(dir, "System");
-		if (fs.existsSync(systemDir)) return systemDir;
+		if (fs.existsSync(path.join(systemDir, "package.jsonc"))) return systemDir;
 		const globalSystem = path.join(dir, "core", "System");
 		if (fs.existsSync(globalSystem)) {
 			return path.join(dir, "core");
@@ -514,5 +518,6 @@ function resolve_lib_for(root: string): string | undefined {
 		if (parent === dir) break;
 		dir = parent;
 	}
-	return undefined;
+	// Nothing local — fall back to the System library bundled with the CLI.
+	return find_bundled("core");
 }
