@@ -12,13 +12,21 @@ const library_cache = new Map<string, Library>();
 // activation by shelling out to `nomen lib-path`. Undefined until then; null
 // after a failed lookup so we don't keep retrying.
 let bundled_lib_dir: string | undefined | null = undefined;
+// Set once the `lib-path` lookup has finished (success or failure), so
+// callers can tell "still looking" apart from "not found".
+let bundled_lib_completed_flag = false;
 
 export function set_bundled_lib_dir(dir: string | undefined): void {
 	bundled_lib_dir = dir;
+	bundled_lib_completed_flag = true;
 }
 
 export function bundled_lib_resolved(): boolean {
 	return bundled_lib_dir !== undefined;
+}
+
+export function bundled_lib_completed(): boolean {
+	return bundled_lib_completed_flag;
 }
 
 export function workspace_folder_of(uri: vscode.Uri): string {

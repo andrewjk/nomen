@@ -8,6 +8,7 @@ import join from "../../src/join.ts";
 import { get_library } from "../../src/lib.ts";
 import parse from "../../src/parse.ts";
 import { find_bundled } from "./init.ts";
+import { build_dir_for } from "./paths.ts";
 
 const RECORD_PREFIX = "\\nomen|";
 
@@ -303,7 +304,7 @@ export function run_test_file(
 		return result;
 	}
 
-	const buildDir = path.join(path.dirname(resolved), "build");
+	const buildDir = build_dir_for(resolved, true);
 	if (!fs.existsSync(buildDir)) fs.mkdirSync(buildDir, { recursive: true });
 	const ext = arch === "aarch64" ? ".s" : ".c";
 	const codefile = path.join(buildDir, path.basename(entry_path, ".nm") + ext);
@@ -407,11 +408,11 @@ export function report_file(result: TestFileResult): void {
 	// short-circuiting a test has at most one failure, so the fail lines are
 	// the per-test detail and a separate count line would just repeat names.
 	for (const f of result.fails) {
-		console.log(`   ${C.red("✗")} ${C.bold(f.test)} ${C.dim(">")} ${f.message}`);
+		console.log(`   ${C.red("✗")} ${f.test} ${C.dim(">")} ${f.message}`);
 	}
 	for (const b of result.benches) {
 		console.log(
-			`   ${C.cyan("⏱")} ${C.bold(b.label)} ${C.dim(`(n=${b.n})`)} ` +
+			`   ${C.cyan("⏱")} ${b.label} ${C.dim(`(n=${b.n})`)} ` +
 				`${C.dim("min")} ${fmt_ns(b.min)} ${C.dim("median")} ${fmt_ns(b.median)} ` +
 				`${C.dim("mean")} ${fmt_ns(Math.round(b.mean))} ${C.dim("max")} ${fmt_ns(b.max)} ` +
 				`${C.dim("±")} ${fmt_ns(Math.round(b.stddev))}`,
@@ -447,6 +448,8 @@ export function runTests(root: string, options: RunTestsOptions = {}): boolean {
 
 	const elapsed = performance.now() - startTime;
 	const totalFiles = results.length;
+	const totalFilesFailed = results.reduce((a, r) => a + (r.ok ? 0 : 1), 0);
+	const totalFilesPassed = totalFiles - totalFilesFailed;
 	// `tests[].failed` (from each test's `done` record) is the authoritative
 	// failure count; `result.fails` holds the same failures' messages for
 	// display, so don't sum both or failures are double-counted.
@@ -456,13 +459,18 @@ export function runTests(root: string, options: RunTestsOptions = {}): boolean {
 	const anyFailed = results.some((r) => !r.ok);
 
 	console.log("");
+	//console.log(
+	//	` ${C.dim("Files ")} ${totalFiles} ${anyFailed ? C.red("failed") : C.green("passed")} (${totalFiles})`,
+	//);
 	console.log(
-		` ${C.dim("Files ")} ${totalFiles} ${anyFailed ? C.red("failed") : C.green("passed")} (${totalFiles})`,
+		` ${C.dim("Files ")} ${C.green(`${totalFilesPassed} passed`)}` +
+			(totalFilesFailed ? ` ${C.dim("|")} ${C.red(`${totalFilesFailed} failed`)}` : "") +
+			C.dim(` (${totalFiles})`),
 	);
 	console.log(
 		` ${C.dim("Tests ")} ${C.green(`${totalPassed} passed`)}` +
 			(totalFailed ? ` ${C.dim("|")} ${C.red(`${totalFailed} failed`)}` : "") +
-			` (${totalTests})`,
+			C.dim(` (${totalTests})`),
 	);
 	console.log(` ${C.dim(" Time ")} ${format_duration(elapsed)}`);
 	console.log("");

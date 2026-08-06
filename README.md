@@ -61,7 +61,7 @@ pub func main = () {
 
 ## Command-Line Interface
 
-The `nomen` CLI has five commands: `run`, `build`, `check`, `format`, and `docs`. Top-level options:
+The `nomen` CLI has several commands: `init`, `run`, `build`, `check`, `format`, `test` and `docs`. Top-level options:
 
 | Option            | Alias | Description                                                                          |
 | ----------------- | ----- | ------------------------------------------------------------------------------------ |

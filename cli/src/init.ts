@@ -16,24 +16,24 @@ function package_jsonc(name: string): string {
 	"entry": "src/main.nm"
 	// The System library is resolved automatically from your nomen-lang
 	// install. To pin a local checkout instead, uncomment:
-	// "imports": { "System": "../core" }
+	// "imports": { "System": "~/Source/nomen/core" }
 }
 `;
 }
 
 const MAIN_NM = `import System
 
+pub func add = (int a, int b) => a + b
+
 pub func main = (Init init) {
-	Console.write("Hello world!\\n")
+	Console.write("Hello world, 2 + 2 is \\{add(2, 2)}!\\n")
 }
 `;
 
 const TEST_NM = `import System
 import System/Test
 
-func add = (int a, int b, out int) => a + b
-
-pub func test_smoke = (ref Tester t) {
+pub func test_add = (ref Tester t) {
 	t.expect(add(2, 2) == 4, "2 + 2 should equal 4")
 }
 `;

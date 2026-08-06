@@ -1,11 +1,12 @@
+import { execSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { execSync, execFileSync } from "node:child_process";
 
 import * as vscode from "vscode";
 
 import { forget_document, get_analysis, invalidate_all } from "./documents.ts";
 import {
+	bundled_lib_completed,
 	resolve_lib_dir,
 	set_bundled_lib_dir,
 	workspace_folder_of,
@@ -92,6 +93,7 @@ function discover_bundled_lib(): void {
 	resolve_shell_path();
 	const dummy_uri = vscode.window.activeTextEditor?.document.uri ?? vscode.Uri.file("/");
 	const executable = resolve_executable(dummy_uri);
+	let found = false;
 	try {
 		const result = execSync(`${executable} lib-path`, {
 			encoding: "utf8",
@@ -104,19 +106,22 @@ function discover_bundled_lib(): void {
 		const lib_dir = lines.length > 0 ? lines[lines.length - 1].trim() : "";
 		if (lib_dir && fs.existsSync(path.join(lib_dir, "package.jsonc"))) {
 			set_bundled_lib_dir(lib_dir);
-			// The initial diagnostic pass ran before the lib was discovered,
-			// so open files may be reporting stale errors. Recompute them.
-			invalidate_all();
-			for (const doc of vscode.workspace.textDocuments) maybe_update_diagnostics(doc);
-			return;
+			found = true;
 		}
 	} catch {
 		// CLI missing, on PATH under a different name, or errored.
 	}
-	set_bundled_lib_dir(undefined);
-	vscode.window.showErrorMessage(
-		"Nomen: CLI not found. Editor features (completion, hover, diagnostics) need the Nomen CLI — install it with `npm i -g nomen-lang`.",
-	);
+	if (!found) {
+		set_bundled_lib_dir(undefined);
+		vscode.window.showErrorMessage(
+			"Nomen: CLI not found. Editor features (completion, hover, diagnostics) need the Nomen CLI — install it with `npm i -g nomen-lang`.",
+		);
+	}
+	// `maybe_update_diagnostics` held off until the bundled lib lookup
+	// finished; the lookup is now complete, so analyze every open document
+	// (and drop any pre-lookup cached analyses).
+	invalidate_all();
+	for (const doc of vscode.workspace.textDocuments) maybe_update_diagnostics(doc);
 }
 
 // GUI-launched VS Code on macOS/Linux inherits a minimal PATH that excludes
@@ -130,8 +135,7 @@ function resolve_shell_path(): void {
 	// Windows GUI launches inherit the system PATH (npm's global bin is there
 	// by default), so no shell trick is needed.
 	if (process.platform === "win32") return;
-	const shell =
-		process.env.SHELL ?? (process.platform === "darwin" ? "/bin/zsh" : "/bin/bash");
+	const shell = process.env.SHELL ?? (process.platform === "darwin" ? "/bin/zsh" : "/bin/bash");
 	try {
 		// `-i -l` sources both .zprofile/.bash_profile (login) AND .zshrc/.bashrc
 		// (interactive) — the latter is where most users add their PATH entries.
@@ -293,7 +297,13 @@ function maybe_update_diagnostics(document: vscode.TextDocument): void {
 		diagnostics.delete(document.uri);
 		return;
 	}
-	if (is_nomen(document)) update_diagnostics(document);
+	if (!is_nomen(document)) return;
+	// Until the bundled System library lookup completes, defer diagnosing
+	// files that have no local library: analyzing them early flashes
+	// "unknown type/value" errors that vanish once the library resolves.
+	// Files with a local `core/` or `imports.System` can be diagnosed at once.
+	if (!resolve_lib_dir(document.uri) && !bundled_lib_completed()) return;
+	update_diagnostics(document);
 }
 
 function schedule_diagnostics(document: vscode.TextDocument, delay: number): void {

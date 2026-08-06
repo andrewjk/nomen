@@ -23,6 +23,7 @@ When no `--in` is given, the CLI discovers what to compile from the current work
 | `build`  | Parse, check, build, **and link** the executable, but do not run it.  |
 | `check`  | **Parse and check only** — no code generation, linking, or execution. |
 | `format` | Reformat every `.nm` file under `--in` (or the current folder).       |
+| `init`   | Scaffold a new project under `./<name>` with a starter layout.        |
 | `test`   | Discover and run `*.test.nm` files with the `Tester` harness.         |
 | `docs`   | Generate markdown documentation into a `docs/` folder.                |
 
@@ -76,6 +77,28 @@ The set of files documented depends on the target:
 - A `package.jsonc` with an `exports` map → a **library**: every exported file is documented, using that package's resolved library.
 - Otherwise → an **app / single-file**: the `.nm` files alongside the resolved input (or in the target folder) are documented together with their module siblings.
 
+### `init`
+
+```bash
+nomen init myapp                 # scaffold ./myapp
+```
+
+Creates `./<name>` as a ready-to-run project:
+
+```
+myapp/
+├── .gitignore       # ignores build/
+├── package.jsonc    # entry: src/main.nm
+├── src/main.nm      # hello-world program
+├── test/main.test.nm
+├── README.md
+└── AGENTS.md        # copied from the bundled Nomen agent template
+```
+
+The project's `System` library is resolved automatically from your `nomen-lang` install; `package.jsonc` carries a commented-out `imports.System` entry if you want to pin a local checkout instead.
+
+The name must start with a letter and contain only letters, digits, `-` and `_`. The command exits `1` (without creating anything) when the name is missing or invalid, or when `./<name>` already exists. After scaffolding: `cd myapp && nomen run` (or `nomen test`).
+
 ### `test`
 
 ```bash
@@ -87,7 +110,7 @@ nomen test --arch c                # use the C backend instead of AArch64
 
 Discovers every `*.test.nm` file under `--in` (or the cwd), and for each one generates a `main` + per-benchmark timing harness, compiles and links it with `clang`, runs it, and renders vitest-style output from the records the binary streams back. See [TESTING.md](TESTING.md) for the full design.
 
-A **test function** is any `pub func <name> = (ref Tester t)`; a **benchmark** is a test function whose body calls `t.bench(...)` / `t.bench_n(...)`. Files are compiled and run serially. Unlike the other commands, `test` exits **`1`** when any test fails or any file fails to build, and **`0`** only when everything passes — so it works as a CI gate. Each file's artifacts land in a `build/` folder next to it.
+A **test function** is any `pub func <name> = (ref Tester t)`; a **benchmark** is a test function whose body calls `t.bench(...)` / `t.bench_n(...)`. Files are compiled and run serially. Unlike the other commands, `test` exits **`1`** when any test fails or any file fails to build, and **`0`** only when everything passes — so it works as a CI gate. Each file's artifacts land in `<build_root>/build/test/`.
 
 ```nomen
 import System
@@ -187,11 +210,11 @@ When `--in` is **not** supplied, `run`, `build`, and `check` resolve an entry fr
 3. **Multiple `.nm` files** — the CLI lists them and asks you to pick one with `--in`, then exits.
 4. **Nothing found** — prints `"Nothing to compile..."` guidance and exits.
 
-When `--in` **is** supplied, the build root is that path (the folder itself, or the file's parent folder).
+When `--in` **is** supplied, the build root is the nearest ancestor folder (or the input folder itself) containing a `package.jsonc`; without one it falls back to the input's own folder, so standalone files keep building next to their source.
 
 ## Build Output
 
-All generated artifacts are written to `<build_root>/build/` (created if missing), regardless of `--out`:
+All generated artifacts are written to `<build_root>/build/` (created if missing), regardless of `--out`. A `*.test.nm` file's artifacts go to `<build_root>/build/test/` instead, keeping program and test outputs separate:
 
 | Artifact                        | When emitted                                               |
 | ------------------------------- | ---------------------------------------------------------- |

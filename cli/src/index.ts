@@ -14,6 +14,7 @@ import { parse_args, print_help, type Args } from "./args.ts";
 import { run_docs } from "./docs.ts";
 import render_errors, { render_warnings } from "./format_errors.ts";
 import { find_bundled, run_init } from "./init.ts";
+import { build_dir_for } from "./paths.ts";
 import { runTests } from "./test.ts";
 import type Config from "./types/Config.ts";
 
@@ -65,11 +66,6 @@ function collect_nm_files(folder: string): string[] {
 	}
 	return out;
 }
-
-// The folder whose `build/` subdirectory receives compiler output. Set during
-// input resolution: the --in folder, the .nm file's folder, or — for
-// package.jsonc discovery — the package folder (cwd), not the entry's folder.
-let build_root: string | undefined;
 
 console.error("\n~ NOMEN ~\n");
 
@@ -154,11 +150,6 @@ try {
 	if (!args.in) {
 		process.exit(0);
 	}
-	// For an explicit --in, build next to whatever was passed (the folder
-	// itself, or the file's folder). Discovery cases set build_root themselves.
-	if (!build_root) {
-		build_root = fs.lstatSync(args.in).isDirectory() ? args.in : path.dirname(args.in);
-	}
 
 	if (fs.existsSync(args.in)) {
 		let config: Config = { arch: "aarch64", platform: default_platform() };
@@ -213,7 +204,6 @@ function resolve_input(): string | undefined {
 			const json = raw.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
 			const parsed = JSON.parse(json);
 			if (parsed.entry) {
-				build_root = cwd;
 				return path.resolve(cwd, parsed.entry);
 			}
 		} catch {
@@ -229,7 +219,6 @@ function resolve_input(): string | undefined {
 		// unreadable working folder
 	}
 	if (nm_files.length === 1) {
-		build_root = cwd;
 		return path.resolve(cwd, nm_files[0]);
 	}
 	if (nm_files.length > 1) {
@@ -368,7 +357,8 @@ function processFile(filename: string, config: Config, mode: Mode) {
 	}
 
 	const basename = path.basename(filename, ".nm");
-	const buildDir = path.join(build_root ?? path.dirname(filename), "build");
+	// Output lives in the project's `build/` — `build/test` for *.test.nm.
+	const buildDir = build_dir_for(resolved_path, filename.endsWith(".test.nm"));
 	if (!fs.existsSync(buildDir)) {
 		fs.mkdirSync(buildDir, { recursive: true });
 	}

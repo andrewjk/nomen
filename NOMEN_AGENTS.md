@@ -68,11 +68,11 @@ func safe = (string[] s, int i: i >= 0 && i < s.length, out string) {
 
 ### Memory modifiers
 
-| Modifier | Meaning |
-|----------|---------|
-| `ref T`  | mutable borrow; caller must also write `ref` |
-| `view T` | read-only borrow |
-| `mov T`  | transfer ownership; caller writes `mov` |
+| Modifier | Meaning                                        |
+| -------- | ---------------------------------------------- |
+| `ref T`  | mutable borrow; caller must also write `ref`   |
+| `view T` | read-only borrow                               |
+| `mov T`  | transfer ownership; caller writes `mov`        |
 | `out T`  | output parameter, assigned inside the function |
 
 `const` values cannot be passed to `ref` — rebind the caller as `var` first.

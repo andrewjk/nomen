@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { resolve_src_module, strip_main_functions } from "../../src/join.ts";
 import type { Library } from "../../src/lib.ts";
 import { resolve_linked_types } from "../../src/parse.ts";
 
@@ -150,7 +151,32 @@ function read_siblings(file_path: string, library: Library | undefined): Sibling
 	if (parent_dir !== self_dir && !is_library_file) {
 		add_dir(siblings, parent_dir, "", seen);
 	}
+	// A `*.test.nm` file can reference the program's `pub` declarations: pull
+	// in the `src/` module (with `main` stripped, since the test harness
+	// generates its own), mirroring how the compiler joins test sources.
+	if (!is_library_file && self_base.endsWith(".test.nm")) {
+		const src_dir = resolve_src_module(self_dir);
+		if (src_dir) add_src_module(siblings, src_dir, seen);
+	}
 	return siblings;
+}
+
+function add_src_module(out: SiblingSource[], src_dir: string, seen: Set<string>): void {
+	let names: string[];
+	try {
+		names = fs.readdirSync(src_dir);
+	} catch {
+		return;
+	}
+	for (const name of names.sort()) {
+		if (!name.endsWith(".nm")) continue;
+		const full = path.join(src_dir, name);
+		if (seen.has(full)) continue;
+		const text = read_file(full);
+		if (text === undefined) continue;
+		seen.add(full);
+		out.push({ path: full, text: strip_main_functions(text) });
+	}
 }
 
 function add_dir(out: SiblingSource[], dir: string, exclude_base: string, seen: Set<string>): void {
