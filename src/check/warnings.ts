@@ -73,6 +73,9 @@ function warn_unused_function(
 ): void {
 	if (func.is_library || (struct && struct.is_library)) return;
 	if (func.name === "main" || is_discard(func.name) || func.name.startsWith("#")) return;
+	// A `pub` function/method is part of a module's public API — it may be
+	// called from another file in the project, so it can't be proven unused.
+	if (func.visibility === "pub") return;
 	// A generic function is instantiated at each call site under a mangled
 	// (monomorphized) name, so its generic definition can't be proven unused
 	// by matching call names — never warn it.

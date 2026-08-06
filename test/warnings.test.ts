@@ -115,7 +115,7 @@ main()
 		expect(warning_messages(input)).not.toContain("Function 'helper' is never called");
 	});
 
-	test("pub functions are also flagged when unused", () => {
+	test("pub functions are not flagged when unused (public API)", () => {
 		const input = `
 import System
 pub func helper = () {
@@ -126,15 +126,15 @@ func main = () {
 }
 main()
 `;
-		expect(warning_messages(input)).toContain("Function 'helper' is never called");
+		expect(warning_messages(input)).not.toContain("Function 'helper' is never called");
 	});
 
-	test("unused method on a non-trait struct warns", () => {
+	test("unused private method on a non-trait struct warns", () => {
 		const input = `
 import System
 struct Counter {
 	var int count = 0
-	func unused = () {
+	private func unused = () {
 		Console.write("nope")
 	}
 }
