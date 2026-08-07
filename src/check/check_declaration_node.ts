@@ -32,6 +32,17 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 	// Whether the user wrote a `view` type modifier (`var view T v = ...`).
 	// Captured before inference overwrites decl.type.
 	const declared_type_is_view = !!decl.type.is_view;
+	// `view <Type> name = expr` is a const view binding with an explicit
+	// element type — the `view` keyword makes the declared type a view (so
+	// `view string hi` is `view string`). `decl.type_start` is set only when
+	// the user wrote a type token, so it distinguishes an explicit type from an
+	// inferred binding, whose `decl.type` is later filled in from the value.
+	// Inferred bindings (`view hi = ...`) pick up `is_view` from the value's
+	// type instead. This must run before the view-enforcement rules below so
+	// rule 1 doesn't reject a legitimate explicit-typed view binding.
+	if (is_view_keyword && decl.type_start !== undefined) {
+		decl.type.is_view = true;
+	}
 
 	if (decl.func_params) {
 		if (is_view_keyword) {

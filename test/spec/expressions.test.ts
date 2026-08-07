@@ -270,6 +270,15 @@ Console.write(v.to_string())
 		expect(compile_main(input)).toEqual([]);
 	});
 
+	test("view keyword with an explicit element type is a const view", () => {
+		const input = `
+var string greeting = "hello world"
+view string hi = greeting.slice(0, 5)
+Console.write(hi.to_string())
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+
 	test("binding a view without the view keyword is an error", () => {
 		const errors = compile_main(`
 const str = "hello world"
