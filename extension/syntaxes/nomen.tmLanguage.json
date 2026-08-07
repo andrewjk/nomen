@@ -47,6 +47,9 @@
 			"patterns": [{ "include": "source.c" }]
 		},
 		"strings": {
+			"patterns": [{ "include": "#multiline-string" }, { "include": "#string-double" }]
+		},
+		"string-double": {
 			"name": "string.quoted.double.nm",
 			"begin": "\"",
 			"end": "\"",
@@ -61,6 +64,37 @@
 				{
 					"name": "constant.character.escape.nm",
 					"match": "\\\\."
+				}
+			]
+		},
+		"multiline-string": {
+			"name": "string.quoted.double.nm",
+			"begin": "(?m)\"(?=[^\"\\n]*$)",
+			"end": "(?m)^(?![ \\t]*\")",
+			"beginCaptures": {
+				"0": { "name": "punctuation.definition.string.begin.nm" }
+			},
+			"patterns": [
+				{ "include": "#string-interpolation" },
+				{
+					"name": "constant.character.escape.nm",
+					"match": "\\\\."
+				}
+			]
+		},
+		"punctuation": {
+			"patterns": [
+				{
+					"name": "punctuation.separator.nm",
+					"match": ","
+				},
+				{
+					"name": "punctuation.section.parens.nm",
+					"match": "[()]"
+				},
+				{
+					"name": "punctuation.terminator.nm",
+					"match": ";"
 				}
 			]
 		},
@@ -80,7 +114,8 @@
 				{ "include": "#numbers" },
 				{ "include": "#types" },
 				{ "include": "#function-call" },
-				{ "include": "#operators" }
+				{ "include": "#operators" },
+				{ "include": "#punctuation" }
 			]
 		},
 		"chars": {
