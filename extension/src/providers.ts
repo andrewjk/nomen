@@ -188,11 +188,18 @@ function to_location(
 
 export class NomenDocumentFormattingProvider implements vscode.DocumentFormattingEditProvider {
 	provideDocumentFormattingEdits(document: vscode.TextDocument): vscode.TextEdit[] {
-		const source = document.getText();
-		const options = load_format_options(document.uri.fsPath);
-		const result = format_source(source, options);
-		if (!result.changed) return [];
-		const full_range = new vscode.Range(document.positionAt(0), document.positionAt(source.length));
-		return [vscode.TextEdit.replace(full_range, result.code)];
+		const force = vscode.workspace.getConfiguration("nomen").get<boolean>("format.force", false);
+		return format_edits(document, force);
 	}
+}
+
+/** Compute the edits that format `document`. When `force`, bypass the
+ *  token-safety check so an explicit "force format" applies the layout anyway. */
+export function format_edits(document: vscode.TextDocument, force: boolean): vscode.TextEdit[] {
+	const source = document.getText();
+	const options = load_format_options(document.uri.fsPath);
+	const result = format_source(source, options, force);
+	if (!result.changed) return [];
+	const full_range = new vscode.Range(document.positionAt(0), document.positionAt(source.length));
+	return [vscode.TextEdit.replace(full_range, result.code)];
 }

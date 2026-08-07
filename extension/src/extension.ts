@@ -17,6 +17,7 @@ import {
 	NomenDocumentFormattingProvider,
 	NomenHoverProvider,
 	NomenReferenceProvider,
+	format_edits,
 } from "./providers.ts";
 
 const ECHO_LANGUAGE = "nomen";
@@ -49,6 +50,7 @@ export function activate(context: vscode.ExtensionContext): void {
 		vscode.languages.registerCompletionItemProvider(selector, new NomenCompletionProvider(), "."),
 		vscode.commands.registerCommand("nomen.run", (uri?: vscode.Uri) => runNomen(uri, false)),
 		vscode.commands.registerCommand("nomen.audit", (uri?: vscode.Uri) => runNomen(uri, true)),
+		vscode.commands.registerCommand("nomen.format.force", () => forceFormat()),
 		vscode.window.onDidCloseTerminal((t) => {
 			if (t === terminal) terminal = undefined;
 		}),
@@ -178,6 +180,19 @@ class NomenCodeLensProvider implements vscode.CodeLensProvider {
 		}
 		return lenses;
 	}
+}
+
+async function forceFormat(): Promise<void> {
+	const document = vscode.window.activeTextEditor?.document;
+	if (!document || document.languageId !== ECHO_LANGUAGE) {
+		vscode.window.showErrorMessage("Nomen: No active Nomen file to format.");
+		return;
+	}
+	const edits = format_edits(document, true);
+	if (!edits.length) return;
+	const edit = new vscode.WorkspaceEdit();
+	edit.set(document.uri, edits);
+	await vscode.workspace.applyEdit(edit);
 }
 
 async function runNomen(uri: vscode.Uri | undefined, audit: boolean): Promise<void> {

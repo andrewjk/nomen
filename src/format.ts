@@ -79,9 +79,14 @@ export default function format(source: string, options?: Partial<FormatOptions>)
  * formatted source doesn't tokenize to exactly the same stream, the original is
  * returned untouched. Nomen's tokenizer folds a sign into the number that
  * follows it (`a -1` is not `a - 1`), so a spacing slip really can change the
- * meaning of a program — never let one through.
+ * meaning of a program — never let one through. Pass `force` to apply the
+ * layout anyway (e.g. for an explicit "force format" command).
  */
-export function format_source(source: string, options?: Partial<FormatOptions>): FormatResult {
+export function format_source(
+	source: string,
+	options?: Partial<FormatOptions>,
+	force = false,
+): FormatResult {
 	const config = { ...default_format_options, ...options };
 	const lines = scan(source);
 
@@ -89,7 +94,7 @@ export function format_source(source: string, options?: Partial<FormatOptions>):
 	// move tokens around on purpose, so they can't be part of the comparison.
 	const layout = render(lines, { ...config, strip_redundant_types: false });
 	const difference = token_difference(source, layout);
-	if (difference) return { code: source, changed: false, unsafe: difference };
+	if (difference && !force) return { code: source, changed: false, unsafe: difference };
 
 	if (config.sort_imports) sort_imports(lines);
 	const code = config.sort_imports || config.strip_redundant_types ? render(lines, config) : layout;

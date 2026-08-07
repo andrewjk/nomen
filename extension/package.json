@@ -59,8 +59,18 @@
 				"command": "nomen.audit",
 				"title": "Nomen: Audit File",
 				"enablement": "resourceLangId == nomen"
+			},
+			{
+				"command": "nomen.format.force",
+				"title": "Nomen: Force Format File",
+				"enablement": "resourceLangId == nomen"
 			}
 		],
+		"configurationDefaults": {
+			"[nomen]": {
+				"editor.defaultFormatter": "nomen.nomen"
+			}
+		},
 		"configuration": {
 			"title": "Nomen",
 			"properties": {
@@ -115,6 +125,11 @@
 					],
 					"default": "onType",
 					"description": "When to compute Nomen error diagnostics."
+				},
+				"nomen.format.force": {
+					"type": "boolean",
+					"default": false,
+					"markdownDescription": "Apply formatting even when it would change the token stream (e.g. a spacing slip like `a -1`). Off by default — enabling can change a program's meaning. The `Nomen: Force Format File` command always forces."
 				}
 			}
 		}
