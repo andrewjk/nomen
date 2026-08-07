@@ -10,6 +10,7 @@ export default function check(root: BaseNode): CheckResult {
 		stack: [root],
 		scope_depth: 0,
 		values: [],
+		function_value_base: 0,
 		types: [...built_in_types],
 		structs: [],
 		enums: [],

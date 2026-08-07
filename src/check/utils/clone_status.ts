@@ -11,6 +11,10 @@ export default function clone_status(status: CheckStatus): CheckStatus {
 		expected_type: status.expected_type,
 		// Clone values, so that we can check whether is_set is set in all branches
 		values: status.values.map((v) => ({ ...v })),
+		// Inherited from the current function: block clones (if/else/while)
+		// stay in the same function, so they keep the enclosing base. Only
+		// `check_function_node` resets it for a freshly-entered function.
+		function_value_base: status.function_value_base,
 		// Clone struct, trait and function arrays so that they can be reset when exiting a block
 		structs: status.structs.slice(),
 		traits: status.traits.slice(),

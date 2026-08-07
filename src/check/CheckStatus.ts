@@ -35,6 +35,14 @@ export default interface CheckStatus {
 	 */
 	values: StackValue[];
 	/**
+	 * Index in `values` below which every entry belongs to an *enclosing*
+	 * function rather than the one currently being checked. Set when entering a
+	 * function body (see `check_function_node`); top-level functions get 0.
+	 * Nomen does not implement closures, so any reference to an entry below
+	 * this boundary — a captured outer local/param — is a compile error.
+	 */
+	function_value_base: number;
+	/**
 	 * Structs in scope
 	 */
 	structs: StructNode[];

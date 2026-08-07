@@ -75,6 +75,13 @@ export default interface StackValue {
 	 */
 	decl_depth?: number;
 	/**
+	 * True for module-scope (file-global) `const`/`var` declarations. Such
+	 * values are accessible from any function — including nested ones — because
+	 * the backends emit them at file scope, so referencing one is NOT a closure
+	 * capture. Only locals/params of an *enclosing* function are captures.
+	 */
+	is_global?: boolean;
+	/**
 	 * For borrowed class references (taken from a field access): the scope depth
 	 * at which the borrow was created. The borrow may not be assigned/returned
 	 * to a variable declared at a shallower depth (decl_depth < borrow_depth).

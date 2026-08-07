@@ -23,6 +23,12 @@ export default function check_function_node(func: FunctionNode, status: CheckSta
 	}
 
 	let function_status = clone_status(status);
+	// Everything inherited from the enclosing scope (now cloned into our
+	// `values`) is a capture target: this function may not reference any of
+	// those names. Record the boundary so check_value_node can reject such
+	// references — Nomen does not implement closures. For a top-level function
+	// the enclosing `values` is empty, so the base is 0.
+	function_status.function_value_base = function_status.values.length;
 	const structs_before = function_status.structs.length;
 	const types_before = function_status.types.length;
 

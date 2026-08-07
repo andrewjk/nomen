@@ -27,7 +27,21 @@ export default function check_value_node(node: ValueNode, status: CheckStatus): 
 		return false;
 	}
 
-	const decl_value = status.values.findLast((v) => v.name === node.value);
+	const decl_index = status.values.findLastIndex((v) => v.name === node.value);
+	const decl_value = decl_index >= 0 ? status.values[decl_index] : undefined;
+	// Nomen does not implement closures: a nested function may not reference
+	// an enclosing function's locals/params. Such entries sit below the
+	// current function's value base (set in check_function_node) and are not
+	// module globals — globals are file-scope in the generated code, so
+	// accessing one from any function is fine.
+	if (decl_value && decl_index < status.function_value_base && !decl_value.is_global) {
+		add_error(
+			status,
+			`Nested function cannot capture outer local '${node.value}'; closures are not supported — pass it as a parameter`,
+			node.start,
+		);
+		return false;
+	}
 	if (decl_value?.borrow_invalidated && !status.is_assignment_target) {
 		const owner = decl_value.borrowed_from ? ` of '${decl_value.borrowed_from}'` : "";
 		add_error(

@@ -12,6 +12,7 @@ import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
 import check_type_exists from "./utils/check_type_exists.ts";
 import evaluate_const_condition from "./utils/evaluate_const_condition.ts";
 import { apply_bounds, track_assignment_bounds } from "./utils/flow_bounds.ts";
+import in_function from "./utils/in_function.ts";
 import { is_class_type, is_owning_struct_type } from "./utils/ownership.ts";
 import { materialize_tuple_type } from "./utils/tuple_struct.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
@@ -129,6 +130,7 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			constraint: decl.constraint,
 			func_params: decl.func_params?.map((p) => ({ name: p.name, type: p.type })),
 			func_return_type: decl.func_return_type,
+			is_global: !in_function(status),
 		});
 		if (decl.value) {
 			track_assignment_bounds(decl.name, decl.value, status);
@@ -326,6 +328,7 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			borrow_depth: decl.value ? borrow_depth_of(decl.value, status) : undefined,
 			borrowed_from: decl.value ? borrow_owner_of(decl.value, status) : undefined,
 			class_alias_of: class_alias_src,
+			is_global: !in_function(status),
 		});
 		if (decl.value) {
 			track_assignment_bounds(decl.name, decl.value, status);

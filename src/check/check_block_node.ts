@@ -120,6 +120,7 @@ function gather_top_level_consts(block: BlockNode, status: CheckStatus) {
 			type: decl.type,
 			is_set: !!decl.value,
 			start: decl.start,
+			is_global: true,
 		});
 	}
 }

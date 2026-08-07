@@ -335,4 +335,49 @@ func add = (out int) => (z0)
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
 	});
+
+	test("nested function cannot capture outer local (read)", () => {
+		const input = `
+func outer = (int base, out int) {
+    func inner = (out int) {
+        return base
+    }
+    return inner()
+}
+`;
+		const parsed = parse(input);
+		expect(parsed.errors.some((e) => e.message.includes("cannot capture outer local 'base'"))).toBe(
+			true,
+		);
+	});
+
+	test("nested function cannot capture outer local (write)", () => {
+		const input = `
+func outer = () {
+    var int counter = 0
+    func bump = () {
+        counter = counter + 1
+    }
+    bump()
+}
+`;
+		const parsed = parse(input);
+		expect(
+			parsed.errors.some((e) => e.message.includes("cannot capture outer local 'counter'")),
+		).toBe(true);
+	});
+
+	test("nested function may use its own params and a module global", () => {
+		const input = `
+const int SCALE = 10
+func outer = (int x, out int) {
+    func inner = (int y, out int) {
+        return y * SCALE
+    }
+    return inner(x)
+}
+`;
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual([]);
+	});
 });
