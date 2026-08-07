@@ -18,11 +18,11 @@ Most types of memory corruption (use before initialization, use after free, doub
 - **Operator Overloading** — custom behavior for arithmetic operators
 - **Generics** — type-safe generic structs and classes with compile-time checking
 - **Constraints** — compile-time assertions on parameters, fields, and variables
-- **Higher-Order Functions** — first-class functions, lambdas, and closures
+- **Higher-Order Functions** — first-class functions and lambdas (no closures)
 - **Structured Concurrency** — run concurrent tasks via OS threads
 - **Core System Library** - small but growing, with data structures that remove the need for you to fight with the borrow checker
 - **GUI System** - a top-down/bottom-up layout system and a few different native controls (WIP)
-- **VS Code Extension** - with syntax highlighting for `.nm` files
+- **VS Code Extension** - with syntax highlighting for `.nm` files as well as the usual LSP niceties
 
 ## Quick Start
 
@@ -34,19 +34,23 @@ Install the Nomen CLI using npm (or your preferred package manager):
 npm i -g nomen-lang
 ```
 
-There is also a VS Code extension that you can install by searching for `Nomen`.
+There is also a VS Code extension that you can install by searching for `Nomen`. It requires that you have the CLI installed first.
 
 ### Run a Program
 
 ```bash
+cd my_program
+nomen run
+
+# or
 nomen --in path/to/program.nm
 ```
 
 Target a specific backend:
 
 ```bash
-nomen --in path/to/program.nm --arch c         # emit C
-nomen --in path/to/program.nm --arch aarch64   # emit AArch64 assembly (default)
+nomen run --arch c         # emit C
+nomen run --arch aarch64   # emit AArch64 assembly (default)
 ```
 
 ### Hello, World!
@@ -63,6 +67,16 @@ pub func main = () {
 
 The `nomen` CLI has several commands: `init`, `run`, `build`, `check`, `format`, `test` and `docs`. Top-level options:
 
+| Command       | Description                                                                                          |
+| ------------- | ---------------------------------------------------------------------------------------------------- |
+| `init <name>` | creates a new project folder for a program with the supplied name                                    |
+| `run`         | runs the program that is in the current folder, or the `.nm` file specified with `--in`              |
+| `build`       | builds the program into an executable file                                                           |
+| `check`       | parses and compiles the program and reports warnings and errors                                      |
+| `format`      | formats the code (defaults to tabs, 100 chars wide, sorted imports, implicit types, trailing commas) |
+| `test`        | runs any `.test.nm` files in the current folder                                                      |
+| `docs`        | generates a folder of documentation from code comments                                               |
+
 | Option            | Alias | Description                                                                          |
 | ----------------- | ----- | ------------------------------------------------------------------------------------ |
 | `--in <path>`     | `-i`  | Input `.nm` file or folder (auto-discovered if omitted).                             |
@@ -76,7 +90,7 @@ The `nomen` CLI has several commands: `init`, `run`, `build`, `check`, `format`,
 | `--audit-runtime` |       | Path to `audit_runtime.c` (used with `--audit`).                                     |
 | `--check`         |       | `format` dry-run: report changes without writing.                                    |
 
-See [CLI.md](CLI.md) for the full reference (commands, input resolution, build output, config files, and examples).
+See [CLI.md](CLI.md) for the full reference (input resolution, build output, config files, and examples).
 
 ## Language Overview
 
