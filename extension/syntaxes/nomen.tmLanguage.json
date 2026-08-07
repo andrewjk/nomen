@@ -21,17 +21,22 @@
 			"patterns": [
 				{
 					"name": "comment.line.double-slash.nm",
-					"match": "//.*$"
+					"match": "//.*"
 				},
-				{
-					"name": "comment.block.nm",
-					"begin": "/\\*",
-					"end": "\\*/",
-					"captures": {
-						"0": { "name": "punctuation.definition.comment.nm" }
-					}
-				}
+				{ "include": "#block-comment" }
 			]
+		},
+		"block-comment": {
+			"name": "comment.block.nm",
+			"begin": "/\\*",
+			"end": "\\*/",
+			"beginCaptures": {
+				"0": { "name": "punctuation.definition.comment.nm" }
+			},
+			"endCaptures": {
+				"0": { "name": "punctuation.definition.comment.nm" }
+			},
+			"patterns": [{ "include": "#block-comment" }]
 		},
 		"raw-block": {
 			"name": "string.other.nm",
@@ -82,22 +87,6 @@
 				}
 			]
 		},
-		"punctuation": {
-			"patterns": [
-				{
-					"name": "punctuation.separator.nm",
-					"match": ","
-				},
-				{
-					"name": "punctuation.section.parens.nm",
-					"match": "[()]"
-				},
-				{
-					"name": "punctuation.terminator.nm",
-					"match": ";"
-				}
-			]
-		},
 		"string-interpolation": {
 			"name": "meta.interpolation.nm",
 			"begin": "\\\\\\{",
@@ -108,15 +97,7 @@
 			"endCaptures": {
 				"0": { "name": "punctuation.section.interpolation.end.nm" }
 			},
-			"patterns": [
-				{ "include": "#constants" },
-				{ "include": "#keywords" },
-				{ "include": "#numbers" },
-				{ "include": "#types" },
-				{ "include": "#function-call" },
-				{ "include": "#operators" },
-				{ "include": "#punctuation" }
-			]
+			"patterns": [{ "include": "$self" }]
 		},
 		"chars": {
 			"name": "string.quoted.single.nm",
