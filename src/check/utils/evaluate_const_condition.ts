@@ -101,6 +101,17 @@ function evaluate_operation(
 		// "unsafe" (off-by-one OOB).
 		const num = evaluate_numeric_comparison(op, status);
 		if (num !== undefined) return num;
+		// Container lengths/capacities (.length/.cap/.count/.size) are always
+		// non-negative, so `0 <= x.length` and `x.length >= 0` always hold —
+		// even when the concrete length is unknown at compile time. This lets a
+		// literal 0 index verify a `start >= 0 && start <= self.length` style
+		// constraint without forcing a runtime guard.
+		if (
+			(op.op === "<=" && is_zero(op.left_value, status) && is_nonnegative_access(op.right_value)) ||
+			(op.op === ">=" && is_zero(op.right_value, status) && is_nonnegative_access(op.left_value))
+		) {
+			return true;
+		}
 		let left_var: string | undefined;
 		let left_offset = 0;
 		if (op.left_value.node_type === "value") {
@@ -604,4 +615,25 @@ export function evaluate_numeric_or_bool(
 	}
 
 	return undefined;
+}
+
+const NON_NEGATIVE_FIELDS = new Set(["length", "cap", "count", "size"]);
+
+/** Does `node` read a container's length/capacity, which is always >= 0? */
+function is_nonnegative_access(node: import("../../nodes/BaseNode.ts").default): boolean {
+	if (node.node_type !== "access") return false;
+	const access = node as AccessNode;
+	if (access.access.node_type === "access_field") {
+		return NON_NEGATIVE_FIELDS.has((access.access as AccessFieldNode).name);
+	}
+	if (access.access.node_type === "access_func") {
+		return NON_NEGATIVE_FIELDS.has((access.access as { name: string }).name);
+	}
+	return false;
+}
+
+/** Does `node` evaluate to the compile-time integer 0 (literal or const)? */
+function is_zero(node: import("../../nodes/BaseNode.ts").default, status: CheckStatus): boolean {
+	const value = evaluate_numeric_or_bool(node, status);
+	return typeof value === "number" && value === 0;
 }

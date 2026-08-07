@@ -525,8 +525,15 @@ export default function check_function_call(
 			const satisfied = evaluate_const_condition(func_param.constraint, status);
 			status.values.length = saved_values_length;
 
+			const constraint_source = expression_to_source(func_param.constraint);
+			const suffix = constraint_source ? `\n  ${constraint_source}` : "";
+
 			if (satisfied === false) {
-				add_error(status, `Parameter constraint not satisfied: ${func_param.name}`, param.start);
+				add_error(
+					status,
+					`Parameter constraint not satisfied: ${func_param.name}${suffix}`,
+					param.start,
+				);
 			} else if (satisfied === undefined) {
 				// Constraint can't be verified at compile time (e.g. runtime variable index).
 				// For ARRAY, STRING, and BUFFER index access, an unverifiable index is a
@@ -542,7 +549,7 @@ export default function check_function_call(
 				if (!inside_core) {
 					add_error(
 						status,
-						`Parameter constraint cannot be verified: ${func_param.name}`,
+						`Parameter constraint cannot be verified: ${func_param.name}${suffix}`,
 						param.start,
 					);
 				}
@@ -552,7 +559,11 @@ export default function check_function_call(
 				// guarding `arr.at(i)`). That bound does NOT guarantee `i < length`,
 				// so the access can read/write one element past the end. This is a
 				// provable off-by-one, so reject it for every type (core or not).
-				add_error(status, `Parameter constraint not satisfied: ${func_param.name}`, param.start);
+				add_error(
+					status,
+					`Parameter constraint not satisfied: ${func_param.name}${suffix}`,
+					param.start,
+				);
 			}
 		}
 
@@ -777,4 +788,28 @@ function find_lhs_var_name(status: CheckStatus): string | undefined {
 		if (node.node_type === "func") return undefined;
 	}
 	return undefined;
+}
+
+/** Render a constraint expression AST back to a source-like string. */
+function expression_to_source(node: BaseNode | null | undefined): string {
+	if (!node) return "";
+	if (node.node_type === "value") return (node as ValueNode).value;
+	if (node.node_type === "access") {
+		const access = node as AccessNode;
+		const target = expression_to_source(access.target);
+		if (access.access.node_type === "access_field") {
+			const name = (access.access as AccessFieldNode).name;
+			return target ? `${target}.${name}` : name;
+		}
+		if (access.access.node_type === "access_func") {
+			const name = (access.access as { name: string }).name;
+			return target ? `${target}.${name}()` : `${name}()`;
+		}
+		return target;
+	}
+	if (node.node_type === "op") {
+		const op = node as OperationNode;
+		return `${expression_to_source(op.left_value)} ${op.op} ${expression_to_source(op.right_value)}`;
+	}
+	return "";
 }
