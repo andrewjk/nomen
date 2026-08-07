@@ -58,6 +58,8 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 	status.loop_labels = status.loop_labels || [];
 	const cleanup_depth = status.heap_cleanup_stack?.length ?? 0;
 	status.loop_labels.push({ start: continue_label, end: end_label, cleanup_depth });
+	if (!status.loop_writebacks) status.loop_writebacks = [];
+	status.loop_writebacks.push(undefined);
 
 	if (status.function_return_label) {
 		const item_offset = allocate_stack_space(status, 8);
@@ -364,7 +366,63 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 			emit_var_store(status, "x0", item_name, element_size);
 		}
 
+		// For `for ref x of arr`, create a write-back that recomputes the
+		// element address and stores the (possibly mutated) item back. Called
+		// after the body and before break/continue.
+		if (node.item_is_ref) {
+			const wb_struct_type = struct_type;
+			const wb_element_size = element_size;
+			const wb_item_name = item_name;
+			const wb_idx_name = idx_name;
+			const wb_list_name = list_name;
+			const wb_list_is_pointer = list_is_pointer;
+			const wb_shift = shift;
+			status.loop_writebacks![status.loop_writebacks.length - 1] = () => {
+				// Recompute element address into x9.
+				if (wb_list_is_pointer) {
+					emit_var_load(status, "x9", wb_list_name, 8);
+					if (status.heap_array_vars?.has(wb_list_name)) {
+						status.code += `add x9, x9, #8\n`;
+					}
+				} else {
+					emit_var_address(status, "x9", wb_list_name);
+				}
+				emit_var_load(status, "x10", wb_idx_name, 8);
+				if (Number.isInteger(wb_shift) && wb_shift > 0) {
+					status.code += `add x9, x9, x10, lsl #${wb_shift}\n`;
+				} else {
+					status.code += `mov x11, #${wb_element_size}\n`;
+					status.code += `mul x10, x10, x11\n`;
+					status.code += `add x9, x9, x10\n`;
+				}
+				if (wb_struct_type) {
+					const item_offset = status.stack_offsets!.get(wb_item_name);
+					if (item_offset !== undefined) {
+						const words = Math.ceil(wb_element_size / 8);
+						for (let w = 0; w < words; w++) {
+							status.code += `ldr x10, [x29, #${item_offset + w * 8}]\n`;
+							status.code += `str x10, [x9, #${w * 8}]\n`;
+						}
+					}
+				} else {
+					if (wb_element_size === 1) {
+						emit_var_load(status, "x10", wb_item_name, wb_element_size);
+						status.code += `strb w10, [x9]\n`;
+					} else if (wb_element_size === 4) {
+						emit_var_load(status, "x10", wb_item_name, wb_element_size);
+						status.code += `str w10, [x9]\n`;
+					} else {
+						emit_var_load(status, "x10", wb_item_name, wb_element_size);
+						status.code += `str x10, [x9]\n`;
+					}
+				}
+			};
+		}
+
 		build_block_node(node, status);
+
+		// Write the (possibly mutated) loop variable back into its array slot.
+		status.loop_writebacks![status.loop_writebacks.length - 1]?.();
 
 		if (node.update) {
 			status.code += `${continue_label}:\n`;
@@ -395,6 +453,7 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 
 	status.buffer_data_cache = saved_buffer_cache;
 	status.loop_labels.pop();
+	status.loop_writebacks?.pop();
 	status.scoped_declarations = old_scoped_declarations;
 }
 

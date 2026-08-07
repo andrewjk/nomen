@@ -13,6 +13,9 @@ export default function parse_for_loop(status: ParseStatus) {
 	const for_start = get_index(status);
 	accept("for", status);
 	const start = get_index(status);
+	// `for ref x of arr` — mutable element access (copy-out/copy-back for
+	// arrays). `for x of arr` is const by default.
+	const item_is_ref = accept("ref", status);
 	const value = consume(status);
 	const item = new ValueNode(start, value);
 	// TODO: index option?
@@ -26,6 +29,7 @@ export default function parse_for_loop(status: ParseStatus) {
 
 		if (expect("{", status)) {
 			const for_loop = new ForLoopNode(for_start, item, list, undefined, update);
+			for_loop.item_is_ref = item_is_ref;
 
 			status.stack.push(for_loop);
 			parse_statement(status);

@@ -20,6 +20,8 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 	status.deferred_frees = [];
 	push_c_loop_frame(status);
 
+	let ref_writeback: (() => void) | undefined;
+
 	if (node.item && node.list) {
 		if (node.list.node_type == "range") {
 			// Wrap in a block so the loop variable is scoped to this loop,
@@ -111,8 +113,31 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 				build_node(node.list!, status);
 				status.code += `[${idx_var}];\n`;
 			}
+
+			// For `for ref x of arr`, build the write-back snippet that persists
+			// the (possibly mutated) loop variable back into its array slot.
+			// Emitted after the body and before break/continue.
+			if (node.item_is_ref) {
+				let wb_target: string;
+				if (is_heap) {
+					const elem_ptr = elem_is_class
+						? `struct ${element_type} **`
+						: `${elem_struct ? `struct ${element_type}` : c_type(element_type)} *`;
+					wb_target = `((${elem_ptr})((char *)${list_name} + sizeof(struct Array_${element_type})))[${idx_var}]`;
+				} else {
+					wb_target = `${list_name}[${idx_var}]`;
+				}
+				const wb_code = `${wb_target} = ${node.item.value};\n`;
+				ref_writeback = () => {
+					status.code += wb_code;
+				};
+			}
 		}
 	}
+
+	// Push the ref write-back so break/continue emit it before jumping.
+	if (!status.loop_writebacks) status.loop_writebacks = [];
+	status.loop_writebacks.push(ref_writeback);
 
 	build_block_node(node, status);
 
@@ -122,9 +147,14 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 		status.code += ";\n";
 	}
 
+	// Write the (possibly mutated) loop variable back into its array slot.
+	if (ref_writeback) ref_writeback();
+
 	build_auto_free(status);
 
 	status.code += `}\n`;
+
+	status.loop_writebacks.pop();
 
 	// Close the wrapping block for range/enumerable for-loops (scoping the
 	// loop variable to prevent redefinition).

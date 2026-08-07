@@ -8,6 +8,9 @@ export default class ForLoopNode extends BaseNode implements BlockNode {
 	index?: BaseNode;
 	update?: BaseNode;
 	statements: BaseNode[];
+	/** `for ref x of arr` — the user wants mutable element access. For arrays
+	 *  this desugars to copy-out / mutate / copy-back via .at()/.set(). */
+	item_is_ref?: boolean;
 
 	constructor(
 		start: number,

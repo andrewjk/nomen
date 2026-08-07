@@ -5,6 +5,8 @@ export default function build_continue_node(status: BuildStatus) {
 	const loop = status.loop_labels?.[status.loop_labels.length - 1];
 	if (loop) {
 		emit_cleanup_to_loop_depth(status);
+		// Persist any mutated `for ref x` loop variable before continuing.
+		status.loop_writebacks?.[status.loop_writebacks.length - 1]?.();
 		status.code += `b ${loop.start}\n`;
 	}
 }

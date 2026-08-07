@@ -53,7 +53,7 @@ export default function check_for_loop_node(for_loop: ForLoopNode, status: Check
 			);
 		if (list_type.is_array && !enumerable && has_at) {
 			desugar_array_for_loop(for_loop, list_type);
-			// The list is now a range; re-check with the normal range logic.
+			for_loop.item_is_ref = false;
 			check_for_loop_node(for_loop, status);
 			return;
 		}
@@ -77,7 +77,28 @@ export default function check_for_loop_node(for_loop: ForLoopNode, status: Check
 			);
 		}
 
+		// `for ref x of arr` writes each element back via arr[idx] = x, which
+		// requires a mutable array. Reject it on a const binding.
+		if (for_loop.item_is_ref && list_type.is_array && for_loop.list.node_type === "value") {
+			const list_name = (for_loop.list as ValueNode).value;
+			const list_value = for_status.values.find((v) => v.name === list_name);
+			if (list_value && list_value.declaration !== "var") {
+				add_error(
+					for_status,
+					`'ref' iteration requires a 'var' array, but '${list_name}' is const`,
+					for_loop.list.start,
+				);
+			}
+		}
+
 		if (for_loop.item) {
+			if (for_loop.item_is_ref && (for_loop.list instanceof RangeNode || is_enumerable)) {
+				add_error(
+					for_status,
+					`'ref' is only valid for array element iteration (for ref x of arr), not ranges or Enumerable types`,
+					for_loop.item.start,
+				);
+			}
 			if (is_enumerable) {
 				// Enumerable types iterate over indices; item type is int
 				for_loop.item.type = new Type("int", true);
@@ -116,7 +137,7 @@ export default function check_for_loop_node(for_loop: ForLoopNode, status: Check
 			}
 
 			for_status.values.push({
-				declaration: "var",
+				declaration: for_loop.item_is_ref ? "var" : "const",
 				name: for_loop.item.value,
 				type: for_loop.item.type,
 				is_set: true,
@@ -139,12 +160,21 @@ export default function check_for_loop_node(for_loop: ForLoopNode, status: Check
 	persist_invalidated(status, for_status);
 }
 
-/** Rewrite `for x of arr` in place into `for __idx of 0..arr.length { var x = arr.at(__idx) }`. */
+/**
+ * Rewrite `for x of arr` in place into `for __idx of 0..arr.length { x = arr.at(__idx) }`.
+ *
+ * By default `x` is const (read-only). For `for ref x of arr` the desugaring is
+ * copy-out / mutate / copy-back: `var x = arr.at(__idx)` is prepended and
+ * `arr.set(__idx, x)` is appended, with the write-back duplicated before every
+ * break/continue so mutations persist on all exit paths. (The write-back is
+ * skipped on `return`, matching Rust's copy semantics.)
+ */
 function desugar_array_for_loop(for_loop: ForLoopNode, array_type: Type) {
 	const list = for_loop.list;
 	const start = list.start;
 	const original_item = for_loop.item;
 	const idx_name = `__for_idx_${original_item.value}`;
+	const is_ref = !!for_loop.item_is_ref;
 
 	// The loop variable becomes the hidden index.
 	for_loop.item = new ValueNode(original_item.start, idx_name);
@@ -158,7 +188,7 @@ function desugar_array_for_loop(for_loop: ForLoopNode, array_type: Type) {
 		: new AccessNode(start, clone_node(list), new AccessFieldNode(start, "length"));
 	for_loop.list = new RangeNode(start, zero, bound);
 
-	// Prepend to the body: var <original_item> = arr.at(__idx)
+	// Prepend to the body: <var|const> <original_item> = arr.at(__idx)
 	const at_call = new AccessFunctionCallNode(start, "at", new Type(""), [
 		new ValueNode(start, idx_name),
 	]);
@@ -166,13 +196,53 @@ function desugar_array_for_loop(for_loop: ForLoopNode, array_type: Type) {
 	const decl = new DeclarationNode(
 		original_item.start,
 		"private",
-		"var",
+		is_ref ? "var" : "const",
 		original_item.value,
 		new Type(array_type.name),
 		at_access,
 	);
 	decl.is_loop_iterator = true;
 	for_loop.statements.unshift(decl);
+
+	// For ref iteration, append the write-back: arr.set(__idx, x), and insert a
+	// copy before every break/continue so mutations aren't lost on early exit.
+	if (is_ref) {
+		const make_writeback = (): BaseNode => {
+			const set_call = new AccessFunctionCallNode(start, "set", new Type(""), [
+				new ValueNode(start, idx_name),
+				new ValueNode(start, original_item.value),
+			]);
+			return new AccessNode(start, clone_node(list), set_call);
+		};
+		insert_writebacks(for_loop.statements, make_writeback);
+		for_loop.statements.push(make_writeback());
+	}
+}
+
+/**
+ * Walk a statement array and insert a write-back node before every break /
+ * continue that belongs to the current loop. Nested for/while loops and nested
+ * function bodies are not descended into (their exits belong to them).
+ */
+function insert_writebacks(statements: BaseNode[], make_writeback: () => BaseNode): void {
+	for (let i = statements.length - 1; i >= 0; i--) {
+		const stmt = statements[i];
+		if (stmt.node_type === "break" || stmt.node_type === "continue") {
+			statements.splice(i, 0, make_writeback());
+			continue;
+		}
+		// Don't rewrite exits belonging to nested loops or function bodies.
+		if (stmt.node_type === "for" || stmt.node_type === "while" || stmt.node_type === "func")
+			continue;
+		// Recurse into child statement arrays (if-branches, switch arms, etc.).
+		for (const key of Object.keys(stmt)) {
+			if (key === "parent" || key === "scope") continue;
+			const val = (stmt as unknown as Record<string, unknown>)[key];
+			if (Array.isArray(val)) {
+				insert_writebacks(val as BaseNode[], make_writeback);
+			}
+		}
+	}
 }
 
 function evaluate_range_bound_value(node: BaseNode, status: CheckStatus): number | undefined {

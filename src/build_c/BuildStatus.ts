@@ -68,6 +68,14 @@ export default interface BuildStatus {
 	 */
 	c_loop_frame_depth?: number[];
 	/**
+	 * Stack of write-back callbacks for enclosing `for ref x of arr` loops.
+	 * Each callback emits the code that persists the (possibly mutated) loop
+	 * variable back into its array slot. break/continue invoke the top entry
+	 * before jumping so mutations aren't lost on early exit. undefined for
+	 * non-ref loops.
+	 */
+	loop_writebacks?: ((() => void) | undefined)[];
+	/**
 	 * Per-function set of string variable names that are reassigned ONLY to
 	 * borrowed values (e.g. `filename = init.args.at(1)`). For such a
 	 * variable, `var string x = "literal"` skips strdup'ing the literal — the

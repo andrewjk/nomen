@@ -1388,6 +1388,21 @@ for i of 0..10 {
 }
 ```
 
+Loop iterators are **const by default**. Use `for ref x of arr` to get mutable
+element access — the loop variable is a mutable copy whose fields you can
+change, and each element is written back to the array at the end of the
+iteration (including before `break`/`continue`):
+
+```
+var Point[] points = [Point(0, 0), Point(0, 0)]
+for ref p of points {
+    p.x = 1     // mutates the element in the array
+}
+```
+
+`for ref` requires a `var` array (a `const` array is rejected) and is only
+valid for arrays, not ranges or Enumerable types.
+
 With update clause:
 
 ```

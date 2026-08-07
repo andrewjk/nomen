@@ -8,5 +8,7 @@ export default function build_break_node(node: BreakNode, status: BuildStatus) {
 	// declaration in the scopes it exits (their scope-exit auto_free is dead
 	// code after the jump). Mirrors aarch64's emit_cleanup_to_loop_depth.
 	reclaim_to_loop_body(status);
+	// Persist any mutated `for ref x` loop variable before exiting.
+	status.loop_writebacks?.[status.loop_writebacks.length - 1]?.();
 	status.code += `break;\n`;
 }

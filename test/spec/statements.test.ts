@@ -486,6 +486,31 @@ for item of items; total += item {
 `;
 		expect(compile_main(input)).toEqual([]);
 	});
+
+	test("for ref x of arr: mutable element access", () => {
+		const input = `
+var int[] nums = [1, 2, 3]
+for ref n of nums {
+    n = 0
+}
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+
+	test("for ref on const array is an error", () => {
+		const errors = compile_main(`
+const int[] nums = [1, 2, 3]
+for ref n of nums {
+    n = 0
+}
+`);
+		expect(errors.some((e) => e.message.includes("const"))).toBe(true);
+	});
+
+	test("for ref on range is an error", () => {
+		const errors = compile_main(`for ref i of 0..10 { Console.write("\\{i}") }`);
+		expect(errors.some((e) => e.message.includes("ref"))).toBe(true);
+	});
 });
 
 describe("spec: break and continue", () => {
