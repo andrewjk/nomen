@@ -11,6 +11,16 @@ var count = 10
 `;
 		expect(compile_main(input)).toEqual([]);
 	});
+
+	test("view and var view declarations", () => {
+		const input = `
+const string greeting = "hello"
+view a = greeting.slice(0, 3)
+var view b = greeting.slice(0, 3)
+b = greeting.slice(1, 4)
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
 });
 
 describe("spec: literals", () => {
@@ -214,7 +224,7 @@ describe("spec: slicing", () => {
 		const input = `
 const str = "hello world"
 if str.length == 11 {
-	var view string v = str.slice(0, 5)
+	view v = str.slice(0, 5)
 	Console.write(v.to_string())
 	Console.write("\\{v.length}")
 	Console.write(v.at(1).to_string())
@@ -226,7 +236,7 @@ if str.length == 11 {
 	test("array and list slices return a view of elements", () => {
 		const input = `
 const int[] nums = [10, 20, 30, 40, 50]
-var view int s = nums.slice(1, 4)
+view s = nums.slice(1, 4)
 Console.write("\\{s.length}")
 Console.write("\\{s.at(0)}")
 Console.write("\\{s.at(2)}")
@@ -235,10 +245,42 @@ var List<int> list = List<int>()
 list.push(1)
 list.push(2)
 list.push(3)
-var view int t = list.slice(0, 2)
+view t = list.slice(0, 2)
 Console.write("\\{t.at(1)}")
 `;
 		expect(compile_main(input)).toEqual([]);
+	});
+
+	test("var view is a re-pointable mutable view", () => {
+		const input = `
+var string greeting = "hello world"
+var view hi = greeting.slice(0, 5)
+hi = greeting.slice(6, 11)
+Console.write(hi.to_string())
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+
+	test("const view explicit type is equivalent to view keyword", () => {
+		const input = `
+const str = "hello world"
+const view string v = str.slice(0, 5)
+Console.write(v.to_string())
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+
+	test("binding a view without the view keyword is an error", () => {
+		const errors = compile_main(`
+const str = "hello world"
+var v = str.slice(0, 5)
+`);
+		expect(errors.some((e) => e.message.includes("view"))).toBe(true);
+	});
+
+	test("view keyword on a non-view value is an error", () => {
+		const errors = compile_main(`view v = "hello"`);
+		expect(errors.some((e) => e.message.includes("view"))).toBe(true);
 	});
 
 	test("user-defined Viewable container delegates slice to its Buffer", () => {
@@ -280,7 +322,7 @@ pub func main = () { Console.write("x") }
 		const input = `
 var string s = "hello"
 if s.length == 5 {
-	var view string v = s.slice(0, 3)
+	view v = s.slice(0, 3)
 	s = "world"
 	Console.write("\\{v.length}")
 }

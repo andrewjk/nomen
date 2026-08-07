@@ -18,7 +18,25 @@ import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
 
 export default function check_declaration_node(decl: DeclarationNode, status: CheckStatus) {
+	// `view hi = expr` is sugar for a const view binding. Normalize the
+	// keyword to `const` so every downstream site (StackValue, both backends,
+	// the var-never-changed warning) treats it as an immutable binding. View
+	// semantics are driven entirely by `type.is_view`, which is unaffected.
+	const is_view_keyword = decl.declaration === "view";
+	// Narrowed, view-free declaration kind for the StackValue and backends.
+	// The ternary narrows `decl.declaration` in the false branch to exclude
+	// "view", so this local is exactly `"const" | "var" | "mov"`.
+	const declaration: "const" | "var" | "mov" =
+		decl.declaration === "view" ? "const" : decl.declaration;
+	decl.declaration = declaration;
+	// Whether the user wrote a `view` type modifier (`var view T v = ...`).
+	// Captured before inference overwrites decl.type.
+	const declared_type_is_view = !!decl.type.is_view;
+
 	if (decl.func_params) {
+		if (is_view_keyword) {
+			add_error(status, `'view' cannot declare a function-typed binding`, decl.start);
+		}
 		if (decl.func_return_type) {
 			check_type_exists(decl.func_return_type, status, -1);
 			if (decl.func_return_type.name === "tuple" && decl.func_return_type.tuple_types?.length) {
@@ -90,13 +108,13 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 		}
 
 		status.values.push({
-			declaration: decl.declaration,
+			declaration: declaration,
 			name: decl.name,
 			type: decl.func_return_type || decl.type,
 			is_set: !!decl.value,
 			start: decl.start,
 			is_null: decl.value?.node_type === "value" && (decl.value as any).value === "null",
-			const_value: decl.declaration === "const" ? extract_const_value(decl.value) : undefined,
+			const_value: declaration === "const" ? extract_const_value(decl.value) : undefined,
 			constraint: decl.constraint,
 			func_params: decl.func_params?.map((p) => ({ name: p.name, type: p.type })),
 			func_return_type: decl.func_return_type,
@@ -152,6 +170,30 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			}
 
 			status.stack.pop();
+		}
+
+		// View-binding enforcement. By this point decl.type is final (declared or
+		// inferred), and `view` keyword decls have been normalized to `const`.
+		//   - Rule 1: `view hi = expr` requires the value to actually be a view
+		//     (e.g. a .slice() result). Binding an owned value with `view` is a
+		//     mistake — the user probably meant `const`.
+		//   - Rule 3: a `var`/`const`/`mov` declaration whose *inferred* type is a
+		//     view must opt in explicitly — either with the `view` keyword
+		//     (`view hi = ...`) or a `view` type modifier (`var view T v = ...`).
+		//     This keeps the borrow semantics visible at the declaration site.
+		if (is_view_keyword && decl.value && !decl.type.is_view) {
+			add_error(
+				status,
+				`'view' binding requires a view value (e.g. a .slice() result), got ${decl.type.name}`,
+				decl.value.start,
+			);
+		}
+		if (!is_view_keyword && !declared_type_is_view && decl.type.is_view && decl.value) {
+			add_error(
+				status,
+				`binding a view requires the 'view' keyword (e.g. 'view name = ...' or 'var view name = ...')`,
+				decl.value.start,
+			);
 		}
 
 		// A string literal bound to a const has a known, invariant length.
@@ -261,13 +303,13 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 				? (decl.value as ValueNode).value
 				: undefined;
 		status.values.push({
-			declaration: decl.declaration,
+			declaration: declaration,
 			name: decl.name,
 			type: decl.type,
 			is_set: !!decl.value,
 			start: decl.start,
 			is_null: decl.value?.node_type === "value" && (decl.value as any).value === "null",
-			const_value: decl.declaration === "const" ? extract_const_value(decl.value) : undefined,
+			const_value: declaration === "const" ? extract_const_value(decl.value) : undefined,
 			constraint: decl.constraint,
 			decl_depth: status.scope_depth,
 			borrow_depth: decl.value ? borrow_depth_of(decl.value, status) : undefined,

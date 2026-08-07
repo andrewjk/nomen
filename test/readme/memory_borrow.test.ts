@@ -48,7 +48,7 @@ pub func main = () {
 		const input = `
 pub func main = () {
     var string s = "hello world"
-    var view string v = s.slice(0, 5)
+    view v = s.slice(0, 5)
     Console.write(v.to_string())
 }
 `;
@@ -59,7 +59,7 @@ pub func main = () {
 		const input = `
 pub func main = () {
     var string s = "hello world"
-    var view string v = s.slice(0, 5)
+    view v = s.slice(0, 5)
     s = "changed"
     Console.write("\\{v.length}")
 }

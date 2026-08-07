@@ -44,16 +44,7 @@ export const KEYWORDS = new Set([
 // Keywords that open a call or declaration and so bind tightly to `(` with no
 // space: `func f(...)`, `struct S(...)`, `cast x as int`. Control-flow
 // keywords (`if`, `while`, `return`, ...) keep a space: `if (...)`.
-const CALL_KEYWORDS = new Set([
-	"func",
-	"struct",
-	"class",
-	"trait",
-	"enum",
-	"bitset",
-	"cast",
-	"view",
-]);
+const CALL_KEYWORDS = new Set(["func", "struct", "class", "trait", "enum", "bitset", "cast"]);
 
 const NO_SPACE_BEFORE = new Set([",", ";", ")", "]", ":", "?"]);
 const NO_SPACE_AFTER = new Set(["(", "[", ".", "#", "...", "!", "???", "!!!"]);

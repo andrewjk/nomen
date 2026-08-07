@@ -133,7 +133,7 @@ const multiline =
 
 // slice(start, end) returns a non-owning view string over [start, end)
 if greeting.length >= 5 {
-    var view string hi = greeting.slice(0, 5)
+    view hi = greeting.slice(0, 5)
     Console.write(hi.to_string())   // "Hello"
 }
 ```
@@ -745,10 +745,10 @@ the source is reassigned (which frees the buffer it points into):
 
 ```nomen
 var string s = "hello world"
-var view string v = s.slice(0, 5)   // borrows from s
-Console.write(v.to_string())        // "hello" — materializes an owned copy
-s = "changed"                       // frees s's old buffer → v dangles
-Console.write("\{v.length}")        // Error: borrow invalidated
+view v = s.slice(0, 5)               // borrows from s
+Console.write(v.to_string())         // "hello" — materializes an owned copy
+s = "changed"                        // frees s's old buffer → v dangles
+Console.write("\{v.length}")         // Error: borrow invalidated
 ```
 
 See [BORROW.md](BORROW.md) for the rules and the borrow-invalidation checks.

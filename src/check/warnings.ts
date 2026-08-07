@@ -156,6 +156,17 @@ function warn_var_not_changed(decl: DeclarationNode, locals: Locals, status: Che
 	// A `ref self` method call mutates the receiver even though the binding is
 	// never reassigned, so `const` would fail — don't recommend it.
 	if (status.mutated_local_names?.has(decl.name)) return;
+	// A `var view` that is never re-pointed should drop `var` to become a
+	// bare `view` (const view) — suggesting `const` would be wrong, since a
+	// const owned binding is a different type and is now rejected by rule 3.
+	if (decl.type?.is_view) {
+		add_warning(
+			status,
+			`View '${decl.name}' is never re-pointed, consider dropping 'var' (use 'view ${decl.name} = ...')`,
+			decl.name_start ?? decl.start,
+		);
+		return;
+	}
 	add_warning(
 		status,
 		`Variable '${decl.name}' is never changed, consider using const`,

@@ -24,7 +24,7 @@ import peek_current from "./utils/peek_current.ts";
 
 export default function parse_declaration(
 	visibility: "pub" | "private",
-	declaration: "const" | "var" | "mov",
+	declaration: "const" | "var" | "mov" | "view",
 	status: ParseStatus,
 ) {
 	const start = get_index(status);
@@ -57,12 +57,27 @@ export default function parse_declaration(
 
 		// If the next token is '=' or EOF, what we parsed was actually the name
 		if (peek_current(status) === "=" || status.i >= status.tokens.length) {
-			status.i = saved_i;
-			status.errors.length = saved_errors_length;
-			decl.type = new Type("");
-			decl.type_start = undefined;
-			decl.name_start = get_index(status);
-			decl.name = consume(status);
+			// `var view <name> =` (or `ref`): parse_type consumed the modifier
+			// prefix then the name token. The name it swallowed IS the variable
+			// name — keep the modifier on the still-to-be-inferred type rather
+			// than re-consuming the modifier as the name.
+			const modifier = status.tokens[saved_i]?.value;
+			if ((modifier === "view" || modifier === "ref") && decl.type.name) {
+				decl.name = decl.type.name;
+				decl.name_start = saved_i + 1;
+				const inferred = new Type("");
+				if (modifier === "view") inferred.is_view = true;
+				else inferred.is_ref = true;
+				decl.type = inferred;
+				decl.type_start = undefined;
+			} else {
+				status.i = saved_i;
+				status.errors.length = saved_errors_length;
+				decl.type = new Type("");
+				decl.type_start = undefined;
+				decl.name_start = get_index(status);
+				decl.name = consume(status);
+			}
 		} else {
 			decl.name_start = get_index(status);
 			decl.name = consume(status);
@@ -383,7 +398,7 @@ function looks_like_destructuring(status: ParseStatus, start_idx: number): boole
  */
 function parse_destructuring(
 	visibility: "pub" | "private",
-	declaration: "const" | "var" | "mov",
+	declaration: "const" | "var" | "mov" | "view",
 	start: number,
 	status: ParseStatus,
 ) {

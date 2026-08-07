@@ -894,6 +894,15 @@ Types are inferred from initializers when omitted:
 - floats → `float`
 - `null` → `null` (requires explicit nullable type annotation)
 
+`view` declares a non-owning borrow binding (a `(ptr, len)` slice). A bare
+`view` is an immutable (const) view; `var view` is a mutable view you can
+re-point. The element type is inferred. See [Slicing](#slicing).
+
+```
+view hi = greeting.slice(0, 5)       // const view, inferred `view string`
+var view cursor = greeting.slice(0, 3)  // mutable, re-pointable
+```
+
 ### Functions
 
 ```
@@ -1729,24 +1738,43 @@ for `string`, `T` for `Array<T>` / `List<T>`). Use `.at(i)` / `.length` to read
 the slice in place, and `.to_string()` (string views only) to materialize an
 owned copy.
 
-`string`, `Array<T>`, and `List<T>` all have `slice`:
+A view binding must be declared with the `view` keyword so the borrow
+semantics are visible at the declaration site. `view` alone is an immutable
+(const) view; `var view` is a mutable view you can re-point at another slice.
+The element type and `view` modifier are inferred, so you rarely write them:
 
 ```
 const str = "hello world"
-var view string v = str.slice(0, 5)
+view v = str.slice(0, 5)          // const view, type inferred as `view string`
 Console.write(v.to_string())      // "hello"
 Console.write("\\{v.length}")         // 5
 
 const int[] nums = [10, 20, 30, 40, 50]
-var view int s = nums.slice(1, 4)
+view s = nums.slice(1, 4)         // `view int`
 Console.write("\\{s.length}")          // 3
 Console.write("\\{s.at(0)}")           // 20
 Console.write("\\{s.at(2)}")           // 40
 
 var List<int> list = List<int>()
 list.push(1); list.push(2); list.push(3)
-var view int t = list.slice(0, 2)  // delegates to the backing Buffer's slice
+view t = list.slice(0, 2)         // delegates to the backing Buffer's slice
 Console.write("\\{t.at(1)}")           // 2
+```
+
+Binding a view without `view` is an error:
+
+```
+var v = str.slice(0, 5)   // Error: binding a view requires the 'view' keyword
+```
+
+The explicit type forms are equivalent to the inferred ones — `view string v`
+and `const view string v` are both const views, `var view string v` is a
+mutable view:
+
+```
+var view string greeting = "hello world"
+var view hi = greeting.slice(0, 5)   // mutable view, re-pointable
+hi = greeting.slice(6, 11)
 ```
 
 #### User-defined sliceable containers
@@ -1764,7 +1792,7 @@ pub struct UserList: Viewable {
         return self.items.slice(start, end)
     }
 }
-var view User sub = users.slice(10, 20)   // borrows from `users`
+view sub = users.slice(10, 20)   // borrows from `users`
 sub.at(3)        // a User
 sub.length       // 10
 ```
@@ -1786,7 +1814,7 @@ func bad = (int[] a: a.length >= 2, out view int) {
 }
 
 var int[] arr = [1, 2, 3]
-var view int v = arr.slice(0, 2)
+view v = arr.slice(0, 2)
 arr = [9, 9, 9]
 Console.write("\\{v.length}")  // Error: borrow invalidated by source reassignment
 ```

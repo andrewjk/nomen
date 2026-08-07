@@ -165,7 +165,7 @@
 				},
 				{
 					"name": "keyword.other.nm",
-					"match": "\\b(?:var|const|let|mov|cp|import|panic|todo)\\b"
+					"match": "\\b(?:var|const|let|mov|cp|view|import|panic|todo)\\b"
 				},
 				{
 					"name": "storage.modifier.nm",

@@ -22,7 +22,8 @@ export default function parse_visibility(visibility: "pub" | "private", status: 
 	switch (next) {
 		case "const":
 		case "var":
-		case "mov": {
+		case "mov":
+		case "view": {
 			if (visibility === "private" && status.stack.at(-1)?.node_type === "trait") {
 				add_error(status, `Trait fields cannot be private`, get_index(status));
 				consume(status);

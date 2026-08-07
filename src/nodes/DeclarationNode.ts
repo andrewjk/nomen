@@ -4,7 +4,7 @@ import Type from "./Type.ts";
 
 export default class DeclarationNode extends BaseNode {
 	visibility: "pub" | "private";
-	declaration: "const" | "var" | "mov";
+	declaration: "const" | "var" | "mov" | "view";
 	name: string;
 	type: Type;
 	value?: BaseNode;
@@ -25,7 +25,7 @@ export default class DeclarationNode extends BaseNode {
 	constructor(
 		start: number,
 		visibility: "pub" | "private",
-		declaration: "const" | "var" | "mov",
+		declaration: "const" | "var" | "mov" | "view",
 		name: string,
 		type?: Type,
 		value?: BaseNode,

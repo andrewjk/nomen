@@ -18,7 +18,7 @@ Console.write("You are \\{age} years old.")
 		const input = `
 const string greeting = "Hello, world"
 if greeting.length >= 5 {
-    var view string hi = greeting.slice(0, 5)
+    view hi = greeting.slice(0, 5)
     Console.write(hi.to_string())
 }
 `;

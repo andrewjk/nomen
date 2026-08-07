@@ -119,12 +119,15 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 		// A `ref`/`view` field would be a non-owning borrow stored in a struct,
 		// which could outlive its target (UAF). Reject it at the field level —
 		// this matches `MEMORY.md` and closes the gap where a `ref` field with a
-		// default value or custom `#init` was accepted (cve-rs probe).
-		if (decl.type.is_ref || decl.type.is_view) {
+		// default value or custom `#init` was accepted (cve-rs probe). The
+		// `view` keyword form (`view v = ...`) is rejected here too, since its
+		// type only becomes a view after inference (the type-level check below
+		// would miss it).
+		if (decl.type.is_ref || decl.type.is_view || decl.declaration === "view") {
 			add_error(
 				status,
 				`${struct.is_class ? "class" : "struct"} fields cannot be '${
-					decl.type.is_view ? "view" : "ref"
+					decl.type.is_view || decl.declaration === "view" ? "view" : "ref"
 				}'`,
 				decl.start,
 			);
