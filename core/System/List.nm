@@ -12,23 +12,23 @@ pub struct List<T>: Viewable {
 			if old_cap >= 4 {
 				new_cap = old_cap * 2
 			}
-			self.items.grow_int(new_cap)
+			self.items.grow_T(new_cap)
 		}
-		self.items.store_int(self.length, value)
+		self.items.store_T(self.length, value)
 		self.length += 1
 	}
 
 	pub func pop = (ref self, mov out T) {
 		if self.length <= 0 {
-			return 0
+			return self.items.move_T(0)
 		}
 		var int idx = self.length - 1
 		self.length = idx
-		return self.items.move_int(idx)
+		return self.items.move_T(idx)
 	}
 
 	pub func at = (self, int i: i >= 0 && i < self.length, out T) {
-		return self.items.load_int(i)
+		return self.items.load_T(i)
 	}
 
 	// A non-owning `view T` over [start, end). Delegates to the backing Buffer's
@@ -38,7 +38,6 @@ pub struct List<T>: Viewable {
 	}
 
 	pub func set = (ref self, int i: i >= 0 && i < self.length, mov T value) {
-		var int v = value
-		self.items.replace_int(i, v)
+		self.items.replace_T(i, value)
 	}
 }

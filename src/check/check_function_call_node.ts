@@ -315,6 +315,19 @@ export function monomorphize(
 		const cloned = clone_node(func) as FunctionNode;
 		substitute_raw_types(cloned, substitution, status.structs);
 		rename_local_labels(cloned, mono_name);
+		// Substitute type-param names on body node `.type` fields (T -> Pt), so
+		// the builder lowers struct-typed locals/args/fields correctly. self is
+		// handled separately below (its type is the struct name, not a type
+		// param). Mirrors the trait-default retype pattern.
+		for (const stmt of cloned.statements) substitute_node_types(stmt, substitution);
+		// Repoint every `self` reference at the monomorphised struct (e.g.
+		// Box -> Box_Pt). The cloned body's `self` ValueNodes keep the generic
+		// struct name, and the builder reads ValueNode.type directly to decide
+		// inline-struct-vs-pointer field access — without this, `self.item`
+		// (item: T) resolves through the generic struct and the stale type
+		// param, lowering a struct field as a pointer. Mirrors the trait-default
+		// retype at the trait-method clone site.
+		retype_self_references(cloned.statements, mono_name);
 		cloned.return_type = substitute_type(cloned.return_type, substitution);
 		for (const param of cloned.params) {
 			param.type = substitute_type(param.type, substitution);
@@ -322,6 +335,13 @@ export function monomorphize(
 				substitute_raw_in_node(param.constraint, substitution, status.structs);
 			}
 		}
+		// Retype body ValueNodes that reference a (non-self) param to that
+		// param's now-substituted type (e.g. `value: T` -> Pt). Must run AFTER
+		// the param-type substitution above. The mono body is not re-checked,
+		// so without this the builder sees an empty type on struct param uses
+		// and lowers them as scalars (wrong arg passing / storing). Sufficient
+		// for List<T>, whose only struct-typed value is the element param.
+		retype_param_references(cloned.statements, cloned.params);
 		cloned.checked = true;
 		mono_struct.functions.push(cloned);
 	}
@@ -517,52 +537,78 @@ export function synthesize_generic_trait_defaults(struct: StructNode, status: Ch
  * Recursively retype every `self` ValueNode in `nodes` to `struct_name`. The
  * trait default body was checked with `self` typed as the trait; the builder
  * reads ValueNode.type verbatim, so a stale trait type would send field access
- * through the vtable. Used only by synthesize_generic_trait_defaults.
+ * through the vtable. Used by synthesize_generic_trait_defaults and the
+ * generic-struct monomorphization loop.
  */
 function retype_self_references(nodes: BaseNode[], struct_name: string) {
-	for (const node of nodes) {
-		retype_self_in_node(node, struct_name);
-	}
+	retype_value_nodes(nodes, (name) => (name === "self" ? new Type(struct_name) : undefined));
 }
 
-function retype_self_in_node(node: BaseNode | undefined | null, struct_name: string) {
+/**
+ * Retype ValueNodes that reference a (non-self) parameter to that param's
+ * type. A monomorphised method body is not re-checked, so its ValueNodes
+ * carry no type for param uses; the builder reads ValueNode.type directly to
+ * decide scalar-vs-struct arg passing, so without this a struct param (e.g.
+ * `value: T` in List.push) is treated as a scalar and passed/stored wrong.
+ */
+function retype_param_references(nodes: BaseNode[], params: ParameterNode[]) {
+	const map = new Map<string, Type>();
+	for (const p of params) {
+		if (p.name && !p.is_self_param && p.type?.name) map.set(p.name, p.type);
+	}
+	if (!map.size) return;
+	retype_value_nodes(nodes, (name) => {
+		const t = map.get(name);
+		return t ? new Type(t.name, t.is_static, t.is_array, t.length) : undefined;
+	});
+}
+
+function retype_value_nodes(nodes: BaseNode[], resolver: (name: string) => Type | undefined) {
+	for (const node of nodes) retype_value_in_node(node, resolver);
+}
+
+function retype_value_in_node(
+	node: BaseNode | undefined | null,
+	resolver: (name: string) => Type | undefined,
+) {
 	if (!node) return;
 	const any_node = node as any;
-	if (node.node_type === "value" && any_node.value === "self") {
-		any_node.type = new Type(struct_name);
+	if (node.node_type === "value") {
+		const t = resolver(any_node.value);
+		if (t) any_node.type = t;
 	}
 	if (any_node.statements && Array.isArray(any_node.statements)) {
 		for (const child of any_node.statements) {
 			if (child && typeof child === "object" && "node_type" in child) {
-				retype_self_in_node(child, struct_name);
+				retype_value_in_node(child, resolver);
 			}
 		}
 	}
 	if (any_node.params && Array.isArray(any_node.params)) {
 		for (const child of any_node.params) {
 			if (child && typeof child === "object" && "node_type" in child) {
-				retype_self_in_node(child, struct_name);
+				retype_value_in_node(child, resolver);
 			}
 		}
 	}
 	if (any_node.cases && Array.isArray(any_node.cases)) {
 		for (const c of any_node.cases) {
-			if (c.branch?.statements) retype_self_in_node(c.branch, struct_name);
-			if (c.match_value) retype_self_in_node(c.match_value, struct_name);
-			if (c.condition) retype_self_in_node(c.condition, struct_name);
+			if (c.branch?.statements) retype_value_in_node(c.branch, resolver);
+			if (c.match_value) retype_value_in_node(c.match_value, resolver);
+			if (c.condition) retype_value_in_node(c.condition, resolver);
 		}
 	}
-	if (any_node.value?.node_type) retype_self_in_node(any_node.value, struct_name);
-	if (any_node.left_value?.node_type) retype_self_in_node(any_node.left_value, struct_name);
-	if (any_node.right_value?.node_type) retype_self_in_node(any_node.right_value, struct_name);
-	if (any_node.target?.node_type) retype_self_in_node(any_node.target, struct_name);
-	if (any_node.access?.node_type) retype_self_in_node(any_node.access, struct_name);
-	if (any_node.condition?.node_type) retype_self_in_node(any_node.condition, struct_name);
-	if (any_node.if_branch?.node_type) retype_self_in_node(any_node.if_branch, struct_name);
-	if (any_node.else_branch?.node_type) retype_self_in_node(any_node.else_branch, struct_name);
-	if (any_node.item?.node_type) retype_self_in_node(any_node.item, struct_name);
-	if (any_node.list?.node_type) retype_self_in_node(any_node.list, struct_name);
-	if (any_node.constraint?.node_type) retype_self_in_node(any_node.constraint, struct_name);
+	if (any_node.value?.node_type) retype_value_in_node(any_node.value, resolver);
+	if (any_node.left_value?.node_type) retype_value_in_node(any_node.left_value, resolver);
+	if (any_node.right_value?.node_type) retype_value_in_node(any_node.right_value, resolver);
+	if (any_node.target?.node_type) retype_value_in_node(any_node.target, resolver);
+	if (any_node.access?.node_type) retype_value_in_node(any_node.access, resolver);
+	if (any_node.condition?.node_type) retype_value_in_node(any_node.condition, resolver);
+	if (any_node.if_branch?.node_type) retype_value_in_node(any_node.if_branch, resolver);
+	if (any_node.else_branch?.node_type) retype_value_in_node(any_node.else_branch, resolver);
+	if (any_node.item?.node_type) retype_value_in_node(any_node.item, resolver);
+	if (any_node.list?.node_type) retype_value_in_node(any_node.list, resolver);
+	if (any_node.constraint?.node_type) retype_value_in_node(any_node.constraint, resolver);
 }
 
 export function substitute_type(type: Type, substitution: Map<string, string>): Type {
@@ -1272,7 +1318,15 @@ function substitute_node_types(
 			if (n.type) n.type = substitute_type(n.type, substitution);
 			break;
 		}
-		case "value":
+		case "value": {
+			// ValueNode.type carries the resolved type from checking (e.g. `T`
+			// for a generic param use). The builder reads it directly to decide
+			// scalar-vs-struct arg passing / field access, so it must be
+			// substituted alongside the rest of the body.
+			const n = node as import("../nodes/ValueNode.ts").default;
+			if (n.type) n.type = substitute_type(n.type, substitution);
+			break;
+		}
 		case "break":
 		case "continue":
 		case "panic":

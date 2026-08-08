@@ -79,3 +79,68 @@ Console.write("\\{list.length}")
 		await build_and_check_output(input, "list_length", "32");
 	});
 });
+
+describe("List of value structs", () => {
+	// Regression: List<T> used the 8-byte Buffer `_int` primitives, so a
+	// multi-field value struct read back as garbage / crashed. It now uses the
+	// size-aware `_T` primitives (memcpy-based), backed by the monomorphizer
+	// retyping `self`/param/body value nodes and the C backend emitting the
+	// element struct's typedef to the header for by-value returns.
+	const PT = `struct Pt {
+  var int x
+  var int y
+}`;
+
+	test("push and read back via at", async () => {
+		const input = `
+${PT}
+var List<Pt> pts = List<Pt>()
+var Pt a = Pt(1, 2)
+pts.push(a)
+var Pt b = Pt(3, 4)
+pts.push(b)
+for i of 0 .. pts.length {
+  var Pt p = pts.at(i)
+  Console.write("\\{p.x},\\{p.y} ")
+}
+`;
+		await build_and_check_output(input, "list_struct_push_at", "1,2 3,4 ");
+	});
+
+	test("set replaces an element", async () => {
+		const input = `
+${PT}
+var List<Pt> pts = List<Pt>()
+var Pt a = Pt(1, 1)
+pts.push(a)
+var Pt b = Pt(2, 2)
+pts.push(b)
+var Pt c = Pt(3, 3)
+pts.push(c)
+var Pt d = Pt(9, 9)
+var int i = 1
+if i >= 0 && i < pts.length {
+  pts.set(i, d)
+}
+for i of 0 .. pts.length {
+  var Pt p = pts.at(i)
+  Console.write("\\{p.x},\\{p.y} ")
+}
+`;
+		await build_and_check_output(input, "list_struct_set", "1,1 9,9 3,3 ");
+	});
+
+	test("pop returns and removes the last element", async () => {
+		const input = `
+${PT}
+var List<Pt> pts = List<Pt>()
+var Pt a = Pt(1, 1)
+pts.push(a)
+var Pt b = Pt(2, 2)
+pts.push(b)
+var Pt p = pts.pop()
+Console.write("\\{p.x},\\{p.y} \\{pts.length}")
+`;
+		await build_and_check_output(input, "list_struct_pop", "2,2 1");
+	});
+});

@@ -1,5 +1,6 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
+import built_in_types from "../built_in_types.ts";
 import { mangled_label } from "../check/utils/function_overload.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
@@ -199,13 +200,29 @@ function resolve_field_type(
 	target_type_name: string | undefined,
 	status: BuildStatus,
 ): Type | undefined {
-	if (access_field.type?.name) return access_field.type;
-	if (!target_type_name) return undefined;
+	// The cached type on the access node can be a stale generic type-parameter
+	// name (e.g. "T") on a monomorphised method body: node types inside the
+	// body are NOT substituted during monomorphization (only param / return /
+	// field-declaration types and raw #arch blocks are). Trust the cached type
+	// only when it names a concrete type; otherwise consult the struct's field
+	// declaration, which carries the substituted concrete type (e.g. Pt).
+	const cached = access_field.type?.name;
+	if (cached && is_concrete_type_name(cached, status)) return access_field.type;
+	if (!target_type_name) return access_field.type;
 	const target_struct = status.structs.find(
 		(s) => s.name === target_type_name && !s.is_simple_type,
 	);
 	const field = target_struct?.fields.find((f) => f.name === access_field.name);
-	return field?.type;
+	return field?.type ?? access_field.type;
+}
+
+function is_concrete_type_name(name: string, status: BuildStatus): boolean {
+	return (
+		built_in_types.includes(name) ||
+		!!status.structs.find((s) => s.name === name) ||
+		!!status.enums.find((e) => e.name === name) ||
+		!!status.traits.find((t) => t.name === name)
+	);
 }
 
 export function reset_access_temp_counter() {

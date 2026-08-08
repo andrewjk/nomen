@@ -190,6 +190,41 @@ Console.write("\\{result.at(0)} \\{result.at(1)} \\{result.at(2)} \\{result.at(3
 		await build_and_check_output(input, "array_with_literal_count_ints", "10 20 30 40");
 	});
 
+	test("Array.set on a local persists across a re-read", async () => {
+		const input = `
+var Array<int> v = Array<int>.with(0, 5)
+v.set(2, 11)
+v.set(2, 42)
+Console.write("\\{v.at(2)}")
+`;
+		await build_and_check_output(input, "array_set_local_persists", "42");
+	});
+
+	// A `ref Array<T>` parameter currently loses writes (the parse-time
+	// `Array<T>` → `T[]` rewrite lowers params to an element pointer while locals
+	// use the struct pointer — see ROADBLOCKS / FOLLOWUP). `List<T>` is the
+	// supported way to mutate a collection across a function boundary.
+	test("List<int> ref param persists set (Array<T> ref workaround)", async () => {
+		const input = `
+func fill = (ref List<int> arr, int idx, int val) {
+    if idx >= 0 && idx < arr.length {
+        arr.set(idx, val)
+    }
+}
+var List<int> v = List<int>()
+v.push(0)
+v.push(0)
+v.push(0)
+v.push(0)
+v.push(0)
+fill(ref v, 2, 42)
+for i of 0 .. v.length {
+    Console.write("\\{v.at(i)} ")
+}
+`;
+		await build_and_check_output(input, "list_ref_set_persists", "0 0 42 0 0 ");
+	});
+
 	test("array in function param", async () => {
 		const input = `
 func sum = (Array<int> nums, out int) {

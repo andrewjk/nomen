@@ -6,6 +6,7 @@ import Type from "../nodes/Type.ts";
 import build_auto_free, { struct_needs_destroy } from "./build_auto_free.ts";
 import build_node from "./build_node.ts";
 import build_parameter_node from "./build_parameter_node.ts";
+import build_struct_body from "./build_struct_body.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import c_function_name from "./utils/c_function_name.ts";
 import { enter_c_scope, leave_c_scope } from "./utils/c_scope.ts";
@@ -447,6 +448,20 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 		} else {
 			const return_struct = status.structs.find((s) => s.name === return_type && !s.is_simple_type);
 			const return_trait = status.traits.find((t) => t.name === return_type);
+			// A method that RETURNS a value struct by value needs that struct's
+			// full typedef at its signature. The signature is forward-declared
+			// in the HEADER, but only `struct T;` lives there — so emit the
+			// full typedef to the header on demand. The `emitted_struct_bodies`
+			// guard makes this a one-time emission (the late code-body pass then
+			// no-ops), avoiding a redefinition. Buffer-swap so build_struct_body
+			// (which writes status.code) appends to the header instead.
+			if (return_struct && !return_struct.is_class) {
+				const swap = status.code;
+				status.code = status.headers;
+				build_struct_body(return_struct, status);
+				status.headers = status.code;
+				status.code = swap;
+			}
 			// A struct/trait return uses the `struct Tag` form (tag never
 			// mangled); otherwise emit the typedef/primitive via c_type.
 			if (return_struct || return_trait) {

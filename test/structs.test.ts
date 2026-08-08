@@ -284,6 +284,31 @@ Console.write("\\{age}")
 		await build_and_check_output(input, "struct_method_return", "42");
 	});
 
+	test("generic struct method returns a struct field by value", async () => {
+		// Regression: a monomorphised generic method returning `T` (a value
+		// struct) lowered the field as a pointer on aarch64 because the cloned
+		// body kept the generic `self`/`T` types. retype_self_references +
+		// substitute_node_types + the resolve_field_type struct-def fallback
+		// fix it.
+		const input = `
+struct Pt {
+  var int x
+  var int y
+}
+struct Box<T> {
+  var T item
+  func get = (self, out T) {
+    return self.item
+  }
+}
+var Pt seed = Pt(3, 4)
+var Box<Pt> b = Box<Pt>(seed)
+var Pt p = b.get()
+Console.write("\\{p.x}\\{p.y}")
+`;
+		await build_and_check_output(input, "generic_struct_field_return", "34");
+	});
+
 	test("nested struct field defaults propagate", async () => {
 		// `var Inner child = Inner()` must run the inner's constructor and
 		// copy the result into the field, so the inner's declared defaults
