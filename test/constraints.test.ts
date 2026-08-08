@@ -585,4 +585,173 @@ func test = () {
 			expect(parsed.errors.some((e) => e.message.includes("not satisfied"))).toBe(true);
 		});
 	});
+
+	describe("guard-clause bounds", () => {
+		// A guard clause `if cond { return }` (or `{ break }`) whose body always
+		// exits establishes the NEGATION of cond for the fall-through, so a
+		// following indexed access verifies without an extra `&&` guard.
+		test("disjunction return-guard verifies .at", () => {
+			const input = `
+import System
+func probe = (List<int> list, int i, out int) {
+    if i < 0 || i >= list.length { return 0 }
+    return list.at(i)
+}
+`;
+			const parsed = parse(input, get_library(core));
+			expect(parsed.errors).toEqual([]);
+		});
+
+		test("break-guard inside a loop verifies .at", () => {
+			const input = `
+import System
+func probe = (List<int> list, out int) {
+    var int p = 0
+    while p < list.length {
+        if p >= list.length { break }
+        return list.at(p)
+    }
+    return 0
+}
+`;
+			const parsed = parse(input, get_library(core));
+			expect(parsed.errors).toEqual([]);
+		});
+
+		test("single lower-bound return-guard carries into a later upper-bound if", () => {
+			const input = `
+import System
+func probe = (List<int> list, int i, out int) {
+    if i < 0 { return 0 }
+    if i < list.length { return list.at(i) }
+    return 0
+}
+`;
+			const parsed = parse(input, get_library(core));
+			expect(parsed.errors).toEqual([]);
+		});
+
+		// Two SEQUENTIAL single-return guards each establish their own
+		// negated bound for the fall-through. Previously the second guard's
+		// negation was suppressed because clone_status shallow-copied the
+		// flow-bound arrays, leaking the applied bound back into the parent
+		// and making the checker think the condition was provably true. The
+		// deep-copy in clone_status fixes this.
+		test("two sequential return-guards verify .at", () => {
+			const input = `
+import System
+func probe = (List<int> list, int i, out int) {
+    if i < 0 { return 0 }
+    if i >= list.length { return 0 }
+    return list.at(i)
+}
+`;
+			const parsed = parse(input, get_library(core));
+			expect(parsed.errors).toEqual([]);
+		});
+	});
+
+	describe("alias-through-arithmetic", () => {
+		// `var int n = list.length` makes `n` an alias of `list.length`. An
+		// access `list.at(n - 1)` (guarded by `n > 0`) should verify because
+		// `n - 1 < list.length` reduces (via the alias) to
+		// `list.length - 1 < list.length`, which always holds. The lower half
+		// `n - 1 >= 0` is discharged by the `n > 0` guard through a partial
+		// numeric interval (range_lower only).
+		test("at(n - 1) where n aliases list.length, guarded n > 0", () => {
+			const input = `
+import System
+func last = (List<int> list, out int) {
+    var int n = list.length
+    if n > 0 {
+        return list.at(n - 1)
+    }
+    return 0
+}
+`;
+			const parsed = parse(input, get_library(core));
+			expect(parsed.errors).toEqual([]);
+		});
+
+		test("at(n - 1) on a fixed-size Array where n aliases arr.length", () => {
+			const input = `
+import System
+func last = (Array<int> arr, out int) {
+    var int n = arr.length
+    if n > 0 {
+        return arr.at(n - 1)
+    }
+    return 0
+}
+`;
+			const parsed = parse(input, get_library(core));
+			expect(parsed.errors).toEqual([]);
+		});
+
+		test("at(n - 1) on a string where n aliases s.length", () => {
+			const input = `
+import System
+func last = (string s, out char) {
+    var int n = s.length
+    if n > 0 {
+        return s.at(n - 1)
+    }
+    return 65 as char
+}
+`;
+			const parsed = parse(input, get_library(core));
+			expect(parsed.errors).toEqual([]);
+		});
+
+		// Without the `n > 0` guard, `n - 1` can be -1 on an empty collection,
+		// so the lower-half constraint cannot be verified — a genuine OOB risk.
+		test("at(n - 1) with no non-empty guard is rejected", () => {
+			const input = `
+import System
+func last = (List<int> list, out int) {
+    var int n = list.length
+    return list.at(n - 1)
+}
+`;
+			const parsed = parse(input, get_library(core));
+			expect(parsed.errors.length).toBeGreaterThanOrEqual(1);
+			expect(parsed.errors.some((e) => e.message.includes("cannot be verified"))).toBe(true);
+		});
+	});
+
+	describe("return-contract bounds", () => {
+		// A function with a return contract `out <= in_len` propagates an
+		// inclusive upper bound onto its result at the call site. Combined
+		// with a strict loop bound (`while j < end`), the existing transitive
+		// logic proves `j < input.length` BEFORE the conservative off-by-one
+		// "unsafe" check fires on the inherited inclusive bound. This is the
+		// shape of `Regex.match`'s inner loop over `match_here`'s result.
+		test("call-result bound + strict loop bound verifies .at", () => {
+			const input = `
+import System
+func bounded = (string input, int i, int len, out int: out <= len) {
+    return i
+}
+func collect = (string input, out string) {
+    var int len = input.length
+    var i = 0
+    var result = ""
+    while i <= len; i += 1 {
+        if i > len { break }
+        var int end = bounded(input, i, len)
+        if end >= 0 {
+            var int j = i
+            while j < end; j += 1 {
+                result = result + "\\{input.at(j)}"
+            }
+            break
+        }
+    }
+    return result
+}
+`;
+			const parsed = parse(input, get_library(core));
+			expect(parsed.errors).toEqual([]);
+		});
+	});
 });

@@ -896,13 +896,29 @@ export function numeric_interval(
 }
 
 /**
- * Apply the NEGATION of a comparison condition as bounds (post-loop).
- * E.g. after `while idx >= cap`, we know `idx < cap` in the parent scope.
- * Only handles single comparisons (not && / ||).
+ * Apply the NEGATION of a comparison condition as bounds.
+ *
+ * Used in two places:
+ *   - after a `while` loop (e.g. `while idx >= cap` ⇒ afterwards `idx < cap`);
+ *   - after a guard-clause `if` whose body always exits (e.g.
+ *     `if i < 0 || i >= list.length { return }` ⇒ the fall-through establishes
+ *     `i >= 0 && i < list.length`).
+ *
+ * Single comparisons set a bound on the bare variable (negating the operator).
+ * A disjunction `A || B` negates to `!A && !B`, so both negated facts hold and
+ * each is applied (De Morgan). A conjunction `A && B` negates to `!A || !B` — a
+ * disjunction where neither fact is individually guaranteed — so nothing sound
+ * can be applied and it is skipped.
  */
 export function apply_negated_bounds(condition: BaseNode, status: CheckStatus) {
 	if (condition.node_type !== "op") return;
 	const op = condition as OperationNode;
+	if (op.op === "||") {
+		apply_negated_bounds(op.left_value, status);
+		apply_negated_bounds(op.right_value, status);
+		return;
+	}
+	if (op.op === "&&") return;
 	if (op.op !== "<" && op.op !== "<=" && op.op !== ">" && op.op !== ">=") return;
 
 	// Determine the variable and the expression it's compared against
@@ -927,8 +943,8 @@ export function apply_negated_bounds(condition: BaseNode, status: CheckStatus) {
 	// Compute the negated relation from the variable's perspective
 	let rel: "<" | "<=" | ">" | ">=";
 	if (left_is_var) {
-		// var OP expr  →  negate(OP)
-		rel = op.op === "<" ? ">=" : op.op === "<=" ? ">" : op.op === ">" ? "<=" : ">=";
+		// var OP expr  →  negate(OP): < → >=, <= → >, > → <=, >= → <
+		rel = op.op === "<" ? ">=" : op.op === "<=" ? ">" : op.op === ">" ? "<=" : "<";
 	} else {
 		// expr OP var  →  flip then negate
 		// var originally was on the right; from var's perspective op is flipped
@@ -937,16 +953,18 @@ export function apply_negated_bounds(condition: BaseNode, status: CheckStatus) {
 	}
 
 	if (rel === "<" || rel === "<=") {
-		if (!var_decl.upper_bound_exprs) var_decl.upper_bound_exprs = [];
-		if (!var_decl.upper_bound_inclusive_exprs) var_decl.upper_bound_inclusive_exprs = [];
 		if (rel === "<=") {
+			if (!var_decl.upper_bound_inclusive_exprs) var_decl.upper_bound_inclusive_exprs = [];
 			if (!var_decl.upper_bound_inclusive_exprs.includes(expr)) {
 				var_decl.upper_bound_inclusive_exprs.push(expr);
 			}
-		} else {
-			if (!var_decl.upper_bound_exprs.includes(expr)) {
-				var_decl.upper_bound_exprs.push(expr);
-			}
+			var_decl.upper_bound_expr = expr;
+			return;
+		}
+		if (!var_decl.upper_bound_exprs) var_decl.upper_bound_exprs = [];
+		if (!var_decl.upper_bound_inclusive_exprs) var_decl.upper_bound_inclusive_exprs = [];
+		if (!var_decl.upper_bound_exprs.includes(expr)) {
+			var_decl.upper_bound_exprs.push(expr);
 		}
 		var_decl.upper_bound_expr = expr;
 	} else {

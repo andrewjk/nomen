@@ -435,24 +435,76 @@ function evaluate_operation(
 		if (!var_name) return undefined;
 		const vdecl = status.values.findLast((v) => v.name === var_name);
 		if (!vdecl) return undefined;
-		// variable may itself be an alias of `arr.length` etc.; resolve its
-		// interval directly when it has a numeric range.
-		const vint =
-			vdecl.range_lower !== undefined && vdecl.range_upper !== undefined
-				? { lower: vdecl.range_lower, upper: vdecl.range_upper }
-				: numeric_interval(left, status);
-		if (!vint) return undefined;
+
+		// Resolve the variable's interval, allowing PARTIAL (half-open) ranges:
+		// a `>`/`>=` comparison only needs range_lower, a `<`/`<=` comparison
+		// only needs range_upper. Fill whichever half is missing from
+		// numeric_interval (which itself requires a complete interval).
+		let vlo: number | undefined = vdecl.range_lower;
+		let vhi: number | undefined = vdecl.range_upper;
+		if (vlo === undefined || vhi === undefined) {
+			const ni =
+				vdecl.range_lower !== undefined && vdecl.range_upper !== undefined
+					? { lower: vdecl.range_lower, upper: vdecl.range_upper }
+					: numeric_interval(left, status);
+			if (ni) {
+				if (vlo === undefined) vlo = ni.lower;
+				if (vhi === undefined) vhi = ni.upper;
+			}
+		}
 
 		// Resolve the right side to a number.
 		const rint = numeric_interval(op.right_value, status);
-		if (!rint) return undefined;
+
+		const need_upper = op.op === "<" || op.op === "<=";
+		const have_left = need_upper ? vhi !== undefined : vlo !== undefined;
+
+		if (!have_left || !rint) {
+			// Alias-through-arithmetic: when the left variable and the right
+			// expression refer to the same runtime value (one aliases the
+			// other, possibly through a ±c offset), the comparison reduces to
+			// `E + left_off OP E + right_off`, determined entirely by the
+			// offset difference. This proves e.g.
+			//   n - 1 < list.length   (n aliases list.length)
+			//   i < self.length       (i is a param bound to n-1, alias_of carries the shift)
+			const right_str = expr_to_string(op.right_value, status);
+			if (right_str) {
+				// Left identity: the variable's alias_of (e.g. "list.length"
+				// or "list.length - 1" for a shifted argument) plus the
+				// decomposed arithmetic offset from the comparison's left side.
+				const la = vdecl.alias_of ? parse_offset_expr(vdecl.alias_of) : undefined;
+				const left_base = la ? la.base : var_name;
+				const left_off = (la ? la.offset : 0) + offset;
+				// Right identity: follow its variable's alias too.
+				const right_base_name = right_str.split(".")[0];
+				const rdecl = status.values.findLast((v) => v.name === right_base_name);
+				const ra = rdecl?.alias_of ? parse_offset_expr(rdecl.alias_of) : undefined;
+				const right_base = ra ? ra.base : right_str;
+				const right_off = ra ? ra.offset : 0;
+				if (left_base === right_base) {
+					const d = left_off - right_off;
+					switch (op.op) {
+						case "<":
+							return d < 0;
+						case "<=":
+							return d <= 0;
+						case ">":
+							return d > 0;
+						case ">=":
+							return d >= 0;
+					}
+				}
+			}
+			return undefined;
+		}
+
 		// When the right side is itself an interval (e.g. `arr.length` on a
 		// fixed array → [len, len+1)), use its lower bound as the concrete value.
-		const r = op.op === "<" || op.op === "<=" ? rint.lower : rint.lower;
+		const r = rint.lower;
 
 		// max/min of (v + offset)
-		const max_v = vint.upper - 1 + offset;
-		const min_v = vint.lower + offset;
+		const max_v = vhi! - 1 + offset;
+		const min_v = vlo! + offset;
 
 		switch (op.op) {
 			case "<":

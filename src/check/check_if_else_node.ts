@@ -7,7 +7,13 @@ import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import clone_status from "./utils/clone_status.ts";
 import evaluate_const_condition from "./utils/evaluate_const_condition.ts";
-import { apply_bounds, intersect_strs, union_max, union_min } from "./utils/flow_bounds.ts";
+import {
+	apply_bounds,
+	apply_negated_bounds,
+	intersect_strs,
+	union_max,
+	union_min,
+} from "./utils/flow_bounds.ts";
 import get_null_check_var from "./utils/get_null_check_var.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import type_name from "./utils/type_name.ts";
@@ -182,6 +188,18 @@ export default function check_if_else_node(if_else: IfElseNode, status: CheckSta
 				value.known_length = else_v?.known_length;
 			}
 		}
+	}
+
+	// Guard clause: an `if cond { ...always exits... }` with no else means the
+	// taken branch never falls through, so code after the if is only reached
+	// when the condition was FALSE. Establish the negated bounds on the parent
+	// so a following access verifies, e.g.
+	//   if i < 0 || i >= list.length { return }
+	//   return list.at(i)        // now provably i >= 0 && i < list.length
+	// The negation is sound only when the else path is reachable (condition not
+	// provably true); apply_negated_bounds itself skips `&&` and unknown shapes.
+	if (!has_else && if_returns && else_reachable) {
+		apply_negated_bounds(if_else.condition, status);
 	}
 
 	if (if_else.if_branch && !if_else.else_branch) {

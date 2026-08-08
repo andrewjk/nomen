@@ -254,6 +254,9 @@ func add_class_chars = (string pattern, int start, int end, ref StringBuilder sb
 
 // Match pattern[pat_pos..pat_end) against input starting at in_pos.
 // Returns the end position in input after a successful match, or -1.
+// Return contract: a successful match never reads past in_len, so the result
+// is always <= in_len (and -1 on failure). This lets callers prove an index
+// bounded by the result is also bounded by the input length.
 func match_here = (
 	string pattern,
 	int pat_pos,
@@ -261,7 +264,7 @@ func match_here = (
 	string input,
 	int in_pos,
 	int in_len,
-	out int
+	out int: out <= in_len
 ) {
 	// Handle top-level alternation: a '|' at bracket/paren depth 0 splits the
 	// range into alternatives. Char classes and escapes are skipped so a '|' or

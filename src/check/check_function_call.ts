@@ -208,6 +208,7 @@ export default function check_function_call(
 		lower_bound_inclusive_exprs?: string[];
 		upper_bound_expr?: string;
 		lower_bound_expr?: string;
+		alias_of?: string;
 	}[] = [];
 
 	for (let [i, param] of node.params.entries()) {
@@ -384,6 +385,10 @@ export default function check_function_call(
 		let lower_bound_inclusive_exprs: string[] | undefined;
 		let upper_bound_expr: string | undefined;
 		let lower_bound_expr: string | undefined;
+		// Carry the argument's alias identity (e.g. `n` aliasing `list.length`),
+		// so the constraint evaluator can prove `n - 1 < self.length` via the
+		// alias-through-arithmetic path. Shifted by the constant for offset args.
+		let alias_of: string | undefined;
 		if (param.node_type === "value") {
 			const decl = status.values.findLast((v) => v.name === (param as ValueNode).value);
 			if (decl) {
@@ -395,6 +400,7 @@ export default function check_function_call(
 				lower_bound_inclusive_exprs = decl.lower_bound_inclusive_exprs;
 				upper_bound_expr = decl.upper_bound_expr;
 				lower_bound_expr = decl.lower_bound_expr;
+				alias_of = decl.alias_of;
 			}
 		} else if (param.node_type === "op") {
 			// Offset access like `arr.at(i - 1)` / `arr.at(i + 1)`: take the
@@ -435,6 +441,7 @@ export default function check_function_call(
 						lower_bound_expr = decl.lower_bound_expr
 							? shift_offset_expr(decl.lower_bound_expr, c)
 							: undefined;
+						alias_of = decl.alias_of ? shift_offset_expr(decl.alias_of, c) : undefined;
 					}
 				}
 			}
@@ -483,6 +490,7 @@ export default function check_function_call(
 			lower_bound_inclusive_exprs,
 			upper_bound_expr,
 			lower_bound_expr,
+			alias_of,
 		});
 
 		// Evaluate constraints that reference this or earlier parameters
@@ -505,6 +513,7 @@ export default function check_function_call(
 					lower_bound_inclusive_exprs: ca.lower_bound_inclusive_exprs,
 					upper_bound_expr: ca.upper_bound_expr,
 					lower_bound_expr: ca.lower_bound_expr,
+					alias_of: ca.alias_of,
 				});
 			}
 			// Push self so constraints can reference self.length

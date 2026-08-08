@@ -9,8 +9,21 @@ export default function clone_status(status: CheckStatus): CheckStatus {
 		scope_depth: status.scope_depth,
 		types: status.types,
 		expected_type: status.expected_type,
-		// Clone values, so that we can check whether is_set is set in all branches
-		values: status.values.map((v) => ({ ...v })),
+		// Clone values, so that we can check whether is_set is set in all branches.
+		// Deep-copy the flow-sensitive bound arrays too — otherwise an
+		// `apply_bounds`/`apply_negated_bounds` call on a cloned branch (an if
+		// body, a while body) mutates the arrays the parent still holds, leaking
+		// branch-local facts outwards (e.g. a guard-clause's negation pollutes the
+		// parent and suppresses a later guard). The reconciliation in
+		// check_if_else_node/check_while_loop_node is responsible for propagating
+		// the surviving bounds back to the parent explicitly.
+		values: status.values.map((v) => ({
+			...v,
+			upper_bound_exprs: v.upper_bound_exprs?.slice(),
+			lower_bound_exprs: v.lower_bound_exprs?.slice(),
+			upper_bound_inclusive_exprs: v.upper_bound_inclusive_exprs?.slice(),
+			lower_bound_inclusive_exprs: v.lower_bound_inclusive_exprs?.slice(),
+		})),
 		// Inherited from the current function: block clones (if/else/while)
 		// stay in the same function, so they keep the enclosing base. Only
 		// `check_function_node` resets it for a freshly-entered function.
