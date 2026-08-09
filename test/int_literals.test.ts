@@ -151,4 +151,46 @@ Console.write("\\{codes.at(0)}\\{codes.at(1)}\\{codes.at(2)}")
 `;
 		await build_and_check_output(input, "int_lit_array", "25525510");
 	});
+
+	// Large literals (>16 bits) cannot be encoded as a aarch64 `mov` (movz)
+	// immediate and must lower to a `ldr =imm` literal-pool load. They must also
+	// be emitted in decimal — the assembler rejects `#0x..`/`#0o..`/`#0b..`.
+	// Regression for the FNV-1a prime `0x01000193` failing to assemble on the
+	// aarch64 backend (`mov x2, #0x01000193` → "expected compatible register or
+	// logical immediate").
+
+	test("large hex as arithmetic operand", async () => {
+		const input = `
+const int h = 0x01000193 * 65536
+Console.write("\\{h}")
+`;
+		await build_and_check_output(input, "int_lit_large_hex_operand", "1099538038784");
+	});
+
+	test("large hex operand against a variable (FNV-1a shape)", async () => {
+		const input = `
+func hash_step = (int h, out int) {
+	return (h * 0x01000193) & 0xFFFFFFFF
+}
+Console.write("\\{hash_step(1)}")
+`;
+		await build_and_check_output(input, "int_lit_large_hex_var_operand", "16777619");
+	});
+
+	test("large hex as array literal element", async () => {
+		const input = `
+const int[] v = [0x01000193, 42]
+Console.write("\\{v.at(0)}\\{v.at(1)}")
+`;
+		await build_and_check_output(input, "int_lit_large_hex_array", "1677761942");
+	});
+
+	test("large binary and octal operands", async () => {
+		const input = `
+const int b = 0b10000000000000000
+const int o = 0o10
+Console.write("\\{b * o}")
+`;
+		await build_and_check_output(input, "int_lit_large_bin_oct_operand", "524288");
+	});
 });

@@ -1,7 +1,7 @@
 import emit_field_overrides from "../build/emit_field_overrides.ts";
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
-import { is_int_literal, to_decimal_string } from "../int_literal.ts";
+import { is_int_literal, parse_int_literal_bigint, to_decimal_string } from "../int_literal.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
@@ -54,15 +54,17 @@ import {
  */
 // Load an integer literal into x0. aarch64 `mov` (movz) only encodes unsigned
 // 16-bit immediates (and movn for small negatives), so larger magnitudes must
-// use a `ldr =imm` literal pool load.
+// use a `ldr =imm` literal pool load. Accepts any base (hex/oct/bin/decimal)
+// via `to_decimal_string`, since the assembler rejects `#0x..`/`#0o..`/`#0b..`.
 function emit_int_immediate(status: BuildStatus, raw: string) {
-	const num = parseInt(raw, 10);
-	if (!isNaN(num) && num >= 0 && num <= 65535) {
-		status.code += `mov x0, #${raw}\n`;
-	} else if (!isNaN(num) && num < 0 && num >= -65536) {
-		status.code += `movn x0, #${-num - 1}\n`;
+	const dec = to_decimal_string(raw);
+	const n = parse_int_literal_bigint(raw);
+	if (n !== null && n >= 0n && n <= 65535n) {
+		status.code += `mov x0, #${dec}\n`;
+	} else if (n !== null && n < 0n && n >= -65536n) {
+		status.code += `movn x0, #${(-n - 1n).toString()}\n`;
 	} else {
-		status.code += `ldr x0, =${raw}\n`;
+		status.code += `ldr x0, =${dec}\n`;
 	}
 }
 
@@ -880,7 +882,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 						} else {
 							const raw = resolve_static_value(value, status);
 							if (raw !== null) {
-								status.code += `mov x0, #${raw}\n`;
+								emit_int_immediate(status, raw);
 								if (element_size === 1) {
 									status.code += `strb w0, [x29, #${slot_offset}]\n`;
 								} else if (element_size === 4) {
@@ -944,7 +946,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 				array_values.values.forEach((value, i) => {
 					const raw = resolve_static_value(value, status);
 					if (raw !== null) {
-						status.code += `mov x0, #${raw}\n`;
+						emit_int_immediate(status, raw);
 						if (element_size === 1) {
 							status.code += `strb w0, [x29, #${offset + i * element_size}]\n`;
 						} else if (element_size === 4) {
@@ -1436,7 +1438,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 						} else {
 							const raw = resolve_static_value(value, status);
 							if (raw !== null) {
-								status.code += `mov x0, #${raw}\n`;
+								emit_int_immediate(status, raw);
 								status.code += `str x0, [x29, #${slot_offset}]\n`;
 							}
 						}

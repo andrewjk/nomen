@@ -1,6 +1,6 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
-import { to_decimal_string } from "../int_literal.ts";
+import { is_int_literal, parse_int_literal_bigint, to_decimal_string } from "../int_literal.ts";
 import BaseNode from "../nodes/BaseNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
@@ -90,11 +90,17 @@ function map_op(op: string, unsigned: boolean = false): string {
 }
 
 function emit_immediate(target_reg: string, value: string, status: BuildStatus) {
-	const num = parseInt(value, 10);
-	if (!isNaN(num) && num >= 0 && num <= 65535) {
-		status.code += `mov ${target_reg}, #${value}`;
+	// Normalise any integer literal (hex/oct/bin/decimal, optional sign) to a
+	// decimal string — the aarch64 assembler only accepts decimal immediates
+	// (or a quoted `=N` literal-pool load), not `#0x..`/`#0o..`/`#0b..`. Use
+	// BigInt for the magnitude check so large 64-bit constants aren't rounded
+	// by JS's double (and so `parseInt(.., 10)` doesn't mis-parse hex as 0).
+	const dec = to_decimal_string(value);
+	const n = parse_int_literal_bigint(value);
+	if (n !== null && n >= 0n && n <= 65535n) {
+		status.code += `mov ${target_reg}, #${dec}`;
 	} else {
-		status.code += `ldr ${target_reg}, =${value}`;
+		status.code += `ldr ${target_reg}, =${dec}`;
 	}
 }
 
@@ -105,7 +111,7 @@ function build_operand(node: BaseNode, target_reg: string, status: BuildStatus) 
 			emit_immediate(target_reg, value === "true" ? "1" : "0", status);
 			return;
 		}
-		if (/^(\+|-)*\d+$/.test(value) || /^(\+|-)*\d+.\d+$/.test(value)) {
+		if (is_int_literal(value)) {
 			emit_immediate(target_reg, value, status);
 			return;
 		}
