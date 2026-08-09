@@ -2,6 +2,7 @@ import type BuildStatus from "../build_c/BuildStatus.ts";
 import { is_int_literal, to_decimal_string } from "../int_literal.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_node from "./build_node.ts";
+import aarch64_size from "./utils/aarch64_size.ts";
 import { allocate_stack_space } from "./utils/stack_var.ts";
 import { get_enum_size } from "./utils/struct_layout.ts";
 
@@ -46,6 +47,19 @@ function is_literal(value: string): boolean {
 		value === "true" ||
 		value === "false"
 	);
+}
+
+// Load instruction that dereferences a pointer (in `reg`) to a value of
+// `type_name`, placing the sign/zero-extended result in x0. Used for `ref T`
+// params: the param slot/register holds an 8-byte pointer, and the pointed-to
+// value must be read with T's width (e.g. `ldrb` for `ref bool`).
+function deref_load_instr(reg: string, type_name: string): string {
+	const size = aarch64_size(type_name);
+	const signed = type_name.startsWith("int");
+	if (size === 1) return signed ? `ldrsb x0, [${reg}]` : `ldrb w0, [${reg}]`;
+	if (size === 2) return signed ? `ldrsh x0, [${reg}]` : `ldrh w0, [${reg}]`;
+	if (size === 4) return signed ? `ldrsw x0, [${reg}]` : `ldr w0, [${reg}]`;
+	return `ldr x0, [${reg}]`;
 }
 
 export default function build_value_node(node: ValueNode, status: BuildStatus) {
@@ -136,7 +150,7 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 					status.code += `mov x0, ${paramReg}`;
 				}
 			} else {
-				status.code += `ldr x0, [${paramReg}]`;
+				status.code += deref_load_instr(paramReg, param_type_name);
 			}
 		} else {
 			// const param - value in register
@@ -194,7 +208,7 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 				!!status.class_vars?.has(value) ||
 				!!status.class_vars?.has(original_value);
 			if (!is_class) {
-				status.code += `ldr x0, [x0]`;
+				status.code += deref_load_instr("x0", param_type_name);
 			}
 		} else {
 			if (alloc_reg !== "x0") {
@@ -220,6 +234,12 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 			!!status.class_vars?.has(original_value);
 		if (is_array) {
 			status.code += `add x0, x29, #${offset}`;
+		} else if (is_ref && !is_class) {
+			// The slot holds an 8-byte pointer to the caller's storage. Load
+			// the pointer, then dereference with the pointed-to value's width
+			// (e.g. `ldrb` for `ref bool`) — NOT the 8-byte `ldr` used before.
+			status.code += `ldr x0, [x29, #${offset}]\n`;
+			status.code += deref_load_instr("x0", type_name);
 		} else {
 			const size =
 				type_name === "uint8" ||
@@ -245,9 +265,6 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 				status.code += signed ? `ldrsw x0, [x29, #${offset}]` : `ldr w0, [x29, #${offset}]`;
 			} else {
 				status.code += `ldr x0, [x29, #${offset}]`;
-			}
-			if (is_ref && !is_class) {
-				status.code += `\nldr x0, [x0]`;
 			}
 		}
 	} else {

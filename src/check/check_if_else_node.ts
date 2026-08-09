@@ -16,7 +16,7 @@ import {
 } from "./utils/flow_bounds.ts";
 import get_null_check_var from "./utils/get_null_check_var.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
-import type_name from "./utils/type_name.ts";
+import type_name, { is_bool_condition } from "./utils/type_name.ts";
 
 /** Check if a block always exits (e.g. contains a top-level return/break/continue) */
 function block_always_returns(node: { statements: BaseNode[] }): boolean {
@@ -28,7 +28,7 @@ function block_always_returns(node: { statements: BaseNode[] }): boolean {
 export default function check_if_else_node(if_else: IfElseNode, status: CheckStatus) {
 	check_node(if_else.condition, status);
 	const condition_type = type_from_value_node(if_else.condition, status);
-	if (type_name(condition_type) !== "bool") {
+	if (!is_bool_condition(condition_type)) {
 		add_error(
 			status,
 			`If/else condition must be a bool, not ${type_name(condition_type)}`,

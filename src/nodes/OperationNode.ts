@@ -29,7 +29,8 @@ export type Operator =
 	| "&&"
 	| "||"
 	| "??"
-	| "!";
+	| "!"
+	| "u-";
 
 export default class OperationNode extends BaseNode {
 	op: Operator;

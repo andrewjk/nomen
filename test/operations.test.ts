@@ -160,6 +160,96 @@ Console.write("\\{x}")
 	});
 });
 
+describe("unary minus on variables/expressions", () => {
+	test("negate a variable", async () => {
+		const input = `
+const int d = 7
+const int k = -d
+Console.write("\\{k}")
+`;
+		await build_and_check_output(input, "unary_minus_variable", "-7");
+	});
+
+	test("negate in a comparison (k != -d)", async () => {
+		const input = `
+const int d = 5
+const int k = 3
+var int result = 0
+if k != -d {
+	result = 1
+}
+Console.write("\\{result}")
+`;
+		await build_and_check_output(input, "unary_minus_compare", "1");
+	});
+
+	test("subtraction of a negation (a - -d does not reassociate)", async () => {
+		const input = `
+const int a = 10
+const int d = 3
+const int r = a - -d
+Console.write("\\{r}")
+`;
+		await build_and_check_output(input, "unary_minus_sub_neg", "13");
+	});
+
+	test("negation binds tighter than binary ops (a * -b)", async () => {
+		const input = `
+const int a = 4
+const int b = 5
+const int r = a * -b
+Console.write("\\{r}")
+`;
+		await build_and_check_output(input, "unary_minus_mul", "-20");
+	});
+
+	test("negation of a grouped expression (-(a + b))", async () => {
+		const input = `
+const int a = 2
+const int b = 3
+const int r = -(a + b)
+Console.write("\\{r}")
+`;
+		await build_and_check_output(input, "unary_minus_grouped", "-5");
+	});
+
+	test("negate a function call result", async () => {
+		const input = `
+func five = (out int) {
+	return 5
+}
+const int r = -five()
+Console.write("\\{r}")
+`;
+		await build_and_check_output(input, "unary_minus_call", "-5");
+	});
+
+	test("negate a field access", async () => {
+		const input = `
+class Pt {
+	var int x
+}
+const Pt p = Pt(7)
+const int r = -p.x
+Console.write("\\{r}")
+`;
+		await build_and_check_output(input, "unary_minus_field", "-7");
+	});
+
+	test("negating a non-numeric type is an error", () => {
+		const input = `
+class Pt {
+	var int x
+}
+const Pt p = Pt(1)
+const Pt q = -p
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors.length).toBeGreaterThan(0);
+		expect(parsed.errors.some((e) => e.message.includes("Cannot negate type"))).toBe(true);
+	});
+});
+
 test("comparison with && (both true)", async () => {
 	const input = `
 const x = 5

@@ -6,7 +6,7 @@ import type CheckStatus from "./CheckStatus.ts";
 import clone_status from "./utils/clone_status.ts";
 import { apply_bounds, intersect_strs, union_max, union_min } from "./utils/flow_bounds.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
-import type_name from "./utils/type_name.ts";
+import type_name, { is_bool_condition } from "./utils/type_name.ts";
 
 export default function check_switch_node(switch_node: SwitchNode, status: CheckStatus) {
 	status.stack.push(switch_node);
@@ -16,7 +16,7 @@ export default function check_switch_node(switch_node: SwitchNode, status: Check
 	for (let switch_case of switch_node.cases) {
 		check_node(switch_case.condition, status);
 		const condition_type = type_from_value_node(switch_case.condition, status);
-		if (type_name(condition_type) !== "bool") {
+		if (!is_bool_condition(condition_type)) {
 			add_error(
 				status,
 				`Switch case condition must be a bool, not ${type_name(condition_type)}`,

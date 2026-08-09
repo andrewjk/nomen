@@ -380,8 +380,13 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 					}
 				}
 			} else {
-				const size = aarch64_size(param.type.name);
-				const offset = allocate_stack_space(status, size, size);
+				// A `ref T` param receives an 8-byte pointer to the caller's
+				// storage regardless of T's size, so the local slot must always
+				// be 8 bytes (spilling `ref bool` as `strb` truncates the
+				// address). The element width only matters at the dereference.
+				const is_ref = param.type.is_ref;
+				const size = is_ref ? 8 : aarch64_size(param.type.name);
+				const offset = allocate_stack_space(status, size, is_ref ? 8 : size);
 				status.stack_offsets!.set(param.name, offset);
 				if (param_idx < NUM_REG_ARGS) {
 					const reg = param_regs[param_idx];

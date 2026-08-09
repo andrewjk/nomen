@@ -11,6 +11,13 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 	if (node.op === "!") {
 		status.code += `!`;
 		build_node(node.right_value, status);
+	} else if (node.op === "u-") {
+		// Unary minus: emit C unary `-`. The operand is wrapped by the binary
+		// builder if it's itself an operation; otherwise (variable/call/access)
+		// C's unary `-` binds tighter than any binary operator, so no parens
+		// are needed.
+		status.code += `-`;
+		build_node(node.right_value, status);
 	} else if (node.op === "??") {
 		// `nullable ?? fallback`. For a nullable struct, the flag is `<expr>_has`.
 		const left_type = type_from_value_node(node.left_value);

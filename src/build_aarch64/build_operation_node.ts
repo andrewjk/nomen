@@ -266,6 +266,16 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		return;
 	}
 
+	// Unary minus: evaluate the operand into x0, then negate it.
+	if (node.op === "u-") {
+		build_node(node.right_value, status);
+		if (!status.code.endsWith("\n")) {
+			status.code += "\n";
+		}
+		status.code += `neg x0, x0\n`;
+		return;
+	}
+
 	// `??` (null-coalescing) is lazy: the right operand is only evaluated when
 	// the left is null. This matters when the fallback allocates (e.g.
 	// `x ?? Box(99)`) — eagerly evaluating it would leak the unused instance.

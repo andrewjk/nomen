@@ -25,6 +25,28 @@ export default function check_operation_node(op: OperationNode, status: CheckSta
 		return true;
 	}
 
+	// Unary minus on a variable/access/call (integer literals fold their sign
+	// into one token, so this is only the non-literal path). The result type is
+	// the operand's type; ints/floats negate to themselves.
+	if (op.op === "u-") {
+		if (!check_node(op.right_value, status)) {
+			return false;
+		}
+		op.type = type_from_value_node(op.right_value, status);
+		const t = op.type.name;
+		if (
+			t !== "int" &&
+			t !== "float" &&
+			t !== "uint" &&
+			!t.startsWith("int") &&
+			!t.startsWith("uint")
+		) {
+			add_error(status, `Cannot negate type ${t}`, op.start);
+			return false;
+		}
+		return true;
+	}
+
 	if (op.op === ("&&" as const)) {
 		if (!check_node(op.left_value, status)) return false;
 

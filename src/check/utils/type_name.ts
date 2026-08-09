@@ -27,6 +27,15 @@ function type_modifier(type: Type): string {
 	return "";
 }
 
+/**
+ * Whether `type` is usable as an `if`/`while`/`switch` condition: a plain
+ * `bool`, ignoring ref/view access modifiers (a `ref bool` reads as a bool).
+ * Nullable `bool?` is rejected — branch on an explicit null comparison instead.
+ */
+export function is_bool_condition(type: Type): boolean {
+	return type.name === "bool" && !type.is_nullable;
+}
+
 function type_name_without_array(type: Type): string {
 	const args = type.type_args?.length
 		? `<${type.type_args.map((t: Type) => type_name(t)).join(", ")}>`

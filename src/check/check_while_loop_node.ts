@@ -8,14 +8,14 @@ import clone_status from "./utils/clone_status.ts";
 import { apply_bounds, apply_negated_bounds } from "./utils/flow_bounds.ts";
 import get_null_check_var from "./utils/get_null_check_var.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
-import type_name from "./utils/type_name.ts";
+import type_name, { is_bool_condition } from "./utils/type_name.ts";
 
 export default function check_while_loop_node(while_loop: WhileLoopNode, status: CheckStatus) {
 	let while_status = clone_status(status);
 
 	check_node(while_loop.condition, while_status);
 	const condition_type = type_from_value_node(while_loop.condition, while_status);
-	if (type_name(condition_type) !== "bool") {
+	if (!is_bool_condition(condition_type)) {
 		add_error(
 			while_status,
 			`While loop condition must be a bool, not ${type_name(condition_type)}`,

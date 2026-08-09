@@ -137,6 +137,32 @@ function parse_anon_struct(start: number, status: ParseStatus): AnonStructNode {
 	return new AnonStructNode(start, fields);
 }
 
+function parse_postfix_chain(status: ParseStatus, node: BaseNode, leading_value: string): BaseNode {
+	// Apply postfix operations (`.access` and `(call)`) to a primary node.
+	// Used for the operand of prefix unary operators (`!`, unary `-`) so that
+	// `!f(x)`, `!a.b.c`, `-obj.method(x).field` parse the full postfix chain as
+	// the operand before the unary operator applies. Mirrors the postfix cases
+	// of parse_expression's main loop.
+	while (true) {
+		const current = peek_current(status);
+		if (current === ".") {
+			accept(".", status);
+			node = new AccessNode(node.start, node, parse_access(leading_value, status));
+		} else if (current === "(") {
+			accept("(", status);
+			const call_name = node.node_type === "value" ? (node as ValueNode).value : leading_value;
+			const func = new FunctionCallNode(node.start, call_name);
+			if (peek_current(status) !== ")") {
+				parse_function_call_parameter(func, status);
+			}
+			expect(")", status);
+			node = func;
+		} else {
+			return node;
+		}
+	}
+}
+
 function parse_primary(status: ParseStatus, value: string): BaseNode {
 	const start = get_index(status);
 	switch (value) {
@@ -144,11 +170,20 @@ function parse_primary(status: ParseStatus, value: string): BaseNode {
 			consume(status);
 			const next = peek_current(status) || "??";
 			let inner: BaseNode = parse_primary(status, next);
-			while (peek_current(status) === ".") {
-				accept(".", status);
-				inner = new AccessNode(inner.start, inner, parse_access(next, status));
-			}
+			inner = parse_postfix_chain(status, inner, next);
 			return new OperationNode(start, "!", inner, inner);
+		}
+		case "-": {
+			// Unary minus on a non-literal (e.g. `-d`, `-(a + b)`, `-obj.field`).
+			// Integer literals already fold their sign into one token, so this
+			// fires for variables, accesses, and call results. Lowers to a
+			// dedicated `u-` operator (handled like `!`) rather than `0 - x` so
+			// it isn't reassociated by the binary `-` precedence logic.
+			consume(status);
+			const next = peek_current(status) || "??";
+			let inner: BaseNode = parse_primary(status, next);
+			inner = parse_postfix_chain(status, inner, next);
+			return new OperationNode(start, "u-", inner, inner);
 		}
 		case ".": {
 			consume(status);
@@ -403,7 +438,8 @@ export default function parse_expression(status: ParseStatus, allow_assignment =
 
 function operator_precedence(op: string) {
 	switch (op) {
-		case "!": {
+		case "!":
+		case "u-": {
 			return 2;
 		}
 		case "*":
