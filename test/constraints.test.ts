@@ -704,7 +704,12 @@ func last = (string s, out char) {
 		});
 
 		// Without the `n > 0` guard, `n - 1` can be -1 on an empty collection,
-		// so the lower-half constraint cannot be verified — a genuine OOB risk.
+		// so the lower-half constraint is rejected — a genuine OOB risk. With
+		// alias-through-arithmetic plus the non-negative-length alias bound
+		// (`var int n = list.length` records `n.range_lower = 0`), the checker
+		// can now PROVE the access can be unsafe (`n - 1` can be -1) and emits
+		// "not satisfied"; without that precision it emits "cannot be verified".
+		// Either rejection is acceptable — the access must be rejected.
 		test("at(n - 1) with no non-empty guard is rejected", () => {
 			const input = `
 import System
@@ -715,7 +720,11 @@ func last = (List<int> list, out int) {
 `;
 			const parsed = parse(input, get_library(core));
 			expect(parsed.errors.length).toBeGreaterThanOrEqual(1);
-			expect(parsed.errors.some((e) => e.message.includes("cannot be verified"))).toBe(true);
+			expect(
+				parsed.errors.some(
+					(e) => e.message.includes("cannot be verified") || e.message.includes("not satisfied"),
+				),
+			).toBe(true);
 		});
 	});
 

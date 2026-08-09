@@ -5,6 +5,10 @@ import OperationNode from "../../nodes/OperationNode.ts";
 import ValueNode from "../../nodes/ValueNode.ts";
 import type CheckStatus from "../CheckStatus.ts";
 
+// Container fields whose values are always >= 0. Mirrors the same set in
+// evaluate_const_condition.ts (kept duplicated to avoid a circular import).
+const NON_NEGATIVE_FIELDS = new Set(["length", "cap", "count", "size"]);
+
 /**
  * Snapshot of the flow-sensitive bound fields on a StackValue, captured
  * BEFORE the variable is reassigned (and its bounds cleared). Used by
@@ -649,11 +653,35 @@ export function track_assignment_bounds(
 	if (!decl) return;
 
 	// 1) Field-access alias: `var int cap = self.keys.cap` → cap alias_of "self.keys.cap"
-	//    Lets bounds on `cap` flow through to verifications involving `self.keys.cap`.
+	//    Lets bounds on `cap` flow through to verifications involving `self.keys.cap".
+	//    For non-negative fields (length/cap/count/size), also record explicit
+	//    inclusive bounds (`cap <= self.keys.cap`, `cap >= self.keys.cap`) and a
+	//    `range_lower = 0`. The alias alone is lossy: an if-else reconciliation
+	//    that copies the if-branch's state can lose `e <= text.length` for a
+	//    clamp like `if e > text.length { e = text.length }` when the negated
+	//    bound is also recorded on the parent — pinning both sides here makes
+	//    the bound survive the merge and lets `e >= 0` verify via the
+	//    non-negative access path. It also lets `n >= m` verify when n aliases
+	//    a non-negative access and m has range [0, 1) (e.g. `end >= start`
+	//    where end aliases text.length and start is `var int s = 0`).
 	if (value.node_type === "access") {
 		const field_str = expr_to_string(value, status);
 		if (field_str) {
 			decl.alias_of = field_str;
+			const last = field_str.split(".").at(-1);
+			if (last && NON_NEGATIVE_FIELDS.has(last)) {
+				if (!decl.upper_bound_inclusive_exprs) decl.upper_bound_inclusive_exprs = [];
+				if (!decl.upper_bound_inclusive_exprs.includes(field_str)) {
+					decl.upper_bound_inclusive_exprs.push(field_str);
+				}
+				if (!decl.lower_bound_inclusive_exprs) decl.lower_bound_inclusive_exprs = [];
+				if (!decl.lower_bound_inclusive_exprs.includes(field_str)) {
+					decl.lower_bound_inclusive_exprs.push(field_str);
+				}
+				decl.upper_bound_expr = field_str;
+				decl.lower_bound_expr = field_str;
+				decl.range_lower = 0;
+			}
 			return;
 		}
 	}

@@ -16,11 +16,13 @@ import type CheckStatus from "./CheckStatus.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
 import evaluate_const_condition, {
 	evaluate_numeric_or_bool,
+	NON_NEGATIVE_FIELDS,
 } from "./utils/evaluate_const_condition.ts";
 import {
 	apply_bounds,
 	collect_return_bounds,
 	collect_return_length,
+	expr_to_string,
 	numeric_interval,
 	path_to_node,
 	record_buffer_cap,
@@ -444,6 +446,24 @@ export default function check_function_call(
 						alias_of = decl.alias_of ? shift_offset_expr(decl.alias_of, c) : undefined;
 					}
 				}
+			}
+		} else if (param.node_type === "access") {
+			// A non-negative field/method access arg like `xs.length`,
+			// `buf.cap`, `list.count()` is always >= 0, and an equality-style
+			// constraint (`count <= self.length`) can match it directly. Carry
+			// the access string as an alias so the constraint evaluator can
+			// recognise the non-negativity through the parameter name (the
+			// aliasing is also used by the alias-through-arithmetic path for
+			// `end <= self.length` against `end.alias_of = "text.length"`).
+			const access = param as AccessNode;
+			let field_name: string | undefined;
+			if (access.access.node_type === "access_field") {
+				field_name = (access.access as AccessFieldNode).name;
+			} else if (access.access.node_type === "access_func") {
+				field_name = (access.access as { name: string }).name;
+			}
+			if (field_name && NON_NEGATIVE_FIELDS.has(field_name)) {
+				alias_of = expr_to_string(param, status);
 			}
 		}
 		// Fold in bounds propagated from a nested call's return contract, so a

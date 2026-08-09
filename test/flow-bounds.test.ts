@@ -244,3 +244,100 @@ Console.write("\\{v}\\n")
 		expect(parsed.errors.some((m) => m.message.includes("cannot be verified"))).toBe(true);
 	});
 });
+
+// Non-negative container-size family: `.length` / `.cap` / `.count` / `.size`
+// are always >= 0, and a variable that aliases one of these accesses (or an
+// argument that IS such an access) carries that non-negativity through to
+// constraint verification. Without this, three concrete shapes all errored
+// with "cannot be verified":
+//   1. `Array.with(0, list.length)` — the count arg is `list.length`; the
+//      constraint `count >= 0` couldn't see through the parameter name.
+//   2. `var int e = text.length; text.slice(0, e)` — after the assignment,
+//      `e >= 0` (for slice's `end >= start`) wasn't provable.
+//   3. `if e > text.length { e = text.length }; text.slice(s, e)` — the clamp
+//      guard's post-if state didn't carry `e <= text.length` over to the slice.
+// All three are now discharged by recognizing the non-negative access
+// (directly or through an alias) and by applying the negated condition's
+// bounds to the parent for a no-else fall-through `if`.
+
+describe("non-negative container size", () => {
+	test("Array.with(0, list.length) verifies count >= 0", async () => {
+		const input = `
+var List<int> xs = List<int>()
+xs.push(1)
+xs.push(2)
+var Array<int> a = Array<int>.with(0, xs.length)
+Console.write("\\{a.length}")
+`;
+		await build_and_check_output(input, "nonneg_with_list_length", "2");
+	});
+
+	test("Array.with(0, runtime string.length) verifies count >= 0", () => {
+		const input = `
+var string a = "ab"
+var string b = "cd"
+var string s = a + b
+var Array<int> z = Array<int>.with(0, s.length)
+Console.write("\\{z.length}")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+	});
+
+	test("var int e = text.length; slice(0, e) verifies end bounds", async () => {
+		const input = `
+var string text = "hello"
+var int e = 100
+e = text.length
+var view string v = text.slice(0, e)
+Console.write("\\{v.length}")
+`;
+		await build_and_check_output(input, "nonneg_assign_then_slice", "5");
+	});
+
+	test("clamp guard establishes e <= text.length for slice", async () => {
+		// The headline ROADBLOCKS case. `if e > text.length { e = text.length }`
+		// is a clamp: both fall-through paths agree on `e <= text.length`, and
+		// the negated-bound application on the parent (plus the alias-based
+		// explicit bounds from the assignment) make the slice verify.
+		const input = `
+var string text = "hello world"
+var int s = 0
+var int e = 100
+if e > text.length {
+	e = text.length
+}
+var view string v = text.slice(s, e)
+Console.write("\\{v.length}")
+`;
+		await build_and_check_output(input, "nonneg_clamp_guard", "11");
+	});
+
+	test("clamp guard with literal 0 start also verifies", async () => {
+		const input = `
+var string text = "hello world"
+var int e = 100
+if e > text.length {
+	e = text.length
+}
+var view string v = text.slice(0, e)
+Console.write(v.to_string())
+`;
+		await build_and_check_output(input, "nonneg_clamp_guard_lit0", "hello world");
+	});
+
+	test("Array.with(0, n) where n aliases list.length", () => {
+		// Variable-to-alias propagation: `var int n = list.length` records
+		// `n.range_lower = 0` via the non-negative-field assignment rule, so
+		// `Array.with(0, n)`'s `count >= 0` constraint verifies through n.
+		const input = `
+var List<int> xs = List<int>()
+xs.push(1)
+var int n = xs.length
+var Array<int> a = Array<int>.with(0, n)
+Console.write("\\{a.length}")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+	});
+});

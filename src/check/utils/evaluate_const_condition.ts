@@ -107,8 +107,12 @@ function evaluate_operation(
 		// literal 0 index verify a `start >= 0 && start <= self.length` style
 		// constraint without forcing a runtime guard.
 		if (
-			(op.op === "<=" && is_zero(op.left_value, status) && is_nonnegative_access(op.right_value)) ||
-			(op.op === ">=" && is_zero(op.right_value, status) && is_nonnegative_access(op.left_value))
+			(op.op === "<=" &&
+				is_zero(op.left_value, status) &&
+				is_nonnegative_access(op.right_value, status)) ||
+			(op.op === ">=" &&
+				is_zero(op.right_value, status) &&
+				is_nonnegative_access(op.left_value, status))
 		) {
 			return true;
 		}
@@ -669,10 +673,45 @@ export function evaluate_numeric_or_bool(
 	return undefined;
 }
 
-const NON_NEGATIVE_FIELDS = new Set(["length", "cap", "count", "size"]);
+export const NON_NEGATIVE_FIELDS = new Set(["length", "cap", "count", "size"]);
 
-/** Does `node` read a container's length/capacity, which is always >= 0? */
-function is_nonnegative_access(node: import("../../nodes/BaseNode.ts").default): boolean {
+/**
+ * Does `node` read a container's length/capacity, which is always >= 0?
+ *
+ * Handles three forms:
+ *   - A direct field/method access (`xs.length`, `buf.cap`, `list.count()`).
+ *   - A bare variable that aliases such an access via `alias_of` (e.g. the
+ *     parameter `count` after `Array.with(0, xs.length)` propagates
+ *     `count.alias_of = "xs.length"`).
+ *   - A bare variable whose `alias_of` carries a constant offset
+ *     (`n.alias_of = "list.length - 1"` is NOT non-negative, but
+ *     `n.alias_of = "list.length + 0"` is — only a non-negative offset
+ *     preserves the non-negativity).
+ */
+function is_nonnegative_access(
+	node: import("../../nodes/BaseNode.ts").default,
+	status: CheckStatus,
+): boolean {
+	if (node.node_type === "value") {
+		const vn = node as ValueNode;
+		const decl = status.values.findLast((v) => v.name === vn.value);
+		if (decl?.alias_of) {
+			// Strip a trailing `± c` offset; the access is non-negative only
+			// when the offset is `+ c` or absent (a `- c` could go negative).
+			const m = decl.alias_of.match(/^(\w+(?:\.\w+)*)\s*([+-]\s*\d+)?$/);
+			if (m) {
+				const field_path = m[1];
+				const offset_str = m[2];
+				const last = field_path.split(".").at(-1);
+				if (last && NON_NEGATIVE_FIELDS.has(last)) {
+					if (!offset_str) return true;
+					const off = parseInt(offset_str.replace(/\s+/g, ""), 10);
+					return off >= 0;
+				}
+			}
+		}
+		return false;
+	}
 	if (node.node_type !== "access") return false;
 	const access = node as AccessNode;
 	if (access.access.node_type === "access_field") {

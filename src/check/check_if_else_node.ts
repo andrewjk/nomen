@@ -91,6 +91,20 @@ export default function check_if_else_node(if_else: IfElseNode, status: CheckSta
 	const if_falls_through = if_reachable && !if_returns;
 	const else_falls_through = else_reachable && (!has_else || !else_returns);
 
+	// For a no-else `if cond { ... }` where the implicit else is reachable,
+	// code after the if can also be reached when cond was FALSE — so the
+	// negation of cond holds for that path. Apply the negated bounds to the
+	// parent directly so the post-if state carries them. This runs alongside
+	// the reconciliation (which copies the if-branch's state) — both paths'
+	// facts are recorded; verification succeeds if either path's bound
+	// discharges the constraint. The previous code only did this for guard
+	// clauses (if_returns); extending it to the no-else fall-through case is
+	// what makes a clamp pattern like `if e > text.length { e = text.length }`
+	// establish `e <= text.length` afterwards.
+	if (!has_else && else_reachable) {
+		apply_negated_bounds(if_else.condition, status);
+	}
+
 	for (let [i, value] of status.values.entries()) {
 		// is_set reconciliation: only branches that fall through contribute to post-if state
 		const contributing_sets: boolean[] = [];
@@ -176,6 +190,7 @@ export default function check_if_else_node(if_else: IfElseNode, status: CheckSta
 				value.upper_bound_expr = if_v?.upper_bound_expr;
 				value.lower_bound_expr = if_v?.lower_bound_expr;
 				value.known_length = if_v?.known_length;
+				value.alias_of = if_v?.alias_of;
 			} else if (else_falls_through) {
 				value.range_lower = else_v?.range_lower;
 				value.range_upper = else_v?.range_upper;
@@ -186,21 +201,17 @@ export default function check_if_else_node(if_else: IfElseNode, status: CheckSta
 				value.upper_bound_expr = else_v?.upper_bound_expr;
 				value.lower_bound_expr = else_v?.lower_bound_expr;
 				value.known_length = else_v?.known_length;
+				value.alias_of = else_v?.alias_of;
 			}
 		}
 	}
 
-	// Guard clause: an `if cond { ...always exits... }` with no else means the
-	// taken branch never falls through, so code after the if is only reached
-	// when the condition was FALSE. Establish the negated bounds on the parent
-	// so a following access verifies, e.g.
+	// Guard-clause note: an `if cond { ...always exits... }` with no else
+	// means only the implicit-else path reaches code after the if. The
+	// negated bounds are applied to the parent above (alongside the
+	// reconciliation), so a following access verifies, e.g.
 	//   if i < 0 || i >= list.length { return }
 	//   return list.at(i)        // now provably i >= 0 && i < list.length
-	// The negation is sound only when the else path is reachable (condition not
-	// provably true); apply_negated_bounds itself skips `&&` and unknown shapes.
-	if (!has_else && if_returns && else_reachable) {
-		apply_negated_bounds(if_else.condition, status);
-	}
 
 	if (if_else.if_branch && !if_else.else_branch) {
 		const parent = status.stack.at(-1);
