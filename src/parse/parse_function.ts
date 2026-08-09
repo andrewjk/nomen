@@ -175,7 +175,7 @@ function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: 
 			func.return_constraint = parse_expression(status);
 		}
 
-		if (accept(",", status)) {
+		if (accept(",", status) && peek_current(status) !== ")") {
 			parse_function_parameter(parent, func, status);
 		}
 		return;
@@ -212,7 +212,7 @@ function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: 
 			param.declaration = "var";
 		}
 
-		if (accept(",", status)) {
+		if (accept(",", status) && peek_current(status) !== ")") {
 			parse_function_parameter(parent, func, status);
 		}
 
@@ -249,7 +249,7 @@ function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: 
 			param.declaration = "var";
 		}
 
-		if (accept(",", status)) {
+		if (accept(",", status) && peek_current(status) !== ")") {
 			parse_function_parameter(parent, func, status);
 		}
 
@@ -313,7 +313,7 @@ function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: 
 		add_error(status, `Expected type or default value`, param.start);
 	}
 
-	if (accept(",", status)) {
+	if (accept(",", status) && peek_current(status) !== ")") {
 		parse_function_parameter(parent, func, status);
 	}
 }
@@ -328,7 +328,7 @@ function parse_param_func_type_params(params: ParameterNode[], status: ParseStat
 		param.type.is_return_type = true;
 		params.push(param);
 
-		if (accept(",", status)) {
+		if (accept(",", status) && peek_current(status) !== ")") {
 			parse_param_func_type_params(params, status);
 		}
 		return;
@@ -339,7 +339,7 @@ function parse_param_func_type_params(params: ParameterNode[], status: ParseStat
 	param.type = parse_type(status);
 	params.push(param);
 
-	if (accept(",", status)) {
+	if (accept(",", status) && peek_current(status) !== ")") {
 		parse_param_func_type_params(params, status);
 	}
 }

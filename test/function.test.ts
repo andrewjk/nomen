@@ -208,6 +208,60 @@ greet("Alice")
 `;
 		await build_and_check_output(input, "function_default_param_set", "Hello Alice!");
 	});
+
+	test("multi-line param list with trailing comma", async () => {
+		const input = `
+func add3 = (
+  int a,
+  int b,
+  int c,
+  out int,
+) {
+  return a + b + c
+}
+Console.write("\\{add3(1, 2, 3)}")
+`;
+		await build_and_check_output(input, "function_multiline_trailing_comma", "6");
+	});
+
+	test("multi-line ref param with trailing comma", async () => {
+		const input = `
+func bump = (
+  ref int n,
+  int by,
+  out int,
+) {
+  return n + by
+}
+var int x = 10
+Console.write("\\{bump(ref x, 5)}")
+`;
+		await build_and_check_output(input, "function_multiline_ref_trailing_comma", "15");
+	});
+
+	test("trailing comma after out return type", async () => {
+		const input = `
+func two = (int a, int b, out int,) {
+  return a + b
+}
+Console.write("\\{two(3, 4)}")
+`;
+		await build_and_check_output(input, "function_trailing_comma_after_out", "7");
+	});
+
+	test("multi-line param list without trailing comma", async () => {
+		const input = `
+func sub = (
+  int a,
+  int b,
+  out int,
+) {
+  return a - b
+}
+Console.write("\\{sub(9, 4)}")
+`;
+		await build_and_check_output(input, "function_multiline_no_trailing_comma", "5");
+	});
 });
 
 // ERRORS
@@ -375,6 +429,49 @@ func outer = (int x, out int) {
         return y * SCALE
     }
     return inner(x)
+}
+`;
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual([]);
+	});
+
+	test("trailing comma in single-param list", () => {
+		const input = `
+func f = (int a, out int,) {
+  return a
+}
+`;
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual([]);
+	});
+
+	test("trailing comma after ref self", () => {
+		const input = `
+struct S {
+  var int n
+  func bump = (ref self, int by,) {
+    self.n = self.n + by
+  }
+}
+`;
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual([]);
+	});
+
+	test("trailing comma in func-type param list", () => {
+		const input = `
+func apply = (func (int, out int,) cb, int x, out int) {
+  return cb(x)
+}
+`;
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual([]);
+	});
+
+	test("trailing comma in empty-then-out signature", () => {
+		const input = `
+func f = (out int,) {
+  return 7
 }
 `;
 		const parsed = parse(input);
