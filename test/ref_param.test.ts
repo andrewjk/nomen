@@ -80,6 +80,54 @@ Console.write("\\{swap_check(ref x, ref y)}")
 `;
 		await build_and_check_output(input, "ref_param_multiple", "10");
 	});
+
+	// Compound / read-modify-write writes through a ref param. `n = n + 1`
+	// reads `n` (re-deriving the caller's pointer from the slot) and writes the
+	// sum back; the write path must not rely on a pointer parked across the RHS
+	// build (it gets clobbered), and `+=` must combine the old value with the
+	// RHS rather than just storing the RHS.
+	test("read-modify-write to ref int param persists", async () => {
+		const input = `
+func bump = (ref int x) {
+  x = x + 1
+}
+
+var int num = 41
+bump(ref num)
+Console.write("\\{num}")
+`;
+		await build_and_check_output(input, "ref_param_rmw_int", "42");
+	});
+
+	test("+= on ref int param persists", async () => {
+		const input = `
+func incr = (ref int x) {
+  x += 5
+}
+
+var int num = 10
+incr(ref num)
+Console.write("\\{num}")
+`;
+		await build_and_check_output(input, "ref_param_compound_int", "15");
+	});
+
+	test("read-modify-write to ref int in a loop persists", async () => {
+		const input = `
+func count = (ref int acc) {
+  var int i = 0
+  while i < 5 {
+    acc = acc + 1
+    i = i + 1
+  }
+}
+
+var int total = 0
+count(ref total)
+Console.write("\\{total}")
+`;
+		await build_and_check_output(input, "ref_param_rmw_loop", "5");
+	});
 });
 
 describe("ref bool as condition", () => {
@@ -217,5 +265,69 @@ var int8 v = -5
 Console.write("\\{get_neg(ref v)}")
 `;
 		await build_and_check_output(input, "ref_int8_signext", "-5");
+	});
+
+	// Small-type writes through a ref param must store with the pointee's width
+	// (`strb` for bool/uint8), not an 8-byte `str` that clobbers adjacent
+	// memory. Writing `true` (1) with `str x0` would splat zeros/ones across
+	// neighbouring stack slots.
+	test("ref bool set true persists without corrupting neighbours", async () => {
+		const input = `
+func turn_on = (ref bool flag) {
+  flag = true
+}
+
+var bool on = false
+turn_on(ref on)
+var int result = 0
+if on {
+  result = 1
+}
+Console.write("\\{result}")
+`;
+		await build_and_check_output(input, "ref_bool_write_true", "1");
+	});
+
+	test("ref uint8 read-modify-write persists", async () => {
+		const input = `
+func grow = (ref uint8 n) {
+  n = n + 5
+}
+
+var uint8 v = 3
+grow(ref v)
+Console.write("\\{v}")
+`;
+		await build_and_check_output(input, "ref_uint8_rmw", "8");
+	});
+
+	test("+= on ref uint8 param persists", async () => {
+		const input = `
+func add = (ref uint8 n) {
+  n += 5
+}
+
+var uint8 v = 3
+add(ref v)
+Console.write("\\{v}")
+`;
+		await build_and_check_output(input, "ref_uint8_compound", "8");
+	});
+
+	test("ref int16 write persists with correct width", async () => {
+		const input = `
+func set = (ref int16 n) {
+  n = 32000
+}
+
+func fetch = (ref int16 n, out int) {
+  return n
+}
+
+var int16 v = 0
+set(ref v)
+Console.write("\\{fetch(ref v)}")
+`;
+		await build_and_check_output(input, "ref_int16_write", "32000");
 	});
 });

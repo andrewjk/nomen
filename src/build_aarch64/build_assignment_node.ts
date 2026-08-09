@@ -42,14 +42,36 @@ function is_mutable_param(name: string, status: BuildStatus): boolean {
 	return !!(status.function_param_vars?.has(name) || status.function_ref_params?.has(name));
 }
 
+/**
+ * Load a `ref T` parameter's caller-side pointer into `reg`. The pointer is the
+ * 8-byte value held in the parameter's stack slot (or, rarely, a register
+ * allocation). Only writes `reg` — safe to run after a RHS has been built into
+ * another register, since no caller-saved scratch is touched.
+ */
+function load_ref_param_pointer(reg: string, name: string, status: BuildStatus) {
+	const alloc_reg = status.register_allocations?.get(name);
+	if (alloc_reg) {
+		status.code += `${alloc_reg.startsWith("d") ? "fmov" : "mov"} ${reg}, ${alloc_reg}\n`;
+		return;
+	}
+	const offset = status.stack_offsets?.get(name);
+	if (offset !== undefined) {
+		status.code += `ldr ${reg}, [x29, #${offset}]\n`;
+		return;
+	}
+	emit_var_address(status, reg, name);
+	status.code += `ldr ${reg}, [${reg}]\n`;
+}
+
 function get_store_instruction(size: number): string {
 	if (size === 1) return "strb";
+	if (size === 2) return "strh";
 	if (size === 4) return "str";
 	return "str";
 }
 
 function get_store_reg(reg: string, size: number): string {
-	if (size === 1 || size === 4) return reg.replace("x", "w");
+	if (size === 1 || size === 2 || size === 4) return reg.replace("x", "w");
 	return reg;
 }
 
@@ -61,12 +83,13 @@ function find_var_size(name: string, status: BuildStatus): number {
 
 function get_load_instruction(size: number): string {
 	if (size === 1) return "ldrb";
+	if (size === 2) return "ldrh";
 	if (size === 4) return "ldr";
 	return "ldr";
 }
 
 function get_load_reg(reg: string, size: number): string {
-	if (size === 1 || size === 4) return reg.replace("x", "w");
+	if (size === 1 || size === 2 || size === 4) return reg.replace("x", "w");
 	return reg;
 }
 
@@ -748,25 +771,46 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 				build_swap(node, status);
 				return;
 			}
-			const alloc_reg_a = status.register_allocations?.get(name);
-			if (alloc_reg_a) {
-				if (alloc_reg_a.startsWith("d")) {
-					status.code += `fmov x2, ${alloc_reg_a}\n`;
-				} else {
-					status.code += `mov x2, ${alloc_reg_a}\n`;
-				}
+			// The caller's pointer is kept in a stack slot (or register) and the
+			// pointee may be smaller than 8 bytes (`ref bool` / `ref uint8` / …),
+			// so resolve the load/store width from the left value's pointee type
+			// rather than `find_var_size` (which only sees scoped_declarations
+			// and so returns 8 for every param — writing `str x0` where `strb w0`
+			// is needed and clobbering adjacent memory).
+			const ref_type_name = (node.left_value as ValueNode).type?.name;
+			const ref_size = ref_type_name ? aarch64_size(ref_type_name) : size;
+			const ref_store_op = get_store_instruction(ref_size);
+			const ref_store_reg = get_store_reg("x0", ref_size);
+			if (node.operator) {
+				// Compound assignment (`n += 1`): read the current value through
+				// the caller's pointer, build the RHS, combine, and store back.
+				// Both the pointer and the old value must survive the RHS build,
+				// so they are spilled to the stack — build_node freely reuses
+				// x1/x2 as scratch.
+				load_ref_param_pointer("x2", name, status);
+				const load_op = get_load_instruction(ref_size);
+				const load_reg = get_load_reg("x1", ref_size);
+				status.code += `${load_op} ${load_reg}, [x2]\n`;
+				status.code += `str x2, [sp, #-16]!\n`;
+				status.code += `str x1, [sp, #-16]!\n`;
+				build_node(node.right_value, status);
+				status.code += `\n`;
+				status.code += `ldr x1, [sp], #16\n`;
+				status.code += `ldr x2, [sp], #16\n`;
+				emit_compound_op(node.operator, status);
+				status.code += `${ref_store_op} ${ref_store_reg}, [x2]\n`;
 			} else {
-				const offset = status.stack_offsets?.get(name);
-				if (offset !== undefined) {
-					status.code += `ldr x2, [x29, #${offset}]\n`;
-				} else {
-					emit_var_address(status, "x2", name);
-					status.code += `ldr x2, [x2]\n`;
-				}
+				// Plain assignment. Build the RHS FIRST: its reads of the ref
+				// param re-derive the caller's pointer from the stack slot, so
+				// no register needs to survive build_node. Parking the pointer
+				// in x2 across build_node(rhs) is unsound — the RHS freely
+				// reuses x2 as scratch (e.g. the right operand of `+`), so the
+				// final store would hit a garbage address.
+				build_node(node.right_value, status);
+				if (!status.code.endsWith("\n")) status.code += "\n";
+				load_ref_param_pointer("x2", name, status);
+				status.code += `${ref_store_op} ${ref_store_reg}, [x2]\n`;
 			}
-			build_node(node.right_value, status);
-			if (!status.code.endsWith("\n")) status.code += "\n";
-			status.code += `${store_op} ${store_reg}, [x2]\n`;
 		} else if (node.operator) {
 			const alloc_reg_op = status.register_allocations?.get(name);
 			if (alloc_reg_op) {
