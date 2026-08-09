@@ -144,3 +144,66 @@ Console.write("\\{p.x},\\{p.y} \\{pts.length}")
 		await build_and_check_output(input, "list_struct_pop", "2,2 1");
 	});
 });
+
+describe("List<string>", () => {
+	// Regression: a `List<string>` compiled but crashed at runtime on the
+	// aarch64 backend (SIGABRT) and on cleanup. The monomorphized
+	// `List<string>.at`/`.slice` bodies call `self.items.load_T(i)`, and
+	// because the monomorphized body's `self.items` access node carries no
+	// type, `value_is_owned_string` could not resolve `load_T` and fell back
+	// to the conservative "owned heap string" classification. That marked
+	// `.at`/`.slice` as heap-returning, so every call site freed the returned
+	// `char*` — a borrow of the buffer's slot (or a static literal address) —
+	// crashing on the free. The fix treats `.at`/`.first`/`.slice`/`load_T`
+	// (without `owned_return`) as borrows in `value_is_owned_string`, mirroring
+	// the C backend's `is_string_borrow`. `pop` (mov out T) stays owned.
+
+	test("push and read back via at", async () => {
+		const input = `
+var List<string> xs = List<string>()
+xs.push("hello")
+xs.push("world")
+for i of 0 .. xs.length {
+  Console.write(xs.at(i))
+}
+`;
+		await build_and_check_output(input, "list_string_push_at", "helloworld");
+	});
+
+	test("set replaces an element", async () => {
+		const input = `
+var List<string> xs = List<string>()
+xs.push("a")
+xs.push("b")
+var int i = 0
+if i >= 0 && i < xs.length {
+  xs.set(i, "X")
+}
+for i of 0 .. xs.length {
+  Console.write(xs.at(i))
+}
+`;
+		await build_and_check_output(input, "list_string_set", "Xb");
+	});
+
+	test("at result used in a comparison (borrow not freed)", async () => {
+		// Two `.at` calls inside one `==` must each survive until the
+		// comparison runs — neither is an owned temporary to free. Uses
+		// loop-bounded indices so the access constraint discharges.
+		const input = `
+var List<string> xs = List<string>()
+xs.push("x")
+xs.push("x")
+var bool same = false
+for i of 0 .. xs.length {
+  for j of 0 .. xs.length {
+    if xs.at(i) == xs.at(j) {
+      same = true
+    }
+  }
+}
+Console.write("\\{same}")
+`;
+		await build_and_check_output(input, "list_string_at_compare", "true");
+	});
+});

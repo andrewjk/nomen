@@ -245,6 +245,23 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 					concrete_method_owned ||
 					!!status.heap_returning_functions?.has(nm);
 				if (returns_owned_string) returns_borrowed_string = false;
+				// A container / buffer BORROW accessor (`.at`/`.first`/`.slice`
+				// or the backing `load_T`) returns a view into the receiver's
+				// storage. The caller's `is_string_borrow` already treats
+				// `.at`/`.first` results as non-owned (not freed at scope
+				// exit), so strdup'ing here would hand the caller a fresh heap
+				// copy it never frees — a leak. Pass the borrow through
+				// unmodified instead. (Monomorphized bodies leave `self.items`
+				// with no resolved type, so `concrete_method_owned` above can't
+				// see that `load_T` is a borrow; this explicit check covers it.)
+				// `mov out T` accessors (`owned_return`, e.g. `pop`) relinquish
+				// the slot and stay owned.
+				if (
+					!fn.owned_return &&
+					(fn.name === "at" || fn.name === "first" || fn.name === "slice" || fn.name === "load_T")
+				) {
+					returns_borrowed_string = false;
+				}
 			}
 		}
 		if (returns_borrowed_string || returns_string_literal) {

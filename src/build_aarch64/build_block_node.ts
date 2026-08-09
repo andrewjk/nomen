@@ -129,6 +129,24 @@ function value_is_owned_string(v: any, status: BuildStatus, visiting?: Set<strin
 			if (mangled.endsWith("_to_string") && mangled !== "string_to_string") return true;
 			if (raw === "to_string" && v.target?.type?.name && v.target.type.name !== "string")
 				return true;
+			// Container / buffer BORROW accessors return a view into the
+			// receiver's existing storage — never a fresh heap allocation — so
+			// the caller must NOT free the result. Mirrors the C backend's
+			// `is_string_borrow` (at/first) and additionally covers the Buffer
+			// slot-load primitives (`load_T`) that back List/Array `.at`.
+			// Without this, a monomorphized `List<string>.at` (whose body is
+			// `return self.items.load_T(i)`) is mis-classified as heap-returning
+			// — `method_call_returns_owned` can't resolve `self.items` (its
+			// access node carries no type after monomorphization), falls back to
+			// the conservative "owned" below, and the caller frees the borrowed
+			// char* (crashing on a static literal / double-freeing the slot).
+			// A `mov out T` accessor (`owned_return`, e.g. `pop`) relinquishes
+			// the slot and IS owned, so it is excluded.
+			if (!v.access.owned_return) {
+				if (raw === "at" || raw === "first" || raw === "slice" || raw === "load_T") {
+					return false;
+				}
+			}
 			// Resolve the method to its implementation(s) and classify by what
 			// they actually return. Without this, a wrapper like
 			// `func f = (Speaker s, out string) { return s.speak() }` is
