@@ -37,6 +37,14 @@ nomen run --in app/main.nm
 
 Full pipeline: parse → check → build → link with `clang` → execute the resulting binary. The program's stdout/stderr are inherited by the terminal, and a `Completed in <ms>` line is printed afterwards.
 
+**Forwarding argv to the program.** Any tokens after a bare `--` are passed to the compiled program as its own argv, so a `main` that takes `(Init init)` can read them through `init.argc` / `init.args`:
+
+```bash
+nomen run --in app/main.nm -- file1 file2
+```
+
+The tokens after `--` are forwarded verbatim — option-like spellings (`--arch`, `-x`) are **not** re-parsed by nomen, and args containing spaces stay whole (the binary is launched with `execFileSync`, not via a shell). `build` does not forward or execute (it only links); use `run` when you want argv.
+
 ### `build`
 
 ```bash

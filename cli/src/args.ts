@@ -12,6 +12,10 @@ export interface Args {
 	audit: boolean;
 	audit_runtime?: string;
 	check: boolean;
+	// Everything after a bare `--` on the command line — forwarded verbatim to
+	// the compiled program by `nomen run`. Lets a program receive its own argv
+	// (`nomen run --in app/main.nm -- arg1 arg2`).
+	program_args: string[];
 }
 
 // Canonical option name for each accepted long/short spelling.
@@ -53,9 +57,8 @@ function set(args: Args, key: string, value: string | boolean): void {
 
 /** Parse `argv` (excluding the node binary and script path) into an `Args` object. */
 export function parse_args(argv: string[] = process.argv.slice(2)): Args {
-	const args: Args = { command: undefined, ...DEFAULTS } as Args;
+	const args: Args = { command: undefined, ...DEFAULTS, program_args: [] } as Args;
 	const positional: string[] = [];
-	let only_positional = false;
 
 	const next_value = (i: number, spelling: string): string => {
 		if (i + 1 >= argv.length) throw new Error(`Option ${spelling} requires a value`);
@@ -65,14 +68,12 @@ export function parse_args(argv: string[] = process.argv.slice(2)): Args {
 	for (let i = 0; i < argv.length; i++) {
 		const arg = argv[i];
 
-		if (only_positional) {
-			positional.push(arg);
-			continue;
-		}
-
+		// A bare `--` ends nomen's own option parsing; everything that follows
+		// is captured verbatim as the compiled program's argv (forwarded by
+		// `nomen run`). This matches the conventional `--` passthrough.
 		if (arg === "--") {
-			only_positional = true;
-			continue;
+			args.program_args = argv.slice(i + 1);
+			break;
 		}
 
 		if (arg === "-h" || arg === "--help") {
@@ -145,6 +146,7 @@ export function print_help(): void {
 		[
 			"Usage:",
 			"  nomen run --in [file/folder]     Parse, check, build and run a program",
+			"                                    (args after a bare -- are forwarded to the program)",
 			"  nomen build --in [file/folder]    Parse, check and build (no run)",
 			"  nomen check --in [file/folder]    Parse and check only",
 			"  nomen format [--in folder]        Reformat every .nm file",

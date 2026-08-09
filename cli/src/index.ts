@@ -1,5 +1,5 @@
 #! /usr/bin/env node
-import { execSync } from "node:child_process";
+import { execFileSync, execSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -167,9 +167,9 @@ try {
 		// Is the --in path a folder
 		if (fs.lstatSync(args.in).isDirectory()) {
 			if (args.watch) {
-				watchPath(args.in, config, mode);
+				watchPath(args.in, config, mode, args.program_args);
 			} else {
-				processFolder(args.in, config, mode);
+				processFolder(args.in, config, mode, args.program_args);
 			}
 		} else {
 			// Process the supplied file
@@ -178,9 +178,9 @@ try {
 				// NOTE: We get add notifications for all watched files immediately
 				// TODO: Is this the case on Windows etc too?
 				if (args.watch) {
-					watchPath(args.in, config, mode);
+					watchPath(args.in, config, mode, args.program_args);
 				} else {
-					processFile(args.in, config, mode);
+					processFile(args.in, config, mode, args.program_args);
 				}
 			} else {
 				console.log("Unsupported file type: " + extname);
@@ -289,20 +289,20 @@ function compile_audit_runtime(config: Config, input_path: string, buildDir: str
 	return audit_obj;
 }
 
-function watchPath(p: string, config: Config, mode: Mode) {
+function watchPath(p: string, config: Config, mode: Mode, program_args: string[]) {
 	chokidar.watch(p).on("all", (event, filePath) => {
 		if (shouldProcessFile(filePath)) {
-			processFile(filePath, config, mode);
+			processFile(filePath, config, mode, program_args);
 		}
 	});
 }
 
-function processFolder(folder: string, config: Config, mode: Mode) {
+function processFolder(folder: string, config: Config, mode: Mode, program_args: string[]) {
 	const dir = fs.opendirSync(folder);
 	let dirent;
 	while ((dirent = dir.readSync()) !== null) {
 		if (shouldProcessFile(dirent.name)) {
-			processFile(path.join(folder, dirent.name), config, mode);
+			processFile(path.join(folder, dirent.name), config, mode, program_args);
 			// @ts-ignore
 			let _ = fs.watch;
 		}
@@ -314,7 +314,7 @@ function shouldProcessFile(filename: string) {
 	return path.extname(filename) === SUPPORTED_EXTENSION;
 }
 
-function processFile(filename: string, config: Config, mode: Mode) {
+function processFile(filename: string, config: Config, mode: Mode, program_args: string[]) {
 	console.log("Processing", filename);
 
 	const arch = config.arch || "aarch64";
@@ -399,10 +399,16 @@ function processFile(filename: string, config: Config, mode: Mode) {
 		return;
 	}
 
-	execSync(outfile, { stdio: "inherit" });
+	// `run` executes the linked binary, forwarding any program args that
+	// followed a bare `--` on the nomen command line. execFileSync runs the
+	// binary directly (no shell), so the args are passed as real argv without
+	// shell-escaping concerns.
+	if (mode === "run") {
+		execFileSync(outfile, program_args, { stdio: "inherit" });
 
-	const runTime = performance.now();
-	console.log("");
-	console.log("");
-	console.log(`Completed in ${(runTime - startTime).toFixed(2)}ms`);
+		const runTime = performance.now();
+		console.log("");
+		console.log("");
+		console.log(`Completed in ${(runTime - startTime).toFixed(2)}ms`);
+	}
 }
