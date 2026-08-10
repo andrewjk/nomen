@@ -205,8 +205,11 @@ function value_is_owned_string(
 		// String literals are static storage (not owned). A bare variable
 		// reference is owned only if it is a local holding a fresh heap
 		// allocation — a parameter or a borrow-initialized local is a borrow.
+		// A numeric literal (e.g. `return 0` for a missing key in a
+		// string-returning function) is null, never a heap allocation.
 		const isLiteral = typeof v.value === "string" && v.value.startsWith('"');
-		return !isLiteral && !borrow_names.has(v.value);
+		const isNumeric = typeof v.value === "string" && /^(\+|-)?\d+$/.test(v.value);
+		return !isLiteral && !isNumeric && !borrow_names.has(v.value);
 	}
 	if (v.node_type === "op") return true;
 	if (v.node_type === "access") {

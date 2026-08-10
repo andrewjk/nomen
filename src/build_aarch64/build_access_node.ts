@@ -1855,6 +1855,40 @@ function build_char_array_to_string(node: AccessNode, length: string, status: Bu
 
 function resolve_access_type(node: AccessNode, status: BuildStatus): Type | null {
 	const inner = node.access;
+
+	if (inner.node_type === "access_func") {
+		// Method-call result (e.g. `self.keys.load_T(k)`): resolve the
+		// receiver's struct, find the method, and return its return type.
+		// This lets `.hash()` dispatch correctly on a `load_T()` result
+		// inside a monomorphized generic body (where the AccessFunctionCall
+		// node's cached `.type` may carry the stale generic type param "T").
+		const access_func = inner as AccessFunctionCallNode;
+		let base_type: Type | null = null;
+		if (node.target.node_type === "value") {
+			const name = (node.target as ValueNode).value;
+			const vtype = (node.target as ValueNode).type;
+			if (vtype?.name) {
+				base_type = vtype;
+			} else if (name === "self" && status.current_struct) {
+				base_type = new Type(status.current_struct.name);
+			}
+		} else if (node.target.node_type === "access") {
+			base_type = resolve_access_type(node.target as AccessNode, status);
+		}
+		if (!base_type?.name) return null;
+		const mono_name = base_type.type_args?.length
+			? base_type.name + "_" + base_type.type_args.map((t) => t.name).join("_")
+			: base_type.name;
+		const struct =
+			status.structs.find((s) => s.name === mono_name && !s.is_generic) ||
+			status.structs.find((s) => s.name === base_type!.name);
+		if (!struct) return null;
+		const func = struct.functions.find(
+			(f) => f.name === access_func.name || f.name === `#${access_func.name}`,
+		);
+		return func?.return_type || null;
+	}
+
 	if (inner.node_type !== "access_field") return null;
 	const field_name = (inner as AccessFieldNode).name;
 

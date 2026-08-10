@@ -160,6 +160,22 @@ export default function check_operation_node(op: OperationNode, status: CheckSta
 		"operation",
 	);
 
+	// `==`/`!=` on type-parameter-typed operands inside a generic body (e.g.
+	// `load_T(idx) == key` in `Map<TK, TV>`). The concrete type isn't known
+	// until monomorphization, so we can't resolve the custom operator now.
+	// Mark it deferred — the build backends resolve it against the concrete
+	// type (custom `eq`/`ne` call if the struct defines one, else builtin).
+	if ((op.op === "==" || op.op === "!=") && left_type.name) {
+		const left_is_unresolved = !status.structs.find((s) => s.name === left_type.name);
+		if (left_is_unresolved) {
+			op.operator_func = {
+				struct_name: left_type.name,
+				func_name: op.op === "==" ? "eq" : "ne",
+				deferred: true,
+			};
+		}
+	}
+
 	// HACK: this needs to come from operator funcs for each operator and type combination
 	switch (op.op) {
 		case "+":

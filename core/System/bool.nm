@@ -1,7 +1,18 @@
 /**
  * A boolean value (`true` or `false`)
  **/
-pub struct bool: Stringable {
+pub struct bool: Stringable, Hashable, Equatable {
+	pub func hash = (self, out uint) {
+		```
+		#arch: c
+		return (unsigned long)self;
+		```
+		```
+		#arch: aarch64
+		mov x0, x19
+		```
+	}
+
 	/** 
 	 * Converts this boolean to a string value (`"true"` or `"false"`)
 	 *

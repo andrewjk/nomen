@@ -322,7 +322,16 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 					!fn.owned_return &&
 					(fn.name === "at" || fn.name === "first" || fn.name === "slice" || fn.name === "load_T");
 				if (is_container_borrow_accessor) {
-					returns_borrowed_string = !access_receiver_is_self(node.value as AccessNode);
+					// Only keep the borrow (skip strdup) when building the accessor
+					// method's OWN body — the caller invokes `.at`/`.first`, which
+					// `is_string_borrow` treats as non-owned (not freed). A different
+					// function (e.g. `Map.get`) returning `self.values.load_T(idx)`
+					// must strdup: its caller (`.get`) is not a recognized borrow
+					// accessor and frees every string call result. The original
+					// `access_receiver_is_self` heuristic was too broad — it matched
+					// any `self.<field>.load_T(i)` even inside a non-accessor body.
+					const fn_name = status.current_function_name;
+					returns_borrowed_string = fn_name !== "at" && fn_name !== "first";
 				}
 			}
 		}
@@ -362,27 +371,6 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 		build_auto_free(status);
 		status.code += `return _return_val;\n`;
 	}
-}
-
-/**
- * Whether the receiver of an access node (e.g. `xs.at(0)`, `self.items.load_T(i)`)
- * roots at `self` — i.e. walking the `.target` chain bottoms out at a `self`
- * value reference. Used to restrict the container-borrow-accessor strdup skip
- * to the accessor method's own body (returning its own `self` storage), so a
- * user function returning a container borrow (`return xs.at(0)`) still strdup's
- * for its caller.
- */
-function access_receiver_is_self(node: AccessNode): boolean {
-	let cur: any = node.target;
-	while (cur) {
-		if (cur.node_type === "value") return cur.value === "self";
-		if (cur.node_type === "access") {
-			cur = cur.target;
-		} else {
-			return false;
-		}
-	}
-	return false;
 }
 
 /**

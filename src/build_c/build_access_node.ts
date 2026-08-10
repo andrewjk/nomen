@@ -97,6 +97,17 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 			}
 		}
 	}
+	// Method-call result receiver (e.g. `self.keys.load_T(k).hash()` in a
+	// monomorphized generic body): the AccessFunctionCallNode's cached `.type`
+	// may carry a stale generic type param ("T") or be empty. Resolve the
+	// actual return type by walking the access chain through the structs.
+	if (
+		node.target.node_type === "access" &&
+		(!target_type?.name || !status.structs.find((s) => s.name === target_type.name))
+	) {
+		const resolved = resolve_access_type(node.target as AccessNode, status);
+		if (resolved?.name) target_type = resolved;
+	}
 	// A bare variable's ValueNode.type may not carry `is_view` (the checker
 	// stores the full declared type on the declaration, not always on each
 	// use-site ValueNode). Recover it from variable_types so view access ops
@@ -782,4 +793,56 @@ function emit_string_length(target: BaseNode, status: BuildStatus) {
 	status.code += "((long)strlen(";
 	build_node(target, status);
 	status.code += "))";
+}
+
+/**
+ * Resolve the type of an access-chain expression by walking through the
+ * monomorphized structs (field types and method return types). Used when a
+ * cached node type is stale (a generic type param like "T" that wasn't
+ * substituted because it belonged to a nested generic, not the enclosing one).
+ */
+function resolve_access_type(node: AccessNode, status: BuildStatus): Type | null {
+	const inner = node.access;
+
+	if (inner.node_type === "access_func") {
+		const access_func = inner as AccessFunctionCallNode;
+		let base_type = resolve_receiver_type(node.target, status);
+		if (!base_type?.name) return null;
+		const mono_name = base_type.type_args?.length
+			? base_type.name + "_" + base_type.type_args.map((t) => t.name).join("_")
+			: base_type.name;
+		const struct =
+			status.structs.find((s) => s.name === mono_name && !s.is_generic) ||
+			status.structs.find((s) => s.name === base_type!.name);
+		if (!struct) return null;
+		const func = struct.functions.find(
+			(f) => f.name === access_func.name || f.name === `#${access_func.name}`,
+		);
+		return func?.return_type || null;
+	}
+
+	if (inner.node_type !== "access_field") return null;
+	const field_name = (inner as AccessFieldNode).name;
+	let base_type = resolve_receiver_type(node.target, status);
+	if (!base_type?.name) return null;
+	const struct = status.structs.find((s) => s.name === base_type!.name);
+	if (!struct) return null;
+	const field = struct.fields.find((f) => f.name === field_name);
+	return field?.type || null;
+}
+
+function resolve_receiver_type(node: BaseNode, status: BuildStatus): Type | null {
+	if (node.node_type === "value") {
+		const name = (node as ValueNode).value;
+		const vtype = (node as ValueNode).type;
+		if (vtype?.name && status.structs.find((s) => s.name === vtype.name)) return vtype;
+		if (name === "self" && status.current_struct) return new Type(status.current_struct.name);
+		return vtype?.name ? vtype : null;
+	}
+	if (node.node_type === "access") {
+		const resolved = resolve_access_type(node as AccessNode, status);
+		if (resolved) return resolved;
+		return type_from_value_node(node);
+	}
+	return null;
 }

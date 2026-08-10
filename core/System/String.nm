@@ -1,7 +1,33 @@
 /**
  * A UTF-8 text string — a heap-owned, length-tracked sequence of bytes
  **/
-pub struct string: Stringable {
+pub struct string: Stringable, Hashable, Equatable {
+	pub func hash = (self, out uint) {
+		```
+		#arch: c
+		unsigned long h = 5381;
+		for (const char* p = self; *p; p++) {
+			h = h * 33 + (unsigned long)(unsigned char)*p;
+		}
+		return h;
+		```
+		```
+		#arch: aarch64
+		// x19 = self (char*), result in x0 (djb2 hash)
+		mov x0, #5381
+		mov x3, x19
+		.Lstring_hash_loop:
+		ldrb w1, [x3]
+		cbz w1, .Lstring_hash_done
+		mov x2, #33
+		mul x0, x0, x2
+		add x0, x0, x1
+		add x3, x3, #1
+		b .Lstring_hash_loop
+		.Lstring_hash_done:
+		```
+	}
+
 	pub func to_string = (self, out string) {
 		```
 		#arch: c

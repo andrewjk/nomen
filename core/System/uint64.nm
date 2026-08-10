@@ -1,7 +1,18 @@
 /**
  * A 64-bit unsigned integer
  **/
-pub struct uint64: Stringable {
+pub struct uint64: Stringable, Hashable, Equatable {
+	pub func hash = (self, out uint) {
+		```
+		#arch: c
+		return (unsigned long)self;
+		```
+		```
+		#arch: aarch64
+		mov x0, x19
+		```
+	}
+
 	pub func to_string = (self, out string) {
 		```
 		#arch: c

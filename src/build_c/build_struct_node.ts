@@ -363,6 +363,8 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 		const old_scoped_declarations = status.scoped_declarations;
 		const old_borrow_only = status.c_borrow_only_strings;
 		const old_return_type = status.function_return_type;
+		const old_function_name = status.current_function_name;
+		status.current_function_name = func.name;
 		status.function_ref_params = new Set<string>();
 		status.class_vars = new Set<string>();
 		status.ref_class_params = new Set<string>();
@@ -532,6 +534,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 		status.scoped_declarations = old_scoped_declarations;
 		status.c_borrow_only_strings = old_borrow_only;
 		status.function_return_type = old_return_type;
+		status.current_function_name = old_function_name;
 	}
 	status.current_struct = old_current_struct;
 

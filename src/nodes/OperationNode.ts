@@ -47,6 +47,16 @@ export default class OperationNode extends BaseNode {
 		 * build backends wrap the call result in a logical NOT.
 		 */
 		invert?: boolean;
+		/**
+		 * Set during generic-body checking when `==`/`!=` is applied to
+		 * type-parameter-typed operands (e.g. `key == other` inside
+		 * `Map<TK, TV>`). The concrete type isn't known until monomorphization,
+		 * so the struct/function can't be resolved yet. The build backends
+		 * resolve it against the now-concrete operand type — emitting a custom
+		 * `eq`/`ne` call if the struct defines one, or falling back to the
+		 * builtin comparison for primitives.
+		 */
+		deferred?: boolean;
 	};
 
 	constructor(

@@ -1,7 +1,18 @@
 /**
  * A single character
  **/
-pub struct char: Stringable {
+pub struct char: Stringable, Hashable, Equatable {
+	pub func hash = (self, out uint) {
+		```
+		#arch: c
+		return (unsigned long)self;
+		```
+		```
+		#arch: aarch64
+		mov x0, x19
+		```
+	}
+
 	pub func to_string = (self, out string) {
 		```
 		#arch: c

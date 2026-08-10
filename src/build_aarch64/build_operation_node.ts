@@ -262,6 +262,35 @@ function build_operator_operand(node: BaseNode, target_reg: string, status: Buil
 }
 
 export default function build_operation_node(node: OperationNode, status: BuildStatus) {
+	// Resolve a deferred == / != operator (set during generic-body checking
+	// when the operands were unresolved type params) against the now-concrete
+	// operand type. If the struct defines `eq`/`ne`, dispatch to it; otherwise
+	// clear the marker so the builtin comparison path handles it.
+	if (node.operator_func?.deferred) {
+		// After monomorphization, at least one operand has a concrete
+		// substituted type (ValueNodes are substituted; access-func results
+		// like `load_T()` may keep the generic "T"). Try both sides.
+		let left_type = type_from_value_node(node.left_value);
+		let struct = status.structs.find((s) => s.name === left_type.name);
+		if (!struct) {
+			const right_type = type_from_value_node(node.right_value);
+			struct = status.structs.find((s) => s.name === right_type.name);
+		}
+		const target = node.operator_func.func_name;
+		const dual = target === "eq" ? "ne" : "eq";
+		let func = struct?.functions.find((f) => f.name === target);
+		let invert = false;
+		if (!func && struct) {
+			func = struct.functions.find((f) => f.name === dual);
+			invert = !!func;
+		}
+		if (func && struct) {
+			node.operator_func = { struct_name: struct.name, func_name: func.name, invert };
+		} else {
+			node.operator_func = undefined;
+		}
+	}
+
 	if (node.op === "!") {
 		build_node(node.right_value, status);
 		if (!status.code.endsWith("\n")) {

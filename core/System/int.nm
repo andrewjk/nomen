@@ -1,7 +1,18 @@
 /**
  * A signed integer — the default integer type
  **/
-pub struct int: Stringable {
+pub struct int: Stringable, Hashable, Equatable {
+	pub func hash = (self, out uint) {
+		```
+		#arch: c
+		return (unsigned long)self;
+		```
+		```
+		#arch: aarch64
+		mov x0, x19
+		```
+	}
+
 	pub func to_string = (self, out string) {
 		```
 		#arch: c

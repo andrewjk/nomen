@@ -4,6 +4,7 @@ import clone_node from "../nodes/clone_node.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
+import OperationNode from "../nodes/OperationNode.ts";
 import ParameterNode from "../nodes/ParameterNode.ts";
 import RawNode from "../nodes/RawNode.ts";
 import RootNode from "../nodes/RootNode.ts";
@@ -342,6 +343,7 @@ export function monomorphize(
 		// and lowers them as scalars (wrong arg passing / storing). Sufficient
 		// for List<T>, whose only struct-typed value is the element param.
 		retype_param_references(cloned.statements, cloned.params);
+		resolve_mono_equality_ops(cloned.statements, status);
 		cloned.checked = true;
 		mono_struct.functions.push(cloned);
 	}
@@ -630,6 +632,98 @@ function retype_value_in_node(
 	if (any_node.item?.node_type) retype_value_in_node(any_node.item, resolver);
 	if (any_node.list?.node_type) retype_value_in_node(any_node.list, resolver);
 	if (any_node.constraint?.node_type) retype_value_in_node(any_node.constraint, resolver);
+}
+
+/**
+ * Resolve `==`/`!=` operators on a monomorphised method body that were left
+ * as builtin comparisons during the generic-body check (the operands were
+ * type-parameter-typed, so the checker couldn't tell whether the concrete
+ * type defines a custom `eq`/`ne`). After monomorphisation + retype_param_
+ * references, the concrete operand types are known — so a `string == string`
+ * inside `Map<string, _>` now dispatches to `string_eq` (strcmp) rather than
+ * a pointer comparison. Primitive types (int, etc.) have no `eq`/`ne` and
+ * correctly stay builtin.
+ */
+function resolve_mono_equality_ops(nodes: BaseNode[], status: CheckStatus) {
+	for (const node of nodes) resolve_eq_ops_in_node(node, status);
+}
+
+function resolve_eq_ops_in_node(node: BaseNode | undefined | null, status: CheckStatus) {
+	if (!node) return;
+	const any_node = node as any;
+
+	if (node.node_type === "op") {
+		const op = node as OperationNode;
+		if ((op.op === "==" || op.op === "!=") && !op.operator_func) {
+			const left_name = operand_type_name(op.left_value);
+			const right_name = operand_type_name(op.right_value);
+			const type_name = status.structs.find((s) => s.name === left_name)
+				? left_name
+				: status.structs.find((s) => s.name === right_name)
+					? right_name
+					: "";
+			if (type_name) {
+				const struct = status.structs.find((s) => s.name === type_name);
+				const target = op.op === "==" ? "eq" : "ne";
+				const dual = op.op === "==" ? "ne" : "eq";
+				let func = struct?.functions.find((f) => f.name === target);
+				let invert = false;
+				if (!func && struct) {
+					func = struct.functions.find((f) => f.name === dual);
+					invert = !!func;
+				}
+				if (func && struct) {
+					op.operator_func = { struct_name: struct.name, func_name: func.name, invert };
+				}
+			}
+		}
+	}
+
+	if (any_node.statements && Array.isArray(any_node.statements)) {
+		for (const child of any_node.statements) {
+			if (child && typeof child === "object" && "node_type" in child) {
+				resolve_eq_ops_in_node(child, status);
+			}
+		}
+	}
+	if (any_node.params && Array.isArray(any_node.params)) {
+		for (const child of any_node.params) {
+			if (child && typeof child === "object" && "node_type" in child) {
+				resolve_eq_ops_in_node(child, status);
+			}
+		}
+	}
+	if (any_node.cases && Array.isArray(any_node.cases)) {
+		for (const c of any_node.cases) {
+			if (c.branch?.statements) resolve_eq_ops_in_node(c.branch, status);
+			if (c.match_value) resolve_eq_ops_in_node(c.match_value, status);
+			if (c.condition) resolve_eq_ops_in_node(c.condition, status);
+		}
+	}
+	if (any_node.value?.node_type) resolve_eq_ops_in_node(any_node.value, status);
+	if (any_node.left_value?.node_type) resolve_eq_ops_in_node(any_node.left_value, status);
+	if (any_node.right_value?.node_type) resolve_eq_ops_in_node(any_node.right_value, status);
+	if (any_node.target?.node_type) resolve_eq_ops_in_node(any_node.target, status);
+	if (any_node.access?.node_type) resolve_eq_ops_in_node(any_node.access, status);
+	if (any_node.condition?.node_type) resolve_eq_ops_in_node(any_node.condition, status);
+	if (any_node.if_branch?.node_type) resolve_eq_ops_in_node(any_node.if_branch, status);
+	if (any_node.else_branch?.node_type) resolve_eq_ops_in_node(any_node.else_branch, status);
+	if (any_node.item?.node_type) resolve_eq_ops_in_node(any_node.item, status);
+	if (any_node.list?.node_type) resolve_eq_ops_in_node(any_node.list, status);
+	if (any_node.constraint?.node_type) resolve_eq_ops_in_node(any_node.constraint, status);
+}
+
+/** Best-effort type-name extraction from an operand value node. */
+function operand_type_name(node: BaseNode | undefined | null): string {
+	if (!node) return "";
+	const any_node = node as any;
+	if (node.node_type === "value") return any_node.type?.name || "";
+	if (node.node_type === "access") return operand_type_name(any_node.access);
+	if (node.node_type === "access_func") return any_node.type?.name || "";
+	if (node.node_type === "access_field") return any_node.type?.name || "";
+	if (node.node_type === "grouped") return operand_type_name(any_node.value);
+	if (node.node_type === "cast") return any_node.target_type?.name || "";
+	return any_node.type?.name || "";
 }
 
 export function substitute_type(type: Type, substitution: Map<string, string>): Type {

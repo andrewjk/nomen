@@ -207,3 +207,96 @@ Console.write("\\{v3} \\{v10} \\{h2} \\{m.length}")
 		await build_and_check_output(input, "map_remove_shift_past", "200 300 false 2");
 	});
 });
+
+describe("Map with string keys", () => {
+	test("set and get with string keys", async () => {
+		const input = `
+var Map<string, int> m = Map<string, int>()
+m.set("hello", 1)
+m.set("world", 2)
+const int a = m.get("hello")
+const int b = m.get("world")
+const int c = m.get("missing")
+Console.write("\\{a} \\{b} \\{c} \\{m.length}")
+`;
+		await build_and_check_output(input, "map_string_keys", "1 2 0 2");
+	});
+
+	test("has with string keys", async () => {
+		const input = `
+var Map<string, int> m = Map<string, int>()
+m.set("alpha", 10)
+m.set("beta", 20)
+Console.write("\\{m.has("alpha")} \\{m.has("beta")} \\{m.has("gamma")}")
+`;
+		await build_and_check_output(input, "map_string_has", "true true false");
+	});
+
+	test("update existing string key", async () => {
+		const input = `
+var Map<string, int> m = Map<string, int>()
+m.set("key", 100)
+m.set("key", 200)
+const int v = m.get("key")
+Console.write("\\{v} \\{m.length}")
+`;
+		await build_and_check_output(input, "map_string_update", "200 1");
+	});
+
+	test("many string keys triggers rehash", async () => {
+		const input = `
+var Map<string, int> m = Map<string, int>()
+m.set("one", 1)
+m.set("two", 2)
+m.set("three", 3)
+m.set("four", 4)
+m.set("five", 5)
+m.set("six", 6)
+m.set("seven", 7)
+m.set("eight", 8)
+m.set("nine", 9)
+m.set("ten", 10)
+m.set("eleven", 11)
+m.set("twelve", 12)
+const int total = m.get("one") + m.get("two") + m.get("three") + m.get("four") + m.get("five") + m.get("six") + m.get("seven") + m.get("eight") + m.get("nine") + m.get("ten") + m.get("eleven") + m.get("twelve")
+Console.write("\\{total} \\{m.length}")
+`;
+		await build_and_check_output(input, "map_string_rehash", "78 12");
+	});
+
+	test("remove string key", async () => {
+		const input = `
+var Map<string, int> m = Map<string, int>()
+m.set("a", 1)
+m.set("b", 2)
+m.set("c", 3)
+m.remove("b")
+Console.write("\\{m.has("a")} \\{m.has("b")} \\{m.has("c")} \\{m.length}")
+`;
+		await build_and_check_output(input, "map_string_remove", "true false true 2");
+	});
+
+	test("variadic-tuple constructor with string keys", async () => {
+		const input = `
+var Map<string, int> m = Map<string, int>(["x", 10], ["y", 20])
+const int a = m.get("x")
+const int b = m.get("y")
+Console.write("\\{a} \\{b} \\{m.length}")
+`;
+		await build_and_check_output(input, "map_string_init", "10 20 2");
+	});
+});
+
+describe("Map with string values", () => {
+	test("set and get string values", async () => {
+		const input = `
+var Map<int, string> m = Map<int, string>()
+m.set(1, "one")
+m.set(2, "two")
+const string a = m.get(1)
+const string b = m.get(2)
+Console.write("\\{a} \\{b}")
+`;
+		await build_and_check_output(input, "map_string_values", "one two");
+	});
+});

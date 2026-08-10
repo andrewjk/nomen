@@ -393,6 +393,30 @@ function check_access_function_node(
 	}
 
 	if (!func) {
+		// Method dispatch on a type-parameter-typed receiver inside a generic
+		// body (e.g. `key.hash()` where `key: TK` and `TK: Hashable`). The
+		// concrete type isn't known until monomorphization, so resolve against
+		// any trait that declares the method — the trait bound is enforced when
+		// the generic is instantiated, and the monomorphized body is re-checked
+		// against the concrete type. This gives the generic-body check the
+		// method's signature (return type) for structural type-checking.
+		const receiver_is_unresolved =
+			!status.structs.find((s) => s.name === target_type.name) &&
+			!status.traits.find((t) => t.name === target_type.name) &&
+			!status.enums.find((e) => e.name === target_type.name) &&
+			!status.bitsets.find((b) => b.name === target_type.name);
+		if (receiver_is_unresolved) {
+			for (const trait of status.traits) {
+				const trait_func = trait.functions.find((f) => f.name === node.name);
+				if (trait_func) {
+					func = trait_func;
+					break;
+				}
+			}
+		}
+	}
+
+	if (!func) {
 		// Are we calling an enum case constructor?
 		const enum_node = status.enums.find((e) => e.name === target_type.name);
 		if (enum_node) {
