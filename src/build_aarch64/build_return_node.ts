@@ -227,6 +227,20 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 					status.moved.add(anchor_name);
 				}
 			}
+			// Returning a heap-array VARIABLE (`return dst` where dst is a
+			// heap-allocated `Array<T>` from `Array.with(...)`, a call, etc.)
+			// transfers buffer ownership to the caller. Mark it moved so the
+			// return-path cleanup AND the function's fall-through scope-exit
+			// cleanup both skip it — otherwise the buffer is freed while the
+			// caller still holds the pointer (a use-after-free that is dead
+			// code for an unconditional return but a real double-free for a
+			// conditional `if cond { return dst }`). Stack-array / literal
+			// returns take the heap-alloc-and-copy path above (total_size > 0)
+			// and are unaffected.
+			if (var_name && status.heap_array_vars?.has(var_name)) {
+				if (!status.moved) status.moved = new Set();
+				status.moved.add(var_name);
+			}
 		}
 
 		mark_moved_if_struct(node.value, status);

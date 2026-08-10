@@ -233,7 +233,18 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 			!!status.class_vars?.has(value) ||
 			!!status.class_vars?.has(original_value);
 		if (is_array) {
-			status.code += `add x0, x29, #${offset}`;
+			// A heap-array variable (from `Array.with(...)`, a call result,
+			// etc. — tracked in `heap_array_vars`) stores a POINTER to the
+			// heap buffer in its slot. A value use (return, function arg,
+			// assignment RHS) wants that pointer loaded, not the slot's
+			// address. Stack arrays (literals / fixed-size) keep the
+			// `add x0, x29, #offset` form: their slot IS the inline elements,
+			// and by-reference passes (e.g. to an array param) want &slot.
+			if (status.heap_array_vars?.has(value)) {
+				status.code += `ldr x0, [x29, #${offset}]`;
+			} else {
+				status.code += `add x0, x29, #${offset}`;
+			}
 		} else if (is_ref && !is_class) {
 			// The slot holds an 8-byte pointer to the caller's storage. Load
 			// the pointer, then dereference with the pointed-to value's width

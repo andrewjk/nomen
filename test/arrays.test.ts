@@ -276,6 +276,50 @@ if words.length == 3 {
 `;
 		await build_and_check_output(input, "array_func_return_string_literal", "abc");
 	});
+
+	// Regression: a function returning `Array<T>` (heap-allocated via
+	// `Array.with(...)`, not a stack-array literal) must give its
+	// `_return_val` temp the correct `struct Array_<T>*` type on the C
+	// backend (it previously fell through to `c_type(elem)` e.g. `long`,
+	// a pointer/int mismatch that round-tripped on 64-bit but broke
+	// 32-bit). The aarch64 backend had a parallel bug: it returned the
+	// stack-slot address of the heap-array variable instead of loading the
+	// heap pointer. Both are exercised here.
+	test("function returning out Array<int> built via Array.with", async () => {
+		const input = `
+func make_arr = (out Array<int>) {
+  var Array<int> dst = Array<int>.with(0, 3)
+  dst.set(0, 10)
+  dst.set(1, 20)
+  dst.set(2, 30)
+  return dst
+}
+var Array<int> a = make_arr()
+for n of a {
+  Console.write("\\{n} ")
+}
+`;
+		await build_and_check_output(input, "array_func_return_heap_with", "10 20 30 ");
+	});
+
+	test("function returning out Array<int> by forwarding another call", async () => {
+		const input = `
+func make_arr = (out Array<int>) {
+  var Array<int> dst = Array<int>.with(0, 2)
+  dst.set(0, 7)
+  dst.set(1, 9)
+  return dst
+}
+func passthrough = (out Array<int>) {
+  return make_arr()
+}
+var Array<int> a = passthrough()
+for n of a {
+  Console.write("\\{n} ")
+}
+`;
+		await build_and_check_output(input, "array_func_return_forwarded_call", "7 9 ");
+	});
 });
 
 // ERRORS

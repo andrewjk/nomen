@@ -138,15 +138,28 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 		// the trait) — without the `*`, the bare typedef would be initialised
 		// as a value from `0L` or `load_int()`'s long, neither of which is a
 		// struct value.
-		const type_prefix = ret_type.is_view
-			? "nomen_view "
-			: is_struct
-				? return_is_class
-					? `struct ${mono_type_name}* `
-					: `struct ${mono_type_name} `
-				: return_trait
-					? `struct ${ret_type.name}* `
-					: c_type(ret_type.name || "int");
+		// An `Array<T>` return type (parse-rewritten to `{name: T, is_array:
+		// true}`) is a heap `struct Array_<T>*` pointer when it reaches this
+		// fall-through path: the stack-array-to-heap-copy path above already
+		// `return`ed for literal / fixed-size-declaration returns, so the only
+		// `is_array` cases left are returning an existing heap-array pointer
+		// (a variable from `Array.with(...)`, or a call to another
+		// `Array<T>`-returning function). Emit the matching pointer type so
+		// the `_return_val` temp matches the function signature — without
+		// this, the temp falls through to `c_type(elem)` (e.g. `long`), which
+		// round-trips on 64-bit but is a type mismatch and breaks 32-bit /
+		// generates implicit-conversion warnings.
+		const type_prefix = ret_type.is_array
+			? `struct Array_${ret_type.name}* `
+			: ret_type.is_view
+				? "nomen_view "
+				: is_struct
+					? return_is_class
+						? `struct ${mono_type_name}* `
+						: `struct ${mono_type_name} `
+					: return_trait
+						? `struct ${ret_type.name}* `
+						: c_type(ret_type.name || "int");
 		// Match/switch/if are statements in C, not expressions — `_return_val
 		// = switch(...)` is invalid. Declare _return_val uninitialised, set
 		// return_assign so each branch's LetNode/ReturnNode assigns to it,
