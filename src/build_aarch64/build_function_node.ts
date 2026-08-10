@@ -14,6 +14,7 @@ import {
 	patch_overflow_placeholders,
 } from "./utils/stack_args.ts";
 import { allocate_stack_space } from "./utils/stack_var.ts";
+import { get_field_offset, get_struct_size } from "./utils/struct_layout.ts";
 
 let label_counter = 0;
 
@@ -226,7 +227,14 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		const argc_offset = vt_size;
 		const args_offset = vt_size + 8;
 		const args_count = 16;
-		init_struct_size = args_offset + args_count * 8;
+		// `is_tty` (bool, 1 byte) is the last Init field, after the `string[16]
+		// args` array (which the layout sizes as 8-byte length prefix + 128
+		// bytes of elements = 136). Resolve its offset and the total struct
+		// size from the layout helpers so this stays correct if the struct
+		// changes, and round the frame up to 16 for AAPCS64 alignment.
+		const is_tty_offset =
+			get_field_offset("Init", "is_tty", status) || args_offset + args_count * 8 + 8;
+		init_struct_size = Math.ceil((get_struct_size("Init", status) || is_tty_offset + 1) / 16) * 16;
 		status.code += `sub sp, sp, #${init_struct_size}\n`;
 		status.code += `str x0, [sp, #${argc_offset}]\n`;
 		status.code += `str x1, [sp, #${args_offset}]\n`;
@@ -247,6 +255,12 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		status.code += `add x2, x2, #1\n`;
 		status.code += `b ${loop_label}\n`;
 		status.code += `${end_label}:\n`;
+		// `init.is_tty = isatty(1)` — whether stdout is a terminal, for
+		// renderer selection. Done after the argv loop (x20/x2/x3 are dead
+		// here) and before any callee-saved param regs are live.
+		status.code += `mov x0, #1\n`;
+		status.code += `bl _isatty\n`;
+		status.code += `strb w0, [sp, #${is_tty_offset}]\n`;
 		status.code += `mov x0, sp\n`;
 	}
 

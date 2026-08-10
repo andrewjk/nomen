@@ -1,9 +1,11 @@
 /**
- * Program startup state — the argument count and argument list passed to `main`
+ * Program startup state — the argument count and argument list passed to `main`,
+ * plus whether stdout is a terminal (for renderer selection).
  **/
 pub struct Init {
 	var int argc
 	var string[16] args
+	var bool is_tty
 }
 
 /**

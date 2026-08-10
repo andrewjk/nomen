@@ -130,6 +130,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		status.code += `${pname}->_vt = 0;\n`;
 		status.code += `${pname}->argc = argc;\n`;
 		status.code += `for (int _nomen_i = 0; _nomen_i < argc && _nomen_i < 16; _nomen_i++) ${pname}->args[_nomen_i] = argv[_nomen_i];\n`;
+		status.code += `${pname}->is_tty = isatty(1);\n`;
 	}
 
 	const old_ref_params = status.function_ref_params;
