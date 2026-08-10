@@ -13,6 +13,7 @@ import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
+import { borrow_depth_of } from "./utils/borrow.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
 import evaluate_const_condition, {
 	evaluate_numeric_or_bool,
@@ -29,7 +30,7 @@ import {
 	substitute_constraint,
 } from "./utils/flow_bounds.ts";
 import is_visible from "./utils/is_visible.ts";
-import { is_class_type } from "./utils/ownership.ts";
+import { is_class_type, is_owning_ref_type } from "./utils/ownership.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
 
@@ -277,12 +278,15 @@ export default function check_function_call(
 			}
 		}
 		// Only require explicit 'mov' keyword at the call site when the
-		// parameter is a class type AND the argument is a variable (has a
-		// name to invalidate). For temporaries (function call results,
-		// literals) and non-class types, mov is implicit or a no-op.
+		// parameter is a class type AND the argument is an OWNED variable
+		// (has a name to invalidate). For temporaries (function call
+		// results, literals), non-class types, and BORROW variables (which
+		// cannot be moved soundly — see the shared-ownership check below),
+		// mov is implicit, a no-op, or the borrow check below fires first.
 		const param_is_class = func_param.type.name && is_class_type(func_param.type.name, status);
 		const arg_is_variable = param.node_type === "value";
-		if (func_param.is_moved && !has_mov_keyword && param_is_class && arg_is_variable) {
+		const arg_is_owned_value = arg_is_variable && borrow_depth_of(param, status) === undefined;
+		if (func_param.is_moved && !has_mov_keyword && param_is_class && arg_is_owned_value) {
 			add_error(
 				status,
 				`Missing 'mov' keyword for mov parameter '${func_param.name}'`,
@@ -317,6 +321,35 @@ export default function check_function_call(
 				add_error(
 					status,
 					`cannot mov '${field_name}' out of struct — struct owns its class fields`,
+					param.start,
+				);
+			}
+		}
+		// Storing a BORROWED class/trait value into a `mov T` slot would
+		// create shared ownership: the destination container's `#destroy`
+		// (ClassBuffer-backed for class/trait element types) frees the
+		// pointer per-element, but the borrow's source still references the
+		// same instance — a runtime double-free (SIGABRT) when the source
+		// is later destroyed. Reject at check time. The argument must be
+		// an OWNED value: an owned local, a constructor call, or a
+		// `mov out T` accessor result (e.g. `.pop()`, `Buffer.move_T(i)`).
+		// `swap` is exempt — the swap expression replaces the source in
+		// scope, so the move is sound even when the lvalue reads as a
+		// borrow (e.g. `dst.push(mov src.field swap fresh)`).
+		if (
+			func_param.is_moved &&
+			!node.swap_params?.has(i) &&
+			func_param.type.name &&
+			is_owning_ref_type(func_param.type.name, status)
+		) {
+			const arg_borrow_depth = borrow_depth_of(param, status);
+			if (arg_borrow_depth !== undefined) {
+				add_error(
+					status,
+					`Cannot move a borrowed value into owning parameter '${func_param.name}' — ` +
+						`it would create shared ownership (the destination frees the pointer on destroy, ` +
+						`leaving the borrow's source dangling). Pass an owned value: a fresh constructor, ` +
+						`an owned local, or a 'mov out T' accessor result (e.g. .pop() or items.move_T(i)).`,
 					param.start,
 				);
 			}

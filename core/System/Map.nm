@@ -145,7 +145,12 @@ pub struct Map<TK: Hashable + Equatable, TV> {
 		var i = 0
 		while i < old_cap; i += 1 {
 			if old_used.load(i) != 0 {
-				self.set(old_keys.load_T(i), old_values.load_T(i))
+				// move_T (not load_T) relinquishes the old slot, so each
+				// key/value is owned by exactly one buffer (the new self)
+				// afterwards. load_T would leave the old slot referencing
+				// the same class pointer — a double-free when old_keys is
+				// destroyed.
+				self.set(old_keys.move_T(i), old_values.move_T(i))
 			}
 		}
 	}

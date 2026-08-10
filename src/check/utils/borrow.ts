@@ -4,7 +4,7 @@ import type BaseNode from "../../nodes/BaseNode.ts";
 import Type from "../../nodes/Type.ts";
 import ValueNode from "../../nodes/ValueNode.ts";
 import type CheckStatus from "../CheckStatus.ts";
-import { is_class_type } from "./ownership.ts";
+import { is_owning_ref_type } from "./ownership.ts";
 import type_from_value_node from "./type_from_value_node.ts";
 import value_from_value_node from "./value_from_value_node.ts";
 
@@ -29,7 +29,7 @@ export function borrow_depth_of(node: BaseNode, status: CheckStatus): number | u
 		const access = node as AccessNode;
 		if (access.access.node_type === "access_field") {
 			const t = type_from_value_node(access, status);
-			if (t?.name && is_class_type(t.name, status)) {
+			if (t?.name && is_owning_ref_type(t.name, status)) {
 				return status.scope_depth;
 			}
 		} else if (access.access.node_type === "access_func") {
@@ -76,7 +76,7 @@ export function borrow_owner_of(node: BaseNode, status: CheckStatus): string | u
 		const access = node as AccessNode;
 		if (access.access.node_type === "access_field") {
 			const t = type_from_value_node(access, status);
-			if (t?.name && is_class_type(t.name, status)) {
+			if (t?.name && is_owning_ref_type(t.name, status)) {
 				return ultimate_owner(access.target, status);
 			}
 		} else if (access.access.node_type === "access_func") {
@@ -109,13 +109,16 @@ export function borrow_owner_of(node: BaseNode, status: CheckStatus): string | u
 
 /**
  * Whether a method-call result type is a borrow of its receiver (rather than an
- * owned value). True for class-typed returns and for `view T` returns; false for
- * primitives, constructors, and `mov out T` (owned) returns.
+ * owned value). True for class-/trait-typed returns and for `view T` returns;
+ * false for primitives, constructors, and `mov out T` (owned) returns. Traits
+ * are reference types just like classes (a trait-typed value is a heap pointer
+ * into someone else's ClassBuffer<Trait> slot), so an instance method returning
+ * a trait borrows from its receiver the same way a class-typed return does.
  */
 function is_borrowed_return(t: Type | undefined, status: CheckStatus): boolean {
 	if (!t) return false;
 	if (t.is_view) return true;
-	return !!t.name && is_class_type(t.name, status);
+	return !!t.name && is_owning_ref_type(t.name, status);
 }
 
 /**

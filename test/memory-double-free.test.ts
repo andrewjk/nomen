@@ -596,3 +596,47 @@ Console.write(result)
 		await build_and_check_output(input, "dfree_return_owned_no_leak", "42");
 	});
 });
+
+describe("container ownership across function boundaries", () => {
+	// Regression for the "RAII double-free when the same class instance is
+	// referenced by two lists" roadblock. Previously: `dels.push(src.at(i))`
+	// silently compiled and crashed at runtime (SIGABRT) — both lists freed
+	// the same class pointer on destroy. The checker now rejects the
+	// shared-ownership pattern at compile time (see test/uaf-via-container),
+	// and the CORRECT pattern (`pop` to extract ownership) round-trips a
+	// class across a function boundary with no leak and no double-free.
+
+	test("pop transfers ownership across a function boundary (no double-free)", async () => {
+		const input = `
+class Item { var int value = 0 }
+func fill = (ref List<Item> items, int n) {
+  var int i = 0
+  while i < n {
+    var Item x = Item()
+    x.value = i
+    items.push(mov x)
+    i = i + 1
+  }
+}
+func drain = (ref List<Item> src, out List<Item>) {
+  var List<Item> dst = List<Item>()
+  while src.length > 0 {
+    dst.push(src.pop())
+  }
+  return dst
+}
+var List<Item> units = List<Item>()
+fill(ref units, 3)
+var List<Item> moved = drain(ref units)
+var int sum = 0
+var int i = 0
+while i < moved.length {
+  sum = sum + moved.at(i).value
+  i = i + 1
+}
+Console.write("\\{sum}")
+`;
+		// Items pushed with values 0, 1, 2; popped in reverse; sum is 0+1+2 = 3.
+		await build_and_check_output(input, "dfree_pop_across_fn", "3");
+	});
+});

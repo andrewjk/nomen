@@ -174,7 +174,15 @@ pub struct ClassBuffer<T> {
 		```
 	}
 
-	inline func move_T = (ref self, int i: i >= 0 && i < self.cap, out T) {
+	// Move a class pointer out of a slot: return it and zero the slot so the
+	// buffer no longer references it. Declared `mov out T` so the borrow
+	// checker treats the result as OWNED — the slot is relinquished, so the
+	// caller is the sole remaining owner. This is the owning-extract primitive
+	// (parallel to List.pop); use it (not load_T) when transferring ownership
+	// out of a ClassBuffer slot, or moving a value into a fresh owning
+	// container — load_T returns a BORROW (the slot is unchanged) and storing
+	// it elsewhere would create shared ownership (double-free at destroy).
+	inline func move_T = (ref self, int i: i >= 0 && i < self.cap, mov out T) {
 		```
 		#arch: c
 		long *slots = (long*)(unsigned long long)self->data;
