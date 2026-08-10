@@ -15,6 +15,7 @@ import build_struct_body from "./build_struct_body.ts";
 import build_struct_node from "./build_struct_node.ts";
 import build_trait_node from "./build_trait_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
+import array_struct_name from "./utils/array_struct.ts";
 import c_function_name from "./utils/c_function_name.ts";
 import { enter_c_scope, leave_c_scope } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
@@ -149,6 +150,26 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		if (param.is_variadic) {
 			status.function_variadic_params.add(c_function_name(param.name));
 		}
+		// An `Array<T>` parameter lowers to `struct Array_<T>*` when the mono
+		// struct exists (see build_parameter_node). Register it in
+		// `heap_array_vars` so the access/value/for-loop paths treat it as a
+		// struct pointer with a length header (dispatching `.length`/`.at`/
+		// `.set` to the monomorphized `Array_<T>` methods), exactly like a
+		// heap-allocated local from `Array.with(...)`. When the struct does
+		// NOT exist (raw iteration only), the param stays a raw pointer and is
+		// not registered here. Params are not in scoped_declarations, so
+		// build_auto_free will not free them (the caller owns the buffer) —
+		// this purely steers access dispatch. Mirrors the aarch64 backend.
+		const param_arr_struct = !param.is_variadic ? array_struct_name(param.type, status) : undefined;
+		if (param_arr_struct) {
+			const pname = c_function_name(param.name);
+			if (!status.heap_array_vars) status.heap_array_vars = new Set();
+			status.heap_array_vars.add(pname);
+			if (param.type?.name) {
+				if (!status.variable_types) status.variable_types = new Map();
+				status.variable_types.set(pname, param.type);
+			}
+		}
 		const param_struct = status.structs.find((s) => s.name === param.type.name);
 		const param_trait = status.traits.find((t) => t.name === param.type.name);
 		// `function_ref_params` tracks params that are emitted as pointers in
@@ -180,7 +201,15 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 					status.ref_class_param_types!.set(pname, param.type);
 				}
 			} else {
-				status.function_ref_params.add(pname);
+				// An `Array<T>` struct param is already registered in
+				// `heap_array_vars` above and lowers to a single
+				// `struct Array_<T>*` (mutation via `.set` is in place, no
+				// write-back). It must NOT also be in `function_ref_params`,
+				// which would make every use emit `*name` (dereferencing the
+				// struct pointer to a by-value struct).
+				if (!status.heap_array_vars?.has(pname)) {
+					status.function_ref_params.add(pname);
+				}
 			}
 			// A `mov` class param transfers ownership to the callee. Register
 			// it as a scoped declaration so build_auto_free destroys+frees it

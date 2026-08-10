@@ -225,6 +225,50 @@ for i of 0 .. v.length {
 		await build_and_check_output(input, "list_ref_set_persists", "0 0 42 0 0 ");
 	});
 
+	// Regression for the `Array<T>.set` ROADBLOCK: a `ref Array<T>` parameter
+	// must persist `.set` writes back to the caller. The parse-time
+	// `Array<T>` → `T[]` rewrite previously lowered such a param to a raw
+	// element pointer, so `.set` wrote into the caller's stack around the
+	// pointer slot instead of the array's data region and `v.at(i)` read the
+	// original value. The param now lowers to `struct Array_<T>*` on both
+	// backends, matching how a heap-array local is treated.
+	test("ref Array<int> param persists set across the call", async () => {
+		const input = `
+func fill = (ref Array<int> arr, int idx, int val) {
+    if idx >= 0 && idx < arr.length {
+        arr.set(idx, val)
+    }
+}
+var Array<int> v = Array<int>.with(0, 5)
+fill(ref v, 2, 42)
+for i of 0 .. v.length {
+    Console.write("\\{v.at(i)} ")
+}
+`;
+		await build_and_check_output(input, "array_ref_set_persists", "0 0 42 0 0 ");
+	});
+
+	// A non-`ref` `Array<T>` param borrows the caller's struct pointer and can
+	// read `.length` / `.at` through it (previously broken — only `for n of`
+	// iteration worked because it used the raw data pointer).
+	test("non-ref Array<int> param supports .length and .at", async () => {
+		const input = `
+func sum_all = (Array<int> arr, out int) {
+    var total = 0
+    for i of 0 .. arr.length {
+        total = total + arr.at(i)
+    }
+    return total
+}
+var Array<int> v = Array<int>.with(0, 3)
+v.set(0, 10)
+v.set(1, 20)
+v.set(2, 30)
+Console.write("\\{sum_all(v)}")
+`;
+		await build_and_check_output(input, "array_param_length_at", "60");
+	});
+
 	test("array in function param", async () => {
 		const input = `
 func sum = (Array<int> nums, out int) {

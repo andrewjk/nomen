@@ -1,5 +1,6 @@
 import ParameterNode from "../nodes/ParameterNode.ts";
 import type BuildStatus from "./BuildStatus.ts";
+import array_struct_name from "./utils/array_struct.ts";
 import c_function_name from "./utils/c_function_name.ts";
 import c_type from "./utils/c_type.ts";
 
@@ -15,6 +16,17 @@ export default function build_parameter_node(node: ParameterNode, status: BuildS
 		status.current_struct.name.startsWith(type_name + "_")
 	) {
 		type_name = status.current_struct.name;
+	}
+	// An `Array<T>` parameter (parse-rewritten to `{name: T, is_array: true}`)
+	// is a heap `struct Array_<T>*` pointer, not a raw element pointer. Promote
+	// it to the struct name so the rest of this function (and the body) treats
+	// it like any generic struct param. Variadic params (`...T`, also
+	// `is_array`) are raw element pointers and stay as-is. Excludes a
+	// length-bearing `T[N]` (a fixed-size stack array), which `array_struct_name`
+	// already rejects via the `length` guard.
+	if (!node.is_self_param && !node.is_variadic) {
+		const arr_struct = array_struct_name(node.type, status);
+		if (arr_struct) type_name = arr_struct;
 	}
 	// For free functions (no current_struct) with an explicitly-instantiated
 	// generic parameter type (e.g. `Tree<int> tree`), rewrite the type name to

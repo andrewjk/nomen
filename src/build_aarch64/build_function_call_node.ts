@@ -348,7 +348,18 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 				const param = node.params[i];
 				const param_type = (param as any).type?.name || "";
 				const is_ref_param = node.ref_param_indices?.includes(i);
-				if (param.node_type === "array" && param_type) {
+				// An `Array<T>` argument that is itself a heap-array value (a
+				// `heap_array_vars` local or an `Array<T>` param — both already
+				// `struct Array_<T>*` pointers) must be forwarded directly
+				// regardless of `ref`/non-`ref`: `.set` mutates in place
+				// through the pointer, so neither `emit_address_of` (which
+				// would pass `&slot`, a double pointer) nor a deref is wanted.
+				const arr_arg_name = param.node_type === "value" ? (param as ValueNode).value : undefined;
+				const arg_is_array_struct_val =
+					!!arr_arg_name && !!status.heap_array_vars?.has(arr_arg_name);
+				if (arg_is_array_struct_val) {
+					build_node(param, status);
+				} else if (param.node_type === "array" && param_type) {
 					const arr = param as ArrayValuesNode;
 					const label = `_arr_param_${array_param_counter++}`;
 					const has_strings = arr.values.some(

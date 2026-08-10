@@ -50,6 +50,31 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		}
 
 		const param_type = type_from_value_node(node.params[i]);
+
+		// An `Array<T>` argument that is itself a heap `struct Array_<T>*`
+		// value (a `heap_array_vars` local or another `Array<T>` param — both
+		// already pointers, recognised by having NO compile-time `length`) must
+		// be forwarded directly: `ref` Array<T> params want the pointer for
+		// in-place `.set` mutation, not its address. Fixed-size array args
+		// (`T[N]`, which carry a `length`) and array literals are left to the
+		// generic arg path below — they are raw stack arrays, not heap struct
+		// pointers, regardless of whether an `Array_<T>` mono struct happens
+		// to exist. Struct-constructor calls are excluded too (their array
+		// fields store elements inline).
+		const arg_arr_struct =
+			!is_struct && param_type.is_array && !param_type.is_view && !param_type.length
+				? status.structs.find((s) => s.name === `Array_${param_type.name}` && !s.is_generic)?.name
+				: undefined;
+		if (arg_arr_struct) {
+			// Already a heap `struct Array_<T>*` pointer — forward as-is.
+			if (node.params[i].node_type === "value") {
+				status.suppress_dereference = true;
+			}
+			build_node(node.params[i], status);
+			status.suppress_dereference = false;
+			continue;
+		}
+
 		const is_ref_param = node.ref_param_indices?.includes(i);
 		// Class-typed arguments are already pointers (the pointer IS the
 		// value). They must NOT be passed by address — `&h1->content` would

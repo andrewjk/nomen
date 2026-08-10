@@ -1,4 +1,5 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
+import array_struct_name from "../build_c/utils/array_struct.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import type Type from "../nodes/Type.ts";
 import build_block_node from "./build_block_node.ts";
@@ -419,9 +420,34 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 				status.function_param_vars.add(param.name);
 			}
 			if (param.type.is_array) {
-				status.function_array_params!.add(param.name);
+				// An `Array<T>` parameter (parse-rewritten to `{name: T, is_array:
+				// true}`) is a heap `struct Array_<T>*` pointer when the mono
+				// `Array_<T>` struct exists (i.e. the type was instantiated — e.g.
+				// by an `Array<T>.with(...)` call) — register it in
+				// `heap_array_vars` so `.length`/`.at`/`.set` and for-loop
+				// iteration use the struct layout (length at [ptr+0], data at
+				// [ptr+8]). When the struct does NOT exist (the param is only used
+				// for raw `for n of` iteration with a stack-array arg), keep the
+				// raw `function_array_params` data-pointer layout. This mirrors
+				// the C backend's build_parameter_node promotion, so the body and
+				// the signature stay consistent. Variadic `...T` params are
+				// excluded by the `is_variadic` guard.
+				const arr_struct = !param.is_variadic ? array_struct_name(param.type, status) : undefined;
+				if (arr_struct) {
+					if (!status.heap_array_vars) status.heap_array_vars = new Set();
+					status.heap_array_vars.add(param.name);
+				} else {
+					status.function_array_params!.add(param.name);
+				}
 			}
-			if (param.type.is_ref) {
+			// A `ref Array<T>` param is a single `struct Array_<T>*` (mutation is
+			// in-place via `.set`, not write-back through a double pointer), so it
+			// must NOT be registered in `function_ref_params` — that set steers the
+			// access/value paths to treat the slot as a pointer-to-pointer
+			// (`is_local_ref_var`), which would dereference the heap pointer as if
+			// it were an address. Skip the ref registration when the param was
+			// already claimed as a heap-array struct above.
+			if (param.type.is_ref && !status.heap_array_vars?.has(param.name)) {
 				status.function_ref_params!.add(param.name);
 			}
 		}
