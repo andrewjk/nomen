@@ -1,6 +1,7 @@
 import emit_field_overrides from "../build/emit_field_overrides.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
+import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import ReturnNode from "../nodes/ReturnNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
@@ -10,6 +11,7 @@ import build_node from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import c_type from "./utils/c_type.ts";
 import emit_allocations from "./utils/emit_allocations.ts";
+import is_string_borrow from "./utils/is_string_borrow.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 
 export default function build_return_node(node: ReturnNode, status: BuildStatus) {
@@ -64,10 +66,20 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 	}
 
 	// HACK: This needs more work to map return values to declarations
-	// Remove the return value from scoped_declarations so it won't be disposed
+	// Remove the return value from scoped_declarations so it won't be disposed.
+	// Capture the declaration FIRST (searching the whole scope stack, since a
+	// return inside an if/while sub-scope may reference a variable declared in
+	// an enclosing frame): a later borrow check (returns_borrow_var) needs to
+	// know whether the returned variable is an owned local vs. a
+	// parameter/borrow, and this splice removes the decl so a subsequent lookup
+	// would mis-classify every local return as a parameter. The splice itself
+	// only affects the current frame (an outer-frame decl is left for its own
+	// scope-exit cleanup, which is dead code after a return anyway).
+	let returned_value_decl: DeclarationNode | undefined;
 	if (node.value.node_type === "value") {
-		let value = (node.value as ValueNode).value;
-		let di = status.scoped_declarations.findIndex((d) => d.name === value);
+		const value = (node.value as ValueNode).value;
+		returned_value_decl = find_decl_across_scopes(value, status);
+		let di = status.scoped_declarations.indexOf(returned_value_decl as DeclarationNode);
 		if (di !== -1) {
 			status.scoped_declarations.splice(di, 1);
 		}
@@ -198,6 +210,40 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 			(node.value as ValueNode).value.length >= 2 &&
 			(node.value as ValueNode).value.startsWith('"') &&
 			(node.value as ValueNode).value.endsWith('"');
+		// A bare VARIABLE return (`return s`) hands the caller a pointer the
+		// callee does not own when the variable is a parameter or a
+		// borrow-initialized local (e.g. `const string t = xs.at(0); return t`,
+		// or `const string x = "lit"; return x`). The caller's auto_free frees
+		// every string call result (see build_auto_free), so a raw borrow
+		// crashes (freeing argv/container storage or a static literal). strdup
+		// at the return so the caller frees a fresh heap copy. An OWNED local
+		// (a heap value the callee would otherwise free at scope exit) is left
+		// alone: ownership transfers to the caller when the decl is spliced out
+		// of scoped_declarations below, so strdup'ing it would leak the
+		// original. A var is a borrow here iff it is NOT a freeable owned
+		// local — i.e. it's a parameter (not in scoped_declarations) or it
+		// matches the auto_free borrow test (`is_string_borrow(init)` or a
+		// recorded `string_borrow_vars` literal).
+		let returns_borrow_var = false;
+		if (
+			ret_type.name === "string" &&
+			!ret_type.is_view &&
+			node.value.node_type === "value" &&
+			!returns_string_literal
+		) {
+			const var_name = (node.value as ValueNode).value;
+			// Use the decl captured before the scoped_declarations splice (the
+			// returned value is removed there so it isn't freed at scope exit).
+			if (!returned_value_decl) {
+				// Not a local declaration → a parameter (or otherwise non-local).
+				returns_borrow_var = true;
+			} else if (
+				is_string_borrow(returned_value_decl.value) ||
+				!!status.string_borrow_vars?.has(var_name)
+			) {
+				returns_borrow_var = true;
+			}
+		}
 		if (returns_borrowed_string) {
 			const access = (node.value as AccessNode).access;
 			if (access.node_type === "access_func") {
@@ -245,26 +291,29 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 					concrete_method_owned ||
 					!!status.heap_returning_functions?.has(nm);
 				if (returns_owned_string) returns_borrowed_string = false;
-				// A container / buffer BORROW accessor (`.at`/`.first`/`.slice`
-				// or the backing `load_T`) returns a view into the receiver's
-				// storage. The caller's `is_string_borrow` already treats
-				// `.at`/`.first` results as non-owned (not freed at scope
-				// exit), so strdup'ing here would hand the caller a fresh heap
-				// copy it never frees — a leak. Pass the borrow through
-				// unmodified instead. (Monomorphized bodies leave `self.items`
-				// with no resolved type, so `concrete_method_owned` above can't
-				// see that `load_T` is a borrow; this explicit check covers it.)
-				// `mov out T` accessors (`owned_return`, e.g. `pop`) relinquish
-				// the slot and stay owned.
-				if (
+				// A container/buffer BORROW accessor (`.at`/`.first`/`.slice` or the
+				// backing `load_T`) returns a view into the receiver's storage. This
+				// is decisive — it overrides the `concrete_method_owned` conclusion
+				// above (which can't tell that `List.at`'s `return self.items.load_T(i)`
+				// yields a borrow, not an owned string). When returned from a USER
+				// function (receiver is NOT self), the caller frees every string call
+				// result, so the borrow must be strdup'd into an owned heap copy;
+				// passing the raw borrow through crashes on the caller's free. When
+				// the receiver IS self — the accessor method's own body — keep it a
+				// borrow: the caller invokes it through `.at`/`.first`, whose result
+				// `is_string_borrow` treats as non-owned (not freed), so strdup'ing
+				// would hand the caller a heap copy it never frees (a leak). `mov out
+				// T` accessors (`owned_return`, e.g. `pop`) relinquish the slot and
+				// stay owned.
+				const is_container_borrow_accessor =
 					!fn.owned_return &&
-					(fn.name === "at" || fn.name === "first" || fn.name === "slice" || fn.name === "load_T")
-				) {
-					returns_borrowed_string = false;
+					(fn.name === "at" || fn.name === "first" || fn.name === "slice" || fn.name === "load_T");
+				if (is_container_borrow_accessor) {
+					returns_borrowed_string = !access_receiver_is_self(node.value as AccessNode);
 				}
 			}
 		}
-		if (returns_borrowed_string || returns_string_literal) {
+		if (returns_borrowed_string || returns_string_literal || returns_borrow_var) {
 			status.code += `strdup(`;
 		}
 		// Type erasure: when the function returns a class/struct pointer but
@@ -285,7 +334,7 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 			status.code += return_is_class ? `(struct ${mono_type_name}*)` : `(struct ${mono_type_name})`;
 		}
 		build_node(node.value, status);
-		if (returns_borrowed_string || returns_string_literal) {
+		if (returns_borrowed_string || returns_string_literal || returns_borrow_var) {
 			status.code += `)`;
 		}
 		status.code += `;\n`;
@@ -300,4 +349,44 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 		build_auto_free(status);
 		status.code += `return _return_val;\n`;
 	}
+}
+
+/**
+ * Whether the receiver of an access node (e.g. `xs.at(0)`, `self.items.load_T(i)`)
+ * roots at `self` — i.e. walking the `.target` chain bottoms out at a `self`
+ * value reference. Used to restrict the container-borrow-accessor strdup skip
+ * to the accessor method's own body (returning its own `self` storage), so a
+ * user function returning a container borrow (`return xs.at(0)`) still strdup's
+ * for its caller.
+ */
+function access_receiver_is_self(node: AccessNode): boolean {
+	let cur: any = node.target;
+	while (cur) {
+		if (cur.node_type === "value") return cur.value === "self";
+		if (cur.node_type === "access") {
+			cur = cur.target;
+		} else {
+			return false;
+		}
+	}
+	return false;
+}
+
+/**
+ * Find a declaration by name across the current scope frame and all enclosing
+ * frames on the c_scope_stack. A return inside an if/while sub-scope may
+ * reference a variable declared in an enclosing scope, which is not in the
+ * current `scoped_declarations` (a fresh frame per enter_c_scope).
+ */
+function find_decl_across_scopes(name: string, status: BuildStatus): DeclarationNode | undefined {
+	let decl = status.scoped_declarations.find((d) => d.name === name);
+	if (decl) return decl;
+	const stack = status.c_scope_stack;
+	if (stack) {
+		for (let i = stack.length - 1; i >= 0; i--) {
+			decl = stack[i].find((d) => d.name === name);
+			if (decl) return decl;
+		}
+	}
+	return undefined;
 }

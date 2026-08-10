@@ -1,6 +1,7 @@
 import add_error from "../add_error.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import ParameterNode from "../nodes/ParameterNode.ts";
+import { instantiate_generic_type } from "./check_function_call_node.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
@@ -30,6 +31,12 @@ export default function check_function_parameter_node(param: ParameterNode, stat
 		if (param.type.name === "tuple" && param.type.tuple_types?.length) {
 			param.type = materialize_tuple_type(param.type, status);
 		}
+		// A generic container used only as a parameter type (e.g.
+		// `List<string> xs` with no `List<string>()` construction elsewhere)
+		// would never be monomorphized, leaving the signature as a bare
+		// incomplete `struct List`. Materialize it here so build/codegen
+		// resolves `List_string`.
+		instantiate_generic_type(param.type, status);
 	}
 
 	// `var`/`cp` parameters are not supported: a `var` param mutates the

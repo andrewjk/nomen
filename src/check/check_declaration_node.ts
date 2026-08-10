@@ -5,6 +5,7 @@ import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
+import { instantiate_generic_type } from "./check_function_call_node.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import { borrow_depth_of, borrow_owner_of } from "./utils/borrow.ts";
@@ -54,6 +55,7 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			if (decl.func_return_type.name === "tuple" && decl.func_return_type.tuple_types?.length) {
 				decl.func_return_type = materialize_tuple_type(decl.func_return_type, status);
 			}
+			instantiate_generic_type(decl.func_return_type, status);
 		}
 		for (const param of decl.func_params) {
 			if (param.type.name) {
@@ -61,6 +63,7 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 				if (param.type.name === "tuple" && param.type.tuple_types?.length) {
 					param.type = materialize_tuple_type(param.type, status);
 				}
+				instantiate_generic_type(param.type, status);
 			}
 		}
 
@@ -143,6 +146,11 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 		if (decl.type.name === "tuple" && decl.type.tuple_types?.length) {
 			decl.type = materialize_tuple_type(decl.type, status);
 		}
+		// A generic container used only as an explicit local declaration type
+		// (e.g. `var List<string> xs` where the value comes from a call rather
+		// than a `List<string>()` construction) needs the monomorphized form
+		// materialized so build/codegen resolves it.
+		instantiate_generic_type(decl.type, status);
 
 		// Check for var on class-type fields in classes/traits (must use mov)
 		if (

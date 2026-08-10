@@ -1,6 +1,7 @@
 import FunctionNode from "../nodes/FunctionNode.ts";
 import Type from "../nodes/Type.ts";
 import check_block_node from "./check_block_node.ts";
+import { instantiate_generic_type } from "./check_function_call_node.ts";
 import check_function_parameter_node from "./check_function_parameter_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import check_type_exists from "./utils/check_type_exists.ts";
@@ -42,6 +43,11 @@ export default function check_function_node(func: FunctionNode, status: CheckSta
 		} else if (func.return_type.name === "tuple" && func.return_type.tuple_types?.length) {
 			func.return_type = materialize_tuple_type(func.return_type, function_status);
 		}
+		// A generic container used only as a return type (e.g.
+		// `out List<string>` with no construction of that exact type) would
+		// never be monomorphized, leaving the signature referencing a bare
+		// incomplete struct. Materialize it here.
+		instantiate_generic_type(func.return_type, function_status);
 	}
 
 	check_block_node(func, function_status);

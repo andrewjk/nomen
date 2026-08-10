@@ -207,3 +207,67 @@ Console.write("\\{same}")
 		await build_and_check_output(input, "list_string_at_compare", "true");
 	});
 });
+
+describe("List<T> as a parameter / return type only", () => {
+	// Regression: a generic container that appeared ONLY as a parameter or
+	// return type — with no `List<T>()` construction elsewhere to trigger
+	// monomorphization — lowered to a bare incomplete `struct List` in the
+	// signature instead of `struct List_T`. Parameter/return/local-declaration
+	// types now materialize their monomorphized form at check time.
+
+	test("List<int> parameter type monomorphizes", async () => {
+		const input = `
+func sum_list = (List<int> xs, out int) {
+  var int total = 0
+  var int i = 0
+  while i < xs.length {
+    total = total + xs.at(i)
+    i = i + 1
+  }
+  return total
+}
+
+var List<int> nums = List<int>()
+nums.push(10)
+nums.push(20)
+nums.push(30)
+const int s = sum_list(nums)
+Console.write("\\{s}")
+`;
+		await build_and_check_output(input, "list_int_param_only", "60");
+	});
+
+	test("List<string> parameter type monomorphizes", async () => {
+		const input = `
+func first_or = (List<string> xs, string fallback, out string) {
+  if xs.length > 0 {
+    const string t = xs.at(0)
+    return t
+  }
+  return fallback
+}
+
+var List<string> names = List<string>()
+names.push("alice")
+names.push("bob")
+const string r = first_or(names, "none")
+Console.write(r)
+`;
+		await build_and_check_output(input, "list_string_param_only", "alice");
+	});
+
+	test("out List<int> return type monomorphizes", async () => {
+		const input = `
+func make_nums = (out List<int>) {
+  var List<int> xs = List<int>()
+  xs.push(7)
+  xs.push(8)
+  return xs
+}
+
+var List<int> r = make_nums()
+Console.write("\\{r.length}")
+`;
+		await build_and_check_output(input, "list_int_return_only", "2");
+	});
+});

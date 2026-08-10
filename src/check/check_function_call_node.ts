@@ -458,6 +458,27 @@ export function monomorphize(
 }
 
 /**
+ * Materialize the monomorphized form of a generic-struct type that carries
+ * concrete type args (e.g. `List<string>` -> `List_string`), so the downstream
+ * build/codegen can resolve it. A generic container that appears ONLY as a
+ * parameter, return, or local-declaration type — with no `List<T>()`
+ * construction site elsewhere — would otherwise never be monomorphized, and the
+ * generated signature would reference a bare incomplete `struct List` instead
+ * of `struct List_string` (clang then rejects `xs->length` on the incomplete
+ * type). No-op for non-generic types, generics inside a generic context
+ * (unresolved type params), and mismatched arg counts.
+ */
+export function instantiate_generic_type(type: Type, status: CheckStatus) {
+	const args = type.type_args;
+	if (!args?.length) return;
+	const generic = status.structs.findLast((s) => s.name === type.name);
+	if (!generic?.is_generic) return;
+	if (generic.type_params.length !== args.length) return;
+	if (args.some((t) => status.type_params.includes(t.name))) return;
+	monomorphize(generic, args, status);
+}
+
+/**
  * Synthesize per-conformer default-method overrides for generic traits.
  *
  * A generic trait's default-method body references its type params (e.g.

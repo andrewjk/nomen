@@ -507,3 +507,92 @@ Console.write("\\{v}")
 		await build_and_check_output(input, "dfree_class_field_borrowed_ref", "42");
 	});
 });
+
+describe("returning a borrowed string", () => {
+	// Regression: a function that returns a string it does NOT own — a
+	// parameter passed through, a borrow-initialized local, a container
+	// `.at(i)` result, or a literal local — handed the caller a non-owned
+	// pointer. The C backend strdup's every string return so the caller can
+	// free it, but it missed bare-variable/borrow-accessor returns; the
+	// aarch64 backend classifies a function as heap-returning via an AST walk,
+	// but `value_is_owned_string` treated every non-literal variable as owned.
+	// Both crashed (the caller freed a borrowed/static pointer).
+
+	test("returning a string parameter", async () => {
+		const input = `
+func echo = (string s, out string) {
+  return s
+}
+const string r = echo("hello")
+Console.write(r)
+`;
+		await build_and_check_output(input, "dfree_return_param", "hello");
+	});
+
+	test("returning a borrow-initialized local", async () => {
+		const input = `
+func first_or = (List<string> xs, string fallback, out string) {
+  if xs.length > 0 {
+    const string t = xs.at(0)
+    return t
+  }
+  return fallback
+}
+var List<string> names = List<string>()
+names.push("zebra")
+const string r = first_or(names, "none")
+Console.write(r)
+`;
+		await build_and_check_output(input, "dfree_return_borrow_local", "zebra");
+	});
+
+	test("returning a container .at directly", async () => {
+		const input = `
+func first_or = (List<string> xs, string fallback, out string) {
+  if xs.length > 0 {
+    return xs.at(0)
+  }
+  return fallback
+}
+var List<string> names = List<string>()
+names.push("ok")
+const string r = first_or(names, "none")
+Console.write(r)
+`;
+		await build_and_check_output(input, "dfree_return_at_direct", "ok");
+	});
+
+	test("returning a literal local", async () => {
+		const input = `
+func label = (int n, out string) {
+  if n > 0 {
+    const string pos = "positive"
+    return pos
+  }
+  const string zero = "zero"
+  return zero
+}
+const string r = label(5)
+Console.write(r)
+`;
+		await build_and_check_output(input, "dfree_return_literal_local", "positive");
+	});
+
+	test("returning an owned local still does not leak or double-free", async () => {
+		// `s` is an owned heap string (from to_string); returning it transfers
+		// ownership to the caller. It must not be strdup'd (that would leak the
+		// original) and must not be freed at the callee's scope exit.
+		const input = `
+func make_greeting = (int x, out string) {
+  var string s = x.to_string()
+  if x == 42 {
+    return s
+  }
+  return s
+}
+var string result = make_greeting(42)
+Console.write(result)
+`;
+		await build_and_check_output(input, "dfree_return_owned_no_leak", "42");
+	});
+});

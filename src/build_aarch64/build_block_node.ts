@@ -103,6 +103,80 @@ export default function build_block_node(node: BlockNode, status: BuildStatus) {
 	status.heap_cleanup_stack.pop();
 }
 
+const EMPTY_SET: Set<string> = new Set();
+
+/**
+ * Names of string variables in `func` that hold a BORROW (a non-owned pointer)
+ * for the duration of the function, not a fresh heap allocation: string
+ * parameters, and string locals that are NEVER assigned a heap-producing value
+ * (a function call, a non-borrow method call, or a string concatenation). A
+ * `return <name>` of such a variable is a borrow return — the caller must NOT
+ * free it. Used by value_is_owned_string to avoid mis-classifying bare-variable
+ * returns as owned.
+ *
+ * A local initialized from a literal / borrow accessor / field is a borrow
+ * candidate, but any reassignment that produces a heap value (e.g.
+ * `result = result + sep`) makes it owned from that point on — so the variable
+ * is scanned across its declaration AND all reassignments. Treating such a var
+ * as a borrow would leak its final heap value (the caller wouldn't free it).
+ */
+function borrow_string_names(func: FunctionNode): Set<string> {
+	const borrow = new Set<string>();
+	for (const param of func.params ?? []) {
+		if (param.type?.name === "string" && !param.is_self_param) {
+			borrow.add(param.name);
+		}
+	}
+	const string_var_names = new Set<string>();
+	const owned = new Set<string>();
+	const isHeapRhs = (rhs: any): boolean => {
+		if (!rhs) return false;
+		const nt = rhs.node_type;
+		if (nt === "op") return true;
+		if (nt === "func_call") return true;
+		if (nt === "access") {
+			const acc = rhs.access;
+			if (acc?.node_type === "access_func") {
+				// Borrow accessors (`.at`/`.first`/`.slice`/`load_T` without
+				// owned_return) yield a view into existing storage, not a fresh
+				// heap allocation. Everything else (to_string, pop, ...) is heap.
+				const isBorrowAccessor =
+					!acc.owned_return &&
+					(acc.name === "at" ||
+						acc.name === "first" ||
+						acc.name === "slice" ||
+						acc.name === "load_T");
+				return !isBorrowAccessor;
+			}
+			return false; // access_field → borrow
+		}
+		// Literal, bare-value alias, etc. → conservatively not heap (borrow).
+		return false;
+	};
+	const visit = (n: any): void => {
+		if (!n || typeof n !== "object") return;
+		if (n.node_type === "declare" && n.type?.name === "string" && n.name) {
+			string_var_names.add(n.name);
+			if (isHeapRhs(n.value)) owned.add(n.name);
+		} else if (n.node_type === "assign" && n.left_value?.node_type === "value" && !n.operator) {
+			const name = n.left_value.value;
+			if (string_var_names.has(name) && isHeapRhs(n.right_value)) owned.add(name);
+		}
+		if (n.node_type === "func") return; // don't descend into nested funcs
+		for (const k of Object.keys(n)) {
+			if (k === "node_type") continue;
+			const val = (n as any)[k];
+			if (Array.isArray(val)) for (const item of val) visit(item);
+			else if (val && typeof val === "object") visit(val);
+		}
+	};
+	for (const stmt of func.statements ?? []) visit(stmt);
+	for (const name of string_var_names) {
+		if (!owned.has(name)) borrow.add(name);
+	}
+	return borrow;
+}
+
 // Whether a returned expression produces a fresh owned heap string (that the
 // caller must free), as opposed to a borrowed field, a variable, or a static
 // string literal. Recurses through match/switch branches so a match returning
@@ -110,14 +184,29 @@ export default function build_block_node(node: BlockNode, status: BuildStatus) {
 //
 // `visiting` tracks methods currently being analyzed (by mangled key) to break
 // cycles when a method returns another method that returns it.
-function value_is_owned_string(v: any, status: BuildStatus, visiting?: Set<string>): boolean {
+//
+// `borrow_names` is the set of string variable names in the function currently
+// being analyzed that hold a BORROW (string parameters, and locals initialized
+// from a borrow accessor / literal / another borrow). A `return <name>` of one
+// of these is a borrow return, not an owned heap return — the caller must NOT
+// free it. Without this, `func echo(string s, out string) { return s }` is
+// mis-classified as heap-returning and the caller frees the borrowed pointer
+// (crashing on a static literal / double-freeing the caller's storage).
+function value_is_owned_string(
+	v: any,
+	status: BuildStatus,
+	visiting?: Set<string>,
+	borrow_names?: Set<string>,
+): boolean {
 	if (!visiting) visiting = new Set<string>();
+	if (!borrow_names) borrow_names = EMPTY_SET;
 	if (!v || typeof v !== "object") return false;
 	if (v.node_type === "value") {
 		// String literals are static storage (not owned). A bare variable
-		// reference returns an owned local built in the callee — treat as owned.
+		// reference is owned only if it is a local holding a fresh heap
+		// allocation — a parameter or a borrow-initialized local is a borrow.
 		const isLiteral = typeof v.value === "string" && v.value.startsWith('"');
-		return !isLiteral;
+		return !isLiteral && !borrow_names.has(v.value);
 	}
 	if (v.node_type === "op") return true;
 	if (v.node_type === "access") {
@@ -179,8 +268,8 @@ function value_is_owned_string(v: any, status: BuildStatus, visiting?: Set<strin
 				// Arrow branches (`-> expr`) wrap the result in a `let`; `=>`
 				// branches wrap it in a `return`. Unwrap to the real expression.
 				if (s?.node_type === "let" || s?.node_type === "return") {
-					if (value_is_owned_string(s.value, status, visiting)) return true;
-				} else if (value_is_owned_string(s, status, visiting)) {
+					if (value_is_owned_string(s.value, status, visiting, borrow_names)) return true;
+				} else if (value_is_owned_string(s, status, visiting, borrow_names)) {
 					return true;
 				}
 			}
@@ -264,11 +353,14 @@ function function_returns_owned(
 	if (func.return_type?.name !== "string") return false;
 	if (visiting.has(key)) return false;
 	visiting.add(key);
+	// Compute this function's borrow string names (params + borrow-initialized
+	// locals) so `return <bare var>` of a borrow is classified correctly.
+	const borrow_names = borrow_string_names(func);
 	let has_owned_return = false;
 	const walk = (n: any): void => {
 		if (!n || typeof n !== "object") return;
 		if (n.node_type === "return" && n.value) {
-			if (value_is_owned_string(n.value, status, visiting)) has_owned_return = true;
+			if (value_is_owned_string(n.value, status, visiting, borrow_names)) has_owned_return = true;
 		}
 		if (n.node_type === "func") return;
 		for (const k of Object.keys(n)) {
