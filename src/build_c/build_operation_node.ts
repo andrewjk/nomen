@@ -4,7 +4,7 @@ import ValueNode from "../nodes/ValueNode.ts";
 import build_node from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import c_type from "./utils/c_type.ts";
-import { is_nullable_struct_type } from "./utils/nullable_struct.ts";
+import { has_flag_name, is_nullable_struct_type } from "./utils/nullable_struct.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 
 export default function build_operation_node(node: OperationNode, status: BuildStatus) {
@@ -51,13 +51,36 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		// `nullable ?? fallback`. For a nullable struct, the flag is `<expr>_has`.
 		const left_type = type_from_value_node(node.left_value);
 		if (is_nullable_struct_type(left_type, status)) {
-			status.code += `(`;
-			status.code += build_nullable_has(node.left_value, status);
-			status.code += ` ? `;
-			build_node(node.left_value, status);
-			status.code += ` : `;
-			build_node(node.right_value, status);
-			status.code += `)`;
+			// Special case: a nullable struct function call on the LHS must be
+			// materialised ONCE (calling it twice — once for the flag, once
+			// for the value — would duplicate side effects and produce two
+			// different return flags). Wrap in a GCC statement-expression that
+			// hoists a value temp + flag temp, then yields the chosen value.
+			if (
+				node.left_value.node_type === "func_call" &&
+				is_nullable_struct_type((node.left_value as any).type, status)
+			) {
+				const id = ns_tmp_counter++;
+				const flag = `_nsh_${id}`;
+				const val = `_nsv_${id}`;
+				const type_name = left_type.name;
+				status.code += `({ unsigned char ${flag} = 0; struct ${type_name} ${val} = `;
+				const old = status.current_nullable_call_flag;
+				status.current_nullable_call_flag = flag;
+				build_node(node.left_value, status);
+				status.current_nullable_call_flag = old;
+				status.code += `; ${flag} ? ${val} : `;
+				build_node(node.right_value, status);
+				status.code += `; })`;
+			} else {
+				status.code += `(`;
+				status.code += build_nullable_has(node.left_value, status);
+				status.code += ` ? `;
+				build_node(node.left_value, status);
+				status.code += ` : `;
+				build_node(node.right_value, status);
+				status.code += `)`;
+			}
 		} else {
 			status.code += `(`;
 			build_node(node.left_value, status);
@@ -75,9 +98,28 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 			: node.right_value;
 		const type = type_from_value_node(nullable_side);
 		if (is_nullable_struct_type(type, status)) {
-			const has = build_nullable_has(nullable_side, status);
-			// `== null` → !has ; `!= null` → has
-			status.code += node.op === "==" ? `(!${has})` : `(${has})`;
+			// A nullable struct CALL result must be materialised once
+			// (calling twice would duplicate side effects). Wrap in a
+			// statement-expression that exposes the flag.
+			if (
+				nullable_side.node_type === "func_call" &&
+				is_nullable_struct_type((nullable_side as any).type, status)
+			) {
+				const id = ns_tmp_counter++;
+				const flag = `_nsh_${id}`;
+				const val = `_nsv_${id}`;
+				const type_name = type.name;
+				status.code += `({ unsigned char ${flag} = 0; struct ${type_name} ${val} = `;
+				const old = status.current_nullable_call_flag;
+				status.current_nullable_call_flag = flag;
+				build_node(nullable_side, status);
+				status.current_nullable_call_flag = old;
+				status.code += `; ${node.op === "==" ? `!${flag}` : `(${flag})`}; })`;
+			} else {
+				const has = build_nullable_has(nullable_side, status);
+				// `== null` → !has ; `!= null` → has
+				status.code += node.op === "==" ? `(!${has})` : `(${has})`;
+			}
 		} else {
 			build_default_binary(node, status);
 		}
@@ -237,8 +279,29 @@ function is_nullable_struct_side(node: any, status: BuildStatus): boolean {
  * building the lvalue's C expression and appending `_has`. This works because
  * every nullable-struct lvalue (a bare variable or a `.field`/`->field` access)
  * ends in an identifier.
+ *
+ * Special case: a nullable struct PARAMETER (`T? p`) lowers to TWO C
+ * parameters (`struct T *p, unsigned char p_has`). The flag lives in a
+ * sibling parameter named `<pname>_has`, not derived from dereferencing `p`.
+ * Detect this case (the value is in `function_ref_params` AND its type is
+ * nullable-struct) and emit the bare `<pname>_has` identifier — building the
+ * lvalue would emit `(*p)` and appending `_has` would give the syntactically
+ * wrong `(*p)_has`.
  */
 function build_nullable_has(node: any, status: BuildStatus): string {
+	if (node.node_type === "value") {
+		const name = node.value;
+		// A nullable struct parameter's flag is the sibling `<pname>_has` C
+		// parameter (not the dereffed struct's `_has`).
+		if (status.function_ref_params?.has(name) && is_nullable_struct_type(node.type, status)) {
+			return has_flag_name(name);
+		}
+		// A nullable struct LOCAL's flag is the sibling `<name>_has` C
+		// variable emitted in build_declaration_node.
+		if (is_nullable_struct_type(node.type, status)) {
+			return has_flag_name(name);
+		}
+	}
 	const before = status.code.length;
 	build_node(node, status);
 	const expr = status.code.substring(before);
@@ -328,4 +391,9 @@ function build_array_operand_for_call(node: any, status: BuildStatus) {
 		}
 	}
 	status.code += `(struct Array_int*)&${wrap}; })`;
+}
+
+let ns_tmp_counter = 0;
+export function reset_ns_tmp_counter() {
+	ns_tmp_counter = 0;
 }

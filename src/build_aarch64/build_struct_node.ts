@@ -405,6 +405,16 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 				status.code += `ldr x9, [${src_reg}, #${w * 8}]\n`;
 				status.code += `str x9, [x19, #${offset + w * 8}]\n`;
 			}
+			// A nullable struct value field (`T? f`) is passed at the call
+			// site as combined `[struct | flag]` storage. After copying the
+			// struct value words above, also copy the companion `_has` flag
+			// (the 8-byte word immediately after the struct value in the
+			// source) into the field's has-offset in self.
+			if (is_nullable_struct_type(field.type, status)) {
+				const has_off = get_field_has_offset(node.name, field.name, status);
+				status.code += `ldr x9, [${src_reg}, #${field_size}]\n`;
+				status.code += `str x9, [x19, #${has_off}]\n`;
+			}
 		} else {
 			const field_size = get_type_size(field.type, status);
 			emit_typed_store(status, src_reg, "x19", offset, field_size);

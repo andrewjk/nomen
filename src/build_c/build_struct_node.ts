@@ -59,12 +59,26 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 						decl += `long _${p.name}_len, `;
 					}
 					decl += c_param_decl(p.type, p.name, status);
+					// A nullable struct value param (`T? f`, T a non-class
+					// struct) takes a companion `unsigned char <name>_has`
+					// flag as the very next C parameter (mirrors
+					// build_function_node). The constructor body reads the
+					// flag through the param name directly.
+					if (!p.is_variadic && is_nullable_struct_type(p.type, status)) {
+						decl += `, unsigned char ${has_flag_name(p.name)}`;
+					}
 					return decl;
 				})
 				.join(", ")
 		: node.fields
 				.filter((f) => f.value == null)
-				.map((f) => c_param_decl(f.type, f.name, status))
+				.map((f) => {
+					let decl = c_param_decl(f.type, f.name, status);
+					if (is_nullable_struct_type(f.type, status)) {
+						decl += `, unsigned char ${has_flag_name(f.name)}`;
+					}
+					return decl;
+				})
 				.join(", ");
 	// The constructor returns by tag (`struct Foo` / `struct Foo*`): the tag is
 	// never mangled (only the typedef is), so the signature stays valid whether
@@ -180,6 +194,12 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 					build_node(field.value, status);
 					status.code += `;\n${object_name}${accessor}${has_flag_name(field.name)} = 1;\n`;
 				}
+			} else if (is_nullable_struct_type(field.type, status)) {
+				// Nullable struct field WITHOUT a default: copy the value from
+				// the param and forward the companion flag (the call site
+				// passed `<field>_has` as a sibling C parameter).
+				status.code += `${object_name}${accessor}${field.name} = *${field.name};\n`;
+				status.code += `${object_name}${accessor}${has_flag_name(field.name)} = ${has_flag_name(field.name)};\n`;
 			} else {
 				status.code += `${object_name}${accessor}${field.name} = `;
 				if (field.value) {

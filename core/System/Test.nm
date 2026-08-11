@@ -129,9 +129,7 @@ pub class Tester {
 	// Assert that a nullable value holds a value.
 	//
 	// Nomen has no generic methods, so there is one overload per nullable
-	// type the compiler can compare against `null`. Nullable *struct* values
-	// (`Point?`) are not supported by the backend yet — use
-	// `t.expect(p != null, "...")` once that gap closes.
+	// type the compiler can compare against `null`.
 	pub func assert = (ref self, int? value, string message) {
 		self.expect(value != null, message)
 	}

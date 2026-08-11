@@ -9,6 +9,12 @@ export default class AccessFunctionCallNode extends BaseNode {
 	is_static?: boolean;
 	ref_param_indices?: number[];
 	mov_param_indices?: number[];
+	/**
+	 * Indices of arguments whose corresponding callee parameter is a nullable
+	 * struct value type (`T?` where T is a non-class struct). See
+	 * FunctionCallNode.nullable_param_indices.
+	 */
+	nullable_param_indices?: number[];
 	swap_params?: Map<number, BaseNode>;
 	variadic_param_name?: string;
 	variadic_param_index?: number;

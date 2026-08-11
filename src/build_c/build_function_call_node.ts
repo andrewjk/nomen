@@ -1,12 +1,14 @@
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
+import type BaseNode from "../nodes/BaseNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_node from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import c_function_name from "./utils/c_function_name.ts";
 import c_type from "./utils/c_type.ts";
+import { has_flag_name, is_nullable_struct_type } from "./utils/nullable_struct.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 
 export default function build_function_call_node(node: FunctionCallNode, status: BuildStatus) {
@@ -51,8 +53,22 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 
 		const param_type = type_from_value_node(node.params[i]);
 
-		// An `Array<T>` argument that is itself a heap `struct Array_<T>*`
-		// value (a `heap_array_vars` local or another `Array<T>` param — both
+		// A `null` literal arg to a nullable struct value parameter
+		// (`use(null)` where `use` takes `T? p`): emit a zero'd compound
+		// literal of the param's struct type (so `&(struct T){0}` is valid C)
+		// and `0` for the companion flag. Skip the rest of the per-arg
+		// machinery — the flag-forwarding step below would otherwise try to
+		// take `&0` (invalid).
+		if (
+			node.nullable_param_indices?.includes(i) &&
+			node.params[i].node_type === "value" &&
+			(node.params[i] as ValueNode).value === "null"
+		) {
+			status.code += `(void *)&(struct ${param_type.name}){0}, 0`;
+			continue;
+		}
+
+		// An `Array<T>` argument that is itself a heap `struct Array_<T>*`		// value (a `heap_array_vars` local or another `Array<T>` param — both
 		// already pointers, recognised by having NO compile-time `length`) must
 		// be forwarded directly: `ref` Array<T> params want the pointer for
 		// in-place `.set` mutation, not its address. Fixed-size array args
@@ -136,7 +152,49 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 
 		build_node(node.params[i], status);
 		status.suppress_dereference = false;
+
+		// If this argument corresponds to a nullable struct value parameter
+		// (`T? p`), the callee takes a companion `unsigned char <name>_has`
+		// flag as the very next C parameter (see build_function_node). Forward
+		// the caller-side flag: a `null` literal → 0; a bare variable /
+		// field-access arg → its built `_has` expression; any other
+		// expression → 1 (assumed non-null).
+		if (node.nullable_param_indices?.includes(i)) {
+			status.code += `, `;
+			emit_nullable_arg_flag(node.params[i], status);
+		}
 	}
+
+	// A nullable struct RETURN type adds a hidden `unsigned char *_ret_has`
+	// out-parameter as the LAST callee parameter. Forward `&<flag>` so the
+	// callee can write null-ness back. The flag name comes from
+	// `status.current_nullable_call_flag` when a consumer has pre-allocated
+	// storage (e.g. a `var T? x = f()` declaration uses its own `_has` flag);
+	// otherwise the call is wrapped in a GCC statement-expression that
+	// synthesises a throwaway flag temp.
+	if (is_nullable_struct_type(node.type, status)) {
+		const flag_name = status.current_nullable_call_flag;
+		if (flag_name) {
+			status.code += `, &${flag_name}`;
+		} else {
+			// Wrap the call (already emitted up to the open paren + args) in
+			// a statement-expression that owns the flag temp. The temp's
+			// `_has` value is discarded — this path is for consumers that
+			// treat the call result as a non-null value (e.g. the call is the
+			// whole RHS of an assignment to a non-nullable T, which the type
+			// checker only permits when the result is provably non-null).
+			const tmp = `_nsd_${ns_default_counter++}`;
+			const open = status.code.lastIndexOf(`${func_name}(`);
+			if (open !== -1) {
+				const before = status.code.slice(0, open);
+				const call = status.code.slice(open);
+				status.code = before + `({ unsigned char ${tmp} = 0; ` + call + `, &${tmp}); })`;
+			} else {
+				status.code += `, &${tmp}`;
+			}
+		}
+	}
+
 	status.code += ")";
 
 	if (node.name.startsWith("_string_interpolate_")) {
@@ -192,4 +250,57 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			}
 		}
 	}
+}
+
+let ns_default_counter = 0;
+export function reset_ns_default_counter() {
+	ns_default_counter = 0;
+}
+
+/**
+ * Emit the caller-side `_has` flag value for a nullable struct argument.
+ * The arg corresponds to a `T?` callee parameter; the call site passes both
+ * the struct address (already emitted before this call) and its flag value
+ * (this helper). `null` literal → 0; a bare nullable-struct variable /
+ * field-access arg → its built `_has` flag expression; a non-nullable
+ * struct value (a fresh constructor, a hoisted `_param_N`, a non-nullable
+ * local) → 1 (it's a real value being lifted into the nullable param type).
+ */
+function emit_nullable_arg_flag(arg: BaseNode, status: BuildStatus) {
+	// `null` literal
+	if (arg.node_type === "value" && (arg as ValueNode).value === "null") {
+		status.code += `0`;
+		return;
+	}
+	// Bare variable: forward its flag IF the variable itself is a nullable
+	// struct value (a `var T? x = ...` local). A non-nullable struct value
+	// (a hoisted `_param_N` from a constructor, a plain `T x` local) is being
+	// lifted into the nullable param type — emit `1`.
+	if (arg.node_type === "value") {
+		const vn = arg as ValueNode;
+		if (is_nullable_struct_type(vn.type, status)) {
+			status.code += `${has_flag_name(vn.value)}`;
+		} else {
+			status.code += `1`;
+		}
+		return;
+	}
+	// Field access `obj.field` / `obj->field` — if the field's type is a
+	// nullable struct, build the lvalue and append `_has`. Otherwise (a
+	// non-nullable struct field being lifted), emit `1`.
+	if (arg.node_type === "access" && (arg as AccessNode).access.node_type === "access_field") {
+		const t = type_from_value_node(arg);
+		if (is_nullable_struct_type(t, status)) {
+			const before = status.code.length;
+			build_node(arg, status);
+			const expr = status.code.substring(before);
+			status.code = status.code.substring(0, before);
+			status.code += `${expr}_has`;
+		} else {
+			status.code += `1`;
+		}
+		return;
+	}
+	// Anything else (function call result, operation, etc.) — assume non-null.
+	status.code += `1`;
 }

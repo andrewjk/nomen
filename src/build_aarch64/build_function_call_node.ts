@@ -13,6 +13,7 @@ import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_malloc } from "./utils/audit.ts";
 import { mark_moved_if_struct, find_anchor_slot } from "./utils/auto_destroy.ts";
 import { build_swap_params } from "./utils/build_swap.ts";
+import { has_flag_name, is_nullable_struct_type } from "./utils/nullable_struct.ts";
 import { NUM_REG_ARGS } from "./utils/stack_args.ts";
 import {
 	allocate_stack_space,
@@ -415,6 +416,49 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 					} else {
 						emit_address_of(arg, status);
 					}
+				} else if (node.nullable_param_indices?.includes(i)) {
+					// A nullable struct value parameter (`T? p`) needs combined
+					// `[struct | flag]` storage at the call site so the callee
+					// can read the flag at `[param_ptr + struct_size]`. Handle
+					// each arg shape:
+					//   - bare nullable-struct VARIABLE: address of its combined
+					//     storage (the local reserves `struct_size + 8`).
+					//   - `null` literal: a zero'd region (flag = 0).
+					//   - non-null rvalue (constructor, call, etc.): materialise
+					//     into a combined region with value + flag = 1.
+					const arg = node.params[i];
+					const struct_size = get_struct_size(param_type, status);
+					if (arg.node_type === "value" && (arg as ValueNode).value === "null") {
+						// `null` arg: allocate combined storage and zero the
+						// FLAG slot (at `[off + struct_size]`). The struct
+						// value bytes are left uninitialised — the callee
+						// won't read them when the flag is 0.
+						const off = allocate_stack_space(status, struct_size + 8);
+						status.code += `str xzr, [x29, #${off + struct_size}]\n`;
+						status.code += `add x0, x29, #${off}\n`;
+					} else if (
+						arg.node_type === "value" &&
+						is_nullable_struct_type((arg as ValueNode).type, status)
+					) {
+						// Bare nullable variable — its storage is already
+						// combined; just take its address.
+						emit_var_address(status, "x0", (arg as ValueNode).value);
+					} else {
+						// Non-null rvalue: build the value (lands as address in
+						// x0 for a struct rvalue, since emit_struct_address /
+						// build_node for a struct leaves the temp's address).
+						emit_struct_address(arg, status);
+						if (!status.code.endsWith("\n")) status.code += "\n";
+						const off = allocate_stack_space(status, struct_size + 8);
+						// Copy the struct value word-by-word, set flag = 1.
+						for (let b = 0; b < struct_size; b += 8) {
+							status.code += `ldr x9, [x0, #${b}]\n`;
+							status.code += `str x9, [x29, #${off + b}]\n`;
+						}
+						status.code += `mov x9, #1\n`;
+						status.code += `str x9, [x29, #${off + struct_size}]\n`;
+						status.code += `add x0, x29, #${off}\n`;
+					}
 				} else if (
 					is_struct_type(param_type, status) ||
 					is_enum_with_data_type(param_type, status)
@@ -475,10 +519,18 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 				(s) => s.name === node.type!.name && !s.is_simple_type && !s.is_class,
 			);
 			if (return_struct) {
+				// A nullable struct return's temp must hold both the struct value
+				// AND its companion `_has` flag (struct_size + 8 bytes), so the
+				// callee can write the null/non-null bit at [temp + struct_size].
+				const nullable_ret = is_nullable_struct_type(node.type, status);
 				const struct_size = get_struct_size(node.type!.name, status);
+				const total = nullable_ret ? struct_size + 8 : struct_size;
 				const temp_name = `_call_ret_${temp_counter++}`;
-				const offset = allocate_stack_space(status, struct_size);
+				const offset = allocate_stack_space(status, total);
 				status.stack_offsets!.set(temp_name, offset);
+				if (nullable_ret) {
+					status.stack_offsets!.set(has_flag_name(temp_name), offset + struct_size);
+				}
 				status.code += `add x8, x29, #${offset}\n`;
 			}
 		}

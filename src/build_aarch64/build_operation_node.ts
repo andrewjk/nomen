@@ -316,15 +316,26 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 	// `x ?? Box(99)`) — eagerly evaluating it would leak the unused instance.
 	if (node.op === "??") {
 		// Nullable struct `??` checks the `_has` flag instead of the value.
+		// The left operand's ADDRESS (the struct value start) must survive
+		// across the flag load and be the result when non-null. Build it
+		// first, spill to a stack slot, then load the flag and branch.
 		if (is_nullable_struct_type(type_from_value_node(node.left_value), status)) {
+			build_operand(node.left_value, "x0", status);
+			if (!status.code.endsWith("\n")) status.code += "\n";
+			const spill = allocate_stack_space(status, 8);
+			status.code += `str x0, [x29, #${spill}]\n`;
 			load_nullable_has(node.left_value, "x0", status);
 			if (!status.code.endsWith("\n")) status.code += "\n";
+			const have_label = `.Lcoalesce_have_${coalesce_counter++}`;
+			const done_label = `.Lcoalesce_done_${coalesce_counter++}`;
 			status.code += `cmp x0, #0\n`;
-			const label = `.Lcoalesce_have_${coalesce_counter++}`;
-			status.code += `b.ne ${label}\n`;
+			status.code += `b.ne ${have_label}\n`;
 			build_operand(node.right_value, "x0", status);
 			if (!status.code.endsWith("\n")) status.code += "\n";
-			status.code += `${label}:\n`;
+			status.code += `b ${done_label}\n`;
+			status.code += `${have_label}:\n`;
+			status.code += `ldr x0, [x29, #${spill}]\n`;
+			status.code += `${done_label}:\n`;
 			return;
 		}
 		build_operand(node.left_value, "x0", status);
@@ -672,12 +683,35 @@ function is_null_literal(node: BaseNode): boolean {
 
 /**
  * Load a nullable-struct lvalue's companion `_has` flag into `target_reg`.
- * Handles a bare variable (flag at `has_flag_name(name)` stack offset) and a
- * field access `obj.field` (flag at the field's has-offset within obj).
+ * Handles:
+ *   - a bare LOCAL variable (flag at `has_flag_name(name)` stack offset)
+ *   - a bare PARAMETER variable (the param's pointer is in a callee-saved
+ *     register; the flag is at `[reg + struct_size]`, immediately after the
+ *     inline struct value)
+ *   - a field access `obj.field` (flag at the field's has-offset within obj)
+ *   - a function call result (the call materialised the result into a temp
+ *     with both the struct value and the flag; load the flag from
+ *     `[temp + struct_size]`)
  */
 function load_nullable_has(node: BaseNode, target_reg: string, status: BuildStatus) {
 	if (node.node_type === "value") {
 		const name = (node as ValueNode).value;
+		// A nullable struct PARAMETER: the param's pointer lives in a
+		// callee-saved register (callee_map / function_param_regs). The flag
+		// lives at `[ptr + struct_size]` in the caller's combined storage.
+		const param_reg = status.function_param_regs?.get(name);
+		if (param_reg) {
+			const t = (node as ValueNode).type;
+			if (t?.name) {
+				const struct_size = get_struct_size(t.name, status);
+				if (!status.code.endsWith("\n")) status.code += "\n";
+				if (target_reg !== param_reg) {
+					status.code += `mov ${target_reg}, ${param_reg}\n`;
+				}
+				status.code += `ldr ${target_reg}, [${target_reg}, #${struct_size}]\n`;
+				return;
+			}
+		}
 		emit_var_load(status, target_reg, has_flag_name(name), 8);
 		return;
 	}
@@ -699,6 +733,20 @@ function load_nullable_has(node: BaseNode, target_reg: string, status: BuildStat
 			} else {
 				status.code += `ldr ${target_reg}, [${target_reg}, #${has_off}]\n`;
 			}
+			return;
+		}
+	}
+	// Function call result: the call was materialised into a temp with the
+	// flag at `[temp + struct_size]`. Resolve the temp's address and load.
+	if (node.node_type === "func_call") {
+		const t = (node as any).type;
+		if (t?.name) {
+			const struct_size = get_struct_size(t.name, status);
+			// Build the call expression: it leaves x0 = address of the temp
+			// (struct value start). Load the flag from there.
+			build_operand(node, target_reg, status);
+			if (!status.code.endsWith("\n")) status.code += "\n";
+			status.code += `ldr ${target_reg}, [${target_reg}, #${struct_size}]\n`;
 			return;
 		}
 	}

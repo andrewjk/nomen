@@ -378,6 +378,41 @@ function build_constructor_params(
 			const label = `_arr_param_${string_array_counter++}`;
 			status.code += `${label}: .quad ${str_labels.join(", ")}\n.p2align 2\n`;
 			status.code += `adr x0, ${label}\n`;
+		} else if (fc.nullable_param_indices?.includes(i)) {
+			// A nullable struct value field (`T? field`, T a non-class
+			// struct) needs combined `[struct | flag]` storage at the call
+			// site so the constructor (which writes the field through the
+			// destination pointer) reads the flag at `[field_addr +
+			// struct_size]`. Same shapes as the free-function path in
+			// build_function_call_node.
+			const arg = param;
+			const struct_size = get_struct_size(param_type, status);
+			if (arg.node_type === "value" && (arg as ValueNode).value === "null") {
+				// `null` arg: zero the flag slot, leave value bytes
+				// uninitialised (the constructor won't read them).
+				const off = allocate_stack_space(status, struct_size + 8);
+				status.code += `str xzr, [x29, #${off + struct_size}]\n`;
+				status.code += `add x0, x29, #${off}\n`;
+			} else if (
+				arg.node_type === "value" &&
+				is_nullable_struct_type((arg as ValueNode).type, status)
+			) {
+				// Bare nullable variable — its storage is already combined.
+				emit_var_address(status, "x0", (arg as ValueNode).value);
+			} else {
+				// Non-null rvalue: build it (lands its address in x0),
+				// materialise into a combined region with value + flag = 1.
+				emit_struct_address_param(arg, status);
+				if (!status.code.endsWith("\n")) status.code += "\n";
+				const off = allocate_stack_space(status, struct_size + 8);
+				for (let b = 0; b < struct_size; b += 8) {
+					status.code += `ldr x9, [x0, #${b}]\n`;
+					status.code += `str x9, [x29, #${off + b}]\n`;
+				}
+				status.code += `mov x9, #1\n`;
+				status.code += `str x9, [x29, #${off + struct_size}]\n`;
+				status.code += `add x0, x29, #${off}\n`;
+			}
 		} else if (
 			!!status.structs.find((s) => s.name === param_type && !s.is_simple_type) ||
 			!!status.enums.find((e) => e.name === param_type && e.has_associated_data)
@@ -1203,15 +1238,25 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 				}
 			}
 			// Initialize the companion flag for a nullable struct local:
-			// 0 for null/unset, 1 when a real value is assigned below.
+			// 0 for null/unset, 1 when a real value is assigned below — EXCEPT
+			// when the value comes from a function call returning a nullable
+			// struct: the callee writes both the struct value AND the flag through
+			// the sret buffer (x8 = &local), so hardcoding `1` here would clobber
+			// the real null/non-null bit the callee wrote.
 			if (nullable_struct) {
 				const is_null_init =
 					!node.value ||
 					(node.value.node_type === "value" && (node.value as ValueNode).value === "null");
+				const value_is_nullable_call =
+					!!node.value &&
+					node.value.node_type === "func_call" &&
+					is_nullable_struct_type((node.value as FunctionCallNode).type, status);
 				const flag_off = status.stack_offsets!.get(has_flag_name(node.name));
 				if (status.function_return_label && flag_off !== undefined && flag_off >= 0) {
 					status.code += `str xzr, [x29, #${flag_off}]\n`;
-					if (!is_null_init) {
+					// Skip the hardcoded `1` for nullable-call initializers — the
+					// callee writes the real flag through the sret buffer.
+					if (!is_null_init && !value_is_nullable_call) {
 						status.code += `mov x9, #1\n`;
 						status.code += `str x9, [x29, #${flag_off}]\n`;
 					}

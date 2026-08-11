@@ -15,6 +15,29 @@ import is_string_borrow from "./utils/is_string_borrow.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 
 export default function build_return_node(node: ReturnNode, status: BuildStatus) {
+	// For a nullable struct return type, the callee signals null-ness to the
+	// caller through the hidden `*_ret_has` out-parameter (0 = null,
+	// 1 = value). Detect once: a bare `return` (void) only fires for non-nullable
+	// returns (the type system rejects it), so just `return null` vs value.
+	const ret_has = status.nullable_ret_has_param;
+	const returns_nullable_struct = !!ret_has;
+	const ret_is_null =
+		returns_nullable_struct &&
+		(!node.value ||
+			(node.value.node_type === "value" && (node.value as ValueNode).value === "null"));
+	if (returns_nullable_struct) {
+		// For `return null`, signal null and return an uninitialised temp —
+		// the caller won't read the struct value (the flag is 0). For a real
+		// value, signal non-null first so the struct-return path below is
+		// free to use _return_val normally.
+		if (ret_is_null) {
+			build_auto_free(status);
+			status.code += `*${ret_has} = 0;\n`;
+			status.code += `return (struct ${status.function_return_type!.name}){0};\n`;
+			return;
+		}
+		status.code += `*${ret_has} = 1;\n`;
+	}
 	if (!node.value) {
 		build_auto_free(status);
 		if (status.return_assign) {

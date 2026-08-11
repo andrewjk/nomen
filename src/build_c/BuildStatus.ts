@@ -167,6 +167,24 @@ export default interface BuildStatus {
 	stack_array_lengths?: Map<string, string>;
 	heap_class_arrays?: Map<string, number>;
 	function_return_type?: Type;
+	/**
+	 * When the current function returns a nullable struct value type, this
+	 * holds the C name of the hidden out-parameter (`unsigned char *_ret_has`)
+	 * the callee writes (0 for null, 1 for value). Set in build_function_node;
+	 * read in build_return_node. The caller (build_function_call_node /
+	 * build_declaration_node) materialises both the struct value and this flag.
+	 */
+	nullable_ret_has_param?: string;
+	/**
+	 * Set by a consumer that's about to build a function call returning a
+	 * nullable struct value type. When set, build_function_call_node emits
+	 * `&<name>` as the trailing `_ret_has` argument, writing the callee's
+	 * null/non-null signal into the named local. The consumer reads the flag
+	 * from that local after the call. When unset, the call is wrapped in a
+	 * statement-expression with a throwaway flag temp (used by expression
+	 * contexts that don't care about nullness).
+	 */
+	current_nullable_call_flag?: string;
 	strings?: Map<string, string>;
 	float_literals?: Map<string, string>;
 	loop_labels?: { start: string; end: string; cleanup_depth?: number }[];

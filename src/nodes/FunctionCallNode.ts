@@ -11,6 +11,14 @@ export default class FunctionCallNode extends BaseNode {
 	type_args?: Type[];
 	ref_param_indices?: number[];
 	mov_param_indices?: number[];
+	/**
+	 * Indices of arguments whose corresponding callee parameter is a nullable
+	 * struct value type (`T?` where T is a non-class struct). Populated during
+	 * the check pass when the callee's signature is resolved. The build uses
+	 * this to emit (and forward) the companion `_has` flag alongside the
+	 * struct pointer — see ROADBLOCKS "Nullable structs".
+	 */
+	nullable_param_indices?: number[];
 	swap_params?: Map<number, BaseNode>;
 	variadic_param_name?: string;
 	variadic_param_index?: number;

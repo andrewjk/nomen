@@ -13,6 +13,7 @@ import {
 	emit_heap_slots_cleanup_for_return,
 	mark_moved_if_struct,
 } from "./utils/auto_destroy.ts";
+import { is_nullable_struct_type } from "./utils/nullable_struct.ts";
 import { allocate_stack_space, emit_var_address, emit_var_store } from "./utils/stack_var.ts";
 import { emit_struct_copy, get_struct_size } from "./utils/struct_layout.ts";
 
@@ -26,6 +27,44 @@ function find_var_size(name: string, status: BuildStatus): number {
 
 export default function build_return_node(node: ReturnNode, status: BuildStatus) {
 	if (node.from_inline) {
+		return;
+	}
+
+	// For a nullable struct return type, the sret buffer (x8) is sized
+	// `struct_size + 8`: bytes [0..struct_size] hold the struct value, the
+	// 8-byte word at [struct_size] is the companion `_has` flag (0 = null,
+	// 1 = value). The callee writes BOTH through x8 — the caller's local is
+	// laid out the same way, so the sret writes land directly on the local's
+	// value+flag (no extra copy or hardcoded flag at the call site).
+	const returns_nullable_struct = is_nullable_struct_type(status.function_return_type, status);
+	const nullable_ret_is_null =
+		returns_nullable_struct &&
+		(!node.value ||
+			(node.value.node_type === "value" && (node.value as ValueNode).value === "null"));
+	if (nullable_ret_is_null) {
+		// `return null`: write 0 to the flag slot in the sret buffer (the
+		// struct value is left uninitialised — the caller won't read it).
+		if (status.return_buffer_stack_offset !== undefined) {
+			const struct_size = get_struct_size(status.function_return_type!.name, status);
+			status.code += `ldr x8, [x29, #${status.return_buffer_stack_offset}]\n`;
+			status.code += `str xzr, [x8, #${struct_size}]\n`;
+		}
+		// Run scope-exit cleanup for remaining declarations and jump to the
+		// return epilogue (mirrors the void-return path above).
+		const finalized = status.moved ?? new Set<string>();
+		for (const decl of status.scoped_declarations) {
+			if (finalized.has(decl.name)) continue;
+			emit_destroy_for_decl(
+				status,
+				decl.name,
+				decl.type.name,
+				undefined,
+				decl.type.type_args,
+				decl.type.is_nullable,
+			);
+		}
+		emit_heap_slots_cleanup_for_return(status);
+		status.code += `b ${status.function_return_label}\n`;
 		return;
 	}
 
@@ -155,6 +194,15 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 				}
 			} else {
 				emit_struct_copy("x0", "x8", 0, struct_size, status);
+			}
+			// For a nullable struct return, the sret buffer is sized
+			// `struct_size + 8` and the 8-byte word at [struct_size] is the
+			// companion `_has` flag. We've just copied the non-null value —
+			// write `1` so the caller sees the result as non-null. (The
+			// null-return path is handled at the top of this function.)
+			if (returns_nullable_struct) {
+				status.code += `mov x9, #1\n`;
+				status.code += `str x9, [x8, #${struct_size}]\n`;
 			}
 		}
 	}

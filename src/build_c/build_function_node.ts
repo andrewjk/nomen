@@ -19,6 +19,7 @@ import array_struct_name from "./utils/array_struct.ts";
 import c_function_name from "./utils/c_function_name.ts";
 import { enter_c_scope, leave_c_scope } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
+import { has_flag_name, is_nullable_struct_type } from "./utils/nullable_struct.ts";
 import scan_borrow_only_strings from "./utils/scan_borrow_only_strings.ts";
 
 export default function build_function_node(node: FunctionNode, status: BuildStatus) {
@@ -106,14 +107,33 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		status.code += `${c_function_name(node.name)}(`;
 	}
 	if (!is_main_with_init) {
+		let first_param = true;
 		for (let i = 0; i < node.params.length; i++) {
-			if (i > 0) {
+			if (!first_param) {
 				status.code += ", ";
 			}
+			first_param = false;
 			if (node.params[i].is_variadic) {
 				status.code += `long _${node.params[i].name}_len, `;
 			}
 			build_parameter_node(node.params[i], status);
+			// A nullable struct value parameter (`T? p`, T a non-class struct)
+			// is lowered as TWO C parameters: the struct pointer (built above)
+			// plus a sibling `unsigned char <name>_has` flag the caller
+			// forwards alongside. The body reads the flag through the param
+			// name directly (build_nullable_has emits `<name>_has`).
+			if (is_nullable_struct_type(node.params[i].type, status) && !node.params[i].is_self_param) {
+				status.code += `, unsigned char ${has_flag_name(c_function_name(node.params[i].name))}`;
+			}
+		}
+		// A nullable struct RETURN type (`func f(...) out T?`) adds a hidden
+		// `unsigned char *_ret_has` out-parameter after the regular params: the
+		// callee writes 0 (null) or 1 (value) so the caller can materialise
+		// both the struct value and its companion flag (C can't return both as
+		// a single by-value struct).
+		if (is_nullable_struct_type(node.return_type, status)) {
+			if (!first_param) status.code += ", ";
+			status.code += `unsigned char *_ret_has`;
 		}
 		status.code += `)`;
 	}
@@ -145,6 +165,12 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.function_variadic_params = new Set<string>();
 	const old_return_type = status.function_return_type;
 	status.function_return_type = node.return_type;
+	const old_nullable_ret_has = status.nullable_ret_has_param;
+	if (is_nullable_struct_type(node.return_type, status)) {
+		status.nullable_ret_has_param = "_ret_has";
+	} else {
+		status.nullable_ret_has_param = undefined;
+	}
 	const old_function_name = status.current_function_name;
 	status.current_function_name = node.name;
 	for (let param of node.params) {
@@ -238,6 +264,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.ref_class_param_types = old_ref_class_param_types;
 	status.function_variadic_params = old_variadic_params;
 	status.function_return_type = old_return_type;
+	status.nullable_ret_has_param = old_nullable_ret_has;
 	status.current_function_name = old_function_name;
 
 	// Always run auto_free at function exit. Functions with explicit returns

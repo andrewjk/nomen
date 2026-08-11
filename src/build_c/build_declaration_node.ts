@@ -410,9 +410,26 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 				const is_null =
 					node.value.node_type === "value" && (node.value as ValueNode).value === "null";
 				if (!is_null) {
+					// A nullable struct function-call initializer
+					// (`var T? x = f(...)`) writes both the struct value AND
+					// the null/non-null flag through the hidden `_ret_has`
+					// out-param — set status.current_nullable_call_flag so
+					// build_function_call_node forwards `&<flag>` and the
+					// callee writes the real null/non-null bit into it. Skip
+					// the unconditional `<flag> = 1` otherwise.
+					const value_is_nullable_call =
+						node.value.node_type === "func_call" &&
+						is_nullable_struct_type((node.value as FunctionCallNode).type, status);
 					status.code += `;\n${safe_name} = `;
-					build_node(node.value, status);
-					status.code += `;\n${flag} = 1`;
+					if (value_is_nullable_call) {
+						const old = status.current_nullable_call_flag;
+						status.current_nullable_call_flag = flag;
+						build_node(node.value, status);
+						status.current_nullable_call_flag = old;
+					} else {
+						build_node(node.value, status);
+						status.code += `;\n${flag} = 1`;
+					}
 				}
 			}
 			return;

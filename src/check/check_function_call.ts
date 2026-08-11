@@ -217,6 +217,29 @@ export default function check_function_call(
 	for (let [i, param] of node.params.entries()) {
 		const func_param = func.params[i + self_offset];
 
+		// Record which arguments correspond to a nullable struct value
+		// parameter (`T? p`, T a non-class struct). The build backends use
+		// this to emit a companion `_has` flag alongside the struct pointer
+		// (see ROADBLOCKS "Nullable structs"). Self-params (`ref self` /
+		// bare `self`) are skipped — the receiver is never a nullable value.
+		if (
+			func_param &&
+			func_param.type.is_nullable &&
+			!func_param.is_self_param &&
+			!func_param.type.is_ref &&
+			!func_param.type.is_array
+		) {
+			const s = status.structs.find(
+				(st) => st.name === func_param.type.name && !st.is_class && !st.is_simple_type,
+			);
+			if (s) {
+				if (!node.nullable_param_indices) node.nullable_param_indices = [];
+				if (!node.nullable_param_indices.includes(i)) {
+					node.nullable_param_indices.push(i);
+				}
+			}
+		}
+
 		// Set expected_type to the function parameter's type so that
 		// untyped values (e.g. array literals) are inferred correctly,
 		// rather than leaking the outer declaration's expected_type.
@@ -239,6 +262,33 @@ export default function check_function_call(
 		}
 		status.expected_type = old_expected_type;
 		status.allow_null_value = old_allow_null;
+
+		// A `null` literal arg to a nullable struct VALUE parameter (`T? p`,
+		// T a non-class struct) carries `Type("null")` from check_value_node,
+		// which doesn't expose the param's struct name. The build backends
+		// need that name to size the combined `[struct | flag]` storage they
+		// materialise for a nullable-struct call site. Rewrite the arg's type
+		// to the param's declared type so `get_struct_size` resolves
+		// correctly. Narrow to non-class structs — nullable CLASS params
+		// (`Box?`) have their own (pre-existing) call convention that doesn't
+		// need this.
+		if (
+			func_param &&
+			func_param.type.is_nullable &&
+			!func_param.type.is_ref &&
+			!func_param.type.is_array &&
+			param.node_type === "value" &&
+			(param as ValueNode).value === "null"
+		) {
+			const s = func_param.type.name
+				? status.structs.find(
+						(st) => st.name === func_param.type.name && !st.is_class && !st.is_simple_type,
+					)
+				: undefined;
+			if (s) {
+				(param as ValueNode).type = func_param.type;
+			}
+		}
 
 		const param_type = type_from_value_node(param, status);
 		const param_value = value_from_value_node(param);
