@@ -171,3 +171,59 @@ Console.write("\\{s.has(1)} \\{s.has(2)} \\{s.length}")
 		await build_and_check_output(input, "set_remove_readd", "true true 2");
 	});
 });
+
+describe("Set<string> (Hashable + Equatable element)", () => {
+	test("add and has with string elements", async () => {
+		const input = `
+var Set<string> s = Set<string>()
+s.add("alpha")
+s.add("beta")
+s.add("gamma")
+Console.write("\\{s.has("alpha")} \\{s.has("beta")} \\{s.has("delta")} \\{s.length}")
+`;
+		await build_and_check_output(input, "set_string_has", "true true false 3");
+	});
+
+	test("add duplicate string does not increase length", async () => {
+		const input = `
+var Set<string> s = Set<string>()
+s.add("x")
+s.add("x")
+Console.write("\\{s.length}")
+`;
+		await build_and_check_output(input, "set_string_dup", "1");
+	});
+
+	test("many string elements triggers rehash", async () => {
+		const input = `
+var Set<string> s = Set<string>()
+s.add("one")
+s.add("two")
+s.add("three")
+s.add("four")
+s.add("five")
+s.add("six")
+s.add("seven")
+s.add("eight")
+s.add("nine")
+s.add("ten")
+s.add("eleven")
+s.add("twelve")
+const bool has_all = s.has("one") && s.has("two") && s.has("three") && s.has("four") && s.has("five") && s.has("six") && s.has("seven") && s.has("eight") && s.has("nine") && s.has("ten") && s.has("eleven") && s.has("twelve")
+Console.write("\\{has_all} \\{s.length}")
+`;
+		await build_and_check_output(input, "set_string_rehash", "true 12");
+	});
+
+	test("remove string element", async () => {
+		const input = `
+var Set<string> s = Set<string>()
+s.add("a")
+s.add("b")
+s.add("c")
+s.remove("b")
+Console.write("\\{s.has("a")} \\{s.has("b")} \\{s.has("c")} \\{s.length}")
+`;
+		await build_and_check_output(input, "set_string_remove", "true false true 2");
+	});
+});

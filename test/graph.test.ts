@@ -218,3 +218,33 @@ Console.write("\\{sum}")
 		await build_and_check_output(input, "graph_chain", "5");
 	});
 });
+
+describe("Graph<struct> (size-aware _T primitives)", () => {
+	test("store and retrieve multi-word struct node values", async () => {
+		const input = `
+struct Point {
+  var int x
+  var int y
+}
+
+var Graph<Point> g = Graph<Point>()
+g.add_node(Point(1, 2))
+g.add_node(Point(3, 4))
+g.add_node(Point(5, 6))
+g.add_edge(0, 1)
+g.add_edge(0, 2)
+var int sum_x = 0
+var int sum_y = 0
+var int e = g.edges_of(0)
+while e != -1 {
+  var int target = g.edge_target(e)
+  var Point p = g.at(target)
+  sum_x = sum_x + p.x
+  sum_y = sum_y + p.y
+  e = g.next_edge(e)
+}
+Console.write("\\{sum_x} \\{sum_y}")
+`;
+		await build_and_check_output(input, "graph_struct", "8 10");
+	});
+});

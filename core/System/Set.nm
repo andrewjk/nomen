@@ -1,7 +1,9 @@
 /**
- * An ordered set of unique values (`add`/`has`/`get`/`remove`)
+ * An ordered set of unique values (`add`/`has`/`get`/`remove`). Elements must
+ * be `Hashable` (hashed to a `uint` via `value.hash()`) and `Equatable`
+ * (compared with `==`).
  **/
-pub struct Set<T> {
+pub struct Set<T: Hashable + Equatable> {
 	var length = 0
 	var Buffer<T> slots = Buffer<T>()
 	var used = Buffer<int>()
@@ -9,7 +11,7 @@ pub struct Set<T> {
 	pub func add = (ref self, mov T value) {
 		var int cap = self.slots.cap
 		if cap == 0 {
-			cap = self.slots.alloc_int(8)
+			cap = self.slots.alloc_T(8)
 			self.used.alloc(8)
 		}
 		if self.length * 4 >= cap * 3 {
@@ -19,7 +21,7 @@ pub struct Set<T> {
 		var int idx = self.find_slot(value, cap)
 		if self.used.load(idx) == 0 {
 			self.used.store(idx, 1)
-			self.slots.store_int(idx, value)
+			self.slots.store_T(idx, value)
 			self.length += 1
 		}
 	}
@@ -42,7 +44,7 @@ pub struct Set<T> {
 		if self.used.load(idx) == 0 {
 			return 0
 		}
-		return self.slots.load_int(idx)
+		return self.slots.load_T(idx)
 	}
 
 	pub func remove = (ref self, T value) {
@@ -54,20 +56,55 @@ pub struct Set<T> {
 		if self.used.load(idx) == 0 {
 			return
 		}
-		self.used.store(idx, 0)
-		self.slots.store_int(idx, 0)
+		// Backward-shift deletion for linear probing. `gap` is the empty slot
+		// walking forward through the cluster; `k` scans ahead of it. An entry
+		// at k shifts into the gap only if the gap still lies within its valid
+		// probe range ([home, k) cyclically); otherwise the entry stays put and
+		// we keep scanning, because a later entry may still belong behind the
+		// gap. This is the subtle point: k advances independently of the gap,
+		// so entries past a non-moveable one are not stranded behind an empty
+		// slot (which would make find_slot miss them). No tombstones, so
+		// find_slot/get/has/add are unchanged, and the cost is the local cluster
+		// length — not a full O(cap) rehash on every delete.
+		var int gap = idx
+		var int k = idx
+		while true {
+			k += 1
+			if k >= cap {
+				k = 0
+			}
+			if self.used.load(k) == 0 {
+				break
+			}
+			var int home = (self.slots.load_T(k).hash() as int) % cap
+			if home < 0 {
+				home = home + cap
+			}
+			var int dgap = gap - home
+			if dgap < 0 {
+				dgap = dgap + cap
+			}
+			var int dk = k - home
+			if dk < 0 {
+				dk = dk + cap
+			}
+			if dgap < dk {
+				self.slots.store_T(gap, self.slots.load_T(k))
+				self.used.store(gap, 1)
+				gap = k
+			}
+		}
+		self.used.store(gap, 0)
 		self.length = self.length - 1
-		self.rehash(cap)
 	}
 
 	func find_slot = (self, T value, int cap, out int: out >= 0 && out < cap) {
-		var int v = value
-		var int idx = v % cap
+		var int idx = (value.hash() as int) % cap
 		if idx < 0 {
 			idx = idx + cap
 		}
 		while self.used.load(idx) != 0 {
-			if self.slots.load_int(idx) == v {
+			if self.slots.load_T(idx) == value {
 				return idx
 			}
 			idx += 1
@@ -83,14 +120,18 @@ pub struct Set<T> {
 		var Buffer<int> old_used = mov self.used swap Buffer<int>()
 		var int old_cap = old_slots.cap
 
-		self.slots.alloc_int(new_cap)
+		self.slots.alloc_T(new_cap)
 		self.used.alloc(new_cap)
 		self.length = 0
 
 		var i = 0
 		while i < old_cap; i += 1 {
 			if old_used.load(i) != 0 {
-				self.add(old_slots.load_int(i))
+				// move_T (not load_T) relinquishes the old slot, so each value
+				// is owned by exactly one buffer (the new self) afterwards.
+				// load_T would leave the old slot referencing the same class
+				// pointer — a double-free when old_slots is destroyed.
+				self.add(old_slots.move_T(i))
 			}
 		}
 	}

@@ -16,9 +16,8 @@ pub struct Graph<T>: Enumerable {
 
 	pub func add_node = (ref self, mov T value) {
 		var int idx = self.node_count
-		self.values.grow_int(idx + 1)
-		var int v = value
-		self.values.store_int(idx, v)
+		self.values.grow_T(idx + 1)
+		self.values.store_T(idx, value)
 		self.head_edge.grow_int(idx + 1)
 		self.head_edge.store_int(idx, -1)
 		self.node_count = self.node_count + 1
@@ -51,11 +50,11 @@ pub struct Graph<T>: Enumerable {
 	}
 
 	pub func first = (self: self.node_count > 0, out T) {
-		return self.values.load_int(0)
+		return self.values.load_T(0)
 	}
 
 	pub func at = (self, int idx: idx >= 0 && idx < self.node_count, out T) {
-		return self.values.load_int(idx)
+		return self.values.load_T(idx)
 	}
 
 	pub func node_length = (self, out int) {

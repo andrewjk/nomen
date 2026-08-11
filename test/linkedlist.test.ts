@@ -164,3 +164,27 @@ for i of 0 .. list.count {
 		await build_and_check_output(input, "ll_index_pattern", "100 200");
 	});
 });
+
+describe("LinkedList<struct> (size-aware _T primitives)", () => {
+	test("store and retrieve multi-word struct elements", async () => {
+		const input = `
+struct Point {
+  var int x
+  var int y
+}
+
+var LinkedList<Point> list = LinkedList<Point>()
+list.add(Point(1, 2))
+list.add(Point(3, 4))
+list.add(Point(5, 6))
+for i of 0 .. list.count {
+  var Point p = list.at(i)
+  if i > 0 {
+    Console.write(" ")
+  }
+  Console.write("\\{p.x},\\{p.y}")
+}
+`;
+		await build_and_check_output(input, "ll_struct", "1,2 3,4 5,6");
+	});
+});
