@@ -7,7 +7,7 @@ import { resolve_static_value } from "./build_array_values_node.ts";
 import { emit_string_array_labels, resolve_array_element } from "./build_declaration_node.ts";
 import build_node from "./build_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
-import { emit_malloc } from "./utils/audit.ts";
+import { emit_malloc, emit_strdup } from "./utils/audit.ts";
 import {
 	emit_destroy_for_decl,
 	emit_heap_slots_cleanup_for_return,
@@ -165,6 +165,38 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 	}
 	if (!status.code.endsWith("\n")) {
 		status.code += "\n";
+	}
+
+	// A bare string literal returned from a heap-returning function is
+	// strdup'd so the caller frees a heap copy, mirroring the C backend's
+	// `returns_string_literal` path in build_return_node. A function with at
+	// least one heap-producing branch is classified heap-returning, so the
+	// caller frees EVERY result from it — but the literal branch lowers to
+	// `adr x0, _str_N` (a rodata pointer) which free rejects (SIGABRT). A
+	// function that returns ONLY literals is not heap-returning (the caller
+	// doesn't free), so the rodata pointer is safe and no strdup is emitted.
+	if (
+		status.function_return_type?.name === "string" &&
+		!status.function_return_type?.is_view &&
+		node.value.node_type === "value" &&
+		(node.value as ValueNode).value.length >= 2 &&
+		(node.value as ValueNode).value.startsWith('"') &&
+		(node.value as ValueNode).value.endsWith('"')
+	) {
+		const fn_name = status.current_function_name;
+		const mangled = status.current_struct ? `${status.current_struct.name}_${fn_name}` : fn_name;
+		if (
+			fn_name &&
+			!!status.heap_returning_functions &&
+			(status.heap_returning_functions.has(fn_name) ||
+				(mangled !== undefined && status.heap_returning_functions.has(mangled)))
+		) {
+			emit_strdup(status);
+			if (!status.code.endsWith("\n")) {
+				status.code += "\n";
+			}
+			status.last_result_is_heap = true;
+		}
 	}
 
 	if (status.last_result_is_heap && status.function_return_type?.name === "string") {
