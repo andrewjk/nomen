@@ -882,22 +882,27 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 	}
 
 	if (node.type.is_array) {
-		// A hoisted array-literal/range temp bound to a heap `Array<T>` param
-		// (see check_function_call): materialise a malloc'd buffer
-		// ([ptr]=length, data at [ptr+8]) so the promoted `Array_<T>` param's
-		// `.length`/`.at`/`.set`/iteration see the heap-array layout. Register
-		// it in `heap_array_vars` so auto-destroy frees the buffer. String
-		// elements store `.asciz` addresses without strdup (matching the
+		// A hoisted array-literal/range temp bound to a heap `Array<T>` param,
+		// or a heap `Array<T>` declared directly with a literal/range
+		// initializer (`var Array<int> x = [2,4,6]`): materialise a malloc'd
+		// buffer ([ptr]=length, data at [ptr+8]) so the promoted `Array_<T>`
+		// param's `.length`/`.at`/`.set`/iteration see the heap-array layout.
+		// Register it in `heap_array_vars` so auto-destroy frees the buffer.
+		// String elements store `.asciz` addresses without strdup (matching the
 		// aarch64 `Array.with`/`set` convention — they are rodata, not owned),
 		// so they are NOT registered in heap_string_arrays; class elements are
 		// fresh constructor results owned by the buffer, so they go to
 		// heap_class_arrays for per-element free.
+		const heap_literal_init =
+			node.is_heap_array_literal ||
+			(node.type.is_array_heap &&
+				(node.value?.node_type === "array" || node.value?.node_type === "range"));
 		const array_literal_values =
-			node.is_heap_array_literal && node.value?.node_type === "array"
+			heap_literal_init && node.value?.node_type === "array"
 				? (node.value as ArrayValuesNode).values
 				: undefined;
 		const range_literal_values =
-			node.is_heap_array_literal && node.value?.node_type === "range"
+			heap_literal_init && node.value?.node_type === "range"
 				? range_to_values(node.value as RangeNode)
 				: undefined;
 		if (array_literal_values || range_literal_values) {

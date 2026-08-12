@@ -6,6 +6,7 @@ import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_node from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
+import array_struct_name from "./utils/array_struct.ts";
 import c_function_name from "./utils/c_function_name.ts";
 import c_type from "./utils/c_type.ts";
 import { has_flag_name, is_nullable_struct_type } from "./utils/nullable_struct.ts";
@@ -68,18 +69,19 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			continue;
 		}
 
-		// An `Array<T>` argument that is itself a heap `struct Array_<T>*`		// value (a `heap_array_vars` local or another `Array<T>` param — both
-		// already pointers, recognised by having NO compile-time `length`) must
-		// be forwarded directly: `ref` Array<T> params want the pointer for
-		// in-place `.set` mutation, not its address. Fixed-size array args
-		// (`T[N]`, which carry a `length`) and array literals are left to the
-		// generic arg path below — they are raw stack arrays, not heap struct
-		// pointers, regardless of whether an `Array_<T>` mono struct happens
-		// to exist. Struct-constructor calls are excluded too (their array
-		// fields store elements inline).
+		// An `Array<T>` argument that is a heap `struct Array_<T>*` value (a
+		// `heap_array_vars` local or another `Array<T>` param — the type carries
+		// `is_array_heap`) must be forwarded directly: `ref` Array<T> params
+		// want the pointer for in-place `.set` mutation, not its address. Raw
+		// `T[]`/`T[N]` args (plain `is_array`) and array-literal VALUES are left
+		// to the generic arg path below — they are stack arrays, not heap struct
+		// pointers. Struct-constructor calls are excluded too (their array
+		// fields store elements inline). `array_struct_name` is the shared,
+		// flag-based gate (a compile-time `length` on a heap Array<T> — e.g.
+		// from a `[ ... ]` initializer — no longer disqualifies it).
 		const arg_arr_struct =
-			!is_struct && param_type.is_array && !param_type.is_view && !param_type.length
-				? status.structs.find((s) => s.name === `Array_${param_type.name}` && !s.is_generic)?.name
+			!is_struct && param_type.is_array && !param_type.is_view
+				? array_struct_name(param_type, status)
 				: undefined;
 		if (arg_arr_struct) {
 			// Already a heap `struct Array_<T>*` pointer — forward as-is.

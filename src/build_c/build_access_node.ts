@@ -148,6 +148,13 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				status.code += `->length`;
 				return;
 			}
+			// Heap `Array<T>` field / expression .length → the value is a
+			// `struct Array_<T>*` pointer, so `.length` is `->length`.
+			if (target_type.is_array && target_type.is_array_heap && access_field.name === "length") {
+				build_node(node.target, status);
+				status.code += `->length`;
+				return;
+			}
 			// HACK:
 			if (target_type.is_array && access_field.name === "length") {
 				const type = c_type(target_type.name);
@@ -327,9 +334,14 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 			// struct). Variadic params are also plain C arrays (`T *name`),
 			// so they hit this path too. Heap arrays (returned from functions)
 			// must NOT inline — they use the Array_<T>_at/_first helpers.
+			// Heap arrays — locals/params registered in heap_array_vars AND
+			// `Array<T>`-typed fields (is_array_heap, whose field value is a
+			// `struct Array_<T>*` pointer) — must NOT inline; they use the
+			// Array_<T>_at/_set/_first helpers.
 			const target_is_heap_array =
-				node.target.node_type === "value" &&
-				!!status.heap_array_vars?.has((node.target as ValueNode).value);
+				target_type.is_array_heap ||
+				(node.target.node_type === "value" &&
+					!!status.heap_array_vars?.has((node.target as ValueNode).value));
 			const wants_inline =
 				target_type.is_array &&
 				!target_is_heap_array &&

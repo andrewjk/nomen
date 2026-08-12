@@ -540,6 +540,11 @@ function check_access_function_node(
 				if (elem_name) {
 					node.type = new Type(elem_name);
 					node.type.is_array = true;
+					// The value is an `Array<T>` struct (heap `struct Array_<T>*`
+					// with a length header), not a raw `T[]` stack array — mark it
+					// so the build's array_struct_name gate and the call-site
+					// forwarding treat it as the heap struct deterministically.
+					node.type.is_array_heap = true;
 				}
 			} else if (node.inferred_array_length) {
 				// Already in internal array form (e.g. Type("char", is_array=true)).

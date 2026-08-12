@@ -20,8 +20,8 @@ export default function build_struct_body(node: StructNode, status: BuildStatus)
 	status.code += `void *_vt;\n`;
 	// Fields from the struct
 	for (let field of node.fields) {
-		if (field.type.is_array && field.type.length) {
-			// Fixed-size array field: e.g. char* items[2]
+		if (field.type.is_array && field.type.length && !field.type.is_array_heap) {
+			// Fixed-size stack array field: e.g. char* items[2]
 			status.code += `${field_c_type(field.type, status)} ${field.name}[`;
 			if (field.type.length) {
 				build_node(field.type.length, status);
@@ -48,6 +48,12 @@ export default function build_struct_body(node: StructNode, status: BuildStatus)
 }
 
 function field_c_type(type: Type, status: BuildStatus): string {
+	// A heap `Array<T>` field is a `struct Array_<T>*` pointer (the value
+	// owns a heap buffer with a length header), not a `char*` element pointer
+	// or an inline stack array.
+	if (type.is_array_heap) {
+		return `struct Array_${type.name} *`;
+	}
 	// Monomorphize generic field types: `List<Animal>` → `List_Animal`.
 	const mono_name = type.type_args?.length
 		? `${type.name}_${type.type_args.map((t) => t.name).join("_")}`

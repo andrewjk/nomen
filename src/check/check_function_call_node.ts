@@ -472,12 +472,24 @@ export function monomorphize(
  */
 export function instantiate_generic_type(type: Type, status: CheckStatus) {
 	const args = type.type_args;
-	if (!args?.length) return;
-	const generic = status.structs.findLast((s) => s.name === type.name);
-	if (!generic?.is_generic) return;
-	if (generic.type_params.length !== args.length) return;
-	if (args.some((t) => status.type_params.includes(t.name))) return;
-	monomorphize(generic, args, status);
+	if (args?.length) {
+		const generic = status.structs.findLast((s) => s.name === type.name);
+		if (!generic?.is_generic) return;
+		if (generic.type_params.length !== args.length) return;
+		if (args.some((t) => status.type_params.includes(t.name))) return;
+		monomorphize(generic, args, status);
+	}
+	// `Array<T>` (parse-rewritten to `{name: T, is_array: true, is_array_heap:
+	// true}`): materialize the mono `Array_<elem>` struct so the build can
+	// always lower it to `struct Array_<T>*` — no reliance on a `.with`/`.at`
+	// call elsewhere having instantiated it (the old order-dependent gate). This
+	// is the deterministic counterpart of the generic-struct instantiation above.
+	if (type.is_array_heap) {
+		const array_struct = status.structs.find((s) => s.name === "Array");
+		if (array_struct?.is_generic) {
+			monomorphize(array_struct, [new Type(type.name)], status);
+		}
+	}
 }
 
 /**

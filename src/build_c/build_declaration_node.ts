@@ -301,13 +301,16 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 				consolidate_temp_anchors(status, node.value as FunctionCallNode, node.type.name);
 			}
 		}
-		// An Array<T> declaration backed by an array literal ([1, 2, 3]) or a
-		// range literal (1..4, which expands to {1, 2, 3}) is a fixed-size
-		// stack C array (e.g. `long nums[3] = {1, 2, 3}`). Any other initializer
+		// An `int[]`/`int[N]`/literal-backed declaration is a fixed-size stack C
+		// array (e.g. `long nums[3] = {1, 2, 3}`). A heap `Array<T>` declaration
+		// (`is_array_heap`, e.g. `var Array<int> x = [2,4,6]`) is NOT a stack
+		// array — it materialises as a heap `struct Array_<T>*` buffer (handled
+		// by the literal/range heap path below). Any other initializer
 		// (e.g. Array.with(...) which returns a heap pointer) or no initializer
 		// at all is emitted as a pointer to the element type.
 		const is_stack_array =
 			node.type.is_array &&
+			!node.type.is_array_heap &&
 			!node.is_heap_array_literal &&
 			(node.value?.node_type === "array" || node.value?.node_type === "range");
 		// Array from a function call (e.g. `var Box[] r = make_arr()`) is a
@@ -330,7 +333,15 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			status.code += `struct Array_${node.type.name}* ${safe_name}`;
 			if (!status.heap_array_vars) status.heap_array_vars = new Set();
 			status.heap_array_vars.add(safe_name);
-		} else if (node.is_heap_array_literal || node.is_heap_array_copy) {
+		} else if (
+			node.is_heap_array_literal ||
+			node.is_heap_array_copy ||
+			// A heap `Array<T>` declared with a literal/range initializer
+			// (`var Array<int> x = [2,4,6]` / `= 1 .. 3`) — not a hoisted temp,
+			// but the same heap-buffer materialisation.
+			(node.type.is_array_heap &&
+				(node.value?.node_type === "array" || node.value?.node_type === "range"))
+		) {
 			// A hoisted array-literal/range/stack-var copy temp bound to a heap
 			// `Array<T>` param (see check_function_call): the temp must be a heap
 			// `struct Array_<T>*` buffer so the promoted param's
@@ -451,13 +462,18 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 		}
 		if (node.value) {
 			// A hoisted array-literal/range temp bound to a heap `Array<T>`
-			// param: materialise a heap `struct Array_<T>*` buffer (header +
-			// inline data) and copy the literal's/range's elements in.
-			// `build_array_values_node` strdup's string-literal elements, so
-			// each slot owns a heap copy that auto_free reclaims at scope exit
-			// — matching how `Array<T>.with`/`set` and stack string arrays are
-			// handled.
-			if (node.is_heap_array_literal && node.value.node_type === "array") {
+			// param, or a heap `Array<T>` declared directly with a literal/range
+			// initializer (`var Array<int> x = [2,4,6]`): materialise a heap
+			// `struct Array_<T>*` buffer (header + inline data) and copy the
+			// literal's/range's elements in. `build_array_values_node`
+			// strdup's string-literal elements, so each slot owns a heap copy
+			// that auto_free reclaims at scope exit — matching how
+			// `Array<T>.with`/`set` and stack string arrays are handled.
+			const is_heap_literal_init =
+				node.is_heap_array_literal ||
+				(node.type.is_array_heap &&
+					(node.value.node_type === "array" || node.value.node_type === "range"));
+			if (is_heap_literal_init && node.value.node_type === "array") {
 				const arr = node.value as ArrayValuesNode;
 				const elem_name = node.type.name;
 				const elem_c = heap_elem_c_type(elem_name, status);
@@ -471,7 +487,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 				status.code += `, ${count}L * sizeof(${elem_c}));\n`;
 				return;
 			}
-			if (node.is_heap_array_literal && node.value.node_type === "range") {
+			if (is_heap_literal_init && node.value.node_type === "range") {
 				const range = node.value as RangeNode;
 				const elem_name = node.type.name;
 				const elem_c = heap_elem_c_type(elem_name, status);

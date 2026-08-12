@@ -54,12 +54,20 @@ export default function parse_type(status: ParseStatus): Type {
 		}
 		expect("]", status);
 	}
-	// Convert `Array<T>` to internal array representation: name=T, is_array=true
+	// `Array<T>` is the generic heap `Array` struct (monomorphized to
+	// `Array_<T>`), NOT a raw `T[]` stack array. Keep `is_array` (so the whole
+	// array dispatch/bounds/for-of machinery applies) but mark it
+	// `is_array_heap` so the check/build can distinguish it deterministically
+	// from a raw `T[]`/`T[N]` annotation and from an array-literal VALUE (both
+	// stay plain `is_array` without the flag). This replaces the old
+	// order-dependent "does the mono struct exist?" build-time gate — see the
+	// ROADBLOCKS `Array<T>.set` entry.
 	if (type.is_array === undefined && type.name === "Array" && type.type_args?.length === 1) {
 		const elem = type.type_args[0];
 		type.name = elem.name;
 		type.is_array = true;
 		type.is_nullable = elem.is_nullable;
+		type.is_array_heap = true;
 		type.type_args = undefined;
 	}
 	return type;

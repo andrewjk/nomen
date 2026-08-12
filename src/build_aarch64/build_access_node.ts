@@ -609,6 +609,36 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 			status.code += `ldr x0, [x0, #-8]\n`;
 			return;
 		}
+		// Heap `Array<T>` FIELD (`obj.items.length`): the field holds a pointer
+		// to the heap buffer with the length at [0]. Load the field value, then
+		// its length word.
+		if (node.target.node_type === "access" && target_type.is_array_heap) {
+			const access_target = node.target as AccessNode;
+			if (access_target.access.node_type === "access_field") {
+				const offset = compute_field_offset(access_target, status);
+				const base = get_base_target(access_target);
+				if (base.node_type === "value") {
+					const name = (base as ValueNode).value;
+					const paramReg = get_param_reg(name, status);
+					if (paramReg) {
+						if (paramReg !== "x0") status.code += `mov x0, ${paramReg}\n`;
+					} else if (is_local_ref_var(name, status)) {
+						emit_deref_var_address(status, "x0", name);
+					} else {
+						emit_var_address(status, "x0", name);
+					}
+				} else {
+					build_node(base, status);
+					if (!status.code.endsWith("\n")) status.code += "\n";
+				}
+				if (offset > 0) {
+					status.code += `add x0, x0, #${offset}\n`;
+				}
+				status.code += `ldr x0, [x0]\n`;
+				status.code += `ldr x0, [x0]\n`;
+				return;
+			}
+		}
 		status.code += `mov x0, #0\n`;
 		return;
 	}
@@ -1498,6 +1528,13 @@ function build_access_method(
 				if (offset > 0) {
 					status.code += `add x0, x0, #${offset}\n`;
 				}
+				// A heap `Array<T>` field holds a POINTER to the heap buffer
+				// (length at [0], data at [8]). The array methods expect the
+				// DATA pointer, so dereference and skip the length prefix.
+				if (target_type.is_array && target_type.is_array_heap) {
+					status.code += `ldr x0, [x0]\n`;
+					status.code += `add x0, x0, #8\n`;
+				}
 			} else {
 				build_node(node.target, status);
 				if (!status.code.endsWith("\n")) {
@@ -1508,6 +1545,13 @@ function build_access_method(
 			build_node(node.target, status);
 			if (!status.code.endsWith("\n")) {
 				status.code += "\n";
+			}
+			// A heap `Array<T>` value built by build_node (e.g. a field load
+			// `obj.items` → the buffer BASE pointer, or a call result) must be
+			// advanced to the DATA pointer the array methods expect (length at
+			// [base], data at [base+8]).
+			if (target_type.is_array && target_type.is_array_heap) {
+				status.code += `add x0, x0, #8\n`;
 			}
 		}
 	}

@@ -45,19 +45,16 @@ import value_from_value_node from "./utils/value_from_value_node.ts";
 const CORE_DATA_STRUCTURES = new Set(["Buffer", "BigInt"]);
 
 /**
- * Whether `type` is a heap `Array<T>` whose monomorphized `Array_<T>` struct
- * has been materialized. `Array<T>` is rewritten to `{name: T, is_array:
- * true}` at parse time (indistinguishable from raw `T[]`), so the only signal
- * is the mono struct's presence in `status.structs` — the same gate the build
- * backends use via `array_struct_name`. A length-bearing type is a stack
- * array, not a heap Array. Used to (a) avoid stamping a caller's literal
+ * Whether `type` is a heap `Array<T>`. `Array<T>` is parse-rewritten to
+ * `{name: T, is_array: true, is_array_heap: true}` — the flag distinguishes it
+ * deterministically from a raw `T[]`/`T[N]` stack array and from an
+ * array-literal VALUE (both plain `is_array`). A length-bearing type is a
+ * stack array, not a heap Array. Used to (a) avoid stamping a caller's literal
  * length onto a dynamic `Array<T>` param, and (b) decide whether a hoisted
- * array-literal arg must be materialised as a heap array.
+ * array-literal/range/stack-var arg must be materialised as a heap array.
  */
-function is_heap_array_type(type: Type | undefined, status: CheckStatus): boolean {
-	if (!type?.is_array || type.is_view || type.length) return false;
-	const mono = `Array_${type.name}`;
-	return !!status.structs.find((s) => s.name === mono && !s.is_generic);
+function is_heap_array_type(type: Type | undefined): boolean {
+	return !!type?.is_array && !!type.is_array_heap && !type.is_view;
 }
 
 /**
@@ -76,8 +73,11 @@ function is_heap_array_var_copy(
 	status: CheckStatus,
 ): boolean {
 	if (param.node_type !== "value") return false;
-	if (!is_heap_array_type(func_param?.type, status)) return false;
-	if (!param_type.is_array || !param_type.length) return false;
+	if (!is_heap_array_type(func_param?.type)) return false;
+	// A heap `Array<T>` arg (is_array_heap) is already a `struct Array_<T>*`
+	// and is forwarded directly — only a raw stack-array var (plain `is_array`
+	// with a compile-time `length`) needs a copy.
+	if (!param_type.is_array || !param_type.length || param_type.is_array_heap) return false;
 	// Owning-element stack arrays are not copied: a class-element source owns
 	// fresh instances the copy would share (double-free on destroy), and a
 	// value-struct element can't be word-copied soundly on the aarch64 backend.
@@ -487,17 +487,15 @@ export default function check_function_call(
 		);
 
 		if (param_type.is_array && param_type.length && !func_param.type.length) {
-			// A heap `Array<T>` param (whose monomorphized `Array_<T>` struct
-			// exists) is a DYNAMIC array: the caller's literal length must not
-			// be stamped onto it. The build recovers the `Array<T>`-vs-raw-`T[]`
-			// distinction via `array_struct_name`, which treats a length-bearing
-			// type as a stack array — stamping the length would keep the param a
-			// raw element pointer and break `.length`/`.at`/`.set`/iteration.
-			// Only raw `T[]` params (no mono struct) absorb the literal's
-			// compile-time length.
-			if (!is_heap_array_type(func_param.type, status)) {
-				func_param.type.length = param_type.length;
-			}
+			// Stamp the caller's compile-time `length` onto the callee param so
+			// field/constructor length knowledge propagates (e.g. `c.items`
+			// after `Container(Array("a","b"))` → `c.items.length == 2`, which
+			// discharges `.at(i)` bounds). This is safe for heap `Array<T>`
+			// params too: the build's `array_struct_name` gate is now flag-based
+			// (`is_array_heap`), not length-based, so the param still lowers to
+			// `struct Array_<T>*`, and the for-of desugar uses the RUNTIME
+			// `.length` bound for heap arrays (see desugar_array_for_loop).
+			func_param.type.length = param_type.length;
 		}
 
 		// Collect argument for constraint evaluation
@@ -782,8 +780,16 @@ export default function check_function_call(
 			// compile-time `length` from its type (the build recomputes the
 			// element count from the literal's values / the range bounds). Raw
 			// `T[]` params keep the stack-array temp.
-			const param_is_heap_array = is_heap_array_type(func_param?.type, status);
+			const param_is_heap_array = is_heap_array_type(func_param?.type);
 			const arg_is_array_like = param.node_type === "array" || param.node_type === "range";
+			// The marked temp is a heap `Array_<T>` at runtime; stamp
+			// `is_array_heap` so the build recognises it deterministically (the
+			// `array_struct_name` gate is now flag-based, not mono-existence).
+			const heap_temp_type = (name: string): Type => {
+				const t = new Type(name, undefined, true);
+				t.is_array_heap = true;
+				return t;
+			};
 			let hoisted_type = param_type;
 			// Static literal/range args (compile-time `length`) bound to a heap
 			// `Array<T>` param are marked for heap materialisation. Dynamic
@@ -791,7 +797,7 @@ export default function check_function_call(
 			// the stack-array path.
 			if (arg_is_array_like && param_is_heap_array && param_type.length) {
 				hoisted.is_heap_array_literal = true;
-				hoisted_type = new Type(param_type.name, undefined, true);
+				hoisted_type = heap_temp_type(param_type.name);
 				hoisted.type = hoisted_type;
 			}
 			// A stack-array VARIABLE arg (`sum(v)` where `v` is a
@@ -803,7 +809,7 @@ export default function check_function_call(
 			// copy path).
 			else if (param_is_heap_array && param_type.length) {
 				hoisted.is_heap_array_copy = true;
-				hoisted_type = new Type(param_type.name, undefined, true);
+				hoisted_type = heap_temp_type(param_type.name);
 				hoisted.type = hoisted_type;
 			}
 			status.allocations.push(hoisted);

@@ -188,8 +188,8 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 		}
 		// Fields from the struct
 		for (const field of node.fields) {
-			if (field.type.is_array && field.type.length) {
-				// Fixed-size array fields — use memcpy instead of assignment
+			if (field.type.is_array && field.type.length && !field.type.is_array_heap) {
+				// Fixed-size stack array fields — use memcpy instead of assignment
 				status.code += `memcpy(${object_name}${accessor}${field.name}, ${field.name}, sizeof(${object_name}${accessor}${field.name}));\n`;
 			} else if (is_nullable_struct_type(field.type, status) && field.value) {
 				// Nullable struct field with a default (typically `= null`).
@@ -350,6 +350,11 @@ function build_struct_traits(node: StructNode, status: BuildStatus) {
  * rather than emitted directly to status.code.
  */
 function c_param_decl(type: Type, name: string, status: BuildStatus): string {
+	// A heap `Array<T>` param is a `struct Array_<T>*` (the value owns a heap
+	// buffer with a length header), not a raw element pointer.
+	if (type.is_array_heap) {
+		return `struct Array_${type.name} *${name}`;
+	}
 	const struct_type = status.structs.find((s) => s.name === type.name);
 	const trait_type = status.traits.find((t) => t.name === type.name);
 	const is_struct = !!struct_type && !struct_type.is_simple_type;
