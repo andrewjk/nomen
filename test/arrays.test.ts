@@ -364,6 +364,85 @@ for n of a {
 `;
 		await build_and_check_output(input, "array_func_return_forwarded_call", "7 9 ");
 	});
+
+	// The `Array<T>` literal-wrap gap (FOLLOWUP / ROADBLOCKS): passing an array
+	// LITERAL directly to an `Array<T>` param whose monomorphized `Array_<T>`
+	// struct exists used to pass the stack-array temp where the promoted
+	// `struct Array_<T>*` param expected a heap struct pointer — clang rejected
+	// it, or (before the length-stamping fix) the param stayed a raw element
+	// pointer and `.length`/`.at`/iteration silently read the wrong memory. The
+	// hoisted literal temp is now materialised as a heap `Array_<T>` buffer
+	// (marked at check time; built by both backends), so the literal round-trips
+	// through the struct-typed param.
+	test("array literal to Array<int> param when Array_int mono struct exists", async () => {
+		const input = `
+var Array<int> filler = Array<int>.with(0, 1)
+func sum = (Array<int> nums, out int) {
+  var total = 0
+  for n of nums {
+    total = total + n
+  }
+  return total
+}
+const n = sum(Array(2, 4, 6))
+Console.write("\\{n}")
+`;
+		await build_and_check_output(input, "array_literal_wrap_int", "12");
+	});
+
+	test("string array literal to Array<string> param when Array_string mono struct exists", async () => {
+		const input = `
+var Array<string> filler = Array<string>.with("", 1)
+func join = (Array<string> words, out string) {
+  var out = ""
+  for w of words {
+    out = out + w
+  }
+  return out
+}
+const s = join(Array("a", "b", "c"))
+Console.write("\\{s}")
+`;
+		await build_and_check_output(input, "array_literal_wrap_string", "abc");
+	});
+
+	// A raw `int[]` param spelling is parse-rewritten identically to
+	// `Array<int>`, so with the mono struct present it takes the same heap
+	// struct pointer and a literal arg must be wrapped the same way.
+	test("array literal to int[] param when Array_int mono struct exists", async () => {
+		const input = `
+var Array<int> filler = Array<int>.with(0, 1)
+func sum = (int[] nums, out int) {
+  var total = 0
+  for n of nums {
+    total = total + n
+  }
+  return total
+}
+const n = sum([2, 4, 6])
+Console.write("\\{n}")
+`;
+		await build_and_check_output(input, "array_literal_wrap_raw_spelling", "12");
+	});
+
+	// When the mono struct is created AFTER the call, the param still goes
+	// through the raw-`T[]` path (no length stamping, matching the pre-fix
+	// behavior) — the literal must still produce the right answer.
+	test("array literal arg when mono struct is created after the call", async () => {
+		const input = `
+func sum = (Array<int> nums, out int) {
+  var total = 0
+  for n of nums {
+    total = total + n
+  }
+  return total
+}
+const n = sum(Array(2, 4, 6))
+var Array<int> filler = Array<int>.with(0, 1)
+Console.write("\\{n}")
+`;
+		await build_and_check_output(input, "array_literal_wrap_order_edge", "12");
+	});
 });
 
 // ERRORS

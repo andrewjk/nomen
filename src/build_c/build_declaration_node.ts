@@ -6,6 +6,7 @@ import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
+import build_array_values_node from "./build_array_values_node.ts";
 import { struct_needs_destroy_by_name } from "./build_auto_free.ts";
 import build_node from "./build_node.ts";
 import build_parameter_node from "./build_parameter_node.ts";
@@ -305,6 +306,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 		// at all is emitted as a pointer to the element type.
 		const is_stack_array =
 			node.type.is_array &&
+			!node.is_heap_array_literal &&
 			(node.value?.node_type === "array" || node.value?.node_type === "range");
 		// Array from a function call (e.g. `var Box[] r = make_arr()`) is a
 		// heap-allocated Array_<T> buffer pointer — not a stack C array. Only
@@ -323,6 +325,17 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 				(node.value?.node_type === "op" &&
 					!!(node.value as OperationNode).operator_func?.struct_name?.startsWith("Array")));
 		if (is_heap_array_from_call) {
+			status.code += `struct Array_${node.type.name}* ${safe_name}`;
+			if (!status.heap_array_vars) status.heap_array_vars = new Set();
+			status.heap_array_vars.add(safe_name);
+		} else if (node.is_heap_array_literal) {
+			// A hoisted array-literal temp bound to a heap `Array<T>` param
+			// (see check_function_call): the temp must be a heap
+			// `struct Array_<T>*` buffer so the promoted param's
+			// `.length`/`.at`/`.set`/iteration dispatch through the Array_<T>
+			// methods. Register it in `heap_array_vars` so auto_free frees the
+			// buffer (and its owning elements) at scope exit. The malloc +
+			// header + element copies are emitted with the initializer below.
 			status.code += `struct Array_${node.type.name}* ${safe_name}`;
 			if (!status.heap_array_vars) status.heap_array_vars = new Set();
 			status.heap_array_vars.add(safe_name);
@@ -435,6 +448,32 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			return;
 		}
 		if (node.value) {
+			// A hoisted array-literal temp bound to a heap `Array<T>` param:
+			// materialise a heap `struct Array_<T>*` buffer (header + inline
+			// data) and copy the literal's elements in. `build_array_values_node`
+			// strdup's string-literal elements, so each slot owns a heap copy
+			// that auto_free reclaims at scope exit — matching how
+			// `Array<T>.with`/`set` and stack string arrays are handled.
+			if (node.is_heap_array_literal && node.value.node_type === "array") {
+				const arr = node.value as ArrayValuesNode;
+				const elem_name = node.type.name;
+				const elem_struct = status.structs.find((s) => s.name === elem_name);
+				const elem_is_class = !!elem_struct?.is_class;
+				const elem_c = elem_is_class
+					? `struct ${elem_name}*`
+					: elem_struct && !elem_struct.is_simple_type
+						? `struct ${elem_name}`
+						: c_type(elem_name);
+				const count = arr.values.length;
+				status.code += `;\n`;
+				status.code += `${safe_name} = malloc(sizeof(struct Array_${elem_name}) + ${count}L * sizeof(${elem_c}));\n`;
+				status.code += `${safe_name}->_vt = 0;\n`;
+				status.code += `${safe_name}->length = ${count}L;\n`;
+				status.code += `memcpy((char *)${safe_name} + sizeof(struct Array_${elem_name}), (${elem_c}[])`;
+				build_array_values_node(arr, status);
+				status.code += `, ${count}L * sizeof(${elem_c}));\n`;
+				return;
+			}
 			// TODO: This should be in more places?? Or apply to more nodes?? Probably
 			// in build_node -- if it's a returning node??
 			if (

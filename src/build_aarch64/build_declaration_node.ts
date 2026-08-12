@@ -882,6 +882,106 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 	}
 
 	if (node.type.is_array) {
+		// A hoisted array-literal temp bound to a heap `Array<T>` param (see
+		// check_function_call): materialise a malloc'd buffer
+		// ([ptr]=length, data at [ptr+8]) so the promoted `Array_<T>` param's
+		// `.length`/`.at`/`.set`/iteration see the heap-array layout. Register
+		// it in `heap_array_vars` so auto-destroy frees the buffer. String
+		// elements store `.asciz` addresses without strdup (matching the
+		// aarch64 `Array.with`/`set` convention — they are rodata, not owned),
+		// so they are NOT registered in heap_string_arrays; class elements are
+		// fresh constructor results owned by the buffer, so they go to
+		// heap_class_arrays for per-element free.
+		if (node.is_heap_array_literal && node.value?.node_type === "array") {
+			const array_values = node.value as ArrayValuesNode;
+			const struct_element = status.structs.find(
+				(s) => s.name === node.type.name && !s.is_simple_type,
+			);
+			const element_size = struct_element
+				? struct_element.is_class
+					? 8
+					: get_struct_size(node.type.name, status)
+				: size;
+			if (!status.heap_array_vars) status.heap_array_vars = new Set();
+			status.heap_array_vars.add(node.name);
+			const class_element = status.structs.find((s) => s.name === node.type.name && s.is_class);
+			if (class_element) {
+				if (!status.heap_class_arrays) status.heap_class_arrays = new Map();
+				status.heap_class_arrays.set(node.name, 0);
+			}
+			const str_labels = emit_string_array_labels(array_values.values, status);
+			if (status.function_return_label) {
+				const offset = allocate_stack_space(status, 8);
+				status.stack_offsets!.set(node.name, offset);
+				// x0 = malloc(8 + count * element_size)
+				status.code += `mov x0, #${array_values.values.length}\n`;
+				status.code += `mov x1, #${element_size}\n`;
+				status.code += `mul x0, x0, x1\n`;
+				status.code += `add x0, x0, #8\n`;
+				emit_malloc(status);
+				status.code += `str x0, [x29, #${offset}]\n`;
+				status.code += `ldr x9, [x29, #${offset}]\n`;
+				status.code += `mov x0, #${array_values.values.length}\n`;
+				status.code += `str x0, [x9]\n`;
+				array_values.values.forEach((value, i) => {
+					const slot = 8 + i * element_size;
+					const raw = resolve_static_value(value, status);
+					if (raw !== null && raw.startsWith('"')) {
+						const label = resolve_array_element(raw, str_labels);
+						status.code += `adr x0, ${label}\n`;
+						status.code += `ldr x9, [x29, #${offset}]\n`;
+						status.code += `str x0, [x9, #${slot}]\n`;
+					} else if (raw !== null) {
+						emit_int_immediate(status, raw);
+						status.code += `ldr x9, [x29, #${offset}]\n`;
+						if (element_size === 1) {
+							status.code += `strb w0, [x9, #${slot}]\n`;
+						} else if (element_size === 4) {
+							status.code += `str w0, [x9, #${slot}]\n`;
+						} else {
+							status.code += `str x0, [x9, #${slot}]\n`;
+						}
+					} else {
+						build_node(value, status);
+						if (!status.code.endsWith("\n")) status.code += "\n";
+						status.code += `ldr x9, [x29, #${offset}]\n`;
+						status.code += `str x0, [x9, #${slot}]\n`;
+					}
+				});
+			} else {
+				emit_data(status, `${node.name}: .space 8\n.p2align 2\n`);
+				status.code += `mov x0, #${array_values.values.length}\n`;
+				status.code += `mov x1, #${element_size}\n`;
+				status.code += `mul x0, x0, x1\n`;
+				status.code += `add x0, x0, #8\n`;
+				emit_malloc(status);
+				status.code += `adr x1, ${node.name}\n`;
+				status.code += `str x0, [x1]\n`;
+				status.code += `ldr x9, [x1]\n`;
+				status.code += `mov x0, #${array_values.values.length}\n`;
+				status.code += `str x0, [x9]\n`;
+				array_values.values.forEach((value, i) => {
+					const slot = 8 + i * element_size;
+					const raw = resolve_static_value(value, status);
+					if (raw !== null && raw.startsWith('"')) {
+						const label = resolve_array_element(raw, str_labels);
+						status.code += `adr x0, ${label}\n`;
+						status.code += `ldr x9, [${node.name}]\n`;
+						status.code += `str x0, [x9, #${slot}]\n`;
+					} else if (raw !== null) {
+						emit_int_immediate(status, raw);
+						status.code += `ldr x9, [${node.name}]\n`;
+						status.code += `str x0, [x9, #${slot}]\n`;
+					} else {
+						build_node(value, status);
+						if (!status.code.endsWith("\n")) status.code += "\n";
+						status.code += `ldr x9, [${node.name}]\n`;
+						status.code += `str x0, [x9, #${slot}]\n`;
+					}
+				});
+			}
+			return;
+		}
 		if (node.value && node.value.node_type === "array") {
 			const array_values = node.value as ArrayValuesNode;
 			const complex = has_complex_elements(array_values.values, status);

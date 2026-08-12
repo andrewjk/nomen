@@ -44,6 +44,22 @@ import value_from_value_node from "./utils/value_from_value_node.ts";
 const CORE_DATA_STRUCTURES = new Set(["Buffer", "BigInt"]);
 
 /**
+ * Whether `type` is a heap `Array<T>` whose monomorphized `Array_<T>` struct
+ * has been materialized. `Array<T>` is rewritten to `{name: T, is_array:
+ * true}` at parse time (indistinguishable from raw `T[]`), so the only signal
+ * is the mono struct's presence in `status.structs` — the same gate the build
+ * backends use via `array_struct_name`. A length-bearing type is a stack
+ * array, not a heap Array. Used to (a) avoid stamping a caller's literal
+ * length onto a dynamic `Array<T>` param, and (b) decide whether a hoisted
+ * array-literal arg must be materialised as a heap array.
+ */
+function is_heap_array_type(type: Type | undefined, status: CheckStatus): boolean {
+	if (!type?.is_array || type.is_view || type.length) return false;
+	const mono = `Array_${type.name}`;
+	return !!status.structs.find((s) => s.name === mono && !s.is_generic);
+}
+
+/**
  * Shift a bound expression string (`base`, `base - a`, `base + a`) by a
  * constant `c`, combining offsets numerically: `(base - a) + c` → `base - (a - c)`.
  * This keeps bounds in a canonical `base ± offset` form so symbolic
@@ -437,7 +453,17 @@ export default function check_function_call(
 		);
 
 		if (param_type.is_array && param_type.length && !func_param.type.length) {
-			func_param.type.length = param_type.length;
+			// A heap `Array<T>` param (whose monomorphized `Array_<T>` struct
+			// exists) is a DYNAMIC array: the caller's literal length must not
+			// be stamped onto it. The build recovers the `Array<T>`-vs-raw-`T[]`
+			// distinction via `array_struct_name`, which treats a length-bearing
+			// type as a stack array — stamping the length would keep the param a
+			// raw element pointer and break `.length`/`.at`/`.set`/iteration.
+			// Only raw `T[]` params (no mono struct) absorb the literal's
+			// compile-time length.
+			if (!is_heap_array_type(func_param.type, status)) {
+				func_param.type.length = param_type.length;
+			}
 		}
 
 		// Collect argument for constraint evaluation
@@ -713,8 +739,22 @@ export default function check_function_call(
 				param_type,
 				param,
 			);
+			// An array-literal argument bound to a heap `Array<T>` param (mono
+			// `Array_<T>` struct exists) must be materialised as a HEAP array:
+			// the build promotes the param to `struct Array_<T>*`, so the
+			// hoisted temp's stack array would mismatch the expected struct
+			// pointer. Mark the temp and drop the compile-time `length` from its
+			// type (kept only on the literal's own type, which the build reads
+			// for the element count). Raw `T[]` params keep the stack-array temp.
+			const param_is_heap_array = is_heap_array_type(func_param?.type, status);
+			let hoisted_type = param_type;
+			if (param.node_type === "array" && param_is_heap_array) {
+				hoisted.is_heap_array_literal = true;
+				hoisted_type = new Type(param_type.name, undefined, true);
+				hoisted.type = hoisted_type;
+			}
 			status.allocations.push(hoisted);
-			node.params.splice(i, 1, new ValueNode(param.start, declaration_name, param_type));
+			node.params.splice(i, 1, new ValueNode(param.start, declaration_name, hoisted_type));
 			// A temporary (e.g. a class constructor result) passed to a
 			// signature-level `mov` param transfers ownership to the callee,
 			// exactly like an explicit `mov var` argument. Record the index so

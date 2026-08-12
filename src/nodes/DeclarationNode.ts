@@ -22,6 +22,14 @@ export default class DeclarationNode extends BaseNode {
 	 *  iteration by the loop, not by user code, so the `var`-never-changed
 	 *  warning must not fire for it. */
 	is_loop_iterator?: boolean;
+	/** True for a hoisted call-argument temp (`_param_N`) whose initializer is
+	 *  an array literal but whose callee parameter is a heap `Array<T>` (the
+	 *  monomorphized `Array_<T>` struct exists). The temp must be materialised
+	 *  as a heap `Array_<T>` buffer (not a stack array) so the promoted
+	 *  `struct Array_<T>*` parameter's `.length`/`.at`/`.set`/iteration see the
+	 *  struct layout. Set at check time by check_function_call; consumed by the
+	 *  build backends' declaration emitters. */
+	is_heap_array_literal?: boolean;
 	constructor(
 		start: number,
 		visibility: "pub" | "private",
