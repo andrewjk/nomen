@@ -22,6 +22,24 @@ export default class Type {
 	 * scope of their source — enforced by the existing borrow machinery.
 	 */
 	is_view?: boolean;
+	/**
+	 * True when this value is a read-only class reference obtained by
+	 * extracting from a const source (e.g. `const_list.at(i)` where the
+	 * element type is a class). Field writes through a const_ref are
+	 * rejected, as are mutating (`ref self`) method dispatch and forwarding
+	 * to a `ref`/`mov` parameter. To regain mutability: don't declare the
+	 * source `const`, take a `ref` to the source first, or `.clone()` the
+	 * element.
+	 *
+	 * Originated by the checker (never the parser) at the method-result
+	 * chokepoint (`check_function_call.ts`), and propagated onto the
+	 * declared type (`check_declaration_node.ts`) so it is infectious —
+	 * you can't strip it by explicit annotation. Propagated through
+	 * `clone_type` and `substitute_type`. Analogous to `is_view` (a
+	 * non-owning borrow), but `is_const_ref` is about *mutability*, not
+	 * ownership. See FOLLOWUP.md "Deep-const for collections".
+	 */
+	is_const_ref?: boolean;
 
 	length?: BaseNode;
 	is_return_type?: boolean;

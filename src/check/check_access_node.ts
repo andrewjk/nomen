@@ -484,6 +484,19 @@ function check_access_function_node(
 				}
 			}
 		}
+		// Deep-const: a mutating (`ref self`) method cannot be dispatched on a
+		// const_ref receiver — one obtained by extracting a class element from
+		// a const source (e.g. `const_list.at(0).push(...)`). The bare-name
+		// case above only catches direct const locals; this catches chained
+		// and extracted const references. See FOLLOWUP.md "Deep-const".
+		if (target_type.is_const_ref) {
+			add_error(
+				status,
+				`Cannot call mutating method '${node.name}' on a const reference`,
+				node.start,
+			);
+			return false;
+		}
 		if (owner) {
 			invalidate_borrows_of(status, owner);
 		}

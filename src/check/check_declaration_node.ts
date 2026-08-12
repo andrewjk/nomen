@@ -135,7 +135,10 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			is_null: decl.value?.node_type === "value" && (decl.value as any).value === "null",
 			const_value: declaration === "const" ? extract_const_value(decl.value) : undefined,
 			constraint: decl.constraint,
-			func_params: decl.func_params?.map((p) => ({ name: p.name, type: p.type })),
+			func_params: decl.func_params?.map((p) => ({
+				name: p.name,
+				type: p.type,
+			})),
 			func_return_type: decl.func_return_type,
 			is_global: !in_function(status),
 		});
@@ -330,6 +333,17 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			is_class_type(decl.type.name, status)
 				? (decl.value as ValueNode).value
 				: undefined;
+		// Deep-const: if the initializer produces a const_ref class reference
+		// (extracted from a const source), the declared type inherits the flag
+		// even when the user wrote an explicit type annotation — you can't
+		// strip const-ness by annotation. Idempotent for inferred types (which
+		// already carry the flag). See FOLLOWUP.md "Deep-const".
+		if (decl.value && decl.type.name && is_class_type(decl.type.name, status)) {
+			const val_type = type_from_value_node(decl.value, status);
+			if (val_type?.is_const_ref) {
+				decl.type.is_const_ref = true;
+			}
+		}
 		status.values.push({
 			declaration: declaration,
 			name: decl.name,

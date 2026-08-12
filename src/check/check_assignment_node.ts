@@ -114,6 +114,21 @@ export default function check_assignment_node(
 		} else {
 			left_value.is_set = true;
 		}
+	} else if (
+		// Deep-const: a field write through a const_ref (a read-only class
+		// reference extracted from a const source, e.g. `const_list.at(0).f = x`)
+		// must be rejected — the whole point of extracting from a const
+		// collection is that the element is not mutable through the result.
+		// Only fires for field writes (AccessNode LHS), not bare rebinding.
+		assign.left_value!.node_type === "access" &&
+		left_value.type.is_const_ref
+	) {
+		add_error(
+			status,
+			`Cannot mutate field of const reference: ${left_value_name}`,
+			assign.left_value!.start,
+		);
+		return false;
 	} else if (left_value.declaration === "var") {
 		left_value.is_set = true;
 		// For `i = i + 6` and the equivalent compound form `i += 6`, snapshot

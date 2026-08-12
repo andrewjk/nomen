@@ -685,7 +685,11 @@ function resolve_eq_ops_in_node(node: BaseNode | undefined | null, status: Check
 					invert = !!func;
 				}
 				if (func && struct) {
-					op.operator_func = { struct_name: struct.name, func_name: func.name, invert };
+					op.operator_func = {
+						struct_name: struct.name,
+						func_name: func.name,
+						invert,
+					};
 				}
 			}
 		}
@@ -743,6 +747,7 @@ export function substitute_type(type: Type, substitution: Map<string, string>): 
 	const new_type = new Type(resolved_name, type.is_static, type.is_array, type.length);
 	new_type.is_ref = type.is_ref;
 	new_type.is_view = type.is_view;
+	new_type.is_const_ref = type.is_const_ref;
 	new_type.is_nullable = type.is_nullable;
 	if (resolved_name !== type.name) {
 		new_type.type_args = undefined;
@@ -1311,7 +1316,11 @@ function validate_field_overrides(
 		}
 		status.expected_type = field.type;
 		check_node(override.value, status);
-		validated.push({ name: override.name, value: override.value, type: field.type });
+		validated.push({
+			name: override.name,
+			value: override.value,
+			type: field.type,
+		});
 	}
 	status.expected_type = saved_expected;
 	node.field_overrides = validated;

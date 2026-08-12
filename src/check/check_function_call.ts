@@ -4,6 +4,7 @@ import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
+import { clone_type } from "../nodes/clone_node.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
@@ -181,6 +182,23 @@ export default function check_function_call(
 
 	node.type = func.return_type;
 	node.is_static = func.is_static;
+
+	// Deep-const: a method dispatched on a const receiver yields a read-only
+	// (`is_const_ref`) class reference. The flag propagates through all
+	// downstream uses — field writes, ref/mov forwarding, and mutating
+	// (`ref self`) dispatch are rejected at their respective check sites.
+	// Only applies when the return type is a class (value types are returned
+	// by copy and need no const-ification). See FOLLOWUP.md "Deep-const".
+	if (
+		node.type &&
+		node.type.name &&
+		self_value && // method call (not a free function)
+		is_class_type(node.type.name, status) &&
+		receiver_is_const(target_type, self_value, status)
+	) {
+		node.type = clone_type(node.type);
+		node.type.is_const_ref = true;
+	}
 
 	const variadic_param_index = func.params.findIndex((p) => p.is_variadic);
 	const self_offset = func.params[0]?.is_self_param ? 1 : 0;
@@ -376,6 +394,21 @@ export default function check_function_call(
 					param.start,
 				);
 			}
+		}
+		// Deep-const: a const_ref (read-only class reference extracted from a
+		// const source) cannot be forwarded to a `ref` (mutable borrow) or
+		// `mov` (ownership-transferring) parameter — either would let the
+		// callee mutate the const object. This catches forwarded method-call
+		// results (e.g. `f(const_list.at(0))`) that the bare-name check above
+		// misses (it only fires for `param.node_type === "value"`). See
+		// FOLLOWUP.md "Deep-const".
+		if (param_type.is_const_ref && (func_param.type.is_ref || func_param.is_moved)) {
+			const kind = func_param.type.is_ref ? "ref" : "mov";
+			add_error(
+				status,
+				`Cannot pass a const reference to ${kind} parameter '${func_param.name}' — extract from a non-const source or use a plain (copy) parameter`,
+				param.start,
+			);
 		}
 		// Only require explicit 'mov' keyword at the call site when the
 		// parameter is a class type AND the argument is an OWNED variable
@@ -1023,4 +1056,30 @@ function expression_to_source(node: BaseNode | null | undefined): string {
 		return `${expression_to_source(op.left_value)} ${op.op} ${expression_to_source(op.right_value)}`;
 	}
 	return "";
+}
+
+/**
+ * Whether a method-call receiver is const, for deep-const purposes. Two paths:
+ *
+ *  (a) The receiver expression already has `is_const_ref` on its type — this
+ *      covers chained calls like `const_list.at(0).foo()`, where `.at(0)`
+ *      already stamped the flag on its result.
+ *
+ *  (b) The root binding is a `const` local (incl. the `view`→`const`
+ *      normalization) — the direct case like `const_list.at(0)`. A `var`
+ *      binding is mutable, and a `mov` binding owns mutable storage (move is
+ *      about ownership transfer, not immutability), so neither propagates
+ *      const_ref. A `ref`-typed binding is a mutable borrow, exempted by
+ *      `!type.is_ref`. `self` is exempt: bare-`self` calls are handled by the
+ *      existing immutable-self field-write check, not by deep-const.
+ */
+function receiver_is_const(
+	target_type: Type | undefined,
+	self_value: string | undefined,
+	status: CheckStatus,
+): boolean {
+	if (target_type?.is_const_ref) return true;
+	if (!self_value || self_value === "self" || self_value === "?") return false;
+	const binding = status.values.findLast((v) => v.name === self_value);
+	return !!binding && binding.declaration === "const" && !binding.type.is_ref;
 }
