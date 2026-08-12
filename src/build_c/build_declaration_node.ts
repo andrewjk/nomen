@@ -5,11 +5,13 @@ import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
+import RangeNode from "../nodes/RangeNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_array_values_node from "./build_array_values_node.ts";
 import { struct_needs_destroy_by_name } from "./build_auto_free.ts";
 import build_node from "./build_node.ts";
 import build_parameter_node from "./build_parameter_node.ts";
+import build_range_node, { evaluate_constant } from "./build_range_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import c_function_name from "./utils/c_function_name.ts";
 import c_type from "./utils/c_type.ts";
@@ -328,9 +330,9 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			status.code += `struct Array_${node.type.name}* ${safe_name}`;
 			if (!status.heap_array_vars) status.heap_array_vars = new Set();
 			status.heap_array_vars.add(safe_name);
-		} else if (node.is_heap_array_literal) {
-			// A hoisted array-literal temp bound to a heap `Array<T>` param
-			// (see check_function_call): the temp must be a heap
+		} else if (node.is_heap_array_literal || node.is_heap_array_copy) {
+			// A hoisted array-literal/range/stack-var copy temp bound to a heap
+			// `Array<T>` param (see check_function_call): the temp must be a heap
 			// `struct Array_<T>*` buffer so the promoted param's
 			// `.length`/`.at`/`.set`/iteration dispatch through the Array_<T>
 			// methods. Register it in `heap_array_vars` so auto_free frees the
@@ -448,22 +450,17 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			return;
 		}
 		if (node.value) {
-			// A hoisted array-literal temp bound to a heap `Array<T>` param:
-			// materialise a heap `struct Array_<T>*` buffer (header + inline
-			// data) and copy the literal's elements in. `build_array_values_node`
-			// strdup's string-literal elements, so each slot owns a heap copy
-			// that auto_free reclaims at scope exit — matching how
-			// `Array<T>.with`/`set` and stack string arrays are handled.
+			// A hoisted array-literal/range temp bound to a heap `Array<T>`
+			// param: materialise a heap `struct Array_<T>*` buffer (header +
+			// inline data) and copy the literal's/range's elements in.
+			// `build_array_values_node` strdup's string-literal elements, so
+			// each slot owns a heap copy that auto_free reclaims at scope exit
+			// — matching how `Array<T>.with`/`set` and stack string arrays are
+			// handled.
 			if (node.is_heap_array_literal && node.value.node_type === "array") {
 				const arr = node.value as ArrayValuesNode;
 				const elem_name = node.type.name;
-				const elem_struct = status.structs.find((s) => s.name === elem_name);
-				const elem_is_class = !!elem_struct?.is_class;
-				const elem_c = elem_is_class
-					? `struct ${elem_name}*`
-					: elem_struct && !elem_struct.is_simple_type
-						? `struct ${elem_name}`
-						: c_type(elem_name);
+				const elem_c = heap_elem_c_type(elem_name, status);
 				const count = arr.values.length;
 				status.code += `;\n`;
 				status.code += `${safe_name} = malloc(sizeof(struct Array_${elem_name}) + ${count}L * sizeof(${elem_c}));\n`;
@@ -472,6 +469,44 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 				status.code += `memcpy((char *)${safe_name} + sizeof(struct Array_${elem_name}), (${elem_c}[])`;
 				build_array_values_node(arr, status);
 				status.code += `, ${count}L * sizeof(${elem_c}));\n`;
+				return;
+			}
+			if (node.is_heap_array_literal && node.value.node_type === "range") {
+				const range = node.value as RangeNode;
+				const elem_name = node.type.name;
+				const elem_c = heap_elem_c_type(elem_name, status);
+				const count = range_count_c(range);
+				status.code += `;\n`;
+				status.code += `${safe_name} = malloc(sizeof(struct Array_${elem_name}) + ${count}L * sizeof(${elem_c}));\n`;
+				status.code += `${safe_name}->_vt = 0;\n`;
+				status.code += `${safe_name}->length = ${count}L;\n`;
+				status.code += `memcpy((char *)${safe_name} + sizeof(struct Array_${elem_name}), (${elem_c}[])`;
+				build_range_node(range, status);
+				status.code += `, ${count}L * sizeof(${elem_c}));\n`;
+				return;
+			}
+			// A hoisted COPY temp for a stack-array variable arg bound to a
+			// heap `Array<T>` param: materialise a heap buffer and copy the
+			// source stack array's inline elements in. String elements are
+			// strdup'd so the copy owns its own heap copies (the source's
+			// stack-array cleanup frees its own) — no double-free. Class
+			// elements are never copied (see is_heap_array_var_copy).
+			if (node.is_heap_array_copy && node.value?.node_type === "value") {
+				const src = node.value as ValueNode;
+				const src_name = src.value;
+				const src_type = type_from_value_node(node.value);
+				const elem_name = node.type.name;
+				const elem_c = heap_elem_c_type(elem_name, status);
+				const count = src_type.length ? parseInt((src_type.length as ValueNode).value || "0") : 0;
+				status.code += `;\n`;
+				status.code += `${safe_name} = malloc(sizeof(struct Array_${elem_name}) + ${count}L * sizeof(${elem_c}));\n`;
+				status.code += `${safe_name}->_vt = 0;\n`;
+				status.code += `${safe_name}->length = ${count}L;\n`;
+				if (elem_name === "string") {
+					status.code += `{ char** _dst = (char**)((char *)${safe_name} + sizeof(struct Array_string)); char** _src = ${src_name}; for (long _i = 0; _i < ${count}L; _i++) { _dst[_i] = strdup(_src[_i]); } }\n`;
+				} else {
+					status.code += `memcpy((char *)${safe_name} + sizeof(struct Array_${elem_name}), ${src_name}, ${count}L * sizeof(${elem_c}));\n`;
+				}
 				return;
 			}
 			// TODO: This should be in more places?? Or apply to more nodes?? Probably
@@ -629,4 +664,26 @@ function build_function_type_declaration(node: DeclarationNode, status: BuildSta
 		status.code += " = ";
 		build_node(node.value, status);
 	}
+}
+
+/**
+ * The C element type for a heap `Array_<T>` buffer's inline data region
+ * (`T`, `struct T` for a value struct, or `struct T*` for a class element).
+ */
+function heap_elem_c_type(elem_name: string, status: BuildStatus): string {
+	const elem_struct = status.structs.find((s) => s.name === elem_name);
+	if (elem_struct?.is_class) return `struct ${elem_name}*`;
+	if (elem_struct && !elem_struct.is_simple_type) return `struct ${elem_name}`;
+	return c_type(elem_name);
+}
+
+/**
+ * The element count of a static range (`1..4` → 3). Dynamic-bound ranges
+ * return 0 — they are not heap-wrapped (see the range-literal heap path).
+ */
+function range_count_c(range: RangeNode): number {
+	const start = evaluate_constant(range.left_value);
+	const end = evaluate_constant(range.right_value);
+	if (start !== undefined && end !== undefined) return end - start;
+	return 0;
 }

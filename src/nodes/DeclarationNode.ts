@@ -30,6 +30,13 @@ export default class DeclarationNode extends BaseNode {
 	 *  struct layout. Set at check time by check_function_call; consumed by the
 	 *  build backends' declaration emitters. */
 	is_heap_array_literal?: boolean;
+	/** True for a hoisted call-argument temp (`_param_N`) that is a heap COPY
+	 *  of a stack-array local, bound to a heap `Array<T>` param (non-`ref`).
+	 *  `value` is the source ValueNode; the temp is materialised as a heap
+	 *  `Array_<T>` buffer whose elements are copied from the source's inline
+	 *  storage at build time. Set at check time by check_function_call;
+	 *  consumed by the build backends' declaration emitters. */
+	is_heap_array_copy?: boolean;
 	constructor(
 		start: number,
 		visibility: "pub" | "private",

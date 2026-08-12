@@ -443,6 +443,149 @@ Console.write("\\{n}")
 `;
 		await build_and_check_output(input, "array_literal_wrap_order_edge", "12");
 	});
+
+	// A range literal (`sum(1 .. 3)`) bound to a heap `Array<T>` param is
+	// materialised as a heap buffer (its elements expanded), not passed as a
+	// stack range temp the promoted param would read past.
+	test("range literal to Array<int> param when Array_int mono struct exists", async () => {
+		const input = `
+var Array<int> filler = Array<int>.with(0, 1)
+func sum = (Array<int> nums, out int) {
+  var total = 0
+  for n of nums {
+    total = total + n
+  }
+  return total
+}
+const n = sum(1 .. 3)
+Console.write("\\{n}")
+`;
+		await build_and_check_output(input, "array_literal_wrap_range", "3");
+	});
+
+	test("non-zero-start range literal to Array<int> param with mono struct", async () => {
+		const input = `
+var Array<int> filler = Array<int>.with(0, 1)
+func sum = (Array<int> nums, out int) {
+  var total = 0
+  for n of nums {
+    total = total + n
+  }
+  return total
+}
+const n = sum(5 .. 8)
+Console.write("\\{n}")
+`;
+		await build_and_check_output(input, "array_literal_wrap_range_nonzero", "18");
+	});
+
+	// A stack-array VARIABLE (`var Array<int> v = [2, 4, 6]`) bound to a heap
+	// `Array<T>` param is copied into a heap `Array_<T>` temp at the call site
+	// (the param promotes to `struct Array_<T>*`; the copy is auto-freed and
+	// the caller's stack array is left intact for later use).
+	test("stack-array variable to Array<int> param when Array_int mono struct exists", async () => {
+		const input = `
+var Array<int> filler = Array<int>.with(0, 1)
+func sum = (Array<int> nums, out int) {
+  var total = 0
+  for n of nums {
+    total = total + n
+  }
+  return total
+}
+var Array<int> v = [2, 4, 6]
+const n = sum(v)
+Console.write("\\{n}")
+`;
+		await build_and_check_output(input, "array_literal_wrap_stack_var", "12");
+	});
+
+	test("stack-array string variable to Array<string> param with mono struct", async () => {
+		const input = `
+var Array<string> filler = Array<string>.with("", 1)
+func join = (Array<string> words, out string) {
+  var out = ""
+  for w of words {
+    out = out + w
+  }
+  return out
+}
+var Array<string> v = ["a", "b", "c"]
+const s = join(v)
+Console.write("\\{s}")
+`;
+		await build_and_check_output(input, "array_literal_wrap_stack_string_var", "abc");
+	});
+
+	test("empty range literal to Array<int> param with mono struct", async () => {
+		const input = `
+var Array<int> filler = Array<int>.with(0, 1)
+func sum = (Array<int> nums, out int) {
+  var total = 0
+  for n of nums {
+    total = total + n
+  }
+  return total
+}
+const n = sum(1 .. 1)
+Console.write("\\{n}")
+`;
+		await build_and_check_output(input, "array_literal_wrap_range_empty", "0");
+	});
+
+	test("stack-array variable reusable after heap param call", async () => {
+		const input = `
+var Array<int> filler = Array<int>.with(0, 1)
+func sum = (Array<int> nums, out int) {
+  var total = 0
+  for n of nums {
+    total = total + n
+  }
+  return total
+}
+var Array<int> v = [2, 4, 6]
+const n = sum(v)
+Console.write("\\{n} \\{v.at(1)}")
+`;
+		await build_and_check_output(input, "array_literal_wrap_stack_var_reuse", "12 4");
+	});
+
+	test("const global stack array to Array<int> param with mono struct", async () => {
+		const input = `
+import System
+const g = [2, 4, 6]
+pub func main = () {
+func sum = (Array<int> nums, out int) {
+  var total = 0
+  for n of nums {
+    total = total + n
+  }
+  return total
+}
+var Array<int> filler = Array<int>.with(0, 1)
+const n = sum(g)
+Console.write("\\{n}")
+}
+`;
+		await build_and_check_output(input, "array_literal_wrap_stack_global", "12", true);
+	});
+
+	test("stack-array variable arg before mono struct exists", async () => {
+		const input = `
+func sum = (Array<int> nums, out int) {
+  var total = 0
+  for n of nums {
+    total = total + n
+  }
+  return total
+}
+var Array<int> v = [2, 4, 6]
+const n = sum(v)
+var Array<int> filler = Array<int>.with(0, 1)
+Console.write("\\{n}")
+`;
+		await build_and_check_output(input, "array_literal_wrap_stack_var_order", "12");
+	});
 });
 
 // ERRORS

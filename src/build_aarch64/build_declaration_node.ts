@@ -882,8 +882,8 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 	}
 
 	if (node.type.is_array) {
-		// A hoisted array-literal temp bound to a heap `Array<T>` param (see
-		// check_function_call): materialise a malloc'd buffer
+		// A hoisted array-literal/range temp bound to a heap `Array<T>` param
+		// (see check_function_call): materialise a malloc'd buffer
 		// ([ptr]=length, data at [ptr+8]) so the promoted `Array_<T>` param's
 		// `.length`/`.at`/`.set`/iteration see the heap-array layout. Register
 		// it in `heap_array_vars` so auto-destroy frees the buffer. String
@@ -892,8 +892,17 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 		// so they are NOT registered in heap_string_arrays; class elements are
 		// fresh constructor results owned by the buffer, so they go to
 		// heap_class_arrays for per-element free.
-		if (node.is_heap_array_literal && node.value?.node_type === "array") {
-			const array_values = node.value as ArrayValuesNode;
+		const array_literal_values =
+			node.is_heap_array_literal && node.value?.node_type === "array"
+				? (node.value as ArrayValuesNode).values
+				: undefined;
+		const range_literal_values =
+			node.is_heap_array_literal && node.value?.node_type === "range"
+				? range_to_values(node.value as RangeNode)
+				: undefined;
+		if (array_literal_values || range_literal_values) {
+			const values = array_literal_values ?? (range_literal_values as string[]);
+			const is_range = !!range_literal_values;
 			const struct_element = status.structs.find(
 				(s) => s.name === node.type.name && !s.is_simple_type,
 			);
@@ -909,29 +918,32 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 				if (!status.heap_class_arrays) status.heap_class_arrays = new Map();
 				status.heap_class_arrays.set(node.name, 0);
 			}
-			const str_labels = emit_string_array_labels(array_values.values, status);
+			const str_labels = emit_string_array_labels(
+				values.filter((v): v is BaseNode => typeof v !== "string"),
+				status,
+			);
 			if (status.function_return_label) {
 				const offset = allocate_stack_space(status, 8);
 				status.stack_offsets!.set(node.name, offset);
 				// x0 = malloc(8 + count * element_size)
-				status.code += `mov x0, #${array_values.values.length}\n`;
+				status.code += `mov x0, #${values.length}\n`;
 				status.code += `mov x1, #${element_size}\n`;
 				status.code += `mul x0, x0, x1\n`;
 				status.code += `add x0, x0, #8\n`;
 				emit_malloc(status);
 				status.code += `str x0, [x29, #${offset}]\n`;
 				status.code += `ldr x9, [x29, #${offset}]\n`;
-				status.code += `mov x0, #${array_values.values.length}\n`;
+				status.code += `mov x0, #${values.length}\n`;
 				status.code += `str x0, [x9]\n`;
-				array_values.values.forEach((value, i) => {
+				values.forEach((value, i) => {
 					const slot = 8 + i * element_size;
-					const raw = resolve_static_value(value, status);
-					if (raw !== null && raw.startsWith('"')) {
+					const raw = is_range ? value : resolve_static_value(value as BaseNode, status);
+					if (typeof raw === "string" && raw.startsWith('"')) {
 						const label = resolve_array_element(raw, str_labels);
 						status.code += `adr x0, ${label}\n`;
 						status.code += `ldr x9, [x29, #${offset}]\n`;
 						status.code += `str x0, [x9, #${slot}]\n`;
-					} else if (raw !== null) {
+					} else if (typeof raw === "string") {
 						emit_int_immediate(status, raw);
 						status.code += `ldr x9, [x29, #${offset}]\n`;
 						if (element_size === 1) {
@@ -942,7 +954,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 							status.code += `str x0, [x9, #${slot}]\n`;
 						}
 					} else {
-						build_node(value, status);
+						build_node(value as BaseNode, status);
 						if (!status.code.endsWith("\n")) status.code += "\n";
 						status.code += `ldr x9, [x29, #${offset}]\n`;
 						status.code += `str x0, [x9, #${slot}]\n`;
@@ -950,7 +962,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 				});
 			} else {
 				emit_data(status, `${node.name}: .space 8\n.p2align 2\n`);
-				status.code += `mov x0, #${array_values.values.length}\n`;
+				status.code += `mov x0, #${values.length}\n`;
 				status.code += `mov x1, #${element_size}\n`;
 				status.code += `mul x0, x0, x1\n`;
 				status.code += `add x0, x0, #8\n`;
@@ -958,27 +970,102 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 				status.code += `adr x1, ${node.name}\n`;
 				status.code += `str x0, [x1]\n`;
 				status.code += `ldr x9, [x1]\n`;
-				status.code += `mov x0, #${array_values.values.length}\n`;
+				status.code += `mov x0, #${values.length}\n`;
 				status.code += `str x0, [x9]\n`;
-				array_values.values.forEach((value, i) => {
+				values.forEach((value, i) => {
 					const slot = 8 + i * element_size;
-					const raw = resolve_static_value(value, status);
-					if (raw !== null && raw.startsWith('"')) {
+					const raw = is_range ? value : resolve_static_value(value as BaseNode, status);
+					if (typeof raw === "string" && raw.startsWith('"')) {
 						const label = resolve_array_element(raw, str_labels);
 						status.code += `adr x0, ${label}\n`;
 						status.code += `ldr x9, [${node.name}]\n`;
 						status.code += `str x0, [x9, #${slot}]\n`;
-					} else if (raw !== null) {
+					} else if (typeof raw === "string") {
 						emit_int_immediate(status, raw);
 						status.code += `ldr x9, [${node.name}]\n`;
 						status.code += `str x0, [x9, #${slot}]\n`;
 					} else {
-						build_node(value, status);
+						build_node(value as BaseNode, status);
 						if (!status.code.endsWith("\n")) status.code += "\n";
 						status.code += `ldr x9, [${node.name}]\n`;
 						status.code += `str x0, [x9, #${slot}]\n`;
 					}
 				});
+			}
+			return;
+		}
+		// A hoisted COPY temp for a stack-array variable arg bound to a heap
+		// `Array<T>` param: materialise a malloc'd buffer and copy the source
+		// stack array's inline elements in. String elements copy the stored
+		// pointer as-is (aarch64 stack string arrays hold `.asciz` addresses,
+		// not owned copies — neither side frees them).
+		if (node.is_heap_array_copy && node.value?.node_type === "value") {
+			const src_name = (node.value as ValueNode).value;
+			const src_type = type_from_value_node(node.value);
+			const struct_element = status.structs.find(
+				(s) => s.name === node.type.name && !s.is_simple_type,
+			);
+			const element_size = struct_element
+				? struct_element.is_class
+					? 8
+					: get_struct_size(node.type.name, status)
+				: size;
+			const count = src_type.length ? parseInt((src_type.length as ValueNode).value || "0") : 0;
+			if (!status.heap_array_vars) status.heap_array_vars = new Set();
+			status.heap_array_vars.add(node.name);
+			if (status.function_return_label) {
+				const offset = allocate_stack_space(status, 8);
+				status.stack_offsets!.set(node.name, offset);
+				status.code += `mov x0, #${count}\n`;
+				status.code += `mov x1, #${element_size}\n`;
+				status.code += `mul x0, x0, x1\n`;
+				status.code += `add x0, x0, #8\n`;
+				emit_malloc(status);
+				status.code += `str x0, [x29, #${offset}]\n`;
+				status.code += `ldr x9, [x29, #${offset}]\n`;
+				status.code += `mov x0, #${count}\n`;
+				status.code += `str x0, [x9]\n`;
+				for (let i = 0; i < count; i++) {
+					const slot = 8 + i * element_size;
+					// Source stack array: `emit_var_address(src)` is the DATA
+					// area (length prefix at [src-8]), so elements are at
+					// [&src + i*size].
+					emit_var_address(status, "x0", src_name);
+					if (element_size === 1) {
+						status.code += `ldrb w0, [x0, #${i * element_size}]\n`;
+					} else if (element_size === 4) {
+						status.code += `ldr w0, [x0, #${i * element_size}]\n`;
+					} else {
+						status.code += `ldr x0, [x0, #${i * element_size}]\n`;
+					}
+					status.code += `ldr x9, [x29, #${offset}]\n`;
+					status.code += `str x0, [x9, #${slot}]\n`;
+				}
+			} else {
+				emit_data(status, `${node.name}: .space 8\n.p2align 2\n`);
+				status.code += `mov x0, #${count}\n`;
+				status.code += `mov x1, #${element_size}\n`;
+				status.code += `mul x0, x0, x1\n`;
+				status.code += `add x0, x0, #8\n`;
+				emit_malloc(status);
+				status.code += `adr x1, ${node.name}\n`;
+				status.code += `str x0, [x1]\n`;
+				status.code += `ldr x9, [x1]\n`;
+				status.code += `mov x0, #${count}\n`;
+				status.code += `str x0, [x9]\n`;
+				for (let i = 0; i < count; i++) {
+					const slot = 8 + i * element_size;
+					emit_var_address(status, "x0", src_name);
+					if (element_size === 1) {
+						status.code += `ldrb w0, [x0, #${i * element_size}]\n`;
+					} else if (element_size === 4) {
+						status.code += `ldr w0, [x0, #${i * element_size}]\n`;
+					} else {
+						status.code += `ldr x0, [x0, #${i * element_size}]\n`;
+					}
+					status.code += `ldr x9, [${node.name}]\n`;
+					status.code += `str x0, [x9, #${slot}]\n`;
+				}
 			}
 			return;
 		}
@@ -1728,6 +1815,14 @@ function evaluate_range_static(node: RangeNode): string | null {
 		return [...Array(actual_end - start).keys()].map((v) => start + v).join(", ");
 	}
 	return null;
+}
+
+/** The decimal element values of a static range (`1..4` → ["1","2","3"]), or
+ *  `undefined` for a dynamic (runtime-bound) range. */
+function range_to_values(node: RangeNode): string[] | undefined {
+	const s = evaluate_range_static(node);
+	if (s === null) return undefined;
+	return s === "" ? [] : s.split(", ");
 }
 
 function compute_range_length(node: RangeNode): number {

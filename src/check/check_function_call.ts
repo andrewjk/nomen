@@ -8,6 +8,7 @@ import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
+import ParameterNode from "../nodes/ParameterNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
@@ -57,6 +58,39 @@ function is_heap_array_type(type: Type | undefined, status: CheckStatus): boolea
 	if (!type?.is_array || type.is_view || type.length) return false;
 	const mono = `Array_${type.name}`;
 	return !!status.structs.find((s) => s.name === mono && !s.is_generic);
+}
+
+/**
+ * Whether a call argument is a stack-array VARIABLE (a value reference whose
+ * type carries a compile-time `length`) bound to a heap `Array<T>` param. Such
+ * args are copied into a heap `Array_<T>` temp at the call site — the param
+ * promotes to `struct Array_<T>*`, so passing the stack array directly would
+ * misalign `.length`/`.at`/iteration. `ref` params are excluded (their
+ * mutation must propagate to the caller's variable, which a copy can't do —
+ * those stay a compile-time mismatch, as before).
+ */
+function is_heap_array_var_copy(
+	param: BaseNode,
+	func_param: ParameterNode | undefined,
+	param_type: Type,
+	status: CheckStatus,
+): boolean {
+	if (param.node_type !== "value") return false;
+	if (!is_heap_array_type(func_param?.type, status)) return false;
+	if (!param_type.is_array || !param_type.length) return false;
+	// Owning-element stack arrays are not copied: a class-element source owns
+	// fresh instances the copy would share (double-free on destroy), and a
+	// value-struct element can't be word-copied soundly on the aarch64 backend.
+	// They keep the previous (compile-mismatch) behaviour instead.
+	const elem_struct = status.structs.find((s) => s.name === param_type.name);
+	if (elem_struct && (elem_struct.is_class || !elem_struct.is_simple_type)) return false;
+	const name = (param as ValueNode).value;
+	// A bare literal / null cannot be a stack-array variable; a value node
+	// with an array type and a compile-time length is a stack-array local or
+	// a `const` array global reference.
+	return (
+		name !== "null" && !/^[+-]?\d+$/.test(name) && !name.startsWith('"') && !name.startsWith("'")
+	);
 }
 
 /**
@@ -706,7 +740,8 @@ export default function check_function_call(
 		}
 
 		if (
-			param.node_type !== "value" &&
+			(param.node_type !== "value" ||
+				is_heap_array_var_copy(param, func_param, param_type, status)) &&
 			!has_ref_keyword &&
 			!node.swap_params?.has(i) &&
 			!(i === (node as FunctionCallNode).variadic_param_index && param.node_type === "array")
@@ -739,17 +774,35 @@ export default function check_function_call(
 				param_type,
 				param,
 			);
-			// An array-literal argument bound to a heap `Array<T>` param (mono
-			// `Array_<T>` struct exists) must be materialised as a HEAP array:
-			// the build promotes the param to `struct Array_<T>*`, so the
-			// hoisted temp's stack array would mismatch the expected struct
-			// pointer. Mark the temp and drop the compile-time `length` from its
-			// type (kept only on the literal's own type, which the build reads
-			// for the element count). Raw `T[]` params keep the stack-array temp.
+			// An array-literal or range-literal argument bound to a heap
+			// `Array<T>` param (mono `Array_<T>` struct exists) must be
+			// materialised as a HEAP array: the build promotes the param to
+			// `struct Array_<T>*`, so the hoisted temp's stack array would
+			// mismatch the expected struct pointer. Mark the temp and drop the
+			// compile-time `length` from its type (the build recomputes the
+			// element count from the literal's values / the range bounds). Raw
+			// `T[]` params keep the stack-array temp.
 			const param_is_heap_array = is_heap_array_type(func_param?.type, status);
+			const arg_is_array_like = param.node_type === "array" || param.node_type === "range";
 			let hoisted_type = param_type;
-			if (param.node_type === "array" && param_is_heap_array) {
+			// Static literal/range args (compile-time `length`) bound to a heap
+			// `Array<T>` param are marked for heap materialisation. Dynamic
+			// (runtime-bound) ranges carry no compile-time length and stay on
+			// the stack-array path.
+			if (arg_is_array_like && param_is_heap_array && param_type.length) {
 				hoisted.is_heap_array_literal = true;
+				hoisted_type = new Type(param_type.name, undefined, true);
+				hoisted.type = hoisted_type;
+			}
+			// A stack-array VARIABLE arg (`sum(v)` where `v` is a
+			// `var Array<int> v = [2,4,6]` local, recognised by its compile-time
+			// `length`) bound to a heap `Array<T>` param is copied into a heap
+			// `Array_<T>` temp. The copy is a scoped declaration, so the buffer
+			// is auto-freed; the caller's stack array is untouched (mutation of
+			// a heap param only applies to `ref` params, which never take this
+			// copy path).
+			else if (param_is_heap_array && param_type.length) {
+				hoisted.is_heap_array_copy = true;
 				hoisted_type = new Type(param_type.name, undefined, true);
 				hoisted.type = hoisted_type;
 			}

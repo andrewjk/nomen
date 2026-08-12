@@ -24,7 +24,7 @@ export default function build_range_node(node: RangeNode, status: BuildStatus) {
 	}
 }
 
-function evaluate_constant(node: any): number | undefined {
+export function evaluate_constant(node: any): number | undefined {
 	if (node.node_type === "value") {
 		const n = parseInt((node as ValueNode).value);
 		if (!isNaN(n)) return n;
