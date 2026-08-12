@@ -135,6 +135,19 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 		}
 		if (!struct.is_class && is_class_type(decl.type.name, status)) {
 			add_error(status, `struct fields cannot be class types, use a class instead`, decl.start);
+		} else if (!struct.is_class && status.traits.find((t) => t.name === decl.type.name)) {
+			// A trait is a reference type (a pointer to a vtable-bearing heap
+			// instance), exactly like a class field: it can't be cloned, so a
+			// byte-copy of the struct (container store, declaration copy) would
+			// share the trait pointer between the source and the copy — a
+			// double-free on destroy. Block it for the same reason class fields
+			// are blocked; store the concrete type or use a `class` (which
+			// routes to ClassBuffer's sound per-pointer destroy).
+			add_error(
+				status,
+				`struct fields cannot be trait types, use a class (or the concrete type) instead`,
+				decl.start,
+			);
 		} else {
 			check_declaration_node(decl, status);
 		}

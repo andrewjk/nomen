@@ -12,6 +12,20 @@ export default function build_struct_body(node: StructNode, status: BuildStatus)
 	if (status.emitted_struct_bodies?.has(node.name)) return;
 	status.emitted_struct_bodies?.add(node.name);
 
+	// A struct that embeds another value struct by value (e.g. `Outer { Inner
+	// inner }`) needs the embedded struct's full typedef to appear BEFORE its
+	// own, wherever this body is emitted. When this body is emitted to the
+	// HEADER on demand (a method returns it by value → build_struct_node
+	// buffer-swaps status.code to status.headers), the embedded struct must be
+	// pulled into the HEADER too — otherwise the header holds `struct Outer {
+	// struct Inner inner; }` with `Inner` only forward-declared, which is an
+	// incomplete type. Recursing BEFORE opening this typedef (idempotent via
+	// emitted_struct_bodies) emits the dependency to the current buffer first.
+	for (let field of node.fields) {
+		const dep = embedded_value_struct(field.type, status);
+		if (dep) build_struct_body(dep, status);
+	}
+
 	// Emit the struct typedef (body only, no functions). The struct TAG
 	// (`struct Foo`) stays the plain Nomen name (raw #arch blocks and field
 	// layouts reference it); only the TYPEDEF name is mangled when a GUI build
@@ -68,4 +82,22 @@ function field_c_type(type: Type, status: BuildStatus): string {
 		return struct_node.is_class ? `struct ${mono_name} *` : `struct ${mono_name}`;
 	}
 	return c_type(type.name);
+}
+
+/**
+ * If `type` is a field type that embeds another value struct BY VALUE (not a
+ * class pointer, not an array, not a primitive), return that struct so its
+ * typedef can be emitted before the containing struct's. Used to keep struct
+ * bodies self-ordering (and to pull embedded structs into the header when the
+ * containing struct is emitted there on demand). Returns undefined for class
+ * fields (forward-declared pointers), array fields, generics, and primitives.
+ */
+function embedded_value_struct(type: Type, status: BuildStatus): StructNode | undefined {
+	if (type.is_ref || type.is_array || type.is_view || type.is_array_heap) return undefined;
+	const mono_name = type.type_args?.length
+		? `${type.name}_${type.type_args.map((t) => t.name).join("_")}`
+		: type.name;
+	const s = status.structs.find((n) => n.name === mono_name && !n.is_simple_type && !n.is_generic);
+	if (!s || s.is_class) return undefined;
+	return s;
 }

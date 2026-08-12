@@ -231,6 +231,82 @@ for i of 0 .. people.length {
 `;
 		await build_and_check_output(input, "list_owning_heap_strings", "Alice Smith Bob Jones ");
 	});
+
+	// Nested owning value struct: a value struct whose field is ANOTHER value
+	// struct that owns a string. Previously this LEAKED on aarch64 (the outer
+	// auto-destroy never called the inner struct's auto-generated _destroy) and
+	// failed to compile on C (the inner struct's full typedef wasn't pulled
+	// into the header, so `struct Outer { struct Inner inner; }` was an
+	// incomplete type). Both fixed.
+	test("nested owning value struct (push/at)", async () => {
+		const input = `
+struct Inner {
+  var string text
+}
+struct Outer {
+  var int n
+  var Inner inner
+}
+var List<Outer> xs = List<Outer>()
+xs.push(Outer(1, Inner("a")))
+xs.push(Outer(2, Inner("b")))
+for i of 0 .. xs.length {
+  var Outer o = xs.at(i)
+  Console.write(o.inner.text)
+}
+`;
+		await build_and_check_output(input, "list_owning_nested", "ab");
+	});
+
+	test("nested owning value struct (set replaces — old freed)", async () => {
+		const input = `
+struct Inner {
+  var string text
+}
+struct Outer {
+  var int n
+  var Inner inner
+}
+var List<Outer> xs = List<Outer>()
+xs.push(Outer(1, Inner("a")))
+xs.push(Outer(2, Inner("b")))
+xs.push(Outer(3, Inner("c")))
+var int i = 1
+if i >= 0 && i < xs.length {
+  xs.set(i, Outer(9, Inner("X")))
+}
+for i of 0 .. xs.length {
+  var Outer o = xs.at(i)
+  Console.write(o.inner.text)
+}
+`;
+		await build_and_check_output(input, "list_owning_nested_set", "aXc");
+	});
+
+	test("two-level nested owning value struct", async () => {
+		// Outer { Mid mid } where Mid { Inner inner } where Inner { string }:
+		// exercises the destroy + deep-copy recursion two levels deep.
+		const input = `
+struct Inner {
+  var string text
+}
+struct Mid {
+  var Inner inner
+}
+struct Outer {
+  var int n
+  var Mid mid
+}
+var List<Outer> xs = List<Outer>()
+xs.push(Outer(1, Mid(Inner("a"))))
+xs.push(Outer(2, Mid(Inner("b"))))
+for i of 0 .. xs.length {
+  var Outer o = xs.at(i)
+  Console.write(o.mid.inner.text)
+}
+`;
+		await build_and_check_output(input, "list_owning_nested_deep", "ab");
+	});
 });
 
 describe("List<string>", () => {

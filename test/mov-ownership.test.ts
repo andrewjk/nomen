@@ -47,6 +47,48 @@ struct Point {
 		});
 	});
 
+	describe("struct fields cannot be trait types", () => {
+		// A trait is a reference type (a pointer to a vtable-bearing heap
+		// instance), exactly like a class field: it can't be cloned, so a
+		// byte-copy of the struct (container store, declaration copy) would
+		// share the trait pointer between source and copy — a double-free on
+		// destroy. Blocked for the same reason class fields are blocked; use a
+		// `class` (routes to ClassBuffer's sound per-pointer destroy) or store
+		// the concrete type.
+		test("struct with trait field using mov", () => {
+			const input = `
+trait Speaker {
+  func say = (out string)
+}
+struct Holder {
+  mov Speaker s
+}
+`;
+			const parsed = parse(input);
+			expect(parsed.errors).toEqual([
+				test_error(
+					input,
+					"struct fields cannot be trait types, use a class (or the concrete type) instead",
+					6,
+					3,
+				),
+			]);
+		});
+
+		test("class with trait field is allowed (ClassBuffer routing)", () => {
+			const input = `
+trait Speaker {
+  func say = (out string)
+}
+class Holder {
+  mov Speaker s
+}
+`;
+			const parsed = parse(input);
+			expect(parsed.errors).toEqual([]);
+		});
+	});
+
 	describe("class-type fields must use mov", () => {
 		test("class with var class field", () => {
 			const input = `

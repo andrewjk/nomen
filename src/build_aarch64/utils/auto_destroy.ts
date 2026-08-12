@@ -454,7 +454,19 @@ export function emit_field_destroys(
 				status.code += `ldr x0, [sp], #16\n`;
 				emit_free(status);
 			} else {
-				if (has_destroy(field_struct)) {
+				// Call the nested struct's OWN destroy if it has one (an explicit
+				// `#destroy`) OR needs an auto-generated one (owning fields such as
+				// a string field). Without this, a nested owning value struct (e.g.
+				// `Outer { Inner inner }` where Inner has a string) leaks: the outer
+				// auto-destroy never freed the inner struct's owned strings. The
+				// auto-generated <Struct>_destroy already walks every owning
+				// sub-field, so for the auto case we must NOT also recurse via
+				// emit_nested_field_destroys (that would double-free them).
+				const field_has_explicit_destroy = has_destroy(field_struct);
+				const field_needs_destroy =
+					field_has_explicit_destroy ||
+					struct_has_owning_fields_for_auto_destroy(field_struct, status);
+				if (field_needs_destroy) {
 					const actual_offset = base_offset !== undefined ? base_offset + offset : offset;
 					if (decl_name) {
 						emit_base_ptr(status, decl_name, is_class_parent);
@@ -462,13 +474,15 @@ export function emit_field_destroys(
 					status.code += `add x0, x0, #${actual_offset}\n`;
 					status.code += `bl ${resolve_struct_name(field_struct.name, field.type.type_args, status)}_destroy\n`;
 				}
-				emit_nested_field_destroys(
-					status,
-					field_struct,
-					decl_name,
-					base_offset !== undefined ? base_offset + offset : offset,
-					is_class_parent,
-				);
+				if (field_has_explicit_destroy) {
+					emit_nested_field_destroys(
+						status,
+						field_struct,
+						decl_name,
+						base_offset !== undefined ? base_offset + offset : offset,
+						is_class_parent,
+					);
+				}
 			}
 			const field_size = get_type_size(field.type, status);
 			offset += field_size;
