@@ -4,6 +4,7 @@ import RawNode from "../nodes/RawNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import { parse_raw_directives } from "../raw_directives.ts";
 import build_block_node from "./build_block_node.ts";
+import { emit_owning_buffer_inline_aarch64 } from "./utils/owning_buffer_specialize.ts";
 import { allocate_stack_space } from "./utils/stack_var.ts";
 
 let inline_counter = 0;
@@ -51,6 +52,10 @@ export default function build_inline_method(
 	func: FunctionNode,
 	status: BuildStatus,
 ) {
+	// Specialize Buffer_<T> store_T / replace_T for owning value struct
+	// elements (deep-copy string fields instead of plain shallow copy).
+	if (emit_owning_buffer_inline_aarch64(struct_node, func.name, status)) return;
+
 	const is_self_param = func.params[0]?.is_self_param;
 	const self_is_var = is_self_param && func.params[0]?.declaration === "var";
 	const needs_x19 = is_self_param && !self_is_var;

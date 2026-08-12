@@ -446,10 +446,13 @@ pub struct Buffer<T> {
 		```
 	}
 
-	// Store into a T_SIZE-sized slot, overwriting the previous value. For value
-	// structs Buffer does not run per-element destroy (its #destroy frees only
-	// the slab), so this is a plain overwrite — matching replace_int. Used by
-	// List.set for any value T. (ClassBuffer.replace_T destroys the old slot.)
+	// Store into a T_SIZE-sized slot, overwriting the previous value. For
+	// trivially-destructible value structs this is a plain overwrite. For
+	// owning value structs (with string fields), the build phase replaces this
+	// body with a specialised version that calls T_destroy on the old slot
+	// value, then deep-copies (strdup per string field). See
+	// owning_buffer_specialize.ts (both backends). ClassBuffer.replace_T
+	// destroys+frees class slots soundly.
 	inline func replace_T = (ref self, int i: i >= 0 && i < self.cap, T val) {
 		```
 		#arch: c

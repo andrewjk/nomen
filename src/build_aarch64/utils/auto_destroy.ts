@@ -225,6 +225,20 @@ function emit_field_destroys_from_slot(
 			const field_size = get_type_size(field.type, status);
 			emit_nested_field_destroys_from_slot(status, field_struct, base_offset + offset);
 			offset += field_size;
+		} else if (
+			field.type.name === "string" &&
+			!field.type.is_array &&
+			!field.type.is_ref &&
+			!struct_type.is_class
+		) {
+			// A `string` field: free the pointer. Only for value structs (not
+			// classes) — class constructors don't strdup, so the field may be
+			// a static literal. This fires from the auto-destroy function
+			// (Buffer per-element destroy), NOT from struct local scope exit.
+			status.code += `ldr x0, [x29, #${base_offset}]\n`;
+			status.code += `ldr x0, [x0, #${offset}]\n`;
+			emit_free(status);
+			offset += aarch64_size("string");
 		} else {
 			offset += aarch64_size(field.type.name);
 		}
@@ -384,7 +398,12 @@ export function emit_destroy_for_decl(
 			emit_free(status);
 		}
 		emit_field_destroys(status, struct_type, decl_name, addr_offset, true);
-	} else {
+	} else if (has_destroy(struct_type) || has_struct_fields_with_destroy(struct_type, status)) {
+		// Only emit field destroys for value structs that have a user #destroy
+		// or class/nested-owning-struct fields. A struct whose only owning
+		// fields are strings is NOT destroyed here — its strings may be raw
+		// args (static literals), not heap. The Buffer per-element destroy
+		// path calls <Struct>_destroy directly (which handles strings).
 		emit_field_destroys(status, struct_type, decl_name, addr_offset);
 	}
 
@@ -448,6 +467,23 @@ export function emit_field_destroys(
 			}
 			const field_size = get_type_size(field.type, status);
 			offset += field_size;
+		} else if (
+			field.type.name === "string" &&
+			!field.type.is_array &&
+			!field.type.is_ref &&
+			!struct_type.is_class
+		) {
+			// A `string` field: free the pointer. Only for value structs (not
+			// classes) — class constructors don't strdup, so the field may be
+			// a static literal. This fires from the auto-destroy function
+			// (Buffer per-element destroy), NOT from struct local scope exit.
+			const actual_offset = base_offset !== undefined ? base_offset + offset : offset;
+			if (decl_name) {
+				emit_base_ptr(status, decl_name, is_class_parent);
+			}
+			status.code += `ldr x0, [x0, #${actual_offset}]\n`;
+			emit_free(status);
+			offset += aarch64_size("string");
 		} else if (field.type.is_array) {
 			const elem_struct = is_struct_type(field.type.name, status);
 			if (elem_struct) {
@@ -714,6 +750,36 @@ export function has_struct_fields_with_destroy(
 			if (has_destroy(field_struct)) return true;
 			if (has_struct_fields_with_destroy(field_struct, status)) return true;
 		}
+	}
+	return false;
+}
+
+/**
+ * Broader than `has_struct_fields_with_destroy`: also returns true for
+ * structs with `string` fields. Used to decide whether to generate a
+ * `<Struct>_destroy` function — Buffer<T>'s specialized #destroy calls it
+ * per element to free each slot's strdup'd strings. Struct LOCAL scope-exit
+ * uses `has_struct_fields_with_destroy` (no strings), so owning-value-struct
+ * locals are NOT auto-destroyed (their strings are raw args, not heap).
+ */
+export function struct_has_owning_fields_for_auto_destroy(
+	struct_type: StructNode,
+	status: BuildStatus,
+): boolean {
+	if (has_destroy(struct_type)) return true;
+	if (has_struct_fields_with_destroy(struct_type, status)) return true;
+	for (const field of struct_type.fields) {
+		if (field.type.is_ref) continue;
+		if (field.type.name === "string" && !field.type.is_array) return true;
+		const field_struct =
+			is_struct_type(resolve_struct_name(field.type.name, field.type.type_args, status), status) ||
+			is_struct_type(field.type.name, status);
+		if (
+			field_struct &&
+			!field_struct.is_class &&
+			struct_has_owning_fields_for_auto_destroy(field_struct, status)
+		)
+			return true;
 	}
 	return false;
 }

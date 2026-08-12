@@ -9,8 +9,15 @@ import build_block_node from "./build_block_node.ts";
 import build_node from "./build_node.ts";
 import { check_c_fallback } from "./build_raw_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
-import { emit_field_destroys, has_struct_fields_with_destroy } from "./utils/auto_destroy.ts";
+import {
+	emit_field_destroys,
+	struct_has_owning_fields_for_auto_destroy,
+} from "./utils/auto_destroy.ts";
 import { is_nullable_struct_type } from "./utils/nullable_struct.ts";
+import {
+	emit_owning_buffer_destroy_aarch64,
+	emit_owning_buffer_standalone_aarch64,
+} from "./utils/owning_buffer_specialize.ts";
 import scan_force_heap_strings from "./utils/scan_force_heap_strings.ts";
 import {
 	NUM_REG_ARGS,
@@ -180,18 +187,20 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 		build_struct_traits(node, status);
 		const destroy_func = node.functions.find((f) => f.name === "#destroy");
 		if (destroy_func) {
-			if (!check_c_fallback(destroy_func, node.name, status)) {
+			if (emit_owning_buffer_destroy_aarch64(node, status)) {
+				// Specialized per-element destroy emitted for owning Buffer.
+			} else if (!check_c_fallback(destroy_func, node.name, status)) {
 				build_destroy_function(node, destroy_func, status);
 			}
 		} else if (node.is_class) {
 			build_auto_destroy_function(node, status);
-		} else if (node.traits.length > 0 && has_struct_fields_with_destroy(node, status)) {
-			// A trait-conforming value struct that owns heap data through its
-			// fields (e.g. `struct Dog : Speaker { var string name }`) needs
-			// an auto-generated <Struct>_destroy: when such a struct is boxed
-			// into a ClassBuffer<Trait> slot, the per-element destroy
-			// dispatches through the vtable to this function. Without it, the
-			// destroy slot in the vtable would point to a missing symbol.
+		} else if (struct_has_owning_fields_for_auto_destroy(node, status)) {
+			// A value struct that owns heap data through its fields (e.g.
+			// `struct Person { var string name }`) needs an auto-generated
+			// <Struct>_destroy: Buffer<T> calls T_destroy per element when T
+			// is an owning value struct (per-element destroy on replace /
+			// scope exit), and trait-conforming owning value structs dispatch
+			// destroy through the vtable when boxed into ClassBuffer<Trait>.
 			build_auto_destroy_function(node, status);
 		}
 		status.current_struct = undefined;
@@ -363,7 +372,6 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 		status.code += `add x9, x9, _${node.name}_traits@PAGEOFF\n`;
 		status.code += `str x9, [x19]\n`;
 	}
-
 	const param_regs = ["x1", "x2", "x3", "x4", "x5", "x6", "x7"];
 	for (let i = 0; i < required_fields.length; i++) {
 		const field = required_fields[i];
@@ -921,7 +929,13 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 
 		status.force_heap_strings = scan_force_heap_strings(func.statements);
 		status.buffer_data_cache = undefined;
-		build_block_node(func, status);
+		// Specialize Buffer_<T> store_T / replace_T for owning value struct
+		// elements (deep-copy string fields, per-element destroy on replace).
+		// In the standalone context: x19 = self, x1 = i, x2 = val (the raw
+		// block's register convention — prologue copies but doesn't clobber).
+		if (!emit_owning_buffer_standalone_aarch64(node, func.name, status)) {
+			build_block_node(func, status);
+		}
 
 		const loop_regs_used = status.callee_saved_regs_used
 			? [...status.callee_saved_regs_used].sort()
@@ -1151,7 +1165,7 @@ function build_struct_traits(node: StructNode, status: BuildStatus) {
 	const has_destroy_fn =
 		!!node.functions.find((f) => f.name === "#destroy") ||
 		!!node.is_class ||
-		(node.traits.length > 0 && has_struct_fields_with_destroy(node, status));
+		(node.traits.length > 0 && struct_has_owning_fields_for_auto_destroy(node, status));
 	if (has_destroy_fn) {
 		status.vtable_data += `.p2align 3\n`;
 		status.vtable_data += `_${node.name}_destroy_funcs:\n`;

@@ -145,6 +145,94 @@ Console.write("\\{p.x},\\{p.y} \\{pts.length}")
 	});
 });
 
+describe("List of owning value structs", () => {
+	// Regression: Buffer<T> for a value struct T that owns heap data (e.g. a
+	// string field) used to shallow-copy the struct into the slot, so the slot
+	// and the source shared the string pointer. Buffer.#destroy freed only the
+	// slab (not per-element), so the string leaked; and when the list was
+	// returned from a function, the hoisted temps that owned the strings were
+	// freed at the function's scope exit, leaving the caller reading freed
+	// memory (use-after-free). The fix: the constructor strdup's string args
+	// (so the struct field is always a heap copy), store_T deep-copies string
+	// fields into the slot (independent copy), replace_T destroys the old slot
+	// value before overwriting, and #destroy calls T_destroy per element. A
+	// T_destroy is auto-generated for value structs with owning fields; struct
+	// locals read from `.at()`/`.first()` are borrows (not destroyed, since the
+	// slot owns the strings).
+	const OWNING = `struct Person {
+  var string name
+  var int age
+}`;
+
+	test("push/at with string fields", async () => {
+		const input = `
+${OWNING}
+var List<Person> people = List<Person>()
+people.push(Person("Alice", 30))
+people.push(Person("Bob", 25))
+for i of 0 .. people.length {
+  var Person p = people.at(i)
+  Console.write("\\{p.name} \\{p.age} ")
+}
+`;
+		await build_and_check_output(input, "list_owning_push_at", "Alice 30 Bob 25 ");
+	});
+
+	test("returned from function (no use-after-free)", async () => {
+		const input = `
+${OWNING}
+func make_people = (out List<Person>) {
+  var List<Person> people = List<Person>()
+  people.push(Person("Alice", 30))
+  people.push(Person("Bob", 25))
+  return people
+}
+var List<Person> everyone = make_people()
+for i of 0 .. everyone.length {
+  var Person p = everyone.at(i)
+  Console.write("\\{p.name} \\{p.age} ")
+}
+`;
+		await build_and_check_output(input, "list_owning_return", "Alice 30 Bob 25 ");
+	});
+
+	test("set replaces element (old value freed)", async () => {
+		const input = `
+${OWNING}
+var List<Person> people = List<Person>()
+people.push(Person("Alice", 30))
+people.push(Person("Bob", 25))
+people.push(Person("Carol", 40))
+var int i = 1
+if i >= 0 && i < people.length {
+  people.set(i, Person("Dave", 50))
+}
+for i of 0 .. people.length {
+  var Person p = people.at(i)
+  Console.write("\\{p.name} \\{p.age} ")
+}
+`;
+		await build_and_check_output(input, "list_owning_set", "Alice 30 Dave 50 Carol 40 ");
+	});
+
+	test("heap-allocated strings from concatenation", async () => {
+		const input = `
+${OWNING}
+func make_name = (string first, string last, out string) {
+  return first + " " + last
+}
+var List<Person> people = List<Person>()
+people.push(Person(make_name("Alice", "Smith"), 30))
+people.push(Person(make_name("Bob", "Jones"), 25))
+for i of 0 .. people.length {
+  var Person p = people.at(i)
+  Console.write("\\{p.name} ")
+}
+`;
+		await build_and_check_output(input, "list_owning_heap_strings", "Alice Smith Bob Jones ");
+	});
+});
+
 describe("List<string>", () => {
 	// Regression: a `List<string>` compiled but crashed at runtime on the
 	// aarch64 backend (SIGABRT) and on cleanup. The monomorphized

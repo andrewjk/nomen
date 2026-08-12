@@ -3,7 +3,10 @@ import FunctionNode from "../nodes/FunctionNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import TraitNode from "../nodes/TraitNode.ts";
 import Type from "../nodes/Type.ts";
-import build_auto_free, { struct_needs_destroy } from "./build_auto_free.ts";
+import build_auto_free, {
+	struct_needs_auto_destroy,
+	struct_needs_destroy,
+} from "./build_auto_free.ts";
 import build_node from "./build_node.ts";
 import build_parameter_node from "./build_parameter_node.ts";
 import build_struct_body from "./build_struct_body.ts";
@@ -12,6 +15,10 @@ import c_function_name from "./utils/c_function_name.ts";
 import { enter_c_scope, leave_c_scope } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
 import { has_flag_name, is_nullable_struct_type } from "./utils/nullable_struct.ts";
+import {
+	emit_owning_buffer_body,
+	owning_buffer_element,
+} from "./utils/owning_buffer_specialize.ts";
 import scan_borrow_only_strings from "./utils/scan_borrow_only_strings.ts";
 
 export default function build_struct_node(node: StructNode, status: BuildStatus) {
@@ -251,17 +258,17 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 		build_auto_destroy(node, status);
 	} else if (
 		!is_class &&
-		node.traits.length > 0 &&
 		!node.functions.find((f) => f.name === "#destroy") &&
-		struct_needs_destroy(node, status)
+		struct_needs_auto_destroy(node, status)
 	) {
-		// A trait-conforming value struct that owns heap data through its
-		// fields (e.g. `struct Dog : Speaker { var string name }`) needs an
-		// auto-generated <Struct>_destroy too: when such a struct is boxed
-		// into a ClassBuffer<Trait> slot, the per-element destroy dispatches
-		// through the vtable to this function, which frees the owning fields.
-		// Without it, the destroy slot in the vtable would point to a missing
-		// symbol and trait-typed heterogeneous storage would leak.
+		// A value struct that owns heap data through its fields (e.g.
+		// `struct Person { var string name }`) needs an auto-generated
+		// <Struct>_destroy: Buffer<T> calls T_destroy per element when T is
+		// an owning value struct (per-element destroy on replace / scope
+		// exit), and trait-conforming owning value structs dispatch destroy
+		// through the vtable when boxed into ClassBuffer<Trait>. Without
+		// this, owning value struct elements in containers would leak their
+		// string/class fields.
 		build_auto_destroy(node, status);
 	}
 
@@ -300,9 +307,11 @@ function build_struct_traits(node: StructNode, status: BuildStatus) {
 	// This is independent of which trait the collection is typed by — every
 	// trait-conforming struct has the same vtable prefix layout. The destroy
 	// fn exists when the struct has a user #destroy, is a class
-	// (auto-destroy), or is a trait-conforming value struct with owning
-	// fields (auto-destroy). For structs without any of these, the slot is
-	// NULL and the dispatcher's NULL check short-circuits.
+	// (auto-destroy), or owns heap data through its fields (auto-destroy).
+	// For structs without any of these, the slot is NULL and the
+	// dispatcher's NULL check short-circuits. (Non-trait owning value
+	// structs also get a standalone destroy fn from build_auto_destroy, but
+	// don't need the vtable — Buffer calls it directly.)
 	const has_destroy_fn =
 		!!node.functions.find((f) => f.name === "#destroy") ||
 		!!node.is_class ||
@@ -537,8 +546,16 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 			status.variable_types.set("_self", new Type(node.name));
 			status.variable_types.set("self", new Type(node.name));
 		}
-		for (let child of func.statements) {
-			build_node(child, status, true);
+		// If this Buffer_<T> method targets an owning value struct element,
+		// emit a specialized body (deep-copy on store, per-element destroy)
+		// instead of the raw primitive block. The raw block assumes trivially
+		// destructible elements and would leak/double-free owning fields.
+		const owning_elem = owning_buffer_element(node, status);
+		const specialized = owning_elem && emit_owning_buffer_body(func.name, owning_elem, status);
+		if (!specialized) {
+			for (let child of func.statements) {
+				build_node(child, status, true);
+			}
 		}
 		// Always run auto_free at function exit (see build_function_node): a
 		// conditional early return still falls through, and those fall-through
@@ -597,6 +614,15 @@ function build_auto_destroy(node: StructNode, status: BuildStatus) {
 	status.code += `${sig}\n{\n`;
 	for (const field of node.fields) {
 		if (field.type.is_ref) continue;
+		// A `string` field owns heap memory when the struct's destroy is
+		// called from a Buffer's per-element destroy (the slot's string was
+		// strdup'd by store_T). For classes, skip — class constructors don't
+		// strdup string args, so the field may be a static literal (freeing
+		// it crashes).
+		if (field.type.name === "string" && !field.type.is_array && !node.is_class) {
+			status.code += `free(self->${field.name});\n`;
+			continue;
+		}
 		const field_struct = status.structs.find(
 			(s) => s.name === field.type.name && !s.is_simple_type,
 		);
@@ -633,6 +659,11 @@ function build_auto_destroy(node: StructNode, status: BuildStatus) {
 				}
 			}
 		} else if (field_struct.functions.find((f) => f.name === "#destroy")) {
+			status.code += `${field_struct.name}_destroy(&self->${field.name});\n`;
+		} else if (struct_needs_destroy(field_struct, status)) {
+			// A nested value struct whose owning fields (string, class, ...)
+			// trigger an auto-generated destroy. Call it to recursively free
+			// owned resources.
 			status.code += `${field_struct.name}_destroy(&self->${field.name});\n`;
 		}
 	}

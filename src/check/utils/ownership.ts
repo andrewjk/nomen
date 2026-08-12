@@ -93,6 +93,10 @@ function struct_owns_heap(s: StructNode, status: CheckStatus, visited: Set<strin
 	if (destroy && destroy_releases(destroy)) return true;
 	for (const field of s.fields) {
 		if (field.type.is_ref) continue;
+		// A `string` field owns heap memory (a strdup'd char*). The field
+		// may hold a static literal pointer at runtime, but the owning copy
+		// (constructor strdup, deep-copy on container store) is always heap.
+		if (field.type.name === "string") return true;
 		const field_struct = resolve_struct(field.type, status);
 		if (!field_struct) continue;
 		if (field_struct.is_class) return true;

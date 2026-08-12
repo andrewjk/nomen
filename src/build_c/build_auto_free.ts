@@ -184,14 +184,6 @@ export function free_scoped_declarations(status: BuildStatus, decls: Declaration
 				status.code += `free(${dec.name});\n`;
 			}
 		}
-		// Struct-typed variables (non-class, non-array, non-string) that own
-		// heap data through their fields — e.g. `List<T>` embeds a
-		// `ClassBuffer<T>` (or `Buffer<T>`) whose `#destroy` frees the backing
-		// store and any stored class elements. Walk the struct's fields and
-		// emit destroy calls for any field whose type has a `#destroy` (or is
-		// a class). Mirrors aarch64's `emit_destroy_for_decl` +
-		// `emit_field_destroys`. The struct's own `#destroy` (if any) runs
-		// first (user side effects), then each field's destroy is called.
 		if (
 			!is_destructured_field_access &&
 			!is_class_var &&
@@ -345,7 +337,10 @@ export function struct_needs_destroy_by_name(name: string, status: BuildStatus):
 /**
  * Whether a struct (or any of its embedded struct fields, recursively) needs
  * a destroy call at scope exit — i.e. it has a `#destroy`, a class-typed
- * field, or a nested struct field that itself needs destroying.
+ * field, or a nested struct field that itself needs destroying. This does
+ * NOT check for `string` fields: a struct local whose only owning fields are
+ * strings is not auto-destroyed at scope exit (the strings are owned by the
+ * container's deep-copied slots or by hoisted temps, not by the local).
  */
 export function struct_needs_destroy(struct: StructNode, status: BuildStatus): boolean {
 	if (has_destroy(struct)) return true;
@@ -355,6 +350,27 @@ export function struct_needs_destroy(struct: StructNode, status: BuildStatus): b
 		if (!field_struct) continue;
 		if (field_struct.is_class) return true;
 		if (struct_needs_destroy(field_struct, status)) return true;
+	}
+	return false;
+}
+
+/**
+ * Whether a struct needs an auto-generated `<Struct>_destroy` function.
+ * Broader than `struct_needs_destroy`: also returns true for structs with
+ * `string` fields, because a Buffer<T> for such a struct deep-copies the
+ * strings into slots (strdup on store) and the per-element destroy must free
+ * them. The generated destroy frees each string field; it is called from
+ * Buffer's specialized #destroy / replace_T, NOT from struct local scope
+ * exit (struct_needs_destroy governs that path and excludes strings).
+ */
+export function struct_needs_auto_destroy(struct: StructNode, status: BuildStatus): boolean {
+	if (struct_needs_destroy(struct, status)) return true;
+	for (const field of struct.fields) {
+		if (field.type.is_ref) continue;
+		if (field.type.name === "string" && !field.type.is_array) return true;
+		const field_struct = resolve_struct(field.type, status);
+		if (field_struct && !field_struct.is_class && struct_needs_auto_destroy(field_struct, status))
+			return true;
 	}
 	return false;
 }
