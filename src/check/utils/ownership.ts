@@ -86,6 +86,45 @@ export function is_owning_struct_type(type: Type, status: CheckStatus): boolean 
 	return struct_owns_heap(s, status, new Set());
 }
 
+/**
+ * Like `is_owning_struct_type`, but only counts NON-string ownership — i.e.
+ * ownership that a scope-exit destroy would actually reclaim: a
+ * resource-releasing `#destroy`, a class field, or a nested struct that owns
+ * non-string resources. `string` fields are excluded: struct locals whose only
+ * ownership is strings are NOT auto-destroyed at scope exit (the strings may
+ * be rodata literals), so byte-copying such a struct out of a field is a sound
+ * BORROW (the copy aliases the source's strings; neither side frees them).
+ * A struct that owns a List/Buffer/class/… WOULD be destroyed, so copying it
+ * by value would double-free — that's the case that must stay a `mov ... swap`.
+ */
+export function is_owning_struct_type_requiring_move(type: Type, status: CheckStatus): boolean {
+	const s = resolve_struct(type, status);
+	if (!s || s.is_class) return false;
+	return struct_owns_non_string_heap(s, status, new Set());
+}
+
+function struct_owns_non_string_heap(
+	s: StructNode,
+	status: CheckStatus,
+	visited: Set<string>,
+): boolean {
+	if (visited.has(s.name)) return false;
+	visited.add(s.name);
+	const destroy = s.functions.find((f) => f.name === "#destroy");
+	if (destroy && destroy_releases(destroy)) return true;
+	for (const field of s.fields) {
+		if (field.type.is_ref) continue;
+		// A string field is owned by a container slot / constructor strdup,
+		// but a struct LOCAL is not auto-destroyed for it — copying is a borrow.
+		if (field.type.name === "string") continue;
+		const field_struct = resolve_struct(field.type, status);
+		if (!field_struct) continue;
+		if (field_struct.is_class) return true;
+		if (struct_owns_non_string_heap(field_struct, status, visited)) return true;
+	}
+	return false;
+}
+
 function struct_owns_heap(s: StructNode, status: CheckStatus, visited: Set<string>): boolean {
 	if (visited.has(s.name)) return false;
 	visited.add(s.name);

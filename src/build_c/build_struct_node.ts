@@ -628,9 +628,13 @@ function build_auto_destroy(node: StructNode, status: BuildStatus) {
 			status.code += `free(self->${field.name});\n`;
 			continue;
 		}
-		const field_struct = status.structs.find(
-			(s) => s.name === field.type.name && !s.is_simple_type,
-		);
+		// Resolve the MONOMORPHIZED struct for a generic field type (e.g.
+		// `Map<int,int>` → `Map_int_int`), so the destroy call matches the
+		// actual field type — `Map_destroy` doesn't exist.
+		const mono_name = field.type.type_args?.length
+			? `${field.type.name}_${field.type.type_args.map((t) => t.name).join("_")}`
+			: field.type.name;
+		const field_struct = status.structs.find((s) => s.name === mono_name && !s.is_simple_type);
 		if (!field_struct) continue;
 		if (field_struct.is_class) {
 			// Reclaim an owned class-typed field when either (a) its type has

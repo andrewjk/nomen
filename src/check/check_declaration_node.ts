@@ -14,7 +14,11 @@ import check_type_exists from "./utils/check_type_exists.ts";
 import evaluate_const_condition from "./utils/evaluate_const_condition.ts";
 import { apply_bounds, track_assignment_bounds } from "./utils/flow_bounds.ts";
 import in_function from "./utils/in_function.ts";
-import { is_class_type, is_owning_struct_type } from "./utils/ownership.ts";
+import {
+	is_class_type,
+	is_owning_struct_type,
+	is_owning_struct_type_requiring_move,
+} from "./utils/ownership.ts";
 import { materialize_tuple_type } from "./utils/tuple_struct.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
@@ -258,12 +262,15 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 		// duplicates the backing pointer; the field must be moved out with a swap
 		// that revalidates it (`var X b = mov obj.field swap <replacement>`).
 		// `mov` without a swap would leave the field holding a moved-out value.
+		// A struct whose ONLY ownership is `string` fields is a BORROW when
+		// copied (string-only struct locals aren't auto-destroyed), so it may be
+		// read out of a field by value.
 		if (
 			decl.value?.node_type === "access" &&
 			(decl.value as AccessNode).access.node_type === "access_field"
 		) {
 			const field_type = type_from_value_node(decl.value, status);
-			if (field_type.name && is_owning_struct_type(field_type, status)) {
+			if (field_type.name && is_owning_struct_type_requiring_move(field_type, status)) {
 				const field_name = ((decl.value as AccessNode).access as AccessFieldNode).name;
 				if (!decl.value.is_moved) {
 					add_error(

@@ -36,7 +36,29 @@ export function owning_buffer_element(
 }
 
 function has_owning_fields(node: StructNode, status: BuildStatus): boolean {
-	return struct_needs_destroy(node, status);
+	// `struct_needs_destroy` deliberately ignores `string` fields for struct
+	// LOCAL scope-exit (a string-only local's strings are borrowed, not owned).
+	// A Buffer element is different: the slot OWNS strdup'd strings (deep-copy
+	// store_T), so a string-only struct (e.g. JsonNode with its `text` field)
+	// must be recognized as owning too — mirroring the aarch64 backend's
+	// `has_string_fields`. Without this the two backends diverge (aarch64
+	// deep-copies, C stays shallow → `free` of a literal crashes).
+	if (struct_needs_destroy(node, status)) return true;
+	return has_string_fields(node, status);
+}
+
+/** Any string field (or a nested owning struct's string field)? */
+function has_string_fields(node: StructNode, status: BuildStatus): boolean {
+	for (const field of node.fields) {
+		if (field.type.is_ref) continue;
+		if (field.type.name === "string" && !field.type.is_array) return true;
+		const field_struct = status.structs.find(
+			(s) => s.name === field.type.name && !s.is_simple_type && !s.is_generic,
+		);
+		if (field_struct && !field_struct.is_class && has_string_fields(field_struct, status))
+			return true;
+	}
+	return false;
 }
 
 /**
@@ -46,7 +68,7 @@ function has_owning_fields(node: StructNode, status: BuildStatus): boolean {
  * move_T transfers ownership (the slot is zeroed, the caller takes the
  * pointers).
  */
-export const OWNING_BUFFER_METHODS = new Set(["store_T", "replace_T", "destroy"]);
+export const OWNING_BUFFER_METHODS = new Set(["store_T", "replace_T", "destroy", "#destroy"]);
 
 /**
  * Emit a specialized C body for a Buffer method whose element type is an
@@ -61,6 +83,7 @@ export function emit_owning_buffer_body(
 	elem: StructNode,
 	status: BuildStatus,
 ): boolean {
+	if (func_name === "#destroy") func_name = "destroy";
 	if (!OWNING_BUFFER_METHODS.has(func_name)) return false;
 
 	const Tptr = `struct ${elem.name} *`;
@@ -69,9 +92,13 @@ export function emit_owning_buffer_body(
 	if (func_name === "store_T") {
 		// store_T(self, i, val): shallow-copy the struct into the slot, then
 		// strdup each string field so the slot owns an independent copy.
+		// `emit_deep_copy_fields`'s round-trip guard (the captured `_old`
+		// value) skips the strdup when the slot already owns the exact copy —
+		// a load-modify-store round-trip re-store must not orphan its string.
 		status.code += `${Tptr}_slots = ${Tcast}(unsigned long long)self->data;\n`;
+		status.code += `struct ${elem.name} _old = _slots[i];\n`;
 		status.code += `_slots[i] = (*val);\n`;
-		emit_deep_copy_fields(elem, "_slots[i]", "val", status);
+		emit_deep_copy_fields(elem, "_slots[i]", "val", status, "_old");
 		return true;
 	}
 
@@ -109,19 +136,31 @@ export function emit_owning_buffer_body(
  * independently. For nested owning value struct fields, recursively call the
  * nested struct's destroy + deep-copy (the nested destroy frees the
  * shallow-copied owned sub-fields, then the deep-copy re-strdup's them).
+ *
+ * `old_expr` (optional) is the slot's PRE-copy value expression. When the
+ * source field pointer equals the old slot field pointer, the slot already
+ * owns that exact copy — a load-modify-store round-trip (`var n =
+ * load_T(i); n.f = x; store_T(i, n)`, where `n` aliases the slot's string) —
+ * so the strdup is skipped and the slot keeps its existing copy instead of
+ * orphaning it. A NULL source field stays NULL (JsonTree's "no text"
+ * sentinel) — strdup(NULL) would crash.
  */
 function emit_deep_copy_fields(
 	elem: StructNode,
 	dst: string,
 	src: string,
 	status: BuildStatus,
+	old_expr?: string,
 ): void {
 	for (const field of elem.fields) {
 		if (field.type.is_ref) continue;
 		if (field.type.name === "string" && !field.type.is_array) {
-			// strdup the source's string into the destination slot so the
-			// slot owns an independent heap copy.
-			status.code += `${dst}.${field.name} = strdup(${src}${arrow(src)}${field.name});\n`;
+			const src_field = `${src}${arrow(src)}${field.name}`;
+			if (old_expr) {
+				status.code += `${dst}.${field.name} = (${src_field} && ${src_field} != ${old_expr}.${field.name}) ? strdup(${src_field}) : ${src_field};\n`;
+			} else {
+				status.code += `${dst}.${field.name} = ${src_field} ? strdup(${src_field}) : 0;\n`;
+			}
 		} else if (field.type.name && !field.type.is_array) {
 			const field_struct = status.structs.find(
 				(s) => s.name === field.type.name && !s.is_simple_type && !s.is_generic,

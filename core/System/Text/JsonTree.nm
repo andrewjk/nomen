@@ -32,12 +32,15 @@ pub struct JsonTree {
 		self.count = idx + 1
 		var default = JsonNode()
 		self.nodes.store_T(idx, default)
-		// The default node's `text` points at the shared empty-string literal.
-		// NULL it in the slab so reset() can safely free only strdup'd texts
-		// (set_text writes a heap pointer; unset nodes stay NULL). idx is x1.
+		// store_T deep-copies the owning `text` field (strdup of the shared
+		// empty-string literal) into the slot. JsonTree manages node texts
+		// manually (set_text strdup's into the slab; free_text/release frees
+		// them; NULL means "no text"), so the slot must start NULL — free the
+		// strdup'd default and NULL it, or reset() would leak it. idx is x1.
 		```
 		#arch: c
 		JsonNode *nodes = (JsonNode*)(unsigned long long)self->nodes.data;
+		free(nodes[idx].text);
 		nodes[idx].text = 0;
 		```
 		```
@@ -51,7 +54,12 @@ pub struct JsonTree {
 		madd x1, x1, x3, xzr
 		add x0, x0, x1
 		add x0, x0, #16
+		ldr x1, [x0]
 		str xzr, [x0]
+		cbz x1, .Lalloc_node_text_skip
+		mov x0, x1
+		bl _free
+		.Lalloc_node_text_skip:
 		```
 		return idx
 	}

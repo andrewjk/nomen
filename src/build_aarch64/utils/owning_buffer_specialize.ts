@@ -72,6 +72,26 @@ function collect_string_fields(
 }
 
 /**
+ * Emit `slot.field = strdup(src.field)` guarded against a NULL source field
+ * (e.g. JsonTree's "no text" sentinel): a NULL field is copied as NULL —
+ * strdup(NULL) would crash. `src`/`dst` are the register names holding the
+ * source struct address and the destination slot address.
+ */
+function emit_strdup_field(
+	status: BuildStatus,
+	src: string,
+	dst: string,
+	foff: number,
+	label_id: number,
+) {
+	status.code += `ldr x0, [${src}, #${foff}]\n`;
+	status.code += `cbz x0, .Lskip_strdup_${label_id}\n`;
+	emit_strdup(status);
+	status.code += `str x0, [${dst}, #${foff}]\n`;
+	status.code += `.Lskip_strdup_${label_id}:\n`;
+}
+
+/**
  * Emit a specialized inline expansion for a Buffer method whose element type
  * is an owning value struct. Called from build_inline_method BEFORE the raw
  * block is emitted. Returns true if the body was emitted.
@@ -128,9 +148,24 @@ export function emit_owning_buffer_standalone_aarch64(
 	status.code += `add x20, x20, x4\n`; // x20 = &slot[i]
 	status.code += `mov x21, x2\n`; // x21 = val
 
+	// replace_T destroys the OLD slot value (its documented overwrite
+	// semantic). store_T does NOT — the round-trip guard below keeps the
+	// slot's own copy instead of orphaning it.
 	if (func_name === "replace_T") {
 		status.code += `mov x0, x20\n`;
 		status.code += `bl ${elem.name}_destroy\n`;
+	}
+
+	// store_T: save each string field's OLD slot pointer (before memcpy) so
+	// the strdup can detect a load-modify-store round-trip (src aliases the
+	// slot's own copy) and keep it instead of orphaning it.
+	if (func_name === "store_T" && string_fields.length) {
+		const tmp = Math.ceil((string_fields.length * 8) / 16) * 16;
+		status.code += `sub sp, sp, #${tmp}\n`;
+		string_fields.forEach((f, i) => {
+			status.code += `ldr x9, [x20, #${f.offset}]\n`;
+			status.code += `str x9, [sp, #${i * 8}]\n`;
+		});
 	}
 
 	// memcpy(slot, val, T_SIZE) — x22 holds T_SIZE (preserved across calls)
@@ -139,11 +174,37 @@ export function emit_owning_buffer_standalone_aarch64(
 	status.code += `mov x2, x22\n`;
 	status.code += `bl _memcpy\n`;
 
-	// strdup each string field
-	for (const { offset: foff } of string_fields) {
-		status.code += `ldr x0, [x21, #${foff}]\n`;
-		emit_strdup(status);
-		status.code += `str x0, [x20, #${foff}]\n`;
+	if (func_name === "store_T") {
+		// strdup each string field, skipping NULL source fields and
+		// round-trips (source pointer identical to the slot's pre-copy pointer).
+		for (const [i, { offset: foff }] of string_fields.entries()) {
+			const lbl = `.Lskip_st_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+			status.code += `ldr x1, [x21, #${foff}]\n`;
+			status.code += `cbz x1, ${lbl}\n`;
+			status.code += `ldr x2, [sp, #${i * 8}]\n`;
+			status.code += `cmp x1, x2\n`;
+			status.code += `b.eq ${lbl}\n`;
+			status.code += `mov x0, x1\n`;
+			emit_strdup(status);
+			status.code += `str x0, [x20, #${foff}]\n`;
+			status.code += `${lbl}:\n`;
+		}
+		if (string_fields.length) {
+			const tmp = Math.ceil((string_fields.length * 8) / 16) * 16;
+			status.code += `add sp, sp, #${tmp}\n`;
+		}
+	} else {
+		// replace_T: the old value was destroyed, so every non-NULL source
+		// field needs a fresh strdup.
+		for (const { offset: foff } of string_fields) {
+			emit_strdup_field(
+				status,
+				"x21",
+				"x20",
+				foff,
+				(status.label_counter = (status.label_counter ?? 0) + 1),
+			);
+		}
 	}
 
 	status.code += `ldr x22, [sp], #16\n`;
@@ -165,16 +226,40 @@ function emit_owning_store_T(elem: StructNode, status: BuildStatus) {
 	status.code += `madd x4, x1, x22, xzr\n`; // byte offset
 	status.code += `add x20, x20, x4\n`; // x20 = &slot[i]
 	status.code += `mov x21, x2\n`; // x21 = val (save across calls)
+	// Save each string field's OLD slot pointer (before memcpy) so the
+	// strdup can detect a load-modify-store round-trip (src aliases the slot's
+	// own copy) and keep it instead of orphaning it. The temp area is padded to
+	// 16 bytes so sp stays AAPCS-aligned across the `bl _memcpy`.
+	if (string_fields.length) {
+		const tmp = Math.ceil((string_fields.length * 8) / 16) * 16;
+		status.code += `sub sp, sp, #${tmp}\n`;
+		string_fields.forEach((f, i) => {
+			status.code += `ldr x9, [x20, #${f.offset}]\n`;
+			status.code += `str x9, [sp, #${i * 8}]\n`;
+		});
+	}
 	// memcpy(slot, val, T_SIZE)
 	status.code += `mov x0, x20\n`; // dest
 	status.code += `mov x1, x21\n`; // src
 	status.code += `mov x2, x22\n`; // size
 	status.code += `bl _memcpy\n`;
-	// strdup each string field: slot.F = strdup(val.F)
-	for (const { offset: foff } of string_fields) {
-		status.code += `ldr x0, [x21, #${foff}]\n`;
+	// strdup each string field, skipping NULL source fields and round-trips
+	// (source pointer identical to the slot's pre-copy pointer).
+	for (const [i, { offset: foff }] of string_fields.entries()) {
+		const lbl = `.Lskip_st_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+		status.code += `ldr x1, [x21, #${foff}]\n`; // src field
+		status.code += `cbz x1, ${lbl}\n`;
+		status.code += `ldr x2, [sp, #${i * 8}]\n`; // old slot field
+		status.code += `cmp x1, x2\n`;
+		status.code += `b.eq ${lbl}\n`;
+		status.code += `mov x0, x1\n`;
 		emit_strdup(status);
 		status.code += `str x0, [x20, #${foff}]\n`;
+		status.code += `${lbl}:\n`;
+	}
+	if (string_fields.length) {
+		const tmp = Math.ceil((string_fields.length * 8) / 16) * 16;
+		status.code += `add sp, sp, #${tmp}\n`;
 	}
 	// Restore
 	status.code += `ldr x22, [sp], #16\n`;
@@ -202,11 +287,15 @@ function emit_owning_replace_T(elem: StructNode, status: BuildStatus) {
 	status.code += `mov x1, x21\n`;
 	status.code += `mov x2, x22\n`;
 	status.code += `bl _memcpy\n`;
-	// strdup each string field
+	// strdup each string field (NULL source fields stay NULL — no strdup)
 	for (const { offset: foff } of string_fields) {
-		status.code += `ldr x0, [x21, #${foff}]\n`;
-		emit_strdup(status);
-		status.code += `str x0, [x20, #${foff}]\n`;
+		emit_strdup_field(
+			status,
+			"x21",
+			"x20",
+			foff,
+			(status.label_counter = (status.label_counter ?? 0) + 1),
+		);
 	}
 	// Restore
 	status.code += `ldr x22, [sp], #16\n`;

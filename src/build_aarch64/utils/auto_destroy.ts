@@ -404,7 +404,11 @@ export function emit_destroy_for_decl(
 		// fields are strings is NOT destroyed here — its strings may be raw
 		// args (static literals), not heap. The Buffer per-element destroy
 		// path calls <Struct>_destroy directly (which handles strings).
-		emit_field_destroys(status, struct_type, decl_name, addr_offset);
+		// `free_strings=false`: this is struct LOCAL scope exit, where string
+		// fields may be rodata literals (aarch64 constructors don't strdup);
+		// the auto-generated <Struct>_destroy (Buffer path) is the one that
+		// frees them.
+		emit_field_destroys(status, struct_type, decl_name, addr_offset, undefined, false);
 	}
 
 	if (skip_label) {
@@ -426,6 +430,7 @@ export function emit_field_destroys(
 	decl_name: string,
 	base_offset?: number,
 	is_class_parent?: boolean,
+	free_strings = true,
 ) {
 	let offset = 8;
 	for (const field of struct_type.fields) {
@@ -468,6 +473,7 @@ export function emit_field_destroys(
 			const field_size = get_type_size(field.type, status);
 			offset += field_size;
 		} else if (
+			free_strings &&
 			field.type.name === "string" &&
 			!field.type.is_array &&
 			!field.type.is_ref &&
@@ -475,8 +481,11 @@ export function emit_field_destroys(
 		) {
 			// A `string` field: free the pointer. Only for value structs (not
 			// classes) — class constructors don't strdup, so the field may be
-			// a static literal. This fires from the auto-destroy function
-			// (Buffer per-element destroy), NOT from struct local scope exit.
+			// a static literal. This fires from the auto-generated
+			// <Struct>_destroy (Buffer per-element destroy, where store_T
+			// strdup'd every string), NOT from struct local scope exit — a
+			// local's string field may be a raw rodata literal arg, so freeing
+			// it would `free` rodata (SIGABRT).
 			const actual_offset = base_offset !== undefined ? base_offset + offset : offset;
 			if (decl_name) {
 				emit_base_ptr(status, decl_name, is_class_parent);

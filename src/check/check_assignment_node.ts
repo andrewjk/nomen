@@ -13,7 +13,11 @@ import { borrow_depth_of, borrow_owner_of, invalidate_view_borrows_of } from "./
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
 import evaluate_const_condition from "./utils/evaluate_const_condition.ts";
 import { snapshot_bounds, track_assignment_bounds } from "./utils/flow_bounds.ts";
-import { is_class_type, is_owning_struct_type } from "./utils/ownership.ts";
+import {
+	is_class_type,
+	is_owning_struct_type,
+	is_owning_struct_type_requiring_move,
+} from "./utils/ownership.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
 
@@ -321,9 +325,10 @@ export default function check_assignment_node(
 					assign.right_value.start,
 				);
 			}
-		} else if (is_owning_struct_type(rhs_type, status)) {
+		} else if (is_owning_struct_type_requiring_move(rhs_type, status)) {
 			// An owning struct field cannot be byte-copied out (double-free); move
-			// it out with a swap that revalidates the field.
+			// it out with a swap that revalidates the field. A string-only owning
+			// struct (e.g. a tuple with a string field) is a sound borrow instead.
 			if (!assign.right_value.is_moved) {
 				const field_name = (assign.right_value as AccessNode).access.name;
 				add_error(
