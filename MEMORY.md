@@ -18,6 +18,8 @@ name = "Bob"                   // old string freed, new one allocated
 
 String interpolation (`"\{expr}"`) creates temporary heap allocations that are freed at the end of the enclosing scope.
 
+`string` is the **own** form (heap, freed at scope exit); `view string` is the non-owning `(ptr, len)` borrow. This own/borrow distinction is the string analog of `Array<T>` vs `view T` — see ARRAY.md.
+
 ### Structs (Value Types)
 
 Structs are allocated on the stack and copied by value. Assigning a struct creates an independent copy — modifications to one do not affect the other.
