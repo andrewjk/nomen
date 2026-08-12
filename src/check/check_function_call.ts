@@ -47,15 +47,16 @@ const CORE_DATA_STRUCTURES = new Set(["Buffer", "BigInt"]);
 
 /**
  * Whether `type` is a heap `Array<T>`. `Array<T>` is parse-rewritten to
- * `{name: T, is_array: true, is_array_heap: true}` — the flag distinguishes it
- * deterministically from a raw `T[]`/`T[N]` stack array and from an
- * array-literal VALUE (both plain `is_array`). A length-bearing type is a
- * stack array, not a heap Array. Used to (a) avoid stamping a caller's literal
- * length onto a dynamic `Array<T>` param, and (b) decide whether a hoisted
- * array-literal/range/stack-var arg must be materialised as a heap array.
+ * `{name: T, storage_kind: "heap_array"}` — the storage discriminant
+ * distinguishes it deterministically from a raw `T[]`/`T[N]` stack array and
+ * from an array-literal VALUE (both `storage_kind: "stack_array"`). A
+ * length-bearing type is a stack array, not a heap Array. Used to (a) avoid
+ * stamping a caller's literal length onto a dynamic `Array<T>` param, and
+ * (b) decide whether a hoisted array-literal/range/stack-var arg must be
+ * materialised as a heap array.
  */
 function is_heap_array_type(type: Type | undefined): boolean {
-	return !!type?.is_array && !!type.is_array_heap && !type.is_view;
+	return type?.storage_kind === "heap_array";
 }
 
 /**
@@ -816,11 +817,12 @@ export default function check_function_call(
 			const param_is_heap_array = is_heap_array_type(func_param?.type);
 			const arg_is_array_like = param.node_type === "array" || param.node_type === "range";
 			// The marked temp is a heap `Array_<T>` at runtime; stamp
-			// `is_array_heap` so the build recognises it deterministically (the
-			// `array_struct_name` gate is now flag-based, not mono-existence).
+			// `storage_kind: "heap_array"` so the build recognises it
+			// deterministically (the `array_struct_name` gate is now
+			// storage-kind-based, not mono-existence).
 			const heap_temp_type = (name: string): Type => {
-				const t = new Type(name, undefined, true);
-				t.is_array_heap = true;
+				const t = new Type(name);
+				t.storage_kind = "heap_array";
 				return t;
 			};
 			let hoisted_type = param_type;

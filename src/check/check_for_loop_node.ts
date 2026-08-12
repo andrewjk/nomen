@@ -47,12 +47,12 @@ export default function check_for_loop_node(for_loop: ForLoopNode, status: Check
 		// in scope — otherwise the generated `arr.at(i)` would be unresolved
 		// (e.g. bare parse without the System library) — AND when the list's
 		// `.at`/`.length` dispatch is well-defined: a heap `Array<T>`
-		// (`is_array_heap`, struct methods) or a stack array with a compile-time
-		// `length` (raw-index `.at`, constant `.length`). A raw `int[]` PARAM
-		// (plain `is_array`, no length, no heap flag) is a bare element pointer
-		// — `.length`/`.at` on it are garbage — so it must NOT desugar; the
-		// build's raw-iteration path uses the caller's stamped compile-time
-		// length instead.
+		// (`storage_kind: "heap_array"`, struct methods) or a stack array with
+		// a compile-time `length` (raw-index `.at`, constant `.length`). A raw
+		// `int[]` PARAM (`storage_kind: "stack_array"`, no length) is a bare
+		// element pointer — `.length`/`.at` on it are garbage — so it must NOT
+		// desugar; the build's raw-iteration path uses the caller's stamped
+		// compile-time length instead.
 		const has_at =
 			list_type.name !== undefined &&
 			!!status.structs.find(
@@ -62,7 +62,7 @@ export default function check_for_loop_node(for_loop: ForLoopNode, status: Check
 			list_type.is_array &&
 			!enumerable &&
 			has_at &&
-			(list_type.is_array_heap || !!list_type.length)
+			(list_type.storage_kind === "heap_array" || !!list_type.length)
 		) {
 			desugar_array_for_loop(for_loop, list_type);
 			for_loop.item_is_ref = false;
@@ -193,14 +193,14 @@ function desugar_array_for_loop(for_loop: ForLoopNode, array_type: Type) {
 
 	// list := 0 .. <bound>, where <bound> is the array's compile-time length
 	// when known (e.g. `Array(1,2,3)`), otherwise `arr.length` (dynamic arrays
-	// such as those from `Array.with`). A heap `Array<T>` (is_array_heap) whose
-	// type carries a STAMPED compile-time length (e.g. the literal passed to a
-	// param at a call site) must still use the RUNTIME `arr.length` — the
-	// stamped length is per-call and would be wrong for a different-length
-	// argument.
+	// such as those from `Array.with`). A heap `Array<T>`
+	// (`storage_kind: "heap_array"`) whose type carries a STAMPED compile-time
+	// length (e.g. the literal passed to a param at a call site) must still
+	// use the RUNTIME `arr.length` — the stamped length is per-call and would
+	// be wrong for a different-length argument.
 	const zero = new ValueNode(start, "0");
 	const bound =
-		array_type.is_array_heap || !array_type.length
+		array_type.storage_kind === "heap_array" || !array_type.length
 			? new AccessNode(start, clone_node(list), new AccessFieldNode(start, "length"))
 			: clone_node(array_type.length);
 	for_loop.list = new RangeNode(start, zero, bound);

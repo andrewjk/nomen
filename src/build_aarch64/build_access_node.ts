@@ -612,7 +612,7 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 		// Heap `Array<T>` FIELD (`obj.items.length`): the field holds a pointer
 		// to the heap buffer with the length at [0]. Load the field value, then
 		// its length word.
-		if (node.target.node_type === "access" && target_type.is_array_heap) {
+		if (node.target.node_type === "access" && target_type.storage_kind === "heap_array") {
 			const access_target = node.target as AccessNode;
 			if (access_target.access.node_type === "access_field") {
 				const offset = compute_field_offset(access_target, status);

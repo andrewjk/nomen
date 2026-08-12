@@ -42,8 +42,12 @@ export function clone_type(type: Type): Type {
 		type.is_array,
 		type.length ? clone_node(type.length) : undefined,
 	);
+	// `storage_kind` is the canonical storage discriminant — copy it directly
+	// (subsumes the old `t.is_view = type.is_view` and also fixes the latent
+	// bug where cloning a heap `Array<T>` dropped `is_array_heap`, producing a
+	// `stack_array`).
+	t.storage_kind = type.storage_kind;
 	t.is_ref = type.is_ref;
-	t.is_view = type.is_view;
 	t.is_const_ref = type.is_const_ref;
 	t.is_return_type = type.is_return_type;
 	t.is_nullable = type.is_nullable;

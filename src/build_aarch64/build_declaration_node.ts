@@ -895,7 +895,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 		// heap_class_arrays for per-element free.
 		const heap_literal_init =
 			node.is_heap_array_literal ||
-			(node.type.is_array_heap &&
+			(node.type.storage_kind === "heap_array" &&
 				(node.value?.node_type === "array" || node.value?.node_type === "range"));
 		const array_literal_values =
 			heap_literal_init && node.value?.node_type === "array"

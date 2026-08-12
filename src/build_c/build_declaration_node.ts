@@ -309,8 +309,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 		// (e.g. Array.with(...) which returns a heap pointer) or no initializer
 		// at all is emitted as a pointer to the element type.
 		const is_stack_array =
-			node.type.is_array &&
-			!node.type.is_array_heap &&
+			node.type.storage_kind === "stack_array" &&
 			!node.is_heap_array_literal &&
 			(node.value?.node_type === "array" || node.value?.node_type === "range");
 		// Array from a function call (e.g. `var Box[] r = make_arr()`) is a
@@ -322,7 +321,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 		// `Array.with(v, LITERAL_N)` also carries a compile-time length but is
 		// still heap-allocated.
 		const is_heap_array_from_call =
-			node.type.is_array &&
+			!!node.type.is_array &&
 			!is_stack_array &&
 			(node.value?.node_type === "func_call" ||
 				(node.value?.node_type === "access" &&
@@ -339,7 +338,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			// A heap `Array<T>` declared with a literal/range initializer
 			// (`var Array<int> x = [2,4,6]` / `= 1 .. 3`) — not a hoisted temp,
 			// but the same heap-buffer materialisation.
-			(node.type.is_array_heap &&
+			(node.type.storage_kind === "heap_array" &&
 				(node.value?.node_type === "array" || node.value?.node_type === "range"))
 		) {
 			// A hoisted array-literal/range/stack-var copy temp bound to a heap
@@ -471,7 +470,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			// `Array<T>.with`/`set` and stack string arrays are handled.
 			const is_heap_literal_init =
 				node.is_heap_array_literal ||
-				(node.type.is_array_heap &&
+				(node.type.storage_kind === "heap_array" &&
 					(node.value.node_type === "array" || node.value.node_type === "range"));
 			if (is_heap_literal_init && node.value.node_type === "array") {
 				const arr = node.value as ArrayValuesNode;
