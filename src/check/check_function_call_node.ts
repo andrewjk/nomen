@@ -1,4 +1,5 @@
 import add_error from "../add_error.ts";
+import type AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import clone_node from "../nodes/clone_node.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
@@ -14,6 +15,7 @@ import check_function_call from "./check_function_call.ts";
 import check_function_node from "./check_function_node.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
+import { is_overloaded, mangled_label } from "./utils/function_overload.ts";
 import type_from_value from "./utils/type_from_value.ts";
 
 export default function check_function_call_node(
@@ -311,6 +313,12 @@ export function monomorphize(
 	mono_struct.is_class = generic_struct.is_class;
 	mono_struct.is_library = generic_struct.is_library;
 
+	// Register the mono struct BEFORE processing methods, so the
+	// re-derivation pass (and the custom #init re-check below) can resolve
+	// self's type and field/method accesses against it.
+	status.structs.push(mono_struct);
+	status.types.push(mono_name);
+
 	for (const func of generic_struct.functions) {
 		if (func.name === "#init") continue;
 		const cloned = clone_node(func) as FunctionNode;
@@ -344,6 +352,16 @@ export function monomorphize(
 		// for List<T>, whose only struct-typed value is the element param.
 		retype_param_references(cloned.statements, cloned.params);
 		resolve_mono_equality_ops(cloned.statements, status);
+		// Re-derive check-phase annotations on AccessFunctionCallNodes.
+		// The mono body is cloned from the unchecked generic body and never
+		// re-checked (cloned.checked = true below), so annotations the
+		// checker normally sets — owned_return, mangled_name,
+		// nullable_param_indices, variadic_param_index — are absent. This
+		// pass resolves each call's receiver type by tracing the access
+		// chain (using the concrete types set by the substitution passes
+		// above) and derives the annotations from the resolved method's
+		// signature.
+		rederive_access_func_annotations(cloned.statements, status);
 		cloned.checked = true;
 		mono_struct.functions.push(cloned);
 	}
@@ -390,9 +408,8 @@ export function monomorphize(
 		}
 		// Register the mono struct BEFORE re-checking the cloned #init body,
 		// so lookups (self's type, method resolution) find it instead of
-		// recursing through monomorphize again.
-		status.structs.push(mono_struct);
-		status.types.push(mono_name);
+		// recursing through monomorphize again. (Already pushed above, before
+		// the method loop.)
 		mono_struct.functions.push(cloned);
 		const root_status: CheckStatus = {
 			stack: status.stack,
@@ -440,13 +457,9 @@ export function monomorphize(
 		mono_struct.functions.push(init_func);
 	}
 
-	// Note: when the generic struct has a custom Nomen #init, the mono struct
-	// was already pushed to status.structs/types before re-checking the clone
-	// (see custom_init branch above). Otherwise push it now.
-	if (!custom_init_is_nomen) {
-		status.structs.push(mono_struct);
-		status.types.push(mono_name);
-	}
+	// The mono struct was registered in status.structs/types above, before
+	// the method loop (so the re-derivation pass and custom #init re-check
+	// could resolve self's type).
 
 	const root = status.stack[0] as RootNode;
 	const already_in_root = root.statements.some(
@@ -740,6 +753,157 @@ function operand_type_name(node: BaseNode | undefined | null): string {
 	if (node.node_type === "grouped") return operand_type_name(any_node.value);
 	if (node.node_type === "cast") return any_node.target_type?.name || "";
 	return any_node.type?.name || "";
+}
+
+/**
+ * Resolve the concrete type name of an AST node that appears as the receiver
+ * (target) of an access chain in a monomorphised method body. Traces through
+ * ValueNodes (type set by retype_self_references / retype_param_references),
+ * AccessNodes (field/function), and grouped nodes — using the mono struct
+ * table to resolve field types that weren't set on the node itself (the body
+ * is not re-checked, so AccessFieldNode.type is typically empty).
+ */
+function resolve_receiver_type_name(
+	node: BaseNode | undefined | null,
+	status: CheckStatus,
+): string {
+	if (!node) return "";
+	const any_node = node as any;
+	if (node.node_type === "value") return any_node.type?.name || "";
+	if (node.node_type === "grouped") return resolve_receiver_type_name(any_node.value, status);
+	if (node.node_type === "cast") return any_node.target_type?.name || "";
+	if (node.node_type === "access_func") return any_node.type?.name || "";
+	if (node.node_type === "access") {
+		const target_type = resolve_receiver_type_name(any_node.target, status);
+		if (!target_type) return any_node.access?.type?.name || "";
+		if (any_node.access?.node_type === "access_field") {
+			// Field type isn't on the node (unchecked body); look it up on
+			// the resolved struct. Handles mono names (Buffer_string, etc.)
+			// and generic-arg rewriting (Buffer<T> → Buffer_string).
+			const field_name = any_node.access.name as string;
+			const struct = status.structs.find((s) => s.name === target_type);
+			const field = struct?.fields.find((f) => f.name === field_name);
+			return field?.type?.name || any_node.access.type?.name || "";
+		}
+		return any_node.access?.type?.name || "";
+	}
+	return any_node.type?.name || "";
+}
+
+/**
+ * Walk a monomorphised method body and re-derive check-phase annotations on
+ * AccessFunctionCallNodes. The body is cloned from the (unchecked) generic
+ * body, type-substituted, but never re-checked — so annotations that
+ * check_access_node would normally set are absent. This pass resolves each
+ * call's receiver type (by tracing the access chain through the concrete
+ * types set by the substitution passes) and derives the annotations from the
+ * resolved method's signature.
+ *
+ * Sets: owned_return, mangled_name, nullable_param_indices,
+ * variadic_param_index, variadic_param_name. Other annotations
+ * (return_bounds, inferred_array_length, is_nursery_spawn, etc.) require
+ * deeper analysis (return-contract evaluation, call-pattern recognition) and
+ * are left for a future pass; they are either irrelevant to mono bodies
+ * (skip_bounds_check — no constraint checking runs) or rare (nursery.spawn
+ * inside a generic method).
+ */
+function rederive_access_func_annotations(nodes: BaseNode[], status: CheckStatus) {
+	for (const node of nodes) rederive_annotations_in_node(node, status);
+}
+
+function rederive_annotations_in_node(node: BaseNode | undefined | null, status: CheckStatus) {
+	if (!node) return;
+	const any_node = node as any;
+
+	// An AccessFunctionCallNode is always the inner `access` of an
+	// AccessNode: `target.access_func`. Derive annotations from the
+	// resolved method on the target's type.
+	if (node.node_type === "access" && any_node.access?.node_type === "access_func") {
+		derive_annotations_for_access_func(any_node, any_node.access, status);
+	}
+
+	// Recurse into children (mirrors retype_value_in_node / resolve_eq_ops_in_node).
+	if (any_node.statements && Array.isArray(any_node.statements)) {
+		for (const child of any_node.statements) {
+			if (child && typeof child === "object" && "node_type" in child) {
+				rederive_annotations_in_node(child, status);
+			}
+		}
+	}
+	if (any_node.params && Array.isArray(any_node.params)) {
+		for (const child of any_node.params) {
+			if (child && typeof child === "object" && "node_type" in child) {
+				rederive_annotations_in_node(child, status);
+			}
+		}
+	}
+	if (any_node.cases && Array.isArray(any_node.cases)) {
+		for (const c of any_node.cases) {
+			if (c.branch?.statements) {
+				for (const s of c.branch.statements) rederive_annotations_in_node(s, status);
+			}
+			if (c.match_value) rederive_annotations_in_node(c.match_value, status);
+			if (c.condition) rederive_annotations_in_node(c.condition, status);
+		}
+	}
+	if (any_node.value?.node_type) rederive_annotations_in_node(any_node.value, status);
+	if (any_node.left_value?.node_type) rederive_annotations_in_node(any_node.left_value, status);
+	if (any_node.right_value?.node_type) rederive_annotations_in_node(any_node.right_value, status);
+	if (any_node.target?.node_type) rederive_annotations_in_node(any_node.target, status);
+	if (any_node.access?.node_type) rederive_annotations_in_node(any_node.access, status);
+	if (any_node.condition?.node_type) rederive_annotations_in_node(any_node.condition, status);
+	if (any_node.if_branch?.node_type) rederive_annotations_in_node(any_node.if_branch, status);
+	if (any_node.else_branch?.node_type) rederive_annotations_in_node(any_node.else_branch, status);
+	if (any_node.item?.node_type) rederive_annotations_in_node(any_node.item, status);
+	if (any_node.list?.node_type) rederive_annotations_in_node(any_node.list, status);
+	if (any_node.constraint?.node_type) rederive_annotations_in_node(any_node.constraint, status);
+}
+
+function derive_annotations_for_access_func(
+	access_node: any,
+	fc: AccessFunctionCallNode,
+	status: CheckStatus,
+) {
+	const receiver_type = resolve_receiver_type_name(access_node.target, status);
+	if (!receiver_type) return;
+	const struct = status.structs.find((s) => s.name === receiver_type);
+	if (!struct) return;
+	const func = struct.functions.find((f) => f.name === fc.name);
+	if (!func) return;
+
+	if (func.returns_mov) {
+		fc.owned_return = true;
+	}
+	if (is_overloaded(struct, fc.name)) {
+		fc.mangled_name = mangled_label(func, struct.name);
+	}
+
+	// variadic_param_index / variadic_param_name
+	const variadic_param_idx = func.params.findIndex((p) => p.is_variadic);
+	if (variadic_param_idx >= 0) {
+		fc.variadic_param_name = func.params[variadic_param_idx].name;
+		// The self param offset: variadic_param_index in the call's args is
+		// the variadic param's position minus the self offset (if any).
+		const self_offset = func.params.findIndex((p) => p.is_self_param);
+		fc.variadic_param_index = variadic_param_idx - (self_offset >= 0 ? self_offset + 1 : 0);
+	}
+
+	// nullable_param_indices: which call args correspond to nullable struct
+	// value params (T? where T is a non-class struct).
+	const self_offset = func.params.findIndex((p) => p.is_self_param);
+	const nullable_indices: number[] = [];
+	for (let i = 0; i < func.params.length; i++) {
+		const p = func.params[i];
+		if (p.is_self_param) continue;
+		if (!p.type?.is_nullable) continue;
+		if (status.structs.find((s) => s.name === p.type.name && !s.is_class)) {
+			// Map callee param index to call arg index (skip self).
+			nullable_indices.push(i - (self_offset >= 0 ? self_offset + 1 : 0));
+		}
+	}
+	if (nullable_indices.length > 0) {
+		fc.nullable_param_indices = nullable_indices;
+	}
 }
 
 export function substitute_type(type: Type, substitution: Map<string, string>): Type {

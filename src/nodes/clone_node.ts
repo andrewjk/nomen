@@ -117,7 +117,25 @@ export default function clone_node(node: BaseNode): BaseNode {
 				? new Map([...n.swap_params].map(([k, v]) => [k, clone_node(v)]))
 				: undefined;
 			c.variadic_param_name = n.variadic_param_name;
+			c.variadic_param_index = n.variadic_param_index;
 			c.mangled_name = n.mangled_name;
+			c.owned_return = n.owned_return;
+			c.nullable_param_indices = n.nullable_param_indices?.slice();
+			c.return_bounds = n.return_bounds
+				? {
+						upper: n.return_bounds.upper.slice(),
+						lower: n.return_bounds.lower.slice(),
+						upper_inclusive: n.return_bounds.upper_inclusive.slice(),
+						lower_inclusive: n.return_bounds.lower_inclusive.slice(),
+					}
+				: undefined;
+			c.inferred_array_length = n.inferred_array_length;
+			c.is_nursery_spawn = n.is_nursery_spawn;
+			c.function_return_type = n.function_return_type
+				? clone_type(n.function_return_type)
+				: undefined;
+			c.is_statement = n.is_statement;
+			c.skip_bounds_check = n.skip_bounds_check;
 			c.allocations = n.allocations?.map(clone_node);
 			return c;
 		}
