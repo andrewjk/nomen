@@ -370,6 +370,69 @@ Console.write("\\{same}")
 `;
 		await build_and_check_output(input, "list_string_at_compare", "true");
 	});
+
+	// Regression: `List<string>.pop` of an element that was `push`'d as a
+	// bare literal previously crashed on the aarch64 backend (SIGABRT). `pop`
+	// is `mov out T` (owned_return), so the caller anchors and frees the
+	// result — but the Buffer<string> slot held a shallow copy of the literal
+	// (a `char*` into rodata), so the free aborted. The aarch64 backend now
+	// strdup's the `move_T` result at the `pop` return (mirroring the C
+	// backend), so the caller frees a fresh heap copy. Push/at/set/iterate
+	// (the borrow paths) were always unaffected.
+
+	test("pop a literal element", async () => {
+		const input = `
+var List<string> xs = List<string>()
+xs.push("hello")
+xs.push("world")
+const string a = xs.pop()
+const string b = xs.pop()
+Console.write(a)
+Console.write(b)
+`;
+		await build_and_check_output(input, "list_string_pop_literal", "worldhello");
+	});
+
+	test("pop a heap-string variable pushed by value", async () => {
+		const input = `
+var string h = "ab" + "cd"
+var List<string> xs = List<string>()
+xs.push(h)
+const string a = xs.pop()
+Console.write(a)
+`;
+		await build_and_check_output(input, "list_string_pop_heap", "abcd");
+	});
+
+	test("pop returned across a function boundary", async () => {
+		const input = `
+func drain_last = (ref List<string> xs, out string) {
+  return xs.pop()
+}
+var List<string> xs = List<string>()
+xs.push("one")
+xs.push("two")
+const string r = drain_last(ref xs)
+Console.write(r)
+Console.write("\\{xs.length}")
+`;
+		await build_and_check_output(input, "list_string_pop_across", "two1");
+	});
+
+	test("set then pop", async () => {
+		const input = `
+var List<string> xs = List<string>()
+xs.push("a")
+xs.push("b")
+var int i = 1
+if i >= 0 && i < xs.length {
+  xs.set(i, "B")
+}
+const string x = xs.pop()
+Console.write(x)
+`;
+		await build_and_check_output(input, "list_string_set_pop", "B");
+	});
 });
 
 describe("List<T> as a parameter / return type only", () => {

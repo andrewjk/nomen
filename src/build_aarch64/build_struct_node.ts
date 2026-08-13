@@ -731,10 +731,15 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		const old_param_vars = status.function_param_vars;
 		const old_return_label = status.function_return_label;
 		const old_force_heap = status.force_heap_strings;
+		const old_function_name = status.current_function_name;
 
 		status.scoped_declarations = [];
 		status.stack_size = 0;
 		status.stack_offsets = new Map();
+		// Reset the transient heap-string flag so it doesn't leak from the
+		// previous function's last statement (e.g. a move_T strdup in `pop`
+		// setting it true) into this function's return classification.
+		status.last_result_is_heap = false;
 
 		const func_label = is_overloaded(node, func.name)
 			? mangled_label(func, node.name)
@@ -776,6 +781,13 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 			(s) => s.name === func.return_type?.name && !s.is_simple_type && !s.is_class,
 		);
 		let return_buffer_stack_offset: number | undefined;
+		// Record the function name so build_return_node can register the
+		// function in heap_returning_functions and look up its return type
+		// (e.g. to strdup a move_T result in List<string>.pop).
+		// function_return_type is set only for struct (sret) returns below —
+		// setting it unconditionally changes the string-ownership analysis
+		// (literal-return strdup) for methods that were previously fine.
+		status.current_function_name = func.name;
 		if (return_struct) {
 			status.function_return_type = func.return_type;
 			status.struct_return_buffer = "x8";
@@ -1003,6 +1015,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		status.force_heap_strings = old_force_heap;
 		status.struct_return_buffer = undefined;
 		status.function_return_type = undefined;
+		status.current_function_name = old_function_name;
 		status.return_buffer_stack_offset = undefined;
 		status.stack_size = old_stack_size;
 		status.stack_offsets = old_stack_offsets;

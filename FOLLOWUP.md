@@ -57,36 +57,54 @@ flat string-field structs (push/at/return/set/heap-strings) and now nested
 (push/at, set, two-level deep); `test/mov-ownership.test.ts` locks the
 class/trait-field guard (direct + class-with-trait-field allowed).
 
-## `List<string>` owning extraction (`pop`) of a static-literal element — aarch64
+## `List<string>` owning extraction (`pop`) of a static-literal element — DONE
 
-Sibling to the value-struct-element work, but `string` is a **primitive** (not a
-value struct), so the Buffer owning-element specialisation does not apply.
-`Buffer<string>` stores shallow-copied `char*` pointers (the slot does not own
-an independent copy). Owning extraction is therefore unsound for a literal:
+`List<string>.pop` of an element `push`'d as a bare literal no longer crashes
+on aarch64. The aarch64 backend now strdup's the `move_T` result at the `pop`
+return site (option 2 from the original note below), mirroring the C backend,
+which already strdup's the borrow there. The caller frees the fresh heap copy
+instead of a rodata pointer. See ROADBLOCKS (`List<string>` caveat, now
+marked FIXED) for the full detail and the two aarch64 infrastructure fixes
+(`current_function_name` for struct methods + `last_result_is_heap` reset)
+that landed alongside it.
 
-- **aarch64**: `List<string>.pop` is `mov out T` (`owned_return`), so the caller
-  anchors and frees the result. If the element was `push`'d as a bare literal,
-  the slot holds a `char*` into rodata — `free` aborts (SIGABRT). The C backend
-  strdup's the `move_T` result at the `List.pop` return, so it is sound; aarch64
-  does not, so it crashes. (`push`/`at`/`set`/iterate — the borrow paths — are
-  unaffected on both backends.)
-- A latent related gap: `Buffer<string>.#destroy` frees only the slab (the slots
-  are borrows), so heap-string elements pushed from concatenation leak at
-  destroy. Not exercised by current tests (they pop or outlive the strings).
+The "make `Buffer<string>` owning" alternative (option 1) was prototyped and
+rejected: it double-strdup's in the `move_T`→`set` path that `Map<K,string>`/
+`Set<string>` rehash uses, leaking at every rehash.
 
-**Two sound options for a future pass** (both touch the string-ownership logic
-shared with `Map<K,string>`/`Set<string>` values, so neither is a one-liner):
+**Remaining gaps (not fixed by the return-site strdup):**
 
-1. Make `Buffer<string>` owning (strdup on `store_T`, per-slot free on
-   `replace_T`/`#destroy`) — symmetric with the value-struct-element
-   specialisation, fixes both the pop crash and the destroy leak, but the C
-   return-path strdup for `move_T`/`pop` would then double-allocate and must be
-   gated off.
-2. Make aarch64 match C (strdup the `move_T`/`pop` result at the return site).
-   Smaller, but leaves the destroy leak and is a backend-specific patch.
+- `Buffer<string>.#destroy` still frees only the slab (the slots are shallow
+  borrows), so a heap-string element (e.g. from concatenation) that outlives
+  the pop leaks at destroy. Not exercised by current tests.
+- `mov string` parameters are not freed at function exit — only `mov` _class_
+  params are registered for auto-free (`build_function_node`: the
+  `param.is_moved && param_struct?.is_class` gate). So a heap string moved
+  into a `mov T value` param (e.g. `xs.push(heapConcatenation)`) leaks the
+  original when the callee strdup's/shallow-copies it into its own storage.
+  Pushing a string _variable_ by value (no `mov`) is unaffected (the param
+  holds a borrow, the caller still owns and frees the original).
 
-Until then, a one-field `pub class` wrapper (the port's `Token`) sidesteps it
-(`ClassBuffer<string-wrapper>` owns/frees the pointer soundly and `pop` works).
+## `clone_node` drops check-phase annotations on AccessFunctionCallNode
+
+`clone_node`'s `access_func` case (`src/nodes/clone_node.ts`) copies
+`mangled_name`, `ref_param_indices`, `mov_param_indices`, `swap_params`,
+`allocations`, and `variadic_param_name` — but drops `owned_return`,
+`nullable_param_indices`, `variadic_param_index`, `return_bounds`,
+`inferred_array_length`, `is_nursery_spawn`, `function_return_type`, and
+`skip_bounds_check`. These are check-phase annotations that the
+monomorphized body depends on (it is never re-checked: `cloned.checked =
+true`). In practice the only one with a currently-demonstrable footprint is
+`owned_return` (the internal `move_T` call inside a mono `List.pop` body),
+and it is masked there by name-based heuristics in the build — so copying it
+is correct but doesn't currently change observable behavior. Compounding the
+drop, monomorphization clones the body _before_ the original is checked
+(verified by tracing: CLONE runs with `owned_return=undefined`, CHECK sets it
+on the original afterward), so even copying the flag at clone-time would be a
+no-op for the mono body. A robust fix would re-derive these annotations in a
+post-clone pass (or close the clone-before-check ordering gap); neither is
+needed for the `pop` fix (which works at the return site instead), so both
+are punted here.
 
 ## `Array<T>` materialization — finish the exclusion list
 

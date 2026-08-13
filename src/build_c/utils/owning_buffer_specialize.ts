@@ -17,6 +17,11 @@ import type BuildStatus from "../BuildStatus.ts";
  * Class/trait elements route to ClassBuffer (which handles per-element
  * destroy/frees soundly); trivially-destructible value structs (no owning
  * fields) use the plain Buffer primitives unchanged.
+ *
+ * `string` elements are NOT handled here: `string` is a primitive (not a
+ * value struct), so the value-struct specialization does not apply. Owning
+ * extraction (`pop`/`move_T`) of a `string` element is made sound at the
+ * return site instead (see ROADBLOCKS "List<string> owning extraction").
  */
 export function owning_buffer_element(
 	node: StructNode,
@@ -71,9 +76,9 @@ function has_string_fields(node: StructNode, status: BuildStatus): boolean {
 export const OWNING_BUFFER_METHODS = new Set(["store_T", "replace_T", "destroy", "#destroy"]);
 
 /**
- * Emit a specialized C body for a Buffer method whose element type is an
- * owning value struct. Returns true if the body was emitted (the caller
- * should skip the raw block); false if the raw block should be used as-is.
+ * Emit a specialized C body for a Buffer method whose element type owns heap
+ * data. Returns true if the body was emitted (the caller should skip the raw
+ * block); false if the raw block should be used as-is.
  *
  * The signature + opening brace + _self deref have already been emitted by
  * build_struct_functions; this function only emits the body statements.

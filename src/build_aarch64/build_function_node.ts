@@ -152,6 +152,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 
 	const old_scoped_declarations = status.scoped_declarations;
 	status.scoped_declarations = [];
+	status.last_result_is_heap = false;
 
 	const old_moved: Set<string> | undefined = status.moved;
 	(status.moved as Set<string> | undefined) = undefined;

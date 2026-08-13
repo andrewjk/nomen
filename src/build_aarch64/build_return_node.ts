@@ -1,4 +1,5 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
+import AccessNode from "../nodes/AccessNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import ReturnNode from "../nodes/ReturnNode.ts";
@@ -23,6 +24,23 @@ function find_var_size(name: string, status: BuildStatus): number {
 		return aarch64_size(decl.type.name);
 	}
 	return 8;
+}
+
+/**
+ * Whether the function currently being built returns `string` (non-view).
+ * `function_return_type` is populated for free functions and struct (sret)
+ * returns, but NOT for struct methods returning a primitive — so fall back to
+ * the declared return type on `current_struct`'s matching function.
+ */
+function current_return_is_string(status: BuildStatus): boolean {
+	const rt = status.function_return_type;
+	if (rt) return rt.name === "string" && !rt.is_view;
+	if (status.current_struct && status.current_function_name) {
+		const fn = status.current_struct.functions.find((f) => f.name === status.current_function_name);
+		const frt = fn?.return_type;
+		return !!frt && frt.name === "string" && !frt.is_view;
+	}
+	return false;
 }
 
 export default function build_return_node(node: ReturnNode, status: BuildStatus) {
@@ -199,7 +217,34 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 		}
 	}
 
-	if (status.last_result_is_heap && status.function_return_type?.name === "string") {
+	// A `move_T` result returned from a string-returning function (e.g.
+	// `List<string>.pop`'s `return self.items.move_T(idx)`) is a `char*` that
+	// may point into rodata (a static literal pushed earlier) — the slot holds
+	// a shallow copy, not an independent heap allocation. Such a function is
+	// classified heap-returning (the caller frees every result), so strdup the
+	// result into a fresh heap copy — mirroring the C backend, which strdup's
+	// the move_T result at the pop return. Without this, freeing the rodata
+	// pointer aborts (SIGABRT). (Borrow accessors `at`/`first`/`load_T` make
+	// the function NOT heap-returning, so the caller doesn't free and no
+	// strdup is needed there.)
+	//
+	// `function_return_type` is only populated for struct (sret) returns, so
+	// for a struct method returning a primitive (like `string`) we look up the
+	// declared return type on the current struct's function instead.
+	const move_T_ret_is_string =
+		node.value.node_type === "access" &&
+		(node.value as AccessNode).access.node_type === "access_func" &&
+		(node.value as AccessNode).access.name === "move_T" &&
+		current_return_is_string(status);
+	if (move_T_ret_is_string) {
+		emit_strdup(status);
+		if (!status.code.endsWith("\n")) {
+			status.code += "\n";
+		}
+		status.last_result_is_heap = true;
+	}
+
+	if (status.last_result_is_heap && current_return_is_string(status)) {
 		if (!status.heap_returning_functions) status.heap_returning_functions = new Set();
 		if (status.current_function_name) {
 			status.heap_returning_functions.add(status.current_function_name);

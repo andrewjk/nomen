@@ -8,6 +8,8 @@ import { get_struct_size, get_type_size } from "./struct_layout.ts";
  * Detect whether a monomorphized struct is a `Buffer_<T>` whose element type
  * `T` is a value struct that owns heap data (string fields). Mirrors the C
  * backend's owning_buffer_element — see that file for the full rationale.
+ * `string` elements are handled at the return site, not here (see ROADBLOCKS
+ * "List<string> owning extraction").
  */
 export function owning_buffer_element_aarch64(
 	node: StructNode,
@@ -96,7 +98,7 @@ function emit_strdup_field(
  * is an owning value struct. Called from build_inline_method BEFORE the raw
  * block is emitted. Returns true if the body was emitted.
  *
- * In the inline context, the parameters are in the AAPPCS64 registers:
+ * In the inline context, the parameters are in the AAPCS64 registers:
  *   x0 = self (Buffer struct pointer)
  *   x1 = i (index)
  *   x2 = val (address of the struct value, since T_SIZE > 8)
