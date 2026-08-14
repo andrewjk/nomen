@@ -218,15 +218,13 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 	}
 
 	// A `move_T` result returned from a string-returning function (e.g.
-	// `List<string>.pop`'s `return self.items.move_T(idx)`) is a `char*` that
-	// may point into rodata (a static literal pushed earlier) — the slot holds
-	// a shallow copy, not an independent heap allocation. Such a function is
-	// classified heap-returning (the caller frees every result), so strdup the
-	// result into a fresh heap copy — mirroring the C backend, which strdup's
-	// the move_T result at the pop return. Without this, freeing the rodata
-	// pointer aborts (SIGABRT). (Borrow accessors `at`/`first`/`load_T` make
-	// the function NOT heap-returning, so the caller doesn't free and no
-	// strdup is needed there.)
+	// `List<string>.pop`'s `return self.items.move_T(idx)`) relinquishes a
+	// `Buffer<string>` slot. The slot owns an independent heap copy (store_T
+	// strdup's), so the returned `char*` is already a heap pointer — it is
+	// handed to the caller as-is, NO strdup. Mark the function heap-returning
+	// so the caller frees the result. (When slots held shallow borrows, the
+	// slot could be rodata and a return-site strdup was required; owning slots
+	// make it redundant and a leak.)
 	//
 	// `function_return_type` is only populated for struct (sret) returns, so
 	// for a struct method returning a primitive (like `string`) we look up the
@@ -237,10 +235,6 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 		(node.value as AccessNode).access.name === "move_T" &&
 		current_return_is_string(status);
 	if (move_T_ret_is_string) {
-		emit_strdup(status);
-		if (!status.code.endsWith("\n")) {
-			status.code += "\n";
-		}
 		status.last_result_is_heap = true;
 	}
 

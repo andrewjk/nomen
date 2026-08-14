@@ -433,6 +433,41 @@ Console.write(x)
 `;
 		await build_and_check_output(input, "list_string_set_pop", "B");
 	});
+
+	// Regression: a heap-string element (from concatenation) that stays in the
+	// list until it is destroyed must not leak. The slot owns an independent
+	// heap copy (store_T strdup's), freed by #destroy (per-slot free + slab).
+	// Previously #destroy freed only the slab, so the heap copy leaked.
+	test("heap concat elements destroyed with the list (no leak)", async () => {
+		const input = `
+var List<string> xs = List<string>()
+xs.push("ab" + "cd")
+xs.push("ef" + "gh")
+xs.push("ij" + "kl")
+for i of 0 .. xs.length {
+  Console.write(xs.at(i))
+}
+`;
+		await build_and_check_output(input, "list_string_heap_destroy", "abcdefghijkl");
+	});
+
+	// Regression: a heap-string expression passed to `push` (a `mov T value`
+	// param) must not leak the original. The buffer strdup's its own copy and
+	// the caller retains + frees the original — ownership transfer of a string
+	// arg would orphan it. Covered by the leak detector on both backends.
+	test("heap concat pushed via expression (no leak)", async () => {
+		const input = `
+func fill = (ref List<string> xs) {
+  xs.push("xx" + "yy")
+  xs.push("zz" + "ww")
+}
+var List<string> xs = List<string>()
+fill(ref xs)
+const string a = xs.pop()
+Console.write(a)
+`;
+		await build_and_check_output(input, "list_string_heap_push_expr", "zzww");
+	});
 });
 
 describe("List<T> as a parameter / return type only", () => {

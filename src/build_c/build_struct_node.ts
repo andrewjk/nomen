@@ -17,7 +17,9 @@ import c_type from "./utils/c_type.ts";
 import { has_flag_name, is_nullable_struct_type } from "./utils/nullable_struct.ts";
 import {
 	emit_owning_buffer_body,
+	emit_owning_buffer_string_body,
 	owning_buffer_element,
+	owning_buffer_is_string_elem,
 } from "./utils/owning_buffer_specialize.ts";
 import scan_borrow_only_strings from "./utils/scan_borrow_only_strings.ts";
 
@@ -551,12 +553,15 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 			status.variable_types.set("_self", new Type(node.name));
 			status.variable_types.set("self", new Type(node.name));
 		}
-		// If this Buffer_<T> method targets an owning value struct element,
+		// If this Buffer_<T> method targets an owning element type — a value
+		// struct with string/nested-owning fields, OR a `string` primitive —
 		// emit a specialized body (deep-copy on store, per-element destroy)
 		// instead of the raw primitive block. The raw block assumes trivially
 		// destructible elements and would leak/double-free owning fields.
 		const owning_elem = owning_buffer_element(node, status);
-		const specialized = owning_elem && emit_owning_buffer_body(func.name, owning_elem, status);
+		const specialized =
+			(owning_elem && emit_owning_buffer_body(func.name, owning_elem, status)) ||
+			(owning_buffer_is_string_elem(node) && emit_owning_buffer_string_body(func.name, status));
 		if (!specialized) {
 			for (let child of func.statements) {
 				build_node(child, status, true);

@@ -1007,6 +1007,28 @@ export default function check_function_call(
 	}
 
 	status.stack.pop();
+
+	// A `string` argument to a `mov T` parameter must NOT transfer ownership
+	// of the caller's original: a `Buffer<string>` (or other owning container)
+	// strdup's the value into its own slot, so the caller retains and frees the
+	// original. (For class/trait args, mov genuinely transfers the pointer and
+	// the callee frees it — that path is unchanged.) Strip string-typed indices
+	// from mov_param_indices so the build does NOT splice the caller's variable
+	// / hoisted temp out of scoped_declarations (which would orphan it). This
+	// covers both the explicit `mov` keyword and the implicit hoisted-temp
+	// transfer. `swap` is unaffected (it has its own replacement source).
+	if (node.mov_param_indices?.length) {
+		const filtered = node.mov_param_indices.filter((idx) => {
+			const arg = node.params[idx];
+			return !(arg?.node_type === "value" && (arg as ValueNode).type?.name === "string");
+		});
+		if (filtered.length === 0) {
+			node.mov_param_indices = undefined;
+		} else if (filtered.length !== node.mov_param_indices.length) {
+			node.mov_param_indices = filtered;
+		}
+	}
+
 	return true;
 }
 

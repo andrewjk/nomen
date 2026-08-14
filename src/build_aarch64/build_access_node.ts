@@ -1757,6 +1757,16 @@ function build_access_method(
 	if (access_func.mov_param_indices?.length) {
 		for (const idx of access_func.mov_param_indices) {
 			const param = access_func.params[idx];
+			if (param?.node_type === "value") {
+				// A `string` mov arg keeps caller ownership (owning
+				// Buffer<string> strdup's); skip mark_moved so scope-exit
+				// cleanup frees it. Resolve the type from the declaration — a
+				// bare variable reference's ValueNode.type is unset after mono.
+				const vname = (param as { value?: string }).value;
+				const decl = status.scoped_declarations?.find((d) => d.name === vname);
+				const tname = decl?.type?.name ?? (param as { type?: { name?: string } }).type?.name;
+				if (tname === "string") continue;
+			}
 			if (param) {
 				mark_moved_if_struct(param, status);
 			}
@@ -1774,6 +1784,16 @@ function build_access_method(
 	// same way (the literal lives in static data and is never freed).
 
 	if (status.heap_returning_functions?.has(method_name)) {
+		status.last_result_is_heap = true;
+	}
+
+	// A `Buffer<string>.move_T` (`mov out T`) result is the slot's strdup'd
+	// heap copy — the caller owns and must free it. move_T is inline raw asm,
+	// so it isn't classified heap-returning via the return-node path, and the
+	// monomorphized call's `owned_return`/type annotations are unset (a bare
+	// variable receiver's type isn't substituted after mono). Detect it by the
+	// mangled name (the only owning-string move primitive today).
+	if (method_name === "Buffer_string_move_T") {
 		status.last_result_is_heap = true;
 	}
 

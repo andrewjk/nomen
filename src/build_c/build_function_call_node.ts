@@ -243,6 +243,17 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			if (param?.node_type === "value") {
 				const vname = (param as ValueNode).value;
 				const di = status.scoped_declarations.findIndex((d) => d.name === vname);
+				// A `string` arg to a `mov T` param does NOT transfer ownership:
+				// an owning `Buffer<string>` strdup's its own copy, so the caller
+				// retains and frees the original. Skip the splice (and the
+				// moved-marker) so auto_free reclaims it. Class/trait args
+				// genuinely transfer the pointer and stay spliced. Resolve the
+				// type from the declaration (a bare variable reference's
+				// ValueNode.type is unset post-monomorphization); this gate
+				// covers generic bodies the check-time filter can't see into.
+				const tname =
+					di !== -1 ? status.scoped_declarations[di].type?.name : (param as ValueNode).type?.name;
+				if (tname === "string") continue;
 				if (di !== -1) status.scoped_declarations.splice(di, 1);
 				// Record that this variable's value has been moved out. A later
 				// reassignment (`a = null` / `a = Box(2)`) must NOT reclaim the

@@ -754,7 +754,17 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 					const param = access_func.params[idx];
 					if (param?.node_type === "value") {
 						const vname = (param as ValueNode).value;
+						// A `string` arg to a `mov T` param keeps caller ownership
+						// (an owning Buffer<string> strdup's its own copy), so do NOT
+						// splice it — auto_free must reclaim the original. Resolve
+						// the type from the declaration (a bare variable reference's
+						// ValueNode.type is unset post-monomorphization).
 						const di = status.scoped_declarations.findIndex((d) => d.name === vname);
+						const tname =
+							di !== -1
+								? status.scoped_declarations[di].type?.name
+								: (param as ValueNode).type?.name;
+						if (tname === "string") continue;
 						if (di !== -1) status.scoped_declarations.splice(di, 1);
 					}
 				}

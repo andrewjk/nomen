@@ -37,7 +37,7 @@ pub struct Map<TK: Hashable + Equatable, TV> {
 			self.values.store_T(idx, value)
 			self.length += 1
 		} else {
-			self.values.store_T(idx, value)
+			self.values.replace_T(idx, value)
 		}
 	}
 
@@ -149,8 +149,14 @@ pub struct Map<TK: Hashable + Equatable, TV> {
 				// key/value is owned by exactly one buffer (the new self)
 				// afterwards. load_T would leave the old slot referencing
 				// the same class pointer — a double-free when old_keys is
-				// destroyed.
-				self.set(old_keys.move_T(i), old_values.move_T(i))
+				// destroyed. The results are bound to locals so an
+				// owning-element copy (e.g. a `Buffer<string>` slot, which
+				// store_T strdup's) is freed here once the new buffer has
+				// made its own copy — passing them inline would orphan the
+				// move_T results.
+				var TK k = old_keys.move_T(i)
+				var TV v = old_values.move_T(i)
+				self.set(mov k, mov v)
 			}
 		}
 	}

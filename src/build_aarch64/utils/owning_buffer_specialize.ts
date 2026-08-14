@@ -8,8 +8,7 @@ import { get_struct_size, get_type_size } from "./struct_layout.ts";
  * Detect whether a monomorphized struct is a `Buffer_<T>` whose element type
  * `T` is a value struct that owns heap data (string fields). Mirrors the C
  * backend's owning_buffer_element — see that file for the full rationale.
- * `string` elements are handled at the return site, not here (see ROADBLOCKS
- * "List<string> owning extraction").
+ * `string` elements use a separate owning path (see below).
  */
 export function owning_buffer_element_aarch64(
 	node: StructNode,
@@ -25,6 +24,15 @@ export function owning_buffer_element_aarch64(
 	// needs deep-copy + per-element destroy).
 	if (!has_string_fields(elem, status)) return undefined;
 	return elem;
+}
+
+/**
+ * A `Buffer<string>` owns an independent heap copy of each slot (strdup on
+ * store_T, free+strdup on replace_T, per-slot free on #destroy). See the C
+ * backend's owning_buffer_is_string_elem for the rationale.
+ */
+export function owning_buffer_is_string_elem_aarch64(node: StructNode): boolean {
+	return node.name === "Buffer_string";
 }
 
 function has_string_fields(node: StructNode, status: BuildStatus): boolean {
@@ -109,15 +117,26 @@ export function emit_owning_buffer_inline_aarch64(
 	status: BuildStatus,
 ): boolean {
 	const elem = owning_buffer_element_aarch64(struct_node, status);
-	if (!elem) return false;
-
-	if (func_name === "store_T") {
-		emit_owning_store_T(elem, status);
-		return true;
+	if (elem) {
+		if (func_name === "store_T") {
+			emit_owning_store_T(elem, status);
+			return true;
+		}
+		if (func_name === "replace_T") {
+			emit_owning_replace_T(elem, status);
+			return true;
+		}
+		return false;
 	}
-	if (func_name === "replace_T") {
-		emit_owning_replace_T(elem, status);
-		return true;
+	if (owning_buffer_is_string_elem_aarch64(struct_node)) {
+		if (func_name === "store_T") {
+			emit_string_store_T(status, "x0");
+			return true;
+		}
+		if (func_name === "replace_T") {
+			emit_string_replace_T(status, "x0");
+			return true;
+		}
 	}
 	return false;
 }
@@ -135,9 +154,25 @@ export function emit_owning_buffer_standalone_aarch64(
 	status: BuildStatus,
 ): boolean {
 	const elem = owning_buffer_element_aarch64(node, status);
-	if (!elem) return false;
-	if (func_name !== "store_T" && func_name !== "replace_T") return false;
+	if (elem) {
+		if (func_name !== "store_T" && func_name !== "replace_T") return false;
+		emit_owning_standalone_struct(elem, func_name, status);
+		return true;
+	}
+	if (owning_buffer_is_string_elem_aarch64(node)) {
+		if (func_name === "store_T") {
+			emit_string_store_T(status, "x19");
+			return true;
+		}
+		if (func_name === "replace_T") {
+			emit_string_replace_T(status, "x19");
+			return true;
+		}
+	}
+	return false;
+}
 
+function emit_owning_standalone_struct(elem: StructNode, func_name: string, status: BuildStatus) {
 	const T_SIZE = get_struct_size(elem.name, status);
 	const string_fields = collect_string_fields(elem, status);
 
@@ -212,6 +247,64 @@ export function emit_owning_buffer_standalone_aarch64(
 	status.code += `ldr x22, [sp], #16\n`;
 	status.code += `ldp x20, x21, [sp], #16\n`;
 	return true;
+}
+
+/**
+ * Specialized `Buffer<string>` store_T. `self_reg` is the register holding
+ * the Buffer pointer ("x0" inline, "x19" standalone); x1 = i, x2 = val (char*).
+ * strdup the incoming pointer into the slot so the slot owns an independent
+ * heap copy, with a round-trip guard (val == old slot → keep). x20/x21 are
+ * callee-saved (survive the strdup call).
+ */
+function emit_string_store_T(status: BuildStatus, self_reg: string) {
+	const lbl = (s: string) =>
+		`.Lstr_st_${s}_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+	const skip = lbl("skip");
+	const done = lbl("done");
+	status.code += `stp x20, x21, [sp, #-16]!\n`;
+	status.code += `ldr x20, [${self_reg}, #8]\n`; // data base
+	status.code += `add x20, x20, x1, lsl #3\n`; // &slot[i] (i * 8)
+	status.code += `mov x21, x2\n`; // val (callee-saved)
+	status.code += `ldr x0, [x20]\n`; // old slot value
+	status.code += `cmp x21, x0\n`;
+	status.code += `b.eq ${skip}\n`; // val == old → keep
+	status.code += `cbz x21, ${skip}\n`; // val == NULL → store NULL (fall through writes x21=0)
+	status.code += `mov x0, x21\n`;
+	emit_strdup(status);
+	status.code += `str x0, [x20]\n`;
+	status.code += `b ${done}\n`;
+	status.code += `${skip}:\n`;
+	status.code += `str x21, [x20]\n`; // store val (NULL or round-trip alias)
+	status.code += `${done}:\n`;
+	status.code += `ldp x20, x21, [sp], #16\n`;
+}
+
+/**
+ * Specialized `Buffer<string>` replace_T. Free the old slot's heap copy, then
+ * strdup the new value (round-trip guard: val == old → keep, no free).
+ */
+function emit_string_replace_T(status: BuildStatus, self_reg: string) {
+	const lbl = (s: string) =>
+		`.Lstr_rp_${s}_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+	const skip = lbl("skip");
+	const done = lbl("done");
+	status.code += `stp x20, x21, [sp, #-16]!\n`;
+	status.code += `ldr x20, [${self_reg}, #8]\n`; // data base
+	status.code += `add x20, x20, x1, lsl #3\n`; // &slot[i]
+	status.code += `mov x21, x2\n`; // val (callee-saved)
+	status.code += `ldr x0, [x20]\n`; // old slot value
+	status.code += `cmp x21, x0\n`;
+	status.code += `b.eq ${done}\n`; // val == old → keep (no free, no strdup)
+	emit_free(status); // free(old) — old in x0
+	status.code += `cbz x21, ${skip}\n`; // val == NULL → store NULL
+	status.code += `mov x0, x21\n`;
+	emit_strdup(status);
+	status.code += `str x0, [x20]\n`;
+	status.code += `b ${done}\n`;
+	status.code += `${skip}:\n`;
+	status.code += `str xzr, [x20]\n`;
+	status.code += `${done}:\n`;
+	status.code += `ldp x20, x21, [sp], #16\n`;
 }
 
 function emit_owning_store_T(elem: StructNode, status: BuildStatus) {
@@ -312,9 +405,11 @@ function emit_owning_replace_T(elem: StructNode, status: BuildStatus) {
  */
 export function emit_owning_buffer_destroy_aarch64(node: StructNode, status: BuildStatus): boolean {
 	const elem = owning_buffer_element_aarch64(node, status);
-	if (!elem) return false;
+	const is_string = !elem && owning_buffer_is_string_elem_aarch64(node);
+	if (!elem && !is_string) return false;
 
-	const T_SIZE = get_struct_size(elem.name, status);
+	// string slots are 8-byte char*; struct slots are T_SIZE bytes.
+	const T_SIZE = elem ? get_struct_size(elem.name, status) : 8;
 	const func_label = `${node.name}_destroy`;
 
 	const old_scoped_declarations = status.scoped_declarations;
@@ -359,7 +454,13 @@ export function emit_owning_buffer_destroy_aarch64(node: StructNode, status: Bui
 	// &slot[i] = x20 + i * T_SIZE
 	status.code += `mov x3, #${T_SIZE}\n`;
 	status.code += `madd x0, x22, x3, x20\n`;
-	status.code += `bl ${elem.name}_destroy\n`;
+	if (is_string) {
+		// free(slot[i]) — a NULL slot (unused/moved) is a no-op free.
+		status.code += `ldr x0, [x0]\n`;
+		emit_free(status);
+	} else {
+		status.code += `bl ${elem!.name}_destroy\n`;
+	}
 	status.code += `add x22, x22, #1\n`;
 	status.code += `b .Lownbuf_destroy_loop_${func_label}\n`;
 	status.code += `.Lownbuf_destroy_done_${func_label}:\n`;

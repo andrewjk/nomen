@@ -130,8 +130,13 @@ pub struct Set<T: Hashable + Equatable> {
 				// move_T (not load_T) relinquishes the old slot, so each value
 				// is owned by exactly one buffer (the new self) afterwards.
 				// load_T would leave the old slot referencing the same class
-				// pointer — a double-free when old_slots is destroyed.
-				self.add(old_slots.move_T(i))
+				// pointer — a double-free when old_slots is destroyed. The
+				// result is bound to a local so an owning-element copy (e.g. a
+				// `Buffer<string>` slot, which store_T strdup's) is freed here
+				// once the new buffer has made its own copy — passing it inline
+				// would orphan the move_T result.
+				var T v = old_slots.move_T(i)
+				self.add(mov v)
 			}
 		}
 	}

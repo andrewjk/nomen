@@ -18,10 +18,19 @@ import type BuildStatus from "../BuildStatus.ts";
  * destroy/frees soundly); trivially-destructible value structs (no owning
  * fields) use the plain Buffer primitives unchanged.
  *
- * `string` elements are NOT handled here: `string` is a primitive (not a
- * value struct), so the value-struct specialization does not apply. Owning
- * extraction (`pop`/`move_T`) of a `string` element is made sound at the
- * return site instead (see ROADBLOCKS "List<string> owning extraction").
+ *
+ * `string` elements use a parallel path: `string` is a primitive (not a value
+ * struct), so the value-struct specialization above does not apply, but a
+ * `Buffer<string>` slot holds a shallow-copied `char*` that may point into
+ * rodata (a literal) or the heap (a concatenation). To be sound, the slot must
+ * OWN an independent heap copy: `store_T` strdup's the incoming pointer,
+ * `replace_T` frees the old slot then strdup's, and `#destroy` frees each slot
+ * then the slab. `move_T`/`pop` then return an already-heap pointer directly
+ * (no return-site strdup). The caller retains ownership of the ORIGINAL string
+ * it pushed (string mov args are not spliced — see check_function_call), so
+ * there is a single owner on each side: the buffer owns its strdup'd copies,
+ * the caller owns the original. See ROADBLOCKS "List<string> owning
+ * extraction".
  */
 export function owning_buffer_element(
 	node: StructNode,
@@ -74,6 +83,64 @@ function has_string_fields(node: StructNode, status: BuildStatus): boolean {
  * pointers).
  */
 export const OWNING_BUFFER_METHODS = new Set(["store_T", "replace_T", "destroy", "#destroy"]);
+
+/**
+ * A `Buffer<string>` owns an independent heap copy of each slot (strdup on
+ * store_T, free+strdup on replace_T, per-slot free on #destroy). The element
+ * is a primitive, so this is a separate path from the value-struct
+ * specialization above.
+ */
+export function owning_buffer_is_string_elem(node: StructNode): boolean {
+	return node.name === "Buffer_string";
+}
+
+/**
+ * Emit a specialized C body for a `Buffer<string>` method. Returns true if the
+ * body was emitted. `self` is `struct Buffer_string*`, `i` is the index, and
+ * `val` is the incoming `char*` (string is 8-byte, passed by value). The
+ * signature + opening brace + _self deref have already been emitted by
+ * build_struct_functions.
+ */
+export function emit_owning_buffer_string_body(func_name: string, status: BuildStatus): boolean {
+	if (func_name === "#destroy") func_name = "destroy";
+	if (!OWNING_BUFFER_METHODS.has(func_name)) return false;
+
+	if (func_name === "store_T") {
+		// store_T(self, i, val): strdup the incoming char* into the slot so the
+		// slot owns an independent heap copy. The round-trip guard (val == old
+		// slot) keeps the existing copy instead of orphaning it — a
+		// load-modify-store round-trip must not strdup over its own alias.
+		status.code += `char** _slots = (char**)self->data;\n`;
+		status.code += `char* _old = _slots[i];\n`;
+		status.code += `_slots[i] = (val && val != _old) ? strdup(val) : val;\n`;
+		return true;
+	}
+
+	if (func_name === "replace_T") {
+		// replace_T(self, i, val): free the old slot's heap copy, then strdup
+		// the new value. When val aliases the old slot (round-trip), keep it.
+		status.code += `char** _slots = (char**)self->data;\n`;
+		status.code += `char* _old = _slots[i];\n`;
+		status.code += `if (val != _old) { free(_old); _slots[i] = val ? strdup(val) : 0; }\n`;
+		return true;
+	}
+
+	if (func_name === "destroy") {
+		// #destroy(self): free each slot's heap copy, then free the slab.
+		// Unused/moved slots are NULL (calloc-zeroed or zeroed by move_T), and
+		// free(NULL) is a no-op, so iterating cap is safe.
+		status.code += `if (self->data) {\n`;
+		status.code += `char** _slots = (char**)self->data;\n`;
+		status.code += `for (int _i = 0; _i < self->cap; _i++) { free(_slots[_i]); }\n`;
+		status.code += `free(_slots);\n`;
+		status.code += `}\n`;
+		status.code += `self->data = 0;\n`;
+		status.code += `self->cap = 0;\n`;
+		return true;
+	}
+
+	return false;
+}
 
 /**
  * Emit a specialized C body for a Buffer method whose element type owns heap

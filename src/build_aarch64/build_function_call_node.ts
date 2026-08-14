@@ -658,6 +658,16 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 	if (node.mov_param_indices?.length) {
 		for (const idx of node.mov_param_indices) {
 			const param = node.params[idx];
+			if (param?.node_type === "value") {
+				// A `string` mov arg keeps caller ownership (owning
+				// Buffer<string> strdup's); skip mark_moved so scope-exit
+				// cleanup frees it. Resolve the type from the declaration — a
+				// bare variable reference's ValueNode.type is unset after mono.
+				const vname = (param as { value?: string }).value;
+				const decl = status.scoped_declarations?.find((d) => d.name === vname);
+				const tname = decl?.type?.name ?? (param as { type?: { name?: string } }).type?.name;
+				if (tname === "string") continue;
+			}
 			if (param) {
 				mark_moved_if_struct(param, status);
 			}

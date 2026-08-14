@@ -328,14 +328,13 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 					!!status.heap_returning_functions?.has(nm);
 				if (returns_owned_string) returns_borrowed_string = false;
 				// A `move_T` call (`owned_return`, e.g. inside `List<string>.pop`'s
-				// `return self.items.move_T(idx)`) relinquishes the buffer slot, but
-				// for string elements the returned char* may be a static literal
-				// (rodata), not a heap allocation. The caller frees every string
-				// return, so strdup to give it a heap copy — mirroring the aarch64
-				// backend's move_T-specific strdup at the return site.
-				if (fn.owned_return && fn.name === "move_T") {
-					returns_borrowed_string = true;
-				}
+				// `return self.items.move_T(idx)`) relinquishes the buffer slot and
+				// returns its `char*`. A `Buffer<string>` slot owns an independent
+				// heap copy (store_T strdup's), so the returned pointer is already
+				// heap — it is handed to the caller as-is (owned_return), no
+				// strdup. (When the buffer held shallow borrows, the slot could be
+				// rodata and a return-site strdup was required; owning slots make
+				// that redundant and a leak.)
 				// A container/buffer BORROW accessor (`.at`/`.first`/`.slice` or the
 				// backing `load_T`) returns a view into the receiver's storage. This
 				// is decisive — it overrides the `concrete_method_owned` conclusion
