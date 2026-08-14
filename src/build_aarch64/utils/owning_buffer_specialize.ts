@@ -429,6 +429,12 @@ export function emit_owning_buffer_destroy_aarch64(node: StructNode, status: Bui
 
 	status.code += `.p2align 2\n`;
 	status.code += `${func_label}:\n`;
+	// Export for the precompiled system object (Mach-O `_name` alias). Only in
+	// system mode; single-TU builds keep the method file-local.
+	if (status.emit_mode === "system" && status.platform !== "windows") {
+		status.code += `.globl _${func_label}\n`;
+		status.code += `_${func_label} = ${func_label}\n`;
+	}
 	status.code += `stp x29, x30, [sp, #-16]!\n`;
 	status.code += `str x19, [sp, #-16]!\n`;
 	status.code += `mov x19, x0\n`; // x19 = self

@@ -7,6 +7,8 @@ export default class TraitNode extends BaseNode {
 	name: string;
 	fields: DeclarationNode[];
 	functions: FunctionNode[];
+	/** True when this trait is defined in the appended System library source. */
+	is_library?: boolean;
 	/**
 	 * Generic trait type parameters, e.g. `trait Viewable<T>` → ["T"].
 	 * Trait methods/fields may reference these; conforming structs supply

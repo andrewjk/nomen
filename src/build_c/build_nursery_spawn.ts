@@ -94,8 +94,7 @@ export default function build_nursery_spawn(
 	header += `\ta->future->done = 1;\n`;
 	header += `\tpthread_cond_broadcast(&a->future->cv);\n`;
 	header += `\tpthread_mutex_unlock(&a->future->mu);\n`;
-	header += `\t__nomen_future_release(a->future);\n`;
-	header += `\tfree(a);\n`;
+	header += `\t__nomen_future_release(a->future);\n`; // a freed via f->owner_args at last release
 	header += `}\n`;
 	status.headers += header;
 
@@ -133,6 +132,7 @@ export default function build_nursery_spawn(
 	status.code += `\t_future->result_slot = _result_ptr;\n`;
 	status.code += `\t_future->refs = ${refs};\n`;
 	status.code += `\t_args->future = _future;\n`;
+	status.code += `\t_future->owner_args = _args;\n`;
 	status.code += `\t__nomen_pool_submit(${tramp_name}, _args);\n`;
 	// Register the future with the nursery via its runtime pointers. The
 	// enclosing async block's join loop reads the same array + count. The

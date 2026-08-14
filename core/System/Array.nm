@@ -41,7 +41,25 @@ pub struct Array<T>: Viewable {
 		// x19 = self (first elem), x1 = index
 		mov x2, #T_SIZE
 		mul x1, x1, x2
+		// Width-matched load (zero-extends): an 8-byte ldr on a sub-8
+		// element would read past the array's end and leave garbage above.
+		cmp x2, #8
+		b.eq .L_at_8
+		cmp x2, #1
+		b.eq .L_at_1
+		cmp x2, #2
+		b.eq .L_at_2
+		ldr w0, [x19, x1]
+		b .L_at_end
+		.L_at_8:
 		ldr x0, [x19, x1]
+		b .L_at_end
+		.L_at_1:
+		ldrb w0, [x19, x1]
+		b .L_at_end
+		.L_at_2:
+		ldrh w0, [x19, x1]
+		.L_at_end:
 		```
 	}
 
@@ -54,7 +72,24 @@ pub struct Array<T>: Viewable {
 		```
 		#arch: aarch64
 		// x19 = self (first elem)
+		mov x3, #T_SIZE
+		cmp x3, #8
+		b.eq .L_first_8
+		cmp x3, #1
+		b.eq .L_first_1
+		cmp x3, #2
+		b.eq .L_first_2
+		ldr w0, [x19]
+		b .L_first_end
+		.L_first_8:
 		ldr x0, [x19]
+		b .L_first_end
+		.L_first_1:
+		ldrb w0, [x19]
+		b .L_first_end
+		.L_first_2:
+		ldrh w0, [x19]
+		.L_first_end:
 		```
 	}
 
@@ -78,15 +113,24 @@ pub struct Array<T>: Viewable {
 		// x19 = self (first elem), x1 = index, x2 = value
 		mov x3, #T_SIZE
 		mul x1, x1, x3
-		// Only use the 8-byte store when T_SIZE is exactly 8 (int/string/ptr).
-		// For smaller types (char/bool/int8/etc.) strb/strh/str w/ would
-		// clobber adjacent slots, so fall through to a size-aware store.
+		// Width-matched store: an 8-byte str on a sub-8 element would
+		// clobber adjacent slots (and run past the array's end).
 		cmp x3, #8
-		b.ne .L_set_byte
+		b.eq .L_set_8
+		cmp x3, #1
+		b.eq .L_set_1
+		cmp x3, #2
+		b.eq .L_set_2
+		str w2, [x19, x1]
+		b .L_set_done
+		.L_set_8:
 		str x2, [x19, x1]
 		b .L_set_done
-		.L_set_byte:
+		.L_set_1:
 		strb w2, [x19, x1]
+		b .L_set_done
+		.L_set_2:
+		strh w2, [x19, x1]
 		.L_set_done:
 		```
 	}
@@ -104,7 +148,23 @@ pub struct Array<T>: Viewable {
 		sub x0, x0, #1
 		mov x1, #T_SIZE
 		mul x0, x0, x1
+		cmp x1, #8
+		b.eq .L_at_end_8
+		cmp x1, #1
+		b.eq .L_at_end_1
+		cmp x1, #2
+		b.eq .L_at_end_2
+		ldr w0, [x19, x0]
+		b .L_at_end_done
+		.L_at_end_8:
 		ldr x0, [x19, x0]
+		b .L_at_end_done
+		.L_at_end_1:
+		ldrb w0, [x19, x0]
+		b .L_at_end_done
+		.L_at_end_2:
+		ldrh w0, [x19, x0]
+		.L_at_end_done:
 		```
 	}
 

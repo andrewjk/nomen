@@ -64,9 +64,14 @@ import type BuildStatus from "./BuildStatus.ts";
 
 export default function build_node(node: BaseNode, status: BuildStatus, with_semicolon = false) {
 	// Build any associated declarations first, e.g. for function call params that
-	// will later be freed
+	// will later be freed. Dedupe via `status.emitted_allocations` so an
+	// allocation already surfaced per-statement by `emit_allocations` (or by an
+	// earlier build of this shared AST — we must not clear-as-we-go) emits once.
 	if (node.allocations) {
+		if (!status.emitted_allocations) status.emitted_allocations = new Set();
 		for (let decl of node.allocations) {
+			if (status.emitted_allocations.has(decl)) continue;
+			status.emitted_allocations.add(decl);
 			build_node(decl, status, true);
 		}
 	}

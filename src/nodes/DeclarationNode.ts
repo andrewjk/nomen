@@ -11,6 +11,10 @@ export default class DeclarationNode extends BaseNode {
 	constraint?: BaseNode;
 	name_start?: number;
 	type_start?: number;
+	/** True when this top-level declaration is in the appended System library
+	 * source. Set by mark_library_nodes; used to route root-scope globals
+	 * (e.g. `const MAX_DIM`) to the correct TU in the System-lib split. */
+	is_library?: boolean;
 	func_params?: ParameterNode[];
 	func_return_type?: Type;
 	scope?: BaseNode;

@@ -110,8 +110,7 @@ export default function build_nursery_spawn(
 	tramp_c += `\ta->future->done = 1;\n`;
 	tramp_c += `\tpthread_cond_broadcast(&a->future->cv);\n`;
 	tramp_c += `\tpthread_mutex_unlock(&a->future->mu);\n`;
-	tramp_c += `\t__nomen_future_release(a->future);\n`;
-	tramp_c += `\tfree(a);\n`;
+	tramp_c += `\t__nomen_future_release(a->future);\n`; // a freed via f->owner_args at last release
 	tramp_c += `}\n`;
 
 	// A nursery.spawn always tracks its future with a nursery (that's the
@@ -143,6 +142,7 @@ export default function build_nursery_spawn(
 	tramp_c += `\tf->cancel_flag = a->cancel_flag;\n`;
 	tramp_c += `\tf->result_slot = a->result_slot;\n`;
 	tramp_c += `\ta->future = f;\n`;
+	tramp_c += `\tf->owner_args = a;\n`;
 	tramp_c += `\t__nomen_pool_submit(${tramp_name}, a);\n`;
 	tramp_c += `\t__nomen_nursery_futures[(*__nomen_nursery_count)++] = (unsigned long long)f;\n`;
 	if (fire_and_forget) {

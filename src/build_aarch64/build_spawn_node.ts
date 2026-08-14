@@ -20,6 +20,7 @@ struct nomen_future {
 	int refs;
 	unsigned long long *cancel_flag;
 	void *result_slot;
+	void *owner_args;
 };
 void __nomen_future_wait(struct nomen_future *f) {
 	pthread_mutex_lock(&f->mu);
@@ -75,6 +76,7 @@ void __nomen_future_release(struct nomen_future *f) {
 		pthread_cond_destroy(&f->cv);
 		free(f->cancel_flag);
 		free(f->result_slot);
+		if (f->owner_args) free(f->owner_args);
 		free(f);
 	}
 }
@@ -287,8 +289,7 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 	tramp_c += `\ta->future->done = 1;\n`;
 	tramp_c += `\tpthread_cond_broadcast(&a->future->cv);\n`;
 	tramp_c += `\tpthread_mutex_unlock(&a->future->mu);\n`;
-	tramp_c += `\t__nomen_future_release(a->future);\n`;
-	tramp_c += `\tfree(a);\n`;
+	tramp_c += `\t__nomen_future_release(a->future);\n`; // a freed via f->owner_args at last release
 	tramp_c += `}\n`;
 
 	// Nursery state + fire-and-forget detection.
@@ -337,6 +338,7 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 	tramp_c += `\tf->cancel_flag = a->cancel_flag;\n`;
 	tramp_c += `\tf->result_slot = a->result_slot;\n`;
 	tramp_c += `\ta->future = f;\n`;
+	tramp_c += `\tf->owner_args = a;\n`;
 	tramp_c += `\t__nomen_pool_submit(${tramp_name}, a);\n`;
 	if (nursery_id !== undefined) {
 		tramp_c += `\t__nomen_nursery_futures[(*__nomen_nursery_count)++] = (unsigned long long)f;\n`;

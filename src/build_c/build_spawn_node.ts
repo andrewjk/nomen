@@ -22,6 +22,7 @@ struct nomen_future {
 	int refs;
 	unsigned long long *cancel_flag;
 	void *result_slot;
+	void *owner_args;
 };
 static void __nomen_future_wait(struct nomen_future *f) {
 	pthread_mutex_lock(&f->mu);
@@ -80,6 +81,13 @@ static void __nomen_future_release(struct nomen_future *f) {
 		pthread_cond_destroy(&f->cv);
 		free(f->cancel_flag);
 		free(f->result_slot);
+		// The spawn args struct is owned by the future: freeing it here (the
+		// last release, ordered after every use — trampoline, Task destroy,
+		// nursery join) instead of inside the trampoline avoids the worker's
+		// free racing the submitting thread's post-submit allocations, which
+		// corrupted the freshly-allocated Task on macOS's nano allocator
+		// (intermittent SIGSEGV in Task.result).
+		if (f->owner_args) free(f->owner_args);
 		free(f);
 	}
 }
@@ -291,8 +299,7 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 	// The trampoline holds one future reference for the duration of the run —
 	// release it only after signaling, so the future (and the result slot it
 	// owns) is guaranteed alive while the result is written.
-	header += `\t__nomen_future_release(a->future);\n`;
-	header += `\tfree(a);\n`;
+	header += `\t__nomen_future_release(a->future);\n`; // a freed via f->owner_args at last release
 	header += `}\n`;
 	status.headers += header;
 
@@ -326,6 +333,7 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 	status.code += `\t_future->cancel_flag = _cancel_ptr;\n`;
 	status.code += `\t_future->result_slot = _result_ptr;\n`;
 	status.code += `\t_args->future = _future;\n`;
+	status.code += `\t_future->owner_args = _args;\n`;
 
 	// Inside a nursery: the nursery holds its own future reference (waits +
 	// releases at block exit). Outside: only the trampoline and the returned

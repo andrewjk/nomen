@@ -4,12 +4,29 @@ import Type from "../nodes/Type.ts";
 import build_node from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import c_type, { c_typedef_name } from "./utils/c_type.ts";
+import is_system_definition from "./utils/is_system_definition.ts";
 import { has_flag_name, is_nullable_struct_type } from "./utils/nullable_struct.ts";
 
 export default function build_struct_body(node: StructNode, status: BuildStatus) {
 	if (node.is_generic) return;
 	if (node.is_simple_type) return;
 	if (status.emitted_struct_bodies?.has(node.name)) return;
+	// Central origin guard for the TU split. Every emission path into a struct
+	// typedef — the pass-1 loop, the embedded-dependency recursion, and the
+	// by-value-return buffer-swap in build_struct_node — funnels through here,
+	// so a single check keeps a System typedef out of the user TU (and vice
+	// versa). System typedefs live in system.h, which the user TU `#include`s,
+	// so skipping here doesn't starve the user TU of the type.
+	if (
+		status.emit_mode === "user" &&
+		is_system_definition(node, status.structs, status.system_struct_names)
+	)
+		return;
+	if (
+		status.emit_mode === "system" &&
+		!is_system_definition(node, status.structs, status.system_struct_names)
+	)
+		return;
 	status.emitted_struct_bodies?.add(node.name);
 
 	// A struct that embeds another value struct by value (e.g. `Outer { Inner

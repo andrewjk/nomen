@@ -17,6 +17,7 @@ import type BuildStatus from "./BuildStatus.ts";
 import c_function_name from "./utils/c_function_name.ts";
 import c_type from "./utils/c_type.ts";
 import emit_allocations from "./utils/emit_allocations.ts";
+import { should_emit_definition } from "./utils/is_system_definition.ts";
 
 /** Primitive types whose `const` initializers are valid C file-scope globals. */
 const SIMPLE_TYPES = new Set([
@@ -106,9 +107,22 @@ export default function build_block_node(
 		// before any struct functions are emitted (which may access fields of other structs).
 		// Structs are emitted in dependency order: if struct A has a by-value field
 		// of struct B, B is emitted first (C requires complete types for by-value fields).
+		// Pass 1: emit struct typedefs, gated by origin. System struct typedefs
+		// are routed to the system TU's HEADERS (system.h) so the user TU reaches
+		// them via `#include "system.h"` for by-value use; user struct typedefs
+		// stay in the user TU. (See emit_struct_in_order for the header swap.)
 		const emitted_structs = new Set<StructNode>();
 		for (let child of node.statements) {
 			if (is_struct_node(child)) {
+				if (
+					!should_emit_definition(
+						child,
+						status.emit_mode,
+						status.structs,
+						status.system_struct_names,
+					)
+				)
+					continue;
 				emit_struct_in_order(child as StructNode, status, emitted_structs);
 			}
 		}
@@ -116,24 +130,60 @@ export default function build_block_node(
 		// Pass 2: Build traits, then enums/bitsets, then struct functions, then functions
 		for (let child of node.statements) {
 			if (is_trait_node(child)) {
+				if (
+					!should_emit_definition(
+						child,
+						status.emit_mode,
+						status.structs,
+						status.system_struct_names,
+					)
+				)
+					continue;
 				build_trait_node(child, status);
 			}
 		}
 
 		for (let child of node.statements) {
 			if (child.node_type === "enum") {
+				if (
+					!should_emit_definition(
+						child,
+						status.emit_mode,
+						status.structs,
+						status.system_struct_names,
+					)
+				)
+					continue;
 				build_enum_node(child as EnumNode, status);
 			}
 		}
 
 		for (let child of node.statements) {
 			if (child.node_type === "bitset") {
+				if (
+					!should_emit_definition(
+						child,
+						status.emit_mode,
+						status.structs,
+						status.system_struct_names,
+					)
+				)
+					continue;
 				build_bitset_node(child as BitsetNode, status);
 			}
 		}
 
 		for (let child of node.statements) {
 			if (is_struct_node(child)) {
+				if (
+					!should_emit_definition(
+						child,
+						status.emit_mode,
+						status.structs,
+						status.system_struct_names,
+					)
+				)
+					continue;
 				build_struct_node(child, status);
 			}
 		}
@@ -170,6 +220,15 @@ export default function build_block_node(
 
 		for (let child of node.statements) {
 			if (is_function_node(child)) {
+				if (
+					!should_emit_definition(
+						child,
+						status.emit_mode,
+						status.structs,
+						status.system_struct_names,
+					)
+				)
+					continue;
 				build_function_node(child, status);
 			}
 		}
@@ -185,6 +244,17 @@ export default function build_block_node(
 			child.node_type !== "bitset" &&
 			!(child.node_type === "declare" && inlined_const_names.has((child as DeclarationNode).name))
 		) {
+			// Root-scope globals carry linker symbols; route them by origin so a
+			// user global isn't also emitted into the system TU (duplicate
+			// symbol) and vice-versa. Locals inside a function body are emitted
+			// with their enclosing function regardless of mode.
+			if (
+				node.node_type === "root" &&
+				child.node_type === "declare" &&
+				!should_emit_definition(child, status.emit_mode, status.structs, status.system_struct_names)
+			) {
+				continue;
+			}
 			emit_allocations(child, status);
 			build_node(child, status, true);
 		}
@@ -309,5 +379,18 @@ function emit_struct_in_order(struct: StructNode, status: BuildStatus, emitted: 
 		}
 	}
 
-	build_struct_body(struct, status);
+	// In system mode, route the typedef to HEADERS (system.h) via the same
+	// buffer-swap build_struct_node uses for by-value returns. The user TU
+	// `#include`s system.h, so it sees System struct definitions for by-value
+	// use (e.g. `struct File r = File_init()`) without those definitions
+	// leaking user-type references into the system TU.
+	if (status.emit_mode === "system") {
+		const swap = status.code;
+		status.code = status.headers;
+		build_struct_body(struct, status);
+		status.headers = status.code;
+		status.code = swap;
+	} else {
+		build_struct_body(struct, status);
+	}
 }

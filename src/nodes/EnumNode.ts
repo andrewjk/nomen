@@ -5,6 +5,8 @@ export default class EnumNode extends BaseNode {
 	visibility: "pub" | "private";
 	name: string;
 	cases: { name: string; params: ParameterNode[] }[];
+	/** True when this enum is defined in the appended System library source. */
+	is_library?: boolean;
 
 	constructor(
 		start: number,

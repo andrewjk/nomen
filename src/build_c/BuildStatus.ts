@@ -25,6 +25,28 @@ export default interface BuildStatus {
 	headers: string;
 	code: string;
 	/**
+	 * Which translation unit this build is emitting, for the System-lib
+	 * tiering split:
+	 * - "all" (default/undefined): emit everything into one TU (the
+	 *   historical single-translation-unit behaviour).
+	 * - "system": emit only non-generic-System definitions (the stable
+	 *   runtime that can be precompiled once into a shared object).
+	 * - "user": emit everything else (user code + generics instantiated
+	 *   with user types + the program's literals/vtables).
+	 * Set by build(); consulted by build_block_node (to skip nodes of the
+	 * wrong origin) and the build.ts/build_root_node tail (to route runtime
+	 * helpers + declarations).
+	 */
+	emit_mode?: "all" | "system" | "user";
+	/**
+	 * When set (user-TU builds), struct names that are defined in the
+	 * precompiled system.o. `is_system_definition` uses this to decide which
+	 * structs the user TU must emit itself (anything NOT in this set) vs.
+	 * reference from system.o — so a generic/tuple the canonical didn't
+	 * instantiate is generated per-test instead of left undefined.
+	 */
+	system_struct_names?: Set<string>;
+	/**
 	 * C companion code (functions with `aarch64_use_c` raw blocks).
 	 * Emitted as a separate `.m`/`.c` file and linked with the assembly output.
 	 */

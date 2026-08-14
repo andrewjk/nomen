@@ -94,8 +94,15 @@ function mark_library_nodes(root: RootNode, boundary: number): void {
 			if (node.fields) walk(node.fields);
 		}
 		if (type === "trait") {
+			if ((node.start as number) >= boundary) node.is_library = true;
 			if (node.functions) for (const f of node.functions) walk(f);
 			if (node.fields) walk(node.fields);
+		}
+		if (type === "enum" || type === "bitset") {
+			if ((node.start as number) >= boundary) node.is_library = true;
+		}
+		if (type === "declare") {
+			if ((node.start as number) >= boundary) node.is_library = true;
 		}
 		if (type === "extend") {
 			// An extend's methods are merged into the target struct during

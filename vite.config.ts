@@ -24,6 +24,9 @@ export default defineConfig({
 		],
 	},
 	test: {
-		exclude: ["**/node_modules/**", "**/dist/**", "./temp/**", "./tests/**"],
+		exclude: ["**/node_modules/**", "**/dist/**", "./temp/**", "./tests/**", "./test/out/**"],
+		// Build the single precompiled system.o once before all tests; every
+		// C-backend test links it instead of recompiling System per test.
+		globalSetup: ["./test/system_lib_setup.ts"],
 	},
 });

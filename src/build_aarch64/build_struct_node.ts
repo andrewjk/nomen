@@ -213,10 +213,32 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 	}
 }
 
+/**
+ * Export a struct method for the precompiled System object. On macOS Mach-O,
+ * bare L-prefixed names (`List_int_pop`) are treated as LOCAL and cannot be
+ * `.globl`'d, so we export only the underscore form via an alias
+ * (`_name = name`) — the user TU references `_name`. Only emitted for the
+ * system TU; single-TU builds keep methods file-local (as before).
+ */
+function emit_method_export(label: string, status: BuildStatus) {
+	if (status.emit_mode === "system" && status.platform !== "windows") {
+		status.code += `.globl _${label}\n`;
+		status.code += `_${label} = ${label}\n`;
+	}
+}
+
 function build_destroy_function(node: StructNode, func: FunctionNode, status: BuildStatus) {
 	const func_label = `${node.name}_destroy`;
 
 	const old_scoped_declarations = status.scoped_declarations;
+
+	const old_heap_strings = status.heap_strings;
+	const old_heap_string_arrays = status.heap_string_arrays;
+	status.heap_string_arrays = undefined;
+	const old_heap_class_arrays = status.heap_class_arrays;
+	status.heap_class_arrays = undefined;
+	const old_heap_array_vars = status.heap_array_vars;
+	status.heap_array_vars = undefined;
 	const old_stack_size = status.stack_size;
 	const old_stack_offsets = status.stack_offsets;
 	const old_param_regs = status.function_param_regs;
@@ -224,6 +246,7 @@ function build_destroy_function(node: StructNode, func: FunctionNode, status: Bu
 	const old_return_label = status.function_return_label;
 
 	status.scoped_declarations = [];
+	status.heap_strings = new Set<string>();
 	status.stack_size = 0;
 	status.stack_offsets = new Map();
 
@@ -234,6 +257,7 @@ function build_destroy_function(node: StructNode, func: FunctionNode, status: Bu
 
 	status.code += `.p2align 2\n`;
 	status.code += `${func_label}:\n`;
+	emit_method_export(func_label, status);
 	status.code += `stp x29, x30, [sp, #-16]!\n`;
 	status.code += `str x19, [sp, #-16]!\n`;
 	status.code += `mov x19, x0\n`;
@@ -271,6 +295,10 @@ function build_destroy_function(node: StructNode, func: FunctionNode, status: Bu
 	status.code += `ret\n`;
 
 	status.scoped_declarations = old_scoped_declarations;
+	status.heap_strings = old_heap_strings;
+	status.heap_string_arrays = old_heap_string_arrays;
+	status.heap_class_arrays = old_heap_class_arrays;
+	status.heap_array_vars = old_heap_array_vars;
 	status.function_param_regs = old_param_regs;
 	status.function_param_vars = old_param_vars;
 	status.function_return_label = old_return_label;
@@ -282,6 +310,14 @@ function build_auto_destroy_function(node: StructNode, status: BuildStatus) {
 	const func_label = `${node.name}_destroy`;
 
 	const old_scoped_declarations = status.scoped_declarations;
+
+	const old_heap_strings = status.heap_strings;
+	const old_heap_string_arrays = status.heap_string_arrays;
+	status.heap_string_arrays = undefined;
+	const old_heap_class_arrays = status.heap_class_arrays;
+	status.heap_class_arrays = undefined;
+	const old_heap_array_vars = status.heap_array_vars;
+	status.heap_array_vars = undefined;
 	const old_stack_size = status.stack_size;
 	const old_stack_offsets = status.stack_offsets;
 	const old_param_regs = status.function_param_regs;
@@ -289,6 +325,7 @@ function build_auto_destroy_function(node: StructNode, status: BuildStatus) {
 	const old_return_label = status.function_return_label;
 
 	status.scoped_declarations = [];
+	status.heap_strings = new Set<string>();
 	status.stack_size = 0;
 	status.stack_offsets = new Map();
 
@@ -299,6 +336,7 @@ function build_auto_destroy_function(node: StructNode, status: BuildStatus) {
 
 	status.code += `.p2align 2\n`;
 	status.code += `${func_label}:\n`;
+	emit_method_export(func_label, status);
 	status.code += `stp x29, x30, [sp, #-16]!\n`;
 	status.code += `str x19, [sp, #-16]!\n`;
 	status.code += `mov x19, x0\n`;
@@ -329,6 +367,10 @@ function build_auto_destroy_function(node: StructNode, status: BuildStatus) {
 	status.code += `ret\n`;
 
 	status.scoped_declarations = old_scoped_declarations;
+	status.heap_strings = old_heap_strings;
+	status.heap_string_arrays = old_heap_string_arrays;
+	status.heap_class_arrays = old_heap_class_arrays;
+	status.heap_array_vars = old_heap_array_vars;
 	status.function_param_regs = old_param_regs;
 	status.function_param_vars = old_param_vars;
 	status.function_return_label = old_return_label;
@@ -349,6 +391,7 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 
 	status.code += `.p2align 2\n`;
 	status.code += `${func_name}:\n`;
+	emit_method_export(func_name, status);
 	status.code += `stp x29, x30, [sp, #-16]!\n`;
 	// self lives in x19 across the whole init so a defaulted struct field
 	// (e.g. `var Inner child = Inner()`) can run a constructor call without
@@ -521,6 +564,14 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 	const func_name = `${node.name}_init`;
 
 	const old_scoped_declarations = status.scoped_declarations;
+
+	const old_heap_strings = status.heap_strings;
+	const old_heap_string_arrays = status.heap_string_arrays;
+	status.heap_string_arrays = undefined;
+	const old_heap_class_arrays = status.heap_class_arrays;
+	status.heap_class_arrays = undefined;
+	const old_heap_array_vars = status.heap_array_vars;
+	status.heap_array_vars = undefined;
 	const old_stack_size = status.stack_size;
 	const old_stack_offsets = status.stack_offsets;
 	const old_param_regs = status.function_param_regs;
@@ -528,6 +579,7 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 	const old_return_label = status.function_return_label;
 
 	status.scoped_declarations = [];
+	status.heap_strings = new Set<string>();
 	status.stack_size = 0;
 	status.stack_offsets = new Map();
 
@@ -538,6 +590,7 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 
 	status.code += `.p2align 2\n`;
 	status.code += `${func_name}:\n`;
+	emit_method_export(func_name, status);
 	status.code += `stp x29, x30, [sp, #-16]!\n`;
 
 	status.code += `str x19, [sp, #-16]!\n`;
@@ -703,6 +756,10 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 	status.code += `ret\n`;
 
 	status.scoped_declarations = old_scoped_declarations;
+	status.heap_strings = old_heap_strings;
+	status.heap_string_arrays = old_heap_string_arrays;
+	status.heap_class_arrays = old_heap_class_arrays;
+	status.heap_array_vars = old_heap_array_vars;
 	status.function_param_regs = old_param_regs;
 	status.function_param_vars = old_param_vars;
 	status.function_variadic_params = old_variadic_params;
@@ -725,6 +782,13 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		if (check_c_fallback(func, node.name, status)) continue;
 
 		const old_scoped_declarations = status.scoped_declarations;
+		const old_heap_strings = status.heap_strings;
+		const old_heap_string_arrays = status.heap_string_arrays;
+		status.heap_string_arrays = undefined;
+		const old_heap_class_arrays = status.heap_class_arrays;
+		status.heap_class_arrays = undefined;
+		const old_heap_array_vars = status.heap_array_vars;
+		status.heap_array_vars = undefined;
 		const old_stack_size = status.stack_size;
 		const old_stack_offsets = status.stack_offsets;
 		const old_param_regs = status.function_param_regs;
@@ -734,6 +798,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		const old_function_name = status.current_function_name;
 
 		status.scoped_declarations = [];
+		status.heap_strings = new Set<string>();
 		status.stack_size = 0;
 		status.stack_offsets = new Map();
 		// Reset the transient heap-string flag so it doesn't leak from the
@@ -751,6 +816,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 
 		status.code += `.p2align 2\n`;
 		status.code += `${func_label}:\n`;
+		emit_method_export(func_label, status);
 		status.code += `stp x29, x30, [sp, #-16]!\n`;
 
 		const is_self_param = func.params[0]?.is_self_param;
@@ -1007,6 +1073,10 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		status.code += `ret\n`;
 
 		status.scoped_declarations = old_scoped_declarations;
+		status.heap_strings = old_heap_strings;
+		status.heap_string_arrays = old_heap_string_arrays;
+		status.heap_class_arrays = old_heap_class_arrays;
+		status.heap_array_vars = old_heap_array_vars;
 		status.function_param_regs = old_param_regs;
 		status.function_param_vars = old_param_vars;
 		status.function_ref_params = old_ref_params;
@@ -1036,6 +1106,7 @@ function build_trait_functions(node: StructNode, status: BuildStatus) {
 
 			status.code += `.p2align 2\n`;
 			status.code += `${func_label}:\n`;
+			emit_method_export(func_label, status);
 			status.code += `b ${trait_func_label}\n`;
 		}
 	}
@@ -1061,6 +1132,13 @@ function build_trait_functions(node: StructNode, status: BuildStatus) {
 			status.emitted_trait_funcs.add(trait_func_label);
 
 			const old_scoped_declarations = status.scoped_declarations;
+			const old_heap_strings = status.heap_strings;
+			const old_heap_string_arrays = status.heap_string_arrays;
+			status.heap_string_arrays = undefined;
+			const old_heap_class_arrays = status.heap_class_arrays;
+			status.heap_class_arrays = undefined;
+			const old_heap_array_vars = status.heap_array_vars;
+			status.heap_array_vars = undefined;
 			const old_stack_size = status.stack_size;
 			const old_stack_offsets = status.stack_offsets;
 			const old_param_regs = status.function_param_regs;
@@ -1068,6 +1146,7 @@ function build_trait_functions(node: StructNode, status: BuildStatus) {
 			const old_return_label = status.function_return_label;
 
 			status.scoped_declarations = [];
+			status.heap_strings = new Set<string>();
 			status.stack_size = 0;
 			status.stack_offsets = new Map();
 
@@ -1078,6 +1157,7 @@ function build_trait_functions(node: StructNode, status: BuildStatus) {
 
 			status.code += `.p2align 2\n`;
 			status.code += `${trait_func_label}:\n`;
+			emit_method_export(trait_func_label, status);
 			status.code += `stp x29, x30, [sp, #-16]!\n`;
 
 			const is_self_param = func.params[0]?.is_self_param;
@@ -1119,6 +1199,10 @@ function build_trait_functions(node: StructNode, status: BuildStatus) {
 			status.code += `ret\n`;
 
 			status.scoped_declarations = old_scoped_declarations;
+			status.heap_strings = old_heap_strings;
+			status.heap_string_arrays = old_heap_string_arrays;
+			status.heap_class_arrays = old_heap_class_arrays;
+			status.heap_array_vars = old_heap_array_vars;
 			status.function_param_regs = old_param_regs;
 			status.function_param_vars = old_param_vars;
 			status.function_return_label = old_return_label;

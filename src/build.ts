@@ -1,4 +1,5 @@
 import { reset_access_temp_counter } from "./build_aarch64/build_access_node.ts";
+import { reset_decl_const_counters } from "./build_aarch64/build_declaration_node.ts";
 import { reset_label_counter as reset_for_label_counter } from "./build_aarch64/build_for_loop_node.ts";
 import { reset_temp_counter as reset_func_call_temp_counter } from "./build_aarch64/build_function_call_node.ts";
 import { reset_label_counter as reset_func_label_counter } from "./build_aarch64/build_function_node.ts";
@@ -23,7 +24,13 @@ import type BuildResult from "./types/BuildResult.ts";
 
 export default function build(
 	root: BaseNode,
-	options: { arch?: "c" | "aarch64"; platform?: string; audit?: boolean } = {},
+	options: {
+		arch?: "c" | "aarch64";
+		platform?: string;
+		audit?: boolean;
+		emit_mode?: "all" | "system" | "user";
+		system_struct_names?: Set<string>;
+	} = {},
 ): BuildResult {
 	let status: BuildStatus = {
 		root,
@@ -33,6 +40,8 @@ export default function build(
 		bitsets: [],
 		headers: "",
 		code: "",
+		emit_mode: options.emit_mode ?? "all",
+		system_struct_names: options.system_struct_names,
 		scoped_declarations: [],
 		interpolate_string_counts: new Set(),
 		strings: new Map(),
@@ -66,6 +75,7 @@ export default function build(
 		reset_access_temp_counter();
 		reset_func_call_temp_counter();
 		reset_inline_counter();
+		reset_decl_const_counters();
 		status.heap_returning_functions = scan_heap_returning_functions(root);
 		status.inline_functions = scan_inline_candidates(root);
 		status.heap_returning_functions.add("int_to_string");
@@ -97,6 +107,12 @@ export default function build(
 		const emitted_trait_destroys = new Set<string>();
 		for (const trait of status.traits) {
 			if (emitted_trait_destroys.has(trait.name)) continue;
+			// Partition destroy shims by trait origin so they land in the same
+			// TU as the ClassBuffer<Trait> that references them (a system trait
+			// collection is always System-origin → system TU; a user trait
+			// collection → user TU). Avoids duplicate symbols across TUs.
+			if (status.emit_mode === "system" && !trait.is_library) continue;
+			if (status.emit_mode === "user" && trait.is_library) continue;
 			emitted_trait_destroys.add(trait.name);
 			const label = `${trait.name}_destroy`;
 			const end_label = `.L${label}_end`;
@@ -135,9 +151,27 @@ export default function build(
 				status.code += `${label}: .double ${value}\n`;
 			}
 		}
-		// Generate _string_interpolate_N helpers for aarch64
-		for (const length of status.interpolate_string_counts) {
+		// Generate _string_interpolate_N helpers for aarch64. These are shared
+		// runtime: definitions live in the system TU (covering every arity so a
+		// user TU's interpolation always resolves at link), and the user TU
+		// emits none (its `bl _string_interpolate_N` is an extern reference).
+		const emit_mode = status.emit_mode ?? "all";
+		const interpolate_lengths: number[] =
+			emit_mode === "user"
+				? []
+				: emit_mode === "system"
+					? Array.from(new Set([...status.interpolate_string_counts, 1, 2, 3, 4, 5, 6, 7])).sort(
+							(a, b) => a - b,
+						)
+					: Array.from(status.interpolate_string_counts);
+		for (const length of interpolate_lengths) {
 			status.code += `\n.p2align 2\n`;
+			// In the system TU these are referenced by the user TU, so export
+			// them (build_function_node already globalizes real functions via
+			// its `_alias` mechanism; these tail helpers are emitted directly).
+			if (emit_mode === "system") {
+				status.code += `.globl _string_interpolate_${length}\n`;
+			}
 			status.code += `_string_interpolate_${length}:\n`;
 			status.code += `stp x29, x30, [sp, #-16]!\n`;
 			status.code += `mov x29, sp\n`;
@@ -224,6 +258,13 @@ export default function build(
 				`void nomen_audit_check(void);\n` +
 				wrap_c_allocators(status.headers);
 		}
+		// In user mode the system TU owns the System type definitions and the
+		// shared runtime helpers; the user TU references them through this
+		// include. (The system TU is compiled to a cached object first, so
+		// system.h is on disk before the user TU is compiled.)
+		if (status.emit_mode === "user") {
+			status.headers = `#include "system.h"\n` + status.headers;
+		}
 	}
 
 	let companion: string | undefined;
@@ -253,6 +294,44 @@ export default function build(
 }
 
 /**
+ * Build both translation units of the System-lib tiering split in one call:
+ * the precompilable `system` TU (non-generic System code + System-instantiated
+ * generics) and the per-program `user` TU (user code + user-typed generics +
+ * the program's literals/vtables). Returns a BuildResult whose `code`/`headers`
+ * are the user TU and whose `system_code`/`system_headers` are the system TU.
+ * The harness compiles the system TU once (cached by content hash) and links it
+ * with every user TU that needs the same System subset — so a codegen change
+ * affecting only user emission keeps the cached system object warm. Plain
+ * `build()` (single TU, `emit_mode` undefined) is unchanged.
+ */
+export function build_split(
+	root: BaseNode,
+	options: { arch?: "c" | "aarch64"; platform?: string; audit?: boolean } = {},
+): BuildResult {
+	const platform = options.platform ?? default_platform();
+	// GUI (ObjC) builds use file-scope raw C blocks (resize callbacks, etc.)
+	// whose emission is hard to partition cleanly across TUs, and they're rare
+	// + already slow (Apple-framework linking). Fall back to a single TU so the
+	// split stays robust for the ~99% non-GUI case that benefits from caching.
+	if (build_needs_objc(root, platform)) {
+		return build(root, options);
+	}
+	const sys = build(root, { ...options, emit_mode: "system" });
+	const usr = build(root, { ...options, emit_mode: "user" });
+	// Companions (aarch64_use_c raw C / pool infra) may originate on either
+	// side; concatenate so the linked binary sees both.
+	const companions = [sys.companion, usr.companion].filter(Boolean) as string[];
+	return {
+		headers: usr.headers,
+		code: usr.code,
+		system_code: sys.code,
+		system_headers: sys.headers,
+		companion: companions.length ? companions.join("\n") : undefined,
+		errors: [...(usr.errors ?? []), ...(sys.errors ?? [])],
+	};
+}
+
+/**
  * Derive a default target platform from the host when none is supplied.
  */
 export function default_platform(): string {
@@ -267,6 +346,14 @@ export function default_platform(): string {
 			return process.platform;
 	}
 }
+
+/**
+ * Whether a top-level definition belongs in the precompilable System
+ * translation unit. Re-exported from the shared util so build_block_node
+ * (both backends) and build.ts share one implementation without a circular
+ * import. See `src/build_c/utils/is_system_definition.ts`.
+ */
+export { default as is_system_definition } from "./build_c/utils/is_system_definition.ts";
 
 /**
  * Wrap every allocator/deallocator call in generated C so the audit runtime's
@@ -296,7 +383,7 @@ function wrap_c_allocators(code: string): string {
  * user typedef names (see set_c_typedef_mangling) so they don't collide with
  * MacTypes.h.
  */
-function build_needs_objc(root: BaseNode, platform: string): boolean {
+export function build_needs_objc(root: BaseNode, platform: string): boolean {
 	if (platform !== "macos" && platform !== "ios") return false;
 	return ast_uses_objc(root);
 }

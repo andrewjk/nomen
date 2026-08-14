@@ -1,1 +1,0 @@
-XXLEAK: 2 allocation(s)

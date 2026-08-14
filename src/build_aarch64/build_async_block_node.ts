@@ -73,7 +73,16 @@ export default function build_async_block_node(node: AsyncBlockNode, status: Bui
 	status.nursery_stack.push(id);
 
 	// Build the nursery body (spawns will look up offsets via nursery_stack).
+	// The body is its own scope: give it a fresh scoped_declarations list (like
+	// if/while/for/match/switch branches do) so its declarations are destroyed
+	// ONCE, at the body's scope exit — otherwise they stay in the function's
+	// list and the function-return cleanup destroys them a SECOND time, after
+	// their memory was already reclaimed (use-after-free; flaky because the
+	// freed block usually still holds the zeroed fields).
+	const old_scoped_declarations = status.scoped_declarations;
+	status.scoped_declarations = [];
 	build_block_node(node, status);
+	status.scoped_declarations = old_scoped_declarations;
 
 	status.nursery_stack.pop();
 	status.nursery_offsets.delete(id);

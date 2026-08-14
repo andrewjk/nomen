@@ -42,6 +42,12 @@ function resolve_static_value(
 		}
 		const raw = get_raw_value(valueNode, status);
 		if (is_literal_value(raw)) return raw;
+		// A char literal ('A') resolves to its decimal code so array-element
+		// store paths can size the store by element_size (strb for char
+		// arrays) instead of falling back to a generic 8-byte str.
+		if (raw.startsWith("'") && raw.endsWith("'") && raw.length === 3) {
+			return String(raw.charCodeAt(1));
+		}
 		return null;
 	}
 	if (node.node_type === "access") {

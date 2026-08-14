@@ -116,6 +116,13 @@ function alloc_array_with_prefix(
 let string_array_counter = 0;
 let decl_const_counter = 0;
 
+/** Reset module-level label counters so repeated builds of the same AST emit
+ *  identical labels (the AST is shared across backends / repeated builds). */
+export function reset_decl_const_counters() {
+	string_array_counter = 0;
+	decl_const_counter = 0;
+}
+
 function emit_string_array_labels(values: BaseNode[], status: BuildStatus): Map<string, string> {
 	const labels = new Map<string, string>();
 	values.forEach((value) => {
@@ -962,7 +969,13 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 						build_node(value as BaseNode, status);
 						if (!status.code.endsWith("\n")) status.code += "\n";
 						status.code += `ldr x9, [x29, #${offset}]\n`;
-						status.code += `str x0, [x9, #${slot}]\n`;
+						if (element_size === 1) {
+							status.code += `strb w0, [x9, #${slot}]\n`;
+						} else if (element_size === 4) {
+							status.code += `str w0, [x9, #${slot}]\n`;
+						} else {
+							status.code += `str x0, [x9, #${slot}]\n`;
+						}
 					}
 				});
 			} else {
@@ -988,12 +1001,24 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 					} else if (typeof raw === "string") {
 						emit_int_immediate(status, raw);
 						status.code += `ldr x9, [${node.name}]\n`;
-						status.code += `str x0, [x9, #${slot}]\n`;
+						if (element_size === 1) {
+							status.code += `strb w0, [x9, #${slot}]\n`;
+						} else if (element_size === 4) {
+							status.code += `str w0, [x9, #${slot}]\n`;
+						} else {
+							status.code += `str x0, [x9, #${slot}]\n`;
+						}
 					} else {
 						build_node(value as BaseNode, status);
 						if (!status.code.endsWith("\n")) status.code += "\n";
 						status.code += `ldr x9, [${node.name}]\n`;
-						status.code += `str x0, [x9, #${slot}]\n`;
+						if (element_size === 1) {
+							status.code += `strb w0, [x9, #${slot}]\n`;
+						} else if (element_size === 4) {
+							status.code += `str w0, [x9, #${slot}]\n`;
+						} else {
+							status.code += `str x0, [x9, #${slot}]\n`;
+						}
 					}
 				});
 			}
@@ -1122,7 +1147,13 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 								if (!status.code.endsWith("\n")) {
 									status.code += "\n";
 								}
-								status.code += `str x0, [x29, #${slot_offset}]\n`;
+								if (element_size === 1) {
+									status.code += `strb w0, [x29, #${slot_offset}]\n`;
+								} else if (element_size === 4) {
+									status.code += `str w0, [x29, #${slot_offset}]\n`;
+								} else {
+									status.code += `str x0, [x29, #${slot_offset}]\n`;
+								}
 								if (struct_element?.is_class) {
 									mark_moved_if_struct(value, status);
 								}
@@ -1140,13 +1171,25 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 							const raw = resolve_static_value(value, status);
 							if (raw !== null) {
 								status.code += `ldr x0, =${raw}\n`;
-								status.code += `str x0, [${node.name} + ${i * element_size}]\n`;
+								if (element_size === 1) {
+									status.code += `strb w0, [${node.name} + ${i * element_size}]\n`;
+								} else if (element_size === 4) {
+									status.code += `str w0, [${node.name} + ${i * element_size}]\n`;
+								} else {
+									status.code += `str x0, [${node.name} + ${i * element_size}]\n`;
+								}
 							} else {
 								build_node(value, status);
 								if (!status.code.endsWith("\n")) {
 									status.code += "\n";
 								}
-								status.code += `str x0, [${node.name} + ${i * element_size}]\n`;
+								if (element_size === 1) {
+									status.code += `strb w0, [${node.name} + ${i * element_size}]\n`;
+								} else if (element_size === 4) {
+									status.code += `str w0, [${node.name} + ${i * element_size}]\n`;
+								} else {
+									status.code += `str x0, [${node.name} + ${i * element_size}]\n`;
+								}
 								if (struct_element?.is_class) {
 									mark_moved_if_struct(value, status);
 								}

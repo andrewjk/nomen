@@ -370,7 +370,25 @@ pub struct Buffer<T> {
 		add x0, x0, x1
 		cmp x3, #8
 		b.gt .Lbuffer_load_T_copy
+		// Width-matched load (zero-extends) — an 8-byte ldr on a sub-8
+		// element would read past the slab's end and leave garbage in the
+		// upper bits.
+		cmp x3, #1
+		b.eq .Lbuffer_load_T_1
+		cmp x3, #2
+		b.eq .Lbuffer_load_T_2
+		cmp x3, #4
+		b.eq .Lbuffer_load_T_4
 		ldr x0, [x0]
+		b .Lbuffer_load_T_end
+		.Lbuffer_load_T_1:
+		ldrb w0, [x0]
+		b .Lbuffer_load_T_end
+		.Lbuffer_load_T_2:
+		ldrh w0, [x0]
+		b .Lbuffer_load_T_end
+		.Lbuffer_load_T_4:
+		ldr w0, [x0]
 		b .Lbuffer_load_T_end
 		.Lbuffer_load_T_copy:
 		mov x1, x0
@@ -395,7 +413,24 @@ pub struct Buffer<T> {
 		add x0, x0, x1
 		cmp x3, #8
 		b.gt .Lbuffer_store_T_copy
+		// Sub-8 element types must use a width-matched store: an 8-byte str
+		// would clobber the following slots (and run past the slab's end).
+		cmp x3, #1
+		b.eq .Lbuffer_store_T_1
+		cmp x3, #2
+		b.eq .Lbuffer_store_T_2
+		cmp x3, #4
+		b.eq .Lbuffer_store_T_4
 		str x2, [x0]
+		b .Lbuffer_store_T_end
+		.Lbuffer_store_T_1:
+		strb w2, [x0]
+		b .Lbuffer_store_T_end
+		.Lbuffer_store_T_2:
+		strh w2, [x0]
+		b .Lbuffer_store_T_end
+		.Lbuffer_store_T_4:
+		str w2, [x0]
 		b .Lbuffer_store_T_end
 		.Lbuffer_store_T_copy:
 		mov x1, x2
@@ -427,8 +462,28 @@ pub struct Buffer<T> {
 		add x5, x4, x5
 		cmp x3, #8
 		b.gt .Lbuffer_move_T_copy
+		// Width-matched load + zero-clear: an 8-byte access on a sub-8
+		// element would zero the following slots and run past the slab.
+		cmp x3, #1
+		b.eq .Lbuffer_move_T_1
+		cmp x3, #2
+		b.eq .Lbuffer_move_T_2
+		cmp x3, #4
+		b.eq .Lbuffer_move_T_4
 		ldr x0, [x5]
 		str xzr, [x5]
+		b .Lbuffer_move_T_end
+		.Lbuffer_move_T_1:
+		ldrb w0, [x5]
+		strb wzr, [x5]
+		b .Lbuffer_move_T_end
+		.Lbuffer_move_T_2:
+		ldrh w0, [x5]
+		strh wzr, [x5]
+		b .Lbuffer_move_T_end
+		.Lbuffer_move_T_4:
+		ldr w0, [x5]
+		str wzr, [x5]
 		b .Lbuffer_move_T_end
 		.Lbuffer_move_T_copy:
 		mov x0, x8
@@ -467,7 +522,24 @@ pub struct Buffer<T> {
 		add x0, x0, x1
 		cmp x3, #8
 		b.gt .Lbuffer_replace_T_copy
+		// Width-matched store: an 8-byte str on a sub-8 element would
+		// clobber the following slots and run past the slab's end.
+		cmp x3, #1
+		b.eq .Lbuffer_replace_T_1
+		cmp x3, #2
+		b.eq .Lbuffer_replace_T_2
+		cmp x3, #4
+		b.eq .Lbuffer_replace_T_4
 		str x2, [x0]
+		b .Lbuffer_replace_T_end
+		.Lbuffer_replace_T_1:
+		strb w2, [x0]
+		b .Lbuffer_replace_T_end
+		.Lbuffer_replace_T_2:
+		strh w2, [x0]
+		b .Lbuffer_replace_T_end
+		.Lbuffer_replace_T_4:
+		str w2, [x0]
 		b .Lbuffer_replace_T_end
 		.Lbuffer_replace_T_copy:
 		mov x1, x2

@@ -1,4 +1,5 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
+import { should_emit_definition } from "../build_c/utils/is_system_definition.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import BitsetNode from "../nodes/BitsetNode.ts";
 import type BlockNode from "../nodes/BlockNode.ts";
@@ -75,12 +76,20 @@ export default function build_block_node(node: BlockNode, status: BuildStatus) {
 
 	for (let child of node.statements) {
 		if (is_struct_node(child)) {
+			if (
+				!should_emit_definition(child, status.emit_mode, status.structs, status.system_struct_names)
+			)
+				continue;
 			build_struct_node(child as StructNode, status);
 		}
 	}
 
 	for (let child of node.statements) {
 		if (is_function_node(child)) {
+			if (
+				!should_emit_definition(child, status.emit_mode, status.structs, status.system_struct_names)
+			)
+				continue;
 			build_function_node(child as FunctionNode, status);
 		}
 	}

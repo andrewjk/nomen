@@ -81,7 +81,10 @@ export default function build_root_node(node: RootNode, status: BuildStatus) {
 	}
 
 	status.headers += "void **_get_trait_func(void **obj, int trait_index, int func_index);\n";
-	status.code += `
+	// `_get_trait_func` is shared runtime. Its definition lives in the system
+	// TU; the user TU only needs the (already-emitted) forward declaration.
+	if (status.emit_mode !== "user") {
+		status.code += `
 void **_get_trait_func(void **obj, int trait_index, int func_index)
 {
     void **vt = *obj;
@@ -93,6 +96,7 @@ void **_get_trait_func(void **obj, int trait_index, int func_index)
     return func;
 }  
 `;
+	}
 
 	// For every trait, emit a `<Trait>_destroy(void *obj)` shim that dispatches
 	// through the destroy slot at index 0 of the struct's vtable. This makes
@@ -106,6 +110,11 @@ void **_get_trait_func(void **obj, int trait_index, int func_index)
 	const emitted_trait_destroys = new Set<string>();
 	for (const trait of status.traits) {
 		if (emitted_trait_destroys.has(trait.name)) continue;
+		// Partition by trait origin across the TU split: a system trait's shim
+		// is defined in the system TU, a user trait's in the user TU (matching
+		// where the referencing ClassBuffer<Trait> lands).
+		if (status.emit_mode === "system" && !trait.is_library) continue;
+		if (status.emit_mode === "user" && trait.is_library) continue;
 		emitted_trait_destroys.add(trait.name);
 		const header_sig = `void ${trait.name}_destroy(void *obj)`;
 		status.headers += `${header_sig};\n`;
@@ -120,11 +129,20 @@ void **_get_trait_func(void **obj, int trait_index, int func_index)
 		status.code += `}\n`;
 	}
 
-	for (let length of status.interpolate_string_counts) {
+	// `_string_interpolate_N` is shared runtime: definitions live in the
+	// system TU (every arity 1..7 so a user TU's interpolation always
+	// resolves), the user TU emits only forward declarations. In "all" mode
+	// (single TU) only the used arities are emitted (unchanged behaviour).
+	const interpolate_counts =
+		status.emit_mode === "user" || status.emit_mode === "system"
+			? new Set([...status.interpolate_string_counts, 1, 2, 3, 4, 5, 6, 7])
+			: status.interpolate_string_counts;
+	for (let length of interpolate_counts) {
 		let range = Array.from({ length }, (_, i) => i);
 		let declaration = `char *_string_interpolate_${length}(char *pattern, ${range.map((n) => `char *arg${n + 1}`).join(", ")})`;
 		status.headers += `${declaration};\n`;
-		status.code += `${declaration}
+		if (status.emit_mode !== "user") {
+			status.code += `${declaration}
 {
     int length = snprintf(NULL, 0, pattern, ${range.map((n) => `arg${n + 1}`).join(", ")});
     char *str = malloc(length + 1);
@@ -132,5 +150,6 @@ void **_get_trait_func(void **obj, int trait_index, int func_index)
     return str;
 }
 `;
+		}
 	}
 }

@@ -154,6 +154,23 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.scoped_declarations = [];
 	status.last_result_is_heap = false;
 
+	// heap_strings / heap_string_arrays / heap_class_arrays are GLOBAL
+	// structures that mark_heap_string / array-anchor paths append to. They
+	// must be reset per function, or names marked by an EARLIER function leak
+	// into a LATER function's scope-exit cleanup (which frees any local whose
+	// name is in the set) — the canonical System build exposes this,
+	// double-freeing unrelated locals (an int named `v`, an Array<char>
+	// `letters`) after some other function marked the same name. Save/restore
+	// so each function sees only its own marks.
+	const old_heap_strings = status.heap_strings;
+	status.heap_strings = new Set<string>();
+	const old_heap_string_arrays = status.heap_string_arrays;
+	status.heap_string_arrays = undefined;
+	const old_heap_class_arrays = status.heap_class_arrays;
+	status.heap_class_arrays = undefined;
+	const old_heap_array_vars = status.heap_array_vars;
+	status.heap_array_vars = undefined;
+
 	const old_moved: Set<string> | undefined = status.moved;
 	(status.moved as Set<string> | undefined) = undefined;
 
@@ -671,6 +688,10 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 
 	status.scoped_declarations = old_scoped_declarations;
 	status.moved = old_moved;
+	status.heap_strings = old_heap_strings;
+	status.heap_string_arrays = old_heap_string_arrays;
+	status.heap_class_arrays = old_heap_class_arrays;
+	status.heap_array_vars = old_heap_array_vars;
 	status.current_function_name = old_function_name;
 	status.stack_size = old_stack_size;
 	status.stack_offsets = old_stack_offsets;

@@ -7,6 +7,8 @@ import util from "node:util";
 import { expect } from "vite-plus/test";
 
 import type BuildResult from "../src/types/BuildResult";
+import { postprocess_macos, postprocess_macos_for_user } from "./postprocess";
+import { SYSTEM_H, SYSTEM_HASH, SYSTEM_HASH_A64, SYSTEM_OBJ, SYSTEM_OBJ_A64 } from "./system_lib";
 
 const execPromise = util.promisify(exec);
 
@@ -18,10 +20,7 @@ const OBJC_RE = /\bobjc_msgSend\b|\bobjc_getClass\b|\bsel_registerName\b/;
 
 // audit_runtime.c is byte-for-byte identical for every test, so compile it once
 // into a shared object keyed by its content hash and reuse it across the whole
-// suite (the per-test recompile was ~0.06s × 200+ cold-cache misses).
-// Parallel-safe: each contender writes a uniquely-suffixed temp file then
-// renames it into place atomically; the bytes are deterministic, so a lost race
-// just overwrites identical content.
+// suite. Parallel-safe (atomic temp-then-rename).
 let cached_audit_hash: string | null = null;
 
 async function ensure_audit_obj(): Promise<string | null> {
@@ -50,9 +49,22 @@ export default async function check_output(
 	name: string,
 	built: BuildResult,
 	expected_output: string,
-	options: { arch?: "c" | "aarch64"; audit?: boolean; provideStdin?: string } = { audit: true },
+	options: {
+		arch?: "c" | "aarch64";
+		audit?: boolean;
+		provideStdin?: string;
+		/** Link the precompiled system object (C-backend split). The caller
+		 *  builds a user-only TU (emit_mode "user"); System code comes from the
+		 *  one object built once in the globalSetup. */
+		system_lib?: boolean;
+		/** Function names exported by the aarch64 system object — the user TU's
+		 *  references to them are rewritten to the Mach-O `_name` aliases. */
+		system_fn_names?: string[];
+	} = { audit: true },
 ) {
 	const arch = options.arch ?? "c";
+	const audit = options.audit ?? true;
+	const system_lib = !!options.system_lib;
 	const folder = path.resolve(".", "test", "out", arch, name);
 	if (!fs.existsSync(folder)) {
 		fs.mkdirSync(folder, { recursive: true });
@@ -63,13 +75,17 @@ export default async function check_output(
 	const outfile = path.join(folder, "main.out");
 	const outputfile = path.join(folder, "output.txt");
 	const cachefile = path.join(folder, ".cache");
-	// The companion file includes Foundation/Cocoa headers on apple platforms,
-	// so it must be compiled as Objective-C (.m) there.
 	const comp_ext = process.platform === "darwin" ? ".m" : ".c";
 	const companionfile = path.join(folder, `main_companion${comp_ext}`);
 
-	let code = built.code;
-	code = postprocess_macos(code, options.audit, arch);
+	let code: string;
+	if (arch === "aarch64" && system_lib) {
+		// Rewrite the user TU's references to System functions to the exported
+		// `_name` aliases (Mach-O), plus libc/main/audit handling.
+		code = postprocess_macos_for_user(built.code, audit, options.system_fn_names ?? []);
+	} else {
+		code = postprocess_macos(built.code, audit, arch);
+	}
 
 	const has_companion = !!built.companion;
 	if (has_companion) {
@@ -81,16 +97,29 @@ export default async function check_output(
 		fs.writeFileSync(headerfile, built.headers);
 	}
 
-	const cache_key = compute_cache_key(code + (built.companion ?? ""), options);
+	// When linking the precompiled system object, the user TU's main.h does
+	// `#include "system.h"` (C only) — stage the prebuilt system header + fold
+	// the system object's hash into the output cache key so a system.o rebuild
+	// invalidates cached stdout.
+	let system_hash = "";
+	if (system_lib) {
+		const hash_file = arch === "aarch64" ? SYSTEM_HASH_A64 : SYSTEM_HASH;
+		if (arch === "c") fs.copyFileSync(SYSTEM_H, path.join(folder, "system.h"));
+		system_hash = fs.existsSync(hash_file) ? fs.readFileSync(hash_file, "utf8") : "";
+	}
+
+	const cache_key = compute_cache_key(code + system_hash + (built.companion ?? ""), {
+		...options,
+		arch,
+	});
 
 	let stdout: string;
 	let stderr: string;
 
-	const audit_obj = options.audit ? await ensure_audit_obj() : null;
-	// Only link Apple frameworks when the generated code actually uses the ObjC
-	// runtime (GUI builds). The previous unconditional flags added ~0.23s of
-	// pure link overhead to every macOS test — a 5-10x tax that ~99% of tests
-	// never need.
+	// The system object references the audit wrappers (nomen_malloc_wrap), so
+	// whenever we link it we must also link audit_runtime.o — regardless of the
+	// individual test's audit flag.
+	const audit_obj = system_lib || audit ? await ensure_audit_obj() : null;
 	const uses_objc =
 		OBJC_RE.test(code) ||
 		OBJC_RE.test(built.headers || "") ||
@@ -99,28 +128,7 @@ export default async function check_output(
 		process.platform === "darwin" && uses_objc
 			? " -framework CoreGraphics -framework Foundation -framework AppKit -lobjc"
 			: "";
-	let compileCmd: string;
-	if (arch === "aarch64") {
-		const main_obj = path.join(folder, "main.o");
-		const comp_obj = path.join(folder, "main_companion.o");
-		let steps: string[] = [];
-		steps.push(`clang -c -x assembler ${codefile} -o ${main_obj}`);
-		let link_inputs = main_obj;
-		if (has_companion) {
-			steps.push(`clang -c ${companionfile} -o ${comp_obj}`);
-			link_inputs += ` ${comp_obj}`;
-		}
-		if (options.audit && audit_obj) {
-			link_inputs += ` ${audit_obj}`;
-		}
-		steps.push(`clang ${link_inputs} -o ${outfile}${framework_flags}`);
-		compileCmd = steps.join(" && ");
-	} else {
-		let link_inputs = codefile;
-		if (has_companion) link_inputs += ` ${companionfile}`;
-		if (options.audit && audit_obj) link_inputs += ` ${audit_obj}`;
-		compileCmd = `clang -o ${outfile} ${link_inputs}${framework_flags}`;
-	}
+	const system_obj = system_lib ? (arch === "aarch64" ? SYSTEM_OBJ_A64 : SYSTEM_OBJ) : null;
 
 	const cached_key = fs.existsSync(cachefile) ? fs.readFileSync(cachefile, "utf-8") : null;
 
@@ -129,6 +137,28 @@ export default async function check_output(
 		stderr = "";
 	} else {
 		fs.writeFileSync(codefile, code);
+		let compileCmd: string;
+		if (arch === "aarch64") {
+			const main_obj = path.join(folder, "main.o");
+			const comp_obj = path.join(folder, "main_companion.o");
+			const steps: string[] = [];
+			steps.push(`clang -c -x assembler ${codefile} -o ${main_obj}`);
+			let link_inputs = main_obj;
+			if (has_companion) {
+				steps.push(`clang -c ${companionfile} -o ${comp_obj}`);
+				link_inputs += ` ${comp_obj}`;
+			}
+			if (system_obj) link_inputs += ` ${system_obj}`;
+			if (audit_obj) link_inputs += ` ${audit_obj}`;
+			steps.push(`clang ${link_inputs} -o ${outfile}${framework_flags}`);
+			compileCmd = steps.join(" && ");
+		} else {
+			let link_inputs = codefile;
+			if (has_companion) link_inputs += ` ${companionfile}`;
+			if (system_obj) link_inputs += ` ${system_obj}`;
+			if (audit_obj) link_inputs += ` ${audit_obj}`;
+			compileCmd = `clang -o ${outfile} ${link_inputs}${framework_flags}`;
+		}
 		const compile_result = await execPromise(compileCmd, { maxBuffer: 10 * 1024 * 1024 });
 		let run_cmd = `"${outfile}"`;
 		if (options.provideStdin !== undefined) {
@@ -146,7 +176,7 @@ export default async function check_output(
 	if (stderr && stderr.includes("error:")) {
 		expect(stderr).toBeFalsy();
 	}
-	if (options.audit && stdout && stdout.includes("LEAK:")) {
+	if (audit && stdout && stdout.includes("LEAK:")) {
 		expect(stdout).not.toContain("LEAK:");
 	}
 	expect(stdout.substring(0, expected_output.length)).toBe(expected_output);
@@ -174,25 +204,4 @@ function compute_cache_key(
 		hash.update(part);
 	}
 	return hash.digest("hex").substring(0, 16);
-}
-
-function postprocess_macos(code: string, audit = false, arch: string = "c"): string {
-	if (arch === "aarch64") {
-		code = code.replace(/\bbl printf\b/g, "bl _printf");
-		code = code.replace(/\bbl snprintf\b/g, "bl _snprintf");
-		code = code.replace(/\bbl malloc\b/g, "bl _malloc");
-		code = code.replace(/\bbl exit\b/g, "bl _exit");
-		code = code.replace(/\bbl realloc\b/g, "bl _realloc");
-		code = code.replace(/\bbl free\b/g, "bl _free");
-		code = code.replace(/\bbl strdup\b/g, "bl _strdup");
-		if (audit) {
-			code = code.replace(/\bbl _malloc\b/g, "bl _nomen_malloc_wrap");
-			code = code.replace(/\bbl _calloc\b/g, "bl _nomen_calloc_wrap");
-			code = code.replace(/\bbl _realloc\b/g, "bl _nomen_realloc_wrap");
-			code = code.replace(/\bbl _free\b/g, "bl _nomen_free_wrap");
-			code = code.replace(/\bbl _strdup\b/g, "bl _nomen_strdup_wrap");
-		}
-		code = code.replace(/\bmain:\n/g, ".globl _main\n_main:\n");
-	}
-	return code;
 }
