@@ -21,7 +21,7 @@ import {
 } from "./utils/function_overload.ts";
 import is_sendable_type from "./utils/is_sendable_type.ts";
 import is_visible from "./utils/is_visible.ts";
-import { is_class_type } from "./utils/ownership.ts";
+import { is_class_type, is_owning_ref_type } from "./utils/ownership.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
 
@@ -449,6 +449,30 @@ function check_access_function_node(
 	if (!func) {
 		add_error(status, `Function not found: ${target_type.name}.${node.name}`, node.start);
 		return false;
+	}
+
+	// `List<T>.copy()` deep-copies by copying each element by value (owning
+	// element types get independent heap copies via Buffer's deep-copy-on-
+	// store). For a class/trait element type the copy would silently share
+	// every stored instance between the source and the copy — each list's
+	// #destroy frees the stored instances, a runtime double-free. That is
+	// exactly the shared-ownership pattern `dst.push(src.at(i))` rejects;
+	// Nomen has no auto-clone (single ownership), so reject the call too.
+	if (node.name === "copy" && node.params.length === 0) {
+		const elem_name =
+			(target_type.name === "List" ? target_type.type_args?.[0]?.name : undefined) ??
+			(struct?.name.startsWith("List_") ? struct.source_type_args?.[0]?.name : undefined);
+		if (elem_name && is_owning_ref_type(elem_name, status)) {
+			add_error(
+				status,
+				`List<${elem_name}>.copy() would share the stored ${elem_name} instances between ` +
+					`the source and the copy — each list frees them on destroy (a double free). ` +
+					`Nomen has no auto-clone: keep one owning list and index into it, ` +
+					`or clone the elements into fresh instances.`,
+				node.start,
+			);
+			return false;
+		}
 	}
 
 	if (struct && is_overloaded(struct, node.name)) {

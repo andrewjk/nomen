@@ -351,6 +351,7 @@ export function monomorphize(
 		// and lowers them as scalars (wrong arg passing / storing). Sufficient
 		// for List<T>, whose only struct-typed value is the element param.
 		retype_param_references(cloned.statements, cloned.params);
+		retype_local_references(cloned.statements);
 		resolve_mono_equality_ops(cloned.statements, status);
 		// Re-derive check-phase annotations on AccessFunctionCallNodes.
 		// The mono body is cloned from the unchecked generic body and never
@@ -609,6 +610,54 @@ function retype_param_references(nodes: BaseNode[], params: ParameterNode[]) {
 		const t = map.get(name);
 		return t ? new Type(t.name, t.is_static, t.is_array, t.length) : undefined;
 	});
+}
+
+/**
+ * Retype ValueNodes that reference a LOCAL DECLARATION to that declaration's
+ * (already-substituted) type. Mirrors retype_param_references: a
+ * monomorphised method body is not re-checked, so a bare local reference
+ * (e.g. `v` in `dst.push(v)` or `return dst` inside List<T>.copy) carries no
+ * type; both backends read ValueNode.type to decide struct-vs-scalar argument
+ * passing and return-ownership transfer, so an untyped local reference
+ * mis-lowers (a struct arg passed by value instead of by address, a returned
+ * owning struct destroyed after its sret copy). Only names declared as locals
+ * in the body are retyped — globals and field names are untouched.
+ */
+function retype_local_references(nodes: BaseNode[]) {
+	const map = new Map<string, Type>();
+	for (const node of nodes) collect_local_decl_types(node, map);
+	if (!map.size) return;
+	retype_value_nodes(nodes, (name) => {
+		const t = map.get(name);
+		if (!t) return undefined;
+		const copy = new Type(t.name, t.is_static, t.is_array, t.length);
+		if (t.type_args) copy.type_args = t.type_args.map((a) => new Type(a.name));
+		return copy;
+	});
+}
+
+function collect_local_decl_types(node: BaseNode | undefined | null, map: Map<string, Type>) {
+	if (!node) return;
+	const any_node = node as any;
+	if (node.node_type === "declare" && any_node.name && any_node.type?.name) {
+		map.set(any_node.name, any_node.type);
+	}
+	if (any_node.statements && Array.isArray(any_node.statements)) {
+		for (const child of any_node.statements) {
+			if (child && typeof child === "object" && "node_type" in child) {
+				collect_local_decl_types(child, map);
+			}
+		}
+	}
+	if (any_node.value?.node_type) collect_local_decl_types(any_node.value, map);
+	if (any_node.left_value?.node_type) collect_local_decl_types(any_node.left_value, map);
+	if (any_node.right_value?.node_type) collect_local_decl_types(any_node.right_value, map);
+	if (any_node.target?.node_type) collect_local_decl_types(any_node.target, map);
+	if (any_node.access?.node_type) collect_local_decl_types(any_node.access, map);
+	if (any_node.condition?.node_type) collect_local_decl_types(any_node.condition, map);
+	if (any_node.if_branch?.node_type) collect_local_decl_types(any_node.if_branch, map);
+	if (any_node.else_branch?.node_type) collect_local_decl_types(any_node.else_branch, map);
+	if (any_node.constraint?.node_type) collect_local_decl_types(any_node.constraint, map);
 }
 
 function retype_value_nodes(nodes: BaseNode[], resolver: (name: string) => Type | undefined) {
@@ -870,6 +919,17 @@ function derive_annotations_for_access_func(
 	if (!struct) return;
 	const func = struct.functions.find((f) => f.name === fc.name);
 	if (!func) return;
+
+	// Derive the call's RESULT type when the generic-body check left it unset
+	// (a type-parameter return like `out T` may never have been recorded).
+	// The mono method's return type is already substituted, so this recovers
+	// e.g. `Person` for `self.at(i)` inside List_Person.copy — the build's
+	// declaration/call paths read it to decide sret setup for struct results.
+	if (!fc.type?.name && func.return_type?.name) {
+		const rt = new Type(func.return_type.name, func.return_type.is_static);
+		rt.is_array = func.return_type.is_array;
+		fc.type = rt;
+	}
 
 	if (func.returns_mov) {
 		fc.owned_return = true;

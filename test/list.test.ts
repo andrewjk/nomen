@@ -1,6 +1,7 @@
-import { describe, test } from "vite-plus/test";
+import { describe, expect, test } from "vite-plus/test";
 
 import build_and_check_output from "./build_and_check_output";
+import parse_with_imports from "./parse_with_imports";
 
 describe("List push", () => {
 	test("push and read back via pop", async () => {
@@ -531,5 +532,139 @@ var List<int> r = make_nums()
 Console.write("\\{r.length}")
 `;
 		await build_and_check_output(input, "list_int_return_only", "2");
+	});
+});
+
+describe("List copy", () => {
+	// MEMORY.md names `.copy()` as the deep-copy escape hatch when an owning
+	// struct (e.g. a `List<T>` field) must be extracted by value. The method
+	// rebuilds the list element-by-element into a fresh `List<T>`: owning
+	// element types (strings, owning value structs) get independent heap
+	// copies (Buffer deep-copies on store). Class/trait element types are
+	// rejected at check time — the copy would share the stored instances
+	// (each list frees them on destroy — a double free); Nomen has no
+	// auto-clone.
+
+	test("int list copy is independent", async () => {
+		const input = `
+var List<int> a = List<int>()
+a.push(1)
+a.push(2)
+var List<int> b = a.copy()
+a.push(3)
+b.push(4)
+Console.write("\\{a.length}")
+Console.write("\\{b.length}")
+for i of 0 .. a.length {
+  Console.write("\\{a.at(i)}")
+}
+for i of 0 .. b.length {
+  Console.write("\\{b.at(i)}")
+}
+`;
+		await build_and_check_output(input, "list_copy_int", "33123124");
+	});
+
+	test("string list copy deep-copies elements", async () => {
+		const input = `
+var List<string> a = List<string>()
+a.push("hello")
+a.push("world")
+var List<string> b = a.copy()
+if a.length > 0 {
+  a.set(0, "changed")
+}
+for i of 0 .. b.length {
+  Console.write("\\{b.at(i)} ")
+}
+for i of 0 .. a.length {
+  Console.write("\\{a.at(i)} ")
+}
+`;
+		await build_and_check_output(input, "list_copy_string", "hello world changed world ");
+	});
+
+	test("owning value struct list copy deep-copies elements", async () => {
+		const input = `
+struct Person {
+  var string name
+  var int age
+}
+var List<Person> a = List<Person>()
+a.push(Person("Alice", 30))
+a.push(Person("Bob", 25))
+var List<Person> b = a.copy()
+if a.length > 1 {
+  a.set(1, Person("Carol", 40))
+}
+for i of 0 .. b.length {
+  var Person p = b.at(i)
+  Console.write("\\{p.name} ")
+}
+for i of 0 .. a.length {
+  var Person p = a.at(i)
+  Console.write("\\{p.name} ")
+}
+`;
+		await build_and_check_output(input, "list_copy_owning_struct", "Alice Bob Alice Carol ");
+	});
+
+	test("copy of a List field (the mov-field escape hatch)", async () => {
+		// The ROADBLOCKS "Copying a `mov List` field out by value" scenario:
+		// extracting an owning List<T> field by value. `mov ... swap` takes
+		// ownership; `.copy()` takes a deep copy and leaves the field intact.
+		const input = `
+struct Group {
+  var List<int> items = List<int>()
+}
+var Group g = Group()
+g.items.push(1)
+g.items.push(2)
+g.items.push(3)
+var List<int> run = g.items.copy()
+g.items.push(4)
+var int total = 0
+for i of 0 .. run.length {
+  total = total + run.at(i)
+}
+Console.write("\\{run.length} \\{g.items.length} \\{total}")
+`;
+		await build_and_check_output(input, "list_copy_field", "3 4 6");
+	});
+
+	test("copy of an empty list", async () => {
+		const input = `
+var List<int> a = List<int>()
+var List<int> b = a.copy()
+a.push(1)
+Console.write("\\{a.length} \\{b.length}")
+`;
+		await build_and_check_output(input, "list_copy_empty", "1 0");
+	});
+
+	test("List<class>.copy is rejected (would share instances)", () => {
+		const input = `
+class Animal { var char letter }
+var List<Animal> l = List<Animal>()
+l.push(mov Animal('X'))
+var List<Animal> c = l.copy()
+`;
+		const parsed = parse_with_imports(input);
+		const err = parsed.errors.find((e) => e.message.includes("List<Animal>.copy()"));
+		expect(err).toBeDefined();
+		expect(err!.message).toContain("double free");
+	});
+
+	test("List<trait>.copy is rejected", () => {
+		const input = `
+trait Speaker { func speak = (self, out string) }
+class Dog : Speaker { func speak = (self, out string) { return "woof" } }
+var List<Speaker> l = List<Speaker>()
+l.push(mov Dog())
+var List<Speaker> c = l.copy()
+`;
+		const parsed = parse_with_imports(input);
+		const err = parsed.errors.find((e) => e.message.includes("List<Speaker>.copy()"));
+		expect(err).toBeDefined();
 	});
 });

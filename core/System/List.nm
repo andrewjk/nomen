@@ -40,4 +40,23 @@ pub struct List<T>: Viewable {
 	pub func set = (ref self, int i: i >= 0 && i < self.length, mov T value) {
 		self.items.replace_T(i, value)
 	}
+
+	// A deep copy: a fresh List<T> with an independent copy of every element.
+	// For owning element types (strings, owning value structs) each slot in the
+	// copy owns its own heap data (Buffer deep-copies on store), so the source
+	// and the copy share nothing. Not available for class/trait element types
+	// (the copy would share the stored instances — the checker rejects it).
+	// The element is bound to a local before push — the monomorphized body is
+	// never re-checked, so it can't rely on check-time call-arg hoisting for
+	// struct element types.
+	pub func copy = (self, out List<T>) {
+		var List<T> dst = List<T>()
+		var int i = 0
+		while i < self.length {
+			var T v = self.at(i)
+			dst.push(v)
+			i += 1
+		}
+		return dst
+	}
 }

@@ -895,7 +895,16 @@ export function consolidate_temp_anchors(
 export function mark_moved_if_struct(value: any, status: BuildStatus) {
 	if (value?.node_type !== "value") return;
 	const var_name = value.value;
-	const var_type = value.type;
+	let var_type = value.type;
+	// A monomorphized method body is never re-checked, so a bare variable's
+	// ValueNode.type can be unset (e.g. `return dst` inside List<T>.copy).
+	// Resolve the type from the declaration so the moved-marking below still
+	// fires — otherwise the return-path scope-exit cleanup destroys the
+	// returned owning struct after its bytes were copied into the sret
+	// buffer, leaving the caller with freed backing storage.
+	if (!var_type?.name) {
+		var_type = status.scoped_declarations?.find((d) => d.name === var_name)?.type;
+	}
 	if (!var_type) return;
 	const is_local = status.scoped_declarations.some((d) => d.name === var_name);
 	const has_anchor = find_anchor_slot(status, var_name) !== undefined;
