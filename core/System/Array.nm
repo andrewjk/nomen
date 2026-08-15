@@ -38,13 +38,12 @@ pub struct Array<T>: Viewable {
 		```
 		```
 		#arch: aarch64
-		// x19 = self (first elem), x1 = index
+		// x19 = self (first elem), x1 = index, x8 = return buf for structs
 		mov x2, #T_SIZE
 		mul x1, x1, x2
-		// Width-matched load (zero-extends): an 8-byte ldr on a sub-8
-		// element would read past the array's end and leave garbage above.
 		cmp x2, #8
 		b.eq .L_at_8
+		b.gt .L_at_copy
 		cmp x2, #1
 		b.eq .L_at_1
 		cmp x2, #2
@@ -59,6 +58,14 @@ pub struct Array<T>: Viewable {
 		b .L_at_end
 		.L_at_2:
 		ldrh w0, [x19, x1]
+		b .L_at_end
+		// Struct element (T_SIZE > 8): copy the slot bytes into the x8
+		// sret buffer and return its address (Buffer.load_T convention).
+		.L_at_copy:
+		mov x0, x8
+		add x1, x19, x1
+		bl _memcpy
+		mov x0, x8
 		.L_at_end:
 		```
 	}
@@ -71,10 +78,11 @@ pub struct Array<T>: Viewable {
 		```
 		```
 		#arch: aarch64
-		// x19 = self (first elem)
+		// x19 = self (first elem), x8 = return buf for structs
 		mov x3, #T_SIZE
 		cmp x3, #8
 		b.eq .L_first_8
+		b.gt .L_first_copy
 		cmp x3, #1
 		b.eq .L_first_1
 		cmp x3, #2
@@ -89,6 +97,15 @@ pub struct Array<T>: Viewable {
 		b .L_first_end
 		.L_first_2:
 		ldrh w0, [x19]
+		b .L_first_end
+		// Struct element (T_SIZE > 8): copy the first slot's bytes into
+		// the x8 sret buffer and return its address.
+		.L_first_copy:
+		mov x0, x8
+		mov x1, x19
+		mov x2, x3
+		bl _memcpy
+		mov x0, x8
 		.L_first_end:
 		```
 	}
@@ -110,13 +127,12 @@ pub struct Array<T>: Viewable {
 		```
 		```
 		#arch: aarch64
-		// x19 = self (first elem), x1 = index, x2 = value
+		// x19 = self (first elem), x1 = index, x2 = value (address if struct)
 		mov x3, #T_SIZE
 		mul x1, x1, x3
-		// Width-matched store: an 8-byte str on a sub-8 element would
-		// clobber adjacent slots (and run past the array's end).
 		cmp x3, #8
 		b.eq .L_set_8
+		b.gt .L_set_copy
 		cmp x3, #1
 		b.eq .L_set_1
 		cmp x3, #2
@@ -131,6 +147,15 @@ pub struct Array<T>: Viewable {
 		b .L_set_done
 		.L_set_2:
 		strh w2, [x19, x1]
+		b .L_set_done
+		// Struct element (T_SIZE > 8): x2 holds the ADDRESS of the value
+		// bytes — memcpy them into the slot (Buffer.store_T convention).
+		.L_set_copy:
+		mov x0, x19
+		add x0, x0, x1
+		mov x1, x2
+		mov x2, x3
+		bl _memcpy
 		.L_set_done:
 		```
 	}
@@ -143,13 +168,14 @@ pub struct Array<T>: Viewable {
 		```
 		```
 		#arch: aarch64
-		// x19 = self (first elem), length at [x19 - 8]
+		// x19 = self (first elem), length at [x19 - 8], x8 = return buf for structs
 		ldr x0, [x19, #-8]
 		sub x0, x0, #1
 		mov x1, #T_SIZE
 		mul x0, x0, x1
 		cmp x1, #8
 		b.eq .L_at_end_8
+		b.gt .L_at_end_copy
 		cmp x1, #1
 		b.eq .L_at_end_1
 		cmp x1, #2
@@ -164,6 +190,15 @@ pub struct Array<T>: Viewable {
 		b .L_at_end_done
 		.L_at_end_2:
 		ldrh w0, [x19, x0]
+		b .L_at_end_done
+		// Struct element (T_SIZE > 8): x0 = byte offset of the last slot —
+		// copy its bytes into the x8 sret buffer and return its address.
+		.L_at_end_copy:
+		mov x2, x1
+		add x1, x19, x0
+		mov x0, x8
+		bl _memcpy
+		mov x0, x8
 		.L_at_end_done:
 		```
 	}

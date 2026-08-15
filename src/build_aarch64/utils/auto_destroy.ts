@@ -660,6 +660,11 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 				status.code += `sub x20, x20, #1\n`;
 				status.code += `cbnz x20, ${label}\n`;
 				status.code += `.Lskip_cls_${decl.name}:\n`;
+				// The elements are freed above; free the malloc'd buffer
+				// itself too (x19 may have advanced past the data area, so
+				// reload the pointer from the variable).
+				emit_var_load(status, "x0", decl.name, 8);
+				emit_free(status);
 				status.code += `ldr x20, [sp], #16\n`;
 				status.code += `ldr x19, [sp], #16\n`;
 				continue;
@@ -721,6 +726,9 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 			status.code += `sub x20, x20, #1\n`;
 			status.code += `cbnz x20, ${label}\n`;
 			status.code += `.Lskip_cls_${decl.name}:\n`;
+			// Free the malloc'd buffer itself (see the heap_slots branch).
+			emit_var_load(status, "x0", decl.name, 8);
+			emit_free(status);
 			status.code += `ldr x20, [sp], #16\n`;
 			status.code += `ldr x19, [sp], #16\n`;
 			continue;

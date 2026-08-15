@@ -577,7 +577,16 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 					}
 				}
 			} else {
-				const struct_type = status.structs.find((s) => s.name === node.type.name && s.is_class);
+				// An ARRAY-typed decl (`var Box[] result = make_arr()`) has
+				// `node.type.name` = the ELEMENT name — for a class element
+				// that would misfire the class-instance anchor below and
+				// anchor the ARRAY BUFFER pointer as if it were a Box. The
+				// buffer's owner is the array cleanup machinery
+				// (heap_class_arrays / heap_array_vars on the decl), so
+				// arrays never take the class anchor path.
+				const struct_type =
+					!node.type.is_array &&
+					status.structs.find((s) => s.name === node.type.name && s.is_class);
 				if (struct_type) {
 					emit_var_load(status, "x0", node.name, 8);
 					anchor_heap_pointer(status, node.name);
@@ -969,7 +978,15 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 						build_node(value as BaseNode, status);
 						if (!status.code.endsWith("\n")) status.code += "\n";
 						status.code += `ldr x9, [x29, #${offset}]\n`;
-						if (element_size === 1) {
+						if (element_size > 8) {
+							// Struct element: x0 holds the ADDRESS of the
+							// value bytes (struct values travel by reference
+							// on this backend) — memcpy them into the slot.
+							status.code += `mov x1, x0\n`;
+							status.code += `add x0, x9, #${slot}\n`;
+							status.code += `mov x2, #${element_size}\n`;
+							status.code += `bl _memcpy\n`;
+						} else if (element_size === 1) {
 							status.code += `strb w0, [x9, #${slot}]\n`;
 						} else if (element_size === 4) {
 							status.code += `str w0, [x9, #${slot}]\n`;
@@ -1012,7 +1029,13 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 						build_node(value as BaseNode, status);
 						if (!status.code.endsWith("\n")) status.code += "\n";
 						status.code += `ldr x9, [${node.name}]\n`;
-						if (element_size === 1) {
+						if (element_size > 8) {
+							// Struct element: x0 = address of the value bytes.
+							status.code += `mov x1, x0\n`;
+							status.code += `add x0, x9, #${slot}\n`;
+							status.code += `mov x2, #${element_size}\n`;
+							status.code += `bl _memcpy\n`;
+						} else if (element_size === 1) {
 							status.code += `strb w0, [x9, #${slot}]\n`;
 						} else if (element_size === 4) {
 							status.code += `str w0, [x9, #${slot}]\n`;
@@ -1061,15 +1084,24 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 					// area (length prefix at [src-8]), so elements are at
 					// [&src + i*size].
 					emit_var_address(status, "x0", src_name);
-					if (element_size === 1) {
-						status.code += `ldrb w0, [x0, #${i * element_size}]\n`;
-					} else if (element_size === 4) {
-						status.code += `ldr w0, [x0, #${i * element_size}]\n`;
-					} else {
-						status.code += `ldr x0, [x0, #${i * element_size}]\n`;
-					}
 					status.code += `ldr x9, [x29, #${offset}]\n`;
-					status.code += `str x0, [x9, #${slot}]\n`;
+					if (element_size > 8) {
+						// Struct element: copy the full slot bytes (an 8-byte
+						// ldr/str pair would truncate the struct).
+						status.code += `add x1, x0, #${i * element_size}\n`;
+						status.code += `add x0, x9, #${slot}\n`;
+						status.code += `mov x2, #${element_size}\n`;
+						status.code += `bl _memcpy\n`;
+					} else {
+						if (element_size === 1) {
+							status.code += `ldrb w0, [x0, #${i * element_size}]\n`;
+						} else if (element_size === 4) {
+							status.code += `ldr w0, [x0, #${i * element_size}]\n`;
+						} else {
+							status.code += `ldr x0, [x0, #${i * element_size}]\n`;
+						}
+						status.code += `str x0, [x9, #${slot}]\n`;
+					}
 				}
 			} else {
 				emit_data(status, `${node.name}: .space 8\n.p2align 2\n`);
@@ -1086,15 +1118,22 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 				for (let i = 0; i < count; i++) {
 					const slot = 8 + i * element_size;
 					emit_var_address(status, "x0", src_name);
-					if (element_size === 1) {
-						status.code += `ldrb w0, [x0, #${i * element_size}]\n`;
-					} else if (element_size === 4) {
-						status.code += `ldr w0, [x0, #${i * element_size}]\n`;
-					} else {
-						status.code += `ldr x0, [x0, #${i * element_size}]\n`;
-					}
 					status.code += `ldr x9, [${node.name}]\n`;
-					status.code += `str x0, [x9, #${slot}]\n`;
+					if (element_size > 8) {
+						status.code += `add x1, x0, #${i * element_size}\n`;
+						status.code += `add x0, x9, #${slot}\n`;
+						status.code += `mov x2, #${element_size}\n`;
+						status.code += `bl _memcpy\n`;
+					} else {
+						if (element_size === 1) {
+							status.code += `ldrb w0, [x0, #${i * element_size}]\n`;
+						} else if (element_size === 4) {
+							status.code += `ldr w0, [x0, #${i * element_size}]\n`;
+						} else {
+							status.code += `ldr x0, [x0, #${i * element_size}]\n`;
+						}
+						status.code += `str x0, [x9, #${slot}]\n`;
+					}
 				}
 			}
 			return;

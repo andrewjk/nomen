@@ -2,6 +2,7 @@ import { expect, describe, test } from "vite-plus/test";
 
 import parse from "../src/parse";
 import build_and_check_output from "./build_and_check_output";
+import parse_with_imports from "./parse_with_imports";
 import test_error from "./test_error";
 
 // BUILD
@@ -586,6 +587,106 @@ Console.write("\\{n}")
 `;
 		await build_and_check_output(input, "array_literal_wrap_stack_var_order", "12");
 	});
+
+	// Value-struct elements (FOLLOWUP / ROADBLOCKS "Array<T> materialization"):
+	// a plain multi-field struct element used to be excluded from the
+	// `T[]`→`Array<T>` materialisation (kept the old compile-mismatch
+	// behaviour). The copy path now memcpy's full element_size slots, the
+	// heap-literal materialisation stores struct values by address, and
+	// Array_<T>.at/set/first handle T_SIZE > 8 elements on aarch64 — so
+	// stack-var args and literal args both round-trip.
+	test("stack-array of value structs to Array<Pt> param materializes", async () => {
+		const input = `
+struct Pt {
+  var int x
+  var int y
+}
+var Array<Pt> filler = Array<Pt>.with(Pt(0, 0), 1)
+func sum_y = (Array<Pt> xs, out int) {
+  var total = 0
+  for p of xs {
+    total = total + p.y
+  }
+  return total
+}
+var Pt[] v = [Pt(1, 2), Pt(3, 4)]
+const n = sum_y(v)
+Console.write("\\{n} \\{v.at(1).y}")
+`;
+		await build_and_check_output(input, "array_literal_wrap_struct_stack_var", "6 4");
+	});
+
+	test("value-struct array literal to Array<Pt> param materializes", async () => {
+		const input = `
+struct Pt {
+  var int x
+  var int y
+}
+var Array<Pt> filler = Array<Pt>.with(Pt(0, 0), 1)
+func sum_y = (Array<Pt> xs, out int) {
+  var total = 0
+  for p of xs {
+    total = total + p.y
+  }
+  return total
+}
+const n = sum_y([Pt(1, 2), Pt(3, 4)])
+Console.write("\\{n}")
+`;
+		await build_and_check_output(input, "array_literal_wrap_struct_literal", "6");
+	});
+
+	test("heap Array<Pt> declared with literal supports at/set/first", async () => {
+		const input = `
+struct Pt {
+  var int x
+  var int y
+}
+var Array<Pt> v = [Pt(1, 2), Pt(3, 4)]
+v.set(0, Pt(9, 9))
+var Pt f = v.first()
+Console.write("\\{v.at(0).x}\\{f.y} \\{v.at(1).y}")
+`;
+		await build_and_check_output(input, "array_heap_struct_decl", "99 4");
+	});
+
+	// Class-element arrays: a heap copy of a stack-array VARIABLE would share
+	// the instances with the caller's array (double free) — rejected at check
+	// time (see the errors block). Literals construct FRESH instances owned
+	// by the heap buffer, and the scope-exit cleanup frees each element and
+	// then the buffer itself (the buffer free used to leak on aarch64).
+	test("class array literal to Array<Box> param materializes without leak", async () => {
+		const input = `
+class Box {
+	var int value
+}
+func sum_vals = (Array<Box> xs, out int) {
+  var total = 0
+  for b of xs {
+    total = total + b.value
+  }
+  return total
+}
+const n = sum_vals([Box(7), Box(8)])
+Console.write("\\{n}")
+`;
+		await build_and_check_output(input, "array_literal_wrap_class_literal", "15");
+	});
+
+	test("heap Array<Box> declared with literal freed without leak", async () => {
+		const input = `
+class Box {
+	var int value
+}
+var Array<Box> v = [Box(7), Box(8)]
+var total = 0
+for b of v {
+  total = total + b.value
+}
+Console.write("\\{total}")
+`;
+		await build_and_check_output(input, "array_heap_class_decl", "15");
+	});
 });
 
 // ERRORS
@@ -658,5 +759,89 @@ x = 5
 		);
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
+	});
+
+	// The three unsound `T[]`→`Array<T>` materialisation shapes are rejected
+	// at check time (FOLLOWUP "Array<T> materialization" — resolved). They
+	// previously fell through to the raw element-pointer codegen, which
+	// silently read/wrote the wrong memory.
+	test("stack array to ref Array param is rejected", () => {
+		const input = `
+func fill = (ref Array<int> xs) {
+  if xs.length > 0 {
+    xs.set(0, 9)
+  }
+}
+var int[] v = [2, 4, 6]
+fill(ref v)
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors.map((e) => e.message)).toContain(
+			"Cannot pass a stack array to 'ref Array<int>' parameter 'xs' — it would be materialised into a heap copy whose mutation cannot propagate back. Use a 'ref int[]' parameter, or pass a heap 'Array<int>' variable",
+		);
+	});
+
+	test("class-element stack array to Array param is rejected", () => {
+		const input = `
+class Box {
+	var int value
+}
+func sum_vals = (Array<Box> xs, out int) {
+  var total = 0
+  for b of xs {
+    total = total + b.value
+  }
+  return total
+}
+var Box[] v = [Box(7), Box(8)]
+const n = sum_vals(v)
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors.map((e) => e.message)).toContain(
+			"Cannot pass a stack array of class 'Box' instances to 'Array<Box>' parameter 'xs' — the materialised heap copy would share the instances with the caller's array (double free). Build the heap array from fresh instances: pass an array literal, or use 'var Array<Box>'",
+		);
+	});
+
+	test("owning value-struct stack array to Array param is rejected", () => {
+		const input = `
+struct Person {
+  var string name
+  var int age
+}
+func names = (Array<Person> xs, out string) {
+  var out = ""
+  for p of xs {
+    out = out + p.name
+  }
+  return out
+}
+var Person[] v = [Person("Alice", 30)]
+const s = names(v)
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors.map((e) => e.message)).toContain(
+			"Cannot pass an array of owning value struct 'Person' (string fields) to 'Array<Person>' parameter 'xs' — the materialised heap copy would share the element strings. Use 'List<Person>' instead: its Buffer deep-copies owning elements soundly",
+		);
+	});
+
+	test("owning value-struct literal to Array param is rejected", () => {
+		const input = `
+struct Person {
+  var string name
+  var int age
+}
+func names = (Array<Person> xs, out string) {
+  var out = ""
+  for p of xs {
+    out = out + p.name
+  }
+  return out
+}
+const s = names([Person("Alice", 30)])
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors.map((e) => e.message)).toContain(
+			"Cannot pass an array of owning value struct 'Person' (string fields) to 'Array<Person>' parameter 'xs' — the materialised heap copy would share the element strings. Use 'List<Person>' instead: its Buffer deep-copies owning elements soundly",
+		);
 	});
 });

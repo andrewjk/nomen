@@ -843,9 +843,14 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		status.ref_class_slots = new Map();
 		status.struct_return_buffer = undefined;
 
-		const return_struct = status.structs.find(
-			(s) => s.name === func.return_type?.name && !s.is_simple_type && !s.is_class,
-		);
+		// An ARRAY-typed return (`out Array<T>`) is a heap buffer POINTER in
+		// x0 — never sret, even when the element type is a struct (the
+		// element name would otherwise match below).
+		const return_struct =
+			!func.return_type?.is_array &&
+			!!status.structs.find(
+				(s) => s.name === func.return_type?.name && !s.is_simple_type && !s.is_class,
+			);
 		let return_buffer_stack_offset: number | undefined;
 		// Record the function name so build_return_node can register the
 		// function in heap_returning_functions and look up its return type

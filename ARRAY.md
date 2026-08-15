@@ -146,15 +146,26 @@ buffer when bound to an `Array<T>` param:
 1. **Array/range literals** (`sum(Array(2,4,6))`, `sum(1 .. 3)`): the hoisted
    temp is marked `is_heap_array_literal` and built as a heap `Array_<T>`
    buffer (elements from the literal / expanded range). String elements are
-   strdup'd on C; `.asciz` addresses stored on aarch64.
+   strdup'd on C; `.asciz` addresses stored on aarch64. Value-struct elements
+   are stored by address (full `element_size` copy) on both backends.
 2. **Stack-array variables** (`sum(v)` where `v = [2, 4, 6]`): the arg is
    copied into a heap `Array_<T>` temp (`is_heap_array_copy`) — auto-freed, the
-   caller's stack array left intact. String elements strdup'd on C; `.asciz`
-   pointers copied as-is on aarch64.
-3. Excluded from the variable copy (they keep the previous compile-mismatch
-   behaviour): `ref Array<T>` params (mutation must propagate to the caller's
-   variable, which a copy can't do), class-element arrays, value-struct
-   elements.
+   caller's stack array left intact. String elements strdup'd on C; struct
+   elements memcpy'd per full element size; plain-class-element args are
+   rejected (see below).
+3. **Rejected at check time** (previously "excluded, keeping the old
+   compile-mismatch behaviour" — i.e. silently falling through to the raw
+   element-pointer codegen, which read/wrote the wrong memory):
+   - `ref Array<T>` params taking a stack array / literal — a heap copy can't
+     propagate the callee's `.set` mutations back to the caller's variable.
+     Use a `ref T[]` param or pass a heap `Array<T>` variable.
+   - class-element stack-array VARIABLES — the copy would share the instances
+     with the caller's array (double free). Literals of fresh constructor
+     calls are fine (the buffer owns the fresh instances).
+   - owning value-struct elements (string fields) — the copy is shallow, so it
+     would share the element strings. `List<T>` deep-copies owning elements
+     soundly (its Buffer specialises store/destroy); use it for owning
+     structs.
 
 Both marked temps carry `is_array_heap` on their type, so the build recognises
 them deterministically.

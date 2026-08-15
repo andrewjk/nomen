@@ -155,9 +155,13 @@ export default function build_inline_method(
 		}
 	}
 
-	const return_struct = status.structs.find(
-		(s) => s.name === func.return_type?.name && !s.is_simple_type && !s.is_class,
-	);
+	// An ARRAY-typed return (`out Array<T>`) is a heap buffer POINTER in x0 —
+	// never sret, even when the element type is a struct.
+	const return_struct =
+		!func.return_type?.is_array &&
+		!!status.structs.find(
+			(s) => s.name === func.return_type?.name && !s.is_simple_type && !s.is_class,
+		);
 	if (return_struct) {
 		status.function_return_type = func.return_type;
 		status.struct_return_buffer = "x8";
@@ -271,9 +275,12 @@ export function build_inline_function(func: FunctionNode, status: BuildStatus) {
 		}
 	}
 
-	const return_struct = status.structs.find(
-		(s) => s.name === func.return_type?.name && !s.is_simple_type && !s.is_class,
-	);
+	// An ARRAY-typed return is a heap buffer POINTER in x0 — never sret.
+	const return_struct =
+		!func.return_type?.is_array &&
+		!!status.structs.find(
+			(s) => s.name === func.return_type?.name && !s.is_simple_type && !s.is_class,
+		);
 	if (return_struct) {
 		status.function_return_type = func.return_type;
 		status.struct_return_buffer = "x8";

@@ -1227,9 +1227,28 @@ function build_access_method(
 			} else {
 				// set(): build value into x2, compute offset and store
 				if (access_func.params.length > 1) {
-					build_node(access_func.params[1], status);
-					if (!status.code.endsWith("\n")) status.code += "\n";
-					status.code += `mov x2, x0\n`;
+					const value_param = access_func.params[1];
+					if (elem_struct && value_param.node_type === "value") {
+						// Struct element: the store memcpy's elem_size bytes
+						// FROM the value's ADDRESS — a plain build_node would
+						// load the first 8 bytes instead of taking the
+						// address (struct params/locals travel by reference;
+						// see the struct-arg pattern in the inline-method
+						// call site below).
+						const vname = (value_param as ValueNode).value;
+						const vReg = get_param_reg(vname, status);
+						if (vReg) {
+							status.code += `mov x2, ${vReg}\n`;
+						} else if (is_local_ref_var(vname, status)) {
+							emit_deref_var_address(status, "x2", vname);
+						} else {
+							emit_var_address(status, "x2", vname);
+						}
+					} else {
+						build_node(value_param, status);
+						if (!status.code.endsWith("\n")) status.code += "\n";
+						status.code += `mov x2, x0\n`;
+					}
 				}
 				if (elem_struct) {
 					// Struct element: x2 is address of value, memcpy to computed address
@@ -1420,8 +1439,12 @@ function build_access_method(
 
 	// Check if method returns a struct. A `view T` return is a (ptr, len) pair
 	// in x0/x1, not a sret struct — exclude views even when T is a struct.
+	// An ARRAY-typed return (`out Array<T>`, e.g. `with`/`add`/`mul`) is a
+	// heap buffer POINTER in x0, never an sret struct — even when the element
+	// T is itself a struct (the element name would otherwise match below).
 	const return_struct =
 		!access_func.type.is_view &&
+		!access_func.type.is_array &&
 		!!status.structs.find(
 			(s) => s.name === access_func.type.name && !s.is_simple_type && !s.is_class,
 		);

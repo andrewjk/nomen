@@ -60,13 +60,35 @@ function is_heap_array_type(type: Type | undefined): boolean {
 }
 
 /**
+ * Whether a value struct has a `string` field (or a nested owning value struct
+ * with one) — the "owning element" case for containers. Mirrors the build's
+ * `struct_needs_auto_destroy` / `has_string_fields` (owning_buffer_specialize).
+ */
+function struct_has_string_fields(node: StructNode, status: CheckStatus): boolean {
+	for (const field of node.fields) {
+		if (field.type.is_ref) continue;
+		if (field.type.name === "string" && !field.type.is_array) return true;
+		const field_struct = field.type.name
+			? status.structs.find((s) => s.name === field.type.name && !s.is_simple_type && !s.is_generic)
+			: undefined;
+		if (field_struct && !field_struct.is_class && struct_has_string_fields(field_struct, status))
+			return true;
+	}
+	return false;
+}
+
+/**
  * Whether a call argument is a stack-array VARIABLE (a value reference whose
  * type carries a compile-time `length`) bound to a heap `Array<T>` param. Such
  * args are copied into a heap `Array_<T>` temp at the call site — the param
  * promotes to `struct Array_<T>*`, so passing the stack array directly would
- * misalign `.length`/`.at`/iteration. `ref` params are excluded (their
- * mutation must propagate to the caller's variable, which a copy can't do —
- * those stay a compile-time mismatch, as before).
+ * misalign `.length`/`.at`/iteration. Three shapes are excluded (the first two
+ * rejected with a dedicated diagnostic, the third — owning value structs —
+ * also rejected; see the heap-array param checks in check_function_call):
+ * `ref` params (mutation must propagate to the caller's variable, which a
+ * copy can't do), class-element arrays (the copy would share the instances —
+ * double-free), and owning value-struct elements (string fields — the copy
+ * would share the strings; List<T> deep-copies those soundly instead).
  */
 function is_heap_array_var_copy(
 	param: BaseNode,
@@ -80,12 +102,10 @@ function is_heap_array_var_copy(
 	// and is forwarded directly — only a raw stack-array var (plain `is_array`
 	// with a compile-time `length`) needs a copy.
 	if (!param_type.is_array || !param_type.length || param_type.is_array_heap) return false;
-	// Owning-element stack arrays are not copied: a class-element source owns
-	// fresh instances the copy would share (double-free on destroy), and a
-	// value-struct element can't be word-copied soundly on the aarch64 backend.
-	// They keep the previous (compile-mismatch) behaviour instead.
 	const elem_struct = status.structs.find((s) => s.name === param_type.name);
-	if (elem_struct && (elem_struct.is_class || !elem_struct.is_simple_type)) return false;
+	if (elem_struct?.is_class) return false;
+	if (elem_struct && !elem_struct.is_simple_type && struct_has_string_fields(elem_struct, status))
+		return false;
 	const name = (param as ValueNode).value;
 	// A bare literal / null cannot be a stack-array variable; a value node
 	// with an array type and a compile-time length is a stack-array local or
@@ -410,6 +430,63 @@ export default function check_function_call(
 				`Cannot pass a const reference to ${kind} parameter '${func_param.name}' — extract from a non-const source or use a plain (copy) parameter`,
 				param.start,
 			);
+		}
+		// A heap `Array<T>` param promotes to `struct Array_<T>*`, so a raw
+		// stack-array argument (`T[]`/`T[N]`/literal-inferred var, or a
+		// literal/range value) must be materialised into a heap copy at the
+		// call site. Three shapes cannot be materialised soundly and are
+		// rejected outright (previously they silently fell through to the raw
+		// element-pointer codegen, which read/wrote the wrong memory):
+		//   1. `ref Array<T>` params — the callee's `.set` mutations must
+		//      propagate to the caller's variable, which a copy cannot do.
+		//   2. class-element stack-array variables — the heap copy would
+		//      share the instances with the caller's array (whose cleanup
+		//      frees each element) — a double-free.
+		//   3. owning value-struct elements (string fields) — the copy would
+		//      share the strings (List<T>'s Buffer deep-copies them; Array
+		//      materialisation does not own element strings yet).
+		if (
+			func_param &&
+			is_heap_array_type(func_param.type) &&
+			param_type.is_array &&
+			!param_type.is_array_heap
+		) {
+			const arg_is_stack_array_var =
+				param.node_type === "value" && !param_type.is_view && !!param_type.length;
+			const arg_is_literal = param.node_type === "array" || param.node_type === "range";
+			const elem_struct = status.structs.find((s) => s.name === param_type.name);
+			if (func_param.type.is_ref && (arg_is_stack_array_var || arg_is_literal)) {
+				add_error(
+					status,
+					`Cannot pass a stack array to 'ref Array<${param_type.name}>' parameter '${func_param.name}' — ` +
+						`it would be materialised into a heap copy whose mutation cannot propagate back. ` +
+						`Use a 'ref ${param_type.name}[]' parameter, or pass a heap 'Array<${param_type.name}>' variable`,
+					param.start,
+				);
+			} else if (!func_param.type.is_ref && arg_is_stack_array_var && elem_struct?.is_class) {
+				add_error(
+					status,
+					`Cannot pass a stack array of class '${param_type.name}' instances to 'Array<${param_type.name}>' parameter '${func_param.name}' — ` +
+						`the materialised heap copy would share the instances with the caller's array (double free). ` +
+						`Build the heap array from fresh instances: pass an array literal, or use 'var Array<${param_type.name}>'`,
+					param.start,
+				);
+			} else if (
+				!func_param.type.is_ref &&
+				(arg_is_stack_array_var || arg_is_literal) &&
+				elem_struct &&
+				!elem_struct.is_simple_type &&
+				!elem_struct.is_class &&
+				struct_has_string_fields(elem_struct, status)
+			) {
+				add_error(
+					status,
+					`Cannot pass an array of owning value struct '${param_type.name}' (string fields) to 'Array<${param_type.name}>' parameter '${func_param.name}' — ` +
+						`the materialised heap copy would share the element strings. ` +
+						`Use 'List<${param_type.name}>' instead: its Buffer deep-copies owning elements soundly`,
+					param.start,
+				);
+			}
 		}
 		// Only require explicit 'mov' keyword at the call site when the
 		// parameter is a class type AND the argument is an OWNED variable

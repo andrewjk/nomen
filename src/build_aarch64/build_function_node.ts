@@ -193,8 +193,11 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	// A `view T` return is a (ptr, len) pair in x0/x1 — never a sret struct,
 	// even when the element T is itself a struct. Exclude views here so a
 	// `view User` slice return isn't misclassified as a struct return.
+	// An ARRAY-typed return (`out Array<T>`) is a heap buffer POINTER in x0 —
+	// never sret, even when the element type is a struct.
 	const return_struct =
 		!node.return_type.is_view &&
+		!node.return_type.is_array &&
 		!!status.structs.find(
 			(s) => s.name === node.return_type.name && !s.is_simple_type && !s.is_class,
 		);
