@@ -1,6 +1,7 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import c_function_name from "../build_c/utils/c_function_name.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
+import { mono_type_name } from "../build_common/mono_name.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
@@ -47,9 +48,7 @@ export default function build_nursery_spawn(
 	const arg_c_types: string[] = [];
 	for (let i = 0; i < args.length; i++) {
 		const arg_type = type_from_value_node(args[i]);
-		const mono_name = arg_type.type_args?.length
-			? `${arg_type.name}_${arg_type.type_args.map((t) => t.name).join("_")}`
-			: arg_type.name;
+		const mono_name = mono_type_name(arg_type);
 		const is_class = !!status.structs.find((s) => s.name === mono_name && s.is_class);
 		const is_trait = !!status.traits.find((t) => t.name === mono_name);
 		arg_c_types.push(is_class || is_trait ? `struct ${mono_name} *` : `${mono_name}`);
@@ -149,9 +148,7 @@ export default function build_nursery_spawn(
 		tramp_c += `\treturn (void *)0;\n`;
 	} else {
 		const task_type_args = access_func.type?.type_args;
-		const mono_task_name = task_type_args?.length
-			? `Task_${task_type_args.map((t) => t.name).join("_")}`
-			: "Task";
+		const mono_task_name = mono_type_name("Task", task_type_args);
 		tramp_c += `\tstruct ${mono_task_name} *t = (struct ${mono_task_name} *)malloc(sizeof(struct ${mono_task_name}));\n`;
 		tramp_c += `\tt->handle = 0;\n`;
 		tramp_c += `\tt->done = 0;\n`;

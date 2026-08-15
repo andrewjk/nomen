@@ -1,5 +1,5 @@
+import { struct_needs_destroy } from "../../build_common/destroy_analysis.ts";
 import StructNode from "../../nodes/StructNode.ts";
-import { struct_needs_destroy } from "../build_auto_free.ts";
 import type BuildStatus from "../BuildStatus.ts";
 
 /**

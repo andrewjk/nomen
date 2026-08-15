@@ -1,6 +1,7 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import { should_emit_definition } from "../build_c/utils/is_system_definition.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
+import { mono_type_name } from "../build_common/mono_name.ts";
 import BitsetNode from "../nodes/BitsetNode.ts";
 import type BlockNode from "../nodes/BlockNode.ts";
 import { is_function_node, is_struct_node, is_trait_node } from "../nodes/check_node_type.ts";
@@ -336,7 +337,7 @@ function method_call_returns_owned(
 	// monomorphized names (e.g. `Foo<int>` → `Foo_int`).
 	let struct_name = recv_name;
 	if (recv_type.type_args?.length) {
-		const mono = recv_name + "_" + recv_type.type_args.map((t: any) => t.name).join("_");
+		const mono = mono_type_name(recv_name, recv_type.type_args);
 		if (status.structs.find((s) => s.name === mono)) struct_name = mono;
 	}
 	const struct = status.structs.find((s) => s.name === struct_name);

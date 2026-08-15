@@ -1,3 +1,4 @@
+import { mono_type_name } from "../build_common/mono_name.ts";
 import StructNode from "../nodes/StructNode.ts";
 import TraitNode from "../nodes/TraitNode.ts";
 import Type from "../nodes/Type.ts";
@@ -86,9 +87,7 @@ function field_c_type(type: Type, status: BuildStatus): string {
 		return `struct Array_${type.name} *`;
 	}
 	// Monomorphize generic field types: `List<Animal>` → `List_Animal`.
-	const mono_name = type.type_args?.length
-		? `${type.name}_${type.type_args.map((t) => t.name).join("_")}`
-		: type.name;
+	const mono_name = mono_type_name(type);
 	// Non-simple struct types must use the `struct` tag (the typedef may not
 	// be in scope yet, e.g. forward references between monomorphized structs).
 	const struct_node = status.structs.find(
@@ -111,9 +110,7 @@ function field_c_type(type: Type, status: BuildStatus): string {
  */
 function embedded_value_struct(type: Type, status: BuildStatus): StructNode | undefined {
 	if (type.is_ref || type.is_array || type.is_view || type.is_array_heap) return undefined;
-	const mono_name = type.type_args?.length
-		? `${type.name}_${type.type_args.map((t) => t.name).join("_")}`
-		: type.name;
+	const mono_name = mono_type_name(type);
 	const s = status.structs.find((n) => n.name === mono_name && !n.is_simple_type && !n.is_generic);
 	if (!s || s.is_class) return undefined;
 	return s;

@@ -1,5 +1,11 @@
 import type BuildStatus from "../../build_c/BuildStatus.ts";
 import type_from_value_node from "../../build_c/utils/type_from_value_node.ts";
+import {
+	has_destroy,
+	struct_needs_auto_destroy,
+	struct_needs_destroy,
+} from "../../build_common/destroy_analysis.ts";
+import { mono_type_name } from "../../build_common/mono_name.ts";
 import StructNode from "../../nodes/StructNode.ts";
 import Type from "../../nodes/Type.ts";
 import aarch64_size from "./aarch64_size.ts";
@@ -318,7 +324,7 @@ export function resolve_struct_name(
 	status?: BuildStatus,
 ): string {
 	if (type_args?.length) {
-		const mono_name = type_name + "_" + type_args.map((t) => t.name).join("_");
+		const mono_name = mono_type_name(type_name, type_args);
 		if (status?.structs.find((s) => s.name === mono_name)) return mono_name;
 	}
 	return type_name;
@@ -326,10 +332,6 @@ export function resolve_struct_name(
 
 export function is_struct_type(type_name: string, status: BuildStatus): StructNode | undefined {
 	return status.structs.find((s) => s.name === type_name && !s.is_simple_type);
-}
-
-function has_destroy(struct_type: StructNode): boolean {
-	return !!struct_type.functions.find((f) => f.name === "#destroy");
 }
 
 export function emit_destroy_for_decl(
@@ -398,7 +400,7 @@ export function emit_destroy_for_decl(
 			emit_free(status);
 		}
 		emit_field_destroys(status, struct_type, decl_name, addr_offset, true);
-	} else if (has_destroy(struct_type) || has_struct_fields_with_destroy(struct_type, status)) {
+	} else if (struct_needs_destroy(struct_type, status)) {
 		// Only emit field destroys for value structs that have a user #destroy
 		// or class/nested-owning-struct fields. A struct whose only owning
 		// fields are strings is NOT destroyed here — its strings may be raw
@@ -464,8 +466,7 @@ export function emit_field_destroys(
 				// emit_nested_field_destroys (that would double-free them).
 				const field_has_explicit_destroy = has_destroy(field_struct);
 				const field_needs_destroy =
-					field_has_explicit_destroy ||
-					struct_has_owning_fields_for_auto_destroy(field_struct, status);
+					field_has_explicit_destroy || struct_needs_auto_destroy(field_struct, status);
 				if (field_needs_destroy) {
 					const actual_offset = base_offset !== undefined ? base_offset + offset : offset;
 					if (decl_name) {
@@ -677,12 +678,7 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 			const resolved_decl = resolve_decl_struct(decl, status);
 			if (!resolved_decl) continue;
 			const struct_type = resolved_decl.struct_type;
-			if (
-				!has_destroy(struct_type) &&
-				!has_struct_fields_with_destroy(struct_type, status) &&
-				!struct_type.is_class
-			)
-				continue;
+			if (!struct_needs_destroy(struct_type, status) && !struct_type.is_class) continue;
 			emit_destroy_for_decl(
 				status,
 				decl.name,
@@ -750,12 +746,7 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 		const resolved_decl = resolve_decl_struct(decl, status);
 		if (!resolved_decl) continue;
 		const struct_type = resolved_decl.struct_type;
-		if (
-			!has_destroy(struct_type) &&
-			!has_struct_fields_with_destroy(struct_type, status) &&
-			!struct_type.is_class
-		)
-			continue;
+		if (!struct_needs_destroy(struct_type, status) && !struct_type.is_class) continue;
 		emit_destroy_for_decl(
 			status,
 			decl.name,
@@ -765,54 +756,6 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 			decl.type.is_nullable,
 		);
 	}
-}
-
-export function has_struct_fields_with_destroy(
-	struct_type: StructNode,
-	status: BuildStatus,
-): boolean {
-	for (const field of struct_type.fields) {
-		if (field.type.is_ref) continue;
-		const field_struct =
-			is_struct_type(resolve_struct_name(field.type.name, field.type.type_args, status), status) ||
-			is_struct_type(field.type.name, status);
-		if (field_struct) {
-			if (field_struct.is_class) return true;
-			if (has_destroy(field_struct)) return true;
-			if (has_struct_fields_with_destroy(field_struct, status)) return true;
-		}
-	}
-	return false;
-}
-
-/**
- * Broader than `has_struct_fields_with_destroy`: also returns true for
- * structs with `string` fields. Used to decide whether to generate a
- * `<Struct>_destroy` function — Buffer<T>'s specialized #destroy calls it
- * per element to free each slot's strdup'd strings. Struct LOCAL scope-exit
- * uses `has_struct_fields_with_destroy` (no strings), so owning-value-struct
- * locals are NOT auto-destroyed (their strings are raw args, not heap).
- */
-export function struct_has_owning_fields_for_auto_destroy(
-	struct_type: StructNode,
-	status: BuildStatus,
-): boolean {
-	if (has_destroy(struct_type)) return true;
-	if (has_struct_fields_with_destroy(struct_type, status)) return true;
-	for (const field of struct_type.fields) {
-		if (field.type.is_ref) continue;
-		if (field.type.name === "string" && !field.type.is_array) return true;
-		const field_struct =
-			is_struct_type(resolve_struct_name(field.type.name, field.type.type_args, status), status) ||
-			is_struct_type(field.type.name, status);
-		if (
-			field_struct &&
-			!field_struct.is_class &&
-			struct_has_owning_fields_for_auto_destroy(field_struct, status)
-		)
-			return true;
-	}
-	return false;
 }
 
 export function emit_cleanup_to_loop_depth(status: BuildStatus) {

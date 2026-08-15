@@ -1,12 +1,14 @@
+import {
+	struct_needs_auto_destroy,
+	struct_needs_destroy,
+} from "../build_common/destroy_analysis.ts";
+import { mono_struct_name, mono_type_name } from "../build_common/mono_name.ts";
 import { is_overloaded, mangled_label } from "../check/utils/function_overload.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import TraitNode from "../nodes/TraitNode.ts";
 import Type from "../nodes/Type.ts";
-import build_auto_free, {
-	struct_needs_auto_destroy,
-	struct_needs_destroy,
-} from "./build_auto_free.ts";
+import build_auto_free from "./build_auto_free.ts";
 import build_node from "./build_node.ts";
 import build_parameter_node from "./build_parameter_node.ts";
 import build_struct_body from "./build_struct_body.ts";
@@ -14,7 +16,6 @@ import type BuildStatus from "./BuildStatus.ts";
 import c_function_name from "./utils/c_function_name.ts";
 import { enter_c_scope, leave_c_scope } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
-import mono_struct_name from "./utils/mono_struct_name.ts";
 import { has_flag_name, is_nullable_struct_type } from "./utils/nullable_struct.ts";
 import {
 	emit_owning_buffer_body,
@@ -646,9 +647,7 @@ function build_auto_destroy(node: StructNode, status: BuildStatus) {
 		// Resolve the MONOMORPHIZED struct for a generic field type (e.g.
 		// `Map<int,int>` → `Map_int_int`), so the destroy call matches the
 		// actual field type — `Map_destroy` doesn't exist.
-		const mono_name = field.type.type_args?.length
-			? `${field.type.name}_${field.type.type_args.map((t) => t.name).join("_")}`
-			: field.type.name;
+		const mono_name = mono_type_name(field.type);
 		const field_struct = status.structs.find((s) => s.name === mono_name && !s.is_simple_type);
 		if (!field_struct) continue;
 		if (field_struct.is_class) {
@@ -697,9 +696,7 @@ function build_auto_destroy(node: StructNode, status: BuildStatus) {
 function forward_decl_referenced_types(func: FunctionNode, status: BuildStatus) {
 	const types_to_decl = new Set<string>();
 	if (func.return_type.name) {
-		const mono_name = func.return_type.type_args?.length
-			? `${func.return_type.name}_${func.return_type.type_args.map((t: Type) => t.name).join("_")}`
-			: func.return_type.name;
+		const mono_name = mono_type_name(func.return_type);
 		if (status.structs.find((s) => s.name === mono_name && !s.is_simple_type)) {
 			types_to_decl.add(mono_name);
 		}

@@ -1,6 +1,7 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import c_function_name from "../build_c/utils/c_function_name.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
+import { mono_type_name } from "../build_common/mono_name.ts";
 import SpawnNode from "../nodes/SpawnNode.ts";
 import build_node from "./build_node.ts";
 
@@ -223,9 +224,7 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 	const arg_is_class: boolean[] = [];
 	for (let i = 0; i < call.params.length; i++) {
 		const arg_type = type_from_value_node(call.params[i]);
-		const mono_name = arg_type.type_args?.length
-			? `${arg_type.name}_${arg_type.type_args.map((t) => t.name).join("_")}`
-			: arg_type.name;
+		const mono_name = mono_type_name(arg_type);
 		const is_class = !!status.structs.find((s) => s.name === mono_name && s.is_class);
 		const is_trait = !!status.traits.find((t) => t.name === mono_name);
 		arg_is_class.push(is_class);
@@ -349,9 +348,7 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 		tramp_c += `\treturn (void *)0;\n`;
 	} else {
 		// Allocate Task and return pointer.
-		const mono_task_name = call.type?.type_args?.length
-			? `Task_${call.type.type_args.map((t) => t.name).join("_")}`
-			: "Task";
+		const mono_task_name = mono_type_name("Task", call.type?.type_args);
 		tramp_c += `\tstruct ${mono_task_name} *t = (struct ${mono_task_name} *)malloc(sizeof(struct ${mono_task_name}));\n`;
 		tramp_c += `\tt->handle = 0;\n`;
 		tramp_c += `\tt->done = 0;\n`;

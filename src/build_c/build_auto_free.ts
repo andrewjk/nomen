@@ -1,7 +1,8 @@
+import { has_destroy, struct_needs_destroy } from "../build_common/destroy_analysis.ts";
+import { mono_type_name, resolve_struct_type } from "../build_common/mono_name.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
 import StructNode from "../nodes/StructNode.ts";
-import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import is_string_borrow from "./utils/is_string_borrow.ts";
@@ -312,67 +313,11 @@ export function free_scoped_declarations(status: BuildStatus, decls: Declaration
 	}
 }
 
-function mono_type_name(type: Type): string {
-	return type.type_args?.length
-		? `${type.name}_${type.type_args.map((t) => t.name).join("_")}`
-		: type.name;
-}
-
-function resolve_struct(type: Type, status: BuildStatus): StructNode | undefined {
-	const mono_name = mono_type_name(type);
-	return status.structs.find((s) => s.name === mono_name && !s.is_simple_type && !s.is_generic);
-}
-
-function has_destroy(struct: StructNode): boolean {
-	return !!struct.functions.find((f) => f.name === "#destroy");
-}
-
 /** Name-based variant of struct_needs_destroy for callers without the StructNode. */
 export function struct_needs_destroy_by_name(name: string, status: BuildStatus): boolean {
 	const struct = status.structs.find((s) => s.name === name && !s.is_simple_type && !s.is_generic);
 	if (!struct) return false;
 	return struct_needs_destroy(struct, status);
-}
-
-/**
- * Whether a struct (or any of its embedded struct fields, recursively) needs
- * a destroy call at scope exit — i.e. it has a `#destroy`, a class-typed
- * field, or a nested struct field that itself needs destroying. This does
- * NOT check for `string` fields: a struct local whose only owning fields are
- * strings is not auto-destroyed at scope exit (the strings are owned by the
- * container's deep-copied slots or by hoisted temps, not by the local).
- */
-export function struct_needs_destroy(struct: StructNode, status: BuildStatus): boolean {
-	if (has_destroy(struct)) return true;
-	for (const field of struct.fields) {
-		if (field.type.is_ref) continue;
-		const field_struct = resolve_struct(field.type, status);
-		if (!field_struct) continue;
-		if (field_struct.is_class) return true;
-		if (struct_needs_destroy(field_struct, status)) return true;
-	}
-	return false;
-}
-
-/**
- * Whether a struct needs an auto-generated `<Struct>_destroy` function.
- * Broader than `struct_needs_destroy`: also returns true for structs with
- * `string` fields, because a Buffer<T> for such a struct deep-copies the
- * strings into slots (strdup on store) and the per-element destroy must free
- * them. The generated destroy frees each string field; it is called from
- * Buffer's specialized #destroy / replace_T, NOT from struct local scope
- * exit (struct_needs_destroy governs that path and excludes strings).
- */
-export function struct_needs_auto_destroy(struct: StructNode, status: BuildStatus): boolean {
-	if (struct_needs_destroy(struct, status)) return true;
-	for (const field of struct.fields) {
-		if (field.type.is_ref) continue;
-		if (field.type.name === "string" && !field.type.is_array) return true;
-		const field_struct = resolve_struct(field.type, status);
-		if (field_struct && !field_struct.is_class && struct_needs_auto_destroy(field_struct, status))
-			return true;
-	}
-	return false;
 }
 
 /**
@@ -392,7 +337,7 @@ export function emit_struct_destroys(
 	}
 	for (const field of struct.fields) {
 		if (field.type.is_ref) continue;
-		const field_struct = resolve_struct(field.type, status);
+		const field_struct = resolve_struct_type(field.type, status);
 		if (!field_struct) continue;
 		const field_expr = `${var_expr}.${field.name}`;
 		if (field_struct.is_class) {
@@ -429,7 +374,7 @@ function capture_destroys(
 	}
 	for (const field of struct.fields) {
 		if (field.type.is_ref) continue;
-		const field_struct = resolve_struct(field.type, status);
+		const field_struct = resolve_struct_type(field.type, status);
 		if (!field_struct) continue;
 		const field_expr = `${var_expr}${accessor}${field.name}`;
 		if (field_struct.is_class) {

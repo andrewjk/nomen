@@ -1,3 +1,4 @@
+import { mono_type_name } from "../build_common/mono_name.ts";
 import ParameterNode from "../nodes/ParameterNode.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import array_struct_name from "./utils/array_struct.ts";
@@ -33,7 +34,7 @@ export default function build_parameter_node(node: ParameterNode, status: BuildS
 	// its monomorphized form (e.g. `Tree_int`) so the C signature matches the
 	// monomorphized struct definition.
 	if (!node.is_self_param && node.type.type_args?.length) {
-		const mono_name = `${type_name}_${node.type.type_args.map((t) => t.name).join("_")}`;
+		const mono_name = mono_type_name(type_name, node.type.type_args);
 		if (status.structs.find((s) => s.name === mono_name && !s.is_generic)) {
 			type_name = mono_name;
 		}

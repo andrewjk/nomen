@@ -1,5 +1,6 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
+import { mono_type_name } from "../build_common/mono_name.ts";
 import built_in_types from "../built_in_types.ts";
 import { mangled_label } from "../check/utils/function_overload.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
@@ -1414,9 +1415,7 @@ function build_access_method(
 
 	let mono_struct_name = target_type.is_array
 		? "Array_" + target_type.name
-		: target_type.type_args?.length
-			? target_type.name + "_" + target_type.type_args.map((t) => t.name).join("_")
-			: target_type.name;
+		: mono_type_name(target_type);
 	// Static calls on a generic type without explicit type args (e.g.
 	// `Array.with(0, n)`) resolve to the generic name (`Array`), for which no
 	// monomorphized struct exists. Find the specialized struct that actually
@@ -1963,9 +1962,7 @@ function resolve_access_type(node: AccessNode, status: BuildStatus): Type | null
 			base_type = resolve_access_type(node.target as AccessNode, status);
 		}
 		if (!base_type?.name) return null;
-		const mono_name = base_type.type_args?.length
-			? base_type.name + "_" + base_type.type_args.map((t) => t.name).join("_")
-			: base_type.name;
+		const mono_name = mono_type_name(base_type);
 		const struct =
 			status.structs.find((s) => s.name === mono_name && !s.is_generic) ||
 			status.structs.find((s) => s.name === base_type!.name);

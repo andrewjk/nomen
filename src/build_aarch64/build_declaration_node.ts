@@ -1,6 +1,8 @@
 import emit_field_overrides from "../build/emit_field_overrides.ts";
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
+import { struct_needs_destroy } from "../build_common/destroy_analysis.ts";
+import { mono_type_name } from "../build_common/mono_name.ts";
 import { is_int_literal, parse_int_literal_bigint, to_decimal_string } from "../int_literal.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
@@ -27,7 +29,6 @@ import {
 	mark_heap_string,
 	mark_moved_if_struct,
 	track_struct_decl,
-	has_struct_fields_with_destroy,
 } from "./utils/auto_destroy.ts";
 import { build_swap_params } from "./utils/build_swap.ts";
 import { has_flag_name, is_nullable_struct_type } from "./utils/nullable_struct.ts";
@@ -647,9 +648,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 	// computation, and field layout all key against the concrete struct.
 	// Mirrors the C backend's mono_name resolution. The Nomen type is left
 	// unchanged (the AST is shared across backends).
-	const resolved_struct_name = node.type.type_args?.length
-		? `${node.type.name}_${node.type.type_args.map((t) => t.name).join("_")}`
-		: node.type.name;
+	const resolved_struct_name = mono_type_name(node.type);
 
 	// Check if type is a struct
 	const struct_type = status.structs.find(
@@ -729,10 +728,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			// break/continue cleanup (emit_cleanup_to_loop_depth) destroys it
 			// correctly too.
 			status.scoped_declarations.push(node);
-			if (
-				concrete.functions.find((f) => f.name === "#destroy") ||
-				has_struct_fields_with_destroy(concrete, status)
-			) {
+			if (struct_needs_destroy(concrete, status)) {
 				track_struct_decl(status, node.name, concrete.name, undefined, node.type.is_nullable);
 			}
 			const func_call = node.value as FunctionCallNode;
@@ -853,12 +849,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			status.alias_owns_flag?.set(node.name, flag_offset);
 		}
 	}
-	if (
-		!is_borrowed_class_ref &&
-		struct_type &&
-		(struct_type.functions.find((f) => f.name === "#destroy") ||
-			has_struct_fields_with_destroy(struct_type, status))
-	) {
+	if (!is_borrowed_class_ref && struct_type && struct_needs_destroy(struct_type, status)) {
 		track_struct_decl(
 			status,
 			node.name,

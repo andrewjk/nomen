@@ -1,4 +1,5 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
+import { struct_needs_auto_destroy } from "../build_common/destroy_analysis.ts";
 import { is_overloaded, mangled_label } from "../check/utils/function_overload.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
@@ -9,10 +10,7 @@ import build_block_node from "./build_block_node.ts";
 import build_node from "./build_node.ts";
 import { check_c_fallback } from "./build_raw_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
-import {
-	emit_field_destroys,
-	struct_has_owning_fields_for_auto_destroy,
-} from "./utils/auto_destroy.ts";
+import { emit_field_destroys } from "./utils/auto_destroy.ts";
 import { is_nullable_struct_type } from "./utils/nullable_struct.ts";
 import {
 	emit_owning_buffer_destroy_aarch64,
@@ -194,7 +192,7 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 			}
 		} else if (node.is_class) {
 			build_auto_destroy_function(node, status);
-		} else if (struct_has_owning_fields_for_auto_destroy(node, status)) {
+		} else if (struct_needs_auto_destroy(node, status)) {
 			// A value struct that owns heap data through its fields (e.g.
 			// `struct Person { var string name }`) needs an auto-generated
 			// <Struct>_destroy: Buffer<T> calls T_destroy per element when T
@@ -1267,7 +1265,7 @@ function build_struct_traits(node: StructNode, status: BuildStatus) {
 	const has_destroy_fn =
 		!!node.functions.find((f) => f.name === "#destroy") ||
 		!!node.is_class ||
-		(node.traits.length > 0 && struct_has_owning_fields_for_auto_destroy(node, status));
+		(node.traits.length > 0 && struct_needs_auto_destroy(node, status));
 	if (has_destroy_fn) {
 		status.vtable_data += `.p2align 3\n`;
 		status.vtable_data += `_${node.name}_destroy_funcs:\n`;
