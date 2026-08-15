@@ -32,7 +32,11 @@ import {
 	substitute_constraint,
 } from "./utils/flow_bounds.ts";
 import is_visible from "./utils/is_visible.ts";
-import { is_class_type, is_owning_ref_type } from "./utils/ownership.ts";
+import {
+	is_class_type,
+	is_owning_ref_type,
+	is_owning_struct_type_requiring_move,
+} from "./utils/ownership.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
 
@@ -489,15 +493,27 @@ export default function check_function_call(
 			}
 		}
 		// Only require explicit 'mov' keyword at the call site when the
-		// parameter is a class type AND the argument is an OWNED variable
-		// (has a name to invalidate). For temporaries (function call
-		// results, literals), non-class types, and BORROW variables (which
-		// cannot be moved soundly — see the shared-ownership check below),
-		// mov is implicit, a no-op, or the borrow check below fires first.
+		// parameter is a class type OR an owning value struct (List/Map/…,
+		// whose auto-init/owning param semantics byte-copy the argument into a
+		// field) AND the argument is an OWNED variable (has a name to
+		// invalidate). For temporaries (function call results, literals),
+		// non-owning types, and BORROW variables (which cannot be moved
+		// soundly — see the shared-ownership check below), mov is implicit, a
+		// no-op, or the borrow check below fires first.
 		const param_is_class = func_param.type.name && is_class_type(func_param.type.name, status);
+		const param_is_owning_struct =
+			func_param.is_moved &&
+			!func_param.type.is_nullable &&
+			!!func_param.type.name &&
+			is_owning_struct_type_requiring_move(func_param.type, status);
 		const arg_is_variable = param.node_type === "value";
 		const arg_is_owned_value = arg_is_variable && borrow_depth_of(param, status) === undefined;
-		if (func_param.is_moved && !has_mov_keyword && param_is_class && arg_is_owned_value) {
+		if (
+			func_param.is_moved &&
+			!has_mov_keyword &&
+			(param_is_class || param_is_owning_struct) &&
+			arg_is_owned_value
+		) {
 			add_error(
 				status,
 				`Missing 'mov' keyword for mov parameter '${func_param.name}'`,
@@ -511,10 +527,15 @@ export default function check_function_call(
 			);
 		}
 		// mov is allowed on any type at the call site. Only invalidate the
-		// caller's variable when the parameter type is a class — for non-class
-		// types (int, struct, etc.), mov is a no-op.
+		// caller's variable when the parameter type is a class or an owning
+		// value struct — for the remaining non-owning types (int, plain
+		// struct, etc.), mov is a no-op.
 		if (has_mov_keyword && param_value && !node.swap_params?.has(i)) {
-			if (func_param.type.name && is_class_type(func_param.type.name, status)) {
+			if (
+				func_param.type.name &&
+				(is_class_type(func_param.type.name, status) ||
+					(func_param.is_moved && is_owning_struct_type_requiring_move(func_param.type, status)))
+			) {
 				if (!status.moved_variables) status.moved_variables = new Set();
 				status.moved_variables.add(param_value);
 			}
@@ -534,7 +555,44 @@ export default function check_function_call(
 					`cannot mov '${field_name}' out of struct — struct owns its class fields`,
 					param.start,
 				);
+			} else if (
+				field_type.name &&
+				!field_type.is_nullable &&
+				is_owning_struct_type_requiring_move(field_type, status)
+			) {
+				// The owning-struct counterpart of the class rule above: a
+				// bare `mov obj.field` leaves the field moved-out (its
+				// backing storage now owned by the destination) — the field
+				// must be revalidated with a swap.
+				const field_name = (access.access as AccessFieldNode).name;
+				add_error(
+					status,
+					`cannot mov '${field_name}' out of struct by value — it owns heap resources; use 'mov ... swap <replacement>' to revalidate the field`,
+					param.start,
+				);
 			}
+		}
+		// Copying an owning value struct OUT of a field into a byte-copying
+		// (`mov`) parameter without the mov machinery would leave the field
+		// and the destination co-owning the backing storage — the same
+		// double-free the declaration-level field-copy check rejects. The
+		// mov keyword alone doesn't help (a bare `mov obj.field` leaves the
+		// field moved-out — rejected above), so the escape hatches are the
+		// swap form and a deep `.copy()`.
+		if (
+			func_param.is_moved &&
+			!has_mov_keyword &&
+			!node.swap_params?.has(i) &&
+			param_is_owning_struct &&
+			param.node_type === "access" &&
+			(param as AccessNode).access.node_type === "access_field"
+		) {
+			const field_name = ((param as AccessNode).access as AccessFieldNode).name;
+			add_error(
+				status,
+				`cannot copy field '${field_name}' into parameter '${func_param.name}' by value — it owns heap resources; use 'mov ... swap <replacement>' or .copy()`,
+				param.start,
+			);
 		}
 		// Storing a BORROWED class/trait value into a `mov T` slot would
 		// create shared ownership: the destination container's `#destroy`

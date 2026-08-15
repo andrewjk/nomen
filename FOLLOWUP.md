@@ -17,15 +17,15 @@ Skipped or out-of-scope items recorded for later.
    backends differ (see ROADBLOCKS "Returning a borrowed `string` — FIXED",
    "Caveat (unchanged)").
 
-3. **`List<T>` (generic container) as an explicit struct-field type doesn't
-   monomorphize.** `struct Group { var List<int> items }` checks clean but
-   the C backend emits `struct List` (the bare generic) in the synthesized
-   `Group_init` signature and the field default wins over the constructor
-   arg (`_self.items = Buffer_int_init()` vs `_self.items = *items` —
-   conflicting types). A default-valued field (`var List<int> items =
-List<int>()`) works on both backends; `check_struct_node` needs the same
-   `instantiate_generic_type` treatment that params/returns/local
-   declarations get. Found while testing `List<T>.copy()` on a field.
+3. **Nested generic instantiation (`Wrapper<List<int>>`) is unsupported.**
+   The monomorphizer's substitution is name-only (`Map<string, string>`),
+   so instantiating a generic with a generic type argument drops the inner
+   args and would leave the mono referencing the bare generic. This used to
+   HANG the checker; it is now a clean check-time error ("nested generic
+   instantiation is not supported yet" — see ROADBLOCKS "`List<T>` as an
+   explicit struct-field type doesn't monomorphize — FIXED"). Supporting it
+   needs the substitution to carry full `Type`s and the mono-name
+   flattening (shared by both backends) to nest args.
 
 ## Differator port (external — `nomen/` in the port project, not this repo)
 

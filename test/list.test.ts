@@ -668,3 +668,140 @@ var List<Speaker> c = l.copy()
 		expect(err).toBeDefined();
 	});
 });
+
+describe("List<T> as an explicit struct-field type", () => {
+	// Regression: a generic container as an explicit struct-field type
+	// (`struct Group { var List<int> items }`) used to emit the BARE generic
+	// (`struct List *items`) in the synthesized `Group_init` signature on C —
+	// an incomplete type the field assignment conflicted with. The ctor
+	// signature now lowers to the monomorphized `struct List_int *`, and the
+	// auto-init param for a non-defaulted owning-struct field is a `mov`
+	// param (the init byte-copies the arg into the field, so ownership must
+	// transfer — a plain by-value pass would leave the caller's variable and
+	// the field co-owning the backing slab).
+
+	test("construct with mov — field reads back on both backends", async () => {
+		const input = `
+struct Group {
+  var List<int> items
+}
+var List<int> xs = List<int>()
+xs.push(1)
+xs.push(2)
+var Group g = Group(mov xs)
+var int total = 0
+for i of 0 .. g.items.length {
+  total = total + g.items.at(i)
+}
+Console.write("\\{g.items.length} \\{total}")
+`;
+		await build_and_check_output(input, "list_field_mov_ctor", "2 3");
+	});
+
+	test("construct with a fresh list argument (implicit move)", async () => {
+		const input = `
+struct Group {
+  var List<int> items
+}
+var Group g = Group(List<int>())
+g.items.push(7)
+g.items.push(8)
+Console.write("\\{g.items.length} \\{g.items.pop()}")
+`;
+		await build_and_check_output(input, "list_field_fresh_ctor", "2 8");
+	});
+
+	test("mov-declared field still works with mov", async () => {
+		const input = `
+struct Group {
+  mov List<int> items
+}
+var List<int> xs = List<int>()
+xs.push(5)
+var Group g = Group(mov xs)
+Console.write("\\{g.items.pop()}")
+`;
+		await build_and_check_output(input, "list_field_mov_field", "5");
+	});
+
+	test("move out of the field with swap revalidates it", async () => {
+		const input = `
+struct Group {
+  var List<int> items = List<int>()
+}
+var Group g = Group()
+g.items.push(1)
+g.items.push(2)
+var List<int> run = mov g.items swap List<int>()
+run.push(3)
+Console.write("\\{run.length} \\{g.items.length}")
+`;
+		await build_and_check_output(input, "list_field_mov_swap", "3 0");
+	});
+
+	test("nested generic instantiation is rejected at check time", () => {
+		// `Wrapper<List<int>>` substitutes T with a name-only "List", which
+		// would leave the mono's fields referencing the bare generic (no
+		// emitted body — broken codegen, previously a checker hang). It is
+		// rejected with a clear message until substitution carries full types.
+		const input = `
+struct Wrapper<T> {
+  mov T item
+}
+var List<int> xs = List<int>()
+xs.push(9)
+var Wrapper<List<int>> w = Wrapper<List<int>>(mov xs)
+Console.write("\\{w.item.length}")
+`;
+		const parsed = parse_with_imports(input);
+		const err = parsed.errors.find((e) =>
+			e.message.includes("nested generic instantiation is not supported"),
+		);
+		expect(err).toBeDefined();
+		expect(err!.message).toContain("Wrapper");
+	});
+
+	test("plain by-value constructor arg is rejected (missing mov)", () => {
+		const input = `
+struct Group {
+  var List<int> items
+}
+var List<int> xs = List<int>()
+var Group g = Group(xs)
+`;
+		const parsed = parse_with_imports(input);
+		const err = parsed.errors.find((e) => e.message.includes("Missing 'mov' keyword"));
+		expect(err).toBeDefined();
+		expect(err!.message).toContain("items");
+	});
+
+	test("copying a field into the constructor by value is rejected", () => {
+		const input = `
+struct Group {
+  var List<int> items
+}
+var Group a = Group(List<int>())
+var Group b = Group(a.items)
+`;
+		const parsed = parse_with_imports(input);
+		const err = parsed.errors.find((e) =>
+			e.message.includes("cannot copy field 'items' into parameter 'items' by value"),
+		);
+		expect(err).toBeDefined();
+	});
+
+	test("bare mov out of a field into the constructor is rejected (needs swap)", () => {
+		const input = `
+struct Group {
+  var List<int> items
+}
+var Group a = Group(List<int>())
+var Group b = Group(mov a.items)
+`;
+		const parsed = parse_with_imports(input);
+		const err = parsed.errors.find((e) =>
+			e.message.includes("cannot mov 'items' out of struct by value"),
+		);
+		expect(err).toBeDefined();
+	});
+});

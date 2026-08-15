@@ -7,7 +7,7 @@ import type CheckStatus from "./CheckStatus.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
 import check_type_exists from "./utils/check_type_exists.ts";
 import { apply_bounds } from "./utils/flow_bounds.ts";
-import { is_class_type } from "./utils/ownership.ts";
+import { is_class_type, is_owning_struct_type_requiring_move } from "./utils/ownership.ts";
 import { materialize_tuple_type } from "./utils/tuple_struct.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
@@ -61,17 +61,24 @@ export default function check_function_parameter_node(param: ParameterNode, stat
 		);
 	}
 
-	// mov is only for class types, but type parameters (T, U, …) are allowed
-	// since the actual type isn't known until monomorphization. When a generic
-	// is instantiated with a non-class, mov silently becomes a no-op.
+	// mov is for class types and owning value structs (List/Map/Buffer/… —
+	// anything whose byte-copy would double-free, so the move transfers the
+	// backing storage). Type parameters (T, U, …) are allowed since the actual
+	// type isn't known until monomorphization; when a generic is instantiated
+	// with a non-owning type, mov silently becomes a no-op.
 	if (
 		param.is_moved &&
 		param.type.name &&
 		!is_class_type(param.type.name, status) &&
+		!is_owning_struct_type_requiring_move(param.type, status) &&
 		!status.type_params.includes(param.type.name) &&
 		!status.structs.some((s) => s.type_params.includes(param.type.name))
 	) {
-		add_error(status, `mov is only allowed for class types, not '${param.type.name}'`, param.start);
+		add_error(
+			status,
+			`mov is only allowed for class or owning struct types, not '${param.type.name}'`,
+			param.start,
+		);
 	}
 
 	if (param.is_variadic && param.default_value) {

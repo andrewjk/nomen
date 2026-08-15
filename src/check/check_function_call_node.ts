@@ -16,6 +16,7 @@ import check_function_node from "./check_function_node.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import { is_overloaded, mangled_label } from "./utils/function_overload.ts";
+import { is_class_type, is_owning_struct_type_requiring_move } from "./utils/ownership.ts";
 import type_from_value from "./utils/type_from_value.ts";
 
 export default function check_function_call_node(
@@ -226,6 +227,26 @@ export function monomorphize(
 	const existing = status.structs.find((s) => s.name === mono_name);
 	if (existing) return existing;
 
+	// A type argument that is itself an instantiated generic (e.g.
+	// `Wrapper<List<int>>`) cannot be substituted soundly yet: the
+	// substitution below is name-only (`T` -> "List"), which drops the inner
+	// type arguments and leaves the mono's fields/params/body referencing the
+	// BARE generic — a type with no emitted body that silently breaks
+	// codegen (incomplete `struct List` signatures, undefined
+	// `List_destroy` symbols) and can even hang the checker. Reject at check
+	// time with a clear message until the substitution carries full types.
+	const nested_generic_arg = type_args.find(
+		(t) => t.type_args?.length && status.structs.findLast((s) => s.name === t.name && s.is_generic),
+	);
+	if (nested_generic_arg) {
+		add_error(
+			status,
+			`Cannot instantiate generic '${generic_struct.name}' with generic type argument '${nested_generic_arg.name}<...>' — nested generic instantiation is not supported yet`,
+			generic_struct.start,
+		);
+		return null;
+	}
+
 	const substitution = new Map<string, string>();
 	for (let i = 0; i < generic_struct.type_params.length; i++) {
 		substitution.set(generic_struct.type_params[i], type_args[i].name);
@@ -434,16 +455,22 @@ export function monomorphize(
 		for (const field of mono_fields) {
 			if (!field.value) {
 				const param = new ParameterNode(field.start, field.name, field.type);
-				// For mov fields: keep mov only if resolved type is class, otherwise convert to var
-				if (field.declaration === "mov") {
-					const field_is_class = !!status.structs.find(
-						(s) => s.name === field.type.name && s.is_class,
-					);
-					if (field_is_class) {
-						param.is_moved = true;
-					} else {
-						param.declaration = "var";
-					}
+				// The synthesized init byte-copies each param into its field,
+				// so a field whose (substituted) type is a class OR an owning
+				// value struct (List<...>/Buffer/…/anything owning heap) must
+				// take it by `mov` — a plain by-value pass would leave the
+				// field and the caller's variable co-owning the same storage
+				// (double-free at scope exit). Mirrors
+				// mark_owning_auto_init_params for non-generic structs.
+				if (
+					!field.type.is_nullable &&
+					field.type.name &&
+					(is_class_type(field.type.name, status) ||
+						is_owning_struct_type_requiring_move(field.type, status))
+				) {
+					param.is_moved = true;
+				} else if (field.declaration === "mov") {
+					param.declaration = "var";
 				}
 				init_params.push(param);
 			}

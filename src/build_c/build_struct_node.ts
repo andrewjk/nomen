@@ -14,6 +14,7 @@ import type BuildStatus from "./BuildStatus.ts";
 import c_function_name from "./utils/c_function_name.ts";
 import { enter_c_scope, leave_c_scope } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
+import mono_struct_name from "./utils/mono_struct_name.ts";
 import { has_flag_name, is_nullable_struct_type } from "./utils/nullable_struct.ts";
 import {
 	emit_owning_buffer_body,
@@ -217,8 +218,11 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 					// Struct params are passed by pointer — dereference when
 					// assigning into a by-value field. Class fields are now
 					// pointers themselves, so don't dereference the param.
+					// Resolve a generic field type (e.g. `List<int>`) to its
+					// mono struct so the pointer/value decision matches the
+					// (already monomorphized) ctor signature.
 					const field_struct = status.structs.find(
-						(s) => s.name === field.type.name && !s.is_simple_type,
+						(s) => s.name === mono_struct_name(field.type, status) && !s.is_simple_type,
 					);
 					const field_trait = status.traits.find((t) => t.name === field.type.name);
 					if ((field_struct && !field_struct.is_class) || field_trait) {
@@ -357,8 +361,14 @@ function c_param_decl(type: Type, name: string, status: BuildStatus): string {
 	if (type.storage_kind === "heap_array") {
 		return `struct Array_${type.name} *${name}`;
 	}
-	const struct_type = status.structs.find((s) => s.name === type.name);
-	const trait_type = status.traits.find((t) => t.name === type.name);
+	// A generic field type applied to concrete args (e.g. `List<int>`) lowers
+	// to its monomorphized struct (`struct List_int *`) — the bare generic
+	// has no emitted body, so a `struct List *` param would be an incomplete
+	// type and the field assignment a type conflict. Mirrors the mono rewrite
+	// in build_parameter_node for free-function params.
+	const type_name = mono_struct_name(type, status);
+	const struct_type = status.structs.find((s) => s.name === type_name);
+	const trait_type = status.traits.find((t) => t.name === type_name);
 	const is_struct = !!struct_type && !struct_type.is_simple_type;
 	const is_simple = !!struct_type?.is_simple_type;
 	const is_ptr = type.is_array || (!is_simple && (is_struct || !!trait_type));
@@ -366,9 +376,9 @@ function c_param_decl(type: Type, name: string, status: BuildStatus): string {
 	// Struct/trait params use the `struct Tag` form (the tag is never mangled,
 	// only the typedef is) — emit the plain name, not c_type's typedef.
 	if (is_struct || trait_type) {
-		out += `struct ${type.name}`;
+		out += `struct ${type_name}`;
 	} else {
-		out += c_type(type.name);
+		out += c_type(type_name);
 	}
 	if (is_ptr) {
 		out += ` *`;

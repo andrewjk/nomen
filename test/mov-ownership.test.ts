@@ -166,7 +166,7 @@ func identity = (mov int x, out int) {
 `;
 			const parsed = parse(input);
 			expect(parsed.errors).toEqual([
-				test_error(input, "mov is only allowed for class types, not 'int'", 2, 18),
+				test_error(input, "mov is only allowed for class or owning struct types, not 'int'", 2, 18),
 			]);
 		});
 
@@ -182,7 +182,12 @@ func identity = (mov Point p, out Point) {
 `;
 			const parsed = parse(input);
 			expect(parsed.errors).toEqual([
-				test_error(input, "mov is only allowed for class types, not 'Point'", 6, 18),
+				test_error(
+					input,
+					"mov is only allowed for class or owning struct types, not 'Point'",
+					6,
+					18,
+				),
 			]);
 		});
 
@@ -207,7 +212,12 @@ func identity = (mov string s, out string) {
 `;
 			const parsed = parse(input);
 			expect(parsed.errors).toEqual([
-				test_error(input, "mov is only allowed for class types, not 'string'", 2, 18),
+				test_error(
+					input,
+					"mov is only allowed for class or owning struct types, not 'string'",
+					2,
+					18,
+				),
 			]);
 		});
 
