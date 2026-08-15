@@ -70,6 +70,57 @@ test("wraps an argument list past the print width", () => {
 	expect(format(result, { print_width: 40 })).toBe(result);
 });
 
+test("reflows a long single-line signature onto one parameter per line", () => {
+	const source =
+		"func f = (int aaaaaaaaaa, int bbbbbbbbbb, int cccccccccc, int dddddddddd, int eeeeeeeeee, int ffffffffff) {\n\treturn 1\n}\n";
+	const expected =
+		"func f = (\n" +
+		"\tint aaaaaaaaaa,\n" +
+		"\tint bbbbbbbbbb,\n" +
+		"\tint cccccccccc,\n" +
+		"\tint dddddddddd,\n" +
+		"\tint eeeeeeeeee,\n" +
+		"\tint ffffffffff\n" +
+		") {\n\treturn 1\n}\n";
+	expect(format(source)).toBe(expected);
+	// A parameter list is not a list context, so no trailing comma is added —
+	// and the reflow is idempotent.
+	expect(format(expected)).toBe(expected);
+});
+
+test("keeps a generic-typed parameter whole when reflowing", () => {
+	const source =
+		"func f = (ref Map<string, List<int>> table_data, int another_parameter_here_ok, bool flag) {\n\treturn 1\n}\n";
+	const result = format(source, { print_width: 60 });
+	// The commas inside `<...>` type arguments are not separators: the
+	// parameter stays on one line, written as tightly as the source had it.
+	expect(result).toBe(
+		"func f = (\n" +
+			"\tref Map<string, List<int>> table_data,\n" +
+			"\tint another_parameter_here_ok,\n" +
+			"\tbool flag\n" +
+			") {\n\treturn 1\n}\n",
+	);
+	expect(format(result, { print_width: 60 })).toBe(result);
+});
+
+test("still splits on commas after an unclosed angle bracket", () => {
+	// The `<` never closes, so it was a comparison — every comma separates.
+	const source = "check_limits(alpha < beta, gamma, delta, epsilon_very_long_name)\n";
+	const result = format(source, { print_width: 50 });
+	expect(result).toBe(
+		"check_limits(\n\talpha < beta,\n\tgamma,\n\tdelta,\n\tepsilon_very_long_name,\n)\n",
+	);
+});
+
+test("keeps a generic constructor argument whole when wrapping a call", () => {
+	const source = "process(Map<int, string>(source_items, capacity_limit), another_argument)\n";
+	const result = format(source, { print_width: 60 });
+	expect(result).toBe(
+		"process(\n\tMap<int, string>(source_items, capacity_limit),\n\tanother_argument,\n)\n",
+	);
+});
+
 test("leaves raw blocks and multiline strings untouched", () => {
 	const source = 'func f = () {\n\t```\nline  one\n  line  two\n```\n\tvar s = "a\n  b"\n}\n';
 	const expected = 'func f = () {\n\t```\nline  one\n  line  two\n```\n\tvar s = "a\n  b"\n}\n';

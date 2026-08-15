@@ -174,7 +174,7 @@ function is_continuation(previous: Piece[] | undefined, pieces: Piece[]): boolea
 	return false;
 }
 
-/** Emit a line, breaking its argument list up if it is over the print width. */
+/** Emit a line, breaking its bracketed list up if it is over the print width. */
 function wrap(pieces: Piece[], level: number, options: FormatOptions): string[] {
 	const text = join(pieces);
 	const width = level * options.tab_width + text.length;
@@ -186,7 +186,8 @@ function wrap(pieces: Piece[], level: number, options: FormatOptions): string[] 
 	if (items.length < 2) return [indent(level, options) + text];
 
 	// Parameter lists are never `is_list`, so this only adds the comma to array
-	// literals and argument lists (which is all the grammar allows).
+	// literals and argument lists; a reflowed parameter list keeps no trailing
+	// comma (any written one is stripped on the closing line).
 	const trailing = options.trailing_comma && group.is_list;
 
 	const out = [indent(level, options) + join(pieces.slice(0, group.open + 1))];
@@ -207,8 +208,7 @@ function find_group(
 		if (!OPENERS.has(pieces[i].text)) continue;
 		const close = match_bracket(pieces, i);
 		if (close < 0) continue;
-		if (!split_items(pieces.slice(i + 1, close)).length) continue;
-		if (!has_separator(pieces.slice(i + 1, close))) continue;
+		if (split_items(pieces.slice(i + 1, close)).length < 2) continue;
 		return { open: i, close, is_list: is_list_open(pieces, i) };
 	}
 	return undefined;
@@ -226,31 +226,53 @@ function match_bracket(pieces: Piece[], open: number): number {
 	return -1;
 }
 
-function has_separator(pieces: Piece[]): boolean {
+/**
+ * The commas that separate the top-level items of a bracket group. Commas
+ * inside nested brackets are not separators, and neither are the ones inside
+ * `<...>` type arguments (`Map<string, int>` is one item, not two). A `<`
+ * after a name opens type arguments; if no matching closer follows before the
+ * group ends, the angle brackets were really comparisons, so the scan is
+ * redone ignoring them.
+ */
+function separator_cuts(pieces: Piece[]): number[] {
+	const cuts: number[] = [];
 	let depth = 0;
-	for (const piece of pieces) {
-		if (OPENERS.has(piece.text)) depth += 1;
-		else if (CLOSERS.has(piece.text)) depth -= 1;
-		else if (piece.text === "," && depth === 0) return true;
+	let angles = 0;
+	let previous: Piece | undefined;
+	for (let i = 0; i < pieces.length; i++) {
+		const text = pieces[i].text;
+		if (OPENERS.has(text)) depth += 1;
+		else if (CLOSERS.has(text)) depth -= 1;
+		else if (text === "<" && is_name(previous)) angles += 1;
+		else if (angles > 0 && text === ">") angles -= 1;
+		else if (angles > 0 && text === ">>") angles = Math.max(0, angles - 2);
+		else if (text === "," && depth === 0 && angles === 0) cuts.push(i);
+		previous = pieces[i];
 	}
-	return false;
+	// An angle bracket that never closed was a comparison, not a type list.
+	return angles > 0 ? separator_cuts_fallback(pieces) : cuts;
+}
+
+/** The bracket-only scan, for angle brackets that never closed. */
+function separator_cuts_fallback(pieces: Piece[]): number[] {
+	const cuts: number[] = [];
+	let depth = 0;
+	for (let i = 0; i < pieces.length; i++) {
+		const text = pieces[i].text;
+		if (OPENERS.has(text)) depth += 1;
+		else if (CLOSERS.has(text)) depth -= 1;
+		else if (text === "," && depth === 0) cuts.push(i);
+	}
+	return cuts;
 }
 
 function split_items(pieces: Piece[]): Piece[][] {
 	const items: Piece[][] = [];
-	let current: Piece[] = [];
-	let depth = 0;
-	for (const piece of pieces) {
-		if (OPENERS.has(piece.text)) depth += 1;
-		else if (CLOSERS.has(piece.text)) depth -= 1;
-		if (piece.text === "," && depth === 0) {
-			if (current.length) items.push(current);
-			current = [];
-			continue;
-		}
-		current.push(piece);
+	const cuts = [...separator_cuts(pieces), pieces.length];
+	for (let i = 0; i < cuts.length; i++) {
+		const item = pieces.slice(i === 0 ? 0 : cuts[i - 1] + 1, cuts[i]);
+		if (item.length) items.push(item);
 	}
-	if (current.length) items.push(current);
 	return items;
 }
 

@@ -48,9 +48,10 @@ const CALL_KEYWORDS = new Set(["func", "struct", "class", "trait", "enum", "bits
 
 const NO_SPACE_BEFORE = new Set([",", ";", ")", "]", ":", "?"]);
 const NO_SPACE_AFTER = new Set(["(", "[", ".", "#", "...", "!", "???", "!!!"]);
-// `<` and `>` are both generic brackets and comparisons, and `..` is written
+// `<` and `>` are both generic brackets and comparisons, `>>` is both a
+// nested-generic closer (`List<List<int>>`) and a shift, and `..` is written
 // either `0..3` or `0 .. 3`. Rather than guess, keep whatever was written.
-const KEEP_SPACING = new Set(["<", ">", ".."]);
+const KEEP_SPACING = new Set(["<", ">", ">>", ".."]);
 
 // After these, a `+` or `-` is a sign rather than a subtraction. Getting this
 // wrong changes the token stream (`a -1` is not `a - 1`), which the safety
