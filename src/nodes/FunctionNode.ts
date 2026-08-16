@@ -41,6 +41,17 @@ export default class FunctionNode extends BaseNode implements BlockNode, Returni
 	 * `mov T` parameter (ownership in), this is ownership out.
 	 */
 	returns_mov?: boolean;
+	/**
+	 * True for a string-returning function whose return expressions hand
+	 * back a BORROW (a parameter pass-through, a borrow-initialized local,
+	 * a literal, a field, or a borrow accessor like `.at`) rather than a
+	 * fresh heap allocation. On backends that pass borrows through raw
+	 * (aarch64), the caller must NOT free such a result; the C backend
+	 * normalizes at the return site (strdup) instead, so every string
+	 * return there is owned regardless. Stamped once by the shared
+	 * string-return analysis (build_common/string_return_analysis.ts).
+	 */
+	returns_string_borrow?: boolean;
 	type_params: string[] = [];
 	scope?: BaseNode;
 	/**

@@ -3,6 +3,7 @@ import {
 	struct_needs_destroy,
 } from "../build_common/destroy_analysis.ts";
 import { mono_struct_name, mono_type_name } from "../build_common/mono_name.ts";
+import { classify_param } from "../build_common/param_classify.ts";
 import { is_overloaded, mangled_label } from "../check/utils/function_overload.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import StructNode from "../nodes/StructNode.ts";
@@ -69,7 +70,10 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 					if (p.is_variadic) {
 						decl += `long _${p.name}_len, `;
 					}
-					decl += c_param_decl(p.type, p.name, status);
+					decl += c_param_decl(p.type, p.name, status, {
+						is_ref: p.is_ref || p.type.is_ref,
+						declaration: p.declaration,
+					});
 					// A nullable struct value param (`T? f`, T a non-class
 					// struct) takes a companion `unsigned char <name>_has`
 					// flag as the very next C parameter (mirrors
@@ -144,12 +148,14 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 		// `self` is a heap pointer (self_is_local=false, self_is_ref=true,
 		// field access uses `->`).
 		const old_ref_params = status.function_ref_params;
+		const old_class_vars = status.class_vars;
 		const old_self_is_ref = status.self_is_ref;
 		const old_self_is_local = status.self_is_local;
 		const old_current_struct = status.current_struct;
 		const old_return_type = status.function_return_type;
 		const old_variadic_params = status.function_variadic_params;
 		status.function_ref_params = new Set<string>();
+		status.class_vars = new Set<string>();
 		status.function_variadic_params = new Set<string>();
 		status.self_is_ref = is_class;
 		status.self_is_local = !is_class;
@@ -159,6 +165,21 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 			if (p.is_variadic) {
 				status.function_variadic_params!.add(c_function_name(p.name));
 			}
+			// Register a `ref` init param so body uses dereference it,
+			// matching the pointer the signature (classify_param) now emits.
+			// Class/trait-typed params follow the method loop's convention
+			// (class_vars — the pointer IS the value); primitives go through
+			// function_ref_params like a `ref` param of any free function.
+			if (!p.is_self_param && (p.is_ref || p.type.is_ref)) {
+				const pname = c_function_name(p.name);
+				const p_struct = status.structs.find((s) => s.name === p.type.name);
+				const p_trait = status.traits.find((t) => t.name === p.type.name);
+				if (p_struct?.is_class || p_trait) {
+					status.class_vars!.add(pname);
+				} else {
+					status.function_ref_params!.add(pname);
+				}
+			}
 		}
 		for (let child of custom_init.statements) {
 			build_node(child, status, true);
@@ -166,6 +187,7 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 		status.code += `return self;\n`;
 		status.code += `}\n`;
 		status.function_ref_params = old_ref_params;
+		status.class_vars = old_class_vars;
 		status.function_variadic_params = old_variadic_params;
 		status.self_is_ref = old_self_is_ref;
 		status.self_is_local = old_self_is_local;
@@ -354,9 +376,16 @@ function build_struct_traits(node: StructNode, status: BuildStatus) {
  * Build a C parameter declaration as a string (type + name), applying the same
  * `struct` prefix and pointer rules as build_parameter_node. Used where the
  * signature needs to be captured as a string (e.g. constructor declarations)
- * rather than emitted directly to status.code.
+ * rather than emitted directly to status.code. Classification is shared via
+ * classify_param; flags are optional because the field-derived auto-init form
+ * carries none (fields cannot be `ref`, and their params default to `const`).
  */
-function c_param_decl(type: Type, name: string, status: BuildStatus): string {
+function c_param_decl(
+	type: Type,
+	name: string,
+	status: BuildStatus,
+	flags?: { is_ref?: boolean; declaration?: string },
+): string {
 	// A heap `Array<T>` param is a `struct Array_<T>*` (the value owns a heap
 	// buffer with a length header), not a raw element pointer.
 	if (type.storage_kind === "heap_array") {
@@ -368,20 +397,16 @@ function c_param_decl(type: Type, name: string, status: BuildStatus): string {
 	// type and the field assignment a type conflict. Mirrors the mono rewrite
 	// in build_parameter_node for free-function params.
 	const type_name = mono_struct_name(type, status);
-	const struct_type = status.structs.find((s) => s.name === type_name);
-	const trait_type = status.traits.find((t) => t.name === type_name);
-	const is_struct = !!struct_type && !struct_type.is_simple_type;
-	const is_simple = !!struct_type?.is_simple_type;
-	const is_ptr = type.is_array || (!is_simple && (is_struct || !!trait_type));
+	const cls = classify_param(type, type_name, flags ?? {}, status);
 	let out = "";
 	// Struct/trait params use the `struct Tag` form (the tag is never mangled,
 	// only the typedef is) — emit the plain name, not c_type's typedef.
-	if (is_struct || trait_type) {
+	if (cls.is_struct) {
 		out += `struct ${type_name}`;
 	} else {
 		out += c_type(type_name);
 	}
-	if (is_ptr) {
+	if (cls.wants_pointer) {
 		out += ` *`;
 	} else {
 		out += ` `;

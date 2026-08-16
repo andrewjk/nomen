@@ -1,3 +1,4 @@
+import { has_return_statement } from "../build_common/string_return_analysis.ts";
 import BitsetNode from "../nodes/BitsetNode.ts";
 import type BlockNode from "../nodes/BlockNode.ts";
 import { is_function_node, is_struct_node, is_trait_node } from "../nodes/check_node_type.ts";
@@ -296,43 +297,22 @@ function gather_structs(block: BlockNode, status: BuildStatus) {
 	}
 }
 
-// Whether a returned expression produces a fresh owned heap string (the caller
-// must free) vs. a borrowed field, a static literal, or a match/switch that
-// only yields literals. Recurses through match/switch branches.
-function value_is_owned_string(v: any): boolean {
-	if (!v || typeof v !== "object") return false;
+function gather_heap_returning_functions(block: BlockNode, status: BuildStatus) {
+	if (!status.heap_returning_functions) status.heap_returning_functions = new Set();
 	// The C backend strdup's EVERY string return before handing it to the
 	// caller: literals (`return "x"` → strdup), borrowed field accesses
 	// (`return self.name` → strdup), method/func calls already produce a
 	// fresh heap string, and match/switch/if returns are strdup'd too (see
 	// build_return_node). So any path through a string-returning function
 	// transfers ownership of a heap string to the caller — register the
-	// function unconditionally so callers know to free the result.
-	return true;
-}
-
-function gather_heap_returning_functions(block: BlockNode, status: BuildStatus) {
-	if (!status.heap_returning_functions) status.heap_returning_functions = new Set();
-	const func_returns_owned = (func: FunctionNode): boolean => {
-		let has_owned_return = false;
-		const walk = (n: any): void => {
-			if (!n || typeof n !== "object") return;
-			if (n.node_type === "return" && n.value) {
-				if (value_is_owned_string(n.value)) has_owned_return = true;
-			}
-			if (n.node_type === "func") return;
-			for (const key of Object.keys(n)) {
-				if (key === "node_type") continue;
-				const val = (n as any)[key];
-				if (Array.isArray(val)) for (const item of val) walk(item);
-				else if (val && typeof val === "object") walk(val);
-			}
-		};
-		for (const stmt of func.statements ?? []) walk(stmt);
-		return has_owned_return;
-	};
+	// function unconditionally. (The precise borrow-vs-owned classification
+	// exists in build_common/string_return_analysis.ts and is stamped on the
+	// FunctionNode (`returns_string_borrow`); the C backend's boundary-strdup
+	// contract makes every return owned regardless, so it is not consulted
+	// here.)
 	const visit = (func: FunctionNode) => {
-		if (func.return_type?.name === "string" && func.name && func_returns_owned(func)) {
+		if (func.return_type?.name === "string" && func.name && has_return_statement(func)) {
+			func.returns_string_borrow = false;
 			status.heap_returning_functions!.add(c_function_name(func.name));
 		}
 		for (const stmt of func.statements ?? []) {
@@ -341,7 +321,7 @@ function gather_heap_returning_functions(block: BlockNode, status: BuildStatus) 
 	};
 	const visit_method = (struct_name: string, func: FunctionNode) => {
 		if (func.return_type?.name !== "string" || !func.name) return;
-		if (func_returns_owned(func)) {
+		if (has_return_statement(func)) {
 			const method_c_name = func.name.replace(/#/g, "");
 			status.heap_returning_functions!.add(`${struct_name}_${method_c_name}`);
 		}

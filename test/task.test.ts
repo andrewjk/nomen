@@ -76,6 +76,47 @@ t2.wait()
 			await check_output(`task_two_both_run_${arch}`, result, "", options);
 		}
 	});
+
+	test("nursery.spawn inside a generic method (mono re-derivation)", async () => {
+		// The generic struct is declared AFTER the code that instantiates
+		// it, so its body is unchecked at monomorphization time (the
+		// clone-before-check ordering). The spawn annotations
+		// (is_nursery_spawn, Task<T> typing, Task<T> materialization) must
+		// be re-derived on the cloned body for the build to emit the spawn
+		// trampoline instead of resolving a nonexistent `spawn` method.
+		const input = `
+import System
+
+func work = (uint64 n) {
+	if n == 42 {
+		Console.write_line("spawned 42")
+	}
+}
+
+pub func main = () {
+	async pool {
+		var Runner<uint64> r = Runner<uint64>(7)
+		r.launch(42, ref pool)
+	}
+	Console.write_line("done")
+}
+
+pub struct Runner<T> {
+	pub var T value
+
+	pub func launch = (ref self, uint64 n, ref Nursery pool) {
+		pool.spawn(work(n))
+	}
+}
+`;
+		for (const arch of ARCHITECTURES) {
+			const parsed = parse_raw(input);
+			expect(parsed.errors).toEqual([]);
+			const options = { arch, ...OPTIONS };
+			const result = build(parsed.root, options);
+			await check_output(`nursery_spawn_mono_${arch}`, result, "spawned 42\ndone\n", options);
+		}
+	});
 });
 
 describe("spawn keyword", () => {

@@ -93,6 +93,26 @@ Console.write("\\{a.value} \\{b.value}")
 `;
 		await build_and_check_output(input, "construct_two_instances", "100 200");
 	});
+
+	test("custom #init with a ref param round-trips the caller's value", async () => {
+		// A `ref` init param must lower to a pointer in the synthesized
+		// constructor signature AND be dereferenced at body use sites —
+		// previously the signature was by-value while the call site passed
+		// `&arg` (garbage read). Locked by the shared param classification
+		// (classify_param) both signature sites use.
+		const input = `
+struct Scale {
+  var int factor = 1
+  pub func #init = (self, ref int n) {
+    self.factor = n
+  }
+}
+var int a = 7
+var Scale s = Scale(ref a)
+Console.write("\\{s.factor}")
+`;
+		await build_and_check_output(input, "construct_ref_init_param", "7");
+	});
 });
 
 // ERRORS

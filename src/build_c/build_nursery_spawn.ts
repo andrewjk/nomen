@@ -53,9 +53,36 @@ export default function build_nursery_spawn(
 		arg_c_types.push(is_class || is_trait ? `struct ${mono_name} *` : c_type(mono_name));
 	}
 
+	// Determine the return type up front (shared by the forward declaration
+	// and the trampoline's result capture).
+	const return_type_name = node.function_return_type?.name;
+	const returns_value = !!(
+		return_type_name &&
+		return_type_name !== "void" &&
+		return_type_name !== "?"
+	);
+	const is_class_ret =
+		returns_value && !!status.structs.find((s) => s.name === return_type_name && s.is_class);
+	const is_trait_ret = returns_value && !!status.traits.find((t) => t.name === return_type_name);
+	const c_ret_type = !returns_value
+		? "void"
+		: is_class_ret || is_trait_ret
+			? `struct ${return_type_name} *`
+			: c_type(return_type_name);
+
+	// Forward-declare the spawned function before the trampoline: the
+	// trampoline is a full function definition appended to the headers, and
+	// it may be appended BEFORE the function's own prototype lands there —
+	// struct methods are built before free functions, so a spawn inside a
+	// method (e.g. a monomorphized generic body) emits its trampoline ahead
+	// of any free function declared after the generic struct. A compatible
+	// redeclaration is legal C, so emitting this unconditionally is safe.
+	// Mirrors the aarch64 companion's trampoline declaration.
+	//
 	// Emit the arg struct + trampoline to headers (file scope). Identical to
 	// build_spawn_node — the trampoline is shared across both spawn forms.
-	let header = `struct ${struct_name} {\n`;
+	let header = `${c_ret_type} ${func_name}(${arg_c_types.join(", ")});\n`;
+	header += `struct ${struct_name} {\n`;
 	for (let i = 0; i < arg_c_types.length; i++) {
 		header += `\t${arg_c_types[i]} arg${i};\n`;
 	}
@@ -66,17 +93,7 @@ export default function build_nursery_spawn(
 	header += `static void ${tramp_name}(void *p) {\n`;
 	header += `\tstruct ${struct_name} *a = (struct ${struct_name} *)p;\n`;
 	header += `\t__nomen_current_cancel_flag = a->cancel_flag;\n`;
-	const return_type_name = node.function_return_type?.name;
-	const returns_value = !!(
-		return_type_name &&
-		return_type_name !== "void" &&
-		return_type_name !== "?"
-	);
 	if (returns_value) {
-		const is_class_ret = !!status.structs.find((s) => s.name === return_type_name && s.is_class);
-		const is_trait_ret = !!status.traits.find((t) => t.name === return_type_name);
-		const c_ret_type =
-			is_class_ret || is_trait_ret ? `struct ${return_type_name} *` : c_type(return_type_name);
 		header += `\t${c_ret_type} _r = ${func_name}(`;
 	} else {
 		header += `\t${func_name}(`;

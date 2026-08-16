@@ -246,13 +246,40 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 		arg_c_types.push(is_class || is_trait ? `struct ${mono_name} *` : c_type(mono_name));
 	}
 
+	// Determine if the function returns a value. We approximate by checking
+	// the captured function_return_type — empty name means void/no return.
+	const return_type_name = node.function_return_type?.name;
+	const returns_value = !!(
+		return_type_name &&
+		return_type_name !== "void" &&
+		return_type_name !== "?"
+	);
+	const is_class_ret =
+		returns_value && !!status.structs.find((s) => s.name === return_type_name && s.is_class);
+	const is_trait_ret = returns_value && !!status.traits.find((t) => t.name === return_type_name);
+	const c_ret_type = !returns_value
+		? "void"
+		: is_class_ret || is_trait_ret
+			? `struct ${return_type_name} *`
+			: c_type(return_type_name);
+
+	// Forward-declare the spawned function before the trampoline. The
+	// trampoline is a full function definition appended to the headers, and
+	// it may be appended BEFORE the function's own prototype lands there —
+	// struct methods are built before free functions, so a spawn inside a
+	// method (e.g. a monomorphized generic body) emits its trampoline ahead
+	// of any free function declared after the generic struct. A compatible
+	// redeclaration is legal C, so emitting this unconditionally is safe.
+	// Mirrors the aarch64 companion's trampoline declaration.
+	let header = `${c_ret_type} ${func_name}(${arg_c_types.join(", ")});\n`;
+
 	// Emit the arg struct + trampoline to headers (file scope).
 	// The args struct also carries a result slot pointer that the trampoline
 	// writes the function's return value to (cast to uint64), a cancel flag
 	// pointer that the trampoline publishes to a thread-local so the
 	// spawned function can poll Task.current_cancelled(), and a future
 	// pointer that the trampoline signals on completion.
-	let header = `struct ${struct_name} {\n`;
+	header += `struct ${struct_name} {\n`;
 	for (let i = 0; i < arg_c_types.length; i++) {
 		header += `\t${arg_c_types[i]} arg${i};\n`;
 	}
@@ -266,19 +293,7 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 	header += `static void ${tramp_name}(void *p) {\n`;
 	header += `\tstruct ${struct_name} *a = (struct ${struct_name} *)p;\n`;
 	header += `\t__nomen_current_cancel_flag = a->cancel_flag;\n`;
-	// Determine if the function returns a value. We approximate by checking
-	// the captured function_return_type — empty name means void/no return.
-	const return_type_name = node.function_return_type?.name;
-	const returns_value = !!(
-		return_type_name &&
-		return_type_name !== "void" &&
-		return_type_name !== "?"
-	);
 	if (returns_value) {
-		const is_class_ret = !!status.structs.find((s) => s.name === return_type_name && s.is_class);
-		const is_trait_ret = !!status.traits.find((t) => t.name === return_type_name);
-		const c_ret_type =
-			is_class_ret || is_trait_ret ? `struct ${return_type_name} *` : c_type(return_type_name);
 		header += `\t${c_ret_type} _r = ${func_name}(`;
 	} else {
 		header += `\t${func_name}(`;

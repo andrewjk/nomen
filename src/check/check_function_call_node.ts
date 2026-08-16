@@ -11,10 +11,16 @@ import RawNode from "../nodes/RawNode.ts";
 import RootNode from "../nodes/RootNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import Type from "../nodes/Type.ts";
+import ValueNode from "../nodes/ValueNode.ts";
 import check_function_call from "./check_function_call.ts";
 import check_function_node from "./check_function_node.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
+import {
+	collect_return_bounds,
+	collect_return_length,
+	substitute_constraint,
+} from "./utils/flow_bounds.ts";
 import { is_overloaded, mangled_label } from "./utils/function_overload.ts";
 import { is_class_type, is_owning_struct_type_requiring_move } from "./utils/ownership.ts";
 import type_from_value from "./utils/type_from_value.ts";
@@ -340,6 +346,7 @@ export function monomorphize(
 	status.structs.push(mono_struct);
 	status.types.push(mono_name);
 
+	const cloned_methods: FunctionNode[] = [];
 	for (const func of generic_struct.functions) {
 		if (func.name === "#init") continue;
 		const cloned = clone_node(func) as FunctionNode;
@@ -378,14 +385,27 @@ export function monomorphize(
 		// The mono body is cloned from the unchecked generic body and never
 		// re-checked (cloned.checked = true below), so annotations the
 		// checker normally sets — owned_return, mangled_name,
-		// nullable_param_indices, variadic_param_index — are absent. This
-		// pass resolves each call's receiver type by tracing the access
-		// chain (using the concrete types set by the substitution passes
-		// above) and derives the annotations from the resolved method's
-		// signature.
+		// nullable_param_indices, variadic_param_index, return-contract
+		// bounds, nursery.spawn recognition — are absent. This pass resolves
+		// each call's receiver type by tracing the access chain (using the
+		// concrete types set by the substitution passes above) and derives
+		// the annotations from the resolved method's signature and contracts.
 		rederive_access_func_annotations(cloned.statements, status);
 		cloned.checked = true;
+		cloned_methods.push(cloned);
 		mono_struct.functions.push(cloned);
+	}
+
+	// Second re-derivation sweep over the cloned method bodies. The loop
+	// above builds the mono struct's method list incrementally, so a call to
+	// a sibling method declared LATER in the generic (e.g. Map.get →
+	// self.find_slot, which Map.nm declares after get/set/has) found no
+	// target during the in-loop pass. With every method now cloned onto the
+	// mono struct, re-run the pass so those calls derive their annotations
+	// from the fully-substituted signatures. Idempotent: every annotation is
+	// either guarded or a pure overwrite with the same value.
+	for (const cloned of cloned_methods) {
+		rederive_access_func_annotations(cloned.statements, status);
 	}
 
 	const init_return_type = new Type(generic_struct.name);
@@ -876,12 +896,15 @@ function resolve_receiver_type_name(
  * resolved method's signature.
  *
  * Sets: owned_return, mangled_name, nullable_param_indices,
- * variadic_param_index, variadic_param_name. Other annotations
- * (return_bounds, inferred_array_length, is_nursery_spawn, etc.) require
- * deeper analysis (return-contract evaluation, call-pattern recognition) and
- * are left for a future pass; they are either irrelevant to mono bodies
- * (skip_bounds_check — no constraint checking runs) or rare (nursery.spawn
- * inside a generic method).
+ * variadic_param_index, variadic_param_name, the call's result type (when
+ * the generic-body check left it unset), return-contract annotations
+ * (return_bounds / inferred_array_length, evaluated from the resolved
+ * method's `out` contract with `self` and the params substituted by the
+ * call-site expressions), and nursery.spawn recognition (is_nursery_spawn
+ * / owned_return / function_return_type / Task<T> typing + Task<T>
+ * monomorphization, mirroring check_nursery_spawn). Deliberately still
+ * unset: skip_bounds_check (no constraint checking runs on mono bodies)
+ * and is_statement (a build-phase decision).
  */
 function rederive_access_func_annotations(nodes: BaseNode[], status: CheckStatus) {
 	for (const node of nodes) rederive_annotations_in_node(node, status);
@@ -942,6 +965,13 @@ function derive_annotations_for_access_func(
 ) {
 	const receiver_type = resolve_receiver_type_name(access_node.target, status);
 	if (!receiver_type) return;
+	// `name.spawn(fn(args))` is compiler-special-cased (check_access_node),
+	// not a regular method on Nursery — recognize it before method
+	// resolution, which would otherwise find no `spawn` function and bail.
+	if (receiver_type === "Nursery" && fc.name === "spawn") {
+		rederive_nursery_spawn_annotations(fc, status);
+		return;
+	}
 	const struct = status.structs.find((s) => s.name === receiver_type);
 	if (!struct) return;
 	const func = struct.functions.find((f) => f.name === fc.name);
@@ -990,6 +1020,92 @@ function derive_annotations_for_access_func(
 	}
 	if (nullable_indices.length > 0) {
 		fc.nullable_param_indices = nullable_indices;
+	}
+
+	// Return-contract evaluation: substitute `out`, `self`, and the callee's
+	// param names with the call-site expressions and collect the resulting
+	// bounds onto the node — mirroring check_function_call's return_bounds /
+	// inferred_array_length derivation, which is unreachable for a
+	// never-re-checked mono body. An enclosing body (e.g. a custom #init
+	// clone, the one mono body that IS re-checked) can then verify parameter
+	// constraints against this call's result, and a literal `out.length == N`
+	// clause feeds the result type's `.length` stamping below.
+	if (func.return_constraint && !fc.return_bounds) {
+		const param_to_arg = new Map<string, BaseNode>();
+		// Map `self` onto the receiver expression so contracts referencing
+		// self.X (e.g. `out < self.count`) resolve against the receiver path
+		// (check_function_call maps it to path_to_node(self_path) — the same
+		// expression reconstructed; passing the actual node is equivalent
+		// and avoids re-deriving the path string).
+		param_to_arg.set("self", access_node.target);
+		for (let i = 0; i < fc.params.length; i++) {
+			const fp = func.params[i + (self_offset >= 0 ? self_offset + 1 : 0)];
+			if (fp?.name) {
+				param_to_arg.set(fp.name, fc.params[i]);
+			}
+		}
+		const substituted = substitute_constraint(func.return_constraint, "_return", param_to_arg);
+		fc.return_bounds = collect_return_bounds(substituted, status);
+		const ret_len = collect_return_length(substituted);
+		if (ret_len !== undefined && fc.inferred_array_length === undefined) {
+			fc.inferred_array_length = ret_len;
+			// Mirror check_access_node's post-check stamping: carry the
+			// literal length onto the result type so the build's inline
+			// literal-length paths fire. Clone first — fc.type may alias the
+			// mono method's shared return_type.
+			if (fc.type?.is_array) {
+				const t = fc.type;
+				const clone = new Type(t.name, t.is_static, t.is_array, t.length);
+				clone.is_ref = t.is_ref;
+				clone.type_args = t.type_args;
+				clone.length = new ValueNode(-1, ret_len, new Type("int"));
+				fc.type = clone;
+			}
+		}
+	}
+}
+
+/**
+ * Re-derive the annotations for a `name.spawn(fn(args))` call inside a
+ * monomorphised body — mirroring check_nursery_spawn (check_access_node),
+ * which is unreachable here because the mono body is never re-checked. The
+ * build gates its spawn-trampoline emission on is_nursery_spawn (without it
+ * the call falls through to method resolution, which finds no `spawn`) and
+ * the declaration-ownership analysis on owned_return (the Task a spawn
+ * yields is a fresh heap allocation). Also types the call as Task<T>,
+ * records function_return_type for the trampoline's result capture, and
+ * triggers Task<T> monomorphization so the struct body is emitted.
+ */
+function rederive_nursery_spawn_annotations(fc: AccessFunctionCallNode, status: CheckStatus) {
+	fc.is_nursery_spawn = true;
+	fc.owned_return = true;
+	if (fc.params.length !== 1 || fc.params[0].node_type !== "func_call") return;
+	const call = fc.params[0] as FunctionCallNode;
+	// The spawned function's return type: reuse the inner call's type when
+	// the clone already carried it (source body was checked before cloning),
+	// else resolve it from the function table (free functions carry their
+	// declared return type regardless of check order).
+	let return_type = call.type;
+	if (!return_type?.name) {
+		const func = status.functions.findLast((f) => f.name === call.name);
+		if (func) {
+			return_type = func.return_type;
+			call.type = func.return_type;
+		}
+	}
+	fc.function_return_type = return_type;
+	const result_type_arg =
+		return_type && return_type.name && return_type.name !== "void" && return_type.name !== "?"
+			? new Type(return_type.name)
+			: new Type("uint64");
+	if (!fc.type?.name) {
+		const task_type = new Type("Task");
+		task_type.type_args = [result_type_arg];
+		fc.type = task_type;
+	}
+	const task_struct = status.structs.find((s) => s.name === "Task");
+	if (task_struct && task_struct.type_params.length > 0) {
+		monomorphize(task_struct, [result_type_arg], status);
 	}
 }
 

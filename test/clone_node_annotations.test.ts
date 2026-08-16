@@ -90,3 +90,92 @@ list.push(1)
 	expect(load_t_call).toBeDefined();
 	expect(load_t_call!.owned_return).toBeUndefined();
 });
+
+test("rederive return_bounds from a return-contract call inside mono body", () => {
+	// List<T>.push's body calls self.items.grow_T(new_cap); Buffer<T>.grow_T
+	// declares `out int: out >= needed`, so the mono List_int.push body's
+	// grow_T call must carry the substituted return-contract bounds.
+	const parsed = parse_with_system(`
+var List<int> list = List<int>()
+list.push(1)
+`);
+	expect(parsed.errors).toEqual([]);
+
+	const calls = find_mono_method_calls(parsed.root as RootNode, "List_int", "push");
+	const grow_call = calls.find((c) => c.name === "grow_T");
+	expect(grow_call).toBeDefined();
+	expect(grow_call!.return_bounds).toBeDefined();
+	// `out >= needed` with the call arg substituted: needed → new_cap.
+	expect(grow_call!.return_bounds!.lower).toContain("new_cap");
+	expect(grow_call!.return_bounds!.upper).toEqual([]);
+});
+
+test("rederive return_bounds with a self-referencing contract inside mono body", () => {
+	// Map<K,V>'s get/has/set bodies call self.find_slot(key, cap);
+	// find_slot declares `out int: out >= 0 && out < cap` — no self
+	// reference, but Tree.left/right do reference self (`out < self.count`).
+	// Use Map (substitutes both a param bound and the receiver).
+	const parsed = parse_with_system(`
+var Map<string, int> m = Map<string, int>()
+m.set("a", 1)
+const int v = m.get("a")
+`);
+	expect(parsed.errors).toEqual([]);
+
+	const calls = find_mono_method_calls(parsed.root as RootNode, "Map_string_int", "get");
+	const find_slot_call = calls.find((c) => c.name === "find_slot");
+	expect(find_slot_call).toBeDefined();
+	expect(find_slot_call!.return_bounds).toBeDefined();
+	expect(find_slot_call!.return_bounds!.lower).toContain("0");
+	expect(find_slot_call!.return_bounds!.upper).toContain("cap");
+});
+
+test("rederive is_nursery_spawn on a nursery.spawn inside a mono body", () => {
+	// A generic method that receives a Nursery and calls pool.spawn(work(n)).
+	// The struct is declared AFTER main, so its generic body is unchecked at
+	// monomorphization time (the clone-before-check ordering) — the spawn
+	// annotations must come from the re-derivation pass. Mirrors what
+	// check_nursery_spawn sets on a checked body: is_nursery_spawn,
+	// owned_return, function_return_type, and Task<T> typing, plus the
+	// Task<T> monomorphization so the build can emit the struct body.
+	const parsed = parse(
+		`
+import System
+
+func work = (int n, out int) {
+	return n * 2
+}
+
+pub func main = () {
+	async pool {
+		var Runner<int> r = Runner<int>(5)
+		r.run(21, ref pool)
+	}
+}
+
+pub struct Runner<T> {
+	pub var T value
+
+	pub func run = (ref self, int n, ref Nursery pool) {
+		pool.spawn(work(n))
+	}
+}
+`,
+		system,
+	);
+	expect(parsed.errors).toEqual([]);
+
+	const calls = find_mono_method_calls(parsed.root as RootNode, "Runner_int", "run");
+	const spawn_call = calls.find((c) => c.name === "spawn");
+	expect(spawn_call).toBeDefined();
+	expect(spawn_call!.is_nursery_spawn).toBe(true);
+	expect(spawn_call!.owned_return).toBe(true);
+	expect(spawn_call!.function_return_type?.name).toBe("int");
+	expect(spawn_call!.type?.name).toBe("Task");
+	expect(spawn_call!.type?.type_args?.[0]?.name).toBe("int");
+	// Task<int> must be materialized (its struct body is emitted at build).
+	const task_int = (parsed.root as RootNode).statements.find(
+		(s) => s.node_type === "struct" && (s as StructNode).name === "Task_int",
+	);
+	expect(task_int).toBeDefined();
+});
