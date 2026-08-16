@@ -597,6 +597,156 @@ Console.write(result)
 	});
 });
 
+describe("returning a container borrow (backend parity)", () => {
+	// Regression for the "Backend divergence: returning a container borrow"
+	// follow-up: on the C backend a function returning `xs.at(i)` handed the
+	// caller an independent (strdup'd) copy, while the aarch64 backend passed
+	// the raw borrow through — tied to the receiver's storage (the result
+	// observed later mutations of the source container). The aarch64 backend
+	// now normalizes container-borrow returns at the return site (a strdup,
+	// mirroring the C backend's boundary-strdup), so both backends hand the
+	// caller an owned copy. Pinned by mutating the source container after the
+	// call: the result keeps the ORIGINAL element value on both backends
+	// (pre-fix aarch64 printed the replacement — the borrow aliased the slot,
+	// which `set` frees and refills).
+
+	test("returning a container .at directly yields an independent copy", async () => {
+		const input = `
+func pick = (List<string> xs, out string) {
+	var int i = 0
+	if i >= 0 && i < xs.length {
+		return xs.at(i)
+	}
+	return "none"
+}
+var List<string> names = List<string>()
+names.push("zebra")
+const string r = pick(names)
+var int j = 0
+if j >= 0 && j < names.length {
+	names.set(j, "viper")
+}
+Console.write(r)
+`;
+		await build_and_check_output(input, "dfree_return_at_copy", "zebra");
+	});
+
+	test("returning a borrow-initialized local yields an independent copy", async () => {
+		const input = `
+func pick_via_local = (List<string> xs, out string) {
+	var int i = 0
+	if i >= 0 && i < xs.length {
+		const string t = xs.at(i)
+		return t
+	}
+	return "none"
+}
+var List<string> names = List<string>()
+names.push("zebra")
+const string r = pick_via_local(names)
+var int j = 0
+if j >= 0 && j < names.length {
+	names.set(j, "viper")
+}
+Console.write(r)
+`;
+		await build_and_check_output(input, "dfree_return_borrow_local_copy", "zebra");
+	});
+
+	test("a borrow fallback alongside a container borrow is also normalized", async () => {
+		// The heap classification is whole-function: once ANY return is owned
+		// (the `.at` here), the caller frees EVERY result — so the parameter
+		// fallback branch must be copied too, not passed through raw.
+		const input = `
+func first_or = (List<string> xs, string fallback, out string) {
+	var int i = 0
+	if i >= 0 && i < xs.length {
+		return xs.at(i)
+	}
+	return fallback
+}
+var List<string> names = List<string>()
+const string r = first_or(names, "none")
+Console.write(r)
+`;
+		await build_and_check_output(input, "dfree_return_at_param_fallback", "none");
+	});
+
+	test("returning a container borrow via match yields an independent copy", async () => {
+		const input = `
+func pick_match = (List<string> xs, int c, out string) {
+	var int i = 0
+	if i >= 0 && i < xs.length {
+		return match c {
+			case 1 -> xs.at(i)
+			else -> "none"
+		}
+	}
+	return "none"
+}
+var List<string> names = List<string>()
+names.push("zebra")
+const string r = pick_match(names, 1)
+var int j = 0
+if j >= 0 && j < names.length {
+	names.set(j, "viper")
+}
+Console.write(r)
+`;
+		await build_and_check_output(input, "dfree_return_at_match_copy", "zebra");
+	});
+
+	test("Map<string> get yields an independent copy", async () => {
+		const input = `
+var Map<int, string> m = Map<int, string>()
+m.set(1, "zebra")
+const string r = m.get(1)
+m.set(1, "viper")
+Console.write(r)
+`;
+		await build_and_check_output(input, "dfree_map_get_copy", "zebra");
+	});
+
+	test("the accessor itself still returns a borrow (no copy leaked)", async () => {
+		// `.at`'s own body keeps the borrow: `List<string>.at` is named `at`,
+		// one of the call-site borrow accessors, so it does NOT strdup (its
+		// callers treat the result as a non-owned borrow and never free it —
+		// a copy would leak under the audit detector).
+		const input = `
+var List<string> names = List<string>()
+names.push("zebra")
+var int i = 0
+if i >= 0 && i < names.length {
+	const string s = names.at(i)
+	Console.write(s)
+}
+`;
+		await build_and_check_output(input, "dfree_at_still_borrow", "zebra");
+	});
+
+	test("a field borrow return alongside a heap branch is normalized", async () => {
+		// Same whole-function rule: `maybe_render` is heap-returning (the
+		// to_string branch), so the caller frees EVERY result — the field
+		// branch must copy its borrow instead of handing over storage that
+		// belongs to the struct (a rodata literal here, which free rejects).
+		const input = `
+struct Named {
+	var string name
+}
+func maybe_render = (Named n, int c, out string) {
+	if c > 0 {
+		return n.name
+	}
+	return c.to_string()
+}
+var Named n = Named("ann")
+const string r = maybe_render(n, 1)
+Console.write(r)
+`;
+		await build_and_check_output(input, "dfree_return_field_mixed", "ann");
+	});
+});
+
 describe("container ownership across function boundaries", () => {
 	// Regression for the "RAII double-free when the same class instance is
 	// referenced by two lists" roadblock. Previously: `dels.push(src.at(i))`

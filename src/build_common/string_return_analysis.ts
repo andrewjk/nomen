@@ -16,6 +16,45 @@ export interface StringAnalysisTable {
 const EMPTY_SET: Set<string> = new Set();
 
 /**
+ * The container/buffer BORROW accessor family — method calls that return a
+ * view into the receiver's existing storage rather than a fresh value:
+ * `.at(i)`, `.first()`, `.slice(...)`, and the backing Buffer slot-load
+ * primitive `load_T`. A `mov out T` accessor (`owned_return`, e.g. `pop` /
+ * `move_T`) relinquishes the slot and is NOT in this family.
+ */
+export function is_container_borrow_accessor_name(name: string): boolean {
+	return name === "at" || name === "first" || name === "slice" || name === "load_T";
+}
+
+/**
+ * Whether `fn_name` is one of the borrow accessors whose CALL SITES treat
+ * the string result as a non-owned borrow (mirroring the C backend's
+ * `is_string_borrow`, which recognizes exactly `.at`/`.first`). Inside such
+ * a function's own body a returned container borrow stays a borrow; inside
+ * any other function it is normalized into an owned copy at the return
+ * site (see build_return_node), so it counts as owned for classification.
+ */
+export function is_call_site_borrow_accessor(fn_name: string | undefined): boolean {
+	return fn_name === "at" || fn_name === "first";
+}
+
+/**
+ * Whether `node` is a container/buffer borrow accessor CALL (an
+ * `access_func` named `.at`/`.first`/`.slice`/`load_T` without
+ * `owned_return`) — the value it produces is a borrow of the receiver's
+ * storage, not a fresh allocation.
+ */
+export function is_container_borrow_access(node: any): boolean {
+	return (
+		!!node &&
+		node.node_type === "access" &&
+		node.access?.node_type === "access_func" &&
+		!node.access.owned_return &&
+		is_container_borrow_accessor_name(node.access.name)
+	);
+}
+
+/**
  * Whether a function has any `return <expr>` statement in its body (used by
  * the C backend's gather, which registers every string-returning function
  * that actually returns — the backend strdup's borrows at the return site,
@@ -55,6 +94,15 @@ export function has_return_statement(func: FunctionNode): boolean {
  * `result = result + sep`) makes it owned from that point on — so the variable
  * is scanned across its declaration AND all reassignments. Treating such a var
  * as a borrow would leak its final heap value (the caller wouldn't free it).
+ *
+ * A local whose DECLARATION initializer is a container-borrow accessor
+ * (`.at(i)`/`.first()`/…, per `is_container_borrow_accessor_name`) is a borrow
+ * only inside the call-site borrow accessors' own bodies (`at`/`first`).
+ * Anywhere else the borrow is normalized when it escapes (the return site
+ * strdup's it into an owned copy for the caller), so the variable counts as
+ * owned for return classification. Only the declaration init is reclassified:
+ * a borrow RE-assignment (`t = ys.at(1)` after a literal init) keeps the
+ * variable a borrow, matching the return-site emission decision.
  */
 export function borrow_string_names(func: FunctionNode): Set<string> {
 	const borrow = new Set<string>();
@@ -63,9 +111,10 @@ export function borrow_string_names(func: FunctionNode): Set<string> {
 			borrow.add(param.name);
 		}
 	}
+	const fn_is_borrow_accessor = is_call_site_borrow_accessor(func.name);
 	const string_var_names = new Set<string>();
 	const owned = new Set<string>();
-	const isHeapRhs = (rhs: any): boolean => {
+	const isHeapRhs = (rhs: any, decl_init: boolean): boolean => {
 		if (!rhs) return false;
 		const nt = rhs.node_type;
 		if (nt === "op") return true;
@@ -76,13 +125,11 @@ export function borrow_string_names(func: FunctionNode): Set<string> {
 				// Borrow accessors (`.at`/`.first`/`.slice`/`load_T` without
 				// owned_return) yield a view into existing storage, not a fresh
 				// heap allocation. Everything else (to_string, pop, ...) is heap.
-				const isBorrowAccessor =
-					!acc.owned_return &&
-					(acc.name === "at" ||
-						acc.name === "first" ||
-						acc.name === "slice" ||
-						acc.name === "load_T");
-				return !isBorrowAccessor;
+				const isBorrowAccessor = !acc.owned_return && is_container_borrow_accessor_name(acc.name);
+				if (isBorrowAccessor) {
+					return !fn_is_borrow_accessor && decl_init;
+				}
+				return true;
 			}
 			return false; // access_field → borrow
 		}
@@ -93,10 +140,10 @@ export function borrow_string_names(func: FunctionNode): Set<string> {
 		if (!n || typeof n !== "object") return;
 		if (n.node_type === "declare" && n.type?.name === "string" && n.name) {
 			string_var_names.add(n.name);
-			if (isHeapRhs(n.value)) owned.add(n.name);
+			if (isHeapRhs(n.value, true)) owned.add(n.name);
 		} else if (n.node_type === "assign" && n.left_value?.node_type === "value" && !n.operator) {
 			const name = n.left_value.value;
-			if (string_var_names.has(name) && isHeapRhs(n.right_value)) owned.add(name);
+			if (string_var_names.has(name) && isHeapRhs(n.right_value, false)) owned.add(name);
 		}
 		if (n.node_type === "func") return; // don't descend into nested funcs
 		for (const k of Object.keys(n)) {
@@ -128,11 +175,20 @@ export function borrow_string_names(func: FunctionNode): Set<string> {
 // free it. Without this, `func echo(string s, out string) { return s }` is
 // mis-classified as heap-returning and the caller frees the borrowed pointer
 // (crashing on a static literal / double-freeing the caller's storage).
+//
+// `enclosing_fn` is the name of the function whose body the expression belongs
+// to. A container/borrow accessor call (`.at`/`.first`/`.slice`/`load_T`)
+// counts as a borrow ONLY inside the call-site borrow accessors' own bodies
+// (`at`/`first`, whose call sites treat the result as a non-owned borrow);
+// returned from any other function it is normalized into an owned copy at the
+// return site (the aarch64 backend strdup's it, mirroring the C backend's
+// boundary-strdup), so it counts as owned here.
 export function value_is_owned_string(
 	v: any,
 	table: StringAnalysisTable,
 	visiting?: Set<string>,
 	borrow_names?: Set<string>,
+	enclosing_fn?: string,
 ): boolean {
 	if (!visiting) visiting = new Set<string>();
 	if (!borrow_names) borrow_names = EMPTY_SET;
@@ -158,22 +214,21 @@ export function value_is_owned_string(
 			if (raw === "to_string" && v.target?.type?.name && v.target.type.name !== "string")
 				return true;
 			// Container / buffer BORROW accessors return a view into the
-			// receiver's existing storage — never a fresh heap allocation — so
-			// the caller must NOT free the result. Mirrors the C backend's
-			// `is_string_borrow` (at/first) and additionally covers the Buffer
-			// slot-load primitives (`load_T`) that back List/Array `.at`.
-			// Without this, a monomorphized `List<string>.at` (whose body is
-			// `return self.items.load_T(i)`) is mis-classified as heap-returning
-			// — `method_call_returns_owned` can't resolve `self.items` (its
-			// access node carries no type after monomorphization), falls back to
-			// the conservative "owned" below, and the caller frees the borrowed
-			// char* (crashing on a static literal / double-freeing the slot).
+			// receiver's existing storage — never a fresh heap allocation.
+			// Inside the accessor methods' OWN bodies (`at`/`first`, e.g. a
+			// monomorphized `List<string>.at` whose body is `return
+			// self.items.load_T(i)`) the result stays a borrow: call sites of
+			// `.at`/`.first` treat it as non-owned and never free it (mirrors
+			// the C backend's `is_string_borrow`), and the unresolved-receiver
+			// fallback below must not mis-classify it as heap either. Returned
+			// from any OTHER function, the borrow is normalized at the return
+			// site (strdup'd into an independent copy for the caller — the
+			// same contract as the C backend), so it counts as OWNED here and
+			// the function is classified heap-returning.
 			// A `mov out T` accessor (`owned_return`, e.g. `pop`) relinquishes
 			// the slot and IS owned, so it is excluded.
-			if (!v.access.owned_return) {
-				if (raw === "at" || raw === "first" || raw === "slice" || raw === "load_T") {
-					return false;
-				}
+			if (!v.access.owned_return && is_container_borrow_accessor_name(raw)) {
+				return !is_call_site_borrow_accessor(enclosing_fn);
 			}
 			// Resolve the method to its implementation(s) and classify by what
 			// they actually return. Without this, a wrapper like
@@ -207,8 +262,9 @@ export function value_is_owned_string(
 				// Arrow branches (`-> expr`) wrap the result in a `let`; `=>`
 				// branches wrap it in a `return`. Unwrap to the real expression.
 				if (s?.node_type === "let" || s?.node_type === "return") {
-					if (value_is_owned_string(s.value, table, visiting, borrow_names)) return true;
-				} else if (value_is_owned_string(s, table, visiting, borrow_names)) {
+					if (value_is_owned_string(s.value, table, visiting, borrow_names, enclosing_fn))
+						return true;
+				} else if (value_is_owned_string(s, table, visiting, borrow_names, enclosing_fn)) {
 					return true;
 				}
 			}
@@ -293,7 +349,9 @@ export function function_returns_owned(
 	visiting: Set<string>,
 	key: string,
 ): boolean {
-	if (func.return_type?.name !== "string") return false;
+	// A `view` return (e.g. `List<T>.slice`'s `out view T`) is the universal
+	// (ptr, len) struct, not a heap string — never heap-returning.
+	if (func.return_type?.name !== "string" || func.return_type?.is_view) return false;
 	if (visiting.has(key)) return false;
 	visiting.add(key);
 	// Compute this function's borrow string names (params + borrow-initialized
@@ -303,7 +361,8 @@ export function function_returns_owned(
 	const walk = (n: any): void => {
 		if (!n || typeof n !== "object") return;
 		if (n.node_type === "return" && n.value) {
-			if (value_is_owned_string(n.value, table, visiting, borrow_names)) has_owned_return = true;
+			if (value_is_owned_string(n.value, table, visiting, borrow_names, func.name))
+				has_owned_return = true;
 		}
 		if (n.node_type === "func") return;
 		for (const k of Object.keys(n)) {
@@ -328,8 +387,6 @@ export function function_returns_string_borrow(
 	func: FunctionNode,
 	table: StringAnalysisTable,
 ): boolean {
-	return (
-		func.return_type?.name === "string" &&
-		!function_returns_owned(func, table, new Set<string>(), func.name)
-	);
+	if (func.return_type?.name !== "string" || func.return_type?.is_view) return false;
+	return !function_returns_owned(func, table, new Set<string>(), func.name);
 }

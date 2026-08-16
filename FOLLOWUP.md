@@ -4,13 +4,7 @@ Skipped or out-of-scope items recorded for later.
 
 ## Compiler / stdlib gaps
 
-1. **Backend divergence: returning a container borrow.** On C, returning
-   `xs.at(i)` hands the caller an independent (strdup'd) copy; on aarch64 it
-   yields a borrow tied to the receiver's storage. Sound, but the two
-   backends differ (see ROADBLOCKS "Returning a borrowed `string` — FIXED",
-   "Caveat (unchanged)").
-
-2. **Nested generic instantiation (`Wrapper<List<int>>`) is unsupported.**
+1. **Nested generic instantiation (`Wrapper<List<int>>`) is unsupported.**
    The monomorphizer's substitution is name-only (`Map<string, string>`),
    so instantiating a generic with a generic type argument drops the inner
    args and would leave the mono referencing the bare generic. This used to
@@ -20,7 +14,7 @@ Skipped or out-of-scope items recorded for later.
    needs the substitution to carry full `Type`s and the mono-name
    flattening (shared by both backends) to nest args.
 
-3. **Build-backend duplication — shared layer (decided & built).**
+2. **Build-backend duplication — shared layer (decided & built).**
    `src/build_common/` owns the genuinely duplicated families:
    `mono_name.ts` (the `List<int>` → `List_int` flattening, previously
    inlined at a dozen sites), `destroy_analysis.ts`
@@ -49,10 +43,15 @@ Skipped or out-of-scope items recorded for later.
      EMISSION models stay deliberately per-backend: C's boundary-strdup
      (callee normalizes, caller always frees) is load-bearing — the C
      backend has no borrow-lifetime tracking for returned aliases, so
-     passing borrows through raw (the aarch64 model) would alias caller
-     storage into results the caller then frees. Unifying the models means
-     adding alias tracking to C, not deleting code; see ROADBLOCKS
-     "Returning a borrowed `string` — FIXED" and FOLLOWUP item 1.
+     passing borrows through raw would alias caller storage into results
+     the caller then frees. The aarch64 backend now normalizes the SAME
+     shapes at its return sites (a borrow-valued return from a
+     heap-classified function is strdup'd; see ROADBLOCKS "Returning a
+     borrowed `string` — FIXED", "Caveat (FIXED)"), so the backends agree
+     on observable semantics for the container-borrow family — only
+     borrow-PURE functions (e.g. a bare parameter pass-through) still
+     differ, with aarch64 passing the borrow through zero-copy instead of
+     copying.
      **Go-forward pattern:** for new duplication, prefer pushing the
      DECISION into the check phase as an annotation both backends read
      (`storage_kind`, `nullable_param_indices`, `owned_return` are this
@@ -63,18 +62,18 @@ Skipped or out-of-scope items recorded for later.
 Status and history in FINDINGS.md / ROADBLOCKS.md. The compiler blockers are
 closed; what remains is bounded port-code work:
 
-4. **Finish `combined`** — the move/word-level post-processing
+3. **Finish `combined`** — the move/word-level post-processing
    (`detect_moves` + `reemit` + word pairing) is written but bypassed
    (`combined` returns `histogram(left, right)`) until the shared-ownership
    call sites are reworked to owning extraction (`.pop()` /
    `items.move_T(i)`) or restructured around one owning list.
 
-5. **Finish `renderText` / `renderConsole`** — same shared-ownership family
+4. **Finish `renderText` / `renderConsole`** — same shared-ownership family
    in the `split_bare`/`lines_of_bare`/StringBuilder path; `main.nm` still
    prints hunk counts instead of rendered output until those call sites are
    reworked.
 
-6. **Port hygiene / modernization** — run `nomen format`; review the 21 check
+5. **Port hygiene / modernization** — run `nomen format`; review the 21 check
    warnings; drop the now-unneeded `List<Token>` wrapper in `diff_arrays`
    (a plain `List<string>` parameter compiles now); optionally switch
    `detect_moves` from the O(n²) scan to `Map<string, List<LineUnit>>`; the

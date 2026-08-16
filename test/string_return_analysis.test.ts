@@ -87,3 +87,54 @@ pub func main = () {
 	const echo = top_level_functions(parsed.root).find((f) => f.name === "echo");
 	expect(echo!.returns_string_borrow).toBe(false);
 });
+
+test("container borrow returns are owned (normalized at the return site), accessors stay borrows", () => {
+	// Backend parity for returning a container borrow: a function returning
+	// `xs.at(i)` hands the caller an independent copy (the return site
+	// strdup's it), so it classifies as OWNED (heap-returning). The borrow
+	// accessor's OWN body (`List.at`'s `return self.items.load_T(i)`) stays a
+	// borrow — its call sites treat the result as non-owned. `Map<K,
+	// string>.get` normalizes like any non-accessor function (its call sites
+	// are not borrow-recognized), mirroring the C backend's strdup in `get`.
+	const input = `
+import System
+
+pub func pick = (List<string> xs, out string) {
+	var int i = 0
+	if i >= 0 && i < xs.length {
+		return xs.at(i)
+	}
+	return "none"
+}
+
+pub func pick_via_local = (List<string> xs, out string) {
+	var int i = 0
+	if i >= 0 && i < xs.length {
+		const string t = xs.at(i)
+		return t
+	}
+	return "none"
+}
+
+pub func main = () {
+	var List<string> names = List<string>()
+	names.push("zebra")
+	var Map<int, string> m = Map<int, string>()
+	Console.write("\\{pick(names)}")
+}
+`;
+	const parsed = parse(input, system);
+	expect(parsed.errors).toEqual([]);
+	build(parsed.root, { arch: "aarch64" });
+
+	const by_name = new Map(top_level_functions(parsed.root).map((f) => [f.name, f]));
+	// A direct container-borrow return is normalized → owned.
+	expect(by_name.get("pick")!.returns_string_borrow).toBe(false);
+	// A borrow-initialized local returned is normalized → owned.
+	expect(by_name.get("pick_via_local")!.returns_string_borrow).toBe(false);
+	// The accessor's own body stays a borrow (call sites of `.at` don't free).
+	expect(struct_method(parsed.root, "List_string", "at").returns_string_borrow).toBe(true);
+	// A non-accessor container method returning a borrow (`Map.get`'s
+	// `return self.values.load_T(idx)`) is normalized → owned.
+	expect(struct_method(parsed.root, "Map_int_string", "get").returns_string_borrow).toBe(false);
+});

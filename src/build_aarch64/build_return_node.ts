@@ -1,4 +1,5 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
+import { is_container_borrow_access } from "../build_common/string_return_analysis.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
@@ -215,6 +216,84 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 			}
 			status.last_result_is_heap = true;
 		}
+	}
+
+	// Borrow normalization at the return boundary. A string-returning
+	// function classified heap-returning hands the caller a value the caller
+	// FREES unconditionally, so every return path must produce a heap
+	// pointer. A return whose value is statically NON-heap — a borrowed bare
+	// variable (a parameter, a literal-initialized local, or a local
+	// initialized from a container-borrow accessor), a container/buffer
+	// borrow accessor call (`.at`/`.first`/`.slice`/`load_T`), a field
+	// access, or a match/switch whose chosen branch produced any of those —
+	// is strdup'd here so the caller frees an independent copy. This mirrors
+	// the C backend's boundary-strdup (whose caller frees every string call
+	// result), closing the backend divergence where this backend passed the
+	// raw borrow through: returning `xs.at(i)` used to hand the caller a
+	// borrow tied to the receiver's storage instead of an owned copy.
+	//
+	// Inside the call-site borrow accessors' OWN bodies (a function named
+	// `at`/`first`, e.g. `List<string>.at`'s `return self.items.load_T(i)`)
+	// the borrow passes through UNCHANGED: their call sites treat the result
+	// as a non-owned borrow and never free it (mirroring the C backend's
+	// `is_string_borrow`), so a copy would hand those callers a heap
+	// allocation they never free.
+	const borrow_fn_name = status.current_function_name;
+	const borrow_mangled =
+		status.current_struct && borrow_fn_name
+			? `${status.current_struct.name}_${borrow_fn_name}`
+			: undefined;
+	const normalizes_borrow_returns =
+		!!borrow_fn_name &&
+		borrow_fn_name !== "at" &&
+		borrow_fn_name !== "first" &&
+		current_return_is_string(status) &&
+		!!status.heap_returning_functions &&
+		(status.heap_returning_functions.has(borrow_fn_name) ||
+			(borrow_mangled !== undefined && status.heap_returning_functions.has(borrow_mangled)));
+	let needs_borrow_strdup = false;
+	if (normalizes_borrow_returns) {
+		if (node.value.node_type === "value") {
+			const raw_value = (node.value as ValueNode).value;
+			const is_str_lit =
+				raw_value.length >= 2 && raw_value.startsWith('"') && raw_value.endsWith('"');
+			const is_numeric = /^(\+|-)?\d+$/.test(raw_value);
+			// A bare VARIABLE whose current value is not a heap allocation
+			// owned by this frame (not in heap_strings) holds a borrow — copy
+			// it. String literals are excluded (handled above) and numerics
+			// are excluded (`return 0` hands the caller NULL, which free
+			// tolerates). A var in heap_strings transfers ownership directly
+			// (mark_moved_if_struct below skips its scope-exit free).
+			if (!is_str_lit && !is_numeric && !status.heap_strings?.has(raw_value)) {
+				needs_borrow_strdup = true;
+			}
+		} else if (is_container_borrow_access(node.value)) {
+			// `return xs.at(i)` / `.first()` / `.slice(...)` / `load_T` — a
+			// view into the receiver's storage (or rodata for a stored
+			// literal element).
+			needs_borrow_strdup = true;
+		} else if (
+			node.value.node_type === "access" &&
+			(node.value as AccessNode).access.node_type === "access_field"
+		) {
+			// `return self.name` / `return obj.field` — the storage belongs
+			// to the struct instance.
+			needs_borrow_strdup = true;
+		} else if (node.value.node_type === "match" || node.value.node_type === "switch") {
+			// The chosen branch's value is in x0; any branch may have produced
+			// a borrow/literal (e.g. `return match c { 1 -> xs.at(0), else ->
+			// "none" }`), so copy it for the freeing caller. (A heap-producing
+			// branch is copied too and its original leaks — the same trade the
+			// C backend's unconditional `return strdup(_return_val)` makes.)
+			needs_borrow_strdup = true;
+		}
+	}
+	if (needs_borrow_strdup) {
+		emit_strdup(status);
+		if (!status.code.endsWith("\n")) {
+			status.code += "\n";
+		}
+		status.last_result_is_heap = true;
 	}
 
 	// A `move_T` result returned from a string-returning function (e.g.
