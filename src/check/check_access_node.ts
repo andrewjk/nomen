@@ -1,4 +1,5 @@
 import add_error from "../add_error.ts";
+import { mono_type_name } from "../build_common/mono_name.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
@@ -152,7 +153,7 @@ function check_access_field_node(
 ): boolean {
 	let struct = status.structs.find((s) => s.name === target_type.name);
 	if (struct?.is_generic && target_type.type_args?.length) {
-		const mono_name = target_type.name + "_" + target_type.type_args.map((t) => t.name).join("_");
+		const mono_name = mono_type_name(target_type);
 		struct = status.structs.find((s) => s.name === mono_name) || struct;
 	}
 	let field = struct?.fields.find((f) => f.name === node.name);
@@ -348,8 +349,7 @@ function check_access_function_node(
 
 	// Resolve generic type to monomorphized name so we find the right methods
 	if (effective_type.type_args?.length && !effective_type.is_array) {
-		const mono_name =
-			effective_type.name + "_" + effective_type.type_args.map((t) => t.name).join("_");
+		const mono_name = mono_type_name(effective_type);
 		if (status.structs.find((s) => s.name === mono_name)) {
 			effective_type = new Type(mono_name);
 		}

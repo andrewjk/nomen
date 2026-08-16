@@ -1,4 +1,5 @@
 import emit_field_overrides from "../build/emit_field_overrides.ts";
+import { mono_type_name } from "../build_common/mono_name.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
@@ -145,12 +146,8 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 		// is not available.
 		const ret_type = status.function_return_type || node.type;
 		// Monomorphize generic return types: `List<int>` → `List_int`.
-		const mono_type_name = ret_type.type_args?.length
-			? `${ret_type.name}_${ret_type.type_args.map((t) => t.name).join("_")}`
-			: ret_type.name;
-		const return_struct = status.structs.find(
-			(s) => s.name === mono_type_name && !s.is_simple_type,
-		);
+		const mono_ret_name = mono_type_name(ret_type);
+		const return_struct = status.structs.find((s) => s.name === mono_ret_name && !s.is_simple_type);
 		const is_struct = !!return_struct;
 		const return_is_class = !!return_struct?.is_class;
 		const return_trait = status.traits.find((t) => t.name === ret_type.name);
@@ -178,8 +175,8 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 				? "nomen_view "
 				: is_struct
 					? return_is_class
-						? `struct ${mono_type_name}* `
-						: `struct ${mono_type_name} `
+						? `struct ${mono_ret_name}* `
+						: `struct ${mono_ret_name} `
 					: return_trait
 						? `struct ${ret_type.name}* `
 						: c_type(ret_type.name || "int");
@@ -310,7 +307,7 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 				if (recv_name && !recv_is_trait && fn.name && fn.name !== "to_string") {
 					let struct_name = recv_name;
 					if (recv_type?.type_args?.length) {
-						const mono = recv_name + "_" + recv_type.type_args.map((t) => t.name).join("_");
+						const mono = mono_type_name(recv_type);
 						if (status.structs.find((s) => s.name === mono)) struct_name = mono;
 					}
 					const struct = status.structs.find((s) => s.name === struct_name);
@@ -384,7 +381,7 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 			!returns_borrowed_string &&
 			!ret_type.is_view;
 		if (needs_type_erasure_cast) {
-			status.code += return_is_class ? `(struct ${mono_type_name}*)` : `(struct ${mono_type_name})`;
+			status.code += return_is_class ? `(struct ${mono_ret_name}*)` : `(struct ${mono_ret_name})`;
 		}
 		build_node(node.value, status);
 		if (returns_borrowed_string || returns_string_literal || returns_borrow_var) {

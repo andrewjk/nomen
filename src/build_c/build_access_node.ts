@@ -1,3 +1,4 @@
+import { mono_type_name } from "../build_common/mono_name.ts";
 import built_in_types from "../built_in_types.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
@@ -581,21 +582,16 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				if (
 					method_type?.type_args?.length &&
 					node.target.node_type === "access" &&
-					!status.structs.find(
-						(s) =>
-							s.name ===
-								`${method_type!.name}_${method_type!.type_args!.map((t) => t.name).join("_")}` &&
-							!s.is_generic,
-					)
+					!status.structs.find((s) => s.name === mono_type_name(method_type!) && !s.is_generic)
 				) {
 					const resolved = resolve_access_field_type(node.target as AccessNode, status);
 					if (resolved?.name) method_type = resolved;
 				}
 				let mono_struct_name = method_type?.is_array
 					? "Array_" + method_type.name
-					: method_type?.type_args?.length
-						? method_type.name + "_" + method_type.type_args.map((t) => t.name).join("_")
-						: method_type?.name || "";
+					: method_type
+						? mono_type_name(method_type)
+						: "";
 				if (
 					!access_func.mangled_name &&
 					mono_struct_name &&
@@ -830,9 +826,7 @@ function resolve_access_type(node: AccessNode, status: BuildStatus): Type | null
 		const access_func = inner as AccessFunctionCallNode;
 		let base_type = resolve_receiver_type(node.target, status);
 		if (!base_type?.name) return null;
-		const mono_name = base_type.type_args?.length
-			? base_type.name + "_" + base_type.type_args.map((t) => t.name).join("_")
-			: base_type.name;
+		const mono_name = mono_type_name(base_type);
 		const struct =
 			status.structs.find((s) => s.name === mono_name && !s.is_generic) ||
 			status.structs.find((s) => s.name === base_type!.name);

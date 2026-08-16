@@ -739,26 +739,74 @@ Console.write("\\{run.length} \\{g.items.length}")
 		await build_and_check_output(input, "list_field_mov_swap", "3 0");
 	});
 
-	test("nested generic instantiation is rejected at check time", () => {
-		// `Wrapper<List<int>>` substitutes T with a name-only "List", which
-		// would leave the mono's fields referencing the bare generic (no
-		// emitted body — broken codegen, previously a checker hang). It is
-		// rejected with a clear message until substitution carries full types.
+	test("nested generic instantiation compiles and runs", async () => {
+		// `Wrapper<List<int>>` — a generic instantiated with a generic type
+		// argument. The inner instantiation is materialized (`List_int`) and
+		// the mono substitution carries the flattened name, so the mono's
+		// fields/params reference a real struct (previously a check-time
+		// rejection; before that, a checker hang).
 		const input = `
 struct Wrapper<T> {
-  mov T item
+	mov T item
 }
 var List<int> xs = List<int>()
 xs.push(9)
+xs.push(8)
 var Wrapper<List<int>> w = Wrapper<List<int>>(mov xs)
-Console.write("\\{w.item.length}")
+Console.write("\\{w.item.length} \\{w.item.pop()}")
 `;
-		const parsed = parse_with_imports(input);
-		const err = parsed.errors.find((e) =>
-			e.message.includes("nested generic instantiation is not supported"),
-		);
-		expect(err).toBeDefined();
-		expect(err!.message).toContain("Wrapper");
+		await build_and_check_output(input, "nested_generic_instantiation", "2 8");
+	});
+
+	test("nested generic instantiation via a defaulted field", async () => {
+		// The defaulted-field construction takes no ctor param; the field's
+		// default `List<int>()` is substituted to the flattened mono name.
+		const input = `
+struct Wrapper<T> {
+	var T item = List<int>()
+}
+var Wrapper<List<int>> w = Wrapper<List<int>>()
+w.item.push(4)
+Console.write("\\{w.item.pop()}")
+`;
+		await build_and_check_output(input, "nested_generic_defaulted", "4");
+	});
+
+	test("doubly nested generic instantiation", async () => {
+		// Wrapper<Wrapper<List<int>>> flattens all the way down
+		// (Wrapper_Wrapper_List_int).
+		const input = `
+struct Wrapper<T> {
+	mov T item
+}
+var List<int> xs = List<int>()
+xs.push(3)
+var Wrapper<List<int>> inner = Wrapper<List<int>>(mov xs)
+var Wrapper<Wrapper<List<int>>> outer = Wrapper<Wrapper<List<int>>>(mov inner)
+Console.write("\\{outer.item.item.pop()}")
+`;
+		await build_and_check_output(input, "nested_generic_doubly", "3");
+	});
+
+	test("nested generic as a parameter and return type", async () => {
+		// Wrapper<List<int>> crossing function boundaries — instantiate
+		// (check) + signature lowering (build) must flatten recursively.
+		const input = `
+struct Wrapper<T> {
+	mov T item
+}
+func fill = (out Wrapper<List<int>>) {
+	var List<int> xs = List<int>()
+	xs.push(6)
+	return Wrapper<List<int>>(mov xs)
+}
+func first_of = (Wrapper<List<int>> w, out int) {
+	return w.item.pop()
+}
+var Wrapper<List<int>> w = fill()
+Console.write("\\{first_of(w)}")
+`;
+		await build_and_check_output(input, "nested_generic_param_return", "6");
 	});
 
 	test("plain by-value constructor arg is rejected (missing mov)", () => {

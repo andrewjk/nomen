@@ -1,3 +1,4 @@
+import { mono_type_name } from "../build_common/mono_name.ts";
 import BitsetNode from "../nodes/BitsetNode.ts";
 import type BlockNode from "../nodes/BlockNode.ts";
 import { is_function_node, is_struct_node, is_trait_node } from "../nodes/check_node_type.ts";
@@ -73,9 +74,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 				// The type_args are already present on node.return_type from the
 				// check pass; fold them into the C name so the signature matches
 				// the specialized struct definition.
-				const mono_return_name = node.return_type.type_args?.length
-					? `${node.return_type.name}_${node.return_type.type_args.map((t) => t.name).join("_")}`
-					: node.return_type.name;
+				const mono_return_name = mono_type_name(node.return_type);
 				// TODO: Set is_struct / is_trait on type when checking
 				const return_is_class = !!status.structs.find(
 					(s) => s.name === mono_return_name && s.is_class,

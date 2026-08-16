@@ -146,6 +146,12 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			emit_malloc(status);
 			status.code += `str x0, [sp, #-16]!\n`;
 		} else if (status.struct_return_buffer) {
+			// Reload the incoming sret pointer from its frame slot: x8 is
+			// destructible (AAPCS64), so intervening calls in this body may
+			// have clobbered the live register. The prologue spilled it.
+			if (status.return_buffer_stack_offset !== undefined) {
+				status.code += `ldr x8, [x29, #${status.return_buffer_stack_offset}]\n`;
+			}
 			status.code += `mov x0, ${status.struct_return_buffer}\n`;
 		} else {
 			const dest_addr = `_temp_${temp_counter++}`;
@@ -507,6 +513,12 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		}
 
 		if (is_struct && status.struct_return_buffer) {
+			// Reload the incoming sret pointer from its frame slot (see the
+			// matching reload above): x8 may have been clobbered by any call
+			// emitted between the prologue and here.
+			if (status.return_buffer_stack_offset !== undefined) {
+				status.code += `ldr x8, [x29, #${status.return_buffer_stack_offset}]\n`;
+			}
 			status.code += `mov x0, ${status.struct_return_buffer}\n`;
 		} else if (is_struct && is_struct.is_class) {
 			status.code += `ldr x0, [sp]\n`;

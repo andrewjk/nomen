@@ -1,3 +1,4 @@
+import { mono_type_name } from "../../build_common/mono_name.ts";
 import type BaseNode from "../../nodes/BaseNode.ts";
 import FunctionNode from "../../nodes/FunctionNode.ts";
 import StructNode from "../../nodes/StructNode.ts";
@@ -32,7 +33,7 @@ function resolve_struct(type: Type, status: CheckStatus): StructNode | undefined
 	const direct = status.structs.find((s) => s.name === type.name && !s.is_simple_type);
 	if (direct) return direct;
 	if (type.type_args?.length) {
-		const mono = type.name + "_" + type.type_args.map((t) => t.name).join("_");
+		const mono = mono_type_name(type);
 		return status.structs.find((s) => s.name === mono && !s.is_simple_type);
 	}
 	return undefined;

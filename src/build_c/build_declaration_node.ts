@@ -1,4 +1,5 @@
 import emit_field_overrides from "../build/emit_field_overrides.ts";
+import { mono_type_name } from "../build_common/mono_name.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
@@ -63,9 +64,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 		status.code += `] = {${variables.map((v) => `&${v}`).join(", ")}}`;
 	} else {
 		const safe_name = c_function_name(node.name);
-		const mono_name = node.type.type_args?.length
-			? `${node.type.name}_${node.type.type_args.map((t) => t.name).join("_")}`
-			: node.type.name;
+		const mono_name = mono_type_name(node.type);
 		const mono_struct = status.structs.find(
 			(s) => s.name === mono_name && !s.is_simple_type && !s.is_generic,
 		);

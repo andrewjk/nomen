@@ -1,3 +1,4 @@
+import { mono_type_name } from "../build_common/mono_name.ts";
 import SpawnNode from "../nodes/SpawnNode.ts";
 import build_node from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
@@ -238,9 +239,7 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 	const arg_c_types: string[] = [];
 	for (let i = 0; i < call.params.length; i++) {
 		const arg_type = type_from_value_node(call.params[i]);
-		const mono_name = arg_type.type_args?.length
-			? `${arg_type.name}_${arg_type.type_args.map((t) => t.name).join("_")}`
-			: arg_type.name;
+		const mono_name = mono_type_name(arg_type);
 		const is_class = !!status.structs.find((s) => s.name === mono_name && s.is_class);
 		const is_trait = !!status.traits.find((t) => t.name === mono_name);
 		arg_c_types.push(is_class || is_trait ? `struct ${mono_name} *` : c_type(mono_name));
@@ -321,9 +320,7 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 	// Resolve the monomorphized Task struct name for the allocation.
 	// call.type is Task<T> — e.g. Task_uint64, Task<int>, etc.
 	const task_type_args = call.type?.type_args;
-	const mono_task_name = task_type_args?.length
-		? `Task_${task_type_args.map((t) => t.name).join("_")}`
-		: "Task";
+	const mono_task_name = mono_type_name("Task", task_type_args);
 
 	// Statement-expression that sets up the args, allocates the future,
 	// submits to the pool, and yields a Task.

@@ -1,3 +1,4 @@
+import { mono_type_name } from "../build_common/mono_name.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import build_node from "./build_node.ts";
@@ -45,9 +46,7 @@ export default function build_nursery_spawn(
 	const arg_c_types: string[] = [];
 	for (let i = 0; i < args.length; i++) {
 		const arg_type = type_from_value_node(args[i]);
-		const mono_name = arg_type.type_args?.length
-			? `${arg_type.name}_${arg_type.type_args.map((t) => t.name).join("_")}`
-			: arg_type.name;
+		const mono_name = mono_type_name(arg_type);
 		const is_class = !!status.structs.find((s) => s.name === mono_name && s.is_class);
 		const is_trait = !!status.traits.find((t) => t.name === mono_name);
 		arg_c_types.push(is_class || is_trait ? `struct ${mono_name} *` : c_type(mono_name));
@@ -122,9 +121,7 @@ export default function build_nursery_spawn(
 
 	// Resolve the monomorphized Task struct name for the captured form.
 	const task_type_args = node.type?.type_args;
-	const mono_task_name = task_type_args?.length
-		? `Task_${task_type_args.map((t) => t.name).join("_")}`
-		: "Task";
+	const mono_task_name = mono_type_name("Task", task_type_args);
 
 	// Statement-expression: set up args, allocate the future, submit, register
 	// with the nursery (runtime futures/count pointers), optionally yield Task.

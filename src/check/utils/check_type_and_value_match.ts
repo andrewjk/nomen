@@ -1,4 +1,5 @@
 import add_error from "../../add_error.ts";
+import { mono_type_name } from "../../build_common/mono_name.ts";
 import { parse_int_literal, parse_int_literal_bigint } from "../../int_literal.ts";
 import Type from "../../nodes/Type.ts";
 import type CheckStatus from "../CheckStatus.ts";
@@ -62,12 +63,11 @@ export default function check_type_and_value_match(
 			}
 
 			if (value_type.type_args?.length) {
-				const mono_name = value_type.name + "_" + value_type.type_args.map((t) => t.name).join("_");
+				const mono_name = mono_type_name(value_type);
 				if (mono_name === effective_target.name) return;
 			}
 			if (effective_target.type_args?.length) {
-				const mono_name =
-					effective_target.name + "_" + effective_target.type_args.map((t) => t.name).join("_");
+				const mono_name = mono_type_name(effective_target);
 				if (mono_name === value_type.name) return;
 			}
 

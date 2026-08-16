@@ -1,5 +1,5 @@
 import type StructNode from "../nodes/StructNode.ts";
-import type Type from "../nodes/Type.ts";
+import Type from "../nodes/Type.ts";
 
 /**
  * Minimal structural view of a build status: everything the shared build
@@ -24,7 +24,10 @@ export function mono_type_name(type_name: string, type_args?: Type[]): string;
 export function mono_type_name(type_or_name: Type | string, type_args?: Type[]): string {
 	const name = typeof type_or_name === "string" ? type_or_name : type_or_name.name;
 	const args = typeof type_or_name === "string" ? type_args : type_or_name.type_args;
-	return args?.length ? `${name}_${args.map((t) => t.name).join("_")}` : name;
+	// Recurse into the args so a NESTED instantiation
+	// (`Wrapper<List<int>>`) flattens all the way down (`Wrapper_List_int`)
+	// — a name-only `t.name` join would drop the inner args (`Wrapper_List`).
+	return args?.length ? `${name}_${args.map((t) => mono_type_name(t)).join("_")}` : name;
 }
 
 /**
@@ -51,4 +54,24 @@ export function mono_struct_name(type: Type, table: StructTable): string {
 	if (!type.type_args?.length) return type.name;
 	const mono_name = mono_type_name(type);
 	return table.structs.find((s) => s.name === mono_name && !s.is_generic) ? mono_name : type.name;
+}
+
+/**
+ * Rewrite a generic-annotated type (`Wrapper<List<int>>`) to a copy whose
+ * name is the registered mono struct (`Wrapper_List_int`, args cleared),
+ * so layout/size/dispatch resolution keyed by `type.name` sees the
+ * concrete struct instead of the bare generic (whose type-param fields
+ * have no concrete size). Returns the type unchanged when there is no
+ * registered mono for it.
+ */
+export function resolve_mono_type(type: Type, table: StructTable): Type {
+	if (!type.type_args?.length) return type;
+	const mono = mono_struct_name(type, table);
+	if (mono === type.name) return type;
+	const resolved = new Type(mono, type.is_static, type.is_array, type.length);
+	resolved.storage_kind = type.storage_kind;
+	resolved.is_ref = type.is_ref;
+	resolved.is_const_ref = type.is_const_ref;
+	resolved.is_nullable = type.is_nullable;
+	return resolved;
 }

@@ -1,4 +1,5 @@
 import add_error from "../add_error.ts";
+import { mono_type_name } from "../build_common/mono_name.ts";
 import type AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import clone_node from "../nodes/clone_node.ts";
@@ -224,38 +225,28 @@ export function monomorphize(
 	// the body of a generic struct like Tree<T> checking its Buffer<T> field),
 	// don't materialize a phantom `Buffer_T` — it will be created later when
 	// the enclosing generic is itself monomorphized with concrete type args.
-	if (type_args.some((t) => status.type_params.includes(t.name))) {
+	// Recursive, so `Wrapper<List<T>>` inside `Outer<T>` defers too (the inner
+	// arg still references T even though the outer arg names a real generic).
+	if (type_args.some((t) => type_contains_unresolved_param(t, status))) {
 		return null;
 	}
 
-	const mono_name = generic_struct.name + "_" + type_args.map((t) => t.name).join("_");
+	// Nested generic instantiation (`Wrapper<List<int>>`): a type argument
+	// that is itself an instantiated generic. Recursively materialize the
+	// inner mono (`List_int`) and carry its FLATTENED name as the type
+	// argument, so the name-only substitution below resolves every use of
+	// the type param to a real, emitted struct — never the bare generic
+	// (which has no emitted body and previously hung the checker).
+	const flat_args = type_args.map((t) => flatten_nested_generic_arg(t, status));
+
+	const mono_name = mono_type_name(generic_struct.name, flat_args);
 
 	const existing = status.structs.find((s) => s.name === mono_name);
 	if (existing) return existing;
 
-	// A type argument that is itself an instantiated generic (e.g.
-	// `Wrapper<List<int>>`) cannot be substituted soundly yet: the
-	// substitution below is name-only (`T` -> "List"), which drops the inner
-	// type arguments and leaves the mono's fields/params/body referencing the
-	// BARE generic — a type with no emitted body that silently breaks
-	// codegen (incomplete `struct List` signatures, undefined
-	// `List_destroy` symbols) and can even hang the checker. Reject at check
-	// time with a clear message until the substitution carries full types.
-	const nested_generic_arg = type_args.find(
-		(t) => t.type_args?.length && status.structs.findLast((s) => s.name === t.name && s.is_generic),
-	);
-	if (nested_generic_arg) {
-		add_error(
-			status,
-			`Cannot instantiate generic '${generic_struct.name}' with generic type argument '${nested_generic_arg.name}<...>' — nested generic instantiation is not supported yet`,
-			generic_struct.start,
-		);
-		return null;
-	}
-
 	const substitution = new Map<string, string>();
 	for (let i = 0; i < generic_struct.type_params.length; i++) {
-		substitution.set(generic_struct.type_params[i], type_args[i].name);
+		substitution.set(generic_struct.type_params[i], flat_args[i].name);
 	}
 
 	// Enforce trait bounds on type params (`struct Container<T: Control>`):
@@ -268,7 +259,7 @@ export function monomorphize(
 	for (let i = 0; i < generic_struct.type_params.length; i++) {
 		const bounds = bounds_parallel ? generic_struct.type_param_bounds[i] : [];
 		if (!bounds || bounds.length === 0) continue;
-		const arg_name = type_args[i].name;
+		const arg_name = flat_args[i].name;
 		const arg_struct = status.structs.findLast((s) => s.name === arg_name);
 		for (const bound of bounds) {
 			const conforms = !!arg_struct && arg_struct.traits.includes(bound);
@@ -336,7 +327,10 @@ export function monomorphize(
 		mono_fields,
 		[],
 	);
-	mono_struct.source_type_args = type_args;
+	// The flattened args (nested generics already resolved to their mono
+	// names) so downstream consumers — e.g. specialize_function's inference
+	// substitution — see concrete, resolvable type names.
+	mono_struct.source_type_args = flat_args;
 	mono_struct.is_class = generic_struct.is_class;
 	mono_struct.is_library = generic_struct.is_library;
 
@@ -409,7 +403,7 @@ export function monomorphize(
 	}
 
 	const init_return_type = new Type(generic_struct.name);
-	init_return_type.type_args = type_args.map((t) => {
+	init_return_type.type_args = flat_args.map((t) => {
 		const copy = new Type(t.name, t.is_static, t.is_array, t.length);
 		copy.is_ref = t.is_ref;
 		copy.is_nullable = t.is_nullable;
@@ -521,6 +515,39 @@ export function monomorphize(
 }
 
 /**
+ * Whether a type (recursively through its type args) references an
+ * unresolved type param of the enclosing generic context — e.g. the `T` in
+ * `List<T>` inside `struct Outer<T>`. Such a type can't be monomorphized
+ * yet; the enclosing generic's own monomorphization substitutes it later.
+ */
+function type_contains_unresolved_param(type: Type, status: CheckStatus): boolean {
+	if (status.type_params.includes(type.name)) return true;
+	return type.type_args?.some((t) => type_contains_unresolved_param(t, status)) ?? false;
+}
+
+/**
+ * Flatten a nested generic type argument (`List<int>` inside
+ * `Wrapper<List<int>>`) to a copy whose name is the inner instantiation's
+ * monomorphized struct name (`List_int`), recursively materializing the
+ * inner mono first. Non-generic args and args whose inner args are still
+ * unresolved type params are returned unchanged.
+ */
+function flatten_nested_generic_arg(t: Type, status: CheckStatus): Type {
+	if (!t.type_args?.length) return t;
+	const inner_generic = status.structs.findLast((s) => s.name === t.name && s.is_generic);
+	if (!inner_generic || inner_generic.type_params.length !== t.type_args.length) return t;
+	if (type_contains_unresolved_param(t, status)) return t;
+	const inner_mono = monomorphize(inner_generic, t.type_args, status);
+	if (!inner_mono) return t;
+	const flat = new Type(inner_mono.name, t.is_static, t.is_array, t.length);
+	flat.storage_kind = t.storage_kind;
+	flat.is_ref = t.is_ref;
+	flat.is_const_ref = t.is_const_ref;
+	flat.is_nullable = t.is_nullable;
+	return flat;
+}
+
+/**
  * Materialize the monomorphized form of a generic-struct type that carries
  * concrete type args (e.g. `List<string>` -> `List_string`), so the downstream
  * build/codegen can resolve it. A generic container that appears ONLY as a
@@ -537,7 +564,9 @@ export function instantiate_generic_type(type: Type, status: CheckStatus) {
 		const generic = status.structs.findLast((s) => s.name === type.name);
 		if (!generic?.is_generic) return;
 		if (generic.type_params.length !== args.length) return;
-		if (args.some((t) => status.type_params.includes(t.name))) return;
+		// Recursive: a nested arg (`Wrapper<List<T>>` inside a generic) still
+		// references T through the inner instantiation — defer the whole thing.
+		if (args.some((t) => type_contains_unresolved_param(t, status))) return;
 		monomorphize(generic, args, status);
 	}
 	// `Array<T>` (parse-rewritten to `{name: T, is_array: true, is_array_heap:
@@ -1319,8 +1348,19 @@ function substitute_raw_in_node(
 	// monomorphized symbol so the build keys `_init` correctly.
 	const any_node = node as any;
 	if (node.node_type === "func_call" && any_node.type_args?.length) {
-		any_node.type_args = any_node.type_args.map((t: Type) => substitute_type(t, substitution));
-		any_node.name = any_node.name + "_" + any_node.type_args.map((t: Type) => t.name).join("_");
+		const old_args = any_node.type_args as Type[];
+		any_node.type_args = old_args.map((t: Type) => substitute_type(t, substitution));
+		// Strip a mono suffix the check phase may already have appended to
+		// the name: a constructor call with CONCRETE args inside a generic
+		// body (e.g. `List<int>()` in `Wrapper<T>`) is monomorphized and
+		// renamed to `List_int` at check time while keeping its type_args —
+		// re-appending without stripping would double the suffix
+		// (`List_int_int`).
+		const old_suffix = "_" + old_args.map((t) => mono_type_name(t)).join("_");
+		const base_name = any_node.name.endsWith(old_suffix)
+			? any_node.name.slice(0, any_node.name.length - old_suffix.length)
+			: any_node.name;
+		any_node.name = mono_type_name(base_name, any_node.type_args);
 	} else if (node.node_type === "access_func" && any_node.type_args?.length) {
 		any_node.type_args = any_node.type_args.map((t: Type) => substitute_type(t, substitution));
 	}
@@ -1394,16 +1434,20 @@ function specialize_function(
 
 		const arg_type = infer_arg_type(arg, status);
 		if (arg_type.type_args?.length) {
-			type_args_for_struct = arg_type.type_args;
+			// A nested generic arg type (`Wrapper<List<int>>` passed to a
+			// param of `Wrapper<W>`) flattens to the inner mono name so the
+			// name-only substitution stays concrete (`W` -> `List_int`, not
+			// the bare generic `List`).
+			type_args_for_struct = arg_type.type_args.map((t) => flatten_nested_generic_arg(t, status));
 			for (let j = 0; j < generic_struct.type_params.length; j++) {
-				if (j < arg_type.type_args.length) {
-					substitution.set(generic_struct.type_params[j], arg_type.type_args[j].name);
+				if (j < type_args_for_struct.length) {
+					substitution.set(generic_struct.type_params[j], type_args_for_struct[j].name);
 				}
 			}
 			if (param.type.type_args?.length) {
 				for (let j = 0; j < param.type.type_args.length; j++) {
-					if (j < arg_type.type_args.length) {
-						substitution.set(param.type.type_args[j].name, arg_type.type_args[j].name);
+					if (j < type_args_for_struct.length) {
+						substitution.set(param.type.type_args[j].name, type_args_for_struct[j].name);
 					}
 				}
 			}
@@ -1431,7 +1475,7 @@ function specialize_function(
 				(tp) => new Type(substitution.get(tp) || tp),
 			);
 		}
-		const mono_name = generic_struct.name + "_" + type_args_for_struct.map((t) => t.name).join("_");
+		const mono_name = mono_type_name(generic_struct.name, type_args_for_struct);
 		substitution.set(generic_struct.name, mono_name);
 		suffix_parts.push(mono_name);
 	}

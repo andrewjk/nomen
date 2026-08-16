@@ -1,3 +1,4 @@
+import { mono_type_name } from "../build_common/mono_name.ts";
 import { has_return_statement } from "../build_common/string_return_analysis.ts";
 import BitsetNode from "../nodes/BitsetNode.ts";
 import type BlockNode from "../nodes/BlockNode.ts";
@@ -348,9 +349,7 @@ function emit_struct_in_order(struct: StructNode, status: BuildStatus, emitted: 
 	// Map<int,int>) are monomorphized to concrete names (Map_int_int), so
 	// resolve the monomorphized name when looking up the dependency.
 	for (const field of struct.fields) {
-		const mono_name = field.type.type_args?.length
-			? `${field.type.name}_${field.type.type_args.map((t) => t.name).join("_")}`
-			: field.type.name;
+		const mono_name = mono_type_name(field.type);
 		const dep = status.structs.find(
 			(s) => s.name === mono_name && !s.is_simple_type && !s.is_generic,
 		);

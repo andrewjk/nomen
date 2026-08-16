@@ -1,5 +1,6 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import array_struct_name from "../build_c/utils/array_struct.ts";
+import { resolve_mono_type } from "../build_common/mono_name.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import type Type from "../nodes/Type.ts";
 import build_block_node from "./build_block_node.ts";
@@ -195,6 +196,11 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	// `view User` slice return isn't misclassified as a struct return.
 	// An ARRAY-typed return (`out Array<T>`) is a heap buffer POINTER in x0 —
 	// never sret, even when the element type is a struct.
+	// First, normalize a generic-annotated return type (`Wrapper<List<int>>`)
+	// to its mono struct form — layout/size resolution below keys on
+	// `.name`, which would otherwise hit the bare generic (type-param fields
+	// have no concrete size).
+	node.return_type = resolve_mono_type(node.return_type, status);
 	const return_struct =
 		!node.return_type.is_view &&
 		!node.return_type.is_array &&

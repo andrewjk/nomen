@@ -1,4 +1,5 @@
 import emit_field_overrides from "../build/emit_field_overrides.ts";
+import { mono_type_name } from "../build_common/mono_name.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import AssignmentNode from "../nodes/AssignmentNode.ts";
@@ -215,9 +216,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 		// call boundary, so eager reclamation is safe.
 		const ref_param_type = status.ref_class_param_types?.get(lhs_name);
 		if (status.ref_class_params?.has(lhs_name) && ref_param_type) {
-			const mono = ref_param_type.type_args?.length
-				? `${ref_param_type.name}_${ref_param_type.type_args.map((t) => t.name).join("_")}`
-				: ref_param_type.name;
+			const mono = mono_type_name(ref_param_type);
 			const destroy_struct =
 				status.structs.find((s) => s.name === mono && !s.is_generic) ??
 				status.structs.find((s) => s.name === ref_param_type.name);
@@ -378,9 +377,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 						(s) => s.name === lhs_decl.type.name && !s.is_simple_type && !s.is_class,
 					)
 				: null;
-			const lhs_mono = lhs_decl.type?.type_args?.length
-				? `${lhs_decl.type.name}_${lhs_decl.type.type_args.map((t) => t.name).join("_")}`
-				: lhs_decl.type?.name;
+			const lhs_mono = lhs_decl.type ? mono_type_name(lhs_decl.type) : undefined;
 			const lhs_mono_struct = lhs_mono
 				? status.structs.find(
 						(s) => s.name === lhs_mono && !s.is_simple_type && !s.is_class && !s.is_generic,

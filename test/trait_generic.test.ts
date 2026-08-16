@@ -364,35 +364,22 @@ Console.write("\\{code_of(W())}")
 		await build_and_check_output(input, "generic_trait_nested_args", "9");
 	});
 
-	test("nested type args split `>>` in a value/type context (parse-level)", () => {
+	test("nested type args split `>>` in a value/type context (parse-level)", async () => {
 		// The tokenizer emits `>>` for the two abutting closes; the parser
 		// must split it on both the type annotation and the constructor
-		// literal. Instantiating a generic struct whose argument is itself
-		// generic (Box<Box<int>>) is REJECTED by the checker (the
-		// substitution is name-only, so the inner args would be dropped) —
-		// but the rejection itself proves the split worked: an unsplit `>>`
-		// would surface as a parse error ("Expected ..."), not the nested-
-		// generic check error.
+		// literal. Nested generic instantiation (Box<Box<int>>) is now
+		// SUPPORTED (the inner mono is materialized and the substitution
+		// carries the flattened name) — the clean compile proves the split
+		// worked: an unsplit `>>` would surface as a parse error.
 		const input = `
 struct Box<T> {
 	pub var T value
 }
 var Box<int> inner = Box<int>(7)
 var Box<Box<int>> outer = Box<Box<int>>(inner)
+Console.write("\\{outer.value.value}")
 `;
-		const parsed = parse(input);
-		expect(parsed.errors.length).toBeGreaterThan(0);
-		// No PARSE-shape errors — an unsplit `>>` would surface as one of
-		// these, while the checker's nested-generic rejection (and its
-		// "Function not found" cascade) means the split worked.
-		for (const err of parsed.errors) {
-			expect(err.message).not.toMatch(
-				/^Expected|^Unexpected|^Unknown type|^Parameter already declared/,
-			);
-		}
-		expect(parsed.errors.some((e) => e.message.includes("nested generic instantiation"))).toBe(
-			true,
-		);
+		await build_and_check_output(input, "nested_box_box_int", "7");
 	});
 
 	test("triple-nested type args: Tree<Node<Node<int>>>", async () => {

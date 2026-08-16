@@ -4,17 +4,7 @@ Skipped or out-of-scope items recorded for later.
 
 ## Compiler / stdlib gaps
 
-1. **Nested generic instantiation (`Wrapper<List<int>>`) is unsupported.**
-   The monomorphizer's substitution is name-only (`Map<string, string>`),
-   so instantiating a generic with a generic type argument drops the inner
-   args and would leave the mono referencing the bare generic. This used to
-   HANG the checker; it is now a clean check-time error ("nested generic
-   instantiation is not supported yet" — see ROADBLOCKS "`List<T>` as an
-   explicit struct-field type doesn't monomorphize — FIXED"). Supporting it
-   needs the substitution to carry full `Type`s and the mono-name
-   flattening (shared by both backends) to nest args.
-
-2. **Build-backend duplication — shared layer (decided & built).**
+1. **Build-backend duplication — shared layer (decided & built).**
    `src/build_common/` owns the genuinely duplicated families:
    `mono_name.ts` (the `List<int>` → `List_int` flattening, previously
    inlined at a dozen sites), `destroy_analysis.ts`
@@ -62,18 +52,18 @@ Skipped or out-of-scope items recorded for later.
 Status and history in FINDINGS.md / ROADBLOCKS.md. The compiler blockers are
 closed; what remains is bounded port-code work:
 
-3. **Finish `combined`** — the move/word-level post-processing
+2. **Finish `combined`** — the move/word-level post-processing
    (`detect_moves` + `reemit` + word pairing) is written but bypassed
    (`combined` returns `histogram(left, right)`) until the shared-ownership
    call sites are reworked to owning extraction (`.pop()` /
    `items.move_T(i)`) or restructured around one owning list.
 
-4. **Finish `renderText` / `renderConsole`** — same shared-ownership family
+3. **Finish `renderText` / `renderConsole`** — same shared-ownership family
    in the `split_bare`/`lines_of_bare`/StringBuilder path; `main.nm` still
    prints hunk counts instead of rendered output until those call sites are
    reworked.
 
-5. **Port hygiene / modernization** — run `nomen format`; review the 21 check
+4. **Port hygiene / modernization** — run `nomen format`; review the 21 check
    warnings; drop the now-unneeded `List<Token>` wrapper in `diff_arrays`
    (a plain `List<string>` parameter compiles now); optionally switch
    `detect_moves` from the O(n²) scan to `Map<string, List<LineUnit>>`; the
