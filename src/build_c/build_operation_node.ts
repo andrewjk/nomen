@@ -4,6 +4,7 @@ import ValueNode from "../nodes/ValueNode.ts";
 import build_node from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import c_type from "./utils/c_type.ts";
+import { enum_with_data_side, static_enum_case } from "./utils/enum_eq.ts";
 import { has_flag_name, is_nullable_struct_type } from "./utils/nullable_struct.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 
@@ -123,6 +124,34 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		} else {
 			build_default_binary(node, status);
 		}
+	} else if (
+		(node.op === "==" || node.op === "!=") &&
+		enum_with_data_side(node.left_value, node.right_value, status)
+	) {
+		// `==`/`!=` on an enum with associated data compares the TAG only:
+		// the operands are structs (tag + payload union), so a plain `==`
+		// would be a struct-vs-struct compare clang rejects. Mirrors `match`,
+		// which also discriminates on the tag.
+		const enum_node = enum_with_data_side(node.left_value, node.right_value, status)!;
+		const left_case = static_enum_case(node.left_value, enum_node, status);
+		const right_case = static_enum_case(node.right_value, enum_node, status);
+		status.code += `(`;
+		if (left_case && right_case) {
+			status.code += `${enum_node.name}_${left_case} ${node.op} ${enum_node.name}_${right_case}`;
+		} else if (left_case || right_case) {
+			const case_name = (left_case ?? right_case)!;
+			const value_side = left_case ? node.right_value : node.left_value;
+			status.code += `(`;
+			build_node(value_side, status);
+			status.code += `).tag ${node.op} ${enum_node.name}_${case_name}`;
+		} else {
+			status.code += `(`;
+			build_node(node.left_value, status);
+			status.code += `).tag ${node.op} (`;
+			build_node(node.right_value, status);
+			status.code += `).tag`;
+		}
+		status.code += `)`;
 	} else if (node.operator_func) {
 		// Custom operator function call
 		const label =

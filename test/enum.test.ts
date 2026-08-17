@@ -358,6 +358,142 @@ Console.write("\\{b.a}")
 `;
 		await build_and_check_output(input, "enum_field_default", "3");
 	});
+
+	test("compare enum with associated data against case constructor", async () => {
+		const input = `
+enum Result {
+  case ok
+  case error(int code)
+}
+
+var Result r = Result.error(42)
+if r == Result.error(5) {
+  Console.write("error")
+} else {
+  Console.write("other")
+}
+`;
+		await build_and_check_output(input, "enum_data_compare_equals", "error");
+	});
+
+	test("compare enum with associated data against no-payload case", async () => {
+		const input = `
+enum Result {
+  case ok
+  case error(int code)
+}
+
+var Result r = Result.error(42)
+if r == Result.ok {
+  Console.write("ok")
+} else {
+  Console.write("error")
+}
+`;
+		await build_and_check_output(input, "enum_data_compare_no_payload", "error");
+	});
+
+	test("compare enum with associated data with not equals", async () => {
+		const input = `
+enum Result {
+  case ok
+  case error(int code)
+}
+
+var Result r = Result.ok
+if r != Result.error(1) {
+  Console.write("not error")
+} else {
+  Console.write("error")
+}
+`;
+		await build_and_check_output(input, "enum_data_compare_not_equals", "not error");
+	});
+
+	test("enum with associated data equality compares tags only", async () => {
+		const input = `
+enum Result {
+  case ok
+  case error(int code)
+}
+
+if Result.error(1) == Result.error(2) {
+  Console.write("same case")
+} else {
+  Console.write("different")
+}
+`;
+		await build_and_check_output(input, "enum_data_compare_tag_only", "same case");
+	});
+
+	test("compare enum with associated data via shorthand", async () => {
+		const input = `
+enum Result {
+  case ok
+  case error(int code)
+}
+
+var Result r = Result.error(7)
+if r == .error(0) {
+  Console.write("error")
+} else {
+  Console.write("other")
+}
+`;
+		await build_and_check_output(input, "enum_data_compare_shorthand", "error");
+	});
+
+	test("compare two enum with associated data variables", async () => {
+		const input = `
+enum Result {
+  case ok
+  case error(int code)
+}
+
+var Result a = Result.error(1)
+var Result b = Result.error(2)
+var Result c = Result.ok
+if a == b {
+  Console.write("ab same")
+}
+if a != c {
+  Console.write("ac differ")
+}
+`;
+		await build_and_check_output(input, "enum_data_compare_variables", "ab sameac differ");
+	});
+
+	test("compare enum with associated data with case on left side", async () => {
+		const input = `
+enum Result {
+  case ok
+  case error(int code)
+}
+
+var Result r = Result.error(42)
+if Result.ok == r {
+  Console.write("ok")
+} else {
+  Console.write("error")
+}
+`;
+		await build_and_check_output(input, "enum_data_compare_case_left", "error");
+	});
+
+	test("compare generic enum with associated data", async () => {
+		const input = `
+var Option<int> found = Option.some(4)
+if found == Option.none {
+  Console.write("none")
+} else {
+  Console.write("some")
+}
+if found == .some(0) {
+  Console.write("same case")
+}
+`;
+		await build_and_check_output(input, "enum_data_compare_generic", "somesame case");
+	});
 });
 
 describe("enum errors", () => {

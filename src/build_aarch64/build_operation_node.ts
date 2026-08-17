@@ -1,7 +1,9 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
+import { enum_with_data_side, static_enum_case } from "../build_c/utils/enum_eq.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import { is_int_literal, parse_int_literal_bigint, to_decimal_string } from "../int_literal.ts";
 import BaseNode from "../nodes/BaseNode.ts";
+import EnumNode from "../nodes/EnumNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import { emit_address_of } from "./build_access_node.ts";
@@ -23,6 +25,44 @@ export function reset_string_counter() {
 
 function is_comparison(op: string): boolean {
 	return [">", "<", "==", "!=", ">=", "<="].includes(op);
+}
+
+/**
+ * Load an enum-with-data operand's case tag (the case's ordinal index) into
+ * `target_reg`. A static case reference emits its index immediately; a
+ * runtime enum value is built — a variable or struct-field access yields the
+ * tag word directly, while constructor forms and calls leave the ADDRESS of
+ * a tag+payload temp in x0 (the same convention declarations rely on), whose
+ * first word is the tag.
+ */
+function build_enum_tag_operand(
+	operand: BaseNode,
+	enum_node: EnumNode,
+	target_reg: string,
+	status: BuildStatus,
+) {
+	const case_name = static_enum_case(operand, enum_node, status);
+	if (case_name) {
+		const idx = enum_node.cases.findIndex((c) => c.name === case_name);
+		status.code += `mov ${target_reg}, #${idx}\n`;
+		return;
+	}
+	let node = operand;
+	while (node.node_type === "grouped") {
+		node = (node as unknown as { value: BaseNode }).value;
+	}
+	const yields_address =
+		node.node_type === "func_call" ||
+		(node.node_type === "value" && (node as ValueNode).is_enum_shorthand) ||
+		(node.node_type === "access" &&
+			(node as unknown as { access: { node_type: string } }).access.node_type === "access_func");
+	build_operand(node, "x0", status);
+	if (!status.code.endsWith("\n")) status.code += "\n";
+	if (yields_address) {
+		status.code += `ldr ${target_reg}, [x0]\n`;
+	} else if (target_reg !== "x0") {
+		status.code += `mov ${target_reg}, x0\n`;
+	}
 }
 
 function map_cmp(op: string, unsigned: boolean = false): string {
@@ -370,6 +410,25 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 			status.code += `cset x0, ${node.op === "==" ? "eq" : "ne"}\n`;
 			return;
 		}
+	}
+
+	// `==`/`!=` on an enum with associated data compares the TAG only. The
+	// operands are multi-word values (tag + payload): a variable or field
+	// access builds to its tag word, while constructor forms and calls leave
+	// the ADDRESS of a tag+payload temp in x0 — the generic path would compare
+	// a tag against an address. Mirrors `match`, which discriminates on the tag.
+	if (
+		(node.op === "==" || node.op === "!=") &&
+		enum_with_data_side(node.left_value, node.right_value, status)
+	) {
+		const enum_node = enum_with_data_side(node.left_value, node.right_value, status)!;
+		build_enum_tag_operand(node.right_value, enum_node, "x2", status);
+		status.code += `str x2, [sp, #-16]!\n`;
+		build_enum_tag_operand(node.left_value, enum_node, "x1", status);
+		status.code += `ldr x2, [sp], #16\n`;
+		status.code += `cmp x1, x2\n`;
+		status.code += `cset x0, ${node.op === "==" ? "eq" : "ne"}\n`;
+		return;
 	}
 
 	if (node.operator_func) {
