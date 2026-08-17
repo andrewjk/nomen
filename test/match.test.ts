@@ -3,7 +3,6 @@ import { expect, describe, test } from "vite-plus/test";
 import build from "../src/build";
 import parse from "../src/parse";
 import build_and_check_output from "./build_and_check_output";
-import check_output from "./check_output";
 import parse_with_imports from "./parse_with_imports";
 import test_error from "./test_error";
 
@@ -474,10 +473,11 @@ Console.write("\\n")
 		await build_and_check_output(input, "match_expr_simple_interp", "N 1\n");
 	});
 
-	// C-backend only: aarch64's `return match` with interpolation branches
-	// clobbers x0 with the branch auto-free before the join-point strdup
-	// (see FOLLOWUP.md).
-	test("return match with interpolated string branches (C backend)", async () => {
+	// `return match` with interpolation branches: the chosen branch's value
+	// must survive the branch's auto-free of the hoisted interpolation temp
+	// (which clobbers x0) and reach the caller without leaking the owned
+	// original (per-branch join normalization, no join-point strdup).
+	test("return match with interpolated string branches", async () => {
 		const input = `
 enum Result {
   case ok(int value)
@@ -496,13 +496,7 @@ Console.write("\\n")
 Console.write(describe(.error("nope")))
 Console.write("\\n")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "c", audit: true });
-		await check_output("match_return_interp", result, "ok 7\nerr nope\n", {
-			arch: "c",
-			audit: true,
-		});
+		await build_and_check_output(input, "match_return_interp", "ok 7\nerr nope\n");
 	});
 
 	// Mixed literal + interpolation branches: the literal branch dominates the
@@ -566,11 +560,11 @@ Console.write("\\n")
 		await build_and_check_output(input, "match_expr_mixed_literal_first", "ok 5\nerr\n");
 	});
 
-	// C-backend only (aarch64 `return match` is a separate FOLLOWUP item): a
-	// mixed join returned from a function. The join-point strdup used to leak
-	// the owned interpolation branch's result; the return now hands the
-	// per-branch-normalized result directly.
-	test("return match with mixed literal + interpolated string branches (C backend)", async () => {
+	// A mixed join (literal + interpolation branches) returned from a
+	// function: the join is normalized per-branch (non-owned values strdup'd
+	// into the join slot) and the owned result returned directly on both
+	// backends.
+	test("return match with mixed literal + interpolated string branches", async () => {
 		const input = `
 enum Result {
   case ok(int value)
@@ -589,13 +583,7 @@ Console.write("\\n")
 Console.write(describe(.error("nope")))
 Console.write("\\n")
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "c", audit: true });
-		await check_output("match_return_mixed", result, "ok 7\nerr\n", {
-			arch: "c",
-			audit: true,
-		});
+		await build_and_check_output(input, "match_return_mixed", "ok 7\nerr\n");
 	});
 
 	test("match on struct field that is an enum with data", async () => {

@@ -1,5 +1,9 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
-import { is_container_borrow_access } from "../build_common/string_return_analysis.ts";
+import {
+	collect_expression_branch_values,
+	is_container_borrow_access,
+	is_owned_string_branch_value,
+} from "../build_common/string_return_analysis.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
@@ -18,6 +22,8 @@ import {
 import { is_nullable_struct_type } from "./utils/nullable_struct.ts";
 import { allocate_stack_space, emit_var_address, emit_var_store } from "./utils/stack_var.ts";
 import { emit_struct_copy, get_struct_size } from "./utils/struct_layout.ts";
+
+let return_val_counter = 0;
 
 function find_var_size(name: string, status: BuildStatus): number {
 	const decl = status.scoped_declarations?.find((d) => d.name === name);
@@ -166,8 +172,56 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 		});
 	}
 
+	let return_join_owned_string = false;
 	if (array_literal_len > 0) {
 		status.code += `add x0, x29, #${array_literal_offset}\n`;
+	} else if (
+		!status.return_assign &&
+		(node.value.node_type === "match" ||
+			node.value.node_type === "switch" ||
+			node.value.node_type === "if")
+	) {
+		// `return match/switch/if` mirrors the C backend's `_return_val` path:
+		// control-flow expressions assign each branch's value to a join slot
+		// instead of leaving it in x0 at the join point. A branch whose value
+		// needs hoisted interpolation temps runs its scope-exit auto-free
+		// (`ldr x0, [x29, #N]; bl _nomen_free_wrap`) after producing the
+		// value, clobbering x0 before the join — the caller would receive a
+		// strdup of a freed pointer. Storing to the slot before that cleanup
+		// (the branch's let/return assign through return_assign) keeps the
+		// chosen branch's result live across the join.
+		const slot_name = `_return_val_${return_val_counter++}`;
+		const ret_size = status.function_return_type
+			? Math.max(aarch64_size(status.function_return_type.name), 8)
+			: 8;
+		const slot = allocate_stack_space(status, ret_size);
+		status.stack_offsets!.set(slot_name, slot);
+		// Mixed string-join ownership normalization (mirrors the C backend):
+		// when any branch produces a fresh owned heap string
+		// (interpolation/concat/call), flag the branch builds so every
+		// non-owned branch value (a literal's rodata pointer, a borrow) is
+		// strdup'd into the slot (build_let_node) — the slot then uniformly
+		// owns its result and is returned DIRECTLY. A join-point strdup would
+		// copy the owned original and leak it.
+		return_join_owned_string =
+			current_return_is_string(status) &&
+			collect_expression_branch_values(node.value).some((v) =>
+				is_owned_string_branch_value(v, status),
+			);
+		const old_return_assign = status.return_assign;
+		const old_join_owned = status.join_needs_owned_string;
+		status.return_assign = slot_name;
+		if (return_join_owned_string) status.join_needs_owned_string = true;
+		build_node(node.value, status);
+		status.join_needs_owned_string = old_join_owned;
+		status.return_assign = old_return_assign;
+		// Reload the chosen branch's value from the slot (x0 was clobbered by
+		// the branch scope-exit cleanup) and hand the owned result to the
+		// caller as-is.
+		status.code += `ldr x0, [x29, #${slot}]\n`;
+		if (return_join_owned_string) {
+			status.last_result_is_heap = true;
+		}
 	} else {
 		// `return T(...) + [ ... ]`: the constructor would normally write
 		// straight into the return buffer (struct_return_buffer), bypassing
@@ -279,12 +333,15 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 			// `return self.name` / `return obj.field` — the storage belongs
 			// to the struct instance.
 			needs_borrow_strdup = true;
-		} else if (node.value.node_type === "match" || node.value.node_type === "switch") {
-			// The chosen branch's value is in x0; any branch may have produced
-			// a borrow/literal (e.g. `return match c { 1 -> xs.at(0), else ->
-			// "none" }`), so copy it for the freeing caller. (A heap-producing
-			// branch is copied too and its original leaks — the same trade the
-			// C backend's unconditional `return strdup(_return_val)` makes.)
+		} else if (
+			(node.value.node_type === "match" || node.value.node_type === "switch") &&
+			!return_join_owned_string
+		) {
+			// The chosen branch's value is in x0; with no owned branch every
+			// branch produced a borrow/literal (e.g. `return match c { 1 ->
+			// xs.at(0), else -> "none" }`), so copy it for the freeing caller.
+			// A mixed join with an owned branch is excluded: it is normalized
+			// per-branch into the join slot and returned directly.
 			needs_borrow_strdup = true;
 		}
 	}

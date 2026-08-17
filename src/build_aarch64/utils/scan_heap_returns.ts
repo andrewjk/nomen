@@ -86,5 +86,31 @@ function is_heap_string_expr(node: BaseNode | undefined): boolean {
 		return false;
 	}
 
+	// A control-flow expression (`return match/switch/if`) is heap-returning
+	// when any branch's value is — each `-> expr` arrow branch wraps its value
+	// in a let, `=> expr` in a return. Mirrors value_is_owned_string's branch
+	// unwrapping so a `return match { ... -> "x \\{y}" }` function is
+	// classified heap-returning even when declared after its callers.
+	if (node.node_type === "match" || node.node_type === "switch") {
+		const branches: any[] = ((node as any).cases ?? []).map((c: any) => c?.branch);
+		if ((node as any).else_branch) branches.push((node as any).else_branch);
+		return branches.some(branch_has_heap_value);
+	}
+	if (node.node_type === "if") {
+		return (
+			branch_has_heap_value((node as any).if_branch) ||
+			branch_has_heap_value((node as any).else_branch)
+		);
+	}
+
+	return false;
+}
+
+function branch_has_heap_value(block: any): boolean {
+	for (const stmt of block?.statements ?? []) {
+		if ((stmt?.node_type === "let" || stmt?.node_type === "return") && stmt.value) {
+			if (is_heap_string_expr(stmt.value)) return true;
+		}
+	}
 	return false;
 }
