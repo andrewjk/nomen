@@ -1,10 +1,17 @@
 import emit_field_overrides from "../build/emit_field_overrides.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
+import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
+import type BaseNode from "../nodes/BaseNode.ts";
+import BranchNode from "../nodes/BranchNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
+import IfElseNode from "../nodes/IfElseNode.ts";
+import LetNode from "../nodes/LetNode.ts";
+import MatchNode from "../nodes/MatchNode.ts";
 import ReturnNode from "../nodes/ReturnNode.ts";
+import SwitchNode from "../nodes/SwitchNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_array_values_node from "./build_array_values_node.ts";
 import build_auto_free from "./build_auto_free.ts";
@@ -195,7 +202,16 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 			status.return_assign = old_return_assign;
 			build_auto_free(status);
 			if (ret_type.name === "string" && !ret_type.is_view) {
-				status.code += `return strdup(_return_val);\n`;
+				// `return strdup(_return_val)` normalizes a branch value that
+				// may be a literal/borrow into an owned heap copy — but when it
+				// is already owned (e.g. every branch returns an interpolation),
+				// the strdup LEAKS the original. Return the owned result
+				// directly when every branch-assigned value is confidently an
+				// owned heap string; keep the strdup otherwise.
+				const branch_values = collect_branch_value_exprs(node.value);
+				const all_owned =
+					branch_values.length > 0 && branch_values.every((v) => is_owned_string_expr(v, status));
+				status.code += all_owned ? `return _return_val;\n` : `return strdup(_return_val);\n`;
 			} else {
 				status.code += `return _return_val;\n`;
 			}
@@ -418,4 +434,64 @@ function find_decl_across_scopes(name: string, status: BuildStatus): Declaration
 		}
 	}
 	return undefined;
+}
+
+/**
+ * Collect the value expressions a match/switch/if-expression's branches assign
+ * to the `return_assign` target — each `-> expr` branch's LetNode value, plus
+ * any explicit `return expr` inside block-form branches.
+ */
+function collect_branch_value_exprs(node: BaseNode): BaseNode[] {
+	const out: BaseNode[] = [];
+	const visit_block = (block: BranchNode | undefined) => {
+		for (const stmt of block?.statements ?? []) {
+			if (stmt.node_type === "let") {
+				out.push((stmt as LetNode).value);
+			} else if (stmt.node_type === "return" && (stmt as ReturnNode).value) {
+				out.push((stmt as ReturnNode).value!);
+			}
+		}
+	};
+	if (node.node_type === "match") {
+		const match = node as MatchNode;
+		for (const match_case of match.cases) visit_block(match_case.branch);
+		visit_block(match.else_branch);
+	} else if (node.node_type === "switch") {
+		const switch_node = node as SwitchNode;
+		for (const switch_case of switch_node.cases) visit_block(switch_case.branch);
+		visit_block(switch_node.else_branch);
+	} else if (node.node_type === "if") {
+		const if_node = node as IfElseNode;
+		visit_block(if_node.if_branch);
+		visit_block(if_node.else_branch);
+	}
+	return out;
+}
+
+/**
+ * Whether an expression is confidently an OWNED heap string — a fresh
+ * allocation the caller can free (interpolation results, to_string,
+ * owned_return accessors, calls to functions that return heap strings).
+ * Conservative: anything not confidently owned (literals, variables, field
+ * accesses) returns false so the return site keeps its strdup normalization.
+ */
+function is_owned_string_expr(node: BaseNode, status: BuildStatus): boolean {
+	if (node.node_type === "func_call") {
+		const call = node as FunctionCallNode;
+		return (
+			call.name.startsWith("_string_interpolate_") ||
+			!!status.heap_returning_functions?.has(call.name)
+		);
+	}
+	if (node.node_type === "access" && (node as AccessNode).access.node_type === "access_func") {
+		const func = (node as AccessNode).access as AccessFunctionCallNode;
+		const mangled = func.mangled_name || func.name || "";
+		return (
+			!!func.owned_return ||
+			(func.name === "to_string" && mangled !== "string_to_string") ||
+			mangled.startsWith("_string_interpolate_") ||
+			!!status.heap_returning_functions?.has(mangled)
+		);
+	}
+	return false;
 }

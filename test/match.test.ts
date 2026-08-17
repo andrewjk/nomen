@@ -3,6 +3,7 @@ import { expect, describe, test } from "vite-plus/test";
 import build from "../src/build";
 import parse from "../src/parse";
 import build_and_check_output from "./build_and_check_output";
+import check_output from "./check_output";
 import parse_with_imports from "./parse_with_imports";
 import test_error from "./test_error";
 
@@ -404,6 +405,104 @@ var int area = match s {
 Console.write("\\{area}")
 `;
 		await build_and_check_output(input, "match_associated_data_multi", "200");
+	});
+
+	// Regression: a match-as-expression whose branches return string
+	// interpolations used to emit the hoisted interpolation temp AFTER the
+	// assignment target (`m = char* _param_0 = ...`) — a declaration
+	// mid-expression, which clang rejects with `expected expression`. The
+	// temps must hoist before the branch's assignment (both backends).
+	test("match-as-expression with interpolated string branches", async () => {
+		const input = `
+enum Result {
+  case ok(int value)
+  case error(string message)
+}
+
+var Result r = .ok(5)
+const m = match r {
+	case .ok(n) -> "ok \\{n}"
+	case .error(e) -> "err \\{e}"
+}
+Console.write(m)
+Console.write("\\n")
+
+var Result r2 = .error("bad")
+const m2 = match r2 {
+	case .ok(n) -> "ok \\{n}"
+	case .error(e) -> "err \\{e}"
+}
+Console.write(m2)
+Console.write("\\n")
+`;
+		await build_and_check_output(input, "match_expr_interp", "ok 5\nerr bad\n");
+	});
+
+	test("match-as-expression with multiple interpolations per branch", async () => {
+		const input = `
+enum Result {
+  case ok(int value)
+  case error(string message)
+}
+
+var Result r = .ok(5)
+const m = match r {
+	case .ok(n) -> "ok \\{n} \\{n + 1}"
+	case .error(e) -> "err \\{e}"
+}
+Console.write(m)
+Console.write("\\n")
+`;
+		await build_and_check_output(input, "match_expr_multi_interp", "ok 5 6\n");
+	});
+
+	test("match-as-expression with interpolated string on a simple enum", async () => {
+		const input = `
+enum Direction {
+  case north
+  case south
+}
+
+var Direction d = .north
+const m = match d {
+	case .north -> "N \\{1}"
+	case .south -> "S \\{2}"
+}
+Console.write(m)
+Console.write("\\n")
+`;
+		await build_and_check_output(input, "match_expr_simple_interp", "N 1\n");
+	});
+
+	// C-backend only: aarch64's `return match` with interpolation branches
+	// clobbers x0 with the branch auto-free before the join-point strdup
+	// (see FOLLOWUP.md).
+	test("return match with interpolated string branches (C backend)", async () => {
+		const input = `
+enum Result {
+  case ok(int value)
+  case error(string message)
+}
+
+func describe = (Result r, out string) {
+    return match r {
+        case .ok(n) -> "ok \\{n}"
+        case .error(e) -> "err \\{e}"
+    }
+}
+
+Console.write(describe(.ok(7)))
+Console.write("\\n")
+Console.write(describe(.error("nope")))
+Console.write("\\n")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "c", audit: true });
+		await check_output("match_return_interp", result, "ok 7\nerr nope\n", {
+			arch: "c",
+			audit: true,
+		});
 	});
 
 	test("match on struct field that is an enum with data", async () => {

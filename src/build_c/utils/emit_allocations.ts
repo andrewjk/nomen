@@ -8,6 +8,7 @@ import DeclarationNode from "../../nodes/DeclarationNode.ts";
 import FunctionCallNode from "../../nodes/FunctionCallNode.ts";
 import GroupedNode from "../../nodes/GroupedNode.ts";
 import IfElseNode from "../../nodes/IfElseNode.ts";
+import LetNode from "../../nodes/LetNode.ts";
 import OperationNode from "../../nodes/OperationNode.ts";
 import RangeNode from "../../nodes/RangeNode.ts";
 import ReturnNode from "../../nodes/ReturnNode.ts";
@@ -68,6 +69,15 @@ function collect_allocations(node: BaseNode): BaseNode[] {
 		case "declare": {
 			const decl = node as DeclarationNode;
 			if (decl.value) result.push(...collect_allocations(decl.value));
+			break;
+		}
+		case "let": {
+			// A LetNode's value allocations (e.g. interpolation temporaries in
+			// a match/if/switch-expression branch) must surface BEFORE the let
+			// emits its `<target> = ` prefix under `status.return_assign` —
+			// otherwise the hoisted declaration lands mid-expression
+			// (`m = char* _param_0 = ...`), which is invalid C.
+			result.push(...collect_allocations((node as LetNode).value));
 			break;
 		}
 		case "func_call": {
