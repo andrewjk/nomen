@@ -1,5 +1,9 @@
 import emit_field_overrides from "../build/emit_field_overrides.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
+import {
+	collect_expression_branch_values,
+	is_owned_string_branch_value,
+} from "../build_common/string_return_analysis.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
@@ -533,7 +537,31 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 				status.code += ";\n";
 				const old_return_assign = status.return_assign;
 				status.return_assign = safe_name;
+				// Mixed string-join ownership normalization: when the join's
+				// branches mix owned heap producers (interpolation/concat/
+				// string-returning call) with non-owned values (literals,
+				// variables, borrows), the inferred type may claim `static`
+				// (the literal branch wins the is_static merge), so auto_free
+				// would skip the variable and the owned branch's heap result
+				// leaks. Flag the branch builds so every non-owned branch value
+				// is strdup'd into an owned copy (build_let_node), and record
+				// the variable as an owned string so auto_free frees it once at
+				// scope exit. All-literal and all-owned joins are unchanged.
+				const join_is_string =
+					node.type.name === "string" && !node.type.is_view && !node.type.is_array;
+				const any_branch_owned =
+					join_is_string &&
+					collect_expression_branch_values(node.value).some((v) =>
+						is_owned_string_branch_value(v, status),
+					);
+				const old_join_owned = status.join_needs_owned_string;
+				if (any_branch_owned) {
+					status.join_needs_owned_string = true;
+					if (!status.string_join_owned_vars) status.string_join_owned_vars = new Set();
+					status.string_join_owned_vars.add(safe_name);
+				}
 				build_node(node.value, status);
+				status.join_needs_owned_string = old_join_owned;
 				status.return_assign = old_return_assign;
 			} else {
 				status.code += " = ";

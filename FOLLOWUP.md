@@ -22,12 +22,3 @@ Skipped or out-of-scope items recorded for later.
    enum-with-data types on either backend; simple (payload-less) enums
    compare fine. Anonymous/generic enums inherit this unchanged.
 
-4. **Match/if/switch-as-expression with mixed literal + interpolation string
-   branches leaks on the C backend** (pre-existing ownership limitation,
-   surfaced while testing the fix for item 2). `const m = match r { case .ok(n)
--> "ok \{n}" case .error -> "err" }` infers a `static` match type (the
-   literal branch dominates), so auto_free deliberately skips the variable
-   (freeing a literal-only result would crash — see the comment in
-   build_c/build_auto_free.ts). The interpolation branch's heap result is
-   never freed (audit `LEAK: 1`). All-interpolation and all-literal forms are
-   handled correctly. On aarch64 the mixed form aborts at exit (SIGABRT).

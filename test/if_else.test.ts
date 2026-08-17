@@ -174,6 +174,24 @@ Console.write("\\{y}")
 		await build_and_check_output(input, "if_else_let_arrow_mixed", "50");
 	});
 
+	// Mixed literal + interpolation branches in an if-expression: the literal
+	// branch's static storage must be strdup'd so the join variable owns its
+	// result uniformly (the interpolation branch's heap result is freed once
+	// at scope exit; freeing the raw literal would crash).
+	test("if else expression with mixed literal and interpolated string branches", async () => {
+		const input = `
+var int n = 5
+const y = if n > 0 -> "positive \\{n}" else -> "zero"
+Console.write(y)
+Console.write("\\n")
+n = 0
+const z = if n > 0 -> "positive \\{n}" else -> "zero"
+Console.write(z)
+Console.write("\\n")
+`;
+		await build_and_check_output(input, "if_else_mixed_interp_literal", "positive 5\nzero\n");
+	});
+
 	test("if else expression with false", async () => {
 		const input = `
 const x = 3

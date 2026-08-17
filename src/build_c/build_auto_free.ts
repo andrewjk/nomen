@@ -100,8 +100,11 @@ export function free_scoped_declarations(status: BuildStatus, decls: Declaration
 		// build_declaration_node), even though its inferred type is `static`.
 		// Recompute that exact strdup condition here so the copy is freed at
 		// scope exit — without also freeing genuinely static results (e.g. a
-		// switch/match expression over string literals, whose non-strdup'd
-		// result still points at static literal storage).
+		// switch/match expression over ONLY string literals, whose non-strdup'd
+		// result still points at static literal storage). A mixed join (some
+		// literal, some interpolation branches) is normalized per-branch at its
+		// declaration site (non-owned branches strdup'd, the variable recorded
+		// in owned_string_vars), so it owns its result and is freed here too.
 		const dec_value = dec.value as ValueNode | undefined;
 		const dec_val_is_string_literal =
 			dec.value?.node_type === "value" &&
@@ -117,6 +120,7 @@ export function free_scoped_declarations(status: BuildStatus, decls: Declaration
 			!dec.type.is_view &&
 			!is_borrowed_string &&
 			(dec_val_is_string_literal || dec_val_is_heap_string_var);
+		const is_normalized_join_string = !!status.string_join_owned_vars?.has(dec.name);
 		const dec_struct = status.structs.find((s) => s.name === dec.type.name);
 		const is_class_var = !!dec_struct?.is_class;
 		// A trait-typed local whose concrete storage is a class holds a
@@ -140,7 +144,10 @@ export function free_scoped_declarations(status: BuildStatus, decls: Declaration
 		if (
 			!is_destructured_field_access &&
 			!is_borrowed_string &&
-			(!dec.type.is_static || value_is_heap_string || was_strdup_string_var) &&
+			(!dec.type.is_static ||
+				value_is_heap_string ||
+				was_strdup_string_var ||
+				is_normalized_join_string) &&
 			dec.type.name === "string" &&
 			!dec.type.is_array
 		) {

@@ -119,6 +119,25 @@ export default interface BuildStatus {
 	deferred_frees?: { temp: string; struct_name: string; is_nullable: boolean }[];
 	interpolate_string_counts: Set<number>;
 	return_assign?: string;
+	/**
+	 * Set while building the branches of a string-typed match/switch/if
+	 * EXPRESSION whose branches are mixed (at least one produces a fresh owned
+	 * heap string, e.g. an interpolation): every non-owned branch value
+	 * (literal, bare variable, field borrow, container borrow) is strdup'd at
+	 * its assignment to the return_assign target so the join variable
+	 * uniformly owns its result and can be freed once at scope exit. Set by
+	 * build_declaration_node / build_return_node on both backends; consumed by
+	 * build_let_node.
+	 */
+	join_needs_owned_string?: boolean;
+	/**
+	 * Join variables (match/switch/if-as-expression results) normalized to
+	 * own their string result per-branch (see join_needs_owned_string): the
+	 * inferred type may claim `static` (a literal branch wins the is_static
+	 * merge), so auto_free needs this explicit record to free them at scope
+	 * exit. Unlike owned_string_vars this contains ONLY normalized joins.
+	 */
+	string_join_owned_vars?: Set<string>;
 	function_param_regs?: Map<string, string>;
 	function_param_vars?: Set<string>;
 	function_ref_params?: Set<string>;

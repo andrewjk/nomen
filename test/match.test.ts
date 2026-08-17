@@ -505,6 +505,99 @@ Console.write("\\n")
 		});
 	});
 
+	// Mixed literal + interpolation branches: the literal branch dominates the
+	// match type's is_static merge, so auto_free used to skip the variable and
+	// the interpolation branch's heap result leaked (C: audit LEAK; aarch64:
+	// the literal branch's rodata pointer was freed at exit → SIGABRT). The
+	// join is now normalized per-branch: non-owned branch values are strdup'd
+	// and the variable owns its result uniformly.
+	test("match-as-expression with mixed literal and interpolated string branches", async () => {
+		const input = `
+enum Result {
+  case ok(int value)
+  case error(string message)
+}
+
+var Result r = .ok(5)
+const m = match r {
+	case .ok(n) -> "ok \\{n}"
+	case .error -> "err"
+}
+Console.write(m)
+Console.write("\\n")
+
+var Result r2 = .error("bad")
+const m2 = match r2 {
+	case .ok(n) -> "ok \\{n}"
+	case .error -> "err"
+}
+Console.write(m2)
+Console.write("\\n")
+`;
+		await build_and_check_output(input, "match_expr_mixed_interp_literal", "ok 5\nerr\n");
+	});
+
+	// Same mixed join with the literal branch FIRST (the is_static merge is
+	// last-branch-wins, so this order infers a non-static type instead — both
+	// orders must produce an owned, freed-once result).
+	test("match-as-expression with mixed literal-first string branches", async () => {
+		const input = `
+enum Result {
+  case ok(int value)
+  case error(string message)
+}
+
+var Result r = .ok(5)
+const m = match r {
+	case .error -> "err"
+	case .ok(n) -> "ok \\{n}"
+}
+Console.write(m)
+Console.write("\\n")
+
+var Result r2 = .error("bad")
+const m2 = match r2 {
+	case .error -> "err"
+	case .ok(n) -> "ok \\{n}"
+}
+Console.write(m2)
+Console.write("\\n")
+`;
+		await build_and_check_output(input, "match_expr_mixed_literal_first", "ok 5\nerr\n");
+	});
+
+	// C-backend only (aarch64 `return match` is a separate FOLLOWUP item): a
+	// mixed join returned from a function. The join-point strdup used to leak
+	// the owned interpolation branch's result; the return now hands the
+	// per-branch-normalized result directly.
+	test("return match with mixed literal + interpolated string branches (C backend)", async () => {
+		const input = `
+enum Result {
+  case ok(int value)
+  case error(string message)
+}
+
+func describe = (Result r, out string) {
+    return match r {
+        case .ok(n) -> "ok \\{n}"
+        case .error -> "err"
+    }
+}
+
+Console.write(describe(.ok(7)))
+Console.write("\\n")
+Console.write(describe(.error("nope")))
+Console.write("\\n")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "c", audit: true });
+		await check_output("match_return_mixed", result, "ok 7\nerr\n", {
+			arch: "c",
+			audit: true,
+		});
+	});
+
 	test("match on struct field that is an enum with data", async () => {
 		// Assigning a wide (multi-word) enum value to a struct field must
 		// struct-copy the full value, not just store the RHS temp's address;

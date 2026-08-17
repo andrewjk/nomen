@@ -1,0 +1,2 @@
+positive 5
+zero

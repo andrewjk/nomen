@@ -129,6 +129,36 @@ Console.write(y)
 		await build_and_check_output(input, "switch_expression_else", "nothing");
 	});
 
+	// Mixed literal + interpolation branches in a switch-expression: the
+	// literal branch's static storage must be strdup'd so the join variable
+	// owns its result uniformly (the interpolation branch's heap result is
+	// freed once at scope exit; freeing the raw literal would crash).
+	test("switch expression with mixed literal and interpolated string branches", async () => {
+		const input = `
+var int x = 42
+const y = switch {
+	case x > 100 -> "huge"
+	case x > 10 -> "big \\{x}"
+	else -> "small"
+}
+Console.write(y)
+Console.write("\\n")
+x = 7
+const z = switch {
+	case x > 100 -> "huge"
+	case x > 10 -> "big \\{x}"
+	else -> "small"
+}
+Console.write(z)
+Console.write("\\n")
+`;
+		await build_and_check_output(
+			input,
+			"switch_expression_mixed_interp_literal",
+			"big 42\nsmall\n",
+		);
+	});
+
 	test("switch with variable assignment", async () => {
 		const input = `
 var int x = 10

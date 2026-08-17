@@ -6,11 +6,14 @@ import { mono_type_name } from "./mono_name.ts";
 
 /**
  * The type tables the string-return analysis needs. Both backends'
- * BuildStatus satisfy this shape.
+ * BuildStatus satisfies this shape.
  */
 export interface StringAnalysisTable {
 	structs: StructNode[];
 	traits: TraitNode[];
+	/** Functions/methods whose string return is a fresh owned heap allocation
+	 *  the caller frees (populated by each backend's gather pass). */
+	heap_returning_functions?: Set<string>;
 }
 
 const EMPTY_SET: Set<string> = new Set();
@@ -389,4 +392,91 @@ export function function_returns_string_borrow(
 ): boolean {
 	if (func.return_type?.name !== "string" || func.return_type?.is_view) return false;
 	return !function_returns_owned(func, table, new Set<string>(), func.name);
+}
+
+/**
+ * Collect the value expressions a match/switch/if-expression's branches assign
+ * to the join target — each `-> expr` / `let expr` branch's LetNode value, plus
+ * any explicit `return expr` inside `=>`/block-form branches.
+ */
+export function collect_expression_branch_values(node: any): any[] {
+	const out: any[] = [];
+	const visit_block = (block: any): void => {
+		for (const stmt of block?.statements ?? []) {
+			if (stmt?.node_type === "let") {
+				out.push(stmt.value);
+			} else if (stmt?.node_type === "return" && stmt.value) {
+				out.push(stmt.value);
+			}
+		}
+	};
+	if (!node || typeof node !== "object") return out;
+	if (node.node_type === "match") {
+		for (const match_case of node.cases ?? []) visit_block(match_case?.branch);
+		visit_block(node.else_branch);
+	} else if (node.node_type === "switch") {
+		for (const switch_case of node.cases ?? []) visit_block(switch_case?.branch);
+		visit_block(node.else_branch);
+	} else if (node.node_type === "if") {
+		visit_block(node.if_branch);
+		visit_block(node.else_branch);
+	}
+	return out;
+}
+
+/**
+ * Whether a match/switch/if-expression branch value produces a fresh OWNED
+ * heap string — an allocation the join variable can free at scope exit — as
+ * opposed to something that must be strdup'd into an owned copy before the
+ * join variable can own it (a string literal in static storage, a numeric
+ * literal lowering to NULL, a bare variable whose own declaration owns its
+ * value, a struct field borrow, or a container-borrow accessor like
+ * `.at(i)`/`.first()` returning a view into the receiver's storage).
+ *
+ * Used to normalize MIXED joins (some branches owned, some not): when any
+ * branch is owned, the non-owned branch values are strdup'd at their
+ * assignment so the join variable uniformly owns its result and can be freed
+ * once at scope exit / returned without a join-point strdup.
+ */
+export function is_owned_string_branch_value(node: any, table: StringAnalysisTable): boolean {
+	if (!node || typeof node !== "object") return false;
+	if (node.node_type === "value") {
+		// Literals (static storage), numerics (NULL), and bare variables
+		// (owned by their own declarations) all need a copy to be owned here.
+		return false;
+	}
+	if (node.node_type === "op") return true; // string concat/repeat allocate
+	if (node.node_type === "grouped") return is_owned_string_branch_value(node.value, table);
+	if (node.node_type === "match" || node.node_type === "switch" || node.node_type === "if") {
+		// A nested expression join assigns its branches to the same target; it
+		// is owned if any of its branches is (it is itself normalized).
+		return collect_expression_branch_values(node).some((v) =>
+			is_owned_string_branch_value(v, table),
+		);
+	}
+	if (node.node_type === "func_call") {
+		const name = (node.mangled_name as string) || (node.name as string) || "";
+		if (name.startsWith("_string_interpolate_")) return true;
+		return !!table.heap_returning_functions?.has(name);
+	}
+	if (node.node_type === "access") {
+		const access = node.access;
+		if (!access) return false;
+		if (access.node_type === "access_field") return false; // struct storage
+		if (access.node_type === "access_func") {
+			if (access.owned_return) return true;
+			const mangled = (access.mangled_name as string) || (access.name as string) || "";
+			if (mangled.startsWith("_string_interpolate_")) return true;
+			if (access.name === "to_string" && mangled !== "string_to_string") return true;
+			// A container/buffer borrow accessor yields a view into the
+			// receiver's storage — never a fresh allocation.
+			if (!access.owned_return && is_container_borrow_accessor_name(access.name)) return false;
+			if (table.heap_returning_functions?.has(mangled)) return true;
+			// Unresolved method: delegate to the shared method-resolution
+			// analysis (conservatively owned).
+			return value_is_owned_string(node, table, new Set<string>(), EMPTY_SET, undefined);
+		}
+		return false;
+	}
+	return false;
 }

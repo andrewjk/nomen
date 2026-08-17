@@ -3,6 +3,10 @@ import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import { struct_needs_destroy } from "../build_common/destroy_analysis.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
+import {
+	collect_expression_branch_values,
+	is_owned_string_branch_value,
+} from "../build_common/string_return_analysis.ts";
 import { is_int_literal, parse_int_literal_bigint, to_decimal_string } from "../int_literal.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
@@ -1847,7 +1851,28 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			}
 			const old_return_assign = status.return_assign;
 			status.return_assign = node.name;
+			// Mixed string-join ownership normalization: when any branch
+			// produces a fresh owned heap string (interpolation/concat/call),
+			// mark the variable as an owning heap string so scope-exit
+			// reclamation frees it, and flag the branch builds so every
+			// non-owned branch value (a literal's rodata pointer, a borrow) is
+			// strdup'd into an owned copy (build_let_node) — freeing a raw
+			// rodata/borrow pointer at exit aborts. All-literal joins (no owned
+			// branch) stay non-owning and are not freed, as before.
+			const join_is_string =
+				node.type.name === "string" && !node.type.is_view && !node.type.is_array;
+			const any_branch_owned =
+				join_is_string &&
+				collect_expression_branch_values(node.value).some((v) =>
+					is_owned_string_branch_value(v, status),
+				);
+			const old_join_owned = status.join_needs_owned_string;
+			if (any_branch_owned) {
+				status.join_needs_owned_string = true;
+				mark_heap_string(status, node.name);
+			}
 			build_node(node.value, status);
+			status.join_needs_owned_string = old_join_owned;
 			status.return_assign = old_return_assign;
 			check_heap();
 		} else {
