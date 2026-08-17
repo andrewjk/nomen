@@ -760,10 +760,13 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			} else {
 				// Struct-returning function: pass the destination address via x8.
 				const old_buffer = status.struct_return_buffer;
+				const old_preset = status.call_x8_preset;
 				emit_var_address(status, "x8", node.name);
 				status.struct_return_buffer = "x8";
+				status.call_x8_preset = true;
 				build_node(node.value, status);
 				status.struct_return_buffer = old_buffer;
+				status.call_x8_preset = old_preset;
 			}
 			return;
 		}
@@ -1573,10 +1576,13 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 					);
 					if (func_return_struct && status.function_return_label) {
 						const old_buffer = status.struct_return_buffer;
+						const old_preset = status.call_x8_preset;
 						emit_var_address(status, "x8", node.name);
 						status.struct_return_buffer = "x8";
+						status.call_x8_preset = true;
 						build_node(node.value, status);
 						status.struct_return_buffer = old_buffer;
+						status.call_x8_preset = old_preset;
 						emit_var_address(status, "x0", node.name);
 					} else {
 						build_node(node.value, status);

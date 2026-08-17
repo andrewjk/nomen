@@ -540,7 +540,7 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			const temp_addr = `_temp_${temp_counter - 1}`;
 			const temp_offset = status.stack_offsets!.get(temp_addr)!;
 			status.code += `add x0, x29, #${temp_offset}\n`;
-		} else if (!is_struct && node.type?.name && !status.struct_return_buffer) {
+		} else if (!is_struct && node.type?.name && !status.call_x8_preset) {
 			const return_struct = status.structs.find(
 				(s) => s.name === node.type!.name && !s.is_simple_type && !s.is_class,
 			);
@@ -557,6 +557,13 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 				if (nullable_ret) {
 					status.stack_offsets!.set(has_flag_name(temp_name), offset + struct_size);
 				}
+				// The callee copies its result through the incoming sret pointer,
+				// so x8 MUST hold a valid destination here — even when the
+				// ENCLOSING function itself returns a struct (its own sret
+				// pointer is spilled in the frame and reloaded at its returns;
+				// x8 currently holds caller-saved garbage). Only a pre-set
+				// destination (call_x8_preset, a struct declaration
+				// initialiser) suppresses this.
 				status.code += `add x8, x29, #${offset}\n`;
 			}
 		}
@@ -639,7 +646,7 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			status.code += `ldr x0, [sp], #16\n`;
 		}
 
-		if (!is_struct && node.type?.name && !status.struct_return_buffer) {
+		if (!is_struct && node.type?.name && !status.call_x8_preset) {
 			const return_struct = status.structs.find(
 				(s) => s.name === node.type!.name && !s.is_simple_type && !s.is_class,
 			);

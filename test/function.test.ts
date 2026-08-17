@@ -36,6 +36,41 @@ Console.write("\\{add(3, 4)}")
 		await build_and_check_output(input, "function_with_params", "7");
 	});
 
+	// A struct-returning call inside another struct-returning function must
+	// still receive a valid sret destination in x8 at the call site — x8 is
+	// caller-saved, so any intervening call leaves garbage there and the
+	// callee's result copy faults (SIGSEGV on aarch64). The func-value call
+	// (`blr x8`) first is the deterministic trigger: it leaves x8 holding a
+	// read-only code address, so the callee's `str` through it always faults.
+	test("struct return forwarded through struct-returning caller", async () => {
+		const input = `
+struct Point {
+  var x = 0
+  var y = 0
+}
+
+func inner = (int v, out Point) {
+  var p = Point()
+  p.x = v
+  p.y = 10
+  return p
+}
+
+func inc = (int a, out int) {
+  return a + 1
+}
+
+func outer = (func (int, out int) cb, int v, out Point) {
+  const int ignored = cb(v)
+  return inner(v)
+}
+
+var Point q = outer(inc, 3)
+Console.write_line("\\{q.x} \\{q.y}")
+`;
+		await build_and_check_output(input, "function_sret_forward", "3 10\n");
+	});
+
 	test("arrow function", async () => {
 		const input = `
 func double = (int x, out int) => x * 2

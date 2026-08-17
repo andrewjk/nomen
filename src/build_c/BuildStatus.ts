@@ -254,6 +254,16 @@ export default interface BuildStatus {
 	}[];
 	struct_return_buffer?: string;
 	return_buffer_stack_offset?: number;
+	/**
+	 * aarch64 only. True while building a call whose sret destination has
+	 * already been loaded into x8 by the surrounding context (a struct-typed
+	 * declaration initialiser passes the local's address). The call emitter
+	 * must not allocate its own `_call_ret_` temp or overwrite x8. Distinct
+	 * from `struct_return_buffer` being set by the ENCLOSING function's own
+	 * struct return — that case still requires the temp, because x8 is
+	 * caller-saved and holds garbage by the time the call runs.
+	 */
+	call_x8_preset?: boolean;
 	function_data?: string;
 	nested_functions?: string;
 	stack_size?: number;
