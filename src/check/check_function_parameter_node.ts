@@ -7,8 +7,8 @@ import type CheckStatus from "./CheckStatus.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
 import check_type_exists from "./utils/check_type_exists.ts";
 import { apply_bounds } from "./utils/flow_bounds.ts";
+import materialize_type from "./utils/materialize_type.ts";
 import { is_class_type, is_owning_struct_type_requiring_move } from "./utils/ownership.ts";
-import { materialize_tuple_type } from "./utils/tuple_struct.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
 
@@ -21,16 +21,15 @@ export default function check_function_parameter_node(param: ParameterNode, stat
 		check_type_exists(param.type, status, param.type_start!);
 		// Variadic tuple: `...[int, string]` materializes the tuple struct and
 		// marks the type as an array of that struct (one tuple per arg group)
-		if (param.type.name === "tuple" && param.type.tuple_types?.length) {
-			param.type = materialize_tuple_type(param.type, status);
+		const was_tuple = param.type.name === "tuple" && !!param.type.tuple_types?.length;
+		param.type = materialize_type(param.type, status);
+		if (was_tuple) {
 			param.is_variadic_tuple = true;
 		}
 		param.type.is_array = true;
 	} else if (param.type.name) {
 		check_type_exists(param.type, status, param.type_start!);
-		if (param.type.name === "tuple" && param.type.tuple_types?.length) {
-			param.type = materialize_tuple_type(param.type, status);
-		}
+		param.type = materialize_type(param.type, status);
 		// A generic container used only as a parameter type (e.g.
 		// `List<string> xs` with no `List<string>()` construction elsewhere)
 		// would never be monomorphized, leaving the signature as a bare

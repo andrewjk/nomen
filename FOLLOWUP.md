@@ -47,6 +47,23 @@ Skipped or out-of-scope items recorded for later.
      (`storage_kind`, `nullable_param_indices`, `owned_return` are this
      pattern working) over sharing emission code.
 
+2. **C backend: match-as-expression with interpolated string branches on an
+   enum-with-data scrutinee emits invalid C** (pre-existing, found while
+   testing anonymous enums). `const m = match r { case .ok(n) -> "ok \{n}" ... }`
+   lowers the branch to `m = char* _param_0 = int_to_string(n);` — a
+   declaration after the assignment has started (`expected expression`).
+   Repro: any enum with associated data, both branches returning
+   string interpolations, match used as an expression. Statement-position
+   matches with the same branches compile fine. (aarch64 handles the
+   expression form correctly.)
+
+3. **`==` on enums with associated data compares whole structs** (pre-existing,
+   C backend). `if r == Result.error(5)` lowers to `r == Result_error_init(5)`
+   (struct vs struct), which clang rejects. Tag-only comparison (`.tag`
+   compare, possibly with payload equality) is not implemented for
+   enum-with-data types on either backend; simple (payload-less) enums
+   compare fine. Anonymous/generic enums inherit this unchanged.
+
 ## Differator port (external — `nomen/` in the port project, not this repo)
 
 Status and history in FINDINGS.md / ROADBLOCKS.md. The compiler blockers are

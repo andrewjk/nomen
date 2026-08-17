@@ -1,0 +1,4 @@
+pub enum Option<T> {
+    case some(T value)
+    case none
+}

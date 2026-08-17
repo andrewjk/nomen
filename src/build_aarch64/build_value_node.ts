@@ -3,6 +3,7 @@ import { is_int_literal, to_decimal_string } from "../int_literal.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_node from "./build_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
+import { find_enum_for_case } from "./utils/enum_case.ts";
 import { allocate_stack_space } from "./utils/stack_var.ts";
 import { get_enum_size } from "./utils/struct_layout.ts";
 
@@ -79,9 +80,10 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 	}
 
 	if (node.is_enum_shorthand) {
-		const enum_node = status.enums.find((e) => value.startsWith(e.name + "_"));
-		if (enum_node) {
-			const case_name = value.substring(enum_node.name.length + 1);
+		const found = find_enum_for_case(value, status);
+		if (found) {
+			const enum_node = found.enum_node;
+			const case_name = found.case_name;
 			const case_index = enum_node.cases.findIndex((c) => c.name === case_name);
 			if (case_index >= 0) {
 				// For an enum with associated data, even a no-arg case must

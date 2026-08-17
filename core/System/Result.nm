@@ -1,0 +1,4 @@
+pub enum Result<T, E> {
+    case ok(T value)
+    case error(E error)
+}

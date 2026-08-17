@@ -62,6 +62,14 @@ export default class Type {
 	tuple_types?: Type[];
 
 	/**
+	 * For anonymous enum types `[.ok(T1, T2), .error]`, the case list.
+	 * When set, `name` is "anon_enum". Like tuples, these are materialized
+	 * into a generated enum during check (see materialize_anon_enum_type);
+	 * the materialized type keeps `enum_cases` for rendering.
+	 */
+	enum_cases?: { name: string; types: Type[] }[];
+
+	/**
 	 * True when this type is an array (stack or heap). Reads from
 	 * `storage_kind`. Setting `is_array = true` promotes a plain type to a
 	 * `stack_array` (or leaves a `heap_array` as heap). Setting it to a

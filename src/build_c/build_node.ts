@@ -108,7 +108,11 @@ export default function build_node(node: BaseNode, status: BuildStatus, with_sem
 			break;
 		}
 		case "enum": {
-			build_enum_node(node as EnumNode, status);
+			// Generic enums are templates — only their monomorphized forms
+			// (created during check) have a concrete layout to emit.
+			if (!(node as EnumNode).is_generic) {
+				build_enum_node(node as EnumNode, status);
+			}
 			break;
 		}
 		case "bitset": {

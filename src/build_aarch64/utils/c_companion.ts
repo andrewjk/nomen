@@ -70,6 +70,9 @@ export function generate_companion(functions: CompanionFunction[], status: Build
 	const emitted_enums = new Set<string>();
 	for (const e of status.enums) {
 		if (emitted_enums.has(e.name)) continue;
+		// Generic enums are templates with no concrete layout; only their
+		// monomorphized forms (also in status.enums) are real types.
+		if (e.is_generic) continue;
 		emitted_enums.add(e.name);
 		out += generate_enum_definition(e, status);
 	}

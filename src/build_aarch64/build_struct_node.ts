@@ -11,6 +11,7 @@ import build_node from "./build_node.ts";
 import { check_c_fallback } from "./build_raw_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_field_destroys } from "./utils/auto_destroy.ts";
+import { find_enum_for_case } from "./utils/enum_case.ts";
 import { is_nullable_struct_type } from "./utils/nullable_struct.ts";
 import {
 	emit_owning_buffer_destroy_aarch64,
@@ -69,9 +70,10 @@ function init_enum_shorthand_field_default(
 ): boolean {
 	if (field.value?.node_type !== "value" || !field.value?.is_enum_shorthand) return false;
 	const val = field.value.value;
-	const enum_node = status.enums.find((e) => val.startsWith(e.name + "_"));
-	if (!enum_node) return false;
-	const case_name = val.substring(enum_node.name.length + 1);
+	const found = find_enum_for_case(val, status);
+	if (!found) return false;
+	const enum_node = found.enum_node;
+	const case_name = found.case_name;
 	const case_index = get_enum_case_index(enum_node.name, case_name, status);
 	if (case_index < 0) return false;
 	const offset = get_field_offset(node.name, field.name, status);

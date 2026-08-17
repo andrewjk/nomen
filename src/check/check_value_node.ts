@@ -2,6 +2,7 @@ import add_error from "../add_error.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import type CheckStatus from "./CheckStatus.ts";
+import { monomorphize_enum } from "./utils/enum_mono.ts";
 import type_from_value from "./utils/type_from_value.ts";
 
 export default function check_value_node(node: ValueNode, status: CheckStatus): boolean {
@@ -82,16 +83,33 @@ function check_enum_shorthand(node: ValueNode, status: CheckStatus): boolean {
 		return false;
 	}
 
-	const enum_node = status.enums.find((e) => e.name === expected.name);
+	let enum_node = status.enums.find((e) => e.name === expected.name);
+	if (enum_node?.is_generic) {
+		// A generic enum as the expected type resolves through its concrete
+		// instantiation (`.none` against `Option<int>` → the `Option_int` mono).
+		const mono =
+			expected.type_args?.length === enum_node.type_params.length
+				? monomorphize_enum(enum_node, expected.type_args, status)
+				: null;
+		if (!mono) {
+			add_error(
+				status,
+				`Cannot resolve .${case_name}: generic enum ${enum_node.name} requires concrete type arguments`,
+				node.start,
+			);
+			return false;
+		}
+		enum_node = mono;
+	}
 	if (enum_node) {
 		const enum_case = enum_node.cases.find((c) => c.name === case_name);
 		if (enum_case) {
-			node.type = new Type(expected.name);
-			node.value = `${expected.name}_${case_name}`;
+			node.type = new Type(enum_node.name);
+			node.value = `${enum_node.name}_${case_name}`;
 			node.is_enum_shorthand = true;
 			return true;
 		} else {
-			add_error(status, `Unknown enum case: .${case_name} on ${expected.name}`, node.start);
+			add_error(status, `Unknown enum case: .${case_name} on ${enum_node.name}`, node.start);
 			return false;
 		}
 	}

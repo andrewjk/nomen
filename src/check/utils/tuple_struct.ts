@@ -21,6 +21,12 @@ export function sanitize_type_name(t: Type): string {
 	if (t.tuple_types?.length) {
 		return "Tup_" + t.tuple_types.map(sanitize_type_name).join("_");
 	}
+	if (t.enum_cases?.length && t.name === "anon_enum") {
+		const sorted = [...t.enum_cases].sort((a, b) => a.name.localeCompare(b.name));
+		return (
+			"Enum_" + sorted.map((c) => [c.name, ...c.types.map(sanitize_type_name)].join("_")).join("__")
+		);
+	}
 	let n = t.name.replace(/[^A-Za-z0-9]/g, "_");
 	if (t.type_args?.length) {
 		n += "_" + t.type_args.map(sanitize_type_name).join("_");
@@ -36,6 +42,10 @@ export function clone_type(t: Type): Type {
 	new_t.is_return_type = t.is_return_type;
 	new_t.type_args = t.type_args?.map(clone_type);
 	new_t.tuple_types = t.tuple_types?.map(clone_type);
+	new_t.enum_cases = t.enum_cases?.map((c) => ({
+		name: c.name,
+		types: c.types.map(clone_type),
+	}));
 	new_t.func_params = t.func_params;
 	new_t.func_return_type = t.func_return_type ? clone_type(t.func_return_type) : undefined;
 	return new_t;

@@ -13,6 +13,7 @@ import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_malloc } from "./utils/audit.ts";
 import { mark_moved_if_struct, find_anchor_slot } from "./utils/auto_destroy.ts";
 import { build_swap_params } from "./utils/build_swap.ts";
+import { find_enum_for_case } from "./utils/enum_case.ts";
 import { has_flag_name, is_nullable_struct_type } from "./utils/nullable_struct.ts";
 import { NUM_REG_ARGS } from "./utils/stack_args.ts";
 import {
@@ -60,10 +61,9 @@ function get_raw_value(node: ValueNode, status?: BuildStatus): string {
 	if (val === "true") return "1";
 	if (val === "false") return "0";
 	if (node.is_enum_shorthand && status) {
-		const enum_node = status.enums.find((e) => val.startsWith(e.name + "_"));
-		if (enum_node) {
-			const case_name = val.substring(enum_node.name.length + 1);
-			const case_index = enum_node.cases.findIndex((c) => c.name === case_name);
+		const found = find_enum_for_case(val, status);
+		if (found) {
+			const case_index = found.enum_node.cases.findIndex((c) => c.name === found.case_name);
 			if (case_index >= 0) return String(case_index);
 		}
 	}
@@ -76,6 +76,19 @@ let array_param_counter = 0;
 function emit_struct_address(node: BaseNode, status: BuildStatus) {
 	if (node.node_type === "value") {
 		const name = (node as any).value;
+		// A bare enum-shorthand case value (`.none`, rewritten to
+		// `Enum_case`) is not a variable — build it, which leaves the address
+		// of a tag+payload temp in x0 for enums with associated data.
+		if ((node as ValueNode).is_enum_shorthand) {
+			const found = find_enum_for_case(name, status);
+			if (found?.enum_node.has_associated_data) {
+				build_node(node, status);
+				if (!status.code.endsWith("\n")) {
+					status.code += "\n";
+				}
+				return;
+			}
+		}
 		const paramReg = status.function_param_regs?.get(name);
 		if (paramReg) {
 			if (paramReg !== "x0") {
@@ -100,9 +113,10 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 	// temp, store the case index at +0, then each arg at its payload offset.
 	// Mirrors the AccessFunctionCallNode path in build_access_node.
 	if (node.is_enum_shorthand && node.params.length > 0) {
-		const enum_node = status.enums.find((e) => node.name.startsWith(e.name + "_"));
-		if (enum_node && enum_node.has_associated_data) {
-			const case_name = node.name.substring(enum_node.name.length + 1);
+		const found = find_enum_for_case(node.name, status);
+		if (found && found.enum_node.has_associated_data) {
+			const enum_node = found.enum_node;
+			const case_name = found.case_name;
 			const enum_case = enum_node.cases.find((c) => c.name === case_name);
 			if (enum_case) {
 				const case_index = enum_node.cases.indexOf(enum_case);

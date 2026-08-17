@@ -3,6 +3,10 @@ import type BuildStatus from "./BuildStatus.ts";
 import c_type, { c_typedef_name } from "./utils/c_type.ts";
 
 export default function build_enum_node(node: EnumNode, status: BuildStatus) {
+	// Generic enums are templates — only their monomorphized forms (created
+	// during check, registered as their own EnumNodes) have a concrete layout.
+	if (node.is_generic) return;
+
 	status.headers += `// Enum ${node.name}\n`;
 	status.code += `// Enum ${node.name}\n`;
 

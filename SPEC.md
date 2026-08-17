@@ -589,6 +589,39 @@ func first_parts = (...[string, int] pairs, out string) {
 first_parts(["count", 1], ["sum", 2])  // ">countsum"
 ```
 
+### Anonymous Enums
+
+An anonymous enum is an inline sum type written `[.case, .case(Type, ...), ...]`. It has no declared name — the compiler generates one, and every annotation with the same case names and payload types shares a single generated type, regardless of the order the cases are written in.
+
+Unlike an anonymous struct (a value whose type is inferred), an anonymous enum is written as a _type_: a single-case literal like `.error("bad")` cannot imply the full case set, so the bracketed form appears in annotations and values use the existing `.case` shorthand, resolved against the context type.
+
+```
+func parse_age = (string s, out [.ok(int), .error(string)]) {
+    return .error("not a number")
+}
+
+var [.ok(int), .error(string)] result = .ok(42)
+match result {
+    case .ok(age) -> Console.write("\\{age}")
+    case .error(msg) -> Console.write("error \\{msg}")
+}
+```
+
+Cases may carry no payload, and the type can be used anywhere a named enum can — parameter types, return types, and declarations:
+
+```
+func describe = ([.some(int), .none] opt, out string) {
+    return match opt {
+        case .some(v) -> "some"
+        case .none -> "none"
+    }
+}
+
+Console.write(describe(.none))  // "none"
+```
+
+Like anonymous structs, anonymous enums are not implicitly coerced to or from named enums.
+
 ### Destructuring
 
 The `var [ ... ] = expr` (or `const [ ... ] = expr`) form binds one or more
@@ -844,6 +877,44 @@ pub enum Shape {
 }
 
 var shape = Shape.rect(10, 20)
+```
+
+### Generic Enums
+
+Enums can declare type parameters. Case payloads may use them; each concrete instantiation gets its own monomorphized type (`Result<int, string>` becomes `Result_int_string`):
+
+```
+pub enum Result<T, E> {
+    case ok(T value)
+    case error(E error)
+}
+
+var Result<int, string> result = .error("not a number")
+match result {
+    case .ok(age) -> Console.write("\\{age}")
+    case .error(msg) -> Console.write("error \\{msg}")
+}
+```
+
+Shorthand cases resolve against the concrete instantiation, and the full form uses the generic name with explicit type arguments:
+
+```
+var Option<int> found = Option.some(4)
+found = .none
+```
+
+The core library ships two generic enums:
+
+```
+pub enum Result<T, E> {
+    case ok(T value)
+    case error(E error)
+}
+
+pub enum Option<T> {
+    case some(T value)
+    case none
+}
 ```
 
 ## Bitsets

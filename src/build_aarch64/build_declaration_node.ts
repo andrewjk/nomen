@@ -31,6 +31,7 @@ import {
 	track_struct_decl,
 } from "./utils/auto_destroy.ts";
 import { build_swap_params } from "./utils/build_swap.ts";
+import { find_enum_for_case } from "./utils/enum_case.ts";
 import { has_flag_name, is_nullable_struct_type } from "./utils/nullable_struct.ts";
 import { NUM_REG_ARGS } from "./utils/stack_args.ts";
 import {
@@ -163,9 +164,10 @@ function get_raw_value(node: ValueNode, status?: BuildStatus): string {
 		return val.charCodeAt(1).toString();
 	}
 	if (node.is_enum_shorthand && status) {
-		const enum_node = status.enums.find((e) => val.startsWith(e.name + "_"));
-		if (enum_node) {
-			const case_name = val.substring(enum_node.name.length + 1);
+		const found = find_enum_for_case(val, status);
+		if (found) {
+			const enum_node = found.enum_node;
+			const case_name = found.case_name;
 			const case_index = enum_node.cases.findIndex((c) => c.name === case_name);
 			if (case_index >= 0) return String(case_index);
 		}
@@ -873,8 +875,14 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 		if (node.value) {
 			build_node(node.value, status);
 			if (!status.code.endsWith("\n")) status.code += "\n";
+			// `Enum.case(args)` accesses, shorthand `.case` values, and calls
+			// whose return type is the enum (functions return a pointer to a
+			// tag+payload temp in their frame) all leave the struct ADDRESS in
+			// x0 — copy the full enum bytes into the declaration's slot. A
+			// bare var store would save only the dangling 8-byte pointer.
 			if (
 				node.value.node_type === "access" ||
+				node.value.node_type === "func_call" ||
 				(node.value.node_type === "value" &&
 					(node.value as ValueNode).is_enum_shorthand &&
 					status.enums.find((e) => e.name === node.type.name && e.has_associated_data))

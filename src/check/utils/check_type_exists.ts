@@ -13,6 +13,19 @@ export default function check_type_exists(type: Type, status: CheckStatus, start
 		}
 		return ok;
 	}
+	// Anonymous enum types are validated case-payload-by-payload; the
+	// auto-generated enum is materialized later (see
+	// materialize_anon_enum_type). The name "anon_enum" itself is a
+	// placeholder, never a registered type.
+	if (type.name === "anon_enum" && type.enum_cases?.length) {
+		let ok = true;
+		for (const c of type.enum_cases) {
+			for (const t of c.types) {
+				if (!check_type_exists(t, status, start)) ok = false;
+			}
+		}
+		return ok;
+	}
 	if (!status.types.includes(type.name)) {
 		add_error(status, `Unknown type: ${type_name(type)}`, start);
 		return false;
@@ -34,6 +47,15 @@ export default function check_type_exists(type: Type, status: CheckStatus, start
 				add_error(
 					status,
 					`Generic type '${type.name}' requires type arguments (expected <${struct.type_params.join(", ")}>)`,
+					start,
+				);
+			}
+		} else {
+			const enum_node = status.enums.findLast((e) => e.name === type.name);
+			if (enum_node?.is_generic) {
+				add_error(
+					status,
+					`Generic type '${type.name}' requires type arguments (expected <${enum_node.type_params.join(", ")}>)`,
 					start,
 				);
 			}

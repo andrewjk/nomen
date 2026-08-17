@@ -1,3 +1,4 @@
+import add_error from "../add_error.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import type ParseStatus from "./ParseStatus.ts";
@@ -12,6 +13,11 @@ export default function parse_type(status: ParseStatus): Type {
 	// Tuple type: `[T1, T2, ...]`
 	if (peek_current(status) === "[") {
 		accept("[", status);
+		// Anonymous enum type: `[.ok(int), .error]` — a case list whose
+		// entries start with `.` (a tuple element can never start with `.`).
+		if (peek_current(status) === ".") {
+			return parse_anon_enum_type(status);
+		}
 		const tuple_types: Type[] = [];
 		if (peek_current(status) !== "]") {
 			tuple_types.push(parse_type(status));
@@ -71,4 +77,50 @@ export default function parse_type(status: ParseStatus): Type {
 		type.type_args = undefined;
 	}
 	return type;
+}
+
+/**
+ * Anonymous enum type: `[.ok(int), .error]`. Each case is `.name` optionally
+ * followed by a parenthesized payload type list. The leading `[` has already
+ * been consumed by the caller; a leading `.` cannot begin a tuple element, so
+ * the two bracket forms are unambiguous.
+ */
+function parse_anon_enum_type(status: ParseStatus): Type {
+	const cases: { name: string; types: Type[] }[] = [];
+	if (peek_current(status) !== "]") {
+		parse_anon_enum_case(cases, status);
+		while (accept(",", status)) {
+			// Allow trailing comma
+			if (peek_current(status) === "]") break;
+			parse_anon_enum_case(cases, status);
+		}
+	}
+	expect("]", status);
+	const type = new Type("anon_enum");
+	type.enum_cases = cases;
+	if (accept("?", status)) {
+		type.is_nullable = true;
+	}
+	return type;
+}
+
+function parse_anon_enum_case(cases: { name: string; types: Type[] }[], status: ParseStatus) {
+	const start = get_index(status);
+	expect(".", status);
+	const name = consume(status);
+	const types: Type[] = [];
+	if (accept("(", status)) {
+		if (peek_current(status) !== ")") {
+			types.push(parse_type(status));
+			while (accept(",", status)) {
+				if (peek_current(status) === ")") break;
+				types.push(parse_type(status));
+			}
+		}
+		expect(")", status);
+	}
+	if (cases.some((c) => c.name === name)) {
+		add_error(status, `Duplicate enum case: ${name}`, start);
+	}
+	cases.push({ name, types });
 }

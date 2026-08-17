@@ -11,6 +11,22 @@ export default function type_name(type: Type): string {
 			type.is_nullable ? "?" : ""
 		}`;
 	}
+	// A materialized anonymous enum (see `materialize_anon_enum_type`) keeps
+	// its cases in `enum_cases` but renames itself to `_AnonEnum_...`. Render
+	// those back as the source-level `[.ok(T), .error]` so errors don't leak
+	// the synthesized enum name.
+	if (
+		type.enum_cases?.length &&
+		(type.name === "anon_enum" || type.name.startsWith("_AnonEnum_"))
+	) {
+		const cases = type.enum_cases
+			.map(
+				(c) =>
+					`.${c.name}${c.types.length ? `(${c.types.map((t) => type_name(t)).join(", ")})` : ""}`,
+			)
+			.join(", ");
+		return `${prefix}[${cases}]${type.is_nullable ? "?" : ""}`;
+	}
 	if (type.is_array) {
 		const elem = type_name_without_array(type);
 		return `Array<${elem}>${type.is_nullable ? "?" : ""}`;

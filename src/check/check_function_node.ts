@@ -6,7 +6,7 @@ import check_function_parameter_node from "./check_function_parameter_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import check_type_exists from "./utils/check_type_exists.ts";
 import clone_status from "./utils/clone_status.ts";
-import { materialize_tuple_type } from "./utils/tuple_struct.ts";
+import materialize_type from "./utils/materialize_type.ts";
 
 function is_generic_func(func: FunctionNode): boolean {
 	return func.type_params.length > 0;
@@ -31,6 +31,7 @@ export default function check_function_node(func: FunctionNode, status: CheckSta
 	// the enclosing `values` is empty, so the base is 0.
 	function_status.function_value_base = function_status.values.length;
 	const structs_before = function_status.structs.length;
+	const enums_before = function_status.enums.length;
 	const types_before = function_status.types.length;
 
 	for (let param of func.params) {
@@ -40,8 +41,8 @@ export default function check_function_node(func: FunctionNode, status: CheckSta
 	if (func.return_type.name) {
 		if (!check_type_exists(func.return_type, function_status, func.return_type_start!)) {
 			func.return_type = new Type("?");
-		} else if (func.return_type.name === "tuple" && func.return_type.tuple_types?.length) {
-			func.return_type = materialize_tuple_type(func.return_type, function_status);
+		} else {
+			func.return_type = materialize_type(func.return_type, function_status);
 		}
 		// A generic container used only as a return type (e.g.
 		// `out List<string>` with no construction of that exact type) would
@@ -54,11 +55,19 @@ export default function check_function_node(func: FunctionNode, status: CheckSta
 
 	// Bubble up any tuple structs (and their types) materialized while
 	// checking this function's body so callers can resolve field accesses
-	// on returned tuples.
+	// on returned tuples. Enums materialized here (anonymous enums, generic
+	// enum monomorphizations) bubble the same way so sibling statements see
+	// them in status.enums.
 	for (let i = structs_before; i < function_status.structs.length; i++) {
 		const s = function_status.structs[i];
 		if (!status.structs.includes(s)) {
 			status.structs.push(s);
+		}
+	}
+	for (let i = enums_before; i < function_status.enums.length; i++) {
+		const e = function_status.enums[i];
+		if (!status.enums.includes(e)) {
+			status.enums.push(e);
 		}
 	}
 	for (let i = types_before; i < function_status.types.length; i++) {

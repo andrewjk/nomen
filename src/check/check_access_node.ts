@@ -14,6 +14,7 @@ import check_function_call_node, { monomorphize } from "./check_function_call_no
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import { invalidate_borrows_of, receiver_owner_of } from "./utils/borrow.ts";
+import { monomorphize_enum } from "./utils/enum_mono.ts";
 import { expr_to_string } from "./utils/flow_bounds.ts";
 import {
 	find_function_by_params,
@@ -131,7 +132,12 @@ export default function check_access_node(node: AccessNode, status: CheckStatus)
 
 	switch (node.access.node_type) {
 		case "access_field": {
-			return check_access_field_node(target_type, node.access as AccessFieldNode, status);
+			return check_access_field_node(
+				target_type,
+				node.target,
+				node.access as AccessFieldNode,
+				status,
+			);
 		}
 		case "access_func": {
 			return check_access_function_node(
@@ -146,8 +152,55 @@ export default function check_access_node(node: AccessNode, status: CheckStatus)
 	return true;
 }
 
+/**
+ * Resolve a generic-enum access (`Result.ok(5)`, `Option.none`) against the
+ * concrete instantiation implied by the expected type — either the bare
+ * generic with type args (`Result<int, string>`) or its already-rewritten
+ * mono annotation (`Result_int_string`, whose `type_args` are preserved).
+ * Returns the mono enum and rewrites the target value node to the mono name
+ * so the build phase emits the mono's case constructors; returns null when
+ * no concrete instantiation is available.
+ */
+function resolve_generic_enum_access(
+	enum_node: import("../nodes/EnumNode.ts").default,
+	target: BaseNode,
+	status: CheckStatus,
+): import("../nodes/EnumNode.ts").default | undefined {
+	const expected = status.expected_type;
+	if (expected?.name) {
+		// The expected type may already BE a monomorphized instantiation
+		// (annotations are rewritten to the mono name during check, with type
+		// args cleared) — use it directly and just retarget the value node.
+		const direct = status.enums.find((e) => e.name === expected.name && !e.is_generic);
+		if (direct) {
+			if (target.node_type === "value" && (target as ValueNode).value !== direct.name) {
+				(target as ValueNode).value = direct.name;
+				(target as ValueNode).type = new Type(direct.name);
+			}
+			return direct;
+		}
+	}
+	let args: Type[] | undefined;
+	if (expected?.name === enum_node.name) {
+		args = expected.type_args;
+	} else if (
+		expected?.type_args?.length === enum_node.type_params.length &&
+		mono_type_name(enum_node.name, expected.type_args) === expected.name
+	) {
+		args = expected.type_args;
+	}
+	if (!args?.length || args.length !== enum_node.type_params.length) return undefined;
+	const mono = monomorphize_enum(enum_node, args, status);
+	if (mono && target.node_type === "value") {
+		(target as ValueNode).value = mono.name;
+		(target as ValueNode).type = new Type(mono.name);
+	}
+	return mono ?? undefined;
+}
+
 function check_access_field_node(
 	target_type: Type,
+	target: BaseNode,
 	node: AccessFieldNode,
 	status: CheckStatus,
 ): boolean {
@@ -180,11 +233,22 @@ function check_access_field_node(
 	// HACK:
 	if (!field) {
 		// Are we accessing an enum case?
-		const enum_node = status.enums.find((e) => e.name === target_type.name);
+		let enum_node = status.enums.find((e) => e.name === target_type.name);
+		if (enum_node?.is_generic) {
+			enum_node = resolve_generic_enum_access(enum_node, target, status);
+			if (!enum_node) {
+				add_error(
+					status,
+					`Generic enum ${target_type.name} requires concrete type arguments to access .${node.name}`,
+					node.start,
+				);
+				return false;
+			}
+		}
 		if (enum_node) {
 			const enum_case = enum_node.cases.find((c) => c.name === node.name);
 			if (enum_case) {
-				node.type = new Type(target_type.name);
+				node.type = new Type(enum_node.name);
 				return true;
 			} else {
 				if (enum_node.has_associated_data) {
@@ -418,11 +482,26 @@ function check_access_function_node(
 
 	if (!func) {
 		// Are we calling an enum case constructor?
-		const enum_node = status.enums.find((e) => e.name === target_type.name);
+		let enum_node = status.enums.find((e) => e.name === target_type.name);
+		if (enum_node?.is_generic) {
+			// `Result.ok(5)` on a generic enum resolves through the concrete
+			// instantiation implied by the expected type; the target value is
+			// rewritten to the mono name so the build emits the mono's
+			// constructor (`Result_int_string_ok_init`).
+			enum_node = resolve_generic_enum_access(enum_node, target, status);
+			if (!enum_node) {
+				add_error(
+					status,
+					`Generic enum ${target_type.name} requires concrete type arguments to construct .${node.name}`,
+					node.start,
+				);
+				return false;
+			}
+		}
 		if (enum_node) {
 			const enum_case = enum_node.cases.find((c) => c.name === node.name);
 			if (enum_case) {
-				node.type = new Type(target_type.name);
+				node.type = new Type(enum_node.name);
 				node.is_static = true;
 
 				for (let param of node.params) {

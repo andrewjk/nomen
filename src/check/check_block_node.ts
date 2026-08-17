@@ -10,11 +10,12 @@ import FunctionNode from "../nodes/FunctionNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import TraitNode from "../nodes/TraitNode.ts";
 import Type from "../nodes/Type.ts";
+import { instantiate_generic_type } from "./check_function_call_node.ts";
 import check_node from "./check_node.ts";
 import { resolve_struct_field_types } from "./check_struct_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import { synthesize_auto_derived_methods } from "./utils/auto_derive.ts";
-import { materialize_tuple_type } from "./utils/tuple_struct.ts";
+import materialize_type from "./utils/materialize_type.ts";
 
 export default function check_block_node(node: BlockNode, status: CheckStatus) {
 	gather_structs(node, status);
@@ -239,13 +240,16 @@ function gather_structs(block: BlockNode, status: CheckStatus) {
 				} else {
 					names_in_block.functions.add(func.name);
 					func.scope = status.stack.at(-1) || block;
-					// Materialize tuple return types upfront so callers that
-					// are checked before this function (e.g. a sibling file
-					// earlier in the concatenation) see the resolved struct
-					// type, not the unmaterialized `tuple` placeholder.
-					if (func.return_type.name === "tuple" && func.return_type.tuple_types?.length) {
-						func.return_type = materialize_tuple_type(func.return_type, status);
-					}
+					// Materialize tuple / anonymous enum return types upfront so
+					// callers that are checked before this function (e.g. a
+					// sibling file earlier in the concatenation) see the
+					// resolved generated type, not the unmaterialized
+					// `tuple`/`anon_enum` placeholder. Generic enum return
+					// types (`out Result<int, string>`) are instantiated here
+					// for the same reason — the annotation is rewritten to the
+					// mono name, which callers match against.
+					func.return_type = materialize_type(func.return_type, status);
+					instantiate_generic_type(func.return_type, status);
 					status.functions.push(func);
 				}
 				break;
@@ -256,6 +260,7 @@ function gather_structs(block: BlockNode, status: CheckStatus) {
 					add_error(status, `Enum already declared: ${enum_node.name}`, enum_node.start);
 				} else {
 					names_in_block.enums.add(enum_node.name);
+					enum_node.is_generic = enum_node.type_params.length > 0;
 					status.types.push(enum_node.name);
 					status.enums.push(enum_node);
 				}

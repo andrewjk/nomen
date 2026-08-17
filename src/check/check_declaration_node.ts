@@ -14,12 +14,12 @@ import check_type_exists from "./utils/check_type_exists.ts";
 import evaluate_const_condition from "./utils/evaluate_const_condition.ts";
 import { apply_bounds, track_assignment_bounds } from "./utils/flow_bounds.ts";
 import in_function from "./utils/in_function.ts";
+import materialize_type from "./utils/materialize_type.ts";
 import {
 	is_class_type,
 	is_owning_struct_type,
 	is_owning_struct_type_requiring_move,
 } from "./utils/ownership.ts";
-import { materialize_tuple_type } from "./utils/tuple_struct.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
 
@@ -56,17 +56,16 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 		}
 		if (decl.func_return_type) {
 			check_type_exists(decl.func_return_type, status, -1);
-			if (decl.func_return_type.name === "tuple" && decl.func_return_type.tuple_types?.length) {
-				decl.func_return_type = materialize_tuple_type(decl.func_return_type, status);
+			const materialized = materialize_type(decl.func_return_type, status);
+			if (materialized.name) {
+				decl.func_return_type = materialized;
+				instantiate_generic_type(decl.func_return_type, status);
 			}
-			instantiate_generic_type(decl.func_return_type, status);
 		}
 		for (const param of decl.func_params) {
 			if (param.type.name) {
 				check_type_exists(param.type, status, param.type_start!);
-				if (param.type.name === "tuple" && param.type.tuple_types?.length) {
-					param.type = materialize_tuple_type(param.type, status);
-				}
+				param.type = materialize_type(param.type, status);
 				instantiate_generic_type(param.type, status);
 			}
 		}
@@ -149,10 +148,8 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 		if (decl.type.name) {
 			check_type_exists(decl.type, status, decl.type_start!);
 		}
-		// Materialize tuple types into anonymous structs
-		if (decl.type.name === "tuple" && decl.type.tuple_types?.length) {
-			decl.type = materialize_tuple_type(decl.type, status);
-		}
+		// Materialize tuple / anonymous enum types into generated types
+		decl.type = materialize_type(decl.type, status);
 		// A generic container used only as an explicit local declaration type
 		// (e.g. `var List<string> xs` where the value comes from a call rather
 		// than a `List<string>()` construction) needs the monomorphized form

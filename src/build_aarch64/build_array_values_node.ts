@@ -4,15 +4,17 @@ import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
+import { find_enum_for_case } from "./utils/enum_case.ts";
 
 function get_raw_value(node: ValueNode, status: BuildStatus): string {
 	let val = node.value;
 	if (val === "true") return "1";
 	if (val === "false") return "0";
 	if (node.is_enum_shorthand) {
-		const enum_node = status.enums.find((e) => val.startsWith(e.name + "_"));
-		if (enum_node) {
-			const case_name = val.substring(enum_node.name.length + 1);
+		const found = find_enum_for_case(val, status);
+		if (found) {
+			const enum_node = found.enum_node;
+			const case_name = found.case_name;
 			const case_index = enum_node.cases.findIndex((c) => c.name === case_name);
 			if (case_index >= 0) return String(case_index);
 		}

@@ -17,6 +17,7 @@ import check_function_call from "./check_function_call.ts";
 import check_function_node from "./check_function_node.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
+import { monomorphize_enum } from "./utils/enum_mono.ts";
 import {
 	collect_return_bounds,
 	collect_return_length,
@@ -156,7 +157,25 @@ export default function check_function_call_node(
 				add_error(status, `Cannot resolve .${case_name} without a type hint`, node.start);
 				return false;
 			}
-			const enum_node = status.enums.find((e) => e.name === expected.name);
+			let enum_node = status.enums.find((e) => e.name === expected.name);
+			if (enum_node?.is_generic) {
+				// A generic enum as the expected type resolves through its
+				// concrete instantiation (`.ok(5)` against `Result<int, string>`
+				// → the `Result_int_string` mono).
+				const mono =
+					expected.type_args?.length === enum_node.type_params.length
+						? monomorphize_enum(enum_node, expected.type_args, status)
+						: null;
+				if (!mono) {
+					add_error(
+						status,
+						`Cannot resolve .${case_name}: generic enum ${enum_node.name} requires concrete type arguments`,
+						node.start,
+					);
+					return false;
+				}
+				enum_node = mono;
+			}
 			if (!enum_node) {
 				add_error(status, `Type ${expected.name} is not an enum`, node.start);
 				return false;
@@ -532,7 +551,7 @@ function type_contains_unresolved_param(type: Type, status: CheckStatus): boolea
  * inner mono first. Non-generic args and args whose inner args are still
  * unresolved type params are returned unchanged.
  */
-function flatten_nested_generic_arg(t: Type, status: CheckStatus): Type {
+export function flatten_nested_generic_arg(t: Type, status: CheckStatus): Type {
 	if (!t.type_args?.length) return t;
 	const inner_generic = status.structs.findLast((s) => s.name === t.name && s.is_generic);
 	if (!inner_generic || inner_generic.type_params.length !== t.type_args.length) return t;
@@ -562,12 +581,39 @@ export function instantiate_generic_type(type: Type, status: CheckStatus) {
 	const args = type.type_args;
 	if (args?.length) {
 		const generic = status.structs.findLast((s) => s.name === type.name);
-		if (!generic?.is_generic) return;
-		if (generic.type_params.length !== args.length) return;
-		// Recursive: a nested arg (`Wrapper<List<T>>` inside a generic) still
-		// references T through the inner instantiation — defer the whole thing.
-		if (args.some((t) => type_contains_unresolved_param(t, status))) return;
-		monomorphize(generic, args, status);
+		if (generic?.is_generic) {
+			if (generic.type_params.length !== args.length) return;
+			// Recursive: a nested arg (`Wrapper<List<T>>` inside a generic) still
+			// references T through the inner instantiation — defer the whole thing.
+			if (args.some((t) => type_contains_unresolved_param(t, status))) return;
+			monomorphize(generic, args, status);
+			return;
+		}
+		// Generic enums (`Result<int, string>`): monomorphize and REWRITE the
+		// annotation's name to the mono (`Result_int_string`), keeping
+		// `type_args` for reference. Unlike structs (whose method resolution
+		// goes through the bare name + args), enum shorthand resolution and
+		// match typing key off `status.enums` by bare name, so the rewritten
+		// name is what makes `.ok(5)`, `match`, and exhaustiveness resolve
+		// against the concrete case payloads. Deferred when an arg still
+		// references an unresolved type param (inside a generic context).
+		const generic_enum = status.enums.findLast((e) => e.name === type.name);
+		if (
+			generic_enum?.is_generic &&
+			generic_enum.type_params.length === args.length &&
+			!args.some((t) => type_contains_unresolved_param(t, status))
+		) {
+			const mono = monomorphize_enum(generic_enum, args, status);
+			if (mono) {
+				// Rewrite the annotation to the mono name and CLEAR the type
+				// args: build-side signature emission derives names via
+				// `mono_type_name(name, args)`, so keeping args would produce
+				// a doubled name (`Result_int_string_int_string`).
+				type.name = mono.name;
+				type.type_args = undefined;
+			}
+		}
+		return;
 	}
 	// `Array<T>` (parse-rewritten to `{name: T, is_array: true, is_array_heap:
 	// true}`): materialize the mono `Array_<elem>` struct so the build can
