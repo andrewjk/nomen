@@ -32,6 +32,7 @@ import {
 	mark_anchor_destroy,
 	mark_heap_string,
 	mark_moved_if_struct,
+	is_field_struct_borrow,
 	track_struct_decl,
 } from "./utils/auto_destroy.ts";
 import { build_swap_params } from "./utils/build_swap.ts";
@@ -595,6 +596,14 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 					!node.type.is_array &&
 					status.structs.find((s) => s.name === node.type.name && s.is_class);
 				if (struct_type) {
+					if (process.env.NOMEN_DEBUG_ANCHOR)
+						console.error(
+							"ANCHOR check_heap:",
+							node.name,
+							"value:",
+							node.value?.node_type,
+							(node.value as any)?.name ?? "",
+						);
 					emit_var_load(status, "x0", node.name, 8);
 					anchor_heap_pointer(status, node.name);
 					consolidate_temp_anchors(status, node.value, node.type.name);
@@ -813,10 +822,13 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 
 	// Don't track class variables that hold a borrowed reference (not an owned
 	// instance) as owned — they must not be destroyed/freed at scope exit.
-	// Borrows arise from a field access (`var Box b = h.c`) or a plain
-	// class-variable copy (`var Box q = p`); the latter would otherwise be
-	// destroyed alongside the original owner, double-freeing / double-destroying
-	// the instance. `mov p` (ownership transfer) and `null` stay owned.
+	// Borrows arise from a field access (`var Box b = h.c`), a plain
+	// class-variable copy (`var Box q = p`), or a NON-owning method call
+	// (`const Diff d = diffs.at(di)` — the container owns the element);
+	// borrowed decls would otherwise be destroyed alongside their owner,
+	// double-freeing / corrupting shared state. `mov p` (ownership transfer),
+	// `null`, and an `owned_return` method (`mov out T`, e.g. `list.pop()`)
+	// stay owned. Mirrors the C backend's val_is_class_alias rule.
 	const value_is_field_borrow =
 		node.value?.node_type === "access" &&
 		(node.value as AccessNode).access.node_type === "access_field";
@@ -824,11 +836,25 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 		node.value?.node_type === "value" &&
 		!(node.value as ValueNode).is_moved &&
 		(node.value as ValueNode).value !== "null";
+	const value_is_method_borrow =
+		node.value?.node_type === "access" &&
+		(node.value as AccessNode).access.node_type === "access_func" &&
+		!((node.value as AccessNode).access as AccessFunctionCallNode).owned_return;
+	// A plain FUNCTION call returning a class may also hand back a borrowed
+	// reference (`func box_at = (... out Box) { var Box got = xs.at(j);
+	// return mov got }` — the container owns the element). Scan-determined
+	// per callee (scan_borrow_returns); such decls are not destroy-tracked.
+	const value_is_borrowing_call =
+		node.value?.node_type === "func_call" &&
+		!!status.borrow_returning_functions?.has((node.value as FunctionCallNode).name);
 	const is_borrowed_class_ref = !!(
 		node.type?.name &&
 		struct_type &&
 		struct_type.is_class &&
-		(value_is_field_borrow || value_is_var_borrow)
+		(value_is_field_borrow ||
+			value_is_var_borrow ||
+			value_is_method_borrow ||
+			value_is_borrowing_call)
 	);
 
 	if (!is_borrowed_class_ref) {
@@ -858,7 +884,20 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			status.alias_owns_flag?.set(node.name, flag_offset);
 		}
 	}
-	if (!is_borrowed_class_ref && struct_type && struct_needs_destroy(struct_type, status)) {
+	// A value-struct declaration initialized from a non-`mov` FIELD ACCESS
+	// (`diff.changes`, `obj.span` — including the checker-hoisted `_param_N`
+	// temp for a struct call argument) is a shallow borrow: the struct bytes
+	// are copied but the embedded buffer's data belongs to the owner. It must
+	// NOT be destroy-tracked — destroying it would free the owner's buffer
+	// (double-free once the owner is destroyed). Mirrors the C backend's
+	// is_destructured_field_access rule in build_auto_free. A `mov` field
+	// access transfers ownership and stays tracked.
+	if (
+		!is_borrowed_class_ref &&
+		!is_field_struct_borrow(node) &&
+		struct_type &&
+		struct_needs_destroy(struct_type, status)
+	) {
 		track_struct_decl(
 			status,
 			node.name,
@@ -1469,8 +1508,14 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 					// anchoring unconditionally here is sound (user-space factories
 					// already set the flag, so this only changes the forward-ref
 					// case — no double-anchor).
-					status.last_result_is_heap = true;
-					check_heap();
+					// EXCEPT a scan-detected borrow-returning function
+					// (`box_at` handing back a container element): its result is
+					// owned by the callee's receiver and must NOT be anchored —
+					// the owner's destroy reclaims it.
+					if (!status.borrow_returning_functions?.has(func_call.name)) {
+						status.last_result_is_heap = true;
+						check_heap();
+					}
 				}
 			} else if (node.value) {
 				if (node.value.node_type === "value") {

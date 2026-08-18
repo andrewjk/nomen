@@ -15,9 +15,13 @@ import build_node from "./build_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_malloc, emit_strdup } from "./utils/audit.ts";
 import {
+	all_scope_frames,
+	clear_heap_string_fields,
 	emit_destroy_for_decl,
 	emit_heap_slots_cleanup_for_return,
+	is_field_struct_borrow,
 	mark_moved_if_struct,
+	release_heap_string_fields,
 } from "./utils/auto_destroy.ts";
 import { is_nullable_struct_type } from "./utils/nullable_struct.ts";
 import { allocate_stack_space, emit_var_address, emit_var_store } from "./utils/stack_var.ts";
@@ -77,8 +81,17 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 		// Run scope-exit cleanup for remaining declarations and jump to the
 		// return epilogue (mirrors the void-return path above).
 		const finalized = status.moved ?? new Set<string>();
-		for (const decl of status.scoped_declarations) {
-			if (finalized.has(decl.name)) continue;
+		// A return exits every enclosing scope, not just the innermost frame —
+		// clean declarations from all of them (all_scope_frames).
+		for (const decl of all_scope_frames(status).flat()) {
+			if (finalized.has(decl.name)) {
+				// A moved-out value struct still owns its recorded heap string
+				// fields (store_T deep-copied them) — release them here since
+				// the skip below bypasses emit_destroy_for_decl.
+				release_heap_string_fields(status, decl.name, decl.type.name);
+				continue;
+			}
+			if (is_field_struct_borrow(decl)) continue;
 			emit_destroy_for_decl(
 				status,
 				decl.name,
@@ -100,8 +113,15 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 			emit_var_store(status, "x0", status.return_assign, size);
 		} else if (status.function_return_label) {
 			const finalized = status.moved ?? new Set<string>();
-			for (const decl of status.scoped_declarations) {
-				if (finalized.has(decl.name)) continue;
+			for (const decl of all_scope_frames(status).flat()) {
+				if (finalized.has(decl.name)) {
+					// A moved-out value struct still owns its recorded heap string
+					// fields (store_T deep-copied them) — release them here since
+					// the skip below bypasses emit_destroy_for_decl.
+					release_heap_string_fields(status, decl.name, decl.type.name);
+					continue;
+				}
+				if (is_field_struct_borrow(decl)) continue;
 				emit_destroy_for_decl(
 					status,
 					decl.name,
@@ -498,11 +518,26 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 			}
 		}
 
-		mark_moved_if_struct(node.value, status);
+		mark_moved_if_struct(node.value, status, { for_return: true });
+		// A returned value struct's bytes — including its string-field
+		// pointers — transfer to the caller via the sret copy: the return
+		// cleanup below must NOT free the recorded heap string fields (and
+		// emit_destroy_for_decl skips moved decls entirely, so the records
+		// have to go).
+		if (node.value?.node_type === "value") {
+			clear_heap_string_fields(status, (node.value as ValueNode).value);
+		}
 		const finalized = status.moved ?? new Set<string>();
 		status.code += `str x0, [sp, #-16]!\n`;
-		for (const decl of status.scoped_declarations) {
-			if (finalized.has(decl.name)) continue;
+		for (const decl of all_scope_frames(status).flat()) {
+			if (finalized.has(decl.name)) {
+				// A moved-out value struct still owns its recorded heap string
+				// fields (store_T deep-copied them) — release them here since
+				// the skip below bypasses emit_destroy_for_decl.
+				release_heap_string_fields(status, decl.name, decl.type.name);
+				continue;
+			}
+			if (is_field_struct_borrow(decl)) continue;
 			emit_destroy_for_decl(
 				status,
 				decl.name,

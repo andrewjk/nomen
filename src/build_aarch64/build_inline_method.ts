@@ -85,6 +85,14 @@ export default function build_inline_method(
 	const old_function_return_type = status.function_return_type;
 	const old_register_allocations = status.register_allocations;
 	const old_buffer_data_cache = status.buffer_data_cache;
+	// The inline body's returns run emit_heap_slots_cleanup_for_return, which
+	// frees EVERY frame on the cleanup stack. On the shared stack that would
+	// free the OUTER function's live anchors (double-free once a later inline
+	// return walks them again) — an inlined body owns only its own frames, so
+	// swap in a fresh stack. `moved` is swapped for the same reason: marks made
+	// inside the body must not leak out (and vice versa).
+	const old_heap_cleanup_stack = status.heap_cleanup_stack;
+	const old_moved = status.moved;
 
 	const return_label = `.inline_ret_${inline_counter++}`;
 	status.function_return_label = return_label;
@@ -94,6 +102,8 @@ export default function build_inline_method(
 	status.struct_return_buffer = undefined;
 	status.return_buffer_stack_offset = undefined;
 	status.buffer_data_cache = undefined;
+	status.heap_cleanup_stack = [];
+	status.moved = new Set();
 
 	if (needs_x19) {
 		status.code += `str x19, [sp, #-16]!\n`;
@@ -204,6 +214,8 @@ export default function build_inline_method(
 	status.function_return_type = old_function_return_type;
 	status.register_allocations = old_register_allocations;
 	status.buffer_data_cache = old_buffer_data_cache;
+	status.heap_cleanup_stack = old_heap_cleanup_stack;
+	status.moved = old_moved;
 }
 
 let inline_fn_depth = 0;
@@ -225,6 +237,11 @@ export function build_inline_function(func: FunctionNode, status: BuildStatus) {
 	const old_function_return_type = status.function_return_type;
 	const old_register_allocations = status.register_allocations;
 	const old_buffer_data_cache = status.buffer_data_cache;
+	// See build_inline_method: an inlined body's returns must only clean up
+	// anchors the body itself created — swap in a fresh cleanup stack (and a
+	// fresh `moved` set) so the outer function's live anchors survive.
+	const old_heap_cleanup_stack = status.heap_cleanup_stack;
+	const old_moved = status.moved;
 
 	const return_label = `.inline_fn_ret_${inline_counter++}`;
 	status.function_return_label = return_label;
@@ -234,6 +251,8 @@ export function build_inline_function(func: FunctionNode, status: BuildStatus) {
 	status.struct_return_buffer = undefined;
 	status.return_buffer_stack_offset = undefined;
 	status.buffer_data_cache = undefined;
+	status.heap_cleanup_stack = [];
+	status.moved = new Set();
 
 	const param_regs = ["x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7"];
 	const callee_saved = ["x19", "x20", "x21", "x22"];
@@ -314,6 +333,8 @@ export function build_inline_function(func: FunctionNode, status: BuildStatus) {
 	status.function_return_type = old_function_return_type;
 	status.register_allocations = old_register_allocations;
 	status.buffer_data_cache = old_buffer_data_cache;
+	status.heap_cleanup_stack = old_heap_cleanup_stack;
+	status.moved = old_moved;
 
 	inline_fn_depth--;
 	return true;

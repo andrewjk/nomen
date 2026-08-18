@@ -26,7 +26,14 @@ export function emit_var_address(status: BuildStatus, reg: string, name: string)
 	}
 	const offset = status.stack_offsets?.get(name);
 	if (offset !== undefined) {
-		status.code += `add ${reg}, x29, #${offset}\n`;
+		if (status.function_struct_param_slots?.has(name)) {
+			// A spilled struct param's slot holds the POINTER to the caller's
+			// struct (by-address convention) — the "address of the variable" is
+			// the slot's VALUE, not the slot's address.
+			status.code += `ldr ${reg}, [x29, #${offset}]\n`;
+		} else {
+			status.code += `add ${reg}, x29, #${offset}\n`;
+		}
 	} else {
 		const param_reg = status.function_param_regs?.get(name);
 		if (param_reg) {

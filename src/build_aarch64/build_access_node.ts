@@ -781,6 +781,23 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 			emit_var_load(status, "x0", name, 8);
 		}
 		const final_offset = get_field_offset(target_type?.name || "", access_field.name, status);
+		// A STRUCT-typed field of a class instance is embedded inline; its
+		// "value" is its address (instance + offset) — same convention as the
+		// generic field_is_struct path below. Loading a word here would hand
+		// consumers the field's first scalar (e.g. Span.index) as a pointer.
+		const field_type_obj = resolve_field_type(access_field, target_type?.name, status);
+		const resolved_field_type = field_type_obj?.name || "";
+		const field_is_struct =
+			!!resolved_field_type &&
+			!field_type_obj?.is_ref &&
+			!field_type_obj?.is_nullable &&
+			is_struct_type(resolved_field_type, status);
+		if (field_is_struct) {
+			if (final_offset > 0) {
+				status.code += `add x0, x0, #${final_offset}\n`;
+			}
+			return;
+		}
 		const field_type = access_field.type?.name || "";
 		const size = aarch64_size(field_type);
 		const signed =

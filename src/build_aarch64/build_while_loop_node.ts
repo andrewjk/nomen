@@ -2,6 +2,7 @@ import type BuildStatus from "../build_c/BuildStatus.ts";
 import WhileLoopNode from "../nodes/WhileLoopNode.ts";
 import build_block_node from "./build_block_node.ts";
 import build_node from "./build_node.ts";
+import { enter_scope_frame, exit_scope_frame } from "./utils/auto_destroy.ts";
 import collect_var_refs, { collect_declared_names } from "./utils/collect_var_refs.ts";
 
 const CALLEE_SAVED_REGS = ["x23", "x24", "x25", "x26", "x27", "x28"];
@@ -35,8 +36,7 @@ export function reset_label_counter() {
 }
 
 export default function build_while_loop_node(node: WhileLoopNode, status: BuildStatus) {
-	const old_scoped_declarations = status.scoped_declarations;
-	status.scoped_declarations = [];
+	const old_scoped_declarations = enter_scope_frame(status);
 
 	const label = label_counter++;
 	const start_label = `.while_${label}`;
@@ -196,5 +196,5 @@ export default function build_while_loop_node(node: WhileLoopNode, status: Build
 	status.buffer_data_cache = saved_buffer_cache;
 
 	status.loop_labels.pop();
-	status.scoped_declarations = old_scoped_declarations;
+	exit_scope_frame(status, old_scoped_declarations);
 }

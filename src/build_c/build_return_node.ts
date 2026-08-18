@@ -11,9 +11,9 @@ import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import ReturnNode from "../nodes/ReturnNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_array_values_node from "./build_array_values_node.ts";
-import build_auto_free from "./build_auto_free.ts";
 import build_node from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
+import { reclaim_all_c_scopes } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
 import emit_allocations from "./utils/emit_allocations.ts";
 import is_string_borrow from "./utils/is_string_borrow.ts";
@@ -36,7 +36,7 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 		// value, signal non-null first so the struct-return path below is
 		// free to use _return_val normally.
 		if (ret_is_null) {
-			build_auto_free(status);
+			reclaim_all_c_scopes(status);
 			status.code += `*${ret_has} = 0;\n`;
 			status.code += `return (struct ${status.function_return_type!.name}){0};\n`;
 			return;
@@ -44,7 +44,7 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 		status.code += `*${ret_has} = 1;\n`;
 	}
 	if (!node.value) {
-		build_auto_free(status);
+		reclaim_all_c_scopes(status);
 		if (status.return_assign) {
 			status.code += `${status.return_assign} = 0;\n`;
 		} else if (status.current_function_name?.toLocaleLowerCase() === "main") {
@@ -107,9 +107,26 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 	if (node.value.node_type === "value") {
 		const value = (node.value as ValueNode).value;
 		returned_value_decl = find_decl_across_scopes(value, status);
-		let di = status.scoped_declarations.indexOf(returned_value_decl as DeclarationNode);
-		if (di !== -1) {
-			status.scoped_declarations.splice(di, 1);
+		// Splice the returned declaration from whichever scope frame holds it
+		// — a return inside an if/while body references enclosing-frame
+		// locals, and leaving it there would have the return-path reclaim
+		// (reclaim_all_c_scopes) free the value being returned.
+		const frames = [status.scoped_declarations, ...(status.c_scope_stack ?? [])];
+		for (const frame of frames) {
+			const di = frame.indexOf(returned_value_decl as DeclarationNode);
+			if (di !== -1) {
+				frame.splice(di, 1);
+				break;
+			}
+		}
+		// The returned struct's bytes — including its string-field pointers —
+		// transfer to the caller (sret copy): drop any heap-string-field
+		// records so the scope-exit / auto-free passes don't free them.
+		if (status.heap_string_fields?.size) {
+			const prefix = `${value}.`;
+			for (const key of Array.from(status.heap_string_fields)) {
+				if (key.startsWith(prefix)) status.heap_string_fields.delete(key);
+			}
 		}
 	}
 
@@ -125,7 +142,7 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 		status.code += `_return_val->length = ${return_array_len};\n`;
 		status.code += `${elem_c_type}* _return_data = (${elem_c_type}*)((char*)_return_val + sizeof(struct ${array_struct}));\n`;
 		status.code += `for (long _i = 0; _i < ${return_array_len}; _i++) _return_data[_i] = ${return_array_var}[_i];\n`;
-		build_auto_free(status);
+		reclaim_all_c_scopes(status);
 		status.code += `return _return_val;\n`;
 		return;
 	}
@@ -139,7 +156,7 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 		status.code += `${old_return_assign} = `;
 		build_node(node.value, status);
 		status.code += `;\n`;
-		build_auto_free(status);
+		reclaim_all_c_scopes(status);
 	} else {
 		emit_allocations(node.value, status);
 		// Use the function's declared return type for the _return_val temp.
@@ -211,7 +228,7 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 			build_node(node.value, status);
 			status.join_needs_owned_string = old_join_owned;
 			status.return_assign = old_return_assign;
-			build_auto_free(status);
+			reclaim_all_c_scopes(status);
 			if (string_join) {
 				status.code += any_branch_owned ? `return _return_val;\n` : `return strdup(_return_val);\n`;
 			} else {
@@ -414,7 +431,7 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 		) {
 			emit_field_overrides("_return_val", node.value, build_node, status, "", ";\n");
 		}
-		build_auto_free(status);
+		reclaim_all_c_scopes(status);
 		status.code += `return _return_val;\n`;
 	}
 }

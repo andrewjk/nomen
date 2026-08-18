@@ -5,6 +5,7 @@ import RangeNode from "../nodes/RangeNode.ts";
 import build_block_node from "./build_block_node.ts";
 import build_node from "./build_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
+import { enter_scope_frame, exit_scope_frame } from "./utils/auto_destroy.ts";
 import collect_var_refs, { collect_declared_names } from "./utils/collect_var_refs.ts";
 import {
 	allocate_stack_space,
@@ -45,8 +46,7 @@ export function reset_label_counter() {
 }
 
 export default function build_for_loop_node(node: ForLoopNode, status: BuildStatus) {
-	const old_scoped_declarations = status.scoped_declarations;
-	status.scoped_declarations = [];
+	const old_scoped_declarations = enter_scope_frame(status);
 
 	const label = label_counter++;
 	const item_name = node.item.value;
@@ -454,7 +454,7 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 	status.buffer_data_cache = saved_buffer_cache;
 	status.loop_labels.pop();
 	status.loop_writebacks?.pop();
-	status.scoped_declarations = old_scoped_declarations;
+	exit_scope_frame(status, old_scoped_declarations);
 }
 
 function is_enumerable_type(node: any, status: BuildStatus): boolean {

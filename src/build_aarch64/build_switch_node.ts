@@ -2,6 +2,7 @@ import type BuildStatus from "../build_c/BuildStatus.ts";
 import SwitchNode from "../nodes/SwitchNode.ts";
 import build_block_node from "./build_block_node.ts";
 import build_node from "./build_node.ts";
+import { enter_scope_frame, exit_scope_frame } from "./utils/auto_destroy.ts";
 
 let label_counter = 0;
 
@@ -11,7 +12,7 @@ export function reset_label_counter() {
 
 export default function build_switch_node(node: SwitchNode, status: BuildStatus) {
 	const label = label_counter++;
-	const old_scoped_declarations = status.scoped_declarations;
+	const old_scoped_declarations = enter_scope_frame(status);
 	const pre_cache = status.buffer_data_cache;
 
 	for (let i = 0; i < node.cases.length; i++) {
@@ -43,5 +44,5 @@ export default function build_switch_node(node: SwitchNode, status: BuildStatus)
 
 	status.code += `end_switch_${label}:\n`;
 
-	status.scoped_declarations = old_scoped_declarations;
+	exit_scope_frame(status, old_scoped_declarations);
 }

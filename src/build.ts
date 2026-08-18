@@ -18,6 +18,7 @@ import { scan_inline_candidates } from "./build_aarch64/utils/scan_inline_candid
 import build_c_node from "./build_c/build_node.ts";
 import type BuildStatus from "./build_c/BuildStatus.ts";
 import { set_c_typedef_mangling } from "./build_c/utils/c_type.ts";
+import { scan_borrow_returning_functions } from "./build_common/scan_borrow_returns.ts";
 import BaseNode from "./nodes/BaseNode.ts";
 import RawNode from "./nodes/RawNode.ts";
 import type BuildResult from "./types/BuildResult.ts";
@@ -77,6 +78,7 @@ export default function build(
 		reset_inline_counter();
 		reset_decl_const_counters();
 		status.heap_returning_functions = scan_heap_returning_functions(root);
+		status.borrow_returning_functions = scan_borrow_returning_functions(root);
 		status.inline_functions = scan_inline_candidates(root);
 		status.heap_returning_functions.add("int_to_string");
 		status.heap_returning_functions.add("uint_to_string");
@@ -211,13 +213,25 @@ export default function build(
 			// The main-function audit_check + pool shutdown hook is emitted
 			// directly by build_function_node (it knows main's return label).
 			//
-			// Raw assembly blocks in the library (e.g. int_to_string) call
-			// _malloc/_free directly. Wrap them so the audit counter stays
-			// balanced.
+			// Raw assembly blocks in the library (e.g. int_to_string,
+			// StringBuilder_to_string) call _malloc/_realloc/_strdup/_calloc/
+			// _free directly. Wrap them so the audit counter stays balanced —
+			// an unwrapped allocation whose eventual free IS wrapped would
+			// read as a phantom over-free. Mirrors wrap_c_allocators on the C
+			// side (nomen_realloc_wrap only counts a null old_ptr, matching
+			// realloc's malloc-equivalence).
 			status.code = status.code.replaceAll("bl _malloc\n", "bl _nomen_malloc_wrap\n");
+			status.code = status.code.replaceAll("bl _calloc\n", "bl _nomen_calloc_wrap\n");
+			status.code = status.code.replaceAll("bl _realloc\n", "bl _nomen_realloc_wrap\n");
+			status.code = status.code.replaceAll("bl _strdup\n", "bl _nomen_strdup_wrap\n");
 			status.code = status.code.replaceAll("bl _free\n", "bl _nomen_free_wrap\n");
 		}
 	} else {
+		// Scan-detected borrow-returning functions (a class-typed return that
+		// hands back a container element) steer BOTH backends' declaration
+		// ownership — see build_c/build_declaration_node's
+		// val_is_borrowing_call.
+		status.borrow_returning_functions = scan_borrow_returning_functions(root);
 		// GUI builds `#import` Apple frameworks (Cocoa/UIKit) which drag in
 		// MacTypes.h, whose typedefs (`Size`, `Point`, …) collide with Nomen's
 		// own struct/enum typedefs. Detect that situation up front (it depends

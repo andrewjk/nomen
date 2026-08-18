@@ -255,5 +255,13 @@ export default function build_node(node: BaseNode, status: BuildStatus, with_sem
 		if (!status.code.endsWith("}\n")) {
 			status.code += ";\n";
 		}
+		// Flush frees deferred from mov call sites inside this statement
+		// (VALUE-struct string fields — see build_access_node /
+		// build_function_call_node). Appending them at the call itself would
+		// break the surrounding expression.
+		if (status.pending_string_releases?.length) {
+			status.code += status.pending_string_releases.join("\n") + "\n";
+			status.pending_string_releases.length = 0;
+		}
 	}
 }

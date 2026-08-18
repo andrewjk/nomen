@@ -264,6 +264,49 @@ export default interface BuildStatus {
 	 * caller-saved and holds garbage by the time the call runs.
 	 */
 	call_x8_preset?: boolean;
+	/**
+	 * aarch64 only. Struct/trait/enum-with-data params that did NOT get a
+	 * callee-saved register (the x19..x22 pool was exhausted) and were spilled
+	 * to a local slot. Under the by-address struct param convention the slot
+	 * holds the POINTER to the caller's struct — emit_var_address must load
+	 * the pointer (`ldr`), not take the slot's address (`add`).
+	 */
+	function_struct_param_slots?: Set<string>;
+	/**
+	 * Functions/methods (by emitted label) whose CLASS-typed return is a
+	 * borrowed reference (e.g. `return mov got` where `got = xs.at(i)`).
+	 * A class declaration initialized from such a call is a borrow — it must
+	 * NOT be destroy-tracked at scope exit (the callee's owner frees the
+	 * instance). See build_common/scan_borrow_returns.ts.
+	 */
+	borrow_returning_functions?: Set<string>;
+	/**
+	 * aarch64 only. The scoped_declarations arrays of ENCLOSING scopes while
+	 * an if/while/for/switch/match body is being built (each swaps in a fresh
+	 * frame — see enter_scope_frame/exit_scope_frame). A `return` inside the
+	 * body must clean up those outer frames' declarations too, and mov
+	 * marking must recognize outer-scope locals.
+	 */
+	outer_scope_declarations?: DeclarationNode[][];
+	/**
+	 * C only. Post-statement frees for VALUE-struct string fields released at
+	 * a `mov` call site (the callee's store_T deep-copied them and the decl
+	 * was spliced out of scoped_declarations). The call may sit inside a
+	 * larger expression, so the frees are buffered here and appended by
+	 * build_node once the statement is complete.
+	 */
+	pending_string_releases?: string[];
+	/**
+	 * aarch64 only. VALUE-struct locals whose `string` field was assigned a
+	 * heap-owned value ("var.field" keys, e.g. "u.text"). Value-struct string
+	 * fields are NOT freed by the struct destroy (they may be rodata from
+	 * construction), so ownership is tracked per assignment: the recorded
+	 * fields are released at scope exit — including when the struct was
+	 * `mov`-stored into a container (store_T strdups its own copy, so the
+	 * source's heap string is otherwise abandoned). Cleared when the struct
+	 * is returned (the sret byte-copy transfers the string pointers).
+	 */
+	heap_string_fields?: Set<string>;
 	function_data?: string;
 	nested_functions?: string;
 	stack_size?: number;

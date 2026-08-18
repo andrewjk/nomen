@@ -10,6 +10,7 @@ import { emit_address_of } from "./build_access_node.ts";
 import build_block_node from "./build_block_node.ts";
 import build_node from "./build_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
+import { enter_scope_frame, exit_scope_frame } from "./utils/auto_destroy.ts";
 import { allocate_stack_space } from "./utils/stack_var.ts";
 import { get_enum_case_index, get_enum_payload_offset } from "./utils/struct_layout.ts";
 
@@ -62,7 +63,7 @@ function emit_pattern_tag(match_value: BaseNode, enum_name: string, status: Buil
 
 export default function build_match_node(node: MatchNode, status: BuildStatus) {
 	const label = label_counter++;
-	const old_scoped_declarations = status.scoped_declarations;
+	const old_scoped_declarations = enter_scope_frame(status);
 	const old_stack_offsets = status.stack_offsets;
 	status.stack_offsets = new Map(old_stack_offsets);
 	const match_type = type_from_value_node(node.value);
@@ -194,6 +195,6 @@ export default function build_match_node(node: MatchNode, status: BuildStatus) {
 
 	status.code += `end_match_${label}:\n`;
 
-	status.scoped_declarations = old_scoped_declarations;
+	exit_scope_frame(status, old_scoped_declarations);
 	status.stack_offsets = old_stack_offsets;
 }

@@ -38,10 +38,38 @@ export default function build_auto_free(status: BuildStatus) {
  * see build_break_node. Does NOT process deferred_frees or clear the list
  * (those are scope-exit-only concerns handled by build_auto_free).
  */
-export function free_scoped_declarations(status: BuildStatus, decls: DeclarationNode[]) {
+export function free_scoped_declarations(
+	status: BuildStatus,
+	decls: DeclarationNode[],
+	persist_string_field_records = false,
+) {
 	// Add dispose calls, if applicable
 	// TODO: free() if it's on the heap
 	let commented = false;
+	// VALUE-struct locals whose string fields were assigned heap-owned values
+	// (tracked as "name.field" — see build_assignment_node). Construction may
+	// leave rodata literals in those fields, so ownership is per-assignment:
+	// free exactly the recorded ones. Records are deleted unless
+	// persist_string_field_records is set (a return-site reclaim keeps them:
+	// sibling return paths each need their own emission, and the records are
+	// finally dropped by the fall-through path's scope-exit auto_free).
+	if (status.heap_string_fields?.size) {
+		for (const dec of decls) {
+			const prefix = `${dec.name}.`;
+			for (const key of Array.from(status.heap_string_fields)) {
+				if (key.startsWith(prefix)) {
+					if (!commented) {
+						status.code += "\n// Auto-free\n";
+						commented = true;
+					}
+					status.code += `free(${key});\n`;
+					if (!persist_string_field_records) {
+						status.heap_string_fields.delete(key);
+					}
+				}
+			}
+		}
+	}
 	for (const dec of decls) {
 		// Call dispose() if it has the Disposable trait
 		const struct = status.structs.find((s) => s.name === dec.type.name);

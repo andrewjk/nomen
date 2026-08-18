@@ -2,6 +2,7 @@ import type BuildStatus from "../build_c/BuildStatus.ts";
 import IfElseNode from "../nodes/IfElseNode.ts";
 import build_block_node from "./build_block_node.ts";
 import build_node from "./build_node.ts";
+import { enter_scope_frame, exit_scope_frame } from "./utils/auto_destroy.ts";
 
 let label_counter = 0;
 
@@ -11,8 +12,7 @@ export function reset_label_counter() {
 
 export default function build_if_else_node(node: IfElseNode, status: BuildStatus) {
 	const label = label_counter++;
-	const old_scoped_declarations = status.scoped_declarations;
-	status.scoped_declarations = [];
+	const old_scoped_declarations = enter_scope_frame(status);
 
 	build_node(node.condition, status);
 	status.code += `\ncmp x0, #0\n`;
@@ -43,5 +43,5 @@ export default function build_if_else_node(node: IfElseNode, status: BuildStatus
 
 	status.code += `end_${label}:\n`;
 
-	status.scoped_declarations = old_scoped_declarations;
+	exit_scope_frame(status, old_scoped_declarations);
 }

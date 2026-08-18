@@ -10,7 +10,7 @@ import ValueNode from "../nodes/ValueNode.ts";
 import { emit_address_of } from "./build_access_node.ts";
 import build_node from "./build_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
-import { emit_free } from "./utils/audit.ts";
+import { emit_free, emit_strdup } from "./utils/audit.ts";
 import {
 	anchor_heap_pointer,
 	consume_anchor_slot,
@@ -20,6 +20,7 @@ import {
 	find_anchor_slot,
 	mark_anchor_destroy,
 	mark_moved_if_struct,
+	record_heap_string_field,
 } from "./utils/auto_destroy.ts";
 import { has_flag_name, is_nullable_struct_type } from "./utils/nullable_struct.ts";
 import {
@@ -40,6 +41,31 @@ import {
 
 function is_mutable_param(name: string, status: BuildStatus): boolean {
 	return !!(status.function_param_vars?.has(name) || status.function_ref_params?.has(name));
+}
+
+/**
+ * Whether `obj.field = rhs` writes a plain `string` field of a struct or
+ * class instance. CLASS string fields follow an always-heap-owned convention
+ * (see the assignment branch that uses this): `_init` strdup's defaults and
+ * assignments strdup non-heap RHS, so destroys can free them unconditionally.
+ * VALUE-struct string fields keep per-assignment ownership tracking instead
+ * (construction may leave rodata in them): non-heap RHS is strdup'd and the
+ * field is recorded in heap_string_fields for release at scope exit.
+ * `ref` string fields (borrows) are excluded either way.
+ */
+function field_is_struct_string(
+	target_type: Type | undefined,
+	field_type: Type | undefined,
+	status: BuildStatus,
+): { name: string; target_is_class: boolean } | undefined {
+	if (!target_type?.name || !field_type) return undefined;
+	if (field_type.name !== "string" || field_type.is_ref || field_type.is_array) return undefined;
+	const target_struct = status.structs.find(
+		(s) => s.name === target_type.name && !s.is_simple_type,
+	);
+	if (!target_struct) return undefined;
+	if (target_struct.is_class) return { name: field_type.name, target_is_class: true };
+	return { name: field_type.name, target_is_class: false };
 }
 
 /**
@@ -937,6 +963,80 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 				status.code += `ldr x0, [sp], #16\n`;
 
 				status.code += `str x2, [x0, #${offset}]\n`;
+			} else if (
+				field_is_struct_string(target_type, field_type, status) &&
+				!node.operator &&
+				// Only for CLASS targets (always-heap fields) or a named
+				// local/param target whose ownership can be tracked in
+				// heap_string_fields. A `self.field = …` write inside a
+				// VALUE-struct method (custom #init, trait default) writes
+				// through to the caller's storage — strdup'ing here would
+				// leave an untracked heap copy (the caller can't know), so it
+				// falls through to the plain raw store. Mirrors the C backend
+				// (which gates the whole branch on `target_var !== "self"`).
+				(() => {
+					const st = field_is_struct_string(target_type, field_type, status)!;
+					const tv = access.target.node_type === "value" ? (access.target as ValueNode).value : "";
+					return st.target_is_class || (tv !== "" && tv !== "self");
+				})()
+			) {
+				// A struct instance's plain `string` field assignment. For
+				// CLASSES the field is always heap (`_init` strdup's the
+				// default, `<Class>_destroy` frees the final value): strdup any
+				// non-heap RHS, free the displaced old value unconditionally.
+				// For VALUE structs the field holds borrow semantics (rodata
+				// literals / borrows are stored RAW — the checker's borrow
+				// discipline already forbids mutating a source an outstanding
+				// borrow points into, and a raw store can never dangle a
+				// tracked record, mirroring the C backend's raw store for
+				// non-tracked shapes): only a fresh-heap RHS
+				// (last_result_is_heap) transfers an owned value into the
+				// field, recorded in heap_string_fields for the scope-exit
+				// release (and the mov-into-container release). Overwriting a
+				// recorded heap value with a non-heap one frees it and drops
+				// the record.
+				const string_target = field_is_struct_string(target_type, field_type, status)!;
+				const target_var =
+					access.target.node_type === "value" ? (access.target as ValueNode).value : "";
+				const tracked_key = `${target_var}.${field_name}`;
+				const is_class_target = string_target.target_is_class;
+				const old_was_heap = is_class_target || !!status.heap_string_fields?.has(tracked_key);
+				const offset = get_field_offset(target_type.name, field_name, status);
+
+				get_base_address(access, status, "x0");
+				status.code += `str x0, [sp, #-16]!\n`;
+
+				status.last_result_is_heap = false;
+				build_node(node.right_value, status);
+				if (!status.code.endsWith("\n")) {
+					status.code += "\n";
+				}
+				const rhs_is_heap = status.last_result_is_heap;
+				if (is_class_target && !rhs_is_heap) {
+					emit_strdup(status);
+				}
+				mark_moved_if_struct(node.right_value, status);
+				// Spill the new value (x2 is caller-saved — the free call may
+				// clobber it), free the old field value, then store.
+				status.code += `str x0, [sp, #-16]!\n`;
+				if (old_was_heap) {
+					status.code += `ldr x0, [sp, #16]\n`;
+					status.code += `ldr x0, [x0, #${offset}]\n`;
+					emit_free(status);
+				}
+				status.code += `ldr x2, [sp], #16\n`;
+				status.code += `ldr x0, [sp], #16\n`;
+				status.code += `str x2, [x0, #${offset}]\n`;
+				// `self.field = …` inside a value-struct method writes through
+				// to the caller's storage (the caller tracks ownership);
+				// recording it here would double-free at this scope's exit.
+				if (!is_class_target && target_var && target_var !== "self") {
+					if (rhs_is_heap) {
+						record_heap_string_field(status, target_var, field_name);
+					} else {
+						status.heap_string_fields?.delete(tracked_key);
+					}
+				}
 			} else if (field_is_struct && !node.operator) {
 				const field_struct = status.structs.find((s) => s.name === field_type!.name);
 				if (field_struct?.is_class) {

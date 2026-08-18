@@ -195,13 +195,14 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 		}
 		// `var q = p` where p is a class variable creates an ALIAS (pointer
 		// copy), not a fresh owner. Aliases must not be freed at scope exit —
-		// the original declaration owns the instance. Detect this by checking
-		// whether the initializer is a bare class-typed variable.
-		// Likewise, `var Elephant cur = list.at(i)` initializes from a method
-		// call (access node) that returns a BORROW — the instance is owned by
-		// the container, not by this variable. Such borrows must not be freed
-		// either. (Constructor calls and factory functions are `func_call`
-		// nodes, which do transfer ownership.)
+		// the original declaration owns the instance. Likewise, `var Elephant
+		// cur = list.at(i)` initializes from a method call (access node) that
+		// returns a BORROW — the instance is owned by the container, not by
+		// this variable. Such borrows must not be freed either. (Constructor
+		// calls and factory functions are `func_call` nodes, which transfer
+		// ownership — EXCEPT scan-detected borrow-returning functions like
+		// `box_at`, whose class return is a container reference the callee's
+		// owner frees.)
 		// An `access` that is an ownership-transferring method (`mov out T`,
 		// e.g. `list.pop()`) returns a fresh owned instance — it is NOT a borrow,
 		// so the variable genuinely owns it and must be freed at scope exit.
@@ -210,10 +211,14 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			node.value?.node_type === "access" &&
 			(node.value as AccessNode).access.node_type === "access_func" &&
 			!!((node.value as AccessNode).access as AccessFunctionCallNode).owned_return;
+		const val_is_borrowing_call =
+			node.value?.node_type === "func_call" &&
+			!!status.borrow_returning_functions?.has((node.value as FunctionCallNode).name);
 		const val_is_class_alias =
 			is_class_type &&
 			((node.value?.node_type === "value" &&
 				!!status.class_vars?.has((node.value as ValueNode).value)) ||
+				val_is_borrowing_call ||
 				(node.value?.node_type === "access" && !val_is_owned_return));
 		// A `var string x = "literal"` where x is later reassigned ONLY to
 		// borrowed values (e.g. `filename = init.args.at(1)`) must not strdup

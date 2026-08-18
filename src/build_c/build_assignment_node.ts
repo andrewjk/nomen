@@ -9,10 +9,13 @@ import ValueNode from "../nodes/ValueNode.ts";
 import { build_vtable_target } from "./build_access_node.ts";
 import { emit_struct_destroys, struct_needs_destroy_by_name } from "./build_auto_free.ts";
 import build_node from "./build_node.ts";
+import { is_owned_heap_temp } from "./build_operation_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import c_type from "./utils/c_type.ts";
 import is_string_borrow from "./utils/is_string_borrow.ts";
 import { is_nullable_struct_type } from "./utils/nullable_struct.ts";
+
+let string_field_counter = 0;
 import type_from_value_node from "./utils/type_from_value_node.ts";
 
 export default function build_assignment_node(node: AssignmentNode, status: BuildStatus) {
@@ -107,6 +110,63 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 					if (rhs_idx !== -1) status.scoped_declarations.splice(rhs_idx, 1);
 				}
 			}
+		}
+	}
+
+	// A plain `string` field assignment (`obj.field = rhs`): the field keeps a
+	// heap-owned value. For CLASS targets the field is always heap (`_init`
+	// strdup's defaults; <Class>_destroy frees unconditionally), so the old
+	// value is freed eagerly here. For VALUE-struct targets construction may
+	// leave a static literal in the field — free the old value only when a
+	// previous assignment recorded it, and record the field so auto_free (or
+	// the mov-site release) reclaims the final value. A fresh-heap RHS
+	// (is_owned_heap_temp — the C backend strdup's every string return) is
+	// stored directly; anything else is strdup'd so the field owns a copy.
+	if (
+		!node.operator &&
+		node.left_value.node_type === "access" &&
+		(node.left_value as AccessNode).access.node_type === "access_field" &&
+		(node.left_value as AccessNode).access.type?.name === "string" &&
+		!(node.left_value as AccessNode).access.type?.is_ref &&
+		!(node.left_value as AccessNode).access.type?.is_array
+	) {
+		const access_lhs = node.left_value as AccessNode;
+		const field_access_node = access_lhs.access as AccessFieldNode;
+		const target_type = type_from_value_node(access_lhs.target);
+		const target_struct = target_type?.name
+			? status.structs.find((s) => s.name === target_type.name && !s.is_simple_type)
+			: null;
+		const target_var =
+			access_lhs.target.node_type === "value" ? (access_lhs.target as ValueNode).value : "";
+		const tracked_key = `${target_var}.${field_access_node.name}`;
+		const old_was_heap = !!target_struct?.is_class || !!status.heap_string_fields?.has(tracked_key);
+		if (target_struct && target_var && target_var !== "self") {
+			const fresh_heap = is_owned_heap_temp(node.right_value, status);
+			// Capture the field-access expression (e.g. `b->text`) by building
+			// it then rolling back, so it can be referenced multiple times.
+			const before_len = status.code.length;
+			build_node(node.left_value, status);
+			const field_access = status.code.substring(before_len);
+			status.code = status.code.substring(0, before_len);
+			const temp = `_nomen_strfield_${string_field_counter++}`;
+			status.code += `{\nchar* ${temp} = `;
+			if (fresh_heap) {
+				build_node(node.right_value, status);
+			} else {
+				status.code += `strdup(`;
+				build_node(node.right_value, status);
+				status.code += `)`;
+			}
+			status.code += `;\n`;
+			if (old_was_heap) {
+				status.code += `free(${field_access});\n`;
+			}
+			status.code += `${field_access} = ${temp};\n}\n`;
+			if (!target_struct.is_class) {
+				if (!status.heap_string_fields) status.heap_string_fields = new Set<string>();
+				status.heap_string_fields.add(tracked_key);
+			}
+			return;
 		}
 	}
 

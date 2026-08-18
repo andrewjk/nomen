@@ -761,7 +761,26 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 								? status.scoped_declarations[di].type?.name
 								: (param as ValueNode).type?.name;
 						if (tname === "string") continue;
+						const decl_struct =
+							di !== -1
+								? status.structs.find((s) => s.name === tname && !s.is_simple_type)
+								: undefined;
+						const is_value_struct = !!decl_struct && !decl_struct.is_class;
 						if (di !== -1) status.scoped_declarations.splice(di, 1);
+						// See build_function_call_node: a moved VALUE struct's
+						// recorded heap string fields are released here — the
+						// callee's store_T deep-copied them, and the splice
+						// removes the decl from auto_free's iteration.
+						if (is_value_struct) {
+							const prefix = `${vname}.`;
+							for (const key of Array.from(status.heap_string_fields ?? [])) {
+								if (key.startsWith(prefix)) {
+									if (!status.pending_string_releases) status.pending_string_releases = [];
+									status.pending_string_releases.push(`free(${key});`);
+									status.heap_string_fields!.delete(key);
+								}
+							}
+						}
 					}
 				}
 			}

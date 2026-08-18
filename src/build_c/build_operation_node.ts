@@ -166,21 +166,34 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		// spill-and-free. (Builds link with clang, which supports GNU
 		// statement expressions.)
 		const is_string_op = node.type?.name === "string";
-		const left_temp = is_string_op && is_owned_heap_temp(node.left_value, status);
-		const right_temp = is_string_op && is_owned_heap_temp(node.right_value, status);
+		// A string comparison (`a == b`, dispatched to String's #op_eq /
+		// strcmp) with a heap-temp operand leaks the same way: the strdup'd
+		// call result is consumed by strcmp and never freed. Spill-and-free
+		// those too (result type differs: the op yields bool, not char*).
+		const is_string_cmp = node.op === "==" || node.op === "!=";
+		const left_temp =
+			(is_string_op || is_string_cmp) && is_owned_heap_temp(node.left_value, status);
+		const right_temp =
+			(is_string_op || is_string_cmp) && is_owned_heap_temp(node.right_value, status);
 		if (left_temp || right_temp) {
 			const id = (status.label_counter = (status.label_counter ?? 0) + 1);
 			const lt = `_ltmp_${id}`;
 			const rt = `_rtmp_${id}`;
+			const cres = `_cres_${id}`;
 			status.code += `({ `;
 			status.code += `char* ${lt} = `;
 			build_operand(node.left_value, status);
 			status.code += `; char* ${rt} = `;
 			build_operand(node.right_value, status);
-			status.code += `; char* _cres_${id} = ${label}(${lt}, ${rt}); `;
+			status.code += `; `;
+			if (is_string_op) {
+				status.code += `char* ${cres} = ${label}(${lt}, ${rt}); `;
+			} else {
+				status.code += `int ${cres} = ${label}(${lt}, ${rt}); `;
+			}
 			if (left_temp) status.code += `free(${lt}); `;
 			if (right_temp) status.code += `free(${rt}); `;
-			status.code += `_cres_${id}; })`;
+			status.code += `${cres}; })`;
 		} else {
 			const is_array_op =
 				node.operator_func.struct_name.startsWith("Array") &&
@@ -269,11 +282,13 @@ export function is_owned_heap_temp(
 		// when the mangled name couldn't be matched (e.g. a trait default
 		// method resolved as `<Trait>_<method>` rather than
 		// `<Struct>_<method>`). The only string calls that are NOT owned are
-		// borrows: `.at()`/`.first()` return a pointer into the receiver's
-		// storage rather than a fresh allocation.
+		// borrows: `.at()`/`.first()`/`.load_T()` return a pointer into (or
+		// the slot value of) the receiver's storage rather than a fresh
+		// allocation — Buffer.load_T is a raw #arch method that returns the
+		// element slot directly, and the buffer still owns it.
 		const is_borrow =
 			check_node.node_type === "access_func" &&
-			(raw_name === "at" || raw_name === "first") &&
+			(raw_name === "at" || raw_name === "first" || raw_name === "load_T") &&
 			!(check_node as unknown as { owned_return?: boolean }).owned_return;
 		return !is_borrow;
 	}

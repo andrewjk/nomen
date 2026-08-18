@@ -5,12 +5,14 @@ import {
 import { mono_struct_name, mono_type_name } from "../build_common/mono_name.ts";
 import { classify_param } from "../build_common/param_classify.ts";
 import { is_overloaded, mangled_label } from "../check/utils/function_overload.ts";
+import type BaseNode from "../nodes/BaseNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import TraitNode from "../nodes/TraitNode.ts";
 import Type from "../nodes/Type.ts";
 import build_auto_free from "./build_auto_free.ts";
 import build_node from "./build_node.ts";
+import { is_owned_heap_temp } from "./build_operation_node.ts";
 import build_parameter_node from "./build_parameter_node.ts";
 import build_struct_body from "./build_struct_body.ts";
 import type BuildStatus from "./BuildStatus.ts";
@@ -234,7 +236,21 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 				status.code += `${object_name}${accessor}${field.name} = *${field.name};\n`;
 				status.code += `${object_name}${accessor}${has_flag_name(field.name)} = ${has_flag_name(field.name)};\n`;
 			} else {
+				// A class's plain string field is always heap-owned (freed
+				// unconditionally by <Class>_destroy): strdup the default /
+				// param value — it may be a static literal or a borrow. A
+				// heap-producing default (is_owned_heap_temp) is stored
+				// directly. Value structs keep the raw store (their field
+				// ownership is tracked per assignment / by Buffer stores).
+				const field_is_class_string =
+					is_class && field.type.name === "string" && !field.type.is_array && !field.type.is_ref;
+				const value_is_fresh_heap =
+					!!field.value && is_owned_heap_temp(field.value as BaseNode, status);
+				const wrap_strdup = field_is_class_string && !value_is_fresh_heap;
 				status.code += `${object_name}${accessor}${field.name} = `;
+				if (wrap_strdup) {
+					status.code += `strdup(`;
+				}
 				if (field.value) {
 					build_node(field.value, status);
 				} else {
@@ -253,6 +269,9 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 					}
 					status.code += field.name;
 				}
+				if (wrap_strdup) {
+					status.code += `)`;
+				}
 				status.code += ";\n";
 			}
 		}
@@ -267,7 +286,17 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 					status.code += `${object_name}${accessor}${field.name}`;
 					if (field.value) {
 						status.code += " = ";
+						// A class's trait-default string field is heap-owned
+						// (see the field loop above).
+						const wrap =
+							is_class &&
+							field.type.name === "string" &&
+							!field.type.is_array &&
+							!field.type.is_ref &&
+							!is_owned_heap_temp(field.value as BaseNode, status);
+						if (wrap) status.code += "strdup(";
 						build_node(field.value, status);
+						if (wrap) status.code += ")";
 					}
 					status.code += ";\n";
 				}
@@ -603,6 +632,19 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 				build_node(child, status, true);
 			}
 		}
+		// A user `#destroy` on a CLASS must still free the class's plain
+		// string fields after the body — they are always heap-owned (`_init`
+		// strdup's defaults/args, assignments strdup non-heap RHS), so not
+		// freeing them leaks. Mirrors build_auto_destroy and the aarch64
+		// backend's build_destroy_function (emit_field_destroys).
+		if (func.name === "#destroy" && node.is_class) {
+			for (const field of node.fields) {
+				if (field.type.is_ref || field.type.is_array) continue;
+				if (field.type.name === "string") {
+					status.code += `free(self->${field.name});\n`;
+				}
+			}
+		}
 		// Always run auto_free at function exit (see build_function_node): a
 		// conditional early return still falls through, and those fall-through
 		// declarations must be reclaimed.
@@ -660,12 +702,11 @@ function build_auto_destroy(node: StructNode, status: BuildStatus) {
 	status.code += `${sig}\n{\n`;
 	for (const field of node.fields) {
 		if (field.type.is_ref) continue;
-		// A `string` field owns heap memory when the struct's destroy is
-		// called from a Buffer's per-element destroy (the slot's string was
-		// strdup'd by store_T). For classes, skip — class constructors don't
-		// strdup string args, so the field may be a static literal (freeing
-		// it crashes).
-		if (field.type.name === "string" && !field.type.is_array && !node.is_class) {
+		// A `string` field owns heap memory: for VALUE structs the Buffer
+		// per-element destroy path frees slots strdup'd by store_T; for
+		// CLASSES the field is always heap-owned (`_init` strdup's defaults,
+		// assignments strdup non-heap RHS), so the destroy frees it too.
+		if (field.type.name === "string" && !field.type.is_array) {
 			status.code += `free(self->${field.name});\n`;
 			continue;
 		}

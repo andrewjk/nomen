@@ -35,6 +35,37 @@ export function pop_c_loop_frame(status: BuildStatus) {
 }
 
 /**
+ * Reclaim declarations from every scope frame on c_scope_stack — a `return`
+ * exits ALL enclosing scopes up to the function boundary, not just the
+ * current one, so declarations living in outer frames (e.g. a class instance
+ * declared before an `if (...) { ... return }`) must be freed before the
+ * jump. Nothing is cleared: sibling return statements and the fall-through
+ * path are mutually exclusive at runtime but are ALL emitted, so every path
+ * needs its own copy of the frees (the function-tail scope-exit auto_free
+ * serves the fall-through). Deferred frees are handled like build_auto_free.
+ */
+export function reclaim_all_c_scopes(status: BuildStatus) {
+	const stack = status.c_scope_stack;
+	if (!stack?.length) {
+		free_scoped_declarations(status, status.scoped_declarations, true);
+	} else {
+		for (const frame of stack) {
+			free_scoped_declarations(status, frame, true);
+		}
+	}
+	if (status.deferred_frees?.length) {
+		status.code += "\n// Deferred frees\n";
+		for (const d of status.deferred_frees) {
+			if (d.is_nullable) {
+				status.code += `if (${d.temp}) { ${d.struct_name}_destroy(${d.temp}); free(${d.temp}); }\n`;
+			} else {
+				status.code += `${d.struct_name}_destroy(${d.temp}); free(${d.temp});\n`;
+			}
+		}
+	}
+}
+
+/**
  * Reclaim declarations from every frame between the current scope and the
  * innermost loop's body frame (inclusive), then return the loop body index.
  * Used by break/continue: the freed declarations' scope-exit auto_free either

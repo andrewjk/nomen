@@ -368,11 +368,13 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	const old_function_array_params = status.function_array_params;
 	const old_function_ref_params = status.function_ref_params;
 	const old_ref_class_slots = status.ref_class_slots;
+	const old_struct_param_slots = status.function_struct_param_slots;
 	status.function_param_regs = new Map();
 	status.function_param_vars = new Set();
 	status.function_array_params = new Set();
 	status.function_ref_params = new Set();
 	status.ref_class_slots = new Map();
+	status.function_struct_param_slots = new Set();
 	const old_variadic_params_aarch64 = status.function_variadic_params;
 	status.function_variadic_params = new Set();
 	status.moved_class_params = new Map();
@@ -430,6 +432,25 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 				const size = is_ref ? 8 : aarch64_size(param.type.name);
 				const offset = allocate_stack_space(status, size, is_ref ? 8 : size);
 				status.stack_offsets!.set(param.name, offset);
+				// A struct/trait/enum-with-data/class param that missed the
+				// callee-saved register pool still follows the by-address
+				// convention: its slot holds the POINTER to the caller's
+				// struct, not the inline value. Record it so emit_var_address
+				// loads the pointer instead of taking the slot's address (a
+				// double indirection that corrupts every consumer — forwarding,
+				// field access, method calls). `ref` params are excluded: the
+				// function_ref_params / is_local_ref_var mechanism already
+				// dereferences their slots, and array params have their own
+				// pointer conventions.
+				if (!is_ref && !param.type.is_array && !param.is_variadic) {
+					const spilled_is_structish =
+						!!status.structs.find((s) => s.name === param.type.name && !s.is_simple_type) ||
+						!!status.traits.find((t) => t.name === param.type.name) ||
+						!!status.enums.find((e) => e.name === param.type.name && e.has_associated_data);
+					if (spilled_is_structish) {
+						status.function_struct_param_slots!.add(param.name);
+					}
+				}
 				if (param_idx < NUM_REG_ARGS) {
 					const reg = param_regs[param_idx];
 					if (size === 1) {
@@ -709,6 +730,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.function_array_params = old_function_array_params;
 	status.function_ref_params = old_function_ref_params;
 	status.ref_class_slots = old_ref_class_slots;
+	status.function_struct_param_slots = old_struct_param_slots;
 	status.function_variadic_params = old_variadic_params_aarch64;
 	status.function_return_label = old_return_label;
 	status.struct_return_buffer = undefined;

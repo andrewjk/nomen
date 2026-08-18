@@ -348,8 +348,12 @@ function build_auto_destroy_function(node: StructNode, status: BuildStatus) {
 	status.code += `sub sp, sp, #${stack_placeholder}\n`;
 	status.code += `mov x29, sp\n`;
 
-	// No user body — just destroy class-typed fields
-	emit_field_destroys(status, node, "self", undefined, false);
+	// No user body — just destroy class-typed fields. free_strings for
+	// classes: a class's plain string fields are always heap-owned (`_init`
+	// strdup's defaults, assignments strdup non-heap RHS), so the destroy
+	// frees them. Value structs keep free_strings=false (their locals may
+	// hold rodata literals; only the strdup'ing Buffer store path owns).
+	emit_field_destroys(status, node, "self", undefined, false, node.is_class);
 
 	status.code += `${return_label}:\n`;
 
@@ -468,6 +472,18 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 			}
 		} else {
 			const field_size = get_type_size(field.type, status);
+			// A class's plain string field is always heap-owned: strdup the
+			// caller's (possibly static/borrowed) argument so the field can
+			// be freed unconditionally at destroy. Value structs keep the raw
+			// store (their fields' ownership is handled by the Buffer store
+			// path).
+			if (node.is_class && field.type.name === "string" && !field.type.is_ref) {
+				status.code += `str ${src_reg}, [sp, #-16]!\n`;
+				status.code += `mov x0, ${src_reg}\n`;
+				status.code += `bl _strdup\n`;
+				status.code += `mov ${src_reg}, x0\n`;
+				status.code += `ldr x0, [sp], #16\n`;
+			}
 			emit_typed_store(status, src_reg, "x19", offset, field_size);
 		}
 	}
@@ -491,6 +507,15 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 					const label = `_str_${func_name}_${field.name}`;
 					status.strings!.set(label, val);
 					status.code += `adr x1, ${label}\n`;
+					// A class's default string literal must be heap-owned —
+					// the field is freed unconditionally at destroy. (The
+					// literal `bl _strdup` is rewritten to the audit wrapper
+					// by build.ts's final sweep.)
+					if (node.is_class && field.type.name === "string" && !field.type.is_ref) {
+						status.code += `mov x0, x1\n`;
+						status.code += `bl _strdup\n`;
+						status.code += `mov x1, x0\n`;
+					}
 				} else {
 					// Non-literal default: a module-level const reference
 					// (e.g. `var int hi = INF` with `const int INF = …`).
@@ -687,6 +712,15 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 					const label = `_str_${func_name}_${field.name}`;
 					status.strings!.set(label, val);
 					status.code += `adr x1, ${label}\n`;
+					// A class's default string literal must be heap-owned —
+					// the field is freed unconditionally at destroy. (The
+					// literal `bl _strdup` is rewritten to the audit wrapper
+					// by build.ts's final sweep.)
+					if (node.is_class && field.type.name === "string" && !field.type.is_ref) {
+						status.code += `mov x0, x1\n`;
+						status.code += `bl _strdup\n`;
+						status.code += `mov x1, x0\n`;
+					}
 				} else {
 					// Non-literal default: a module-level const reference
 					// (e.g. `var int hi = INF` with `const int INF = …`).

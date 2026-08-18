@@ -41,11 +41,18 @@ a.push(3)
 			const main_asm = extract_main(result.code);
 
 			const jumpIdx = main_asm.indexOf("b .return_0");
-			const destroyIdx = main_asm.indexOf("bl Buffer_int_destroy");
 			const auditIdx = main_asm.indexOf("bl _nomen_audit_check");
 			expect(jumpIdx).toBeGreaterThan(0);
-			expect(destroyIdx).toBeGreaterThan(jumpIdx);
 			expect(auditIdx).toBeGreaterThan(jumpIdx);
+			// The early `return` inside the if must run the outer scope's
+			// Buffer cleanup BEFORE jumping to the return label (it used to
+			// leak — the destroy only existed on the fall-through path), and
+			// the fall-through keeps its own destroy after the if.
+			const destroyIdx = main_asm.indexOf("bl Buffer_int_destroy");
+			const last_destroy_idx = main_asm.lastIndexOf("bl Buffer_int_destroy");
+			expect(destroyIdx).toBeGreaterThan(0);
+			expect(destroyIdx).toBeLessThan(jumpIdx);
+			expect(last_destroy_idx).toBeGreaterThan(jumpIdx);
 		});
 
 		test("assigning struct frees old Buffer.data", async () => {

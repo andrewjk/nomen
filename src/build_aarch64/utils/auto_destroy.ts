@@ -6,13 +6,104 @@ import {
 	struct_needs_destroy,
 } from "../../build_common/destroy_analysis.ts";
 import { mono_type_name } from "../../build_common/mono_name.ts";
+import AccessNode from "../../nodes/AccessNode.ts";
+import type DeclarationNode from "../../nodes/DeclarationNode.ts";
 import StructNode from "../../nodes/StructNode.ts";
 import Type from "../../nodes/Type.ts";
 import aarch64_size from "./aarch64_size.ts";
 import { emit_free } from "./audit.ts";
 import { allocate_stack_space } from "./stack_var.ts";
 import { emit_var_address, emit_var_load } from "./stack_var.ts";
-import { get_struct_size, get_type_size } from "./struct_layout.ts";
+import { get_field_offset, get_struct_size, get_type_size } from "./struct_layout.ts";
+
+/**
+ * Whether a declaration's initializer is a non-`mov` FIELD ACCESS — a shallow
+ * struct borrow (`diff.changes`, the checker-hoisted `_param_N` temp for a
+ * struct call arg). The struct bytes are copied but any embedded buffer data
+ * belongs to the owner, so the declaration must NOT be destroyed at scope
+ * exit / return (mirrors the C backend's is_destructured_field_access).
+ */
+export function is_field_struct_borrow(decl: { value?: unknown }): boolean {
+	if (!decl.value || typeof decl.value !== "object") return false;
+	const value = decl.value as AccessNode & { is_moved?: boolean };
+	return (
+		value.node_type === "access" && value.access.node_type === "access_field" && !value.is_moved
+	);
+}
+
+/**
+ * Record that a VALUE-struct local's `string` field now holds a heap-owned
+ * value ("var.field"). See BuildStatus.heap_string_fields.
+ */
+export function record_heap_string_field(status: BuildStatus, var_name: string, field: string) {
+	if (!status.heap_string_fields) status.heap_string_fields = new Set<string>();
+	status.heap_string_fields.add(`${var_name}.${field}`);
+}
+
+/**
+ * Drop a local's heap-string-field records — used when the struct's bytes
+ * (and thus its string pointers) transfer to the caller, e.g. `return u`.
+ */
+export function clear_heap_string_fields(status: BuildStatus, var_name: string) {
+	if (!status.heap_string_fields) return;
+	const prefix = `${var_name}.`;
+	for (const key of Array.from(status.heap_string_fields)) {
+		if (key.startsWith(prefix)) status.heap_string_fields.delete(key);
+	}
+}
+
+/**
+ * Free every heap-owned string field recorded for `decl_name` (a VALUE-struct
+ * local) and drop the records. Class locals are never recorded — their string
+ * fields are unconditionally heap and freed by the destroy path. Called from
+ * emit_destroy_for_decl and directly from cleanup loops that skip moved
+ * declarations before reaching it.
+ */
+export function release_heap_string_fields(
+	status: BuildStatus,
+	decl_name: string,
+	decl_type_name: string,
+) {
+	if (!status.heap_string_fields?.size) return;
+	const prefix = `${decl_name}.`;
+	const fields = Array.from(status.heap_string_fields)
+		.filter((k) => k.startsWith(prefix))
+		.map((k) => k.slice(prefix.length));
+	if (!fields.length) return;
+	for (const field of fields) {
+		const offset = get_field_offset(decl_type_name, field, status);
+		emit_var_address(status, "x0", decl_name);
+		status.code += `ldr x0, [x0, #${offset}]\n`;
+		emit_free(status);
+		status.heap_string_fields.delete(`${decl_name}.${field}`);
+	}
+}
+
+/**
+ * Swap in a fresh scoped_declarations frame for a nested scope (if/while/
+ * for/switch/match body), pushing the enclosing array onto
+ * outer_scope_declarations so return-path cleanup can still reach it.
+ * Pair with exit_scope_frame.
+ */
+export function enter_scope_frame(status: BuildStatus): DeclarationNode[] {
+	const old = status.scoped_declarations ?? [];
+	if (!status.outer_scope_declarations) status.outer_scope_declarations = [];
+	status.outer_scope_declarations.push(old);
+	status.scoped_declarations = [];
+	return old;
+}
+
+/** Restore the enclosing scoped_declarations frame (enter_scope_frame's pair). */
+export function exit_scope_frame(status: BuildStatus, old: DeclarationNode[]) {
+	status.outer_scope_declarations?.pop();
+	status.scoped_declarations = old;
+}
+
+/** Every declaration frame a `return` must clean: enclosing scopes first,
+ *  the current (innermost) frame last — matching fall-through cleanup order. */
+export function all_scope_frames(status: BuildStatus): DeclarationNode[][] {
+	return [...(status.outer_scope_declarations ?? []), status.scoped_declarations ?? []];
+}
 
 export function mark_heap_string(status: BuildStatus, name: string) {
 	if (!status.heap_strings) status.heap_strings = new Set<string>();
@@ -231,16 +322,11 @@ function emit_field_destroys_from_slot(
 			const field_size = get_type_size(field.type, status);
 			emit_nested_field_destroys_from_slot(status, field_struct, base_offset + offset);
 			offset += field_size;
-		} else if (
-			field.type.name === "string" &&
-			!field.type.is_array &&
-			!field.type.is_ref &&
-			!struct_type.is_class
-		) {
-			// A `string` field: free the pointer. Only for value structs (not
-			// classes) — class constructors don't strdup, so the field may be
-			// a static literal. This fires from the auto-destroy function
-			// (Buffer per-element destroy), NOT from struct local scope exit.
+		} else if (field.type.name === "string" && !field.type.is_array && !field.type.is_ref) {
+			// A `string` field: free the pointer. Value-struct anchor slots hold
+			// strdup'd strings (the Buffer store copied them); class anchor slots
+			// hold always-heap fields (`_init` strdup's defaults, assignments
+			// strdup non-heap RHS) — either way the slot owns the string.
 			status.code += `ldr x0, [x29, #${base_offset}]\n`;
 			status.code += `ldr x0, [x0, #${offset}]\n`;
 			emit_free(status);
@@ -343,6 +429,12 @@ export function emit_destroy_for_decl(
 	is_nullable?: boolean,
 ) {
 	const moved = status.moved ?? new Set<string>();
+	// A value struct's heap string fields are released even when the struct
+	// itself was moved out: a container's store_T deep-copies (strdups) the
+	// strings, so the source's own heap copies would otherwise be abandoned.
+	// (A RETURN clears the records instead — the sret byte-copy transfers the
+	// string pointers to the caller.)
+	release_heap_string_fields(status, decl_name, decl_type_name);
 	if (moved.has(decl_name)) return;
 
 	if (status.heap_strings?.has(decl_name)) {
@@ -373,7 +465,13 @@ export function emit_destroy_for_decl(
 		status.code += `cbz x0, ${skip_label}\n`;
 	}
 
-	if (has_destroy(struct_type)) {
+	// Every class HAS a `<Class>_destroy` function — a user `#destroy` or the
+	// auto-generated one (build_struct_node) — and it reclaims ALL owning
+	// fields (nested class instances, owning structs, always-heap string
+	// fields). Call it for every class; the field-destroy recursion below is
+	// only for value structs (repeating it after a class destroy would
+	// double-free the fields).
+	if (has_destroy(struct_type) || struct_type.is_class) {
 		if (struct_type.is_class) {
 			if (addr_offset !== undefined) {
 				status.code += `ldr x0, [x0, #${addr_offset}]\n`;
@@ -399,7 +497,9 @@ export function emit_destroy_for_decl(
 			}
 			emit_free(status);
 		}
-		emit_field_destroys(status, struct_type, decl_name, addr_offset, true);
+		// No emit_field_destroys here — `<Class>_destroy` above already
+		// reclaimed every owning field (strings included); repeating the
+		// recursion would double-free them.
 	} else if (struct_needs_destroy(struct_type, status)) {
 		// Only emit field destroys for value structs that have a user #destroy
 		// or class/nested-owning-struct fields. A struct whose only owning
@@ -491,16 +591,15 @@ export function emit_field_destroys(
 			free_strings &&
 			field.type.name === "string" &&
 			!field.type.is_array &&
-			!field.type.is_ref &&
-			!struct_type.is_class
+			!field.type.is_ref
 		) {
-			// A `string` field: free the pointer. Only for value structs (not
-			// classes) — class constructors don't strdup, so the field may be
-			// a static literal. This fires from the auto-generated
-			// <Struct>_destroy (Buffer per-element destroy, where store_T
-			// strdup'd every string), NOT from struct local scope exit — a
-			// local's string field may be a raw rodata literal arg, so freeing
-			// it would `free` rodata (SIGABRT).
+			// A `string` field: free the pointer. For VALUE structs this fires
+			// from the auto-generated <Struct>_destroy (Buffer per-element
+			// destroy, where store_T strdup'd every string), NOT from struct
+			// local scope exit — a local's string field may be a raw rodata
+			// literal arg, so freeing it would `free` rodata (SIGABRT). For
+			// CLASSES the field is always heap-owned (`_init` strdup's the
+			// default, assignments strdup non-heap RHS), so it is freed here too.
 			const actual_offset = base_offset !== undefined ? base_offset + offset : offset;
 			if (decl_name) {
 				emit_base_ptr(status, decl_name, is_class_parent);
@@ -635,7 +734,14 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 	if (current_scope?.heap_slots.length) {
 		for (let i = declarations_before; i < status.scoped_declarations.length; i++) {
 			const decl = status.scoped_declarations[i];
-			if (moved.has(decl.name)) continue;
+			// Recorded heap string fields are released for every decl before
+			// the gates below: a string-only value struct is skipped by the
+			// struct_needs_destroy gate, and a moved-out struct's records were
+			// already dropped by the release (store_T deep-copied them).
+			release_heap_string_fields(status, decl.name, decl.type.name);
+			if (moved.has(decl.name)) {
+				continue;
+			}
 			if (status.heap_string_arrays?.has(decl.name)) {
 				const len = status.heap_string_arrays.get(decl.name)!;
 				for (let j = 0; j < len; j++) {
@@ -675,6 +781,9 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 				emit_free(status);
 				continue;
 			}
+			// A shallow field-struct borrow (e.g. the hoisted `_param_N` copy
+			// of `diff.changes`) is not destroyed — the owner frees it.
+			if (is_field_struct_borrow(decl)) continue;
 			const resolved_decl = resolve_decl_struct(decl, status);
 			if (!resolved_decl) continue;
 			const struct_type = resolved_decl.struct_type;
@@ -696,7 +805,12 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 	}
 	for (let i = declarations_before; i < status.scoped_declarations.length; i++) {
 		const decl = status.scoped_declarations[i];
-		if (moved.has(decl.name)) continue;
+		// See the heap_slots branch above: recorded heap string fields are
+		// released before the moved / struct_needs_destroy gates.
+		release_heap_string_fields(status, decl.name, decl.type.name);
+		if (moved.has(decl.name)) {
+			continue;
+		}
 		if (status.heap_string_arrays?.has(decl.name)) {
 			const len = status.heap_string_arrays.get(decl.name)!;
 			for (let j = 0; j < len; j++) {
@@ -743,6 +857,9 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 			emit_free(status);
 			continue;
 		}
+		// A shallow field-struct borrow is not destroyed — see the
+		// heap_slots branch above.
+		if (is_field_struct_borrow(decl)) continue;
 		const resolved_decl = resolve_decl_struct(decl, status);
 		if (!resolved_decl) continue;
 		const struct_type = resolved_decl.struct_type;
@@ -835,7 +952,11 @@ export function consolidate_temp_anchors(
 	}
 }
 
-export function mark_moved_if_struct(value: any, status: BuildStatus) {
+export function mark_moved_if_struct(
+	value: any,
+	status: BuildStatus,
+	opts?: { for_return?: boolean },
+) {
 	if (value?.node_type !== "value") return;
 	const var_name = value.value;
 	let var_type = value.type;
@@ -846,10 +967,14 @@ export function mark_moved_if_struct(value: any, status: BuildStatus) {
 	// returned owning struct after its bytes were copied into the sret
 	// buffer, leaving the caller with freed backing storage.
 	if (!var_type?.name) {
-		var_type = status.scoped_declarations?.find((d) => d.name === var_name)?.type;
+		var_type = all_scope_frames(status)
+			.flat()
+			.find((d) => d.name === var_name)?.type;
 	}
 	if (!var_type) return;
-	const is_local = status.scoped_declarations.some((d) => d.name === var_name);
+	// Search every scope frame: a `mov`/`return` inside an if/loop body must
+	// still recognize (and mark) locals declared in enclosing scopes.
+	const is_local = all_scope_frames(status).some((frame) => frame.some((d) => d.name === var_name));
 	const has_anchor = find_anchor_slot(status, var_name) !== undefined;
 	const is_class_param =
 		!!status.moved_class_params?.has(var_name) ||
@@ -860,7 +985,15 @@ export function mark_moved_if_struct(value: any, status: BuildStatus) {
 		if (!status.moved) status.moved = new Set<string>();
 		status.moved.add(var_name);
 	}
-	if (status.heap_strings?.has(var_name)) {
+	// A RETURNED heap string transfers ownership to the caller (the return
+	// cleanup must not free it) — but only in return context (for_return): a
+	// plain `string` arg to a `mov T` param does NOT transfer ownership (an
+	// owning `Buffer<string>` strdup's its own copy — the callee-copies
+	// convention), so the caller retains and frees the original at scope
+	// exit. (Mirrors the C backend's mov_param_indices string gate.) A string
+	// field of a moved VALUE struct is likewise released at scope exit via
+	// heap_string_fields — store_T deep-copied it.
+	if (opts?.for_return && status.heap_strings?.has(var_name)) {
 		if (!status.moved) status.moved = new Set<string>();
 		status.moved.add(var_name);
 	}

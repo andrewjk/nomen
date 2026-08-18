@@ -254,7 +254,28 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 				const tname =
 					di !== -1 ? status.scoped_declarations[di].type?.name : (param as ValueNode).type?.name;
 				if (tname === "string") continue;
+				const decl_struct =
+					di !== -1 ? status.structs.find((s) => s.name === tname && !s.is_simple_type) : undefined;
+				const is_value_struct = !!decl_struct && !decl_struct.is_class;
 				if (di !== -1) status.scoped_declarations.splice(di, 1);
+				// A moved VALUE struct's plain string fields keep caller
+				// ownership: owning callees (Buffer/List store_T) strdup their
+				// own copies, so the source's heap strings — recorded in
+				// heap_string_fields at assignment — are released here (the
+				// splice above removes the decl from auto_free's iteration).
+				// The call has already been emitted, so the callee's copy is
+				// complete. Classes transfer the whole instance (strings
+				// included) and need no release.
+				if (is_value_struct) {
+					const prefix = `${vname}.`;
+					for (const key of Array.from(status.heap_string_fields ?? [])) {
+						if (key.startsWith(prefix)) {
+							if (!status.pending_string_releases) status.pending_string_releases = [];
+							status.pending_string_releases.push(`free(${key});`);
+							status.heap_string_fields!.delete(key);
+						}
+					}
+				}
 				// Record that this variable's value has been moved out. A later
 				// reassignment (`a = null` / `a = Box(2)`) must NOT reclaim the
 				// old (already-transferred) value — the callee now owns it.
