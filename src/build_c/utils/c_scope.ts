@@ -21,6 +21,42 @@ export function leave_c_scope(status: BuildStatus) {
 }
 
 /**
+ * Find a declaration by name in the active scope frame or any enclosing frame
+ * on c_scope_stack (innermost frame first, so a shadowing inner declaration
+ * wins). Returns the owning frame and the declaration's index, so a mov site
+ * can resolve and splice a declaration living in an OUTER scope — a `mov`
+ * inside an if/loop branch must still transfer ownership of variables
+ * declared before the branch (mirrors aarch64's all_scope_frames).
+ */
+export function find_decl_in_c_scopes(
+	status: BuildStatus,
+	name: string,
+): { frame: DeclarationNode[]; index: number } | undefined {
+	const stack = status.c_scope_stack ?? [];
+	for (let i = stack.length - 1; i >= 0; i--) {
+		const index = stack[i].findIndex((d) => d.name === name);
+		if (index !== -1) return { frame: stack[i], index };
+	}
+	const index = status.scoped_declarations.findIndex((d) => d.name === name);
+	return index === -1 ? undefined : { frame: status.scoped_declarations, index };
+}
+
+/**
+ * Splice a declaration out of whichever scope frame holds it (the current
+ * frame or an enclosing frame on c_scope_stack). Used at ownership-transfer
+ * sites (`mov` args, alias moves) — without this, a declaration left in an
+ * outer frame is reclaimed by that scope's exit cleanup even though the
+ * callee/new owner now owns the value (latent double-free).
+ */
+export function splice_decl_from_c_scopes(
+	status: BuildStatus,
+	name: string,
+): DeclarationNode | undefined {
+	const hit = find_decl_in_c_scopes(status, name);
+	return hit ? hit.frame.splice(hit.index, 1)[0] : undefined;
+}
+
+/**
  * Mark the current top frame as a loop body, so break/continue know how far up
  * the scope stack to reclaim. Call AFTER entering the loop body scope.
  */

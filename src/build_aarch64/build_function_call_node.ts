@@ -11,7 +11,7 @@ import { build_inline_function } from "./build_inline_method.ts";
 import build_node from "./build_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_malloc } from "./utils/audit.ts";
-import { mark_moved_if_struct, find_anchor_slot } from "./utils/auto_destroy.ts";
+import { all_scope_frames, mark_moved_if_struct, find_anchor_slot } from "./utils/auto_destroy.ts";
 import { build_swap_params } from "./utils/build_swap.ts";
 import { find_enum_for_case } from "./utils/enum_case.ts";
 import { has_flag_name, is_nullable_struct_type } from "./utils/nullable_struct.ts";
@@ -695,9 +695,13 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 				// A `string` mov arg keeps caller ownership (owning
 				// Buffer<string> strdup's); skip mark_moved so scope-exit
 				// cleanup frees it. Resolve the type from the declaration — a
-				// bare variable reference's ValueNode.type is unset after mono.
+				// bare variable reference's ValueNode.type is unset after mono —
+				// searching every scope frame (the variable may live in an
+				// outer scope when the call sits inside an if/loop branch).
 				const vname = (param as { value?: string }).value;
-				const decl = status.scoped_declarations?.find((d) => d.name === vname);
+				const decl = all_scope_frames(status)
+					.flat()
+					.find((d) => d.name === vname);
 				const tname = decl?.type?.name ?? (param as { type?: { name?: string } }).type?.name;
 				if (tname === "string") continue;
 			}

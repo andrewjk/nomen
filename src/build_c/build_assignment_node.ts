@@ -11,6 +11,7 @@ import { emit_struct_destroys, struct_needs_destroy_by_name } from "./build_auto
 import build_node from "./build_node.ts";
 import { is_owned_heap_temp } from "./build_operation_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
+import { find_decl_in_c_scopes, splice_decl_from_c_scopes } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
 import is_string_borrow from "./utils/is_string_borrow.ts";
 import { is_nullable_struct_type } from "./utils/nullable_struct.ts";
@@ -99,15 +100,15 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 				}
 				// Ownership transfer: assigning a bare variable to an owned
 				// (`mov`) class field moves ownership from the source variable
-				// to the field. Remove the source from scoped_declarations so
-				// it is NOT freed at scope exit (the field's container destroy
-				// reclaims it). Without this, the source and the field alias
-				// the same instance and both get freed -> use-after-free.
+				// to the field. Remove the source from whichever scope frame
+				// holds it (the source may be declared in an OUTER scope when
+				// the assignment sits inside an if/loop branch) so it is NOT
+				// freed at scope exit (the field's container destroy reclaims
+				// it). Without this, the source and the field alias the same
+				// instance and both get freed -> use-after-free.
 				// Mirrors aarch64's mark_moved_if_struct.
 				if (node.right_value.node_type === "value") {
-					const rhs_name = (node.right_value as ValueNode).value;
-					const rhs_idx = status.scoped_declarations.findIndex((d) => d.name === rhs_name);
-					if (rhs_idx !== -1) status.scoped_declarations.splice(rhs_idx, 1);
+					splice_decl_from_c_scopes(status, (node.right_value as ValueNode).value);
 				}
 			}
 		}
@@ -184,7 +185,11 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 		is_string_borrow(node.right_value)
 	) {
 		const lhs_name = (node.left_value as ValueNode).value;
-		const lhs_decl = status.scoped_declarations.find((d) => d.name === lhs_name);
+		// Search every scope frame: the LHS may be declared in an outer scope
+		// (e.g. reassigned inside an if branch), and the displaced owned value
+		// must still be reclaimed eagerly.
+		const lhs_hit = find_decl_in_c_scopes(status, lhs_name);
+		const lhs_decl = lhs_hit ? lhs_hit.frame[lhs_hit.index] : undefined;
 		const lhs_type = lhs_decl?.type || status.variable_types?.get(lhs_name);
 		// Only string-typed LHS need borrow handling — an int/struct element
 		// access like `first = p.at(0)` (int array) is a plain value copy with
@@ -194,10 +199,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 			if (!status.string_borrow_vars) status.string_borrow_vars = new Set();
 			status.string_borrow_vars.add(lhs_name);
 			if (!was_borrow) {
-				if (lhs_decl) {
-					const idx = status.scoped_declarations.indexOf(lhs_decl);
-					if (idx !== -1) status.scoped_declarations.splice(idx, 1);
-				}
+				if (lhs_hit) lhs_hit.frame.splice(lhs_hit.index, 1);
 				status.code += `free(${lhs_name});\n`;
 			}
 		}
@@ -392,9 +394,9 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 
 			if (rhs_is_bare_value) {
 				// RHS is a bare variable (alias). For classes, transfer
-				// ownership: remove the SOURCE from scoped_declarations so
-				// it won't be freed at its scope exit (the LHS now owns it).
-				// For strings, remove the LHS so it won't be freed (string
+				// ownership: remove the SOURCE from whichever scope frame holds
+				// it so it won't be freed at its scope exit (the LHS now owns
+				// it). For strings, remove the LHS so it won't be freed (string
 				// aliases don't own — the source does via its own copy).
 				if (lhs_is_class) {
 					// `a = b swap Box(0)`: `b`'s current value transfers to `a`,
@@ -403,16 +405,11 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 					// stay registered for reclamation. Only remove the source
 					// when there is no swap (a plain alias-move `a = b`).
 					if (!node.swap) {
-						const rhs_name = (rhs as ValueNode).value;
-						const rhs_idx = status.scoped_declarations.findIndex((d) => d.name === rhs_name);
-						if (rhs_idx !== -1) status.scoped_declarations.splice(rhs_idx, 1);
+						splice_decl_from_c_scopes(status, (rhs as ValueNode).value);
 					}
 				} else {
 					// String: LHS is now an alias, remove it
-					if (lhs_decl) {
-						const idx = status.scoped_declarations.indexOf(lhs_decl);
-						if (idx !== -1) status.scoped_declarations.splice(idx, 1);
-					}
+					if (lhs_decl) splice_decl_from_c_scopes(status, lhs_name);
 				}
 			}
 			// Fall through: the normal path emits `lhs = rhs`.
@@ -430,7 +427,10 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 	//    buffer at scope exit. This leaks but is safe.
 	if (!node.operator && node.left_value.node_type === "value") {
 		const lhs_name = (node.left_value as ValueNode).value;
-		const lhs_decl = status.scoped_declarations.find((d) => d.name === lhs_name);
+		// Search every scope frame — the LHS may be declared in an outer
+		// scope when the reassignment sits inside an if/loop branch.
+		const lhs_hit = find_decl_in_c_scopes(status, lhs_name);
+		const lhs_decl = lhs_hit ? lhs_hit.frame[lhs_hit.index] : undefined;
 		if (lhs_decl) {
 			const lhs_struct = lhs_decl.type?.name
 				? status.structs.find(
@@ -449,16 +449,15 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 					// `b = mov a` — ownership transfers from `a` to `b`. The OLD
 					// `b` value is being discarded, so eagerly reclaim its
 					// resources (e.g. `b`'s old Buffer) first. Then remove the
-					// SOURCE `a` from scoped_declarations so it won't be freed at
-					// its own scope exit (b owns the data now and is freed
-					// instead). Mirrors aarch64's mov-ownership transfer.
+					// SOURCE `a` from whichever scope frame holds it (it may be
+					// declared in an OUTER scope) so it won't be freed at its
+					// own scope exit (b owns the data now and is freed instead).
+					// Mirrors aarch64's mov-ownership transfer.
 					const mov_struct_type = lhs_mono_struct ?? lhs_struct;
 					if (mov_struct_type && struct_needs_destroy_by_name(mov_struct_type.name, status)) {
 						emit_struct_destroys(status, mov_struct_type, lhs_name);
 					}
-					const rhs_name = (rhs as ValueNode).value;
-					const rhs_idx = status.scoped_declarations.findIndex((d) => d.name === rhs_name);
-					if (rhs_idx !== -1) status.scoped_declarations.splice(rhs_idx, 1);
+					splice_decl_from_c_scopes(status, (rhs as ValueNode).value);
 				} else {
 					// Non-mov struct reassignment.
 					//
@@ -507,20 +506,18 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 						// NOT reference `lhs` (`k = k2.new(3)`): the old `lhs`
 						// value is genuinely discarded (the new value aliases the
 						// OTHER variable's buffer), so eagerly reclaim the old
-						// value, then DROP `lhs` from scoped_declarations so
+						// value, then DROP `lhs` from its scope frame so
 						// scope-exit doesn't double-free the shared (aliased)
 						// buffer.
 						if (needs_destroy) emit_struct_destroys(status, struct_type!, lhs_name);
-						const idx = status.scoped_declarations.indexOf(lhs_decl);
-						if (idx !== -1) status.scoped_declarations.splice(idx, 1);
+						if (lhs_hit) lhs_hit.frame.splice(lhs_hit.index, 1);
 					} else {
 						// Method/func call that references `lhs` as an argument
 						// (`k = f(k)` returning `k` by value): eagerly freeing the
 						// old value would be a use-after-free (the RHS reads it).
 						// Drop the variable (original safe behaviour) — the
 						// result aliases `lhs`'s buffer, so no scope-exit free.
-						const idx = status.scoped_declarations.indexOf(lhs_decl);
-						if (idx !== -1) status.scoped_declarations.splice(idx, 1);
+						if (lhs_hit) lhs_hit.frame.splice(lhs_hit.index, 1);
 					}
 				}
 			}

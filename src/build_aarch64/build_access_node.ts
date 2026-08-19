@@ -1,6 +1,10 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
+import {
+	drop_self_written_string_field_records,
+	scan_self_string_field_writes,
+} from "../build_common/scan_self_string_writes.ts";
 import built_in_types from "../built_in_types.ts";
 import { mangled_label } from "../check/utils/function_overload.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
@@ -14,7 +18,7 @@ import build_node from "./build_node.ts";
 import build_nursery_spawn from "./build_nursery_spawn.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free, emit_malloc } from "./utils/audit.ts";
-import { mark_moved_if_struct } from "./utils/auto_destroy.ts";
+import { all_scope_frames, mark_moved_if_struct } from "./utils/auto_destroy.ts";
 import { NUM_REG_ARGS } from "./utils/stack_args.ts";
 import {
 	allocate_stack_space,
@@ -1800,15 +1804,44 @@ function build_access_method(
 				// A `string` mov arg keeps caller ownership (owning
 				// Buffer<string> strdup's); skip mark_moved so scope-exit
 				// cleanup frees it. Resolve the type from the declaration — a
-				// bare variable reference's ValueNode.type is unset after mono.
+				// bare variable reference's ValueNode.type is unset after mono —
+				// searching every scope frame (the variable may live in an
+				// outer scope when the call sits inside an if/loop branch).
 				const vname = (param as { value?: string }).value;
-				const decl = status.scoped_declarations?.find((d) => d.name === vname);
+				const decl = all_scope_frames(status)
+					.flat()
+					.find((d) => d.name === vname);
 				const tname = decl?.type?.name ?? (param as { type?: { name?: string } }).type?.name;
 				if (tname === "string") continue;
 			}
 			if (param) {
 				mark_moved_if_struct(param, status);
 			}
+		}
+	}
+
+	// A value-struct method may overwrite the receiver's plain string fields
+	// through `self` — writes the caller's heap_string_fields records can't
+	// reflect (the method can't know the displaced values' ownership; see the
+	// `tv !== "self"` gate in build_assignment_node's struct-string branch).
+	// Drop the records for the fields the method writes so the receiver's
+	// scope-exit cleanup never frees a value the method replaced with a
+	// non-heap one. Conservative: a heap value the method wrote leaks instead
+	// of being freed. Applies to both the bl and inline paths (an inlined
+	// `self.field = …` keeps the `self` name and also bypasses the record).
+	if (
+		node.target.node_type === "value" &&
+		target_struct &&
+		!target_struct.is_class &&
+		!trait_target
+	) {
+		const target_method = target_struct.functions.find((f) => f.name === access_func.name);
+		if (target_method) {
+			drop_self_written_string_field_records(
+				status,
+				(node.target as ValueNode).value,
+				scan_self_string_field_writes(target_struct, target_method),
+			);
 		}
 	}
 

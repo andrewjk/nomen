@@ -1,4 +1,8 @@
 import { mono_type_name } from "../build_common/mono_name.ts";
+import {
+	drop_self_written_string_field_records,
+	scan_self_string_field_writes,
+} from "../build_common/scan_self_string_writes.ts";
 import built_in_types from "../built_in_types.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
@@ -11,6 +15,7 @@ import build_nursery_spawn from "./build_nursery_spawn.ts";
 import { is_owned_heap_temp } from "./build_operation_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import c_function_name from "./utils/c_function_name.ts";
+import { find_decl_in_c_scopes } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 
@@ -615,6 +620,27 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				const target_method = target_struct_for_method?.functions.find(
 					(f) => f.name === access_func.name,
 				);
+				// A value-struct method may overwrite the receiver's plain
+				// string fields through `self` — writes the caller's
+				// heap_string_fields records can't reflect (the method can't
+				// know the displaced values' ownership; see the
+				// `target_var !== "self"` gate in build_assignment_node). Drop
+				// the records for the fields the method writes so the
+				// receiver's scope-exit cleanup never frees a value the method
+				// replaced with a non-heap one. Conservative: a heap value the
+				// method wrote leaks instead of being freed.
+				if (
+					node.target.node_type === "value" &&
+					target_struct_for_method &&
+					!target_struct_for_method.is_class &&
+					target_method
+				) {
+					drop_self_written_string_field_records(
+						status,
+						(node.target as ValueNode).value,
+						scan_self_string_field_writes(target_struct_for_method, target_method),
+					);
+				}
 				const self_offset = target_method?.params?.some((p) => p.is_self_param) ? 1 : 0;
 				// If the method doesn't exist on the struct, check if it's a
 				// trait default method inherited by this struct.
@@ -755,18 +781,19 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 						// splice it — auto_free must reclaim the original. Resolve
 						// the type from the declaration (a bare variable reference's
 						// ValueNode.type is unset post-monomorphization).
-						const di = status.scoped_declarations.findIndex((d) => d.name === vname);
+						const decl_hit = find_decl_in_c_scopes(status, vname);
 						const tname =
-							di !== -1
-								? status.scoped_declarations[di].type?.name
-								: (param as ValueNode).type?.name;
+							decl_hit?.frame[decl_hit.index].type?.name ?? (param as ValueNode).type?.name;
 						if (tname === "string") continue;
-						const decl_struct =
-							di !== -1
-								? status.structs.find((s) => s.name === tname && !s.is_simple_type)
-								: undefined;
+						const decl_struct = decl_hit
+							? status.structs.find((s) => s.name === tname && !s.is_simple_type)
+							: undefined;
 						const is_value_struct = !!decl_struct && !decl_struct.is_class;
-						if (di !== -1) status.scoped_declarations.splice(di, 1);
+						// Splice from whichever scope frame holds the declaration —
+						// a `mov` inside an if/loop branch must also remove an
+						// OUTER-scope variable, or that scope's exit cleanup reclaims
+						// the value the callee now owns (double-free).
+						if (decl_hit) decl_hit.frame.splice(decl_hit.index, 1);
 						// See build_function_call_node: a moved VALUE struct's
 						// recorded heap string fields are released here — the
 						// callee's store_T deep-copied them, and the splice

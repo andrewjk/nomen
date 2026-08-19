@@ -8,6 +8,7 @@ import build_node from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import array_struct_name from "./utils/array_struct.ts";
 import c_function_name from "./utils/c_function_name.ts";
+import { find_decl_in_c_scopes } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
 import { has_flag_name, is_nullable_struct_type } from "./utils/nullable_struct.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
@@ -242,7 +243,11 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			const param = node.params[idx];
 			if (param?.node_type === "value") {
 				const vname = (param as ValueNode).value;
-				const di = status.scoped_declarations.findIndex((d) => d.name === vname);
+				// Search every scope frame (current + enclosing on c_scope_stack):
+				// a `mov` inside an if/loop branch must also transfer ownership
+				// of a variable declared in an OUTER scope, or that scope's exit
+				// cleanup reclaims the value the callee now owns (double-free).
+				const decl_hit = find_decl_in_c_scopes(status, vname);
 				// A `string` arg to a `mov T` param does NOT transfer ownership:
 				// an owning `Buffer<string>` strdup's its own copy, so the caller
 				// retains and frees the original. Skip the splice (and the
@@ -251,13 +256,13 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 				// type from the declaration (a bare variable reference's
 				// ValueNode.type is unset post-monomorphization); this gate
 				// covers generic bodies the check-time filter can't see into.
-				const tname =
-					di !== -1 ? status.scoped_declarations[di].type?.name : (param as ValueNode).type?.name;
+				const tname = decl_hit?.frame[decl_hit.index].type?.name ?? (param as ValueNode).type?.name;
 				if (tname === "string") continue;
-				const decl_struct =
-					di !== -1 ? status.structs.find((s) => s.name === tname && !s.is_simple_type) : undefined;
+				const decl_struct = decl_hit
+					? status.structs.find((s) => s.name === tname && !s.is_simple_type)
+					: undefined;
 				const is_value_struct = !!decl_struct && !decl_struct.is_class;
-				if (di !== -1) status.scoped_declarations.splice(di, 1);
+				if (decl_hit) decl_hit.frame.splice(decl_hit.index, 1);
 				// A moved VALUE struct's plain string fields keep caller
 				// ownership: owning callees (Buffer/List store_T) strdup their
 				// own copies, so the source's heap strings — recorded in

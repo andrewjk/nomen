@@ -1,16 +1,19 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import { struct_needs_auto_destroy } from "../build_common/destroy_analysis.ts";
+import { moved_param_is_consumed } from "../build_common/scan_moved_param_consumed.ts";
 import { is_overloaded, mangled_label } from "../check/utils/function_overload.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import RootNode from "../nodes/RootNode.ts";
 import StructNode from "../nodes/StructNode.ts";
+import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_block_node from "./build_block_node.ts";
 import build_node from "./build_node.ts";
 import { check_c_fallback } from "./build_raw_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
-import { emit_field_destroys } from "./utils/auto_destroy.ts";
+import { emit_free } from "./utils/audit.ts";
+import { emit_destroy_for_anchor_slot, emit_field_destroys } from "./utils/auto_destroy.ts";
 import { find_enum_for_case } from "./utils/enum_case.ts";
 import { is_nullable_struct_type } from "./utils/nullable_struct.ts";
 import {
@@ -1044,8 +1047,47 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 			second_slot_idx++;
 		}
 
+		// Save mov'd class param values for cleanup at return — mirrors
+		// build_function_node's top-level prologue (a method's `mov Box b` param
+		// is owned by the callee and must be reclaimed at its return label).
+		// A param with a callee-saved register needs a dedicated spill slot; one
+		// that missed the callee-saved pool already lives in its own param slot.
+		const moved_param_save_slots = new Map<
+			string,
+			{ offset: number; type_name: string; type_args?: Type[]; is_nullable?: boolean }
+		>();
+		for (const param of func.params) {
+			if (!param.is_moved || param.is_self_param) continue;
+			if (!status.structs.find((s) => s.name === param.type.name && s.is_class)) continue;
+			const reg = status.function_param_regs.get(param.name);
+			if (reg) {
+				const save_offset = allocate_stack_space(status, 8);
+				status.code += `str ${reg}, [x29, #${save_offset}]\n`;
+				moved_param_save_slots.set(param.name, {
+					offset: save_offset,
+					type_name: param.type.name,
+					type_args: param.type.type_args,
+					is_nullable: param.type.is_nullable,
+				});
+			} else {
+				const offset = status.stack_offsets!.get(param.name);
+				if (offset !== undefined) {
+					moved_param_save_slots.set(param.name, {
+						offset,
+						type_name: param.type.name,
+						type_args: param.type.type_args,
+						is_nullable: param.type.is_nullable,
+					});
+				}
+			}
+		}
+
 		status.force_heap_strings = scan_force_heap_strings(func.statements);
 		status.buffer_data_cache = undefined;
+		// Snapshot the moved set so the reclaim below can tell a param moved
+		// out WITHIN this body from a same-named variable already moved in an
+		// enclosing context.
+		const moved_before = new Set(status.moved ?? []);
 		// Specialize Buffer_<T> store_T / replace_T for owning value struct
 		// elements (deep-copy string fields, per-element destroy on replace).
 		// In the standalone context: x19 = self, x1 = i, x2 = val (the raw
@@ -1077,6 +1119,53 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		}
 
 		status.code += `${return_label}:\n`;
+
+		// Reclaim mov'd class params at the return label (every return jumps
+		// here): #destroy + field destroys, then free — skipping params moved
+		// out within the body, and params whose ownership escapes into an
+		// outliving value (stored into a container, forwarded, returned —
+		// the shared consumed-scan mirrors the C backend's registration gate).
+		// Mirrors build_function_node's epilogue, including spilling a
+		// non-void return value across the frees (they clobber x0) and the
+		// equality guard for class returns (the returned instance may be the
+		// param itself).
+		if (moved_param_save_slots.size > 0) {
+			const ret_is_class =
+				!!func.return_type?.name &&
+				!!status.structs.find((s) => s.name === func.return_type!.name && s.is_class);
+			const need_save = !!func.return_type?.name;
+			const keep_prefix = `.Lkeep_mparam_${func_label.replace(/[^\w]/g, "_")}`;
+			let return_save: number | undefined;
+			if (ret_is_class || need_save) {
+				return_save = allocate_stack_space(status, 8);
+				status.code += `str x0, [x29, #${return_save}]\n`;
+			}
+			for (const [name, info] of moved_param_save_slots) {
+				if (status.moved?.has(name) && !moved_before.has(name)) continue;
+				if (moved_param_is_consumed(func, name)) continue;
+				if (ret_is_class) {
+					status.code += `ldr x0, [x29, #${info.offset}]\n`;
+					status.code += `ldr x1, [x29, #${return_save!}]\n`;
+					status.code += `cmp x0, x1\n`;
+					status.code += `beq ${keep_prefix}_${name}\n`;
+				}
+				emit_destroy_for_anchor_slot(
+					status,
+					info.offset,
+					info.type_name,
+					info.type_args,
+					info.is_nullable,
+				);
+				status.code += `ldr x0, [x29, #${info.offset}]\n`;
+				emit_free(status);
+				if (ret_is_class) {
+					status.code += `${keep_prefix}_${name}:\n`;
+				}
+			}
+			if (ret_is_class || need_save) {
+				status.code += `ldr x0, [x29, #${return_save!}]\n`;
+			}
+		}
 
 		const total_stack = Math.ceil((status.stack_size || 0) / 16) * 16;
 		status.code = status.code.replace(

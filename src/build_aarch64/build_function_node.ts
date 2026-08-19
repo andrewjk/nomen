@@ -1,6 +1,7 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import array_struct_name from "../build_c/utils/array_struct.ts";
 import { resolve_mono_type } from "../build_common/mono_name.ts";
+import { moved_param_is_consumed } from "../build_common/scan_moved_param_consumed.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import type Type from "../nodes/Type.ts";
 import build_block_node from "./build_block_node.ts";
@@ -618,19 +619,25 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	// owned class fields) then free the instance itself. Skip params that were
 	// moved out within the body. When the function returns a class, also skip a
 	// param whose value is the return value — it is handed back to the caller.
-	// (The return-value guard is only meaningful for class returns, where x0
-	// holds the returned pointer; for void/primitive returns x0 is not a live
-	// return value.)
+	// The return value lives in x0 and the destroy/free calls clobber it, so
+	// for ANY non-void return it is spilled across the reclaim and reloaded
+	// afterwards (the equality guard is only meaningful for class returns,
+	// where a returned instance may be the param itself).
 	const moved_set = status.moved;
 	if (moved_param_save_slots.size > 0 && node.name !== "main") {
 		const need_guard = return_is_class;
+		const need_save = !!node.return_type?.name;
 		let return_save: number | undefined;
-		if (need_guard) {
+		if (need_guard || need_save) {
 			return_save = allocate_stack_space(status, 8);
 			status.code += `str x0, [x29, #${return_save}]\n`;
 		}
 		for (const [name, info] of moved_param_save_slots) {
 			if (moved_set?.has(name)) continue;
+			// A param whose ownership escapes into an outliving value (stored
+			// into a container, forwarded, returned) is not the callee's to
+			// free — mirrors the C backend's registration gate.
+			if (moved_param_is_consumed(node, name)) continue;
 			if (need_guard) {
 				status.code += `ldr x0, [x29, #${info.offset}]\n`;
 				status.code += `ldr x1, [x29, #${return_save!}]\n`;
@@ -650,7 +657,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 				status.code += `${keep_prefix}_${name}:\n`;
 			}
 		}
-		if (need_guard) {
+		if (need_guard || need_save) {
 			status.code += `ldr x0, [x29, #${return_save!}]\n`;
 		}
 	}

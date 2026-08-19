@@ -4,8 +4,10 @@ import {
 } from "../build_common/destroy_analysis.ts";
 import { mono_struct_name, mono_type_name } from "../build_common/mono_name.ts";
 import { classify_param } from "../build_common/param_classify.ts";
+import { moved_param_is_consumed } from "../build_common/scan_moved_param_consumed.ts";
 import { is_overloaded, mangled_label } from "../check/utils/function_overload.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
+import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import TraitNode from "../nodes/TraitNode.ts";
@@ -514,6 +516,22 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 				} else {
 					status.function_ref_params.add(pname);
 				}
+			}
+		}
+
+		// A `mov` class param transfers ownership to the callee — register it
+		// as a scoped declaration so build_auto_free destroys+frees it at the
+		// method's exit, mirroring build_function_node (and skipping params
+		// whose ownership escapes into an outliving value — the same
+		// consumed-scan the top-level path uses).
+		for (const param of func.params) {
+			if (param.is_self_param) continue;
+			const param_struct = status.structs.find((s) => s.name === param.type.name);
+			if (param.is_moved && param_struct?.is_class && !moved_param_is_consumed(func, param.name)) {
+				const pname = c_function_name(param.name);
+				status.scoped_declarations.push(
+					new DeclarationNode(param.start, "private", "mov", pname, param.type),
+				);
 			}
 		}
 

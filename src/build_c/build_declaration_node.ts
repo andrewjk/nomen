@@ -19,6 +19,7 @@ import build_parameter_node from "./build_parameter_node.ts";
 import build_range_node, { evaluate_constant } from "./build_range_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import c_function_name from "./utils/c_function_name.ts";
+import { splice_decl_from_c_scopes } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
 import { has_flag_name, is_nullable_struct_type } from "./utils/nullable_struct.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
@@ -281,12 +282,12 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			}
 		}
 		// `var List b = mov a` (struct mov): ownership transfers from a to b.
-		// Remove the source `a` from scoped_declarations so it won't be
-		// destroyed at scope exit (b owns the data now).
+		// Remove the source `a` from whichever scope frame holds it (it may be
+		// declared in an OUTER scope when the declaration sits inside an
+		// if/loop branch) so it won't be destroyed at scope exit (b owns the
+		// data now).
 		if (node.value?.node_type === "value" && (node.value as ValueNode).is_moved && !is_class_type) {
-			const src_name = (node.value as ValueNode).value;
-			const src_idx = status.scoped_declarations.findIndex((d) => d.name === src_name);
-			if (src_idx !== -1) status.scoped_declarations.splice(src_idx, 1);
+			splice_decl_from_c_scopes(status, (node.value as ValueNode).value);
 		}
 		if (node.type?.name) {
 			if (!status.variable_types) status.variable_types = new Map();
