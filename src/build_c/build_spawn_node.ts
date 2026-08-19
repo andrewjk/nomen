@@ -1,4 +1,7 @@
 import { mono_type_name } from "../build_common/mono_name.ts";
+import type BaseNode from "../nodes/BaseNode.ts";
+import FunctionCallNode from "../nodes/FunctionCallNode.ts";
+import FunctionNode from "../nodes/FunctionNode.ts";
 import SpawnNode from "../nodes/SpawnNode.ts";
 import build_node from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
@@ -233,17 +236,7 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 	const struct_name = `__nomen_spawn_${id}_args`;
 	const tramp_name = `__nomen_spawn_${id}_trampoline`;
 
-	// Resolve each arg's C type. Classes/traits are pointers; primitives and
-	// by-value structs use c_type's output directly. Generic instantiations
-	// (e.g. Channel<uint64>) use the monomorphized C name (`Channel_uint64`).
-	const arg_c_types: string[] = [];
-	for (let i = 0; i < call.params.length; i++) {
-		const arg_type = type_from_value_node(call.params[i]);
-		const mono_name = mono_type_name(arg_type);
-		const is_class = !!status.structs.find((s) => s.name === mono_name && s.is_class);
-		const is_trait = !!status.traits.find((t) => t.name === mono_name);
-		arg_c_types.push(is_class || is_trait ? `struct ${mono_name} *` : c_type(mono_name));
-	}
+	const arg_c_types = spawn_arg_c_types(call, status);
 
 	// Determine if the function returns a value. We approximate by checking
 	// the captured function_return_type — empty name means void/no return.
@@ -379,4 +372,111 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 		status.code += `\t_task;\n`;
 	}
 	status.code += `})\n`;
+}
+
+const C_BUILTIN_TYPES = new Set([
+	"bool",
+	"int",
+	"uint",
+	"int8",
+	"uint8",
+	"int16",
+	"uint16",
+	"int32",
+	"uint32",
+	"int64",
+	"uint64",
+	"float",
+	"ufloat",
+	"float32",
+	"ufloat32",
+	"float64",
+	"ufloat64",
+	"char",
+	"string",
+	"func",
+	"void",
+	"null",
+]);
+
+/**
+ * Resolve each spawn argument's C type. Classes/traits are pointers;
+ * primitives and by-value structs use c_type's output directly. Generic
+ * instantiations (e.g. Channel<uint64>) use the monomorphized C name
+ * (`Channel_uint64`). The type comes from the CALLEE's declared parameter
+ * whenever it can be resolved — an argument's own node type can differ
+ * (e.g. an int literal `41` passed for a `uint64` param lowers to `long`,
+ * conflicting with the emitted `unsigned long long` prototype). Falls back
+ * to the argument's type when the callee (or its param type) can't be
+ * resolved at build time.
+ */
+export function spawn_arg_c_types(call: FunctionCallNode, status: BuildStatus): string[] {
+	const arg_c_types: string[] = [];
+	const callee = find_spawn_callee(call.name, status);
+	const callee_params = callee?.params?.filter((p) => !p.is_self_param) ?? [];
+	for (let i = 0; i < call.params.length; i++) {
+		// Use the callee's declared param type only when it lowers to a real
+		// C type (builtin or a known struct/enum); an unresolved generic type
+		// param (`T`) on a non-monomorphized body falls back to the arg type.
+		const param_type =
+			callee_params[i]?.type && is_resolvable_c_type(callee_params[i].type!, status)
+				? callee_params[i].type!
+				: type_from_value_node(call.params[i]);
+		const mono_name = mono_type_name(param_type);
+		const is_class = !!status.structs.find((s) => s.name === mono_name && s.is_class);
+		const is_trait = !!status.traits.find((t) => t.name === mono_name);
+		arg_c_types.push(is_class || is_trait ? `struct ${mono_name} *` : c_type(mono_name));
+	}
+	return arg_c_types;
+}
+
+/** Whether a Nomen type name lowers to a real C type in this build: a
+ *  builtin primitive or a struct/enum the backend knows (post-monomorphization).
+ *  Unresolved generic type params (`T`) fail this check. */
+function is_resolvable_c_type(type: { name: string }, status: BuildStatus): boolean {
+	if (C_BUILTIN_TYPES.has(type.name)) return true;
+	return !!status.structs.find((s) => s.name === type.name);
+}
+
+/**
+ * Find the spawned function's definition — a top-level function, a function
+ * nested in a block (parse wrappers hoist user code into `main`), or a
+ * struct/trait method (matched by its mangled `Struct_method` name) — so the
+ * trampoline's forward declaration can copy the callee's DECLARED parameter
+ * types. Monomorphized clones are also reachable this way (they are appended
+ * to the AST). A same-named pair would already collide at C level, so the
+ * first match is as good as any.
+ */
+function find_spawn_callee(name: string, status: BuildStatus): FunctionNode | undefined {
+	let found: FunctionNode | undefined;
+	const visit = (node: BaseNode | undefined | null): void => {
+		if (found || !node || typeof node !== "object") return;
+		if (node.node_type === "func") {
+			if ((node as FunctionNode).name === name) {
+				found = node as FunctionNode;
+				return;
+			}
+		} else if (node.node_type === "struct" || node.node_type === "trait") {
+			const functions = (node as unknown as { functions?: FunctionNode[] }).functions ?? [];
+			for (const func of functions) {
+				const owner = (node as unknown as { name: string }).name;
+				if (func.name === name || `${owner}_${func.name}` === name) {
+					found = func;
+					return;
+				}
+			}
+		}
+		for (const key of Object.keys(node as unknown as Record<string, unknown>)) {
+			if (key === "parent" || key === "scope") continue;
+			const v = (node as unknown as Record<string, unknown>)[key];
+			if (Array.isArray(v)) {
+				for (const item of v) visit(item as BaseNode);
+			} else if (v && typeof v === "object" && "node_type" in v) {
+				visit(v as BaseNode);
+			}
+			if (found) return;
+		}
+	};
+	visit(status.root);
+	return found;
 }

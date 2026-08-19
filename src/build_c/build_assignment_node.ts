@@ -5,6 +5,7 @@ import AccessNode from "../nodes/AccessNode.ts";
 import AssignmentNode from "../nodes/AssignmentNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
+import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import { build_vtable_target } from "./build_access_node.ts";
 import { emit_struct_destroys, struct_needs_destroy_by_name } from "./build_auto_free.ts";
@@ -133,15 +134,37 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 	) {
 		const access_lhs = node.left_value as AccessNode;
 		const field_access_node = access_lhs.access as AccessFieldNode;
-		const target_type = type_from_value_node(access_lhs.target);
+		let target_type = type_from_value_node(access_lhs.target);
+		// The implicit `self` param may carry no type on its ValueNode —
+		// resolve it against the struct being built (mirrors build_access_node).
+		if (
+			!target_type?.name &&
+			access_lhs.target.node_type === "value" &&
+			(access_lhs.target as ValueNode).value === "self" &&
+			status.current_struct
+		) {
+			target_type = new Type(status.current_struct.name);
+		}
 		const target_struct = target_type?.name
 			? status.structs.find((s) => s.name === target_type.name && !s.is_simple_type)
 			: null;
 		const target_var =
 			access_lhs.target.node_type === "value" ? (access_lhs.target as ValueNode).value : "";
+		const self_target = target_var === "self";
 		const tracked_key = `${target_var}.${field_access_node.name}`;
 		const old_was_heap = !!target_struct?.is_class || !!status.heap_string_fields?.has(tracked_key);
-		if (target_struct && target_var && target_var !== "self") {
+		// A `self.field = …` write inside a VALUE-struct method writes through
+		// to the caller's storage (ownership is tracked by the CALLER via
+		// heap_string_fields, dropped at the call site by
+		// drop_self_written_string_field_records) — strdup'ing here would
+		// leave an untracked heap copy, so it keeps the raw store. A CLASS
+		// `self.field = …` is always-heap (`_init` strdup's defaults,
+		// `<Class>_destroy` frees unconditionally), so it gets the
+		// ownership-normalized lowering like any other class target —
+		// otherwise the field ends up holding a borrow (a rodata literal or a
+		// caller-owned heap string) that destroy invalidly frees. Mirrors the
+		// aarch64 backend's `target_is_class ||` gate.
+		if (target_struct && target_var && (!self_target || target_struct.is_class)) {
 			const fresh_heap = is_owned_heap_temp(node.right_value, status);
 			// Capture the field-access expression (e.g. `b->text`) by building
 			// it then rolling back, so it can be referenced multiple times.

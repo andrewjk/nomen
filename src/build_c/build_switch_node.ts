@@ -3,6 +3,7 @@ import build_auto_free from "./build_auto_free.ts";
 import build_block_node from "./build_block_node.ts";
 import build_node from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
+import { strip_outer_parens } from "./utils/build_condition.ts";
 import { enter_c_scope, leave_c_scope } from "./utils/c_scope.ts";
 
 export default function build_switch_node(node: SwitchNode, status: BuildStatus) {
@@ -28,6 +29,9 @@ export default function build_switch_node(node: SwitchNode, status: BuildStatus)
 		while (cond_code.startsWith("(") && !cond_code.endsWith(")")) {
 			cond_code = cond_code.substring(1).trim();
 		}
+		// Drop redundant outer parens so `if ((a == b))` isn't emitted
+		// (clang's -Wparentheses-equality).
+		cond_code = strip_outer_parens(cond_code);
 
 		if (decls.length > 0) {
 			status.code += decls.join("\n") + "\n";

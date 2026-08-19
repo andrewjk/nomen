@@ -1,8 +1,8 @@
 import IfElseNode from "../nodes/IfElseNode.ts";
 import build_auto_free from "./build_auto_free.ts";
 import build_block_node from "./build_block_node.ts";
-import build_node from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
+import build_condition from "./utils/build_condition.ts";
 import { enter_c_scope, leave_c_scope } from "./utils/c_scope.ts";
 import emit_allocations from "./utils/emit_allocations.ts";
 
@@ -18,7 +18,7 @@ export default function build_if_else_node(node: IfElseNode, status: BuildStatus
 	emit_allocations(node.condition, status);
 
 	status.code += `if (`;
-	build_node(node.condition, status);
+	build_condition(node.condition, status);
 	status.code += `) {\n`;
 
 	if (node.if_branch) {

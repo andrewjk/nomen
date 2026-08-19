@@ -2,11 +2,10 @@ import { mono_type_name } from "../build_common/mono_name.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import build_node from "./build_node.ts";
-import { POOL_HEADER } from "./build_spawn_node.ts";
+import { POOL_HEADER, spawn_arg_c_types } from "./build_spawn_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import c_function_name from "./utils/c_function_name.ts";
 import c_type from "./utils/c_type.ts";
-import type_from_value_node from "./utils/type_from_value_node.ts";
 
 /**
  * Build a `name.spawn(fn(args))` escape-hatch call (C backend).
@@ -42,15 +41,9 @@ export default function build_nursery_spawn(
 	const struct_name = `__nomen_spawn_${id}_args`;
 	const tramp_name = `__nomen_spawn_${id}_trampoline`;
 
-	// Resolve each arg's C type (classes/traits are pointers).
-	const arg_c_types: string[] = [];
-	for (let i = 0; i < args.length; i++) {
-		const arg_type = type_from_value_node(args[i]);
-		const mono_name = mono_type_name(arg_type);
-		const is_class = !!status.structs.find((s) => s.name === mono_name && s.is_class);
-		const is_trait = !!status.traits.find((t) => t.name === mono_name);
-		arg_c_types.push(is_class || is_trait ? `struct ${mono_name} *` : c_type(mono_name));
-	}
+	// Resolve each arg's C type (from the callee's declared params — see
+	// spawn_arg_c_types; classes/traits are pointers).
+	const arg_c_types = spawn_arg_c_types(call, status);
 
 	// Determine the return type up front (shared by the forward declaration
 	// and the trampoline's result capture).

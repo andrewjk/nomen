@@ -3,6 +3,7 @@ import build_auto_free from "./build_auto_free.ts";
 import build_block_node from "./build_block_node.ts";
 import build_node from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
+import build_condition from "./utils/build_condition.ts";
 import {
 	enter_c_scope,
 	leave_c_scope,
@@ -26,13 +27,13 @@ export default function build_while_loop_node(node: WhileLoopNode, status: Build
 	// before re-checking the condition — matching the language's semantics.
 	if (node.update) {
 		status.code += `for (; `;
-		build_node(node.condition, status);
+		build_condition(node.condition, status);
 		status.code += `; `;
 		build_node(node.update, status);
 		status.code += `) {\n`;
 	} else {
 		status.code += `while (`;
-		build_node(node.condition, status);
+		build_condition(node.condition, status);
 		status.code += `) {\n`;
 	}
 
