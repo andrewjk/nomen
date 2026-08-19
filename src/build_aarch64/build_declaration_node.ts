@@ -1728,7 +1728,13 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 				raw.startsWith('"') ||
 				raw === "true" ||
 				raw === "false";
-			const use_stack = status.function_return_label && (node.declaration === "var" || !is_literal);
+			// Inside a function body (incl. inlined bodies, which carry their
+			// own return label) EVERY declaration gets a stack slot — a
+			// literal-initialized `const` local lowered as a file-scope data
+			// label named after the variable collides at assembly with
+			// same-named locals in other functions (and with globals). Only
+			// top-level declarations keep the file-scope label form.
+			const use_stack = !!status.function_return_label;
 			if (use_stack) {
 				const offset = allocate_stack_space(status, size, size);
 				status.stack_offsets!.set(node.name, offset);

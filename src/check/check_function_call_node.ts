@@ -1335,6 +1335,33 @@ function raw_c_type_name(name: string): string {
 	}
 }
 
+/**
+ * Whether a raw block's content is pure aarch64 assembly (`#arch: aarch64`).
+ * asm immediates (`mov x3, #T_SIZE`) need the compiler's numeric layout
+ * size; every other target (`#arch: c`, `aarch64_use_c`, or untagged) is C
+ * source, where the size must be `sizeof(T)` — C lays out structs with
+ * natural alignment (tail padding), so the compiler's unpadded numeric size
+ * would disagree with C's own `sizeof`/pointer-arithmetic strides and
+ * undersize heap slabs (heap-buffer-overflow on wide-struct elements).
+ */
+function raw_block_is_pure_asm(value: string): boolean {
+	for (const line of value.split("\n")) {
+		const trimmed = line.trim();
+		if (!trimmed) continue;
+		if (trimmed.startsWith("#arch:")) {
+			const arches = trimmed
+				.substring(6)
+				.split(",")
+				.map((a) => a.trim())
+				.filter((a) => a.length > 0);
+			return arches.length > 0 && arches.every((a) => a === "aarch64");
+		}
+		if (trimmed.startsWith("#platform:") || trimmed.startsWith("#scope:")) continue;
+		break;
+	}
+	return false;
+}
+
 function substitute_raw_in_node(
 	node: BaseNode,
 	substitution: Map<string, string>,
@@ -1360,9 +1387,12 @@ function substitute_raw_in_node(
 				c_type_name = raw_c_type_name(type);
 			}
 			value = value.replace(new RegExp(`\\b${param}\\b`, "g"), c_type_name);
-			// Also substitute T_SIZE placeholder with element byte size
+			// Also substitute T_SIZE placeholder with element byte size.
+			// Numeric only for pure-asm blocks; C blocks get sizeof(T) so
+			// slab sizing agrees with C struct layout (tail padding).
 			const size = raw_type_size(type, structs);
-			value = value.replace(new RegExp(`\\b${param}_SIZE\\b`, "g"), String(size));
+			const size_expr = raw_block_is_pure_asm(value) ? String(size) : `sizeof(${c_type_name})`;
+			value = value.replace(new RegExp(`\\b${param}_SIZE\\b`, "g"), size_expr);
 			// Substitute T_destroy placeholder with the monomorphized element's
 			// destroy symbol (e.g. ClassBuffer<Animal>.#destroy calls Animal_destroy).
 			value = value.replace(new RegExp(`\\b${param}_destroy\\b`, "g"), `${type}_destroy`);

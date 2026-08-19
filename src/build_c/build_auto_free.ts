@@ -5,6 +5,7 @@ import DeclarationNode from "../nodes/DeclarationNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import type BuildStatus from "./BuildStatus.ts";
+import c_function_name from "./utils/c_function_name.ts";
 import is_string_borrow from "./utils/is_string_borrow.ts";
 import { has_flag_name, is_nullable_struct_type } from "./utils/nullable_struct.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
@@ -62,7 +63,10 @@ export function free_scoped_declarations(
 						status.code += "\n// Auto-free\n";
 						commented = true;
 					}
-					status.code += `free(${key});\n`;
+					// The record key is the raw Nomen name; emitted C must use
+					// the keyword-mangled form (`id` → `_nomen_id` in ObjC .m).
+					const dot = key.indexOf(".");
+					status.code += `free(${c_function_name(key.substring(0, dot))}${key.substring(dot)});\n`;
 					if (!persist_string_field_records) {
 						status.heap_string_fields.delete(key);
 					}
@@ -71,6 +75,10 @@ export function free_scoped_declarations(
 		}
 	}
 	for (const dec of decls) {
+		// Emitted C identifier: raw Nomen names may collide with C/ObjC
+		// keywords (`id`), so every generated reference goes through the
+		// same mangling the declaration site used.
+		const cname = c_function_name(dec.name);
 		// Call dispose() if it has the Disposable trait
 		const struct = status.structs.find((s) => s.name === dec.type.name);
 		if (struct && struct.traits.includes("Disposable")) {
@@ -84,7 +92,7 @@ export function free_scoped_declarations(
 				const cast = "(void *(*)(void *))";
 				const traitIndex = status.traits.indexOf(trait);
 				const funcIndex = trait.functions.indexOf(func);
-				status.code += `(${cast}_get_trait_func((void *)&${dec.name}, ${traitIndex}, ${funcIndex}))(&${dec.name});\n`;
+				status.code += `(${cast}_get_trait_func((void *)&${cname}, ${traitIndex}, ${funcIndex}))(&${cname});\n`;
 			}
 		}
 
@@ -164,9 +172,9 @@ export function free_scoped_declarations(
 				commented = true;
 			}
 			if (dec.type.is_nullable) {
-				status.code += `if (${dec.name}) { ${trait_class_trait}_destroy(${dec.name}); free(${dec.name}); }\n`;
+				status.code += `if (${cname}) { ${trait_class_trait}_destroy(${cname}); free(${cname}); }\n`;
 			} else {
-				status.code += `${trait_class_trait}_destroy(${dec.name}); free(${dec.name});\n`;
+				status.code += `${trait_class_trait}_destroy(${cname}); free(${cname});\n`;
 			}
 		}
 		if (
@@ -183,7 +191,7 @@ export function free_scoped_declarations(
 				status.code += "\n// Auto-free\n";
 				commented = true;
 			}
-			status.code += `free(${dec.name});\n`;
+			status.code += `free(${cname});\n`;
 		}
 		// Class-typed variables are heap-allocated (malloc'd in the
 		// constructor). Free them at scope exit. Aliases (var q = p) are
@@ -206,18 +214,18 @@ export function free_scoped_declarations(
 			// Every class has a `<Class>_destroy` function — either a user
 			// `#destroy` or an auto-generated one (build_struct_node) that
 			// recursively frees owned class-typed fields. Always call it
-			// before free so class fields (and their #destroy side effects)
-			// are reclaimed at scope exit.
+			// before free so that class fields (and their #destroy side
+			// effects) are reclaimed at scope exit.
 			const has_destroy_fn = !!cls?.functions.find((f) => f.name === "#destroy") || !!cls?.is_class;
 			if (cls) {
-				const destroy_call = has_destroy_fn ? `${mono_cls_name}_destroy(${dec.name}); ` : "";
+				const destroy_call = has_destroy_fn ? `${mono_cls_name}_destroy(${cname}); ` : "";
 				if (dec.type.is_nullable) {
-					status.code += `if (${dec.name}) { ${destroy_call}free(${dec.name}); }\n`;
+					status.code += `if (${cname}) { ${destroy_call}free(${cname}); }\n`;
 				} else {
-					status.code += `${destroy_call}free(${dec.name});\n`;
+					status.code += `${destroy_call}free(${cname});\n`;
 				}
 			} else {
-				status.code += `free(${dec.name});\n`;
+				status.code += `free(${cname});\n`;
 			}
 		}
 		if (
@@ -235,7 +243,7 @@ export function free_scoped_declarations(
 					status.code += "\n// Auto-free\n";
 					commented = true;
 				}
-				emit_struct_destroys(status, struct_type, dec.name);
+				emit_struct_destroys(status, struct_type, cname);
 			}
 		}
 		// Trait-typed local with concrete storage (e.g.
@@ -256,7 +264,7 @@ export function free_scoped_declarations(
 					status.code += "\n// Auto-free\n";
 					commented = true;
 				}
-				emit_struct_destroys(status, concrete, dec.name);
+				emit_struct_destroys(status, concrete, cname);
 			}
 		}
 		// Nullable struct value-type local: destroy the inner value only when
@@ -273,8 +281,8 @@ export function free_scoped_declarations(
 					status.code += "\n// Auto-free\n";
 					commented = true;
 				}
-				const body = capture_destroys(status, inner, dec.name, ".");
-				status.code += `if (${has_flag_name(dec.name)}) { ${body} }\n`;
+				const body = capture_destroys(status, inner, cname, ".");
+				status.code += `if (${has_flag_name(cname)}) { ${body} }\n`;
 			}
 		}
 		// Heap-allocated arrays (returned from functions / Array.with): free
@@ -295,19 +303,19 @@ export function free_scoped_declarations(
 			const elem_is_string = elem_name === "string";
 			const elem_c_type = elem_is_class ? `struct ${elem_name}*` : elem_name;
 			if (elem_is_class) {
-				status.code += `for (long _i = 0; _i < ${dec.name}->length; _i++) {\n`;
-				status.code += `\t${elem_c_type}* _data = (${elem_c_type}*)((char*)${dec.name} + sizeof(struct Array_${elem_name}));\n`;
+				status.code += `for (long _i = 0; _i < ${cname}->length; _i++) {\n`;
+				status.code += `\t${elem_c_type}* _data = (${elem_c_type}*)((char*)${cname} + sizeof(struct Array_${elem_name}));\n`;
 				status.code += `\t${elem_name}_destroy(_data[_i]); free(_data[_i]);\n`;
 				status.code += `}\n`;
 			} else if (elem_is_string) {
 				// Function-returned string arrays strdup each element into a
 				// distinct heap copy, so free every slot before the buffer.
-				status.code += `for (long _i = 0; _i < ${dec.name}->length; _i++) {\n`;
-				status.code += `\tchar** _data = (char**)((char*)${dec.name} + sizeof(struct Array_string));\n`;
+				status.code += `for (long _i = 0; _i < ${cname}->length; _i++) {\n`;
+				status.code += `\tchar** _data = (char**)((char*)${cname} + sizeof(struct Array_string));\n`;
 				status.code += `\tfree(_data[_i]);\n`;
 				status.code += `}\n`;
 			}
-			status.code += `free(${dec.name});\n`;
+			status.code += `free(${cname});\n`;
 		}
 		// Stack (fixed-size) C arrays: the backing array is not malloc'd, but
 		// each element may own heap data (string / class / struct needing
@@ -332,16 +340,16 @@ export function free_scoped_declarations(
 			);
 			const arr_len = status.stack_array_lengths?.get(dec.name) ?? "0";
 			if (elem_is_string) {
-				status.code += `for (long _i = 0; _i < ${arr_len}; _i++) { free(${dec.name}[_i]); }\n`;
+				status.code += `for (long _i = 0; _i < ${arr_len}; _i++) { free(${cname}[_i]); }\n`;
 			} else if (elem_is_class) {
 				if (has_destroy(elem_struct!)) {
-					status.code += `for (long _i = 0; _i < ${arr_len}; _i++) { if (${dec.name}[_i]) { ${elem_name}_destroy(${dec.name}[_i]); free(${dec.name}[_i]); } }\n`;
+					status.code += `for (long _i = 0; _i < ${arr_len}; _i++) { if (${cname}[_i]) { ${elem_name}_destroy(${cname}[_i]); free(${cname}[_i]); } }\n`;
 				} else {
-					status.code += `for (long _i = 0; _i < ${arr_len}; _i++) { free(${dec.name}[_i]); }\n`;
+					status.code += `for (long _i = 0; _i < ${arr_len}; _i++) { free(${cname}[_i]); }\n`;
 				}
 			} else if (elem_struct_type && struct_needs_destroy(elem_struct_type, status)) {
 				status.code += `for (long _i = 0; _i < ${arr_len}; _i++) {\n`;
-				emit_struct_destroys(status, elem_struct_type, `${dec.name}[_i]`);
+				emit_struct_destroys(status, elem_struct_type, `${cname}[_i]`);
 				status.code += `}\n`;
 			}
 		}

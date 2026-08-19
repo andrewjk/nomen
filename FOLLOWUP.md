@@ -73,3 +73,54 @@ if it keeps biting.
   invalid-free abort the direct-call fix addresses, reached via vtable.
   Exposure is strictly no worse than before the fix — the direct-call path
   was the hole that was closed; this is the unfixed remainder.
+
+## `string.length` lowers to a per-call `strlen` — hoist loop-invariant lengths (perf)
+
+`x.length` on a `string` emits a real `strlen(x)` call at every evaluation;
+it is not a field read. In loop conditions this is O(len) **per iteration**,
+making any char-walking loop O(len²). The differator port's
+`split_lines`/`substring`/`fnv32`/`ends_with_newline` family scans a whole
+document byte-by-byte, so splitting a 257 KB / 10k-line file took **2.7 s**
+— every single iteration re-ran `strlen` over the full 257 KB (~33 GB of
+scanning). Every diff entry point (`myers`, `histogram`, `combined`) was
+bottlenecked by this shared infrastructure, not the algorithms.
+
+**Shape in the port** (`core`-style user code, `differator/nomen/src/diff.nm`):
+
+```nomen
+pub func split_lines = (string text, out List<Line>) {
+	var List<Line> lines = List<Line>()
+	var start = 0
+	var i = 0
+	while i < text.length {          // <-- strlen(text) every iteration
+		if (text.at(i) as int) == 10 {
+			...
+		}
+		i += 1
+	}
+	...
+}
+```
+
+Generated C for the condition: `while (i < ((long)strlen(text)))`.
+
+**Fix tiers**:
+
+1. _Targeted codegen_: recognise a loop whose condition compares an
+   induction variable against `string.length` of a loop-invariant string
+   (parameter or un-reassigned local) and hoist the `strlen` into a temp
+   before the loop — mirroring what the bounds analyser already knows (it
+   tracks `text.length` as a symbol for constraint discharge, so the
+   invariance fact is available).
+2. _General LICM_: a small loop-invariant code motion pass over call-ish
+   expressions with no side effects (`strlen` on an invariant pointer is the
+   main one; `List.length` is already a field read).
+3. _Representation_: prefix- or side-table-stored string lengths, making
+   `.length` a load. Biggest change (ABI, all backends, interop), but kills
+   the whole class.
+
+**Interim user workaround**: bind `const int n = text.length` before the
+loop and compare against `n`. Note the bounds checker already discharges
+`at(i)` through an `n` aliasing `text.length`, so the workaround costs
+nothing in checkability. BENCH note: the differator benchmarks will look
+quadratic until this lands.

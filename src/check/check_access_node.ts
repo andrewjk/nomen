@@ -4,7 +4,7 @@ import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import BaseNode from "../nodes/BaseNode.ts";
-import type DeclarationNode from "../nodes/DeclarationNode.ts";
+import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import Type from "../nodes/Type.ts";
@@ -23,7 +23,11 @@ import {
 } from "./utils/function_overload.ts";
 import is_sendable_type from "./utils/is_sendable_type.ts";
 import is_visible from "./utils/is_visible.ts";
-import { is_class_type, is_owning_ref_type } from "./utils/ownership.ts";
+import {
+	is_class_type,
+	is_owning_ref_type,
+	is_owning_struct_type_requiring_move,
+} from "./utils/ownership.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
 
@@ -36,6 +40,31 @@ export default function check_access_node(node: AccessNode, status: CheckStatus)
 	if (!target_type.name) {
 		add_error(status, `Unknown target: ${value_from_value_node(node.target)}`, node.target.start);
 		return false;
+	}
+
+	// A call whose result is an owning struct (e.g. `build_norm(units).length`)
+	// must not stay inline as the receiver: the returned struct's heap
+	// resources (container buffers, class fields) are reclaimed by a
+	// variable's scope-exit destroy, and an uncaptured temporary has none —
+	// it leaks. Hoist the call into a scoped temp declaration (the same
+	// mechanism as hoisted `_param_N` call arguments) so the existing
+	// scope-exit cleanup destroys it.
+	if (
+		(node.target.node_type === "func_call" ||
+			(node.target.node_type === "access" &&
+				(node.target as AccessNode).access.node_type === "access_func")) &&
+		is_owning_struct_type_requiring_move(target_type, status)
+	) {
+		const decl = new DeclarationNode(
+			node.target.start,
+			"private",
+			"const",
+			`_recv_${status.var_name_counter.value++}`,
+			target_type,
+			node.target,
+		);
+		status.allocations.push(decl);
+		node.target = new ValueNode(node.target.start, decl.name, target_type);
 	}
 
 	// Resolve destructuring placeholders (`var [a, b] = expr`) from the RHS
