@@ -30,6 +30,10 @@ export default function check_function_node(func: FunctionNode, status: CheckSta
 	// references — Nomen does not implement closures. For a top-level function
 	// the enclosing `values` is empty, so the base is 0.
 	function_status.function_value_base = function_status.values.length;
+	// Parallel-length equations are scoped to the function whose params
+	// declared them; a nested function's params may shadow the outer names,
+	// so it starts with a clean slate.
+	function_status.equal_lengths = [];
 	const structs_before = function_status.structs.length;
 	const enums_before = function_status.enums.length;
 	const types_before = function_status.types.length;

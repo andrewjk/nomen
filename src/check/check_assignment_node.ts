@@ -12,7 +12,12 @@ import type CheckStatus from "./CheckStatus.ts";
 import { borrow_depth_of, borrow_owner_of, invalidate_view_borrows_of } from "./utils/borrow.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
 import evaluate_const_condition from "./utils/evaluate_const_condition.ts";
-import { snapshot_bounds, track_assignment_bounds } from "./utils/flow_bounds.ts";
+import {
+	snapshot_bounds,
+	track_assignment_bounds,
+	apply_return_bounds_to_var,
+	call_return_bounds,
+} from "./utils/flow_bounds.ts";
 import {
 	is_class_type,
 	is_owning_struct_type,
@@ -154,6 +159,7 @@ export default function check_assignment_node(
 		left_value.lower_bound_exprs = undefined;
 		left_value.upper_bound_inclusive_exprs = undefined;
 		left_value.lower_bound_inclusive_exprs = undefined;
+		left_value.path_bounds = undefined;
 		left_value.alias_of = undefined;
 		left_value.class_alias_of = undefined;
 		// Clear compile-time string/array length: reassignment may change it.
@@ -191,6 +197,13 @@ export default function check_assignment_node(
 				status,
 				self_snapshot,
 			);
+			// A call RHS carries its return-contract bounds on the call node
+			// (check_function_call); transfer them onto the variable so a
+			// later `.at(m)` verifies — mirroring the declaration path and
+			// the nested-call form.
+			if (!is_compound) {
+				apply_return_bounds_to_var(left_value.name, call_return_bounds(assign.right_value), status);
+			}
 		}
 		// If the RHS is a string literal, record its length on the type so
 		// subsequent constraint checks (e.g. slice bounds) can verify it.

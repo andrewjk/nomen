@@ -9,6 +9,7 @@ import parse_trait from "./parse_trait.ts";
 import type ParseStatus from "./ParseStatus.ts";
 import consume from "./utils/consume.ts";
 import get_index from "./utils/get_index.ts";
+import peek_current from "./utils/peek_current.ts";
 import peek_next from "./utils/peek_next.ts";
 
 export default function parse_visibility(visibility: "pub" | "private", status: ParseStatus) {
@@ -67,7 +68,12 @@ export default function parse_visibility(visibility: "pub" | "private", status: 
 		}
 		case "inline": {
 			consume(status);
-			if (peek_next(status) === "func") {
+			// `<visibility> inline func …` — consume the `inline` marker too
+			// (for the bare statement-level form, current is already `func`).
+			if (peek_current(status) === "inline") {
+				consume(status);
+			}
+			if (peek_current(status) === "func") {
 				parse_function(visibility, status, undefined, true);
 			} else {
 				add_error(status, "Expected func after inline", get_index(status));

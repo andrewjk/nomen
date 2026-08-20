@@ -356,7 +356,11 @@ pub struct Buffer<T> {
 		```
 	}
 
-	func load_T = (self, int i: i >= 0 && i < self.cap, out T) {
+	// `inline` splices the (width-folded at monomorphization) raw body at
+	// call sites — the load/store pair behind every container `.at`/`set` is
+	// the hottest path in data-heavy code, and the naked-inline path keeps it
+	// to a handful of instructions with no call overhead.
+	inline func load_T = (self, int i: i >= 0 && i < self.cap, out T) {
 		```
 		#arch: c
 		return ((T*)(unsigned long long)self->data)[i];
@@ -399,7 +403,7 @@ pub struct Buffer<T> {
 		```
 	}
 
-	func store_T = (ref self, int i: i >= 0 && i < self.cap, T val) {
+	inline func store_T = (ref self, int i: i >= 0 && i < self.cap, T val) {
 		```
 		#arch: c
 		((T*)(unsigned long long)self->data)[i] = val;

@@ -12,7 +12,12 @@ import { borrow_depth_of, borrow_owner_of } from "./utils/borrow.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
 import check_type_exists from "./utils/check_type_exists.ts";
 import evaluate_const_condition from "./utils/evaluate_const_condition.ts";
-import { apply_bounds, track_assignment_bounds } from "./utils/flow_bounds.ts";
+import {
+	apply_bounds,
+	apply_return_bounds_to_var,
+	call_return_bounds,
+	track_assignment_bounds,
+} from "./utils/flow_bounds.ts";
 import in_function from "./utils/in_function.ts";
 import materialize_type from "./utils/materialize_type.ts";
 import {
@@ -367,6 +372,14 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 				for (const bound of pending) apply_bounds(bound, status);
 				status.pending_return_bounds.delete(decl.name);
 			}
+		}
+		// Transfer the call's return-contract bounds (the decoration the
+		// nested-call form uses) onto the bound variable, so `const int m =
+		// mid(xs)` verifies like `xs.at(mid(xs))` does. `apply_bounds` above
+		// records the exact (inclusive/strict) shape of the contract; this
+		// adds the same funneled bounds the nested path relies on.
+		if (decl.value) {
+			apply_return_bounds_to_var(decl.name, call_return_bounds(decl.value), status);
 		}
 	}
 }

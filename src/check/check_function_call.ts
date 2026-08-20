@@ -775,6 +775,26 @@ export default function check_function_call(
 			if (field_name && NON_NEGATIVE_FIELDS.has(field_name)) {
 				alias_of = expr_to_string(param, status);
 			}
+			// A field-path argument like `p.a` carries the bounds recorded for
+			// exactly that path (e.g. from a field-referencing out-contract
+			// `out.a >= 0 && out.a < xs.length` that substituted onto `p`), so
+			// a downstream constraint on this parameter can verify against
+			// them. Only path_bounds is consulted — the base variable's shared
+			// bound arrays may hold bounds for a DIFFERENT field of the same
+			// base, which must not leak across paths.
+			const access_path = expr_to_string(param, status);
+			if (access_path && access_path.includes(".")) {
+				const base_decl = status.values.findLast((v) => v.name === access_path.split(".")[0]);
+				const path_bounds = base_decl?.path_bounds?.get(access_path);
+				if (path_bounds) {
+					upper_bound_exprs = path_bounds.upper?.slice();
+					lower_bound_exprs = path_bounds.lower?.slice();
+					upper_bound_inclusive_exprs = path_bounds.upper_inclusive?.slice();
+					lower_bound_inclusive_exprs = path_bounds.lower_inclusive?.slice();
+					range_lower = path_bounds.range_lower;
+					range_upper = path_bounds.range_upper;
+				}
+			}
 		}
 		// Fold in bounds propagated from a nested call's return contract, so a
 		// parameter constraint can verify against an inline call result

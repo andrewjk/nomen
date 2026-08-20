@@ -2,6 +2,20 @@ import BaseNode from "../nodes/BaseNode.ts";
 import Type from "../nodes/Type.ts";
 
 /**
+ * Flow-sensitive bounds for one dotted access path on a StackValue (see
+ * `StackValue.path_bounds`). Mirrors the shared bound fields, but scoped to
+ * the exact path a contract or guard established them for.
+ */
+export interface PathBounds {
+	upper?: string[];
+	lower?: string[];
+	upper_inclusive?: string[];
+	lower_inclusive?: string[];
+	range_lower?: number;
+	range_upper?: number;
+}
+
+/**
  * A value (declaration, param etc) that is accessible at the current point
  */
 export default interface StackValue {
@@ -114,6 +128,15 @@ export default interface StackValue {
 	 * which may be unknown for `Array.with(...)`). Cleared on scope exit.
 	 */
 	known_length?: number;
+	/**
+	 * Bounds keyed by the full dotted path they were established for (e.g.
+	 * "p.a" from a field-referencing out-contract `out.a < xs.length`
+	 * substituted onto the binding `p`). Shared bound arrays cannot
+	 * distinguish WHICH field of `p` a bound constrains, so dotted-path
+	 * bounds recorded here stay precise: an access argument `p.a` carries
+	 * exactly the bounds proven for "p.a", and `p.b` sees none of them.
+	 */
+	path_bounds?: Map<string, PathBounds>;
 	/**
 	 * For function-typed variables: the parameter types from the declared
 	 * function signature. Used to infer parameter types on a lambda assigned

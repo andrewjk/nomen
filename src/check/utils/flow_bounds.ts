@@ -4,6 +4,7 @@ import type BaseNode from "../../nodes/BaseNode.ts";
 import OperationNode from "../../nodes/OperationNode.ts";
 import ValueNode from "../../nodes/ValueNode.ts";
 import type CheckStatus from "../CheckStatus.ts";
+import type { PathBounds } from "../StackValue.ts";
 
 // Container fields whose values are always >= 0. Mirrors the same set in
 // evaluate_const_condition.ts (kept duplicated to avoid a circular import).
@@ -44,6 +45,60 @@ export function snapshot_bounds(name: string, status: CheckStatus): BoundsSnapsh
 }
 
 /**
+ * Snapshot of EVERY flow-bound field on EVERY value, keyed by StackValue
+ * object identity. Used to make condition-position bound application
+ * transient: bounds established by earlier `&&` operands (or the negation
+ * of earlier `||` operands) are valid only while evaluating the remaining
+ * operands of that same expression, so they are applied before checking the
+ * right operand and restored afterwards.
+ */
+type FullBoundsSnapshot = BoundsSnapshot & {
+	upper_bound_expr?: string;
+	lower_bound_expr?: string;
+	alias_of?: string;
+	known_length?: number;
+	path_bounds?: Map<string, PathBounds>;
+};
+
+export function snapshot_all_bounds(status: CheckStatus): Map<object, FullBoundsSnapshot> {
+	const snap = new Map<object, FullBoundsSnapshot>();
+	for (const v of status.values) {
+		snap.set(v, {
+			range_lower: v.range_lower,
+			range_upper: v.range_upper,
+			upper_bound_exprs: v.upper_bound_exprs?.slice(),
+			lower_bound_exprs: v.lower_bound_exprs?.slice(),
+			upper_bound_inclusive_exprs: v.upper_bound_inclusive_exprs?.slice(),
+			lower_bound_inclusive_exprs: v.lower_bound_inclusive_exprs?.slice(),
+			upper_bound_expr: v.upper_bound_expr,
+			lower_bound_expr: v.lower_bound_expr,
+			alias_of: v.alias_of,
+			known_length: v.known_length,
+			path_bounds: v.path_bounds ? new Map(v.path_bounds) : undefined,
+		});
+	}
+	return snap;
+}
+
+export function restore_all_bounds(status: CheckStatus, snap: Map<object, FullBoundsSnapshot>) {
+	for (const v of status.values) {
+		const s = snap.get(v);
+		if (!s) continue;
+		v.range_lower = s.range_lower;
+		v.range_upper = s.range_upper;
+		v.upper_bound_exprs = s.upper_bound_exprs;
+		v.lower_bound_exprs = s.lower_bound_exprs;
+		v.upper_bound_inclusive_exprs = s.upper_bound_inclusive_exprs;
+		v.lower_bound_inclusive_exprs = s.lower_bound_inclusive_exprs;
+		v.upper_bound_expr = s.upper_bound_expr;
+		v.lower_bound_expr = s.lower_bound_expr;
+		v.alias_of = s.alias_of;
+		v.known_length = s.known_length;
+		v.path_bounds = s.path_bounds;
+	}
+}
+
+/**
  * Serialize an AST expression to a canonical string for comparison.
  * E.g. `list.length` → "list.length", `self.length` → resolves alias to actual var.
  */
@@ -52,7 +107,7 @@ export function expr_to_string(node: BaseNode, status?: CheckStatus): string | u
 		const vn = node as ValueNode;
 		if (status) {
 			const decl = status.values.findLast((v) => v.name === vn.value);
-			if (decl?.alias_of) return decl.alias_of;
+			if (decl?.alias_of) return canonicalize_length_path(decl.alias_of, status);
 		}
 		return vn.value;
 	}
@@ -61,16 +116,114 @@ export function expr_to_string(node: BaseNode, status?: CheckStatus): string | u
 		if (access.access.node_type === "access_field") {
 			const target = expr_to_string(access.target, status);
 			const field = (access.access as AccessFieldNode).name;
-			if (target) return `${target}.${field}`;
+			if (target) {
+				const path = `${target}.${field}`;
+				return status ? canonicalize_length_path(path, status) : path;
+			}
 		} else if (access.access.node_type === "access_func") {
 			// Method call like `s.length()` / `b.size()` — treat the method as
 			// a property for bounds purposes (its return value IS the length).
 			const target = expr_to_string(access.target, status);
 			const method = (access.access as any).name;
 			if (target && ["length", "size", "count", "cap"].includes(method)) {
-				return `${target}.${method}`;
+				const path = `${target}.${method}`;
+				return status ? canonicalize_length_path(path, status) : path;
 			}
 		}
+	}
+	return undefined;
+}
+
+/**
+ * Rewrite a `<base>.<field>` path through the assumed parallel-length
+ * equalities (`a.length == b.length` param contracts) to a canonical
+ * representative, so a bound phrased against either container's length
+ * (`i < xs.length`) verifies a constraint on the other (`hash.length`).
+ * Each equation's `a` side is the representative; following `b → a` edges
+ * to a fixed point makes the rewrite idempotent and confluent for chains
+ * (a==b, b==c all canonicalize to the chain head). Only touches paths whose
+ * field has a recorded equation.
+ */
+function canonicalize_length_path(path: string, status: CheckStatus): string {
+	const eqs = status.equal_lengths;
+	if (!eqs?.length) return path;
+	const m = /^(\w+)\.(length|count|size|cap)$/.exec(path);
+	if (!m) return path;
+	const field = m[2];
+	let base = m[1];
+	for (let step = 0; step < eqs.length; step++) {
+		const eq = eqs.find((e) => e.field === field && (e.a === base || e.b === base));
+		if (!eq || eq.a === base) break;
+		base = eq.a;
+	}
+	return `${base}.${field}`;
+}
+
+/**
+ * Remove `X.<f> == Y.<f>` clauses (same container-size field on two params,
+ * one of them `param_name`) from a parameter constraint, recording each as an
+ * ASSUMED parallel-length equality on `status.equal_lengths`. Such a clause
+ * relates two runtime lengths, which the verifier can never prove at a call
+ * site — instead it is trusted there (stripped from the contract) and made
+ * available to the body's bounds machinery via expr_to_string
+ * canonicalization. Returns the rewritten constraint, or undefined when
+ * everything was stripped. Nodes are only rebuilt when something changed.
+ */
+export function strip_length_equalities(
+	constraint: BaseNode | undefined,
+	param_name: string,
+	status: CheckStatus,
+): BaseNode | undefined {
+	if (!constraint) return undefined;
+	if (constraint.node_type !== "op") return constraint;
+	const op = constraint as OperationNode;
+	if (op.op === "&&") {
+		const left = strip_length_equalities(op.left_value, param_name, status);
+		const right = strip_length_equalities(op.right_value, param_name, status);
+		if (left && right) {
+			if (left === op.left_value && right === op.right_value) return constraint;
+			return new OperationNode(op.start, "&&", left, right, op.type);
+		}
+		return left ?? right;
+	}
+	if (op.op !== "==") return constraint;
+
+	// Both sides must be `<param>.<size field>` accesses over existing values.
+	const extract = (side: BaseNode): { base: string; field: string } | undefined => {
+		if (side.node_type !== "access") return undefined;
+		const access = side as AccessNode;
+		let field: string | undefined;
+		if (access.access.node_type === "access_field") {
+			field = (access.access as AccessFieldNode).name;
+		} else if (access.access.node_type === "access_func") {
+			field = (access.access as any).name;
+		}
+		if (!field || !NON_NEGATIVE_FIELDS.has(field)) return undefined;
+		if (access.target.node_type !== "value") return undefined;
+		const base = (access.target as ValueNode).value;
+		// The param's own name isn't in `values` yet (constraints are checked
+		// before the param is pushed), so accept it implicitly; the OTHER side
+		// must already exist.
+		if (base !== param_name && !status.values.some((v) => v.name === base)) return undefined;
+		return { base, field };
+	};
+	const lhs = extract(op.left_value);
+	const rhs = extract(op.right_value);
+	if (!lhs || !rhs || lhs.field !== rhs.field) return constraint;
+	if (lhs.base === rhs.base) return constraint;
+
+	if (!status.equal_lengths) status.equal_lengths = [];
+	const other = lhs.base;
+	const paired = rhs.base;
+	const duplicate = status.equal_lengths.some(
+		(e) =>
+			e.field === lhs.field &&
+			((e.a === other && e.b === paired) || (e.a === paired && e.b === other)),
+	);
+	if (!duplicate) {
+		// `a` is the canonical side; `param_name` (when it is one endpoint)
+		// canonicalizes onto the other container's length.
+		status.equal_lengths.push({ a: other, b: paired, field: lhs.field });
 	}
 	return undefined;
 }
@@ -204,17 +357,44 @@ export function apply_bounds(condition: BaseNode, status: CheckStatus, is_loop =
 	}
 	if (!var_decl) return;
 
+	// Dotted-path precision: when the bounded name is a field path on the
+	// base variable (e.g. "p.a" from a field-referencing out-contract
+	// `out.a < xs.length` substituted onto the binding `p`), record the
+	// bound under the full path in `path_bounds` too. The shared arrays
+	// below cannot distinguish WHICH field of `p` a bound constrains; an
+	// access argument like `p.a` reads the path entry so it carries exactly
+	// the bounds proven for that path.
+	let path_entry: import("../StackValue.ts").PathBounds | undefined;
+	if (bound.var_name.includes(".") && bound.var_name !== var_decl.name) {
+		if (!var_decl.path_bounds) var_decl.path_bounds = new Map();
+		path_entry = var_decl.path_bounds.get(bound.var_name);
+		if (!path_entry) {
+			path_entry = {};
+			var_decl.path_bounds.set(bound.var_name, path_entry);
+		}
+	}
+	const push_unique = (arr: string[] | undefined, expr: string): string[] => {
+		const out = arr ?? [];
+		if (!out.includes(expr)) out.push(expr);
+		return out;
+	};
+
 	if (bound.op === "<" || bound.op === "<=") {
 		const inclusive = bound.op === "<=";
 		if (!var_decl.upper_bound_exprs) var_decl.upper_bound_exprs = [];
 		if (!var_decl.upper_bound_inclusive_exprs) var_decl.upper_bound_inclusive_exprs = [];
 		if (inclusive) {
-			if (!var_decl.upper_bound_inclusive_exprs.includes(bound.expr)) {
-				var_decl.upper_bound_inclusive_exprs.push(bound.expr);
+			var_decl.upper_bound_inclusive_exprs = push_unique(
+				var_decl.upper_bound_inclusive_exprs,
+				bound.expr,
+			);
+			if (path_entry) {
+				path_entry.upper_inclusive = push_unique(path_entry.upper_inclusive, bound.expr);
 			}
 		} else {
-			if (!var_decl.upper_bound_exprs.includes(bound.expr)) {
-				var_decl.upper_bound_exprs.push(bound.expr);
+			var_decl.upper_bound_exprs = push_unique(var_decl.upper_bound_exprs, bound.expr);
+			if (path_entry) {
+				path_entry.upper = push_unique(path_entry.upper, bound.expr);
 			}
 		}
 		// Backwards compat
@@ -235,18 +415,30 @@ export function apply_bounds(condition: BaseNode, status: CheckStatus, is_loop =
 				if (var_decl.range_upper === undefined || hi < var_decl.range_upper)
 					var_decl.range_upper = hi;
 			}
+			if (path_entry) {
+				if (is_loop) {
+					path_entry.range_upper = hi;
+				} else if (path_entry.range_upper === undefined || hi < path_entry.range_upper) {
+					path_entry.range_upper = hi;
+				}
+			}
 		}
 	} else if (bound.op === ">" || bound.op === ">=") {
 		const inclusive = bound.op === ">=";
 		if (!var_decl.lower_bound_exprs) var_decl.lower_bound_exprs = [];
 		if (!var_decl.lower_bound_inclusive_exprs) var_decl.lower_bound_inclusive_exprs = [];
 		if (inclusive) {
-			if (!var_decl.lower_bound_inclusive_exprs.includes(bound.expr)) {
-				var_decl.lower_bound_inclusive_exprs.push(bound.expr);
+			var_decl.lower_bound_inclusive_exprs = push_unique(
+				var_decl.lower_bound_inclusive_exprs,
+				bound.expr,
+			);
+			if (path_entry) {
+				path_entry.lower_inclusive = push_unique(path_entry.lower_inclusive, bound.expr);
 			}
 		} else {
-			if (!var_decl.lower_bound_exprs.includes(bound.expr)) {
-				var_decl.lower_bound_exprs.push(bound.expr);
+			var_decl.lower_bound_exprs = push_unique(var_decl.lower_bound_exprs, bound.expr);
+			if (path_entry) {
+				path_entry.lower = push_unique(path_entry.lower, bound.expr);
 			}
 		}
 		var_decl.lower_bound_expr = bound.expr;
@@ -257,6 +449,8 @@ export function apply_bounds(condition: BaseNode, status: CheckStatus, is_loop =
 			const lo = bound.op === ">=" ? num.lower : num.upper;
 			if (var_decl.range_lower === undefined || lo > var_decl.range_lower)
 				var_decl.range_lower = lo;
+			if (path_entry && (path_entry.range_lower === undefined || lo > path_entry.range_lower))
+				path_entry.range_lower = lo;
 		}
 	}
 
@@ -450,6 +644,7 @@ export function clear_bounds(name: string, status: CheckStatus) {
 		decl.lower_bound_inclusive_exprs = undefined;
 		decl.upper_bound_expr = undefined;
 		decl.lower_bound_expr = undefined;
+		decl.path_bounds = undefined;
 	}
 }
 
@@ -504,6 +699,56 @@ export function substitute_constraint(
 	}
 
 	return node;
+}
+
+/**
+ * Bounds collected from a call node's (substituted) return contract — the
+ * same decoration the nested-call path reads (see collect_return_bounds).
+ */
+export interface ReturnBounds {
+	upper: string[];
+	lower: string[];
+	upper_inclusive: string[];
+	lower_inclusive: string[];
+}
+
+/** Extract `return_bounds` from a value node that is a call (or wraps one). */
+export function call_return_bounds(value: BaseNode): ReturnBounds | undefined {
+	if (!value) return undefined;
+	if (value.node_type === "func_call" || value.node_type === "access_func") {
+		return (value as any).return_bounds as ReturnBounds | undefined;
+	}
+	if (value.node_type === "access" && (value as AccessNode).access.node_type === "access_func") {
+		return ((value as AccessNode).access as any).return_bounds as ReturnBounds | undefined;
+	}
+	return undefined;
+}
+
+/**
+ * Transfer a call's return-contract bounds onto the variable the call result
+ * is bound to (`const int m = mid(xs)` / `m = mid(xs)`). Without this, only
+ * the nested form `xs.at(mid(xs))` carried the contract (via the call node's
+ * `return_bounds` decoration); binding to a variable dropped it and forced
+ * unreadable nesting. Uses the same funneled semantics as the nested path
+ * (collect_return_bounds: `<=` lands in the strict `upper` array), so both
+ * forms verify identically.
+ */
+export function apply_return_bounds_to_var(
+	name: string,
+	rb: ReturnBounds | undefined,
+	status: CheckStatus,
+) {
+	if (!rb) return;
+	const decl = status.values.findLast((v) => v.name === name);
+	if (!decl) return;
+	const push = (arr: string[] | undefined, add: string[]) =>
+		arr ? (arr.push(...add.filter((e) => !arr.includes(e))), arr) : add.slice();
+	if (rb.upper.length) decl.upper_bound_exprs = push(decl.upper_bound_exprs, rb.upper);
+	if (rb.lower.length) decl.lower_bound_exprs = push(decl.lower_bound_exprs, rb.lower);
+	if (rb.upper_inclusive.length)
+		decl.upper_bound_inclusive_exprs = push(decl.upper_bound_inclusive_exprs, rb.upper_inclusive);
+	if (rb.lower_inclusive.length)
+		decl.lower_bound_inclusive_exprs = push(decl.lower_bound_inclusive_exprs, rb.lower_inclusive);
 }
 
 /**

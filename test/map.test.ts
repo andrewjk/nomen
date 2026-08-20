@@ -300,3 +300,97 @@ Console.write("\\{a} \\{b}")
 		await build_and_check_output(input, "map_string_values", "one two");
 	});
 });
+
+describe("Map get_or", () => {
+	test("get_or returns the stored value for an existing key", async () => {
+		const input = `
+var Map<int, int> m = Map<int, int>()
+m.set(3, 30)
+const int v = m.get_or(3, 7)
+Console.write("\\{v}")
+`;
+		await build_and_check_output(input, "map_get_or_hit", "30");
+	});
+
+	test("get_or returns the fallback for a missing key", async () => {
+		const input = `
+var Map<int, int> m = Map<int, int>()
+m.set(3, 30)
+const int v = m.get_or(4, 7)
+Console.write("\\{v}")
+`;
+		await build_and_check_output(input, "map_get_or_miss", "7");
+	});
+
+	test("get_or on an empty map returns the fallback", async () => {
+		const input = `
+var Map<int, int> m = Map<int, int>()
+const int v = m.get_or(1, -1)
+Console.write("\\{v}")
+`;
+		await build_and_check_output(input, "map_get_or_empty", "-1");
+	});
+
+	test("get_or with string keys", async () => {
+		const input = `
+var Map<string, int> m = Map<string, int>()
+m.set("count", 5)
+const int hit = m.get_or("count", 0)
+const int miss = m.get_or("missing", 42)
+Console.write("\\{hit} \\{miss}")
+`;
+		await build_and_check_output(input, "map_get_or_string", "5 42");
+	});
+});
+
+describe("Map mask-indexing stress (power-of-two capacity)", () => {
+	test("insert/verify/remove across several rehash boundaries", async () => {
+		const input = `
+var Map<int, int> m = Map<int, int>()
+var int i = 0
+while i < 200 {
+	m.set(i * 3, i)
+	i += 1
+}
+var int sum = 0
+i = 0
+while i < 200 {
+	sum += m.get(i * 3)
+	i += 1
+}
+i = 0
+while i < 100 {
+	m.remove(i * 3)
+	i += 1
+}
+i = 100
+var int sum2 = 0
+while i < 200 {
+	sum2 += m.get(i * 3)
+	i += 1
+}
+Console.write("\\{m.length} \\{sum} \\{sum2} \\{m.has(0)} \\{m.has(300)}")
+`;
+		const total = Array.from({ length: 200 }, (_, k) => k).reduce((a, b) => a + b, 0);
+		const kept = Array.from({ length: 100 }, (_, k) => k + 100).reduce((a, b) => a + b, 0);
+		await build_and_check_output(input, "map_mask_stress", `100 ${total} ${kept} false true`);
+	});
+
+	test("string keys survive insert/lookup across rehash boundaries", async () => {
+		// (Removal with string keys leaks moved slots — a pre-existing
+		// backward-shift ownership gap, see FOLLOWUP.md — so this stress
+		// covers insert/lookup only.)
+		const input = `
+var Map<string, int> m = Map<string, int>()
+var int i = 0
+while i < 60 {
+	m.set("key-\\{i}", i)
+	i += 1
+}
+const int hit = m.get_or("key-45", -1)
+const int miss = m.get_or("missing", -1)
+Console.write("\\{m.length} \\{hit} \\{miss}")
+`;
+		await build_and_check_output(input, "map_mask_stress_string", "60 45 -1");
+	});
+});

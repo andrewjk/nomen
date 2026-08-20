@@ -121,6 +121,17 @@ export default interface CheckStatus {
 	pending_return_bounds?: Map<string, BaseNode[]>;
 
 	/**
+	 * Parallel-length equalities assumed from parameter contracts of the form
+	 * `a.length == b.length` (both params). The clauses are stripped from the
+	 * contract (assumed, not verified at call sites) and recorded here for the
+	 * duration of the function body; `expr_to_string` canonicalizes one side
+	 * to the other so bounds phrased against either length verify for both.
+	 * Replaced (not shared) on clone so nested functions don't inherit the
+	 * enclosing function's equations.
+	 */
+	equal_lengths?: { a: string; b: string; field: string }[];
+
+	/**
 	 * Names of locals/params that cannot safely be `const` — either the
 	 * receiver of a mutating (`ref self`) method call, or passed as a `ref`
 	 * argument a callee may mutate. Populated during checking so the post-check

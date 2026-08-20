@@ -73,3 +73,52 @@ if it keeps biting.
   invalid-free abort the direct-call fix addresses, reached via vtable.
   Exposure is strictly no worse than before the fix — the direct-call path
   was the hole that was closed; this is the unfixed remainder.
+
+## General-path method inlining destroys borrowed receivers (found via PERF work)
+
+`build_inline_method`'s general (non-raw) path mis-handles a struct-field
+receiver inside the inlined body: inlining `List.at` (body
+`return self.items.load_T(i)`) emitted a `bl Buffer_int_destroy` on
+`&self.items` at the inline return — freeing the LIVE backing buffer of the
+caller's list (next access segfaults). The cleanup comes from the
+receiver-hoisting machinery around the nested `load_T` call; scoped cleanup
+stacks are swapped but whatever registers the hoisted temp isn't scoped the
+same way when inlined. Raw-only bodies (the naked-inline path) are unaffected
+— `Buffer.load_T`/`store_T`/`load`/`store` inline correctly today. Fixing
+this would unlock `inline` on `List.at`/`Array.at` and any accessor whose
+body calls through a field receiver. Repro: mark `List.at` `pub inline` and
+run `test/flow-bounds.test.ts` (aarch64 crashes).
+
+## Map/Set `remove` with string keys leaks moved slots (pre-existing)
+
+Backward-shift deletion moves entries with
+`keys.store_T(gap, keys.load_T(k))`. For `Buffer<string>` keys, `store_T`
+strdups a fresh copy into `gap` while the moved-from slot `k` keeps its old
+pointer; when the cluster walk finishes, `used.store(gap, 0)` marks `gap`
+empty, so the buffer's destroy skips it — the stale pointer at the vacated
+slot is never freed (one leak per shifted entry). Verified against the
+pre-PERF baseline (changes stashed): 60 inserts + 30 removes leaks 45
+allocations identically, so the mask-indexing change did not introduce it.
+Likely fix direction: an owning-aware shift primitive (free the vacated
+slot's strings after the copy), or zero the vacated slot's pointer before
+marking it unused.
+
+## Per-call `strlen` of whole strings in per-character helpers (PERF 2.4, deferred)
+
+A helper taking an owned `string` and indexing it per character pays one
+`strlen` per CALL; calling it once per line over a large document is
+O(lines x bytes). The loop-invariant hoist
+(`scan_string_length_hoists`) only covers while loops, not call chains.
+Structural fix is an ABI change — thread (ptr, len) through function
+boundaries (the `view string` representation already exists for
+params/returns) or auto-convert borrows at boundaries. Interim library
+pattern: take/return `view string` (verified working; see PERF.md Part 1
+bonus).
+
+## Class-per-element lists allocate one malloc per element (PERF 2.5, deferred)
+
+`var Op = Op(); ops.push(mov op)` costs a malloc/free per element; a
+value-struct element or parallel `List<int>`s would be flat storage. Needs
+escape analysis or value-struct `List<T>` element support (the known
+element-ownership pipeline issues). Not a bug — the natural encoding is
+just not the fast one yet.

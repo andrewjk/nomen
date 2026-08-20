@@ -23,6 +23,21 @@ export default function clone_status(status: CheckStatus): CheckStatus {
 			lower_bound_exprs: v.lower_bound_exprs?.slice(),
 			upper_bound_inclusive_exprs: v.upper_bound_inclusive_exprs?.slice(),
 			lower_bound_inclusive_exprs: v.lower_bound_inclusive_exprs?.slice(),
+			path_bounds: v.path_bounds
+				? new Map(
+						[...v.path_bounds].map(([k, b]) => [
+							k,
+							{
+								upper: b.upper?.slice(),
+								lower: b.lower?.slice(),
+								upper_inclusive: b.upper_inclusive?.slice(),
+								lower_inclusive: b.lower_inclusive?.slice(),
+								range_lower: b.range_lower,
+								range_upper: b.range_upper,
+							},
+						]),
+					)
+				: undefined,
 		})),
 		// Inherited from the current function: block clones (if/else/while)
 		// stay in the same function, so they keep the enclosing base. Only
@@ -41,6 +56,10 @@ export default function clone_status(status: CheckStatus): CheckStatus {
 		errors: status.errors,
 		// Buffer cap tracking: share the same map (writes propagate to parent)
 		buffer_caps: status.buffer_caps,
+		// Parallel-length equations: block clones stay in the same function,
+		// so carry a copy (blocks never write; the copy is only for reads).
+		// check_function_node resets this for a freshly-entered function.
+		equal_lengths: status.equal_lengths?.slice(),
 		// Mutating-call tracking: share the same set so records in cloned
 		// (block/function) scopes propagate to the root warning pass.
 		mutated_local_names: status.mutated_local_names,

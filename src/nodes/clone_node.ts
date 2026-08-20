@@ -391,6 +391,11 @@ export default function clone_node(node: BaseNode): BaseNode {
 			c.return_constraint = n.return_constraint ? clone_node(n.return_constraint) : undefined;
 			c.returns_mov = n.returns_mov;
 			c.is_library = n.is_library;
+			// `inline` must survive monomorphization: the aarch64 backend
+			// skips standalone emission of inline funcs and splices their
+			// bodies at call sites, so a mono clone without the flag would
+			// silently fall back to a plain call.
+			c.is_inline = n.is_inline;
 			return c;
 		}
 		case "param": {

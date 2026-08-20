@@ -6,7 +6,7 @@ import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
 import check_type_exists from "./utils/check_type_exists.ts";
-import { apply_bounds } from "./utils/flow_bounds.ts";
+import { apply_bounds, strip_length_equalities } from "./utils/flow_bounds.ts";
 import materialize_type from "./utils/materialize_type.ts";
 import { is_class_type, is_owning_struct_type_requiring_move } from "./utils/ownership.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
@@ -122,6 +122,16 @@ export default function check_function_parameter_node(param: ParameterNode, stat
 
 	// Type-check the constraint expression (if any)
 	if (param.constraint) {
+		// Parallel-length clauses (`hash.length == xs.length`) are stripped
+		// BEFORE checking: they relate two runtime lengths, which no call
+		// site could ever prove. The clause becomes an ASSUMED equality for
+		// this function's body (status.equal_lengths) instead — see
+		// strip_length_equalities / canonicalize_length_path.
+		const stripped = strip_length_equalities(param.constraint, param.name, status);
+		if (stripped !== param.constraint) {
+			param.constraint = stripped;
+			if (!param.constraint) return;
+		}
 		check_node(param.constraint, status);
 		const constraint_type = type_from_value_node(param.constraint as BaseNode, status);
 		if (constraint_type.name && constraint_type.name !== "bool") {

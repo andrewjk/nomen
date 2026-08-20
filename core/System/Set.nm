@@ -2,6 +2,10 @@
  * An ordered set of unique values (`add`/`has`/`get`/`remove`). Elements must
  * be `Hashable` (hashed to a `uint` via `value.hash()`) and `Equatable`
  * (compared with `==`).
+ *
+ * The capacity is always a power of two (initial 8, doubling on rehash), so
+ * slot indexing is a mask (`hash & (cap - 1)`) — correct for negative hashes
+ * too (two's-complement `&` already lands in `[0, cap)`).
  **/
 pub struct Set<T: Hashable + Equatable> {
 	var length = 0
@@ -76,10 +80,7 @@ pub struct Set<T: Hashable + Equatable> {
 			if self.used.load(k) == 0 {
 				break
 			}
-			var int home = (self.slots.load_T(k).hash() as int) % cap
-			if home < 0 {
-				home = home + cap
-			}
+			var int home = (self.slots.load_T(k).hash() as int) & (cap - 1)
 			var int dgap = gap - home
 			if dgap < 0 {
 				dgap = dgap + cap
@@ -99,10 +100,9 @@ pub struct Set<T: Hashable + Equatable> {
 	}
 
 	func find_slot = (self, T value, int cap, out int: out >= 0 && out < cap) {
-		var int idx = (value.hash() as int) % cap
-		if idx < 0 {
-			idx = idx + cap
-		}
+		// cap is a power of two: `hash mod cap` via a mask, non-negative
+		// for any hash — no adjustment needed.
+		var int idx = (value.hash() as int) & (cap - 1)
 		while self.used.load(idx) != 0 {
 			if self.slots.load_T(idx) == value {
 				return idx

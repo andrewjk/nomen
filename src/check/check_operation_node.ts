@@ -8,6 +8,12 @@ import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
 import {
+	apply_bounds,
+	apply_negated_bounds,
+	restore_all_bounds,
+	snapshot_all_bounds,
+} from "./utils/flow_bounds.ts";
+import {
 	find_function_by_params,
 	is_overloaded,
 	mangled_label,
@@ -61,13 +67,41 @@ export default function check_operation_node(op: OperationNode, status: CheckSta
 			}
 		}
 
-		if (!check_node(op.right_value, status)) return false;
+		// Short-circuit bounds: when the right operand is evaluated, the left
+		// operand was TRUE, so its bounds hold for the right operand's check.
+		// This lets `.at(i)` verify inside a condition like
+		// `i < x_end && xs.at(i) == ys.at(j)` — the bounds from earlier `&&`
+		// operands are applied left-to-right while checking later ones. The
+		// facts are transient (they don't hold after the whole expression), so
+		// a snapshot of every value's flow bounds is restored afterwards.
+		const saved_bounds = snapshot_all_bounds(status);
+		apply_bounds(op.left_value, status);
+		const right_ok = check_node(op.right_value, status);
+		restore_all_bounds(status, saved_bounds);
+		if (!right_ok) return false;
 
 		// Restore is_null after the condition (else branch shouldn't be narrowed)
 		if (saved_null !== undefined && left_check) {
 			const var_obj = status.values.findLast((v) => v.name === left_check.name);
 			if (var_obj) var_obj.is_null = saved_null;
 		}
+
+		op.type = new Type("bool");
+		return true;
+	}
+
+	if (op.op === ("||" as const)) {
+		if (!check_node(op.left_value, status)) return false;
+
+		// Short-circuit bounds: when the right operand of `||` is evaluated,
+		// the left operand was FALSE, so its NEGATION holds (De Morgan per
+		// comparison — see apply_negated_bounds). Transient, like the `&&`
+		// case: restored after the right operand's check.
+		const saved_bounds = snapshot_all_bounds(status);
+		apply_negated_bounds(op.left_value, status);
+		const right_ok = check_node(op.right_value, status);
+		restore_all_bounds(status, saved_bounds);
+		if (!right_ok) return false;
 
 		op.type = new Type("bool");
 		return true;
@@ -196,8 +230,7 @@ export default function check_operation_node(op: OperationNode, status: CheckSta
 		case ">":
 		case ">=":
 		case "<":
-		case "<=":
-		case "||": {
+		case "<=": {
 			op.type = new Type("bool");
 			break;
 		}

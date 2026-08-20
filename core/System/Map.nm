@@ -1,7 +1,12 @@
 /**
- * An ordered key-value map with `set`/`get`/`has`/`remove`. Keys must be
+ * An ordered key-value map with `set`/`get`/`get_or`/`has`/`remove`. Keys must be
  * `Hashable` (hashed to a `uint` via `key.hash()`) and `Equatable` (compared
  * with `==`); values may be any type.
+ *
+ * The capacity is always a power of two (initial 8, doubling on rehash), so
+ * bucket indexing is a mask (`hash & (cap - 1)`) instead of a division — and
+ * it is correct for negative hashes too: two's-complement `&` already lands
+ * in `[0, cap)`, which is why no negative adjustment is needed.
  **/
 pub struct Map<TK: Hashable + Equatable, TV> {
 	var length = 0
@@ -53,6 +58,20 @@ pub struct Map<TK: Hashable + Equatable, TV> {
 		return self.values.load_T(idx)
 	}
 
+	// Fused lookup-with-fallback: one probe instead of the `has` + `get`
+	// pair (which probes twice) for the common "default when missing" shape.
+	pub func get_or = (self, TK key, TV fallback, out TV) {
+		var int cap = self.keys.cap
+		if cap == 0 {
+			return fallback
+		}
+		var int idx = self.find_slot(key, cap)
+		if self.used.load(idx) == 0 {
+			return fallback
+		}
+		return self.values.load_T(idx)
+	}
+
 	pub func has = (self, TK key, out bool) {
 		var int cap = self.keys.cap
 		if cap == 0 {
@@ -91,10 +110,7 @@ pub struct Map<TK: Hashable + Equatable, TV> {
 			if self.used.load(k) == 0 {
 				break
 			}
-			var int home = (self.keys.load_T(k).hash() as int) % cap
-			if home < 0 {
-				home = home + cap
-			}
+			var int home = (self.keys.load_T(k).hash() as int) & (cap - 1)
 			var int dgap = gap - home
 			if dgap < 0 {
 				dgap = dgap + cap
@@ -115,10 +131,9 @@ pub struct Map<TK: Hashable + Equatable, TV> {
 	}
 
 	func find_slot = (self, TK key, int cap, out int: out >= 0 && out < cap) {
-		var int idx = (key.hash() as int) % cap
-		if idx < 0 {
-			idx = idx + cap
-		}
+		// cap is a power of two, so this is `hash mod cap` via a mask —
+		// non-negative for any hash (two's complement), no adjustment.
+		var int idx = (key.hash() as int) & (cap - 1)
 		while self.used.load(idx) != 0 {
 			if self.keys.load_T(idx) == key {
 				return idx

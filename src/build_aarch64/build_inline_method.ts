@@ -31,7 +31,14 @@ function extract_aarch64_asm(func: FunctionNode, platform: string): string {
 }
 
 function count_x19_reads(asm: string): number {
-	const matches = asm.match(/\bx19\b/g);
+	// Count real instruction operands only — asm comments (e.g. the
+	// `// x19 = self` prologue notes in core raw bodies) mention registers
+	// without reading them.
+	const code = asm
+		.split("\n")
+		.map((l) => l.replace(/\/\/.*$/, ""))
+		.join("\n");
+	const matches = code.match(/\bx19\b/g);
 	return matches ? matches.length : 0;
 }
 
@@ -43,6 +50,13 @@ function build_naked_inline(struct_node: StructNode, func: FunctionNode, status:
 	if (count_x19_reads(asm) === 1) {
 		asm = asm.replace(/\bx19\b/g, "x0");
 	}
+
+	// Local labels in the raw body (`.L…`) are defined once per emission —
+	// splicing the same body at multiple inline sites would define them
+	// twice and fail to assemble. Rename every `.L…` token with a per-site
+	// suffix (definitions and branch targets alike, consistently).
+	const site = inline_counter++;
+	asm = asm.replace(/(\.L[A-Za-z0-9_]+)/g, `$1_${site}`);
 
 	status.code += asm + "\n";
 }

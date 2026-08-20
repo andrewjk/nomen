@@ -1,4 +1,5 @@
 import add_error from "../add_error.ts";
+import { fold_asm_constants } from "../build_common/fold_asm_constants.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import type AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
@@ -1415,6 +1416,14 @@ function substitute_raw_in_node(
 				new RegExp(`(?<![&*.>\\w])\\b${pname}\\b(?![\\w])`, "g"),
 				`(*${pname})`,
 			);
+		}
+		// Pure-asm blocks now have literal T_SIZE/T names: fold the runtime
+		// width dispatches they were written with (cmp/b.eq chains against a
+		// constant `mov xN, #T_SIZE`) and power-of-two stride multiplies
+		// (madd/mul → lsl). C-source blocks are left alone — the C compiler
+		// folds them itself.
+		if (raw_block_is_pure_asm(value)) {
+			value = fold_asm_constants(value);
 		}
 		raw.value = value;
 		return;
