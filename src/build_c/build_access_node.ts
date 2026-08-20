@@ -674,7 +674,14 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 					// instance is passed by address (`&`); a pointer param/var is
 					// forwarded as-is; a `ref` class param (`struct T **`) is
 					// dereferenced once to yield the single pointer `self` expects.
-					if (!built_in_types.includes(method_type?.name || "")) {
+					// A `ref self` method (e.g. string.set) takes the caller's slot
+					// by pointer even for built-in types — its `T *self` param is
+					// one indirection deeper than the by-value convention the
+					// simple-type methods (string.at & co.) use.
+					const method_self_is_ref = !!target_method?.params?.some(
+						(p) => p.is_self_param && (p.is_ref || p.type?.is_ref),
+					);
+					if (!built_in_types.includes(method_type?.name || "") || method_self_is_ref) {
 						const target_value =
 							node.target.node_type === "value" ? (node.target as ValueNode).value : "";
 						// See field-access branch: self is a pointer whenever

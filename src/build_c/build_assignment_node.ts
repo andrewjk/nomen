@@ -415,6 +415,26 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 				status.code += `free(${lhs_name});\n`;
 			}
 
+			// A bare string LITERAL reassignment (`s = "abc"`): the variable keeps
+			// owning a heap value — strdup the literal (mirroring the declaration
+			// path's `var string s = "abc"` lowering) so the scope-exit auto_free
+			// stays valid. The displaced old owned value was already freed above.
+			// Without this, the raw rodata pointer is stored while auto_free still
+			// frees it at scope exit (an invalid free / abort).
+			const rhs_is_string_literal =
+				lhs_is_string &&
+				!node.swap &&
+				rhs_is_bare_value &&
+				(rhs as ValueNode).value.length >= 2 &&
+				(rhs as ValueNode).value.startsWith('"') &&
+				(rhs as ValueNode).value.endsWith('"');
+			if (rhs_is_string_literal) {
+				status.code += `${lhs_name} = strdup(`;
+				build_node(node.right_value, status);
+				status.code += `);\n`;
+				return;
+			}
+
 			if (rhs_is_bare_value) {
 				// RHS is a bare variable (alias). For classes, transfer
 				// ownership: remove the SOURCE from whichever scope frame holds
@@ -565,6 +585,41 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 			status.code += `;\n${flag} = 1`;
 		}
 		return;
+	}
+
+	// A `ref string` param reassignment (`s = …` inside `func f = (ref string
+	// s)`) writes through to the CALLER's storage, whose ownership tracking
+	// (scoped_declarations / auto_free) assumes the slot may own a heap value
+	// and frees it at scope exit. Storing a non-owning value (a rodata literal
+	// or another variable's string) would make that free invalid. Mirror the
+	// struct-string-field lowering: a fresh-heap RHS (every string-returning
+	// call on this backend) is stored directly; anything else is strdup'd so
+	// the slot keeps owning a heap copy. The displaced old value leaks — the
+	// callee can't know whether the caller's slot was owned (conditional
+	// writes make an eager free unsound), mirroring
+	// drop_self_written_string_field_records' convention.
+	if (!node.operator && !node.swap && node.left_value.node_type === "value") {
+		const lhs_name = (node.left_value as ValueNode).value;
+		const lhs_type = type_from_value_node(node.left_value);
+		const lhs_is_ref_string_param =
+			lhs_type?.name === "string" &&
+			!lhs_type.is_array &&
+			!!status.function_ref_params?.has(lhs_name) &&
+			!status.ref_class_params?.has(lhs_name);
+		if (lhs_is_ref_string_param) {
+			const fresh_heap = is_owned_heap_temp(node.right_value, status);
+			build_node(node.left_value, status);
+			status.code += ` = `;
+			if (!fresh_heap) {
+				status.code += `strdup(`;
+			}
+			build_node(node.right_value, status);
+			if (!fresh_heap) {
+				status.code += `)`;
+			}
+			status.code += `;\n`;
+			return;
+		}
 	}
 
 	// Ref-local reassignment (`current = otherVar`): repoint the pointer

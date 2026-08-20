@@ -1697,7 +1697,19 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 		if (node.value.node_type === "op" && (node.value as OperationNode).type?.name === "string") {
 			const op = node.value as OperationNode;
 			const str_result = resolve_string_op(op, status);
-			if (str_result !== null) {
+			if (str_result !== null && status.force_heap_strings?.has(node.name)) {
+				// Heap-forced (e.g. a `ref self` method like string.set writes
+				// through this var): the folded literal would land in
+				// read-only data — strdup it into an owned stack slot instead.
+				const offset = allocate_stack_space(status, 8);
+				status.stack_offsets!.set(node.name, offset);
+				const label = `_str_fold_${decl_const_counter++}`;
+				emit_data(status, `${label}: .asciz ${escape_asciz(str_result)}\n.p2align 2\n`);
+				status.code += `adr x0, ${label}\n`;
+				emit_strdup(status);
+				status.code += `str x0, [x29, #${offset}]\n`;
+				mark_heap_string(status, node.name);
+			} else if (str_result !== null) {
 				if (status.function_return_label) {
 					emit_data(status, `${node.name}: .asciz ${escape_asciz(str_result)}\n.p2align 2\n`);
 				} else {

@@ -133,9 +133,17 @@ Console.write(i.to_string())
 
 test("mutating method call disables hoist", async () => {
 	// `set` is a `ref self` method: it can change the receiver's effective
-	// strlen in place, so its receiver must not be hoisted. (The runtime
-	// path for `set` on aarch64 is broken pre-existing, so assert on the
-	// scanner directly instead of executing the program.)
+	// strlen in place, so its receiver must not be hoisted.
+	const input = `
+var string s = "abc"
+var int i = 0
+while i < s.length {
+	s.set(i, 'x')
+	i += 1
+}
+Console.write(s)
+`;
+	await build_and_check_output(input, "hoist_mutating_set", "xxx");
 	const root = parse_with_imports(`
 var string s = "abc"
 var int i = 0

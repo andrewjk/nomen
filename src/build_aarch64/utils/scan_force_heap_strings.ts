@@ -1,7 +1,9 @@
+import AccessFunctionCallNode from "../../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../../nodes/AccessNode.ts";
 import AssignmentNode from "../../nodes/AssignmentNode.ts";
 import BaseNode from "../../nodes/BaseNode.ts";
 import IfElseNode from "../../nodes/IfElseNode.ts";
+import StructNode from "../../nodes/StructNode.ts";
 import SwitchNode from "../../nodes/SwitchNode.ts";
 import ValueNode from "../../nodes/ValueNode.ts";
 
@@ -9,20 +11,26 @@ import ValueNode from "../../nodes/ValueNode.ts";
 // string somewhere in the function body (including inside loops/branches).
 // The build uses this to heap-allocate their initial literal value so that
 // reassignment can uniformly free the previous value (e.g. `s = s + "x"`).
-export default function scan_force_heap_strings(statements: BaseNode[]): Set<string> {
+// A string local that is the RECEIVER of a `ref self` method call (e.g.
+// `s.set(i, 'x')`) is also included: a literal initializer would store the
+// rodata address, which the mutating method cannot write through.
+export default function scan_force_heap_strings(
+	statements: BaseNode[],
+	structs?: StructNode[],
+): Set<string> {
 	const result = new Set<string>();
-	walk(statements, result);
+	walk(statements, result, structs);
 	return result;
 }
 
-function walk(statements: BaseNode[] | undefined, result: Set<string>) {
+function walk(statements: BaseNode[] | undefined, result: Set<string>, structs?: StructNode[]) {
 	if (!statements) return;
 	for (const stmt of statements) {
-		visit(stmt, result);
+		visit(stmt, result, structs);
 	}
 }
 
-function visit(node: BaseNode | undefined, result: Set<string>) {
+function visit(node: BaseNode | undefined, result: Set<string>, structs?: StructNode[]) {
 	if (!node) return;
 	switch (node.node_type) {
 		case "assign": {
@@ -30,25 +38,45 @@ function visit(node: BaseNode | undefined, result: Set<string>) {
 			if (a.left_value.node_type === "value" && is_fresh_heap_string(a.right_value)) {
 				result.add((a.left_value as ValueNode).value);
 			}
+			visit(a.right_value, result, structs);
+			break;
+		}
+		case "access": {
+			// A `ref self` method call on a string local (`s.set(i, 'x')`):
+			// the method writes through the receiver, so the local must not
+			// hold a read-only rodata literal — force it to a heap copy.
+			const n = node as AccessNode;
+			if (n.access.node_type === "access_func" && n.target.node_type === "value") {
+				const target = n.target as ValueNode;
+				if (
+					target.type?.name === "string" &&
+					structs
+						?.find((s) => s.name === "string")
+						?.functions.find((f) => f.name === (n.access as AccessFunctionCallNode).name)
+						?.params?.some((p) => p.is_self_param && (p.is_ref || p.type?.is_ref))
+				) {
+					result.add(target.value);
+				}
+			}
 			break;
 		}
 		case "while":
 		case "for": {
-			walk((node as unknown as { statements: BaseNode[] }).statements, result);
+			walk((node as unknown as { statements: BaseNode[] }).statements, result, structs);
 			break;
 		}
 		case "if": {
 			const n = node as IfElseNode;
-			walk(n.if_branch?.statements, result);
-			walk(n.else_branch?.statements, result);
+			walk(n.if_branch?.statements, result, structs);
+			walk(n.else_branch?.statements, result, structs);
 			break;
 		}
 		case "switch": {
 			const n = node as SwitchNode;
 			for (const c of n.cases) {
-				walk(c.branch?.statements, result);
+				walk(c.branch?.statements, result, structs);
 			}
-			walk(n.else_branch?.statements, result);
+			walk(n.else_branch?.statements, result, structs);
 			break;
 		}
 		default:

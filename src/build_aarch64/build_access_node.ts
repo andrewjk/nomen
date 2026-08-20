@@ -1467,6 +1467,15 @@ function build_access_method(
 	const method_name =
 		access_func.mangled_name || `${mono_struct_name}_${access_func.name.replace(/#/g, "")}`;
 
+	// A `ref self` method (e.g. string.set) receives the caller's slot BY
+	// ADDRESS — the same convention the plain-function ref-param path uses —
+	// so the callee can write back through it. Simple-type receivers must
+	// therefore skip the usual "pass the value" load.
+	const method_self_is_ref = !!status.structs
+		.find((s) => s.name === mono_struct_name && !s.is_generic)
+		?.functions.find((f) => f.name === access_func.name)
+		?.params?.some((p) => p.is_self_param && (p.is_ref || p.type?.is_ref));
+
 	// Check if method returns a struct. A `view T` return is a (ptr, len) pair
 	// in x0/x1, not a sret struct — exclude views even when T is a struct.
 	// An ARRAY-typed return (`out Array<T>`, e.g. `with`/`add`/`mul`) is a
@@ -1538,7 +1547,10 @@ function build_access_method(
 					target_is_simple &&
 					!target_type.is_array &&
 					(target_type.name !== "string" || has_stack_offset) &&
-					!is_local_ref_var(name, status)
+					!is_local_ref_var(name, status) &&
+					// A `ref self` method receives &slot: keep the address
+					// emit_var_address produced instead of loading the value.
+					!method_self_is_ref
 				) {
 					const size = aarch64_size(target_type.name);
 					const signed =

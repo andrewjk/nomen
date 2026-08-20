@@ -832,8 +832,21 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 				// in x2 across build_node(rhs) is unsound — the RHS freely
 				// reuses x2 as scratch (e.g. the right operand of `+`), so the
 				// final store would hit a garbage address.
+				status.last_result_is_heap = false;
 				build_node(node.right_value, status);
 				if (!status.code.endsWith("\n")) status.code += "\n";
+				// A `ref string` pointee: the write goes through to the
+				// CALLER's storage, whose scope-exit ownership tracking
+				// (heap_strings) may free it. Storing a non-owning value (a
+				// rodata literal, another variable's string) would make that
+				// free invalid — strdup it so the caller's slot keeps owning a
+				// heap copy. The displaced old value leaks (the callee can't
+				// know whether the caller's slot was owned); a fresh-heap RHS
+				// (last_result_is_heap) is stored directly. Mirrors the C
+				// backend's ref-string-param lowering.
+				if (ref_type_name === "string" && !status.last_result_is_heap) {
+					emit_strdup(status);
+				}
 				load_ref_param_pointer("x2", name, status);
 				status.code += `${ref_store_op} ${ref_store_reg}, [x2]\n`;
 			}

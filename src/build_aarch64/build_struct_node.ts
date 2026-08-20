@@ -858,10 +858,18 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 
 		const is_self_param = func.params[0]?.is_self_param;
 		const self_is_var = is_self_param && func.params[0]?.declaration === "var";
-		const needs_x19 = is_self_param && !self_is_var;
+		const self_is_ref = is_self_param && !!(func.params[0].is_ref || func.params[0].type?.is_ref);
+		// `ref self` on a SIMPLE type (e.g. string.set) follows the by-ref
+		// convention: x0 arrives holding &receiver, while raw #arch: aarch64
+		// bodies expect x19 = the self VALUE (the same convention read-only
+		// self uses, e.g. string.at's `ldrb w0, [x19, x1]`). Load through the
+		// pointer so both agree. (For non-simple structs, ref self keeps the
+		// historical by-address x19 = x0 — the value/struct convention.)
+		const needs_x19 = is_self_param && (!self_is_var || (self_is_ref && node.is_simple_type));
+		const x19_through_ref = needs_x19 && self_is_var;
 		if (needs_x19) {
 			status.code += `str x19, [sp, #-16]!\n`;
-			status.code += `mov x19, x0\n`;
+			status.code += x19_through_ref ? `ldr x19, [x0]\n` : `mov x19, x0\n`;
 		}
 
 		const param_regs = ["x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7"];
@@ -901,7 +909,13 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 			status.struct_return_buffer = "x8";
 		}
 
-		if (needs_x19) {
+		// Register self→x19 only for the by-address convention (read-only
+		// self). A `ref self` on a simple type must stay OUT of the param-reg
+		// map: uses then route through the ref slot (function_ref_params), so
+		// `self = ...` writes back through to the caller's storage instead of
+		// silently reassigning the x19 copy. x19 still carries the loaded
+		// value for raw #arch bodies to read.
+		if (needs_x19 && !self_is_var) {
 			status.function_param_regs.set("self", "x19");
 		}
 
@@ -1003,8 +1017,11 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 				const offset = allocate_stack_space(status, size, size);
 				status.stack_offsets!.set(param.name, offset);
 				if (param.is_self_param) {
-					// `var self`: self takes slot 0 (in x0) — not a stack arg.
-					const save_reg = needs_x19 ? "x19" : param_regs[second_slot_idx];
+					// `var self` (= `ref self` here): self takes slot 0 (in
+					// x0) — not a stack arg. For `ref self` on a simple type
+					// the slot must hold the RAW incoming &receiver (x0); x19
+					// carries the dereferenced value for raw bodies only.
+					const save_reg = x19_through_ref ? "x0" : needs_x19 ? "x19" : param_regs[second_slot_idx];
 					status.code += `str ${save_reg}, [x29, #${offset}]\n`;
 				} else if (second_slot_idx < NUM_REG_ARGS) {
 					const reg = param_regs[second_slot_idx];
@@ -1082,7 +1099,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 			}
 		}
 
-		status.force_heap_strings = scan_force_heap_strings(func.statements);
+		status.force_heap_strings = scan_force_heap_strings(func.statements, status.structs);
 		status.buffer_data_cache = undefined;
 		// Snapshot the moved set so the reclaim below can tell a param moved
 		// out WITHIN this body from a same-named variable already moved in an
