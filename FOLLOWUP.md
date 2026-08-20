@@ -74,53 +74,66 @@ if it keeps biting.
   Exposure is strictly no worse than before the fix — the direct-call path
   was the hole that was closed; this is the unfixed remainder.
 
-## `string.length` lowers to a per-call `strlen` — hoist loop-invariant lengths (perf)
+## Reassigning a string to a bare literal stores rodata, then scope-exit
+free aborts (pre-existing)
 
-`x.length` on a `string` emits a real `strlen(x)` call at every evaluation;
-it is not a field read. In loop conditions this is O(len) **per iteration**,
-making any char-walking loop O(len²). The differator port's
-`split_lines`/`substring`/`fnv32`/`ends_with_newline` family scans a whole
-document byte-by-byte, so splitting a 257 KB / 10k-line file took **2.7 s**
-— every single iteration re-ran `strlen` over the full 257 KB (~33 GB of
-scanning). Every diff entry point (`myers`, `histogram`, `combined`) was
-bottlenecked by this shared infrastructure, not the algorithms.
+Found while testing the `string.length` hoist. A `var string` initialized
+with a literal is heap-allocated (strdup) at declaration, but a later
+REASSIGNMENT to a bare literal stores the raw rodata pointer — no strdup —
+while scope-exit auto_free still frees it. Output is correct; the program
+aborts at exit (audit wrap, exit 134). Confirmed on the unmodified baseline
+(changes stashed); crashes on the C backend (aarch64 untested for this
+shape).
 
-**Shape in the port** (`core`-style user code, `differator/nomen/src/diff.nm`):
+**Failing shape** (local reassignment in a loop):
 
 ```nomen
-pub func split_lines = (string text, out List<Line>) {
-	var List<Line> lines = List<Line>()
-	var start = 0
-	var i = 0
-	while i < text.length {          // <-- strlen(text) every iteration
-		if (text.at(i) as int) == 10 {
-			...
-		}
-		i += 1
-	}
-	...
+var string s = "abcdef"
+var int total = 0
+while s.length > 3 {
+	s = "abc"        // free(old); s = <rodata literal> — no strdup
+	total += 1
+}
+Console.write(total.to_string())  // prints "1abc" fine
+Console.write(s)
+// scope exit: free(rodata "abc") → invalid free / abort
+```
+
+Generated C: `nomen_free_wrap(s); s = "abc";` … `nomen_free_wrap(s);` at
+auto-free. The same root cause is reachable through a `ref string` param
+(callee writes the literal through the ref; the CALLER's scope-exit free
+aborts):
+
+```nomen
+func truncate_in_place = (ref string s) {
+	s = "xy"
 }
 ```
 
-Generated C for the condition: `while (i < ((long)strlen(text)))`.
+That ref-param shape also crashes on the unmodified baseline. The fix
+likely belongs in `src/build_c/build_assignment_node.ts` (reassignment
+emit): apply the same literal-strdup ownership rule the declaration path
+uses (see `force_heap_strings` / borrow-only analysis), or record the var
+as non-owning so auto_free skips it — mirroring `string_borrow_vars`.
 
-**Fix tiers**:
+## `String.set` traps on aarch64 (pre-existing)
 
-1. _Targeted codegen_: recognise a loop whose condition compares an
-   induction variable against `string.length` of a loop-invariant string
-   (parameter or un-reassigned local) and hoist the `strlen` into a temp
-   before the loop — mirroring what the bounds analyser already knows (it
-   tracks `text.length` as a symbol for constraint discharge, so the
-   invariance fact is available).
-2. _General LICM_: a small loop-invariant code motion pass over call-ish
-   expressions with no side effects (`strlen` on an invariant pointer is the
-   main one; `List.length` is already a field read).
-3. _Representation_: prefix- or side-table-stored string lengths, making
-   `.length` a load. Biggest change (ABI, all backends, interop), but kills
-   the whole class.
+Also found while testing the hoist: a `set` (`ref self`) call writing
+chars crashes on the aarch64 backend with SIGTRAP (exit 138); the C
+backend runs the same program correctly. Confirmed on the unmodified
+baseline (changes stashed). Not yet diagnosed — could be the aarch64
+`set` body in `core/System/String.nm` writing through a non-owning
+pointer, or an audit trap on a bad free in the ref-self receiver path.
 
-**Interim user workaround**: bind `const int n = text.length` before the
-loop and compare against `n`. Note the bounds checker already discharges
-`at(i)` through an `n` aliasing `text.length`, so the workaround costs
-nothing in checkability. BENCH note: the differator benchmarks will look
-quadratic until this lands.
+**Failing shape**:
+
+```nomen
+var string s = "abc"
+var int i = 0
+while i < s.length {
+	s.set(i, 'x')
+	i += 1
+}
+Console.write(s)   // C prints "xxx"; aarch64 traps (exit 138)
+```
+

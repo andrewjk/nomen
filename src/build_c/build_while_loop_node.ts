@@ -1,3 +1,4 @@
+import scan_string_length_hoists from "../build_common/scan_string_length_hoists.ts";
 import WhileLoopNode from "../nodes/WhileLoopNode.ts";
 import build_auto_free from "./build_auto_free.ts";
 import build_block_node from "./build_block_node.ts";
@@ -18,6 +19,24 @@ export default function build_while_loop_node(node: WhileLoopNode, status: Build
 	const old_deferred_frees = status.deferred_frees;
 	status.deferred_frees = [];
 	push_c_loop_frame(status);
+
+	// Hoist `strlen` of loop-invariant strings into temps before the loop so
+	// the condition (and body references) read the temp instead of re-running
+	// an O(len) strlen on every iteration.
+	const old_length_temps = status.string_length_temps;
+	const hoists = scan_string_length_hoists(node.condition, node.statements, node.update, status);
+	if (hoists.size) {
+		if (!status.string_length_temps) status.string_length_temps = new Map();
+		for (const [name, target] of hoists) {
+			if (status.string_length_temps.has(name)) continue;
+			const id = (status.label_counter = (status.label_counter ?? 0) + 1);
+			const temp = `_slh_${id}`;
+			status.string_length_temps.set(name, temp);
+			status.code += `const long ${temp} = (long)strlen(`;
+			build_node(target, status);
+			status.code += `);\n`;
+		}
+	}
 
 	// Hoist allocation declarations from the condition to before the `while`.
 	emit_allocations(node.condition, status);
@@ -47,4 +66,5 @@ export default function build_while_loop_node(node: WhileLoopNode, status: Build
 	leave_c_scope(status);
 	status.scoped_declarations = old_scoped_declarations;
 	status.deferred_frees = old_deferred_frees;
+	status.string_length_temps = old_length_temps;
 }

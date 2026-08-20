@@ -426,6 +426,22 @@ export default interface BuildStatus {
 	 */
 	float_result_in_d0?: boolean;
 	/**
+	 * Loop-invariant `string.length` cache (C backend): maps a string
+	 * variable name to the C temp holding its length, hoisted before the
+	 * enclosing while loop by build_while_loop_node. `x.length` inside the
+	 * loop emits the temp instead of a per-evaluation `strlen(x)`. Populated
+	 * only for variables the loop never rebinds (see
+	 * scan_string_length_hoists); saved/restored per loop.
+	 */
+	string_length_temps?: Map<string, string>;
+	/**
+	 * Loop-invariant `string.length` cache (aarch64 backend): maps a string
+	 * variable name to the stack slot offset holding its length, computed
+	 * once before the enclosing while loop by build_while_loop_node. Saved/
+	 * restored per loop.
+	 */
+	string_length_slots?: Map<string, number>;
+	/**
 	 * Loop-invariant cache: maps a Buffer target key (e.g. "flags" or
 	 * "self.digits") to the callee-saved register holding its pre-loaded
 	 * data pointer. Populated lazily on first Buffer access inside a loop;

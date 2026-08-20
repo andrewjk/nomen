@@ -33,7 +33,17 @@ import { get_field_offset, get_struct_size } from "./utils/struct_layout.ts";
 // Emit strlen(target) leaving the length in x0. If the target expression
 // produces an owned heap string temporary (e.g. Json.stringify(...) or an
 // operator/interpolation result), free it after measuring so it does not leak.
+// A bare variable registered in status.string_length_slots (a loop-invariant
+// hoist from build_while_loop_node) loads the pre-computed length instead.
 function emit_string_length(target: BaseNode, status: BuildStatus) {
+	if (target.node_type === "value") {
+		const slot = status.string_length_slots?.get((target as ValueNode).value);
+		if (slot !== undefined) {
+			status.last_result_is_heap = false;
+			status.code += `ldr x0, [x29, #${slot}]\n`;
+			return;
+		}
+	}
 	status.last_result_is_heap = false;
 	build_node(target, status);
 	if (!status.code.endsWith("\n")) status.code += "\n";

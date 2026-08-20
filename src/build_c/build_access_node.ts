@@ -845,7 +845,16 @@ function resolve_access_field_type(node: AccessNode, status: BuildStatus): Type 
 // an OWNED heap string temporary (e.g. `Json.stringify(...).length`), the
 // intermediate string would otherwise leak — the caller keeps only the length.
 // Wrap in a clang statement-expression that frees the temp after measuring it.
+// A bare variable registered in status.string_length_temps (a loop-invariant
+// hoist from build_while_loop_node) emits the pre-computed temp instead.
 function emit_string_length(target: BaseNode, status: BuildStatus) {
+	if (target.node_type === "value") {
+		const temp = status.string_length_temps?.get((target as ValueNode).value);
+		if (temp) {
+			status.code += temp;
+			return;
+		}
+	}
 	if (is_owned_heap_temp(target, status)) {
 		const id = (status.label_counter = (status.label_counter ?? 0) + 1);
 		const tmp = `_slen_${id}`;
