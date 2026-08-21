@@ -12,6 +12,7 @@ import { find_decl_in_c_scopes } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
 import { has_flag_name, is_nullable_struct_type } from "./utils/nullable_struct.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
+import { c_view_string_arg } from "./utils/view_value.ts";
 
 export default function build_function_call_node(node: FunctionCallNode, status: BuildStatus) {
 	// Shorthand enum-with-args constructor `.case(args)` (rewritten by the
@@ -91,6 +92,15 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			}
 			build_node(node.params[i], status);
 			status.suppress_dereference = false;
+			continue;
+		}
+
+		// A `view string` parameter receives a (ptr, len) nomen_view: a
+		// view-typed argument passes through; an owned string expression is
+		// wrapped with its strlen (implicit owned→view borrow — the caller
+		// keeps ownership).
+		if (node.view_param_indices?.includes(i)) {
+			c_view_string_arg(node.params[i], status);
 			continue;
 		}
 

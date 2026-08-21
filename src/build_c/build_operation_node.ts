@@ -7,6 +7,7 @@ import c_type from "./utils/c_type.ts";
 import { enum_with_data_side, static_enum_case } from "./utils/enum_eq.ts";
 import { has_flag_name, is_nullable_struct_type } from "./utils/nullable_struct.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
+import { c_view_string_arg, is_view_value } from "./utils/view_value.ts";
 
 export default function build_operation_node(node: OperationNode, status: BuildStatus) {
 	// Resolve a deferred == / != operator (set during generic-body checking
@@ -157,6 +158,26 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		const label =
 			node.operator_func.mangled_name ||
 			`${node.operator_func.struct_name}_${node.operator_func.func_name}`;
+		// A string comparison (`a == b`) with a VIEW operand must NOT dispatch
+		// to string_eq/strcmp: a view into the middle of a buffer is not
+		// NUL-terminated, and its nomen_view struct doesn't fit the char*
+		// signature. Compare as slices: equal lengths + equal bytes. An owned
+		// operand is measured with strlen for the comparison (no copy).
+		const is_string_cmp = node.op === "==" || node.op === "!=";
+		if (
+			is_string_cmp &&
+			node.operator_func.struct_name === "string" &&
+			(is_view_value(node.left_value, status) || is_view_value(node.right_value, status))
+		) {
+			status.code += `({ nomen_view _a = `;
+			c_view_string_arg(node.left_value, status);
+			status.code += `, _b = `;
+			c_view_string_arg(node.right_value, status);
+			status.code += `; ((_a.len == _b.len) && (memcmp(_a.ptr, _b.ptr, _a.len) == 0))${
+				node.op === "!=" ? " == 0" : ""
+			}; })`;
+			return;
+		}
 		// String concat/repeat (`a + b`, `s * n`): if an operand is itself a
 		// freshly-allocated heap string temp (a nested string op or a
 		// heap-returning call), it is never bound to a variable and would leak
@@ -170,7 +191,6 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		// strcmp) with a heap-temp operand leaks the same way: the strdup'd
 		// call result is consumed by strcmp and never freed. Spill-and-free
 		// those too (result type differs: the op yields bool, not char*).
-		const is_string_cmp = node.op === "==" || node.op === "!=";
 		const left_temp =
 			(is_string_op || is_string_cmp) && is_owned_heap_temp(node.left_value, status);
 		const right_temp =

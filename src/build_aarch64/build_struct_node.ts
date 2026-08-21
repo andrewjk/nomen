@@ -881,11 +881,13 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 
 		const old_ref_params = status.function_ref_params;
 		const old_ref_class_slots = status.ref_class_slots;
+		const old_view_params = status.function_view_params;
 
 		status.function_param_regs = new Map();
 		status.function_param_vars = new Set();
 		status.function_ref_params = new Set();
 		status.ref_class_slots = new Map();
+		status.function_view_params = new Set();
 		status.struct_return_buffer = undefined;
 
 		// An ARRAY-typed return (`out Array<T>`) is a heap buffer POINTER in
@@ -937,6 +939,12 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 				if (param.type.is_ref) {
 					status.function_ref_params!.add(param.name);
 				}
+				continue;
+			}
+			// A `view T` param arrives as a (ptr, len) register pair — two
+			// AAPCS64 slots, not a by-address struct param.
+			if (param.type.is_view) {
+				slot_idx += 2;
 				continue;
 			}
 			// Enum-with-data params arrive as a pointer to the 16-byte
@@ -1006,6 +1014,28 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 				continue;
 			}
 			if (param.is_variadic) {
+				second_slot_idx += 2;
+				continue;
+			}
+			// A `view T` param is a (ptr, len) pair: spill both halves into a
+			// 16-byte local (two register slots — matching the call site's
+			// pair passing), then skip the generic single-slot spill.
+			if (param.type.is_view) {
+				const offset = allocate_stack_space(status, 16, 16);
+				status.stack_offsets!.set(param.name, offset);
+				status.function_view_params!.add(param.name);
+				// Each half comes from its own register slot, or from the
+				// caller's outgoing stack area when its slot is past x7.
+				for (const half of [0, 1] as const) {
+					const p_slot = second_slot_idx + half;
+					if (p_slot < NUM_REG_ARGS) {
+						status.code += `str ${param_regs[p_slot]}, [x29, #${offset + half * 8}]\n`;
+					} else {
+						const k = p_slot - NUM_REG_ARGS;
+						status.code += `ldr x9, [x29, #${overflow_placeholder(func_label, k)}]\n`;
+						status.code += `str x9, [x29, #${offset + half * 8}]\n`;
+					}
+				}
 				second_slot_idx += 2;
 				continue;
 			}
@@ -1226,6 +1256,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		status.function_param_vars = old_param_vars;
 		status.function_ref_params = old_ref_params;
 		status.ref_class_slots = old_ref_class_slots;
+		status.function_view_params = old_view_params;
 		status.function_return_label = old_return_label;
 		status.force_heap_strings = old_force_heap;
 		status.struct_return_buffer = undefined;

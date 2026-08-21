@@ -58,6 +58,15 @@ export default function build_parameter_node(node: ParameterNode, status: BuildS
 		return;
 	}
 
+	// A `view T` parameter is the universal non-owning (ptr, len) slice
+	// struct, passed by value (matching the aarch64 register pair). Inside
+	// the body, `.length` lowers to `.len` and the view builtins (.at /
+	// .to_string) operate on it directly.
+	if (!node.is_self_param && node.type.is_view) {
+		status.code += `nomen_view ${c_function_name(node.name)}`;
+		return;
+	}
+
 	const cls = classify_param(
 		node.type,
 		type_name,

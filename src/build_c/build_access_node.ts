@@ -18,6 +18,7 @@ import c_function_name from "./utils/c_function_name.ts";
 import { find_decl_in_c_scopes } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
+import { c_view_string_arg } from "./utils/view_value.ts";
 
 /**
  * The C type of a single element of a `view T` slice, used to cast the
@@ -711,6 +712,13 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				for (let i = 0; i < access_func.params.length; i++) {
 					if (!access_func.is_static || i > 0) {
 						status.code += ", ";
+					}
+					// A `view string` parameter receives a (ptr, len)
+					// nomen_view: a view-typed argument passes through; an
+					// owned string expression is wrapped with its strlen.
+					if (access_func.view_param_indices?.includes(i)) {
+						c_view_string_arg(access_func.params[i], status);
+						continue;
 					}
 					const param_type = type_from_value_node(access_func.params[i]);
 					const param_value =

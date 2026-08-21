@@ -19,6 +19,14 @@ export default class FunctionCallNode extends BaseNode {
 	 * struct pointer — see ROADBLOCKS "Nullable structs".
 	 */
 	nullable_param_indices?: number[];
+	/**
+	 * Indices of arguments whose corresponding callee parameter is a `view T`
+	 * (notably `view string`). Populated during the check pass when the
+	 * callee's signature is resolved. The build uses this to pass the (ptr,
+	 * len) pair at the call boundary: a view-typed argument passes through,
+	 * an owned `string` argument is wrapped with its strlen.
+	 */
+	view_param_indices?: number[];
 	swap_params?: Map<number, BaseNode>;
 	variadic_param_name?: string;
 	variadic_param_index?: number;

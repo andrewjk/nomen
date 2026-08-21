@@ -53,6 +53,11 @@ import {
 	get_field_offset,
 	get_struct_size,
 } from "./utils/struct_layout.ts";
+import {
+	emit_view_materialize_owned,
+	emit_view_string_arg,
+	is_view_value,
+} from "./utils/view_value.ts";
 
 /**
  * Pass a struct-typed param by address. For ValueNode (variable references)
@@ -1747,12 +1752,28 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			// same-named locals in other functions (and with globals). Only
 			// top-level declarations keep the file-scope label form.
 			const use_stack = !!status.function_return_label;
+			const is_heap_alias =
+				node.type.name === "string" && !is_literal && status.heap_strings?.has(raw);
 			if (use_stack) {
 				const offset = allocate_stack_space(status, size, size);
 				status.stack_offsets!.set(node.name, offset);
-				const is_heap_alias =
-					node.type.name === "string" && !is_literal && status.heap_strings?.has(raw);
-				if (is_heap_alias) {
+				// A `string` declaration initialized from a VIEW value
+				// (`const string s = v`) materializes an OWNED heap copy
+				// bounded by the view's len — never an alias of the source
+				// buffer. The value build leaves the (ptr, len) pair in x0/x1;
+				// copy it, store the owned result, and mark it for scope-exit
+				// cleanup.
+				if (
+					node.type.name === "string" &&
+					!node.type.is_view &&
+					is_view_value(node.value, status)
+				) {
+					emit_view_string_arg(node.value, status);
+					emit_view_materialize_owned(status);
+					status.code += `str x0, [x29, #${offset}]\n`;
+					mark_heap_string(status, node.name);
+					status.last_result_is_heap = false;
+				} else if (is_heap_alias) {
 					emit_var_load(status, "x0", raw, 8);
 					emit_strdup(status);
 					status.code += `str x0, [x29, #${offset}]\n`;
@@ -1950,6 +1971,20 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 				status.stack_offsets!.set(node.name, offset);
 			} else {
 				emit_data(status, `${node.name}: .space ${size}\n`);
+			}
+			// A `string` declaration initialized from a VIEW value
+			// (`const string s = v`, incl. a hoisted interpolation
+			// `_param_N = v`) materializes an OWNED heap copy bounded by
+			// the view's len — never an alias of the source buffer. The
+			// value build leaves the (ptr, len) pair in x0/x1; copy it,
+			// store the owned result, and mark it for scope-exit cleanup.
+			if (node.type.name === "string" && !node.type.is_view && is_view_value(node.value, status)) {
+				emit_view_string_arg(node.value, status);
+				emit_view_materialize_owned(status);
+				emit_var_store(status, "x0", node.name, size);
+				mark_heap_string(status, node.name);
+				status.last_result_is_heap = false;
+				return;
 			}
 			build_node(node.value, status);
 			emit_var_store(status, "x0", node.name, size);

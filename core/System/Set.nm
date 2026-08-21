@@ -117,7 +117,12 @@ pub struct Set<T: Hashable + Equatable> {
 				dk = dk + cap
 			}
 			if dgap < dk {
-				self.slots.store_T(gap, self.slots.load_T(k))
+				// shift_T (not store_T): transfers the entry wholesale and
+				// reclaims the displaced slot's value — store_T would strdup a
+				// fresh copy into gap while stranding the source slot's
+				// pointer at the vacated slot (leaked once used.store marks it
+				// empty; the buffer destroy skips unused slots).
+				self.slots.shift_T(gap, k)
 				self.used.store(gap, 1)
 				gap = k
 			}

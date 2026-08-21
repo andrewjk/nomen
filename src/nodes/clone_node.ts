@@ -84,6 +84,8 @@ export default function clone_node(node: BaseNode): BaseNode {
 			c.type_args = n.type_args?.map(clone_type);
 			c.ref_param_indices = n.ref_param_indices?.slice();
 			c.mov_param_indices = n.mov_param_indices?.slice();
+			c.nullable_param_indices = n.nullable_param_indices?.slice();
+			c.view_param_indices = n.view_param_indices?.slice();
 			c.swap_params = n.swap_params
 				? new Map([...n.swap_params].map(([k, v]) => [k, clone_node(v)]))
 				: undefined;
@@ -125,6 +127,7 @@ export default function clone_node(node: BaseNode): BaseNode {
 			c.mangled_name = n.mangled_name;
 			c.owned_return = n.owned_return;
 			c.nullable_param_indices = n.nullable_param_indices?.slice();
+			c.view_param_indices = n.view_param_indices?.slice();
 			c.return_bounds = n.return_bounds
 				? {
 						upper: n.return_bounds.upper.slice(),
@@ -414,6 +417,7 @@ export default function clone_node(node: BaseNode): BaseNode {
 			c.is_variadic = n.is_variadic;
 			c.is_ref = n.is_ref;
 			c.constraint = n.constraint ? clone_node(n.constraint) : undefined;
+			c.stripped_length_equalities = n.stripped_length_equalities?.map((e) => ({ ...e }));
 			c.func_params = n.func_params?.map((p) => clone_node(p) as ParameterNode);
 			c.func_return_type = n.func_return_type ? clone_type(n.func_return_type) : undefined;
 			c.allocations = n.allocations?.map(clone_node);

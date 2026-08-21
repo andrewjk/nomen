@@ -14,13 +14,18 @@ import { emit_free } from "./utils/audit.ts";
 import { has_flag_name, is_nullable_struct_type } from "./utils/nullable_struct.ts";
 import { allocate_stack_space, emit_var_address, emit_var_load } from "./utils/stack_var.ts";
 import { get_field_has_offset, get_struct_size } from "./utils/struct_layout.ts";
+import { emit_view_string_arg, is_view_value } from "./utils/view_value.ts";
 
 let string_counter = 0;
 let coalesce_counter = 0;
+let view_cmp_counter = 0;
+let sc_counter = 0;
 
 export function reset_string_counter() {
 	string_counter = 0;
 	coalesce_counter = 0;
+	view_cmp_counter = 0;
+	sc_counter = 0;
 }
 
 function is_comparison(op: string): boolean {
@@ -431,6 +436,41 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		return;
 	}
 
+	// A string comparison (`a == b`) with a VIEW operand must not dispatch to
+	// string_eq/strcmp: a view into the middle of a buffer is not
+	// NUL-terminated. Compare as slices: equal lengths, then equal bytes
+	// (memcmp). An owned operand is measured with strlen for the comparison.
+	if (
+		(node.op === "==" || node.op === "!=") &&
+		node.operator_func?.struct_name === "string" &&
+		(is_view_value(node.left_value, status) || is_view_value(node.right_value, status))
+	) {
+		const id = view_cmp_counter++;
+		const len_ne_label = `.Lview_cmp_len_ne_${id}`;
+		const done_label = `.Lview_cmp_done_${id}`;
+		// (ptr, len) for the right operand, spilled; then the left.
+		emit_view_string_arg(node.right_value, status);
+		status.code += `stp x0, x1, [sp, #-16]!\n`;
+		emit_view_string_arg(node.left_value, status);
+		status.code += `ldr x2, [sp, #8]\n`;
+		status.code += `cmp x1, x2\n`;
+		status.code += `b.ne ${len_ne_label}\n`;
+		status.code += `mov x2, x1\n`; // size
+		status.code += `ldr x1, [sp]\n`; // right ptr
+		status.code += `bl _memcmp\n`;
+		status.code += `cmp x0, #0\n`;
+		status.code += `cset x0, ${node.op === "==" ? "eq" : "ne"}\n`;
+		status.code += `b ${done_label}\n`;
+		status.code += `${len_ne_label}:\n`;
+		status.code += `mov x0, #0\n`;
+		if (node.op === "!=") {
+			status.code += `mov x0, #1\n`;
+		}
+		status.code += `${done_label}:\n`;
+		status.code += `add sp, sp, #16\n`;
+		return;
+	}
+
 	if (node.operator_func) {
 		const left_type = type_from_value_node(node.left_value);
 		const is_array_op = node.operator_func.struct_name.startsWith("Array") && left_type.is_array;
@@ -632,6 +672,33 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		return;
 	}
 
+	// `&&` / `||` SHORT-CIRCUIT: the right operand must not be evaluated when
+	// the left decides the result (`i < n && items.at(i)...` — evaluating the
+	// right unconditionally reads past the end on the loop-exit iteration).
+	// Mirrors C's && / || semantics, which the C backend inherits for free.
+	if (node.op === "&&" || node.op === "||") {
+		const id = sc_counter++;
+		const skip_right = `.Lsc_skip_${id}`;
+		const done = `.Lsc_done_${id}`;
+		build_operand(node.left_value, "x0", status);
+		if (!status.code.endsWith("\n")) status.code += "\n";
+		status.code += `cmp x0, #0\n`;
+		status.code += node.op === "&&" ? `b.eq ${skip_right}\n` : `b.ne ${skip_right}\n`;
+		build_operand(node.right_value, "x0", status);
+		if (!status.code.endsWith("\n")) status.code += "\n";
+		status.code += `cmp x0, #0\n`;
+		status.code += `cset x0, ne\n`;
+		status.code += `b ${done}\n`;
+		status.code += `${skip_right}:\n`;
+		if (node.op === "&&") {
+			status.code += `mov x0, #0\n`;
+		} else {
+			status.code += `mov x0, #1\n`;
+		}
+		status.code += `${done}:\n`;
+		return;
+	}
+
 	const need_spill = !is_simple(node.left_value);
 
 	build_operand(node.right_value, "x2", status);
@@ -656,19 +723,7 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 
 	const unsigned = is_unsigned_type(node.left_value) || is_unsigned_type(node.right_value);
 
-	if (node.op === "&&") {
-		status.code += `cmp x1, #0\n`;
-		status.code += `cset x1, ne\n`;
-		status.code += `cmp x2, #0\n`;
-		status.code += `cset x2, ne\n`;
-		status.code += `and x0, x1, x2\n`;
-	} else if (node.op === "||") {
-		status.code += `cmp x1, #0\n`;
-		status.code += `cset x1, ne\n`;
-		status.code += `cmp x2, #0\n`;
-		status.code += `cset x2, ne\n`;
-		status.code += `orr x0, x1, x2\n`;
-	} else if (is_comparison(node.op)) {
+	if (is_comparison(node.op)) {
 		status.code += `cmp x1, x2\n`;
 		status.code += `cset x0, ${map_cmp(node.op, unsigned)}\n`;
 	} else {

@@ -134,8 +134,13 @@ pub struct Map<TK: Hashable + Equatable, TV> {
 				dk = dk + cap
 			}
 			if dgap < dk {
-				self.keys.store_T(gap, self.keys.load_T(k))
-				self.values.store_T(gap, self.values.load_T(k))
+				// shift_T (not store_T): transfers the entry's owned pointers
+				// wholesale and reclaims the displaced slot's value. store_T
+				// would strdup a fresh copy into gap while leaving the source
+				// slot's pointer stranded at the vacated slot — leaked once
+				// used.store marks it empty (the buffer destroy skips it).
+				self.keys.shift_T(gap, k)
+				self.values.shift_T(gap, k)
 				self.used.store(gap, 1)
 				gap = k
 			}

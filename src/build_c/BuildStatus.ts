@@ -142,6 +142,13 @@ export default interface BuildStatus {
 	function_param_vars?: Set<string>;
 	function_ref_params?: Set<string>;
 	/**
+	 * Names of the current function's/method's `view T` parameters. On C
+	 * these are nomen_view locals; on aarch64 they live as (ptr, len) stack
+	 * pairs. Used to recognize bare view-param names as view VALUES at call
+	 * sites and declarations (an owned→view conversion must not wrap them).
+	 */
+	function_view_params?: Set<string>;
+	/**
 	 * Variables and parameters whose type is a `class` (heap-allocated).
 	 * Class-typed slots are emitted as pointers in C and use `->` for field
 	 * access, but — unlike `function_ref_params` entries — they must NOT be

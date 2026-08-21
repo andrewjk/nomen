@@ -24,6 +24,7 @@ import {
 	is_local_ref_var,
 } from "./utils/stack_var.ts";
 import { get_enum_size, get_struct_size } from "./utils/struct_layout.ts";
+import { emit_view_string_arg } from "./utils/view_value.ts";
 
 let temp_counter = 0;
 
@@ -267,7 +268,12 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			}
 
 			// Evaluate non-variadic params right-to-left (they come after variadic in the call)
-			const non_variadic: { node: BaseNode; is_struct: boolean; is_ref: boolean }[] = [];
+			const non_variadic: {
+				node: BaseNode;
+				is_struct: boolean;
+				is_ref: boolean;
+				is_view: boolean;
+			}[] = [];
 			for (let i = 0; i < node.params.length; i++) {
 				if (i === variadic_idx) continue;
 				const param = node.params[i];
@@ -278,27 +284,41 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 					is_struct:
 						is_struct_type(param_type, status) || is_enum_with_data_type(param_type, status),
 					is_ref: !!is_ref_param,
+					is_view: !!node.view_param_indices?.includes(i),
 				});
 			}
 			// The non-variadic params plus the hidden (count, pointer) pair
-			// occupy `nv + 2` consecutive AAPCS64 register/stack slots: the
-			// non-variadic params first (slots 0..nv-1), then the count (slot
-			// nv) and the array pointer (slot nv+1). When the total exceeds
-			// the 8 register slots the surplus overflows into the caller's
-			// outgoing stack area, so mirror the non-variadic path: spill
-			// every slot to a dedicated area first (evaluating an arg can
-			// clobber any register), then load the in-register slots and copy
-			// the overflow slots to the outgoing area below `sp`.
+			// occupy consecutive AAPCS64 register/stack slots: the
+			// non-variadic params first (a `view` param takes TWO — the
+			// (ptr, len) pair), then the count and the array pointer. When
+			// the total exceeds the 8 register slots the surplus overflows
+			// into the caller's outgoing stack area, so mirror the
+			// non-variadic path: spill every slot to a dedicated area first
+			// (evaluating an arg can clobber any register), then load the
+			// in-register slots and copy the overflow slots to the outgoing
+			// area below `sp`.
 			const nv = non_variadic.length;
-			const total_slots = nv + 2;
+			const nv_slot: number[] = [];
+			let nv_total = 0;
+			for (let i = 0; i < nv; i++) {
+				nv_slot.push(nv_total);
+				nv_total += non_variadic[i].is_view ? 2 : 1;
+			}
+			const total_slots = nv_total + 2;
 			const slots_base = allocate_stack_space(status, total_slots * 8, 16);
-			const count_slot = slots_base + nv * 8;
+			const count_slot = slots_base + nv_total * 8;
 			const ptr_slot = count_slot + 8;
 
 			// Evaluate non-variadic params right-to-left, spilling each to
 			// its slot.
 			for (let i = nv - 1; i >= 0; i--) {
 				const ep = non_variadic[i];
+				if (ep.is_view) {
+					emit_view_string_arg(ep.node, status);
+					status.code += `str x0, [x29, #${slots_base + nv_slot[i] * 8}]\n`;
+					status.code += `str x1, [x29, #${slots_base + (nv_slot[i] + 1) * 8}]\n`;
+					continue;
+				}
 				if (ep.is_struct) {
 					emit_struct_address(ep.node, status);
 				} else if (ep.is_ref) {
@@ -314,7 +334,7 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 					build_node(ep.node, status);
 				}
 				if (!status.code.endsWith("\n")) status.code += "\n";
-				status.code += `str x0, [x29, #${slots_base + i * 8}]\n`;
+				status.code += `str x0, [x29, #${slots_base + nv_slot[i] * 8}]\n`;
 			}
 
 			// Store the count and array pointer into their slots.
@@ -353,22 +373,43 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			}
 		} else {
 			// Non-variadic call.
-			// Evaluate each param into x0 and spill it to a dedicated stack
-			// slot, then load all slots into argument registers right before the
-			// call. Evaluating an argument expression can use x1..x7 as scratch
-			// (e.g. binary operators hardcode x1/x2), so storing a result
-			// directly into its target register would let a later argument
-			// clobber an earlier one (e.g. `[a+1, a+2]` lost the second value).
-			const has_args = node.params.length > 0;
+			// A `view T` param (view_param_indices) consumes TWO consecutive
+			// argument slots — (ptr, len) — matching the callee prologue's
+			// pair spilling. Compute a slot map first so spills, register
+			// loads, and the overflow area all agree.
+			const view_arg_set = new Set(node.view_param_indices ?? []);
+			const arg_slot: number[] = [];
+			let total_slots = 0;
+			for (let i = 0; i < node.params.length; i++) {
+				arg_slot.push(total_slots);
+				total_slots += view_arg_set.has(i) ? 2 : 1;
+			}
+			// Evaluate each param into x0 (and x1 for a view pair) and spill
+			// it to a dedicated stack slot, then load all slots into argument
+			// registers right before the call. Evaluating an argument
+			// expression can use x1..x7 as scratch (e.g. binary operators
+			// hardcode x1/x2), so storing a result directly into its target
+			// register would let a later argument clobber an earlier one
+			// (e.g. `[a+1, a+2]` lost the second value).
+			const has_args = total_slots > 0;
 			let args_base = 0;
 			if (has_args) {
-				args_base = allocate_stack_space(status, node.params.length * 8, 16);
+				args_base = allocate_stack_space(status, total_slots * 8, 16);
 			}
 			// Evaluate params right-to-left, spilling each result to its slot.
 			for (let i = node.params.length - 1; i >= 0; i--) {
 				const param = node.params[i];
 				const param_type = (param as any).type?.name || "";
 				const is_ref_param = node.ref_param_indices?.includes(i);
+				// A `view string` argument passes as a (ptr, len) pair in
+				// x0/x1 — a view VALUE passes through, an owned string is
+				// wrapped with its strlen (the caller keeps ownership).
+				if (view_arg_set.has(i)) {
+					emit_view_string_arg(param, status);
+					status.code += `str x0, [x29, #${args_base + arg_slot[i] * 8}]\n`;
+					status.code += `str x1, [x29, #${args_base + (arg_slot[i] + 1) * 8}]\n`;
+					continue;
+				}
 				// An `Array<T>` argument that is itself a heap-array value (a
 				// `heap_array_vars` local or an `Array<T>` param — both already
 				// `struct Array_<T>*` pointers) must be forwarded directly
@@ -490,20 +531,21 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 				if (!status.code.endsWith("\n")) {
 					status.code += "\n";
 				}
-				status.code += `str x0, [x29, #${args_base + i * 8}]\n`;
+				status.code += `str x0, [x29, #${args_base + arg_slot[i] * 8}]\n`;
 			}
 			// Load each spilled argument into its target register. For struct
 			// constructors x0 is the destination (set up below), so it's never a
 			// param target; for ordinary calls param 0 goes in x0. Arguments
-			// beyond the 8 register slots (slot >= 8) are spilled to the
-			// outgoing stack-arg area below, not to a register.
+			// beyond the 8 register slots are spilled to the outgoing stack-arg
+			// area below, not to a register. Slot indices (not param indices)
+			// drive the mapping — a view arg occupies two consecutive slots.
 			if (has_args) {
-				for (let i = 0; i < node.params.length; i++) {
-					const slot = start_reg + i;
+				for (let s = 0; s < total_slots; s++) {
+					const slot = start_reg + s;
 					if (slot >= NUM_REG_ARGS) continue;
 					const reg = param_regs[slot];
 					if (reg === "x0") continue;
-					status.code += `ldr ${reg}, [x29, #${args_base + i * 8}]\n`;
+					status.code += `ldr ${reg}, [x29, #${args_base + s * 8}]\n`;
 				}
 				if (!is_struct) {
 					status.code += `ldr x0, [x29, #${args_base}]\n`;
@@ -514,7 +556,7 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			// outgoing area size and copy each overflow arg from its spill slot
 			// into the outgoing area; restore sp right after the call. Skip
 			// when there's no overflow (the common case).
-			overflow_count = Math.max(0, node.params.length - (NUM_REG_ARGS - start_reg));
+			overflow_count = Math.max(0, total_slots - (NUM_REG_ARGS - start_reg));
 			if (overflow_count > 0) {
 				outgoing_size = Math.ceil((overflow_count * 8) / 16) * 16;
 				status.code += `sub sp, sp, #${outgoing_size}\n`;

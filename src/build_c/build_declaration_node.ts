@@ -23,6 +23,7 @@ import { splice_decl_from_c_scopes } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
 import { has_flag_name, is_nullable_struct_type } from "./utils/nullable_struct.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
+import { c_materialize_view_string, is_view_value } from "./utils/view_value.ts";
 
 export default function build_declaration_node(node: DeclarationNode, status: BuildStatus) {
 	// TODO: malloc() if it's on the heap
@@ -590,7 +591,20 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 					node.value.node_type === "value" &&
 					!val_is_string_literal &&
 					!!status.scoped_declarations.find((d) => d.name === val_node.value);
+				// A `string` declaration initialized from a VIEW value
+				// (`const string s = v`, incl. a hoisted interpolation
+				// `_param_N = v`) materializes an OWNED heap copy bounded by
+				// the view's len — never an alias of the source buffer and
+				// never a strlen-past-the-end copy. The malloc'd result is
+				// reclaimed at scope exit (auto_free treats view-initialized
+				// string decls as heap-owned).
 				if (
+					node.type.name === "string" &&
+					!node.type.is_view &&
+					is_view_value(node.value, status)
+				) {
+					c_materialize_view_string(node.value, status);
+				} else if (
 					node.declaration === "var" &&
 					node.type.name === "string" &&
 					!node.type.is_view &&

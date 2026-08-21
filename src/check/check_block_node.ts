@@ -15,6 +15,7 @@ import check_node from "./check_node.ts";
 import { resolve_struct_field_types } from "./check_struct_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import { synthesize_auto_derived_methods } from "./utils/auto_derive.ts";
+import { extract_length_equalities_at_registration } from "./utils/flow_bounds.ts";
 import materialize_type from "./utils/materialize_type.ts";
 
 export default function check_block_node(node: BlockNode, status: CheckStatus) {
@@ -250,6 +251,27 @@ function gather_structs(block: BlockNode, status: CheckStatus) {
 					// mono name, which callers match against.
 					func.return_type = materialize_type(func.return_type, status);
 					instantiate_generic_type(func.return_type, status);
+					// Strip parallel-length equality clauses (`a.length == b.length`)
+					// from every parameter's constraint AT GATHER TIME — this is
+					// what makes the signature visible to callers checked BEFORE
+					// the function's own statement walk, so a forward-referenced
+					// callee must not hand its caller a clause no call site could
+					// ever prove. The clause becomes an assumed equality for the
+					// callee's own body instead (stashed on the param, seeded into
+					// scope when its params are checked).
+					const param_names = new Set(func.params.map((p) => p.name));
+					for (const param of func.params) {
+						if (!param.constraint) continue;
+						const { constraint, equalities } = extract_length_equalities_at_registration(
+							param.constraint,
+							param.name,
+							param_names,
+						);
+						if (equalities.length) {
+							param.constraint = constraint;
+							param.stripped_length_equalities = equalities;
+						}
+					}
 					status.functions.push(func);
 				}
 				break;

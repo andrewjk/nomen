@@ -15,6 +15,11 @@ export default class AccessFunctionCallNode extends BaseNode {
 	 * FunctionCallNode.nullable_param_indices.
 	 */
 	nullable_param_indices?: number[];
+	/**
+	 * Indices of arguments whose corresponding callee parameter is a `view T`
+	 * (notably `view string`). See FunctionCallNode.view_param_indices.
+	 */
+	view_param_indices?: number[];
 	swap_params?: Map<number, BaseNode>;
 	variadic_param_name?: string;
 	variadic_param_index?: number;

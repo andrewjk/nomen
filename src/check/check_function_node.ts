@@ -6,6 +6,7 @@ import check_function_parameter_node from "./check_function_parameter_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import check_type_exists from "./utils/check_type_exists.ts";
 import clone_status from "./utils/clone_status.ts";
+import { extract_length_equalities_at_registration } from "./utils/flow_bounds.ts";
 import materialize_type from "./utils/materialize_type.ts";
 
 function is_generic_func(func: FunctionNode): boolean {
@@ -17,6 +18,26 @@ export default function check_function_node(func: FunctionNode, status: CheckSta
 	func.checked = true;
 
 	status.functions.push(func);
+
+	// Strip parallel-length equality clauses (`a.length == b.length`) from
+	// every parameter's constraint AT REGISTRATION — before any call site can
+	// observe the signature. A forward-referenced callee must not hand its
+	// caller a clause no call site could ever prove; the clause becomes an
+	// assumed equality for the callee's own body instead (stashed on the
+	// param, seeded into scope when its params are checked).
+	const param_names = new Set(func.params.map((p) => p.name));
+	for (const param of func.params) {
+		if (!param.constraint) continue;
+		const { constraint, equalities } = extract_length_equalities_at_registration(
+			param.constraint,
+			param.name,
+			param_names,
+		);
+		if (equalities.length) {
+			param.constraint = constraint;
+			param.stripped_length_equalities = equalities;
+		}
+	}
 
 	if (is_generic_func(func)) {
 		func.is_generic = true;

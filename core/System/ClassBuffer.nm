@@ -299,6 +299,51 @@ pub struct ClassBuffer<T> {
 		```
 	}
 
+	// Move slot src into slot dst: reclaim dst's previous instance (destroy +
+	// free), take over src's pointer, and zero src — exactly one slot owns the
+	// instance afterwards. The class-buffer counterpart of Buffer.shift_T,
+	// used by Map/Set.remove's backward-shift so shifting entries neither
+	// duplicates nor orphans owned instances.
+	func shift_T = (ref self, int dst: dst >= 0 && dst < self.cap, int src: src >= 0 && src < self.cap) {
+		```
+		#arch: c
+		long *slots = (long*)(unsigned long long)self->data;
+		if (dst != src) {
+			if (slots[dst]) {
+				T_destroy((void*)slots[dst]);
+				free((void*)slots[dst]);
+			}
+			slots[dst] = slots[src];
+			slots[src] = 0;
+		}
+		```
+		```
+		#arch: aarch64
+		stp x20, x21, [sp, #-16]!
+		str x22, [sp, #-16]!
+		ldr x9, [x19, #8]
+		lsl x3, x1, #3
+		add x20, x9, x3
+		lsl x3, x2, #3
+		add x21, x9, x3
+		cmp x20, x21
+		b.eq .Lcb_shift_T_done
+		ldr x0, [x20]
+		cbz x0, .Lcb_shift_T_move
+		mov x22, x0
+		bl T_destroy
+		mov x0, x22
+		bl _free
+		.Lcb_shift_T_move:
+		ldr x9, [x21]
+		str x9, [x20]
+		str xzr, [x21]
+		.Lcb_shift_T_done:
+		ldr x22, [sp], #16
+		ldp x20, x21, [sp], #16
+		```
+	}
+
 	// A non-owning (ptr, len) slice [start, end) over this buffer's class
 	// pointers, returned as a `view T` (T is a class, so each element is an
 	// 8-byte pointer). Borrows from self — invalidated on reassignment. Mirrors

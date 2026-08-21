@@ -22,6 +22,15 @@ export default class ParameterNode extends BaseNode {
 	is_variadic_tuple?: boolean;
 	func_params?: ParameterNode[];
 	func_return_type?: Type;
+	/**
+	 * Parallel-length equalities (`a.length == b.length` conjuncts) stripped
+	 * from `constraint` at signature-registration time — before any call site
+	 * can observe this function, so declaration order never matters (a
+	 * forward-referenced callee must not ask its caller to prove a clause no
+	 * call site could). The callee's own param check seeds
+	 * `status.equal_lengths` from these so its body still gets the assumption.
+	 */
+	stripped_length_equalities?: { a: string; b: string; field: string }[];
 
 	constructor(
 		start: number,

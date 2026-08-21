@@ -82,7 +82,13 @@ function has_string_fields(node: StructNode, status: BuildStatus): boolean {
  * move_T transfers ownership (the slot is zeroed, the caller takes the
  * pointers).
  */
-export const OWNING_BUFFER_METHODS = new Set(["store_T", "replace_T", "destroy", "#destroy"]);
+export const OWNING_BUFFER_METHODS = new Set([
+	"store_T",
+	"replace_T",
+	"shift_T",
+	"destroy",
+	"#destroy",
+]);
 
 /**
  * A `Buffer<string>` owns an independent heap copy of each slot (strdup on
@@ -122,6 +128,19 @@ export function emit_owning_buffer_string_body(func_name: string, status: BuildS
 		status.code += `char** _slots = (char**)self->data;\n`;
 		status.code += `char* _old = _slots[i];\n`;
 		status.code += `if (val != _old) { free(_old); _slots[i] = val ? strdup(val) : 0; }\n`;
+		return true;
+	}
+
+	if (func_name === "shift_T") {
+		// shift_T(self, dst, src): move slot src into slot dst — free dst's
+		// heap copy, take over src's pointer, zero src. Exactly one slot owns
+		// the string afterwards (Map/Set.remove's backward-shift).
+		status.code += `char** _slots = (char**)self->data;\n`;
+		status.code += `if (dst != src) {\n`;
+		status.code += `free(_slots[dst]);\n`;
+		status.code += `_slots[dst] = _slots[src];\n`;
+		status.code += `_slots[src] = 0;\n`;
+		status.code += `}\n`;
 		return true;
 	}
 
@@ -181,6 +200,20 @@ export function emit_owning_buffer_body(
 		status.code += `${elem.name}_destroy(&_slots[i]);\n`;
 		status.code += `_slots[i] = (*val);\n`;
 		emit_deep_copy_fields(elem, "_slots[i]", "val", status);
+		return true;
+	}
+
+	if (func_name === "shift_T") {
+		// shift_T(self, dst, src): move slot src into slot dst — destroy dst's
+		// old value (it owned heap memory), take over src's bytes wholesale
+		// (no deep copy: the moved struct's owned pointers transfer), and zero
+		// src. Exactly one slot owns each heap pointer afterwards.
+		status.code += `${Tptr}_slots = ${Tcast}(unsigned long long)self->data;\n`;
+		status.code += `if (dst != src) {\n`;
+		status.code += `${elem.name}_destroy(&_slots[dst]);\n`;
+		status.code += `_slots[dst] = _slots[src];\n`;
+		status.code += `memset((void*)&_slots[src], 0, sizeof(struct ${elem.name}));\n`;
+		status.code += `}\n`;
 		return true;
 	}
 

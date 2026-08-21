@@ -310,6 +310,14 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 				first_pass_slot += 1;
 				continue;
 			}
+			// A `view T` param arrives as a (ptr, len) REGISTER PAIR — two
+			// AAPCS64 slots. It is not a by-address struct param (excluded
+			// from the callee-saved pool; spilled to two stack slots in the
+			// second pass below).
+			if (param.type.is_view) {
+				first_pass_slot += 2;
+				continue;
+			}
 			// A class param is a reference type (a heap pointer), but the body
 			// accesses it as a pointer VALUE — so it still belongs in the
 			// callee-saved register path (saved like a struct param and read
@@ -377,7 +385,9 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.ref_class_slots = new Map();
 	status.function_struct_param_slots = new Set();
 	const old_variadic_params_aarch64 = status.function_variadic_params;
+	const old_view_params = status.function_view_params;
 	status.function_variadic_params = new Set();
+	status.function_view_params = new Set();
 	status.moved_class_params = new Map();
 
 	// Save mov'd class param values for cleanup at return
@@ -405,6 +415,33 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 					status.code += `str x9, [x29, #${len_offset}]\n`;
 				}
 				param_idx++;
+			}
+
+			// A `view T` param is a (ptr, len) pair: spill BOTH halves from
+			// their two register slots (or the caller's outgoing stack area)
+			// into a 16-byte local so `.length` / `.at` / forwarding read the
+			// correct pair. Consumes two param register slots — matching the
+			// call site's pair passing — so skip the generic single-slot
+			// spill and the trailing param_idx++.
+			if (param.type.is_view) {
+				const offset = allocate_stack_space(status, 16, 16);
+				status.stack_offsets!.set(param.name, offset);
+				status.function_view_params!.add(param.name);
+				// Each half comes from its own register slot, or from the
+				// caller's outgoing stack area when its slot is past x7 (the
+				// pair can straddle the boundary: ptr in x7, len at [sp]).
+				for (const half of [0, 1] as const) {
+					const p_slot = param_idx + half;
+					if (p_slot < NUM_REG_ARGS) {
+						status.code += `str ${param_regs[p_slot]}, [x29, #${offset + half * 8}]\n`;
+					} else {
+						const k = p_slot - NUM_REG_ARGS;
+						status.code += `ldr x9, [x29, #${overflow_placeholder(node.name, k)}]\n`;
+						status.code += `str x9, [x29, #${offset + half * 8}]\n`;
+					}
+				}
+				param_idx += 2;
+				continue;
 			}
 
 			if (callee_map.has(param.name)) {
@@ -739,6 +776,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.ref_class_slots = old_ref_class_slots;
 	status.function_struct_param_slots = old_struct_param_slots;
 	status.function_variadic_params = old_variadic_params_aarch64;
+	status.function_view_params = old_view_params;
 	status.function_return_label = old_return_label;
 	status.struct_return_buffer = undefined;
 	status.return_buffer_stack_offset = undefined;

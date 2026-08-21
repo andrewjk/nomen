@@ -120,13 +120,32 @@ export default function check_function_parameter_node(param: ParameterNode, stat
 		is_null: param.type.is_nullable ? true : undefined,
 	});
 
+	// Equalities already stripped at signature-registration time (so no call
+	// site ever sees them, regardless of declaration order) become ASSUMED
+	// equalities for this function's body. Seeded BEFORE the constraint block:
+	// a fully-stripped param has no constraint left, but the assumption must
+	// still reach the body.
+	if (param.stripped_length_equalities?.length) {
+		if (!status.equal_lengths) status.equal_lengths = [];
+		for (const eq of param.stripped_length_equalities) {
+			const duplicate = status.equal_lengths.some(
+				(e) =>
+					e.field === eq.field &&
+					((e.a === eq.a && e.b === eq.b) || (e.a === eq.b && e.b === eq.a)),
+			);
+			if (!duplicate) status.equal_lengths.push(eq);
+		}
+	}
+
 	// Type-check the constraint expression (if any)
 	if (param.constraint) {
 		// Parallel-length clauses (`hash.length == xs.length`) are stripped
 		// BEFORE checking: they relate two runtime lengths, which no call
 		// site could ever prove. The clause becomes an ASSUMED equality for
 		// this function's body (status.equal_lengths) instead — see
-		// strip_length_equalities / canonicalize_length_path.
+		// strip_length_equalities / canonicalize_length_path. (Registration
+		// already removed the cross-parameter ones above; this catches any
+		// remaining shape whose other side is an outer-scope value.)
 		const stripped = strip_length_equalities(param.constraint, param.name, status);
 		if (stripped !== param.constraint) {
 			param.constraint = stripped;

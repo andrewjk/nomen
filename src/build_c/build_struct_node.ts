@@ -467,6 +467,8 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 		const old_borrow_only = status.c_borrow_only_strings;
 		const old_return_type = status.function_return_type;
 		const old_function_name = status.current_function_name;
+		const old_view_params = status.function_view_params;
+		status.function_view_params = new Set<string>();
 		status.current_function_name = func.name;
 		status.function_ref_params = new Set<string>();
 		status.class_vars = new Set<string>();
@@ -478,6 +480,12 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 		const self_param = func.params[0]?.is_self_param ? func.params[0] : null;
 		status.self_is_ref = !!self_param?.is_ref || self_param?.declaration === "var";
 		for (let param of func.params) {
+			// A `view T` param lowers to a by-value nomen_view — record its
+			// name so call sites / declarations inside this body recognize
+			// bare uses as view VALUES (no owned→view re-wrap).
+			if (param.type.is_view && !param.is_self_param) {
+				status.function_view_params.add(c_function_name(param.name));
+			}
 			const param_struct = status.structs.find((s) => s.name === param.type.name);
 			const param_trait = status.traits.find((t) => t.name === param.type.name);
 			// Only struct/trait/self/ref params and non-simple `var` params are
@@ -678,6 +686,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 		status.c_borrow_only_strings = old_borrow_only;
 		status.function_return_type = old_return_type;
 		status.current_function_name = old_function_name;
+		status.function_view_params = old_view_params;
 	}
 	status.current_struct = old_current_struct;
 

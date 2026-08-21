@@ -9,6 +9,7 @@ import c_function_name from "./utils/c_function_name.ts";
 import is_string_borrow from "./utils/is_string_borrow.ts";
 import { has_flag_name, is_nullable_struct_type } from "./utils/nullable_struct.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
+import { is_view_value } from "./utils/view_value.ts";
 
 export default function build_auto_free(status: BuildStatus) {
 	free_scoped_declarations(status, status.scoped_declarations);
@@ -130,7 +131,11 @@ export function free_scoped_declarations(
 			dec.type.name === "string" &&
 			((dec.value?.node_type === "access" &&
 				(dec.value as AccessNode).access.node_type === "access_func") ||
-				dec.value?.node_type === "func_call");
+				dec.value?.node_type === "func_call" ||
+				// A string declaration materialized from a VIEW value
+				// (`const string s = v`) mallocs an owned copy — always
+				// freed, regardless of inferred staticness.
+				(!!dec.value && !dec.type.is_view && is_view_value(dec.value, status)));
 		// A `var string x = "literal"` (or `var string x = other_owned`) is
 		// strdup'd into a heap-owned copy at declaration (see
 		// build_declaration_node), even though its inferred type is `static`.

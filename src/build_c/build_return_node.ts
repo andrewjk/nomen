@@ -18,6 +18,7 @@ import c_type from "./utils/c_type.ts";
 import emit_allocations from "./utils/emit_allocations.ts";
 import is_string_borrow from "./utils/is_string_borrow.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
+import { is_view_value } from "./utils/view_value.ts";
 
 export default function build_return_node(node: ReturnNode, status: BuildStatus) {
 	// For a nullable struct return type, the callee signals null-ness to the
@@ -401,6 +402,13 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 		if (returns_borrowed_string || returns_string_literal || returns_borrow_var) {
 			status.code += `strdup(`;
 		}
+		// A `view string` return of a NON-view expression (an owned string,
+		// a field read, a literal) must become the (ptr, len) pair: wrap it
+		// in a statement-expression that measures it once. A view-typed
+		// value (a slice result, a view variable/param) is already a
+		// nomen_view and passes through unchanged.
+		const wrap_view_string_return =
+			!!ret_type.is_view && ret_type.name === "string" && !is_view_value(node.value, status);
 		// Type erasure: when the function returns a class/struct pointer but
 		// the return expression is a simple type (e.g. long from ClassBuffer's
 		// type-erased load_int/move_int), cast the expression to the correct
@@ -418,7 +426,13 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 		if (needs_type_erasure_cast) {
 			status.code += return_is_class ? `(struct ${mono_ret_name}*)` : `(struct ${mono_ret_name})`;
 		}
+		if (wrap_view_string_return) {
+			status.code += `({ char* _p = `;
+		}
 		build_node(node.value, status);
+		if (wrap_view_string_return) {
+			status.code += `; nomen_view _v = { (void*)_p, (long)strlen(_p) }; _v; })`;
+		}
 		if (returns_borrowed_string || returns_string_literal || returns_borrow_var) {
 			status.code += `)`;
 		}

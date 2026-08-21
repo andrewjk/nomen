@@ -26,6 +26,7 @@ import {
 import { is_nullable_struct_type } from "./utils/nullable_struct.ts";
 import { allocate_stack_space, emit_var_address, emit_var_store } from "./utils/stack_var.ts";
 import { emit_struct_copy, get_struct_size } from "./utils/struct_layout.ts";
+import { is_view_value } from "./utils/view_value.ts";
 
 let return_val_counter = 0;
 
@@ -258,6 +259,22 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 	}
 	if (!status.code.endsWith("\n")) {
 		status.code += "\n";
+	}
+
+	// A `view string` return of a NON-view expression (an owned string, a
+	// field read, a literal) must leave the (ptr, len) pair in x0/x1: x0
+	// already holds the pointer — measure it. A view-typed value (a slice
+	// result, a view variable/param) already produced the pair.
+	if (
+		status.function_return_type?.is_view &&
+		status.function_return_type.name === "string" &&
+		node.value &&
+		!is_view_value(node.value, status)
+	) {
+		status.code += `str x0, [sp, #-16]!\n`;
+		status.code += `bl _strlen\n`;
+		status.code += `mov x1, x0\n`;
+		status.code += `ldr x0, [sp], #16\n`;
 	}
 
 	// A bare string literal returned from a heap-returning function is

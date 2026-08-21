@@ -70,6 +70,10 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 				// the Array_<T> header struct (heap-allocated by build_return_node
 				// when the local stack array is copied to the heap at return).
 				status.code += `struct Array_${node.return_type.name}* `;
+			} else if (node.return_type.is_view) {
+				// A `view T` return is the universal non-owning (ptr, len)
+				// slice, returned by value.
+				status.code += `nomen_view `;
 			} else {
 				// Monomorphize generic return types: `List<int>` → `List_int`.
 				// The type_args are already present on node.return_type from the
@@ -163,6 +167,8 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.ref_class_param_types = new Map();
 	const old_variadic_params = status.function_variadic_params;
 	status.function_variadic_params = new Set<string>();
+	const old_view_params = status.function_view_params;
+	status.function_view_params = new Set<string>();
 	const old_return_type = status.function_return_type;
 	status.function_return_type = node.return_type;
 	const old_nullable_ret_has = status.nullable_ret_has_param;
@@ -176,6 +182,12 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	for (let param of node.params) {
 		if (param.is_variadic) {
 			status.function_variadic_params.add(c_function_name(param.name));
+		}
+		// A `view T` param lowers to a by-value nomen_view — record its name
+		// so call sites / declarations inside this body recognize bare uses
+		// as view VALUES (no owned→view re-wrap).
+		if (param.type.is_view && !param.is_self_param) {
+			status.function_view_params.add(c_function_name(param.name));
 		}
 		// An `Array<T>` parameter lowers to `struct Array_<T>*` when the mono
 		// struct exists (see build_parameter_node). Register it in
@@ -263,6 +275,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.ref_class_params = old_ref_class_params;
 	status.ref_class_param_types = old_ref_class_param_types;
 	status.function_variadic_params = old_variadic_params;
+	status.function_view_params = old_view_params;
 	status.function_return_type = old_return_type;
 	status.nullable_ret_has_param = old_nullable_ret_has;
 	status.current_function_name = old_function_name;

@@ -126,6 +126,10 @@ export function emit_owning_buffer_inline_aarch64(
 			emit_owning_replace_T(elem, status);
 			return true;
 		}
+		if (func_name === "shift_T") {
+			emit_owning_shift_T(elem, status, "x0");
+			return true;
+		}
 		return false;
 	}
 	if (owning_buffer_is_string_elem_aarch64(struct_node)) {
@@ -135,6 +139,10 @@ export function emit_owning_buffer_inline_aarch64(
 		}
 		if (func_name === "replace_T") {
 			emit_string_replace_T(status, "x0");
+			return true;
+		}
+		if (func_name === "shift_T") {
+			emit_string_shift_T(status, "x0");
 			return true;
 		}
 	}
@@ -155,7 +163,9 @@ export function emit_owning_buffer_standalone_aarch64(
 ): boolean {
 	const elem = owning_buffer_element_aarch64(node, status);
 	if (elem) {
-		if (func_name !== "store_T" && func_name !== "replace_T") return false;
+		if (func_name !== "store_T" && func_name !== "replace_T" && func_name !== "shift_T") {
+			return false;
+		}
 		emit_owning_standalone_struct(elem, func_name, status);
 		return true;
 	}
@@ -168,6 +178,10 @@ export function emit_owning_buffer_standalone_aarch64(
 			emit_string_replace_T(status, "x19");
 			return true;
 		}
+		if (func_name === "shift_T") {
+			emit_string_shift_T(status, "x19");
+			return true;
+		}
 	}
 	return false;
 }
@@ -175,6 +189,11 @@ export function emit_owning_buffer_standalone_aarch64(
 function emit_owning_standalone_struct(elem: StructNode, func_name: string, status: BuildStatus) {
 	const T_SIZE = get_struct_size(elem.name, status);
 	const string_fields = collect_string_fields(elem, status);
+
+	if (func_name === "shift_T") {
+		emit_owning_shift_T(elem, status, "x19");
+		return true;
+	}
 
 	// x19 = self, x1 = i, x2 = val (struct address)
 	status.code += `stp x20, x21, [sp, #-16]!\n`;
@@ -304,6 +323,61 @@ function emit_string_replace_T(status: BuildStatus, self_reg: string) {
 	status.code += `${skip}:\n`;
 	status.code += `str xzr, [x20]\n`;
 	status.code += `${done}:\n`;
+	status.code += `ldp x20, x21, [sp], #16\n`;
+}
+
+/**
+ * Specialized `Buffer<string>` shift_T. `self_reg` is the register holding
+ * the Buffer pointer ("x0" inline, "x19" standalone); x1 = dst, x2 = src.
+ * Move slot src into slot dst — free dst's heap copy, take over src's
+ * pointer, zero src. Exactly one slot owns the string afterwards.
+ */
+function emit_string_shift_T(status: BuildStatus, self_reg: string) {
+	const done = `.Lstr_sh_done_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+	status.code += `stp x20, x21, [sp, #-16]!\n`;
+	status.code += `ldr x9, [${self_reg}, #8]\n`; // data base
+	status.code += `add x20, x9, x1, lsl #3\n`; // &slot[dst]
+	status.code += `add x21, x9, x2, lsl #3\n`; // &slot[src]
+	status.code += `cmp x20, x21\n`;
+	status.code += `b.eq ${done}\n`;
+	status.code += `ldr x0, [x20]\n`;
+	emit_free(status); // free(dst-old); free(NULL) is a no-op
+	status.code += `ldr x9, [x21]\n`;
+	status.code += `str x9, [x20]\n`;
+	status.code += `str xzr, [x21]\n`;
+	status.code += `${done}:\n`;
+	status.code += `ldp x20, x21, [sp], #16\n`;
+}
+
+/**
+ * Specialized owning-value-struct shift_T. `self_reg` holds the Buffer
+ * pointer ("x0" inline, "x19" standalone); x1 = dst, x2 = src (slot indices).
+ * Destroy dst's old value, copy src's bytes over it wholesale (the moved
+ * struct's owned pointers transfer — no deep copy), zero src.
+ */
+function emit_owning_shift_T(elem: StructNode, status: BuildStatus, self_reg: string) {
+	const T_SIZE = get_struct_size(elem.name, status);
+	const done = `.Lown_sh_done_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+	status.code += `stp x20, x21, [sp, #-16]!\n`;
+	status.code += `str x22, [sp, #-16]!\n`;
+	status.code += `ldr x9, [${self_reg}, #8]\n`; // data base
+	status.code += `mov x22, #${T_SIZE}\n`; // callee-saved, survives calls
+	status.code += `madd x20, x1, x22, x9\n`; // &slot[dst]
+	status.code += `madd x21, x2, x22, x9\n`; // &slot[src]
+	status.code += `cmp x20, x21\n`;
+	status.code += `b.eq ${done}\n`;
+	status.code += `mov x0, x20\n`;
+	status.code += `bl ${elem.name}_destroy\n`;
+	status.code += `mov x0, x20\n`;
+	status.code += `mov x1, x21\n`;
+	status.code += `mov x2, x22\n`;
+	status.code += `bl _memcpy\n`;
+	status.code += `mov x0, x21\n`;
+	status.code += `mov x1, #0\n`;
+	status.code += `mov x2, x22\n`;
+	status.code += `bl _memset\n`;
+	status.code += `${done}:\n`;
+	status.code += `ldr x22, [sp], #16\n`;
 	status.code += `ldp x20, x21, [sp], #16\n`;
 }
 

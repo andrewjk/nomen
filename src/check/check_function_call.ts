@@ -333,6 +333,18 @@ export default function check_function_call(
 			}
 		}
 
+		// Record which arguments correspond to a `view T` parameter (notably
+		// `view string`). The build passes a view as a (ptr, len) pair across
+		// the call boundary: a view-typed argument passes through, while an
+		// owned `string` argument is wrapped with its strlen (an implicit
+		// owned→view borrow conversion — the caller keeps ownership).
+		if (func_param && func_param.type.is_view && !func_param.is_self_param) {
+			if (!node.view_param_indices) node.view_param_indices = [];
+			if (!node.view_param_indices.includes(i)) {
+				node.view_param_indices.push(i);
+			}
+		}
+
 		// Set expected_type to the function parameter's type so that
 		// untyped values (e.g. array literals) are inferred correctly,
 		// rather than leaking the outer declaration's expected_type.

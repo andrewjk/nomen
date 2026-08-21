@@ -29,6 +29,7 @@ import {
 } from "./utils/stack_var.ts";
 import { get_enum_size } from "./utils/struct_layout.ts";
 import { get_field_offset, get_struct_size } from "./utils/struct_layout.ts";
+import { emit_view_materialize_owned, emit_view_string_arg } from "./utils/view_value.ts";
 
 // Emit strlen(target) leaving the length in x0. If the target expression
 // produces an owned heap string temporary (e.g. Json.stringify(...) or an
@@ -124,21 +125,11 @@ function build_view_op(
 		return true;
 	}
 	if (access_func.name === "to_string" && t.name === "string") {
-		// Load ptr/len, save them, malloc(len+1), memcpy(dst,ptr,len), null-term.
+		// Load ptr/len into x0/x1, then materialize an owned, len-bounded
+		// copy (malloc(len+1); memcpy; null-terminate).
 		status.code += `ldr x0, [x29, #${base}]\n`;
 		status.code += `ldr x1, [x29, #${base + 8}]\n`;
-		status.code += `stp x0, x1, [sp, #-16]!\n`; // [sp]=ptr, [sp+8]=len
-		status.code += `add x0, x1, #1\n`; // len+1
-		emit_malloc(status); // x0 = dst
-		status.code += `str x0, [sp, #-16]!\n`; // [sp]=dst (now -32)
-		status.code += `ldr x1, [sp, #16]\n`; // ptr
-		status.code += `ldr x2, [sp, #24]\n`; // len
-		status.code += `ldr x0, [sp]\n`; // dst
-		status.code += `bl _memcpy\n`;
-		status.code += `ldr x0, [sp]\n`; // dst (don't trust memcpy's return)
-		status.code += `ldr x1, [sp, #24]\n`; // len
-		status.code += `strb wzr, [x0, x1]\n`; // dst[len] = 0
-		status.code += `add sp, sp, #32\n`;
+		emit_view_materialize_owned(status);
 		status.last_result_is_heap = true;
 		return true;
 	}
@@ -1629,15 +1620,42 @@ function build_access_method(
 	// Evaluate params. For an instance method, x0 holds self (saved above)
 	// and args go in x1..x7; for a static method args go in x0..x7. Args past
 	// slot 7 arrive in the caller's outgoing stack area.
+	// A `view T` param (view_param_indices) occupies TWO consecutive register
+	// slots — the (ptr, len) pair — so an arg's slot is its declaration
+	// position PLUS one per view param declared before it.
 	const start_reg = access_func.is_static ? 0 : 1;
 	const param_regs = access_func.is_static
 		? ["x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7"]
 		: ["x1", "x2", "x3", "x4", "x5", "x6", "x7"];
-	const overflow_count = Math.max(0, access_func.params.length - (NUM_REG_ARGS - start_reg));
+	const view_arg_set = new Set(access_func.view_param_indices ?? []);
+	const arg_slot: number[] = [];
+	let total_arg_slots = 0;
+	for (let i = 0; i < access_func.params.length; i++) {
+		arg_slot.push(total_arg_slots);
+		total_arg_slots += view_arg_set.has(i) ? 2 : 1;
+	}
+	const overflow_count = Math.max(0, total_arg_slots - (NUM_REG_ARGS - start_reg));
 	let overflow_base = 0;
 	if (overflow_count > 0) {
 		overflow_base = allocate_stack_space(status, overflow_count * 8, 16);
 	}
+	// View pairs are spilled to a dedicated area and reloaded into their
+	// register pair AFTER the loop — evaluating a later (lower-index)
+	// argument can use x0-x2 as scratch, which would clobber a pair claimed
+	// inline. A pair half whose register slot is past x7 goes to the
+	// outgoing-area slot it occupies (copied down at the bl, like every
+	// other overflow arg).
+	const has_view_args = view_arg_set.size > 0;
+	let view_spill_base = 0;
+	if (has_view_args) {
+		view_spill_base = allocate_stack_space(status, total_arg_slots * 8, 16);
+	}
+	const view_half_store = (j: number, half: 0 | 1): number => {
+		const half_slot = start_reg + arg_slot[j] + half;
+		return half_slot >= NUM_REG_ARGS
+			? overflow_base + (half_slot - NUM_REG_ARGS) * 8
+			: view_spill_base + (arg_slot[j] + half) * 8;
+	};
 	// `ref` class PARAMS forwarded to a method's `ref` param: tracked so their
 	// callee-saved registers can be reloaded from the caller's slot once the
 	// call returns (the callee may have reassigned it).
@@ -1646,6 +1664,14 @@ function build_access_method(
 		const param = access_func.params[i];
 		const is_ref_param = access_func.ref_param_indices?.includes(i);
 		const param_type = (param as any).type?.name || "";
+		// A `view string` argument: (ptr, len) pair in x0/x1 — a view VALUE
+		// passes through, an owned string is wrapped with its strlen.
+		if (view_arg_set.has(i)) {
+			emit_view_string_arg(param, status);
+			status.code += `str x0, [x29, #${view_half_store(i, 0)}]\n`;
+			status.code += `str x1, [x29, #${view_half_store(i, 1)}]\n`;
+			continue;
+		}
 		// Enum-with-data values (tag + payload, 16 bytes) use the same
 		// pass-by-address convention as structs — mirrors the plain-function
 		// call path in build_function_call_node.
@@ -1686,7 +1712,7 @@ function build_access_method(
 		} else {
 			build_node(param, status);
 		}
-		const slot = start_reg + i;
+		const slot = start_reg + arg_slot[i];
 		if (!status.code.endsWith("\n")) {
 			status.code += "\n";
 		}
@@ -1695,9 +1721,22 @@ function build_access_method(
 			// once self has been restored to x0 below.
 			status.code += `str x0, [x29, #${overflow_base + (slot - NUM_REG_ARGS) * 8}]\n`;
 		} else {
-			const reg = param_regs[i];
+			const reg = param_regs[arg_slot[i]];
 			if (reg && reg !== "x0") {
 				status.code += `mov ${reg}, x0\n`;
+			}
+		}
+	}
+	// Reload the spilled view pairs into their register slots now that every
+	// argument has been evaluated (no later evaluation can clobber them).
+	// Halves at register slots past x7 stay in the outgoing-area slots.
+	if (has_view_args) {
+		for (let j = 0; j < access_func.params.length; j++) {
+			if (!view_arg_set.has(j)) continue;
+			for (const half of [0, 1] as const) {
+				const half_slot = start_reg + arg_slot[j] + half;
+				if (half_slot >= NUM_REG_ARGS) continue;
+				status.code += `ldr x${half_slot}, [x29, #${view_spill_base + (arg_slot[j] + half) * 8}]\n`;
 			}
 		}
 	}

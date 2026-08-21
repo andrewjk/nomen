@@ -187,7 +187,6 @@ export function strip_length_equalities(
 		return left ?? right;
 	}
 	if (op.op !== "==") return constraint;
-
 	// Both sides must be `<param>.<size field>` accesses over existing values.
 	const extract = (side: BaseNode): { base: string; field: string } | undefined => {
 		if (side.node_type !== "access") return undefined;
@@ -226,6 +225,66 @@ export function strip_length_equalities(
 		status.equal_lengths.push({ a: other, b: paired, field: lhs.field });
 	}
 	return undefined;
+}
+
+/**
+ * Registration-time variant of strip_length_equalities: removes
+ * `<container>.<size> == <container>.<size>` conjuncts from a parameter
+ * constraint and returns them alongside the remaining constraint. Used when a
+ * function signature is REGISTERED — before any call site can observe it — so
+ * a forward-referenced callee never hands its caller a clause no call site
+ * could prove (declaration order must not matter). Bases are validated
+ * against `known_names` (the function's own parameters) instead of
+ * status.values, because at registration time nothing has been pushed into
+ * any scope yet. Does NOT touch status.equal_lengths: the extracted
+ * equalities are returned for the callee's own param check to seed.
+ */
+export function extract_length_equalities_at_registration(
+	constraint: BaseNode | undefined,
+	param_name: string,
+	known_names: Set<string>,
+): { constraint: BaseNode | undefined; equalities: { a: string; b: string; field: string }[] } {
+	const equalities: { a: string; b: string; field: string }[] = [];
+	if (!constraint) return { constraint, equalities };
+	const walk = (node: BaseNode): BaseNode | undefined => {
+		if (node.node_type !== "op") return node;
+		const op = node as OperationNode;
+		if (op.op === "&&") {
+			const left = walk(op.left_value);
+			const right = walk(op.right_value);
+			if (left && right) {
+				if (left === op.left_value && right === op.right_value) return node;
+				return new OperationNode(op.start, "&&", left, right, op.type);
+			}
+			return left ?? right;
+		}
+		if (op.op !== "==") return node;
+		const extract = (side: BaseNode): { base: string; field: string } | undefined => {
+			if (side.node_type !== "access") return undefined;
+			const access = side as AccessNode;
+			let field: string | undefined;
+			if (access.access.node_type === "access_field") {
+				field = (access.access as AccessFieldNode).name;
+			} else if (access.access.node_type === "access_func") {
+				field = (access.access as unknown as { name?: string }).name;
+			}
+			if (!field || !NON_NEGATIVE_FIELDS.has(field)) return undefined;
+			if (access.target.node_type !== "value") return undefined;
+			return { base: (access.target as ValueNode).value, field };
+		};
+		const lhs = extract(op.left_value);
+		const rhs = extract(op.right_value);
+		if (!lhs || !rhs || lhs.field !== rhs.field) return node;
+		if (lhs.base === rhs.base) return node;
+		// Both endpoints must be parameters of THIS function (the param itself
+		// or a sibling — on either side; order must not matter).
+		for (const base of [lhs.base, rhs.base]) {
+			if (base !== param_name && !known_names.has(base)) return node;
+		}
+		equalities.push({ a: lhs.base, b: rhs.base, field: lhs.field });
+		return undefined;
+	};
+	return { constraint: walk(constraint), equalities };
 }
 
 /**

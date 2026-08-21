@@ -74,20 +74,6 @@ if it keeps biting.
   Exposure is strictly no worse than before the fix — the direct-call path
   was the hole that was closed; this is the unfixed remainder.
 
-## Map/Set `remove` with string keys leaks moved slots (pre-existing)
-
-Backward-shift deletion moves entries with
-`keys.store_T(gap, keys.load_T(k))`. For `Buffer<string>` keys, `store_T`
-strdups a fresh copy into `gap` while the moved-from slot `k` keeps its old
-pointer; when the cluster walk finishes, `used.store(gap, 0)` marks `gap`
-empty, so the buffer's destroy skips it — the stale pointer at the vacated
-slot is never freed (one leak per shifted entry). Verified against the
-pre-PERF baseline (changes stashed): 60 inserts + 30 removes leaks 45
-allocations identically, so the mask-indexing change did not introduce it.
-Likely fix direction: an owning-aware shift primitive (free the vacated
-slot's strings after the copy), or zero the vacated slot's pointer before
-marking it unused.
-
 ## Per-call `strlen` of whole strings in per-character helpers (PERF 2.4, deferred)
 
 A helper taking an owned `string` and indexing it per character pays one
