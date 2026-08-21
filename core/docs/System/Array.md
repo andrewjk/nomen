@@ -7,6 +7,8 @@ A fixed-length array of values, created with a literal (`[1, 2, 3]`) and address
 **Members:**
 
 - `at(int index) -> T`
+- `at_or(int index, T fallback) -> T`
+- `at_or_panic(int index) -> T`
 - `first() -> T`
 - `set(int index, T value)`
 - `at_end() -> T`

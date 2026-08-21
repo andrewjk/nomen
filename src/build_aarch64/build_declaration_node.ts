@@ -269,14 +269,21 @@ function build_constructor_params(
 		const elem_struct = status.structs.find((s) => s.name === elem_type_name && !s.is_simple_type);
 		const elem_size = elem_struct ? get_struct_size(elem_type_name, status) : 8;
 		const count = arr.values.length;
-		// Always reserve at least one element so the pointer we pass is a valid,
-		// uniquely-owned stack address even when there are zero variadic args.
-		const arr_offset = allocate_stack_space(status, Math.max(count, 1) * elem_size, 16);
+		// Pack behind an 8-byte length prefix so the buffer carries the
+		// standard aarch64 array layout (first-element pointer, length at
+		// [-8]) — matching the plain variadic call path in
+		// build_function_call_node. Always reserve at least one element so
+		// the pointer we pass is a valid, uniquely-owned stack address even
+		// when there are zero variadic args.
+		const arr_offset = allocate_stack_space(status, 8 + Math.max(count, 1) * elem_size, 16);
+		const data_base = arr_offset + 8;
+		status.code += `mov x0, #${count}\n`;
+		status.code += `str x0, [x29, #${arr_offset}]\n`;
 
 		// Evaluate each variadic arg into its slot (right-to-left).
 		for (let j = count - 1; j >= 0; j--) {
 			const arg = arr.values[j];
-			const slot_offset = arr_offset + j * elem_size;
+			const slot_offset = data_base + j * elem_size;
 			if (elem_struct && arg.node_type === "func_call") {
 				// Tuple/struct constructor: eval params into x1..x7, then call _init
 				// with x0 pointing at this slot.
@@ -347,7 +354,7 @@ function build_constructor_params(
 		emit_int_immediate(status, String(count));
 		if (!status.code.endsWith("\n")) status.code += "\n";
 		status.code += `str x0, [x29, #${count_slot}]\n`;
-		status.code += `add x0, x29, #${arr_offset}\n`;
+		status.code += `add x0, x29, #${data_base}\n`;
 		status.code += `str x0, [x29, #${ptr_slot}]\n`;
 
 		// Load in-register slots (x1..x7). param_regs index i maps to slot

@@ -124,6 +124,16 @@ still carry a compile-time `length` (e.g. from a `[ ... ]` initializer) for
   `#init` assigns the pointer, and array methods on the field dispatch through
   the `Array_<T>` helpers (C: `Array_<T>_at(obj.items, i)`, `.length` →
   `obj.items->length`; aarch64: field loads advance to the data pointer).
+- **Method receivers** — every `Array<T>` method, raw `#arch` body or
+  Nomen-level body alike, receives `self` in the platform's array receiver
+  convention: on C a `struct Array_<T>*` (header `[0]=_vt, [8]=length`, data
+  at `+16`), with non-heap receivers (`T w[N]`, variadic packs) wrapped in a
+  header temp at the call site (`array_receiver_wrap` in
+  `build_c/build_access_node.ts`); on aarch64 the FIRST-ELEMENT pointer with
+  the length prefix at `[self - 8]` — which stack arrays, heap buffers, and
+  variadic packs all provide — so Nomen-level bodies read `self.length` at
+  `[-8]` (`build_access_field`'s Array-self special case), matching the raw
+  bodies.
 - **Call sites** forward a heap-array value arg directly (the pointer IS the
   value) — recognised by the flag, not by absence of a compile-time `length`.
 

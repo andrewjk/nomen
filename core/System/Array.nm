@@ -160,6 +160,26 @@ pub struct Array<T>: Viewable {
 		```
 	}
 
+	// Bounds-checked accessors — the runtime-checked escape hatch for
+	// indices the constraint checker can't prove (see PERF.md gap 5). Unlike
+	// every other Array method these have Nomen-level bodies: the method-call
+	// receiver conventions for Array receivers (first-element pointer on
+	// aarch64, struct Array_<T>* on C) are passed through unchanged, and the
+	// bodies read self.length / self.at through them.
+	pub func at_or = (self, int index, T fallback, out T) {
+		if index >= 0 && index < self.length {
+			return self.at(index)
+		}
+		return fallback
+	}
+
+	pub func at_or_panic = (self, int index, out T) {
+		if index >= 0 && index < self.length {
+			return self.at(index)
+		}
+		panic("index out of range")
+	}
+
 	pub func at_end = (self, out T) {
 		```
 		#arch: c

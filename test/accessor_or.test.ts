@@ -80,11 +80,79 @@ Console.write("\\{xs.at_or_panic(i)}")
 	});
 });
 
-// Array is intentionally excluded from the _or family for now: `.at` on
-// arrays is special-cased to direct indexing in both backends (never a
-// method call), and a general Array method with a Nomen body exposes
-// pre-existing receiver-convention gaps — see FOLLOWUP.md "Array methods
-// with Nomen-level bodies".
+// Array.at_or / at_or_panic were the first Array methods with Nomen-level
+// bodies (every other member is a raw #arch body) — they drove the receiver
+// fixes that made those work: C non-heap receivers are wrapped in a
+// `struct Array_<T>` header temp at the call site, and aarch64 method bodies
+// read self.length at [self - 8], the first-element convention the call
+// sites already pass. See PERF_RESPONSE.md "The `_or` accessor family".
+
+describe("Array at_or / at_or_panic", () => {
+	test("at_or on a stack array", async () => {
+		const input = `
+var arr = Array(10, 20, 30)
+Console.write("\\{arr.at_or(0, -1)} \\{arr.at_or(2, -1)} \\{arr.at_or(3, -7)} \\{arr.at_or(-1, -9)}")
+`;
+		await build_and_check_output(input, "array_at_or_stack", "10 30 -7 -9");
+	});
+
+	test("at_or on a heap array", async () => {
+		const input = `
+var Array<int> arr = Array.with(5, 3)
+Console.write("\\{arr.at_or(0, -1)} \\{arr.at_or(2, -1)} \\{arr.at_or(3, -7)}")
+`;
+		await build_and_check_output(input, "array_at_or_heap", "5 5 -7");
+	});
+
+	test("at_or on a heap array from a literal", async () => {
+		const input = `
+var Array<int> arr = [7, 8, 9]
+Console.write("\\{arr.at_or(1, -1)} \\{arr.at_or(9, -7)}")
+`;
+		await build_and_check_output(input, "array_at_or_heap_literal", "8 -7");
+	});
+
+	test("at_or with string elements", async () => {
+		const input = `
+var arr = Array("a", "b", "c")
+Console.write("\\{arr.at_or(1, "z")}\\{arr.at_or(9, "z")}")
+`;
+		await build_and_check_output(input, "array_at_or_string", "bz");
+	});
+
+	test("at_or on a variadic receiver", async () => {
+		const input = `
+func pick = (...int xs) {
+	Console.write("\\{xs.at_or(0, -1)} \\{xs.at_or(9, -5)}")
+}
+pick(4, 5, 6)
+`;
+		await build_and_check_output(input, "array_at_or_variadic", "4 -5");
+	});
+
+	test("at_or_panic in-bounds returns the element", async () => {
+		const input = `
+var arr = Array(10, 20, 30)
+Console.write("\\{arr.at_or_panic(1)}")
+`;
+		await build_and_check_output(input, "array_at_or_panic_hit", "20");
+	});
+
+	test("at_or_panic out-of-bounds emits the trap", () => {
+		const input = `
+var arr = Array(10, 20, 30)
+var int i = 0
+i += 5
+Console.write("\\{arr.at_or_panic(i)}")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		for (const arch of ["aarch64", "c"] as const) {
+			const result = build(parsed.root, { arch, audit: false });
+			expect(result.code).toContain("index out of range");
+		}
+	});
+});
 
 describe("string at_or / at_or_panic", () => {
 	test("at_or in-bounds and out-of-bounds", async () => {

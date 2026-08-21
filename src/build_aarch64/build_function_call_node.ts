@@ -232,12 +232,26 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 				(s) => s.name === elem_type_name && !s.is_simple_type,
 			);
 			const elem_size = elem_struct ? get_struct_size(elem_type_name, status) : 8;
-			const arr_offset = allocate_stack_space(status, arr.values.length * elem_size, 16);
+			// Pack behind an 8-byte length prefix so the buffer carries the
+			// standard aarch64 array layout (first-element pointer, length at
+			// [-8]): array method bodies — raw #arch (at_end) and Nomen-level
+			// (at_or) alike — read the length at [self - 8] when a variadic
+			// param is the receiver. Always reserve at least one element so
+			// the pointer passed is a valid, uniquely-owned stack address
+			// even when there are zero variadic args.
+			const arr_offset = allocate_stack_space(
+				status,
+				8 + Math.max(arr.values.length, 1) * elem_size,
+				16,
+			);
+			const data_base = arr_offset + 8;
+			status.code += `mov x0, #${arr.values.length}\n`;
+			status.code += `str x0, [x29, #${arr_offset}]\n`;
 
 			// Evaluate all variadic args and store on stack
 			for (let j = arr.values.length - 1; j >= 0; j--) {
 				const arg = arr.values[j];
-				const slot_offset = arr_offset + j * elem_size;
+				const slot_offset = data_base + j * elem_size;
 				if (elem_struct && arg.node_type === "func_call") {
 					// Tuple constructor: evaluate params into x1..x7 (right-to-left)
 					// then set x0 to slot address and call _init
@@ -340,7 +354,7 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			// Store the count and array pointer into their slots.
 			status.code += `mov x0, #${arr.values.length}\n`;
 			status.code += `str x0, [x29, #${count_slot}]\n`;
-			status.code += `add x0, x29, #${arr_offset}\n`;
+			status.code += `add x0, x29, #${data_base}\n`;
 			status.code += `str x0, [x29, #${ptr_slot}]\n`;
 
 			// Load each in-register slot into its argument register. Slot 0

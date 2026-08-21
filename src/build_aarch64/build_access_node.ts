@@ -11,6 +11,7 @@ import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
+import type StructNode from "../nodes/StructNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_inline_method from "./build_inline_method.ts";
@@ -30,6 +31,20 @@ import {
 import { get_enum_size } from "./utils/struct_layout.ts";
 import { get_field_offset, get_struct_size } from "./utils/struct_layout.ts";
 import { emit_view_materialize_owned, emit_view_string_arg } from "./utils/view_value.ts";
+
+/**
+ * Whether `struct_node` is a monomorphized `Array<T>` (`Array_<T>`). The mono
+ * name is unambiguous — the compiler derives it itself (`"Array_" + elem`)
+ * for every `Array<T>` instantiation, so a name match is always an Array mono.
+ */
+function is_array_mono_struct(struct_node: StructNode | undefined, status: BuildStatus): boolean {
+	return (
+		!!struct_node &&
+		!struct_node.is_generic &&
+		struct_node.name.startsWith("Array_") &&
+		!!status.structs.find((s) => s.name === struct_node.name)
+	);
+}
 
 // Emit strlen(target) leaving the length in x0. If the target expression
 // produces an owned heap string temporary (e.g. Json.stringify(...) or an
@@ -477,6 +492,31 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 	const target_name =
 		node.target.node_type === "value" ? (node.target as ValueNode).value : target_type?.name;
 	const access_field = node.access as AccessFieldNode;
+
+	// Inside a compiled `Array<T>` method body, `self` follows the aarch64
+	// array receiver convention every call site already passes (see the
+	// receiver loading in build_access_method): the FIRST ELEMENT pointer,
+	// with the length prefix at [self - 8] — not the VT-prefixed struct
+	// layout the generic field path below assumes ([self + 8]). The raw
+	// `#arch` Array bodies read the same [-8] prefix (at_end/add/mul), so a
+	// Nomen-level body must agree with them. Only `self` can carry the mono
+	// struct type here — every other array-typed value stays element-typed
+	// (`T[]`/`Array<T>`) and dispatches through the is_array paths above.
+	if (
+		access_field.name === "length" &&
+		node.target.node_type === "value" &&
+		(node.target as ValueNode).value === "self" &&
+		is_array_mono_struct(status.current_struct, status)
+	) {
+		const self_reg = get_param_reg("self", status);
+		if (self_reg) {
+			if (self_reg !== "x0") {
+				status.code += `mov x0, ${self_reg}\n`;
+			}
+			status.code += `ldr x0, [x0, #-8]\n`;
+			return;
+		}
+	}
 
 	if (access_field.type?.name === "func") {
 		status.code += `adr x0, ${target_type.name}_${access_field.name}\n`;

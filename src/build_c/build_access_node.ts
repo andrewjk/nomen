@@ -8,6 +8,7 @@ import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import BaseNode from "../nodes/BaseNode.ts";
+import type FunctionNode from "../nodes/FunctionNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_node from "./build_node.ts";
@@ -86,6 +87,100 @@ export function build_vtable_target(node: BaseNode, status: BuildStatus) {
 	const expr = status.code.substring(before);
 	status.code = status.code.substring(0, before);
 	status.code += "&" + expr;
+}
+
+/**
+ * An Array method's `self` is a `struct Array_<T>*` — header `[0]=_vt`,
+ * `[8]=length`, elements at `+16` — which is exactly what a heap receiver
+ * (`struct Array_<T>*`) already is. A NON-heap receiver (a plain stack C
+ * array `T w[N]`, or a variadic `...T` param lowered to `T *w`) would pass
+ * the bare element pointer, so the callee's `self->length` and the raw
+ * bodies' `(T*)((char*)self + sizeof(*self))` reads land on garbage
+ * (`w[1]`, `w + 2`). When such a receiver with a usable length calls a
+ * method on the mono `Array_<T>` struct, build a statement-expression
+ * temporary carrying a proper header plus a copy of the elements — the
+ * same wrap the binary-operator operand path uses
+ * (build_array_operand_for_call). A `ref self` callee additionally gets
+ * its element copy written back after the call, so mutations through
+ * `self` reach the caller's array.
+ */
+function array_receiver_wrap(
+	node: AccessNode,
+	target_type: Type | undefined,
+	target_method: FunctionNode | undefined,
+	mono_struct_name: string,
+	status: BuildStatus,
+): { prefix: string; self_expr: string; suffix: string } | undefined {
+	if (!target_type?.is_array || !mono_struct_name.startsWith("Array_")) return undefined;
+	if (node.target.node_type !== "value") return undefined;
+	const target_value = (node.target as ValueNode).value;
+	if (target_type.is_array_heap || status.heap_array_vars?.has(target_value)) return undefined;
+	// Element-count expression: the auto_free registration for owning
+	// stack arrays, the checker's stamped compile-time length, or a
+	// variadic param's hidden `_<name>_len`. Without one there is no sound
+	// wrap (e.g. a `T[]` param's runtime length), so leave the receiver
+	// untouched.
+	let length: string | undefined;
+	if (status.stack_array_lengths?.has(target_value)) {
+		length = status.stack_array_lengths.get(target_value);
+	} else if (target_type.length) {
+		const before = status.code.length;
+		build_node(target_type.length, status);
+		length = status.code.substring(before);
+		status.code = status.code.substring(0, before);
+	} else if (status.function_variadic_params?.has(target_value)) {
+		length = `_${target_value}_len`;
+	}
+	if (!length) return undefined;
+	// Capture the receiver's C lvalue text (the bare array identifier).
+	const before = status.code.length;
+	status.suppress_dereference = true;
+	build_node(node.target, status);
+	status.suppress_dereference = false;
+	const recv = status.code.substring(before);
+	status.code = status.code.substring(0, before);
+
+	const elem_c = c_type(target_type.name);
+	const id = (status.label_counter = (status.label_counter ?? 0) + 1);
+	const wrap = `_arrm_${id}`;
+	const method_self_is_ref = !!target_method?.params?.some(
+		(p) => p.is_self_param && (p.is_ref || p.type?.is_ref),
+	);
+	const ret = target_method?.return_type;
+	const ret_c = !ret?.name ? "void" : ret.is_array ? "void*" : c_type(ret.name);
+	const bytes = `${length} * sizeof(${elem_c})`;
+	// A compile-time length sizes the wrap struct's inline `_d[N]` member
+	// directly. A runtime length (a variadic receiver's `_<name>_len`) can't
+	// — VLAs are illegal in struct members — so use a flat VLA byte buffer
+	// with the 16-byte header at its start and the elements memcpy'd to +16
+	// (exactly where `sizeof(struct Array_<T>)`-based reads expect them).
+	const length_is_literal = /^(\d+L?|0x[0-9a-fA-F]+)$/.test(length.trim());
+	let prefix: string;
+	let self_expr: string;
+	if (length_is_literal) {
+		prefix =
+			`({ struct { struct ${mono_struct_name} _h; ${elem_c} _d[${length}]; } ${wrap}; ` +
+			`${wrap}._h._vt = 0; ${wrap}._h.length = ${length}; ` +
+			`memcpy(${wrap}._d, ${recv}, ${bytes}); ` +
+			(method_self_is_ref && ret_c !== "void" ? `${ret_c} _arrm_r_${id} = ` : "");
+		self_expr = `(struct ${mono_struct_name}*)&${wrap}`;
+	} else {
+		prefix =
+			`({ char ${wrap}[sizeof(struct ${mono_struct_name}) + ${bytes}]; ` +
+			`struct ${mono_struct_name}* _arrm_p_${id} = (struct ${mono_struct_name}*)${wrap}; ` +
+			`_arrm_p_${id}->_vt = 0; _arrm_p_${id}->length = ${length}; ` +
+			`memcpy(${wrap} + sizeof(struct ${mono_struct_name}), ${recv}, ${bytes}); ` +
+			(method_self_is_ref && ret_c !== "void" ? `${ret_c} _arrm_r_${id} = ` : "");
+		self_expr = `_arrm_p_${id}`;
+	}
+	const copy_back = `memcpy(${recv}, ${
+		length_is_literal ? `${wrap}._d` : `${wrap} + sizeof(struct ${mono_struct_name})`
+	}, ${bytes}); `;
+	const suffix =
+		(method_self_is_ref
+			? `; ${copy_back}` + (ret_c !== "void" ? `_arrm_r_${id}; ` : `(void)0; `)
+			: "") + `; })`;
+	return { prefix, self_expr, suffix };
 }
 
 export default function build_access_node(node: AccessNode, status: BuildStatus) {
@@ -669,45 +764,63 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 					access_func.mangled_name ||
 					trait_default_label ||
 					`${mono_struct_name}_${access_func.name.replace(/#/g, "")}`;
+				// A non-heap Array receiver must be wrapped in a header temp
+				// before the callee's `struct Array_<T>* self` (see
+				// array_receiver_wrap) — decided here so the statement
+				// expression can surround the call text emitted below.
+				const array_wrap = array_receiver_wrap(
+					node,
+					method_type,
+					target_method,
+					mono_struct_name,
+					status,
+				);
+				if (array_wrap) {
+					status.code += array_wrap.prefix;
+				}
 				status.code += `${label}(`;
 				if (!access_func.is_static) {
-					// Emit the receiver (`self`) for a method call. A plain local
-					// instance is passed by address (`&`); a pointer param/var is
-					// forwarded as-is; a `ref` class param (`struct T **`) is
-					// dereferenced once to yield the single pointer `self` expects.
-					// A `ref self` method (e.g. string.set) takes the caller's slot
-					// by pointer even for built-in types — its `T *self` param is
-					// one indirection deeper than the by-value convention the
-					// simple-type methods (string.at & co.) use.
-					const method_self_is_ref = !!target_method?.params?.some(
-						(p) => p.is_self_param && (p.is_ref || p.type?.is_ref),
-					);
-					if (!built_in_types.includes(method_type?.name || "") || method_self_is_ref) {
-						const target_value =
-							node.target.node_type === "value" ? (node.target as ValueNode).value : "";
-						// See field-access branch: self is a pointer whenever
-						// it's in function_ref_params, so the generic check
-						// covers it.
-						const target_is_ref_class_param = !!status.ref_class_params?.has(target_value);
-						const target_is_ref_param =
-							!!status.function_ref_params?.has(target_value) ||
-							!!status.class_vars?.has(target_value) ||
-							!!status.heap_array_vars?.has(target_value);
-						if (!target_is_ref_param) {
-							status.code += "&";
-						} else if (target_is_ref_class_param) {
-							// A `ref` class param is a double pointer (`struct T **`),
-							// but the method's `self` is a single pointer. Leave
-							// suppress_dereference off so build_value_node emits
-							// `(*t)`, yielding the instance pointer self expects.
-						} else {
-							// target is already a pointer (var/ref param) — don't
-							// dereference it; we want the pointer itself.
-							status.suppress_dereference = true;
+					if (array_wrap) {
+						status.code += array_wrap.self_expr;
+					} else {
+						// Emit the receiver (`self`) for a method call. A plain local
+						// instance is passed by address (`&`); a pointer param/var is
+						// forwarded as-is; a `ref` class param (`struct T **`) is
+						// dereferenced once to yield the single pointer `self` expects.
+						// A `ref self` method (e.g. string.set) takes the caller's slot
+						// by pointer even for built-in types — its `T *self` param is
+						// one indirection deeper than the by-value convention the
+						// simple-type methods (string.at & co.) use.
+						const method_self_is_ref = !!target_method?.params?.some(
+							(p) => p.is_self_param && (p.is_ref || p.type?.is_ref),
+						);
+						if (!built_in_types.includes(method_type?.name || "") || method_self_is_ref) {
+							const target_value =
+								node.target.node_type === "value" ? (node.target as ValueNode).value : "";
+							// See field-access branch: self is a pointer whenever
+							// it's in function_ref_params, so the generic check
+							// covers it.
+							const target_is_ref_class_param = !!status.ref_class_params?.has(target_value);
+							const target_is_ref_param =
+								!!status.function_ref_params?.has(target_value) ||
+								!!status.class_vars?.has(target_value) ||
+								!!status.heap_array_vars?.has(target_value);
+							if (!target_is_ref_param) {
+								status.code += "&";
+							} else if (target_is_ref_class_param) {
+								// A `ref` class param is a double pointer (`struct T **`),
+								// but the method's `self` is a single pointer. Leave
+								// suppress_dereference off so build_value_node emits
+								// `(*t)`, yielding the instance pointer self expects.
+							} else {
+								// target is already a pointer (var/ref param) — don't
+								// dereference it; we want the pointer itself.
+								status.suppress_dereference = true;
+							}
 						}
+						build_node(node.target, status);
+						status.suppress_dereference = false;
 					}
-					build_node(node.target, status);
-					status.suppress_dereference = false;
 				}
 				for (let i = 0; i < access_func.params.length; i++) {
 					if (!access_func.is_static || i > 0) {
@@ -782,6 +895,9 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 					}
 				}
 				status.code += ")";
+				if (array_wrap) {
+					status.code += array_wrap.suffix;
+				}
 			}
 			// mov parameter handling for method calls: same as
 			// build_function_call_node — remove moved class vars / temporaries
