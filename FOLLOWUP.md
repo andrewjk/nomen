@@ -74,21 +74,6 @@ if it keeps biting.
   Exposure is strictly no worse than before the fix — the direct-call path
   was the hole that was closed; this is the unfixed remainder.
 
-## General-path method inlining destroys borrowed receivers (found via PERF work)
-
-`build_inline_method`'s general (non-raw) path mis-handles a struct-field
-receiver inside the inlined body: inlining `List.at` (body
-`return self.items.load_T(i)`) emitted a `bl Buffer_int_destroy` on
-`&self.items` at the inline return — freeing the LIVE backing buffer of the
-caller's list (next access segfaults). The cleanup comes from the
-receiver-hoisting machinery around the nested `load_T` call; scoped cleanup
-stacks are swapped but whatever registers the hoisted temp isn't scoped the
-same way when inlined. Raw-only bodies (the naked-inline path) are unaffected
-— `Buffer.load_T`/`store_T`/`load`/`store` inline correctly today. Fixing
-this would unlock `inline` on `List.at`/`Array.at` and any accessor whose
-body calls through a field receiver. Repro: mark `List.at` `pub inline` and
-run `test/flow-bounds.test.ts` (aarch64 crashes).
-
 ## Map/Set `remove` with string keys leaks moved slots (pre-existing)
 
 Backward-shift deletion moves entries with

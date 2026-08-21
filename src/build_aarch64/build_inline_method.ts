@@ -111,6 +111,25 @@ export default function build_inline_method(
 	// scope frames so the inlined method's returns don't destroy the
 	// caller's live locals.
 	const old_outer_scope_declarations = status.outer_scope_declarations;
+	// The inlined body's returns must be attributed to the INLINED method,
+	// not the caller: build_return_node's string-ownership logic keys on
+	// current_struct/current_function_name (e.g. borrow normalization
+	// strdups a `load_T` borrow when the enclosing function is
+	// heap-returning — an inlined `List<string>.at` inside `at_or` used to
+	// inherit `at_or`'s classification and strdup twice, leaking one copy).
+	// return_assign/join_needs_owned_string belong to the caller's join
+	// slot too — the body's returns must not store through them.
+	const old_current_struct = status.current_struct;
+	const old_current_function_name = status.current_function_name;
+	const old_return_assign = status.return_assign;
+	const old_join_needs_owned_string = status.join_needs_owned_string;
+	// A hoisted receiver/arg temp (`_recv_N`/`_param_N`) attached to a body
+	// statement is per-SITE state: each inline emission needs its own copy
+	// (own stack slot, own anchor). The per-build dedupe set would emit it
+	// only at the first site (the standalone body or an earlier inline),
+	// leaving later sites referencing a stack offset that isn't in their
+	// swapped stack_offsets map.
+	const old_emitted_allocations = status.emitted_allocations;
 
 	const return_label = `.inline_ret_${inline_counter++}`;
 	status.function_return_label = return_label;
@@ -123,6 +142,11 @@ export default function build_inline_method(
 	status.buffer_data_cache = undefined;
 	status.heap_cleanup_stack = [];
 	status.moved = new Set();
+	status.current_struct = struct_node;
+	status.current_function_name = func.name;
+	status.return_assign = undefined;
+	status.join_needs_owned_string = undefined;
+	status.emitted_allocations = new Set();
 
 	if (needs_x19) {
 		status.code += `str x19, [sp, #-16]!\n`;
@@ -203,10 +227,27 @@ export default function build_inline_method(
 		status.return_buffer_stack_offset = return_buffer_stack_offset;
 	}
 
+	// Snapshot the code length so the raw-body return-label rewrite below
+	// only touches asm emitted for THIS inline body. A whole-buffer
+	// replaceAll used to rewrite the standalone version's own return
+	// branches (emitted earlier, e.g. `b .return_List_int_at` inside
+	// `List_int_at` itself) into jumps to this inline site's label — the
+	// standalone function fell into a random caller's code (segfault) —
+	// and prefix-mangled sibling labels (`b .return_List_int_at_or` became
+	// `b .inline_ret_N_or`, an undefined symbol).
+	const code_length_before_body = status.code.length;
+
 	build_block_node(func, status);
 
+	// A raw block inside a (mixed) inline body may still branch to the
+	// function's standalone return label — rewrite those to the inline
+	// label. The trailing newline anchors the match so a method whose name
+	// extends this one (`at` vs `at_or`) is never caught by prefix.
 	const standalone_return_label = `.return_${struct_node.name}_${func.name.replace(/#/g, "")}`;
-	status.code = status.code.replaceAll(`b ${standalone_return_label}`, `b ${return_label}`);
+	const body = status.code.slice(code_length_before_body);
+	status.code =
+		status.code.slice(0, code_length_before_body) +
+		body.replaceAll(`b ${standalone_return_label}\n`, `b ${return_label}\n`);
 
 	status.code += `${return_label}:\n`;
 
@@ -236,6 +277,11 @@ export default function build_inline_method(
 	status.heap_cleanup_stack = old_heap_cleanup_stack;
 	status.moved = old_moved;
 	status.outer_scope_declarations = old_outer_scope_declarations;
+	status.current_struct = old_current_struct;
+	status.current_function_name = old_current_function_name;
+	status.return_assign = old_return_assign;
+	status.join_needs_owned_string = old_join_needs_owned_string;
+	status.emitted_allocations = old_emitted_allocations;
 }
 
 let inline_fn_depth = 0;
@@ -266,6 +312,14 @@ export function build_inline_function(func: FunctionNode, status: BuildStatus) {
 	// anchors the body itself created — swap in a fresh cleanup stack (and a
 	// fresh `moved` set) so the outer function's live anchors survive.
 	const old_outer_scope_declarations = status.outer_scope_declarations;
+	// See build_inline_method: the body's returns are attributed to the
+	// inlined function (not the caller), and hoisted per-site temps
+	// re-emit at every inline site.
+	const old_current_struct = status.current_struct;
+	const old_current_function_name = status.current_function_name;
+	const old_return_assign = status.return_assign;
+	const old_join_needs_owned_string = status.join_needs_owned_string;
+	const old_emitted_allocations = status.emitted_allocations;
 
 	const return_label = `.inline_fn_ret_${inline_counter++}`;
 	status.function_return_label = return_label;
@@ -284,6 +338,11 @@ export function build_inline_function(func: FunctionNode, status: BuildStatus) {
 	status.buffer_data_cache = undefined;
 	status.heap_cleanup_stack = [];
 	status.moved = new Set();
+	status.current_struct = undefined;
+	status.current_function_name = func.name;
+	status.return_assign = undefined;
+	status.join_needs_owned_string = undefined;
+	status.emitted_allocations = new Set();
 
 	const param_regs = ["x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7"];
 	const callee_saved = ["x19", "x20", "x21", "x22"];
@@ -367,6 +426,11 @@ export function build_inline_function(func: FunctionNode, status: BuildStatus) {
 	status.heap_cleanup_stack = old_heap_cleanup_stack;
 	status.moved = old_moved;
 	status.outer_scope_declarations = old_outer_scope_declarations;
+	status.current_struct = old_current_struct;
+	status.current_function_name = old_current_function_name;
+	status.return_assign = old_return_assign;
+	status.join_needs_owned_string = old_join_needs_owned_string;
+	status.emitted_allocations = old_emitted_allocations;
 
 	inline_fn_depth--;
 	return true;

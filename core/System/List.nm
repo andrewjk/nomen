@@ -27,7 +27,7 @@ pub struct List<T>: Viewable {
 		return self.items.move_T(idx)
 	}
 
-	pub func at = (self, int i: i >= 0 && i < self.length, out T) {
+	pub inline func at = (self, int i: i >= 0 && i < self.length, out T) {
 		return self.items.load_T(i)
 	}
 
