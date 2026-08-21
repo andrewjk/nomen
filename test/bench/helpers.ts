@@ -63,22 +63,27 @@ export async function build_and_check_bench(name: string, expected: string) {
 // Like build_and_check_bench, but stages one or more input files into the
 // executable's working directory first. `files` maps a project-relative source
 // path to the relative path the binary expects (relative to its CWD).
+// `variant` gives the output folder a distinct suffix when the same benchmark
+// is checked with different staged inputs (check_output caches stdout per
+// folder, keyed by the generated code alone).
 export async function build_and_check_bench_with_files(
 	name: string,
 	expected: string,
 	files: Record<string, string>,
+	variant?: string,
 ) {
 	const source = read_bench(name);
 	const parsed = parse(source, lib);
 	expect(parsed.errors).toEqual([]);
+	const check_name = `${name}${variant ? `_${variant}` : ""}`;
 	for (const arch of ["aarch64", "c"] as const) {
-		const folder = path.resolve(".", "test", "out", arch, `${name}_${arch}`);
+		const folder = path.resolve(".", "test", "out", arch, `${check_name}_${arch}`);
 		for (const [src, target] of Object.entries(files)) {
 			const dest = path.join(folder, target);
 			fs.mkdirSync(path.dirname(dest), { recursive: true });
 			fs.copyFileSync(path.resolve(import.meta.dirname, `../../bench/${src}`), dest);
 		}
 		const { result, check_opts } = await bench_options(parsed, arch);
-		await check_output(`${name}_${arch}`, result, expected, check_opts);
+		await check_output(`${check_name}_${arch}`, result, expected, check_opts);
 	}
 }

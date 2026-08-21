@@ -107,11 +107,16 @@ export default function build_inline_method(
 	// inside the body must not leak out (and vice versa).
 	const old_heap_cleanup_stack = status.heap_cleanup_stack;
 	const old_moved = status.moved;
+	// Mirror build_inline_function: hide the outer function's enclosing
+	// scope frames so the inlined method's returns don't destroy the
+	// caller's live locals.
+	const old_outer_scope_declarations = status.outer_scope_declarations;
 
 	const return_label = `.inline_ret_${inline_counter++}`;
 	status.function_return_label = return_label;
 
 	status.scoped_declarations = [];
+	status.outer_scope_declarations = [];
 	status.function_return_type = undefined;
 	status.struct_return_buffer = undefined;
 	status.return_buffer_stack_offset = undefined;
@@ -230,6 +235,7 @@ export default function build_inline_method(
 	status.buffer_data_cache = old_buffer_data_cache;
 	status.heap_cleanup_stack = old_heap_cleanup_stack;
 	status.moved = old_moved;
+	status.outer_scope_declarations = old_outer_scope_declarations;
 }
 
 let inline_fn_depth = 0;
@@ -256,11 +262,22 @@ export function build_inline_function(func: FunctionNode, status: BuildStatus) {
 	// fresh `moved` set) so the outer function's live anchors survive.
 	const old_heap_cleanup_stack = status.heap_cleanup_stack;
 	const old_moved = status.moved;
+	// See build_inline_method: an inlined body's returns must only clean up
+	// anchors the body itself created — swap in a fresh cleanup stack (and a
+	// fresh `moved` set) so the outer function's live anchors survive.
+	const old_outer_scope_declarations = status.outer_scope_declarations;
 
 	const return_label = `.inline_fn_ret_${inline_counter++}`;
 	status.function_return_label = return_label;
 
 	status.scoped_declarations = [];
+	// The inline body's returns clean `all_scope_frames` — the outer
+	// function's enclosing scope frames (pushed by enter_scope_frame around
+	// the call site, e.g. a loop body) must NOT be visible, or the inlined
+	// return destroys the caller's live locals mid-expression (e.g. an
+	// inlined `base_code(c)` inside main's read loop freeing `data` before
+	// the store into it).
+	status.outer_scope_declarations = [];
 	status.function_return_type = undefined;
 	status.struct_return_buffer = undefined;
 	status.return_buffer_stack_offset = undefined;
@@ -349,6 +366,7 @@ export function build_inline_function(func: FunctionNode, status: BuildStatus) {
 	status.buffer_data_cache = old_buffer_data_cache;
 	status.heap_cleanup_stack = old_heap_cleanup_stack;
 	status.moved = old_moved;
+	status.outer_scope_declarations = old_outer_scope_declarations;
 
 	inline_fn_depth--;
 	return true;
