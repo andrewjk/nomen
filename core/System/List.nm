@@ -31,6 +31,26 @@ pub struct List<T>: Viewable {
 		return self.items.load_T(i)
 	}
 
+	// Bounds-checked access: `fallback` when i is outside [0, self.length) —
+	// for indices that can't be proven at compile time and out-of-range is an
+	// expected case.
+	pub func at_or = (self, int i, T fallback, out T) {
+		if i >= 0 && i < self.length {
+			return self.at(i)
+		}
+		return fallback
+	}
+
+	// Bounds-checked access that traps when i is outside [0, self.length) —
+	// for indices that can't be proven at compile time and out-of-range is a
+	// bug, not a case.
+	pub func at_or_panic = (self, int i, out T) {
+		if i >= 0 && i < self.length {
+			return self.at(i)
+		}
+		panic("index out of range")
+	}
+
 	// A non-owning `view T` over [start, end). Delegates to the backing Buffer's
 	// #arch slice primitive — no #arch code here. Borrows from self.
 	pub func slice = (self, int start: start >= 0, int end: end >= start, out view T) {

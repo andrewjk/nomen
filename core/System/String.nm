@@ -51,6 +51,24 @@ pub struct string: Stringable, Hashable, Equatable {
 		```
 	}
 
+	// Bounds-checked access: `fallback` when index is outside
+	// [0, self.length).
+	pub func at_or = (self, int index, char fallback, out char) {
+		if index >= 0 && index < self.length {
+			return self.at(index)
+		}
+		return fallback
+	}
+
+	// Bounds-checked access that traps when index is outside
+	// [0, self.length) — out-of-range is a bug, not a case.
+	pub func at_or_panic = (self, int index, out char) {
+		if index >= 0 && index < self.length {
+			return self.at(index)
+		}
+		panic("index out of range")
+	}
+
 	// A non-owning slice [start, end) into self's buffer. Returns a `view
 	// string` (ptr, len) that borrows from self: it may not outlive self's
 	// scope and is invalidated if self is reassigned. Use .to_string() to

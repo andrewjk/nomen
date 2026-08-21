@@ -51,6 +51,33 @@ pub struct Set<T: Hashable + Equatable> {
 		return self.slots.load_T(idx)
 	}
 
+	// Membership lookup with a fallback value: `fallback` when the value is
+	// not in the set (one probe instead of the `has` + `get` pair).
+	pub func get_or = (self, T key, T fallback, out T) {
+		var int cap = self.slots.cap
+		if cap == 0 {
+			return fallback
+		}
+		var int idx = self.find_slot(key, cap)
+		if self.used.load(idx) == 0 {
+			return fallback
+		}
+		return self.slots.load_T(idx)
+	}
+
+	// Membership lookup that traps when the value is not in the set.
+	pub func get_or_panic = (self, T key, out T) {
+		var int cap = self.slots.cap
+		if cap == 0 {
+			panic("value not found in set")
+		}
+		var int idx = self.find_slot(key, cap)
+		if self.used.load(idx) == 0 {
+			panic("value not found in set")
+		}
+		return self.slots.load_T(idx)
+	}
+
 	pub func remove = (ref self, T value) {
 		var int cap = self.slots.cap
 		if cap == 0 {

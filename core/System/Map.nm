@@ -72,6 +72,20 @@ pub struct Map<TK: Hashable + Equatable, TV> {
 		return self.values.load_T(idx)
 	}
 
+	// Lookup that traps when the key is absent — for when a missing key is
+	// a bug, not a case (and `get`'s 0-for-missing would be ambiguous).
+	pub func get_or_panic = (self, TK key, out TV) {
+		var int cap = self.keys.cap
+		if cap == 0 {
+			panic("key not found")
+		}
+		var int idx = self.find_slot(key, cap)
+		if self.used.load(idx) == 0 {
+			panic("key not found")
+		}
+		return self.values.load_T(idx)
+	}
+
 	pub func has = (self, TK key, out bool) {
 		var int cap = self.keys.cap
 		if cap == 0 {

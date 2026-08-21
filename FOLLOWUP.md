@@ -122,3 +122,36 @@ value-struct element or parallel `List<int>`s would be flat storage. Needs
 escape analysis or value-struct `List<T>` element support (the known
 element-ownership pipeline issues). Not a bug — the natural encoding is
 just not the fast one yet.
+
+## Array methods with Nomen-level bodies get the wrong receiver (found via the `_or` accessors)
+
+`.at` on an array never becomes a method call — both backends special-case
+it to direct indexing (`(w[i])` on C; an inline `ldr` on aarch64). Every
+_real_ Array method is a raw `#arch` body, so the general method-call
+conventions for Array receivers were never exercised. Adding a Nomen-body
+method (`Array.at_or`, since reverted) exposed three mismatches:
+
+- **C, stack arrays**: the call site passes the bare array
+  (`long w[3] = {…}`) as `struct Array_int *self`, so `self->length` reads
+  `w[1]` — garbage. (Heap arrays pass a proper `struct Array_int*` and are
+  fine.)
+- **aarch64, stack arrays**: the call site passes `&first_element` with the
+  length at `[recv - 8]`, but the compiled body reads `[recv + 8]` (the
+  VT-prefixed struct layout) — garbage.
+- **aarch64, heap arrays**: layout is `[length@0, data@8]` (see
+  `Array_int_with`), so the compiled body's `[recv + 8]` reads element 0 —
+  also wrong.
+
+Fix direction: either make the method-call lowering pass a self pointer the
+compiled body expects (and reconcile the aarch64 heap layout with the
+16-byte C-style header), or extend the special-case array indexing path in
+`build_access_node` to cover `at_or`-style guarded accessors (guard +
+reuse the direct-index emission + fallback/trap arm) per backend. Until
+then, Array is excluded from the `at_or`/`at_or_panic` family — use List,
+or copy into a List when a checked accessor is needed.
+
+Also fixed on the way (kept): the C backend dereferenced `self` in
+Nomen-level string method bodies (`*self`) as if it were a struct receiver;
+string's C signature is `char *self` (the pointer IS the value), so the
+deref is now skipped for `current_struct.name === "string"`
+(`src/build_c/build_value_node.ts`).

@@ -57,6 +57,22 @@ pub struct LinkedList<T>: Enumerable {
 		return self.values.load_T(idx)
 	}
 
+	// Bounds-checked access: `fallback` when idx is outside [0, self.count).
+	pub func at_or = (self, int idx, T fallback, out T) {
+		if idx >= 0 && idx < self.count {
+			return self.at(idx)
+		}
+		return fallback
+	}
+
+	// Bounds-checked access that traps when idx is outside [0, self.count).
+	pub func at_or_panic = (self, int idx, out T) {
+		if idx >= 0 && idx < self.count {
+			return self.at(idx)
+		}
+		panic("index out of range")
+	}
+
 	pub func length = (self, out int) {
 		return self.count
 	}
