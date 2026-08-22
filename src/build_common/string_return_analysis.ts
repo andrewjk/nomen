@@ -58,6 +58,26 @@ export function is_container_borrow_access(node: any): boolean {
 }
 
 /**
+ * Whether `target` (the receiver of a `.to_string()` call) is a `view string`
+ * VALUE — a named view local/param (the checker stamps variable references
+ * with the declared type, and substitute_type preserves `is_view` across
+ * monomorphization) or an inline `.slice(...)` chain (a slice call always
+ * produces a view, even when its cached type lost the modifier). Such a call
+ * MATERIALIZES a fresh owned heap copy (malloc + memcpy), unlike
+ * `to_string` on an owned string (the `string_to_string` identity).
+ */
+export function is_view_materialization_target(target: any): boolean {
+	if (!target || typeof target !== "object") return false;
+	if (target.type?.is_view) return true;
+	return (
+		target.node_type === "access" &&
+		target.access?.node_type === "access_func" &&
+		!target.access.owned_return &&
+		target.access.name === "slice"
+	);
+}
+
+/**
  * Whether a function has any `return <expr>` statement in its body (used by
  * the C backend's gather, which registers every string-returning function
  * that actually returns — the backend strdup's borrows at the return site,
@@ -216,6 +236,12 @@ export function value_is_owned_string(
 			if (mangled.endsWith("_to_string") && mangled !== "string_to_string") return true;
 			if (raw === "to_string" && v.target?.type?.name && v.target.type.name !== "string")
 				return true;
+			// `.to_string()` on a `view string` receiver materializes a fresh
+			// owned heap copy — an OWNED return. Must be checked before the
+			// method resolution below, which resolves the view builtin to
+			// `string_to_string` (a raw #arch body with no return statements)
+			// and would mis-classify it as a borrow.
+			if (raw === "to_string" && is_view_materialization_target(v.target)) return true;
 			// Container / buffer BORROW accessors return a view into the
 			// receiver's existing storage — never a fresh heap allocation.
 			// Inside the accessor methods' OWN bodies (`at`/`first`, e.g. a

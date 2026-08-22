@@ -31,7 +31,11 @@ import {
 } from "./utils/stack_var.ts";
 import { get_enum_size } from "./utils/struct_layout.ts";
 import { get_field_offset, get_struct_size } from "./utils/struct_layout.ts";
-import { emit_view_materialize_owned, emit_view_string_arg } from "./utils/view_value.ts";
+import {
+	emit_view_materialize_owned,
+	emit_view_string_arg,
+	is_view_value,
+} from "./utils/view_value.ts";
 
 /**
  * Whether `struct_node` is a monomorphized `Array<T>` (`Array_<T>`). The mono
@@ -98,6 +102,14 @@ function emit_string_length(target: BaseNode, status: BuildStatus) {
  *                     struct element, with x0 = temp address)
  *   v.to_string()  →  malloc(len+1); memcpy; null-terminate; owned copy in x0
  *                     (string views only)
+ * The receiver is either a NAMED view local/param (pair in its two stack
+ * slots) or an INLINE view-producing expression such as
+ * `text.slice(start, end).to_string()` — the expression leaves the pair in
+ * x0/x1, which is spilled to scratch slots first. Without this, the inline
+ * chain falls through to struct-method dispatch and resolves to
+ * `string_to_string` (an identity `mov x0, x19`), handing consumers the raw
+ * slice pointer — not NUL-terminated at len — and strlen-based readers run
+ * past the slice.
  * Returns true if handled (caller skips struct-method dispatch).
  */
 function build_view_op(
@@ -110,12 +122,29 @@ function build_view_op(
 		const vt = status.variable_types?.get((node.target as ValueNode).value);
 		if (vt?.is_view) t = vt;
 	}
-	if (!t?.is_view) return false;
-	if (node.target.node_type !== "value") return false;
-	const base = status.stack_offsets?.get((node.target as ValueNode).value);
-	if (base === undefined) return false;
+	if (!t?.is_view && !is_view_value(node.target, status)) return false;
 
-	const elem_name = t.name === "string" ? "char" : t.name;
+	// A named view local/param keeps its (ptr, len) pair in two stack slots.
+	// An inline view expression is built first (pair lands in x0/x1) and
+	// spilled to scratch slots so both receiver shapes share the paths below.
+	let base: number | undefined;
+	if (node.target.node_type === "value") {
+		base = status.stack_offsets?.get((node.target as ValueNode).value);
+	}
+	if (base === undefined) {
+		build_node(node.target, status);
+		if (!status.code.endsWith("\n")) status.code += "\n";
+		const temp_base = allocate_stack_space(status, 16, 16);
+		status.code += `str x0, [x29, #${temp_base}]\n`;
+		status.code += `str x1, [x29, #${temp_base + 8}]\n`;
+		base = temp_base;
+	}
+	// When only is_view_value recognized the receiver (e.g. a view param
+	// whose bare reference lost its cached type), the checker has already
+	// guaranteed `.to_string` implies a `view string` — default to string.
+	const view_elem = t?.name || "string";
+
+	const elem_name = view_elem === "string" ? "char" : view_elem;
 
 	if (access_func.name === "at" && access_func.params.length === 1) {
 		// index → x0, then x1=index, x0=ptr
@@ -152,7 +181,7 @@ function build_view_op(
 		}
 		return true;
 	}
-	if (access_func.name === "to_string" && t.name === "string") {
+	if (access_func.name === "to_string" && view_elem === "string") {
 		// Load ptr/len into x0/x1, then materialize an owned, len-bounded
 		// copy (malloc(len+1); memcpy; null-terminate).
 		status.code += `ldr x0, [x29, #${base}]\n`;

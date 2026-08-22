@@ -2,6 +2,7 @@ import type BuildStatus from "../build_c/BuildStatus.ts";
 import { enum_with_data_side, static_enum_case } from "../build_c/utils/enum_eq.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import { is_int_literal, parse_int_literal_bigint, to_decimal_string } from "../int_literal.ts";
+import AccessNode from "../nodes/AccessNode.ts";
 import BaseNode from "../nodes/BaseNode.ts";
 import EnumNode from "../nodes/EnumNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
@@ -330,7 +331,11 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 			invert = !!func;
 		}
 		if (func && struct) {
-			node.operator_func = { struct_name: struct.name, func_name: func.name, invert };
+			node.operator_func = {
+				struct_name: struct.name,
+				func_name: func.name,
+				invert,
+			};
 		} else {
 			node.operator_func = undefined;
 		}
@@ -781,6 +786,18 @@ function is_owned_heap_temp(node: BaseNode, status?: BuildStatus): boolean {
 		// AST method name is just `to_string` with no type prefix, so match it
 		// via the target's type rather than the mangled label.
 		if (raw_name === "to_string" && target_type_name && target_type_name !== "string") return true;
+		// `.to_string()` on a `view string` receiver (named or an inline
+		// `.slice(...)` chain) MATERIALIZES a fresh owned heap copy — safe to
+		// free once consumed. (`to_string` on an owned string is the
+		// `string_to_string` identity, a borrow — excluded by is_view_value.)
+		if (
+			raw_name === "to_string" &&
+			status &&
+			node.node_type === "access" &&
+			is_view_value((node as AccessNode).target, status)
+		) {
+			return true;
+		}
 		const heap_set = status?.heap_returning_functions;
 		if (heap_set?.has(mangled)) return true;
 		// Non-overloaded struct methods don't carry a precomputed mangled_name on
