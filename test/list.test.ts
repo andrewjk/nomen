@@ -144,6 +144,36 @@ Console.write("\\{p.x},\\{p.y} \\{pts.length}")
 `;
 		await build_and_check_output(input, "list_struct_pop", "2,2 1");
 	});
+
+	// The PERF.md Part 5 idiom: an emit-style loop that builds an element,
+	// mutates its fields, and pushes it. With a value-struct element this is
+	// flat storage — no per-element malloc/free (codegen shape asserted in
+	// test/perf_codegen.test.ts); this locks the behavior + leak-freedom on
+	// both backends.
+	test("construct/mutate/push in a hot loop (the PERF 2.5 idiom)", async () => {
+		const input = `
+struct Op {
+	var int kind = 0
+	var int line = 0
+}
+var List<Op> ops = List<Op>()
+var int line = 0
+var int sum = 0
+while line < 50 {
+	var op = Op()
+	op.kind = line % 4
+	op.line = line
+	ops.push(mov op)
+	line += 1
+}
+for i of 0 .. ops.length {
+	var Op op = ops.at(i)
+	sum += op.kind + op.line
+}
+Console.write("\\{ops.length} \\{sum}")
+`;
+		await build_and_check_output(input, "list_struct_perf_idiom", "50 1298");
+	});
 });
 
 describe("List of owning value structs", () => {

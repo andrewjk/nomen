@@ -73,11 +73,3 @@ if it keeps biting.
   invalid-free abort the direct-call fix addresses, reached via vtable.
   Exposure is strictly no worse than before the fix — the direct-call path
   was the hole that was closed; this is the unfixed remainder.
-
-## Class-per-element lists allocate one malloc per element (PERF 2.5, deferred)
-
-`var Op = Op(); ops.push(mov op)` costs a malloc/free per element; a
-value-struct element or parallel `List<int>`s would be flat storage. Needs
-escape analysis or value-struct `List<T>` element support (the known
-element-ownership pipeline issues). Not a bug — the natural encoding is
-just not the fast one yet.

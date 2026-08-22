@@ -105,3 +105,86 @@ Console.write("\\{m.get("b")}\\n")
 		expect(code).not.toContain("sdiv");
 	});
 });
+
+// Slice a top-level asm function body: from its label to the function
+// separator (.p2align) that follows every `ret`.
+function asm_function_body(code: string, label: string): string {
+	const start = code.indexOf(`\n${label}\n`);
+	expect(start, `label ${label} not found`).toBeGreaterThanOrEqual(0);
+	const body = code.slice(start + 1);
+	const end = body.indexOf("\n.p2align");
+	return end === -1 ? body : body.slice(0, end);
+}
+
+describe("value-struct list elements are flat storage (PERF.md Part 5)", () => {
+	// The PERF.md Part 5 idiom (`var op = Op(); op.kind = 0; ops.push(mov op)`)
+	// cost one malloc/free per element when Op was a class. The fix the
+	// follow-up called for — value-struct `List<T>` element support — makes
+	// the natural encoding the fast one: elements live in a slab sized in
+	// multiples of T_SIZE, grown by amortized realloc, stored/loaded by the
+	// naked-inlined `_T` primitives, and freed once at scope exit.
+	const IDIOM = `
+struct Op {
+	var int kind = 0
+	var int line = 0
+}
+var List<Op> ops = List<Op>()
+var int line = 0
+while line < 50 {
+	var op = Op()
+	op.kind = line
+	op.line = line
+	ops.push(mov op)
+	line += 1
+}
+var int sink = 0
+for i of 0 .. ops.length {
+	var Op probe = ops.at(i)
+	sink += probe.kind + probe.line
+}
+sink += ops.length
+`;
+
+	test("aarch64: push is slab-grow + inline memcpy, no per-element malloc/free", () => {
+		const code = build_aarch64(IDIOM);
+		const push = asm_function_body(code, "List_Op_push:");
+		// The only allocation is amortized slab growth (grow_T reallocs), and
+		// the element store is the naked-inlined memcpy path.
+		expect(push).not.toContain("bl _malloc");
+		expect(push).not.toContain("bl _calloc");
+		expect(push).not.toContain("bl _free");
+		expect(push).toContain("bl Buffer_Op_grow_T");
+		expect(push).toContain("bl _memcpy");
+		// The construct/mutate/push loop in main must not allocate either.
+		const main = asm_function_body(code, "_main:");
+		expect(main).not.toContain("bl _malloc");
+		expect(main).not.toContain("bl _free");
+		// Scope exit drops the slab with a single destroy (one free of the
+		// backing allocation, not one per element).
+		expect(main).toContain("bl Buffer_Op_destroy");
+	});
+
+	test("c: push and main contain no per-element malloc/free", () => {
+		const parsed = parse_with_imports(IDIOM);
+		expect(parsed.errors).toEqual([]);
+		const code = build(parsed.root, { arch: "c", audit: false }).code;
+		const push_start = code.indexOf("void List_Op_push(");
+		expect(push_start).toBeGreaterThanOrEqual(0);
+		const push = code.slice(push_start, code.indexOf("List_Op_pop", push_start));
+		expect(push).not.toContain("malloc(");
+		expect(push).not.toContain("free(");
+		expect(push).toContain("Buffer_Op_grow_T(");
+		const main_start = code.indexOf("int main()");
+		expect(main_start).toBeGreaterThanOrEqual(0);
+		// main's closing brace is the first `}` line after the Auto-free
+		// marker (nested blocks close before it; only destroy + return follow).
+		const auto_free = code.indexOf("// Auto-free", main_start);
+		expect(auto_free).toBeGreaterThanOrEqual(0);
+		const main_end = code.indexOf("\n}\n", auto_free);
+		const main = code.slice(main_start, main_end);
+		expect(main).not.toContain("malloc(");
+		expect(main).not.toContain("calloc(");
+		expect(main).not.toContain("free(");
+		expect(main).toContain("Buffer_Op_destroy(&ops.items)");
+	});
+});
