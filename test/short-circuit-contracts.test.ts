@@ -107,3 +107,90 @@ pub func main = (Init init) {
 	const parsed = parse_with_imports(input);
 	expect(parsed.errors).toEqual([]);
 });
+
+// Same shape, but as TOP-LEVEL functions in file order (the differator's
+// layout: `histogram` forward-references helpers declared below it) and
+// computing a real result — the contract must be stripped before the caller
+// is checked AND the body must still trust it, on both backends.
+test("top-level parallel-length callee compiles caller-first end to end", async () => {
+	const input = `
+import System
+
+func dot = (List<int> xs, List<int> hash, out int) {
+	return probe(xs, hash, xs.length)
+}
+
+func probe = (
+	List<int> xs,
+	List<int> hash: hash.length == xs.length,
+	int hi: hi >= 0 && hi <= xs.length,
+	out int,
+) {
+	var i = 0
+	var sum = 0
+	while i < hi {
+		sum += xs.at(i) * hash.at(i)
+		i += 1
+	}
+	return sum
+}
+
+pub func main = (Init init) {
+	var List<int> xs = List<int>()
+	xs.push(1)
+	xs.push(2)
+	xs.push(3)
+	var List<int> hash = List<int>()
+	hash.push(10)
+	hash.push(20)
+	hash.push(30)
+	Console.write_line("\\{dot(xs, hash)}")
+}
+`;
+	await build_and_run(input, "pl_order_free_forward", "140", true);
+});
+
+// Struct methods used to hit the same order dependence through a different
+// gap: their clauses were only stripped in check_struct_node's statement walk
+// (file order), so a caller declared before the struct got "Parameter
+// constraint cannot be verified: hash". Gather-time stripping covers them.
+test("parallel-length method contract compiles caller-before-struct end to end", async () => {
+	const input = `
+import System
+
+func call_probe = (Prober p, List<int> xs, List<int> hash, out int) {
+	return p.probe(xs, hash, xs.length)
+}
+
+pub struct Prober {
+	func probe = (
+		List<int> xs,
+		List<int> hash: hash.length == xs.length,
+		int hi: hi >= 0 && hi <= xs.length,
+		out int,
+	) {
+		var i = 0
+		var sum = 0
+		while i < hi {
+			sum += hash.at(i)
+			i += 1
+		}
+		return sum
+	}
+}
+
+pub func main = (Init init) {
+	var Prober p = Prober()
+	var List<int> xs = List<int>()
+	xs.push(1)
+	xs.push(2)
+	xs.push(3)
+	var List<int> hash = List<int>()
+	hash.push(10)
+	hash.push(20)
+	hash.push(30)
+	Console.write_line("\\{call_probe(p, xs, hash)}")
+}
+`;
+	await build_and_run(input, "pl_order_method_forward", "60", true);
+});

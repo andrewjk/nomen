@@ -145,7 +145,9 @@ function hoist_discarded_class_results(block: BlockNode, status: CheckStatus) {
 		const child = block.statements[i];
 		const result_type = discarded_class_result_type(child, status);
 		if (!result_type) continue;
-		const original = child as DeclarationNode["value"] & { allocations?: DeclarationNode[] };
+		const original = child as DeclarationNode["value"] & {
+			allocations?: DeclarationNode[];
+		};
 		const decl = new DeclarationNode(
 			child.start,
 			"private",
@@ -199,6 +201,34 @@ function clone_type(t: Type): Type {
 	return c;
 }
 
+/**
+ * Strip parallel-length equality clauses (`a.length == b.length`) from every
+ * parameter's constraint of `func` at SIGNATURE-GATHER time — before any call
+ * site can observe the signature, regardless of declaration order. A
+ * forward-referenced callee must not hand its caller a clause no call site
+ * could ever prove; the clause becomes an assumed equality for the callee's
+ * own body instead (stashed on the param, seeded into scope when its params
+ * are checked). Idempotent: a constraint already stripped has no clauses
+ * left to extract. `check_function_node` re-runs the same extraction at
+ * registration for function clones that never pass through a gather pass
+ * (generic monomorphizations).
+ */
+function strip_param_length_equalities(func: FunctionNode) {
+	const param_names = new Set(func.params.map((p) => p.name));
+	for (const param of func.params) {
+		if (!param.constraint) continue;
+		const { constraint, equalities } = extract_length_equalities_at_registration(
+			param.constraint,
+			param.name,
+			param_names,
+		);
+		if (equalities.length) {
+			param.constraint = constraint;
+			param.stripped_length_equalities = equalities;
+		}
+	}
+}
+
 function gather_structs(block: BlockNode, status: CheckStatus) {
 	const names_in_block = {
 		structs: new Set<string>(),
@@ -218,6 +248,15 @@ function gather_structs(block: BlockNode, status: CheckStatus) {
 					names_in_block.structs.add(struct.name);
 					struct.scope = status.stack.at(-1) || block;
 					struct.is_generic = struct.type_params.length > 0;
+					// Strip parallel-length clauses from every method's params
+					// at gather time — same reason as free functions below: a
+					// caller declared before this struct must see the stripped
+					// signature, not a clause no call site could ever prove
+					// (stripping only in check_struct_node is file-order
+					// dependent).
+					for (const func of struct.functions) {
+						strip_param_length_equalities(func);
+					}
 					status.types.push(struct.name);
 					status.structs.push(struct);
 				}
@@ -231,6 +270,13 @@ function gather_structs(block: BlockNode, status: CheckStatus) {
 					names_in_block.traits.add(trait.name);
 					status.types.push(trait.name);
 					status.traits.push(trait);
+					// Trait method signatures get the same gather-time
+					// parallel-length strip as struct methods and free
+					// functions, so call sites checked before this trait's
+					// statement walk never see the unstripped clause.
+					for (const func of trait.functions) {
+						strip_param_length_equalities(func);
+					}
 				}
 				break;
 			}
@@ -251,27 +297,11 @@ function gather_structs(block: BlockNode, status: CheckStatus) {
 					// mono name, which callers match against.
 					func.return_type = materialize_type(func.return_type, status);
 					instantiate_generic_type(func.return_type, status);
-					// Strip parallel-length equality clauses (`a.length == b.length`)
-					// from every parameter's constraint AT GATHER TIME — this is
-					// what makes the signature visible to callers checked BEFORE
-					// the function's own statement walk, so a forward-referenced
-					// callee must not hand its caller a clause no call site could
-					// ever prove. The clause becomes an assumed equality for the
-					// callee's own body instead (stashed on the param, seeded into
-					// scope when its params are checked).
-					const param_names = new Set(func.params.map((p) => p.name));
-					for (const param of func.params) {
-						if (!param.constraint) continue;
-						const { constraint, equalities } = extract_length_equalities_at_registration(
-							param.constraint,
-							param.name,
-							param_names,
-						);
-						if (equalities.length) {
-							param.constraint = constraint;
-							param.stripped_length_equalities = equalities;
-						}
-					}
+					// Gather-time parallel-length strip (see
+					// strip_param_length_equalities): callers checked before
+					// this function's statement walk must see the stripped
+					// signature.
+					strip_param_length_equalities(func);
 					status.functions.push(func);
 				}
 				break;
@@ -346,6 +376,9 @@ function apply_extensions(block: BlockNode, status: CheckStatus) {
 		}
 		ext.scope = target;
 		for (const func of ext.functions) {
+			// Extend-merged methods go through the same gather-time
+			// parallel-length strip as methods declared in the struct body.
+			strip_param_length_equalities(func);
 			target.functions.push(func);
 		}
 		for (let i = 0; i < ext.traits.length; i++) {
