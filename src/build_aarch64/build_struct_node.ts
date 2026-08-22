@@ -882,12 +882,14 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		const old_ref_params = status.function_ref_params;
 		const old_ref_class_slots = status.ref_class_slots;
 		const old_view_params = status.function_view_params;
+		const old_hidden_len_params = status.hidden_len_params;
 
 		status.function_param_regs = new Map();
 		status.function_param_vars = new Set();
 		status.function_ref_params = new Set();
 		status.ref_class_slots = new Map();
 		status.function_view_params = new Set();
+		status.hidden_len_params = new Set<string>();
 		status.struct_return_buffer = undefined;
 
 		// An ARRAY-typed return (`out Array<T>`) is a heap buffer POINTER in
@@ -990,6 +992,12 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 				if (!status.class_vars) status.class_vars = new Set();
 				status.class_vars.add(param.name);
 			}
+			// A hidden-length string param's companion occupies the NEXT slot
+			// (mirrors the C signature's trailing `long _<name>_len`); see
+			// stamp_hidden_string_lens.
+			if (param.hidden_len) {
+				slot_idx++;
+			}
 			slot_idx++;
 		}
 
@@ -1090,6 +1098,28 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 						status.ref_class_slots!.set(param.name, ref_slot);
 					}
 				}
+			}
+			// A hidden-length string param's companion length arrives in the
+			// NEXT AAPCS slot (mirroring the C signature's trailing
+			// `long _<name>_len`); spill it under its companion name so
+			// emit_string_length reads `.length` from here instead of calling
+			// strlen (see stamp_hidden_string_lens). The companion's slot is
+			// one past this param's own slot — second_slot_idx is only
+			// advanced past both below.
+			if (param.hidden_len) {
+				const len_offset = allocate_stack_space(status, 8, 8);
+				status.stack_offsets!.set(`_${param.name}_len`, len_offset);
+				if (!status.hidden_len_params) status.hidden_len_params = new Set();
+				status.hidden_len_params.add(param.name);
+				const len_slot = second_slot_idx + 1;
+				if (len_slot < NUM_REG_ARGS) {
+					status.code += `str ${param_regs[len_slot]}, [x29, #${len_offset}]\n`;
+				} else {
+					const k = len_slot - NUM_REG_ARGS;
+					status.code += `ldr x9, [x29, #${overflow_placeholder(func_label, k)}]\n`;
+					status.code += `str x9, [x29, #${len_offset}]\n`;
+				}
+				second_slot_idx++;
 			}
 			second_slot_idx++;
 		}
@@ -1257,6 +1287,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		status.function_ref_params = old_ref_params;
 		status.ref_class_slots = old_ref_class_slots;
 		status.function_view_params = old_view_params;
+		status.hidden_len_params = old_hidden_len_params;
 		status.function_return_label = old_return_label;
 		status.force_heap_strings = old_force_heap;
 		status.struct_return_buffer = undefined;

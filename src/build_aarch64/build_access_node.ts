@@ -1,5 +1,6 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
+import callee_hidden_len_indices from "../build_common/hidden_len.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import {
 	drop_self_written_string_field_records,
@@ -53,6 +54,18 @@ function is_array_mono_struct(struct_node: StructNode | undefined, status: Build
 // hoist from build_while_loop_node) loads the pre-computed length instead.
 function emit_string_length(target: BaseNode, status: BuildStatus) {
 	if (target.node_type === "value") {
+		const name = (target as ValueNode).value;
+		// A hidden-length string param carries its length in the companion
+		// slot spilled by the prologue — `.length` is a load, not a strlen
+		// (see stamp_hidden_string_lens).
+		if (name !== "self" && status.hidden_len_params?.has(name)) {
+			const len_slot = status.stack_offsets?.get(`_${name}_len`);
+			if (len_slot !== undefined) {
+				status.last_result_is_heap = false;
+				status.code += `ldr x0, [x29, #${len_slot}]\n`;
+				return;
+			}
+		}
 		const slot = status.string_length_slots?.get((target as ValueNode).value);
 		if (slot !== undefined) {
 			status.last_result_is_heap = false;
@@ -1668,11 +1681,22 @@ function build_access_method(
 		? ["x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7"]
 		: ["x1", "x2", "x3", "x4", "x5", "x6", "x7"];
 	const view_arg_set = new Set(access_func.view_param_indices ?? []);
+	// Hidden string-length companions (`ParameterNode.hidden_len`) occupy the
+	// AAPCS slot immediately AFTER their string argument's slot(s) — mirroring
+	// the C signature's interleaved `long _<name>_len` parameter (see
+	// stamp_hidden_string_lens).
+	const hidden_len_indices = callee_hidden_len_indices(access_func);
+	const hidden_len_set = new Set(hidden_len_indices);
+	const hidden_len_slots = new Map<number, number>();
 	const arg_slot: number[] = [];
 	let total_arg_slots = 0;
 	for (let i = 0; i < access_func.params.length; i++) {
 		arg_slot.push(total_arg_slots);
 		total_arg_slots += view_arg_set.has(i) ? 2 : 1;
+		if (hidden_len_set.has(i)) {
+			hidden_len_slots.set(i, total_arg_slots);
+			total_arg_slots += 1;
+		}
 	}
 	const overflow_count = Math.max(0, total_arg_slots - (NUM_REG_ARGS - start_reg));
 	let overflow_base = 0;
@@ -1777,6 +1801,81 @@ function build_access_method(
 				const half_slot = start_reg + arg_slot[j] + half;
 				if (half_slot >= NUM_REG_ARGS) continue;
 				status.code += `ldr x${half_slot}, [x29, #${view_spill_base + (arg_slot[j] + half) * 8}]\n`;
+			}
+		}
+	}
+
+	// Hidden length companions for `string` params whose callee body reads
+	// `.length`. At this point every argument value lives in its register
+	// slot (or its overflow spill), so a strlen here would clobber it —
+	// spill the live argument registers around any strlen and reload them
+	// afterwards. A loop-invariant hoisted length slot (string_length_slots)
+	// supplies the value with no call at all.
+	if (hidden_len_indices.length > 0) {
+		const needs_strlen = hidden_len_indices.some((i) => {
+			const arg = access_func.params[i];
+			if (arg.node_type !== "value") return true;
+			return !status.string_length_slots?.has((arg as ValueNode).value);
+		});
+		// Registers currently holding live argument values (self excluded —
+		// it was pushed to the stack before argument evaluation).
+		const live_regs: string[] = [];
+		if (needs_strlen) {
+			const max_live = Math.min(NUM_REG_ARGS - 1, start_reg + total_arg_slots - 1);
+			for (let s = start_reg; s <= max_live; s++) {
+				live_regs.push(`x${s}`);
+			}
+		}
+		const reg_save_base = needs_strlen
+			? allocate_stack_space(status, Math.max(live_regs.length, 1) * 8, 16)
+			: 0;
+		const len_save_base = allocate_stack_space(status, hidden_len_indices.length * 8, 16);
+
+		for (let k = 0; k < live_regs.length; k++) {
+			status.code += `str ${live_regs[k]}, [x29, #${reg_save_base + k * 8}]\n`;
+		}
+		for (let h = 0; h < hidden_len_indices.length; h++) {
+			const i = hidden_len_indices[h];
+			const arg = access_func.params[i];
+			let computed = false;
+			if (arg.node_type === "value") {
+				const hoisted = status.string_length_slots?.get((arg as ValueNode).value);
+				if (hoisted !== undefined) {
+					// x9 is scratch: when every companion comes from a hoisted
+					// slot, needs_strlen is false and NO register save/restore
+					// surrounds this loop — x0..x7 still hold live arguments,
+					// so loading the hoisted length via x0 would clobber one.
+					status.code += `ldr x9, [x29, #${hoisted}]\n`;
+					status.code += `str x9, [x29, #${len_save_base + h * 8}]\n`;
+					computed = true;
+				}
+			}
+			if (!computed) {
+				// Load the argument's string pointer from its PHASE-A SAVE SLOT
+				// (registers were spilled there) — an earlier `bl _strlen` in
+				// this loop has already clobbered every caller-saved register,
+				// so the live register copy can no longer be trusted.
+				const src_slot = start_reg + arg_slot[i];
+				if (src_slot < NUM_REG_ARGS) {
+					const save_index = src_slot - start_reg;
+					status.code += `ldr x0, [x29, #${reg_save_base + save_index * 8}]\n`;
+				} else {
+					status.code += `ldr x0, [x29, #${overflow_base + (src_slot - NUM_REG_ARGS) * 8}]\n`;
+				}
+				status.code += `bl _strlen\n`;
+				status.code += `str x0, [x29, #${len_save_base + h * 8}]\n`;
+			}
+		}
+		for (let k = live_regs.length - 1; k >= 0; k--) {
+			status.code += `ldr ${live_regs[k]}, [x29, #${reg_save_base + k * 8}]\n`;
+		}
+		for (let h = 0; h < hidden_len_indices.length; h++) {
+			const dest_slot = start_reg + hidden_len_slots.get(hidden_len_indices[h])!;
+			status.code += `ldr x9, [x29, #${len_save_base + h * 8}]\n`;
+			if (dest_slot < NUM_REG_ARGS) {
+				status.code += `mov x${dest_slot}, x9\n`;
+			} else {
+				status.code += `str x9, [x29, #${overflow_base + (dest_slot - NUM_REG_ARGS) * 8}]\n`;
 			}
 		}
 	}

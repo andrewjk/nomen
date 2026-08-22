@@ -196,6 +196,14 @@ export default interface BuildStatus {
 	self_is_ref?: boolean;
 	function_array_params?: Set<string>;
 	function_variadic_params?: Set<string>;
+	/**
+	 * Names of the CURRENT function's `string` params carrying the hidden
+	 * length companion (`long _<name>_len`, see ParameterNode.hidden_len).
+	 * `emit_string_length` reads it so `<name>.length` inside the body lowers
+	 * to the companion param instead of `strlen`. Saved/restored per function
+	 * like function_variadic_params.
+	 */
+	hidden_len_params?: Set<string>;
 	function_return_label?: string;
 	moved_class_params?: Map<string, string>;
 	heap_array_vars?: Set<string>;

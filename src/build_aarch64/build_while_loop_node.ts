@@ -167,6 +167,10 @@ export default function build_while_loop_node(node: WhileLoopNode, status: Build
 		if (!status.string_length_slots) status.string_length_slots = new Map();
 		for (const [name, target] of hoists) {
 			if (status.string_length_slots.has(name)) continue;
+			// A hidden-length string param already carries its length in the
+			// companion slot — `.length` reads resolve to it for free, no
+			// hoisted strlen needed (see stamp_hidden_string_lens).
+			if (status.hidden_len_params?.has(name)) continue;
 			const offset = allocate_stack_space(status, 8);
 			status.string_length_slots.set(name, offset);
 			build_node(target, status);

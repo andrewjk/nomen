@@ -1,4 +1,5 @@
 import BaseNode from "./BaseNode.ts";
+import type FunctionNode from "./FunctionNode.ts";
 import Type from "./Type.ts";
 
 export default class FunctionCallNode extends BaseNode {
@@ -65,6 +66,14 @@ export default class FunctionCallNode extends BaseNode {
 	 * tag+payload temp), mirroring `Enum.case(args)` access calls.
 	 */
 	is_enum_shorthand?: boolean;
+	/**
+	 * The concrete FunctionNode the checker resolved this call to (plain
+	 * function, struct constructor, or monomorphized/specialized copy).
+	 * Build-time passes consult it for callee-signature facts that only the
+	 * checker can resolve robustly (overloads, monos) — notably the hidden
+	 * string-length companion params (`ParameterNode.hidden_len`).
+	 */
+	resolved_function?: FunctionNode;
 
 	constructor(start: number, name: string, type?: Type, params?: BaseNode[], is_static?: boolean) {
 		super("func_call", start);

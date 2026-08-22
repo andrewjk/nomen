@@ -184,6 +184,7 @@ export default function scan_string_length_hoists(
 					ref_param_indices?: number[];
 					mov_param_indices?: number[];
 					swap_params?: Map<number, BaseNode>;
+					resolved_function?: FunctionNode;
 				};
 				for (const indices of [call.ref_param_indices, call.mov_param_indices]) {
 					for (const i of indices ?? []) {
@@ -195,6 +196,26 @@ export default function scan_string_length_hoists(
 					for (const [i, swap] of call.swap_params) {
 						for (const arg of [root_name(call.params?.[i]), root_name(swap)]) {
 							if (arg) invalidated.add(arg);
+						}
+					}
+				}
+				// An argument bound to a hidden-length companion parameter
+				// (`ParameterNode.hidden_len`) supplies its length to the
+				// callee at the boundary — treat it exactly like a `.length`
+				// READ so one hoisted strlen before the loop covers every
+				// call inside it (PERF gap 2.4).
+				if (!in_boundary && call.resolved_function) {
+					const self_offset = call.resolved_function.params[0]?.is_self_param ? 1 : 0;
+					const params = call.params ?? [];
+					for (let i = 0; i < params.length; i++) {
+						if (!call.resolved_function.params[i + self_offset]?.hidden_len) continue;
+						const arg = params[i];
+						if (
+							arg.node_type === "value" &&
+							is_identifier((arg as ValueNode).value) &&
+							is_string_target(arg as ValueNode)
+						) {
+							candidates.set((arg as ValueNode).value, arg as ValueNode);
 						}
 					}
 				}

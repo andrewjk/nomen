@@ -27,6 +27,7 @@ import RangeNode from "./RangeNode.ts";
 import RawNode from "./RawNode.ts";
 import ReturnNode from "./ReturnNode.ts";
 import RootNode from "./RootNode.ts";
+import { set_resolved_function } from "./set_resolved_function.ts";
 import StructNode from "./StructNode.ts";
 import SwitchNode from "./SwitchNode.ts";
 import TodoNode from "./TodoNode.ts";
@@ -92,6 +93,7 @@ export default function clone_node(node: BaseNode): BaseNode {
 			c.variadic_param_name = n.variadic_param_name;
 			c.variadic_param_index = n.variadic_param_index;
 			c.is_enum_shorthand = n.is_enum_shorthand;
+			set_resolved_function(c, n.resolved_function);
 			c.allocations = n.allocations?.map(clone_node);
 			return c;
 		}
@@ -143,6 +145,7 @@ export default function clone_node(node: BaseNode): BaseNode {
 				: undefined;
 			c.is_statement = n.is_statement;
 			c.skip_bounds_check = n.skip_bounds_check;
+			set_resolved_function(c, n.resolved_function);
 			c.allocations = n.allocations?.map(clone_node);
 			return c;
 		}
@@ -416,6 +419,8 @@ export default function clone_node(node: BaseNode): BaseNode {
 			c.default_value_start = n.default_value_start;
 			c.is_variadic = n.is_variadic;
 			c.is_ref = n.is_ref;
+			c.is_variadic_tuple = n.is_variadic_tuple;
+			c.hidden_len = n.hidden_len;
 			c.constraint = n.constraint ? clone_node(n.constraint) : undefined;
 			c.stripped_length_equalities = n.stripped_length_equalities?.map((e) => ({ ...e }));
 			c.func_params = n.func_params?.map((p) => clone_node(p) as ParameterNode);

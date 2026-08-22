@@ -74,18 +74,6 @@ if it keeps biting.
   Exposure is strictly no worse than before the fix — the direct-call path
   was the hole that was closed; this is the unfixed remainder.
 
-## Per-call `strlen` of whole strings in per-character helpers (PERF 2.4, deferred)
-
-A helper taking an owned `string` and indexing it per character pays one
-`strlen` per CALL; calling it once per line over a large document is
-O(lines x bytes). The loop-invariant hoist
-(`scan_string_length_hoists`) only covers while loops, not call chains.
-Structural fix is an ABI change — thread (ptr, len) through function
-boundaries (the `view string` representation already exists for
-params/returns) or auto-convert borrows at boundaries. Interim library
-pattern: take/return `view string` (verified working; see PERF.md Part 1
-bonus).
-
 ## Class-per-element lists allocate one malloc per element (PERF 2.5, deferred)
 
 `var Op = Op(); ops.push(mov op)` costs a malloc/free per element; a

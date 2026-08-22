@@ -31,6 +31,18 @@ export default class ParameterNode extends BaseNode {
 	 * `status.equal_lengths` from these so its body still gets the assumption.
 	 */
 	stripped_length_equalities?: { a: string; b: string; field: string }[];
+	/**
+	 * True for a by-value `string` param whose function body reads
+	 * `<name>.length` (and never rebinds/mutates/escapes it) — stamped by the
+	 * post-check pass `stamp_hidden_string_lens`. The backends lower it as TWO
+	 * parameters: the `char*` itself plus a trailing companion length
+	 * (`long _<name>_len` on C; the next AAPCS slot on aarch64), so the body's
+	 * `.length` reads are register/stack loads instead of a per-call `strlen`.
+	 * Call sites append the companion argument (a hoisted loop-invariant
+	 * strlen temp when one exists — see scan_string_length_hoists). Mirrors
+	 * the nullable `_has` companion convention.
+	 */
+	hidden_len?: boolean;
 
 	constructor(
 		start: number,

@@ -318,6 +318,12 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 				first_pass_slot += 2;
 				continue;
 			}
+			// A hidden-length string param's companion occupies the NEXT slot
+			// (mirrors the C signature's trailing `long _<name>_len`); see
+			// stamp_hidden_string_lens.
+			if (param.hidden_len) {
+				first_pass_slot++;
+			}
 			// A class param is a reference type (a heap pointer), but the body
 			// accesses it as a pointer VALUE — so it still belongs in the
 			// callee-saved register path (saved like a struct param and read
@@ -388,6 +394,8 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	const old_view_params = status.function_view_params;
 	status.function_variadic_params = new Set();
 	status.function_view_params = new Set();
+	const old_hidden_len_params = status.hidden_len_params;
+	status.hidden_len_params = new Set<string>();
 	status.moved_class_params = new Map();
 
 	// Save mov'd class param values for cleanup at return
@@ -516,6 +524,26 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 			}
 			param_idx++;
 
+			// A hidden-length string param's companion length arrives in the
+			// NEXT AAPCS slot (mirroring the C signature's trailing
+			// `long _<name>_len`); spill it under its companion name so
+			// emit_string_length reads `.length` from here instead of
+			// calling strlen (see stamp_hidden_string_lens).
+			if (param.hidden_len) {
+				const len_offset = allocate_stack_space(status, 8, 8);
+				status.stack_offsets!.set(`_${param.name}_len`, len_offset);
+				if (!status.hidden_len_params) status.hidden_len_params = new Set();
+				status.hidden_len_params.add(param.name);
+				if (param_idx < NUM_REG_ARGS) {
+					status.code += `str ${param_regs[param_idx]}, [x29, #${len_offset}]\n`;
+				} else {
+					const k = param_idx - NUM_REG_ARGS;
+					status.code += `ldr x9, [x29, #${overflow_placeholder(node.name, k)}]\n`;
+					status.code += `str x9, [x29, #${len_offset}]\n`;
+				}
+				param_idx++;
+			}
+
 			if (param.declaration === "var") {
 				status.function_param_vars.add(param.name);
 			}
@@ -565,6 +593,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	for (let i = 0; i < node.params.length; i++) {
 		const param = node.params[i];
 		if (param.is_variadic) pidx++;
+		if (param.hidden_len) pidx++;
 		if (param.is_moved) {
 			const is_class = !!status.structs.find((s) => s.name === param.type.name && s.is_class);
 			if (is_class) {
@@ -777,6 +806,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.function_struct_param_slots = old_struct_param_slots;
 	status.function_variadic_params = old_variadic_params_aarch64;
 	status.function_view_params = old_view_params;
+	status.hidden_len_params = old_hidden_len_params;
 	status.function_return_label = old_return_label;
 	status.struct_return_buffer = undefined;
 	status.return_buffer_stack_offset = undefined;

@@ -10,6 +10,7 @@ import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
 import ParameterNode from "../nodes/ParameterNode.ts";
+import { set_resolved_function } from "../nodes/set_resolved_function.ts";
 import StructNode from "../nodes/StructNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
@@ -184,6 +185,11 @@ export default function check_function_call(
 	self_value?: string,
 	self_path?: string,
 ): boolean {
+	// Stamp the resolved callee so build-time passes can consult the exact
+	// FunctionNode (overloads, monos) — used for the hidden string-length
+	// companion params (`ParameterNode.hidden_len`). Non-enumerable by
+	// design (see set_resolved_function).
+	set_resolved_function(node, func);
 	const access_scope = status.stack.at(-1)!;
 	// For init functions, check the struct's visibility
 	if (func.name === "#init") {

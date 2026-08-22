@@ -20,6 +20,8 @@ String interpolation (`"\{expr}"`) creates temporary heap allocations that are f
 
 `string` is the **own** form (heap, freed at scope exit); `view string` is the non-owning `(ptr, len)` borrow. This own/borrow distinction is the string analog of `Array<T>` vs `view T` — see ARRAY.md.
 
+**Hidden string-length companions**: a by-value `string` parameter whose function body reads `.length` is lowered as two parameters — the `char*` plus a trailing `long _<name>_len` companion (mirroring the nullable `_has` convention). Call sites append the companion right after the string argument, so a per-character helper called in a loop costs one hoisted `strlen`, not one per call. See `src/check/stamp_hidden_string_lens.ts`.
+
 ### Structs (Value Types)
 
 Structs are allocated on the stack and copied by value. Assigning a struct creates an independent copy — modifications to one do not affect the other.

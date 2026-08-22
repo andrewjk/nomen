@@ -1,3 +1,4 @@
+import callee_hidden_len_indices from "../build_common/hidden_len.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
@@ -10,6 +11,11 @@ import array_struct_name from "./utils/array_struct.ts";
 import c_function_name from "./utils/c_function_name.ts";
 import { find_decl_in_c_scopes } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
+import {
+	close_hidden_len_wrap,
+	emit_hidden_len_expr,
+	open_hidden_len_wrap,
+} from "./utils/hidden_len_call.ts";
 import { has_flag_name, is_nullable_struct_type } from "./utils/nullable_struct.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import { c_view_string_arg } from "./utils/view_value.ts";
@@ -32,6 +38,11 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 
 	const is_struct = status.structs.find((s) => s.name === node.name && !s.is_simple_type);
 	const func_name = is_struct ? `${node.name}_init` : c_function_name(node.name);
+	// Hidden string-length companions: prepare the (possible) materialisation
+	// wrap BEFORE the call text starts, then append each companion right
+	// after its argument. See hidden_len_call / stamp_hidden_string_lens.
+	const hidden_len = callee_hidden_len_indices(node);
+	const hidden_wrap = open_hidden_len_wrap(hidden_len, node.params, status);
 	status.code += `${func_name}(`;
 
 	const variadic_idx = node.variadic_param_name
@@ -41,6 +52,15 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 	for (let i = 0; i < node.params.length; i++) {
 		if (i > 0) {
 			status.code += ", ";
+		}
+
+		// A materialised hidden-len argument passes its temp as the string
+		// value and the temp's strlen as the companion — the original
+		// expression is NOT re-emitted (it may have side effects).
+		const hidden_temp = hidden_wrap.temps.get(i);
+		if (hidden_temp) {
+			status.code += `${hidden_temp}, strlen(${hidden_temp})`;
+			continue;
 		}
 
 		if (i === variadic_idx && node.params[i].node_type === "array") {
@@ -176,6 +196,13 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			status.code += `, `;
 			emit_nullable_arg_flag(node.params[i], status);
 		}
+		// The hidden length companion for a `string` param whose callee body
+		// reads `.length` — the very next C parameter, mirroring the nullable
+		// `_has` flag's position.
+		if (hidden_len.includes(i)) {
+			status.code += `, `;
+			emit_hidden_len_expr(node.params[i], undefined, status);
+		}
 	}
 
 	// A nullable struct RETURN type adds a hidden `unsigned char *_ret_has`
@@ -209,6 +236,10 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 	}
 
 	status.code += ")";
+
+	// Terminate the hidden-len materialisation statement-expression (opened
+	// before the call label) — before the swap/mov follow-up statements.
+	close_hidden_len_wrap(hidden_wrap, status);
 
 	if (node.name.startsWith("_string_interpolate_")) {
 		status.interpolate_string_counts.add(node.params.length - 1);

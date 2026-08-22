@@ -129,6 +129,13 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 			if (is_nullable_struct_type(node.params[i].type, status) && !node.params[i].is_self_param) {
 				status.code += `, unsigned char ${has_flag_name(c_function_name(node.params[i].name))}`;
 			}
+			// A `string` param stamped `hidden_len` (its body reads `.length`)
+			// takes a sibling `long _<name>_len` companion the caller forwards,
+			// so the body's `.length` reads are param loads, not `strlen` —
+			// see stamp_hidden_string_lens (PERF gap 2.4).
+			if (node.params[i].hidden_len) {
+				status.code += `, long _${c_function_name(node.params[i].name)}_len`;
+			}
 		}
 		// A nullable struct RETURN type (`func f(...) out T?`) adds a hidden
 		// `unsigned char *_ret_has` out-parameter after the regular params: the
@@ -167,6 +174,8 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.ref_class_param_types = new Map();
 	const old_variadic_params = status.function_variadic_params;
 	status.function_variadic_params = new Set<string>();
+	const old_hidden_len_params = status.hidden_len_params;
+	status.hidden_len_params = new Set<string>();
 	const old_view_params = status.function_view_params;
 	status.function_view_params = new Set<string>();
 	const old_return_type = status.function_return_type;
@@ -182,6 +191,9 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	for (let param of node.params) {
 		if (param.is_variadic) {
 			status.function_variadic_params.add(c_function_name(param.name));
+		}
+		if (param.hidden_len) {
+			status.hidden_len_params!.add(c_function_name(param.name));
 		}
 		// A `view T` param lowers to a by-value nomen_view — record its name
 		// so call sites / declarations inside this body recognize bare uses
@@ -275,6 +287,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.ref_class_params = old_ref_class_params;
 	status.ref_class_param_types = old_ref_class_param_types;
 	status.function_variadic_params = old_variadic_params;
+	status.hidden_len_params = old_hidden_len_params;
 	status.function_view_params = old_view_params;
 	status.function_return_type = old_return_type;
 	status.nullable_ret_has_param = old_nullable_ret_has;

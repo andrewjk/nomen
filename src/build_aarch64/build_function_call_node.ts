@@ -1,5 +1,6 @@
 import emit_field_overrides from "../build/emit_field_overrides.ts";
 import type BuildStatus from "../build_c/BuildStatus.ts";
+import callee_hidden_len_indices from "../build_common/hidden_len.ts";
 import { is_int_literal, to_decimal_string } from "../int_literal.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
@@ -392,11 +393,22 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			// pair spilling. Compute a slot map first so spills, register
 			// loads, and the overflow area all agree.
 			const view_arg_set = new Set(node.view_param_indices ?? []);
+			// Hidden string-length companions (`ParameterNode.hidden_len`)
+			// occupy the AAPCS slot immediately AFTER their string argument's
+			// slot(s) — mirroring the C signature's interleaved
+			// `long _<name>_len` parameter (see stamp_hidden_string_lens).
+			const hidden_len_indices = callee_hidden_len_indices(node);
+			const hidden_len_set = new Set(hidden_len_indices);
+			const hidden_len_slots = new Map<number, number>();
 			const arg_slot: number[] = [];
 			let total_slots = 0;
 			for (let i = 0; i < node.params.length; i++) {
 				arg_slot.push(total_slots);
 				total_slots += view_arg_set.has(i) ? 2 : 1;
+				if (hidden_len_set.has(i)) {
+					hidden_len_slots.set(i, total_slots);
+					total_slots += 1;
+				}
 			}
 			// Evaluate each param into x0 (and x1 for a view pair) and spill
 			// it to a dedicated stack slot, then load all slots into argument
@@ -547,6 +559,29 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 				}
 				status.code += `str x0, [x29, #${args_base + arg_slot[i] * 8}]\n`;
 			}
+			// Hidden length companions: every argument value already sits in
+			// its spill slot, so compute the lengths here — nothing live is in
+			// registers (the register-load phase below runs afterwards), and a
+			// loop-invariant hoisted strlen slot is used when one exists.
+			for (const i of hidden_len_indices) {
+				const arg = node.params[i];
+				let computed = false;
+				if (arg.node_type === "value") {
+					const hoisted = status.string_length_slots?.get((arg as ValueNode).value);
+					if (hoisted !== undefined) {
+						status.code += `ldr x0, [x29, #${hoisted}]\n`;
+						computed = true;
+					}
+				}
+				if (!computed) {
+					// The argument's string pointer was spilled to its slot by
+					// the evaluation loop above.
+					status.code += `ldr x0, [x29, #${args_base + arg_slot[i] * 8}]\n`;
+					status.code += `bl _strlen\n`;
+				}
+				status.code += `str x0, [x29, #${args_base + hidden_len_slots.get(i)! * 8}]\n`;
+			}
+
 			// Load each spilled argument into its target register. For struct
 			// constructors x0 is the destination (set up below), so it's never a
 			// param target; for ordinary calls param 0 goes in x0. Arguments

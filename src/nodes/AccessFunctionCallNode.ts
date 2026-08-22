@@ -1,4 +1,5 @@
 import BaseNode from "./BaseNode.ts";
+import type FunctionNode from "./FunctionNode.ts";
 import Type from "./Type.ts";
 
 export default class AccessFunctionCallNode extends BaseNode {
@@ -76,6 +77,12 @@ export default class AccessFunctionCallNode extends BaseNode {
 	 * the programmer is asserting the array is long enough positionally.
 	 */
 	skip_bounds_check?: boolean;
+	/**
+	 * The concrete FunctionNode the checker resolved this method call to.
+	 * See FunctionCallNode.resolved_function — used by build-time passes for
+	 * callee-signature facts (notably hidden string-length companions).
+	 */
+	resolved_function?: FunctionNode;
 
 	constructor(start: number, name: string, type?: Type, params?: BaseNode[], is_static?: boolean) {
 		super("access_func", start);

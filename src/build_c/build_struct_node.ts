@@ -469,6 +469,8 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 		const old_function_name = status.current_function_name;
 		const old_view_params = status.function_view_params;
 		status.function_view_params = new Set<string>();
+		const old_hidden_len_params = status.hidden_len_params;
+		status.hidden_len_params = new Set<string>();
 		status.current_function_name = func.name;
 		status.function_ref_params = new Set<string>();
 		status.class_vars = new Set<string>();
@@ -485,6 +487,9 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 			// bare uses as view VALUES (no owned→view re-wrap).
 			if (param.type.is_view && !param.is_self_param) {
 				status.function_view_params.add(c_function_name(param.name));
+			}
+			if (param.hidden_len) {
+				status.hidden_len_params!.add(c_function_name(param.name));
 			}
 			const param_struct = status.structs.find((s) => s.name === param.type.name);
 			const param_trait = status.traits.find((t) => t.name === param.type.name);
@@ -615,6 +620,12 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 				status.code += ", ";
 			}
 			build_parameter_node(func.params[i], status);
+			// A `string` param stamped `hidden_len` (its body reads `.length`)
+			// takes a sibling `long _<name>_len` companion the caller forwards
+			// — mirrors build_function_node; see stamp_hidden_string_lens.
+			if (func.params[i].hidden_len) {
+				status.code += `, long _${c_function_name(func.params[i].name)}_len`;
+			}
 		}
 		status.code += `)`;
 
@@ -687,6 +698,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 		status.function_return_type = old_return_type;
 		status.current_function_name = old_function_name;
 		status.function_view_params = old_view_params;
+		status.hidden_len_params = old_hidden_len_params;
 	}
 	status.current_struct = old_current_struct;
 

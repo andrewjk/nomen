@@ -1,3 +1,4 @@
+import callee_hidden_len_indices from "../build_common/hidden_len.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import {
 	drop_self_written_string_field_records,
@@ -18,6 +19,11 @@ import type BuildStatus from "./BuildStatus.ts";
 import c_function_name from "./utils/c_function_name.ts";
 import { find_decl_in_c_scopes } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
+import {
+	close_hidden_len_wrap,
+	emit_hidden_len_expr,
+	open_hidden_len_wrap,
+} from "./utils/hidden_len_call.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import { c_view_string_arg } from "./utils/view_value.ts";
 
@@ -778,6 +784,11 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				if (array_wrap) {
 					status.code += array_wrap.prefix;
 				}
+				// Hidden string-length companions for `string` args whose callee
+				// param reads `.length` — the materialisation wrap (if any rvalue
+				// args) nests inside the array receiver wrap.
+				const hidden_len = callee_hidden_len_indices(access_func);
+				const hidden_wrap = open_hidden_len_wrap(hidden_len, access_func.params, status);
 				status.code += `${label}(`;
 				if (!access_func.is_static) {
 					if (array_wrap) {
@@ -825,6 +836,14 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				for (let i = 0; i < access_func.params.length; i++) {
 					if (!access_func.is_static || i > 0) {
 						status.code += ", ";
+					}
+					// A materialised hidden-len argument passes its temp plus the
+					// temp's strlen as the companion — the original expression is
+					// not re-emitted (side effects would run twice).
+					const hidden_temp = hidden_wrap.temps.get(i);
+					if (hidden_temp) {
+						status.code += `${hidden_temp}, strlen(${hidden_temp})`;
+						continue;
 					}
 					// A `view string` parameter receives a (ptr, len)
 					// nomen_view: a view-typed argument passes through; an
@@ -893,8 +912,15 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 					} else {
 						build_node(access_func.params[i], status);
 					}
+					// Hidden length companion: the very next C parameter after
+					// the string arg (mirrors the nullable `_has` position).
+					if (hidden_len.includes(i)) {
+						status.code += `, `;
+						emit_hidden_len_expr(access_func.params[i], undefined, status);
+					}
 				}
 				status.code += ")";
+				close_hidden_len_wrap(hidden_wrap, status);
 				if (array_wrap) {
 					status.code += array_wrap.suffix;
 				}
@@ -979,7 +1005,15 @@ function resolve_access_field_type(node: AccessNode, status: BuildStatus): Type 
 // A bare variable registered in status.string_length_temps (a loop-invariant
 // hoist from build_while_loop_node) emits the pre-computed temp instead.
 function emit_string_length(target: BaseNode, status: BuildStatus) {
+	// A `string` param carrying the hidden length companion: `.length` is the
+	// companion param itself — no strlen, no hoisted temp needed (the value
+	// arrived through the call boundary; see stamp_hidden_string_lens).
 	if (target.node_type === "value") {
+		const name = (target as ValueNode).value;
+		if (name !== "self" && status.hidden_len_params?.has(c_function_name(name))) {
+			status.code += `_${c_function_name(name)}_len`;
+			return;
+		}
 		const temp = status.string_length_temps?.get((target as ValueNode).value);
 		if (temp) {
 			status.code += temp;
