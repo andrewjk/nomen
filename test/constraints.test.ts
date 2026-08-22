@@ -649,6 +649,61 @@ func probe = (List<int> list, int i, out int) {
 			const parsed = parse(input, get_library(core));
 			expect(parsed.errors).toEqual([]);
 		});
+
+		// A guard clause must (re-)establish its negated bounds on a `var`
+		// local that was REASSIGNED before the guard — even by an earlier
+		// clamp. The if/else reconciliation copies the pre-if (cleared)
+		// bounds for `var` values, so applying the negation before the copy
+		// lost it; the guard-clause application now runs after the
+		// reconciliation.
+		test("return-guard after a clamp verifies .at on the clamped var", () => {
+			const input = `
+import System
+func probe = (List<int> list, int start, out int) {
+    var int i = start
+    if i < 0 { i = 0 }
+    if i < 0 || i >= list.length { return 0 }
+    return list.at(i)
+}
+`;
+			const parsed = parse(input, get_library(core));
+			expect(parsed.errors).toEqual([]);
+		});
+
+		test("return-guard verifies .at on a never-reassigned var local", () => {
+			const input = `
+import System
+func probe = (List<int> list, out int) {
+    var int i = first_index(list)
+    if i < 0 || i >= list.length { return 0 }
+    return list.at(i)
+}
+func first_index = (List<int> list, out int) {
+    return 0
+}
+`;
+			const parsed = parse(input, get_library(core));
+			expect(parsed.errors).toEqual([]);
+		});
+
+		// The natural clamp-then-guard style for string.slice: clamp both
+		// ends, guard the ordering, and the slice's parameter constraints
+		// discharge from the guard's negated bounds.
+		test("clamp-then-guard verifies string.slice bounds", () => {
+			const input = `
+import System
+func probe = (string text, int start, int end, out string) {
+    var int s = start
+    var int e = end
+    if s < 0 { s = 0 }
+    if e > text.length { e = text.length }
+    if s > e { return text }
+    return text.slice(s, e).to_string()
+}
+`;
+			const parsed = parse(input, get_library(core));
+			expect(parsed.errors).toEqual([]);
+		});
 	});
 
 	describe("alias-through-arithmetic", () => {

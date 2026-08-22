@@ -101,7 +101,13 @@ export default function check_if_else_node(if_else: IfElseNode, status: CheckSta
 	// clauses (if_returns); extending it to the no-else fall-through case is
 	// what makes a clamp pattern like `if e > text.length { e = text.length }`
 	// establish `e <= text.length` afterwards.
-	if (!has_else && else_reachable) {
+	//
+	// Guard clauses (if_returns) are EXCLUDED here and handled after the
+	// reconciliation loop instead: the loop's else-path copy for `var` locals
+	// would otherwise clobber these bounds (assignment in an earlier clamp
+	// cleared them, and the copy restores the cleared pre-if state), which is
+	// exactly why a guard after a clamp used to lose its facts.
+	if (!has_else && else_reachable && !if_returns) {
 		apply_negated_bounds(if_else.condition, status);
 	}
 
@@ -206,12 +212,24 @@ export default function check_if_else_node(if_else: IfElseNode, status: CheckSta
 		}
 	}
 
-	// Guard-clause note: an `if cond { ...always exits... }` with no else
-	// means only the implicit-else path reaches code after the if. The
-	// negated bounds are applied to the parent above (alongside the
-	// reconciliation), so a following access verifies, e.g.
+	// Guard-clause: an `if cond { ...always exits... }` with no else
+	// means only the implicit-else path reaches code after the if, so the
+	// NEGATION of cond holds unconditionally there — e.g.
 	//   if i < 0 || i >= list.length { return }
 	//   return list.at(i)        // now provably i >= 0 && i < list.length
+	// This runs AFTER the reconciliation loop (unlike the fall-through case
+	// above): the loop's else-path copy for `var` locals restores the pre-if
+	// state — which an earlier clamp's assignment cleared the bounds on — so
+	// applying the negation first would have it clobbered. Applying it here
+	// re-seeds the bounds on top of the copied state, which is what makes the
+	// natural clamp-then-guard style verify:
+	//   var int s = start
+	//   if s < 0 { s = 0 }
+	//   if s < 0 || s > text.length { return }
+	//   text.slice(s, ...)
+	if (!has_else && if_returns && else_reachable) {
+		apply_negated_bounds(if_else.condition, status);
+	}
 
 	if (if_else.if_branch && !if_else.else_branch) {
 		const parent = status.stack.at(-1);
