@@ -30,7 +30,7 @@ pub struct Array<T>: Viewable {
 		```
 	}
 
-	pub func at = (self, int index: index >= 0 && index < self.length, out T) {
+	pub inline func at = (self, int index: index >= 0 && index < self.length, out T) {
 		```
 		#arch: c
 		T* _data = (T*)((char*)self + sizeof(*self));

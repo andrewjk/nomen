@@ -47,18 +47,39 @@ function build_naked_inline(struct_node: StructNode, func: FunctionNode, status:
 	const standalone_return_label = `.return_${struct_node.name}_${func.name.replace(/#/g, "")}`;
 	asm = asm.replaceAll(`b ${standalone_return_label}`, "");
 
-	if (count_x19_reads(asm) === 1) {
+	// The raw body is written for the standalone convention (x19 = self),
+	// but the inline call site holds the receiver in x0. One x19 read can
+	// be rewritten to x0 (cheapest); a body that reads x19 several times
+	// (e.g. Array.at's per-width load arms) cannot — an arm may read x19
+	// after x0 was already clobbered (the struct-element copy arm does
+	// `mov x0, x8` first), so a blanket rewrite is unsound. Instead,
+	// emulate the standalone prologue at the splice site: save the caller's
+	// x19 (callee-saved, possibly holding a live value), install x0 into
+	// x19, run the body, restore. A zero-read body needs neither.
+	const x19_reads = count_x19_reads(asm);
+	let prologue = "";
+	let epilogue = "";
+	if (x19_reads === 1) {
 		asm = asm.replace(/\bx19\b/g, "x0");
+	} else if (x19_reads > 1) {
+		prologue = `str x19, [sp, #-16]!\nmov x19, x0\n`;
+		epilogue = `ldr x19, [sp], #16\n`;
 	}
 
 	// Local labels in the raw body (`.L…`) are defined once per emission —
 	// splicing the same body at multiple inline sites would define them
 	// twice and fail to assemble. Rename every `.L…` token with a per-site
 	// suffix (definitions and branch targets alike, consistently).
+	// The suffix is `__ni<N>` (not `_<N>`): a bare numeric suffix collides
+	// with a SIBLING method's mono-renamed width-arm labels — inlined `at`'s
+	// `.L_Array__at_end` at site 1 became `.L_Array__at_end_1`, which is
+	// exactly `at_end`'s own `.L_at_end_1` after rename_local_labels. The
+	// letter-led `__ni` token is compiler-reserved and can't be produced
+	// from a source label by the renamer.
 	const site = inline_counter++;
-	asm = asm.replace(/(\.L[A-Za-z0-9_]+)/g, `$1_${site}`);
+	asm = asm.replace(/(\.L[A-Za-z0-9_]+)/g, `$1__ni${site}`);
 
-	status.code += asm + "\n";
+	status.code += prologue + asm + "\n" + epilogue;
 }
 
 export default function build_inline_method(

@@ -16,6 +16,15 @@ import parse_with_imports from "./parse_with_imports";
 //    the caller (borrow normalization keys on the caller's name used to
 //    strdup an inlined borrow inside `at_or`, leaking one copy);
 //  - checker-hoisted receiver temps (`_recv_N`) re-emit per inline site.
+//  - the inlined body's cleanup must never destroy the caller's live
+//    receiver (the receiver-cleanup landmine: an inlined body's return used
+//    to walk the caller's scope frames and emit `Buffer_int_destroy` on
+//    `&list.items` inside the caller's loop — next access segfaulted);
+//  - naked-inline per-site label suffixes must not collide with sibling
+//    methods' mono-renamed labels (`Array.at` inline vs `at_end`'s
+//    `.L_at_end_1` width-arm label), and a raw body reading x19 several
+//    times gets the standalone x19 prologue emulated at the splice site
+//    (class-element `Array.at` receivers travel in x0, not x19).
 
 describe("general-path method inlining", () => {
 	test("List.at inlines into callers (accessor chain gone)", () => {
@@ -112,5 +121,69 @@ Console.write("\\{xs.at_or(0, "fallback")}\\{xs.at_or(5, "fallback")}")
 		);
 		const strdups = at_or_body.match(/bl (_nomen_strdup_wrap|_strdup)/g) ?? [];
 		expect(strdups.length).toBe(2);
+	});
+
+	test("inlined body never destroys the caller's live receiver", () => {
+		// The receiver-cleanup landmine: the inline body's return cleanup
+		// used to see the caller's scope frames and destroy the caller's
+		// live `list` mid-loop (`List_int`'s field destroys emit
+		// `bl Buffer_int_destroy` on `&list.items` — the next `at` in the
+		// loop segfaulted on the freed buffer).
+		const parsed = parse_with_imports(`
+var List<int> list = List<int>()
+list.push(1)
+list.push(2)
+var int sum = 0
+var int j = 0
+while j < list.length {
+	sum = sum + list.at(j)
+	j = j + 1
+}
+Console.write("\\{sum}\\n")
+`);
+		expect(parsed.errors).toEqual([]);
+		const code = build(parsed.root, { arch: "aarch64", audit: false }).code;
+		const main = code.slice(code.indexOf("_main:"));
+		const loop = main.slice(main.indexOf(".while_"), main.indexOf(".end_while_"));
+		expect(loop).not.toMatch(/bl \w+_destroy/);
+	});
+
+	test("naked-inline site labels never collide with sibling method labels", () => {
+		// `Array.at` is `pub inline`; its spliced body defines
+		// `.L_Array_int__at_end`. The per-site suffix used to be `_<N>`,
+		// which made site 1's label exactly `at_end`'s own mono-renamed
+		// width-arm label `.L_Array_int__at_end_1` — a duplicate symbol at
+		// assemble time. Pin: every .L label in the whole program is
+		// defined at most once, and no internal `bl Array_int_at` remains
+		// in the accessor chain.
+		const parsed = parse_with_imports(`
+var Array<int> a = Array.with(0, 4)
+a.set(1, 9)
+Console.write("\\{a.at_or(1, 0)}\\{a.at_or_panic(1)}\\n")
+`);
+		expect(parsed.errors).toEqual([]);
+		const code = build(parsed.root, { arch: "aarch64", audit: false }).code;
+		expect(code).not.toContain("bl Array_int_at\n");
+		const labels: string[] = code.match(/^\.L[A-Za-z0-9_]+:/gm) ?? [];
+		const duplicates = labels.filter((l, i) => labels.indexOf(l) !== i);
+		expect(duplicates).toEqual([]);
+	});
+
+	test("inline Array.at on class-element arrays runs the x19 prologue", async () => {
+		// A class-element `.at` is a real method call (the aarch64
+		// direct-index fast path refuses class elements), so the inlined
+		// raw body must not assume x19 holds self: `Array.at`'s body reads
+		// x19 in every width arm, and the call site passes the receiver in
+		// x0. The naked-inline path emulates the standalone prologue
+		// (save x19, mov x19, x0) around the splice — without it the loads
+		// read a garbage register ("837" instead of "123").
+		const input = `
+class Box {
+	var int value
+}
+var items = Array(Box(1), Box(2), Box(3))
+Console.write("\\{items.at(0).value}\\{items.at(1).value}\\{items.at(2).value}\\n")
+`;
+		await build_and_check_output(input, "inline_array_at_class", "123\n");
 	});
 });
