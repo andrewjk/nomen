@@ -1,4 +1,3 @@
-import callee_hidden_len_indices from "../build_common/hidden_len.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import {
 	drop_self_written_string_field_records,
@@ -19,11 +18,6 @@ import type BuildStatus from "./BuildStatus.ts";
 import c_function_name from "./utils/c_function_name.ts";
 import { find_decl_in_c_scopes } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
-import {
-	close_hidden_len_wrap,
-	emit_hidden_len_expr,
-	open_hidden_len_wrap,
-} from "./utils/hidden_len_call.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import { c_view_string_arg } from "./utils/view_value.ts";
 
@@ -427,13 +421,13 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 					return;
 				}
 				if (access_func.name === "to_string" && target_type.name === "string") {
-					// GCC statement-expression: evaluate the receiver once into a
-					// temporary, then malloc/copy/null-terminate its bytes.
+					// view string → owned fat string: the len is already on the
+					// view — copy exactly len bytes and NUL-terminate.
 					const id = (status.label_counter = (status.label_counter ?? 0) + 1);
 					const tmp = `_vts_${id}`;
 					status.code += `({ nomen_view ${tmp} = `;
 					build_node(node.target, status);
-					status.code += `; char* _r = malloc(${tmp}.len + 1); memcpy(_r, ${tmp}.ptr, ${tmp}.len); _r[${tmp}.len] = 0; _r; })`;
+					status.code += `; char* _p = malloc(${tmp}.len + 1); memcpy(_p, ${tmp}.ptr, ${tmp}.len); _p[${tmp}.len] = 0; (nomen_string){ _p, ${tmp}.len }; })`;
 					return;
 				}
 			}
@@ -518,13 +512,13 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				}
 			}
 			// `.to_string()` on a string-typed receiver compiles to
-			// `string_to_string(receiver)`, which strdups its argument and
-			// returns a fresh owned copy. When the receiver is itself an owned
-			// heap temporary (e.g. a method call like `f.greet().to_string()`
-			// used inside a string interpolation), the strdup'd input leaks —
-			// nobody frees it. Wrap in a clang statement-expression that frees
-			// the temporary after string_to_string has copied it, mirroring
-			// emit_string_length.
+			// `string_to_string(receiver)`, whose _raw_ body strdups its
+			// argument and returns a fresh owned copy. When the receiver is
+			// itself an owned heap temporary (e.g. a method call like
+			// `f.greet().to_string()` used inside a string interpolation),
+			// the strdup'd input leaks — nobody frees it. Wrap in a clang
+			// statement-expression that frees the temporary after
+			// string_to_string has copied it.
 			if (
 				access_func.name === "to_string" &&
 				target_type.name === "string" &&
@@ -532,9 +526,9 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 			) {
 				const id = (status.label_counter = (status.label_counter ?? 0) + 1);
 				const tmp = `_sts_${id}`;
-				status.code += `({ char* ${tmp} = `;
+				status.code += `({ nomen_string ${tmp} = `;
 				build_node(node.target, status);
-				status.code += `; char* _sto_${id} = string_to_string(${tmp}); free(${tmp}); _sto_${id}; })`;
+				status.code += `; nomen_string _sto_${id} = string_to_string(${tmp}); free(${tmp}.ptr); _sto_${id}; })`;
 				break;
 			}
 			if (
@@ -565,7 +559,7 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				const target_name =
 					node.target.node_type === "value" ? (node.target as ValueNode).value : "";
 				const is_heap = !!target_name && !!status.heap_array_vars?.has(target_name);
-				status.code += `({ char* _ts_r = (char*)malloc(1); _ts_r[0] = 0; long _ts_n = 0; for (long _i = 0; _i < ${len}; _i++) { char* _s = ${to_string_fn}(`;
+				status.code += `({ char* _ts_r = (char*)malloc(1); _ts_r[0] = 0; long _ts_n = 0; for (long _i = 0; _i < ${len}; _i++) { nomen_string _s = ${to_string_fn}(`;
 				if (is_heap) {
 					status.code += `((${c_type(elem_name)}*)((char*)`;
 					build_node(node.target, status);
@@ -574,7 +568,7 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 					build_node(node.target, status);
 					status.code += `[_i]`;
 				}
-				status.code += `); _ts_n += strlen(_s); _ts_r = (char*)realloc(_ts_r, _ts_n + 1); strcat(_ts_r, _s); free(_s); } _ts_r; })`;
+				status.code += `); _ts_n += _s.len; _ts_r = (char*)realloc(_ts_r, _ts_n + 1); strcat(_ts_r, _s.ptr); free(_s.ptr); } (nomen_string){ _ts_r, _ts_n }; })`;
 				status.last_result_is_heap = true;
 				break;
 			}
@@ -784,11 +778,6 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				if (array_wrap) {
 					status.code += array_wrap.prefix;
 				}
-				// Hidden string-length companions for `string` args whose callee
-				// param reads `.length` — the materialisation wrap (if any rvalue
-				// args) nests inside the array receiver wrap.
-				const hidden_len = callee_hidden_len_indices(access_func);
-				const hidden_wrap = open_hidden_len_wrap(hidden_len, access_func.params, status);
 				status.code += `${label}(`;
 				if (!access_func.is_static) {
 					if (array_wrap) {
@@ -837,17 +826,9 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 					if (!access_func.is_static || i > 0) {
 						status.code += ", ";
 					}
-					// A materialised hidden-len argument passes its temp plus the
-					// temp's strlen as the companion — the original expression is
-					// not re-emitted (side effects would run twice).
-					const hidden_temp = hidden_wrap.temps.get(i);
-					if (hidden_temp) {
-						status.code += `${hidden_temp}, strlen(${hidden_temp})`;
-						continue;
-					}
 					// A `view string` parameter receives a (ptr, len)
 					// nomen_view: a view-typed argument passes through; an
-					// owned string expression is wrapped with its strlen.
+					// owned string expression is borrowed into the pair.
 					if (access_func.view_param_indices?.includes(i)) {
 						c_view_string_arg(access_func.params[i], status);
 						continue;
@@ -912,15 +893,8 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 					} else {
 						build_node(access_func.params[i], status);
 					}
-					// Hidden length companion: the very next C parameter after
-					// the string arg (mirrors the nullable `_has` position).
-					if (hidden_len.includes(i)) {
-						status.code += `, `;
-						emit_hidden_len_expr(access_func.params[i], undefined, status);
-					}
 				}
 				status.code += ")";
-				close_hidden_len_wrap(hidden_wrap, status);
 				if (array_wrap) {
 					status.code += array_wrap.suffix;
 				}
@@ -960,7 +934,7 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 							for (const key of Array.from(status.heap_string_fields ?? [])) {
 								if (key.startsWith(prefix)) {
 									if (!status.pending_string_releases) status.pending_string_releases = [];
-									status.pending_string_releases.push(`free(${key});`);
+									status.pending_string_releases.push(`free(${key}.ptr);`);
 									status.heap_string_fields!.delete(key);
 								}
 							}
@@ -998,39 +972,23 @@ function resolve_access_field_type(node: AccessNode, status: BuildStatus): Type 
 	return field?.type;
 }
 
-// Emit `string.length` as `strlen(target)`. When the target is
-// an OWNED heap string temporary (e.g. `Json.stringify(...).length`), the
-// intermediate string would otherwise leak — the caller keeps only the length.
-// Wrap in a clang statement-expression that frees the temp after measuring it.
-// A bare variable registered in status.string_length_temps (a loop-invariant
-// hoist from build_while_loop_node) emits the pre-computed temp instead.
+// Emit `string.length` as a `.len` field load on the fat nomen_string
+// value — O(1), no strlen. When the target is an OWNED heap string
+// temporary (e.g. `Json.stringify(...).length`), the caller keeps only the
+// length — wrap in a statement-expression that frees the temp's ptr after
+// reading `.len`.
 function emit_string_length(target: BaseNode, status: BuildStatus) {
-	// A `string` param carrying the hidden length companion: `.length` is the
-	// companion param itself — no strlen, no hoisted temp needed (the value
-	// arrived through the call boundary; see stamp_hidden_string_lens).
-	if (target.node_type === "value") {
-		const name = (target as ValueNode).value;
-		if (name !== "self" && status.hidden_len_params?.has(c_function_name(name))) {
-			status.code += `_${c_function_name(name)}_len`;
-			return;
-		}
-		const temp = status.string_length_temps?.get((target as ValueNode).value);
-		if (temp) {
-			status.code += temp;
-			return;
-		}
-	}
 	if (is_owned_heap_temp(target, status)) {
 		const id = (status.label_counter = (status.label_counter ?? 0) + 1);
 		const tmp = `_slen_${id}`;
-		status.code += `({ char* ${tmp} = `;
+		status.code += `({ nomen_string ${tmp} = `;
 		build_node(target, status);
-		status.code += `; long _slr_${id} = (long)strlen(${tmp}); free(${tmp}); _slr_${id}; })`;
+		status.code += `; long _slr_${id} = ${tmp}.len; free(${tmp}.ptr); _slr_${id}; })`;
 		return;
 	}
-	status.code += "((long)strlen(";
+	status.code += "(";
 	build_node(target, status);
-	status.code += "))";
+	status.code += ").len";
 }
 
 /**

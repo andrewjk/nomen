@@ -75,9 +75,9 @@ export function is_view_value(node: BaseNode, status: BuildStatus): boolean {
  * Emit the (ptr, len) pair for a `view string` argument into x0/x1.
  * - A view VALUE (a view local/param's two stack slots, or a view-returning
  *   call that leaves the pair in x0/x1) passes through unchanged.
- * - An owned string expression builds its pointer into x0, then measures it
- *   with strlen — an implicit owned→view borrow; ownership stays with the
- *   caller.
+ * - An owned `string` expression is now ITSELF a fat (ptr, len) value —
+ *   borrowing it into a view is the identity: build it and keep both halves
+ *   in x0/x1. Ownership stays with the caller.
  */
 export function emit_view_string_arg(arg: BaseNode, status: BuildStatus) {
 	if (is_view_value(arg, status)) {
@@ -95,10 +95,6 @@ export function emit_view_string_arg(arg: BaseNode, status: BuildStatus) {
 	}
 	build_node(arg, status);
 	if (!status.code.endsWith("\n")) status.code += "\n";
-	status.code += `str x0, [sp, #-16]!\n`;
-	status.code += `bl _strlen\n`;
-	status.code += `mov x1, x0\n`;
-	status.code += `ldr x0, [sp], #16\n`;
 }
 
 /**

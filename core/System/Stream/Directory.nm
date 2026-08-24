@@ -69,7 +69,7 @@ pub struct Directory {
 		```
 		#arch: c
 		DIR *d = opendir(path);
-		if (!d) return strdup("");
+		if (!d) return (nomen_string){ strdup(""), 0 };
 		int cap = 4096;
 		int len = 0;
 		char *buf = (char*)malloc(cap);
@@ -88,7 +88,8 @@ pub struct Directory {
 		}
 		buf[len] = 0;
 		closedir(d);
-		return buf;
+		// len bytes were appended — the count is exact, no strlen.
+		return (nomen_string){ buf, len };
 		```
 		```
 		#arch: aarch64
@@ -160,12 +161,15 @@ pub struct Directory {
 		strb wzr, [x0, x1]
 		ldr x0, [sp, #8]
 		bl _closedir
+		// Fat-string ABI: reload the (buf, len) pair — closedir clobbered x1.
 		ldr x0, [sp, #16]
+		ldr x1, [sp, #24]
 		add sp, sp, #64
 		b .return_Directory_list
 		.Ldir_list_empty:
 		adr x0, .Ldir_list_empty_str
 		bl _strdup
+		mov x1, #0
 		add sp, sp, #64
 		b .return_Directory_list
 		.Ldir_list_empty_str: .asciz ""

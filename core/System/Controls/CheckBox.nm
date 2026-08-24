@@ -6,7 +6,7 @@ pub class CheckBox : Control {
 
 	pub func #init = (self, Window window) {
 		```
-		#arch: c, aarch64_use_c
+		#arch: c
 		#platform: macos
 		id cb = ((id(*)(id, SEL, CGRect))objc_msgSend)(
 			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSButton"), sel_registerName("alloc")),
@@ -23,7 +23,39 @@ pub class CheckBox : Control {
 		self->handle = (uint64_t)cb;
 		```
 		```
-		#arch: c, aarch64_use_c
+		#arch: aarch64_use_c
+		#platform: macos
+		id cb = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSButton"), sel_registerName("alloc")),
+			sel_registerName("initWithFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 200, 24));
+		((void(*)(id, SEL, unsigned long))objc_msgSend)(
+			cb, sel_registerName("setButtonType:"), 3); // NSSwitchButton = 3
+		((void(*)(id, SEL, long))objc_msgSend)(
+			cb, sel_registerName("setState:"), 0);       // NSControlStateValueOff = 0
+		id contentView = ((id(*)(id, SEL))objc_msgSend)(
+			(id)window->handle, sel_registerName("contentView"));
+		((void(*)(id, SEL, id))objc_msgSend)(
+			contentView, sel_registerName("addSubview:"), cb);
+		self->handle = (uint64_t)cb;
+		```
+		```
+		#arch: c
+		#platform: ios
+		id cb = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("UISwitch"), sel_registerName("alloc")),
+			sel_registerName("initWithFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 100, 24));
+		id parentView = ((id(*)(id, SEL))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)(
+				(id)window->handle, sel_registerName("rootViewController")),
+			sel_registerName("view"));
+		((void(*)(id, SEL, id))objc_msgSend)(
+			parentView, sel_registerName("addSubview:"), cb);
+		self->handle = (uint64_t)cb;
+		```
+		```
+		#arch: aarch64_use_c
 		#platform: ios
 		id cb = ((id(*)(id, SEL, CGRect))objc_msgSend)(
 			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("UISwitch"), sel_registerName("alloc")),
@@ -41,14 +73,28 @@ pub class CheckBox : Control {
 
 	pub func set_frame = (ref self, int x, int y, int width, int height) {
 		```
-		#arch: c, aarch64_use_c
+		#arch: c
 		#platform: macos
 		((void(*)(id, SEL, CGRect))objc_msgSend)(
 			(id)self->handle, sel_registerName("setFrame:"),
 			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
 		```
 		```
-		#arch: c, aarch64_use_c
+		#arch: aarch64_use_c
+		#platform: macos
+		((void(*)(id, SEL, CGRect))objc_msgSend)(
+			(id)self->handle, sel_registerName("setFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+		```
+		```
+		#arch: c
+		#platform: ios
+		((void(*)(id, SEL, CGRect))objc_msgSend)(
+			(id)self->handle, sel_registerName("setFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+		```
+		```
+		#arch: aarch64_use_c
 		#platform: ios
 		((void(*)(id, SEL, CGRect))objc_msgSend)(
 			(id)self->handle, sel_registerName("setFrame:"),
@@ -58,25 +104,46 @@ pub class CheckBox : Control {
 
 	pub func set_title = (self, string title) {
 		```
-		#arch: c, aarch64_use_c
+		#arch: c
 		#platform: macos
 		((void(*)(id, SEL, id))objc_msgSend)(
 			(id)self->handle, sel_registerName("setTitle:"),
 			((id(*)(id, SEL, const char*))objc_msgSend)(
 				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title));
 		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		((void(*)(id, SEL, id))objc_msgSend)(
+			(id)self->handle, sel_registerName("setTitle:"),
+			((id(*)(id, SEL, const char*))objc_msgSend)(
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr));
+		```
 	}
 
 	pub func set_checked = (self, bool checked) {
 		```
-		#arch: c, aarch64_use_c
+		#arch: c
 		#platform: macos
 		((void(*)(id, SEL, long))objc_msgSend)(
 			(id)self->handle, sel_registerName("setState:"),
 			checked ? 1 : 0); // NSControlStateValueOn = 1, Off = 0
 		```
 		```
-		#arch: c, aarch64_use_c
+		#arch: aarch64_use_c
+		#platform: macos
+		((void(*)(id, SEL, long))objc_msgSend)(
+			(id)self->handle, sel_registerName("setState:"),
+			checked ? 1 : 0); // NSControlStateValueOn = 1, Off = 0
+		```
+		```
+		#arch: c
+		#platform: ios
+		((void(*)(id, SEL, BOOL))objc_msgSend)(
+			(id)self->handle, sel_registerName("setOn:"), checked ? 1 : 0);
+		```
+		```
+		#arch: aarch64_use_c
 		#platform: ios
 		((void(*)(id, SEL, BOOL))objc_msgSend)(
 			(id)self->handle, sel_registerName("setOn:"), checked ? 1 : 0);
@@ -85,14 +152,28 @@ pub class CheckBox : Control {
 
 	pub func is_checked = (self, out bool) {
 		```
-		#arch: c, aarch64_use_c
+		#arch: c
 		#platform: macos
 		long state = ((long(*)(id, SEL))objc_msgSend)(
 			(id)self->handle, sel_registerName("state"));
 		return state == 1; // NSControlStateValueOn = 1
 		```
 		```
-		#arch: c, aarch64_use_c
+		#arch: aarch64_use_c
+		#platform: macos
+		long state = ((long(*)(id, SEL))objc_msgSend)(
+			(id)self->handle, sel_registerName("state"));
+		return state == 1; // NSControlStateValueOn = 1
+		```
+		```
+		#arch: c
+		#platform: ios
+		BOOL on = ((BOOL(*)(id, SEL))objc_msgSend)(
+			(id)self->handle, sel_registerName("isOn"));
+		return on ? 1 : 0;
+		```
+		```
+		#arch: aarch64_use_c
 		#platform: ios
 		BOOL on = ((BOOL(*)(id, SEL))objc_msgSend)(
 			(id)self->handle, sel_registerName("isOn"));
@@ -102,7 +183,13 @@ pub class CheckBox : Control {
 
 	pub func set_hidden = (self, bool hidden) {
 		```
-		#arch: c, aarch64_use_c
+		#arch: c
+		#platform: macos
+		((void(*)(id, SEL, BOOL))objc_msgSend)(
+			(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
+		```
+		```
+		#arch: aarch64_use_c
 		#platform: macos
 		((void(*)(id, SEL, BOOL))objc_msgSend)(
 			(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
@@ -137,7 +224,7 @@ pub class CheckBox : Control {
 
 	func #destroy = () {
 		```
-		#arch: c, aarch64_use_c
+		#arch: c
 		#platform: macos
 		if (self->handle) {
 			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
@@ -146,7 +233,25 @@ pub class CheckBox : Control {
 		}
 		```
 		```
-		#arch: c, aarch64_use_c
+		#arch: aarch64_use_c
+		#platform: macos
+		if (self->handle) {
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+			self->handle = 0;
+		}
+		```
+		```
+		#arch: c
+		#platform: ios
+		if (self->handle) {
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+			self->handle = 0;
+		}
+		```
+		```
+		#arch: aarch64_use_c
 		#platform: ios
 		if (self->handle) {
 			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));

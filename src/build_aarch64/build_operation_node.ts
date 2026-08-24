@@ -1,6 +1,7 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import { enum_with_data_side, static_enum_case } from "../build_c/utils/enum_eq.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
+import string_literal_length from "../build_common/string_literal_length.ts";
 import { is_int_literal, parse_int_literal_bigint, to_decimal_string } from "../int_literal.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import BaseNode from "../nodes/BaseNode.ts";
@@ -14,6 +15,7 @@ import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free } from "./utils/audit.ts";
 import { has_flag_name, is_nullable_struct_type } from "./utils/nullable_struct.ts";
 import { allocate_stack_space, emit_var_address, emit_var_load } from "./utils/stack_var.ts";
+import { emit_pair_load_x29, emit_pair_store_x29 } from "./utils/string_pair.ts";
 import { get_field_has_offset, get_struct_size } from "./utils/struct_layout.ts";
 import { emit_view_string_arg, is_view_value } from "./utils/view_value.ts";
 
@@ -191,7 +193,10 @@ function build_operand(node: BaseNode, target_reg: string, status: BuildStatus) 
 		if (value.startsWith('"')) {
 			const label = `_str_op_${string_counter++}`;
 			status.strings!.set(label, value);
-			status.code += `adr ${target_reg}, ${label}`;
+			// Fat-string literal: emit the (ptr, len) pair.
+			status.code += `adr ${target_reg}, ${label}\n`;
+			const n = parseInt(target_reg.substring(1), 10);
+			status.code += `mov x${n + 1}, #${string_literal_length(value)}\n`;
 			return;
 		}
 	}
@@ -508,6 +513,62 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 			node.type?.name === "string" && is_owned_heap_temp(node.right_value, status);
 		const left_is_heap =
 			node.type?.name === "string" && is_owned_heap_temp(node.left_value, status);
+
+		if (node.type?.name === "string" || node.operator_func.struct_name === "string") {
+			// Fat-string operator call: each operand is a (ptr, len) pair.
+			// Evaluate right, spill its pair; evaluate left into (x0, x1);
+			// reload right's pair into (x2, x3); call. Owned-temp frees happen
+			// after the call (the callee has copied by then), and a string
+			// result's pair is spilled across the frees.
+			const right_spill_pair = allocate_stack_space(status, 16, 16);
+			build_operator_operand(node.right_value, "x0", status);
+			if (!status.code.endsWith("\n")) {
+				status.code += "\n";
+			}
+			emit_pair_store_x29(status, right_spill_pair);
+
+			const left_spill_pair = allocate_stack_space(status, 16, 16);
+			build_operator_operand(node.left_value, "x0", status);
+			if (!status.code.endsWith("\n")) {
+				status.code += "\n";
+			}
+			emit_pair_store_x29(status, left_spill_pair);
+			// Self = left pair in (x0, x1); other = right pair in (x2, x3).
+			emit_pair_load_x29(status, left_spill_pair);
+			emit_pair_load_x29(status, right_spill_pair, "x2", "x3");
+
+			const op_label =
+				node.operator_func.mangled_name ||
+				`${node.operator_func.struct_name}_${node.operator_func.func_name}`;
+			status.code += `bl ${op_label}\n`;
+
+			const returns_string = node.type?.name === "string";
+			let result_pair_spill: number | undefined;
+			if (returns_string || left_is_heap || right_is_heap) {
+				result_pair_spill = allocate_stack_space(status, 16, 16);
+				emit_pair_store_x29(status, result_pair_spill);
+			}
+
+			if (left_is_heap) {
+				status.code += `ldr x0, [x29, #${left_spill_pair}]\n`;
+				emit_free(status);
+			}
+			if (right_is_heap) {
+				status.code += `ldr x0, [x29, #${right_spill_pair}]\n`;
+				emit_free(status);
+			}
+			if (result_pair_spill !== undefined) {
+				emit_pair_load_x29(status, result_pair_spill);
+			}
+			if (node.operator_func.invert) {
+				status.code += `cmp x0, #0\n`;
+				status.code += `cset x0, eq\n`;
+			}
+			if (returns_string) {
+				status.last_result_is_heap = true;
+			}
+			return;
+		}
 
 		// Evaluate right operand, spill to stack (left evaluation may clobber x1)
 		const right_spill = allocate_stack_space(status, 8);

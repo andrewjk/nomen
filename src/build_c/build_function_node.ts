@@ -21,7 +21,9 @@ import array_struct_name from "./utils/array_struct.ts";
 import c_function_name from "./utils/c_function_name.ts";
 import { enter_c_scope, leave_c_scope } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
+import { set_c_thin_strings } from "./utils/c_type.ts";
 import { has_flag_name, is_nullable_struct_type } from "./utils/nullable_struct.ts";
+import { emit_raw_string_adapter, raw_string_abi_needed } from "./utils/raw_string_abi.ts";
 import scan_borrow_only_strings from "./utils/scan_borrow_only_strings.ts";
 
 export default function build_function_node(node: FunctionNode, status: BuildStatus) {
@@ -57,6 +59,15 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		node.name.toLocaleLowerCase() === "main" &&
 		node.params.length > 0 &&
 		node.params[0].type.name === "Init";
+
+	// A raw-only body written against the thin char* string ABI (String.nm,
+	// *_to_string, File/Http FFI...) is emitted under a `_raw_` label with
+	// thin string types, followed by a compiler-generated fat adapter (see
+	// raw_string_abi.ts). The adapter synthesizes the length exactly once,
+	// at the creation boundary.
+	const raw_thin =
+		!is_main_with_init && raw_string_abi_needed(node, undefined, status.platform ?? "");
+	if (raw_thin) set_c_thin_strings(true);
 
 	const func_start = status.code.length;
 	if (is_main_with_init) {
@@ -108,7 +119,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		} else {
 			status.code += `void `;
 		}
-		status.code += `${c_function_name(node.name)}(`;
+		status.code += `${raw_thin ? "_raw_" : ""}${c_function_name(node.name)}(`;
 	}
 	if (!is_main_with_init) {
 		let first_param = true;
@@ -129,13 +140,6 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 			if (is_nullable_struct_type(node.params[i].type, status) && !node.params[i].is_self_param) {
 				status.code += `, unsigned char ${has_flag_name(c_function_name(node.params[i].name))}`;
 			}
-			// A `string` param stamped `hidden_len` (its body reads `.length`)
-			// takes a sibling `long _<name>_len` companion the caller forwards,
-			// so the body's `.length` reads are param loads, not `strlen` —
-			// see stamp_hidden_string_lens (PERF gap 2.4).
-			if (node.params[i].hidden_len) {
-				status.code += `, long _${c_function_name(node.params[i].name)}_len`;
-			}
 		}
 		// A nullable struct RETURN type (`func f(...) out T?`) adds a hidden
 		// `unsigned char *_ret_has` out-parameter after the regular params: the
@@ -150,7 +154,15 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	}
 
 	// TODO: Only if top-level
-	status.headers += `${status.code.substring(func_start)};\n\n`;
+	if (raw_thin) {
+		// The thin body is TU-local: prototype it in the code stream (not the
+		// shared headers) as static, ahead of its definition, so the adapter
+		// below can call it.
+		const sig_text = status.code.substring(func_start);
+		status.code = status.code.substring(0, func_start) + `static ${sig_text};\n` + sig_text;
+	} else {
+		status.headers += `${status.code.substring(func_start)};\n\n`;
+	}
 
 	status.code += `\n{\n`;
 
@@ -160,7 +172,9 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		status.code += `struct Init *${pname} = &_nomen_init_data;\n`;
 		status.code += `${pname}->_vt = 0;\n`;
 		status.code += `${pname}->argc = argc;\n`;
-		status.code += `for (int _nomen_i = 0; _nomen_i < argc && _nomen_i < 16; _nomen_i++) ${pname}->args[_nomen_i] = argv[_nomen_i];\n`;
+		// args is a fat nomen_string[16]; argv entries are thin char* —
+		// measure each once at startup (the only strlen on this path).
+		status.code += `for (int _nomen_i = 0; _nomen_i < argc && _nomen_i < 16; _nomen_i++) ${pname}->args[_nomen_i] = (nomen_string){ argv[_nomen_i], (long)strlen(argv[_nomen_i]) };\n`;
 		status.code += `${pname}->is_tty = isatty(1);\n`;
 	}
 
@@ -174,8 +188,6 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.ref_class_param_types = new Map();
 	const old_variadic_params = status.function_variadic_params;
 	status.function_variadic_params = new Set<string>();
-	const old_hidden_len_params = status.hidden_len_params;
-	status.hidden_len_params = new Set<string>();
 	const old_view_params = status.function_view_params;
 	status.function_view_params = new Set<string>();
 	const old_return_type = status.function_return_type;
@@ -188,12 +200,24 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	}
 	const old_function_name = status.current_function_name;
 	status.current_function_name = node.name;
+	// Raw-block shim registry: by-value fat-string params (see build_raw_node).
+	// A raw-THIN function (raw_string_abi_needed) emits its whole body with
+	// thin char* params — there is nothing to shim, and shimming would emit
+	// `.ptr` accesses on plain char* (compile error).
+	status.fat_string_params = new Set<string>();
 	for (let param of node.params) {
+		if (
+			!raw_thin &&
+			param.type.name === "string" &&
+			!param.type.is_view &&
+			!param.type.is_array &&
+			!param.is_ref &&
+			!param.type.is_ref
+		) {
+			status.fat_string_params.add(c_function_name(param.name));
+		}
 		if (param.is_variadic) {
 			status.function_variadic_params.add(c_function_name(param.name));
-		}
-		if (param.hidden_len) {
-			status.hidden_len_params!.add(c_function_name(param.name));
 		}
 		// A `view T` param lowers to a by-value nomen_view — record its name
 		// so call sites / declarations inside this body recognize bare uses
@@ -287,7 +311,6 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.ref_class_params = old_ref_class_params;
 	status.ref_class_param_types = old_ref_class_param_types;
 	status.function_variadic_params = old_variadic_params;
-	status.hidden_len_params = old_hidden_len_params;
 	status.function_view_params = old_view_params;
 	status.function_return_type = old_return_type;
 	status.nullable_ret_has_param = old_nullable_ret_has;
@@ -327,6 +350,12 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	}
 
 	status.code += `}\n\n`;
+
+	if (raw_thin) {
+		set_c_thin_strings(false);
+		emit_raw_string_adapter(node, c_function_name(node.name), status, build_parameter_node);
+		status.code += `\n`;
+	}
 
 	leave_c_scope(status);
 	status.scoped_declarations = old_scoped_declarations;

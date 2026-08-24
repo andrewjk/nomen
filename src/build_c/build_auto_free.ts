@@ -67,7 +67,7 @@ export function free_scoped_declarations(
 					// The record key is the raw Nomen name; emitted C must use
 					// the keyword-mangled form (`id` → `_nomen_id` in ObjC .m).
 					const dot = key.indexOf(".");
-					status.code += `free(${c_function_name(key.substring(0, dot))}${key.substring(dot)});\n`;
+					status.code += `free(${c_function_name(key.substring(0, dot))}${key.substring(dot)}.ptr);\n`;
 					if (!persist_string_field_records) {
 						status.heap_string_fields.delete(key);
 					}
@@ -196,7 +196,7 @@ export function free_scoped_declarations(
 				status.code += "\n// Auto-free\n";
 				commented = true;
 			}
-			status.code += `free(${cname});\n`;
+			status.code += `free(${cname}.ptr);\n`;
 		}
 		// Class-typed variables are heap-allocated (malloc'd in the
 		// constructor). Free them at scope exit. Aliases (var q = p) are
@@ -224,7 +224,13 @@ export function free_scoped_declarations(
 			const has_destroy_fn = !!cls?.functions.find((f) => f.name === "#destroy") || !!cls?.is_class;
 			if (cls) {
 				const destroy_call = has_destroy_fn ? `${mono_cls_name}_destroy(${cname}); ` : "";
-				if (dec.type.is_nullable) {
+				// An object-level alias registered here by a reassignment owns
+				// its value only at runtime (after the reassignment executed),
+				// so the scope-exit destroy is guarded by its owns-flag.
+				const alias_flag = status.c_alias_owns_flags?.get(dec.name);
+				if (alias_flag !== undefined) {
+					status.code += `if (${alias_flag}) { ${destroy_call}free(${cname}); }\n`;
+				} else if (dec.type.is_nullable) {
 					status.code += `if (${cname}) { ${destroy_call}free(${cname}); }\n`;
 				} else {
 					status.code += `${destroy_call}free(${cname});\n`;
@@ -313,11 +319,12 @@ export function free_scoped_declarations(
 				status.code += `\t${elem_name}_destroy(_data[_i]); free(_data[_i]);\n`;
 				status.code += `}\n`;
 			} else if (elem_is_string) {
-				// Function-returned string arrays strdup each element into a
-				// distinct heap copy, so free every slot before the buffer.
+				// Function-returned string arrays own each element (the fat
+				// slots own their heap buffers), so free every slot's ptr
+				// before the buffer.
 				status.code += `for (long _i = 0; _i < ${cname}->length; _i++) {\n`;
-				status.code += `\tchar** _data = (char**)((char*)${cname} + sizeof(struct Array_string));\n`;
-				status.code += `\tfree(_data[_i]);\n`;
+				status.code += `\tnomen_string* _data = (nomen_string*)((char*)${cname} + sizeof(struct Array_string));\n`;
+				status.code += `\tfree(_data[_i].ptr);\n`;
 				status.code += `}\n`;
 			}
 			status.code += `free(${cname});\n`;
@@ -345,7 +352,7 @@ export function free_scoped_declarations(
 			);
 			const arr_len = status.stack_array_lengths?.get(dec.name) ?? "0";
 			if (elem_is_string) {
-				status.code += `for (long _i = 0; _i < ${arr_len}; _i++) { free(${cname}[_i]); }\n`;
+				status.code += `for (long _i = 0; _i < ${arr_len}; _i++) { free(${cname}[_i].ptr); }\n`;
 			} else if (elem_is_class) {
 				if (has_destroy(elem_struct!)) {
 					status.code += `for (long _i = 0; _i < ${arr_len}; _i++) { if (${cname}[_i]) { ${elem_name}_destroy(${cname}[_i]); free(${cname}[_i]); } }\n`;

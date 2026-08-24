@@ -39,8 +39,10 @@ pub struct Http {
 		```
 		```
 		#arch: c
-		const char *scheme = strstr(url, "://");
-		const char *hp = scheme ? scheme + 3 : url;
+		// Fat-string ABI: params are (ptr, len) pairs; consume the .ptr
+		// halves at each FFI boundary.
+		const char *scheme = strstr(url.ptr, "://");
+		const char *hp = scheme ? scheme + 3 : url.ptr;
 		const char *colon = strchr(hp, ':');
 		const char *slash = strchr(hp, '/');
 		char host[256];
@@ -70,33 +72,33 @@ pub struct Http {
 		snprintf(portstr, sizeof(portstr), "%d", port);
 		if (getaddrinfo(host, portstr, &hints, &res) != 0) {
 			self->status = 0;
-			return strdup("");
+			return (nomen_string){ strdup(""), 0 };
 		}
 		int sock = socket(AF_INET, SOCK_STREAM, 0);
 		if (sock < 0) {
 			freeaddrinfo(res);
 			self->status = 0;
-			return strdup("");
+			return (nomen_string){ strdup(""), 0 };
 		}
 		if (connect(sock, res->ai_addr, res->ai_addrlen) < 0) {
 			freeaddrinfo(res);
 			close(sock);
 			self->status = 0;
-			return strdup("");
+			return (nomen_string){ strdup(""), 0 };
 		}
 		freeaddrinfo(res);
 
 		char req[1600];
 		int off = snprintf(req, sizeof(req),
 			"%s %s HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n",
-			method, path, host);
-		if (method[0] == 'P') {
-			int blen = (int)strlen(body);
+			method.ptr, path, host);
+		if (method.ptr[0] == 'P') {
+			int blen = (int)body.len;
 			off += snprintf(req + off, sizeof(req) - off,
 				"Content-Type: application/x-www-form-urlencoded\r\nContent-Length: %d\r\n\r\n",
 				blen);
 			send(sock, req, off, 0);
-			send(sock, body, blen, 0);
+			send(sock, body.ptr, blen, 0);
 		} else {
 			off += snprintf(req + off, sizeof(req) - off, "\r\n");
 			send(sock, req, off, 0);
@@ -124,14 +126,17 @@ pub struct Http {
 		char *body_start = strstr(buf, "\r\n\r\n");
 		if (body_start) {
 			char *result = strdup(body_start + 4);
+			long rlen = (long)len - (long)(body_start + 4 - buf);
 			free(buf);
-			return result;
+			return (nomen_string){ result, rlen };
 		}
-		return buf;
+		return (nomen_string){ buf, len };
 		```
 		```
 		#arch: aarch64
-		// x0=self(->x19), x1=method, x2=url, x3=body
+		// Fat-string ABI: x0=self(->x19); method=(x1,x2), url=(x3,x4),
+		// body=(x5,x6) — only the ptr halves are consumed below, plus
+		// body.len (stashed at #200) for Content-Length/send.
 		// macOS arm64 passes variadic args on the caller stack at [sp+0..], so
 		// [sp+0..47] is reserved scratch for snprintf variadic args and the
 		// addrinfo hints live above it. Stack frame (2048 bytes):
@@ -146,8 +151,9 @@ pub struct Http {
 		//   #208 host buffer (256)   #464 request buffer (1584)
 		sub sp, sp, #2048
 		str x1, [sp, #128]
-		str x2, [sp, #136]
-		str x3, [sp, #144]
+		str x3, [sp, #136]
+		str x5, [sp, #144]
+		str x6, [sp, #200]           // body len
 		mov x0, #80
 		str x0, [sp, #112]
 		adr x0, .Lhttp_slash
@@ -297,10 +303,9 @@ pub struct Http {
 		cmp w0, #0x50
 		b.ne .Lhttp_getsend
 
-		// POST: blen = strlen(body); append Content-Length; send headers; send body
-		ldr x0, [sp, #144]
-		bl _strlen
-		str x0, [sp, #160]
+		// POST: blen = body.len (fat half); append Content-Length; send both
+		ldr x9, [sp, #200]
+		str x9, [sp, #160]
 		// snprintf(req+off, 1584-off, reqpost, blen) — blen on stack at [sp+0]
 		ldr x9, [sp, #160]
 		str x9, [sp, #0]
@@ -321,11 +326,9 @@ pub struct Http {
 		ldr x2, [sp, #176]
 		mov x3, xzr
 		bl _send
-		ldr x0, [sp, #144]
-		bl _strlen
-		mov x2, x0
 		ldr w0, [sp, #104]
 		ldr x1, [sp, #144]
+		ldr x2, [sp, #200]
 		mov x3, xzr
 		bl _send
 		b .Lhttp_recv
@@ -400,14 +403,21 @@ pub struct Http {
 		bl _atoi
 		sxtw x0, w0
 		str x0, [x19, #8]
-		// body_start = strstr(buf, "\r\n\r\n")
+		// body_start = strstr(buf, "\r\n\r\n"); fat returns carry lens.
 		ldr x0, [sp, #160]
 		adr x1, .Lhttp_hdrsep
 		bl _strstr
 		cbz x0, .Lhttp_retbuf
-		// result = strdup(body_start + 4); free(buf); return result
+		// result = strdup(body_start + 4); rlen = len - (body_start+4-buf)
+		add x9, x0, #4
+		ldr x10, [sp, #160]
+		sub x9, x9, x10
+		ldr x10, [sp, #96]
+		sub x9, x10, x9              // rlen
+		str x9, [sp, #168]
 		add x0, x0, #4
 		bl _strdup
+		ldr x1, [sp, #168]
 		str x0, [sp, #112]
 		ldr x0, [sp, #160]
 		bl _free
@@ -416,12 +426,14 @@ pub struct Http {
 		b .return_Http_exchange
 		.Lhttp_retbuf:
 		ldr x0, [sp, #160]
+		ldr x1, [sp, #96]
 		add sp, sp, #2048
 		b .return_Http_exchange
 		.Lhttp_fail:
 		str xzr, [x19, #8]
 		adr x0, .Lhttp_empty
 		bl _strdup
+		mov x1, #0
 		add sp, sp, #2048
 		b .return_Http_exchange
 

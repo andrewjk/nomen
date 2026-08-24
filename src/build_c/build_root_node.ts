@@ -139,15 +139,20 @@ void **_get_trait_func(void **obj, int trait_index, int func_index)
 			: status.interpolate_string_counts;
 	for (let length of interpolate_counts) {
 		let range = Array.from({ length }, (_, i) => i);
-		let declaration = `char *_string_interpolate_${length}(char *pattern, ${range.map((n) => `char *arg${n + 1}`).join(", ")})`;
+		// Fat-string ABI: the pattern and every rendered argument are
+		// nomen_string values (the checker's interpolation rewrite routes
+		// each `\{expr}` through `<T>.to_string`, which now returns a fat
+		// string). snprintf only needs the NUL-terminated .ptr halves; the
+		// result's length is snprintf's own return — no strlen anywhere.
+		let declaration = `nomen_string _string_interpolate_${length}(nomen_string pattern, ${range.map((n) => `nomen_string arg${n + 1}`).join(", ")})`;
 		status.headers += `${declaration};\n`;
 		if (status.emit_mode !== "user") {
 			status.code += `${declaration}
 {
-    int length = snprintf(NULL, 0, pattern, ${range.map((n) => `arg${n + 1}`).join(", ")});
+    int length = snprintf(NULL, 0, pattern.ptr, ${range.map((n) => `arg${n + 1}.ptr`).join(", ")});
     char *str = malloc(length + 1);
-    snprintf(str, length + 1, pattern, ${range.map((n) => `arg${n + 1}`).join(", ")});
-    return str;
+    snprintf(str, length + 1, pattern.ptr, ${range.map((n) => `arg${n + 1}.ptr`).join(", ")});
+    return (nomen_string){ str, (long)length };
 }
 `;
 		}

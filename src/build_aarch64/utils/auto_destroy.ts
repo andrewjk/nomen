@@ -14,7 +14,12 @@ import aarch64_size from "./aarch64_size.ts";
 import { emit_free } from "./audit.ts";
 import { allocate_stack_space } from "./stack_var.ts";
 import { emit_var_address, emit_var_load } from "./stack_var.ts";
-import { get_field_offset, get_struct_size, get_type_size } from "./struct_layout.ts";
+import {
+	get_field_offset,
+	get_field_offset_of_fields,
+	get_struct_size,
+	get_type_size,
+} from "./struct_layout.ts";
 
 /**
  * Whether a declaration's initializer is a non-`mov` FIELD ACCESS — a shallow
@@ -297,8 +302,8 @@ function emit_field_destroys_from_slot(
 	struct_type: StructNode,
 	base_offset: number,
 ) {
-	let offset = 8;
 	for (const field of struct_type.fields) {
+		const offset = get_field_offset_of_fields(struct_type.fields, field.name, status);
 		const field_struct =
 			is_struct_type(resolve_struct_name(field.type.name, field.type.type_args, status), status) ||
 			is_struct_type(field.type.name, status);
@@ -319,9 +324,7 @@ function emit_field_destroys_from_slot(
 				status.code += `add x0, x0, #${offset}\n`;
 				status.code += `bl ${resolve_struct_name(field_struct.name, field.type.type_args, status)}_destroy\n`;
 			}
-			const field_size = get_type_size(field.type, status);
 			emit_nested_field_destroys_from_slot(status, field_struct, base_offset + offset);
-			offset += field_size;
 		} else if (field.type.name === "string" && !field.type.is_array && !field.type.is_ref) {
 			// A `string` field: free the pointer. Value-struct anchor slots hold
 			// strdup'd strings (the Buffer store copied them); class anchor slots
@@ -330,9 +333,6 @@ function emit_field_destroys_from_slot(
 			status.code += `ldr x0, [x29, #${base_offset}]\n`;
 			status.code += `ldr x0, [x0, #${offset}]\n`;
 			emit_free(status);
-			offset += aarch64_size("string");
-		} else {
-			offset += aarch64_size(field.type.name);
 		}
 	}
 }
@@ -342,8 +342,8 @@ function emit_nested_field_destroys_from_slot(
 	struct_type: StructNode,
 	base_offset: number,
 ) {
-	let offset = 8;
 	for (const field of struct_type.fields) {
+		const offset = get_field_offset_of_fields(struct_type.fields, field.name, status);
 		const field_struct =
 			is_struct_type(resolve_struct_name(field.type.name, field.type.type_args, status), status) ||
 			is_struct_type(field.type.name, status);
@@ -353,11 +353,7 @@ function emit_nested_field_destroys_from_slot(
 				status.code += `add x0, x0, #${offset}\n`;
 				status.code += `bl ${resolve_struct_name(field_struct.name, field.type.type_args, status)}_destroy\n`;
 			}
-			const field_size = get_type_size(field.type, status);
 			emit_nested_field_destroys_from_slot(status, field_struct, base_offset + offset);
-			offset += field_size;
-		} else {
-			offset += aarch64_size(field.type.name);
 		}
 	}
 }
@@ -534,8 +530,8 @@ export function emit_field_destroys(
 	is_class_parent?: boolean,
 	free_strings = true,
 ) {
-	let offset = 8;
 	for (const field of struct_type.fields) {
+		const offset = get_field_offset_of_fields(struct_type.fields, field.name, status);
 		const resolved = resolve_struct_name(field.type.name, field.type.type_args, status);
 		const field_struct =
 			is_struct_type(resolved, status) || is_struct_type(field.type.name, status);
@@ -585,8 +581,6 @@ export function emit_field_destroys(
 					);
 				}
 			}
-			const field_size = get_type_size(field.type, status);
-			offset += field_size;
 		} else if (
 			free_strings &&
 			field.type.name === "string" &&
@@ -606,7 +600,6 @@ export function emit_field_destroys(
 			}
 			status.code += `ldr x0, [x0, #${actual_offset}]\n`;
 			emit_free(status);
-			offset += aarch64_size("string");
 		} else if (field.type.is_array) {
 			const elem_struct = is_struct_type(field.type.name, status);
 			if (elem_struct) {
@@ -623,11 +616,6 @@ export function emit_field_destroys(
 					);
 				}
 			}
-			const elem_size = aarch64_size(field.type.name);
-			const arr_len = field.type.length ? parseInt((field.type.length as any).value || "0") : 0;
-			offset += elem_size * arr_len;
-		} else {
-			offset += aarch64_size(field.type.name);
 		}
 	}
 }
@@ -639,8 +627,8 @@ function emit_nested_field_destroys(
 	base_offset: number,
 	is_class_parent?: boolean,
 ) {
-	let offset = 8;
 	for (const field of struct_type.fields) {
+		const offset = get_field_offset_of_fields(struct_type.fields, field.name, status);
 		const field_struct =
 			is_struct_type(resolve_struct_name(field.type.name, field.type.type_args, status), status) ||
 			is_struct_type(field.type.name, status);
@@ -650,7 +638,6 @@ function emit_nested_field_destroys(
 				status.code += `add x0, x0, #${base_offset + offset}\n`;
 				status.code += `bl ${resolve_struct_name(field_struct.name, field.type.type_args, status)}_destroy\n`;
 			}
-			const field_size = get_type_size(field.type, status);
 			emit_nested_field_destroys(
 				status,
 				field_struct,
@@ -658,9 +645,6 @@ function emit_nested_field_destroys(
 				base_offset + offset,
 				is_class_parent,
 			);
-			offset += field_size;
-		} else {
-			offset += aarch64_size(field.type.name);
 		}
 	}
 }
@@ -746,7 +730,7 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 				const len = status.heap_string_arrays.get(decl.name)!;
 				for (let j = 0; j < len; j++) {
 					emit_var_address(status, "x0", decl.name);
-					status.code += `ldr x0, [x0, #${j * 8}]\n`;
+					status.code += `ldr x0, [x0, #${j * 16}]\n`;
 					emit_free(status);
 				}
 				continue;
@@ -815,7 +799,7 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 			const len = status.heap_string_arrays.get(decl.name)!;
 			for (let j = 0; j < len; j++) {
 				emit_var_address(status, "x0", decl.name);
-				status.code += `ldr x0, [x0, #${j * 8}]\n`;
+				status.code += `ldr x0, [x0, #${j * 16}]\n`;
 				emit_free(status);
 			}
 			continue;
@@ -848,6 +832,30 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 		// follows). Free the buffer. Class/string element arrays are handled
 		// by heap_class_arrays/heap_string_arrays above (which `continue`).
 		if (status.heap_array_vars?.has(decl.name)) {
+			if (status.heap_owned_string_arrays?.has(decl.name)) {
+				// Owned fat-string elements: free every slot's ptr half
+				// (16-byte stride, data at buffer+8), then the buffer.
+				status.code += `str x19, [sp, #-16]!\n`;
+				status.code += `str x20, [sp, #-16]!\n`;
+				emit_var_load(status, "x0", decl.name, 8);
+				status.code += `mov x19, x0\n`;
+				status.code += `ldr x20, [x19]\n`;
+				status.code += `add x19, x19, #8\n`;
+				const loop = `.Lhosa_${decl.name}`;
+				status.code += `${loop}:\n`;
+				status.code += `cbz x20, .Lhosa_done_${decl.name}\n`;
+				status.code += `ldr x0, [x19]\n`;
+				emit_free(status);
+				status.code += `add x19, x19, #16\n`;
+				status.code += `sub x20, x20, #1\n`;
+				status.code += `b ${loop}\n`;
+				status.code += `.Lhosa_done_${decl.name}:\n`;
+				emit_var_load(status, "x0", decl.name, 8);
+				emit_free(status);
+				status.code += `ldr x20, [sp], #16\n`;
+				status.code += `ldr x19, [sp], #16\n`;
+				continue;
+			}
 			emit_var_load(status, "x0", decl.name, 8);
 			emit_free(status);
 			continue;

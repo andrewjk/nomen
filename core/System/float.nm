@@ -32,6 +32,7 @@ pub struct float: Stringable {
 		adr x2, .Lfmt_float_f
 		fmov d0, x19
 		bl _snprintf
+		mov x1, x0
 		ldr x0, [sp, #72]
 		add sp, sp, #128
 		b .Lend_float_to_string

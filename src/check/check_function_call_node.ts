@@ -1265,6 +1265,27 @@ function rename_local_labels(node: BaseNode, prefix: string) {
 	}
 }
 
+function raw_type_alignment(name: string): number {
+	switch (name) {
+		case "bool":
+		case "int8":
+		case "uint8":
+		case "char":
+			return 1;
+		case "int16":
+		case "uint16":
+			return 2;
+		case "int32":
+		case "uint32":
+			return 4;
+	}
+	return 8;
+}
+
+function raw_align_to(offset: number, alignment: number): number {
+	return Math.ceil(offset / alignment) * alignment;
+}
+
 function raw_type_size(name: string, structs: StructNode[]): number {
 	switch (name) {
 		case "bool":
@@ -1279,28 +1300,46 @@ function raw_type_size(name: string, structs: StructNode[]): number {
 		case "uint32":
 			return 4;
 	}
-	// User-defined value struct: VT_SIZE prefix (8) + sum of field sizes.
-	// Classes are always 8 (a heap pointer); simple types are 8 (word-aligned).
+	// User-defined value struct: VT_SIZE prefix (8), each field aligned to
+	// its natural width (a nullable struct field carries an extra 8-byte
+	// `_has` flag), tail-padded to 8 — byte-for-byte the aarch64 layout in
+	// build_aarch64/utils/struct_layout.ts (get_struct_size). A mismatch
+	// desynchronizes slab strides (mov x3, #T_SIZE) from the real element
+	// layout, so every element past the first reads misaligned garbage.
+	// Classes are always 8 (a heap pointer); `string` is the fat 16-byte
+	// { char* ptr; long len; } value (aarch64 slot layout agrees — see
+	// aarch64_size.ts); other simple types are 8 (word-aligned).
 	const struct = structs.find((s) => s.name === name);
+	if (name === "string") return 16;
 	if (!struct || struct.is_simple_type || struct.is_class) return 8;
 	let size = 8;
 	for (const field of struct.fields) {
+		size = raw_align_to(size, raw_type_alignment(field.type.name));
 		size += raw_type_size(field.type.name, structs);
+		if (
+			field.type.is_nullable &&
+			structs.find((s) => s.name === field.type.name && !s.is_simple_type && !s.is_class)
+		) {
+			size += 8;
+		}
 	}
-	return size;
+	return raw_align_to(size, 8);
 }
 
 /**
  * Map an Nomen type name to its C representation for substitution inside raw C
  * blocks. This MUST agree with build_c/utils/c_type.ts so that, e.g., `T*`
  * expands to `long*` for an `int` element (Nomen `int` is 64-bit, i.e. C
- * `long`, not C `int`). `string` is not a C type, so it becomes `char*`
- * (making `T*` become `char**`).
+ * `long`, not C `int`). `string` is the fat `nomen_string` value — a raw
+ * T-generic body (Buffer_<T>/Array_<T> slots) then gets 16-byte struct slots
+ * and `sizeof(T)` slab strides. Raw bodies written against the thin char* ABI
+ * (String.nm, *_to_string, File/Console FFI) never reference `T` — they are
+ * marshalled via _raw_ adapters instead (see raw_string_abi.ts).
  */
 function raw_c_type_name(name: string): string {
 	switch (name) {
 		case "string":
-			return "char*";
+			return "nomen_string";
 		case "bool":
 			return "unsigned char";
 		case "int":

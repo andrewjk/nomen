@@ -1,11 +1,9 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
-import scan_string_length_hoists from "../build_common/scan_string_length_hoists.ts";
 import WhileLoopNode from "../nodes/WhileLoopNode.ts";
 import build_block_node from "./build_block_node.ts";
 import build_node from "./build_node.ts";
 import { enter_scope_frame, exit_scope_frame } from "./utils/auto_destroy.ts";
 import collect_var_refs, { collect_declared_names } from "./utils/collect_var_refs.ts";
-import { allocate_stack_space } from "./utils/stack_var.ts";
 
 const CALLEE_SAVED_REGS = ["x23", "x24", "x25", "x26", "x27", "x28"];
 const FLOAT_CALLEE_SAVED = ["d8", "d9", "d10", "d11", "d12", "d13", "d14", "d15"];
@@ -158,29 +156,8 @@ export default function build_while_loop_node(node: WhileLoopNode, status: Build
 		}
 	}
 
-	// Hoist `strlen` of loop-invariant strings into stack slots before the
-	// loop start label so the condition (and body references) load the cached
-	// length instead of re-running an O(len) strlen on every iteration.
-	const old_length_slots = status.string_length_slots;
-	const hoists = scan_string_length_hoists(node.condition, node.statements, node.update, status);
-	if (hoists.size) {
-		if (!status.string_length_slots) status.string_length_slots = new Map();
-		for (const [name, target] of hoists) {
-			if (status.string_length_slots.has(name)) continue;
-			// A hidden-length string param already carries its length in the
-			// companion slot — `.length` reads resolve to it for free, no
-			// hoisted strlen needed (see stamp_hidden_string_lens).
-			if (status.hidden_len_params?.has(name)) continue;
-			const offset = allocate_stack_space(status, 8);
-			status.string_length_slots.set(name, offset);
-			build_node(target, status);
-			if (!status.code.endsWith("\n")) {
-				status.code += "\n";
-			}
-			status.code += `bl _strlen\n`;
-			status.code += `str x0, [x29, #${offset}]\n`;
-		}
-	}
+	// (String `.length` is a load of the fat string's len half — no
+	// strlen hoisting is needed anymore.)
 
 	status.code += `${start_label}:\n`;
 
@@ -220,7 +197,6 @@ export default function build_while_loop_node(node: WhileLoopNode, status: Build
 	}
 
 	status.buffer_data_cache = saved_buffer_cache;
-	status.string_length_slots = old_length_slots;
 
 	status.loop_labels.pop();
 	exit_scope_frame(status, old_scoped_declarations);

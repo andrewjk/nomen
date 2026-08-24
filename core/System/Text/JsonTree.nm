@@ -40,22 +40,25 @@ pub struct JsonTree {
 		```
 		#arch: c
 		JsonNode *nodes = (JsonNode*)(unsigned long long)self->nodes.data;
-		free(nodes[idx].text);
-		nodes[idx].text = 0;
+		free(nodes[idx].text.ptr);
+		nodes[idx].text.ptr = 0;
+		nodes[idx].text.len = 0;
 		```
 		```
 		#arch: aarch64
 		// x19 = self. count is at self+32 and already equals idx+1 here, so
-		// idx = count - 1. nodes.data at self+16, JsonNode size 48, text at +16.
+		// idx = count - 1. nodes.data at self+16, JsonNode size 56 (fat text),
+		// text at +16 (ptr) / +24 (len).
 		ldr x0, [x19, #16]
 		ldr x1, [x19, #32]
 		sub x1, x1, #1
-		mov x3, #48
+		mov x3, #56
 		madd x1, x1, x3, xzr
 		add x0, x0, x1
 		add x0, x0, #16
 		ldr x1, [x0]
 		str xzr, [x0]
+		str xzr, [x0, #8]
 		cbz x1, .Lalloc_node_text_skip
 		mov x0, x1
 		bl _free
@@ -70,13 +73,13 @@ pub struct JsonTree {
 		```
 		#arch: c
 		JsonNode *nodes = (JsonNode*)(unsigned long long)self->nodes.data;
-		if (nodes[idx].text) { free(nodes[idx].text); nodes[idx].text = 0; }
+		if (nodes[idx].text.ptr) { free(nodes[idx].text.ptr); nodes[idx].text.ptr = 0; nodes[idx].text.len = 0; }
 		```
 		```
 		#arch: aarch64
-		// x19 = self, x1 = idx. Compute &nodes[idx].text.
+		// x19 = self, x1 = idx. Compute &nodes[idx].text (JsonNode size 56).
 		ldr x0, [x19, #16]
-		mov x3, #48
+		mov x3, #56
 		madd x1, x1, x3, xzr
 		add x0, x0, x1
 		add x0, x0, #16
@@ -87,6 +90,7 @@ pub struct JsonTree {
 		bl _free
 		ldr x0, [sp], #16
 		str xzr, [x0]
+		str xzr, [x0, #8]
 		.Ljsontree_free_text_skip:
 		```
 	}
@@ -113,33 +117,38 @@ pub struct JsonTree {
 	}
 
 	// strdup directly into the slab — see file header for why this can't
-	// go through load_T/store_T.
+	// go through load_T/store_T. (Under the fat-string ABI the C body is
+	// emitted behind the _raw_ adapter, so `text` arrives as a thin char*;
+	// aarch64 receives the pair x2 = ptr, x3 = len.)
 	func set_text = (ref self, int idx, string text) {
 		```
 		#arch: c
 		JsonNode *nodes = (JsonNode*)(unsigned long long)self->nodes.data;
-		nodes[idx].text = strdup(text);
+		nodes[idx].text.ptr = strdup(text);
+		nodes[idx].text.len = (long)strlen(text);
 		```
 		```
 		#arch: aarch64
-		// x19 = self, x1 = idx, x2 = text
+		// x19 = self, x1 = idx, x2 = text.ptr, x3 = text.len
 		// nodes.data is at self+16 (JsonTree.vt[0] + Buffer.vt[8])
-		// text field is at offset 16 in JsonNode (vt[0] + kind[8])
-		// sizeof(JsonNode) = 48 (vt + 5 fields * 8)
+		// text field is at offset 16 in JsonNode (vt[0] + kind[8]); the fat
+		// field is ptr@+16, len@+24; sizeof(JsonNode) = 56.
 		sub sp, sp, #32
 		str x1, [sp, #0]
-		str x2, [sp, #8]
+		str x3, [sp, #8]
 		mov x0, x2
 		bl _strdup
 		str x0, [sp, #16]
 		ldr x0, [x19, #16]
 		ldr x1, [sp, #0]
-		mov x3, #48
+		mov x3, #56
 		madd x1, x1, x3, xzr
 		add x0, x0, x1
 		add x0, x0, #16
 		ldr x1, [sp, #16]
 		str x1, [x0]
+		ldr x1, [sp, #8]
+		str x1, [x0, #8]
 		add sp, sp, #32
 		```
 	}

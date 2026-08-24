@@ -1,10 +1,12 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
+import string_literal_length from "../build_common/string_literal_length.ts";
 import { is_int_literal, to_decimal_string } from "../int_literal.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_node from "./build_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { find_enum_for_case } from "./utils/enum_case.ts";
 import { allocate_stack_space } from "./utils/stack_var.ts";
+import { emit_string_pair_load } from "./utils/string_pair.ts";
 import { get_enum_size } from "./utils/struct_layout.ts";
 
 let string_counter = 0;
@@ -130,6 +132,18 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 		paramReg = status.function_param_regs?.get(value);
 	}
 
+	// The `string` struct's by-value self rides as the (x19, x20) pair
+	// (ptr, len) — see build_struct_node's string-self prologue.
+	if (
+		paramReg === "x19" &&
+		(original_value === "self" || value === "_self") &&
+		status.current_struct?.name === "string"
+	) {
+		status.code += `mov x0, x19\n`;
+		status.code += `mov x1, x20\n`;
+		return;
+	}
+
 	if (paramReg) {
 		if (original_value === "self" || value === "_self") {
 			// self is always the struct address, don't dereference
@@ -182,7 +196,10 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 	if (value.startsWith('"')) {
 		const label = `_str_${string_counter++}`;
 		status.strings!.set(label, value);
-		status.code += `adr x0, ${label}`;
+		// Fat string: the literal is the (ptr, len) pair — the length is the
+		// unescaped byte count, computed at compile time (no strlen).
+		status.code += `adr x0, ${label}\n`;
+		status.code += `mov x1, #${string_literal_length(value)}\n`;
 		return;
 	}
 
@@ -247,6 +264,9 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 			} else {
 				status.code += `add x0, x29, #${offset}`;
 			}
+		} else if (type_name === "string" && !is_ref) {
+			// Fat string slot: load the (ptr, len) pair.
+			emit_string_pair_load(status, value);
 		} else if (is_ref && !is_class) {
 			// The slot holds an 8-byte pointer to the caller's storage. Load
 			// the pointer, then dereference with the pointed-to value's width
@@ -286,7 +306,11 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 		if (is_array) {
 			status.code += `adr x0, ${value}`;
 		} else if (type_name === "string" && status.string_literal_names?.has(value)) {
-			status.code += `adr x0, ${value}`;
+			// A named folded-const string literal: the label's byte length was
+			// recorded when the data was emitted (string_literal_lengths).
+			const len = status.string_literal_lengths?.get(value) ?? 0;
+			status.code += `adr x0, ${value}\n`;
+			status.code += `mov x1, #${len}\n`;
 		} else {
 			const size =
 				type_name === "uint8" ||

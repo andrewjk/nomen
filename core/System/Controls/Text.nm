@@ -7,7 +7,7 @@ pub class Text: Control {
 
 	pub func #init = (self, Window window) {
 		```
-		#arch: c, aarch64_use_c
+		#arch: c
 		#platform: macos
 		id label = ((id(*)(id, SEL, CGRect))objc_msgSend)(
 			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSTextField"), sel_registerName("alloc")),
@@ -28,7 +28,49 @@ pub class Text: Control {
 		self->handle = (uint64_t)label;
 		```
 		```
-		#arch: c, aarch64_use_c
+		#arch: aarch64_use_c
+		#platform: macos
+		id label = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSTextField"), sel_registerName("alloc")),
+			sel_registerName("initWithFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)(10, 10, 200, 30));
+		((void(*)(id, SEL, BOOL))objc_msgSend)(
+			label, sel_registerName("setEditable:"), 0);
+		((void(*)(id, SEL, BOOL))objc_msgSend)(
+			label, sel_registerName("setSelectable:"), 0);
+		((void(*)(id, SEL, BOOL))objc_msgSend)(
+			label, sel_registerName("setBordered:"), 0);
+		((void(*)(id, SEL, BOOL))objc_msgSend)(
+			label, sel_registerName("setDrawsBackground:"), 0);
+		id contentView = ((id(*)(id, SEL))objc_msgSend)(
+			(id)window->handle, sel_registerName("contentView"));
+		((void(*)(id, SEL, id))objc_msgSend)(
+			contentView, sel_registerName("addSubview:"), label);
+		self->handle = (uint64_t)label;
+		```
+		```
+		#arch: c
+		#platform: ios
+		id label = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)(objc_getClass("UILabel"), sel_registerName("alloc")),
+			sel_registerName("initWithFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)(10, 10, 200, 30));
+		((void(*)(id, SEL, id))objc_msgSend)(
+			label, sel_registerName("setText:"),
+			((id(*)(id, SEL, const char*))objc_msgSend)(
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), ""));
+		((void(*)(id, SEL, BOOL))objc_msgSend)(
+			label, sel_registerName("setUserInteractionEnabled:"), 0);
+		id parentView = ((id(*)(id, SEL))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)(
+				(id)window->handle, sel_registerName("rootViewController")),
+			sel_registerName("view"));
+		((void(*)(id, SEL, id))objc_msgSend)(
+			parentView, sel_registerName("addSubview:"), label);
+		self->handle = (uint64_t)label;
+		```
+		```
+		#arch: aarch64_use_c
 		#platform: ios
 		id label = ((id(*)(id, SEL, CGRect))objc_msgSend)(
 			((id(*)(id, SEL))objc_msgSend)(objc_getClass("UILabel"), sel_registerName("alloc")),
@@ -53,7 +95,7 @@ pub class Text: Control {
 	pub func set_text = (ref self, string text) {
 		self.text = text
 		```
-		#arch: c, aarch64_use_c
+		#arch: c
 		#platform: macos
 		((void(*)(id, SEL, id))objc_msgSend)(
 			(id)self->handle, sel_registerName("setStringValue:"),
@@ -61,12 +103,28 @@ pub class Text: Control {
 				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), text));
 		```
 		```
-		#arch: c, aarch64_use_c
+		#arch: aarch64_use_c
+		#platform: macos
+		((void(*)(id, SEL, id))objc_msgSend)(
+			(id)self->handle, sel_registerName("setStringValue:"),
+			((id(*)(id, SEL, const char*))objc_msgSend)(
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), text.ptr));
+		```
+		```
+		#arch: c
 		#platform: ios
 		((void(*)(id, SEL, id))objc_msgSend)(
 			(id)self->handle, sel_registerName("setText:"),
 			((id(*)(id, SEL, const char*))objc_msgSend)(
 				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), text));
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		((void(*)(id, SEL, id))objc_msgSend)(
+			(id)self->handle, sel_registerName("setText:"),
+			((id(*)(id, SEL, const char*))objc_msgSend)(
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), text.ptr));
 		```
 	}
 
@@ -91,14 +149,28 @@ pub class Text: Control {
 
 	pub func set_frame = (ref self, int x, int y, int width, int height) {
 		```
-		#arch: c, aarch64_use_c
+		#arch: c
 		#platform: macos
 		((void(*)(id, SEL, CGRect))objc_msgSend)(
 			(id)self->handle, sel_registerName("setFrame:"),
 			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
 		```
 		```
-		#arch: c, aarch64_use_c
+		#arch: aarch64_use_c
+		#platform: macos
+		((void(*)(id, SEL, CGRect))objc_msgSend)(
+			(id)self->handle, sel_registerName("setFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+		```
+		```
+		#arch: c
+		#platform: ios
+		((void(*)(id, SEL, CGRect))objc_msgSend)(
+			(id)self->handle, sel_registerName("setFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+		```
+		```
+		#arch: aarch64_use_c
 		#platform: ios
 		((void(*)(id, SEL, CGRect))objc_msgSend)(
 			(id)self->handle, sel_registerName("setFrame:"),
@@ -108,7 +180,7 @@ pub class Text: Control {
 
 	func #destroy = () {
 		```
-		#arch: c, aarch64_use_c
+		#arch: c
 		#platform: macos
 		if (self->handle) {
 			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
@@ -117,7 +189,25 @@ pub class Text: Control {
 		}
 		```
 		```
-		#arch: c, aarch64_use_c
+		#arch: aarch64_use_c
+		#platform: macos
+		if (self->handle) {
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+			self->handle = 0;
+		}
+		```
+		```
+		#arch: c
+		#platform: ios
+		if (self->handle) {
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+			self->handle = 0;
+		}
+		```
+		```
+		#arch: aarch64_use_c
 		#platform: ios
 		if (self->handle) {
 			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));

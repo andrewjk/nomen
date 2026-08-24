@@ -96,13 +96,24 @@ func length_val = (LayoutLength len, out int) {
 func is_visible = (uint64 handle, out bool) {
 	if handle == 0 { return true }
 	```
-	#arch: c, aarch64_use_c
+	#arch: c
 	#platform: macos
 	BOOL hidden = ((BOOL(*)(id, SEL))objc_msgSend)((id)handle, sel_registerName("isHidden"));
 	return !hidden;
 	```
 	```
-	#arch: c, aarch64_use_c
+	#arch: aarch64_use_c
+	#platform: macos
+	BOOL hidden = ((BOOL(*)(id, SEL))objc_msgSend)((id)handle, sel_registerName("isHidden"));
+	return !hidden;
+	```
+	```
+	#arch: c
+	#platform: ios
+	return true;
+	```
+	```
+	#arch: aarch64_use_c
 	#platform: ios
 	return true;
 	```
@@ -110,7 +121,7 @@ func is_visible = (uint64 handle, out bool) {
 
 func apply_frame = (uint64 handle, int x, int y, int w, int h, int content_w, int content_h) {
 	```
-	#arch: c, aarch64_use_c
+	#arch: c
 	#platform: macos
 	// AppKit runs its own blocking tracking loop during a live window resize,
 	// so the manual event loop can't re-layout mid-drag. Give the control an
@@ -131,7 +142,36 @@ func apply_frame = (uint64 handle, int x, int y, int w, int h, int content_w, in
 			(double)x, (double)(content_h - y - h), (double)w, (double)h));
 	```
 	```
-	#arch: c, aarch64_use_c
+	#arch: aarch64_use_c
+	#platform: macos
+	// AppKit runs its own blocking tracking loop during a live window resize,
+	// so the manual event loop can't re-layout mid-drag. Give the control an
+	// autoresizing mask so AppKit repositions it live: pin to the nearest
+	// vertical edge (top=NSViewMinYMargin 8 / bottom=NSViewMaxYMargin 32) to
+	// respect the top-left-origin layout instead of AppKit's default
+	// bottom-left pin, and let wide controls grow with the content width
+	// (NSViewWidthSizable 2). Never set NSViewHeightSizable (16): control
+	// heights come from the layout pass, not the window. AppKit's result
+	// matches what layout() computes, so the post-drag relayout only fixes up
+	// cells AppKit can't (column reflow for sub-full-width children).
+	unsigned long mask = (y * 2 < content_h) ? 8UL : 32UL;
+	if (w * 10 >= content_w * 8) mask |= 2UL;
+	((void(*)(id, SEL, unsigned long))objc_msgSend)((id)handle, sel_registerName("setAutoresizingMask:"), mask);
+	((void(*)(id, SEL, CGRect))objc_msgSend)(
+		(id)handle, sel_registerName("setFrame:"),
+		((CGRect(*)(double, double, double, double))CGRectMake)(
+			(double)x, (double)(content_h - y - h), (double)w, (double)h));
+	```
+	```
+	#arch: c
+	#platform: ios
+	((void(*)(id, SEL, CGRect))objc_msgSend)(
+		(id)handle, sel_registerName("setFrame:"),
+		((CGRect(*)(double, double, double, double))CGRectMake)(
+			(double)x, (double)y, (double)w, (double)h));
+	```
+	```
+	#arch: aarch64_use_c
 	#platform: ios
 	((void(*)(id, SEL, CGRect))objc_msgSend)(
 		(id)handle, sel_registerName("setFrame:"),
@@ -153,7 +193,7 @@ func apply_frame = (uint64 handle, int x, int y, int w, int h, int content_w, in
 pub func native_intrinsic = (uint64 handle, out [int, int]) {
 	if handle == 0 { return [0, 0] }
 	```
-	#arch: c, aarch64_use_c
+	#arch: c
 	#platform: macos
 	CGSize sz = ((CGSize(*)(id, SEL))objc_msgSend)((id)handle, sel_registerName("intrinsicContentSize"));
 	int w = (sz.width < 0 || sz.width > 100000) ? 0 : (int)sz.width;
@@ -164,7 +204,29 @@ pub func native_intrinsic = (uint64 handle, out [int, int]) {
 	return r;
 	```
 	```
-	#arch: c, aarch64_use_c
+	#arch: aarch64_use_c
+	#platform: macos
+	CGSize sz = ((CGSize(*)(id, SEL))objc_msgSend)((id)handle, sel_registerName("intrinsicContentSize"));
+	int w = (sz.width < 0 || sz.width > 100000) ? 0 : (int)sz.width;
+	int h = (sz.height < 0 || sz.height > 100000) ? 0 : (int)sz.height;
+	struct _Tuple_int_int r;
+	r._0 = w;
+	r._1 = h;
+	return r;
+	```
+	```
+	#arch: c
+	#platform: ios
+	CGSize sz = ((CGSize(*)(id, SEL))objc_msgSend)((id)handle, sel_registerName("intrinsicContentSize"));
+	int w = (sz.width < 0 || sz.width > 100000) ? 0 : (int)sz.width;
+	int h = (sz.height < 0 || sz.height > 100000) ? 0 : (int)sz.height;
+	struct _Tuple_int_int r;
+	r._0 = w;
+	r._1 = h;
+	return r;
+	```
+	```
+	#arch: aarch64_use_c
 	#platform: ios
 	CGSize sz = ((CGSize(*)(id, SEL))objc_msgSend)((id)handle, sel_registerName("intrinsicContentSize"));
 	int w = (sz.width < 0 || sz.width > 100000) ? 0 : (int)sz.width;
@@ -1384,7 +1446,7 @@ pub class Container : Control {
 	// both backends, methods are not.
 	pub func set_resize_callback = (ref self, Window win) {
 		```
-		#arch: c, aarch64_use_c
+		#arch: c
 		#platform: macos
 		#scope: file
 		struct Container;
@@ -1410,7 +1472,51 @@ pub class Container : Control {
 		}
 		```
 		```
-		#arch: c, aarch64_use_c
+		#arch: aarch64_use_c
+		#platform: macos
+		#scope: file
+		struct Container;
+		struct Window;
+		// nomen_layout_thunk is a free function (defined in Nomen below) that
+		// forwards to Container.layout — exported for C linkage on both
+		// backends, unlike the layout method itself. It takes the Container by
+		// `ref` (mutable reference): as a `class`, `ref Container` lowers to
+		// `struct Container **` (reference to the instance pointer), so the
+		// callback passes the address of the stored instance pointer.
+		extern void nomen_layout_thunk(struct Container**, struct Window*);
+		static void *g_resize_grid = 0;
+		static void *g_resize_win = 0;
+		void nomen_set_resize_target(void *grid, void *win) {
+			g_resize_grid = grid;
+			g_resize_win = win;
+		}
+		void nomen_window_did_resize(id self, SEL cmd, id notification) {
+			(void)self; (void)cmd; (void)notification;
+			if (g_resize_grid && g_resize_win) {
+				nomen_layout_thunk((struct Container**)&g_resize_grid, (struct Window*)g_resize_win);
+			}
+		}
+		```
+		```
+		#arch: c
+		#platform: macos
+		nomen_set_resize_target(self, win);
+		Class Dc = objc_getClass("NomenResizeDelegate");
+		if (!Dc) {
+			Dc = objc_allocateClassPair(objc_getClass("NSObject"), "NomenResizeDelegate", 0);
+			if (Dc) {
+				class_addMethod(Dc, sel_registerName("windowDidResize:"), (IMP)nomen_window_did_resize, "v@:@");
+				objc_registerClassPair(Dc);
+			}
+		}
+		if (Dc) {
+			id delegate = ((id(*)(id, SEL))objc_msgSend)((id)Dc, sel_registerName("alloc"));
+			delegate = ((id(*)(id, SEL))objc_msgSend)(delegate, sel_registerName("init"));
+			((void(*)(id, SEL, id))objc_msgSend)((id)win->handle, sel_registerName("setDelegate:"), delegate);
+		}
+		```
+		```
+		#arch: aarch64_use_c
 		#platform: macos
 		nomen_set_resize_target(self, win);
 		Class Dc = objc_getClass("NomenResizeDelegate");

@@ -1,3 +1,4 @@
+import string_literal_length from "../build_common/string_literal_length.ts";
 import { is_int_literal } from "../int_literal.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_node from "./build_node.ts";
@@ -66,8 +67,11 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 	// simplifies to `x`, so those callers stay correct.
 	// Escape raw control characters in string literals so they are valid C
 	// (multi-line Nomen strings have actual newlines that C rejects inside "...").
+	// A string literal is a fat nomen_string VALUE: wrap it in a rodata
+	// compound literal { ptr, sizeof-1 } — no allocation, no strlen, and the
+	// NUL inside the C literal terminates the buffer for libc consumers.
 	if (value.startsWith('"')) {
-		value = escape_c_string(value);
+		value = `nomen_str_lit(${escape_c_string(value)}, ${string_literal_length(value)})`;
 	}
 	if (value !== "self" && status.function_ref_params?.has(value) && !status.suppress_dereference) {
 		status.code += `*`;
@@ -83,10 +87,11 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 		value === "self" &&
 		status.function_ref_params?.has("self") &&
 		!status.suppress_dereference &&
-		// A `string` receiver is emitted as `char *self` — the pointer IS
-		// the value, so unlike struct receivers (`struct T *self`) there is
-		// nothing to dereference. Raw #arch string bodies already treat it
-		// that way; this is the Nomen-level expression path.
+		// A `string` receiver is emitted as a thin `char *self` inside raw
+		// #arch bodies (via the _raw_ adapter) — the pointer IS the value.
+		// A Nomen-level (non-raw) string method's self is a by-value
+		// nomen_string param, never in function_ref_params, so this guard
+		// only matters for the raw path.
 		status.current_struct?.name !== "string"
 	) {
 		status.code += `*`;

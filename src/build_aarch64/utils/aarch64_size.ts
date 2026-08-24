@@ -20,10 +20,14 @@ export default function aarch64_size(type: string): number {
 		case "uint":
 		case "int64":
 		case "uint64":
-		case "string":
 		case "float64":
 		case "ufloat64":
 			return 8;
+		case "string":
+			// Fat string: the 16-byte { char* ptr; long len; } value. In
+			// registers it rides as a consecutive (ptr, len) pair — the same
+			// ABI `view T` already uses; in memory it is one 16-byte slot.
+			return 16;
 		default:
 			return 8;
 	}

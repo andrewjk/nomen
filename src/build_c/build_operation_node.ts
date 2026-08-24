@@ -52,7 +52,16 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 	} else if (node.op === "??") {
 		// `nullable ?? fallback`. For a nullable struct, the flag is `<expr>_has`.
 		const left_type = type_from_value_node(node.left_value);
-		if (is_nullable_struct_type(left_type, status)) {
+		if (left_type?.is_nullable && left_type.name === "string") {
+			// Nullable string: null is the in-band {NULL, 0} fat zero — the
+			// null test is `left.ptr != 0`. Evaluate the left once.
+			status.code += `({ nomen_string _nss_${ns_tmp_counter} = `;
+			build_node(node.left_value, status);
+			status.code += `; _nss_${ns_tmp_counter}.ptr ? _nss_${ns_tmp_counter} : `;
+			build_node(node.right_value, status);
+			status.code += `; })`;
+			ns_tmp_counter++;
+		} else if (is_nullable_struct_type(left_type, status)) {
 			// Special case: a nullable struct function call on the LHS must be
 			// materialised ONCE (calling it twice — once for the flag, once
 			// for the value — would duplicate side effects and produce two
@@ -95,11 +104,23 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 	} else if ((node.op === "==" || node.op === "!=") && is_null_comparison(node)) {
 		// `x == null` / `x != null` against a nullable struct lowers to its
 		// companion `_has` flag rather than comparing the struct value to 0.
-		const nullable_side = is_nullable_struct_side(node.left_value, status)
+		const left_is_nullable_string =
+			type_from_value_node(node.left_value)?.is_nullable &&
+			type_from_value_node(node.left_value)?.name === "string";
+		const nullable_side = left_is_nullable_string
 			? node.left_value
-			: node.right_value;
+			: is_nullable_struct_side(node.left_value, status)
+				? node.left_value
+				: node.right_value;
 		const type = type_from_value_node(nullable_side);
-		if (is_nullable_struct_type(type, status)) {
+		// A nullable STRING is null iff its fat ptr half is NULL (the null
+		// value is the in-band {NULL, 0} zero, no `_has` companion).
+		if (type?.is_nullable && type.name === "string") {
+			if (node.op === "==") status.code += `(!(`;
+			else status.code += `((`;
+			build_node(nullable_side, status);
+			status.code += `.ptr != 0))`;
+		} else if (is_nullable_struct_type(type, status)) {
 			// A nullable struct CALL result must be materialised once
 			// (calling twice would duplicate side effects). Wrap in a
 			// statement-expression that exposes the flag.
@@ -201,18 +222,18 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 			const rt = `_rtmp_${id}`;
 			const cres = `_cres_${id}`;
 			status.code += `({ `;
-			status.code += `char* ${lt} = `;
+			status.code += `nomen_string ${lt} = `;
 			build_operand(node.left_value, status);
-			status.code += `; char* ${rt} = `;
+			status.code += `; nomen_string ${rt} = `;
 			build_operand(node.right_value, status);
 			status.code += `; `;
 			if (is_string_op) {
-				status.code += `char* ${cres} = ${label}(${lt}, ${rt}); `;
+				status.code += `nomen_string ${cres} = ${label}(${lt}, ${rt}); `;
 			} else {
 				status.code += `int ${cres} = ${label}(${lt}, ${rt}); `;
 			}
-			if (left_temp) status.code += `free(${lt}); `;
-			if (right_temp) status.code += `free(${rt}); `;
+			if (left_temp) status.code += `free(${lt}.ptr); `;
+			if (right_temp) status.code += `free(${rt}.ptr); `;
 			status.code += `${cres}; })`;
 		} else {
 			const is_array_op =

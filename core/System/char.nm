@@ -42,6 +42,7 @@ pub struct char: Stringable, Hashable, Equatable {
 		adr x2, .Lfmt_char_c
 		mov x3, x19
 		bl _snprintf
+		mov x1, x0
 		ldr x0, [sp, #72]
 		add sp, sp, #128
 		b .Lend_char_to_string

@@ -104,6 +104,12 @@ function get_store_reg(reg: string, size: number): string {
 function find_var_size(name: string, status: BuildStatus): number {
 	const decl = status.scoped_declarations.find((d) => d.name === name);
 	if (decl) return aarch64_size(decl.type.name);
+	// Inside a loop body the scoped-declaration table is swapped out — fall
+	// back to the checker's persistent variable types (e.g. a string concat
+	// reassignment `s = s + …` in a while loop must resolve to the 16-byte
+	// fat slot, or only the ptr half would be stored).
+	const vt = status.variable_types?.get(name);
+	if (vt) return aarch64_size(vt.name);
 	return 8;
 }
 
@@ -848,7 +854,14 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 					emit_strdup(status);
 				}
 				load_ref_param_pointer("x2", name, status);
-				status.code += `${ref_store_op} ${ref_store_reg}, [x2]\n`;
+				if (ref_size === 16) {
+					// Fat string: write BOTH halves through the caller's
+					// pointer (ptr at +0, len at +8).
+					status.code += `str x0, [x2]\n`;
+					status.code += `str x1, [x2, #8]\n`;
+				} else {
+					status.code += `${ref_store_op} ${ref_store_reg}, [x2]\n`;
+				}
 			}
 		} else if (node.operator) {
 			const alloc_reg_op = status.register_allocations?.get(name);
@@ -917,13 +930,23 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 			build_node(node.right_value, status);
 			if (!status.code.endsWith("\n")) status.code += "\n";
 			// Preserve the freshly computed value across freeing the old value.
-			status.code += `str x0, [sp, #-16]!\n`;
+			// A fat string rides the (x0, x1) pair — save BOTH halves.
+			const saves_fat_pair = size === 16;
+			if (saves_fat_pair) {
+				status.code += `stp x0, x1, [sp, #-16]!\n`;
+			} else {
+				status.code += `str x0, [sp, #-16]!\n`;
+			}
 			if (lhs_is_heap) {
 				emit_var_load(status, "x0", name, 8);
 				emit_free(status);
 				status.heap_strings!.delete(name);
 			}
-			status.code += `ldr x0, [sp], #16\n`;
+			if (saves_fat_pair) {
+				status.code += `ldp x0, x1, [sp], #16\n`;
+			} else {
+				status.code += `ldr x0, [sp], #16\n`;
+			}
 			// last_result_is_heap means the RHS produced a fresh heap string, so the
 			// target now owns a heap value. (Don't key off lhs_type_name: inside a
 			// loop body the scoped-declaration table is swapped out, so the type
@@ -1029,17 +1052,32 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 					emit_strdup(status);
 				}
 				mark_moved_if_struct(node.right_value, status);
-				// Spill the new value (x2 is caller-saved — the free call may
-				// clobber it), free the old field value, then store.
-				status.code += `str x0, [sp, #-16]!\n`;
-				if (old_was_heap) {
-					status.code += `ldr x0, [sp, #16]\n`;
-					status.code += `ldr x0, [x0, #${offset}]\n`;
-					emit_free(status);
+				// Spill the new value (x2/x3 are caller-saved — the free call
+				// may clobber them), free the old field value, then store.
+				// A fat string field is a 16-byte slot — spill and store BOTH
+				// halves as one 16-byte push/pop frame.
+				if (field_type?.name === "string") {
+					status.code += `stp x0, x1, [sp, #-16]!\n`;
+					if (old_was_heap) {
+						status.code += `ldr x0, [sp, #16]\n`;
+						status.code += `ldr x0, [x0, #${offset}]\n`;
+						emit_free(status);
+					}
+					status.code += `ldp x2, x3, [sp], #16\n`;
+					status.code += `ldr x0, [sp], #16\n`;
+					status.code += `str x2, [x0, #${offset}]\n`;
+					status.code += `str x3, [x0, #${offset + 8}]\n`;
+				} else {
+					status.code += `str x0, [sp, #-16]!\n`;
+					if (old_was_heap) {
+						status.code += `ldr x0, [sp, #16]\n`;
+						status.code += `ldr x0, [x0, #${offset}]\n`;
+						emit_free(status);
+					}
+					status.code += `ldr x2, [sp], #16\n`;
+					status.code += `ldr x0, [sp], #16\n`;
+					status.code += `str x2, [x0, #${offset}]\n`;
 				}
-				status.code += `ldr x2, [sp], #16\n`;
-				status.code += `ldr x0, [sp], #16\n`;
-				status.code += `str x2, [x0, #${offset}]\n`;
 				// `self.field = …` inside a value-struct method writes through
 				// to the caller's storage (the caller tracks ownership);
 				// recording it here would double-free at this scope's exit.

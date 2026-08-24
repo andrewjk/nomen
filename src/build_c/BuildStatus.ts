@@ -106,6 +106,11 @@ export default interface BuildStatus {
 	 * function entry; reset per function.
 	 */
 	c_borrow_only_strings?: Set<string>;
+	/** Names of the current function's by-value fat-string params (C backend).
+	 *  Raw `#arch: c` blocks inside MIXED functions (Nomen statements + raw)
+	 *  were authored against the thin char* ABI — build_raw_node shims each
+	 *  such name to its `.ptr` for the duration of the block. */
+	fat_string_params?: Set<string>;
 	/**
 	 * Old class instances displaced by variable reassignment (`h = Holder(...)`)
 	 * whose reclamation is deferred to scope exit. Eagerly freeing them at the
@@ -196,14 +201,6 @@ export default interface BuildStatus {
 	self_is_ref?: boolean;
 	function_array_params?: Set<string>;
 	function_variadic_params?: Set<string>;
-	/**
-	 * Names of the CURRENT function's `string` params carrying the hidden
-	 * length companion (`long _<name>_len`, see ParameterNode.hidden_len).
-	 * `emit_string_length` reads it so `<name>.length` inside the body lowers
-	 * to the companion param instead of `strlen`. Saved/restored per function
-	 * like function_variadic_params.
-	 */
-	hidden_len_params?: Set<string>;
 	function_return_label?: string;
 	moved_class_params?: Map<string, string>;
 	heap_array_vars?: Set<string>;
@@ -327,6 +324,9 @@ export default interface BuildStatus {
 	stack_size?: number;
 	stack_offsets?: Map<string, number>;
 	string_literal_names?: Set<string>;
+	/** Label → runtime byte length for folded/named string literal data
+	 * (the fat string's len half is a compile-time constant — no strlen). */
+	string_literal_lengths?: Map<string, number>;
 	audit?: boolean;
 	moved?: Set<string>;
 	heap_returning_functions?: Set<string>;
@@ -357,6 +357,11 @@ export default interface BuildStatus {
 	 */
 	owned_string_vars?: Set<string>;
 	heap_string_arrays?: Map<string, number>;
+	/** Heap array buffers whose string ELEMENTS are owned heap copies
+	 *  (e.g. `Array.with("x", n)` strdups each slot) — scope-exit destroy
+	 *  must free every slot's ptr half before freeing the buffer. Unlike
+	 *  heap_string_arrays (rodata rows), these own their bytes. */
+	heap_owned_string_arrays?: Set<string>;
 	last_result_is_heap?: boolean;
 	current_struct?: StructNode;
 	current_function_name?: string;
@@ -415,6 +420,23 @@ export default interface BuildStatus {
 	 */
 	alias_owns_flag?: Map<string, number>;
 	/**
+	 * C backend counterpart of `alias_owns_flag`: maps an object-level alias
+	 * var name to the emitted `int` flag variable (initialized to 0 at the
+	 * alias declaration). A reassignment sets it to 1 and frees the old
+	 * instance only when it is already 1 (the alias owns it) — a runtime
+	 * decision, so a loop that reassigns the alias reclaims every former
+	 * instance from iteration 2 on while the first iteration leaves the
+	 * shared original for its owner.
+	 */
+	c_alias_owns_flags?: Map<string, string>;
+	/**
+	 * C backend: the scoped-declarations FRAME (by reference) in which a
+	 * class alias was declared. A reassignment registers the alias's exit
+	 * destroy in that frame (not the current one), so an alias reassigned
+	 * inside a loop body is destroyed once at its declaration scope's exit.
+	 */
+	alias_decl_frames?: Map<string, import("../nodes/DeclarationNode.ts").default[]>;
+	/**
 	 * For a `ref` CLASS param, the call site passes the ADDRESS of the caller's
 	 * pointer slot (so the callee can reassign it). The callee loads the
 	 * instance into the param's callee-saved register (so field access works
@@ -440,22 +462,6 @@ export default interface BuildStatus {
 	 * so nested grandchildren can't steal it.
 	 */
 	float_result_in_d0?: boolean;
-	/**
-	 * Loop-invariant `string.length` cache (C backend): maps a string
-	 * variable name to the C temp holding its length, hoisted before the
-	 * enclosing while loop by build_while_loop_node. `x.length` inside the
-	 * loop emits the temp instead of a per-evaluation `strlen(x)`. Populated
-	 * only for variables the loop never rebinds (see
-	 * scan_string_length_hoists); saved/restored per loop.
-	 */
-	string_length_temps?: Map<string, string>;
-	/**
-	 * Loop-invariant `string.length` cache (aarch64 backend): maps a string
-	 * variable name to the stack slot offset holding its length, computed
-	 * once before the enclosing while loop by build_while_loop_node. Saved/
-	 * restored per loop.
-	 */
-	string_length_slots?: Map<string, number>;
 	/**
 	 * Loop-invariant cache: maps a Buffer target key (e.g. "flags" or
 	 * "self.digits") to the callee-saved register holding its pre-loaded

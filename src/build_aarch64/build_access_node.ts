@@ -1,6 +1,5 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
-import callee_hidden_len_indices from "../build_common/hidden_len.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import {
 	drop_self_written_string_field_records,
@@ -19,7 +18,7 @@ import build_inline_method from "./build_inline_method.ts";
 import build_node from "./build_node.ts";
 import build_nursery_spawn from "./build_nursery_spawn.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
-import { emit_free, emit_malloc } from "./utils/audit.ts";
+import { emit_free, emit_malloc, emit_strdup } from "./utils/audit.ts";
 import { all_scope_frames, mark_moved_if_struct } from "./utils/auto_destroy.ts";
 import { NUM_REG_ARGS } from "./utils/stack_args.ts";
 import {
@@ -29,6 +28,11 @@ import {
 	emit_var_load,
 	is_local_ref_var,
 } from "./utils/stack_var.ts";
+import {
+	emit_pair_load_x29,
+	emit_pair_store_x29,
+	emit_string_pair_load_at,
+} from "./utils/string_pair.ts";
 import { get_enum_size } from "./utils/struct_layout.ts";
 import { get_field_offset, get_struct_size } from "./utils/struct_layout.ts";
 import {
@@ -51,46 +55,35 @@ function is_array_mono_struct(struct_node: StructNode | undefined, status: Build
 	);
 }
 
-// Emit strlen(target) leaving the length in x0. If the target expression
-// produces an owned heap string temporary (e.g. Json.stringify(...) or an
-// operator/interpolation result), free it after measuring so it does not leak.
-// A bare variable registered in status.string_length_slots (a loop-invariant
-// hoist from build_while_loop_node) loads the pre-computed length instead.
+// Emit `string.length` leaving the length in x0 — a load of the fat
+// string's len half, never strlen. If the target expression produces an
+// owned heap string temporary (e.g. Json.stringify(...) or an operator/
+// interpolation result), free its ptr after reading `.len`.
+// A `string` struct's self keeps its len in x20 (the pair prologue).
 function emit_string_length(target: BaseNode, status: BuildStatus) {
 	if (target.node_type === "value") {
 		const name = (target as ValueNode).value;
-		// A hidden-length string param carries its length in the companion
-		// slot spilled by the prologue — `.length` is a load, not a strlen
-		// (see stamp_hidden_string_lens).
-		if (name !== "self" && status.hidden_len_params?.has(name)) {
-			const len_slot = status.stack_offsets?.get(`_${name}_len`);
-			if (len_slot !== undefined) {
-				status.last_result_is_heap = false;
-				status.code += `ldr x0, [x29, #${len_slot}]\n`;
-				return;
-			}
-		}
-		const slot = status.string_length_slots?.get((target as ValueNode).value);
-		if (slot !== undefined) {
+		if (name === "self" && status.current_struct?.name === "string") {
 			status.last_result_is_heap = false;
-			status.code += `ldr x0, [x29, #${slot}]\n`;
+			status.code += `mov x0, x20\n`;
 			return;
 		}
 	}
 	status.last_result_is_heap = false;
 	build_node(target, status);
-	if (!status.code.endsWith("\n")) status.code += "\n";
+	if (!status.code.endsWith("\n")) {
+		status.code += "\n";
+	}
+	// x0/x1 = the fat value. An owned heap temp's ptr must be freed after
+	// the read (the caller keeps only the length). The len half is spilled
+	// across the free call — a temporary register would be clobbered (x9-x15
+	// are caller-saved).
 	if (status.last_result_is_heap) {
-		// x0 = owned heap string pointer. Save it, strlen, save length, free, restore.
-		status.code += `str x0, [sp, #-16]!\n`;
-		status.code += `bl _strlen\n`;
-		status.code += `mov x1, x0\n`;
-		status.code += `ldr x0, [sp], #16\n`;
 		status.code += `str x1, [sp, #-16]!\n`;
 		emit_free(status);
 		status.code += `ldr x0, [sp], #16\n`;
 	} else {
-		status.code += `bl _strlen\n`;
+		status.code += `mov x0, x1\n`;
 	}
 	status.last_result_is_heap = false;
 }
@@ -774,6 +767,10 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 		}
 		const final_offset = offset;
 		const field_type = access_field.type?.name || "";
+		if (field_type === "string") {
+			emit_string_pair_load_at(status, "x0", final_offset);
+			return;
+		}
 		const size = aarch64_size(field_type);
 		const signed =
 			field_type.startsWith("int") ||
@@ -801,6 +798,10 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 		}
 		const final_offset = get_field_offset(target_type?.name || "", access_field.name, status);
 		const field_type = access_field.type?.name || "";
+		if (field_type === "string") {
+			emit_string_pair_load_at(status, "x0", final_offset);
+			return;
+		}
 		const size = aarch64_size(field_type);
 		const signed =
 			field_type.startsWith("int") ||
@@ -886,6 +887,11 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 			return;
 		}
 		const field_type = access_field.type?.name || "";
+		// A fat-string FIELD loads as the (ptr, len) pair.
+		if (field_type === "string") {
+			emit_string_pair_load_at(status, "x0", final_offset);
+			return;
+		}
 		const size = aarch64_size(field_type);
 		const signed =
 			field_type.startsWith("int") ||
@@ -941,6 +947,12 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 		return;
 	}
 
+	// A fat-string FIELD is a 16-byte (ptr, len) pair — load both words.
+	if (resolved_field_type === "string") {
+		emit_string_pair_load_at(status, "x0", offset);
+		return;
+	}
+
 	const size = aarch64_size(resolved_field_type);
 	const signed =
 		resolved_field_type.startsWith("int") ||
@@ -954,6 +966,20 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 	} else {
 		status.code += `ldr x0, [x0, #${offset}]\n`;
 	}
+}
+
+/**
+ * Whether an argument expression is a fat string VALUE: either its static
+ * type names `string`, or it is a string literal (whose ValueNode.type may
+ * be unset). Literals ride the pair ABI like any string.
+ */
+function arg_is_string(node: BaseNode): boolean {
+	const v = node as { value?: string };
+	if (node.node_type === "value" && typeof v.value === "string" && v.value.startsWith('"')) {
+		return true;
+	}
+	const t = type_from_value_node(node);
+	return t?.name === "string" && !t.is_view && !t.is_array;
 }
 
 function build_access_method(
@@ -1106,6 +1132,8 @@ function build_access_method(
 				access_func.params[1].node_type === "value" &&
 				node.target.node_type === "value";
 
+			const elem_is_fat_string =
+				elem_type_name === "string" && !elem_struct && !target_type.is_view;
 			if (set_fast) {
 				// .set() fast path: base → x9, index → x1, value → x2, store.
 				// Base is built first so a param-register base (e.g. an array
@@ -1128,6 +1156,38 @@ function build_access_method(
 					status.code += `ldr x9, [x9]\n`;
 				} else {
 					emit_var_address(status, "x9", name);
+				}
+				if (elem_is_fat_string) {
+					// Deep-copy semantics: free the outgoing ptr, strdup the
+					// incoming one, carry the len half. A string VALUE build
+					// emits the (ptr, len) PAIR — x0 AND x1 — so evaluate the
+					// value FIRST, spill it, then build the index into x1.
+					// The slot address (x9) and incoming pair (x2/x3) are all
+					// caller-saved — park them in x19-x21 across the
+					// free/strdup calls.
+					build_node(access_func.params[1], status);
+					if (!status.code.endsWith("\n")) status.code += "\n";
+					const val_spill = allocate_stack_space(status, 16, 16);
+					emit_pair_store_x29(status, val_spill);
+					build_node(access_func.params[0], status);
+					if (!status.code.endsWith("\n")) status.code += "\n";
+					status.code += `mov x1, x0\n`;
+					emit_pair_load_x29(status, val_spill, "x2", "x3");
+					status.code += `stp x19, x20, [sp, #-16]!\n`;
+					status.code += `stp x21, x22, [sp, #-16]!\n`;
+					status.code += `mov x20, x2\n`;
+					status.code += `mov x21, x3\n`;
+					status.code += `lsl x10, x1, #4\n`;
+					status.code += `add x19, x9, x10\n`;
+					status.code += `ldr x0, [x19]\n`;
+					emit_free(status);
+					status.code += `mov x0, x20\n`;
+					emit_strdup(status);
+					status.code += `str x0, [x19]\n`;
+					status.code += `str x21, [x19, #8]\n`;
+					status.code += `ldp x21, x22, [sp], #16\n`;
+					status.code += `ldp x19, x20, [sp], #16\n`;
+					return;
 				}
 				// index → x1
 				build_node(access_func.params[0], status);
@@ -1222,6 +1282,10 @@ function build_access_method(
 						status.code += `mul x1, x1, x2\n`;
 						status.code += `add x0, x9, x1\n`;
 					}
+				} else if (elem_is_fat_string) {
+					// Fat-string element: load the (ptr, len) pair.
+					status.code += `add x0, x9, x1, lsl #4\n`;
+					status.code += `ldp x0, x1, [x0]\n`;
 				} else {
 					if (elem_size === 8) {
 						status.code += `ldr x0, [x9, x1, lsl #3]\n`;
@@ -1311,6 +1375,10 @@ function build_access_method(
 						status.code += `mul x1, x1, x2\n`;
 						status.code += `add x0, x19, x1\n`;
 					}
+				} else if (elem_is_fat_string) {
+					// Fat-string element: load the (ptr, len) pair.
+					status.code += `add x9, x19, x1, lsl #4\n`;
+					status.code += `ldp x0, x1, [x9]\n`;
 				} else {
 					// Simple element: compute offset and load value
 					if (elem_size === 8) {
@@ -1354,6 +1422,22 @@ function build_access_method(
 						if (!status.code.endsWith("\n")) status.code += "\n";
 						status.code += `mov x2, x0\n`;
 					}
+				}
+				if (elem_is_fat_string) {
+					// Deep-copy semantics: free the outgoing ptr, strdup the
+					// incoming one, carry the len half. x19 base, x1 index,
+					// value pair in (x2, x3).
+					status.code += `stp x20, x21, [sp, #-16]!\n`;
+					status.code += `lsl x21, x1, #4\n`;
+					status.code += `add x9, x19, x21\n`;
+					status.code += `ldr x0, [x9]\n`;
+					emit_free(status);
+					status.code += `mov x0, x2\n`;
+					emit_strdup(status);
+					status.code += `str x0, [x9]\n`;
+					status.code += `str x3, [x9, #8]\n`;
+					status.code += `ldp x20, x21, [sp], #16\n`;
+					return;
 				}
 				if (elem_struct) {
 					// Struct element: x2 is address of value, memcpy to computed address
@@ -1570,7 +1654,30 @@ function build_access_method(
 		status.code += `add x8, x29, #${temp_offset}\n`;
 	}
 
-	if (!access_func.is_static) {
+	// A fat-STRING receiver is a (ptr, len) value: build it into the x0/x1
+	// pair and start argument registers at slot 2 (the pair occupies slots
+	// 0 and 1). This early path bypasses the struct-oriented receiver logic
+	// below — string receivers are simple values (locals, params, fields,
+	// call results).
+	const receiver_is_string =
+		!access_func.is_static &&
+		target_type?.name === "string" &&
+		!target_type.is_view &&
+		// A string ARRAY (`string[N]` / heap `Array<string>`) is typed
+		// name="string" but its methods take ONE pointer slot (first-element
+		// convention), not the fat pair.
+		!target_type.is_array &&
+		// A `ref self` method (string.set) takes &slot — one pointer, not
+		// the fat pair.
+		!method_self_is_ref;
+	if (receiver_is_string) {
+		build_node(node.target, status);
+		if (!status.code.endsWith("\n")) status.code += "\n";
+		// Pair now in x0/x1. Save both halves across argument evaluation.
+		status.code += `stp x0, x1, [sp, #-16]!\n`;
+	}
+
+	if (!access_func.is_static && !receiver_is_string) {
 		// Instance method: load target into x0 (self)
 		// For simple types, pass value; for structs/traits, pass address.
 		// A trait-typed receiver is treated like a struct: its concrete storage
@@ -1694,7 +1801,8 @@ function build_access_method(
 		}
 	}
 
-	const needs_self_save = !access_func.is_static && access_func.params.length > 0;
+	const needs_self_save =
+		!access_func.is_static && access_func.params.length > 0 && !receiver_is_string;
 	if (needs_self_save) {
 		status.code += `str x0, [sp, #-16]!\n`;
 	}
@@ -1705,42 +1813,44 @@ function build_access_method(
 	// A `view T` param (view_param_indices) occupies TWO consecutive register
 	// slots — the (ptr, len) pair — so an arg's slot is its declaration
 	// position PLUS one per view param declared before it.
-	const start_reg = access_func.is_static ? 0 : 1;
-	const param_regs = access_func.is_static
-		? ["x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7"]
-		: ["x1", "x2", "x3", "x4", "x5", "x6", "x7"];
+	// For an instance method, x0 holds self (restored after arg evaluation);
+	// args start at slot 1. A fat-string receiver's pair occupies slots 0-1,
+	// so args start at slot 2.
+	const start_reg = access_func.is_static ? 0 : receiver_is_string ? 2 : 1;
 	const view_arg_set = new Set(access_func.view_param_indices ?? []);
-	// Hidden string-length companions (`ParameterNode.hidden_len`) occupy the
-	// AAPCS slot immediately AFTER their string argument's slot(s) — mirroring
-	// the C signature's interleaved `long _<name>_len` parameter (see
-	// stamp_hidden_string_lens).
-	const hidden_len_indices = callee_hidden_len_indices(access_func);
-	const hidden_len_set = new Set(hidden_len_indices);
-	const hidden_len_slots = new Map<number, number>();
+	// A fat `string` ARGUMENT consumes TWO consecutive slots — the (ptr,
+	// len) pair — matching the callee prologue's pair spilling. Detection is
+	// by the ARGUMENT's static type (a string-typed expression always rides
+	// the pair ABI, even when the callee signature is still generic, e.g.
+	// Map<string,int>'s `TK key`). `ref` args pass &slot — one pointer, not
+	// a pair.
+	const string_arg_set = new Set<number>();
+	for (let i = 0; i < access_func.params.length; i++) {
+		if ((access_func.ref_param_indices ?? []).includes(i)) continue;
+		if (arg_is_string(access_func.params[i])) {
+			string_arg_set.add(i);
+		}
+	}
 	const arg_slot: number[] = [];
 	let total_arg_slots = 0;
 	for (let i = 0; i < access_func.params.length; i++) {
 		arg_slot.push(total_arg_slots);
-		total_arg_slots += view_arg_set.has(i) ? 2 : 1;
-		if (hidden_len_set.has(i)) {
-			hidden_len_slots.set(i, total_arg_slots);
-			total_arg_slots += 1;
-		}
+		total_arg_slots += view_arg_set.has(i) || string_arg_set.has(i) ? 2 : 1;
 	}
 	const overflow_count = Math.max(0, total_arg_slots - (NUM_REG_ARGS - start_reg));
 	let overflow_base = 0;
 	if (overflow_count > 0) {
 		overflow_base = allocate_stack_space(status, overflow_count * 8, 16);
 	}
-	// View pairs are spilled to a dedicated area and reloaded into their
-	// register pair AFTER the loop — evaluating a later (lower-index)
-	// argument can use x0-x2 as scratch, which would clobber a pair claimed
-	// inline. A pair half whose register slot is past x7 goes to the
-	// outgoing-area slot it occupies (copied down at the bl, like every
+	// View and fat-string pairs are spilled to a dedicated area and reloaded
+	// into their register pairs AFTER the loop — evaluating a later
+	// (lower-index) argument can use x0-x2 as scratch, which would clobber a
+	// pair claimed inline. A pair half whose register slot is past x7 goes to
+	// the outgoing-area slot it occupies (copied down at the bl, like every
 	// other overflow arg).
-	const has_view_args = view_arg_set.size > 0;
+	const has_pair_args = view_arg_set.size > 0 || string_arg_set.size > 0;
 	let view_spill_base = 0;
-	if (has_view_args) {
+	if (has_pair_args) {
 		view_spill_base = allocate_stack_space(status, total_arg_slots * 8, 16);
 	}
 	const view_half_store = (j: number, half: 0 | 1): number => {
@@ -1761,6 +1871,17 @@ function build_access_method(
 		// passes through, an owned string is wrapped with its strlen.
 		if (view_arg_set.has(i)) {
 			emit_view_string_arg(param, status);
+			status.code += `str x0, [x29, #${view_half_store(i, 0)}]\n`;
+			status.code += `str x1, [x29, #${view_half_store(i, 1)}]\n`;
+			continue;
+		}
+		// A fat `string` argument is already the (ptr, len) pair in x0/x1 —
+		// spill both halves like a view.
+		if (string_arg_set.has(i)) {
+			build_node(param, status);
+			if (!status.code.endsWith("\n")) {
+				status.code += "\n";
+			}
 			status.code += `str x0, [x29, #${view_half_store(i, 0)}]\n`;
 			status.code += `str x1, [x29, #${view_half_store(i, 1)}]\n`;
 			continue;
@@ -1814,18 +1935,22 @@ function build_access_method(
 			// once self has been restored to x0 below.
 			status.code += `str x0, [x29, #${overflow_base + (slot - NUM_REG_ARGS) * 8}]\n`;
 		} else {
-			const reg = param_regs[arg_slot[i]];
-			if (reg && reg !== "x0") {
+			// The AAPCS register IS the slot index: static args start at x0,
+			// instance args at x1 (self = slot 0), fat-string-receiver args
+			// at x2 (the receiver pair owns slots 0-1).
+			const reg = `x${slot}`;
+			if (reg !== "x0") {
 				status.code += `mov ${reg}, x0\n`;
 			}
 		}
 	}
-	// Reload the spilled view pairs into their register slots now that every
-	// argument has been evaluated (no later evaluation can clobber them).
-	// Halves at register slots past x7 stay in the outgoing-area slots.
-	if (has_view_args) {
+	// Reload the spilled view/string pairs into their register slots now that
+	// every argument has been evaluated (no later evaluation can clobber
+	// them). Halves at register slots past x7 stay in the outgoing-area
+	// slots.
+	if (has_pair_args) {
 		for (let j = 0; j < access_func.params.length; j++) {
-			if (!view_arg_set.has(j)) continue;
+			if (!view_arg_set.has(j) && !string_arg_set.has(j)) continue;
 			for (const half of [0, 1] as const) {
 				const half_slot = start_reg + arg_slot[j] + half;
 				if (half_slot >= NUM_REG_ARGS) continue;
@@ -1834,85 +1959,13 @@ function build_access_method(
 		}
 	}
 
-	// Hidden length companions for `string` params whose callee body reads
-	// `.length`. At this point every argument value lives in its register
-	// slot (or its overflow spill), so a strlen here would clobber it —
-	// spill the live argument registers around any strlen and reload them
-	// afterwards. A loop-invariant hoisted length slot (string_length_slots)
-	// supplies the value with no call at all.
-	if (hidden_len_indices.length > 0) {
-		const needs_strlen = hidden_len_indices.some((i) => {
-			const arg = access_func.params[i];
-			if (arg.node_type !== "value") return true;
-			return !status.string_length_slots?.has((arg as ValueNode).value);
-		});
-		// Registers currently holding live argument values (self excluded —
-		// it was pushed to the stack before argument evaluation).
-		const live_regs: string[] = [];
-		if (needs_strlen) {
-			const max_live = Math.min(NUM_REG_ARGS - 1, start_reg + total_arg_slots - 1);
-			for (let s = start_reg; s <= max_live; s++) {
-				live_regs.push(`x${s}`);
-			}
-		}
-		const reg_save_base = needs_strlen
-			? allocate_stack_space(status, Math.max(live_regs.length, 1) * 8, 16)
-			: 0;
-		const len_save_base = allocate_stack_space(status, hidden_len_indices.length * 8, 16);
-
-		for (let k = 0; k < live_regs.length; k++) {
-			status.code += `str ${live_regs[k]}, [x29, #${reg_save_base + k * 8}]\n`;
-		}
-		for (let h = 0; h < hidden_len_indices.length; h++) {
-			const i = hidden_len_indices[h];
-			const arg = access_func.params[i];
-			let computed = false;
-			if (arg.node_type === "value") {
-				const hoisted = status.string_length_slots?.get((arg as ValueNode).value);
-				if (hoisted !== undefined) {
-					// x9 is scratch: when every companion comes from a hoisted
-					// slot, needs_strlen is false and NO register save/restore
-					// surrounds this loop — x0..x7 still hold live arguments,
-					// so loading the hoisted length via x0 would clobber one.
-					status.code += `ldr x9, [x29, #${hoisted}]\n`;
-					status.code += `str x9, [x29, #${len_save_base + h * 8}]\n`;
-					computed = true;
-				}
-			}
-			if (!computed) {
-				// Load the argument's string pointer from its PHASE-A SAVE SLOT
-				// (registers were spilled there) — an earlier `bl _strlen` in
-				// this loop has already clobbered every caller-saved register,
-				// so the live register copy can no longer be trusted.
-				const src_slot = start_reg + arg_slot[i];
-				if (src_slot < NUM_REG_ARGS) {
-					const save_index = src_slot - start_reg;
-					status.code += `ldr x0, [x29, #${reg_save_base + save_index * 8}]\n`;
-				} else {
-					status.code += `ldr x0, [x29, #${overflow_base + (src_slot - NUM_REG_ARGS) * 8}]\n`;
-				}
-				status.code += `bl _strlen\n`;
-				status.code += `str x0, [x29, #${len_save_base + h * 8}]\n`;
-			}
-		}
-		for (let k = live_regs.length - 1; k >= 0; k--) {
-			status.code += `ldr ${live_regs[k]}, [x29, #${reg_save_base + k * 8}]\n`;
-		}
-		for (let h = 0; h < hidden_len_indices.length; h++) {
-			const dest_slot = start_reg + hidden_len_slots.get(hidden_len_indices[h])!;
-			status.code += `ldr x9, [x29, #${len_save_base + h * 8}]\n`;
-			if (dest_slot < NUM_REG_ARGS) {
-				status.code += `mov x${dest_slot}, x9\n`;
-			} else {
-				status.code += `str x9, [x29, #${overflow_base + (dest_slot - NUM_REG_ARGS) * 8}]\n`;
-			}
-		}
-	}
-
 	if (!status.code.endsWith("\n")) {
 		status.code += "\n";
 	}
-	if (needs_self_save) {
+	if (receiver_is_string) {
+		// Restore the fat receiver's pair into x0/x1.
+		status.code += `ldp x0, x1, [sp], #16\n`;
+	} else if (needs_self_save) {
 		status.code += `ldr x0, [sp], #16\n`;
 	}
 

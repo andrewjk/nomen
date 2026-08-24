@@ -264,6 +264,23 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			// persists across scope resets, so it survives loop bodies.
 			if (!status.class_alias_vars) status.class_alias_vars = new Set();
 			status.class_alias_vars.add(safe_name);
+			// A class alias gets a runtime ownership flag (mirrors aarch64's
+			// alias_owns_flag stack slot): an alias only owns its value after
+			// its first reassignment to a fresh instance, and inside a loop
+			// that decision is per-iteration, so it must be made at runtime.
+			// Also record the declaration frame so a reassignment registers
+			// the alias's scope-exit destroy in the scope that declared it
+			// (not a loop body it happens to be reassigned in).
+			if (is_class_type) {
+				if (!status.c_alias_owns_flags) status.c_alias_owns_flags = new Map();
+				if (!status.c_alias_owns_flags.has(safe_name)) {
+					const flag = `_alias_owns_${safe_name}`;
+					status.c_alias_owns_flags.set(safe_name, flag);
+					status.code += `int ${flag} = 0;\n`;
+				}
+				if (!status.alias_decl_frames) status.alias_decl_frames = new Map();
+				status.alias_decl_frames.set(safe_name, status.scoped_declarations);
+			}
 			// Track the source variable as aliased so that a later
 			// reassignment of the source (`a = Box(99)`) does NOT eagerly
 			// free the old instance — the alias (`b`) still references it.
@@ -528,7 +545,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 				status.code += `${safe_name}->_vt = 0;\n`;
 				status.code += `${safe_name}->length = ${count}L;\n`;
 				if (elem_name === "string") {
-					status.code += `{ char** _dst = (char**)((char *)${safe_name} + sizeof(struct Array_string)); char** _src = ${src_name}; for (long _i = 0; _i < ${count}L; _i++) { _dst[_i] = strdup(_src[_i]); } }\n`;
+					status.code += `{ nomen_string* _dst = (nomen_string*)((char *)${safe_name} + sizeof(struct Array_string)); nomen_string* _src = ${src_name}; for (long _i = 0; _i < ${count}L; _i++) { _dst[_i] = nomen_str_dup(_src[_i]); } }\n`;
 				} else {
 					status.code += `memcpy((char *)${safe_name} + sizeof(struct Array_${elem_name}), ${src_name}, ${count}L * sizeof(${elem_c}));\n`;
 				}
@@ -611,7 +628,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 					(val_is_string_literal || val_is_heap_string_var) &&
 					!is_borrow_only_string
 				) {
-					status.code += `strdup(`;
+					status.code += `nomen_str_dup(`;
 					build_node(node.value, status);
 					status.code += `)`;
 				} else {

@@ -231,7 +231,9 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 			status.return_assign = old_return_assign;
 			reclaim_all_c_scopes(status);
 			if (string_join) {
-				status.code += any_branch_owned ? `return _return_val;\n` : `return strdup(_return_val);\n`;
+				status.code += any_branch_owned
+					? `return _return_val;\n`
+					: `return nomen_str_dup(_return_val);\n`;
 			} else {
 				status.code += `return _return_val;\n`;
 			}
@@ -399,14 +401,27 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 				}
 			}
 		}
-		if (returns_borrowed_string || returns_string_literal || returns_borrow_var) {
-			status.code += `strdup(`;
+		// The string ZERO value (`return 0` / `return null` for a `out TV`
+		// where TV instantiated to string — e.g. Map.get's empty-map path):
+		// the fat zero is {NULL, 0}, not nomen_str_dup(0L) (which wouldn't
+		// compile) — and there is nothing to deep-copy.
+		const returns_string_zero =
+			ret_type.name === "string" &&
+			!ret_type.is_view &&
+			!ret_type.is_array &&
+			node.value.node_type === "value" &&
+			((node.value as ValueNode).value === "0" || (node.value as ValueNode).value === "null");
+		if (
+			!returns_string_zero &&
+			(returns_borrowed_string || returns_string_literal || returns_borrow_var)
+		) {
+			status.code += `nomen_str_dup(`;
 		}
 		// A `view string` return of a NON-view expression (an owned string,
 		// a field read, a literal) must become the (ptr, len) pair: wrap it
-		// in a statement-expression that measures it once. A view-typed
-		// value (a slice result, a view variable/param) is already a
-		// nomen_view and passes through unchanged.
+		// in a statement-expression that borrows the fat value's halves. A
+		// view-typed value (a slice result, a view variable/param) is
+		// already a nomen_view and passes through unchanged.
 		const wrap_view_string_return =
 			!!ret_type.is_view && ret_type.name === "string" && !is_view_value(node.value, status);
 		// Type erasure: when the function returns a class/struct pointer but
@@ -427,13 +442,20 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 			status.code += return_is_class ? `(struct ${mono_ret_name}*)` : `(struct ${mono_ret_name})`;
 		}
 		if (wrap_view_string_return) {
-			status.code += `({ char* _p = `;
+			status.code += `({ nomen_string _p = `;
 		}
-		build_node(node.value, status);
+		if (returns_string_zero) {
+			status.code += `(nomen_string){0,0}`;
+		} else {
+			build_node(node.value, status);
+		}
 		if (wrap_view_string_return) {
-			status.code += `; nomen_view _v = { (void*)_p, (long)strlen(_p) }; _v; })`;
+			status.code += `; nomen_view _v = { (void*)_p.ptr, _p.len }; _v; })`;
 		}
-		if (returns_borrowed_string || returns_string_literal || returns_borrow_var) {
+		if (
+			!returns_string_zero &&
+			(returns_borrowed_string || returns_string_literal || returns_borrow_var)
+		) {
 			status.code += `)`;
 		}
 		status.code += `;\n`;

@@ -9,12 +9,12 @@ pub struct Console {
 		```
 		```
 		#arch: aarch64
-		sub sp, sp, #16
-		mov x1, x0
-		str x1, [sp]
+		// Fat-string ABI: line = (x0 ptr, x1 len); printf needs the fmt in
+		// x0 and the NUL-terminated ptr half in x1.
+		mov x2, x0
 		adr x0, .Lfmt_console_s
+		mov x1, x2
 		bl _printf
-		add sp, sp, #16
 		b .Lend_Console_write
 		.Lfmt_console_s: .asciz "%s"
 		.p2align 2
@@ -29,12 +29,11 @@ pub struct Console {
 		```
 		```
 		#arch: aarch64
-		sub sp, sp, #16
-		mov x1, x0
-		str x1, [sp]
+		// Fat-string ABI: line = (x0 ptr, x1 len).
+		mov x2, x0
 		adr x0, .Lfmt_console_snl
+		mov x1, x2
 		bl _printf
-		add sp, sp, #16
 		b .Lend_Console_write_line
 		.Lfmt_console_snl: .asciz "%s\n"
 		.p2align 2
@@ -58,7 +57,9 @@ pub struct Console {
 			c = getchar();
 		}
 		buf[len] = 0;
-		return buf;
+		// Fat-string ABI: return the (ptr, len) pair — len is already
+		// counted, no strlen.
+		return (nomen_string){ buf, len };
 		```
 		```
 		#arch: aarch64
@@ -125,38 +126,39 @@ pub struct Console {
 		```
 		#arch: c
 		#platform: macos
-		return strdup("macos");
+		return (nomen_string){ strdup("macos"), 5 };
 		```
 		```
 		#arch: c
 		#platform: ios
-		return strdup("ios");
+		return (nomen_string){ strdup("ios"), 3 };
 		```
 		```
 		#arch: c
 		#platform: linux
-		return strdup("linux");
+		return (nomen_string){ strdup("linux"), 5 };
 		```
 		```
 		#arch: c
 		#platform: android
-		return strdup("android");
+		return (nomen_string){ strdup("android"), 7 };
 		```
 		```
 		#arch: c
 		#platform: windows
-		return strdup("windows");
+		return (nomen_string){ strdup("windows"), 7 };
 		```
 		```
 		#arch: c
 		#platform: web
-		return strdup("web");
+		return (nomen_string){ strdup("web"), 3 };
 		```
 		```
 		#arch: aarch64
 		#platform: macos
 		adr x0, .Lconsole_plat_macos
 		bl _strdup
+		mov x1, #5
 		b .return_Console_platform
 		.Lconsole_plat_macos: .asciz "macos"
 		.p2align 2
@@ -166,6 +168,7 @@ pub struct Console {
 		#platform: ios
 		adr x0, .Lconsole_plat_ios
 		bl _strdup
+		mov x1, #3
 		b .return_Console_platform
 		.Lconsole_plat_ios: .asciz "ios"
 		.p2align 2
@@ -175,6 +178,7 @@ pub struct Console {
 		#platform: linux
 		adr x0, .Lconsole_plat_linux
 		bl _strdup
+		mov x1, #5
 		b .return_Console_platform
 		.Lconsole_plat_linux: .asciz "linux"
 		.p2align 2
@@ -184,6 +188,7 @@ pub struct Console {
 		#platform: android
 		adr x0, .Lconsole_plat_android
 		bl _strdup
+		mov x1, #7
 		b .return_Console_platform
 		.Lconsole_plat_android: .asciz "android"
 		.p2align 2
@@ -193,6 +198,7 @@ pub struct Console {
 		#platform: windows
 		adr x0, .Lconsole_plat_windows
 		bl _strdup
+		mov x1, #7
 		b .return_Console_platform
 		.Lconsole_plat_windows: .asciz "windows"
 		.p2align 2
@@ -202,6 +208,7 @@ pub struct Console {
 		#platform: web
 		adr x0, .Lconsole_plat_web
 		bl _strdup
+		mov x1, #3
 		b .return_Console_platform
 		.Lconsole_plat_web: .asciz "web"
 		.p2align 2

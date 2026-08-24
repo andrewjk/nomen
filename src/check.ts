@@ -1,10 +1,8 @@
 import built_in_types from "./built_in_types.ts";
 import check_node from "./check/check_node.ts";
 import type CheckStatus from "./check/CheckStatus.ts";
-import stamp_hidden_string_lens from "./check/stamp_hidden_string_lens.ts";
 import emit_warnings from "./check/warnings.ts";
 import BaseNode from "./nodes/BaseNode.ts";
-import type RootNode from "./nodes/RootNode.ts";
 import type CheckResult from "./types/CheckResult.ts";
 
 export default function check(root: BaseNode): CheckResult {
@@ -30,11 +28,8 @@ export default function check(root: BaseNode): CheckResult {
 
 	check_node(root, status);
 
-	// Stamp hidden string-length companion params (PERF gap 2.4): by-value
-	// `string` params whose body reads `.length` gain a trailing length
-	// companion in the ABI, threaded through every call site. Runs after the
-	// full tree is checked so body facts and func-value references are final.
-	stamp_hidden_string_lens(root as RootNode, status);
+	// (The hidden string-length companion pass is retired: `.length` is a
+	// field load on the fat string value, so no length threading is needed.)
 
 	// Only analyse for warnings on a clean check — a partially-checked,
 	// erroring tree would surface misleading or spurious warnings.

@@ -173,17 +173,17 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 			const field_access = status.code.substring(before_len);
 			status.code = status.code.substring(0, before_len);
 			const temp = `_nomen_strfield_${string_field_counter++}`;
-			status.code += `{\nchar* ${temp} = `;
+			status.code += `{\nnomen_string ${temp} = `;
 			if (fresh_heap) {
 				build_node(node.right_value, status);
 			} else {
-				status.code += `strdup(`;
+				status.code += `nomen_str_dup(`;
 				build_node(node.right_value, status);
 				status.code += `)`;
 			}
 			status.code += `;\n`;
 			if (old_was_heap) {
-				status.code += `free(${field_access});\n`;
+				status.code += `free(${field_access}.ptr);\n`;
 			}
 			status.code += `${field_access} = ${temp};\n}\n`;
 			if (!target_struct.is_class) {
@@ -223,7 +223,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 			status.string_borrow_vars.add(lhs_name);
 			if (!was_borrow) {
 				if (lhs_hit) lhs_hit.frame.splice(lhs_hit.index, 1);
-				status.code += `free(${lhs_name});\n`;
+				status.code += `free(${lhs_name}.ptr);\n`;
 			}
 		}
 
@@ -380,6 +380,13 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 				for (const alias_decl of aliases) {
 					const already = status.scoped_declarations.some((d) => d.name === alias_decl.name);
 					if (!already) status.scoped_declarations.push(alias_decl);
+					// Ownership of the old instance now rests with the alias:
+					// set its runtime owns-flag so the (flag-guarded) scope-exit
+					// destroy actually fires.
+					const alias_flag = status.c_alias_owns_flags?.get(alias_decl.name);
+					if (alias_flag !== undefined) {
+						status.code += `${alias_flag} = 1;\n`;
+					}
 				}
 			} else if (lhs_is_class && lhs_struct && !lhs_is_alias && (lhs_decl || lhs_in_class_vars)) {
 				// Deferred reclamation: capture the old instance into a temp
@@ -400,6 +407,30 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 					struct_name: lhs_struct.name,
 					is_nullable: !!lhs_type?.is_nullable,
 				});
+			} else if (
+				lhs_is_class &&
+				lhs_is_alias &&
+				lhs_struct &&
+				status.c_alias_owns_flags?.has(lhs_name)
+			) {
+				// Alias reassignment to a fresh instance (`q = R(3)` where
+				// `var R q = p`): the alias only owns its value AFTER its first
+				// reassignment, so free the old instance only when the runtime
+				// owns-flag is set (a loop reassigning the alias reclaims every
+				// former instance from iteration 2 on; iteration 1 leaves the
+				// shared original for its owner). Then flag the alias as owning
+				// and register its scope-exit destroy in the frame that DECLARED
+				// it (not the current one — the reassignment may sit in a loop
+				// body). Mirrors aarch64's alias_owns_flag + mark_anchor_destroy.
+				const flag = status.c_alias_owns_flags.get(lhs_name)!;
+				status.code += `if (${flag}) { ${lhs_struct.name}_destroy(${lhs_name}); free(${lhs_name}); }\n`;
+				status.code += `${flag} = 1;\n`;
+				const frame = status.alias_decl_frames?.get(lhs_name) ?? status.scoped_declarations;
+				if (!frame.some((d) => d.name === lhs_name)) {
+					frame.push(
+						lhs_decl ?? new DeclarationNode(node.start, "private", "var", lhs_name, lhs_type!),
+					);
+				}
 			} else {
 				// For a string with a non-bare RHS that may reference the LHS
 				// (e.g. `s = f(s)` or `s = s + "x"`), compute the RHS into a
@@ -407,12 +438,12 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 				if (lhs_is_string && !rhs_is_bare_value) {
 					const id = (status.label_counter = (status.label_counter ?? 0) + 1);
 					const temp = `_reassign_${id}`;
-					status.code += `char* ${temp} = `;
+					status.code += `nomen_string ${temp} = `;
 					build_node(node.right_value, status);
-					status.code += `;\nfree(${lhs_name});\n${lhs_name} = ${temp};\n`;
+					status.code += `;\nfree(${lhs_name}.ptr);\n${lhs_name} = ${temp};\n`;
 					return;
 				}
-				status.code += `free(${lhs_name});\n`;
+				status.code += `free(${lhs_name}.ptr);\n`;
 			}
 
 			// A bare string LITERAL reassignment (`s = "abc"`): the variable keeps
@@ -429,7 +460,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 				(rhs as ValueNode).value.startsWith('"') &&
 				(rhs as ValueNode).value.endsWith('"');
 			if (rhs_is_string_literal) {
-				status.code += `${lhs_name} = strdup(`;
+				status.code += `${lhs_name} = nomen_str_dup(`;
 				build_node(node.right_value, status);
 				status.code += `);\n`;
 				return;
@@ -611,7 +642,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 			build_node(node.left_value, status);
 			status.code += ` = `;
 			if (!fresh_heap) {
-				status.code += `strdup(`;
+				status.code += `nomen_str_dup(`;
 			}
 			build_node(node.right_value, status);
 			if (!fresh_heap) {

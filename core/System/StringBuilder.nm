@@ -128,15 +128,13 @@ pub struct StringBuilder {
 		```
 		```
 		#arch: aarch64
-		// x19 = self, x1 = s
-		// Save s across strlen/realloc.
-		mov x0, x1
+		// Fat-string ABI: x19 = self; s = (x1 ptr, x2 len). The length is
+		// already in a register — no strlen.
 		sub sp, sp, #32
-		str x0, [sp, #0]
-		bl _strlen
-		str x0, [sp, #8]          // sl
+		str x1, [sp, #0]          // s ptr
+		str x2, [sp, #8]          // sl
 		ldr x1, [x19, #16]        // len
-		add x1, x1, x0            // len + sl
+		add x1, x1, x2            // len + sl
 		add x1, x1, #1            // +1 for null room
 		// inline ensure(x1)
 		ldr x2, [x19, #24]
@@ -157,12 +155,11 @@ pub struct StringBuilder {
 		bl _realloc
 		str x0, [x19, #8]
 		.Lsb_as_copy:
-		// memcpy(data + len, s, sl)
-		ldr x1, [sp, #8]          // sl
+		// memcpy(data + len, s.ptr, sl)
 		ldr x0, [x19, #8]         // data
-		ldr x2, [x19, #16]        // len
-		add x0, x0, x2            // dest = data + len
-		ldr x1, [sp, #0]          // src = s
+		ldr x1, [x19, #16]        // len
+		add x0, x0, x1            // dest = data + len
+		ldr x1, [sp, #0]          // src = s ptr
 		ldr x2, [sp, #8]          // n = sl
 		bl _memcpy
 		// len = len + sl
@@ -221,6 +218,7 @@ pub struct StringBuilder {
 		strb wzr, [x0, x1]        // data[len] = 0
 		// transfer ownership: clear self->data. x0 retains the old ptr.
 		str xzr, [x19, #8]
+		// Fat-string ABI: (x0 = data, x1 = len) is already the return pair.
 		```
 	}
 

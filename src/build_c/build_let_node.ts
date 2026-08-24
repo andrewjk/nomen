@@ -20,7 +20,7 @@ export default function build_let_node(node: LetNode, status: BuildStatus) {
 			node.value.node_type !== "switch" &&
 			!is_owned_string_branch_value(node.value, status);
 		if (needs_copy) {
-			status.code += `strdup(`;
+			status.code += `nomen_str_dup(`;
 			build_node(node.value, status);
 			status.code += `)`;
 			return;

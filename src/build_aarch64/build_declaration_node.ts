@@ -3,6 +3,7 @@ import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import { struct_needs_destroy } from "../build_common/destroy_analysis.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
+import string_literal_length from "../build_common/string_literal_length.ts";
 import {
 	collect_expression_branch_values,
 	is_owned_string_branch_value,
@@ -47,6 +48,7 @@ import {
 	emit_var_store,
 	is_local_ref_var,
 } from "./utils/stack_var.ts";
+import { emit_pair_store_x29 } from "./utils/string_pair.ts";
 import {
 	emit_struct_copy,
 	get_enum_size,
@@ -148,6 +150,43 @@ function emit_string_array_labels(values: BaseNode[], status: BuildStatus): Map<
 	return labels;
 }
 
+/**
+ * Store one fat-string ARRAY ELEMENT — the (rodata label ptr, compile-time
+ * len) pair — into the 16-byte slot at [base_reg, #slot]. Every string-array
+ * builder must go through this so rows stay 16 bytes wide, matching the
+ * T_SIZE=16 stride the index codegen and Buffer accessors read with.
+ */
+function emit_string_array_element(
+	status: BuildStatus,
+	resolved: string,
+	labels: Map<string, string>,
+	base_reg: string,
+	slot: number,
+) {
+	const label = resolve_array_element(resolved, labels);
+	status.code += `adr x0, ${label}\n`;
+	status.code += `mov x1, #${string_literal_length(resolved)}\n`;
+	if (slot < 0 || slot + 8 > 504 || !base_reg.startsWith("x")) {
+		status.code += `str x0, [${base_reg}, #${slot}]\n`;
+		status.code += `str x1, [${base_reg}, #${slot + 8}]\n`;
+	} else {
+		status.code += `stp x0, x1, [${base_reg}, #${slot}]\n`;
+	}
+}
+
+/** One `.quad ptr / .quad len` fat-string row for a static data-directive
+ *  array (16 bytes per element). */
+function emit_string_data_row(
+	emit: (text: string) => void,
+	resolved: string,
+	labels: Map<string, string>,
+	first: boolean,
+) {
+	const label = resolve_array_element(resolved, labels);
+	if (!first) emit(", ");
+	emit(`.quad ${label}\n\t.quad ${string_literal_length(resolved)}`);
+}
+
 export { emit_string_array_labels };
 
 function needs_runtime_array_init(values: BaseNode[], status: BuildStatus): boolean {
@@ -199,6 +238,20 @@ function is_struct_constructor(node: BaseNode, status: BuildStatus): boolean {
 	if (node.node_type !== "func_call") return false;
 	const fc = node as FunctionCallNode;
 	return !!status.structs.find((s) => s.name === fc.name && !s.is_simple_type);
+}
+
+/**
+ * Whether an argument expression is a fat string VALUE: either its static
+ * type names `string`, or it is a string literal (whose ValueNode.type may
+ * be unset). Literals ride the pair ABI like any string.
+ */
+function arg_is_string(node: BaseNode): boolean {
+	const v = node as { value?: string };
+	if (node.node_type === "value" && typeof v.value === "string" && v.value.startsWith('"')) {
+		return true;
+	}
+	const t = type_from_value_node(node);
+	return t?.name === "string" && !t.is_view && !t.is_array;
 }
 
 function is_class_constructor(node: BaseNode, status: BuildStatus): boolean {
@@ -267,7 +320,14 @@ function build_constructor_params(
 		const arr = fc.params[variadic_idx] as ArrayValuesNode;
 		const elem_type_name = arr.type.name || "int";
 		const elem_struct = status.structs.find((s) => s.name === elem_type_name && !s.is_simple_type);
-		const elem_size = elem_struct ? get_struct_size(elem_type_name, status) : 8;
+		// A fat `string` element is a 16-byte { ptr, len } slot even though
+		// `string` has no struct node (which would size it at 8).
+		const elem_is_string = elem_type_name === "string";
+		const elem_size = elem_struct
+			? get_struct_size(elem_type_name, status)
+			: elem_is_string
+				? 16
+				: 8;
 		const count = arr.values.length;
 		// Pack behind an 8-byte length prefix so the buffer carries the
 		// standard aarch64 array layout (first-element pointer, length at
@@ -286,13 +346,30 @@ function build_constructor_params(
 			const slot_offset = data_base + j * elem_size;
 			if (elem_struct && arg.node_type === "func_call") {
 				// Tuple/struct constructor: eval params into x1..x7, then call _init
-				// with x0 pointing at this slot.
+				// with x0 pointing at this slot. A by-value string param consumes
+				// TWO consecutive registers (ptr, len) — matching _init's pair
+				// prologue — so compute a slot map left-to-right before packing.
 				const tfc = arg as FunctionCallNode;
 				const fc_param_regs = ["x1", "x2", "x3", "x4", "x5", "x6", "x7"];
+				const fc_slots: number[] = [];
+				let fc_total = 0;
+				for (let k = 0; k < tfc.params.length; k++) {
+					fc_slots.push(fc_total);
+					fc_total += arg_is_string(tfc.params[k]) ? 2 : 1;
+				}
 				for (let k = tfc.params.length - 1; k >= 0; k--) {
 					build_node(tfc.params[k], status);
 					if (!status.code.endsWith("\n")) status.code += "\n";
-					status.code += `mov ${fc_param_regs[k]}, x0\n`;
+					const reg_idx = fc_slots[k];
+					if (arg_is_string(tfc.params[k]) && reg_idx + 1 < fc_param_regs.length) {
+						// Move the LEN half FIRST: the pair rides in x0/x1,
+						// and for slot 0 the ptr destination IS x1 — moving
+						// it first would destroy the length.
+						status.code += `mov ${fc_param_regs[reg_idx + 1]}, x1\n`;
+						status.code += `mov ${fc_param_regs[reg_idx]}, x0\n`;
+					} else {
+						status.code += `mov ${fc_param_regs[reg_idx]}, x0\n`;
+					}
 				}
 				status.code += `add x0, x29, #${slot_offset}\n`;
 				status.code += `bl ${tfc.name}_init\n`;
@@ -305,6 +382,12 @@ function build_constructor_params(
 					status.code += `ldr x2, [x1, #${b}]\n`;
 					status.code += `str x2, [x0, #${b}]\n`;
 				}
+			} else if (elem_is_string) {
+				// Fat string element: store both (ptr, len) halves.
+				build_node(arg, status);
+				if (!status.code.endsWith("\n")) status.code += "\n";
+				status.code += `str x0, [x29, #${slot_offset}]\n`;
+				status.code += `str x1, [x29, #${slot_offset + 8}]\n`;
 			} else {
 				build_node(arg, status);
 				if (!status.code.endsWith("\n")) status.code += "\n";
@@ -381,13 +464,42 @@ function build_constructor_params(
 	}
 
 	const has_args = fc.params.length > 0;
+	// Fat-string args consume TWO AAPCS slots (ptr, len pair).
+	const arg_pair: boolean[] = [];
+	let base_slot_count = 0;
+	for (let i = 0; i < fc.params.length; i++) {
+		const p = fc.params[i];
+		const pt = (p as any).type?.name || "";
+		const lit =
+			p.node_type === "value" && typeof (p as ValueNode).value === "string"
+				? ((p as ValueNode).value as string).startsWith('"')
+				: false;
+		const is_pair = pt === "string" || lit;
+		arg_pair.push(is_pair);
+		base_slot_count += is_pair ? 2 : 1;
+	}
 	let base = 0;
 	if (has_args) {
-		base = allocate_stack_space(status, fc.params.length * 8, 16);
+		base = allocate_stack_space(status, base_slot_count * 8, 16);
+	}
+	const arg_slot_base: number[] = [];
+	{
+		let acc = 0;
+		for (let i = 0; i < fc.params.length; i++) {
+			arg_slot_base.push(acc);
+			acc += arg_pair[i] ? 2 : 1;
+		}
 	}
 	for (let i = fc.params.length - 1; i >= 0; i--) {
 		const param = fc.params[i];
 		const param_type = (param as any).type?.name || "";
+		if (arg_pair[i]) {
+			build_node(param, status);
+			if (!status.code.endsWith("\n")) status.code += "\n";
+			status.code += `str x0, [x29, #${base + arg_slot_base[i] * 8}]\n`;
+			status.code += `str x1, [x29, #${base + (arg_slot_base[i] + 1) * 8}]\n`;
+			continue;
+		}
 		if (param.node_type === "array" && param_type === "string") {
 			// Static string-array arg: emit a .quad data label and pass its address.
 			const arr = param as ArrayValuesNode;
@@ -449,15 +561,26 @@ function build_constructor_params(
 			build_node(param, status);
 		}
 		if (!status.code.endsWith("\n")) status.code += "\n";
-		status.code += `str x0, [x29, #${base + i * 8}]\n`;
+		status.code += `str x0, [x29, #${base + arg_slot_base[i] * 8}]\n`;
 	}
 	// `param_regs` is ["x1".."x7"] — slot index for arg i is i+1 (x0 is the
-	// destination pointer). Load each in-register arg, skipping args whose
-	// slot falls past x7 (those are spilled to the outgoing area below).
-	for (let i = 0; i < fc.params.length; i++) {
-		const slot = i + 1;
-		if (slot >= NUM_REG_ARGS) continue;
-		status.code += `ldr ${param_regs[i]}, [x29, #${base + i * 8}]\n`;
+	// destination pointer). Fat-string args occupy TWO consecutive slots.
+	// Load each in-register arg, skipping args whose slot falls past x7
+	// (those are spilled to the outgoing area below).
+	{
+		let load_slot = 1;
+		for (let i = 0; i < fc.params.length; i++) {
+			if (load_slot >= NUM_REG_ARGS) break;
+			status.code += `ldr ${param_regs[load_slot - 1]}, [x29, #${base + arg_slot_base[i] * 8}]\n`;
+			if (arg_pair[i]) {
+				if (load_slot + 1 < NUM_REG_ARGS) {
+					status.code += `ldr ${param_regs[load_slot]}, [x29, #${base + (arg_slot_base[i] + 1) * 8}]\n`;
+				}
+				load_slot += 2;
+			} else {
+				load_slot += 1;
+			}
+		}
 	}
 	// AAPCS64: args past slot 7 go in the caller's outgoing area at [sp] at
 	// the moment of the bl. Lower sp by the outgoing area size and copy each
@@ -991,6 +1114,12 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 				: size;
 			if (!status.heap_array_vars) status.heap_array_vars = new Set();
 			status.heap_array_vars.add(node.name);
+			// The literal rows are strdup'd (owned) for string elements —
+			// scope-exit destroy must free each slot before the buffer.
+			if (node.type.name === "string") {
+				if (!status.heap_owned_string_arrays) status.heap_owned_string_arrays = new Set();
+				status.heap_owned_string_arrays.add(node.name);
+			}
 			const class_element = status.structs.find((s) => s.name === node.type.name && s.is_class);
 			if (class_element) {
 				if (!status.heap_class_arrays) status.heap_class_arrays = new Map();
@@ -1017,10 +1146,14 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 					const slot = 8 + i * element_size;
 					const raw = is_range ? value : resolve_static_value(value as BaseNode, status);
 					if (typeof raw === "string" && raw.startsWith('"')) {
-						const label = resolve_array_element(raw, str_labels);
-						status.code += `adr x0, ${label}\n`;
+						// strdup the label ptr: the buffer OWNS its rows (the
+						// scope-exit walk frees each slot's ptr half).
+						status.code += `adr x0, ${resolve_array_element(raw, str_labels)}\n`;
+						emit_strdup(status);
 						status.code += `ldr x9, [x29, #${offset}]\n`;
 						status.code += `str x0, [x9, #${slot}]\n`;
+						status.code += `mov x1, #${string_literal_length(raw)}\n`;
+						status.code += `str x1, [x9, #${slot + 8}]\n`;
 					} else if (typeof raw === "string") {
 						emit_int_immediate(status, raw);
 						status.code += `ldr x9, [x29, #${offset}]\n`;
@@ -1331,17 +1464,21 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 						const slot_offset = offset + i * element_size;
 						const resolved = resolve_static_value(value, status);
 						if (resolved !== null) {
-							const label = resolve_array_element(resolved, labels);
-							status.code += `adr x0, ${label}\n`;
-							status.code += `str x0, [x29, #${slot_offset}]\n`;
+							emit_string_array_element(status, resolved, labels, "x29", slot_offset);
 						}
 					});
 				} else {
 					emit_data(status, `${node.name}: ${directive} `);
-					array_values.values.forEach((value, i) => {
-						if (i > 0) emit_data(status, ", ");
+					let first = true;
+					array_values.values.forEach((value) => {
 						const resolved = resolve_static_value(value, status);
-						emit_data(status, resolved !== null ? resolved : "0");
+						if (node.type.name === "string" && resolved !== null && resolved.startsWith('"')) {
+							emit_string_data_row((text) => emit_data(status, text), resolved, labels, first);
+						} else {
+							if (!first) emit_data(status, ", ");
+							emit_data(status, resolved !== null ? resolved : "0");
+						}
+						first = false;
 					});
 					emit_data(status, `\n.p2align 2\n`);
 				}
@@ -1349,10 +1486,15 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 				const labels = emit_string_array_labels(array_values.values, status);
 				status.code += `${node.name}: ${directive} `;
 				array_values.values.forEach((value, i) => {
-					if (i > 0) status.code += ", ";
+					if (i > 0) emit_data(status, ", ");
 					const resolved = resolve_static_value(value, status);
-					const label = resolved !== null ? resolve_array_element(resolved, labels) : "0";
-					status.code += label;
+					if (resolved !== null && resolved.startsWith('"')) {
+						// Fat-string row: ptr label + len half (16 bytes).
+						const label = resolve_array_element(resolved, labels);
+						status.code += `.quad ${label}\n\t.quad ${string_literal_length(resolved)}`;
+					} else {
+						status.code += ".quad 0\n\t.quad 0";
+					}
 				});
 				status.code += `\n.p2align 2\n`;
 			} else {
@@ -1412,6 +1554,13 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 		) {
 			if (!status.heap_array_vars) status.heap_array_vars = new Set();
 			status.heap_array_vars.add(node.name);
+			// An `Array<string>`-returning call (Array.with / a helper) hands
+			// back a buffer of OWNED heap copies — record it so scope-exit
+			// destroy frees each slot before the buffer itself.
+			if (node.type.name === "string") {
+				if (!status.heap_owned_string_arrays) status.heap_owned_string_arrays = new Set();
+				status.heap_owned_string_arrays.add(node.name);
+			}
 			const class_element = status.structs.find((s) => s.name === node.type.name && s.is_class);
 			if (class_element) {
 				if (!status.heap_class_arrays) status.heap_class_arrays = new Map();
@@ -1713,15 +1862,18 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 				// Heap-forced (e.g. a `ref self` method like string.set writes
 				// through this var): the folded literal would land in
 				// read-only data — strdup it into an owned stack slot instead.
-				const offset = allocate_stack_space(status, 8);
+				const offset = allocate_stack_space(status, 16);
 				status.stack_offsets!.set(node.name, offset);
 				const label = `_str_fold_${decl_const_counter++}`;
 				emit_data(status, `${label}: .asciz ${escape_asciz(str_result)}\n.p2align 2\n`);
 				status.code += `adr x0, ${label}\n`;
 				emit_strdup(status);
-				status.code += `str x0, [x29, #${offset}]\n`;
+				status.code += `mov x1, #${string_literal_length(str_result)}\n`;
+				emit_pair_store_x29(status, offset);
 				mark_heap_string(status, node.name);
 			} else if (str_result !== null) {
+				if (!status.string_literal_lengths) status.string_literal_lengths = new Map();
+				status.string_literal_lengths.set(node.name, string_literal_length(str_result));
 				if (status.function_return_label) {
 					emit_data(status, `${node.name}: .asciz ${escape_asciz(str_result)}\n.p2align 2\n`);
 				} else {
@@ -1734,13 +1886,13 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 					status.code += "\n";
 				}
 				if (status.function_return_label) {
-					const offset = allocate_stack_space(status, 8);
+					const offset = allocate_stack_space(status, 16);
 					status.stack_offsets!.set(node.name, offset);
-					status.code += `str x0, [x29, #${offset}]\n`;
+					emit_pair_store_x29(status, offset);
 				} else {
-					emit_data(status, `${node.name}: .space 8\n`);
+					emit_data(status, `${node.name}: .space 16\n`);
 					status.code += `adr x1, ${node.name}\n`;
-					status.code += `str x0, [x1]\n`;
+					status.code += `stp x0, x1, [x1]\n`;
 				}
 				check_heap();
 			}
@@ -1777,13 +1929,22 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 				) {
 					emit_view_string_arg(node.value, status);
 					emit_view_materialize_owned(status);
-					status.code += `str x0, [x29, #${offset}]\n`;
+					emit_pair_store_x29(status, offset);
 					mark_heap_string(status, node.name);
 					status.last_result_is_heap = false;
 				} else if (is_heap_alias) {
-					emit_var_load(status, "x0", raw, 8);
+					// The source string is heap-owned by another variable —
+					// strdup an independent copy of the ptr half, then carry
+					// the source's len word.
+					const src_off0 = status.stack_offsets?.get(raw);
+					status.code += `ldr x0, [x29, #${src_off0 ?? 0}]\n`;
 					emit_strdup(status);
-					status.code += `str x0, [x29, #${offset}]\n`;
+					if (src_off0 !== undefined) {
+						status.code += `ldr x1, [x29, #${src_off0 + 8}]\n`;
+					} else {
+						status.code += `mov x1, #0\n`;
+					}
+					emit_pair_store_x29(status, offset);
 					mark_heap_string(status, node.name);
 				} else if (!is_literal) {
 					build_node(node.value, status);
@@ -1794,6 +1955,10 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 						status.code += `strb w0, [x29, #${offset}]\n`;
 					} else if (size === 4) {
 						status.code += `str w0, [x29, #${offset}]\n`;
+					} else if (size === 16 && node.type.name === "string") {
+						// Fat string: the value build leaves the (ptr, len)
+						// pair in x0/x1 — store both words.
+						emit_pair_store_x29(status, offset);
 					} else {
 						status.code += `str x0, [x29, #${offset}]\n`;
 					}
@@ -1804,18 +1969,21 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 					status.code += `ldr d0, [x0]\n`;
 					status.code += `str d0, [x29, #${offset}]\n`;
 				} else if (node.type.name === "string" && raw.startsWith('"')) {
+					const lit_len = string_literal_length(raw);
 					if (status.force_heap_strings?.has(node.name)) {
 						const label = `_str_init_${decl_const_counter++}`;
 						emit_data(status, `${label}: .asciz ${escape_asciz(raw)}\n.p2align 2\n`);
 						status.code += `adr x0, ${label}\n`;
 						emit_strdup(status);
-						status.code += `str x0, [x29, #${offset}]\n`;
+						status.code += `mov x1, #${lit_len}\n`;
+						emit_pair_store_x29(status, offset);
 						mark_heap_string(status, node.name);
 					} else {
 						const label = `_str_init_${decl_const_counter++}`;
 						emit_data(status, `${label}: .asciz ${escape_asciz(raw)}\n.p2align 2\n`);
 						status.code += `adr x0, ${label}\n`;
-						status.code += `str x0, [x29, #${offset}]\n`;
+						status.code += `mov x1, #${lit_len}\n`;
+						emit_pair_store_x29(status, offset);
 					}
 				} else {
 					emit_int_immediate(status, raw);
@@ -1831,6 +1999,8 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 				if (node.type.name === "string" && raw.startsWith('"')) {
 					emit_data(status, `${node.name}: .asciz ${escape_asciz(raw)}\n.p2align 2\n`);
 					status.string_literal_names!.add(node.name);
+					if (!status.string_literal_lengths) status.string_literal_lengths = new Map();
+					status.string_literal_lengths.set(node.name, string_literal_length(raw));
 				} else {
 					emit_data(status, `${node.name}: ${directive} ${raw}\n`);
 					if (size % 4 !== 0) {
@@ -1887,17 +2057,21 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 						const slot_offset = offset + i * size;
 						const resolved = resolve_static_value(value, status);
 						if (resolved !== null) {
-							const label = resolve_array_element(resolved, labels);
-							status.code += `adr x0, ${label}\n`;
-							status.code += `str x0, [x29, #${slot_offset}]\n`;
+							emit_string_array_element(status, resolved, labels, "x29", slot_offset);
 						}
 					});
 				} else {
 					emit_data(status, `${node.name}: ${directive} `);
-					array_values.values.forEach((value, i) => {
-						if (i > 0) emit_data(status, ", ");
+					let first = true;
+					array_values.values.forEach((value) => {
 						const resolved = resolve_static_value(value, status);
-						emit_data(status, resolved !== null ? resolved : "0");
+						if (node.type.name === "string" && resolved !== null && resolved.startsWith('"')) {
+							emit_string_data_row((text) => emit_data(status, text), resolved, labels, first);
+						} else {
+							if (!first) emit_data(status, ", ");
+							emit_data(status, resolved !== null ? resolved : "0");
+						}
+						first = false;
 					});
 					emit_data(status, `\n.p2align 2\n`);
 				}

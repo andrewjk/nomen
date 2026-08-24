@@ -20,7 +20,11 @@ String interpolation (`"\{expr}"`) creates temporary heap allocations that are f
 
 `string` is the **own** form (heap, freed at scope exit); `view string` is the non-owning `(ptr, len)` borrow. This own/borrow distinction is the string analog of `Array<T>` vs `view T` — see ARRAY.md.
 
-**Hidden string-length companions**: a by-value `string` parameter whose function body reads `.length` is lowered as two parameters — the `char*` plus a trailing `long _<name>_len` companion (mirroring the nullable `_has` convention). Call sites append the companion right after the string argument, so a per-character helper called in a loop costs one hoisted `strlen`, not one per call. See `src/check/stamp_hidden_string_lens.ts`.
+**Fat-string representation**: `string` is a 16-byte `nomen_string { char* ptr; long len; }` value. `.length` is a field load (O(1), no strlen). The buffer stays NUL-terminated at `ptr[len]`, so libc/FFI consumers (`printf %s`, `fopen`, `stringWithUTF8String:`) work unchanged. Literal lengths are compile-time constants (`src/build_common/string_literal_length.ts` — unescape-aware; never use sizeof-1). Backend ABIs:
+
+- **C**: string renders as `nomen_string` by value (`c_type.ts`); raw `#arch: c` bodies written against thin `char*` are emitted under a `_raw_` label with a marshalling adapter that synthesizes `len` once via strlen at the creation boundary (`src/build_c/utils/raw_string_abi.ts`). T-generic container raw bodies (Buffer_<T>, Array_<T>) are natively fat via checker substitution (`raw_c_type_name` → `nomen_string`).
+- **aarch64**: strings ride as consecutive (ptr, len) register pairs — the same ABI `view T` uses — and 16-byte stack slots. String-receiver methods keep ptr in x19, len in x20; the pair occupies AAPCS slots 0–1, so first real param starts at x2. Call-site pair detection is by argument static type (generic callee params like `TK` stay generic post-mono). Watch the ldp/stp ±504 offset range — use the guarded helpers in `utils/string_pair.ts`.
+- Known unsupported: `Task<string>` results and `Channel<string>` payloads still assume 8-byte values.
 
 ### Structs (Value Types)
 

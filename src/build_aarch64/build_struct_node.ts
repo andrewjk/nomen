@@ -1,6 +1,7 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import { struct_needs_auto_destroy } from "../build_common/destroy_analysis.ts";
 import { moved_param_is_consumed } from "../build_common/scan_moved_param_consumed.ts";
+import string_literal_length from "../build_common/string_literal_length.ts";
 import { is_overloaded, mangled_label } from "../check/utils/function_overload.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
@@ -12,7 +13,7 @@ import build_block_node from "./build_block_node.ts";
 import build_node from "./build_node.ts";
 import { check_c_fallback } from "./build_raw_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
-import { emit_free } from "./utils/audit.ts";
+import { emit_free, emit_strdup } from "./utils/audit.ts";
 import { emit_destroy_for_anchor_slot, emit_field_destroys } from "./utils/auto_destroy.ts";
 import { find_enum_for_case } from "./utils/enum_case.ts";
 import { is_nullable_struct_type } from "./utils/nullable_struct.ts";
@@ -27,6 +28,7 @@ import {
 	patch_overflow_placeholders,
 } from "./utils/stack_args.ts";
 import { allocate_stack_space } from "./utils/stack_var.ts";
+import { emit_owning_array_string_specialize, emit_pair_store_to } from "./utils/string_pair.ts";
 import {
 	get_enum_case_index,
 	get_enum_size,
@@ -179,7 +181,13 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 	const custom_init = node.functions.find((f) => f.name === "#init" && f.has_body);
 
 	if (node.is_simple_type) {
+		// Simple types (string, int, …) have no ctor/fields to build, but
+		// their METHOD bodies need current_struct so `self.length` resolves
+		// through the fat-pair prologue (len in x20) instead of a stale
+		// generic load.
+		status.current_struct = node;
 		build_struct_functions(node, status);
+		status.current_struct = undefined;
 	} else {
 		status.current_struct = node;
 		if (!custom_init) {
@@ -423,6 +431,9 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 		status.code += `str x9, [x19]\n`;
 	}
 	const param_regs = ["x1", "x2", "x3", "x4", "x5", "x6", "x7"];
+	// Fat-string fields consume TWO AAPCS slots (ptr, len pair) — track the
+	// register-slot index separately from the field index.
+	let ctor_slot = 1;
 	for (let i = 0; i < required_fields.length; i++) {
 		const field = required_fields[i];
 		const offset = get_field_offset(node.name, field.name, status);
@@ -431,14 +442,52 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 		// area; with one callee-saved push (x19) between `stp x29, x30` and
 		// `sub sp, sp, #STACK_SIZE`, slot (8+k) lives at the per-arg
 		// placeholder offset patched once the local frame size is known.
-		const slot = i + 1;
+		const slot = ctor_slot;
+		// A fat-string FIELD consumes two AAPCS slots (ptr, len) — but a
+		// fixed-size string ARRAY field (`var string[2] args`) arrives as
+		// ONE pointer to the caller's row data and is copied element-wise
+		// by the array branch below.
+		const field_is_fat_string =
+			field.type.name === "string" &&
+			!field.type.is_view &&
+			!field.type.is_ref &&
+			!field.type.is_array;
+		if (field_is_fat_string) ctor_slot += 2;
+		else ctor_slot += 1;
 		let src_reg: string;
 		if (slot < NUM_REG_ARGS) {
-			src_reg = param_regs[i];
+			src_reg = param_regs[slot - 1];
 		} else {
 			const k = slot - NUM_REG_ARGS;
 			status.code += `ldr x10, [x29, #${overflow_placeholder(func_name, k)}]\n`;
 			src_reg = "x10";
+		}
+		// A fat-string field stores both halves: ptr from its slot, len from
+		// the next slot. A CLASS's plain string field is always heap-owned —
+		// strdup the caller's (possibly rodata) ptr half so destroy can free
+		// it unconditionally.
+		if (field_is_fat_string) {
+			const len_src = slot + 1 < NUM_REG_ARGS ? param_regs[slot] : undefined;
+			if (node.is_class && !field.type.is_ref) {
+				// Class string fields are always heap-owned: strdup the ptr
+				// half. The strdup wrapper call clobbers every caller-saved
+				// register, so BOTH halves must be spilled across it.
+				status.code += `stp ${src_reg}, ${len_src ?? "xzr"}, [sp, #-16]!\n`;
+				status.code += `mov x0, ${src_reg}\n`;
+				emit_strdup(status);
+				status.code += `ldp ${src_reg}, ${len_src ?? "xzr"}, [sp], #16\n`;
+				status.code += `mov ${src_reg}, x0\n`;
+			}
+			if (len_src) {
+				emit_pair_store_to(status, "x19", offset, src_reg, len_src);
+			} else {
+				// Pair straddles the register/overflow boundary.
+				const k2 = slot + 1 - NUM_REG_ARGS;
+				status.code += `str ${src_reg}, [x19, #${offset}]\n`;
+				status.code += `ldr x9, [x29, #${overflow_placeholder(func_name, k2)}]\n`;
+				status.code += `str x9, [x19, #${offset + 8}]\n`;
+			}
+			continue;
 		}
 		if (field.type.is_array && field.type.length && (field.type.length.start ?? -1) >= 0) {
 			const element_size = aarch64_size(field.type.name);
@@ -519,6 +568,15 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 						status.code += `bl _strdup\n`;
 						status.code += `mov x1, x0\n`;
 					}
+					// Fat-string default: carry the compile-time length half,
+					// then skip the generic single-word store below.
+					status.code += `mov x2, #${string_literal_length(val)}\n`;
+					if (offset + 8 > 504) {
+						emit_pair_store_to(status, "x19", offset, "x1", "x2");
+					} else {
+						emit_pair_store_to(status, "x19", offset, "x1", "x2");
+					}
+					continue;
 				} else {
 					// Non-literal default: a module-level const reference
 					// (e.g. `var int hi = INF` with `const int INF = …`).
@@ -724,6 +782,15 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 						status.code += `bl _strdup\n`;
 						status.code += `mov x1, x0\n`;
 					}
+					// Fat-string default: carry the compile-time length half,
+					// then skip the generic single-word store below.
+					status.code += `mov x2, #${string_literal_length(val)}\n`;
+					if (offset + 8 > 504) {
+						emit_pair_store_to(status, "x19", offset, "x1", "x2");
+					} else {
+						emit_pair_store_to(status, "x19", offset, "x1", "x2");
+					}
+					continue;
 				} else {
 					// Non-literal default: a module-level const reference
 					// (e.g. `var int hi = INF` with `const int INF = …`).
@@ -859,6 +926,12 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		const is_self_param = func.params[0]?.is_self_param;
 		const self_is_var = is_self_param && func.params[0]?.declaration === "var";
 		const self_is_ref = is_self_param && !!(func.params[0].is_ref || func.params[0].type?.is_ref);
+		// A `string` struct's by-value self arrives as the (x0=ptr, x1=len)
+		// pair. Raw bodies read the pointer from x19 (the long-standing
+		// convention); the len half lives in x20 — `.length` on self is
+		// `mov x0, x20`, and fat rewrites of String.nm's raw bodies read it
+		// from there too.
+		const self_is_string = is_self_param && node.name === "string" && !self_is_var && !self_is_ref;
 		// `ref self` on a SIMPLE type (e.g. string.set) follows the by-ref
 		// convention: x0 arrives holding &receiver, while raw #arch: aarch64
 		// bodies expect x19 = the self VALUE (the same convention read-only
@@ -868,8 +941,14 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		const needs_x19 = is_self_param && (!self_is_var || (self_is_ref && node.is_simple_type));
 		const x19_through_ref = needs_x19 && self_is_var;
 		if (needs_x19) {
-			status.code += `str x19, [sp, #-16]!\n`;
-			status.code += x19_through_ref ? `ldr x19, [x0]\n` : `mov x19, x0\n`;
+			if (self_is_string) {
+				status.code += `stp x19, x20, [sp, #-16]!\n`;
+				status.code += x19_through_ref ? `ldr x19, [x0]\n` : `mov x19, x0\n`;
+				if (!x19_through_ref) status.code += `mov x20, x1\n`;
+			} else {
+				status.code += `str x19, [sp, #-16]!\n`;
+				status.code += x19_through_ref ? `ldr x19, [x0]\n` : `mov x19, x0\n`;
+			}
 		}
 
 		const param_regs = ["x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7"];
@@ -882,14 +961,12 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		const old_ref_params = status.function_ref_params;
 		const old_ref_class_slots = status.ref_class_slots;
 		const old_view_params = status.function_view_params;
-		const old_hidden_len_params = status.hidden_len_params;
 
 		status.function_param_regs = new Map();
 		status.function_param_vars = new Set();
 		status.function_ref_params = new Set();
 		status.ref_class_slots = new Map();
 		status.function_view_params = new Set();
-		status.hidden_len_params = new Set<string>();
 		status.struct_return_buffer = undefined;
 
 		// An ARRAY-typed return (`out Array<T>`) is a heap buffer POINTER in
@@ -930,7 +1007,9 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		for (let i = 0; i < func.params.length; i++) {
 			const param = func.params[i];
 			if (param.is_self_param && !self_is_var) {
-				slot_idx++;
+				// A fat-string BY-VALUE self is a (ptr, len) pair — two AAPCS
+				// slots. (`ref self` on a simple type passes &slot — one.)
+				slot_idx += self_is_string ? 2 : 1;
 				continue;
 			}
 			if (param.is_variadic) {
@@ -943,9 +1022,10 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 				}
 				continue;
 			}
-			// A `view T` param arrives as a (ptr, len) register pair — two
-			// AAPCS64 slots, not a by-address struct param.
-			if (param.type.is_view) {
+			// A fat `string` or `view T` param arrives as a (ptr, len)
+			// register pair — two AAPCS64 slots, not a by-address struct
+			// param.
+			if (param.type.is_view || param.type.name === "string") {
 				slot_idx += 2;
 				continue;
 			}
@@ -992,12 +1072,6 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 				if (!status.class_vars) status.class_vars = new Set();
 				status.class_vars.add(param.name);
 			}
-			// A hidden-length string param's companion occupies the NEXT slot
-			// (mirrors the C signature's trailing `long _<name>_len`); see
-			// stamp_hidden_string_lens.
-			if (param.hidden_len) {
-				slot_idx++;
-			}
 			slot_idx++;
 		}
 
@@ -1018,7 +1092,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		for (let i = 0; i < func.params.length; i++) {
 			const param = func.params[i];
 			if (param.is_self_param && !self_is_var) {
-				second_slot_idx++;
+				second_slot_idx += self_is_string ? 2 : 1;
 				continue;
 			}
 			if (param.is_variadic) {
@@ -1032,6 +1106,27 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 				const offset = allocate_stack_space(status, 16, 16);
 				status.stack_offsets!.set(param.name, offset);
 				status.function_view_params!.add(param.name);
+				// Each half comes from its own register slot, or from the
+				// caller's outgoing stack area when its slot is past x7.
+				for (const half of [0, 1] as const) {
+					const p_slot = second_slot_idx + half;
+					if (p_slot < NUM_REG_ARGS) {
+						status.code += `str ${param_regs[p_slot]}, [x29, #${offset + half * 8}]\n`;
+					} else {
+						const k = p_slot - NUM_REG_ARGS;
+						status.code += `ldr x9, [x29, #${overflow_placeholder(func_label, k)}]\n`;
+						status.code += `str x9, [x29, #${offset + half * 8}]\n`;
+					}
+				}
+				second_slot_idx += 2;
+				continue;
+			}
+			// A fat `string` param is a (ptr, len) pair: spill both halves
+			// into a 16-byte local (two register slots — matching the call
+			// site's pair passing), then skip the generic single-slot spill.
+			if (param.type.name === "string") {
+				const offset = allocate_stack_space(status, 16, 16);
+				status.stack_offsets!.set(param.name, offset);
 				// Each half comes from its own register slot, or from the
 				// caller's outgoing stack area when its slot is past x7.
 				for (const half of [0, 1] as const) {
@@ -1099,28 +1194,6 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 					}
 				}
 			}
-			// A hidden-length string param's companion length arrives in the
-			// NEXT AAPCS slot (mirroring the C signature's trailing
-			// `long _<name>_len`); spill it under its companion name so
-			// emit_string_length reads `.length` from here instead of calling
-			// strlen (see stamp_hidden_string_lens). The companion's slot is
-			// one past this param's own slot — second_slot_idx is only
-			// advanced past both below.
-			if (param.hidden_len) {
-				const len_offset = allocate_stack_space(status, 8, 8);
-				status.stack_offsets!.set(`_${param.name}_len`, len_offset);
-				if (!status.hidden_len_params) status.hidden_len_params = new Set();
-				status.hidden_len_params.add(param.name);
-				const len_slot = second_slot_idx + 1;
-				if (len_slot < NUM_REG_ARGS) {
-					status.code += `str ${param_regs[len_slot]}, [x29, #${len_offset}]\n`;
-				} else {
-					const k = len_slot - NUM_REG_ARGS;
-					status.code += `ldr x9, [x29, #${overflow_placeholder(func_label, k)}]\n`;
-					status.code += `str x9, [x29, #${len_offset}]\n`;
-				}
-				second_slot_idx++;
-			}
 			second_slot_idx++;
 		}
 
@@ -1169,7 +1242,20 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		// elements (deep-copy string fields, per-element destroy on replace).
 		// In the standalone context: x19 = self, x1 = i, x2 = val (the raw
 		// block's register convention — prologue copies but doesn't clobber).
-		if (!emit_owning_buffer_standalone_aarch64(node, func.name, status)) {
+		// Array<string>'s raw T-generic `with`/`set` copy shared pointers;
+		// string slots must own deep copies (the C side guards this with
+		// T_NEEDS_STRDUP). Specialize before the raw body would emit.
+		if (
+			node.name === "Array_string" &&
+			(func.name === "with" ||
+				func.name === "set" ||
+				func.name === "at" ||
+				func.name === "first" ||
+				func.name === "at_end") &&
+			emit_owning_array_string_specialize(func.name, status)
+		) {
+			// specialized — skip the raw body
+		} else if (!emit_owning_buffer_standalone_aarch64(node, func.name, status)) {
 			build_block_node(func, status);
 		}
 
@@ -1272,7 +1358,11 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 			status.code += `ldr ${callee_saved[ci]}, [sp], #16\n`;
 		}
 		if (needs_x19) {
-			status.code += `ldr x19, [sp], #16\n`;
+			if (self_is_string) {
+				status.code += `ldp x19, x20, [sp], #16\n`;
+			} else {
+				status.code += `ldr x19, [sp], #16\n`;
+			}
 		}
 		status.code += `ldp x29, x30, [sp], #16\n`;
 		status.code += `ret\n`;
@@ -1287,7 +1377,6 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		status.function_ref_params = old_ref_params;
 		status.ref_class_slots = old_ref_class_slots;
 		status.function_view_params = old_view_params;
-		status.hidden_len_params = old_hidden_len_params;
 		status.function_return_label = old_return_label;
 		status.force_heap_strings = old_force_heap;
 		status.struct_return_buffer = undefined;

@@ -13,16 +13,19 @@ pub struct string: Stringable, Hashable, Equatable {
 		```
 		```
 		#arch: aarch64
-		// x19 = self (char*), result in x0 (djb2 hash)
+		// Fat-string ABI: x19 = self ptr, x20 = self len (the pair prologue).
+		// djb2 over exactly len bytes — no NUL scan.
 		mov x0, #5381
 		mov x3, x19
+		mov x4, x20
 		.Lstring_hash_loop:
+		cbz x4, .Lstring_hash_done
 		ldrb w1, [x3]
-		cbz w1, .Lstring_hash_done
 		mov x2, #33
 		mul x0, x0, x2
 		add x0, x0, x1
 		add x3, x3, #1
+		sub x4, x4, #1
 		b .Lstring_hash_loop
 		.Lstring_hash_done:
 		```
@@ -35,7 +38,9 @@ pub struct string: Stringable, Hashable, Equatable {
 		```
 		```
 		#arch: aarch64
+		// The fat value IS self — return the pair unchanged.
 		mov x0, x19
+		mov x1, x20
 		```
 	}
 
@@ -46,8 +51,9 @@ pub struct string: Stringable, Hashable, Equatable {
 		```
 		```
 		#arch: aarch64
-		// x19 = self (pointer), x1 = index
-		ldrb w0, [x19, x1]
+		// Fat-string ABI: x19 = self ptr, x20 = self len; index in x2
+		// (self's pair occupies slots 0-1).
+		ldrb w0, [x19, x2]
 		```
 	}
 
@@ -89,9 +95,10 @@ pub struct string: Stringable, Hashable, Equatable {
 		```
 		#arch: aarch64
 		// view string is (ptr, len), returned in the x0/x1 register pair.
-		// x19 = self (char*), x1 = start, x2 = end (retained through prologue).
-		add x0, x19, x1     // ptr = self + start
-		sub x1, x2, x1      // len = end - start
+		// Fat-string ABI: x19 = self ptr, x20 = self len; start in x2,
+		// end in x3 (self's pair occupies slots 0-1).
+		add x0, x19, x2     // ptr = self + start
+		sub x1, x3, x2      // len = end - start
 		```
 	}
 
@@ -114,10 +121,22 @@ pub struct string: Stringable, Hashable, Equatable {
 		```
 		```
 		#arch: aarch64
-		// x0 = self, x1 = other on entry
-		bl _strcmp
+		// Fat-string ABI: x19/x20 = self (ptr, len); other = (x2 ptr, x3
+		// len). Equal lengths + equal bytes — no NUL scan.
+		stp x20, x21, [sp, #-16]!
+		cmp x20, x3
+		b.ne .Lstring_eq_len_ne
+		mov x0, x19
+		mov x1, x2
+		mov x2, x20
+		bl _memcmp
 		cmp x0, #0
 		cset x0, eq
+		b .Lstring_eq_done
+		.Lstring_eq_len_ne:
+		mov x0, #0
+		.Lstring_eq_done:
+		ldp x20, x21, [sp], #16
 		```
 	}
 
@@ -133,23 +152,29 @@ pub struct string: Stringable, Hashable, Equatable {
 		```
 		```
 		#arch: aarch64
-		stp x20, x21, [sp, #-16]!
-		mov x20, x1
-		bl _strlen
-		mov x21, x0
-		mov x0, x20
-		bl _strlen
-		add x0, x21, x0
+		// Fat-string ABI: x19/x20 = self (ptr, len); other = (x2 ptr, x3
+		// len). Two memcpys of known length — no strlen/strcpy/strcat.
+		// Returns the (buf, total) pair.
+		stp x21, x22, [sp, #-16]!
+		stp x2, x3, [sp, #-16]!      // other (ptr, len)
+		add x0, x20, x3
 		add x0, x0, #1
 		bl _malloc
-		mov x21, x0
+		mov x21, x0                  // buf (callee-saved across memcpys)
+		mov x0, x21
 		mov x1, x19
-		bl _strcpy
+		mov x2, x20
+		bl _memcpy                   // left half
+		ldp x1, x2, [sp]             // other ptr, len
+		add x0, x21, x20
+		bl _memcpy                   // right half
+		ldp x1, x2, [sp], #16        // reload other len; pop
+		add x3, x20, x2              // total bytes
+		add x0, x21, x3
+		strb wzr, [x0]               // NUL-terminate for libc consumers
+		mov x1, x3
 		mov x0, x21
-		mov x1, x20
-		bl _strcat
-		mov x0, x21
-		ldp x20, x21, [sp], #16
+		ldp x21, x22, [sp], #16
 		```
 	}
 
@@ -169,29 +194,34 @@ pub struct string: Stringable, Hashable, Equatable {
 		```
 		```
 		#arch: aarch64
+		// Fat-string ABI: x19/x20 = self (ptr, len); count in x2. memcpy
+		// loop of known stride; returns the (buf, total) pair.
 		stp x20, x21, [sp, #-16]!
-		stp x22, xzr, [sp, #-16]!
-		mov x20, x1
-		bl _strlen
-		mov x21, x0
-		mul x0, x0, x20
-		add x0, x0, #1
+		stp x22, x23, [sp, #-16]!
+		stp x24, x25, [sp, #-16]!
+		mov x21, x20            // self len (stride)
+		mov x22, x2             // count
+		mul x23, x21, x22       // total bytes
+		add x0, x23, #1
 		bl _malloc
-		str x0, [x29, #8]
-		mov x22, x0
-		.Lmul_loop:
-		cbz x20, .Lmul_done
-		mov x0, x22
+		mov x24, x0             // buf
+		mov x25, x0             // cursor
+		.Lstring_mul_loop:
+		cbz x22, .Lstring_mul_done
+		mov x0, x25
 		mov x1, x19
 		mov x2, x21
 		bl _memcpy
-		add x22, x22, x21
-		sub x20, x20, #1
-		b .Lmul_loop
-		.Lmul_done:
-		strb wzr, [x22]
-		ldr x0, [x29, #8]
-		ldp x22, xzr, [sp], #16
+		add x25, x25, x21
+		sub x22, x22, #1
+		b .Lstring_mul_loop
+		.Lstring_mul_done:
+		add x0, x24, x23
+		strb wzr, [x0]          // NUL-terminate for libc consumers
+		mov x1, x23
+		mov x0, x24
+		ldp x24, x25, [sp], #16
+		ldp x22, x23, [sp], #16
 		ldp x20, x21, [sp], #16
 		```
 	}

@@ -6,6 +6,7 @@ import { parse_raw_directives } from "../raw_directives.ts";
 import build_block_node from "./build_block_node.ts";
 import { emit_owning_buffer_inline_aarch64 } from "./utils/owning_buffer_specialize.ts";
 import { allocate_stack_space } from "./utils/stack_var.ts";
+import { emit_owning_array_string_specialize } from "./utils/string_pair.ts";
 
 let inline_counter = 0;
 
@@ -87,6 +88,19 @@ export default function build_inline_method(
 	func: FunctionNode,
 	status: BuildStatus,
 ) {
+	// Array<string>'s at/set/first/at_end return or store the fat (ptr, len)
+	// pair — specialize before the raw T-generic body would splice a
+	// single-word load / sret copy.
+	if (process.env.NOMEN_DBG_ARRAY) {
+		console.error(`DBG inline_method struct=${struct_node.name} func=${func.name}`);
+	}
+	if (
+		struct_node.name === "Array_string" &&
+		["at", "set", "first", "at_end"].includes(func.name) &&
+		emit_owning_array_string_specialize(func.name, status, "x0")
+	) {
+		return;
+	}
 	// Specialize Buffer_<T> store_T / replace_T for owning value struct
 	// elements (deep-copy string fields instead of plain shallow copy).
 	if (emit_owning_buffer_inline_aarch64(struct_node, func.name, status)) return;

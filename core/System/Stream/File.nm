@@ -35,8 +35,9 @@ pub struct File {
 		```
 		```
 		#arch: aarch64
+		// Fat-string ABI: path = (x1, x2), mode = (x3, x4).
 		mov x0, x1
-		mov x1, x2
+		mov x1, x3
 		bl _fopen
 		str x0, [x19, #8]
 		```
@@ -75,7 +76,8 @@ pub struct File {
 		fread(buf, 1, size, f);
 		buf[size] = 0;
 		self->eof = 1;
-		return buf;
+		// size bytes were read — the count is exact, no strlen.
+		return (nomen_string){ buf, size };
 		```
 		```
 		#arch: aarch64
@@ -106,6 +108,7 @@ pub struct File {
 		mov w1, #1
 		strb w1, [x19, #16]
 		ldr x0, [sp, #8]
+		ldr x1, [sp, #0]          // fat len half = size read
 		add sp, sp, #16
 		b .return_File_readAll
 		```
@@ -147,7 +150,7 @@ pub struct File {
 		}
 		buf[len] = 0;
 		if (c == EOF) self->eof = 1;
-		return buf;
+		return (nomen_string){ buf, len };
 		```
 		```
 		#arch: aarch64
@@ -201,6 +204,7 @@ pub struct File {
 		strb w1, [x19, #16]
 		.Lfile_readline_ret:
 		ldr x0, [sp, #0]
+		ldr x1, [sp, #16]         // fat len half
 		add sp, sp, #32
 		b .return_File_readLine
 		```
@@ -236,7 +240,7 @@ pub struct File {
 		long n = fread(buf, 1, size, f);
 		buf[n] = 0;
 		if (n < size) self->eof = 1;
-		return buf;
+		return (nomen_string){ buf, n };
 		```
 		```
 		#arch: aarch64
@@ -260,6 +264,7 @@ pub struct File {
 		strb w3, [x19, #16]
 		.Lfile_readchunk_ret:
 		ldr x0, [sp, #8]
+		ldr x1, [sp, #0]          // fat len half = bytes read
 		add sp, sp, #16
 		b .return_File_readChunk
 		```
@@ -275,7 +280,9 @@ pub struct File {
 		```
 		```
 		#arch: aarch64
+		// Fat-string ABI: data = (x1, x2), size in x3.
 		mov x0, x1
+		mov x2, x3
 		mov x1, #1
 		ldr x3, [x19, #8]
 		bl _fwrite
@@ -320,7 +327,7 @@ pub struct File {
 		```
 		#arch: c
 		FILE *f = fopen(path, "r");
-		if (!f) return strdup("");
+		if (!f) return (nomen_string){ strdup(""), 0 };
 		fseek(f, 0, SEEK_END);
 		long size = ftell(f);
 		fseek(f, 0, SEEK_SET);
@@ -328,7 +335,7 @@ pub struct File {
 		fread(buf, 1, size, f);
 		buf[size] = 0;
 		fclose(f);
-		return buf;
+		return (nomen_string){ buf, size };
 		```
 		```
 		#arch: aarch64
@@ -364,11 +371,13 @@ pub struct File {
 		ldr x0, [sp, #8]
 		bl _fclose
 		ldr x0, [sp, #24]
+		ldr x1, [sp, #16]         // fat len half = file size
 		add sp, sp, #48
 		b .return_File_read_all
 		.Lfile_read_all_empty:
 		adr x0, .Lfile_read_all_empty_str
 		bl _strdup
+		mov x1, #0
 		add sp, sp, #48
 		b .return_File_read_all
 		.Lfile_read_all_mode: .asciz "r"
@@ -391,8 +400,8 @@ pub struct File {
 		```
 		#arch: aarch64
 		sub sp, sp, #32
-		str x0, [sp, #0]
-		str x1, [sp, #8]
+		str x0, [sp, #0]          // path ptr
+		str x2, [sp, #8]          // data ptr (fat pair: data = x2/x3)
 		adr x1, .Lfile_write_all_mode
 		bl _fopen
 		str x0, [sp, #16]

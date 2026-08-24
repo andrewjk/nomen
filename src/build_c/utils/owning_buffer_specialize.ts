@@ -112,45 +112,48 @@ export function emit_owning_buffer_string_body(func_name: string, status: BuildS
 	if (!OWNING_BUFFER_METHODS.has(func_name)) return false;
 
 	if (func_name === "store_T") {
-		// store_T(self, i, val): strdup the incoming char* into the slot so the
-		// slot owns an independent heap copy. The round-trip guard (val == old
-		// slot) keeps the existing copy instead of orphaning it — a
-		// load-modify-store round-trip must not strdup over its own alias.
-		status.code += `char** _slots = (char**)self->data;\n`;
-		status.code += `char* _old = _slots[i];\n`;
-		status.code += `_slots[i] = (val && val != _old) ? strdup(val) : val;\n`;
+		// store_T(self, i, val): deep-copy the incoming fat string into the
+		// slot so the slot owns an independent heap buffer. The round-trip
+		// guard (val.ptr == old slot ptr) keeps the existing copy instead of
+		// orphaning it — a load-modify-store round-trip must not strdup over
+		// its own alias.
+		status.code += `nomen_string* _slots = (nomen_string*)self->data;\n`;
+		status.code += `nomen_string _old = _slots[i];\n`;
+		status.code += `_slots[i] = (val.ptr && val.ptr != _old.ptr) ? nomen_str_dup(val) : val;\n`;
 		return true;
 	}
 
 	if (func_name === "replace_T") {
-		// replace_T(self, i, val): free the old slot's heap copy, then strdup
-		// the new value. When val aliases the old slot (round-trip), keep it.
-		status.code += `char** _slots = (char**)self->data;\n`;
-		status.code += `char* _old = _slots[i];\n`;
-		status.code += `if (val != _old) { free(_old); _slots[i] = val ? strdup(val) : 0; }\n`;
+		// replace_T(self, i, val): free the old slot's heap buffer, then
+		// deep-copy the new value. When val aliases the old slot
+		// (round-trip), keep it.
+		status.code += `nomen_string* _slots = (nomen_string*)self->data;\n`;
+		status.code += `nomen_string _old = _slots[i];\n`;
+		status.code += `if (val.ptr != _old.ptr) { free(_old.ptr); _slots[i] = val.ptr ? nomen_str_dup(val) : (nomen_string){0,0}; }\n`;
 		return true;
 	}
 
 	if (func_name === "shift_T") {
 		// shift_T(self, dst, src): move slot src into slot dst — free dst's
-		// heap copy, take over src's pointer, zero src. Exactly one slot owns
-		// the string afterwards (Map/Set.remove's backward-shift).
-		status.code += `char** _slots = (char**)self->data;\n`;
+		// heap buffer, take over src's {ptr, len} wholesale, zero src.
+		// Exactly one slot owns the string afterwards (Map/Set.remove's
+		// backward-shift).
+		status.code += `nomen_string* _slots = (nomen_string*)self->data;\n`;
 		status.code += `if (dst != src) {\n`;
-		status.code += `free(_slots[dst]);\n`;
+		status.code += `free(_slots[dst].ptr);\n`;
 		status.code += `_slots[dst] = _slots[src];\n`;
-		status.code += `_slots[src] = 0;\n`;
+		status.code += `_slots[src] = (nomen_string){0,0};\n`;
 		status.code += `}\n`;
 		return true;
 	}
 
 	if (func_name === "destroy") {
-		// #destroy(self): free each slot's heap copy, then free the slab.
-		// Unused/moved slots are NULL (calloc-zeroed or zeroed by move_T), and
+		// #destroy(self): free each slot's heap buffer, then free the slab.
+		// Unused/moved slots are zeroed (calloc'd or cleared by move_T), and
 		// free(NULL) is a no-op, so iterating cap is safe.
 		status.code += `if (self->data) {\n`;
-		status.code += `char** _slots = (char**)self->data;\n`;
-		status.code += `for (int _i = 0; _i < self->cap; _i++) { free(_slots[_i]); }\n`;
+		status.code += `nomen_string* _slots = (nomen_string*)self->data;\n`;
+		status.code += `for (int _i = 0; _i < self->cap; _i++) { free(_slots[_i].ptr); }\n`;
 		status.code += `free(_slots);\n`;
 		status.code += `}\n`;
 		status.code += `self->data = 0;\n`;
@@ -262,9 +265,9 @@ function emit_deep_copy_fields(
 		if (field.type.name === "string" && !field.type.is_array) {
 			const src_field = `${src}${arrow(src)}${field.name}`;
 			if (old_expr) {
-				status.code += `${dst}.${field.name} = (${src_field} && ${src_field} != ${old_expr}.${field.name}) ? strdup(${src_field}) : ${src_field};\n`;
+				status.code += `${dst}.${field.name} = (${src_field}.ptr && ${src_field}.ptr != ${old_expr}.${field.name}.ptr) ? nomen_str_dup(${src_field}) : ${src_field};\n`;
 			} else {
-				status.code += `${dst}.${field.name} = ${src_field} ? strdup(${src_field}) : 0;\n`;
+				status.code += `${dst}.${field.name} = ${src_field}.ptr ? nomen_str_dup(${src_field}) : ${src_field};\n`;
 			}
 		} else if (field.type.name && !field.type.is_array) {
 			const field_struct = status.structs.find(

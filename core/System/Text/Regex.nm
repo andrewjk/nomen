@@ -136,16 +136,17 @@ func find_next_byte = (string input, int pos, int len, string charset, out int) 
 	```
 	```
 	#arch: aarch64
-	// Free function: x0 = input, x1 = pos, x2 = len, x3 = charset
+	// Fat-string ABI (free fn): x0 = input.ptr, x1 = input.len, x2 = pos,
+	// x3 = len, x4 = charset.ptr, x5 = charset.len.
 	sub sp, sp, #32
 	str x0, [sp, #0]            // input
-	str x2, [sp, #8]            // len (default return)
-	cmp x1, x2
+	str x3, [sp, #8]            // len (default return)
+	cmp x2, x3
 	b.ge .Lfnb_default
-	ldrb w9, [x3]
+	ldrb w9, [x4]
 	cbz w9, .Lfnb_default
-	add x0, x0, x1              // x0 = input + pos
-	mov x1, x3                  // x1 = charset
+	add x0, x0, x2              // x0 = input + pos
+	mov x1, x4                  // x1 = charset
 	bl _strpbrk
 	cbz x0, .Lfnb_default
 	ldr x9, [sp, #0]            // input

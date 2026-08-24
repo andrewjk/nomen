@@ -55,12 +55,6 @@ export default class FunctionNode extends BaseNode implements BlockNode, Returni
 	type_params: string[] = [];
 	scope?: BaseNode;
 	/**
-	 * Set once the post-check `stamp_hidden_string_lens` pass has considered
-	 * this function — guards against double-stamping when a check pass runs
-	 * twice over a shared tree.
-	 */
-	hidden_len_stamped?: boolean;
-	/**
 	 * Optional contract on the return value, parsed from `out TYPE: constraint`.
 	 * The placeholder `out` refers to the return value; other identifiers refer
 	 * to the function's parameters. Used by check_function_call to propagate

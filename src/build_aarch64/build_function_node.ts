@@ -168,6 +168,8 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.heap_strings = new Set<string>();
 	const old_heap_string_arrays = status.heap_string_arrays;
 	status.heap_string_arrays = undefined;
+	const old_heap_owned_string_arrays = status.heap_owned_string_arrays;
+	status.heap_owned_string_arrays = undefined;
 	const old_heap_class_arrays = status.heap_class_arrays;
 	status.heap_class_arrays = undefined;
 	const old_heap_array_vars = status.heap_array_vars;
@@ -310,19 +312,13 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 				first_pass_slot += 1;
 				continue;
 			}
-			// A `view T` param arrives as a (ptr, len) REGISTER PAIR — two
-			// AAPCS64 slots. It is not a by-address struct param (excluded
-			// from the callee-saved pool; spilled to two stack slots in the
-			// second pass below).
-			if (param.type.is_view) {
+			// A fat `string` or `view T` param arrives as a (ptr, len)
+			// REGISTER PAIR — two AAPCS64 slots. It is not a by-address
+			// struct param (excluded from the callee-saved pool; spilled to
+			// a 16-byte stack slot in the second pass below).
+			if (param.type.is_view || param.type.name === "string") {
 				first_pass_slot += 2;
 				continue;
-			}
-			// A hidden-length string param's companion occupies the NEXT slot
-			// (mirrors the C signature's trailing `long _<name>_len`); see
-			// stamp_hidden_string_lens.
-			if (param.hidden_len) {
-				first_pass_slot++;
 			}
 			// A class param is a reference type (a heap pointer), but the body
 			// accesses it as a pointer VALUE — so it still belongs in the
@@ -394,8 +390,6 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	const old_view_params = status.function_view_params;
 	status.function_variadic_params = new Set();
 	status.function_view_params = new Set();
-	const old_hidden_len_params = status.hidden_len_params;
-	status.hidden_len_params = new Set<string>();
 	status.moved_class_params = new Map();
 
 	// Save mov'd class param values for cleanup at return
@@ -449,6 +443,41 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 					}
 				}
 				param_idx += 2;
+				continue;
+			}
+
+			// A fat `string` param is a (ptr, len) pair: spill BOTH halves
+			// from their two register slots (or the caller's outgoing stack
+			// area) into a 16-byte local — identical shape to `view T`.
+			// Consumes two param register slots, so skip the generic
+			// single-slot spill and the trailing param_idx++.
+			// (`ref string` params are excluded — they arrive as ONE slot
+			// holding &caller-storage; param.is_ref only covers `ref self`,
+			// so test the TYPE's ref flag. String ARRAY params
+			// (`Array<string>` / `string[]`, also typed name="string") are
+			// excluded too — they arrive as ONE buffer-pointer slot.)
+			if (
+				param.type.name === "string" &&
+				!param.type.is_view &&
+				!param.type.is_ref &&
+				!param.type.is_array
+			) {
+				const offset = allocate_stack_space(status, 16, 16);
+				status.stack_offsets!.set(param.name, offset);
+				for (const half of [0, 1] as const) {
+					const p_slot = param_idx + half;
+					if (p_slot < NUM_REG_ARGS) {
+						status.code += `str ${param_regs[p_slot]}, [x29, #${offset + half * 8}]\n`;
+					} else {
+						const k = p_slot - NUM_REG_ARGS;
+						status.code += `ldr x9, [x29, #${overflow_placeholder(node.name, k)}]\n`;
+						status.code += `str x9, [x29, #${offset + half * 8}]\n`;
+					}
+				}
+				param_idx += 2;
+				if (param.declaration === "var") {
+					status.function_param_vars.add(param.name);
+				}
 				continue;
 			}
 
@@ -524,26 +553,6 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 			}
 			param_idx++;
 
-			// A hidden-length string param's companion length arrives in the
-			// NEXT AAPCS slot (mirroring the C signature's trailing
-			// `long _<name>_len`); spill it under its companion name so
-			// emit_string_length reads `.length` from here instead of
-			// calling strlen (see stamp_hidden_string_lens).
-			if (param.hidden_len) {
-				const len_offset = allocate_stack_space(status, 8, 8);
-				status.stack_offsets!.set(`_${param.name}_len`, len_offset);
-				if (!status.hidden_len_params) status.hidden_len_params = new Set();
-				status.hidden_len_params.add(param.name);
-				if (param_idx < NUM_REG_ARGS) {
-					status.code += `str ${param_regs[param_idx]}, [x29, #${len_offset}]\n`;
-				} else {
-					const k = param_idx - NUM_REG_ARGS;
-					status.code += `ldr x9, [x29, #${overflow_placeholder(node.name, k)}]\n`;
-					status.code += `str x9, [x29, #${len_offset}]\n`;
-				}
-				param_idx++;
-			}
-
 			if (param.declaration === "var") {
 				status.function_param_vars.add(param.name);
 			}
@@ -592,8 +601,10 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	let pidx = 0;
 	for (let i = 0; i < node.params.length; i++) {
 		const param = node.params[i];
-		if (param.is_variadic) pidx++;
-		if (param.hidden_len) pidx++;
+		if (param.is_variadic) pidx += 2;
+		else if (param.type.is_array) pidx += 1;
+		// Fat strings and views consume two AAPCS slots (pair ABI).
+		else if (param.type.name === "string" || param.type.is_view) pidx += 2;
 		if (param.is_moved) {
 			const is_class = !!status.structs.find((s) => s.name === param.type.name && s.is_class);
 			if (is_class) {
@@ -793,6 +804,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.moved = old_moved;
 	status.heap_strings = old_heap_strings;
 	status.heap_string_arrays = old_heap_string_arrays;
+	status.heap_owned_string_arrays = old_heap_owned_string_arrays;
 	status.heap_class_arrays = old_heap_class_arrays;
 	status.heap_array_vars = old_heap_array_vars;
 	status.current_function_name = old_function_name;
@@ -806,7 +818,6 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.function_struct_param_slots = old_struct_param_slots;
 	status.function_variadic_params = old_variadic_params_aarch64;
 	status.function_view_params = old_view_params;
-	status.hidden_len_params = old_hidden_len_params;
 	status.function_return_label = old_return_label;
 	status.struct_return_buffer = undefined;
 	status.return_buffer_stack_offset = undefined;

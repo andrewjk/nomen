@@ -72,6 +72,19 @@ export function emit_var_load(status: BuildStatus, reg: string, name: string, si
 	}
 	const offset = status.stack_offsets?.get(name);
 	if (offset !== undefined) {
+		// Fat string slot (16 bytes): move the (ptr, len) pair. Only the
+		// plain base-register form is supported (x-registers). ldp/stp
+		// simm7-scaled range tops out at +504 — split beyond it.
+		if (size === 16 && reg.startsWith("x")) {
+			const n = parseInt(reg.substring(1), 10);
+			if (offset + 8 > 504) {
+				status.code += `ldr ${reg}, [x29, #${offset}]\n`;
+				status.code += `ldr x${n + 1}, [x29, #${offset + 8}]\n`;
+			} else {
+				status.code += `ldp ${reg}, x${n + 1}, [x29, #${offset}]\n`;
+			}
+			return;
+		}
 		if (size === 1) {
 			status.code += `ldrb ${reg.replace("x", "w")}, [x29, #${offset}]\n`;
 		} else if (size === 4) {
@@ -114,6 +127,18 @@ export function emit_var_store(status: BuildStatus, reg: string, name: string, s
 	}
 	const offset = status.stack_offsets?.get(name);
 	if (offset !== undefined) {
+		// Fat string slot (16 bytes): store the (ptr, len) pair. Split
+		// beyond the ldp/stp +504 range.
+		if (size === 16 && reg.startsWith("x")) {
+			const n = parseInt(reg.substring(1), 10);
+			if (offset + 8 > 504) {
+				status.code += `str ${reg}, [x29, #${offset}]\n`;
+				status.code += `str x${n + 1}, [x29, #${offset + 8}]\n`;
+			} else {
+				status.code += `stp ${reg}, x${n + 1}, [x29, #${offset}]\n`;
+			}
+			return;
+		}
 		if (size === 1) {
 			status.code += `strb ${reg.replace("x", "w")}, [x29, #${offset}]\n`;
 		} else if (size === 4) {

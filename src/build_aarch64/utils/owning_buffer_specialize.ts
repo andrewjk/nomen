@@ -145,6 +145,23 @@ export function emit_owning_buffer_inline_aarch64(
 			emit_string_shift_T(status, "x0");
 			return true;
 		}
+		if (func_name === "load_T" || func_name === "move_T") {
+			// Fat-string elements return as the (ptr, len) register PAIR —
+			// not the x8 sret copy the T-generic raw body would emit for a
+			// 16-byte element. move_T additionally zeroes the slot pair.
+			status.code += `stp x20, x21, [sp, #-16]!\n`;
+			status.code += `ldr x20, [x0, #8]\n`; // data base
+			status.code += `ldr x21, [x0, #0]\n`; // cap (bounds already checked)
+			status.code += `add x20, x20, x1, lsl #4\n`; // &slot[i]
+			if (func_name === "load_T") {
+				status.code += `ldp x0, x1, [x20]\n`;
+			} else {
+				status.code += `ldp x0, x1, [x20]\n`;
+				status.code += `stp xzr, xzr, [x20]\n`;
+			}
+			status.code += `ldp x20, x21, [sp], #16\n`;
+			return true;
+		}
 	}
 	return false;
 }
@@ -180,6 +197,20 @@ export function emit_owning_buffer_standalone_aarch64(
 		}
 		if (func_name === "shift_T") {
 			emit_string_shift_T(status, "x19");
+			return true;
+		}
+		if (func_name === "load_T" || func_name === "move_T") {
+			// Pair-returning loads (see the inline variant above).
+			status.code += `stp x20, x21, [sp, #-16]!\n`;
+			status.code += `ldr x20, [x19, #8]\n`; // data base
+			status.code += `add x20, x20, x1, lsl #4\n`; // &slot[i]
+			if (func_name === "load_T") {
+				status.code += `ldp x0, x1, [x20]\n`;
+			} else {
+				status.code += `ldp x0, x1, [x20]\n`;
+				status.code += `stp xzr, xzr, [x20]\n`;
+			}
+			status.code += `ldp x20, x21, [sp], #16\n`;
 			return true;
 		}
 	}
@@ -278,23 +309,30 @@ function emit_owning_standalone_struct(elem: StructNode, func_name: string, stat
 function emit_string_store_T(status: BuildStatus, self_reg: string) {
 	const lbl = (s: string) =>
 		`.Lstr_st_${s}_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
-	const skip = lbl("skip");
+	const store_null = lbl("null");
 	const done = lbl("done");
+	// Fat-string slots are 16 bytes: (ptr @ +0, len @ +8). The incoming
+	// value is the (x2 ptr, x3 len) pair. strdup the ptr half, carry the
+	// len half through the call.
 	status.code += `stp x20, x21, [sp, #-16]!\n`;
+	status.code += `str x22, [sp, #-16]!\n`;
 	status.code += `ldr x20, [${self_reg}, #8]\n`; // data base
-	status.code += `add x20, x20, x1, lsl #3\n`; // &slot[i] (i * 8)
-	status.code += `mov x21, x2\n`; // val (callee-saved)
-	status.code += `ldr x0, [x20]\n`; // old slot value
+	status.code += `add x20, x20, x1, lsl #4\n`; // &slot[i] (i * 16)
+	status.code += `mov x21, x2\n`; // val ptr
+	status.code += `mov x22, x3\n`; // val len
+	status.code += `ldr x0, [x20]\n`; // old slot ptr
 	status.code += `cmp x21, x0\n`;
-	status.code += `b.eq ${skip}\n`; // val == old → keep
-	status.code += `cbz x21, ${skip}\n`; // val == NULL → store NULL (fall through writes x21=0)
+	status.code += `b.eq ${done}\n`; // round-trip alias → keep slot as-is
+	status.code += `cbz x21, ${store_null}\n`; // NULL → zero the slot pair
 	status.code += `mov x0, x21\n`;
 	emit_strdup(status);
 	status.code += `str x0, [x20]\n`;
+	status.code += `str x22, [x20, #8]\n`;
 	status.code += `b ${done}\n`;
-	status.code += `${skip}:\n`;
-	status.code += `str x21, [x20]\n`; // store val (NULL or round-trip alias)
+	status.code += `${store_null}:\n`;
+	status.code += `stp xzr, xzr, [x20]\n`;
 	status.code += `${done}:\n`;
+	status.code += `ldr x22, [sp], #16\n`;
 	status.code += `ldp x20, x21, [sp], #16\n`;
 }
 
@@ -307,22 +345,26 @@ function emit_string_replace_T(status: BuildStatus, self_reg: string) {
 		`.Lstr_rp_${s}_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
 	const skip = lbl("skip");
 	const done = lbl("done");
+	// Fat slots (16 bytes): free the old ptr half, strdup the new ptr half,
+	// store the new len half. The incoming value is the (x2, x3) pair.
 	status.code += `stp x20, x21, [sp, #-16]!\n`;
+	status.code += `str x22, [sp, #-16]!\n`;
 	status.code += `ldr x20, [${self_reg}, #8]\n`; // data base
-	status.code += `add x20, x20, x1, lsl #3\n`; // &slot[i]
-	status.code += `mov x21, x2\n`; // val (callee-saved)
-	status.code += `ldr x0, [x20]\n`; // old slot value
-	status.code += `cmp x21, x0\n`;
-	status.code += `b.eq ${done}\n`; // val == old → keep (no free, no strdup)
-	emit_free(status); // free(old) — old in x0
-	status.code += `cbz x21, ${skip}\n`; // val == NULL → store NULL
+	status.code += `add x20, x20, x1, lsl #4\n`; // &slot[i]
+	status.code += `mov x21, x2\n`; // val ptr
+	status.code += `mov x22, x3\n`; // val len
+	status.code += `ldr x0, [x20]\n`; // old slot ptr
+	emit_free(status); // free(old)
+	status.code += `cbz x21, ${skip}\n`; // NULL val → zero the slot pair
 	status.code += `mov x0, x21\n`;
 	emit_strdup(status);
 	status.code += `str x0, [x20]\n`;
+	status.code += `str x22, [x20, #8]\n`;
 	status.code += `b ${done}\n`;
 	status.code += `${skip}:\n`;
-	status.code += `str xzr, [x20]\n`;
+	status.code += `stp xzr, xzr, [x20]\n`;
 	status.code += `${done}:\n`;
+	status.code += `ldr x22, [sp], #16\n`;
 	status.code += `ldp x20, x21, [sp], #16\n`;
 }
 
@@ -334,17 +376,19 @@ function emit_string_replace_T(status: BuildStatus, self_reg: string) {
  */
 function emit_string_shift_T(status: BuildStatus, self_reg: string) {
 	const done = `.Lstr_sh_done_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+	// Fat slots (16 bytes): free dst's ptr half, move the (ptr, len) pair
+	// wholesale from src, zero src's pair.
 	status.code += `stp x20, x21, [sp, #-16]!\n`;
 	status.code += `ldr x9, [${self_reg}, #8]\n`; // data base
-	status.code += `add x20, x9, x1, lsl #3\n`; // &slot[dst]
-	status.code += `add x21, x9, x2, lsl #3\n`; // &slot[src]
+	status.code += `add x20, x9, x1, lsl #4\n`; // &slot[dst]
+	status.code += `add x21, x9, x2, lsl #4\n`; // &slot[src]
 	status.code += `cmp x20, x21\n`;
 	status.code += `b.eq ${done}\n`;
 	status.code += `ldr x0, [x20]\n`;
 	emit_free(status); // free(dst-old); free(NULL) is a no-op
-	status.code += `ldr x9, [x21]\n`;
-	status.code += `str x9, [x20]\n`;
-	status.code += `str xzr, [x21]\n`;
+	status.code += `ldp x9, x10, [x21]\n`;
+	status.code += `stp x9, x10, [x20]\n`;
+	status.code += `stp xzr, xzr, [x21]\n`;
 	status.code += `${done}:\n`;
 	status.code += `ldp x20, x21, [sp], #16\n`;
 }
@@ -482,8 +526,9 @@ export function emit_owning_buffer_destroy_aarch64(node: StructNode, status: Bui
 	const is_string = !elem && owning_buffer_is_string_elem_aarch64(node);
 	if (!elem && !is_string) return false;
 
-	// string slots are 8-byte char*; struct slots are T_SIZE bytes.
-	const T_SIZE = elem ? get_struct_size(elem.name, status) : 8;
+	// string slots are 16-byte fat values (free the ptr half only); struct
+	// slots are T_SIZE bytes.
+	const T_SIZE = elem ? get_struct_size(elem.name, status) : 16;
 	const func_label = `${node.name}_destroy`;
 
 	const old_scoped_declarations = status.scoped_declarations;
@@ -535,7 +580,8 @@ export function emit_owning_buffer_destroy_aarch64(node: StructNode, status: Bui
 	status.code += `mov x3, #${T_SIZE}\n`;
 	status.code += `madd x0, x22, x3, x20\n`;
 	if (is_string) {
-		// free(slot[i]) — a NULL slot (unused/moved) is a no-op free.
+		// free(slot[i].ptr) — a NULL/zeroed slot is a no-op free. x0 holds
+		// &slot[i]; the ptr half is at offset 0.
 		status.code += `ldr x0, [x0]\n`;
 		emit_free(status);
 	} else {

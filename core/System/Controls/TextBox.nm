@@ -6,7 +6,7 @@ pub class TextBox : Control {
 
 	pub func #init = (self, Window window) {
 		```
-		#arch: c, aarch64_use_c
+		#arch: c
 		#platform: macos
 		id field = ((id(*)(id, SEL, CGRect))objc_msgSend)(
 			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSTextField"), sel_registerName("alloc")),
@@ -33,7 +33,51 @@ pub class TextBox : Control {
 		self->handle = (uint64_t)field;
 		```
 		```
-		#arch: c, aarch64_use_c
+		#arch: aarch64_use_c
+		#platform: macos
+		id field = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSTextField"), sel_registerName("alloc")),
+			sel_registerName("initWithFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 200, 24));
+		((void(*)(id, SEL, BOOL))objc_msgSend)(
+			field, sel_registerName("setEditable:"), 1);
+		((void(*)(id, SEL, BOOL))objc_msgSend)(
+			field, sel_registerName("setSelectable:"), 1);
+		((void(*)(id, SEL, BOOL))objc_msgSend)(
+			field, sel_registerName("setBordered:"), 1);
+		((void(*)(id, SEL, BOOL))objc_msgSend)(
+			field, sel_registerName("setBezeled:"), 1);
+		((void(*)(id, SEL, BOOL))objc_msgSend)(
+			field, sel_registerName("setDrawsBackground:"), 1);
+		((void(*)(id, SEL, id))objc_msgSend)(
+			field, sel_registerName("setStringValue:"),
+			((id(*)(id, SEL, const char*))objc_msgSend)(
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), ""));
+		id contentView = ((id(*)(id, SEL))objc_msgSend)(
+			(id)window->handle, sel_registerName("contentView"));
+		((void(*)(id, SEL, id))objc_msgSend)(
+			contentView, sel_registerName("addSubview:"), field);
+		self->handle = (uint64_t)field;
+		```
+		```
+		#arch: c
+		#platform: ios
+		id field = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("UITextField"), sel_registerName("alloc")),
+			sel_registerName("initWithFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 200, 30));
+		((void(*)(id, SEL, BOOL))objc_msgSend)(
+			field, sel_registerName("setBorderStyle:"), 1); // UITextBorderStyleRoundedRect = 1
+		id parentView = ((id(*)(id, SEL))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)(
+				(id)window->handle, sel_registerName("rootViewController")),
+			sel_registerName("view"));
+		((void(*)(id, SEL, id))objc_msgSend)(
+			parentView, sel_registerName("addSubview:"), field);
+		self->handle = (uint64_t)field;
+		```
+		```
+		#arch: aarch64_use_c
 		#platform: ios
 		id field = ((id(*)(id, SEL, CGRect))objc_msgSend)(
 			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("UITextField"), sel_registerName("alloc")),
@@ -53,14 +97,28 @@ pub class TextBox : Control {
 
 	pub func set_frame = (ref self, int x, int y, int width, int height) {
 		```
-		#arch: c, aarch64_use_c
+		#arch: c
 		#platform: macos
 		((void(*)(id, SEL, CGRect))objc_msgSend)(
 			(id)self->handle, sel_registerName("setFrame:"),
 			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
 		```
 		```
-		#arch: c, aarch64_use_c
+		#arch: aarch64_use_c
+		#platform: macos
+		((void(*)(id, SEL, CGRect))objc_msgSend)(
+			(id)self->handle, sel_registerName("setFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+		```
+		```
+		#arch: c
+		#platform: ios
+		((void(*)(id, SEL, CGRect))objc_msgSend)(
+			(id)self->handle, sel_registerName("setFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+		```
+		```
+		#arch: aarch64_use_c
 		#platform: ios
 		((void(*)(id, SEL, CGRect))objc_msgSend)(
 			(id)self->handle, sel_registerName("setFrame:"),
@@ -70,7 +128,7 @@ pub class TextBox : Control {
 
 	pub func set_text = (self, string text) {
 		```
-		#arch: c, aarch64_use_c
+		#arch: c
 		#platform: macos
 		((void(*)(id, SEL, id))objc_msgSend)(
 			(id)self->handle, sel_registerName("setStringValue:"),
@@ -78,18 +136,34 @@ pub class TextBox : Control {
 				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), text));
 		```
 		```
-		#arch: c, aarch64_use_c
+		#arch: aarch64_use_c
+		#platform: macos
+		((void(*)(id, SEL, id))objc_msgSend)(
+			(id)self->handle, sel_registerName("setStringValue:"),
+			((id(*)(id, SEL, const char*))objc_msgSend)(
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), text.ptr));
+		```
+		```
+		#arch: c
 		#platform: ios
 		((void(*)(id, SEL, id))objc_msgSend)(
 			(id)self->handle, sel_registerName("setText:"),
 			((id(*)(id, SEL, const char*))objc_msgSend)(
 				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), text));
 		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		((void(*)(id, SEL, id))objc_msgSend)(
+			(id)self->handle, sel_registerName("setText:"),
+			((id(*)(id, SEL, const char*))objc_msgSend)(
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), text.ptr));
+		```
 	}
 
 	pub func get_text = (self, out string) {
 		```
-		#arch: c, aarch64_use_c
+		#arch: c
 		#platform: macos
 		id str = ((id(*)(id, SEL))objc_msgSend)(
 			(id)self->handle, sel_registerName("stringValue"));
@@ -98,10 +172,28 @@ pub class TextBox : Control {
 		return strdup(cstr);
 		```
 		```
-		#arch: c, aarch64_use_c
+		#arch: aarch64_use_c
+		#platform: macos
+		id str = ((id(*)(id, SEL))objc_msgSend)(
+			(id)self->handle, sel_registerName("stringValue"));
+		const char *cstr = ((const char*(*)(id, SEL))objc_msgSend)(
+			str, sel_registerName("UTF8String"));
+		return strdup(cstr);
+		```
+		```
+		#arch: c
 		#platform: ios
 		id str = ((id(*)(id, SEL))objc_msgSend)(
 			(id)self->handle, sel_registerName("text"));
+		const char *cstr = ((const char*(*)(id, SEL))objc_msgSend)(
+			str, sel_registerName("UTF8String"));
+		return strdup(cstr);
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		id str = ((id(*)(id, SEL))objc_msgSend)(
+			(id)self->handle, sel_registerName("text.ptr"));
 		const char *cstr = ((const char*(*)(id, SEL))objc_msgSend)(
 			str, sel_registerName("UTF8String"));
 		return strdup(cstr);
@@ -136,7 +228,7 @@ pub class TextBox : Control {
 
 	func #destroy = () {
 		```
-		#arch: c, aarch64_use_c
+		#arch: c
 		#platform: macos
 		if (self->handle) {
 			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
@@ -145,7 +237,25 @@ pub class TextBox : Control {
 		}
 		```
 		```
-		#arch: c, aarch64_use_c
+		#arch: aarch64_use_c
+		#platform: macos
+		if (self->handle) {
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+			self->handle = 0;
+		}
+		```
+		```
+		#arch: c
+		#platform: ios
+		if (self->handle) {
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+			self->handle = 0;
+		}
+		```
+		```
+		#arch: aarch64_use_c
 		#platform: ios
 		if (self->handle) {
 			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));

@@ -420,7 +420,6 @@ export default function clone_node(node: BaseNode): BaseNode {
 			c.is_variadic = n.is_variadic;
 			c.is_ref = n.is_ref;
 			c.is_variadic_tuple = n.is_variadic_tuple;
-			c.hidden_len = n.hidden_len;
 			c.constraint = n.constraint ? clone_node(n.constraint) : undefined;
 			c.stripped_length_equalities = n.stripped_length_equalities?.map((e) => ({ ...e }));
 			c.func_params = n.func_params?.map((p) => clone_node(p) as ParameterNode);

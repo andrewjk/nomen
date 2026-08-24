@@ -6,7 +6,7 @@ pub class Window: Control {
 
 	pub func #init = (self, string title, int width, int height) {
 		```
-		#arch: c, aarch64_use_c
+		#arch: c
 		#platform: macos
 		// Set up NSApplication first
 		id app = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
@@ -35,7 +35,46 @@ pub class Window: Control {
 		self->handle = (uint64_t)win;
 		```
 		```
-		#arch: c, aarch64_use_c
+		#arch: aarch64_use_c
+		#platform: macos
+		// Set up NSApplication first
+		id app = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
+		((void(*)(id, SEL, long))objc_msgSend)(app, sel_registerName("setActivationPolicy:"), 0);
+		((void(*)(id, SEL, BOOL))objc_msgSend)(app, sel_registerName("activateIgnoringOtherApps:"), 1);
+		// Create window
+		unsigned long style = 1 | 2 | 4 | 8;
+		id win = ((id(*)(id, SEL, double, double, double, double, unsigned long, unsigned long, BOOL))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSWindow"), sel_registerName("alloc")),
+			sel_registerName("initWithContentRect:styleMask:backing:defer:"),
+			0.0, 0.0, (double)width, (double)height,
+			style, 2, 0);
+		((id(*)(id, SEL, id))objc_msgSend)(
+			win, sel_registerName("setTitle:"),
+			((id(*)(id, SEL, const char*))objc_msgSend)(
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr));
+		((void(*)(id, SEL, double, double))objc_msgSend)(
+			win, sel_registerName("setFrameTopLeftPoint:"), 100.0, 100.0);
+		((void(*)(id, SEL, id))objc_msgSend)(win, sel_registerName("makeKeyAndOrderFront:"), (id)0);
+		// The content view must resize with the window and autoresize its
+		// subviews so each control's autoresizingMask takes effect during a
+		// live resize (AppKit's blocking drag loop bypasses our event loop).
+		id cv = ((id(*)(id, SEL))objc_msgSend)(win, sel_registerName("contentView"));
+		((void(*)(id, SEL, unsigned long))objc_msgSend)(cv, sel_registerName("setAutoresizingMask:"), 18UL);
+		((void(*)(id, SEL, BOOL))objc_msgSend)(cv, sel_registerName("setAutoresizesSubviews:"), 1);
+		self->handle = (uint64_t)win;
+		```
+		```
+		#arch: c
+		#platform: ios
+		id win = ((id(*)(id, SEL))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)(objc_getClass("UIWindow"), sel_registerName("alloc")),
+			sel_registerName("initWithFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, (double)width, (double)height));
+		((void(*)(id, SEL))objc_msgSend)(win, sel_registerName("makeKeyAndVisible"));
+		self->handle = (uint64_t)win;
+		```
+		```
+		#arch: aarch64_use_c
 		#platform: ios
 		id win = ((id(*)(id, SEL))objc_msgSend)(
 			((id(*)(id, SEL))objc_msgSend)(objc_getClass("UIWindow"), sel_registerName("alloc")),
@@ -48,12 +87,22 @@ pub class Window: Control {
 
 	pub func show = (self) {
 		```
-		#arch: c, aarch64_use_c
+		#arch: c
 		#platform: macos
 		((void(*)(id, SEL, id))objc_msgSend)((id)self->handle, sel_registerName("makeKeyAndOrderFront:"), 0);
 		```
 		```
-		#arch: c, aarch64_use_c
+		#arch: aarch64_use_c
+		#platform: macos
+		((void(*)(id, SEL, id))objc_msgSend)((id)self->handle, sel_registerName("makeKeyAndOrderFront:"), 0);
+		```
+		```
+		#arch: c
+		#platform: ios
+		((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("makeKeyAndVisible"));
+		```
+		```
+		#arch: aarch64_use_c
 		#platform: ios
 		((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("makeKeyAndVisible"));
 		```
@@ -61,24 +110,43 @@ pub class Window: Control {
 
 	pub func set_title = (self, string title) {
 		```
-		#arch: c, aarch64_use_c
+		#arch: c
 		#platform: macos
 		((id(*)(id, SEL, id))objc_msgSend)(
 			(id)self->handle, sel_registerName("setTitle:"),
 			((id(*)(id, SEL, const char*))objc_msgSend)(
 				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title));
 		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		((id(*)(id, SEL, id))objc_msgSend)(
+			(id)self->handle, sel_registerName("setTitle:"),
+			((id(*)(id, SEL, const char*))objc_msgSend)(
+				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr));
+		```
 	}
 
 	pub func run = () {
 		```
-		#arch: c, aarch64_use_c
+		#arch: c
 		#platform: macos
 		((void(*)(id, SEL))objc_msgSend)(
 			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication")), sel_registerName("run"));
 		```
 		```
-		#arch: c, aarch64_use_c
+		#arch: aarch64_use_c
+		#platform: macos
+		((void(*)(id, SEL))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication")), sel_registerName("run"));
+		```
+		```
+		#arch: c
+		#platform: ios
+		UIApplicationMain(0, 0, 0, 0);
+		```
+		```
+		#arch: aarch64_use_c
 		#platform: ios
 		UIApplicationMain(0, 0, 0, 0);
 		```
@@ -90,7 +158,7 @@ pub class Window: Control {
 	// Also runs the run loop briefly to process Apple Events (e.g. dock Quit).
 	pub func process_events = (out int) {
 		```
-		#arch: c, aarch64_use_c
+		#arch: c
 		#platform: macos
 		id app = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
 		id distant_past = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSDate"), sel_registerName("distantPast"));
@@ -115,7 +183,37 @@ pub class Window: Control {
 		return had_click;
 		```
 		```
-		#arch: c, aarch64_use_c
+		#arch: aarch64_use_c
+		#platform: macos
+		id app = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
+		id distant_past = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSDate"), sel_registerName("distantPast"));
+		id default_mode = ((id(*)(id, SEL, const char*))objc_msgSend)(
+			(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), "kCFRunLoopDefaultMode");
+		int had_click = 0;
+		while (1) {
+			id event = ((id(*)(id, SEL, unsigned long long, id, id, BOOL))objc_msgSend)(
+				app, sel_registerName("nextEventMatchingMask:untilDate:inMode:dequeue:"),
+				0xFFFFFFFFFFFFFFFFULL, // NSEventMaskAny
+				distant_past,          // untilDate — returns immediately if no events
+				default_mode,          // inMode
+				1);                    // dequeue
+			if (!event) break;
+			((void(*)(id, SEL, id))objc_msgSend)(app, sel_registerName("sendEvent:"), event);
+			long type = ((long(*)(id, SEL))objc_msgSend)(event, sel_registerName("type"));
+			if (type == 1) had_click = 1; // NSLeftMouseDown = 1
+		}
+		// Process run loop sources (Apple Events, timers) so that dock Quit
+		// and other system interactions work without NSApplication.run().
+		CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0, 1);
+		return had_click;
+		```
+		```
+		#arch: c
+		#platform: ios
+		return 0;
+		```
+		```
+		#arch: aarch64_use_c
 		#platform: ios
 		return 0;
 		```
@@ -125,13 +223,25 @@ pub class Window: Control {
 	// manual event loop when the user closes the window.
 	pub func is_visible = (self, out bool) {
 		```
-		#arch: c, aarch64_use_c
+		#arch: c
 		#platform: macos
 		BOOL vis = ((BOOL(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("isVisible"));
 		return vis;
 		```
 		```
-		#arch: c, aarch64_use_c
+		#arch: aarch64_use_c
+		#platform: macos
+		BOOL vis = ((BOOL(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("isVisible"));
+		return vis;
+		```
+		```
+		#arch: c
+		#platform: ios
+		BOOL vis = ((BOOL(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("isKeyWindow"));
+		return vis;
+		```
+		```
+		#arch: aarch64_use_c
 		#platform: ios
 		BOOL vis = ((BOOL(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("isKeyWindow"));
 		return vis;
@@ -142,7 +252,7 @@ pub class Window: Control {
 	// recent mouse-down. Call after process_events returned 1.
 	pub func click_x = (self, out int) {
 		```
-		#arch: c, aarch64_use_c
+		#arch: c
 		#platform: macos
 		id app = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
 		id event = ((id(*)(id, SEL))objc_msgSend)(app, sel_registerName("currentEvent"));
@@ -154,7 +264,24 @@ pub class Window: Control {
 		return (int)loc.x;
 		```
 		```
-		#arch: c, aarch64_use_c
+		#arch: aarch64_use_c
+		#platform: macos
+		id app = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
+		id event = ((id(*)(id, SEL))objc_msgSend)(app, sel_registerName("currentEvent"));
+		if (!event) return -1;
+		long type = ((long(*)(id, SEL))objc_msgSend)(event, sel_registerName("type"));
+		if (type != 1) return -1; // NSLeftMouseDown = 1
+		// locationInWindow is a CGPoint inside the event; read it via struct-return
+		CGPoint loc = ((CGPoint(*)(id, SEL))objc_msgSend)(event, sel_registerName("locationInWindow"));
+		return (int)loc.x;
+		```
+		```
+		#arch: c
+		#platform: ios
+		return -1;
+		```
+		```
+		#arch: aarch64_use_c
 		#platform: ios
 		return -1;
 		```
@@ -164,7 +291,7 @@ pub class Window: Control {
 	// recent mouse-down, in the window's content view.
 	pub func click_y = (self, out int) {
 		```
-		#arch: c, aarch64_use_c
+		#arch: c
 		#platform: macos
 		id app = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
 		id event = ((id(*)(id, SEL))objc_msgSend)(app, sel_registerName("currentEvent"));
@@ -178,7 +305,26 @@ pub class Window: Control {
 		return (int)(frame.size.height - loc.y);
 		```
 		```
-		#arch: c, aarch64_use_c
+		#arch: aarch64_use_c
+		#platform: macos
+		id app = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
+		id event = ((id(*)(id, SEL))objc_msgSend)(app, sel_registerName("currentEvent"));
+		if (!event) return -1;
+		long type = ((long(*)(id, SEL))objc_msgSend)(event, sel_registerName("type"));
+		if (type != 1) return -1; // NSLeftMouseDown = 1
+		CGPoint loc = ((CGPoint(*)(id, SEL))objc_msgSend)(event, sel_registerName("locationInWindow"));
+		id cv = ((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("contentView"));
+		CGRect frame = ((CGRect(*)(id, SEL))objc_msgSend)(cv, sel_registerName("frame"));
+		// NSWindow coords are bottom-left origin; flip to top-left for layout math
+		return (int)(frame.size.height - loc.y);
+		```
+		```
+		#arch: c
+		#platform: ios
+		return -1;
+		```
+		```
+		#arch: aarch64_use_c
 		#platform: ios
 		return -1;
 		```
@@ -187,14 +333,30 @@ pub class Window: Control {
 	// Returns the width of the window's content view.
 	pub func content_width = (self, out int) {
 		```
-		#arch: c, aarch64_use_c
+		#arch: c
 		#platform: macos
 		id cv = ((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("contentView"));
 		CGRect frame = ((CGRect(*)(id, SEL))objc_msgSend)(cv, sel_registerName("frame"));
 		return (int)frame.size.width;
 		```
 		```
-		#arch: c, aarch64_use_c
+		#arch: aarch64_use_c
+		#platform: macos
+		id cv = ((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("contentView"));
+		CGRect frame = ((CGRect(*)(id, SEL))objc_msgSend)(cv, sel_registerName("frame"));
+		return (int)frame.size.width;
+		```
+		```
+		#arch: c
+		#platform: ios
+		id cv = ((id(*)(id, SEL))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("rootViewController")),
+			sel_registerName("view"));
+		CGRect frame = ((CGRect(*)(id, SEL))objc_msgSend)(cv, sel_registerName("frame"));
+		return (int)frame.size.width;
+		```
+		```
+		#arch: aarch64_use_c
 		#platform: ios
 		id cv = ((id(*)(id, SEL))objc_msgSend)(
 			((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("rootViewController")),
@@ -207,14 +369,30 @@ pub class Window: Control {
 	// Returns the height of the window's content view (for coordinate flipping).
 	pub func content_height = (self, out int) {
 		```
-		#arch: c, aarch64_use_c
+		#arch: c
 		#platform: macos
 		id cv = ((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("contentView"));
 		CGRect frame = ((CGRect(*)(id, SEL))objc_msgSend)(cv, sel_registerName("frame"));
 		return (int)frame.size.height;
 		```
 		```
-		#arch: c, aarch64_use_c
+		#arch: aarch64_use_c
+		#platform: macos
+		id cv = ((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("contentView"));
+		CGRect frame = ((CGRect(*)(id, SEL))objc_msgSend)(cv, sel_registerName("frame"));
+		return (int)frame.size.height;
+		```
+		```
+		#arch: c
+		#platform: ios
+		id cv = ((id(*)(id, SEL))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("rootViewController")),
+			sel_registerName("view"));
+		CGRect frame = ((CGRect(*)(id, SEL))objc_msgSend)(cv, sel_registerName("frame"));
+		return (int)frame.size.height;
+		```
+		```
+		#arch: aarch64_use_c
 		#platform: ios
 		id cv = ((id(*)(id, SEL))objc_msgSend)(
 			((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("rootViewController")),
@@ -244,14 +422,28 @@ pub class Window: Control {
 
 	pub func set_frame = (ref self, int x, int y, int width, int height) {
 		```
-		#arch: c, aarch64_use_c
+		#arch: c
 		#platform: macos
 		((void(*)(id, SEL, CGRect))objc_msgSend)(
 			(id)self->handle, sel_registerName("setFrame:"),
 			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
 		```
 		```
-		#arch: c, aarch64_use_c
+		#arch: aarch64_use_c
+		#platform: macos
+		((void(*)(id, SEL, CGRect))objc_msgSend)(
+			(id)self->handle, sel_registerName("setFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+		```
+		```
+		#arch: c
+		#platform: ios
+		((void(*)(id, SEL, CGRect))objc_msgSend)(
+			(id)self->handle, sel_registerName("setFrame:"),
+			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+		```
+		```
+		#arch: aarch64_use_c
 		#platform: ios
 		((void(*)(id, SEL, CGRect))objc_msgSend)(
 			(id)self->handle, sel_registerName("setFrame:"),
@@ -261,7 +453,7 @@ pub class Window: Control {
 
 	func #destroy = () {
 		```
-		#arch: c, aarch64_use_c
+		#arch: c
 		#platform: macos
 		if (self->handle) {
 			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
@@ -269,7 +461,23 @@ pub class Window: Control {
 		}
 		```
 		```
-		#arch: c, aarch64_use_c
+		#arch: aarch64_use_c
+		#platform: macos
+		if (self->handle) {
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+			self->handle = 0;
+		}
+		```
+		```
+		#arch: c
+		#platform: ios
+		if (self->handle) {
+			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+			self->handle = 0;
+		}
+		```
+		```
+		#arch: aarch64_use_c
 		#platform: ios
 		if (self->handle) {
 			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));

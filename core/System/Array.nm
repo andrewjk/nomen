@@ -114,13 +114,13 @@ pub struct Array<T>: Viewable {
 		```
 		#arch: c
 		T* _data = (T*)((char*)self + sizeof(*self));
-		// T_NEEDS_STRDUP is 1 when T is string: the slot must own a heap copy
-		// (free the outgoing string, strdup the incoming one) so auto_free can
-		// soundly free every slot at scope exit and reassigning a slot doesn't
-		// leak the previous value. 0 for all other T (plain assignment).
+		// T_NEEDS_STRDUP is 1 when T is string (a fat value whose backing
+		// bytes must be heap-copied per slot — otherwise the slot would share
+		// the incoming pointer and auto_free would double-free it). 0 for all
+		// other T (plain assignment).
 		#if T_NEEDS_STRDUP
-			free(_data[index]);
-			_data[index] = (T)strdup(value);
+			free(_data[index].ptr);
+			_data[index] = nomen_str_dup(value);
 		#else
 			_data[index] = value;
 		#endif
@@ -258,12 +258,12 @@ pub struct Array<T>: Viewable {
 		((long*)_result)[1] = count;
 		T* _data = (T*)((char*)_result + _header);
 		for (long i = 0; i < count; i++) {
-			// T_NEEDS_STRDUP is 1 when T is string (a `char*` pointer whose
-			// backing bytes must be heap-copied per slot — otherwise all n
-			// slots would share one pointer and auto_free would n-free it).
-			// For all other T it is 0 and the plain assignment runs.
+			// T_NEEDS_STRDUP is 1 when T is string (a fat value whose backing
+			// bytes must be heap-copied per slot — otherwise all n slots would
+			// share one pointer and auto_free would n-free it). For all other
+			// T it is 0 and the plain assignment runs.
 			#if T_NEEDS_STRDUP
-				_data[i] = (T)strdup(value);
+				_data[i] = nomen_str_dup(value);
 			#else
 				_data[i] = value;
 			#endif

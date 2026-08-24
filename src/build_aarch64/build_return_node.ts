@@ -1,4 +1,5 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
+import string_literal_length from "../build_common/string_literal_length.ts";
 import {
 	collect_expression_branch_values,
 	is_container_borrow_access,
@@ -25,8 +26,8 @@ import {
 } from "./utils/auto_destroy.ts";
 import { is_nullable_struct_type } from "./utils/nullable_struct.ts";
 import { allocate_stack_space, emit_var_address, emit_var_store } from "./utils/stack_var.ts";
+import { emit_strdup_string } from "./utils/string_pair.ts";
 import { emit_struct_copy, get_struct_size } from "./utils/struct_layout.ts";
-import { is_view_value } from "./utils/view_value.ts";
 
 let return_val_counter = 0;
 
@@ -172,8 +173,14 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 			const slot = array_literal_offset + i * element_size;
 			const raw = resolve_static_value(value, status);
 			if (raw !== null && is_string_array) {
-				status.code += `adr x0, ${resolve_array_element(raw, str_labels)}\n`;
-				status.code += `str x0, [x29, #${slot}]\n`;
+				// Fat-string row: {strdup(label ptr), compile-time len}. The
+				// strdup makes the buffer OWN its rows — scope-exit destroy
+				// frees each slot, so rodata pointers must never land here.
+				const label = resolve_array_element(raw, str_labels);
+				status.code += `adr x0, ${label}\n`;
+				emit_strdup(status);
+				status.code += `mov x1, #${string_literal_length(raw)}\n`;
+				status.code += `stp x0, x1, [x29, #${slot}]\n`;
 			} else if (raw !== null) {
 				status.code += `mov x0, #${raw}\n`;
 				if (element_size === 1) {
@@ -262,20 +269,10 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 	}
 
 	// A `view string` return of a NON-view expression (an owned string, a
-	// field read, a literal) must leave the (ptr, len) pair in x0/x1: x0
-	// already holds the pointer — measure it. A view-typed value (a slice
-	// result, a view variable/param) already produced the pair.
-	if (
-		status.function_return_type?.is_view &&
-		status.function_return_type.name === "string" &&
-		node.value &&
-		!is_view_value(node.value, status)
-	) {
-		status.code += `str x0, [sp, #-16]!\n`;
-		status.code += `bl _strlen\n`;
-		status.code += `mov x1, x0\n`;
-		status.code += `ldr x0, [sp], #16\n`;
-	}
+	// field read, a literal) must leave the (ptr, len) pair in x0/x1 — the
+	// fat value build already produced the pair in x0/x1, so it passes
+	// through unchanged. (A view-typed value likewise already produced the
+	// pair.)
 
 	// A bare string literal returned from a heap-returning function is
 	// strdup'd so the caller frees a heap copy, mirroring the C backend's
@@ -301,7 +298,8 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 			(status.heap_returning_functions.has(fn_name) ||
 				(mangled !== undefined && status.heap_returning_functions.has(mangled)))
 		) {
-			emit_strdup(status);
+			// strdup the ptr half, keep the len half (x1 survives the call).
+			emit_strdup_string(status);
 			if (!status.code.endsWith("\n")) {
 				status.code += "\n";
 			}
@@ -383,7 +381,7 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 		}
 	}
 	if (needs_borrow_strdup) {
-		emit_strdup(status);
+		emit_strdup_string(status);
 		if (!status.code.endsWith("\n")) {
 			status.code += "\n";
 		}
@@ -545,7 +543,14 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 			clear_heap_string_fields(status, (node.value as ValueNode).value);
 		}
 		const finalized = status.moved ?? new Set<string>();
-		status.code += `str x0, [sp, #-16]!\n`;
+		// A string return rides the (x0, x1) pair — save BOTH halves around
+		// the cleanup calls (destroy clobbers x1).
+		const returns_fat_pair = current_return_is_string(status);
+		if (returns_fat_pair) {
+			status.code += `stp x0, x1, [sp, #-16]!\n`;
+		} else {
+			status.code += `str x0, [sp, #-16]!\n`;
+		}
 		for (const decl of all_scope_frames(status).flat()) {
 			if (finalized.has(decl.name)) {
 				// A moved-out value struct still owns its recorded heap string
@@ -565,7 +570,11 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 			);
 		}
 		emit_heap_slots_cleanup_for_return(status);
-		status.code += `ldr x0, [sp], #16\n`;
+		if (returns_fat_pair) {
+			status.code += `ldp x0, x1, [sp], #16\n`;
+		} else {
+			status.code += `ldr x0, [sp], #16\n`;
+		}
 		status.code += `b ${status.function_return_label}\n`;
 	}
 }

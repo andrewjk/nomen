@@ -177,12 +177,27 @@ export default function build(
 			status.code += `_string_interpolate_${length}:\n`;
 			status.code += `stp x29, x30, [sp, #-16]!\n`;
 			status.code += `mov x29, sp\n`;
-			// Stack layout: args at #0..#48, length at #56, str at #64, pattern at #72
+			// Fat-string ABI: pattern = (x0 ptr, x1 len); arg_i = (ptr, len)
+			// register pairs starting at x2. Only the NUL-terminated ptr
+			// halves feed snprintf. Stack layout: unpacked arg ptrs at
+			// #0..#48, length at #56, str at #64, pattern ptr at #72.
 			status.code += `sub sp, sp, #80\n`;
 			status.code += `str x0, [sp, #72]\n`;
-			const argRegs = ["x1", "x2", "x3", "x4", "x5", "x6", "x7"];
-			for (let i = 0; i < length && i < argRegs.length; i++) {
-				status.code += `str ${argRegs[i]}, [sp, #${i * 8}]\n`;
+			const pairRegs = [
+				["x2", "x3"],
+				["x4", "x5"],
+				["x6", "x7"],
+			];
+			for (let i = 0; i < length && i < pairRegs.length; i++) {
+				status.code += `str ${pairRegs[i][0]}, [sp, #${i * 8}]\n`;
+			}
+			// Pairs past x7 arrived in the caller's outgoing area: at the bl,
+			// pair k (k >= 3) sits at [caller_sp + (k-3)*16]. Inside the
+			// helper, x29 = entry_sp - 16 (the stp push), so the ptr half is
+			// at [x29, #(16 + (k-3)*16)].
+			for (let i = 3; i < length; i++) {
+				status.code += `ldr x9, [x29, #${16 + (i - 3) * 16}]\n`;
+				status.code += `str x9, [sp, #${i * 8}]\n`;
 			}
 			// Call snprintf(NULL, 0, pattern, args...)
 			status.code += `mov x0, xzr\n`;
@@ -204,6 +219,9 @@ export default function build(
 				status.code += `ldr ${variadicRegs[i]}, [sp, #${i * 8}]\n`;
 			}
 			status.code += `bl _snprintf\n`;
+			// Return the fat pair: x1 = the rendered length (snprintf's own
+			// return — no strlen), then x0 = buffer.
+			status.code += `mov x1, x0\n`;
 			status.code += `ldr x0, [sp, #64]\n`;
 			status.code += `add sp, sp, #80\n`;
 			status.code += `ldp x29, x30, [sp], #16\n`;
@@ -247,7 +265,26 @@ export default function build(
 		// the Nomen `Type` (used to cast `ptr` on `.at`), not in the struct.
 		// Defined up front so any view reference (notably a slice method's
 		// #arch body, emitted whenever System is imported) compiles.
-		status.code = `typedef struct { void* ptr; long len; } nomen_view;\n` + status.code;
+		//
+		// `string` is the fat 16-byte { char* ptr; long len; } value. The
+		// buffer is NUL-terminated at ptr[len] (libc/FFI keep working);
+		// `.length` is a `.len` field load. nomen_str_dup deep-copies (the
+		// copy owns its heap buffer — the input keeps its own); raw #arch
+		// bodies see a thin char* via _raw_ adapters (build_raw_node).
+		status.code =
+			`typedef struct { void* ptr; long len; } nomen_view;\n` +
+			`typedef struct { char* ptr; long len; } nomen_string;\n` +
+			`#define nomen_str_lit(s, n) ((nomen_string){ (s), (long)(n) })\n` +
+			`#include <string.h>\n` +
+			// In audit mode wrap_c_allocators rewrites this strdup to
+			// nomen_strdup_wrap — declare it before use (the definition lives
+			// in audit_runtime.o, linked separately).
+			(options.audit ? `void *nomen_strdup_wrap(const char *);\n` : "") +
+			`static nomen_string nomen_str_dup(nomen_string s) {\n` +
+			`\tnomen_string r = { strdup(s.ptr), s.len };\n` +
+			`\treturn r;\n` +
+			`}\n` +
+			status.code;
 		if (options.audit) {
 			// Route the C backend through audit_runtime.c (the same runtime
 			// aarch64 uses): wrap every malloc/calloc/realloc/free/strdup so

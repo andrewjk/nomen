@@ -1,6 +1,7 @@
 import emit_field_overrides from "../build/emit_field_overrides.ts";
 import type BuildStatus from "../build_c/BuildStatus.ts";
-import callee_hidden_len_indices from "../build_common/hidden_len.ts";
+import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
+import string_literal_length from "../build_common/string_literal_length.ts";
 import { is_int_literal, to_decimal_string } from "../int_literal.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
@@ -107,6 +108,20 @@ function emit_struct_address(node: BaseNode, status: BuildStatus) {
 			status.code += "\n";
 		}
 	}
+}
+
+/**
+ * Whether an argument expression is a fat string VALUE: either its static
+ * type names `string`, or it is a string literal (whose ValueNode.type may
+ * be unset). Literals ride the pair ABI like any string.
+ */
+function arg_is_string(node: BaseNode): boolean {
+	const v = node as { value?: string };
+	if (node.node_type === "value" && typeof v.value === "string" && v.value.startsWith('"')) {
+		return true;
+	}
+	const t = type_from_value_node(node);
+	return t?.name === "string" && !t.is_view && !t.is_array;
 }
 
 export default function build_function_call_node(node: FunctionCallNode, status: BuildStatus) {
@@ -232,7 +247,14 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			const elem_struct = status.structs.find(
 				(s) => s.name === elem_type_name && !s.is_simple_type,
 			);
-			const elem_size = elem_struct ? get_struct_size(elem_type_name, status) : 8;
+			// A fat `string` element is a 16-byte { ptr, len } slot even
+			// though `string` has no struct node (which would size it at 8).
+			const elem_is_string = elem_type_name === "string";
+			const elem_size = elem_struct
+				? get_struct_size(elem_type_name, status)
+				: elem_is_string
+					? 16
+					: 8;
 			// Pack behind an 8-byte length prefix so the buffer carries the
 			// standard aarch64 array layout (first-element pointer, length at
 			// [-8]): array method bodies — raw #arch (at_end) and Nomen-level
@@ -255,13 +277,31 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 				const slot_offset = data_base + j * elem_size;
 				if (elem_struct && arg.node_type === "func_call") {
 					// Tuple constructor: evaluate params into x1..x7 (right-to-left)
-					// then set x0 to slot address and call _init
+					// then set x0 to slot address and call _init. A by-value
+					// string param consumes TWO consecutive registers (ptr, len) —
+					// matching _init's pair prologue — so compute a slot map
+					// left-to-right before packing.
 					const fc = arg as FunctionCallNode;
 					const fc_param_regs = ["x1", "x2", "x3", "x4", "x5", "x6", "x7"];
+					const fc_slots: number[] = [];
+					let fc_total = 0;
+					for (let k = 0; k < fc.params.length; k++) {
+						fc_slots.push(fc_total);
+						fc_total += arg_is_string(fc.params[k]) ? 2 : 1;
+					}
 					for (let k = fc.params.length - 1; k >= 0; k--) {
 						build_node(fc.params[k], status);
 						if (!status.code.endsWith("\n")) status.code += "\n";
-						status.code += `mov ${fc_param_regs[k]}, x0\n`;
+						const reg_idx = fc_slots[k];
+						if (arg_is_string(fc.params[k]) && reg_idx + 1 < fc_param_regs.length) {
+							// Move the LEN half FIRST: the pair rides in x0/x1,
+							// and for slot 0 the ptr destination IS x1 — moving
+							// it first would destroy the length.
+							status.code += `mov ${fc_param_regs[reg_idx + 1]}, x1\n`;
+							status.code += `mov ${fc_param_regs[reg_idx]}, x0\n`;
+						} else {
+							status.code += `mov ${fc_param_regs[reg_idx]}, x0\n`;
+						}
 					}
 					status.code += `add x0, x29, #${slot_offset}\n`;
 					status.code += `bl ${fc.name}_init\n`;
@@ -275,6 +315,12 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 						status.code += `ldr x2, [x1, #${b}]\n`;
 						status.code += `str x2, [x0, #${b}]\n`;
 					}
+				} else if (elem_is_string) {
+					// Fat string element: store both (ptr, len) halves.
+					build_node(arr.values[j], status);
+					if (!status.code.endsWith("\n")) status.code += "\n";
+					status.code += `str x0, [x29, #${slot_offset}]\n`;
+					status.code += `str x1, [x29, #${slot_offset + 8}]\n`;
 				} else {
 					build_node(arr.values[j], status);
 					if (!status.code.endsWith("\n")) status.code += "\n";
@@ -390,25 +436,27 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			// Non-variadic call.
 			// A `view T` param (view_param_indices) consumes TWO consecutive
 			// argument slots — (ptr, len) — matching the callee prologue's
-			// pair spilling. Compute a slot map first so spills, register
-			// loads, and the overflow area all agree.
+			// pair spilling. So does a fat `string` param. Compute a slot
+			// map first so spills, register loads, and the overflow area all
+			// agree.
 			const view_arg_set = new Set(node.view_param_indices ?? []);
-			// Hidden string-length companions (`ParameterNode.hidden_len`)
-			// occupy the AAPCS slot immediately AFTER their string argument's
-			// slot(s) — mirroring the C signature's interleaved
-			// `long _<name>_len` parameter (see stamp_hidden_string_lens).
-			const hidden_len_indices = callee_hidden_len_indices(node);
-			const hidden_len_set = new Set(hidden_len_indices);
-			const hidden_len_slots = new Map<number, number>();
+			const string_arg_set = new Set<number>();
+			// A fat `string` ARGUMENT consumes two slots — detection is by
+			// the argument's static type, which stays correct even when the
+			// callee signature is still generic. Interpolation helpers take
+			// fat strings too (pattern + rendered args).
+			const is_interp_call = node.name.startsWith("_string_interpolate_");
+			for (let i = 0; i < node.params.length; i++) {
+				if (!is_interp_call && (node.ref_param_indices ?? []).includes(i)) continue;
+				if (is_interp_call || arg_is_string(node.params[i])) {
+					string_arg_set.add(i);
+				}
+			}
 			const arg_slot: number[] = [];
 			let total_slots = 0;
 			for (let i = 0; i < node.params.length; i++) {
 				arg_slot.push(total_slots);
-				total_slots += view_arg_set.has(i) ? 2 : 1;
-				if (hidden_len_set.has(i)) {
-					hidden_len_slots.set(i, total_slots);
-					total_slots += 1;
-				}
+				total_slots += view_arg_set.has(i) || string_arg_set.has(i) ? 2 : 1;
 			}
 			// Evaluate each param into x0 (and x1 for a view pair) and spill
 			// it to a dedicated stack slot, then load all slots into argument
@@ -436,6 +484,15 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 					status.code += `str x1, [x29, #${args_base + (arg_slot[i] + 1) * 8}]\n`;
 					continue;
 				}
+				// A fat `string` argument is already the (ptr, len) pair in
+				// x0/x1 — spill both halves.
+				if (string_arg_set.has(i)) {
+					build_node(param, status);
+					if (!status.code.endsWith("\n")) status.code += "\n";
+					status.code += `str x0, [x29, #${args_base + arg_slot[i] * 8}]\n`;
+					status.code += `str x1, [x29, #${args_base + (arg_slot[i] + 1) * 8}]\n`;
+					continue;
+				}
 				// An `Array<T>` argument that is itself a heap-array value (a
 				// `heap_array_vars` local or an `Array<T>` param — both already
 				// `struct Array_<T>*` pointers) must be forwarded directly
@@ -454,17 +511,30 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 						(v) => v.node_type === "value" && (v as ValueNode).value.startsWith('"'),
 					);
 					if (has_strings) {
-						const str_labels: string[] = [];
+						// Fat-string rows: each element is TWO quads (ptr label,
+						// compile-time len) — 16 bytes, matching the callee's
+						// string-element stride.
+						const str_labels: (string | null)[] = [];
 						arr.values.forEach((v, idx) => {
 							if (v.node_type === "value" && (v as ValueNode).value.startsWith('"')) {
 								const str_label = `_arr_str_${array_param_counter++}_${idx}`;
 								status.code += `${str_label}: .asciz ${(v as ValueNode).value}\n.p2align 2\n`;
 								str_labels.push(str_label);
 							} else {
-								str_labels.push(get_raw_value(v as ValueNode, status));
+								str_labels.push(null);
 							}
 						});
-						status.code += `${label}: .quad ${str_labels.join(", ")}\n.p2align 2\n`;
+						const row = arr.values
+							.map((v, idx) => {
+								const lbl = str_labels[idx];
+								if (lbl) {
+									return `.quad ${lbl}\n\t.quad ${string_literal_length((v as ValueNode).value)}`;
+								}
+								const raw = v.node_type === "value" ? get_raw_value(v as ValueNode, status) : "0";
+								return `.quad ${raw}\n\t.quad 0`;
+							})
+							.join(", ");
+						status.code += `${label}: ${row}\n.p2align 2\n`;
 					} else {
 						const values = arr.values
 							.map((v) => (v.node_type === "value" ? get_raw_value(v as ValueNode, status) : "0"))
@@ -558,28 +628,6 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 					status.code += "\n";
 				}
 				status.code += `str x0, [x29, #${args_base + arg_slot[i] * 8}]\n`;
-			}
-			// Hidden length companions: every argument value already sits in
-			// its spill slot, so compute the lengths here — nothing live is in
-			// registers (the register-load phase below runs afterwards), and a
-			// loop-invariant hoisted strlen slot is used when one exists.
-			for (const i of hidden_len_indices) {
-				const arg = node.params[i];
-				let computed = false;
-				if (arg.node_type === "value") {
-					const hoisted = status.string_length_slots?.get((arg as ValueNode).value);
-					if (hoisted !== undefined) {
-						status.code += `ldr x0, [x29, #${hoisted}]\n`;
-						computed = true;
-					}
-				}
-				if (!computed) {
-					// The argument's string pointer was spilled to its slot by
-					// the evaluation loop above.
-					status.code += `ldr x0, [x29, #${args_base + arg_slot[i] * 8}]\n`;
-					status.code += `bl _strlen\n`;
-				}
-				status.code += `str x0, [x29, #${args_base + hidden_len_slots.get(i)! * 8}]\n`;
 			}
 
 			// Load each spilled argument into its target register. For struct
