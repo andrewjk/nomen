@@ -21,35 +21,55 @@ export interface BuiltInTypeInfo {
 	 * wraps), see `is_negatable_type`.
 	 */
 	signed: boolean;
-	/** Semantic width in bits. Ints only; float widths live with the ABIs. */
+	/** Value range in bits, used for literal validation (ints only). */
 	bits?: number;
+	/**
+	 * Storage width in bytes, shared by both backends' layouts. Note that
+	 * storage is wider than range for some types (`int`/`uint` occupy 8
+	 * bytes — C `long` / a full register — while literals validate against
+	 * 32-bit ranges), so both columns must stay independent.
+	 */
+	bytes?: number;
+	/**
+	 * The C type this name lowers to. Single source of truth for every C
+	 * emission path (declarations/fields via c_type(), raw-block T
+	 * substitution) so layout and bodies can never disagree on width or
+	 * signedness.
+	 */
+	c_type?: string;
 }
 
 const TYPE_INFO: BuiltInTypeInfo[] = [
 	// True or false
-	{ name: "bool", kind: "bool", signed: false },
-	// Alias to 32 bit int
-	{ name: "int", kind: "int", signed: true, bits: 32 },
-	{ name: "uint", kind: "int", signed: false, bits: 32 },
+	{ name: "bool", kind: "bool", signed: false, bytes: 1, c_type: "unsigned char" },
+	// Alias to a 32-bit-range int stored in a full word (C long)
+	{ name: "int", kind: "int", signed: true, bits: 32, bytes: 8, c_type: "long" },
+	{ name: "uint", kind: "int", signed: false, bits: 32, bytes: 8, c_type: "unsigned long" },
 	// Sized ints
-	{ name: "int8", kind: "int", signed: true, bits: 8 },
-	{ name: "uint8", kind: "int", signed: false, bits: 8 },
-	{ name: "int16", kind: "int", signed: true, bits: 16 },
-	{ name: "uint16", kind: "int", signed: false, bits: 16 },
-	{ name: "int32", kind: "int", signed: true, bits: 32 },
-	{ name: "uint32", kind: "int", signed: false, bits: 32 },
-	{ name: "int64", kind: "int", signed: true, bits: 64 },
-	{ name: "uint64", kind: "int", signed: false, bits: 64 },
-	// Alias to 32 bit float
-	{ name: "float", kind: "float", signed: true },
-	{ name: "ufloat", kind: "float", signed: false },
-	// Sized floats
-	{ name: "float32", kind: "float", signed: true },
-	{ name: "ufloat32", kind: "float", signed: false },
-	{ name: "float64", kind: "float", signed: true },
-	{ name: "ufloat64", kind: "float", signed: false },
-	// Char -- a unicode point
-	{ name: "char", kind: "char", signed: false },
+	{ name: "int8", kind: "int", signed: true, bits: 8, bytes: 1, c_type: "char" },
+	{ name: "uint8", kind: "int", signed: false, bits: 8, bytes: 1, c_type: "unsigned char" },
+	{ name: "int16", kind: "int", signed: true, bits: 16, bytes: 2, c_type: "short" },
+	{ name: "uint16", kind: "int", signed: false, bits: 16, bytes: 2, c_type: "unsigned short" },
+	{ name: "int32", kind: "int", signed: true, bits: 32, bytes: 4, c_type: "int" },
+	{ name: "uint32", kind: "int", signed: false, bits: 32, bytes: 4, c_type: "unsigned int" },
+	{ name: "int64", kind: "int", signed: true, bits: 64, bytes: 8, c_type: "long long" },
+	{
+		name: "uint64",
+		kind: "int",
+		signed: false,
+		bits: 64,
+		bytes: 8,
+		c_type: "unsigned long long",
+	},
+	// Floats: all widths share 8-byte double storage/ABI on supported targets
+	{ name: "float", kind: "float", signed: true, bytes: 8, c_type: "double" },
+	{ name: "ufloat", kind: "float", signed: false, bytes: 8, c_type: "double" },
+	{ name: "float32", kind: "float", signed: true, bytes: 8, c_type: "double" },
+	{ name: "ufloat32", kind: "float", signed: false, bytes: 8, c_type: "double" },
+	{ name: "float64", kind: "float", signed: true, bytes: 8, c_type: "double" },
+	{ name: "ufloat64", kind: "float", signed: false, bytes: 8, c_type: "double" },
+	// Char -- an unsigned 8-bit code point
+	{ name: "char", kind: "char", signed: false, bytes: 1, c_type: "unsigned char" },
 	// String -- type depends on how it's defined
 	// E.g. const string = "hello" is static
 	//      const string = "hello, \{name}" is fixed size and on the stack
@@ -69,6 +89,14 @@ export function get_built_in_type(name: string): BuiltInTypeInfo | undefined {
 	return TYPE_INFO.find((t) => t.name === name);
 }
 
+/** The C type a built-in name lowers to, or undefined for non-built-ins /
+ *  dynamically-mapped names (string/func/void/null keep backend-specific
+ *  handling). Shared by every C emission path so layout and raw bodies
+ *  always agree. */
+export function built_in_c_type(name: string): string | undefined {
+	return get_built_in_type(name)?.c_type;
+}
+
 export function is_built_in_type(name: string): boolean {
 	return names.includes(name);
 }
@@ -82,8 +110,7 @@ export const INT_TYPES = ["int8", "int16", "int32", "int", "int64"];
 export const UINT_TYPES = ["uint8", "uint16", "uint32", "uint", "uint64"];
 export const ALL_INT_TYPES = [...INT_TYPES, ...UINT_TYPES];
 
-/** Signed floats. Unsigned floats (`ufloat*`) take no float conversion or
- *  cast path yet. */
+/** Signed floats. `can_implicit_cast` only widens ints into signed floats. */
 export const SIGNED_FLOAT_TYPES = ["float", "float32", "float64"];
 
 /** All floats including unsigned ones — the full float register model. */

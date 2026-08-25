@@ -1,6 +1,7 @@
 import add_error from "../add_error.ts";
 import { fold_asm_constants } from "../build_common/fold_asm_constants.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
+import { get_built_in_type } from "../built_in_types.ts";
 import type AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import clone_node from "../nodes/clone_node.ts";
@@ -1335,51 +1336,20 @@ function raw_type_size(name: string, structs: StructNode[]): number {
 
 /**
  * Map an Nomen type name to its C representation for substitution inside raw C
- * blocks. This MUST agree with build_c/utils/c_type.ts so that, e.g., `T*`
- * expands to `long*` for an `int` element (Nomen `int` is 64-bit, i.e. C
- * `long`, not C `int`). `string` is the fat `nomen_string` value — a raw
- * T-generic body (Buffer_<T>/Array_<T> slots) then gets 16-byte struct slots
- * and `sizeof(T)` slab strides. Raw bodies written against the thin char* ABI
- * (String.nm, *_to_string, File/Console FFI) never reference `T` — they are
- * marshalled via _raw_ adapters instead (see raw_string_abi.ts).
+ * blocks. Delegates to the shared type table (built_in_types.ts c_type column)
+ * — the SAME source build_c/utils/c_type.ts uses for declarations and struct
+ * fields — so a raw body's view of `T` always agrees with the emitted layout
+ * (e.g. Nomen floats lower to C `double`, matching their 8-byte storage; they
+ * historically drifted to 4-byte `float` here). `string` expands to the fat
+ * nomen_string value — a raw T-generic body (Buffer_<T>/Array_<T> slots) then
+ * gets 16-byte struct slots and `sizeof(T)` slab strides. Raw bodies written
+ * against the thin char* ABI (String.nm, *_to_string, File/Console FFI) never
+ * reference `T` — they are marshalled via _raw_ adapters instead (see
+ * raw_string_abi.ts).
  */
 function raw_c_type_name(name: string): string {
-	switch (name) {
-		case "string":
-			return "nomen_string";
-		case "bool":
-			return "unsigned char";
-		case "int":
-			return "long";
-		case "uint":
-			return "unsigned long";
-		case "int8":
-			return "char";
-		case "uint8":
-			return "unsigned char";
-		case "int16":
-			return "short";
-		case "uint16":
-			return "unsigned short";
-		case "int32":
-			return "int";
-		case "uint32":
-			return "unsigned int";
-		case "int64":
-			return "long long";
-		case "uint64":
-			return "unsigned long long";
-		case "float":
-		case "ufloat32":
-			return "float";
-		case "float64":
-		case "ufloat":
-			return "double";
-		case "char":
-			return "unsigned char";
-		default:
-			return name;
-	}
+	if (name === "string") return "nomen_string";
+	return get_built_in_type(name)?.c_type ?? name;
 }
 
 /**

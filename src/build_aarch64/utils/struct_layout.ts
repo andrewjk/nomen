@@ -1,4 +1,5 @@
 import type BuildStatus from "../../build_c/BuildStatus.ts";
+import { get_built_in_type } from "../../built_in_types.ts";
 import DeclarationNode from "../../nodes/DeclarationNode.ts";
 import ValueNode from "../../nodes/ValueNode.ts";
 import aarch64_size from "./aarch64_size.ts";
@@ -10,8 +11,9 @@ const VT_SIZE = 8;
  * Natural alignment of a type in bytes — must match C struct layout rules,
  * because raw `#arch: c` bodies and companion code read the SAME fields
  * through C's naturally-aligned layout. Sub-8-byte scalars (bool, char,
- * int8/16/32) align to their own width; everything else (ints, floats, fat
- * strings, pointers, nested structs) aligns to 8.
+ * int8/16/32) align to their own storage width (BuiltInTypeInfo.bytes);
+ * everything else (word-sized ints, floats, fat strings, pointers, nested
+ * structs) aligns to 8.
  */
 function get_type_alignment(
 	type: import("../../nodes/Type.ts").default,
@@ -27,18 +29,11 @@ function get_type_alignment(
 	const enum_node = status.enums.find((e) => e.name === type.name);
 	if (enum_node) return 8;
 	if (type.is_array) return 8;
-	switch (type.name) {
-		case "bool":
-		case "int8":
-		case "uint8":
-		case "char":
-			return 1;
-		case "int16":
-		case "uint16":
-			return 2;
-		case "int32":
-		case "uint32":
-			return 4;
+	switch (get_built_in_type(type.name)?.bytes) {
+		case 1:
+		case 2:
+		case 4:
+			return get_built_in_type(type.name)!.bytes!;
 		default:
 			return 8;
 	}

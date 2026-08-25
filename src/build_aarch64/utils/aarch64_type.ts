@@ -1,31 +1,21 @@
+import { get_built_in_type } from "../../built_in_types.ts";
+
+/**
+ * Assembler data directive for a static value of `type`, derived from the
+ * built-in type table: floats emit as doubles, ints by storage width
+ * (BuiltInTypeInfo.bytes). Unknown names (structs/enums/generics) are words.
+ */
 export default function aarch64_type(type: string): string {
-	switch (type) {
-		case "bool":
+	const info = get_built_in_type(type);
+	if (!info) return ".quad";
+	if (info.kind === "float") return ".double";
+	switch (info.bytes) {
+		case 1:
 			return ".byte";
-		case "int":
-		case "uint":
-		case "int64":
-		case "uint64":
-		case "string":
-			return ".quad";
-		case "int8":
-		case "uint8":
-		case "char":
-			return ".byte";
-		case "int16":
-		case "uint16":
+		case 2:
 			return ".short";
-		case "int32":
-		case "uint32":
+		case 4:
 			return ".long";
-		case "float":
-		case "float32":
-		case "ufloat":
-		case "ufloat32":
-			return ".double";
-		case "float64":
-		case "ufloat64":
-			return ".double";
 		default:
 			return ".quad";
 	}

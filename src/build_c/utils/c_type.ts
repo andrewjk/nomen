@@ -1,3 +1,5 @@
+import { built_in_c_type } from "../../built_in_types.ts";
+
 // When the C backend's single translation unit also `#import`s Apple's
 // Foundation/Cocoa/UIKit frameworks (any GUI build — see `build_needs_objc` in
 // build.ts), MacTypes.h defines typedefs like `Size`/`Point`/`Rect` that would
@@ -44,46 +46,6 @@ export function c_typedef_name(name: string): string {
 
 export default function c_type(type: string): string {
 	switch (type) {
-		case "bool":
-			return "unsigned char";
-		case "int":
-			return "long";
-		case "uint":
-			return "unsigned long";
-		case "int8":
-			return "char";
-		case "uint8":
-			return "unsigned char";
-		case "int16":
-			return "short";
-		case "uint16":
-			return "unsigned short";
-		case "int32":
-			return "int";
-		case "uint32":
-			return "unsigned int";
-		case "int64":
-			return "long long";
-		case "uint64":
-			return "unsigned long long";
-		case "float":
-			// Nomen `float` is 8 bytes on aarch64 (see aarch64_size.ts), so the C
-			// backend must use `double` to match struct layout and arithmetic
-			// precision. Using C `float` (4 bytes) causes checksum/energy drift.
-			return "double";
-		case "ufloat":
-			return "double";
-		case "float32":
-			return "double";
-		case "ufloat32":
-			return "double";
-		case "float64":
-			return "double";
-		case "ufloat64":
-			return "double";
-		case "char":
-			// Char is an unsigned 8-bit code point (see built_in_types.ts).
-			return "unsigned char";
 		case "string":
 			// Fat string: a 16-byte { char* ptr; long len; } value (see the
 			// nomen_string typedef in build.ts's prelude). The buffer is always
@@ -100,7 +62,13 @@ export default function c_type(type: string): string {
 			return "void";
 		case "null":
 			return "void*";
-		default:
+		default: {
+			// Static built-in scalars come straight from the shared type table
+			// (built_in_types.ts) so declarations can never drift from the raw-
+			// block T substitution or from aarch64 layout.
+			const mapped = built_in_c_type(type);
+			if (mapped) return mapped;
 			return c_typedef_name(type);
+		}
 	}
 }
