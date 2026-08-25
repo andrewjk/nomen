@@ -3,7 +3,9 @@ import { mono_type_name } from "../../build_common/mono_name.ts";
 import {
 	ALL_INT_TYPES,
 	UINT_TYPES,
+	is_float_type,
 	is_int_type,
+	is_signed_float_type,
 	is_unsigned_int_type,
 	type_bits,
 } from "../../built_in_types.ts";
@@ -114,7 +116,17 @@ function can_coerce(target_type: string, value_type: string, value: string | und
 		}
 		return is_unsigned_int_type(target_type) ? uint_is_valid(num, bits) : int_is_valid(num, bits);
 	}
+	if (is_float_type(target_type) && is_numeric_literal(value)) {
+		// A numeric literal coerces into any float width; unsigned floats
+		// (`ufloat*`) only accept non-negative literals.
+		return is_signed_float_type(target_type) || !value.trimStart().startsWith("-");
+	}
 	return can_coerce_type(target_type, value_type);
+}
+
+/** Integer or decimal literal (incl. sign/exponent), e.g. `2`, `-1.5`, `1e3`. */
+function is_numeric_literal(value: string): boolean {
+	return /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(value.trim());
 }
 
 // 64-bit range checks use BigInt so values near 2^63/2^64 (e.g.
@@ -144,7 +156,14 @@ function uint_is_valid(uint: number, bits: number) {
 function can_coerce_type(target_type: string, value_type: string): boolean {
 	const target_idx = ALL_INT_TYPES.indexOf(target_type);
 	const value_idx = ALL_INT_TYPES.indexOf(value_type);
-	if (target_idx === -1 || value_idx === -1) return false;
+	if (target_idx === -1 || value_idx === -1) {
+		// Floats: a signed float accepts any float; an unsigned float accepts
+		// only unsigned floats (a signed one may be negative).
+		if (is_float_type(target_type) && is_float_type(value_type)) {
+			return is_signed_float_type(target_type) || !is_signed_float_type(value_type);
+		}
+		return false;
+	}
 	const target_is_uint = UINT_TYPES.includes(target_type);
 	const value_is_uint = UINT_TYPES.includes(value_type);
 	if (value_is_uint && !target_is_uint) {

@@ -18,12 +18,23 @@ Nomen is a statically-typed, compiled language that compiles to C or AArch64 ass
 ### Basic Types
 
 - **Integers**: `int`, `uint`, `int8`, `int16`, `int32`, `int64`, `uint8`, `uint16`, `uint32`, `uint64`
-- **Floating-point**: `float`, `float32`, `float64`
+- **Floating-point**: `float`, `ufloat`, `float32`, `ufloat32`, `float64`, `ufloat64` (the `u` variants are unsigned)
 - **String**: `string` (C-style null-terminated string)
 - **Character**: `char` (8-bit character)
 - **Boolean**: `bool`
 - **Null**: `null` (represents the absence of a value for nullable types)
 - **Void**: `void` (used for functions with no return value)
+
+Numeric literals coerce into sized numeric types when the value fits. Unsigned
+types (`uint*`, `ufloat*`) reject negative literals:
+
+```
+var int16 small = 300
+var int doubled = small * 2
+var ufloat ratio = 0.5
+var ufloat scaled = ratio * 2.0
+Console.write("\{doubled} \{scaled}\n")
+```
 
 ### Array Types
 

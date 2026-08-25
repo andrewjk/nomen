@@ -166,9 +166,11 @@ function build_view_op(
 			status.code += `add x0, x29, #${temp_offset}\n`; // reload dst
 			return true;
 		}
-		// Primitive element: scaled load based on element width.
+		// Primitive element: scaled load based on element width. char is a
+		// unicode point (non-negative) — zero-extend like the other unsigned
+		// scalar loads.
 		const size = aarch64_size(elem_name);
-		const signed = is_signed_int_type(elem_name) || elem_name === "char";
+		const signed = is_signed_int_type(elem_name);
 		if (size === 1) {
 			status.code += signed ? `ldrsb x0, [x0, x1]\n` : `ldrb w0, [x0, x1]\n`;
 		} else if (size === 2) {

@@ -82,8 +82,8 @@ export default function c_type(type: string): string {
 		case "ufloat64":
 			return "double";
 		case "char":
-			// TODO:
-			return "char";
+			// Char is an unsigned 8-bit code point (see built_in_types.ts).
+			return "unsigned char";
 		case "string":
 			// Fat string: a 16-byte { char* ptr; long len; } value (see the
 			// nomen_string typedef in build.ts's prelude). The buffer is always

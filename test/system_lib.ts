@@ -66,27 +66,6 @@ export function load_system_fn_names(): string[] {
 	}
 }
 
-/** Primitive type names — always pulled by BASE_TYPES, never referenced as
- *  identifiers in the canonical program (they'd collide with the type keyword). */
-const PRIMITIVES = new Set([
-	"int",
-	"uint",
-	"int8",
-	"uint8",
-	"int16",
-	"uint16",
-	"int32",
-	"uint32",
-	"int64",
-	"uint64",
-	"float",
-	"float32",
-	"float64",
-	"bool",
-	"char",
-	"string",
-]);
-
 /**
  * Build the canonical program that pulls the ENTIRE non-GUI System library
  * into one system TU.
@@ -106,10 +85,13 @@ function canonical_program(): { source: string; lib_source_hash: string } {
 	const lib = get_library(path.resolve("core"));
 	const lib_source_hash = crypto.createHash("sha256").update(lib.source).digest("hex").slice(0, 16);
 
+	// Primitive type names can't be declared as identifiers (they'd collide
+	// with the type keyword); they're pulled in via parse.ts BASE_TYPES.
+	const primitives = new Set<string>(built_in_types);
 	const types = (Array.from(lib.types.entries()) as [string, { path?: string }][])
 		.filter(([, entry]) => !String(entry.path).includes("Controls"))
 		.map(([name]) => name)
-		.filter((name) => !PRIMITIVES.has(name));
+		.filter((name) => !primitives.has(name));
 	const decls = types.map((t) => `\tvar int ${t} = 0`);
 
 	// List/Array handle string elements; the index-buffered containers

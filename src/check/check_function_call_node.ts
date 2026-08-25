@@ -1376,7 +1376,7 @@ function raw_c_type_name(name: string): string {
 		case "ufloat":
 			return "double";
 		case "char":
-			return "char";
+			return "unsigned char";
 		default:
 			return name;
 	}

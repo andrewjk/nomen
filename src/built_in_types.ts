@@ -95,9 +95,8 @@ export const ALL_FLOAT_TYPES = ["float", "ufloat", "float32", "ufloat32", "float
 export const SCALAR_TYPES = [...ALL_INT_TYPES, ...ALL_FLOAT_TYPES, "bool", "char"];
 
 /** Scalar types accepted as file-scope `const` initializers and as
- *  auto-inline param/return types. Same as SCALAR_TYPES minus unsigned
- *  floats, which neither backend's const-data emitter handles yet. */
-export const SIMPLE_TYPES = [...INT_TYPES, ...SIGNED_FLOAT_TYPES, "bool", "char"];
+ *  auto-inline param/return types: every numeric scalar plus bool/char. */
+export const SIMPLE_TYPES = [...ALL_INT_TYPES, ...ALL_FLOAT_TYPES, "bool", "char"];
 
 // --- Predicates -----------------------------------------------------------
 

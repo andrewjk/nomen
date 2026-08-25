@@ -1,5 +1,11 @@
 import add_error from "../add_error.ts";
-import { ALL_INT_TYPES, SIGNED_FLOAT_TYPES, UINT_TYPES, type_bits } from "../built_in_types.ts";
+import {
+	ALL_FLOAT_TYPES,
+	ALL_INT_TYPES,
+	SIGNED_FLOAT_TYPES,
+	UINT_TYPES,
+	type_bits,
+} from "../built_in_types.ts";
 import CastNode from "../nodes/CastNode.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
@@ -58,8 +64,8 @@ export default function check_cast_node(node: CastNode, status: CheckStatus) {
 
 	const from_idx = ALL_INT_TYPES.indexOf(from);
 	const to_idx = ALL_INT_TYPES.indexOf(to);
-	const from_is_float = SIGNED_FLOAT_TYPES.includes(from);
-	const to_is_float = SIGNED_FLOAT_TYPES.includes(to);
+	const from_is_float = ALL_FLOAT_TYPES.includes(from);
+	const to_is_float = ALL_FLOAT_TYPES.includes(to);
 	const from_is_bool = from === "bool";
 	const to_is_bool = to === "bool";
 

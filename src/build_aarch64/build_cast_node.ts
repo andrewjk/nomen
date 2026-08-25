@@ -1,6 +1,6 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
-import { is_signed_float_type } from "../built_in_types.ts";
+import { is_float_type } from "../built_in_types.ts";
 import CastNode from "../nodes/CastNode.ts";
 import build_node from "./build_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
@@ -34,8 +34,8 @@ export default function build_cast_node(node: CastNode, status: BuildStatus) {
 	const fs = aarch64_size(from);
 	const ts = aarch64_size(to);
 
-	const is_from_float = is_signed_float_type(from);
-	const is_to_float = is_signed_float_type(to);
+	const is_from_float = is_float_type(from);
+	const is_to_float = is_float_type(to);
 
 	if (is_from_float && !is_to_float) {
 		status.code += `fcvtzs x0, d0\n`;
@@ -56,9 +56,10 @@ export default function build_cast_node(node: CastNode, status: BuildStatus) {
 
 	if (ts > fs) {
 		if (from === "bool" || from === "int8" || from === "uint8" || from === "char") {
-			if (from === "int8" || from === "char") {
+			if (from === "int8") {
 				status.code += `sxtb x0, x0\n`;
 			} else {
+				// bool, uint8, char: zero-extend (char is an unsigned code point).
 				status.code += `and x0, x0, #0xFF\n`;
 			}
 		} else if (from === "int16") {

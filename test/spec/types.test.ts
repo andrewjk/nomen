@@ -1,6 +1,27 @@
 import { describe, expect, test } from "vite-plus/test";
 
-import { compile_module, compile_main } from "./_helpers.ts";
+import { compile_main, compile_module } from "./_helpers.ts";
+
+describe("spec: basic types", () => {
+	test("sized and unsigned numeric types with literal coercion", () => {
+		const input = `
+var int16 small = 300
+var int doubled = small * 2
+var ufloat ratio = 0.5
+var ufloat scaled = ratio * 2.0
+Console.write("\\{doubled} \\{scaled}\\n")
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+
+	test("negative literals are rejected for unsigned types", () => {
+		const input = `
+var ufloat ratio = -0.5
+`;
+		const errors = compile_main(input);
+		expect(errors.some((e) => e.message.includes("Type mismatch"))).toBe(true);
+	});
+});
 
 describe("spec: comments", () => {
 	test("single and nested block comments", () => {

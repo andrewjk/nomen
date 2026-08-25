@@ -8,6 +8,7 @@ import {
 	collect_expression_branch_values,
 	is_owned_string_branch_value,
 } from "../build_common/string_return_analysis.ts";
+import { is_float_type } from "../built_in_types.ts";
 import { is_int_literal, parse_int_literal_bigint, to_decimal_string } from "../int_literal.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
@@ -1985,7 +1986,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 					} else {
 						status.code += `str x0, [x29, #${offset}]\n`;
 					}
-				} else if (node.type.name === "float") {
+				} else if (is_float_type(node.type.name)) {
 					const label = `_float_const_${decl_const_counter++}`;
 					emit_data(status, `${label}: .double ${raw}\n.p2align 2\n`);
 					status.code += `adr x0, ${label}\n`;
