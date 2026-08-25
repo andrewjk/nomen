@@ -912,7 +912,14 @@ function check_nursery_spawn(node: AccessFunctionCallNode, status: CheckStatus):
 
 	// Every argument moved into the spawned task must be Sendable.
 	for (const param of call.params) {
-		const arg_type = type_from_value_node(param, status);
+		let arg_type = type_from_value_node(param, status);
+		// A constant-folded argument (e.g. `"a" + "b"` → a synthetic data
+		// label value) resolves to no declared name — fall back to the
+		// checker-stamped node type, which the fold sets.
+		const stamped = (param as unknown as { type?: Type }).type;
+		if (!arg_type.name && stamped?.name) {
+			arg_type = stamped;
+		}
 		if (!is_sendable_type(arg_type.name, status)) {
 			add_error(
 				status,

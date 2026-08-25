@@ -1,9 +1,12 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import c_function_name from "../build_c/utils/c_function_name.ts";
+import c_type from "../build_c/utils/c_type.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
+import type BaseNode from "../nodes/BaseNode.ts";
 import SpawnNode from "../nodes/SpawnNode.ts";
 import build_node from "./build_node.ts";
+import { allocate_stack_space } from "./utils/stack_var.ts";
 
 /**
  * Pool infrastructure emitted as file-scope C on the first spawn.
@@ -219,16 +222,18 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 	const tramp_name = `__nomen_spawn_${id}_trampoline`;
 	const submit_name = `nomen_spawn_${id}_submit`;
 
-	// Resolve each arg's C type.
+	// Resolve each arg's C type. Primitives and the fat `string` (the
+	// 16-byte nomen_string — two AAPCS register slots) go through c_type so
+	// the companion C signature matches the asm's actual 64-bit values (the
+	// raw Nomen names either don't exist in C (`string`) or are the wrong
+	// width (`int` is C `long`)). Classes/traits are heap pointers.
 	const arg_c_types: string[] = [];
-	const arg_is_class: boolean[] = [];
 	for (let i = 0; i < call.params.length; i++) {
 		const arg_type = type_from_value_node(call.params[i]);
 		const mono_name = mono_type_name(arg_type);
 		const is_class = !!status.structs.find((s) => s.name === mono_name && s.is_class);
 		const is_trait = !!status.traits.find((t) => t.name === mono_name);
-		arg_is_class.push(is_class);
-		arg_c_types.push(is_class || is_trait ? `struct ${mono_name} *` : `${mono_name}`);
+		arg_c_types.push(is_class || is_trait ? `struct ${mono_name} *` : `${c_type(mono_name)}`);
 	}
 
 	// Determine return type.
@@ -244,8 +249,13 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 	const c_ret_type = is_class_ret
 		? `struct ${return_type_name} *`
 		: returns_value
-			? return_type_name
+			? c_type(return_type_name)
 			: "void";
+	// The result cell is always 16 bytes: Task.nm's raw `result` asm loads
+	// BOTH words ([slot], [slot+8]) for every T (fat strings ride the pair,
+	// scalars ignore x1), so the cell must be at least a pair wide even when
+	// the typed write below stores a single word.
+	const slot_c_type = returns_value ? c_ret_type : "unsigned long long";
 
 	// --- Emit trampoline + submit helper as C companion ---
 
@@ -261,7 +271,7 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 	for (let i = 0; i < arg_c_types.length; i++) {
 		tramp_c += `\t${arg_c_types[i]} arg${i};\n`;
 	}
-	tramp_c += `\tunsigned long long *result_slot;\n`;
+	tramp_c += `\t${slot_c_type} *result_slot;\n`;
 	tramp_c += `\tunsigned long long *cancel_flag;\n`;
 	tramp_c += `\tstruct nomen_future *future;\n`;
 	tramp_c += `};\n`;
@@ -281,7 +291,7 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 	}
 	tramp_c += `);\n`;
 	if (returns_value) {
-		tramp_c += `\t*(a->result_slot) = (unsigned long long)_r;\n`;
+		tramp_c += `\t*(a->result_slot) = _r;\n`;
 	}
 	tramp_c += `\t__nomen_current_cancel_flag = NULL;\n`;
 	tramp_c += `\tpthread_mutex_lock(&a->future->mu);\n`;
@@ -325,8 +335,10 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 	for (let i = 0; i < arg_c_types.length; i++) {
 		tramp_c += `\ta->arg${i} = arg${i};\n`;
 	}
-	tramp_c += `\ta->result_slot = (unsigned long long *)malloc(sizeof(unsigned long long));\n`;
-	tramp_c += `\t*(a->result_slot) = 0;\n`;
+	// Uniform 16-byte cell (see slot_c_type above), zeroed so the unwritten
+	// len half of a scalar result reads 0.
+	tramp_c += `\ta->result_slot = (${slot_c_type} *)malloc(16);\n`;
+	tramp_c += `\tmemset(a->result_slot, 0, 16);\n`;
 	tramp_c += `\ta->cancel_flag = (unsigned long long *)malloc(sizeof(unsigned long long));\n`;
 	tramp_c += `\t*(a->cancel_flag) = 0;\n`;
 	tramp_c += `\tstruct nomen_future *f = (struct nomen_future *)malloc(sizeof(struct nomen_future));\n`;
@@ -364,63 +376,84 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 
 	// --- Emit assembly: build arg registers and call submit helper ---
 	status.code += `// spawn site ${id}\n`;
-	for (let i = 0; i < call.params.length; i++) {
-		status.code += `// Load arg${i}\n`;
-		build_node(call.params[i], status);
-		// Result is in x0; the C ABI passes first 8 args in x0-x7.
-		// Since we're calling submit_name which takes the args directly,
-		// we need to move each arg to the right register.
-		if (i < call.params.length - 1) {
-			// Move to a temporary (x1-x7) before building the next arg.
-			status.code += `mov x${i + 1}, x0\n`;
-		}
-	}
-	// x0 already has the last arg (or the only arg).
-	// For multiple args, we need them in x0, x1, x2, ... simultaneously.
-	// Build args in reverse order to avoid register conflicts.
-	// Actually, let's rebuild: build all args first, storing to stack.
-	// Simpler: build each arg, push to stack, then pop into registers.
-	// But the build_node calls may clobber x0. Let's use the stack.
-
-	// Revised approach: build args in reverse, storing each to stack,
-	// then pop into registers for the call.
-	status.code = status.code.substring(0, status.code.lastIndexOf(`// spawn site ${id}\n`));
-	status.code += `// spawn site ${id}\n`;
 
 	// When inside a nursery, two extra trailing args carry the addresses of
 	// the nursery's per-invocation futures array and count slot (on the
 	// caller's stack). They occupy the last two arg slots.
 	const nursery_extra = nursery_off ? 2 : 0;
-	const total_arg_slots = call.params.length + nursery_extra;
+
+	// A fat `string` argument rides the (ptr, len) pair in x0/x1 and occupies
+	// TWO consecutive AAPCS slots (matching the `nomen_string` by-value param
+	// of the submit helper) — same detection rule as arg_c_types above.
+	const fat_string_args = call.params.map(spawn_arg_is_string);
+	const arg_slot: number[] = [];
+	let total_arg_slots = 0;
+	for (let i = 0; i < call.params.length; i++) {
+		arg_slot.push(total_arg_slots);
+		total_arg_slots += fat_string_args[i] ? 2 : 1;
+	}
+	total_arg_slots += nursery_extra;
 
 	if (total_arg_slots === 0) {
-		status.code += `bl ${submit_name}\n`;
+		status.code += `bl _${submit_name}\n`;
 	} else {
-		// Build each arg and store to stack (args are 8 bytes each).
-		// ARM64 requires 16-byte stack alignment.
-		const raw_stack_size = total_arg_slots * 8;
-		const stack_size = raw_stack_size + ((16 - (raw_stack_size % 16)) % 16);
-		status.code += `sub sp, sp, #${stack_size}\n`;
+		// Build each arg and spill it to a dedicated frame slot (building an
+		// argument can clobber x1..x7, so registers are loaded only after
+		// every arg is staged), then load the argument registers and call.
+		// Mirrors the general call path in build_function_call_node.
+		const args_base = allocate_stack_space(status, total_arg_slots * 8, 16);
 		for (let i = 0; i < call.params.length; i++) {
 			status.code += `// Build arg${i}\n`;
 			build_node(call.params[i], status);
 			// Ensure newline after build_node (value nodes don't add one).
 			if (!status.code.endsWith("\n")) status.code += "\n";
-			status.code += `str x0, [sp, #${i * 8}]\n`;
+			status.code += `str x0, [x29, #${args_base + arg_slot[i] * 8}]\n`;
+			if (fat_string_args[i]) {
+				// The pair's len half rides x1 — spill both halves.
+				status.code += `str x1, [x29, #${args_base + (arg_slot[i] + 1) * 8}]\n`;
+			}
 		}
 		if (nursery_off) {
 			// Compute addresses of nursery futures array and count slot.
 			status.code += `add x0, x29, #${nursery_off.futures_off}\n`;
-			status.code += `str x0, [sp, #${call.params.length * 8}]\n`;
+			status.code += `str x0, [x29, #${args_base + (total_arg_slots - 2) * 8}]\n`;
 			status.code += `add x0, x29, #${nursery_off.count_off}\n`;
-			status.code += `str x0, [sp, #${(call.params.length + 1) * 8}]\n`;
+			status.code += `str x0, [x29, #${args_base + (total_arg_slots - 1) * 8}]\n`;
 		}
-		// Pop args into registers x0, x1, x2, ...
-		for (let i = total_arg_slots - 1; i >= 0; i--) {
-			status.code += `ldr x${i}, [sp, #${i * 8}]\n`;
+		// Load each staged slot into its argument register. Slots past x0..x7
+		// go in the caller's outgoing area at [sp] for the call (AAPCS64).
+		const NUM_REG_ARGS = 8;
+		const overflow_count = Math.max(0, total_arg_slots - NUM_REG_ARGS);
+		if (overflow_count > 0) {
+			const outgoing_size = Math.ceil((overflow_count * 8) / 16) * 16;
+			status.code += `sub sp, sp, #${outgoing_size}\n`;
+			for (let k = 0; k < overflow_count; k++) {
+				status.code += `ldr x9, [x29, #${args_base + (NUM_REG_ARGS + k) * 8}]\n`;
+				status.code += `str x9, [sp, #${k * 8}]\n`;
+			}
 		}
-		status.code += `add sp, sp, #${stack_size}\n`;
+		for (let s = 0; s < Math.min(total_arg_slots, NUM_REG_ARGS); s++) {
+			status.code += `ldr x${s}, [x29, #${args_base + s * 8}]\n`;
+		}
 		status.code += `bl _${submit_name}\n`;
+		if (overflow_count > 0) {
+			const outgoing_size = Math.ceil((overflow_count * 8) / 16) * 16;
+			status.code += `add sp, sp, #${outgoing_size}\n`;
+		}
 	}
 	// x0 = Task pointer (returned by submit helper).
+}
+
+/**
+ * Whether a spawn argument rides the fat-string (ptr, len) pair ABI: its
+ * static type names `string`, or it is a string literal (whose ValueNode.type
+ * may be unset). Mirrors arg_is_string in build_function_call_node.
+ */
+function spawn_arg_is_string(node: BaseNode): boolean {
+	const v = node as { value?: string };
+	if (node.node_type === "value" && typeof v.value === "string" && v.value.startsWith('"')) {
+		return true;
+	}
+	const t = type_from_value_node(node);
+	return t?.name === "string" && !t.is_view && !t.is_array;
 }

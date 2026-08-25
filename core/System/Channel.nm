@@ -1,9 +1,18 @@
 // Channel — thread-safe single-direction queue for passing values between
 // tasks. Unbounded, FIFO, blocking receive.
 //
-// Stores uint64 values (Nomen values are pointer-sized on every target we
-// care about). A typed Channel<T> wrapper can come later — the storage story
-// is identical, only the call-site types change.
+// The queue node's payload is two words wide: every message carries a
+// (value, len) pair. `send`/`receive` move uint64 values (len stays 0);
+// `send_string`/`receive_string` move fat strings without truncating the len
+// half. A typed Channel<T> wrapper can come later — the storage story is
+// identical, only the call-site types change.
+//
+// String payloads are copied in and moved out: `send_string` duplicates the
+// value into the node (the sender keeps its own string), and
+// `receive_string` moves that copy out to the receiver (zeroing the node's
+// payload). A message that is never received is freed by #destroy's drain.
+// This keeps literals (rodata), heap strings freed at the sender's scope
+// exit, and messages crossing task boundaries all sound.
 //
 // Default stance in Nomen is "no shared mutable state" — channels are the
 // preferred way for tasks to communicate. See ASYNC.md.
@@ -24,6 +33,7 @@ pub class Channel: Sendable {
 		#include <pthread.h>
 		struct nomen_channel_node {
 			unsigned long long value;
+			unsigned long long len;
 			struct nomen_channel_node *next;
 		};
 		```
@@ -58,6 +68,7 @@ pub class Channel: Sendable {
 		#arch: c
 		struct nomen_channel_node *n = (struct nomen_channel_node *)malloc(sizeof(struct nomen_channel_node));
 		n->value = value;
+		n->len = 0;
 		n->next = NULL;
 		pthread_mutex_lock((pthread_mutex_t *)self->mu);
 		if (self->tail) {
@@ -73,18 +84,19 @@ pub class Channel: Sendable {
 		#arch: aarch64
 		// x19 = self (set by prologue), x1 = value
 		str x1, [sp, #-16]!       // save value on stack
-		mov x0, #16
+		mov x0, #24               // node = { value, len, next }
 		bl _malloc                // x0 = node
 		ldr x1, [sp], #16         // restore value
 		str x1, [x0, #0]          // node->value = value
-		str xzr, [x0, #8]         // node->next = NULL
+		str xzr, [x0, #8]         // node->len = 0
+		str xzr, [x0, #16]        // node->next = NULL
 		str x0, [sp, #-16]!       // save node on stack
 		ldr x0, [x19, #8]         // self->mu
 		bl _pthread_mutex_lock
 		ldr x2, [sp], #16         // restore node
 		ldr x1, [x19, #32]        // tail
 		cbz x1, .Lchannel_send_empty
-		str x2, [x1, #8]          // tail->next = node
+		str x2, [x1, #16]         // tail->next = node
 		b .Lchannel_send_enqueued
 		.Lchannel_send_empty:
 		str x2, [x19, #24]        // head = node
@@ -94,6 +106,67 @@ pub class Channel: Sendable {
 		bl _pthread_cond_signal
 		ldr x0, [x19, #8]         // self->mu
 		bl _pthread_mutex_unlock
+		```
+	}
+
+	// Pass a fat string through the channel. The value is DUPLICATED into the
+	// queue node — the sender keeps ownership of what it passed — so the
+	// message survives the sender's scope exit intact (true len, embedded
+	// NULs and all). Receive it with receive_string.
+	pub func send_string = (self, string value) {
+		```
+		#arch: c
+		struct nomen_channel_node *n = (struct nomen_channel_node *)malloc(sizeof(struct nomen_channel_node));
+		nomen_string _v = value.ptr ? nomen_str_dup(value) : (nomen_string){0, 0};
+		n->value = (unsigned long long)_v.ptr;
+		n->len = (unsigned long long)_v.len;
+		n->next = NULL;
+		pthread_mutex_lock((pthread_mutex_t *)self->mu);
+		if (self->tail) {
+			((struct nomen_channel_node *)self->tail)->next = n;
+		} else {
+			self->head = (unsigned long long)n;
+		}
+		self->tail = (unsigned long long)n;
+		pthread_cond_signal((pthread_cond_t *)self->not_empty_cv);
+		pthread_mutex_unlock((pthread_mutex_t *)self->mu);
+		```
+		```
+		#arch: aarch64
+		// x19 = self (set by prologue), x1 = value.ptr, x2 = value.len
+		stp x1, x2, [sp, #-32]!   // [sp]=ptr [sp+8]=len [sp+16]=node scratch
+		mov x0, #24               // node = { value, len, next }
+		bl _malloc                // x0 = node
+		str x0, [sp, #16]         // save node across the strdup call
+		ldr x1, [sp, #0]          // value.ptr
+		cbz x1, .Lchannel_send_str_zero
+		mov x0, x1
+		bl _strdup                // x0 = owned copy (node owns its buffer)
+		b .Lchannel_send_str_have
+		.Lchannel_send_str_zero:
+		mov x0, #0
+		.Lchannel_send_str_have:
+		ldr x2, [sp, #16]         // node
+		str x0, [x2, #0]          // node->value = copied ptr
+		ldr x1, [sp, #8]          // value.len
+		str x1, [x2, #8]          // node->len = len
+		str xzr, [x2, #16]        // node->next = NULL
+		ldr x0, [x19, #8]         // self->mu
+		bl _pthread_mutex_lock
+		ldr x2, [sp, #16]         // restore node
+		ldr x1, [x19, #32]        // tail
+		cbz x1, .Lchannel_send_str_empty
+		str x2, [x1, #16]         // tail->next = node
+		b .Lchannel_send_str_enqueued
+		.Lchannel_send_str_empty:
+		str x2, [x19, #24]        // head = node
+		.Lchannel_send_str_enqueued:
+		str x2, [x19, #32]        // tail = node
+		ldr x0, [x19, #16]        // not_empty_cv
+		bl _pthread_cond_signal
+		ldr x0, [x19, #8]         // self->mu
+		bl _pthread_mutex_unlock
+		add sp, sp, #32
 		```
 	}
 
@@ -126,7 +199,7 @@ pub class Channel: Sendable {
 		b .Lchannel_receive_wait
 		.Lchannel_receive_got:
 		// x1 = node
-		ldr x2, [x1, #8]          // node->next
+		ldr x2, [x1, #16]         // node->next
 		str x2, [x19, #24]        // head = node->next
 		cbnz x2, .Lchannel_receive_not_empty
 		str xzr, [x19, #32]       // tail = 0
@@ -141,14 +214,69 @@ pub class Channel: Sendable {
 		```
 	}
 
+	// Block until a message is available, then return it as an OWNED string
+	// (the node's copy is moved out — the payload leaves the channel, and a
+	// second receive of the same message is not possible). The fat (ptr, len)
+	// pair survives intact. Pair with send_string.
+	pub func receive_string = (self, mov out string) {
+		```
+		#arch: c
+		pthread_mutex_lock((pthread_mutex_t *)self->mu);
+		while (!self->head) {
+			pthread_cond_wait((pthread_cond_t *)self->not_empty_cv, (pthread_mutex_t *)self->mu);
+		}
+		struct nomen_channel_node *n = (struct nomen_channel_node *)self->head;
+		self->head = (unsigned long long)n->next;
+		if (!self->head) self->tail = 0;
+		nomen_string v = { (char *)n->value, (long)n->len };
+		n->value = 0;
+		n->len = 0;
+		free(n);
+		pthread_mutex_unlock((pthread_mutex_t *)self->mu);
+		return v;
+		```
+		```
+		#arch: aarch64
+		// x19 = self (set by prologue); returns the fat pair in x0/x1
+		ldr x0, [x19, #8]         // self->mu
+		bl _pthread_mutex_lock
+		.Lchannel_receive_str_wait:
+		ldr x1, [x19, #24]        // head
+		cbnz x1, .Lchannel_receive_str_got
+		ldr x0, [x19, #16]        // not_empty_cv
+		ldr x1, [x19, #8]         // mu
+		bl _pthread_cond_wait
+		b .Lchannel_receive_str_wait
+		.Lchannel_receive_str_got:
+		// x1 = node
+		ldr x2, [x1, #16]         // node->next
+		str x2, [x19, #24]        // head = node->next
+		cbnz x2, .Lchannel_receive_str_not_empty
+		str xzr, [x19, #32]       // tail = 0
+		.Lchannel_receive_str_not_empty:
+		ldr x0, [x1, #0]          // value.ptr
+		ldr x2, [x1, #8]          // value.len
+		stp x0, x2, [sp, #-16]!   // push pair
+		str xzr, [x1, #0]         // payload moves out of the node
+		str xzr, [x1, #8]
+		mov x0, x1                // x0 = node (for free)
+		bl _free
+		ldr x0, [x19, #8]         // self->mu
+		bl _pthread_mutex_unlock
+		ldp x0, x1, [sp], #16     // pop pair → x0/x1 (return)
+		```
+	}
+
 	pub func #destroy = () {
 		```
 		#arch: c
 		if (self->mu) {
-			// Drain any pending nodes.
+			// Drain any pending nodes. A string payload that was never
+			// received still owns its buffer — free it with the node.
 			struct nomen_channel_node *n = (struct nomen_channel_node *)self->head;
 			while (n) {
 				struct nomen_channel_node *next = n->next;
+				if (n->value) free((void *)n->value);
 				free(n);
 				n = next;
 			}
@@ -167,14 +295,20 @@ pub class Channel: Sendable {
 		// x19 = self (set by prologue)
 		ldr x0, [x19, #8]         // self->mu
 		cbz x0, .Lchannel_destroy_done
-		// Drain nodes
+		// Drain nodes (freeing any unconsumed string payload)
 		ldr x1, [x19, #24]        // head
 		.Lchannel_destroy_drain:
 		cbz x1, .Lchannel_destroy_drained
-		ldr x2, [x1, #8]          // next (before free clobbers it)
-		str x2, [sp, #-16]!       // save next on stack
+		ldr x2, [x1, #16]         // next (before calls clobber x1)
+		stp x1, x2, [sp, #-16]!   // save node + next
+		ldr x0, [x1, #0]          // payload ptr
+		cbz x0, .Lchannel_destroy_no_payload
 		bl _free
-		ldr x1, [sp], #16         // restore next
+		.Lchannel_destroy_no_payload:
+		ldr x0, [sp, #0]          // node
+		bl _free
+		ldr x1, [sp, #8]          // next
+		add sp, sp, #16
 		b .Lchannel_destroy_drain
 		.Lchannel_destroy_drained:
 		// Destroy mutex and condvar

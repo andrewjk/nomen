@@ -29,16 +29,41 @@ import c_type from "./c_type.ts";
  * stay NUL-terminated at ptr[len] for libc/FFI.
  *
  * Methods of monomorphized generic containers (Buffer_<T>, Array_<T>,
- * ClassBuffer_<T>, List_<T>) are EXEMPT: their raw bodies are written against
- * the generic `T`, and the checker's raw-type substitution (raw_c_type_name)
- * rewrites T to `nomen_string`, making the body natively fat-correct.
+ * ClassBuffer_<T>, List_<T>), Task<T> monos, and Channel are EXEMPT (see
+ * NATIVELY_FAT_PREFIXES): their raw bodies are authored against the fat
+ * representation — the checker's raw-type substitution (raw_c_type_name)
+ * rewrites T to `nomen_string`, and Channel's string methods marshal the
+ * pair directly — so they emit verbatim with no adapter.
  */
 
-/** Struct name prefixes whose raw bodies are written against generic `T`. */
-const T_GENERIC_PREFIXES = ["Buffer_", "Array_", "ClassBuffer_", "List_", "Map_", "Set_"];
+/**
+ * Struct name prefixes whose raw bodies are authored against the FAT string
+ * ABI (nomen_string values), not the thin `char*` convention:
+ *
+ * - T-generic container monos (Buffer_<T>, Array_<T>, …) — the checker's
+ *   raw-type substitution (raw_c_type_name) rewrites T to `nomen_string`,
+ *   making the body natively fat-correct.
+ * - Task<T> monos — `result` dereferences the typed result slot (`T *`),
+ *   which is sized to the full fat value by the spawn build phase.
+ * - Channel — send_string/receive_string marshal the fat (ptr, len) pair
+ *   into the queue node directly, preserving the true len (a thin char* body
+ *   would re-synthesize it via strlen and drop embedded NULs).
+ */
+const NATIVELY_FAT_PREFIXES = [
+	"Buffer_",
+	"Array_",
+	"ClassBuffer_",
+	"List_",
+	"Map_",
+	"Set_",
+	// Task<T>'s `result` moves the typed result slot out (the slot is
+	// allocated with sizeof(T) and the body dereferences `T *` directly).
+	"Task_",
+	"Channel",
+];
 
 export function is_t_generic_struct(name: string | undefined): boolean {
-	return !!name && T_GENERIC_PREFIXES.some((p) => name.startsWith(p));
+	return !!name && NATIVELY_FAT_PREFIXES.some((p) => name.startsWith(p));
 }
 
 function signature_has_string(func: FunctionNode): boolean {

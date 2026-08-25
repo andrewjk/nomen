@@ -64,11 +64,15 @@ pub class Task<T> : Sendable {
 		```
 	}
 
-	// Block until the task finishes, then return its result as T.
-	// The spawn build phase allocates a heap slot (owned by the future) and
-	// the trampoline writes the function's return value there before exiting.
-	// For tasks with no return value (void functions), returns the zero value.
-	pub func result = (ref self, out T) {
+	// Block until the task finishes, then return its result as T. The spawn
+	// build phase allocates a heap slot (owned by the future) sized to hold
+	// the full return value — including the 16-byte fat-string pair — and the
+	// trampoline writes the function's return value there before exiting.
+	// The result is MOVED OUT: the slot is zeroed as the value leaves, and
+	// `mov out T` marks the caller as the owner. Call it once; a second call
+	// returns the zero value. For tasks with no return value (void
+	// functions), returns the zero value.
+	pub func result = (ref self, mov out T) {
 		```
 		#arch: c
 		if (self->future) {
@@ -79,7 +83,9 @@ pub class Task<T> : Sendable {
 			self->handle = 0;
 			self->done = 1;
 		}
-		return *(T *)self->result_slot;
+		T _r = *(T *)self->result_slot;
+		memset((void *)self->result_slot, 0, sizeof(T));
+		return _r;
 		```
 		```
 		#arch: aarch64
@@ -101,9 +107,14 @@ pub class Task<T> : Sendable {
 		mov w0, #1
 		strb w0, [x19, #16]
 		.Lresult_read:
-		// return *(T *)self->result_slot
-		ldr x0, [x19, #24]
-		ldr x0, [x0]
+		// The result cell is always 16 bytes (see the spawn build phase):
+		// load the full pair — a fat string returns (ptr, len) in x0/x1, a
+		// scalar returns its word in x0 — then zero the cell (the value is
+		// moved out; a second call observes the zero).
+		ldr x8, [x19, #24]
+		ldr x0, [x8]
+		ldr x1, [x8, #8]
+		stp xzr, xzr, [x8]
 		```
 	}
 
@@ -236,12 +247,22 @@ pub class Task<T> : Sendable {
 	// Release this handle's reference to the future. The future owns the
 	// result slot and cancel flag; it (and they) are freed only when the
 	// last reference — this handle, the running trampoline, or a tracking
-	// nursery — is released. The Task instance itself is freed by the
-	// auto-free pass after #destroy returns.
+	// nursery — is released. A string result that was never consumed
+	// (`result()` zeroes the slot when it moves the value out) is freed
+	// here, before the future releases the cell. The Task instance itself
+	// is freed by the auto-free pass after #destroy returns.
 	pub func #destroy = () {
 		```
 		#arch: c
 		if (self->future) {
+		#if T_NEEDS_STRDUP
+			// T is the fat nomen_string here (the guard is 0 for every other
+			// T, and the preprocessor removes this region before parsing).
+			if (self->result_slot) {
+				T _s = *(T *)self->result_slot;
+				if (_s.ptr) free(_s.ptr);
+			}
+		#endif
 			__nomen_future_release((struct nomen_future *)self->future);
 			self->future = 0;
 			self->result_slot = 0;
@@ -250,9 +271,22 @@ pub class Task<T> : Sendable {
 		```
 		```
 		#arch: aarch64
-		// if (self->future) { release; zero fields }
+		// if (self->future) { free an unconsumed string result; release; zero fields }
 		ldr x0, [x19, #40]
 		cbz x0, .Ldestroy_done
+		// An unconsumed string result: the cell still holds (ptr, len) —
+		// result() zeroes it when it moves the value out. The T_FAT dispatch
+		// folds to a constant branch after monomorphization.
+		ldr x8, [x19, #24]
+		mov x0, #T_FAT
+		cmp x0, #0
+		b.eq .Ldestroy_nofree
+		cbz x8, .Ldestroy_nofree
+		ldr x0, [x8]
+		cbz x0, .Ldestroy_nofree
+		bl _free
+		.Ldestroy_nofree:
+		ldr x0, [x19, #40]
 		bl ___nomen_future_release
 		str xzr, [x19, #40]
 		str xzr, [x19, #24]

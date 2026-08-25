@@ -2075,7 +2075,24 @@ var v = ch.receive()   // blocks until ready
 ```
 
 `Channel` stores `uint64` values (Nomen values are pointer-sized on every
-target we care about). A typed `Channel<T>` wrapper can come later.
+target we care about). Fat strings ride through `send_string` /
+`receive_string`: the payload is copied into the queue node on send (the
+sender keeps its string) and moved out to the receiver as an owned value, so
+the message survives the sender's scope exit with its true length intact.
+
+```
+var Channel ch = Channel()
+
+func producer = (Channel c) {
+    c.send_string("hello")
+}
+
+async {
+    spawn producer(ch)
+}
+
+var string s = ch.receive_string()   // blocks until ready
+```
 
 ## Concurrency
 
@@ -2271,7 +2288,7 @@ function's return type (`Task<uint64>` for uint64-returning functions,
 ```
 pub class Task<T> : Sendable {
     func wait = (ref self)
-    func result = (ref self, out T)
+    func result = (ref self, mov out T)
     func result_uint64 = (ref self, out uint64)
     func cancel = (ref self)
     func current_cancelled = (out bool)   // static
@@ -2279,7 +2296,11 @@ pub class Task<T> : Sendable {
 ```
 
 - `wait()` blocks until the task finishes. Idempotent.
-- `result()` blocks, then returns the spawned function's return value as `T`.
+- `result()` blocks, then moves the spawned function's return value out as
+  `T`. The value transfers to the caller (`mov out`) — call it once; a
+  second call observes the zero value. The result slot is sized to the full
+  type, so a fat `string` result arrives intact, and an unconsumed result
+  is freed when the handle's `#destroy` runs.
 - `result_uint64()` blocks, then returns the spawned function's return value
   cast to `uint64`. Convenience for the common case.
 - `cancel()` requests cooperative cancellation — sets a flag the task

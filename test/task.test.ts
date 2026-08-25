@@ -910,6 +910,240 @@ if v2 == 202 {
 	});
 });
 
+describe("fat string payloads", () => {
+	test("spawn of a string-returning function; result moves the string out", async () => {
+		const input = `
+func greet = (uint64 n) => "hello " + "world"
+
+var t = spawn greet(0)
+var string s = t.result()
+Console.write_line(s)
+`;
+		for (const arch of ARCHITECTURES) {
+			const parsed = parse_with_imports(input);
+			expect(parsed.errors).toEqual([]);
+			const options = { arch, ...OPTIONS };
+			const result = build(parsed.root, options);
+			await check_output(`spawn_string_result_${arch}`, result, "hello world\n", options);
+		}
+	});
+
+	test("spawn of a literal-returning function; result is an owned copy", async () => {
+		// aarch64: a literal-only return is rodata — the result() transfer
+		// must hand the caller an owned heap copy (the caller frees it).
+		const input = `
+func greet = (uint64 n) => "hello"
+
+var t = spawn greet(0)
+var string s = t.result()
+if s.length == 5 {
+	Console.write_line("literal ok")
+}
+`;
+		for (const arch of ARCHITECTURES) {
+			const parsed = parse_with_imports(input);
+			expect(parsed.errors).toEqual([]);
+			const options = { arch, ...OPTIONS };
+			const result = build(parsed.root, options);
+			await check_output(`spawn_literal_result_${arch}`, result, "literal ok\n", options);
+		}
+	});
+
+	test("unconsumed string result is freed by Task destroy (no leak)", async () => {
+		const input = `
+func greet = (uint64 n) => "hello " + "world"
+
+var t = spawn greet(0)
+t.wait()
+Console.write_line("done")
+`;
+		for (const arch of ARCHITECTURES) {
+			const parsed = parse_with_imports(input);
+			expect(parsed.errors).toEqual([]);
+			const options = { arch, ...OPTIONS };
+			const result = build(parsed.root, options);
+			await check_output(`spawn_string_unconsumed_${arch}`, result, "done\n", options);
+		}
+	});
+
+	test("spawn with a fat string argument", async () => {
+		const input = `
+func shout = (string s) {
+	if s.length == 8 {
+		Console.write_line("len ok")
+	}
+	Console.write_line(s)
+}
+
+var t = spawn shout("heap " + "arg")
+t.wait()
+`;
+		for (const arch of ARCHITECTURES) {
+			const parsed = parse_with_imports(input);
+			expect(parsed.errors).toEqual([]);
+			const options = { arch, ...OPTIONS };
+			const result = build(parsed.root, options);
+			await check_output(`spawn_string_arg_${arch}`, result, "len ok\nheap arg\n", options);
+		}
+	});
+
+	test("nursery pool.spawn of a string-returning function", async () => {
+		const input = `
+func greet = (uint64 n) => "from pool"
+
+func spawn_one = (ref Nursery pool) {
+	var t = pool.spawn(greet(0))
+	var string s = t.result()
+	Console.write_line(s)
+}
+
+async pool {
+	spawn_one(ref pool)
+}
+`;
+		for (const arch of ARCHITECTURES) {
+			const parsed = parse_with_imports(input);
+			expect(parsed.errors).toEqual([]);
+			const options = { arch, ...OPTIONS };
+			const result = build(parsed.root, options);
+			await check_output(`nursery_string_result_${arch}`, result, "from pool\n", options);
+		}
+	});
+
+	test("scalar result still moves out intact", async () => {
+		const input = `
+func compute = (uint64 n) => n + 1
+
+var t = spawn compute(41)
+var uint64 r = t.result()
+if r == 42 {
+	Console.write_line("scalar ok")
+}
+`;
+		for (const arch of ARCHITECTURES) {
+			const parsed = parse_with_imports(input);
+			expect(parsed.errors).toEqual([]);
+			const options = { arch, ...OPTIONS };
+			const result = build(parsed.root, options);
+			await check_output(`spawn_scalar_result_${arch}`, result, "scalar ok\n", options);
+		}
+	});
+
+	test("Channel.send_string / receive_string carries the fat pair intact", async () => {
+		const input = `
+func producer = (Channel ch) {
+	ch.send_string("hello")
+	ch.send_string("wor" + "ld")
+}
+
+var Channel ch = Channel()
+
+async {
+	spawn producer(ch)
+}
+
+var string a = ch.receive_string()
+var string b = ch.receive_string()
+if a.length == 5 {
+	Console.write_line("len ok")
+}
+Console.write_line(a)
+Console.write_line(b)
+`;
+		for (const arch of ARCHITECTURES) {
+			const parsed = parse_with_imports(input);
+			expect(parsed.errors).toEqual([]);
+			const options = { arch, ...OPTIONS };
+			const result = build(parsed.root, options);
+			await check_output(
+				`channel_string_payload_${arch}`,
+				result,
+				"len ok\nhello\nworld\n",
+				options,
+			);
+		}
+	});
+
+	test("Channel string payload survives the sender's scope exit", async () => {
+		// send_string copies the payload into the node, so a heap string
+		// freed at the producer's scope exit is still fully alive on receipt.
+		const input = `
+func producer = (Channel ch) {
+	var string temp = "temp " + "value"
+	ch.send_string(temp)
+}
+
+var Channel ch = Channel()
+
+async {
+	spawn producer(ch)
+}
+
+var string s = ch.receive_string()
+Console.write_line(s)
+`;
+		for (const arch of ARCHITECTURES) {
+			const parsed = parse_with_imports(input);
+			expect(parsed.errors).toEqual([]);
+			const options = { arch, ...OPTIONS };
+			const result = build(parsed.root, options);
+			await check_output(`channel_outlive_${arch}`, result, "temp value\n", options);
+		}
+	});
+
+	test("unreceived string message is freed by Channel destroy (no leak)", async () => {
+		const input = `
+func producer = (Channel ch) {
+	ch.send_string("never received")
+}
+
+var Channel ch = Channel()
+
+async {
+	spawn producer(ch)
+}
+
+Console.write_line("done")
+`;
+		for (const arch of ARCHITECTURES) {
+			const parsed = parse_with_imports(input);
+			expect(parsed.errors).toEqual([]);
+			const options = { arch, ...OPTIONS };
+			const result = build(parsed.root, options);
+			await check_output(`channel_string_unreceived_${arch}`, result, "done\n", options);
+		}
+	});
+
+	test("Channel mixes uint64 and string messages", async () => {
+		const input = `
+func producer = (Channel ch) {
+	ch.send(7)
+	ch.send_string("seven")
+}
+
+var Channel ch = Channel()
+
+async {
+	spawn producer(ch)
+}
+
+var uint64 n = ch.receive()
+var string s = ch.receive_string()
+if n == 7 {
+	Console.write_line("num ok")
+}
+Console.write_line(s)
+`;
+		for (const arch of ARCHITECTURES) {
+			const parsed = parse_with_imports(input);
+			expect(parsed.errors).toEqual([]);
+			const options = { arch, ...OPTIONS };
+			const result = build(parsed.root, options);
+			await check_output(`channel_mixed_${arch}`, result, "num ok\nseven\n", options);
+		}
+	});
+});
+
 describe("Sendable enforcement", () => {
 	test("non-Sendable struct arg fails to compile", () => {
 		const input = `

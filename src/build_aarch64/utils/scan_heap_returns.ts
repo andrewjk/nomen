@@ -37,7 +37,45 @@ const KNOWN_HEAP_RETURNING = new Set([
 export function scan_heap_returning_functions(root: BaseNode): Set<string> {
 	const result = new Set<string>(KNOWN_HEAP_RETURNING);
 	scan_statements((root as any).statements ?? [], result, undefined);
+	scan_spawn_callees(root, result);
 	return result;
+}
+
+/**
+ * Every string-returning function spawned via `spawn` / `pool.spawn(...)` is
+ * consumed through the task's C trampoline, where the aarch64 backend's
+ * declaration-level heap tracking can't see the result — the value lands in
+ * the typed result slot and is later moved out to the `result()` caller, who
+ * frees it unconditionally (a `mov out string`). The callee must therefore
+ * normalize EVERY return path to an owned heap copy (the return-site strdup
+ * only fires for functions in this set), so a literal-only spawned function
+ * doesn't hand `result()` a rodata pointer the caller would free.
+ */
+function scan_spawn_callees(root: BaseNode, result: Set<string>) {
+	const visit = (node: any): void => {
+		if (!node || typeof node !== "object") return;
+		const name_and_ret: [string, { name?: string }] | undefined =
+			node.node_type === "spawn"
+				? [node.call?.name, node.function_return_type ?? {}]
+				: node.node_type === "access_func" &&
+					  node.is_nursery_spawn &&
+					  node.params?.[0]?.node_type === "func_call"
+					? [node.params[0].name, node.function_return_type ?? {}]
+					: undefined;
+		if (name_and_ret && name_and_ret[0] && name_and_ret[1].name === "string") {
+			result.add(name_and_ret[0]);
+		}
+		for (const key of Object.keys(node)) {
+			if (key === "parent" || key === "scope") continue;
+			const val = node[key];
+			if (Array.isArray(val)) {
+				for (const item of val) visit(item);
+			} else if (val && typeof val === "object") {
+				visit(val);
+			}
+		}
+	};
+	visit(root);
 }
 
 function scan_statements(statements: any[], result: Set<string>, struct_name: string | undefined) {

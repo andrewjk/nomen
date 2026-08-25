@@ -24,7 +24,7 @@ String interpolation (`"\{expr}"`) creates temporary heap allocations that are f
 
 - **C**: string renders as `nomen_string` by value (`c_type.ts`); raw `#arch: c` bodies written against thin `char*` are emitted under a `_raw_` label with a marshalling adapter that synthesizes `len` once via strlen at the creation boundary (`src/build_c/utils/raw_string_abi.ts`). T-generic container raw bodies (Buffer_<T>, Array_<T>) are natively fat via checker substitution (`raw_c_type_name` → `nomen_string`).
 - **aarch64**: strings ride as consecutive (ptr, len) register pairs — the same ABI `view T` uses — and 16-byte stack slots. String-receiver methods keep ptr in x19, len in x20; the pair occupies AAPCS slots 0–1, so first real param starts at x2. Call-site pair detection is by argument static type (generic callee params like `TK` stay generic post-mono). Watch the ldp/stp ±504 offset range — use the guarded helpers in `utils/string_pair.ts`.
-- Known unsupported: `Task<string>` results and `Channel<string>` payloads still assume 8-byte values.
+- **Task/Channel payloads**: task result slots are sized to the full return type (`sizeof(T)`), so a fat string survives the thread boundary whole. `Task<T>.result` is a `mov out T` move-out accessor (owned transfer; unconsumed results are freed by `#destroy`). `Channel` nodes carry a two-word `(value, len)` payload: `send`/`receive` move uint64 words, `send_string`/`receive_string` marshal the fat pair (copy-in, move-out).
 
 ### Structs (Value Types)
 

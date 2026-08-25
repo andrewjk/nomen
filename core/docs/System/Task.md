@@ -7,7 +7,7 @@ A handle to an asynchronously-running computation, backed by a shared thread poo
 **Members:**
 
 - `wait()`
-- `result() -> T`
+- `result() -> T` (moves the value out — call once; the caller owns it)
 - `result_uint64() -> uint64`
 - `cancel()`
 - `current_cancelled() -> bool`

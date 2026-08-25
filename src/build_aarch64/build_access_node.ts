@@ -2161,6 +2161,19 @@ function build_access_method(
 		status.last_result_is_heap = true;
 	}
 
+	// General `mov out string` move-out accessors (Task<string>.result,
+	// Channel.receive_string, List<string>.pop): the callee relinquishes an
+	// owned heap buffer to the caller (the checker stamps owned_return), so
+	// the receiving declaration must free it at scope exit. Generalizes the
+	// Buffer_string_move_T name-match above to the annotation-driven form.
+	if (
+		access_func.owned_return &&
+		access_func.type?.name === "string" &&
+		!access_func.type.is_view
+	) {
+		status.last_result_is_heap = true;
+	}
+
 	if (return_struct) {
 		status.code += `add x0, x29, #${temp_offset}\n`;
 	}

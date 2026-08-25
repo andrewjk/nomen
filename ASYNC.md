@@ -14,12 +14,14 @@ assembly + C companion). End-to-end usable for concurrency on both targets.
   Sendable; classes must opt in explicitly.
 - **`Task<T>`** — generic, heap-allocated (with `#destroy` cleanup),
   pthread-backed handle parameterised by the spawned function's return type.
-  Methods: `wait()` (idempotent), `result()` (blocks, returns `T`),
-  `result_uint64()` (blocks, returns the value cast to `uint64`), `cancel()`,
-  `current_cancelled()` (static, thread-local). Monomorphized per
-  instantiation (e.g. `Task_uint64`).
+  Methods: `wait()` (idempotent), `result()` (blocks, moves the value out —
+  a `mov out T`, so a fat string result arrives whole and an unconsumed one
+  is freed by destroy), `result_uint64()` (blocks, returns the value cast to
+  `uint64`), `cancel()`, `current_cancelled()` (static, thread-local).
+  Monomorphized per instantiation (e.g. `Task_uint64`).
 - **`Mutex`** — pthread-backed lock; `#destroy` releases the resource.
-- **`Channel`** — blocking FIFO queue (`send` / `receive`).
+- **`Channel`** — blocking FIFO queue (`send` / `receive` for uint64 words,
+  `send_string` / `receive_string` for fat strings).
 - **`spawn`** — statement (fire-and-forget) or expression
   (`var t = spawn fn(args)`) yielding `Task<T>`. Args packed via a per-site
   trampoline, submitted to a global worker pool.
@@ -187,8 +189,11 @@ Open questions, intentionally not yet in scope:
   (state-machine or stack-switching transform). Not required for thread-pool
   tasks, where `Task<T>.result` just blocks. Revisit when there's a real I/O
   story.
-- **Typed `Channel<T>`.** Today `Channel` stores `uint64` (values are
-  pointer-sized on every target we care about). A typed wrapper is a
+- **Typed `Channel<T>`.** `Channel` nodes carry a two-word `(value, len)`
+  payload: `send`/`receive` move uint64 words, and
+  `send_string`/`receive_string` marshal fat strings (copy-in on send,
+  move-out on receive — a message survives its sender's scope exit). A fully
+  typed wrapper (`Channel<T>` with native T payloads) remains a
   straightforward stdlib addition.
 - **Coroutine-scale concurrency (if ever needed).** The v1 thread-pool model
   caps out at thousands of concurrent tasks (~MB per OS thread). If

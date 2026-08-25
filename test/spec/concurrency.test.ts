@@ -271,6 +271,23 @@ pub func main = () {
 `;
 		expect(compile_module(input)).toEqual([]);
 	});
+
+	test("Channel send_string/receive_string", () => {
+		const input = `
+func producer = (Channel c) {
+	c.send_string("hello")
+}
+
+pub func main = () {
+	var Channel c = Channel()
+	async {
+		spawn producer(c)
+	}
+	var string s = c.receive_string()
+}
+`;
+		expect(compile_module(input)).toEqual([]);
+	});
 });
 
 describe("spec: concurrency - timeout", () => {

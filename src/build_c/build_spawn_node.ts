@@ -254,6 +254,10 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 		: is_class_ret || is_trait_ret
 			? `struct ${return_type_name} *`
 			: c_type(return_type_name);
+	// The result slot carries the full return VALUE — a fat `string` result is
+	// a 16-byte nomen_string, so the cell is typed (and sized) as the return
+	// type, not a fixed unsigned long long (which truncated the len half).
+	const slot_c_type = returns_value ? c_ret_type : "unsigned long long";
 
 	// Forward-declare the spawned function before the trampoline. The
 	// trampoline is a full function definition appended to the headers, and
@@ -275,7 +279,7 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 	for (let i = 0; i < arg_c_types.length; i++) {
 		header += `\t${arg_c_types[i]} arg${i};\n`;
 	}
-	header += `\tunsigned long long *result_slot;\n`;
+	header += `\t${slot_c_type} *result_slot;\n`;
 	header += `\tunsigned long long *cancel_flag;\n`;
 	header += `\tstruct nomen_future *future;\n`;
 	header += `};\n`;
@@ -296,7 +300,7 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 	}
 	header += ");\n";
 	if (returns_value) {
-		header += `\t*(a->result_slot) = (unsigned long long)_r;\n`;
+		header += `\t*(a->result_slot) = _r;\n`;
 	}
 	header += `\t__nomen_current_cancel_flag = NULL;\n`;
 	header += `\tpthread_mutex_lock(&a->future->mu);\n`;
@@ -324,8 +328,8 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 		build_node(call.params[i], status);
 		status.code += ";\n";
 	}
-	status.code += `\tunsigned long long *_result_ptr = (unsigned long long *)malloc(sizeof(unsigned long long));\n`;
-	status.code += `\t*_result_ptr = 0;\n`;
+	status.code += `\t${slot_c_type} *_result_ptr = (${slot_c_type} *)malloc(sizeof(${slot_c_type}));\n`;
+	status.code += `\tmemset(_result_ptr, 0, sizeof(${slot_c_type}));\n`;
 	status.code += `\t_args->result_slot = _result_ptr;\n`;
 	status.code += `\tunsigned long long *_cancel_ptr = (unsigned long long *)malloc(sizeof(unsigned long long));\n`;
 	status.code += `\t*_cancel_ptr = 0;\n`;

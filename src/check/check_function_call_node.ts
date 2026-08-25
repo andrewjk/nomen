@@ -1445,6 +1445,14 @@ function substitute_raw_in_node(
 				new RegExp(`\\b${param}_NEEDS_STRDUP\\b`, "g"),
 				type === "string" ? "1" : "0",
 			);
+			// T_FAT: 1 when T is `string` (the fat 16-byte {ptr, len} value),
+			// 0 otherwise. Raw bodies use it to guard representation-specific
+			// code paths — in C via `#if T_FAT` (the preprocessor removes the
+			// branch before parsing, so the text may reference T's fat fields
+			// even when they wouldn't compile for scalar T), and in pure-asm
+			// blocks via a `mov xN, #T_FAT / cmp / b.cond` dispatch that
+			// fold_asm_constants folds to a constant branch after substitution.
+			value = value.replace(new RegExp(`\\b${param}_FAT\\b`, "g"), type === "string" ? "1" : "0");
 		}
 		// Dereference struct params: the C backend passes them as pointers,
 		// but raw blocks were written assuming pass-by-value. Replace bare
