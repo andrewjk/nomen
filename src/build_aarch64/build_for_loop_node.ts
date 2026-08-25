@@ -9,6 +9,8 @@ import { enter_scope_frame, exit_scope_frame } from "./utils/auto_destroy.ts";
 import collect_var_refs, { collect_declared_names } from "./utils/collect_var_refs.ts";
 import {
 	allocate_stack_space,
+	emit_promoted_load,
+	emit_promoted_store,
 	emit_var_address,
 	emit_var_load,
 	emit_var_store,
@@ -66,7 +68,7 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 		status.stack_offsets!.set(item_name, item_offset);
 	}
 
-	const promoted: { name: string; reg: string; offset: number }[] = [];
+	const promoted: { name: string; reg: string; offset: number; type_name: string }[] = [];
 	const saved_reg_allocs = status.register_allocations
 		? new Map(status.register_allocations)
 		: undefined;
@@ -144,8 +146,11 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 				const reg = FLOAT_CALLEE_SAVED[d_idx];
 				status.register_allocations.set(v.name, reg);
 				used_d.add(reg);
-				promoted.push({ name: v.name, reg, offset: v.offset });
-				status.code += `ldr ${reg}, [x29, #${v.offset}]\n`;
+				promoted.push({ name: v.name, reg, offset: v.offset, type_name: v.type_name });
+				// The cached register must be loaded with the slot's width —
+				// bool/char/int8 slots are 1-byte strb stores, so a full-width
+				// `ldr` would pull dirty stack bytes into the cache.
+				emit_promoted_load(status, reg, v.offset, v.type_name);
 				d_idx++;
 			} else {
 				while (x_idx < CALLEE_SAVED_REGS.length && used_x.has(CALLEE_SAVED_REGS[x_idx])) {
@@ -155,8 +160,8 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 				const reg = CALLEE_SAVED_REGS[x_idx];
 				status.register_allocations.set(v.name, reg);
 				used_x.add(reg);
-				promoted.push({ name: v.name, reg, offset: v.offset });
-				status.code += `ldr ${reg}, [x29, #${v.offset}]\n`;
+				promoted.push({ name: v.name, reg, offset: v.offset, type_name: v.type_name });
+				emit_promoted_load(status, reg, v.offset, v.type_name);
 				x_idx++;
 			}
 		}
@@ -442,7 +447,9 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 	}
 
 	for (const p of promoted) {
-		status.code += `str ${p.reg}, [x29, #${p.offset}]\n`;
+		// Store back with the slot's width — a full-width `str` into a
+		// sub-word slot would clobber the adjacent stack bytes.
+		emit_promoted_store(status, p.reg, p.offset, p.type_name);
 	}
 
 	if (saved_reg_allocs) {

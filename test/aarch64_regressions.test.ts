@@ -150,3 +150,38 @@ pub func main = () {
 `;
 	await build_and_check_output(input, "class_at_borrow_kept", "502", true);
 });
+
+// A bool local promoted into a callee-saved register across calls was
+// loaded with a full-width `ldr` from its 1-byte `strb` slot — dirty stack
+// bytes above the slot made the register cache read `true` regardless of
+// the stored value, so `while ... && !done` never executed its body (the
+// writeback likewise `str`-ed 8 bytes into the 1-byte slot, corrupting a
+// neighbor). The cache load/store must use the slot's width (ldrb/strb).
+test("bool promoted across calls reads stored byte", async () => {
+	const input = `
+func pad = (int a, out int) {
+  var x1 = a + 1
+  var x2 = a + 2
+  var x3 = a + 3
+  return x1 + x2 + x3
+}
+
+var total = 0
+var k = 0
+while k < 5 {
+  total += pad(k)
+  k += 1
+}
+var Map<string, int> m = Map<string, int>()
+m.set("x", 42)
+var idx = m.get_or("x", -1)
+var done = false
+var n = 0
+while idx != -1 && !done && !done {
+  n += 1
+  done = true
+}
+Console.write("idx=\\{idx} n=\\{n}")
+`;
+	await build_and_check_output(input, "bool_promoted_byte_load", "idx=42 n=1");
+});
