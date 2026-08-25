@@ -9,7 +9,8 @@ import parse_with_imports from "./parse_with_imports";
 // Nomen mirrors this with Directory.create (System/Stream/Directory.nm)
 // and File (System/Stream/File.nm) which opens a path for a given mode.
 // `writeChunk(data, size)` writes exactly `size` bytes, so the byte count
-// reported is the size we asked to write.
+// reported is the size we asked to write. Fallible operations return
+// `Result<..., FileError>` / `Result<..., DirectoryError>`.
 
 test("ziglings 106 files -- errors", () => {
 	// writeChunk needs both the data and a size; omitting the size is an error.
@@ -35,9 +36,15 @@ import System
 pub func main = () {
     Directory.create("output")
     var File f = File()
-    f.open("output/zigling.txt", "w")
-    f.writeChunk("It's zigling time!", 18)
-    Console.write("Successfully wrote 18 bytes.\\n")
+    match f.open("output/zigling.txt", "w") {
+        case .ok(did) {
+            match f.writeChunk("It's zigling time!", 18) {
+                case .ok(wrote) { Console.write("Successfully wrote 18 bytes.\\n") }
+                case .error(e) { Console.write("write failed") }
+            }
+        }
+        case .error(e) { Console.write("open failed") }
+    }
 }
 `;
 	const parsed = parse_with_imports(input);
@@ -51,9 +58,15 @@ import System
 pub func main = () {
     Directory.create("output")
     var File f = File()
-    f.open("output/zigling.txt", "w")
-    f.writeChunk("It's zigling time!", 18)
-    Console.write("Successfully wrote 18 bytes.\\n")
+    match f.open("output/zigling.txt", "w") {
+        case .ok(did) {
+            match f.writeChunk("It's zigling time!", 18) {
+                case .ok(wrote) { Console.write("Successfully wrote 18 bytes.\\n") }
+                case .error(e) { Console.write("write failed") }
+            }
+        }
+        case .error(e) { Console.write("open failed") }
+    }
 }
 `;
 	const parsed = parse_with_imports(input);

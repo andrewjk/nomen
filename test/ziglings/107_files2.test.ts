@@ -6,7 +6,8 @@ import parse_with_imports from "./parse_with_imports";
 // The original Zig exercise reads back the file written in 106_files and
 // reports the number of bytes read. string.length (strlen) gives us that
 // count. To keep the test self-contained, it creates the directory, writes
-// the file, then reads it back.
+// the file, then reads it back. File operations return
+// `Result<..., FileError>`, so each fallible step is matched.
 
 test("ziglings 107 files2 -- errors", () => {
 	// open requires a mode argument; omitting it is an error.
@@ -16,9 +17,13 @@ import System
 pub func main = () {
     Directory.create("output")
     var File w = File()
-    w.open("output/zigling.txt", "w")
-    w.writeAll("It's zigling time!")
-    w.close()
+    match w.open("output/zigling.txt", "w") {
+        case .ok(did) {
+            w.writeAll("It's zigling time!")
+            w.close()
+        }
+        case .error(e) { Console.write("open failed") }
+    }
 
     var File r = File()
     r.open("output/zigling.txt")
@@ -37,14 +42,26 @@ import System
 pub func main = () {
     Directory.create("output")
     var File w = File()
-    w.open("output/zigling.txt", "w")
-    w.writeAll("It's zigling time!")
-    w.close()
+    match w.open("output/zigling.txt", "w") {
+        case .ok(did) {
+            w.writeAll("It's zigling time!")
+            w.close()
+        }
+        case .error(e) { Console.write("open failed") }
+    }
 
     var File r = File()
-    r.open("output/zigling.txt", "r")
-    const string content = r.readAll()
-    Console.write("Successfully Read \\{content.length} bytes: \\{content}\\n")
+    match r.open("output/zigling.txt", "r") {
+        case .ok(did) {
+            match r.readAll() {
+                case .ok(content) {
+                    Console.write("Successfully Read \\{content.length} bytes: \\{content}\\n")
+                }
+                case .error(e2) { Console.write("read failed") }
+            }
+        }
+        case .error(e1) { Console.write("open failed") }
+    }
 }
 `;
 	const parsed = parse_with_imports(input);
@@ -58,14 +75,26 @@ import System
 pub func main = () {
     Directory.create("output")
     var File w = File()
-    w.open("output/zigling.txt", "w")
-    w.writeAll("It's zigling time!")
-    w.close()
+    match w.open("output/zigling.txt", "w") {
+        case .ok(did) {
+            w.writeAll("It's zigling time!")
+            w.close()
+        }
+        case .error(e) { Console.write("open failed") }
+    }
 
     var File r = File()
-    r.open("output/zigling.txt", "r")
-    const string content = r.readAll()
-    Console.write("Successfully Read \\{content.length} bytes: \\{content}\\n")
+    match r.open("output/zigling.txt", "r") {
+        case .ok(did) {
+            match r.readAll() {
+                case .ok(content) {
+                    Console.write("Successfully Read \\{content.length} bytes: \\{content}\\n")
+                }
+                case .error(e2) { Console.write("read failed") }
+            }
+        }
+        case .error(e1) { Console.write("open failed") }
+    }
 }
 `;
 	const parsed = parse_with_imports(input);

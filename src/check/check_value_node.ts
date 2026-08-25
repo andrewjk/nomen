@@ -2,7 +2,7 @@ import add_error from "../add_error.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import type CheckStatus from "./CheckStatus.ts";
-import { monomorphize_enum } from "./utils/enum_mono.ts";
+import { find_mono_enum, monomorphize_enum } from "./utils/enum_mono.ts";
 import type_from_value from "./utils/type_from_value.ts";
 
 export default function check_value_node(node: ValueNode, status: CheckStatus): boolean {
@@ -83,7 +83,13 @@ function check_enum_shorthand(node: ValueNode, status: CheckStatus): boolean {
 		return false;
 	}
 
-	let enum_node = status.enums.find((e) => e.name === expected.name);
+	// A rewritten mono annotation may reference an enum that was registered in
+	// a cloned check scope whose enums died with it — find_mono_enum recovers
+	// it from root.statements.
+	let enum_node = find_mono_enum(expected.name, status);
+	if (!enum_node) {
+		enum_node = status.enums.find((e) => e.name === expected.name);
+	}
 	if (enum_node?.is_generic) {
 		// A generic enum as the expected type resolves through its concrete
 		// instantiation (`.none` against `Option<int>` → the `Option_int` mono).

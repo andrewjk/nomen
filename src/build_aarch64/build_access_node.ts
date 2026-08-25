@@ -31,6 +31,7 @@ import {
 import {
 	emit_pair_load_x29,
 	emit_pair_store_x29,
+	emit_strdup_string,
 	emit_string_pair_load_at,
 } from "./utils/string_pair.ts";
 import { get_enum_size } from "./utils/struct_layout.ts";
@@ -1024,9 +1025,18 @@ function build_access_method(
 				for (let i = access_func.params.length - 1; i >= 0; i--) {
 					build_node(access_func.params[i], status);
 					if (!status.code.endsWith("\n")) status.code += "\n";
-					const param_size = aarch64_size(enum_case.params[i].type.name);
+					const param_type_name = enum_case.params[i].type.name;
+					const param_size = aarch64_size(param_type_name);
 					const abs_offset = temp_offset + payload_offset;
-					if (param_size === 1) {
+					if (param_type_name === "string") {
+						// A string payload is an OWNED copy: strdup the (ptr,
+						// len) pair the arg built, then store both halves —
+						// the enum value outlives the producer's local, and
+						// the scope-exit payload free needs a heap ptr.
+						emit_strdup_string(status);
+						status.code += `str x0, [x29, #${abs_offset}]\n`;
+						status.code += `str x1, [x29, #${abs_offset + 8}]\n`;
+					} else if (param_size === 1) {
 						status.code += `strb w0, [x29, #${abs_offset}]\n`;
 					} else if (param_size === 4) {
 						status.code += `str w0, [x29, #${abs_offset}]\n`;

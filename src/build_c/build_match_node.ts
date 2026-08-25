@@ -44,7 +44,7 @@ export default function build_match_node(node: MatchNode, status: BuildStatus) {
 	const saved_code = status.code;
 	status.code = "";
 	build_node(match_type, status);
-	const value_expr = status.code;
+	const value_expr_raw = status.code;
 	status.code = saved_code;
 
 	const enum_name = node.value_type || null;
@@ -55,7 +55,7 @@ export default function build_match_node(node: MatchNode, status: BuildStatus) {
 	if (!has_associated_data) {
 		// Simple (non-associated) enum: emit a C switch on the tag value.
 		status.code += "switch (";
-		status.code += value_expr;
+		status.code += value_expr_raw;
 		status.code += ") {\n";
 
 		for (const match_case of node.cases) {
@@ -85,6 +85,23 @@ export default function build_match_node(node: MatchNode, status: BuildStatus) {
 
 	// Associated-data enum: emit if/else-if chains comparing the tag, binding
 	// each case's payload fields to the local names declared in the branch.
+	// A scrutinee that is not a plain identifier (e.g. a call) must be
+	// evaluated ONCE into a temp — reusing the raw expression text in each
+	// case's tag test and payload binding would re-run it per case (triple
+	// evaluation for a two-case match), and an enum-with-string-payload call
+	// result owns heap strings that need a home for the scope-exit free.
+	let value_expr = value_expr_raw;
+	const scrutinee_is_identifier = match_type.node_type === "value";
+	let match_scrutinee_temps: string[] = [];
+	if (!scrutinee_is_identifier && enum_name) {
+		const temp = `_match_val_${match_temp_counter++}`;
+		status.code += `${c_type(enum_name)} ${temp} = ${value_expr_raw};\n`;
+		value_expr = temp;
+		if (enum_node!.cases.some((c) => c.params.some((p) => p.type.name === "string"))) {
+			match_scrutinee_temps.push(temp);
+		}
+	}
+
 	let first = true;
 	for (const match_case of node.cases) {
 		const case_tag = extract_case_tag(match_case.match_value, enum_node!.name);
@@ -117,5 +134,18 @@ export default function build_match_node(node: MatchNode, status: BuildStatus) {
 	}
 	status.code += "}\n";
 
+	// The scrutinee temp dies with the match: free its string payloads
+	// (tag-guarded), mirroring the enum-local auto-free.
+	for (const temp of match_scrutinee_temps) {
+		for (const c of enum_node!.cases) {
+			for (const p of c.params) {
+				if (p.type.name !== "string") continue;
+				status.code += `if (${temp}.tag == ${enum_node!.name}_${c.name}) { free(${temp}._data._${c.name}.${p.name}.ptr); }\n`;
+			}
+		}
+	}
+
 	status.scoped_declarations = old_scoped_declarations;
 }
+
+let match_temp_counter = 0;

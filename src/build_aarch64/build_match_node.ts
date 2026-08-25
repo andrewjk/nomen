@@ -10,9 +10,17 @@ import { emit_address_of } from "./build_access_node.ts";
 import build_block_node from "./build_block_node.ts";
 import build_node from "./build_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
-import { enter_scope_frame, exit_scope_frame } from "./utils/auto_destroy.ts";
+import {
+	enter_scope_frame,
+	exit_scope_frame,
+	emit_enum_payload_frees,
+} from "./utils/auto_destroy.ts";
 import { allocate_stack_space } from "./utils/stack_var.ts";
-import { get_enum_case_index, get_enum_payload_offset } from "./utils/struct_layout.ts";
+import {
+	get_enum_case_index,
+	get_enum_payload_offset,
+	get_enum_size,
+} from "./utils/struct_layout.ts";
 
 let label_counter = 0;
 
@@ -80,12 +88,39 @@ export default function build_match_node(node: MatchNode, status: BuildStatus) {
 	const tag_slot = allocate_stack_space(status, 8, 8);
 	let addr_slot = 0;
 
+	// A scrutinee that is not a plain identifier (e.g. a method call) is
+	// HOISTED into a match-owned blob slot: the value is copied once (a raw
+	// address would point into the callee's dead frame), and the temp owns
+	// its string payloads so they can be freed when the match ends.
+	let scrutinee_is_temp = false;
+	let temp_blob_slot = 0;
+
 	// For an enum with associated data we need the ADDRESS of the scrutinee
 	// (so we can read its tag at +0 and payload bytes at +8…); a plain
 	// build_node would load only the tag word for a bare variable reference.
 	if (enum_with_data) {
 		addr_slot = allocate_stack_space(status, 8, 8);
-		emit_address_of(node.value, status);
+		// Only CALL-shaped scrutinees become owned temps: their result blob
+		// would otherwise point into the callee's dead frame and its string
+		// payloads would leak. A field access keeps pointing at its owner.
+		const v = node.value as unknown as { access?: { node_type: string } };
+		scrutinee_is_temp =
+			node.value.node_type === "func_call" ||
+			(node.value.node_type === "access" && v.access?.node_type === "access_func");
+		if (scrutinee_is_temp) {
+			const enum_size = get_enum_size(enum_with_data.name, status);
+			temp_blob_slot = allocate_stack_space(status, enum_size, 8);
+			build_node(node.value, status);
+			ensure_newline(status);
+			// Copy the returned blob (x0 = &tag+payload) into the slot.
+			for (let off = 0; off < enum_size; off += 8) {
+				status.code += `ldr x9, [x0, #${off}]\n`;
+				status.code += `str x9, [x29, #${temp_blob_slot + off}]\n`;
+			}
+			status.code += `add x0, x29, #${temp_blob_slot}\n`;
+		} else {
+			emit_address_of(node.value, status);
+		}
 	} else {
 		build_node(node.value, status);
 	}
@@ -135,7 +170,12 @@ export default function build_match_node(node: MatchNode, status: BuildStatus) {
 					// reloaded from its slot + payload offset) and store it
 					// into the binding's slot.
 					status.code += `ldr x10, [x29, #${addr_slot}]\n`;
-					if (size === 1) {
+					if (field.type.name === "string") {
+						// A fat-string payload rides as a (ptr, len) pair —
+						// copy BOTH halves or the binding's length is stale.
+						status.code += `ldp x9, x11, [x10, #${payload_off}]\n`;
+						status.code += `stp x9, x11, [x29, #${slot}]\n`;
+					} else if (size === 1) {
 						status.code += `ldrb w9, [x10, #${payload_off}]\n`;
 						status.code += `strb w9, [x29, #${slot}]\n`;
 					} else if (size === 2) {
@@ -194,6 +234,15 @@ export default function build_match_node(node: MatchNode, status: BuildStatus) {
 	status.buffer_data_cache = pre_cache;
 
 	status.code += `end_match_${label}:\n`;
+
+	// A hoisted scrutinee temp dies with the match: free its string payloads
+	// (tag-guarded). Identifier/field scrutinees are NOT freed here — their
+	// owner outlives the match and keeps ownership.
+	if (scrutinee_is_temp && enum_with_data) {
+		const temp_name = `_match_scrutinee_${label}`;
+		status.stack_offsets!.set(temp_name, temp_blob_slot);
+		emit_enum_payload_frees(status, enum_with_data.name, temp_name);
+	}
 
 	exit_scope_frame(status, old_scoped_declarations);
 	status.stack_offsets = old_stack_offsets;

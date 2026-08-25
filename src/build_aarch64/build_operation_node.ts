@@ -59,9 +59,21 @@ function build_enum_tag_operand(
 	while (node.node_type === "grouped") {
 		node = (node as unknown as { value: BaseNode }).value;
 	}
+	// An enum-with-data VARIABLE reference yields the ADDRESS of its
+	// tag+payload blob (build_value_node) — same as constructor forms — so
+	// the tag is loaded through it. Params in registers hold the blob address
+	// too (by-address convention).
+	const var_name = node.node_type === "value" ? (node as ValueNode).value : undefined;
+	const is_enum_var =
+		var_name !== undefined &&
+		((node as ValueNode).type?.name === enum_node.name ||
+			status.scoped_declarations?.some(
+				(d) => d.name === var_name && d.type.name === enum_node.name,
+			));
 	const yields_address =
 		node.node_type === "func_call" ||
 		(node.node_type === "value" && (node as ValueNode).is_enum_shorthand) ||
+		is_enum_var ||
 		(node.node_type === "access" &&
 			(node as unknown as { access: { node_type: string } }).access.node_type === "access_func");
 	build_operand(node, "x0", status);

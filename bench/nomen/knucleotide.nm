@@ -205,68 +205,76 @@ pub func main = (Init init) {
 	}
 
 	var f = File()
-	f.open(filename, "r")
-	const string text = f.readAll()
-	f.close()
+	match f.open(filename, "r") {
+		case .ok(did) {
+			match f.readAll() {
+				case .ok(text) {
+					f.close()
 
-	var data = Buffer<int>()
-	const int text_len = text.length
-	data.alloc_int(text_len)
-	var n = 0
+		var data = Buffer<int>()
+		const int text_len = text.length
+		data.alloc_int(text_len)
+		var n = 0
 
-	var i = 0
-	var started = 0
-	while i < text_len {
-		const int c = text.at(i) as int
-		if started == 1 {
-			if c != 10 {
-				if c != 13 {
-					if n >= 0 && n < data.cap {
-						data.store_int(n, base_code(c))
+		var i = 0
+		var started = 0
+		while i < text_len {
+			const int c = text.at(i) as int
+			if started == 1 {
+				if c != 10 {
+					if c != 13 {
+						if n >= 0 && n < data.cap {
+							data.store_int(n, base_code(c))
+						}
+						n += 1
 					}
-					n += 1
 				}
-			}
-			i += 1
-		} else {
-			var matched = 0
-			if c == 62 {
-				if i + 5 < text_len {
-					if (text.at(i + 1) as int) == 84 {
-						if (text.at(i + 2) as int) == 72 {
-							if (text.at(i + 3) as int) == 82 {
-								if (text.at(i + 4) as int) == 69 {
-									if (text.at(i + 5) as int) == 69 {
-										matched = 1
+				i += 1
+			} else {
+				var matched = 0
+				if c == 62 {
+					if i + 5 < text_len {
+						if (text.at(i + 1) as int) == 84 {
+							if (text.at(i + 2) as int) == 72 {
+								if (text.at(i + 3) as int) == 82 {
+									if (text.at(i + 4) as int) == 69 {
+										if (text.at(i + 5) as int) == 69 {
+											matched = 1
+										}
 									}
 								}
 							}
 						}
 					}
 				}
-			}
-			if matched == 1 {
-				i += 6
-				while i < text_len; i += 1 {
-					if (text.at(i) as int) == 10 {
-						i += 1
-						break
+				if matched == 1 {
+					i += 6
+					while i < text_len; i += 1 {
+						if (text.at(i) as int) == 10 {
+							i += 1
+							break
+						}
 					}
+					started = 1
+				} else {
+					i += 1
 				}
-				started = 1
-			} else {
-				i += 1
 			}
 		}
-	}
 
-	write_freq(ref data, n, 1)
-	Console.write("\n")
-	write_freq(ref data, n, 2)
-	Console.write("\n")
-	write_count(ref data, n, "GGT")
-	write_count(ref data, n, "GGTA")
-	write_count(ref data, n, "GGTATT")
-	write_count(ref data, n, "GGTATTTTAATT")
-	write_count(ref data, n, "GGTATTTTAATTTATAGT")
+		write_freq(ref data, n, 1)
+		Console.write("\n")
+		write_freq(ref data, n, 2)
+		Console.write("\n")
+		write_count(ref data, n, "GGT")
+		write_count(ref data, n, "GGTA")
+		write_count(ref data, n, "GGTATT")
+		write_count(ref data, n, "GGTATTTTAATT")
+		write_count(ref data, n, "GGTATTTTAATTTATAGT")
+				}
+				case .error(e) { panic("read failed") }
+			}
+		}
+		case .error(e) { panic("open failed") }
+	}
 }

@@ -198,6 +198,29 @@ export function free_scoped_declarations(
 			}
 			status.code += `free(${cname}.ptr);\n`;
 		}
+		// An enum-with-data local owns its string payloads (case-init strdups
+		// string args — construction is an ownership copy). Free the payload
+		// of the case actually stored, guarded by the tag.
+		if (!is_destructured_field_access && !dec.type.is_array) {
+			const enum_node = status.enums.find((e) => e.name === dec.type.name);
+			if (enum_node?.has_associated_data) {
+				const payload_cases = enum_node.cases.filter((c) =>
+					c.params.some((p) => p.type.name === "string"),
+				);
+				if (payload_cases.length) {
+					if (!commented) {
+						status.code += "\n// Auto-free\n";
+						commented = true;
+					}
+					for (const c of payload_cases) {
+						for (const p of c.params) {
+							if (p.type.name !== "string") continue;
+							status.code += `if (${cname}.tag == ${enum_node.name}_${c.name}) { free(${cname}._data._${c.name}.${p.name}.ptr); }\n`;
+						}
+					}
+				}
+			}
+		}
 		// Class-typed variables are heap-allocated (malloc'd in the
 		// constructor). Free them at scope exit. Aliases (var q = p) are
 		// already excluded from scoped_declarations by build_declaration_node.

@@ -2,39 +2,109 @@
  * Helpers for working with filesystem directories.
  *
  * `Directory` is a namespace of static helpers — no instance is constructed.
+ * Fallible operations return a `Result` whose error side is a
+ * `DirectoryError`.
  *
  *	Directory.create("scratch")
- *	const string names = Directory.list("scratch")
- *	const bool has     = Directory.exists("scratch")
- *	Directory.remove("scratch")
+ *	var Result<string, DirectoryError> names = Directory.list("scratch")
+ *	match names {
+ *		case .ok(text) -> Console.write(text)
+ *		case .error(e) -> Console.write("failed")
+ *	}
  **/
 pub struct Directory {
-	// (static) Create a directory at `path`.
-	pub func create = (string path) {
+	// Maps an errno to its DirectoryError case.
+	func error_of = (int err, out DirectoryError) {
+		switch {
+			case err == 2 {
+				return DirectoryError.not_found
+			}
+			case err == 13 {
+				return DirectoryError.access_denied
+			}
+			case err == 17 {
+				return DirectoryError.already_exists
+			}
+			case err == 66 {
+				return DirectoryError.not_empty
+			}
+			else {
+				return DirectoryError.other
+			}
+		}
+	}
+
+	// (static) Create a directory at `path`; returns errno (0 on success).
+	func raw_create = (string path, out int) {
 		```
 		#arch: c
-		mkdir(path, 0777);
+		#scope: file
+		#include <errno.h>
+		```
+		```
+		#arch: c
+		if (mkdir(path, 0777)) return errno;
+		return 0;
 		```
 		```
 		#arch: aarch64
 		mov x1, #0x1FF
 		bl _mkdir
+		cbz w0, .Ldir_create_ok
+		bl ___error
+		ldr w0, [x0]
+		b .return_Directory_raw_create
+		.Ldir_create_ok:
+		mov x0, #0
+		b .return_Directory_raw_create
 		```
+		return 0
 	}
 
-	// (static) Remove the (empty) directory at `path`.
-	pub func remove = (string path) {
+	// (static) Create a directory at `path`. `.ok(true)`, or
+	// `.error(DirectoryError)` (`already_exists` when it is already there).
+	pub func create = (string path, out Result<bool, DirectoryError>) {
+		const int err = Directory.raw_create(path)
+		if err == 0 {
+			return Result.ok(true)
+		}
+		return Result.error(Directory.error_of(err))
+	}
+
+	// (static) Remove the (empty) directory at `path`; returns errno (0 on
+	// success).
+	func raw_remove = (string path, out int) {
 		```
 		#arch: c
-		rmdir(path);
+		if (rmdir(path)) return errno;
+		return 0;
 		```
 		```
 		#arch: aarch64
 		bl _rmdir
+		cbz w0, .Ldir_remove_ok
+		bl ___error
+		ldr w0, [x0]
+		b .return_Directory_raw_remove
+		.Ldir_remove_ok:
+		mov x0, #0
+		b .return_Directory_raw_remove
 		```
+		return 0
 	}
 
-	// (static) Whether a directory exists at `path`.
+	// (static) Remove the (empty) directory at `path`. `.ok(true)`, or
+	// `.error(DirectoryError)` (`not_empty` when it still has entries).
+	pub func remove = (string path, out Result<bool, DirectoryError>) {
+		const int err = Directory.raw_remove(path)
+		if err == 0 {
+			return Result.ok(true)
+		}
+		return Result.error(Directory.error_of(err))
+	}
+
+	// (static) Whether a directory exists at `path`. A missing directory is
+	// `false`, not an error.
 	pub func exists = (string path, out bool) {
 		```
 		#arch: c
@@ -54,60 +124,104 @@ pub struct Directory {
 		return false
 	}
 
-	// Returns the directory's entry names as a single newline-separated
-	// string. The `.` and `..` entries are skipped. Returns an empty string
-	// if the path cannot be opened.
+	// (static) The directory's entry names as a single newline-separated
+	// string (the `.` and `..` entries are skipped). `.ok(text)`, or
+	// `.error(DirectoryError)` when the directory cannot be opened.
 	//
-	// On macOS/iOS the entry length is read from `dirent.d_namlen`, so this
-	// is currently macOS-specific aarch64 asm (the C backend is portable).
-	pub func list = (string path, out string) {
+	// The whole operation is one raw body per backend: the listing must be
+	// built and any open failure mapped to its errno inside a single
+	// opendir/closedir lifetime, so the Result is constructed directly in
+	// `#arch` code. Case ordinals mirrored below come from
+	// System/Result.nm (ok=0, error=1) and DirectoryError.nm (not_found=0,
+	// access_denied=1, already_exists=2, not_empty=3, other=4).
+	//
+	// On macOS/iOS the entry length is read from `dirent.d_namlen`, so the
+	// aarch64 body is currently macOS-specific (the C backend is portable).
+	pub func list = (string path, out Result<string, DirectoryError>) {
 		```
 		#arch: c
 		#scope: file
+		#include <errno.h>
 		#include <dirent.h>
 		```
 		```
 		#arch: c
+		Result_string_DirectoryError r;
 		DIR *d = opendir(path);
-		if (!d) return (nomen_string){ strdup(""), 0 };
+		if (!d) {
+			int e = errno;
+			long de = 4;
+			if (e == ENOENT) de = 0;
+			else if (e == EACCES) de = 1;
+			r.tag = 1;
+			r._data._error.error = (DirectoryError)de;
+			return r;
+		}
 		int cap = 4096;
 		int len = 0;
 		char *buf = (char*)malloc(cap);
-		struct dirent *e;
-		while ((e = readdir(d)) != NULL) {
-			if (e->d_name[0] == '.' && e->d_name[1] == 0) continue;
-			if (e->d_name[0] == '.' && e->d_name[1] == '.' && e->d_name[2] == 0) continue;
-			int nl = (int)strlen(e->d_name);
+		struct dirent *ent;
+		while ((ent = readdir(d)) != NULL) {
+			if (ent->d_name[0] == '.' && ent->d_name[1] == 0) continue;
+			if (ent->d_name[0] == '.' && ent->d_name[1] == '.' && ent->d_name[2] == 0) continue;
+			int nl = (int)strlen(ent->d_name);
 			if (len + nl + 2 > cap) {
 				while (len + nl + 2 > cap) cap *= 2;
 				buf = (char*)realloc(buf, cap);
 			}
-			memcpy(buf + len, e->d_name, nl);
+			memcpy(buf + len, ent->d_name, nl);
 			len += nl;
 			buf[len++] = '\n';
 		}
 		buf[len] = 0;
 		closedir(d);
+		r.tag = 0;
+		r._data._ok.value.ptr = buf;
+		r._data._ok.value.len = len;
 		// len bytes were appended — the count is exact, no strlen.
-		return (nomen_string){ buf, len };
+		return r;
 		```
 		```
 		#arch: aarch64
+		// Fat-string ABI: path = (x0, x1). Returns x0 = &tag+payload blob
+		// (24 bytes below the restored sp — the caller copies it before its
+		// next call, matching the enum-return convention).
+		//
+		// Frame (sp-relative): #0 DIR*, #8 blob.tag, #16 blob.ptr,
+		// #24 blob.len, #32 readdir ent, #40 namlen, #48 cap, #56 buf.
 		sub sp, sp, #64
-		str x0, [sp, #0]
 		bl _opendir
-		str x0, [sp, #8]
-		cbz x0, .Ldir_list_empty
+		str x0, [sp, #0]
+		cbnz x0, .Ldir_list_opened
+		bl ___error
+		ldr w0, [x0]
+		// Map errno -> DirectoryError ordinal (see header comment).
+		mov x9, #4
+		cmp w0, #2
+		b.ne .Ldir_list_nf_skip
+		mov x9, #0
+		b .Ldir_list_emap
+		.Ldir_list_nf_skip:
+		cmp w0, #13
+		b.ne .Ldir_list_emap
+		mov x9, #1
+		.Ldir_list_emap:
+		mov x10, #1
+		str x10, [sp, #8]      // tag = error
+		str x9, [sp, #16]      // payload = DirectoryError ordinal
+		b .Ldir_list_ret
+		.Ldir_list_opened:
 		mov x0, #4096
 		bl _malloc
-		str x0, [sp, #16]
-		str xzr, [sp, #24]
-		mov x0, #4096
-		str x0, [sp, #32]
+		str x0, [sp, #56]      // buf
+		mov x1, #0
+		str x1, [sp, #24]      // len
+		mov x1, #4096
+		str x1, [sp, #48]      // cap
 		.Ldir_list_loop:
-		ldr x0, [sp, #8]
+		ldr x0, [sp, #0]
 		bl _readdir
-		str x0, [sp, #40]
+		str x0, [sp, #32]
 		cbz x0, .Ldir_list_done
 		ldrb w1, [x0, #21]
 		cmp w1, #46
@@ -119,62 +233,57 @@ pub struct Directory {
 		ldrb w1, [x0, #23]
 		cbz w1, .Ldir_list_loop
 		.Ldir_list_keep:
-		ldr x0, [sp, #40]
-		ldrh w0, [x0, #18]
-		str x0, [sp, #48]
+		ldrh w2, [x0, #18]     // d_namlen (macOS dirent)
+		str x2, [sp, #40]
 		.Ldir_list_grow:
 		ldr x1, [sp, #24]
-		ldr x2, [sp, #48]
+		ldr x2, [sp, #40]
 		add x1, x1, x2
 		add x1, x1, #2
-		ldr x2, [sp, #32]
+		ldr x2, [sp, #48]
 		cmp x1, x2
 		ble .Ldir_list_grow_ok
 		lsl x2, x2, #1
-		str x2, [sp, #32]
-		ldr x0, [sp, #16]
+		str x2, [sp, #48]
+		ldr x0, [sp, #56]
 		bl _realloc
-		str x0, [sp, #16]
+		str x0, [sp, #56]
 		b .Ldir_list_grow
 		.Ldir_list_grow_ok:
-		ldr x0, [sp, #16]
+		ldr x0, [sp, #56]
 		ldr x1, [sp, #24]
-		add x0, x0, x1
-		ldr x1, [sp, #40]
-		add x1, x1, #21
-		ldr x2, [sp, #48]
+		add x0, x0, x1         // dst = buf + len
+		ldr x1, [sp, #32]
+		add x1, x1, #21        // src = ent->d_name
+		ldr x2, [sp, #40]      // nl
 		bl _memcpy
-		ldr x0, [sp, #48]
 		ldr x1, [sp, #24]
-		add x1, x1, x0
-		str x1, [sp, #24]
-		ldr x0, [sp, #16]
+		ldr x2, [sp, #40]
+		add x1, x1, x2
+		str x1, [sp, #24]      // len += nl
+		ldr x0, [sp, #56]
 		ldr x1, [sp, #24]
 		mov w2, #10
-		strb w2, [x0, x1]
+		strb w2, [x0, x1]      // buf[len++] = '\n'
 		add x1, x1, #1
 		str x1, [sp, #24]
 		b .Ldir_list_loop
 		.Ldir_list_done:
-		ldr x0, [sp, #16]
+		ldr x0, [sp, #56]
 		ldr x1, [sp, #24]
 		strb wzr, [x0, x1]
-		ldr x0, [sp, #8]
+		ldr x0, [sp, #0]
 		bl _closedir
-		// Fat-string ABI: reload the (buf, len) pair — closedir clobbered x1.
-		ldr x0, [sp, #16]
+		// ok: tag = 0, payload = (buf, len)
+		str xzr, [sp, #8]
+		ldr x0, [sp, #56]
 		ldr x1, [sp, #24]
+		stp x0, x1, [sp, #16]
+		.Ldir_list_ret:
+		add x0, sp, #8         // &blob (tag slot base)
 		add sp, sp, #64
 		b .return_Directory_list
-		.Ldir_list_empty:
-		adr x0, .Ldir_list_empty_str
-		bl _strdup
-		mov x1, #0
-		add sp, sp, #64
-		b .return_Directory_list
-		.Ldir_list_empty_str: .asciz ""
-		.p2align 2
 		```
-		return ""
+		return Result.error(DirectoryError.other)
 	}
 }

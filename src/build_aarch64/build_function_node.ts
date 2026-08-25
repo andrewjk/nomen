@@ -257,13 +257,12 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		const argc_offset = vt_size;
 		const args_offset = vt_size + 8;
 		const args_count = 16;
-		// `is_tty` (bool, 1 byte) is the last Init field, after the `string[16]
-		// args` array (which the layout sizes as 8-byte length prefix + 128
-		// bytes of elements = 136). Resolve its offset and the total struct
+		// `is_tty` (bool, 1 byte) is the last Init field, after the fat
+		// `string[16] args` array (8-byte length prefix + 16×16-byte
+		// {ptr, len} elements = 264). Resolve its offset and the total struct
 		// size from the layout helpers so this stays correct if the struct
 		// changes, and round the frame up to 16 for AAPCS64 alignment.
-		const is_tty_offset =
-			get_field_offset("Init", "is_tty", status) || args_offset + args_count * 8 + 8;
+		const is_tty_offset = get_field_offset("Init", "is_tty", status) || args_offset + 264;
 		init_struct_size = Math.ceil((get_struct_size("Init", status) || is_tty_offset + 1) / 16) * 16;
 		status.code += `sub sp, sp, #${init_struct_size}\n`;
 		status.code += `str x0, [sp, #${argc_offset}]\n`;
@@ -279,9 +278,19 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		status.code += `b.ge ${end_label}\n`;
 		status.code += `cmp x2, #${args_count}\n`;
 		status.code += `b.ge ${end_label}\n`;
+		// Copy argv[i] into the fat-string element {ptr, len} — the len half
+		// is strlen(argv[i]) (argv strings are NUL-terminated C strings).
+		// i (x2) and argv[i] are spilled across the strlen call; x20 (argv)
+		// is callee-saved and survives it.
 		status.code += `ldr x0, [x20, x2, lsl #3]\n`;
-		status.code += `add x3, x2, #2\n`;
-		status.code += `str x0, [sp, x3, lsl #3]\n`;
+		status.code += `stp x2, x0, [sp, #-16]!\n`;
+		status.code += `bl _strlen\n`;
+		status.code += `ldp x2, x1, [sp], #16\n`;
+		status.code += `mov x4, #${args_offset}\n`;
+		status.code += `add x4, x4, x2, lsl #4\n`;
+		status.code += `str x1, [sp, x4]\n`;
+		status.code += `add x4, x4, #8\n`;
+		status.code += `str x0, [sp, x4]\n`;
 		status.code += `add x2, x2, #1\n`;
 		status.code += `b ${loop_label}\n`;
 		status.code += `${end_label}:\n`;

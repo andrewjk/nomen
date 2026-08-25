@@ -1,0 +1,21 @@
+/**
+ * The failure mode of a file operation.
+ *
+ *	File.write_all("out.txt", "payload")
+ *	var Result<string, FileError> body = File.read_all("out.txt")
+ *	match body {
+ *		case .ok(text) -> Console.write(text)
+ *		case .error(e) -> Console.write("failed")
+ *	}
+ *
+ * Cases map from the underlying errno: `not_found` (ENOENT), `access_denied`
+ * (EACCES), `already_exists` (EEXIST), `not_open` (operating on a `File`
+ * whose open failed or that was already closed), `other` (anything else).
+ **/
+pub enum FileError {
+	case not_found
+	case access_denied
+	case already_exists
+	case not_open
+	case other
+}

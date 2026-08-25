@@ -52,7 +52,16 @@ function build_tagged_union_enum(node: EnumNode, status: BuildStatus) {
 		status.code += `${c_typedef_name(node.name)} r;\n`;
 		status.code += `r.tag = ${node.name}_${c.name};\n`;
 		for (const p of c.params) {
-			status.code += `r._data._${c.name}.${p.name} = ${p.name};\n`;
+			if (p.type.name === "string") {
+				// A string payload is an OWNED copy: strdup the argument so the
+				// enum value's lifetime is independent of the producer's local
+				// (which is freed at its own scope exit). Bitwise assignment
+				// would leave the payload dangling after that free.
+				status.code += `r._data._${c.name}.${p.name}.ptr = strdup(${p.name}.ptr);\n`;
+				status.code += `r._data._${c.name}.${p.name}.len = ${p.name}.len;\n`;
+			} else {
+				status.code += `r._data._${c.name}.${p.name} = ${p.name};\n`;
+			}
 		}
 		status.code += `return r;\n`;
 		status.code += `}\n`;

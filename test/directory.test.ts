@@ -32,11 +32,16 @@ if Directory.exists("dir_exists_test") {
 		}
 	});
 
-	test("Directory.list on missing path yields empty string", async () => {
+	test("Directory.list on missing path yields not_found", async () => {
 		const input = `
-const string names = Directory.list("dir_no_such_xyz_123")
-if names.length == 0 {
-	Console.write("empty")
+match Directory.list("dir_no_such_xyz_123") {
+	case .ok(names) { Console.write("content?!") }
+	case .error(e) {
+		match e {
+			case .not_found -> Console.write("empty")
+			else -> Console.write("other")
+		}
+	}
 }
 `;
 		for (const arch of ARCHITECTURES) {
@@ -52,8 +57,10 @@ if names.length == 0 {
 		const input = `
 Directory.create("dir_list_test")
 File.write_all("dir_list_test/only.txt", "x")
-const string names = Directory.list("dir_list_test")
-Console.write(names)
+match Directory.list("dir_list_test") {
+	case .ok(names) { Console.write(names) }
+	case .error(e) { Console.write("list failed") }
+}
 `;
 		for (const arch of ARCHITECTURES) {
 			const parsed = parse_with_imports(input);

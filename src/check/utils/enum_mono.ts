@@ -120,6 +120,23 @@ function find_root_enum(status: CheckStatus, name: string): EnumNode | undefined
 }
 
 /**
+ * Find a concrete (monomorphized) enum by exact name, recovering monos that
+ * were created inside a cloned check scope: a clone's `status.enums` dies with
+ * the scope, but the mono node it appended to `root.statements` survives.
+ * Re-registers a recovered mono into the current status so downstream lookups
+ * (match exhaustiveness, build emission) see it.
+ */
+export function find_mono_enum(name: string, status: CheckStatus): EnumNode | undefined {
+	const in_status = status.enums.find((e) => e.name === name && !e.is_generic);
+	if (in_status) return in_status;
+	const from_root = find_root_enum(status, name);
+	if (from_root && !from_root.is_generic && !status.enums.includes(from_root)) {
+		status.enums.push(from_root);
+	}
+	return from_root;
+}
+
+/**
  * Substitute type params inside a composite payload type (recursively through
  * type args, tuple elements, and anonymous enum case payloads).
  */

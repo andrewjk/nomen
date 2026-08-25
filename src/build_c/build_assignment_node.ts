@@ -12,6 +12,7 @@ import { emit_struct_destroys, struct_needs_destroy_by_name } from "./build_auto
 import build_node from "./build_node.ts";
 import { is_owned_heap_temp } from "./build_operation_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
+import c_function_name from "./utils/c_function_name.ts";
 import { find_decl_in_c_scopes, splice_decl_from_c_scopes } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
 import is_string_borrow from "./utils/is_string_borrow.ts";
@@ -666,6 +667,32 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 		build_node(node.right_value, status);
 		status.code += `;\n`;
 		return;
+	}
+
+	// Reassignment of an enum-with-data LOCAL with string payloads: the old
+	// value's payload is an owned heap string — free it (tag-guarded) before
+	// the store overwrites it. Scope-exit auto-free only reclaims the FINAL
+	// value, so a displaced payload would otherwise leak. Enum fields inside
+	// containers are not covered (their destroy doesn't walk payloads yet).
+	if (!node.operator && !node.swap && node.left_value.node_type === "value") {
+		const lhs_name = (node.left_value as ValueNode).value;
+		const rhs_is_same_var =
+			node.right_value.node_type === "value" && (node.right_value as ValueNode).value === lhs_name;
+		const decl = status.scoped_declarations.find((d) => d.name === lhs_name);
+		const lhs_type = decl?.type || status.variable_types?.get(lhs_name);
+		const enum_node =
+			lhs_type && !lhs_type.is_array
+				? status.enums.find((e) => e.name === lhs_type.name)
+				: undefined;
+		if (!rhs_is_same_var && enum_node?.has_associated_data) {
+			const cname = c_function_name(lhs_name);
+			for (const c of enum_node.cases) {
+				for (const p of c.params) {
+					if (p.type.name !== "string") continue;
+					status.code += `if (${cname}.tag == ${enum_node.name}_${c.name}) { free(${cname}._data._${c.name}.${p.name}.ptr); }\n`;
+				}
+			}
+		}
 	}
 
 	build_node(node.left_value, status);

@@ -20,11 +20,12 @@ const KNOWN_HEAP_RETURNING = new Set([
 	"float64_to_string",
 	"bool_to_string",
 	"char_to_string",
-	"File_readAll",
-	"File_readLine",
-	"File_readChunk",
-	"File_read_all",
-	"Directory_list",
+	// Raw #arch bodies returning malloc'd strings — invisible to the AST
+	// scan below (their returns are raw blocks), so they're listed here.
+	"File_raw_read_all",
+	"File_raw_read_line",
+	"File_raw_read_chunk",
+	"Directory_raw_list",
 	"Http_exchange",
 	"Console_read_line",
 	"Console_platform",

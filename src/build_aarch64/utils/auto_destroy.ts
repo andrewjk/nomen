@@ -15,6 +15,7 @@ import { emit_free } from "./audit.ts";
 import { allocate_stack_space } from "./stack_var.ts";
 import { emit_var_address, emit_var_load } from "./stack_var.ts";
 import {
+	get_enum_payload_offset,
 	get_field_offset,
 	get_field_offset_of_fields,
 	get_struct_size,
@@ -412,6 +413,39 @@ export function resolve_struct_name(
 	return type_name;
 }
 
+/**
+ * Free the string payloads of an enum-with-data local (`var Result<string, E>
+ * r`), tag-guarded: for every case carrying a string param, load the case
+ * index, compare against the blob's tag word, and free the payload's ptr
+ * half on match. Case construction strdups string args (always-heap), so
+ * freeing here is safe. Callers must NOT run this for an enum local that was
+ * RETURNED — its bytes (and payload ownership) transferred to the caller.
+ */
+export function emit_enum_payload_frees(status: BuildStatus, enum_name: string, decl_name: string) {
+	const enum_node = status.enums.find((e) => e.name === enum_name);
+	if (!enum_node?.has_associated_data) return;
+	const string_cases = enum_node.cases.filter((c) =>
+		c.params.some((p) => p.type.name === "string"),
+	);
+	if (!string_cases.length) return;
+	for (const c of string_cases) {
+		for (const p of c.params) {
+			if (p.type.name !== "string") continue;
+			const case_index = enum_node.cases.indexOf(c);
+			const payload_off = get_enum_payload_offset(enum_name, c.name, p.name, status);
+			emit_var_address(status, "x0", decl_name);
+			status.code += `ldr x9, [x0]\n`;
+			const skip = `.Lskip_epf_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+			status.code += `mov x10, #${case_index}\n`;
+			status.code += `cmp x9, x10\n`;
+			status.code += `b.ne ${skip}\n`;
+			status.code += `ldr x0, [x0, #${payload_off}]\n`;
+			emit_free(status);
+			status.code += `${skip}:\n`;
+		}
+	}
+}
+
 export function is_struct_type(type_name: string, status: BuildStatus): StructNode | undefined {
 	return status.structs.find((s) => s.name === type_name && !s.is_simple_type);
 }
@@ -726,6 +760,17 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 			if (moved.has(decl.name)) {
 				continue;
 			}
+			// An enum-with-data local owns its string payloads (case
+			// construction strdups string args) — free them, tag-guarded.
+			// RETURN-path cleanup never reaches here, so an enum local that
+			// was returned keeps its payload (ownership transferred).
+			const scope_enum = status.enums.find(
+				(e) => e.name === decl.type.name && e.has_associated_data,
+			);
+			if (scope_enum && !decl.type.is_array) {
+				emit_enum_payload_frees(status, scope_enum.name, decl.name);
+				continue;
+			}
 			if (status.heap_string_arrays?.has(decl.name)) {
 				const len = status.heap_string_arrays.get(decl.name)!;
 				for (let j = 0; j < len; j++) {
@@ -793,6 +838,13 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 		// released before the moved / struct_needs_destroy gates.
 		release_heap_string_fields(status, decl.name, decl.type.name);
 		if (moved.has(decl.name)) {
+			continue;
+		}
+		// An enum-with-data local owns its string payloads (see the
+		// heap_slots branch above for the ownership contract).
+		const scope_enum = status.enums.find((e) => e.name === decl.type.name && e.has_associated_data);
+		if (scope_enum && !decl.type.is_array) {
+			emit_enum_payload_frees(status, scope_enum.name, decl.name);
 			continue;
 		}
 		if (status.heap_string_arrays?.has(decl.name)) {

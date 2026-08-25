@@ -90,7 +90,21 @@ export default function is_system_definition(
 		const cache = system_origin_cache(structs);
 		return s.source_type_args.every((arg) => type_origin_is_system(arg.name, structs, cache));
 	}
-	if (node.node_type === "trait" || node.node_type === "enum" || node.node_type === "bitset") {
+	if (node.node_type === "enum") {
+		const e = node as unknown as {
+			is_library?: boolean;
+			is_generic?: boolean;
+			name: string;
+		};
+		if (e.is_library) return true;
+		if (system_set) return system_set.has(e.name);
+		// Canonical system-TU build: the only non-library CONCRETE enums in
+		// this parse are monomorphizations created for System signatures
+		// (`out Result<bool, FileError>` on File.open) — the prebuilt object
+		// must provide them, since System method bodies construct them.
+		return !e.is_generic;
+	}
+	if (node.node_type === "trait" || node.node_type === "bitset") {
 		return !!(node as { is_library?: boolean }).is_library;
 	}
 	if (node.node_type === "declare") {

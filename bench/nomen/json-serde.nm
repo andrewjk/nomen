@@ -20,24 +20,32 @@ pub func main = (Init init) {
 	}
 
 	var f = File()
-	f.open(filename, "r")
-	const string text = f.readAll()
-	f.close()
+	match f.open(filename, "r") {
+		case .ok(did) {
+			match f.readAll() {
+				case .ok(text) {
+					f.close()
 
-	// Parse once and serialize, like the Go version's first pass.
-	var tree = JsonTree()
-	const int root = Json.parse(text, ref tree)
-	Console.write(Json.stringify(ref tree, root).length.to_string())
-	Console.write("\n")
+					// Parse once and serialize, like the Go version's first pass.
+					var tree = JsonTree()
+					const int root = Json.parse(text, ref tree)
+					Console.write(Json.stringify(ref tree, root).length.to_string())
+					Console.write("\n")
 
-	// Re-parse and re-serialize n times, accumulating the serialized length.
-	// The tree pool is reset per iteration (no per-node malloc/free).
-	var total = 0
-	var i = 0
-	while i < n; i += 1 {
-		const int r = Json.parse(text, ref tree)
-		total = total + Json.stringify(ref tree, r).length
+					// Re-parse and re-serialize n times, accumulating the serialized length.
+					// The tree pool is reset per iteration (no per-node malloc/free).
+					var total = 0
+					var i = 0
+					while i < n; i += 1 {
+						const int r = Json.parse(text, ref tree)
+						total = total + Json.stringify(ref tree, r).length
+					}
+					Console.write(total.to_string())
+					Console.write("\n")
+				}
+				case .error(e) { panic("read failed") }
+			}
+		}
+		case .error(e) { panic("open failed") }
 	}
-	Console.write(total.to_string())
-	Console.write("\n")
 }

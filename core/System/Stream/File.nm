@@ -5,16 +5,27 @@
  * automatically by its `#destroy` when it goes out of scope. Read methods set
  * the `eof` flag when the end of the file is reached.
  *
+ * Every operation that can fail returns a `Result` whose error side is a
+ * `FileError`; a handle whose `open` failed (or that was closed) reports
+ * `FileError.not_open` from subsequent operations instead of crashing.
+ *
  *	var File w = File()
- *	w.open("notes.txt", "w")
- *	w.writeLine("hello")
- *	w.writeLine("world")
- *	w.close()
+ *	match w.open("notes.txt", "w") {
+ *		case .ok(ok) -> {
+ *			w.writeLine("hello")
+ *			w.writeLine("world")
+ *			w.close()
+ *		}
+ *		case .error(e) -> Console.write("could not open")
+ *	}
  *
  *	var File r = File()
- *	r.open("notes.txt", "r")
- *	const string first = r.readLine()    // "hello"
- *	const string rest  = r.readAll()     // read the remaining bytes
+ *	match r.open("notes.txt", "r") {
+ *		case .ok(ok) -> {
+ *			const string first = r.readLine()    // Result<string, FileError>
+ *		}
+ *		case .error(e) -> Console.write("could not open")
+ *	}
  *
  * Static one-shot helpers do the open/read/close in one call:
  *
@@ -26,12 +37,47 @@
 pub struct File {
 	var uint64 handle = 0
 	pub var eof = false
+	// errno of the last operation; 0 = success. Raw #arch bodies set it,
+	// the Result-returning wrappers map it to FileError.
+	var int error = 0
+
+	// Maps an errno to its FileError case.
+	func error_of = (int err, out FileError) {
+		switch {
+			case err == 2 {
+				return FileError.not_found
+			}
+			case err == 9 {
+				return FileError.not_open
+			}
+			case err == 13 {
+				return FileError.access_denied
+			}
+			case err == 17 {
+				return FileError.already_exists
+			}
+			else {
+				return FileError.other
+			}
+		}
+	}
 
 	// Open the file at `path` with a C mode string ("r", "w", "a", …).
-	pub func open = (ref self, string path, string mode) {
+	// Stores the handle and records errno (0 on success) in `error`.
+	func raw_open = (ref self, string path, string mode) {
+		```
+		#arch: c
+		#scope: file
+		#include <errno.h>
+		```
 		```
 		#arch: c
 		self->handle = (unsigned long long)fopen(path, mode);
+		if (self->handle) {
+			self->error = 0;
+		} else {
+			self->error = errno;
+		}
 		```
 		```
 		#arch: aarch64
@@ -40,35 +86,82 @@ pub struct File {
 		mov x1, x3
 		bl _fopen
 		str x0, [x19, #8]
+		cbnz x0, .Lfile_open_ok
+		bl ___error
+		ldr w0, [x0]
+		str x0, [x19, #24]
+		b .Lfile_open_end
+		.Lfile_open_ok:
+		str xzr, [x19, #24]
+		.Lfile_open_end:
 		```
 	}
 
-	// Close the handle. Also performed automatically by #destroy; calling
-	// close explicitly releases the resource early.
-	pub func close = (ref self) {
+	// Open the file at `path` with a C mode string ("r", "w", "a", …).
+	// `.ok(true)` on success; `.error(FileError)` otherwise.
+	pub func open = (ref self, string path, string mode, out Result<bool, FileError>) {
+		self.raw_open(path, mode)
+		if self.error == 0 {
+			return Result.ok(true)
+		}
+		return Result.error(File.error_of(self.error))
+	}
+
+	// Close the handle, recording errno in `error` (0 on success). Also
+	// performed automatically by #destroy; calling close explicitly releases
+	// the resource early.
+	func raw_close = (ref self) {
 		```
 		#arch: c
 		if (self->handle) {
-			fclose((FILE*)(unsigned long long)self->handle);
-			self->handle = 0;
+			if (fclose((FILE*)(unsigned long long)self->handle)) {
+				self->error = errno;
+			} else {
+				self->handle = 0;
+				self->error = 0;
+			}
+		} else {
+			self->error = 0;
 		}
 		```
 		```
 		#arch: aarch64
 		ldr x0, [x19, #8]
-		cbz x0, .Lfile_close_end
+		cbz x0, .Lfile_close_clean
 		bl _fclose
-		.Lfile_close_end:
+		cbnz w0, .Lfile_close_err
 		str xzr, [x19, #8]
+		str xzr, [x19, #24]
+		b .Lfile_close_end
+		.Lfile_close_err:
+		bl ___error
+		ldr w0, [x0]
+		str x0, [x19, #24]
+		b .Lfile_close_end
+		.Lfile_close_clean:
+		str xzr, [x19, #24]
+		.Lfile_close_end:
 		```
 	}
 
+	// Close the handle. Also performed automatically by #destroy; calling
+	// close explicitly releases the resource early. Closing an unopened (or
+	// already closed) File is `.ok(true)`.
+	pub func close = (ref self, out Result<bool, FileError>) {
+		self.raw_close()
+		if self.error == 0 {
+			return Result.ok(true)
+		}
+		return Result.error(File.error_of(self.error))
+	}
+
 	// Read every byte from the current position to EOF and return it. Sets
-	// `eof`.
-	pub func readAll = (ref self, out string) {
+	// `eof` and `error`.
+	func raw_read_all = (ref self, out string) {
 		```
 		#arch: c
 		FILE *f = (FILE*)(unsigned long long)self->handle;
+		if (!f) { self->error = 9; return (nomen_string){ NULL, 0 }; }
 		fseek(f, 0, SEEK_END);
 		long size = ftell(f);
 		fseek(f, 0, SEEK_SET);
@@ -76,11 +169,20 @@ pub struct File {
 		fread(buf, 1, size, f);
 		buf[size] = 0;
 		self->eof = 1;
+		self->error = 0;
 		// size bytes were read — the count is exact, no strlen.
 		return (nomen_string){ buf, size };
 		```
 		```
 		#arch: aarch64
+		ldr x0, [x19, #8]
+		cbnz x0, .Lfile_read_all_go
+		mov x0, #9
+		str x0, [x19, #24]
+		mov x0, #0
+		mov x1, #0
+		b .return_File_raw_read_all
+		.Lfile_read_all_go:
 		sub sp, sp, #16
 		ldr x0, [x19, #8]
 		mov x1, #0
@@ -107,35 +209,69 @@ pub struct File {
 		strb wzr, [x0, x1]
 		mov w1, #1
 		strb w1, [x19, #16]
+		str xzr, [x19, #24]
 		ldr x0, [sp, #8]
 		ldr x1, [sp, #0]          // fat len half = size read
 		add sp, sp, #16
-		b .return_File_readAll
+		b .return_File_raw_read_all
 		```
 		return ""
 	}
 
+	// Read every byte from the current position to EOF. `.ok(text)` with the
+	// remaining bytes (and `eof` set), or `.error(FileError)` — including
+	// `not_open` when the handle was never opened.
+	pub func readAll = (ref self, out Result<string, FileError>) {
+		const string body = self.raw_read_all()
+		if self.error == 0 {
+			return Result.ok(body)
+		}
+		return Result.error(File.error_of(self.error))
+	}
+
 	// Write a string at the current position.
-	pub func writeAll = (self, string data) {
+	func raw_write_all = (ref self, string data) {
 		```
 		#arch: c
 		FILE *f = (FILE*)(unsigned long long)self->handle;
+		if (!f) { self->error = 9; return; }
 		fputs(data, f);
+		self->error = 0;
 		```
 		```
 		#arch: aarch64
+		// Fat-string ABI: data = (x1, x2).
+		ldr x3, [x19, #8]
+		cbnz x3, .Lfile_write_all_go
+		mov x0, #9
+		str x0, [x19, #24]
+		b .return_File_raw_write_all
+		.Lfile_write_all_go:
 		mov x0, x1
-		ldr x1, [x19, #8]
+		mov x1, x3
 		bl _fputs
+		str xzr, [x19, #24]
 		```
 	}
 
+	// Write a string at the current position. `.ok(true)`, or
+	// `.error(FileError)` — including `not_open` when the handle was never
+	// opened.
+	pub func writeAll = (ref self, string data, out Result<bool, FileError>) {
+		self.raw_write_all(data)
+		if self.error == 0 {
+			return Result.ok(true)
+		}
+		return Result.error(File.error_of(self.error))
+	}
+
 	// Read up to the next '\n' (the newline is not included). Sets `eof`
-	// when the end of the file is reached.
-	pub func readLine = (ref self, out string) {
+	// when the end of the file is reached and `error` on failure.
+	func raw_read_line = (ref self, out string) {
 		```
 		#arch: c
 		FILE *f = (FILE*)(unsigned long long)self->handle;
+		if (!f) { self->error = 9; return (nomen_string){ NULL, 0 }; }
 		int cap = 16;
 		int len = 0;
 		char *buf = (char*)malloc(cap);
@@ -150,10 +286,19 @@ pub struct File {
 		}
 		buf[len] = 0;
 		if (c == EOF) self->eof = 1;
+		self->error = 0;
 		return (nomen_string){ buf, len };
 		```
 		```
 		#arch: aarch64
+		ldr x0, [x19, #8]
+		cbnz x0, .Lfile_read_line_go
+		mov x0, #9
+		str x0, [x19, #24]
+		mov x0, #0
+		mov x1, #0
+		b .return_File_raw_read_line
+		.Lfile_read_line_go:
 		sub sp, sp, #32
 		mov x0, #16
 		bl _malloc
@@ -164,24 +309,24 @@ pub struct File {
 		ldr x0, [x19, #8]
 		bl _fgetc
 		str w0, [sp, #24]
-		.Lfile_readline_loop:
+		.Lfile_read_line_loop:
 		ldr w0, [sp, #24]
 		cmp w0, #0
-		blt .Lfile_readline_done
+		blt .Lfile_read_line_done
 		cmp w0, #10
-		beq .Lfile_readline_done
+		beq .Lfile_read_line_done
 		ldr x0, [sp, #16]
 		add x0, x0, #1
 		ldr x1, [sp, #8]
 		cmp x0, x1
-		ble .Lfile_readline_store
+		ble .Lfile_read_line_store
 		ldr x1, [sp, #8]
 		lsl x1, x1, #1
 		str x1, [sp, #8]
 		ldr x0, [sp, #0]
 		bl _realloc
 		str x0, [sp, #0]
-		.Lfile_readline_store:
+		.Lfile_read_line_store:
 		ldr x0, [sp, #0]
 		ldr x1, [sp, #16]
 		ldr w2, [sp, #24]
@@ -192,58 +337,98 @@ pub struct File {
 		ldr x0, [x19, #8]
 		bl _fgetc
 		str w0, [sp, #24]
-		b .Lfile_readline_loop
-		.Lfile_readline_done:
+		b .Lfile_read_line_loop
+		.Lfile_read_line_done:
 		ldr x0, [sp, #0]
 		ldr x1, [sp, #16]
 		strb wzr, [x0, x1]
 		ldr w0, [sp, #24]
 		cmp w0, #0
-		bge .Lfile_readline_ret
+		bge .Lfile_read_line_ret
 		mov w1, #1
 		strb w1, [x19, #16]
-		.Lfile_readline_ret:
+		.Lfile_read_line_ret:
+		str xzr, [x19, #24]
 		ldr x0, [sp, #0]
 		ldr x1, [sp, #16]         // fat len half
 		add sp, sp, #32
-		b .return_File_readLine
+		b .return_File_raw_read_line
 		```
 		return ""
 	}
 
+	// Read up to the next '\n' (the newline is not included). `.ok(text)`
+	// and `eof` set at end of file, or `.error(FileError)`.
+	pub func readLine = (ref self, out Result<string, FileError>) {
+		const string line = self.raw_read_line()
+		if self.error == 0 {
+			return Result.ok(line)
+		}
+		return Result.error(File.error_of(self.error))
+	}
+
 	// Write a string followed by '\n'.
-	pub func writeLine = (self, string data) {
+	func raw_write_line = (ref self, string data) {
 		```
 		#arch: c
 		FILE *f = (FILE*)(unsigned long long)self->handle;
+		if (!f) { self->error = 9; return; }
 		fputs(data, f);
 		fputc('\n', f);
+		self->error = 0;
 		```
 		```
 		#arch: aarch64
+		// Fat-string ABI: data = (x1, x2).
+		ldr x3, [x19, #8]
+		cbnz x3, .Lfile_write_line_go
+		mov x0, #9
+		str x0, [x19, #24]
+		b .return_File_raw_write_line
+		.Lfile_write_line_go:
 		mov x0, x1
-		ldr x1, [x19, #8]
+		mov x1, x3
 		bl _fputs
 		mov w0, #10
 		ldr x1, [x19, #8]
 		bl _fputc
+		str xzr, [x19, #24]
 		```
 	}
 
+	// Write a string followed by '\n'. `.ok(true)`, or `.error(FileError)`.
+	pub func writeLine = (ref self, string data, out Result<bool, FileError>) {
+		self.raw_write_line(data)
+		if self.error == 0 {
+			return Result.ok(true)
+		}
+		return Result.error(File.error_of(self.error))
+	}
+
 	// Read up to `size` bytes from the current position. Sets `eof` if fewer
-	// than `size` bytes remain.
-	pub func readChunk = (ref self, int size, out string) {
+	// than `size` bytes remain and `error` on failure.
+	func raw_read_chunk = (ref self, int size, out string) {
 		```
 		#arch: c
 		FILE *f = (FILE*)(unsigned long long)self->handle;
+		if (!f) { self->error = 9; return (nomen_string){ NULL, 0 }; }
 		char *buf = (char*)malloc(size + 1);
 		long n = fread(buf, 1, size, f);
 		buf[n] = 0;
 		if (n < size) self->eof = 1;
+		self->error = 0;
 		return (nomen_string){ buf, n };
 		```
 		```
 		#arch: aarch64
+		ldr x0, [x19, #8]
+		cbnz x0, .Lfile_read_chunk_go
+		mov x0, #9
+		str x0, [x19, #24]
+		mov x0, #0
+		mov x1, #0
+		b .return_File_raw_read_chunk
+		.Lfile_read_chunk_go:
 		sub sp, sp, #16
 		str x1, [sp, #0]
 		ldr x0, [sp, #0]
@@ -259,37 +444,68 @@ pub struct File {
 		strb wzr, [x1, x0]
 		ldr x2, [sp, #0]
 		cmp x0, x2
-		bge .Lfile_readchunk_ret
+		bge .Lfile_read_chunk_ret
 		mov w3, #1
 		strb w3, [x19, #16]
-		.Lfile_readchunk_ret:
+		.Lfile_read_chunk_ret:
+		str xzr, [x19, #24]
 		ldr x0, [sp, #8]
 		ldr x1, [sp, #0]          // fat len half = bytes read
 		add sp, sp, #16
-		b .return_File_readChunk
+		b .return_File_raw_read_chunk
 		```
 		return ""
 	}
 
+	// Read up to `size` bytes from the current position. `.ok(text)`
+	// (`eof` set if fewer bytes remained), or `.error(FileError)`.
+	pub func readChunk = (ref self, int size, out Result<string, FileError>) {
+		const string chunk = self.raw_read_chunk(size)
+		if self.error == 0 {
+			return Result.ok(chunk)
+		}
+		return Result.error(File.error_of(self.error))
+	}
+
 	// Write the first `size` bytes of `data` at the current position.
-	pub func writeChunk = (self, string data, int size) {
+	func raw_write_chunk = (ref self, string data, int size) {
 		```
 		#arch: c
 		FILE *f = (FILE*)(unsigned long long)self->handle;
+		if (!f) { self->error = 9; return; }
 		fwrite(data, 1, size, f);
+		self->error = 0;
 		```
 		```
 		#arch: aarch64
 		// Fat-string ABI: data = (x1, x2), size in x3.
+		ldr x4, [x19, #8]
+		cbnz x4, .Lfile_write_chunk_go
+		mov x0, #9
+		str x0, [x19, #24]
+		b .return_File_raw_write_chunk
+		.Lfile_write_chunk_go:
 		mov x0, x1
 		mov x2, x3
 		mov x1, #1
-		ldr x3, [x19, #8]
+		mov x3, x4
 		bl _fwrite
+		str xzr, [x19, #24]
 		```
 	}
 
-	// (static) Whether a file exists at `path`.
+	// Write the first `size` bytes of `data` at the current position.
+	// `.ok(true)`, or `.error(FileError)`.
+	pub func writeChunk = (ref self, string data, int size, out Result<bool, FileError>) {
+		self.raw_write_chunk(data, size)
+		if self.error == 0 {
+			return Result.ok(true)
+		}
+		return Result.error(File.error_of(self.error))
+	}
+
+	// (static) Whether a file exists at `path`. A missing file is `false`,
+	// not an error.
 	pub func exists = (string path, out bool) {
 		```
 		#arch: c
@@ -309,118 +525,79 @@ pub struct File {
 		return false
 	}
 
-	// (static) Remove the file at `path`.
-	pub func delete = (string path) {
+	// (static) Remove the file at `path`; returns errno (0 on success).
+	func raw_delete = (string path, out int) {
 		```
 		#arch: c
-		remove(path);
+		if (remove(path)) return errno;
+		return 0;
 		```
 		```
 		#arch: aarch64
 		bl _remove
+		cbz w0, .Lfile_delete_ok
+		bl ___error
+		ldr w0, [x0]
+		b .return_File_raw_delete
+		.Lfile_delete_ok:
+		mov x0, #0
+		b .return_File_raw_delete
 		```
+		return 0
+	}
+
+	// (static) Remove the file at `path`. `.ok(true)`, or
+	// `.error(FileError)`.
+	pub func delete = (string path, out Result<bool, FileError>) {
+		const int err = File.raw_delete(path)
+		if err == 0 {
+			return Result.ok(true)
+		}
+		return Result.error(File.error_of(err))
 	}
 
 	// (static) Read the entire contents of `path` in one open/read/close.
-	// Returns an empty string if the file cannot be opened.
-	pub func read_all = (string path, out string) {
-		```
-		#arch: c
-		FILE *f = fopen(path, "r");
-		if (!f) return (nomen_string){ strdup(""), 0 };
-		fseek(f, 0, SEEK_END);
-		long size = ftell(f);
-		fseek(f, 0, SEEK_SET);
-		char *buf = (char*)malloc(size + 1);
-		fread(buf, 1, size, f);
-		buf[size] = 0;
-		fclose(f);
-		return (nomen_string){ buf, size };
-		```
-		```
-		#arch: aarch64
-		sub sp, sp, #48
-		str x0, [sp, #0]
-		adr x1, .Lfile_read_all_mode
-		bl _fopen
-		str x0, [sp, #8]
-		cbz x0, .Lfile_read_all_empty
-		ldr x0, [sp, #8]
-		mov x1, #0
-		mov x2, #2
-		bl _fseek
-		ldr x0, [sp, #8]
-		bl _ftell
-		str x0, [sp, #16]
-		ldr x0, [sp, #8]
-		mov x1, #0
-		mov x2, #0
-		bl _fseek
-		ldr x0, [sp, #16]
-		add x0, x0, #1
-		bl _malloc
-		str x0, [sp, #24]
-		ldr x0, [sp, #24]
-		mov x1, #1
-		ldr x2, [sp, #16]
-		ldr x3, [sp, #8]
-		bl _fread
-		ldr x0, [sp, #24]
-		ldr x1, [sp, #16]
-		strb wzr, [x0, x1]
-		ldr x0, [sp, #8]
-		bl _fclose
-		ldr x0, [sp, #24]
-		ldr x1, [sp, #16]         // fat len half = file size
-		add sp, sp, #48
-		b .return_File_read_all
-		.Lfile_read_all_empty:
-		adr x0, .Lfile_read_all_empty_str
-		bl _strdup
-		mov x1, #0
-		add sp, sp, #48
-		b .return_File_read_all
-		.Lfile_read_all_mode: .asciz "r"
-		.Lfile_read_all_empty_str: .asciz ""
-		.p2align 2
-		```
-		return ""
+	pub func read_all = (string path, out Result<string, FileError>) {
+		var Result<string, FileError> result = .error(FileError.other)
+		var File f = File()
+		match f.open(path, "r") {
+			case .ok(did) {
+				match f.readAll() {
+					case .ok(text) {
+						result = .ok(text)
+					}
+					case .error(e2) {
+						result = .error(e2)
+					}
+				}
+			}
+			case .error(e) {
+				result = .error(e)
+			}
+		}
+		return result
 	}
 
 	// (static) Write `data` to `path` (replacing any existing contents) in
 	// one open/write/close.
-	pub func write_all = (string path, string data) {
-		```
-		#arch: c
-		FILE *f = fopen(path, "w");
-		if (!f) return;
-		fputs(data, f);
-		fclose(f);
-		```
-		```
-		#arch: aarch64
-		sub sp, sp, #32
-		str x0, [sp, #0]          // path ptr
-		str x2, [sp, #8]          // data ptr (fat pair: data = x2/x3)
-		adr x1, .Lfile_write_all_mode
-		bl _fopen
-		str x0, [sp, #16]
-		cbz x0, .Lfile_write_all_done
-		ldr x0, [sp, #8]
-		ldr x1, [sp, #16]
-		bl _fputs
-		ldr x0, [sp, #16]
-		bl _fclose
-		.Lfile_write_all_done:
-		add sp, sp, #32
-		b .return_File_write_all
-		.Lfile_write_all_mode: .asciz "w"
-		.p2align 2
-		```
+	pub func write_all = (string path, string data, out Result<bool, FileError>) {
+		var Result<bool, FileError> result = .error(FileError.other)
+		var File f = File()
+		match f.open(path, "w") {
+			case .ok(did) {
+				f.writeAll(data)
+				result = f.close()
+			}
+			case .error(e) {
+				result = .error(e)
+			}
+		}
+		return result
 	}
 
 	// Closes the handle if still open (no-op after close). Runs automatically
-	// at scope exit, so an unclosed `File` never leaks.
+	// at scope exit, so an unclosed `File` never leaks. Best-effort: failures
+	// are not reported (use `close` to observe them).
 	func #destroy = () {
 		```
 		#arch: c

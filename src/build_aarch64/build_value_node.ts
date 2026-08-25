@@ -264,6 +264,12 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 			} else {
 				status.code += `add x0, x29, #${offset}`;
 			}
+		} else if (status.enums.find((e) => e.name === type_name && e.has_associated_data)) {
+			// An enum-with-data local is a multi-word (tag + payload) blob —
+			// a value reference (return, assignment RHS, argument) passes its
+			// ADDRESS so consumers struct-copy the full value. The generic
+			// scalar path below would load only the 8-byte tag word.
+			status.code += `add x0, x29, #${offset}`;
 		} else if (type_name === "string" && !is_ref) {
 			// Fat string slot: load the (ptr, len) pair.
 			emit_string_pair_load(status, value);

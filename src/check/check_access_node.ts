@@ -10,11 +10,14 @@ import FunctionNode from "../nodes/FunctionNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import check_function_call from "./check_function_call.ts";
-import check_function_call_node, { monomorphize } from "./check_function_call_node.ts";
+import check_function_call_node, {
+	instantiate_generic_type,
+	monomorphize,
+} from "./check_function_call_node.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import { invalidate_borrows_of, receiver_owner_of } from "./utils/borrow.ts";
-import { monomorphize_enum } from "./utils/enum_mono.ts";
+import { find_mono_enum, monomorphize_enum } from "./utils/enum_mono.ts";
 import { expr_to_string } from "./utils/flow_bounds.ts";
 import {
 	find_function_by_params,
@@ -200,7 +203,10 @@ function resolve_generic_enum_access(
 		// The expected type may already BE a monomorphized instantiation
 		// (annotations are rewritten to the mono name during check, with type
 		// args cleared) — use it directly and just retarget the value node.
-		const direct = status.enums.find((e) => e.name === expected.name && !e.is_generic);
+		// find_mono_enum also recovers monos that were created inside a cloned
+		// check scope (their status.enums died with the scope; the root
+		// statement survives).
+		const direct = find_mono_enum(expected.name, status);
 		if (direct) {
 			if (target.node_type === "value" && (target as ValueNode).value !== direct.name) {
 				(target as ValueNode).value = direct.name;
@@ -650,6 +656,22 @@ function check_access_function_node(
 		returns_value(func)
 	) {
 		infer_return_type(func, status);
+	}
+
+	// Forward-reference fix, annotated form: a non-generic method whose
+	// declared return type is a GENERIC ENUM (`out Result<bool, FileError>`)
+	// carries the raw `Result<...>` annotation until its defining struct is
+	// checked — which may be after this call site (library structs are
+	// appended after user code). Instantiate it now so callers see the
+	// monomorphized name; the rewrite is deterministic and idempotent (the
+	// mono is reused once the signature's own check runs).
+	if (
+		func &&
+		!func.is_generic &&
+		func.return_type?.type_args?.length &&
+		status.enums.findLast((e) => e.name === func.return_type!.name)?.is_generic
+	) {
+		instantiate_generic_type(func.return_type, status);
 	}
 
 	const result = check_function_call(

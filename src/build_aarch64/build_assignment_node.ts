@@ -17,6 +17,7 @@ import {
 	defer_anchor_destroy,
 	emit_destroy_for_anchor_slot,
 	emit_destroy_for_decl,
+	emit_enum_payload_frees,
 	find_anchor_slot,
 	mark_anchor_destroy,
 	mark_moved_if_struct,
@@ -709,8 +710,15 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 		// Enum with associated data is multi-word (tag + payload). The RHS
 		// builds to a temp address in x0; copy the full enum bytes into the
 		// variable's stack slot (a plain `str` would only store the address).
+		// Reassignment displaces the old value: free its string payloads
+		// (tag-guarded) BEFORE the copy — scope-exit only reclaims the final
+		// value, so the displaced payload would otherwise leak.
 		if (rhs_is_enum_with_data && !node.operator) {
 			const enum_size = get_enum_size(rhs_type.name, status);
+			const lhs_enum = status.enums.find((e) => e.name === rhs_type.name);
+			if (lhs_enum?.cases.some((c) => c.params.some((p) => p.type.name === "string"))) {
+				emit_enum_payload_frees(status, rhs_type.name, name);
+			}
 			build_node(node.right_value, status);
 			if (!status.code.endsWith("\n")) status.code += "\n";
 			emit_var_address(status, "x1", name);

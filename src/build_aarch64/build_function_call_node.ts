@@ -25,6 +25,7 @@ import {
 	emit_var_load,
 	is_local_ref_var,
 } from "./utils/stack_var.ts";
+import { emit_strdup_string } from "./utils/string_pair.ts";
 import { get_enum_size, get_struct_size } from "./utils/struct_layout.ts";
 import { emit_view_string_arg } from "./utils/view_value.ts";
 
@@ -146,9 +147,18 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 				for (let i = node.params.length - 1; i >= 0; i--) {
 					build_node(node.params[i], status);
 					if (!status.code.endsWith("\n")) status.code += "\n";
-					const param_size = aarch64_size(enum_case.params[i].type.name);
+					const param_type_name = enum_case.params[i].type.name;
+					const param_size = aarch64_size(param_type_name);
 					const abs_offset = temp_offset + payload_offset;
-					if (param_size === 1) {
+					if (param_type_name === "string") {
+						// A string payload is an OWNED copy: strdup the (ptr,
+						// len) pair the arg built, then store both halves —
+						// the enum value outlives the producer's local, and
+						// the scope-exit payload free needs a heap ptr.
+						emit_strdup_string(status);
+						status.code += `str x0, [x29, #${abs_offset}]\n`;
+						status.code += `str x1, [x29, #${abs_offset + 8}]\n`;
+					} else if (param_size === 1) {
 						status.code += `strb w0, [x29, #${abs_offset}]\n`;
 					} else if (param_size === 4) {
 						status.code += `str w0, [x29, #${abs_offset}]\n`;

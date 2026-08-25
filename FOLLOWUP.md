@@ -2,6 +2,53 @@
 
 Skipped or out-of-scope items recorded for later.
 
+## Must-use enforcement for `Result`-returning IO (design agreed, not built)
+
+All fallible File/Directory operations now return `Result<T, FileError>` /
+`Result<T, DirectoryError>`, but the compiler does NOT force callers to handle
+the result: a bare statement call (`f.open(p, "r")`) still silently discards
+it. Agreed design, deferred as its own scope:
+
+- Mark the generic `Result` enum declaration must-use (attribute-style marker
+  on the enum), so ANY Result-typed value discarded in statement position is a
+  compile error.
+- Explicit escape hatch: bind to `_` or `match` on it — ignoring/panicking is
+  fine, it just has to be deliberate.
+- Enforcement point: checker walk where statement-position calls are checked
+  (AccessFunctionCallNode.is_statement already exists as a hook).
+
+## Http API still reports failures softly
+
+core/System/Stream/Http.nm was not converted to the error-enum pattern; it
+should get an `HttpError` + `Result<..., HttpError>` API like File/Directory
+did (465 lines of raw bodies across both backends — its own pass).
+
+## Enum-with-string-payload ownership edges
+
+The core contract now works end to end on both backends (case construction
+strdups string args; enum locals free payloads at scope exit; match hoists
+call scrutinees into owned temps and frees them; reassignment frees the
+displaced payload). Not yet covered:
+
+- Enum values stored INSIDE containers/structs: `<Struct>_destroy` (both
+  backends) does not walk enum fields' string payloads — storing a
+  `Result<string, E>` in a struct field, Buffer, or List leaks it.
+- Enum-valued struct FIELD returns (`return self.last_result`) bitwise-copy
+  the payload without a boundary copy — aliasing with the field's own
+  lifetime is unchecked.
+- A match binding that escapes its branch (`case .ok(t) -> return t`) relies
+  on the return-boundary borrow normalization; deeper escapes (storing the
+  binding) are untracked.
+
+## Harness quirk: mono enums vs enums nested in `main`
+
+`parse_with_imports` wraps main-less test input inside `pub func main`, so a
+user enum declared in such input lands NESTED while generic monos created
+from its use land at root scope. The C header then emits the mono's typedef
+before the nested enum's (build order: root enums first), failing clang with
+"unknown type name". Real programs declare enums top-level; tests can avoid
+it by using library enums or an explicit `pub func main`.
+
 ## Cold-run parallel test flakiness (pre-existing)
 
 A fully cold `npm test` (after `rm -rf test/out`) with default file
@@ -74,44 +121,7 @@ if it keeps biting.
   Exposure is strictly no worse than before the fix — the direct-call path
   was the hole that was closed; this is the unfixed remainder.
 
-## Fat-string migration (in progress) — remaining aarch64 work
-
-The repo is mid-migration to fat strings: `string` is now a 16-byte
-`{ char* ptr; long len; }` value (`nomen_string`), NUL kept at `ptr[len]`.
-`.length` is a field load; strlen survives only at raw-boundary adapters
-(C backend) and creation tails (aarch64).
-
-**Current state**: `npm run check` green. C backend: fully green on the
-suite. aarch64: core paths green (Map/Set/List/Buffer<string>, literals,
-`.length`, concat, `==`, interpolation, ctor pair args); **102 tests still
-fail**, all aarch64-side. Remaining clusters:
-
-1. **regex (18)** — `Regex.match` returns garbage length; `Regex.test`
-   false. Internal helpers (`first_byte_set`, `find_next_byte`,
-   `match_here`) mix free-function pair args with StringBuilder results.
-   Harness pattern: `/tmp/smoke12.mjs`-style single-call probes.
-2. **json (8)** — JsonTree geometry updated (#48→#56 strides, text
-   ptr/len halves); parse/stringify paths still fail — likely string-field
-   loads/stores through Buffer<JsonNode> paths not covered by the owning
-   specializations.
-3. **ansi (7) / string-reassignment (3)** — concat/reassignment chains;
-   check `build_assignment_node` aarch64 reassign temps store pairs.
-4. **view_params (7) / view_materialize (5) / view_slice (3)** — owned↔view
-   bridging after `emit_view_string_arg` became the identity; audit borrow
-   normalization for views specifically.
-5. **struct string[N] array fields (2+)** — inline fixed-size string arrays:
-   ctor element-copy loop copies 16-byte slots by value (aliases pointers)
-   and auto_free walks need verification; also `emit_string_array_labels`
-   `.quad` tables are 8-byte pointer rows — must become 16-byte {ptr,len}
-   rows for string elements.
-6. _\*gui_typedef_collision (3), flow-bounds (3), trait_collection_*
-   (6), memory-leaks (4), scattered singles_* — re-triage after 1–5.
-
-Known unsupported until widened: `Task<string>`/spawn string RESULTS
-(8-byte `result_slot`; Task.nm `result()` loads one word),
-`Channel<string>` (8-byte payload design assumption).
-
-### Gotchas encountered (for whoever continues)
+### ASM gotchas (kept for future work)
 
 - `ldp/stp` simm7-scaled range tops out at **+504** — use the guarded
   helpers (`emit_pair_load_x29` / `emit_pair_store_x29` /
@@ -129,9 +139,13 @@ Known unsupported until widened: `Task<string>`/spawn string RESULTS
 - Raw `#arch: c` bodies are thin (char*) behind `_raw_` adapters
   (`raw_string_abi.ts`); T-generic container bodies (Buffer_/Array_/…)
   are natively fat via checker substitution (`raw_c_type_name` →
-  nomen_string, `raw_type_size` string→16). Dual-use
+  nomen_string, `raw_type_size` string→16 — and it must mirror
+  struct_layout's ALIGNED sizes). Dual-use
   `#arch: c, aarch64_use_c` blocks were SPLIT into per-arch variants in
   Controls/*.nm because the two sides see different param types.
 - String literal lengths come from
   `src/build_common/string_literal_length.ts` (unescape-aware); do NOT use
   sizeof-1 (escapes miscount) or the raw token length.
+- Any emitted assembly that must survive a `bl` may only rely on
+  callee-saved registers (x19–x28, sp) or stack slots — x0–x18 are
+  caller-saved and clobbered by the callee.
