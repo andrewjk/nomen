@@ -40,6 +40,61 @@ displaced payload). Not yet covered:
   on the return-boundary borrow normalization; deeper escapes (storing the
   binding) are untracked.
 
+## Backend divergence: `string.to_string()` copies on C, borrows on aarch64
+
+C lowers `string.to_string()` to `strdup(self)` — the result is an OWNED copy.
+aarch64 returns the pair unchanged (`mov x0, x19; mov x1, x20`) — the result
+ALIASES the receiver's storage. The same program can therefore dangle on one
+backend and not the other: `text = body.to_string()` inside a `match` branch
+kept working on C but read freed memory on aarch64 once the scrutinee temp was
+reclaimed (hit by the bench rewrites; worked around by using the binding
+inside the branch).
+
+Fixing it is not just "add a strdup": on aarch64, `string_to_string` results
+are deliberately classified NON-heap (excluded in `is_heap_string_expr`, and
+absent from `scan_heap_returns`' set), so callers never free them — every
+interpolation arg goes through it. Making it strdup without flipping that
+classification and auditing all call sites would leak at each one. Needs its
+own pass: strdup in the raw body + classify as owned + confirm every caller
+(e.g. `_param_N` interpolation temps) frees exactly once.
+
+## aarch64: enum-with-data returns point into the callee's dead frame
+
+An enum-with-data return hands back `x0 = &tag+payload` pointing INTO the
+callee's stack frame. It is sound ONLY while the caller copies the blob
+before its next call — any intervening call (e.g. a `#destroy` running after
+the value was built) overwrites the bytes. `File.read_all`/`write_all` are
+shaped around this today (materialize into a local, then `return` the local,
+so the pointer targets the returning function's own live frame). Robust long-
+term fix: give enums the struct sret convention (caller-provided buffer via
+x8) so liveness stops depending on copy timing. Until then, treat "return an
+enum built by another call" as a hazard when writing library wrappers.
+
+## `KNOWN_HEAP_RETURNING` is a hand-maintained ownership registry
+
+`src/build_aarch64/utils/scan_heap_returns.ts` hardcodes a set of function
+names whose aarch64 results are OWNED heap strings (builtins plus raw `#arch`
+library bodies: `File_raw_read_all`, `File_raw_read_line`,
+`File_raw_read_chunk`, `Directory_raw_list`, `Http_exchange`, …). The AST
+scan below it cannot see raw bodies' returns, so anything not in the set is
+treated as a borrow.
+
+Two failure modes, both quiet:
+
+- Add a raw string-returning library function without registering it →
+  call sites classify the result as a borrow → nothing frees it → leaks
+  surface only as audit `LEAK:` failures in tests exercising that path.
+- Rename/remove an entry (this session: `File_readAll` → `File_raw_read_all`
+  when the Result API landed) → every existing caller's classification flips
+  under it.
+
+A systematic fix could annotate the raw block itself (e.g. a
+`#returns_owned` directive parsed alongside `#arch`) so registration lives
+next to the body instead of a distant list — but note not all raw
+string-returning funcs are owned (accessors returning borrowed storage), so
+the directive must be opt-in per function rather than inferred from
+`out string`.
+
 ## Harness quirk: mono enums vs enums nested in `main`
 
 `parse_with_imports` wraps main-less test input inside `pub func main`, so a
