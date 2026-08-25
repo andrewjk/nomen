@@ -22,13 +22,22 @@ export default function parse_string_interpolation(status: ParseStatus): Functio
 		if (value === "\\{") {
 			pattern += "\\{}";
 			let param = parse_expression(status);
-			// TODO: Not if it's already a string
-			param = new AccessNode(
-				start,
-				param,
-				new AccessFunctionCallNode(start, "to_string" /*, new Type("string", true)*/),
-			);
-			//console.log("PARAM", param);
+			// Skip the wrap when the expression is ALREADY a `*.to_string()`
+			// call: double-wrapping used to be harmless while the outer call
+			// lowered to the `string_to_string` identity, but with the
+			// signature flipped to `mov out string` (a real strdup) the inner
+			// conversion's copy would leak between the two conversions.
+			const already_to_string =
+				param.node_type === "access" &&
+				(param as AccessNode).access.node_type === "access_func" &&
+				((param as AccessNode).access as AccessFunctionCallNode).name === "to_string";
+			if (!already_to_string) {
+				param = new AccessNode(
+					start,
+					param,
+					new AccessFunctionCallNode(start, "to_string" /*, new Type("string", true)*/),
+				);
+			}
 			values.push(param);
 			accept("}", status);
 		} else if (value.endsWith('"')) {

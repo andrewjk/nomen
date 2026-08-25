@@ -2,6 +2,7 @@ import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import type FunctionNode from "../nodes/FunctionNode.ts";
 import type StructNode from "../nodes/StructNode.ts";
 import type TraitNode from "../nodes/TraitNode.ts";
+import Type from "../nodes/Type.ts";
 import { mono_type_name } from "./mono_name.ts";
 
 /**
@@ -350,6 +351,16 @@ function method_call_returns_owned(
 	if (recv_type.type_args?.length) {
 		const mono = mono_type_name(recv_name, recv_type.type_args);
 		if (table.structs.find((s) => s.name === mono)) struct_name = mono;
+	} else if (recv_type.is_array && !recv_type.is_view) {
+		// A FIXED-SIZE array receiver (`Array("a","b")` / `T[N]`) is typed
+		// name=<element>, is_array=true — its methods live on the Array<T>
+		// monomorphization, NOT on the element struct (without this,
+		// String.at_or would shadow Array<string>.at_or by name and
+		// mis-classify the call).
+		const inner = recv_type.type_args?.[0]?.name ?? recv_name;
+		const elem_type = new Type(inner);
+		const mono = mono_type_name("Array", [elem_type]);
+		if (table.structs.find((s) => s.name === mono)) struct_name = mono;
 	}
 	const struct = table.structs.find((s) => s.name === struct_name);
 	if (struct) {
@@ -361,6 +372,22 @@ function method_call_returns_owned(
 				visiting,
 				`${struct_name}_${method_name}`,
 			);
+		}
+		// Not defined on the struct itself: fall back to conforming traits'
+		// DEFAULT bodies (e.g. `Frank: Dancer` inheriting `Dancer.dance`).
+		// Without this the call falls through to the caller's conservative
+		// owned guess, which can free a default impl's static-literal return.
+		for (const trait_name of struct.traits ?? []) {
+			const trait = table.traits.find((t) => t.name === trait_name);
+			const tm = trait?.functions.find((f) => f.name === method_name);
+			if (tm && (tm as FunctionNode).has_body) {
+				return function_returns_owned(
+					tm as FunctionNode,
+					table,
+					visiting,
+					`${trait_name}_${method_name}`,
+				);
+			}
 		}
 	}
 	return undefined;
@@ -381,6 +408,12 @@ export function function_returns_owned(
 	// A `view` return (e.g. `List<T>.slice`'s `out view T`) is the universal
 	// (ptr, len) struct, not a heap string — never heap-returning.
 	if (func.return_type?.name !== "string" || func.return_type?.is_view) return false;
+	// A `mov out string` declaration IS the ownership contract: the callee
+	// hands the caller an owned value by signature. Classify from the
+	// declaration instead of the body — raw `#arch` returns are invisible to
+	// the walk below (only a dead `return ""` fallback is visible), which
+	// would mis-classify e.g. File.raw_read_all as borrow-returning.
+	if (func.returns_mov) return true;
 	if (visiting.has(key)) return false;
 	visiting.add(key);
 	// Compute this function's borrow string names (params + borrow-initialized
@@ -483,6 +516,8 @@ export function is_owned_string_branch_value(node: any, table: StringAnalysisTab
 	if (node.node_type === "func_call") {
 		const name = (node.mangled_name as string) || (node.name as string) || "";
 		if (name.startsWith("_string_interpolate_")) return true;
+		// A `mov out` call transfers ownership by signature.
+		if ((node as unknown as { owned_return?: boolean }).owned_return) return true;
 		return !!table.heap_returning_functions?.has(name);
 	}
 	if (node.node_type === "access") {

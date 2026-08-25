@@ -14,8 +14,9 @@
  **/
 pub struct Json {
 	// Serialize a string to a JSON string literal, escaping the special
-	// characters ", \, newline, tab and carriage return.
-	pub func serialize = (string value, out string) {
+	// characters ", \, newline, tab and carriage return. `mov out string`:
+	// returns the StringBuilder's owned heap copy.
+	pub func serialize = (string value, mov out string) {
 		var sb = StringBuilder()
 		sb.append_char('"')
 		var i = 0
@@ -49,7 +50,8 @@ pub struct Json {
 	}
 
 	// Deserialize a JSON string literal to the raw, unescaped value.
-	pub func deserialize = (string json, out string) {
+	// `mov out string`: returns the StringBuilder's owned heap copy.
+	pub func deserialize = (string json, mov out string) {
 		var sb = StringBuilder()
 		var int len = json.length
 		var i = 0

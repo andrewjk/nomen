@@ -876,6 +876,12 @@ function is_owned_heap_temp(node: BaseNode, status?: BuildStatus): boolean {
 		// Non-overloaded struct methods don't carry a precomputed mangled_name on
 		// the AST; the build phase emits them as `StructName_func`. Try that.
 		if (heap_set && target_value && heap_set.has(`${target_value}_${raw_name}`)) return true;
+		// A `mov out string` call transfers ownership by signature — the
+		// checker stamps owned_return regardless of the name patterns above
+		// (this includes `string.to_string`, whose result is an OWNED copy
+		// since the signature flipped, even though the mangled label is still
+		// excluded by the identity carve-out).
+		if ((check_node as unknown as { owned_return?: boolean }).owned_return) return true;
 		return false;
 	}
 	return false;

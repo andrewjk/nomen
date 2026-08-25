@@ -30,7 +30,9 @@ pub struct Regex {
 	}
 
 	// Return the first substring of input matching pattern, or "" if none.
-	pub func match = (string pattern, string input, out string) {
+	// `mov out string`: the built match (or the copied empty literal) is
+	// handed to the caller as an owned value.
+	pub func match = (string pattern, string input, mov out string) {
 		var match_result = ""
 		var int pat_len = pattern.length
 		var int len = input.length

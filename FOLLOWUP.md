@@ -40,23 +40,18 @@ displaced payload). Not yet covered:
   on the return-boundary borrow normalization; deeper escapes (storing the
   binding) are untracked.
 
-## Backend divergence: `string.to_string()` copies on C, borrows on aarch64
+## Backend divergence: `string.to_string()` copies on C, borrows on aarch64 (FIXED)
 
-C lowers `string.to_string()` to `strdup(self)` — the result is an OWNED copy.
-aarch64 returns the pair unchanged (`mov x0, x19; mov x1, x20`) — the result
-ALIASES the receiver's storage. The same program can therefore dangle on one
-backend and not the other: `text = body.to_string()` inside a `match` branch
-kept working on C but read freed memory on aarch64 once the scrutinee temp was
-reclaimed (hit by the bench rewrites; worked around by using the binding
-inside the branch).
+Fixed by making `String.to_string` a real `mov out string` on BOTH backends:
+the aarch64 raw body now strdups the ptr half (keeping the len half) instead
+of returning the pair unchanged, so every backend hands back an independent
+owned copy and the result can safely outlive its receiver. C was already
+end-to-end sound (`strdup` body + callers free exactly once), so it needed no
+changes.
 
-Fixing it is not just "add a strdup": on aarch64, `string_to_string` results
-are deliberately classified NON-heap (excluded in `is_heap_string_expr`, and
-absent from `scan_heap_returns`' set), so callers never free them — every
-interpolation arg goes through it. Making it strdup without flipping that
-classification and auditing all call sites would leak at each one. Needs its
-own pass: strdup in the raw body + classify as owned + confirm every caller
-(e.g. `_param_N` interpolation temps) frees exactly once.
+Perf note: interpolated string args and `.to_string()` on strings now cost
+one malloc+memcpy+free each on aarch64 (C always paid this). Identity-copy
+elision remains possible future work if benches demand it.
 
 ## aarch64: enum-with-data returns point into the callee's dead frame
 
@@ -70,30 +65,40 @@ term fix: give enums the struct sret convention (caller-provided buffer via
 x8) so liveness stops depending on copy timing. Until then, treat "return an
 enum built by another call" as a hazard when writing library wrappers.
 
-## `KNOWN_HEAP_RETURNING` is a hand-maintained ownership registry
+## `KNOWN_HEAP_RETURNING` — dissolved (fixed)
 
-`src/build_aarch64/utils/scan_heap_returns.ts` hardcodes a set of function
-names whose aarch64 results are OWNED heap strings (builtins plus raw `#arch`
-library bodies: `File_raw_read_all`, `File_raw_read_line`,
-`File_raw_read_chunk`, `Directory_raw_list`, `Http_exchange`, …). The AST
-scan below it cannot see raw bodies' returns, so anything not in the set is
-treated as a borrow.
+Fixed by converting every registered function to a `mov out string`
+signature, so ownership flows through parse (`returns_mov`) → the checker's
+`owned_return` stamp → both backends' classification, instead of a hand-
+maintained name list living in `scan_heap_returns.ts`. Converted:
+`File.raw_read_all`/`raw_read_line`/`raw_read_chunk`, `Http.exchange`,
+`Console.read_line`/`platform`, `Json.serialize`/`deserialize`,
+`Regex.match`, and all nine primitive `*_to_string` builtins (int/uint/int8/
+uint8/int64/uint64/float/bool/char — six further registry names,
+`int16_to_string` etc., had referred to types that don't exist as structs
+and were dead entries). `Directory_raw_list` was already stale and deleted.
+`String.to_string` deliberately STAYS plain `out string`: it is the
+identity/borrow (`string_to_string`), excluded from owned classification
+everywhere. Supporting compiler changes:
 
-Two failure modes, both quiet:
+- `function_returns_owned` classifies `mov out string` declarations as owned
+  WITHOUT walking the body (raw `#arch` returns are invisible to the walk,
+  which would otherwise see only a dead `return ""` fallback).
+- aarch64 return-site normalization (literal-strdup + borrow-strdup) also
+  fires for `mov out string` functions: the signature hands the caller an
+  owned value, so every return path must produce heap storage (e.g.
+  Regex.match's no-match path returning the empty literal).
+- `build_function_call_node` (bare calls) and `is_owned_string_branch_value`
+  (match/if joins) honor `owned_return`, not just set membership.
 
-- Add a raw string-returning library function without registering it →
-  call sites classify the result as a borrow → nothing frees it → leaks
-  surface only as audit `LEAK:` failures in tests exercising that path.
-- Rename/remove an entry (this session: `File_readAll` → `File_raw_read_all`
-  when the Result API landed) → every existing caller's classification flips
-  under it.
-
-A systematic fix could annotate the raw block itself (e.g. a
-`#returns_owned` directive parsed alongside `#arch`) so registration lives
-next to the body instead of a distant list — but note not all raw
-string-returning funcs are owned (accessors returning borrowed storage), so
-the directive must be opt-in per function rather than inferred from
-`out string`.
+The set itself remains (now with no static seed) because it still accumulates
+DYNAMIC entries: string-returning `spawn` callees (the trampoline frees via
+Task.result's mov out contract) and functions whose return sites produce heap
+values during building. The redundant-but-harmless `*_to_string` /
+`_string_interpolate_` NAME patterns at call sites stay as defense in depth —
+monomorphized call nodes can lose stamped annotations (the reason
+`Buffer_string_move_T` is still name-matched despite `move_T` being declared
+`mov out T`).
 
 ## Harness quirk: mono enums vs enums nested in `main`
 
@@ -116,6 +121,13 @@ A second (warm) run is fully green, and a cold run with
 concurrency/caching artifact in `check_output`'s cache write under load.
 Worth investigating `test/check_output.ts`'s `outputfile`/`cachefile` writes
 if it keeps biting.
+
+ALSO: a failure that happens once under load POISONS the per-test cache —
+the wrong `output.txt` + matching `.cache` key are replayed on every later
+run even though the binary is fine (hit 2026-08-25: six file/dir tests
+failed cold, then kept "failing" warm until `test/out/<arch>/<name>/` was
+deleted). Any triage of a suspicious failure should start with
+`rm -rf test/out/<arch>/<name>` for that test before believing it.
 
 ## Residual ownership-tracking gaps (accepted, narrow)
 

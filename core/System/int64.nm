@@ -13,7 +13,7 @@ pub struct int64: Stringable, Hashable, Equatable {
 		```
 	}
 
-	pub func to_string = (self, out string) {
+	pub func to_string = (self, mov out string) {
 		```
 		#arch: c
 		int length = snprintf(NULL, 0, "%lld", self);

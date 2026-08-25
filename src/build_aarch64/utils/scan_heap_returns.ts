@@ -4,34 +4,15 @@ import FunctionNode from "../../nodes/FunctionNode.ts";
 import ReturnNode from "../../nodes/ReturnNode.ts";
 import StructNode from "../../nodes/StructNode.ts";
 
-const KNOWN_HEAP_RETURNING = new Set([
-	"int_to_string",
-	"uint_to_string",
-	"int8_to_string",
-	"uint8_to_string",
-	"int16_to_string",
-	"uint16_to_string",
-	"int32_to_string",
-	"uint32_to_string",
-	"int64_to_string",
-	"uint64_to_string",
-	"float_to_string",
-	"float32_to_string",
-	"float64_to_string",
-	"bool_to_string",
-	"char_to_string",
-	// Raw #arch bodies returning malloc'd strings — invisible to the AST
-	// scan below (their returns are raw blocks), so they're listed here.
-	"File_raw_read_all",
-	"File_raw_read_line",
-	"File_raw_read_chunk",
-	"Directory_raw_list",
-	"Http_exchange",
-	"Console_read_line",
-	"Console_platform",
-	"Json_serialize",
-	"Json_deserialize",
-	"Regex_match",
+const KNOWN_HEAP_RETURNING = new Set<string>([
+	// NOTE: intentionally empty of static entries. Raw `#arch` library bodies
+	// that hand back malloc'd strings declare `mov out string` in their .nm
+	// signatures and classify through the checker's `owned_return` stamp; the
+	// primitive `*_to_string` builtins are `mov out string` too (and every
+	// consumer also recognizes them by their `*_to_string` label). Only
+	// DYNAMIC entries land here anymore: string-returning functions consumed
+	// through a `spawn` trampoline (scan_spawn_callees below) and functions
+	// whose return sites produce heap values during building.
 ]);
 
 export function scan_heap_returning_functions(root: BaseNode): Set<string> {

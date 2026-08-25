@@ -19,7 +19,7 @@ pub struct bool: Stringable, Hashable, Equatable {
 	 * @param self: the boolean
 	 * @out string: the boolean as a string value (`"true"` or `"false"`)
 	 **/
-	pub func to_string = (self, out string) {
+	pub func to_string = (self, mov out string) {
 		```
 		#arch: c
 		int length = snprintf(NULL, 0, "%s", self ? "true" : "false");

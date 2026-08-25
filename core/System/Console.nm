@@ -41,7 +41,9 @@ pub struct Console {
 		```
 	}
 
-	pub func read_line = (out string) {
+	// Read one line from stdin (newline stripped). The raw body mallocs the
+	// buffer — `mov out string` transfers ownership to the caller.
+	pub func read_line = (mov out string) {
 		```
 		#arch: c
 		int cap = 16;
@@ -122,7 +124,9 @@ pub struct Console {
 		```
 	}
 
-	pub func platform = (out string) {
+	// The platform name ("macos" / "ios" / …). The raw body strdups a static
+	// string — `mov out string` transfers the owned copy to the caller.
+	pub func platform = (mov out string) {
 		```
 		#arch: c
 		#platform: macos

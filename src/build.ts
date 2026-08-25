@@ -80,21 +80,6 @@ export default function build(
 		status.heap_returning_functions = scan_heap_returning_functions(root);
 		status.borrow_returning_functions = scan_borrow_returning_functions(root);
 		status.inline_functions = scan_inline_candidates(root);
-		status.heap_returning_functions.add("int_to_string");
-		status.heap_returning_functions.add("uint_to_string");
-		status.heap_returning_functions.add("int8_to_string");
-		status.heap_returning_functions.add("uint8_to_string");
-		status.heap_returning_functions.add("int16_to_string");
-		status.heap_returning_functions.add("uint16_to_string");
-		status.heap_returning_functions.add("int32_to_string");
-		status.heap_returning_functions.add("uint32_to_string");
-		status.heap_returning_functions.add("int64_to_string");
-		status.heap_returning_functions.add("uint64_to_string");
-		status.heap_returning_functions.add("float_to_string");
-		status.heap_returning_functions.add("float32_to_string");
-		status.heap_returning_functions.add("float64_to_string");
-		status.heap_returning_functions.add("bool_to_string");
-		status.heap_returning_functions.add("char_to_string");
 		build_aarch64_node(root, status);
 		// For every trait, emit a `<Trait>_destroy` shim that dispatches
 		// through the destroy slot at index 0 of the struct's vtable. This

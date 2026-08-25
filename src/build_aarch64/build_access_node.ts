@@ -1680,9 +1680,29 @@ function build_access_method(
 		// A `ref self` method (string.set) takes &slot — one pointer, not
 		// the fat pair.
 		!method_self_is_ref;
+	let frees_string_receiver = false;
+	// A consuming `mov out string` call (`string_to_string`, the identity
+	// until the signature flipped to a real strdup) receives a COPY of the
+	// receiver's storage. When that receiver is itself a temporary OWNING
+	// allocation (`f().to_string()`, `(a + b).to_string()`), the original
+	// temp must be freed once the callee has copied it — mirroring the C
+	// backend's statement-expression. Bare vars/fields/literals are NOT
+	// freed (their owner outlives the call); borrow-returning callees are
+	// excluded too.
 	if (receiver_is_string) {
+		// Build the receiver pair, tracking whether it produced an OWNING
+		// heap temp (`f(...)`, a concat, a mov-out call). Reset-first mirrors
+		// emit_string_length: the flag reflects exactly this expression.
+		status.last_result_is_heap = false;
 		build_node(node.target, status);
 		if (!status.code.endsWith("\n")) status.code += "\n";
+		// A consuming `mov out string` call (`string_to_string`, the identity
+		// until the signature flipped to a real strdup) copies the receiver's
+		// storage — when that receiver is itself an owning temp, the original
+		// must be freed once the copy exists (mirroring the C backend's
+		// statement-expression). Borrows/literals/vars leave the flag false.
+		frees_string_receiver = method_name === "string_to_string" && status.last_result_is_heap;
+		status.last_result_is_heap = false;
 		// Pair now in x0/x1. Save both halves across argument evaluation.
 		status.code += `stp x0, x1, [sp, #-16]!\n`;
 	}
@@ -1973,8 +1993,10 @@ function build_access_method(
 		status.code += "\n";
 	}
 	if (receiver_is_string) {
-		// Restore the fat receiver's pair into x0/x1.
-		status.code += `ldp x0, x1, [sp], #16\n`;
+		// Restore the fat receiver's pair into x0/x1. When the call consumes
+		// an OWNED receiver temp (frees_string_receiver), keep the pair's
+		// stack frame so the ptr half can be freed after the call.
+		status.code += frees_string_receiver ? `ldp x0, x1, [sp]\n` : `ldp x0, x1, [sp], #16\n`;
 	} else if (needs_self_save) {
 		status.code += `ldr x0, [sp], #16\n`;
 	}
@@ -2069,6 +2091,21 @@ function build_access_method(
 	// Free the outgoing stack-arg area now that the call has read it.
 	if (outgoing_size > 0) {
 		status.code += `add sp, sp, #${outgoing_size}\n`;
+	}
+
+	// The callee (string_to_string) copied the receiver's storage — free the
+	// original temp now, preserving the result pair in x0/x1. Stack at this
+	// point: [sp]=receiver.ptr, [sp+8]=receiver.len (kept by the non-popping
+	// restore above).
+	if (frees_string_receiver) {
+		status.code += `ldr x9, [sp]\n`;
+		status.code += `str x0, [sp, #-16]!\n`;
+		status.code += `str x1, [sp, #-16]!\n`;
+		status.code += `mov x0, x9\n`;
+		status.code += `bl _nomen_free_wrap\n`;
+		status.code += `ldr x1, [sp], #16\n`;
+		status.code += `ldr x0, [sp], #16\n`;
+		status.code += `add sp, sp, #16\n`;
 	}
 
 	// A forwarded `ref` class PARAM may have been reassigned by the callee,

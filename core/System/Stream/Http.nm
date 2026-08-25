@@ -26,8 +26,9 @@ pub struct Http {
 	// Shared socket round-trip used by get/post. `method` is the request
 	// method string ("GET" / "POST"); a leading 'P' selects POST semantics
 	// (sends `body` and the Content-* headers). Sets self->status and returns
-	// the response body (empty string on failure).
-	func exchange = (ref self, string method, string url, string body, out string) {
+	// the response body (empty string on failure). The raw body mallocs the
+	// response — `mov out string` transfers ownership to the caller.
+	func exchange = (ref self, string method, string url, string body, mov out string) {
 		```
 		#arch: c
 		#scope: file

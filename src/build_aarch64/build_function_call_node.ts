@@ -837,6 +837,17 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		status.last_result_is_heap = true;
 	}
 
+	// A `mov out string` call transfers ownership by signature (the checker
+	// stamps owned_return) — the caller owns and must free the result, even
+	// when the callee isn't in heap_returning_functions.
+	if (
+		(node as unknown as { owned_return?: boolean }).owned_return &&
+		node.type?.name === "string" &&
+		!node.type.is_view
+	) {
+		status.last_result_is_heap = true;
+	}
+
 	if (node.mov_param_indices?.length) {
 		for (const idx of node.mov_param_indices) {
 			const param = node.params[idx];

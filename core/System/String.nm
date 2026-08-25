@@ -31,15 +31,23 @@ pub struct string: Stringable, Hashable, Equatable {
 		```
 	}
 
-	pub func to_string = (self, out string) {
+	// Returns an OWNED copy of self (`mov out string`). Both backends hand
+	// back a fresh allocation the caller frees — never an alias of self's
+	// storage — so the result can outlive the receiver (e.g. escape a match
+	// branch that reclaims the scrutinee temp).
+	pub func to_string = (self, mov out string) {
 		```
 		#arch: c
 		return strdup(self);
 		```
 		```
 		#arch: aarch64
-		// The fat value IS self — return the pair unchanged.
+		// x19/x20 hold self's (ptr, len). Hand back an independent copy:
+		// strdup the NUL-terminated ptr half (len == strlen for owned
+		// strings and literals — views take the build_view_op path instead)
+		// and keep the len half.
 		mov x0, x19
+		bl _strdup
 		mov x1, x20
 		```
 	}
