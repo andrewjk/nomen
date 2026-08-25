@@ -55,6 +55,9 @@ export function struct_needs_auto_destroy(struct: StructNode, table: StructTable
 	if (struct_needs_destroy(struct, table)) return true;
 	for (const field of struct.fields) {
 		if (field.type.is_ref) continue;
+		// A `view T` field is a non-owning borrow — nothing to free, so it
+		// never triggers an auto-generated destroy.
+		if (field.type.is_view) continue;
 		if (field.type.name === "string" && !field.type.is_array) return true;
 		const field_struct = resolve_struct_type(field.type, table);
 		if (field_struct && !field_struct.is_class && struct_needs_auto_destroy(field_struct, table))

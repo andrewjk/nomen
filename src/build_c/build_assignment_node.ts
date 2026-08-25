@@ -17,6 +17,7 @@ import { find_decl_in_c_scopes, splice_decl_from_c_scopes } from "./utils/c_scop
 import c_type from "./utils/c_type.ts";
 import is_string_borrow from "./utils/is_string_borrow.ts";
 import { is_nullable_struct_type } from "./utils/nullable_struct.ts";
+import { c_view_string_arg } from "./utils/view_value.ts";
 
 let string_field_counter = 0;
 import type_from_value_node from "./utils/type_from_value_node.ts";
@@ -114,6 +115,28 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 				}
 			}
 		}
+	}
+
+	// A `view T` field assignment (`obj.field = rhs`): the field is a
+	// non-owning (ptr, len) pair — store it raw. Nothing is duplicated and
+	// the displaced pair owns nothing, so there is no free / strdup /
+	// ownership bookkeeping (unlike an owned string field). The RHS goes
+	// through c_view_string_arg: a view value passes through; an owned fat
+	// string wraps into the (nomen_view){ ptr, len } form.
+	if (
+		!node.operator &&
+		node.left_value.node_type === "access" &&
+		(node.left_value as AccessNode).access.node_type === "access_field" &&
+		(node.left_value as AccessNode).access.type?.is_view
+	) {
+		const before_len = status.code.length;
+		build_node(node.left_value, status);
+		const field_access = status.code.substring(before_len);
+		status.code = status.code.substring(0, before_len);
+		status.code += `${field_access} = `;
+		c_view_string_arg(node.right_value, status);
+		status.code += `;\n`;
+		return;
 	}
 
 	// A plain `string` field assignment (`obj.field = rhs`): the field keeps a

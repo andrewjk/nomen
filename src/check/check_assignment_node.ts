@@ -3,6 +3,7 @@ import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import AssignmentNode from "../nodes/AssignmentNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
+import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
 import Type from "../nodes/Type.ts";
@@ -25,6 +26,14 @@ import {
 } from "./utils/ownership.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
+import {
+	ctor_call_view_borrow,
+	merge_view_borrows_into_var,
+	propagate_view_borrows,
+	root_var_of,
+	view_fields_invalidated,
+	view_source_borrow_info,
+} from "./utils/view_fields.ts";
 
 export default function check_assignment_node(
 	assign: AssignmentNode,
@@ -246,6 +255,40 @@ export default function check_assignment_node(
 		"assignment",
 	);
 
+	// A view-typed field store (`line.text = doc.slice(0, 5)`): the instance
+	// now carries a non-owning borrow rooted at the RHS's owner. Record it on
+	// the ROOT variable of the access chain so escape checks (return /
+	// outer-scope assignment) and source-mutation invalidation see the whole
+	// instance's dependencies. Also rejects reading a view field whose source
+	// was mutated — a fresh store here re-points (and un-stales) the field.
+	if (
+		assign.left_value.node_type === "access" &&
+		(assign.left_value as AccessNode).access.node_type === "access_field"
+	) {
+		const lhs_access = assign.left_value as AccessNode;
+		const lhs_field = lhs_access.access as AccessFieldNode;
+		if (lhs_field.type?.is_view) {
+			const root = root_var_of(lhs_access.target);
+			const rhs = assign.right_value;
+			let infos: Map<string, import("./utils/view_fields.ts").BorrowInfo> | undefined;
+			if (rhs.node_type === "func_call") {
+				infos = ctor_call_view_borrow(rhs as FunctionCallNode, status);
+				if (infos?.size) merge_view_borrows_into_var(root, infos, status);
+			}
+			const info = view_source_borrow_info(rhs, status);
+			if (info) {
+				merge_view_borrows_into_var(root, new Map([[info.owner ?? "", info]]), status);
+			} else if (!infos?.size && root && view_fields_invalidated(root, status)) {
+				// Re-pointing from an unconditional source (a literal / const)
+				// also refreshes the instance.
+				status.invalidated_view_structs?.delete(root);
+			}
+		}
+	}
+
+	// Reject reading a view field whose source was mutated is handled in
+	// check_access_node; the LHS read above is exempt as an assignment target.
+
 	// Reject byte-copying a struct that transitively owns heap resources from
 	// another variable — both variables would free the same backing data
 	// (double-free). Use `mov` (`b = mov a`) to transfer ownership or `.copy()`
@@ -394,6 +437,41 @@ export default function check_assignment_node(
 				// Re-assigning a (possibly invalidated) borrow refreshes it: the
 				// new value is a fresh borrow rooted at its own owner.
 				left_value.borrow_invalidated = false;
+			}
+			// Copying a struct whose view fields hold borrows transfers the
+			// dependency: the copy's pairs alias exactly the same sources
+			// (the escape-depth check above already ran on the merged depth).
+			const src_name = value_from_value_node(assign.right_value);
+			const src_sv =
+				assign.right_value.node_type === "value"
+					? status.values.findLast((v) => v.name === src_name)
+					: undefined;
+			if (src_sv?.has_view_borrows) {
+				propagate_view_borrows(left_value, src_sv);
+			}
+		} else if (
+			assign.right_value.node_type === "func_call" &&
+			type_from_value_node(assign.right_value, status)?.name
+		) {
+			// A constructor call whose `view T` arguments borrow from named
+			// sources (`x = Line(doc.slice(0, 5), …)`): record those
+			// dependencies on the receiving variable so escape / invalidation
+			// checks see them. An argument rooted deeper than the variable's
+			// own declaration scope would let the borrow escape — rejected.
+			const infos = ctor_call_view_borrow(assign.right_value as FunctionCallNode, status);
+			if (infos?.size) {
+				for (const [, info] of infos) {
+					const depth = info.depth ?? status.scope_depth;
+					if (left_value.decl_depth !== undefined && left_value.decl_depth < depth) {
+						add_error(
+							status,
+							`borrow escapes its scope — the constructed value would outlive its 'view' source`,
+							assign.right_value.start,
+						);
+						break;
+					}
+				}
+				merge_view_borrows_into_var(left_value.name, infos, status);
 			}
 		} else {
 			left_value.borrow_depth = undefined;

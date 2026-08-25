@@ -1315,6 +1315,13 @@ function raw_type_size(name: string, structs: StructNode[]): number {
 	let size = 8;
 	for (const field of struct.fields) {
 		size = raw_align_to(size, raw_type_alignment(field.type.name));
+		// A `view T` field is the universal 16-byte (ptr, len) pair,
+		// regardless of its element type (matches get_type_size in
+		// build_aarch64/utils/struct_layout.ts and C's sizeof(nomen_view)).
+		if (field.type.is_view) {
+			size += 16;
+			continue;
+		}
 		size += raw_type_size(field.type.name, structs);
 		if (
 			field.type.is_nullable &&

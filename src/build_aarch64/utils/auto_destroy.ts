@@ -326,11 +326,17 @@ function emit_field_destroys_from_slot(
 				status.code += `bl ${resolve_struct_name(field_struct.name, field.type.type_args, status)}_destroy\n`;
 			}
 			emit_nested_field_destroys_from_slot(status, field_struct, base_offset + offset);
-		} else if (field.type.name === "string" && !field.type.is_array && !field.type.is_ref) {
+		} else if (
+			field.type.name === "string" &&
+			!field.type.is_array &&
+			!field.type.is_ref &&
+			!field.type.is_view
+		) {
 			// A `string` field: free the pointer. Value-struct anchor slots hold
 			// strdup'd strings (the Buffer store copied them); class anchor slots
 			// hold always-heap fields (`_init` strdup's defaults, assignments
-			// strdup non-heap RHS) — either way the slot owns the string.
+			// strdup non-heap RHS) — either way the slot owns the string. A
+			// `view T` field is excluded: non-owning borrow, nothing to free.
 			status.code += `ldr x0, [x29, #${base_offset}]\n`;
 			status.code += `ldr x0, [x0, #${offset}]\n`;
 			emit_free(status);
@@ -619,7 +625,8 @@ export function emit_field_destroys(
 			free_strings &&
 			field.type.name === "string" &&
 			!field.type.is_array &&
-			!field.type.is_ref
+			!field.type.is_ref &&
+			!field.type.is_view
 		) {
 			// A `string` field: free the pointer. For VALUE structs this fires
 			// from the auto-generated <Struct>_destroy (Buffer per-element
@@ -627,7 +634,9 @@ export function emit_field_destroys(
 			// local scope exit — a local's string field may be a raw rodata
 			// literal arg, so freeing it would `free` rodata (SIGABRT). For
 			// CLASSES the field is always heap-owned (`_init` strdup's the
-			// default, assignments strdup non-heap RHS), so it is freed here too.
+			// default, assignments strdup non-heap RHS), so it is freed here
+			// too. A `view T` field is excluded above: it is a non-owning
+			// borrow and freeing its pointer half would be an invalid free.
 			const actual_offset = base_offset !== undefined ? base_offset + offset : offset;
 			if (decl_name) {
 				emit_base_ptr(status, decl_name, is_class_parent);

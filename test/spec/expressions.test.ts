@@ -339,6 +339,35 @@ if s.length == 5 {
 		const errors = compile_main(input);
 		expect(errors.some((e) => e.message.includes("invalidat"))).toBe(true);
 	});
+
+	test("a struct may declare view fields (zero-copy slices in containers)", () => {
+		const input = `
+pub struct Line {
+	var view string text
+	var start = 0
+	var len = 0
+}
+
+var string doc = "name other"
+var Line first = Line(doc.slice(0, 4))
+first.text.to_string()
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+
+	test("returning a struct whose view field borrows from this scope is an error", () => {
+		const errors = compile_module(`
+struct Line {
+	var view string text
+}
+func make_line = (out Line) {
+	var string doc = "hi"
+	return Line(doc.slice(0, 2))
+}
+pub func main = () { Console.write("x") }
+`);
+		expect(errors.some((e) => e.message.includes("'view' field(s) borrow"))).toBe(true);
+	});
 });
 
 describe("spec: field access", () => {

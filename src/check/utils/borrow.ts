@@ -32,6 +32,13 @@ export function borrow_depth_of(node: BaseNode, status: CheckStatus): number | u
 			if (t?.name && is_owning_ref_type(t.name, status)) {
 				return status.scope_depth;
 			}
+			// Reading a `view T` FIELD yields a non-owning slice whose validity
+			// is rooted at the struct instance it was read from (the instance's
+			// own borrow depth covers its fields' sources).
+			if (t?.is_view && access.target.node_type === "value") {
+				const base = status.values.findLast((v) => v.name === (access.target as ValueNode).value);
+				return Math.max(base?.borrow_depth ?? 0, status.scope_depth);
+			}
 		} else if (access.access.node_type === "access_func") {
 			const t = type_from_value_node(access, status);
 			if (is_borrowed_return(t, status)) {
@@ -77,6 +84,11 @@ export function borrow_owner_of(node: BaseNode, status: CheckStatus): string | u
 		if (access.access.node_type === "access_field") {
 			const t = type_from_value_node(access, status);
 			if (t?.name && is_owning_ref_type(t.name, status)) {
+				return ultimate_owner(access.target, status);
+			}
+			// A `view T` field read roots at the struct variable it was read
+			// from (mirroring borrow_depth_of's field case).
+			if (t?.is_view) {
 				return ultimate_owner(access.target, status);
 			}
 		} else if (access.access.node_type === "access_func") {
@@ -164,6 +176,10 @@ export function receiver_owner_of(target: BaseNode, status: CheckStatus): string
  * Mark every live VIEW borrow rooted at `owner` as invalidated. Used when a
  * bare variable is reassigned: a `view string`/`view T[]` slice points into
  * the old buffer, which is freed at the reassignment, so the view dangles.
+ * Struct variables whose `view T` fields borrow from `owner` (see
+ * StackValue.view_field_owners) are recorded in invalidated_view_structs so
+ * reading one of those fields afterwards is rejected — without poisoning the
+ * whole struct value (its non-view fields stay usable).
  *
  * This is intentionally NARROWER than `invalidate_borrows_of`: class
  * child-group borrows are kept valid across owner reassignment by deferred
@@ -173,8 +189,13 @@ export function receiver_owner_of(target: BaseNode, status: CheckStatus): string
  */
 export function invalidate_view_borrows_of(status: CheckStatus, owner: string) {
 	for (const v of status.values) {
+		if (!v.borrowed_from && !v.view_field_owners?.size) continue;
+		const field_borrows = v.has_view_borrows && !!v.view_field_owners?.has(owner);
 		if (v.borrowed_from === owner && v.type?.is_view) {
 			v.borrow_invalidated = true;
+		} else if (field_borrows) {
+			if (!status.invalidated_view_structs) status.invalidated_view_structs = new Set();
+			status.invalidated_view_structs.add(v.name);
 		}
 	}
 }
@@ -183,14 +204,19 @@ export function invalidate_view_borrows_of(status: CheckStatus, owner: string) {
  * Mark every live child-group borrow rooted at `owner` as invalidated, because
  * a `ref self` / `var self` call on (or owning-field assignment to) `owner` may
  * free or displace the contents those borrows point into. Reading an
- * invalidated borrow is rejected later in check_value_node.
+ * invalidated borrow is rejected later in check_value_node. View-field borrows
+ * (struct values with view_field_owners) are handled by the view-specific
+ * invalidator above — this pass must not poison the whole struct variable for
+ * uses of its non-view fields.
  */
 export function invalidate_borrows_of(status: CheckStatus, owner: string) {
 	for (const v of status.values) {
-		if (v.borrowed_from === owner) {
+		if (v.borrowed_from === owner && !v.has_view_borrows) {
 			v.borrow_invalidated = true;
 		}
 	}
+	// A ref-mutation of an owner also invalidates struct view-field borrows.
+	invalidate_view_borrows_of(status, owner);
 }
 
 /**

@@ -115,6 +115,9 @@ function struct_owns_non_string_heap(
 	if (destroy && destroy_releases(destroy)) return true;
 	for (const field of s.fields) {
 		if (field.type.is_ref) continue;
+		// A `view T` field is a non-owning (ptr, len) pair — byte-copying it
+		// aliases nothing owned, so it never makes a struct owning.
+		if (field.type.is_view) continue;
 		// A string field is owned by a container slot / constructor strdup,
 		// but a struct LOCAL is not auto-destroyed for it — copying is a borrow.
 		if (field.type.name === "string") continue;
@@ -133,6 +136,8 @@ function struct_owns_heap(s: StructNode, status: CheckStatus, visited: Set<strin
 	if (destroy && destroy_releases(destroy)) return true;
 	for (const field of s.fields) {
 		if (field.type.is_ref) continue;
+		// A `view T` field owns nothing (a borrowed pair) — copying it is sound.
+		if (field.type.is_view) continue;
 		// A `string` field owns heap memory (a strdup'd char*). The field
 		// may hold a static literal pointer at runtime, but the owning copy
 		// (constructor strdup, deep-copy on container store) is always heap.

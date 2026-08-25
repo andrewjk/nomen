@@ -313,7 +313,14 @@ offset 8+sizeof(first): second field
 ...
 ```
 
-`get_struct_size` returns `VT_SIZE + sum(field_sizes)`. Classes are always stored as 8-byte pointers (the instance is heap-allocated; the variable holds a pointer to it). `mov T` fields holding a class store the 8-byte pointer (and transfer ownership — see Move Semantics). Note: `ref T` struct/class fields are rejected at compile time (`fields cannot be 'ref'`) because a non-owning borrow field could outlive its target — use a value field (copied) or a `mov` field.
+`get_struct_size` returns `VT_SIZE + sum(field_sizes)`. Classes are always stored as 8-byte pointers (the instance is heap-allocated; the variable holds a pointer to it). `mov T` fields holding a class store the 8-byte pointer (and transfer ownership — see Move Semantics). Note: `ref T` struct/class fields are rejected at compile time (`fields cannot be 'ref'`) because a non-owning borrow field could outlive its target — use a value field (copied), a `mov` field, or a `view T` field.
+
+**`view T` fields** are allowed: a view is a self-contained 16-byte (ptr, len) pair (`nomen_view` in C; two slots on aarch64), so storing one in a struct is a plain value copy — sound to byte-copy (it aliases nothing owned) and nothing is freed at destroy (non-owning). This enables the borrow-into-parent pattern: many small records referencing slices of one long-lived buffer, e.g. `Line { var view string text }` collected into a `List<Line>` over the source document. The checker tracks where an instance's view fields were borrowed from:
+
+- Storing a view into a field (`line.text = doc.slice(0, 5)`, or constructing `Line(doc.slice(…))`) records the source on the instance's variable. Returning that instance is rejected ("its 'view' field(s) borrow from this scope") unless every borrow roots at `self` — the same re-rooting convention slice methods use; assigning it to an outer-scope variable is rejected by the borrow-depth check.
+- Reassigning or ref-mutating a source invalidates dependent instances: reading an invalidated view field is a compile error until the field is re-pointed.
+- Copying such a struct (`var Line b = a`) transfers the dependencies — the copy aliases the same sources.
+- Known limitation: a container of view-carrying structs is NOT lifetime-checked against the borrow sources (`lines.push(l)` does not prove `lines` dies before every source). Keep sources alive as long as the container.
 
 Auto-generated `_init` functions use correctly-sized store instructions (`strb` for 1-byte fields like `char`/`bool`, `strh` for 2-byte, `str` for 4-byte, `str` with `x` register for 8-byte) to avoid heap buffer overflows on class instances malloc'd to exact size.
 

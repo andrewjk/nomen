@@ -17,6 +17,10 @@ function get_type_alignment(
 	type: import("../../nodes/Type.ts").default,
 	status: BuildStatus,
 ): number {
+	// A `view T` field is a (ptr, len) pair of words — 8-byte aligned like
+	// every other pointer-bearing value (checked before the struct lookup so
+	// a view OF a struct doesn't recurse into element layout rules).
+	if (type.is_view) return 8;
 	const struct = status.structs.find((s) => s.name === type.name && !s.is_simple_type);
 	if (type.is_ref || (struct && struct.is_class)) return 8;
 	if (struct) return 8;
@@ -67,6 +71,9 @@ export function get_type_size(
 	status: BuildStatus,
 ): number {
 	if (type.is_ref) return 8;
+	// A `view T` is the universal (ptr, len) pair — 16 bytes regardless of
+	// the element type (a view of a struct is a slice, NOT the struct value).
+	if (type.is_view) return 16;
 	const struct = status.structs.find((s) => s.name === type.name && !s.is_simple_type);
 	if (struct) {
 		if (struct.is_class) return 8;

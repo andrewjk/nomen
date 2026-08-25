@@ -39,6 +39,7 @@ import {
 	get_field_offset,
 	get_struct_size,
 } from "./utils/struct_layout.ts";
+import { is_view_value } from "./utils/view_value.ts";
 
 function is_mutable_param(name: string, status: BuildStatus): boolean {
 	return !!(status.function_param_vars?.has(name) || status.function_ref_params?.has(name));
@@ -60,6 +61,9 @@ function field_is_struct_string(
 	status: BuildStatus,
 ): { name: string; target_is_class: boolean } | undefined {
 	if (!target_type?.name || !field_type) return undefined;
+	// A `view T` field is a non-owning pair — never heap-owned, so it must
+	// not enter the strdup/free ownership machinery below.
+	if (field_type.is_view) return undefined;
 	if (field_type.name !== "string" || field_type.is_ref || field_type.is_array) return undefined;
 	const target_struct = status.structs.find(
 		(s) => s.name === target_type.name && !s.is_simple_type,
@@ -1007,6 +1011,36 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 				status.code += `ldr x0, [sp], #16\n`;
 
 				status.code += `str x2, [x0, #${offset}]\n`;
+			} else if (field_type?.is_view && !node.operator) {
+				// A `view T` field store (`line.text = doc.slice(0, 5)`): the
+				// field is a non-owning (ptr, len) pair — store both halves
+				// verbatim. Nothing is duplicated and the displaced pair owns
+				// nothing, so there is no strdup / free / ownership record.
+				const offset = get_field_offset(target_type.name, field_name, status);
+				get_base_address(access, status, "x0");
+				status.code += `str x0, [sp, #-16]!\n`;
+
+				build_node(node.right_value, status);
+				if (!status.code.endsWith("\n")) {
+					status.code += "\n";
+				}
+				mark_moved_if_struct(node.right_value, status);
+				if (field_type.name === "string" || is_view_value(node.right_value, status)) {
+					// A fat string / view value builds as the full pair.
+					status.code += `stp x0, x1, [sp, #-16]!\n`;
+					status.code += `ldp x2, x3, [sp], #16\n`;
+					status.code += `ldr x0, [sp], #16\n`;
+					status.code += `str x2, [x0, #${offset}]\n`;
+					status.code += `str x3, [x0, #${offset + 8}]\n`;
+				} else {
+					// A scalar RHS has no pair identity: store the value half,
+					// zero the length half (an empty slice over that value).
+					status.code += `str x0, [sp, #-16]!\n`;
+					status.code += `ldr x2, [sp], #16\n`;
+					status.code += `ldr x0, [sp], #16\n`;
+					status.code += `str x2, [x0, #${offset}]\n`;
+					status.code += `str xzr, [x0, #${offset + 8}]\n`;
+				}
 			} else if (
 				field_is_struct_string(target_type, field_type, status) &&
 				!node.operator &&

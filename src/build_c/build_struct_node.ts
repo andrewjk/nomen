@@ -133,7 +133,21 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 		// field the init doesn't explicitly assign still gets its default.
 		for (const field of node.fields) {
 			if (field.value) {
-				if (is_nullable_struct_type(field.type, status)) {
+				if (
+					field.type.is_view &&
+					!field.type.is_array &&
+					!is_nullable_struct_type(field.type, status)
+				) {
+					// Defaulted view field (see the auto-init loop): borrow the
+					// string literal's storage, or zero the pair.
+					if (field.type.name === "string") {
+						status.code += `{ nomen_string _p = `;
+						build_node(field.value, status);
+						status.code += `; self${accessor}${field.name} = (nomen_view){ _p.ptr, _p.len }; }\n`;
+					} else {
+						status.code += `self${accessor}${field.name} = (nomen_view){0};\n`;
+					}
+				} else if (is_nullable_struct_type(field.type, status)) {
 					// Default is either `null` (flag 0, value untouched) or a
 					// struct value (copy it in, flag 1).
 					const is_null =
@@ -248,7 +262,26 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 		}
 		// Fields from the struct
 		for (const field of node.fields) {
-			if (field.type.storage_kind === "stack_array" && field.type.length) {
+			if (
+				field.type.is_view &&
+				!field.type.is_array &&
+				!is_nullable_struct_type(field.type, status)
+			) {
+				// A `view T` field: a REQUIRED field copies its (ptr, len)
+				// param verbatim; a defaulted one borrows the default's
+				// storage (a string literal wraps its fat value into the pair
+				// form) or zeroes the pair. Nothing is duplicated — views are
+				// borrows.
+				if (!field.value) {
+					status.code += `${object_name}${accessor}${field.name} = ${field.name};\n`;
+				} else if (field.type.name === "string") {
+					status.code += `{ nomen_string _p = `;
+					build_node(field.value, status);
+					status.code += `; ${object_name}${accessor}${field.name} = (nomen_view){ _p.ptr, _p.len }; }\n`;
+				} else {
+					status.code += `${object_name}${accessor}${field.name} = (nomen_view){0};\n`;
+				}
+			} else if (field.type.storage_kind === "stack_array" && field.type.length) {
 				// Fixed-size stack array fields — use memcpy instead of assignment
 				status.code += `memcpy(${object_name}${accessor}${field.name}, ${field.name}, sizeof(${object_name}${accessor}${field.name}));\n`;
 			} else if (is_nullable_struct_type(field.type, status) && field.value) {
@@ -274,8 +307,14 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 				// heap-producing default (is_owned_heap_temp) is stored
 				// directly. Value structs keep the raw store (their field
 				// ownership is tracked per assignment / by Buffer stores).
+				// A `view T` field is a non-owning pair — stored raw, never
+				// duplicated.
 				const field_is_class_string =
-					is_class && field.type.name === "string" && !field.type.is_array && !field.type.is_ref;
+					is_class &&
+					field.type.name === "string" &&
+					!field.type.is_array &&
+					!field.type.is_ref &&
+					!field.type.is_view;
 				const value_is_fresh_heap =
 					!!field.value && is_owned_heap_temp(field.value as BaseNode, status);
 				const wrap_strdup = field_is_class_string && !value_is_fresh_heap;
@@ -447,6 +486,12 @@ function c_param_decl(
 	status: BuildStatus,
 	flags?: { is_ref?: boolean; declaration?: string },
 ): string {
+	// A `view T` parameter is the universal non-owning (ptr, len) slice
+	// struct, passed by value (mirrors build_parameter_node and the aarch64
+	// register-pair convention).
+	if (type.is_view) {
+		return `nomen_view ${name}`;
+	}
 	// A heap `Array<T>` param is a `struct Array_<T>*` (the value owns a heap
 	// buffer with a length header), not a raw element pointer.
 	if (type.storage_kind === "heap_array") {
@@ -732,7 +777,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 		// backend's build_destroy_function (emit_field_destroys).
 		if (func.name === "#destroy" && node.is_class) {
 			for (const field of node.fields) {
-				if (field.type.is_ref || field.type.is_array) continue;
+				if (field.type.is_ref || field.type.is_array || field.type.is_view) continue;
 				if (field.type.name === "string") {
 					status.code += `free(self->${field.name}.ptr);\n`;
 				}
@@ -783,7 +828,13 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 			const field_is_struct = !!status.structs.find(
 				(s) => s.name === field_type.name && !s.is_simple_type,
 			);
-			const field_c_type = field_is_struct ? `struct ${field_type.name}` : c_type(field_type.name);
+			// A `view T` trait field accessor passes the (ptr, len) pair by
+			// value — the universal nomen_view form, not the element type.
+			const field_c_type = field_type.is_view
+				? "nomen_view"
+				: field_is_struct
+					? `struct ${field_type.name}`
+					: c_type(field_type.name);
 			const get_signature = `${field_c_type} get_${node.name}_${field.name}(struct ${node.name} *self)`;
 			status.headers += `${get_signature};\n`;
 			status.code += `${get_signature} { return self->${field.name}; }\n`;
@@ -801,11 +852,14 @@ function build_auto_destroy(node: StructNode, status: BuildStatus) {
 	status.code += `${sig}\n{\n`;
 	for (const field of node.fields) {
 		if (field.type.is_ref) continue;
+		// A `view T` field is a non-owning borrow: freeing its pointer half
+		// would be an invalid free (the storage is owned elsewhere).
+		if (field.type.is_view) continue;
 		// A `string` field owns heap memory: for VALUE structs the Buffer
 		// per-element destroy path frees slots strdup'd by store_T; for
 		// CLASSES the field is always heap-owned (`_init` strdup's defaults,
 		// assignments strdup non-heap RHS), so the destroy frees it too.
-		if (field.type.name === "string" && !field.type.is_array) {
+		if (field.type.name === "string" && !field.type.is_array && !field.type.is_view) {
 			status.code += `free(self->${field.name}.ptr);\n`;
 			continue;
 		}

@@ -116,19 +116,27 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 	const values_length_before_fields = status.values.length;
 	for (let decl of struct.fields) {
 		decl.scope = struct;
-		// A `ref`/`view` field would be a non-owning borrow stored in a struct,
-		// which could outlive its target (UAF). Reject it at the field level —
-		// this matches `MEMORY.md` and closes the gap where a `ref` field with a
-		// default value or custom `#init` was accepted (cve-rs probe). The
-		// `view` keyword form (`view v = ...`) is rejected here too, since its
-		// type only becomes a view after inference (the type-level check below
-		// would miss it).
-		if (decl.type.is_ref || decl.type.is_view || decl.declaration === "view") {
+		// A `ref` field would be a non-owning borrow stored in a struct with
+		// no representation of its own (an 8-byte bare pointer), which could
+		// outlive its target (UAF). Reject it at the field level — this
+		// matches `MEMORY.md` and closes the gap where a `ref` field with a
+		// default value or custom `#init` was accepted (cve-rs probe).
+		//
+		// `view T` fields ARE allowed: a view is a self-contained 16-byte
+		// (ptr, len) pair, so storing it in a struct is a plain value copy —
+		// sound to byte-copy, nothing to free (non-owning), and the zero-copy
+		// slice-in-container pattern it enables is the point. The escape
+		// hazards are handled by borrow tracking instead:
+		// `merge_view_borrows_into_var` records which sources an instance's
+		// fields borrow from (check_assignment_node / check_declaration_node),
+		// and returning / outer-scope assignment of such an instance is
+		// rejected unless every borrow roots at `self`. The `view` keyword
+		// form (`view v = ...`) is accepted too; its type only becomes a view
+		// after inference.
+		if (decl.type.is_ref) {
 			add_error(
 				status,
-				`${struct.is_class ? "class" : "struct"} fields cannot be '${
-					decl.type.is_view || decl.declaration === "view" ? "view" : "ref"
-				}'`,
+				`${struct.is_class ? "class" : "struct"} fields cannot be 'ref'`,
 				decl.start,
 			);
 			continue;

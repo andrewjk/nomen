@@ -33,6 +33,7 @@ import {
 } from "./utils/ownership.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
+import { view_fields_invalidated } from "./utils/view_fields.ts";
 
 export default function check_access_node(node: AccessNode, status: CheckStatus): boolean {
 	if (!check_node(node.target, status)) {
@@ -363,6 +364,21 @@ function check_access_field_node(
 			return false;
 		} else {
 			node.type = field.type;
+			// A `view T` field read whose struct's source was mutated since the
+			// field was stored (`doc = …` after `line.text = doc.slice(…)`) is
+			// a dangling borrow — reject the read. Writing over the field (the
+			// assignment target path) is exempt: that re-points it.
+			if (field.type.is_view && target.node_type === "value" && !status.is_assignment_target) {
+				const root = (target as ValueNode).value;
+				if (view_fields_invalidated(root, status)) {
+					add_error(
+						status,
+						`view field '${node.name}' was invalidated by a mutation of its source; re-fetch it after the mutation`,
+						node.start,
+					);
+					return false;
+				}
+			}
 		}
 	} else {
 		add_error(status, `Field not found: ${node.name}`, node.start);

@@ -727,19 +727,28 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 
 	// view T.length → the slice's stored length (second word of the local).
 	// Must precede the string.length case: a view string also has name "string".
-	if (target_type.is_view && access_field.name === "length" && node.target.node_type === "value") {
-		const name = (node.target as ValueNode).value;
-		const offset = status.stack_offsets?.get(name);
-		if (offset !== undefined) {
-			status.code += `ldr x0, [x29, #${offset + 8}]\n`;
-		} else {
-			status.code += `mov x0, #0\n`;
+	// A NAMED view local/param keeps its pair in its own two stack slots; a
+	// FIELD read (`self.text.length`) builds the pair into x0/x1 through the
+	// normal field-read path and takes the len half from x1.
+	if (target_type.is_view && access_field.name === "length") {
+		if (node.target.node_type === "value") {
+			const name = (node.target as ValueNode).value;
+			const offset = status.stack_offsets?.get(name);
+			if (offset !== undefined) {
+				status.code += `ldr x0, [x29, #${offset + 8}]\n`;
+			} else {
+				status.code += `mov x0, #0\n`;
+			}
+			return;
 		}
+		build_node(node.target, status);
+		if (!status.code.endsWith("\n")) status.code += "\n";
+		status.code += `mov x0, x1\n`;
 		return;
 	}
 
 	// String.length → strlen(self)
-	if (target_type.name === "string" && access_field.name === "length") {
+	if (!target_type.is_view && target_type.name === "string" && access_field.name === "length") {
 		emit_string_length(node.target, status);
 		return;
 	}
@@ -768,7 +777,7 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 		}
 		const final_offset = offset;
 		const field_type = access_field.type?.name || "";
-		if (field_type === "string") {
+		if (field_type === "string" || access_field.type?.is_view) {
 			emit_string_pair_load_at(status, "x0", final_offset);
 			return;
 		}
@@ -799,7 +808,7 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 		}
 		const final_offset = get_field_offset(target_type?.name || "", access_field.name, status);
 		const field_type = access_field.type?.name || "";
-		if (field_type === "string") {
+		if (field_type === "string" || access_field.type?.is_view) {
 			emit_string_pair_load_at(status, "x0", final_offset);
 			return;
 		}
@@ -889,7 +898,7 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 		}
 		const field_type = access_field.type?.name || "";
 		// A fat-string FIELD loads as the (ptr, len) pair.
-		if (field_type === "string") {
+		if (field_type === "string" || access_field.type?.is_view) {
 			emit_string_pair_load_at(status, "x0", final_offset);
 			return;
 		}
@@ -948,8 +957,9 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 		return;
 	}
 
-	// A fat-string FIELD is a 16-byte (ptr, len) pair — load both words.
-	if (resolved_field_type === "string") {
+	// A fat-string FIELD is a 16-byte (ptr, len) pair — load both words. A
+	// `view T` field is the same pair shape, so it loads identically.
+	if (resolved_field_type === "string" || field_type_obj?.is_view) {
 		emit_string_pair_load_at(status, "x0", offset);
 		return;
 	}

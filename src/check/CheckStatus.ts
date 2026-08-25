@@ -140,4 +140,12 @@ export default interface CheckStatus {
 	 * "Cannot pass const to ref parameter").
 	 */
 	mutated_local_names?: Set<string>;
+
+	/**
+	 * Struct variables whose `view T` fields were invalidated by a mutation
+	 * (reassignment or ref-mutation) of a source they borrow from. Reading a
+	 * view field of one is rejected until the field is re-pointed. Shared by
+	 * block clones so branch-local invalidations propagate to the parent.
+	 */
+	invalidated_view_structs?: Set<string>;
 }

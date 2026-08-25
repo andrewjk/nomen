@@ -346,22 +346,32 @@ function build_constructor_params(
 			const slot_offset = data_base + j * elem_size;
 			if (elem_struct && arg.node_type === "func_call") {
 				// Tuple/struct constructor: eval params into x1..x7, then call _init
-				// with x0 pointing at this slot. A by-value string param consumes
-				// TWO consecutive registers (ptr, len) — matching _init's pair
-				// prologue — so compute a slot map left-to-right before packing.
+				// with x0 pointing at this slot. A by-value string OR view param
+				// consumes TWO consecutive registers (ptr, len) — matching
+				// _init's pair prologue — so compute a slot map left-to-right
+				// before packing.
 				const tfc = arg as FunctionCallNode;
 				const fc_param_regs = ["x1", "x2", "x3", "x4", "x5", "x6", "x7"];
 				const fc_slots: number[] = [];
 				let fc_total = 0;
 				for (let k = 0; k < tfc.params.length; k++) {
 					fc_slots.push(fc_total);
-					fc_total += arg_is_string(tfc.params[k]) ? 2 : 1;
+					fc_total +=
+						arg_is_string(tfc.params[k]) || !!(tfc.params[k] as any).type?.is_view ? 2 : 1;
 				}
 				for (let k = tfc.params.length - 1; k >= 0; k--) {
-					build_node(tfc.params[k], status);
+					const arg_is_view_arg = !!(tfc.params[k] as any).type?.is_view;
+					if (arg_is_view_arg) {
+						emit_view_string_arg(tfc.params[k], status);
+					} else {
+						build_node(tfc.params[k], status);
+					}
 					if (!status.code.endsWith("\n")) status.code += "\n";
 					const reg_idx = fc_slots[k];
-					if (arg_is_string(tfc.params[k]) && reg_idx + 1 < fc_param_regs.length) {
+					if (
+						(arg_is_string(tfc.params[k]) || arg_is_view_arg) &&
+						reg_idx + 1 < fc_param_regs.length
+					) {
 						// Move the LEN half FIRST: the pair rides in x0/x1,
 						// and for slot 0 the ptr destination IS x1 — moving
 						// it first would destroy the length.
@@ -464,8 +474,11 @@ function build_constructor_params(
 	}
 
 	const has_args = fc.params.length > 0;
-	// Fat-string args consume TWO AAPCS slots (ptr, len pair).
+	// Fat-string args consume TWO AAPCS slots (ptr, len pair); so does every
+	// `view T` argument (the universal pair ABI), matching the init
+	// prologue's two-slot consumption per view field.
 	const arg_pair: boolean[] = [];
+	const arg_is_view: boolean[] = [];
 	let base_slot_count = 0;
 	for (let i = 0; i < fc.params.length; i++) {
 		const p = fc.params[i];
@@ -474,8 +487,10 @@ function build_constructor_params(
 			p.node_type === "value" && typeof (p as ValueNode).value === "string"
 				? ((p as ValueNode).value as string).startsWith('"')
 				: false;
-		const is_pair = pt === "string" || lit;
+		const is_view = !!(p as any).type?.is_view;
+		const is_pair = pt === "string" || lit || is_view;
 		arg_pair.push(is_pair);
+		arg_is_view.push(is_view);
 		base_slot_count += is_pair ? 2 : 1;
 	}
 	let base = 0;
@@ -494,7 +509,15 @@ function build_constructor_params(
 		const param = fc.params[i];
 		const param_type = (param as any).type?.name || "";
 		if (arg_pair[i]) {
-			build_node(param, status);
+			// A view argument rides the (ptr, len) pair ABI whatever its
+			// element type — a non-string view value's bare build loads only
+			// the ptr half, so route through emit_view_string_arg. Fat
+			// strings already build as the full pair.
+			if (arg_is_view[i]) {
+				emit_view_string_arg(param, status);
+			} else {
+				build_node(param, status);
+			}
 			if (!status.code.endsWith("\n")) status.code += "\n";
 			status.code += `str x0, [x29, #${base + arg_slot_base[i] * 8}]\n`;
 			status.code += `str x1, [x29, #${base + (arg_slot_base[i] + 1) * 8}]\n`;

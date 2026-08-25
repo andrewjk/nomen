@@ -80,6 +80,12 @@ export default function build_struct_body(node: StructNode, status: BuildStatus)
 }
 
 function field_c_type(type: Type, status: BuildStatus): string {
+	// A `view T` field is the universal non-owning (ptr, len) slice struct —
+	// every view lowers to the same 16-byte nomen_view value regardless of
+	// its element type (mirrors the param/local emission sites).
+	if (type.is_view) {
+		return "nomen_view";
+	}
 	// A heap `Array<T>` field is a `struct Array_<T>*` pointer (the value
 	// owns a heap buffer with a length header), not a `char*` element pointer
 	// or an inline stack array.

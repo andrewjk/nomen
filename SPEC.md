@@ -1905,6 +1905,36 @@ arr = [9, 9, 9]
 Console.write("\\{v.length}")  // Error: borrow invalidated by source reassignment
 ```
 
+#### Views in structs
+
+Structs may declare `view T` fields — a non-owning `(ptr, len)` pair stored by
+value, so copying the struct copies the borrow and nothing is freed on destroy.
+This is the zero-copy way to keep many small records over one long-lived buffer:
+
+```
+pub struct Line {
+    var view string text
+    var start = 0
+    var len = 0
+}
+
+var string doc = "name other"
+var Line first = Line(doc.slice(0, 4))
+first.text.to_string()   // "name" — no heap copy of the slice was made
+```
+
+The same two rules apply to the whole instance: a struct whose view fields
+borrow from this scope may not be returned (`its 'view' field(s) borrow from
+this scope`) unless every field borrows from `self`, and mutating a source
+invalidates every instance borrowing from it until the field is re-pointed:
+
+```
+func make_line = (out Line) {
+    var string doc = "hi"
+    return Line(doc.slice(0, 2))   // Error: 'view' field(s) borrow from this scope
+}
+```
+
 ### Field Access
 
 ```

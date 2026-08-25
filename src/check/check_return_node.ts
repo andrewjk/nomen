@@ -1,4 +1,5 @@
 import add_error from "../add_error.ts";
+import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import type ReturningNode from "../nodes/ReturningNode.ts";
 import ReturnNode from "../nodes/ReturnNode.ts";
 import Type from "../nodes/Type.ts";
@@ -9,6 +10,7 @@ import { borrow_depth_of, borrow_owner_of } from "./utils/borrow.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
+import { ctor_call_view_borrow, view_borrows_root_at_self } from "./utils/view_fields.ts";
 
 function is_class_type(type_name: string, status: CheckStatus): boolean {
 	return !!status.structs.find((s) => s.name === type_name && s.is_class);
@@ -77,13 +79,48 @@ export default function check_return_node(ret: ReturnNode, status: CheckStatus) 
 	// sound. A view borrowing from a non-self param/local still escapes and is
 	// rejected.
 	if (func && borrow_depth_of(ret.value, status) !== undefined) {
-		const safe_view_from_self =
-			!!func.return_type?.is_view && borrow_owner_of(ret.value, status) === "self";
-		const explicit_mov = !!get_inner_value_node(ret.value)?.is_moved;
-		if (!safe_view_from_self && !explicit_mov) {
+		const ret_value_name = value_from_value_node(ret.value);
+		const sv =
+			ret_value_name !== undefined
+				? status.values.findLast((v) => v.name === ret_value_name)
+				: undefined;
+		if (sv?.has_view_borrows) {
+			// A struct whose `view T` fields hold borrows: its bytes carry
+			// slices of someone else's storage, and `mov` cannot transfer that
+			// ownership (there is none). Returning is sound only when every
+			// field borrow roots at `self` — the same re-rooting convention as
+			// the direct-view case above (a method handing its receiver's
+			// slices back to the caller).
+			if (!view_borrows_root_at_self(sv)) {
+				add_error(
+					status,
+					`cannot return '${ret.type.name}' — its 'view' field(s) borrow from this scope`,
+					ret.value.start,
+				);
+			}
+		} else {
+			const safe_view_from_self =
+				!!func.return_type?.is_view && borrow_owner_of(ret.value, status) === "self";
+			const explicit_mov = !!get_inner_value_node(ret.value)?.is_moved;
+			if (!safe_view_from_self && !explicit_mov) {
+				add_error(
+					status,
+					`cannot return a borrowed reference — use 'mov' (with swap) to transfer ownership`,
+					ret.value.start,
+				);
+			}
+		}
+	} else if (func && ret.value.node_type === "func_call") {
+		// A CONSTRUCTOR call returned directly (`return Line(doc.slice(…))`):
+		// the fresh value's `view T` arguments borrow from this frame's
+		// storage. Sound only when every argument's borrow roots at `self`
+		// (re-rooted at the call-site receiver); anything else dangles the
+		// moment the function returns.
+		const infos = ctor_call_view_borrow(ret.value as FunctionCallNode, status);
+		if (infos?.size && ![...infos.keys()].every((o) => o === "self")) {
 			add_error(
 				status,
-				`cannot return a borrowed reference — use 'mov' (with swap) to transfer ownership`,
+				`cannot return '${ret.type.name}' — its 'view' field(s) borrow from this scope`,
 				ret.value.start,
 			);
 		}

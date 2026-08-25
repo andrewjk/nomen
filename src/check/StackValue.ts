@@ -116,6 +116,20 @@ export default interface StackValue {
 	 */
 	borrow_invalidated?: boolean;
 	/**
+	 * True when this struct value's `view T` fields hold borrows taken from
+	 * other variables (see `view_field_owners`). Drives escape checking:
+	 * the instance may not be returned (unless every borrow roots at `self`)
+	 * or assigned to an outer scope, since its bytes carry non-owning slices.
+	 */
+	has_view_borrows?: boolean;
+	/**
+	 * For a struct value with `has_view_borrows`: the owner variables its view
+	 * fields currently borrow from. Reassignment/mutation of any owner
+	 * invalidates the instance's view fields (recorded in CheckStatus.
+	 * invalidated_view_structs); reading a view field afterwards is rejected.
+	 */
+	view_field_owners?: Set<string>;
+	/**
 	 * For Buffer variables: the minimum guaranteed capacity, established by
 	 * calls to grow_int(N)/alloc_int(N)/alloc(N). Used to verify compile-time
 	 * `i < buf.cap` constraints after a known-size allocation.

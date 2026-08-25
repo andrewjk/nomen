@@ -189,6 +189,8 @@ function order_structs_by_dependency(structs: StructNode[]): StructNode[] {
 	for (const s of structs) {
 		const s_deps = new Set<string>();
 		for (const field of s.fields) {
+			// A `view T` field lowers to nomen_view (no struct dependency).
+			if (field.type.is_view) continue;
 			const dep_struct = by_name.get(field.type.name);
 			if (dep_struct && !dep_struct.is_generic && !dep_struct.is_simple_type) {
 				s_deps.add(field.type.name);
@@ -216,7 +218,9 @@ function generate_struct_definition(struct: StructNode, status: BuildStatus): st
 	let out = `typedef struct ${struct.name}\n{\n`;
 	out += `void *_vt;\n`;
 	for (const field of struct.fields) {
-		out += `${companion_type(field.type.name, status)} ${field.name};\n`;
+		// A `view T` field is the universal (ptr, len) slice value — every
+		// view lowers to nomen_view regardless of its element type.
+		out += `${field.type.is_view ? "nomen_view" : companion_type(field.type.name, status)} ${field.name};\n`;
 	}
 	for (const traitName of struct.traits) {
 		const trait = status.traits.find((t) => t.name === traitName) as TraitNode | undefined;
@@ -224,7 +228,7 @@ function generate_struct_definition(struct: StructNode, status: BuildStatus): st
 		for (const field of trait.fields.filter(
 			(f) => !struct.fields.find((nf) => nf.name === f.name),
 		)) {
-			out += `${companion_type(field.type.name, status)} ${field.name};\n`;
+			out += `${field.type.is_view ? "nomen_view" : companion_type(field.type.name, status)} ${field.name};\n`;
 		}
 	}
 	out += `} ${nm(struct.name)};\n`;

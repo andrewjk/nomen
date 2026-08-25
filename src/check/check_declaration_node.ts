@@ -2,6 +2,7 @@ import add_error from "../add_error.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
+import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
@@ -27,6 +28,11 @@ import {
 } from "./utils/ownership.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
+import {
+	ctor_call_view_borrow,
+	propagate_view_borrows,
+	type BorrowInfo,
+} from "./utils/view_fields.ts";
 
 export default function check_declaration_node(decl: DeclarationNode, status: CheckStatus) {
 	// `view hi = expr` is sugar for a const view binding. Normalize the
@@ -346,6 +352,58 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 				decl.type.is_const_ref = true;
 			}
 		}
+		// View-field borrow tracking for struct values: a constructor whose
+		// `view T` arguments borrow from named sources (`var Line l =
+		// Line(doc.slice(0, 5), …)`) gives the new variable dependencies on
+		// those sources; copying another view-carrying struct transfers its
+		// dependencies. An argument rooted deeper than this declaration's
+		// scope would let the borrow escape — rejected.
+		let view_borrows: Map<string, BorrowInfo> | undefined;
+		if (decl.value?.node_type === "func_call") {
+			view_borrows = ctor_call_view_borrow(decl.value as FunctionCallNode, status);
+			if (view_borrows?.size) {
+				for (const [, info] of view_borrows) {
+					const depth = info.depth ?? status.scope_depth;
+					if (status.scope_depth < depth) {
+						add_error(
+							status,
+							`borrow escapes its scope — the constructed value would outlive its 'view' source`,
+							decl.value.start,
+						);
+						break;
+					}
+				}
+			}
+		} else if (decl.value?.node_type === "value") {
+			const src_sv = status.values.findLast((v) => v.name === (decl.value as ValueNode).value);
+			if (src_sv?.has_view_borrows) {
+				const staged = {
+					has_view_borrows: false,
+					view_field_owners: undefined as Set<string> | undefined,
+					borrow_depth: undefined as number | undefined,
+				};
+				propagate_view_borrows(staged, src_sv);
+				view_borrows = new Map();
+				for (const owner of staged.view_field_owners ?? []) {
+					view_borrows.set(owner, { depth: staged.borrow_depth, owner });
+				}
+				if (!view_borrows.size && staged.has_view_borrows) {
+					view_borrows.set("", { depth: staged.borrow_depth, owner: "" });
+				}
+			}
+		}
+		// Fold the view-field borrows' tightest depth into the pushed
+		// borrow_depth, so the existing escape checks (return / outer-scope
+		// assignment, which gate on borrow_depth) fire for view-carrying
+		// struct values too.
+		let pushed_borrow_depth = decl.value ? borrow_depth_of(decl.value, status) : undefined;
+		if (view_borrows?.size) {
+			for (const [, info] of view_borrows) {
+				const depth = info.depth ?? status.scope_depth;
+				pushed_borrow_depth =
+					pushed_borrow_depth === undefined ? depth : Math.min(pushed_borrow_depth, depth);
+			}
+		}
 		status.values.push({
 			declaration: declaration,
 			name: decl.name,
@@ -356,8 +414,11 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			const_value: declaration === "const" ? extract_const_value(decl.value) : undefined,
 			constraint: decl.constraint,
 			decl_depth: status.scope_depth,
-			borrow_depth: decl.value ? borrow_depth_of(decl.value, status) : undefined,
+			borrow_depth: pushed_borrow_depth,
 			borrowed_from: decl.value ? borrow_owner_of(decl.value, status) : undefined,
+			has_view_borrows: !!view_borrows?.size || undefined,
+			view_field_owners:
+				view_borrows && view_borrows.size ? new Set(view_borrows.keys()) : undefined,
 			class_alias_of: class_alias_src,
 			is_global: !in_function(status),
 		});

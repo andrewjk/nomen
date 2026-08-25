@@ -65,6 +65,9 @@ function has_owning_fields(node: StructNode, status: BuildStatus): boolean {
 function has_string_fields(node: StructNode, status: BuildStatus): boolean {
 	for (const field of node.fields) {
 		if (field.type.is_ref) continue;
+		// A `view T` field is a non-owning borrow — the slot's byte copy of
+		// it aliases nothing owned, so it does not make the element owning.
+		if (field.type.is_view) continue;
 		if (field.type.name === "string" && !field.type.is_array) return true;
 		const field_struct = status.structs.find(
 			(s) => s.name === field.type.name && !s.is_simple_type && !s.is_generic,
@@ -262,6 +265,9 @@ function emit_deep_copy_fields(
 ): void {
 	for (const field of elem.fields) {
 		if (field.type.is_ref) continue;
+		// A `view T` field owns nothing — the memcpy'd byte copy IS the value
+		// (a non-owning pair); no strdup, no destroy.
+		if (field.type.is_view) continue;
 		if (field.type.name === "string" && !field.type.is_array) {
 			const src_field = `${src}${arrow(src)}${field.name}`;
 			if (old_expr) {

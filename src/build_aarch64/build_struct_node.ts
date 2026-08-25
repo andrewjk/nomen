@@ -446,13 +446,15 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 		// A fat-string FIELD consumes two AAPCS slots (ptr, len) — but a
 		// fixed-size string ARRAY field (`var string[2] args`) arrives as
 		// ONE pointer to the caller's row data and is copied element-wise
-		// by the array branch below.
+		// by the array branch below. A `view T` field is likewise a
+		// (ptr, len) pair: two slots, stored raw (never strdup'd).
+		const field_is_view = !!field.type.is_view && !field.type.is_array;
 		const field_is_fat_string =
 			field.type.name === "string" &&
 			!field.type.is_view &&
 			!field.type.is_ref &&
 			!field.type.is_array;
-		if (field_is_fat_string) ctor_slot += 2;
+		if (field_is_view || field_is_fat_string) ctor_slot += 2;
 		else ctor_slot += 1;
 		let src_reg: string;
 		if (slot < NUM_REG_ARGS) {
@@ -461,6 +463,21 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 			const k = slot - NUM_REG_ARGS;
 			status.code += `ldr x10, [x29, #${overflow_placeholder(func_name, k)}]\n`;
 			src_reg = "x10";
+		}
+		// A view FIELD stores both halves of the incoming pair verbatim —
+		// it is a non-owning borrow, so no duplication ever happens.
+		if (field_is_view) {
+			const len_src = slot + 1 < NUM_REG_ARGS ? param_regs[slot] : undefined;
+			if (len_src) {
+				emit_pair_store_to(status, "x19", offset, src_reg, len_src);
+			} else {
+				// Pair straddles the register/overflow boundary.
+				const k2 = slot + 1 - NUM_REG_ARGS;
+				status.code += `str ${src_reg}, [x19, #${offset}]\n`;
+				status.code += `ldr x9, [x29, #${overflow_placeholder(func_name, k2)}]\n`;
+				status.code += `str x9, [x19, #${offset + 8}]\n`;
+			}
+			continue;
 		}
 		// A fat-string field stores both halves: ptr from its slot, len from
 		// the next slot. A CLASS's plain string field is always heap-owned —
@@ -529,7 +546,12 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 			// be freed unconditionally at destroy. Value structs keep the raw
 			// store (their fields' ownership is handled by the Buffer store
 			// path).
-			if (node.is_class && field.type.name === "string" && !field.type.is_ref) {
+			if (
+				node.is_class &&
+				field.type.name === "string" &&
+				!field.type.is_ref &&
+				!field.type.is_view
+			) {
 				status.code += `str ${src_reg}, [sp, #-16]!\n`;
 				status.code += `mov x0, ${src_reg}\n`;
 				status.code += `bl _strdup\n`;
@@ -545,8 +567,20 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 			if (init_nullable_field_default(node, field, "x19", status)) continue;
 			if (init_enum_shorthand_field_default(node, field, "x19", status)) continue;
 			const offset = get_field_offset(node.name, field.name, status);
+			const val = field.value.node_type === "value" ? (field.value as any).value : undefined;
+			// A defaulted `view T` field: a string literal borrows its static
+			// storage via the pair store below; anything else zeroes the pair
+			// (a scalar has no meaningful slice identity). Never strdup'd —
+			// views are non-owning.
+			if (
+				field.type.is_view &&
+				!field.type.is_array &&
+				!(typeof val === "string" && val.startsWith('"'))
+			) {
+				emit_pair_store_to(status, "x19", offset, "xzr", "xzr");
+				continue;
+			}
 			if (field.value.node_type === "value") {
-				const val = (field.value as any).value;
 				if (val === "true") {
 					status.code += `mov x1, #1\n`;
 				} else if (val === "false") {
@@ -563,7 +597,12 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 					// the field is freed unconditionally at destroy. (The
 					// literal `bl _strdup` is rewritten to the audit wrapper
 					// by build.ts's final sweep.)
-					if (node.is_class && field.type.name === "string" && !field.type.is_ref) {
+					if (
+						node.is_class &&
+						field.type.name === "string" &&
+						!field.type.is_ref &&
+						!field.type.is_view
+					) {
 						status.code += `mov x0, x1\n`;
 						status.code += `bl _strdup\n`;
 						status.code += `mov x1, x0\n`;
@@ -759,8 +798,20 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 			if (init_nullable_field_default(node, field, "x19", status)) continue;
 			if (init_enum_shorthand_field_default(node, field, "x19", status)) continue;
 			const offset = get_field_offset(node.name, field.name, status);
+			const val = field.value.node_type === "value" ? (field.value as any).value : undefined;
+			// A defaulted `view T` field: a string literal borrows its static
+			// storage via the pair store below; anything else zeroes the pair
+			// (a scalar has no meaningful slice identity). Never strdup'd —
+			// views are non-owning.
+			if (
+				field.type.is_view &&
+				!field.type.is_array &&
+				!(typeof val === "string" && val.startsWith('"'))
+			) {
+				emit_pair_store_to(status, "x19", offset, "xzr", "xzr");
+				continue;
+			}
 			if (field.value.node_type === "value") {
-				const val = (field.value as any).value;
 				if (val === "true") {
 					status.code += `mov x1, #1\n`;
 				} else if (val === "false") {
@@ -777,7 +828,12 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 					// the field is freed unconditionally at destroy. (The
 					// literal `bl _strdup` is rewritten to the audit wrapper
 					// by build.ts's final sweep.)
-					if (node.is_class && field.type.name === "string" && !field.type.is_ref) {
+					if (
+						node.is_class &&
+						field.type.name === "string" &&
+						!field.type.is_ref &&
+						!field.type.is_view
+					) {
 						status.code += `mov x0, x1\n`;
 						status.code += `bl _strdup\n`;
 						status.code += `mov x1, x0\n`;

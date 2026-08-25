@@ -38,6 +38,9 @@ export function owning_buffer_is_string_elem_aarch64(node: StructNode): boolean 
 function has_string_fields(node: StructNode, status: BuildStatus): boolean {
 	for (const field of node.fields) {
 		if (field.type.is_ref) continue;
+		// A `view T` field is a non-owning borrow — the slot's byte copy of
+		// it aliases nothing owned, so it does not make the element owning.
+		if (field.type.is_view) continue;
 		if (field.type.name === "string" && !field.type.is_array) return true;
 		const field_struct = status.structs.find(
 			(s) => s.name === field.type.name && !s.is_simple_type && !s.is_generic,
@@ -51,7 +54,8 @@ function has_string_fields(node: StructNode, status: BuildStatus): boolean {
 /**
  * Collect the (name, offset) pairs for every string field in the element
  * struct, including those nested inside owning sub-structs. Used by the
- * specialized Buffer methods to strdup/free per field.
+ * specialized Buffer methods to strdup/free per field. `view T` fields are
+ * excluded: they own nothing and their byte-copy in the slot IS the value.
  */
 function collect_string_fields(
 	elem: StructNode,
@@ -62,6 +66,11 @@ function collect_string_fields(
 	let offset = 8; // VT_SIZE prefix
 	for (const field of elem.fields) {
 		if (field.type.is_ref) {
+			offset += get_type_size(field.type, status);
+			continue;
+		}
+		if (field.type.is_view) {
+			// 16-byte non-owning pair — advance the layout cursor, no record.
 			offset += get_type_size(field.type, status);
 			continue;
 		}
