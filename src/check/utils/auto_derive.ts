@@ -1,3 +1,4 @@
+import { is_hashable_scalar } from "../../built_in_types.ts";
 import AccessFieldNode from "../../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../../nodes/AccessNode.ts";
@@ -11,26 +12,6 @@ import StructNode from "../../nodes/StructNode.ts";
 import Type from "../../nodes/Type.ts";
 import ValueNode from "../../nodes/ValueNode.ts";
 import type CheckStatus from "../CheckStatus.ts";
-
-/**
- * Integer/bool/char primitive names whose values can be cast to `uint` for
- * hashing. Strings are deliberately excluded — there is no builtin string
- * hash, so a struct with a string field does not get an auto-derived `hash`.
- */
-const HASHABLE_SCALARS = [
-	"int",
-	"uint",
-	"int8",
-	"uint8",
-	"int16",
-	"uint16",
-	"int32",
-	"uint32",
-	"int64",
-	"uint64",
-	"bool",
-	"char",
-];
 
 function struct_has_function(struct: StructNode, name: string): boolean {
 	return struct.functions.some((f) => f.name === name);
@@ -104,7 +85,7 @@ function field_is_equatable(
  * `uint`; structs qualify if they define `hash` or conform to `Hashable`.
  */
 function type_is_hashable(type_name: string, status: CheckStatus, visiting: Set<string>): boolean {
-	if (HASHABLE_SCALARS.includes(type_name)) return true;
+	if (is_hashable_scalar(type_name)) return true;
 	const struct = status.structs.find((s) => s.name === type_name);
 	if (!struct) return false;
 	if (struct_has_function(struct, "hash")) return true;
@@ -243,7 +224,7 @@ function build_eq(struct: StructNode, fields: { name: string }[]): FunctionNode 
 
 function build_hash(struct: StructNode, fields: { name: string; type: Type }[]): FunctionNode {
 	const field_hashes: BaseNode[] = fields.map((f) => {
-		if (HASHABLE_SCALARS.includes(f.type.name)) {
+		if (is_hashable_scalar(f.type.name)) {
 			return new CastNode(-1, field_access("self", f.name), new Type("uint"));
 		}
 		return hash_call(f.name);

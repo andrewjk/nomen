@@ -1,5 +1,6 @@
 import { mono_type_name } from "../build_common/mono_name.ts";
 import { has_return_statement } from "../build_common/string_return_analysis.ts";
+import { SIMPLE_TYPES } from "../built_in_types.ts";
 import BitsetNode from "../nodes/BitsetNode.ts";
 import type BlockNode from "../nodes/BlockNode.ts";
 import { is_function_node, is_struct_node, is_trait_node } from "../nodes/check_node_type.ts";
@@ -20,25 +21,6 @@ import c_function_name from "./utils/c_function_name.ts";
 import c_type from "./utils/c_type.ts";
 import emit_allocations from "./utils/emit_allocations.ts";
 import { should_emit_definition } from "./utils/is_system_definition.ts";
-
-/** Primitive types whose `const` initializers are valid C file-scope globals. */
-const SIMPLE_TYPES = new Set([
-	"int",
-	"uint",
-	"int8",
-	"uint8",
-	"int16",
-	"uint16",
-	"int32",
-	"uint32",
-	"int64",
-	"uint64",
-	"float",
-	"float32",
-	"float64",
-	"bool",
-	"char",
-]);
 
 export default function build_block_node(
 	node: BlockNode,
@@ -62,7 +44,7 @@ export default function build_block_node(
 			const decl = child as DeclarationNode;
 			if (decl.declaration !== "const") continue;
 			if (!decl.type?.name || !decl.value) continue;
-			if (SIMPLE_TYPES.has(decl.type.name)) continue;
+			if (SIMPLE_TYPES.includes(decl.type.name)) continue;
 			if (decl.type.is_array) continue;
 			inlined_const_names.add(decl.name);
 			if (!status.top_level_consts) status.top_level_consts = new Map();
@@ -202,7 +184,7 @@ export default function build_block_node(
 			for (let child of node.statements) {
 				if (child.node_type === "declare") {
 					const decl = child as DeclarationNode;
-					if (!decl.func_params && SIMPLE_TYPES.has(decl.type.name)) {
+					if (!decl.func_params && SIMPLE_TYPES.includes(decl.type.name)) {
 						if (decl.type.is_array) {
 							// A global fixed-size array (e.g. `const nums = Array(1, 2, 3)`
 							// lowered to `long nums[3] = {...}`) is defined after the

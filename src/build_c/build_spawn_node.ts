@@ -1,4 +1,5 @@
 import { mono_type_name } from "../build_common/mono_name.ts";
+import { is_built_in_type } from "../built_in_types.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
@@ -378,31 +379,6 @@ export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 	status.code += `})\n`;
 }
 
-const C_BUILTIN_TYPES = new Set([
-	"bool",
-	"int",
-	"uint",
-	"int8",
-	"uint8",
-	"int16",
-	"uint16",
-	"int32",
-	"uint32",
-	"int64",
-	"uint64",
-	"float",
-	"ufloat",
-	"float32",
-	"ufloat32",
-	"float64",
-	"ufloat64",
-	"char",
-	"string",
-	"func",
-	"void",
-	"null",
-]);
-
 /**
  * Resolve each spawn argument's C type. Classes/traits are pointers;
  * primitives and by-value structs use c_type's output directly. Generic
@@ -435,10 +411,11 @@ export function spawn_arg_c_types(call: FunctionCallNode, status: BuildStatus): 
 }
 
 /** Whether a Nomen type name lowers to a real C type in this build: a
- *  builtin primitive or a struct/enum the backend knows (post-monomorphization).
- *  Unresolved generic type params (`T`) fail this check. */
+ *  builtin primitive (or the pseudo-types void/null), or a struct/enum the
+ *  backend knows (post-monomorphization). Unresolved generic type params
+ *  (`T`) fail this check. */
 function is_resolvable_c_type(type: { name: string }, status: BuildStatus): boolean {
-	if (C_BUILTIN_TYPES.has(type.name)) return true;
+	if (is_built_in_type(type.name) || type.name === "void" || type.name === "null") return true;
 	return !!status.structs.find((s) => s.name === type.name);
 }
 

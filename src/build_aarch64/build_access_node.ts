@@ -5,7 +5,12 @@ import {
 	drop_self_written_string_field_records,
 	scan_self_string_field_writes,
 } from "../build_common/scan_self_string_writes.ts";
-import built_in_types from "../built_in_types.ts";
+import {
+	is_built_in_type,
+	is_signed_int_type,
+	is_signed_type,
+	type_bits,
+} from "../built_in_types.ts";
 import { mangled_label } from "../check/utils/function_overload.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
@@ -163,7 +168,7 @@ function build_view_op(
 		}
 		// Primitive element: scaled load based on element width.
 		const size = aarch64_size(elem_name);
-		const signed = elem_name.startsWith("int") || elem_name === "char";
+		const signed = is_signed_int_type(elem_name) || elem_name === "char";
 		if (size === 1) {
 			status.code += signed ? `ldrsb x0, [x0, x1]\n` : `ldrb w0, [x0, x1]\n`;
 		} else if (size === 2) {
@@ -275,7 +280,7 @@ function resolve_field_type(
 
 function is_concrete_type_name(name: string, status: BuildStatus): boolean {
 	return (
-		built_in_types.includes(name) ||
+		is_built_in_type(name) ||
 		!!status.structs.find((s) => s.name === name) ||
 		!!status.enums.find((e) => e.name === name) ||
 		!!status.traits.find((t) => t.name === name)
@@ -616,11 +621,7 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 				}
 				const field_type = access_field.type?.name || "int";
 				const field_size = aarch64_size(field_type);
-				const signed =
-					field_type.startsWith("int") ||
-					field_type === "float" ||
-					field_type === "float32" ||
-					field_type === "float64";
+				const signed = is_signed_type(field_type);
 				if (field_size === 1) {
 					status.code += signed
 						? `ldrsb x0, [x0, #${payload_offset}]\n`
@@ -782,11 +783,7 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 			return;
 		}
 		const size = aarch64_size(field_type);
-		const signed =
-			field_type.startsWith("int") ||
-			field_type === "float" ||
-			field_type === "float32" ||
-			field_type === "float64";
+		const signed = is_signed_type(field_type);
 		if (size === 1) {
 			status.code += signed
 				? `ldrsb x0, [x0, #${final_offset}]\n`
@@ -813,11 +810,7 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 			return;
 		}
 		const size = aarch64_size(field_type);
-		const signed =
-			field_type.startsWith("int") ||
-			field_type === "float" ||
-			field_type === "float32" ||
-			field_type === "float64";
+		const signed = is_signed_type(field_type);
 		if (size === 1) {
 			status.code += signed
 				? `ldrsb x0, [x0, #${final_offset}]\n`
@@ -845,11 +838,7 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 		const final_offset = get_field_offset(access_field.type?.name || "", access_field.name, status);
 		const field_type = access_field.type?.name || "";
 		const size = aarch64_size(field_type);
-		const signed =
-			field_type.startsWith("int") ||
-			field_type === "float" ||
-			field_type === "float32" ||
-			field_type === "float64";
+		const signed = is_signed_type(field_type);
 		if (size === 1) {
 			status.code += signed
 				? `ldrsb x0, [x0, #${final_offset}]\n`
@@ -903,11 +892,7 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 			return;
 		}
 		const size = aarch64_size(field_type);
-		const signed =
-			field_type.startsWith("int") ||
-			field_type === "float" ||
-			field_type === "float32" ||
-			field_type === "float64";
+		const signed = is_signed_type(field_type);
 		if (size === 1) {
 			status.code += signed
 				? `ldrsb x0, [x0, #${final_offset}]\n`
@@ -965,11 +950,7 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 	}
 
 	const size = aarch64_size(resolved_field_type);
-	const signed =
-		resolved_field_type.startsWith("int") ||
-		resolved_field_type === "float" ||
-		resolved_field_type === "float32" ||
-		resolved_field_type === "float64";
+	const signed = is_signed_type(resolved_field_type);
 	if (size === 1) {
 		status.code += signed ? `ldrsb x0, [x0, #${offset}]\n` : `ldrb w0, [x0, #${offset}]\n`;
 	} else if (size === 4) {
@@ -1127,11 +1108,7 @@ function build_access_method(
 				? get_struct_size(elem_type_name, status)
 				: aarch64_size(elem_type_name);
 			const elem_signed =
-				!elem_struct &&
-				elem_type_name.startsWith("int") &&
-				elem_type_name !== "int8" &&
-				elem_type_name !== "int16" &&
-				elem_type_name !== "int32";
+				!elem_struct && is_signed_int_type(elem_type_name) && type_bits(elem_type_name) === 64;
 
 			// The inlined .at()/.set() below uses x9 (caller-saved scratch) for
 			// the array base, avoiding the per-access x19 save/restore overhead.
@@ -1773,11 +1750,7 @@ function build_access_method(
 					!method_self_is_ref
 				) {
 					const size = aarch64_size(target_type.name);
-					const signed =
-						target_type.name.startsWith("int") ||
-						target_type.name === "float" ||
-						target_type.name === "float32" ||
-						target_type.name === "float64";
+					const signed = is_signed_type(target_type.name);
 					if (size === 1) {
 						status.code += signed ? `ldrsb x0, [x0]\n` : `ldrb w0, [x0]\n`;
 					} else if (size === 4) {

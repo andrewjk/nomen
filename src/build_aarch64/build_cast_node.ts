@@ -1,5 +1,6 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
+import { is_signed_float_type } from "../built_in_types.ts";
 import CastNode from "../nodes/CastNode.ts";
 import build_node from "./build_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
@@ -33,8 +34,8 @@ export default function build_cast_node(node: CastNode, status: BuildStatus) {
 	const fs = aarch64_size(from);
 	const ts = aarch64_size(to);
 
-	const is_from_float = from === "float" || from === "float32" || from === "float64";
-	const is_to_float = to === "float" || to === "float32" || to === "float64";
+	const is_from_float = is_signed_float_type(from);
+	const is_to_float = is_signed_float_type(to);
 
 	if (is_from_float && !is_to_float) {
 		status.code += `fcvtzs x0, d0\n`;

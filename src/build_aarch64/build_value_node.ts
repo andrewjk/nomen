@@ -1,5 +1,6 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import string_literal_length from "../build_common/string_literal_length.ts";
+import { is_signed_int_type, is_signed_type } from "../built_in_types.ts";
 import { is_int_literal, to_decimal_string } from "../int_literal.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_node from "./build_node.ts";
@@ -58,7 +59,7 @@ function is_literal(value: string): boolean {
 // value must be read with T's width (e.g. `ldrb` for `ref bool`).
 function deref_load_instr(reg: string, type_name: string): string {
 	const size = aarch64_size(type_name);
-	const signed = type_name.startsWith("int");
+	const signed = is_signed_int_type(type_name);
 	if (size === 1) return signed ? `ldrsb x0, [${reg}]` : `ldrb w0, [${reg}]`;
 	if (size === 2) return signed ? `ldrsh x0, [${reg}]` : `ldrh w0, [${reg}]`;
 	if (size === 4) return signed ? `ldrsw x0, [${reg}]` : `ldr w0, [${reg}]`;
@@ -280,22 +281,8 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 			status.code += `ldr x0, [x29, #${offset}]\n`;
 			status.code += deref_load_instr("x0", type_name);
 		} else {
-			const size =
-				type_name === "uint8" ||
-				type_name === "int8" ||
-				type_name === "char" ||
-				type_name === "bool"
-					? 1
-					: type_name === "int16" || type_name === "uint16"
-						? 2
-						: type_name === "int32" || type_name === "uint32"
-							? 4
-							: 8;
-			const signed =
-				type_name.startsWith("int") ||
-				type_name === "float" ||
-				type_name === "float32" ||
-				type_name === "float64";
+			const size = aarch64_size(type_name);
+			const signed = is_signed_type(type_name);
 			if (size === 1) {
 				status.code += signed ? `ldrsb x0, [x29, #${offset}]` : `ldrb w0, [x29, #${offset}]`;
 			} else if (size === 2) {

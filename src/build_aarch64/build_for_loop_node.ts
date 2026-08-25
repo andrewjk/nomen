@@ -1,5 +1,6 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
+import { ALL_FLOAT_TYPES, SCALAR_TYPES } from "../built_in_types.ts";
 import ForLoopNode from "../nodes/ForLoopNode.ts";
 import RangeNode from "../nodes/RangeNode.ts";
 import build_block_node from "./build_block_node.ts";
@@ -19,27 +20,6 @@ import { get_struct_size } from "./utils/struct_layout.ts";
 
 const CALLEE_SAVED_REGS = ["x23", "x24", "x25", "x26", "x27", "x28"];
 const FLOAT_CALLEE_SAVED = ["d8", "d9", "d10", "d11", "d12", "d13", "d14", "d15"];
-const FLOAT_TYPES = new Set(["float", "ufloat", "float32", "ufloat32", "float64", "ufloat64"]);
-const SCALAR_TYPES = new Set([
-	"int",
-	"uint",
-	"int64",
-	"uint64",
-	"int32",
-	"uint32",
-	"int16",
-	"uint16",
-	"int8",
-	"uint8",
-	"bool",
-	"char",
-	"float",
-	"ufloat",
-	"float32",
-	"ufloat32",
-	"float64",
-	"ufloat64",
-]);
 
 let label_counter = 0;
 
@@ -111,7 +91,7 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 			let type_name = "";
 			if (decl) {
 				type_name = decl.type?.name || "";
-				if (!SCALAR_TYPES.has(type_name)) continue;
+				if (!SCALAR_TYPES.includes(type_name)) continue;
 			}
 			eligible.push({ name, reads: info.reads, offset, type_name });
 		}
@@ -137,7 +117,7 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 		let x_idx = 0;
 		let d_idx = 0;
 		for (const v of eligible) {
-			const is_float = FLOAT_TYPES.has(v.type_name);
+			const is_float = ALL_FLOAT_TYPES.includes(v.type_name);
 			if (is_float) {
 				while (d_idx < FLOAT_CALLEE_SAVED.length && used_d.has(FLOAT_CALLEE_SAVED[d_idx])) {
 					d_idx++;

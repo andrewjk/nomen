@@ -1,5 +1,12 @@
 import add_error from "../../add_error.ts";
 import { mono_type_name } from "../../build_common/mono_name.ts";
+import {
+	ALL_INT_TYPES,
+	UINT_TYPES,
+	is_int_type,
+	is_unsigned_int_type,
+	type_bits,
+} from "../../built_in_types.ts";
 import { parse_int_literal, parse_int_literal_bigint } from "../../int_literal.ts";
 import Type from "../../nodes/Type.ts";
 import type CheckStatus from "../CheckStatus.ts";
@@ -90,10 +97,6 @@ function add_error_message(
 	add_error(status, message, i);
 }
 
-const INT_TYPES = ["int8", "int16", "int32", "int", "int64"];
-const UINT_TYPES = ["uint8", "uint16", "uint32", "uint", "uint64"];
-const ALL_INT_TYPES = [...INT_TYPES, ...UINT_TYPES];
-
 function can_coerce(target_type: string, value_type: string, value: string | undefined) {
 	if (value === "?") {
 		return can_coerce_type(target_type, value_type);
@@ -102,31 +105,14 @@ function can_coerce(target_type: string, value_type: string, value: string | und
 		return can_coerce_type(target_type, value_type);
 	}
 	const num = parse_int_literal(value);
-	if (!Number.isNaN(num)) {
-		switch (target_type) {
-			case "bool":
-				return false;
-			case "int":
-				return int_is_valid(num, 32);
-			case "uint":
-				return uint_is_valid(num, 32);
-			case "int8":
-				return int_is_valid(num, 8);
-			case "uint8":
-				return uint_is_valid(num, 8);
-			case "int16":
-				return int_is_valid(num, 16);
-			case "uint16":
-				return uint_is_valid(num, 16);
-			case "int32":
-				return int_is_valid(num, 32);
-			case "uint32":
-				return uint_is_valid(num, 32);
-			case "int64":
-				return int64_is_valid(value);
-			case "uint64":
-				return uint64_is_valid(value);
+	if (!Number.isNaN(num) && is_int_type(target_type)) {
+		const bits = type_bits(target_type);
+		// 64-bit range checks use BigInt so values near 2^63/2^64 (e.g.
+		// 0xFFFFFFFFFFFFFFFF) aren't rounded by JS's double and wrongly rejected.
+		if (bits === 64) {
+			return is_unsigned_int_type(target_type) ? uint64_is_valid(value) : int64_is_valid(value);
 		}
+		return is_unsigned_int_type(target_type) ? uint_is_valid(num, bits) : int_is_valid(num, bits);
 	}
 	return can_coerce_type(target_type, value_type);
 }
@@ -167,27 +153,6 @@ function can_coerce_type(target_type: string, value_type: string): boolean {
 		return target_bits > value_bits;
 	}
 	return target_idx >= value_idx;
-}
-
-function type_bits(t: string): number {
-	switch (t) {
-		case "int8":
-		case "uint8":
-			return 8;
-		case "int16":
-		case "uint16":
-			return 16;
-		case "int32":
-		case "uint32":
-		case "int":
-		case "uint":
-			return 32;
-		case "int64":
-		case "uint64":
-			return 64;
-		default:
-			return 0;
-	}
 }
 
 function is_type_param(name: string, status: CheckStatus): boolean {

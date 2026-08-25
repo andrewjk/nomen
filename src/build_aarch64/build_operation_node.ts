@@ -2,6 +2,10 @@ import type BuildStatus from "../build_c/BuildStatus.ts";
 import { enum_with_data_side, static_enum_case } from "../build_c/utils/enum_eq.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import string_literal_length from "../build_common/string_literal_length.ts";
+import {
+	is_float_type as name_is_float_type,
+	is_unsigned_int_type as name_is_unsigned_int_type,
+} from "../built_in_types.ts";
 import { is_int_literal, parse_int_literal_bigint, to_decimal_string } from "../int_literal.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import BaseNode from "../nodes/BaseNode.ts";
@@ -227,14 +231,12 @@ function is_simple(node: BaseNode): boolean {
 
 function is_float_type(node: BaseNode): boolean {
 	const type = type_from_value_node(node);
-	const name = type?.name || "";
-	return name === "float" || name === "float32" || name === "float64" || name === "ufloat";
+	return name_is_float_type(type?.name || "");
 }
 
 function is_unsigned_type(node: BaseNode): boolean {
 	const type = type_from_value_node(node);
-	const name = type?.name || "";
-	return name === "uint64" || name === "uint32" || name === "uint8";
+	return name_is_unsigned_int_type(type?.name || "");
 }
 
 function build_float_operand(node: BaseNode, target_reg: string, status: BuildStatus) {

@@ -1,4 +1,4 @@
-import built_in_types from "../../built_in_types.ts";
+import { is_built_in_type } from "../../built_in_types.ts";
 import BaseNode from "../../nodes/BaseNode.ts";
 import FunctionNode from "../../nodes/FunctionNode.ts";
 import StructNode from "../../nodes/StructNode.ts";
@@ -18,7 +18,7 @@ function type_origin_is_system(
 	if (cached !== undefined) return cached;
 	cache.set(name, false); // cycle guard
 	let result = false;
-	if (built_in_types.includes(name)) {
+	if (is_built_in_type(name)) {
 		result = true;
 	} else {
 		const s = structs.find((x) => x.name === name);

@@ -1,6 +1,7 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import { should_emit_definition } from "../build_c/utils/is_system_definition.ts";
 import { function_returns_owned } from "../build_common/string_return_analysis.ts";
+import { SIMPLE_TYPES } from "../built_in_types.ts";
 import BitsetNode from "../nodes/BitsetNode.ts";
 import type BlockNode from "../nodes/BlockNode.ts";
 import { is_function_node, is_struct_node, is_trait_node } from "../nodes/check_node_type.ts";
@@ -14,25 +15,6 @@ import build_node from "./build_node.ts";
 import build_struct_node from "./build_struct_node.ts";
 import { emit_destroy_for_scope } from "./utils/auto_destroy.ts";
 import emit_allocations from "./utils/emit_allocations.ts";
-
-/** Primitive types whose `const` initializers are valid aarch64 file-scope data. */
-const SIMPLE_TYPES = new Set([
-	"int",
-	"uint",
-	"int8",
-	"uint8",
-	"int16",
-	"uint16",
-	"int32",
-	"uint32",
-	"int64",
-	"uint64",
-	"float",
-	"float32",
-	"float64",
-	"bool",
-	"char",
-]);
 
 export default function build_block_node(node: BlockNode, status: BuildStatus) {
 	gather_structs(node, status);
@@ -51,7 +33,7 @@ export default function build_block_node(node: BlockNode, status: BuildStatus) {
 			const decl = child as DeclarationNode;
 			if (decl.declaration !== "const") continue;
 			if (!decl.type?.name || !decl.value) continue;
-			if (SIMPLE_TYPES.has(decl.type.name)) continue;
+			if (SIMPLE_TYPES.includes(decl.type.name)) continue;
 			if (decl.type.is_array) continue;
 			inlined_const_names.add(decl.name);
 			if (!status.top_level_consts) status.top_level_consts = new Map();

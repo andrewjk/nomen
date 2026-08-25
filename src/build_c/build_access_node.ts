@@ -3,7 +3,7 @@ import {
 	drop_self_written_string_field_records,
 	scan_self_string_field_writes,
 } from "../build_common/scan_self_string_writes.ts";
-import built_in_types from "../built_in_types.ts";
+import { is_built_in_type } from "../built_in_types.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
@@ -794,7 +794,7 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 						const method_self_is_ref = !!target_method?.params?.some(
 							(p) => p.is_self_param && (p.is_ref || p.type?.is_ref),
 						);
-						if (!built_in_types.includes(method_type?.name || "") || method_self_is_ref) {
+						if (!is_built_in_type(method_type?.name || "") || method_self_is_ref) {
 							const target_value =
 								node.target.node_type === "value" ? (node.target as ValueNode).value : "";
 							// See field-access branch: self is a pointer whenever

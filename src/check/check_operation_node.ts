@@ -1,4 +1,5 @@
 import add_error from "../add_error.ts";
+import { is_negatable_type } from "../built_in_types.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
 import Type from "../nodes/Type.ts";
@@ -40,13 +41,7 @@ export default function check_operation_node(op: OperationNode, status: CheckSta
 		}
 		op.type = type_from_value_node(op.right_value, status);
 		const t = op.type.name;
-		if (
-			t !== "int" &&
-			t !== "float" &&
-			t !== "uint" &&
-			!t.startsWith("int") &&
-			!t.startsWith("uint")
-		) {
+		if (!is_negatable_type(t)) {
 			add_error(status, `Cannot negate type ${t}`, op.start);
 			return false;
 		}

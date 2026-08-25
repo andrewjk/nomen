@@ -1,25 +1,8 @@
+import { SIMPLE_TYPES } from "../../built_in_types.ts";
 import BaseNode from "../../nodes/BaseNode.ts";
 import FunctionNode from "../../nodes/FunctionNode.ts";
 
 const MAX_STATEMENTS = 15;
-
-const PRIMITIVE_TYPES = new Set([
-	"int",
-	"uint",
-	"int8",
-	"uint8",
-	"int16",
-	"uint16",
-	"int32",
-	"uint32",
-	"int64",
-	"uint64",
-	"float",
-	"float32",
-	"float64",
-	"bool",
-	"char",
-]);
 
 export function scan_inline_candidates(root: BaseNode): Map<string, BaseNode> {
 	const result = new Map<string, BaseNode>();
@@ -49,13 +32,13 @@ function is_inline_candidate(func: FunctionNode): boolean {
 
 	for (const param of func.params) {
 		if (param.is_variadic || param.is_variadic_tuple) return false;
-		if (!PRIMITIVE_TYPES.has(param.type.name)) return false;
+		if (!SIMPLE_TYPES.includes(param.type.name)) return false;
 		if (param.type.is_ref) return false;
 		if (param.is_moved) return false;
 		if (param.declaration === "var") return false;
 	}
 
-	if (func.return_type && func.return_type.name && !PRIMITIVE_TYPES.has(func.return_type.name)) {
+	if (func.return_type && func.return_type.name && !SIMPLE_TYPES.includes(func.return_type.name)) {
 		return false;
 	}
 

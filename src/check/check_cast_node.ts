@@ -1,36 +1,11 @@
 import add_error from "../add_error.ts";
+import { ALL_INT_TYPES, SIGNED_FLOAT_TYPES, UINT_TYPES, type_bits } from "../built_in_types.ts";
 import CastNode from "../nodes/CastNode.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import check_type_exists from "./utils/check_type_exists.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import type_name from "./utils/type_name.ts";
-
-const INT_TYPES = ["int8", "int16", "int32", "int", "int64"];
-const UINT_TYPES = ["uint8", "uint16", "uint32", "uint", "uint64"];
-const ALL_INT_TYPES = [...INT_TYPES, ...UINT_TYPES];
-const FLOAT_TYPES = ["float", "float32", "float64"];
-
-function type_bits(t: string): number {
-	switch (t) {
-		case "int8":
-		case "uint8":
-			return 8;
-		case "int16":
-		case "uint16":
-			return 16;
-		case "int32":
-		case "uint32":
-		case "int":
-		case "uint":
-			return 32;
-		case "int64":
-		case "uint64":
-			return 64;
-		default:
-			return 0;
-	}
-}
 
 export function can_implicit_cast(from: string, to: string): boolean {
 	const from_idx = ALL_INT_TYPES.indexOf(from);
@@ -45,8 +20,8 @@ export function can_implicit_cast(from: string, to: string): boolean {
 		if (from_is_uint && to_is_uint && to_bits === from_bits) return true;
 		return false;
 	}
-	if (from_idx !== -1 && FLOAT_TYPES.includes(to)) return true;
-	if (UINT_TYPES.includes(from) && FLOAT_TYPES.includes(to)) return true;
+	if (from_idx !== -1 && SIGNED_FLOAT_TYPES.includes(to)) return true;
+	if (UINT_TYPES.includes(from) && SIGNED_FLOAT_TYPES.includes(to)) return true;
 	return false;
 }
 
@@ -83,8 +58,8 @@ export default function check_cast_node(node: CastNode, status: CheckStatus) {
 
 	const from_idx = ALL_INT_TYPES.indexOf(from);
 	const to_idx = ALL_INT_TYPES.indexOf(to);
-	const from_is_float = FLOAT_TYPES.includes(from);
-	const to_is_float = FLOAT_TYPES.includes(to);
+	const from_is_float = SIGNED_FLOAT_TYPES.includes(from);
+	const to_is_float = SIGNED_FLOAT_TYPES.includes(to);
 	const from_is_bool = from === "bool";
 	const to_is_bool = to === "bool";
 
