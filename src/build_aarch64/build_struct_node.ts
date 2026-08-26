@@ -255,6 +255,12 @@ function build_destroy_function(node: StructNode, func: FunctionNode, status: Bu
 	const old_param_regs = status.function_param_regs;
 	const old_param_vars = status.function_param_vars;
 	const old_return_label = status.function_return_label;
+	// See build_struct_functions: clear the enclosing function's promotion
+	// maps while the destroy body builds; restore afterwards.
+	const old_register_allocations = status.register_allocations;
+	const old_callee_saved_regs = status.callee_saved_regs_used;
+	status.register_allocations = undefined;
+	status.callee_saved_regs_used = undefined;
 
 	status.scoped_declarations = [];
 	status.heap_strings = new Set<string>();
@@ -283,6 +289,28 @@ function build_destroy_function(node: StructNode, func: FunctionNode, status: Bu
 	status.buffer_data_cache = undefined;
 	build_block_node(func, status);
 
+	// The body build may have claimed registers (loop promotion); the cast
+	// defeats the assignment narrowing from the clear above.
+	const destroy_claims = status.callee_saved_regs_used as Set<string> | undefined;
+	const destroy_loop_regs = destroy_claims ? [...destroy_claims].sort() : [];
+	status.callee_saved_regs_used = old_callee_saved_regs;
+	status.register_allocations = old_register_allocations;
+
+	if (destroy_loop_regs.length > 0) {
+		const label = `${func_label}:`;
+		const func_start = status.code.indexOf(label);
+		const after_prologue =
+			func_start !== -1 ? status.code.indexOf(`sub sp, sp, #${stack_placeholder}`, func_start) : -1;
+		if (after_prologue !== -1) {
+			let saves = "";
+			for (const reg of destroy_loop_regs) {
+				saves += `str ${reg}, [sp, #-16]!\n`;
+			}
+			status.code =
+				status.code.slice(0, after_prologue) + saves + status.code.slice(after_prologue);
+		}
+	}
+
 	// After the user body, recursively destroy all class-typed fields.
 	// This ensures that grandchildren (and deeper) are freed, not just
 	// direct children.
@@ -299,6 +327,10 @@ function build_destroy_function(node: StructNode, func: FunctionNode, status: Bu
 	);
 	if (total_stack > 0) {
 		status.code += `add sp, sp, #${total_stack}\n`;
+	}
+
+	for (let i = destroy_loop_regs.length - 1; i >= 0; i--) {
+		status.code += `ldr ${destroy_loop_regs[i]}, [sp], #16\n`;
 	}
 
 	status.code += `ldr x19, [sp], #16\n`;
@@ -702,6 +734,14 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 	const old_param_regs = status.function_param_regs;
 	const old_param_vars = status.function_param_vars;
 	const old_return_label = status.function_return_label;
+	// See build_struct_functions: a struct declared inside a function body
+	// builds its custom #init while the enclosing function's whole-function
+	// promotions are live — clear both maps so same-named init locals can't
+	// alias the enclosing's registers, restore afterwards.
+	const old_register_allocations = status.register_allocations;
+	const old_callee_saved_regs = status.callee_saved_regs_used;
+	status.register_allocations = undefined;
+	status.callee_saved_regs_used = undefined;
 
 	status.scoped_declarations = [];
 	status.heap_strings = new Set<string>();
@@ -766,13 +806,27 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 		const size = aarch64_size(param.type.name);
 		const offset = allocate_stack_space(status, size, size);
 		status.stack_offsets!.set(param.name, offset);
+		// Spill with the param's declared width — a full-width `str` into a
+		// sub-word slot (bool/char/int8/int16/int32) clobbers the adjacent
+		// stack bytes.
 		if (param_idx < NUM_REG_ARGS) {
-			status.code += `str ${param_regs[param_idx]}, [x29, #${offset}]\n`;
+			const reg = param_regs[param_idx];
+			if (size === 1) {
+				status.code += `strb ${reg.replace("x", "w")}, [x29, #${offset}]\n`;
+			} else if (size === 2) {
+				status.code += `strh ${reg.replace("x", "w")}, [x29, #${offset}]\n`;
+			} else if (size === 4) {
+				status.code += `str ${reg.replace("x", "w")}, [x29, #${offset}]\n`;
+			} else {
+				status.code += `str ${reg}, [x29, #${offset}]\n`;
+			}
 		} else {
 			const k = param_idx - NUM_REG_ARGS;
 			status.code += `ldr x9, [x29, #${overflow_placeholder(func_name, k)}]\n`;
 			if (size === 1) {
 				status.code += `strb w9, [x29, #${offset}]\n`;
+			} else if (size === 2) {
+				status.code += `strh w9, [x29, #${offset}]\n`;
 			} else if (size === 4) {
 				status.code += `str w9, [x29, #${offset}]\n`;
 			} else {
@@ -896,6 +950,31 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 	status.buffer_data_cache = undefined;
 	build_block_node(func, status);
 
+	// The init body's own loop-promotion claims (the enclosing's set was
+	// cleared above); restored after capture. These MUST be saved/restored
+	// around the init body — the promoted registers are callee-saved, and a
+	// caller holding a value in one across its `bl <Struct>_init` would
+	// otherwise lose it (the loop brackets only cache, they don't preserve).
+	const init_claims = status.callee_saved_regs_used as Set<string> | undefined;
+	const init_loop_regs = init_claims ? [...init_claims].sort() : [];
+	status.callee_saved_regs_used = old_callee_saved_regs;
+	status.register_allocations = old_register_allocations;
+
+	if (init_loop_regs.length > 0) {
+		const func_label = `${func_name}:`;
+		const func_start = status.code.indexOf(func_label);
+		const after_prologue =
+			func_start !== -1 ? status.code.indexOf(`sub sp, sp, #${stack_placeholder}`, func_start) : -1;
+		if (after_prologue !== -1) {
+			let saves = "";
+			for (const reg of init_loop_regs) {
+				saves += `str ${reg}, [sp, #-16]!\n`;
+			}
+			status.code =
+				status.code.slice(0, after_prologue) + saves + status.code.slice(after_prologue);
+		}
+	}
+
 	status.code += `${return_label}:\n`;
 
 	const total_stack = Math.ceil((status.stack_size || 0) / 16) * 16;
@@ -904,11 +983,21 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 		total_stack > 0 ? `sub sp, sp, #${total_stack}` : `// no stack needed`,
 	);
 	// Patch per-overflow-arg placeholders emitted in the param-loading loop
-	// above. self's x19 save is the only `str xN, [sp, #-16]!` between
-	// `stp x29, x30` and `sub sp, sp, #STACK_SIZE`, so N = 1.
-	status.code = patch_overflow_placeholders(status.code, func_name, 1, total_stack);
+	// above. self's x19 save plus any loop-reg saves are the
+	// `str xN, [sp, #-16]!` pushes between `stp x29, x30` and
+	// `sub sp, sp, #STACK_SIZE`, so N = 1 + init_loop_regs.length.
+	status.code = patch_overflow_placeholders(
+		status.code,
+		func_name,
+		1 + init_loop_regs.length,
+		total_stack,
+	);
 	if (total_stack > 0) {
 		status.code += `add sp, sp, #${total_stack}\n`;
+	}
+
+	for (let i = init_loop_regs.length - 1; i >= 0; i--) {
+		status.code += `ldr ${init_loop_regs[i]}, [sp], #16\n`;
 	}
 
 	status.code += `ldr x19, [sp], #16\n`;
@@ -956,6 +1045,19 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		const old_return_label = status.function_return_label;
 		const old_force_heap = status.force_heap_strings;
 		const old_function_name = status.current_function_name;
+		// A struct declared INSIDE a function body builds its methods while
+		// the enclosing function's whole-function promotions are live. Clear
+		// both maps for the method build: a same-named method local must not
+		// read the enclosing function's register (emit_var_load checks
+		// register_allocations first), and the method's own loop promotions
+		// must not mutate the enclosing's claimed-reg set (its prologue saves
+		// are computed from it after the body). Restored below — previously
+		// this builder left callee_saved_regs_used CLEARED, dropping the
+		// enclosing function's prologue saves for its promoted registers.
+		const old_register_allocations = status.register_allocations;
+		const old_callee_saved_regs = status.callee_saved_regs_used;
+		status.register_allocations = undefined;
+		status.callee_saved_regs_used = undefined;
 
 		status.scoped_declarations = [];
 		status.heap_strings = new Set<string>();
@@ -1315,10 +1417,12 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 			build_block_node(func, status);
 		}
 
-		const loop_regs_used = status.callee_saved_regs_used
-			? [...status.callee_saved_regs_used].sort()
-			: [];
-		status.callee_saved_regs_used = undefined;
+		// The method's own loop-promotion claims (the enclosing function's set
+		// was cleared above); restore the enclosing state afterwards.
+		const method_claims = status.callee_saved_regs_used as Set<string> | undefined;
+		const loop_regs_used = method_claims ? [...method_claims].sort() : [];
+		status.callee_saved_regs_used = old_callee_saved_regs;
+		status.register_allocations = old_register_allocations;
 
 		if (loop_regs_used.length > 0) {
 			const label = `${func_label}:`;
@@ -1530,8 +1634,37 @@ function build_trait_functions(node: StructNode, status: BuildStatus) {
 			status.code += `sub sp, sp, #${stack_placeholder}\n`;
 			status.code += `mov x29, sp\n`;
 
+			// See build_struct_functions: clear the enclosing function's
+			// promotion maps while the shared default body builds.
+			const old_register_allocations = status.register_allocations;
+			const old_callee_saved_regs = status.callee_saved_regs_used;
+			status.register_allocations = undefined;
+			status.callee_saved_regs_used = undefined;
+
 			status.buffer_data_cache = undefined;
 			build_block_node(func, status);
+
+			const trait_claims = status.callee_saved_regs_used as Set<string> | undefined;
+			const trait_loop_regs = trait_claims ? [...trait_claims].sort() : [];
+			status.callee_saved_regs_used = old_callee_saved_regs;
+			status.register_allocations = old_register_allocations;
+
+			if (trait_loop_regs.length > 0) {
+				const label = `${trait_func_label}:`;
+				const func_start = status.code.indexOf(label);
+				const after_prologue =
+					func_start !== -1
+						? status.code.indexOf(`sub sp, sp, #${stack_placeholder}`, func_start)
+						: -1;
+				if (after_prologue !== -1) {
+					let saves = "";
+					for (const reg of trait_loop_regs) {
+						saves += `str ${reg}, [sp, #-16]!\n`;
+					}
+					status.code =
+						status.code.slice(0, after_prologue) + saves + status.code.slice(after_prologue);
+				}
+			}
 
 			status.code += `${return_label}:\n`;
 
@@ -1542,6 +1675,10 @@ function build_trait_functions(node: StructNode, status: BuildStatus) {
 			);
 			if (total_stack > 0) {
 				status.code += `add sp, sp, #${total_stack}\n`;
+			}
+
+			for (let i = trait_loop_regs.length - 1; i >= 0; i--) {
+				status.code += `ldr ${trait_loop_regs[i]}, [sp], #16\n`;
 			}
 
 			if (needs_x19) {

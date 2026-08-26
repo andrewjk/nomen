@@ -455,3 +455,104 @@ Console.write("\\{r1} \\{r2} \\{r3} \\{r4} \\{n}")
 		"5.000000 8.000000 2.500000 16.000000 2.000000",
 	);
 });
+
+// An int16/uint16 param spills into a 2-byte slot; the store must be `strh`
+// (the old code fell through to a full-width `str`, writing 8 bytes into the
+// 2-byte slot). Same for a custom #init's sub-word params (that path used a
+// full-width `str` for EVERY sub-word size, including bool).
+test("int16 params spill with halfword stores", async () => {
+	const input = `
+func narrow = (int16 a, int16 b, out int16) {
+  return a + b + a + b
+}
+
+struct S {
+  var uint16 s
+  var bool f
+  pub func #init = (self, uint16 s, bool f) {
+    self.s = s
+    self.f = f
+  }
+  pub func parts = (self, out int) {
+    if self.f {
+      return (self.s as int) + 1
+    }
+    return self.s as int
+  }
+}
+
+var int16 one = 1000
+var int16 two = 2000
+var uint16 big = 50000
+var S x = S(one as uint16, true)
+var S y = S(big, false)
+Console.write("\\{narrow(one, two) as int} \\{x.parts()} \\{y.parts()}")
+`;
+	// narrow: 2*(1000+2000) = 6000; x: 1000+1 = 1001; y: 50000 stores and
+	// reloads through its 2-byte slot intact.
+	await build_and_check_output(input, "int16_param_halfword_spill", "6000 1001 50000");
+});
+
+// A struct declared INSIDE a function with whole-function promotions: the
+// method body must build with the enclosing's promotion maps cleared (a
+// same-named method local previously aliased the enclosing's register), and
+// the enclosing's claimed-register set must survive the method build (it was
+// cleared, dropping the enclosing's prologue saves — clobbering the CALLER's
+// promoted register across the bl).
+test("nested struct method under enclosing promotions", async () => {
+	const input = `
+func outer = (int a, out int) {
+  struct P {
+    var int x
+    pub func read = (self, out int) {
+      var t = 4
+      var i = 0
+      while i < 3 {
+        t = t + 1
+        i = i + 1
+      }
+      return self.x + t + t
+    }
+  }
+  var P p = P(7)
+  var t = a * 2
+  var n = 0
+  var j = 0
+  while j < 4 {
+    n = n + p.read() + t + t + t
+    j = j + 1
+  }
+  return t + n
+}
+
+var m = 3
+var r = outer(m + m + m + m)
+Console.write("m=\\{m} r=\\{r}")
+`;
+	// outer(12): t=24 (promoted in outer); P.read: t=7 (its OWN t, not
+	// outer's 24), returns 7+7+7=21; n = 4*(21+72) = 372; return 24+372=396.
+	// main's m (5 reads, whole-function promoted) must survive the bl outer.
+	await build_and_check_output(input, "nested_struct_under_promotions", "m=3 r=396");
+});
+
+// A plain `func` nested inside another function body is an inline candidate
+// (the scan used to only visit root statements, so the test harness — which
+// wraps everything in main — never inlined user helpers). The checker
+// rejects closures, so a nested body is safe to inline anywhere.
+test("nested function statement is inlined at call sites", async () => {
+	const input = `
+func step = (int x, out int) {
+  return x + x + 1
+}
+
+var t = 0
+var i = 0
+while i < 5 {
+  t = t + step(i)
+  i = i + 1
+}
+Console.write("t=\\{t}")
+`;
+	// step(i) = 2i+1 summed over 0..4 = 2*10 + 5 = 25.
+	await build_and_check_output(input, "nested_func_inlined", "t=25");
+});

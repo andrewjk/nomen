@@ -276,28 +276,13 @@ name, so promotion is not affected. Repro:
 `test/aarch64_regressions.test.ts` history (the "shadowed name" test was
 rewritten to avoid the divergent read; see git history for the original).
 
-## int16/uint16 param spill writes full word (2026-08)
+## Duplicate nested function names emit colliding labels (2026-08)
 
-The generic param-spill path in `build_function_node` (aarch64) sizes stores
-by `size === 1` / `size === 4` branches only — an int16/uint16 param (2-byte
-slot) spills with a full-width `str`, clobbering the adjacent 6 stack bytes.
-Pre-existing (the promoted-param tranche kept the same shape for the
-non-promoted spill); no test covers an int16 param followed by another local
-today. Same pattern exists in `build_struct_node`'s custom-init spill loop.
-
-## Nested struct-with-methods cannot parse inside a function (2026-08)
-
-A `struct` containing methods declared inside a function body fails to parse
-("Unknown value: self") — so `build_struct_node`'s method builders can never
-run with an enclosing function's `register_allocations` live. The phase-4
-inline-body clearing covers the inlining paths that matter today; if nested
-structs ever parse, re-audit those builders for the same leakage.
-
-## Top-level inline-candidate scan misses nested functions (2026-08)
-
-`scan_inline_candidates` only scans ROOT statements, but the test harness
-(parse_with_imports) wraps all user code inside `main` — so user-defined
-`func`s are never function-inlined in tests (only `inline` struct methods,
-selected via `target_struct.functions`, inline). If whole-program inlining
-matters later, the scan should descend into function bodies (respecting
-MAX_INLINE_DEPTH).
+Found while extending `scan_inline_candidates` to nested function bodies
+(aarch64). Two sibling functions may each declare a same-named nested `func`
+(the checker accepts it — no duplicate-name rule across scopes), but both are
+emitted with the same flat label (`helper:` twice → assembler error). Standalone
+and call sites all use the unmangled name. Needs either a checker rule
+(unique nested names, mirroring the flat call namespace) or per-parent name
+mangling through call resolution. The inline scan defensively skips any name
+with more than one definition, so inlining can't silently pick the wrong body.

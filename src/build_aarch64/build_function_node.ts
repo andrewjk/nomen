@@ -579,6 +579,8 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 					} else {
 						if (size === 1) {
 							status.code += `strb ${reg.replace("x", "w")}, [x29, #${offset}]\n`;
+						} else if (size === 2) {
+							status.code += `strh ${reg.replace("x", "w")}, [x29, #${offset}]\n`;
 						} else if (size === 4) {
 							status.code += `str ${reg.replace("x", "w")}, [x29, #${offset}]\n`;
 						} else {
@@ -600,6 +602,8 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 						status.code += `ldr x9, [x29, #${overflow_placeholder(node.name, k)}]\n`;
 						if (size === 1) {
 							status.code += `strb w9, [x29, #${offset}]\n`;
+						} else if (size === 2) {
+							status.code += `strh w9, [x29, #${offset}]\n`;
 						} else if (size === 4) {
 							status.code += `str w9, [x29, #${offset}]\n`;
 						} else {
