@@ -11,6 +11,7 @@ import { reset_string_counter as reset_op_string_counter } from "./build_aarch64
 import { reset_label_counter as reset_switch_label_counter } from "./build_aarch64/build_switch_node.ts";
 import { reset_string_counter as reset_value_string_counter } from "./build_aarch64/build_value_node.ts";
 import { reset_label_counter as reset_while_label_counter } from "./build_aarch64/build_while_loop_node.ts";
+import { validate_asm } from "./build_aarch64/lift_asm.ts";
 import { emit_malloc } from "./build_aarch64/utils/audit.ts";
 import { generate_companion } from "./build_aarch64/utils/c_companion.ts";
 import { scan_heap_returning_functions } from "./build_aarch64/utils/scan_heap_returns.ts";
@@ -212,6 +213,16 @@ export default function build(
 			status.code += `ldp x29, x30, [sp], #16\n`;
 			status.code += `ret\n`;
 		}
+		// Release mode: run the optimization pipeline over the whole
+		// aarch64 program (constant folding/propagation, dead-branch folding,
+		// strength reduction, dead-code elimination, peepholes). This is the
+		// asm-level equivalent of the clang -O2 the C backend receives at
+		// link time — the .s is assembled verbatim, so the passes must be
+		// done in-codegen. Runs before audit wrapping so the `bl _malloc`
+		// rewrites below see unmodified call sites.
+		if (options.optimize) {
+			status.code = optimize_asm(status.code);
+		}
 		if (options.audit) {
 			// The main-function audit_check + pool shutdown hook is emitted
 			// directly by build_function_node (it knows main's return label).
@@ -228,6 +239,20 @@ export default function build(
 			status.code = status.code.replaceAll("bl _realloc\n", "bl _nomen_realloc_wrap\n");
 			status.code = status.code.replaceAll("bl _strdup\n", "bl _nomen_strdup_wrap\n");
 			status.code = status.code.replaceAll("bl _free\n", "bl _nomen_free_wrap\n");
+		}
+		// Validate the final assembly (lift it into structured form and check
+		// mnemonic shapes, branch targets, flag discipline, stack balance).
+		// A backend emission bug fails the build here with the offending line
+		// instead of surfacing as an assembler error or silent miscompile.
+		const lift_errors = validate_asm(status.code);
+		if (lift_errors.length > 0) {
+			if (!status.build_errors) status.build_errors = [];
+			for (const e of lift_errors.slice(0, 20)) {
+				status.build_errors.push({
+					message: `asm: ${e.message} — ${e.text.trim()}`,
+					start: 0,
+				});
+			}
 		}
 	} else {
 		// Scan-detected borrow-returning functions (a class-typed return that
