@@ -1,6 +1,7 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import { enum_with_data_side, static_enum_case } from "../build_c/utils/enum_eq.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
+import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import string_literal_length from "../build_common/string_literal_length.ts";
 import {
 	is_float_type as name_is_float_type,
@@ -18,7 +19,6 @@ import { get_source_address } from "./build_assignment_node.ts";
 import build_node from "./build_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free } from "./utils/audit.ts";
-import { has_flag_name, is_nullable_struct_type } from "./utils/nullable_struct.ts";
 import { allocate_stack_space, emit_var_address, emit_var_load } from "./utils/stack_var.ts";
 import { emit_pair_load_x29, emit_pair_store_x29 } from "./utils/string_pair.ts";
 import { get_field_has_offset, get_struct_size } from "./utils/struct_layout.ts";

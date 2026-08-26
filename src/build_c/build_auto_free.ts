@@ -1,13 +1,13 @@
 import { has_destroy, struct_needs_destroy } from "../build_common/destroy_analysis.ts";
 import { mono_type_name, resolve_struct_type } from "../build_common/mono_name.ts";
+import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
+import { is_string_borrow } from "../build_common/string_return_analysis.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import c_function_name from "./utils/c_function_name.ts";
-import is_string_borrow from "./utils/is_string_borrow.ts";
-import { has_flag_name, is_nullable_struct_type } from "./utils/nullable_struct.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import { is_view_value } from "./utils/view_value.ts";
 

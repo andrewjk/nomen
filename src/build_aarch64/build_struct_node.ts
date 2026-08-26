@@ -1,5 +1,6 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import { struct_needs_auto_destroy } from "../build_common/destroy_analysis.ts";
+import { is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import { moved_param_is_consumed } from "../build_common/scan_moved_param_consumed.ts";
 import string_literal_length from "../build_common/string_literal_length.ts";
 import { is_overloaded, mangled_label } from "../check/utils/function_overload.ts";
@@ -16,7 +17,6 @@ import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free, emit_strdup } from "./utils/audit.ts";
 import { emit_destroy_for_anchor_slot, emit_field_destroys } from "./utils/auto_destroy.ts";
 import { find_enum_for_case } from "./utils/enum_case.ts";
-import { is_nullable_struct_type } from "./utils/nullable_struct.ts";
 import {
 	emit_owning_buffer_destroy_aarch64,
 	emit_owning_buffer_standalone_aarch64,

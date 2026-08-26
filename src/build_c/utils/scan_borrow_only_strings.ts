@@ -1,7 +1,7 @@
+import { is_string_borrow } from "../../build_common/string_return_analysis.ts";
 import AssignmentNode from "../../nodes/AssignmentNode.ts";
 import type BaseNode from "../../nodes/BaseNode.ts";
 import ValueNode from "../../nodes/ValueNode.ts";
-import is_string_borrow from "./is_string_borrow.ts";
 
 const CHILD_KEYS = [
 	"value",

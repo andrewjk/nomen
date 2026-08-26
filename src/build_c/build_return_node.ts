@@ -4,6 +4,7 @@ import {
 	collect_expression_branch_values,
 	is_owned_string_branch_value,
 } from "../build_common/string_return_analysis.ts";
+import { is_string_borrow } from "../build_common/string_return_analysis.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
@@ -16,7 +17,6 @@ import type BuildStatus from "./BuildStatus.ts";
 import { reclaim_all_c_scopes } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
 import emit_allocations from "./utils/emit_allocations.ts";
-import is_string_borrow from "./utils/is_string_borrow.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import { is_view_value } from "./utils/view_value.ts";
 

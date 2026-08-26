@@ -1,6 +1,7 @@
 import emit_field_overrides from "../build/emit_field_overrides.ts";
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
+import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import string_literal_length from "../build_common/string_literal_length.ts";
 import { is_float_type } from "../built_in_types.ts";
 import { is_int_literal, to_decimal_string } from "../int_literal.ts";
@@ -17,7 +18,6 @@ import { emit_malloc } from "./utils/audit.ts";
 import { all_scope_frames, mark_moved_if_struct, find_anchor_slot } from "./utils/auto_destroy.ts";
 import { build_swap_params } from "./utils/build_swap.ts";
 import { find_enum_for_case } from "./utils/enum_case.ts";
-import { has_flag_name, is_nullable_struct_type } from "./utils/nullable_struct.ts";
 import { NUM_REG_ARGS } from "./utils/stack_args.ts";
 import {
 	allocate_stack_space,

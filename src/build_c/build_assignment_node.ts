@@ -1,5 +1,7 @@
 import emit_field_overrides from "../build/emit_field_overrides.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
+import { is_nullable_struct_type } from "../build_common/nullable_struct.ts";
+import { is_string_borrow } from "../build_common/string_return_analysis.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import AssignmentNode from "../nodes/AssignmentNode.ts";
@@ -15,8 +17,6 @@ import type BuildStatus from "./BuildStatus.ts";
 import c_function_name from "./utils/c_function_name.ts";
 import { find_decl_in_c_scopes, splice_decl_from_c_scopes } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
-import is_string_borrow from "./utils/is_string_borrow.ts";
-import { is_nullable_struct_type } from "./utils/nullable_struct.ts";
 import { c_view_string_arg } from "./utils/view_value.ts";
 
 let string_field_counter = 0;

@@ -1,3 +1,4 @@
+import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
@@ -10,7 +11,6 @@ import array_struct_name from "./utils/array_struct.ts";
 import c_function_name from "./utils/c_function_name.ts";
 import { find_decl_in_c_scopes } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
-import { has_flag_name, is_nullable_struct_type } from "./utils/nullable_struct.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import { c_view_string_arg } from "./utils/view_value.ts";
 

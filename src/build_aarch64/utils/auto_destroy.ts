@@ -6,6 +6,7 @@ import {
 	struct_needs_destroy,
 } from "../../build_common/destroy_analysis.ts";
 import { mono_type_name } from "../../build_common/mono_name.ts";
+import { superseded_param_temp_names } from "../../build_common/temp_anchor_consolidation.ts";
 import AccessNode from "../../nodes/AccessNode.ts";
 import type DeclarationNode from "../../nodes/DeclarationNode.ts";
 import StructNode from "../../nodes/StructNode.ts";
@@ -994,27 +995,17 @@ export function emit_cleanup_to_loop_depth(status: BuildStatus) {
  * the function may return the very same instance (e.g. `return x ?? fallback`),
  * so both anchors point at one allocation and one gets double-freed. The
  * result variable supersedes the temporary, so release the temporary's anchor
- * (mark it moved) to consolidate to a single owner.
+ * (mark it moved) to consolidate to a single owner. WHICH temporaries are
+ * superseded is the shared decision in
+ * `build_common/temp_anchor_consolidation.ts`; this side's action is marking
+ * the anchor slot moved.
  */
 export function consolidate_temp_anchors(
 	status: BuildStatus,
 	call_node: { node_type?: string; params?: any[]; mov_param_indices?: number[] } | undefined,
 	result_type_name: string | undefined,
 ) {
-	if (!call_node || call_node.node_type !== "func_call" || !call_node.params) return;
-	if (!result_type_name) return;
-	const is_class = !!status.structs.find((s) => s.name === result_type_name && s.is_class);
-	if (!is_class) return;
-	for (let i = 0; i < call_node.params.length; i++) {
-		const p = call_node.params[i];
-		if (p?.node_type !== "value") continue;
-		if (call_node.mov_param_indices?.includes(i)) continue;
-		const pname = p.value as string;
-		// Only hoisted call temporaries (_param_N) — plain variables may still
-		// be used after the call and must keep their own cleanup.
-		if (!pname.startsWith("_param_")) continue;
-		const ptype = p.type?.name;
-		if (ptype !== result_type_name) continue;
+	for (const pname of superseded_param_temp_names(status, call_node, result_type_name)) {
 		if (find_anchor_slot(status, pname) === undefined) continue;
 		if (!status.moved) status.moved = new Set<string>();
 		status.moved.add(pname);

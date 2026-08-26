@@ -1,9 +1,11 @@
 import emit_field_overrides from "../build/emit_field_overrides.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
+import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import {
 	collect_expression_branch_values,
 	is_owned_string_branch_value,
 } from "../build_common/string_return_analysis.ts";
+import { superseded_param_temp_names } from "../build_common/temp_anchor_consolidation.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
@@ -21,7 +23,6 @@ import type BuildStatus from "./BuildStatus.ts";
 import c_function_name from "./utils/c_function_name.ts";
 import { splice_decl_from_c_scopes } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
-import { has_flag_name, is_nullable_struct_type } from "./utils/nullable_struct.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import { c_materialize_view_string, is_view_value } from "./utils/view_value.ts";
 
@@ -323,7 +324,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			// result var and the temporary would then point at one
 			// allocation and auto_free would double-free. The result var
 			// supersedes the temporary, so drop the temporary from
-			// scoped_declarations. Mirrors aarch64 consolidate_temp_anchors.
+			// scoped_declarations (shared decision with the aarch64 backend).
 			if (node.value?.node_type === "func_call") {
 				consolidate_temp_anchors(status, node.value as FunctionCallNode, node.type.name);
 			}
@@ -690,28 +691,18 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
  * When a class-typed variable captures the result of a call that also
  * received a same-type class temporary as a non-mov arg (the hoisted
  * `_param_N` for e.g. `Box(5)`), the callee may return that very instance
- * (e.g. `return x ?? fallback`). Both the result var and the temporary
- * would then point at one allocation and auto_free would double-free. The
- * result variable supersedes the temporary, so drop the temporary from
- * scoped_declarations to consolidate to a single owner. Mirrors the
- * aarch64 backend's `consolidate_temp_anchors`.
+ * (e.g. `return x ?? fallback`). The result variable supersedes the
+ * temporary, so drop it from scoped_declarations to consolidate to a single
+ * owner. WHICH temporaries are superseded is the shared decision in
+ * `build_common/temp_anchor_consolidation.ts`; this side's action is
+ * removing them from C scope bookkeeping.
  */
 function consolidate_temp_anchors(
 	status: BuildStatus,
 	call_node: FunctionCallNode,
 	result_type_name: string,
 ) {
-	const is_class = !!status.structs.find((s) => s.name === result_type_name && s.is_class);
-	if (!is_class) return;
-	for (let i = 0; i < call_node.params.length; i++) {
-		const p = call_node.params[i];
-		if (p?.node_type !== "value") continue;
-		if (call_node.mov_param_indices?.includes(i)) continue;
-		const pname = (p as ValueNode).value;
-		// Only hoisted call temporaries (_param_N) — plain variables may
-		// still be used after the call and must keep their own cleanup.
-		if (!pname.startsWith("_param_")) continue;
-		if ((p as ValueNode).type?.name !== result_type_name) continue;
+	for (const pname of superseded_param_temp_names(status, call_node, result_type_name)) {
 		const di = status.scoped_declarations.findIndex((d) => d.name === pname);
 		if (di === -1) continue;
 		status.scoped_declarations.splice(di, 1);

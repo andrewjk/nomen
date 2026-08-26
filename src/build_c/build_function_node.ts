@@ -1,4 +1,5 @@
 import { mono_type_name } from "../build_common/mono_name.ts";
+import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import { moved_param_is_consumed } from "../build_common/scan_moved_param_consumed.ts";
 import BitsetNode from "../nodes/BitsetNode.ts";
 import type BlockNode from "../nodes/BlockNode.ts";
@@ -22,7 +23,6 @@ import c_function_name from "./utils/c_function_name.ts";
 import { enter_c_scope, leave_c_scope } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
 import { set_c_thin_strings } from "./utils/c_type.ts";
-import { has_flag_name, is_nullable_struct_type } from "./utils/nullable_struct.ts";
 import { emit_raw_string_adapter, raw_string_abi_needed } from "./utils/raw_string_abi.ts";
 import scan_borrow_only_strings from "./utils/scan_borrow_only_strings.ts";
 

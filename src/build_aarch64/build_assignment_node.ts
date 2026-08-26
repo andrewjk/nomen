@@ -1,5 +1,6 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
+import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import { is_float_type } from "../built_in_types.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
@@ -24,7 +25,6 @@ import {
 	mark_moved_if_struct,
 	record_heap_string_field,
 } from "./utils/auto_destroy.ts";
-import { has_flag_name, is_nullable_struct_type } from "./utils/nullable_struct.ts";
 import {
 	allocate_stack_space,
 	emit_deref_var_address,

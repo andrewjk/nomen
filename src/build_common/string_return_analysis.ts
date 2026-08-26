@@ -1,4 +1,7 @@
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
+import type AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
+import type AccessNode from "../nodes/AccessNode.ts";
+import type BaseNode from "../nodes/BaseNode.ts";
 import type FunctionNode from "../nodes/FunctionNode.ts";
 import type StructNode from "../nodes/StructNode.ts";
 import type TraitNode from "../nodes/TraitNode.ts";
@@ -56,6 +59,27 @@ export function is_container_borrow_access(node: any): boolean {
 		!node.access.owned_return &&
 		is_container_borrow_accessor_name(node.access.name)
 	);
+}
+
+/**
+ * Whether a value node denotes a BORROWED string — a pointer into storage the
+ * receiver does not own (an array element accessed via `.at()`/`.first()`, or
+ * `init.args.at(n)` which points into the C runtime's `argv`). Borrowed
+ * strings must NOT be freed by auto_free or by reassignment: freeing them
+ * reclaims memory owned by the container (or argv), crashing with
+ * "pointer being freed was not allocated". A method with `owned_return`
+ * (`mov out T`) produces a fresh allocation, not a borrow, so it remains
+ * owned. This is the C backend's per-expression borrow test; it is defined
+ * here so the accessor-name rule has exactly one source (the aarch64
+ * backend's heap-string ownership tracking classifies through the same
+ * `.at`/`.first` call-site rule via `is_call_site_borrow_accessor`).
+ */
+export function is_string_borrow(node: BaseNode | undefined): boolean {
+	if (!node || node.node_type !== "access") return false;
+	const access = (node as AccessNode).access;
+	if (access.node_type !== "access_func") return false;
+	const func = access as AccessFunctionCallNode;
+	return is_call_site_borrow_accessor(func.name) && !func.owned_return;
 }
 
 /**

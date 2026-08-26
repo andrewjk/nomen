@@ -3,6 +3,7 @@ import {
 	struct_needs_destroy,
 } from "../build_common/destroy_analysis.ts";
 import { mono_struct_name, mono_type_name } from "../build_common/mono_name.ts";
+import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import { classify_param } from "../build_common/param_classify.ts";
 import { moved_param_is_consumed } from "../build_common/scan_moved_param_consumed.ts";
 import { is_overloaded, mangled_label } from "../check/utils/function_overload.ts";
@@ -22,7 +23,6 @@ import c_function_name from "./utils/c_function_name.ts";
 import { enter_c_scope, leave_c_scope } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
 import { set_c_thin_strings } from "./utils/c_type.ts";
-import { has_flag_name, is_nullable_struct_type } from "./utils/nullable_struct.ts";
 import {
 	emit_owning_buffer_body,
 	emit_owning_buffer_string_body,

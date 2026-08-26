@@ -21,12 +21,12 @@ Text passes can't see liveness; the AST has no per-function CFG.
 
 ## Architecture (agreed)
 
-| Phase | Scope                                                                                                       | Status                             |
-| ----- | ----------------------------------------------------------------------------------------------------------- | ---------------------------------- |
-| **1** | Asm lifter + validator; wire into every build; round-trip fidelity                                          | ✅ DONE, suite green pre-crash     |
+| Phase | Scope                                                                                                       | Status                                                                      |
+| ----- | ----------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| **1** | Asm lifter + validator; wire into every build; round-trip fidelity                                          | ✅ DONE, suite green pre-crash                                              |
 | **2** | Frame-slot forwarding + dead-store elimination over the lifted IR (`asm_opt.ts`)                            | ✅ DONE — suite green (2468 tests); measured −1…−5% broad, regex-redux −17% |
-| **3** | Extract duplicated semantic lowering (ownership/borrows/moves) into `build_common/` shared by BOTH backends | not started                        |
-| **4** | Single canonical IR from the check phase; aarch64 gets real regalloc; eventually NEON                       | endgame                            |
+| **3** | Extract duplicated semantic lowering (ownership/borrows/moves) into `build_common/` shared by BOTH backends | ✅ DONE — first tranche landed, suite green (253 files / 2468 tests)        |
+| **4** | Single canonical IR from the check phase; aarch64 gets real regalloc; eventually NEON                       | endgame                                                                     |
 
 ## Phase 1 — lifter + validator (DONE)
 
@@ -102,16 +102,14 @@ Tests: `test/frame_slots.test.ts` — 10 unit cases (forwarding, dead store,
 redundant load, idiom normalization, escape, call clobber/survival, label
 flush, width mismatch).
 
-### Current state at crash ⚠️
+### Post-crash state (resolved)
 
-- Last applied fix: `bl`/`blr` now `flush_all()` + kill caller-saved
-  availability (pending stores sourced from caller-saved regs were surviving
-  across the call). This was expected to make ALL 10 unit tests pass, but
-  **tests were NOT re-run after the fix**.
-- Full suite has **NOT** been run since `asm_opt` was wired into `build()`.
-- Benchmarks have **NOT** been measured.
+The crash-time checklist below has since been completed: frame-slot unit
+tests 10/10, full suite green (2468), `vp check` clean. Benchmarks were
+NOT re-measured after the final `bl`/`blr` flush fix (transform is
+perf-foundation work; measure alongside the next perf change).
 
-### Resume checklist (in order)
+<details><summary>Original resume checklist (completed)</summary>
 
 1. `npm test test/frame_slots.test.ts` — expect 10/10.
 2. `npm test` — full suite (validator + transform now run inside EVERY
@@ -128,13 +126,46 @@ flush, width mismatch).
    normalize) via targeted disables; if neutral: keep (foundation) and
    proceed; if wins: update IMPROVEMENTS.md item 30 + PERF.md.
 
+</details>
+
+## Phase 3 — shared semantic lowering (DONE, first tranche)
+
+The semantic DECISIONS that both backends must make identically now live in
+`build_common/`; each backend keeps only its own emission action. Landed:
+
+1. `build_common/view_value.ts` (borrows) — `value_struct_name` +
+   `is_view_value` were byte-identical copies in both backends'
+   `utils/view_value.ts`. The shared layer takes a structural
+   `ViewValueStatus`; the backend files keep only their emit halves
+   (`c_view_string_arg` / `c_materialize_view_string` /
+   `emit_view_string_arg` / `emit_view_materialize_owned`) and re-export
+   `is_view_value`.
+2. `build_common/nullable_struct.ts` (value semantics) —
+   `is_nullable_struct_type` / `has_nullable_struct_field` / `has_flag_name`
+   unified; both backend copies deleted, 16 call sites re-pointed.
+3. `build_common/temp_anchor_consolidation.ts` (ownership) — WHICH hoisted
+   `_param_N` class temporaries are superseded by a capturing result var is
+   now one function (`superseded_param_temp_names`). C's action: splice from
+   `scoped_declarations`; aarch64's action: mark the anchor slot moved.
+4. `is_string_borrow` moved into `build_common/string_return_analysis.ts`,
+   defined via the existing `is_call_site_borrow_accessor`, so the
+   `.at`/`.first` borrow-name rule has exactly one source; aarch64's
+   return-site normalization check now consumes the same predicate.
+
+Verification: `npm run check` clean, full suite green (253 files / 2468
+tests), no codegen changes expected (refactor-only).
+
+Remaining duplication candidates (recorded for later, not extracted):
+
+- `collect_allocations` walk (`emit_allocations.ts` both backends) — the two
+  versions intentionally differ (C collects LetNode values for statement
+  hoisting; aarch64 does not need to). Extraction needs an options flag.
+- Owning-Buffer element specialization decision (`has_string_fields` vs the
+  C side's `struct_needs_destroy || has_string_fields`): the aarch64 copy of
+  `has_string_fields` could move to common alongside `destroy_analysis.ts`.
+
 ## Later phases (design notes)
 
-- **Phase 3**: the real duplication between backends is semantic lowering
-  (ownership, borrows, moves, heap-string frees) implemented twice in
-  `build_c/` and `build_aarch64/` — source of documented "backend
-  divergence" fixes. Extract into `build_common/` producing the same IR shape
-  both backends consume.
 - **Phase 4**: single canonical IR out of the check phase; aarch64 lowers
   IR→regs with whole-function register allocation (today only loop vars with
   ≥3 reads get promoted); NEON auto-vectorization is the big float lever

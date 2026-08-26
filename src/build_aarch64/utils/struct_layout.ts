@@ -1,9 +1,9 @@
 import type BuildStatus from "../../build_c/BuildStatus.ts";
+import { is_nullable_struct_type } from "../../build_common/nullable_struct.ts";
 import { get_built_in_type } from "../../built_in_types.ts";
 import DeclarationNode from "../../nodes/DeclarationNode.ts";
 import ValueNode from "../../nodes/ValueNode.ts";
 import aarch64_size from "./aarch64_size.ts";
-import { is_nullable_struct_type } from "./nullable_struct.ts";
 
 const VT_SIZE = 8;
 

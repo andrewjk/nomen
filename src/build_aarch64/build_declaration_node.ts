@@ -3,6 +3,7 @@ import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import { struct_needs_destroy } from "../build_common/destroy_analysis.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
+import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import string_literal_length from "../build_common/string_literal_length.ts";
 import {
 	collect_expression_branch_values,
@@ -39,7 +40,6 @@ import {
 } from "./utils/auto_destroy.ts";
 import { build_swap_params } from "./utils/build_swap.ts";
 import { find_enum_for_case } from "./utils/enum_case.ts";
-import { has_flag_name, is_nullable_struct_type } from "./utils/nullable_struct.ts";
 import { NUM_REG_ARGS } from "./utils/stack_args.ts";
 import {
 	allocate_stack_space,

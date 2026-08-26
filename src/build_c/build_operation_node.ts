@@ -1,3 +1,4 @@
+import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
@@ -5,7 +6,6 @@ import build_node from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import c_type from "./utils/c_type.ts";
 import { enum_with_data_side, static_enum_case } from "./utils/enum_eq.ts";
-import { has_flag_name, is_nullable_struct_type } from "./utils/nullable_struct.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import { c_view_string_arg, is_view_value } from "./utils/view_value.ts";
 

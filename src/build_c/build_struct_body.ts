@@ -1,4 +1,5 @@
 import { mono_type_name } from "../build_common/mono_name.ts";
+import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import StructNode from "../nodes/StructNode.ts";
 import TraitNode from "../nodes/TraitNode.ts";
 import Type from "../nodes/Type.ts";
@@ -6,7 +7,6 @@ import build_node from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import c_type, { c_typedef_name } from "./utils/c_type.ts";
 import is_system_definition from "./utils/is_system_definition.ts";
-import { has_flag_name, is_nullable_struct_type } from "./utils/nullable_struct.ts";
 
 export default function build_struct_body(node: StructNode, status: BuildStatus) {
 	if (node.is_generic) return;

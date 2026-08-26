@@ -1,7 +1,9 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
+import { is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import string_literal_length from "../build_common/string_literal_length.ts";
 import {
 	collect_expression_branch_values,
+	is_call_site_borrow_accessor,
 	is_container_borrow_access,
 	is_owned_string_branch_value,
 } from "../build_common/string_return_analysis.ts";
@@ -25,7 +27,6 @@ import {
 	mark_moved_if_struct,
 	release_heap_string_fields,
 } from "./utils/auto_destroy.ts";
-import { is_nullable_struct_type } from "./utils/nullable_struct.ts";
 import { allocate_stack_space, emit_var_address, emit_var_store } from "./utils/stack_var.ts";
 import { emit_strdup_string } from "./utils/string_pair.ts";
 import { emit_struct_copy, get_struct_size } from "./utils/struct_layout.ts";
@@ -378,9 +379,9 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 	// Inside the call-site borrow accessors' OWN bodies (a function named
 	// `at`/`first`, e.g. `List<string>.at`'s `return self.items.load_T(i)`)
 	// the borrow passes through UNCHANGED: their call sites treat the result
-	// as a non-owned borrow and never free it (mirroring the C backend's
-	// `is_string_borrow`), so a copy would hand those callers a heap
-	// allocation they never free.
+	// as a non-owned borrow and never free it (the shared `is_string_borrow`
+	// rule), so a copy would hand those callers a heap allocation they never
+	// free.
 	const borrow_fn_name = status.current_function_name;
 	const borrow_mangled =
 		status.current_struct && borrow_fn_name
@@ -388,8 +389,7 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 			: undefined;
 	const normalizes_borrow_returns =
 		!!borrow_fn_name &&
-		borrow_fn_name !== "at" &&
-		borrow_fn_name !== "first" &&
+		!is_call_site_borrow_accessor(borrow_fn_name) &&
 		current_return_is_string(status) &&
 		// Either the function is classified heap-returning (its callers free
 		// every result) or it declares `mov out string` (the caller owns the
