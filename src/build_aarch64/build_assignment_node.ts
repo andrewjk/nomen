@@ -1,5 +1,6 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
+import { is_float_type } from "../built_in_types.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import AssignmentNode from "../nodes/AssignmentNode.ts";
@@ -130,7 +131,37 @@ function get_load_reg(reg: string, size: number): string {
 	return reg;
 }
 
-function emit_compound_op(op: string, status: BuildStatus) {
+/** Emit the combine step of a compound assignment (`n += 1`). Operands
+ *  arrive as raw bit patterns (old value in x1, RHS in x0). For float
+ *  targets the bit patterns must be combined with FP instructions — an
+ *  integer `add`/`sub`/`mul` on double bits produces garbage (e.g.
+ *  `x += 1.0` yielding nan). Result returns in x0, preserving the
+ *  integer-convention interface used by every call site. */
+/** Whether building this RHS provably leaves x1 (and x2) untouched, so a
+ *  compound assignment can keep the old value in x1 across it without the
+ *  stack spill/reload. A plain non-string value node (numeric/bool literal
+ *  or a plain variable) builds to x0 only; strings use the x0/x1 fat pair
+ *  and ref-param reads may route through scratch, so both stay on the slow
+ *  path. This is the hot idiom `i += 1` / `total += 0.5`. */
+function rhs_preserves_x1(node: AssignmentNode, status: BuildStatus): boolean {
+	if (node.right_value.node_type !== "value") return false;
+	const v = node.right_value as ValueNode;
+	if (v.type?.name === "string" || v.value.startsWith('"')) return false;
+	if (status.heap_strings?.has(v.value)) return false;
+	if (status.function_ref_params?.has(v.value)) return false;
+	return true;
+}
+
+function emit_compound_op(op: string, status: BuildStatus, target_is_float = false) {
+	if (target_is_float) {
+		status.code += `fmov d1, x1\n`;
+		status.code += `fmov d0, x0\n`;
+		if (op === "+=") status.code += `fadd d0, d1, d0\n`;
+		else if (op === "-=") status.code += `fsub d0, d1, d0\n`;
+		else if (op === "*=") status.code += `fmul d0, d1, d0\n`;
+		status.code += `fmov x0, d0\n`;
+		return;
+	}
 	if (op === "+=") status.code += `add x0, x1, x0\n`;
 	else if (op === "-=") status.code += `sub x0, x1, x0\n`;
 	else if (op === "*=") status.code += `mul x0, x1, x0\n`;
@@ -733,7 +764,10 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 
 		const size = find_var_size(name, status);
 		const lhs_decl = status.scoped_declarations.find((d) => d.name === name);
-		const lhs_type_name = lhs_decl?.type?.name ?? "";
+		// Inside a loop body the scoped-declaration table is swapped out (see
+		// find_var_size) — fall back to the checker's persistent variable
+		// types so a float `x += f` in a loop still lowers to fadd.
+		const lhs_type_name = lhs_decl?.type?.name ?? status.variable_types?.get(name)?.name ?? "";
 		const store_op = get_store_instruction(size);
 		const store_reg = get_store_reg("x0", size);
 		if (paramReg) {
@@ -741,13 +775,17 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 				status.code += `mov x2, ${paramReg}\n`;
 				build_node(node.right_value, status);
 				if (node.operator) {
+					// x0 holds the RHS; the old value lands in x1. (The
+					// historical `mov x1, x0` here clobbered the old value
+					// with the RHS, making `p += r` compute r + r.)
 					status.code += `\nstr x0, [sp, #-16]!\n`;
 					const load_op = get_load_instruction(size);
 					const load_reg = get_load_reg("x1", size);
 					status.code += `${load_op} ${load_reg}, [x2]\n`;
-					status.code += `mov x1, x0\n`;
+					status.code += `str x1, [sp, #-16]!\n`;
 					status.code += `ldr x0, [sp], #16\n`;
-					emit_compound_op(node.operator, status);
+					status.code += `ldr x1, [sp], #16\n`;
+					emit_compound_op(node.operator, status, is_float_type(lhs_type_name));
 				}
 				status.code += `\n${store_op} ${store_reg}, [x2]\n`;
 			} else {
@@ -828,20 +866,26 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 			if (node.operator) {
 				// Compound assignment (`n += 1`): read the current value through
 				// the caller's pointer, build the RHS, combine, and store back.
-				// Both the pointer and the old value must survive the RHS build,
-				// so they are spilled to the stack — build_node freely reuses
-				// x1/x2 as scratch.
+				// The pointer and the old value must survive a complex RHS
+				// build, so they are spilled to the stack — build_node freely
+				// reuses x1/x2 as scratch. A simple RHS (literal/plain var)
+				// touches neither, skipping both spills.
 				load_ref_param_pointer("x2", name, status);
 				const load_op = get_load_instruction(ref_size);
 				const load_reg = get_load_reg("x1", ref_size);
 				status.code += `${load_op} ${load_reg}, [x2]\n`;
-				status.code += `str x2, [sp, #-16]!\n`;
-				status.code += `str x1, [sp, #-16]!\n`;
+				const keep = rhs_preserves_x1(node, status);
+				if (!keep) {
+					status.code += `str x2, [sp, #-16]!\n`;
+					status.code += `str x1, [sp, #-16]!\n`;
+				}
 				build_node(node.right_value, status);
 				status.code += `\n`;
-				status.code += `ldr x1, [sp], #16\n`;
-				status.code += `ldr x2, [sp], #16\n`;
-				emit_compound_op(node.operator, status);
+				if (!keep) {
+					status.code += `ldr x1, [sp], #16\n`;
+					status.code += `ldr x2, [sp], #16\n`;
+				}
+				emit_compound_op(node.operator, status, is_float_type(ref_type_name));
 				status.code += `${ref_store_op} ${ref_store_reg}, [x2]\n`;
 			} else {
 				// Plain assignment. Build the RHS FIRST: its reads of the ref
@@ -883,11 +927,16 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 				} else {
 					status.code += `mov x1, ${alloc_reg_op}\n`;
 				}
-				status.code += `str x1, [sp, #-16]!\n`;
+				const keep = rhs_preserves_x1(node, status);
+				if (!keep) status.code += `str x1, [sp, #-16]!\n`;
 				build_node(node.right_value, status);
 				status.code += `\n`;
-				status.code += `ldr x1, [sp], #16\n`;
-				emit_compound_op(node.operator, status);
+				if (!keep) status.code += `ldr x1, [sp], #16\n`;
+				emit_compound_op(
+					node.operator,
+					status,
+					alloc_reg_op.startsWith("d") || is_float_type(lhs_type_name),
+				);
 				if (alloc_reg_op.startsWith("d")) {
 					status.code += `fmov ${alloc_reg_op}, x0\n`;
 				} else {
@@ -898,11 +947,12 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 				const load_op = get_load_instruction(size);
 				const load_reg = get_load_reg("x1", size);
 				status.code += `${load_op} ${load_reg}, [x1]\n`;
-				status.code += `str x1, [sp, #-16]!\n`;
+				const keep = rhs_preserves_x1(node, status);
+				if (!keep) status.code += `str x1, [sp, #-16]!\n`;
 				build_node(node.right_value, status);
 				status.code += `\n`;
-				status.code += `ldr x1, [sp], #16\n`;
-				emit_compound_op(node.operator, status);
+				if (!keep) status.code += `ldr x1, [sp], #16\n`;
+				emit_compound_op(node.operator, status, is_float_type(lhs_type_name));
 				emit_var_address(status, "x1", name);
 				status.code += `${store_op} ${store_reg}, [x1]\n`;
 			}
@@ -1224,9 +1274,11 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 				if (node.operator) {
 					// Compound assignment to a scalar struct field (e.g.
 					// `self.count += 1`): load the current value, build the RHS,
-					// apply the operator, and store the result back. Both the
-					// base address and the current value must survive the RHS
-					// build, so they are spilled to the stack.
+					// apply the operator, and store the result back. For a
+					// complex RHS the base address and current value are
+					// spilled to survive the build; a simple RHS (literal /
+					// plain var) touches neither x1 nor x2, so the base parks
+					// in x2 with no spills.
 					get_base_address(access, status, "x0");
 					if (field_size === 1) {
 						status.code += `ldrb w1, [x0, #${offset}]\n`;
@@ -1237,6 +1289,25 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 					} else {
 						status.code += `ldr x1, [x0, #${offset}]\n`;
 					}
+					if (rhs_preserves_x1(node, status)) {
+						status.code += `mov x2, x0\n`;
+						build_node(node.right_value, status);
+						if (!status.code.endsWith("\n")) {
+							status.code += "\n";
+						}
+						emit_compound_op(node.operator, status, is_float_type(field_type?.name ?? ""));
+						if (field_size === 1) {
+							status.code += `strb w0, [x2, #${offset}]\n`;
+						} else if (field_size === 2) {
+							status.code += `strh w0, [x2, #${offset}]\n`;
+						} else if (field_size === 4) {
+							status.code += `str w0, [x2, #${offset}]\n`;
+						} else {
+							status.code += `str x0, [x2, #${offset}]\n`;
+						}
+						build_swap(node, status);
+						return;
+					}
 					status.code += `str x0, [sp, #-16]!\n`;
 					status.code += `str x1, [sp, #-16]!\n`;
 					build_node(node.right_value, status);
@@ -1244,7 +1315,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 						status.code += "\n";
 					}
 					status.code += `ldr x1, [sp], #16\n`;
-					emit_compound_op(node.operator, status);
+					emit_compound_op(node.operator, status, is_float_type(field_type?.name ?? ""));
 					status.code += `ldr x1, [sp], #16\n`;
 					if (field_size === 1) {
 						status.code += `strb w0, [x1, #${offset}]\n`;

@@ -3,6 +3,7 @@ import { ALL_FLOAT_TYPES, SCALAR_TYPES } from "../built_in_types.ts";
 import WhileLoopNode from "../nodes/WhileLoopNode.ts";
 import build_block_node from "./build_block_node.ts";
 import build_node from "./build_node.ts";
+import { emit_cond_branch } from "./build_operation_node.ts";
 import { enter_scope_frame, exit_scope_frame } from "./utils/auto_destroy.ts";
 import collect_var_refs, { collect_declared_names } from "./utils/collect_var_refs.ts";
 import { emit_promoted_load, emit_promoted_store } from "./utils/stack_var.ts";
@@ -26,9 +27,18 @@ export default function build_while_loop_node(node: WhileLoopNode, status: Build
 
 	status.loop_labels = status.loop_labels || [];
 	const cleanup_depth = status.heap_cleanup_stack?.length ?? 0;
-	status.loop_labels.push({ start: continue_label, end: end_label, cleanup_depth });
+	status.loop_labels.push({
+		start: continue_label,
+		end: end_label,
+		cleanup_depth,
+	});
 
-	const promoted: { name: string; reg: string; offset: number; type_name: string }[] = [];
+	const promoted: {
+		name: string;
+		reg: string;
+		offset: number;
+		type_name: string;
+	}[] = [];
 	const saved_reg_allocs = status.register_allocations
 		? new Map(status.register_allocations)
 		: undefined;
@@ -45,7 +55,10 @@ export default function build_while_loop_node(node: WhileLoopNode, status: Build
 					existing.reads += info.reads;
 					if (info.address_taken) existing.address_taken = true;
 				} else {
-					all_refs.set(name, { reads: info.reads, address_taken: info.address_taken });
+					all_refs.set(name, {
+						reads: info.reads,
+						address_taken: info.address_taken,
+					});
 				}
 			}
 		};
@@ -58,7 +71,12 @@ export default function build_while_loop_node(node: WhileLoopNode, status: Build
 			merge_refs(collect_var_refs(node.update));
 		}
 
-		const eligible: { name: string; reads: number; offset: number; type_name: string }[] = [];
+		const eligible: {
+			name: string;
+			reads: number;
+			offset: number;
+			type_name: string;
+		}[] = [];
 		const redeclared = collect_declared_names({
 			node_type: "block",
 			statements: node.statements,
@@ -110,7 +128,12 @@ export default function build_while_loop_node(node: WhileLoopNode, status: Build
 				const reg = FLOAT_CALLEE_SAVED[d_idx];
 				status.register_allocations.set(v.name, reg);
 				used_d.add(reg);
-				promoted.push({ name: v.name, reg, offset: v.offset, type_name: v.type_name });
+				promoted.push({
+					name: v.name,
+					reg,
+					offset: v.offset,
+					type_name: v.type_name,
+				});
 				// The cached register must be loaded with the slot's width —
 				// bool/char/int8 slots are 1-byte strb stores, so a full-width
 				// `ldr` would pull dirty stack bytes into the cache.
@@ -124,7 +147,12 @@ export default function build_while_loop_node(node: WhileLoopNode, status: Build
 				const reg = CALLEE_SAVED_REGS[x_idx];
 				status.register_allocations.set(v.name, reg);
 				used_x.add(reg);
-				promoted.push({ name: v.name, reg, offset: v.offset, type_name: v.type_name });
+				promoted.push({
+					name: v.name,
+					reg,
+					offset: v.offset,
+					type_name: v.type_name,
+				});
 				emit_promoted_load(status, reg, v.offset, v.type_name);
 				x_idx++;
 			}
@@ -149,12 +177,12 @@ export default function build_while_loop_node(node: WhileLoopNode, status: Build
 		node.condition.node_type === "value" && (node.condition as any).value === "true";
 
 	if (!is_always_true) {
-		build_node(node.condition, status);
+		// Branch-aware condition lowering: comparisons branch directly off
+		// the operand `cmp` instead of materializing a 0/1 into x0 first.
+		emit_cond_branch(node.condition, end_label, false, status);
 		if (!status.code.endsWith("\n")) {
 			status.code += "\n";
 		}
-		status.code += `cmp x0, #0\n`;
-		status.code += `beq ${end_label}\n`;
 	}
 
 	build_block_node(node, status);

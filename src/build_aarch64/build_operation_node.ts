@@ -4,6 +4,7 @@ import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import string_literal_length from "../build_common/string_literal_length.ts";
 import {
 	is_float_type as name_is_float_type,
+	is_scalar_type,
 	is_unsigned_int_type as name_is_unsigned_int_type,
 } from "../built_in_types.ts";
 import { is_int_literal, parse_int_literal_bigint, to_decimal_string } from "../int_literal.ts";
@@ -27,12 +28,145 @@ let string_counter = 0;
 let coalesce_counter = 0;
 let view_cmp_counter = 0;
 let sc_counter = 0;
+let cond_branch_counter = 0;
 
 export function reset_string_counter() {
 	string_counter = 0;
 	coalesce_counter = 0;
 	view_cmp_counter = 0;
 	sc_counter = 0;
+	cond_branch_counter = 0;
+}
+
+/** Inverse of an AArch64 condition code. */
+function invert_cond(c: string): string {
+	switch (c) {
+		case "eq":
+			return "ne";
+		case "ne":
+			return "eq";
+		case "lt":
+			return "ge";
+		case "ge":
+			return "lt";
+		case "le":
+			return "gt";
+		case "gt":
+			return "le";
+		case "lo":
+			return "hs";
+		case "hs":
+			return "lo";
+		case "ls":
+			return "hi";
+		case "hi":
+			return "ls";
+		default:
+			return "ne";
+	}
+}
+
+/**
+ * Branch-aware condition lowering for `if` heads and `while` conditions.
+ * Emits code that branches to `target` exactly when `node` evaluates to
+ * `on_true`, else falls through. This replaces the generic
+ * materialize-then-test shape (`cmp; cset x0, cc; cmp x0, #0; b.eq`) with a
+ * direct `b.cc` / `b.<inverse-cc>` after the operand comparison, and lowers
+ * `&&` / `||` chains as short-circuit branch trees — the bounds-check guard
+ * idiom `i >= 0 && i < cap` drops from ~14 instructions to ~6. Operand
+ * evaluation (right-then-left, spill discipline, unsigned condition codes)
+ * matches build_operation_node's comparison path exactly, so semantics are
+ * unchanged. Comparisons of two integer literals fall back to the value
+ * path to keep the constant fold.
+ */
+export function emit_cond_branch(
+	node: BaseNode,
+	target: string,
+	on_true: boolean,
+	status: BuildStatus,
+) {
+	if (node.node_type === "op") {
+		const op_node = node as OperationNode;
+		const op = op_node.op;
+		if (op === "!" && op_node.right_value) {
+			emit_cond_branch(op_node.right_value, target, !on_true, status);
+			return;
+		}
+		if (op === "&&" && op_node.left_value && op_node.right_value) {
+			if (!on_true) {
+				// False if either side is false: branch out on the first
+				// false (short-circuits the right side).
+				emit_cond_branch(op_node.left_value, target, false, status);
+				emit_cond_branch(op_node.right_value, target, false, status);
+				return;
+			}
+			// True only if both are true: a false left side skips the
+			// (not taken) branch entirely.
+			const skip = `.Lcb_${cond_branch_counter++}`;
+			emit_cond_branch(op_node.left_value, skip, false, status);
+			emit_cond_branch(op_node.right_value, target, true, status);
+			status.code += `${skip}:\n`;
+			return;
+		}
+		if (op === "||" && op_node.left_value && op_node.right_value) {
+			if (on_true) {
+				emit_cond_branch(op_node.left_value, target, true, status);
+				emit_cond_branch(op_node.right_value, target, true, status);
+				return;
+			}
+			const skip = `.Lcb_${cond_branch_counter++}`;
+			emit_cond_branch(op_node.left_value, skip, true, status);
+			emit_cond_branch(op_node.right_value, target, false, status);
+			status.code += `${skip}:\n`;
+			return;
+		}
+		// Direct-branch fast path for comparisons the value builder lowers
+		// to a plain `cmp x1, x2` on bit patterns: both operands plain
+		// non-literal value nodes of SCALAR type. Everything else — struct
+		// equality via operator_func, enum-with-data tag/payload compares,
+		// nullable-struct `== null`, string/view equality — must fall back
+		// to build_node, which performs the special lowering.
+		const left_scalar =
+			op_node.left_value !== undefined &&
+			is_scalar_type(type_from_value_node(op_node.left_value)?.name ?? "");
+		const right_scalar =
+			op_node.right_value !== undefined &&
+			is_scalar_type(type_from_value_node(op_node.right_value)?.name ?? "");
+		if (
+			is_comparison(op) &&
+			left_scalar &&
+			right_scalar &&
+			op_node.left_value?.node_type === "value" &&
+			op_node.right_value?.node_type === "value" &&
+			!is_int_literal((op_node.left_value as ValueNode).value) &&
+			!is_int_literal((op_node.right_value as ValueNode).value)
+		) {
+			const need_spill = !is_simple(op_node.left_value);
+			build_operand(op_node.right_value, "x2", status);
+			if (!status.code.endsWith("\n")) status.code += "\n";
+			if (need_spill) {
+				status.code += `str x2, [sp, #-16]!\n`;
+			}
+			build_operand(op_node.left_value, "x1", status);
+			if (!status.code.endsWith("\n")) status.code += "\n";
+			if (need_spill) {
+				status.code += `ldr x2, [sp], #16\n`;
+			}
+			const unsigned =
+				is_unsigned_type(op_node.left_value) || is_unsigned_type(op_node.right_value);
+			status.code += `cmp x1, x2\n`;
+			const cond = map_cmp(op, unsigned);
+			status.code += `b.${on_true ? cond : invert_cond(cond)} ${target}\n`;
+			return;
+		}
+	}
+	// Fallback: materialize the boolean (0/1) into x0 and test it. Keeps
+	// the constant-fold path (literal comparisons) and arbitrary boolean
+	// expressions working unchanged.
+	build_node(node, status);
+	if (!status.code.endsWith("\n")) status.code += "\n";
+	status.code += `cmp x0, #0\n`;
+	status.code += `${on_true ? "bne" : "beq"} ${target}\n`;
 }
 
 function is_comparison(op: string): boolean {

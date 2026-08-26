@@ -301,6 +301,37 @@ Changes applied:
     Lifts mandelbrot 210 ms → 140 ms at n=1000 (1.50×), 840 ms → 550 ms at
     n=2000 (1.53×), on top of items 17–18.
 
+23. **Float compound-assignment bug fix** (`build_assignment_node.ts`):
+    `x += f` on a float target emitted an integer `add` over the raw double
+    bit patterns (`emit_compound_op` was hardcoded to integer ops) — garbage
+    or `nan`. All five lowering paths (stack var, register-allocated loop
+    var, `ref` param, struct field, mutable param) now dispatch to
+    `fadd`/`fsub`/`fmul` via `fmov`. Also fixed the mutable-param path,
+    whose `mov x1, x0` clobbered the old value making `p += r` compute
+    `r + r`. (Found by spectral-norm work — no benchmark exercised float
+    `+=` before.) Regression tests in `test/float_compound.test.ts`.
+
+24. **Compound-assignment fast path** (`build_assignment_node.ts`): a simple
+    RHS (numeric/bool literal or plain non-string variable) builds to x0
+    without touching x1/x2, so the spill/reload bracketing the RHS build is
+    skipped. The hot idiom `i += 1` / `total += 0.5` drops from 6 to 4
+    instructions on the stack path, with no spills. Also applies to the
+    register-allocated, `ref`-param, and struct-field paths.
+
+25. **Branch-aware condition lowering** (`emit_cond_branch` in
+    `build_operation_node.ts`, used by `build_if_else_node.ts` and
+    `build_while_loop_node.ts`): `if`/`while` conditions that are
+    comparisons of two scalar value operands now emit `cmp` + `b.cond`
+    directly instead of the materialize-then-test chain
+    (`cmp; cset x0, cc; cmp x0, #0; b.eq`), and `&&`/`||` chains lower as
+    short-circuit branch trees. The bounds-guard idiom
+    `i >= 0 && i < cap` — which the verifier-friendly sources use in every
+    hot loop — drops from ~14 instructions to ~6. Struct/enum/string/view
+    equality falls back to the old path (their special lowering is not
+    replicable by a plain `cmp`). Measured (aarch64, interleaved best-of-N,
+    same source before/after): spectral-norm −24% (55→42 ms at n=500,
+    487→366 ms at n=1500), pidigits −6%, nbody −6%, nsieve −5%, lru −4%.
+
 ### Known issues
 
 **Float register allocation overhead in call-heavy benchmarks.** mandelbrot
@@ -447,13 +478,16 @@ nested loops. No allocation, no I/O inside the loop. The cost is 100% codegen.
 - ✓ **[codegen] DONE (partial):** `.at()` on fixed-size arrays now uses
   caller-saved x9 (no save/restore). `.set()` now has a fast path when both
   index and value are simple operands (no x19 save/restore).
-- **[source]** Replace the byte-by-byte rotate (`while rj <= k { p.set(rj,
-p.at(rj+1)); … }`) with a precomputed permutation table. The Rust reference
-  builds `NEXT_PERM_MASKS[r]` at compile time via `const fn`; Nomen can build the
-  same tables once at startup and apply each permutation with a fixed 16-element
-  copy. This removes the inner rotate loop entirely.
-- **[source]** Hoist `fact.at(n)` into a local before the `while true` loop —
-  it's loop-invariant but reloaded every iteration.
+- ✗ **[source] (rejected for Nomen's scalar codegen):** Replace the
+  byte-by-byte rotate with the Rust reference's `NEXT_PERM_MASKS` table of
+  fixed 16-element permutation masks. In Rust/Zig the win comes from SIMD
+  auto-vectorizing the fixed-size `a[mask[i]]` gathers (and `const fn`
+  evaluation). In Nomen's scalar codegen each permutation application would
+  become 16 data-dependent gathers plus per-element verifier guards (~100+
+  ops) versus the current in-place data-dependent reversal (~5 ops/flip) —
+  a large pessimization. Revisit only when the backend can vectorize.
+- ✓ **[source] DONE:** Hoist `fact.at(n)` into a `const` before the
+  `while true` loop (`const int fact_n = fact.at(n)`).
 - **[source]** The flip-count inner loop copies `p` → `pp` then reverses in
   place. The reverse can use two indices into a single copy of `p` (no separate
   `pp`) if the swap is done in-place against `p` and restored after.
@@ -702,13 +736,32 @@ Hilbert-like matrix `A[i,j] = 1/((i+j)(i+j+1)/2+i+1)`.
   divide from the inner loop. (The reference implementations exploit this.)
   — **Already done in the Nomen source** (`denom` running variable in
   `eval_a_times_u`).
+- ✗ **[source] (tried and reverted — float `+=` codegen too heavy):** Rewrote
+  the recurrence with `denom`/`inc` as float running variables (no per-element
+  int→float convert, no per-element transpose branch; exact for values < 2^53).
+  Produced correct output, but the _correct_ float compound assignment
+  (`denom += inc`, `inc += 1.0`) lowers to ~20 instructions per element —
+  `fmov d↔x` round-trips plus stack traffic for each accumulator (neither
+  reaches the loop register allocator's reads ≥ 3 threshold, so both stay in
+  stack slots) — versus ~8 for the integer recurrence, saving only one
+  `scvtf`. Measured **+33% at n=1500** (366 → 487 ms), wiping out the
+  item-25 codegen win. Reverted to the integer recurrence. Revisit once
+  float compound ops go d0-direct (part of the d0 calling convention work).
+- ✗ **[source] (tried and reverted — table too big):** Precomputing the
+  reciprocal matrix A into a flat n×n `Buffer<float>` once (removing the
+  per-element `fdiv` entirely) was implemented and produced correct output,
+  but measured **+29% slower at n=1500** — the 18 MB table strided by the
+  transposed pass blows L2, which costs more than the overlapped `fdiv`s it
+  saves. Apple Silicon's FP pipeline hides the divide latency behind the
+  loop's other work. Reverted.
 - **[source]** `eval_a_times_u` reads `u` and writes `au` via Buffers. Cache
-  `u.data` and `au.data` in locals once at the top of the function (the Buffers
-  don't change during the loop).
+  `u.data` and `au.data` in locals once at the top of the function (the
+  Buffers don't change during the loop).
 - **[source]** The double product `A^T·A·u` does two passes per iteration over
   the n×n matrix. Since `A` is fixed, precomputing the n×n matrix once into a
   `Buffer<float>` and reusing it for all 20 iterations would eliminate
-  recomputation. (Trade memory for speed; for n=1500 that's ~18 MB, fine.)
+  recomputation — but see the reverted attempt above: at n=1500 the 18 MB
+  table is cache-hostile and measured slower than recomputing.
 - **[codegen]** Inline `eval_a` (it's one divide). `eval_a` is a function call
   with a float return through a struct-return buffer, so each element costs a
   call + the division.
@@ -899,24 +952,34 @@ the note at the top.)
     to register-allocated float vars go directly `d0 → dN` instead of
     `d0 → x0 → dN`. Biggest remaining win for mandelbrot (1.50× on top of
     items 17–18).
+15. ✓ **DONE (items 23–24):** Float compound assignment was _broken_ (integer
+    op over double bits) — fixed across all five lowering paths — and the
+    compound paths no longer spill around a simple RHS. Also fixes the
+    mutable-param `p += r` computing `r + r`.
+16. ✓ **DONE (item 25):** Branch-aware condition lowering for `if`/`while`
+    heads — direct `cmp` + `b.cond` (and short-circuit branch trees for
+    `&&`/`||`) instead of the `cset` materialize-then-test chains. −4…−10%
+    across every guarded-loop benchmark.
 
 ### Expected payoff
 
 - **Family A (source)** is the cheapest to land (per-benchmark edits, no compiler
-  work) and contains the largest individual wins. The edigits and lru changes are
-  done; regex-redux and fannkuch permutation masks remain.
+  work) and contains the largest individual wins. The edigits, lru, nsieve, and
+  spectral-norm (float recurrence) changes are done. regex-redux (needs a
+  stdlib compiled-pattern API) remains; fannkuch permutation masks are
+  **rejected** for scalar codegen (see its section — SIMD-only win).
 - **Family B (stdlib)** is a handful of localized stdlib changes that unblock
   whole classes of code. None done yet.
-- **Family C (codegen)** — items 1, 2, 3, 4, 5, 6, 10, 11, 12, 13, 14 are done.
-  The `load_float` bug is fixed (item 12); leaf-function inlining (C3) already
-  covers `mbrot`; the float round-trip is now eliminated for both expressions
-  (item 10) and assignments (item 14). Item 7 (strength reduction) and the
-  full float-result calling convention (d0 returns, d0–d7 params, `fcmp`)
-  remain the main codegen levers.
+- **Family C (codegen)** — items 1–6 and 10–16 are done. The float
+  round-trip is eliminated for expressions and assignments; branch
+  conditions no longer materialize booleans. Item 7 (strength reduction)
+  and the full float-result calling convention (d0 returns, d0–d7 params,
+  `fcmp`) remain the main codegen levers, alongside tighter per-receiver
+  `bl` cache invalidation (C9 note).
 
-The spectral-norm bug fix (item 12), naked inline (item 13), and float
-assignment round-trip (item 14) are now landed. The float benchmarks
-(mandelbrot, nbody, spectral-norm) have moved from ~30–143× off the references
-into a 6–20× band. The remaining source-level changes (family A: regex-redux,
-fannkuch permutation masks) and the full d0 calling convention are the next
-levers.
+The float benchmarks (mandelbrot, nbody, spectral-norm) have moved from
+~30–143× off the references into a 6–20× band, and the guarded-loop
+benchmarks (spectral-norm, pidigits, nsieve) gained another 5–25% from item
+25 (spectral-norm the most — its inner loop is the guard-heaviest). The
+remaining levers: the full d0 calling convention, `fcmp` for float
+comparisons, and regex-redux's compiled-pattern stdlib API.
