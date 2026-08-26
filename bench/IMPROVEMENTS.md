@@ -792,6 +792,13 @@ N-body simulation, 5 bodies, `n` steps. Float-heavy inner loop with `Math.sqrt`.
   whole-`Body` materialization.
 - ✓ **[codegen] DONE:** Float loop locals (`dx`, `dy`, `dz`, `dist`, `mag`, …)
   now promoted to `d8`–`d15` registers.
+- ✓ **[codegen] DONE (whole-function regalloc, ASM_PLAN phase 4):** the
+  hottest scalar locals (`advance`'s `dx/dy/dz/dist/mag` population) are now
+  promoted for the ENTIRE function at declaration time — no loop-entry
+  load / loop-exit store brackets, and reads outside loops hit registers too.
+  Escape-aware: ref-passed, shadowed, and address-taken names are excluded.
+  nbody 134 ms → 121 ms at n=500000 (~10%); rest of the suite neutral
+  (best-of-7 interleaved).
 - The Body is 7 floats = 56 bytes; `.at(i)` materializes the whole thing.
   Passing `ref Body[5]` is correct but the access pattern defeats locality.
 

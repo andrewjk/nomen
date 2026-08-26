@@ -185,3 +185,87 @@ Console.write("idx=\\{idx} n=\\{n}")
 `;
 	await build_and_check_output(input, "bool_promoted_byte_load", "idx=42 n=1");
 });
+
+// Whole-function register allocation (phase 4): a scalar local read ≥4 times
+// across the function is promoted into a callee-saved register at its
+// declaration (initialized in the register, no loop load/store brackets) and
+// must survive calls (callee-saved), reassignment, and sub-word widths.
+test("whole-function promoted int survives calls and reassignment", async () => {
+	const input = `
+func step = (int v, out int) {
+  return v + 1
+}
+
+var acc = 0
+var guard = 0
+while guard < 10 {
+  acc = step(acc) + acc
+  guard = guard + 1
+}
+Console.write("acc=\\{acc}")
+`;
+	// acc doubles + 1 each iteration: 2^10 - 1.
+	await build_and_check_output(input, "wholefunc_promoted_int", "acc=1023");
+});
+
+// A ref-passed variable must NOT be whole-function promoted (the callee
+// writes through &slot; a register copy would go stale), while a hot sibling
+// local still promotes.
+test("ref-passed local excluded from whole-function promotion", async () => {
+	const input = `
+func bump = (ref int acc) {
+  acc = acc + 1
+}
+
+var total = 0
+var k = 0
+while k < 5 {
+  total = total + k
+  k = k + 1
+}
+bump(ref total)
+bump(ref total)
+bump(ref total)
+bump(ref total)
+Console.write("total=\\{total}")
+`;
+	// 0+0+1+2+3+4 = 10, then four bumps → 14.
+	await build_and_check_output(input, "wholefunc_ref_excluded", "total=14");
+});
+
+// A name shadowed by a second declaration anywhere in the function must not
+// be whole-function promoted (the two instances would share one register).
+test("shadowed name excluded from whole-function promotion", async () => {
+	const input = `
+var x = 1
+var i = 0
+while i < 3 {
+  x = x * 2
+  i = i + 1
+}
+var out = 0
+if x > 4 {
+  var x = 100
+  x = x + 1
+  out = x
+}
+Console.write("out=\\{out}")
+`;
+	await build_and_check_output(input, "wholefunc_shadow_excluded", "out=101");
+});
+
+// A whole-function promoted float lives in a callee-saved d-register for the
+// entire function; its literal initializer must initialize the register.
+test("whole-function promoted float initializes in register", async () => {
+	const input = `
+var float f = 1.0
+var i = 0
+while i < 8 {
+  f = f * 1.5 + f * 0.5
+  i = i + 1
+}
+Console.write("f=\\{f}")
+`;
+	// f doubles each iteration: 2^8 = 256.
+	await build_and_check_output(input, "wholefunc_promoted_float", "f=256");
+});

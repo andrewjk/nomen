@@ -1975,23 +1975,24 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 					if (!status.code.endsWith("\n")) {
 						status.code += "\n";
 					}
-					if (size === 1) {
-						status.code += `strb w0, [x29, #${offset}]\n`;
-					} else if (size === 4) {
-						status.code += `str w0, [x29, #${offset}]\n`;
-					} else if (size === 16 && node.type.name === "string") {
+					if (size === 16 && node.type.name === "string") {
 						// Fat string: the value build leaves the (ptr, len)
 						// pair in x0/x1 — store both words.
 						emit_pair_store_x29(status, offset);
 					} else {
-						status.code += `str x0, [x29, #${offset}]\n`;
+						// Whole-function-promoted scalars live in a
+						// callee-saved register — the declaration must
+						// initialize the register, not the (dead) slot.
+						emit_var_store(status, "x0", node.name, size);
 					}
 				} else if (is_float_type(node.type.name)) {
 					const label = `_float_const_${decl_const_counter++}`;
 					emit_data(status, `${label}: .double ${raw}\n.p2align 2\n`);
 					status.code += `adr x0, ${label}\n`;
 					status.code += `ldr d0, [x0]\n`;
-					status.code += `str d0, [x29, #${offset}]\n`;
+					// Reg-aware: a whole-function-promoted float lives in a
+					// callee-saved d-register, not the slot.
+					emit_var_store(status, "d0", node.name, size);
 				} else if (node.type.name === "string" && raw.startsWith('"')) {
 					const lit_len = string_literal_length(raw);
 					if (status.force_heap_strings?.has(node.name)) {
@@ -2011,13 +2012,11 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 					}
 				} else {
 					emit_int_immediate(status, raw);
-					if (size === 1) {
-						status.code += `strb w0, [x29, #${offset}]\n`;
-					} else if (size === 4) {
-						status.code += `str w0, [x29, #${offset}]\n`;
-					} else {
-						status.code += `str x0, [x29, #${offset}]\n`;
-					}
+					// Reg-aware: a whole-function-promoted scalar (int/bool/
+					// char) is initialized in its callee-saved register; for
+					// slot-resident vars this emits the same width-correct
+					// strb/str/str store as before.
+					emit_var_store(status, "x0", node.name, size);
 				}
 			} else {
 				if (node.type.name === "string" && raw.startsWith('"')) {

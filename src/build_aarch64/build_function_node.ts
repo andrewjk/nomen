@@ -9,6 +9,7 @@ import { check_c_fallback } from "./build_raw_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free } from "./utils/audit.ts";
 import { emit_destroy_for_anchor_slot } from "./utils/auto_destroy.ts";
+import { plan_function_promotions } from "./utils/func_regalloc.ts";
 import scan_force_heap_strings from "./utils/scan_force_heap_strings.ts";
 import {
 	NUM_REG_ARGS,
@@ -635,19 +636,39 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	const old_force_heap = status.force_heap_strings;
 	status.force_heap_strings = scan_force_heap_strings(node.statements, status.structs);
 
+	// Whole-function register allocation (phase 4): reserve callee-saved
+	// registers for the body's hottest scalar locals before building it, so
+	// every access is register-resident with no loop brackets. Seeding
+	// `callee_saved_regs_used` first also keeps loop promotion and Buffer
+	// data-pointer caches off these registers. Snapshot the enclosing state so
+	// a nested function build (a `func` statement inside this body) can't leak
+	// its own bindings into ours — or clobber our claimed-register set.
+	const old_register_allocations = status.register_allocations;
+	const old_callee_saved_regs = status.callee_saved_regs_used;
+	const fn_allocs = has_body ? plan_function_promotions(node) : undefined;
+	status.register_allocations = fn_allocs && fn_allocs.size > 0 ? fn_allocs : undefined;
+	status.callee_saved_regs_used =
+		fn_allocs && fn_allocs.size > 0 ? new Set(fn_allocs.values()) : undefined;
+
 	// Each function body starts with a fresh Buffer data-pointer cache so a
 	// cache entry established while building an earlier function can't leak in
 	// and produce a bogus "hit" that skips the data-pointer load.
+	const old_buffer_data_cache = status.buffer_data_cache;
 	status.buffer_data_cache = undefined;
 
 	build_block_node(node, status);
 
+	status.buffer_data_cache = old_buffer_data_cache;
 	status.force_heap_strings = old_force_heap;
 
 	const loop_regs_used = status.callee_saved_regs_used
 		? [...status.callee_saved_regs_used].sort()
 		: [];
-	status.callee_saved_regs_used = undefined;
+	// Restore the ENCLOSING function's state (previously cleared to undefined,
+	// which dropped an outer function's claimed registers when a nested
+	// function was built mid-body — its prologue saves went missing).
+	status.callee_saved_regs_used = old_callee_saved_regs;
+	status.register_allocations = old_register_allocations;
 
 	if (loop_regs_used.length > 0 && has_body) {
 		const func_label = `${node.name === "main" ? "_" : ""}${node.name}:`;
