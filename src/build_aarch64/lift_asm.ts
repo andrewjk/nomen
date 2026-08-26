@@ -19,7 +19,6 @@ import {
 	type LiftError,
 	type Operand,
 	MNEMONICS,
-	is_cond,
 	reg_class,
 } from "./asm_ir.ts";
 
@@ -31,6 +30,76 @@ export interface LiftResult {
 	errors: LiftError[];
 	lines: AsmLine[];
 	functions: LiftedFunction[];
+}
+
+const COND_TOKEN_RE = /^(eq|ne|gt|ge|lt|le|hi|hs|lo|ls|mi|pl)$/;
+const SHIFT_TOKEN_RE = /^(?:lsl|lsr|asr)\s+#(\d+)$/;
+
+/** Parse an operand list (already comma-split at top level). Shift tokens
+ *  (`lsl #3`) attach to the preceding register operand — a shifted source
+ *  still just reads that register. Returns null on any unknown token. */
+export function try_parse_operands(parts: string[]): Operand[] | null {
+	const operands: Operand[] = [];
+	for (let p = 0; p < parts.length; p++) {
+		const tok = parts[p];
+		if (tok.startsWith("[")) {
+			const mem = parse_mem(parts, p);
+			if (!mem) return null;
+			operands.push({ kind: "mem", ...mem.mem } as Operand);
+			p = mem.next - 1;
+			continue;
+		}
+		const cond_m = COND_TOKEN_RE.exec(tok);
+		if (cond_m) {
+			operands.push({ kind: "cond", code: cond_m[1] });
+			continue;
+		}
+		const parsed = parse_operand(tok);
+		if (parsed === "labelish") {
+			operands.push({ kind: "label", name: tok });
+			continue;
+		}
+		if (parsed !== null) {
+			operands.push(parsed);
+			continue;
+		}
+		// Shift qualifier on the previous register operand.
+		const shift_m = SHIFT_TOKEN_RE.exec(tok);
+		if (shift_m && operands.length > 0) {
+			const prev = operands[operands.length - 1];
+			if (prev.kind === "reg") continue;
+		}
+		return null;
+	}
+	return operands;
+}
+
+/**
+ * Parse a single instruction line into structured form (null when the line
+ * is not an instruction — label, directive, comment, blank, OR an
+ * instruction outside the contract table). Shared by the validator and the
+ * phase-2 optimizer so both see identical shapes.
+ */
+export function parse_asm_instruction(
+	text: string,
+	line: number,
+): import("./asm_ir.ts").AsmInstruction | null {
+	const t = strip_comment(text).trim();
+	const m = /^([a-z][a-z0-9.]*)\s*(.*)$/.exec(t);
+	if (!m) return null;
+	const op = m[1].toLowerCase();
+	const sig = MNEMONICS[op];
+	if (!sig) return null;
+	const operands = try_parse_operands(split_operands(m[2].trim()));
+	if (!operands) return null;
+	return {
+		text,
+		line,
+		op,
+		operands,
+		setsFlags: !!sig.setsFlags,
+		readsFlags: !!sig.readsFlags,
+	};
 }
 
 interface ParsedMem {
@@ -76,6 +145,14 @@ function parse_imm(tok: string): bigint | null {
 	const sign = m[1] ? -1n : 1n;
 	const body = m[2].toLowerCase().startsWith("0x") ? BigInt(m[2]) : BigInt(m[2]);
 	return sign * body;
+}
+
+/** `ldr x0, =N` — the emitter's 64-bit load-literal pseudo-instruction. */
+function parse_pseudo_imm(tok: string): bigint | null {
+	const t = tok.trim();
+	if (!t.startsWith("=")) return null;
+	const v = parse_imm("#" + t.slice(1));
+	return v === null && /^=\d+$/.test(t) ? BigInt(t.slice(1)) : v;
 }
 
 function parse_reg(tok: string): string | null {
@@ -182,6 +259,8 @@ function parse_operand(tok: string): Operand | "labelish" | null {
 	}
 	const imm = parse_imm(trimmed);
 	if (imm !== null) return { kind: "imm", value: imm, raw: trimmed };
+	const pseudo = parse_pseudo_imm(trimmed);
+	if (pseudo !== null) return { kind: "imm", value: pseudo, raw: trimmed };
 	if (/^[A-Za-z_.$][\w.$]*$/.test(trimmed)) return "labelish";
 	return null;
 }
@@ -280,45 +359,12 @@ export function validate_asm(code: string): LiftError[] {
 			continue;
 		}
 
-		// Operand tokenization: b.cond's suffix is part of the mnemonic; a
-		// trailing `, lsl #n` shift attaches to the previous operand.
-		const parts = split_operands(rest);
-		const operands: Operand[] = [];
-		let labelish_count = 0;
-		let parse_failed = false;
-		for (let p = 0; p < parts.length; p++) {
-			const tok = parts[p];
-			if (tok.startsWith("[")) {
-				const mem = parse_mem(parts, p);
-				if (!mem) {
-					parse_failed = true;
-					break;
-				}
-				operands.push({ kind: "mem", ...mem.mem } as Operand);
-				p = mem.next - 1;
-				continue;
-			}
-			const cond_m = /^(eq|ne|gt|ge|lt|le|hi|hs|lo|ls|mi|pl)$/.exec(tok);
-			if (cond_m && is_cond(cond_m[1])) {
-				operands.push({ kind: "cond", code: cond_m[1] });
-				continue;
-			}
-			const parsed = parse_operand(tok);
-			if (parsed === null) {
-				parse_failed = true;
-				break;
-			}
-			if (parsed === "labelish") {
-				operands.push({ kind: "label", name: tok });
-				labelish_count++;
-				continue;
-			}
-			operands.push(parsed);
-		}
-		if (parse_failed) {
+		const operands = try_parse_operands(split_operands(rest));
+		if (!operands) {
 			err(`malformed operand(s) for '${op}'`);
 			continue;
 		}
+		const labelish_count = operands.filter((o) => o.kind === "label").length;
 
 		// Shape check against the mnemonic's allowed signatures.
 		if (!shape_matches(operands, sig.shapes)) {

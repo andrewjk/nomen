@@ -230,6 +230,7 @@ export const MNEMONICS: Record<string, MnemonicSig> = {
 		shapes: [
 			["r", "m"],
 			["f", "m"],
+			["r", "i"], // `ldr x0, =imm64` load-literal pseudo-form
 		],
 	},
 	str: {

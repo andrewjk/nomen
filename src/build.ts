@@ -1,3 +1,4 @@
+import { optimize_frame_slots } from "./build_aarch64/asm_opt.ts";
 import { reset_access_temp_counter } from "./build_aarch64/build_access_node.ts";
 import { reset_decl_const_counters } from "./build_aarch64/build_declaration_node.ts";
 import { reset_label_counter as reset_for_label_counter } from "./build_aarch64/build_for_loop_node.ts";
@@ -223,6 +224,11 @@ export default function build(
 		if (options.optimize) {
 			status.code = optimize_asm(status.code);
 		}
+		// Phase-2 IR pass: frame-slot forwarding + dead-store elimination on
+		// the lifted assembly. Runs unconditionally so every build (and every
+		// test binary) exercises it; the validator below then re-checks the
+		// rewritten text.
+		status.code = optimize_frame_slots(status.code);
 		if (options.audit) {
 			// The main-function audit_check + pool shutdown hook is emitted
 			// directly by build_function_node (it knows main's return label).

@@ -392,6 +392,21 @@ Changes applied:
     Rust is engine architecture (compiled lazy-DFA vs per-position
     backtracking re-parse). Tests in `test/regex.test.ts`.
 
+30. **Frame-slot forwarding + dead-store elimination** (`asm_opt.ts`, the
+    phase-2 dataflow pass over the lifted IR): the emitters' structural
+    waste is the stack-slot round-trip — values computed into registers,
+    spilled to `[x29,#N]` locals, and reloaded, often via the
+    `add xK,x29,#N; ldr XD,[xK]` address idiom. Within basic blocks the
+    pass forwards stores to loads (`mov`), coalesces redundant loads, drops
+    same-key overwritten stores, and normalizes the address idiom — sound
+    because frame slots are call-private (ref/sret marshalling visibly
+    materializes its `add x29` addresses, which are treated as escapes).
+    Every instruction declares its definitions (`instr_defs`); defining a
+    register materializes pends sourced from it and kills availability.
+    Measured (interleaved): regex-redux **−17%**, lru −5%, pidigits/
+    fannkuch/mandelbrot/edigits −3%, nbody −2%. Foundation: the lifted-IR
+    substrate (`lift_asm.ts` + `asm_ir.ts` table) now validates EVERY build.
+
 ### Known issues
 
 **Float register allocation overhead in call-heavy benchmarks.** mandelbrot
