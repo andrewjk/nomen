@@ -5,6 +5,7 @@ import {
 	is_container_borrow_access,
 	is_owned_string_branch_value,
 } from "../build_common/string_return_analysis.ts";
+import { is_float_type } from "../built_in_types.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
@@ -52,6 +53,24 @@ function current_return_is_string(status: BuildStatus): boolean {
 		const fn = status.current_struct.functions.find((f) => f.name === status.current_function_name);
 		const frt = fn?.return_type;
 		return !!frt && frt.name === "string" && !frt.is_view;
+	}
+	return false;
+}
+
+/**
+ * Whether the function currently being built returns a float type. Float
+ * returns follow the d0 convention: the value is handed back in `d0` (the
+ * AArch64 FP result register), not as raw bits in x0. Mirrors
+ * current_return_is_string's resolution — `function_return_type` is unset
+ * for primitive-returning struct methods, so fall back to the declared
+ * return type on `current_struct`'s matching function.
+ */
+function current_return_is_float(status: BuildStatus): boolean {
+	const rt = status.function_return_type;
+	if (rt) return is_float_type(rt.name);
+	if (status.current_struct && status.current_function_name) {
+		const fn = status.current_struct.functions.find((f) => f.name === status.current_function_name);
+		return !!fn?.return_type && is_float_type(fn.return_type.name);
 	}
 	return false;
 }
@@ -259,6 +278,9 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 		// the branch scope-exit cleanup) and hand the owned result to the
 		// caller as-is.
 		status.code += `ldr x0, [x29, #${slot}]\n`;
+		if (current_return_is_float(status)) {
+			status.code += `fmov d0, x0\n`;
+		}
 		if (return_join_owned_string) {
 			status.last_result_is_heap = true;
 		}
@@ -273,7 +295,23 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 			!!(node.value as FunctionCallNode).field_overrides?.length;
 		const saved_buffer = override_ctor ? status.struct_return_buffer : undefined;
 		if (override_ctor) status.struct_return_buffer = undefined;
+		// A float return rides the d0 convention — request the d0 fast path
+		// so a float-op value leaves its result directly in d0 (no
+		// fmov-to-x0-then-back). Non-op values (variables, literals, calls)
+		// don't consume the flag and land in x0; the tail below moves them.
+		const ret_is_float = current_return_is_float(status);
+		if (ret_is_float) status.float_result_in_d0 = true;
 		build_node(node.value, status);
+		if (ret_is_float) {
+			if (!status.code.endsWith("\n")) {
+				status.code += "\n";
+			}
+			if (status.float_result_in_d0) {
+				// Flag unconsumed — value is in x0 as raw bits.
+				status.code += `fmov d0, x0\n`;
+			}
+			status.float_result_in_d0 = false;
+		}
 		if (override_ctor) status.struct_return_buffer = saved_buffer;
 	}
 	if (!status.code.endsWith("\n")) {
@@ -565,10 +603,13 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 		}
 		const finalized = status.moved ?? new Set<string>();
 		// A string return rides the (x0, x1) pair — save BOTH halves around
-		// the cleanup calls (destroy clobbers x1).
+		// the cleanup calls (destroy clobbers x1). A float return rides d0.
 		const returns_fat_pair = current_return_is_string(status);
+		const returns_float = current_return_is_float(status);
 		if (returns_fat_pair) {
 			status.code += `stp x0, x1, [sp, #-16]!\n`;
+		} else if (returns_float) {
+			status.code += `str d0, [sp, #-16]!\n`;
 		} else {
 			status.code += `str x0, [sp, #-16]!\n`;
 		}
@@ -593,6 +634,8 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 		emit_heap_slots_cleanup_for_return(status);
 		if (returns_fat_pair) {
 			status.code += `ldp x0, x1, [sp], #16\n`;
+		} else if (returns_float) {
+			status.code += `ldr d0, [sp], #16\n`;
 		} else {
 			status.code += `ldr x0, [sp], #16\n`;
 		}

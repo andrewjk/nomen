@@ -5,6 +5,7 @@ import {
 	drop_self_written_string_field_records,
 	scan_self_string_field_writes,
 } from "../build_common/scan_self_string_writes.ts";
+import { is_float_type } from "../built_in_types.ts";
 import {
 	is_built_in_type,
 	is_signed_int_type,
@@ -2064,6 +2065,11 @@ function build_access_method(
 		status.code += `ldr x10, [x10, #${(trait_index + 1) * 8}]\n`;
 		status.code += `ldr x10, [x10, #${func_index * 8}]\n`;
 		status.code += `blr x10\n`;
+		// A float-returning trait method hands its result back in d0 —
+		// bit-cast to x0 for the generic consumers.
+		if (is_float_type(access_func.type.name)) {
+			status.code += `fmov x0, d0\n`;
+		}
 	} else if (inline_func && overflow_count === 0) {
 		// Inline candidates are small functions; the inline path can't accept
 		// a pre-lowered outgoing-arg area, so skip inlining when this call
@@ -2071,6 +2077,11 @@ function build_access_method(
 		build_inline_method(target_struct!, inline_func, status);
 	} else {
 		status.code += `bl ${method_name}\n`;
+		// A float-returning method hands its result back in d0 (the d0
+		// return convention) — bit-cast to x0 for the generic consumers.
+		if (is_float_type(access_func.type.name)) {
+			status.code += `fmov x0, d0\n`;
+		}
 	}
 
 	// Free the outgoing stack-arg area now that the call has read it.

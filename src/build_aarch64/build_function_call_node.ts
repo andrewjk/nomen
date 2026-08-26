@@ -2,6 +2,7 @@ import emit_field_overrides from "../build/emit_field_overrides.ts";
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import string_literal_length from "../build_common/string_literal_length.ts";
+import { is_float_type } from "../built_in_types.ts";
 import { is_int_literal, to_decimal_string } from "../int_literal.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
@@ -733,6 +734,14 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		}
 
 		status.code += `bl ${func_name}\n`;
+
+		// A float-returning callee hands its result back in d0 (the d0
+		// return convention). Bit-cast to x0 so every existing consumer
+		// (build_float_operand's fallback, declarations, assignments) keeps
+		// seeing the raw pattern in x0.
+		if (is_float_type(node.type.name)) {
+			status.code += `fmov x0, d0\n`;
+		}
 
 		// Free the outgoing stack-arg area now that the call has read it.
 		// Restoring sp here (before any post-call code that uses sp — e.g.

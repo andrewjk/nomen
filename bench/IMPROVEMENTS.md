@@ -332,6 +332,36 @@ Changes applied:
     same source before/after): spectral-norm −24% (55→42 ms at n=500,
     487→366 ms at n=1500), pidigits −6%, nbody −6%, nsieve −5%, lru −4%.
 
+26. **`fcmp` for float comparisons** (`build_operation_node.ts`): float
+    `< <= > >= == !=` now lowers to `fcmp d0, d1` + `cset`/`b.cond` (with
+    the IEEE-correct mnemonic mapping — `<` is `mi`, not `lt`, which
+    mis-fires on NaN where V=1) in both the value path and
+    `emit_cond_branch`. Previously comparisons fell through to a raw
+    bit-pattern integer `cmp`, which returned wrong results for NaN (all
+    ordered comparisons could succeed) and ordered `-0.0 < +0.0`. Also
+    fixed unary minus on floats (`fneg`, not integer `neg` over the bit
+    pattern). Perf-neutral on the suite (escape checks aren't hot enough to
+    matter); correctness-motivated. Tests in `test/float_compare.test.ts`.
+
+27. **d0 float returns** (`build_return_node.ts` + call sites): a
+    float-returning function now hands its result back in `d0` (the AArch64
+    FP result register) instead of raw bits in x0 — the return value-build
+    requests the `float_result_in_d0` fast path so a float-op result flows
+    directly d0→d0 with no bit-cast, and the scope-exit cleanup spills d0
+    (not x0) across destroy calls. Callers (`build_function_call_node.ts`,
+    method calls + trait dispatch in `build_access_node.ts`) bit-cast
+    `fmov x0, d0` so all generic consumers are unchanged; `Math.log`'s raw
+    body keeps its result in d0 (libc's AAPCS return). Perf-neutral on the
+    suite (the hot float producers are naked-inlined sqrt and
+    register-allocated loop vars, neither crosses a call boundary) — landed
+    as the architecture half of the d0 calling convention. The remaining
+    half (d0–d7 float _params_) was evaluated and **deferred**: no hot
+    non-inlined float-param call site exists in the suite (sqrt is
+    naked-inline at 3 instrs → 1, worth ~2% of nbody only), while the
+    change would touch every `function_param_regs` consumer. Tests in
+    `test/float_compare.test.ts` (expression results feeding comparisons)
+    and the bench-derived tests (nbody energy, spectral-norm sqrt).
+
 ### Known issues
 
 **Float register allocation overhead in call-heavy benchmarks.** mandelbrot
@@ -972,14 +1002,20 @@ the note at the top.)
   whole classes of code. None done yet.
 - **Family C (codegen)** — items 1–6 and 10–16 are done. The float
   round-trip is eliminated for expressions and assignments; branch
-  conditions no longer materialize booleans. Item 7 (strength reduction)
-  and the full float-result calling convention (d0 returns, d0–d7 params,
-  `fcmp`) remain the main codegen levers, alongside tighter per-receiver
-  `bl` cache invalidation (C9 note).
+  conditions no longer materialize booleans; float comparisons are IEEE
+  (`fcmp`); float returns ride d0 (item 27). **d0–d7 float params are
+  deferred** — measured value ≈ 0 on the suite (no hot non-inlined
+  float-param calls; sqrt is naked-inline), against broad
+  `function_param_regs` blast radius. The dominant remaining float-gap vs
+  clang -O2/Rust/Zig (nbody 143 vs 22 ms, spectral 367 vs 14, mandelbrot
+  155 vs 48) is **NEON auto-vectorization**, not the scalar ABI.
 
 The float benchmarks (mandelbrot, nbody, spectral-norm) have moved from
 ~30–143× off the references into a 6–20× band, and the guarded-loop
 benchmarks (spectral-norm, pidigits, nsieve) gained another 5–25% from item
-25 (spectral-norm the most — its inner loop is the guard-heaviest). The
-remaining levers: the full d0 calling convention, `fcmp` for float
-comparisons, and regex-redux's compiled-pattern stdlib API.
+25 (spectral-norm the most — its inner loop is the guard-heaviest). The d0
+convention is half-landed (fcmp + d0 returns, items 26–27); d0 params are
+deferred as measured-value-free. **The remaining float lever is NEON
+auto-vectorization** — that's where clang -O2's 3–6× advantage on
+nbody/spectral/mandelbrot comes from. regex-redux's compiled-pattern
+stdlib API remains the top non-codegen lever.

@@ -61,8 +61,40 @@ function invert_cond(c: string): string {
 			return "hi";
 		case "hi":
 			return "ls";
+		case "mi":
+			return "pl";
+		case "pl":
+			return "mi";
 		default:
 			return "ne";
+	}
+}
+
+/**
+ * Condition code for a comparison operator after `fcmp`. The integer
+ * mnemonics differ for the less-than family: fcmp sets N = "less than"
+ * directly, so `<` is `mi` (not `lt`, which is N!=V and mis-fires on NaN
+ * where V=1), and `<=` is `ls`. With these, NaN compares false for every
+ * ordered condition and true for `ne` — matching IEEE 754 (and C)
+ * semantics, where the historical raw bit-pattern integer `cmp` returned
+ * wrong results for NaN and ordered -0.0 < +0.0.
+ */
+function map_float_cmp(op: string): string {
+	switch (op) {
+		case ">":
+			return "gt";
+		case "<":
+			return "mi";
+		case "==":
+			return "eq";
+		case "!=":
+			return "ne";
+		case ">=":
+			return "ge";
+		case "<=":
+			return "ls";
+		default:
+			return "eq";
 	}
 }
 
@@ -120,6 +152,33 @@ export function emit_cond_branch(
 			status.code += `${skip}:\n`;
 			return;
 		}
+		// Float comparisons branch directly off `fcmp` (IEEE semantics —
+		// see map_float_cmp). Applies whenever both operands are
+		// float-typed; build_float_operand handles literals, promoted
+		// d-register vars, stack vars, and nested expressions.
+		const left_f =
+			op_node.left_value !== undefined &&
+			is_float_type(op_node.left_value) &&
+			!!op_node.right_value;
+		const right_f = op_node.right_value !== undefined && is_float_type(op_node.right_value);
+		if (is_comparison(op) && left_f && right_f) {
+			status.float_result_in_d0 = false;
+			const need_spill = !is_simple(op_node.left_value!);
+			build_float_operand(op_node.right_value!, "d1", status);
+			if (!status.code.endsWith("\n")) status.code += "\n";
+			if (need_spill) {
+				status.code += `str d1, [sp, #-16]!\n`;
+			}
+			build_float_operand(op_node.left_value!, "d0", status);
+			if (!status.code.endsWith("\n")) status.code += "\n";
+			if (need_spill) {
+				status.code += `ldr d1, [sp], #16\n`;
+			}
+			status.code += `fcmp d0, d1\n`;
+			const cond = map_float_cmp(op);
+			status.code += `b.${on_true ? cond : invert_cond(cond)} ${target}\n`;
+			return;
+		}
 		// Direct-branch fast path for comparisons the value builder lowers
 		// to a plain `cmp x1, x2` on bit patterns: both operands plain
 		// non-literal value nodes of SCALAR type. Everything else — struct
@@ -136,6 +195,8 @@ export function emit_cond_branch(
 			is_comparison(op) &&
 			left_scalar &&
 			right_scalar &&
+			!left_f &&
+			!right_f &&
 			op_node.left_value?.node_type === "value" &&
 			op_node.right_value?.node_type === "value" &&
 			!is_int_literal((op_node.left_value as ValueNode).value) &&
@@ -510,7 +571,15 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		if (!status.code.endsWith("\n")) {
 			status.code += "\n";
 		}
-		status.code += `neg x0, x0\n`;
+		if (is_float_type(node.right_value!)) {
+			// A double's negation flips only the sign bit — integer `neg`
+			// (two's-complement of the bit pattern) is not that.
+			status.code += `fmov d0, x0\n`;
+			status.code += `fneg d0, d0\n`;
+			status.code += `fmov x0, d0\n`;
+		} else {
+			status.code += `neg x0, x0\n`;
+		}
 		return;
 	}
 
@@ -861,6 +930,28 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 				return;
 			}
 		}
+	}
+
+	if (is_float && is_comparison(node.op)) {
+		// Float comparisons lower to `fcmp` — IEEE semantics (NaN compares
+		// false for ordered conditions, -0.0 == +0.0) where the historical
+		// raw bit-pattern integer `cmp` gave wrong answers, and the flags
+		// are set directly for a following cset/branch.
+		status.float_result_in_d0 = false;
+		const need_float_spill = !is_simple(node.left_value);
+		build_float_operand(node.right_value, "d1", status);
+		if (!status.code.endsWith("\n")) status.code += "\n";
+		if (need_float_spill) {
+			status.code += `str d1, [sp, #-16]!\n`;
+		}
+		build_float_operand(node.left_value, "d0", status);
+		if (!status.code.endsWith("\n")) status.code += "\n";
+		if (need_float_spill) {
+			status.code += `ldr d1, [sp], #16\n`;
+		}
+		status.code += `fcmp d0, d1\n`;
+		status.code += `cset x0, ${map_float_cmp(node.op)}\n`;
+		return;
 	}
 
 	if (is_float && !is_comparison(node.op)) {
