@@ -162,66 +162,137 @@ func find_next_byte = (string input, int pos, int len, string charset, out int) 
 }
 
 // Extract the set of possible first bytes from a pattern into a charset string.
-// Returns "" if every byte is possible (e.g. pattern starts with '.', '^', '(').
+// Returns "" if every byte is possible (e.g. pattern starts with '.', '(' with
+// an unbounded repeat, or an alternative whose first set can't be determined).
 func first_byte_set = (string pattern, int pat_len, out string) {
 	if pat_len == 0 {
 		return ""
 	}
 	var sb = StringBuilder()
-	collect_first_bytes(pattern, 0, pat_len, ref sb)
+	if collect_first_bytes(pattern, 0, pat_len, ref sb) < 0 {
+		// Some alternative's first-byte set is indeterminable — a wildcard
+		// '.', an empty alternative, or similar. The charset is a PREFILTER
+		// (candidate positions via strpbrk): under-approximating it would
+		// skip positions where a match can start, so disable it entirely.
+		return ""
+	}
 	return sb.to_string()
 }
 
 // Walk top-level alternatives of pattern[pat_pos..pat_end), appending the first
 // byte(s) of each alternative to sb. Alternations at depth 0 are split on '|'.
-func collect_first_bytes = (string pattern, int pat_pos, int pat_end, ref StringBuilder sb) {
+// Returns -1 when any alternative's first-byte set can't be determined (the
+// caller must then disable the prefilter), 0 otherwise.
+func collect_first_bytes = (string pattern, int pat_pos, int pat_end, ref StringBuilder sb, out int) {
 	var depth = 0
 	var int i = pat_pos
 	var int alt_start = pat_pos
 	while i < pat_end {
 		var char c = pattern.at(i)
-		switch {
-			case (c as int) == 92 {
-				// escaped literal: '\x' → first byte is x
-				if i == alt_start {
-					if i + 1 < pat_end {
-						sb.append_char(pattern.at(i + 1))
+		if (c as int) == 92 {
+			i += 2
+		} else {
+			if c == '[' {
+				i = atom_end_pos(pattern, i, pat_end)
+			} else {
+				if c == '(' {
+					depth = depth + 1
+				}
+				if c == ')' {
+					if depth > 0 {
+						depth -= 1
 					}
 				}
-				i += 2
-			}
-			case c == '[' {
-				if i == alt_start {
-					var int a_end = atom_end_pos(pattern, i, pat_end)
-					add_class_chars(pattern, i + 1, a_end - 1, ref sb)
+				if (c as int) == 124 {
+					if depth == 0 {
+						if alt_first_bytes(pattern, alt_start, i, ref sb) < 0 {
+							return -1
+						}
+						alt_start = i + 1
+					}
 				}
-				i = atom_end_pos(pattern, i, pat_end)
-			}
-			case c == '(' {
-				depth = depth + 1
-				i += 1
-			}
-			case c == ')' {
-				if depth > 0 {
-					depth -= 1
-				}
-				i += 1
-			}
-			case (c as int) == 124 {
-				if depth == 0 {
-					alt_start = i + 1
-				}
-				i += 1
-			}
-			case i == alt_start && depth == 0 && c != '^' && c != '$' && c != '.' {
-				sb.append_char(c)
-				i += 1
-			}
-			else {
 				i += 1
 			}
 		}
 	}
+	return alt_first_bytes(pattern, alt_start, pat_end, ref sb)
+}
+
+// Append the set of bytes that can start a match of the alternative occupying
+// pattern[start..end) to sb. Returns -1 when the set can't be determined (the
+// caller must disable the prefilter), 0 when it was appended.
+//
+// Handles the shapes the engine's matcher can produce: a leading anchor is
+// zero-width (skipped), a leading group contributes its CONTENT's first bytes
+// (recursively over the group's own top-level alternatives), and a group
+// quantified with '?'/'*' is nullable — what FOLLOWS it can also be first, so
+// the scan continues past it. A wildcard '.' or an empty alternative makes the
+// set indeterminable.
+func alt_first_bytes = (string pattern, int start, int end, ref StringBuilder sb, out int) {
+	var int i = start
+	while i < end {
+		var char c = pattern.at(i)
+		if (c as int) == 92 {
+			// escaped literal: first byte is the escaped char
+			if i + 1 < end {
+				sb.append_char(pattern.at(i + 1))
+			}
+			return 0
+		}
+		if c == '[' {
+			var int a_end = atom_end_pos(pattern, i, end)
+			// A NEGATED class can match any byte outside its member set —
+			// not expressible as an inclusion charset, and under-approximating
+			// (the member bytes alone) would make strpbrk skip valid match
+			// positions. Disable the prefilter instead.
+			var int cs = i + 1
+			if cs < a_end - 1 {
+				if pattern.at(cs) == '^' {
+					return -1
+				}
+			}
+			add_class_chars(pattern, i + 1, a_end - 1, ref sb)
+			return 0
+		}
+		if c == '(' {
+			var int a_end = atom_end_pos(pattern, i, end)
+			// The group's first bytes are the union of its content's
+			// top-level alternatives' first bytes.
+			if collect_first_bytes(pattern, i + 1, a_end - 1, ref sb) < 0 {
+				return -1
+			}
+			// A '?'/'*' quantifier makes the group nullable — the first byte
+			// can also come from whatever follows it.
+			var int after = a_end
+			var int nullable = 0
+			if after < end {
+				var char q = pattern.at(after)
+				if q == '?' || q == '*' {
+					nullable = 1
+					after += 1
+				}
+			}
+			if nullable == 0 {
+				return 0
+			}
+			i = after
+			continue
+		}
+		if c == '^' || c == '$' {
+			// zero-width assertions never consume a byte
+			i += 1
+			continue
+		}
+		if c == '.' {
+			// wildcard (any byte except '\n') — not expressible as an
+			// inclusion set; the prefilter must be disabled.
+			return -1
+		}
+		sb.append_char(c)
+		return 0
+	}
+	// An empty alternative can match at any position — indeterminable.
+	return -1
 }
 
 // Append the members of character class [start..end) to sb. Ranges (a-z) are

@@ -96,6 +96,41 @@ function emit_string_length(target: BaseNode, status: BuildStatus) {
 }
 
 /**
+ * Inline fast path for `.at(i)` on a plain (non-view) `string` receiver.
+ * A string local/param keeps its fat (ptr, len) pair in two stack slots —
+ * the same layout `build_view_op` relies on — and the checker has already
+ * proven `at`'s `index >= 0 && index < self.length` constraint at the call
+ * site (an unverifiable index is a compile error outside core, matching the
+ * fixed-size array `.at` fast path, which also emits an unchecked load).
+ * The generic path pays a full `bl string_at` frame per character — the
+ * dominant cost of byte-scanning loops (regex engine, FASTA parsing).
+ * Returns true when handled.
+ */
+function build_string_at_inline(
+	node: AccessNode,
+	access_func: AccessFunctionCallNode,
+	status: BuildStatus,
+): boolean {
+	if (access_func.name !== "at" || access_func.params.length !== 1) return false;
+	if (node.target.node_type !== "value") return false;
+	const name = (node.target as ValueNode).value;
+	if (name === "self") return false; // self rides x19/x20 in string methods
+	if (name.startsWith('"')) return false; // literal receivers keep the call path
+	let t: Type | undefined = type_from_value_node(node.target);
+	if (!t?.name) t = status.variable_types?.get(name);
+	if (!t || t.name !== "string" || t.is_view || t.is_array || t.is_ref) return false;
+	const base = status.stack_offsets?.get(name);
+	if (base === undefined) return false;
+	// index → x1, ptr → x0, zero-extended byte load (char is unsigned).
+	build_node(access_func.params[0], status);
+	if (!status.code.endsWith("\n")) status.code += "\n";
+	status.code += `mov x1, x0\n`;
+	status.code += `ldr x0, [x29, #${base}]\n`;
+	status.code += `ldrb w0, [x0, x1]\n`;
+	return true;
+}
+
+/**
  * `view T` builtins, operating on the (ptr, len) slice stored in two stack
  * slots ([base]=ptr, [base+8]=len):
  *   v.at(i)        →  element at ptr[i], left in x0 (or a sret temp for a
@@ -310,6 +345,10 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 			// `view T` builtins (.at, .to_string) operate on the (ptr, len)
 			// slice directly — emit inline and skip struct-method dispatch.
 			if (build_view_op(node, access_func, status)) {
+				return;
+			}
+			// Plain `string .at(i)` — same fat-pair layout, inline ldrb.
+			if (build_string_at_inline(node, access_func, status)) {
 				return;
 			}
 			build_access_method(node, access_func, status);

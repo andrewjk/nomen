@@ -262,3 +262,104 @@ Console.write(r)
 		await check_output("regex_replace_empty_input", result, "", opts);
 	});
 });
+
+// The first-byte-set prefilter (strpbrk candidate positions) must
+// OVER-approximate the bytes a match can start with. These exercise the
+// group/quantifier/anchor recursion added to the set computation: an
+// under-approximation would skip candidate positions and silently drop
+// matches.
+describe("Regex first-byte-set prefilter", () => {
+	test("optional group: match can start after the group", async () => {
+		// `(ab)?c` — first bytes {a, c}. A prefilter of only {a} would miss
+		// the standalone `c` matches.
+		const input = `
+Console.write(Regex.count("(ab)?c", "c ab c x").to_string())
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64" });
+		await check_output("regex_prefilter_opt_group_count", result, "2", opts);
+	});
+
+	test("star group: match can start after the group", async () => {
+		const input = `
+Console.write(Regex.count("(ab)*c", "c abc ababc").to_string())
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64" });
+		await check_output("regex_prefilter_star_group_count", result, "3", opts);
+	});
+
+	test("group with inner alternation: all branches are candidates", async () => {
+		// `(x|y)z` — first bytes {x, y}; a set missing either drops matches.
+		const input = `
+Console.write(Regex.count("(x|y)z", "xz yz zz").to_string())
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64" });
+		await check_output("regex_prefilter_group_alt_count", result, "2", opts);
+	});
+
+	test("chained optional groups", async () => {
+		// `(a)?(b)?c` — first bytes {a, b, c}.
+		const input = `
+Console.write(Regex.count("(a)?(b)?c", "c bc ac abc").to_string())
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64" });
+		await check_output("regex_prefilter_chained_opt_count", result, "4", opts);
+	});
+
+	test("anchored pattern: the anchor is not a first byte", async () => {
+		// `^ab` — first byte {a}; skipping the anchor must not disable or
+		// corrupt the set.
+		const input = `
+Console.write(Regex.count("^ab", "ab ab").to_string())
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64" });
+		await check_output("regex_prefilter_anchor_count", result, "1", opts);
+	});
+
+	test("negated leading class: prefilter disabled, no matches dropped", async () => {
+		// `[^a]b` — the true first set is "any byte except a", not
+		// expressible as an inclusion charset. Historically the charset was
+		// under-approximated to {a} and strpbrk skipped every valid start —
+		// this counted 0 instead of 3.
+		const input = `
+Console.write(Regex.count("[^a]b", "bb cb ab xb").to_string())
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64" });
+		await check_output("regex_prefilter_neg_class_count", result, "3", opts);
+	});
+
+	test("wildcard start: prefilter disabled, matches found everywhere", async () => {
+		const input = `
+Console.write(Regex.count(".b", "ab bb").to_string())
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64" });
+		await check_output("regex_prefilter_wildcard_count", result, "2", opts);
+	});
+
+	test("regex-redux clean pattern over FASTA-shaped input", async () => {
+		// The benchmark's clean pattern `(>[^\\n]+)?\\n` — an optional group
+		// (first byte '>') nullable to '\\n'. Both kinds of position must be
+		// found.
+		const input = `
+const string r = Regex.replace_all("(>[^\\n]+)?\\n", ">one\\nACGT\\n>two\\nTGCA\\n", "")
+Console.write(r)
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64" });
+		await check_output("regex_prefilter_fasta_clean", result, "ACGTTGCA", opts);
+	});
+});

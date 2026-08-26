@@ -362,6 +362,36 @@ Changes applied:
     `test/float_compare.test.ts` (expression results feeding comparisons)
     and the bench-derived tests (nbody energy, spectral-norm sqrt).
 
+28. **Inline `string.at(i)`** (`build_access_node.ts`): `.at` on a plain
+    (non-view) `string` receiver — local, param, or field-backed variable
+    with a fat (ptr, len) stack pair — now emits an unchecked `ldrb`
+    (index → x1, ptr → x0, load) instead of a full `bl string_at` call
+    frame. Sound for the same reason the fixed-size array `.at` fast path
+    is: the checker proves `at`'s `0 <= i < self.length` constraint at
+    every call site (an unverifiable index is a compile error outside
+    core). This is the byte-scan idiom's base cost — the regex engine,
+    FASTA parsing, and every char loop paid a call per character. Measured:
+    **regex-redux −35%** (58 → 38 ms), knucleotide −6% on top of item 25
+    (18 → 7.6 ms cumulative, now ~1.3× Zig).
+
+29. **Regex first-byte-set prefilter extension** (`core/System/Text/Regex.nm`):
+    the `strpbrk` candidate-position prefilter previously gave up (empty
+    charset → try a full backtracking match at EVERY position) for patterns
+    starting with a group, anchor, or wildcard. The first-byte-set
+    computation now recurses into groups (union of the group's
+    alternatives), treats `?`/`*`-quantified groups as nullable (what
+    FOLLOWS can also be first), and skips leading anchors — mirroring the
+    literal-prefix dispatch every production engine (RE2/Go/Rust) performs.
+    This makes the benchmark's `(>[^\n]+)?\n` clean pass stop matching at
+    all 25k positions and instead jump between '\n'/'>' candidates. Also
+    fixed a **pre-existing miscount**: a leading _negated_ class
+    (`[^a]b`) under-approximated the set to its member bytes, so strpbrk
+    skipped valid match starts (counted 0 instead of 3 in the regression
+    test) — negated classes now disable the prefilter. A further −4% on
+    regex-redux (38 → 35 ms, stacked on item 28); the remaining ~9× gap to
+    Rust is engine architecture (compiled lazy-DFA vs per-position
+    backtracking re-parse). Tests in `test/regex.test.ts`.
+
 ### Known issues
 
 **Float register allocation overhead in call-heavy benchmarks.** mandelbrot
@@ -634,7 +664,7 @@ LRU cache over a `Map<int,int>` plus a doubly-linked-list order tracker.
 - ✓ **[codegen] DONE:** Buffer.load_int/store_int inlined. Buffer.data pointer
   cached across loop iterations (LICM).
 
-### knucleotide (18 / 18 ms — ~3× off Zig)
+### knucleotide (18 / 18 ms → 7.6 / 7.6 ms — ~1.3× off Zig)
 
 Reads FASTA, packs bases 2-bit, counts k-mers. Already Nomen's closest-to-par
 benchmark because the hot loop is a tight sliding-window hash with no
@@ -643,21 +673,19 @@ allocation.
 - ✓ **[stdlib/codegen] DONE:** The `count_seq` / `write_freq` inner loops'
   `data.load_int(...)` is now inlined to a single strided load. 1.55× speedup
   measured.
-- **[source]** The FASTA header scan is a 6-deep if-nest checking
-  `>`,`T`,`H`,`R`,`E`,`E` byte-by-byte through `text.at(i) as int`. Replace with
-  a single inline-C `memcmp(&text[i], ">THREE", 6)` (or `Regex.find`), and a
-  bulk `memchr`-style scan for `>`.
-- **[source]** `text.at(i) as int` decodes the string byte-by-byte through a
-  method call. A `String.raw_bytes()` accessor returning `uint8*` would let the
-  parse loop index directly.
-- **[source]** The k-mer sort is a selection sort (`find max, swap`) — O(found²)
-  over at most 256 keys. A counting sort or radix sort over the fixed key space
-  is linear and tiny.
-- **[source]** `count_seq` recomputes the rolling hash from scratch for every
-  query sequence. Factor the rolling-hash state out of `write_count` and share
-  it across the 5 `write_count` calls (one pass over `data`, updating counts for
-  all queries).
-- Remaining headroom is small; the Buffer accessor fix closed most of the gap.
+- ✓ **[codegen] DONE (items 25 + 28):** Branch-aware condition lowering plus
+  inline `string.at` — the FASTA parse loop's per-byte `text.at(i)` method
+  calls and the guard chains dropped to direct loads/branches. 18 → 7.6 ms
+  cumulative; now within ~1.3× of Zig (6 ms).
+- ✗ **[source] (skipped — marginal):** memcmp/memchr header scan and
+  `String.raw_bytes()`. With `.at` inlined the byte loop is already direct
+  loads; at 7.6 vs 6 ms the whole remaining gap is smaller than the noise on
+  this change.
+- ✗ **[source] (skipped — marginal):** Counting sort over the ≤16 found keys;
+  the selection sort's O(found²) is ~120 comparisons total.
+- ✗ **[source] (skipped for fairness):** Single-pass shared rolling hash
+  across the 5 queries. The references scan once per query/length; fusing
+  the passes is an algorithmic improvement beyond what they do.
 
 ### json-serde (46 / 219 ms — ~55× off Go)
 
@@ -694,30 +722,34 @@ prints the length.
   discarded after printing length; the same work is then done N more times.
   Faithful to the spec, but worth noting.
 
-### regex-redux (62 / 62 ms — ~15× off Rust)
+### regex-redux (62 / 62 ms → 35 / 35 ms — ~9× off Rust)
 
 Reads FASTA, runs 9 regex counts and 5 substitutions. Single-threaded (matches
 the GOMAXPROCS=1 treatment for Go).
 
-- **[source]** Each of the 9 `Regex.count(pattern, cleaned)` calls recompiles
-  the pattern and re-scans the full ~25k-char string. If the stdlib exposes a
-  compiled-pattern object (`Regex.compile(pattern)`), hoist all 9 compiles out
-  of any loop. Currently there's no such API — needs stdlib support (below).
-- **[source]** The 5 chained `Regex.replace_all` calls each scan + allocate a
-  fresh string. The substitutions never grow the string (`<…>` → `|`,
-  `|…|` → `-`, etc.), so an in-place replacement would remove 4 allocations of a
-  25k-char string.
+- ✓ **[codegen] DONE (item 28):** Inline `string.at` — the engine's
+  per-character `pattern.at`/`input.at` calls were the dominant cost of both
+  the scans and the matcher. −35% (58 → 38 ms).
+- ✓ **[stdlib] DONE (item 29):** First-byte-set prefilter now handles groups,
+  `?`/`*` nullability, and leading anchors (mirroring RE2/Go/Rust literal
+  dispatch); the `(>[^\n]+)?\n` clean pass no longer backtracks at every
+  position. Also fixed a pre-existing leading-negated-class miscount. −4%
+  more (38 → 35 ms).
+- **[source]** Each of the 9 `Regex.count(pattern, cleaned)` calls rebuilds
+  the charset (the "compile") — but each pattern is used exactly once per
+  run, so a compiled-pattern API would save ~nothing here (there is no loop
+  to hoist compiles out of). The remaining cost is the matching itself.
+- ✗ **[source] (skipped for fairness):** In-place substitution
+  (`replace_all_into`). The references chain `replace_all` and pay for the
+  fresh strings; skipping those allocations would dodge work the references
+  do. Revisit only if a reference uses in-place replacement.
 - **[source]** After the variants are counted once each, the results are printed
   one at a time. Concatenating into one write would save 9 syscall round-trips
   (minor).
-- **[stdlib]** Add `Regex.compile(pattern) -> Regex` and
-  `Regex.count_compiled(re, text) -> int`. Pattern compilation is the dominant
-  regex cost; caching it across the 9 calls would help a lot.
-- **[stdlib]** Add an in-place `Regex.replace_all_into(pattern, text, repl)` or
-  a `StringBuilder`-friendly variant that doesn't allocate a fresh string per
-  pass.
-- **[stdlib]** A faster regex engine (DFA-first like re2 instead of
-  backtracking) would speed up every regex benchmark.
+- **[stdlib]** A compiled-program engine (parse each pattern once into a
+  node/automaton structure instead of re-parsing the pattern string at every
+  match attempt) is the honest remaining lever — Go/Rust compile once and run
+  a lazy DFA. That architectural gap is the bulk of the remaining ~9×.
 
 ### nbody (230 / 2281 ms → 120 / 1310 ms — ~1.76× speedup)
 

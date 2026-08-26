@@ -437,6 +437,7 @@
 	"find_next_byte",
 	"first_byte_set",
 	"collect_first_bytes",
+	"alt_first_bytes",
 	"add_class_chars",
 	"match_here",
 	"atom_end_pos",
