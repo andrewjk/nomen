@@ -112,9 +112,15 @@ export default function build_while_loop_node(node: WhileLoopNode, status: Build
 		}
 		// Avoid callee-saved registers already claimed by an enclosing loop's
 		// promoted variables or Buffer data-pointer caches — reusing one would
-		// clobber the outer loop's value across this loop's body.
+		// clobber the outer loop's value across this loop's body. Split by
+		// register class so a claimed d-register actually blocks the float
+		// pool (adding every name to used_x left d8-d15 claims invisible to
+		// the FLOAT_CALLEE_SAVED scan).
 		if (status.callee_saved_regs_used) {
-			for (const r of status.callee_saved_regs_used) used_x.add(r);
+			for (const r of status.callee_saved_regs_used) {
+				if (r.startsWith("d")) used_d.add(r);
+				else used_x.add(r);
+			}
 		}
 		let x_idx = 0;
 		let d_idx = 0;

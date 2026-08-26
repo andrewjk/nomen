@@ -182,6 +182,14 @@ export default function build_inline_method(
 	status.return_assign = undefined;
 	status.join_needs_owned_string = undefined;
 	status.emitted_allocations = new Set();
+	// The caller's whole-function/loop promotions must not be visible inside
+	// the inline body: the body's own params and locals can carry the same
+	// names, and a read (emit_var_load checks register_allocations FIRST)
+	// would grab the caller's register instead of the inline value. Clearing
+	// also stops an inline loop promotion from mutating the caller's map
+	// without a matching prologue save. The caller's CLAIMED registers stay
+	// blocked via callee_saved_regs_used, which the loop pass avoids.
+	status.register_allocations = undefined;
 
 	if (needs_x19) {
 		status.code += `str x19, [sp, #-16]!\n`;
@@ -378,6 +386,10 @@ export function build_inline_function(func: FunctionNode, status: BuildStatus) {
 	status.return_assign = undefined;
 	status.join_needs_owned_string = undefined;
 	status.emitted_allocations = new Set();
+	// See build_inline_method: the caller's register promotions must not leak
+	// into the inline body (same-named params/locals would read the caller's
+	// register; an inline loop would mutate the caller's map unsaved).
+	status.register_allocations = undefined;
 
 	const param_regs = ["x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7"];
 	const callee_saved = ["x19", "x20", "x21", "x22"];

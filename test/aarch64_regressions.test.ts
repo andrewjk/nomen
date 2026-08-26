@@ -269,3 +269,189 @@ Console.write("f=\\{f}")
 	// f doubles each iteration: 2^8 = 256.
 	await build_and_check_output(input, "wholefunc_promoted_float", "f=256");
 });
+
+// Whole-function register allocation (phase 4, params tranche): a hot scalar
+// PARAM initializes its callee-saved register in the prologue (mov/fmov from
+// the incoming param register instead of a slot spill) and must survive real
+// calls (callee-saved) inside loops.
+test("whole-function promoted int param survives calls and reassignment", async () => {
+	const input = `
+func id = (int x, out int) {
+  return x
+}
+
+func peek = (int v, out int) {
+  return id(v) * 2
+}
+
+func spin = (int n, out int) {
+  var i = 0
+  var t = n * 2
+  while i < 10 {
+    t = peek(t) - t / 2 + t
+    i = i + 1
+  }
+  return t + n + n + n + n
+}
+
+Console.write("n=\\{spin(3)}")
+`;
+	// t' = 3t - floor(t/2) from 6: 15, 38, 95, 238, 595, 1488, 3720, 9300,
+	// 23250, 58125. Return 58125 + 12 = 58137. (`peek` contains a call, so it
+	// is NOT inlined — n/x23 must survive the real bl each iteration.)
+	await build_and_check_output(input, "wholefunc_promoted_int_param", "n=58137");
+});
+
+// A hot float param is promoted into a callee-saved d-register; the incoming
+// raw bits ride an x param register, so the prologue init is an fmov.
+test("whole-function promoted float param initializes via fmov", async () => {
+	const input = `
+func scale = (float a, float b, out float) {
+  var i = 0
+  var float acc = 0.0
+  while i < 8 {
+    acc = acc + a * b - a + a * b - a
+    i = i + 1
+  }
+  return acc + a + b
+}
+
+Console.write("r=\\{scale(2.0, 0.5)}")
+`;
+	// per iter: (a*b - a) * 2 = (1.0 - 2.0) * 2 = -2.0 → acc = -16;
+	// -16 + 2.0 + 0.5 = -13.5.
+	await build_and_check_output(input, "wholefunc_promoted_float_param", "r=-13.5");
+});
+
+// A sub-word (bool) promoted param keeps its spill but adds a width-aware
+// load (ldrb), so the register holds exactly the zero-extended byte a slot
+// read would produce — full-width compares on the register see clean bits.
+test("whole-function promoted bool param reads correct byte", async () => {
+	const input = `
+func flagtest = (bool flag, out int) {
+  var n = 0
+  if flag {
+    n = n + 2
+  } else {
+    n = n + 1
+  }
+  if flag {
+    n = n + 2
+  } else {
+    n = n + 1
+  }
+  if flag {
+    n = n + 2
+  } else {
+    n = n + 1
+  }
+  if flag {
+    n = n + 2
+  } else {
+    n = n + 1
+  }
+  return n
+}
+
+Console.write("\\{flagtest(false)} \\{flagtest(true)}")
+`;
+	// false → +1 each = 4; true → +2 each = 8.
+	await build_and_check_output(input, "wholefunc_promoted_bool_param", "4 8");
+});
+
+// A hot param promotes while a hot sibling LOCAL that is ref-passed must NOT
+// (the callee writes through &slot; a register copy would go stale).
+test("ref-passed local excluded beside promoted param", async () => {
+	const input = `
+func bump = (ref int acc) {
+  acc = acc + 1
+}
+
+func mix = (int hot, out int) {
+  var i = 0
+  var t = 0
+  var shared = 10
+  while i < 5 {
+    t = t + hot + hot + hot + hot
+    i = i + 1
+  }
+  bump(ref shared)
+  bump(ref shared)
+  return t * 100 + shared
+}
+
+Console.write("r=\\{mix(3)}")
+`;
+	// t = 5 * 12 = 60; shared 10 → 12; 60*100 + 12 = 6012.
+	await build_and_check_output(input, "wholefunc_param_ref_excluded", "r=6012");
+});
+
+// A param whose name is redeclared as a local anywhere in the function must
+// not be promoted (the register would be shared by two variables).
+test("param shadowed by local excluded from whole-function promotion", async () => {
+	const input = `
+func shady = (int v, out int) {
+  var t = v + v + v + v
+  if t > 4 {
+    var v = 100
+    t = t + v
+  }
+  return t
+}
+
+Console.write("r=\\{shady(2)}")
+`;
+	// t = 8; 8 > 4 → inner v = 100, t = 108.
+	await build_and_check_output(input, "wholefunc_param_shadow_excluded", "r=108");
+});
+
+// A promoted param past the 8 register-arg boundary arrives in the caller's
+// outgoing stack area; the prologue init must load it straight into the
+// promoted register via the overflow placeholder.
+test("overflow param promoted into callee-saved register", async () => {
+	const input = `
+func wide = (int a, int b, int c, int d, int e, int f, int g, int h, int hot, out int) {
+  var i = 0
+  var t = 0
+  while i < 4 {
+    t = t + hot + hot + hot + hot
+    i = i + 1
+  }
+  return t + a + b + c + d + e + f + g + h
+}
+
+Console.write("r=\\{wide(1, 2, 3, 4, 5, 6, 7, 8, 10)}")
+`;
+	// t = 4 * 40 = 160; + 36 = 196.
+	await build_and_check_output(input, "wholefunc_overflow_param", "r=196");
+});
+
+// An inlined method's param sharing a name with the caller's promoted local
+// must read ITS OWN value, not the caller's register or slot: the inline
+// body previously saw the caller's register_allocations, and the
+// float-operand fast path also probed the caller's stack_offsets before the
+// inline param's register — so the body's `n` grabbed the caller's copy.
+test("inline body param does not alias caller's promoted register", async () => {
+	const input = `
+struct F {
+  inline func twice = (float n, out float) {
+    return n + n
+  }
+}
+
+var F f = F()
+var float n = 2.0
+var float r1 = f.twice(1.5) + n
+var float r2 = f.twice(n) * n
+var float r3 = f.twice(0.25) + n
+var float r4 = f.twice(4.0) * n
+Console.write("\\{r1} \\{r2} \\{r3} \\{r4} \\{n}")
+`;
+	// 3+2=5, 4*2=8, 0.5+2=2.5, 8*2=16, n stays 2 (multi-arg interpolation
+	// formats floats with %f).
+	await build_and_check_output(
+		input,
+		"inline_param_no_alias_promoted_reg",
+		"5.000000 8.000000 2.500000 16.000000 2.000000",
+	);
+});

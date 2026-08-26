@@ -39,7 +39,11 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 
 	status.loop_labels = status.loop_labels || [];
 	const cleanup_depth = status.heap_cleanup_stack?.length ?? 0;
-	status.loop_labels.push({ start: continue_label, end: end_label, cleanup_depth });
+	status.loop_labels.push({
+		start: continue_label,
+		end: end_label,
+		cleanup_depth,
+	});
 	if (!status.loop_writebacks) status.loop_writebacks = [];
 	status.loop_writebacks.push(undefined);
 
@@ -48,7 +52,12 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 		status.stack_offsets!.set(item_name, item_offset);
 	}
 
-	const promoted: { name: string; reg: string; offset: number; type_name: string }[] = [];
+	const promoted: {
+		name: string;
+		reg: string;
+		offset: number;
+		type_name: string;
+	}[] = [];
 	const saved_reg_allocs = status.register_allocations
 		? new Map(status.register_allocations)
 		: undefined;
@@ -64,7 +73,10 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 					existing.reads += info.reads;
 					if (info.address_taken) existing.address_taken = true;
 				} else {
-					all_refs.set(name, { reads: info.reads, address_taken: info.address_taken });
+					all_refs.set(name, {
+						reads: info.reads,
+						address_taken: info.address_taken,
+					});
 				}
 			}
 		};
@@ -75,7 +87,12 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 			merge_refs(collect_var_refs(node.update));
 		}
 
-		const eligible: { name: string; reads: number; offset: number; type_name: string }[] = [];
+		const eligible: {
+			name: string;
+			reads: number;
+			offset: number;
+			type_name: string;
+		}[] = [];
 		const redeclared = collect_declared_names({
 			node_type: "block",
 			statements: node.statements,
@@ -110,9 +127,15 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 		}
 		// Avoid callee-saved registers already claimed by an enclosing loop's
 		// promoted variables or Buffer data-pointer caches — reusing one would
-		// clobber the outer loop's value across this loop's body.
+		// clobber the outer loop's value across this loop's body. Split by
+		// register class so a claimed d-register actually blocks the float
+		// pool (adding every name to used_x left d8-d15 claims invisible to
+		// the FLOAT_CALLEE_SAVED scan).
 		if (status.callee_saved_regs_used) {
-			for (const r of status.callee_saved_regs_used) used_x.add(r);
+			for (const r of status.callee_saved_regs_used) {
+				if (r.startsWith("d")) used_d.add(r);
+				else used_x.add(r);
+			}
 		}
 		let x_idx = 0;
 		let d_idx = 0;
@@ -126,7 +149,12 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 				const reg = FLOAT_CALLEE_SAVED[d_idx];
 				status.register_allocations.set(v.name, reg);
 				used_d.add(reg);
-				promoted.push({ name: v.name, reg, offset: v.offset, type_name: v.type_name });
+				promoted.push({
+					name: v.name,
+					reg,
+					offset: v.offset,
+					type_name: v.type_name,
+				});
 				// The cached register must be loaded with the slot's width —
 				// bool/char/int8 slots are 1-byte strb stores, so a full-width
 				// `ldr` would pull dirty stack bytes into the cache.
@@ -140,7 +168,12 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 				const reg = CALLEE_SAVED_REGS[x_idx];
 				status.register_allocations.set(v.name, reg);
 				used_x.add(reg);
-				promoted.push({ name: v.name, reg, offset: v.offset, type_name: v.type_name });
+				promoted.push({
+					name: v.name,
+					reg,
+					offset: v.offset,
+					type_name: v.type_name,
+				});
 				emit_promoted_load(status, reg, v.offset, v.type_name);
 				x_idx++;
 			}

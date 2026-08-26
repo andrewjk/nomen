@@ -21,12 +21,12 @@ Text passes can't see liveness; the AST has no per-function CFG.
 
 ## Architecture (agreed)
 
-| Phase | Scope                                                                                                       | Status                                                                                 |
-| ----- | ----------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| **1** | Asm lifter + validator; wire into every build; round-trip fidelity                                          | ✅ DONE, suite green pre-crash                                                         |
-| **2** | Frame-slot forwarding + dead-store elimination over the lifted IR (`asm_opt.ts`)                            | ✅ DONE — suite green (2468 tests); measured −1…−5% broad, regex-redux −17%            |
-| **3** | Extract duplicated semantic lowering (ownership/borrows/moves) into `build_common/` shared by BOTH backends | ✅ DONE — first tranche landed, suite green (253 files / 2468 tests)                   |
-| **4** | Single canonical IR from the check phase; aarch64 gets real regalloc; eventually NEON                       | 🔄 first tranche: whole-function regalloc DONE (nbody −9%); canonical IR + NEON remain |
+| Phase | Scope                                                                                                       | Status                                                                                             |
+| ----- | ----------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| **1** | Asm lifter + validator; wire into every build; round-trip fidelity                                          | ✅ DONE, suite green pre-crash                                                                     |
+| **2** | Frame-slot forwarding + dead-store elimination over the lifted IR (`asm_opt.ts`)                            | ✅ DONE — suite green (2468 tests); measured −1…−5% broad, regex-redux −17%                        |
+| **3** | Extract duplicated semantic lowering (ownership/borrows/moves) into `build_common/` shared by BOTH backends | ✅ DONE — first tranche landed, suite green (253 files / 2468 tests)                               |
+| **4** | Single canonical IR from the check phase; aarch64 gets real regalloc; eventually NEON                       | 🔄 whole-function regalloc DONE for locals + scalar params (nbody −9%); canonical IR + NEON remain |
 
 ## Phase 1 — lifter + validator (DONE)
 
@@ -164,17 +164,27 @@ Remaining duplication candidates (recorded for later, not extracted):
   C side's `struct_needs_destroy || has_string_fields`): the aarch64 copy of
   `has_string_fields` could move to common alongside `destroy_analysis.ts`.
 
-## Phase 4 — real regalloc → canonical IR (first tranche DONE)
+## Phase 4 — real regalloc → canonical IR (first tranche DONE + params tranche DONE)
 
 **Whole-function register allocation** (`src/build_aarch64/utils/func_regalloc.ts`):
 before a function body builds, one AST scan reserves callee-saved registers
 (x23-x26, d8-d11, capped; x27/x28 + d12-d15 stay for loop promotion and
-Buffer data-pointer caches) for the body's hottest scalar locals
-(reads ≥ 4). The binding seeds `status.register_allocations` BEFORE the body
-build, so declarations initialize the register directly (the literal
+Buffer data-pointer caches) for the body's hottest scalar locals **and
+params** (reads ≥ 4). The binding seeds `status.register_allocations` BEFORE
+the body build, so declarations initialize the register directly (the literal
 fast-paths in build_declaration_node were rerouted through the reg-aware
 `emit_var_store`) and every read/write in the function is register-resident
 with no loop-entry load / loop-exit store brackets.
+
+Promoted params (params tranche): the prologue spill loop initializes the
+register instead of (or in addition to) the home slot — `mov xN, xArg` /
+`fmov dN, xArg` for 8-byte params (floats arrive as raw bits in an x
+register), or the ordinary spill plus a width-aware load (`ldrb`/`ldrh`/
+`ldr w`) for sub-word params. Overflow params load straight from the
+resolved overflow slot. Param eligibility: clean scalar types only (no
+array/view/ref/nullable/variadic/fat-string); struct/trait/enum/class params
+keep the x19-x22 pool; same shadow/ref-arg/address-taken exclusions as
+locals.
 
 Soundness model (why this is legal):
 
@@ -194,23 +204,40 @@ Soundness model (why this is legal):
   build — fixing two latent nested-function hazards (bindings leaking into an
   inner build; the inner build clearing the outer's claimed-reg set so its
   prologue saves went missing).
+- Inline bodies (`build_inline_method` / `build_inline_function`) now CLEAR
+  `register_allocations` while building the body (restoring after): an inline
+  param/local sharing the caller's promoted name must not read the caller's
+  register (emit_var_load / build_value_node check register_allocations
+  FIRST). The caller's claimed regs stay blocked via `callee_saved_regs_used`
+  (loop promotion + Buffer caches already avoid that set).
+- `build_float_operand` now checks `function_param_regs` BEFORE
+  `register_allocations`/`stack_offsets` — an inline float param rides an
+  x19-x22 register, and the old order let a same-named caller local win
+  (build_operand for ints already had the right order).
+- The for/while loop-promotion passes now split `callee_saved_regs_used` by
+  register class when avoiding claimed regs — adding every name to the x-set
+  left d8-d15 claims invisible to the FLOAT_CALLEE_SAVED scan (latent
+  clobber whenever two float promotions overlapped a loop).
 
 Measured (best-of-7 interleaved, small sizes): nbody −9…−10% (its `advance`
 population is exactly the multi-loop float case loop promotion couldn't
-serve); pidigits/nsieve −1%; rest neutral. No regressions.
+serve); pidigits/nsieve −1%; rest neutral. No regressions. (Params tranche
+not separately measured — foundation; measure alongside the next perf
+change.)
 
-Tests: `test/aarch64_regressions.test.ts` — 4 new (promoted int across calls,
-ref-arg exclusion, shadow exclusion, promoted float init).
+Tests: `test/aarch64_regressions.test.ts` — 11 total for phase 4 (promoted
+int across calls, ref-arg exclusion, shadow exclusion, promoted float init,
+promoted int param across real calls, float param via fmov, bool param
+sub-word load, ref-passed local beside promoted param, param shadowed by
+local, overflow param, inline-body param not aliasing caller's promoted
+register).
 
 Remaining phase-4 work (NOT done):
 
-- **Scalar params** are not whole-function promoted (their prologue spill
-  paths are more intricate; the x19-x22 struct-param pool already serves
-  struct-ish params).
-- **Canonical IR from the check phase** — the big rewrite; this tranche
+- **Canonical IR from the check phase** — the big rewrite; these tranches
   deliberately stayed AST-level so the suite stayed green. The func_regalloc
-  scan (decls/reads/ref-args) is a down-payment on the liveness analysis a
-  real allocator over IR will need.
+  scan (decls/params/reads/ref-args) is a down-payment on the liveness
+  analysis a real allocator over IR will need.
 - **NEON auto-vectorization** — untouched.
 - Known pre-existing divergence found while testing (recorded in
   FOLLOWUP.md): a shadowed local read after its scope diverges between
@@ -219,10 +246,9 @@ Remaining phase-4 work (NOT done):
 ## Later phases (design notes)
 
 - **Phase 4**: single canonical IR out of the check phase; aarch64 lowers
-  IR→regs with whole-function register allocation (first tranche landed —
-  see above; loop vars with ≥3 reads AND whole-function scalar locals both
-  get promoted today); NEON auto-vectorization is the big float lever
-  beyond that.
+  IR→regs with whole-function register allocation (locals + scalar params
+  both promote today; see above); NEON auto-vectorization is the big float
+  lever beyond that.
 - Stack-balance validation: implement over lifted blocks (per-block delta,
   join = require equal deltas or unknown) once phase 2 blocks exist.
 

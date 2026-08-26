@@ -2,6 +2,7 @@ import type BuildStatus from "../build_c/BuildStatus.ts";
 import array_struct_name from "../build_c/utils/array_struct.ts";
 import { resolve_mono_type } from "../build_common/mono_name.ts";
 import { moved_param_is_consumed } from "../build_common/scan_moved_param_consumed.ts";
+import { ALL_FLOAT_TYPES } from "../built_in_types.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import type Type from "../nodes/Type.ts";
 import build_block_node from "./build_block_node.ts";
@@ -16,7 +17,7 @@ import {
 	overflow_placeholder,
 	patch_overflow_placeholders,
 } from "./utils/stack_args.ts";
-import { allocate_stack_space } from "./utils/stack_var.ts";
+import { allocate_stack_space, emit_promoted_load } from "./utils/stack_var.ts";
 import { get_field_offset, get_struct_size } from "./utils/struct_layout.ts";
 
 let label_counter = 0;
@@ -405,8 +406,29 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	// Save mov'd class param values for cleanup at return
 	let moved_param_save_slots: Map<
 		string,
-		{ offset: number; type_name: string; type_args?: Type[]; is_nullable?: boolean }
+		{
+			offset: number;
+			type_name: string;
+			type_args?: Type[];
+			is_nullable?: boolean;
+		}
 	> = new Map();
+
+	// Whole-function register allocation (phase 4): reserve callee-saved
+	// registers for the body's hottest scalar locals AND params before
+	// building the prologue's param spills, so a promoted param initializes
+	// its register directly instead of spilling (and every later access is
+	// register-resident with no loop brackets). Seeding
+	// `callee_saved_regs_used` first also keeps loop promotion and Buffer
+	// data-pointer caches off these registers. Snapshot the enclosing state so
+	// a nested function build (a `func` statement inside this body) can't leak
+	// its own bindings into ours — or clobber our claimed-register set.
+	const old_register_allocations = status.register_allocations;
+	const old_callee_saved_regs = status.callee_saved_regs_used;
+	const fn_allocs = has_body ? plan_function_promotions(node) : undefined;
+	status.register_allocations = fn_allocs && fn_allocs.size > 0 ? fn_allocs : undefined;
+	status.callee_saved_regs_used =
+		fn_allocs && fn_allocs.size > 0 ? new Set(fn_allocs.values()) : undefined;
 
 	if (has_body) {
 		let param_idx = 0;
@@ -536,14 +558,35 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 						status.function_struct_param_slots!.add(param.name);
 					}
 				}
+				// Whole-function-promoted param: initialize the callee-saved
+				// register instead of (or in addition to) spilling. 8-byte params
+				// (int64/uint64, every float — floats ride an x param register as
+				// raw bits) move/load straight into the register and SKIP the
+				// spill: the home slot stays dead until an eventual
+				// emit_var_address flush. Sub-word params keep the spill and add a
+				// width-aware load, so the register holds exactly the zero-extended
+				// value a body read of the slot would produce.
+				const promoted_reg = status.register_allocations?.get(param.name);
+				const param_is_float = ALL_FLOAT_TYPES.includes(param.type.name);
 				if (param_idx < NUM_REG_ARGS) {
 					const reg = param_regs[param_idx];
-					if (size === 1) {
-						status.code += `strb ${reg.replace("x", "w")}, [x29, #${offset}]\n`;
-					} else if (size === 4) {
-						status.code += `str ${reg.replace("x", "w")}, [x29, #${offset}]\n`;
+					if (promoted_reg && size === 8) {
+						if (param_is_float) {
+							status.code += `fmov ${promoted_reg}, ${reg}\n`;
+						} else {
+							status.code += `mov ${promoted_reg}, ${reg}\n`;
+						}
 					} else {
-						status.code += `str ${reg}, [x29, #${offset}]\n`;
+						if (size === 1) {
+							status.code += `strb ${reg.replace("x", "w")}, [x29, #${offset}]\n`;
+						} else if (size === 4) {
+							status.code += `str ${reg.replace("x", "w")}, [x29, #${offset}]\n`;
+						} else {
+							status.code += `str ${reg}, [x29, #${offset}]\n`;
+						}
+						if (promoted_reg) {
+							emit_promoted_load(status, promoted_reg, offset, param.type.name);
+						}
 					}
 				} else {
 					// Overflow: arg arrived on the caller's stack. Load via x9
@@ -551,13 +594,20 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 					// with the param's declared width so the local slot matches
 					// what the register path would have produced.
 					const k = param_idx - NUM_REG_ARGS;
-					status.code += `ldr x9, [x29, #${overflow_placeholder(node.name, k)}]\n`;
-					if (size === 1) {
-						status.code += `strb w9, [x29, #${offset}]\n`;
-					} else if (size === 4) {
-						status.code += `str w9, [x29, #${offset}]\n`;
+					if (promoted_reg && size === 8) {
+						status.code += `ldr ${promoted_reg}, [x29, #${overflow_placeholder(node.name, k)}]\n`;
 					} else {
-						status.code += `str x9, [x29, #${offset}]\n`;
+						status.code += `ldr x9, [x29, #${overflow_placeholder(node.name, k)}]\n`;
+						if (size === 1) {
+							status.code += `strb w9, [x29, #${offset}]\n`;
+						} else if (size === 4) {
+							status.code += `str w9, [x29, #${offset}]\n`;
+						} else {
+							status.code += `str x9, [x29, #${offset}]\n`;
+						}
+						if (promoted_reg) {
+							emit_promoted_load(status, promoted_reg, offset, param.type.name);
+						}
 					}
 				}
 			}
@@ -635,20 +685,6 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 
 	const old_force_heap = status.force_heap_strings;
 	status.force_heap_strings = scan_force_heap_strings(node.statements, status.structs);
-
-	// Whole-function register allocation (phase 4): reserve callee-saved
-	// registers for the body's hottest scalar locals before building it, so
-	// every access is register-resident with no loop brackets. Seeding
-	// `callee_saved_regs_used` first also keeps loop promotion and Buffer
-	// data-pointer caches off these registers. Snapshot the enclosing state so
-	// a nested function build (a `func` statement inside this body) can't leak
-	// its own bindings into ours — or clobber our claimed-register set.
-	const old_register_allocations = status.register_allocations;
-	const old_callee_saved_regs = status.callee_saved_regs_used;
-	const fn_allocs = has_body ? plan_function_promotions(node) : undefined;
-	status.register_allocations = fn_allocs && fn_allocs.size > 0 ? fn_allocs : undefined;
-	status.callee_saved_regs_used =
-		fn_allocs && fn_allocs.size > 0 ? new Set(fn_allocs.values()) : undefined;
 
 	// Each function body starts with a fresh Buffer data-pointer cache so a
 	// cache entry established while building an earlier function can't leak in

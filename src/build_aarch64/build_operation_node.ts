@@ -455,6 +455,16 @@ function build_float_operand(node: BaseNode, target_reg: string, status: BuildSt
 			status.code += `scvtf ${target_reg}, x3\n`;
 			return;
 		}
+		// An inline body's float param rides an x callee-saved register as raw
+		// bits (function_param_regs). Check it BEFORE the promotion/slot fast
+		// paths — the caller's register_allocations / stack_offsets may hold a
+		// DIFFERENT variable with the same name (emit paths like this one are
+		// what made a same-named inline param alias the caller's local).
+		const param_reg = status.function_param_regs?.get(value);
+		if (param_reg) {
+			status.code += `fmov ${target_reg}, ${param_reg}\n`;
+			return;
+		}
 		const alloc_reg_op = status.register_allocations?.get(value);
 		if (alloc_reg_op) {
 			status.code += `fmov ${target_reg}, ${alloc_reg_op}\n`;

@@ -216,3 +216,88 @@ deleted). Any triage of a suspicious failure should start with
 - Any emitted assembly that must survive a `bl` may only rely on
   callee-saved registers (x19–x28, sp) or stack slots — x0–x18 are
   caller-saved and clobbered by the callee.
+
+## Built-in type follow-ups from the `built_in_types.ts` consolidation (2026-08)
+
+Consolidating the scattered type-name checks into `src/built_in_types.ts`
+(metadata table + predicates) surfaced several drift bugs. Fixed in that pass
+and a follow-up ufloat implementation (all tests green):
+
+- `float32`/`float64` are negatable (`u-`), `ufloat*` counts as Sendable, and
+  aarch64 arithmetic uses unsigned instructions for ALL unsigned ints (was
+  missing `uint16`/`uint`) and the FPU path for all six float variants.
+- `ufloat*` is now implemented end to end: float-literal coercion into float
+  targets (non-negative only for unsigned; negative literals are rejected),
+  explicit `as` casts, cross-float variable coercion (signed targets accept
+  any float; unsigned accept unsigned), file-scope const data + auto-inline
+  candidates (`SIMPLE_TYPES` now includes all floats), proper `.double`
+  constant emission for local float literals of ANY width (was hardwired to
+  exactly `"float"`, breaking `float32`/`float64`/`ufloat*` locals on
+  aarch64), and System library structs with `to_string` for all five
+  previously method-less float variants (`core/System/{ufloat,float32,
+ufloat32,float64,ufloat64}.nm`, pulled in via parse.ts BASE_TYPES).
+- Char is now treated as unsigned end to end: aarch64 element loads
+  zero-extend (`ldrb`, was `ldrsb` for view/array elements), cast widening
+  zero-extends (`and #0xFF`, was `sxtb`), and the C backend declares chars as
+  `unsigned char` (c_type + raw-block substitution). Still open: Nomen char
+  literals >= 0x80 are emitted verbatim into C source (`'é'`), which clang
+  rejects — high bytes must be built via `233 as char` until literals are
+  escaped per backend.
+- String interpolation parses decimal literals inside `\{...}` wrong:
+  `Console.write("\{f * 2.0}\n")` fails with "Unknown value: 2." — the `0`
+  after the dot is lost. Affects plain `float` too; workaround is to compute
+  the expression into a variable first.
+
+## aarch64/C backend divergence: shadowed local read after its scope (2026-08)
+
+Discovered while testing whole-function register allocation (phase 4). A
+variable shadowed in an if-branch diverges between backends when the OUTER
+variable is read after the branch:
+
+```
+var x = 1
+var i = 0
+while i < 3 { x = x * 2  i = i + 1 }
+if x > 4 {
+  var x = 100
+  x = x + 1
+  Console.write("inner=\{x}")
+}
+Console.write("x=\{x}")   // C: x=8 (correct)  aarch64: x=10
+```
+
+aarch64's `stack_offsets` map is keyed by NAME, so the inner declaration's
+slot assignment clobbers the outer's entry; after the branch, reads and the
+inner-branch store traffic resolve to the wrong slot. Pre-existing (reprodes
+with whole-function promotion disabled). Likely fix: scope the offsets map
+per frame (like scoped_declarations) or rename shadowed slots during build.
+The phase-4 func_regalloc scan conservatively excludes any multiply-declared
+name, so promotion is not affected. Repro:
+`test/aarch64_regressions.test.ts` history (the "shadowed name" test was
+rewritten to avoid the divergent read; see git history for the original).
+
+## int16/uint16 param spill writes full word (2026-08)
+
+The generic param-spill path in `build_function_node` (aarch64) sizes stores
+by `size === 1` / `size === 4` branches only — an int16/uint16 param (2-byte
+slot) spills with a full-width `str`, clobbering the adjacent 6 stack bytes.
+Pre-existing (the promoted-param tranche kept the same shape for the
+non-promoted spill); no test covers an int16 param followed by another local
+today. Same pattern exists in `build_struct_node`'s custom-init spill loop.
+
+## Nested struct-with-methods cannot parse inside a function (2026-08)
+
+A `struct` containing methods declared inside a function body fails to parse
+("Unknown value: self") — so `build_struct_node`'s method builders can never
+run with an enclosing function's `register_allocations` live. The phase-4
+inline-body clearing covers the inlining paths that matter today; if nested
+structs ever parse, re-audit those builders for the same leakage.
+
+## Top-level inline-candidate scan misses nested functions (2026-08)
+
+`scan_inline_candidates` only scans ROOT statements, but the test harness
+(parse_with_imports) wraps all user code inside `main` — so user-defined
+`func`s are never function-inlined in tests (only `inline` struct methods,
+selected via `target_struct.functions`, inline). If whole-program inlining
+matters later, the scan should descend into function bodies (respecting
+MAX_INLINE_DEPTH).
