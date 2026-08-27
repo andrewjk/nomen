@@ -21,12 +21,12 @@ Text passes can't see liveness; the AST has no per-function CFG.
 
 ## Architecture (agreed)
 
-| Phase | Scope                                                                                                       | Status                                                                                                                                                                                    |
-| ----- | ----------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **1** | Asm lifter + validator; wire into every build; round-trip fidelity                                          | ✅ DONE, suite green pre-crash                                                                                                                                                            |
-| **2** | Frame-slot forwarding + dead-store elimination over the lifted IR (`asm_opt.ts`)                            | ✅ DONE — suite green (2468 tests); measured −1…−5% broad, regex-redux −17%                                                                                                               |
-| **3** | Extract duplicated semantic lowering (ownership/borrows/moves) into `build_common/` shared by BOTH backends | ✅ DONE — first tranche landed, suite green (253 files / 2468 tests)                                                                                                                      |
-| **4** | Single canonical IR from the check phase; aarch64 gets real regalloc; eventually NEON                       | 🔄 whole-function regalloc DONE (locals + params, nbody −9%); flow groundwork + canonical NIR stage 1 DONE (planner consumes NIR, codegen byte-identical); backend lowering + NEON remain |
+| Phase | Scope                                                                                                       | Status                                                                                                                                                                                                                              |
+| ----- | ----------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **1** | Asm lifter + validator; wire into every build; round-trip fidelity                                          | ✅ DONE, suite green pre-crash                                                                                                                                                                                                      |
+| **2** | Frame-slot forwarding + dead-store elimination over the lifted IR (`asm_opt.ts`)                            | ✅ DONE — suite green (2468 tests); measured −1…−5% broad, regex-redux −17%                                                                                                                                                         |
+| **3** | Extract duplicated semantic lowering (ownership/borrows/moves) into `build_common/` shared by BOTH backends | ✅ DONE — first tranche landed, suite green (253 files / 2468 tests)                                                                                                                                                                |
+| **4** | Single canonical IR from the check phase; aarch64 gets real regalloc; eventually NEON                       | 🔄 whole-function regalloc DONE (locals + params, nbody −9%); flow groundwork + canonical NIR stage 1 DONE (planner consumes NIR, codegen byte-identical); CFG + liveness + dominance over NIR DONE; backend lowering + NEON remain |
 
 ## Phase 1 — lifter + validator (DONE)
 
@@ -272,7 +272,8 @@ item 31.
 
 ### Canonical IR stage 1 — NIR + planner migration (DONE)
 
-`src/nir/` — the canonical IR now EXISTS and has its first real consumer.
+`src/nir/` — the canonical IR (Nomen IR, or NIR) now EXISTS and has its
+first real consumer.
 
 - `nir.ts` — closed, tagged union of statements (`declare/assign/eval/if/
 while/for/switch_match/return/break/continue/exit/raw/spawn/async_block/
@@ -307,15 +308,58 @@ contention, if-branch coverage over MIN_READS, exotic-statement corpus with
 `unknown_kinds` asserted empty, every `bench/nomen/*.nm` function lowered +
 analyzed with empty unknown sets, identifier-classification parity).
 
+### CFG + liveness + dominance tranche (DONE)
+
+The liveness groundwork the plan said NEON needs before a vectorizer can
+exist.
+
+- `src/nir/cfg.ts` — flattens the structured NIR into basic blocks with
+  explicit terminators (`goto/branch/return/exit/unreachable`). `if` gets
+  then/else/join blocks (join always exists, so phi-style consumers have a
+  home); `while`/`for` get header/body/update/exit blocks with break/continue
+  target stacks (`continue` → update block, `break` → exit); `switch`/`match`
+  lower to the backend's sequential condition-chain shape; falling off the
+  end leaves an `unreachable` terminator (the epilogue is backend-emitted).
+  `nested_func` bodies become their own `FunctionCfg`s (a nested declaration
+  never executes at its declaration point; the checker rejects closures, so
+  nothing is lost). Facts ride the flat statements: `reads`/`defs`/`barrier`.
+  Defs include may-defs — ref args, swap swapees, method receivers, path
+  assignment roots, and (new on the NIR assign variant) `operator`, so a
+  compound target's old value counts as read while a plain target is a pure
+  def. `raw`/`opaque`/`other` are LIVENESS BARRIERS (reads/defs = whole
+  name universe). Name-keyed, matching the backend's name-keyed
+  `stack_offsets`; names read but never declared (checker-injected
+  `_param_N` temps) still join the universe.
+- `src/nir/analysis.ts` — the passes: forward-computed block use/def (a read
+  is upward-exposed only if no earlier statement in the block defined it) +
+  iterative may-liveness fixpoint (`analyze_liveness`); reachable set, RPO,
+  iterative dominator sets → idoms → dominator tree → dominance frontiers
+  (`analyze_dominance`); natural loops from back edges with body, latches,
+  exits and containment-based nesting depth, plus per-block loop depth
+  (`analyze_loops`); `analyze_cfg` runs all of them.
+
+Refactor-only proof: no codegen consumer yet, so generated `.s` is
+byte-identical by construction. Tests: `test/nir_cfg.test.ts` — 10 cases
+(straight-line/diamond/while/for-break-continue/early-return/match-chain
+shapes, idom + frontier assertions, loop-carried liveness, ref-arg may-defs,
+raw-block barrier, nested-function separation, and a full-corpus run over
+every `bench/nomen/*.nm` function asserting idom validity and
+liveness/loop invariants).
+
+Next tranche (unchanged from the list below): backend lowering from NIR
+(aarch64 first), then the C backend; the vectorizer stands on
+`analyze_loops` + `analyze_liveness`.
+
 Remaining phase-4 work (NOT done):
 
 - **Canonical IR stage 2+** — lower the aarch64 BACKEND from NIR (today only
   the regalloc PLANNER consumes it; emission still walks the AST), then the
   C backend, then retire the duplicate AST walks entirely. Stage 1's closed
   union + coverage sets are the contract those passes build against.
-- **NEON auto-vectorization** — untouched. The NIR's loop-nesting weights
-  and per-statement structure are the substrate a loop-vectorizer pass
-  needs; liveness/dominance over NIR comes before that.
+- **NEON auto-vectorization** — the CFG/liveness/dominance substrate now
+  exists (`src/nir/analysis.ts`: loop discovery with nesting depth, block
+  liveness, frontiers). What remains is the vectorizer pass itself over
+  loop bodies plus a lowering path that can emit NEON from the NIR.
 - Known pre-existing divergence found while testing (recorded in
   FOLLOWUP.md): a shadowed local read after its scope diverges between
   backends (aarch64 `x=10` vs C `x=8`); `stack_offsets` is name-keyed.

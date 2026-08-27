@@ -76,6 +76,7 @@ function stmt(ctx: LowerCtx, n: BaseNode): NirStmt {
 				node: n,
 				target: expr(ctx, (n as any).left_value),
 				rhs: expr(ctx, (n as any).right_value),
+				operator: ((n as any).operator as string | undefined) ?? null,
 			};
 		case "return": {
 			const ret = n as ReturnNode;

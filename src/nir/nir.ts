@@ -113,7 +113,14 @@ interface NirStmtBase {
 
 export type NirStmt =
 	| (NirStmtBase & { readonly kind: "declare"; readonly decl: NirDeclareInfo })
-	| (NirStmtBase & { readonly kind: "assign"; readonly target: NirExpr; readonly rhs: NirExpr })
+	| (NirStmtBase & {
+			readonly kind: "assign";
+			readonly target: NirExpr;
+			readonly rhs: NirExpr;
+			/** Compound operator (`+` for `x += …`) — the target's OLD value is
+			 *  read exactly when this is set. */
+			readonly operator: string | null;
+	  })
 	| (NirStmtBase & { readonly kind: "eval"; readonly expr: NirExpr })
 	| (NirStmtBase & {
 			readonly kind: "if";
