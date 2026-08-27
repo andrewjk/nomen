@@ -21,12 +21,12 @@ Text passes can't see liveness; the AST has no per-function CFG.
 
 ## Architecture (agreed)
 
-| Phase | Scope                                                                                                       | Status                                                                                             |
-| ----- | ----------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| **1** | Asm lifter + validator; wire into every build; round-trip fidelity                                          | ✅ DONE, suite green pre-crash                                                                     |
-| **2** | Frame-slot forwarding + dead-store elimination over the lifted IR (`asm_opt.ts`)                            | ✅ DONE — suite green (2468 tests); measured −1…−5% broad, regex-redux −17%                        |
-| **3** | Extract duplicated semantic lowering (ownership/borrows/moves) into `build_common/` shared by BOTH backends | ✅ DONE — first tranche landed, suite green (253 files / 2468 tests)                               |
-| **4** | Single canonical IR from the check phase; aarch64 gets real regalloc; eventually NEON                       | 🔄 whole-function regalloc DONE for locals + scalar params (nbody −9%); canonical IR + NEON remain |
+| Phase | Scope                                                                                                       | Status                                                                                                                            |
+| ----- | ----------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| **1** | Asm lifter + validator; wire into every build; round-trip fidelity                                          | ✅ DONE, suite green pre-crash                                                                                                    |
+| **2** | Frame-slot forwarding + dead-store elimination over the lifted IR (`asm_opt.ts`)                            | ✅ DONE — suite green (2468 tests); measured −1…−5% broad, regex-redux −17%                                                       |
+| **3** | Extract duplicated semantic lowering (ownership/borrows/moves) into `build_common/` shared by BOTH backends | ✅ DONE — first tranche landed, suite green (253 files / 2468 tests)                                                              |
+| **4** | Single canonical IR from the check phase; aarch64 gets real regalloc; eventually NEON                       | 🔄 whole-function regalloc DONE for locals + scalar params (nbody −9%); flow-analysis groundwork DONE; canonical IR + NEON remain |
 
 ## Phase 1 — lifter + validator (DONE)
 
@@ -164,7 +164,7 @@ Remaining duplication candidates (recorded for later, not extracted):
   C side's `struct_needs_destroy || has_string_fields`): the aarch64 copy of
   `has_string_fields` could move to common alongside `destroy_analysis.ts`.
 
-## Phase 4 — real regalloc → canonical IR (first tranche DONE + params tranche DONE)
+## Phase 4 — real regalloc → canonical IR (locals+params DONE; flow tranche DONE)
 
 **Whole-function register allocation** (`src/build_aarch64/utils/func_regalloc.ts`):
 before a function body builds, one AST scan reserves callee-saved registers
@@ -231,6 +231,44 @@ promoted int param across real calls, float param via fmov, bool param
 sub-word load, ref-passed local beside promoted param, param shadowed by
 local, overflow param, inline-body param not aliasing caller's promoted
 register).
+
+### Flow-analysis tranche (DONE)
+
+`src/build_aarch64/utils/func_flow.ts` — the liveness groundwork the plan
+called a down-payment. `plan_function_promotions` now gets its variable
+facts from ONE full-coverage walk (`collect_weighted_var_refs`) instead of
+per-statement `collect_var_refs`, which was structurally blind in three
+places:
+
+1. **If branches**: `IfElseNode` stores `if_branch`/`else_branch`
+   (`BranchNode`s); the old scanner read `statements`/`else_statements`,
+   which don't exist on it → every identifier inside an if body was
+   invisible. Missed reads under-promoted; missed ADDRESS-TAKES left a hole
+   in the promotion exclusions for variables only addressed inside branches.
+2. **Method-call arguments**: `AccessFunctionCallNode` carries `params`; the
+   old scanner read `.args` → method args (reads AND ref-swapees) never
+   counted.
+3. **Switch/match arms**: case wrappers are plain `{condition, branch}`
+   objects without a `node_type` tag → arm conditions/bodies never walked.
+
+The walk also records each name's LOOP-NESTING-WEIGHTED reads
+(`reads × 8^depth`) alongside raw counts. A/B outcome: weight-FIRST ranking
+inverted `advance`'s d-pool order (params demoted to slots) and measured
+neutral-to-slightly-negative (nbody −~1%, spectral-norm −~0.6% medians,
+pidigits/nsieve even; quiet-window re-run had spectral marginally ahead and
+nbody noise-bound). Landing shape: eligibility unchanged (raw ≥ MIN_READS +
+all exclusions), ranking = raw desc with WEIGHT as tie-breaker only;
+outputs are untouched where counts didn't change, while functions whose
+reads live in if/method/switch regions may now promote at all. The full
+weighted profile stays exported for the future IR allocator's cost model.
+
+Tests: `test/func_flow.test.ts` — 5 unit tests (weighted depth math incl.
+legacy LHS-target counting, address-take marks via access receivers,
+method-arg visibility, tie-break-by-loop-heat under pool contention,
+if-branch coverage pushing a var over MIN_READS).
+
+Measured: perf-neutral (foundation + soundness fix); see IMPROVEMENTS.md
+item 31.
 
 Remaining phase-4 work (NOT done):
 

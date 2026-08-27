@@ -406,6 +406,27 @@ Changes applied:
     Measured (interleaved): regex-redux **−17%**, lru −5%, pidigits/
     fannkuch/mandelbrot/edigits −3%, nbody −2%. Foundation: the lifted-IR
     substrate (`lift_asm.ts` + `asm_ir.ts` table) now validates EVERY build.
+31. **Flow-aware promotion planning** (`utils/func_flow.ts`, phase 4
+    groundwork): `plan_function_promotions` now sources its variable facts
+    from one full-coverage AST walk instead of per-statement `collect_var_refs`
+    scans that were structurally blind in three places — if branches
+    (`IfElseNode` stores `if_branch`/`else_branch`, not
+    `statements`/`else_statements`), method-call arguments
+    (`AccessFunctionCallNode` carries `params`, not `args`), and switch/match
+    arms (plain `{condition, branch}` wrappers carry no `node_type` tag).
+    Missing reads under-promoted; missing address-take marks left a hole in
+    the promotion exclusions for variables only addressed inside those
+    regions. Eligibility is unchanged (raw reads ≥ 4 plus all exclusions);
+    loop-nesting WEIGHTS (`reads × 8^depth`) are recorded per name and used
+    ONLY to break ranking ties between equal raw counts — a weight-first A/B
+    measured neutral-to-slightly-negative on the suite (nbody −~1%,
+    spectral-norm −~0.6% medians, pidigits/nsieve dead even; quiet-window
+    re-run: spectral marginally ahead, nbody noise-bound) because raw
+    frequency already encodes most hotness once MIN_READS filters candidates.
+    The weighted profile stays exported for an IR-based allocator's cost
+    model. Perf-neutral by design on outputs whose counts didn't change;
+    functions with reads hidden in if/method/switch-marginal positions may
+    now promote where they previously couldn't.
 
 ### Known issues
 

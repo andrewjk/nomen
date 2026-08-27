@@ -2,7 +2,7 @@ import { ALL_FLOAT_TYPES, SCALAR_TYPES } from "../../built_in_types.ts";
 import type BaseNode from "../../nodes/BaseNode.ts";
 import type DeclarationNode from "../../nodes/DeclarationNode.ts";
 import type Type from "../../nodes/Type.ts";
-import collect_var_refs from "./collect_var_refs.ts";
+import collect_weighted_var_refs from "./func_flow.ts";
 
 /**
  * Whole-function register allocation (ASM_PLAN phase 4).
@@ -35,13 +35,25 @@ import collect_var_refs from "./collect_var_refs.ts";
  *     write the caller's slot through the pointer; the register copy would go
  *     stale). The checker stamps `ref_param_indices` on call nodes, so this
  *     is detected syntactically.
- *   - its address taken / used as an access target (collect_var_refs).
+ *   - its address taken / used as an access target (func_flow.ts).
  *   - the name is declared more than once anywhere in the function (shadowed
  *     declarations would share the register) or — for a local — collides
  *     with a parameter of the function.
  *   - (params) not a clean scalar type: array/view/ref/nullable modifiers,
  *     variadic, and fat `string` pair-ABI params all keep their existing
  *     conventions; struct/trait/enum/class params ride the x19-x22 pool.
+ * - Reads come from the flow-aware walk (utils/func_flow.ts), which sees
+ *   every control region (if branches, method args, switch/match arms)
+ *   where the earlier per-statement scans were blind — including
+ *   address-take marks feeding these exclusions. Eligibility keys off RAW
+ *   read counts; ranking is raw-frequency first with loop-nesting weight
+ *   breaking ties between equal counts.
+ * - Reads are counted by the flow-aware walk (utils/func_flow.ts), which
+ *   sees every control region (if branches, method args, switch/match arms)
+ *   where earlier per-statement scans were blind — including address-take
+ *   marks feeding the exclusions. Eligibility uses RAW read counts and the
+ *   ranking is raw-frequency first; loop-nesting weight only breaks ties
+ *   between equal read counts.
  * - Sub-word scalars (bool/char/int8/int16/int32) are promoted like the loop
  *   pass: all register traffic is full-width `mov`s of already zero-extended
  *   values, and the declaration's `emit_var_store` initializes the register
@@ -64,6 +76,7 @@ const MIN_READS = 4;
 interface Candidate {
 	name: string;
 	reads: number;
+	weight: number;
 	type_name: string;
 }
 
@@ -86,15 +99,14 @@ export function plan_function_promotions(func: {
 		scan(stmt, decl_types, decl_counts, ref_arg_names);
 	}
 
-	// Read counts / access-target marks, merged across the body (same source
-	// the loop pass uses, so the two heuristics count identically).
-	const reads = new Map<string, number>();
+	// Flow facts (raw + loop-weighted reads, address-take marks), collected by
+	// one full-coverage walk — see func_flow.ts. Eligibility still keys off
+	// RAW reads so the candidate set only ever grows via better coverage;
+	// hotness decides RANKING under pool contention.
+	const reads = collect_weighted_var_refs(func);
 	const address_taken = new Set<string>();
-	for (const stmt of func.statements) {
-		for (const [name, info] of collect_var_refs(stmt)) {
-			reads.set(name, (reads.get(name) ?? 0) + info.reads);
-			if (info.address_taken) address_taken.add(name);
-		}
+	for (const [name, info] of reads) {
+		if (info.address_taken) address_taken.add(name);
 	}
 
 	const param_names = new Set(func.params.map((p) => p.name));
@@ -104,9 +116,9 @@ export function plan_function_promotions(func: {
 		if (param_names.has(name)) continue; // would collide with a param slot
 		if (ref_arg_names.has(name)) continue; // callee may write the slot
 		if (address_taken.has(name)) continue;
-		const r = reads.get(name) ?? 0;
-		if (r < MIN_READS) continue;
-		candidates.push({ name, reads: r, type_name });
+		const r = reads.get(name);
+		if (!r || r.reads < MIN_READS) continue;
+		candidates.push({ name, reads: r.reads, weight: r.weighted_reads, type_name });
 	}
 	// Scalar params are promotion candidates too: the value arrives in a
 	// param register (or overflow slot) and would otherwise be spilled to a
@@ -120,13 +132,27 @@ export function plan_function_promotions(func: {
 		if ((decl_counts.get(param.name) ?? 0) !== 0) continue; // shadowed by a body decl
 		if (ref_arg_names.has(param.name)) continue; // callee may write the slot
 		if (address_taken.has(param.name)) continue;
-		const r = reads.get(param.name) ?? 0;
-		if (r < MIN_READS) continue;
-		candidates.push({ name: param.name, reads: r, type_name: t.name });
+		const r = reads.get(param.name);
+		if (!r || r.reads < MIN_READS) continue;
+		candidates.push({
+			name: param.name,
+			reads: r.reads,
+			weight: r.weighted_reads,
+			type_name: t.name,
+		});
 	}
 	if (candidates.length === 0) return new Map();
 
-	candidates.sort((a, b) => b.reads - a.reads);
+	// Hottest first by RAW reads — the ranking the suite's benchmarks were
+	// tuned around. Loop-nesting WEIGHT breaks ties between equal raw counts
+	// (an equal-read variable inside a loop executes far more often); a
+	// weight-first A/B (nbody −~1%, spectral-norm −~0.6%, rest neutral) showed
+	// raw frequency beats structural frequency once eligibility already
+	// demands MIN_READS, so weighting only refines ties here. The full
+	// weighted profile stays available for an IR-based allocator's cost model
+	// (utils/func_flow.ts). Raw count, weight, declaration order — V8 sort is
+	// stable, so this is deterministic.
+	candidates.sort((a, b) => b.reads - a.reads || b.weight - a.weight);
 	const result = new Map<string, string>();
 	let x_used = 0;
 	let d_used = 0;
@@ -147,7 +173,7 @@ export function plan_function_promotions(func: {
  * Descends through every object key (except parent/scope links) so nothing is
  * missed; nested function bodies are included, which can only make the
  * shadow/ref exclusions more conservative (their reads don't affect this
- * scan's eligibility, only the collect_var_refs counts do).
+ * scan's eligibility, only the func_flow.ts counts do).
  */
 function scan(
 	node: BaseNode | null | undefined,
