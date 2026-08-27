@@ -298,10 +298,11 @@ function gather_structs(block: BlockNode, status: CheckStatus) {
 					func.return_type = materialize_type(func.return_type, status);
 					instantiate_generic_type(func.return_type, status);
 					// Gather-time parallel-length strip (see
-					// strip_param_length_equalities): callers checked before
-					// this function's statement walk must see the stripped
+					// strip_param_length_equalities): callers checked before this
+					// function's statement walk must see the stripped
 					// signature.
 					strip_param_length_equalities(func);
+					assign_function_label(func, block, status);
 					status.functions.push(func);
 				}
 				break;
@@ -331,6 +332,45 @@ function gather_structs(block: BlockNode, status: CheckStatus) {
 			}
 		}
 	}
+}
+
+/**
+ * Assign `label_name` (the unique backend emission label) to a function at
+ * gather time. Top-level functions (gathered from the ROOT block) keep their
+ * source name — no label. A function declared inside another function body
+ * gets `<parent>_<name>`: call resolution is parent-scoped during checking
+ * (each body's cloned function table), but both backends hoist nested funcs
+ * to file scope, so siblings sharing a bare name — or monomorphized clones
+ * of the same generic parent — would emit colliding symbols. The label is
+ * uniquified against every function emission name in the program (the shared
+ * `function_emission_names` set); `name` stays the source name so calls keep
+ * resolving. check_function_node registers the emission name of every
+ * function that flows through it (covering clones that skip this gather).
+ */
+function assign_function_label(func: FunctionNode, block: BlockNode, status: CheckStatus) {
+	const taken = status.function_emission_names;
+	if (block.node_type === "root" || !taken) {
+		if (taken) register_emission_name(func, taken);
+		return;
+	}
+	// Parent: the body being gathered is the enclosing FunctionNode itself
+	// (its check_block_node runs gather BEFORE pushing anything), or — for a
+	// func declared in a deeper block (if/while/match) — the nearest function
+	// already on the stack (pushed by its check_block_node before walking).
+	const parent =
+		block.node_type === "func"
+			? (block as FunctionNode)
+			: (status.stack.findLast((n) => n.node_type === "func") as FunctionNode | undefined);
+	const base = `${parent?.name ?? "nested"}_${func.name}`;
+	let label = base;
+	let suffix = 2;
+	while (taken.has(label)) label = `${base}_${suffix++}`;
+	func.label_name = label;
+	register_emission_name(func, taken);
+}
+
+function register_emission_name(func: FunctionNode, taken: Set<string>) {
+	taken.add(func.label_name ?? func.name);
 }
 
 /**

@@ -5,6 +5,7 @@ import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import ReturnNode from "../nodes/ReturnNode.ts";
 import StructNode from "../nodes/StructNode.ts";
+import emission_label from "./emission_label.ts";
 
 /**
  * Functions (and methods) whose CLASS-typed return value is a BORROWED
@@ -135,8 +136,14 @@ function scan_func(
 		}
 	});
 	if (returns_borrowed) {
-		const sanitized = func.name.replace(/#/g, "");
-		const label = struct_name ? `${struct_name}_${sanitized}` : sanitized;
+		// Mirror the build's emission label: a checker-assigned uniquified
+		// label for a function nested in another body, else
+		// `StructName_func_name` / the bare name.
+		const label = func.label_name
+			? emission_label(func)
+			: struct_name
+				? `${struct_name}_${func.name.replace(/#/g, "")}`
+				: func.name.replace(/#/g, "");
 		result.add(label);
 	}
 }

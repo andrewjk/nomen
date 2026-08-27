@@ -483,6 +483,7 @@ export function monomorphize(
 			var_name_counter: status.var_name_counter,
 			type_params: [],
 			errors: status.errors,
+			function_emission_names: status.function_emission_names,
 		};
 		check_function_node(cloned, root_status);
 	} else {
@@ -1649,6 +1650,7 @@ function specialize_function(
 		var_name_counter: status.var_name_counter,
 		type_params: [],
 		errors: status.errors,
+		function_emission_names: status.function_emission_names,
 	};
 
 	check_function_node(cloned, root_status);

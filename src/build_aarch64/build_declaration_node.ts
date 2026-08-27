@@ -1,6 +1,7 @@
 import emit_field_overrides from "../build/emit_field_overrides.ts";
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
+import call_in_set from "../build_common/call_in_set.ts";
 import { struct_needs_destroy } from "../build_common/destroy_analysis.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
@@ -1005,7 +1006,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 	// per callee (scan_borrow_returns); such decls are not destroy-tracked.
 	const value_is_borrowing_call =
 		node.value?.node_type === "func_call" &&
-		!!status.borrow_returning_functions?.has((node.value as FunctionCallNode).name);
+		!!call_in_set(status.borrow_returning_functions, node.value as FunctionCallNode);
 	const is_borrowed_class_ref = !!(
 		node.type?.name &&
 		struct_type &&
@@ -1697,7 +1698,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 					// (`box_at` handing back a container element): its result is
 					// owned by the callee's receiver and must NOT be anchored —
 					// the owner's destroy reclaims it.
-					if (!status.borrow_returning_functions?.has(func_call.name)) {
+					if (!call_in_set(status.borrow_returning_functions, func_call)) {
 						status.last_result_is_heap = true;
 						check_heap();
 					}

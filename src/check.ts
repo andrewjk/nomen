@@ -24,6 +24,7 @@ export default function check(root: BaseNode): CheckResult {
 		warnings: [],
 		buffer_caps: new Map(),
 		mutated_local_names: new Set(),
+		function_emission_names: new Set(),
 	};
 
 	check_node(root, status);

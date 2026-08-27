@@ -55,6 +55,18 @@ export default class FunctionNode extends BaseNode implements BlockNode, Returni
 	type_params: string[] = [];
 	scope?: BaseNode;
 	/**
+	 * Unique backend label for a function declared NESTED inside another
+	 * function body. Call resolution is parent-scoped during checking (each
+	 * body's cloned function table), but both backends hoist nested funcs to
+	 * file scope — a bare name would collide across siblings sharing it, or
+	 * across monomorphized clones of the same generic parent. Assigned by the
+	 * checker's block gather as `<parent>_<name>` ( uniquified against every
+	 * other function emission name); `name` stays the source name so
+	 * resolution keeps working. Undefined for top-level functions (they emit
+	 * under their own name).
+	 */
+	label_name?: string;
+	/**
 	 * Optional contract on the return value, parsed from `out TYPE: constraint`.
 	 * The placeholder `out` refers to the return value; other identifiers refer
 	 * to the function's parameters. Used by check_function_call to propagate

@@ -1,3 +1,4 @@
+import emission_label from "../build_common/emission_label.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import { moved_param_is_consumed } from "../build_common/scan_moved_param_consumed.ts";
@@ -119,7 +120,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		} else {
 			status.code += `void `;
 		}
-		status.code += `${raw_thin ? "_raw_" : ""}${c_function_name(node.name)}(`;
+		status.code += `${raw_thin ? "_raw_" : ""}${c_function_name(emission_label(node))}(`;
 	}
 	if (!is_main_with_init) {
 		let first_param = true;
@@ -199,7 +200,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		status.nullable_ret_has_param = undefined;
 	}
 	const old_function_name = status.current_function_name;
-	status.current_function_name = node.name;
+	status.current_function_name = emission_label(node);
 	// Raw-block shim registry: by-value fat-string params (see build_raw_node).
 	// A raw-THIN function (raw_string_abi_needed) emits its whole body with
 	// thin char* params — there is nothing to shim, and shimming would emit
@@ -353,7 +354,12 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 
 	if (raw_thin) {
 		set_c_thin_strings(false);
-		emit_raw_string_adapter(node, c_function_name(node.name), status, build_parameter_node);
+		emit_raw_string_adapter(
+			node,
+			c_function_name(emission_label(node)),
+			status,
+			build_parameter_node,
+		);
 		status.code += `\n`;
 	}
 

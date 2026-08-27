@@ -2,6 +2,7 @@ import type BuildStatus from "../build_c/BuildStatus.ts";
 import c_function_name from "../build_c/utils/c_function_name.ts";
 import c_type from "../build_c/utils/c_type.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
+import emission_label from "../build_common/emission_label.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
@@ -36,7 +37,7 @@ export default function build_nursery_spawn(
 ) {
 	if (access_func.params.length !== 1 || access_func.params[0].node_type !== "func_call") return;
 	const call = access_func.params[0] as FunctionCallNode;
-	const func_name = c_function_name(call.name);
+	const func_name = c_function_name(emission_label(call.resolved_function ?? call));
 	const args = call.params;
 
 	const id = status.spawn_counter ?? 0;

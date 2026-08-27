@@ -1,5 +1,6 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import { should_emit_definition } from "../build_c/utils/is_system_definition.ts";
+import emission_label from "../build_common/emission_label.ts";
 import { function_returns_owned } from "../build_common/string_return_analysis.ts";
 import { SIMPLE_TYPES } from "../built_in_types.ts";
 import BitsetNode from "../nodes/BitsetNode.ts";
@@ -113,7 +114,7 @@ function gather_heap_returning_functions(block: BlockNode, status: BuildStatus) 
 		const owned = function_returns_owned(func, status, new Set<string>(), func.name);
 		func.returns_string_borrow = !owned;
 		if (owned) {
-			status.heap_returning_functions!.add(func.name.replace(/#/g, ""));
+			status.heap_returning_functions!.add(emission_label(func));
 		}
 	};
 	for (const node of block.statements) {

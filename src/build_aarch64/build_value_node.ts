@@ -1,4 +1,5 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
+import emission_label from "../build_common/emission_label.ts";
 import string_literal_length from "../build_common/string_literal_length.ts";
 import { is_signed_int_type, is_signed_type } from "../built_in_types.ts";
 import { is_int_literal, to_decimal_string } from "../int_literal.ts";
@@ -204,13 +205,14 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 		return;
 	}
 
-	// Function reference - need the address
+	// Function reference - need the address. A nested function emits under
+	// its uniquified label (stamped via resolved_function at check time).
 	if (node.type?.name === "func") {
 		const func_offset = status.stack_offsets?.get(value);
 		if (func_offset !== undefined) {
 			status.code += `ldr x0, [x29, #${func_offset}]\n`;
 		} else {
-			status.code += `adr x0, ${value}\n`;
+			status.code += `adr x0, ${emission_label(node.resolved_function ?? { name: value })}\n`;
 		}
 		return;
 	}

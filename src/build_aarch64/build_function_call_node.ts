@@ -1,6 +1,7 @@
 import emit_field_overrides from "../build/emit_field_overrides.ts";
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
+import emission_label from "../build_common/emission_label.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import string_literal_length from "../build_common/string_literal_length.ts";
 import { is_float_type } from "../built_in_types.ts";
@@ -176,7 +177,12 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 	}
 
 	const is_struct = status.structs.find((s) => s.name === node.name && !s.is_simple_type);
-	const func_name = is_struct ? `${node.name}_init` : node.name;
+	// A nested-function callee emits under its uniquified label (the checker
+	// stamps resolved_function on every resolved call); struct constructors
+	// and top-level functions keep their names.
+	const func_name = is_struct
+		? `${node.name}_init`
+		: emission_label(node.resolved_function ?? node);
 	const param_regs = ["x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7"];
 
 	let start_reg = 0;
@@ -842,7 +848,11 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		status.last_result_is_heap = true;
 	}
 
-	if (status.heap_returning_functions?.has(node.name)) {
+	if (
+		status.heap_returning_functions?.has(node.name) ||
+		(node.resolved_function?.label_name !== undefined &&
+			status.heap_returning_functions?.has(node.resolved_function.label_name))
+	) {
 		status.last_result_is_heap = true;
 	}
 

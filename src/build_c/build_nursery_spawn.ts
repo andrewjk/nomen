@@ -1,3 +1,4 @@
+import emission_label from "../build_common/emission_label.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
@@ -27,7 +28,7 @@ export default function build_nursery_spawn(
 ) {
 	if (node.params.length !== 1 || node.params[0].node_type !== "func_call") return;
 	const call = node.params[0] as FunctionCallNode;
-	const func_name = c_function_name(call.name);
+	const func_name = c_function_name(emission_label(call.resolved_function ?? call));
 	const args = call.params;
 
 	const id = status.spawn_counter ?? 0;

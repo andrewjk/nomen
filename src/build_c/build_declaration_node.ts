@@ -1,4 +1,5 @@
 import emit_field_overrides from "../build/emit_field_overrides.ts";
+import call_in_set from "../build_common/call_in_set.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import {
@@ -216,7 +217,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			!!((node.value as AccessNode).access as AccessFunctionCallNode).owned_return;
 		const val_is_borrowing_call =
 			node.value?.node_type === "func_call" &&
-			!!status.borrow_returning_functions?.has((node.value as FunctionCallNode).name);
+			!!call_in_set(status.borrow_returning_functions, node.value as FunctionCallNode);
 		const val_is_class_alias =
 			is_class_type &&
 			((node.value?.node_type === "value" &&

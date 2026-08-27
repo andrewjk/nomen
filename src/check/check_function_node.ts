@@ -18,6 +18,13 @@ export default function check_function_node(func: FunctionNode, status: CheckSta
 	func.checked = true;
 
 	status.functions.push(func);
+	// Register the emission name so later nested-label uniquification (see
+	// assign_function_label) can't collide with this function. Covers the
+	// flows that never pass a block gather: monomorphized clones registered
+	// straight from check_function_call_node.
+	if (status.function_emission_names) {
+		status.function_emission_names.add(func.label_name ?? func.name);
+	}
 
 	// Strip parallel-length equality clauses (`a.length == b.length`) from
 	// every parameter's constraint AT REGISTRATION — before any call site can

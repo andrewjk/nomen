@@ -556,3 +556,58 @@ Console.write("t=\\{t}")
 	// step(i) = 2i+1 summed over 0..4 = 2*10 + 5 = 25.
 	await build_and_check_output(input, "nested_func_inlined", "t=25");
 });
+
+// Two siblings may each declare a same-named nested func: call resolution is
+// parent-scoped during checking, but both backends hoist nested funcs to file
+// scope — previously BOTH emitted the flat bare label (duplicate symbol,
+// assembler/linker error). Each now emits under `<parent>_<name>`.
+test("sibling nested functions share a name without colliding", async () => {
+	const input = `
+func one = (int x, out int) {
+  func helper = (int a, out int) {
+    return a * 2
+  }
+  return helper(x)
+}
+
+func two = (int x, out int) {
+  func helper = (int a, out int) {
+    return a * 3
+  }
+  return helper(x)
+}
+
+Console.write("\\{one(5)} \\{two(5)}")
+`;
+	// Each parent's helper resolves to its OWN body: 5*2=10, 5*3=15.
+	await build_and_check_output(input, "sibling_nested_funcs_unique_labels", "10 15");
+});
+
+// Monomorphized clones of a generic parent duplicate the parent's body —
+// including its nested funcs. Previously every instantiation emitted the
+// same flat `pick:` label (duplicate symbol); each clone now gets its own.
+test("generic parent's nested func is uniquified per instantiation", async () => {
+	const input = `
+struct Box<T> {
+  var T value
+}
+
+func pickin<T> = (Box<T> a, Box<T> b, out int) {
+  func pick = (int x, int y, out int) {
+    if x != y {
+      return x
+    }
+    return y
+  }
+  return pick(1, 2) + pick(2, 3)
+}
+
+var Box<int> p = Box<int>(3)
+var Box<int> q = Box<int>(4)
+var Box<string> r = Box<string>("x")
+var Box<string> w = Box<string>("y")
+Console.write("\\{pickin(p, q)} \\{pickin(r, w)}")
+`;
+	// pick(1,2)=1, pick(2,3)=2 → 3 per instantiation.
+	await build_and_check_output(input, "mono_clone_nested_func_labels", "3 3");
+});

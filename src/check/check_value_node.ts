@@ -1,4 +1,5 @@
 import add_error from "../add_error.ts";
+import { set_resolved_function } from "../nodes/set_resolved_function.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import type CheckStatus from "./CheckStatus.ts";
@@ -21,6 +22,15 @@ export default function check_value_node(node: ValueNode, status: CheckStatus): 
 	if (!node.type.name) {
 		add_error(status, `Unknown value: ${node.value}`, node.start);
 		return false;
+	}
+
+	// A function referenced as a VALUE (`apply(multiply, 4)`, `var func f = g`)
+	// resolves through this node in the build's value paths. Stamp the
+	// concrete FunctionNode so emitters can use its emission label (nested
+	// funcs emit under `<parent>_<name>`, not the bare source name).
+	if (node.type.name === "func") {
+		const fn = status.functions.findLast((f) => f.name === node.value);
+		if (fn?.label_name) set_resolved_function(node, fn);
 	}
 
 	if (status.moved_variables?.has(node.value)) {

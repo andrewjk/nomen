@@ -1,3 +1,4 @@
+import emission_label from "../../build_common/emission_label.ts";
 import BaseNode from "../../nodes/BaseNode.ts";
 import FunctionCallNode from "../../nodes/FunctionCallNode.ts";
 import FunctionNode from "../../nodes/FunctionNode.ts";
@@ -35,14 +36,19 @@ export function scan_heap_returning_functions(root: BaseNode): Set<string> {
 function scan_spawn_callees(root: BaseNode, result: Set<string>) {
 	const visit = (node: any): void => {
 		if (!node || typeof node !== "object") return;
-		const name_and_ret: [string, { name?: string }] | undefined =
+		const spawn_call =
 			node.node_type === "spawn"
-				? [node.call?.name, node.function_return_type ?? {}]
-				: node.node_type === "access_func" &&
-					  node.is_nursery_spawn &&
-					  node.params?.[0]?.node_type === "func_call"
-					? [node.params[0].name, node.function_return_type ?? {}]
+				? node.call
+				: node.node_type === "access_func" && node.is_nursery_spawn
+					? node.params?.[0]
 					: undefined;
+		const name_and_ret: [string, { name?: string }] | undefined =
+			spawn_call && spawn_call.node_type === "func_call"
+				? [
+						emission_label(spawn_call.resolved_function ?? { name: spawn_call.name }),
+						node.function_return_type ?? {},
+					]
+				: undefined;
 		if (name_and_ret && name_and_ret[0] && name_and_ret[1].name === "string") {
 			result.add(name_and_ret[0]);
 		}
@@ -74,9 +80,14 @@ function scan_statements(statements: any[], result: Set<string>, struct_name: st
 						s.node_type === "return" &&
 						is_heap_string_expr((s as ReturnNode).value ?? undefined)
 					) {
-						// Match the label the build phase emits: `StructName_func_name`.
-						const sanitized = func.name.replace(/#/g, "");
-						const label = struct_name ? `${struct_name}_${sanitized}` : sanitized;
+						// Match the label the build phase emits: a checker-assigned
+						// uniquified label for a function nested in another body,
+						// else `StructName_func_name` / the bare name.
+						const label = func.label_name
+							? emission_label(func)
+							: struct_name
+								? `${struct_name}_${func.name.replace(/#/g, "")}`
+								: func.name.replace(/#/g, "");
 						result.add(label);
 						break;
 					}

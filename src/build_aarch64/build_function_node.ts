@@ -1,5 +1,6 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import array_struct_name from "../build_c/utils/array_struct.ts";
+import emission_label from "../build_common/emission_label.ts";
 import { resolve_mono_type } from "../build_common/mono_name.ts";
 import { moved_param_is_consumed } from "../build_common/scan_moved_param_consumed.ts";
 import { ALL_FLOAT_TYPES } from "../built_in_types.ts";
@@ -152,7 +153,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	if (check_c_fallback(node, undefined, status)) return;
 
 	const old_function_name = status.current_function_name;
-	status.current_function_name = node.name;
+	status.current_function_name = emission_label(node);
 
 	const old_scoped_declarations = status.scoped_declarations;
 	status.scoped_declarations = [];
@@ -234,8 +235,11 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	// Make user functions visible to the companion C file (spawn trampolines
 	// call user functions defined in assembly). On macOS, C symbols have a
 	// leading _ prefix, so we define both the bare label (for bl references
-	// from other assembly) and the _-prefixed label (for C linkage).
-	const label_name = node.name.replace(/#/g, "");
+	// from other assembly) and the _-prefixed label (for C linkage). A
+	// nested function emits under its uniquified label_name (siblings
+	// sharing a source name, or mono clones of one generic parent, must not
+	// collide); top-level functions keep their own name.
+	const label_name = emission_label(node);
 	if (node.name === "main") {
 		status.code += `_main:\n`;
 	} else {
@@ -371,7 +375,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		}
 	}
 
-	const stack_placeholder = `STACK_SIZE_${node.name}`;
+	const stack_placeholder = `STACK_SIZE_${label_name}`;
 	status.code += `sub sp, sp, #${stack_placeholder}\n`;
 	status.code += `mov x29, sp\n`;
 
@@ -445,7 +449,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 					status.code += `str ${len_reg}, [x29, #${len_offset}]\n`;
 				} else {
 					const k = param_idx - NUM_REG_ARGS;
-					status.code += `ldr x9, [x29, #${overflow_placeholder(node.name, k)}]\n`;
+					status.code += `ldr x9, [x29, #${overflow_placeholder(label_name, k)}]\n`;
 					status.code += `str x9, [x29, #${len_offset}]\n`;
 				}
 				param_idx++;
@@ -470,7 +474,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 						status.code += `str ${param_regs[p_slot]}, [x29, #${offset + half * 8}]\n`;
 					} else {
 						const k = p_slot - NUM_REG_ARGS;
-						status.code += `ldr x9, [x29, #${overflow_placeholder(node.name, k)}]\n`;
+						status.code += `ldr x9, [x29, #${overflow_placeholder(label_name, k)}]\n`;
 						status.code += `str x9, [x29, #${offset + half * 8}]\n`;
 					}
 				}
@@ -502,7 +506,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 						status.code += `str ${param_regs[p_slot]}, [x29, #${offset + half * 8}]\n`;
 					} else {
 						const k = p_slot - NUM_REG_ARGS;
-						status.code += `ldr x9, [x29, #${overflow_placeholder(node.name, k)}]\n`;
+						status.code += `ldr x9, [x29, #${overflow_placeholder(label_name, k)}]\n`;
 						status.code += `str x9, [x29, #${offset + half * 8}]\n`;
 					}
 				}
@@ -597,9 +601,9 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 					// what the register path would have produced.
 					const k = param_idx - NUM_REG_ARGS;
 					if (promoted_reg && size === 8) {
-						status.code += `ldr ${promoted_reg}, [x29, #${overflow_placeholder(node.name, k)}]\n`;
+						status.code += `ldr ${promoted_reg}, [x29, #${overflow_placeholder(label_name, k)}]\n`;
 					} else {
-						status.code += `ldr x9, [x29, #${overflow_placeholder(node.name, k)}]\n`;
+						status.code += `ldr x9, [x29, #${overflow_placeholder(label_name, k)}]\n`;
 						if (size === 1) {
 							status.code += `strb w9, [x29, #${offset}]\n`;
 						} else if (size === 2) {
@@ -711,7 +715,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.register_allocations = old_register_allocations;
 
 	if (loop_regs_used.length > 0 && has_body) {
-		const func_label = `${node.name === "main" ? "_" : ""}${node.name}:`;
+		const func_label = `${node.name === "main" ? "_" : ""}${label_name}:`;
 		const func_start = status.code.indexOf(func_label);
 		const search_for = `sub sp, sp, #${stack_placeholder}`;
 		const after_prologue = func_start !== -1 ? status.code.indexOf(search_for, func_start) : -1;
@@ -732,7 +736,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 			if (moved_before.has(name)) continue;
 			if (heap_after?.has(name)) {
 				if (!status.heap_returning_functions) status.heap_returning_functions = new Set();
-				status.heap_returning_functions.add(node.name);
+				status.heap_returning_functions.add(label_name);
 				break;
 			}
 		}
@@ -742,7 +746,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	);
 	if (return_is_class) {
 		if (!status.heap_returning_functions) status.heap_returning_functions = new Set();
-		status.heap_returning_functions.add(node.name);
+		status.heap_returning_functions.add(label_name);
 	}
 
 	status.code += `${return_label}:\n`;
@@ -829,7 +833,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	}
 	status.code = patch_overflow_placeholders(
 		status.code,
-		node.name,
+		label_name,
 		callee_idx + loop_regs_used.length,
 		total_stack,
 	);

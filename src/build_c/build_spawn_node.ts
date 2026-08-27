@@ -1,3 +1,4 @@
+import emission_label from "../build_common/emission_label.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import { is_built_in_type } from "../built_in_types.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
@@ -225,7 +226,7 @@ static int __nomen_nursery_race_wait(struct nomen_future **futures, int count, l
  */
 export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 	const call = node.call;
-	const func_name = c_function_name(call.name);
+	const func_name = c_function_name(emission_label(call.resolved_function ?? call));
 	const id = status.spawn_counter ?? 0;
 	status.spawn_counter = id + 1;
 

@@ -148,4 +148,12 @@ export default interface CheckStatus {
 	 * block clones so branch-local invalidations propagate to the parent.
 	 */
 	invalidated_view_structs?: Set<string>;
+
+	/**
+	 * Every function EMISSION name seen so far (top-level source names,
+	 * monomorphized specialized names, and assigned nested-function labels).
+	 * Shared by reference through clones and sub-statuses so nested-label
+	 * uniquification sees the whole program, not just the current scope.
+	 */
+	function_emission_names?: Set<string>;
 }

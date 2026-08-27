@@ -275,14 +275,3 @@ The phase-4 func_regalloc scan conservatively excludes any multiply-declared
 name, so promotion is not affected. Repro:
 `test/aarch64_regressions.test.ts` history (the "shadowed name" test was
 rewritten to avoid the divergent read; see git history for the original).
-
-## Duplicate nested function names emit colliding labels (2026-08)
-
-Found while extending `scan_inline_candidates` to nested function bodies
-(aarch64). Two sibling functions may each declare a same-named nested `func`
-(the checker accepts it — no duplicate-name rule across scopes), but both are
-emitted with the same flat label (`helper:` twice → assembler error). Standalone
-and call sites all use the unmangled name. Needs either a checker rule
-(unique nested names, mirroring the flat call namespace) or per-parent name
-mangling through call resolution. The inline scan defensively skips any name
-with more than one definition, so inlining can't silently pick the wrong body.

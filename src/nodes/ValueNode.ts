@@ -7,6 +7,13 @@ export default class ValueNode extends BaseNode {
 	type: Type;
 	is_enum_shorthand?: boolean;
 	type_args?: Type[];
+	/**
+	 * Stamped (non-enumerably, via set_resolved_function) when this value is
+	 * a function referenced as a VALUE and the callee is nested inside
+	 * another body: the build emits its emission label, not the bare source
+	 * name. Mirrors FunctionCallNode.resolved_function.
+	 */
+	resolved_function?: import("./FunctionNode.ts").default;
 
 	constructor(start: number, value: string, type?: Type) {
 		super("value", start);

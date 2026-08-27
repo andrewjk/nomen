@@ -2,6 +2,7 @@ import type BuildStatus from "../build_c/BuildStatus.ts";
 import c_function_name from "../build_c/utils/c_function_name.ts";
 import c_type from "../build_c/utils/c_type.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
+import emission_label from "../build_common/emission_label.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import SpawnNode from "../nodes/SpawnNode.ts";
@@ -209,7 +210,7 @@ int __nomen_nursery_race_wait(struct nomen_future **futures, int count, long lon
  */
 export default function build_spawn_node(node: SpawnNode, status: BuildStatus) {
 	const call = node.call;
-	const func_name = c_function_name(call.name);
+	const func_name = c_function_name(emission_label(call.resolved_function ?? call));
 	const id = status.spawn_counter ?? 0;
 	status.spawn_counter = id + 1;
 

@@ -1,3 +1,4 @@
+import emission_label from "../build_common/emission_label.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import { has_return_statement } from "../build_common/string_return_analysis.ts";
 import { SIMPLE_TYPES } from "../built_in_types.ts";
@@ -296,7 +297,7 @@ function gather_heap_returning_functions(block: BlockNode, status: BuildStatus) 
 	const visit = (func: FunctionNode) => {
 		if (func.return_type?.name === "string" && func.name && has_return_statement(func)) {
 			func.returns_string_borrow = false;
-			status.heap_returning_functions!.add(c_function_name(func.name));
+			status.heap_returning_functions!.add(c_function_name(emission_label(func)));
 		}
 		for (const stmt of func.statements ?? []) {
 			if (is_function_node(stmt)) visit(stmt as FunctionNode);

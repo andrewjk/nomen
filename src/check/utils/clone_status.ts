@@ -67,5 +67,8 @@ export default function clone_status(status: CheckStatus): CheckStatus {
 		// inside a branch (which may fall through) stays visible afterwards —
 		// a conservative union, mirroring mutated_local_names.
 		invalidated_view_structs: status.invalidated_view_structs,
+		// Nested-function label uniquification must see every emission name
+		// in the program — share the same set across all clones.
+		function_emission_names: status.function_emission_names,
 	};
 }

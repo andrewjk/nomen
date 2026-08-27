@@ -1,3 +1,4 @@
+import emission_label from "../build_common/emission_label.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
@@ -31,7 +32,12 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 	}
 
 	const is_struct = status.structs.find((s) => s.name === node.name && !s.is_simple_type);
-	const func_name = is_struct ? `${node.name}_init` : c_function_name(node.name);
+	// A nested-function callee emits under its uniquified label (the checker
+	// stamps resolved_function on every resolved call); struct constructors
+	// and top-level functions keep their names.
+	const func_name = is_struct
+		? `${node.name}_init`
+		: c_function_name(emission_label(node.resolved_function ?? node));
 	status.code += `${func_name}(`;
 
 	const variadic_idx = node.variadic_param_name

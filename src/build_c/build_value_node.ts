@@ -54,6 +54,10 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 		// `0x`/`0o`/`0b` prefixes — with the width suffix appended. Underscore
 		// digit separators are stripped (C uses `'`, not `_`).
 		value = value.replace(/_/g, "") + (INT_LITERAL_SUFFIX[node.type?.name ?? "int"] ?? "");
+	} else if (node.resolved_function?.label_name) {
+		// A func-typed value referencing a function nested in another body
+		// emits under its uniquified label (stamped at check time).
+		value = c_function_name(node.resolved_function.label_name.replace(/#/g, ""));
 	} else value = c_function_name(value);
 	// `self` is always a pointer in the generated C (matching aarch64):
 	// regular methods receive `struct T *self`, and a custom #init uses a
