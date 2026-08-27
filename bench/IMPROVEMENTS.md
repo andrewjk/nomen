@@ -427,6 +427,19 @@ Changes applied:
     model. Perf-neutral by design on outputs whose counts didn't change;
     functions with reads hidden in if/method/switch-marginal positions may
     now promote where they previously couldn't.
+32. **Canonical IR stage 1 — NIR** (`src/nir/`): whole-function promotion
+    planning now runs over a typed, closed per-function IR lowered from the
+    checked AST (`from_ast.ts`) instead of duck-typed AST scans. The IR is
+    exhaustive and fact-carrying — unmapped AST constructs surface as
+    recorded `unknown_kinds` (asserted empty over the exotic-statement
+    corpus and every `bench/nomen/*.nm` function in `test/nir.test.ts`), and
+    every analysis-relevant fact (ref/swap argument indices, receiver
+    address-take positions, declaration modifiers) is extracted once during
+    lowering. Traffic analysis (`traffic.ts`) reproduces item 31's counting
+    semantics exactly; the duck-typed `scan()` and `utils/func_flow.ts` were
+    deleted. Refactor-only: generated `.s` byte-identical across the seven
+    benchmark binaries. This is the substrate the plan's remaining phase-4
+    items (backend lowering from IR, then NEON) build against.
 
 ### Known issues
 
