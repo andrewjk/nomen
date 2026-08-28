@@ -100,15 +100,6 @@ monomorphized call nodes can lose stamped annotations (the reason
 `Buffer_string_move_T` is still name-matched despite `move_T` being declared
 `mov out T`).
 
-## Harness quirk: mono enums vs enums nested in `main`
-
-`parse_with_imports` wraps main-less test input inside `pub func main`, so a
-user enum declared in such input lands NESTED while generic monos created
-from its use land at root scope. The C header then emits the mono's typedef
-before the nested enum's (build order: root enums first), failing clang with
-"unknown type name". Real programs declare enums top-level; tests can avoid
-it by using library enums or an explicit `pub func main`.
-
 ## Cold-run parallel test flakiness (pre-existing)
 
 A fully cold `npm test` (after `rm -rf test/out`) with default file

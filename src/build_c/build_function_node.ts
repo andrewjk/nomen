@@ -14,7 +14,6 @@ import TraitNode from "../nodes/TraitNode.ts";
 import build_auto_free from "./build_auto_free.ts";
 import build_bitset_node from "./build_bitset_node.ts";
 import build_block_node from "./build_block_node.ts";
-import build_enum_node from "./build_enum_node.ts";
 import build_parameter_node from "./build_parameter_node.ts";
 import build_struct_body from "./build_struct_body.ts";
 import build_struct_node from "./build_struct_node.ts";
@@ -26,6 +25,7 @@ import c_function_name from "./utils/c_function_name.ts";
 import { enter_c_scope, leave_c_scope } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
 import { set_c_thin_strings } from "./utils/c_type.ts";
+import emit_enum_in_order from "./utils/emit_enum_in_order.ts";
 import { emit_raw_string_adapter, raw_string_abi_needed } from "./utils/raw_string_abi.ts";
 import scan_borrow_only_strings from "./utils/scan_borrow_only_strings.ts";
 
@@ -438,7 +438,10 @@ function emit_nested_declarations(node: FunctionNode, status: BuildStatus) {
 
 	for (let child of block.statements) {
 		if (child.node_type === "enum") {
-			build_enum_node(child as EnumNode, status);
+			// Dependency-ordered so a nested enum whose payload is another
+			// (later-declared) nested enum emits its dependency's typedef
+			// first; idempotent when the root pass already pulled it forward.
+			emit_enum_in_order(child as EnumNode, status);
 		}
 	}
 

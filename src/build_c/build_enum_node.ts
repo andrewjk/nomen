@@ -7,6 +7,14 @@ export default function build_enum_node(node: EnumNode, status: BuildStatus) {
 	// during check, registered as their own EnumNodes) have a concrete layout.
 	if (node.is_generic) return;
 
+	// Idempotency guard: an enum may be emitted early — pulled to root scope
+	// as a dependency of a monomorphized enum (emit_enum_in_order) — before
+	// the function body that declares it is built (emit_nested_declarations).
+	// Without the guard the typedef would be emitted twice.
+	if (!status.emitted_enums) status.emitted_enums = new Set();
+	if (status.emitted_enums.has(node.name)) return;
+	status.emitted_enums.add(node.name);
+
 	status.headers += `// Enum ${node.name}\n`;
 	status.code += `// Enum ${node.name}\n`;
 

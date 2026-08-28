@@ -203,18 +203,34 @@ export default async function check_output(
 	// Stage the caller's data files (bench inputs etc.) into the scratch dir:
 	// programs under test read them via relative paths from their CWD, and
 	// without this the run would not see files staged into `folder` (e.g.
-	// build_and_check_bench_with_files' knucleotide input).
-	for (const entry of fs.readdirSync(folder, { withFileTypes: true })) {
-		if (!entry.isFile()) continue;
-		if (
-			entry.name.startsWith("main") ||
-			entry.name === "output.txt" ||
-			entry.name === ".cache" ||
-			entry.name === "system.h"
-		) {
-			continue;
+	// build_and_check_bench_with_files' knucleotide input). The walk is
+	// recursive: staged inputs may live in subdirectories (e.g.
+	// `bench/sample.json`, which the program opens relative to its CWD).
+	// The reserved names are only ever written at the folder's top level, so
+	// the skip list applies at depth 0 only.
+	const stage_entry = (abs: string, rel: string, depth: number): void => {
+		if (depth === 0) {
+			const name = path.basename(rel);
+			if (
+				name.startsWith("main") ||
+				name === "output.txt" ||
+				name === ".cache" ||
+				name === "system.h"
+			) {
+				return;
+			}
 		}
-		fs.copyFileSync(path.join(folder, entry.name), path.join(rundir, entry.name));
+		if (fs.statSync(abs).isDirectory()) {
+			for (const child of fs.readdirSync(abs)) {
+				stage_entry(path.join(abs, child), path.join(rel, child), depth + 1);
+			}
+			return;
+		}
+		fs.mkdirSync(path.dirname(path.join(rundir, rel)), { recursive: true });
+		fs.copyFileSync(abs, path.join(rundir, rel));
+	};
+	for (const entry of fs.readdirSync(folder)) {
+		stage_entry(path.join(folder, entry), entry, 0);
 	}
 	let stdout: string;
 	let stderr: string;

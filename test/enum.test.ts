@@ -496,6 +496,78 @@ if found == .some(0) {
 	});
 });
 
+describe("enum declaration order", () => {
+	// These exercise types declared NESTED inside main (the parse_with_imports
+	// wrapping): a monomorphized generic enum hoisted to root scope must not
+	// have its typedef emitted before the nested types it embeds by value.
+
+	test("mono enum with nested enum payload", async () => {
+		const input = `
+enum Color {
+  case red
+  case green
+}
+
+enum Option<T> {
+  case some(T value)
+  case none
+}
+
+var Option<Color> o = Option.some(Color.red)
+const label = match o {
+  case .some(c) -> "some"
+  case .none -> "none"
+}
+Console.write(label)
+`;
+		await build_and_check_output(input, "enum_mono_nested_enum_payload", "some");
+	});
+
+	test("mono enum with nested struct payload", async () => {
+		const input = `
+struct Point {
+  var int x
+  var int y
+}
+
+enum Option<T> {
+  case some(T value)
+  case none
+}
+
+var Option<Point> o = Option.some(Point(1, 2))
+const label = match o {
+  case .some(p) -> "some"
+  case .none -> "none"
+}
+Console.write(label)
+`;
+		await build_and_check_output(input, "enum_mono_nested_struct_payload", "some");
+	});
+
+	test("mono enum with nested bitset payload", async () => {
+		const input = `
+bitset Flags {
+  case a
+  case b
+}
+
+enum Option<T> {
+  case some(T value)
+  case none
+}
+
+var Option<Flags> o = Option.some(Flags.a)
+const label = match o {
+  case .some(f) -> "some"
+  case .none -> "none"
+}
+Console.write(label)
+`;
+		await build_and_check_output(input, "enum_mono_nested_bitset_payload", "some");
+	});
+});
+
 describe("enum errors", () => {
 	test("enum without braces", () => {
 		const input = `

@@ -11,7 +11,6 @@ import FunctionNode from "../nodes/FunctionNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import TraitNode from "../nodes/TraitNode.ts";
 import build_bitset_node from "./build_bitset_node.ts";
-import build_enum_node from "./build_enum_node.ts";
 import build_function_node from "./build_function_node.ts";
 import build_struct_body from "./build_struct_body.ts";
 import build_struct_node from "./build_struct_node.ts";
@@ -21,6 +20,7 @@ import { emit_stmt_from_nir } from "./emit_nir.ts";
 import c_function_name from "./utils/c_function_name.ts";
 import c_type from "./utils/c_type.ts";
 import emit_allocations from "./utils/emit_allocations.ts";
+import emit_enum_in_order from "./utils/emit_enum_in_order.ts";
 import { should_emit_definition } from "./utils/is_system_definition.ts";
 
 export default function build_block_node(
@@ -88,11 +88,50 @@ export default function build_block_node(
 		};
 		forward_declare(node);
 
-		// Pass 1: Emit all struct bodies first so that all types are fully defined
-		// before any struct functions are emitted (which may access fields of other structs).
-		// Structs are emitted in dependency order: if struct A has a by-value field
-		// of struct B, B is emitted first (C requires complete types for by-value fields).
-		// Pass 1: emit struct typedefs, gated by origin. System struct typedefs
+		// Pass 1: Emit enum typedefs FIRST. Enum typedefs land in the header,
+		// and struct bodies/trait signatures reference them (a struct field of
+		// enum type uses the enum's typedef; the aarch64 companion follows the
+		// same enums-before-structs order). Monomorphized enums hoisted to root
+		// scope may embed types that are nested inside a function body, so each
+		// emission pulls its by-value payload dependencies first (see
+		// emit_enum_in_order).
+		for (let child of node.statements) {
+			if (child.node_type === "enum") {
+				if (
+					!should_emit_definition(
+						child,
+						status.emit_mode,
+						status.structs,
+						status.system_struct_names,
+					)
+				)
+					continue;
+				emit_enum_in_order(child as EnumNode, status);
+			}
+		}
+
+		for (let child of node.statements) {
+			if (child.node_type === "bitset") {
+				if (
+					!should_emit_definition(
+						child,
+						status.emit_mode,
+						status.structs,
+						status.system_struct_names,
+					)
+				)
+					continue;
+				build_bitset_node(child as BitsetNode, status);
+			}
+		}
+
+		// Pass 2: Build traits, then struct typedefs, so that all types are fully
+		// defined before any struct functions are emitted (which may access fields
+		// of other structs).
+		// Struct typedefs are emitted in dependency order: if struct A has a
+		// by-value field of struct B, B is emitted first (C requires complete
+		// types for by-value fields).
+		// Emit struct typedefs, gated by origin. System struct typedefs
 		// are routed to the system TU's HEADERS (system.h) so the user TU reaches
 		// them via `#include "system.h"` for by-value use; user struct typedefs
 		// stay in the user TU. (See emit_struct_in_order for the header swap.)
@@ -112,7 +151,6 @@ export default function build_block_node(
 			}
 		}
 
-		// Pass 2: Build traits, then enums/bitsets, then struct functions, then functions
 		for (let child of node.statements) {
 			if (is_trait_node(child)) {
 				if (
@@ -125,36 +163,6 @@ export default function build_block_node(
 				)
 					continue;
 				build_trait_node(child, status);
-			}
-		}
-
-		for (let child of node.statements) {
-			if (child.node_type === "enum") {
-				if (
-					!should_emit_definition(
-						child,
-						status.emit_mode,
-						status.structs,
-						status.system_struct_names,
-					)
-				)
-					continue;
-				build_enum_node(child as EnumNode, status);
-			}
-		}
-
-		for (let child of node.statements) {
-			if (child.node_type === "bitset") {
-				if (
-					!should_emit_definition(
-						child,
-						status.emit_mode,
-						status.structs,
-						status.system_struct_names,
-					)
-				)
-					continue;
-				build_bitset_node(child as BitsetNode, status);
 			}
 		}
 

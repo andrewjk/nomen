@@ -522,6 +522,18 @@ export default interface BuildStatus {
 	 */
 	emitted_struct_bodies?: Set<string>;
 	/**
+	 * Tracks which enum typedefs have already been emitted, so an enum pulled
+	 * to root scope as a dependency of a monomorphized enum (see
+	 * `emit_enum_in_order`) is not emitted a second time by
+	 * `emit_nested_declarations` when the enclosing function body is built.
+	 */
+	emitted_enums?: Set<string>;
+	/**
+	 * Tracks which bitset typedefs have already been emitted, mirroring
+	 * `emitted_enums` for the same dependency-pulling idempotency.
+	 */
+	emitted_bitsets?: Set<string>;
+	/**
 	 * Per-build set of allocation declarations (hoisted `_param_N` temps)
 	 * that have already been emitted, so the inline `if (node.allocations)`
 	 * path in `build_node` and the per-statement `emit_allocations` helper
