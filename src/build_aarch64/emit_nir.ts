@@ -1,10 +1,11 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
-import type { NirStmt } from "../nir/nir.ts";
+import type { NirExpr, NirStmt } from "../nir/nir.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import type BlockNode from "../nodes/BlockNode.ts";
 import ForLoopNode from "../nodes/ForLoopNode.ts";
 import IfElseNode from "../nodes/IfElseNode.ts";
 import MatchNode from "../nodes/MatchNode.ts";
+import ReturnNode from "../nodes/ReturnNode.ts";
 import SwitchNode from "../nodes/SwitchNode.ts";
 import WhileLoopNode from "../nodes/WhileLoopNode.ts";
 import build_block_node from "./build_block_node.ts";
@@ -12,6 +13,7 @@ import build_for_loop_node from "./build_for_loop_node.ts";
 import build_if_else_node from "./build_if_else_node.ts";
 import build_match_node from "./build_match_node.ts";
 import build_node from "./build_node.ts";
+import build_return_node from "./build_return_node.ts";
 import build_switch_node from "./build_switch_node.ts";
 import build_while_loop_node from "./build_while_loop_node.ts";
 
@@ -35,11 +37,15 @@ import build_while_loop_node from "./build_while_loop_node.ts";
  *   (label numbering, scope frames, buffer-cache snapshots, loop promotion,
  *   writebacks and condition lowering stay in the builders, so both paths are
  *   the same code — no drift).
+ * - handles `return` NIR-natively: the builder keeps every ownership/cleanup
+ *   decision on the AST node, and its value expression is emitted through
+ *   `emit_expr_from_nir` (the expression seam below).
  * - delegates every other statement kind to `build_node` unchanged.
  *
  * This is the seam where NIR facts attach to emission: later tranches add
- * liveness-gated decisions and the NEON vectorizer at exactly this dispatch
- * point (`return` waits on NIR-level expression emission).
+ * liveness-gated decisions and the NEON vectorizer at exactly these dispatch
+ * points (`emit_stmt_from_nir` for statements, `emit_expr_from_nir` for
+ * expressions).
  */
 
 export interface NirEmitCtx {
@@ -93,11 +99,20 @@ export function emit_stmt_from_nir(
 					build_match_node(child as MatchNode, status, nstmt);
 				}
 				return;
+			case "return":
+				// Ownership/cleanup decisions stay on the AST node inside the
+				// builder; the value expression (when any) is emitted through
+				// the NIR expression seam. The trailing-newline replicates
+				// build_node's with_semicolon tail so output is byte-identical
+				// to the delegated path.
+				build_return_node(child as ReturnNode, status, nstmt.value);
+				if (!status.code.endsWith("\n")) {
+					status.code += "\n";
+				}
+				return;
 			default:
-				// Everything else rides the existing AST emission unchanged
-				// (`return` included — its takeover needs NIR-level expression
-				// emission, which is a later tranche); later tranches take over
-				// more kinds here.
+				// Everything else rides the existing AST emission unchanged;
+				// later tranches take over more kinds here.
 				break;
 		}
 	}
@@ -120,4 +135,43 @@ export function build_block_with_cursor(
 	status.nir_emit_ctx = stmts ? { stmts, ast: block.statements } : undefined;
 	build_block_node(block, status);
 	status.nir_emit_ctx = old_ctx;
+}
+
+/**
+ * NIR-level EXPRESSION emission (phase 4, stage 2 tranche 3).
+ *
+ * The expression seam: a value emission that runs while a NIR ctx owns the
+ * enclosing statement list descends through here, so NIR facts (ref/swap
+ * argument indices, receiver address-take marks, promoted-register leaves,
+ * and — later — liveness-gated and NEON decisions) attach per-kind at
+ * exactly one dispatch point.
+ *
+ * Byte-identity contract: every arm routes to the SAME builder the AST walk
+ * picked for that node shape — via `build_node`, which also runs the hoisted
+ * allocation pre-pass the AST path performed — with `grouped` recursing
+ * through the NIR inner (build_node's grouped case is a pure pass-through,
+ * so the NIR-side recursion is the same descent). Exhaustive over NirExpr:
+ * a new expression kind is a compile error here until mapped.
+ */
+export function emit_expr_from_nir(expr: NirExpr, status: BuildStatus): void {
+	switch (expr.kind) {
+		case "leaf": // "value" → build_value_node
+		case "binary": // "op" → build_operation_node / "range" → build_range_node
+		case "call": // "func_call" → build_function_call_node / "array" literal
+		case "method_call": // "access" → access_func → build_access_node
+		case "path": // "access" field chain → build_access_node
+		case "other": // unreachable under a NIR ctx (unknown_kinds forces fallback)
+			build_node(expr.node, status);
+			return;
+		case "wrap":
+			if (expr.node.node_type === "grouped" && expr.inner) {
+				emit_expr_from_nir(expr.inner, status);
+			} else {
+				// cast/let builders own their inner emission on the AST node.
+				build_node(expr.node, status);
+			}
+			return;
+	}
+	const _exhaustive: never = expr;
+	void _exhaustive;
 }

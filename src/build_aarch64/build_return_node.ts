@@ -8,14 +8,17 @@ import {
 	is_owned_string_branch_value,
 } from "../build_common/string_return_analysis.ts";
 import { is_float_type } from "../built_in_types.ts";
+import type { NirExpr } from "../nir/nir.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
+import type BaseNode from "../nodes/BaseNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import ReturnNode from "../nodes/ReturnNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import { resolve_static_value } from "./build_array_values_node.ts";
 import { emit_string_array_labels, resolve_array_element } from "./build_declaration_node.ts";
 import build_node from "./build_node.ts";
+import { emit_expr_from_nir } from "./emit_nir.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_malloc, emit_strdup } from "./utils/audit.ts";
 import {
@@ -88,7 +91,30 @@ function current_function_returns_mov_string(status: BuildStatus): boolean {
 	return !!fn?.returns_mov && fn.return_type?.name === "string" && !fn.return_type?.is_view;
 }
 
-export default function build_return_node(node: ReturnNode, status: BuildStatus) {
+/**
+ * Emit a return VALUE expression. Under NIR-driven emission the lowered
+ * `NirExpr` rides in and descends through `emit_expr_from_nir` (the
+ * expression seam); without one (plain AST walk) it is exactly the
+ * historical `build_node(value)`. Index-aligned with `value` by
+ * construction — from_ast lowers 1:1.
+ */
+function emit_return_value(
+	value: BaseNode,
+	nir_value: NirExpr | null | undefined,
+	status: BuildStatus,
+): void {
+	if (nir_value) {
+		emit_expr_from_nir(nir_value, status);
+		return;
+	}
+	build_node(value, status);
+}
+
+export default function build_return_node(
+	node: ReturnNode,
+	status: BuildStatus,
+	nir_value?: NirExpr | null,
+) {
 	if (node.from_inline) {
 		return;
 	}
@@ -223,7 +249,13 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 					status.code += `str x0, [x29, #${slot}]\n`;
 				}
 			} else {
-				build_node(value, status);
+				// NIR mode: array literals lower to a `call` whose args are the
+				// lowered elements, index-aligned with arr.values.
+				const nir_elem =
+					nir_value?.kind === "call" && nir_value.node === arr
+						? nir_value.facts.args[i]
+						: undefined;
+				emit_return_value(value, nir_elem, status);
 				if (!status.code.endsWith("\n")) {
 					status.code += "\n";
 				}
@@ -302,7 +334,7 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 		// don't consume the flag and land in x0; the tail below moves them.
 		const ret_is_float = current_return_is_float(status);
 		if (ret_is_float) status.float_result_in_d0 = true;
-		build_node(node.value, status);
+		emit_return_value(node.value, nir_value, status);
 		if (ret_is_float) {
 			if (!status.code.endsWith("\n")) {
 				status.code += "\n";
