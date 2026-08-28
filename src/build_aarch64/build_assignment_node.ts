@@ -2,6 +2,7 @@ import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import { is_float_type } from "../built_in_types.ts";
+import type { NirExpr } from "../nir/nir.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import AssignmentNode from "../nodes/AssignmentNode.ts";
@@ -11,6 +12,7 @@ import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import { emit_address_of } from "./build_access_node.ts";
 import build_node from "./build_node.ts";
+import { emit_expr_from_nir } from "./emit_nir.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free, emit_strdup } from "./utils/audit.ts";
 import {
@@ -238,7 +240,27 @@ function is_nullable_struct_assignment(node: AssignmentNode, status: BuildStatus
  * Build assignment to a nullable struct slot: for `= null`, clear the flag;
  * otherwise copy the value in and set the flag to 1.
  */
-function build_nullable_struct_assignment(node: AssignmentNode, status: BuildStatus) {
+/**
+ * Emit an assignment RHS. Under NIR-driven emission the lowered `NirExpr`
+ * rides in and descends through `emit_expr_from_nir` (the expression seam);
+ * without one — or if the lowered expr doesn't carry this exact AST node
+ * (from_ast is 1:1, so that can't happen) — it is exactly the historical
+ * `build_node(rhs)`. Every semantic decision (reclamation, aliasing, move
+ * marks, swap marshalling) stays on the AST node in the builder.
+ */
+function emit_rhs_value(rhs: BaseNode, nir: NirExpr | null | undefined, status: BuildStatus): void {
+	if (nir && nir.node === rhs) {
+		emit_expr_from_nir(nir, status);
+		return;
+	}
+	build_node(rhs, status);
+}
+
+function build_nullable_struct_assignment(
+	node: AssignmentNode,
+	status: BuildStatus,
+	nir_rhs?: NirExpr | null,
+) {
 	const rhs_is_null =
 		node.right_value.node_type === "value" && (node.right_value as ValueNode).value === "null";
 
@@ -250,7 +272,7 @@ function build_nullable_struct_assignment(node: AssignmentNode, status: BuildSta
 			return;
 		}
 		// Build the value (a constructor or another struct value) → address in x0.
-		build_node(node.right_value, status);
+		emit_rhs_value(node.right_value, nir_rhs, status);
 		if (!status.code.endsWith("\n")) status.code += "\n";
 		// Copy the struct value into the variable's slot, then set the flag.
 		const decl = status.scoped_declarations.find((d) => d.name === name);
@@ -284,7 +306,7 @@ function build_nullable_struct_assignment(node: AssignmentNode, status: BuildSta
 		return;
 	}
 
-	build_node(node.right_value, status);
+	emit_rhs_value(node.right_value, nir_rhs, status);
 	if (!status.code.endsWith("\n")) status.code += "\n";
 	status.code += `ldr x9, [sp], #16\n`;
 	// x0 = source address, x9 = object base. Copy value in, set flag.
@@ -385,7 +407,11 @@ export function get_source_address(value: BaseNode, status: BuildStatus) {
 	}
 }
 
-export default function build_assignment_node(node: AssignmentNode, status: BuildStatus) {
+export default function build_assignment_node(
+	node: AssignmentNode,
+	status: BuildStatus,
+	nir_rhs?: NirExpr | null,
+) {
 	const rhs_type = type_from_value_node(node.right_value);
 	const rhs_is_struct = is_struct_type(rhs_type, status);
 	// An enum with associated data is multi-word (tag + payload) and lives on
@@ -427,7 +453,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 	// Assignment to a nullable struct slot (local var or struct field): copy
 	// the value in (if non-null) and set the companion `_has` flag.
 	if (!node.operator && is_nullable_struct_assignment(node, status)) {
-		build_nullable_struct_assignment(node, status);
+		build_nullable_struct_assignment(node, status, nir_rhs);
 		build_swap(node, status);
 		return;
 	}
@@ -468,7 +494,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 						}
 						mark_moved_if_struct(node.right_value, status);
 						status.moved?.delete(name);
-						build_node(node.right_value, status);
+						emit_rhs_value(node.right_value, nir_rhs, status);
 						if (!status.code.endsWith("\n")) status.code += "\n";
 						anchor_heap_pointer(status, name, decl_frame);
 						mark_anchor_destroy(status, name, trait_class_trait);
@@ -509,7 +535,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 						status.code += `ldr x0, [x29, #${tmp}]\n`;
 						emit_free(status);
 						mark_moved_if_struct(node.right_value, status);
-						build_node(node.right_value, status);
+						emit_rhs_value(node.right_value, nir_rhs, status);
 						if (!status.code.endsWith("\n")) status.code += "\n";
 						status.code += `ldr x1, [x29, #${ref_slot}]\n`;
 						status.code += `str x0, [x1]\n`;
@@ -529,7 +555,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 							defer_anchor_destroy(status, name, rhs_type.name, rhs_type.type_args);
 						}
 						mark_moved_if_struct(node.right_value, status);
-						build_node(node.right_value, status);
+						emit_rhs_value(node.right_value, nir_rhs, status);
 						if (!status.code.endsWith("\n")) status.code += "\n";
 						anchor_heap_pointer(status, name, decl_frame);
 						if (is_alias) {
@@ -609,7 +635,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 					// Reassignment gives the variable a new valid value — clear any
 					// stale moved flag so scope-exit cleanup frees this instance.
 					status.moved?.delete(name);
-					build_node(node.right_value, status);
+					emit_rhs_value(node.right_value, nir_rhs, status);
 					if (!status.code.endsWith("\n")) status.code += "\n";
 					anchor_heap_pointer(status, name, decl_frame);
 					if (is_alias) {
@@ -754,7 +780,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 			if (lhs_enum?.cases.some((c) => c.params.some((p) => p.type.name === "string"))) {
 				emit_enum_payload_frees(status, rhs_type.name, name);
 			}
-			build_node(node.right_value, status);
+			emit_rhs_value(node.right_value, nir_rhs, status);
 			if (!status.code.endsWith("\n")) status.code += "\n";
 			emit_var_address(status, "x1", name);
 			emit_struct_copy("x0", "x1", 0, enum_size, status);
@@ -773,7 +799,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 		if (paramReg) {
 			if (is_mutable_param(name, status)) {
 				status.code += `mov x2, ${paramReg}\n`;
-				build_node(node.right_value, status);
+				emit_rhs_value(node.right_value, nir_rhs, status);
 				if (node.operator) {
 					// x0 holds the RHS; the old value lands in x1. (The
 					// historical `mov x1, x0` here clobbered the old value
@@ -789,7 +815,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 				}
 				status.code += `\n${store_op} ${store_reg}, [x2]\n`;
 			} else {
-				build_node(node.right_value, status);
+				emit_rhs_value(node.right_value, nir_rhs, status);
 				status.code += `\n// cannot assign to const param\n`;
 			}
 		} else if (status.function_ref_params?.has(name)) {
@@ -800,7 +826,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 					(s) => s.name === func_call.name && !s.is_simple_type,
 				);
 				if (is_constructor) {
-					build_node(node.right_value, status);
+					emit_rhs_value(node.right_value, nir_rhs, status);
 					if (!status.code.endsWith("\n")) status.code += "\n";
 					anchor_heap_pointer(status, name);
 					const offset = status.stack_offsets?.get(name);
@@ -813,7 +839,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 			}
 			if (struct_type && !node.operator) {
 				status.last_result_is_heap = false;
-				build_node(node.right_value, status);
+				emit_rhs_value(node.right_value, nir_rhs, status);
 				if (!status.code.endsWith("\n")) status.code += "\n";
 				// Reclaim a nullable class instance being overwritten by a non-
 				// constructor RHS (e.g. `a = null` or `a = other_nullable`).
@@ -879,7 +905,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 					status.code += `str x2, [sp, #-16]!\n`;
 					status.code += `str x1, [sp, #-16]!\n`;
 				}
-				build_node(node.right_value, status);
+				emit_rhs_value(node.right_value, nir_rhs, status);
 				status.code += `\n`;
 				if (!keep) {
 					status.code += `ldr x1, [sp], #16\n`;
@@ -895,7 +921,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 				// reuses x2 as scratch (e.g. the right operand of `+`), so the
 				// final store would hit a garbage address.
 				status.last_result_is_heap = false;
-				build_node(node.right_value, status);
+				emit_rhs_value(node.right_value, nir_rhs, status);
 				if (!status.code.endsWith("\n")) status.code += "\n";
 				// A `ref string` pointee: the write goes through to the
 				// CALLER's storage, whose scope-exit ownership tracking
@@ -929,7 +955,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 				}
 				const keep = rhs_preserves_x1(node, status);
 				if (!keep) status.code += `str x1, [sp, #-16]!\n`;
-				build_node(node.right_value, status);
+				emit_rhs_value(node.right_value, nir_rhs, status);
 				status.code += `\n`;
 				if (!keep) status.code += `ldr x1, [sp], #16\n`;
 				emit_compound_op(
@@ -949,7 +975,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 				status.code += `${load_op} ${load_reg}, [x1]\n`;
 				const keep = rhs_preserves_x1(node, status);
 				if (!keep) status.code += `str x1, [sp, #-16]!\n`;
-				build_node(node.right_value, status);
+				emit_rhs_value(node.right_value, nir_rhs, status);
 				status.code += `\n`;
 				if (!keep) status.code += `ldr x1, [sp], #16\n`;
 				emit_compound_op(node.operator, status, is_float_type(lhs_type_name));
@@ -973,7 +999,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 			if (alloc_reg_fast?.startsWith("d") && !node.operator && !lhs_is_heap) {
 				status.last_result_is_heap = false;
 				status.float_result_in_d0 = true;
-				build_node(node.right_value, status);
+				emit_rhs_value(node.right_value, nir_rhs, status);
 				if (!status.code.endsWith("\n")) status.code += "\n";
 				if (!status.float_result_in_d0) {
 					if (alloc_reg_fast !== "d0") {
@@ -989,7 +1015,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 			status.last_result_is_heap = false;
 			// Build the RHS first: it may read the current (old) value of `name`
 			// (e.g. `s = s + "x"`), so the old value must still be alive here.
-			build_node(node.right_value, status);
+			emit_rhs_value(node.right_value, nir_rhs, status);
 			if (!status.code.endsWith("\n")) status.code += "\n";
 			// Preserve the freshly computed value across freeing the old value.
 			// A fat string rides the (x0, x1) pair — save BOTH halves.
@@ -1070,7 +1096,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 				get_base_address(access, status, "x0");
 				status.code += `str x0, [sp, #-16]!\n`;
 
-				build_node(node.right_value, status);
+				emit_rhs_value(node.right_value, nir_rhs, status);
 				if (!status.code.endsWith("\n")) {
 					status.code += "\n";
 				}
@@ -1135,7 +1161,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 				status.code += `str x0, [sp, #-16]!\n`;
 
 				status.last_result_is_heap = false;
-				build_node(node.right_value, status);
+				emit_rhs_value(node.right_value, nir_rhs, status);
 				if (!status.code.endsWith("\n")) {
 					status.code += "\n";
 				}
@@ -1212,7 +1238,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 					}
 					emit_free(status);
 
-					build_node(node.right_value, status);
+					emit_rhs_value(node.right_value, nir_rhs, status);
 					if (!status.code.endsWith("\n")) {
 						status.code += "\n";
 					}
@@ -1259,7 +1285,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 				get_base_address(access, status, "x0");
 				status.code += `str x0, [sp, #-16]!\n`;
 
-				build_node(node.right_value, status);
+				emit_rhs_value(node.right_value, nir_rhs, status);
 				if (!status.code.endsWith("\n")) {
 					status.code += "\n";
 				}
@@ -1291,7 +1317,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 					}
 					if (rhs_preserves_x1(node, status)) {
 						status.code += `mov x2, x0\n`;
-						build_node(node.right_value, status);
+						emit_rhs_value(node.right_value, nir_rhs, status);
 						if (!status.code.endsWith("\n")) {
 							status.code += "\n";
 						}
@@ -1310,7 +1336,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 					}
 					status.code += `str x0, [sp, #-16]!\n`;
 					status.code += `str x1, [sp, #-16]!\n`;
-					build_node(node.right_value, status);
+					emit_rhs_value(node.right_value, nir_rhs, status);
 					if (!status.code.endsWith("\n")) {
 						status.code += "\n";
 					}
@@ -1330,7 +1356,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 					get_base_address(access, status, "x0");
 					status.code += `str x0, [sp, #-16]!\n`;
 
-					build_node(node.right_value, status);
+					emit_rhs_value(node.right_value, nir_rhs, status);
 					if (!status.code.endsWith("\n")) {
 						status.code += "\n";
 					}
@@ -1350,11 +1376,11 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 				}
 			}
 		} else {
-			build_node(node.right_value, status);
+			emit_rhs_value(node.right_value, nir_rhs, status);
 			status.code += `\n// complex assignment\n`;
 		}
 	} else {
-		build_node(node.right_value, status);
+		emit_rhs_value(node.right_value, nir_rhs, status);
 		status.code += `\n// complex assignment\n`;
 	}
 

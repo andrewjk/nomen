@@ -1,14 +1,20 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type { NirExpr, NirStmt } from "../nir/nir.ts";
+import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
+import AccessNode from "../nodes/AccessNode.ts";
+import AssignmentNode from "../nodes/AssignmentNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import type BlockNode from "../nodes/BlockNode.ts";
+import DeclarationNode from "../nodes/DeclarationNode.ts";
 import ForLoopNode from "../nodes/ForLoopNode.ts";
 import IfElseNode from "../nodes/IfElseNode.ts";
 import MatchNode from "../nodes/MatchNode.ts";
 import ReturnNode from "../nodes/ReturnNode.ts";
 import SwitchNode from "../nodes/SwitchNode.ts";
 import WhileLoopNode from "../nodes/WhileLoopNode.ts";
+import build_assignment_node from "./build_assignment_node.ts";
 import build_block_node from "./build_block_node.ts";
+import build_declaration_node from "./build_declaration_node.ts";
 import build_for_loop_node from "./build_for_loop_node.ts";
 import build_if_else_node from "./build_if_else_node.ts";
 import build_match_node from "./build_match_node.ts";
@@ -40,6 +46,10 @@ import build_while_loop_node from "./build_while_loop_node.ts";
  * - handles `return` NIR-natively: the builder keeps every ownership/cleanup
  *   decision on the AST node, and its value expression is emitted through
  *   `emit_expr_from_nir` (the expression seam below).
+ * - handles `declare`/`assign`/`eval` NIR-natively the same way: the builders
+ *   keep every semantic decision on the AST node, and the value positions
+ *   (declaration initializer, assignment RHS, bare-expression statements) are
+ *   emitted through `emit_expr_from_nir`.
  * - delegates every other statement kind to `build_node` unchanged.
  *
  * This is the seam where NIR facts attach to emission: later tranches add
@@ -110,6 +120,53 @@ export function emit_stmt_from_nir(
 					status.code += "\n";
 				}
 				return;
+			case "declare":
+				// Type/ownership routing stays on the AST node inside the
+				// builder; the initializer (when any) is emitted through the
+				// NIR expression seam. The trailing-newline guard replicates
+				// build_node's with_semicolon tail: a `var f = func …`
+				// declaration adds none. (Under a NIR ctx a func initializer
+				// actually forces the whole-function AST fallback — the guard
+				// is parity, not load-bearing.)
+				build_declaration_node(child as DeclarationNode, status, nstmt.decl.init);
+				if (nstmt.decl.init && nstmt.decl.init.node.node_type !== "func") {
+					if (!status.code.endsWith("\n")) {
+						status.code += "\n";
+					}
+				}
+				return;
+			case "assign":
+				// Reclamation/aliasing decisions stay on the AST node inside
+				// the builder; the RHS value is emitted through the NIR
+				// expression seam. Trailing-newline replicates the delegated
+				// with_semicolon tail.
+				build_assignment_node(child as AssignmentNode, status, nstmt.rhs);
+				if (!status.code.endsWith("\n")) {
+					status.code += "\n";
+				}
+				return;
+			case "eval": {
+				// Expression-shaped statements (bare calls, lets): the value
+				// rides the NIR expression seam. build_node's with_semicolon
+				// path also stamps a bare nursery-spawn statement as
+				// fire-and-forget — the seam bypasses that case, so replicate
+				// the stamp here, then the usual newline tail.
+				const eval_node = nstmt.expr.node;
+				if (eval_node.node_type === "access") {
+					const inner = (eval_node as AccessNode).access;
+					if (
+						inner.node_type === "access_func" &&
+						(inner as AccessFunctionCallNode).is_nursery_spawn
+					) {
+						(inner as AccessFunctionCallNode).is_statement = true;
+					}
+				}
+				emit_expr_from_nir(nstmt.expr, status);
+				if (!status.code.endsWith("\n")) {
+					status.code += "\n";
+				}
+				return;
+			}
 			default:
 				// Everything else rides the existing AST emission unchanged;
 				// later tranches take over more kinds here.

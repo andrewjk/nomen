@@ -12,6 +12,7 @@ import {
 } from "../build_common/string_return_analysis.ts";
 import { is_float_type } from "../built_in_types.ts";
 import { is_int_literal, parse_int_literal_bigint, to_decimal_string } from "../int_literal.ts";
+import type { NirExpr } from "../nir/nir.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
@@ -27,6 +28,7 @@ import build_array_values_node, { resolve_static_value } from "./build_array_val
 import { get_source_address } from "./build_assignment_node.ts";
 import build_node from "./build_node.ts";
 import build_range_node from "./build_range_node.ts";
+import { emit_expr_from_nir } from "./emit_nir.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import aarch64_type from "./utils/aarch64_type.ts";
 import { emit_strdup, emit_malloc } from "./utils/audit.ts";
@@ -715,7 +717,42 @@ function resolve_string_op(op: OperationNode, status: BuildStatus): string | nul
 	return null;
 }
 
-export default function build_declaration_node(node: DeclarationNode, status: BuildStatus) {
+/**
+ * Emit a declaration INITIALIZER expression. Under NIR-driven emission the
+ * lowered `NirExpr` rides in and descends through `emit_expr_from_nir` (the
+ * expression seam); without one — or if the lowered expr doesn't carry this
+ * exact AST node (from_ast is 1:1, so that can't happen) — it is exactly the
+ * historical `build_node(value)`. Every semantic decision (type routing,
+ * ownership marks, view materialization) stays on the AST node in the builder.
+ */
+function emit_init_value(
+	value: BaseNode,
+	nir: NirExpr | null | undefined,
+	status: BuildStatus,
+): void {
+	if (nir && nir.node === value) {
+		emit_expr_from_nir(nir, status);
+		return;
+	}
+	build_node(value, status);
+}
+
+/** The lowered NIR element expr for element `i` of an array-literal init:
+ *  array literals lower to a `call` whose args are the index-aligned
+ *  elements (same shape the return path consumes). */
+function nir_array_element(
+	nir: NirExpr | null | undefined,
+	arr: BaseNode | null | undefined,
+	i: number,
+): NirExpr | undefined {
+	return nir?.kind === "call" && nir.node === arr ? nir.facts.args[i] : undefined;
+}
+
+export default function build_declaration_node(
+	node: DeclarationNode,
+	status: BuildStatus,
+	nir_init?: NirExpr | null,
+) {
 	status.last_result_is_heap = false;
 	const prev_heap = status.last_result_is_heap;
 
@@ -782,9 +819,9 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			emit_data(status, `${node.name}: .space 8`);
 		}
 		if (node.value && node.value.node_type === "func") {
-			build_node(node.value, status);
+			emit_init_value(node.value, nir_init, status);
 		} else if (node.value) {
-			build_node(node.value, status);
+			emit_init_value(node.value, nir_init, status);
 			if (!status.code.endsWith("\n")) {
 				status.code += "\n";
 			}
@@ -806,7 +843,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 		const base = allocate_stack_space(status, 16, 16);
 		status.stack_offsets!.set(node.name, base);
 		if (node.value) {
-			build_node(node.value, status);
+			emit_init_value(node.value, nir_init, status);
 			if (!status.code.endsWith("\n")) status.code += "\n";
 			// slice returns (ptr, len) in x0/x1 — spill both into the local.
 			status.code += `str x0, [x29, #${base}]\n`;
@@ -887,7 +924,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 					}
 					build_swap_params(func_call, status);
 				} else {
-					build_node(node.value, status);
+					emit_init_value(node.value, nir_init, status);
 					if (!status.code.endsWith("\n")) status.code += "\n";
 					emit_var_store(status, "x0", node.name, 8);
 					anchor_heap_pointer(status, node.name, undefined, node.type.is_nullable);
@@ -933,7 +970,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 				emit_var_address(status, "x8", node.name);
 				status.struct_return_buffer = "x8";
 				status.call_x8_preset = true;
-				build_node(node.value, status);
+				emit_init_value(node.value, nir_init, status);
 				status.struct_return_buffer = old_buffer;
 				status.call_x8_preset = old_preset;
 			}
@@ -970,7 +1007,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 		} else {
 			emit_data(status, `${node.name}: .space 8\n`);
 		}
-		build_node(node.value, status);
+		emit_init_value(node.value, nir_init, status);
 		if (!status.code.endsWith("\n")) status.code += "\n";
 		emit_var_store(status, "x0", node.name, 8);
 		if (inner.owned_return) {
@@ -1079,7 +1116,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			emit_data(status, `${node.name}: .space ${enum_size}\n`);
 		}
 		if (node.value) {
-			build_node(node.value, status);
+			emit_init_value(node.value, nir_init, status);
 			if (!status.code.endsWith("\n")) status.code += "\n";
 			// `Enum.case(args)` accesses, shorthand `.case` values, and calls
 			// whose return type is the enum (functions return a pointer to a
@@ -1118,10 +1155,11 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			node.is_heap_array_literal ||
 			(node.type.storage_kind === "heap_array" &&
 				(node.value?.node_type === "array" || node.value?.node_type === "range"));
-		const array_literal_values =
+		const array_literal_node =
 			heap_literal_init && node.value?.node_type === "array"
-				? (node.value as ArrayValuesNode).values
+				? (node.value as ArrayValuesNode)
 				: undefined;
+		const array_literal_values = array_literal_node?.values;
 		const range_literal_values =
 			heap_literal_init && node.value?.node_type === "range"
 				? range_to_values(node.value as RangeNode)
@@ -1190,7 +1228,11 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 							status.code += `str x0, [x9, #${slot}]\n`;
 						}
 					} else {
-						build_node(value as BaseNode, status);
+						emit_init_value(
+							value as BaseNode,
+							nir_array_element(nir_init, array_literal_node, i),
+							status,
+						);
 						if (!status.code.endsWith("\n")) status.code += "\n";
 						status.code += `ldr x9, [x29, #${offset}]\n`;
 						if (element_size > 8) {
@@ -1241,7 +1283,11 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 							status.code += `str x0, [x9, #${slot}]\n`;
 						}
 					} else {
-						build_node(value as BaseNode, status);
+						emit_init_value(
+							value as BaseNode,
+							nir_array_element(nir_init, array_literal_node, i),
+							status,
+						);
 						if (!status.code.endsWith("\n")) status.code += "\n";
 						status.code += `ldr x9, [${node.name}]\n`;
 						if (element_size > 8) {
@@ -1397,7 +1443,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 									status.code += `str x0, [x29, #${slot_offset}]\n`;
 								}
 							} else {
-								build_node(value, status);
+								emit_init_value(value, nir_array_element(nir_init, array_values, i), status);
 								if (!status.code.endsWith("\n")) {
 									status.code += "\n";
 								}
@@ -1433,7 +1479,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 									status.code += `str x0, [${node.name} + ${i * element_size}]\n`;
 								}
 							} else {
-								build_node(value, status);
+								emit_init_value(value, nir_array_element(nir_init, array_values, i), status);
 								if (!status.code.endsWith("\n")) {
 									status.code += "\n";
 								}
@@ -1566,10 +1612,10 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 						status.code += `${node.name}: ${directive} ${values.join(", ")}\n.p2align 2\n`;
 					}
 				} else {
-					build_node(node.value, status);
+					emit_init_value(node.value, nir_init, status);
 				}
 			} else {
-				build_node(node.value, status);
+				emit_init_value(node.value, nir_init, status);
 			}
 		} else if (
 			node.value &&
@@ -1594,12 +1640,12 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			if (status.function_return_label) {
 				const offset = allocate_stack_space(status, 8);
 				status.stack_offsets!.set(node.name, offset);
-				build_node(node.value, status);
+				emit_init_value(node.value, nir_init, status);
 				if (!status.code.endsWith("\n")) status.code += "\n";
 				status.code += `str x0, [x29, #${offset}]\n`;
 			} else {
 				emit_data(status, `${node.name}: .space 8\n.p2align 2\n`);
-				build_node(node.value, status);
+				emit_init_value(node.value, nir_init, status);
 				if (!status.code.endsWith("\n")) status.code += "\n";
 				status.code += `adr x1, ${node.name}\n`;
 				status.code += `str x0, [x1]\n`;
@@ -1632,7 +1678,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 					const src_name = (node.value as ValueNode).value;
 					emit_var_address(status, "x0", src_name);
 				} else {
-					build_node(node.value, status);
+					emit_init_value(node.value, nir_init, status);
 					if (!status.code.endsWith("\n")) {
 						status.code += "\n";
 					}
@@ -1678,7 +1724,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 					}
 					build_swap_params(func_call, status);
 				} else {
-					build_node(func_call, status);
+					emit_init_value(func_call, nir_init, status);
 					if (!status.code.endsWith("\n")) {
 						status.code += "\n";
 					}
@@ -1708,7 +1754,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 					const src_name = (node.value as ValueNode).value;
 					emit_var_load(status, "x0", src_name, 8);
 				} else {
-					build_node(node.value, status);
+					emit_init_value(node.value, nir_init, status);
 					if (!status.code.endsWith("\n")) {
 						status.code += "\n";
 					}
@@ -1811,12 +1857,12 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 						emit_var_address(status, "x8", node.name);
 						status.struct_return_buffer = "x8";
 						status.call_x8_preset = true;
-						build_node(node.value, status);
+						emit_init_value(node.value, nir_init, status);
 						status.struct_return_buffer = old_buffer;
 						status.call_x8_preset = old_preset;
 						emit_var_address(status, "x0", node.name);
 					} else {
-						build_node(node.value, status);
+						emit_init_value(node.value, nir_init, status);
 						emit_var_store(status, "x0", node.name, struct_size);
 					}
 				}
@@ -1836,7 +1882,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 					} else if (src_is_struct) {
 						get_source_address(node.value, status);
 					} else {
-						build_node(node.value, status);
+						emit_init_value(node.value, nir_init, status);
 					}
 					if (!status.code.endsWith("\n")) {
 						status.code += "\n";
@@ -1906,7 +1952,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 				}
 				status.string_literal_names!.add(node.name);
 			} else {
-				build_node(node.value, status);
+				emit_init_value(node.value, nir_init, status);
 				if (!status.code.endsWith("\n")) {
 					status.code += "\n";
 				}
@@ -1972,7 +2018,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 					emit_pair_store_x29(status, offset);
 					mark_heap_string(status, node.name);
 				} else if (!is_literal) {
-					build_node(node.value, status);
+					emit_init_value(node.value, nir_init, status);
 					if (!status.code.endsWith("\n")) {
 						status.code += "\n";
 					}
@@ -2166,7 +2212,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 				status.join_needs_owned_string = true;
 				mark_heap_string(status, node.name);
 			}
-			build_node(node.value, status);
+			emit_init_value(node.value, nir_init, status);
 			status.join_needs_owned_string = old_join_owned;
 			status.return_assign = old_return_assign;
 			check_heap();
@@ -2191,7 +2237,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 				status.last_result_is_heap = false;
 				return;
 			}
-			build_node(node.value, status);
+			emit_init_value(node.value, nir_init, status);
 			emit_var_store(status, "x0", node.name, size);
 			check_heap();
 		}
