@@ -171,7 +171,7 @@ export default function tokenize(input: string, preserve_source = false): Token[
 				) {
 					// It's a float, add the decimal part to the previous token
 					const previous_token = status.tokens.at(-1)!;
-					let end = status.i + 1;
+					let end = status.i + 2;
 					for (let j = status.i + 2; j < input.length; j++) {
 						if (!is_number_char(input, j)) {
 							end = j;

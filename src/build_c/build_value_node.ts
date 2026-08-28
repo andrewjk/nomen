@@ -3,6 +3,7 @@ import { is_int_literal } from "../int_literal.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_node from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
+import c_char_literal from "./utils/c_char_literal.ts";
 import c_function_name from "./utils/c_function_name.ts";
 
 const INT_LITERAL_SUFFIX: Record<string, string> = {
@@ -58,6 +59,8 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 		// A func-typed value referencing a function nested in another body
 		// emits under its uniquified label (stamped at check time).
 		value = c_function_name(node.resolved_function.label_name.replace(/#/g, ""));
+	} else if (value.startsWith("'") && value.endsWith("'")) {
+		value = c_char_literal(value);
 	} else value = c_function_name(value);
 	// `self` is always a pointer in the generated C (matching aarch64):
 	// regular methods receive `struct T *self`, and a custom #init uses a

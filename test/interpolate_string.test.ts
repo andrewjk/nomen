@@ -30,6 +30,14 @@ Console.write("\\{x * 2} is double")
 		await build_and_check_output(input, "interpolate_expression", "10 is double");
 	});
 
+	test("interpolation with float literal expression", async () => {
+		const input = `
+var f = 1.5
+Console.write("\\{f * 2.0}\\n")
+`;
+		await build_and_check_output(input, "interpolate_float_literal", "3.000000\n");
+	});
+
 	test("interpolation with string variable", async () => {
 		const input = `
 const name = "world"

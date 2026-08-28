@@ -6,8 +6,8 @@ import build_and_check_output from "./build_and_check_output";
 // Loads and casts must ZERO-extend it on both backends — values >= 0x80 used
 // to come back sign-extended (negative) from aarch64 element loads (`ldrsb`)
 // and cast widening (`sxtb`), and from the C backend's signed `char`.
-// High bytes are built via `as char`: Nomen char literals >= 0x80 are emitted
-// verbatim into C sources, which rejects them (pre-existing gap).
+// High-byte char literals are emitted as hex escapes (`'\xe9'`) in C sources
+// and as immediates on aarch64, so they work on both backends.
 
 describe("char is unsigned", () => {
 	test("high-byte char casts round-trip zero-extended", async () => {
@@ -30,5 +30,14 @@ if hi > lo {
 }
 `;
 		await build_and_check_output(input, "char_compare_unsigned", "positive\n");
+	});
+
+	test("high-byte char literals work on both backends", async () => {
+		const input = `
+var char c = 'é'
+var int code = c as int
+Console.write("\\{code}\\n")
+`;
+		await build_and_check_output(input, "char_literal_high_byte", "233\n");
 	});
 });

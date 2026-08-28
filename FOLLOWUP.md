@@ -210,37 +210,6 @@ if it keeps biting.
   callee-saved registers (x19–x28, sp) or stack slots — x0–x18 are
   caller-saved and clobbered by the callee.
 
-## Built-in type follow-ups from the `built_in_types.ts` consolidation (2026-08)
-
-Consolidating the scattered type-name checks into `src/built_in_types.ts`
-(metadata table + predicates) surfaced several drift bugs. Fixed in that pass
-and a follow-up ufloat implementation (all tests green):
-
-- `float32`/`float64` are negatable (`u-`), `ufloat*` counts as Sendable, and
-  aarch64 arithmetic uses unsigned instructions for ALL unsigned ints (was
-  missing `uint16`/`uint`) and the FPU path for all six float variants.
-- `ufloat*` is now implemented end to end: float-literal coercion into float
-  targets (non-negative only for unsigned; negative literals are rejected),
-  explicit `as` casts, cross-float variable coercion (signed targets accept
-  any float; unsigned accept unsigned), file-scope const data + auto-inline
-  candidates (`SIMPLE_TYPES` now includes all floats), proper `.double`
-  constant emission for local float literals of ANY width (was hardwired to
-  exactly `"float"`, breaking `float32`/`float64`/`ufloat*` locals on
-  aarch64), and System library structs with `to_string` for all five
-  previously method-less float variants (`core/System/{ufloat,float32,
-ufloat32,float64,ufloat64}.nm`, pulled in via parse.ts BASE_TYPES).
-- Char is now treated as unsigned end to end: aarch64 element loads
-  zero-extend (`ldrb`, was `ldrsb` for view/array elements), cast widening
-  zero-extends (`and #0xFF`, was `sxtb`), and the C backend declares chars as
-  `unsigned char` (c_type + raw-block substitution). Still open: Nomen char
-  literals >= 0x80 are emitted verbatim into C source (`'é'`), which clang
-  rejects — high bytes must be built via `233 as char` until literals are
-  escaped per backend.
-- String interpolation parses decimal literals inside `\{...}` wrong:
-  `Console.write("\{f * 2.0}\n")` fails with "Unknown value: 2." — the `0`
-  after the dot is lost. Affects plain `float` too; workaround is to compute
-  the expression into a variable first.
-
 ## aarch64/C backend divergence: shadowed local read after its scope (2026-08)
 
 Discovered while testing whole-function register allocation (phase 4). A
