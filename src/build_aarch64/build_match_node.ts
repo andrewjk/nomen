@@ -72,8 +72,6 @@ function emit_pattern_tag(match_value: BaseNode, enum_name: string, status: Buil
 export default function build_match_node(node: MatchNode, status: BuildStatus) {
 	const label = label_counter++;
 	const old_scoped_declarations = enter_scope_frame(status);
-	const old_stack_offsets = status.stack_offsets;
-	status.stack_offsets = new Map(old_stack_offsets);
 	const match_type = type_from_value_node(node.value);
 	const match_type_name = match_type?.name;
 	const enum_with_data = match_type_name
@@ -245,5 +243,4 @@ export default function build_match_node(node: MatchNode, status: BuildStatus) {
 	}
 
 	exit_scope_frame(status, old_scoped_declarations);
-	status.stack_offsets = old_stack_offsets;
 }

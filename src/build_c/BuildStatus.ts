@@ -301,6 +301,16 @@ export default interface BuildStatus {
 	 */
 	outer_scope_declarations?: DeclarationNode[][];
 	/**
+	 * aarch64 only. Saved stack_offsets maps of ENCLOSING scope frames (see
+	 * enter_scope_frame/exit_scope_frame). Each frame builds against a COPY of
+	 * the enclosing map so a declaration inside it (e.g. a shadowing `var x`)
+	 * cannot clobber an outer same-named local's slot entry; exiting the frame
+	 * restores the enclosing map. Without this, reads AFTER the frame resolve
+	 * to the inner slot — diverging from the C backend (where the C compiler
+	 * scopes the locals) and from the outer variable's actual storage.
+	 */
+	stack_offsets_frames?: Map<string, number>[];
+	/**
 	 * C only. Post-statement frees for VALUE-struct string fields released at
 	 * a `mov` call site (the callee's store_T deep-copied them and the decl
 	 * was spliced out of scoped_declarations). The call may sit inside a

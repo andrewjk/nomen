@@ -254,6 +254,26 @@ Console.write("out=\\{out}")
 	await build_and_check_output(input, "wholefunc_shadow_excluded", "out=101");
 });
 
+// A variable shadowed inside an if-branch must not corrupt the OUTER variable:
+// the branch's declaration gets its own stack slot, and after the branch the
+// outer name resolves back to the outer slot. (stack_offsets used to be a flat
+// name-keyed map — the inner declaration clobbered the outer entry, so reads
+// after the branch saw the inner slot; the C backend always scoped correctly.)
+test("shadowed local read after its scope", async () => {
+	const input = `
+var x = 1
+var i = 0
+while i < 3 { x = x * 2  i = i + 1 }
+if x > 4 {
+  var x = 100
+  x = x + 1
+  Console.write("inner=\\{x}")
+}
+Console.write("x=\\{x}")
+`;
+	await build_and_check_output(input, "shadowed_local_read_after_scope", "inner=101x=8");
+});
+
 // A whole-function promoted float lives in a callee-saved d-register for the
 // entire function; its literal initializer must initialize the register.
 test("whole-function promoted float initializes in register", async () => {

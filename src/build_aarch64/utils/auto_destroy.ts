@@ -90,13 +90,19 @@ export function release_heap_string_fields(
  * Swap in a fresh scoped_declarations frame for a nested scope (if/while/
  * for/switch/match body), pushing the enclosing array onto
  * outer_scope_declarations so return-path cleanup can still reach it.
- * Pair with exit_scope_frame.
+ * Also swaps in a COPY of stack_offsets: the map is keyed by NAME, so a
+ * declaration inside the frame (e.g. a shadowing `var x`) would otherwise
+ * permanently clobber the outer local's slot entry — reads after the frame
+ * would resolve to the inner slot. Pair with exit_scope_frame.
  */
 export function enter_scope_frame(status: BuildStatus): DeclarationNode[] {
 	const old = status.scoped_declarations ?? [];
 	if (!status.outer_scope_declarations) status.outer_scope_declarations = [];
 	status.outer_scope_declarations.push(old);
 	status.scoped_declarations = [];
+	if (!status.stack_offsets_frames) status.stack_offsets_frames = [];
+	status.stack_offsets_frames.push(status.stack_offsets ?? new Map());
+	status.stack_offsets = new Map(status.stack_offsets ?? []);
 	return old;
 }
 
@@ -104,6 +110,8 @@ export function enter_scope_frame(status: BuildStatus): DeclarationNode[] {
 export function exit_scope_frame(status: BuildStatus, old: DeclarationNode[]) {
 	status.outer_scope_declarations?.pop();
 	status.scoped_declarations = old;
+	const saved_offsets = status.stack_offsets_frames?.pop();
+	if (saved_offsets) status.stack_offsets = saved_offsets;
 }
 
 /** Every declaration frame a `return` must clean: enclosing scopes first,
