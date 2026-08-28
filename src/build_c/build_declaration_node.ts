@@ -7,9 +7,11 @@ import {
 	is_owned_string_branch_value,
 } from "../build_common/string_return_analysis.ts";
 import { superseded_param_temp_names } from "../build_common/temp_anchor_consolidation.ts";
+import type { NirExpr } from "../nir/nir.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
+import type BaseNode from "../nodes/BaseNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
@@ -21,13 +23,58 @@ import build_node from "./build_node.ts";
 import build_parameter_node from "./build_parameter_node.ts";
 import build_range_node, { evaluate_constant } from "./build_range_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
+import { emit_expr_from_nir, nir_array_elements } from "./emit_nir.ts";
 import c_function_name from "./utils/c_function_name.ts";
 import { splice_decl_from_c_scopes } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import { c_materialize_view_string, is_view_value } from "./utils/view_value.ts";
 
-export default function build_declaration_node(node: DeclarationNode, status: BuildStatus) {
+/**
+ * Emit a declaration INITIALIZER expression. Under NIR-driven emission the
+ * lowered `NirExpr` rides in and descends through `emit_expr_from_nir` (the
+ * expression seam); without one — or if the lowered expr doesn't carry this
+ * exact AST node (from_ast is 1:1, so that can't happen) — it is exactly the
+ * historical `build_node(value)`. Every semantic decision (type routing,
+ * ownership marks, strdup rules, view materialization) stays on the AST node
+ * in the builder.
+ */
+function emit_init_value(
+	value: BaseNode,
+	nir: NirExpr | null | undefined,
+	status: BuildStatus,
+): void {
+	if (nir && nir.node === value) {
+		emit_expr_from_nir(nir, status);
+		return;
+	}
+	build_node(value, status);
+}
+
+/**
+ * The declaration SWAP replacement (`var X b = mov obj.field swap <rep>`) —
+ * the expression-seam version of the historical `build_node(swap)`. Both
+ * backends build it in VALUE position; the surrounding statement tail is
+ * handled by the caller, so no newline normalization happens here.
+ */
+function emit_swap_value(
+	swap: BaseNode,
+	nir: NirExpr | null | undefined,
+	status: BuildStatus,
+): void {
+	if (nir && nir.node === swap) {
+		emit_expr_from_nir(nir, status);
+		return;
+	}
+	build_node(swap, status);
+}
+
+export default function build_declaration_node(
+	node: DeclarationNode,
+	status: BuildStatus,
+	nir_init?: NirExpr | null,
+	nir_swap?: NirExpr | null,
+) {
 	// TODO: malloc() if it's on the heap
 
 	// Function type declaration (explicit `var func (...) f = ...` or inferred
@@ -50,6 +97,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 		// Support GCC by defining vars first
 		const variables: string[] = [];
 		let i = 1;
+		const nir_elems = nir_array_elements(nir_init, array_values);
 		for (let value of array_values.values) {
 			const var_type = type_from_value_node(value);
 			const var_name = `_${node.name}_${i}`;
@@ -58,7 +106,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			);
 			// HACK:
 			status.code += `${c_type(var_type.name)} ${var_name} = `;
-			build_node(value, status);
+			emit_init_value(value, nir_elems?.[i - 1], status);
 			status.code += ";\n";
 			i += 1;
 			variables.push(var_name);
@@ -122,7 +170,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			status.code += `void *${safe_name}`;
 			if (node.value) {
 				status.code += ` = (void *)`;
-				build_node(node.value, status);
+				emit_init_value(node.value, nir_init, status);
 			}
 			status.code += `;\n`;
 			return;
@@ -167,7 +215,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 			status.code += `void *${safe_name}`;
 			if (node.value) {
 				status.code += ` = (void *)`;
-				build_node(node.value, status);
+				emit_init_value(node.value, nir_init, status);
 			}
 			status.code += `;\n`;
 			return;
@@ -478,10 +526,10 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 					if (value_is_nullable_call) {
 						const old = status.current_nullable_call_flag;
 						status.current_nullable_call_flag = flag;
-						build_node(node.value, status);
+						emit_init_value(node.value, nir_init, status);
 						status.current_nullable_call_flag = old;
 					} else {
-						build_node(node.value, status);
+						emit_init_value(node.value, nir_init, status);
 						status.code += `;\n${flag} = 1`;
 					}
 				}
@@ -511,7 +559,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 				status.code += `${safe_name}->_vt = 0;\n`;
 				status.code += `${safe_name}->length = ${count}L;\n`;
 				status.code += `memcpy((char *)${safe_name} + sizeof(struct Array_${elem_name}), (${elem_c}[])`;
-				build_array_values_node(arr, status);
+				build_array_values_node(arr, status, nir_array_elements(nir_init, arr));
 				status.code += `, ${count}L * sizeof(${elem_c}));\n`;
 				return;
 			}
@@ -631,7 +679,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 					!is_borrow_only_string
 				) {
 					status.code += `nomen_str_dup(`;
-					build_node(node.value, status);
+					emit_init_value(node.value, nir_init, status);
 					status.code += `)`;
 				} else {
 					// Type erasure: when a class pointer is assigned to a
@@ -651,10 +699,10 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 							status.suppress_dereference = true;
 						}
 						status.code += `(long)`;
-						build_node(node.value, status);
+						emit_init_value(node.value, nir_init, status);
 						status.suppress_dereference = false;
 					} else {
-						build_node(node.value, status);
+						emit_init_value(node.value, nir_init, status);
 					}
 				}
 			}
@@ -673,7 +721,7 @@ export default function build_declaration_node(node: DeclarationNode, status: Bu
 				const field_access = status.code.substring(before_len);
 				status.code = status.code.substring(0, before_len);
 				status.code += `${field_access} = `;
-				build_node(node.swap, status);
+				emit_swap_value(node.swap, nir_swap, status);
 			}
 			// Named-field struct literal overrides (e.g. `[ grow = 2 ]` on a
 			// struct whose `grow` field has a declared default) are applied as

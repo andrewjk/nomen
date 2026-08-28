@@ -5,8 +5,10 @@ import {
 	is_owned_string_branch_value,
 } from "../build_common/string_return_analysis.ts";
 import { is_string_borrow } from "../build_common/string_return_analysis.ts";
+import type { NirExpr } from "../nir/nir.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
+import type BaseNode from "../nodes/BaseNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import ReturnNode from "../nodes/ReturnNode.ts";
@@ -14,13 +16,39 @@ import ValueNode from "../nodes/ValueNode.ts";
 import build_array_values_node from "./build_array_values_node.ts";
 import build_node from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
+import { emit_expr_from_nir, nir_array_elements } from "./emit_nir.ts";
 import { reclaim_all_c_scopes } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
 import emit_allocations from "./utils/emit_allocations.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import { is_view_value } from "./utils/view_value.ts";
 
-export default function build_return_node(node: ReturnNode, status: BuildStatus) {
+/**
+ * Emit a return VALUE expression. Under NIR-driven emission the lowered
+ * `NirExpr` rides in and descends through `emit_expr_from_nir` (the
+ * expression seam); without one — or if the lowered expr doesn't carry this
+ * exact AST node (from_ast is 1:1, so that can't happen) — it is exactly the
+ * historical `build_node(value)`. Every semantic decision (borrow
+ * normalization, strdup rules, join-slot routing) stays on the AST node in
+ * the builder.
+ */
+function emit_return_value(
+	value: BaseNode,
+	nir_value: NirExpr | null | undefined,
+	status: BuildStatus,
+): void {
+	if (nir_value && nir_value.node === value) {
+		emit_expr_from_nir(nir_value, status);
+		return;
+	}
+	build_node(value, status);
+}
+
+export default function build_return_node(
+	node: ReturnNode,
+	status: BuildStatus,
+	nir_value?: NirExpr | null,
+) {
 	// For a nullable struct return type, the callee signals null-ness to the
 	// caller through the hidden `*_ret_has` out-parameter (0 = null,
 	// 1 = value). Detect once: a bare `return` (void) only fires for non-nullable
@@ -78,7 +106,7 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 		const elem_is_class = !!elem_struct?.is_class;
 		const elem_c_type = elem_is_class ? `struct ${ret_type.name}*` : c_type(ret_type.name);
 		status.code += `${elem_c_type} ${return_array_var}[${return_array_len}] = `;
-		build_array_values_node(arr, status);
+		build_array_values_node(arr, status, nir_array_elements(nir_value, arr));
 		status.code += ";\n";
 	} else if (ret_type?.is_array && node.value.node_type === "value") {
 		return_array_var = (node.value as ValueNode).value;
@@ -155,7 +183,7 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 	if (old_return_assign) {
 		emit_allocations(node.value, status);
 		status.code += `${old_return_assign} = `;
-		build_node(node.value, status);
+		emit_return_value(node.value, nir_value, status);
 		status.code += `;\n`;
 		reclaim_all_c_scopes(status);
 	} else {
@@ -447,7 +475,7 @@ export default function build_return_node(node: ReturnNode, status: BuildStatus)
 		if (returns_string_zero) {
 			status.code += `(nomen_string){0,0}`;
 		} else {
-			build_node(node.value, status);
+			emit_return_value(node.value, nir_value, status);
 		}
 		if (wrap_view_string_return) {
 			status.code += `; nomen_view _v = { (void*)_p.ptr, _p.len }; _v; })`;

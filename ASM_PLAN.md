@@ -21,12 +21,12 @@ Text passes can't see liveness; the AST has no per-function CFG.
 
 ## Architecture (agreed)
 
-| Phase | Scope                                                                                                       | Status                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| ----- | ----------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **1** | Asm lifter + validator; wire into every build; round-trip fidelity                                          | ✅ DONE, suite green pre-crash                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| **2** | Frame-slot forwarding + dead-store elimination over the lifted IR (`asm_opt.ts`)                            | ✅ DONE — suite green (2468 tests); measured −1…−5% broad, regex-redux −17%                                                                                                                                                                                                                                                                                                                                                                                                         |
-| **3** | Extract duplicated semantic lowering (ownership/borrows/moves) into `build_common/` shared by BOTH backends | ✅ DONE — first tranche landed, suite green (253 files / 2468 tests)                                                                                                                                                                                                                                                                                                                                                                                                                |
-| **4** | Single canonical IR from the check phase; aarch64 gets real regalloc; eventually NEON                       | 🔄 whole-function regalloc DONE (locals + params, nbody −9%); flow groundwork + canonical NIR stage 1 DONE (planner consumes NIR, codegen byte-identical); CFG + liveness + dominance over NIR DONE; NIR-driven emission tranches 1–5 DONE (if/while/for/switch/match/return/declare/assign/eval + address-position/swap-expr value positions emitted from NIR + expression seam, byte-identical); C backend consumes the seam for control flow DONE (byte-identical); NEON remains |
+| Phase | Scope                                                                                                       | Status                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ----- | ----------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **1** | Asm lifter + validator; wire into every build; round-trip fidelity                                          | ✅ DONE, suite green pre-crash                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| **2** | Frame-slot forwarding + dead-store elimination over the lifted IR (`asm_opt.ts`)                            | ✅ DONE — suite green (2468 tests); measured −1…−5% broad, regex-redux −17%                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| **3** | Extract duplicated semantic lowering (ownership/borrows/moves) into `build_common/` shared by BOTH backends | ✅ DONE — first tranche landed, suite green (253 files / 2468 tests)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| **4** | Single canonical IR from the check phase; aarch64 gets real regalloc; eventually NEON                       | 🔄 whole-function regalloc DONE (locals + params, nbody −9%); flow groundwork + canonical NIR stage 1 DONE (planner consumes NIR, codegen byte-identical); CFG + liveness + dominance over NIR DONE; NIR-driven emission tranches 1–5 DONE (if/while/for/switch/match/return/declare/assign/eval + address-position/swap-expr value positions emitted from NIR + expression seam, byte-identical); C backend consumes the seam for control flow DONE (byte-identical); C expression seam DONE (return/declare/assign/eval + array-element + swap value positions, byte-identical); NEON remains |
 
 ## Phase 1 — lifter + validator (DONE)
 
@@ -598,15 +598,83 @@ scratch dirs (c695ea64) — staged data files stayed behind in `folder`.
 check_output now copies non-artifact files from `folder` into the scratch
 dir before executing.
 
+### C expression seam (DONE)
+
+The C backend's remaining value positions now descend the canonical
+expression seam — mirroring aarch64 tranches 3–5, and completing the C side
+of the dispatch (`return`/`declare`/`assign`/`eval` were the last delegated
+kinds with value positions).
+
+- `src/build_c/emit_nir.ts` — `emit_stmt_from_nir` gained the four arms plus
+  `emit_expr_from_nir` (the expression seam, exhaustive over NirExpr) and
+  `nir_array_elements` (array literals lower to a `call` whose args are the
+  index-aligned elements; consumed by the declaration and return
+  array-literal sites). A new `with_semicolon_tail` helper replicates
+  build_node's with_semicolon suffix byte-exactly — including the C
+  backend's HISTORICAL extra `;` line after returns and the deferred
+  string-release flush, both of which the delegated path emits and the arms
+  must too.
+  - C-side divergence from the aarch64 seam: the `wrap` arm routes through
+    `build_node` UNCONDITIONALLY. C's `grouped` case emits literal
+    parentheses into the expression text (aarch64's is a pure value
+    pass-through), so the aarch64-style recursion into the NIR inner would
+    drop parens — caught immediately by the knucleotide corpus diff
+    (`((((c >> 1L)) & 3L))` vs `(((c >> 1L)) & 3L)`).
+  - The `eval` arm re-stamps bare nursery spawns as fire-and-forget
+    (`is_statement`), replicating build_node's with_semicolon side effect.
+  - The `assign` arm passes `nstmt.node` (the INNER AssignmentNode, for
+    let-wrapped arrow-arm assigns) — same as aarch64.
+- `build_c/build_return_node.ts` — takes `nir_value`; value emissions
+  (main `_return_val` initializer, the nested `return_assign` path, and the
+  array-literal element initializer) descend the seam via a local
+  `emit_return_value` (guarded by `nir.node === value`, falling back to
+  `build_node`). Every ownership/borrow decision (strdup rules, join-slot
+  routing, field-override application) stays on the AST node.
+- `build_c/build_declaration_node.ts` — takes `nir_init`/`nir_swap`; local
+  `emit_init_value`/`emit_swap_value` route the initializer sites (trait-
+  class `void*` locals, nullable-struct init, heap-array-literal memcpy,
+  strdup'd literals, type-erasure casts, trait pointer-array elements) and
+  the decl-swap replacement through the seam.
+- `build_c/build_assignment_node.ts` — takes `nir_rhs`/`nir_swap`; local
+  `emit_rhs_value` routes ALL RHS value positions (trait vtable dispatch
+  setter, string-field temp, trait-class and ref-class-param reassigns,
+  string re-concat temp + literal strdup, nullable-struct slot, ref-string
+  param, generic RHS) plus the swap replacement. Address positions stay on
+  the plain path (the `{ rhs = swap; }` source re-emit is an lvalue; ref
+  locals' `= &` re-pointing takes names only) — matching the aarch64
+  precedent. View-string arg marshalling (`c_view_string_arg`) stays
+  unthreaded, also matching aarch64 (`emit_view_string_arg`).
+- `build_c/build_array_values_node.ts` — optional `nir_elements` param so
+  array-literal elements descend the seam at both call sites.
+
+Proof: byte-IDENTICAL C versus the emission cursor disabled —
+`test/emit_c_nir.test.ts` extended to 24 tests (returns of every expression
+shape incl. nested-flow arms, float/string returns; array-literal returns
+riding the NIR element facts; declare/assign/eval across literal/op/grouped/
+cast/string-concat/struct-ctor/fixed-array/nullable shapes; bare
+nursery-spawn fire-and-forget; nullable-struct declares + null/non-null
+assignments; variable-RHS and field-RHS assignment swaps; value-struct
+declaration swap; behavioral run → `13 0.750000 hi there! 14 set 9 13 27
+45`) AND the full `bench/nomen/*.nm` corpus. Mutation checks (markers
+injected into all four new arms) confirmed each arm executes on the probe
+programs and were reverted. Full suite green. Perf: byte-identical output by
+design.
+
+Side find (pre-existing, recorded in FOLLOWUP.md): `for v of <call>()`
+crashes the C backend when the returned array has no compile-time length
+(`build_node(list_type.length!)`) — predates the seam (crashes with the
+cursor disabled too); aarch64 handles the shape.
+
 ### Remaining phase-4 work (NOT done)
 
-- **Canonical IR stage 2+** — the C backend now consumes the seam for
-  control flow (above); aarch64 tranches 1–5 are DONE (if/while/for/switch/
-  match/return/declare/assign/eval native; expression emission seam covering
-  plain, address-position and swap-expr value emissions; per-function
-  eligibility + delegation). Remaining: the C expression seam
-  (return/declare/assign/eval value positions through C builders), then
-  retire the duplicate AST walks entirely. Stage 1's closed union +
+- **Canonical IR stage 2+** — aarch64 tranches 1–5 and the C backend's
+  control-flow + expression seams are DONE (both backends emit
+  if/while/for/switch/match/return/declare/assign/eval through
+  `emit_stmt_from_nir` with a full expression seam covering plain,
+  array-element and swap-expr value emissions). Remaining: retire the
+  duplicate AST walks entirely (each builder still carries its AST-path
+  branches for fallback functions; once unknown_kinds is provably empty over
+  all real programs the fallback can go). Stage 1's closed union +
   coverage sets are the contract those passes build against. (The former
   lowering gap for assignment expressions in arrow arms is closed:
   from_ast lowers let-wrapped assigns to the `assign` KIND; the bench

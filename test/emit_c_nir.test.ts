@@ -359,6 +359,232 @@ async nursery {
 `);
 });
 
+test("return values of every expression shape emit through the C expression seam", () => {
+	// C expression-seam tranche: the return arm threads the lowered value
+	// through emit_expr_from_nir — leaf, binary, grouped, cast, call shapes,
+	// plus returns from nested flow arms (which install their own cursors).
+	expect_byte_identical(`
+func helper = (int v, out int) {
+    return v * 2
+}
+func shape_test = (int n, out int) {
+    if n == 0 {
+        return 0
+    }
+    if n == 1 {
+        return (n + 2) * 3
+    }
+    if n == 2 {
+        return (n * n) as int
+    }
+    if n == 3 {
+        return helper(n) + helper(n + 1)
+    }
+    return 0 - n
+}
+func first_hit = (int limit, out int) {
+    var int i = 0
+    while i < limit {
+        if i * i > 20 {
+            return i
+        }
+        i = i + 1
+    }
+    return 0
+}
+func half_of = (float v, out float) {
+    return v / 2.0
+}
+func greet = (string who, out string) {
+    if who == "world" {
+        return "hi " + who
+    }
+    return who
+}
+Console.write("\\{shape_test(0)} \\{shape_test(1)} \\{shape_test(2)} \\{shape_test(3)} \\{shape_test(9)}")
+Console.write("\\{first_hit(10)} \\{half_of(1.0)} \\{greet("world")} \\{greet("bob")}")
+`);
+});
+
+test("array literal returns ride the NIR element facts byte-identically", () => {
+	// The C return path materializes the literal into a stack C array
+	// initializer; each element descends the seam via nir_array_elements.
+	// (Iterating a call-returned array directly — `for v of triple()` — is a
+	// pre-existing C-backend gap recorded in FOLLOWUP.md; iterate a declared
+	// array here.)
+	expect_byte_identical(`
+func triple = (out int[]) {
+    return [4, 5, 6]
+}
+func total = (out int) {
+    var int[] nums = triple()
+    var int sum = 0
+    for v of nums {
+        sum = sum + v
+    }
+    return sum
+}
+Console.write("\\{total()}")
+`);
+});
+
+test("declare/assign/eval statements emit through the C NIR seam byte-identically", () => {
+	// C expression-seam tranche: declares of every initializer shape (literal,
+	// op, grouped, cast, string concat, struct ctor, fixed array),
+	// assignments (plain, compound scalar/field/float, string re-concat,
+	// indexed store, trait-dispatch field set), and bare-expression statements
+	// (free call, method call). Parsed raw so the struct can live at module
+	// scope (a nested struct declaration would force the AST fallback).
+	expect_byte_identical(
+		`
+import System
+
+struct Counter {
+    var int count
+    var string label
+}
+
+func bump = (int by, out int) {
+    return by + 1
+}
+
+pub func main = () {
+    var int base = 10
+    var int scaled = base * 3
+    var int grp = (base + 2)
+    var uint64 wide = base as uint64
+    var float ratio = 0.5
+    var string greeting = "hi " + "there"
+    var Counter c = Counter(0, "none")
+    var int[3] nums = [7, 8, 5]
+    var int spare
+    var int[] empties
+    c.count = base
+    c.count += 4
+    c.label = "set"
+    base = bump(base)
+    base += 2
+    ratio += 0.25
+    greeting = greeting + "!"
+    spare = 4
+    nums.set(0, 9)
+    nums.set(1, base)
+    bump(base)
+    Console.write("\\{base} \\{ratio} \\{greeting} \\{c.count} \\{c.label} \\{nums.at(0)} \\{nums.at(1)} \\{spare}")
+}
+`,
+		true,
+	);
+});
+
+test("bare nursery-spawn statements stay fire-and-forget through the C eval seam", () => {
+	// The delegated path stamps is_statement on a nursery-spawn statement via
+	// build_node's with_semicolon side effect; the eval arm replicates the
+	// stamp — a missed stamp would emit a joined (waited) task, an observable
+	// difference this byte-identity test would catch.
+	expect_byte_identical(`
+func work = (uint64 id) {
+    Console.write_line("ok")
+}
+async nursery {
+    nursery.spawn(work(1))
+    var t = nursery.spawn(work(2))
+    t.wait()
+}
+`);
+});
+
+test("nullable struct declares and assignments marshal through the C seam", () => {
+	// Nullable struct slots carry a companion `<name>_has` flag in C; the
+	// declaration initializer and assignment RHS are value positions on the
+	// seam (null / non-null paths both exercised).
+	expect_byte_identical(
+		`
+import System
+
+struct Point {
+    var int x
+    var int y
+}
+
+func make = (int x, out Point?) {
+    return Point(x, x * 2)
+}
+
+pub func main = () {
+    var Point? p = make(7)
+    var Point? q = null
+    q = make(3)
+    q = null
+    if p != null {
+        Console.write("\\{p.x}|\\{p.y} ")
+    }
+    if q == null {
+        Console.write("null")
+    }
+}
+`,
+		true,
+	);
+});
+
+test("assignment swaps marshal through the C NIR seam byte-identically", () => {
+	// The swap replacement (`a = b swap <rep>`) is a value emission inside the
+	// swap marshalling, for both variable-RHS and field-RHS swap shapes.
+	expect_byte_identical(
+		`
+import System
+
+class Box {
+    var int value
+}
+class Holder {
+    mov Box content
+}
+func run_swap_var = (out int) {
+    var Box a = Box(1)
+    var Box b = Box(2)
+    a = b swap Box(7)
+    return a.value * 10 + b.value
+}
+func run_swap_field = (out int) {
+    var Holder h1 = Holder(mov Box(1))
+    var Holder h2 = Holder(mov Box(2))
+    h1.content = h2.content swap Box(99)
+    return h1.content.value * 100 + h2.content.value
+}
+Console.write("\\{run_swap_var()} \\{run_swap_field()}")
+`,
+		true,
+	);
+});
+
+test("declaration swaps marshal through the C NIR seam byte-identically", () => {
+	// `var Pt c = mov w.pt swap <rep>` — the value-struct declaration path's
+	// swap replacement rides the seam too (the moved-out field is revalidated
+	// with the replacement after the bytes transfer to the local).
+	expect_byte_identical(
+		`
+import System
+
+struct Pt {
+    var int x
+    var int y
+}
+struct Wrap {
+    var Pt pt
+}
+func run_decl = (out int) {
+    var Wrap w = Wrap(Pt(4, 4))
+    var Pt c = mov w.pt swap Pt(5, 5)
+    return c.x * 10 + w.pt.x
+}
+Console.write("\\{run_decl()}")
+`,
+		true,
+	);
+});
+
 test("whole benchmark corpus is byte-identical through the C NIR emission path", () => {
 	const bench_dir = "bench/nomen";
 	const lib = get_library("core");
@@ -447,6 +673,75 @@ pub func main = () {
 `,
 		"emit_c_nir_behavior",
 		"16 5 18 1",
+		true,
+	);
+});
+
+test("C binaries built through the expression seam run correctly", async () => {
+	// Behavioral belt-and-braces for the expression-seam tranche: base 10 →
+	// bump → 11 → +=2 → 13; ratio 0.5+0.25 → 0.750000; greeting "hi there" +
+	// "!"; c.count 10+4=14; c.label "set"; nums[0]=9, nums[1]=13; a = b swap
+	// 99 → a=2 (b's old value), b=99; var Pt c = mov w.pt swap Pt(5,5) →
+	// c.x=4, w.pt.x=5 → 45. (Console.write adds no newline.)
+	const { default: build_and_check_output } = await import("./build_and_check_output");
+	await build_and_check_output(
+		`
+import System
+
+struct Counter {
+    var int count
+    var string label
+}
+struct Pt {
+    var int x
+    var int y
+}
+struct Wrap {
+    var Pt pt
+}
+class Box {
+    var int value
+}
+
+func bump = (int by, out int) {
+    return by + 1
+}
+
+func run_swap = (out int) {
+    var Box a = Box(1)
+    var Box b = Box(2)
+    a = b swap Box(7)
+    return a.value * 10 + b.value
+}
+
+func run_decl_swap = (out int) {
+    var Wrap w = Wrap(Pt(4, 4))
+    var Pt c = mov w.pt swap Pt(5, 5)
+    return c.x * 10 + w.pt.x
+}
+
+pub func main = () {
+    var int base = 10
+    var float ratio = 0.5
+    var string greeting = "hi " + "there"
+    var Counter c = Counter(0, "none")
+    var int[3] nums = [7, 8, 5]
+    c.count = base
+    c.count += 4
+    c.label = "set"
+    base = bump(base)
+    base += 2
+    ratio += 0.25
+    greeting = greeting + "!"
+    nums.set(0, 9)
+    nums.set(1, base)
+    bump(base)
+    Console.write("\\{base} \\{ratio} \\{greeting} \\{c.count} \\{c.label} \\{nums.at(0)} \\{nums.at(1)}")
+    Console.write(" \\{run_swap()} \\{run_decl_swap()}")
+}
+`,
+		"emit_c_nir_expr_seam_behavior",
+		"13 0.750000 hi there! 14 set 9 13 27 45",
 		true,
 	);
 });

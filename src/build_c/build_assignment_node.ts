@@ -2,9 +2,11 @@ import emit_field_overrides from "../build/emit_field_overrides.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import { is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import { is_string_borrow } from "../build_common/string_return_analysis.ts";
+import type { NirExpr } from "../nir/nir.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import AssignmentNode from "../nodes/AssignmentNode.ts";
+import type BaseNode from "../nodes/BaseNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import Type from "../nodes/Type.ts";
@@ -14,6 +16,7 @@ import { emit_struct_destroys, struct_needs_destroy_by_name } from "./build_auto
 import build_node from "./build_node.ts";
 import { is_owned_heap_temp } from "./build_operation_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
+import { emit_expr_from_nir } from "./emit_nir.ts";
 import c_function_name from "./utils/c_function_name.ts";
 import { find_decl_in_c_scopes, splice_decl_from_c_scopes } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
@@ -28,7 +31,29 @@ export function reset_string_field_counter() {
 	string_field_counter = 0;
 }
 
-export default function build_assignment_node(node: AssignmentNode, status: BuildStatus) {
+/**
+ * Emit an assignment RHS. Under NIR-driven emission the lowered `NirExpr`
+ * rides in and descends through `emit_expr_from_nir` (the expression seam);
+ * without one — or if the lowered expr doesn't carry this exact AST node
+ * (from_ast is 1:1, so that can't happen) — it is exactly the historical
+ * `build_node(rhs)`. Every semantic decision (reclamation, aliasing, move
+ * marks, strdup rules, swap marshalling) stays on the AST node in the
+ * builder.
+ */
+function emit_rhs_value(rhs: BaseNode, nir: NirExpr | null | undefined, status: BuildStatus): void {
+	if (nir && nir.node === rhs) {
+		emit_expr_from_nir(nir, status);
+		return;
+	}
+	build_node(rhs, status);
+}
+
+export default function build_assignment_node(
+	node: AssignmentNode,
+	status: BuildStatus,
+	nir_rhs?: NirExpr | null,
+	nir_swap?: NirExpr | null,
+) {
 	// Check whether this is an access of a field from a trait rather than a concrete type
 	// HACK: This needs to be much more comprehensive, e.g. to handle access
 	// chains where something in the middle is a trait
@@ -61,7 +86,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 				status.code += `, ${traitIndex}, ${fieldIndex}))(`;
 				build_vtable_target(accessNode.target, status);
 				status.code += `, `;
-				build_node(node.right_value, status);
+				emit_rhs_value(node.right_value, nir_rhs, status);
 				status.code += `)`;
 
 				return;
@@ -205,10 +230,10 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 			const temp = `_nomen_strfield_${string_field_counter++}`;
 			status.code += `{\nnomen_string ${temp} = `;
 			if (fresh_heap) {
-				build_node(node.right_value, status);
+				emit_rhs_value(node.right_value, nir_rhs, status);
 			} else {
 				status.code += `nomen_str_dup(`;
-				build_node(node.right_value, status);
+				emit_rhs_value(node.right_value, nir_rhs, status);
 				status.code += `)`;
 			}
 			status.code += `;\n`;
@@ -295,7 +320,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 				const id = (status.label_counter = (status.label_counter ?? 0) + 1);
 				const temp = `_treassign_${id}`;
 				status.code += `void *${temp} = (void *)`;
-				build_node(rhs, status);
+				emit_rhs_value(rhs, nir_rhs, status);
 				status.code += `;\n`;
 				if (lhs_type?.is_nullable) {
 					status.code += `if (${lhs_name}) { ${lhs_trait_class}_destroy(${lhs_name}); free(${lhs_name}); }\n`;
@@ -310,7 +335,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 					status.code += `${lhs_trait_class}_destroy(${lhs_name}); free(${lhs_name});\n`;
 				}
 				status.code += `${lhs_name} = (void *)`;
-				build_node(rhs, status);
+				emit_rhs_value(rhs, nir_rhs, status);
 				status.code += `;\n`;
 			}
 			return;
@@ -337,7 +362,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 				status.structs.find((s) => s.name === ref_param_type.name);
 			if (!destroy_struct) {
 				status.code += `*${lhs_name} = `;
-				build_node(node.right_value, status);
+				emit_rhs_value(node.right_value, nir_rhs, status);
 				status.code += `;\n`;
 				return;
 			}
@@ -347,7 +372,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 				status.code += `${destroy_struct.name}_destroy(*${lhs_name}); free(*${lhs_name});\n`;
 			}
 			status.code += `*${lhs_name} = `;
-			build_node(node.right_value, status);
+			emit_rhs_value(node.right_value, nir_rhs, status);
 			status.code += `;\n`;
 			return;
 		}
@@ -469,7 +494,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 					const id = (status.label_counter = (status.label_counter ?? 0) + 1);
 					const temp = `_reassign_${id}`;
 					status.code += `nomen_string ${temp} = `;
-					build_node(node.right_value, status);
+					emit_rhs_value(node.right_value, nir_rhs, status);
 					status.code += `;\nfree(${lhs_name}.ptr);\n${lhs_name} = ${temp};\n`;
 					return;
 				}
@@ -491,7 +516,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 				(rhs as ValueNode).value.endsWith('"');
 			if (rhs_is_string_literal) {
 				status.code += `${lhs_name} = nomen_str_dup(`;
-				build_node(node.right_value, status);
+				emit_rhs_value(node.right_value, nir_rhs, status);
 				status.code += `);\n`;
 				return;
 			}
@@ -642,7 +667,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 			status.code += `${flag} = 0`;
 		} else {
 			status.code += `${lhs_expr} = `;
-			build_node(node.right_value, status);
+			emit_rhs_value(node.right_value, nir_rhs, status);
 			status.code += `;\n${flag} = 1`;
 		}
 		return;
@@ -674,7 +699,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 			if (!fresh_heap) {
 				status.code += `nomen_str_dup(`;
 			}
-			build_node(node.right_value, status);
+			emit_rhs_value(node.right_value, nir_rhs, status);
 			if (!fresh_heap) {
 				status.code += `)`;
 			}
@@ -730,7 +755,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 	} else {
 		status.code += " = ";
 	}
-	build_node(node.right_value, status);
+	emit_rhs_value(node.right_value, nir_rhs, status);
 	// `x = T(...) + [ ... ]`: apply the named-field overrides to the LHS
 	// after the construction. Only a simple variable LHS is handled here;
 	// field-target overrides in assignment are an edge case.
@@ -748,7 +773,7 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 		status.code += `{ `;
 		build_node(node.right_value, status);
 		status.code += ` = `;
-		build_node(node.swap, status);
+		emit_rhs_value(node.swap, nir_swap, status);
 		status.code += `; }\n`;
 	}
 }
