@@ -506,6 +506,128 @@ pub func main = () {
 	);
 });
 
+test("address-position struct RHS emits through the NIR seam byte-identically", () => {
+	// Tranche 5: get_source_address with a non-name RHS is a VALUE emission in
+	// address position (a struct-typed RHS builds to an ADDRESS in x0) — it
+	// now descends the expression seam; plain names keep their slot/param-reg
+	// resolution on the AST path.
+	expect_byte_identical(`
+struct Pt {
+  var int x
+  var int y
+}
+func mk = (int a, out Pt) {
+  return Pt(a, a + 1)
+}
+func run_addr = (out int) {
+  var Pt p = Pt(0, 0)
+  p = mk(3)
+  return p.x + p.y
+}
+Console.write("\\{run_addr()}")
+`);
+});
+
+test("assignment swaps marshal through the NIR seam byte-identically", () => {
+	// Tranche 5: the swap replacement (`a = b swap <rep>`) is a value
+	// emission inside the swap marshalling, for both variable-RHS and
+	// field-RHS swap shapes.
+	expect_byte_identical(`
+class Box {
+  var int value
+}
+class Holder {
+  mov Box content
+}
+func run_swap_var = (out int) {
+  var Box a = Box(1)
+  var Box b = Box(2)
+  a = b swap Box(7)
+  return a.value * 10 + b.value
+}
+func run_swap_field = (out int) {
+  var Holder h1 = Holder(mov Box(1))
+  var Holder h2 = Holder(mov Box(2))
+  h1.content = h2.content swap Box(99)
+  return h1.content.value * 100 + h2.content.value
+}
+Console.write("\\{run_swap_var()} \\{run_swap_field()}")
+`);
+});
+
+test("declaration swaps marshal through the NIR seam byte-identically", () => {
+	// Tranche 5: `var Pt c = mov w.pt swap <rep>` — the value-struct
+	// declaration path's swap replacement rides the seam too.
+	expect_byte_identical(`
+struct Pt {
+  var int x
+  var int y
+}
+struct Wrap {
+  var Pt pt
+}
+func run_decl = (out int) {
+  var Wrap w = Wrap(Pt(4, 4))
+  var Pt c = mov w.pt swap Pt(5, 5)
+  return c.x * 10 + w.pt.x
+}
+Console.write("\\{run_decl()}")
+`);
+});
+
+test("NIR-native swap and address-RHS binaries run correctly", async () => {
+	// Behavioral belt-and-braces for the tranche-5 paths: p = mk(3) → (3,4)
+	// → 7; a = b swap Box(7) → a=2, b=7 → 27; h1.content = h2.content swap
+	// Box(99) → h1=2, h2=99 → 299; var Pt c = mov w.pt swap Pt(5,5) → c.x=4,
+	// w.pt.x=5 → 45.
+	const { default: build_and_check_output } = await import("./build_and_check_output");
+	await build_and_check_output(
+		`
+struct Pt {
+  var int x
+  var int y
+}
+struct Wrap {
+  var Pt pt
+}
+class Box {
+  var int value
+}
+class Holder {
+  mov Box content
+}
+func mk = (int a, out Pt) {
+  return Pt(a, a + 1)
+}
+func run_addr = (out int) {
+  var Pt p = Pt(0, 0)
+  p = mk(3)
+  return p.x + p.y
+}
+func run_swap_var = (out int) {
+  var Box a = Box(1)
+  var Box b = Box(2)
+  a = b swap Box(7)
+  return a.value * 10 + b.value
+}
+func run_swap_field = (out int) {
+  var Holder h1 = Holder(mov Box(1))
+  var Holder h2 = Holder(mov Box(2))
+  h1.content = h2.content swap Box(99)
+  return h1.content.value * 100 + h2.content.value
+}
+func run_decl = (out int) {
+  var Wrap w = Wrap(Pt(4, 4))
+  var Pt c = mov w.pt swap Pt(5, 5)
+  return c.x * 10 + w.pt.x
+}
+Console.write("\\{run_addr()} \\{run_swap_var()} \\{run_swap_field()} \\{run_decl()}")
+`,
+		"emit_nir_swap_addr",
+		"7 27 299 45",
+	);
+});
+
 test("whole benchmark corpus is byte-identical through NIR emission", () => {
 	const bench_dir = "bench/nomen";
 	const lib = get_library("core");

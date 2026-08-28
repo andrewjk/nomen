@@ -1,9 +1,10 @@
+import type { NirStmt } from "../nir/nir.ts";
 import ForLoopNode from "../nodes/ForLoopNode.ts";
 import RangeNode from "../nodes/RangeNode.ts";
 import build_auto_free from "./build_auto_free.ts";
-import build_block_node from "./build_block_node.ts";
 import build_node from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
+import { build_block_with_cursor } from "./emit_nir.ts";
 import {
 	enter_c_scope,
 	leave_c_scope,
@@ -13,7 +14,11 @@ import {
 import c_type from "./utils/c_type.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 
-export default function build_for_loop_node(node: ForLoopNode, status: BuildStatus) {
+export default function build_for_loop_node(
+	node: ForLoopNode,
+	status: BuildStatus,
+	nir?: NirStmt & { kind: "for" },
+) {
 	const old_scoped_declarations = status.scoped_declarations;
 	status.scoped_declarations = enter_c_scope(status);
 	const old_deferred_frees = status.deferred_frees;
@@ -139,7 +144,7 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 	if (!status.loop_writebacks) status.loop_writebacks = [];
 	status.loop_writebacks.push(ref_writeback);
 
-	build_block_node(node, status);
+	build_block_with_cursor(node, nir?.body, status);
 
 	// Emit the update expression at the end of each iteration
 	if (node.update) {

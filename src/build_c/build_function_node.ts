@@ -2,6 +2,7 @@ import emission_label from "../build_common/emission_label.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import { moved_param_is_consumed } from "../build_common/scan_moved_param_consumed.ts";
+import { lower_function } from "../nir/from_ast.ts";
 import BitsetNode from "../nodes/BitsetNode.ts";
 import type BlockNode from "../nodes/BlockNode.ts";
 import { is_function_node, is_struct_node, is_trait_node } from "../nodes/check_node_type.ts";
@@ -19,6 +20,7 @@ import build_struct_body from "./build_struct_body.ts";
 import build_struct_node from "./build_struct_node.ts";
 import build_trait_node from "./build_trait_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
+import { c_nir_emission_enabled } from "./emit_nir.ts";
 import array_struct_name from "./utils/array_struct.ts";
 import c_function_name from "./utils/c_function_name.ts";
 import { enter_c_scope, leave_c_scope } from "./utils/c_scope.ts";
@@ -305,7 +307,21 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		}
 	}
 
+	// NIR-driven emission (canonical-IR stage 2, C backend): ONE canonical
+	// lowering per function. When the whole body mapped (unknown_kinds empty),
+	// point the emission cursor at the lowered statements — build_block_node's
+	// statement loop then dispatches NIR-natively. Restored after the body so
+	// a nested function build (which installs its own cursor) hands ours back.
+	const nir = node.statements?.length ? lower_function(node) : undefined;
+	const old_nir_ctx = status.nir_emit_ctx;
+	status.nir_emit_ctx =
+		nir && nir.unknown_kinds.size === 0 && c_nir_emission_enabled()
+			? { stmts: nir.body, ast: node.statements }
+			: undefined;
+
 	build_block_node(node, status, false);
+
+	status.nir_emit_ctx = old_nir_ctx;
 
 	status.function_ref_params = old_ref_params;
 	status.class_vars = old_class_vars;

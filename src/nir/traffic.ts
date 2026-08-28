@@ -110,11 +110,17 @@ class TrafficWalker {
 					modifiers: s.decl.modifiers,
 				});
 				if (s.decl.init) this.expr(s.decl.init, depth, false);
+				// `s.decl.swap` deliberately uncounted — same parity rule as the
+				// assign case above.
 				return;
 			}
 			case "assign":
 				this.expr(s.target, depth, false);
 				this.expr(s.rhs, depth, false);
+				// `s.swap` is deliberately NOT walked: the historical func_flow
+				// scan never saw assignment swap exprs, and promotion inputs
+				// must stay byte-stable. (cfg.ts DOES count swap reads for
+				// liveness, which has no emission consumer yet.)
 				return;
 			case "eval":
 				this.expr(s.expr, depth, false);

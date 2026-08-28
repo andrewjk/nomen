@@ -13,11 +13,11 @@ import TraitNode from "../nodes/TraitNode.ts";
 import build_bitset_node from "./build_bitset_node.ts";
 import build_enum_node from "./build_enum_node.ts";
 import build_function_node from "./build_function_node.ts";
-import build_node from "./build_node.ts";
 import build_struct_body from "./build_struct_body.ts";
 import build_struct_node from "./build_struct_node.ts";
 import build_trait_node from "./build_trait_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
+import { emit_stmt_from_nir } from "./emit_nir.ts";
 import c_function_name from "./utils/c_function_name.ts";
 import c_type from "./utils/c_type.ts";
 import emit_allocations from "./utils/emit_allocations.ts";
@@ -220,7 +220,8 @@ export default function build_block_node(
 	}
 
 	// Build the block's statements
-	for (let child of node.statements) {
+	for (let index = 0; index < node.statements.length; index++) {
+		const child = node.statements[index];
 		if (
 			!is_trait_node(child) &&
 			!is_struct_node(child) &&
@@ -241,7 +242,10 @@ export default function build_block_node(
 				continue;
 			}
 			emit_allocations(child, status);
-			build_node(child, status, true);
+			// NIR-driven dispatch (canonical-IR stage 2, C backend): consumes
+			// the index-aligned NIR entry when the emission ctx owns this
+			// statement list; falls back to the plain AST walk otherwise.
+			emit_stmt_from_nir(child, index, node.statements, status);
 		}
 	}
 }

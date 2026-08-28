@@ -373,3 +373,32 @@ test("benchmark corpus: cfg, liveness, dominance and loops stay consistent", () 
 	}
 	expect(checked).toBeGreaterThan(0);
 });
+
+test("swap assignments count the replacement's reads and the rhs source as a def", () => {
+	// `a = b swap Box(c)`: b's old value moves into a (read) AND the
+	// replacement is stored into b (may-def); the replacement's argument
+	// `c` joins the reads — so `c` (a param) is live into the block.
+	const cfg = compile_cfg(
+		`
+class Box {
+    var int value
+}
+pub func swapper = (int c, out int) {
+    var Box a = Box(0)
+    var Box b = Box(1)
+    a = b swap Box(c)
+    return a.value
+}
+`,
+		"swapper",
+	);
+	const assign = cfg.blocks[0].stmts.find((s) => s.op === "assign");
+	expect(assign).toBeTruthy();
+	expect(assign!.reads).toContain("b");
+	expect(assign!.reads).toContain("c");
+	expect(assign!.defs).toContain("a");
+	expect(assign!.defs).toContain("b");
+	expect(assign!.barrier).toBe(false);
+	const { liveness } = analyze_cfg(cfg);
+	expect(liveness.live_in[0]).toContain("c");
+});

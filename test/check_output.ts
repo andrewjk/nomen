@@ -200,6 +200,22 @@ export default async function check_output(
 	// impossible while the code (and thus the cache key) stays deterministic.
 	const rundir = path.join(folder, `run-${process.pid}-${crypto.randomBytes(6).toString("hex")}`);
 	fs.mkdirSync(rundir, { recursive: true });
+	// Stage the caller's data files (bench inputs etc.) into the scratch dir:
+	// programs under test read them via relative paths from their CWD, and
+	// without this the run would not see files staged into `folder` (e.g.
+	// build_and_check_bench_with_files' knucleotide input).
+	for (const entry of fs.readdirSync(folder, { withFileTypes: true })) {
+		if (!entry.isFile()) continue;
+		if (
+			entry.name.startsWith("main") ||
+			entry.name === "output.txt" ||
+			entry.name === ".cache" ||
+			entry.name === "system.h"
+		) {
+			continue;
+		}
+		fs.copyFileSync(path.join(folder, entry.name), path.join(rundir, entry.name));
+	}
 	let stdout: string;
 	let stderr: string;
 	let failed = false;

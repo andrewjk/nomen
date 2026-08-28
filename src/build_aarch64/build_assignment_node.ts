@@ -256,6 +256,25 @@ function emit_rhs_value(rhs: BaseNode, nir: NirExpr | null | undefined, status: 
 	build_node(rhs, status);
 }
 
+/**
+ * Emit an assignment/declaration SWAP expression (the replacement value
+ * `a = b swap <rep>` / `var X b = mov f swap <rep>`): the expression-seam
+ * version of the historical `build_node(swap)`. Both callers normalize the
+ * trailing newline immediately after, so the helper does it.
+ */
+export function emit_swap_value(
+	swap: BaseNode,
+	nir: NirExpr | null | undefined,
+	status: BuildStatus,
+): void {
+	if (nir && nir.node === swap) {
+		emit_expr_from_nir(nir, status);
+	} else {
+		build_node(swap, status);
+	}
+	if (!status.code.endsWith("\n")) status.code += "\n";
+}
+
 function build_nullable_struct_assignment(
 	node: AssignmentNode,
 	status: BuildStatus,
@@ -315,7 +334,7 @@ function build_nullable_struct_assignment(
 	status.code += `str x0, [x9, #${has_offset}]\n`;
 }
 
-function build_swap(node: AssignmentNode, status: BuildStatus) {
+function build_swap(node: AssignmentNode, status: BuildStatus, nir_swap?: NirExpr | null) {
 	if (!node.swap) return;
 	const rhs = node.right_value;
 	if (rhs.node_type === "access" && (rhs as AccessNode).access.node_type === "access_field") {
@@ -331,10 +350,7 @@ function build_swap(node: AssignmentNode, status: BuildStatus) {
 			: undefined;
 		const field_is_struct = !!field_struct && !field_struct.is_class;
 
-		build_node(node.swap, status);
-		if (!status.code.endsWith("\n")) {
-			status.code += "\n";
-		}
+		emit_swap_value(node.swap, nir_swap, status);
 		status.code += `// swap: store replacement to rhs source field\n`;
 		status.code += `str x0, [sp, #-16]!\n`;
 
@@ -351,10 +367,7 @@ function build_swap(node: AssignmentNode, status: BuildStatus) {
 		}
 	} else if (rhs.node_type === "value") {
 		const rhs_value = rhs as ValueNode;
-		build_node(node.swap, status);
-		if (!status.code.endsWith("\n")) {
-			status.code += "\n";
-		}
+		emit_swap_value(node.swap, nir_swap, status);
 		status.code += `// swap: store replacement to rhs variable\n`;
 		status.code += `str x0, [sp, #-16]!\n`;
 		const rhs_name = rhs_value.value;
@@ -388,7 +401,14 @@ function build_swap(node: AssignmentNode, status: BuildStatus) {
 	}
 }
 
-export function get_source_address(value: BaseNode, status: BuildStatus) {
+/**
+ * Resolve the ADDRESS of `value` into x0. A plain name resolves from its
+ * slot/param register directly; any other expression is a VALUE emission in
+ * address position — under NIR-driven emission the lowered `NirExpr` rides
+ * in and descends through the expression seam, exactly the historical
+ * `build_node(value)` + newline tail otherwise.
+ */
+export function get_source_address(value: BaseNode, status: BuildStatus, nir?: NirExpr | null) {
 	if (value.node_type === "value") {
 		const name = (value as ValueNode).value;
 		const paramReg = status.function_param_regs?.get(name);
@@ -398,6 +418,11 @@ export function get_source_address(value: BaseNode, status: BuildStatus) {
 			emit_deref_var_address(status, "x0", name);
 		} else {
 			emit_var_address(status, "x0", name);
+		}
+	} else if (nir && nir.node === value) {
+		emit_expr_from_nir(nir, status);
+		if (!status.code.endsWith("\n")) {
+			status.code += "\n";
 		}
 	} else {
 		build_node(value, status);
@@ -411,6 +436,7 @@ export default function build_assignment_node(
 	node: AssignmentNode,
 	status: BuildStatus,
 	nir_rhs?: NirExpr | null,
+	nir_swap?: NirExpr | null,
 ) {
 	const rhs_type = type_from_value_node(node.right_value);
 	const rhs_is_struct = is_struct_type(rhs_type, status);
@@ -454,7 +480,7 @@ export default function build_assignment_node(
 	// the value in (if non-null) and set the companion `_has` flag.
 	if (!node.operator && is_nullable_struct_assignment(node, status)) {
 		build_nullable_struct_assignment(node, status, nir_rhs);
-		build_swap(node, status);
+		build_swap(node, status, nir_swap);
 		return;
 	}
 
@@ -502,7 +528,7 @@ export default function build_assignment_node(
 						if (offset !== undefined) {
 							status.code += `str x0, [x29, #${offset}]\n`;
 						}
-						build_swap(node, status);
+						build_swap(node, status, nir_swap);
 						return;
 					}
 					// Does this variable own its current instance (have an anchor
@@ -542,7 +568,7 @@ export default function build_assignment_node(
 						if (paramReg) {
 							status.code += `mov ${paramReg}, x0\n`;
 						}
-						build_swap(node, status);
+						build_swap(node, status, nir_swap);
 						return;
 					}
 					if (node.has_live_borrow) {
@@ -565,7 +591,7 @@ export default function build_assignment_node(
 						if (offset !== undefined) {
 							status.code += `str x0, [x29, #${offset}]\n`;
 						}
-						build_swap(node, status);
+						build_swap(node, status, nir_swap);
 						return;
 					}
 					// No live borrow: reclaim the current instance eagerly. This
@@ -649,7 +675,7 @@ export default function build_assignment_node(
 						status.code += `mov x9, #1\n`;
 						status.code += `str x9, [x29, #${alias_flag}]\n`;
 					}
-					build_swap(node, status);
+					build_swap(node, status, nir_swap);
 					return;
 				}
 			}
@@ -681,7 +707,7 @@ export default function build_assignment_node(
 					lhs_decl?.type?.is_nullable,
 				);
 			}
-			get_source_address(node.right_value, status);
+			get_source_address(node.right_value, status, nir_rhs);
 			if (!status.code.endsWith("\n")) {
 				status.code += "\n";
 			}
@@ -764,7 +790,7 @@ export default function build_assignment_node(
 					emit_struct_copy("x0", "x1", 0, struct_size, status);
 				}
 			}
-			build_swap(node, status);
+			build_swap(node, status, nir_swap);
 			return;
 		}
 
@@ -784,7 +810,7 @@ export default function build_assignment_node(
 			if (!status.code.endsWith("\n")) status.code += "\n";
 			emit_var_address(status, "x1", name);
 			emit_struct_copy("x0", "x1", 0, enum_size, status);
-			build_swap(node, status);
+			build_swap(node, status, nir_swap);
 			return;
 		}
 
@@ -833,7 +859,7 @@ export default function build_assignment_node(
 					if (offset !== undefined) {
 						status.code += `str x0, [x29, #${offset}]\n`;
 					}
-					build_swap(node, status);
+					build_swap(node, status, nir_swap);
 					return;
 				}
 			}
@@ -876,7 +902,7 @@ export default function build_assignment_node(
 				if (offset !== undefined) {
 					status.code += `str x0, [x29, #${offset}]\n`;
 				}
-				build_swap(node, status);
+				build_swap(node, status, nir_swap);
 				return;
 			}
 			// The caller's pointer is kept in a stack slot (or register) and the
@@ -1009,7 +1035,7 @@ export default function build_assignment_node(
 					status.float_result_in_d0 = false;
 					status.code += `fmov ${alloc_reg_fast}, x0\n`;
 				}
-				build_swap(node, status);
+				build_swap(node, status, nir_swap);
 				return;
 			}
 			status.last_result_is_heap = false;
@@ -1068,7 +1094,7 @@ export default function build_assignment_node(
 				const paramReg = status.function_param_regs?.get(name);
 				if (paramReg && name !== "self" && !is_mutable_param(name, status)) {
 					status.code += `// cannot assign to field of value param\n`;
-					build_swap(node, status);
+					build_swap(node, status, nir_swap);
 					return;
 				}
 			}
@@ -1079,7 +1105,7 @@ export default function build_assignment_node(
 				get_base_address(access, status, "x0");
 				status.code += `str x0, [sp, #-16]!\n`;
 
-				get_source_address(node.right_value, status);
+				get_source_address(node.right_value, status, nir_rhs);
 				if (!status.code.endsWith("\n")) {
 					status.code += "\n";
 				}
@@ -1263,7 +1289,7 @@ export default function build_assignment_node(
 					get_base_address(access, status, "x0");
 					status.code += `str x0, [sp, #-16]!\n`;
 
-					get_source_address(node.right_value, status);
+					get_source_address(node.right_value, status, nir_rhs);
 					if (!status.code.endsWith("\n")) {
 						status.code += "\n";
 					}
@@ -1331,7 +1357,7 @@ export default function build_assignment_node(
 						} else {
 							status.code += `str x0, [x2, #${offset}]\n`;
 						}
-						build_swap(node, status);
+						build_swap(node, status, nir_swap);
 						return;
 					}
 					status.code += `str x0, [sp, #-16]!\n`;
@@ -1384,5 +1410,5 @@ export default function build_assignment_node(
 		status.code += `\n// complex assignment\n`;
 	}
 
-	build_swap(node, status);
+	build_swap(node, status, nir_swap);
 }

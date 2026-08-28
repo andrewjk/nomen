@@ -25,7 +25,7 @@ import RangeNode from "../nodes/RangeNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import { emit_address_of } from "./build_access_node.ts";
 import build_array_values_node, { resolve_static_value } from "./build_array_values_node.ts";
-import { get_source_address } from "./build_assignment_node.ts";
+import { emit_swap_value, get_source_address } from "./build_assignment_node.ts";
 import build_node from "./build_node.ts";
 import build_range_node from "./build_range_node.ts";
 import { emit_expr_from_nir } from "./emit_nir.ts";
@@ -752,6 +752,7 @@ export default function build_declaration_node(
 	node: DeclarationNode,
 	status: BuildStatus,
 	nir_init?: NirExpr | null,
+	nir_swap?: NirExpr | null,
 ) {
 	status.last_result_is_heap = false;
 	const prev_heap = status.last_result_is_heap;
@@ -1880,7 +1881,7 @@ export default function build_declaration_node(
 					if (src_is_struct && node.value.node_type === "access") {
 						emit_address_of(node.value, status);
 					} else if (src_is_struct) {
-						get_source_address(node.value, status);
+						get_source_address(node.value, status, nir_init);
 					} else {
 						emit_init_value(node.value, nir_init, status);
 					}
@@ -1906,10 +1907,7 @@ export default function build_declaration_node(
 				// field to revalidate it (so the owner never destroys a moved field).
 				if (node.swap && node.value.node_type === "access") {
 					const access = node.value as AccessNode;
-					build_node(node.swap, status);
-					if (!status.code.endsWith("\n")) {
-						status.code += "\n";
-					}
+					emit_swap_value(node.swap, nir_swap, status);
 					status.code += `str x0, [sp, #-16]!\n`;
 					emit_address_of(access.target, status);
 					if (!status.code.endsWith("\n")) {

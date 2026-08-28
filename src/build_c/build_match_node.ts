@@ -1,12 +1,13 @@
+import type { NirStmt } from "../nir/nir.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
-import BaseNode from "../nodes/BaseNode.ts";
+import type BaseNode from "../nodes/BaseNode.ts";
 import MatchNode from "../nodes/MatchNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import build_auto_free from "./build_auto_free.ts";
-import build_block_node from "./build_block_node.ts";
 import build_node from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
+import { build_block_with_cursor } from "./emit_nir.ts";
 import c_type from "./utils/c_type.ts";
 
 function enum_case_tag_name(match_value: string, enum_name: string): string | null {
@@ -36,7 +37,11 @@ function extract_case_tag(match_value: BaseNode, enum_name: string): string | nu
 	return null;
 }
 
-export default function build_match_node(node: MatchNode, status: BuildStatus) {
+export default function build_match_node(
+	node: MatchNode,
+	status: BuildStatus,
+	nir?: NirStmt & { kind: "switch_match" },
+) {
 	const old_scoped_declarations = status.scoped_declarations;
 	status.scoped_declarations = [];
 
@@ -58,13 +63,13 @@ export default function build_match_node(node: MatchNode, status: BuildStatus) {
 		status.code += value_expr_raw;
 		status.code += ") {\n";
 
-		for (const match_case of node.cases) {
+		for (const [match_case_index, match_case] of node.cases.entries()) {
 			status.scoped_declarations = [];
 			status.code += "case ";
 			build_node(match_case.match_value, status);
 			status.code += ":\n";
 			status.code += "{\n";
-			build_block_node(match_case.branch, status);
+			build_block_with_cursor(match_case.branch, nir?.arms[match_case_index]?.branch, status);
 			build_auto_free(status);
 			status.code += "break;\n}\n";
 		}
@@ -73,7 +78,7 @@ export default function build_match_node(node: MatchNode, status: BuildStatus) {
 			status.scoped_declarations = [];
 			status.code += "default:\n";
 			status.code += "{\n";
-			build_block_node(node.else_branch, status);
+			build_block_with_cursor(node.else_branch, nir?.otherwise ?? undefined, status);
 			build_auto_free(status);
 			status.code += "break;\n}\n";
 		}
@@ -103,7 +108,7 @@ export default function build_match_node(node: MatchNode, status: BuildStatus) {
 	}
 
 	let first = true;
-	for (const match_case of node.cases) {
+	for (const [match_case_index, match_case] of node.cases.entries()) {
 		const case_tag = extract_case_tag(match_case.match_value, enum_node!.name);
 		if (!case_tag) continue;
 
@@ -122,14 +127,14 @@ export default function build_match_node(node: MatchNode, status: BuildStatus) {
 		}
 
 		status.scoped_declarations = [];
-		build_block_node(match_case.branch, status);
+		build_block_with_cursor(match_case.branch, nir?.arms[match_case_index]?.branch, status);
 		build_auto_free(status);
 	}
 
 	if (node.else_branch) {
 		status.code += first ? "{\n" : "} else {\n";
 		status.scoped_declarations = [];
-		build_block_node(node.else_branch, status);
+		build_block_with_cursor(node.else_branch, nir?.otherwise ?? undefined, status);
 		build_auto_free(status);
 	}
 	status.code += "}\n";
@@ -149,3 +154,9 @@ export default function build_match_node(node: MatchNode, status: BuildStatus) {
 }
 
 let match_temp_counter = 0;
+
+/** Per-build reset: builds must be deterministic per process (the NIR
+ *  byte-identity tests build the same program twice). */
+export function reset_match_temp_counter() {
+	match_temp_counter = 0;
+}

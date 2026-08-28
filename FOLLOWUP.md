@@ -2,6 +2,25 @@
 
 Skipped or out-of-scope items recorded for later.
 
+## NIR coverage gap: assignment EXPRESSIONS (match/switch/if arrow arms)
+
+Found while landing the C-backend NIR emission tranche. `case X -> target =
+value` parses the assignment as a `let` wrapping an assign EXPRESSION
+(`parse_match.ts` pushes `new LetNode(...)` for arrow arms); `from_ast.ts`
+has no assign-expression mapping in `expr()`, so the arm lowers to `other`
+and the enclosing function lands in `unknown_kinds` as `"assign"` →
+whole-function AST fallback at emission. Same shape via `if`/`switch` arrow
+arms. Impact today is only lost NIR coverage (fallback is byte-identical and
+sound), but those functions ALSO lose the traffic facts the assign would
+contribute (reads/defs invisible to `analyze_traffic`), under-promoting
+registers in the aarch64 planner. Fixing it means extending from_ast (lower
+let-wrapped assign statements to the `assign` KIND) — sound for C (byte-
+identical), but it changes promotion FACTS for aarch64 (more eligibility,
+different reg assignments), so it needs its own A/B measurement per the
+ASM_PLAN discipline. White-box test pinned in `test/emit_c_nir.test.ts`
+("match/switch arms with assignment expressions fall back...") — flip it to
+a positive assertion when the gap closes.
+
 ## Must-use enforcement for `Result`-returning IO (design agreed, not built)
 
 All fallible File/Directory operations now return `Result<T, FileError>` /

@@ -252,3 +252,43 @@ test("identifier classification mirrors historical scan rules", () => {
 	for (const bad of ['"str"', "'c'", "42", "-7", "2.5", "", "true", "false", "null", "self", "as"])
 		expect(is_identifier_like(bad)).toBe(false);
 });
+
+test("assignment and declaration swaps ride the IR; traffic keeps historical parity", () => {
+	const input = `
+class Box {
+    var int value
+}
+pub func swapper = (int q, out int) {
+    var Box a = Box(0)
+    var Box b = Box(1)
+    a = b swap Box(q)
+    var Box d = mov a swap Box(q + 1)
+    return d.value
+}
+`;
+	const parsed = parse_raw(input);
+	for (const err of parsed.errors)
+		throw new Error(`parse error @${err.line}:${err.column}: ${err.message}`);
+	const fn = parsed.root.statements.find(
+		(s) => s.node_type === "func" && (s as FunctionNode).name === "swapper",
+	) as FunctionNode;
+	const lowered = lower_function(fn);
+	expect([...lowered.unknown_kinds]).toEqual([]);
+
+	// `a = b swap Box(q)` — the replacement rides the assign variant.
+	const assign = lowered.body.find((s) => s.kind === "assign");
+	expect(assign && assign.kind === "assign").toBe(true);
+	if (assign!.kind !== "assign") return;
+	expect(assign!.swap).not.toBeNull();
+	expect(assign!.swap!.node.node_type).toBe("func_call");
+
+	// `var Box d = mov a swap Box(q + 1)` — the replacement rides the declare.
+	const decl = lowered.body.find((s) => s.kind === "declare" && s.decl.swap !== null);
+	expect(decl && decl.kind === "declare").toBe(true);
+
+	// Parity pin: `q` is read ONLY inside swap exprs here, and the historical
+	// func_flow scan never saw assignment swap exprs — traffic must keep
+	// promotion inputs byte-stable by NOT counting them.
+	const report = analyze_traffic(lowered);
+	expect(report.variables.get("q")?.reads ?? 0).toBe(0);
+});

@@ -1,6 +1,7 @@
 import type AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import type AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import type AccessNode from "../nodes/AccessNode.ts";
+import type AssignmentNode from "../nodes/AssignmentNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import type CastNode from "../nodes/CastNode.ts";
 import type DeclarationNode from "../nodes/DeclarationNode.ts";
@@ -70,14 +71,17 @@ function stmt(ctx: LowerCtx, n: BaseNode): NirStmt {
 	switch (n.node_type) {
 		case "declare":
 			return declare_stmt(ctx, n as DeclarationNode);
-		case "assign":
+		case "assign": {
+			const a = n as any as AssignmentNode;
 			return {
 				kind: "assign",
 				node: n,
-				target: expr(ctx, (n as any).left_value),
-				rhs: expr(ctx, (n as any).right_value),
-				operator: ((n as any).operator as string | undefined) ?? null,
+				target: expr(ctx, a.left_value),
+				rhs: expr(ctx, a.right_value),
+				operator: (a.operator as string | undefined) ?? null,
+				swap: a.swap ? expr(ctx, a.swap) : null,
 			};
+		}
 		case "return": {
 			const ret = n as ReturnNode;
 			return { kind: "return", node: n, value: ret.value ? expr(ctx, ret.value) : null };
@@ -192,6 +196,7 @@ function declare_stmt(ctx: LowerCtx, d: DeclarationNode): NirStmt {
 			is_nullable: t?.is_nullable,
 		},
 		init: d.value ? expr(ctx, d.value) : null,
+		swap: d.swap ? expr(ctx, d.swap) : null,
 		node: d,
 	};
 	return { kind: "declare", node: d, decl: info };

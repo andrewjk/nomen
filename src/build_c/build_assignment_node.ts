@@ -17,10 +17,16 @@ import type BuildStatus from "./BuildStatus.ts";
 import c_function_name from "./utils/c_function_name.ts";
 import { find_decl_in_c_scopes, splice_decl_from_c_scopes } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
+import type_from_value_node from "./utils/type_from_value_node.ts";
 import { c_view_string_arg } from "./utils/view_value.ts";
 
 let string_field_counter = 0;
-import type_from_value_node from "./utils/type_from_value_node.ts";
+
+/** Per-build reset: builds must be deterministic per process (the NIR
+ *  byte-identity tests build the same program twice). */
+export function reset_string_field_counter() {
+	string_field_counter = 0;
+}
 
 export default function build_assignment_node(node: AssignmentNode, status: BuildStatus) {
 	// Check whether this is an access of a field from a trait rather than a concrete type

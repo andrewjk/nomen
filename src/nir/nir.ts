@@ -103,6 +103,9 @@ export interface NirDeclareInfo {
 	readonly type: Type;
 	readonly modifiers: NirDeclModifiers;
 	readonly init: NirExpr | null;
+	/** Replacement value written back into a moved-out source (`var X b =
+	 *  mov obj.field swap <rep>`); null when the declaration has no swap. */
+	readonly swap: NirExpr | null;
 	readonly node: BaseNode;
 }
 
@@ -120,6 +123,9 @@ export type NirStmt =
 			/** Compound operator (`+` for `x += …`) — the target's OLD value is
 			 *  read exactly when this is set. */
 			readonly operator: string | null;
+			/** Replacement value exchanged by swap marshalling (`a = b swap c`)
+			 *  — built in VALUE position, then stored into the rhs source. */
+			readonly swap: NirExpr | null;
 	  })
 	| (NirStmtBase & { readonly kind: "eval"; readonly expr: NirExpr })
 	| (NirStmtBase & {

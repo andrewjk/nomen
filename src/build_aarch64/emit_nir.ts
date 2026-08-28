@@ -48,8 +48,9 @@ import build_while_loop_node from "./build_while_loop_node.ts";
  *   `emit_expr_from_nir` (the expression seam below).
  * - handles `declare`/`assign`/`eval` NIR-natively the same way: the builders
  *   keep every semantic decision on the AST node, and the value positions
- *   (declaration initializer, assignment RHS, bare-expression statements) are
- *   emitted through `emit_expr_from_nir`.
+ *   (declaration initializer, assignment RHS — plain OR address-position —,
+ *   swap replacements, bare-expression statements) are emitted through
+ *   `emit_expr_from_nir`.
  * - delegates every other statement kind to `build_node` unchanged.
  *
  * This is the seam where NIR facts attach to emission: later tranches add
@@ -58,12 +59,7 @@ import build_while_loop_node from "./build_while_loop_node.ts";
  * expressions).
  */
 
-export interface NirEmitCtx {
-	/** Lowered statements, index-aligned with `ast` (from_ast is 1:1). */
-	stmts: readonly NirStmt[];
-	/** The exact AST statement list this ctx drives (identity-checked). */
-	ast: readonly BaseNode[];
-}
+export type { NirEmitCtx } from "../nir/emit_ctx.ts";
 
 let nir_emission_on = true;
 
@@ -128,7 +124,7 @@ export function emit_stmt_from_nir(
 				// declaration adds none. (Under a NIR ctx a func initializer
 				// actually forces the whole-function AST fallback — the guard
 				// is parity, not load-bearing.)
-				build_declaration_node(child as DeclarationNode, status, nstmt.decl.init);
+				build_declaration_node(child as DeclarationNode, status, nstmt.decl.init, nstmt.decl.swap);
 				if (nstmt.decl.init && nstmt.decl.init.node.node_type !== "func") {
 					if (!status.code.endsWith("\n")) {
 						status.code += "\n";
@@ -137,10 +133,11 @@ export function emit_stmt_from_nir(
 				return;
 			case "assign":
 				// Reclamation/aliasing decisions stay on the AST node inside
-				// the builder; the RHS value is emitted through the NIR
-				// expression seam. Trailing-newline replicates the delegated
+				// the builder; the RHS value (plain or address-position) and
+				// the swap replacement are emitted through the NIR expression
+				// seam. Trailing-newline replicates the delegated
 				// with_semicolon tail.
-				build_assignment_node(child as AssignmentNode, status, nstmt.rhs);
+				build_assignment_node(child as AssignmentNode, status, nstmt.rhs, nstmt.swap);
 				if (!status.code.endsWith("\n")) {
 					status.code += "\n";
 				}

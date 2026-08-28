@@ -286,14 +286,27 @@ class CfgBuilder {
 		switch (s.kind) {
 			case "declare": {
 				const out = empty_walk();
+				const defs: string[] = s.decl.name ? [s.decl.name] : [];
 				walk_expr(s.decl.init, out);
+				if (s.decl.swap) {
+					// `var X b = mov src.field swap <rep>`: the replacement's
+					// reads join the walk, and the source root is redefined.
+					if (s.decl.init) {
+						const root = root_name(s.decl.init);
+						if (root) defs.push(root);
+						else out.barrier = true;
+					} else {
+						out.barrier = true;
+					}
+					walk_expr(s.decl.swap, out);
+				}
 				this.track_name(s.decl.name);
 				this.push_flat({
 					op: "declare",
 					node: s.node,
 					name: s.decl.name,
 					reads: out.reads,
-					defs: s.decl.name ? [s.decl.name] : [],
+					defs,
 					barrier: out.barrier,
 				});
 				return;
@@ -319,6 +332,15 @@ class CfgBuilder {
 					out.barrier = true;
 				}
 				walk_expr(s.rhs, out);
+				if (s.swap) {
+					// `a = b swap c`: the replacement is stored INTO the rhs
+					// source, so the rhs's root is a may-def and the swap
+					// expr's reads join the walk.
+					const root = root_name(s.rhs);
+					if (root) defs.push(root);
+					else out.barrier = true;
+					walk_expr(s.swap, out);
+				}
 				this.push_flat({
 					op: "assign",
 					node: s.node,
