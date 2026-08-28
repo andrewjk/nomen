@@ -1,7 +1,8 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
+import type { NirStmt } from "../nir/nir.ts";
 import SwitchNode from "../nodes/SwitchNode.ts";
-import build_block_node from "./build_block_node.ts";
 import build_node from "./build_node.ts";
+import { build_block_with_cursor } from "./emit_nir.ts";
 import { enter_scope_frame, exit_scope_frame } from "./utils/auto_destroy.ts";
 
 let label_counter = 0;
@@ -10,7 +11,11 @@ export function reset_label_counter() {
 	label_counter = 0;
 }
 
-export default function build_switch_node(node: SwitchNode, status: BuildStatus) {
+export default function build_switch_node(
+	node: SwitchNode,
+	status: BuildStatus,
+	nir?: NirStmt & { kind: "switch_match" },
+) {
 	const label = label_counter++;
 	const old_scoped_declarations = enter_scope_frame(status);
 	const pre_cache = status.buffer_data_cache;
@@ -28,7 +33,7 @@ export default function build_switch_node(node: SwitchNode, status: BuildStatus)
 		}
 
 		status.buffer_data_cache = new Map(pre_cache);
-		build_block_node(node.cases[i].branch, status);
+		build_block_with_cursor(node.cases[i].branch, nir?.arms[i]?.branch, status);
 		status.code += `b end_switch_${label}\n`;
 
 		status.code += `sw_next_${label}_${i}:\n`;
@@ -37,7 +42,7 @@ export default function build_switch_node(node: SwitchNode, status: BuildStatus)
 	if (node.else_branch) {
 		status.scoped_declarations = [];
 		status.buffer_data_cache = new Map(pre_cache);
-		build_block_node(node.else_branch, status);
+		build_block_with_cursor(node.else_branch, nir?.otherwise ?? undefined, status);
 	}
 
 	status.buffer_data_cache = pre_cache;

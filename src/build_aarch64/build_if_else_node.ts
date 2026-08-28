@@ -1,9 +1,8 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type { NirStmt } from "../nir/nir.ts";
-import type BlockNode from "../nodes/BlockNode.ts";
 import IfElseNode from "../nodes/IfElseNode.ts";
-import build_block_node from "./build_block_node.ts";
 import { emit_cond_branch } from "./build_operation_node.ts";
+import { build_block_with_cursor } from "./emit_nir.ts";
 import { enter_scope_frame, exit_scope_frame } from "./utils/auto_destroy.ts";
 
 let label_counter = 0;
@@ -46,15 +45,15 @@ export default function build_if_else_node(
 
 	if (node.else_branch) {
 		status.buffer_data_cache = new Map(pre_cache);
-		build_branch_block(node.if_branch!, nir?.then_branch, status);
+		build_block_with_cursor(node.if_branch!, nir?.then_branch, status);
 		status.code += `b end_${label}\n`;
 		status.code += `else_${label}:\n`;
 		status.buffer_data_cache = new Map(pre_cache);
-		build_branch_block(node.else_branch, nir?.else_branch, status);
+		build_block_with_cursor(node.else_branch, nir?.else_branch, status);
 	} else {
 		if (node.if_branch) {
 			status.buffer_data_cache = new Map(pre_cache);
-			build_branch_block(node.if_branch, nir?.then_branch, status);
+			build_block_with_cursor(node.if_branch, nir?.then_branch, status);
 		}
 	}
 
@@ -63,19 +62,4 @@ export default function build_if_else_node(
 	status.code += `end_${label}:\n`;
 
 	exit_scope_frame(status, old_scoped_declarations);
-}
-
-/** Build an if branch, pointing the NIR emission cursor at the branch's
- *  lowered statements when available (and clearing it when not — a delegated
- *  branch must never let its statements consume an enclosing block's cursor,
- *  even though the identity guard would catch it). */
-function build_branch_block(
-	branch: BlockNode,
-	stmts: readonly NirStmt[] | undefined,
-	status: BuildStatus,
-) {
-	const old_ctx = status.nir_emit_ctx;
-	status.nir_emit_ctx = stmts ? { stmts, ast: branch.statements } : undefined;
-	build_block_node(branch, status);
-	status.nir_emit_ctx = old_ctx;
 }

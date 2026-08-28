@@ -1,5 +1,6 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
+import type { NirStmt } from "../nir/nir.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
@@ -7,8 +8,8 @@ import DeclarationNode from "../nodes/DeclarationNode.ts";
 import MatchNode from "../nodes/MatchNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import { emit_address_of } from "./build_access_node.ts";
-import build_block_node from "./build_block_node.ts";
 import build_node from "./build_node.ts";
+import { build_block_with_cursor } from "./emit_nir.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import {
 	enter_scope_frame,
@@ -69,7 +70,11 @@ function emit_pattern_tag(match_value: BaseNode, enum_name: string, status: Buil
 	build_node(match_value, status);
 }
 
-export default function build_match_node(node: MatchNode, status: BuildStatus) {
+export default function build_match_node(
+	node: MatchNode,
+	status: BuildStatus,
+	nir?: NirStmt & { kind: "switch_match" },
+) {
 	const label = label_counter++;
 	const old_scoped_declarations = enter_scope_frame(status);
 	const match_type = type_from_value_node(node.value);
@@ -217,7 +222,7 @@ export default function build_match_node(node: MatchNode, status: BuildStatus) {
 			status.code += `bne end_match_${label}\n`;
 		}
 		status.buffer_data_cache = new Map(pre_cache);
-		build_block_node(match_case.branch, status);
+		build_block_with_cursor(match_case.branch, nir?.arms[i]?.branch, status);
 		status.code += `b end_match_${label}\n`;
 
 		status.code += `case_next_${label}_${i}:\n`;
@@ -226,7 +231,7 @@ export default function build_match_node(node: MatchNode, status: BuildStatus) {
 	if (node.else_branch) {
 		status.scoped_declarations = [];
 		status.buffer_data_cache = new Map(pre_cache);
-		build_block_node(node.else_branch, status);
+		build_block_with_cursor(node.else_branch, nir?.otherwise ?? undefined, status);
 	}
 
 	status.buffer_data_cache = pre_cache;

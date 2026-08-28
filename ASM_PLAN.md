@@ -21,12 +21,12 @@ Text passes can't see liveness; the AST has no per-function CFG.
 
 ## Architecture (agreed)
 
-| Phase | Scope                                                                                                       | Status                                                                                                                                                                                                                                                                                                                       |
-| ----- | ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **1** | Asm lifter + validator; wire into every build; round-trip fidelity                                          | ✅ DONE, suite green pre-crash                                                                                                                                                                                                                                                                                               |
-| **2** | Frame-slot forwarding + dead-store elimination over the lifted IR (`asm_opt.ts`)                            | ✅ DONE — suite green (2468 tests); measured −1…−5% broad, regex-redux −17%                                                                                                                                                                                                                                                  |
-| **3** | Extract duplicated semantic lowering (ownership/borrows/moves) into `build_common/` shared by BOTH backends | ✅ DONE — first tranche landed, suite green (253 files / 2468 tests)                                                                                                                                                                                                                                                         |
-| **4** | Single canonical IR from the check phase; aarch64 gets real regalloc; eventually NEON                       | 🔄 whole-function regalloc DONE (locals + params, nbody −9%); flow groundwork + canonical NIR stage 1 DONE (planner consumes NIR, codegen byte-identical); CFG + liveness + dominance over NIR DONE; NIR-driven emission tranche 1 DONE (if/while emitted from NIR, byte-identical); for/switch/match lowering + NEON remain |
+| Phase | Scope                                                                                                       | Status                                                                                                                                                                                                                                                                                                                                 |
+| ----- | ----------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **1** | Asm lifter + validator; wire into every build; round-trip fidelity                                          | ✅ DONE, suite green pre-crash                                                                                                                                                                                                                                                                                                         |
+| **2** | Frame-slot forwarding + dead-store elimination over the lifted IR (`asm_opt.ts`)                            | ✅ DONE — suite green (2468 tests); measured −1…−5% broad, regex-redux −17%                                                                                                                                                                                                                                                            |
+| **3** | Extract duplicated semantic lowering (ownership/borrows/moves) into `build_common/` shared by BOTH backends | ✅ DONE — first tranche landed, suite green (253 files / 2468 tests)                                                                                                                                                                                                                                                                   |
+| **4** | Single canonical IR from the check phase; aarch64 gets real regalloc; eventually NEON                       | 🔄 whole-function regalloc DONE (locals + params, nbody −9%); flow groundwork + canonical NIR stage 1 DONE (planner consumes NIR, codegen byte-identical); CFG + liveness + dominance over NIR DONE; NIR-driven emission tranches 1–2 DONE (if/while/for/switch/match emitted from NIR, byte-identical); NEON + return-from-NIR remain |
 
 ## Phase 1 — lifter + validator (DONE)
 
@@ -390,17 +390,52 @@ branch) confirms the path actually executes. Full suite green (256 files /
 2516 tests). Perf: byte-identical output by design; build-time cost is one
 extra NIR lowering per function (stage 1 measured the lowering at ~free).
 
-Next tranches: native `for`/`switch`/`match` lowering; liveness-gated
-emission decisions over `analyze_cfg`; then the NEON vectorizer hooks in at
-this dispatch point.
+### NIR-driven emission tranche 2 (DONE): native for/switch/match
 
-Remaining phase-4 work (NOT done):
+The remaining structured control flow is now emitted NIR-natively at the
+same dispatch point.
 
-- **Canonical IR stage 2+** — NIR-driven emission tranche 1 is DONE (above:
-  if/while native, per-function eligibility + delegation). Remaining: lower
-  `for`/`switch`/`match`/`return` from NIR (same dispatch point), then the C
-  backend, then retire the duplicate AST walks entirely. Stage 1's closed
-  union + coverage sets are the contract those passes build against.
+- `emit_stmt_from_nir` gained `for` and `switch_match` dispatch arms
+  (`switch` and `match` share the one NIR kind — the AST `node_type` picks
+  the builder). `return` deliberately stays delegated: it has no nested
+  statement list to drive, so its takeover belongs with NIR-level
+  EXPRESSION emission, not this tranche.
+- The cursor mechanics are deduped into ONE shared helper,
+  `emit_nir.build_block_with_cursor(block, stmts, status)` (set ctx to the
+  lowered list when available, CLEAR it when not, restore after). The
+  previously duplicated private helpers in `build_if_else_node`
+  (`build_branch_block`) and `build_while_loop_node`
+  (`build_loop_body_block`) are deleted; `build_for_loop_node` (all THREE
+  iteration paths: range / Enumerable / array), `build_switch_node` (per
+  case + else) and `build_match_node` (per case + else) all consume it.
+  Builders keep everything semantic — label numbering (per-builder counters
+  shared with the AST path via `next_if_label`-style accessors), loop
+  promotion, for-ref writebacks, match payload bindings, hoisted scrutinee
+  temps, buffer-cache snapshots — so "NIR mode" and "AST mode" remain the
+  same code by construction.
+- A side benefit: an if/match/switch nested INSIDE a for body or a match/
+  switch arm now installs its own cursor (the enclosing builder no longer
+  delegates with the outer ctx still active), so nested structured flow is
+  fully cursor-driven end to end.
+
+Proof: byte-IDENTICAL `.s` versus the emission cursor disabled —
+`test/emit_nir.test.ts` extended to 16 tests (array-iteration for,
+for-ref writeback, enum-with-data match with payload bindings parsed RAW,
+for/match nesting with block arms, plus the tranche-1 set) AND the full
+`bench/nomen/*.nm` corpus. Mutation checks (markers injected into the new
+`for` and `switch_match` dispatch arms) confirmed both arms execute and
+were reverted. Behavioral test runs the NIR-built binary (for/of +
+for-ref + payload match → `536 1`). Full suite green (256 files / 2521
+tests). Perf: byte-identical output by design.
+
+### Remaining phase-4 work (NOT done)
+
+- **Canonical IR stage 2+** — tranches 1–2 are DONE (if/while/for/switch/
+  match native; per-function eligibility + delegation). Remaining: NIR-level
+  EXPRESSION emission (which is also what `return`'s dispatch takeover
+  waits on), then the C backend, then retire the duplicate AST walks
+  entirely. Stage 1's closed union + coverage sets are the contract those
+  passes build against.
 - **NEON auto-vectorization** — the CFG/liveness/dominance substrate now
   exists (`src/nir/analysis.ts`: loop discovery with nesting depth, block
   liveness, frontiers). What remains is the vectorizer pass itself over

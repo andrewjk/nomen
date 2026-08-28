@@ -1,9 +1,10 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
+import type { NirStmt } from "../nir/nir.ts";
 import ForLoopNode from "../nodes/ForLoopNode.ts";
 import RangeNode from "../nodes/RangeNode.ts";
-import build_block_node from "./build_block_node.ts";
 import build_node from "./build_node.ts";
+import { build_block_with_cursor } from "./emit_nir.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { enter_scope_frame, exit_scope_frame } from "./utils/auto_destroy.ts";
 import { promote_loop_locals, type PromotedVar } from "./utils/loop_promotion.ts";
@@ -22,7 +23,11 @@ export function reset_label_counter() {
 	label_counter = 0;
 }
 
-export default function build_for_loop_node(node: ForLoopNode, status: BuildStatus) {
+export default function build_for_loop_node(
+	node: ForLoopNode,
+	status: BuildStatus,
+	nir?: NirStmt & { kind: "for" },
+) {
 	const old_scoped_declarations = enter_scope_frame(status);
 
 	const label = label_counter++;
@@ -99,7 +104,7 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 		}
 		status.code += `bge ${end_label}\n`;
 
-		build_block_node(node, status);
+		build_block_with_cursor(node, nir?.body, status);
 
 		if (node.update) {
 			status.code += `${continue_label}:\n`;
@@ -143,7 +148,7 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 		status.code += `cmp x0, x1\n`;
 		status.code += `bge ${end_label}\n`;
 
-		build_block_node(node, status);
+		build_block_with_cursor(node, nir?.body, status);
 
 		if (node.update) {
 			status.code += `${continue_label}:\n`;
@@ -311,7 +316,7 @@ export default function build_for_loop_node(node: ForLoopNode, status: BuildStat
 			};
 		}
 
-		build_block_node(node, status);
+		build_block_with_cursor(node, nir?.body, status);
 
 		// Write the (possibly mutated) loop variable back into its array slot.
 		status.loop_writebacks![status.loop_writebacks.length - 1]?.();

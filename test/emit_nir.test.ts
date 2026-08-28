@@ -8,7 +8,7 @@ import join from "../src/join";
 import { get_library } from "../src/lib";
 import { lower_function } from "../src/nir/from_ast";
 import parse from "../src/parse";
-import parse_with_imports from "./parse_with_imports";
+import parse_with_imports, { parse_raw } from "./parse_with_imports";
 
 /**
  * Phase 4 canonical-IR stage 2 (ASM_PLAN): NIR-driven emission must be a
@@ -17,19 +17,19 @@ import parse_with_imports from "./parse_with_imports";
  * the generated aarch64 assembly to match exactly.
  */
 
-function compile_aarch64(source: string): string {
-	const parsed = parse_with_imports(source);
+function compile_aarch64(source: string, raw = false): string {
+	const parsed = raw ? parse_raw(source) : parse_with_imports(source);
 	expect(parsed.errors).toEqual([]);
 	const result = build(parsed.root, { arch: "aarch64" });
 	return result.code;
 }
 
-function expect_byte_identical(source: string): void {
+function expect_byte_identical(source: string, raw = false): void {
 	set_nir_emission_enabled(false);
-	const baseline = compile_aarch64(source);
+	const baseline = compile_aarch64(source, raw);
 	set_nir_emission_enabled(true);
 	try {
-		const with_nir = compile_aarch64(source);
+		const with_nir = compile_aarch64(source, raw);
 		expect(with_nir.length).toBeGreaterThan(0);
 		expect(with_nir).toEqual(baseline);
 	} finally {
@@ -96,7 +96,7 @@ Console.write("\\{mul_table_sum(4)}")
 `);
 });
 
-test("for loops delegate while nested ifs stay NIR-driven", () => {
+test("for loops emit NIR-natively (range path, nested ifs NIR-driven)", () => {
 	expect_byte_identical(`
 func count_even = (int n, out int) {
     var int c = 0
@@ -111,7 +111,40 @@ Console.write("\\{count_even(10)}")
 `);
 });
 
-test("match arms build under an active NIR ctx byte-identically", () => {
+test("array-iteration for loops emit NIR-natively byte-identically", () => {
+	expect_byte_identical(`
+func total = (out int) {
+    var int[] nums = [3, 1, 2]
+    var int sum = 0
+    for n of nums {
+        if n > 1 {
+            sum = sum + n
+        }
+    }
+    return sum
+}
+Console.write("\\{total()}")
+`);
+});
+
+test("for ref of array (writeback path) emits NIR-natively byte-identically", () => {
+	expect_byte_identical(`
+func zeroed = (out int) {
+    var int[] nums = [7, 8, 9]
+    for ref n of nums {
+        n = n - 1
+    }
+    var int sum = 0
+    for n of nums {
+        sum = sum + n
+    }
+    return sum
+}
+Console.write("\\{zeroed()}")
+`);
+});
+
+test("match arms emit NIR-natively byte-identically", () => {
 	expect_byte_identical(`
 func describe = (int x, out string) {
     var string label = "other"
@@ -126,7 +159,37 @@ Console.write("\\{describe(1)} \\{describe(5)}")
 `);
 });
 
-test("switch chains build under an active NIR ctx byte-identically", () => {
+test("enum-with-data match with payload bindings emits NIR-natively", () => {
+	// Module-level enum + match-with-payloads: parsed raw (parse_with_imports
+	// wraps the source inside main, where enums can't be declared).
+	expect_byte_identical(
+		`
+import System
+
+enum MyShape {
+    case circle(int radius)
+    case unit
+}
+
+func area_of = (MyShape s, out int) {
+    var int area = 0
+    match s {
+        case .circle(r) -> area = 3 * r
+        case .unit -> area = 1
+        else -> area = 0
+    }
+    return area
+}
+
+pub func main = () {
+    Console.write("\\{area_of(MyShape.circle(2))} \\{area_of(MyShape.unit)}")
+}
+`,
+		true,
+	);
+});
+
+test("switch chains emit NIR-natively byte-identically", () => {
 	expect_byte_identical(`
 func size_of = (int x, out string) {
     var string s = "small"
@@ -138,6 +201,29 @@ func size_of = (int x, out string) {
     return s
 }
 Console.write("\\{size_of(500)} \\{size_of(3)}")
+`);
+});
+
+test("flow-shaped nesting (match in for, for in match) emits NIR-natively", () => {
+	expect_byte_identical(`
+func nested_flow = (int n, out int) {
+    var int acc = 0
+    for i of 0 .. n {
+        match i % 3 {
+            case 0 -> acc = acc + 10
+            case 1 {
+                var int j = 0
+                while j < i {
+                    acc = acc + 1
+                    j = j + 1
+                }
+            }
+            else -> acc = acc + 1
+        }
+    }
+    return acc
+}
+Console.write("\\{nested_flow(6)}")
 `);
 });
 
@@ -246,5 +332,64 @@ Console.write("\\{sum_odd_to(5)} \\{sum_odd_to(20)}")
 `,
 		"emit_nir_promotion",
 		"9 16",
+	);
+});
+
+test("NIR-native for/match binaries run correctly", async () => {
+	// Behavioral belt-and-braces for the tranche-2 paths: array-iteration for
+	// (with nested if), for-ref writeback, and enum-with-data match arms with
+	// payload bindings. nums=[3,1,2] → sum of >1 elements = 3+2 = 5; ref loop
+	// decrements each element once → sum = 2+0+1 = 3; area(circle 2) = 6,
+	// area(unit) = 1. (Console.write adds no newline → "536 1".)
+	const { default: build_and_check_output } = await import("./build_and_check_output");
+	await build_and_check_output(
+		`
+import System
+
+enum MyShape {
+    case circle(int radius)
+    case unit
+}
+
+func area_of = (MyShape s, out int) {
+    var int area = 0
+    match s {
+        case .circle(r) -> area = 3 * r
+        case .unit -> area = 1
+        else -> area = 0
+    }
+    return area
+}
+
+pub func main = () {
+    var int[] nums = [3, 1, 2]
+    var int sum = 0
+    for n of nums {
+        if n > 1 {
+            sum = sum + n
+        }
+    }
+    Console.write("\\{sum}")
+    for ref n of nums {
+        n = n - 1
+    }
+    var int total = 0
+    for n of nums {
+        total = total + n
+    }
+    Console.write("\\{total}")
+    var MyShape s = MyShape.circle(2)
+    var int area = 0
+    match s {
+        case .circle(r) -> area = 3 * r
+        case .unit -> area = 1
+        else -> area = 0
+    }
+    Console.write("\\{area} \\{area_of(MyShape.unit)}")
+}
+`,
+		"emit_nir_for_match",
+		"536 1",
+		true,
 	);
 });

@@ -1,10 +1,9 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type { NirStmt } from "../nir/nir.ts";
-import type BlockNode from "../nodes/BlockNode.ts";
 import WhileLoopNode from "../nodes/WhileLoopNode.ts";
-import build_block_node from "./build_block_node.ts";
 import build_node from "./build_node.ts";
 import { emit_cond_branch } from "./build_operation_node.ts";
+import { build_block_with_cursor } from "./emit_nir.ts";
 import { enter_scope_frame, exit_scope_frame } from "./utils/auto_destroy.ts";
 import { promote_loop_locals, type PromotedVar } from "./utils/loop_promotion.ts";
 import { emit_promoted_store } from "./utils/stack_var.ts";
@@ -75,7 +74,7 @@ export default function build_while_loop_node(
 		}
 	}
 
-	build_loop_body_block(node, nir?.body, status);
+	build_block_with_cursor(node, nir?.body, status);
 
 	if (node.update) {
 		status.code += `${continue_label}:\n`;
@@ -104,19 +103,4 @@ export default function build_while_loop_node(
 
 	status.loop_labels.pop();
 	exit_scope_frame(status, old_scoped_declarations);
-}
-
-/** Build a loop body block, pointing the NIR emission cursor at the loop's
- *  lowered body statements when available (and clearing it when not — a
- *  delegated loop must never let its body consume an enclosing block's
- *  cursor, even though the identity guard would catch it). */
-export function build_loop_body_block(
-	node: BlockNode,
-	stmts: readonly NirStmt[] | undefined,
-	status: BuildStatus,
-) {
-	const old_ctx = status.nir_emit_ctx;
-	status.nir_emit_ctx = stmts ? { stmts, ast: node.statements } : undefined;
-	build_block_node(node, status);
-	status.nir_emit_ctx = old_ctx;
 }
