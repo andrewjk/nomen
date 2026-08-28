@@ -607,10 +607,10 @@ dir before executing.
   eligibility + delegation). Remaining: the C expression seam
   (return/declare/assign/eval value positions through C builders), then
   retire the duplicate AST walks entirely. Stage 1's closed union +
-  coverage sets are the contract those passes build against. Known lowering
-  gap: assignment expressions (arrow-arm `x = y`) record `"assign"` in
-  `unknown_kinds` (FOLLOWUP.md) — closing it changes aarch64 promotion facts
-  and needs its own measurement.
+  coverage sets are the contract those passes build against. (The former
+  lowering gap for assignment expressions in arrow arms is closed:
+  from_ast lowers let-wrapped assigns to the `assign` KIND; the bench
+  corpus contains none, so its promotion facts and bytes are unchanged.)
 - **NEON auto-vectorization** — the CFG/liveness/dominance substrate now
   exists (`src/nir/analysis.ts`: loop discovery with nesting depth, block
   liveness, frontiers). What remains is the vectorizer pass itself over

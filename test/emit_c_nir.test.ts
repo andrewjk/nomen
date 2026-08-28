@@ -249,12 +249,12 @@ Console.write("\\{apply(Op.add, 10)} \\{apply(Op.sub, 10)}")
 	);
 });
 
-test("match/switch arms with assignment expressions fall back and stay byte-identical", () => {
+test("match/switch arms with assignment expressions lower to the assign KIND", () => {
 	// White-box: `case X -> target = value` parses the assignment as a LET
-	// wrapping an assign EXPRESSION; from_ast has no assign-expression
-	// mapping yet, so the arm lowers to `other` (unknown "assign") and the
-	// whole function rides the AST fallback. Byte-identity must hold — and
-	// this test turns green coverage the day assign-expressions lower.
+	// wrapping an assign EXPRESSION; from_ast lowers it to the assign KIND
+	// (not `other`), so the function stays NIR-eligible (unknown_kinds empty)
+	// and the match/switch statements ride the cursor — byte-identity must
+	// hold through the NIR-native dispatch.
 	const source = `
 func pick = (int x, out string) {
     var string s = "?"
@@ -282,7 +282,15 @@ Console.write("\\{pick(1)} \\{pick(50)}")
 	const fn = walk(parsed.root).find((f: any) => f.name === "pick");
 	expect(fn).toBeTruthy();
 	const nir = lower_function(fn);
-	expect([...nir.unknown_kinds]).toContain("assign");
+	expect([...nir.unknown_kinds]).toEqual([]);
+	// The arm lets lowered to assign statements carrying the INNER
+	// AssignmentNode (not the wrapping let).
+	const match_stmt = nir.body.find((s) => s.kind === "switch_match");
+	expect(match_stmt).toBeTruthy();
+	for (const arm of match_stmt!.kind === "switch_match" ? match_stmt!.arms : []) {
+		expect(arm.branch.map((s) => s.kind)).toEqual(["assign"]);
+		expect(arm.branch[0].node.node_type).toBe("assign");
+	}
 	expect_byte_identical(source);
 });
 

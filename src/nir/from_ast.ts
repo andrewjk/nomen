@@ -71,17 +71,8 @@ function stmt(ctx: LowerCtx, n: BaseNode): NirStmt {
 	switch (n.node_type) {
 		case "declare":
 			return declare_stmt(ctx, n as DeclarationNode);
-		case "assign": {
-			const a = n as any as AssignmentNode;
-			return {
-				kind: "assign",
-				node: n,
-				target: expr(ctx, a.left_value),
-				rhs: expr(ctx, a.right_value),
-				operator: (a.operator as string | undefined) ?? null,
-				swap: a.swap ? expr(ctx, a.swap) : null,
-			};
-		}
+		case "assign":
+			return assign_stmt(ctx, n as AssignmentNode);
 		case "return": {
 			const ret = n as ReturnNode;
 			return { kind: "return", node: n, value: ret.value ? expr(ctx, ret.value) : null };
@@ -151,6 +142,17 @@ function stmt(ctx: LowerCtx, n: BaseNode): NirStmt {
 				otherwise: m.else_branch ? block(ctx, m.else_branch.statements) : null,
 			};
 		}
+		case "let": {
+			// Arrow arms (`case X -> target = value` in match/switch/if) parse
+			// the assignment as a LET wrapping an assign EXPRESSION; lower it
+			// as the assign KIND so the arm's traffic is visible and the
+			// function stays NIR-eligible. Any other let rides the eval path.
+			const inner = (n as LetNode).value;
+			if (inner && inner.node_type === "assign") {
+				return assign_stmt(ctx, inner as AssignmentNode);
+			}
+			return { kind: "eval", node: n, expr: expr(ctx, n) };
+		}
 		case "spawn": {
 			const sp = n as SpawnNode;
 			return { kind: "spawn", node: n, call: expr(ctx, sp.call) };
@@ -175,13 +177,26 @@ function stmt(ctx: LowerCtx, n: BaseNode): NirStmt {
 			};
 		}
 		default: {
-			// Expression-shaped statements (bare calls, lets) carry traffic and
-			// lower to eval; anything genuinely unmapped surfaces as opaque.
+			// Expression-shaped statements (bare calls, non-assign lets) carry
+			// traffic and lower to eval; anything genuinely unmapped surfaces
+			// as opaque.
 			if (is_expr_node(n)) return { kind: "eval", node: n, expr: expr(ctx, n) };
 			record_unknown(ctx, n);
 			return { kind: "opaque", node: n };
 		}
 	}
+}
+
+/** Lower an AssignmentNode — statement-level, or let-wrapped (arrow arms). */
+function assign_stmt(ctx: LowerCtx, a: AssignmentNode): NirStmt {
+	return {
+		kind: "assign",
+		node: a,
+		target: expr(ctx, a.left_value),
+		rhs: expr(ctx, a.right_value),
+		operator: (a.operator as string | undefined) ?? null,
+		swap: a.swap ? expr(ctx, a.swap) : null,
+	};
 }
 
 function declare_stmt(ctx: LowerCtx, d: DeclarationNode): NirStmt {

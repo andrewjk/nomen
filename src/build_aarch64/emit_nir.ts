@@ -136,8 +136,11 @@ export function emit_stmt_from_nir(
 				// the builder; the RHS value (plain or address-position) and
 				// the swap replacement are emitted through the NIR expression
 				// seam. Trailing-newline replicates the delegated
-				// with_semicolon tail.
-				build_assignment_node(child as AssignmentNode, status, nstmt.rhs, nstmt.swap);
+				// with_semicolon tail. nstmt.node (NOT `child`): an arrow-arm
+				// assignment (`case X -> t = v`) lowers from the LetNode
+				// wrapping the assign expression, and the NIR stmt carries the
+				// inner AssignmentNode the builder needs.
+				build_assignment_node(nstmt.node as AssignmentNode, status, nstmt.rhs, nstmt.swap);
 				if (!status.code.endsWith("\n")) {
 					status.code += "\n";
 				}
