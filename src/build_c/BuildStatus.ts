@@ -479,6 +479,15 @@ export default interface BuildStatus {
 	 * cleared when the loop exits.
 	 */
 	buffer_data_cache?: Map<string, string>;
+	/**
+	 * aarch64-only (ASM_PLAN phase 4, canonical-IR stage 2): the NIR statement
+	 * list driving emission for the block currently being built, index-aligned
+	 * 1:1 with `ast`. Statement dispatch verifies `ast[i]` identity before
+	 * consuming, so any nested block build that doesn't own the cursor (inline
+	 * bodies, delegated for/switch/match branches, method bodies…) safely
+	 * falls back to the AST walk. Undefined = pure AST walk.
+	 */
+	nir_emit_ctx?: import("../build_aarch64/emit_nir.ts").NirEmitCtx;
 	platform: string;
 	label_counter?: number;
 	/**

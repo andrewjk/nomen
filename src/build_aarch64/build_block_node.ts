@@ -12,8 +12,8 @@ import FunctionNode from "../nodes/FunctionNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import TraitNode from "../nodes/TraitNode.ts";
 import build_function_node from "./build_function_node.ts";
-import build_node from "./build_node.ts";
 import build_struct_node from "./build_struct_node.ts";
+import { emit_stmt_from_nir } from "./emit_nir.ts";
 import { emit_destroy_for_scope } from "./utils/auto_destroy.ts";
 import emit_allocations from "./utils/emit_allocations.ts";
 
@@ -77,7 +77,8 @@ export default function build_block_node(node: BlockNode, status: BuildStatus) {
 		}
 	}
 
-	for (let child of node.statements) {
+	for (let index = 0; index < node.statements.length; index++) {
+		const child = node.statements[index];
 		if (
 			!is_trait_node(child) &&
 			!is_struct_node(child) &&
@@ -87,7 +88,10 @@ export default function build_block_node(node: BlockNode, status: BuildStatus) {
 			!(child.node_type === "declare" && inlined_const_names.has((child as DeclarationNode).name))
 		) {
 			emit_allocations(child, status);
-			build_node(child, status, true);
+			// NIR-driven dispatch (phase 4 stage 2): consumes the index-aligned
+			// NIR entry when the emission ctx owns this statement list; falls
+			// back to the plain AST walk otherwise.
+			emit_stmt_from_nir(child, index, node.statements, status);
 		}
 	}
 

@@ -1,5 +1,6 @@
 import { ALL_FLOAT_TYPES, SCALAR_TYPES } from "../../built_in_types.ts";
-import { analyze_function } from "../../nir/traffic.ts";
+import type { NirFunction } from "../../nir/nir.ts";
+import { analyze_function, analyze_traffic } from "../../nir/traffic.ts";
 import type Type from "../../nodes/Type.ts";
 
 /**
@@ -92,13 +93,20 @@ function is_clean_scalar_type(t: {
  * name→register map (empty when nothing is worth promoting); the caller seeds
  * it into `status.register_allocations` and `status.callee_saved_regs_used`
  * before building the body. Params and locals compete for the same register
- * pools, hottest first.
+ * pools, hottest first. Pass `nir` to reuse an already-lowered canonical IR
+ * (build_function_node lowers once and shares it with the emission path)
+ * instead of re-lowering the AST here.
  */
-export function plan_function_promotions(func: {
-	params: { name: string; type: Type; is_variadic?: boolean }[];
-	statements: import("../../nodes/BaseNode.ts").default[];
-}): Map<string, string> {
-	const { variables, decl_counts, decls, ref_arg_names } = analyze_function(func);
+export function plan_function_promotions(
+	func: {
+		params: { name: string; type: Type; is_variadic?: boolean }[];
+		statements: import("../../nodes/BaseNode.ts").default[];
+	},
+	nir?: NirFunction,
+): Map<string, string> {
+	const { variables, decl_counts, decls, ref_arg_names } = nir
+		? analyze_traffic(nir)
+		: analyze_function(func);
 
 	const address_taken = new Set<string>();
 	for (const [name, info] of variables) {

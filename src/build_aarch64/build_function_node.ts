@@ -4,10 +4,13 @@ import emission_label from "../build_common/emission_label.ts";
 import { resolve_mono_type } from "../build_common/mono_name.ts";
 import { moved_param_is_consumed } from "../build_common/scan_moved_param_consumed.ts";
 import { ALL_FLOAT_TYPES } from "../built_in_types.ts";
+import { lower_function } from "../nir/from_ast.ts";
+import type { NirFunction } from "../nir/nir.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import type Type from "../nodes/Type.ts";
 import build_block_node from "./build_block_node.ts";
 import { check_c_fallback } from "./build_raw_node.ts";
+import { nir_emission_enabled } from "./emit_nir.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free } from "./utils/audit.ts";
 import { emit_destroy_for_anchor_slot } from "./utils/auto_destroy.ts";
@@ -429,7 +432,11 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	// its own bindings into ours — or clobber our claimed-register set.
 	const old_register_allocations = status.register_allocations;
 	const old_callee_saved_regs = status.callee_saved_regs_used;
-	const fn_allocs = has_body ? plan_function_promotions(node) : undefined;
+	// ONE canonical lowering per function (phase 4 stage 2): the NIR drives
+	// both the promotion planner here and — when the whole body mapped — the
+	// emission path below via `status.nir_emit_ctx`.
+	const nir: NirFunction | undefined = has_body ? lower_function(node) : undefined;
+	const fn_allocs = nir ? plan_function_promotions(node, nir) : undefined;
 	status.register_allocations = fn_allocs && fn_allocs.size > 0 ? fn_allocs : undefined;
 	status.callee_saved_regs_used =
 		fn_allocs && fn_allocs.size > 0 ? new Set(fn_allocs.values()) : undefined;
@@ -700,7 +707,18 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	const old_buffer_data_cache = status.buffer_data_cache;
 	status.buffer_data_cache = undefined;
 
+	// NIR-driven emission: when the whole body lowered cleanly, point the
+	// emission cursor at the lowered statements. Restored after the body so a
+	// nested function build (which installs its own cursor) hands ours back.
+	const old_nir_ctx = status.nir_emit_ctx;
+	status.nir_emit_ctx =
+		nir && nir.unknown_kinds.size === 0 && nir_emission_enabled()
+			? { stmts: nir.body, ast: node.statements }
+			: undefined;
+
 	build_block_node(node, status);
+
+	status.nir_emit_ctx = old_nir_ctx;
 
 	status.buffer_data_cache = old_buffer_data_cache;
 	status.force_heap_strings = old_force_heap;

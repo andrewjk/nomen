@@ -1,4 +1,6 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
+import type { NirStmt } from "../nir/nir.ts";
+import type BlockNode from "../nodes/BlockNode.ts";
 import IfElseNode from "../nodes/IfElseNode.ts";
 import build_block_node from "./build_block_node.ts";
 import { emit_cond_branch } from "./build_operation_node.ts";
@@ -10,8 +12,18 @@ export function reset_label_counter() {
 	label_counter = 0;
 }
 
-export default function build_if_else_node(node: IfElseNode, status: BuildStatus) {
-	const label = label_counter++;
+/** Allocate the next if-statement label number (shared with the NIR-driven
+ *  emission path so both produce identical label numbering). */
+export function next_if_label(): number {
+	return label_counter++;
+}
+
+export default function build_if_else_node(
+	node: IfElseNode,
+	status: BuildStatus,
+	nir?: NirStmt & { kind: "if" },
+) {
+	const label = next_if_label();
 	const old_scoped_declarations = enter_scope_frame(status);
 
 	// Branch-aware condition lowering: comparisons branch directly off the
@@ -34,15 +46,15 @@ export default function build_if_else_node(node: IfElseNode, status: BuildStatus
 
 	if (node.else_branch) {
 		status.buffer_data_cache = new Map(pre_cache);
-		build_block_node(node.if_branch!, status);
+		build_branch_block(node.if_branch!, nir?.then_branch, status);
 		status.code += `b end_${label}\n`;
 		status.code += `else_${label}:\n`;
 		status.buffer_data_cache = new Map(pre_cache);
-		build_block_node(node.else_branch, status);
+		build_branch_block(node.else_branch, nir?.else_branch, status);
 	} else {
 		if (node.if_branch) {
 			status.buffer_data_cache = new Map(pre_cache);
-			build_block_node(node.if_branch, status);
+			build_branch_block(node.if_branch, nir?.then_branch, status);
 		}
 	}
 
@@ -51,4 +63,19 @@ export default function build_if_else_node(node: IfElseNode, status: BuildStatus
 	status.code += `end_${label}:\n`;
 
 	exit_scope_frame(status, old_scoped_declarations);
+}
+
+/** Build an if branch, pointing the NIR emission cursor at the branch's
+ *  lowered statements when available (and clearing it when not — a delegated
+ *  branch must never let its statements consume an enclosing block's cursor,
+ *  even though the identity guard would catch it). */
+function build_branch_block(
+	branch: BlockNode,
+	stmts: readonly NirStmt[] | undefined,
+	status: BuildStatus,
+) {
+	const old_ctx = status.nir_emit_ctx;
+	status.nir_emit_ctx = stmts ? { stmts, ast: branch.statements } : undefined;
+	build_block_node(branch, status);
+	status.nir_emit_ctx = old_ctx;
 }
