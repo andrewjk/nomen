@@ -22,7 +22,7 @@ import {
 	patch_overflow_placeholders,
 } from "./utils/stack_args.ts";
 import { allocate_stack_space, emit_promoted_load } from "./utils/stack_var.ts";
-import { get_field_offset, get_struct_size } from "./utils/struct_layout.ts";
+import { get_enum_sret_size, get_field_offset, get_struct_size } from "./utils/struct_layout.ts";
 
 let label_counter = 0;
 
@@ -210,12 +210,16 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	// `.name`, which would otherwise hit the bare generic (type-param fields
 	// have no concrete size).
 	node.return_type = resolve_mono_type(node.return_type, status);
+	// An enum-with-data return also uses sret: a plain x0 return hands the
+	// caller a pointer into THIS function's frame, which dies at `ret` —
+	// any intervening call on the caller's side would clobber the bytes.
 	const return_struct =
 		!node.return_type.is_view &&
 		!node.return_type.is_array &&
-		!!status.structs.find(
+		(!!status.structs.find(
 			(s) => s.name === node.return_type.name && !s.is_simple_type && !s.is_class,
-		);
+		) ||
+			get_enum_sret_size(node.return_type.name, status) !== undefined);
 	if (return_struct) {
 		status.struct_return_buffer = "x8";
 	}

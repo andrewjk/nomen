@@ -7,6 +7,7 @@ import build_block_node from "./build_block_node.ts";
 import { emit_owning_buffer_inline_aarch64 } from "./utils/owning_buffer_specialize.ts";
 import { allocate_stack_space } from "./utils/stack_var.ts";
 import { emit_owning_array_string_specialize } from "./utils/string_pair.ts";
+import { get_enum_sret_size } from "./utils/struct_layout.ts";
 
 let inline_counter = 0;
 
@@ -252,12 +253,14 @@ export default function build_inline_method(
 	}
 
 	// An ARRAY-typed return (`out Array<T>`) is a heap buffer POINTER in x0 —
-	// never sret, even when the element type is a struct.
+	// never sret, even when the element type is a struct. An enum-with-data
+	// return uses sret like a struct (see build_function_node).
 	const return_struct =
 		!func.return_type?.is_array &&
-		!!status.structs.find(
+		(!!status.structs.find(
 			(s) => s.name === func.return_type?.name && !s.is_simple_type && !s.is_class,
-		);
+		) ||
+			get_enum_sret_size(func.return_type?.name, status) !== undefined);
 	if (return_struct) {
 		status.function_return_type = func.return_type;
 		status.struct_return_buffer = "x8";
@@ -431,12 +434,14 @@ export function build_inline_function(func: FunctionNode, status: BuildStatus) {
 		}
 	}
 
-	// An ARRAY-typed return is a heap buffer POINTER in x0 — never sret.
+	// An ARRAY-typed return is a heap buffer POINTER in x0 — never sret. An
+	// enum-with-data return uses sret like a struct (see build_function_node).
 	const return_struct =
 		!func.return_type?.is_array &&
-		!!status.structs.find(
+		(!!status.structs.find(
 			(s) => s.name === func.return_type?.name && !s.is_simple_type && !s.is_class,
-		);
+		) ||
+			get_enum_sret_size(func.return_type?.name, status) !== undefined);
 	if (return_struct) {
 		status.function_return_type = func.return_type;
 		status.struct_return_buffer = "x8";

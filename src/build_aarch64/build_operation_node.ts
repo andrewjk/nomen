@@ -21,7 +21,11 @@ import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free } from "./utils/audit.ts";
 import { allocate_stack_space, emit_var_address, emit_var_load } from "./utils/stack_var.ts";
 import { emit_pair_load_x29, emit_pair_store_x29 } from "./utils/string_pair.ts";
-import { get_field_has_offset, get_struct_size } from "./utils/struct_layout.ts";
+import {
+	get_enum_sret_size,
+	get_field_has_offset,
+	get_struct_size,
+} from "./utils/struct_layout.ts";
 import { emit_view_string_arg, is_view_value } from "./utils/view_value.ts";
 
 let string_counter = 0;
@@ -712,12 +716,18 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		const left_type = type_from_value_node(node.left_value);
 		const is_array_op = node.operator_func.struct_name.startsWith("Array") && left_type.is_array;
 
+		// An enum-with-data operator result uses sret like a struct (see
+		// build_function_node) — preset x8 with a caller-owned temp.
 		const return_struct = status.structs.find(
 			(s) => s.name === node.type?.name && !s.is_simple_type && !s.is_class,
 		);
+		const return_enum_size = get_enum_sret_size(node.type?.name, status);
 		let return_temp_offset: number | undefined;
-		if (return_struct) {
-			return_temp_offset = allocate_stack_space(status, get_struct_size(node.type!.name, status));
+		if (return_struct || return_enum_size !== undefined) {
+			return_temp_offset = allocate_stack_space(
+				status,
+				return_struct ? get_struct_size(node.type!.name, status) : return_enum_size!,
+			);
 			status.code += `add x8, x29, #${return_temp_offset}\n`;
 		}
 
@@ -830,7 +840,7 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 			status.code += `str x0, [x29, #${result_spill}]\n`;
 		}
 
-		if (return_struct && return_temp_offset !== undefined) {
+		if (return_temp_offset !== undefined && (return_struct || return_enum_size !== undefined)) {
 			status.code += `add x0, x29, #${return_temp_offset}\n`;
 		}
 

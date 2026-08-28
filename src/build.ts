@@ -17,9 +17,14 @@ import { emit_malloc } from "./build_aarch64/utils/audit.ts";
 import { generate_companion } from "./build_aarch64/utils/c_companion.ts";
 import { scan_heap_returning_functions } from "./build_aarch64/utils/scan_heap_returns.ts";
 import { scan_inline_candidates } from "./build_aarch64/utils/scan_inline_candidates.ts";
+import { reset_string_field_counter } from "./build_c/build_assignment_node.ts";
+import { reset_ns_default_counter } from "./build_c/build_function_call_node.ts";
+import { reset_match_temp_counter } from "./build_c/build_match_node.ts";
 import build_c_node from "./build_c/build_node.ts";
+import { reset_ns_tmp_counter } from "./build_c/build_operation_node.ts";
 import type BuildStatus from "./build_c/BuildStatus.ts";
 import { set_c_typedef_mangling } from "./build_c/utils/c_type.ts";
+import { optimize_asm } from "./build_common/optimize_asm.ts";
 import { scan_borrow_returning_functions } from "./build_common/scan_borrow_returns.ts";
 import BaseNode from "./nodes/BaseNode.ts";
 import RawNode from "./nodes/RawNode.ts";
@@ -33,6 +38,11 @@ export default function build(
 		audit?: boolean;
 		emit_mode?: "all" | "system" | "user";
 		system_struct_names?: Set<string>;
+		/** Release mode: run the optimization passes over the generated code.
+		 *  For the aarch64 backend this is the asm-level equivalent of the
+		 *  clang -O2 the C backend receives at link time (clang's optimizer
+		 *  never sees the assembly — it goes straight to the assembler). */
+		optimize?: boolean;
 	} = {},
 ): BuildResult {
 	let status: BuildStatus = {
@@ -65,6 +75,14 @@ export default function build(
 	// aarch64 build, which would corrupt the companion's primitive c_type
 	// lookups). The C branch below re-enables it when this build pulls in ObjC.
 	set_c_typedef_mangling(false);
+
+	// Reset the C backend's module-level temp counters so two builds in the
+	// same process are byte-identical (the NIR emission tests require this;
+	// the aarch64 counters below get the same treatment).
+	reset_string_field_counter();
+	reset_ns_default_counter();
+	reset_match_temp_counter();
+	reset_ns_tmp_counter();
 
 	if (options.arch === "aarch64") {
 		reset_value_string_counter();
@@ -373,7 +391,12 @@ export default function build(
  */
 export function build_split(
 	root: BaseNode,
-	options: { arch?: "c" | "aarch64"; platform?: string; audit?: boolean } = {},
+	options: {
+		arch?: "c" | "aarch64";
+		platform?: string;
+		audit?: boolean;
+		optimize?: boolean;
+	} = {},
 ): BuildResult {
 	const platform = options.platform ?? default_platform();
 	// GUI (ObjC) builds use file-scope raw C blocks (resize callbacks, etc.)

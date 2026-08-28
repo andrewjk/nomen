@@ -53,18 +53,6 @@ Perf note: interpolated string args and `.to_string()` on strings now cost
 one malloc+memcpy+free each on aarch64 (C always paid this). Identity-copy
 elision remains possible future work if benches demand it.
 
-## aarch64: enum-with-data returns point into the callee's dead frame
-
-An enum-with-data return hands back `x0 = &tag+payload` pointing INTO the
-callee's stack frame. It is sound ONLY while the caller copies the blob
-before its next call — any intervening call (e.g. a `#destroy` running after
-the value was built) overwrites the bytes. `File.read_all`/`write_all` are
-shaped around this today (materialize into a local, then `return` the local,
-so the pointer targets the returning function's own live frame). Robust long-
-term fix: give enums the struct sret convention (caller-provided buffer via
-x8) so liveness stops depending on copy timing. Until then, treat "return an
-enum built by another call" as a hazard when writing library wrappers.
-
 ## `KNOWN_HEAP_RETURNING` — dissolved (fixed)
 
 Fixed by converting every registered function to a `mov out string`

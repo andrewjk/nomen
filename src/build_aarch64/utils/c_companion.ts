@@ -6,7 +6,7 @@ import FunctionNode from "../../nodes/FunctionNode.ts";
 import ParameterNode from "../../nodes/ParameterNode.ts";
 import StructNode from "../../nodes/StructNode.ts";
 import TraitNode from "../../nodes/TraitNode.ts";
-import { get_struct_size } from "./struct_layout.ts";
+import { get_enum_sret_size, get_struct_size } from "./struct_layout.ts";
 
 export interface CompanionFunction {
 	func: FunctionNode;
@@ -289,8 +289,15 @@ function generate_c_function(
 	// Struct-returning functions get a `_c` suffix because the aarch64
 	// assembly emits a thunk (under the bare name) that bridges the x8
 	// struct-return convention to the standard ARM64 register-return ABI.
+	// Enum-with-data returns share the x8 sret convention on the asm side,
+	// so they need the same bridging when the C ABI would return the value
+	// in registers (≤ 16 bytes; larger C returns already ride the hidden
+	// x8 sret pointer, matching the asm convention naturally).
+	const return_enum_size = return_struct ? undefined : get_enum_sret_size(return_type, status);
 	const return_struct_size = return_struct ? get_struct_size(return_type, status) : 0;
-	const needs_thunk = return_struct && return_struct_size <= 16;
+	const needs_thunk =
+		(return_struct && return_struct_size <= 16) ||
+		(return_enum_size !== undefined && return_enum_size <= 16);
 	const symbol_label = needs_thunk ? `${func_label}_c` : func_label;
 
 	// --- Build parameter list ---

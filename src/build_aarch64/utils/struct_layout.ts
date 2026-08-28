@@ -172,6 +172,24 @@ export function get_enum_size(enum_name: string, status: BuildStatus): number {
 	return 8 + Math.ceil(max_payload / 8) * 8;
 }
 
+/**
+ * The sret size for an enum-with-data return type, or undefined when `name`
+ * is not an enum that uses the sret convention. Enums with associated data
+ * ride the SAME caller-provided x8 buffer convention as structs: a plain x0
+ * return would hand the caller a pointer into the callee's (now dead) stack
+ * frame, which any intervening call clobbers. Simple enums (no associated
+ * data) are 8-byte scalars returned in x0 — no sret.
+ */
+export function get_enum_sret_size(
+	name: string | undefined,
+	status: BuildStatus,
+): number | undefined {
+	if (!name) return undefined;
+	const enum_node = status.enums.find((e) => e.name === name);
+	if (!enum_node?.has_associated_data) return undefined;
+	return get_enum_size(name, status);
+}
+
 export function get_enum_payload_offset(
 	enum_name: string,
 	case_name: string,

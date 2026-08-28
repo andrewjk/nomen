@@ -3,7 +3,7 @@ import { is_overloaded, mangled_label } from "../check/utils/function_overload.t
 import FunctionNode from "../nodes/FunctionNode.ts";
 import RawNode from "../nodes/RawNode.ts";
 import { check_raw_arch_coverage, parse_raw_directives } from "../raw_directives.ts";
-import { get_struct_size } from "./utils/struct_layout.ts";
+import { get_enum_sret_size, get_struct_size } from "./utils/struct_layout.ts";
 
 export default function build_raw_node(node: RawNode, status: BuildStatus) {
 	const { should_emit, code, is_c, scope } = parse_raw_directives(
@@ -105,16 +105,23 @@ export function check_c_fallback(
 
 		// Emit an assembly thunk when the function returns a struct ≤ 16 bytes.
 		// The aarch64 backend uses x8 (caller-allocated buffer) for ALL struct
-		// returns, but the standard ARM64 ABI used by the C companion returns
-		// small structs in registers x0/x1. The thunk bridges the gap.
+		// returns — and, like structs, for all enum-with-data returns — but
+		// the standard ARM64 ABI used by the C companion returns small structs
+		// in registers x0/x1. The thunk bridges the gap. (> 16-byte returns
+		// already ride C's hidden-pointer sret, which matches x8 naturally.)
 		const return_type = func.return_type?.name || "";
 		const return_struct = status.structs.find(
 			(s) => s.name === return_type && !s.is_simple_type && !s.is_class,
 		);
+		const enum_sret_size = get_enum_sret_size(return_type, status);
 		if (return_struct) {
 			const struct_size = get_struct_size(return_type, status);
 			if (struct_size <= 16) {
 				emit_struct_return_thunk(func, struct_name, status, struct_size);
+			}
+		} else if (enum_sret_size !== undefined) {
+			if (enum_sret_size <= 16) {
+				emit_struct_return_thunk(func, struct_name, status, enum_sret_size);
 			}
 		}
 

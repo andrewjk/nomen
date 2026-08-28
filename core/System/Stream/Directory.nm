@@ -183,13 +183,17 @@ pub struct Directory {
 		```
 		```
 		#arch: aarch64
-		// Fat-string ABI: path = (x0, x1). Returns x0 = &tag+payload blob
-		// (24 bytes below the restored sp — the caller copies it before its
-		// next call, matching the enum-return convention).
+		// Fat-string ABI: path = (x0, x1). Enum-with-data returns use the
+		// sret convention: x8 holds the caller-provided destination buffer
+		// on entry (the prologue spills it; this body re-saves it across the
+		// calls below). The final blob (tag+payload, 24 bytes) is copied
+		// through x8 and the buffer address returned in x0.
 		//
 		// Frame (sp-relative): #0 DIR*, #8 blob.tag, #16 blob.ptr,
-		// #24 blob.len, #32 readdir ent, #40 namlen, #48 cap, #56 buf.
-		sub sp, sp, #64
+		// #24 blob.len, #32 readdir ent, #40 namlen, #48 cap, #56 buf,
+		// #64 saved sret pointer (x8).
+		sub sp, sp, #80
+		str x8, [sp, #64]
 		bl _opendir
 		str x0, [sp, #0]
 		cbnz x0, .Ldir_list_opened
@@ -280,8 +284,17 @@ pub struct Directory {
 		ldr x1, [sp, #24]
 		stp x0, x1, [sp, #16]
 		.Ldir_list_ret:
-		add x0, sp, #8         // &blob (tag slot base)
-		add sp, sp, #64
+		// Copy the blob into the caller's sret buffer (x8), then hand the
+		// buffer address back in x0.
+		ldr x8, [sp, #64]
+		ldr x0, [sp, #8]
+		str x0, [x8]
+		ldr x0, [sp, #16]
+		str x0, [x8, #8]
+		ldr x0, [sp, #24]
+		str x0, [x8, #16]
+		mov x0, x8
+		add sp, sp, #80
 		b .return_Directory_list
 		```
 		return Result.error(DirectoryError.other)

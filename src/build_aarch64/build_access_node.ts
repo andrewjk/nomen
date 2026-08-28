@@ -41,6 +41,7 @@ import {
 	emit_string_pair_load_at,
 } from "./utils/string_pair.ts";
 import { get_enum_size } from "./utils/struct_layout.ts";
+import { get_enum_sret_size } from "./utils/struct_layout.ts";
 import { get_field_offset, get_struct_size } from "./utils/struct_layout.ts";
 import {
 	emit_view_materialize_owned,
@@ -1677,18 +1678,24 @@ function build_access_method(
 	// An ARRAY-typed return (`out Array<T>`, e.g. `with`/`add`/`mul`) is a
 	// heap buffer POINTER in x0, never an sret struct — even when the element
 	// T is itself a struct (the element name would otherwise match below).
+	// An enum-with-data return uses sret like a struct (see build_function_node).
 	const return_struct =
 		!access_func.type.is_view &&
 		!access_func.type.is_array &&
-		!!status.structs.find(
+		(!!status.structs.find(
 			(s) => s.name === access_func.type.name && !s.is_simple_type && !s.is_class,
-		);
+		) ||
+			get_enum_sret_size(access_func.type.name, status) !== undefined);
 
 	let temp_addr = "";
 	let temp_offset = 0;
 	if (return_struct) {
+		const return_enum_size = get_enum_sret_size(access_func.type.name, status);
 		temp_addr = `_access_temp_${access_temp_counter++}`;
-		temp_offset = allocate_stack_space(status, get_struct_size(access_func.type.name, status));
+		temp_offset = allocate_stack_space(
+			status,
+			return_enum_size ?? get_struct_size(access_func.type.name, status),
+		);
 		status.stack_offsets!.set(temp_addr, temp_offset);
 		status.code += `add x8, x29, #${temp_offset}\n`;
 	}

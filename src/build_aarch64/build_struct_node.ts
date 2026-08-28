@@ -31,6 +31,7 @@ import { allocate_stack_space } from "./utils/stack_var.ts";
 import { emit_owning_array_string_specialize, emit_pair_store_to } from "./utils/string_pair.ts";
 import {
 	get_enum_case_index,
+	get_enum_sret_size,
 	get_enum_size,
 	get_field_has_offset,
 	get_field_offset,
@@ -1129,12 +1130,15 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 
 		// An ARRAY-typed return (`out Array<T>`) is a heap buffer POINTER in
 		// x0 — never sret, even when the element type is a struct (the
-		// element name would otherwise match below).
+		// element name would otherwise match below). An enum-with-data return
+		// uses sret like a struct (a plain x0 return would hand the caller a
+		// pointer into this method's dead frame).
 		const return_struct =
 			!func.return_type?.is_array &&
-			!!status.structs.find(
+			(!!status.structs.find(
 				(s) => s.name === func.return_type?.name && !s.is_simple_type && !s.is_class,
-			);
+			) ||
+				get_enum_sret_size(func.return_type?.name, status) !== undefined);
 		let return_buffer_stack_offset: number | undefined;
 		// Record the function name so build_return_node can register the
 		// function in heap_returning_functions and look up its return type

@@ -32,7 +32,7 @@ import {
 } from "./utils/auto_destroy.ts";
 import { allocate_stack_space, emit_var_address, emit_var_store } from "./utils/stack_var.ts";
 import { emit_strdup_string } from "./utils/string_pair.ts";
-import { emit_struct_copy, get_struct_size } from "./utils/struct_layout.ts";
+import { emit_struct_copy, get_enum_sret_size, get_struct_size } from "./utils/struct_layout.ts";
 
 let return_val_counter = 0;
 
@@ -511,12 +511,26 @@ export default function build_return_node(
 		const ret_struct = status.structs.find(
 			(s) => s.name === status.function_return_type!.name && !s.is_simple_type && !s.is_class,
 		);
-		if (ret_struct) {
+		// An enum-with-data return shares the sret convention: copy the
+		// tag+payload blob into the caller-provided x8 buffer (sized by
+		// get_enum_size). The copy happens HERE — before the scope-exit
+		// destroy `bl`s below — so the source bytes (a callee frame for a
+		// `return f()` value, or this frame's temps) are still live.
+		const ret_enum_size = ret_struct
+			? undefined
+			: get_enum_sret_size(status.function_return_type!.name, status);
+		if (ret_struct || ret_enum_size !== undefined) {
 			if (status.return_buffer_stack_offset !== undefined) {
 				status.code += `ldr x8, [x29, #${status.return_buffer_stack_offset}]\n`;
 			}
-			const struct_size = get_struct_size(status.function_return_type!.name, status);
-			if (node.value.node_type === "value") {
+			const struct_size = ret_struct
+				? get_struct_size(status.function_return_type!.name, status)
+				: ret_enum_size!;
+			// A `value` node is a plain variable/param reference — EXCEPT an
+			// enum case shorthand (`.none`, checker-stamped to its mono name),
+			// which is not a declaration: its build already left x0 pointing at
+			// the tag+payload temp, so copy straight from x0.
+			if (node.value.node_type === "value" && !(node.value as ValueNode).is_enum_shorthand) {
 				const var_name = (node.value as ValueNode).value;
 				const paramReg = status.function_param_regs?.get(var_name);
 				if (paramReg) {
@@ -528,12 +542,13 @@ export default function build_return_node(
 			} else {
 				emit_struct_copy("x0", "x8", 0, struct_size, status);
 			}
-			// For a nullable struct return, the sret buffer is sized
+			// For a nullable STRUCT return, the sret buffer is sized
 			// `struct_size + 8` and the 8-byte word at [struct_size] is the
 			// companion `_has` flag. We've just copied the non-null value —
 			// write `1` so the caller sees the result as non-null. (The
 			// null-return path is handled at the top of this function.)
-			if (returns_nullable_struct) {
+			// Enums are never nullable, so this stays struct-only.
+			if (ret_struct && returns_nullable_struct) {
 				status.code += `mov x9, #1\n`;
 				status.code += `str x9, [x8, #${struct_size}]\n`;
 			}

@@ -28,7 +28,7 @@ import {
 	is_local_ref_var,
 } from "./utils/stack_var.ts";
 import { emit_strdup_string } from "./utils/string_pair.ts";
-import { get_enum_size, get_struct_size } from "./utils/struct_layout.ts";
+import { get_enum_sret_size, get_enum_size, get_struct_size } from "./utils/struct_layout.ts";
 import { emit_view_string_arg } from "./utils/view_value.ts";
 
 let temp_counter = 0;
@@ -700,12 +700,19 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			const return_struct = status.structs.find(
 				(s) => s.name === node.type!.name && !s.is_simple_type && !s.is_class,
 			);
-			if (return_struct) {
+			// An enum-with-data return rides the same sret convention (see
+			// build_function_node) — preset x8 with a caller-owned temp so the
+			// result blob lands in THIS frame instead of the callee's dead one.
+			const return_enum_size = get_enum_sret_size(node.type?.name, status);
+			if (return_struct || return_enum_size !== undefined) {
 				// A nullable struct return's temp must hold both the struct value
 				// AND its companion `_has` flag (struct_size + 8 bytes), so the
 				// callee can write the null/non-null bit at [temp + struct_size].
+				// Enums are never nullable.
 				const nullable_ret = is_nullable_struct_type(node.type, status);
-				const struct_size = get_struct_size(node.type!.name, status);
+				const struct_size = return_struct
+					? get_struct_size(node.type!.name, status)
+					: return_enum_size!;
 				const total = nullable_ret ? struct_size + 8 : struct_size;
 				const temp_name = `_call_ret_${temp_counter++}`;
 				const offset = allocate_stack_space(status, total);
@@ -814,7 +821,8 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			const return_struct = status.structs.find(
 				(s) => s.name === node.type!.name && !s.is_simple_type && !s.is_class,
 			);
-			if (return_struct) {
+			const return_enum_size = get_enum_sret_size(node.type?.name, status);
+			if (return_struct || return_enum_size !== undefined) {
 				const temp_name = `_call_ret_${temp_counter - 1}`;
 				const offset = status.stack_offsets!.get(temp_name)!;
 				status.code += `add x0, x29, #${offset}\n`;
