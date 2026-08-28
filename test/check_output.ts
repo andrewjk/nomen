@@ -113,9 +113,6 @@ export default async function check_output(
 		arch,
 	});
 
-	let stdout: string;
-	let stderr: string;
-
 	// The system object references the audit wrappers (nomen_malloc_wrap), so
 	// whenever we link it we must also link audit_runtime.o — regardless of the
 	// individual test's audit flag.
@@ -132,54 +129,111 @@ export default async function check_output(
 
 	const cached_key = fs.existsSync(cachefile) ? fs.readFileSync(cachefile, "utf-8") : null;
 
-	if (cache_key === cached_key && fs.existsSync(outputfile)) {
-		stdout = fs.readFileSync(outputfile, "utf-8");
-		stderr = "";
-	} else {
-		fs.writeFileSync(codefile, code);
-		let compileCmd: string;
-		if (arch === "aarch64") {
-			const main_obj = path.join(folder, "main.o");
-			const comp_obj = path.join(folder, "main_companion.o");
-			const steps: string[] = [];
-			steps.push(`clang -c -x assembler ${codefile} -o ${main_obj}`);
-			let link_inputs = main_obj;
-			if (has_companion) {
-				steps.push(`clang -c ${companionfile} -o ${comp_obj}`);
-				link_inputs += ` ${comp_obj}`;
-			}
-			if (system_obj) link_inputs += ` ${system_obj}`;
-			if (audit_obj) link_inputs += ` ${audit_obj}`;
-			steps.push(`clang ${link_inputs} -o ${outfile}${framework_flags}`);
-			compileCmd = steps.join(" && ");
-		} else {
-			let link_inputs = codefile;
-			if (has_companion) link_inputs += ` ${companionfile}`;
-			if (system_obj) link_inputs += ` ${system_obj}`;
-			if (audit_obj) link_inputs += ` ${audit_obj}`;
-			compileCmd = `clang -o ${outfile} ${link_inputs}${framework_flags}`;
+	// Full acceptance check for a captured stdout. Runs the assertions the
+	// caller expects; throws (vitest) on the first failure.
+	const assert_output = (got: string, run_stderr: string): void => {
+		if (run_stderr && run_stderr.includes("error:")) {
+			expect(run_stderr).toBeFalsy();
 		}
-		const compile_result = await execPromise(compileCmd, { maxBuffer: 10 * 1024 * 1024 });
+		if (audit && got && got.includes("LEAK:")) {
+			expect(got).not.toContain("LEAK:");
+		}
+		expect(got.substring(0, expected_output.length)).toBe(expected_output);
+	};
+
+	// Cache entries must only ever hold output that passed assert_output.
+	// Writing them before validation let a bad run (e.g. a concurrent suite
+	// run clobbering this test's data files) poison the cache permanently.
+	const write_atomic = (file: string, data: string): void => {
+		const tmp = `${file}.tmp.${process.pid}.${crypto.randomBytes(6).toString("hex")}`;
+		fs.writeFileSync(tmp, data);
+		fs.renameSync(tmp, file);
+	};
+	const purge_cache = (): void => {
+		fs.rmSync(outputfile, { force: true });
+		fs.rmSync(cachefile, { force: true });
+	};
+
+	if (cache_key === cached_key && fs.existsSync(outputfile)) {
+		const cached_stdout = fs.readFileSync(outputfile, "utf-8");
+		try {
+			assert_output(cached_stdout, "");
+			return;
+		} catch {
+			// The cached output fails its own assertion — it was written by a
+			// bad run before validation existed. Purge and execute for real
+			// so the test recovers instead of replaying the poison forever.
+			purge_cache();
+		}
+	}
+
+	fs.writeFileSync(codefile, code);
+	let compileCmd: string;
+	if (arch === "aarch64") {
+		const main_obj = path.join(folder, "main.o");
+		const comp_obj = path.join(folder, "main_companion.o");
+		const steps: string[] = [];
+		steps.push(`clang -c -x assembler ${codefile} -o ${main_obj}`);
+		let link_inputs = main_obj;
+		if (has_companion) {
+			steps.push(`clang -c ${companionfile} -o ${comp_obj}`);
+			link_inputs += ` ${comp_obj}`;
+		}
+		if (system_obj) link_inputs += ` ${system_obj}`;
+		if (audit_obj) link_inputs += ` ${audit_obj}`;
+		steps.push(`clang ${link_inputs} -o ${outfile}${framework_flags}`);
+		compileCmd = steps.join(" && ");
+	} else {
+		let link_inputs = codefile;
+		if (has_companion) link_inputs += ` ${companionfile}`;
+		if (system_obj) link_inputs += ` ${system_obj}`;
+		if (audit_obj) link_inputs += ` ${audit_obj}`;
+		compileCmd = `clang -o ${outfile} ${link_inputs}${framework_flags}`;
+	}
+	const compile_result = await execPromise(compileCmd, { maxBuffer: 10 * 1024 * 1024 });
+
+	// Execute the binary in a private scratch directory. Programs under test
+	// create files/directories with relative paths, so a shared CWD let two
+	// concurrent suite runs (e.g. watch mode + a CLI run) clobber each other's
+	// data files and observe each other's deletes — producing flaky outputs
+	// that then got cached. A fresh scratch dir per run makes the overlap
+	// impossible while the code (and thus the cache key) stays deterministic.
+	const rundir = path.join(folder, `run-${process.pid}-${crypto.randomBytes(6).toString("hex")}`);
+	fs.mkdirSync(rundir, { recursive: true });
+	let stdout: string;
+	let stderr: string;
+	let failed = false;
+	try {
 		let run_cmd = `"${outfile}"`;
 		if (options.provideStdin !== undefined) {
-			const inputfile = path.join(folder, "input.txt");
+			const inputfile = path.join(rundir, "input.txt");
 			fs.writeFileSync(inputfile, options.provideStdin);
 			run_cmd = `"${outfile}" < "${inputfile}"`;
 		}
-		const run_result = await execPromise(run_cmd, { cwd: folder, maxBuffer: 10 * 1024 * 1024 });
+		const run_result = await execPromise(run_cmd, { cwd: rundir, maxBuffer: 10 * 1024 * 1024 });
 		stdout = run_result.stdout;
 		stderr = (compile_result.stderr || "") + (run_result.stderr || "");
-		fs.writeFileSync(outputfile, stdout);
-		fs.writeFileSync(cachefile, cache_key);
+	} catch (error) {
+		failed = true;
+		throw error;
+	} finally {
+		// Keep the scratch dir around for inspection when the run itself
+		// failed; otherwise remove it so no data files linger in the tree.
+		if (!failed) {
+			fs.rmSync(rundir, { recursive: true, force: true });
+		}
 	}
 
-	if (stderr && stderr.includes("error:")) {
-		expect(stderr).toBeFalsy();
+	try {
+		assert_output(stdout, stderr);
+	} catch (error) {
+		// Never leave a failing output behind as a cache entry: purge so the
+		// next run executes for real instead of replaying this one.
+		purge_cache();
+		throw error;
 	}
-	if (audit && stdout && stdout.includes("LEAK:")) {
-		expect(stdout).not.toContain("LEAK:");
-	}
-	expect(stdout.substring(0, expected_output.length)).toBe(expected_output);
+	write_atomic(outputfile, stdout);
+	write_atomic(cachefile, cache_key);
 }
 
 function compute_cache_key(

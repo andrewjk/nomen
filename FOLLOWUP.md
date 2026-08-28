@@ -122,13 +122,6 @@ concurrency/caching artifact in `check_output`'s cache write under load.
 Worth investigating `test/check_output.ts`'s `outputfile`/`cachefile` writes
 if it keeps biting.
 
-ALSO: a failure that happens once under load POISONS the per-test cache —
-the wrong `output.txt` + matching `.cache` key are replayed on every later
-run even though the binary is fine (hit 2026-08-25: six file/dir tests
-failed cold, then kept "failing" warm until `test/out/<arch>/<name>/` was
-deleted). Any triage of a suspicious failure should start with
-`rm -rf test/out/<arch>/<name>` for that test before believing it.
-
 ## Residual ownership-tracking gaps (accepted, narrow)
 
 - **Trait-dispatched value-struct methods bypass the self-write record
