@@ -27,6 +27,11 @@
 
 const REG = /^[wx][0-9]+$/;
 const COND_OPS = new Set(["eq", "ne", "gt", "ge", "lt", "le", "hi", "hs", "lo", "ls", "al"]);
+// Any label form: symbol labels (`foo:` / `.Lx:`), numeric local labels
+// (`1:`, used by raw `#arch: aarch64` blocks), and label+data lines
+// (`_str_1: .asciz "..."`). All are join points — tracked constants from a
+// preceding block don't hold for a jump arriving at the label.
+const ANY_LABEL_RE = /^(?:[A-Za-z_.$][\w.$]*|\d+):/;
 
 function split_comment(line: string): string {
 	return line.replace(/\/\/.*$/, "");
@@ -91,7 +96,7 @@ export function fold_asm_constants(asm: string): string {
 
 		// Label or assembler directive: a possible join point — drop all
 		// tracked constants.
-		if (/^\.[\w$]+:$/.test(line) || line.startsWith(".")) {
+		if (ANY_LABEL_RE.test(line) || line.startsWith(".")) {
 			clear();
 			out.push(raw_line);
 			i++;

@@ -11,10 +11,13 @@ const input_file = process.argv[2];
 const output_file = process.argv[3];
 const lib_arg = process.argv[4];
 const arch = (process.argv[5] as "c" | "aarch64") ?? "aarch64";
+// Optional release toggle (default on — benchmarks are release builds).
+// "0" builds the unoptimized baseline for before/after comparisons.
+const release = process.argv[6] !== "0";
 
 if (!input_file || !output_file) {
 	console.error(
-		"Usage: tsx compile_nomen.ts <input.nm> <output_binary> [lib_path] [arch=c|aarch64]",
+		"Usage: tsx compile_nomen.ts <input.nm> <output_binary> [lib_path] [arch=c|aarch64] [release=1|0]",
 	);
 	process.exit(1);
 }
@@ -63,7 +66,7 @@ if (parsed.errors.length) {
 	process.exit(1);
 }
 
-const result = build(parsed.root, { arch });
+const result = build(parsed.root, { arch, optimize: release });
 
 const out = path.resolve(output_file);
 const folder = path.dirname(out);
@@ -85,7 +88,10 @@ if (arch === "c") {
 		fs.writeFileSync(companion_file, result.companion);
 		link_inputs += ` ${companion_file}`;
 	}
-	execSync(`clang ${link_inputs} -o ${out} -lm`);
+	// -O2 matches the optimized builds the other languages use (go build,
+	// zig -O ReleaseFast, cargo --release); at -O0 the C backend's per-char
+	// accessors and string adapters stay un-inlined call chains.
+	execSync(`clang ${release ? "-O2" : ""} ${link_inputs} -o ${out} -lm`);
 } else {
 	let code = result.code;
 	code = code.replace(/\bbl printf\b/g, "bl _printf");
@@ -106,5 +112,8 @@ if (arch === "c") {
 		fs.writeFileSync(companion_file, result.companion);
 		link_inputs += ` ${companion_file}`;
 	}
-	execSync(`clang ${link_inputs} -o ${out}`);
+	// The .s is assembled verbatim (its optimizations are the codegen
+	// passes enabled via `optimize` above), but the companion C file (if
+	// any) is a real compilation — give it the same -O2 the C backend gets.
+	execSync(`clang ${release ? "-O2" : ""} ${link_inputs} -o ${out}`);
 }
