@@ -26,6 +26,8 @@ import build_node from "./build_node.ts";
 import build_return_node from "./build_return_node.ts";
 import build_switch_node from "./build_switch_node.ts";
 import build_while_loop_node from "./build_while_loop_node.ts";
+import { neon_vectorization_enabled } from "./neon_emit.ts";
+import { plan_vector_loop } from "./neon_plan.ts";
 
 /**
  * NIR-driven emission (ASM_PLAN phase 4, canonical-IR stage 2).
@@ -100,7 +102,16 @@ export function emit_stmt_from_nir(
 				build_if_else_node(child as IfElseNode, status, nstmt);
 				return;
 			case "while":
-				build_while_loop_node(child as WhileLoopNode, status, nstmt);
+				// NEON vectorization planning rides exactly this dispatch point:
+				// the plan needs the NIR list (init check + post-loop reads),
+				// which only exists under an active cursor. A null plan leaves
+				// emission byte-identical to the plain scalar loop.
+				build_while_loop_node(
+					child as WhileLoopNode,
+					status,
+					nstmt,
+					neon_vectorization_enabled() ? plan_vector_loop(nstmt, index, ctx.stmts, status) : null,
+				);
 				return;
 			case "for":
 				build_for_loop_node(child as ForLoopNode, status, nstmt);

@@ -4,6 +4,7 @@ import { expect, test } from "vite-plus/test";
 
 import build from "../src/build";
 import { set_nir_emission_enabled } from "../src/build_aarch64/emit_nir";
+import { set_neon_vectorization_enabled } from "../src/build_aarch64/neon_emit";
 import join from "../src/join";
 import { get_library } from "../src/lib";
 import { lower_function } from "../src/nir/from_ast";
@@ -17,6 +18,10 @@ import parse_with_imports, { parse_raw } from "./parse_with_imports";
  * makes emit_stmt_from_nir delegate every statement to build_node, the exact
  * statement-level walk the retired whole-function fallback performed) — and
  * requires the generated aarch64 assembly to match exactly.
+ *
+ * The NEON vectorizer rides the same NIR cursor but INTENTIONALLY changes
+ * output, so it is held off in both arms: these tests prove the seam
+ * mechanics, not the vectorizer (see test/neon_vector.test.ts).
  */
 
 function compile_aarch64(source: string, raw = false): string {
@@ -28,6 +33,7 @@ function compile_aarch64(source: string, raw = false): string {
 
 function expect_byte_identical(source: string, raw = false): void {
 	set_nir_emission_enabled(false);
+	set_neon_vectorization_enabled(false);
 	const baseline = compile_aarch64(source, raw);
 	set_nir_emission_enabled(true);
 	try {
@@ -36,6 +42,7 @@ function expect_byte_identical(source: string, raw = false): void {
 		expect(with_nir).toEqual(baseline);
 	} finally {
 		set_nir_emission_enabled(true);
+		set_neon_vectorization_enabled(true);
 	}
 }
 
@@ -764,13 +771,18 @@ test("whole benchmark corpus is byte-identical through NIR emission", () => {
 			const result = build(parsed.root, { arch: "aarch64" });
 			return result.code;
 		};
+		// The NEON vectorizer intentionally changes output, so it is held off
+		// in both arms (see the harness comment at the top of this file).
 		set_nir_emission_enabled(false);
+		set_neon_vectorization_enabled(false);
 		const baseline = compile();
 		set_nir_emission_enabled(true);
+		set_neon_vectorization_enabled(false);
 		try {
 			expect(compile(), file).toEqual(baseline);
 		} finally {
 			set_nir_emission_enabled(true);
+			set_neon_vectorization_enabled(true);
 		}
 	}
 });

@@ -440,6 +440,35 @@ Changes applied:
     deleted. Refactor-only: generated `.s` byte-identical across the seven
     benchmark binaries. This is the substrate the plan's remaining phase-4
     items (backend lowering from IR, then NEON) build against.
+33. **NEON auto-vectorization tranche 1 — elementwise float loops**
+    (`src/build_aarch64/neon_plan.ts` + `neon_emit.ts`): the canonical-IR
+    pipeline pays off. `emit_stmt_from_nir`'s `while` dispatch now attempts
+    `plan_vector_loop`, which pattern-matches the canonical count-up
+    elementwise float loop (`var i = 0; while i < n; i += 1` whose body is
+    straight-line `load_float`/`store_float` traffic at bare index `i` —
+    including per-lane temps and the checker-hoisted `_param_N` arg temps)
+    and, when every soundness condition holds, emits a 2-lane `.2d` NEON
+    vector loop before the unchanged scalar loop (the tail). Soundness:
+    every Buffer access at exactly the induction index makes aliasing a
+    non-issue (lane k only reads/writes element i+k whatever the buffers
+    alias); reductions are rejected (float reassociation would change
+    results); temps never escape (post-loop reads reject); bound hoisting
+    requires an invariant leaf/literal bound and a zero init. Q-register
+    register-offset addressing only encodes scale #0/#4, so the vector
+    counter runs in 16-byte pair units (`asr x9, xN, #1` = floor(n/2)
+    iterations; `lsl x0, x10, #1` syncs the induction for the tail).
+    Measured (interleaved best-of-5/7): saxpy-style elementwise loop
+    **−65%** (86 → 30 ms median, 2M elements × 20 reps); spectral-norm
+    −3…−6% (its O(n) init loop against O(n²) total work); all other bench
+    programs byte-identical asm and perf-neutral (the vectorizer only fires
+    on the matched pattern; everything else emits the same code as before).
+    Output is bit-identical (same per-element ops in the same order — no
+    reassociation). Gated on the NIR emission cursor, so the byte-identity
+    A/B harness holds it off (`set_neon_vectorization_enabled`); the
+    contract table (asm_ir.ts) gained `q`/`v.2d` operand forms plus
+    `dup`/`bic`/vector-`mov`. Remaining for tranche 2: `.2s`/int element
+    types, reduction accumulation, `for`-range loops, shifted-index
+    patterns behind alias checks.
 
 ### Known issues
 

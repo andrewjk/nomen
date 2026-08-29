@@ -67,14 +67,23 @@ const FPR = new Set<string>();
 for (let i = 0; i <= 31; i++) {
 	FPR.add(`d${i}`);
 	FPR.add(`s${i}`);
+	FPR.add(`q${i}`);
 }
+
+/**
+ * Vector operand forms the NEON lowering emits: an arrangement-suffixed
+ * register (`v0.2d`, `v1.16b`) or a lane accessor (`v0.d[0]`). They classify
+ * as FPRs (width 128) — the arrangement/lane suffix carries no validation
+ * semantics the lift needs, only the register does.
+ */
+const VECTOR_FORM_RE = /^[vq]\d+\.(16b|8b|2d|1d|2s|4s|[ds]\[\d+\])$/;
 
 export function is_gpr(name: string): boolean {
 	return GPR64.has(name);
 }
 
 export function is_fpr(name: string): boolean {
-	return FPR.has(name);
+	return FPR.has(name) || VECTOR_FORM_RE.test(name);
 }
 
 export function reg_class(name: string): "gpr" | "fpr" | null {
@@ -129,8 +138,11 @@ export const MNEMONICS: Record<string, MnemonicSig> = {
 		shapes: [
 			["r", "r"],
 			["r", "i"],
+			["f", "f"], // vector mov (`mov v0.16b, v4.16b`)
 		],
 	},
+	bic: { shapes: [["r", "r", "i"]] },
+	dup: { shapes: [["f", "f"]] },
 	movz: { shapes: [["r", "i"]] },
 	mvn: { shapes: [["r", "r"]] },
 	fmov: {

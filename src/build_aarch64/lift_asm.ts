@@ -254,7 +254,9 @@ function parse_operand(tok: string): Operand | "labelish" | null {
 	if (reg) {
 		const cls = reg_class(reg)!;
 		const is_floating = cls === "fpr";
-		const width = is_floating ? (reg.startsWith("d") ? 64 : 32) : 64;
+		// d = scalar double (64), q / vector forms (v0.2d, v0.d[0]) = 128,
+		// s = scalar single (32).
+		const width = !is_floating ? 64 : reg.startsWith("d") ? 64 : /^[vs]\d+$/.test(reg) ? 32 : 128;
 		return { kind: "reg", name: reg, cls, width };
 	}
 	const imm = parse_imm(trimmed);

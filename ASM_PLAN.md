@@ -21,12 +21,12 @@ Text passes can't see liveness; the AST has no per-function CFG.
 
 ## Architecture (agreed)
 
-| Phase | Scope                                                                                                       | Status                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| ----- | ----------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **1** | Asm lifter + validator; wire into every build; round-trip fidelity                                          | ✅ DONE, suite green pre-crash                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| **2** | Frame-slot forwarding + dead-store elimination over the lifted IR (`asm_opt.ts`)                            | ✅ DONE — suite green (2468 tests); measured −1…−5% broad, regex-redux −17%                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| **3** | Extract duplicated semantic lowering (ownership/borrows/moves) into `build_common/` shared by BOTH backends | ✅ DONE — first tranche landed, suite green (253 files / 2468 tests)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| **4** | Single canonical IR from the check phase; aarch64 gets real regalloc; eventually NEON                       | 🔄 whole-function regalloc DONE (locals + params, nbody −9%); flow groundwork + canonical NIR stage 1 DONE (planner consumes NIR, codegen byte-identical); CFG + liveness + dominance over NIR DONE; NIR-driven emission tranches 1–5 DONE (if/while/for/switch/match/return/declare/assign/eval + address-position/swap-expr value positions emitted from NIR + expression seam, byte-identical); C backend consumes the seam for control flow + expressions DONE (byte-identical); fallback retirement DONE (lowering total, every statement list cursor-driven, AST fallback deleted — byte-identical); NEON remains |
+| Phase | Scope                                                                                                       | Status                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ----- | ----------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **1** | Asm lifter + validator; wire into every build; round-trip fidelity                                          | ✅ DONE, suite green pre-crash                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| **2** | Frame-slot forwarding + dead-store elimination over the lifted IR (`asm_opt.ts`)                            | ✅ DONE — suite green (2468 tests); measured −1…−5% broad, regex-redux −17%                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| **3** | Extract duplicated semantic lowering (ownership/borrows/moves) into `build_common/` shared by BOTH backends | ✅ DONE — first tranche landed, suite green (253 files / 2468 tests)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| **4** | Single canonical IR from the check phase; aarch64 gets real regalloc; eventually NEON                       | 🔄 whole-function regalloc DONE (locals + params, nbody −9%); flow groundwork + canonical NIR stage 1 DONE (planner consumes NIR, codegen byte-identical); CFG + liveness + dominance over NIR DONE; NIR-driven emission tranches 1–5 DONE (if/while/for/switch/match/return/declare/assign/eval + address-position/swap-expr value positions emitted from NIR + expression seam, byte-identical); C backend consumes the seam for control flow + expressions DONE (byte-identical); fallback retirement DONE (lowering total, every statement list cursor-driven, AST fallback deleted — byte-identical); **NEON tranche 1 DONE** (elementwise float loops → 2-lane `.2d` vector loop + scalar tail; saxpy −65%) |
 
 ## Phase 1 — lifter + validator (DONE)
 
@@ -721,6 +721,90 @@ files / 2573 tests). Tests added: nir.test.ts (flow/spawn/func lowering,
 nested-type opaque, traffic parity pins), nir_cfg.test.ts (flow + spawn fact
 folding into flat statements). Perf: byte-identical output by design.
 
+### NEON vectorization tranche 1 (DONE): elementwise float loops
+
+The vectorizer pass + NEON lowering the plan called the last big lever.
+
+- `src/build_aarch64/neon_plan.ts` — `plan_vector_loop(nstmt, index, list,
+status)`: pattern-matches the canonical count-up elementwise float loop
+  over the NIR (`while` stmt + its enclosing list, which only exist under
+  the emission cursor) and returns a lane plan or null. Soundness model:
+  - **Aliasing is a non-issue by construction** — every Buffer access
+    (load or store, any buffer) uses EXACTLY the induction index, so a
+    2-lane iteration touches the same elements {i, i+1} the two scalar
+    iterations would; no lane reads an element another lane writes
+    whatever the buffers alias. Shifted indices
+    (`load_float(i + 1)`) therefore reject outright.
+  - **No reassociation** — float reductions reject: a name defined anywhere
+    in the loop may only be read AFTER its defining statement (straight-
+    line single-assignment temps); `a = a + …load(i)` fails.
+  - **Temps never escape** — per-lane temps ride v-registers in the vector
+    loop; a temp read anywhere AFTER the loop in the enclosing list rejects
+    the plan (the no-tail-iterations case would expose stale bytes).
+  - **Hoisted call-arg temps** — the checker rewrites non-trivial
+    `store_float` value args into `_param_N` temps attached as
+    `allocations` on the statement node; the planner converts each into a
+    per-lane temp_def built from the temp's ORIGINAL AST initializer
+    (shallow AST→NIR mirror; nested allocations reject). Without this the
+    vector loop would read slots nothing writes.
+  - **Zero init + invariant bound** — the backward init scan requires the
+    nearest induction def to establish literal 0 (declare or assign; calls
+    with ref-args to the induction abort the scan); the bound must be a
+    leaf/literal not defined in the loop. Increment is `i += 1` (update
+    slot or last body statement — the parser stamps `"+="`, not `"+"`).
+  - **No other effects** — only float temp declares/assigns and
+    `store_float` evals; calls, control flow, ref args, swaps, raw all
+    reject. ≤3 distinct Buffers, ≤4 temps, op depth ≤4.
+- `src/build_aarch64/neon_emit.ts` — the lowering. Preheader pins one data
+  pointer per Buffer (x11–x13, via the exported
+  `emit_buffer_struct_addr`), then `lim = asr x9, xN, #1` (floor(N/2)
+  vector iterations; floor semantics keep lane indices < N for ANY signed
+  bound — negative → loop skipped) and a pair-unit counter x10. Loop:
+  `cmp/b.hs`, lanes, `add x10, x10, #1`. Q-register register-offset
+  addressing only encodes scale #0/#4, so lane access is
+  `[xK, x10, lsl #4]` in 16-byte pair units. Exit: `lsl x0, x10, #1` +
+  `emit_var_store(i ← x0)` syncs the induction, then the ORIGINAL scalar
+  loop emits unchanged as the tail (handles the N % 2 remainder, zero
+  iterations when N is even or < 2). Lane compilation: loads → `ldr q0`,
+  literals/invariant scalars → `build_float_operand` + `dup v0.2d,
+v0.d[0]`, temps → `mov v.16b` (v4–v7), binary ops → left in v0, spill to
+  v14→v11 by depth, right in v0, `fadd/fsub/fmul/fdiv v0.2d, v0.2d,
+v1.2d`. No calls inside the loop, so caller-saved x9–x13/v0–v15 are
+  stable; callee-saved/promoted registers untouched; the only frame access
+  is the standard induction sync.
+- Wiring: `emit_stmt_from_nir`'s `while` arm computes the plan (NEON
+  toggle on) and `build_while_loop_node` emits the vector loop after
+  promotion setup, before its own label — the scalar loop is THE tail by
+  construction. Gated on the NIR cursor, so the AST path (and the
+  byte-identity A/B harness) never sees it; the harness
+  (`expect_byte_identical` + the bench corpus test) holds NEON off in both
+  arms via `set_neon_vectorization_enabled`.
+- asm contract: `asm_ir.ts` gained `q0–q31` FPRs, `vN.arr`/`vN.d[k]`
+  operand forms (classified FPR width 128), `bic`, `dup`, and the
+  vector-`mov` shape — the phase-1 validator runs over vectorized output
+  in every build. Phase-2 frame-slot optimization unaffected (no sp/q
+  interaction; the induction sync is a standard slot store).
+
+Proof: `test/neon_vector.test.ts` — 13 tests (two-store init loop emission
+shape; same-buffer load+store with one pinned pointer; per-lane temps;
+kill-switch restores scalar-only; and rejections: reduction, shifted
+index, non-zero init, bound assigned in loop, loop-carried temp, control
+flow, arithmetic index) plus behavioral runs of vectorized binaries on
+BOTH backends with exact output. Spectral-norm's real init loop vectorizes
+(1 `.Lneon_` in the binary) and prints identical results at n=2/100/555.
+Measured (interleaved best-of-5/7, noisy box): saxpy-style elementwise
+loop **−65%** (86 → 30 ms median, 2M × 20 reps); spectral-norm −3…−6%
+(its init loop is O(n) against O(n²) work); nbody/mandelbrot/nsieve/
+fannkuch/pidigits/binarytrees byte-identical asm and perf-neutral. Full
+suite green (259 files / 2596 tests). Also: bench/IMPROVEMENTS.md item 33.
+
+Remaining NEON work (tranches 2+): reduction accumulation (vector
+accumulator + horizontal add, safe because the planner can prove the
+accumulator is loop-private), `for`-range loops, `.2s`/fp32 and int
+element types, shifted-index patterns behind alias/peeling machinery,
+unroll-by-2 vector iterations (4 lanes via two q loads), and a cost
+threshold (trip-count < N → skip vector emission).
+
 ### Remaining phase-4 work (NOT done)
 
 - **Canonical IR stage 2+** — DONE: aarch64 tranches 1–5, the C backend's
@@ -732,10 +816,11 @@ folding into flat statements). Perf: byte-identical output by design.
   survives only as the byte-identity A/B baseline, the join-slot engine for
   value-position flow, and synthetic fragment emission). Stage 1's closed
   union + coverage sets are the contract; unknown kinds now tripwire.
-- **NEON auto-vectorization** — the CFG/liveness/dominance substrate now
-  exists (`src/nir/analysis.ts`: loop discovery with nesting depth, block
-  liveness, frontiers). What remains is the vectorizer pass itself over
-  loop bodies plus a lowering path that can emit NEON from the NIR.
+- **NEON auto-vectorization** — tranche 1 DONE (see above): elementwise
+  float loops vectorize to 2-lane `.2d` with the scalar loop as tail.
+  What remains: reductions, `for`-range, int/fp32 element types, shifted
+  indices behind alias checks, and a trip-count cost threshold (details in
+  the tranche section).
 - Known pre-existing divergence found while testing (recorded in
   FOLLOWUP.md): a shadowed local read after its scope diverges between
   backends (aarch64 `x=10` vs C `x=8`); `stack_offsets` is name-keyed.

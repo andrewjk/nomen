@@ -435,8 +435,9 @@ export function buffer_cache_key(target: BaseNode): string | null {
 // .data pointer) into x9. Handles local variables, params, `self`, and
 // `obj.field` targets. This is the former `emit_buf_addr_to_x9` closure,
 // lifted to module scope so the loop-invariant hoist (loop_buffer_licm) can
-// call it from the loop preheader.
-function emit_buffer_struct_addr(target: BaseNode, status: BuildStatus) {
+// call it from the loop preheader — and so the NEON vectorizer's preheader
+// can pin data pointers the same way.
+export function emit_buffer_struct_addr(target: BaseNode, status: BuildStatus) {
 	if (target.node_type === "value") {
 		const name = (target as ValueNode).value;
 		const paramReg = get_param_reg(name, status);

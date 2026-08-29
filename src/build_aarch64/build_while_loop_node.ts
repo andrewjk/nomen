@@ -4,6 +4,8 @@ import WhileLoopNode from "../nodes/WhileLoopNode.ts";
 import build_node from "./build_node.ts";
 import { emit_cond_branch } from "./build_operation_node.ts";
 import { build_block_with_cursor } from "./emit_nir.ts";
+import { emit_neon_vector_loop } from "./neon_emit.ts";
+import type { NeonPlan } from "./neon_plan.ts";
 import { enter_scope_frame, exit_scope_frame } from "./utils/auto_destroy.ts";
 import { promote_loop_locals, type PromotedVar } from "./utils/loop_promotion.ts";
 import { emit_promoted_store } from "./utils/stack_var.ts";
@@ -24,6 +26,7 @@ export default function build_while_loop_node(
 	node: WhileLoopNode,
 	status: BuildStatus,
 	nir?: NirStmt & { kind: "while" },
+	vector?: NeonPlan | null,
 ) {
 	const old_scoped_declarations = enter_scope_frame(status);
 
@@ -59,6 +62,15 @@ export default function build_while_loop_node(
 
 	// (String `.length` is a load of the fat string's len half — no
 	// strlen hoisting is needed anymore.)
+
+	// NEON vector loop (phase 4): when a plan rides in, emit the 2-lane
+	// loop first; the scalar loop below then executes unchanged as the
+	// tail. The plan is computed only under an active NIR cursor (see
+	// emit_stmt_from_nir), so the AST path — and the byte-identity A/B
+	// harness — never sees it.
+	if (vector) {
+		emit_neon_vector_loop(vector, status);
+	}
 
 	status.code += `${start_label}:\n`;
 

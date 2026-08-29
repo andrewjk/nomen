@@ -13,6 +13,7 @@ import { reset_label_counter as reset_switch_label_counter } from "./build_aarch
 import { reset_string_counter as reset_value_string_counter } from "./build_aarch64/build_value_node.ts";
 import { reset_label_counter as reset_while_label_counter } from "./build_aarch64/build_while_loop_node.ts";
 import { validate_asm } from "./build_aarch64/lift_asm.ts";
+import { reset_neon_counter } from "./build_aarch64/neon_emit.ts";
 import { emit_malloc } from "./build_aarch64/utils/audit.ts";
 import { generate_companion } from "./build_aarch64/utils/c_companion.ts";
 import { scan_heap_returning_functions } from "./build_aarch64/utils/scan_heap_returns.ts";
@@ -97,6 +98,7 @@ export default function build(
 		reset_func_call_temp_counter();
 		reset_inline_counter();
 		reset_decl_const_counters();
+		reset_neon_counter();
 		status.heap_returning_functions = scan_heap_returning_functions(root);
 		status.borrow_returning_functions = scan_borrow_returning_functions(root);
 		status.inline_functions = scan_inline_candidates(root);

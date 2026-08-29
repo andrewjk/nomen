@@ -438,7 +438,7 @@ function is_unsigned_type(node: BaseNode): boolean {
 	return name_is_unsigned_int_type(type?.name || "");
 }
 
-function build_float_operand(node: BaseNode, target_reg: string, status: BuildStatus) {
+export function build_float_operand(node: BaseNode, target_reg: string, status: BuildStatus) {
 	if (node.node_type === "value") {
 		const value = (node as ValueNode).value.replace("self", "_self");
 		if (/^(\+|-)*\d+.\d+$/.test(value)) {
