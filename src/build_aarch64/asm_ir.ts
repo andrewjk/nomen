@@ -68,6 +68,8 @@ for (let i = 0; i <= 31; i++) {
 	FPR.add(`d${i}`);
 	FPR.add(`s${i}`);
 	FPR.add(`q${i}`);
+	// v16-v31: the expression-tree pool (low halves alias d16-d31).
+	if (i >= 16) FPR.add(`v${i}`);
 }
 
 /**

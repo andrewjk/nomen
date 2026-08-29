@@ -542,7 +542,14 @@ v2.4s` for `.4s`), with the combined bits routed `fmov x0, d0` /
     identical): mandelbrot n=1000 144 → 58 ms (−60%; 3.2× faster than
     the release row that motivated ASM_PLAN_2, within ~25% of C `-O2`),
     nbody −31%, fannkuch −7%.
-40. **ASM_PLAN_2 tranche B — spill-order elimination + promoted-operand
+40. **Float expression-tree v-register allocation**: call-free float
+    expression trees allocate into the untouched d16–d31 pool — every
+    interior result gets a tree register, promoted operands are read in
+    place, the root lands in the assignment target. Eliminates the
+    d0/d1-scratch spills and round-trips for complex operands entirely
+    (mbrot: 2798 → 1455 instrs, fmovs 1456 → 116). Falls back cleanly
+    for call-containing or oversized trees.
+41. **ASM_PLAN_2 tranche B — spill-order elimination + promoted-operand
     direct-source selection**: two codegen fixes found by the per-function
     asm-diff analysis method (ASM_PLAN_2). (a) The float/int operand spill
     spilled d1/x2 whenever the LEFT operand was complex — but the spill is

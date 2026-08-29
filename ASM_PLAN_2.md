@@ -162,6 +162,29 @@ C `-O2` entry; nbody 259 → 178 ms (−31%); fannkuch −7%; spectral neutral
 (its cost is the serial denom chain). mbrot (unrolled): 1455 instrs with
 116 fmovs remaining (result writebacks for non-assignment consumers).
 
+## Tranche C addendum — float expression-tree allocation (DONE)
+
+The destination hint covered the ROOT writeback, but complex operands
+still round-tripped through d0/d1 with both-complex spills. The float
+expression compiler now allocates CALL-FREE expression trees into the
+untouched d16–d31 pool (v16–v31's scalar view — verified unused across
+the backend and System raw blocks): every interior result gets its own
+tree register, promoted operands are read IN PLACE as instruction
+sources (zero copies), and the root lands directly in the assignment
+target's register. Gates: no calls/spawns in the tree (they clobber
+v0–v31), ≤14 nodes (monotonic temp counter fits the pool), unsupported
+shapes fall back cleanly. Tree emission is bit-exact — same ops, same
+order, different registers.
+
+`build_float_tree(node, dest, next, status)` returns the result register:
+leaves materialize into `dest` via the existing `build_float_operand`
+(promoted-reg fmov, slot ldr, literal pool load, inline Buffer accessor);
+binaries allocate fresh temps for non-promoted sides and emit
+`fop dest, lreg, rreg`. Wired into the assignment fast path ahead of the
+destination-hint path.
+
+mbrot (unrolled) census: 2798 → 1455 instructions, fmovs 1456 → 116.
+
 **Tranche A revision:** unrolling measured neutral on mandelbrot with the
 spill fix in place (+8% without it — slot traffic multiplied per copy).
 The kernel is a serial FP dependence chain; loop overhead was already

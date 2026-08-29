@@ -12,6 +12,7 @@ import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import { emit_address_of } from "./build_access_node.ts";
 import build_node from "./build_node.ts";
+import { build_float_tree, float_tree_ok, tree_has_call } from "./build_operation_node.ts";
 import { emit_expr_from_nir } from "./emit_nir.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free, emit_strdup } from "./utils/audit.ts";
@@ -154,21 +155,6 @@ function rhs_preserves_x1(node: AssignmentNode, status: BuildStatus): boolean {
 	return true;
 }
 
-function emit_compound_op(op: string, status: BuildStatus, target_is_float = false) {
-	if (target_is_float) {
-		status.code += `fmov d1, x1\n`;
-		status.code += `fmov d0, x0\n`;
-		if (op === "+=") status.code += `fadd d0, d1, d0\n`;
-		else if (op === "-=") status.code += `fsub d0, d1, d0\n`;
-		else if (op === "*=") status.code += `fmul d0, d1, d0\n`;
-		status.code += `fmov x0, d0\n`;
-		return;
-	}
-	if (op === "+=") status.code += `add x0, x1, x0\n`;
-	else if (op === "-=") status.code += `sub x0, x1, x0\n`;
-	else if (op === "*=") status.code += `mul x0, x1, x0\n`;
-}
-
 function get_base_address(access: AccessNode, status: BuildStatus, reg: string) {
 	if (access.target.node_type === "value") {
 		const name = (access.target as ValueNode).value;
@@ -248,6 +234,21 @@ function is_nullable_struct_assignment(node: AssignmentNode, status: BuildStatus
  * `build_node(rhs)`. Every semantic decision (reclamation, aliasing, move
  * marks, swap marshalling) stays on the AST node in the builder.
  */
+function emit_compound_op(op: string, status: BuildStatus, target_is_float = false) {
+	if (target_is_float) {
+		status.code += `fmov d1, x1\n`;
+		status.code += `fmov d0, x0\n`;
+		if (op === "+=") status.code += `fadd d0, d1, d0\n`;
+		else if (op === "-=") status.code += `fsub d0, d1, d0\n`;
+		else if (op === "*=") status.code += `fmul d0, d1, d0\n`;
+		status.code += `fmov x0, d0\n`;
+		return;
+	}
+	if (op === "+=") status.code += `add x0, x1, x0\n`;
+	else if (op === "-=") status.code += `sub x0, x1, x0\n`;
+	else if (op === "*=") status.code += `mul x0, x1, x0\n`;
+}
+
 function emit_rhs_value(rhs: BaseNode, nir: NirExpr | null | undefined, status: BuildStatus): void {
 	if (nir && nir.node === rhs) {
 		emit_expr_from_nir(nir, status);
@@ -1025,6 +1026,23 @@ export default function build_assignment_node(
 			if (alloc_reg_fast?.startsWith("d") && !node.operator && !lhs_is_heap) {
 				status.last_result_is_heap = false;
 				status.float_result_in_d0 = true;
+				// Float expression-tree allocation (ASM_PLAN_2 tranche C):
+				// call-free trees allocate into the untouched v16-v31 pool
+				// with the root landing directly in the target register —
+				// no d0/d1 scratch, no spills, no writeback fmov.
+				if (alloc_reg_fast !== "d0" && alloc_reg_fast !== "d1" && alloc_reg_fast !== "d2") {
+					const seen = new Set<unknown>();
+					if (!tree_has_call(node.right_value, seen)) {
+						const budget = { n: 14 };
+						if (float_tree_ok(node.right_value, budget)) {
+							status.float_result_in_d0 = false;
+							build_float_tree(node.right_value, alloc_reg_fast, { v: 0 }, status);
+							if (!status.code.endsWith("\n")) status.code += "\n";
+							build_swap(node, status, nir_swap);
+							return;
+						}
+					}
+				}
 				// Destination hint (ASM_PLAN_2 tranche C): a float-op RHS
 				// root emits directly into the target's register — no d0 +
 				// writeback fmov. Scratch-safety guard: the hint is never

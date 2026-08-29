@@ -28,6 +28,111 @@ import {
 } from "./utils/struct_layout.ts";
 import { emit_view_string_arg, is_view_value } from "./utils/view_value.ts";
 
+const FLOAT_TREE_FIRST = 16; // d16..d31 — scalar (64-bit) view of v16..v31
+const INLINE_BUFFER_ACCESSORS = new Set([
+	"load_float",
+	"store_float",
+	"load_int",
+	"store_int",
+	"load",
+	"store",
+]);
+
+export function tree_has_call(node: BaseNode, seen: Set<unknown>): boolean {
+	if (!node || typeof node !== "object" || seen.has(node)) return false;
+	seen.add(node);
+	const n = node as unknown as Record<string, unknown>;
+	if (n.node_type === "func_call" || n.node_type === "spawn") return true;
+	if (n.node_type === "access") {
+		const acc = (n as { access?: { node_type?: string; name?: string; params?: unknown[] } })
+			.access;
+		if (acc && acc.node_type === "access_func") {
+			if (!INLINE_BUFFER_ACCESSORS.has(acc.name ?? "")) return true;
+		}
+	}
+	for (const key of Object.keys(n)) {
+		if (key === "parent" || key === "scope") continue;
+		const v = n[key];
+		if (Array.isArray(v)) {
+			for (const item of v) {
+				if (tree_has_call(item, seen)) return true;
+			}
+		} else if (v && typeof v === "object" && "node_type" in (v as object)) {
+			if (tree_has_call(v as unknown as BaseNode, seen)) return true;
+		}
+	}
+	return false;
+}
+
+export function float_tree_ok(node: BaseNode, budget: { n: number }): boolean {
+	if (budget.n <= 0) return false;
+	budget.n--;
+	if (node.node_type === "grouped") {
+		const inner = (node as unknown as { value?: BaseNode }).value;
+		return !!inner && float_tree_ok(inner, budget);
+	}
+	if (node.node_type === "op") {
+		const op = node as OperationNode;
+		if (is_float_type(node) && !is_comparison((node as OperationNode).op)) {
+			// float binary: both sides must themselves be tree-able
+			if (!op.left_value || !op.right_value) return false;
+			return float_tree_ok(op.left_value, budget) && float_tree_ok(op.right_value, budget);
+		}
+		// non-float or comparison op: leaf via build_float_operand
+		return true;
+	}
+	// value / access / cast / etc.: materialized via build_float_operand
+	// or build_node (call-free verified by tree_has_call).
+	return true;
+}
+
+export function build_float_tree(
+	node: BaseNode,
+	dest: string,
+	next: { v: number },
+	status: BuildStatus,
+): string {
+	// Returns the register holding the node's value (usually `dest`).
+	// Promoted float variables are read IN PLACE as instruction sources —
+	// zero copies. Fresh d-temps (d16+) only materialize interior results;
+	// monotonic per-statement counter, so a 14-node tree fits the pool.
+	const src_reg = (side: BaseNode | undefined): string | null => {
+		if (!side || side.node_type !== "value") return null;
+		const name = (side as unknown as ValueNode).value;
+		if (typeof name !== "string" || status.function_param_regs?.has(name)) return null;
+		const reg = status.register_allocations?.get(name);
+		return reg && reg.startsWith("d") ? reg : null;
+	};
+
+	if (node.node_type === "grouped") {
+		const inner = (node as unknown as { value?: BaseNode }).value;
+		if (inner) return build_float_tree(inner, dest, next, status);
+		return dest;
+	}
+	if (node.node_type === "op") {
+		const op = node as OperationNode;
+		if (
+			is_float_type(node) &&
+			!is_comparison((node as OperationNode).op) &&
+			op.left_value &&
+			op.right_value
+		) {
+			const ls = src_reg(op.left_value);
+			const lreg = ls ?? `d${FLOAT_TREE_FIRST + next.v++}`;
+			if (!ls) build_float_tree(op.left_value, lreg, next, status);
+			const rs = src_reg(op.right_value);
+			const rreg = rs ?? `d${FLOAT_TREE_FIRST + next.v++}`;
+			if (!rs) build_float_tree(op.right_value, rreg, next, status);
+			status.code += `${map_float_op(op.op)} ${dest}, ${lreg}, ${rreg}\n`;
+			return dest;
+		}
+	}
+	// Leaf: materialize into dest (promoted reg fmov, slot ldr, literal
+	// pool load, inline Buffer accessor, cast — call-free verified).
+	build_float_operand(node, dest, status);
+	return dest;
+}
+
 let string_counter = 0;
 let coalesce_counter = 0;
 let view_cmp_counter = 0;
@@ -1012,6 +1117,15 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		return;
 	}
 
+	// ---- Float expression-tree v-register allocation (ASM_PLAN_2 tranche C)
+	//
+	// The float expression compiler used hardwired scratch (d0/d1): every
+	// complex operand paid a spill or a d0 round-trip, and every result a
+	// writeback fmov. When a float expression tree is CALL-FREE (calls
+	// clobber v0–v31) and small enough, allocate it into the untouched
+	// v16–v31 pool instead: every intermediate result gets its own v-reg,
+	// promoted operands are used in place, and the root lands directly in
+	// the assignment target's register. Bit-exact — same ops, same order.
 	if (is_float && !is_comparison(node.op)) {
 		const caller_wants_d0 = status.float_result_in_d0 ?? false;
 		status.float_result_in_d0 = false;
