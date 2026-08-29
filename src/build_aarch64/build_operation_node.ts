@@ -977,6 +977,47 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 	if (is_float && !is_comparison(node.op)) {
 		const caller_wants_d0 = status.float_result_in_d0 ?? false;
 		status.float_result_in_d0 = false;
+
+		// FMA contraction (fast_math — the `-ffp-contract=fast` analog):
+		// `a*b ± c` / `c ± a*b` fuse into a single-rounding fmadd family
+		// form. Uniform spill scheme keeps any operand shapes safe: c → d0
+		// → spill, n → d0 → spill, m → d0 → d1, pop n → d0 / c → d2.
+		if (status.fast_math && (node.op === "+" || node.op === "-")) {
+			const mul_of = (side: BaseNode | undefined): OperationNode | null => {
+				if (!side) return null;
+				let n = side;
+				while (n.node_type === "grouped") {
+					n = (n as unknown as { value: BaseNode }).value;
+				}
+				if (n.node_type !== "op" || (n as OperationNode).op !== "*") return null;
+				return n as OperationNode;
+			};
+			const left_mul = mul_of(node.left_value);
+			const right_mul = left_mul ? null : mul_of(node.right_value);
+			const mul = left_mul ?? right_mul;
+			if (mul && mul.left_value && mul.right_value && is_float_type(mul)) {
+				const c_node = left_mul ? node.right_value : node.left_value;
+				// left_mul:  n*m + c → fmadd,  n*m - c → fmsub
+				// right_mul: c + n*m → fmadd,  c - n*m → fnmadd
+				const mnemonic = node.op === "+" ? "fmadd" : left_mul ? "fmsub" : "fnmadd";
+				build_float_operand(c_node!, "d0", status);
+				status.code += `str d0, [sp, #-16]!\n`;
+				build_float_operand(mul.left_value, "d0", status);
+				status.code += `str d0, [sp, #-16]!\n`;
+				build_float_operand(mul.right_value, "d0", status);
+				status.code += `fmov d1, d0\n`;
+				status.code += `ldr d0, [sp], #16\n`;
+				status.code += `ldr d2, [sp], #16\n`;
+				status.code += `${mnemonic} d0, d0, d1, d2\n`;
+				if (caller_wants_d0) {
+					status.float_result_in_d0 = false;
+				} else {
+					status.code += `fmov x0, d0\n`;
+				}
+				return;
+			}
+		}
+
 		const need_float_spill = !is_simple(node.left_value);
 		build_float_operand(node.right_value, "d1", status);
 		if (!status.code.endsWith("\n")) status.code += "\n";

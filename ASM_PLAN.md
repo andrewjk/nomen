@@ -940,6 +940,45 @@ guard-free behavioral run covering float fill + range add + int
 transform, exact output on both backends). Full suite green (262 files /
 2627 tests).
 
+### NEON/fast-math tranche 6 (DONE): FMA contraction — the clang `-ffp-contract=fast` default
+
+Tranche-5 head-to-head motivated this: saxpy C `-O2` 23 ms vs NEON 30 ms;
+dot C `-O2` 94 ms vs NEON 50 ms (2× win — clang keeps float reductions
+scalar at `-O2`). The remaining saxpy gap — and the main driver behind
+C `-O2`'s edge on mandelbrot — was FMA contraction: clang's DEFAULT
+`-ffp-contract=fast` fuses `a*b + c` into single-rounding `fmadd` inside
+expressions. NOT loop-level reassociation (sanctioned by ISO C's
+`FP_CONTRACT`, changes the last ulp) — so it rides `--fast-math` in Nomen.
+
+- **Scalar** (`build_operation_node` float binary path): under fast_math,
+  `+`/`-` with one side a float `*` (grouped parens unwrapped) emits the
+  fused form via a uniform spill scheme (c → d0 → spill, n → d0 → spill,
+  m → d0 → d1, pop n → d0 / c → d2): left-mul `+` → `fmadd`, left-mul `-`
+  → `fmsub`, right-mul `+` → `fmadd`, right-mul `-` → `fnmadd`; both-sides-
+  mul contracts the left. Nested contractions compose through the
+  build_float_operand recursion.
+- **Vector** (`neon_emit`, `plan.fma_contract`): `+` with either-side mul
+  → `fmla`, `-` with right-mul → `fmls` (left-mul `-` = n*m − c has no
+  accumulate form — stays fmul+fsub). The c operand parks in dedicated v8
+  (v2/v3 reductions, v4–v7 temps, v11–v14 op spills — conflict-free).
+- **Contract table**: `fmadd`/`fmsub`/`fnmadd`/`fnmsub` (4×f),
+  `fmla`/`fmls` (3×f) — validated in every fast_math build.
+- **Semantics**: single rounding; last-ulp differences are the documented
+  `--fast-math` trade (the same one clang ships by default). Chaotic
+  kernels amplify ulps (mandelbrot checksum / nbody digits shift under the
+  flag) — the dyadic behavioral tests round exactly and assert identical
+  output on and off.
+
+Measured (interleaved best-of-5): mandelbrot n=200 scalar 11 ms →
+fast_math 8 ms (**−27%**, now ~1 ms from C `-O2`); saxpy 31 → 29 ms
+(−8%; the rest of the C gap is clang's wider unrolling); nbody ~neutral
+(its cost is struct-field traffic, not arithmetic — the 5.6× C gap there
+is unrolling + memory access, a different project). The phase-1/5
+validators accept the new mnemonics in every fast_math build. Tests:
+`test/fast_math_fma.test.ts` — 7 cases (off-guard, all four scalar
+forms, the mandelbrot one-level shape, vector fmla on/off, dyadic
+behavioral run). Full suite green (263 files / 2644 tests).
+
 ### Tranche-5 candidates surveyed and CLOSED (rejected or blocked)
 
 - **Shifted-index patterns** (`load(i + 1)`): soundness machinery fully

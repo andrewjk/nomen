@@ -226,6 +226,16 @@ export const MNEMONICS: Record<string, MnemonicSig> = {
 	fsub: { shapes: [["f", "f", "f"]] },
 	fmul: { shapes: [["f", "f", "f"]] },
 	fdiv: { shapes: [["f", "f", "f"]] },
+	// FMA contraction family (fast_math): fused multiply-add forms —
+	// fmadd d0, n, m, a = n*m + a; fmsub = n*m - a; fnmadd = -(n*m) + a;
+	// fnmsub = -(n*m) - a. Vector accumulate forms: fmla vd, vn, vm
+	// (vd += vn*vm) and fmls (vd -= vn*vm).
+	fmadd: { shapes: [["f", "f", "f", "f"]] },
+	fmsub: { shapes: [["f", "f", "f", "f"]] },
+	fnmadd: { shapes: [["f", "f", "f", "f"]] },
+	fnmsub: { shapes: [["f", "f", "f", "f"]] },
+	fmla: { shapes: [["f", "f", "f"]] },
+	fmls: { shapes: [["f", "f", "f"]] },
 	// FADDP (scalar): horizontal pair-add — `faddp d0, v2.2d` (the NEON
 	// reduction's 2-lane float combine).
 	faddp: { shapes: [["f", "f"]] },

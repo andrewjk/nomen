@@ -134,6 +134,32 @@ function emit_lane_expr(
 			return;
 		}
 		case "op": {
+			// FMA contraction (fast_math): fuse `c ± n*m` into fmla/fmls.
+			// fmla vd, vn, vm → vd += vn*vm; fmls → vd -= vn*vm — so `+`
+			// contracts with the mul on either side, `-` only with the mul
+			// on the right (left-mul `-` = n*m - c has no accumulate form).
+			// c parks in v8 — dedicated (v2/v3 reductions, v4–v7 temps,
+			// v11–v14 op spills), so reduction operands stay conflict-free.
+			if (plan.fma_contract && plan.elem.float && (e.op === "+" || e.op === "-")) {
+				type OpExpr = Extract<NeonLaneExpr, { k: "op" }>;
+				const mul_of = (x: NeonLaneExpr): OpExpr | null =>
+					x.k === "op" && x.op === "*" ? x : null;
+				const left_mul = mul_of(e.left);
+				const right_mul = left_mul ? null : mul_of(e.right);
+				const mul = left_mul ?? right_mul;
+				if (mul && (e.op === "+" || !left_mul)) {
+					emit_lane_expr(left_mul ? e.right : e.left, status, plan, buffer_regs, idx, depth + 1);
+					status.code += `mov v8.16b, v0.16b\n`;
+					emit_lane_expr(mul.left, status, plan, buffer_regs, idx, depth + 1);
+					status.code += `mov ${spill_reg(depth + 1)}.16b, v0.16b\n`;
+					emit_lane_expr(mul.right, status, plan, buffer_regs, idx, depth + 1);
+					status.code += `mov v1.16b, v0.16b\n`;
+					status.code += `mov v0.16b, ${spill_reg(depth + 1)}.16b\n`;
+					status.code += `${e.op === "+" ? "fmla" : "fmls"} v8.2d, v0.2d, v1.2d\n`;
+					status.code += `mov v0.16b, v8.16b\n`;
+					return;
+				}
+			}
 			emit_lane_expr(e.left, status, plan, buffer_regs, idx, depth + 1);
 			status.code += `mov ${spill_reg(depth)}.16b, v0.16b\n`;
 			emit_lane_expr(e.right, status, plan, buffer_regs, idx, depth + 1);

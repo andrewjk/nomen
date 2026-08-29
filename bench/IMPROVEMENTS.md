@@ -521,6 +521,17 @@ v2.4s` for `.4s`), with the combined bits routed `fmov x0, d0` /
     64-bit int mul expansion is a strict loss (~5 instructions/element vs
     one scalar `mul`), byte kinds need scalar `load_T`/`store_T` inlining
     first, and `store_or` RMW has no vectorizable hot user.
+38. **NEON/fast-math tranche 6 — FMA contraction**: under the explicit
+    `--fast-math` opt-in, `a*b ± c` fuses into single-rounding `fmadd`/
+    `fmsub`/`fnmadd` in scalar float code and `fmla`/`fmls` in vector lane
+    bodies (the `-ffp-contract=fast` behavior clang ships by DEFAULT at
+    `-O2`). Scalar emission uses a uniform spill scheme safe for arbitrary
+    operand shapes; the vector c-operand parks in dedicated v8 so
+    reduction accumulators never conflict. Measured: mandelbrot −27%
+    (now ~1 ms off C `-O2`), saxpy −8%; output changes under the flag are
+    the documented ulp trade. Closes the vectorizer-era gap analysis:
+    dot products 2× faster than C `-O2`, saxpy within 30%, mandelbrot
+    within ~15%.
 
 ### Known issues
 

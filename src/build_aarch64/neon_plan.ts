@@ -207,6 +207,9 @@ export interface NeonPlan {
 	readonly elem: ElemDesc;
 	/** Vector accumulators (≤ MAX_REDUCTIONS; fast_math opt-in only). */
 	readonly reductions: readonly NeonReduction[];
+	/** FMA contraction in lane bodies (fast_math opt-in): `+` with a mul
+	 *  operand emits `fmla`, `-` with a right mul emits `fmls`. */
+	readonly fma_contract: boolean;
 }
 
 // Literal shapes — mirrored exactly from build_float_operand's accepted
@@ -953,6 +956,7 @@ function plan_common(
 		buffers: walk.buffers,
 		elem: walk.elem,
 		reductions,
+		fma_contract: allow_reductions,
 	};
 }
 

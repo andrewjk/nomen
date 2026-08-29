@@ -211,7 +211,10 @@ All options are global and accepted by every command (though only a subset are m
 
 - **Type:** boolean
 - **Applies to:** `run`, `build`
-- **Description:** Opt in to floating-point reassociation (the aarch64 backend's analog of clang's `-ffast-math` reduction behavior). Float loop reductions (`acc = acc + …`, `acc += …`, `*`/`*=`) vectorize under NEON — a vector accumulator plus a horizontal combine replaces the sequential scalar sum. **Results may differ in the last ulp** from the scalar loop (the pairwise summation order differs); with the flag off, every vectorized loop is bit-exact and reductions stay scalar. See [PERF.md](PERF.md).
+- **Description:** Opt in to floating-point reassociation and FMA contraction (the aarch64 backend's analog of clang's `-ffast-math` + its default `-ffp-contract=fast`):
+  - Float loop reductions (`acc = acc + …`, `acc += …`, `*`/`*=`) vectorize under NEON — a vector accumulator plus a horizontal combine replaces the sequential scalar sum. The pairwise summation order differs, so **results may differ in the last ulp**.
+  - Float expressions fuse `a*b ± c` into single-rounding `fmadd`/`fmsub`/`fnmadd` (scalar) and `fmla`/`fmls` (vector bodies) — the same contraction clang applies by default at `-O2`.
+  - With the flag off, every vectorized loop is bit-exact and reductions stay scalar. See [PERF.md](PERF.md).
 
 ### `--check`
 
