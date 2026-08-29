@@ -466,9 +466,19 @@ Changes applied:
     reassociation). Gated on the NIR emission cursor, so the byte-identity
     A/B harness holds it off (`set_neon_vectorization_enabled`); the
     contract table (asm_ir.ts) gained `q`/`v.2d` operand forms plus
-    `dup`/`bic`/vector-`mov`. Remaining for tranche 2: `.2s`/int element
-    types, reduction accumulation, `for`-range loops, shifted-index
-    patterns behind alias checks.
+    `dup`/`bic`/vector-`mov`.
+34. **NEON vectorization tranche 2 — unroll-by-2, range fors, int kinds,
+    cost threshold**: vector iterations now process TWO 16-byte groups
+    (`x14 = x10 + 1` second group; limit `asr #shift` + `bic #1`), halving
+    per-group loop overhead. `for i of 0 .. n` range loops plan like
+    count-up whiles (the builder self-initializes the zero start; no init
+    scan needed). The Buffer method pair picks an element descriptor —
+    f64 `.2d`, 8-byte int `.2d` (wrap-exact + - and lane-wise & | ^ on
+    `.16b`; AArch64 NEON has NO 64-bit int multiply, so int `*` is `.4s`-
+    only), uint32 `.4s` — mixed kinds reject. Integer-literal bounds under
+    8 stay scalar (MIN_TRIP threshold). Float reductions remain rejected
+    (reassociation changes results; no language opt-in). Bench A/B: all
+    outputs match, no regressions; saxpy −65.9%.
 
 ### Known issues
 

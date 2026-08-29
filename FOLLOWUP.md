@@ -231,3 +231,17 @@ ASM_PLAN discipline): walk the flow arms + spawn call facts like `cfg.ts`
 already does (its folding is sound for liveness — no emission consumer). The
 whitelisted pins live in `test/nir.test.ts` ("traffic deliberately does not
 count flow-arm or spawn-arg reads").
+
+## Split-build link gap: user programs monomorphizing `Buffer<uint32>` (pre-existing)
+
+Found while writing the NEON tranche-2 behavioral tests. In the prebuilt-object
+split build (`emit_mode: "user"` + system.o), a user program that uses
+`Buffer<uint32>` makes the user TU emit `Buffer_uint32_*` (the
+`system_struct_names` set carries `Buffer`, not the monomorphized name), whose
+System-internal references (e.g. `uint32_to_string` from `Buffer_uint32_init`)
+then fail to link. The full single-TU build assembles fine. Affects the test
+harness (`build_and_check_output`) only for uint32-element programs; the NEON
+uint32 emission is covered by the compile-shape test instead
+(`test/neon_vector.test.ts` — "4-byte uint32 buffers vectorize as .4s
+groups"). Fix sketch: add monomorphized `Buffer_<T>` names to the system
+struct-name filter, or ship the monomorphized container bodies in system.o.

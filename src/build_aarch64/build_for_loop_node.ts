@@ -5,6 +5,8 @@ import ForLoopNode from "../nodes/ForLoopNode.ts";
 import RangeNode from "../nodes/RangeNode.ts";
 import build_node from "./build_node.ts";
 import { build_block_with_cursor } from "./emit_nir.ts";
+import { emit_neon_vector_loop } from "./neon_emit.ts";
+import type { NeonPlan } from "./neon_plan.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { enter_scope_frame, exit_scope_frame } from "./utils/auto_destroy.ts";
 import { promote_loop_locals, type PromotedVar } from "./utils/loop_promotion.ts";
@@ -27,6 +29,7 @@ export default function build_for_loop_node(
 	node: ForLoopNode,
 	status: BuildStatus,
 	nir?: NirStmt & { kind: "for" },
+	vector?: NeonPlan | null,
 ) {
 	const old_scoped_declarations = enter_scope_frame(status);
 
@@ -78,6 +81,14 @@ export default function build_for_loop_node(
 		}
 		status.code += `\n`;
 		emit_var_store(status, "x0", item_name, 8);
+
+		// NEON vector loop (phase 4, tranche 2): the plan guarantees the
+		// range start is 0, so emitting the vector loop after the init (and
+		// its induction sync) is exact; the scalar range loop below is the
+		// tail. Rides the NIR cursor only — see build_while_loop_node.
+		if (vector) {
+			emit_neon_vector_loop(vector, status);
+		}
 
 		status.code += `${start_label}:\n`;
 

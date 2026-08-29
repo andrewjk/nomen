@@ -798,12 +798,55 @@ loop **−65%** (86 → 30 ms median, 2M × 20 reps); spectral-norm −3…−6%
 fannkuch/pidigits/binarytrees byte-identical asm and perf-neutral. Full
 suite green (259 files / 2596 tests). Also: bench/IMPROVEMENTS.md item 33.
 
-Remaining NEON work (tranches 2+): reduction accumulation (vector
-accumulator + horizontal add, safe because the planner can prove the
-accumulator is loop-private), `for`-range loops, `.2s`/fp32 and int
-element types, shifted-index patterns behind alias/peeling machinery,
-unroll-by-2 vector iterations (4 lanes via two q loads), and a cost
-threshold (trip-count < N → skip vector emission).
+### NEON vectorization tranche 2 (DONE): unroll-by-2, range fors, int kinds, cost threshold
+
+- **Unroll-by-2**: each vector iteration now processes TWO 16-byte groups
+  (4 f64/i64 or 8 u32 elements) — the second group rides `x14 = x10 + 1`,
+  the counter steps 2 group units, and the limit is
+  `asr #shift` + `bic #1` (floor groups, rounded to whole double-groups).
+  Sub-group remainders go through the unchanged scalar tail. Loop
+  overhead per element halves; measured saxpy stays −65.9% (DRAM-bound at
+  2M elements), and cache-resident loops save the branch/cmp per group.
+- **Range fors**: `plan_vector_for` plans `for i of 0 .. n` loops — the
+  builder itself initializes the induction to the range start (the plan
+  requires the start to be absent or literal 0) and steps it by one, so
+  no init scan is needed; the vector loop emits after the builder's init,
+  before the range loop label (same tail discipline as whiles). The NIR
+  range lowers to `binary` whose node is the `RangeNode`; array/enumerable
+  fors get a null plan.
+- **Integer element kinds**: the Buffer method pair picks an element
+  descriptor — `load_float`/`store_float` (f64 `.2d`),
+  `load_int`/`store_int` (8-byte int `.2d`), `load`/`store` (4-byte
+  uint32 `.4s`). All accesses in a loop must agree (mixed kinds reject).
+  Integer `+`/`-` are wrap-exact on lanes; `&`/`|`/`^` ride `.16b`.
+  **AArch64 NEON has NO 64-bit integer multiply** (`mul` vector is
+  8/16/32-bit only — the assembler caught this immediately), so int `*`
+  is planned only for the `.4s` kind; `/`/`%` have no NEON form and
+  always reject. Literals/invariant scalars splat via `dup v.2d, x0` /
+  `dup v.4s, w0`; float scalars keep the `build_float_operand` + dup path.
+- **Cost threshold**: integer-literal bounds below MIN_TRIP (8) stay
+  scalar — the unrolled preheader/loop overhead swamps a handful of
+  iterations. Runtime bounds always vectorize.
+- Float reductions remain REJECTED (FP reassociation changes results — no
+  language opt-in exists); integer reductions ride the same shape guard
+  for now (future work).
+
+Proof: `test/neon_vector.test.ts` extended to 25 tests (unroll shape,
+range-for emission + non-zero-start rejection, int add + bitwise `.16b`
+emission, uint32 `.4s` shape incl. `asr #2`/`lsl #2`, int-div and
+mixed-kind rejections, threshold, plus behavioral runs: unroll remainder
+sizes n=9, int buffer, range-for — exact outputs on both backends).
+Bench A/B re-run: all outputs match, no regressions (spectral −2%,
+mandelbrot −1.4%, rest noise). Full suite green (260 files / 2608 tests).
+Side find (pre-existing, FOLLOWUP.md): split-build link gap for user
+programs monomorphizing `Buffer<uint32>` (`Buffer_uint32_init` references
+System-internal `uint32_to_string` not in system.o) — the uint32
+behavioral run is covered by the compile-shape test instead.
+
+Remaining NEON work (tranches 3+): float reductions behind a language
+opt-in, shifted-index patterns behind alias/peeling machinery, 64-bit
+int mul via 32-bit mulh expansion, byte (`.16b`) element kinds, and a
+cached-plan reuse so `plan_*` isn't recomputed per dispatch.
 
 ### Remaining phase-4 work (NOT done)
 
@@ -816,11 +859,12 @@ threshold (trip-count < N → skip vector emission).
   survives only as the byte-identity A/B baseline, the join-slot engine for
   value-position flow, and synthetic fragment emission). Stage 1's closed
   union + coverage sets are the contract; unknown kinds now tripwire.
-- **NEON auto-vectorization** — tranche 1 DONE (see above): elementwise
-  float loops vectorize to 2-lane `.2d` with the scalar loop as tail.
-  What remains: reductions, `for`-range, int/fp32 element types, shifted
-  indices behind alias checks, and a trip-count cost threshold (details in
-  the tranche section).
+- **NEON auto-vectorization** — tranches 1–2 DONE (see above): elementwise
+  float loops vectorize to unrolled `.2d` groups (range fors included),
+  integer `.2d`/`.4s` kinds, literal-bound cost threshold; the scalar loop
+  is always the tail. What remains: reductions (needs language opt-in for
+  FP), shifted indices behind alias checks, 64-bit int mul expansion,
+  byte element kinds (details in the tranche sections).
 - Known pre-existing divergence found while testing (recorded in
   FOLLOWUP.md): a shadowed local read after its scope diverges between
   backends (aarch64 `x=10` vs C `x=8`); `stack_offsets` is name-keyed.

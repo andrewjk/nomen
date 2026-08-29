@@ -304,3 +304,277 @@ test("behavioral: fill loop vectorized on both buffers prints exact values", asy
 	const { default: build_and_check_output } = await import("./build_and_check_output");
 	await build_and_check_output(INIT_LOOP, "neon_vector_fill", "1.000000 1.000000 1.000000", true);
 });
+
+// --- Tranche 2: unroll-by-2, for-range, int/uint32 element kinds, threshold --
+
+test("vector loop is unrolled to two groups per iteration", () => {
+	const code = compile_aarch64(INIT_LOOP);
+	// Two lane copies: the second rides x14 = x10 + 1; the counter steps 2
+	// group units per iteration.
+	expect(code).toContain("add x14, x10, #1");
+	expect(code).toContain("str q0, [x14, lsl #4]".replace("[x14, lsl", "[x11, x14, lsl"));
+	expect(code).toContain("str q0, [x12, x14, lsl #4]");
+	expect(code).toContain("add x10, x10, #2");
+	// limit = floor(n/2) rounded down to whole double-groups
+	expect(code).toContain("asr x9, x9, #1");
+	expect(code).toContain("bic x9, x9, #1");
+});
+
+test("for i of 0 .. n range loops vectorize", () => {
+	const code = compile_aarch64(`
+import System
+
+func fill = (ref Buffer<float> u, int n) {
+	if n <= u.cap {
+		for i of 0 .. n {
+			u.store_float(i, 2.5)
+		}
+	}
+}
+pub func main = () {}
+`);
+	expect(code).toContain(".Lneon_0:");
+	expect(code).toContain("dup v0.2d, v0.d[0]");
+	// The scalar range loop is still emitted (the tail).
+	expect(code).toContain(".for_");
+});
+
+test("non-zero range start is NOT vectorized", () => {
+	compiles_without_vector(`
+import System
+
+func off = (ref Buffer<float> u, int n) {
+	if n <= u.cap {
+		for i of 2 .. n {
+			u.store_float(i, 1.0)
+		}
+	}
+}
+pub func main = () {}
+`);
+});
+
+test("8-byte int buffers vectorize with wrap-exact integer add", () => {
+	const code = compile_aarch64(`
+import System
+
+func scale = (ref Buffer<int> a, ref Buffer<int> b, int n) {
+	if n <= a.cap && n <= b.cap {
+		var i = 0
+		while i < n; i += 1 {
+			const int x = a.load_int(i) + 3
+			b.store_int(i, x + 1)
+		}
+	}
+}
+pub func main = () {}
+`);
+	expect(code).toContain(".Lneon_0:");
+	expect(code).toContain("add v0.2d, v0.2d, v1.2d");
+	// int literals splat from the gpr path
+	expect(code).toContain("dup v0.2d, x0");
+});
+
+test("4-byte uint32 buffers vectorize as .4s groups", () => {
+	const code = compile_aarch64(`
+import System
+
+func bump = (ref Buffer<uint32> a, ref Buffer<uint32> b, int n) {
+	if n <= a.cap && n <= b.cap {
+		var i = 0
+		while i < n; i += 1 {
+			b.store(i, a.load(i) + 5)
+		}
+	}
+}
+pub func main = () {}
+`);
+	expect(code).toContain(".Lneon_0:");
+	expect(code).toContain("add v0.4s, v0.4s, v1.4s");
+	expect(code).toContain("dup v0.4s, w0");
+	// 4 elements per group: limit shift #2, sync shift #2
+	expect(code).toContain("asr x9, x9, #2");
+	expect(code).toContain("lsl x0, x10, #2");
+});
+
+test("integer bitwise ops vectorize as .16b", () => {
+	const code = compile_aarch64(`
+import System
+
+func mask = (ref Buffer<int> a, ref Buffer<int> b, int n) {
+	if n <= a.cap && n <= b.cap {
+		var i = 0
+		while i < n; i += 1 {
+			b.store_int(i, a.load_int(i) & 255)
+		}
+	}
+}
+pub func main = () {}
+`);
+	expect(code).toContain(".Lneon_0:");
+	expect(code).toContain("and v0.16b, v0.16b, v1.16b");
+});
+
+test("integer division is NOT vectorized (no NEON int div)", () => {
+	compiles_without_vector(`
+import System
+
+func half = (ref Buffer<int> a, ref Buffer<int> b, int n) {
+	if n <= a.cap && n <= b.cap {
+		var i = 0
+		while i < n; i += 1 {
+			b.store_int(i, a.load_int(i) / 2)
+		}
+	}
+}
+pub func main = () {}
+`);
+});
+
+test("mixed element kinds in one loop are NOT vectorized", () => {
+	compiles_without_vector(`
+import System
+
+func bad = (ref Buffer<float> a, ref Buffer<int> c, int n) {
+	if n <= a.cap && n <= c.cap {
+		var i = 0
+		while i < n; i += 1 {
+			a.store_float(i, 1.0)
+			c.store_int(i, 2)
+		}
+	}
+}
+pub func main = () {}
+`);
+});
+
+test("tiny literal bounds stay scalar (cost threshold)", () => {
+	compiles_without_vector(`
+import System
+
+pub func main = () {
+	var a = Buffer<float>()
+	a.alloc_float(4)
+	if 4 <= a.cap {
+		var i = 0
+		while i < 4; i += 1 {
+			a.store_float(i, 1.0)
+		}
+	}
+}
+`);
+});
+
+test("behavioral: unrolled vector loop handles every remainder size", async () => {
+	// a[i] = i * 0.5; b[i] = a[i] * 2 + 1 = i + 1. n=9 exercises one full
+	// double-group (elements 0..3), a partial second (4..7) and a tail
+	// element (8).
+	const { default: build_and_check_output } = await import("./build_and_check_output");
+	await build_and_check_output(
+		`
+import System
+func scale_into = (ref Buffer<float> a, ref Buffer<float> b, int n) {
+	if n <= a.cap && n <= b.cap {
+		var i = 0
+		while i < n; i += 1 {
+			b.store_float(i, a.load_float(i) * 2.0 + 1.0)
+		}
+	}
+}
+pub func main = (Init init) {
+	var a = Buffer<float>()
+	var b = Buffer<float>()
+	a.alloc_float(9)
+	b.alloc_float(9)
+	if 9 <= a.cap && 9 <= b.cap {
+		var i = 0
+		while i < 9 {
+			a.store_float(i, i as float * 0.5)
+			i += 1
+		}
+		scale_into(ref a, ref b, 9)
+		i = 0
+		while i < 9 {
+			Console.write("\\{b.load_float(i)} ")
+			i += 1
+		}
+	}
+}
+`,
+		"neon_vector_unroll_edges",
+		"1.000000 2.000000 3.000000 4.000000 5.000000 6.000000 7.000000 8.000000 9.000000 ",
+		true,
+	);
+});
+
+test("behavioral: int buffer vector loop prints exact values", async () => {
+	const { default: build_and_check_output } = await import("./build_and_check_output");
+	await build_and_check_output(
+		`
+import System
+func scale_into = (ref Buffer<int> a, ref Buffer<int> b, int n) {
+	if n <= a.cap && n <= b.cap {
+		var i = 0
+		while i < n; i += 1 {
+			const int x = a.load_int(i) + 3
+			b.store_int(i, x + 1)
+		}
+	}
+}
+pub func main = (Init init) {
+	var a = Buffer<int>()
+	var b = Buffer<int>()
+	a.alloc_int(9)
+	b.alloc_int(9)
+	if 9 <= a.cap && 9 <= b.cap {
+		var i = 0
+		while i < 9 {
+			a.store_int(i, i * 2)
+			i += 1
+		}
+		scale_into(ref a, ref b, 9)
+		i = 0
+		while i < 9 {
+			Console.write("\\{b.load_int(i)} ")
+			i += 1
+		}
+	}
+}
+`,
+		"neon_vector_int",
+		"4 6 8 10 12 14 16 18 20 ",
+		true,
+	);
+});
+
+test("behavioral: for-range vector loop prints exact values", async () => {
+	const { default: build_and_check_output } = await import("./build_and_check_output");
+	await build_and_check_output(
+		`
+import System
+
+func fill = (ref Buffer<float> u, int n) {
+	if n <= u.cap {
+		for i of 0 .. n {
+			u.store_float(i, i as float * 0.5 + 1.0)
+		}
+	}
+}
+pub func main = (Init init) {
+	var u = Buffer<float>()
+	u.alloc_float(9)
+	if 9 <= u.cap {
+		fill(ref u, 9)
+		var i = 0
+		while i < 9 {
+			Console.write("\\{u.load_float(i)} ")
+			i += 1
+		}
+	}
+}
+`,
+		"neon_vector_range",
+		"1.000000 1.500000 2.000000 2.500000 3.000000 3.500000 4.000000 4.500000 5.000000 ",
+		true,
+	);
+});

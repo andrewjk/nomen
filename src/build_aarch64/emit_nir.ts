@@ -27,7 +27,7 @@ import build_return_node from "./build_return_node.ts";
 import build_switch_node from "./build_switch_node.ts";
 import build_while_loop_node from "./build_while_loop_node.ts";
 import { neon_vectorization_enabled } from "./neon_emit.ts";
-import { plan_vector_loop } from "./neon_plan.ts";
+import { plan_vector_for, plan_vector_loop } from "./neon_plan.ts";
 
 /**
  * NIR-driven emission (ASM_PLAN phase 4, canonical-IR stage 2).
@@ -114,7 +114,17 @@ export function emit_stmt_from_nir(
 				);
 				return;
 			case "for":
-				build_for_loop_node(child as ForLoopNode, status, nstmt);
+				// Range fors (`for i of 0 .. n`) vectorize like count-up
+				// whiles: the builder self-initializes the induction to the
+				// range start (zero-checked by the planner) and steps it by
+				// one. Array/enumerable fors get a null plan and emit
+				// unchanged.
+				build_for_loop_node(
+					child as ForLoopNode,
+					status,
+					nstmt,
+					neon_vectorization_enabled() ? plan_vector_for(nstmt, index, ctx.stmts, status) : null,
+				);
 				return;
 			case "switch_match":
 				// `switch` and `match` lower to the same NIR kind (sequential

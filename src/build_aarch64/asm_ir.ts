@@ -142,7 +142,12 @@ export const MNEMONICS: Record<string, MnemonicSig> = {
 		],
 	},
 	bic: { shapes: [["r", "r", "i"]] },
-	dup: { shapes: [["f", "f"]] },
+	dup: {
+		shapes: [
+			["f", "f"], // dup v0.2d, v0.d[0] (lane splat)
+			["f", "r"], // dup v0.2d, x0 / dup v0.4s, w0 (gpr splat)
+		],
+	},
 	movz: { shapes: [["r", "i"]] },
 	mvn: { shapes: [["r", "r"]] },
 	fmov: {
@@ -156,33 +161,43 @@ export const MNEMONICS: Record<string, MnemonicSig> = {
 		shapes: [
 			["r", "r", "r"],
 			["r", "r", "i"],
+			["f", "f", "f"], // vector `add v0.2d/4s, …`
 		],
 	},
 	sub: {
 		shapes: [
 			["r", "r", "r"],
 			["r", "r", "i"],
+			["f", "f", "f"], // vector `sub v0.2d/4s, …`
 		],
 	},
 	and: {
 		shapes: [
 			["r", "r", "r"],
 			["r", "r", "i"],
+			["f", "f", "f"], // vector `and v0.16b, …`
 		],
 	},
 	orr: {
 		shapes: [
 			["r", "r", "r"],
 			["r", "r", "i"],
+			["f", "f", "f"], // vector `orr v0.16b, …`
 		],
 	},
 	eor: {
 		shapes: [
 			["r", "r", "r"],
 			["r", "r", "i"],
+			["f", "f", "f"], // vector `eor v0.16b, …`
 		],
 	},
-	mul: { shapes: [["r", "r", "r"]] },
+	mul: {
+		shapes: [
+			["r", "r", "r"],
+			["f", "f", "f"], // vector `mul v0.2d/4s, …`
+		],
+	},
 	madd: { shapes: [["r", "r", "r", "r"]] },
 	msub: { shapes: [["r", "r", "r", "r"]] },
 	sdiv: { shapes: [["r", "r", "r"]] },
