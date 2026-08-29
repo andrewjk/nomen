@@ -1025,9 +1025,20 @@ export default function build_assignment_node(
 			if (alloc_reg_fast?.startsWith("d") && !node.operator && !lhs_is_heap) {
 				status.last_result_is_heap = false;
 				status.float_result_in_d0 = true;
+				// Destination hint (ASM_PLAN_2 tranche C): a float-op RHS
+				// root emits directly into the target's register — no d0 +
+				// writeback fmov. Scratch-safety guard: the hint is never
+				// d0-d2 (the expression scratch registers).
+				const hint_ok =
+					alloc_reg_fast !== "d0" && alloc_reg_fast !== "d1" && alloc_reg_fast !== "d2";
+				if (hint_ok) status.float_dest_hint = alloc_reg_fast;
 				emit_rhs_value(node.right_value, nir_rhs, status);
+				const hint_consumed = hint_ok && status.float_dest_hint === undefined;
+				status.float_dest_hint = undefined;
 				if (!status.code.endsWith("\n")) status.code += "\n";
-				if (!status.float_result_in_d0) {
+				if (hint_consumed) {
+					// The root op already wrote the target register.
+				} else if (!status.float_result_in_d0) {
 					if (alloc_reg_fast !== "d0") {
 						status.code += `fmov ${alloc_reg_fast}, d0\n`;
 					}

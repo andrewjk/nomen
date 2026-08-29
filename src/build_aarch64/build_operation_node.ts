@@ -1016,6 +1016,33 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		const caller_wants_d0 = status.float_result_in_d0 ?? false;
 		status.float_result_in_d0 = false;
 
+		// Destination hint (tranche C): the ROOT float op emits directly
+		// into the assignment target's promoted register — no d0 + fmov
+		// writeback. Consume-once: cleared here so nested sub-operations
+		// keep the scratch discipline (and the target's OLD value stays
+		// readable until this final instruction, which reads its sources
+		// before writing).
+		const dest =
+			status.float_dest_hint && /^[d][3-9]|d1[0-9]|d2[0-9]|d3[01]$/.test(status.float_dest_hint)
+				? status.float_dest_hint
+				: "d0";
+		const hinted = dest !== "d0";
+		status.float_dest_hint = undefined;
+		const emit_fop = (mnemonic: string, a: string, b: string) => {
+			status.code += `${mnemonic} ${dest}, ${a}, ${b}\n`;
+		};
+		const tail = () => {
+			if (hinted) {
+				// Result already in the target register.
+				return;
+			}
+			if (caller_wants_d0) {
+				status.float_result_in_d0 = false;
+			} else {
+				status.code += `fmov x0, d0\n`;
+			}
+		};
+
 		// Promoted-operand direct-source selection (ASM_PLAN_2 tranche B):
 		// an operand that already lives in a promoted d-register is used
 		// IN PLACE as the instruction source — no fmov round-trips through
@@ -1031,34 +1058,22 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		const ls = promoted_source(node.left_value);
 		const rs = promoted_source(node.right_value);
 		if (ls && rs) {
-			status.code += `${map_float_op(node.op)} d0, ${ls}, ${rs}\n`;
-			if (caller_wants_d0) {
-				status.float_result_in_d0 = false;
-			} else {
-				status.code += `fmov x0, d0\n`;
-			}
+			emit_fop(map_float_op(node.op), ls, rs);
+			tail();
 			return;
 		}
 		if (ls) {
 			build_float_operand(node.right_value, "d0", status);
 			if (!status.code.endsWith("\n")) status.code += "\n";
-			status.code += `${map_float_op(node.op)} d0, ${ls}, d0\n`;
-			if (caller_wants_d0) {
-				status.float_result_in_d0 = false;
-			} else {
-				status.code += `fmov x0, d0\n`;
-			}
+			emit_fop(map_float_op(node.op), ls, "d0");
+			tail();
 			return;
 		}
 		if (rs) {
 			build_float_operand(node.left_value, "d0", status);
 			if (!status.code.endsWith("\n")) status.code += "\n";
-			status.code += `${map_float_op(node.op)} d0, d0, ${rs}\n`;
-			if (caller_wants_d0) {
-				status.float_result_in_d0 = false;
-			} else {
-				status.code += `fmov x0, d0\n`;
-			}
+			emit_fop(map_float_op(node.op), "d0", rs);
+			tail();
 			return;
 		}
 
@@ -1067,6 +1082,12 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		// form. Uniform spill scheme keeps any operand shapes safe: c → d0
 		// → spill, n → d0 → spill, m → d0 → d1, pop n → d0 / c → d2.
 		if (status.fast_math && (node.op === "+" || node.op === "-")) {
+			const fma_dest =
+				status.float_dest_hint && /^[d]([3-9]|1[0-9]|2[0-9]|3[01])$/.test(status.float_dest_hint)
+					? status.float_dest_hint
+					: "d0";
+			const hinted_fma = fma_dest !== "d0";
+			status.float_dest_hint = undefined;
 			const mul_of = (side: BaseNode | undefined): OperationNode | null => {
 				if (!side) return null;
 				let n = side;
@@ -1092,8 +1113,10 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 				status.code += `fmov d1, d0\n`;
 				status.code += `ldr d0, [sp], #16\n`;
 				status.code += `ldr d2, [sp], #16\n`;
-				status.code += `${mnemonic} d0, d0, d1, d2\n`;
-				if (caller_wants_d0) {
+				status.code += `${mnemonic} ${fma_dest}, d0, d1, d2\n`;
+				if (hinted_fma) {
+					// Result already in the target register.
+				} else if (caller_wants_d0) {
 					status.float_result_in_d0 = false;
 				} else {
 					status.code += `fmov x0, d0\n`;
@@ -1129,7 +1152,7 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 			build_float_operand(node.left_value, "d0", status);
 			if (!status.code.endsWith("\n")) status.code += "\n";
 		}
-		status.code += `${map_float_op(node.op)} d0, d0, d1\n`;
+		status.code += `${map_float_op(node.op)} ${dest}, d0, d1\n`;
 		if (caller_wants_d0) {
 			status.float_result_in_d0 = false;
 		} else {

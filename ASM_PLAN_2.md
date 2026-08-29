@@ -138,6 +138,30 @@ clang's mandelbrot advantage was never "registers vs slots" — the locals
 were already promoted; it was the operand fmov round-trips through the
 d0/d1 scratch pair, which direct-source selection deletes.
 
+## Tranche C — destination hint for float assignments (DONE)
+
+The remaining per-statement fmovs were RESULT WRITEBACKS: `zi = <expr>`
+evaluated the root op into d0, crossed domains (`fmov x0, d0`), and moved
+into the target's register — an FP↔INT domain crossing per statement
+(~5 cycles each; mandelbrot does 12/iteration).
+
+`status.float_dest_hint` (BuildStatus): the assignment fast path (target
+already promoted to a d-register) sets the hint; the ROOT float operation
+in `build_operation_node` (binary + FMA paths) consumes it and emits
+directly into the target register. Consume-once at the root: cleared
+before operand evaluation so nested sub-operations keep the scratch
+discipline, and the target's OLD value stays readable until the final
+fused instruction (which reads its sources before writing — aliasing the
+target as a source is safe). Scratch-safety guard: the hint is never
+d0–d2. Unconsumed (leaf/call/cast RHS) → the existing writeback path.
+
+Measured (interleaved best-of-7 vs the pre-tranche emitters, outputs
+identical): mandelbrot n=1000 144 → **58 ms (−60%)** — 3.2× faster than
+the 186 ms release row that motivated this plan, now within ~25% of the
+C `-O2` entry; nbody 259 → 178 ms (−31%); fannkuch −7%; spectral neutral
+(its cost is the serial denom chain). mbrot (unrolled): 1455 instrs with
+116 fmovs remaining (result writebacks for non-assignment consumers).
+
 **Tranche A revision:** unrolling measured neutral on mandelbrot with the
 spill fix in place (+8% without it — slot traffic multiplied per copy).
 The kernel is a serial FP dependence chain; loop overhead was already

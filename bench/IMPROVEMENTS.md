@@ -532,7 +532,17 @@ v2.4s` for `.4s`), with the combined bits routed `fmov x0, d0` /
     the documented ulp trade. Closes the vectorizer-era gap analysis:
     dot products 2× faster than C `-O2`, saxpy within 30%, mandelbrot
     within ~15%.
-39. **ASM_PLAN_2 tranche B — spill-order elimination + promoted-operand
+39. **ASM_PLAN_2 tranche C — destination hint for float assignments**:
+    the root float operation of an assignment RHS emits directly into the
+    target's promoted register (`status.float_dest_hint`, consume-once at
+    the root so nested ops keep the scratch discipline and the target's
+    old value stays readable until the final fused instruction). Kills
+    the per-statement FP↔INT domain crossing (`fmov x0, d0`) that cost
+    ~5 cycles per statement. Measured (interleaved best-of-7, outputs
+    identical): mandelbrot n=1000 144 → 58 ms (−60%; 3.2× faster than
+    the release row that motivated ASM_PLAN_2, within ~25% of C `-O2`),
+    nbody −31%, fannkuch −7%.
+40. **ASM_PLAN_2 tranche B — spill-order elimination + promoted-operand
     direct-source selection**: two codegen fixes found by the per-function
     asm-diff analysis method (ASM_PLAN_2). (a) The float/int operand spill
     spilled d1/x2 whenever the LEFT operand was complex — but the spill is

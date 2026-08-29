@@ -341,6 +341,13 @@ export default interface BuildStatus {
 	/** FP-reassociation opt-in (build `fast_math`): float loop reductions
 	 *  may vectorize under NEON (results may differ in the last ulp). */
 	fast_math?: boolean;
+	/** Destination hint (ASM_PLAN_2 tranche C): when set to a promoted
+	 *  d-register, the ROOT float operation of an assignment RHS emits
+	 *  directly into it instead of d0 + writeback fmov. Consume-once: the
+	 *  root op clears it so nested sub-operations never write the target
+	 *  (RHS reads of the target need the old value until the final fused
+	 *  instruction, which reads its sources before writing). */
+	float_dest_hint?: string;
 	moved?: Set<string>;
 	heap_returning_functions?: Set<string>;
 	heap_strings?: Set<string>;
