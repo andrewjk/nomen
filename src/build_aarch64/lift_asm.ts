@@ -409,6 +409,318 @@ export function validate_asm(code: string): LiftError[] {
 	return errors;
 }
 
+// --- Stack-balance validation (per-block sp dataflow) ------------------------
+
+/**
+ * The deferred phase-1 check: every function's sp must return to its entry
+ * value at each `ret`. A LINEAR scan double-counts across diamond control
+ * flow (`b .epilogue` skipping the sibling path's `add sp` — the classic
+ * false positive on bool_to_string), so this runs a per-block dataflow over
+ * the lifted function bodies:
+ *
+ * - Block splitting: labels and branch/terminator instructions bound blocks,
+ *   exactly like the CFG the emitters produce.
+ * - Per-instruction sp effects: pre-indexed `stp/str [sp, #-N]!` subtracts,
+ *   post-indexed `ldp/ldr [sp], #N` adds, `sub/add sp, sp, #imm` adjusts;
+ *   any other sp write (`mov sp, xN`, register-scaled adds, `ldr sp, …`)
+ *   is UNKNOWN and conservatively poisons downstream deltas.
+ * - Join = require equal deltas or unknown: a label reached by paths with
+ *   differing deltas becomes unknown; only a KNOWN non-zero delta at a
+ *   `ret` is reported. Unknown never errors — the check is conservative by
+ *   construction (no false positives, only silence).
+ * - `bl`/`blr` preserve sp (the callee rebalances under the ABI) and do not
+ *   terminate blocks; `br xN` (tail-jump) ends propagation with no check;
+ *   `svc` continues (the kernel preserves sp).
+ * - Branch targets resolve within the function, including the numeric local
+ *   form raw `#arch` blocks use (`1:` / `b.hs 1f` — forward/backward by
+ *   suffix); an unresolvable target makes downstream deltas unknown.
+ */
+export function validate_stack_balance(code: string): LiftError[] {
+	const { result } = lift_functions(code);
+	if (!result.ok) return []; // structural errors already reported — don't cascade
+	const errors: LiftError[] = [];
+	for (const fn of result.functions) {
+		check_function_balance(fn, errors);
+	}
+	return errors;
+}
+
+type SpDelta = number | "unknown";
+
+const BRANCH_OPS = new Set(["b", "cbz", "cbnz", "tbz", "tbnz"]);
+const BRANCH_ALIAS_RE = /^b(eq|ne|lt|le|gt|ge|hs|lo|ls|hi|mi|pl)$/;
+const LABEL_RE = /^([A-Za-z_.$][\w.$]*|\d+):(.*)$/;
+const TARGET_RE = /^[A-Za-z_.$][\w.$]*$|^\d+[fb]$/;
+
+function branch_target_token(op: string, rest: string): string | null {
+	// The label is the only operand for b/b.cond, the LAST for cbz/cbnz/
+	// tbz/tbnz. Numeric suffixes (1f/1b) ride along verbatim.
+	const parts = rest
+		.split(",")
+		.map((p) => p.trim())
+		.filter(Boolean);
+	if (parts.length === 0) return null;
+	const token = parts[parts.length - 1];
+	return TARGET_RE.test(token) ? token : null;
+}
+
+/** sp effect of one instruction: a numeric delta, "unknown", or null when
+ *  the instruction does not move sp. Also reports branches and rets. */
+interface LineEffect {
+	delta: SpDelta | null;
+	branch: string | null; // target token
+	/** Conditional branch (cbz/cbnz/tbz/tbnz/b.cond) — falls through too. */
+	cond: boolean;
+	ret: boolean;
+	unknown_jump: boolean;
+}
+
+function line_effect(text: string): LineEffect {
+	const t = strip_comment(text).trim();
+	const m = /^([a-z][a-z0-9.]*)\s*(.*)$/.exec(t);
+	if (!m) return { delta: null, branch: null, cond: false, ret: false, unknown_jump: false };
+	const op = m[1].toLowerCase();
+	const rest = m[2].trim();
+	if (op === "ret")
+		return { delta: null, branch: null, cond: false, ret: true, unknown_jump: false };
+	if (op === "br")
+		return { delta: null, branch: null, cond: false, ret: false, unknown_jump: true };
+	if (BRANCH_OPS.has(op) || BRANCH_ALIAS_RE.test(op)) {
+		return {
+			delta: null,
+			branch: branch_target_token(op, rest),
+			cond: op !== "b",
+			ret: false,
+			unknown_jump: false,
+		};
+	}
+	// Structured operand parse for the sp-effect ops.
+	const instr = parse_asm_instruction(t, 0);
+	if (!instr) return { delta: null, branch: null, cond: false, ret: false, unknown_jump: false };
+	const operands = instr.operands;
+	const dest = operands[0];
+	if (op === "add" || op === "sub") {
+		if (dest.kind === "reg" && dest.name === "sp") {
+			const src = operands[1];
+			const last = operands[operands.length - 1];
+			if (src.kind === "reg" && src.name === "sp" && last.kind === "imm") {
+				const n = Number(last.value);
+				return {
+					delta: op === "add" ? n : -n,
+					branch: null,
+					cond: false,
+					ret: false,
+					unknown_jump: false,
+				};
+			}
+			return { delta: "unknown", branch: null, cond: false, ret: false, unknown_jump: false };
+		}
+		return { delta: null, branch: null, cond: false, ret: false, unknown_jump: false };
+	}
+	if (op === "stp" || op === "ldp" || op === "str" || op === "ldr") {
+		const mem = operands.find((o) => o.kind === "mem");
+		if (mem && mem.kind === "mem" && mem.base === "sp") {
+			if (mem.writeback === "pre" && mem.offset?.kind === "imm") {
+				return {
+					delta: Number(mem.offset.value),
+					branch: null,
+					cond: false,
+					ret: false,
+					unknown_jump: false,
+				};
+			}
+			if (mem.writeback === "post" && mem.postOffset !== undefined) {
+				return {
+					delta: Number(mem.postOffset),
+					branch: null,
+					cond: false,
+					ret: false,
+					unknown_jump: false,
+				};
+			}
+		}
+	}
+	// A direct write to sp with an unknown value (`mov sp, xN`, `ldr sp, …`).
+	if (dest.kind === "reg" && dest.name === "sp") {
+		return { delta: "unknown", branch: null, cond: false, ret: false, unknown_jump: false };
+	}
+	return { delta: null, branch: null, cond: false, ret: false, unknown_jump: false };
+}
+
+interface BalanceBlock {
+	/** Body line indices of the block's instructions. */
+	lines: number[];
+	/** Sum of numeric effects, or "unknown" if any effect poisons it. */
+	delta: SpDelta;
+	/** The block ends in a `ret` (checked against its entry delta). */
+	ret: boolean;
+	/** Conditional-branch terminator — the fallthrough successor exists too. */
+	cond: boolean;
+	/** Resolved successor BLOCK indices; null entries are unknown targets. */
+	targets: (number | null)[];
+}
+
+/** Resolve a branch target token to a body line index, or null when the
+ *  target is outside this function / unresolved (numeric f/b forms scan
+ *  linearly, matching the assembler's semantics). */
+function resolve_target(token: string, from: number, body: LiftedFunction["body"]): number | null {
+	const numeric = /^(\d+)([fb])$/.exec(token);
+	if (numeric) {
+		const n = numeric[1];
+		if (numeric[2] === "f") {
+			for (let i = from + 1; i < body.length; i++) {
+				const lm = /^(\d+):/.exec(strip_comment(body[i].text).trim());
+				if (lm && lm[1] === n) return i;
+			}
+			return null;
+		}
+		for (let i = from - 1; i >= 0; i--) {
+			const lm = /^(\d+):/.exec(strip_comment(body[i].text).trim());
+			if (lm && lm[1] === n) return i;
+		}
+		return null;
+	}
+	for (let i = 0; i < body.length; i++) {
+		const lm = LABEL_RE.exec(strip_comment(body[i].text).trim());
+		if (lm && lm[1] === token) return i;
+	}
+	return null;
+}
+
+function check_function_balance(fn: LiftedFunction, errors: LiftError[]): void {
+	const body = fn.body;
+
+	// Pass 1: per-line decomposition — label prefix, sp effect, code flag.
+	const effects: LineEffect[] = [];
+	const is_code: boolean[] = [];
+	for (let i = 0; i < body.length; i++) {
+		const t = strip_comment(body[i].text).trim();
+		effects.push({ delta: null, branch: null, cond: false, ret: false, unknown_jump: false });
+		is_code.push(false);
+		if (!t) continue;
+		const lm = LABEL_RE.exec(t);
+		const rest = lm ? lm[2].trim() : t;
+		if (rest.startsWith(".") || /^[\w.$]+\s*=\s*[\w.$]+$/.test(rest) || !rest) continue;
+		is_code[i] = true;
+		effects[i] = line_effect(rest);
+	}
+
+	// Pass 2: block assignment — one sweep, so EVERY line's block is known
+	// before any branch target resolves (forward branches are the norm).
+	const blocks: BalanceBlock[] = [];
+	const line_block = new Map<number, number>(); // body line index → block index
+	const pending: { block: number; token: string; from: number }[] = [];
+	let cur = -1;
+	let terminated = true; // the body starts a fresh block
+	for (let i = 0; i < body.length; i++) {
+		const t = strip_comment(body[i].text).trim();
+		if (!t) continue;
+		if (LABEL_RE.test(t)) {
+			cur++;
+			blocks.push({ lines: [], delta: 0, ret: false, cond: false, targets: [] });
+			line_block.set(i, cur);
+			terminated = false;
+			continue;
+		}
+		if (!is_code[i]) continue;
+		if (terminated) {
+			cur++;
+			blocks.push({ lines: [], delta: 0, ret: false, cond: false, targets: [] });
+			terminated = false;
+		}
+		line_block.set(i, cur);
+		const blk = blocks[cur];
+		blk.lines.push(i);
+		const eff = effects[i];
+		// null delta = the instruction does not touch sp — never poisons.
+		if (eff.delta === "unknown") blk.delta = "unknown";
+		else if (eff.delta !== null && typeof blk.delta === "number") blk.delta += eff.delta;
+		if (eff.ret) {
+			blk.ret = true;
+			terminated = true;
+		} else if (eff.unknown_jump) {
+			terminated = true;
+		} else if (eff.branch !== null) {
+			pending.push({ block: cur, token: eff.branch, from: i });
+			blk.cond = eff.cond;
+			terminated = true;
+		}
+	}
+
+	// Pass 3: resolve branch targets against the COMPLETE block map.
+	for (const p of pending) {
+		const line = resolve_target(p.token, p.from, body);
+		blocks[p.block].targets.push(line === null ? null : (line_block.get(line) ?? null));
+	}
+
+	// Pass 4: successors + predecessors. Fallthrough goes to the next block.
+	const preds: number[][] = Array.from({ length: blocks.length }, () => []);
+	for (let b = 0; b < blocks.length; b++) {
+		const blk = blocks[b];
+		if (blk.ret) continue;
+		const succs =
+			blk.targets.length > 0
+				? blk.cond && b + 1 < blocks.length
+					? [...blk.targets, b + 1]
+					: blk.targets
+				: b + 1 < blocks.length
+					? [b + 1]
+					: [];
+		for (const s of succs) {
+			if (s !== null && s !== undefined) preds[s].push(b);
+		}
+	}
+
+	// A block's EXIT delta = its entry delta composed with its own effects.
+	const combine = (entry: number | "unknown" | null, delta: SpDelta): number | "unknown" | null => {
+		if (entry === null || entry === "unknown" || delta === "unknown")
+			return entry === null ? null : "unknown";
+		return entry + delta;
+	};
+
+	// Pass 5: dataflow fixpoint on ENTRY deltas. null = bottom (unreached),
+	// number = known, "unknown" = top (conflicting joins / poisoned effects).
+	const in_delta: (number | "unknown" | null)[] = Array.from({ length: blocks.length }, () => null);
+	if (blocks.length > 0) in_delta[0] = 0;
+	const join = (a: number | "unknown" | null, b: number | "unknown" | null) => {
+		if (a === null) return b;
+		if (b === null) return a;
+		if (a === "unknown" || b === "unknown") return "unknown";
+		return a === b ? a : "unknown";
+	};
+	let changed = true;
+	let guard = blocks.length * blocks.length + 8;
+	while (changed && guard-- > 0) {
+		changed = false;
+		for (let b = 1; b < blocks.length; b++) {
+			let merged: number | "unknown" | null = null;
+			for (const p of preds[b]) {
+				merged = join(merged, combine(in_delta[p], blocks[p].delta));
+			}
+			if (merged !== null && merged !== in_delta[b]) {
+				in_delta[b] = merged;
+				changed = true;
+			}
+		}
+	}
+
+	// Pass 6: check every `ret` against the delta AT the ret (entry plus the
+	// block's own effects). Unknown never errors — conservative by design.
+	for (let b = 0; b < blocks.length; b++) {
+		const blk = blocks[b];
+		if (!blk.ret) continue;
+		const at_ret = combine(in_delta[b], blk.delta);
+		if (typeof at_ret === "number" && at_ret !== 0) {
+			const line = body[blk.lines[blk.lines.length - 1] ?? 0];
+			errors.push({
+				message: `unbalanced stack: sp offset ${at_ret} at ret`,
+				line: line.line,
+				text: line.text,
+			});
+		}
+	}
+}
+
 function prev_is_entry_marker(lines: string[], i: number): boolean {
 	for (let j = i - 1; j >= 0; j--) {
 		const t = strip_comment(lines[j]).trim();

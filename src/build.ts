@@ -12,7 +12,7 @@ import { reset_string_counter as reset_op_string_counter } from "./build_aarch64
 import { reset_label_counter as reset_switch_label_counter } from "./build_aarch64/build_switch_node.ts";
 import { reset_string_counter as reset_value_string_counter } from "./build_aarch64/build_value_node.ts";
 import { reset_label_counter as reset_while_label_counter } from "./build_aarch64/build_while_loop_node.ts";
-import { validate_asm } from "./build_aarch64/lift_asm.ts";
+import { validate_asm, validate_stack_balance } from "./build_aarch64/lift_asm.ts";
 import { reset_neon_counter } from "./build_aarch64/neon_emit.ts";
 import { emit_malloc } from "./build_aarch64/utils/audit.ts";
 import { generate_companion } from "./build_aarch64/utils/c_companion.ts";
@@ -281,6 +281,20 @@ export default function build(
 		if (lift_errors.length > 0) {
 			if (!status.build_errors) status.build_errors = [];
 			for (const e of lift_errors.slice(0, 20)) {
+				status.build_errors.push({
+					message: `asm: ${e.message} — ${e.text.trim()}`,
+					start: 0,
+				});
+			}
+		}
+		// Stack-balance validation (the deferred phase-1 check, now per-block):
+		// sp must return to its entry value at each `ret`. Joins with unequal
+		// path deltas become unknown (never error) — the classic epilogue-diamond
+		// pattern stays clean while straight-line imbalance fails loudly.
+		const balance_errors = validate_stack_balance(status.code);
+		if (balance_errors.length > 0) {
+			if (!status.build_errors) status.build_errors = [];
+			for (const e of balance_errors.slice(0, 20)) {
 				status.build_errors.push({
 					message: `asm: ${e.message} — ${e.text.trim()}`,
 					start: 0,

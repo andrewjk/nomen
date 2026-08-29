@@ -55,11 +55,9 @@ Files:
 
 Known deferrals (documented in code):
 
-- **Stack-balance checking deliberately NOT in phase 1** — a linear scan
-  double-counts `sp` adjustments across diamond control flow
-  (`b .epilogue` skipping the sibling path's `add sp`; false-positives on
-  e.g. `bool_to_string`). Needs per-block analysis → fold into phase 2+
-  using the lifted structure.
+- ~~**Stack-balance checking deliberately NOT in phase 1**~~ — DONE (see the
+  stack-balance section below): the linear scan is replaced by per-block sp
+  dataflow over the lifted function bodies.
 - Flags tracking resets at labels AND calls only; fine because regular
   AArch64 ALU ops don't touch NZCV.
 
@@ -996,8 +994,20 @@ a.cap`, literal guards, `lim = n - 1`, range form). Extending the
   IR→regs with whole-function register allocation (locals + scalar params
   both promote today; see above); NEON auto-vectorization is the big float
   lever beyond that.
-- Stack-balance validation: implement over lifted blocks (per-block delta,
-  join = require equal deltas or unknown) once phase 2 blocks exist.
+- ~~Stack-balance validation~~ — DONE: `validate_stack_balance`
+  (lift_asm.ts) builds a label/branch CFG per lifted function and runs a
+  three-valued dataflow (known delta / unknown / unreachable). Per-
+  instruction effects: pre-indexed `stp/str [sp, #-N]!` subtracts,
+  post-indexed `ldp/ldr [sp], #N` adds, `sub/add sp, sp, #imm` adjusts;
+  any other sp write poisons to unknown. Joins require equal deltas or
+  unknown — only a KNOWN non-zero delta at a `ret` is reported, so the
+  classic epilogue-diamond shape (the bool_to_string false positive that
+  deferred the check in phase 1) stays clean by construction.
+  `bl`/`blr` preserve sp; `br xN` tail-jumps end propagation unchecked;
+  numeric raw-block locals (`1:` / `b.hs 1f`) resolve forward/backward.
+  Wired into build() after `validate_asm` — every aarch64 build (and
+  therefore every test binary) checks balance. Tests:
+  `test/asm_balance.test.ts` (10 cases incl. a real-build integration).
 
 ## Session context that may matter
 
