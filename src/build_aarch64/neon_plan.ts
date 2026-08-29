@@ -737,7 +737,10 @@ function plan_common(
 	// `acc = e * acc` shapes whose accumulator is a float LOCAL. Registered
 	// before the general def rules — the accumulator's self-read is exactly
 	// the carried dependency the vector-accumulate form exists for.
-	const reduction_candidates = new Map<string, { op: "+" | "*"; operand: NirExpr }>();
+	const reduction_candidates = new Map<
+		string,
+		{ op: "+" | "*"; operand: NirExpr; cls: ElemClass | null }
+	>();
 	// Def pre-pass: every lane statement shape + def name. Hoisted call-arg
 	// temps attached to an eval store count as defs (they become lane temps).
 	const defs = new Set<string>([induction]);
@@ -750,17 +753,27 @@ function plan_common(
 		}
 		if (s.kind === "assign") {
 			if (s.target.kind !== "leaf" || !s.target.name) return null;
-			const cand = allow_reductions ? reduction_candidate(s) : null;
+			const cand = reduction_candidate(s);
 			if (cand) {
-				if (reduction_candidates.has(cand.name)) return null; // one def only
-				if (class_of_type_name(type_from_value_node(s.target.node)?.name) !== "float") {
-					return null; // float accumulators only (tranche 3 scope)
+				// Class-gated soundness: float accumulators REASSOCIATE the
+				// sum (fast_math opt-in only); integer `+` is wrap-exact
+				// under any association (no opt-in); integer `*` would need
+				// a multi-step horizontal combine — not planned.
+				const cls =
+					class_of_type_name(type_from_value_node(s.target.node)?.name) ??
+					(float_type_of_name(cand.name, status)
+						? "float"
+						: class_of_type_name(status.variable_types?.get(cand.name)?.name));
+				const gate_ok =
+					cls === "float" ? allow_reductions : (cls === "e8" || cls === "e4") && cand.op === "+";
+				if (cls && gate_ok) {
+					if (reduction_candidates.has(cand.name)) return null; // one def only
+					if (status.function_param_regs?.has(cand.name)) return null; // local only
+					if (defs.has(cand.name)) return null;
+					defs.add(cand.name);
+					reduction_candidates.set(cand.name, { op: cand.op, operand: cand.operand, cls });
+					continue;
 				}
-				if (status.function_param_regs?.has(cand.name)) return null; // local only
-				if (defs.has(cand.name)) return null;
-				defs.add(cand.name);
-				reduction_candidates.set(cand.name, { op: cand.op, operand: cand.operand });
-				continue;
 			}
 			if (s.operator !== null || s.swap) return null;
 			if (has_allocations(s.node)) return null;
@@ -838,7 +851,7 @@ function plan_common(
 				// lane_expr (its self-read is the carried dependency).
 				const operand = lane_expr(cand.operand, walk, induction, status, 0);
 				if (!operand) return null;
-				walk.temp_classes.set(name, "float");
+				walk.temp_classes.set(name, cand.cls ?? "float");
 				walk.defed_so_far.add(name);
 				reductions.push({
 					name,

@@ -227,8 +227,12 @@ export const MNEMONICS: Record<string, MnemonicSig> = {
 	fmul: { shapes: [["f", "f", "f"]] },
 	fdiv: { shapes: [["f", "f", "f"]] },
 	// FADDP (scalar): horizontal pair-add — `faddp d0, v2.2d` (the NEON
-	// reduction's 2-lane combine).
+	// reduction's 2-lane float combine).
 	faddp: { shapes: [["f", "f"]] },
+	// ADDP (scalar) / ADDV (add-across): the integer `+` reduction's
+	// horizontal combines — wrap-exact under any association.
+	addp: { shapes: [["f", "f"]] },
+	addv: { shapes: [["f", "f"]] },
 	fcmp: { shapes: [["f", "f"]], setsFlags: true },
 	fsqrt: { shapes: [["f", "f"]] },
 	scvtf: { shapes: [["f", "r"]] },

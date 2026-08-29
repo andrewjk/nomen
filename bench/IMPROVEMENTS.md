@@ -494,6 +494,18 @@ Changes applied:
     (interleaved best-of-7): dot-product bench (1000 × dot over 100k
     elements) **−90.8%** (526 → 49 ms, 10.7×); spectral-norm n=500
     fast_math output identical to scalar.
+36. **NEON vectorization tranche 4 — integer reductions (no opt-in)**:
+    int `+`/`+=` reductions (`.2d` int64 and `.4s` uint32 buffers) are
+    wrap-exact under ANY association (mod-2^64 addition is
+    associative/commutative), so they vectorize unconditionally — no
+    fast_math needed. Accumulation rides `add vACC.<arr>`; horizontal
+    combines are kind-specific (`addp d0, v2.2d` for `.2d`, `addv s0,
+v2.4s` for `.4s`), with the combined bits routed `fmov x0, d0` /
+    `fmov w0, s0` into the standard store (the x↔s move isn't encodable —
+    the assembler caught it). Integer `*` reductions still reject (no
+    horizontal multiply combine). Behavioral test covers negative sums,
+    the range-for reduction, tail-only calls and a mod-2^32 wrap — exact
+    on both backends.
 
 ### Known issues
 

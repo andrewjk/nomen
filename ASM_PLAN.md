@@ -892,10 +892,39 @@ identical output (its O(n) vbv/vv loops vectorize; the O(n²) inner loop
 stays scalar — it carries an integer recurrence alongside the reduction,
 which the whitelist rejects). Full suite green (261 files / 2619 tests).
 
-Remaining NEON work (tranches 4+): int reductions (bit-exact — no opt-in
-needed; needs ADDP/scalar-combine for `.2d`/`.4s`), shifted-index patterns
-behind alias/peeling machinery, 64-bit int mul via 32-bit mulh expansion,
-byte (`.16b`) element kinds, and cached-plan reuse across dispatches.
+### NEON vectorization tranche 4 (DONE): integer reductions (no opt-in)
+
+Integer `+` is associative and commutative mod 2^64, so a vector-accumulated
+int sum is WRAP-EXACT under any association — no fast_math opt-in needed.
+
+- **Planner**: the reduction gate splits by accumulator class — float keeps
+  the fast_math requirement (ops `+`/`*`); int accumulators (e8/e4) plan
+  `+`/`+=` reductions unconditionally. Integer `*` reductions still reject
+  (no horizontal multiply combine); the class-consistency check keeps
+  accumulator and loop element kinds agreeing.
+- **Emitter**: accumulation rides `add vACC.<arr>`; the horizontal combine
+  is kind-specific — `.2d`: scalar `addp d0, v2.2d`, `.4s`:
+  `addv s0, v2.4s` — then the bits route through `fmov x0, d0` /
+  `fmov w0, s0` so `emit_var_store` resolves slots, promoted x-regs and
+  promoted d-regs uniformly (`fmov x, s` is not encodable — caught by the
+  assembler). Contract table gained `addp`/`addv` (scalar forms).
+- **Cached-plan reuse** (from the tranche-3 list): analyzed — each
+  statement dispatches exactly once per build, so plans are never
+  recomputed; nothing to cache.
+- **Shifted-index patterns** stay deferred: the naive soundness argument
+  breaks for negative offsets under multi-lane groups (a `load(i-1)`
+  inside `store(i)` reads pre-write values where the scalar loop reads
+  post-write ones) — versioning/peeling machinery, its own tranche.
+
+Proof: `test/neon_vector.test.ts` → 37 tests (int64 sum emission shape
+without fast_math; uint32 `.4s` sum with ADDV combine; int `*` rejection;
+behavioral run covering negative int64 sums, the range-for reduction, a
+tail-only call, and a mod-2^32 uint32 wrap — exact output on both
+backends). Full suite green (262 files / 2623 tests).
+
+Remaining NEON work (tranches 5+): shifted-index patterns behind
+versioning/peeling, 64-bit int mul via 32-bit mulh expansion, byte
+(`.16b`) element kinds (needs generic `load_T`/`store_T` name survey).
 
 ### Remaining phase-4 work (NOT done)
 
@@ -908,13 +937,13 @@ byte (`.16b`) element kinds, and cached-plan reuse across dispatches.
   survives only as the byte-identity A/B baseline, the join-slot engine for
   value-position flow, and synthetic fragment emission). Stage 1's closed
   union + coverage sets are the contract; unknown kinds now tripwire.
-- **NEON auto-vectorization** — tranches 1–3 DONE (see above): elementwise
+- **NEON auto-vectorization** — tranches 1–4 DONE (see above): elementwise
   float loops vectorize to unrolled `.2d` groups (range fors included),
-  integer `.2d`/`.4s` kinds, literal-bound cost threshold, and float
+  integer `.2d`/`.4s` kinds, literal-bound cost threshold, float
   reductions behind the explicit `--fast-math` opt-in (dot products
-  −91%). What remains: int reductions (bit-exact), shifted indices
-  behind alias checks, 64-bit int mul expansion, byte element kinds
-  (details in the tranche sections).
+  −91%), and bit-exact integer reductions (no opt-in). What remains:
+  shifted indices behind versioning/peeling, 64-bit int mul expansion,
+  byte element kinds (details in the tranche sections).
 - Known pre-existing divergence found while testing (recorded in
   FOLLOWUP.md): a shadowed local read after its scope diverges between
   backends (aarch64 `x=10` vs C `x=8`); `stack_offsets` is name-keyed.

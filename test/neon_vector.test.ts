@@ -804,3 +804,146 @@ pub func main = () {
 		{ fast_math: true },
 	);
 });
+
+// --- Tranche 4: integer reductions (bit-exact, no opt-in) --------------------
+
+test("int64 sum reductions vectorize WITHOUT fast_math (wrap-exact)", () => {
+	const code = compile_aarch64_fast(
+		`
+import System
+
+func total = (ref Buffer<int> a, int n, out int) {
+	if n <= a.cap {
+		var int acc = 0
+		var i = 0
+		while i < n; i += 1 {
+			acc += a.load_int(i)
+		}
+		return acc
+	}
+	return 0
+}
+pub func main = () {}
+`,
+		false,
+	);
+	expect(code).toContain(".Lneon_0:");
+	expect(code).toContain("add v2.2d, v2.2d, v0.2d");
+	// .2d horizontal combine: scalar ADDP, bits routed through x0
+	expect(code).toContain("addp d0, v2.2d");
+	expect(code).toContain("fmov x0, d0");
+});
+
+test("uint32 sum reductions vectorize with an ADDV combine", () => {
+	const code = compile_aarch64_fast(
+		`
+import System
+
+func total = (ref Buffer<uint32> a, int n, out int) {
+	if n <= a.cap {
+		var uint32 acc = 0
+		var i = 0
+		while i < n; i += 1 {
+			acc = acc + a.load(i)
+		}
+		return acc as int
+	}
+	return 0
+}
+pub func main = () {}
+`,
+		false,
+	);
+	expect(code).toContain(".Lneon_0:");
+	expect(code).toContain("add v2.4s, v2.4s, v0.4s");
+	// .4s horizontal combine: add-across, 32-bit move to x0
+	expect(code).toContain("addv s0, v2.4s");
+	expect(code).toContain("fmov w0, s0");
+});
+
+test("integer multiply reductions still reject (no horizontal combine)", () => {
+	const code = compile_aarch64_fast(
+		`
+import System
+
+func bad = (ref Buffer<int> a, int n) {
+	if n <= a.cap {
+		var int p = 1
+		var i = 0
+		while i < n; i += 1 {
+			p = p * a.load_int(i)
+		}
+	}
+}
+pub func main = () {}
+`,
+		true,
+	);
+	expect(code).not.toContain(".Lneon_");
+});
+
+test("behavioral: int reductions are exact (negatives, range-for, tail, wrap)", async () => {
+	// total(9) sums (i-4)*1e6 → 0 (negatives included); range_sum rides the
+	// range-for reduction; total(1) is tail-only; the uint32 sum wraps mod
+	// 2^32: 9 × (2^32 - 1000) ≡ 2^32 - 9009 = 4294958287.
+	const { default: build_and_check_output } = await import("./build_and_check_output");
+	await build_and_check_output(
+		`
+import System
+
+func total = (ref Buffer<int> a, int n, out int) {
+	if n <= a.cap {
+		var int acc = 0
+		var i = 0
+		while i < n; i += 1 {
+			acc += a.load_int(i)
+		}
+		return acc
+	}
+	return 0
+}
+
+func range_sum = (ref Buffer<int> a, int n, out int) {
+	if n <= a.cap {
+		var int s = 0
+		for i of 0 .. n {
+			s += a.load_int(i)
+		}
+		return s
+	}
+	return 0
+}
+
+pub func main = () {
+	var a = Buffer<int>()
+	a.alloc_int(9)
+	if 9 <= a.cap {
+		var i = 0
+		while i < 9 {
+			a.store_int(i, (i - 4) * 1000000)
+			i += 1
+		}
+		Console.write("\\{total(ref a, 9)} \\{range_sum(ref a, 9)} \\{total(ref a, 1)}")
+	}
+	var b = Buffer<uint32>()
+	b.alloc(9)
+	if 9 <= b.cap {
+		var i = 0
+		while i < 9 {
+			b.store(i, 4294967295 - 1000)
+			i += 1
+		}
+		var uint32 acc = 0
+		var i2 = 0
+		while i2 < 9; i2 += 1 {
+			acc += b.load(i2)
+		}
+		Console.write(" \\{acc as int}")
+	}
+}
+`,
+		"neon_vector_int_reduction",
+		"0 0 -4000000 4294958287",
+		true,
+	);
+});

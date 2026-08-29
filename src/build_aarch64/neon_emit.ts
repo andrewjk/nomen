@@ -191,12 +191,13 @@ function emit_lane_stmt(
 		return;
 	}
 	if (lane.kind === "reduction") {
-		// Vector-accumulate: vACC +=/*= operand (the accumulator never
-		// enters lane_expr — its self-read is the carried dependency).
+		// Vector-accumulate: vACC ∘= operand (the accumulator never enters
+		// lane_expr — its self-read is the carried dependency). Floats use
+		// fadd/fmul; integer `+` rides `add` (wrap-exact).
 		emit_lane_expr(lane.operand, status, plan, buffer_regs, idx, 0);
 		const acc = acc_regs.get(lane.name) ?? "v2";
-		const mn = lane.op === "+" ? "fadd" : "fmul";
-		status.code += `${mn} ${acc}.2d, ${acc}.2d, v0.2d\n`;
+		const mn = lane.op === "+" ? (plan.elem.float ? "fadd" : "add") : "fmul";
+		status.code += `${mn} ${acc}.${plan.elem.arr}, ${acc}.${plan.elem.arr}, v0.${plan.elem.arr}\n`;
 		return;
 	}
 	emit_lane_expr(lane.value, status, plan, buffer_regs, idx, 0);
@@ -243,8 +244,14 @@ export function emit_neon_vector_loop(plan: NeonPlan, status: BuildStatus): bool
 	const acc_regs = new Map<string, string>();
 	plan.reductions.forEach((r, i) => {
 		const reg = REDUCTION_REGS[i] ?? "v2";
-		build_float_operand(r.init_node, "d0", status);
-		status.code += `dup ${reg}.2d, v0.d[0]\n`;
+		if (plan.elem.float) {
+			build_float_operand(r.init_node, "d0", status);
+			status.code += `dup ${reg}.2d, v0.d[0]\n`;
+		} else {
+			build_node(r.init_node, status);
+			if (!status.code.endsWith("\n")) status.code += "\n";
+			status.code += `dup ${reg}.${plan.elem.arr}, ${plan.elem.arr === "4s" ? "w0" : "x0"}\n`;
+		}
 		acc_regs.set(r.name, reg);
 	});
 
@@ -267,18 +274,32 @@ export function emit_neon_vector_loop(plan: NeonPlan, status: BuildStatus): bool
 	status.code += `b ${label}\n`;
 	status.code += `${label}_end:\n`;
 
-	// Horizontal-combine each accumulator into its scalar (d0 = lane0 ∘
-	// lane1), then store — the scalar tail continues from the combined
-	// value. emit_var_store resolves slots and promoted d-registers; the
-	// planner rejects param accumulators.
+	// Horizontal-combine each accumulator into its scalar and store — the
+	// scalar tail continues from the combined value. Floats: FADDP (pair) or
+	// the scalar FMUL element form. Integer `+` is wrap-exact under any
+	// association, so no opt-in is needed: `.2d` combines with ADDP
+	// (scalar), `.4s` with ADDV (add-across). The combined bits route
+	// through x0 so `emit_var_store` can resolve slots, promoted x-regs or
+	// promoted d-regs (float accumulators store directly from d0 — they can
+	// only be slots or d-promoted).
 	for (const r of plan.reductions) {
 		const reg = acc_regs.get(r.name) ?? "v2";
-		if (r.op === "+") {
-			status.code += `faddp d0, ${reg}.2d\n`;
+		if (plan.elem.float) {
+			if (r.op === "+") {
+				status.code += `faddp d0, ${reg}.2d\n`;
+			} else {
+				status.code += `fmul d0, ${reg}.d[0], ${reg}.d[1]\n`;
+			}
+			emit_var_store(status, "d0", r.name, 8);
+		} else if (plan.elem.arr === "2d") {
+			status.code += `addp d0, ${reg}.2d\n`;
+			status.code += `fmov x0, d0\n`;
+			emit_var_store(status, "x0", r.name, 8);
 		} else {
-			status.code += `fmul d0, ${reg}.d[0], ${reg}.d[1]\n`;
+			status.code += `addv s0, ${reg}.4s\n`;
+			status.code += `fmov w0, s0\n`;
+			emit_var_store(status, "x0", r.name, 4);
 		}
-		emit_var_store(status, "d0", r.name, 8);
 	}
 
 	// Sync the induction: the scalar tail resumes at the vector loop's exit
