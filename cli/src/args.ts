@@ -12,6 +12,10 @@ export interface Args {
 	audit: boolean;
 	audit_runtime?: string;
 	check: boolean;
+	release: boolean;
+	/** Opt in to FP reassociation: float reductions vectorize under NEON
+	 *  (results may differ in the last ulp vs the scalar loop). */
+	fast_math: boolean;
 	// Everything after a bare `--` on the command line — forwarded verbatim to
 	// the compiled program by `nomen run`. Lets a program receive its own argv
 	// (`nomen run --in app/main.nm -- arg1 arg2`).
@@ -42,6 +46,9 @@ const BOOLEAN_OPTIONS: Map<string, string> = new Map([
 	["w", "watch"],
 	["audit", "audit"],
 	["check", "check"],
+	["release", "release"],
+	["r", "release"],
+	["fast-math", "fast_math"],
 ]);
 
 const DEFAULTS: Partial<Args> = {
@@ -49,6 +56,8 @@ const DEFAULTS: Partial<Args> = {
 	watch: false,
 	audit: false,
 	check: false,
+	release: false,
+	fast_math: false,
 };
 
 function set(args: Args, key: string, value: string | boolean): void {
@@ -166,6 +175,8 @@ export function print_help(): void {
 			"  --lib, -l <path>        Path to System library directory (containing package.jsonc)",
 			"  --audit                 Audit the generated program for memory issues",
 			"  --audit-runtime <path>  Path to audit_runtime.c, linked in when --audit is set",
+			"  --release, -r           Build with optimizations (clang -O2; asm passes on aarch64)",
+			"  --fast-math             Allow FP reassociation (float loop reductions vectorize on aarch64)",
 			"  --check                 For `nomen format`: report files that would change",
 			"  -h, --help              Show this help",
 		].join("\n"),

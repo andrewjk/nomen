@@ -199,6 +199,20 @@ All options are global and accepted by every command (though only a subset are m
 - **Applies to:** `run`, `build` (only when `--audit` is set)
 - **Description:** Explicit path to `audit_runtime.c`. If not supplied, the CLI searches each ancestor folder for `src/audit_runtime.c`. When `--audit` is set and no runtime can be resolved, the build fails with an error.
 
+### `--release`, `-r`
+
+- **Type:** boolean
+- **Applies to:** `run`, `build`
+- **Description:** Build with optimizations, matching the release builds other toolchains produce (`cargo --release`, `zig -O ReleaseFast`, `go build`):
+  - The generated C (and the aarch64 companion C file) is compiled with `clang -O2` instead of unoptimized.
+  - The AArch64 assembly (assembled verbatim — clang's optimizer never sees it) is run through the compiler's own optimization passes: constant folding/propagation, dead-branch folding, strength reduction (`mul` by power-of-two → `lsl`), unreachable-code elimination, and branch/peephole cleanups. See [PERF.md](PERF.md) for the pass list and measured impact.
+
+### `--fast-math`
+
+- **Type:** boolean
+- **Applies to:** `run`, `build`
+- **Description:** Opt in to floating-point reassociation (the aarch64 backend's analog of clang's `-ffast-math` reduction behavior). Float loop reductions (`acc = acc + …`, `acc += …`, `*`/`*=`) vectorize under NEON — a vector accumulator plus a horizontal combine replaces the sequential scalar sum. **Results may differ in the last ulp** from the scalar loop (the pairwise summation order differs); with the flag off, every vectorized loop is bit-exact and reductions stay scalar. See [PERF.md](PERF.md).
+
 ### `--check`
 
 - **Type:** boolean
@@ -246,11 +260,12 @@ All generated artifacts are written to `<build_root>/build/` (created if missing
 	"platform": "macos",
 	"lib": "../core",
 	"audit": false,
-	"audit_runtime": "../src/audit_runtime.c"
+	"audit_runtime": "../src/audit_runtime.c",
+	"release": true
 }
 ```
 
-CLI flags (`--arch`, `--platform`, `--lib`, `--audit`, `--audit-runtime`) override any corresponding config-file value. If a field is absent everywhere, its built-in default applies (`arch = aarch64`, `platform = host-derived`).
+CLI flags (`--arch`, `--platform`, `--lib`, `--audit`, `--audit-runtime`, `--release`, `--fast-math`) override any corresponding config-file value. If a field is absent everywhere, its built-in default applies (`arch = aarch64`, `platform = host-derived`, `release = false`, `fast_math = false`).
 
 ## `package.jsonc`
 

@@ -163,6 +163,8 @@ try {
 		if (args.lib) config.lib = args.lib;
 		if (args.audit) config.audit = args.audit;
 		if (args.audit_runtime) config.audit_runtime = args.audit_runtime;
+		if (args.release) config.release = args.release;
+		if (args.fast_math) config.fast_math = args.fast_math;
 
 		// Is the --in path a folder
 		if (fs.lstatSync(args.in).isDirectory()) {
@@ -349,7 +351,13 @@ function processFile(filename: string, config: Config, mode: Mode, program_args:
 		return;
 	}
 
-	const result = build(parsed.root, { arch, platform, audit: config.audit });
+	const result = build(parsed.root, {
+		arch,
+		platform,
+		audit: config.audit,
+		optimize: config.release,
+		fast_math: config.fast_math,
+	});
 
 	if (result.errors && result.errors.length > 0) {
 		console.log(render_errors(input, result.errors));
@@ -391,7 +399,12 @@ function processFile(filename: string, config: Config, mode: Mode, program_args:
 		platform === "macos" || platform === "ios"
 			? " -framework CoreGraphics -framework Foundation -framework AppKit -lobjc"
 			: "";
-	execSync(`clang -o ${outfile} ${link_inputs}${framework_flags}`);
+	// Release mode compiles the C (and aarch64 companion C) with -O2,
+	// matching the optimized builds other toolchains produce by default.
+	// The aarch64 .s itself is assembled verbatim — its optimizations are
+	// the codegen passes enabled via `optimize` above.
+	const opt_flags = config.release ? " -O2" : "";
+	execSync(`clang${opt_flags} -o ${outfile} ${link_inputs}${framework_flags}`);
 
 	if (mode === "build") {
 		const buildTime = performance.now();

@@ -4,4 +4,6 @@ export default interface Config {
 	lib?: string;
 	audit?: boolean;
 	audit_runtime?: string;
+	release?: boolean;
+	fast_math?: boolean;
 }

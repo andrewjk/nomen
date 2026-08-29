@@ -51,3 +51,42 @@ describe("parse_args program passthrough", () => {
 		expect(a.program_args).toEqual(["x"]);
 	});
 });
+
+describe("parse_args release flag", () => {
+	test("release defaults to false", () => {
+		const a = parse_args(["run", "--in", "app/main.nm"]);
+		expect(a.release).toBe(false);
+	});
+
+	test("--release sets it true", () => {
+		const a = parse_args(["build", "--in", "app/main.nm", "--release"]);
+		expect(a.release).toBe(true);
+	});
+
+	test("-r short form sets it true", () => {
+		const a = parse_args(["build", "-r", "-i", "app/main.nm"]);
+		expect(a.release).toBe(true);
+	});
+
+	test("--release=false sets it false explicitly", () => {
+		const a = parse_args(["build", "--release=false", "-i", "app/main.nm"]);
+		expect(a.release).toBe(false);
+	});
+});
+
+describe("parse_args fast_math flag", () => {
+	test("fast_math defaults to false", () => {
+		const a = parse_args(["run", "--in", "app/main.nm"]);
+		expect(a.fast_math).toBe(false);
+	});
+
+	test("--fast-math sets it true", () => {
+		const a = parse_args(["build", "--in", "app/main.nm", "--fast-math"]);
+		expect(a.fast_math).toBe(true);
+	});
+
+	test("--fast-math=false sets it false explicitly", () => {
+		const a = parse_args(["build", "--fast-math=false", "-i", "app/main.nm"]);
+		expect(a.fast_math).toBe(false);
+	});
+});
