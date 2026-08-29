@@ -5,6 +5,7 @@ import { expect, test } from "vite-plus/test";
 import build from "../src/build";
 import { set_nir_emission_enabled } from "../src/build_aarch64/emit_nir";
 import { set_neon_vectorization_enabled } from "../src/build_aarch64/neon_emit";
+import { set_loop_unrolling_enabled } from "../src/build_aarch64/unroll";
 import join from "../src/join";
 import { get_library } from "../src/lib";
 import { lower_function } from "../src/nir/from_ast";
@@ -771,18 +772,22 @@ test("whole benchmark corpus is byte-identical through NIR emission", () => {
 			const result = build(parsed.root, { arch: "aarch64" });
 			return result.code;
 		};
-		// The NEON vectorizer intentionally changes output, so it is held off
-		// in both arms (see the harness comment at the top of this file).
+		// The NEON vectorizer and the full unroller intentionally change
+		// output, so both are held off in both arms (see the harness comment
+		// at the top of this file).
 		set_nir_emission_enabled(false);
 		set_neon_vectorization_enabled(false);
+		set_loop_unrolling_enabled(false);
 		const baseline = compile();
 		set_nir_emission_enabled(true);
 		set_neon_vectorization_enabled(false);
+		set_loop_unrolling_enabled(false);
 		try {
 			expect(compile(), file).toEqual(baseline);
 		} finally {
 			set_nir_emission_enabled(true);
 			set_neon_vectorization_enabled(true);
+			set_loop_unrolling_enabled(true);
 		}
 	}
 });

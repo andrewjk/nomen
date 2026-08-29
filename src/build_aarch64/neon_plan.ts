@@ -602,7 +602,7 @@ function is_one_leaf(e: NirExpr | null): boolean {
 }
 
 /** `i += 1` or `i = i + 1` — the one sanctioned induction increment. */
-function is_increment(s: NirStmt, induction: string): boolean {
+export function is_increment(s: NirStmt, induction: string): boolean {
 	if (s.kind !== "assign") return false;
 	if (s.target.kind !== "leaf" || s.target.name !== induction) return false;
 	// The parser stamps the RAW token on AssignmentNode.operator: "+=" for
@@ -629,7 +629,7 @@ interface InitScan {
  * barriers and constructs that may redefine arbitrary names abort. Callers
  * add shape requirements (the induction additionally needs a literal 0).
  */
-function scan_init(list: readonly NirStmt[], index: number, name: string): InitScan {
+export function scan_init(list: readonly NirStmt[], index: number, name: string): InitScan {
 	for (let k = index - 1; k >= 0; k--) {
 		const s = list[k];
 		if (defs_name(s, name)) {
