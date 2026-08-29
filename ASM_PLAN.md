@@ -922,9 +922,49 @@ behavioral run covering negative int64 sums, the range-for reduction, a
 tail-only call, and a mod-2^32 uint32 wrap — exact output on both
 backends). Full suite green (262 files / 2623 tests).
 
-Remaining NEON work (tranches 5+): shifted-index patterns behind
-versioning/peeling, 64-bit int mul via 32-bit mulh expansion, byte
-(`.16b`) element kinds (needs generic `load_T`/`store_T` name survey).
+### NEON vectorization tranche 5 (DONE): invariant path bounds (`while i < a.cap`)
+
+Guard-free elementwise loops. `extract_bound` now accepts a PATH bound whose
+ROOT is a named loop-invariant variable (`a.cap`): the preheader evaluates
+it once via the ordinary access path, the plan_common defs check enforces
+root invariance (lanes never define Buffers, and with no calls in the lanes
+a cap cannot change mid-loop), and the scalar tail keeps its original
+per-iteration re-evaluation. Both loop forms ride it (`while i < a.cap` and
+`for i of 0 .. a.cap`). This is the shape the checker verifies DIRECTLY —
+the loop condition IS the access constraint — so elementwise loops drop
+their `n <= a.cap` guard dances entirely (spectral-norm's guards exist
+only because `n` arrives as a parameter through `ref`-opaqueness).
+
+Proof: `test/neon_vector.test.ts` → 41 tests (cap-bound while + range
+emission; cross-buffer cap rejection — `while i < a.cap` cannot prove
+`i < b.cap` and the checker stops the program before the planner; a
+guard-free behavioral run covering float fill + range add + int
+transform, exact output on both backends). Full suite green (262 files /
+2627 tests).
+
+### Tranche-5 candidates surveyed and CLOSED (rejected or blocked)
+
+- **Shifted-index patterns** (`load(i + 1)`): soundness machinery fully
+  designed (per-element event-order rule: a cross-statement read/write
+  pair with `d = ow - or` is consistent iff sign(d) matches statement
+  order, `|d| >= G` is always consistent, same-statement reads precede
+  stores) — but BLOCKED UPSTREAM: the checker's bound verifier cannot
+  prove `i >= 0 && i + 1 < cap` under ANY guard shape (tested `n + 1 <=
+a.cap`, literal guards, `lim = n - 1`, range form). Extending the
+  verifier is memory-safety-critical work outside the vectorizer; no
+  shifted program reaches the planner today.
+- **64-bit int mul via mulh expansion**: rejected by analysis — scalar
+  64-bit `mul` is one instruction; the 32-bit-half NEON expansion is
+  ~10 instructions for 2 lanes (~5/element). Strictly worse.
+- **Byte (`.16b`) element kinds**: `load_T`/`store_T` are not in the
+  scalar inline fast path (they emit real calls), so there is nothing to
+  vectorize — requires scalar-path inlining work first; byte-typed loads
+  additionally hit the same checker constraint gap as shifted indices.
+- **`store_or` vectorization (RMW)**: sound (lane-local RMW) but no
+  vectorizable hot user — nsieve's marking loop strides by `2*i` with
+  inner guards, outside the pattern class.
+- **Cached-plan reuse**: analyzed in tranche 4 — each statement
+  dispatches exactly once per build; nothing to cache.
 
 ### Remaining phase-4 work (NOT done)
 
@@ -941,9 +981,11 @@ versioning/peeling, 64-bit int mul via 32-bit mulh expansion, byte
   float loops vectorize to unrolled `.2d` groups (range fors included),
   integer `.2d`/`.4s` kinds, literal-bound cost threshold, float
   reductions behind the explicit `--fast-math` opt-in (dot products
-  −91%), and bit-exact integer reductions (no opt-in). What remains:
-  shifted indices behind versioning/peeling, 64-bit int mul expansion,
-  byte element kinds (details in the tranche sections).
+  −91%), bit-exact integer reductions (no opt-in), and guard-free
+  capacity-bound loops (`while i < a.cap`). The remaining candidates are
+  surveyed and closed — shifted indices are checker-blocked, 64-bit int
+  mul is a measured/analyzed loss, byte kinds need scalar-path inlining
+  first (details in the tranche sections).
 - Known pre-existing divergence found while testing (recorded in
   FOLLOWUP.md): a shadowed local read after its scope diverges between
   backends (aarch64 `x=10` vs C `x=8`); `stack_offsets` is name-keyed.

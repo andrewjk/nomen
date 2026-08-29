@@ -506,6 +506,21 @@ v2.4s` for `.4s`), with the combined bits routed `fmov x0, d0` /
     horizontal multiply combine). Behavioral test covers negative sums,
     the range-for reduction, tail-only calls and a mod-2^32 wrap — exact
     on both backends.
+37. **NEON vectorization tranche 5 — invariant path bounds
+    (`while i < a.cap`)**: the loop bound may now be a PATH (`a.cap`)
+    whose root is loop-invariant — the preheader evaluates it once, the
+    defs check enforces invariance (lanes never define Buffers; no calls
+    means no resize), and the scalar tail keeps its per-iteration
+    re-evaluation. Both `while` and `for of 0 .. cap` forms ride it.
+    This is the shape the CHECKER verifies directly (the loop condition
+    is the access constraint), so elementwise loops drop their
+    `n <= a.cap` guard dances entirely. Also surveyed and closed the
+    remaining candidates: shifted indices are checker-blocked (the bound
+    verifier cannot prove `i + 1 < cap` under any guard shape — full
+    soundness design recorded in ASM_PLAN for when the verifier grows),
+    64-bit int mul expansion is a strict loss (~5 instructions/element vs
+    one scalar `mul`), byte kinds need scalar `load_T`/`store_T` inlining
+    first, and `store_or` RMW has no vectorizable hot user.
 
 ### Known issues
 

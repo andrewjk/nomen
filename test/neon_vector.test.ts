@@ -947,3 +947,109 @@ pub func main = () {
 		true,
 	);
 });
+
+// --- Tranche 5: loop-invariant path bounds (`while i < a.cap`) ---------------
+
+test("capacity-bound loops vectorize without guard dances", () => {
+	const code = compile_aarch64(`
+import System
+
+func fill = (ref Buffer<float> a) {
+	var i = 0
+	while i < a.cap; i += 1 {
+		a.store_float(i, 1.5)
+	}
+}
+pub func main = () {}
+`);
+	expect(code).toContain(".Lneon_0:");
+	expect(code).toContain(".while_");
+});
+
+test("capacity-bound range loops vectorize", () => {
+	const code = compile_aarch64(`
+import System
+
+func fill = (ref Buffer<float> a) {
+	for i of 0 .. a.cap {
+		a.store_float(i, 2.5)
+	}
+}
+pub func main = () {}
+`);
+	expect(code).toContain(".Lneon_0:");
+	expect(code).toContain(".for_");
+});
+
+test("cross-buffer capacity bounds stay scalar (caps unrelated)", () => {
+	// `while i < a.cap` cannot prove `i < b.cap` for the store — the checker
+	// rejects the program; the vectorizer must never fire.
+	compiles_lenient_without_vector(`
+import System
+
+func bump = (ref Buffer<int> a, ref Buffer<int> b) {
+	var i = 0
+	while i < a.cap; i += 1 {
+		const int x = a.load_int(i) * 3
+		b.store_int(i, x + 1)
+	}
+}
+pub func main = () {}
+`);
+});
+
+test("behavioral: guard-free capacity-bound loops print exact results", async () => {
+	const { default: build_and_check_output } = await import("./build_and_check_output");
+	await build_and_check_output(
+		`
+import System
+
+func fill = (ref Buffer<float> a) {
+	var i = 0
+	while i < a.cap; i += 1 {
+		a.store_float(i, i as float * 0.5)
+	}
+}
+
+func range_add = (ref Buffer<float> a) {
+	for i of 0 .. a.cap {
+		a.store_float(i, a.load_float(i) + 100.0)
+	}
+}
+
+pub func main = () {
+	var a = Buffer<float>()
+	a.alloc_float(9)
+	fill(ref a)
+	range_add(ref a)
+	var i = 0
+	while i < a.cap {
+		Console.write("\\{a.load_float(i)} ")
+		i += 1
+	}
+	var b = Buffer<int>()
+	b.alloc_int(9)
+	if b.cap >= 9 {
+		var i2 = 0
+		while i2 < 9 {
+			b.store_int(i2, i2)
+			i2 += 1
+		}
+		var j = 0
+		while j < b.cap; j += 1 {
+			const int x = b.load_int(j) * 2
+			b.store_int(j, x + 1)
+		}
+		j = 0
+		while j < b.cap {
+			Console.write("\\{b.load_int(j)} ")
+			j += 1
+		}
+	}
+}
+`,
+		"neon_vector_cap_bound",
+		"100.000000 100.500000 101.000000 101.500000 102.000000 102.500000 103.000000 103.500000 104.000000 1 3 5 7 9 11 13 15 17 ",
+		true,
+	);
+});

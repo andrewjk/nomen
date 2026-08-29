@@ -71,9 +71,12 @@ import aarch64_size from "./utils/aarch64_size.ts";
  *   assigns and store evals — no calls, no control flow, no ref args, no
  *   swaps, no raw blocks — so there is nothing the vector loop could
  *   reorder, skip, or duplicate.
- * - The bound N is a leaf variable or integer literal, is not defined
- *   anywhere in the loop, and (for literals) is at least MIN_TRIP — tiny
- *   fixed-trip loops stay scalar.
+ * - The bound N is a leaf variable, an integer literal, or a loop-invariant
+ *   PATH (`while i < a.cap` — the root must not be defined in the loop; with
+ *   no calls in the lanes a Buffer's cap cannot change mid-loop). Literal
+ *   bounds below MIN_TRIP stay scalar. Path bounds let elementwise loops
+ *   drop their `n <= a.cap` guard dances entirely: the loop condition
+ *   itself verifies the access constraints.
  */
 
 /** Max distinct Buffers per plan — the preheader pins each data pointer in
@@ -703,19 +706,31 @@ function extract_bound(
 	bound: NirExpr,
 	induction: string,
 ): { node: BaseNode; name: string | null } | null {
-	if (bound.kind !== "leaf") return null;
-	if (bound.name) {
-		if (bound.name === induction) return null;
-		return { node: bound.node, name: bound.name };
+	if (bound.kind === "leaf") {
+		if (bound.name) {
+			if (bound.name === induction) return null;
+			return { node: bound.node, name: bound.name };
+		}
+		const v = node_value(bound);
+		if (v === null || !INT_LIT_RE.test(v)) return null;
+		try {
+			if (BigInt(v) < BigInt(MIN_TRIP)) return null;
+		} catch {
+			return null;
+		}
+		return { node: bound.node, name: null };
 	}
-	const v = node_value(bound);
-	if (v === null || !INT_LIT_RE.test(v)) return null;
-	try {
-		if (BigInt(v) < BigInt(MIN_TRIP)) return null;
-	} catch {
-		return null;
-	}
-	return { node: bound.node, name: null };
+	// Path bound (`while i < a.cap`): the ROOT must be a named variable that
+	// is loop-invariant (the defs check in plan_common enforces it — lanes
+	// never define Buffers, so a Buffer's cap is stable across the loop: no
+	// calls means no resize). The whole path's AST node rides as the bound —
+	// the preheader evaluates it once via the ordinary access path. This is
+	// what lets elementwise loops drop their `n <= a.cap` guard dances:
+	// `while i < a.cap` verifies the access constraints directly.
+	if (bound.kind !== "path") return null;
+	const root = bound.receiver;
+	if (root.kind !== "leaf" || !root.name || root.name === induction) return null;
+	return { node: bound.node, name: root.name };
 }
 
 /**
