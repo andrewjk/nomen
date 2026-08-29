@@ -83,6 +83,8 @@ const MAX_BUFFERS = 3;
 const MAX_TEMPS = 4;
 /** Max binary-op nesting depth in lane expressions (spill regs v14→v11). */
 const MAX_OP_DEPTH = 4;
+/** Max vector accumulators per plan (v2/v3). */
+const MAX_REDUCTIONS = 2;
 /** Literal bounds below this stay scalar (unrolled-vector overhead swamps
  *  a handful of iterations). Runtime bounds always vectorize. */
 const MIN_TRIP = 8;
@@ -169,7 +171,27 @@ export type NeonLaneStmt =
 			/** Buffer receiver node (data-pointer resolution at emission). */
 			readonly buffer_node: BaseNode;
 			readonly value: NeonLaneExpr;
+	  }
+	| {
+			readonly kind: "reduction";
+			/** The accumulator (a float local defined before the loop). */
+			readonly name: string;
+			readonly op: "+" | "*";
+			readonly operand: NeonLaneExpr;
 	  };
+
+/** A vector accumulator: `acc = acc + expr` (or `+=`, `*`, `*=`) riding the
+ *  loop. REASSOCIATION: the vector accumulator sums pairs and the tail
+ *  continues sequentially, so the result may differ in the last ulp from
+ *  the pure scalar loop — this shape is only planned under the explicit
+ *  `fast_math` opt-in. */
+export interface NeonReduction {
+	readonly name: string;
+	readonly op: "+" | "*";
+	readonly operand: NeonLaneExpr;
+	/** The accumulator's init expression (loaded + splatted at vector entry). */
+	readonly init_node: BaseNode;
+}
 
 export interface NeonPlan {
 	readonly induction: string;
@@ -180,6 +202,8 @@ export interface NeonPlan {
 	readonly buffers: readonly { readonly name: string; readonly node: BaseNode }[];
 	/** Element kind — every access in the loop agreed on this descriptor. */
 	readonly elem: ElemDesc;
+	/** Vector accumulators (≤ MAX_REDUCTIONS; fast_math opt-in only). */
+	readonly reductions: readonly NeonReduction[];
 }
 
 // Literal shapes — mirrored exactly from build_float_operand's accepted
@@ -323,6 +347,9 @@ interface PlanWalk {
 	elem: ElemDesc | null;
 	/** Name-derived element class per temp (consistency-checked at the end). */
 	temp_classes: Map<string, ElemClass>;
+	/** Registered accumulator names — reads outside their own reduction
+	 *  reject (the vector form must not observe partial sums). */
+	reductions: Set<string>;
 }
 
 function discover_load_desc(name: string, walk: PlanWalk): ElemDesc | null {
@@ -499,6 +526,7 @@ function lane_expr(
 				return { k: "lit", node: e.node };
 			}
 			if (e.name === induction) return null; // induction in value position
+			if (walk.reductions.has(e.name)) return null; // accumulator outside its own reduction
 			if (walk.defs.has(e.name)) {
 				// Temp: must be defined by an EARLIER statement of this
 				// iteration — a same-statement or later-first def is a
@@ -556,6 +584,12 @@ function is_zero_leaf(e: NirExpr | null): boolean {
 	return node_value(e)?.replace(/^\+/, "") === "0";
 }
 
+/** Literal-zero check on an AST value node (init-scan result). */
+function is_zero_ast_node(node: BaseNode | null): boolean {
+	const v = (node as ValueNode | undefined)?.value;
+	return typeof v === "string" && v.replace(/^\+/, "") === "0";
+}
+
 function is_one_leaf(e: NirExpr | null): boolean {
 	if (!e || e.kind !== "leaf" || e.name !== null) return false;
 	return node_value(e)?.replace(/^\+/, "") === "1";
@@ -575,6 +609,89 @@ function is_increment(s: NirStmt, induction: string): boolean {
 	if (op_node.op !== "+") return false;
 	if (s.rhs.left.kind !== "leaf" || s.rhs.left.name !== induction) return false;
 	return is_one_leaf(s.rhs.right);
+}
+
+interface InitScan {
+	ok: boolean;
+	/** The init value's AST node (declare initializer / assign RHS). */
+	init_node: BaseNode | null;
+}
+
+/**
+ * Backward scan from `index`: the nearest statement defining `name` must be
+ * a plain declare or assign (its value is the stable loop-entry value);
+ * barriers and constructs that may redefine arbitrary names abort. Callers
+ * add shape requirements (the induction additionally needs a literal 0).
+ */
+function scan_init(list: readonly NirStmt[], index: number, name: string): InitScan {
+	for (let k = index - 1; k >= 0; k--) {
+		const s = list[k];
+		if (defs_name(s, name)) {
+			if (s.kind === "declare" && !s.decl.swap) {
+				return { ok: s.decl.init !== null, init_node: s.decl.init?.node ?? null };
+			}
+			if (
+				s.kind === "assign" &&
+				s.operator === null &&
+				!s.swap &&
+				s.target.kind === "leaf" &&
+				s.target.name === name
+			) {
+				return { ok: true, init_node: s.rhs.node };
+			}
+			return { ok: false, init_node: null };
+		}
+		// Statements that may redefine arbitrary names stop the scan.
+		if (s.kind !== "declare" && s.kind !== "assign" && s.kind !== "eval" && s.kind !== "return") {
+			return { ok: false, init_node: null };
+		}
+		if (s.kind === "eval") {
+			// A call may define the name only through ref args / swapees /
+			// receivers.
+			const e = s.expr;
+			const roots: NirExpr[] = [];
+			if (e.kind === "call" || e.kind === "method_call") {
+				roots.push(...e.facts.swap_exprs);
+				if (e.facts.ref_arg_indices.length > 0) roots.push(...e.facts.args);
+				if (e.kind === "method_call") roots.push(e.receiver);
+			} else {
+				continue;
+			}
+			for (const r of roots) {
+				if (r.kind === "leaf" && r.name === name) return { ok: false, init_node: null };
+			}
+		}
+	}
+	return { ok: false, init_node: null };
+}
+
+/**
+ * Reduction candidacy for an `assign` lane statement: `acc = acc ±operand`,
+ * `acc = operand ±acc`, or the compound `acc += operand` / `acc *= operand`
+ * with op `+` or `*`. Returns the split (op, operand expr) or null. Only
+ * `+`/`*` — the two operations whose reassociated vector accumulation is
+ * well-defined (and only under the fast_math opt-in).
+ */
+function reduction_candidate(s: NirStmt): { name: string; op: "+" | "*"; operand: NirExpr } | null {
+	if (s.kind !== "assign") return null;
+	if (s.target.kind !== "leaf" || !s.target.name) return null;
+	if (s.swap) return null;
+	const name = s.target.name;
+	if (s.operator === "+=" || s.operator === "*=") {
+		return { name, op: s.operator === "+=" ? "+" : "*", operand: s.rhs };
+	}
+	if (s.operator !== null) return null;
+	if (s.rhs.kind !== "binary") return null;
+	const op_node = s.rhs.node as OperationNode;
+	if (op_node.op !== "+" && op_node.op !== "*") return null;
+	const left_is_acc = s.rhs.left.kind === "leaf" && s.rhs.left.name === name;
+	const right_is_acc = s.rhs.right.kind === "leaf" && s.rhs.right.name === name;
+	if (left_is_acc === right_is_acc) return null; // neither (or both) sides
+	return {
+		name,
+		op: op_node.op,
+		operand: left_is_acc ? s.rhs.right : s.rhs.left,
+	};
 }
 
 /**
@@ -614,7 +731,13 @@ function plan_common(
 	index: number,
 	list: readonly NirStmt[],
 	status: BuildStatus,
+	allow_reductions: boolean,
 ): NeonPlan | null {
+	// Reduction candidates (fast_math only): `acc = acc + e` / `acc += e` /
+	// `acc = e * acc` shapes whose accumulator is a float LOCAL. Registered
+	// before the general def rules — the accumulator's self-read is exactly
+	// the carried dependency the vector-accumulate form exists for.
+	const reduction_candidates = new Map<string, { op: "+" | "*"; operand: NirExpr }>();
 	// Def pre-pass: every lane statement shape + def name. Hoisted call-arg
 	// temps attached to an eval store count as defs (they become lane temps).
 	const defs = new Set<string>([induction]);
@@ -627,6 +750,18 @@ function plan_common(
 		}
 		if (s.kind === "assign") {
 			if (s.target.kind !== "leaf" || !s.target.name) return null;
+			const cand = allow_reductions ? reduction_candidate(s) : null;
+			if (cand) {
+				if (reduction_candidates.has(cand.name)) return null; // one def only
+				if (class_of_type_name(type_from_value_node(s.target.node)?.name) !== "float") {
+					return null; // float accumulators only (tranche 3 scope)
+				}
+				if (status.function_param_regs?.has(cand.name)) return null; // local only
+				if (defs.has(cand.name)) return null;
+				defs.add(cand.name);
+				reduction_candidates.set(cand.name, { op: cand.op, operand: cand.operand });
+				continue;
+			}
 			if (s.operator !== null || s.swap) return null;
 			if (has_allocations(s.node)) return null;
 			if (defs.has(s.target.name)) return null;
@@ -646,6 +781,7 @@ function plan_common(
 				max_depth: 0,
 				elem: null,
 				temp_classes: new Map(),
+				reductions: new Set(),
 			};
 			const temps = alloc_temps_of(s, probe);
 			if (!temps) return null;
@@ -658,6 +794,14 @@ function plan_common(
 		return null; // any other statement kind: no vectorization
 	}
 	if (bound_name !== null && defs.has(bound_name)) return null;
+	// Accumulators must be stable from their nearest def to loop entry; keep
+	// the init expression (splat at vector entry).
+	const reduction_inits = new Map<string, BaseNode>();
+	for (const name of reduction_candidates.keys()) {
+		const scan = scan_init(list, index, name);
+		if (!scan.ok || !scan.init_node) return null;
+		reduction_inits.set(name, scan.init_node);
+	}
 
 	const walk: PlanWalk = {
 		lanes: [],
@@ -669,7 +813,9 @@ function plan_common(
 		max_depth: 0,
 		elem: null,
 		temp_classes: new Map(),
+		reductions: new Set(reduction_candidates.keys()),
 	};
+	const reductions: NeonReduction[] = [];
 	for (const s of lanes_raw) {
 		if (s.kind === "declare") {
 			const cls = class_of_type_name(s.decl.type?.name);
@@ -686,6 +832,23 @@ function plan_common(
 		}
 		if (s.kind === "assign") {
 			const name = (s.target as { kind: "leaf"; name: string }).name;
+			const cand = reduction_candidates.get(name);
+			if (cand) {
+				// Vector-accumulate the operand; the accumulator never enters
+				// lane_expr (its self-read is the carried dependency).
+				const operand = lane_expr(cand.operand, walk, induction, status, 0);
+				if (!operand) return null;
+				walk.temp_classes.set(name, "float");
+				walk.defed_so_far.add(name);
+				reductions.push({
+					name,
+					op: cand.op,
+					operand,
+					init_node: reduction_inits.get(name)!,
+				});
+				walk.lanes.push({ kind: "reduction", name, op: cand.op, operand });
+				continue;
+			}
 			const tname = type_from_value_node(s.target.node)?.name;
 			const cls = tname
 				? class_of_type_name(tname)
@@ -735,15 +898,18 @@ function plan_common(
 		});
 	}
 	if (walk.temps.length > MAX_TEMPS) return null;
-	if (!walk.lanes.some((l) => l.kind === "store")) return null;
+	if (!walk.lanes.some((l) => l.kind === "store") && reductions.length === 0) return null;
 	if (!walk.elem) return null; // no Buffer access — nothing to vectorize
-	// Every temp's element class must agree with the discovered descriptor.
+	// Every temp's element class must agree with the discovered descriptor
+	// (accumulators register as float, so this also pins elem to f64).
 	const want = class_of_elem(walk.elem);
 	for (const cls of walk.temp_classes.values()) {
 		if (cls !== want) return null;
 	}
+	if (reductions.length > MAX_REDUCTIONS) return null;
 
-	// Per-lane temps must not be read after the loop in the enclosing list.
+	// Per-lane temps must not be read after the loop in the enclosing list —
+	// accumulators are the loop's OUTPUT and are exempt.
 	if (walk.temps.length > 0) {
 		const after = new Set<string>();
 		for (let k = index + 1; k < list.length; k++) stmt_reads(list[k], after);
@@ -758,6 +924,7 @@ function plan_common(
 		lanes: walk.lanes,
 		buffers: walk.buffers,
 		elem: walk.elem,
+		reductions,
 	};
 }
 
@@ -794,48 +961,21 @@ export function plan_vector_loop(
 	}
 
 	// Init: scanning backwards, the FIRST statement defining the induction
-	// must establish 0; barriers and anything that might redefine it abort.
-	let init_ok = false;
-	for (let k = index - 1; k >= 0; k--) {
-		const s = list[k];
-		if (defs_name(s, induction)) {
-			if (s.kind === "declare" && !s.decl.swap && is_zero_leaf(s.decl.init)) init_ok = true;
-			if (
-				s.kind === "assign" &&
-				s.operator === null &&
-				!s.swap &&
-				s.target.kind === "leaf" &&
-				s.target.name === induction &&
-				is_zero_leaf(s.rhs)
-			) {
-				init_ok = true;
-			}
-			break;
-		}
-		// Statements that may redefine arbitrary names stop the scan.
-		if (s.kind !== "declare" && s.kind !== "assign" && s.kind !== "eval" && s.kind !== "return") {
-			return null;
-		}
-		if (s.kind === "eval") {
-			// A call may define the induction only through ref args /
-			// swapees / receivers.
-			const e = s.expr;
-			const roots: NirExpr[] = [];
-			if (e.kind === "call" || e.kind === "method_call") {
-				roots.push(...e.facts.swap_exprs);
-				if (e.facts.ref_arg_indices.length > 0) roots.push(...e.facts.args);
-				if (e.kind === "method_call") roots.push(e.receiver);
-			} else {
-				continue;
-			}
-			for (const r of roots) {
-				if (r.kind === "leaf" && r.name === induction) return null;
-			}
-		}
-	}
-	if (!init_ok) return null;
+	// must establish literal 0; barriers and anything that might redefine it
+	// abort.
+	const init = scan_init(list, index, induction);
+	if (!init.ok || !init.init_node || !is_zero_ast_node(init.init_node)) return null;
 
-	return plan_common(lanes_raw, bound.node, bound.name, induction, index, list, status);
+	return plan_common(
+		lanes_raw,
+		bound.node,
+		bound.name,
+		induction,
+		index,
+		list,
+		status,
+		status.fast_math === true,
+	);
 }
 
 /**
@@ -860,5 +1000,14 @@ export function plan_vector_for(
 	if (!range.right_value) return null;
 	const bound = extract_bound(l.right, nstmt.item_name);
 	if (!bound) return null;
-	return plan_common(nstmt.body, bound.node, bound.name, nstmt.item_name, index, list, status);
+	return plan_common(
+		nstmt.body,
+		bound.node,
+		bound.name,
+		nstmt.item_name,
+		index,
+		list,
+		status,
+		status.fast_math === true,
+	);
 }

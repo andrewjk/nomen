@@ -57,6 +57,7 @@ export default async function build_and_check_output(
 	name: string,
 	expected: string,
 	raw = false,
+	extra_options: { fast_math?: boolean } = {},
 ) {
 	let architectures = ["aarch64", "c"] as const;
 	// Struct names in the prebuilt C system.o — tells the user-TU build which
@@ -70,7 +71,7 @@ export default async function build_and_check_output(
 		const parsed = raw ? parse_raw(input) : parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
 
-		const options = { arch, audit: true };
+		const options = { arch, audit: true, ...extra_options };
 		// Non-GUI tests link the precompiled system.o (built once in the
 		// globalSetup) instead of recompiling the System library per test —
 		// the per-test System recompile was the cold-run timeout. The user TU

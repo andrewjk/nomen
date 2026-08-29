@@ -338,6 +338,9 @@ export default interface BuildStatus {
 	 * (the fat string's len half is a compile-time constant — no strlen). */
 	string_literal_lengths?: Map<string, number>;
 	audit?: boolean;
+	/** FP-reassociation opt-in (build `fast_math`): float loop reductions
+	 *  may vectorize under NEON (results may differ in the last ulp). */
+	fast_math?: boolean;
 	moved?: Set<string>;
 	heap_returning_functions?: Set<string>;
 	heap_strings?: Set<string>;

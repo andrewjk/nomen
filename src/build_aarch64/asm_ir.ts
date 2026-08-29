@@ -226,6 +226,9 @@ export const MNEMONICS: Record<string, MnemonicSig> = {
 	fsub: { shapes: [["f", "f", "f"]] },
 	fmul: { shapes: [["f", "f", "f"]] },
 	fdiv: { shapes: [["f", "f", "f"]] },
+	// FADDP (scalar): horizontal pair-add — `faddp d0, v2.2d` (the NEON
+	// reduction's 2-lane combine).
+	faddp: { shapes: [["f", "f"]] },
 	fcmp: { shapes: [["f", "f"]], setsFlags: true },
 	fsqrt: { shapes: [["f", "f"]] },
 	scvtf: { shapes: [["f", "r"]] },

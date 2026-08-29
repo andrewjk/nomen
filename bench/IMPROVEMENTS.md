@@ -476,9 +476,24 @@ Changes applied:
     f64 `.2d`, 8-byte int `.2d` (wrap-exact + - and lane-wise & | ^ on
     `.16b`; AArch64 NEON has NO 64-bit int multiply, so int `*` is `.4s`-
     only), uint32 `.4s` — mixed kinds reject. Integer-literal bounds under
-    8 stay scalar (MIN_TRIP threshold). Float reductions remain rejected
-    (reassociation changes results; no language opt-in). Bench A/B: all
-    outputs match, no regressions; saxpy −65.9%.
+    8 stay scalar (MIN_TRIP threshold). Bench A/B: all outputs match, no
+    regressions; saxpy −65.9%.
+35. **NEON vectorization tranche 3 — float reductions behind
+    `--fast-math`**: dot-product-shaped reductions (`acc = acc + …`,
+    `acc += …`, `*`/`*=`, up to two independent accumulators per loop)
+    now vectorize — vector accumulator in v2/v3 splatted from the
+    loop-entry value, both unrolled groups accumulated per iteration,
+    `faddp`/scalar-`fmul` horizontal combine before the scalar tail —
+    but ONLY under the explicit `build({ fast_math })` / `--fast-math`
+    opt-in, because pair-wise accumulation reassociates the sum
+    (last-ulp differences are the documented trade, the same contract as
+    clang's flag). Without the flag every vectorized loop stays
+    bit-exact and reductions scalar. Accumulators must be float locals,
+    defined once, stable from their nearest pre-loop def, and may appear
+    nowhere else in the loop (partial sums are unobservable). Measured
+    (interleaved best-of-7): dot-product bench (1000 × dot over 100k
+    elements) **−90.8%** (526 → 49 ms, 10.7×); spectral-norm n=500
+    fast_math output identical to scalar.
 
 ### Known issues
 

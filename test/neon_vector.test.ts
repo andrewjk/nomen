@@ -578,3 +578,229 @@ pub func main = (Init init) {
 		true,
 	);
 });
+
+// --- Tranche 3: float reductions behind the fast_math opt-in -----------------
+
+const DOT = `
+import System
+
+func dot = (ref Buffer<float> a, ref Buffer<float> b, int n, out float) {
+	if n <= a.cap && n <= b.cap {
+		var float acc = 0.0
+		var i = 0
+		while i < n; i += 1 {
+			acc += a.load_float(i) * b.load_float(i)
+		}
+		return acc
+	}
+	return 0.0
+}
+pub func main = () {}
+`;
+
+function compile_aarch64_fast(source: string, fast_math: boolean): string {
+	const parsed = parse_raw(source);
+	expect(parsed.errors).toEqual([]);
+	const result = build(parsed.root, { arch: "aarch64", fast_math });
+	expect(result.errors ?? []).toEqual([]);
+	return result.code;
+}
+
+test("float reductions stay scalar without the fast_math opt-in", () => {
+	const code = compile_aarch64_fast(DOT, false);
+	expect(code).not.toContain(".Lneon_");
+	expect(code).not.toContain("faddp");
+});
+
+test("fast_math vectorizes dot-product reductions (v2 accumulator + faddp)", () => {
+	const code = compile_aarch64_fast(DOT, true);
+	expect(code).toContain(".Lneon_0:");
+	// accumulator init splat, vector accumulate, horizontal combine
+	expect(code).toContain("dup v2.2d, v0.d[0]");
+	expect(code).toContain("fadd v2.2d, v2.2d, v0.2d");
+	expect(code).toContain("faddp d0, v2.2d");
+	// the scalar loop is still the tail
+	expect(code).toContain(".while_");
+});
+
+test("fast_math vectorizes two independent accumulators (v2 + v3)", () => {
+	const code = compile_aarch64_fast(
+		`
+import System
+
+func sums = (ref Buffer<float> a, ref Buffer<float> b, int n, out float) {
+	if n <= a.cap && n <= b.cap {
+		var float s1 = 0.0
+		var float s2 = 0.0
+		var i = 0
+		while i < n; i += 1 {
+			s1 = s1 + a.load_float(i)
+			s2 = s2 + b.load_float(i)
+		}
+		return s1 + s2
+	}
+	return 0.0
+}
+pub func main = () {}
+`,
+		true,
+	);
+	expect(code).toContain(".Lneon_0:");
+	expect(code).toContain("dup v2.2d, v0.d[0]");
+	expect(code).toContain("dup v3.2d, v0.d[0]");
+	expect(code).toContain("fadd v2.2d, v2.2d, v0.2d");
+	expect(code).toContain("fadd v3.2d, v3.2d, v0.2d");
+	expect(code).toContain("faddp d0, v2.2d");
+	expect(code).toContain("faddp d0, v3.2d");
+});
+
+test("fast_math vectorizes multiplicative reductions", () => {
+	const code = compile_aarch64_fast(
+		`
+import System
+
+func prod = (ref Buffer<float> a, int n, out float) {
+	if n <= a.cap {
+		var float p = 1.0
+		var i = 0
+		while i < n; i += 1 {
+			p = p * a.load_float(i)
+		}
+		return p
+	}
+	return 0.0
+}
+pub func main = () {}
+`,
+		true,
+	);
+	expect(code).toContain(".Lneon_0:");
+	expect(code).toContain("fmul v2.2d, v2.2d, v0.2d");
+	expect(code).toContain("fmul d0, v2.d[0], v2.d[1]");
+});
+
+test("accumulator read outside its own reduction rejects", () => {
+	const code = compile_aarch64_fast(
+		`
+import System
+
+func bad = (ref Buffer<float> a, ref Buffer<float> b, int n) {
+	if n <= a.cap && n <= b.cap {
+		var float acc = 0.0
+		var i = 0
+		while i < n; i += 1 {
+			acc = acc + a.load_float(i)
+			b.store_float(i, acc)
+		}
+	}
+}
+pub func main = () {}
+`,
+		true,
+	);
+	expect(code).not.toContain(".Lneon_");
+});
+
+test("double reduction assignment rejects", () => {
+	const code = compile_aarch64_fast(
+		`
+import System
+
+func bad = (ref Buffer<float> a, int n) {
+	if n <= a.cap {
+		var float acc = 0.0
+		var i = 0
+		while i < n; i += 1 {
+			acc = acc + a.load_float(i)
+			acc = acc + 1.0
+		}
+	}
+}
+pub func main = () {}
+`,
+		true,
+	);
+	expect(code).not.toContain(".Lneon_");
+});
+
+test("non-associative accumulator ops (- and /) reject", () => {
+	for (const op of ["-", "/"]) {
+		const code = compile_aarch64_fast(
+			`
+import System
+
+func bad = (ref Buffer<float> a, int n) {
+	if n <= a.cap {
+		var float acc = 0.0
+		var i = 0
+		while i < n; i += 1 {
+			acc = acc ${op} a.load_float(i)
+		}
+	}
+}
+pub func main = () {}
+`,
+			true,
+		);
+		expect(code).not.toContain(".Lneon_");
+	}
+});
+
+test("behavioral: vectorized reductions print exact dyadic results", async () => {
+	// Dyadic values (halves/quarters) sum exactly in f64, so reassociation
+	// cannot change the printed output; n=9 (vector+tail) and n=1 (tail
+	// only, vector accumulator still horizontally combined) both covered.
+	const { default: build_and_check_output } = await import("./build_and_check_output");
+	await build_and_check_output(
+		`
+import System
+
+func dot = (ref Buffer<float> a, ref Buffer<float> b, int n, out float) {
+	if n <= a.cap && n <= b.cap {
+		var float acc = 0.0
+		var i = 0
+		while i < n; i += 1 {
+			acc += a.load_float(i) * b.load_float(i)
+		}
+		return acc
+	}
+	return 0.0
+}
+
+func sums = (ref Buffer<float> a, ref Buffer<float> b, int n, out float) {
+	if n <= a.cap && n <= b.cap {
+		var float s1 = 0.0
+		var float s2 = 0.0
+		var i = 0
+		while i < n; i += 1 {
+			s1 = s1 + a.load_float(i)
+			s2 = s2 + b.load_float(i)
+		}
+		return s1 + s2
+	}
+	return 0.0
+}
+
+pub func main = () {
+	var a = Buffer<float>()
+	var b = Buffer<float>()
+	a.alloc_float(9)
+	b.alloc_float(9)
+	if 9 <= a.cap && 9 <= b.cap {
+		var i = 0
+		while i < 9 {
+			a.store_float(i, 0.5)
+			b.store_float(i, 0.25)
+			i += 1
+		}
+		Console.write("\\{dot(ref a, ref b, 9)} \\{sums(ref a, ref b, 9)} ")
+		Console.write("\\{dot(ref a, ref b, 1)} \\{sums(ref a, ref b, 1)}")
+	}
+}
+`,
+		"neon_vector_reduction",
+		"1.125000 6.750000 0.125000 0.750000",
+		true,
+		{ fast_math: true },
+	);
+});

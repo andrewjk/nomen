@@ -843,10 +843,59 @@ programs monomorphizing `Buffer<uint32>` (`Buffer_uint32_init` references
 System-internal `uint32_to_string` not in system.o) — the uint32
 behavioral run is covered by the compile-shape test instead.
 
-Remaining NEON work (tranches 3+): float reductions behind a language
-opt-in, shifted-index patterns behind alias/peeling machinery, 64-bit
-int mul via 32-bit mulh expansion, byte (`.16b`) element kinds, and a
-cached-plan reuse so `plan_*` isn't recomputed per dispatch.
+### NEON vectorization tranche 3 (DONE): float reductions behind `--fast-math`
+
+The last big elementwise lever: reductions (`acc = acc + … * buf.load(i)`,
+the dot-product/spectral-norm shape), which were rejected in tranches 1–2
+because vector accumulation reassociates the sum.
+
+- **Opt-in**: `build(root, { fast_math: true })` → `status.fast_math` → CLI
+  `--fast-math` (Config `fast_math`). The analog of clang's
+  `-ffast-math` reduction behavior, and equally explicit: with the flag
+  off, reductions stay scalar and every vectorized loop remains
+  bit-exact. Everything non-reduction is unaffected by the flag.
+- **Planner** (`plan_common`): an `assign` lane statement whose target is
+  a leaf `acc` and whose rhs is `acc ∘ e` / `e ∘ acc` (`∘ ∈ {+, *}`,
+  one side the accumulator), or the compound `acc += e` / `acc *= e`,
+  registers a REDUCTION — but only when `fast_math` is on, the
+  accumulator is a float LOCAL (class check + `function_param_regs`
+  exclusion; params are const anyway), def'd exactly once in the loop,
+  and its nearest pre-loop def is a stable declare/assign (shared
+  `scan_init` — also now used for the induction's literal-0 check).
+  Accumulator names may appear NOWHERE else in the loop (`lane_expr`
+  rejects reads outside the own reduction — the vector form must not
+  observe partial sums) and are EXEMPT from the post-loop escape check
+  (they are the output). ≤ MAX_REDUCTIONS (2) per loop; the class
+  consistency check pins the element kind to f64. Reduction-only loops
+  (no stores) now plan.
+- **Emitter**: each accumulator splats its loop-entry value
+  (`build_float_operand(init) → d0 → dup v2/v3.2d, v0.d[0]`) in the
+  preheader, accumulates both unrolled groups per iteration
+  (`fadd/fmul vACC.2d, vACC.2d, v0.2d`), and is horizontally combined
+  after the loop (`faddp d0, vACC.2d` — new contract-table entry — or
+  `fmul d0, vACC.d[0], vACC.d[1]`) and stored via the standard
+  `emit_var_store(d0)`. The scalar tail continues from the combined
+  value, so vector part + tail sum consistently.
+- **Semantics contract**: the pairwise vector accumulation reorders the
+  sum — last-ulp differences vs the scalar loop are the documented
+  fast_math trade (same one clang's flag carries). Dyadic test values sum
+  exactly in f64, so behavioral tests assert exact output.
+
+Proof: `test/neon_vector.test.ts` → 33 tests (fast_math-off scalar guard;
+dot `+=` emission shape; two independent accumulators v2+v3; multiplicative
+reduction incl. the scalar fmul combine; rejections: accumulator read in a
+store, double assignment, `-`/`/`; behavioral dyadic run on both backends)
+plus `test/args.test.ts` fast_math flag tests (4). Measured (interleaved
+best-of-7): dot-product bench (1000 × dot over 100k elements) **−90.8%**
+(526 → 49 ms, 10.7×); spectral-norm at n=500 with fast_math prints
+identical output (its O(n) vbv/vv loops vectorize; the O(n²) inner loop
+stays scalar — it carries an integer recurrence alongside the reduction,
+which the whitelist rejects). Full suite green (261 files / 2619 tests).
+
+Remaining NEON work (tranches 4+): int reductions (bit-exact — no opt-in
+needed; needs ADDP/scalar-combine for `.2d`/`.4s`), shifted-index patterns
+behind alias/peeling machinery, 64-bit int mul via 32-bit mulh expansion,
+byte (`.16b`) element kinds, and cached-plan reuse across dispatches.
 
 ### Remaining phase-4 work (NOT done)
 
@@ -859,12 +908,13 @@ cached-plan reuse so `plan_*` isn't recomputed per dispatch.
   survives only as the byte-identity A/B baseline, the join-slot engine for
   value-position flow, and synthetic fragment emission). Stage 1's closed
   union + coverage sets are the contract; unknown kinds now tripwire.
-- **NEON auto-vectorization** — tranches 1–2 DONE (see above): elementwise
+- **NEON auto-vectorization** — tranches 1–3 DONE (see above): elementwise
   float loops vectorize to unrolled `.2d` groups (range fors included),
-  integer `.2d`/`.4s` kinds, literal-bound cost threshold; the scalar loop
-  is always the tail. What remains: reductions (needs language opt-in for
-  FP), shifted indices behind alias checks, 64-bit int mul expansion,
-  byte element kinds (details in the tranche sections).
+  integer `.2d`/`.4s` kinds, literal-bound cost threshold, and float
+  reductions behind the explicit `--fast-math` opt-in (dot products
+  −91%). What remains: int reductions (bit-exact), shifted indices
+  behind alias checks, 64-bit int mul expansion, byte element kinds
+  (details in the tranche sections).
 - Known pre-existing divergence found while testing (recorded in
   FOLLOWUP.md): a shadowed local read after its scope diverges between
   backends (aarch64 `x=10` vs C `x=8`); `stack_offsets` is name-keyed.

@@ -2,8 +2,7 @@ import type BuildStatus from "../build_c/BuildStatus.ts";
 import { emit_buffer_struct_addr } from "./build_access_node.ts";
 import build_node from "./build_node.ts";
 import { build_float_operand } from "./build_operation_node.ts";
-import type { ElemDesc } from "./neon_plan.ts";
-import type { NeonLaneExpr, NeonLaneStmt, NeonPlan } from "./neon_plan.ts";
+import type { ElemDesc, NeonLaneExpr, NeonLaneStmt, NeonPlan } from "./neon_plan.ts";
 import { emit_var_store } from "./utils/stack_var.ts";
 
 /**
@@ -79,6 +78,8 @@ export function reset_neon_counter(): void {
 /** Buffer data pointers are pinned here (x11..x13); x9 = limit, x10 = index,
  *  x14 = second unrolled group index. */
 const BUFFER_PTR_REGS = ["x11", "x12", "x13"];
+/** Vector accumulator registers (planner caps at 2 reductions). */
+const REDUCTION_REGS = ["v2", "v3"];
 /** Per-lane temp result registers (planner caps at 4 temps). */
 const TEMP_REGS = ["v4", "v5", "v6", "v7"];
 /** Nested binary spill registers by depth (depth 1 → v14 … depth 4 → v11). */
@@ -182,10 +183,20 @@ function emit_lane_stmt(
 	plan: NeonPlan,
 	buffer_regs: Map<string, string>,
 	idx: string,
+	acc_regs: Map<string, string>,
 ): void {
 	if (lane.kind === "temp_def") {
 		emit_lane_expr(lane.value, status, plan, buffer_regs, idx, 0);
 		status.code += `mov ${lane_reg_of(lane.name, plan)}.16b, v0.16b\n`;
+		return;
+	}
+	if (lane.kind === "reduction") {
+		// Vector-accumulate: vACC +=/*= operand (the accumulator never
+		// enters lane_expr — its self-read is the carried dependency).
+		emit_lane_expr(lane.operand, status, plan, buffer_regs, idx, 0);
+		const acc = acc_regs.get(lane.name) ?? "v2";
+		const mn = lane.op === "+" ? "fadd" : "fmul";
+		status.code += `${mn} ${acc}.2d, ${acc}.2d, v0.2d\n`;
 		return;
 	}
 	emit_lane_expr(lane.value, status, plan, buffer_regs, idx, 0);
@@ -203,6 +214,13 @@ function emit_lane_stmt(
  * the counter steps 2 in group units. The limit is floor(N / group_elems)
  * rounded down to a multiple of 2 (`asr` then `bic #1`), so only complete
  * double-groups vectorize; the scalar tail mops up the rest.
+ *
+ * Reductions (fast_math opt-in): each accumulator splats its loop-entry
+ * value into v2/v3 before the loop, accumulates both unrolled groups per
+ * iteration, and is horizontally combined into its scalar at the end —
+ * the scalar tail then continues from the combined value. Reassociation:
+ * the pair-wise accumulation order differs from the sequential scalar
+ * loop (last-ulp differences are the documented fast_math contract).
  */
 export function emit_neon_vector_loop(plan: NeonPlan, status: BuildStatus): boolean {
 	const saved_d0 = status.float_result_in_d0;
@@ -221,6 +239,15 @@ export function emit_neon_vector_loop(plan: NeonPlan, status: BuildStatus): bool
 		buffer_regs.set(b.name, reg);
 	});
 
+	// Preheader: splat each accumulator's loop-entry value into v2/v3.
+	const acc_regs = new Map<string, string>();
+	plan.reductions.forEach((r, i) => {
+		const reg = REDUCTION_REGS[i] ?? "v2";
+		build_float_operand(r.init_node, "d0", status);
+		status.code += `dup ${reg}.2d, v0.d[0]\n`;
+		acc_regs.set(r.name, reg);
+	});
+
 	// lim = floor(bound / group_elems) double-groups.
 	build_node(plan.bound_node, status);
 	if (!status.code.endsWith("\n")) status.code += "\n";
@@ -233,12 +260,26 @@ export function emit_neon_vector_loop(plan: NeonPlan, status: BuildStatus): bool
 	status.code += `${label}:\n`;
 	status.code += `cmp x10, x9\n`;
 	status.code += `b.hs ${label}_end\n`;
-	for (const lane of plan.lanes) emit_lane_stmt(lane, status, plan, buffer_regs, "x10");
+	for (const lane of plan.lanes) emit_lane_stmt(lane, status, plan, buffer_regs, "x10", acc_regs);
 	status.code += `add x14, x10, #1\n`;
-	for (const lane of plan.lanes) emit_lane_stmt(lane, status, plan, buffer_regs, "x14");
+	for (const lane of plan.lanes) emit_lane_stmt(lane, status, plan, buffer_regs, "x14", acc_regs);
 	status.code += `add x10, x10, #2\n`;
 	status.code += `b ${label}\n`;
 	status.code += `${label}_end:\n`;
+
+	// Horizontal-combine each accumulator into its scalar (d0 = lane0 ∘
+	// lane1), then store — the scalar tail continues from the combined
+	// value. emit_var_store resolves slots and promoted d-registers; the
+	// planner rejects param accumulators.
+	for (const r of plan.reductions) {
+		const reg = acc_regs.get(r.name) ?? "v2";
+		if (r.op === "+") {
+			status.code += `faddp d0, ${reg}.2d\n`;
+		} else {
+			status.code += `fmul d0, ${reg}.d[0], ${reg}.d[1]\n`;
+		}
+		emit_var_store(status, "d0", r.name, 8);
+	}
 
 	// Sync the induction: the scalar tail resumes at the vector loop's exit
 	// counter (group units → element index). (int = 8-byte slot / x-reg.)

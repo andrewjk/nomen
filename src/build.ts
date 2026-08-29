@@ -44,6 +44,12 @@ export default function build(
 		 *  clang -O2 the C backend receives at link time (clang's optimizer
 		 *  never sees the assembly — it goes straight to the assembler). */
 		optimize?: boolean;
+		/** Opt in to FP reassociation (the analog of clang's `-ffast-math`
+		 *  reduction behavior): float loop reductions (`acc = acc + …`)
+		 *  vectorize under NEON, which changes summation order — results may
+		 *  differ in the last ulp vs the scalar loop. Everything else
+		 *  (elementwise vectorization) is bit-exact and unaffected. */
+		fast_math?: boolean;
 	} = {},
 ): BuildResult {
 	let status: BuildStatus = {
@@ -66,6 +72,7 @@ export default function build(
 		alias_owns_flag: new Map(),
 		ref_class_slots: new Map(),
 		audit: options.audit,
+		fast_math: options.fast_math,
 		platform: options.platform ?? default_platform(),
 		emitted_struct_bodies: new Set(),
 		vtable_data: "",
