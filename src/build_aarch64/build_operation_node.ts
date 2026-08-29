@@ -167,16 +167,28 @@ export function emit_cond_branch(
 		const right_f = op_node.right_value !== undefined && is_float_type(op_node.right_value);
 		if (is_comparison(op) && left_f && right_f) {
 			status.float_result_in_d0 = false;
-			const need_spill = !is_simple(op_node.left_value!);
-			build_float_operand(op_node.right_value!, "d1", status);
-			if (!status.code.endsWith("\n")) status.code += "\n";
-			if (need_spill) {
-				status.code += `str d1, [sp, #-16]!\n`;
-			}
-			build_float_operand(op_node.left_value!, "d0", status);
-			if (!status.code.endsWith("\n")) status.code += "\n";
-			if (need_spill) {
-				status.code += `ldr d1, [sp], #16\n`;
+			// Spill-order elimination: complex-left builds FIRST; spill only
+			// when both sides are complex.
+			const left_simple_f = is_simple(op_node.left_value!);
+			const need_spill = !left_simple_f && !is_simple(op_node.right_value!);
+			if (!left_simple_f) {
+				build_float_operand(op_node.left_value!, "d0", status);
+				if (!status.code.endsWith("\n")) status.code += "\n";
+				if (need_spill) {
+					status.code += `str d0, [sp, #-16]!\n`;
+					build_float_operand(op_node.right_value!, "d0", status);
+					if (!status.code.endsWith("\n")) status.code += "\n";
+					status.code += `fmov d1, d0\n`;
+					status.code += `ldr d0, [sp], #16\n`;
+				} else {
+					build_float_operand(op_node.right_value!, "d1", status);
+					if (!status.code.endsWith("\n")) status.code += "\n";
+				}
+			} else {
+				build_float_operand(op_node.right_value!, "d1", status);
+				if (!status.code.endsWith("\n")) status.code += "\n";
+				build_float_operand(op_node.left_value!, "d0", status);
+				if (!status.code.endsWith("\n")) status.code += "\n";
 			}
 			status.code += `fcmp d0, d1\n`;
 			const cond = map_float_cmp(op);
@@ -206,16 +218,28 @@ export function emit_cond_branch(
 			!is_int_literal((op_node.left_value as ValueNode).value) &&
 			!is_int_literal((op_node.right_value as ValueNode).value)
 		) {
-			const need_spill = !is_simple(op_node.left_value);
-			build_operand(op_node.right_value, "x2", status);
-			if (!status.code.endsWith("\n")) status.code += "\n";
-			if (need_spill) {
-				status.code += `str x2, [sp, #-16]!\n`;
-			}
-			build_operand(op_node.left_value, "x1", status);
-			if (!status.code.endsWith("\n")) status.code += "\n";
-			if (need_spill) {
-				status.code += `ldr x2, [sp], #16\n`;
+			// Spill-order elimination: complex-left builds FIRST; spill
+			// only when both sides are complex.
+			const left_simple_i = is_simple(op_node.left_value);
+			const need_spill = !left_simple_i && !is_simple(op_node.right_value);
+			if (!left_simple_i) {
+				build_operand(op_node.left_value, "x1", status);
+				if (!status.code.endsWith("\n")) status.code += "\n";
+				if (need_spill) {
+					status.code += `str x1, [sp, #-16]!\n`;
+					build_operand(op_node.right_value, "x1", status);
+					if (!status.code.endsWith("\n")) status.code += "\n";
+					status.code += `mov x2, x1\n`;
+					status.code += `ldr x1, [sp], #16\n`;
+				} else {
+					build_operand(op_node.right_value, "x2", status);
+					if (!status.code.endsWith("\n")) status.code += "\n";
+				}
+			} else {
+				build_operand(op_node.right_value, "x2", status);
+				if (!status.code.endsWith("\n")) status.code += "\n";
+				build_operand(op_node.left_value, "x1", status);
+				if (!status.code.endsWith("\n")) status.code += "\n";
 			}
 			const unsigned =
 				is_unsigned_type(op_node.left_value) || is_unsigned_type(op_node.right_value);
@@ -958,16 +982,30 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		// raw bit-pattern integer `cmp` gave wrong answers, and the flags
 		// are set directly for a following cset/branch.
 		status.float_result_in_d0 = false;
-		const need_float_spill = !is_simple(node.left_value);
-		build_float_operand(node.right_value, "d1", status);
-		if (!status.code.endsWith("\n")) status.code += "\n";
-		if (need_float_spill) {
-			status.code += `str d1, [sp, #-16]!\n`;
-		}
-		build_float_operand(node.left_value, "d0", status);
-		if (!status.code.endsWith("\n")) status.code += "\n";
-		if (need_float_spill) {
-			status.code += `ldr d1, [sp], #16\n`;
+		// Spill-order elimination (ASM_PLAN_2 tranche B): complex-left +
+		// simple-right builds the left FIRST (nothing live to destroy) so
+		// the simple right lands in d1 untouched; only both-complex spills
+		// (the left, around the right's eval).
+		const left_simple = is_simple(node.left_value);
+		const need_float_spill = !left_simple && !is_simple(node.right_value);
+		if (!left_simple) {
+			build_float_operand(node.left_value, "d0", status);
+			if (!status.code.endsWith("\n")) status.code += "\n";
+			if (need_float_spill) {
+				status.code += `str d0, [sp, #-16]!\n`;
+				build_float_operand(node.right_value, "d0", status);
+				if (!status.code.endsWith("\n")) status.code += "\n";
+				status.code += `fmov d1, d0\n`;
+				status.code += `ldr d0, [sp], #16\n`;
+			} else {
+				build_float_operand(node.right_value, "d1", status);
+				if (!status.code.endsWith("\n")) status.code += "\n";
+			}
+		} else {
+			build_float_operand(node.right_value, "d1", status);
+			if (!status.code.endsWith("\n")) status.code += "\n";
+			build_float_operand(node.left_value, "d0", status);
+			if (!status.code.endsWith("\n")) status.code += "\n";
 		}
 		status.code += `fcmp d0, d1\n`;
 		status.code += `cset x0, ${map_float_cmp(node.op)}\n`;
@@ -977,6 +1015,52 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 	if (is_float && !is_comparison(node.op)) {
 		const caller_wants_d0 = status.float_result_in_d0 ?? false;
 		status.float_result_in_d0 = false;
+
+		// Promoted-operand direct-source selection (ASM_PLAN_2 tranche B):
+		// an operand that already lives in a promoted d-register is used
+		// IN PLACE as the instruction source — no fmov round-trips through
+		// the d0/d1 scratch pair. `fsub`/`fdiv` operand order is preserved
+		// by naming the left source first in the instruction.
+		const promoted_source = (side: BaseNode | undefined): string | null => {
+			if (!side || side.node_type !== "value") return null;
+			const name = (side as ValueNode).value;
+			if (!name || status.function_param_regs?.has(name)) return null;
+			const reg = status.register_allocations?.get(name);
+			return reg && reg.startsWith("d") ? reg : null;
+		};
+		const ls = promoted_source(node.left_value);
+		const rs = promoted_source(node.right_value);
+		if (ls && rs) {
+			status.code += `${map_float_op(node.op)} d0, ${ls}, ${rs}\n`;
+			if (caller_wants_d0) {
+				status.float_result_in_d0 = false;
+			} else {
+				status.code += `fmov x0, d0\n`;
+			}
+			return;
+		}
+		if (ls) {
+			build_float_operand(node.right_value, "d0", status);
+			if (!status.code.endsWith("\n")) status.code += "\n";
+			status.code += `${map_float_op(node.op)} d0, ${ls}, d0\n`;
+			if (caller_wants_d0) {
+				status.float_result_in_d0 = false;
+			} else {
+				status.code += `fmov x0, d0\n`;
+			}
+			return;
+		}
+		if (rs) {
+			build_float_operand(node.left_value, "d0", status);
+			if (!status.code.endsWith("\n")) status.code += "\n";
+			status.code += `${map_float_op(node.op)} d0, d0, ${rs}\n`;
+			if (caller_wants_d0) {
+				status.float_result_in_d0 = false;
+			} else {
+				status.code += `fmov x0, d0\n`;
+			}
+			return;
+		}
 
 		// FMA contraction (fast_math — the `-ffp-contract=fast` analog):
 		// `a*b ± c` / `c ± a*b` fuse into a single-rounding fmadd family
@@ -1018,16 +1102,32 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 			}
 		}
 
-		const need_float_spill = !is_simple(node.left_value);
-		build_float_operand(node.right_value, "d1", status);
-		if (!status.code.endsWith("\n")) status.code += "\n";
-		if (need_float_spill) {
-			status.code += `str d1, [sp, #-16]!\n`;
-		}
-		build_float_operand(node.left_value, "d0", status);
-		if (!status.code.endsWith("\n")) status.code += "\n";
-		if (need_float_spill) {
-			status.code += `ldr d1, [sp], #16\n`;
+		// Spill-order elimination (ASM_PLAN_2 tranche B): spill only when
+		// both sides are complex; complex-left + simple-right builds the
+		// left FIRST so the simple right never sits in a clobbered register.
+		const left_simple = is_simple(node.left_value);
+		const need_float_spill = !left_simple && !is_simple(node.right_value);
+		if (!left_simple) {
+			// Complex left evaluates first (nothing live to destroy). If the
+			// right is complex too, its eval would clobber d0 — spill the
+			// LEFT around it; a simple right just lands in d1 untouched.
+			build_float_operand(node.left_value, "d0", status);
+			if (!status.code.endsWith("\n")) status.code += "\n";
+			if (need_float_spill) {
+				status.code += `str d0, [sp, #-16]!\n`;
+				build_float_operand(node.right_value, "d0", status);
+				if (!status.code.endsWith("\n")) status.code += "\n";
+				status.code += `fmov d1, d0\n`;
+				status.code += `ldr d0, [sp], #16\n`;
+			} else {
+				build_float_operand(node.right_value, "d1", status);
+				if (!status.code.endsWith("\n")) status.code += "\n";
+			}
+		} else {
+			build_float_operand(node.right_value, "d1", status);
+			if (!status.code.endsWith("\n")) status.code += "\n";
+			build_float_operand(node.left_value, "d0", status);
+			if (!status.code.endsWith("\n")) status.code += "\n";
 		}
 		status.code += `${map_float_op(node.op)} d0, d0, d1\n`;
 		if (caller_wants_d0) {
@@ -1065,26 +1165,40 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		return;
 	}
 
-	const need_spill = !is_simple(node.left_value);
+	// Spill-order elimination (ASM_PLAN_2 tranche B): complex-left builds
+	// FIRST (nothing live to destroy); spill only when both sides are
+	// complex (the right's eval would clobber x1).
+	const left_simple_op = is_simple(node.left_value);
+	const need_spill = !left_simple_op && !is_simple(node.right_value);
 
-	build_operand(node.right_value, "x2", status);
-	if (need_spill) {
-		if (!status.code.endsWith("\n")) {
-			status.code += "\n";
+	if (!left_simple_op) {
+		build_operand(node.left_value, "x1", status);
+		if (need_spill) {
+			if (!status.code.endsWith("\n")) {
+				status.code += "\n";
+			}
+			status.code += `str x1, [sp, #-16]!\n`;
+			build_operand(node.right_value, "x1", status);
+			if (!status.code.endsWith("\n")) {
+				status.code += "\n";
+			}
+			status.code += `mov x2, x1\n`;
+			status.code += `ldr x1, [sp], #16\n`;
+		} else {
+			build_operand(node.right_value, "x2", status);
+			if (!status.code.endsWith("\n")) {
+				status.code += "\n";
+			}
 		}
-		status.code += `str x2, [sp, #-16]!\n`;
 	} else {
+		build_operand(node.right_value, "x2", status);
 		if (!status.code.endsWith("\n")) {
 			status.code += "\n";
 		}
-	}
-
-	build_operand(node.left_value, "x1", status);
-	if (!status.code.endsWith("\n")) {
-		status.code += "\n";
-	}
-	if (need_spill) {
-		status.code += `ldr x2, [sp], #16\n`;
+		build_operand(node.left_value, "x1", status);
+		if (!status.code.endsWith("\n")) {
+			status.code += "\n";
+		}
 	}
 
 	const unsigned = is_unsigned_type(node.left_value) || is_unsigned_type(node.right_value);

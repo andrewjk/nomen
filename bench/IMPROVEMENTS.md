@@ -532,6 +532,19 @@ v2.4s` for `.4s`), with the combined bits routed `fmov x0, d0` /
     the documented ulp trade. Closes the vectorizer-era gap analysis:
     dot products 2× faster than C `-O2`, saxpy within 30%, mandelbrot
     within ~15%.
+39. **ASM_PLAN_2 tranche B — spill-order elimination + promoted-operand
+    direct-source selection**: two codegen fixes found by the per-function
+    asm-diff analysis method (ASM_PLAN_2). (a) The float/int operand spill
+    spilled d1/x2 whenever the LEFT operand was complex — but the spill is
+    only needed when BOTH sides are complex; complex-left + simple-right
+    now builds the left FIRST so the simple right lands in its register
+    untouched. (b) An operand that already lives in a promoted d-register
+    is used IN PLACE as the instruction source (`fadd d0, d8, d9`) instead
+    of two fmov round-trips through the d0/d1 scratch pair — mbrot emitted
+    1456 fmovs for 724 real FP ops; now 203. Measured (interleaved,
+    release builds, outputs identical): mandelbrot n=1000 839 → 534 ms
+    (−36%), nbody 1M 2505 → 1694 ms (−32%), fannkuch −11%, pidigits −8%,
+    spectral/nsieve/binarytrees neutral.
 
 ### Known issues
 

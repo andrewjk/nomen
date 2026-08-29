@@ -130,6 +130,21 @@ its fcmp path, emit_cond_branch's float path):
 existing d8–d15 pool already covers mandelbrot, and expression scratch is
 hardwired to d0–d2.)
 
+**RESULT (measured, interleaved best-of-5, release builds, outputs
+identical):** mandelbrot n=1000 839 → 534 ms (**−36%**); nbody 1M
+2505 → 1694 ms (**−32%**); fannkuch 53 → 47 ms (−11%); pidigits 4684 →
+4318 ms (−8%); spectral/nsieve/binarytrees neutral. The second half of
+clang's mandelbrot advantage was never "registers vs slots" — the locals
+were already promoted; it was the operand fmov round-trips through the
+d0/d1 scratch pair, which direct-source selection deletes.
+
+**Tranche A revision:** unrolling measured neutral on mandelbrot with the
+spill fix in place (+8% without it — slot traffic multiplied per copy).
+The kernel is a serial FP dependence chain; loop overhead was already
+hidden by OoO execution. Default stays OFF; the pass is sound, tested,
+and available for loop shapes where the body is NOT a dependence chain
+(e.g. memcpy-style loops with independent iterations).
+
 ## Success criteria
 
 Measured at the REAL bench sizes (`bench/benchmark.sh`: mandelbrot

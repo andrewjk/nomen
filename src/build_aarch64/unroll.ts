@@ -1,5 +1,4 @@
 import type { NirStmt } from "../nir/nir.ts";
-import type BaseNode from "../nodes/BaseNode.ts";
 import { is_increment, scan_init } from "./neon_plan.ts";
 
 /**
