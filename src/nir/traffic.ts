@@ -200,6 +200,14 @@ class TrafficWalker {
 			case "path":
 				this.expr(e.receiver, depth, true);
 				return;
+			case "flow":
+			case "spawn":
+				// Deliberately NOT walked: these exprs lowered to the `other`
+				// barrier until the fallback-retirement tranche, and promotion
+				// inputs must stay byte-stable (the swap-expr parity rule — see
+				// FOLLOWUP.md). cfg.ts DOES fold their reads for liveness,
+				// which has no emission consumer yet.
+				return;
 			case "other":
 				return;
 			default: {

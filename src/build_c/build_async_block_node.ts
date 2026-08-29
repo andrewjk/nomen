@@ -1,9 +1,10 @@
+import type { NirStmt } from "../nir/nir.ts";
 import AsyncBlockNode from "../nodes/AsyncBlockNode.ts";
 import build_auto_free from "./build_auto_free.ts";
-import build_block_node from "./build_block_node.ts";
 import build_node from "./build_node.ts";
 import { POOL_HEADER } from "./build_spawn_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
+import { build_block_with_cursor } from "./emit_nir.ts";
 import { enter_c_scope, leave_c_scope } from "./utils/c_scope.ts";
 
 /**
@@ -26,7 +27,11 @@ import { enter_c_scope, leave_c_scope } from "./utils/c_scope.ts";
  * v1: fixed capacity (64 tasks per nursery). Exceeding it is undefined
  * behavior — a real implementation would grow or use a linked list.
  */
-export default function build_async_block_node(node: AsyncBlockNode, status: BuildStatus) {
+export default function build_async_block_node(
+	node: AsyncBlockNode,
+	status: BuildStatus,
+	nir?: NirStmt & { kind: "async_block" },
+) {
 	const id = status.spawn_counter ?? 0;
 	status.spawn_counter = id + 1;
 
@@ -78,7 +83,7 @@ export default function build_async_block_node(node: AsyncBlockNode, status: Bui
 	status.nursery_stack ??= [];
 	status.nursery_stack.push(id);
 
-	build_block_node(node, status);
+	build_block_with_cursor(node, nir?.body, status);
 
 	status.nursery_stack.pop();
 

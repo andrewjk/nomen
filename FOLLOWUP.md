@@ -207,3 +207,27 @@ Materializing (vs re-evaluating the expression in the loop header) also
 matters for correctness — a bare call would otherwise be re-invoked on every
 condition check and element load. Then re-enable the `for v of triple()`
 shape in `test/emit_c_nir.test.ts` (array-literal-returns test).
+
+## NIR traffic deliberately does not count flow-arm / spawn-arg / nested-type reads
+
+Landed with the fallback-retirement tranche (phase 4 canonical IR stage 2).
+`from_ast` is now TOTAL: value-position `if`/`switch`/`match` lower to the
+`flow` expr (arms riding the IR), value-position `spawn` to the `spawn` expr,
+and nested type declarations to `opaque` — so every function publishes the
+emission ctx and the whole-function AST fallback is gone (residual unknown
+kinds are a tripwire throw).
+
+For PROMOTION INPUTS, though, these keep their pre-tranche (barrier)
+behavior: `traffic.ts` deliberately does NOT walk `flow` arms, `spawn`
+arguments, or nested type-declaration bodies. Those shapes used to lower to
+`other`/`opaque` barriers, and `plan_function_promotions`' inputs must stay
+byte-stable (the same parity rule as assignment swap exprs). Affected
+functions: the value-match cluster in `core/System/Controls/Container.nm`
+(`length_kind`/`length_val` and friends) plus various concurrency/GUI tests —
+none of them benchmark-hot.
+
+When flipping traffic to count them (measure before/after per
+ASM_PLAN discipline): walk the flow arms + spawn call facts like `cfg.ts`
+already does (its folding is sound for liveness — no emission consumer). The
+whitelisted pins live in `test/nir.test.ts` ("traffic deliberately does not
+count flow-arm or spawn-arg reads").

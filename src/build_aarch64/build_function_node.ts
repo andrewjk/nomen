@@ -437,9 +437,17 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	const old_register_allocations = status.register_allocations;
 	const old_callee_saved_regs = status.callee_saved_regs_used;
 	// ONE canonical lowering per function (phase 4 stage 2): the NIR drives
-	// both the promotion planner here and — when the whole body mapped — the
-	// emission path below via `status.nir_emit_ctx`.
+	// both the promotion planner here and the emission path below via
+	// `status.nir_emit_ctx`.
 	const nir: NirFunction | undefined = has_body ? lower_function(node) : undefined;
+	if (nir && nir.unknown_kinds.size > 0) {
+		// Lowering is total over the checked AST — a residual kind is a
+		// compiler bug, not user error. Fail loudly instead of silently
+		// re-walking the AST (the whole-function fallback is retired).
+		throw new Error(
+			`NIR lowering gap in ${node.name || label_name}: ${[...nir.unknown_kinds].join(", ")}`,
+		);
+	}
 	const fn_allocs = nir ? plan_function_promotions(node, nir) : undefined;
 	status.register_allocations = fn_allocs && fn_allocs.size > 0 ? fn_allocs : undefined;
 	status.callee_saved_regs_used =
@@ -711,14 +719,14 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	const old_buffer_data_cache = status.buffer_data_cache;
 	status.buffer_data_cache = undefined;
 
-	// NIR-driven emission: when the whole body lowered cleanly, point the
-	// emission cursor at the lowered statements. Restored after the body so a
-	// nested function build (which installs its own cursor) hands ours back.
+	// NIR-driven emission: the ctx is published for EVERY function body (the
+	// whole-function AST fallback is retired — emission dispatches through
+	// emit_stmt_from_nir). `nir_emission_enabled()` is the per-statement
+	// delegation toggle used by the byte-identity A/B tests. Restored after
+	// the body so a nested function build hands ours back.
 	const old_nir_ctx = status.nir_emit_ctx;
 	status.nir_emit_ctx =
-		nir && nir.unknown_kinds.size === 0 && nir_emission_enabled()
-			? { stmts: nir.body, ast: node.statements }
-			: undefined;
+		nir && nir_emission_enabled() ? { stmts: nir.body, ast: node.statements } : undefined;
 
 	build_block_node(node, status);
 

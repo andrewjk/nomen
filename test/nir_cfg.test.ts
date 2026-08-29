@@ -402,3 +402,39 @@ pub func swapper = (int c, out int) {
 	const { liveness } = analyze_cfg(cfg);
 	expect(liveness.live_in[0]).toContain("c");
 });
+
+test("value-position flow folds arm reads into the flat statement's facts", () => {
+	const cfg = compile_cfg(
+		`
+pub func flow_facts = (int q, out int) {
+    var int k = match 1 {
+        case 1 -> q
+        else -> 0
+    }
+    return k
+}
+`,
+		"flow_facts",
+	);
+	const decl = cfg.blocks[0].stmts.find((s) => s.op === "declare");
+	expect(decl?.reads).toContain("q");
+	const { liveness } = analyze_cfg(cfg);
+	// `q` is read by the (folded) flow value, so it is live into entry.
+	expect(names(liveness.live_in[0])).toContain("q");
+});
+
+test("value-position spawn folds its call arguments' reads into the flat statement", () => {
+	const cfg = compile_cfg(
+		`
+func work = (uint64 arg) {}
+pub func spawn_facts = (uint64 n) {
+    var t = spawn work(n)
+}
+`,
+		"spawn_facts",
+	);
+	const decl = cfg.blocks[0].stmts.find((s) => s.op === "declare");
+	expect(decl?.reads).toContain("n");
+	const { liveness } = analyze_cfg(cfg);
+	expect(names(liveness.live_in[0])).toContain("n");
+});

@@ -3,7 +3,7 @@ import FunctionNode from "../nodes/FunctionNode.ts";
 import RawNode from "../nodes/RawNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import { parse_raw_directives } from "../raw_directives.ts";
-import build_block_node from "./build_block_node.ts";
+import { build_body_with_cursor } from "./emit_nir.ts";
 import { emit_owning_buffer_inline_aarch64 } from "./utils/owning_buffer_specialize.ts";
 import { allocate_stack_space } from "./utils/stack_var.ts";
 import { emit_owning_array_string_specialize } from "./utils/string_pair.ts";
@@ -283,7 +283,7 @@ export default function build_inline_method(
 	// `b .inline_ret_N_or`, an undefined symbol).
 	const code_length_before_body = status.code.length;
 
-	build_block_node(func, status);
+	build_body_with_cursor(func, status);
 
 	// A raw block inside a (mixed) inline body may still branch to the
 	// function's standalone return label — rewrite those to the inline
@@ -452,7 +452,7 @@ export function build_inline_function(func: FunctionNode, status: BuildStatus) {
 		status.return_buffer_stack_offset = return_buffer_stack_offset;
 	}
 
-	build_block_node(func, status);
+	build_body_with_cursor(func, status);
 
 	status.code += `${return_label}:\n`;
 

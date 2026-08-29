@@ -1,17 +1,22 @@
+import { lower_function } from "../nir/from_ast.ts";
 import type { NirExpr, NirStmt } from "../nir/nir.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import AssignmentNode from "../nodes/AssignmentNode.ts";
+import AsyncBlockNode from "../nodes/AsyncBlockNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import type BlockNode from "../nodes/BlockNode.ts";
+import { is_function_node, is_struct_node, is_trait_node } from "../nodes/check_node_type.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
 import ForLoopNode from "../nodes/ForLoopNode.ts";
+import FunctionNode from "../nodes/FunctionNode.ts";
 import IfElseNode from "../nodes/IfElseNode.ts";
 import MatchNode from "../nodes/MatchNode.ts";
 import ReturnNode from "../nodes/ReturnNode.ts";
 import SwitchNode from "../nodes/SwitchNode.ts";
 import WhileLoopNode from "../nodes/WhileLoopNode.ts";
 import build_assignment_node from "./build_assignment_node.ts";
+import build_async_block_node from "./build_async_block_node.ts";
 import build_block_node from "./build_block_node.ts";
 import build_declaration_node from "./build_declaration_node.ts";
 import build_for_loop_node from "./build_for_loop_node.ts";
@@ -22,21 +27,22 @@ import build_return_node from "./build_return_node.ts";
 import build_switch_node from "./build_switch_node.ts";
 import build_while_loop_node from "./build_while_loop_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
+import emit_allocations from "./utils/emit_allocations.ts";
 
 /**
  * NIR-driven emission — C BACKEND (ASM_PLAN phase 4, canonical-IR stage 2+).
  *
  * Mirrors `build_aarch64/emit_nir.ts`: build_function_node lowers the body to
- * NIR ONCE and, when the whole body mapped (`unknown_kinds` empty), points
- * `status.nir_emit_ctx` at the lowered statement list aligned 1:1 with the
- * body's AST statements. build_block_node's statement loop then dispatches
- * through `emit_stmt_from_nir`, which:
+ * NIR ONCE and — lowering being TOTAL over the checked AST — publishes the
+ * ctx for EVERY function body; the whole-function AST fallback is retired (a
+ * residual unknown kind is a tripwire throw). build_block_node's statement
+ * loop then dispatches through `emit_stmt_from_nir`, which:
  *
  * - only consumes NIR entries when the ctx's `ast` IS the statement list
  *   being iterated (array identity). Any nested block build that doesn't own
- *   the list (inline method bodies, spawn/async bodies, method bodies built
- *   from build_struct_node…) sees a different array and falls back to the
- *   plain AST walk — misalignment structurally cannot corrupt emission.
+ *   the list (synthetic statement fragments like #init constructor bodies…)
+ *   sees a different array and falls back to the plain AST walk —
+ *   misalignment structurally cannot corrupt emission.
  * - handles `if`/`while`/`for`/`switch`/`match` NIR-natively: the builders
  *   take the lowered branch/body lists and hand them to their nested blocks
  *   (scope frames, deferred frees, auto-free, loop writebacks and condition
@@ -51,7 +57,13 @@ import type BuildStatus from "./BuildStatus.ts";
  *   below). The trailing `with_semicolon_tail` replicates build_node's
  *   with_semicolon tail byte-exactly (including the historical `;` line after
  *   returns and the deferred string-release flush).
+ * - handles `async_block` NIR-natively: the nursery body installs its own
+ *   cursor from the lowered list.
  * - delegates every other statement kind to `build_node` unchanged.
+ *
+ * Method bodies (built by build_struct_node's own statement loop, not
+ * build_block_node) dispatch through `emit_method_body_from_nir` (below), so
+ * every executable statement list is cursor-driven.
  *
  * This is the seam where NIR facts attach to C emission: later tranches add
  * liveness-gated decisions at exactly these dispatch points.
@@ -118,9 +130,7 @@ export function emit_stmt_from_nir(
 				// builder; the initializer (when any) descends the NIR
 				// expression seam. Only a func-valued declaration skips the
 				// tail (build_node's parity rule) — a declaration with NO
-				// initializer still gets one. (Under a NIR ctx a func
-				// initializer actually forces the whole-function AST fallback
-				// — the guard is parity, not load-bearing.)
+				// initializer still gets one.
 				build_declaration_node(child as DeclarationNode, status, nstmt.decl.init, nstmt.decl.swap);
 				if (!nstmt.decl.init || nstmt.decl.init.node.node_type !== "func") {
 					with_semicolon_tail(status);
@@ -157,6 +167,12 @@ export function emit_stmt_from_nir(
 				with_semicolon_tail(status);
 				return;
 			}
+			case "async_block":
+				// The nursery body is its own statement list: hand the builder
+				// the lowered list so the body block dispatches NIR-natively
+				// (scope frames and join emission stay in the builder).
+				build_async_block_node(child as AsyncBlockNode, status, nstmt);
+				return;
 			default:
 				// Everything else rides the existing AST emission unchanged;
 				// later tranches take over more kinds here.
@@ -181,6 +197,42 @@ export function build_block_with_cursor(
 	const old_ctx = status.nir_emit_ctx;
 	status.nir_emit_ctx = stmts ? { stmts, ast: block.statements } : undefined;
 	build_block_node(block, status);
+	status.nir_emit_ctx = old_ctx;
+}
+
+/**
+ * Emit a struct/class/trait METHOD body through the NIR dispatch. C methods
+ * don't go through build_block_node/build_function_node — build_struct_node
+ * iterates `func.statements` directly — so without this they would be the
+ * one remaining statement list the AST walk still drove. Same loop shape as
+ * build_block_node's statement loop (type/function skip guards, per-statement
+ * allocation surfacing, NIR dispatch), minus the root-scope gating that only
+ * applies to top-level blocks.
+ */
+export function emit_method_body_from_nir(func: FunctionNode, status: BuildStatus): void {
+	const nir = lower_function(func);
+	if (nir.unknown_kinds.size > 0) {
+		// Lowering is total over the checked AST; this is a compiler bug, not
+		// user error — fail loudly instead of silently re-walking the AST.
+		throw new Error(
+			`NIR lowering gap in ${func.name || "<method>"}: ${[...nir.unknown_kinds].join(", ")}`,
+		);
+	}
+	const old_ctx = status.nir_emit_ctx;
+	status.nir_emit_ctx = { stmts: nir.body, ast: func.statements };
+	for (let index = 0; index < func.statements.length; index++) {
+		const child = func.statements[index];
+		if (
+			!is_trait_node(child) &&
+			!is_struct_node(child) &&
+			!is_function_node(child) &&
+			child.node_type !== "enum" &&
+			child.node_type !== "bitset"
+		) {
+			emit_allocations(child, status);
+			emit_stmt_from_nir(child, index, func.statements, status);
+		}
+	}
 	status.nir_emit_ctx = old_ctx;
 }
 
@@ -228,7 +280,9 @@ export function emit_expr_from_nir(expr: NirExpr, status: BuildStatus): void {
 		case "call": // "func_call" → build_function_call_node / "array" literal
 		case "method_call": // "access" → access_func → build_access_node
 		case "path": // "access" field chain → build_access_node
-		case "other": // unreachable under a NIR ctx (unknown_kinds forces fallback)
+		case "spawn": // value-position `spawn f(x)` → build_spawn_node
+		case "flow": // value-position if/switch/match → join-slot builders via build_node
+		case "other": // unreachable: lowering is total (build_function_node tripwires)
 			build_node(expr.node, status);
 			return;
 		case "wrap":

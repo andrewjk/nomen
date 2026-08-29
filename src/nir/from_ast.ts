@@ -176,6 +176,22 @@ function stmt(ctx: LowerCtx, n: BaseNode): NirStmt {
 				body: f.has_body === false ? [] : block(ctx, f.statements),
 			};
 		}
+		case "struct":
+		case "class":
+		case "trait":
+		case "enum":
+		case "bitset":
+		case "extend": {
+			// Type declarations carry no executable statements: the block loop
+			// skips them before dispatch (struct/trait/enum/bitset) or they emit
+			// nothing (class/extend — `extend` bodies were merged into the
+			// target struct during check). They lower to `opaque` WITHOUT
+			// recording into `unknown_kinds`: their IR entries are never
+			// consumed by the emitter, so they must not force the fallback.
+			// Bodies are deliberately not descended — matching the historical
+			// scans and keeping promotion inputs byte-stable.
+			return { kind: "opaque", node: n };
+		}
 		default: {
 			// Expression-shaped statements (bare calls, non-assign lets) carry
 			// traffic and lower to eval; anything genuinely unmapped surfaces
@@ -336,6 +352,67 @@ function expr(ctx: LowerCtx, n: BaseNode | null | undefined): NirExpr {
 			}
 			const steps: NirPathStep[] = [{ name: step_name, node: acc.access }];
 			return { kind: "path", node: n, receiver: expr(ctx, acc.target), steps };
+		}
+		case "if":
+		case "switch":
+		case "match": {
+			// Control flow in VALUE position (`var k = match len { … }`,
+			// `return if c { a } else { b }`). The emission side routes the
+			// ORIGINAL node through build_node, whose join-slot machinery (the
+			// same builders the AST walk used) stores each arm's value into
+			// `status.return_assign`; the arms ride the IR for liveness.
+			if (n.node_type === "if") {
+				const iff = n as IfElseNode;
+				return {
+					kind: "flow",
+					node: n,
+					scrutinee: null,
+					arms: [
+						{
+							condition: iff.condition ? expr(ctx, iff.condition) : null,
+							branch: block(ctx, iff.if_branch?.statements),
+						},
+					],
+					otherwise: iff.else_branch ? block(ctx, iff.else_branch.statements) : null,
+				};
+			}
+			if (n.node_type === "switch") {
+				const sw = n as SwitchNode;
+				return {
+					kind: "flow",
+					node: n,
+					scrutinee: null,
+					arms: sw.cases.map((c) => ({
+						condition: c.condition ? expr(ctx, c.condition) : null,
+						branch: block(ctx, c.branch?.statements),
+					})),
+					otherwise: sw.else_branch ? block(ctx, sw.else_branch.statements) : null,
+				};
+			}
+			const m = n as MatchNode;
+			return {
+				kind: "flow",
+				node: n,
+				scrutinee: m.value ? expr(ctx, m.value) : null,
+				arms: m.cases.map((c) => ({
+					condition: c.match_value ? expr(ctx, c.match_value) : null,
+					branch: block(ctx, c.branch?.statements),
+				})),
+				otherwise: m.else_branch ? block(ctx, m.else_branch.statements) : null,
+			};
+		}
+		case "spawn": {
+			// `var t = spawn f(x)` — a task handle is a VALUE. The wrapped call
+			// rides whole (its facts carry the arg reads for liveness).
+			return { kind: "spawn", node: n, call: expr(ctx, (n as SpawnNode).call) };
+		}
+		case "func": {
+			// A function used as a VALUE: `var func (int) handler { … }`
+			// declares a function-typed variable whose value is the
+			// FunctionNode. The seam routes build_node to it — which builds
+			// the function (label + body) exactly as the AST walk did. A
+			// function reference reads no storage, so it carries no name.
+			return { kind: "leaf", node: n, name: null };
 		}
 		default: {
 			// Field-read chains and destructures reachable in value position.

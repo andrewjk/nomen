@@ -292,3 +292,131 @@ pub func swapper = (int q, out int) {
 	const report = analyze_traffic(lowered);
 	expect(report.variables.get("q")?.reads ?? 0).toBe(0);
 });
+
+test("value-position match/if/switch lower to flow with empty unknown kinds", () => {
+	const input = `
+pub func flow_demo = (int v, out int) {
+    var int kind = match v {
+        case 0 -> 100
+        else -> 300
+    }
+    var int bump = if kind > 150 -> 5
+                   else -> 1
+    var int wrap = switch {
+        case kind == 100 -> 7
+        else -> 9
+    }
+    return kind + bump + wrap
+}
+`;
+	const parsed = parse_raw(input);
+	for (const err of parsed.errors)
+		throw new Error(`parse error @${err.line}:${err.column}: ${err.message}`);
+	const fn = parsed.root.statements.find(
+		(s) => s.node_type === "func" && (s as FunctionNode).name === "flow_demo",
+	) as FunctionNode;
+	const lowered = lower_function(fn);
+	expect([...lowered.unknown_kinds]).toEqual([]);
+	const inits = lowered.body
+		.filter((s) => s.kind === "declare")
+		.map((s) => (s.kind === "declare" ? s.decl.init : null));
+	// match: scrutinee-free? No — match HAS a scrutinee (v); switch has none.
+	const match_init = inits[0];
+	expect(match_init?.kind).toBe("flow");
+	if (match_init?.kind === "flow") {
+		expect(match_init.scrutinee?.kind).toBe("leaf");
+		expect(match_init.arms.length).toBe(1);
+		expect(match_init.otherwise?.length).toBe(1);
+	}
+	const if_init = inits[1];
+	expect(if_init?.kind).toBe("flow");
+	if (if_init?.kind === "flow") {
+		expect(if_init.arms.length).toBe(1);
+		expect(if_init.arms[0].condition?.kind).toBe("binary");
+	}
+	const switch_init = inits[2];
+	expect(switch_init?.kind).toBe("flow");
+	if (switch_init?.kind === "flow") {
+		expect(switch_init.scrutinee).toBeNull();
+	}
+});
+
+test("value-position spawn lowers to the spawn expr carrying its call", () => {
+	const input = `
+func work = (uint64 arg) {}
+pub func spawn_value = (out uint64) {
+    var t = spawn work(3)
+    return t.result_uint64()
+}
+`;
+	const parsed = parse_raw(input);
+	const fn = parsed.root.statements.find(
+		(s) => s.node_type === "func" && (s as FunctionNode).name === "spawn_value",
+	) as FunctionNode;
+	const lowered = lower_function(fn);
+	expect([...lowered.unknown_kinds]).toEqual([]);
+	const decl = lowered.body.find((s) => s.kind === "declare");
+	expect(decl && decl.kind === "declare" && decl.decl.init?.kind === "spawn").toBe(true);
+	if (decl!.kind !== "declare" || decl!.decl.init?.kind !== "spawn") return;
+	expect(decl!.decl.init.call.kind).toBe("call");
+});
+
+test("nested type declarations lower to opaque without recording unknown kinds", () => {
+	const input = `
+pub func nested_types = (out int) {
+    var int v = 3
+    struct P {
+        var int x
+    }
+    enum E {
+        case a
+        case b
+    }
+    bitset B {
+        case f1
+        case f2
+    }
+    return v
+}
+`;
+	const parsed = parse_raw(input);
+	const fn = parsed.root.statements.find(
+		(s) => s.node_type === "func" && (s as FunctionNode).name === "nested_types",
+	) as FunctionNode;
+	const lowered = lower_function(fn);
+	expect([...lowered.unknown_kinds]).toEqual([]);
+	const opaque_count = lowered.body.filter((s) => s.kind === "opaque").length;
+	expect(opaque_count).toBe(3);
+	// The executable statements around the type declarations still lower.
+	expect(lowered.body[0].kind).toBe("declare");
+	expect(lowered.body[lowered.body.length - 1].kind).toBe("return");
+});
+
+test("traffic deliberately does not count flow-arm or spawn-arg reads (parity pin)", () => {
+	const input = `
+pub func parity = (int q, out int) {
+    var int k = match 1 {
+        case 1 -> q
+        else -> 0
+    }
+    return k
+}
+pub func parity_spawn = (int q) {
+    var t = spawn work(q)
+    t.wait()
+}
+func work = (int arg) {}
+`;
+	const parsed = parse_raw(input);
+	for (const name of ["parity", "parity_spawn"]) {
+		const fn = parsed.root.statements.find(
+			(s) => s.node_type === "func" && (s as FunctionNode).name === name,
+		) as FunctionNode;
+		const report = analyze_traffic(lower_function(fn));
+		// `q` appears ONLY inside a flow arm / spawn argument. These lowered
+		// to the `other` barrier until the fallback-retirement tranche, and
+		// promotion inputs must stay byte-stable (the swap-expr rule — see
+		// FOLLOWUP.md).
+		expect(report.variables.get("q")?.reads ?? 0, name).toBe(0);
+	}
+});

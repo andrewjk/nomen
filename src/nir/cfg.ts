@@ -172,6 +172,23 @@ function walk_expr(e: NirExpr | null | undefined, out: FactWalk): void {
 		case "path":
 			walk_expr(e.receiver, out);
 			return;
+		case "spawn":
+			// Value-position `spawn f(x)`: the wrapped call's arguments are
+			// read (and packed) when the task is created.
+			walk_expr(e.call, out);
+			return;
+		case "flow":
+			// Value-position control flow: every arm MAY execute, so each
+			// condition's reads join the walk and each arm body's writes fold
+			// in as may-defs (over-approximation is sound for liveness — it
+			// only shortens no live range a later read would revive).
+			if (e.scrutinee) walk_expr(e.scrutinee, out);
+			for (const arm of e.arms) {
+				if (arm.condition) walk_expr(arm.condition, out);
+				for (const inner of arm.branch) stmt_facts(inner, out);
+			}
+			if (e.otherwise) for (const inner of e.otherwise) stmt_facts(inner, out);
+			return;
 		case "other":
 			out.barrier = true;
 			return;
@@ -180,6 +197,57 @@ function walk_expr(e: NirExpr | null | undefined, out: FactWalk): void {
 			void _exhaustive;
 			return;
 		}
+	}
+}
+
+/**
+ * Fact folding for STATEMENTS nested inside a value-position `flow`'s arms,
+ * where the enclosing statement's flat facts must absorb them (there is no
+ * CFG structure for the arm itself). Mirrors emit_stmt's declare/assign/eval
+ * logic; structured control flow or raw escapes inside an arm are liveness
+ * barriers.
+ */
+function stmt_facts(s: NirStmt, out: FactWalk): void {
+	switch (s.kind) {
+		case "eval":
+			walk_expr(s.expr, out);
+			return;
+		case "declare": {
+			if (s.decl.name) out.defs.push(s.decl.name);
+			else out.barrier = true;
+			if (s.decl.init) walk_expr(s.decl.init, out);
+			if (s.decl.swap) walk_expr(s.decl.swap, out);
+			return;
+		}
+		case "assign": {
+			if (s.target.kind === "leaf") {
+				if (s.target.name) {
+					out.defs.push(s.target.name);
+					if (s.operator) out.reads.push(s.target.name);
+				} else out.barrier = true;
+			} else if (s.target.kind === "path") {
+				walk_expr(s.target, out);
+				const root = root_name(s.target.receiver);
+				if (root) out.defs.push(root);
+				else out.barrier = true;
+			} else {
+				out.barrier = true;
+			}
+			walk_expr(s.rhs, out);
+			if (s.swap) {
+				const root = root_name(s.rhs);
+				if (root) out.defs.push(root);
+				else out.barrier = true;
+				walk_expr(s.swap, out);
+			}
+			return;
+		}
+		default:
+			// break/continue/return/exit/raw/spawn/async_block/nested_func/
+			// anon_struct/opaque or structured flow inside a value arm:
+			// conservative barrier.
+			out.barrier = true;
+			return;
 	}
 }
 

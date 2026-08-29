@@ -21,12 +21,12 @@ Text passes can't see liveness; the AST has no per-function CFG.
 
 ## Architecture (agreed)
 
-| Phase | Scope                                                                                                       | Status                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| ----- | ----------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **1** | Asm lifter + validator; wire into every build; round-trip fidelity                                          | ✅ DONE, suite green pre-crash                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| **2** | Frame-slot forwarding + dead-store elimination over the lifted IR (`asm_opt.ts`)                            | ✅ DONE — suite green (2468 tests); measured −1…−5% broad, regex-redux −17%                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| **3** | Extract duplicated semantic lowering (ownership/borrows/moves) into `build_common/` shared by BOTH backends | ✅ DONE — first tranche landed, suite green (253 files / 2468 tests)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| **4** | Single canonical IR from the check phase; aarch64 gets real regalloc; eventually NEON                       | 🔄 whole-function regalloc DONE (locals + params, nbody −9%); flow groundwork + canonical NIR stage 1 DONE (planner consumes NIR, codegen byte-identical); CFG + liveness + dominance over NIR DONE; NIR-driven emission tranches 1–5 DONE (if/while/for/switch/match/return/declare/assign/eval + address-position/swap-expr value positions emitted from NIR + expression seam, byte-identical); C backend consumes the seam for control flow DONE (byte-identical); C expression seam DONE (return/declare/assign/eval + array-element + swap value positions, byte-identical); NEON remains |
+| Phase | Scope                                                                                                       | Status                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ----- | ----------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **1** | Asm lifter + validator; wire into every build; round-trip fidelity                                          | ✅ DONE, suite green pre-crash                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| **2** | Frame-slot forwarding + dead-store elimination over the lifted IR (`asm_opt.ts`)                            | ✅ DONE — suite green (2468 tests); measured −1…−5% broad, regex-redux −17%                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| **3** | Extract duplicated semantic lowering (ownership/borrows/moves) into `build_common/` shared by BOTH backends | ✅ DONE — first tranche landed, suite green (253 files / 2468 tests)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| **4** | Single canonical IR from the check phase; aarch64 gets real regalloc; eventually NEON                       | 🔄 whole-function regalloc DONE (locals + params, nbody −9%); flow groundwork + canonical NIR stage 1 DONE (planner consumes NIR, codegen byte-identical); CFG + liveness + dominance over NIR DONE; NIR-driven emission tranches 1–5 DONE (if/while/for/switch/match/return/declare/assign/eval + address-position/swap-expr value positions emitted from NIR + expression seam, byte-identical); C backend consumes the seam for control flow + expressions DONE (byte-identical); fallback retirement DONE (lowering total, every statement list cursor-driven, AST fallback deleted — byte-identical); NEON remains |
 
 ## Phase 1 — lifter + validator (DONE)
 
@@ -665,20 +665,73 @@ crashes the C backend when the returned array has no compile-time length
 (`build_node(list_type.length!)`) — predates the seam (crashes with the
 cursor disabled too); aarch64 handles the shape.
 
+### Fallback retirement tranche (DONE)
+
+The duplicate AST walks are gone — canonical-IR stage 2 is complete.
+
+- **Lowering is TOTAL.** The recon (instrumented `lower_function` over the
+  entire test suite, both backends, System lib included) found exactly three
+  gap classes; all closed in `from_ast.ts`:
+  1. Value-position control flow (`var k = match len { … }` — the
+     `Container.nm` cluster, ~250 suite hits) lowers to a new `flow` NirExpr
+     (`{scrutinee, arms: NirArm[], otherwise}` — the switch_match arm shape).
+     Emission routes the ORIGINAL node through build_node to the same
+     join-slot builders (`status.return_assign`), so bytes don't move; the
+     arms ride the IR for liveness/vectorization.
+  2. Value-position `spawn` (`var t = spawn f(x)`) lowers to a `spawn` NirExpr
+     carrying the wrapped call; emission → build_spawn_node unchanged.
+  3. Nested type declarations (struct/enum/bitset — the only kinds the parser
+     allows inside a body) lower to `opaque` WITHOUT recording: the block loop
+     skips them before dispatch, so their IR entries are never consumed and
+     they must not force ineligibility. Bodies deliberately not descended
+     (promotion-input stability).
+     Bonus find: `var func (int) handler { … }` (function-typed declarations —
+     value IS a FunctionNode) lowers to a nameless `leaf`; without it the new
+     tripwire would have broken legal syntax no suite test exercised.
+- **Tripwire.** `build_function_node` (both backends) publishes the emission
+  ctx for EVERY function body and THROWS on any residual `unknown_kinds` —
+  a lowering gap is a compiler bug, not a silent fallback.
+- **Every statement list is cursor-driven.** The contexts that used to walk
+  the AST directly now install their own ctx:
+  - aarch64: struct/class/trait method bodies (4 sites in build_struct_node)
+    and inline-expanded bodies (build_inline_method / build_inline_function)
+    via the shared `build_body_with_cursor` helper;
+  - aarch64 + C: nursery (`async`) bodies — the `async_block` dispatch arm
+    hands the builder the lowered list (`build_block_with_cursor`);
+  - C: method bodies — build_struct_node's own statement loop is now
+    `emit_method_body_from_nir` (type/function skip guards + emit_allocations
+    - dispatch, mirroring build_block_node's loop).
+- **A/B semantics unchanged.** The kill-switches stay: toggled off,
+  `emit_stmt_from_nir` delegates every statement to build_node — the exact
+  statement-level walk the retired whole-function fallback performed — so all
+  53 existing byte-identity tests kept working unchanged, and new tests cover
+  the previously-fallback shapes (value match/if/switch joins, value spawn,
+  `var func`, nested struct, nursery with nested flow).
+- Facts split per the swap precedent: `traffic.ts` deliberately does NOT
+  count flow-arm/spawn-arg reads (promotion inputs byte-stable — pinned by
+  test); `cfg.ts` DOES fold them (liveness soundness; no emission consumer).
+  Recorded in FOLLOWUP.md for a measured flip later.
+
+Proof: byte-IDENTICAL `.s`/C vs the delegation toggle across both suites
+(33 aarch64 + 27 C tests) and the full `bench/nomen/*.nm` corpora; mutation
+checks (markers in the `flow`/`spawn`/`async_block` dispatch arms,
+`build_body_with_cursor`, `emit_method_body_from_nir` — both backends)
+confirmed every new path executes and were reverted. Full suite green (258
+files / 2573 tests). Tests added: nir.test.ts (flow/spawn/func lowering,
+nested-type opaque, traffic parity pins), nir_cfg.test.ts (flow + spawn fact
+folding into flat statements). Perf: byte-identical output by design.
+
 ### Remaining phase-4 work (NOT done)
 
-- **Canonical IR stage 2+** — aarch64 tranches 1–5 and the C backend's
-  control-flow + expression seams are DONE (both backends emit
-  if/while/for/switch/match/return/declare/assign/eval through
-  `emit_stmt_from_nir` with a full expression seam covering plain,
-  array-element and swap-expr value emissions). Remaining: retire the
-  duplicate AST walks entirely (each builder still carries its AST-path
-  branches for fallback functions; once unknown_kinds is provably empty over
-  all real programs the fallback can go). Stage 1's closed union +
-  coverage sets are the contract those passes build against. (The former
-  lowering gap for assignment expressions in arrow arms is closed:
-  from_ast lowers let-wrapped assigns to the `assign` KIND; the bench
-  corpus contains none, so its promotion facts and bytes are unchanged.)
+- **Canonical IR stage 2+** — DONE: aarch64 tranches 1–5, the C backend's
+  control-flow + expression seams, and the fallback retirement (both backends
+  emit every statement kind through `emit_stmt_from_nir` with a full
+  expression seam covering plain, array-element, swap-expr, value-position
+  flow and spawn emissions; every statement list — function bodies, method
+  bodies, inline bodies, nursery bodies — is cursor-driven; the AST walk
+  survives only as the byte-identity A/B baseline, the join-slot engine for
+  value-position flow, and synthetic fragment emission). Stage 1's closed
+  union + coverage sets are the contract; unknown kinds now tripwire.
 - **NEON auto-vectorization** — the CFG/liveness/dominance substrate now
   exists (`src/nir/analysis.ts`: loop discovery with nesting depth, block
   liveness, frontiers). What remains is the vectorizer pass itself over

@@ -10,9 +10,9 @@ import RootNode from "../nodes/RootNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
-import build_block_node from "./build_block_node.ts";
 import build_node from "./build_node.ts";
 import { check_c_fallback } from "./build_raw_node.ts";
+import { build_body_with_cursor } from "./emit_nir.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free, emit_strdup } from "./utils/audit.ts";
 import { emit_destroy_for_anchor_slot, emit_field_destroys } from "./utils/auto_destroy.ts";
@@ -288,7 +288,7 @@ function build_destroy_function(node: StructNode, func: FunctionNode, status: Bu
 	status.code += `mov x29, sp\n`;
 
 	status.buffer_data_cache = undefined;
-	build_block_node(func, status);
+	build_body_with_cursor(func, status);
 
 	// The body build may have claimed registers (loop promotion); the cast
 	// defeats the assignment narrowing from the clear above.
@@ -949,7 +949,7 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 	}
 
 	status.buffer_data_cache = undefined;
-	build_block_node(func, status);
+	build_body_with_cursor(func, status);
 
 	// The init body's own loop-promotion claims (the enclosing's set was
 	// cleared above); restored after capture. These MUST be saved/restored
@@ -1418,7 +1418,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		) {
 			// specialized — skip the raw body
 		} else if (!emit_owning_buffer_standalone_aarch64(node, func.name, status)) {
-			build_block_node(func, status);
+			build_body_with_cursor(func, status);
 		}
 
 		// The method's own loop-promotion claims (the enclosing function's set
@@ -1646,7 +1646,7 @@ function build_trait_functions(node: StructNode, status: BuildStatus) {
 			status.callee_saved_regs_used = undefined;
 
 			status.buffer_data_cache = undefined;
-			build_block_node(func, status);
+			build_body_with_cursor(func, status);
 
 			const trait_claims = status.callee_saved_regs_used as Set<string> | undefined;
 			const trait_loop_regs = trait_claims ? [...trait_claims].sort() : [];

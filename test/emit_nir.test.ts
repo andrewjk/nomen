@@ -13,8 +13,10 @@ import parse_with_imports, { parse_raw } from "./parse_with_imports";
 /**
  * Phase 4 canonical-IR stage 2 (ASM_PLAN): NIR-driven emission must be a
  * byte-identical re-encoding of the AST walk. Every test here compiles the
- * same source twice — emission cursor off (baseline) vs on — and requires
- * the generated aarch64 assembly to match exactly.
+ * same source twice — per-statement delegation off/on (the emission toggle
+ * makes emit_stmt_from_nir delegate every statement to build_node, the exact
+ * statement-level walk the retired whole-function fallback performed) — and
+ * requires the generated aarch64 assembly to match exactly.
  */
 
 function compile_aarch64(source: string, raw = false): string {
@@ -250,7 +252,7 @@ Console.write("\\{apply_twice(3)}")
 `);
 });
 
-test("function with a nested struct falls back and stays byte-identical", () => {
+test("nested struct statements lower to opaque and stay NIR-eligible", () => {
 	const source = `
 func nested_type = (out int) {
     struct P {
@@ -264,8 +266,9 @@ func nested_type = (out int) {
 }
 Console.write("\\{nested_type()}")
 `;
-	// White-box: the nested struct declaration must make the function
-	// ineligible (unknown_kinds non-empty), exercising the fallback.
+	// White-box: the nested struct declaration lowers to `opaque` WITHOUT
+	// recording (type declarations are skipped by the block loop — their IR
+	// entries are never dispatched), so the function stays NIR-eligible.
 	const parsed = parse_with_imports(source);
 	const walk = (n: any): any[] => {
 		if (!n || typeof n !== "object") return [];
@@ -278,7 +281,8 @@ Console.write("\\{nested_type()}")
 	const fn = walk(parsed.root).find((f) => f.name === "nested_type");
 	expect(fn).toBeTruthy();
 	const nir = lower_function(fn);
-	expect([...nir.unknown_kinds]).toContain("struct");
+	expect([...nir.unknown_kinds]).toEqual([]);
+	expect(nir.body.some((s) => s.kind === "opaque")).toBe(true);
 	expect_byte_identical(source);
 });
 
@@ -367,7 +371,7 @@ Console.write("\\{total()}")
 `);
 });
 
-test("return match forces the AST fallback and stays byte-identical", () => {
+test("return match emits NIR-natively through the join-slot path", () => {
 	const source = `
 func pick = (int x, out int) {
     return match x {
@@ -377,8 +381,10 @@ func pick = (int x, out int) {
 }
 Console.write("\\{pick(1)} \\{pick(2)}")
 `;
-	// White-box: a match in return-value position lowers to `other` → the
-	// whole function is ineligible, so this return rides the AST path.
+	// White-box: a match in return-value position lowers to a `flow` expr
+	// (was: `other` → whole-function fallback). The NIR return arm descends
+	// the expression seam, whose flow arm routes the ORIGINAL match node
+	// through build_node to the same join-slot builders — byte-identical.
 	const parsed = parse_with_imports(source);
 	const walk = (n: any): any[] => {
 		if (!n || typeof n !== "object") return [];
@@ -391,8 +397,126 @@ Console.write("\\{pick(1)} \\{pick(2)}")
 	const fn = walk(parsed.root).find((f) => f.name === "pick");
 	expect(fn).toBeTruthy();
 	const nir = lower_function(fn);
-	expect([...nir.unknown_kinds]).toContain("match");
+	expect([...nir.unknown_kinds]).toEqual([]);
+	const ret = nir.body.find((s) => s.kind === "return");
+	expect(ret && ret.kind === "return" && ret.value?.kind === "flow").toBe(true);
 	expect_byte_identical(source);
+});
+
+test("value-position match/if/switch join through the seam byte-identically", () => {
+	// The Container.nm pattern: match/if/switch as a DECLARATION initializer.
+	// Each lowers to a `flow` expr; the declaration's init site descends the
+	// seam, whose flow arm routes the original node to the join-slot
+	// builders (status.return_assign stores each arm's value).
+	expect_byte_identical(`
+func classify = (int v, out int) {
+    var int kind = match v {
+        case 0 -> 100
+        case 1 -> 200
+        else -> 300
+    }
+    var int bump = if kind > 150 -> 5
+                   else -> 1
+    var int wrap = switch {
+        case kind == 100 -> 7
+        else -> 9
+    }
+    return kind + bump + wrap
+}
+Console.write("\\{classify(0)} \\{classify(1)} \\{classify(9)}")
+`);
+});
+
+test("function-typed declarations (`var func`) stay NIR-eligible byte-identically", () => {
+	// A declared function variable's value IS a FunctionNode — it lowers to a
+	// nameless leaf, and the seam routes build_node to it (which builds the
+	// function and emits its label exactly as the AST walk did).
+	const source = `
+pub func main = () {
+    var func (int) handler {
+        Console.write_line("handled")
+    }
+    handler(1)
+}
+`;
+	const parsed = parse_with_imports(source);
+	expect(parsed.errors).toEqual([]);
+	const walk = (n: any): any[] => {
+		if (!n || typeof n !== "object") return [];
+		if (Array.isArray(n)) return n.flatMap(walk);
+		const found = n.node_type === "func" ? [n] : [];
+		return found.concat(
+			Object.keys(n).flatMap((k) => (k === "parent" || k === "scope" ? [] : walk(n[k]))),
+		);
+	};
+	const fn = walk(parsed.root).find(
+		(f) => f.name === "main" && f.statements.some((s: any) => s.node_type === "declare"),
+	);
+	expect(fn).toBeTruthy();
+	const nir = lower_function(fn);
+	expect([...nir.unknown_kinds]).toEqual([]);
+	const decl = nir.body.find((s) => s.kind === "declare");
+	expect(
+		decl &&
+			decl.kind === "declare" &&
+			decl.decl.init?.kind === "leaf" &&
+			decl.decl.init.node.node_type === "func",
+	).toBe(true);
+	expect_byte_identical(source);
+});
+
+test("value-position spawn lowers to the spawn expr and stays NIR-eligible", () => {
+	const source = `
+func work = (uint64 arg) {
+    Console.write_line("worked")
+}
+pub func main = () {
+    var t = spawn work(3)
+    t.wait()
+}
+`;
+	const parsed = parse_with_imports(source);
+	const walk = (n: any): any[] => {
+		if (!n || typeof n !== "object") return [];
+		if (Array.isArray(n)) return n.flatMap(walk);
+		const found = n.node_type === "func" ? [n] : [];
+		return found.concat(
+			Object.keys(n).flatMap((k) => (k === "parent" || k === "scope" ? [] : walk(n[k]))),
+		);
+	};
+	// NOTE: parse_with_imports wraps the source with a synthetic main stub —
+	// pick the USER main (the one holding the declare).
+	const fn = walk(parsed.root).find(
+		(f) => f.name === "main" && f.statements.some((s: any) => s.node_type === "declare"),
+	);
+	expect(fn).toBeTruthy();
+	const nir = lower_function(fn);
+	expect([...nir.unknown_kinds]).toEqual([]);
+	const decl = nir.body.find((s) => s.kind === "declare");
+	expect(decl && decl.kind === "declare" && decl.decl.init?.kind === "spawn").toBe(true);
+	expect_byte_identical(source);
+});
+
+test("async nursery body dispatches NIR-natively (nested flow inside the cursor)", () => {
+	// The async_block dispatch arm hands build_async_block_node the lowered
+	// body, whose block installs its own cursor — an if inside the nursery
+	// now dispatches NIR-natively instead of riding the AST walk.
+	expect_byte_identical(`
+func probe = (int v, out int) {
+    return v + 1
+}
+func nursery_flow = (out int) {
+    var int total = 0
+    async(timeout: 2000) {
+        spawn probe(1)
+        if total == 0 {
+            total = total + 40
+        }
+    }
+    return total
+}
+Console.write("\\{nursery_flow()}")
+`);
 });
 
 test("declare/assign/eval statements emit through the NIR seam byte-identically", () => {

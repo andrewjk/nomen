@@ -1,8 +1,9 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
+import type { NirStmt } from "../nir/nir.ts";
 import AsyncBlockNode from "../nodes/AsyncBlockNode.ts";
-import build_block_node from "./build_block_node.ts";
 import build_node from "./build_node.ts";
 import { POOL_HEADER_C } from "./build_spawn_node.ts";
+import { build_block_with_cursor } from "./emit_nir.ts";
 import { allocate_stack_space } from "./utils/stack_var.ts";
 
 /**
@@ -23,7 +24,11 @@ import { allocate_stack_space } from "./utils/stack_var.ts";
  * __nomen_future_release, __nomen_future_cancel) are C functions in the
  * companion file, called via `bl` from assembly.
  */
-export default function build_async_block_node(node: AsyncBlockNode, status: BuildStatus) {
+export default function build_async_block_node(
+	node: AsyncBlockNode,
+	status: BuildStatus,
+	nir?: NirStmt & { kind: "async_block" },
+) {
 	const id = status.spawn_counter ?? 0;
 	status.spawn_counter = id + 1;
 
@@ -81,7 +86,7 @@ export default function build_async_block_node(node: AsyncBlockNode, status: Bui
 	// freed block usually still holds the zeroed fields).
 	const old_scoped_declarations = status.scoped_declarations;
 	status.scoped_declarations = [];
-	build_block_node(node, status);
+	build_block_with_cursor(node, nir?.body, status);
 	status.scoped_declarations = old_scoped_declarations;
 
 	status.nursery_stack.pop();

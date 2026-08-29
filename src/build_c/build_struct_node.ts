@@ -19,6 +19,7 @@ import { is_owned_heap_temp } from "./build_operation_node.ts";
 import build_parameter_node from "./build_parameter_node.ts";
 import build_struct_body from "./build_struct_body.ts";
 import type BuildStatus from "./BuildStatus.ts";
+import { emit_method_body_from_nir } from "./emit_nir.ts";
 import c_function_name from "./utils/c_function_name.ts";
 import { enter_c_scope, leave_c_scope } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
@@ -766,9 +767,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 			(owning_elem && emit_owning_buffer_body(func.name, owning_elem, status)) ||
 			(owning_buffer_is_string_elem(node) && emit_owning_buffer_string_body(func.name, status));
 		if (!specialized) {
-			for (let child of func.statements) {
-				build_node(child, status, true);
-			}
+			emit_method_body_from_nir(func, status);
 		}
 		// A user `#destroy` on a CLASS must still free the class's plain
 		// string fields after the body — they are always heap-owned (`_init`

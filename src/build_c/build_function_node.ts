@@ -308,16 +308,25 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	}
 
 	// NIR-driven emission (canonical-IR stage 2, C backend): ONE canonical
-	// lowering per function. When the whole body mapped (unknown_kinds empty),
-	// point the emission cursor at the lowered statements — build_block_node's
-	// statement loop then dispatches NIR-natively. Restored after the body so
-	// a nested function build (which installs its own cursor) hands ours back.
+	// lowering per function. The ctx is published for EVERY function body —
+	// the whole-function AST fallback is retired; build_block_node's
+	// statement loop dispatches through emit_stmt_from_nir. Restored after
+	// the body so a nested function build (which installs its own cursor)
+	// hands ours back.
 	const nir = node.statements?.length ? lower_function(node) : undefined;
+	if (nir && nir.unknown_kinds.size > 0) {
+		// Lowering is total over the checked AST — a residual kind is a
+		// compiler bug, not user error. Fail loudly instead of silently
+		// re-walking the AST (the whole-function fallback is retired).
+		throw new Error(
+			`NIR lowering gap in ${node.name || status.current_function_name || "<func>"}: ${[
+				...nir.unknown_kinds,
+			].join(", ")}`,
+		);
+	}
 	const old_nir_ctx = status.nir_emit_ctx;
 	status.nir_emit_ctx =
-		nir && nir.unknown_kinds.size === 0 && c_nir_emission_enabled()
-			? { stmts: nir.body, ast: node.statements }
-			: undefined;
+		nir && c_nir_emission_enabled() ? { stmts: nir.body, ast: node.statements } : undefined;
 
 	build_block_node(node, status, false);
 

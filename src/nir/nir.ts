@@ -28,10 +28,15 @@ import type Type from "../nodes/Type.ts";
  *   lowering and ride the IR explicitly — ref/swap argument indices on calls,
  *   receiver positions on paths (address-take marks), scalar modifier flags
  *   on declarations. Analyses never guess again.
- * - HONEST ESCAPES: expressions/statements whose lowering is not yet modeled
- *   surface as explicit `other_*` variants carrying the original node. They
- *   are a lint signal (tests keep them empty over real code), not silent
- *   black boxes.
+ * - HONEST ESCAPES: statements/expressions with no modeling surface as
+ *   explicit `other_*`/`opaque` variants carrying the original node, recorded
+ *   in a coverage set so tests keep them empty over real code. Lowering is
+ *   TOTAL over the checked AST as of the fallback-retirement tranche: the
+ *   remaining `opaque` producers are type declarations (struct/class/trait/
+ *   enum/bitset/extend), which are hoisted/skipped by the block loop and
+ *   never dispatched, so they lower to `opaque` WITHOUT recording. A new
+ *   unknown kind is a tripwire (`build_function_node` throws), not a silent
+ *   fallback.
  */
 
 /** A variable read inside an expression tree, as reported by traffic.ts. */
@@ -82,7 +87,28 @@ export type NirExpr =
 			readonly receiver: NirExpr;
 			readonly steps: NirPathStep[];
 	  }
+	/** Value-position control flow (`var k = match len { … }`, `return if c {
+	 *  a } else { b }`). The backend emits these through the SAME join-slot
+	 *  builders the AST walk used (the lowered expr routes `build_node` to
+	 *  them); the arms ride the IR so liveness/vectorization see the traffic. */
+	| {
+			readonly kind: "flow";
+			readonly node: BaseNode;
+			readonly scrutinee: NirExpr | null;
+			readonly arms: readonly NirArm[];
+			readonly otherwise: NirStmt[] | null;
+	  }
+	/** Value-position `spawn` (`var t = spawn f(x)`) — the call rides whole
+	 *  so liveness folds its argument reads; traffic deliberately does not
+	 *  count them (promotion-input parity — see FOLLOWUP.md). */
+	| { readonly kind: "spawn"; readonly node: BaseNode; readonly call: NirExpr }
 	| { readonly kind: "other"; readonly node: BaseNode };
+
+/** One arm of a match/switch/if: condition (null = always-taken default) + branch statements. */
+export interface NirArm {
+	readonly condition: NirExpr | null;
+	readonly branch: NirStmt[];
+}
 
 /** One member hop on an access path: `.field` reads or trailing method tail… */
 export interface NirPathStep {
@@ -150,7 +176,7 @@ export type NirStmt =
 	| (NirStmtBase & {
 			readonly kind: "switch_match";
 			readonly scrutinee: NirExpr | null;
-			readonly arms: readonly { readonly condition: NirExpr | null; readonly branch: NirStmt[] }[];
+			readonly arms: readonly NirArm[];
 			readonly otherwise: NirStmt[] | null;
 	  })
 	| (NirStmtBase & { readonly kind: "return"; readonly value: NirExpr | null })

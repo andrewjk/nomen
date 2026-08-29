@@ -14,8 +14,10 @@ import parse_with_imports, { parse_raw } from "./parse_with_imports";
  * Phase 4 canonical-IR stage 2+ (ASM_PLAN): the C backend consumes the same
  * NIR emission seam as the aarch64 backend. NIR-driven emission must be a
  * byte-identical re-encoding of the AST walk. Every test here compiles the
- * same source twice — emission cursor off (baseline) vs on — and requires the
- * generated C to match exactly.
+ * same source twice — per-statement delegation off/on (the emission toggle
+ * makes emit_stmt_from_nir delegate every statement to build_node, the exact
+ * statement-level walk the retired whole-function fallback performed) — and
+ * requires the generated C to match exactly.
  */
 
 function compile_c(source: string, raw = false): { code: string; headers: string } {
@@ -310,10 +312,11 @@ Console.write("\\{x}")
 	);
 });
 
-test("functions with unmapped statements fall back to the AST walk", () => {
-	// White-box: a nested struct declaration is not modeled in NIR → the
-	// whole enclosing function is ineligible (unknown_kinds non-empty) and
-	// its statements ride the AST path. Byte-identity must hold regardless.
+test("nested struct statements lower to opaque and stay NIR-eligible", () => {
+	// White-box: a nested struct declaration lowers to `opaque` WITHOUT
+	// recording (type declarations are skipped by the block loop — their IR
+	// entries are never dispatched), so the function stays NIR-eligible and
+	// every statement dispatches through the seam. Byte-identity must hold.
 	const source = `
 func make_point = (out int) {
     struct Pt {
@@ -337,16 +340,17 @@ Console.write("\\{make_point()}")
 	const fn = walk(parsed.root).find((f: any) => f.name === "make_point");
 	expect(fn).toBeTruthy();
 	const nir = lower_function(fn);
-	expect([...nir.unknown_kinds]).toContain("struct");
+	expect([...nir.unknown_kinds]).toEqual([]);
+	expect(nir.body.some((s) => s.kind === "opaque")).toBe(true);
 	expect_byte_identical(source);
 });
 
-test("async nursery blocks delegate byte-identically", () => {
-	// The async body is a delegated block: build_async_block_node calls
-	// build_block_node directly, so the identity guard must fall back to the
-	// AST walk inside it even though the enclosing function's cursor is
-	// active. A bare nursery-spawn statement rides the delegated eval path,
-	// whose fire-and-forget stamp is build_node's with_semicolon side effect.
+test("async nursery bodies with nursery.spawn stay byte-identical", () => {
+	// The async body installs its own cursor via the async_block dispatch
+	// arm, so its statements dispatch NIR-natively. `nursery.spawn(...)`
+	// statements ride the delegated eval path (an access method-call, not a
+	// SpawnNode), whose fire-and-forget stamp is build_node's with_semicolon
+	// side effect — the eval arm re-stamps it.
 	expect_byte_identical(`
 func work = (uint64 id) {
     Console.write_line("ok")
@@ -744,4 +748,62 @@ pub func main = () {
 		"13 0.750000 hi there! 14 set 9 13 27 45",
 		true,
 	);
+});
+
+test("value-position match/if/switch join through the seam byte-identically (C)", () => {
+	// The Container.nm pattern on the C backend: match/if/switch as a
+	// DECLARATION initializer lowers to a `flow` expr; the declaration's
+	// init site descends the seam, whose flow arm routes the original node
+	// to the join-slot builders.
+	expect_byte_identical(`
+func classify = (int v, out int) {
+    var int kind = match v {
+        case 0 -> 100
+        case 1 -> 200
+        else -> 300
+    }
+    var int bump = if kind > 150 -> 5
+                   else -> 1
+    var int wrap = switch {
+        case kind == 100 -> 7
+        else -> 9
+    }
+    return kind + bump + wrap
+}
+Console.write("\\{classify(0)} \\{classify(1)} \\{classify(9)}")
+`);
+});
+
+test("value-position spawn stays NIR-eligible byte-identically (C)", () => {
+	expect_byte_identical(`
+func work = (uint64 arg) {
+    Console.write_line("worked")
+}
+pub func main = () {
+    var t = spawn work(3)
+    t.wait()
+}
+`);
+});
+
+test("async nursery body dispatches NIR-natively with nested flow (C)", () => {
+	// The async_block dispatch arm hands build_async_block_node the lowered
+	// body; the nursery's block installs its own cursor so the nested if
+	// dispatches NIR-natively instead of riding the AST walk.
+	expect_byte_identical(`
+func probe = (int v, out int) {
+    return v + 1
+}
+func nursery_flow = (out int) {
+    var int total = 0
+    async(timeout: 2000) {
+        spawn probe(1)
+        if total == 0 {
+            total = total + 40
+        }
+    }
+    return total
+}
+Console.write("\\{nursery_flow()}")
+`);
 });
