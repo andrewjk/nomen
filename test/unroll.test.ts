@@ -50,18 +50,19 @@ func kernel = (float cr, float ci, out int) {
 pub func main = () {}
 `;
 
-test("fixed-trip loops fully unroll (both loops gone, body replicated)", () => {
+test("fixed-trip inner loop unrolls; outer with nested body stays a loop", () => {
 	const code = compile(KERNEL);
 	const fn = code.slice(code.indexOf("kernel:"), code.indexOf("main:"));
-	// No loop machinery at all.
-	expect(fn).not.toContain(".while_");
-	expect(fn).not.toContain(".end_while_");
-	// 10 × 5 × 7 FP ops of straight-line chain (plus the 10 escape adds).
+	// The outer body contains the nested inner loop → kept as a loop (the
+	// clang shape: outer looped, inner fully unrolled). Exactly one loop.
+	const loops = (fn.match(/\.while_\d+:/g) ?? []).length;
+	expect(loops).toBe(1);
+	// 5 × 7 FP ops of straight-line inner chain.
 	const fp = (fn.match(/^\s*f(mul|add|sub)/gm) ?? []).length;
-	expect(fp).toBeGreaterThanOrEqual(350);
+	expect(fp).toBeGreaterThanOrEqual(35);
 });
 
-test("induction read in the body keeps the loop", () => {
+test("induction-index reads unroll with constant substitution", () => {
 	const code = compile(`
 import System
 
@@ -76,7 +77,9 @@ pub func main = () {
 	}
 }
 `);
-	expect(code).toContain(".while_");
+	// Loop machinery gone; the copies store with constant indices.
+	const fn = code.slice(code.indexOf("pub func main"), code.length);
+	expect(fn).not.toContain(".while_");
 });
 
 test("non-literal bound keeps the loop", () => {
@@ -113,7 +116,7 @@ pub func main = () {}
 	expect(code).toContain(".while_");
 });
 
-test("break inside a NESTED loop still unrolls the outer", () => {
+test("break inside a NESTED loop keeps both loops looping", () => {
 	const code = compile(`
 import System
 
@@ -132,10 +135,10 @@ func f = (out int) {
 }
 pub func main = () {}
 `);
-	// The outer loop unrolls (no break targets it) — 4 copies, each
-	// rebuilding its own nested loop (4 nested loop labels total).
+	// Outer contains a nested loop → outer stays; the inner's own break
+	// rejects the inner's unroll → both remain loops (two end labels).
 	const fn = code.slice(code.indexOf("f:"), code.indexOf("main:"));
-	expect((fn.match(/\.end_while_\d+:/g) ?? []).length).toBe(4);
+	expect((fn.match(/\.end_while_\d+:/g) ?? []).length).toBe(2);
 });
 
 test("non-scalar declaration keeps the loop", () => {

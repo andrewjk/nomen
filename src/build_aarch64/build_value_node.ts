@@ -71,6 +71,15 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 	const original_value = node.value;
 	let value = node.value.replace("self", "_self");
 
+	// Full-unroll index substitution (ASM_PLAN_2 tranche E): inside an
+	// unrolled copy, reads of the induction become immediate loads — the
+	// copy's value is a compile-time constant.
+	const const_idx = status.induction_const?.get(original_value);
+	if (const_idx !== undefined) {
+		status.code += `mov x0, #${const_idx}\n`;
+		return;
+	}
+
 	// A top-level non-primitive `const` (e.g. geometry-type constants like
 	// `DEFAULT_PARAMS`) is inlined at every use site rather than emitted as a
 	// module-scope global — the initializer is typically a struct constructor

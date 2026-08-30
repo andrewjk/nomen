@@ -209,6 +209,30 @@ Pre-existing bugs recorded in FOLLOWUP.md while testing: the malformed
 `scvtf d0, d0` for `int-cast + float` adds, and the two-ref-arg Buffer
 call marshalling swapping arg0/arg1 for guarded-main-scope calls.
 
+## Tranche E — index-constant unrolling (DONE)
+
+Tranche A rejected any loop whose body READS the induction (the counter
+was deleted). But the common hot shape — `while j < 5; j += 1 {
+body[...] = f(...at(j)...) }` with a literal bound and a 0-init/+1-step
+induction — has a compile-time value for the induction on EVERY copy:
+copy k executes with the induction == k. `status.induction_const`
+(as name → literal map, consulted by build_value_node and build_operand
+ahead of the promoted lookup) makes induction reads immediate loads in
+each copy.
+
+Gates (beyond tranche A's): the body never ASSIGNS the induction (the
+constant would be wrong), and the body contains no nested loop —
+unrolling the parent multiplies the nested loop's text; the clang shape
+keeps the outer loop and unrolls the inner (mandelbrot now matches that
+shape too — previously it fully unrolled both). After the copies, a
+post-loop store sets the induction to the trip count (its exact had-run
+value), keeping post-loop reads correct.
+
+Known limit: nbody's inner loop initializes from `j = i + 1` — the init
+is only constant when the OUTER induction is (i.e. after outer
+unrolling, which the nested-loop gate now defers). Peeling or outer-
+first composition is future work.
+
 **Tranche A revision:** unrolling measured neutral on mandelbrot with the
 spill fix in place (+8% without it — slot traffic multiplied per copy).
 The kernel is a serial FP dependence chain; loop overhead was already

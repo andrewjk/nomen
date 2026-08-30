@@ -8,7 +8,7 @@ import { emit_neon_vector_loop } from "./neon_emit.ts";
 import type { NeonPlan } from "./neon_plan.ts";
 import { enter_scope_frame, exit_scope_frame } from "./utils/auto_destroy.ts";
 import { promote_loop_locals, type PromotedVar } from "./utils/loop_promotion.ts";
-import { emit_promoted_store } from "./utils/stack_var.ts";
+import { emit_promoted_store, emit_var_store } from "./utils/stack_var.ts";
 
 let label_counter = 0;
 
@@ -20,6 +20,17 @@ export function reset_label_counter() {
  *  emission path so both produce identical label numbering). */
 export function next_while_label(): number {
 	return label_counter++;
+}
+
+/** The induction name for this while (left leaf of the `<` condition). */
+function node_condition_name(node: WhileLoopNode): string {
+	const cond = node.condition as unknown as { left_value?: { value?: string }; value?: string };
+	return (cond.left_value?.value as string) ?? (cond.value as string) ?? "";
+}
+
+function mov_immediate_x0_and_store(status: BuildStatus, name: string, value: number): void {
+	status.code += `mov x0, #${value}\n`;
+	emit_var_store(status, "x0", name, 8);
 }
 
 export default function build_while_loop_node(
@@ -58,7 +69,14 @@ export default function build_while_loop_node(
 		// NIR cursor; promotion above keeps body floats in registers across
 		// copies. Computed only under an active NIR cursor (see
 		// emit_stmt_from_nir), so the AST/byte-identity path never sees it.
+		// Index-substitution mode (tranche E): the body READS the
+		// induction as an array index — per copy, reads of the induction
+		// become immediate constants (k). Cleared after the copies; the
+		// post-loop store then sets the induction to the trip count (its
+		// exact value had the loop run).
+		status.induction_const = new Map([[node_condition_name(node), 0]]);
 		for (let k = 0; k < unroll_count; k++) {
+			status.induction_const.set(node_condition_name(node), k);
 			// Allocations (checker-hoisted `_param_N` call-arg temps,
 			// interpolation temps, …) are deduped per BUILD via
 			// `emitted_allocations`. The same alloc NODE recurs in every
@@ -73,6 +91,10 @@ export default function build_while_loop_node(
 			build_block_with_cursor(node, nir!.body, status);
 			status.emitted_allocations = saved_allocs;
 		}
+		status.induction_const = undefined;
+		// Post-loop induction value: the dropped loop would have left the
+		// counter at the trip count.
+		mov_immediate_x0_and_store(status, node_condition_name(node), unroll_count);
 	} else {
 		const label = next_while_label();
 		const start_label = `.while_${label}`;

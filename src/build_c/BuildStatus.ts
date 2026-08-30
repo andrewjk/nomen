@@ -348,6 +348,13 @@ export default interface BuildStatus {
 	 *  (RHS reads of the target need the old value until the final fused
 	 *  instruction, which reads its sources before writing). */
 	float_dest_hint?: string;
+	/** Full-unroll index substitution (ASM_PLAN_2 tranche E): while the
+	 *  unroller emits copy k of a fixed-trip loop whose body reads the
+	 *  induction as an array index, this maps the induction name to the
+	 *  literal k — reads become immediate loads. Cleared after the copies
+	 *  (the loop itself is deleted; a post-loop store sets the induction
+	 *  to the trip count). */
+	induction_const?: Map<string, number>;
 	moved?: Set<string>;
 	heap_returning_functions?: Set<string>;
 	heap_strings?: Set<string>;

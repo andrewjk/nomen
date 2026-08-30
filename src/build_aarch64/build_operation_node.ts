@@ -508,6 +508,15 @@ function build_operand(node: BaseNode, target_reg: string, status: BuildStatus) 
 			emit_immediate(target_reg, value, status);
 			return;
 		}
+		// Full-unroll index substitution (ASM_PLAN_2 tranche E): an
+		// induction read inside an unrolled copy is a compile-time
+		// constant (checked before the promoted lookup — the induction's
+		// register still holds its pre-loop init during emission).
+		const const_idx = raw_value !== undefined ? status.induction_const?.get(raw_value) : undefined;
+		if (const_idx !== undefined) {
+			emit_immediate(target_reg, String(const_idx), status);
+			return;
+		}
 		// Promoted-operand direct-source (ASM_PLAN_2 tranche D): an integer
 		// variable living in a promoted x-register is read IN PLACE — one
 		// `mov` (or none when the target IS the register) instead of the

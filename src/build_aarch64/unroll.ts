@@ -1,4 +1,5 @@
 import type { NirStmt } from "../nir/nir.ts";
+import type BaseNode from "../nodes/BaseNode.ts";
 import { is_increment, scan_init } from "./neon_plan.ts";
 
 /**
@@ -43,38 +44,51 @@ export function set_loop_unrolling_enabled(enabled: boolean): void {
 const MAX_TRIP = 64;
 const MAX_STMTS = 500;
 
-/**
- * Does any node in this AST subtree read identifier `name`? Walks ALL
- * object properties (nodes, arrays) — deliberately over-approximate, and
- * deliberately AST-side: the NIR read facts are blind to interpolated-
- * string arguments (`"\{x}"` lowers to a format-string leaf whose reads
- * ride in node fields the NIR never sees), and for the unroller a false
- * "read" merely keeps the loop. Used for the induction-read check.
- */
-function ast_references(node: unknown, name: string, seen: Set<unknown>): boolean {
-	if (!node || typeof node !== "object") return false;
-	if (seen.has(node)) return false;
-	seen.add(node);
-	const n = node as Record<string, unknown>;
-	if (n.node_type === "value" && n.value === name) return true;
-	for (const key of Object.keys(n)) {
-		if (key === "parent" || key === "scope") continue;
-		const v = n[key];
-		if (Array.isArray(v)) {
-			for (const item of v) {
-				if (ast_references(item, name, seen)) return true;
+/** Does any AST statement in the subtree ASSIGN `name` (assignment target)? */
+function body_assigns_induction(s: NirStmt, induction: string): boolean {
+	const node = s.node;
+	if (!node) return false;
+	const stack = [node];
+	const seen = new Set<unknown>();
+	while (stack.length) {
+		const cur = stack.pop()!;
+		if (!cur || typeof cur !== "object" || seen.has(cur)) continue;
+		seen.add(cur);
+		const n = cur as unknown as Record<string, unknown>;
+		if (n.node_type === "assign" || n.node_type === "assign_decl") {
+			const left = n.left_value as { node_type?: string; value?: unknown } | undefined;
+			if (left && left.node_type === "value" && left.value === induction) return true;
+		}
+		for (const key of Object.keys(n)) {
+			if (key === "parent" || key === "scope") continue;
+			const v = n[key];
+			if (Array.isArray(v)) {
+				for (const item of v) {
+					if (item && typeof item === "object") stack.push(item);
+				}
+			} else if (v && typeof v === "object") {
+				stack.push(v as unknown as BaseNode);
 			}
-		} else if (v && typeof v === "object" && "node_type" in (v as object)) {
-			if (ast_references(v, name, seen)) return true;
 		}
 	}
 	return false;
 }
 
-/** Any body/update AST statement reads the induction? */
-function body_reads_induction(stmts: readonly NirStmt[], induction: string): boolean {
+/** Does the statement list contain a nested while/for loop? (Unrolling a
+ *  loop whose body nests another loop multiplies the nested loop's text by
+ *  the trip count — the clang shape keeps the outer loop and unrolls the
+ *  inner, so we reject and let the nested loop unroll itself.) */
+function body_has_nested_loop(stmts: readonly NirStmt[]): boolean {
 	for (const s of stmts) {
-		if (s.node && ast_references(s.node, induction, new Set())) return true;
+		if (s.kind === "while" || s.kind === "for") return true;
+		if (s.kind === "if") {
+			if (body_has_nested_loop(s.then_branch) || body_has_nested_loop(s.else_branch)) return true;
+		} else if (s.kind === "switch_match") {
+			for (const arm of s.arms) {
+				if (body_has_nested_loop(arm.branch)) return true;
+			}
+			if (s.otherwise && body_has_nested_loop(s.otherwise)) return true;
+		}
 	}
 	return false;
 }
@@ -190,11 +204,20 @@ export function plan_full_unroll(
 	const init_value = (init.init_node as { value?: unknown }).value;
 	if (typeof init_value !== "string" || !/^\+?0$/.test(init_value)) return null;
 
-	// The body must not read the induction (dropping the counter is then
-	// unobservable) and must be structurally unrollable. The read check is
-	// AST-side (see ast_references) — NIR facts are blind to interpolation.
+	// The body must not ASSIGN the induction (its per-copy value is the
+	// compile-time constant k; an assignment would break the substitution)
+	// and must contain no nested loops (the nested loop unrolls itself;
+	// unrolling the parent would multiply code size for no gain — the
+	// clang shape is outer-looped + inner unrolled). READS of the
+	// induction are allowed and become immediate constants per copy.
+	// The read check is AST-side (see ast_references) — NIR facts are
+	// blind to interpolation.
 	const all_stmts = nstmt.update ? body : [...body, nstmt.update!];
-	if (body_reads_induction(all_stmts.filter(Boolean), induction)) return null;
+	const full_stmts = all_stmts.filter(Boolean);
+	for (const s of full_stmts) {
+		if (body_assigns_induction(s, induction)) return null;
+	}
+	if (body_has_nested_loop(full_stmts)) return null;
 	if (!body.every((s) => stmt_unrollable(s, false))) return null;
 
 	// Code size bound.
