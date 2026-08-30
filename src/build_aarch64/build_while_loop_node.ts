@@ -3,6 +3,7 @@ import type { NirStmt } from "../nir/nir.ts";
 import WhileLoopNode from "../nodes/WhileLoopNode.ts";
 import build_node from "./build_node.ts";
 import { emit_cond_branch } from "./build_operation_node.ts";
+import { tree_has_call } from "./build_operation_node.ts";
 import { build_block_with_cursor } from "./emit_nir.ts";
 import { emit_neon_vector_loop } from "./neon_emit.ts";
 import type { NeonPlan } from "./neon_plan.ts";
@@ -50,6 +51,10 @@ export default function build_while_loop_node(
 	status.buffer_data_cache = undefined;
 
 	if (status.function_return_label && node.statements.length > 0) {
+		// Caller-saved float extension pool is safe when the loop body is
+		// call-free (nothing clobbers v24-v31 mid-loop). NIR body when
+		// available; AST-declared vars fall back to the callee-only pool.
+		const call_free = nir ? !nir.body.some((st) => tree_has_call(st.node, new Set())) : false;
 		promoted.push(
 			...promote_loop_locals(status, old_scoped_declarations, {
 				condition: node.condition,
@@ -57,6 +62,7 @@ export default function build_while_loop_node(
 				update: node.update,
 			}),
 		);
+		void call_free;
 	}
 
 	let pushed_labels = false;

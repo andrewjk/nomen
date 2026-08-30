@@ -2,7 +2,7 @@ import type BuildStatus from "../../build_c/BuildStatus.ts";
 import { ALL_FLOAT_TYPES, SCALAR_TYPES } from "../../built_in_types.ts";
 import type BaseNode from "../../nodes/BaseNode.ts";
 import type DeclarationNode from "../../nodes/DeclarationNode.ts";
-import collect_var_refs, { collect_declared_names } from "./collect_var_refs.ts";
+import collect_var_refs from "./collect_var_refs.ts";
 import { emit_promoted_load } from "./stack_var.ts";
 
 /**
@@ -25,6 +25,11 @@ import { emit_promoted_load } from "./stack_var.ts";
 
 const CALLEE_SAVED_REGS = ["x23", "x24", "x25", "x26", "x27", "x28"];
 const FLOAT_CALLEE_SAVED = ["d8", "d9", "d10", "d11", "d12", "d13", "d14", "d15"];
+// Caller-saved extension pool (ASM_PLAN_2 tranche D addendum): for
+// CALL-FREE loop bodies nothing can clobber v24-v31 mid-loop, so hot
+// locals may live there with no prologue saves. Distinct from the tree
+// allocator's d16-d23 temps (no overlap).
+const FLOAT_CALLER_SAVED_EXT = ["d24", "d25", "d26", "d27", "d28", "d29", "d30", "d31"];
 
 export interface PromotedVar {
 	name: string;
@@ -74,6 +79,7 @@ export function promote_loop_locals(
 	status: BuildStatus,
 	scoped_declarations: DeclarationNode[],
 	sources: { condition?: BaseNode; statements: BaseNode[]; update?: BaseNode | null },
+	options?: { call_free?: boolean },
 ): PromotedVar[] {
 	const promoted: PromotedVar[] = [];
 	const all_refs = new Map<string, { reads: number; address_taken: boolean }>();
@@ -109,10 +115,39 @@ export function promote_loop_locals(
 		offset: number;
 		type_name: string;
 	}[] = [];
-	const redeclared = collect_declared_names({
-		node_type: "block",
-		statements: sources.statements,
-	} as any);
+	// Body-declared names are promotable when declared exactly ONCE (the
+	// accumulator/const-local pattern: `var a = 0.0` / `const float bj_x =
+	// …` — the slot write executes per iteration and reads should come
+	// from the register). Declared twice = redeclared → two slots, one
+	// register: unsound, keep excluded.
+	const body_decl_count = new Map<string, number>();
+	{
+		const count_declares = (node: BaseNode): void => {
+			if (!node || typeof node !== "object") return;
+			const n = node as unknown as Record<string, unknown>;
+			if (n.node_type === "declare") {
+				const name = (n as unknown as { name?: string }).name;
+				if (name) body_decl_count.set(name, (body_decl_count.get(name) ?? 0) + 1);
+			}
+			for (const key of Object.keys(n)) {
+				if (key === "parent" || key === "scope") continue;
+				const v = n[key];
+				if (Array.isArray(v)) {
+					for (const item of v) {
+						if (item && typeof item === "object" && "node_type" in (item as object)) {
+							count_declares(item as BaseNode);
+						}
+					}
+				} else if (v && typeof v === "object" && "node_type" in (v as object)) {
+					count_declares(v as BaseNode);
+				}
+			}
+		};
+		for (const stmt of sources.statements) count_declares(stmt);
+	}
+	const redeclared = new Set(
+		[...body_decl_count.entries()].filter(([, c]) => c > 1).map(([n]) => n),
+	);
 	// Accumulator-aware eligibility (ASM_PLAN_2 tranche D): a variable
 	// WRITTEN in the loop body is a loop-carried accumulator/induction —
 	// its slot round-trips execute every iteration even when the TEXT has
@@ -173,16 +208,20 @@ export function promote_loop_locals(
 			else used_x.add(r);
 		}
 	}
+	const float_pool =
+		options?.call_free === true
+			? [...FLOAT_CALLEE_SAVED, ...FLOAT_CALLER_SAVED_EXT]
+			: FLOAT_CALLEE_SAVED;
 	let x_idx = 0;
 	let d_idx = 0;
 	for (const v of eligible) {
 		const is_float = ALL_FLOAT_TYPES.includes(v.type_name);
 		if (is_float) {
-			while (d_idx < FLOAT_CALLEE_SAVED.length && used_d.has(FLOAT_CALLEE_SAVED[d_idx])) {
+			while (d_idx < float_pool.length && used_d.has(float_pool[d_idx])) {
 				d_idx++;
 			}
-			if (d_idx >= FLOAT_CALLEE_SAVED.length) continue;
-			const reg = FLOAT_CALLEE_SAVED[d_idx];
+			if (d_idx >= float_pool.length) continue;
+			const reg = float_pool[d_idx];
 			status.register_allocations.set(v.name, reg);
 			used_d.add(reg);
 			promoted.push({
@@ -220,7 +259,11 @@ export function promote_loop_locals(
 			status.callee_saved_regs_used = new Set();
 		}
 		for (const p of promoted) {
-			status.callee_saved_regs_used.add(p.reg);
+			// Caller-saved extension regs are NOT callee-saved — the prologue
+			// must not save them (call-free loop, storeback covers the exit).
+			if (!p.reg.startsWith("d2") && !p.reg.startsWith("d3")) {
+				status.callee_saved_regs_used.add(p.reg);
+			}
 		}
 	}
 

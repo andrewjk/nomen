@@ -233,6 +233,18 @@ is only constant when the OUTER induction is (i.e. after outer
 unrolling, which the nested-loop gate now defers). Peeling or outer-
 first composition is future work.
 
+## Tranche D addendum — declare-slot pre-allocation (NEXT, in progress)
+
+Body-declared loop locals (`var a = 0.0`, `const float bj_x = …`) still
+miss promotion: promote_loop_locals runs BEFORE the body builds, so their
+stack slots don't exist yet and the `stack_offsets.get(name) === undefined`
+gate skips them. The caller-saved d24–d31 extension pool + single-declare
+eligibility landed (commit cbb31dcf) but nbody's advance needs the
+declare-slot pre-allocation: walk the body's declares at promotion time,
+allocate_stack_space upfront (matching the declare build's type size), and
+register the offset so eligibility passes. The declare build then writes
+the promoted register via the reg-aware paths.
+
 **Tranche A revision:** unrolling measured neutral on mandelbrot with the
 spill fix in place (+8% without it — slot traffic multiplied per copy).
 The kernel is a serial FP dependence chain; loop overhead was already
