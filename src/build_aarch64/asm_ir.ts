@@ -247,7 +247,14 @@ export const MNEMONICS: Record<string, MnemonicSig> = {
 	addv: { shapes: [["f", "f"]] },
 	fcmp: { shapes: [["f", "f"]], setsFlags: true },
 	fsqrt: { shapes: [["f", "f"]] },
-	scvtf: { shapes: [["f", "r"]] },
+	// SCVTF: integer→float. Both forms are emitted: x-source (scvtf d0, x0)
+	// and the in-place d-source bit-form (fmov d0, x0; scvtf d0, d0).
+	scvtf: {
+		shapes: [
+			["f", "r"],
+			["f", "f"],
+		],
+	},
 	fcvtzs: { shapes: [["r", "f"]] },
 	cmp: {
 		shapes: [

@@ -245,3 +245,14 @@ uint32 emission is covered by the compile-shape test instead
 (`test/neon_vector.test.ts` — "4-byte uint32 buffers vectorize as .4s
 groups"). Fix sketch: add monomorphized `Buffer_<T>` names to the system
 struct-name filter, or ship the monomorphized container bodies in system.o.
+
+## `int-cast + float` add emits `scvtf d0, d0` — FIXED (validator table gap)
+
+`u.store_float(i, i as float + 1.0)` was rejected by the asm validator:
+"'scvtf' operand shape mismatch: got reg,reg, expected f/r". The emitted
+sequence (`fmov d0, x0; scvtf d0, d0; fmov x0, d0`) is CORRECT codegen —
+move the int bits into d0, convert in place — and `SCVTF Dd, Dn` is a
+valid hardware form (verified by assembling). The phase-1 validator's
+mnemonic table simply lacked the f/f shape. Fixed in asm_ir.ts (tranche
+D commit); the accumulator behavioral test now uses the original cast+add
+source.

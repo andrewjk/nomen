@@ -185,6 +185,30 @@ destination-hint path.
 
 mbrot (unrolled) census: 2798 → 1455 instructions, fmovs 1456 → 116.
 
+## Tranche D — accumulator-aware loop promotion (DONE)
+
+The spectral receipts showed the actual remaining tax: `var a = 0.0` —
+the accumulator declared INSIDE the loop — reads once per TEXT
+occurrence, so the reads ≥ 3 rule excluded it from promotion. Every
+`a = a + …` then round-tripped through its stack slot and fell off the
+register fast paths (assignment hint, expression trees are d-target
+only). Clang promotes accumulators because it counts EXECUTIONS.
+
+`promote_loop_locals` now collects assignment targets in the loop body
+(`collect_assign_targets`) and qualifies variables written in the body
+with reads ≥ 1 as accumulators. Aliasing-aware exclusions guard it:
+ref params, heap strings, class aliases, ref class slots, heap arrays,
+struct param slots stay excluded (a promoted alias breaks write-through
+semantics — caught immediately by the ref-param and class-aliasing
+tests).
+
+**RESULT:** spectral-norm n=1000 160 → **82 ms (−49%)** — now within
+1.8× of the C `-O2` row. Full suite green (2651 tests) including new
+`test/accumulator_promotion.test.ts` (promotion shape + behavioral run).
+Pre-existing bugs recorded in FOLLOWUP.md while testing: the malformed
+`scvtf d0, d0` for `int-cast + float` adds, and the two-ref-arg Buffer
+call marshalling swapping arg0/arg1 for guarded-main-scope calls.
+
 **Tranche A revision:** unrolling measured neutral on mandelbrot with the
 spill fix in place (+8% without it — slot traffic multiplied per copy).
 The kernel is a serial FP dependence chain; loop overhead was already

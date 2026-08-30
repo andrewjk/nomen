@@ -549,7 +549,14 @@ v2.4s` for `.4s`), with the combined bits routed `fmov x0, d0` /
     d0/d1-scratch spills and round-trips for complex operands entirely
     (mbrot: 2798 → 1455 instrs, fmovs 1456 → 116). Falls back cleanly
     for call-containing or oversized trees.
-41. **ASM_PLAN_2 tranche B — spill-order elimination + promoted-operand
+41. **Accumulator-aware loop promotion**: loop-body assignment targets
+    qualify for promotion with reads ≥ 1 (accumulator/induction pattern)
+    instead of the reads ≥ 3 text-count bar that missed loop-carried
+    accumulators like spectral-norm's `var a = 0.0`. Aliasing-aware
+    exclusions (ref params, heap strings, class aliases, ref slots,
+    heap arrays) keep write-through semantics sound. Measured:
+    spectral-norm n=1000 160 → 82 ms (−49%).
+42. **ASM_PLAN_2 tranche B — spill-order elimination + promoted-operand
     direct-source selection**: two codegen fixes found by the per-function
     asm-diff analysis method (ASM_PLAN_2). (a) The float/int operand spill
     spilled d1/x2 whenever the LEFT operand was complex — but the spill is

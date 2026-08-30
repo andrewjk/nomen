@@ -498,7 +498,8 @@ function emit_immediate(target_reg: string, value: string, status: BuildStatus) 
 
 function build_operand(node: BaseNode, target_reg: string, status: BuildStatus) {
 	if (node.node_type === "value") {
-		const value = (node as ValueNode).value.replace("self", "_self");
+		const raw_value = (node as ValueNode).value;
+		const value = raw_value.replace("self", "_self");
 		if (value === "true" || value === "false") {
 			emit_immediate(target_reg, value === "true" ? "1" : "0", status);
 			return;
@@ -506,6 +507,20 @@ function build_operand(node: BaseNode, target_reg: string, status: BuildStatus) 
 		if (is_int_literal(value)) {
 			emit_immediate(target_reg, value, status);
 			return;
+		}
+		// Promoted-operand direct-source (ASM_PLAN_2 tranche D): an integer
+		// variable living in a promoted x-register is read IN PLACE — one
+		// `mov` (or none when the target IS the register) instead of the
+		// `mov x0, xN; mov target, x0` double shuffle. Kills the per-
+		// iteration register shuffling in every loop condition and update.
+		if (!status.function_param_regs?.has(raw_value) && !status.function_param_regs?.has(value)) {
+			const promoted = status.register_allocations?.get(raw_value);
+			if (promoted && promoted.startsWith("x")) {
+				if (promoted !== target_reg) {
+					status.code += `mov ${target_reg}, ${promoted}\n`;
+				}
+				return;
+			}
 		}
 		const paramReg = status.function_param_regs?.get(value);
 		if (paramReg) {

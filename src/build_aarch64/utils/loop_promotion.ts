@@ -34,6 +34,36 @@ export interface PromotedVar {
 }
 
 /**
+ * Value-node names assigned in this statement subtree (`x = …`, `x += …`,
+ * `obj.f = …` assigns the object root's field — the ROOT name counts as a
+ * write for promotion purposes only when it's a plain value target).
+ */
+function collect_assign_targets(node: BaseNode, out: Set<string>): void {
+	if (!node || typeof node !== "object") return;
+	const n = node as unknown as Record<string, unknown>;
+	if (n.node_type === "assign" || n.node_type === "assign_decl") {
+		const left = n.left_value as BaseNode | undefined;
+		if (left && left.node_type === "value") {
+			const v = (left as unknown as { value: string }).value;
+			if (v && v !== "null" && !v.startsWith('"')) out.add(v);
+		}
+	}
+	for (const key of Object.keys(n)) {
+		if (key === "parent" || key === "scope") continue;
+		const v = n[key];
+		if (Array.isArray(v)) {
+			for (const item of v) {
+				if (item && typeof item === "object" && "node_type" in (item as object)) {
+					collect_assign_targets(item as BaseNode, out);
+				}
+			}
+		} else if (v && typeof v === "object" && "node_type" in (v as object)) {
+			collect_assign_targets(v as BaseNode, out);
+		}
+	}
+}
+
+/**
  * Promote the loop's hottest variables and emit their entry loads. Mutates
  * `status.register_allocations` (creating the map when absent) and seeds
  * `status.callee_saved_regs_used` with every claimed register. Returns the
@@ -83,10 +113,29 @@ export function promote_loop_locals(
 		node_type: "block",
 		statements: sources.statements,
 	} as any);
+	// Accumulator-aware eligibility (ASM_PLAN_2 tranche D): a variable
+	// WRITTEN in the loop body is a loop-carried accumulator/induction —
+	// its slot round-trips execute every iteration even when the TEXT has
+	// a single read (e.g. `var a = 0.0` read once as `a = a + …`). Those
+	// qualify with reads >= 1; everything else keeps the reads >= 3 bar.
+	const body_writes = new Set<string>();
+	for (const stmt of sources.statements) {
+		collect_assign_targets(stmt, body_writes);
+	}
 	for (const [name, info] of all_refs) {
-		if (info.reads < 3) continue;
+		const is_accumulator = body_writes.has(name) && info.reads >= 1;
+		if (info.reads < 3 && !is_accumulator) continue;
 		if (info.address_taken) continue;
 		if (redeclared.has(name)) continue;
+		// Aliasing-aware exclusions (critical for accumulator eligibility —
+		// a promoted alias/ref breaks write-through semantics):
+		if (status.function_ref_params?.has(name)) continue;
+		if (status.function_ref_params?.has(`&${name}`)) continue;
+		if (status.heap_strings?.has(name)) continue;
+		if (status.class_alias_vars?.has(name)) continue;
+		if (status.ref_class_slots?.has(name)) continue;
+		if (status.heap_array_vars?.has(name)) continue;
+		if (status.function_struct_param_slots?.has(name)) continue;
 		const offset = status.stack_offsets?.get(name);
 		if (offset === undefined) continue;
 		if (status.register_allocations?.has(name)) continue;
