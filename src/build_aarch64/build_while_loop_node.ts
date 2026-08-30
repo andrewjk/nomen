@@ -47,6 +47,11 @@ export default function build_while_loop_node(
 	const saved_reg_allocs = status.register_allocations
 		? new Map(status.register_allocations)
 		: undefined;
+	// Declare-slot pre-allocation (tranche D addendum): promotion records
+	// pre-allocated slots for the body's declares; the set lives exactly for
+	// this loop's body build (the declare sites consume it) and is restored
+	// after so a later declare of the same name can't alias this loop's slot.
+	const saved_preallocated = status.preallocated_decl_slots;
 	const saved_buffer_cache = status.buffer_data_cache;
 	status.buffer_data_cache = undefined;
 
@@ -56,13 +61,17 @@ export default function build_while_loop_node(
 		// available; AST-declared vars fall back to the callee-only pool.
 		const call_free = nir ? !nir.body.some((st) => tree_has_call(st.node, new Set())) : false;
 		promoted.push(
-			...promote_loop_locals(status, old_scoped_declarations, {
-				condition: node.condition,
-				statements: node.statements,
-				update: node.update,
-			}),
+			...promote_loop_locals(
+				status,
+				old_scoped_declarations,
+				{
+					condition: node.condition,
+					statements: node.statements,
+					update: node.update,
+				},
+				{ call_free },
+			),
 		);
-		void call_free;
 	}
 
 	let pushed_labels = false;
@@ -167,6 +176,7 @@ export default function build_while_loop_node(
 	} else {
 		status.register_allocations = undefined;
 	}
+	status.preallocated_decl_slots = saved_preallocated;
 
 	status.buffer_data_cache = saved_buffer_cache;
 

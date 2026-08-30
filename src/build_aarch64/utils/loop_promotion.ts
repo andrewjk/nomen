@@ -2,8 +2,9 @@ import type BuildStatus from "../../build_c/BuildStatus.ts";
 import { ALL_FLOAT_TYPES, SCALAR_TYPES } from "../../built_in_types.ts";
 import type BaseNode from "../../nodes/BaseNode.ts";
 import type DeclarationNode from "../../nodes/DeclarationNode.ts";
+import aarch64_size from "./aarch64_size.ts";
 import collect_var_refs from "./collect_var_refs.ts";
-import { emit_promoted_load } from "./stack_var.ts";
+import { allocate_stack_space, emit_promoted_load } from "./stack_var.ts";
 
 /**
  * Shared per-loop register promotion (ASM_PLAN phase 4).
@@ -121,13 +122,17 @@ export function promote_loop_locals(
 	// from the register). Declared twice = redeclared → two slots, one
 	// register: unsound, keep excluded.
 	const body_decl_count = new Map<string, number>();
+	const body_decl_type = new Map<string, string>();
 	{
 		const count_declares = (node: BaseNode): void => {
 			if (!node || typeof node !== "object") return;
 			const n = node as unknown as Record<string, unknown>;
 			if (n.node_type === "declare") {
-				const name = (n as unknown as { name?: string }).name;
-				if (name) body_decl_count.set(name, (body_decl_count.get(name) ?? 0) + 1);
+				const dn = n as unknown as { name?: string; type?: { name?: string } };
+				if (dn.name) {
+					body_decl_count.set(dn.name, (body_decl_count.get(dn.name) ?? 0) + 1);
+					if (!body_decl_type.has(dn.name)) body_decl_type.set(dn.name, dn.type?.name ?? "");
+				}
 			}
 			for (const key of Object.keys(n)) {
 				if (key === "parent" || key === "scope") continue;
@@ -171,16 +176,48 @@ export function promote_loop_locals(
 		if (status.ref_class_slots?.has(name)) continue;
 		if (status.heap_array_vars?.has(name)) continue;
 		if (status.function_struct_param_slots?.has(name)) continue;
-		const offset = status.stack_offsets?.get(name);
-		if (offset === undefined) continue;
 		if (status.register_allocations?.has(name)) continue;
+		// Body-declared vars have no scoped declaration yet — their recorded
+		// declare type is authoritative (and required: an unknown type can't
+		// be register-classed).
+		const dtype = body_decl_type.get(name);
+		if (dtype !== undefined && !SCALAR_TYPES.includes(dtype)) continue;
+		// Shadow gate: a body-declared name that shadows an OUTER declaration
+		// must not be promoted — the register would diverge from the name-
+		// keyed slot model after the loop (the documented shadowed-local
+		// divergence class).
+		if (dtype !== undefined && scoped_declarations.some((d) => d.name === name)) {
+			continue;
+		}
 		const decl = scoped_declarations.find((d) => d.name === name);
 		let type_name = "";
 		if (decl) {
 			type_name = decl.type?.name || "";
 			if (!SCALAR_TYPES.includes(type_name)) continue;
 		}
-		eligible.push({ name, reads: info.reads, offset, type_name });
+		// Declare-slot pre-allocation (ASM_PLAN_2 tranche D addendum): a
+		// body-declared local has no slot until its declare builds — which
+		// happens AFTER this pass ran. Allocate the slot NOW (same size and
+		// alignment the declare build uses) and record it in
+		// `preallocated_decl_slots`; the declare build detects the record and
+		// reuses this exact offset, so the entry load below, the exit
+		// store-back, and every slot access share one slot. (The naive
+		// version that pre-allocated without the declare-side reuse let the
+		// entry load read a stale slot the declare never wrote — run-
+		// dependent output from uninitialized memory.) Only names with a
+		// known scalar declare type reach this point, so the size is sound;
+		// outer-scope vars always have their slot already.
+		let offset = status.stack_offsets?.get(name);
+		if (offset === undefined) {
+			if (dtype === undefined || dtype === "") continue;
+			const size = aarch64_size(dtype);
+			if (!status.stack_offsets) status.stack_offsets = new Map();
+			offset = allocate_stack_space(status, size, size);
+			status.stack_offsets.set(name, offset);
+			if (!status.preallocated_decl_slots) status.preallocated_decl_slots = new Map();
+			status.preallocated_decl_slots.set(name, size);
+		}
+		eligible.push({ name, reads: info.reads, offset, type_name: type_name || dtype || "" });
 	}
 
 	eligible.sort((a, b) => b.reads - a.reads);

@@ -561,6 +561,19 @@ export default interface BuildStatus {
 	 */
 	emitted_allocations?: Set<unknown>;
 	/**
+	 * aarch64-only (ASM_PLAN_2 tranche D addendum): body-declared loop
+	 * locals whose stack slots were pre-allocated by `promote_loop_locals`
+	 * BEFORE the body builds, so they can be register-promoted (their slot
+	 * would otherwise not exist until the declare builds — after promotion).
+	 * Maps declare name → slot size. The declare build consults this map and
+	 * REUSES the pre-allocated offset instead of allocating a second slot
+	 * (a second slot left the promotion's entry load / exit store-back
+	 * pointing at a slot nothing else read or wrote — the reverted naive
+	 * attempt's uninitialized-memory bug). Populated per loop; the loop
+	 * builders snapshot/restore it around the body build.
+	 */
+	preallocated_decl_slots?: Map<string, number>;
+	/**
 	 * Tracks which file-scope raw C blocks have already been emitted to
 	 * headers. When a generic struct (e.g. Task<T>) is monomorphized, its
 	 * #init file-scope block (pool infrastructure, type defs, etc.) would be

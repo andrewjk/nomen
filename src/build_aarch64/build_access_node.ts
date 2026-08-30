@@ -23,6 +23,7 @@ import ValueNode from "../nodes/ValueNode.ts";
 import build_inline_method from "./build_inline_method.ts";
 import build_node from "./build_node.ts";
 import build_nursery_spawn from "./build_nursery_spawn.ts";
+import { build_operand } from "./build_operation_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free, emit_malloc, emit_strdup } from "./utils/audit.ts";
 import { all_scope_frames, mark_moved_if_struct } from "./utils/auto_destroy.ts";
@@ -123,9 +124,8 @@ function build_string_at_inline(
 	const base = status.stack_offsets?.get(name);
 	if (base === undefined) return false;
 	// index → x1, ptr → x0, zero-extended byte load (char is unsigned).
-	build_node(access_func.params[0], status);
+	build_operand(access_func.params[0], "x1", status);
 	if (!status.code.endsWith("\n")) status.code += "\n";
-	status.code += `mov x1, x0\n`;
 	status.code += `ldr x0, [x29, #${base}]\n`;
 	status.code += `ldrb w0, [x0, x1]\n`;
 	return true;
@@ -184,9 +184,8 @@ function build_view_op(
 
 	if (access_func.name === "at" && access_func.params.length === 1) {
 		// index → x0, then x1=index, x0=ptr
-		build_node(access_func.params[0], status);
+		build_operand(access_func.params[0], "x1", status);
 		if (!status.code.endsWith("\n")) status.code += "\n";
-		status.code += `mov x1, x0\n`;
 		status.code += `ldr x0, [x29, #${base}]\n`;
 		const elem_struct = status.structs.find((s) => s.name === elem_name && !s.is_simple_type);
 		if (elem_struct) {
@@ -1210,9 +1209,8 @@ function build_access_method(
 					if (!status.code.endsWith("\n")) status.code += "\n";
 					const val_spill = allocate_stack_space(status, 16, 16);
 					emit_pair_store_x29(status, val_spill);
-					build_node(access_func.params[0], status);
+					build_operand(access_func.params[0], "x1", status);
 					if (!status.code.endsWith("\n")) status.code += "\n";
-					status.code += `mov x1, x0\n`;
 					emit_pair_load_x29(status, val_spill, "x2", "x3");
 					status.code += `stp x19, x20, [sp, #-16]!\n`;
 					status.code += `stp x21, x22, [sp, #-16]!\n`;
@@ -1231,9 +1229,8 @@ function build_access_method(
 					return;
 				}
 				// index → x1
-				build_node(access_func.params[0], status);
+				build_operand(access_func.params[0], "x1", status);
 				if (!status.code.endsWith("\n")) status.code += "\n";
-				status.code += `mov x1, x0\n`;
 				// value → x2 (simple value node: build only writes x0)
 				build_node(access_func.params[1], status);
 				if (!status.code.endsWith("\n")) status.code += "\n";
@@ -1258,11 +1255,11 @@ function build_access_method(
 			}
 
 			if (use_fast_path) {
-				// .at(): evaluate index → x1, compute base → x9, load
+				// .at(): evaluate index → x1 (build_operand: promoted vars/
+				// literals emit 1 instruction), compute base → x9, load
 				if (access_func.params.length > 0) {
-					build_node(access_func.params[0], status);
+					build_operand(access_func.params[0], "x1", status);
 					if (!status.code.endsWith("\n")) status.code += "\n";
-					status.code += `mov x1, x0\n`;
 				}
 				// Build target (array base) into x9
 				if (node.target.node_type === "value") {
@@ -1399,11 +1396,11 @@ function build_access_method(
 					status.code += `add x19, x19, #${field_offset}\n`;
 				}
 			}
-			// Build index argument into x1
+			// Build index argument into x1 (promoted vars/literals emit 1
+			// instruction via build_operand's direct paths)
 			if (access_func.params.length > 0) {
-				build_node(access_func.params[0], status);
+				build_operand(access_func.params[0], "x1", status);
 				if (!status.code.endsWith("\n")) status.code += "\n";
-				status.code += `mov x1, x0\n`;
 			}
 
 			if (access_func.name === "at") {
@@ -1573,11 +1570,11 @@ function build_access_method(
 			const is_float = method === "load_float" || method === "store_float";
 
 			if (is_buf_load) {
-				// Evaluate index → x1
+				// Evaluate index → x1 (promoted vars/literals emit 1 instr via
+				// build_operand's direct paths)
 				if (access_func.params.length > 0) {
-					build_node(access_func.params[0], status);
+					build_operand(access_func.params[0], "x1", status);
 					if (!status.code.endsWith("\n")) status.code += "\n";
-					status.code += `mov x1, x0\n`;
 				}
 				// Get data pointer (cached or freshly loaded)
 				const data_reg = get_buffer_data_ptr(node.target, status);
@@ -1604,14 +1601,13 @@ function build_access_method(
 					status.code += `ldr w0, [${data_reg}, x1, lsl #2]\n`;
 				}
 			} else {
-				// Store: evaluate index (push), value (→x2), pop index (→x1)
-				build_node(access_func.params[0], status);
+				// Store: evaluate value (→x2), index (→x1) — value first so a
+				// complex index eval can't clobber it, then no spill needed
+				// unless both are complex.
+				build_operand(access_func.params[1], "x2", status);
 				if (!status.code.endsWith("\n")) status.code += "\n";
-				status.code += `str x0, [sp, #-16]!\n`;
-				build_node(access_func.params[1], status);
+				build_operand(access_func.params[0], "x1", status);
 				if (!status.code.endsWith("\n")) status.code += "\n";
-				status.code += `mov x2, x0\n`;
-				status.code += `ldr x1, [sp], #16\n`;
 				// Get data pointer (cached or freshly loaded)
 				const data_reg = get_buffer_data_ptr(node.target, status);
 				// Strided store

@@ -131,6 +131,25 @@ function alloc_array_with_prefix(
 	return start + 8;
 }
 
+/**
+ * Slot offset for a scalar declaration inside a function frame. When loop
+ * promotion PRE-allocated a slot for this name (ASM_PLAN_2 tranche D
+ * addendum — the body's declares are walked before the body builds so they
+ * can be register-promoted), that exact slot MUST be reused: the promotion's
+ * loop-entry load and exit store-back target it, and allocating a second
+ * slot would leave them reading/writing memory no other access touches (the
+ * reverted naive attempt's uninitialized-memory bug). Falls back to a fresh
+ * allocation for everything else. The recorded size must match the declare's
+ * so a same-named non-scalar declare can never alias a scalar's slot.
+ */
+function declare_slot_offset(status: BuildStatus, name: string, size: number): number {
+	if (status.preallocated_decl_slots?.get(name) === size) {
+		const pre = status.stack_offsets?.get(name);
+		if (pre !== undefined) return pre;
+	}
+	return allocate_stack_space(status, size, size);
+}
+
 let string_array_counter = 0;
 let decl_const_counter = 0;
 
@@ -1983,7 +2002,7 @@ export default function build_declaration_node(
 			const is_heap_alias =
 				node.type.name === "string" && !is_literal && status.heap_strings?.has(raw);
 			if (use_stack) {
-				const offset = allocate_stack_space(status, size, size);
+				const offset = declare_slot_offset(status, node.name, size);
 				status.stack_offsets!.set(node.name, offset);
 				// A `string` declaration initialized from a VIEW value
 				// (`const string s = v`) materializes an OWNED heap copy
@@ -2183,7 +2202,7 @@ export default function build_declaration_node(
 			node.value.node_type === "switch"
 		) {
 			if (status.function_return_label) {
-				const offset = allocate_stack_space(status, size, size);
+				const offset = declare_slot_offset(status, node.name, size);
 				status.stack_offsets!.set(node.name, offset);
 			} else {
 				emit_data(status, `${node.name}: .space ${size}\n`);
@@ -2216,7 +2235,7 @@ export default function build_declaration_node(
 			check_heap();
 		} else {
 			if (status.function_return_label) {
-				const offset = allocate_stack_space(status, size, size);
+				const offset = declare_slot_offset(status, node.name, size);
 				status.stack_offsets!.set(node.name, offset);
 			} else {
 				emit_data(status, `${node.name}: .space ${size}\n`);
@@ -2249,7 +2268,9 @@ export default function build_declaration_node(
 				const offset = alloc_array_with_prefix(status, array_length, size);
 				status.stack_offsets!.set(node.name, offset);
 			} else {
-				const offset = allocate_stack_space(status, total_size, size);
+				// Non-array no-init declare: total_size === size, so the
+				// pre-allocation reuse check applies like the init paths.
+				const offset = declare_slot_offset(status, node.name, total_size);
 				status.stack_offsets!.set(node.name, offset);
 			}
 		} else {

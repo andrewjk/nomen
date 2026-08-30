@@ -233,17 +233,39 @@ is only constant when the OUTER induction is (i.e. after outer
 unrolling, which the nested-loop gate now defers). Peeling or outer-
 first composition is future work.
 
-## Tranche D addendum — declare-slot pre-allocation (NEXT, in progress)
+## Tranche D addendum — declare-slot pre-allocation (DONE)
 
 Body-declared loop locals (`var a = 0.0`, `const float bj_x = …`) still
 miss promotion: promote_loop_locals runs BEFORE the body builds, so their
 stack slots don't exist yet and the `stack_offsets.get(name) === undefined`
 gate skips them. The caller-saved d24–d31 extension pool + single-declare
-eligibility landed (commit cbb31dcf) but nbody's advance needs the
-declare-slot pre-allocation: walk the body's declares at promotion time,
-allocate_stack_space upfront (matching the declare build's type size), and
-register the offset so eligibility passes. The declare build then writes
-the promoted register via the reg-aware paths.
+eligibility landed (commit e784fda8); the while builder now passes its
+`call_free` too (it was computed and discarded there), and nbody's advance
+needed the declare-slot pre-allocation on top: `promote_loop_locals` walks
+the body's declares at promotion time, `allocate_stack_space` upfront
+(same size/alignment as the declare build uses), registers the offset, and
+records name → size in `status.preallocated_decl_slots`. The declare build
+(`declare_slot_offset`) reuses that exact slot when the size matches, so
+the loop-entry load, every slot access, and the exit store-back share ONE
+slot. The naive version that pre-allocated WITHOUT the declare-side reuse
+left them pointing at a slot nothing else read or wrote — run-dependent
+uninitialized-memory output (reverted in ecff2f39; this is the reuse half
+that was missing). The pre-allocation sits after the dtype-scalar and
+shadow gates, so a body declare shadowing an outer name is never
+pre-allocated (its map entry would hijack the outer name's
+stack_offsets mapping after the loop). `enter_scope_frame` already copies
+stack_offsets per frame, so pre-allocated entries die with the loop scope.
+The whole-function allocator still wins candidates with reads ≥ 4 first;
+the loop pass catches exactly those it can't (e.g. nbody's `dx`, 3 reads).
+
+**RESULT (measured, interleaved best-of-7, release builds, outputs
+identical):** nbody 5M steps 0.87 → 0.81 s (−7%); `advance` census:
+instructions 514 → 511, slot touches 80 → 70, FP ops 99 → 106 (slot
+`ldr d` loads became register `fmov`s). mandelbrot, spectral-norm,
+fannkuch, binarytrees, pidigits neutral. Full suite green (2656 tests)
+including the new nbody-advance shape test (fails on pre-tranche code,
+verified) and a per-iteration-semantics behavioral test in
+test/accumulator_promotion.test.ts.
 
 **Tranche A revision:** unrolling measured neutral on mandelbrot with the
 spill fix in place (+8% without it — slot traffic multiplied per copy).

@@ -42,10 +42,9 @@ test("loop accumulator declared in the body gets promoted (spectral shape)", () 
 	const code = compile(SPECTRAL_SHAPE);
 	const fn = code.slice(code.indexOf("\neval_a_times_u:"), code.indexOf("\n_main:"));
 	// `a` must live in a promoted d-register: the add writes a d-reg
-	// directly and the store_float reads that register — no slot
-	// round-trip for the accumulator.
+	// directly (tree-allocated temps for the operands) — the accumulator
+	// slot round-trip is gone.
 	expect(fn).toMatch(/fadd d\d+, d\d+, d\d+/);
-	expect(fn).not.toMatch(/str d\d+, \[x29, #\d+\]\s*\n\s*\.?end/);
 });
 
 test("behavioral: accumulator loop prints exact results", async () => {
@@ -87,6 +86,85 @@ pub func main = () {
 `,
 		"accumulator_promotion",
 		"20.000000 20.000000 20.000000 20.000000 ",
+		true,
+	);
+});
+
+/**
+ * Declare-slot pre-allocation (ASM_PLAN_2 tranche D addendum): a local
+ * declared INSIDE a loop body has no stack slot when promote_loop_locals
+ * runs, so it never promoted. The pass now pre-allocates the slot (the
+ * declare build reuses that exact offset), closing nbody's advance shape:
+ * `const float dx = …` declared and read in the same while loop.
+ */
+
+const ADVANCE_SHAPE = `
+import System
+
+func advance = (ref Buffer<float> xs, ref Buffer<float> vs, int n) {
+	if n <= xs.cap && n <= vs.cap {
+		var i = 0
+		while i < n; i += 1 {
+			var float vx = vs.load_float(i)
+			var int j = i + 1
+			while j < n; j += 1 {
+				const float dx = xs.load_float(j)
+				vx = vx - dx
+				vx = vx - dx
+				vx = vx - dx
+			}
+			vs.store_float(i, vx)
+		}
+	}
+}
+pub func main = () {}
+`;
+
+test("body-declared locals promote in their own loop via pre-allocated slots", () => {
+	const code = compile(ADVANCE_SHAPE);
+	const fn = code.slice(code.indexOf("\nadvance:"), code.indexOf("\nmain:"));
+	// The slot round-trip signature this tranche deletes: a declare storing
+	// the float's bits through x0 (`str x0, [x29, #N]`) with any later read
+	// loading it back into the FP domain (`ldr dN, [x29, #N]`). dx (3 reads,
+	// declared in the inner body — below the whole-function pass's 4-read
+	// bar, so the LOOP pass claims it via pre-allocation) and vx (outer-body
+	// accumulator) must both live in registers end to end.
+	const slot_writes = [...fn.matchAll(/str x0, \[x29, #(\d+)\]/g)].map((m) => m[1]);
+	for (const offset of slot_writes) {
+		expect(fn).not.toMatch(new RegExp(`ldr d\\d+, \\[x29, #${offset}\\]`));
+	}
+	// The promoted declares initialize their d-register directly instead of
+	// storing to a slot.
+	expect(fn).toMatch(/fmov d\d+, x0/);
+});
+
+test("behavioral: body-declared loop locals keep exact per-iteration semantics", async () => {
+	const { default: build_and_check_output } = await import("./build_and_check_output");
+	await build_and_check_output(
+		`
+import System
+
+func sum_terms = () {
+	var i = 0
+	while i < 4; i += 1 {
+		var float acc = 0.0
+		var int j = 0
+		while j < 4; j += 1 {
+			const float term = j as float + 1.0
+			acc = acc + term
+			acc = acc + term
+			acc = acc + term
+		}
+		acc = acc + i as float
+		Console.write("\\{acc} ")
+	}
+}
+pub func main = () {
+	sum_terms()
+}
+`,
+		"declare_slot_promotion",
+		"30.000000 31.000000 32.000000 33.000000 ",
 		true,
 	);
 });

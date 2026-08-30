@@ -496,7 +496,7 @@ function emit_immediate(target_reg: string, value: string, status: BuildStatus) 
 	}
 }
 
-function build_operand(node: BaseNode, target_reg: string, status: BuildStatus) {
+export function build_operand(node: BaseNode, target_reg: string, status: BuildStatus) {
 	if (node.node_type === "value") {
 		const raw_value = (node as ValueNode).value;
 		const value = raw_value.replace("self", "_self");
