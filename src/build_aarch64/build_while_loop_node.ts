@@ -7,6 +7,7 @@ import { tree_has_call } from "./build_operation_node.ts";
 import { build_block_with_cursor } from "./emit_nir.ts";
 import { emit_neon_vector_loop } from "./neon_emit.ts";
 import type { NeonPlan } from "./neon_plan.ts";
+import type { UnrollPlan } from "./unroll.ts";
 import { enter_scope_frame, exit_scope_frame } from "./utils/auto_destroy.ts";
 import { promote_loop_locals, type PromotedVar } from "./utils/loop_promotion.ts";
 import { emit_promoted_store, emit_var_store } from "./utils/stack_var.ts";
@@ -39,7 +40,7 @@ export default function build_while_loop_node(
 	status: BuildStatus,
 	nir?: NirStmt & { kind: "while" },
 	vector?: NeonPlan | null,
-	unroll_count?: number | null,
+	unroll?: UnrollPlan | null,
 ) {
 	const old_scoped_declarations = enter_scope_frame(status);
 
@@ -75,23 +76,31 @@ export default function build_while_loop_node(
 	}
 
 	let pushed_labels = false;
-	if (unroll_count !== null && unroll_count !== undefined) {
+	if (unroll) {
 		// Full unrolling (ASM_PLAN_2 tranche A): the plan guarantees the trip
-		// count is exact (literal bound, 0-init, +1 step), the body never
-		// reads the induction, and no break/continue targets this loop — so
-		// the body is emitted N straight times and the loop machinery
-		// (counter, compare, branch, labels) disappears. Each copy rides the
-		// NIR cursor; promotion above keeps body floats in registers across
-		// copies. Computed only under an active NIR cursor (see
-		// emit_stmt_from_nir), so the AST/byte-identity path never sees it.
+		// count is exact (literal `<` bound, constant init, +1 step), the
+		// body never assigns the induction, and no break/continue targets
+		// this loop — so the body is emitted once per trip and the loop
+		// machinery (counter, compare, branch, labels) disappears. Each copy
+		// rides the NIR cursor; promotion above keeps body floats in
+		// registers across copies. Computed only under an active NIR cursor
+		// (see emit_stmt_from_nir), so the AST/byte-identity path never sees
+		// it.
 		// Index-substitution mode (tranche E): the body READS the
-		// induction as an array index — per copy, reads of the induction
-		// become immediate constants (k). Cleared after the copies; the
-		// post-loop store then sets the induction to the trip count (its
-		// exact value had the loop run).
-		status.induction_const = new Map([[node_condition_name(node), 0]]);
-		for (let k = 0; k < unroll_count; k++) {
-			status.induction_const.set(node_condition_name(node), k);
+		// induction as an index — per copy, reads of the induction become
+		// immediate constants (init + k).
+		// Outer-first composition (tranche E addendum): the plan's init is
+		// constant under the AMBIENT map (an enclosing copy holds its own
+		// induction constant — `j = i + 1`), so the ambient entries are
+		// preserved while this loop's constant rides on top, and restored
+		// afterwards. A nested loop unrolling inside a copy re-enters this
+		// branch and stacks its constant the same way; the post-loop store
+		// leaves the induction at its exact had-run value (init + trip).
+		const induction = node_condition_name(node);
+		const saved_induction_const = status.induction_const;
+		status.induction_const = new Map(saved_induction_const ?? []);
+		for (let k = 0; k < unroll.trip; k++) {
+			status.induction_const.set(induction, unroll.init + k);
 			// Allocations (checker-hoisted `_param_N` call-arg temps,
 			// interpolation temps, …) are deduped per BUILD via
 			// `emitted_allocations`. The same alloc NODE recurs in every
@@ -106,10 +115,8 @@ export default function build_while_loop_node(
 			build_block_with_cursor(node, nir!.body, status);
 			status.emitted_allocations = saved_allocs;
 		}
-		status.induction_const = undefined;
-		// Post-loop induction value: the dropped loop would have left the
-		// counter at the trip count.
-		mov_immediate_x0_and_store(status, node_condition_name(node), unroll_count);
+		status.induction_const = saved_induction_const;
+		mov_immediate_x0_and_store(status, induction, unroll.init + unroll.trip);
 	} else {
 		const label = next_while_label();
 		const start_label = `.while_${label}`;

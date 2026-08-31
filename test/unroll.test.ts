@@ -50,16 +50,41 @@ func kernel = (float cr, float ci, out int) {
 pub func main = () {}
 `;
 
-test("fixed-trip inner loop unrolls; outer with nested body stays a loop", () => {
+test("mandelbrot kernel composes: both loops unroll", () => {
 	const code = compile(KERNEL);
 	const fn = code.slice(code.indexOf("kernel:"), code.indexOf("main:"));
-	// The outer body contains the nested inner loop → kept as a loop (the
-	// clang shape: outer looped, inner fully unrolled). Exactly one loop.
+	// Outer-first composition (tranche E addendum): the inner's init is a
+	// literal 0, so it plans under every outer copy → both loops are gone.
 	const loops = (fn.match(/\.while_\d+:/g) ?? []).length;
-	expect(loops).toBe(1);
-	// 5 × 7 FP ops of straight-line inner chain.
+	expect(loops).toBe(0);
+	// 10 × 5 × 4 FP ops of straight-line inner chain.
 	const fp = (fn.match(/^\s*f(mul|add|sub)/gm) ?? []).length;
 	expect(fp).toBeGreaterThanOrEqual(35);
+});
+
+test("outer with a non-plannable nested body stays a loop", () => {
+	const code = compile(`
+import System
+
+func kernel = (int n, out int) {
+	var zr = 0.0
+	var zi = 0.0
+	var outer = 0
+	while outer < 10; outer += 1 {
+		var inner = 0
+		while inner < n; inner += 1 {
+			zi = (zr + zr) * zi + 1.0
+			zr = zr * zr
+		}
+	}
+	return 1
+}
+pub func main = () {}
+`);
+	// The inner's bound is a param → it never plans → the composition gate
+	// keeps the outer a loop too (the clang shape: outer looped).
+	const fn = code.slice(code.indexOf("kernel:"), code.indexOf("main:"));
+	expect((fn.match(/\.while_\d+:/g) ?? []).length).toBe(2);
 });
 
 test("induction-index reads unroll with constant substitution", () => {
@@ -202,4 +227,162 @@ pub func main = () {
 		"31.000000 3.000000",
 		true,
 	);
+});
+
+test("comparison must be `<` — count-down shapes keep their loop", () => {
+	const code = compile(`
+import System
+
+func f = (out int) {
+	var i = 0
+	while i > 5; i += 1 {
+		var int x = 0
+	}
+	return 1
+}
+pub func main = () {}
+`);
+	// The trip-count arithmetic is bound - init — a `>` bound would have
+	// miscompiled into 5 copies of a loop that never runs.
+	const fn = code.slice(code.indexOf("f:"), code.indexOf("main:"));
+	expect(fn).toContain(".while_");
+});
+
+test("non-zero literal init unrolls with per-copy constants", () => {
+	const code = compile(`
+import System
+
+func f = (out float) {
+	var acc = 0.0
+	var i = 2
+	while i < 5; i += 1 {
+		acc = acc + i as float
+	}
+	return acc
+}
+pub func main = () {}
+`);
+	const fn = code.slice(code.indexOf("f:"), code.indexOf("main:"));
+	// Trips 2, 3, 4 — the plan's init is the literal, not just 0.
+	expect(fn).not.toContain(".while_");
+	expect((fn.match(/mov x0, #[234]\n/g) ?? []).length).toBeGreaterThanOrEqual(3);
+});
+
+test("zero-trip loop unrolls to the post-loop store only", async () => {
+	const { default: build_and_check_output } = await import("./build_and_check_output");
+	await build_and_check_output(
+		`
+import System
+
+func f = (out int) {
+	var i = 5
+	while i < 5; i += 1 {
+		var int x = 0
+	}
+	return i
+}
+pub func main = () {
+	Console.write("\\{f()}")
+}
+`,
+		"unroll_zero_trip",
+		"5",
+		true,
+	);
+});
+
+test("composition: outer index-constant unroll constant-folds the inner init", () => {
+	const code = compile(`
+import System
+
+func kernel = (out float) {
+	var acc = 0.0
+	var i = 0
+	while i < 3; i += 1 {
+		var int j = i + 1
+		while j < 3; j += 1 {
+			acc = acc + i as float * 10.0 + j as float
+		}
+	}
+	return acc
+}
+pub func main = () {}
+`);
+	const fn = code.slice(code.indexOf("kernel:"), code.indexOf("main:"));
+	// `j = i + 1` resolves per outer copy (k+1) → the inner plans under
+	// every copy → both loops are gone.
+	expect(fn).not.toContain(".while_");
+});
+
+test("behavioral: composed double loop prints exact pair sums (incl. zero-trip copy)", async () => {
+	const { default: build_and_check_output } = await import("./build_and_check_output");
+	await build_and_check_output(
+		`
+import System
+
+func pairs = (out float) {
+	var acc = 0.0
+	var i = 0
+	while i < 4; i += 1 {
+		var int j = i + 1
+		while j < 4; j += 1 {
+			acc = acc + i as float * 10.0 + j as float
+		}
+	}
+	return acc
+}
+pub func main = () {
+	Console.write("\\{pairs()}")
+}
+`,
+		"unroll_compose",
+		"54.000000",
+		true,
+	);
+});
+
+test("composition gate: non-constant inner init keeps both loops", () => {
+	const code = compile(`
+import System
+
+func f = (int n, out int) {
+	var i = 0
+	while i < 3; i += 1 {
+		var int j = n + 1
+		while j < 3; j += 1 {
+			var int x = 0
+		}
+	}
+	return 1
+}
+pub func main = () {}
+`);
+	// `j = n + 1` never resolves (n is a param) → the inner rejects under
+	// every copy → the outer rejects too. Both stay loops.
+	const fn = code.slice(code.indexOf("f:"), code.indexOf("main:"));
+	expect((fn.match(/\.while_\d+:/g) ?? []).length).toBe(2);
+});
+
+test("composition gate: inner break at its own level keeps both loops", () => {
+	const code = compile(`
+import System
+
+func f = (out int) {
+	var i = 0
+	while i < 3; i += 1 {
+		var int j = i + 1
+		while j < 3; j += 1 {
+			if j == 1 {
+				break
+			}
+		}
+	}
+	return 1
+}
+pub func main = () {}
+`);
+	// The break targets the inner loop; unrolling the inner would delete
+	// its target, and the outer inherits the rejection via the gate.
+	const fn = code.slice(code.indexOf("f:"), code.indexOf("main:"));
+	expect((fn.match(/\.while_\d+:/g) ?? []).length).toBe(2);
 });

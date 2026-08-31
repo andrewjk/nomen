@@ -231,7 +231,8 @@ value), keeping post-loop reads correct.
 Known limit: nbody's inner loop initializes from `j = i + 1` — the init
 is only constant when the OUTER induction is (i.e. after outer
 unrolling, which the nested-loop gate now defers). Peeling or outer-
-first composition is future work.
+first composition is future work. (Addressed by the tranche E addendum
+below.)
 
 ## Tranche D addendum — declare-slot pre-allocation (DONE)
 
@@ -273,6 +274,49 @@ The kernel is a serial FP dependence chain; loop overhead was already
 hidden by OoO execution. Default stays OFF; the pass is sound, tested,
 and available for loop shapes where the body is NOT a dependence chain
 (e.g. memcpy-style loops with independent iterations).
+
+## Tranche E addendum — outer-first composition (DONE)
+
+The known limit fell. The outer loop now unrolls in index-constant mode when
+every nested `while` in its body plans under EVERY copy's hypothetical env
+(`induction → init + k`): per copy the inner's init resolves (`j = i + 1` →
+k+1), and the inner unrolls itself inside the copy with trips
+`bound − (k+1)` — the last outer copy's inner trip is 0, which is legal
+(zero copies plus the post-loop store). Supporting changes:
+
+- `plan_full_unroll` returns `{init, trip, emitted}` instead of a bare trip
+  count. The init is resolved by a compile-time constant walker over the
+  init AST (integer literals and `+`/`-` over names in the ambient
+  induction-constant map — the enclosing copy's map, passed in from
+  `emit_stmt_from_nir` as `status.induction_const`). Non-zero literal inits
+  (`var i = 2; while i < 5`) unroll too — the trip count is still exact.
+- The size cap counts the COMPOSED emission (`emitted`: copies composed
+  with nested unrolls' volume + the post-loop store), still ≤ 500 — nbody
+  advance composes to ~206 statements.
+- The builder seeds `status.induction_const` ON TOP of the ambient map
+  (nested unrolls stack constants) and RESTORES it after (it used to
+  clobber with a fresh map); the post-loop store leaves the induction at
+  `init + trip`, its exact had-run value.
+- Nested `for`s still reject the parent (the planner is while-specific),
+  and any nested loop failing to plan under ANY copy rejects the parent —
+  both stay loops, byte-identical to the pre-composition emission.
+
+Drive-by soundness fix: the planner never checked the comparison op —
+`while i > 5` with a 0-init would have unrolled into 5 copies of a loop
+that never runs. `<` is now required (read off the AST OperationNode; NIR
+binary exprs carry no op).
+
+**RESULT (measured, interleaved best-of-7, release builds, outputs
+identical):** nbody 5M steps 0.836 → 0.788 s (−6%); `advance` census:
+loops 2 → 0, branches 4 → 0 (instrs 359 → 2330 — composition multiplies
+text by design; `energy` likewise 2 → 0). Mandelbrot (both loops now
+compose) neutral — serial FP chain, exactly the Tranche A revision's
+finding. for-loop benches (spectral-norm, fannkuch, binarytrees, nsieve)
+take unchanged paths. Full suite green (2661 tests) with new coverage:
+composed shape + behavioral pair-sum run (incl. a zero-trip copy),
+composition gates (non-constant inner init, inner break), the `<` op
+gate, non-zero literal init, and the zero-trip post-loop store. Default
+stays OFF — the pass remains opt-in via `set_loop_unrolling_enabled`.
 
 ## Success criteria
 

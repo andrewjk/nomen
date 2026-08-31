@@ -112,7 +112,7 @@ export function emit_stmt_from_nir(
 					status,
 					nstmt,
 					neon_vectorization_enabled() ? plan_vector_loop(nstmt, index, ctx.stmts, status) : null,
-					plan_full_unroll(nstmt, index, ctx.stmts),
+					plan_full_unroll(nstmt, index, ctx.stmts, status.induction_const),
 				);
 				return;
 			case "for":
