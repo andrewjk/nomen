@@ -259,6 +259,14 @@ export function promote_loop_locals(
 			else used_x.add(r);
 		}
 	}
+	// NIR-level function allocation (ASM_PLAN_2 tranche G): caller-saved
+	// ext registers held by call-free-contained variable ranges. This set
+	// survives the inline-expansion path's register_allocations clear, so
+	// a loop inside an inline-expanded body cannot reclaim one while the
+	// caller's variable is live across the expansion.
+	if (status.nir_caller_saved_claimed) {
+		for (const r of status.nir_caller_saved_claimed) used_x.add(r);
+	}
 	const float_pool =
 		options?.call_free === true
 			? [...FLOAT_CALLEE_SAVED, ...FLOAT_CALLER_SAVED_EXT]

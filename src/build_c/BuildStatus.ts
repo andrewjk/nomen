@@ -490,6 +490,18 @@ export default interface BuildStatus {
 	register_allocations?: Map<string, string>;
 	callee_saved_regs_used?: Set<string>;
 	/**
+	 * aarch64-only (ASM_PLAN_2 tranche G): caller-saved ext registers
+	 * (x12-x15) claimed by the NIR-level function allocator for
+	 * call-free-contained variable ranges. Unlike register_allocations —
+	 * which the inline-expansion path CLEARS so the inline body can't see
+	 * the caller's name bindings — this set survives inline builds, so a
+	 * loop promotion inside an inline-expanded body cannot claim one of
+	 * these registers while the caller's variable is live across the
+	 * expansion (an inline expansion is call-free: its range may legally
+	 * span it).
+	 */
+	nir_caller_saved_claimed?: Set<string>;
+	/**
 	 * Set by build_float_operand before building a float-typed child expression.
 	 * When a float binary operation sees this flag at its result point, it skips
 	 * the `fmov x0, d0` (leaving the result in d0) and clears the flag. This

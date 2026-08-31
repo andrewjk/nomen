@@ -17,6 +17,7 @@ import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free, emit_strdup } from "./utils/audit.ts";
 import { emit_destroy_for_anchor_slot, emit_field_destroys } from "./utils/auto_destroy.ts";
 import { find_enum_for_case } from "./utils/enum_case.ts";
+import { nir_regalloc_enabled, seed_function_allocations } from "./utils/nir_regalloc.ts";
 import {
 	emit_owning_buffer_destroy_aarch64,
 	emit_owning_buffer_standalone_aarch64,
@@ -1057,8 +1058,10 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		// enclosing function's prologue saves for its promoted registers.
 		const old_register_allocations = status.register_allocations;
 		const old_callee_saved_regs = status.callee_saved_regs_used;
+		const old_nir_caller_claimed = status.nir_caller_saved_claimed;
 		status.register_allocations = undefined;
 		status.callee_saved_regs_used = undefined;
+		status.nir_caller_saved_claimed = undefined;
 
 		status.scoped_declarations = [];
 		status.heap_strings = new Set<string>();
@@ -1418,6 +1421,14 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		) {
 			// specialized — skip the raw body
 		} else if (!emit_owning_buffer_standalone_aarch64(node, func.name, status)) {
+			// Tranche G stage 1 (ASM_PLAN_2): NIR-level function allocation
+			// for standalone method bodies — the maps were cleared above, so
+			// seed the plan (and the promoted-param prologue loads) right
+			// before the body builds. `self` stays excluded: the method ABI
+			// parks it in x19/x20 with its own conventions.
+			if (nir_regalloc_enabled()) {
+				seed_function_allocations(func, status, { exclude_params: new Set(["self"]) });
+			}
 			build_body_with_cursor(func, status);
 		}
 
@@ -1427,6 +1438,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		const loop_regs_used = method_claims ? [...method_claims].sort() : [];
 		status.callee_saved_regs_used = old_callee_saved_regs;
 		status.register_allocations = old_register_allocations;
+		status.nir_caller_saved_claimed = old_nir_caller_claimed;
 
 		if (loop_regs_used.length > 0) {
 			const label = `${func_label}:`;

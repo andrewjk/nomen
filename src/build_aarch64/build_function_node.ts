@@ -15,6 +15,7 @@ import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free } from "./utils/audit.ts";
 import { emit_destroy_for_anchor_slot } from "./utils/auto_destroy.ts";
 import { plan_function_promotions } from "./utils/func_regalloc.ts";
+import { nir_regalloc_enabled, plan_nir_registers } from "./utils/nir_regalloc.ts";
 import scan_force_heap_strings from "./utils/scan_force_heap_strings.ts";
 import {
 	NUM_REG_ARGS,
@@ -436,6 +437,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	// its own bindings into ours — or clobber our claimed-register set.
 	const old_register_allocations = status.register_allocations;
 	const old_callee_saved_regs = status.callee_saved_regs_used;
+	const old_nir_caller_claimed = status.nir_caller_saved_claimed;
 	// ONE canonical lowering per function (phase 4 stage 2): the NIR drives
 	// both the promotion planner here and the emission path below via
 	// `status.nir_emit_ctx`.
@@ -448,11 +450,43 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 			`NIR lowering gap in ${node.name || label_name}: ${[...nir.unknown_kinds].join(", ")}`,
 		);
 	}
-	const fn_allocs = nir ? plan_function_promotions(node, nir) : undefined;
+	// Tranche G stage 1 (ASM_PLAN_2): when the NIR-level allocator is
+	// enabled it replaces the legacy pass entirely — statement-granularity
+	// liveness, interference sharing, caller-saved ext pool for
+	// call-free-contained int ranges. Off (default) keeps the legacy
+	// expressions verbatim: byte-identical output.
+	let fn_allocs: Map<string, string> | undefined;
+	let fn_callee_saved: Set<string> | undefined;
+	if (nir) {
+		if (nir_regalloc_enabled()) {
+			const plan = plan_nir_registers(node, nir);
+			fn_allocs = plan.allocs;
+			// Always defined under the new pass (possibly empty): the
+			// caller-saved ext regs must never ride the prologue's save set.
+			fn_callee_saved = plan.callee_saved;
+			// Caller-saved ext claims ride a set that SURVIVES inline
+			// expansions (which clear register_allocations), so loop
+			// promotion inside an inlined body can't reclaim one while a
+			// variable is live across the expansion.
+			status.nir_caller_saved_claimed = new Set(
+				[...plan.allocs.values()].filter((r) => /^x1[2-5]$/.test(r)),
+			);
+			if (status.nir_caller_saved_claimed.size === 0) {
+				status.nir_caller_saved_claimed = undefined;
+			}
+		} else {
+			fn_allocs = plan_function_promotions(node, nir);
+		}
+	}
 	status.register_allocations = fn_allocs && fn_allocs.size > 0 ? fn_allocs : undefined;
 	status.callee_saved_regs_used =
-		fn_allocs && fn_allocs.size > 0 ? new Set(fn_allocs.values()) : undefined;
-
+		fn_callee_saved !== undefined
+			? fn_callee_saved.size > 0
+				? fn_callee_saved
+				: undefined
+			: fn_allocs && fn_allocs.size > 0
+				? new Set(fn_allocs.values())
+				: undefined;
 	if (has_body) {
 		let param_idx = 0;
 		for (let i = 0; i < node.params.length; i++) {
@@ -743,6 +777,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	// function was built mid-body — its prologue saves went missing).
 	status.callee_saved_regs_used = old_callee_saved_regs;
 	status.register_allocations = old_register_allocations;
+	status.nir_caller_saved_claimed = old_nir_caller_claimed;
 
 	if (loop_regs_used.length > 0 && has_body) {
 		const func_label = `${node.name === "main" ? "_" : ""}${label_name}:`;

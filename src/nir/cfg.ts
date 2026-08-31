@@ -49,8 +49,12 @@ interface FlatStmtBase {
 	 *  change. */
 	readonly defs: readonly string[];
 	/** True when the statement touches unknown state (raw asm, unmapped
-	 *  constructs): reads/defs must be treated as the whole universe. */
+	 *  constructs): reads/defs must be treated as the entire variable universe. */
 	readonly barrier: boolean;
+	/** True when evaluating this statement executes a call/method-call/spawn
+	 *  somewhere in its expression trees — a register-allocation crossing
+	 *  point (caller-saved registers die here). */
+	readonly has_call: boolean;
 }
 
 export type FlatStmt =
@@ -73,12 +77,14 @@ export type Terminator =
 			readonly if_false: number;
 			readonly reads: readonly string[];
 			readonly barrier: boolean;
+			readonly has_call: boolean;
 	  }
 	| {
 			readonly t: "return";
 			readonly value: NirExpr | null;
 			readonly reads: readonly string[];
 			readonly barrier: boolean;
+			readonly has_call: boolean;
 	  }
 	| { readonly t: "exit"; readonly message: string | null }
 	| { readonly t: "unreachable" };
@@ -111,10 +117,11 @@ interface FactWalk {
 	reads: string[];
 	defs: string[];
 	barrier: boolean;
+	has_call: boolean;
 }
 
 function empty_walk(): FactWalk {
-	return { reads: [], defs: [], barrier: false };
+	return { reads: [], defs: [], barrier: false, has_call: false };
 }
 
 /** The identifier a path/method receiver chain bottoms out at, if any. */
@@ -155,6 +162,7 @@ function walk_expr(e: NirExpr | null | undefined, out: FactWalk): void {
 			walk_expr(e.inner, out);
 			return;
 		case "call":
+			out.has_call = true;
 			walk_call_facts(e.facts, out);
 			return;
 		case "method_call":
@@ -162,6 +170,7 @@ function walk_expr(e: NirExpr | null | undefined, out: FactWalk): void {
 			// methods marshal a pointer). A may-def is always sound for
 			// liveness; over-approximating only shortens no live range that
 			// a later read would revive.
+			out.has_call = true;
 			walk_expr(e.receiver, out);
 			{
 				const root = root_name(e.receiver);
@@ -175,6 +184,7 @@ function walk_expr(e: NirExpr | null | undefined, out: FactWalk): void {
 		case "spawn":
 			// Value-position `spawn f(x)`: the wrapped call's arguments are
 			// read (and packed) when the task is created.
+			out.has_call = true;
 			walk_expr(e.call, out);
 			return;
 		case "flow":
@@ -376,6 +386,7 @@ class CfgBuilder {
 					reads: out.reads,
 					defs,
 					barrier: out.barrier,
+					has_call: out.has_call,
 				});
 				return;
 			}
@@ -417,6 +428,7 @@ class CfgBuilder {
 					reads: out.reads,
 					defs,
 					barrier: out.barrier,
+					has_call: out.has_call,
 				});
 				return;
 			}
@@ -430,6 +442,7 @@ class CfgBuilder {
 					reads: out.reads,
 					defs: out.defs,
 					barrier: out.barrier,
+					has_call: out.has_call,
 				});
 				return;
 			}
@@ -443,6 +456,7 @@ class CfgBuilder {
 					reads: out.reads,
 					defs: out.defs,
 					barrier: out.barrier,
+					has_call: out.has_call,
 				});
 				return;
 			}
@@ -455,13 +469,20 @@ class CfgBuilder {
 					reads: out.reads,
 					defs: out.defs,
 					barrier: out.barrier,
+					has_call: out.has_call,
 				});
 				return;
 			}
 			case "return": {
 				const out = empty_walk();
 				walk_expr(s.value, out);
-				this.terminate({ t: "return", value: s.value, reads: out.reads, barrier: out.barrier });
+				this.terminate({
+					t: "return",
+					value: s.value,
+					reads: out.reads,
+					barrier: out.barrier,
+					has_call: out.has_call,
+				});
 				return;
 			}
 			case "break": {
@@ -485,10 +506,18 @@ class CfgBuilder {
 					reads: [],
 					defs: [],
 					barrier: true,
+					has_call: false,
 				});
 				return;
 			case "opaque":
-				this.push_flat({ op: "opaque", node: s.node, reads: [], defs: [], barrier: true });
+				this.push_flat({
+					op: "opaque",
+					node: s.node,
+					reads: [],
+					defs: [],
+					barrier: true,
+					has_call: false,
+				});
 				return;
 			case "if": {
 				const then_b = this.new_block();
@@ -503,6 +532,7 @@ class CfgBuilder {
 					if_false: else_b.id,
 					reads: out.reads,
 					barrier: out.barrier,
+					has_call: out.has_call,
 				});
 				this.cur = then_b;
 				this.emit_stmts(s.then_branch);
@@ -529,6 +559,7 @@ class CfgBuilder {
 					if_false: exit_b.id,
 					reads: out.reads,
 					barrier: out.barrier,
+					has_call: out.has_call,
 				});
 				this.break_targets.push(exit_b.id);
 				this.continue_targets.push(cont.id);
@@ -556,6 +587,7 @@ class CfgBuilder {
 						reads: out.reads,
 						defs: out.defs,
 						barrier: out.barrier,
+						has_call: out.has_call,
 					});
 				}
 				const header = this.new_block();
@@ -573,6 +605,7 @@ class CfgBuilder {
 						reads: [],
 						defs: [s.item_name],
 						barrier: false,
+						has_call: false,
 					});
 				}
 				this.terminate({
@@ -582,6 +615,7 @@ class CfgBuilder {
 					if_false: exit_b.id,
 					reads: [],
 					barrier: false,
+					has_call: false,
 				});
 				this.break_targets.push(exit_b.id);
 				this.continue_targets.push(update_b.id);
@@ -607,6 +641,7 @@ class CfgBuilder {
 						reads: out.reads,
 						defs: out.defs,
 						barrier: out.barrier,
+						has_call: out.has_call,
 					});
 				}
 				const arm_blocks = s.arms.map(() => this.new_block());
@@ -630,6 +665,7 @@ class CfgBuilder {
 							if_false: next_b,
 							reads: out.reads,
 							barrier: out.barrier,
+							has_call: out.has_call,
 						});
 					} else {
 						// Null-condition arm = always-taken default.

@@ -398,24 +398,112 @@ post-tranche profile (no dominant label — time smeared across every
 limb loop) is the receipt that no single further fast path moves the
 needle.
 
-## Tranche G — int register allocation at the NIR level (NEXT)
+## Tranche G — int register allocation at the NIR level (stage 1 DONE)
 
 Where Tranche F leaves us: pidigits n=4000 1.27 s vs C `-O2` 0.32 s
 (~3.9×, was 5.4×), and the post-tranche profile is FLAT — time smeared
 across every Knuth-D/schoolbook limb loop with no dominant label, so no
 single fast path moves the needle any more. The structural cause: the
 per-statement compilation model gives every value exactly one home (a
-stack slot or a single promoted register), has no liveness analysis,
-and cannot keep a value in a register across unrelated statements.
-clang's ~10-instruction limb loop keeps ~10 live scalars in registers
-simultaneously; our model caps at ~8 promoted registers total and
-cannot reassign them per region.
+stack slot or a single promoted register), has no liveness analysis, and
+cannot keep a value in a register across unrelated statements. clang's
+~10-instruction limb loop keeps ~10 live scalars in registers
+simultaneously; our model caps at ~8 promoted registers total and cannot
+reassign them per region.
 
 Closing the gap means building a real int register allocator at the NIR
 level: live ranges over the canonical IR, allocation into x0–x7/x9–x15
-within call-free regions plus the callee-saved pool. Sized like the
-whole NIR pipeline, not a tranche — but it is the only remaining lever
-of consequence for int-heavy kernels.
+within call-free regions plus the callee-saved pool. Sized like the whole
+NIR pipeline, not a tranche — but it is the only remaining lever of
+consequence for int-heavy kernels.
+
+### Stage 1 (this tranche): liveness ranges, interference sharing, caller-saved ext pool
+
+`plan_nir_registers` (new `src/build_aarch64/utils/nir_regalloc.ts`,
+default-OFF via `set_nir_regalloc_enabled` — kill-switch off keeps the
+legacy `plan_function_promotions` expressions verbatim, byte-identical):
+
+- **Statement-granularity live ranges.** The lowered function builds its
+  CFG (`build_cfg`) and runs may-liveness; a per-statement BACKWARD walk
+  inside every reachable block (start from live-out, defs cut, reads add,
+  barriers reset to the universe) yields live sets at every statement
+  position. Defs interfere with everything live after them — two variables
+  whose ranges never overlap SHARE one register, so more variables fit
+  than the pool has slots. Params get virtual defs at entry (and interfere
+  with everything live there); they are PINNED (never share): the
+  prologue initializes every promoted param's register unconditionally,
+  so two names on one register would race.
+- **Call/barrier crossings.** A statement whose evaluation contains a
+  call (NIR CFG now carries `has_call` per statement and terminator) or a
+  liveness barrier is a CROSSING POINT: any variable live across it stays
+  callee-saved. A variable whose entire range avoids every call may take
+  the caller-saved extension pool x12–x15 — zero prologue cost, the same
+  discipline tranche F proved for call-free LOOP bodies, generalized to
+  any call-free range. Crossing refinement: a statement whose only "call"
+  is an inline method with a call-free body (tranche F's
+  `tree_is_call_free` — BigInt `mul_wide_hi` yes, `div128` → ___udivti3
+  no) is NOT a crossing; its expansion stays in x0–x9 and never issues
+  `bl`.
+- **Loop-header gate.** A variable live INTO any loop header never gets a
+  caller-saved register: the NEON vector loop's preheader/lanes clobber
+  x9–x14, and the planner cannot know at plan time which loops will
+  vectorize. Ranges contained INSIDE a loop body (def'd and dead between
+  header crossings — the Knuth-D limb temporaries) are exactly the ones
+  not live-in at the header, so the profitable case survives the gate.
+- **Low-read extension.** An int local with ANY root-body reads whose
+  range is call-free-contained and never spans a loop header becomes a
+  caller-saved-ONLY candidate (no prologue cost, so 1–2 textual reads
+  pay: `vv`, `lo_prod`, `hi_prod`). Full candidates keep the legacy bars
+  (reads ≥ 4 for callee-saved, floats byte-stable with the old pass:
+  d8–d15, hottest four).
+- **Method bodies.** Struct methods never went through the legacy
+  whole-function pass (`build_struct_functions` clears the promotion
+  maps). `seed_function_allocations` now plans + seeds the same status
+  maps before `build_body_with_cursor` at the standalone-method site
+  (`self` excluded — its x19/x20 ABI is its own convention), loading each
+  promoted scalar param from its freshly-spilled prologue slot. Init /
+  destroy / trait-default bodies and inline-EXPANSION sites are
+  deliberately untouched (the latter run mid-caller-statement).
+- **Inline-expansion safety.** The inline path clears
+  `register_allocations` but keeps `callee_saved_regs_used` — x12–x15
+  claims would be invisible there, and an inline body's loop promotion
+  could reclaim one while the caller's variable is live across the
+  (call-free, hence legally crossable) expansion. Caller-saved claims
+  therefore also ride `status.nir_caller_saved_claimed`, which survives
+  inline builds and which `promote_loop_locals` unions into its used-reg
+  scan.
+
+**Two soundness bugs caught and fixed during bring-up** — both by the
+plan's analysis recipe (build both arms, run, diff outputs):
+
+1. **fannkuch-redux output mismatch at n=11** (first receipt run): the
+   occupancy map was register → SINGLE name. Legal sharers i and k took
+   x23 after p0, the map forgot p0, and the interferer `flips` (edge to
+   p0, none to k) slipped onto x23 — corrupting check_sum/max_flips.
+   Fixed: register → SET of occupants; a newcomer must not interfere with
+   ANY of them. Regression test asserts the general invariant (no two
+   names sharing a register have an interference edge) on both a trimmed
+   scalar kernel and the REAL `fannkuch-redux.nm` `run` — verified to
+   fail on the pre-fix allocator with exactly the p0/flips pair.
+2. **The integration nearly let caller-saved regs ride the prologue save
+   set** when a plan assigned ONLY ext-pool registers (empty callee set
+   fell back to `new Set(fn_allocs.values())`); the new pass now always
+   returns its (possibly empty) callee set and the site distinguishes
+   "new pass" from "legacy".
+
+**RESULT (interleaved best-of-5/7, release builds, outputs byte-identical
+on every bench):** fannkuch-redux n=11 3155 → 3013 ms (**−4.5%**);
+pidigits n=4000 1286 → 1240 ms (**−3.5%**); nbody 5M, mandelbrot n=2000,
+spectral-norm n=1500, binarytrees n=18, nsieve n=12 all within ±0.5%
+(noise). Full suite green (2671 tests + the new
+`test/nir_regalloc.test.ts`: 10 covering sharing, interference, call
+crossing, the loop gate, float parity, the callee-set contract, the
+default-off kill-switch, and a behavioral pair-sum run).
+
+Default stays OFF — byte-identity standing invariant. The remaining gap
+to clang's limb loops is cross-statement TEMPORARIES (values with no
+source name) and per-region reassignment of the callee-saved pool; both
+are stage-2 work on the same ranges/interference substrate.
 
 ## Success criteria
 
