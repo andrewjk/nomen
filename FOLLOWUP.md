@@ -282,3 +282,19 @@ helpers that assert `build errors === []` cannot use struct-array
 programs (test/accumulator_promotion.test.ts works around it via
 Buffer<float>). Fix: teach asm_ir.ts the `adrp` mnemonic and the
 `@PAGE`/`@PAGEOFF` operand shapes.
+
+## promote_loop_locals misclassifies float params into the int pool (pre-existing)
+
+A loop candidate with NO scoped declaration and NO body-declare record
+(i.e. a parameter) resolves to `type_name: ""` in promote_loop_locals —
+the `""`→int default that legitimately promotes int params (`while i < n`)
+also claims an X-REGISTER for FLOAT params (mandelbrot's `mbrot`:
+`ci(?#1) cr(?#1)` in the eligible dump, claimed x25/x26 through the int
+branch). Reads/writes stay slot-correct (emit_var_load falls through to
+the slot when the alloc reg's class mismatches), so it is wasted
+registers, not corruption — but it starves the int pool and the float
+pool both. Surfaces now because the stage-2 debug dump printed eligible
+types. Fix: resolve the param type (thread the enclosing function's param
+types into promote_loop_locals, or populate
+`status.variable_types` for params at prologue time) and route floats to
+the float pool; keep the `""`→skip-or-int decision explicit.

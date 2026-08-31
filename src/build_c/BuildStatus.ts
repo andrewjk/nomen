@@ -502,6 +502,21 @@ export default interface BuildStatus {
 	 */
 	nir_caller_saved_claimed?: Set<string>;
 	/**
+	 * aarch64-only (ASM_PLAN_2 tranche G stage 2): interference facts from
+	 * the NIR-level function allocator, so LOOP promotion may SHARE a
+	 * function-claimed register instead of leaving it idle: a loop
+	 * candidate may take register R when it has no interference edge with
+	 * ANY current occupant of R (ranges provably never overlap). `pinned`
+	 * holds the function's param claims (their prologue inits are
+	 * unconditional — never shared). Cleared/restored alongside
+	 * register_allocations; the inline-expansion path leaves it unset so
+	 * in-body loops fall back to avoid-mode.
+	 */
+	nir_alloc_shared?: {
+		adj: Map<string, Set<string>>;
+		pinned: Set<string>;
+	};
+	/**
 	 * Set by build_float_operand before building a float-typed child expression.
 	 * When a float binary operation sees this flag at its result point, it skips
 	 * the `fmov x0, d0` (leaving the result in d0) and clears the flag. This

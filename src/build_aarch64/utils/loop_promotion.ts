@@ -47,6 +47,36 @@ export interface PromotedVar {
 }
 
 /**
+ * Whether loop candidate `name` may SHARE an already-claimed register
+ * (tranche G stage 2): the function-level allocator's interference
+ * adjacency must show NO edge between `name` and ANY current occupant of
+ * `reg` — their live ranges provably never overlap, so the bracketing
+ * entry load / exit store-back cannot observe or clobber an occupant.
+ * (An occupant live across the loop always interferes with body defs of
+ * `name` and is refused; an occupant live only after the loop interferes
+ * at `name`'s defs for the same reason.) Param claims are pinned — their
+ * prologue inits are unconditional. A register with NO registered
+ * occupant is refused even when "used" (its owner lives outside
+ * register_allocations — an enclosing loop's claim, a Buffer cache, a
+ * stale inline-expansion leak — and is unknown here): sharing into an
+ * unknown owner is what corrupted main's loop induction when mbrot was
+ * inline-expanded inside it. Without the facts (inline-expanded bodies,
+ * flag off) sharing is refused: avoid-mode.
+ */
+function can_share_claimed_register(status: BuildStatus, name: string, reg: string): boolean {
+	const shared = status.nir_alloc_shared;
+	if (!shared || !status.register_allocations) return false;
+	let occupants = 0;
+	for (const [occupant, occupant_reg] of status.register_allocations) {
+		if (occupant_reg !== reg || occupant === name) continue;
+		occupants++;
+		if (shared.pinned.has(occupant)) return false;
+		if (shared.adj.get(name)?.has(occupant)) return false;
+	}
+	return occupants > 0;
+}
+
+/**
  * Value-node names assigned in this statement subtree (`x = …`, `x += …`,
  * `obj.f = …` assigns the object root's field — the ROOT name counts as a
  * write for promotion purposes only when it's a plain value target).
@@ -283,7 +313,13 @@ export function promote_loop_locals(
 	for (const v of eligible) {
 		const is_float = ALL_FLOAT_TYPES.includes(v.type_name);
 		if (is_float) {
-			while (d_idx < float_pool.length && used_d.has(float_pool[d_idx])) {
+			// First pool register that is FREE or legally SHAREABLE with a
+			// function-level occupant (tranche G stage 2 — see
+			// can_share_claimed_register; the bracketing entry load and
+			// exit store-back keep the loop's copy coherent).
+			while (d_idx < float_pool.length) {
+				if (!used_d.has(float_pool[d_idx])) break;
+				if (can_share_claimed_register(status, v.name, float_pool[d_idx])) break;
 				d_idx++;
 			}
 			if (d_idx >= float_pool.length) continue;
@@ -302,7 +338,10 @@ export function promote_loop_locals(
 			emit_promoted_load(status, reg, v.offset, v.type_name);
 			d_idx++;
 		} else {
-			while (x_idx < x_pool.length && used_x.has(x_pool[x_idx])) {
+			// Share-aware scan, same contract as the float branch above.
+			while (x_idx < x_pool.length) {
+				if (!used_x.has(x_pool[x_idx])) break;
+				if (can_share_claimed_register(status, v.name, x_pool[x_idx])) break;
 				x_idx++;
 			}
 			if (x_idx >= x_pool.length) continue;

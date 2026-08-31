@@ -1439,6 +1439,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		status.callee_saved_regs_used = old_callee_saved_regs;
 		status.register_allocations = old_register_allocations;
 		status.nir_caller_saved_claimed = old_nir_caller_claimed;
+		status.nir_alloc_shared = undefined;
 
 		if (loop_regs_used.length > 0) {
 			const label = `${func_label}:`;

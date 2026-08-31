@@ -279,7 +279,17 @@ function expr(ctx: LowerCtx, n: BaseNode | null | undefined): NirExpr {
 	switch (n.node_type) {
 		case "value": {
 			const val = (n as any).value;
-			return { kind: "leaf", node: n, name: is_identifier_like(val) ? val : null };
+			// `self` IS carried as a leaf name: traffic deliberately ignores it
+			// (count() filters non-identifier-likes — promotion inputs stay
+			// byte-stable), but the CFG needs it as a path ROOT so a field
+			// write (`self.len = x`) is an honest may-def instead of a
+			// whole-universe liveness barrier (the stage-2 receipt: every
+			// method that touched a scalar field poisoned all of its liveness).
+			return {
+				kind: "leaf",
+				node: n,
+				name: is_identifier_like(val) ? val : val === "self" ? "self" : null,
+			};
 		}
 		case "op": {
 			const op = n as OperationNode;

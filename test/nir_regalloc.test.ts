@@ -42,8 +42,8 @@ function plan_for(source: string, name: string): Map<string, string> {
 const CALLER = /^x1[2-5]$/;
 const CALLEE = /^x2[3-8]$/;
 
-test("kill-switch defaults off", () => {
-	expect(nir_regalloc_enabled()).toBe(false);
+test("kill-switch defaults ON; disabling falls back to the legacy pass", () => {
+	expect(nir_regalloc_enabled()).toBe(true);
 });
 
 test("non-overlapping live ranges share one caller-saved register", () => {
@@ -336,8 +336,91 @@ pub func main = () {
 			true,
 		);
 	} finally {
-		set_nir_regalloc_enabled(false);
+		set_nir_regalloc_enabled(true);
 	}
+});
+
+test("loop sharing stays correct when an inline-expandable loop callee runs inside promoted loops", async () => {
+	// The mandelbrot hang (stage-2 receipt): a pure-math loop-containing
+	// function (an inline candidate) expanded inside main's loops, whose
+	// promotion claims leaked through callee_saved_regs_used — the
+	// expansion's vacuous "shares" claimed the caller's loop registers and
+	// the outer induction never advanced. Behavioral guard at that shape.
+	const { default: build_and_check_output } = await import("./build_and_check_output");
+	set_nir_regalloc_enabled(true);
+	try {
+		await build_and_check_output(
+			`
+import System
+
+func kernel = (int seed, out int) {
+	var acc = 0
+	var k = 0
+	while k < 5; k += 1 {
+		acc = acc + seed * k + 1
+	}
+	if acc > 100 {
+		return 1
+	}
+	return 0
+}
+pub func main = () {
+	var hits = 0
+	var i = 0
+	while i < 6; i += 1 {
+		var j = 0
+		while j < 4; j += 1 {
+			if kernel(i * 3 + j) == 1 {
+				hits = hits + 1
+			}
+		}
+	}
+	Console.write("hits \\{hits}")
+}
+`,
+			"nir_regalloc_inline_expand",
+			"hits 11",
+			true,
+		);
+	} finally {
+		set_nir_regalloc_enabled(true);
+	}
+});
+
+test("self field writes are honest defs, not liveness barriers", () => {
+	// Stage-2 barrier fix: `self.len = …` used to lower to a path whose
+	// root was a nameless leaf — cfg.ts set the whole-universe barrier,
+	// marking every name in the method as call-crossing. The CFG must now
+	// carry `self` as the path root.
+	const source = `
+import System
+
+struct Box {
+	var int len
+	var int cap
+
+	pub func fill = (ref self, int n) {
+		self.len = n
+		var int i = 0
+		while i < n; i += 1 {
+			i = i + 1
+		}
+		self.cap = i
+	}
+}
+	pub func main = () {}
+`;
+	const parsed = parse_raw(source);
+	expect(parsed.errors).toEqual([]);
+	const box = parsed.root.statements.find((s) => s.node_type === "struct") as any;
+	expect(box).toBeDefined();
+	const fill = box.functions.find((f: any) => f.name === "fill") as FunctionNode;
+	expect(fill).toBeDefined();
+	const nir = lower_function(fill);
+	const cfg = build_cfg(nir);
+	const assign_stmts = cfg.blocks.flatMap((b) => b.stmts.filter((s) => s.op === "assign"));
+	const field_writes = assign_stmts.filter((s) => s.barrier);
+	expect(field_writes).toEqual([]);
 });
 
 test("build output with the kill-switch off is unchanged by the integration", () => {
@@ -357,4 +440,5 @@ pub func main = () {
 	const second = build(parsed.root, { arch: "aarch64" });
 	expect(first.code).toEqual(second.code);
 	expect(nir_regalloc_enabled()).toBe(false);
+	set_nir_regalloc_enabled(true);
 });

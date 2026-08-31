@@ -505,6 +505,107 @@ to clang's limb loops is cross-statement TEMPORARIES (values with no
 source name) and per-region reassignment of the callee-saved pool; both
 are stage-2 work on the same ranges/interference substrate.
 
+### Stage 2 (this tranche): honest `self` paths + loop-promotion register sharing
+
+Two changes on the stage-1 substrate, driven by its receipts (probe:
+per-name crossing/loop-blocked facts for every scalar in the pidigits
+BigInt methods):
+
+1. **`self` is now a named leaf in NIR** (`from_ast.ts`). Bare field
+   writes lowered to a path whose receiver was a NAMELESS leaf
+   (`is_identifier_like` excludes "self"), so cfg.ts's path-assign case
+   found no root and set the whole-universe LIVENESS BARRIER: every
+   `self.len = …`-style method poisoned all of its own function's
+   liveness — every name became call-crossing, nothing qualified for the
+   caller-saved pool, sharing collapsed. Naming the leaf is
+   traffic-neutral (traffic's `count()` filters non-identifier-likes, so
+   promotion inputs stay byte-stable) while the CFG gains the honest
+   root: field writes become may-defs of `self`, reads track `self`'s
+   liveness. div_to's allocations went 4 → 31 (with legal sharing:
+   `p_lh=x15`, `diff2=x15`, … four ext regs held ~21 limb temporaries).
+
+2. **Loop promotion may SHARE function-claimed registers**
+   (`promote_loop_locals` via `can_share_claimed_register` + the plan's
+   exported interference adjacency in `status.nir_alloc_shared`). The
+   stage-1 allocation starved the loop pass — the function pass claimed
+   x23–x26 + x12–x15, `used_x` blocked everything, and accumulators like
+   mul_carry/sub_borrow fell back to per-iteration slot round-trips
+   (pidigits measured +3.8% REGRESSION at that point). Sharing fixes the
+   pressure conflict soundly: a loop candidate may take a claimed
+   register when the adjacency shows no edge to ANY current occupant
+   (ranges provably disjoint; an occupant live across the loop always
+   interferes with body defs and is refused; pinned params are never
+   shared). A register with NO registered occupant is refused — its owner
+   lives outside register_allocations (enclosing loop claim, Buffer
+   cache, stale inline-expansion leak) and is unknown.
+
+**The mandelbrot hang — the receipt that caught the vacuous share**:
+`mbrot` is an INLINE CANDIDATE (pure-math body, ≤15 statements, no
+calls), so main's `mbrot(cr, ci)` expands mid-statement inside main's
+bit-loop. The inline path clears register_allocations but LEAKS
+`callee_saved_regs_used` (pre-existing; benign under avoid-mode). The
+expansion's loop promotion saw x23–x27 "used" with an EMPTY allocation
+map — and the first sharing implementation returned TRUE vacuously
+(no occupants → no edges → "shareable"), claiming main's loop registers
+for the expansion's own inductions. main's `bit` never advanced: infinite
+loop, caught by the mandelbrot receipt (hang at runtime), diagnosed by
+diffing the stage-1/stage-2 asm (60 lines of pure register renaming — the
+corruption was in the CLAIM bookkeeping, not the instruction stream) and
+an instrumented share trace (`outer <- x23 occupants=`). The
+ownerless-register refusal (occupants > 0) is the fix; the behavioral
+regression test builds that exact shape (inline-expandable loop callee
+inside promoted loops).
+
+**RESULT (interleaved best-of-5, release builds, outputs byte-identical
+everywhere):** fannkuch-redux n=11 3153 → 2983 ms (**−5.4%**); pidigits
+n=4000 1272 → 1221 ms (**−4.1%**, the +3.8% starvation regression
+reversed); mandelbrot n=2000 neutral and now CORRECT (the hang fix);
+nbody/spectral-norm/binarytrees/nsieve within ±0.3% (noise). Full suite
+green (2671 tests) with new coverage: the inline-expansion behavioral
+guard, the barrier-free CFG contract (field writes carry a `self` root),
+and the shared-register invariant pair.
+
+Pre-existing bug recorded in FOLLOWUP.md: promote_loop_locals
+misclassifies float PARAMS into the int pool (`""` type default) — wasted
+registers, slot-correct values, surfaced by the stage-2 debug dump.
+
+Stage 3 (future): decl-site disambiguation — same-named consts in sibling
+loops (`vv`/`lo_prod` declared in both D3 and D4) still collapse onto one
+CFG key and stay excluded by the redeclare gate; unlocking them needs
+decl-site-keyed live ranges (SSA-style renaming) on the same substrate.
+
+### Enablement: the pass is now the default (kill-switch inverted)
+
+The flag-on path was proven at scale and the default flipped ON
+(`nir_regalloc_on = true`; `set_nir_regalloc_enabled(false)` falls back to
+the legacy pass for A/B). Two things stood between stage 2 and this:
+
+1. **The flag-on suite gate.** The 2673-test suite exercises the aarch64
+   backend across every language feature with behavioral output checks —
+   running it flag-ON was the missing proof. It caught exactly one
+   real bug class:
+2. **Hoisted `_param_N` allocation computes were invisible to the IR**
+   (stage-2 follow-up receipt). The checker extracts interpolated-string
+   args and struct-returning call args into `const _param_N = <arg>`
+   temps attached via `node.allocations`, and the lowered expression only
+   references the temp name — so `n`'s final read inside an interpolated
+   `Console.write` did not exist for liveness, `n` looked call-free-
+   contained, took a caller-saved register, and the hoisted
+   `float_to_string` calls clobbered it (float-buffer printed garbage).
+   Fix: `fold_hoisted_allocations` (cfg.ts) folds each statement's
+   attached computes into its fact walk — reads, defs and the calls they
+   contain (`hoisted_facts`/`hoisted_expr_facts` cover the declaration
+   shapes the checker emits; anything else is a barrier). The fold also
+   sharpens crossing marks for every statement with hoisted args, which
+   is most `Console.write` call sites.
+
+**RESULT at the default-on state (interleaved best-of-5, release builds,
+outputs byte-identical on every bench):** fannkuch-redux n=11 3099 →
+2899 ms (**−6.4%**); pidigits n=4000 1250 → 1188 ms (**−4.9%**);
+mandelbrot/nbody/spectral-norm/binarytrees/nsieve within ±0.5% (noise).
+Full suite green flag-ON (264 files, 2673 tests). The C backend shares
+none of this machinery and is untouched.
+
 ## Success criteria
 
 Written before the measurements; kept for the record — the per-tranche

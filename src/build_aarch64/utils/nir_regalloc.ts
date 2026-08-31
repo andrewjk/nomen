@@ -67,14 +67,15 @@ import { emit_promoted_load } from "./stack_var.ts";
  * float side is byte-stable with plan_function_promotions; this pass is
  * about the INT side.
  *
- * Kill-switch: `set_nir_regalloc_enabled` (default OFF — output is
- * byte-identical to the legacy pass while off, per the standing
- * byte-identity invariant).
+ * Kill-switch: `set_nir_regalloc_enabled` (default ON; false falls back
+ * to the legacy pass — kept for A/B comparisons and debugging).
  */
 
-let nir_regalloc_on = false;
+let nir_regalloc_on = true;
 
-/** Kill-switch for A/B byte-identity tests (default: off = legacy pass). */
+/** Kill-switch for A/B byte-identity tests (default: ON — the NIR-level
+ *  allocator replaced the legacy read-count pass in tranche G; set false
+ *  to fall back to plan_function_promotions). */
 export function nir_regalloc_enabled(): boolean {
 	return nir_regalloc_on;
 }
@@ -123,6 +124,12 @@ export interface NirRegisterPlan {
 	/** Callee-saved registers ONLY — the prologue's save/restore set.
 	 *  Caller-saved ext regs must not ride it. */
 	callee_saved: Set<string>;
+	/** Function-wide interference adjacency (name → interfering names) —
+	 *  exported so LOOP promotion can share function-claimed registers
+	 *  when its candidate provably never overlaps the occupants. */
+	adj: Map<string, Set<string>>;
+	/** Param claims — pinned, never shared with loop promotions. */
+	pinned: Set<string>;
 }
 
 export interface NirRegisterPlanOptions {
@@ -277,6 +284,7 @@ export function plan_nir_registers(
 ): NirRegisterPlan {
 	const allocs = new Map<string, string>();
 	const callee_saved = new Set<string>();
+	const pinned = new Set<string>();
 	const traffic = analyze_traffic(nir);
 
 	const address_taken = new Set<string>();
@@ -350,7 +358,7 @@ export function plan_nir_registers(
 			caller_only: false,
 		});
 	}
-	if (candidates.length === 0) return { allocs, callee_saved };
+	if (candidates.length === 0) return { allocs, callee_saved, adj, pinned };
 
 	// Hottest first — same ranking the legacy pass and the benchmarks
 	// were tuned around (raw reads, then loop-weighted, V8 stable sort).
@@ -384,8 +392,8 @@ export function plan_nir_registers(
 		}
 		const f = facts.get(c.name);
 		if (!f) continue;
-		const pinned = param_names.has(c.name);
-		const caller_eligible = !pinned && !f.crosses_call && !f.loop_blocked;
+		const pinned_name = param_names.has(c.name);
+		const caller_eligible = !pinned_name && !f.crosses_call && !f.loop_blocked;
 		if (c.caller_only && !caller_eligible) continue;
 		// Caller-saved first (no prologue cost, keeps callee regs for loops
 		// and Buffer caches), then callee-saved. Every non-caller_only int
@@ -404,6 +412,7 @@ export function plan_nir_registers(
 				if (is_callee && x_callee_used >= MAX_X_CALLEE) continue;
 				allocs.set(c.name, reg);
 				occupants.add(c.name);
+				if (pinned_name) pinned.add(c.name);
 				if (is_callee) {
 					x_callee_used++;
 					callee_saved.add(reg);
@@ -413,7 +422,7 @@ export function plan_nir_registers(
 			// Sharing: the newcomer must be non-pinned and must not
 			// interfere with ANY current occupant (nor may an occupant be
 			// a pinned param — its prologue init is unconditional).
-			if (pinned) continue;
+			if (pinned_name) continue;
 			let blocked = false;
 			for (const occupant of occupants) {
 				if (param_names.has(occupant) || adj.get(c.name)?.has(occupant)) {
@@ -427,7 +436,7 @@ export function plan_nir_registers(
 			break;
 		}
 	}
-	return { allocs, callee_saved };
+	return { allocs, callee_saved, adj, pinned };
 }
 
 /**
@@ -466,6 +475,8 @@ export function seed_function_allocations(
 	if (plan.allocs.size === 0) return undefined;
 	status.register_allocations = plan.allocs;
 	status.callee_saved_regs_used = plan.callee_saved.size > 0 ? plan.callee_saved : undefined;
+	// Interference facts for loop-promotion sharing (see BuildStatus).
+	status.nir_alloc_shared = { adj: plan.adj, pinned: plan.pinned };
 	// Caller-saved ext claims survive inline expansions (which clear
 	// register_allocations); the method caller restores the old value.
 	status.nir_caller_saved_claimed = new Set(

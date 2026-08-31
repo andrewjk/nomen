@@ -464,6 +464,9 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 			// Always defined under the new pass (possibly empty): the
 			// caller-saved ext regs must never ride the prologue's save set.
 			fn_callee_saved = plan.callee_saved;
+			// Interference facts so loop promotion shares function-claimed
+			// registers when its candidates provably never overlap them.
+			status.nir_alloc_shared = { adj: plan.adj, pinned: plan.pinned };
 			// Caller-saved ext claims ride a set that SURVIVES inline
 			// expansions (which clear register_allocations), so loop
 			// promotion inside an inlined body can't reclaim one while a
@@ -778,6 +781,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.callee_saved_regs_used = old_callee_saved_regs;
 	status.register_allocations = old_register_allocations;
 	status.nir_caller_saved_claimed = old_nir_caller_claimed;
+	status.nir_alloc_shared = undefined;
 
 	if (loop_regs_used.length > 0 && has_body) {
 		const func_label = `${node.name === "main" ? "_" : ""}${label_name}:`;
