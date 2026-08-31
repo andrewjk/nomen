@@ -27,6 +27,7 @@ import { emit_address_of } from "./build_access_node.ts";
 import build_array_values_node, { resolve_static_value } from "./build_array_values_node.ts";
 import { emit_swap_value, get_source_address } from "./build_assignment_node.ts";
 import build_node from "./build_node.ts";
+import { tree_is_call_free } from "./build_operation_node.ts";
 import build_range_node from "./build_range_node.ts";
 import { emit_expr_from_nir } from "./emit_nir.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
@@ -2035,10 +2036,23 @@ export default function build_declaration_node(
 					emit_pair_store_x29(status, offset);
 					mark_heap_string(status, node.name);
 				} else if (!is_literal) {
+					// Declaration destination hint (ASM_PLAN_2 tranche F): a
+					// promoted scalar's initializer root op emits straight
+					// into the target register. Callee-saved x23-x28 always;
+					// the caller-saved ext pool (x12-x15) only when the
+					// initializer itself is call-free. Unconsumed hints fall
+					// back to the x0 writeback via emit_var_store.
+					const decl_alloc = status.register_allocations?.get(node.name);
+					if (decl_alloc && (/^x2[3-8]$/.test(decl_alloc) || /^x1[2-5]$/.test(decl_alloc))) {
+						if (/^x2[3-8]$/.test(decl_alloc) || tree_is_call_free(node.value, status, new Set())) {
+							status.int_dest_hint = decl_alloc;
+						}
+					}
 					emit_init_value(node.value, nir_init, status);
 					if (!status.code.endsWith("\n")) {
 						status.code += "\n";
 					}
+					status.int_dest_hint = undefined;
 					if (size === 16 && node.type.name === "string") {
 						// Fat string: the value build leaves the (ptr, len)
 						// pair in x0/x1 — store both words.

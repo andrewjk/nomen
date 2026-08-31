@@ -3,7 +3,7 @@ import type { NirStmt } from "../nir/nir.ts";
 import WhileLoopNode from "../nodes/WhileLoopNode.ts";
 import build_node from "./build_node.ts";
 import { emit_cond_branch } from "./build_operation_node.ts";
-import { tree_has_call } from "./build_operation_node.ts";
+import { tree_is_call_free } from "./build_operation_node.ts";
 import { build_block_with_cursor } from "./emit_nir.ts";
 import { emit_neon_vector_loop } from "./neon_emit.ts";
 import type { NeonPlan } from "./neon_plan.ts";
@@ -60,7 +60,16 @@ export default function build_while_loop_node(
 		// Caller-saved float extension pool is safe when the loop body is
 		// call-free (nothing clobbers v24-v31 mid-loop). NIR body when
 		// available; AST-declared vars fall back to the callee-only pool.
-		const call_free = nir ? !nir.body.some((st) => tree_has_call(st.node, new Set())) : false;
+		// tree_is_call_free (tranche F) extends the scan to inline methods
+		// whose raw aarch64 bodies contain no bl/blr, and gates the int
+		// extension pool off when a NEON plan rides (the vector loop's
+		// preheader/lanes clobber x12-x15). Both arms (AST walk and NIR
+		// cursor) must reach the SAME verdict — promotion decisions drive
+		// prologue saves and register traffic — so the AST arm scans the
+		// AST statements when no NIR body rides.
+		const call_free = nir
+			? nir.body.every((st) => tree_is_call_free(st.node, status, new Set()))
+			: node.statements.every((st) => tree_is_call_free(st, status, new Set()));
 		promoted.push(
 			...promote_loop_locals(
 				status,
@@ -70,7 +79,7 @@ export default function build_while_loop_node(
 					statements: node.statements,
 					update: node.update,
 				},
-				{ call_free },
+				{ call_free, int_ext: call_free && !vector },
 			),
 		);
 	}

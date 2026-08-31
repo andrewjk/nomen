@@ -348,6 +348,16 @@ export default interface BuildStatus {
 	 *  (RHS reads of the target need the old value until the final fused
 	 *  instruction, which reads its sources before writing). */
 	float_dest_hint?: string;
+	/** Destination hint, integer side (ASM_PLAN_2 tranche F): when set to a
+	 *  promoted x-register, the ROOT integer operation of an assignment or
+	 *  declaration initializer emits directly into it instead of x0 +
+	 *  writeback mov. Consume-once (the root op clears it, so nested
+	 *  sub-operations keep the scratch discipline; the target's old value
+	 *  stays readable until the final instruction, which reads its sources
+	 *  before writing). Only ever set for callee-saved x23-x28 targets —
+	 *  a call inside the RHS would clobber caller-saved ext-pool registers
+	 *  (x10-x15) before the root op reads its sources. */
+	int_dest_hint?: string;
 	/** Full-unroll index substitution (ASM_PLAN_2 tranche E): while the
 	 *  unroller emits copy k of a fixed-trip loop whose body reads the
 	 *  induction as an array index, this maps the induction name to the

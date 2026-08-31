@@ -2,6 +2,7 @@ import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import { is_float_type } from "../built_in_types.ts";
+import { is_int_literal, parse_int_literal_bigint } from "../int_literal.ts";
 import type { NirExpr } from "../nir/nir.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
@@ -12,7 +13,15 @@ import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import { emit_address_of } from "./build_access_node.ts";
 import build_node from "./build_node.ts";
-import { build_float_tree, float_tree_ok, tree_has_call } from "./build_operation_node.ts";
+import {
+	build_float_tree,
+	build_int_tree,
+	count_int_tree_allocs,
+	float_tree_ok,
+	INT_TREE_POOL,
+	tree_has_call,
+	tree_is_call_free,
+} from "./build_operation_node.ts";
 import { emit_expr_from_nir } from "./emit_nir.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free, emit_strdup } from "./utils/audit.ts";
@@ -974,6 +983,26 @@ export default function build_assignment_node(
 			}
 		} else if (node.operator) {
 			const alloc_reg_op = status.register_allocations?.get(name);
+			// Literal-compound fast path (ASM_PLAN_2 tranche F): `x += 1` /
+			// `i -= 2` on a promoted x-target folds to one `add/sub xN, xN,
+			// #imm` — no x1 round-trip, no spill. Only +/- with immediates
+			// the `add imm12` form takes (0..4095); everything else keeps
+			// the generic compound sequence below.
+			if (alloc_reg_op?.startsWith("x") && (node.operator === "+" || node.operator === "-")) {
+				const lit =
+					node.right_value.node_type === "value"
+						? (node.right_value as ValueNode).value
+						: undefined;
+				if (lit !== undefined && is_int_literal(lit)) {
+					const mag = parse_int_literal_bigint(lit);
+					if (mag !== null && mag >= 0n && mag <= 4095n) {
+						const mn = node.operator === "+" ? "add" : "sub";
+						status.code += `${mn} ${alloc_reg_op}, ${alloc_reg_op}, #${mag.toString()}\n`;
+						build_swap(node, status, nir_swap);
+						return;
+					}
+				}
+			}
 			if (alloc_reg_op) {
 				if (alloc_reg_op.startsWith("d")) {
 					status.code += `fmov x1, ${alloc_reg_op}\n`;
@@ -1063,6 +1092,48 @@ export default function build_assignment_node(
 				} else {
 					status.float_result_in_d0 = false;
 					status.code += `fmov ${alloc_reg_fast}, x0\n`;
+				}
+				build_swap(node, status, nir_swap);
+				return;
+			}
+			// Int fast path (ASM_PLAN_2 tranche F): assignment to a promoted
+			// x-register target from an integer expression. Two tiers, the
+			// analogs of the float tree + hint above:
+			// (a) call-free int trees allocate interior results into the
+			//     untouched x12-x15 pool with the root landing directly in
+			//     the target register;
+			// (b) otherwise the root int op emits into the target via
+			//     int_dest_hint (callee-saved x23-x28 only — a call inside
+			//     the RHS would clobber x12-x15 before the root reads its
+			//     sources). Unconsumed hints (leaf/call/cast RHS) fall back
+			//     to the x0 writeback mov.
+			const alloc_reg_int = status.register_allocations?.get(name);
+			if (alloc_reg_int?.startsWith("x") && !node.operator && !lhs_is_heap) {
+				status.last_result_is_heap = false;
+				const rhs_call_free = tree_is_call_free(node.right_value, status, new Set());
+				if (alloc_reg_int !== "x0" && alloc_reg_int !== "x1" && alloc_reg_int !== "x2") {
+					if (rhs_call_free) {
+						const allocs = count_int_tree_allocs(node.right_value, status);
+						if (allocs <= INT_TREE_POOL) {
+							build_int_tree(node.right_value, alloc_reg_int, { v: 0 }, status);
+							if (!status.code.endsWith("\n")) status.code += "\n";
+							build_swap(node, status, nir_swap);
+							return;
+						}
+					}
+				}
+				// Hint-safe targets: callee-saved always; the caller-saved
+				// ext pool only when the RHS itself contains no call (in a
+				// call-free loop nothing else can clobber x12-x15 either).
+				if (/^x2[3-8]$/.test(alloc_reg_int) || (rhs_call_free && /^x1[2-5]$/.test(alloc_reg_int))) {
+					status.int_dest_hint = alloc_reg_int;
+				}
+				emit_rhs_value(node.right_value, nir_rhs, status);
+				if (!status.code.endsWith("\n")) status.code += "\n";
+				const hint_consumed = status.int_dest_hint === undefined;
+				status.int_dest_hint = undefined;
+				if (!hint_consumed && alloc_reg_int !== "x0") {
+					status.code += `mov ${alloc_reg_int}, x0\n`;
 				}
 				build_swap(node, status, nir_swap);
 				return;

@@ -20,7 +20,7 @@ import type BaseNode from "../nodes/BaseNode.ts";
 import type StructNode from "../nodes/StructNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
-import build_inline_method from "./build_inline_method.ts";
+import build_inline_method, { naked_inline_skips_self } from "./build_inline_method.ts";
 import build_node from "./build_node.ts";
 import build_nursery_spawn from "./build_nursery_spawn.ts";
 import { build_operand } from "./build_operation_node.ts";
@@ -1860,8 +1860,25 @@ function build_access_method(
 		}
 	}
 
-	const needs_self_save =
+	const raw_needs_self =
 		!access_func.is_static && access_func.params.length > 0 && !receiver_is_string;
+	// Self-marshal elision (ASM_PLAN_2 tranche F): a raw-only inline
+	// method whose body never reads self (no x19, x0 only as a
+	// write-destination) needs neither the self spill, its restore, nor a
+	// receiver in x0 — the args evaluate freely and the body's result
+	// lands in x0 directly (BigInt mul_wide_hi/get_at/set_at/div128).
+	const inline_struct0 = status.structs.find((s) => s.name === mono_struct_name);
+	const inline_func0 = inline_struct0?.functions.find(
+		(f) =>
+			f.is_inline &&
+			f.name === access_func.name &&
+			(access_func.mangled_name
+				? mangled_label(f, mono_struct_name) === access_func.mangled_name
+				: true),
+	);
+	const elide_self_save =
+		raw_needs_self && !!inline_func0 && naked_inline_skips_self(inline_func0, status.platform);
+	const needs_self_save = raw_needs_self && !elide_self_save;
 	if (needs_self_save) {
 		status.code += `str x0, [sp, #-16]!\n`;
 	}

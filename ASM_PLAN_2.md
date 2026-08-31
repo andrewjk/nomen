@@ -318,13 +318,125 @@ composition gates (non-constant inner init, inner break), the `<` op
 gate, non-zero literal init, and the zero-trip post-loop store. Default
 stays OFF — the pass remains opt-in via `set_loop_unrolling_enabled`.
 
+## Tranche F — int-side register codegen: dest hints, trees, ext pool (pidigits, DONE)
+
+Receipts (same method as above, pidigits n=4000, `sample` + per-label
+bucketing): the runtime was ~60% `BigInt_div_to` (Knuth-D limb loops:
+`.end_while_19` alone 42% of samples), ~20% `mul_to` schoolbook, ~15%
+`add_to`. The per-limb asm showed the shape: the int side never got the
+float tranches' treatment, so every limb op round-tripped stack slots
+(`ldr [x29,#N]`/compute/`str [x29,#M]`, ~30–54 instructions per limb vs
+clang's 8–10). The int promotion pool is structurally starved here: 4
+params ride x19–x22, the whole-function pass caps at 4 x-regs, Buffer
+caches claim the rest, and the D3/D4 temps (`vv`, `lo_prod`,
+`hi_prod`) read 1–2× textually — below the reads≥3 bar and not
+body-written, so neither promotion pass could take them.
+
+Four compiler changes, each the int analog of a float tranche (the
+library source stays plain — the compiler got smarter, not the code):
+
+1. **Int destination hint** (tranche C analog): `status.int_dest_hint`;
+   the assignment fast path (build_assignment_node) and declaration
+   initializers (build_declaration_node) set it for promoted x-targets,
+   and the ROOT int op in build_operation_node emits straight into the
+   target register — no x0 + writeback mov. Callee-saved x23–x28 only
+   (a call inside the RHS would clobber caller-saved regs before the
+   root reads its sources), consume-once, same aliasing argument as the
+   float hint.
+2. **Int expression-tree allocation** (tranche C addendum analog):
+   `build_int_tree` lands call-free pure int-op trees (`+ - * / << >>
+& | ^`) with interior results in x10–x11, promoted operands read IN
+   PLACE, root directly in the target. Pool discipline mirrors the
+   float split (tree d16-23 vs promotion d24-31): tree temps x10-x11
+   are live only within one statement; the emitters that touch x10/x11
+   (write barriers, NEON preheader, trait dispatch) cannot appear
+   inside such a tree, and every inline accessor body uses x0-x9 only.
+3. **Caller-saved int extension pool** (tranche D addendum analog):
+   `INT_CALLER_SAVED_EXT = x12–x15` for call-free loop bodies, claimed
+   after the callee-saved pool, synced by the existing loop-exit
+   store-backs (which sit after `end_label`, so break exits are
+   covered). Gated off when a NEON plan rides (the vector loop's
+   preheader/lanes use x10–x14). In call-free mode the promotion bar
+   drops to reads≥1: entry loads and exit stores amortize across every
+   iteration, so any once-read var is worth a register.
+4. **Call-site self-marshal elision**: a raw-only inline method whose
+   body never reads self (no x19; x0 only ever a write-destination —
+   `mul_wide_hi`, `get_at`, `set_at`, `div128`) skips the call-site's
+   `mov x0, x19` + `str x0, [sp], …` + restore triple.
+
+Enabling pass: `tree_is_call_free` (status-aware call-free scan) —
+inline METHODS whose raw aarch64 bodies contain no `bl`/`blr` count as
+call-free (BigInt `mul_wide_hi` yes, `div128` → ___udivti3 correctly
+no), so the Knuth-D inner loops qualify for the ext pool. Byte-identity
+harness: the AST arm and NIR arm must reach the SAME call-free verdict,
+so the no-NIR arm scans the AST statements (`node.statements`) —
+verified by test/emit_nir.test.ts (caught the asymmetry on the first
+run: the NIR arm promoted more vars → different prologue).
+
+Two soundness bugs caught before they shipped: the first tree pool
+(x12+) overlapped the ext pool and the allocator materialized an
+operand INTO the live loop induction `i` (hang at n=2000; found by
+sample, fixed by the disjoint-pool split above), and the byte-identity
+asymmetry (found by the harness).
+
+**RESULT (interleaved best-of-5/7, release builds, outputs
+byte-identical on every size and every bench):** pidigits n=4000
+1.66 → 1.27 s (**−24%**); n=2000 0.38 → 0.29 s; n=1000 90 → 60 ms.
+Bench matrix unchanged (mandelbrot/nbody/spectral-norm/fannkuch/
+binarytrees identical times; nsieve −10ms noise-level; all outputs
+identical). Full suite green (2661 tests). The C backend shares none of
+this machinery and is untouched.
+
+**Remaining gap (the honest accounting):** pidigits now runs ~3.9×
+behind C `-O2` (was 5.4×). The remaining distance is the structural
+register-allocation chasm — our per-statement model (every value = slot
+or ONE promoted register, no liveness, no cross-statement temps)
+cannot express clang's ~10-instruction limb loop, which keeps ~10 live
+scalars in registers across loop iterations at once. Closing it is its
+own project (a real int register allocator on the NIR level); the flat
+post-tranche profile (no dominant label — time smeared across every
+limb loop) is the receipt that no single further fast path moves the
+needle.
+
+## Tranche G — int register allocation at the NIR level (NEXT)
+
+Where Tranche F leaves us: pidigits n=4000 1.27 s vs C `-O2` 0.32 s
+(~3.9×, was 5.4×), and the post-tranche profile is FLAT — time smeared
+across every Knuth-D/schoolbook limb loop with no dominant label, so no
+single fast path moves the needle any more. The structural cause: the
+per-statement compilation model gives every value exactly one home (a
+stack slot or a single promoted register), has no liveness analysis,
+and cannot keep a value in a register across unrelated statements.
+clang's ~10-instruction limb loop keeps ~10 live scalars in registers
+simultaneously; our model caps at ~8 promoted registers total and
+cannot reassign them per region.
+
+Closing the gap means building a real int register allocator at the NIR
+level: live ranges over the canonical IR, allocation into x0–x7/x9–x15
+within call-free regions plus the callee-saved pool. Sized like the
+whole NIR pipeline, not a tranche — but it is the only remaining lever
+of consequence for int-heavy kernels.
+
 ## Success criteria
 
-Measured at the REAL bench sizes (`bench/benchmark.sh`: mandelbrot
-n=1000/2000), release builds, interleaved best-of-N:
+Written before the measurements; kept for the record — the per-tranche
+RESULT blocks above are the authoritative accounting. What actually held:
 
-- Tranche A: mandelbrot branches per `mbrot` drop to ~10; measurable
-  runtime drop vs the pre-unroll release build.
-- Tranche B: mandelbrot `mbrot` stack touches → ~0; further runtime drop.
-- No regressions across the rest of the bench matrix; full suite green;
-  kill-switch off = byte-identical output.
+- Method (unrevised): measure at the REAL bench sizes
+  (`bench/benchmark.sh`: mandelbrot n=1000/2000), release builds,
+  interleaved best-of-N, outputs identical.
+- Tranche A: **revised.** Unrolling mandelbrot measured neutral (the
+  kernel is a serial FP dependence chain; OoO execution already hid the
+  loop overhead — and +8% before tranche B's spill fix). The pass ships
+  sound and tested but DEFAULT-OFF, opt-in via
+  `set_loop_unrolling_enabled`; it pays where iterations are independent
+  or compose (nbody's `j = i + 1` double loop: −6%, tranche E addendum).
+  Under the flag, mandelbrot now fully composes (0 loops/branches in
+  `mbrot`) — the "branches → ~10" target above is obsolete.
+- Tranche B: **mechanism revised, win delivered.** The locals were
+  already promoted (d8–d15); the stack-touches framing was wrong — the
+  actual tax was operand-order spills through d0/d1. Fixing that took
+  mandelbrot −36%, nbody −32%.
+- Standing invariants (unchanged): no regressions across the rest of the
+  bench matrix; full suite green; kill-switch off = byte-identical
+  output.

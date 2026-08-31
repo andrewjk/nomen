@@ -31,6 +31,13 @@ const FLOAT_CALLEE_SAVED = ["d8", "d9", "d10", "d11", "d12", "d13", "d14", "d15"
 // locals may live there with no prologue saves. Distinct from the tree
 // allocator's d16-d23 temps (no overlap).
 const FLOAT_CALLER_SAVED_EXT = ["d24", "d25", "d26", "d27", "d28", "d29", "d30", "d31"];
+// Int caller-saved extension pool (ASM_PLAN_2 tranche F): same contract
+// as FLOAT_CALLER_SAVED_EXT — call-free loop bodies only, values synced
+// to their home slots by the loop-exit store-backs. x10/x11 stay
+// excluded (write-barrier address math), x12-x15 are additionally
+// clobbered by the NEON vector loop, so the caller gates this pool off
+// when a vector plan rides. x9 is the emitter's address scratch.
+const INT_CALLER_SAVED_EXT = ["x12", "x13", "x14", "x15"];
 
 export interface PromotedVar {
 	name: string;
@@ -80,7 +87,7 @@ export function promote_loop_locals(
 	status: BuildStatus,
 	scoped_declarations: DeclarationNode[],
 	sources: { condition?: BaseNode; statements: BaseNode[]; update?: BaseNode | null },
-	options?: { call_free?: boolean },
+	options?: { call_free?: boolean; int_ext?: boolean },
 ): PromotedVar[] {
 	const promoted: PromotedVar[] = [];
 	const all_refs = new Map<string, { reads: number; address_taken: boolean }>();
@@ -163,8 +170,15 @@ export function promote_loop_locals(
 		collect_assign_targets(stmt, body_writes);
 	}
 	for (const [name, info] of all_refs) {
+		// Call-free extension mode (ASM_PLAN_2 tranche F): entry loads and
+		// exit store-backs amortize across every iteration, so ANY var read
+		// at least once in the body is a candidate (hottest first, all the
+		// aliasing/redeclare exclusions below still apply). Outside that
+		// mode the classic bars hold: reads >= 3, or the accumulator rule
+		// (written in the body with reads >= 1 — ASM_PLAN_2 tranche D).
+		const ext_mode = options?.call_free === true && options?.int_ext === true;
 		const is_accumulator = body_writes.has(name) && info.reads >= 1;
-		if (info.reads < 3 && !is_accumulator) continue;
+		if (info.reads < (ext_mode ? 1 : 3) && !is_accumulator) continue;
 		if (info.address_taken) continue;
 		if (redeclared.has(name)) continue;
 		// Aliasing-aware exclusions (critical for accumulator eligibility —
@@ -249,6 +263,13 @@ export function promote_loop_locals(
 		options?.call_free === true
 			? [...FLOAT_CALLEE_SAVED, ...FLOAT_CALLER_SAVED_EXT]
 			: FLOAT_CALLEE_SAVED;
+	// Int pool: callee-saved first, then the call-free caller-saved
+	// extension (gated off when a NEON plan rides — its preheader/lanes
+	// clobber x12-x15).
+	const x_pool =
+		options?.call_free === true && options?.int_ext === true
+			? [...CALLEE_SAVED_REGS, ...INT_CALLER_SAVED_EXT]
+			: CALLEE_SAVED_REGS;
 	let x_idx = 0;
 	let d_idx = 0;
 	for (const v of eligible) {
@@ -273,11 +294,11 @@ export function promote_loop_locals(
 			emit_promoted_load(status, reg, v.offset, v.type_name);
 			d_idx++;
 		} else {
-			while (x_idx < CALLEE_SAVED_REGS.length && used_x.has(CALLEE_SAVED_REGS[x_idx])) {
+			while (x_idx < x_pool.length && used_x.has(x_pool[x_idx])) {
 				x_idx++;
 			}
-			if (x_idx >= CALLEE_SAVED_REGS.length) continue;
-			const reg = CALLEE_SAVED_REGS[x_idx];
+			if (x_idx >= x_pool.length) continue;
+			const reg = x_pool[x_idx];
 			status.register_allocations.set(v.name, reg);
 			used_x.add(reg);
 			promoted.push({
@@ -298,7 +319,7 @@ export function promote_loop_locals(
 		for (const p of promoted) {
 			// Caller-saved extension regs are NOT callee-saved — the prologue
 			// must not save them (call-free loop, storeback covers the exit).
-			if (!p.reg.startsWith("d2") && !p.reg.startsWith("d3")) {
+			if (!p.reg.startsWith("d2") && !p.reg.startsWith("d3") && !/^x1[0-5]$/.test(p.reg)) {
 				status.callee_saved_regs_used.add(p.reg);
 			}
 		}

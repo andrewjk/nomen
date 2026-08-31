@@ -8,12 +8,14 @@ import {
 	is_scalar_type,
 	is_unsigned_int_type as name_is_unsigned_int_type,
 } from "../built_in_types.ts";
+import { mangled_label } from "../check/utils/function_overload.ts";
 import { is_int_literal, parse_int_literal_bigint, to_decimal_string } from "../int_literal.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import BaseNode from "../nodes/BaseNode.ts";
 import EnumNode from "../nodes/EnumNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
+import { parse_raw_directives } from "../raw_directives.ts";
 import { emit_address_of } from "./build_access_node.ts";
 import { get_source_address } from "./build_assignment_node.ts";
 import build_node from "./build_node.ts";
@@ -62,6 +64,101 @@ export function tree_has_call(node: BaseNode, seen: Set<unknown>): boolean {
 		}
 	}
 	return false;
+}
+
+/**
+ * Status-aware call-free scan (ASM_PLAN_2 tranche F). Like tree_has_call,
+ * but an inline METHOD whose aarch64 expansion cannot clobber
+ * caller-saved registers counts as call-free: its body is raw `#arch:
+ * aarch64` text (or statements with none of the same) containing no
+ * `bl`/`blr`. This is what lets BigInt's `mul_wide_hi`/`load_int`/
+ * `store_int`-shaped limb loops qualify for the caller-saved extension
+ * pools. Flat `func_call`s stay calls (the flat inliner can bail to a
+ * real `bl`), as do plain/trait/virtual method calls and any inline
+ * method whose raw text branches to a subroutine (BigInt `div128` →
+ * ___udivti3 is correctly NOT call-free).
+ */
+export function tree_is_call_free(
+	node: BaseNode,
+	status: BuildStatus,
+	seen: Set<unknown>,
+): boolean {
+	if (!node || typeof node !== "object" || seen.has(node)) return true;
+	seen.add(node);
+	const n = node as unknown as Record<string, unknown>;
+	if (n.node_type === "spawn") return false;
+	if (n.node_type === "func_call") return false;
+	if (n.node_type === "access") {
+		const acc = (n as { access?: { node_type?: string; name?: string; mangled_name?: string } })
+			.access;
+		if (acc && acc.node_type === "access_func") {
+			if (
+				!INLINE_BUFFER_ACCESSORS.has(acc.name ?? "") &&
+				!inline_method_is_call_free(n.target as BaseNode | undefined, acc, status)
+			) {
+				return false;
+			}
+			// call-free inline expansion — keep scanning receiver + args
+		}
+	}
+	for (const key of Object.keys(n)) {
+		if (key === "parent" || key === "scope") continue;
+		const v = n[key];
+		if (Array.isArray(v)) {
+			for (const item of v) {
+				if (item && typeof item === "object" && "node_type" in (item as object)) {
+					if (!tree_is_call_free(item as BaseNode, status, seen)) return false;
+				}
+			}
+		} else if (v && typeof v === "object" && "node_type" in (v as object)) {
+			if (!tree_is_call_free(v as unknown as BaseNode, status, seen)) return false;
+		}
+	}
+	return true;
+}
+
+function inline_method_is_call_free(
+	target: BaseNode | undefined,
+	acc: { name?: string; mangled_name?: string },
+	status: BuildStatus,
+): boolean {
+	let type_name = target ? type_from_value_node(target)?.name : undefined;
+	if (
+		!type_name &&
+		target?.node_type === "value" &&
+		(target as ValueNode).value === "self" &&
+		status.current_struct
+	) {
+		type_name = status.current_struct.name;
+	}
+	if (!type_name) return false;
+	const struct = status.structs.find((s) => s.name === type_name);
+	if (!struct) return false;
+	const func = struct.functions.find(
+		(f) =>
+			f.is_inline &&
+			f.name === acc.name &&
+			(acc.mangled_name ? mangled_label(f, struct.name) === acc.mangled_name : true),
+	);
+	if (!func) return false;
+	return func_statements_call_free(func.statements ?? [], status, new Set());
+}
+
+function func_statements_call_free(
+	statements: BaseNode[],
+	status: BuildStatus,
+	seen: Set<unknown>,
+): boolean {
+	for (const stmt of statements) {
+		if ((stmt as unknown as { node_type?: string }).node_type === "raw") {
+			const text = (stmt as unknown as { value?: string }).value ?? "";
+			const { should_emit, code } = parse_raw_directives(text, "aarch64", status.platform);
+			if (should_emit && code && /\bbl\b|\bblr\b/.test(code)) return false;
+		} else if (!tree_is_call_free(stmt, status, seen)) {
+			return false;
+		}
+	}
+	return true;
 }
 
 export function float_tree_ok(node: BaseNode, budget: { n: number }): boolean {
@@ -130,6 +227,95 @@ export function build_float_tree(
 	// Leaf: materialize into dest (promoted reg fmov, slot ldr, literal
 	// pool load, inline Buffer accessor, cast — call-free verified).
 	build_float_operand(node, dest, status);
+	return dest;
+}
+
+// ---- Int expression-tree allocation (ASM_PLAN_2 tranche F) ----
+//
+// The int analog of build_float_tree: interior results of call-free
+// integer expression trees allocate into the emitter-untouched x10-x11
+// pool, promoted operands are read IN PLACE as instruction sources, and
+// the root lands directly in the assignment target's register. Same
+// ops, same order — bit-exact.
+//
+// Pool discipline (mirrors the float split: tree d16-d23 vs promotion
+// d24-d31): tree temps x10-x11 are live ONLY within the single
+// statement being emitted, and the only statement-level emitters that
+// touch x10/x11 (array-store write barriers, NEON preheader, trait
+// dispatch) cannot appear inside a call-free pure int-op tree; inline
+// accessor bodies use x0-x9 only. The loop promotion's caller-saved
+// ext pool lives in x12-x15 — disjoint from tree temps.
+
+const INT_TREE_FIRST = 10;
+export const INT_TREE_POOL = 2; // x10..x11
+
+const INT_TREE_OPS = new Set(["+", "-", "*", "/", "<<", ">>", "&", "|", "^"]);
+
+/** Number of fresh x-temps the tree needs (each non-promoted child of an
+ *  arith node materializes into its own register; the root's register is
+ *  provided by the caller). */
+export function count_int_tree_allocs(node: BaseNode, status: BuildStatus): number {
+	const src_reg = (side: BaseNode | undefined): string | null => {
+		if (!side || side.node_type !== "value") return null;
+		const name = (side as ValueNode).value;
+		if (typeof name !== "string" || status.function_param_regs?.has(name)) return null;
+		const reg = status.register_allocations?.get(name);
+		return reg && reg.startsWith("x") ? reg : null;
+	};
+	let n = node;
+	while (n.node_type === "grouped") {
+		n = (n as unknown as { value?: BaseNode }).value as BaseNode;
+	}
+	if (n.node_type === "op") {
+		const op = n as OperationNode;
+		if (INT_TREE_OPS.has(op.op) && op.left_value && op.right_value && !is_float_type(n)) {
+			let count = 0;
+			if (!src_reg(op.left_value)) count += 1 + count_int_tree_allocs(op.left_value, status);
+			if (!src_reg(op.right_value)) count += 1 + count_int_tree_allocs(op.right_value, status);
+			return count;
+		}
+	}
+	return 0;
+}
+
+export function build_int_tree(
+	node: BaseNode,
+	dest: string,
+	next: { v: number },
+	status: BuildStatus,
+): string {
+	// Returns the register holding the node's value (usually `dest`).
+	let n = node;
+	while (n.node_type === "grouped") {
+		n = (n as unknown as { value?: BaseNode }).value as BaseNode;
+	}
+	if (n.node_type === "op") {
+		const op = n as OperationNode;
+		if (INT_TREE_OPS.has(op.op) && op.left_value && op.right_value && !is_float_type(n)) {
+			const src_reg = (side: BaseNode | undefined): string | null => {
+				if (!side || side.node_type !== "value") return null;
+				const name = (side as ValueNode).value;
+				if (typeof name !== "string" || status.function_param_regs?.has(name)) return null;
+				const reg = status.register_allocations?.get(name);
+				return reg && reg.startsWith("x") ? reg : null;
+			};
+			const ls = src_reg(op.left_value);
+			const lreg = ls ?? `x${INT_TREE_FIRST + next.v++}`;
+			if (!ls) build_int_tree(op.left_value, lreg, next, status);
+			if (!status.code.endsWith("\n")) status.code += "\n";
+			const rs = src_reg(op.right_value);
+			const rreg = rs ?? `x${INT_TREE_FIRST + next.v++}`;
+			if (!rs) build_int_tree(op.right_value, rreg, next, status);
+			if (!status.code.endsWith("\n")) status.code += "\n";
+			const unsigned = is_unsigned_type(op.left_value) || is_unsigned_type(op.right_value);
+			status.code += `${map_op(op.op, unsigned)} ${dest}, ${lreg}, ${rreg}\n`;
+			return dest;
+		}
+	}
+	// Leaf: materialize into dest (promoted-reg mov, slot ldr, immediate,
+	// inline Buffer accessor, cast, call — call-free verified upstream).
+	build_operand(n, dest, status);
+	if (!status.code.endsWith("\n")) status.code += "\n";
 	return dest;
 }
 
@@ -1324,6 +1510,79 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		}
 		status.code += `${done}:\n`;
 		return;
+	}
+
+	// ---- Int direct-source selection + destination hint (tranche F) ----
+	//
+	// Operands already living in promoted x-registers are used IN PLACE as
+	// instruction sources (the int analog of tranche B), and the ROOT op
+	// emits straight into the assignment/declaration target's register
+	// when int_dest_hint set one (callee-saved x23-x28 only — a call in
+	// the RHS would clobber caller-saved ext-pool registers x10-x15
+	// before this root reads its sources). Comparisons (cset), `%` (msub
+	// needs a fourth register) and short-circuits keep the x0 path.
+	if (!is_float && !is_comparison(node.op) && node.op !== "%") {
+		const hint =
+			status.int_dest_hint && /^x(1[2-5]|2[3-8])$/.test(status.int_dest_hint)
+				? status.int_dest_hint
+				: undefined;
+		status.int_dest_hint = undefined;
+		const int_source = (side: BaseNode | undefined): string | null => {
+			if (!side || side.node_type !== "value") return null;
+			const name = (side as ValueNode).value;
+			if (typeof name !== "string" || status.function_param_regs?.has(name)) return null;
+			const reg = status.register_allocations?.get(name);
+			return reg && reg.startsWith("x") ? reg : null;
+		};
+		const unsigned = is_unsigned_type(node.left_value) || is_unsigned_type(node.right_value);
+		const mnemonic = map_op(node.op, unsigned);
+		const ls = int_source(node.left_value);
+		const rs = int_source(node.right_value);
+		if (ls && rs) {
+			const dest = hint ?? "x0";
+			status.code += `${mnemonic} ${dest}, ${ls}, ${rs}\n`;
+			return;
+		}
+		if (ls) {
+			build_operand(node.right_value, "x0", status);
+			if (!status.code.endsWith("\n")) status.code += "\n";
+			status.code += `${mnemonic} ${hint ?? "x0"}, ${ls}, x0\n`;
+			return;
+		}
+		if (rs) {
+			build_operand(node.left_value, "x0", status);
+			if (!status.code.endsWith("\n")) status.code += "\n";
+			status.code += `${mnemonic} ${hint ?? "x0"}, x0, ${rs}\n`;
+			return;
+		}
+		if (hint) {
+			// Both operands need materializing — build into the x1/x2
+			// scratch pair (same spill-order discipline as the generic
+			// path below) and emit straight into the target register.
+			const left_simple = is_simple(node.left_value);
+			const need_spill = !left_simple && !is_simple(node.right_value);
+			if (!left_simple) {
+				build_operand(node.left_value, "x1", status);
+				if (!status.code.endsWith("\n")) status.code += "\n";
+				if (need_spill) {
+					status.code += `str x1, [sp, #-16]!\n`;
+					build_operand(node.right_value, "x1", status);
+					if (!status.code.endsWith("\n")) status.code += "\n";
+					status.code += `mov x2, x1\n`;
+					status.code += `ldr x1, [sp], #16\n`;
+				} else {
+					build_operand(node.right_value, "x2", status);
+					if (!status.code.endsWith("\n")) status.code += "\n";
+				}
+			} else {
+				build_operand(node.right_value, "x2", status);
+				if (!status.code.endsWith("\n")) status.code += "\n";
+				build_operand(node.left_value, "x1", status);
+				if (!status.code.endsWith("\n")) status.code += "\n";
+			}
+			status.code += `${mnemonic} ${hint}, x1, x2\n`;
+			return;
+		}
 	}
 
 	// Spill-order elimination (ASM_PLAN_2 tranche B): complex-left builds

@@ -44,6 +44,34 @@ function count_x19_reads(asm: string): number {
 	return matches ? matches.length : 0;
 }
 
+/**
+ * Call-site self-marshal elision (ASM_PLAN_2 tranche F): a raw-only
+ * inline method whose body never reads self — no `x19`, and `x0` only
+ * ever as a write-destination — needs neither the call-site's
+ * `str x0, [sp], …` self spill, its restore, nor a receiver in x0 at
+ * all (BigInt `mul_wide_hi`/`get_at`/`set_at`/`div128`). Stores keep
+ * x0 out of the dest-only treatment (`str x0, [x1]` READS x0); a line
+ * mentioning x0 anywhere besides a single leading destination operand
+ * counts as a read.
+ */
+export function naked_inline_skips_self(func: FunctionNode, platform: string): boolean {
+	if (!is_raw_only(func)) return false;
+	const asm = extract_aarch64_asm(func, platform);
+	if (/\bx19\b/.test(asm)) return false;
+	for (const rawLine of asm.split("\n")) {
+		const line = rawLine.replace(/\/\/.*$/, "").trim();
+		if (!line || line.endsWith(":") || line.startsWith(".")) continue;
+		const count = (line.match(/\bx0\b/g) ?? []).length;
+		if (count === 0) continue;
+		const mnemonic = line.split(/[\s,]/)[0];
+		const first = line.replace(/^\w+\s+/, "");
+		const dest_only =
+			count === 1 && /^x0\b/.test(first) && mnemonic !== "str" && mnemonic !== "stur";
+		if (!dest_only) return false;
+	}
+	return true;
+}
+
 function build_naked_inline(struct_node: StructNode, func: FunctionNode, status: BuildStatus) {
 	let asm = extract_aarch64_asm(func, status.platform);
 	const standalone_return_label = `.return_${struct_node.name}_${func.name.replace(/#/g, "")}`;

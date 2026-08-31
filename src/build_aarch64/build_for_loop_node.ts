@@ -4,7 +4,7 @@ import type { NirStmt } from "../nir/nir.ts";
 import ForLoopNode from "../nodes/ForLoopNode.ts";
 import RangeNode from "../nodes/RangeNode.ts";
 import build_node from "./build_node.ts";
-import { tree_has_call } from "./build_operation_node.ts";
+import { tree_is_call_free } from "./build_operation_node.ts";
 import { build_block_with_cursor } from "./emit_nir.ts";
 import { emit_neon_vector_loop } from "./neon_emit.ts";
 import type { NeonPlan } from "./neon_plan.ts";
@@ -69,7 +69,9 @@ export default function build_for_loop_node(
 	status.buffer_data_cache = undefined;
 
 	if (status.function_return_label && node.statements.length > 0) {
-		const call_free = nir ? !nir.body.some((st) => tree_has_call(st.node, new Set())) : false;
+		const call_free = nir
+			? nir.body.every((st) => tree_is_call_free(st.node, status, new Set()))
+			: node.statements.every((st) => tree_is_call_free(st, status, new Set()));
 		promoted.push(
 			...promote_loop_locals(
 				status,
