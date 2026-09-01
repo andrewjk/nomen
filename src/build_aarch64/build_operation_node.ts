@@ -6,6 +6,7 @@ import string_literal_length from "../build_common/string_literal_length.ts";
 import {
 	is_float_type as name_is_float_type,
 	is_scalar_type,
+	is_signed_type,
 	is_unsigned_int_type as name_is_unsigned_int_type,
 } from "../built_in_types.ts";
 import { mangled_label } from "../check/utils/function_overload.ts";
@@ -16,7 +17,7 @@ import EnumNode from "../nodes/EnumNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import { parse_raw_directives } from "../raw_directives.ts";
-import { emit_address_of } from "./build_access_node.ts";
+import { emit_address_of, emit_direct_field_load } from "./build_access_node.ts";
 import { get_source_address } from "./build_assignment_node.ts";
 import build_node from "./build_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
@@ -735,6 +736,52 @@ export function build_operand(node: BaseNode, target_reg: string, status: BuildS
 			}
 			return;
 		}
+		// Slot-resident scalar direct-source (ASM_PLAN_2 tranche H): a plain
+		// scalar local living in a stack slot loads DIRECTLY into the target
+		// register — no `build_node → x0 → mov` round-trip. The gate mirrors
+		// build_value_node's scalar slot branch exactly (no arrays, enums,
+		// strings, refs, or class vars), so the emitted load is the same
+		// width/signedness instruction — just into `target_reg` instead of x0.
+		{
+			const slot_offset = status.stack_offsets?.get(value);
+			const vtype = (node as ValueNode).type;
+			const type_name = vtype?.name || "";
+			if (
+				slot_offset !== undefined &&
+				!vtype?.is_array &&
+				type_name !== "string" &&
+				type_name !== "func" &&
+				!status.function_ref_params?.has(raw_value) &&
+				!status.function_ref_params?.has(value) &&
+				!status.class_vars?.has(raw_value) &&
+				!status.class_vars?.has(value) &&
+				// A promoted variable's home is its REGISTER (x-promoted reads
+				// returned above; d-promoted floats would otherwise read the
+				// stale sync slot) — never the slot.
+				!status.register_allocations?.has(raw_value) &&
+				!status.register_allocations?.has(value) &&
+				!status.enums.find((e) => e.name === type_name && e.has_associated_data)
+			) {
+				const size = aarch64_size(type_name);
+				const signed = is_signed_type(type_name);
+				if (size === 1) {
+					status.code += signed
+						? `ldrsb ${target_reg}, [x29, #${slot_offset}]\n`
+						: `ldrb ${target_reg.replace("x", "w")}, [x29, #${slot_offset}]\n`;
+				} else if (size === 2) {
+					status.code += signed
+						? `ldrsh ${target_reg}, [x29, #${slot_offset}]\n`
+						: `ldrh ${target_reg.replace("x", "w")}, [x29, #${slot_offset}]\n`;
+				} else if (size === 4) {
+					status.code += signed
+						? `ldrsw ${target_reg}, [x29, #${slot_offset}]\n`
+						: `ldr ${target_reg.replace("x", "w")}, [x29, #${slot_offset}]\n`;
+				} else {
+					status.code += `ldr ${target_reg}, [x29, #${slot_offset}]\n`;
+				}
+				return;
+			}
+		}
 		if (value.startsWith("'") && value.endsWith("'") && value.length === 3) {
 			const char_code = value.charCodeAt(1);
 			if (char_code <= 65535) {
@@ -753,6 +800,13 @@ export function build_operand(node: BaseNode, target_reg: string, status: BuildS
 			status.code += `mov x${n + 1}, #${string_literal_length(value)}\n`;
 			return;
 		}
+	}
+	// Single-field direct-source (tranche H): `x.field` off a named receiver
+	// loads straight into the target register — no x0 round-trip. Every
+	// special-cased shape is rejected inside the helper and falls back to
+	// build_node unchanged.
+	if (emit_direct_field_load(node, target_reg, status)) {
+		return;
 	}
 	build_node(node, status);
 	if (target_reg !== "x0") {

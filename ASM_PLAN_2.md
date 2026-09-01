@@ -706,6 +706,93 @@ accounting (cross-statement temporaries with no source name); stage 3
 widens what a "source name" can be — every sibling scope's locals now
 compete for registers on equal footing.
 
+## Tranche H — call-site operand-home marshalling: the cross-statement-temporaries slice (DONE)
+
+The remaining lever named by the stage-3 accounting: values with no source
+name that round-trip the stack inside one statement. The pidigits receipts
+(BigInt limb loops) showed where they live — CALL MARSHALLING, not
+expressions:
+
+| limb fn  | instrs | `mov xN, x0` arg shuffles | self push/pop pairs |
+| -------- | ------ | ------------------------- | ------------------- |
+| `div_to` | 122    | 21                        | 4                   |
+| `mul_to` | 47     | 7                         | 1                   |
+| `add_to` | 54     | 8                         | 2                   |
+| `sub_to` | 67     | 11                        | 5                   |
+
+The per-call shape was: receiver pushed across argument evaluation
+(`mov x0, x20; str x0, [sp,#-16]!; …; ldr x0, [sp],#16`), every scalar arg
+built through x0 then shuffled (`mov x0,#0; mov x1,x0` — two instructions
+for a literal), slot-var operands round-tripping x0 (`ldr x0,[x29,#N]; mov
+x1,x0`), and `x.len` field reads doing the same. clang's `get_at(0)`-equivalent
+is two instructions; ours was seven.
+
+Three mechanisms (all pure codegen refinement, same ops at the `bl`):
+
+1. **Deferred self** (access path): when the receiver's fast path is a
+   CALLEE-SAVED param register (x19–x28), the `mov x0, <reg>` defers to
+   after argument evaluation — a callee-saved register survives any call
+   inside an argument (calls clobber caller-saved x0–x18 only), so the
+   push/pop round-trip is simply gone. The load string is captured at
+   receiver-resolution time and emitted after the arg loop.
+2. **Deferred leaf args** (access + plain-call paths): a scalar leaf arg
+   (literal or named variable) materializes DIRECTLY into its slot register
+   at the final stage — no x0 shuffle; on the plain-call path it also skips
+   the spill slot entirely. A named leaf defers only when every sibling
+   argument is `tree_is_call_free` (deferral moves its read past the
+   siblings' evaluation). Materialization parks registers in DESCENDING
+   slot order: a leaf whose `build_operand` falls back to `build_node`
+   parks its value through x0 (func refs emit `adr x0, <label>`), and x0
+   may only be clobbered while nothing is parked — x0 materializes last.
+3. **Direct-source operands in `build_operand`**: a slot-resident scalar
+   loads straight into the target register (the gate mirrors
+   `build_value_node`'s scalar slot branch — no arrays, enums, strings,
+   refs, class vars, funcs; PROMOTED variables excluded — the x-promoted
+   reads return earlier, and a d-promoted float would otherwise read its
+   stale sync slot), and a single `.field` hop off a named receiver loads
+   via `emit_direct_field_load` (build_access_node) with a POSITIVE gate:
+   the receiver must be a plain value struct whose field list contains the
+   name — every shape `build_access_field` special-cases upstream (bitsets,
+   enums, views, strings, func fields, class vars, array/nullable
+   receivers, array-mono self, struct-typed fields) falls back to
+   `build_node` unchanged.
+
+**Four soundness bugs caught during bring-up**, each by a failing suite test:
+
+1. Newline discipline: the new emit paths ended without `\n` while the
+   fallback they replaced ended with one — the assembler glued instructions
+   (`ldr x1, [x19, #24]mov x2, #0`); 387 failures, fixed by ending every
+   new emit with `\n`.
+2. The x0-clobber above: `apply_func_to_num(4, multiply)` printed 21 — the
+   func-ref leaf's `adr x0, multiply` overwrote the parked `mov x0, #4`;
+   fixed by descending-slot materialization.
+3. The d-promoted read: `acc = acc + acc` printed 0.000000 — the slot fast
+   path fired for a promoted float whose home is the d-register; fixed by
+   the `register_allocations` exclusion (covered by
+   `test/accumulator_promotion.test.ts`, which fails on the pre-fix code).
+4. The bitset interception: `Flags.A | Flags.B` failed to assemble — the
+   direct-field path swallowed `build_access_field`'s bitset branch, so the
+   `Flags:` constant data was never emitted; fixed by the positive
+   struct+field gate.
+
+**RESULT (interleaved best-of-7/5, release builds, outputs byte-identical
+on every bench):** pidigits n=4000 1.20 → **1.05 s (−12.5%)**; fannkuch
+n=11 3.01 → 2.98 s (−1%, noisy — reads up to −4%); nbody 5M, mandelbrot
+n=2000, spectral-norm n=1500, binarytrees n=18, nsieve n=12 all within
+±1% (noise). Census: `mul_to` 47 → 36 instructions with 7 → 2 shuffles and
+zero self-pushes; `div_to` 122 → 104 with 21 → 13. Full suite green (2684
+tests) including the new `test/call_marshal.test.ts` (arg-direct shape,
+deferred-self shape, func-ref parking order, slot direct-source, hoisted
+sibling semantics, promoted-float operand home). Pre-existing C-backend gap
+recorded in FOLLOWUP.md while testing: the hoisted `_param_N` temp loses
+the `&` for `ref` args.
+
+The remaining field-read shuffles (`x.len` chains through nested access)
+and the field-WRITE self push (`x.len = y.len`) are the follow-up slice;
+cross-backend argument-evaluation-order divergence (aarch64 right-to-left
+vs C left-to-right) predates this tranche and is visible only through
+side-effecting siblings the checker does not hoist.
+
 ## Success criteria
 
 Written before the measurements; kept for the record — the per-tranche

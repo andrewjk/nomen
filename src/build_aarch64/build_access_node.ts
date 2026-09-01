@@ -13,6 +13,7 @@ import {
 	type_bits,
 } from "../built_in_types.ts";
 import { mangled_label } from "../check/utils/function_overload.ts";
+import { is_int_literal } from "../int_literal.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
@@ -23,7 +24,7 @@ import ValueNode from "../nodes/ValueNode.ts";
 import build_inline_method, { naked_inline_skips_self } from "./build_inline_method.ts";
 import build_node from "./build_node.ts";
 import build_nursery_spawn from "./build_nursery_spawn.ts";
-import { build_operand } from "./build_operation_node.ts";
+import { build_operand, tree_is_call_free } from "./build_operation_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free, emit_malloc, emit_strdup } from "./utils/audit.ts";
 import { all_scope_frames, mark_moved_if_struct } from "./utils/auto_destroy.ts";
@@ -228,6 +229,107 @@ function build_view_op(
 		return true;
 	}
 	return false;
+}
+
+/**
+ * Direct-source field read (ASM_PLAN_2 tranche H): a single `.field` hop off
+ * a named receiver, loaded DIRECTLY into `target_reg` — the generic path
+ * spends a `mov x0, <home>` + `ldr x0, [x0, #off]` + caller-side
+ * `mov <target>, x0` triple; this emits the one load from the receiver's
+ * home. Handles the same receiver homes as build_access_field's generic tail
+ * (param register / ref-local deref / local slot address) and the same
+ * width/signedness table. Returns false for every shape build_access_field
+ * special-cases upstream (enums, views, strings, func-typed fields,
+ * class vars, array/nullable receivers, struct-typed fields, nested access
+ * chains) — the caller then falls back to build_node unchanged.
+ */
+export function emit_direct_field_load(
+	node: BaseNode,
+	target_reg: string,
+	status: BuildStatus,
+): boolean {
+	if (node.node_type !== "access") return false;
+	const access_node = node as AccessNode;
+	if (access_node.access?.node_type !== "access_field") return false;
+	if (access_node.target?.node_type !== "value") return false;
+	const access_field = access_node.access as AccessFieldNode;
+	const receiver_name = (access_node.target as ValueNode).value;
+	if (typeof receiver_name !== "string" || receiver_name === "null") return false;
+	if (access_field.type?.name === "func") return false;
+
+	let target_type = type_from_value_node(access_node.target);
+	if (!target_type?.name) {
+		if (receiver_name === "self" && status.current_struct) {
+			target_type = new Type(status.current_struct.name);
+		} else if (status.variable_types?.has(receiver_name)) {
+			target_type = status.variable_types.get(receiver_name)!;
+		} else {
+			const decl = status.scoped_declarations.findLast((d) => d.name === receiver_name);
+			if (decl?.type?.name) {
+				target_type = decl.type;
+			}
+		}
+	}
+	if (!target_type?.name) return false;
+	if (target_type.is_array || target_type.is_view || target_type.is_nullable) return false;
+	if (target_type.name === "string" || target_type.name === "func") return false;
+	// POSITIVE gate: the generic tail is only valid for a plain VALUE STRUCT
+	// receiver whose field list actually contains the accessed name. Every
+	// other shape build_access_field handles upstream (bitset cases, enums
+	// and their payloads, static/type members, array length, array-mono
+	// self, trait receivers) must fall back to build_node unchanged.
+	const target_struct = status.structs.find((s) => s.name === target_type.name && !s.is_generic);
+	if (!target_struct || target_struct.is_class || target_struct.is_simple_type) return false;
+	if (!target_struct.fields.find((f) => f.name === access_field.name)) return false;
+	if (status.bitsets.find((b) => b.name === target_type.name)) return false;
+	if (receiver_name === "self" && is_array_mono_struct(target_struct, status)) return false;
+
+	const field_type_obj = resolve_field_type(access_field, target_type.name, status);
+	const resolved_field_type = field_type_obj?.name || "";
+	const field_is_struct =
+		!!resolved_field_type &&
+		!field_type_obj?.is_ref &&
+		!field_type_obj?.is_nullable &&
+		is_struct_type(resolved_field_type, status);
+	if (field_is_struct || resolved_field_type === "string" || field_type_obj?.is_view) return false;
+
+	const paramReg = get_param_reg(receiver_name, status);
+	const offset = compute_field_offset(access_node, status);
+	const emit_field_load = (base: string): void => {
+		const size = aarch64_size(resolved_field_type);
+		const signed = is_signed_type(resolved_field_type);
+		if (size === 1) {
+			status.code += signed
+				? `ldrsb ${target_reg}, [${base}, #${offset}]\n`
+				: `ldrb ${target_reg.replace("x", "w")}, [${base}, #${offset}]\n`;
+		} else if (size === 2) {
+			status.code += signed
+				? `ldrsh ${target_reg}, [${base}, #${offset}]\n`
+				: `ldrh ${target_reg.replace("x", "w")}, [${base}, #${offset}]\n`;
+		} else if (size === 4) {
+			status.code += signed
+				? `ldrsw ${target_reg}, [${base}, #${offset}]\n`
+				: `ldr ${target_reg.replace("x", "w")}, [${base}, #${offset}]\n`;
+		} else {
+			status.code += `ldr ${target_reg}, [${base}, #${offset}]\n`;
+		}
+	};
+	if (paramReg && /^x(?:19|2[0-8])$/.test(paramReg)) {
+		// The receiver's home IS a callee-saved register: one direct load.
+		emit_field_load(paramReg);
+		return true;
+	}
+	if (paramReg || status.heap_array_vars?.has(receiver_name)) return false;
+	// Slot/ref home: resolve the base address INTO the target register (it is
+	// this load's scratch), then load the field from it — two instructions
+	// where the generic path used three.
+	if (is_local_ref_var(receiver_name, status)) {
+		emit_deref_var_address(status, target_reg, receiver_name);
+	} else {
+		emit_var_address(status, target_reg, receiver_name);
+	}
+	emit_field_load(target_reg);
+	return true;
 }
 
 export function emit_address_of(node: BaseNode, status: BuildStatus) {
@@ -1740,6 +1842,22 @@ function build_access_method(
 		status.code += `stp x0, x1, [sp, #-16]!\n`;
 	}
 
+	// Deferred self (ASM_PLAN_2 tranche H — call-site operand-home
+	// marshalling): a receiver whose value already lives in a CALLEE-SAVED
+	// register (param x19-x28) needs no push/pop round-trip — a callee-saved
+	// register survives every argument evaluation (calls inside arguments
+	// clobber caller-saved x0-x18 only), so the `mov x0, <reg>` defers to
+	// just before the bl. The code string is captured at receiver-resolution
+	// time and emitted after the argument loop.
+	let deferred_self_code: string | null = null;
+	// Deferred leaf arguments: a scalar leaf (literal / variable read with a
+	// single-instruction materialization) can be built DIRECTLY into its slot
+	// register after every evaluation — no `build_node → x0 → mov xN, x0`
+	// shuffle. A named leaf defers only when every sibling argument is
+	// call-free: deferral moves the read past the siblings' evaluation, and a
+	// call could (through an inline expansion) mutate an observable value.
+	const deferred_args: { param: BaseNode; slot: number }[] = [];
+
 	if (!access_func.is_static && !receiver_is_string) {
 		// Instance method: load target into x0 (self)
 		// For simple types, pass value; for structs/traits, pass address.
@@ -1756,7 +1874,11 @@ function build_access_method(
 			const is_literal_value =
 				/^(\+|-)?\d+(\.\d+)?$/.test(name) || name === "true" || name === "false";
 			if (paramReg) {
-				if (paramReg !== "x0") {
+				// Callee-saved param registers survive argument evaluation —
+				// defer the self load past the arg loop (no push/pop).
+				if (paramReg !== "x0" && /^x(?:19|2[0-8])$/.test(paramReg)) {
+					deferred_self_code = `mov x0, ${paramReg}\n`;
+				} else if (paramReg !== "x0") {
 					status.code += `mov x0, ${paramReg}\n`;
 				}
 			} else if (is_literal_value || (name.startsWith("'") && name.endsWith("'"))) {
@@ -1878,7 +2000,7 @@ function build_access_method(
 	);
 	const elide_self_save =
 		raw_needs_self && !!inline_func0 && naked_inline_skips_self(inline_func0, status.platform);
-	const needs_self_save = raw_needs_self && !elide_self_save;
+	const needs_self_save = raw_needs_self && !elide_self_save && !deferred_self_code;
 	if (needs_self_save) {
 		status.code += `str x0, [sp, #-16]!\n`;
 	}
@@ -1913,6 +2035,27 @@ function build_access_method(
 		arg_slot.push(total_arg_slots);
 		total_arg_slots += view_arg_set.has(i) || string_arg_set.has(i) ? 2 : 1;
 	}
+	// Leaf-argument deferrability (tranche H): a scalar leaf whose
+	// materialization is a single build_operand instruction can defer to the
+	// post-evaluation stage. Call-free siblings gate named reads (a call in a
+	// sibling argument could mutate an observable value through an inline
+	// expansion — deferring the leaf's read past it would change semantics).
+	const arg_call_free = access_func.params.map((p) => tree_is_call_free(p, status, new Set()));
+	const arg_deferrable = (i: number): boolean => {
+		if (start_reg + arg_slot[i] >= NUM_REG_ARGS) return false;
+		const param = access_func.params[i];
+		if (param.node_type !== "value") return false;
+		const raw = (param as ValueNode).value;
+		if (typeof raw !== "string" || raw === "null") return false;
+		const const_leaf = is_int_literal(raw) || raw === "true" || raw === "false";
+		if (!const_leaf && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(raw)) return false;
+		if (!const_leaf) {
+			for (let j = 0; j < access_func.params.length; j++) {
+				if (j !== i && !arg_call_free[j]) return false;
+			}
+		}
+		return true;
+	};
 	const overflow_count = Math.max(0, total_arg_slots - (NUM_REG_ARGS - start_reg));
 	let overflow_base = 0;
 	if (overflow_count > 0) {
@@ -1999,6 +2142,9 @@ function build_access_method(
 					status.code += "\n";
 				}
 			}
+		} else if (arg_deferrable(i)) {
+			deferred_args.push({ param, slot: arg_slot[i] });
+			continue;
 		} else {
 			build_node(param, status);
 		}
@@ -2035,6 +2181,19 @@ function build_access_method(
 		}
 	}
 
+	// Deferred leaf arguments (tranche H): materialize directly into their
+	// slot registers — every argument evaluation is complete, so nothing can
+	// clobber them and no evaluation can be reordered past a side effect
+	// (the call-free sibling gate decided that at the deferral site).
+	// DESCENDING slot order: a leaf whose build_operand falls back to
+	// build_node parks its value through x0 (func refs, globals) — that may
+	// only clobber registers not yet parked, so x0 materializes last.
+	deferred_args.sort((a, b) => b.slot - a.slot);
+	for (const d of deferred_args) {
+		build_operand(d.param, `x${start_reg + d.slot}`, status);
+		if (!status.code.endsWith("\n")) status.code += "\n";
+	}
+
 	if (!status.code.endsWith("\n")) {
 		status.code += "\n";
 	}
@@ -2043,6 +2202,10 @@ function build_access_method(
 		// an OWNED receiver temp (frees_string_receiver), keep the pair's
 		// stack frame so the ptr half can be freed after the call.
 		status.code += frees_string_receiver ? `ldp x0, x1, [sp]\n` : `ldp x0, x1, [sp], #16\n`;
+	} else if (deferred_self_code) {
+		// The self value lived in a callee-saved register all along — load
+		// it now (after argument evaluation) instead of push/pop round-trips.
+		status.code += deferred_self_code;
 	} else if (needs_self_save) {
 		status.code += `ldr x0, [sp], #16\n`;
 	}

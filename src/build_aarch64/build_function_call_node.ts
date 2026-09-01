@@ -14,6 +14,7 @@ import ValueNode from "../nodes/ValueNode.ts";
 import { emit_address_of } from "./build_access_node.ts";
 import { build_inline_function } from "./build_inline_method.ts";
 import build_node from "./build_node.ts";
+import { build_operand, tree_is_call_free } from "./build_operation_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_malloc } from "./utils/audit.ts";
 import { all_scope_frames, mark_moved_if_struct, find_anchor_slot } from "./utils/auto_destroy.ts";
@@ -488,6 +489,28 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 				args_base = allocate_stack_space(status, total_slots * 8, 16);
 			}
 			// Evaluate params right-to-left, spilling each result to its slot.
+			// Leaf scalar arguments (tranche H) skip the spill entirely: they
+			// materialize directly into their argument register in the final
+			// load stage below — a named leaf defers only when every sibling
+			// argument is call-free (deferral moves its read past the
+			// siblings' evaluation; a call could mutate an observable value).
+			const arg_call_free = node.params.map((p) => tree_is_call_free(p, status, new Set()));
+			const arg_deferrable = (i: number): boolean => {
+				if (start_reg + arg_slot[i] >= NUM_REG_ARGS) return false;
+				const param = node.params[i];
+				if (param.node_type !== "value") return false;
+				const raw = (param as ValueNode).value;
+				if (typeof raw !== "string" || raw === "null") return false;
+				const const_leaf = is_int_literal(raw) || raw === "true" || raw === "false";
+				if (!const_leaf && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(raw)) return false;
+				if (!const_leaf) {
+					for (let j = 0; j < node.params.length; j++) {
+						if (j !== i && !arg_call_free[j]) return false;
+					}
+				}
+				return true;
+			};
+			const deferred_args: { param: BaseNode; slot: number }[] = [];
 			for (let i = node.params.length - 1; i >= 0; i--) {
 				const param = node.params[i];
 				const param_type = (param as any).type?.name || "";
@@ -638,6 +661,9 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 					is_enum_with_data_type(param_type, status)
 				) {
 					emit_struct_address(node.params[i], status);
+				} else if (arg_deferrable(i)) {
+					deferred_args.push({ param: node.params[i], slot: arg_slot[i] });
+					continue;
 				} else {
 					build_node(node.params[i], status);
 				}
@@ -659,11 +685,29 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 					if (slot >= NUM_REG_ARGS) continue;
 					const reg = param_regs[slot];
 					if (reg === "x0") continue;
+					const deferred = deferred_args.find((d) => d.slot === s);
+					if (deferred) continue;
 					status.code += `ldr ${reg}, [x29, #${args_base + s * 8}]\n`;
 				}
 				if (!is_struct) {
-					status.code += `ldr x0, [x29, #${args_base}]\n`;
+					const deferred0 = deferred_args.find((d) => start_reg + d.slot === 0);
+					if (!deferred0) {
+						status.code += `ldr x0, [x29, #${args_base}]\n`;
+					}
 				}
+			}
+			// Deferred leaf arguments (tranche H): materialize directly into
+			// their argument registers — every evaluation is complete.
+			// DESCENDING slot order: a leaf whose build_operand falls back to
+			// build_node parks its value through x0 (func refs, globals) —
+			// that may only clobber registers not yet parked, so x0
+			// materializes last.
+			deferred_args.sort((a, b) => b.slot - a.slot);
+			for (const d of deferred_args) {
+				const slot = start_reg + d.slot;
+				if (slot >= NUM_REG_ARGS) continue;
+				build_operand(d.param, param_regs[slot], status);
+				if (!status.code.endsWith("\n")) status.code += "\n";
 			}
 			// AAPCS64: arguments past x0..x7 go in the caller's outgoing area,
 			// which must be at [sp] at the moment of the bl. Lower sp by the
