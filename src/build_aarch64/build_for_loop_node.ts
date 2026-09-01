@@ -9,6 +9,7 @@ import { build_block_with_cursor } from "./emit_nir.ts";
 import { emit_neon_vector_loop } from "./neon_emit.ts";
 import type { NeonPlan } from "./neon_plan.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
+import { emit_free } from "./utils/audit.ts";
 import { enter_scope_frame, exit_scope_frame } from "./utils/auto_destroy.ts";
 import { promote_loop_locals, type PromotedVar } from "./utils/loop_promotion.ts";
 import {
@@ -214,7 +215,34 @@ export default function build_for_loop_node(
 			status.stack_offsets!.set(idx_name, idx_offset);
 		}
 
-		const list_name = node.list.node_type === "value" ? (node.list as any).value : "_list";
+		let list_name: string;
+		let materialized_list = false;
+		if (node.list.node_type === "value") {
+			list_name = (node.list as any).value;
+		} else {
+			// A non-variable list expression (a call returning `T[]`, e.g.
+			// `for v of triple()`) has no name to address — the old fallback
+			// emitted `adr x3, _list` (an undefined symbol). Evaluate the
+			// expression ONCE into a stack slot, register the slot in
+			// heap_array_vars (call-returned arrays are heap `Array_<T>`
+			// buffers: length at [ptr], data past the header), and iterate the
+			// slot. Materializing also keeps a bare call from re-invoking on
+			// every condition check and element load. The buffer is freed
+			// right after the loop's end label — break and fallthrough land
+			// there (exactly one free), continue never does (the condition
+			// re-reads the length), matching a scope-exit free without the
+			// frame machinery.
+			list_name = `_list_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+			if (!status.heap_array_vars) status.heap_array_vars = new Set();
+			status.heap_array_vars.add(list_name);
+			if (status.function_return_label) {
+				materialized_list = true;
+				const list_slot = allocate_stack_space(status, 8);
+				status.stack_offsets!.set(list_name, list_slot);
+				build_node(node.list, status);
+				emit_var_store(status, "x0", list_name, 8);
+			}
+		}
 		const list_type = type_from_value_node(node.list);
 		const list_is_pointer =
 			list_type.is_array &&
@@ -361,6 +389,14 @@ export default function build_for_loop_node(
 
 		status.code += `b ${start_label}\n`;
 		status.code += `${end_label}:\n`;
+
+		if (materialized_list) {
+			// Free the materialized call result once the loop is done — both
+			// break and fallthrough land at the end label, and continue never
+			// reaches it (the loop condition still reads the buffer length).
+			emit_var_load(status, "x0", list_name, 8);
+			emit_free(status);
+		}
 	}
 
 	for (const p of promoted) {

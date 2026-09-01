@@ -1,4 +1,5 @@
 import type { NirStmt } from "../nir/nir.ts";
+import DeclarationNode from "../nodes/DeclarationNode.ts";
 import ForLoopNode from "../nodes/ForLoopNode.ts";
 import RangeNode from "../nodes/RangeNode.ts";
 import build_auto_free from "./build_auto_free.ts";
@@ -26,6 +27,11 @@ export default function build_for_loop_node(
 	push_c_loop_frame(status);
 
 	let ref_writeback: (() => void) | undefined;
+	// A call-returned list (`for v of triple()`) materializes into a heap
+	// `struct Array_<T>*` temp; the decl is registered in the ENCLOSING scope
+	// frame (never the loop frame — break/continue reclaim that frame's decls
+	// before jumping, and the loop condition re-reads `->length`).
+	let materialized_list_decl: DeclarationNode | undefined;
 
 	if (node.item && node.list) {
 		if (node.list.node_type == "range") {
@@ -82,10 +88,59 @@ export default function build_for_loop_node(
 			// have no compile-time length — read it from the Array_<T> header's
 			// `length` field, and index into the data region past the header.
 			const list_name = node.list!.node_type === "value" ? (node.list as any).value : undefined;
-			const is_heap = !!list_name && !!status.heap_array_vars?.has(list_name);
+			let is_heap = !!list_name && !!status.heap_array_vars?.has(list_name);
+			// A call-returned array (`for v of triple()`) has no compile-time
+			// length: the `build_node(list_type.length!)` header read used to
+			// crash the build. Materialize the call ONCE into a heap temp —
+			// re-evaluating the expression in the loop header would otherwise
+			// re-invoke the call on every condition check and element load —
+			// register it in heap_array_vars, and iterate the temp via the
+			// existing heap path. The temp's declaration joins the ENCLOSING
+			// scope frame so break/continue (which reclaim the loop frame)
+			// never free it out from under the loop condition, while the
+			// normal scope-exit and return paths do.
+			const list_is_call =
+				node.list.node_type === "func_call" ||
+				(node.list.node_type === "access" &&
+					(node.list as any).access?.node_type === "access_func");
+			let temp_list: string | undefined;
+			if (!is_heap && !list_type.length && list_is_call) {
+				const id = (status.label_counter = (status.label_counter ?? 0) + 1);
+				temp_list = `_list_${id}`;
+				status.code += `struct Array_${element_type}* ${temp_list} = `;
+				build_node(node.list!, status);
+				status.code += `;\n`;
+				if (!status.heap_array_vars) status.heap_array_vars = new Set();
+				status.heap_array_vars.add(temp_list);
+				const decl = new DeclarationNode(
+					node.list.start,
+					"private",
+					"const",
+					temp_list,
+					list_type,
+					node.list,
+				);
+				const stack = status.c_scope_stack;
+				if (stack && stack.length >= 2) {
+					stack[stack.length - 2].push(decl);
+				} else {
+					old_scoped_declarations.push(decl);
+				}
+				materialized_list_decl = decl;
+				is_heap = true;
+			}
+			// The temp's C text is already emitted; re-building the list node
+			// would re-invoke the call.
+			const emit_list_ref = () => {
+				if (temp_list) {
+					status.code += temp_list;
+				} else {
+					build_node(node.list!, status);
+				}
+			};
 			status.code += `for (int ${idx_var} = 0; ${idx_var} < `;
 			if (is_heap) {
-				build_node(node.list!, status);
+				emit_list_ref();
 				status.code += `->length`;
 			} else {
 				build_node(list_type.length!, status);
@@ -112,10 +167,10 @@ export default function build_for_loop_node(
 					? `struct ${element_type} **`
 					: `${elem_struct ? `struct ${element_type}` : c_type(element_type)} *`;
 				status.code += `((${elem_ptr})((char *)`;
-				build_node(node.list!, status);
+				emit_list_ref();
 				status.code += ` + sizeof(struct Array_${element_type})))[${idx_var}];\n`;
 			} else {
-				build_node(node.list!, status);
+				emit_list_ref();
 				status.code += `[${idx_var}];\n`;
 			}
 
@@ -125,10 +180,11 @@ export default function build_for_loop_node(
 			if (node.item_is_ref) {
 				let wb_target: string;
 				if (is_heap) {
+					const ref_name = temp_list ?? list_name;
 					const elem_ptr = elem_is_class
 						? `struct ${element_type} **`
 						: `${elem_struct ? `struct ${element_type}` : c_type(element_type)} *`;
-					wb_target = `((${elem_ptr})((char *)${list_name} + sizeof(struct Array_${element_type})))[${idx_var}]`;
+					wb_target = `((${elem_ptr})((char *)${ref_name} + sizeof(struct Array_${element_type})))[${idx_var}]`;
 				} else {
 					wb_target = `${list_name}[${idx_var}]`;
 				}

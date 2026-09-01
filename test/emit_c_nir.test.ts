@@ -413,17 +413,16 @@ Console.write("\\{first_hit(10)} \\{half_of(1.0)} \\{greet("world")} \\{greet("b
 test("array literal returns ride the NIR element facts byte-identically", () => {
 	// The C return path materializes the literal into a stack C array
 	// initializer; each element descends the seam via nir_array_elements.
-	// (Iterating a call-returned array directly — `for v of triple()` — is a
-	// pre-existing C-backend gap recorded in FOLLOWUP.md; iterate a declared
-	// array here.)
+	// The call-returned array is iterated directly (`for v of triple()`):
+	// build_for_loop_node materializes it into a heap temp and iterates the
+	// temp's header length.
 	expect_byte_identical(`
 func triple = (out int[]) {
     return [4, 5, 6]
 }
 func total = (out int) {
-    var int[] nums = triple()
     var int sum = 0
-    for v of nums {
+    for v of triple() {
         sum = sum + v
     }
     return sum

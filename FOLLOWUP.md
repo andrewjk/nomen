@@ -196,25 +196,6 @@ if it keeps biting.
   callee-saved registers (x19–x28, sp) or stack slots — x0–x18 are
   caller-saved and clobbered by the callee.
 
-## C backend: `for x of <call>()` crashes (no compile-time list length) (pre-existing)
-
-Found while writing the C expression-seam tests (phase 4 canonical IR).
-`for v of triple()` — iterating an array returned by a CALL, rather than a
-declared variable — crashes the C backend in `build_c/build_for_loop_node.ts`
-(~line 91): `build_node(list_type.length!)` where `length` is undefined for a
-call-returned `int[]` (the type carries no compile-time length). The crash is
-identical with the NIR emission cursor disabled, so it predates the seam
-entirely; the aarch64 backend handles the same shape fine.
-
-Fix sketch: when the list expression is not a plain variable with a
-compile-time length, materialize it once into a temp (`struct Array_<T>*
-_list_N = <call>();`), register the temp in `heap_array_vars`, and iterate the
-temp via the existing heap path (`->length` + data-past-header indexing).
-Materializing (vs re-evaluating the expression in the loop header) also
-matters for correctness — a bare call would otherwise be re-invoked on every
-condition check and element load. Then re-enable the `for v of triple()`
-shape in `test/emit_c_nir.test.ts` (array-literal-returns test).
-
 ## NIR traffic deliberately does not count flow-arm / spawn-arg / nested-type reads
 
 Landed with the fallback-retirement tranche (phase 4 canonical IR stage 2).
