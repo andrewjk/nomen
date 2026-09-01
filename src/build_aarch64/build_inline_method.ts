@@ -219,6 +219,7 @@ export default function build_inline_method(
 	// without a matching prologue save. The caller's CLAIMED registers stay
 	// blocked via callee_saved_regs_used, which the loop pass avoids.
 	status.register_allocations = undefined;
+	status.nir_site_allocs = undefined;
 
 	if (needs_x19) {
 		status.code += `str x19, [sp, #-16]!\n`;
@@ -421,6 +422,7 @@ export function build_inline_function(func: FunctionNode, status: BuildStatus) {
 	// into the inline body (same-named params/locals would read the caller's
 	// register; an inline loop would mutate the caller's map unsaved).
 	status.register_allocations = undefined;
+	status.nir_site_allocs = undefined;
 
 	const param_regs = ["x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7"];
 	const callee_saved = ["x19", "x20", "x21", "x22"];

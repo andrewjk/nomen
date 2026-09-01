@@ -3,10 +3,10 @@ import { expect, test } from "vite-plus/test";
 import build from "../src/build";
 import { plan_function_promotions } from "../src/build_aarch64/utils/func_regalloc";
 import {
-	analyze_ranges,
 	nir_regalloc_enabled,
 	plan_nir_registers,
 	set_nir_regalloc_enabled,
+	set_nir_site_promotion_enabled,
 } from "../src/build_aarch64/utils/nir_regalloc";
 import { build_cfg } from "../src/nir/cfg";
 import { lower_function } from "../src/nir/from_ast";
@@ -214,7 +214,10 @@ function expect_no_shared_interference(fn: FunctionNode): void {
 	const nir = lower_function(fn);
 	const plan = plan_nir_registers(fn, nir);
 	expect(plan.allocs.size).toBeGreaterThan(0);
-	const { adj } = analyze_ranges(build_cfg(nir));
+	// The adjacency rides the plan itself: its keys are source names for
+	// uniquely-declared variables and decl-site keys (`name@N`) for
+	// ambiguous ones — exactly the keys allocs was assigned over.
+	const { adj } = plan;
 	const by_reg = new Map<string, string[]>();
 	for (const [vname, reg] of plan.allocs) {
 		const list = by_reg.get(reg) ?? [];
@@ -441,4 +444,153 @@ pub func main = () {
 	expect(first.code).toEqual(second.code);
 	expect(nir_regalloc_enabled()).toBe(false);
 	set_nir_regalloc_enabled(true);
+});
+
+// ==================== stage 3: decl-site disambiguation ====================
+
+const SIBLING_LOOPS = `
+import System
+
+func two_loops = (int n, out int) {
+	var int total = 0
+	var int i = 0
+	while i < 3; i += 1 {
+		const int v = n + i
+		total = total + v * 2
+	}
+	var int j = 0
+	while j < 3; j += 1 {
+		const int v = n * j + 1
+		total = total + v
+	}
+	return total
+}
+pub func main = () {}
+`;
+
+test("same-named consts in sibling loops get per-site registers", () => {
+	// Pre-stage-3 this whole function was excluded: `v` is declared twice
+	// and the name-keyed model could not give two scopes one name's register.
+	const fn = func_named(SIBLING_LOOPS, "two_loops");
+	const plan = plan_nir_registers(fn, lower_function(fn));
+	const v_sites = [...plan.sites.entries()].filter(([, s]) => s.name === "v");
+	expect(v_sites.length).toBe(2);
+	// Each site's key resolved to a register in the plan.
+	for (const [key] of v_sites) {
+		expect(plan.allocs.get(key)).toMatch(/^(x\d+|d\d+)$/);
+	}
+	// Uniquely-declared names stay plain (byte-parity path): total/i/j are
+	// never site-keyed.
+	expect(plan.sites.size).toBe(2);
+});
+
+test("site sharing keeps the no-interference invariant", () => {
+	const fn = func_named(SIBLING_LOOPS, "two_loops");
+	const nir = lower_function(fn);
+	const plan = plan_nir_registers(fn, nir);
+	// Every pair of names on ONE register — site keys included — must have
+	// no interference edge.
+	const by_reg = new Map<string, string[]>();
+	for (const [key, reg] of plan.allocs) {
+		const list = by_reg.get(reg) ?? [];
+		list.push(key);
+		by_reg.set(reg, list);
+	}
+	for (const [reg, keys] of by_reg) {
+		for (let a = 0; a < keys.length; a++) {
+			for (let b = a + 1; b < keys.length; b++) {
+				const interferes = plan.adj.get(keys[a])?.has(keys[b]) ?? false;
+				expect(interferes, `${keys[a]} and ${keys[b]} interfere but share ${reg}`).toBe(false);
+			}
+		}
+	}
+});
+
+test("site-promotion kill-switch off restores the stage-2 exclusion", () => {
+	const fn = func_named(SIBLING_LOOPS, "two_loops");
+	const nir = lower_function(fn);
+	set_nir_site_promotion_enabled(false);
+	try {
+		const plan = plan_nir_registers(fn, nir);
+		expect(plan.sites.size).toBe(0);
+		// Both `v` sites excluded: no key mentioning v anywhere.
+		for (const key of plan.allocs.keys()) {
+			expect(key.startsWith("v@")).toBe(false);
+		}
+	} finally {
+		set_nir_site_promotion_enabled(true);
+	}
+});
+
+test("multi-decl program compiles and runs its sibling sites correctly", async () => {
+	const { default: build_and_check_output } = await import("./build_and_check_output");
+	set_nir_regalloc_enabled(true);
+	try {
+		await build_and_check_output(
+			`
+import System
+
+func two_loops = (int n, out int) {
+	var int total = 0
+	var int i = 0
+	while i < 3; i += 1 {
+		const int v = n + i
+		total = total + v * 2
+	}
+	var int j = 0
+	while j < 3; j += 1 {
+		const int v = n * j + 1
+		total = total + v
+	}
+	return total
+}
+pub func main = () {
+	Console.write("\\{two_loops(4)}")
+}
+`,
+			"nir_site_sibling_loops",
+			"45",
+			true,
+		);
+	} finally {
+		set_nir_regalloc_enabled(true);
+	}
+});
+
+test("behavioral: sibling same-named consts keep independent values", async () => {
+	// The two `v` consts must never alias one register: loop 1 adds
+	// (n+i)*10 per iteration, loop 2 adds n*1000 + j*3 — any aliasing
+	// corrupts one of the running sums.
+	const { default: build_and_check_output } = await import("./build_and_check_output");
+	set_nir_regalloc_enabled(true);
+	try {
+		await build_and_check_output(
+			`
+import System
+
+func drive = (int n, out int) {
+	var int total = 0
+	var int i = 0
+	while i < 4; i += 1 {
+		const int v = n * 100 + i
+		total = total + v * 10
+	}
+	var int j = 0
+	while j < 4; j += 1 {
+		const int v = n * 1000 + j * 3
+		total = total + v
+	}
+	return total
+}
+pub func main = () {
+	Console.write("\\{drive(7)}")
+}
+`,
+			"nir_site_behavior",
+			"56078",
+			true,
+		);
+	} finally {
+		set_nir_regalloc_enabled(true);
+	}
 });

@@ -260,8 +260,10 @@ function build_destroy_function(node: StructNode, func: FunctionNode, status: Bu
 	// See build_struct_functions: clear the enclosing function's promotion
 	// maps while the destroy body builds; restore afterwards.
 	const old_register_allocations = status.register_allocations;
+	const old_nir_site_allocs = status.nir_site_allocs;
 	const old_callee_saved_regs = status.callee_saved_regs_used;
 	status.register_allocations = undefined;
+	status.nir_site_allocs = undefined;
 	status.callee_saved_regs_used = undefined;
 
 	status.scoped_declarations = [];
@@ -297,6 +299,7 @@ function build_destroy_function(node: StructNode, func: FunctionNode, status: Bu
 	const destroy_loop_regs = destroy_claims ? [...destroy_claims].sort() : [];
 	status.callee_saved_regs_used = old_callee_saved_regs;
 	status.register_allocations = old_register_allocations;
+	status.nir_site_allocs = old_nir_site_allocs;
 
 	if (destroy_loop_regs.length > 0) {
 		const label = `${func_label}:`;
@@ -741,8 +744,10 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 	// promotions are live — clear both maps so same-named init locals can't
 	// alias the enclosing's registers, restore afterwards.
 	const old_register_allocations = status.register_allocations;
+	const old_nir_site_allocs = status.nir_site_allocs;
 	const old_callee_saved_regs = status.callee_saved_regs_used;
 	status.register_allocations = undefined;
+	status.nir_site_allocs = undefined;
 	status.callee_saved_regs_used = undefined;
 
 	status.scoped_declarations = [];
@@ -961,6 +966,7 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 	const init_loop_regs = init_claims ? [...init_claims].sort() : [];
 	status.callee_saved_regs_used = old_callee_saved_regs;
 	status.register_allocations = old_register_allocations;
+	status.nir_site_allocs = old_nir_site_allocs;
 
 	if (init_loop_regs.length > 0) {
 		const func_label = `${func_name}:`;
@@ -1057,9 +1063,11 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		// this builder left callee_saved_regs_used CLEARED, dropping the
 		// enclosing function's prologue saves for its promoted registers.
 		const old_register_allocations = status.register_allocations;
+		const old_nir_site_allocs = status.nir_site_allocs;
 		const old_callee_saved_regs = status.callee_saved_regs_used;
 		const old_nir_caller_claimed = status.nir_caller_saved_claimed;
 		status.register_allocations = undefined;
+		status.nir_site_allocs = undefined;
 		status.callee_saved_regs_used = undefined;
 		status.nir_caller_saved_claimed = undefined;
 
@@ -1438,6 +1446,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		const loop_regs_used = method_claims ? [...method_claims].sort() : [];
 		status.callee_saved_regs_used = old_callee_saved_regs;
 		status.register_allocations = old_register_allocations;
+		status.nir_site_allocs = old_nir_site_allocs;
 		status.nir_caller_saved_claimed = old_nir_caller_claimed;
 		status.nir_alloc_shared = undefined;
 
@@ -1654,8 +1663,10 @@ function build_trait_functions(node: StructNode, status: BuildStatus) {
 			// See build_struct_functions: clear the enclosing function's
 			// promotion maps while the shared default body builds.
 			const old_register_allocations = status.register_allocations;
+			const old_nir_site_allocs = status.nir_site_allocs;
 			const old_callee_saved_regs = status.callee_saved_regs_used;
 			status.register_allocations = undefined;
+			status.nir_site_allocs = undefined;
 			status.callee_saved_regs_used = undefined;
 
 			status.buffer_data_cache = undefined;
@@ -1665,6 +1676,7 @@ function build_trait_functions(node: StructNode, status: BuildStatus) {
 			const trait_loop_regs = trait_claims ? [...trait_claims].sort() : [];
 			status.callee_saved_regs_used = old_callee_saved_regs;
 			status.register_allocations = old_register_allocations;
+			status.nir_site_allocs = old_nir_site_allocs;
 
 			if (trait_loop_regs.length > 0) {
 				const label = `${trait_func_label}:`;

@@ -62,16 +62,29 @@ export interface PromotedVar {
  * unknown owner is what corrupted main's loop induction when mbrot was
  * inline-expanded inside it. Without the facts (inline-expanded bodies,
  * flag off) sharing is refused: avoid-mode.
+ *
+ * Stage 3: names and adjacency keys no longer coincide — a redeclared
+ * name lives in the adjacency under several `name@N` site keys, and its
+ * register is bound by SOURCE name in the frame maps. Both sides are
+ * therefore expanded through `source_keys` and EVERY candidate-key ×
+ * occupant-key pair must be edge-free (the mul_to receipt: a plain-name
+ * lookup missed the site-keyed adjacency entirely and shared lo_prod onto
+ * the induction i's register).
  */
 function can_share_claimed_register(status: BuildStatus, name: string, reg: string): boolean {
 	const shared = status.nir_alloc_shared;
 	if (!shared || !status.register_allocations) return false;
+	const cand_keys = shared.source_keys.get(name) ?? [name];
 	let occupants = 0;
 	for (const [occupant, occupant_reg] of status.register_allocations) {
 		if (occupant_reg !== reg || occupant === name) continue;
 		occupants++;
 		if (shared.pinned.has(occupant)) return false;
-		if (shared.adj.get(name)?.has(occupant)) return false;
+		for (const occ_key of shared.source_keys.get(occupant) ?? [occupant]) {
+			for (const cand_key of cand_keys) {
+				if (shared.adj.get(cand_key)?.has(occ_key)) return false;
+			}
+		}
 	}
 	return occupants > 0;
 }
@@ -297,6 +310,20 @@ export function promote_loop_locals(
 	if (status.nir_caller_saved_claimed) {
 		for (const r of status.nir_caller_saved_claimed) used_x.add(r);
 	}
+	// Decl-site registers (stage 3) are PRIVATE to their declare sites: the
+	// emitter binds them at the declare (when the name has no live
+	// binding), and the function allocator's occupancy check for a shared
+	// site register only saw the SEED's occupants — never this loop's
+	// claims. A loop claim (or share) onto a site register can therefore
+	// collide with the site's own binding: mul_to's D-arm loop shared x15
+	// for lo_prod (legal vs the seeded cur2) while the plan had given site
+	// hi_prod@15 the same x15 — two claims, one register, both live in the
+	// loop body. Loops never claim or share a site register; the site's
+	// availability to its own declare is unaffected.
+	const site_regs = new Set<string>();
+	if (status.nir_site_allocs) {
+		for (const s of status.nir_site_allocs.values()) site_regs.add(s.reg);
+	}
 	const float_pool =
 		options?.call_free === true
 			? [...FLOAT_CALLEE_SAVED, ...FLOAT_CALLER_SAVED_EXT]
@@ -316,8 +343,13 @@ export function promote_loop_locals(
 			// First pool register that is FREE or legally SHAREABLE with a
 			// function-level occupant (tranche G stage 2 — see
 			// can_share_claimed_register; the bracketing entry load and
-			// exit store-back keep the loop's copy coherent).
+			// exit store-back keep the loop's copy coherent). Site
+			// registers are skipped entirely (stage 3, see site_regs).
 			while (d_idx < float_pool.length) {
+				if (site_regs.has(float_pool[d_idx])) {
+					d_idx++;
+					continue;
+				}
 				if (!used_d.has(float_pool[d_idx])) break;
 				if (can_share_claimed_register(status, v.name, float_pool[d_idx])) break;
 				d_idx++;
@@ -340,6 +372,10 @@ export function promote_loop_locals(
 		} else {
 			// Share-aware scan, same contract as the float branch above.
 			while (x_idx < x_pool.length) {
+				if (site_regs.has(x_pool[x_idx])) {
+					x_idx++;
+					continue;
+				}
 				if (!used_x.has(x_pool[x_idx])) break;
 				if (can_share_claimed_register(status, v.name, x_pool[x_idx])) break;
 				x_idx++;

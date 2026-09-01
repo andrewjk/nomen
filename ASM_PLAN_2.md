@@ -606,6 +606,106 @@ mandelbrot/nbody/spectral-norm/binarytrees/nsieve within ±0.5% (noise).
 Full suite green flag-ON (264 files, 2673 tests). The C backend shares
 none of this machinery and is untouched.
 
+### Stage 3 (this tranche): decl-site disambiguation — per-site live ranges and registers
+
+The stage-1/2 model is name-keyed everywhere: `traffic.decl_counts`,
+the CFG universe, `register_allocations`, loop promotion — so a name
+declared MORE THAN ONCE anywhere in a function (the pidigits `div_to`
+shape: `pi`/`vv`/`lo_prod`/`hv_carry` declared in sibling Knuth-D loops;
+sibling-loop consts generally; same-named locals across if/else arms)
+collapsed onto one liveness key and the `declared-exactly-once` gate
+excluded it wholesale. clang's limb loops keep those per-iteration
+temporaries in registers; we could not even consider them.
+
+The unlock is SSA-style renaming ON THE SAME SUBSTRATE — no CFG rewrite,
+no phi functions:
+
+- **Deterministic site keys at lowering** (`from_ast.ts`): every
+  `NirDeclareInfo` now carries `key = "name@N"` (N = per-lowering
+  monotonic counter in source order; `@` cannot appear in a source
+  identifier, so keys never collide with names). Re-lowerings are
+  deterministic, so the renamer, the planner and the emitter agree on
+  every key without sharing state.
+- **A renaming VIEW for planning only** (`src/nir/version.ts`): a
+  lexical scope-chain walk over the lowered function that renames ONLY
+  ambiguous names (declared ≥ 2× anywhere) to their site keys — reads
+  resolve through nested scopes, closure reads of outer names land on the
+  right key, uniquely-declared names bind identity so the view is
+  byte-equal to the original lowering. Value-position `flow` arms,
+  loop bodies/updates, `for` items (resolve-only) and nested_func bodies
+  (scope extended, sites marked `nested` and never planned here) are all
+  scope-tracked. The renamed view feeds `analyze_traffic` +
+  `build_cfg` + `analyze_ranges` inside `plan_nir_registers`; emission
+  still walks the ORIGINAL NIR.
+- **Hoisted-compute reads resolve through the statement's scope**
+  (`hoist_scope` on the renamed stmts; cfg.ts's fold resolves names via
+  it) — the stage-3 analog of the enablement receipt's invisible-read
+  bug: a hoisted `_param_N = n` read attributed to a same-named OUTER
+  binding would shorten the real range and could place a call-crossing
+  variable in a caller-saved register.
+- **Per-site eligibility**: the `declared-exactly-once` gate is replaced
+  by per-site candidacy (each key is structurally unique). Sites keep
+  every other gate (clean scalar, reads ≥ 1, MIN_READS / low-read
+  extension, crossing, loop-header, ref args, address-taken); declares
+  inside nested funcs and declares shadowing a parameter keep the
+  conservative exclusion. Uniquely-declared names produce byte-identical
+  plans by construction — the kill-switch off (`set_nir_site_promotion_
+enabled(false)`) restores the stage-2 wholesale exclusion.
+- **Declare-time binding in the emitter** (`emit_stmt_from_nir`, aarch64
+  only): the plan's site entries ride `status.nir_site_allocs` (key →
+  source name + register); the declare hook binds the register into the
+  CURRENT scope frame's `register_allocations` right before the declare
+  builds. `enter_scope_frame` now copy-on-enters `register_allocations`
+  (mirroring `stack_offsets`), so two sibling scopes declaring the same
+  name each bind their own register and bindings die with their frame —
+  the register model finally matches the slot model's frame discipline.
+  Sites bound nowhere else; all reads/writes resolve through the frame
+  chain unchanged.
+- **Three claim-system soundness rules** (each caught by a real
+  corruption during bring-up — build both arms, run, diff):
+  1. **The site hook never overwrites a live binding.** An enclosing
+     loop's promotion bracketed `pi→x13` and `lo_prod→x14` (div_to's D2
+     loop); the hook then rebound `lo_prod` to its plan register (x13 —
+     plan-legal vs the seed's claims, which never see loop claims) and
+     the inner product loop wrote lo_prod over the induction — SEGV in
+     the real Knuth-D loop. Rule: loop claims win; the site's register
+     simply goes unused there (the loop's slot bracketing keeps every
+     access coherent).
+  2. **Site registers are private — loop promotion never claims or
+     shares one** (`site_regs` skip in `promote_loop_locals`). The D-arm
+     loop shared x15 for `lo_prod` (legal vs the seeded `cur2`) while the
+     plan had given site `hi_prod@15` the same x15 — two independent
+     shares of one register chain, both live in the loop body (mul_to's
+     2-limb × 1-limb arm computed `result = hi_prod + carry`).
+  3. **Loop↔function sharing expands BOTH sides through
+     `source_keys`** (source name → every key it owns). The adjacency is
+     keyed by the renamed view; occupants are bound by source name in
+     the frame maps — a plain-name lookup against a site-keyed name
+     misses and "shares" over a live range (the mul_to receipt, the
+     stage-2 vacuous-share bug reborn through renaming).
+- **Kill-switch parity**: site promotion OFF (default ON) makes the plan
+  exclude multi-declared names exactly as stage 2 did — every binding is
+  function-wide and installed before the prologue — so the byte-identity
+  harness holds the switch off in BOTH arms (the same treatment as the
+  NEON vectorizer: the site hook is cursor-dependent by design).
+
+**RESULT (interleaved best-of-5/7, outputs byte-identical between the
+site-on and site-off arms on every bench):** pidigits n=4000 1999 →
+1849 ms (**−7.5%**); fannkuch-redux n=11 4630 → 4475 ms (**−3.3%**);
+nbody 5M −1.8%; binarytrees n=18 −1.3%; spectral-norm n=1500 −4.1%
+(best-of-7; a first +2.0% read did not reproduce); mandelbrot n=2000 and
+nsieve n=12 within ±1% (noise). (Absolute times sit above the earlier
+RESULT rows' — different machine/load — the A/B arms are the receipt.)
+Full suite green (264 files, 2678 tests) with new coverage: the
+per-site plan shape, the no-interference invariant over site keys, the
+kill-switch parity, and two behavioral sibling-loop runs (composable
+shape + value-independence guard).
+
+The remaining gap to clang's limb loops is unchanged from stage 2's
+accounting (cross-statement temporaries with no source name); stage 3
+widens what a "source name" can be — every sibling scope's locals now
+compete for registers on equal footing.
+
 ## Success criteria
 
 Written before the measurements; kept for the record — the per-tranche

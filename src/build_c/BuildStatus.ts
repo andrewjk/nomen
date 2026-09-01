@@ -488,6 +488,28 @@ export default interface BuildStatus {
 	 * When present, emit_var_load/emit_var_store will use the register instead of stack.
 	 */
 	register_allocations?: Map<string, string>;
+	/**
+	 * Saved register_allocations maps of ENCLOSING scope frames (aarch64
+	 * only — stage 3 of the NIR allocator). enter_scope_frame swaps in a
+	 * COPY (mirroring stack_offsets) so a decl-site binding inside the frame
+	 * (same-named locals in sibling scopes must each bind their own
+	 * register) cannot leak past the frame exit; reads after the frame
+	 * resolve to the enclosing binding or none.
+	 */
+	register_allocations_frames?: (Map<string, string> | undefined)[];
+	/**
+	 * aarch64-only (ASM_PLAN_2 tranche G stage 3): decl-site register
+	 * bindings from the NIR-level allocator, keyed by the lowering's
+	 * deterministic `name@N` declare keys. emit_stmt_from_nir binds the
+	 * register into the CURRENT scope frame's register_allocations right
+	 * before the declare builds — two sibling scopes declaring the same
+	 * name each bind their own register, where the function-wide name map
+	 * could hold only one. Cleared wherever register_allocations is cleared
+	 * (inline expansions, method/init/destroy body builds) so a nested
+	 * body's declare keys can never resolve against an enclosing function's
+	 * table.
+	 */
+	nir_site_allocs?: Map<string, { name: string; reg: string }>;
 	callee_saved_regs_used?: Set<string>;
 	/**
 	 * aarch64-only (ASM_PLAN_2 tranche G): caller-saved ext registers
@@ -511,10 +533,19 @@ export default interface BuildStatus {
 	 * unconditional — never shared). Cleared/restored alongside
 	 * register_allocations; the inline-expansion path leaves it unset so
 	 * in-body loops fall back to avoid-mode.
+	 *
+	 * `source_keys` (stage 3) maps each source name to EVERY key it owns in
+	 * the allocator's renamed view — the plain name when uniquely declared,
+	 * all `name@N` site keys when redeclared. Sharing must check edges for
+	 * every candidate-key × occupant-key pair: occupants are bound by
+	 * source name in the frame maps, while the adjacency is keyed by the
+	 * renamed view — a plain-name lookup against a site-keyed name misses
+	 * and would "share" over a live range (the mul_to corruption receipt).
 	 */
 	nir_alloc_shared?: {
 		adj: Map<string, Set<string>>;
 		pinned: Set<string>;
+		source_keys: Map<string, string[]>;
 	};
 	/**
 	 * Set by build_float_operand before building a float-typed child expression.

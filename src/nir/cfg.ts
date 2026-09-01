@@ -150,9 +150,12 @@ function root_name(e: NirExpr): string | null {
  * `const _param_N = <arg>` declaration (or plain assignment). These AST
  * nodes never reach from_ast's lowering, so the NIR expr walk can't see
  * them; this compact walk covers the shapes the checker emits and makes
- * anything else a liveness barrier.
+ * anything else a liveness barrier. `resolve` maps each pushed name
+ * through the statement's decl-site scope (stage 3 renaming) when the CFG
+ * is built over a versioned view.
  */
-function hoisted_facts(node: unknown, out: FactWalk): void {
+function hoisted_facts(node: unknown, out: FactWalk, resolve?: (name: string) => string): void {
+	const res = resolve ?? ((n: string) => n);
 	if (!node || typeof node !== "object") {
 		out.barrier = true;
 		return;
@@ -160,41 +163,46 @@ function hoisted_facts(node: unknown, out: FactWalk): void {
 	const n = node as Record<string, unknown>;
 	if (n.node_type === "declare") {
 		const name = n.name;
-		if (typeof name === "string" && name) out.defs.push(name);
+		if (typeof name === "string" && name) out.defs.push(res(name));
 		else out.barrier = true;
-		hoisted_expr_facts(n.value, out);
+		hoisted_expr_facts(n.value, out, resolve);
 		return;
 	}
 	if (n.node_type === "assign") {
 		const target = n.left_value as Record<string, unknown> | undefined;
 		if (target && target.node_type === "value" && typeof target.value === "string") {
-			out.defs.push(target.value);
+			out.defs.push(res(target.value));
 		} else {
 			out.barrier = true;
 			return;
 		}
-		hoisted_expr_facts(n.right_value, out);
+		hoisted_expr_facts(n.right_value, out, resolve);
 		return;
 	}
 	out.barrier = true;
 }
 
-function hoisted_expr_facts(node: unknown, out: FactWalk): void {
+function hoisted_expr_facts(
+	node: unknown,
+	out: FactWalk,
+	resolve?: (name: string) => string,
+): void {
+	const res = resolve ?? ((n: string) => n);
 	if (!node || typeof node !== "object") return;
 	const n = node as Record<string, unknown>;
 	switch (n.node_type) {
 		case "value": {
 			const v = n.value;
-			if (typeof v === "string" && is_identifier_like(v)) out.reads.push(v);
+			if (typeof v === "string" && is_identifier_like(v)) out.reads.push(res(v));
 			return;
 		}
 		case "op":
-			hoisted_expr_facts(n.left_value, out);
-			hoisted_expr_facts(n.right_value, out);
+			hoisted_expr_facts(n.left_value, out, resolve);
+			hoisted_expr_facts(n.right_value, out, resolve);
 			return;
 		case "grouped":
 		case "cast":
-			hoisted_expr_facts(n.value, out);
+			hoisted_expr_facts(n.value, out, resolve);
 			return;
 		case "access": {
 			const access = n.access as Record<string, unknown> | undefined;
@@ -205,15 +213,15 @@ function hoisted_expr_facts(node: unknown, out: FactWalk): void {
 			if (access.node_type === "access_func") {
 				out.has_call = true;
 				const params = access.params as unknown[] | undefined;
-				if (params) for (const p of params) hoisted_expr_facts(p, out);
+				if (params) for (const p of params) hoisted_expr_facts(p, out, resolve);
 			}
-			hoisted_expr_facts(n.target, out);
+			hoisted_expr_facts(n.target, out, resolve);
 			return;
 		}
 		case "func_call": {
 			out.has_call = true;
 			const params = n.params as unknown[] | undefined;
-			if (params) for (const p of params) hoisted_expr_facts(p, out);
+			if (params) for (const p of params) hoisted_expr_facts(p, out, resolve);
 			return;
 		}
 		default:
@@ -222,7 +230,12 @@ function hoisted_expr_facts(node: unknown, out: FactWalk): void {
 	}
 }
 
-function fold_hoisted_allocations(node: unknown, seen: Set<unknown>, out: FactWalk): void {
+function fold_hoisted_allocations(
+	node: unknown,
+	seen: Set<unknown>,
+	out: FactWalk,
+	resolve?: (name: string) => string,
+): void {
 	if (!node || typeof node !== "object") return;
 	if (seen.has(node)) return;
 	seen.add(node);
@@ -230,7 +243,7 @@ function fold_hoisted_allocations(node: unknown, seen: Set<unknown>, out: FactWa
 	if (Array.isArray(n.allocations)) {
 		for (const alloc of n.allocations) {
 			if (alloc && typeof alloc === "object") {
-				hoisted_facts(alloc, out);
+				hoisted_facts(alloc, out, resolve);
 			}
 		}
 	}
@@ -240,13 +253,22 @@ function fold_hoisted_allocations(node: unknown, seen: Set<unknown>, out: FactWa
 		if (Array.isArray(v)) {
 			for (const item of v) {
 				if (item && typeof item === "object") {
-					fold_hoisted_allocations(item, seen, out);
+					fold_hoisted_allocations(item, seen, out, resolve);
 				}
 			}
 		} else if (v && typeof v === "object") {
-			fold_hoisted_allocations(v, seen, out);
+			fold_hoisted_allocations(v, seen, out, resolve);
 		}
 	}
+}
+
+/** The hoisted-compute name resolver for a NIR statement: its decl-site
+ *  scope snapshot (stage 3 renaming) when one rides, identity otherwise. */
+function hoist_resolver(s: {
+	hoist_scope?: ReadonlyMap<string, string>;
+}): ((name: string) => string) | undefined {
+	const scope = s.hoist_scope;
+	return scope ? (name) => scope.get(name) ?? name : undefined;
 }
 
 function walk_call_facts(facts: NirCallFacts, out: FactWalk): void {
@@ -496,7 +518,7 @@ class CfgBuilder {
 					}
 					walk_expr(s.decl.swap, out);
 				}
-				fold_hoisted_allocations(s.node, new Set(), out);
+				fold_hoisted_allocations(s.node, new Set(), out, hoist_resolver(s));
 				this.track_name(s.decl.name);
 				this.push_flat({
 					op: "declare",
@@ -539,7 +561,7 @@ class CfgBuilder {
 					else out.barrier = true;
 					walk_expr(s.swap, out);
 				}
-				fold_hoisted_allocations(s.node, new Set(), out);
+				fold_hoisted_allocations(s.node, new Set(), out, hoist_resolver(s));
 				this.push_flat({
 					op: "assign",
 					node: s.node,
@@ -555,7 +577,7 @@ class CfgBuilder {
 			case "eval": {
 				const out = empty_walk();
 				walk_expr(s.expr, out);
-				fold_hoisted_allocations(s.node, new Set(), out);
+				fold_hoisted_allocations(s.node, new Set(), out, hoist_resolver(s));
 				this.push_flat({
 					op: "eval",
 					node: s.node,
@@ -570,7 +592,7 @@ class CfgBuilder {
 			case "spawn": {
 				const out = empty_walk();
 				walk_expr(s.call, out);
-				fold_hoisted_allocations(s.node, new Set(), out);
+				fold_hoisted_allocations(s.node, new Set(), out, hoist_resolver(s));
 				this.push_flat({
 					op: "spawn",
 					node: s.node,
@@ -585,7 +607,7 @@ class CfgBuilder {
 			case "anon_struct": {
 				const out = empty_walk();
 				for (const field of s.fields) walk_expr(field.expr, out);
-				fold_hoisted_allocations(s.node, new Set(), out);
+				fold_hoisted_allocations(s.node, new Set(), out, hoist_resolver(s));
 				this.push_flat({
 					op: "anon_struct",
 					node: s.node,
@@ -599,7 +621,12 @@ class CfgBuilder {
 			case "return": {
 				const out = empty_walk();
 				walk_expr(s.value, out);
-				fold_hoisted_allocations(s.value ? s.value.node : s.node, new Set(), out);
+				fold_hoisted_allocations(
+					s.value ? s.value.node : s.node,
+					new Set(),
+					out,
+					hoist_resolver(s),
+				);
 				this.terminate({
 					t: "return",
 					value: s.value,
@@ -649,7 +676,7 @@ class CfgBuilder {
 				const join_b = this.new_block();
 				const out = empty_walk();
 				walk_expr(s.cond, out);
-				fold_hoisted_allocations(s.cond.node, new Set(), out);
+				fold_hoisted_allocations(s.cond.node, new Set(), out, hoist_resolver(s));
 				this.terminate({
 					t: "branch",
 					cond: s.cond,
@@ -676,7 +703,7 @@ class CfgBuilder {
 				this.terminate({ t: "goto", target: header.id });
 				const out = empty_walk();
 				walk_expr(s.cond, out);
-				fold_hoisted_allocations(s.cond.node, new Set(), out);
+				fold_hoisted_allocations(s.cond.node, new Set(), out, hoist_resolver(s));
 				this.cur = header;
 				this.terminate({
 					t: "branch",
@@ -706,7 +733,7 @@ class CfgBuilder {
 				if (s.list) {
 					const out = empty_walk();
 					walk_expr(s.list, out);
-					fold_hoisted_allocations(s.list.node, new Set(), out);
+					fold_hoisted_allocations(s.list.node, new Set(), out, hoist_resolver(s));
 					this.push_flat({
 						op: "eval",
 						node: s.list.node,
@@ -761,7 +788,7 @@ class CfgBuilder {
 				if (s.scrutinee) {
 					const out = empty_walk();
 					walk_expr(s.scrutinee, out);
-					fold_hoisted_allocations(s.scrutinee.node, new Set(), out);
+					fold_hoisted_allocations(s.scrutinee.node, new Set(), out, hoist_resolver(s));
 					this.push_flat({
 						op: "eval",
 						node: s.scrutinee.node,
@@ -786,7 +813,7 @@ class CfgBuilder {
 					const out = empty_walk();
 					if (arm.condition) {
 						walk_expr(arm.condition, out);
-						fold_hoisted_allocations(arm.condition.node, new Set(), out);
+						fold_hoisted_allocations(arm.condition.node, new Set(), out, hoist_resolver(s));
 						this.terminate({
 							t: "branch",
 							cond: arm.condition,

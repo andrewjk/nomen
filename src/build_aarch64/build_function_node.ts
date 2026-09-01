@@ -436,6 +436,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	// a nested function build (a `func` statement inside this body) can't leak
 	// its own bindings into ours — or clobber our claimed-register set.
 	const old_register_allocations = status.register_allocations;
+	const old_nir_site_allocs = status.nir_site_allocs;
 	const old_callee_saved_regs = status.callee_saved_regs_used;
 	const old_nir_caller_claimed = status.nir_caller_saved_claimed;
 	// ONE canonical lowering per function (phase 4 stage 2): the NIR drives
@@ -460,13 +461,31 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	if (nir) {
 		if (nir_regalloc_enabled()) {
 			const plan = plan_nir_registers(node, nir);
-			fn_allocs = plan.allocs;
+			// Stage 3: split plain-name bindings (live from function entry —
+			// the prologue initializes params into them) from decl-site
+			// bindings (the emitter binds those at each declare site, so
+			// same-named locals in sibling scopes never fight over one map
+			// entry). allocs carries both for the invariant tests; only the
+			// plain half installs here.
+			const plain = new Map<string, string>();
+			const site_table = new Map<string, { name: string; reg: string }>();
+			for (const [key, reg] of plan.allocs) {
+				const site = plan.sites.get(key);
+				if (site) site_table.set(key, site);
+				else plain.set(key, reg);
+			}
+			fn_allocs = plain;
+			status.nir_site_allocs = site_table.size > 0 ? site_table : undefined;
 			// Always defined under the new pass (possibly empty): the
 			// caller-saved ext regs must never ride the prologue's save set.
 			fn_callee_saved = plan.callee_saved;
 			// Interference facts so loop promotion shares function-claimed
 			// registers when its candidates provably never overlap them.
-			status.nir_alloc_shared = { adj: plan.adj, pinned: plan.pinned };
+			status.nir_alloc_shared = {
+				adj: plan.adj,
+				pinned: plan.pinned,
+				source_keys: plan.source_keys,
+			};
 			// Caller-saved ext claims ride a set that SURVIVES inline
 			// expansions (which clear register_allocations), so loop
 			// promotion inside an inlined body can't reclaim one while a
@@ -479,7 +498,14 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 			}
 		} else {
 			fn_allocs = plan_function_promotions(node, nir);
+			// Legacy pass has no decl-site table — clear any enclosing
+			// function's so this body's declare keys can't resolve against it.
+			status.nir_site_allocs = undefined;
 		}
+	} else {
+		// No body (no NIR): nothing of this function can bind; drop any
+		// enclosing table for the duration of the build.
+		status.nir_site_allocs = undefined;
 	}
 	status.register_allocations = fn_allocs && fn_allocs.size > 0 ? fn_allocs : undefined;
 	status.callee_saved_regs_used =
@@ -780,6 +806,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	// function was built mid-body — its prologue saves went missing).
 	status.callee_saved_regs_used = old_callee_saved_regs;
 	status.register_allocations = old_register_allocations;
+	status.nir_site_allocs = old_nir_site_allocs;
 	status.nir_caller_saved_claimed = old_nir_caller_claimed;
 	status.nir_alloc_shared = undefined;
 

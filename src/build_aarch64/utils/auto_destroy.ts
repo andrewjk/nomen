@@ -94,6 +94,12 @@ export function release_heap_string_fields(
  * declaration inside the frame (e.g. a shadowing `var x`) would otherwise
  * permanently clobber the outer local's slot entry — reads after the frame
  * would resolve to the inner slot. Pair with exit_scope_frame.
+ *
+ * register_allocations gets the same copy-on-enter treatment (stage 3 of
+ * the NIR allocator): a decl-site binding made inside the frame (a
+ * same-named local in a sibling scope binds its own register at its
+ * declare) must die with the frame — after the exit, reads resolve to the
+ * enclosing binding or to the stack slot, never to the inner register.
  */
 export function enter_scope_frame(status: BuildStatus): DeclarationNode[] {
 	const old = status.scoped_declarations ?? [];
@@ -103,6 +109,11 @@ export function enter_scope_frame(status: BuildStatus): DeclarationNode[] {
 	if (!status.stack_offsets_frames) status.stack_offsets_frames = [];
 	status.stack_offsets_frames.push(status.stack_offsets ?? new Map());
 	status.stack_offsets = new Map(status.stack_offsets ?? []);
+	if (!status.register_allocations_frames) status.register_allocations_frames = [];
+	status.register_allocations_frames.push(status.register_allocations);
+	status.register_allocations = status.register_allocations
+		? new Map(status.register_allocations)
+		: undefined;
 	return old;
 }
 
@@ -112,6 +123,8 @@ export function exit_scope_frame(status: BuildStatus, old: DeclarationNode[]) {
 	status.scoped_declarations = old;
 	const saved_offsets = status.stack_offsets_frames?.pop();
 	if (saved_offsets) status.stack_offsets = saved_offsets;
+	const saved_allocs = status.register_allocations_frames?.pop();
+	status.register_allocations = saved_allocs;
 }
 
 /** Every declaration frame a `return` must clean: enclosing scopes first,

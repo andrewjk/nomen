@@ -149,6 +149,33 @@ export function emit_stmt_from_nir(
 				}
 				return;
 			case "declare":
+				// Decl-site binding (stage 3): a register the allocator gave
+				// this DECLARE SITE binds here, into the CURRENT scope
+				// frame's map — two sibling scopes declaring the same name
+				// each bind their own register at their own declare. Reads
+				// before the declare (its initializer's operands) resolve to
+				// the enclosing binding or the slot; reads after resolve to
+				// this register. Frames die at exit_scope_frame, so the
+				// binding never leaks past its scope.
+				//
+				// A name ALREADY bound keeps its existing binding: an
+				// enclosing loop's promotion bracketed it (entry load, exit
+				// store-back, name-keyed binding), and the loop pass cannot
+				// know a site register will override it mid-body — the two
+				// claim systems can otherwise hand one register to two
+				// simultaneously-live variables (the div_to receipt: the
+				// D2-loop claimed pi→x13 and lo_prod→x14, then the site hook
+				// rebound lo_prod to its plan register x13, and the inner
+				// product loop wrote lo_prod over the induction). The site's
+				// planned register simply goes unused — the loop's slot
+				// bracketing keeps every access coherent.
+				{
+					const site = status.nir_site_allocs?.get(nstmt.decl.key);
+					if (site && !status.register_allocations?.has(nstmt.decl.name)) {
+						if (!status.register_allocations) status.register_allocations = new Map();
+						status.register_allocations.set(nstmt.decl.name, site.reg);
+					}
+				}
 				// Type/ownership routing stays on the AST node inside the
 				// builder; the initializer (when any) is emitted through the
 				// NIR expression seam. The trailing-newline guard replicates

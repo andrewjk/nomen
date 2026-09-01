@@ -126,6 +126,16 @@ export interface NirDeclModifiers {
 
 export interface NirDeclareInfo {
 	readonly name: string;
+	/**
+	 * Decl-site key (`name@N`, N a per-lowering monotonic counter in source
+	 * order — identifiers can never contain `@`, so keys cannot collide with
+	 * source names). Stage 3 (ASM_PLAN_2 tranche G): the register allocator's
+	 * renamer keys AMBIGUOUS declarations (a name declared 2+ times in the
+	 * lowered body — sibling-loop consts, shadowing redeclares) by this key
+	 * so each site gets its own live range; the emitter binds the plan's
+	 * register at the declare site through this same key.
+	 */
+	readonly key: string;
 	readonly type: Type;
 	readonly modifiers: NirDeclModifiers;
 	readonly init: NirExpr | null;
@@ -138,6 +148,15 @@ export interface NirDeclareInfo {
 interface NirStmtBase {
 	/** Original AST statement this IR statement lowered from. */
 	readonly node: BaseNode;
+	/**
+	 * Identifier → decl-site key scope at this statement (materialized only
+	 * when the AST node carries checker-hoisted allocations). cfg.ts's
+	 * hoisted-allocation fold resolves the computes' reads through it so a
+	 * hoisted `_param_N = n` read attributes to the renamed key of the `n`
+	 * actually in scope — not to a same-named outer binding (the stage-3
+	 * analog of the enablement receipt's invisible-read bug).
+	 */
+	readonly hoist_scope?: ReadonlyMap<string, string>;
 }
 
 export type NirStmt =

@@ -52,6 +52,10 @@ export function is_identifier_like(val: unknown): val is string {
 
 interface LowerCtx {
 	coverage: Set<string>;
+	/** Monotonic declare counter — decl-site keys (`name@N`) are assigned in
+	 *  source order so the renamer (version.ts), the planner and the emitter
+	 *  (which each re-lower deterministically) agree on every key. */
+	decl_counter: number;
 }
 
 function record_unknown(ctx: LowerCtx, node: BaseNode | null | undefined): void {
@@ -219,6 +223,7 @@ function declare_stmt(ctx: LowerCtx, d: DeclarationNode): NirStmt {
 	const t = d.type;
 	const info: NirDeclareInfo = {
 		name: d.name,
+		key: `${d.name}@${ctx.decl_counter++}`,
 		type: t,
 		modifiers: {
 			is_array: t?.is_array,
@@ -452,7 +457,7 @@ export function lower_function(func: {
 	statements: BaseNode[];
 }): NirFunction {
 	const coverage = new Set<string>();
-	const ctx: LowerCtx = { coverage };
+	const ctx: LowerCtx = { coverage, decl_counter: 0 };
 	const body = block(ctx, func.statements);
 	return {
 		name: func.name ?? "",

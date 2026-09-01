@@ -10,6 +10,7 @@ import { build_cfg, type FunctionCfg } from "../../nir/cfg.ts";
 import { lower_function } from "../../nir/from_ast.ts";
 import type { NirFunction } from "../../nir/nir.ts";
 import { analyze_traffic } from "../../nir/traffic.ts";
+import { version_function } from "../../nir/version.ts";
 import type BaseNode from "../../nodes/BaseNode.ts";
 import type Type from "../../nodes/Type.ts";
 import { tree_is_call_free } from "../build_operation_node.ts";
@@ -84,6 +85,24 @@ export function set_nir_regalloc_enabled(enabled: boolean): void {
 	nir_regalloc_on = enabled;
 }
 
+let nir_site_promotion_on = true;
+
+/**
+ * Kill-switch for decl-site promotion (stage 3; default ON). OFF restores
+ * the stage-2 exclusion of names declared more than once — every register
+ * binding is function-wide and installed before the prologue, so emission
+ * is byte-identical with and without the NIR cursor (the byte-identity
+ * harness holds this off in both arms, the same way it holds off the NEON
+ * vectorizer: the site hook is cursor-dependent by design).
+ */
+export function nir_site_promotion_enabled(): boolean {
+	return nir_site_promotion_on;
+}
+
+export function set_nir_site_promotion_enabled(enabled: boolean): void {
+	nir_site_promotion_on = enabled;
+}
+
 const CALLEE_SAVED_X = ["x23", "x24", "x25", "x26", "x27", "x28"];
 /** Caller-saved extension pool: call-free-contained ranges only. x10/x11
  *  stay excluded (write barriers / tree temps), x9 is emitter scratch. */
@@ -126,10 +145,24 @@ export interface NirRegisterPlan {
 	callee_saved: Set<string>;
 	/** Function-wide interference adjacency (name → interfering names) —
 	 *  exported so LOOP promotion can share function-claimed registers
-	 *  when its candidate provably never overlaps the occupants. */
+	 *  when its candidate provably never overlaps the occupants. Keys are
+	 *  source names for uniquely-declared variables, decl-site keys
+	 *  (`name@N`) for ambiguous ones (stage 3). */
 	adj: Map<string, Set<string>>;
 	/** Param claims — pinned, never shared with loop promotions. */
 	pinned: Set<string>;
+	/** Source name → every key it owns in the renamed view (its plain name
+	 *  when uniquely declared; all its `name@N` site keys otherwise). Loop
+	 *  promotion's candidates are plain AST names, so sharing checks must
+	 *  consult edges for EVERY key a name could be — a single-key lookup
+	 *  would miss site-keyed occupants and "share" over a live range (the
+	 *  stage-3 rebirth of the stage-2 vacuous-share bug). */
+	source_keys: Map<string, string[]>;
+	/** Decl-site allocations (stage 3): key → source name + register. The
+	 *  emitter binds these at the declare site (frame-scoped), not from
+	 *  function entry — two sibling scopes declaring the same name each
+	 *  bind their own register. */
+	sites: Map<string, { name: string; reg: string }>;
 }
 
 export interface NirRegisterPlanOptions {
@@ -285,7 +318,22 @@ export function plan_nir_registers(
 	const allocs = new Map<string, string>();
 	const callee_saved = new Set<string>();
 	const pinned = new Set<string>();
-	const traffic = analyze_traffic(nir);
+	const site_allocs = new Map<string, { name: string; reg: string }>();
+
+	// Stage 3 (decl-site disambiguation): every source name declared more
+	// than once anywhere in the lowered body — sibling-loop consts, shadow
+	// redeclares, same-named locals across arms — is renamed per declare
+	// site (`name@N`), so each site gets its own live range, interference
+	// edges and register instead of being excluded wholesale. Uniquely
+	// declared names bind identity: the versioned view is byte-equal to the
+	// original lowering and the plan keys stay source names. Kill-switch
+	// off restores the stage-2 wholesale exclusion.
+	const source_decl_counts = analyze_traffic(nir).decl_counts;
+	const multi = nir_site_promotion_enabled()
+		? new Set([...source_decl_counts.entries()].filter(([, c]) => c > 1).map(([n]) => n))
+		: new Set<string>();
+	const { renamed, sites } = version_function(nir, multi);
+	const traffic = analyze_traffic(renamed);
 
 	const address_taken = new Set<string>();
 	for (const [name, info] of traffic.variables) {
@@ -294,28 +342,53 @@ export function plan_nir_registers(
 	const param_names = new Set(func.params.map((p) => p.name));
 	const excluded = (name: string): boolean => !!options?.exclude_params?.has(name);
 
-	const cfg = build_cfg(nir);
+	const cfg = build_cfg(renamed);
 	const { facts, adj } = analyze_ranges(cfg, options?.status);
+
+	// Source name → every key it owns in the renamed view (see
+	// NirRegisterPlan.source_keys). Every declare contributes its key; a
+	// uniquely-declared name's key IS its plain name.
+	const source_keys = new Map<string, string[]>();
+	const add_key = (source: string, key: string): void => {
+		const list = source_keys.get(source);
+		if (list) list.push(key);
+		else source_keys.set(source, [key]);
+	};
+	for (const decl of traffic.decls) {
+		const site = sites.get(decl.name);
+		add_key(site?.source ?? decl.name, decl.name);
+	}
 
 	const candidates: Candidate[] = [];
 	for (const decl of traffic.decls) {
 		if (!is_clean_scalar_type({ name: decl.type_name, ...decl.modifiers })) continue;
-		const name = decl.name;
-		if ((traffic.decl_counts.get(name) ?? 0) !== 1) continue;
-		if (param_names.has(name)) continue;
-		if (traffic.ref_arg_names.has(name)) continue;
-		if (address_taken.has(name)) continue;
-		const r = traffic.variables.get(name);
+		const key = decl.name;
+		const site = sites.get(key);
+		const source = site?.source ?? key;
+		// A declare inside a nested_func is its own compilation unit — the
+		// nested build plans (and binds) its own body; the enclosing plan
+		// never grants it a register.
+		if (site?.nested) continue;
+		// Kill-switch off: names declared more than once are excluded
+		// wholesale, exactly as in stage 2.
+		if (!nir_site_promotion_enabled() && (source_decl_counts.get(source) ?? 0) > 1) continue;
+		// A declare sharing a parameter's name (shadowing or not) keeps the
+		// conservative exclusion — the pre-stage-3 model never promoted
+		// either name there.
+		if (param_names.has(source)) continue;
+		if (traffic.ref_arg_names.has(key)) continue;
+		if (address_taken.has(key)) continue;
+		const r = traffic.variables.get(key);
 		if (!r || r.reads < 1) continue;
 		const is_float = ALL_FLOAT_TYPES.includes(decl.type_name);
-		const f = facts.get(name);
+		const f = facts.get(key);
 		if (r.reads < MIN_READS) {
 			// Low-read extension: int locals only, caller-saved-only, and
 			// only with a provably call-free, loop-free-contained range.
 			if (is_float) continue;
 			if (!f || f.reads < 1 || f.crosses_call || f.loop_blocked) continue;
 			candidates.push({
-				name,
+				name: key,
 				reads: r.reads,
 				weight: r.weighted_reads,
 				type_name: decl.type_name,
@@ -330,7 +403,7 @@ export function plan_nir_registers(
 			if (!f || f.reads < 1) continue;
 		}
 		candidates.push({
-			name,
+			name: key,
 			reads: r.reads,
 			weight: r.weighted_reads,
 			type_name: decl.type_name,
@@ -341,7 +414,9 @@ export function plan_nir_registers(
 		if (param.is_variadic) continue;
 		if (excluded(param.name)) continue;
 		if (!is_clean_scalar_type(param.type)) continue;
-		if ((traffic.decl_counts.get(param.name) ?? 0) !== 0) continue;
+		// Source-name counts (not the renamed view's): a param whose name is
+		// declared anywhere in the body stays excluded, exactly as before.
+		if ((source_decl_counts.get(param.name) ?? 0) !== 0) continue;
 		if (traffic.ref_arg_names.has(param.name)) continue;
 		if (address_taken.has(param.name)) continue;
 		const r = traffic.variables.get(param.name);
@@ -358,7 +433,8 @@ export function plan_nir_registers(
 			caller_only: false,
 		});
 	}
-	if (candidates.length === 0) return { allocs, callee_saved, adj, pinned };
+	if (candidates.length === 0)
+		return { allocs, callee_saved, adj, pinned, source_keys, sites: site_allocs };
 
 	// Hottest first — same ranking the legacy pass and the benchmarks
 	// were tuned around (raw reads, then loop-weighted, V8 stable sort).
@@ -386,6 +462,8 @@ export function plan_nir_registers(
 			if (d_used >= MAX_D_REGS) continue;
 			const reg = D_POOL[d_used++];
 			allocs.set(c.name, reg);
+			const site = sites.get(c.name);
+			if (site) site_allocs.set(c.name, { name: site.source, reg });
 			occupants_of(reg).add(c.name);
 			callee_saved.add(reg);
 			continue;
@@ -411,6 +489,10 @@ export function plan_nir_registers(
 			if (occupants.size === 0) {
 				if (is_callee && x_callee_used >= MAX_X_CALLEE) continue;
 				allocs.set(c.name, reg);
+				{
+					const site = sites.get(c.name);
+					if (site) site_allocs.set(c.name, { name: site.source, reg });
+				}
 				occupants.add(c.name);
 				if (pinned_name) pinned.add(c.name);
 				if (is_callee) {
@@ -432,11 +514,15 @@ export function plan_nir_registers(
 			}
 			if (blocked) continue;
 			allocs.set(c.name, reg);
+			{
+				const site = sites.get(c.name);
+				if (site) site_allocs.set(c.name, { name: site.source, reg });
+			}
 			occupants.add(c.name);
 			break;
 		}
 	}
-	return { allocs, callee_saved, adj, pinned };
+	return { allocs, callee_saved, adj, pinned, source_keys, sites: site_allocs };
 }
 
 /**
@@ -473,10 +559,21 @@ export function seed_function_allocations(
 		exclude_params: options?.exclude_params,
 	});
 	if (plan.allocs.size === 0) return undefined;
-	status.register_allocations = plan.allocs;
+	// Split plain-name bindings (live from function entry) from decl-site
+	// bindings (stage 3: bound at each declare site by the emitter, so
+	// same-named locals in sibling scopes never share one register).
+	const plain = new Map<string, string>();
+	const site_table = new Map<string, { name: string; reg: string }>();
+	for (const [key, reg] of plan.allocs) {
+		const site = plan.sites.get(key);
+		if (site) site_table.set(key, site);
+		else plain.set(key, reg);
+	}
+	status.register_allocations = plain.size > 0 ? plain : undefined;
+	if (site_table.size > 0) status.nir_site_allocs = site_table;
 	status.callee_saved_regs_used = plan.callee_saved.size > 0 ? plan.callee_saved : undefined;
 	// Interference facts for loop-promotion sharing (see BuildStatus).
-	status.nir_alloc_shared = { adj: plan.adj, pinned: plan.pinned };
+	status.nir_alloc_shared = { adj: plan.adj, pinned: plan.pinned, source_keys: plan.source_keys };
 	// Caller-saved ext claims survive inline expansions (which clear
 	// register_allocations); the method caller restores the old value.
 	status.nir_caller_saved_claimed = new Set(

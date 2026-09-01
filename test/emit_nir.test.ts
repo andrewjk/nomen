@@ -6,6 +6,7 @@ import build from "../src/build";
 import { set_nir_emission_enabled } from "../src/build_aarch64/emit_nir";
 import { set_neon_vectorization_enabled } from "../src/build_aarch64/neon_emit";
 import { set_loop_unrolling_enabled } from "../src/build_aarch64/unroll";
+import { set_nir_site_promotion_enabled } from "../src/build_aarch64/utils/nir_regalloc";
 import join from "../src/join";
 import { get_library } from "../src/lib";
 import { lower_function } from "../src/nir/from_ast";
@@ -35,6 +36,12 @@ function compile_aarch64(source: string, raw = false): string {
 function expect_byte_identical(source: string, raw = false): void {
 	set_nir_emission_enabled(false);
 	set_neon_vectorization_enabled(false);
+	// Decl-site register binding (tranche G stage 3) is cursor-dependent by
+	// design: the site hook fires only when emit_stmt_from_nir owns the
+	// statement, so the delegated baseline arm could never reproduce it.
+	// Hold it off in both arms — the same treatment the NEON vectorizer
+	// gets — so the harness keeps proving the SEAM mechanics.
+	set_nir_site_promotion_enabled(false);
 	const baseline = compile_aarch64(source, raw);
 	set_nir_emission_enabled(true);
 	try {
@@ -44,6 +51,7 @@ function expect_byte_identical(source: string, raw = false): void {
 	} finally {
 		set_nir_emission_enabled(true);
 		set_neon_vectorization_enabled(true);
+		set_nir_site_promotion_enabled(true);
 	}
 }
 
@@ -774,20 +782,24 @@ test("whole benchmark corpus is byte-identical through NIR emission", () => {
 		};
 		// The NEON vectorizer and the full unroller intentionally change
 		// output, so both are held off in both arms (see the harness comment
-		// at the top of this file).
+		// at the top of this file). Decl-site register binding (tranche G
+		// stage 3) is cursor-dependent the same way.
 		set_nir_emission_enabled(false);
 		set_neon_vectorization_enabled(false);
 		set_loop_unrolling_enabled(false);
+		set_nir_site_promotion_enabled(false);
 		const baseline = compile();
 		set_nir_emission_enabled(true);
 		set_neon_vectorization_enabled(false);
 		set_loop_unrolling_enabled(false);
+		set_nir_site_promotion_enabled(false);
 		try {
 			expect(compile(), file).toEqual(baseline);
 		} finally {
 			set_nir_emission_enabled(true);
 			set_neon_vectorization_enabled(true);
 			set_loop_unrolling_enabled(true);
+			set_nir_site_promotion_enabled(true);
 		}
 	}
 });
