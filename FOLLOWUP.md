@@ -263,14 +263,3 @@ valid hardware form (verified by assembling). The phase-1 validator's
 mnemonic table simply lacked the f/f shape. Fixed in asm_ir.ts (tranche
 D commit); the accumulator behavioral test now uses the original cast+add
 source.
-
-## nbody binary alternates final-energy output across runs (pre-existing)
-
-`nbody` release builds print the final energy alternating between
-`-0.169075` and `-0.169086` on consecutive runs of the SAME binary
-(initial energy is stable). Deterministic FP code cannot alternate —
-some value depends on uninitialized/stack-residual state whose contents
-vary with the process address space. Present at HEAD before the
-accumulator/at()-index work (verified via stash). The chaotic system
-amplifies a ~1-ulp difference to the 6th decimal. Worth an MSan-style
-audit of advance()'s locals when the receipts method next targets nbody.
