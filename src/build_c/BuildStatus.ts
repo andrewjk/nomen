@@ -145,6 +145,16 @@ export default interface BuildStatus {
 	string_join_owned_vars?: Set<string>;
 	function_param_regs?: Map<string, string>;
 	function_param_vars?: Set<string>;
+	/**
+	 * The current function's/method's parameter types (aarch64), recorded at
+	 * prologue time. Loop promotion resolves a candidate with no scoped
+	 * declaration and no body declare record (i.e. a parameter) through this
+	 * map so FLOAT params ride the float register pool — the legacy ""→int
+	 * default claimed an x-register floats never use, starving both pools
+	 * (mandelbrot's mbrot ci/cr). Nested function builds reset and restore it
+	 * alongside the other param-tracking sets.
+	 */
+	function_param_types?: Map<string, Type>;
 	function_ref_params?: Set<string>;
 	/**
 	 * Names of the current function's/method's `view T` parameters. On C

@@ -251,6 +251,30 @@ export function promote_loop_locals(
 		if (decl) {
 			type_name = decl.type?.name || "";
 			if (!SCALAR_TYPES.includes(type_name)) continue;
+		} else if (dtype === undefined) {
+			// No body declare and no scoped declaration: the candidate is a
+			// PARAMETER (or a for-loop item). Resolve params through
+			// `function_param_types` (recorded at prologue time): a known
+			// FLOAT must ride the float pool — the legacy ""→int default
+			// claimed an x-register floats never use, starving both pools
+			// (mandelbrot's mbrot ci/cr) — and only a clean scalar
+			// (non-array/view/ref/nullable) is register-classable.
+			const ptype = status.function_param_types?.get(name);
+			if (ptype) {
+				if (
+					!ptype.name ||
+					!SCALAR_TYPES.includes(ptype.name) ||
+					ptype.is_array ||
+					ptype.is_view ||
+					ptype.is_ref ||
+					ptype.is_nullable
+				) {
+					continue;
+				}
+				type_name = ptype.name;
+			}
+			// Genuinely unknown (""): explicit INT default — for-loop items
+			// and `while i < n` int params legitimately promote through it.
 		}
 		// Declare-slot pre-allocation (ASM_PLAN_2 tranche D addendum): a
 		// body-declared local has no slot until its declare builds — which
