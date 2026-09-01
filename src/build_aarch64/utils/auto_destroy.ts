@@ -610,9 +610,16 @@ export function emit_field_destroys(
 				const skip_label = `.Lskip_destroy_${label_id}`;
 				status.code += `cbz x0, ${skip_label}\n`;
 				status.code += `bl ${resolve_struct_name(field_struct.name, field.type.type_args, status)}_destroy\n`;
+				// The pop runs on BOTH paths (the push above is unconditional) —
+				// then the free alone is null-guarded: a null field has nothing
+				// to release and the audited free wrapper traps on a null
+				// pointer.
 				status.code += `${skip_label}:\n`;
 				status.code += `ldr x0, [sp], #16\n`;
+				const free_label = `.Lskip_destroy_free_${label_id}`;
+				status.code += `cbz x0, ${free_label}\n`;
 				emit_free(status);
+				status.code += `${free_label}:\n`;
 			} else {
 				// Call the nested struct's OWN destroy if it has one (an explicit
 				// `#destroy`) OR needs an auto-generated one (owning fields such as

@@ -30,6 +30,13 @@ strdups string args; enum locals free payloads at scope exit; match hoists
 call scrutinees into owned temps and frees them; reassignment frees the
 displaced payload). Not yet covered:
 
+- The checker does not reject storing a BORROWED class value (e.g. a plain
+  non-`mov` param) into an OWNING class field (`self.art = b` with
+  `func f = (ref self, Box b)`): the callee's field destroy frees it AND
+  the caller's auto-free frees the same temp — both backends double-free.
+  The documented model (MEMORY.md) requires `mov T` for owning mutators;
+  a checker rule mirroring the rejected `b = a` owning-struct copy would
+  close it.
 - Enum values stored INSIDE containers/structs: `<Struct>_destroy` (both
   backends) does not walk enum fields' string payloads — storing a
   `Result<string, E>` in a struct field, Buffer, or List leaks it.
@@ -297,20 +304,3 @@ interpolation argument (the interpolation hoist creates the `_param_0`).
 Fix sketch: in the C backend's hoisted-allocation emission, walk the hoisted
 compute's arguments with the same ref-param indices the checker stamps and
 emit `&name` for those positions.
-
-## Nullable class-field write through a method crashes on aarch64 (pre-existing)
-
-Found while probing the field-write deferral slice (aarch64, baseline AND
-after): a `mov Box? art = null` field assigned through a method
-(`func set_art = (ref self, Box b) { self.art = b }`) — two successive
-calls SIGTRAP before any output. The non-nullable class-field write path
-(`field_struct?.is_class` branch in build_assignment_node) destroys+frees
-the old field value; with a nullable field whose old value is null, the
-cbz guard should skip... the crash happens before main's first write
-completes, so the suspect is the load or the guard sequence for the
-never-assigned field, not the ownership dance. The same shape through a
-plain local assignment (outside a method) is not exercised by this probe —
-scope unknown. Bisected shapes: `wall` (nullable class field, method
-write) crashes; string-field and view-field writes through methods are
-fine; `test/view_fields.test.ts` and `test/field_marshal.test.ts` are
-green, so the common shapes are covered elsewhere.

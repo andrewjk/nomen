@@ -366,8 +366,7 @@ export default function build_return_node(
 	// function that returns ONLY literals is not heap-returning (the caller
 	// doesn't free), so the rodata pointer is safe and no strdup is emitted.
 	if (
-		status.function_return_type?.name === "string" &&
-		!status.function_return_type?.is_view &&
+		current_return_is_string(status) &&
 		node.value.node_type === "value" &&
 		(node.value as ValueNode).value.length >= 2 &&
 		(node.value as ValueNode).value.startsWith('"') &&
