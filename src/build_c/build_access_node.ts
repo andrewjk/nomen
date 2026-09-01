@@ -891,7 +891,25 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 						build_node(access_func.params[i], status);
 						status.suppress_dereference = false;
 					} else {
+						// A scalar `ref T` param receives the caller's storage
+						// address (`long *r`) — emit `&` exactly like the free
+						// function call path (build_function_call_node). An
+						// argument that is itself a `ref` param or a class var
+						// (already a pointer) is forwarded as-is; suppress the
+						// dereference build_value_node would emit.
+						if (access_func.ref_param_indices?.includes(i)) {
+							if (
+								access_func.params[i].node_type === "value" &&
+								(status.function_ref_params?.has((access_func.params[i] as ValueNode).value) ||
+									status.class_vars?.has((access_func.params[i] as ValueNode).value))
+							) {
+								status.suppress_dereference = true;
+							} else {
+								status.code += "&";
+							}
+						}
 						build_node(access_func.params[i], status);
+						status.suppress_dereference = false;
 					}
 				}
 				status.code += ")";

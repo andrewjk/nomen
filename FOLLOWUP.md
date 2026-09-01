@@ -289,18 +289,3 @@ helpers that assert `build errors === []` cannot use struct-array
 programs (test/accumulator_promotion.test.ts works around it via
 Buffer<float>). Fix: teach asm_ir.ts the `adrp` mnemonic and the
 `@PAGE`/`@PAGEOFF` operand shapes.
-
-## C backend: hoisted `_param_N` temp loses `&` for `ref` args (pre-existing)
-
-Found while writing the tranche-H call-marshal tests. The checker hoists a
-struct-returning call argument into `const _param_0 = <call>` attached via
-`node.allocations`; when the hoisted call itself passes a `ref` local, the C
-backend emits the callee's ref param positionally WITHOUT the address-of:
-`Counter_take(&box, n)` for a signature `Counter_take(struct Counter*, long *r)`
-— clang rejects (`-Wint-conversion`). The aarch64 backend marshals the same
-shape correctly (it stages `&slot` through the arg loop's ref branch).
-Repro: a method `func take = (ref self, ref int r, out int)` called as an
-interpolation argument (the interpolation hoist creates the `_param_0`).
-Fix sketch: in the C backend's hoisted-allocation emission, walk the hoisted
-compute's arguments with the same ref-param indices the checker stamps and
-emit `&name` for those positions.
