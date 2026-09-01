@@ -793,6 +793,57 @@ cross-backend argument-evaluation-order divergence (aarch64 right-to-left
 vs C left-to-right) predates this tranche and is visible only through
 side-effecting siblings the checker does not hoist.
 
+## Tranche H follow-up — field-home marshalling: chain reads + deferred write base (DONE)
+
+The slice H named for itself, driven by the same receipts (BigInt limb
+loops): `self.len = …` writes still pushed/popped the receiver around the
+RHS (`mov x0, x19; str x0, [sp,#-16]!; …; ldr x0, [sp],#16`) and multi-hop
+reads (`o.inner.v`) still built the chain through x0 with a caller-side
+shuffle per operand site.
+
+Two mechanisms (pure codegen refinement, same ops at every effect point):
+
+1. **Multi-hop direct field loads.** `emit_direct_field_load` grew a chain
+   walker (`emit_direct_field_chain`): when the target of the outer hop is
+   itself an access chain over a named base, every intermediate hop must be
+   a plain INLINE value-struct field (a class hop is a pointer deref, a
+   string/view hop a fat pair — both bail) and the final hop a scalar
+   (struct/string/func/enum-with-data finals bail); the read is then
+   `base_home + Σoffset` — ONE summed-offset load from the receiver's
+   callee-saved param register (or the slot/ref two-instruction form),
+   where the generic path paid `mov x0, <home>` + per-hop loads + a
+   `mov <target>, x0` shuffle. The offset hop is looked up in the struct
+   CONTAINING it (hop_type) before hop_type advances to the field's own
+   struct — the first draft summed after advancing and read `inner` out of
+   `Inner` (fallback offset), which the C-vs-aarch64 output diff caught
+   immediately (o.inner.v read [o+24] instead of [o+16]).
+2. **Deferred field-write base.** `deferred_field_base_reg`
+   (build_assignment_node): when the receiver of `obj.field = rhs` lives in
+   a callee-saved param register (x19–x28 — the only homes
+   function_param_regs ever holds), the base push/pop is simply gone: the
+   store re-reads the register AFTER the RHS build. The value read is
+   bit-identical to the pre-RHS one — the ABI preserves x19–x28 across
+   calls, and inline expansions save/restore what they borrow
+   (`str x19/…; mov x19, x0; …; ldr x19/…`), so nothing inside a RHS can
+   change the register. Applied at the five write sites with the simple
+   post-RHS shape (scalar plain, scalar compound-slow, ref field,
+   value-struct field copy, enum-with-data field); the string/class/view
+   field writes keep the push (they free old values THROUGH the pushed
+   base mid-sequence — a separate slice). 4 → 2 instructions per scalar
+   field write.
+
+**RESULT (interleaved best-of-5, release builds, outputs byte-identical
+on every bench):** pidigits n=4000 1063 → 1062 ms (neutral); fannkuch n=11
++0.7%, nbody 5M +0.5%, mandelbrot n=2000 −1.4%, spectral-norm n=1500
+−1.6%, binarytrees n=18 −0.3%, nsieve n=12 +0.2% — all noise-level. The
+win is instruction count, not wall clock on these kernels (their hot loops
+were already direct-sourced): census `div_to` 106 → 103 and `sub_to`
+50 → 47 with the LAST self-pushes gone (H left one each); pidigits .s
+91267 → 89405 bytes (−2%). Full suite green (2684 tests + the new
+`test/field_marshal.test.ts`: push/pop-free write shape, store-after-call
+ordering, one-load chain shape, and two behavioral runs — the shape tests
+verified to fail on the pre-slice code).
+
 ## Success criteria
 
 Written before the measurements; kept for the record — the per-tranche

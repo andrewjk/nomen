@@ -188,6 +188,24 @@ function get_base_address(access: AccessNode, status: BuildStatus, reg: string) 
 	}
 }
 
+/**
+ * Deferred field-write base (ASM_PLAN_2 tranche H follow-up): when the
+ * receiver of `obj.field = rhs` lives in a callee-saved param register, the
+ * base address needs no push/pop round-trip around the RHS — the register
+ * provably survives it (the ABI preserves x19–x28 across calls; inline
+ * expansions save/restore what they borrow), so the store re-reads it after
+ * the RHS build. The value read is bit-identical to the pre-RHS one.
+ * Returns the register, or undefined to keep the emit + push flow.
+ */
+function deferred_field_base_reg(access: AccessNode, status: BuildStatus): string | undefined {
+	if (access.target.node_type !== "value") return undefined;
+	const name = (access.target as ValueNode).value;
+	if (typeof name !== "string") return undefined;
+	const paramReg = status.function_param_regs?.get(name);
+	if (!paramReg || !/^x(?:19|2[0-8])$/.test(paramReg)) return undefined;
+	return paramReg;
+}
+
 function is_struct_type(type: Type | undefined, status: BuildStatus): boolean {
 	if (!type?.name) return false;
 	return !!status.structs.find((s) => s.name === type.name && !s.is_simple_type);
@@ -1202,17 +1220,24 @@ export default function build_assignment_node(
 			if (field_type?.is_ref) {
 				const offset = get_field_offset(target_type.name, field_name, status);
 
-				get_base_address(access, status, "x0");
-				status.code += `str x0, [sp, #-16]!\n`;
+				const base_reg = deferred_field_base_reg(access, status);
+				if (base_reg === undefined) {
+					get_base_address(access, status, "x0");
+					status.code += `str x0, [sp, #-16]!\n`;
+				}
 
 				get_source_address(node.right_value, status, nir_rhs);
 				if (!status.code.endsWith("\n")) {
 					status.code += "\n";
 				}
-				status.code += `mov x2, x0\n`;
-				status.code += `ldr x0, [sp], #16\n`;
+				if (base_reg !== undefined) {
+					status.code += `str x0, [${base_reg}, #${offset}]\n`;
+				} else {
+					status.code += `mov x2, x0\n`;
+					status.code += `ldr x0, [sp], #16\n`;
 
-				status.code += `str x2, [x0, #${offset}]\n`;
+					status.code += `str x2, [x0, #${offset}]\n`;
+				}
 			} else if (field_type?.is_view && !node.operator) {
 				// A `view T` field store (`line.text = doc.slice(0, 5)`): the
 				// field is a non-owning (ptr, len) pair — store both halves
@@ -1386,15 +1411,22 @@ export default function build_assignment_node(
 					const struct_size = get_struct_size(field_type!.name, status);
 					mark_moved_if_struct(node.right_value, status);
 
-					get_base_address(access, status, "x0");
-					status.code += `str x0, [sp, #-16]!\n`;
+					const base_reg = deferred_field_base_reg(access, status);
+					if (base_reg === undefined) {
+						get_base_address(access, status, "x0");
+						status.code += `str x0, [sp, #-16]!\n`;
+					}
 
 					get_source_address(node.right_value, status, nir_rhs);
 					if (!status.code.endsWith("\n")) {
 						status.code += "\n";
 					}
 					status.code += `mov x1, x0\n`;
-					status.code += `ldr x0, [sp], #16\n`;
+					if (base_reg !== undefined) {
+						status.code += `mov x0, ${base_reg}\n`;
+					} else {
+						status.code += `ldr x0, [sp], #16\n`;
+					}
 
 					emit_struct_copy("x1", "x0", offset, struct_size, status);
 				}
@@ -1408,15 +1440,22 @@ export default function build_assignment_node(
 				const enum_size = get_enum_size(rhs_type.name, status);
 				mark_moved_if_struct(node.right_value, status);
 
-				get_base_address(access, status, "x0");
-				status.code += `str x0, [sp, #-16]!\n`;
+				const base_reg = deferred_field_base_reg(access, status);
+				if (base_reg === undefined) {
+					get_base_address(access, status, "x0");
+					status.code += `str x0, [sp, #-16]!\n`;
+				}
 
 				emit_rhs_value(node.right_value, nir_rhs, status);
 				if (!status.code.endsWith("\n")) {
 					status.code += "\n";
 				}
 				status.code += `mov x1, x0\n`;
-				status.code += `ldr x0, [sp], #16\n`;
+				if (base_reg !== undefined) {
+					status.code += `mov x0, ${base_reg}\n`;
+				} else {
+					status.code += `ldr x0, [sp], #16\n`;
+				}
 
 				emit_struct_copy("x1", "x0", offset, enum_size, status);
 			} else {
@@ -1430,7 +1469,10 @@ export default function build_assignment_node(
 					// complex RHS the base address and current value are
 					// spilled to survive the build; a simple RHS (literal /
 					// plain var) touches neither x1 nor x2, so the base parks
-					// in x2 with no spills.
+					// in x2 with no spills. With a callee-saved base register
+					// the base is never pushed — the store re-reads it after
+					// the RHS (deferred_field_base_reg).
+					const base_reg = deferred_field_base_reg(access, status);
 					get_base_address(access, status, "x0");
 					if (field_size === 1) {
 						status.code += `ldrb w1, [x0, #${offset}]\n`;
@@ -1460,7 +1502,9 @@ export default function build_assignment_node(
 						build_swap(node, status, nir_swap);
 						return;
 					}
-					status.code += `str x0, [sp, #-16]!\n`;
+					if (base_reg === undefined) {
+						status.code += `str x0, [sp, #-16]!\n`;
+					}
 					status.code += `str x1, [sp, #-16]!\n`;
 					emit_rhs_value(node.right_value, nir_rhs, status);
 					if (!status.code.endsWith("\n")) {
@@ -1468,19 +1512,34 @@ export default function build_assignment_node(
 					}
 					status.code += `ldr x1, [sp], #16\n`;
 					emit_compound_op(node.operator, status, is_float_type(field_type?.name ?? ""));
-					status.code += `ldr x1, [sp], #16\n`;
-					if (field_size === 1) {
-						status.code += `strb w0, [x1, #${offset}]\n`;
-					} else if (field_size === 2) {
-						status.code += `strh w0, [x1, #${offset}]\n`;
-					} else if (field_size === 4) {
-						status.code += `str w0, [x1, #${offset}]\n`;
+					if (base_reg !== undefined) {
+						if (field_size === 1) {
+							status.code += `strb w0, [${base_reg}, #${offset}]\n`;
+						} else if (field_size === 2) {
+							status.code += `strh w0, [${base_reg}, #${offset}]\n`;
+						} else if (field_size === 4) {
+							status.code += `str w0, [${base_reg}, #${offset}]\n`;
+						} else {
+							status.code += `str x0, [${base_reg}, #${offset}]\n`;
+						}
 					} else {
-						status.code += `str x0, [x1, #${offset}]\n`;
+						status.code += `ldr x1, [sp], #16\n`;
+						if (field_size === 1) {
+							status.code += `strb w0, [x1, #${offset}]\n`;
+						} else if (field_size === 2) {
+							status.code += `strh w0, [x1, #${offset}]\n`;
+						} else if (field_size === 4) {
+							status.code += `str w0, [x1, #${offset}]\n`;
+						} else {
+							status.code += `str x0, [x1, #${offset}]\n`;
+						}
 					}
 				} else {
-					get_base_address(access, status, "x0");
-					status.code += `str x0, [sp, #-16]!\n`;
+					const base_reg = deferred_field_base_reg(access, status);
+					if (base_reg === undefined) {
+						get_base_address(access, status, "x0");
+						status.code += `str x0, [sp, #-16]!\n`;
+					}
 
 					emit_rhs_value(node.right_value, nir_rhs, status);
 					if (!status.code.endsWith("\n")) {
@@ -1488,16 +1547,28 @@ export default function build_assignment_node(
 					}
 					mark_moved_if_struct(node.right_value, status);
 					status.code += `mov x2, x0\n`;
-					status.code += `ldr x0, [sp], #16\n`;
-
-					if (field_size === 1) {
-						status.code += `strb w2, [x0, #${offset}]\n`;
-					} else if (field_size === 2) {
-						status.code += `strh w2, [x0, #${offset}]\n`;
-					} else if (field_size === 4) {
-						status.code += `str w2, [x0, #${offset}]\n`;
+					if (base_reg !== undefined) {
+						if (field_size === 1) {
+							status.code += `strb w2, [${base_reg}, #${offset}]\n`;
+						} else if (field_size === 2) {
+							status.code += `strh w2, [${base_reg}, #${offset}]\n`;
+						} else if (field_size === 4) {
+							status.code += `str w2, [${base_reg}, #${offset}]\n`;
+						} else {
+							status.code += `str x2, [${base_reg}, #${offset}]\n`;
+						}
 					} else {
-						status.code += `str x2, [x0, #${offset}]\n`;
+						status.code += `ldr x0, [sp], #16\n`;
+
+						if (field_size === 1) {
+							status.code += `strb w2, [x0, #${offset}]\n`;
+						} else if (field_size === 2) {
+							status.code += `strh w2, [x0, #${offset}]\n`;
+						} else if (field_size === 4) {
+							status.code += `str w2, [x0, #${offset}]\n`;
+						} else {
+							status.code += `str x2, [x0, #${offset}]\n`;
+						}
 					}
 				}
 			}

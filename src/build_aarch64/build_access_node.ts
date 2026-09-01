@@ -232,17 +232,156 @@ function build_view_op(
 }
 
 /**
- * Direct-source field read (ASM_PLAN_2 tranche H): a single `.field` hop off
- * a named receiver, loaded DIRECTLY into `target_reg` — the generic path
- * spends a `mov x0, <home>` + `ldr x0, [x0, #off]` + caller-side
- * `mov <target>, x0` triple; this emits the one load from the receiver's
- * home. Handles the same receiver homes as build_access_field's generic tail
- * (param register / ref-local deref / local slot address) and the same
- * width/signedness table. Returns false for every shape build_access_field
- * special-cases upstream (enums, views, strings, func-typed fields,
- * class vars, array/nullable receivers, struct-typed fields, nested access
- * chains) — the caller then falls back to build_node unchanged.
+ * Direct-source field read (ASM_PLAN_2 tranche H + follow-up): a field read
+ * off a named receiver — a single `.field` hop or a chain of inline
+ * value-struct hops (`a.b.c`, offsets summed) — loaded DIRECTLY into
+ * `target_reg`; the generic path spends a `mov x0, <home>` + per-hop loads
+ * + caller-side `mov <target>, x0` shuffles. Handles the same receiver
+ * homes as build_access_field's generic tail (param register / ref-local
+ * deref / local slot address) and the same width/signedness table. Returns
+ * false for every shape build_access_field special-cases upstream (enums,
+ * views, strings, func-typed fields, class vars, array/nullable receivers,
+ * struct-typed final fields, chains through anything but plain value
+ * structs) — the caller then falls back to build_node unchanged.
  */
+/**
+ * Width/signedness table for a scalar field load from a resolved base
+ * address. Shared by the single-hop and chain direct-load paths (and by the
+ * generic tail they replace) — same instructions, different base.
+ */
+function emit_scalar_field_load(
+	base: string,
+	offset: number,
+	field_type_name: string,
+	target_reg: string,
+	status: BuildStatus,
+): void {
+	const size = aarch64_size(field_type_name);
+	const signed = is_signed_type(field_type_name);
+	if (size === 1) {
+		status.code += signed
+			? `ldrsb ${target_reg}, [${base}, #${offset}]\n`
+			: `ldrb ${target_reg.replace("x", "w")}, [${base}, #${offset}]\n`;
+	} else if (size === 2) {
+		status.code += signed
+			? `ldrsh ${target_reg}, [${base}, #${offset}]\n`
+			: `ldrh ${target_reg.replace("x", "w")}, [${base}, #${offset}]\n`;
+	} else if (size === 4) {
+		status.code += signed
+			? `ldrsw ${target_reg}, [${base}, #${offset}]\n`
+			: `ldr ${target_reg.replace("x", "w")}, [${base}, #${offset}]\n`;
+	} else {
+		status.code += `ldr ${target_reg}, [${base}, #${offset}]\n`;
+	}
+}
+
+/**
+ * Resolve the receiver's home and emit the field load from it: a callee-
+ * saved param register loads directly; a slot/ref receiver resolves its
+ * base address INTO the target register (this load's scratch) and loads
+ * from it. Returns false when the home is neither (caller-saved param reg,
+ * heap array) — the caller falls back to build_node unchanged.
+ */
+function load_field_from_receiver_home(
+	receiver_name: string,
+	offset: number,
+	field_type_name: string,
+	target_reg: string,
+	status: BuildStatus,
+): boolean {
+	const paramReg = get_param_reg(receiver_name, status);
+	if (paramReg && /^x(?:19|2[0-8])$/.test(paramReg)) {
+		// The receiver's home IS a callee-saved register: one direct load.
+		emit_scalar_field_load(paramReg, offset, field_type_name, target_reg, status);
+		return true;
+	}
+	if (paramReg || status.heap_array_vars?.has(receiver_name)) return false;
+	if (is_local_ref_var(receiver_name, status)) {
+		emit_deref_var_address(status, target_reg, receiver_name);
+	} else {
+		emit_var_address(status, target_reg, receiver_name);
+	}
+	emit_scalar_field_load(target_reg, offset, field_type_name, target_reg, status);
+	return true;
+}
+
+/**
+ * Multi-hop direct field read (`a.b.c` off a named base — ASM_PLAN_2
+ * tranche H follow-up): every intermediate hop must be a plain INLINE
+ * value-struct field (a class hop is a pointer dereference, a string/view
+ * hop a fat pair — both change the addressing) and the final hop a scalar;
+ * the read is then `base_home + Σoffset`, one instruction where the
+ * generic path built each hop through x0 with a caller-side shuffle.
+ * Returns false for every other shape — the caller falls back to
+ * build_node unchanged.
+ */
+function emit_direct_field_chain(
+	access_node: AccessNode,
+	target_reg: string,
+	status: BuildStatus,
+): boolean {
+	const hops: AccessFieldNode[] = [];
+	let cursor: BaseNode = access_node;
+	while (cursor.node_type === "access") {
+		const hop = cursor as AccessNode;
+		if (hop.access?.node_type !== "access_field") return false;
+		hops.unshift(hop.access as AccessFieldNode);
+		cursor = hop.target;
+	}
+	if (cursor.node_type !== "value") return false;
+	const receiver_name = (cursor as ValueNode).value;
+	if (typeof receiver_name !== "string" || receiver_name === "null") return false;
+
+	let base_type = type_from_value_node(cursor);
+	if (!base_type?.name) {
+		if (receiver_name === "self" && status.current_struct) {
+			base_type = new Type(status.current_struct.name);
+		} else if (status.variable_types?.has(receiver_name)) {
+			base_type = status.variable_types.get(receiver_name)!;
+		} else {
+			const decl = status.scoped_declarations.findLast((d) => d.name === receiver_name);
+			if (decl?.type?.name) {
+				base_type = decl.type;
+			}
+		}
+	}
+	if (!base_type?.name) return false;
+	if (base_type.is_array || base_type.is_view || base_type.is_nullable) return false;
+	if (base_type.name === "string" || base_type.name === "func") return false;
+	const base_struct = status.structs.find((s) => s.name === base_type.name && !s.is_generic);
+	if (!base_struct || base_struct.is_class || base_struct.is_simple_type) return false;
+	if (!base_struct.fields.find((f) => f.name === hops[0].name)) return false;
+	if (status.bitsets.find((b) => b.name === base_type.name)) return false;
+	if (receiver_name === "self" && is_array_mono_struct(base_struct, status)) return false;
+
+	let hop_type = base_type;
+	let offset = 0;
+	let final_field_type = "";
+	for (let i = 0; i < hops.length; i++) {
+		const field = resolve_field_type(hops[i], hop_type.name, status);
+		const field_name = field?.name || "";
+		if (!field_name || field!.is_ref || field!.is_nullable || field!.is_view) return false;
+		const field_struct = status.structs.find((s) => s.name === field_name && !s.is_simple_type);
+		// The offset hop is looked up in the struct CONTAINING it (hop_type);
+		// only afterwards does hop_type advance to the field's own struct.
+		offset += get_field_offset(hop_type.name, hops[i].name, status);
+		if (i === hops.length - 1) {
+			// Final hop: scalar only. Struct-typed fields (value or class),
+			// fat strings, func fields, and multi-word enum payloads stay on
+			// the generic path.
+			final_field_type = field_name;
+			if (field_struct || field_name === "string" || field_name === "func") return false;
+			if (status.enums.find((e) => e.name === field_name && e.has_associated_data)) {
+				return false;
+			}
+		} else {
+			if (!field_struct || field_struct.is_class) return false;
+			hop_type = field!;
+		}
+	}
+	return load_field_from_receiver_home(receiver_name, offset, final_field_type, target_reg, status);
+}
+
 export function emit_direct_field_load(
 	node: BaseNode,
 	target_reg: string,
@@ -251,6 +390,10 @@ export function emit_direct_field_load(
 	if (node.node_type !== "access") return false;
 	const access_node = node as AccessNode;
 	if (access_node.access?.node_type !== "access_field") return false;
+	// Multi-hop chain: same direct-load idea with the offsets summed.
+	if (access_node.target?.node_type === "access") {
+		return emit_direct_field_chain(access_node, target_reg, status);
+	}
 	if (access_node.target?.node_type !== "value") return false;
 	const access_field = access_node.access as AccessFieldNode;
 	const receiver_name = (access_node.target as ValueNode).value;
@@ -293,43 +436,14 @@ export function emit_direct_field_load(
 		is_struct_type(resolved_field_type, status);
 	if (field_is_struct || resolved_field_type === "string" || field_type_obj?.is_view) return false;
 
-	const paramReg = get_param_reg(receiver_name, status);
 	const offset = compute_field_offset(access_node, status);
-	const emit_field_load = (base: string): void => {
-		const size = aarch64_size(resolved_field_type);
-		const signed = is_signed_type(resolved_field_type);
-		if (size === 1) {
-			status.code += signed
-				? `ldrsb ${target_reg}, [${base}, #${offset}]\n`
-				: `ldrb ${target_reg.replace("x", "w")}, [${base}, #${offset}]\n`;
-		} else if (size === 2) {
-			status.code += signed
-				? `ldrsh ${target_reg}, [${base}, #${offset}]\n`
-				: `ldrh ${target_reg.replace("x", "w")}, [${base}, #${offset}]\n`;
-		} else if (size === 4) {
-			status.code += signed
-				? `ldrsw ${target_reg}, [${base}, #${offset}]\n`
-				: `ldr ${target_reg.replace("x", "w")}, [${base}, #${offset}]\n`;
-		} else {
-			status.code += `ldr ${target_reg}, [${base}, #${offset}]\n`;
-		}
-	};
-	if (paramReg && /^x(?:19|2[0-8])$/.test(paramReg)) {
-		// The receiver's home IS a callee-saved register: one direct load.
-		emit_field_load(paramReg);
-		return true;
-	}
-	if (paramReg || status.heap_array_vars?.has(receiver_name)) return false;
-	// Slot/ref home: resolve the base address INTO the target register (it is
-	// this load's scratch), then load the field from it — two instructions
-	// where the generic path used three.
-	if (is_local_ref_var(receiver_name, status)) {
-		emit_deref_var_address(status, target_reg, receiver_name);
-	} else {
-		emit_var_address(status, target_reg, receiver_name);
-	}
-	emit_field_load(target_reg);
-	return true;
+	return load_field_from_receiver_home(
+		receiver_name,
+		offset,
+		resolved_field_type,
+		target_reg,
+		status,
+	);
 }
 
 export function emit_address_of(node: BaseNode, status: BuildStatus) {
