@@ -164,6 +164,7 @@ export const MNEMONICS: Record<string, MnemonicSig> = {
 			["r", "r", "r"],
 			["r", "r", "i"],
 			["f", "f", "f"], // vector `add v0.2d/4s, …`
+			["r", "r", "l"], // `add x9, x9, _sym@PAGEOFF` (adrp pair idiom)
 		],
 	},
 	sub: {
@@ -312,6 +313,11 @@ export const MNEMONICS: Record<string, MnemonicSig> = {
 		],
 	},
 	adr: { shapes: [["r", "l"]] },
+	// adrp: page-relative symbol address (Mach-O `adrp x9, _sym@PAGE`). The
+	// vtable install in every trait-conforming struct's init uses adrp+add
+	// because the vtable lives in the __DATA segment (cross-section from
+	// __TEXT, so adr's ±1MB reach doesn't apply).
+	adrp: { shapes: [["r", "l"]] },
 	b: { shapes: [["l"]] },
 	cbz: { shapes: [["r", "l"]] },
 	cbnz: { shapes: [["r", "l"]] },

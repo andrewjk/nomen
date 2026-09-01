@@ -274,18 +274,3 @@ vary with the process address space. Present at HEAD before the
 accumulator/at()-index work (verified via stash). The chaotic system
 amplifies a ~1-ulp difference to the 6th decimal. Worth an MSan-style
 audit of advance()'s locals when the receipts method next targets nbody.
-
-## asm validator rejects the backend's own adrp/@PAGEOFF vtable loads (pre-existing)
-
-Any build that monomorphizes a generic struct with trait conformance
-(e.g. `Body[5]` → `Array<Body>` in bench/nomen/nbody.nm) emits
-`adrp x9, _<T>_traits@PAGE` + `add x9, x9, _<T>_traits@PAGEOFF`
-(build_struct_node.ts vtable emission). The internal asm validator's
-mnemonic table knows neither `adrp` nor the `@PAGE`/`@PAGEOFF` relocation
-operand forms, so `build(..., { arch: "aarch64" })` returns asm errors
-for perfectly valid code (clang assembles it; the bench binaries build
-and run — compile_nomen.ts ignores build errors). Consequence: test
-helpers that assert `build errors === []` cannot use struct-array
-programs (test/accumulator_promotion.test.ts works around it via
-Buffer<float>). Fix: teach asm_ir.ts the `adrp` mnemonic and the
-`@PAGE`/`@PAGEOFF` operand shapes.
