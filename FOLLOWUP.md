@@ -298,6 +298,23 @@ Fix sketch: in the C backend's hoisted-allocation emission, walk the hoisted
 compute's arguments with the same ref-param indices the checker stamps and
 emit `&name` for those positions.
 
+## Nullable class-field write through a method crashes on aarch64 (pre-existing)
+
+Found while probing the field-write deferral slice (aarch64, baseline AND
+after): a `mov Box? art = null` field assigned through a method
+(`func set_art = (ref self, Box b) { self.art = b }`) — two successive
+calls SIGTRAP before any output. The non-nullable class-field write path
+(`field_struct?.is_class` branch in build_assignment_node) destroys+frees
+the old field value; with a nullable field whose old value is null, the
+cbz guard should skip... the crash happens before main's first write
+completes, so the suspect is the load or the guard sequence for the
+never-assigned field, not the ownership dance. The same shape through a
+plain local assignment (outside a method) is not exercised by this probe —
+scope unknown. Bisected shapes: `wall` (nullable class field, method
+write) crashes; string-field and view-field writes through methods are
+fine; `test/view_fields.test.ts` and `test/field_marshal.test.ts` are
+green, so the common shapes are covered elsewhere.
+
 ## promote_loop_locals misclassifies float params into the int pool (pre-existing)
 
 A loop candidate with NO scoped declaration and NO body-declare record

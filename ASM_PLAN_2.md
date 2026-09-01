@@ -844,6 +844,49 @@ were already direct-sourced): census `div_to` 106 → 103 and `sub_to`
 ordering, one-load chain shape, and two behavioral runs — the shape tests
 verified to fail on the pre-slice code).
 
+## Tranche H follow-up part 2 — string/class/view field writes defer their base too (DONE)
+
+The separate slice part 1 left on the table: the string-field, class-field
+and view-field write paths kept the base push because they free old values
+THROUGH the pushed base mid-sequence. But the free reads the base at most
+one instruction after the RHS — and the callee-saved register holds the
+same value there as the pushed copy did. All three paths now take
+`deferred_field_base_reg`:
+
+- **String fields** (`field_is_struct_string` branch): the displaced-value
+  free loads `ldr x0, [<base_reg>, #offset]` instead of
+  `ldr x0, [sp, #16]; ldr x0, [x0, #offset]`, and the (ptr, len) halves
+  store straight through the register. 3 instructions + one stack frame
+  gone per write.
+- **Class fields** (`field_struct?.is_class` branch): the old instance
+  pointer for the #destroy/free dance loads from `[<base_reg>, #offset]`
+  (no `mov x0, <reg>` + push), and the new pointer stores through the
+  register. 3 instructions gone; the destroy guards' internal spill/restore
+  is untouched.
+- **View fields**: the (ptr, len) pair stores through the register. 3
+  instructions gone.
+
+Slot-homed receivers (binarytrees' `node.left = …` on a local) are
+deliberately untouched: `get_base_address` reads the slot CONTENT there
+(the instance pointer), and that read is load-bearing before the RHS — a
+ref-aliased call inside the RHS may legally replace it, and the pushed
+pre-RHS pointer is the current semantics. Only register-held bases defer.
+
+**RESULT (interleaved best-of-5, release builds, outputs byte-identical
+on every bench):** pidigits n=4000 +0.9%, fannkuch −0.3%, nbody −0.1%,
+mandelbrot ±0.0%, spectral-norm +0.9%, binarytrees −0.5%, nsieve −0.9% —
+all noise, as expected (no bench kernel writes string/class/view fields
+through a param-register receiver; the beneficiaries are core-library and
+GUI method bodies). pidigits .s unchanged (89405 bytes — its writes were
+already deferred in part 1). Full suite green (2692 tests + three new
+`field_marshal.test.ts` cases: string-free-through-register shape,
+view-pair-through-register shape, and an aarch64-only ownership gauntlet —
+literal → heap → literal overwrites under the audit runtime — whose two
+shape tests fail on the part-1 code). Probing surfaced a PRE-EXISTING
+crash, recorded in FOLLOWUP.md: a `mov Box?` nullable class-field write
+through a method SIGTRAPs on aarch64 at baseline (shape isolated, out of
+scope here).
+
 ## Success criteria
 
 Written before the measurements; kept for the record — the per-tranche

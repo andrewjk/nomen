@@ -1244,8 +1244,11 @@ export default function build_assignment_node(
 				// verbatim. Nothing is duplicated and the displaced pair owns
 				// nothing, so there is no strdup / free / ownership record.
 				const offset = get_field_offset(target_type.name, field_name, status);
-				get_base_address(access, status, "x0");
-				status.code += `str x0, [sp, #-16]!\n`;
+				const base_reg = deferred_field_base_reg(access, status);
+				if (base_reg === undefined) {
+					get_base_address(access, status, "x0");
+					status.code += `str x0, [sp, #-16]!\n`;
+				}
 
 				emit_rhs_value(node.right_value, nir_rhs, status);
 				if (!status.code.endsWith("\n")) {
@@ -1256,17 +1259,27 @@ export default function build_assignment_node(
 					// A fat string / view value builds as the full pair.
 					status.code += `stp x0, x1, [sp, #-16]!\n`;
 					status.code += `ldp x2, x3, [sp], #16\n`;
-					status.code += `ldr x0, [sp], #16\n`;
-					status.code += `str x2, [x0, #${offset}]\n`;
-					status.code += `str x3, [x0, #${offset + 8}]\n`;
+					if (base_reg !== undefined) {
+						status.code += `str x2, [${base_reg}, #${offset}]\n`;
+						status.code += `str x3, [${base_reg}, #${offset + 8}]\n`;
+					} else {
+						status.code += `ldr x0, [sp], #16\n`;
+						status.code += `str x2, [x0, #${offset}]\n`;
+						status.code += `str x3, [x0, #${offset + 8}]\n`;
+					}
 				} else {
 					// A scalar RHS has no pair identity: store the value half,
 					// zero the length half (an empty slice over that value).
 					status.code += `str x0, [sp, #-16]!\n`;
 					status.code += `ldr x2, [sp], #16\n`;
-					status.code += `ldr x0, [sp], #16\n`;
-					status.code += `str x2, [x0, #${offset}]\n`;
-					status.code += `str xzr, [x0, #${offset + 8}]\n`;
+					if (base_reg !== undefined) {
+						status.code += `str x2, [${base_reg}, #${offset}]\n`;
+						status.code += `str xzr, [${base_reg}, #${offset + 8}]\n`;
+					} else {
+						status.code += `ldr x0, [sp], #16\n`;
+						status.code += `str x2, [x0, #${offset}]\n`;
+						status.code += `str xzr, [x0, #${offset + 8}]\n`;
+					}
 				}
 			} else if (
 				field_is_struct_string(target_type, field_type, status) &&
@@ -1308,8 +1321,11 @@ export default function build_assignment_node(
 				const old_was_heap = is_class_target || !!status.heap_string_fields?.has(tracked_key);
 				const offset = get_field_offset(target_type.name, field_name, status);
 
-				get_base_address(access, status, "x0");
-				status.code += `str x0, [sp, #-16]!\n`;
+				const base_reg = deferred_field_base_reg(access, status);
+				if (base_reg === undefined) {
+					get_base_address(access, status, "x0");
+					status.code += `str x0, [sp, #-16]!\n`;
+				}
 
 				status.last_result_is_heap = false;
 				emit_rhs_value(node.right_value, nir_rhs, status);
@@ -1324,28 +1340,47 @@ export default function build_assignment_node(
 				// Spill the new value (x2/x3 are caller-saved — the free call
 				// may clobber them), free the old field value, then store.
 				// A fat string field is a 16-byte slot — spill and store BOTH
-				// halves as one 16-byte push/pop frame.
+				// halves as one 16-byte push/pop frame. With a deferred base
+				// register the old value loads from and the halves store
+				// through the register — no base push/pop, no [sp,#16] reload.
 				if (field_type?.name === "string") {
 					status.code += `stp x0, x1, [sp, #-16]!\n`;
 					if (old_was_heap) {
-						status.code += `ldr x0, [sp, #16]\n`;
-						status.code += `ldr x0, [x0, #${offset}]\n`;
+						if (base_reg !== undefined) {
+							status.code += `ldr x0, [${base_reg}, #${offset}]\n`;
+						} else {
+							status.code += `ldr x0, [sp, #16]\n`;
+							status.code += `ldr x0, [x0, #${offset}]\n`;
+						}
 						emit_free(status);
 					}
 					status.code += `ldp x2, x3, [sp], #16\n`;
-					status.code += `ldr x0, [sp], #16\n`;
-					status.code += `str x2, [x0, #${offset}]\n`;
-					status.code += `str x3, [x0, #${offset + 8}]\n`;
+					if (base_reg !== undefined) {
+						status.code += `str x2, [${base_reg}, #${offset}]\n`;
+						status.code += `str x3, [${base_reg}, #${offset + 8}]\n`;
+					} else {
+						status.code += `ldr x0, [sp], #16\n`;
+						status.code += `str x2, [x0, #${offset}]\n`;
+						status.code += `str x3, [x0, #${offset + 8}]\n`;
+					}
 				} else {
 					status.code += `str x0, [sp, #-16]!\n`;
 					if (old_was_heap) {
-						status.code += `ldr x0, [sp, #16]\n`;
-						status.code += `ldr x0, [x0, #${offset}]\n`;
+						if (base_reg !== undefined) {
+							status.code += `ldr x0, [${base_reg}, #${offset}]\n`;
+						} else {
+							status.code += `ldr x0, [sp, #16]\n`;
+							status.code += `ldr x0, [x0, #${offset}]\n`;
+						}
 						emit_free(status);
 					}
 					status.code += `ldr x2, [sp], #16\n`;
-					status.code += `ldr x0, [sp], #16\n`;
-					status.code += `str x2, [x0, #${offset}]\n`;
+					if (base_reg !== undefined) {
+						status.code += `str x2, [${base_reg}, #${offset}]\n`;
+					} else {
+						status.code += `ldr x0, [sp], #16\n`;
+						status.code += `str x2, [x0, #${offset}]\n`;
+					}
 				}
 				// `self.field = …` inside a value-struct method writes through
 				// to the caller's storage (the caller tracks ownership);
@@ -1363,9 +1398,14 @@ export default function build_assignment_node(
 					const offset = get_field_offset(target_type.name, field_name, status);
 					mark_moved_if_struct(node.right_value, status);
 
-					get_base_address(access, status, "x0");
-					status.code += `str x0, [sp, #-16]!\n`;
-					status.code += `ldr x0, [x0, #${offset}]\n`;
+					const base_reg = deferred_field_base_reg(access, status);
+					if (base_reg !== undefined) {
+						status.code += `ldr x0, [${base_reg}, #${offset}]\n`;
+					} else {
+						get_base_address(access, status, "x0");
+						status.code += `str x0, [sp, #-16]!\n`;
+						status.code += `ldr x0, [x0, #${offset}]\n`;
+					}
 					// Run #destroy + free on the old field value, not just a raw
 					// free — otherwise resources the instance owns (nested heap,
 					// handles) silently leak. For nullable fields, guard with cbz
@@ -1394,17 +1434,29 @@ export default function build_assignment_node(
 						status.code += "\n";
 					}
 					status.code += `mov x2, x0\n`;
-					status.code += `ldr x0, [sp], #16\n`;
 
 					const field_size = aarch64_size(field_type?.name ?? "int");
-					if (field_size === 1) {
-						status.code += `strb w2, [x0, #${offset}]\n`;
-					} else if (field_size === 2) {
-						status.code += `strh w2, [x0, #${offset}]\n`;
-					} else if (field_size === 4) {
-						status.code += `str w2, [x0, #${offset}]\n`;
+					if (base_reg !== undefined) {
+						if (field_size === 1) {
+							status.code += `strb w2, [${base_reg}, #${offset}]\n`;
+						} else if (field_size === 2) {
+							status.code += `strh w2, [${base_reg}, #${offset}]\n`;
+						} else if (field_size === 4) {
+							status.code += `str w2, [${base_reg}, #${offset}]\n`;
+						} else {
+							status.code += `str x2, [${base_reg}, #${offset}]\n`;
+						}
 					} else {
-						status.code += `str x2, [x0, #${offset}]\n`;
+						status.code += `ldr x0, [sp], #16\n`;
+						if (field_size === 1) {
+							status.code += `strb w2, [x0, #${offset}]\n`;
+						} else if (field_size === 2) {
+							status.code += `strh w2, [x0, #${offset}]\n`;
+						} else if (field_size === 4) {
+							status.code += `str w2, [x0, #${offset}]\n`;
+						} else {
+							status.code += `str x2, [x0, #${offset}]\n`;
+						}
 					}
 				} else {
 					const offset = get_field_offset(target_type.name, field_name, status);
