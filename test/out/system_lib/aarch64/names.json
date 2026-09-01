@@ -82,6 +82,8 @@
 	"Ansi_bg_magenta",
 	"Ansi_bg_cyan",
 	"Ansi_bg_white",
+	"uint32_hash",
+	"uint32_to_string",
 	"BigInt_init",
 	"BigInt_new",
 	"BigInt_ensure",
