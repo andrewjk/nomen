@@ -620,24 +620,40 @@ depth for future passes, byte-clean kill-switch.
 loop-spanning names into the callee pool via loop-weighted traffic
 (`weighted_reads >= 8`) captured the real targets — div_to's `divisor`
 promoted (3 slot loads/iteration gone), mul_to's `sp` promoted — but
-**mandelbrot hung at n=16**. Forensics, compressed: the bar admitted the
-loop-written state too (`y`, `x`, `checksum`, `outer`, `inner`,
-`byte_val`, `bit` — all live across loop headers), moving them from loop
-promotion's bracketing (entry load / exit store-back with
-register_allocations snapshot) into function-plan plain bindings — and
-the mbrot INLINE EXPANSION's seed (`seed_function_allocations`)
-OVERWRITES `callee_saved_regs_used` with its own plan's set and the
-expansion path clears `register_allocations`, so the caller's claims
-vanish from exactly the sets the expansion's own promotion consults;
-mbrot's claims then reuse the caller's live registers. A never-written
-gate on the bar still hung (the expansion reclaims ANY register whose
-claim only lives in the overwritten sets). Structural blocker, written
-per the success criteria: **loop-invariant slot loads need the inline
-expansion path to UNION caller claims into its seed instead of
-overwriting them** — a one-session fix on its own, after which the
-re-baring can land. Until then the loads stay: the loops use all six
-callee-saved + four ext registers on live state, and the remaining
-traffic is 2–3 `ldr`s per iteration against a correct allocator.
+**mandelbrot hung at n=16**. Two forensic sessions, findings compressed:
+
+- First theory (written-loop state losing bracketing) was WRONG — a
+  never-written-only gate (admitting just `size`/`chunk_size`) still
+  hung. `sample` pinned the spin to mbrot's inlined inner loop; the
+  outer counter is what never terminates.
+- The allocation dump found a REAL collision class: with the bar's
+  extra plan claims (size=x24, chunk_size=x25, bit=x23), the mbrot
+  INLINE EXPANSION's loop promotion can no longer start at x23 and
+  reaches the caller-saved ext pool — claiming x13/x14/x15 — while the
+  enclosing bit-loop's `byte_val=x13` ext claim is INVISIBLE to it
+  (`register_allocations` is cleared at expansion entry;
+  `callee_saved_regs_used` deliberately excludes ext regs;
+  `nir_caller_saved_claimed` only tracked the FUNCTION-plan's ext
+  claims). **Fixed**: loop promotion now records its ext-pool claims in
+  `nir_caller_saved_claimed` (the set the expansion consults), so the
+  expansion avoids them. Also exposed: the expansion swaps
+  `function_param_types` to an EMPTY map, so mbrot's FLOAT param `ci`
+  promoted through the unknown-type-int default (ci=x15) — the
+  documented mandelbrot ci/cr receipt re-entering through the expansion
+  door; its offset audit is open.
+- With the ext-claim fix landed, mandelbrot STILL hangs with the bar on
+  — the remaining corruption lives in the expansion's shadow-slot
+  store-backs (`str x13, [#128]` per bit-iteration) interleaving with
+  main's frame under the shifted layout. Structural blocker, per the
+  success criteria: **the re-baring needs an instrumented session that
+  dumps the frame slot map beside the expansion's bracket pairs** (plus
+  the expansion's param-type swap fix above) before it can land. The
+  loop-invariant loads (`bp`/`sp`/`divisor`) stay; the loops use all
+  six callee-saved + four ext registers on live state.
+
+Full suite green through both sessions (277 files); all six bench
+outputs byte-identical in the landed state (cap lift + ext-claim
+survival, bar off).
 
 ## Method (unchanged from ASM_PLAN_2)
 

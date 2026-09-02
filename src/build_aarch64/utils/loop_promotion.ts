@@ -429,6 +429,18 @@ export function promote_loop_locals(
 			if (!p.reg.startsWith("d2") && !p.reg.startsWith("d3") && !/^x1[0-5]$/.test(p.reg)) {
 				status.callee_saved_regs_used.add(p.reg);
 			}
+			// Ext-pool claims (x12-x15 / d24-d31) must still SURVIVE the
+			// inline-expansion path's register_allocations clear: an
+			// expansion's own loop promotion consults
+			// `nir_caller_saved_claimed` (it cannot consult this loop's
+			// bindings — the map was cleared), and without the record it
+			// reclaims the register for its own local while this loop's
+			// bracketed value is live (mandelbrot: byte_val=x13 reclaimed
+			// by the inlined mbrot's `outer`).
+			if (p.reg.startsWith("d2") || p.reg.startsWith("d3") || /^x1[0-5]$/.test(p.reg)) {
+				if (!status.nir_caller_saved_claimed) status.nir_caller_saved_claimed = new Set();
+				status.nir_caller_saved_claimed.add(p.reg);
+			}
 		}
 	}
 
