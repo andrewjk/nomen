@@ -7,7 +7,7 @@
 >
 > Motivation: pidigits and nbody remain the two worst gaps vs the C backend's
 > `clang -O2` artifact. Receipts below measured 2026-09-02.
-> **Tranches A and B are DONE; C is DONE** (enablement declined + the mandelbrot unroll corruption fixed); **D step 1 is DONE** (float declaration fast path + `.at()` call-freeness — nbody −44%, ~1.7× vs C), D step 2 (NEON) remains receipt-gated. E is a survey note.
+> **A, B, C are DONE** (C: enablement declined + the mandelbrot unroll corruption fixed); **D step 1 is DONE** (nbody −44%, ~1.7× vs C) and **D step 2 is CLOSED** (analyzed: j-pair vectorization unprofitable for AoS; clang's win is field-pair SLP — a future pass class). **E is DONE as a survey** (the div128 boundary does not dominate post-B; neutral, reverted). All measured receipts in-section.
 
 ## Where the gap actually is (receipts, 2026-09-02)
 
@@ -372,30 +372,76 @@ Remaining for D step 2 (NEON) and beyond: the field-WRITE marshalling
 spill pair, the fsqrt d0 crossings, and — the gap clang still owns —
 vectorization of the inner loop. Receipt-gated as before.
 
-## Tranche D, step 2 — inner-loop NEON for fixed struct arrays (nbody, receipt-gated)
+## Tranche D, step 2 — inner-loop NEON for fixed struct arrays — CLOSED (analyzed, wrong transform)
 
-Clang's third win: the unrolled inner vectorizes over j-pairs. Our
-vectorizer plans Buffer load/store elementwise loops only; this tranche
-extends `plan_vector_loop` with a struct-array element kind (element =
-struct stride, field offsets as lane bases, `.2d` lanes over j-pairs).
-Per-j terms (`dx*mass_i`, …) are lane-independent; the `A_i` accumulation
-is a float reduction → `--fast_math` gated, same as tranche 3.
+The gate receipt was earned (post-D1 census: 196 instrs / fp 59 / sp 35 vs
+clang's 59 / 25 / 0), but reading clang's actual `advance` kills the
+planned transform. What clang ships is NOT lanes-over-j:
 
-RECEIPT FIRST: after A+B+C, re-census `advance` vs clang. If the remaining
-gap is ALU parallelism (fp ops dominate, stack ~0), vectorize; if it is
-still address/register traffic, fix that first. Tranches 5/6's closed
-candidates (`shifted indices`, byte kinds) stay closed — this is a
-different element kind, not a reopened one.
+```asm
+ldr q4, [x11, #32]        ; (bj.vx, bj.vy) — ONE q-load, fields as lanes
+fsub.2d v16, v2, v16      ; (dx, dy)
+fmul.2d v17, v16, v16     ; (dx², dy²)
+faddp.2d d17, v17         ; dx²+dy² horizontal
+fsqrt d17, d7             ; sqrt stays SCALAR
+fsub.2d v4, v4, v19       ; (bvx, bvy) -= dx*mag, dy*mag
+str q4, [x11, #32]        ; one q-store
+add x9, x9, #64; subs x13, x13, #1; b.ne   ; the j loop REMAINS a loop
+```
 
-## Tranche E (survey note, not planned): the div128 boundary
+Two conclusions:
 
-`div128` lowers to `___udivti3` — a real call, so everything live across it
-must be callee-saved (correct today, and the pool is the constraint the
-per-limb loops feel). If the post-A/B pidigits receipts still show the call
-boundary dominating: (a) Newton–Raphson reciprocal or `umulh`-based
-division in raw asm (counted a loss for NEON in ASM_PLAN_2, unanalyzed for
-scalar), or (b) `#arch: aarch64` inline asm for the estimate step. Survey,
-measure, then decide — do not start here.
+1. **Lanes-over-j (the planned `plan_vector_loop` extension) is
+   unprofitable for AoS struct arrays.** `{x_j, x_j+1}` are 64 bytes
+   apart: each field-pair gather costs `ldr d; ldr d; ins v.d[1]` (3
+   instructions) to save one 2-wide fp op. Counting nbody's inner body:
+   ~21 gather instructions per pair against ~26 scalar fp ops halved —
+   the gather eats the win before the RMW stores and reductions pay
+   anything. Clang doesn't do it either.
+2. **Clang's win is field-pair SLP within ONE body** — (x,y) and (vx,vy)
+   as `.2d` lanes, `faddp` for the horizontal sum, q-load/q-store of
+   adjacent field pairs. That is a different pass class (superword-level
+   pattern matching over consecutive statements), not an extension of the
+   induction-driven loop vectorizer. And it is layout-gated: clang's C
+   structs have no 8-byte prefix, so its (x,y) pair sits at #0; Nomen's
+   vt-prefix layout puts x@8/y@16, which the Q-form LDR immediate cannot
+   even encode (offsets must be multiples of 16). The usable Nomen pairs
+   are (y,z)@16 and (vx,vy)@32 — the win shrinks to the vx/vy update
+   slice.
+
+CLOSED as analyzed-unprofitable for the loop vectorizer. The honest
+remaining lever for nbody is a field-pair SLP pass — its own project, on
+the order of the NEON vectorizer itself, gated on a receipt showing the
+instruction-count delta (~35 vs ~55 per body) survives Nomen's prefix
+layout. nbody stands at ~1.7× vs C `-O2`.
+
+## Tranche E (DONE — survey): the div128 boundary does not dominate
+
+The premise ("`div128` → `___udivti3` is a real call and the per-limb
+loops feel the pool constraint") predates tranche B. Measured directly:
+the full Granlund–Montgomery replacement — normalize once, hoist
+`m = invert_limb(d_norm)` via one `div128` call, per-limb
+`umulh(m, n_hi) + n_hi` estimate (GM Thm 4.2, error ≤ 2) made exact by a
+bounded self-validating remainder correction with the library call as a
+fallback — swept **correct on 176 divisor×dividend cases on both
+backends** (`test/bigint_single_limb.test.ts`, cross-backend +
+in-program `a == q·d + r` verification) and measured **perf-neutral**:
+pidigits n=4000 0.84 → 0.84 s, outputs identical.
+
+That is the survey answer: **post-B, the call boundary is not the
+bottleneck.** Tranche B's cset fuse flattened the profile (the ASM_PLAN_2
+tranche-F accounting was taken before it); the remaining time is smeared
+across the limb loops' memory traffic and residual per-statement costs,
+none of which a faster div128 touches. The implementation was reverted
+(neutral perf does not buy complexity in the core library — the
+`Buffer.data` LICM precedent); the sweep test stays as a division
+regression test.
+
+pidigits stands at ~2.3× vs C `-O2`. The remaining distance is the same
+structural accounting as stage 2/3's: clang's limb loops keep ~10 live
+scalars in registers through memory traffic our per-statement model
+still materializes — the next lever there would be NIR-level store-to-load
+forwarding across straight-line regions (stage 4), not division.
 
 ## Method (unchanged from ASM_PLAN_2)
 
