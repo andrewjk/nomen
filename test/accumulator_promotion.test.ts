@@ -133,9 +133,13 @@ test("body-declared locals promote in their own loop via pre-allocated slots", (
 	for (const offset of slot_writes) {
 		expect(fn).not.toMatch(new RegExp(`ldr d\\d+, \\[x29, #${offset}\\]`));
 	}
-	// The promoted declares initialize their d-register directly instead of
-	// storing to a slot.
-	expect(fn).toMatch(/fmov d\d+, x0/);
+	// The promoted declares initialize their d-register directly — the
+	// float declare fast path (ASM_PLAN_3) either lands the initializer's
+	// root op straight in the target register (dest hint) or moves it from
+	// d0 (call/load_float RHS rides the d0 protocol); the historical
+	// d0 → x0 → dN writeback crossing is gone.
+	expect(fn).toMatch(/fmov d\d+, d0/);
+	expect(fn).not.toMatch(/fmov d\d+, x0/);
 });
 
 test("behavioral: body-declared loop locals keep exact per-iteration semantics", async () => {

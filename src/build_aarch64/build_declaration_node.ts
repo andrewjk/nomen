@@ -27,7 +27,12 @@ import { emit_address_of } from "./build_access_node.ts";
 import build_array_values_node, { resolve_static_value } from "./build_array_values_node.ts";
 import { emit_swap_value, get_source_address } from "./build_assignment_node.ts";
 import build_node from "./build_node.ts";
-import { tree_is_call_free } from "./build_operation_node.ts";
+import {
+	build_float_tree,
+	float_tree_ok,
+	tree_has_call,
+	tree_is_call_free,
+} from "./build_operation_node.ts";
 import build_range_node from "./build_range_node.ts";
 import { emit_expr_from_nir } from "./emit_nir.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
@@ -2266,6 +2271,52 @@ export default function build_declaration_node(
 				emit_var_store(status, "x0", node.name, size);
 				mark_heap_string(status, node.name);
 				status.last_result_is_heap = false;
+				return;
+			}
+			// Float declaration fast path (ASM_PLAN_3): a promoted float
+			// target initializes via the float expression tree / dest hint —
+			// the declare-side analog of the assignment path's fast path.
+			// Previously every promoted-float declaration round-tripped
+			// d0 → x0 → dN (nbody's dx/dy/dz per inner iteration).
+			const decl_float_alloc = status.register_allocations?.get(node.name);
+			if (
+				is_float_type(node.type.name) &&
+				decl_float_alloc?.startsWith("d") &&
+				decl_float_alloc !== "d0" &&
+				decl_float_alloc !== "d1" &&
+				decl_float_alloc !== "d2"
+			) {
+				status.last_result_is_heap = false;
+				status.float_result_in_d0 = true;
+				const seen = new Set<unknown>();
+				if (!tree_has_call(node.value, seen)) {
+					const budget = { n: 14 };
+					if (float_tree_ok(node.value, budget)) {
+						status.float_result_in_d0 = false;
+						build_float_tree(node.value, decl_float_alloc, { v: 0 }, status);
+						if (!status.code.endsWith("\n")) status.code += "\n";
+						check_heap();
+						return;
+					}
+				}
+				// Destination hint: the initializer's root float op emits
+				// straight into the target register. Unconsumed (leaf/call/
+				// field-read inits) fall back — the value rides d0 (flag
+				// cleared) or x0, mirrored from the assignment path.
+				status.float_dest_hint = decl_float_alloc;
+				emit_init_value(node.value, nir_init, status);
+				if (!status.code.endsWith("\n")) status.code += "\n";
+				const hint_consumed = status.float_dest_hint === undefined;
+				status.float_dest_hint = undefined;
+				if (hint_consumed) {
+					// The root op already wrote the target register.
+				} else if (!status.float_result_in_d0) {
+					status.code += `fmov ${decl_float_alloc}, d0\n`;
+				} else {
+					status.float_result_in_d0 = false;
+					status.code += `fmov ${decl_float_alloc}, x0\n`;
+				}
+				check_heap();
 				return;
 			}
 			emit_init_value(node.value, nir_init, status);

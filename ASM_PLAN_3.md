@@ -7,7 +7,7 @@
 >
 > Motivation: pidigits and nbody remain the two worst gaps vs the C backend's
 > `clang -O2` artifact. Receipts below measured 2026-09-02.
-> **Tranches A and B are DONE; C is DONE** — enablement declined on the perf math, and the mandelbrot unroll corruption it surfaced is fixed (5 selectors, receipts in the tranche). E is a survey note. D (NEON for struct arrays) is receipt-gated future work.
+> **Tranches A and B are DONE; C is DONE** (enablement declined + the mandelbrot unroll corruption fixed); **D step 1 is DONE** (float declaration fast path + `.at()` call-freeness — nbody −44%, ~1.7× vs C), D step 2 (NEON) remains receipt-gated. E is a survey note.
 
 ## Where the gap actually is (receipts, 2026-09-02)
 
@@ -326,7 +326,53 @@ remaining nbody gap (0.58 vs 0.21 s) is the float declaration-init slot
 round-trips in the inner loop — float-codegen work, not loop overhead —
 which is the next receipt to chase.
 
-## Tranche D — inner-loop NEON for fixed struct arrays (nbody, receipt-gated)
+## Tranche D, step 1 (DONE): float declaration fast path + `.at()` call-freeness
+
+The tranche-D gate receipt (post-A/B/C census of `advance` vs clang):
+226 instrs / fp 77 / sp 39 / movx 40 vs clang's 59 / 25 / 0 / 3 — still
+address/register traffic, not ALU parallelism, so NEON is NOT yet the
+lever. Two traffic sources, both fixed here:
+
+1. **Float declaration fast path** (`build_declaration_node`): promoted
+   float targets initialize via the float expression tree (call-free
+   trees into v16-v31, root in the target) or the float dest hint — the
+   declare-side analog of the assignment fast path. Previously EVERY
+   promoted-float declaration round-tripped d0 → x0 → dN (nbody's
+   dx/dy/dz/mag per inner iteration; the int-side hint landed in
+   ASM_PLAN_2 tranche F but the float side only ever covered
+   assignments). Unconsumed hints (call/field-read inits) fall back
+   through the d0 protocol, mirrored from the assignment path.
+
+2. **`.at()` is call-free** (`tree_is_call_free`): the whitelist knew the
+   Buffer accessors by name but treated fixed-array `.at(i)` as a call —
+   even though it inlines to a pure strided load (no `bl`). Every
+   struct-array loop body therefore failed the call-free gate: no
+   extension pools, the reads≥1 bar collapsed to reads≥3, and
+   d_sq/dist/mag stayed in slots with every add spilling through [sp].
+   Fixed with `at_inline_is_call_free` — the same gate
+   build_access_method's inliner uses (fixed length, non-class element,
+   value or fixed-size-field target, not a heap array var).
+
+**Census after:** advance 226 → 196 instrs, fp 77 → 59, and the inner
+loop's d_sq chain rides the float tree (zero [sp] spills; only the
+field-write marshalling keeps its one pre-existing pair). Probe receipt:
+`fsub d8, d9, d0` / tree `fmul d16, d8, d8; fadd d11, …` /
+`fdiv d13, d10, d16` where the pre-tranche body spilled five times.
+
+**RESULT (interleaved best-of-7, outputs byte-identical at 1M and 5M):**
+nbody 5M **0.64 → 0.36 s (−44%)** — now ~1.7× vs C `-O2` (3.9× when this
+plan started). Bench matrix neutral (pidigits n=4000, spectral-norm
+n=1500, fannkuch n=11, mandelbrot n=1000 all ±0; outputs identical).
+Full suite green (275 files / 2716 tests) — one tranche-D-addendum shape
+test updated to the new declare shape (it asserted the deleted crossing);
+new regression test "struct-array loop bodies are call-free" verified to
+fail pre-tranche.
+
+Remaining for D step 2 (NEON) and beyond: the field-WRITE marshalling
+spill pair, the fsqrt d0 crossings, and — the gap clang still owns —
+vectorization of the inner loop. Receipt-gated as before.
+
+## Tranche D, step 2 — inner-loop NEON for fixed struct arrays (nbody, receipt-gated)
 
 Clang's third win: the unrolled inner vectorizes over j-pairs. Our
 vectorizer plans Buffer load/store elementwise loops only; this tranche

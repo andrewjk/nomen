@@ -235,3 +235,51 @@ pub func main = () {
 		true,
 	);
 });
+
+test("struct-array loop bodies are call-free: consts promote and trees fire", () => {
+	// Fixed-array `.at(i)` inlines to a pure strided load (no `bl`), so the
+	// loop body counts as call-free and the extension pools promote its
+	// body-declared consts (ASM_PLAN_3 pre-D slice). Before the fix,
+	// tree_is_call_free treated `.at` as a call: d_sq/dist/mag stayed in
+	// slots and every add spilled through [sp].
+	const code = compile(`
+import System
+
+struct B {
+	var float x
+	var float y
+	var float z
+	var float vx
+	var float vy
+	var float vz
+	var float mass
+}
+
+func kern = (ref B[4] bs, float dt, out float) {
+	var i = 0
+	while i < 4; i += 1 {
+		const float bi_x = bs.at(i).x
+		var int j = 0
+		while j < 4; j += 1 {
+			const float dx = bi_x - bs.at(j).x
+			const float d_sq = dx * dx + dx * 3.0
+			const float dist = Math.sqrt(d_sq)
+			const float mag = dt / (d_sq * dist)
+			bs.at(j).vx = bs.at(j).vx + dx * mag
+			j += 1
+		}
+	}
+	return bs.at(0).vx
+}
+pub func main = () {}
+`);
+	const fn = code.slice(code.indexOf("\nkern:"), code.indexOf("\n_main:"));
+	// d_sq's initializer rides the float expression tree (v16+ temps, root
+	// straight into its promoted register) — no [sp] spill pairs in the
+	// inner loop, and the division root lands in mag's promoted register.
+	expect(fn).toMatch(/fmul d1[6-9], d\d+, d\d+/);
+	expect(fn).toMatch(/fdiv d\d+, d\d+, d\d+/);
+	// The d_sq chain itself spills nothing; the field-WRITE marshalling
+	// keeps its own (pre-existing) one-pair spill.
+	expect((fn.match(/str d0, \[sp, #-16\]!/g) ?? []).length).toBeLessThanOrEqual(2);
+});

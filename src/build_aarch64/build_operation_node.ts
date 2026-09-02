@@ -15,6 +15,7 @@ import AccessNode from "../nodes/AccessNode.ts";
 import BaseNode from "../nodes/BaseNode.ts";
 import EnumNode from "../nodes/EnumNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
+import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import { parse_raw_directives } from "../raw_directives.ts";
 import { emit_address_of, emit_direct_field_load } from "./build_access_node.ts";
@@ -79,6 +80,41 @@ export function tree_has_call(node: BaseNode, seen: Set<unknown>): boolean {
  * method whose raw text branches to a subroutine (BigInt `div128` →
  * ___udivti3 is correctly NOT call-free).
  */
+/**
+ * Whether a `.at(i)` call inlines to a pure strided load/store with no `bl`
+ * — the same shapes build_access_method's inline fast path covers: a value
+ * target or a fixed-size struct-field target, non-class element. Fixed
+ * arrays load inline regardless of the index expression; dynamic/class
+ * shapes dispatch to a real method call. (ASM_PLAN_3: makes struct-array
+ * loop bodies call-free so the ext pools can promote their locals —
+ * nbody's advance inner loop.)
+ */
+function at_inline_is_call_free(target: BaseNode | undefined, status: BuildStatus): boolean {
+	if (!target) return false;
+	const resolve_array_type = (): Type | undefined => {
+		if (target.node_type === "value") return type_from_value_node(target);
+		if (target.node_type === "access") {
+			const inner = target as AccessNode;
+			if (inner.access.node_type !== "access_field") return undefined;
+			const field_type = (inner.access as { type?: Type }).type;
+			if (field_type?.is_array) return field_type;
+		}
+		return undefined;
+	};
+	const t = resolve_array_type();
+	if (!t?.is_array) return false;
+	// Fixed length only: dynamic (heap) arrays hit the inline path too, but
+	// a non-inlineable fallback there dispatches to a real method call.
+	if (!t.length || (t.length.start ?? -1) < 0) return false;
+	if (target.node_type === "value") {
+		const name = (target as unknown as { value?: string }).value;
+		if (typeof name === "string" && status.heap_array_vars?.has(name)) return false;
+	}
+	const elem_struct = status.structs.find((s) => s.name === t.name && !s.is_simple_type);
+	if (elem_struct?.is_class) return false;
+	return true;
+}
+
 export function tree_is_call_free(
 	node: BaseNode,
 	status: BuildStatus,
@@ -95,6 +131,7 @@ export function tree_is_call_free(
 		if (acc && acc.node_type === "access_func") {
 			if (
 				!INLINE_BUFFER_ACCESSORS.has(acc.name ?? "") &&
+				!(acc.name === "at" && at_inline_is_call_free(n.target as BaseNode, status)) &&
 				!inline_method_is_call_free(n.target as BaseNode | undefined, acc, status)
 			) {
 				return false;
