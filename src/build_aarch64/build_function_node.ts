@@ -787,6 +787,8 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	// and produce a bogus "hit" that skips the data-pointer load.
 	const old_buffer_data_cache = status.buffer_data_cache;
 	status.buffer_data_cache = undefined;
+	const old_array_ptr_cache = status.array_ptr_cache;
+	status.array_ptr_cache = undefined;
 
 	// NIR-driven emission: the ctx is published for EVERY function body (the
 	// whole-function AST fallback is retired — emission dispatches through
@@ -802,6 +804,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.nir_emit_ctx = old_nir_ctx;
 
 	status.buffer_data_cache = old_buffer_data_cache;
+	status.array_ptr_cache = old_array_ptr_cache;
 	status.force_heap_strings = old_force_heap;
 
 	const loop_regs_used = status.callee_saved_regs_used

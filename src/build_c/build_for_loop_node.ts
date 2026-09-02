@@ -27,11 +27,6 @@ export default function build_for_loop_node(
 	push_c_loop_frame(status);
 
 	let ref_writeback: (() => void) | undefined;
-	// A call-returned list (`for v of triple()`) materializes into a heap
-	// `struct Array_<T>*` temp; the decl is registered in the ENCLOSING scope
-	// frame (never the loop frame — break/continue reclaim that frame's decls
-	// before jumping, and the loop condition re-reads `->length`).
-	let materialized_list_decl: DeclarationNode | undefined;
 
 	if (node.item && node.list) {
 		if (node.list.node_type == "range") {
@@ -126,7 +121,6 @@ export default function build_for_loop_node(
 				} else {
 					old_scoped_declarations.push(decl);
 				}
-				materialized_list_decl = decl;
 				is_heap = true;
 			}
 			// The temp's C text is already emitted; re-building the list node

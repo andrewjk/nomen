@@ -1,0 +1,175 @@
+import { expect, test } from "vite-plus/test";
+
+import build from "../src/build";
+import { set_array_licm_enabled } from "../src/build_aarch64/array_licm";
+import { parse_raw } from "./parse_with_imports";
+
+/**
+ * Fixed-array element-address pipeline (ASM_PLAN_3 tranche A): `.at(i).field`
+ * on a fixed-size array of structs pins `base + i*stride` in a callee-saved
+ * register per (array, index) pair, so repeated accesses within a region are
+ * single `ldr [reg, #off]` loads (float fields straight into d0) instead of
+ * re-deriving the whole address per access.
+ */
+
+function compile(source: string): string {
+	const parsed = parse_raw(source);
+	expect(parsed.errors).toEqual([]);
+	const result = build(parsed.root, { arch: "aarch64" });
+	expect(result.errors ?? []).toEqual([]);
+	return result.code;
+}
+
+const READ_SHAPE = `
+import System
+
+struct P {
+	var float x
+	var float y
+	var float z
+}
+
+func sum_pairs = (ref P[3] ps, out float) {
+	var i = 0
+	var s = 0.0
+	while i < 3; i += 1 {
+		s = s + ps.at(i).x + ps.at(i).y
+	}
+	return s
+}
+pub func main = () {}
+`;
+
+test("repeated .at(i) reads pin one element address and reuse it", () => {
+	const code = compile(READ_SHAPE);
+	const fn = code.slice(code.indexOf("\nsum_pairs:"), code.indexOf("\n_main:"));
+	// Exactly one fill: the pinned element address (pow2 struct size → the
+	// shifted-register add form).
+	const fills = fn.match(/add x\d+, x9, x1, lsl #\d+/g) ?? [];
+	expect(fills).toHaveLength(1);
+	const reg = fills[0]!.split(",")[0]!.replace("add ", "");
+	// Both field loads ride the SAME pinned register — no second address
+	// derivation, and the float hop loads d0 directly (no x0 crossing).
+	expect(fn).toContain(`ldr d0, [${reg}, #8]`);
+	expect(fn).toContain(`ldr d0, [${reg}, #16]`);
+	// The pre-tranche idiom is gone from the loop body.
+	expect(fn).not.toContain(`mul x1, x1, x2`);
+});
+
+test("kill switch restores the historical per-access address derivation", () => {
+	set_array_licm_enabled(false);
+	try {
+		const code = compile(READ_SHAPE);
+		const fn = code.slice(code.indexOf("\nsum_pairs:"), code.indexOf("\n_main:"));
+		// No pinned address, no direct d0 field hop: both accesses derive
+		// the address and load through x0.
+		expect(fn).not.toMatch(/add x\d+, x9, x1, lsl #\d+/);
+		expect(fn.match(/ldr x0, \[x0, #8\]/g) ?? []).toHaveLength(1);
+		expect(fn.match(/ldr x0, \[x0, #16\]/g) ?? []).toHaveLength(1);
+	} finally {
+		set_array_licm_enabled(true);
+	}
+});
+
+test("a post-loop access re-derives after the index update dropped the pin", () => {
+	const code = compile(`
+import System
+
+struct P {
+	var float x
+	var float y
+	var float z
+}
+
+func tail_read = (ref P[4] ps, out float) {
+	var j = 0
+	var s = 0.0
+	while j < 3; j += 1 {
+		s = s + ps.at(j).x * 10.0
+	}
+	s = s + ps.at(j).x
+	return s
+}
+pub func main = () {}
+`);
+	const fn = code.slice(code.indexOf("\ntail_read:"), code.indexOf("\n_main:"));
+	// The loop's `j += 1` update invalidates the pinned address, so the
+	// post-loop access must derive a fresh one: two fill sites in the text.
+	const fills = fn.match(/add x\d+, x9, x1, lsl #\d+/g) ?? [];
+	expect(fills).toHaveLength(2);
+});
+
+test("field stores through .at(i) write via the pinned register (no base push)", () => {
+	const code = compile(`
+import System
+
+struct P {
+	var float x
+	var float y
+	var float z
+}
+
+func scale = (ref P[3] ps, float k) {
+	var i = 0
+	while i < 3; i += 1 {
+		ps.at(i).x = ps.at(i).x * k
+	}
+}
+pub func main = () {}
+`);
+	const fn = code.slice(code.indexOf("\nscale:"), code.indexOf("\n_main:"));
+	const fills = fn.match(/add x\d+, x9, x1, lsl #\d+/g) ?? [];
+	expect(fills).toHaveLength(1);
+	const reg = fills[0]!.split(",")[0]!.replace("add ", "");
+	// The RHS read and the store both go through the pinned register, and
+	// the store path skips the historical base push/pop pair.
+	expect(fn).toContain(`ldr d0, [${reg}, #8]`);
+	expect(fn).toMatch(new RegExp(`str x\\d+, \\[${reg}, #8\\]`));
+	expect(fn).not.toContain(`str x0, [sp, #-16]!`);
+});
+
+test("behavioral: struct-array pipeline prints exact results", async () => {
+	const { default: build_and_check_output } = await import("./build_and_check_output");
+	await build_and_check_output(
+		`
+import System
+
+struct P {
+	var float x
+	var float y
+}
+
+func advance_all = (ref P[4] ps, float k, out float) {
+	var i = 0
+	while i < 3; i += 1 {
+		ps.at(i).x = ps.at(i).x + ps.at(i).y * k
+		ps.at(i).y = ps.at(i).y - ps.at(i).x * 0.5
+	}
+	var s = 0.0
+	var j = 0
+	while j < 3; j += 1 {
+		s = s + ps.at(j).x * 10.0 + ps.at(j).y
+		j += 1
+	}
+	s = s + ps.at(j).x
+	return s
+}
+
+pub func main = () {
+	var P[4] ps = [P(1.0, 2.0), P(3.0, 4.0), P(5.0, 6.0), P(7.0, 8.0)]
+	advance_all(ref ps, 2.0)
+	Console.write(ps.at(0).x.to_string())
+	Console.write("\\n")
+	Console.write(ps.at(0).y.to_string())
+	Console.write("\\n")
+	Console.write(ps.at(2).x.to_string())
+	Console.write("\\n")
+	Console.write(ps.at(3).x.to_string())
+	Console.write("\\n")
+}
+`,
+		"array_licm_pipeline",
+		"5.000000\n-0.500000\n17.000000\n7.000000",
+		true,
+	);
+});

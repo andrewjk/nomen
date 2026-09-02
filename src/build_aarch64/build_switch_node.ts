@@ -19,6 +19,7 @@ export default function build_switch_node(
 	const label = label_counter++;
 	const old_scoped_declarations = enter_scope_frame(status);
 	const pre_cache = status.buffer_data_cache;
+	const pre_array_cache = status.array_ptr_cache;
 
 	for (let i = 0; i < node.cases.length; i++) {
 		status.scoped_declarations = [];
@@ -33,6 +34,7 @@ export default function build_switch_node(
 		}
 
 		status.buffer_data_cache = new Map(pre_cache);
+		status.array_ptr_cache = new Map(pre_array_cache);
 		build_block_with_cursor(node.cases[i].branch, nir?.arms[i]?.branch, status);
 		status.code += `b end_switch_${label}\n`;
 
@@ -42,10 +44,12 @@ export default function build_switch_node(
 	if (node.else_branch) {
 		status.scoped_declarations = [];
 		status.buffer_data_cache = new Map(pre_cache);
+		status.array_ptr_cache = new Map(pre_array_cache);
 		build_block_with_cursor(node.else_branch, nir?.otherwise ?? undefined, status);
 	}
 
 	status.buffer_data_cache = pre_cache;
+	status.array_ptr_cache = pre_array_cache;
 
 	status.code += `end_switch_${label}:\n`;
 

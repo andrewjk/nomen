@@ -11,7 +11,7 @@ import BaseNode from "../nodes/BaseNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
-import { emit_address_of } from "./build_access_node.ts";
+import { emit_address_of, resolve_at_element_addr } from "./build_access_node.ts";
 import build_node from "./build_node.ts";
 import {
 	build_float_tree,
@@ -198,12 +198,21 @@ function get_base_address(access: AccessNode, status: BuildStatus, reg: string) 
  * Returns the register, or undefined to keep the emit + push flow.
  */
 function deferred_field_base_reg(access: AccessNode, status: BuildStatus): string | undefined {
-	if (access.target.node_type !== "value") return undefined;
-	const name = (access.target as ValueNode).value;
-	if (typeof name !== "string") return undefined;
-	const paramReg = status.function_param_regs?.get(name);
-	if (!paramReg || !/^x(?:19|2[0-8])$/.test(paramReg)) return undefined;
-	return paramReg;
+	if (access.target.node_type === "value") {
+		const name = (access.target as ValueNode).value;
+		if (typeof name !== "string") return undefined;
+		const paramReg = status.function_param_regs?.get(name);
+		if (!paramReg || !/^x(?:19|2[0-8])$/.test(paramReg)) return undefined;
+		return paramReg;
+	}
+	// Fixed-array pipeline (ASM_PLAN_3 tranche A): `arr.at(i).field = rhs`
+	// resolves the element address through the pointer cache into a pinned
+	// callee-saved register. Computed at the same point the historical flow
+	// built get_base_address (pre-RHS) — the storage of a fixed array cannot
+	// move, and the register survives the RHS like any callee-saved base.
+	const reg = resolve_at_element_addr(access.target, status);
+	if (reg !== undefined) return reg;
+	return undefined;
 }
 
 function is_struct_type(type: Type | undefined, status: BuildStatus): boolean {
@@ -501,6 +510,26 @@ export default function build_assignment_node(
 		}
 		for (const k of keys_to_invalidate) {
 			status.buffer_data_cache.delete(k);
+		}
+	}
+
+	// Invalidate fixed-array pointer-cache entries for the assigned names. Keys
+	// are "<array>@<index>"; a write to the index name (e.g. the loop's `j += 1`
+	// update) drops every entry pinned for that index, a write to the array name
+	// drops its entries. "@" cannot appear in an identifier, so the split at the
+	// first "@" is total.
+	if (status.array_ptr_cache && status.array_ptr_cache.size > 0) {
+		for (const side of [node.left_value, node.right_value]) {
+			if (side.node_type !== "value") continue;
+			const name = (side as ValueNode).value;
+			if (typeof name !== "string") continue;
+			for (const k of Array.from(status.array_ptr_cache.keys())) {
+				const at = k.indexOf("@");
+				if (at === -1) continue;
+				if (k.slice(at + 1) === name || k.slice(0, at) === name) {
+					status.array_ptr_cache.delete(k);
+				}
+			}
 		}
 	}
 

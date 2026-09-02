@@ -141,6 +141,7 @@ export default function build_match_node(
 	// starts from the dominating (pre-match) state and a cache entry loaded in
 	// one case is dropped on restore (sound: not valid in a sibling case).
 	const pre_cache = status.buffer_data_cache;
+	const pre_array_cache = status.array_ptr_cache;
 
 	for (let i = 0; i < node.cases.length; i++) {
 		status.scoped_declarations = [];
@@ -222,6 +223,7 @@ export default function build_match_node(
 			status.code += `bne end_match_${label}\n`;
 		}
 		status.buffer_data_cache = new Map(pre_cache);
+		status.array_ptr_cache = new Map(pre_array_cache);
 		build_block_with_cursor(match_case.branch, nir?.arms[i]?.branch, status);
 		status.code += `b end_match_${label}\n`;
 
@@ -231,10 +233,12 @@ export default function build_match_node(
 	if (node.else_branch) {
 		status.scoped_declarations = [];
 		status.buffer_data_cache = new Map(pre_cache);
+		status.array_ptr_cache = new Map(pre_array_cache);
 		build_block_with_cursor(node.else_branch, nir?.otherwise ?? undefined, status);
 	}
 
 	status.buffer_data_cache = pre_cache;
+	status.array_ptr_cache = pre_array_cache;
 
 	status.code += `end_match_${label}:\n`;
 

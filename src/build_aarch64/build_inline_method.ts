@@ -166,6 +166,7 @@ export default function build_inline_method(
 	const old_function_return_type = status.function_return_type;
 	const old_register_allocations = status.register_allocations;
 	const old_buffer_data_cache = status.buffer_data_cache;
+	const old_array_ptr_cache = status.array_ptr_cache;
 	// The inline body's returns run emit_heap_slots_cleanup_for_return, which
 	// frees EVERY frame on the cleanup stack. On the shared stack that would
 	// free the OUTER function's live anchors (double-free once a later inline
@@ -207,6 +208,7 @@ export default function build_inline_method(
 	status.struct_return_buffer = undefined;
 	status.return_buffer_stack_offset = undefined;
 	status.buffer_data_cache = undefined;
+	status.array_ptr_cache = undefined;
 	status.heap_cleanup_stack = [];
 	status.moved = new Set();
 	status.current_struct = struct_node;
@@ -358,6 +360,7 @@ export default function build_inline_method(
 	status.function_return_type = old_function_return_type;
 	status.register_allocations = old_register_allocations;
 	status.buffer_data_cache = old_buffer_data_cache;
+	status.array_ptr_cache = old_array_ptr_cache;
 	status.heap_cleanup_stack = old_heap_cleanup_stack;
 	status.moved = old_moved;
 	status.outer_scope_declarations = old_outer_scope_declarations;
@@ -390,6 +393,7 @@ export function build_inline_function(func: FunctionNode, status: BuildStatus) {
 	const old_function_return_type = status.function_return_type;
 	const old_register_allocations = status.register_allocations;
 	const old_buffer_data_cache = status.buffer_data_cache;
+	const old_array_ptr_cache = status.array_ptr_cache;
 	// See build_inline_method: an inlined body's returns must only clean up
 	// anchors the body itself created — swap in a fresh cleanup stack (and a
 	// fresh `moved` set) so the outer function's live anchors survive.
@@ -423,6 +427,7 @@ export function build_inline_function(func: FunctionNode, status: BuildStatus) {
 	status.struct_return_buffer = undefined;
 	status.return_buffer_stack_offset = undefined;
 	status.buffer_data_cache = undefined;
+	status.array_ptr_cache = undefined;
 	status.heap_cleanup_stack = [];
 	status.moved = new Set();
 	status.current_struct = undefined;
@@ -523,6 +528,7 @@ export function build_inline_function(func: FunctionNode, status: BuildStatus) {
 	status.function_return_type = old_function_return_type;
 	status.register_allocations = old_register_allocations;
 	status.buffer_data_cache = old_buffer_data_cache;
+	status.array_ptr_cache = old_array_ptr_cache;
 	status.heap_cleanup_stack = old_heap_cleanup_stack;
 	status.moved = old_moved;
 	status.outer_scope_declarations = old_outer_scope_declarations;

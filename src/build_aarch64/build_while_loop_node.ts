@@ -55,6 +55,11 @@ export default function build_while_loop_node(
 	const saved_preallocated = status.preallocated_decl_slots;
 	const saved_buffer_cache = status.buffer_data_cache;
 	status.buffer_data_cache = undefined;
+	// Fixed-array pointer cache (ASM_PLAN_3 tranche A): the induction may
+	// advance between iterations, so no pinned element address may cross a
+	// loop boundary in either direction.
+	const saved_array_cache = status.array_ptr_cache;
+	status.array_ptr_cache = undefined;
 
 	if (status.function_return_label && node.statements.length > 0) {
 		// Caller-saved float extension pool is safe when the loop body is
@@ -195,6 +200,7 @@ export default function build_while_loop_node(
 	status.preallocated_decl_slots = saved_preallocated;
 
 	status.buffer_data_cache = saved_buffer_cache;
+	status.array_ptr_cache = saved_array_cache;
 
 	if (pushed_labels) status.loop_labels?.pop();
 	exit_scope_frame(status, old_scoped_declarations);

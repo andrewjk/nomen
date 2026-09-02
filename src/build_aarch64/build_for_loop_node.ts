@@ -68,6 +68,8 @@ export default function build_for_loop_node(
 	const saved_preallocated = status.preallocated_decl_slots;
 	const saved_buffer_cache = status.buffer_data_cache;
 	status.buffer_data_cache = undefined;
+	const saved_array_cache = status.array_ptr_cache;
+	status.array_ptr_cache = undefined;
 
 	if (status.function_return_label && node.statements.length > 0) {
 		const call_free = nir
@@ -413,6 +415,7 @@ export default function build_for_loop_node(
 	status.preallocated_decl_slots = saved_preallocated;
 
 	status.buffer_data_cache = saved_buffer_cache;
+	status.array_ptr_cache = saved_array_cache;
 	status.loop_labels.pop();
 	status.loop_writebacks?.pop();
 	exit_scope_frame(status, old_scoped_declarations);

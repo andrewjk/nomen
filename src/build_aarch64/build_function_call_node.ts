@@ -821,6 +821,14 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 				if (k.includes(".")) status.buffer_data_cache.delete(k);
 			}
 		}
+		// Fixed-array pointer cache: a ref arg may write the index (or the
+		// callee may reassign anything reachable), so drop every entry —
+		// the next access re-fills. Fixed-array storage itself cannot move,
+		// but the pinned address is only valid for the index it was built
+		// with, and the callee may change it.
+		if (status.array_ptr_cache && status.array_ptr_cache.size > 0) {
+			status.array_ptr_cache.clear();
+		}
 
 		// A `ref` class arg may have been reassigned by the callee, which wrote
 		// the new pointer into the caller's slot. The caller's anchor slot (used

@@ -575,6 +575,23 @@ export default interface BuildStatus {
 	 */
 	buffer_data_cache?: Map<string, string>;
 	/**
+	 * Fixed-array element-address pipeline (ASM_PLAN_3 tranche A): maps
+	 * "<array>@<index>" to the callee-saved register holding `base +
+	 * index*stride` for a fixed-size array of structs. Same bracketing and
+	 * invalidation discipline as buffer_data_cache (loop/if/switch/match
+	 * snapshots, assignment and call invalidation).
+	 */
+	array_ptr_cache?: Map<string, string>;
+	/**
+	 * Consume-once: set by the fixed-array `.at()` fast path when the
+	 * element address was produced into (or reads from) a pinned cache
+	 * register. Consumed by the immediately-following method-access field
+	 * hop in build_access_field (single `ldr [reg, #off]`, float fields
+	 * straight into d0) and by deferred_field_base_reg in
+	 * build_assignment_node. Cleared at every build_access_node entry.
+	 */
+	at_addr_reg?: string;
+	/**
 	 * Canonical-IR stage 2 (ASM_PLAN phase 4): the NIR statement list driving
 	 * emission for the block currently being built, index-aligned 1:1 with
 	 * `ast`. Statement dispatch verifies `ast[i]` identity before consuming,

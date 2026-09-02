@@ -291,6 +291,7 @@ function build_destroy_function(node: StructNode, func: FunctionNode, status: Bu
 	status.code += `mov x29, sp\n`;
 
 	status.buffer_data_cache = undefined;
+	status.array_ptr_cache = undefined;
 	build_body_with_cursor(func, status);
 
 	// The body build may have claimed registers (loop promotion); the cast
@@ -955,6 +956,7 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 	}
 
 	status.buffer_data_cache = undefined;
+	status.array_ptr_cache = undefined;
 	build_body_with_cursor(func, status);
 
 	// The init body's own loop-promotion claims (the enclosing's set was
@@ -1407,6 +1409,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 
 		status.force_heap_strings = scan_force_heap_strings(func.statements, status.structs);
 		status.buffer_data_cache = undefined;
+		status.array_ptr_cache = undefined;
 		// Snapshot the moved set so the reclaim below can tell a param moved
 		// out WITHIN this body from a same-named variable already moved in an
 		// enclosing context.
@@ -1670,6 +1673,7 @@ function build_trait_functions(node: StructNode, status: BuildStatus) {
 			status.callee_saved_regs_used = undefined;
 
 			status.buffer_data_cache = undefined;
+			status.array_ptr_cache = undefined;
 			build_body_with_cursor(func, status);
 
 			const trait_claims = status.callee_saved_regs_used as Set<string> | undefined;

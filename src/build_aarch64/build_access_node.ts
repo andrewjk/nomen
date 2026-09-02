@@ -21,6 +21,7 @@ import type BaseNode from "../nodes/BaseNode.ts";
 import type StructNode from "../nodes/StructNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
+import { array_licm_enabled } from "./array_licm.ts";
 import build_inline_method, { naked_inline_skips_self } from "./build_inline_method.ts";
 import build_node from "./build_node.ts";
 import build_nursery_spawn from "./build_nursery_spawn.ts";
@@ -546,6 +547,9 @@ export function reset_access_temp_counter() {
 }
 
 export default function build_access_node(node: AccessNode, status: BuildStatus) {
+	// Consume-once marker for the fixed-array pipeline: a stale value from an
+	// earlier `.at()` must never leak into an unrelated field hop.
+	status.at_addr_reg = undefined;
 	switch (node.access.node_type) {
 		case "access_field": {
 			build_access_field(node, status);
@@ -769,6 +773,108 @@ function get_buffer_data_ptr(target: BaseNode, status: BuildStatus): string {
 		}
 	}
 	return "x9";
+}
+
+// ---------------------------------------------------------------------------
+// Fixed-array element-address pipeline (ASM_PLAN_3 tranche A).
+//
+// `arr.at(i)` on a FIXED-SIZE array of structs leaves the element ADDRESS in
+// x0 — but today every access re-derives that address (base slot load +
+// stride constant + index shift + add). For a repeated (array, index) pair
+// within one region the address is invariant, so it is computed once into a
+// pinned callee-saved register and every further access is a single
+// `ldr [p, #off]`. Soundness: a fixed array IS storage — a local slot or a
+// ref-param pointer to caller storage — so the element base `base + i*stride`
+// cannot change while neither the array nor the index is reassigned. The
+// cache is invalidated on assignments to either name, on any non-inlined
+// call (a ref arg may write the index), and at loop/branch/function/inline
+// boundaries (the same bracketing as buffer_data_cache). Dynamic (heap)
+// arrays are excluded wholesale: their base pointer moves on realloc.
+// ---------------------------------------------------------------------------
+
+/**
+ * Cache key for a fixed-array `.at(index)` access: `"<array>@<index>"` where
+ * <array> is the buffer-style key (name or "obj.field") and <index> is a
+ * plain identifier. Returns null for every shape the pipeline must not
+ * cache: non-identifier indexes (literals, expressions), dynamic arrays,
+ * non-struct or class elements, non-inlineable targets.
+ */
+export function fixed_array_cache_key(
+	node: AccessNode,
+	access_func: AccessFunctionCallNode,
+	status: BuildStatus,
+): string | null {
+	if (!array_licm_enabled()) return null;
+	if (access_func.name !== "at" || access_func.params.length !== 1) return null;
+	const idx = access_func.params[0];
+	if (idx.node_type !== "value") return null;
+	const idx_name = (idx as ValueNode).value;
+	if (typeof idx_name !== "string" || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(idx_name)) return null;
+
+	const target_type = type_from_value_node(node.target);
+	if (!target_type?.is_array) return null;
+	// Fixed-size only: a real source position on the length. Dynamic arrays
+	// (length.start = -1) live on the heap and move on realloc/grow.
+	if (!target_type.length || (target_type.length.start ?? -1) < 0) return null;
+	// The element must be a non-class struct — the cached register holds the
+	// element ADDRESS (the .at() contract for struct elements).
+	const elem_struct = status.structs.find((s) => s.name === target_type.name && !s.is_simple_type);
+	if (!elem_struct || elem_struct.is_class) return null;
+
+	const is_struct_field_target =
+		node.target.node_type === "access" &&
+		(node.target as AccessNode).access.node_type === "access_field";
+	if (node.target.node_type === "value") {
+		const name = (node.target as ValueNode).value;
+		// Heap dynamic arrays are excluded above via the length check; this
+		// also guards any value target whose storage rides the heap path.
+		if (status.heap_array_vars?.has(name)) return null;
+	} else if (!is_struct_field_target) {
+		return null;
+	}
+	const arr_key = buffer_cache_key(node.target);
+	if (!arr_key) return null;
+	return `${arr_key}@${idx_name}`;
+}
+
+/** First free register for the fixed-array cache, or null. Same pool and
+ * exclusions as alloc_buffer_cache_reg (promotions, both caches, anything
+ * claimed earlier in the function). Pure — claims happen at the call site. */
+function alloc_array_cache_reg(status: BuildStatus): string | null {
+	const used = new Set(status.register_allocations?.values() ?? []);
+	const cached = new Set(status.buffer_data_cache?.values() ?? []);
+	const mine = new Set(status.array_ptr_cache?.values() ?? []);
+	const claimed = new Set(status.callee_saved_regs_used ?? []);
+	for (const r of BUFFER_DATA_CACHE_REGS) {
+		if (used.has(r) || cached.has(r) || mine.has(r) || claimed.has(r)) continue;
+		return r;
+	}
+	return null;
+}
+
+/**
+ * Store-side resolution for `arr.at(i).field = rhs`: returns the pinned
+ * register holding the element address (consulting or filling the cache),
+ * or undefined to keep the historical get_base_address + push flow. The
+ * register is callee-saved and claimed for the function, so it survives the
+ * RHS build — the same contract as deferred_field_base_reg.
+ */
+export function resolve_at_element_addr(target: BaseNode, status: BuildStatus): string | undefined {
+	if (!array_licm_enabled()) return undefined;
+	if (target.node_type !== "access") return undefined;
+	const acc = target as AccessNode;
+	if (acc.access.node_type !== "access_func") return undefined;
+	const af = acc.access as AccessFunctionCallNode;
+	const key = fixed_array_cache_key(acc, af, status);
+	if (!key) return undefined;
+	const cached = status.array_ptr_cache?.get(key);
+	if (cached) return cached;
+	if (alloc_array_cache_reg(status) === null) return undefined;
+	status.at_addr_reg = undefined;
+	build_node(acc, status);
+	const reg = status.at_addr_reg;
+	status.at_addr_reg = undefined;
+	return reg ?? undefined;
 }
 
 function build_access_field(node: AccessNode, status: BuildStatus) {
@@ -1037,22 +1143,41 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 		}
 		const final_offset = offset;
 		const field_type = access_field.type?.name || "";
+		// Fixed-array pipeline (ASM_PLAN_3 tranche A): when the `.at()` just
+		// built resolved through the pointer cache, load the field straight
+		// from the pinned register instead of the x0 round trip.
+		const at_reg = status.at_addr_reg;
+		status.at_addr_reg = undefined;
+		const load_base = at_reg ?? "x0";
 		if (field_type === "string" || access_field.type?.is_view) {
-			emit_string_pair_load_at(status, "x0", final_offset);
+			emit_string_pair_load_at(status, load_base, final_offset);
 			return;
 		}
 		const size = aarch64_size(field_type);
 		const signed = is_signed_type(field_type);
+		if (at_reg !== undefined && size === 8 && is_float_type(field_type)) {
+			// Float field straight into d0 — mirrors the Buffer load_float
+			// fast path's d0 protocol: consume the caller's request flag;
+			// without one, x0 must still receive the value (call args read
+			// float bits from x0).
+			const caller_wants_d0 = status.float_result_in_d0 ?? false;
+			status.float_result_in_d0 = false;
+			status.code += `ldr d0, [${load_base}, #${final_offset}]\n`;
+			if (!caller_wants_d0) {
+				status.code += `fmov x0, d0\n`;
+			}
+			return;
+		}
 		if (size === 1) {
 			status.code += signed
-				? `ldrsb x0, [x0, #${final_offset}]\n`
-				: `ldrb w0, [x0, #${final_offset}]\n`;
+				? `ldrsb x0, [${load_base}, #${final_offset}]\n`
+				: `ldrb w0, [${load_base}, #${final_offset}]\n`;
 		} else if (size === 4) {
 			status.code += signed
-				? `ldrsw x0, [x0, #${final_offset}]\n`
-				: `ldr w0, [x0, #${final_offset}]\n`;
+				? `ldrsw x0, [${load_base}, #${final_offset}]\n`
+				: `ldr w0, [${load_base}, #${final_offset}]\n`;
 		} else {
-			status.code += `ldr x0, [x0, #${final_offset}]\n`;
+			status.code += `ldr x0, [${load_base}, #${final_offset}]\n`;
 		}
 		return;
 	}
@@ -1471,6 +1596,21 @@ function build_access_method(
 			}
 
 			if (use_fast_path) {
+				// Fixed-array pipeline: a repeated (array, index) pair reads
+				// its pinned element-address register instead of re-deriving
+				// the whole address per access.
+				const licm_key =
+					elem_struct && status.function_return_label
+						? fixed_array_cache_key(node, access_func, status)
+						: null;
+				if (licm_key) {
+					const cached = status.array_ptr_cache?.get(licm_key);
+					if (cached) {
+						status.code += `mov x0, ${cached}\n`;
+						status.at_addr_reg = cached;
+						return;
+					}
+				}
 				// .at(): evaluate index → x1 (build_operand: promoted vars/
 				// literals emit 1 instruction), compute base → x9, load
 				if (access_func.params.length > 0) {
@@ -1529,6 +1669,27 @@ function build_access_method(
 				}
 				// Load element
 				if (elem_struct) {
+					// Fill the fixed-array pipeline: pin `base + i*stride` in
+					// a callee-saved register, then hand the address out
+					// through x0 (the .at() contract) and the consume-once
+					// marker for the following field hop.
+					if (licm_key && alloc_array_cache_reg(status) !== null) {
+						const reg = alloc_array_cache_reg(status)!;
+						if ((elem_size & (elem_size - 1)) === 0) {
+							status.code += `add ${reg}, x9, x1, lsl #${Math.log2(elem_size)}\n`;
+						} else {
+							status.code += `mov x2, #${elem_size}\n`;
+							status.code += `mul x1, x1, x2\n`;
+							status.code += `add ${reg}, x9, x1\n`;
+						}
+						status.code += `mov x0, ${reg}\n`;
+						if (!status.array_ptr_cache) status.array_ptr_cache = new Map();
+						status.array_ptr_cache.set(licm_key, reg);
+						if (!status.callee_saved_regs_used) status.callee_saved_regs_used = new Set();
+						status.callee_saved_regs_used.add(reg);
+						status.at_addr_reg = reg;
+						return;
+					}
 					if (elem_size === 8) {
 						status.code += `add x0, x9, x1, lsl #3\n`;
 					} else {
