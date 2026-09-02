@@ -7,7 +7,7 @@
 >
 > Motivation: pidigits and nbody remain the two worst gaps vs the C backend's
 > `clang -O2` artifact. Receipts below measured 2026-09-02.
-> **A, B, C are DONE** (C: enablement declined + the mandelbrot unroll corruption fixed); **D step 1 is DONE** (nbody −44%, ~1.7× vs C) and **D step 2 is CLOSED** (analyzed: j-pair vectorization unprofitable for AoS; clang's win is field-pair SLP — a future pass class). **E is DONE as a survey** (the div128 boundary does not dominate post-B; neutral, reverted). All measured receipts in-section.
+> **A, B, C are DONE** (C: enablement declined + the mandelbrot unroll corruption fixed); **D step 1 is DONE** (nbody −44%, ~1.7× vs C) and **D step 2 is CLOSED** (analyzed: j-pair vectorization unprofitable for AoS; clang's win is field-pair SLP — a future pass class). **E is DONE as a survey** (the div128 boundary does not dominate post-B; neutral, reverted). **F is DONE as a narrow win + survey** (stage-4 straight-line store-to-load forwarding + write-only cset elision: real capture on the single-limb shapes, bench-neutral — the profile has moved to multi-read temporaries; see the F section for the structural accounting). All measured receipts in-section.
 
 ## Where the gap actually is (receipts, 2026-09-02)
 
@@ -442,6 +442,98 @@ structural accounting as stage 2/3's: clang's limb loops keep ~10 live
 scalars in registers through memory traffic our per-statement model
 still materializes — the next lever there would be NIR-level store-to-load
 forwarding across straight-line regions (stage 4), not division.
+
+## Tranche F (DONE — narrow win + survey): stage-4 straight-line store-to-load traffic elimination
+
+Landed 2026-09-02 (`src/build_aarch64/forward.ts`, kill-switch
+`set_forwarding_enabled`, default ON; `prepare_nir_forwarding` runs once per
+published emission cursor from build_function_node and build_body_with_cursor;
+the cset fuse consults `ctx.write_only`, the emitter applies
+`ctx.use_sites`/`ctx.forward_defs` per statement).
+
+The premise from E's tail: "the next lever there would be NIR-level
+store-to-load forwarding across straight-line regions (stage 4)". The census
+confirmed the traffic — in the inlined single-limb `div_to` loop, three
+single-read locals round-trip their slots every iteration
+(`str x0, [x29, #K]` at the def, `ldr x0, [x29, #K]` at the only read: d_hi
+#64, q_hi #80, ai #40), the phase-2 asm pass unable to help because the
+store's source register is clobbered in between — plus two WRITE-ONLY cset
+flags (p_mc/p_lo_c, their reader commented out at BigInt.nm line 587):
+`mov #0; cmp; cset; str` pairs materializing a boolean nothing reads.
+
+Two cursor-level rewrites, both gated on one traffic walk:
+
+- **Single-use forwarding**: a scalar declared exactly once, read exactly
+  once, never written/ref/receiver, whose initializer is a pure int
+  expression tree (bounded size/depth) is re-emitted AT the read site — the
+  use's NIR leaf and its AST node are replaced by the declaring initializer
+  (apply → build → restore, one statement at a time), and the def emits
+  nothing. Soundness = every leaf of the re-emitted tree holds its def-time
+  value: the use must be in the SAME statement list, every intervening
+  statement a declare with a call-free initializer, no redeclares of any
+  name in play, no window declare whose site register collides with a
+  promoted leaf's register (the div_to two-claim-systems receipt), no
+  checker-hoisted allocations reading any of it (`_param_N` computes are
+  invisible to NIR traffic — interpolation lowers to a spliced
+  `_param_1 = prod` leaf plus a hoisted compute), and the forwarded name
+  occurs as a leaf EXACTLY once in the whole function counting positions
+  traffic deliberately skips (flow arms, spawn calls, swap exprs).
+  Candidates whose own initializer already received a splice are dropped
+  (composition guard), and so are promoted names (they already avoid the
+  slot). The rewrite happens BEFORE emission, so the tree counter, operand
+  selectors and cset homes all see a plain deeper tree — no read path
+  learns about forwarding.
+- **Write-only cset-pair elision**: the tranche-B fuse whose flag has zero
+  true reads (traffic's assign-target parity subtracted) skips the whole
+  cmp/cset/store tail; the declare still builds (registration semantics
+  preserved).
+
+Receipts (the inlined single-limb `div_to` loop, per iteration):
+`str`/`ldr` #64 and #80 gone (use-site re-emit: `mov #32; ldr divisor;
+lsr` and `mov #32; lsr x0, q_reg` — q's promoted register read in place),
+both dead cset pairs gone — **−16 instructions and −5 memory ops per
+iteration of the ~75-instruction loop; frame 944 → 928 bytes.**
+
+**RESULT: bench-neutral.** Interleaved best-of-7/11 medians, outputs
+byte-identical at every size: pidigits n=4000 0.8167 → 0.8167 s (0.0%),
+nbody 5M 0.3514 → 0.3513 (0.0%), spectral-norm 1500 +0.8%, mandelbrot 1000
++1.3%, fannkuch 11 −1.0%/+0.6% (arms swapped: pure noise), binarytrees 15
++0.5%. Full suite green (276 files / 2721 tests) with `test/forward.test.ts`
+(7 tests: shape via use-site anchors, write-only elision, kill-switch
+byte-restoration, branch-boundary window rejection, shadowing rejection,
+two behavioral runs incl. loop re-execution).
+
+### The survey answer: why neutral, and what actually remains
+
+`sample` on a running pidigits shows the profile MOVED: the hot loops are
+now div_to's **Knuth-D section** (D1 normalize, D3 correction, D4
+multiply-subtract) and **mul_to's schoolbook inner loop** — not the
+single-limb estimate step this tranche captures. Those loops' temporaries
+are genuinely MULTI-read, and multi-read-by-a-compare is their shape:
+
+```nomen
+const uint64 old = scratch.get_at(scratchp, j + i)   // 2 reads
+const uint64 cur = old + carry                        // 2 reads
+var c1 = 0
+if cur < old { c1 = 1 }                               // the compare IS the second read
+const uint64 cur2 = cur + lo_prod                     // 2 reads
+```
+
+The allocator already keeps those in registers (ext pool/site promotion);
+forwarding is unprofitable-by-absence. The structural lever they expose is
+a compare-shape lowering that reads the operands from the VALUE computations
+without materializing the compare inputs twice — i.e. flag-producing
+compares consume SSA values directly (`cmp x_cur, x_old; cset`) — which is
+a NIR value-numbering/regalloc-cooperative pass class, one order larger
+than this tranche. That, plus nbody's field-pair SLP (D step 2's
+conclusion), are the honest remaining levers against the 1.5× success
+criterion: pidigits' residual ~2.3× is smeared across Knuth-D memory
+traffic our statement model must materialize; nbody's ~1.7× is the SLP gap.
+
+The pass stays (default ON, kill-switch off = byte-identical): it is
+non-negative everywhere, removes the documented round-trips wherever
+single-read shapes occur, and is the seam a future value-numbering pass
+would drive.
 
 ## Method (unchanged from ASM_PLAN_2)
 

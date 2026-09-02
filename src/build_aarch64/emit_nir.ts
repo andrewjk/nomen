@@ -32,6 +32,7 @@ import build_return_node from "./build_return_node.ts";
 import build_switch_node from "./build_switch_node.ts";
 import build_while_loop_node from "./build_while_loop_node.ts";
 import { cset_lowering_enabled } from "./cset_lower.ts";
+import { apply_forward_use, cset_flag_is_write_only, prepare_nir_forwarding } from "./forward.ts";
 import { neon_vectorization_enabled } from "./neon_emit.ts";
 import { plan_vector_for, plan_vector_loop } from "./neon_plan.ts";
 import { plan_full_unroll } from "./unroll.ts";
@@ -145,17 +146,23 @@ export function emit_stmt_from_nir(
 					build_match_node(child as MatchNode, status, nstmt);
 				}
 				return 1;
-			case "return":
+			case "return": {
 				// Ownership/cleanup decisions stay on the AST node inside the
 				// builder; the value expression (when any) is emitted through
 				// the NIR expression seam. The trailing-newline replicates
 				// build_node's with_semicolon tail so output is byte-identical
 				// to the delegated path.
-				build_return_node(child as ReturnNode, status, nstmt.value);
-				if (!status.code.endsWith("\n")) {
-					status.code += "\n";
+				const restore_return = apply_forward_use(ctx.use_sites, nstmt.node);
+				try {
+					build_return_node(child as ReturnNode, status, nstmt.value);
+					if (!status.code.endsWith("\n")) {
+						status.code += "\n";
+					}
+					return 1;
+				} finally {
+					restore_return?.();
 				}
-				return 1;
+			}
 			case "declare":
 				// Decl-site binding (stage 3): a register the allocator gave
 				// this DECLARE SITE binds here, into the CURRENT scope
@@ -184,26 +191,47 @@ export function emit_stmt_from_nir(
 						status.register_allocations.set(nstmt.decl.name, site.reg);
 					}
 				}
-				// Cset fuse (ASM_PLAN_3 tranche B): `var x = 0; if <pure
-				// scalar cmp> { x = 1 }` lowers as one branch-free
-				// declare + cmp/cset + store, consuming both statements.
-				const consumed = try_emit_cset_pair(child as DeclarationNode, nstmt, index, ctx, status);
-				if (consumed === 2) {
-					return 2;
+				// Stage-4 forward plan (see forward.ts): this declare may be
+				// another declare's single use. Swap the leaf AST for the
+				// declaring initializer while this statement builds, restore
+				// after — the cset gate, tree counter, operand selectors and
+				// builders all see the substituted tree; nothing else does.
+				// A forwarded def site emits nothing — its initializer is
+				// re-emitted at the single use (scalar declares carry no
+				// registration the builder provides).
+				if (ctx.forward_defs?.has(nstmt.decl.node)) {
+					return 1;
 				}
-				// Type/ownership routing stays on the AST node inside the
-				// builder; the initializer (when any) is emitted through the
-				// NIR expression seam. The trailing-newline guard replicates
-				// build_node's with_semicolon tail: a `var func …`
-				// declaration adds none.
-				build_declaration_node(child as DeclarationNode, status, nstmt.decl.init, nstmt.decl.swap);
-				if (nstmt.decl.init && nstmt.decl.init.node.node_type !== "func") {
-					if (!status.code.endsWith("\n")) {
-						status.code += "\n";
+				const restore_decl = apply_forward_use(ctx.use_sites, nstmt.decl.node);
+				try {
+					// Cset fuse (ASM_PLAN_3 tranche B): `var x = 0; if <pure
+					// scalar cmp> { x = 1 }` lowers as one branch-free
+					// declare + cmp/cset + store, consuming both statements.
+					const consumed = try_emit_cset_pair(child as DeclarationNode, nstmt, index, ctx, status);
+					if (consumed === 2) {
+						return 2;
 					}
+					// Type/ownership routing stays on the AST node inside the
+					// builder; the initializer (when any) is emitted through
+					// the NIR expression seam. The trailing-newline guard
+					// replicates build_node's with_semicolon tail: a `var
+					// func …` declaration adds none.
+					build_declaration_node(
+						child as DeclarationNode,
+						status,
+						nstmt.decl.init,
+						nstmt.decl.swap,
+					);
+					if (nstmt.decl.init && nstmt.decl.init.node.node_type !== "func") {
+						if (!status.code.endsWith("\n")) {
+							status.code += "\n";
+						}
+					}
+					return 1;
+				} finally {
+					restore_decl?.();
 				}
-				return 1;
-			case "assign":
+			case "assign": {
 				// Reclamation/aliasing decisions stay on the AST node inside
 				// the builder; the RHS value (plain or address-position) and
 				// the swap replacement are emitted through the NIR expression
@@ -212,11 +240,17 @@ export function emit_stmt_from_nir(
 				// assignment (`case X -> t = v`) lowers from the LetNode
 				// wrapping the assign expression, and the NIR stmt carries the
 				// inner AssignmentNode the builder needs.
-				build_assignment_node(nstmt.node as AssignmentNode, status, nstmt.rhs, nstmt.swap);
-				if (!status.code.endsWith("\n")) {
-					status.code += "\n";
+				const restore_assign = apply_forward_use(ctx.use_sites, nstmt.node);
+				try {
+					build_assignment_node(nstmt.node as AssignmentNode, status, nstmt.rhs, nstmt.swap);
+					if (!status.code.endsWith("\n")) {
+						status.code += "\n";
+					}
+					return 1;
+				} finally {
+					restore_assign?.();
 				}
-				return 1;
+			}
 			case "eval": {
 				// Expression-shaped statements (bare calls, lets): the value
 				// rides the NIR expression seam. build_node's with_semicolon
@@ -233,11 +267,16 @@ export function emit_stmt_from_nir(
 						(inner as AccessFunctionCallNode).is_statement = true;
 					}
 				}
-				emit_expr_from_nir(nstmt.expr, status);
-				if (!status.code.endsWith("\n")) {
-					status.code += "\n";
+				const restore_eval = apply_forward_use(ctx.use_sites, nstmt.expr.node);
+				try {
+					emit_expr_from_nir(nstmt.expr, status);
+					if (!status.code.endsWith("\n")) {
+						status.code += "\n";
+					}
+					return 1;
+				} finally {
+					restore_eval?.();
 				}
-				return 1;
 			}
 			case "async_block":
 				// The nursery body is its own statement list: hand the builder
@@ -306,6 +345,11 @@ function try_emit_cset_pair(
 	// ... and the condition must be a plain scalar comparison.
 	if (!cond_is_cset_eligible(ifn.condition)) return 1;
 
+	// Stage-4 elision: the flag is never read anywhere — the whole
+	// cmp/cset/store tail is dead. The declare still builds below
+	// (registration semantics preserved); only the tail is skipped.
+	const flag_dead = cset_flag_is_write_only(ctx, decl.name);
+
 	// Emit: the declare (registers the name, stores the 0 — every
 	// registration/scope semantic preserved), then the comparison
 	// materialized straight into x0 and stored to the same home.
@@ -314,6 +358,9 @@ function try_emit_cset_pair(
 		if (!status.code.endsWith("\n")) {
 			status.code += "\n";
 		}
+	}
+	if (flag_dead) {
+		return 2;
 	}
 	emit_cond_cset(ifn.condition, status);
 	emit_var_store(status, "x0", decl.name, aarch64_size(decl.type?.name ?? "int"));
@@ -341,7 +388,19 @@ export function build_block_with_cursor(
 	status: BuildStatus,
 ): void {
 	const old_ctx = status.nir_emit_ctx;
-	status.nir_emit_ctx = stmts ? { stmts, ast: block.statements } : undefined;
+	// Nested blocks continue the enclosing body's cursor: the statement
+	// lists differ (this block's), but the stage-4 analysis facts
+	// (write_only flags, forward use sites) belong to the WHOLE function
+	// body and ride every nested cursor.
+	status.nir_emit_ctx = stmts
+		? {
+				stmts,
+				ast: block.statements,
+				write_only: old_ctx?.write_only,
+				use_sites: old_ctx?.use_sites,
+				forward_defs: old_ctx?.forward_defs,
+			}
+		: undefined;
 	build_block_node(block, status);
 	status.nir_emit_ctx = old_ctx;
 }
@@ -362,8 +421,20 @@ export function build_body_with_cursor(func: FunctionNode, status: BuildStatus):
 			`NIR lowering gap in ${func.name || "<method>"}: ${[...nir.unknown_kinds].join(", ")}`,
 		);
 	}
+	// Stage 4 (ASM_PLAN_3): single-use forwarding + write-only flag facts,
+	// computed against the SAME plan (register_allocations / nir_site_allocs)
+	// the emission below will consult. The pass returns a fresh spine for
+	// rewritten statements; publishing THAT list (not nir.body) keeps the
+	// shared lowering object untouched.
+	const prepared = prepare_nir_forwarding(nir.body, status);
 	const old_ctx = status.nir_emit_ctx;
-	status.nir_emit_ctx = { stmts: nir.body, ast: func.statements };
+	status.nir_emit_ctx = {
+		stmts: prepared.stmts,
+		ast: func.statements,
+		write_only: prepared.write_only,
+		use_sites: prepared.use_sites,
+		forward_defs: prepared.forward_defs,
+	};
 	build_block_node(func, status);
 	status.nir_emit_ctx = old_ctx;
 }

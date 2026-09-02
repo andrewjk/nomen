@@ -11,6 +11,7 @@ import type Type from "../nodes/Type.ts";
 import build_block_node from "./build_block_node.ts";
 import { check_c_fallback } from "./build_raw_node.ts";
 import { nir_emission_enabled } from "./emit_nir.ts";
+import { prepare_nir_forwarding } from "./forward.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free } from "./utils/audit.ts";
 import { emit_destroy_for_anchor_slot } from "./utils/auto_destroy.ts";
@@ -794,10 +795,24 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	// whole-function AST fallback is retired — emission dispatches through
 	// emit_stmt_from_nir). `nir_emission_enabled()` is the per-statement
 	// delegation toggle used by the byte-identity A/B tests. Restored after
-	// the body so a nested function build hands ours back.
+	// the body so a nested function build hands ours back. Stage 4 (see
+	// forward.ts) rewrites single-use forwards against the plan installed
+	// above and reports write-only flag names; the prepared list (a fresh
+	// spine when anything rewrote) is what gets published, not nir.body —
+	// the shared lowering object stays untouched.
 	const old_nir_ctx = status.nir_emit_ctx;
-	status.nir_emit_ctx =
-		nir && nir_emission_enabled() ? { stmts: nir.body, ast: node.statements } : undefined;
+	if (nir && nir_emission_enabled()) {
+		const prepared = prepare_nir_forwarding(nir.body, status);
+		status.nir_emit_ctx = {
+			stmts: prepared.stmts,
+			ast: node.statements,
+			write_only: prepared.write_only,
+			use_sites: prepared.use_sites,
+			forward_defs: prepared.forward_defs,
+		};
+	} else {
+		status.nir_emit_ctx = undefined;
+	}
 
 	build_block_node(node, status);
 
