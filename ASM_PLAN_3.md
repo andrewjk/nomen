@@ -7,7 +7,7 @@
 >
 > Motivation: pidigits and nbody remain the two worst gaps vs the C backend's
 > `clang -O2` artifact. Receipts below measured 2026-09-02.
-> **A, B, C are DONE** (C: enablement declined + the mandelbrot unroll corruption fixed); **D step 1 is DONE** (nbody −44%, ~1.7× vs C) and **D step 2 is CLOSED** (analyzed: j-pair vectorization unprofitable for AoS; clang's win is field-pair SLP — a future pass class). **E is DONE as a survey** (the div128 boundary does not dominate post-B; neutral, reverted). **F is DONE as a narrow win + survey** (stage-4 straight-line store-to-load forwarding + write-only cset elision: real capture on the single-limb shapes, bench-neutral — the profile has moved to multi-read temporaries; see the F section for the structural accounting). **G is DONE** (promoted-destination statement lowering: cset dest hints + the never-firing compound-assign fast path fixed — pidigits −8%, fannkuch +2-4%). All measured receipts in-section.
+> **A, B, C are DONE** (C: enablement declined + the mandelbrot unroll corruption fixed); **D step 1 is DONE** (nbody −44%, ~1.7× vs C) and **D step 2 is CLOSED** (analyzed: j-pair vectorization unprofitable for AoS; clang's win is field-pair SLP — a future pass class). **E is DONE as a survey** (the div128 boundary does not dominate post-B; neutral, reverted). **F is DONE as a narrow win + survey** (stage-4 straight-line store-to-load forwarding + write-only cset elision: real capture on the single-limb shapes, bench-neutral — the profile has moved to multi-read temporaries; see the F section for the structural accounting). **G is DONE** (promoted-destination statement lowering: cset dest hints + the never-firing compound-assign fast path fixed — pidigits −8%, fannkuch +2-4%). **H is DONE as cap lift + CLOSED survey** (callee pool to the full x23–x28 — clean, neutral; the loop-invariant re-baring half was reverted with a forensic finding: the inline-expansion seed drops caller claims — mandelbrot hang at n=16, see the section). All measured receipts in-section.
 
 ## Where the gap actually is (receipts, 2026-09-02)
 
@@ -583,6 +583,61 @@ arm swap — noise). Full suite green (277 files / 2729 tests) with
 unchanged, cset kill-switch restoration, compound imm12 fold + 4096
 fallback, behavioral) and the two tranche-B cset shape tests updated to
 the dest-hinted canonical form (they asserted the deleted x0 staging).
+
+## Tranche H (DONE — cap lift; CLOSED survey): the callee pool and the loop-invariant slot loads
+
+Landed 2026-09-02 (`nir_regalloc.ts`: MAX_X_CALLEE 4 → 6, kill-switch
+`set_nir_callee_pool_extended` default ON; OFF restores the legacy cap
+byte-identically). The re-baring half of the tranche was REVERTED the same
+session — forensics below.
+
+The G-session census flagged the last obvious memory traffic in the limb
+loops: loop-invariant locals re-read from their frame slots EVERY
+iteration (`bp` #56 and `sp` #24 in mul_to's single-limb loop, `divisor`
+#0 three times in div_to's). Why they stay slots: (a) their live ranges
+span a loop header → `loop_blocked` → the caller-saved ext pool is
+forbidden; (b) their raw textual reads (1–3) sit below MIN_READS=4, and
+the low-read extension also requires a loop-free-contained range; (c) the
+callee-saved pool cap of 4 was already consumed by the loop's hotter
+state (i/carry/sv/other_len). Pool depth and the read bar, in that order.
+
+**What landed: the cap lift.** `MAX_X_CALLEE` 4 → 6. The legacy cap kept
+x27/x28 "available" to loop promotion and the Buffer/array caches — but
+every runtime claimant already excludes `callee_saved_regs_used`, so
+plan-claimed registers are respected and the reservation was pure
+conservatism. The prologue patching (fn_callee_saved →
+callee_saved_regs_used → save/restore) picks the extra claims up
+automatically, for functions and seeded method bodies alike. Receipt: 4+
+-read candidates that previously missed the cap take x27/x28 (mul_to
+loses one slot store; the shift is visible in the assignment ordering).
+**RESULT: bench-neutral** (interleaved best-of-7/11, load 3–30,
+outputs byte-identical on all six benches: pidigits ±0.5%, fannkuch
+−0.4%, nbody ±0, spectral −0.1%, mandelbrot +0.7%, binarytrees +1.6% —
+no directional signal; full suite 277 files green). Kept: zero-risk pool
+depth for future passes, byte-clean kill-switch.
+
+**What was reverted: the loop-invariant re-baring.** Admitting low-read
+loop-spanning names into the callee pool via loop-weighted traffic
+(`weighted_reads >= 8`) captured the real targets — div_to's `divisor`
+promoted (3 slot loads/iteration gone), mul_to's `sp` promoted — but
+**mandelbrot hung at n=16**. Forensics, compressed: the bar admitted the
+loop-written state too (`y`, `x`, `checksum`, `outer`, `inner`,
+`byte_val`, `bit` — all live across loop headers), moving them from loop
+promotion's bracketing (entry load / exit store-back with
+register_allocations snapshot) into function-plan plain bindings — and
+the mbrot INLINE EXPANSION's seed (`seed_function_allocations`)
+OVERWRITES `callee_saved_regs_used` with its own plan's set and the
+expansion path clears `register_allocations`, so the caller's claims
+vanish from exactly the sets the expansion's own promotion consults;
+mbrot's claims then reuse the caller's live registers. A never-written
+gate on the bar still hung (the expansion reclaims ANY register whose
+claim only lives in the overwritten sets). Structural blocker, written
+per the success criteria: **loop-invariant slot loads need the inline
+expansion path to UNION caller claims into its seed instead of
+overwriting them** — a one-session fix on its own, after which the
+re-baring can land. Until then the loads stay: the loops use all six
+callee-saved + four ext registers on live state, and the remaining
+traffic is 2–3 `ldr`s per iteration against a correct allocator.
 
 ## Method (unchanged from ASM_PLAN_2)
 

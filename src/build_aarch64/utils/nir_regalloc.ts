@@ -108,14 +108,33 @@ const CALLEE_SAVED_X = ["x23", "x24", "x25", "x26", "x27", "x28"];
  *  stay excluded (write barriers / tree temps), x9 is emitter scratch. */
 const CALLER_SAVED_EXT_X = ["x12", "x13", "x14", "x15"];
 const D_POOL = ["d8", "d9", "d10", "d11", "d12", "d13", "d14", "d15"];
-/** Distinct callee-saved int registers this pass may claim — x27/x28 stay
- *  available to loop promotion and Buffer data-pointer caches (legacy cap). */
-const MAX_X_CALLEE = 4;
 const MAX_D_REGS = 4;
+/** Distinct callee-saved int registers this pass may claim. The legacy cap
+ *  of 4 kept x27/x28 "available" to loop promotion and Buffer caches — but
+ *  every runtime claimant (array_ptr_cache, Buffer data cache, loop
+ *  promotion) already excludes `callee_saved_regs_used`, so claimed
+ *  registers are respected. Tranche H lifts the cap to the full pool: 4+
+ *  -read candidates were missing out purely on pool depth. (Re-barring
+ *  LOW-read loop-spanning names into the pool was tried and reverted the
+ *  same session: the admitted written loop state collides with the inline
+ *  expansion path's claim seeding — mandelbrot hung at n=16. See
+ *  ASM_PLAN_3.md tranche H.) */
+const MAX_X_CALLEE = 6;
 /** Reads (textual, function-wide) below which a CALLEE-SAVED promotion
  *  never pays its prologue save (legacy bar). Caller-saved assignments
  *  have no prologue cost and need only one root-body read. */
 const MIN_READS = 4;
+let callee_pool_extended = true;
+
+/** Kill-switch for the tranche-H callee-pool extension (default ON; OFF
+ *  restores MAX_X_CALLEE = 4 and the raw-read-only bar — byte-identical). */
+export function nir_callee_pool_extended(): boolean {
+	return callee_pool_extended;
+}
+
+export function set_nir_callee_pool_extended(enabled: boolean): void {
+	callee_pool_extended = enabled;
+}
 
 interface Candidate {
 	name: string;
@@ -487,7 +506,8 @@ export function plan_nir_registers(
 			const occupants = occupants_of(reg);
 			const is_callee = CALLEE_SAVED_X.includes(reg);
 			if (occupants.size === 0) {
-				if (is_callee && x_callee_used >= MAX_X_CALLEE) continue;
+				const callee_cap = nir_callee_pool_extended() ? MAX_X_CALLEE : 4;
+				if (is_callee && x_callee_used >= callee_cap) continue;
 				allocs.set(c.name, reg);
 				{
 					const site = sites.get(c.name);
