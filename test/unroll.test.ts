@@ -386,3 +386,52 @@ pub func main = () {}
 	const fn = code.slice(code.indexOf("f:"), code.indexOf("main:"));
 	expect((fn.match(/\.while_\d+:/g) ?? []).length).toBe(2);
 });
+
+test("unrolled induction reads fold inside int-op operands (promoted in-place bypass)", async () => {
+	// Regression (ASM_PLAN_3, mandelbrot corruption receipt): a promoted
+	// induction read as an int-op OPERAND must fold to the copy's constant.
+	// The direct-source selectors (int trees, root-op in-place sources)
+	// read the operand's promoted REGISTER, which still holds the pre-loop
+	// init during emission — with the stale read, `128 >> bit` evaluated
+	// with bit=0 in every copy (checksum 1024 instead of 255; mandelbrot's
+	// checksum was wrong the same way).
+	const { default: check_output } = await import("./check_output");
+	const parsed = parse_raw(`
+import System
+
+func mb = (float cr, float ci, out int) {
+	var zr = 0.0
+	var zi = 0.0
+	var outer = 0
+	while outer < 10; outer += 1 {
+		zi = (zr + zr) * zi + ci
+		zr = zr * zr - zi * zi + cr
+	}
+	if zr * zi > 4.0 {
+		return 0
+	}
+	return 1
+}
+
+pub func main = (Init init) {
+	var checksum = 0
+	var bit = 0
+	while bit < 8; bit += 1 {
+		const int xi = bit * 3
+		const float cr = (xi as float) * 0.5 - 1.5
+		const int r = mb(cr, 0.5)
+		if r == 1 {
+			checksum = checksum + (128 >> bit)
+		}
+	}
+	Console.write("checksum \\{checksum}\\n")
+}
+`);
+	expect(parsed.errors).toEqual([]);
+	const result = build(parsed.root, { arch: "aarch64", audit: true });
+	expect(result.errors ?? []).toEqual([]);
+	await check_output("unroll_induction_operand_fold", result, "checksum 255", {
+		arch: "aarch64",
+		audit: true,
+	});
+});

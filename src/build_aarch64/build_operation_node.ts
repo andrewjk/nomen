@@ -198,6 +198,11 @@ export function build_float_tree(
 		if (!side || side.node_type !== "value") return null;
 		const name = (side as unknown as ValueNode).value;
 		if (typeof name !== "string" || status.function_param_regs?.has(name)) return null;
+		// Index-constant unrolling: an induction read is the copy's
+		// compile-time constant — its (int) register never holds a float,
+		// but the invariant "an induction-constant name never resolves to a
+		// register" is enforced uniformly (mandelbrot corruption receipt).
+		if (status.induction_const?.has(name)) return null;
 		const reg = status.register_allocations?.get(name);
 		return reg && reg.startsWith("d") ? reg : null;
 	};
@@ -260,6 +265,12 @@ export function count_int_tree_allocs(node: BaseNode, status: BuildStatus): numb
 		if (!side || side.node_type !== "value") return null;
 		const name = (side as ValueNode).value;
 		if (typeof name !== "string" || status.function_param_regs?.has(name)) return null;
+		// Index-constant unrolling (ASM_PLAN_2 tranche E): an induction read
+		// must fold to the copy's compile-time constant via build_operand —
+		// the promoted register still holds the PRE-LOOP init during
+		// emission, so an in-place read would return a stale value (the
+		// mandelbrot corruption receipt, first bad commit 44e05e79).
+		if (status.induction_const?.has(name)) return null;
 		const reg = status.register_allocations?.get(name);
 		return reg && reg.startsWith("x") ? reg : null;
 	};
@@ -297,6 +308,13 @@ export function build_int_tree(
 				if (!side || side.node_type !== "value") return null;
 				const name = (side as ValueNode).value;
 				if (typeof name !== "string" || status.function_param_regs?.has(name)) return null;
+				// Index-constant unrolling (ASM_PLAN_2 tranche E): an induction
+				// read must fold to the copy's compile-time constant via
+				// build_operand — the promoted register still holds the
+				// PRE-LOOP init during emission, so an in-place read would
+				// return a stale value (the mandelbrot corruption receipt,
+				// first bad commit 44e05e79).
+				if (status.induction_const?.has(name)) return null;
 				const reg = status.register_allocations?.get(name);
 				return reg && reg.startsWith("x") ? reg : null;
 			};
@@ -1516,6 +1534,11 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 			if (!side || side.node_type !== "value") return null;
 			const name = (side as ValueNode).value;
 			if (!name || status.function_param_regs?.has(name)) return null;
+			// Index-constant unrolling: an induction read is the copy's
+			// compile-time constant — it can never be float-typed, but the
+			// invariant "an induction-constant name never resolves to a
+			// register" is enforced uniformly (mandelbrot corruption receipt).
+			if (status.induction_const?.has(name)) return null;
 			const reg = status.register_allocations?.get(name);
 			return reg && reg.startsWith("d") ? reg : null;
 		};
@@ -1671,6 +1694,13 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 			if (!side || side.node_type !== "value") return null;
 			const name = (side as ValueNode).value;
 			if (typeof name !== "string" || status.function_param_regs?.has(name)) return null;
+			// Index-constant unrolling (ASM_PLAN_2 tranche E): an induction
+			// read must fold to the copy's compile-time constant via
+			// build_operand — the promoted register still holds the PRE-LOOP
+			// init during emission, so an in-place read would return a stale
+			// value (the mandelbrot corruption receipt, first bad commit
+			// 44e05e79).
+			if (status.induction_const?.has(name)) return null;
 			const reg = status.register_allocations?.get(name);
 			return reg && reg.startsWith("x") ? reg : null;
 		};

@@ -7,7 +7,7 @@
 >
 > Motivation: pidigits and nbody remain the two worst gaps vs the C backend's
 > `clang -O2` artifact. Receipts below measured 2026-09-02.
-> **Tranches A and B are DONE; C is DONE (enablement declined, receipts in its section).** E is a survey note. D (NEON for struct arrays) is receipt-gated future work.
+> **Tranches A and B are DONE; C is DONE** — enablement declined on the perf math, and the mandelbrot unroll corruption it surfaced is fixed (5 selectors, receipts in the tranche). E is a survey note. D (NEON for struct arrays) is receipt-gated future work.
 
 ## Where the gap actually is (receipts, 2026-09-02)
 
@@ -285,11 +285,40 @@ registers chain through copies), and the loop overhead it removes was
 already small. The rest of the matrix with the flag on: mandelbrot,
 spectral-norm, fannkuch, pidigits (n=2000), binarytrees all neutral.
 
-Worse, the unroller is **broken at HEAD** for mandelbrot with the flag on
-(pre-existing, first bad commit 44e05e79 — tranche F; see FOLLOWUP.md) —
-silent wrong checksum. Nothing shipped today enables it (default OFF, and
-the corpus/byte-identity harnesses hold it off in both arms), but this
-bars any default flip regardless of the perf math.
+Worse, the unroller was **broken at HEAD** for mandelbrot with the flag on
+— silent wrong checksum. FIXED in this tranche (see below); the enablement
+decision still stands on the perf math alone.
+
+### The mandelbrot corruption — root cause and fix (landed)
+
+Bisected with `git bisect run` (unroll-flagged build + checksum diff):
+**first bad commit 44e05e79** — ASM_PLAN_2 tranche F's int direct-source
+selectors. The mechanism, shrunk to a 30-line repro (unroll on: checksum
+1024 instead of 255 — `128 >> bit` with `bit` stuck at 0):
+
+- Index-constant unrolling substitutes the induction's per-copy value via
+  `status.induction_const`, consulted by `build_value_node` and
+  `build_operand` BEFORE the promoted-register lookup (tranche E's
+  contract: the register still holds the PRE-LOOP init during emission).
+- Tranche F added five copy-pasted IN-PLACE operand selectors (`int_source`
+  in the root int op, `src_reg` in `build_int_tree` and in
+  `count_int_tree_allocs`, `promoted_source` in the float op path, `src_reg`
+  in `build_float_tree`) that read `register_allocations` DIRECTLY —
+  bypassing the `induction_const` check. A promoted induction read as an
+  int-op operand therefore returned the stale register value (0) in every
+  copy. `build_int_tree`'s version multiplied it: the whole TREE evaluated
+  with the stale operand.
+- The corruption surfaced only under composed unrolling of a loop whose
+  body is an inlined callee (mandelbrot's ×8 `mbrot` expansion) — exactly
+  the shape the E-addendum's "outputs identical" receipt predates.
+
+Fix: all five selectors now return null for names in
+`status.induction_const`, forcing the operand through `build_operand`,
+which folds the copy's constant. The check is a no-op outside unrolled
+copies (`induction_const` is only non-empty inside them — flag-gated), so
+default builds are byte-identical. Regression test
+`test/unroll.test.ts` ("unrolled induction reads fold inside int-op
+operands") — behavioral, verified to fail pre-fix with checksum 1024.
 
 Conclusion: the pass stays sound, tested, and available behind
 `set_loop_unrolling_enabled` for shapes where it provably pays. The
