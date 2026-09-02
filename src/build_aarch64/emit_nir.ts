@@ -346,21 +346,33 @@ function try_emit_cset_pair(
 	if (!cond_is_cset_eligible(ifn.condition)) return 1;
 
 	// Stage-4 elision: the flag is never read anywhere — the whole
-	// cmp/cset/store tail is dead. The declare still builds below
-	// (registration semantics preserved); only the tail is skipped.
+	// cmp/cset/store tail is dead.
 	const flag_dead = cset_flag_is_write_only(ctx, decl.name);
-
-	// Emit: the declare (registers the name, stores the 0 — every
-	// registration/scope semantic preserved), then the comparison
-	// materialized straight into x0 and stored to the same home.
+	if (flag_dead) {
+		return 2;
+	}
+	// Stage-5 dest hint: a flag with a promoted register home takes the
+	// cset directly (`cset xN, cc` — no x0 staging, no store) and its
+	// literal-0 initializer is dead (the fused cset overwrites it before
+	// any possible read — tranche B's contract). The declare is skipped
+	// ENTIRELY here: frame slots allocate at declare-emission, so the skip
+	// is only sound when no slot is ever needed. A swap-bearing declare
+	// keeps the full builder path (ownership semantics).
+	const flag_reg = status.register_allocations?.get(decl.name);
+	if (flag_reg?.startsWith("x") && !nstmt.decl.swap) {
+		emit_cond_cset(ifn.condition, status, flag_reg);
+		if (!status.code.endsWith("\n")) {
+			status.code += "\n";
+		}
+		return 2;
+	}
+	// Slot-home flag: the declare allocates the flag's frame slot, then the
+	// comparison materializes into x0 and stores to the same home.
 	build_declaration_node(decl, status, nstmt.decl.init, nstmt.decl.swap);
 	if (nstmt.decl.init && nstmt.decl.init.node.node_type !== "func") {
 		if (!status.code.endsWith("\n")) {
 			status.code += "\n";
 		}
-	}
-	if (flag_dead) {
-		return 2;
 	}
 	emit_cond_cset(ifn.condition, status);
 	emit_var_store(status, "x0", decl.name, aarch64_size(decl.type?.name ?? "int"));

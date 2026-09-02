@@ -37,10 +37,11 @@ pub func main = () {}
 test("declare + if fuses into cmp/cset with no branch", () => {
 	const code = compile(CARRY_SHAPE);
 	const fn = code.slice(code.indexOf("\ncarries:"), code.indexOf("\n_main:"));
-	// The comparison materializes straight into x0 and stores to the flag's
-	// home; the branch + join label are gone.
+	// The comparison materializes as a branch-free cset — into the flag's
+	// promoted home directly (stage-5 dest hint) or x0 + store when it
+	// lives in a slot; the branch + join label are gone.
 	expect(fn).toContain(`cmp x1, x2\n`);
-	expect(fn).toContain(`cset x0, lo\n`);
+	expect(fn).toMatch(/cset x[0-9]+, lo\n/);
 	expect(fn).not.toMatch(/b\.lo end_\d+/);
 	expect(fn).not.toMatch(/^end_\d+:/m);
 });
@@ -73,7 +74,7 @@ func sc = (int a, int b, out int) {
 pub func main = () {}
 `);
 	const fn = code.slice(code.indexOf("\nsc:"), code.indexOf("\n_main:"));
-	expect(fn).toContain(`cset x0, lt\n`);
+	expect(fn).toMatch(/cset x[0-9]+, lt\n/);
 });
 
 test("negated comparisons emit the inverted cset", () => {

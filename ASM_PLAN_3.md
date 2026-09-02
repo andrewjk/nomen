@@ -7,7 +7,7 @@
 >
 > Motivation: pidigits and nbody remain the two worst gaps vs the C backend's
 > `clang -O2` artifact. Receipts below measured 2026-09-02.
-> **A, B, C are DONE** (C: enablement declined + the mandelbrot unroll corruption fixed); **D step 1 is DONE** (nbody −44%, ~1.7× vs C) and **D step 2 is CLOSED** (analyzed: j-pair vectorization unprofitable for AoS; clang's win is field-pair SLP — a future pass class). **E is DONE as a survey** (the div128 boundary does not dominate post-B; neutral, reverted). **F is DONE as a narrow win + survey** (stage-4 straight-line store-to-load forwarding + write-only cset elision: real capture on the single-limb shapes, bench-neutral — the profile has moved to multi-read temporaries; see the F section for the structural accounting). All measured receipts in-section.
+> **A, B, C are DONE** (C: enablement declined + the mandelbrot unroll corruption fixed); **D step 1 is DONE** (nbody −44%, ~1.7× vs C) and **D step 2 is CLOSED** (analyzed: j-pair vectorization unprofitable for AoS; clang's win is field-pair SLP — a future pass class). **E is DONE as a survey** (the div128 boundary does not dominate post-B; neutral, reverted). **F is DONE as a narrow win + survey** (stage-4 straight-line store-to-load forwarding + write-only cset elision: real capture on the single-limb shapes, bench-neutral — the profile has moved to multi-read temporaries; see the F section for the structural accounting). **G is DONE** (promoted-destination statement lowering: cset dest hints + the never-firing compound-assign fast path fixed — pidigits −8%, fannkuch +2-4%). All measured receipts in-section.
 
 ## Where the gap actually is (receipts, 2026-09-02)
 
@@ -534,6 +534,55 @@ The pass stays (default ON, kill-switch off = byte-identical): it is
 non-negative everywhere, removes the documented round-trips wherever
 single-read shapes occur, and is the seam a future value-numbering pass
 would drive.
+
+## Tranche G (DONE): promoted-destination statement lowering
+
+Landed 2026-09-02 (build_operation_node's `emit_cond_cset` takes a
+`dest_reg`; build_assignment_node's literal-compound fast path fixed;
+emit_nir's cset fuse resolves the flag's home). No new kill-switch — the
+cset fuse and plan-2-F fast path are the existing toggles.
+
+F's survey said the remaining limb-loop temporaries are multi-read "by the
+compare". Reading the actual mul_to single-limb loop and add_to/sub_to
+bodies against the emitter found two concrete statement-level leaks:
+
+1. **The plan-2-F literal-compound fast path NEVER fired.** It checks
+   `node.operator === "+"`, but compound assignments carry the two-char
+   token the parser stores (`"+="`, `"-="`) — `i += 1` on a promoted i
+   emitted the generic 4-instruction sequence (`mov x1, xI; mov x0, #1;
+add x0, x1, x0; mov xI, x0`). Fixed by matching the token form; the
+   fast path now folds to `add xI, xI, #imm`.
+2. **The tranche-B cset fuse staged every flag through x0 twice**: the
+   declare's dead 0-init (`mov x0, #0; mov xN, x0`) plus the cset result
+   staging (`cset x0, cc; mov xN, x0`) — 4 wasted instructions per flag
+   even when the flag's home is a promoted register. Now a flag whose home
+   is a promoted register takes `cset xN, cc` directly and the declare
+   emits nothing (the 0-init is dead under B's own contract — the fused
+   cset overwrites it before any read; frame slots allocate at
+   declare-emission, so the skip is only sound for register homes, which
+   is exactly when it pays). Slot-home flags and swap-bearing declares
+   keep the full builder path.
+
+The same F-session census had also flagged this loop's `adr x1, carry`
+assembler failure — caught by the build validator, never shipped: the
+first A2 attempt skipped the declare unconditionally, stranding slot-home
+flags (the declare allocates their frame slot). The guard above is the
+fix.
+
+Census (mul_to single-limb loop, per iteration): c1 7 → 2 instructions,
+the `i += 1` update 4 → 1; loop ~62 → ~54 lines. The same shapes carry in
+add_to/sub_to's carry chains and div_to's Knuth-D updates.
+
+**RESULT (interleaved best-of-7/11 medians, load 3–12, outputs
+byte-identical at every size and bench):** pidigits n=4000 **0.8345 →
+0.7684 s (−7.9%, reproduced 8.0%**, now ~2.2× vs C `-O2`), pidigits n=1000
+−6.6%, fannkuch 11 +1.9% to +4.5%, nbody 5M −1.7% to −2.0%; spectral-norm,
+mandelbrot, binarytrees neutral (the negative readings flipped sign with
+arm swap — noise). Full suite green (277 files / 2729 tests) with
+`test/promoted_dest.test.ts` (5 tests: dest-hint shape, slot-home
+unchanged, cset kill-switch restoration, compound imm12 fold + 4096
+fallback, behavioral) and the two tranche-B cset shape tests updated to
+the dest-hinted canonical form (they asserted the deleted x0 staging).
 
 ## Method (unchanged from ASM_PLAN_2)
 

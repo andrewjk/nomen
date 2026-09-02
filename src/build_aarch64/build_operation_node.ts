@@ -657,12 +657,15 @@ export function cond_is_cset_eligible(node: BaseNode): boolean {
  * elimination, unsigned condition codes). Precondition:
  * cond_is_cset_eligible(node) returned true ( ASM_PLAN_3 tranche B).
  */
-export function emit_cond_cset(node: BaseNode, status: BuildStatus): void {
+export function emit_cond_cset(node: BaseNode, status: BuildStatus, dest_reg = "x0"): void {
 	const n = unwrap_grouped(node);
 	const op_node = n as OperationNode;
 	if (op_node.op === "!") {
 		emit_cond_cset((op_node.left_value ?? op_node.right_value)!, status);
 		status.code += `eor x0, x0, #1\n`;
+		if (dest_reg !== "x0") {
+			status.code += `mov ${dest_reg}, x0\n`;
+		}
 		return;
 	}
 	const lv = unwrap_grouped(op_node.left_value!);
@@ -692,7 +695,7 @@ export function emit_cond_cset(node: BaseNode, status: BuildStatus): void {
 	}
 	const unsigned = is_unsigned_type(lv) || is_unsigned_type(rv);
 	status.code += `cmp x1, x2\n`;
-	status.code += `cset x0, ${map_cmp(op_node.op, unsigned)}\n`;
+	status.code += `cset ${dest_reg}, ${map_cmp(op_node.op, unsigned)}\n`;
 }
 
 /**

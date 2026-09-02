@@ -1034,8 +1034,11 @@ export default function build_assignment_node(
 			// `i -= 2` on a promoted x-target folds to one `add/sub xN, xN,
 			// #imm` — no x1 round-trip, no spill. Only +/- with immediates
 			// the `add imm12` form takes (0..4095); everything else keeps
-			// the generic compound sequence below.
-			if (alloc_reg_op?.startsWith("x") && (node.operator === "+" || node.operator === "-")) {
+			// the generic compound sequence below. (Compound operators ride
+			// the two-char token form `+=`/`-=` — the first character is the
+			// arithmetic op.)
+			const arith_op = node.operator === "+=" ? "+" : node.operator === "-=" ? "-" : null;
+			if (alloc_reg_op?.startsWith("x") && arith_op) {
 				const lit =
 					node.right_value.node_type === "value"
 						? (node.right_value as ValueNode).value
@@ -1043,7 +1046,7 @@ export default function build_assignment_node(
 				if (lit !== undefined && is_int_literal(lit)) {
 					const mag = parse_int_literal_bigint(lit);
 					if (mag !== null && mag >= 0n && mag <= 4095n) {
-						const mn = node.operator === "+" ? "add" : "sub";
+						const mn = arith_op === "+" ? "add" : "sub";
 						status.code += `${mn} ${alloc_reg_op}, ${alloc_reg_op}, #${mag.toString()}\n`;
 						build_swap(node, status, nir_swap);
 						return;
