@@ -126,7 +126,28 @@ export default function build_while_loop_node(
 			const saved_allocs = status.emitted_allocations
 				? new Set(status.emitted_allocations)
 				: undefined;
+			// Fixed-array pointer cache (ASM_PLAN_3 tranche C): cache keys
+			// ride the induction's NAME (`bodies@j`), and in index-constant
+			// mode the update that would invalidate them is DELETED — so a
+			// pin from copy k would survive into copy k+1 with copy k's
+			// address. Give each copy a fresh map (seeded with the enclosing
+			// scope's pins — an outer copy's `bodies@i` stays valid: its
+			// constant is fixed for this whole copy) and release the
+			// register claims this copy added: the pins die with the copy,
+			// so the next copy re-fills into the SAME registers instead of
+			// exhausting the pool into generic fallbacks.
+			const saved_array_cache: Map<string, string> | undefined = status.array_ptr_cache;
+			const saved_claims = status.callee_saved_regs_used
+				? new Set(status.callee_saved_regs_used)
+				: undefined;
+			status.array_ptr_cache = saved_array_cache ? new Map(saved_array_cache) : undefined;
 			build_block_with_cursor(node, nir!.body, status);
+			status.array_ptr_cache = saved_array_cache;
+			if (status.callee_saved_regs_used && saved_claims) {
+				for (const r of Array.from(status.callee_saved_regs_used)) {
+					if (!saved_claims.has(r)) status.callee_saved_regs_used.delete(r);
+				}
+			}
 			status.emitted_allocations = saved_allocs;
 		}
 		status.induction_const = saved_induction_const;

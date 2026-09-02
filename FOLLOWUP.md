@@ -2,6 +2,27 @@
 
 Skipped or out-of-scope items recorded for later.
 
+## Unrolling corrupts mandelbrot since the int-side codegen tranches (pre-existing)
+
+With `set_loop_unrolling_enabled(true)` (default OFF — nothing shipped is
+affected today), mandelbrot at n=1000 prints `checksum 50800640` instead of
+the correct `checksum 12649259` (C backend + unflagged aarch64 agree on the
+latter). Bisected with `git bisect run` (unroll-flagged build + checksum
+diff): **first bad commit 44e05e79 "Perf: int-side register codegen
+tranches"** (ASM_PLAN_2 tranche F). The composed unroll of main's 8-bit
+loop multiplies the inlined `mbrot` expansion ×8, so the corrupting shape
+is tranche F's int dest-hint / int-tree codegen (or its register-claim
+bookkeeping) inside unrolled copies. The E-addendum's "outputs identical"
+receipt predates F. Reproduce: a tsx probe with
+`set_loop_unrolling_enabled(true)` building
+`bench/nomen/mandelbrot.nm` with `{ arch: "aarch64", optimize: true }`.
+
+Found while landing ASM_PLAN_3 tranche C (the array-pointer cache needed
+per-copy clearing under index-constant unrolling — that fix is in
+build_while_loop_node.ts and is unrelated to this corruption, which
+reproduces with the array cache disabled via `set_array_licm_enabled(false)`).
+Fix before ever enabling the unroller by default.
+
 ## Must-use enforcement for `Result`-returning IO (design agreed, not built)
 
 All fallible File/Directory operations now return `Result<T, FileError>` /

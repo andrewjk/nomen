@@ -7,7 +7,7 @@
 >
 > Motivation: pidigits and nbody remain the two worst gaps vs the C backend's
 > `clang -O2` artifact. Receipts below measured 2026-09-02.
-> **Tranche A is DONE** (see its section for the measured result); B–E open.
+> **Tranches A and B are DONE; C is DONE (enablement declined, receipts in its section).** E is a survey note. D (NEON for struct arrays) is receipt-gated future work.
 
 ## Where the gap actually is (receipts, 2026-09-02)
 
@@ -176,42 +176,126 @@ revisit: per-copy field reads chain through pinned registers.
 Kill-switch off: byte-identical output (the flag gates every consult,
 fill, hop change, and store-path change).
 
-## Tranche B — branch-free comparison-assign lowering (pidigits)
+## Tranche B — branch-free comparison-assign lowering (pidigits) — DONE
+
+Landed 2026-09-02 (`src/build_aarch64/cset_lower.ts`, kill-switch
+`set_cset_lowering_enabled`, default ON; `cond_is_cset_eligible` +
+`emit_cond_cset` in build_operation_node.ts; the fuse hooks
+`emit_stmt_from_nir`'s declare arm and consumes TWO statements —
+`emit_stmt_from_nir` now returns a consumed count that
+build_block_node's loop advances by).
 
 `var p_mc = 0; if p_mid < p_lh { p_mc = 1 }` is a materialized boolean.
-Pattern-match it at the statement level (NIR cursor): a declare-to-0
-immediately followed by an `if` whose condition compares two pure scalar
-operands and whose (only) branch assigns literal 1 to the same name →
+Pattern-matched at the statement level (NIR cursor): a `var` declare with a
+literal-0 scalar init immediately followed by an if with NO else, a single-
+statement branch assigning literal 1 to the same name, and a condition that
+is a comparison over two plain scalar value nodes (optionally `!`-negated,
+parenthesized wrappers unwrapped) →
 
 ```asm
-cmp xN, xM
-cset xK, lt
+ldr x1, [x29, #M]        ; operand homes: slots, promoted regs, literals
+ldr x2, [x29, #K]
+cmp x1, x2
+cset x0, lo              ; unsigned lo/hi/ls/hs, signed lt/gt/le/ge, eq/ne
+mov x12, x0              ; store into the site-promoted register or slot
 ```
 
-No branch, no block boundary, no flush. Two occurrences per div_to
-iteration; removing them makes the whole estimate step straight-line, which
-unblocks the EXISTING machinery (stage-3 site keys + ext pool + int trees)
-to hold `p_ll/p_lh/p_hl/p_mid/p_lo_val` in registers across the iteration —
-no new allocator work required.
+No branch, no join label, no block boundary. The declare still builds
+(first — every registration/scope semantic preserved); the fused cset
+overwrites the dead 0-init. Two occurrences per div_to iteration; removing
+them makes the whole estimate step straight-line, which unblocks the
+EXISTING machinery (stage-3 site keys + ext pool + int trees) to hold the
+products in registers across the iteration.
 
-Soundness: operands must be pure scalars (no calls, no ref args, no
-possible side effects) — anything else keeps the branches. The pattern
-generalizes to `if c { x = 1 }` / `if !c { x = 1 }` with the declare
-immediately preceding; anything more complex rejects.
+Soundness gates: operands must be plain scalar value nodes — non-float,
+non-literal-pair (literal-vs-literal keeps the constant fold), no calls/no
+ref args/no side effects. Compound conditions (`&&`/`||`), float
+comparisons, and every special lowering (struct equality, enum tags,
+nullable null-checks, strings) keep their branches. The `!` arm recurses
+and emits `eor x0, x0, #1`.
 
-Kill-switch: `set_cset_lowering_enabled`.
+Byte-identity harness: the fuse is cursor-dependent (it consumes two
+statements), so like NEON/unroll/site-promotion it is held OFF in both
+arms of `expect_byte_identical` and the corpus test — the delegation arm
+could never reproduce a consumed pair.
 
-## Tranche C — unroll enablement composed with tranche A (nbody)
+Receipts (whole program): carry-carry branches `b.hs/b.lo end_N` 16 → 5
+(the remainder are the compound `q_val != 0 && last_nonzero == 0` shapes),
+csets 1 → 16.
 
-The pass exists, is sound, tested, default-off (ASM_PLAN_2 tranche E
-addendum: composed outer-first unroll of advance measured −6…−7.5% BEFORE
-tranche A). With A landed, re-measure:
+**RESULT (interleaved best-of-7 medians, load avg 9–23, outputs
+byte-identical at n=1000 and n=4000):** pidigits n=4000 1.07 → 0.80 s
+(**−25%**), now ~2.3× vs C `-O2` (was 3.1×; ~6.5× at tranche F's start).
+Bench matrix neutral: nbody 5M 0.59 → 0.58 (noise), spectral-norm n=1000,
+fannkuch n=11, mandelbrot n=1000 all ±0 (outputs identical). Full suite
+green (274 files / 2713 tests) with `test/cset_lower.test.ts` (6 tests:
+fuse shape, unsigned/signed condition codes, `!` negation via eor,
+kill-switch branchy restoration, compound-keeps-branches, behavioral run
+on both backends) — the shape tests verified to fail on the pre-tranche
+compiler. Static text grew slightly (explicit cset sequences, pidigits .s
+90279 → 90119 bytes); the win is dynamic — no branch to mispredict and no
+block boundary flushing neighboring products to slots.
 
-- If A+unroll compose well (expected — copies multiply slot traffic today,
-  register traffic after A), decide the enablement shape: a bench-harness
-  flag, `--unroll` on the CLI, or an automatic heuristic (loop not a serial
-  dependence chain — the mandelbrot counter-example is documented). Do NOT
-  flip the global default without the full bench matrix.
+Remaining gap to clang's limb loops (honest accounting, unchanged in
+kind): cross-statement temporaries are now largely covered, but the
+div128 `___udivti3` call boundary still forces callee-saved residency for
+everything live across it, and the multiply chains still round-trip the
+accumulator through slots where clang chains them. Tranche E (survey) is
+the next lever if the post-B profile still shows the call boundary
+dominant.
+
+## Tranche C — unroll enablement composed with tranche A (nbody) — DONE (decision: stays OFF)
+
+Closed 2026-09-02. Two outcomes: a **required soundness fix**, and an
+**enablement decision backed by receipts** — the composition works but the
+value collapsed post-A, and the unroller carries a pre-existing corruption
+that bars any default flip.
+
+### The soundness fix (landed)
+
+The array-pointer cache keys on the induction's NAME (`bodies@j`), and in
+index-constant unrolling mode the `j += 1` update — the write that drives
+the assignment invalidation — is DELETED. Copy k's pin would survive into
+copy k+1 with copy k's address. Receipt: the composed build printed
+`-1.348342 / 891.903402` instead of `-0.169075 / -0.169088` (nbody 1M).
+
+`build_while_loop_node`'s copy loop now gives each copy a fresh
+`array_ptr_cache` (seeded with the enclosing scope's pins — an outer
+copy's `bodies@i` stays valid for the whole copy) and releases exactly the
+register claims the copy added (the pins die with the copy, so the next
+copy re-fills into the SAME registers instead of exhausting the pool into
+generic fallbacks). Regression test in `test/array_licm.test.ts`
+("unrolled index-constant copies re-derive the pinned address per copy")
+— verified to fail on the pre-fix compiler with corrupted output.
+
+### The enablement decision (default stays OFF)
+
+Interleaved best-of-7 medians, nbody 5M, outputs byte-identical at 1M and
+5M:
+
+|                  | A      | A + unroll |
+| ---------------- | ------ | ---------- |
+| nbody 5M         | 0.58 s | 0.56 s     |
+| `advance` instrs | 226    | 1385       |
+
+Post-A, the composed unroll is worth **−3.4%** for a **6× code-size
+explosion** on `advance`. Tranche A already captured what unrolling was
+buying: the slot traffic it used to multiply per copy is gone (pinned
+registers chain through copies), and the loop overhead it removes was
+already small. The rest of the matrix with the flag on: mandelbrot,
+spectral-norm, fannkuch, pidigits (n=2000), binarytrees all neutral.
+
+Worse, the unroller is **broken at HEAD** for mandelbrot with the flag on
+(pre-existing, first bad commit 44e05e79 — tranche F; see FOLLOWUP.md) —
+silent wrong checksum. Nothing shipped today enables it (default OFF, and
+the corpus/byte-identity harnesses hold it off in both arms), but this
+bars any default flip regardless of the perf math.
+
+Conclusion: the pass stays sound, tested, and available behind
+`set_loop_unrolling_enabled` for shapes where it provably pays. The
+remaining nbody gap (0.58 vs 0.21 s) is the float declaration-init slot
+round-trips in the inner loop — float-codegen work, not loop overhead —
+which is the next receipt to chase.
 
 ## Tranche D — inner-loop NEON for fixed struct arrays (nbody, receipt-gated)
 

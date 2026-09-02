@@ -90,8 +90,11 @@ export default function build_block_node(node: BlockNode, status: BuildStatus) {
 			emit_allocations(child, status);
 			// NIR-driven dispatch (phase 4 stage 2): consumes the index-aligned
 			// NIR entry when the emission ctx owns this statement list; falls
-			// back to the plain AST walk otherwise.
-			emit_stmt_from_nir(child, index, node.statements, status);
+			// back to the plain AST walk otherwise. Returns the number of
+			// AST statements consumed — the cset fuse (tranche B) consumes a
+			// declare AND its following if in one emission.
+			const consumed = emit_stmt_from_nir(child, index, node.statements, status);
+			index += consumed - 1;
 		}
 	}
 

@@ -128,6 +128,68 @@ pub func main = () {}
 	expect(fn).not.toContain(`str x0, [sp, #-16]!`);
 });
 
+test("unrolled index-constant copies re-derive the pinned address per copy", async () => {
+	const { default: build_and_check_output } = await import("./build_and_check_output");
+	const { set_loop_unrolling_enabled } = await import("../src/build_aarch64/unroll");
+	// Composed unrolling (ASM_PLAN_3 tranche C): the outer loop unrolls in
+	// index-constant mode (body reads `i`), the inner `j = i + 1` loop
+	// unrolls inside each outer copy. Cache keys ride the induction's NAME
+	// (`ps@j`) and the update that would invalidate them is deleted in
+	// index-constant mode — so without the per-copy cache clearing, copy
+	// k+1's accesses hit copy k's pin and read the wrong element.
+	set_loop_unrolling_enabled(true);
+	try {
+		await build_and_check_output(
+			`
+import System
+
+struct P {
+	var float x
+	var float y
+	var float z
+}
+
+func advance_like = (ref P[4] ps, out float) {
+	var i = 0
+	while i < 2; i += 1 {
+		const float bi = ps.at(i).x
+		var int j = i + 1
+		while j < 4; j += 1 {
+			ps.at(j).x = ps.at(j).x + bi
+			ps.at(j).y = ps.at(j).y + ps.at(j).x
+		}
+	}
+	var s = 0.0
+	var k = 0
+	while k < 4; k += 1 {
+		s = s + ps.at(k).x + ps.at(k).y
+		k += 1
+	}
+	return s
+}
+
+pub func main = () {
+	var P[4] ps = [P(1.0, 0.0, 0.0), P(2.0, 0.0, 0.0), P(4.0, 0.0, 0.0), P(8.0, 0.0, 0.0)]
+	advance_like(ref ps)
+	Console.write(ps.at(1).x.to_string())
+	Console.write("\\n")
+	Console.write(ps.at(2).x.to_string())
+	Console.write("\\n")
+	Console.write(ps.at(3).x.to_string())
+	Console.write("\\n")
+	Console.write(ps.at(3).y.to_string())
+	Console.write("\\n")
+}
+`,
+			"array_licm_unroll",
+			"3.000000\n8.000000\n12.000000\n21.000000",
+			true,
+		);
+	} finally {
+		set_loop_unrolling_enabled(false);
+	}
+});
+
 test("behavioral: struct-array pipeline prints exact results", async () => {
 	const { default: build_and_check_output } = await import("./build_and_check_output");
 	await build_and_check_output(

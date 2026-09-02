@@ -1,4 +1,7 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
+import { is_float_type, is_scalar_type } from "../built_in_types.ts";
+import { is_int_literal, parse_int_literal_bigint } from "../int_literal.ts";
+import type { NirEmitCtx } from "../nir/emit_ctx.ts";
 import { lower_function } from "../nir/from_ast.ts";
 import type { NirExpr, NirStmt } from "../nir/nir.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
@@ -14,6 +17,7 @@ import IfElseNode from "../nodes/IfElseNode.ts";
 import MatchNode from "../nodes/MatchNode.ts";
 import ReturnNode from "../nodes/ReturnNode.ts";
 import SwitchNode from "../nodes/SwitchNode.ts";
+import ValueNode from "../nodes/ValueNode.ts";
 import WhileLoopNode from "../nodes/WhileLoopNode.ts";
 import build_assignment_node from "./build_assignment_node.ts";
 import build_async_block_node from "./build_async_block_node.ts";
@@ -23,12 +27,16 @@ import build_for_loop_node from "./build_for_loop_node.ts";
 import build_if_else_node from "./build_if_else_node.ts";
 import build_match_node from "./build_match_node.ts";
 import build_node from "./build_node.ts";
+import { cond_is_cset_eligible, emit_cond_cset } from "./build_operation_node.ts";
 import build_return_node from "./build_return_node.ts";
 import build_switch_node from "./build_switch_node.ts";
 import build_while_loop_node from "./build_while_loop_node.ts";
+import { cset_lowering_enabled } from "./cset_lower.ts";
 import { neon_vectorization_enabled } from "./neon_emit.ts";
 import { plan_vector_for, plan_vector_loop } from "./neon_plan.ts";
 import { plan_full_unroll } from "./unroll.ts";
+import aarch64_size from "./utils/aarch64_size.ts";
+import { emit_var_store } from "./utils/stack_var.ts";
 
 /**
  * NIR-driven emission (ASM_PLAN phase 4, canonical-IR stage 2).
@@ -71,8 +79,6 @@ import { plan_full_unroll } from "./unroll.ts";
  * expressions).
  */
 
-export type { NirEmitCtx } from "../nir/emit_ctx.ts";
-
 let nir_emission_on = true;
 
 /** Kill-switch for A/B byte-identity tests (default: on). */
@@ -87,21 +93,23 @@ export function set_nir_emission_enabled(enabled: boolean): void {
 /**
  * Statement dispatch for build_block_node's loop: consume the index-aligned
  * NIR entry when the active ctx owns this statement list and the kind is
- * emitted NIR-natively; delegate to the AST walk otherwise.
+ * emitted NIR-natively; delegate to the AST walk otherwise. Returns the
+ * number of statements consumed — normally 1; the cset fuse (tranche B)
+ * consumes the declare AND its following if and returns 2.
  */
 export function emit_stmt_from_nir(
 	child: BaseNode,
 	index: number,
 	statements: readonly BaseNode[],
 	status: BuildStatus,
-): void {
+): number {
 	const ctx = status.nir_emit_ctx;
 	if (ctx && nir_emission_on && ctx.ast === statements) {
 		const nstmt = ctx.stmts[index];
 		switch (nstmt.kind) {
 			case "if":
 				build_if_else_node(child as IfElseNode, status, nstmt);
-				return;
+				return 1;
 			case "while":
 				// NEON vectorization + full-unroll planning ride exactly this
 				// dispatch point: the plans need the NIR list (init check +
@@ -114,7 +122,7 @@ export function emit_stmt_from_nir(
 					neon_vectorization_enabled() ? plan_vector_loop(nstmt, index, ctx.stmts, status) : null,
 					plan_full_unroll(nstmt, index, ctx.stmts, status.induction_const),
 				);
-				return;
+				return 1;
 			case "for":
 				// Range fors (`for i of 0 .. n`) vectorize like count-up
 				// whiles: the builder self-initializes the induction to the
@@ -127,7 +135,7 @@ export function emit_stmt_from_nir(
 					nstmt,
 					neon_vectorization_enabled() ? plan_vector_for(nstmt, index, ctx.stmts, status) : null,
 				);
-				return;
+				return 1;
 			case "switch_match":
 				// `switch` and `match` lower to the same NIR kind (sequential
 				// condition-chain); the AST node type picks the builder.
@@ -136,7 +144,7 @@ export function emit_stmt_from_nir(
 				} else {
 					build_match_node(child as MatchNode, status, nstmt);
 				}
-				return;
+				return 1;
 			case "return":
 				// Ownership/cleanup decisions stay on the AST node inside the
 				// builder; the value expression (when any) is emitted through
@@ -147,7 +155,7 @@ export function emit_stmt_from_nir(
 				if (!status.code.endsWith("\n")) {
 					status.code += "\n";
 				}
-				return;
+				return 1;
 			case "declare":
 				// Decl-site binding (stage 3): a register the allocator gave
 				// this DECLARE SITE binds here, into the CURRENT scope
@@ -176,6 +184,13 @@ export function emit_stmt_from_nir(
 						status.register_allocations.set(nstmt.decl.name, site.reg);
 					}
 				}
+				// Cset fuse (ASM_PLAN_3 tranche B): `var x = 0; if <pure
+				// scalar cmp> { x = 1 }` lowers as one branch-free
+				// declare + cmp/cset + store, consuming both statements.
+				const consumed = try_emit_cset_pair(child as DeclarationNode, nstmt, index, ctx, status);
+				if (consumed === 2) {
+					return 2;
+				}
 				// Type/ownership routing stays on the AST node inside the
 				// builder; the initializer (when any) is emitted through the
 				// NIR expression seam. The trailing-newline guard replicates
@@ -187,7 +202,7 @@ export function emit_stmt_from_nir(
 						status.code += "\n";
 					}
 				}
-				return;
+				return 1;
 			case "assign":
 				// Reclamation/aliasing decisions stay on the AST node inside
 				// the builder; the RHS value (plain or address-position) and
@@ -201,7 +216,7 @@ export function emit_stmt_from_nir(
 				if (!status.code.endsWith("\n")) {
 					status.code += "\n";
 				}
-				return;
+				return 1;
 			case "eval": {
 				// Expression-shaped statements (bare calls, lets): the value
 				// rides the NIR expression seam. build_node's with_semicolon
@@ -222,14 +237,14 @@ export function emit_stmt_from_nir(
 				if (!status.code.endsWith("\n")) {
 					status.code += "\n";
 				}
-				return;
+				return 1;
 			}
 			case "async_block":
 				// The nursery body is its own statement list: hand the builder
 				// the lowered list so the body block dispatches NIR-natively
 				// (scope frames and join emission stay in the builder).
 				build_async_block_node(child as AsyncBlockNode, status, nstmt);
-				return;
+				return 1;
 			default:
 				// Everything else rides the existing AST emission unchanged;
 				// later tranches take over more kinds here.
@@ -237,6 +252,80 @@ export function emit_stmt_from_nir(
 		}
 	}
 	build_node(child, status, true);
+	return 1;
+}
+
+/**
+ * Cset fuse (ASM_PLAN_3 tranche B): match `var x = 0` immediately followed
+ * by `if <pure scalar comparison> { x = 1 }` (no else, single-statement
+ * branch) and emit the declare plus one branch-free `cmp/cset` + store to
+ * x's home. Returns 2 when the pair was consumed (the caller's loop skips
+ * the if), 1 to fall back to the ordinary per-statement emission. Every
+ * gate that fails keeps the branches — see cset_lower.ts for the
+ * soundness model.
+ */
+function try_emit_cset_pair(
+	decl: DeclarationNode,
+	nstmt: NirStmt & { kind: "declare" },
+	index: number,
+	ctx: NirEmitCtx,
+	status: BuildStatus,
+): number {
+	if (!cset_lowering_enabled()) return 1;
+	// `var x = 0` — mutable, scalar-typed, literal-zero initializer.
+	if (decl.declaration !== "var") return 1;
+	const init = decl.value;
+	if (
+		!init ||
+		init.node_type !== "value" ||
+		typeof (init as ValueNode).value !== "string" ||
+		!is_int_literal((init as ValueNode).value) ||
+		!parse_zero_literal((init as ValueNode).value)
+	) {
+		return 1;
+	}
+	if (is_float_type(decl.type?.name ?? "") || !is_scalar_type(decl.type?.name ?? "int")) {
+		return 1;
+	}
+	// ... immediately followed by the if (AST + NIR entries must agree).
+	const next = ctx.ast[index + 1];
+	const nnext = ctx.stmts[index + 1];
+	if (!next || !nnext || next.node_type !== "if" || nnext.kind !== "if") return 1;
+	const ifn = next as IfElseNode;
+	if (ifn.else_branch) return 1;
+	const body = ifn.if_branch?.statements ?? [];
+	if (body.length !== 1) return 1;
+	// ... whose only statement is the flag write `x = 1`.
+	const assign = body[0] as AssignmentNode;
+	if (assign.node_type !== "assign") return 1;
+	const lhs = assign.left_value;
+	if (!lhs || lhs.node_type !== "value" || (lhs as ValueNode).value !== decl.name) return 1;
+	if (assign.operator !== undefined) return 1;
+	const rhs = assign.right_value;
+	if (!rhs || rhs.node_type !== "value" || (rhs as ValueNode).value !== "1") return 1;
+	// ... and the condition must be a plain scalar comparison.
+	if (!cond_is_cset_eligible(ifn.condition)) return 1;
+
+	// Emit: the declare (registers the name, stores the 0 — every
+	// registration/scope semantic preserved), then the comparison
+	// materialized straight into x0 and stored to the same home.
+	build_declaration_node(decl, status, nstmt.decl.init, nstmt.decl.swap);
+	if (nstmt.decl.init && nstmt.decl.init.node.node_type !== "func") {
+		if (!status.code.endsWith("\n")) {
+			status.code += "\n";
+		}
+	}
+	emit_cond_cset(ifn.condition, status);
+	emit_var_store(status, "x0", decl.name, aarch64_size(decl.type?.name ?? "int"));
+	if (!status.code.endsWith("\n")) {
+		status.code += "\n";
+	}
+	return 2;
+}
+
+/** True when the literal string is exactly the integer 0 (decimal or hex). */
+function parse_zero_literal(value: string): boolean {
+	return parse_int_literal_bigint(value)?.toString() === "0";
 }
 
 /**

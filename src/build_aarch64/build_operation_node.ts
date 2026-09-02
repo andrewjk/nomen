@@ -554,6 +554,92 @@ function is_comparison(op: string): boolean {
 	return [">", "<", "==", "!=", ">=", "<="].includes(op);
 }
 
+/** Strip parenthesized wrappers: `(a < b)` parses to grouped(op). */
+function unwrap_grouped(node: BaseNode): BaseNode {
+	if (node.node_type === "grouped") {
+		return unwrap_grouped((node as unknown as { value: BaseNode }).value);
+	}
+	return node;
+}
+
+/**
+ * Whether a condition can be materialized as a single `cset` by
+ * emit_cond_cset: a comparison over two plain scalar value nodes (the
+ * same gate emit_cond_branch's direct-branch fast path uses), optionally
+ * negated by `!`. Compound conditions (`&&`/`||`), float comparisons,
+ * literal-vs-literal (constant fold), and every special lowering
+ * (struct equality, enum tags, nullable null-checks, strings) reject.
+ */
+export function cond_is_cset_eligible(node: BaseNode): boolean {
+	const n = unwrap_grouped(node);
+	if (n.node_type !== "op") return false;
+	const op_node = n as OperationNode;
+	if (op_node.op === "!") {
+		const inner = op_node.left_value ?? op_node.right_value;
+		return !!inner && cond_is_cset_eligible(inner);
+	}
+	if (!is_comparison(op_node.op)) return false;
+	const lv = op_node.left_value;
+	const rv = op_node.right_value;
+	if (!lv || !rv) return false;
+	const lu = unwrap_grouped(lv);
+	const ru = unwrap_grouped(rv);
+	if (lu.node_type !== "value" || ru.node_type !== "value") return false;
+	if (is_float_type(lu) || is_float_type(ru)) return false;
+	if (!is_scalar_type(type_from_value_node(lu)?.name ?? "")) return false;
+	if (!is_scalar_type(type_from_value_node(ru)?.name ?? "")) return false;
+	// Literal-vs-literal keeps the constant-fold path.
+	if (is_int_literal((lu as ValueNode).value) && is_int_literal((ru as ValueNode).value)) {
+		return false;
+	}
+	return true;
+}
+
+/**
+ * Materialize a comparison into `cset x0, cc` with no branch — the
+ * value-path analog of emit_cond_branch's direct-branch fast path, with
+ * identical operand evaluation (right→x2, left→x1, spill-order
+ * elimination, unsigned condition codes). Precondition:
+ * cond_is_cset_eligible(node) returned true ( ASM_PLAN_3 tranche B).
+ */
+export function emit_cond_cset(node: BaseNode, status: BuildStatus): void {
+	const n = unwrap_grouped(node);
+	const op_node = n as OperationNode;
+	if (op_node.op === "!") {
+		emit_cond_cset((op_node.left_value ?? op_node.right_value)!, status);
+		status.code += `eor x0, x0, #1\n`;
+		return;
+	}
+	const lv = unwrap_grouped(op_node.left_value!);
+	const rv = unwrap_grouped(op_node.right_value!);
+	// Spill-order elimination: complex-left builds FIRST; spill only
+	// when both sides are complex.
+	const left_simple = is_simple(lv);
+	const need_spill = !left_simple && !is_simple(rv);
+	if (!left_simple) {
+		build_operand(lv, "x1", status);
+		if (!status.code.endsWith("\n")) status.code += "\n";
+		if (need_spill) {
+			status.code += `str x1, [sp, #-16]!\n`;
+			build_operand(rv, "x1", status);
+			if (!status.code.endsWith("\n")) status.code += "\n";
+			status.code += `mov x2, x1\n`;
+			status.code += `ldr x1, [sp], #16\n`;
+		} else {
+			build_operand(rv, "x2", status);
+			if (!status.code.endsWith("\n")) status.code += "\n";
+		}
+	} else {
+		build_operand(rv, "x2", status);
+		if (!status.code.endsWith("\n")) status.code += "\n";
+		build_operand(lv, "x1", status);
+		if (!status.code.endsWith("\n")) status.code += "\n";
+	}
+	const unsigned = is_unsigned_type(lv) || is_unsigned_type(rv);
+	status.code += `cmp x1, x2\n`;
+	status.code += `cset x0, ${map_cmp(op_node.op, unsigned)}\n`;
+}
+
 /**
  * Load an enum-with-data operand's case tag (the case's ordinal index) into
  * `target_reg`. A static case reference emits its index immediately; a
