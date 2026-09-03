@@ -8,7 +8,7 @@ import {
 } from "../../nir/analysis.ts";
 import { build_cfg, type FunctionCfg } from "../../nir/cfg.ts";
 import { lower_function } from "../../nir/from_ast.ts";
-import type { NirFunction } from "../../nir/nir.ts";
+import type { NirFunction, NirStmt } from "../../nir/nir.ts";
 import { analyze_traffic } from "../../nir/traffic.ts";
 import { version_function } from "../../nir/version.ts";
 import type BaseNode from "../../nodes/BaseNode.ts";
@@ -124,6 +124,15 @@ const MAX_X_CALLEE = 6;
  *  never pays its prologue save (legacy bar). Caller-saved assignments
  *  have no prologue cost and need only one root-body read. */
 const MIN_READS = 4;
+/** Tranche H (re-land, post expansion fixes): a NEVER-WRITTEN
+ *  loop-spanning name (BigInt's bp/sp/divisor — one init at the declare,
+ *  read-only after) repeats its reads EVERY iteration, so the prologue
+ *  save amortizes immediately and loop-weighted traffic — not the raw
+ *  count — decides the callee-saved bar. Written loop state (inductions,
+ *  accumulators) is deliberately excluded: they already have
+ *  loop-promotion bracketing coherence, and double-claiming them is the
+ *  mandelbrot hang receipt. */
+const LOOP_INVARIANT_MIN_WEIGHT = 8;
 let callee_pool_extended = true;
 
 /** Kill-switch for the tranche-H callee-pool extension (default ON; OFF
@@ -198,6 +207,51 @@ interface RangeAnalysis {
 	/** Symmetric interference adjacency (def-point rule: a def interferes
 	 *  with everything live after it). */
 	adj: Map<string, Set<string>>;
+}
+
+/** Every assign-target name in the lowered body (any list depth) — the
+ *  tranche-H write-free gate for loop-invariant promotion. While/for
+ *  UPDATE statements are walked: `y += 1` in the header writes y, and
+ *  missing it admitted the inductions (the first mandelbrot hang). */
+function collect_nir_assign_targets(stmts: readonly NirStmt[]): Set<string> {
+	const out = new Set<string>();
+	const walk = (list: readonly NirStmt[]): void => {
+		for (const s of list) {
+			switch (s.kind) {
+				case "assign": {
+					let e = s.target;
+					while (e.kind === "wrap") e = e.inner ?? e;
+					if (e.kind === "leaf" && e.name) out.add(e.name);
+					break;
+				}
+				case "while":
+					if (s.update) walk([s.update]);
+					walk(s.body);
+					break;
+				case "for":
+					out.add(s.item_name);
+					if (s.update) walk([s.update]);
+					walk(s.body);
+					break;
+				case "if":
+					walk(s.then_branch);
+					walk(s.else_branch);
+					break;
+				case "switch_match":
+					for (const a of s.arms) walk(a.branch);
+					if (s.otherwise) walk(s.otherwise);
+					break;
+				case "async_block":
+				case "nested_func":
+					walk(s.body);
+					break;
+				default:
+					break;
+			}
+		}
+	};
+	walk(stmts);
+	return out;
 }
 
 function is_clean_scalar_type(t: {
@@ -378,6 +432,13 @@ export function plan_nir_registers(
 		add_key(site?.source ?? decl.name, decl.name);
 	}
 
+	// Writes are collected over the RENAMED body so every target carries its
+	// decl-site key: the raw lowering's targets are plain names, and a
+	// shadowed site checked against them looks never-written (the
+	// shadowed-local regression the bar's first landing caught — the outer
+	// site was admitted and the shadow's writes landed in its register).
+	const body_writes = collect_nir_assign_targets(renamed.body);
+
 	const candidates: Candidate[] = [];
 	for (const decl of traffic.decls) {
 		if (!is_clean_scalar_type({ name: decl.type_name, ...decl.modifiers })) continue;
@@ -401,7 +462,13 @@ export function plan_nir_registers(
 		if (!r || r.reads < 1) continue;
 		const is_float = ALL_FLOAT_TYPES.includes(decl.type_name);
 		const f = facts.get(key);
-		if (r.reads < MIN_READS) {
+		const loop_invariant_hot =
+			!is_float &&
+			f !== undefined &&
+			f.loop_blocked &&
+			r.weighted_reads >= LOOP_INVARIANT_MIN_WEIGHT &&
+			!body_writes.has(key);
+		if (r.reads < MIN_READS && !loop_invariant_hot) {
 			// Low-read extension: int locals only, caller-saved-only, and
 			// only with a provably call-free, loop-free-contained range.
 			if (is_float) continue;

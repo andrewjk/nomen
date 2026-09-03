@@ -243,9 +243,15 @@ export default function build_inline_method(
 	status.function_ref_params = new Set();
 	// Inline params live in callee-saved registers / spill slots (never
 	// stack_offsets), so an inline body's loops never resolve param types —
-	// swap in an EMPTY map so the caller's types can't bleed into a
-	// same-named name here.
+	// swap in a FRESH map so the caller's types can't bleed into a
+	// same-named name here, then record the INLINED function's own param
+	// types: its loop promotion resolves param types through this map, and
+	// a typeless float param falls into the ""→int pool default (the
+	// mandelbrot mbrot ci/cr receipt, re-entering through this door).
 	status.function_param_types = new Map();
+	for (const p of func.params) {
+		if (p.type) status.function_param_types.set(p.name, p.type);
+	}
 
 	if (needs_x19) {
 		status.function_param_regs.set("self", "x19");
@@ -450,9 +456,15 @@ export function build_inline_function(func: FunctionNode, status: BuildStatus) {
 	status.function_ref_params = new Set();
 	// Inline params live in callee-saved registers / spill slots (never
 	// stack_offsets), so an inline body's loops never resolve param types —
-	// swap in an EMPTY map so the caller's types can't bleed into a
-	// same-named name here.
+	// swap in a FRESH map so the caller's types can't bleed into a
+	// same-named name here, then record the INLINED function's own param
+	// types: its loop promotion resolves param types through this map, and
+	// a typeless float param falls into the ""→int pool default (the
+	// mandelbrot mbrot ci/cr receipt, re-entering through this door).
 	status.function_param_types = new Map();
+	for (const p of func.params) {
+		if (p.type) status.function_param_types.set(p.name, p.type);
+	}
 
 	const saved_stack_slots: string[] = [];
 

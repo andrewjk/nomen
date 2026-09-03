@@ -159,3 +159,34 @@ pub func main = () {
 		true,
 	);
 });
+
+test("behavioral: inlined float param keeps its type through loop promotion", async () => {
+	const { default: build_and_check_output } = await import("./build_and_check_output");
+	// A float param of an inlined callee, called from a call-free loop:
+	// the expansion's loop promotion resolves the param type through
+	// function_param_types — a typeless float param fell into the
+	// ""→int default and claimed an x-register (the mbrot ci/cr receipt,
+	// via the expansion door).
+	await build_and_check_output(
+		`
+import System
+
+func scale = (float v, float k, out float) {
+	return v * k
+}
+
+pub func main = () {
+	var float acc = 1.0
+	var i = 0
+	while i < 4 {
+		acc = scale(acc, 1.5)
+		i += 1
+	}
+	Console.write("\\{acc}")
+}
+`,
+		"expansion_float_param_pipeline",
+		"5.0625",
+		true,
+	);
+});

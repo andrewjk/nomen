@@ -616,44 +616,45 @@ outputs byte-identical on all six benches: pidigits ±0.5%, fannkuch
 no directional signal; full suite 277 files green). Kept: zero-risk pool
 depth for future passes, byte-clean kill-switch.
 
-**What was reverted: the loop-invariant re-baring.** Admitting low-read
-loop-spanning names into the callee pool via loop-weighted traffic
-(`weighted_reads >= 8`) captured the real targets — div_to's `divisor`
-promoted (3 slot loads/iteration gone), mul_to's `sp` promoted — but
-**mandelbrot hung at n=16**. Two forensic sessions, findings compressed:
+**What was reverted twice, then LANDED: the loop-invariant re-baring.**
+Admitting low-read loop-spanning names into the callee pool via
+loop-weighted traffic (`weighted_reads >= 8`, never-written gate,
+update-walking write scan) captured the real targets — div_to's
+`divisor` promoted (3 slot loads/iteration gone), mul_to's `sp`/`bp`
+promoted — and **mandelbrot hung at n=16**. Two forensic sessions
+compressed:
 
-- First theory (written-loop state losing bracketing) was WRONG — a
-  never-written-only gate (admitting just `size`/`chunk_size`) still
-  hung. `sample` pinned the spin to mbrot's inlined inner loop; the
-  outer counter is what never terminates.
-- The allocation dump found a REAL collision class: with the bar's
-  extra plan claims (size=x24, chunk_size=x25, bit=x23), the mbrot
-  INLINE EXPANSION's loop promotion can no longer start at x23 and
-  reaches the caller-saved ext pool — claiming x13/x14/x15 — while the
-  enclosing bit-loop's `byte_val=x13` ext claim is INVISIBLE to it
-  (`register_allocations` is cleared at expansion entry;
-  `callee_saved_regs_used` deliberately excludes ext regs;
-  `nir_caller_saved_claimed` only tracked the FUNCTION-plan's ext
-  claims). **Fixed**: loop promotion now records its ext-pool claims in
-  `nir_caller_saved_claimed` (the set the expansion consults), so the
-  expansion avoids them. Also exposed: the expansion swaps
-  `function_param_types` to an EMPTY map, so mbrot's FLOAT param `ci`
-  promoted through the unknown-type-int default (ci=x15) — the
-  documented mandelbrot ci/cr receipt re-entering through the expansion
-  door; its offset audit is open.
-- With the ext-claim fix landed, mandelbrot STILL hangs with the bar on
-  — the remaining corruption lives in the expansion's shadow-slot
-  store-backs (`str x13, [#128]` per bit-iteration) interleaving with
-  main's frame under the shifted layout. Structural blocker, per the
-  success criteria: **the re-baring needs an instrumented session that
-  dumps the frame slot map beside the expansion's bracket pairs** (plus
-  the expansion's param-type swap fix above) before it can land. The
-  loop-invariant loads (`bp`/`sp`/`divisor`) stay; the loops use all
-  six callee-saved + four ext registers on live state.
+- The hang needed TWO expansion-path fixes, both real bugs on their own:
+  1. **Loop promotion's caller-saved ext claims were invisible to
+     inline expansions** (`register_allocations` cleared at expansion
+     entry; `callee_saved_regs_used` deliberately excludes ext regs;
+     `nir_caller_saved_claimed` tracked only the function-plan's ext
+     claims). With the bar's extra plan claims pushing the expansion's
+     promotion into the ext range, it reclaimed the enclosing bit-loop's
+     live `byte_val=x13`. **Fixed**: loop promotion records its
+     ext-pool claims in `nir_caller_saved_claimed`, which the expansion
+     consults.
+  2. **The expansion swapped `function_param_types` to an EMPTY map**,
+     so the inlined method's FLOAT params promoted through the
+     unknown-type-int default (mbrot's `ci=x15` — the documented
+     ci/cr receipt re-entering through the expansion door). **Fixed**:
+     both inline paths now fill the fresh map with the inlined
+     function's own param types.
+- The first re-land then failed the suite's own shadowed-local
+  regression: the write-free scan walked the RAW lowering, whose assign
+  targets are plain names, so a shadowed site checked against them
+  looked never-written (`x@0` admitted; the shadow's writes landed in
+  its register). **Fixed**: the scan walks the RENAMED body — targets
+  carry their decl-site keys, and the gate is per-site exact.
 
-Full suite green through both sessions (277 files); all six bench
-outputs byte-identical in the landed state (cap lift + ext-claim
-survival, bar off).
+**LANDED RESULT (interleaved best-of-7/11, outputs byte-identical on
+all six benches at multiple sizes):** pidigits n=4000 +1.2% (the
+divisor's 3 loads/iteration gone), mandelbrot +4.0% (param-type fix
++3.1% measured separately), nbody/fannkuch/spectral/binarytrees neutral.
+div_to's hot loop: 5 → 2 frame references; mul_to's: 3 → 1. Full suite
+green (277 files / 2727 tests) — the suite's own shadowed-local
+regression test caught the renamed-writes bug (it failed on the first
+re-land), and a behavioral test pins the expansion float-param shape.
 
 ## Method (unchanged from ASM_PLAN_2)
 
