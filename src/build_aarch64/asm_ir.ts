@@ -174,6 +174,25 @@ export const MNEMONICS: Record<string, MnemonicSig> = {
 			["f", "f", "f"], // vector `sub v0.2d/4s, …`
 		],
 	},
+	// Flag-setting add/sub (tranche J): the declare-side arithmetic whose
+	// carry/borrow a fused cset/cinc reads. cs == hs, cc == lo (aliases).
+	adds: {
+		shapes: [
+			["r", "r", "r"],
+			["r", "r", "i"],
+		],
+		setsFlags: true,
+	},
+	subs: {
+		shapes: [
+			["r", "r", "r"],
+			["r", "r", "i"],
+		],
+		setsFlags: true,
+	},
+	// Conditional increment: `cinc xN, xN, cc` = xN + 1 when cond — the
+	// register-home `x += 1` tail of the fused carry compare.
+	cinc: { shapes: [["r", "r", "c"]], readsFlags: true },
 	and: {
 		shapes: [
 			["r", "r", "r"],

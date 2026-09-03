@@ -7,7 +7,7 @@
 >
 > Motivation: pidigits and nbody remain the two worst gaps vs the C backend's
 > `clang -O2` artifact. Receipts below measured 2026-09-02.
-> **A, B, C are DONE** (C: enablement declined + the mandelbrot unroll corruption fixed); **D step 1 is DONE** (nbody −44%, ~1.7× vs C) and **D step 2 is CLOSED** (analyzed: j-pair vectorization unprofitable for AoS; clang's win is field-pair SLP — a future pass class). **E is DONE as a survey** (the div128 boundary does not dominate post-B; neutral, reverted). **F is DONE as a narrow win + survey** (stage-4 straight-line store-to-load forwarding + write-only cset elision: real capture on the single-limb shapes, bench-neutral — the profile has moved to multi-read temporaries; see the F section for the structural accounting). **G is DONE** (promoted-destination statement lowering: cset dest hints + the never-firing compound-assign fast path fixed — pidigits −8%, fannkuch +2-4%). **H is DONE as cap lift + CLOSED survey** (callee pool to the full x23–x28 — clean, neutral; the loop-invariant re-baring half was reverted with a forensic finding: the inline-expansion seed drops caller claims — mandelbrot hang at n=16, see the section). All measured receipts in-section.
+> **A, B, C are DONE** (C: enablement declined + the mandelbrot unroll corruption fixed); **D step 1 is DONE** (nbody −44%, ~1.7× vs C) and **D step 2 is CLOSED** (analyzed: j-pair vectorization unprofitable for AoS; clang's win is field-pair SLP — a future pass class). **E is DONE as a survey** (the div128 boundary does not dominate post-B; neutral, reverted). **F is DONE as a narrow win + survey** (stage-4 straight-line store-to-load forwarding + write-only cset elision: real capture on the single-limb shapes, bench-neutral — the profile has moved to multi-read temporaries; see the F section for the structural accounting). **G is DONE** (promoted-destination statement lowering: cset dest hints + the never-firing compound-assign fast path fixed — pidigits −8%, fannkuch +2-4%). **H is DONE as cap lift + CLOSED survey** (callee pool to the full x23–x28 — clean, neutral; the loop-invariant re-baring half was reverted with a forensic finding: the inline-expansion seed drops caller claims — mandelbrot hang at n=16, see the section). **I is DONE** (float-bits forwarding — nbody −10%, at the 1.5× target). **J is DONE as a narrow win + survey** (flag-form carry lowering: `adds`/`cinc` folds in the Knuth-D loops — pidigits −4.8%; the loops are now accessor-address bound, see the J survey). All measured receipts in-section.
 
 ## Where the gap actually is (receipts, 2026-09-02)
 
@@ -697,6 +697,118 @@ the success-criteria target)**, mandelbrot +5.8%, spectral +1.6%,
 pidigits +0.8%, fannkuch/binarytrees neutral. Full suite green (277
 files / 2730 tests) with three tests: the collapse shape, kill-switch
 byte restoration, behavioral exactness.
+
+## Tranche J (DONE): flag-form carry lowering — the compare-shape lever, narrow form
+
+Landed 2026-09-02 (`src/build_aarch64/flag_form.ts` kill-switch
+`set_flag_form_enabled`, default ON; `try_emit_carry_fold` in emit_nir.ts
+rides the declare dispatch BEFORE the tranche-B fuse; `adds`/`subs`/`cinc`
+added to the asm validator's mnemonic table — condition codes reuse the
+existing `hs`/`lo` aliases of `cs`/`cc`).
+
+F's survey named the lever: "flag-producing compares consume SSA values
+directly (`cmp x_cur, x_old; cset`)". The sample profile says where it
+pays: ~60% of pidigits is div_to's Knuth-D section (D3 correction loop
+39%, D4 multiply 17%, D4 subtract 27% of the hot samples at n=12000).
+Every one of those loops computes carries the same source shape:
+
+```nomen
+const uint64 prod = a + b        // or a - b (the D4 borrow)
+[plain assign: mul_carry = hi_prod]   // the intervening statement
+var c = 0
+if prod < a { c = 1 }            // — or —  if prod < a { mul_carry += 1 }
+```
+
+`prod < a` after `a + b` IS the carry flag (and `prod > a` after `a - b`
+IS the borrow), so the whole compare — cmp plus its two operand stagings
+plus the branch for the compound-assign form — collapses into the
+declare's own arithmetic:
+
+```asm
+adds x12, x13, x26        ; the declare's root op, flags set for free
+mov  x26, x14             ; the intervening assign (flag-safe: mov/str only)
+cinc x26, x26, hs         ; was: cmp + 2 stagings + b.hs + add (clang's idiom)
+```
+
+Two forms, one matcher (consumes 2-4 NIR/AST statements):
+
+- **Form A** — the tranche-B zero-flag pair, reached through the fold: the
+  cset fires from the adds/subs flags with NO cmp. Form B's tails (G dest
+  hints, F write-only elision) stay authoritative: the fold declines and
+  lets the B fuse handle them when the flag is dead or a slot-home.
+- **Form B** — `if cmp { x += 1 }` on an existing scalar: `cinc xH, xH, cc`
+  on a register home; `cset x0 + load/add/store` on a slot home (mul_carry
+  in D4 has no register — the pool is exhausted).
+
+The declare is emitted DIRECTLY (promoted operands used in place via the
+int fast-path selector contract — params and unrolled-copy inductions
+excluded, the mandelbrot receipt; others stage through build_operand) —
+NOT via a one-shot emitter arm: build_declaration_node provably builds an
+initializer more than once (first emission discarded), so any consumed-
+once global arm mis-fires (tried, debugged via stack traces, reverted the
+same session). Skipping the builder for a register home is the G-tranche
+precedent; slot-home prod declines the whole fold.
+
+Soundness gates: unsigned only (`<` over `+` and `>` over `-` are the
+carry/borrow flags; signed overflow is not — `int` operands decline and
+keep cmp/cset lt); `==`/`!=`/`<`-after-`-`/`>`-after-`+` decline; the
+intervening statement (at most ONE) must be a plain `name = name|literal`
+scalar assign with no compound operator and not writing prod — mov/ldr/str
+are the only instructions the window may emit between the flags and the
+consumer; no else, single-statement branch; swap-bearing declares decline;
+forward-use splices are applied around the consumed intervening assign
+(ifs and literal-1 assigns cannot be splice hosts).
+
+Byte-identity harness: cursor-dependent (consumes up to four statements),
+so like B/F/G it is held OFF in both arms of `expect_byte_identical` and
+the corpus test.
+
+Receipts (loop bodies, source lines per iteration; the first number is the
+pre-J committed build):
+
+| loop (pidigits)                  | before | after |
+| -------------------------------- | -----: | ----: |
+| div_to D3 correction (.while_22) |     43 |    38 |
+| div_to D4 multiply (.while_24)   |     50 |    43 |
+| div_to D4 subtract (.while_25)   |     69 |    61 |
+| mul_to single-limb (.while_9)    |     46 |    46 |
+| mul_to schoolbook (.while_12)    |     66 |    62 |
+
+The carry compares are branch-free in all five loops (b.hs/b.lo carry
+branches 5 → 3 whole-program; the remainder are the compound
+`q_val != 0 && last_nonzero == 0` shapes).
+
+**RESULT (interleaved best-of-45 medians, outputs byte-identical at
+n=1000 and n=4000):** pidigits n=4000 0.7202 → 0.6855 s (**−4.8%**),
+n=1000 −4.6% (reproduced at both sizes). Bench matrix: nbody,
+spectral-norm, fannkuch, mandelbrot, binarytrees assemble to
+**byte-identical .s** (the shape cannot fire without a BigInt carry
+loop — structurally regression-free; output diffs on their binaries are
+LC_UUID link randomness). Full suite green (279 files / 2740 tests) with
+`test/flag_form.test.ts` (9 tests: adds+cset-hs shape, subs+cset-lo,
+adds+cinc Form B, negation via inverted cc, kill-switch byte restoration,
+signed-declines, no-flag-equivalent-declines, arithmetic-intervening
+declines, behavioral on both backends) — the shape tests verified to fail
+on the pre-tranche compiler (4 of 9 under `git stash` of the two emitter
+files). Two tranche-G shape tests updated to the new canonical form (they
+asserted `cset …, lo` where the same source now fuses to `adds` +
+`cset …, hs`).
+
+### The survey answer: what remains in pidigits
+
+The win is real but bounded: the Knuth-D loops are now ADDRESS-TRAFFIC
+bound, not compare-bound. Per D4-subtract iteration (~61 lines), ~30 are
+inline-accessor address derivation: each `remainder.digits.load_int/
+store_int` re-derives `wd_off + u_len + 1 + i` (with 2-3 loop-invariant
+slot loads inside) and RE-LOADS the `digits` data pointer (3 instructions)
+— clang's `str x10, [x20, x12, lsl #3]` is one instruction. The tranche-A
+array pipeline does not reach inline Buffer accessors on nested receivers
+(`remainder.digits`), and the x23–x28 cache pool is already exhausted in
+div_to. The next lever there is an accessor-address pipeline for inline
+Buffer accessors (hoist the receiver's data pointer + the loop-invariant
+index summands), or widening the cache pool again — both their own
+tranches, receipt-gated on this census. pidigits stands at ~2.1× vs
+C `-O2` (was ~2.2×); nbody holds at ~1.5×.
 
 ## Method (unchanged from ASM_PLAN_2)
 

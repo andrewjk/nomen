@@ -5,6 +5,7 @@ import { expect, test } from "vite-plus/test";
 import build from "../src/build";
 import { set_cset_lowering_enabled } from "../src/build_aarch64/cset_lower";
 import { set_nir_emission_enabled } from "../src/build_aarch64/emit_nir";
+import { set_flag_form_enabled } from "../src/build_aarch64/flag_form";
 import { set_forwarding_enabled } from "../src/build_aarch64/forward";
 import { set_neon_vectorization_enabled } from "../src/build_aarch64/neon_emit";
 import { set_loop_unrolling_enabled } from "../src/build_aarch64/unroll";
@@ -49,6 +50,9 @@ function expect_byte_identical(source: string, raw = false): void {
 	set_nir_site_promotion_enabled(false);
 	set_cset_lowering_enabled(false);
 	set_forwarding_enabled(false);
+	// The carry-fold fuse (ASM_PLAN_3 tranche J) consumes up to four
+	// statements through the cursor — same treatment as the cset fuse.
+	set_flag_form_enabled(false);
 	const baseline = compile_aarch64(source, raw);
 	set_nir_emission_enabled(true);
 	try {
@@ -61,6 +65,7 @@ function expect_byte_identical(source: string, raw = false): void {
 		set_nir_site_promotion_enabled(true);
 		set_cset_lowering_enabled(true);
 		set_forwarding_enabled(true);
+		set_flag_form_enabled(true);
 	}
 }
 
@@ -802,6 +807,7 @@ test("whole benchmark corpus is byte-identical through NIR emission", () => {
 		set_nir_site_promotion_enabled(false);
 		set_cset_lowering_enabled(false);
 		set_forwarding_enabled(false);
+		set_flag_form_enabled(false);
 		const baseline = compile();
 		set_nir_emission_enabled(true);
 		set_neon_vectorization_enabled(false);
@@ -809,6 +815,7 @@ test("whole benchmark corpus is byte-identical through NIR emission", () => {
 		set_nir_site_promotion_enabled(false);
 		set_cset_lowering_enabled(false);
 		set_forwarding_enabled(false);
+		set_flag_form_enabled(false);
 		try {
 			expect(compile(), file).toEqual(baseline);
 		} finally {
@@ -818,6 +825,7 @@ test("whole benchmark corpus is byte-identical through NIR emission", () => {
 			set_nir_site_promotion_enabled(true);
 			set_cset_lowering_enabled(true);
 			set_forwarding_enabled(true);
+			set_flag_form_enabled(true);
 		}
 	}
 });

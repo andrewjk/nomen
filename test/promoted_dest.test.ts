@@ -3,6 +3,7 @@ import { expect, test } from "vite-plus/test";
 import build from "../src/build";
 import { set_float_forwarding_enabled } from "../src/build_aarch64/asm_opt";
 import { set_cset_lowering_enabled } from "../src/build_aarch64/cset_lower";
+import { set_flag_form_enabled } from "../src/build_aarch64/flag_form";
 import { parse_raw } from "./parse_with_imports";
 
 /**
@@ -48,11 +49,15 @@ test("fused flag with a register home takes cset directly, no dead init", () => 
 	const code = compile(CARRY_LOOP);
 	const fn = code.slice(code.indexOf("\ncarries:"), code.indexOf("\n_main:"));
 	// The cset lands in a promoted register (not x0), with no staging mov.
-	expect(fn).toMatch(/cset x(?:1[2-5]|2[0-8]), lo\n/);
-	expect(fn).not.toMatch(/cset x0, lo\nmov x(?:1[2-5]|2[0-8]), x0/);
+	// Since tranche J the fused carry compare rides the declare's own
+	// `adds` flags: the condition code is `hs` (the add's carry-out), not
+	// `lo` from a cmp.
+	expect(fn).toMatch(/adds x\d+, x\d+, x\d+\n/);
+	expect(fn).toMatch(/cset x(?:1[2-5]|2[0-8]), hs\n/);
+	expect(fn).not.toMatch(/cset x0, hs\nmov x(?:1[2-5]|2[0-8]), x0/);
 	// The flag's home register receives nothing but the cset: the old shape
 	// staged `mov x0, #0; mov xHOME, x0` (the dead 0-init) before it.
-	const cset_home = fn.match(/cset (x(?:1[2-5]|2[0-8])), lo/)?.[1];
+	const cset_home = fn.match(/cset (x(?:1[2-5]|2[0-8])), hs/)?.[1];
 	expect(cset_home).toBeDefined();
 	expect(fn).not.toContain(`mov ${cset_home}, x0`);
 });
@@ -83,6 +88,10 @@ pub func main = () {}
 
 test("cset kill switch still restores the branchy shape", () => {
 	set_cset_lowering_enabled(false);
+	// The carry-fold fuse (tranche J) is its own toggle — hold it off too
+	// so this test proves the tranche-B kill switch alone restores the
+	// pre-B branchy shape.
+	set_flag_form_enabled(false);
 	try {
 		const code = compile(CARRY_LOOP);
 		const fn = code.slice(code.indexOf("\ncarries:"), code.indexOf("\n_main:"));
@@ -90,6 +99,7 @@ test("cset kill switch still restores the branchy shape", () => {
 		expect(fn).toMatch(/b\.[a-z]+ end_\d+/);
 	} finally {
 		set_cset_lowering_enabled(true);
+		set_flag_form_enabled(true);
 	}
 });
 

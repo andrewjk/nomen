@@ -230,3 +230,23 @@ valid hardware form (verified by assembling). The phase-1 validator's
 mnemonic table simply lacked the f/f shape. Fixed in asm_ir.ts (tranche
 D commit); the accumulator behavioral test now uses the original cast+add
 source.
+
+## build_declaration_node builds scalar initializers twice (first emission discarded)
+
+Found while landing the flag-form tranche (J): for a promoted scalar
+declare with an op initializer, `build_declaration_node` (via
+`emit_declaration_value`) runs `build_operation_node` on the SAME init
+tree TWICE — the first build (through the int fast path, with site
+registers bound) is discarded, the second (generic tail, operands
+re-staged from slots) survives. Traced with stack instrumentation during
+the J session; observable as one dead `add`-shape emission per declare in
+a probe buffer. Harmless for output correctness (the surviving text is
+correct), but it is (a) wasted compile-time work on every hot-loop
+declare, and (b) a hazard: any future pass that tries consumed-once or
+one-shot emitter state around a declare build WILL mis-fire (the J
+tranche first shipped an armed-`map_op` design that failed exactly this
+way — replaced with direct emission). Worth a look whenever the declare
+emission path is next touched: the discarded first build also explains
+why the visible shape for promoted operands stages from SLOTS instead of
+the site registers bound moments earlier.
+
