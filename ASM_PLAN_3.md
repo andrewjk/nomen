@@ -656,6 +656,48 @@ green (277 files / 2727 tests) — the suite's own shadowed-local
 regression test caught the renamed-writes bug (it failed on the first
 re-land), and a behavioral test pins the expansion float-param shape.
 
+## Tranche I (DONE): float-bits forwarding — the d0 protocol's crossings collapse
+
+Landed 2026-09-02 (`asm_opt.ts`: `run_float_forwarding` = consumer rewrite
+
+- dead stage-move elimination, kill-switch `set_float_forwarding_enabled`
+  default ON; wired into build.ts after the frame-slot pass, same
+  unconditional + asm-validated contract).
+
+The D2 leftovers in nbody's `advance` census: `Math.sqrt` completed a
+quadruple conversion — `d29→x0→d0→fsqrt→d0→x0→d30` — five instructions
+around one `fsqrt`, plus the field-write staging (`fmov x0, d0; mov x2,
+x0; str x2, [x26, #32]`). The residue is the d0 call protocol: D1 fixed
+the declare/assignment crossings; CALLS still stage float bits through
+integer registers.
+
+The pass, two linear scans over the lifted assembly:
+
+- **Consumer rewrite (forward)**: a `fmov xN, dM` records "xN holds dM's
+  bits"; a later `fmov dK, xN` with the record live rewrites to
+  `fmov dK, dM` (self-moves drop). Records die at labels (join
+  provenance), on any redefinition of xN, AND on any redefinition of dM
+  — the staleness case that first landed broken (a consumer rewritten to
+  read d8's NEW value after d8 was reassigned produced `-inf`; the
+  output diff on nbody's energy caught it before anything shipped).
+- **Dead producer elimination (backward)**: a `fmov xN, dM` whose xN is
+  never read below is a dead staging move. Its live set needed an exact
+  AArch64 defs rule (dest-first, two for ldp) — the shared `instr_defs`
+  over-approximates (safe for invalidation, but there it counted every
+  reg-only op's sources as defs and hid reads) — plus explicit call-arg
+  reads (bl reads x0–x8/d0–d7/x30; the lifted call text carries only the
+  target). Pruning is forbidden across labels (the live set resets to
+  the universe).
+
+Receipts: nbody's sqrt block is now `fmov d0, d29; fsqrt d0, d0; fmov
+d30, d0` (5 → 3, both leftovers pruned). **RESULT (interleaved
+best-of-7/11, outputs byte-identical on all benches):** nbody 5M
+**0.3496 → 0.3141 s (−9 to −10%, reproduced — now ~1.5× vs C `-O2`,
+the success-criteria target)**, mandelbrot +5.8%, spectral +1.6%,
+pidigits +0.8%, fannkuch/binarytrees neutral. Full suite green (277
+files / 2730 tests) with three tests: the collapse shape, kill-switch
+byte restoration, behavioral exactness.
+
 ## Method (unchanged from ASM_PLAN_2)
 
 Per bench: emit both artifacts (`bench/compile_nomen.ts`, aarch64 + `c`

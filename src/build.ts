@@ -1,4 +1,4 @@
-import { optimize_frame_slots } from "./build_aarch64/asm_opt.ts";
+import { optimize_frame_slots, run_float_forwarding } from "./build_aarch64/asm_opt.ts";
 import { reset_access_temp_counter } from "./build_aarch64/build_access_node.ts";
 import { reset_decl_const_counters } from "./build_aarch64/build_declaration_node.ts";
 import { reset_label_counter as reset_for_label_counter } from "./build_aarch64/build_for_loop_node.ts";
@@ -256,6 +256,10 @@ export default function build(
 		// test binary) exercises it; the validator below then re-checks the
 		// rewritten text.
 		status.code = optimize_frame_slots(status.code);
+		// Phase-2 sibling: float-bits forwarding — collapses the d0 call
+		// protocol's `fmov xN, dM … fmov dK, xN` crossings into direct
+		// d↔d moves (see asm_opt.ts). Same unconditional/validated contract.
+		status.code = run_float_forwarding(status.code);
 		if (options.audit) {
 			// The main-function audit_check + pool shutdown hook is emitted
 			// directly by build_function_node (it knows main's return label).

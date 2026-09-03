@@ -356,3 +356,281 @@ export function optimize_frame_slots(code: string): string {
 
 	return out.join("\n");
 }
+
+let float_forwarding_on = true;
+
+/** Kill-switch for the float-bits forwarding pass (default ON; OFF
+ *  restores the untransformed text byte-identically). */
+export function float_forwarding_enabled(): boolean {
+	return float_forwarding_on;
+}
+
+export function set_float_forwarding_enabled(enabled: boolean): void {
+	float_forwarding_on = enabled;
+}
+
+/**
+ * Float-bits forwarding (ASM_PLAN_3 tranche I): the d0 call protocol
+ * shuttles float values through integer registers — `fmov x0, d29 …
+ * fmov d0, x0` (arg marshalling) and `fmov x0, d0 … fmov d30, x0`
+ * (result staging) — two wasted moves per crossing. When `fmov xN, dM`
+ * is followed (with xN unredefined in between) by `fmov dK, xN`, the pair
+ * collapses to `fmov dK, dM`: 64-bit fmov pairs carry the bits exactly.
+ * Records drop at labels (join points may arrive with different
+ * provenance) and on any redefinition of xN (calls clobber the
+ * caller-saved set, xN included).
+ *
+ * Deliberately narrow: only the d-form (64-bit) on both ends, only
+ * `fmov dK, xN` consumers — `str xN` bit-stores and s/d-width moves keep
+ * their explicit form.
+ */
+export function optimize_float_forwarding(code: string): string {
+	if (!float_forwarding_on) return code;
+	const lines = code.split("\n");
+	const out: string[] = [];
+	/** xN → the d-register whose bits xN currently holds. */
+	const held = new Map<string, string>();
+
+	/** A register is REDEFINED: records KEYED by it die (the bits are
+	 *  gone) and records HOLDING it die (the consumer would read the new
+	 *  value, not the copied bits). */
+	const drop_reg = (reg: string): void => {
+		if (!reg) return;
+		const sib = sibling_reg(reg);
+		held.delete(reg);
+		if (sib) held.delete(sib);
+		for (const [k, v] of [...held]) {
+			if (v === reg || (sib !== null && v === sib)) held.delete(k);
+		}
+	};
+
+	for (let i = 0; i < lines.length; i++) {
+		const text = lines[i];
+		const trimmed = text.trim();
+		if (!trimmed || trimmed.startsWith("//")) {
+			out.push(text);
+			continue;
+		}
+		const label_m = /^([A-Za-z_.$][\w.$]*):/.exec(trimmed);
+		if (label_m || trimmed.startsWith(".") || /^[\w.$]+\s*=\s*[\w.$]+$/.exec(trimmed)) {
+			// Label: provenance is path-dependent at join points.
+			held.clear();
+			out.push(text);
+			continue;
+		}
+		const instr = parse_asm_instruction(text, i + 1);
+		if (!instr) {
+			held.clear();
+			out.push(text);
+			continue;
+		}
+		const op = instr.op;
+
+		// The consumer pattern: `fmov dK, xN` with a live record for xN.
+		if (op === "fmov" && instr.operands.length === 2) {
+			const dst = instr.operands[0];
+			const src = instr.operands[1];
+			if (
+				dst.kind === "reg" &&
+				src.kind === "reg" &&
+				dst.name.startsWith("d") &&
+				src.name.startsWith("x")
+			) {
+				const dreg = held.get(src.name);
+				if (dreg) {
+					if (dst.name === dreg) {
+						// Self-move: the rewritten form would be d↔d to itself.
+						continue;
+					}
+					const indent = text.match(/^\s*/)?.[0] ?? "";
+					out.push(`${indent}fmov ${dst.name}, ${dreg}`);
+					// dK now holds the same bits — and xN's record stays valid
+					// (xN was not redefined; it may feed more consumers).
+					continue;
+				}
+			}
+		}
+
+		// Producer pattern: `fmov xN, dM` — record it (after invalidating
+		// xN's previous record; the fmov defines xN).
+		if (op === "fmov" && instr.operands.length === 2) {
+			const dst = instr.operands[0];
+			const src = instr.operands[1];
+			if (
+				dst.kind === "reg" &&
+				src.kind === "reg" &&
+				dst.name.startsWith("x") &&
+				src.name.startsWith("d")
+			) {
+				drop_reg(dst.name);
+				held.set(dst.name, src.name);
+				out.push(text);
+				continue;
+			}
+		}
+
+		// Everything else: uniform defs handling invalidates records.
+		if (op === "bl" || op === "blr" || op === "br" || op === "svc") {
+			for (const r of CALLER_SAVED) drop_reg(r);
+			out.push(text);
+			continue;
+		}
+		if (
+			(op.startsWith("b") && op !== "blr" && op !== "br") ||
+			op === "cbz" ||
+			op === "cbnz" ||
+			op === "ret"
+		) {
+			// Unconditional control transfer to an out-of-line target: the
+			// fall-through provenance no longer applies. (b.cond keeps the
+			// record — its fall-through is straight-line, and the taken
+			// arm lands on a label that clears.)
+			if (op === "b" || op === "br" || op === "ret") held.clear();
+			out.push(text);
+			continue;
+		}
+		for (const d of instr_defs(instr)) drop_reg(d);
+		out.push(text);
+	}
+
+	return out.join("\n");
+}
+
+const ALL_TRACKED_REGS: string[] = [];
+for (let i = 0; i <= 30; i++) {
+	ALL_TRACKED_REGS.push(`x${i}`, `d${i}`);
+}
+ALL_TRACKED_REGS.push("sp", "xzr");
+
+/**
+ * Backward companion to the float forwarding pass: a `fmov xN, dM` whose
+ * xN is never read below (before redefinition) is a dead staging move —
+ * the d0 protocol's leftover producer after its consumer was rewritten to
+ * a direct d↔d move. Pruning is forbidden across labels (the live set
+ * resets to the universe there: a jump predecessor may read anything).
+ */
+function eliminate_dead_float_stage_moves(code: string): string {
+	const lines = code.split("\n");
+	const out = new Array<string>(lines.length);
+	const live = new Set<string>();
+
+	// AArch64 is dest-first: the def is the LEADING register operand
+	// (two for ldp). instr_defs deliberately over-approximates (safe for
+	// invalidation); pruning needs the exact def or every source operand
+	// of a reg-only op would vanish from the live set.
+	const defs_of = (instr: AsmInstruction): Set<string> => {
+		const defs = new Set<string>();
+		switch (instr.op) {
+			case "str":
+			case "strb":
+			case "strh":
+			case "stp":
+			case "cmp":
+			case "tst":
+			case "cmn":
+			case "ret":
+				return defs;
+			case "ldp": {
+				for (const o of instr.operands) {
+					if (o.kind === "reg") {
+						defs.add(o.name);
+						if (defs.size === 2) break;
+					} else break;
+				}
+				return defs;
+			}
+			default:
+				break;
+		}
+		if (instr.op.startsWith("b")) return defs;
+		for (const o of instr.operands) {
+			if (o.kind === "reg") {
+				defs.add(o.name);
+				break;
+			}
+			if (o.kind === "mem" || o.kind === "cond") break;
+		}
+		return defs;
+	};
+	const reads_of = (instr: AsmInstruction): string[] => {
+		const reads: string[] = [];
+		const defs = defs_of(instr);
+		for (const o of instr.operands) {
+			if (o.kind === "reg") {
+				if (!defs.has(o.name)) reads.push(o.name);
+			} else if (o.kind === "mem") {
+				if (o.base) reads.push(o.base);
+				if (o.offset?.kind === "reg") reads.push(o.offset.name);
+			}
+		}
+		return reads;
+	};
+
+	for (let i = lines.length - 1; i >= 0; i--) {
+		const text = lines[i];
+		const trimmed = text.trim();
+		if (!trimmed || trimmed.startsWith("//")) {
+			out[i] = text;
+			continue;
+		}
+		const label_m = /^([A-Za-z_.$][\w.$]*):/.exec(trimmed);
+		if (label_m || trimmed.startsWith(".") || /^[\w.$]+\s*=\s*[\w.$]+$/.exec(trimmed)) {
+			// Conservative reset: a jump predecessor may read anything.
+			live.clear();
+			for (const r of ALL_TRACKED_REGS) live.add(r);
+			out[i] = text;
+			continue;
+		}
+		const instr = parse_asm_instruction(text, i + 1);
+		if (!instr) {
+			live.clear();
+			for (const r of ALL_TRACKED_REGS) live.add(r);
+			out[i] = text;
+			continue;
+		}
+		const op = instr.op;
+		// Calls READ their argument registers (and lr) — the lifted text's
+		// call operands carry only the target, so the arg set is added
+		// explicitly or pre-call argument staging would look dead.
+		if (op === "bl") {
+			for (let a = 0; a <= 8; a++) live.add(`x${a}`);
+			for (let a = 0; a < 8; a++) live.add(`d${a}`);
+			live.add("x30");
+		} else if (op === "blr") {
+			const t = instr.operands.find((o) => o.kind === "reg");
+			if (t && t.kind === "reg") live.add(t.name);
+			for (let a = 0; a <= 8; a++) live.add(`x${a}`);
+			for (let a = 0; a < 8; a++) live.add(`d${a}`);
+			live.add("x30");
+		} else if (op === "svc") {
+			for (let a = 0; a <= 17; a++) live.add(`x${a}`);
+		}
+		// Prune candidate: a float→int staging fmov whose destination is
+		// never read below.
+		if (
+			op === "fmov" &&
+			instr.operands.length === 2 &&
+			instr.operands[0].kind === "reg" &&
+			instr.operands[1].kind === "reg" &&
+			instr.operands[0].name.startsWith("x") &&
+			instr.operands[1].name.startsWith("d") &&
+			!live.has(instr.operands[0].name)
+		) {
+			// Drop: dM's read disappears with it (no side effects).
+			out[i] = "";
+			continue;
+		}
+		for (const r of reads_of(instr)) live.add(r);
+		for (const d of defs_of(instr)) live.delete(d);
+		out[i] = text;
+	}
+
+	return out.filter((l) => l !== "").join("\n");
+}
+
+/** Full float-forwarding pipeline: consumer rewrite, then dead producer
+ *  elimination. */
+export function run_float_forwarding(code: string): string {
+	if (!float_forwarding_on) return code;
+	return eliminate_dead_float_stage_moves(optimize_float_forwarding(code));
+}

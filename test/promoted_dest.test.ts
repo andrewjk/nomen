@@ -1,6 +1,7 @@
 import { expect, test } from "vite-plus/test";
 
 import build from "../src/build";
+import { set_float_forwarding_enabled } from "../src/build_aarch64/asm_opt";
 import { set_cset_lowering_enabled } from "../src/build_aarch64/cset_lower";
 import { parse_raw } from "./parse_with_imports";
 
@@ -187,6 +188,71 @@ pub func main = () {
 `,
 		"expansion_float_param_pipeline",
 		"5.0625",
+		true,
+	);
+});
+
+test("float-bits forwarding collapses the sqrt d0 crossing", () => {
+	set_float_forwarding_enabled(true);
+	const code = compile(`
+import System
+
+func dist = (float a, float b, out float) {
+	var float d = a - b
+	var float r = Math.sqrt(d * d)
+	return r * 2.0
+}
+pub func main = () {}
+`);
+	const fn = code.slice(code.indexOf("\ndist:"), code.indexOf("\n_main:"));
+	// The 5-instruction crossing (fmov x0, dA; fmov d0, x0; fsqrt; fmov
+	// x0, d0; fmov dB, x0) collapses: the sqrt's arg and result move
+	// d↔d directly — no staging through x0, no self-moves.
+	expect(fn).toMatch(/fsqrt d[0-9]+, d[0-9]+\n/);
+	// No d↔d self-moves (the rewritten-from x0 staging degenerate).
+	expect(fn).not.toMatch(/fmov d([0-9]+), d\1\n/);
+	expect(fn).not.toContain("fmov d0, x0\nfmov x0, d0");
+});
+
+test("float forwarding kill switch restores the crossings", () => {
+	set_float_forwarding_enabled(false);
+	try {
+		const code = compile(`
+import System
+
+func dist = (float a, float b, out float) {
+	var float d = a - b
+	return Math.sqrt(d * d)
+}
+pub func main = () {}
+`);
+		const fn = code.slice(code.indexOf("\ndist:"), code.indexOf("\n_main:"));
+		expect(fn).toContain("fmov x0, d0\nfmov d0, x0");
+	} finally {
+		set_float_forwarding_enabled(true);
+	}
+});
+
+test("behavioral: forwarded float math stays exact", async () => {
+	const { default: build_and_check_output } = await import("./build_and_check_output");
+	await build_and_check_output(
+		`
+import System
+
+func hyp = (float a, float b, out float) {
+	var float d = a - b
+	return Math.sqrt(d * d)
+}
+
+pub func main = () {
+	Console.write("\\{hyp(9.0, 4.0)}")
+	Console.write("\\n")
+	Console.write("\\{hyp(4.0, 9.0)}")
+	Console.write("\\n")
+}
+`,
+		"float_forward_pipeline",
+		"5.000000\n5.000000",
 		true,
 	);
 });
