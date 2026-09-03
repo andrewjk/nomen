@@ -583,6 +583,15 @@ export default interface BuildStatus {
 	 */
 	array_ptr_cache?: Map<string, string>;
 	/**
+	 * Inline Buffer address pipeline (ASM_PLAN_3 tranche K): maps
+	 * "<buffer>::<invariant>@<induction>" to the callee-saved register
+	 * holding the loop-invariant index base (sum of invariant terms). The
+	 * data pointer itself is hoisted via buffer_data_cache; the base is
+	 * hoisted here so each access becomes `add x1, baseReg, indReg`.
+	 * Same bracketing as the other caches.
+	 */
+	buffer_base_cache?: Map<string, { baseReg: string; induction: string; dataReg?: string }>;
+	/**
 	 * Consume-once: set by the fixed-array `.at()` fast path when the
 	 * element address was produced into (or reads from) a pinned cache
 	 * register. Consumed by the immediately-following method-access field

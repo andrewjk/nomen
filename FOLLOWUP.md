@@ -249,4 +249,3 @@ way — replaced with direct emission). Worth a look whenever the declare
 emission path is next touched: the discarded first build also explains
 why the visible shape for promoted operands stages from SLOTS instead of
 the site registers bound moments earlier.
-

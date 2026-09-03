@@ -18,6 +18,7 @@ import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
+import OperationNode from "../nodes/OperationNode.ts";
 import type StructNode from "../nodes/StructNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
@@ -1947,14 +1948,113 @@ function build_access_method(
 			const is_float = method === "load_float" || method === "store_float";
 
 			if (is_buf_load) {
-				// Evaluate index → x1 (promoted vars/literals emit 1 instr via
-				// build_operand's direct paths)
-				if (access_func.params.length > 0) {
-					build_operand(access_func.params[0], "x1", status);
-					if (!status.code.endsWith("\n")) status.code += "\n";
+				// Pipeline hoist (tranche K): if this access's index is
+				// `base + induction` with a hoisted invariant base, emit a
+				// single `add x1, baseReg, indReg` instead of the full
+				// recomputation.
+				let data_reg: string | null = null;
+				let hoisted = false;
+				if (
+					(
+						status as unknown as {
+							buffer_base_cache?: Map<string, { baseReg: string; induction: string }>;
+						}
+					).buffer_base_cache &&
+					access_func.params.length > 0
+				) {
+					const key = buffer_cache_key(node.target);
+					if (key) {
+						const baseCache = (
+							status as unknown as {
+								buffer_base_cache?: Map<string, { baseReg: string; induction: string }>;
+							}
+						).buffer_base_cache!;
+						for (const [k, v] of baseCache) {
+							if (!k.startsWith(key + "::")) continue;
+							const at = k.lastIndexOf("@");
+							const invPart = k.slice(key.length + 2, at);
+							const ind = k.slice(at + 1);
+							// Check index contains ind and all inv terms
+							const terms: { name: string; isLit: boolean }[] = [];
+							const collect = (n: BaseNode | undefined): boolean => {
+								const u =
+									n && n.node_type === "grouped" ? (n as unknown as { value?: BaseNode }).value : n;
+								const uu =
+									u && u.node_type === "cast" ? (u as unknown as { value?: BaseNode }).value : u;
+								if (!uu) return false;
+								if (uu.node_type === "value") {
+									const nm = (uu as ValueNode).value;
+									if (typeof nm !== "string") return false;
+									terms.push({ name: nm, isLit: is_int_literal(nm) });
+									return true;
+								}
+								if (uu.node_type === "op" && (uu as OperationNode).op === "+") {
+									return (
+										collect((uu as OperationNode).left_value) &&
+										collect((uu as OperationNode).right_value)
+									);
+								}
+								return false;
+							};
+							terms.length = 0;
+							if (!collect(access_func.params[0])) continue;
+							const hasInd = terms.some((t) => !t.isLit && t.name === ind);
+							if (!hasInd) continue;
+							const invTerms = terms
+								.filter((t) => t.name !== ind)
+								.map((t) => t.name)
+								.sort();
+							const expected = invPart ? invPart.split("+").sort() : [];
+							if (invTerms.length !== expected.length) continue;
+							let ok = true;
+							for (let i = 0; i < invTerms.length; i++)
+								if (invTerms[i] !== expected[i]) {
+									ok = false;
+									break;
+								}
+							if (!ok) continue;
+							// Found hoisted base — emit add
+							let indReg: string | null = null;
+							const r = status.register_allocations?.get(ind);
+							if (
+								r &&
+								r.startsWith("x") &&
+								!status.function_param_regs?.has(ind) &&
+								!status.induction_const?.has(ind)
+							)
+								indReg = r;
+							else {
+								const p = status.function_param_regs?.get(ind);
+								if (p) indReg = p;
+								else {
+									const off = status.stack_offsets?.get(ind);
+									if (off !== undefined) {
+										status.code += `ldr x1, [x29, #${off}]\n`;
+										indReg = "x1";
+									}
+								}
+							}
+							if (!indReg) continue;
+							if (indReg === "x1") {
+								status.code += `add x1, ${v.baseReg}, x1\n`;
+							} else {
+								status.code += `add x1, ${v.baseReg}, ${indReg}\n`;
+							}
+							hoisted = true;
+							data_reg = get_buffer_data_ptr(node.target, status);
+							break;
+						}
+					}
 				}
-				// Get data pointer (cached or freshly loaded)
-				const data_reg = get_buffer_data_ptr(node.target, status);
+				if (!hoisted) {
+					if (access_func.params.length > 0) {
+						build_operand(access_func.params[0], "x1", status);
+						if (!status.code.endsWith("\n")) status.code += "\n";
+					}
+					data_reg = get_buffer_data_ptr(node.target, status);
+				} else if (!data_reg) {
+					data_reg = get_buffer_data_ptr(node.target, status);
+				}
 				// Strided load
 				if (is_float) {
 					// `load_float` leaves its result in d0. The default Nomen calling
@@ -1983,10 +2083,102 @@ function build_access_method(
 				// unless both are complex.
 				build_operand(access_func.params[1], "x2", status);
 				if (!status.code.endsWith("\n")) status.code += "\n";
-				build_operand(access_func.params[0], "x1", status);
-				if (!status.code.endsWith("\n")) status.code += "\n";
+				let storeHoisted = false;
+				let storeDataReg: string | null = null;
+				if (
+					(
+						status as unknown as {
+							buffer_base_cache?: Map<string, { baseReg: string; induction: string }>;
+						}
+					).buffer_base_cache &&
+					access_func.params.length > 0
+				) {
+					const key = buffer_cache_key(node.target);
+					if (key) {
+						const baseCache = (
+							status as unknown as {
+								buffer_base_cache?: Map<string, { baseReg: string; induction: string }>;
+							}
+						).buffer_base_cache!;
+						for (const [k, v] of baseCache) {
+							if (!k.startsWith(key + "::")) continue;
+							const at = k.lastIndexOf("@");
+							const invPart = k.slice(key.length + 2, at);
+							const ind = k.slice(at + 1);
+							const terms: { name: string; isLit: boolean }[] = [];
+							const collect2 = (n: BaseNode | undefined): boolean => {
+								const u =
+									n && n.node_type === "grouped" ? (n as unknown as { value?: BaseNode }).value : n;
+								const uu =
+									u && u.node_type === "cast" ? (u as unknown as { value?: BaseNode }).value : u;
+								if (!uu) return false;
+								if (uu.node_type === "value") {
+									const nm = (uu as ValueNode).value;
+									if (typeof nm !== "string") return false;
+									terms.push({ name: nm, isLit: is_int_literal(nm) });
+									return true;
+								}
+								if (uu.node_type === "op" && (uu as OperationNode).op === "+") {
+									return (
+										collect2((uu as OperationNode).left_value) &&
+										collect2((uu as OperationNode).right_value)
+									);
+								}
+								return false;
+							};
+							terms.length = 0;
+							if (!collect2(access_func.params[0])) continue;
+							const hasInd = terms.some((t) => !t.isLit && t.name === ind);
+							if (!hasInd) continue;
+							const invTerms = terms
+								.filter((t) => t.name !== ind)
+								.map((t) => t.name)
+								.sort();
+							const expected = invPart ? invPart.split("+").sort() : [];
+							if (invTerms.length !== expected.length) continue;
+							let ok2 = true;
+							for (let i = 0; i < invTerms.length; i++)
+								if (invTerms[i] !== expected[i]) {
+									ok2 = false;
+									break;
+								}
+							if (!ok2) continue;
+							let indReg2: string | null = null;
+							const r2 = status.register_allocations?.get(ind);
+							if (
+								r2 &&
+								r2.startsWith("x") &&
+								!status.function_param_regs?.has(ind) &&
+								!status.induction_const?.has(ind)
+							)
+								indReg2 = r2;
+							else {
+								const p2 = status.function_param_regs?.get(ind);
+								if (p2) indReg2 = p2;
+								else {
+									const off2 = status.stack_offsets?.get(ind);
+									if (off2 !== undefined) {
+										status.code += `ldr x1, [x29, #${off2}]\n`;
+										indReg2 = "x1";
+									}
+								}
+							}
+							if (!indReg2) continue;
+							if (indReg2 === "x1") status.code += `add x1, ${v.baseReg}, x1\n`;
+							else status.code += `add x1, ${v.baseReg}, ${indReg2}\n`;
+							storeHoisted = true;
+							storeDataReg = get_buffer_data_ptr(node.target, status);
+							break;
+						}
+					}
+				}
+				if (!storeHoisted) {
+					build_operand(access_func.params[0], "x1", status);
+					if (!status.code.endsWith("\n")) status.code += "\n";
+				}
 				// Get data pointer (cached or freshly loaded)
-				const data_reg = get_buffer_data_ptr(node.target, status);
+				const data_reg =
+					storeHoisted && storeDataReg ? storeDataReg : get_buffer_data_ptr(node.target, status);
 				// Strided store
 				if (method === "store_or_int") {
 					if (elem_bytes === 8) {

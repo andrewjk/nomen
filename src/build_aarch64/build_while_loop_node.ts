@@ -1,6 +1,7 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type { NirStmt } from "../nir/nir.ts";
 import WhileLoopNode from "../nodes/WhileLoopNode.ts";
+import { tryHoistBufferAddrs } from "./buffer_pipeline.ts";
 import build_node from "./build_node.ts";
 import { emit_cond_branch } from "./build_operation_node.ts";
 import { tree_is_call_free } from "./build_operation_node.ts";
@@ -60,6 +61,16 @@ export default function build_while_loop_node(
 	// loop boundary in either direction.
 	const saved_array_cache = status.array_ptr_cache;
 	status.array_ptr_cache = undefined;
+	const saved_base_cache = (
+		status as unknown as {
+			buffer_base_cache?: Map<string, { baseReg: string; induction: string; dataReg?: string }>;
+		}
+	).buffer_base_cache;
+	(
+		status as unknown as {
+			buffer_base_cache?: Map<string, { baseReg: string; induction: string; dataReg?: string }>;
+		}
+	).buffer_base_cache = undefined;
 
 	if (status.function_return_label && node.statements.length > 0) {
 		// Caller-saved float extension pool is safe when the loop body is
@@ -153,6 +164,12 @@ export default function build_while_loop_node(
 		status.induction_const = saved_induction_const;
 		mov_immediate_x0_and_store(status, induction, unroll.init + unroll.trip);
 	} else {
+		// Inline Buffer address pipeline (tranche K): hoist data pointers and
+		// invariant index bases for remainder.digits et al. so inner Knuth-D
+		// loops pay one `add x1, base, ind` per access instead of the full
+		// recomputation. Runs in the preheader (before the loop label) so the
+		// hoisted values are live on entry.
+		if (nir) tryHoistBufferAddrs(node, nir.body, status);
 		const label = next_while_label();
 		const start_label = `.while_${label}`;
 		const end_label = `.end_while_${label}`;
@@ -222,6 +239,11 @@ export default function build_while_loop_node(
 
 	status.buffer_data_cache = saved_buffer_cache;
 	status.array_ptr_cache = saved_array_cache;
+	(
+		status as unknown as {
+			buffer_base_cache?: Map<string, { baseReg: string; induction: string; dataReg?: string }>;
+		}
+	).buffer_base_cache = saved_base_cache;
 
 	if (pushed_labels) status.loop_labels?.pop();
 	exit_scope_frame(status, old_scoped_declarations);

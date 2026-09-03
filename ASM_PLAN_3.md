@@ -7,7 +7,7 @@
 >
 > Motivation: pidigits and nbody remain the two worst gaps vs the C backend's
 > `clang -O2` artifact. Receipts below measured 2026-09-02.
-> **A, B, C are DONE** (C: enablement declined + the mandelbrot unroll corruption fixed); **D step 1 is DONE** (nbody −44%, ~1.7× vs C) and **D step 2 is CLOSED** (analyzed: j-pair vectorization unprofitable for AoS; clang's win is field-pair SLP — a future pass class). **E is DONE as a survey** (the div128 boundary does not dominate post-B; neutral, reverted). **F is DONE as a narrow win + survey** (stage-4 straight-line store-to-load forwarding + write-only cset elision: real capture on the single-limb shapes, bench-neutral — the profile has moved to multi-read temporaries; see the F section for the structural accounting). **G is DONE** (promoted-destination statement lowering: cset dest hints + the never-firing compound-assign fast path fixed — pidigits −8%, fannkuch +2-4%). **H is DONE as cap lift + CLOSED survey** (callee pool to the full x23–x28 — clean, neutral; the loop-invariant re-baring half was reverted with a forensic finding: the inline-expansion seed drops caller claims — mandelbrot hang at n=16, see the section). **I is DONE** (float-bits forwarding — nbody −10%, at the 1.5× target). **J is DONE as a narrow win + survey** (flag-form carry lowering: `adds`/`cinc` folds in the Knuth-D loops — pidigits −4.8%; the loops are now accessor-address bound, see the J survey). All measured receipts in-section.
+> **A, B, C are DONE** (C: enablement declined + the mandelbrot unroll corruption fixed); **D step 1 is DONE** (nbody −44%, ~1.7× vs C) and **D step 2 is CLOSED** (analyzed: j-pair vectorization unprofitable for AoS; clang's win is field-pair SLP — a future pass class). **E is DONE as a survey** (the div128 boundary does not dominate post-B; neutral, reverted). **F is DONE as a narrow win + survey** (stage-4 straight-line store-to-load forwarding + write-only cset elision: real capture on the single-limb shapes, bench-neutral — the profile has moved to multi-read temporaries; see the F section for the structural accounting). **G is DONE** (promoted-destination statement lowering: cset dest hints + the never-firing compound-assign fast path fixed — pidigits −8%, fannkuch +2-4%). **H is DONE as cap lift + CLOSED survey** (callee pool to the full x23–x28 — clean, neutral; the loop-invariant re-baring half was reverted with a forensic finding: the inline-expansion seed drops caller claims — mandelbrot hang at n=16, see the section). **I is DONE** (float-bits forwarding — nbody −10%, at the 1.5× target). **J is DONE as a narrow win + survey** (flag-form carry lowering: `adds`/`cinc` folds in the Knuth-D loops — pidigits −4.8%; the loops are now accessor-address bound, see the J survey). **K is DONE as a survey** (inline Buffer address pipeline — correct but neutral, reverted to OFF; the remaining gap is the per-statement `x0` staging model, see the K survey). All measured receipts in-section.
 
 ## Where the gap actually is (receipts, 2026-09-02)
 
@@ -809,6 +809,56 @@ Buffer accessors (hoist the receiver's data pointer + the loop-invariant
 index summands), or widening the cache pool again — both their own
 tranches, receipt-gated on this census. pidigits stands at ~2.1× vs
 C `-O2` (was ~2.2×); nbody holds at ~1.5×.
+
+## Tranche K (DONE — survey): inline Buffer address pipeline does not pay
+
+Landed as a survey 2026-09-02 (`src/build_aarch64/buffer_pipeline.ts`,
+kill-switch `set_buffer_pipeline_enabled`, default OFF; `tryHoistBufferAddrs`
+in `build_while_loop_node` preheader, `buffer_base_cache` + `buffer_data_cache`
+seeding, `build_access_node` index rewrite to `add x1, baseReg, indReg`).
+
+The J survey named the lever: Knuth-D loops are now address-traffic bound
+(~30 of ~61 instructions per D4-subtract iteration are `remainder.digits`
+address re-derivation: 2-3 loop-invariant slot loads + 2 adds for the
+index sum + 3 for the data pointer). The existing `buffer_data_cache`
+dedups within a straight line but is cleared on entry to every `while`,
+so each outer iteration refills and under Knuth-D pressure the x23-x28
+pool is exhausted.
+
+The pipeline hoists both parts loop-invariant per `while`:
+
+- the Buffer's data pointer (one callee-saved register per distinct
+  `remainder.digits` target that is not written inside the loop), and
+- the invariant index base (the sum of all terms except the loop
+  induction, e.g. `wd_off + j` for the inner `si2` loop, `wd_off + u_len + 1`
+  for the `mi` loop) into a callee-saved (or caller-saved for call-free
+  inner loops, `x12-x15`) register, so each inner access becomes a single
+  `add x1, baseReg, indReg` plus the cached `ldr/str`.
+
+Correctness was verified (asm: the inner multiply loops no longer reload
+`remainder.digits.data` per iteration, and the `wd_off + j + si2` index
+computes as `base + si2`; all tests pass), but A/B benchmarking showed
+**no measurable speedup on pidigits (0.686s → 0.684s, <1% on both n=1000
+and n=4000, outputs identical) and the extra preheader code adds
+register pressure for outer loops that already have a `div128` call
+(`callFree=false` for the outer `j` loop, so caller-saved cannot be used
+and the x23-x28 pool is still exhausted — the outer `j` loop's data
+pointer hoist fails to allocate).** The inner loops do hoist (one data
+pointer to `x28`, one base to `x27` etc., verified via `NOMEN_PIPE_DBG`),
+but the saved loads are L1 hits fully overlapped with the `mul`/`umulh`
+/ `subs` work, so they were never on the critical path — the same
+reason the earlier `loop_buffer_licm` (data-pointer-only) was reverted
+(bench/IMPROVEMENTS.md:589). The per-loop overhead (cache-map copy,
+body scan, extra callee-saved saves) offsets the saving.
+
+The implementation is kept disabled (default OFF) as the seam a future
+more comprehensive address-materialization pass would drive. The honest
+remaining lever for pidigits is the per-statement `x0` staging model
+itself: the `wd_off + j + si2` index sum and the store's value/index
+ordering still sequence through `x0`/`x1`/`x2` with slot spills; collapsing
+that needs a fuller value-numbering / register-coalescing pass, one order
+larger than this tranche. That, plus nbody's field-pair SLP (D step 2),
+are the structural blockers for the 1.5× criterion.
 
 ## Method (unchanged from ASM_PLAN_2)
 
