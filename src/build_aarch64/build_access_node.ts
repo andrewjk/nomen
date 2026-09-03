@@ -2196,6 +2196,8 @@ function build_access_method(
 					const signed = is_signed_type(target_type.name);
 					if (size === 1) {
 						status.code += signed ? `ldrsb x0, [x0]\n` : `ldrb w0, [x0]\n`;
+					} else if (size === 2) {
+						status.code += signed ? `ldrsh x0, [x0]\n` : `ldrh w0, [x0]\n`;
 					} else if (size === 4) {
 						status.code += signed ? `ldrsw x0, [x0]\n` : `ldr w0, [x0]\n`;
 					} else {
