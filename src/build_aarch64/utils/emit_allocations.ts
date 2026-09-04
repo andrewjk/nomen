@@ -46,6 +46,15 @@ export default function emit_allocations(node: BaseNode, status: BuildStatus) {
 			if (tree) forwarded.set((alloc as DeclarationNode).name, tree);
 		}
 	}
+	// Tranche M: value-numbered `_param_N` inits — the temp's chain had its
+	// invariant prefix hoisted to a preheader `_vn_N` declare, so the temp
+	// must not emit at all; the accessor's staging path re-builds the
+	// rewritten tree at the read. These entries win over the L gating
+	// (their soundness gates ran in the pass).
+	const vn_inits = status.vn_param_inits?.get(node);
+	if (vn_inits) {
+		for (const [name, tree] of vn_inits) forwarded.set(name, tree);
+	}
 	status.forwarded_param_inits = forwarded;
 	for (const alloc of allocations) {
 		if (status.emitted_allocations.has(alloc)) continue;

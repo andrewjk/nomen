@@ -7,7 +7,11 @@
 >
 > Motivation: pidigits and nbody remain the two worst gaps vs the C backend's
 > `clang -O2` artifact. Receipts below measured 2026-09-02.
-> **A, B, C are DONE** (C: enablement declined + the mandelbrot unroll corruption fixed); **D step 1 is DONE** (nbody −44%, ~1.7× vs C) and **D step 2 is CLOSED** (analyzed: j-pair vectorization unprofitable for AoS; clang's win is field-pair SLP — a future pass class). **E is DONE as a survey** (the div128 boundary does not dominate post-B; neutral, reverted). **F is DONE as a narrow win + survey** (stage-4 straight-line store-to-load forwarding + write-only cset elision: real capture on the single-limb shapes, bench-neutral — the profile has moved to multi-read temporaries; see the F section for the structural accounting). **G is DONE** (promoted-destination statement lowering: cset dest hints + the never-firing compound-assign fast path fixed — pidigits −8%, fannkuch +2-4%). **H is DONE as cap lift + CLOSED survey** (callee pool to the full x23–x28 — clean, neutral; the loop-invariant re-baring half was reverted with a forensic finding: the inline-expansion seed drops caller claims — mandelbrot hang at n=16, see the section). **I is DONE** (float-bits forwarding — nbody −10%, at the 1.5× target). **J is DONE as a narrow win + survey** (flag-form carry lowering: `adds`/`cinc` folds in the Knuth-D loops — pidigits −4.8%; the loops are now accessor-address bound, see the J survey). **K is DONE as a survey** (inline Buffer address pipeline — correct but neutral, reverted to OFF; the remaining gap is the per-statement `x0` staging model, see the K survey). **L is DONE** (access staging bypass — the per-statement `x0` staging model itself: `_param_N` index forwarding + dest-directed `+`-chain builds + x10/x11 index/data pins across verified straight-line windows — pidigits −7.4%, now ~1.85× vs C; matrix neutral, four benches byte-identical). All measured receipts in-section.
+> **A, B, C are DONE** (C: enablement declined + the mandelbrot unroll corruption fixed); **D step 1 is DONE** (nbody −44%, ~1.7× vs C) and **D step 2 is CLOSED** (analyzed: j-pair vectorization unprofitable for AoS; clang's win is field-pair SLP — a future pass class). **E is DONE as a survey** (the div128 boundary does not dominate post-B; neutral, reverted). **F is DONE as a narrow win + survey** (stage-4 straight-line store-to-load forwarding + write-only cset elision: real capture on the single-limb shapes, bench-neutral — the profile has moved to multi-read temporaries; see the F section for the structural accounting). **G is DONE** (promoted-destination statement lowering: cset dest hints + the never-firing compound-assign fast path fixed — pidigits −8%, fannkuch +2-4%). **H is DONE as cap lift + CLOSED survey** (callee pool to the full x23–x28 — clean, neutral; the loop-invariant re-baring half was reverted with a forensic finding: the inline-expansion seed drops caller claims — mandelbrot hang at n=16, see the section). **I is DONE** (float-bits forwarding — nbody −10%, at the 1.5× target). **J is DONE as a narrow win + survey** (flag-form carry lowering: `adds`/`cinc` folds in the Knuth-D loops — pidigits −4.8%; the loops are now accessor-address bound, see the J survey). **K is DONE as a survey** (inline Buffer address pipeline — correct but neutral, reverted to OFF; the remaining gap is the per-statement `x0` staging model, see the K survey). **L is DONE** (access staging bypass — the per-statement `x0` staging model itself: `_param_N` index forwarding + dest-directed `+`-chain builds + x10/x11 index/data pins across verified straight-line windows — pidigits −7.4%, now ~1.85× vs C; matrix neutral, four benches byte-identical). **M is DONE** (loop value
+> numbering — the cross-iteration pass the K/L surveys scoped: invariant
+> chain prefixes hoisted to preheader `_vn_N` temps through three rewrite
+> channels — real census wins in the Knuth-D loops, bench-neutral, kept as
+> the pass class's plumbing). All measured receipts in-section.
 
 ## Where the gap actually is (receipts, 2026-09-02)
 
@@ -974,6 +978,106 @@ through the whole loop body) needs the fuller value-numbering /
 register-coalescing pass the K survey named, one order larger than this
 tranche. pidigits stands at ~1.85× vs the 1.5× criterion; nbody holds at
 ~1.5×.
+
+## Tranche M (DONE — neutral, kept): loop value numbering — the K/L-survey pass
+
+Landed 2026-09-04 (`src/build_aarch64/value_number.ts`, kill-switch
+`set_value_numbering_enabled`, default ON; runs BETWEEN `lower_function`
+and `plan_nir_registers` in build_function_node, planning-only in
+`seed_function_allocations`, and with AST mutation in
+`build_body_with_cursor` — the same deterministic rewrite in all three so
+the plan sees the traffic emission produces; forward.ts's splice machinery
+extended with `arg<N>` descent steps and a value-numbering-host gate;
+`emit_allocations` merges `status.vn_param_inits`; OFF = byte-identical).
+
+The K survey scoped the remaining pidigits lever as "a fuller
+value-numbering / register-coalescing pass, one order larger than this
+tranche"; L's honest accounting repeated it ("the window is statement-list
+scoped — cross-block or cross-iteration reuse (clang keeps ~10 scalars
+through the whole loop body)"). The mechanism, per `while` loop:
+
+- Every pure `+` chain in a hosted value position (declare init, assign
+  rhs, eval expr, return value — accessor args included, via the new
+  `arg<N>` steps) is split into an INVARIANT part (name leaves never
+  written anywhere in the loop + literals) and a VARIANT part (the
+  induction-dependent leaves). Chains are grouped by invariant multiset —
+  two occurrences of `wd_off + j + …` in one iteration share ONE temp
+  (cross-statement CSE for free).
+- The invariant sub-sum is hoisted into a fresh `const _vn_N` declared
+  immediately BEFORE the loop — a real statement in BOTH the NIR spine and
+  the AST list (inserted at the same index, preserving the cursor's
+  index-alignment contract; removed from the shared AST after the body
+  build). The register plan then sees the temp's traffic and may promote
+  it (the loop-invariant-hot route: one read at depth ≥ 1 weighs 8), and
+  loop promotion may claim it.
+- Each occurrence is rewritten to `temp + <variant leaves>` through two
+  channels: NIR value positions via the stage-4 splice mechanism
+  (apply → build → restore per statement), and — the census's main
+  shapes — chains hiding in checker-hoisted `_param_N` allocation inits
+  (`scratch.get_at(scratchp, wd_off + u_len + 1 + si2)` never appears in
+  a NIR value position; its temp's rewritten init rides
+  `status.vn_param_inits`, emit_allocations skips the slot write, and the
+  accessor's staging path re-builds the tree at the read — deliberately
+  ABOVE the staging flag check so the rewrite is independent of L's
+  kill-switch).
+- Soundness: wrapping regrouping requires every NAME leaf of a chain to
+  share one non-float scalar type (integer adds are associative under
+  wrapping at a fixed width; floats excluded wholesale; `_param_N` leaves
+  excluded — their slots are written INSIDE the loop; a single-term
+  invariant part is a bare copy and is skipped as pure overhead). A name
+  is invariant only when NOTHING in the loop writes it: assign targets
+  (plain and path roots), declares, for items, ref arguments, and
+  swap-marshalled names, collected from the NIR call facts over the whole
+  body + update subtree. The stage-4 forwarder declines single-use
+  candidates whose use lives in a value-numbering host (overlapping
+  splices on one host would walk stale paths). Conditions and updates are
+  not touched (no splice application runs there); nested loops process
+  their own bodies.
+
+Census (div_to's Knuth-D section, same-tree A/B, off = kill-switch arm):
+
+| loop                           | lines off → on | mem ops off → on |
+| ------------------------------ | -------------: | ---------------: |
+| D4 subtract (.while_25)        |        41 → 37 |           13 → 7 |
+| D3 correction (.while_22)      |        38 → 38 |            6 → 5 |
+| D4 multiply (.while_24)        |        43 → 43 |           10 → 9 |
+| D5 carry propagate (.while_27) |        31 → 27 |                  |
+| D5 add-back (.while_26)        |        62 → 62 |                  |
+
+The D4-subtract loop's index builds are now nearly slot-load-free (the
+invariant pair `wd_off + u_len` lives in a register per group, the
+induction in its own register, the update block collapsed to one `add`),
+and `wd_off`'s promotion itself was a knock-on (the temp's preheader read
+bumped its priority). Temps fired in all seven div_to loops, with ×2
+occurrence sharing in four (the debug receipt: `inv:j+wd_off x2`).
+
+**RESULT: bench-neutral.** Interleaved same-tree A/B (off vs on, medians
+of 9), outputs byte-identical on all six benches: pidigits n=4000 0.66 →
+0.66 s, nbody 5M, fannkuch 11, mandelbrot 1000, spectral-norm 1500,
+binarytrees 15 all ±0. The same accounting as the K survey: the removed
+loads were L1 hits fully overlapped with the `mul`/`umulh`/`subs` work —
+they were never on the critical path, and the preheader inits + extra
+prologue saves offset the per-iteration savings. Full suite green (281
+files / 2749 tests) with `test/value_number.test.ts` (5 tests: preheader
+hoist shape + body add-count reduction, kill-switch byte restoration,
+loop-write invariance rejection, cross-block if-arm hoist, behavioral run
+on both backends). Two existing tests updated: the NIR byte-identity
+harness and corpus test hold VN off in both arms (cursor-dependent, the
+fuses' treatment), and the tranche-J shape test's source now mutates a
+body local instead of comparing against loop-invariant params (an
+invariant-only `a + b` legitimately hoists, which de-fuses that synthetic
+shape; the real BigInt carry adds all read loop-carried operands and
+still fuse).
+
+What remains in pidigits (unchanged in kind): the receiver-path
+re-derivation (`mov x9, x22; add x9, x9, #24; ldr x9, [x9, #8]` twice per
+iteration — 6 instructions of the ~37-line loops — is a PATH, not an
+arithmetic chain, and stays L/K territory), the carry slot round-trips
+(#288-class multi-assignment carries), and D5 add-back's 62 lines. The
+pass stays default ON as the value-numbering plumbing the surveys named:
+non-negative everywhere measured, it kills the documented re-derivations
+wherever shapes occur, and a future regalloc-cooperative pass (the "one
+order larger" class) drives it.
 
 ## Method (unchanged from ASM_PLAN_2)
 

@@ -5,7 +5,7 @@ import { resolve_mono_type } from "../build_common/mono_name.ts";
 import { moved_param_is_consumed } from "../build_common/scan_moved_param_consumed.ts";
 import { ALL_FLOAT_TYPES } from "../built_in_types.ts";
 import { lower_function } from "../nir/from_ast.ts";
-import type { NirFunction } from "../nir/nir.ts";
+import type { NirFunction, NirStmt } from "../nir/nir.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import type Type from "../nodes/Type.ts";
 import build_block_node from "./build_block_node.ts";
@@ -25,6 +25,7 @@ import {
 } from "./utils/stack_args.ts";
 import { allocate_stack_space, emit_promoted_load } from "./utils/stack_var.ts";
 import { get_enum_sret_size, get_field_offset, get_struct_size } from "./utils/struct_layout.ts";
+import { value_number_loops, type VnPlan } from "./value_number.ts";
 
 let label_counter = 0;
 
@@ -459,6 +460,18 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 			`NIR lowering gap in ${node.name || label_name}: ${[...nir.unknown_kinds].join(", ")}`,
 		);
 	}
+	// Tranche M (ASM_PLAN_3): loop value numbering runs BETWEEN lowering and
+	// the register plan, so the allocator sees the hoisted temps' traffic
+	// (the plan computed here is the plan the emitter below will honor —
+	// both run the same deterministic rewrite). The AST splices ride the
+	// body build and are undone right after it (the AST is shared with the
+	// C backend and re-lowered per inline expansion).
+	let vn: VnPlan | undefined;
+	let plan_nir: NirFunction | undefined = nir;
+	if (nir) {
+		vn = value_number_loops(nir.body, node.statements, status, true);
+		if (vn.stmts !== nir.body) plan_nir = { ...nir, body: vn.stmts as NirStmt[] };
+	}
 	// Tranche G stage 1 (ASM_PLAN_2): when the NIR-level allocator is
 	// enabled it replaces the legacy pass entirely — statement-granularity
 	// liveness, interference sharing, caller-saved ext pool for
@@ -468,7 +481,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	let fn_callee_saved: Set<string> | undefined;
 	if (nir) {
 		if (nir_regalloc_enabled()) {
-			const plan = plan_nir_registers(node, nir);
+			const plan = plan_nir_registers(node, plan_nir!);
 			// Stage 3: split plain-name bindings (live from function entry —
 			// the prologue initializes params into them) from decl-site
 			// bindings (the emitter binds those at each declare site, so
@@ -505,7 +518,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 				status.nir_caller_saved_claimed = undefined;
 			}
 		} else {
-			fn_allocs = plan_function_promotions(node, nir);
+			fn_allocs = plan_function_promotions(node, plan_nir!);
 			// Legacy pass has no decl-site table — clear any enclosing
 			// function's so this body's declare keys can't resolve against it.
 			status.nir_site_allocs = undefined;
@@ -806,22 +819,36 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	// spine when anything rewrote) is what gets published, not nir.body —
 	// the shared lowering object stays untouched.
 	const old_nir_ctx = status.nir_emit_ctx;
-	if (nir && nir_emission_enabled()) {
-		const prepared = prepare_nir_forwarding(nir.body, status);
+	if (plan_nir && nir_emission_enabled()) {
+		const prepared = prepare_nir_forwarding(plan_nir.body, status, vn?.host_stmts);
+		// Merge the value-numbering use sites with the forwarder's: the two
+		// pass gates keep any single host from carrying overlapping splices,
+		// so plain concatenation is enough.
+		const use_sites = new Map(prepared.use_sites);
+		if (vn && vn.use_sites.size > 0) {
+			for (const [host, use] of vn.use_sites) {
+				const existing = use_sites.get(host);
+				if (existing) existing.splices.push(...use.splices);
+				else use_sites.set(host, use);
+			}
+		}
 		status.nir_emit_ctx = {
 			stmts: prepared.stmts,
 			ast: node.statements,
 			write_only: prepared.write_only,
-			use_sites: prepared.use_sites,
+			use_sites,
 			forward_defs: prepared.forward_defs,
 		};
 	} else {
 		status.nir_emit_ctx = undefined;
 	}
 
-	build_block_node(node, status);
-
-	status.nir_emit_ctx = old_nir_ctx;
+	try {
+		build_block_node(node, status);
+	} finally {
+		status.nir_emit_ctx = old_nir_ctx;
+		vn?.undo();
+	}
 
 	status.buffer_data_cache = old_buffer_data_cache;
 	status.array_ptr_cache = old_array_ptr_cache;

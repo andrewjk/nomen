@@ -12,6 +12,7 @@ import { set_forwarding_enabled } from "../src/build_aarch64/forward";
 import { set_neon_vectorization_enabled } from "../src/build_aarch64/neon_emit";
 import { set_loop_unrolling_enabled } from "../src/build_aarch64/unroll";
 import { set_nir_site_promotion_enabled } from "../src/build_aarch64/utils/nir_regalloc";
+import { set_value_numbering_enabled } from "../src/build_aarch64/value_number";
 import join from "../src/join";
 import { get_library } from "../src/lib";
 import { lower_function } from "../src/nir/from_ast";
@@ -60,6 +61,10 @@ function expect_byte_identical(source: string, raw = false): void {
 	// pin filled by an earlier statement can never reproduce in a
 	// delegated single-statement rebuild — same treatment as the fuses.
 	set_access_staging_enabled(false);
+	// Loop value numbering (ASM_PLAN_3 tranche M) rewrites the NIR spine
+	// AND the statement lists the delegated walk builds from — the two arms
+	// could never agree — same treatment as the fuses.
+	set_value_numbering_enabled(false);
 	const baseline = compile_aarch64(source, raw);
 	set_nir_emission_enabled(true);
 	try {
@@ -75,6 +80,7 @@ function expect_byte_identical(source: string, raw = false): void {
 		set_flag_form_enabled(true);
 		set_buffer_pipeline_enabled(true);
 		set_access_staging_enabled(true);
+		set_value_numbering_enabled(true);
 	}
 }
 
@@ -819,6 +825,7 @@ test("whole benchmark corpus is byte-identical through NIR emission", () => {
 		set_flag_form_enabled(false);
 		set_buffer_pipeline_enabled(false);
 		set_access_staging_enabled(false);
+		set_value_numbering_enabled(false);
 		const baseline = compile();
 		set_nir_emission_enabled(true);
 		set_neon_vectorization_enabled(false);
@@ -829,6 +836,7 @@ test("whole benchmark corpus is byte-identical through NIR emission", () => {
 		set_flag_form_enabled(false);
 		set_buffer_pipeline_enabled(false);
 		set_access_staging_enabled(false);
+		set_value_numbering_enabled(false);
 		try {
 			expect(compile(), file).toEqual(baseline);
 		} finally {
@@ -841,6 +849,7 @@ test("whole benchmark corpus is byte-identical through NIR emission", () => {
 			set_flag_form_enabled(true);
 			set_buffer_pipeline_enabled(true);
 			set_access_staging_enabled(true);
+			set_value_numbering_enabled(true);
 		}
 	}
 });

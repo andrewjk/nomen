@@ -33,9 +33,10 @@ func carries = (uint64 a, uint64 b, out uint64) {
 	var uint64 carry = 0
 	var i = 0
 	while i < 4; i += 1 {
-		const uint64 sum = a + b
+		var uint64 v = a + i
+		const uint64 sum = v + b
 		var c1 = 0
-		if sum < a {
+		if sum < v {
 			c1 = 1
 		}
 		carry = carry + c1

@@ -584,6 +584,16 @@ export default interface BuildStatus {
 	 */
 	forwarded_param_inits?: Map<string, BaseNode>;
 	/**
+	 * aarch64-only (ASM_PLAN_3 tranche M): per-statement `_param_N`
+	 * initializers rewritten by the loop value-numbering pass — the
+	 * checker-hoisted temp's chain had its invariant prefix hoisted to a
+	 * `_vn_N` preheader declare, so the temp's slot must never be written
+	 * (emit_allocations skips it and feeds the rewritten tree to the
+	 * accessor's staging path instead). Keyed by the owning statement's
+	 * AST node; set/cleared by the pass around each body build.
+	 */
+	vn_param_inits?: Map<BaseNode, Map<string, BaseNode>>;
+	/**
 	 * Set by build_float_operand before building a float-typed child expression.
 	 * When a float binary operation sees this flag at its result point, it skips
 	 * the `fmov x0, d0` (leaving the result in d0) and clears the flag. This

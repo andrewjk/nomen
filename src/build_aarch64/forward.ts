@@ -3,8 +3,10 @@ import { is_float_type, is_scalar_type } from "../built_in_types.ts";
 import type { NirEmitCtx } from "../nir/emit_ctx.ts";
 import type { NirExpr, NirStmt } from "../nir/nir.ts";
 import { analyze_traffic, type TrafficReport } from "../nir/traffic.ts";
+import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
+import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import type OperationNode from "../nodes/OperationNode.ts";
 import type ValueNode from "../nodes/ValueNode.ts";
 
@@ -298,7 +300,20 @@ function use_expr_of(stmt: NirStmt): NirExpr | null {
 	}
 }
 
-type PathStep = "left" | "right" | "inner" | "receiver";
+/**
+ * Expression descent steps. `arg<N>` descends into a call's Nth argument —
+ * the value position the aarch64 access-staging pass (and the value-numbering
+ * pass) splice into; forward itself never produces it (its use expressions
+ * are call-free), but apply_forward_use must honor the step to host splices
+ * recorded by other passes.
+ */
+type PathStep = "left" | "right" | "inner" | "receiver" | `arg${number}`;
+
+export type { PathStep };
+
+function arg_step_index(step: PathStep): number | null {
+	return step.startsWith("arg") && step.length > 3 ? Number(step.slice(3)) : null;
+}
 
 /** Find the path to a leaf naming `name` inside the expression. */
 function find_leaf(e: NirExpr, name: string): PathStep[] | null {
@@ -406,8 +421,21 @@ function ast_child_at(node: BaseNode, step: PathStep): BaseNode | null {
 		case "cast":
 		case "let":
 			return step === "inner" ? ((node as unknown as { value?: BaseNode }).value ?? null) : null;
-		case "access":
-			return step === "receiver" ? (node as AccessNode).target : null;
+		case "access": {
+			if (step === "receiver") return (node as AccessNode).target;
+			const ai = arg_step_index(step);
+			if (ai !== null) {
+				const inner = (node as AccessNode).access;
+				if (inner && inner.node_type === "access_func") {
+					return (inner as AccessFunctionCallNode).params?.[ai] ?? null;
+				}
+			}
+			return null;
+		}
+		case "func_call": {
+			const ai = arg_step_index(step);
+			return ai !== null ? ((node as FunctionCallNode).params?.[ai] ?? null) : null;
+		}
 		default:
 			return null;
 	}
@@ -424,9 +452,24 @@ function ast_child_set(node: BaseNode, step: PathStep, value: BaseNode): void {
 		case "let":
 			if (step === "inner") (node as unknown as { value?: BaseNode }).value = value;
 			return;
-		case "access":
+		case "access": {
 			if (step === "receiver") (node as AccessNode).target = value;
+			const ai = arg_step_index(step);
+			if (ai !== null) {
+				const inner = (node as AccessNode).access;
+				if (inner && inner.node_type === "access_func") {
+					const params = (inner as AccessFunctionCallNode).params;
+					if (params && ai < params.length) params[ai] = value;
+				}
+			}
 			return;
+		}
+		case "func_call": {
+			const ai = arg_step_index(step);
+			const params = (node as FunctionCallNode).params;
+			if (ai !== null && params && ai < params.length) params[ai] = value;
+			return;
+		}
 	}
 }
 
@@ -761,11 +804,15 @@ function record_use_site(
  * Run once per published emission cursor, before any statement emits:
  * rewrite single-use forwards and report write-only names for the cset
  * fuse. Returns the (possibly identical) statement list plus the
- * write-only name set.
+ * write-only name set. `vn_hosts` (ASM_PLAN_3 tranche M) lists statement
+ * AST nodes hosting a value-numbering splice: a forward whose single USE
+ * lands in such a statement keeps its plain slot round trip — the two
+ * passes' splices would otherwise walk overlapping paths on one host.
  */
 export function prepare_nir_forwarding(
 	stmts: readonly NirStmt[],
 	status: BuildStatus,
+	vn_hosts?: ReadonlySet<unknown>,
 ): {
 	stmts: readonly NirStmt[];
 	write_only: ReadonlySet<string>;
@@ -800,6 +847,7 @@ export function prepare_nir_forwarding(
 		hidden_reads,
 		use_sites,
 		forward_defs,
+		vn_hosts,
 	);
 	return { stmts: rewritten, write_only, use_sites, forward_defs };
 }
@@ -813,6 +861,7 @@ function process_list(
 	hidden_reads: ReadonlySet<string>,
 	use_sites: Map<BaseNode, ForwardUse>,
 	forward_defs: Set<BaseNode>,
+	vn_hosts?: ReadonlySet<unknown>,
 ): readonly NirStmt[] {
 	const out = [...list];
 	// Names whose INIT received a forwarded tree: those declares must not
@@ -842,6 +891,10 @@ function process_list(
 		}
 		if (use_index < 0) continue;
 		const use_stmt = out[use_index];
+		// A use inside a value-numbering host statement keeps its slot: the
+		// two passes would splice overlapping paths on one host (see
+		// prepare_nir_forwarding).
+		if (vn_hosts?.has(use_stmt.node)) continue;
 
 		// The use expression must be entirely call-free (an intervening
 		// inline expansion or ref write may change what the leaves hold).
@@ -909,7 +962,17 @@ function process_list(
 		const lists = nested_lists(out[i]);
 		if (lists.length === 0) continue;
 		const updated = lists.map((l) =>
-			process_list(l, root, traffic, write_only, status, hidden_reads, use_sites, forward_defs),
+			process_list(
+				l,
+				root,
+				traffic,
+				write_only,
+				status,
+				hidden_reads,
+				use_sites,
+				forward_defs,
+				vn_hosts,
+			),
 		);
 		let stmt = out[i];
 		for (let n = 0; n < updated.length; n++) {

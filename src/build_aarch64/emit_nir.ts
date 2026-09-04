@@ -42,6 +42,7 @@ import { plan_vector_for, plan_vector_loop } from "./neon_plan.ts";
 import { plan_full_unroll } from "./unroll.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_var_load, emit_var_store } from "./utils/stack_var.ts";
+import { value_number_loops } from "./value_number.ts";
 
 /**
  * NIR-driven emission (ASM_PLAN phase 4, canonical-IR stage 2).
@@ -788,18 +789,34 @@ export function build_body_with_cursor(func: FunctionNode, status: BuildStatus):
 			`NIR lowering gap in ${func.name || "<method>"}: ${[...nir.unknown_kinds].join(", ")}`,
 		);
 	}
+	// Tranche M (ASM_PLAN_3): loop value numbering — the same deterministic
+	// rewrite the seeding planner ran on its own lowering, so the plan's
+	// traffic and this body's spine agree. AST splices ride the build and
+	// are undone in the finally (the AST is shared and re-lowered per
+	// expansion).
+	const vn = value_number_loops(nir.body, func.statements, status, true);
+	const body_stmts = vn.stmts !== nir.body ? vn.stmts : nir.body;
 	// Stage 4 (ASM_PLAN_3): single-use forwarding + write-only flag facts,
 	// computed against the SAME plan (register_allocations / nir_site_allocs)
 	// the emission below will consult. The pass returns a fresh spine for
 	// rewritten statements; publishing THAT list (not nir.body) keeps the
-	// shared lowering object untouched.
-	const prepared = prepare_nir_forwarding(nir.body, status);
+	// shared lowering object untouched. Value-numbering hosts gate its
+	// candidates (overlapping splices), and the two use-site maps merge.
+	const prepared = prepare_nir_forwarding(body_stmts, status, vn.host_stmts);
+	const use_sites = new Map(prepared.use_sites);
+	if (vn.use_sites.size > 0) {
+		for (const [host, use] of vn.use_sites) {
+			const existing = use_sites.get(host);
+			if (existing) existing.splices.push(...use.splices);
+			else use_sites.set(host, use);
+		}
+	}
 	const old_ctx = status.nir_emit_ctx;
 	status.nir_emit_ctx = {
 		stmts: prepared.stmts,
 		ast: func.statements,
 		write_only: prepared.write_only,
-		use_sites: prepared.use_sites,
+		use_sites,
 		forward_defs: prepared.forward_defs,
 	};
 	// A function-like body is a fresh emission scope: prologue patching and
@@ -807,8 +824,12 @@ export function build_body_with_cursor(func: FunctionNode, status: BuildStatus):
 	// enclosing scope must not survive into it (ASM_PLAN_3 tranche L).
 	pins_taint(status);
 	status.forwarded_param_inits = undefined;
-	build_block_node(func, status);
-	status.nir_emit_ctx = old_ctx;
+	try {
+		build_block_node(func, status);
+	} finally {
+		status.nir_emit_ctx = old_ctx;
+		vn.undo();
+	}
 }
 
 /**

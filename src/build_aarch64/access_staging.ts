@@ -417,11 +417,11 @@ function read_is_buffer_accessor_arg(statement: BaseNode, name: string): boolean
 }
 
 /** Whether a hoisted allocation declare may skip its slot and be re-emitted
- * at its single read: a `_param_N` const with a scalar non-float type and a
- * pure arithmetic tree, read exactly once in the owning statement — at a
- * direct inline-Buffer-accessor argument. */
-export function forwardable_hoisted_param(alloc: BaseNode, statement: BaseNode): BaseNode | null {
-	if (!access_staging_enabled()) return null;
+ *  at its single read: a `_param_N` const with a scalar non-float type and a
+ *  pure arithmetic tree, read exactly once in the owning statement — at a
+ *  direct inline-Buffer-accessor argument. (Flag-agnostic core — the value
+ *  numbering pass reuses these gates for its own rewritten inits.) */
+export function hoistable_hoisted_param(alloc: BaseNode, statement: BaseNode): BaseNode | null {
 	if (alloc.node_type !== "declare") return null;
 	const decl = alloc as DeclarationNode;
 	if (typeof decl.name !== "string" || !/^_param_\d+$/.test(decl.name)) return null;
@@ -435,6 +435,14 @@ export function forwardable_hoisted_param(alloc: BaseNode, statement: BaseNode):
 	// ... and that site is one the accessor paths actually forward at.
 	if (!read_is_buffer_accessor_arg(statement, decl.name)) return null;
 	return decl.value;
+}
+
+/** Whether a hoisted allocation declare may skip its slot and be re-emitted
+ *  at its single read (the staging-enabled gate on top of the shared
+ *  shape gates). */
+export function forwardable_hoisted_param(alloc: BaseNode, statement: BaseNode): BaseNode | null {
+	if (!access_staging_enabled()) return null;
+	return hoistable_hoisted_param(alloc, statement);
 }
 
 // ---------------------------------------------------------------------------
@@ -555,13 +563,17 @@ export function note_dispatched_statement(
  * the (possibly `_param_N`-spliced) index argument.
  */
 export function staged_index_reg(param: BaseNode, status: BuildStatus): string {
+	// The value-numbering pass (tranche M) may have rewritten this hoisted
+	// temp's initializer (its invariant prefix lives in a preheader _vn_N
+	// now) — the consult is deliberately ABOVE the staging flag check: with
+	// staging off the rewritten tree still builds, straight into x1.
+	const forwarded = forwarded_param_tree(param, status);
+	const effective = forwarded ?? param;
 	if (!access_staging_on) {
-		build_operand(param, "x1", status);
+		build_operand(effective, "x1", status);
 		if (!status.code.endsWith("\n")) status.code += "\n";
 		return "x1";
 	}
-	const forwarded = forwarded_param_tree(param, status);
-	const effective = forwarded ?? param;
 	const chain = collect_index_chain(effective);
 	if (!chain) {
 		build_operand(effective, "x1", status);

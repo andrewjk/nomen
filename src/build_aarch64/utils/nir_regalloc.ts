@@ -14,6 +14,7 @@ import { version_function } from "../../nir/version.ts";
 import type BaseNode from "../../nodes/BaseNode.ts";
 import type Type from "../../nodes/Type.ts";
 import { tree_is_call_free } from "../build_operation_node.ts";
+import { value_number_loops } from "../value_number.ts";
 import { emit_promoted_load } from "./stack_var.ts";
 
 /**
@@ -641,10 +642,22 @@ export function seed_function_allocations(
 		// throws the same tripwire; stay out of its way here.
 		return undefined;
 	}
-	const plan = plan_nir_registers(func, nir, {
-		status,
-		exclude_params: options?.exclude_params,
-	});
+	// Tranche M (ASM_PLAN_3): the SAME loop value-numbering rewrite
+	// build_body_with_cursor will run on its own lowering — applied here
+	// (planning-only: no AST mutation) so the plan is computed from the
+	// traffic the emitter will actually produce, and the hoisted temps can
+	// earn registers. The rewrite is deterministic, so both lowerings agree
+	// on every temp name and site.
+	const vn = value_number_loops(nir.body, func.statements, status, false);
+	const plan_body = (vn.stmts !== nir.body ? vn.stmts : nir.body) as NirStmt[];
+	const plan = plan_nir_registers(
+		func,
+		{ ...nir, body: plan_body },
+		{
+			status,
+			exclude_params: options?.exclude_params,
+		},
+	);
 	if (plan.allocs.size === 0) return undefined;
 	// Split plain-name bindings (live from function entry) from decl-site
 	// bindings (stage 3: bound at each declare site by the emitter, so
