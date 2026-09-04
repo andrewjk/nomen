@@ -289,21 +289,7 @@ model materializes. The written accounting should quote those receipts.
   sibling args the checker does not hoist. Either hoist (checker) or
   align the order (emitters); low priority, but document the choice.
 
-### 5. Recorded bugs — final tally (audited at HEAD, 2026-09-05)
-
-Eight of the nine were already fixed by later work (regression tests exist
-or were added); one was fixed in this audit; one was dropped:
-
-- **Confirmed still open (recorded 2026-09-05, FOLLOWUP.md)**: the C
-  emitter writes top-level const definitions AFTER their use sites
-  (`nbody_c.m` uses `solar_mass` ~68 lines before defining it; same shape
-  for `Buffer_int_init` in `pidigits_c.m`). Links only via clang's ObjC-
-  mode implicit-declaration leniency, and identical bytes have been
-  observed flipping between clean compile and hard `use of undeclared
-identifier` errors across runs of the same clang. Fix: hoist top-level
-  const definitions ahead of all functions in the C output.
-
-### 6. Phase-3 leftover duplication candidates (refactor-only, no urgency)
+### 5. Phase-3 leftover duplication candidates (refactor-only, no urgency)
 
 From ASM_PLAN.md phase 3, still unextracted:
 

@@ -183,7 +183,6 @@ export default function build_block_node(
 
 		// Emit forward declarations for top-level primitive constants (e.g.
 		// `const float ln10 = ...`) so function bodies can reference them.
-		// The actual definitions remain after functions in the remaining loop.
 		// Only run at the root level — inner blocks (if/while/for bodies) also
 		// default to with_declarations=true but their locals must not be
 		// forward-declared as globals. Non-primitive `const` declarations are
@@ -196,9 +195,9 @@ export default function build_block_node(
 					if (!decl.func_params && SIMPLE_TYPES.includes(decl.type.name)) {
 						if (decl.type.is_array) {
 							// A global fixed-size array (e.g. `const nums = Array(1, 2, 3)`
-							// lowered to `long nums[3] = {...}`) is defined after the
-							// functions (see the statement loop below). Forward-declare it
-							// as an incomplete array so functions compiled earlier can
+							// lowered to `long nums[3] = {...}`) is defined before the
+							// functions (see the hoist loop below). Forward-declare it
+							// as an incomplete array so other translation units can
 							// subscript it (e.g. `nums.at(0)` → `nums[0]`).
 							status.headers += `extern ${c_type(decl.type.name)} ${c_function_name(
 								decl.name,
@@ -208,6 +207,41 @@ export default function build_block_node(
 						}
 					}
 				}
+			}
+		}
+
+		// Hoist top-level (program-scope AND library-scope) global definitions
+		// ahead of ALL function definitions. Function bodies read these globals,
+		// and C requires the definition to be visible before the use: when the
+		// definitions trailed the functions, every use relied on the `extern`
+		// declarations above (or, before those existed, on compiler leniency —
+		// clang has been observed flipping between accepting and rejecting the
+		// same bytes). The aarch64 backend already gets this ordering for free
+		// via its data section (labels are order-independent; C text is not).
+		// Library globals sit after `main` in the source, so keeping source
+		// order for them would define them after their (only) readers. Run
+		// before the function pass; inner blocks never enter (root-gated) and
+		// non-primitive consts emit nothing (inlined at use sites, see
+		// `inlined_const_names`).
+		if (node.node_type === "root") {
+			for (let index = 0; index < node.statements.length; index++) {
+				const child = node.statements[index];
+				if (child.node_type !== "declare") continue;
+				if (inlined_const_names.has((child as DeclarationNode).name)) continue;
+				if (
+					!should_emit_definition(
+						child,
+						status.emit_mode,
+						status.structs,
+						status.system_struct_names,
+					)
+				)
+					continue;
+				emit_allocations(child, status);
+				// NIR-driven dispatch (canonical-IR stage 2, C backend): the root
+				// statement list has no published emission ctx, so this falls
+				// back to the plain AST walk — same as the tail loop did.
+				emit_stmt_from_nir(child, index, node.statements, status);
 			}
 		}
 
@@ -238,15 +272,12 @@ export default function build_block_node(
 			child.node_type !== "bitset" &&
 			!(child.node_type === "declare" && inlined_const_names.has((child as DeclarationNode).name))
 		) {
-			// Root-scope globals carry linker symbols; route them by origin so a
-			// user global isn't also emitted into the system TU (duplicate
-			// symbol) and vice-versa. Locals inside a function body are emitted
-			// with their enclosing function regardless of mode.
-			if (
-				node.node_type === "root" &&
-				child.node_type === "declare" &&
-				!should_emit_definition(child, status.emit_mode, status.structs, status.system_struct_names)
-			) {
+			// Root-scope globals were hoisted ahead of the function pass above
+			// (C requires the definition before the use); the tail loop only
+			// emits them for a root built without declarations (which never
+			// happens today) and otherwise routes non-declare statements. The
+			// emit_mode gating is applied by the hoist loop.
+			if (node.node_type === "root" && with_declarations && child.node_type === "declare") {
 				continue;
 			}
 			emit_allocations(child, status);
