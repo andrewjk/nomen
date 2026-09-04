@@ -438,6 +438,29 @@ export default function check_function_call(
 				);
 			}
 		}
+		// A `ref` argument must be a mutable LVALUE — a named variable or an
+		// access chain rooted at one (`ref p.f`). Literals (`ref 5`) and
+		// computed expressions (`ref a * 2`) have no caller storage to borrow:
+		// both backends materialized an address for them anyway (aarch64
+		// emitted `adr x0, 5`; C emitted `&(a * 2L)`, an rvalue address —
+		// clang rejects it), producing builds that cannot compile or that
+		// crash. Mutations to a hoisted temporary would also be silently
+		// discarded, so the hoist path the non-ref computed args take is not
+		// an option here.
+		if (func_param.type.is_ref && has_ref_keyword) {
+			const is_name_arg =
+				param.node_type === "value" &&
+				/^[A-Za-z_][A-Za-z0-9_]*$/.test(value_from_value_node(param));
+			const is_access_arg = param.node_type === "access";
+			if (!is_name_arg && !is_access_arg) {
+				const kind = param.node_type === "value" ? "literal" : "computed";
+				add_error(
+					status,
+					`Cannot pass a ${kind} value to ref parameter '${func_param.name}' — a mutable borrow requires a mutable value; assign it to a 'var' first`,
+					param.start,
+				);
+			}
+		}
 		// Deep-const: a const_ref (read-only class reference extracted from a
 		// const source) cannot be forwarded to a `ref` (mutable borrow) or
 		// `mov` (ownership-transferring) parameter — either would let the

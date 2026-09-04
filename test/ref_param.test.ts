@@ -331,3 +331,57 @@ Console.write("\\{fetch(ref v)}")
 		await build_and_check_output(input, "ref_int16_write", "32000");
 	});
 });
+
+describe("ref arg lvalue requirement", () => {
+	// A `ref` argument must be a mutable lvalue — caller storage the callee
+	// can borrow. Literals and computed expressions have no storage: both
+	// backends used to materialize an address for them anyway (aarch64
+	// emitted `adr x0, 5` — caught by the asm validator; C emitted
+	// `&(a * 2L)` / `&5L`, an rvalue address clang rejects).
+	test("literal ref arg is a compile error", () => {
+		const parsed = parse_with_imports(`
+func incr = (ref int v) {
+	v = v + 1
+}
+incr(ref 5)
+`);
+		expect(
+			parsed.errors.some((e) =>
+				e.message.includes("Cannot pass a literal value to ref parameter 'v'"),
+			),
+		).toBe(true);
+	});
+
+	test("computed ref arg is a compile error", () => {
+		const parsed = parse_with_imports(`
+func incr = (ref int v) {
+	v = v + 1
+}
+var a = 5
+var b = 3
+incr(ref a * b)
+`);
+		expect(
+			parsed.errors.some((e) =>
+				e.message.includes("Cannot pass a computed value to ref parameter 'v'"),
+			),
+		).toBe(true);
+	});
+
+	test("field-access ref arg still works", async () => {
+		const input = `
+struct P {
+	var int f
+}
+
+func incr = (ref int v) {
+	v = v + 1
+}
+
+var P p = P(7)
+incr(ref p.f)
+Console.write("\\{p.f}")
+`;
+		await build_and_check_output(input, "ref_field_lvalue", "8");
+	});
+});

@@ -15,21 +15,37 @@
 
 ## Where things stand (snapshot)
 
-Latest receipts per plan (interleaved best-of-N medians, release builds,
-outputs identical; see each plan's RESULT blocks):
+**Fresh receipts 2026-09-05** (interleaved best-of-7 medians, release,
+outputs byte-identical across backends; load avg 8 — arms interleaved, so
+ratios hold):
 
-| bench             | ours vs C `-O2` | status                                             |
-| ----------------- | --------------: | -------------------------------------------------- |
-| nbody 5M          |        ~1.5×    | **at target** (float-bits forwarding was the last) |
-| pidigits n=4000   |        ~1.85×   | 1.5× criterion unmet; structural levers below      |
-| mandelbrot        |        ~1.25×   | last ratio at PLAN_2 tranche C; neutral since      |
-| spectral-norm     |        ~1.8×    | serial denom chain; post-D-tranche accounting      |
-| fannkuch/binarytrees/nsieve | neutral-ish | profile flat, no dominant label             |
+| bench                       |   ours | C `-O2` |       ratio | status                                             |
+| --------------------------- | -----: | ------: | ----------: | -------------------------------------------------- |
+| nbody 5M                    | 338 ms |  218 ms |       1.56× | **at target** (float-bits forwarding was the last) |
+| pidigits n=4000             | 684 ms |  372 ms |       1.84× | 1.5× criterion unmet; structural levers below      |
+| mandelbrot                  |      — |       — |      ~1.25× | last ratio at PLAN_2 tranche C; neutral since      |
+| spectral-norm               |      — |       — |       ~1.8× | serial denom chain; post-D-tranche accounting      |
+| fannkuch/binarytrees/nsieve |      — |       — | neutral-ish | profile flat, no dominant label                    |
+
+Hot-function census from the same run (ours = whole function; clang's
+pidigits functions are unrolled/replicated, so its STATIC totals mislead —
+read its hot loop, not the totals):
+
+| function (ours vs clang) | instrs    | sp      | movx    | mem      |
+| ------------------------ | --------- | ------- | ------- | -------- |
+| nbody `advance`          | 189 vs 59 | 35 vs 0 | 34 vs 3 | 81 vs 15 |
+| nbody `energy`           | 161 vs 46 | 39 vs 0 | 22 vs 3 | 76 vs 8  |
+| pidigits `div_to`        | 112 vs —  | 15 vs — | 52 vs — | 31 vs —  |
+| pidigits `mul_to`        | 36 vs —   | 13 vs — | 11 vs — | 17 vs —  |
+
+The nbody shape is unchanged in kind from PLAN_3's D1/I accounting: clang
+touches the stack **zero** times; our `advance` spends ~116 of 189
+instructions on sp/mov/memory staging around 57 FP ops (clang: 25 of 59).
 
 Success criterion (written in ASM_PLAN_3, still standing): pidigits and
 nbody within **1.5×** of the C `-O2` artifact, **or a written structural
-blocker per remaining multiple**. nbody has met it; pidigits owes either a
-winning tranche or that written accounting.
+blocker per remaining multiple**. nbody is at the line; pidigits owes
+either a winning tranche or that written accounting.
 
 ## Evaluation methodology (consolidated)
 
@@ -40,16 +56,20 @@ Never plan a tranche from intuition. For any `bench/nomen/<name>.nm`:
 1. **Emit both artifacts** (tsx, using the repo's own build; the driver is
    `bench/compile_nomen.ts`):
    - aarch64: `build(parse(join("bench/nomen/<name>.nm", "core"), lib),
-     { arch: "aarch64", audit: true })` → write `code` to `main.s`.
+{ arch: "aarch64", audit: true })` → write `code` to `main.s`.
    - C `-O2`: `build(..., { arch: "c", audit: true })` → write
      `code + companion` to `main.c`, `headers` to `main.h`, then
      `clang -O2 -S -o main-O2.s main.c` (one input file per invocation).
 2. **Extract the hot function** from each text: slice from the function
    label (`^<name>:` ours; `^_<name>:` clang's) to the next function-label
-   anchor (`^main:` ours; `^_[a-z]` clang's). Two traps: cutting at the
+   anchor (`^main:` ours; `^_[a-z]` clang's — for clang files the end
+   anchor MUST be underscore-prefixed only, else `LBB`/`Lloh` locals and
+   the start label itself truncate the slice). Two traps: cutting at the
    first `ret` truncates multi-exit functions (early returns), and clang
-   inlines small callees — if the function vanishes, the hot code moved
-   into its caller; analyze the caller.
+   inlines/unrolls aggressively — if the function vanishes, the hot code
+   moved into its caller (analyze the caller), and for unrolled functions
+   (pidigits limb loops) the STATIC total is meaningless: compare hot-loop
+   bodies, not whole-function totals.
 3. **Census per function body** (skip label/directive/comment lines):
    - total instructions;
    - FP ops (opcode starts with `f`) — the compute floor;
@@ -160,7 +180,7 @@ param-type maps).
 
 Ordered by expected value; each entry names its gate.
 
-### 1. Field-pair SLP pass (nbody) — the D-step-2 conclusion
+### 1. Field-pair SLP pass (nbody) — the D-step-2 conclusion — **GATE PASSED 2026-09-05, GO**
 
 Clang's `advance` win is field-pair SLP within ONE struct body — `(x,y)`,
 `(vx,vy)` as `.2d` lanes, `faddp` horizontal sums, q-load/q-store of
@@ -169,15 +189,46 @@ gathers cost more than they save). It is a different pass class
 (superword-level pattern matching over consecutive statements), on the
 order of the NEON vectorizer itself.
 
-Nomen-specific constraints to receipt-check first:
+**The D2 blocker was wrong — corrected 2026-09-05.** PLAN_3 D2 closed this
+pass because "the Q-form LDR immediate must be ×16, and Nomen's (x,y) sits
+at #8". True for `ldr q` — irrelevant, because the UNALIGNED form
+`ldur q/stur q` (simm9 offset, no ×16 rule) encodes it, and clang's own
+`advance` pairs (x,y) at exactly `ldur q2, [x11, #8]` **on the same
+vt-prefix layout** (the C backend emits the identical 8-byte prefix; all
+field offsets match ours: x@8, y@16, z@24, vx@32, vy@40, vz@48, mass@56).
+No pairs are layout-blocked; the "win shrinks to (vx,vy)" conclusion is
+void.
 
-- The vt-prefix layout shifts pairs: (x,y) sits at #8/#16 — the Q-form LDR
-  immediate needs multiples of 16, so the usable Nomen pairs are
-  **(y,z)@16 and (vx,vy)@32**. Gate: a census showing the instruction-
-  count delta (~35 vs ~55 per body) survives the layout.
-- `fsqrt` stays scalar (clang's does too).
-- nbody is AT ~1.5×; this pass is how it goes further, and the same pass
-  class is what any AoS float kernel needs.
+Gate receipt (2026-09-05 census of the real bodies, same layout both
+sides):
+
+- Clang inner j-iteration: **30 instructions** — `ldur q16, [x12, #-48]`
+  (other body's field pair), `fsub.2d`/`fmul.2d`/`faddp.2d` (two axes of
+  the distance, third scalar), `fsqrt` scalar, then the RMW velocity pair
+  as `ldur q17` + `fmul.2d`×2 + `fadd.2d` + `stur q16` (5 instructions
+  for two axes), scalar third axis, and the j-loop REMAINS a loop.
+- Ours (`.while_3` in `advance`): **~65 instructions** per inner
+  iteration, mapping 1:1 onto the missing transforms:
+  - body_j velocity RMW: 3 axes × 11 instructions (per-axis
+    `mov x0,x26; ldr; str [sp,#-16]!; fmul; fmul; fmov d1,d0; ldr [sp],#16;
+fadd; fmov x0,d0; mov x2,x0; str`) = 33 → pair form is ~11;
+  - distance: 3 dead `mov x0, x26` prefixes (the `.at()` contract
+    marker — provably dead when the address is already pinned) + 5
+    scalar dist² ops → q-load + `fmul.2d` + `faddp.2d` ≈ 5 → ~4;
+  - body_i accumulator (`d13/d14/d15 -= …`): 3×3 → pair ~3 + scalar 3;
+  - d0-protocol fmovs around `fsqrt` (2) → dest-hint territory (landed
+    machinery).
+- Projected inner iteration after SLP: ~30 (parity with clang);
+  whole-function ~189 → ~90–110. The `.while_4` slice (the sun's
+  per-axis 9-instruction pattern ×3) shrinks the same way.
+
+Pass shape (when built): statement-level SLP over the NIR emission path —
+pairs of adjacent same-shaped float ops fed by adjacent field
+loads/stores of one struct → `.2d` forms with `ldur/stur` q access;
+rides the landed address pipeline (tranche A pins) and float dest hints;
+same harness rules as every cursor-dependent pass. NOT an extension of
+the induction-driven loop vectorizer; reductions/`faddp` only where the
+source shape is the two-axis distance sum.
 
 ### 2. Cross-block / cross-iteration value numbering + register coalescing (pidigits)
 
@@ -187,7 +238,7 @@ killed at calls/branches/joins), while clang keeps ~10 live scalars in
 registers across the whole loop body. Components:
 
 - **Receiver-path re-derivation**: `mov x9, x22; add x9, x9, #24; ldr x9,
-  [x9, #8]` twice per D4 iteration — 6 of ~37 lines — is a PATH, not an
+[x9, #8]` twice per D4 iteration — 6 of ~37 lines — is a PATH, not an
   arithmetic chain, so neither the L staging pins nor the M `+`-chain
   hoist can touch it. The K machinery (`buffer_pipeline.ts`, kept default
   OFF) is the designated seam; a comprehensive address-materialization
@@ -238,32 +289,19 @@ model materializes. The written accounting should quote those receipts.
   sibling args the checker does not hoist. Either hoist (checker) or
   align the order (emitters); low priority, but document the choice.
 
-### 5. Recorded bugs to verify-then-fix (source: plan docs; FOLLOWUP.md has been cleaned since some were recorded)
+### 5. Recorded bugs — final tally (audited at HEAD, 2026-09-05)
 
-Status unknown → verify at HEAD before acting on any of these:
+Eight of the nine were already fixed by later work (regression tests exist
+or were added); one was fixed in this audit; one was dropped:
 
-- Two-ref-arg Buffer call marshalling swaps arg0/arg1 for guarded-
-  main-scope calls (ASM_PLAN_2, tranche D session).
-- `promote_loop_locals` misclassifies float PARAMS into the int pool
-  (empty-string type default) — wasted registers, slot-correct values
-  (ASM_PLAN_2, stage 2 debug dump).
-- `for v of <call>()` crashes the C backend when the returned array has
-  no compile-time length (ASM_PLAN.md, C expression seam session).
-- C backend: hoisted `_param_N` temp loses the `&` for `ref` args
-  (ASM_PLAN_2, tranche H).
-- `mov Box?` nullable class-field write through a method SIGTRAPs on
-  aarch64 at baseline (shape isolated; ASM_PLAN_2, field-marshal part 2).
-- Shadowed-local read after its scope diverges between backends
-  (aarch64 `x=10` vs C `x=8`; `stack_offsets` is name-keyed) (ASM_PLAN.md).
-- Split-build link gap for user programs monomorphizing `Buffer<uint32>`
-  (`Buffer_uint32_init` references System-internal `uint32_to_string`
-  not in system.o) (ASM_PLAN.md, NEON tranche 2).
-- C backend assign-expression fallback gap (ASM_PLAN.md, C seam;
-  FOLLOWUP.md no longer lists it — may have been fixed).
-- **Confirmed still open**: `build_declaration_node` builds scalar
-  initializers TWICE (first emission discarded) — wasted compile time and
-  a hazard for any consumed-once emitter state around declares
-  (FOLLOWUP.md; the J tranche's armed-map mis-fire was this bug biting).
+- **Confirmed still open (recorded 2026-09-05, FOLLOWUP.md)**: the C
+  emitter writes top-level const definitions AFTER their use sites
+  (`nbody_c.m` uses `solar_mass` ~68 lines before defining it; same shape
+  for `Buffer_int_init` in `pidigits_c.m`). Links only via clang's ObjC-
+  mode implicit-declaration leniency, and identical bytes have been
+  observed flipping between clean compile and hard `use of undeclared
+identifier` errors across runs of the same clang. Fix: hoist top-level
+  const definitions ahead of all functions in the C output.
 
 ### 6. Phase-3 leftover duplication candidates (refactor-only, no urgency)
 
