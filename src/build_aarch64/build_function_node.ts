@@ -186,6 +186,11 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	const old_moved: Set<string> | undefined = status.moved;
 	(status.moved as Set<string> | undefined) = undefined;
 
+	// Access-staging pins are per-function (prologue patching shifts code
+	// positions at function exit — ASM_PLAN_3 tranche L).
+	status.access_pins = undefined;
+	status.forwarded_param_inits = undefined;
+
 	const param_regs = ["x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7"];
 
 	const old_return_label = status.function_return_label;

@@ -21,6 +21,7 @@ import ReturnNode from "../nodes/ReturnNode.ts";
 import SwitchNode from "../nodes/SwitchNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import WhileLoopNode from "../nodes/WhileLoopNode.ts";
+import { note_dispatched_statement, pins_taint } from "./access_staging.ts";
 import build_assignment_node from "./build_assignment_node.ts";
 import build_async_block_node from "./build_async_block_node.ts";
 import build_block_node from "./build_block_node.ts";
@@ -100,8 +101,27 @@ export function set_nir_emission_enabled(enabled: boolean): void {
  * emitted NIR-natively; delegate to the AST walk otherwise. Returns the
  * number of statements consumed — normally 1; the cset fuse (tranche B)
  * consumes the declare AND its following if and returns 2.
+ *
+ * The exported wrapper also notes the dispatched span for the
+ * access-staging pin window (ASM_PLAN_3 tranche L): plain declares/assigns
+ * record their written names, fused cset/carry-fold spans are pure flag
+ * materialization, everything else taints.
  */
 export function emit_stmt_from_nir(
+	child: BaseNode,
+	index: number,
+	statements: readonly BaseNode[],
+	status: BuildStatus,
+): number {
+	const ctx = status.nir_emit_ctx;
+	const owned = !!(ctx && nir_emission_on && ctx.ast === statements);
+	const kind = owned ? ctx!.stmts[index]!.kind : "";
+	const consumed = emit_stmt_dispatch(child, index, statements, status);
+	note_dispatched_statement(kind, statements.slice(index, index + consumed), status);
+	return consumed;
+}
+
+function emit_stmt_dispatch(
 	child: BaseNode,
 	index: number,
 	statements: readonly BaseNode[],
@@ -744,6 +764,10 @@ export function build_block_with_cursor(
 				forward_defs: old_ctx?.forward_defs,
 			}
 		: undefined;
+	// Access-staging pins never cross INTO a nested block build (its
+	// condition/bracket emissions sit between the statements) — the
+	// label/branch fences catch it textually; this keeps the state scoped.
+	pins_taint(status);
 	build_block_node(block, status);
 	status.nir_emit_ctx = old_ctx;
 }
@@ -778,6 +802,11 @@ export function build_body_with_cursor(func: FunctionNode, status: BuildStatus):
 		use_sites: prepared.use_sites,
 		forward_defs: prepared.forward_defs,
 	};
+	// A function-like body is a fresh emission scope: prologue patching and
+	// inline label rewrites shift absolute code positions — pins from the
+	// enclosing scope must not survive into it (ASM_PLAN_3 tranche L).
+	pins_taint(status);
+	status.forwarded_param_inits = undefined;
 	build_block_node(func, status);
 	status.nir_emit_ctx = old_ctx;
 }

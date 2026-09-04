@@ -93,8 +93,14 @@ export default function build_block_node(node: BlockNode, status: BuildStatus) {
 			// back to the plain AST walk otherwise. Returns the number of
 			// AST statements consumed — the cset fuse (tranche B) consumes a
 			// declare AND its following if in one emission.
+			//
+			// The forwarded-param map is per-statement (emit_allocations resets
+			// it above): a nested statement list built inside this statement
+			// repopulates it, so restore the enclosing statement's map after.
+			const prev_forwarded = status.forwarded_param_inits;
 			const consumed = emit_stmt_from_nir(child, index, node.statements, status);
 			index += consumed - 1;
+			status.forwarded_param_inits = prev_forwarded;
 		}
 	}
 

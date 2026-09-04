@@ -7,7 +7,7 @@
 >
 > Motivation: pidigits and nbody remain the two worst gaps vs the C backend's
 > `clang -O2` artifact. Receipts below measured 2026-09-02.
-> **A, B, C are DONE** (C: enablement declined + the mandelbrot unroll corruption fixed); **D step 1 is DONE** (nbody −44%, ~1.7× vs C) and **D step 2 is CLOSED** (analyzed: j-pair vectorization unprofitable for AoS; clang's win is field-pair SLP — a future pass class). **E is DONE as a survey** (the div128 boundary does not dominate post-B; neutral, reverted). **F is DONE as a narrow win + survey** (stage-4 straight-line store-to-load forwarding + write-only cset elision: real capture on the single-limb shapes, bench-neutral — the profile has moved to multi-read temporaries; see the F section for the structural accounting). **G is DONE** (promoted-destination statement lowering: cset dest hints + the never-firing compound-assign fast path fixed — pidigits −8%, fannkuch +2-4%). **H is DONE as cap lift + CLOSED survey** (callee pool to the full x23–x28 — clean, neutral; the loop-invariant re-baring half was reverted with a forensic finding: the inline-expansion seed drops caller claims — mandelbrot hang at n=16, see the section). **I is DONE** (float-bits forwarding — nbody −10%, at the 1.5× target). **J is DONE as a narrow win + survey** (flag-form carry lowering: `adds`/`cinc` folds in the Knuth-D loops — pidigits −4.8%; the loops are now accessor-address bound, see the J survey). **K is DONE as a survey** (inline Buffer address pipeline — correct but neutral, reverted to OFF; the remaining gap is the per-statement `x0` staging model, see the K survey). All measured receipts in-section.
+> **A, B, C are DONE** (C: enablement declined + the mandelbrot unroll corruption fixed); **D step 1 is DONE** (nbody −44%, ~1.7× vs C) and **D step 2 is CLOSED** (analyzed: j-pair vectorization unprofitable for AoS; clang's win is field-pair SLP — a future pass class). **E is DONE as a survey** (the div128 boundary does not dominate post-B; neutral, reverted). **F is DONE as a narrow win + survey** (stage-4 straight-line store-to-load forwarding + write-only cset elision: real capture on the single-limb shapes, bench-neutral — the profile has moved to multi-read temporaries; see the F section for the structural accounting). **G is DONE** (promoted-destination statement lowering: cset dest hints + the never-firing compound-assign fast path fixed — pidigits −8%, fannkuch +2-4%). **H is DONE as cap lift + CLOSED survey** (callee pool to the full x23–x28 — clean, neutral; the loop-invariant re-baring half was reverted with a forensic finding: the inline-expansion seed drops caller claims — mandelbrot hang at n=16, see the section). **I is DONE** (float-bits forwarding — nbody −10%, at the 1.5× target). **J is DONE as a narrow win + survey** (flag-form carry lowering: `adds`/`cinc` folds in the Knuth-D loops — pidigits −4.8%; the loops are now accessor-address bound, see the J survey). **K is DONE as a survey** (inline Buffer address pipeline — correct but neutral, reverted to OFF; the remaining gap is the per-statement `x0` staging model, see the K survey). **L is DONE** (access staging bypass — the per-statement `x0` staging model itself: `_param_N` index forwarding + dest-directed `+`-chain builds + x10/x11 index/data pins across verified straight-line windows — pidigits −7.4%, now ~1.85× vs C; matrix neutral, four benches byte-identical). All measured receipts in-section.
 
 ## Where the gap actually is (receipts, 2026-09-02)
 
@@ -859,6 +859,121 @@ ordering still sequence through `x0`/`x1`/`x2` with slot spills; collapsing
 that needs a fuller value-numbering / register-coalescing pass, one order
 larger than this tranche. That, plus nbody's field-pair SLP (D step 2),
 are the structural blockers for the 1.5× criterion.
+
+## Tranche L (DONE): access staging bypass — the per-statement x0 staging model
+
+Landed 2026-09-04 (`src/build_aarch64/access_staging.ts`, kill-switch
+`set_access_staging_enabled`, default ON; `emit_allocations` populates
+`status.forwarded_param_inits`, `build_access_node`'s inline Buffer load/store
+paths resolve through `staged_index_reg`/`staged_data_reg`, `emit_nir`'s
+dispatch is wrapped with `note_dispatched_statement`, OFF = byte-identical).
+
+The K survey named the lever: "the `wd_off + j + si2` index sum and the
+store's value/index ordering still sequence through `x0`/`x1`/`x2` with slot
+spills". Forensics (ALLOC stack traces + accessor code-tail probes) pinned
+every tax to a concrete emitter:
+
+1. **The checker hoists every non-value call argument into a `_param_N`
+   const** (check_function_call.ts:974 — `node.params.splice`), so each
+   computed index materializes as a declare: the tree stages through
+   `add x0, x1, x2; mov x1, x0`, then `str x0, [x29, #K]` into the temp's
+   frame slot, and the accessor reads it back (`ldr x1, [x29, #K]` — the
+   phase-2 peephole deletes the load only when a register already holds the
+   value; the dead store survives). Per D4-subtract iteration: three index
+   sums (the `wd_off + j + si2` sum computed TWICE), two dead stores, one
+   live slot round-trip.
+2. **The receiver's data pointer re-derives at every access** (`mov x9,
+x22; add x9, x9, #24; ldr x9, [x9, #8]` ×3): `buffer_data_cache` is
+   cleared at every loop entry and its callee-saved pool is exhausted in
+   div_to (the K receipt).
+3. The store's value staged `mov x0, x15; mov x2, x0` — two moves for one.
+
+The tranche, three cooperating pieces inside a verified straight-line
+window:
+
+- **Param forwarding**: a `_param_N` hoisted temp (scalar non-float type,
+  pure `+ - * << >> & | ^` tree over plain names/literals, read exactly
+  once IN THE OWNING STATEMENT at a DIRECT inline-Buffer-accessor argument)
+  is not emitted at all — the accessor re-builds its tree at the read. The
+  read-site gate exists because the first attempt forwarded `grow_int`'s
+  int arg (`BigInt_ensure`'s `_param_5`): the declare was skipped but the
+  non-accessor read kept `adr x0, _param_5` against a label that no longer
+  existed (assembler error — the direct-arg gate is the fix).
+- **Dest-directed chains**: a pure `+` chain of names/literals builds
+  first-leaf→dest then `add dest, dest, x3` per term (immediates fold
+  directly) — no x0 staging, no slot.
+- **Pins**: the first access builds its chain straight into x10/x11 and the
+  data pointer is copied there; later accesses in the window reuse them —
+  the D4 store becomes `mov x2, x15; str x2, [x11, x10, lsl #3]` with zero
+  re-derivation. The existing asm peephole composes: seeing the pin fill it
+  rewrites later slot loads of the same index into `mov`s (the `.while_26`
+  receipt).
+
+Soundness is three fences, all conservative (the inlined-ref-arg call that
+writes a scalar without any `bl` in the text is the shape they jointly
+exclude):
+
+1. **Structural** (per statement, in emit_nir's dispatch wrapper): plain
+   declares/assigns note their written names; a consumed cset/carry-fold
+   span (consumed > 1 off a declare — the D4 body's `borrow1/borrow2` pairs)
+   is pure flag materialization and notes the span's written names;
+   everything else — eval, if, while, for, switch/match, return, async,
+   fallback — taints. A pin dies when a name it reads is written after its
+   fill. Function and function-like bodies taint at entry (prologue patching
+   and inline label rewrites shift absolute code positions).
+2. **Textual** (per consult): the emitted text between a pin's fill and the
+   consult must contain no label/directive, branch, call, or return, and
+   must not define the pin register outside a memory operand (reads inside
+   `[...]` are the pin's own uses). Kills pins at every join, loop back-edge
+   (the wrap-around window always contains the back-branch), call, and
+   prologue.
+3. **Register exclusivity**: pins from {x10, x11} minus every claim map
+   (promotions, both caches, param regs, ext-pool claims, at-address pins).
+   Two extra gates with receipts behind them: **int-tree depth** — x10/x11
+   are also the tranche-F int-tree temp pool ("live only within a single
+   statement"), and `build_int_tree` accepts inline Buffer accessors as
+   leaves, so fills are disabled while a tree is mid-build (a fill would
+   clobber a live temp; the surviving pins still die textually when a later
+   tree writes the reg — the basic-shape test's store rebuilds its index
+   after `total = total + a + b`'s tree takes x10); **index-constant
+   unrolling** — copies share an AST key while folding different constants
+   (the tranche-C receipt class), so pinning disables wholesale when
+   `induction_const` is non-empty.
+
+Census (instruction lines per loop, pidigits; off = kill-switch arm =
+byte-identical to pre-tranche):
+
+| loop                           | before | after |
+| ------------------------------ | -----: | ----: |
+| D4 subtract (.while_25)        |     61 |    38 |
+| D5 carry propagate (.while_27) |     40 |    29 |
+| D5 add-back (.while_26)        |     68 |    59 |
+| D3 correction (.while_23)      |     45 |    39 |
+| D4 multiply (.while_24)        |     43 |    40 |
+| normalize (.while_20)          |     64 |    56 |
+| whole Knuth-D section (22-27)  |    295 |   240 |
+
+**RESULT (interleaved best-of-15, load avg 4-5, outputs byte-identical vs
+the C backend at n=1000 and n=4000):** pidigits n=4000 **0.68 → 0.63 s
+(−7.4%)** — now ~1.85× vs C `-O2` (0.34 s; was ~2.0× post-J). Bench matrix:
+nbody, fannkuch, mandelbrot, binarytrees assemble **byte-identical**;
+spectral-norm differs only in index-REGISTER CHOICE (x1→x10 for the same
+value, −2 lines) with identical outputs at n=100/1500 and neutral timing
+(0.69 s both arms). Full suite green (280 files / 2744 tests) with
+`test/access_staging.test.ts` (4 tests: pin/data-reuse shape, kill-switch
+staging restoration, call-taint rebuild after the inline label, behavioral
+runs on both backends) — the shape test verified to fail with the default
+off.
+
+Remaining gap (honest accounting): the store sites still pay one index
+rebuild where an int tree or a call taints the window (correct but lossy —
+the D5 add-back loop), the loop-update block keeps its two dead
+`add x1, x29, #N` address computations, and the window is statement-list
+scoped — cross-block or cross-iteration reuse (clang keeps ~10 scalars
+through the whole loop body) needs the fuller value-numbering /
+register-coalescing pass the K survey named, one order larger than this
+tranche. pidigits stands at ~1.85× vs the 1.5× criterion; nbody holds at
+~1.5×.
 
 ## Method (unchanged from ASM_PLAN_2)
 

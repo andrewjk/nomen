@@ -334,6 +334,27 @@ export function build_int_tree(
 	status: BuildStatus,
 ): string {
 	// Returns the register holding the node's value (usually `dest`).
+	// The depth marker fences cross-statement access-staging pins (tranche
+	// L): while a tree is mid-build its x10/x11 temps are LIVE, so an
+	// inline-Buffer-accessor leaf must not fill a pin register.
+	int_tree_depth++;
+	try {
+		return build_int_tree_inner(node, dest, next, status);
+	} finally {
+		int_tree_depth--;
+	}
+}
+
+/** Non-negative while an int expression tree is mid-build (its x10/x11
+ * temps are live). Access-staging fills are gated on this being zero. */
+export let int_tree_depth = 0;
+
+function build_int_tree_inner(
+	node: BaseNode,
+	dest: string,
+	next: { v: number },
+	status: BuildStatus,
+): string {
 	let n = node;
 	while (n.node_type === "grouped") {
 		n = (n as unknown as { value?: BaseNode }).value as BaseNode;

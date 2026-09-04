@@ -558,6 +558,32 @@ export default interface BuildStatus {
 		source_keys: Map<string, string[]>;
 	};
 	/**
+	 * aarch64-only (ASM_PLAN_3 tranche L): cross-statement access-staging
+	 * pins. Straight-line windows of plain declares/assigns may keep a
+	 * Buffer-accessor index sum and the receiver's data pointer in x10/x11
+	 * (never homes, never call-protocol registers). `entries` maps a
+	 * canonical key (index-sum terms / receiver path) to its pin — the code
+	 * length at fill time and the written-names snapshot fence every
+	 * consult (see access_staging.ts). `written` accumulates the names the
+	 * window's statements have assigned; a pin dies when a name it reads is
+	 * written after its fill. Undefined = no live window (tainted).
+	 */
+	access_pins?: {
+		entries: Map<
+			string,
+			{ key: string; reg: string; len: number; names: string[]; snap: Set<string> }
+		>;
+		written: Set<string>;
+	};
+	/**
+	 * aarch64-only (ASM_PLAN_3 tranche L): `_param_N` hoisted argument
+	 * temps whose declaration is skipped and whose initializer tree is
+	 * re-emitted at the single read (the accessor paths consult this).
+	 * Repopulated per statement by emit_allocations; restored by
+	 * build_block_node around each statement.
+	 */
+	forwarded_param_inits?: Map<string, BaseNode>;
+	/**
 	 * Set by build_float_operand before building a float-typed child expression.
 	 * When a float binary operation sees this flag at its result point, it skips
 	 * the `fmov x0, d0` (leaving the result in d0) and clears the flag. This

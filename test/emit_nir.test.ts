@@ -3,6 +3,7 @@ import fs from "node:fs";
 import { expect, test } from "vite-plus/test";
 
 import build from "../src/build";
+import { set_access_staging_enabled } from "../src/build_aarch64/access_staging";
 import { set_buffer_pipeline_enabled } from "../src/build_aarch64/buffer_pipeline";
 import { set_cset_lowering_enabled } from "../src/build_aarch64/cset_lower";
 import { set_nir_emission_enabled } from "../src/build_aarch64/emit_nir";
@@ -55,6 +56,10 @@ function expect_byte_identical(source: string, raw = false): void {
 	// statements through the cursor — same treatment as the cset fuse.
 	set_flag_form_enabled(false);
 	set_buffer_pipeline_enabled(false);
+	// Access staging (ASM_PLAN_3 tranche L) is window-state-dependent: a
+	// pin filled by an earlier statement can never reproduce in a
+	// delegated single-statement rebuild — same treatment as the fuses.
+	set_access_staging_enabled(false);
 	const baseline = compile_aarch64(source, raw);
 	set_nir_emission_enabled(true);
 	try {
@@ -69,6 +74,7 @@ function expect_byte_identical(source: string, raw = false): void {
 		set_forwarding_enabled(true);
 		set_flag_form_enabled(true);
 		set_buffer_pipeline_enabled(true);
+		set_access_staging_enabled(true);
 	}
 }
 
@@ -812,6 +818,7 @@ test("whole benchmark corpus is byte-identical through NIR emission", () => {
 		set_forwarding_enabled(false);
 		set_flag_form_enabled(false);
 		set_buffer_pipeline_enabled(false);
+		set_access_staging_enabled(false);
 		const baseline = compile();
 		set_nir_emission_enabled(true);
 		set_neon_vectorization_enabled(false);
@@ -821,6 +828,7 @@ test("whole benchmark corpus is byte-identical through NIR emission", () => {
 		set_forwarding_enabled(false);
 		set_flag_form_enabled(false);
 		set_buffer_pipeline_enabled(false);
+		set_access_staging_enabled(false);
 		try {
 			expect(compile(), file).toEqual(baseline);
 		} finally {
@@ -832,6 +840,7 @@ test("whole benchmark corpus is byte-identical through NIR emission", () => {
 			set_forwarding_enabled(true);
 			set_flag_form_enabled(true);
 			set_buffer_pipeline_enabled(true);
+			set_access_staging_enabled(true);
 		}
 	}
 });

@@ -14,6 +14,7 @@ import RangeNode from "../../nodes/RangeNode.ts";
 import ReturnNode from "../../nodes/ReturnNode.ts";
 import SwitchNode from "../../nodes/SwitchNode.ts";
 import WhileLoopNode from "../../nodes/WhileLoopNode.ts";
+import { forwardable_hoisted_param } from "../access_staging.ts";
 import build_node from "../build_node.ts";
 
 /**
@@ -32,9 +33,24 @@ import build_node from "../build_node.ts";
 export default function emit_allocations(node: BaseNode, status: BuildStatus) {
 	if (!status.emitted_allocations) status.emitted_allocations = new Set();
 	const allocations = collect_allocations(node);
+	// Access-staging forwarding (ASM_PLAN_3 tranche L): a `_param_N` hoisted
+	// temp with a pure scalar initializer is not emitted at all — the
+	// accessor paths re-build its tree at the single read, so the index sum
+	// never round-trips a frame slot. The map is ALWAYS reset here so a
+	// stale entry can never outlive its statement (build_block_node
+	// restores the enclosing statement's map afterwards).
+	const forwarded = new Map<string, BaseNode>();
+	if (allocations.length) {
+		for (const alloc of allocations) {
+			const tree = forwardable_hoisted_param(alloc, node);
+			if (tree) forwarded.set((alloc as DeclarationNode).name, tree);
+		}
+	}
+	status.forwarded_param_inits = forwarded;
 	for (const alloc of allocations) {
 		if (status.emitted_allocations.has(alloc)) continue;
 		status.emitted_allocations.add(alloc);
+		if (forwarded.has((alloc as DeclarationNode).name)) continue;
 		build_node(alloc, status, true);
 	}
 }

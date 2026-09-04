@@ -22,6 +22,12 @@ import OperationNode from "../nodes/OperationNode.ts";
 import type StructNode from "../nodes/StructNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
+import {
+	forwarded_param_tree,
+	staged_data_reg,
+	staged_index_reg,
+	unwrap_noop_int_cast,
+} from "./access_staging.ts";
 import { array_licm_enabled } from "./array_licm.ts";
 import build_inline_method, { naked_inline_skips_self } from "./build_inline_method.ts";
 import build_node from "./build_node.ts";
@@ -2046,12 +2052,20 @@ function build_access_method(
 						}
 					}
 				}
+				// Access-staging (ASM_PLAN_3 tranche L): the index resolves
+				// through the pin window — a previously pinned sum is reused in
+				// place, otherwise the (possibly forwarded) chain builds
+				// dest-directed into x1 or a fresh pin. The data pointer takes
+				// the same window (a live pin, the existing cache, or a fresh
+				// derivation copied to a pin).
+				let load_index_reg = "x1";
 				if (!hoisted) {
 					if (access_func.params.length > 0) {
-						build_operand(access_func.params[0], "x1", status);
-						if (!status.code.endsWith("\n")) status.code += "\n";
+						load_index_reg = staged_index_reg(access_func.params[0], status);
 					}
-					data_reg = get_buffer_data_ptr(node.target, status);
+					data_reg = staged_data_reg(node.target, buffer_cache_key(node.target), status, () =>
+						get_buffer_data_ptr(node.target, status),
+					);
 				} else if (!data_reg) {
 					data_reg = get_buffer_data_ptr(node.target, status);
 				}
@@ -2068,20 +2082,26 @@ function build_access_method(
 					// produce `nan`, which was the pre-existing spectral-norm bug.
 					const caller_wants_d0 = status.float_result_in_d0 ?? false;
 					status.float_result_in_d0 = false;
-					status.code += `ldr d0, [${data_reg}, x1, lsl #${shift}]\n`;
+					status.code += `ldr d0, [${data_reg}, ${load_index_reg}, lsl #${shift}]\n`;
 					if (!caller_wants_d0) {
 						status.code += `fmov x0, d0\n`;
 					}
 				} else if (elem_bytes === 8) {
-					status.code += `ldr x0, [${data_reg}, x1, lsl #3]\n`;
+					status.code += `ldr x0, [${data_reg}, ${load_index_reg}, lsl #3]\n`;
 				} else {
-					status.code += `ldr w0, [${data_reg}, x1, lsl #2]\n`;
+					status.code += `ldr w0, [${data_reg}, ${load_index_reg}, lsl #2]\n`;
 				}
 			} else {
 				// Store: evaluate value (→x2), index (→x1) — value first so a
 				// complex index eval can't clobber it, then no spill needed
-				// unless both are complex.
-				build_operand(access_func.params[1], "x2", status);
+				// unless both are complex. Access staging (ASM_PLAN_3 tranche L)
+				// forwards a `_param_N` value temp's tree at the read — a no-op
+				// int cast unwraps so a promoted source moves straight to x2.
+				const value_forwarded = forwarded_param_tree(access_func.params[1], status);
+				const value_node = value_forwarded
+					? unwrap_noop_int_cast(value_forwarded)
+					: access_func.params[1];
+				build_operand(value_node, "x2", status);
 				if (!status.code.endsWith("\n")) status.code += "\n";
 				let storeHoisted = false;
 				let storeDataReg: string | null = null;
@@ -2172,23 +2192,30 @@ function build_access_method(
 						}
 					}
 				}
+				let store_index_reg = "x1";
 				if (!storeHoisted) {
-					build_operand(access_func.params[0], "x1", status);
-					if (!status.code.endsWith("\n")) status.code += "\n";
+					store_index_reg = staged_index_reg(access_func.params[0], status);
 				}
-				// Get data pointer (cached or freshly loaded)
+				// Get data pointer (cached, pinned, or freshly loaded)
 				const data_reg =
-					storeHoisted && storeDataReg ? storeDataReg : get_buffer_data_ptr(node.target, status);
+					storeHoisted && storeDataReg
+						? storeDataReg
+						: staged_data_reg(
+								node.target,
+								storeHoisted ? null : buffer_cache_key(node.target),
+								status,
+								() => get_buffer_data_ptr(node.target, status),
+							);
 				// Strided store
 				if (method === "store_or_int") {
 					if (elem_bytes === 8) {
-						status.code += `ldr x0, [${data_reg}, x1, lsl #3]\n`;
+						status.code += `ldr x0, [${data_reg}, ${store_index_reg}, lsl #3]\n`;
 						status.code += `orr x2, x0, x2\n`;
-						status.code += `str x2, [${data_reg}, x1, lsl #3]\n`;
+						status.code += `str x2, [${data_reg}, ${store_index_reg}, lsl #3]\n`;
 					} else {
-						status.code += `ldr w0, [${data_reg}, x1, lsl #2]\n`;
+						status.code += `ldr w0, [${data_reg}, ${store_index_reg}, lsl #2]\n`;
 						status.code += `orr w2, w0, w2\n`;
-						status.code += `str w2, [${data_reg}, x1, lsl #2]\n`;
+						status.code += `str w2, [${data_reg}, ${store_index_reg}, lsl #2]\n`;
 					}
 				} else if (is_float) {
 					// The value was built via build_node and moved to x2 as a raw
@@ -2196,11 +2223,11 @@ function build_access_method(
 					// NOT d0, which holds whatever stale float a prior op left
 					// behind. (Pre-existing latent bug masked by d0 usually
 					// happening to still hold the right value.)
-					status.code += `str x2, [${data_reg}, x1, lsl #${shift}]\n`;
+					status.code += `str x2, [${data_reg}, ${store_index_reg}, lsl #${shift}]\n`;
 				} else if (elem_bytes === 8) {
-					status.code += `str x2, [${data_reg}, x1, lsl #3]\n`;
+					status.code += `str x2, [${data_reg}, ${store_index_reg}, lsl #3]\n`;
 				} else {
-					status.code += `str w2, [${data_reg}, x1, lsl #2]\n`;
+					status.code += `str w2, [${data_reg}, ${store_index_reg}, lsl #2]\n`;
 				}
 			}
 			return;
