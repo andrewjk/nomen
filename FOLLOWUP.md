@@ -196,7 +196,7 @@ if it keeps biting.
   callee-saved registers (x19–x28, sp) or stack slots — x0–x18 are
   caller-saved and clobbered by the callee.
 
-## NIR traffic deliberately does not count flow-arm / spawn-arg / nested-type reads
+## NIR traffic deliberately does not count flow-arm / spawn-arg / nested-type reads — FLIPPED (2026-09-05)
 
 Landed with the fallback-retirement tranche (phase 4 canonical IR stage 2).
 `from_ast` is now TOTAL: value-position `if`/`switch`/`match` lower to the
@@ -205,20 +205,14 @@ and nested type declarations to `opaque` — so every function publishes the
 emission ctx and the whole-function AST fallback is gone (residual unknown
 kinds are a tripwire throw).
 
-For PROMOTION INPUTS, though, these keep their pre-tranche (barrier)
-behavior: `traffic.ts` deliberately does NOT walk `flow` arms, `spawn`
-arguments, or nested type-declaration bodies. Those shapes used to lower to
-`other`/`opaque` barriers, and `plan_function_promotions`' inputs must stay
-byte-stable (the same parity rule as assignment swap exprs). Affected
-functions: the value-match cluster in `core/System/Controls/Container.nm`
-(`length_kind`/`length_val` and friends) plus various concurrency/GUI tests —
-none of them benchmark-hot.
-
-When flipping traffic to count them (measure before/after per
-ASM_PLAN discipline): walk the flow arms + spawn call facts like `cfg.ts`
-already does (its folding is sound for liveness — no emission consumer). The
-whitelisted pins live in `test/nir.test.ts` ("traffic deliberately does not
-count flow-arm or spawn-arg reads").
+**RESOLVED by the ASM_PLAN_4 item-4 traffic flip** (commit
+"Perf: count flow-arm and spawn-arg reads"): `traffic.ts` now walks the
+flow scrutinee/arms and spawn call (the parity pin in `test/nir.test.ts`
+was flipped to pin the NEW behavior — `q` reads = 1). Measured per the
+discipline: nbody/spectral-norm output byte-identical to pre-flip (no
+flow/spawn in their hot paths), pidigits/binarytrees timings unchanged,
+full suite green. Nested type-declaration bodies remain `opaque`
+(non-executable declarations — nothing to count).
 
 ## `int-cast + float` add emits `scvtf d0, d0` — FIXED (validator table gap)
 
