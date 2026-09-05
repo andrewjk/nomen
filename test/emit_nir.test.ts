@@ -10,6 +10,7 @@ import { set_nir_emission_enabled } from "../src/build_aarch64/emit_nir";
 import { set_flag_form_enabled } from "../src/build_aarch64/flag_form";
 import { set_forwarding_enabled } from "../src/build_aarch64/forward";
 import { set_neon_vectorization_enabled } from "../src/build_aarch64/neon_emit";
+import { set_slp_pair_enabled } from "../src/build_aarch64/slp_pair";
 import { set_loop_unrolling_enabled } from "../src/build_aarch64/unroll";
 import { set_nir_site_promotion_enabled } from "../src/build_aarch64/utils/nir_regalloc";
 import { set_value_numbering_enabled } from "../src/build_aarch64/value_number";
@@ -65,6 +66,10 @@ function expect_byte_identical(source: string, raw = false): void {
 	// AND the statement lists the delegated walk builds from — the two arms
 	// could never agree — same treatment as the fuses.
 	set_value_numbering_enabled(false);
+	// Field-pair SLP (ASM_PLAN_4) consumes adjacent statement pairs and
+	// plans lane pairs in the allocators — cursor-dependent, same
+	// treatment as the fuses.
+	set_slp_pair_enabled(false);
 	const baseline = compile_aarch64(source, raw);
 	set_nir_emission_enabled(true);
 	try {
@@ -81,6 +86,7 @@ function expect_byte_identical(source: string, raw = false): void {
 		set_buffer_pipeline_enabled(true);
 		set_access_staging_enabled(true);
 		set_value_numbering_enabled(true);
+		set_slp_pair_enabled(true);
 	}
 }
 
@@ -826,6 +832,7 @@ test("whole benchmark corpus is byte-identical through NIR emission", () => {
 		set_buffer_pipeline_enabled(false);
 		set_access_staging_enabled(false);
 		set_value_numbering_enabled(false);
+		set_slp_pair_enabled(false);
 		const baseline = compile();
 		set_nir_emission_enabled(true);
 		set_neon_vectorization_enabled(false);
@@ -837,6 +844,7 @@ test("whole benchmark corpus is byte-identical through NIR emission", () => {
 		set_buffer_pipeline_enabled(false);
 		set_access_staging_enabled(false);
 		set_value_numbering_enabled(false);
+		set_slp_pair_enabled(false);
 		try {
 			expect(compile(), file).toEqual(baseline);
 		} finally {
@@ -850,6 +858,7 @@ test("whole benchmark corpus is byte-identical through NIR emission", () => {
 			set_buffer_pipeline_enabled(true);
 			set_access_staging_enabled(true);
 			set_value_numbering_enabled(true);
+			set_slp_pair_enabled(true);
 		}
 	}
 });

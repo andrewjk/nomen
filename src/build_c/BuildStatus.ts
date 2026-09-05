@@ -576,6 +576,22 @@ export default interface BuildStatus {
 		written: Set<string>;
 	};
 	/**
+	 * aarch64-only (ASM_PLAN_4 field-pair SLP): name → partner map for the
+	 * adjacent-statement float pairs the loop-promotion planner allocated
+	 * into LANE-PAIRED registers — `a` in dN (lane 0, scalar-visible) and
+	 * `b` in vN.d[1] (the unnamed high lane; b is deliberately NOT
+	 * register-promoted, its slot stays synced by the pair fuses). See
+	 * slp_pair.ts for the soundness gates.
+	 */
+	slp_pair_hints?: Map<string, string>;
+	/**
+	 * aarch64-only (ASM_PLAN_4 field-pair SLP): v-registers hosting live
+	 * pairs (vN whose high lane is b) — the float-tree temp allocator
+	 * (d16+) must skip their low halves: a scalar write to dM ZEROES the
+	 * upper half of vM, which would silently destroy b.
+	 */
+	slp_pair_vregs?: Set<string>;
+	/**
 	 * aarch64-only (ASM_PLAN_3 tranche L): `_param_N` hoisted argument
 	 * temps whose declaration is skipped and whose initializer tree is
 	 * re-emitted at the single read (the accessor paths consult this).

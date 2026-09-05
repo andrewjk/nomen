@@ -54,6 +54,12 @@ export default function build_while_loop_node(
 	// this loop's body build (the declare sites consume it) and is restored
 	// after so a later declare of the same name can't alias this loop's slot.
 	const saved_preallocated = status.preallocated_decl_slots;
+	// Field-pair SLP state (ASM_PLAN_4): promotion stashes this loop's
+	// planned lane pairs + reserved v-registers; visible to the body
+	// (including nested loops) and restored at exit, like the register
+	// claims.
+	const saved_slp_hints = status.slp_pair_hints;
+	const saved_slp_vregs = status.slp_pair_vregs;
 	const saved_buffer_cache = status.buffer_data_cache;
 	status.buffer_data_cache = undefined;
 	// Fixed-array pointer cache (ASM_PLAN_3 tranche A): the induction may
@@ -98,6 +104,12 @@ export default function build_while_loop_node(
 				{ call_free, int_ext: call_free && !vector },
 			),
 		);
+		// Field-pair SLP (ASM_PLAN_4): a pair hosting v8 (the NEON
+		// accumulator) makes the vector plan unsafe for this loop — drop
+		// it and emit the scalar loop.
+		if (vector && status.slp_pair_vregs?.has("v8")) {
+			vector = null;
+		}
 	}
 
 	let pushed_labels = false;
@@ -236,6 +248,8 @@ export default function build_while_loop_node(
 		status.register_allocations = undefined;
 	}
 	status.preallocated_decl_slots = saved_preallocated;
+	status.slp_pair_hints = saved_slp_hints;
+	status.slp_pair_vregs = saved_slp_vregs;
 
 	status.buffer_data_cache = saved_buffer_cache;
 	status.array_ptr_cache = saved_array_cache;

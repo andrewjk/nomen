@@ -21,6 +21,7 @@ import { parse_raw_directives } from "../raw_directives.ts";
 import { emit_address_of, emit_direct_field_load } from "./build_access_node.ts";
 import { get_source_address } from "./build_assignment_node.ts";
 import build_node from "./build_node.ts";
+import { slp_pair_enabled } from "./slp_pair.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free } from "./utils/audit.ts";
 import { allocate_stack_space, emit_var_address, emit_var_load } from "./utils/stack_var.ts";
@@ -221,6 +222,21 @@ export function float_tree_ok(node: BaseNode, budget: { n: number }): boolean {
 	return true;
 }
 
+/**
+ * Next float-tree temp number (d16+), skipping v-registers that host a
+ * live field-pair SLP lane (a scalar write to dM zeroes vM's upper half
+ * — see slp_pair.ts). Pairs consume budget at the float_tree_ok gates
+ * (call sites subtract the reserved count), so the skip never runs past
+ * the pool for a tree that passed its budget check.
+ */
+function tree_temp(next: { v: number }, status: BuildStatus): number {
+	let idx = FLOAT_TREE_FIRST + next.v++;
+	while (idx <= 31 && status.slp_pair_vregs?.has(`v${idx}`)) {
+		idx = FLOAT_TREE_FIRST + next.v++;
+	}
+	return idx;
+}
+
 export function build_float_tree(
 	node: BaseNode,
 	dest: string,
@@ -257,11 +273,49 @@ export function build_float_tree(
 			op.left_value &&
 			op.right_value
 		) {
+			// Field-pair SLP square-sum (ASM_PLAN_4): `X*X + Y*Y` where X/Y
+			// are a planned lane pair (X promoted to dN = lane 0, Y in
+			// vN.d[1]) squares both lanes with one fmul.2d and reduces with
+			// faddp — bit-identical to the scalar form (faddp computes
+			// v.d[0] + v.d[1], the same left+right operand order).
+			if (slp_pair_enabled() && op.op === "+") {
+				const square_name = (n: BaseNode | undefined): string | null => {
+					if (!n || n.node_type !== "op") return null;
+					const m = n as OperationNode;
+					if (m.op !== "*" || !m.left_value || !m.right_value) return null;
+					const l = m.left_value;
+					const r = m.right_value;
+					if (l.node_type !== "value" || r.node_type !== "value") return null;
+					const ln = (l as ValueNode).value;
+					if (typeof ln !== "string" || ln !== (r as ValueNode).value) return null;
+					if (status.function_param_regs?.has(ln)) return null;
+					if (status.induction_const?.has(ln)) return null;
+					return ln;
+				};
+				const xn = square_name(op.left_value);
+				const yn = xn ? square_name(op.right_value) : null;
+				if (xn && yn) {
+					// X in dN (lane 0), Y its planned partner in vN.d[1].
+					const hints = status.slp_pair_hints;
+					if (hints?.get(xn) === yn && !status.register_allocations?.has(yn)) {
+						const xreg = status.register_allocations?.get(xn);
+						if (xreg && xreg.startsWith("d")) {
+							const n1 = parseInt(xreg.slice(1), 10);
+							if (n1 >= 3) {
+								const tmp = `v${tree_temp(next, status)}`;
+								status.code += `fmul ${tmp}.2d, v${n1}.2d, v${n1}.2d\n`;
+								status.code += `faddp ${dest}, ${tmp}.2d\n`;
+								return dest;
+							}
+						}
+					}
+				}
+			}
 			const ls = src_reg(op.left_value);
-			const lreg = ls ?? `d${FLOAT_TREE_FIRST + next.v++}`;
+			const lreg = ls ?? `d${tree_temp(next, status)}`;
 			if (!ls) build_float_tree(op.left_value, lreg, next, status);
 			const rs = src_reg(op.right_value);
-			const rreg = rs ?? `d${FLOAT_TREE_FIRST + next.v++}`;
+			const rreg = rs ?? `d${tree_temp(next, status)}`;
 			if (!rs) build_float_tree(op.right_value, rreg, next, status);
 			status.code += `${map_float_op(op.op)} ${dest}, ${lreg}, ${rreg}\n`;
 			return dest;

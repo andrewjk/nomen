@@ -39,6 +39,7 @@ import { flag_form_enabled } from "./flag_form.ts";
 import { apply_forward_use, cset_flag_is_write_only, prepare_nir_forwarding } from "./forward.ts";
 import { neon_vectorization_enabled } from "./neon_emit.ts";
 import { plan_vector_for, plan_vector_loop } from "./neon_plan.ts";
+import { slp_pair_enabled, try_emit_slp_pair } from "./slp_pair.ts";
 import { plan_full_unroll } from "./unroll.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_var_load, emit_var_store } from "./utils/stack_var.ts";
@@ -246,6 +247,16 @@ function emit_stmt_dispatch(
 					if (consumed === 2) {
 						return 2;
 					}
+					// Field-pair SLP fuse (ASM_PLAN_4): two adjacent float
+					// declares with lane-isomorphic initializers over paired
+					// registers/fields lower as one `.2d` sequence, consuming
+					// both statements. Same cursor rules as the cset fuse.
+					if (slp_pair_enabled()) {
+						const slp = try_emit_slp_pair(index, statements, ctx.stmts, status);
+						if (slp > 1) {
+							return slp;
+						}
+					}
 					// Type/ownership routing stays on the AST node inside the
 					// builder; the initializer (when any) is emitted through
 					// the NIR expression seam. The trailing-newline guard
@@ -277,6 +288,16 @@ function emit_stmt_dispatch(
 				// inner AssignmentNode the builder needs.
 				const restore_assign = apply_forward_use(ctx.use_sites, nstmt.node);
 				try {
+					// Field-pair SLP fuse (ASM_PLAN_4): two adjacent plain
+					// field/var float assignments with lane-matched shapes
+					// lower as one `.2d` sequence, consuming both statements.
+					// Same cursor rules as the declare-side fuse.
+					if (slp_pair_enabled()) {
+						const slp = try_emit_slp_pair(index, statements, ctx.stmts, status);
+						if (slp > 1) {
+							return slp;
+						}
+					}
 					build_assignment_node(nstmt.node as AssignmentNode, status, nstmt.rhs, nstmt.swap);
 					if (!status.code.endsWith("\n")) {
 						status.code += "\n";

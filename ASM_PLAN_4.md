@@ -230,6 +230,60 @@ same harness rules as every cursor-dependent pass. NOT an extension of
 the induction-driven loop vectorizer; reductions/`faddp` only where the
 source shape is the two-axis distance sum.
 
+#### RESULT — field-pair SLP tranche 1 (landed 2026-09-05)
+
+Shipped as `src/build_aarch64/slp_pair.ts` + pair-aware allocation in
+both allocators (`plan_nir_registers`, `promote_loop_locals`) + the
+`fmul.2d`/`faddp` square-sum hook in `build_float_tree`.
+
+- **Register model (the tranche's hard-won fact):** adjacent d-registers
+  are NOT the lanes of one q-register — `vN.d[1]` has no d-name. A pair
+  is `a` in dN (lane 0, its normal promotion) and `b` in `vN.d[1]`
+  (lane-resident, deliberately NOT register-promoted). Scalar writes to
+  a D register zero the upper half of the V register, so: every fused
+  register-pair write re-syncs b's slot (`mov v0.d[0], vN.d[1];
+  str d0, [x29, #slot]`); the write gate refuses pairs where a or b is
+  assigned by a non-pair statement inside the loop (fixpoint drop); the
+  lane register dN+1 is blocked (never assigned, rides
+  `callee_saved_regs_used` so inline expansions cannot claim it); pair
+  v-regs are reserved against the float-tree temp pool
+  (`slp_pair_vregs`, budget-adjusted); a NEON vector plan is dropped
+  when v8 hosts a pair. First cut assumed consecutive-d = lanes and
+  read garbage in lane 1 (probe program summed 30 instead of 45); the
+  lldb receipt named the model error.
+- **Planning:** `slp_pair_hints` (register-blind shape scan with
+  group-continuation lookahead — bi_z@z + vx@vx are text-adjacent AND
+  field-adjacent but must not pair) + write-gate fixpoint. Function
+  level pairs (both members fn candidates): advance's (vx,vy) and
+  (dx,dy); loop level: (bi_x,bi_y). Unregistered pairs fall through to
+  the next scope — the scan is shared.
+- **Fuses** (2 statements each, at the NIR dispatch): declare pair
+  (`ldur q` / `.2d` op + slot sync), var-assign pair (in-place target
+  pair, operand order preserved, broadcast scalars as `vN.d[0]` — the
+  by-element operand must be the FINAL source; commutative ops swap,
+  subtraction dups), field-RMW pair (`ldur q0` + chain + `stur q0`),
+  plain field-store pair (`stur qPair`), square-sum (`fmul.2d` +
+  `faddp`, lane order = the scalar left+right add order). All emission
+  forms parse under the asm IR (arrangement-suffixed registers;
+  `ldur/stur` added to MNEMONICS) so the phase-2 float-forwarding and
+  dead-stage-move passes keep working — an unparseable `.2d` line made
+  the DCE conservative and left a stale `fmov x0, d0` behind.
+- **Timings** (nbody 5M, interleaved best-of-7 medians, arm-swapped,
+  load avg 4, outputs byte-identical across all three arms):
+  ours 302.6 → 248.5 ms (**−17.9%**, arm-swap −18.5%); vs C -O2
+  **1.36× → 1.12×**. advance inner loop 65 → ~43 instructions
+  (clang 30). No regressions: spectral-norm −0.2%, fannkuch +0.2%,
+  mandelbrot +2.1% (all output-identical, within noise).
+- **Tests:** `test/slp_pair.test.ts` (7: fused forms present — fail on
+  pre-tranche code; kill-switch restores scalar-only text; behavioral
+  run on BOTH backends agreeing). Byte-identity harnesses hold the pass
+  off in both arms (cursor-dependent). Full suite green.
+- **Remaining gap to clang (~43 vs 30):** the d0-protocol fmovs around
+  `fsqrt`, the third-axis (z) scalar RMW's spill protocol (12
+  instructions), the per-iteration `.at()` address re-derivation, and
+  the dead `mov x0, xPin` contract markers (a `mov x0, xN` DCE would
+  take 4 more). Candidate tranche 2 material.
+
 ### 2. Cross-block / cross-iteration value numbering + register coalescing (pidigits)
 
 The K/L/M-survey lever, named "one order larger than a tranche": the

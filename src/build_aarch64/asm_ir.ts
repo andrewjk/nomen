@@ -312,6 +312,20 @@ export const MNEMONICS: Record<string, MnemonicSig> = {
 			["f", "m"],
 		],
 	},
+	// Unscaled (simm9) load/store — the field-pair SLD `ldur q/stur q`
+	// accesses at arbitrary 8-byte offsets (x@8, y@16 within one struct).
+	ldur: {
+		shapes: [
+			["r", "m"],
+			["f", "m"],
+		],
+	},
+	stur: {
+		shapes: [
+			["r", "m"],
+			["f", "m"],
+		],
+	},
 	ldrb: { shapes: [["r", "m"]] },
 	strb: { shapes: [["r", "m"]] },
 	ldrh: { shapes: [["r", "m"]] },

@@ -2,6 +2,7 @@ import type BuildStatus from "../../build_c/BuildStatus.ts";
 import { ALL_FLOAT_TYPES, SCALAR_TYPES } from "../../built_in_types.ts";
 import type BaseNode from "../../nodes/BaseNode.ts";
 import type DeclarationNode from "../../nodes/DeclarationNode.ts";
+import { slp_pair_enabled, slp_pair_entry_pack, slp_pair_hints } from "../slp_pair.ts";
 import aarch64_size from "./aarch64_size.ts";
 import collect_var_refs from "./collect_var_refs.ts";
 import { allocate_stack_space, emit_promoted_load } from "./stack_var.ts";
@@ -234,6 +235,12 @@ export function promote_loop_locals(
 		if (status.heap_array_vars?.has(name)) continue;
 		if (status.function_struct_param_slots?.has(name)) continue;
 		if (status.register_allocations?.has(name)) continue;
+		// Field-pair SLP (ASM_PLAN_4): a REGISTERED pair member never
+		// promotes as a single — the lane-1 member lives in its partner's
+		// vN.d[1] (slot-synced by the fuses); promoting it here would make
+		// pair_vreg decline at emission and split the pair's atomic .2d
+		// writes (the stale-lane corruption class).
+		if (status.slp_pair_hints?.has(name)) continue;
 		// Body-declared vars have no scoped declaration yet — their recorded
 		// declare type is authoritative (and required: an unknown type can't
 		// be register-classed).
@@ -303,6 +310,35 @@ export function promote_loop_locals(
 
 	eligible.sort((a, b) => b.reads - a.reads);
 
+	// Field-pair SLP hints (ASM_PLAN_4): adjacent float declares whose
+	// initializers lane-match plan as LANE PAIRS — a in dN (lane 0, its
+	// normal promotion) and b in vN.d[1] (b is NOT register-promoted; its
+	// slot stays synced by the emission fuses). dN+1 is blocked for the
+	// pair's lifetime (a scalar write there would zero b's lane). The
+	// scan is register-blind; this scope registers only the pairs whose
+	// BOTH members are among its own eligible names (the rest were
+	// claimed by the function-level allocator or wait for a nested
+	// loop's own promotion). Kill switch off → no hints → allocation
+	// identical to the scalar path.
+	const slp_plan =
+		slp_pair_enabled() && status.function_return_label
+			? slp_pair_hints(sources.statements, status)
+			: undefined;
+	const eligible_names = new Set(eligible.map((e) => e.name));
+	// Only pairs whose BOTH members are this scope's eligible names can
+	// register here.
+	const loop_hints = new Map<string, string>();
+	if (slp_plan) {
+		for (const [a, b] of slp_plan.pairs) {
+			if (eligible_names.has(a) && eligible_names.has(b)) {
+				loop_hints.set(a, b);
+				loop_hints.set(b, a);
+			}
+		}
+	}
+	const eligible_by_name = new Map(eligible.map((e) => [e.name, e]));
+	const allocated_pairs = new Set<string>();
+
 	if (!status.register_allocations) {
 		status.register_allocations = new Map();
 	}
@@ -362,8 +398,91 @@ export function promote_loop_locals(
 	let x_idx = 0;
 	let d_idx = 0;
 	for (const v of eligible) {
+		if (allocated_pairs.has(v.name)) continue;
 		const is_float = ALL_FLOAT_TYPES.includes(v.type_name);
 		if (is_float) {
+			// Pair-aware allocation first (field-pair SLP): when this name
+			// and its planned partner are both eligible and unclaimed,
+			// promote v into dN (lane 0) and BLOCK dN+1 (the partner's
+			// high lane — a scalar write there would zero it). The partner
+			// itself is NOT promoted: its value lives in vN.d[1], kept in
+			// sync with its slot by the emission fuses; a live-in partner
+			// (declared outside this loop) gets its slot packed into the
+			// lane at entry. Falls through to the ordinary single scan
+			// when no suitable vN is available.
+			const partner_name = loop_hints.get(v.name);
+			const partner = partner_name ? eligible_by_name.get(partner_name) : undefined;
+			if (partner && !allocated_pairs.has(partner.name)) {
+				while (d_idx + 1 < float_pool.length) {
+					const reg0 = float_pool[d_idx]!;
+					const reg1 = float_pool[d_idx + 1]!;
+					const n0 = parseInt(reg0.slice(1), 10);
+					// v0/v1/v2 are the fuses' scratch — never pair homes
+					// (v8 may host a pair; the loop builder drops a NEON
+					// plan when slp_pair_vregs holds v8). The lane register
+					// must be strictly free (no sharing: the pair's lane
+					// has no bracketing to keep a shared occupant sound).
+					if (n0 < 3) {
+						d_idx++;
+						continue;
+					}
+					if (site_regs.has(reg0) || site_regs.has(reg1)) {
+						d_idx++;
+						continue;
+					}
+					if (used_d.has(reg0)) {
+						if (!can_share_claimed_register(status, v.name, reg0)) {
+							d_idx++;
+							continue;
+						}
+					}
+					if (used_d.has(reg1)) {
+						d_idx++;
+						continue;
+					}
+					break;
+				}
+				if (d_idx + 1 < float_pool.length) {
+					const reg = float_pool[d_idx]!;
+					const lane1 = float_pool[d_idx + 1]!;
+					status.register_allocations.set(v.name, reg);
+					used_d.add(reg);
+					used_d.add(lane1);
+					// The lane register is claimed like a promotion: an
+					// inline expansion's own loop promotion (which clears
+					// register_allocations) must not hand it to its local.
+					if (!status.callee_saved_regs_used) status.callee_saved_regs_used = new Set();
+					status.callee_saved_regs_used.add(lane1);
+					promoted.push({
+						name: v.name,
+						reg,
+						offset: v.offset,
+						type_name: v.type_name,
+					});
+					emit_promoted_load(status, reg, v.offset, v.type_name);
+					// Publish the partnership + reserve vN against the
+					// float-tree temp pool (a scalar d16+ write zeroes the
+					// upper half of the v register).
+					const vreg = `v${parseInt(reg.slice(1), 10)}`;
+					if (!status.slp_pair_hints) status.slp_pair_hints = new Map();
+					status.slp_pair_hints.set(v.name, partner.name);
+					status.slp_pair_hints.set(partner.name, v.name);
+					if (parseInt(reg.slice(1), 10) >= 16) {
+						if (!status.slp_pair_vregs) status.slp_pair_vregs = new Set();
+						status.slp_pair_vregs.add(vreg);
+					}
+					// Live-in partner: pack its incoming slot value into
+					// the lane so pair reads inside see the old value.
+					const partner_declared_in_loop = body_decl_count.has(partner.name);
+					if (!partner_declared_in_loop) {
+						slp_pair_entry_pack(vreg, partner.name, status);
+					}
+					allocated_pairs.add(v.name);
+					allocated_pairs.add(partner.name);
+					d_idx += 2;
+					continue;
+				}
+			}
 			// First pool register that is FREE or legally SHAREABLE with a
 			// function-level occupant (tranche G stage 2 — see
 			// can_share_claimed_register; the bracketing entry load and

@@ -1112,7 +1112,7 @@ export default function build_assignment_node(
 				if (alloc_reg_fast !== "d0" && alloc_reg_fast !== "d1" && alloc_reg_fast !== "d2") {
 					const seen = new Set<unknown>();
 					if (!tree_has_call(node.right_value, seen)) {
-						const budget = { n: 14 };
+						const budget = { n: 14 - (status.slp_pair_vregs?.size ?? 0) };
 						if (float_tree_ok(node.right_value, budget)) {
 							status.float_result_in_d0 = false;
 							build_float_tree(node.right_value, alloc_reg_fast, { v: 0 }, status);

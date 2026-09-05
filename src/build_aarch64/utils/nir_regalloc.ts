@@ -14,6 +14,7 @@ import { version_function } from "../../nir/version.ts";
 import type BaseNode from "../../nodes/BaseNode.ts";
 import type Type from "../../nodes/Type.ts";
 import { tree_is_call_free } from "../build_operation_node.ts";
+import { publish_slp_pairs, slp_pair_enabled, slp_pair_hints } from "../slp_pair.ts";
 import { value_number_loops } from "../value_number.ts";
 import { emit_promoted_load } from "./stack_var.ts";
 
@@ -192,6 +193,11 @@ export interface NirRegisterPlan {
 	 *  function entry — two sibling scopes declaring the same name each
 	 *  bind their own register. */
 	sites: Map<string, { name: string; reg: string }>;
+	/** Field-pair SLP lanes (ASM_PLAN_4): ordered (a, b) pairs the plan
+	 *  allocated — a in its d-register (lane 0), b lane-resident in
+	 *  vN.d[1] (excluded from the candidate set). The caller publishes
+	 *  these on status.slp_pair_hints / slp_pair_vregs. */
+	pairs: { a: string; b: string; vreg: string }[];
 }
 
 export interface NirRegisterPlanOptions {
@@ -381,6 +387,26 @@ export function analyze_ranges(cfg: FunctionCfg, status?: BuildStatus): RangeAna
  * caller-saved x12-x15 extension pool instead of spending a callee-saved
  * register (and its prologue save).
  */
+/**
+ * Float candidates belonging to a planned SLP pair walk first (their
+ * lane-0 members must reach the d-pool before singles eat the budget);
+ * every other candidate keeps its sorted order. Pair lane-1 members are
+ * dropped (they take no register).
+ */
+function slp_pairs_ordered(
+	candidates: Candidate[],
+	partner_of: Map<string, string> | undefined,
+): Candidate[] {
+	if (!partner_of || partner_of.size === 0) return candidates;
+	const pairs: Candidate[] = [];
+	const rest: Candidate[] = [];
+	for (const c of candidates) {
+		if (partner_of.has(c.name)) pairs.push(c);
+		else rest.push(c);
+	}
+	return [...pairs, ...rest];
+}
+
 export function plan_nir_registers(
 	func: {
 		params: { name: string; type: Type; is_variadic?: boolean }[];
@@ -521,11 +547,35 @@ export function plan_nir_registers(
 		});
 	}
 	if (candidates.length === 0)
-		return { allocs, callee_saved, adj, pinned, source_keys, sites: site_allocs };
+		return { allocs, callee_saved, adj, pinned, source_keys, sites: site_allocs, pairs: [] };
 
 	// Hottest first — same ranking the legacy pass and the benchmarks
 	// were tuned around (raw reads, then loop-weighted, V8 stable sort).
 	candidates.sort((a, b) => b.reads - a.reads || b.weight - a.weight);
+
+	// Field-pair SLP (ASM_PLAN_4): the function-level hint plan over the
+	// AST (eligible = unrenamed float candidates). The lane-1 member of
+	// each pair is REMOVED from the candidate walk — it lives in vN.d[1],
+	// slot-synced by the emission fuses — and the walk pairs its partner
+	// into (dN, dN+1) with dN+1 blocked (floats never share registers, so
+	// skipping the slot index is the whole block).
+	const slp_pairs: { a: string; b: string; vreg: string }[] = [];
+	let slp_partner_of: Map<string, string> | undefined;
+	let slp_lane_of: Map<string, string> | undefined;
+	if (slp_pair_enabled() && options?.status) {
+		const float_names = new Set(
+			candidates
+				.filter((c) => ALL_FLOAT_TYPES.includes(c.type_name) && !sites.has(c.name))
+				.map((c) => c.name),
+		);
+		const plan = slp_pair_hints(func.statements, options.status);
+		// Register only the pairs whose BOTH members are this allocator's
+		// candidates; the rest (e.g. loop-body consts below the read bar)
+		// stay unregistered for the loop promotion to claim.
+		const registrable = plan.pairs.filter(([a, b]) => float_names.has(a) && float_names.has(b));
+		slp_partner_of = new Map(registrable);
+		slp_lane_of = new Map(registrable.map(([a, b]) => [b, a]));
+	}
 
 	// Register → EVERY name sharing it. Sharing means several names live
 	// in one physical register, so a single name→reg map would forget the
@@ -543,9 +593,35 @@ export function plan_nir_registers(
 	};
 	let d_used = 0;
 	let x_callee_used = 0;
-	for (const c of candidates) {
+	// Float pairs walk FIRST (each consumes two d-slots), then everything
+	// else in sorted order — the int side's relative order (and therefore
+	// its allocations) is unchanged.
+	const pair_first = slp_pairs_ordered(candidates, slp_partner_of);
+	for (const c of pair_first) {
+		// The lane-1 member of a planned pair gets NO register — it lives
+		// in its partner's vN.d[1] (slot-synced by the emission fuses).
+		if (slp_lane_of?.has(c.name)) continue;
 		if (ALL_FLOAT_TYPES.includes(c.type_name)) {
 			// Float side: legacy allocation, byte-stable with the old pass.
+			if (d_used >= MAX_D_REGS) continue;
+			const partner = slp_partner_of?.get(c.name);
+			if (partner !== undefined && d_used + 1 < MAX_D_REGS) {
+				// Pair: a in dN (lane 0), dN+1 blocked for the lane. The
+				// lane rides callee_saved so an inline expansion's own loop
+				// promotion (which clears register_allocations) cannot
+				// hand it to its own local and zero the lane.
+				const reg = D_POOL[d_used];
+				const lane = D_POOL[d_used + 1];
+				allocs.set(c.name, reg);
+				const site = sites.get(c.name);
+				if (site) site_allocs.set(c.name, { name: site.source, reg });
+				occupants_of(reg).add(c.name);
+				callee_saved.add(reg);
+				callee_saved.add(lane);
+				slp_pairs.push({ a: c.name, b: partner, vreg: `v${reg.slice(1)}` });
+				d_used += 2;
+				continue;
+			}
 			if (d_used >= MAX_D_REGS) continue;
 			const reg = D_POOL[d_used++];
 			allocs.set(c.name, reg);
@@ -610,7 +686,7 @@ export function plan_nir_registers(
 			break;
 		}
 	}
-	return { allocs, callee_saved, adj, pinned, source_keys, sites: site_allocs };
+	return { allocs, callee_saved, adj, pinned, source_keys, sites: site_allocs, pairs: slp_pairs };
 }
 
 /**
@@ -674,6 +750,9 @@ export function seed_function_allocations(
 	status.callee_saved_regs_used = plan.callee_saved.size > 0 ? plan.callee_saved : undefined;
 	// Interference facts for loop-promotion sharing (see BuildStatus).
 	status.nir_alloc_shared = { adj: plan.adj, pinned: plan.pinned, source_keys: plan.source_keys };
+	// Field-pair SLP (ASM_PLAN_4): publish the plan's lane pairs for the
+	// method body the caller builds right after this.
+	publish_slp_pairs(plan.pairs, status);
 	// Caller-saved ext claims survive inline expansions (which clear
 	// register_allocations); the method caller restores the old value.
 	status.nir_caller_saved_claimed = new Set(

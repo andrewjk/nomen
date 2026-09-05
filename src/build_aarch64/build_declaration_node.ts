@@ -2290,7 +2290,7 @@ export default function build_declaration_node(
 				status.float_result_in_d0 = true;
 				const seen = new Set<unknown>();
 				if (!tree_has_call(node.value, seen)) {
-					const budget = { n: 14 };
+					const budget = { n: 14 - (status.slp_pair_vregs?.size ?? 0) };
 					if (float_tree_ok(node.value, budget)) {
 						status.float_result_in_d0 = false;
 						build_float_tree(node.value, decl_float_alloc, { v: 0 }, status);

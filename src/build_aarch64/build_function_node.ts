@@ -12,6 +12,7 @@ import build_block_node from "./build_block_node.ts";
 import { check_c_fallback } from "./build_raw_node.ts";
 import { nir_emission_enabled } from "./emit_nir.ts";
 import { prepare_nir_forwarding } from "./forward.ts";
+import { publish_slp_pairs } from "./slp_pair.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free } from "./utils/audit.ts";
 import { emit_destroy_for_anchor_slot } from "./utils/auto_destroy.ts";
@@ -481,7 +482,8 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	let fn_callee_saved: Set<string> | undefined;
 	if (nir) {
 		if (nir_regalloc_enabled()) {
-			const plan = plan_nir_registers(node, plan_nir!);
+			// status rides along for the field-pair SLP hint scan (ASM_PLAN_4).
+			const plan = plan_nir_registers(node, plan_nir!, { status });
 			// Stage 3: split plain-name bindings (live from function entry —
 			// the prologue initializes params into them) from decl-site
 			// bindings (the emitter binds those at each declare site, so
@@ -517,6 +519,10 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 			if (status.nir_caller_saved_claimed.size === 0) {
 				status.nir_caller_saved_claimed = undefined;
 			}
+			// Field-pair SLP (ASM_PLAN_4): publish the plan's lane pairs —
+			// the emission fuses consult the hints, and the reserved
+			// v-registers fence the float-tree temp pool.
+			publish_slp_pairs(plan.pairs, status);
 		} else {
 			fn_allocs = plan_function_promotions(node, plan_nir!);
 			// Legacy pass has no decl-site table — clear any enclosing
