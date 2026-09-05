@@ -112,6 +112,12 @@ export function optimize_frame_slots(code: string): string {
 	const out: string[] = [];
 
 	let slots = new Map<number, SlotState>();
+	/** Known zero-extension width (bits) per register (xN-keyed): set by
+	 *  ldrb/ldrh/ldr-w (w writes zero the upper half), killed by any
+	 *  other definition. Lets a sub-width reload be elided when the
+	 *  pending store's source register already holds exactly the
+	 *  zero-extended stored value. */
+	let zextW = new Map<string, number>();
 
 	const flush_slot = (off: number) => {
 		const s = slots.get(off);
@@ -123,6 +129,7 @@ export function optimize_frame_slots(code: string): string {
 	};
 	const clear_all = () => {
 		slots = new Map();
+		zextW = new Map();
 	};
 
 	/** A register is REDEFINED: pends sourced from it must reach memory now
@@ -131,6 +138,8 @@ export function optimize_frame_slots(code: string): string {
 	const clobber = (reg: string) => {
 		if (!reg) return;
 		const sib = sibling_reg(reg);
+		zextW.delete(reg.startsWith("w") ? `x${reg.slice(1)}` : reg);
+		if (sib && sib.startsWith("x")) zextW.delete(sib);
 		for (const [off, s] of [...slots.entries()].sort((a, b) => a[0] - b[0])) {
 			if (
 				s.pendText !== undefined &&
@@ -156,8 +165,50 @@ export function optimize_frame_slots(code: string): string {
 		}
 		const is_store = instr.op.startsWith("str");
 		const key = access_key(instr.op, data_reg.name);
+		const op = instr.op;
 
-		if (!is_store) clobber(data_reg.name);
+		if (!is_store) {
+			// Load into the SAME register a same-width pending store came
+			// from. Full-width (str xN → ldr xN): the register still
+			// holds exactly the stored 8 bytes. Sub-width (strb wN →
+			// ldrb wN): the reload is an identity when the register is
+			// KNOWN zero-extended to the store's width (the zext fact —
+			// without it the reload's zero-extension of the upper bits
+			// would be an observable register change; the pick
+			// corruption receipt). Checked BEFORE the clobber below,
+			// which would materialize the pending store and make this
+			// case unreachable.
+			const s0 = slots.get(off);
+			const reload_width =
+				op === "ldrb"
+					? 8
+					: op === "ldrh"
+						? 16
+						: op === "ldr" && data_reg.name.startsWith("x")
+							? 64
+							: 0;
+			const known = s0?.pendReg
+				? zextW.get(s0.pendReg.startsWith("w") ? `x${s0.pendReg.slice(1)}` : s0.pendReg)
+				: undefined;
+			if (
+				s0?.pendText !== undefined &&
+				s0.pendKey === key &&
+				s0.pendReg === data_reg.name &&
+				(key === "gpr64" || (reload_width > 0 && known !== undefined && known >= reload_width))
+			) {
+				// Commit the store AT ITS ORIGINAL POSITION (a later flush
+				// could land it after epilogue instructions that move
+				// x29/sp — the pick-corruption receipt), drop only the
+				// redundant load, and record the register as holding the
+				// slot's value for future load elision.
+				out.push(s0.pendText);
+				slots.delete(off);
+				const fresh: SlotState = { availReg: data_reg.name, availKey: key };
+				slots.set(off, fresh);
+				return;
+			}
+			clobber(data_reg.name);
+		}
 
 		// Attach (don't detach!) the slot state so mutations persist.
 		let s = slots.get(off);
@@ -205,6 +256,12 @@ export function optimize_frame_slots(code: string): string {
 		}
 		s.availReg = data_reg.name;
 		s.availKey = key;
+		if (op === "ldrb" || op === "ldrh") {
+			zextW.set(
+				data_reg.name.startsWith("w") ? `x${data_reg.name.slice(1)}` : data_reg.name,
+				op === "ldrb" ? 8 : 16,
+			);
+		}
 		out.push(instr.text);
 	}
 
@@ -356,6 +413,17 @@ export function optimize_frame_slots(code: string): string {
 
 		// Everything else: uniform defs handling.
 		for (const d of instr_defs(instr)) clobber(d);
+		// A zero-extending byte/half load (re)establishes the zext fact
+		// for its destination — including NON-frame loads (`ldrb w0,
+		// [x0, x1]`), which never reach process_frame_access.
+		const load_dst = instr.operands[0];
+		if (
+			(op === "ldrb" || op === "ldrh" || op === "ldr") &&
+			load_dst.kind === "reg" &&
+			/^w\d+$/.test(load_dst.name)
+		) {
+			zextW.set(`x${load_dst.name.slice(1)}`, op === "ldrb" ? 8 : op === "ldrh" ? 16 : 32);
+		}
 		out.push(text);
 	}
 
@@ -893,4 +961,135 @@ export function eliminate_dead_copy_moves(code: string): string {
 	}
 
 	return out.filter((l) => l !== "").join("\n");
+}
+
+let widen_masks_on = true;
+
+/** Kill-switch for the redundant widen-mask elimination (default ON;
+ *  OFF restores the untransformed text byte-identically). */
+export function widen_mask_elimination_enabled(): boolean {
+	return widen_masks_on;
+}
+
+export function set_widen_mask_elimination_enabled(enabled: boolean): void {
+	widen_masks_on = enabled;
+}
+
+/**
+ * Redundant widen-mask elimination (STRING_PLAN tranche 2): a
+ * char→int widening cast emits `and xN, xN, #0xFF`, but when the value
+ * was produced by an `ldrb wN` the upper bits are ALREADY zero (a w
+ * write zeroes bits 63:32, ldrb zero-extends bits 31:8) — the mask is
+ * an identity. Track per-register known zero-extension widths through
+ * the linear stream (labels/branches/ret and any unparseable line
+ * invalidate; bl invalidates caller-saved; defs invalidate; reads
+ * preserve) and drop `and xN, xN, #imm` when the known width already
+ * covers imm's set bits. Same shape as the float-forwarding held-map.
+ */
+export function eliminate_redundant_widen_masks(code: string): string {
+	if (!widen_masks_on) return code;
+	const lines = code.split("\n");
+	const out: string[] = [];
+	/** reg (xN/wN share the entry, keyed by xN) → known zero-extension
+	 *  width in bits (8/16/32). */
+	const zext = new Map<string, number>();
+	const key = (reg: string): string => (reg.startsWith("w") ? `x${reg.slice(1)}` : reg);
+
+	const kill = (reg: string): void => {
+		zext.delete(key(reg));
+	};
+	const set_zext = (reg: string, width: number): void => {
+		zext.set(key(reg), width);
+	};
+
+	for (let i = 0; i < lines.length; i++) {
+		const text = lines[i];
+		const trimmed = text.trim();
+		if (!trimmed || trimmed.startsWith("//")) {
+			out.push(text);
+			continue;
+		}
+		const label_m = /^([A-Za-z_.$][\w.$]*):/.exec(trimmed);
+		if (label_m || trimmed.startsWith(".") || /^[\w.$]+\s*=\s*[\w.$]+$/.exec(trimmed)) {
+			zext.clear();
+			out.push(text);
+			continue;
+		}
+		const instr = parse_asm_instruction(text, i + 1);
+		if (!instr) {
+			zext.clear();
+			out.push(text);
+			continue;
+		}
+		const op = instr.op;
+
+		// Candidate: `and xN, xN, #imm` whose known zext width covers imm.
+		if (
+			op === "and" &&
+			instr.operands.length === 3 &&
+			instr.operands[0].kind === "reg" &&
+			instr.operands[1].kind === "reg" &&
+			instr.operands[0].name === instr.operands[1].name &&
+			instr.operands[0].name.startsWith("x") &&
+			instr.operands[2].kind === "imm"
+		) {
+			const dst = instr.operands[0].name;
+			const known = zext.get(dst);
+			const imm = instr.operands[2].value;
+			if (
+				known !== undefined &&
+				imm >= 0n &&
+				imm < 1n << BigInt(known) && // every set bit is below the known-zero boundary
+				(imm & (imm + 1n)) === 0n // low bits all set (a real mask)
+			) {
+				continue; // identity — drop
+			}
+		}
+
+		// Fact updates.
+		if (op === "bl" || op === "blr" || op === "svc") {
+			for (let a = 0; a <= 17; a++) kill(`x${a}`);
+			for (let a = 0; a < 8; a++) kill(`d${a}`);
+			zext.delete("x30");
+			out.push(text);
+			continue;
+		}
+		if (op === "ldrb" || op === "ldrh" || op === "ldr") {
+			const dst = instr.operands[0];
+			if (dst.kind === "reg" && /^w\d+$/.test(dst.name)) {
+				set_zext(dst.name, op === "ldrb" ? 8 : op === "ldrh" ? 16 : 32);
+				out.push(text);
+				continue;
+			}
+		}
+		// Any other definition of a tracked register kills its fact; pure
+		// reads (stores, compares, branches) preserve every fact.
+		const is_store_like =
+			op === "str" ||
+			op === "strb" ||
+			op === "strh" ||
+			op === "stp" ||
+			op === "cmp" ||
+			op === "tst" ||
+			op === "cmn" ||
+			op.startsWith("b.") ||
+			op === "b" ||
+			op === "cbz" ||
+			op === "cbnz" ||
+			op === "tbz" ||
+			op === "tbnz" ||
+			op === "ret";
+		if (!is_store_like) {
+			for (const o of instr.operands) {
+				if (o.kind === "reg") {
+					kill(o.name);
+					break; // only the leading (destination) register
+				}
+				if (o.kind === "mem" || o.kind === "cond") break;
+			}
+		}
+		out.push(text);
+	}
+
+	return out.join("\n");
 }
