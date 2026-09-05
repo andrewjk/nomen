@@ -201,12 +201,22 @@ class TrafficWalker {
 				this.expr(e.receiver, depth, true);
 				return;
 			case "flow":
+				// Traffic flip (ASM_PLAN_4 item 4): flow scrutinee + arm
+				// conditions + arm statements are REAL reads — the value's
+				// consumer sees them every evaluation. Counting them makes
+				// the allocators' read counts honest (a var read only in a
+				// match arm was invisible and never promoted).
+				if (e.scrutinee) this.expr(e.scrutinee, depth, false);
+				for (const arm of e.arms) {
+					if (arm.condition) this.expr(arm.condition, depth, false);
+					this.stmts(arm.branch, depth);
+				}
+				if (e.otherwise) this.stmts(e.otherwise, depth);
+				return;
 			case "spawn":
-				// Deliberately NOT walked: these exprs lowered to the `other`
-				// barrier until the fallback-retirement tranche, and promotion
-				// inputs must stay byte-stable (the swap-expr parity rule — see
-				// FOLLOWUP.md). cfg.ts DOES fold their reads for liveness,
-				// which has no emission consumer yet.
+				// Spawn arguments execute (on the task) and read their
+				// inputs — counted like any call's arguments.
+				this.expr(e.call, depth, false);
 				return;
 			case "other":
 				return;

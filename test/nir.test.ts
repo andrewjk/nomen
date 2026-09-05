@@ -392,7 +392,7 @@ pub func nested_types = (out int) {
 	expect(lowered.body[lowered.body.length - 1].kind).toBe("return");
 });
 
-test("traffic deliberately does not count flow-arm or spawn-arg reads (parity pin)", () => {
+test("traffic counts flow-arm and spawn-arg reads (flip pin)", () => {
 	const input = `
 pub func parity = (int q, out int) {
     var int k = match 1 {
@@ -413,10 +413,9 @@ func work = (int arg) {}
 			(s) => s.node_type === "func" && (s as FunctionNode).name === name,
 		) as FunctionNode;
 		const report = analyze_traffic(lower_function(fn));
-		// `q` appears ONLY inside a flow arm / spawn argument. These lowered
-		// to the `other` barrier until the fallback-retirement tranche, and
-		// promotion inputs must stay byte-stable (the swap-expr rule — see
-		// FOLLOWUP.md).
-		expect(report.variables.get("q")?.reads ?? 0, name).toBe(0);
+		// `q` appears ONLY inside a flow arm / spawn argument — the
+		// ASM_PLAN_4 traffic flip counts these (they execute on every
+		// evaluation, so the allocators' read inputs are now honest).
+		expect(report.variables.get("q")?.reads ?? 0, name).toBe(1);
 	}
 });
