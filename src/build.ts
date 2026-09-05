@@ -1,5 +1,6 @@
 import {
 	eliminate_dead_copy_moves,
+	eliminate_redundant_widen_masks,
 	optimize_frame_slots,
 	run_float_forwarding,
 } from "./build_aarch64/asm_opt.ts";
@@ -260,6 +261,10 @@ export default function build(
 		// test binary) exercises it; the validator below then re-checks the
 		// rewritten text.
 		status.code = optimize_frame_slots(status.code);
+		// Widen-mask elimination — `and xN, xN, #0xFF` after a zero-
+		// extending `ldrb wN` (the char→int comparison promotion) is an
+		// identity; tracked via per-register zero-extension facts.
+		status.code = eliminate_redundant_widen_masks(status.code);
 		// Phase-2 sibling: float-bits forwarding — collapses the d0 call
 		// protocol's `fmov xN, dM … fmov dK, xN` crossings into direct
 		// d↔d moves (see asm_opt.ts). Same unconditional/validated contract.
