@@ -11,11 +11,11 @@
 String-corpus timings (interleaved best-of-5, outputs byte-identical
 both backends):
 
-| bench            |  ours | C -O2 | ratio |
-| ---------------- | ----: | ----: | ----: |
-| json-serde n=1000|  16ms |   9ms | 1.76× |
-| knucleotide      |   7ms |   4ms | 1.71× |
-| regex-redux      |  24ms |  13ms | 1.92× |
+| bench             | ours | C -O2 | ratio |
+| ----------------- | ---: | ----: | ----: |
+| json-serde n=1000 | 16ms |   9ms | 1.76× |
+| knucleotide       |  7ms |   4ms | 1.71× |
+| regex-redux       | 24ms |  13ms | 1.92× |
 
 (Absolute times are small — startup is ~2-3ms of each; scale runs below.)
 
@@ -77,13 +77,14 @@ loop promotion — overlapping with tranche 2.
 ### Tranche 2 — char declare promotion + redundant `and` (next)
 
 The per-char loop's slot round-trip and mask. Two parts:
+
 - The `and x0, x0, #0xFF` after `ldrb` — ldrb zero-extends; the mask is
   redundant whenever the load width is already the type width.
 - The `const char c = …` slot round-trip — promotion (register home)
   or width-aware frame-slot forwarding for the sub-width store→load
   pair.
-Receipt: instruction census of json_parse_string before/after; the
-`strb+ldrb` pair must be gone (fails pre-tranche).
+  Receipt: instruction census of json_parse_string before/after; the
+  `strb+ldrb` pair must be gone (fails pre-tranche).
 
 ### Tranche 3 — borrow-position `to_string()` elision
 
