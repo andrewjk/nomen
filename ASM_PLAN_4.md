@@ -388,10 +388,12 @@ model materializes. The written accounting should quote those receipts.
 - **Byte (`.16b`) element kinds**: `load_T`/`store_T` are not in the
   scalar inline fast path (they emit real calls) — needs scalar-path
   inlining first.
-- **Traffic flip**: count flow-arm / spawn-arg reads in `traffic.ts`
-  (currently deliberate barrier parity for promotion-input stability;
-  pinned by test). Measure before/after per the discipline; whitelisted
-  pins live in `test/nir.test.ts`.
+- **Traffic flip** — **LANDED 2026-09-05**: `traffic.ts` now counts
+  flow-arm/spawn-arg reads (they execute on every evaluation; the
+  allocators' read inputs are honest). Parity pin in `test/nir.test.ts`
+  flipped to pin the NEW behavior (`q` reads = 1). Full suite green;
+  nbody/spectral-norm output byte-identical to pre-flip (no flow/spawn
+  in their hot paths), pidigits/binarytrees timings unchanged.
 - **Float promotion pool in v16+**: effectively SUPERSEDED — the float
   expression-tree allocator now occupies v16–v31 for call-free trees; any
   new pool must disjointly split against it (the x10/x11 tree-vs-pin
@@ -418,6 +420,12 @@ From ASM_PLAN.md phase 3, still unextracted:
   an options flag (C collects LetNode values for statement hoisting).
 - Owning-Buffer element specialization decision (`has_string_fields` could
   move to `build_common/` alongside `destroy_analysis.ts`).
+
+**DONE 2026-09-05**: both extracted — `build_common/has_string_fields.ts`
+(shared by both backends' owning-Buffer specialization) and
+`build_common/collect_allocations.ts` (the shared walk; `let_values: true`
+on the C arm, off on aarch64 — byte-stable, full suite green). This
+section's list is empty; future duplication goes to FOLLOWUP.md.
 
 ## If resuming
 
