@@ -1,4 +1,5 @@
 import type BuildStatus from "../../build_c/BuildStatus.ts";
+import { has_string_fields } from "../../build_common/has_string_fields.ts";
 import StructNode from "../../nodes/StructNode.ts";
 import aarch64_size from "./aarch64_size.ts";
 import { emit_free, emit_strdup } from "./audit.ts";
@@ -33,22 +34,6 @@ export function owning_buffer_element_aarch64(
  */
 export function owning_buffer_is_string_elem_aarch64(node: StructNode): boolean {
 	return node.name === "Buffer_string";
-}
-
-function has_string_fields(node: StructNode, status: BuildStatus): boolean {
-	for (const field of node.fields) {
-		if (field.type.is_ref) continue;
-		// A `view T` field is a non-owning borrow — the slot's byte copy of
-		// it aliases nothing owned, so it does not make the element owning.
-		if (field.type.is_view) continue;
-		if (field.type.name === "string" && !field.type.is_array) return true;
-		const field_struct = status.structs.find(
-			(s) => s.name === field.type.name && !s.is_simple_type && !s.is_generic,
-		);
-		if (field_struct && !field_struct.is_class && has_string_fields(field_struct, status))
-			return true;
-	}
-	return false;
 }
 
 /**

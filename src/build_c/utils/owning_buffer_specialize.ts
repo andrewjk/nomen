@@ -1,4 +1,5 @@
 import { struct_needs_destroy } from "../../build_common/destroy_analysis.ts";
+import { has_string_fields } from "../../build_common/has_string_fields.ts";
 import StructNode from "../../nodes/StructNode.ts";
 import type BuildStatus from "../BuildStatus.ts";
 
@@ -59,23 +60,6 @@ function has_owning_fields(node: StructNode, status: BuildStatus): boolean {
 	// deep-copies, C stays shallow → `free` of a literal crashes).
 	if (struct_needs_destroy(node, status)) return true;
 	return has_string_fields(node, status);
-}
-
-/** Any string field (or a nested owning struct's string field)? */
-function has_string_fields(node: StructNode, status: BuildStatus): boolean {
-	for (const field of node.fields) {
-		if (field.type.is_ref) continue;
-		// A `view T` field is a non-owning borrow — the slot's byte copy of
-		// it aliases nothing owned, so it does not make the element owning.
-		if (field.type.is_view) continue;
-		if (field.type.name === "string" && !field.type.is_array) return true;
-		const field_struct = status.structs.find(
-			(s) => s.name === field.type.name && !s.is_simple_type && !s.is_generic,
-		);
-		if (field_struct && !field_struct.is_class && has_string_fields(field_struct, status))
-			return true;
-	}
-	return false;
 }
 
 /**
