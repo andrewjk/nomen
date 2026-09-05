@@ -74,17 +74,43 @@ NOTE: with append_char inlined, json_parse_string's body may now be
 call-free, which unlocks the caller-saved float/int ext pools for its
 loop promotion — overlapping with tranche 2.
 
-### Tranche 2 — char declare promotion + redundant `and` (next)
+### Tranche 2 — char declare round-trip + redundant `and` — DONE (neutral perf, codegen win)
 
-The per-char loop's slot round-trip and mask. Two parts:
+Landed in `asm_opt.ts` (widen-mask pass has its own kill-switch
+`set_widen_mask_elimination_enabled`; the frame-slot elide rides
+`optimize_frame_slots`):
 
-- The `and x0, x0, #0xFF` after `ldrb` — ldrb zero-extends; the mask is
-  redundant whenever the load width is already the type width.
-- The `const char c = …` slot round-trip — promotion (register home)
-  or width-aware frame-slot forwarding for the sub-width store→load
-  pair.
-  Receipt: instruction census of json_parse_string before/after; the
-  `strb+ldrb` pair must be gone (fails pre-tranche).
+- **Frame-slot reload elide**: a load from a slot whose PENDING store
+  came from the SAME register is redundant — the register still holds
+  the stored bytes. Full-width (str/ldr xN) is exact; sub-width
+  (strb/ldrb) requires a per-register zero-extension fact (ldrb/ldrh/
+  ldr-w set it, defs kill it, stores/compares preserve) — the
+  reload's zero-extension of the upper bits is an observable register
+  change, and eliding without the fact corrupted class-move's
+  ownership slot (the pick receipt, audit trap exit 133). Second
+  receipt from the same feature: an elided load left the store
+  PENDING, and the next flush re-positioned it after the epilogue —
+  writing through the caller's restored x29. Stores now commit at
+  their original position when the load is dropped.
+- **Redundant widen-mask elimination**
+  (`eliminate_redundant_widen_masks`): `and xN, xN, #0xFF` after a
+  zero-extending `ldrb wN` (the checker's char→int comparison
+  promotion) is an identity — same zext-fact tracking, covering
+  NON-frame loads too.
+
+json_parse_string's per-char sequence: 7 → 4 instructions
+(`ldrb w0,[x0,x1]; strb w0,[x29,#64]; mov x12, x0` + index mov).
+Bench: NEUTRAL on json-serde (±1%) — the loop is dominated by the
+escape-switch dispatch and the remaining append_string call. Kept as a
+strict instruction-count win (applies corpus-wide to every char/short
+compare).
+
+REMAINING here: the per-char `strb w0, [x29,#64]` slot store is dead
+(c's reads all use the promoted x12; the loop-exit store-back reads
+the register) — it survives because the store is emitted before the
+declare's register binding is visible to emit_var_store (the
+inline-return/declare-promotion plumbing). One instruction per char;
+trace the inline-return protocol before attempting.
 
 ### Tranche 3 — borrow-position `to_string()` elision
 
