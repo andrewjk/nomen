@@ -284,6 +284,47 @@ str d0, [x29, #slot]`); the write gate refuses pairs where a or b is
   the dead `mov x0, xPin` contract markers (a `mov x0, xN` DCE would
   take 4 more). Candidate tranche 2 material.
 
+#### RESULT — SLP follow-on micro-tranches (2026-09-05)
+
+Two of the four candidates landed; two parked with receipts.
+
+- **Scalar float field RMW fast path — LANDED (+10.7%)**
+  (`build_assignment_node.try_float_field_rmw`): the non-paired member
+  of a field-RMW group paid the both-complex spill protocol — old value
+  spilled around the RHS, result round-tripped x0 → x2 (10-11
+  instructions). With the `.at()` base pinned and the RHS side
+  call-free, it is now rhs → d0 (float tree), `ldr d1, [base, #off]`,
+  one `fadd/fsub` (operand order preserved; `+` commutes bitwise),
+  `str d0, [base, #off]` — 5 instructions. nbody 5M: 244.3 → 218.0 ms
+  (**+10.7%**, interleaved best-of-7, arm-swapped) — **0.99× of C -O2:
+  the success criterion is now MET with parity.** Inner loop ~37
+  instructions (clang 30).
+- **Dead copy-move elimination — LANDED, DEFAULT-OFF** (measured-loss
+  convention). `eliminate_dead_copy_moves` in asm_opt.ts prunes
+  `mov xD, xS` whose destination is neither live nor control-flow
+  tainted (two-set backward scan: labels/branches/rets taint all —
+  the linear universe reset got switch-arm joins wrong and corrupted
+  switch lowering before the taint model; `bl` reads its argument
+  registers — deleting them pruned arg staging and segfaulted; `ret`
+  clears, plain `b` must NOT — fat returns flow through the target).
+  20 markers die in nbody, but the measurement is **−1.3…−1.5%**
+  (removed markers executed in the OoO shadow; layout drift dominates).
+  Ships sound, fully tested (9 unit tests), opt-in via
+  `set_dead_move_elimination_enabled`. The work also fixed a latent
+  liveness-cancellation bug in the float stage-move pruner's reads
+  (name-filtered reads cancelled def-and-read registers —
+  `add x0, x0, x1` reported zero reads; now positional).
+- **Parked: d0-protocol around `fsqrt`** — `fmov d0, d29; fsqrt;
+fmov x0, d0` is already the forwarding-collapsed minimum; beating it
+  needs raw-inline bodies to take float args in d-registers
+  (convention change in core/System raw blocks + the naked-inline
+  arg marshalling). ~2 instructions/iteration.
+- **Parked: array-base pin** — the ref-param base reload
+  (`add x9, x29, #0; ldr x9, [x29,#0]`) at each element-pin fill is
+  loop-invariant and pinnable (1 instruction/fill saved), but the DCE
+  receipt shows this class of micro-removal measures at noise or
+  worse; not worth a tranche without a new receipt.
+
 ### 2. Cross-block / cross-iteration value numbering + register coalescing (pidigits)
 
 The K/L/M-survey lever, named "one order larger than a tranche": the
