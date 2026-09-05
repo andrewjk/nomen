@@ -242,7 +242,7 @@ both allocators (`plan_nir_registers`, `promote_loop_locals`) + the
   (lane-resident, deliberately NOT register-promoted). Scalar writes to
   a D register zero the upper half of the V register, so: every fused
   register-pair write re-syncs b's slot (`mov v0.d[0], vN.d[1];
-  str d0, [x29, #slot]`); the write gate refuses pairs where a or b is
+str d0, [x29, #slot]`); the write gate refuses pairs where a or b is
   assigned by a non-pair statement inside the loop (fixpoint drop); the
   lane register dN+1 is blocked (never assigned, rides
   `callee_saved_regs_used` so inline expansions cannot claim it); pair
@@ -310,6 +310,64 @@ registers across the whole loop body. Components:
 
 Gate: a sample + census receipt showing address ALU (not L1 loads) on the
 critical path of the Knuth-D loops post-L/M.
+
+#### GATE RECEIPT — passed 2026-09-05 at HEAD (post SLP tranche)
+
+- **Sample** (pidigits n=40000, 3s): hottest labels are the inlined
+  Knuth-D bodies — `.end_while_19` subtree 669/2277 samples
+  (`.while_24` 270, `.while_22` 206, `.while_25` 192), `end_28` subtree
+  605 (the mul_to/school limb loops), `.end_while_17` 373,
+  `BigInt_ensure` 268. The profile is NOT flat — one lever class
+  dominates.
+- **Census of `.while_24`** (the D4 single-divisor inner loop,
+  ~40 instructions): the receiver path
+  `mov x9, x22; add x9, x9, #24; ldr x9, [x9, #8]` is derived TWICE per
+  iteration (8 with the x11 copies); the store index is rebuilt from a
+  taint-survivor slot (`ldr x3, [x29, #264]` + 3 adds); the carry
+  round-trips a frame slot (`ldr [x29,#288] / str / cset / ldr`);
+  copy shuffles (`mov x2/x3/x10/x12`) pad the rest. True memory loads: 4. **~22 of ~40 instructions are address ALU, staging, or slot
+  traffic — the gate's condition holds.**
+- **But the named seam is wrong for this code**: pidigits has ZERO
+  Buffer accesses — the receiver paths are inline-expanded
+  `.get/.set` accessor marshalling inside BigInt's Nomen-level limb
+  loops (`self.digits` derivations), not `Buffer.data` loads.
+  `buffer_pipeline.ts` keys on Buffer targets and hoists nothing here
+  (verified: `NOMEN_PIPE_DBG` finds 0 accesses). The lever therefore
+  needs the comprehensive address-materialization/coalescing pass in
+  the NIR allocator (cross-statement live ranges for TEMPORARIES) —
+  confirmed **one order larger than a tranche**.
+
+### 3. pidigits accounting closure — WRITTEN 2026-09-05 (criterion unmet at 1.87×)
+
+Fresh interleaved medians (n=4000, best-of-7, load avg 4, outputs
+byte-identical): ours 638.1 ms, C -O2 341.7 ms — **1.87×** (the 1.5×
+criterion is unmet). Per the success criterion, the written structural
+accounting per remaining multiple:
+
+1. **Receiver-path re-derivations + store-index rebuild (dominant).**
+   ~22 of ~40 instructions in the hottest D4 iteration are address ALU,
+   staging copies, or slot traffic (census above); the sample puts that
+   loop's subtree at ~45% of runtime. Structural blocker: the
+   per-statement emission model has no cross-statement live ranges for
+   TEMPORARIES (values with no source name). The receiver path is a
+   PATH (`x9 = x22+24; ldr [x9,#8]`), not an arithmetic chain — the L
+   staging pins and the M `+`-chain hoist structurally cannot touch it;
+   the accessor bodies that re-derive it are inline-expanded at each
+   call site, and hoisting the derivation once per loop requires the
+   allocator-level coalescing pass named in (2). Not a flag-flip: the
+   K machinery is Buffer-keyed and provably does not apply.
+2. **div128 `___udivti3` call boundary.** Measured NOT dominant
+   post-cset-fuse (tranche E survey); unchanged at HEAD — the sample
+   shows the div128 call sites outside the top subtrees.
+3. **Smeared Knuth-D memory traffic.** The carry slot round-trip
+   (`str/ldr [x29,#288]` around `cset`) and hoisted-temp slot reads
+   (`[x29,#264]`) are the per-statement model's materialization tax —
+   subsumed by the same missing temp live ranges as (1).
+
+Closure: pidigits stays above the line pending the coalescing pass.
+That pass, when planned, inherits these receipts: attack the receiver
+PATH materialization + temp live ranges in the NIR allocator (stages
+1–3 substrate), NOT the loads.
 
 ### 3. pidigits accounting closure
 
