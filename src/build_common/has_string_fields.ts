@@ -1,5 +1,5 @@
-import type StructNode from "../nodes/StructNode.ts";
 import type BuildStatus from "../build_c/BuildStatus.ts";
+import type StructNode from "../nodes/StructNode.ts";
 
 /**
  * Whether any field (recursively, through nested owning value structs)

@@ -1,7 +1,7 @@
+import collect_allocations from "../../build_common/collect_allocations.ts";
 import type BaseNode from "../../nodes/BaseNode.ts";
 import build_node from "../build_node.ts";
 import type BuildStatus from "../BuildStatus.ts";
-import collect_allocations from "../../build_common/collect_allocations.ts";
 
 /**
  * Recursively collects all allocation declarations attached to a node and its

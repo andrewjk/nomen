@@ -1,9 +1,9 @@
 import type BuildStatus from "../../build_c/BuildStatus.ts";
+import collect_allocations from "../../build_common/collect_allocations.ts";
 import type BaseNode from "../../nodes/BaseNode.ts";
 import type DeclarationNode from "../../nodes/DeclarationNode.ts";
 import { forwardable_hoisted_param } from "../access_staging.ts";
 import build_node from "../build_node.ts";
-import collect_allocations from "../../build_common/collect_allocations.ts";
 
 /**
  * Recursively collects all allocation declarations attached to a node and its
