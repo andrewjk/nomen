@@ -397,9 +397,18 @@ model materializes. The written accounting should quote those receipts.
   new pool must disjointly split against it (the x10/x11 tree-vs-pin
   collision is the int-side precedent).
 - **Cross-backend argument-evaluation-order divergence** (aarch64
-  right-to-left vs C left-to-right): visible only through side-effecting
-  sibling args the checker does not hoist. Either hoist (checker) or
-  align the order (emitters); low priority, but document the choice.
+  right-to-left vs C left-to-right) — **CHOICE DOCUMENTED 2026-09-05**:
+  the divergence stays, deliberately. The aarch64 right-to-left walk is
+  load-bearing: args spill to stack slots in walk order, so walking
+  from the last argument makes every register-arg's slot land at its
+  final depth with no fixup pass; reversing it would re-touch every
+  call site's marshalling for corpus-wide byte churn. The observable is
+  a program whose sibling arguments carry side effects the checker does
+  NOT hoist (plain `f(g(), h())` calls) — computed args are hoisted to
+  `_param_N` temps in source order by the checker, so both backends see
+  side-effect-free leaves there. The C and aarch64 backends therefore
+  may differ ONLY on non-hoisted side-effecting sibling args; that is
+  the documented contract, not a bug to fix.
 
 ### 5. Phase-3 leftover duplication candidates (refactor-only, no urgency)
 
