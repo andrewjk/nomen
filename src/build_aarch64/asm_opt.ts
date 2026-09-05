@@ -47,6 +47,11 @@ for (let i = 0; i <= 7; i++) {
 	CALLER_SAVED.push(`d${i}`, `s${i}`);
 }
 
+/** Ops whose register operands are ALL reads (no destination register):
+ *  branch/test and call-target forms — their operand must count as live
+ *  (a `mov x9, …` feeding `cbz x9` is load-bearing). */
+const READ_ONLY_REG_OPS = new Set(["blr", "br", "cbz", "cbnz", "tbz", "tbnz"]);
+
 function sibling_reg(name: string): string | null {
 	if (/^w\d+$/.test(name)) return `x${name.slice(1)}`;
 	if (/^x\d+$/.test(name)) return `w${name.slice(1)}`;
@@ -552,15 +557,38 @@ function eliminate_dead_float_stage_moves(code: string): string {
 		}
 		return defs;
 	};
+	// Positional reads (see eliminate_dead_copy_moves): skip the leading
+	// destination, count the rest — the name-based defs filter cancelled
+	// def-and-read registers (`add x0, x0, x1` reported zero reads).
 	const reads_of = (instr: AsmInstruction): string[] => {
 		const reads: string[] = [];
-		const defs = defs_of(instr);
+		let skip: number;
+		switch (instr.op) {
+			case "str":
+			case "strb":
+			case "strh":
+			case "stp":
+			case "cmp":
+			case "tst":
+			case "cmn":
+				skip = 0;
+				break;
+			case "ldp":
+				skip = 2;
+				break;
+			default:
+				skip = READ_ONLY_REG_OPS.has(instr.op) ? 0 : 1;
+				break;
+		}
+		let reg_seen = 0;
 		for (const o of instr.operands) {
 			if (o.kind === "reg") {
-				if (!defs.has(o.name)) reads.push(o.name);
+				if (reg_seen++ >= skip) reads.push(o.name);
 			} else if (o.kind === "mem") {
 				if (o.base) reads.push(o.base);
 				if (o.offset?.kind === "reg") reads.push(o.offset.name);
+			} else if (o.kind === "cond" || o.kind === "imm") {
+				break;
 			}
 		}
 		return reads;
@@ -620,8 +648,12 @@ function eliminate_dead_float_stage_moves(code: string): string {
 			out[i] = "";
 			continue;
 		}
-		for (const r of reads_of(instr)) live.add(r);
+		// Backward transfer, defs FIRST: an instruction that reads AND
+		// defines the same register keeps the earlier definition's need
+		// alive — reads-after-defs would cancel it (the GPR copy pruner's
+		// receipt; this pass's fmov pattern just never observed it).
 		for (const d of defs_of(instr)) live.delete(d);
+		for (const r of reads_of(instr)) live.add(r);
 		out[i] = text;
 	}
 
@@ -633,4 +665,232 @@ function eliminate_dead_float_stage_moves(code: string): string {
 export function run_float_forwarding(code: string): string {
 	if (!float_forwarding_on) return code;
 	return eliminate_dead_float_stage_moves(optimize_float_forwarding(code));
+}
+
+let dead_moves_on = false;
+
+/** Enable-switch for the dead copy-move elimination (default OFF —
+ *  measured −1.3…−1.5% on nbody 5M: the removed `.at()` contract
+ *  markers executed in the OoO shadow and their removal perturbs code
+ *  layout more than it saves; the same measured-loss convention as the
+ *  unroller). Opt-in via `set_dead_move_elimination_enabled`; OFF
+ *  restores the untransformed text byte-identically. */
+export function dead_move_elimination_enabled(): boolean {
+	return dead_moves_on;
+}
+
+export function set_dead_move_elimination_enabled(enabled: boolean): void {
+	dead_moves_on = enabled;
+}
+
+const GPR_PRUNE_SKIP_DESTS = new Set(["sp", "x29", "x30"]);
+
+/**
+ * Dead copy-move elimination (ASM_PLAN_4 SLP follow-on): the value
+ * protocol parks every result in x0, and several emitters stage
+ * addresses through it (`mov x0, xPin` — the fixed-array `.at()`
+ * contract marker) only for the consumer to read the pinned register
+ * directly. A `mov xD, xS` whose xD is never read below (before
+ * redefinition, on every path) is dead.
+ *
+ * Soundness model — a two-set backward scan:
+ * - `live`: registers with an observed read below (defs delete, reads
+ *   add, defs BEFORE reads so a def-and-read instruction keeps the
+ *   earlier definition's need alive).
+ * - `taint`: registers whose liveness is control-flow-unreliable.
+ *   Labels, branches and rets taint EVERYTHING (a def on one switch
+ *   arm must not kill the join's need for the other arm's definition —
+ *   the linear-scan universe reset got this wrong and corrupted
+ *   switch-lowering code); defs and reads untaint (a definitive
+ *   redefinition, or an observed read, re-establishes exact knowledge);
+ *   `bl`/`blr` DEFINitively define the caller-saved set (delete from
+ *   both — every path from above crosses the call).
+ * A move is pruned only when its destination is in NEITHER set.
+ * Frame-pointer, link-register and sp writes are never pruned.
+ */
+export function eliminate_dead_copy_moves(code: string): string {
+	if (!dead_moves_on) return code;
+	const lines = code.split("\n");
+	const out = new Array<string>(lines.length);
+	const live = new Set<string>();
+	const tainted = new Set<string>();
+
+	const defs_of = (instr: AsmInstruction): Set<string> => {
+		const defs = new Set<string>();
+		switch (instr.op) {
+			case "str":
+			case "strb":
+			case "strh":
+			case "stp":
+			case "cmp":
+			case "tst":
+			case "cmn":
+			case "ret":
+				return defs;
+			case "ldp": {
+				for (const o of instr.operands) {
+					if (o.kind === "reg") {
+						defs.add(o.name);
+						if (defs.size === 2) break;
+					} else break;
+				}
+				return defs;
+			}
+			default:
+				break;
+		}
+		if (instr.op.startsWith("b")) return defs;
+		if (READ_ONLY_REG_OPS.has(instr.op)) return defs;
+		for (const o of instr.operands) {
+			if (o.kind === "reg") {
+				defs.add(o.name);
+				break;
+			}
+			if (o.kind === "mem" || o.kind === "cond") break;
+		}
+		return defs;
+	};
+	// Positional reads: skip the LEADING destination register(s), count
+	// every other register operand (a dest that is also a source —
+	// `add x9, x9, #16` — appears at its source position and IS a read).
+	const reads_of = (instr: AsmInstruction): string[] => {
+		const reads: string[] = [];
+		let skip: number;
+		switch (instr.op) {
+			case "str":
+			case "strb":
+			case "strh":
+			case "stp":
+			case "cmp":
+			case "tst":
+			case "cmn":
+				skip = 0;
+				break;
+			case "ldp":
+				skip = 2;
+				break;
+			default:
+				skip = READ_ONLY_REG_OPS.has(instr.op) ? 0 : 1;
+				break;
+		}
+		let reg_seen = 0;
+		for (const o of instr.operands) {
+			if (o.kind === "reg") {
+				if (reg_seen++ >= skip) reads.push(o.name);
+			} else if (o.kind === "mem") {
+				if (o.base) reads.push(o.base);
+				if (o.offset?.kind === "reg") reads.push(o.offset.name);
+			} else if (o.kind === "cond" || o.kind === "imm") {
+				break;
+			}
+		}
+		return reads;
+	};
+	const taint_all = (): void => {
+		for (const r of ALL_TRACKED_REGS) tainted.add(r);
+	};
+
+	for (let i = lines.length - 1; i >= 0; i--) {
+		const text = lines[i];
+		const trimmed = text.trim();
+		if (!trimmed || trimmed.startsWith("//")) {
+			out[i] = text;
+			continue;
+		}
+		const label_m = /^([A-Za-z_.$][\w.$]*):/.exec(trimmed);
+		if (label_m || trimmed.startsWith(".") || /^[\w.$]+\s*=\s*[\w.$]+$/.exec(trimmed)) {
+			// Join point: liveness is the merge of every predecessor path.
+			taint_all();
+			out[i] = text;
+			continue;
+		}
+		const instr = parse_asm_instruction(text, i + 1);
+		if (!instr) {
+			// Unparseable line: invisible definitions would corrupt tracking.
+			live.clear();
+			taint_all();
+			out[i] = text;
+			continue;
+		}
+		const op = instr.op;
+		if (op === "ret") {
+			// The return value rides x0 (x1 for a fat pair); the ret also
+			// ENDS the function — nothing above shares liveness with the
+			// text below.
+			live.clear();
+			live.add("x0");
+			live.add("x1");
+			live.add("d0");
+			live.add("d1");
+			taint_all();
+			out[i] = text;
+			continue;
+		}
+		if (op === "bl" || op === "blr") {
+			// Arguments x0-x8 / d0-d7 are READ (their current values are
+			// consumed — a staging move above the call is load-bearing)
+			// and their taint resolves; x9-x17 and lr are clobbered
+			// (definitive definitions); callee-saved registers are
+			// preserved and flow through untouched.
+			for (let a = 0; a <= 8; a++) {
+				live.add(`x${a}`);
+				tainted.delete(`x${a}`);
+				live.add(`d${a}`);
+				tainted.delete(`d${a}`);
+			}
+			for (let a = 9; a <= 17; a++) {
+				live.delete(`x${a}`);
+				tainted.delete(`x${a}`);
+			}
+			live.delete("x30");
+			tainted.delete("x30");
+			out[i] = text;
+			continue;
+		}
+		if (op === "b" || op.startsWith("b.") || READ_ONLY_REG_OPS.has(op)) {
+			// Control flow below the scanned point diverges here.
+			taint_all();
+			out[i] = text;
+			continue;
+		}
+
+		// Prune candidate: a register-to-register copy whose destination
+		// is neither read below nor control-flow-tainted.
+		if (
+			op === "mov" &&
+			instr.operands.length === 2 &&
+			instr.operands[0].kind === "reg" &&
+			instr.operands[1].kind === "reg" &&
+			/^x\d+$/.test(instr.operands[0].name) &&
+			/^x\d+$/.test(instr.operands[1].name) &&
+			instr.operands[0].name !== instr.operands[1].name &&
+			!GPR_PRUNE_SKIP_DESTS.has(instr.operands[0].name) &&
+			!live.has(instr.operands[0].name) &&
+			!tainted.has(instr.operands[0].name)
+		) {
+			// Drop: the copy has no side effects and its source read
+			// disappears with it.
+			out[i] = "";
+			continue;
+		}
+
+		// Backward transfer, defs FIRST (a def-and-read instruction keeps
+		// the earlier definition's need alive), then reads untaint.
+		for (const d of defs_of(instr)) {
+			live.delete(d);
+			tainted.delete(d);
+			const sib = sibling_reg(d);
+			if (sib) tainted.delete(sib);
+		}
+		for (const r of reads_of(instr)) {
+			live.add(r);
+			const sib = sibling_reg(r);
+			if (sib) live.add(sib);
+			tainted.delete(r);
+			if (sib) tainted.delete(sib);
+		}
+		out[i] = text;
+	}
+
+	return out.filter((l) => l !== "").join("\n");
 }

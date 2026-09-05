@@ -1,4 +1,8 @@
-import { optimize_frame_slots, run_float_forwarding } from "./build_aarch64/asm_opt.ts";
+import {
+	eliminate_dead_copy_moves,
+	optimize_frame_slots,
+	run_float_forwarding,
+} from "./build_aarch64/asm_opt.ts";
 import { reset_access_temp_counter } from "./build_aarch64/build_access_node.ts";
 import { reset_decl_const_counters } from "./build_aarch64/build_declaration_node.ts";
 import { reset_label_counter as reset_for_label_counter } from "./build_aarch64/build_for_loop_node.ts";
@@ -260,6 +264,11 @@ export default function build(
 		// protocol's `fmov xN, dM … fmov dK, xN` crossings into direct
 		// d↔d moves (see asm_opt.ts). Same unconditional/validated contract.
 		status.code = run_float_forwarding(status.code);
+		// Dead copy-move elimination — prunes `mov xD, xS` whose
+		// destination is never read (the x0 value protocol's staging
+		// leftovers, e.g. the `.at()` contract marker when the following
+		// field hop reads the pinned register directly).
+		status.code = eliminate_dead_copy_moves(status.code);
 		if (options.audit) {
 			// The main-function audit_check + pool shutdown hook is emitted
 			// directly by build_function_node (it knows main's return label).
