@@ -9,6 +9,7 @@ import AccessNode from "../nodes/AccessNode.ts";
 import AssignmentNode from "../nodes/AssignmentNode.ts";
 import BaseNode from "../nodes/BaseNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
+import OperationNode from "../nodes/OperationNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import { emit_address_of, resolve_at_element_addr } from "./build_access_node.ts";
@@ -369,6 +370,130 @@ function build_nullable_struct_assignment(
 	emit_struct_copy("x0", "x9", field_offset, struct_size, status);
 	status.code += `mov x0, #1\n`;
 	status.code += `str x0, [x9, #${has_offset}]\n`;
+}
+
+/**
+ * Scalar float field RMW fast path (ASM_PLAN_4 SLP follow-on): the
+ * non-paired member of a field-RMW group (`P.fz = P.fz + dz * m * mag`)
+ * paid the both-complex spill protocol — old value spilled around the
+ * RHS, result round-tripped x0 → x2 (10-11 instructions). With the base
+ * pinned and the RHS side call-free, the whole statement is:
+ * rhs → d0 (float tree), `ldr d1, [base, #off]`, one `fadd/fsub`,
+ * `str d0, [base, #off]` — 5-6 instructions, no spills, no x0 stage.
+ *
+ * Bit-exactness: the RHS is evaluated before the old load (both pure
+ * reads — no intervening writes); addition's commutation is bitwise
+ * exact; subtraction keeps the scalar operand order
+ * (`fsub d0, d1, d0` for old − rhs). Returns true when emitted.
+ */
+function try_float_field_rmw(
+	access: AccessNode,
+	field_name: string,
+	field_type: Type | undefined,
+	offset: number,
+	rhs: BaseNode,
+	status: BuildStatus,
+): boolean {
+	if ((field_type?.name ?? "") === "" || !is_float_type(field_type!.name)) return false;
+	if (aarch64_size(field_type!.name) !== 8) return false;
+	let n = rhs;
+	while (n.node_type === "grouped") {
+		const inner = (n as unknown as { value?: BaseNode }).value;
+		if (!inner) return false;
+		n = inner;
+	}
+	if (n.node_type !== "op") return false;
+	const op = n as OperationNode;
+	if (op.op !== "+" && op.op !== "-") return false;
+	if (!op.left_value || !op.right_value) return false;
+
+	// Exactly one side must re-read the assigned field; the other side is
+	// the computed rest.
+	const is_target_read = (side: BaseNode): boolean => {
+		let s = side;
+		while (s.node_type === "grouped") {
+			s = (s as unknown as { value?: BaseNode }).value as BaseNode;
+		}
+		if (s.node_type !== "access") return false;
+		const acc = s as AccessNode;
+		if (acc.access.node_type !== "access_field") return false;
+		if ((acc.access as AccessFieldNode).name !== field_name) return false;
+		return same_receiver_shape(acc.target, access.target);
+	};
+	let rest: BaseNode | undefined;
+	let old_is_left = false;
+	if (is_target_read(op.left_value)) {
+		old_is_left = true;
+		rest = op.right_value;
+	} else if (is_target_read(op.right_value)) {
+		rest = op.left_value;
+	} else {
+		return false;
+	}
+	// The rest must be a pure expression (calls could write the field).
+	if (!tree_is_call_free(rest, status, new Set())) return false;
+	if (tree_has_call(rest, new Set())) return false; // tree path only
+	const budget = { n: 14 - (status.slp_pair_vregs?.size ?? 0) };
+	if (!float_tree_ok(rest, budget)) return false;
+
+	const base_reg = deferred_field_base_reg(access, status);
+	if (base_reg === undefined) return false;
+	// Commit point — everything below only emits.
+	status.last_result_is_heap = false;
+	status.float_result_in_d0 = false;
+	build_float_tree(rest, "d0", { v: 0 }, status);
+	status.code += `ldr d1, [${base_reg}, #${offset}]\n`;
+	if (op.op === "+") {
+		// old + rhs ≡ rhs + old (bitwise).
+		status.code += `fadd d0, d0, d1\n`;
+	} else if (old_is_left) {
+		status.code += `fsub d0, d1, d0\n`;
+	} else {
+		status.code += `fsub d0, d0, d1\n`;
+	}
+	status.code += `str d0, [${base_reg}, #${offset}]\n`;
+	return true;
+}
+
+/** Structural receiver equality for `arr.at(idx)` targets: same array
+ * shape, same index expression (names/literals by value, ops
+ * recursively, depth-capped). */
+function same_receiver_shape(a: BaseNode | undefined, b: BaseNode | undefined, depth = 0): boolean {
+	if (!a || !b) return a === b;
+	if (depth > 4) return false;
+	if (a.node_type !== b.node_type) return false;
+	if (a.node_type === "value") {
+		return (a as ValueNode).value === (b as ValueNode).value;
+	}
+	if (a.node_type === "op") {
+		const oa = a as OperationNode;
+		const ob = b as OperationNode;
+		if (oa.op !== ob.op) return false;
+		return (
+			same_receiver_shape(oa.left_value, ob.left_value, depth + 1) &&
+			same_receiver_shape(oa.right_value, ob.right_value, depth + 1)
+		);
+	}
+	if (a.node_type === "access") {
+		const aa = a as AccessNode;
+		const ab = b as AccessNode;
+		if (aa.access.node_type !== ab.access.node_type) return false;
+		if (!same_receiver_shape(aa.target, ab.target, depth + 1)) return false;
+		if (aa.access.node_type === "access_func") {
+			const fa = aa.access as unknown as { name?: string; params?: BaseNode[] };
+			const fb = ab.access as unknown as { name?: string; params?: BaseNode[] };
+			if (fa.name !== fb.name) return false;
+			if ((fa.params?.length ?? 0) !== (fb.params?.length ?? 0)) return false;
+			for (let i = 0; i < (fa.params?.length ?? 0); i++) {
+				if (!same_receiver_shape(fa.params![i], fb.params![i], depth + 1)) return false;
+			}
+		}
+		if (aa.access.node_type === "access_field") {
+			if ((aa.access as AccessFieldNode).name !== (ab.access as AccessFieldNode).name) return false;
+		}
+		return true;
+	}
+	return false;
 }
 
 function build_swap(node: AssignmentNode, status: BuildStatus, nir_swap?: NirExpr | null) {
@@ -1623,6 +1748,20 @@ export default function build_assignment_node(
 						}
 					}
 				} else {
+					// Scalar float field RMW fast path (ASM_PLAN_4): rhs →
+					// d0, old → d1, one fadd/fsub, direct d-store — skips
+					// the both-complex spill and the x0 → x2 round trip.
+					if (
+						field_size === 8 &&
+						try_float_field_rmw(access, field_name, field_type, offset, node.right_value, status)
+					) {
+						if (!status.code.endsWith("\n")) {
+							status.code += "\n";
+						}
+						build_swap(node, status, nir_swap);
+						return;
+					}
+
 					const base_reg = deferred_field_base_reg(access, status);
 					if (base_reg === undefined) {
 						get_base_address(access, status, "x0");

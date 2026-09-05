@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 
 import { expect, test } from "vite-plus/test";
@@ -8,6 +9,10 @@ import { get_library } from "../src/lib";
 import parse from "../src/parse";
 
 const system_lib = get_library(path.resolve("core"));
+
+function read_bench_source(name: string): string {
+	return fs.readFileSync(path.resolve(`bench/nomen/${name}.nm`), "utf8");
+}
 
 /**
  * Field-pair SLP (ASM_PLAN_4 remaining step 1): adjacent same-shaped
@@ -159,4 +164,31 @@ test("pair-fused binaries still produce correct output on both backends", async 
 	// advance-like pass, then ps.at(1) reads back (4.75, 5.75). Both
 	// backends must agree (the C backend is untouched by this pass).
 	await build_and_check_output(PAIR_PROGRAM, "slp_pair_behavior", "4.750000\n5.750000\n", true);
+});
+
+test("scalar float field RMW skips the spill and x0 protocol", () => {
+	// The odd axis of a field-RMW group (no pair partner) — rhs builds
+	// into d0, old loads into d1, one fadd, one direct d-store: no
+	// `str d0, [sp, #-16]!` spill, no `fmov x0, d0 / mov x2, x0` stage.
+	// The real nbody bench: its third-axis RMW
+	// (`bodies.at(j).vz = bodies.at(j).vz + dz * mass_i * mag`) hits the
+	// fast path — rhs into d0, old into d1, one fadd, one d-store.
+	const nbody_source = read_bench_source("nbody");
+	const parsed = parse(nbody_source, system_lib);
+	expect(parsed.errors).toEqual([]);
+	set_slp_pair_enabled(true);
+	const code = build(parsed.root, { arch: "aarch64", optimize: true }).code;
+	const advance = code.slice(code.indexOf("\nadvance:"), code.indexOf("\noffset_momentum:"));
+	expect(advance).toMatch(/fadd d0, d0, d1\nstr d0, \[x\d+, #48\]/);
+	// the generic shape's spill fingerprint must be gone from advance
+	expect(advance).not.toMatch(/str d0, \[sp, #-16\]!/);
+	set_slp_pair_enabled(false);
+	try {
+		const off = build(parsed.root, { arch: "aarch64", optimize: true }).code;
+		const off_advance = off.slice(off.indexOf("\nadvance:"), off.indexOf("\noffset_momentum:"));
+		// pre-tranche shape: the x0 round-trip fingerprint IS present
+		expect(off_advance).toMatch(/fmov x0, d0\nmov x2, x0/);
+	} finally {
+		set_slp_pair_enabled(true);
+	}
 });
