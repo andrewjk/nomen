@@ -59,7 +59,7 @@ pub struct StringBuilder {
 	}
 
 	// Append a single byte (char).
-	func append_char = (ref self, char c) {
+	pub inline func append_char = (ref self, char c) {
 		```
 		#arch: c
 		int idx = self->len;
