@@ -112,17 +112,27 @@ declare's register binding is visible to emit_var_store (the
 inline-return/declare-promotion plumbing). One instruction per char;
 trace the inline-return protocol before attempting.
 
-### Tranche 3 — borrow-position `to_string()` elision
+### Tranche 3 — borrow-position `to_string()` elision (GATED)
 
 `X.to_string()` where type_from_value_node(X) is `string`, consumed at
-a position whose parameter is a plain `string` (borrow): pass the
-receiver's pair, skip the strdup and the temp free. Call arguments and
-concat operands both qualify. Soundness note: a borrowed string cannot
-be mutated while borrowed (the checker's borrow discipline), so the
-copy is unobservable — VERIFY that holds for `string_set`-style
-mutation before landing. No bench impact expected (corpus to_strings
-are int conversions); it is a real-world allocation win and the
-motivating note's target.
+a position whose parameter is a plain `string`: pass the receiver's
+pair, skip the strdup and the temp free. Call arguments and concat
+operands both qualify.
+
+SOUNDNESS GATE (verified 2026-09-05 — the naive form is UNSOUND):
+plain `string` params share their bytes with the caller, and
+`String.set` takes `ref self` writing through them
+(`strb w2, [x19, x1]` — a param variable binds to `ref`). A consumer
+that reaches `set` on the param would, with the elision, mutate the
+CALLER's original string where the copy semantics previously isolated
+it. The elision therefore requires an INTERPROCEDURAL no-mutation
+check on the callee for that parameter (scan the callee body —
+transitively through its own plain-string-param calls — for `set`/
+byte-mutation reaches; cache per function; kill-switch). Console.write,
+Regex.count, Json.parse are trivially non-mutating — the hot real-world
+consumers. No bench impact expected (corpus to_strings are int
+conversions); real-world allocation win and the motivating note's
+target. Implement the mutation scan as its own reviewed unit.
 
 ### Tranche 4 — move-on-last-use string assignment (largest)
 
