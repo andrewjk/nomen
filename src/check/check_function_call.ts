@@ -38,6 +38,7 @@ import {
 	is_owning_ref_type,
 	is_owning_struct_type_requiring_move,
 } from "./utils/ownership.ts";
+import { maybe_mark_borrow_to_string_arg } from "./utils/string_mutation_scan.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
 
@@ -965,6 +966,19 @@ export default function check_function_call(
 					param.start,
 				);
 			}
+		}
+
+		// Borrow-position `to_string()` elision (STRING_PLAN tranche 3): when
+		// the argument is `X.to_string()` on an owned string, this parameter is
+		// a plain `string` (a borrow), and the interprocedural scan proves the
+		// callee can't reach the bytes through it, mark the call and keep the
+		// argument inline — the backends pass the receiver's pair straight
+		// through, skipping the strdup and the hoisted temporary's free.
+		if (
+			param.node_type === "access" &&
+			maybe_mark_borrow_to_string_arg(param, func_param, func, i, node, status)
+		) {
+			continue;
 		}
 
 		if (

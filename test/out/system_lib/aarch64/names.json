@@ -113,7 +113,6 @@
 	"Nursery_init",
 	"StringBuilder_init",
 	"StringBuilder_ensure",
-	"StringBuilder_append_char",
 	"StringBuilder_append_string",
 	"StringBuilder_to_string",
 	"StringBuilder_destroy",

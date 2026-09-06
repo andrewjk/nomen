@@ -71,6 +71,17 @@ export default class AccessFunctionCallNode extends BaseNode {
 	 */
 	is_statement?: boolean;
 	/**
+	 * Set during checking when this `.to_string()` call sits at a BORROW
+	 * position: a call argument whose parameter is a plain `string` (verified
+	 * non-mutating by the interprocedural scan, see
+	 * check/utils/string_mutation_scan.ts) or a string concat operand (a
+	 * read-only consumer by construction). The backends then pass the
+	 * receiver's (ptr, len) pair straight through — skipping the
+	 * `string_to_string` strdup and the temporary's anchor/free — instead of
+	 * materializing an owned copy nobody mutates.
+	 */
+	borrow_to_string?: boolean;
+	/**
 	 * Set when this `.at(i)` call was synthesized by array destructuring
 	 * (`var [a, b] = arr`). The index is a compile-time constant chosen by
 	 * the programmer, so the parameter constraint (bounds check) is skipped —

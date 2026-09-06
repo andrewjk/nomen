@@ -1391,6 +1391,22 @@ function build_access_method(
 	const target_name =
 		node.target.node_type === "value" ? (node.target as ValueNode).value : target_type?.name;
 	const enum_node = status.enums.find((e) => e.name === target_name);
+	// Borrow-position `to_string()` elision (STRING_PLAN tranche 3): the
+	// checker verified the consumer takes the receiver's bytes as a plain
+	// `string` borrow and cannot mutate them — pass the receiver's (ptr, len)
+	// pair straight through instead of calling `string_to_string` (strdup) and
+	// freeing the temporary. The result is NOT an owned heap temp.
+	if (
+		access_func.borrow_to_string &&
+		target_type?.name === "string" &&
+		!target_type.is_view &&
+		!target_type.is_array
+	) {
+		build_node(node.target, status);
+		if (!status.code.endsWith("\n")) status.code += "\n";
+		status.last_result_is_heap = false;
+		return;
+	}
 	if (enum_node) {
 		const enum_case = enum_node.cases.find((c) => c.name === access_func.name);
 		if (enum_case) {

@@ -299,6 +299,10 @@ export function is_owned_heap_temp(
 		// the outer AccessNode — fall back to the latter.
 		type_name = access.access?.type?.name || type_name;
 	}
+	// A borrow-position `to_string()` (STRING_PLAN tranche 3) passes the
+	// receiver's pair through — it is a borrow of the caller's string, not an
+	// owned temp, so the operator must not free it after consuming it.
+	if ((check_node as unknown as { borrow_to_string?: boolean }).borrow_to_string) return false;
 	if (type_name !== "string") return false;
 	if (check_node.node_type === "op") return true;
 	if (check_node.node_type === "func_call" || check_node.node_type === "access_func") {

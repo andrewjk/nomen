@@ -511,6 +511,20 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 					break;
 				}
 			}
+			// Borrow-position `to_string()` elision (STRING_PLAN tranche 3): the
+			// checker verified the consumer takes the receiver's bytes as a plain
+			// `string` borrow and cannot mutate them — emit the receiver
+			// expression itself instead of `string_to_string(receiver)` (strdup);
+			// no temporary is created, so nothing is freed.
+			if (
+				access_func.borrow_to_string &&
+				target_type.name === "string" &&
+				!target_type.is_view &&
+				!target_type.is_array
+			) {
+				build_node(node.target, status);
+				break;
+			}
 			// `.to_string()` on a string-typed receiver compiles to
 			// `string_to_string(receiver)`, whose _raw_ body strdups its
 			// argument and returns a fresh owned copy. When the receiver is

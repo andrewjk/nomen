@@ -112,7 +112,7 @@ declare's register binding is visible to emit_var_store (the
 inline-return/declare-promotion plumbing). One instruction per char;
 trace the inline-return protocol before attempting.
 
-### Tranche 3 — borrow-position `to_string()` elision (GATED)
+### Tranche 3 — borrow-position `to_string()` elision — DONE (2026-09-06)
 
 `X.to_string()` where type_from_value_node(X) is `string`, consumed at
 a position whose parameter is a plain `string`: pass the receiver's
@@ -133,6 +133,52 @@ Regex.count, Json.parse are trivially non-mutating — the hot real-world
 consumers. No bench impact expected (corpus to_strings are int
 conversions); real-world allocation win and the motivating note's
 target. Implement the mutation scan as its own reviewed unit.
+
+LANDED as `src/check/utils/string_mutation_scan.ts` (the reviewed
+unit) + a `borrow_to_string` stamp the checker puts on the access_func
+and both backends honor:
+
+- **Mark sites** (check pass): call arguments in check_function_call
+  (callee param must be plain `string` — no ref/mov/view/variadic;
+  marking also skips the usual `_param_N` temp hoist, so no anchor and
+  no scope-exit free) and string `+` operands in check_operation_node
+  (concat is a read-only consumer by construction — no scan needed).
+  The RECEIVER must be an owned `string` via a name/field chain
+  (never a call/concat temp — an elided borrow of a temporary would
+  leak; and the receiver type matters, not the result type:
+  `n.to_string()` on an int produces a FRESH allocation — caught
+  during testing, the hoist-skip would have leaked its temp).
+- **Mutation scan**: walks the callee AST for byte-mutation reaches on
+  the param — direct `ref self` dispatch (`p.set`), forwarding to
+  `ref`/`mov` params (the callee would own — and free — the bytes),
+  swap, spawn/async capture — and recurses through plain-string-param
+  callees (cycle-safe via a visiting set; memoized per
+  (function, param) in a WeakMap). Unresolvable callees are
+  conservative-mutating. Raw `#arch` bodies are opaque to the AST, so
+  textual rules: asm rejects any store/RMW mnemonic or free/mutator
+  `bl` target (Console.write — `printf` only, no stores — passes);
+  C rejects param indexing/deref, any call taking the param as its
+  FIRST argument (C convention: first pointer args are destinations),
+  and the byte-writing libc surface (`printf("%s", line)` passes —
+  the param is a later argument).
+- **Backends**: aarch64 `build_access_method` returns the receiver
+  pair (no push/bl/pop, no frees_string_receiver,
+  `last_result_is_heap` false); both `is_owned_heap_temp`s return
+  false for marked nodes (concat must not free a borrow); C emits the
+  receiver expression instead of `string_to_string(receiver)`.
+- Kill-switch `set_borrow_to_string_elision_enabled(false)` restores
+  the pre-tranche emission (pinned in
+  test/borrow_to_string_elision.test.ts).
+
+Receipt (prog: `consume(s.to_string())`, `Console.write(s.to_string())`,
+`"x" + s.to_string()`): per site the strdup + hoisted-temp + free
+disappear — aarch64 main frame 208→160 bytes, one `bl string_to_string`
+total (the owned `var s` decl); C collapses to `consume(s)`,
+`Console_write(s)`, `string_add(nomen_str_lit("x",1), s)`. Full suite
+green (285 files); string benches byte-identical on both backends
+(harness-pinned). Regex.count / Json.parse routes verified non-mutating
+by the scan (pure-Nomen forwarding chains); view/mov positions keep
+their copies (outside this tranche).
 
 ### Tranche 4 — move-on-last-use string assignment (largest)
 

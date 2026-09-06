@@ -20,6 +20,7 @@ import {
 	mangled_label,
 } from "./utils/function_overload.ts";
 import get_null_check_var from "./utils/get_null_check_var.ts";
+import { maybe_mark_borrow_to_string_operand } from "./utils/string_mutation_scan.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
 
@@ -164,6 +165,15 @@ export default function check_operation_node(op: OperationNode, status: CheckSta
 				const multiplier = parseInt(right_val);
 				op.type.length = new ValueNode(-1, (left_len * multiplier).toString(), new Type("int"));
 			}
+		}
+
+		// String concat is a read-only consumer of both operands (it copies
+		// them into a fresh buffer), so a borrow-position `to_string()` operand
+		// needs no owned copy (STRING_PLAN tranche 3). No mutation scan is
+		// required here — concat never writes through its operands.
+		if (op.op === "+" && op.type.name === "string") {
+			maybe_mark_borrow_to_string_operand(op.left_value, status);
+			maybe_mark_borrow_to_string_operand(op.right_value, status);
 		}
 
 		return true;
