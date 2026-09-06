@@ -105,12 +105,27 @@ escape-switch dispatch and the remaining append_string call. Kept as a
 strict instruction-count win (applies corpus-wide to every char/short
 compare).
 
-REMAINING here: the per-char `strb w0, [x29,#64]` slot store is dead
-(c's reads all use the promoted x12; the loop-exit store-back reads
-the register) — it survives because the store is emitted before the
-declare's register binding is visible to emit_var_store (the
-inline-return/declare-promotion plumbing). One instruction per char;
-trace the inline-return protocol before attempting.
+REMAINING here — RECEIPT CORRECTION (2026-09-06, falsified): the note
+below claimed the per-char `strb w0, [x29,#64]` slot store is dead.
+It is NOT: `c` has only 2 reads in json_parse_string (`code`'s init +
+the else-branch `append_char` arg) — below the loop-promotion ≥3-reads
+threshold AND the NIR allocator's MIN_READS=4 — and its live range
+crosses the inline append_char's `_nomen_realloc_wrap` call, which
+also disqualifies the caller-saved low-read extension pool. The inline
+append_char expansions READ the slot (`ldrb w1, [x29, #64]` at
+else_241 in the prebuilt system.s) — the store is load-bearing. Making
+it dead requires granting `c` a callee-saved register (eligibility
+changes that shipped regressions before — the regex-redux class) for
+a bounded 1 instr/char win; the original note ("trace the
+inline-return protocol") under-described the gate. PARKED unless a
+reads-threshold or inline-arg-marshalling change lands for other
+reasons. Original note kept below for the record:
+> the per-char `strb w0, [x29,#64]` slot store is dead (c's reads all
+> use the promoted x12; the loop-exit store-back reads the register) —
+> it survives because the store is emitted before the declare's
+> register binding is visible to emit_var_store (the inline-return/
+> declare-promotion plumbing). One instruction per char; trace the
+> inline-return protocol before attempting.
 
 ### Tranche 3 — borrow-position `to_string()` elision — DONE (2026-09-06)
 

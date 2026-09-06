@@ -243,3 +243,29 @@ way — replaced with direct emission). Worth a look whenever the declare
 emission path is next touched: the discarded first build also explains
 why the visible shape for promoted operands stages from SLOTS instead of
 the site registers bound moments earlier.
+
+## STRING_PLAN tranche 2 REMAINING note falsified (dead slot store is live)
+
+Found while picking up the plan's "REMAINING here" item (2026-09-06):
+the note claimed json_parse_string's per-char `strb w0, [x29,#64]`
+(c's declare slot store) is dead because "c's reads all use the
+promoted x12". Receipts say otherwise:
+
+- `c` is NOT promoted: 2 reads total (code's `c as int` init + the
+  else-branch `sb.append_char(c)` arg) — under loop promotion's >=3
+  threshold and the NIR allocator's MIN_READS=4.
+- x12 belongs to `code` (NIR site alloc, low-read extension: call-free
+  range), not to `c`.
+- `c`'s live range crosses the inline append_char's
+  `_nomen_realloc_wrap` call, which disqualifies the caller-saved
+  low-read pool (`f.crosses_call` gate in nir_regalloc.ts).
+- The inline append_char expansions READ the slot
+  (`ldrb w1, [x29, #64]` at else_241 in the prebuilt system.s) — the
+  store is load-bearing today.
+
+Making the store dead requires granting `c` a callee-saved register
+(loosening the reads thresholds, or a new pool class for call-crossing
+loop-local scalars) — eligibility changes are the regex-redux
+regression class — for a bounded 1 instr/char win. PARKED in
+STRING_PLAN.md tranche 2 with the correction; revisit only if a
+threshold or inline-arg-marshalling change lands for other reasons.
