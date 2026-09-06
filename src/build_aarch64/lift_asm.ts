@@ -264,6 +264,9 @@ function parse_operand(tok: string): Operand | "labelish" | null {
 	const pseudo = parse_pseudo_imm(trimmed);
 	if (pseudo !== null) return { kind: "imm", value: pseudo, raw: trimmed };
 	if (/^[A-Za-z_.$][\w.$]*$/.test(trimmed)) return "labelish";
+	// GNU numeric local labels (`1:`) with forward/backward references
+	// (`1f` / `1b`) — raw library blocks use them for short branches.
+	if (/^\d+[fb]?$/.test(trimmed)) return "labelish";
 	// Symbol with a Mach-O relocation suffix (`_Sym@PAGE`, `_Sym@PAGEOFF`,
 	// `@GOTPAGE`, …) — the adrp/add vtable idiom. The suffix rides the label
 	// operand verbatim: it references an external data symbol, so the

@@ -332,6 +332,82 @@ current reuse windows are statement-list scoped (straight-line, taint-
 killed at calls/branches/joins), while clang keeps ~10 live scalars in
 registers across the whole loop body. Components:
 
+#### RESULT — copy coalescing + derivation memoization, tranche 1 (landed 2026-09-06)
+
+Shipped as `src/build_aarch64/asm_coalesce.ts` (`coalesce_copies`, kill-switch
+`set_copy_coalescing_enabled`, default ON; wired into build.ts after
+`eliminate_dead_copy_moves`, before audit wrapping; runs over the final text,
+re-validated by the phase-1 lift). NOT the full allocator-level pass — the
+first slice of it, delivered at the text level where the soundness fences are
+region-local:
+
+- **Copy propagation**: `mov xD, xS` records D == S; reads of D rewrite to S
+  until S or D is redefined or a region boundary. w/x families exact-name,
+  sibling-aware kills; writeback memory forms and lines whose pristine
+  render round-trip fails are never rewritten (the lift drops shifted-ALU
+  shift qualifiers — the round-trip guard is what keeps `add x0, x1, x2,
+  lsl #6` intact).
+- **Flagged-move deletion**: a backward two-set live/taint scan (the
+  eliminate_dead_copy_moves model) deletes exactly moves whose destination
+  is dead below; taint at joins is the TARGET BLOCK's upward-exposed read
+  set (walked to depth 4, memoized) instead of the universe — the universe
+  taint from a distant `ret`/`b.cond` had been blocking every staging-move
+  deletion in loop bodies.
+- **Derivation memoization**: the consecutive `mov xA, xB / add xA, xA|xB,
+  #o1 / ldr xA, [xA, #o2]` receiver-path sequence is memoized (base + off1
+  + off2, holders = the sequence register + its tail copies); an identical
+  later sequence with a live holder snapshot deletes its three instructions
+  plus the tail copy. This crosses the boundary the statement-level staging
+  pins cannot: the flag-form carry `if` taints the statement window but
+  emits NO branch, so two accessor statements share one straight-line text
+  region.
+- **Drive-by validator fixes (the table is the contract)**: `umulh` and
+  `movn` added to MNEMONICS and GNU numeric local labels (`1f`/`2b`)
+  accepted as label operands — BigInt's raw `mul_wide_hi` body had been
+  failing the phase-1 lift silently on every build (`build_errors` are not
+  surfaced by the bench driver); the unparseable `umulh` line also reset
+  all coalescer state mid-loop.
+- **Four soundness receipts caught during bring-up** (build both arms, run,
+  diff): (1) `reads_of` name-matching hid dest-and-source reads
+  (`eor x24, x24, x23`) so the XOR-swap's load-bearing `mov x24, x0` was
+  deleted — now position-based like the existing pass; (2) merkletrees
+  segfault from `bne`-spelled conditional branches (ARM32-style aliases)
+  missing both branch arms' exposed-read unions; (3) the exposed walk
+  stopped at `bl` ("reads after a call are defined by the convention") —
+  wrong for callee-saved registers, which flow through; (4) a mov's own
+  source must not substitute into a self-move (`mov x0, x19` → `mov x0,
+  x0`), preserving the deferred-self shape.
+
+Census (instruction lines per loop, pidigits div_to/mul_to; base = pre-
+tranche):
+
+| loop                           | before | after |
+| ------------------------------ | -----: | ----- |
+| div_to D3 correction (.while_22) |     33 |    24 |
+| div_to D4 multiply (.while_24)   |     38 |    28 |
+| div_to D4 subtract (.while_25)   |     32 |    26 |
+| mul_to single-limb (.while_9)    |     44 |    40 |
+| mul_to schoolbook (.while_12)    |     59 |    54 |
+
+**RESULT (interleaved best-of-7, load 3–5, outputs byte-identical across
+backends on every bench):** pidigits n=4000 0.63 → **0.55 s (−12.7%)** —
+now ~1.57× vs C `-O2` (was 1.89×). Bench matrix neutral: nbody 5M,
+mandelbrot, spectral-norm, binarytrees, nsieve ±0; fannkuch +0.7% (noise).
+Full suite green (288 files / 2805 tests) with `test/copy_coalesce.test.ts`
+(9 tests: substitution, alias-kill, derivation deletion + memo-kill fences,
+round-trip guard, kill-switch byte restoration, behavioral on both
+backends); the cset/promoted-dest/field-marshal/call-marshal/access-staging
+shape tests updated to the new canonical forms (their properties intact).
+
+What remains for the allocator-level pass (item 2 proper): the carry slot
+round-trips (multi-written loop-carried scalars — pool exhaustion keeps
+`mul_carry`-class names in slots), per-region reassignment of the
+callee-saved pool, and receiver-path materialization ACROSS calls and
+loop iterations (the memo is region-scoped by design). The asm-level slice
+is the floor those build on; pidigits' residual 1.57× decomposes into the
+same receipts as the 2026-09-05 accounting, now with the address ALU and
+staging halves of the D4 loops largely gone.
+
 - **Receiver-path re-derivation**: `mov x9, x22; add x9, x9, #24; ldr x9,
 [x9, #8]` twice per D4 iteration — 6 of ~37 lines — is a PATH, not an
   arithmetic chain, so neither the L staging pins nor the M `+`-chain

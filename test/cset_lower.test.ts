@@ -39,8 +39,10 @@ test("declare + if fuses into cmp/cset with no branch", () => {
 	const fn = code.slice(code.indexOf("\ncarries:"), code.indexOf("\n_main:"));
 	// The comparison materializes as a branch-free cset — into the flag's
 	// promoted home directly (stage-5 dest hint) or x0 + store when it
-	// lives in a slot; the branch + join label are gone.
-	expect(fn).toContain(`cmp x1, x2\n`);
+	// lives in a slot; the branch + join label are gone. Copy coalescing
+	// substitutes the staging moves into the cmp's operand registers, so
+	// the comparison reads the params' arrival registers.
+	expect(fn).toMatch(/cmp x\d+, x\d+\n/);
 	expect(fn).toMatch(/cset x[0-9]+, lo\n/);
 	expect(fn).not.toMatch(/b\.lo end_\d+/);
 	expect(fn).not.toMatch(/^end_\d+:/m);

@@ -1,3 +1,4 @@
+import { coalesce_copies } from "./build_aarch64/asm_coalesce.ts";
 import {
 	eliminate_dead_copy_moves,
 	eliminate_redundant_widen_masks,
@@ -282,6 +283,13 @@ export default function build(
 		// leftovers, e.g. the `.at()` contract marker when the following
 		// field hop reads the pinned register directly).
 		status.code = eliminate_dead_copy_moves(status.code);
+		// Copy coalescing + derivation memoization — substitutes read
+		// operands through register copies (the x0 staging protocol's
+		// writeback moves) and deletes redundant receiver-path
+		// re-derivations within a straight-line region (the flag-form
+		// carry `if` emits no branch, so accessor pairs share one region
+		// the statement-level pins cannot span).
+		status.code = coalesce_copies(status.code);
 		if (options.audit) {
 			// The main-function audit_check + pool shutdown hook is emitted
 			// directly by build_function_node (it knows main's return label).

@@ -128,7 +128,9 @@ pub func main = () {
 	// besides): the store's strided index register must have been (re)built
 	// AFTER the call — the load's pin did not survive across it.
 	const lines = body.split("\n");
-	const store_line = lines.findIndex((l) => /^str x2, \[x\d+, x\d+, lsl #3\]$/.test(l));
+	// Copy coalescing may substitute the stored value's register — only
+	// the strided-index store shape is pinned.
+	const store_line = lines.findIndex((l) => /^str x\d+, \[x\d+, x\d+, lsl #3\]$/.test(l));
 	expect(store_line).toBeGreaterThan(0);
 	const idx_reg = lines[store_line].match(/\[x\d+, (x\d+), lsl #3\]/)![1];
 	let label_line = -1;
@@ -139,10 +141,14 @@ pub func main = () {
 		}
 	}
 	expect(label_line).toBeGreaterThan(0);
+	// Copy coalescing may substitute the store's index register with the
+	// loop induction itself (always current — correct by construction).
+	// Otherwise a rebuilt pin must appear after the call.
+	const induction_direct = new RegExp(`^add ${idx_reg}, ${idx_reg}, #1$`, "m").test(body);
 	const rebuilt = lines
 		.slice(label_line + 1, store_line)
 		.some((l) => new RegExp(`^(?:mov|ldr|add) ${idx_reg},`).test(l));
-	expect(rebuilt).toBe(true);
+	expect(rebuilt || induction_direct).toBe(true);
 });
 
 test("behavioral: staged loops produce exact results on both backends", async () => {

@@ -120,7 +120,10 @@ pub func main = () {}
 `);
 	const fn = code.slice(code.indexOf("\nbumps:"), code.indexOf("\n_main:"));
 	// imm12-range literals fold into the register home; 4096 does not.
-	expect(fn).toMatch(/add x(?:1[2-5]|2[0-8]), x(?:1[2-5]|2[0-8]), #1\n/);
+	// The first fold may read the initializer's staging register directly
+	// (copy coalescing substitutes the promoted home's defining move):
+	// `add x12, x0, #1` instead of `add x12, x12, #1`.
+	expect(fn).toMatch(/add x(?:1[2-5]|2[0-8]), x(?:\d+), #1\n/);
 	expect(fn).toMatch(/add x(?:1[2-5]|2[0-8]), x(?:1[2-5]|2[0-8]), #4095\n/);
 	expect(fn).toMatch(/sub x(?:1[2-5]|2[0-8]), x(?:1[2-5]|2[0-8]), #2\n/);
 	expect(fn).not.toContain("add x(?:1[2-5]|2[0-8]), x(?:1[2-5]|2[0-8]), #4096");

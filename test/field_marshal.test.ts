@@ -67,8 +67,10 @@ pub func main = () {
 test("scalar field write with a callee-saved receiver skips the push/pop", () => {
 	const code = compile(WRITE_SHAPE);
 	const body = fn_body(code, "Counter_set_len");
-	// The store goes straight through the receiver's register.
-	expect(body).toMatch(/str x2, \[x19, #\d+\]\n/);
+	// The store goes straight through the receiver's register. Copy
+	// coalescing may substitute the stored value's register (the arg's
+	// arrival register read directly), so only the base is pinned.
+	expect(body).toMatch(/str x\d+, \[x19, #\d+\]\n/);
 	// No base push/pop pair around the RHS.
 	expect(body).not.toMatch(/str x0, \[sp, #-16\]!\n[\s\S]*ldr x0, \[sp\], #16\n/);
 });
@@ -78,7 +80,9 @@ test("field write with a call in the RHS stores after the call through the regis
 	const body = fn_body(code, "Counter_len_from_call");
 	const bl_at = body.indexOf("bl Inner_doubled");
 	expect(bl_at).toBeGreaterThan(-1);
-	const store_at = body.indexOf("str x2, [x19,");
+	// Copy coalescing substitutes the store's value register (the RHS
+	// result stays in its arrival register — the mov x2 shuffle folds).
+	const store_at = body.indexOf("str x0, [x19,");
 	expect(store_at).toBeGreaterThan(bl_at);
 	expect(body).not.toMatch(/str x0, \[sp, #-16\]!/);
 });
@@ -122,7 +126,10 @@ test("multi-hop chain operand loads direct from the receiver home", () => {
 	const body = fn_body(code, "scale");
 	// The 3-hop chain is ONE summed-offset load from the callee-saved param
 	// register — no per-hop x0 builds and no `mov x1, x0` shuffle.
-	expect(body).toMatch(/ldr x1, \[x1[0-9], #\d+\]\n/);
+	// Copy coalescing may read the receiver from its arrival register
+	// (the park move folded away) — the summed-offset one-load shape is
+	// the property under test.
+	expect(body).toMatch(/ldr x1, \[x\d+, #\d+\]\n/);
 	expect(body).not.toMatch(/mov x1, x0\n/);
 });
 
