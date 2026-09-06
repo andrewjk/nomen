@@ -120,6 +120,7 @@ a bounded 1 instr/char win; the original note ("trace the
 inline-return protocol") under-described the gate. PARKED unless a
 reads-threshold or inline-arg-marshalling change lands for other
 reasons. Original note kept below for the record:
+
 > the per-char `strb w0, [x29,#64]` slot store is dead (c's reads all
 > use the promoted x12; the loop-exit store-back reads the register) —
 > it survives because the store is emitted before the declare's
@@ -202,6 +203,30 @@ pair, mark `t` moved. Requires the checker's last-use analysis to feed
 the builders (the `mark_moved_if_struct` precedent exists for `mov`-
 explicit structs). Gate: a checker-level last-use receipt on a real
 pattern first; do not start without it.
+
+GATE RECEIPT (2026-09-06) — the checker-level analysis exists
+(`src/check/utils/last_use.ts`, pinned in
+test/last_use_analysis.test.ts) and measures the real pattern:
+
+- The accumulator shape (`var next = acc + part; acc = next` inside a
+  loop — the loop-local binding makes the back edge safe) is detected:
+  1 site in the real-world-shaped probe.
+- Corpus receipts: json-serde / knucleotide / regex-redux and the
+  whole core System library contain ZERO `s = t` last-use sites —
+  confirming the plan's "real-world allocation win, no bench impact"
+  expectation (the win lives in user code, e.g. pre-StringBuilder
+  accumulation and staged rebinding).
+- Negative controls, all refused: read-after (0), back-edge re-read of
+  an outer-loop binding (0), const source (0), sibling-branch read
+  (0), non-string and compound assignments (0).
+
+The conservative model: reads textually after the site kill it (sibling
+branches included), reads inside an enclosing loop kill it UNLESS the
+binding is loop-local (fresh each iteration), spawn/async subtrees are
+opaque, and sources must be plain `var` owned-string locals with the
+assignment as plain `s = t`. Implementation of the tranche itself
+(builder consumption in both backends, moved-marking in the checker
+flow, kill-switch + restoration tests) may now start per the gate.
 
 ### Standing invariants (every tranche)
 
