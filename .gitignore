@@ -10,3 +10,5 @@ build/
 *.o
 *.s
 bench/rust/target/
+
+test/out/**/run-*
