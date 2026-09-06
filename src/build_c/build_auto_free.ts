@@ -185,6 +185,9 @@ export function free_scoped_declarations(
 		if (
 			!is_destructured_field_access &&
 			!is_borrowed_string &&
+			// Move-on-last-use (STRING_PLAN tranche 4): a moved-from source no
+			// longer owns its bytes — the transferred-to variable frees them.
+			!status.moved_string_vars?.has(dec.name) &&
 			(!dec.type.is_static ||
 				value_is_heap_string ||
 				was_strdup_string_var ||

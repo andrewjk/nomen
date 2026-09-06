@@ -1,6 +1,7 @@
 import AccessNode from "../../nodes/AccessNode.ts";
 import type AssignmentNode from "../../nodes/AssignmentNode.ts";
 import BaseNode from "../../nodes/BaseNode.ts";
+import type DeclarationNode from "../../nodes/DeclarationNode.ts";
 import type FunctionNode from "../../nodes/FunctionNode.ts";
 import OperationNode from "../../nodes/OperationNode.ts";
 import type ValueNode from "../../nodes/ValueNode.ts";
@@ -33,6 +34,83 @@ import type ValueNode from "../../nodes/ValueNode.ts";
  *     an owned non-view string, and the assignment must be plain
  *     (`s = t`, no compound operator) with `t` as the ENTIRE right side.
  */
+
+let move_enabled = true;
+
+/** Kill-switch for the move-on-last-use emission (default ON). OFF = the
+ *  stamping pass clears its marks and the backends keep the strdup'd copy —
+ *  output byte-identical to the pre-tranche compiler. */
+export function set_move_on_last_use_enabled(enabled: boolean): void {
+	move_enabled = enabled;
+}
+
+export function move_on_last_use_enabled(): boolean {
+	return move_enabled;
+}
+
+/**
+ * Stamps `last_use_move` on candidate declare/assignment nodes across the
+ * tree. Run once per build, after checking (types are stamped). With the
+ * kill-switch OFF, existing stamps are CLEARED so repeated builds of a
+ * shared AST stay deterministic. Returns the number of stamps.
+ */
+export function stamp_last_use_moves(root: BaseNode): number {
+	if (!move_enabled) return clear_last_use_moves(root);
+	let count = 0;
+	for (const stamp of collect_stamps(root)) {
+		stamp.node.last_use_move = true;
+		count++;
+	}
+	return count;
+}
+
+function clear_last_use_moves(root: BaseNode): number {
+	let count = 0;
+	const visit = (node: BaseNode): void => {
+		if (node.node_type === "declare" || node.node_type === "assign") {
+			const n = node as unknown as { last_use_move?: boolean };
+			if (n.last_use_move) {
+				n.last_use_move = false;
+				count++;
+			}
+		}
+		for (const child of children_of(node)) visit(child);
+	};
+	visit(root);
+	return count;
+}
+
+interface StampTarget {
+	node: DeclarationNode;
+}
+
+function collect_stamps(root: BaseNode): StampTarget[] {
+	const out: StampTarget[] = [];
+	const visit_functions = (node: BaseNode): void => {
+		if (node.node_type === "func") {
+			out.push(...collect_function_stamps(node as unknown as FunctionNode));
+		}
+		for (const child of children_of(node)) visit_functions(child);
+	};
+	visit_functions(root);
+	return out;
+}
+
+function collect_function_stamps(func: FunctionNode): StampTarget[] {
+	if (!func.statements?.length) return [];
+	const walk = new Walk();
+	const param_names = new Set(func.params.map((p) => p.name));
+	for (const stmt of func.statements) walk_stmt(walk, stmt);
+	if (walk.has_raw) return [];
+	const out: StampTarget[] = [];
+	for (const decl of walk.declares) {
+		if (!decl.node) continue;
+		if (classify_declare(decl, walk, param_names, func.label_name ?? func.name)) {
+			out.push({ node: decl.node });
+		}
+	}
+	return out;
+}
 
 export interface LastUseSite {
 	/** Enclosing function label (or name). */
@@ -71,13 +149,19 @@ interface AssignmentRecord {
 
 interface DeclareRecord {
 	name: string;
-	declaration: "const" | "var";
+	declaration: "const" | "var" | "mov" | "view";
 	enter: number;
 	exit: number;
+	/** Enclosing loops at the declare site (back-edge coverage). */
+	loop_ranges?: LoopRange[];
+	/** The AST node, when this declare is a candidate shape (bare-name RHS). */
+	node?: DeclarationNode;
 }
 
 class Walk {
 	private stamp = 0;
+	has_raw = false;
+	readonly writes: { name: string; enter: number; loop_ranges: LoopRange[] }[] = [];
 	readonly reads: ReadRecord[] = [];
 	readonly declares: DeclareRecord[] = [];
 	readonly assignments: AssignmentRecord[] = [];
@@ -115,11 +199,28 @@ class Walk {
 		this.assignments.push({ node, enter, exit, loop_ranges });
 	}
 
-	declare(name: string, declaration: "const" | "var", body: () => void): void {
+	write(name: string): void {
+		this.writes.push({ name, enter: ++this.stamp, loop_ranges: [...this.loop_stack] });
+	}
+
+	declare(node: DeclarationNode, body: () => void): void {
+		const loop_ranges = [...this.loop_stack];
 		const enter = ++this.stamp;
 		body();
 		const exit = ++this.stamp;
-		this.declares.push({ name, declaration, enter, exit });
+		const value = node.value;
+		const bare_name =
+			value?.node_type === "value" &&
+			typeof (value as ValueNode).value === "string" &&
+			/^[A-Za-z_][A-Za-z0-9_]*$/.test((value as ValueNode).value);
+		this.declares.push({
+			name: node.name,
+			declaration: node.declaration,
+			enter,
+			exit,
+			loop_ranges,
+			node: bare_name ? node : undefined,
+		});
 	}
 }
 
@@ -147,10 +248,19 @@ function scan_function(func: FunctionNode): LastUseSite[] {
 	const param_names = new Set(func.params.map((p) => p.name));
 	for (const stmt of func.statements) walk_stmt(walk, stmt);
 
+	// A raw `#arch` body may read or write ANY local by name (C bodies use
+	// source names; asm reaches slots) — every move candidate in a function
+	// containing one is refused.
+	if (walk.has_raw) return [];
 	const func_label = func.label_name ?? func.name;
 	const sites: LastUseSite[] = [];
 	for (const assign of walk.assignments) {
 		const site = classify(assign, walk, param_names, func_label);
+		if (site) sites.push(site);
+	}
+	for (const decl of walk.declares) {
+		if (!decl.node) continue;
+		const site = classify_declare(decl, walk, param_names, func_label);
 		if (site) sites.push(site);
 	}
 	return sites;
@@ -217,6 +327,60 @@ function classify(
 	};
 }
 
+/**
+ * Declare-site classification: `var u = t` where t is an owned string local
+ * never touched (read OR written) after the declare. This is the one shape
+ * whose codegen still strdups on both backends (the plain `s = t` assignment
+ * already transfers the pair).
+ */
+function classify_declare(
+	decl: DeclareRecord,
+	walk: Walk,
+	param_names: Set<string>,
+	func_label: string,
+): LastUseSite | undefined {
+	const node = decl.node;
+	if (!node) return undefined;
+	if (node.declaration !== "var") return undefined; // consts are not movable
+	const source_node = node.value as ValueNode;
+	const source = source_node.value;
+	if (source_node.is_moved) return undefined; // already an explicit move
+	if (param_names.has(source)) return undefined; // params are not movable here
+	const binding = walk.declares.findLast((d) => d.name === source && d.exit < decl.enter);
+	if (!binding || binding.declaration !== "var") return undefined;
+	// Owned owned-string shapes only (stamped types).
+	const src_type = source_node.type;
+	if (!src_type || src_type.name !== "string" || src_type.is_view || src_type.is_array) {
+		return undefined;
+	}
+	const tgt_type = node.type;
+	if (!tgt_type || tgt_type.name !== "string" || tgt_type.is_view || tgt_type.is_array) {
+		return undefined;
+	}
+	// The source's only write must be its own binding declare.
+	const write_count = walk.writes.filter((w) => w.name === source).length;
+	if (write_count > 1) return undefined;
+	// Nothing after the declare may touch the source.
+	for (const r of walk.reads) {
+		if (r.name !== source) continue;
+		if (r.opaque) return undefined;
+		if (r.enter > decl.exit) return undefined;
+		if (r.enter >= decl.enter && r.enter <= decl.exit) continue; // the RHS read
+		for (const loop of decl.loop_ranges ?? []) {
+			if (r.enter >= loop.enter && r.enter <= loop.exit) {
+				const binding_in_loop = binding.enter >= loop.enter && binding.exit <= loop.exit;
+				if (!binding_in_loop) return undefined;
+			}
+		}
+	}
+	return {
+		func: func_label,
+		target: node.name,
+		source,
+		desc: `var ${node.name} = ${source}`,
+	};
+}
+
 // ---------------------------------------------------------------------------
 // Statement / expression walk
 // ---------------------------------------------------------------------------
@@ -232,10 +396,13 @@ function walk_stmt(walk: Walk, node: BaseNode): void {
 				func_params?: unknown;
 			};
 			if (decl.func_params) return; // func-typed declare: value is a lambda
-			walk.declare(decl.name, decl.declaration, () => {
+			walk.declare(decl as DeclarationNode, () => {
 				if (decl.value) walk_expr(walk, decl.value!);
 				if (decl.swap) walk_expr(walk, decl.swap!);
 			});
+			// A redeclaration of the same name is a write of the outer
+			// binding's slot model — record it so move sites refuse.
+			walk.write(decl.name);
 			return;
 		}
 		case "assign": {
@@ -243,6 +410,17 @@ function walk_stmt(walk: Walk, node: BaseNode): void {
 			walk.assignment(assign, () => {
 				// A plain (non-compound) whole-variable target is a WRITE, not
 				// a read. A compound target (x += …) reads.
+				const target_name =
+					assign.left_value.node_type === "value"
+						? (assign.left_value as ValueNode).value
+						: undefined;
+				if (
+					!assign.operator &&
+					typeof target_name === "string" &&
+					/^[A-Za-z_][A-Za-z0-9_]*$/.test(target_name)
+				) {
+					walk.write(target_name);
+				}
 				walk_lhs(walk, assign.left_value, !!assign.operator);
 				walk_expr(walk, assign.right_value);
 				if (assign.swap) walk_expr(walk, assign.swap);
@@ -333,6 +511,10 @@ function walk_stmt(walk: Walk, node: BaseNode): void {
 		case "access": {
 			// A bare method-call statement (e.g. `sb.append(x)`).
 			walk.interval(() => walk_expr(walk, node));
+			return;
+		}
+		case "raw": {
+			walk.has_raw = true;
 			return;
 		}
 		case "spawn":

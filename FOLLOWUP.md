@@ -269,3 +269,38 @@ loop-local scalars) — eligibility changes are the regex-redux
 regression class — for a bounded 1 instr/char win. PARKED in
 STRING_PLAN.md tranche 2 with the correction; revisit only if a
 threshold or inline-arg-marshalling change lands for other reasons.
+
+## Plain string assignment aliases (value-semantics hole, both backends)
+
+Found while landing STRING_PLAN tranche 4 (2026-09-06): `s = t` between
+two owned strings does NOT strdup on either backend — it pair-copies,
+frees the displaced target value, and leaves the heap block owned by
+the SOURCE (only the source frees at scope exit). The two variables
+alias the same bytes:
+
+- aarch64 probe: `s = t` then a write through `ref s` (raw-body
+  mutator, so no compile-time escape hatch involved) — BOTH `s` and
+  `t` print the mutation (`Xaaa`).
+- C backend: `free(s.ptr); s = t;` struct assignment — same alias.
+
+String mutation is only reachable through `ref self` dispatch
+(`String.set`), so the hole needs a `ref` on the assignee after a
+plain var-to-var assign — narrow, but it violates the documented value
+semantics of assignment (MEMORY.md: strings are per-variable owned
+heap buffers; the language rejects plain `b = a` for owning STRUCTS
+for exactly this reason, yet allows it for strings with move
+semantics).
+
+Options when this is picked up:
+
+1. Restore value semantics: strdup on plain string assign (the
+   tranche-4 note's original assumption). Costs a strdup per var-var
+   assign; keeps every current valid program correct.
+2. Embrace move semantics: keep the transfer, mark the source moved
+   (zero its slot / moved set) so post-assign reads are compile
+   errors and the alias becomes unreachable. Aligns with how the
+   backends already treat it, but is a LANGUAGE change (spec the
+   assign-time move) and touches the checker's flow tracking.
+
+Not fixed in the tranche (out of scope; tranche 3's mutation scan
+keeps borrow positions isolated). Recorded for the semantic owner.

@@ -32,6 +32,7 @@ import type BuildStatus from "./build_c/BuildStatus.ts";
 import { set_c_typedef_mangling } from "./build_c/utils/c_type.ts";
 import { optimize_asm } from "./build_common/optimize_asm.ts";
 import { scan_borrow_returning_functions } from "./build_common/scan_borrow_returns.ts";
+import { stamp_last_use_moves } from "./check/utils/last_use.ts";
 import BaseNode from "./nodes/BaseNode.ts";
 import RawNode from "./nodes/RawNode.ts";
 import type BuildResult from "./types/BuildResult.ts";
@@ -96,6 +97,13 @@ export default function build(
 	reset_ns_default_counter();
 	reset_match_temp_counter();
 	reset_ns_tmp_counter();
+
+	// Move-on-last-use stamping (STRING_PLAN tranche 4): mark `var u = t`
+	// declares whose heap-string source is proven dead after, so the backends
+	// transfer the pair instead of strdup'ing. Semantic stamps on the shared
+	// AST — idempotent, and cleared by the kill-switch (the consumers also
+	// check the live switch, so a toggled rebuild stays deterministic).
+	stamp_last_use_moves(root);
 
 	if (options.arch === "aarch64") {
 		reset_value_string_counter();

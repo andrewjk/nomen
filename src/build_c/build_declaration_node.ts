@@ -2,11 +2,13 @@ import emit_field_overrides from "../build/emit_field_overrides.ts";
 import call_in_set from "../build_common/call_in_set.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
+import { is_string_borrow } from "../build_common/string_return_analysis.ts";
 import {
 	collect_expression_branch_values,
 	is_owned_string_branch_value,
 } from "../build_common/string_return_analysis.ts";
 import { superseded_param_temp_names } from "../build_common/temp_anchor_consolidation.ts";
+import { move_on_last_use_enabled } from "../check/utils/last_use.ts";
 import type { NirExpr } from "../nir/nir.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
@@ -678,9 +680,36 @@ export default function build_declaration_node(
 					(val_is_string_literal || val_is_heap_string_var) &&
 					!is_borrow_only_string
 				) {
-					status.code += `nomen_str_dup(`;
-					emit_init_value(node.value, nir_init, status);
-					status.code += `)`;
+					// Move-on-last-use (STRING_PLAN tranche 4): when the pass
+					// proved the heap-string source is never read or written
+					// again, transfer the pair instead of strdup'ing — the
+					// source's auto-free is suppressed via moved_string_vars so
+					// exactly one owner frees the bytes. The source must be an
+					// OWNED string: a borrow-initialized source (`arr.at(i)`)
+					// owns nothing, and freeing the transferred alias would
+					// release container memory.
+					const source_dec =
+						node.value.node_type === "value"
+							? status.scoped_declarations.find((d) => d.name === (node.value as ValueNode).value)
+							: undefined;
+					const source_is_owned =
+						!!source_dec &&
+						!is_string_borrow(source_dec.value) &&
+						!status.string_borrow_vars?.has(source_dec.name);
+					if (
+						node.last_use_move &&
+						move_on_last_use_enabled() &&
+						val_is_heap_string_var &&
+						source_is_owned
+					) {
+						if (!status.moved_string_vars) status.moved_string_vars = new Set();
+						status.moved_string_vars.add((node.value as ValueNode).value);
+						emit_init_value(node.value, nir_init, status);
+					} else {
+						status.code += `nomen_str_dup(`;
+						emit_init_value(node.value, nir_init, status);
+						status.code += `)`;
+					}
 				} else {
 					// Type erasure: when a class pointer is assigned to a
 					// simple-typed variable (e.g. `var int v = value` in

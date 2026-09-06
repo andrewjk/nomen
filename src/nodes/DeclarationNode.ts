@@ -26,6 +26,12 @@ export default class DeclarationNode extends BaseNode {
 	 *  iteration by the loop, not by user code, so the `var`-never-changed
 	 *  warning must not fire for it. */
 	is_loop_iterator?: boolean;
+	/** Set by the build's move-on-last-use pass (STRING_PLAN tranche 4, see
+	 *  check/utils/last_use.ts) when this declare is `var u = t` with t an
+	 *  owned string local proven never read or written again: the backends
+	 *  transfer the pair and the ownership mark instead of strdup'ing a copy.
+	 *  Consumers must also honor the live kill-switch. */
+	last_use_move?: boolean;
 	/** True for a hoisted call-argument temp (`_param_N`) whose initializer is
 	 *  an array literal but whose callee parameter is a heap `Array<T>` (the
 	 *  monomorphized `Array_<T>` struct exists). The temp must be materialised

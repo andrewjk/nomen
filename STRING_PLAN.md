@@ -228,6 +228,50 @@ assignment as plain `s = t`. Implementation of the tranche itself
 (builder consumption in both backends, moved-marking in the checker
 flow, kill-switch + restoration tests) may now start per the gate.
 
+GATE RECEIPT CORRECTION + TRANCHE LANDED (2026-09-06, re-scoped):
+building the tranche falsified the ORIGINAL premise — plain `s = t` on
+an owned string does NOT strdup on either backend: it pair-copies,
+frees the displaced target value, and leaves ownership with the source
+(only the source frees at scope exit). The tranche-4 note described the
+DECLARE shape. Consequences, verified with probes:
+
+1. The remaining strdup is the declare ALIAS (`var u = t`, the
+   is_heap_alias / nomen_str_dup path — "each owned string var must
+   have its own copy" so auto_free doesn't double-free).
+2. Plain assignment's transfer leaves the source ALIASED-AND-READABLE:
+   mutating one visible through the other (probe: `s = t`, write
+   through `ref s` → both print the mutation). A value-semantics
+   violation recorded in FOLLOWUP.md ("plain string assignment
+   aliases") — pre-existing, NOT changed here (restoring the strdup is
+   a semantic/perf decision; the mutation gate of tranche 3 keeps
+   borrows isolated, so this is reachable only via `ref` on the
+   assignee).
+
+LANDED (re-scoped tranche): declare-alias move-on-last-use.
+
+- `last_use.ts` extended: write tracking (an assignment to the source
+  after the site refuses the move — the memory-double-free suite's
+  alias-then-reassign case caught the first version's gap), declare
+  classification (`var u = t`, source `var`-local, owned, zero
+  touches after), and a whole-function raw-body refusal (asm/C text
+  can touch any local by name).
+- `stamp_last_use_moves(root)` runs once per build (semantic stamps on
+  the shared AST; cleared by the kill-switch — consumers also check
+  the live switch, so toggled rebuilds stay deterministic).
+- aarch64: the is_heap_alias branch transfers the pair
+  (`ldp/stp`) and moves ownership (`heap_strings.delete(source)` —
+  the cleanup frames are gated on the global set, so the source's
+  scope-exit free is suppressed).
+- C: skips `nomen_str_dup`, records the source in
+  `moved_string_vars`, and auto_free skips moved-from strings. The
+  source must be an OWNED string (borrow-initialized sources —
+  `arr.at(i)` — are refused: freeing a transferred borrow would
+  release container memory).
+- Kill-switch `set_move_on_last_use_enabled(false)` restores the
+  strdup'd copy byte-identically (pinned in
+  test/move_on_last_use.test.ts: the transfer, the single-owner free,
+  read-after and write-after refusals, and the restoration).
+
 ### Standing invariants (every tranche)
 
 1. No regressions across the bench matrix, ±noise (regex-redux is the

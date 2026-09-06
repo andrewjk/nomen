@@ -105,11 +105,44 @@ pub func main = (bool c) {
 	if c {
 		s = t
 	} else {
-		Console.write_line(t)
+		Console.write(t)
 	}
 }
 `);
 	expect(sibling_branch).toHaveLength(0);
+});
+
+test("refuses a write of the source after the declare", () => {
+	const sites = scan(`
+import System
+pub func main = () {
+	var t = "a".to_string()
+	var u = t
+	t = "b".to_string()
+	Console.write(u)
+}
+`);
+	expect(sites).toHaveLength(0);
+});
+
+test("refuses any function containing a raw body", () => {
+	const sites = scan(`
+import System
+func probe = (string s, out int) {
+	\`\`\`
+	#arch: c
+	return 0;
+	\`\`\`
+}
+pub func main = () {
+	var t = "a".to_string()
+	var u = t
+	Console.write(u)
+	var n = probe(t)
+	Console.write(n.to_string())
+}
+`);
+	expect(sites).toHaveLength(0);
 });
 
 test("refuses non-string and compound assignments", () => {

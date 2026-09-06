@@ -396,6 +396,14 @@ export default interface BuildStatus {
 	 */
 	string_borrow_vars?: Set<string>;
 	/**
+	 * String variables whose ownership was TRANSFERRED by a move-on-last-use
+	 * declare (`var u = t` where t is proven dead after — STRING_PLAN tranche
+	 * 4). The transferred-to variable frees the bytes at its own scope exit,
+	 * so auto_free must skip the moved-from variable (freeing both would
+	 * double-free). Mirrors aarch64's heap_strings deletion on transfer.
+	 */
+	moved_string_vars?: Set<string>;
+	/**
 	 * Owned (heap) string variables, tracked in a set that persists across
 	 * scope resets (unlike scoped_declarations). A reassignment inside a loop
 	 * body (`s = s + "x"`) needs to know the outer-scope `s` is an owned string

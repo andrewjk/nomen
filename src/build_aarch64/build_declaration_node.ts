@@ -11,6 +11,7 @@ import {
 	is_owned_string_branch_value,
 } from "../build_common/string_return_analysis.ts";
 import { is_float_type } from "../built_in_types.ts";
+import { move_on_last_use_enabled } from "../check/utils/last_use.ts";
 import { is_int_literal, parse_int_literal_bigint, to_decimal_string } from "../int_literal.ts";
 import type { NirExpr } from "../nir/nir.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
@@ -2031,15 +2032,28 @@ export default function build_declaration_node(
 					// strdup an independent copy of the ptr half, then carry
 					// the source's len word.
 					const src_off0 = status.stack_offsets?.get(raw);
-					status.code += `ldr x0, [x29, #${src_off0 ?? 0}]\n`;
-					emit_strdup(status);
-					if (src_off0 !== undefined) {
-						status.code += `ldr x1, [x29, #${src_off0 + 8}]\n`;
+					// Move-on-last-use (STRING_PLAN tranche 4): when the pass
+					// proved the source is never read or written again, transfer
+					// the pair and the ownership mark instead of strdup'ing —
+					// the source's scope-exit free is suppressed by dropping it
+					// from heap_strings (the frame's entry is gated on the
+					// global set).
+					if (node.last_use_move && move_on_last_use_enabled() && src_off0 !== undefined) {
+						status.code += `ldp x0, x1, [x29, #${src_off0}]\n`;
+						emit_pair_store_x29(status, offset);
+						status.heap_strings?.delete(raw);
+						mark_heap_string(status, node.name);
 					} else {
-						status.code += `mov x1, #0\n`;
+						status.code += `ldr x0, [x29, #${src_off0 ?? 0}]\n`;
+						emit_strdup(status);
+						if (src_off0 !== undefined) {
+							status.code += `ldr x1, [x29, #${src_off0 + 8}]\n`;
+						} else {
+							status.code += `mov x1, #0\n`;
+						}
+						emit_pair_store_x29(status, offset);
+						mark_heap_string(status, node.name);
 					}
-					emit_pair_store_x29(status, offset);
-					mark_heap_string(status, node.name);
 				} else if (!is_literal) {
 					// Declaration destination hint (ASM_PLAN_2 tranche F): a
 					// promoted scalar's initializer root op emits straight
