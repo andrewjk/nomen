@@ -1,4 +1,5 @@
 import { coalesce_copies } from "./build_aarch64/asm_coalesce.ts";
+import { promote_loop_slots } from "./build_aarch64/asm_loop_promote.ts";
 import {
 	eliminate_dead_copy_moves,
 	eliminate_redundant_widen_masks,
@@ -283,6 +284,13 @@ export default function build(
 		// leftovers, e.g. the `.at()` contract marker when the following
 		// field hop reads the pinned register directly).
 		status.code = eliminate_dead_copy_moves(status.code);
+		// Loop-carried slot promotion — renames an innermost call-free
+		// loop's read+write frame slots (the carry slots the allocator
+		// cannot hold: live into the header, low raw reads, function-wide
+		// pool exhaustion) into caller-saved scratch registers, syncing at
+		// the entry and the exits, and collapses the flag-form carry
+		// increment to `cinc`.
+		status.code = promote_loop_slots(status.code);
 		// Copy coalescing + derivation memoization — substitutes read
 		// operands through register copies (the x0 staging protocol's
 		// writeback moves) and deletes redundant receiver-path

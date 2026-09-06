@@ -346,7 +346,7 @@ region-local:
   sibling-aware kills; writeback memory forms and lines whose pristine
   render round-trip fails are never rewritten (the lift drops shifted-ALU
   shift qualifiers — the round-trip guard is what keeps `add x0, x1, x2,
-  lsl #6` intact).
+lsl #6` intact).
 - **Flagged-move deletion**: a backward two-set live/taint scan (the
   eliminate_dead_copy_moves model) deletes exactly moves whose destination
   is dead below; taint at joins is the TARGET BLOCK's upward-exposed read
@@ -354,13 +354,13 @@ region-local:
   taint from a distant `ret`/`b.cond` had been blocking every staging-move
   deletion in loop bodies.
 - **Derivation memoization**: the consecutive `mov xA, xB / add xA, xA|xB,
-  #o1 / ldr xA, [xA, #o2]` receiver-path sequence is memoized (base + off1
-  + off2, holders = the sequence register + its tail copies); an identical
-  later sequence with a live holder snapshot deletes its three instructions
-  plus the tail copy. This crosses the boundary the statement-level staging
-  pins cannot: the flag-form carry `if` taints the statement window but
-  emits NO branch, so two accessor statements share one straight-line text
-  region.
+#o1 / ldr xA, [xA, #o2]` receiver-path sequence is memoized (base + off1
+  - off2, holders = the sequence register + its tail copies); an identical
+    later sequence with a live holder snapshot deletes its three instructions
+    plus the tail copy. This crosses the boundary the statement-level staging
+    pins cannot: the flag-form carry `if` taints the statement window but
+    emits NO branch, so two accessor statements share one straight-line text
+    region.
 - **Drive-by validator fixes (the table is the contract)**: `umulh` and
   `movn` added to MNEMONICS and GNU numeric local labels (`1f`/`2b`)
   accepted as label operands — BigInt's raw `mul_wide_hi` body had been
@@ -376,18 +376,18 @@ region-local:
   stopped at `bl` ("reads after a call are defined by the convention") —
   wrong for callee-saved registers, which flow through; (4) a mov's own
   source must not substitute into a self-move (`mov x0, x19` → `mov x0,
-  x0`), preserving the deferred-self shape.
+x0`), preserving the deferred-self shape.
 
 Census (instruction lines per loop, pidigits div_to/mul_to; base = pre-
 tranche):
 
-| loop                           | before | after |
-| ------------------------------ | -----: | ----- |
-| div_to D3 correction (.while_22) |     33 |    24 |
-| div_to D4 multiply (.while_24)   |     38 |    28 |
-| div_to D4 subtract (.while_25)   |     32 |    26 |
-| mul_to single-limb (.while_9)    |     44 |    40 |
-| mul_to schoolbook (.while_12)    |     59 |    54 |
+| loop                             | before | after |
+| -------------------------------- | -----: | ----- |
+| div_to D3 correction (.while_22) |     33 | 24    |
+| div_to D4 multiply (.while_24)   |     38 | 28    |
+| div_to D4 subtract (.while_25)   |     32 | 26    |
+| mul_to single-limb (.while_9)    |     44 | 40    |
+| mul_to schoolbook (.while_12)    |     59 | 54    |
 
 **RESULT (interleaved best-of-7, load 3–5, outputs byte-identical across
 backends on every bench):** pidigits n=4000 0.63 → **0.55 s (−12.7%)** —
@@ -398,6 +398,56 @@ Full suite green (288 files / 2805 tests) with `test/copy_coalesce.test.ts`
 round-trip guard, kill-switch byte restoration, behavioral on both
 backends); the cset/promoted-dest/field-marshal/call-marshal/access-staging
 shape tests updated to the new canonical forms (their properties intact).
+
+#### RESULT — loop-carried slot promotion, tranche 2 (landed 2026-09-06)
+
+Shipped as `src/build_aarch64/asm_loop_promote.ts` (`promote_loop_slots`,
+kill-switch `set_loop_slot_promotion_enabled`, default ON; wired into
+build.ts BEFORE coalesce_copies — the renames feed its substitution). The
+carry slot round-trips named by the tranche-1 accounting, delivered at the
+same text level:
+
+- **Cycle model**: cycles are [header label … unconditional back-edge]
+  ranges — the back-edge may sit past `.while_update_N:`/`.for_inc_N:`
+  labels. Innermost-first processing with line ownership (a range
+  overlapping an already-promoted inner cycle is skipped); no
+  `bl`/`blr`/`svc`/`ret` inside (calls clobber the promotion registers).
+- **Renaming**: all 64-bit `ldr`/`str` accesses of a read+write
+  `[x29, #N]` slot inside the cycle become `mov`s through x16 (then x17);
+  entry loads accumulate before the header label (fall-through only — the
+  back-edge skips them), sync stores after each exit label. Provenance
+  checks: every jump to the header and to each exit target must originate
+  inside the cycle, or the slot is refused.
+- **The carry-increment collapse**: `cset xT, cc` … `add xA, xA, xT` …
+  `mov xH, xA` (xH a promotion register) folds to `cinc xH, xH, cc` —
+  windowed (the add may sit several harmless instructions after the cset,
+  the home update several after the add), with flag-writers,
+  branch/label/call lines, and any other reader/writer of xT/xA/xH
+  refusing the fold. Removing the cset is flag-safe because nothing
+  between writes flags.
+- **Escape/disqualification rules**: sub-width accesses, `ldp`/`stp`, or
+  an `add xK, x29, #N` address build anywhere in the function
+  disqualify slot N; read-only slots are untouched.
+- **Two soundness receipts caught during bring-up** (build both arms,
+  run, diff): the emit_nir behavioral belt-and-braces (range-for +
+  break/continue) printed garbage because multiple promoted slots'
+  ENTRY LOADS overwrote each other (only the last rename's load
+  survived — the other promotion register stayed uninitialized);
+  and the fold's `is_harmless` initially rejected the consumer `add`
+  itself (it reads xT by definition) — consumers match before the
+  harm check.
+
+**RESULT (interleaved best-of-7/9, arm-swapped on the narrow readings,
+load 3–5, outputs byte-identical across backends on every bench):**
+pidigits n=4000 0.64 → **0.55 s (−14%**, ~1.55× vs C `-O2` — the carry
+block is 4 register instructions with zero memory ops per D4 iteration);
+**fannkuch-redux n=11 2.96 → 2.13 s (−28%** — its permutation loops carry
+the same slot shape; output verified identical at n=11). Bench matrix
+neutral: nbody 5M, mandelbrot, binarytrees, nsieve ±0; spectral-norm
+0.17↔0.18 flips with arm order (noise). Full suite green (289 files /
+2812 tests) with `test/loop_promote.test.ts` (7 tests: rename+entry/sync
+shape, read-only/escape/call/sub-width refusals, kill-switch byte
+restoration, behavioral carry-propagation run on both backends).
 
 What remains for the allocator-level pass (item 2 proper): the carry slot
 round-trips (multi-written loop-carried scalars — pool exhaustion keeps
