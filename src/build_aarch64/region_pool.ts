@@ -119,7 +119,11 @@ export function region_pool_enter(
 export function region_pool_exit(status: BuildStatus, lease: RegionLease | null): void {
 	if (!lease) return;
 	for (const l of lease.leases) {
-		status.callee_saved_regs_used?.delete(l.reg);
+		// The pin STAYS in callee_saved_regs_used: the plan claims it
+		// function-wide (plan.callee_saved → the prologue/epilogue
+		// save/restore patch), so deleting it here would drop it from the
+		// post-body patch and the function would destroy the CALLER's
+		// value in that register (the layout corruption receipt).
 		for (const d of l.displaced) {
 			status.code += `ldr ${l.reg}, [x29, #${d.slot}]\n`;
 		}

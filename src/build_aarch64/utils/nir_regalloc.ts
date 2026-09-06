@@ -792,10 +792,6 @@ export function plan_nir_registers(
 		pins: { reg: string; displaced: { name: string; key: string; type_name: string }[] }[];
 		receivers: { key: string; node: BaseNode; call: BaseNode }[];
 	}[] = [];
-	if (process.env.RP_DBG)
-		console.error(
-			`REGIONBLOCK enabled=${region_pool_enabled()} loops=${analysis.loop_list.length} headers=${cfg.loop_headers.size}`,
-		);
 	if (region_pool_enabled()) {
 		const reg_occupants = new Map<string, string[]>();
 		for (const [name, reg] of allocs) {
@@ -814,8 +810,16 @@ export function plan_nir_registers(
 			for (const reg of CALLEE_SAVED_X) {
 				if (pins.length >= 2) break;
 				const occupants = reg_occupants.get(reg) ?? [];
+				// SHARED registers are NOT borrowable: the allocator's
+				// sharing puts N non-interfering ranges in one register with
+				// N DIFFERENT values — a single reload point at the loop
+				// exit can only restore one of them (the edigits receipt:
+				// five shared limb temps, four corrupted on resume). Only
+				// 0/1-occupant registers borrow cleanly.
+				if (occupants.length > 1) continue;
 				// Unoccupied registers are trivially borrowable (nothing to
-				// spill); occupied ones need every occupant dead in the loop.
+				// spill); single-occupant ones need the occupant dead in the
+				// loop.
 				let free = true;
 				const displaced: { name: string; key: string; type_name: string }[] = [];
 				for (const key of occupants) {
@@ -938,11 +942,12 @@ export function plan_nir_registers(
 				if (roots_refused.has(key)) receivers.delete(key);
 			}
 			if (receivers.size === 0) continue;
-			if (process.env.RP_DBG) {
-				console.error(
-					`REGIONPUSH hdr=${loop.header} start=${(node as unknown as { start?: number }).start} pins=${pins.map((p) => p.reg).join(",")} receivers=${[...receivers.keys()].join(",")}`,
-				);
-			}
+			// The pins are CALLEE-SAVED registers used by this function —
+			// they MUST ride the prologue/epilogue save/restore set, or the
+			// function destroys the CALLER's value in them (the layout
+			// corruption receipt: first_child's pin clobbered measure_w's
+			// live x25 across the call).
+			for (const pin of pins) callee_saved.add(pin.reg);
 			region_free.push({
 				node,
 				pins,

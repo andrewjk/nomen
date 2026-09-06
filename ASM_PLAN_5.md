@@ -85,16 +85,20 @@ occupants round-trip through pre-allocated slots. Full suite green
 refusal, kill-switch, behavioral both backends) and the byte-identity
 harness holding the pass off in both arms.
 
-### Soundness — DEFAULT OFF, one hole open
+### Soundness — DEFAULT OFF; layout/BigInt fixed, edigits-class hole open
 
-Corrupts layout/lru/edigits/knucleotide when ON (wrong widths, wrong
-output) — all `ref`-param-receiver loops outside BigInt's method shapes.
-Fixed during bring-up: two receivers on one pin (spectral aliasing),
-foreign-vs-own root-write attribution, path-assign root-defs, entry-load
-accumulation, positional dest-and-source reads. The remaining invalidation
-is unisolated — see FOLLOWUP.md ("Region-pool receiver pins") for the
-forensics state and the bisect recipe. **The default flips only when that
-hunt closes.**
+The 2026-09-06 forensics session fixed THREE real holes (see
+FOLLOWUP.md "Region-pool receiver pins" for the full list): the pin
+register now rides `plan.callee_saved` (it is callee-saved — without the
+prologue save the function destroyed the CALLER's live value: first_child
+clobbered measure_w's x25 — the layout 800-width receipt), shared
+registers are refused (N sharers have N different values; a single
+loop-exit reload restores one — the edigits limb-temp receipt), and the
+receiver/def attribution is per-statement. Layout + BigInt are correct
+forced-ON. **edigits/knucleotide/lru still corrupt forced-ON** — edigits
+is the smallest repro (171 lines; delta = ONE single-occupant pin site +
+a prologue shuffle; the unsound step is unidentified). Next session
+shrinks edigits. The default flips when that closes.
 
 ## Next tranches
 

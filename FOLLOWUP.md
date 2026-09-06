@@ -183,35 +183,40 @@ Options when this is picked up:
 Not fixed in the tranche (out of scope; tranche 3's mutation scan
 keeps borrow positions isolated). Recorded for the semantic owner.
 
-## Region-pool receiver pins: unsound on ref-param receiver loops (DEFAULT OFF)
+## Region-pool receiver pins: sound on BigInt/layout, still corrupts edigits/knucleotide/lru (DEFAULT OFF)
 
 ASM_PLAN_5 tranche 1 shipped `region_pool.ts` (region-scoped callee-pool
 claims + loop-pinned Buffer data-pointer materialization) **default OFF**
-via `set_region_pool_enabled(false)` — the pidigits/fannkuch wins are real
-(measured with the switch forced on) but the invariance proof has an
-unisolated hole:
+via `set_region_pool_enabled(false)`. Forced-ON state after the 2026-09-06
+forensics session (env bisects `NOMEN_REGION_ON=1`; per-function `.s`
+diffs):
 
-- **Passes**: BigInt's Knuth-D/D2 loops (div_to/mul_to) — outputs
-  byte-identical, pidigits n=4000 0.55 → 0.53 s, fannkuch-redux 2.12 s.
-- **Corrupts**: layout engine (wrong measured widths), lru (build fails),
-  edigits/knucleotide (wrong output) — all Buffer-heavy non-method code
-  with `ref`-param receivers.
-- **Already fixed during bring-up**: two receivers sharing one pin
-  register (spectral-norm aliased data pointers — one pin per receiver
-  now); foreign root-writes vs the accessor's own receiver may-defs
-  (attribution by statement); path-assign root-defs now refuse
-  unconditionally; entry loads accumulate instead of overwriting;
-  dest-and-source reads counted positionally.
-- **Remaining suspect**: an unmodeled invalidation on `ref`-param
-  receivers — the pinned cell (root.field.data) changing through a path
-  the NIR def facts don't attribute to the loop (e.g. a ref-arg of the
-  PARENT struct reaching a call-free-refined inline that grows the
-  field, or a scope-frame binding whose liveness membership is computed
-  on the renamed view while the emitter binds by source name).
-- **Forensics recipe**: `NOMEN_REGION_OFF=1` / `NOMEN_REGION_NOSEED=1`
-  env bisects (the env checks are removed — re-add temporarily), then
-  diff the per-function `.s` (layout_vstack's diff isolated the
-  add_vstack/add_leaf hoists).
+- **FIXED**: two receivers sharing one pin register (spectral aliasing —
+  one pin per receiver now); foreign-vs-own root-write attribution;
+  path-assign root-defs refuse; entry loads accumulate; positional
+  dest-and-source reads; **the pin register is now added to
+  `plan.callee_saved`** (it is callee-saved — using it without riding the
+  prologue/epilogue save/restore destroyed the CALLER's live value:
+  first_child's pin clobbered measure_w's x25 — the layout receipt);
+  **shared registers refused** — the allocator puts N non-interfering
+  ranges in one register with N different values, and a single loop-exit
+  reload can only restore one (the edigits receipt: five shared limb
+  temps, four corrupted on resume). Layout + BigInt now correct
+  forced-ON.
+- **STILL CORRUPTS forced-ON**: edigits, knucleotide, lru (wrong
+  output/build). edigits' delta is a 64-line diff: ONE pin site
+  (x24 = [x29+688]+8's data, a single-occupant borrow ✓ passes the new
+  rule) plus a prologue shuffle (x28 left the save set, a value moved
+  x25→x26) — the unsound step is not yet identified. Next session:
+  shrink edigits (171 lines, the smallest repro), dump the BigInt limbs
+  around the pinned loop (temporary library dump function — main-sourced
+  load_int calls can't pass the static constraint verifier), and check
+  the displaced occupant's post-loop resume in that function.
+- **Repro/bisect recipe**: force via `set_region_pool_enabled(true)` or a
+  temporary env in `region_pool_enabled()`; per-function `.s` diffs
+  (`awk -v f="^fn:" '$0 ~ f,/^\.p2align/'`); node-array dumps via a
+  temporary LIBRARY dump function (main-sourced direct loads are
+  checker-refused — library code is verification-exempt).
 
 The substrate (plan-side region-free computation, block-membership
 liveness, the bracket + pre-seed mechanics) is sound where it fires on
