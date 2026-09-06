@@ -452,6 +452,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	// ONE canonical lowering per function (phase 4 stage 2): the NIR drives
 	// both the promotion planner here and the emission path below via
 	// `status.nir_emit_ctx`.
+	console.error(`BFN fn=${node.name} has_body=${has_body}`);
 	const nir: NirFunction | undefined = has_body ? lower_function(node) : undefined;
 	if (nir && nir.unknown_kinds.size > 0) {
 		// Lowering is total over the checked AST — a residual kind is a
@@ -523,11 +524,21 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 			// the emission fuses consult the hints, and the reserved
 			// v-registers fence the float-tree temp pool.
 			publish_slp_pairs(plan.pairs, status);
+			console.error(`PUBLISH fn=${node.name} region_free=${plan.region_free.length}`);
+			// Region-scoped pool claims (ASM_PLAN_5): the while-dispatch
+			// bracket looks up this loop by its AST node.
+			status.nir_region_free = new Map(
+				plan.region_free.map((e) => [e.node, { pins: e.pins, receivers: e.receivers }]),
+			);
+			if (status.nir_region_free.size === 0) status.nir_region_free = undefined;
+			status.region_preseed = undefined;
 		} else {
 			fn_allocs = plan_function_promotions(node, plan_nir!);
 			// Legacy pass has no decl-site table — clear any enclosing
 			// function's so this body's declare keys can't resolve against it.
 			status.nir_site_allocs = undefined;
+			status.nir_region_free = undefined;
+			status.region_preseed = undefined;
 		}
 	} else {
 		// No body (no NIR): nothing of this function can bind; drop any

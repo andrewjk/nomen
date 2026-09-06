@@ -62,6 +62,14 @@ export default function build_while_loop_node(
 	const saved_slp_vregs = status.slp_pair_vregs;
 	const saved_buffer_cache = status.buffer_data_cache;
 	status.buffer_data_cache = undefined;
+	// Region-scoped pool claims (ASM_PLAN_5): apply this loop's receiver
+	// pins AFTER the snapshot-clear, so in-loop accessor derivations hit
+	// the pre-seeded cache (materialized once per loop, not per
+	// iteration). Node identity — the pre-seed rides exactly one loop.
+	const preseed = status.region_preseed;
+	if (preseed && preseed.node === node) {
+		status.buffer_data_cache = new Map(preseed.entries.map((e) => [e.key, e.reg]));
+	}
 	// Fixed-array pointer cache (ASM_PLAN_3 tranche A): the induction may
 	// advance between iterations, so no pinned element address may cross a
 	// loop boundary in either direction.

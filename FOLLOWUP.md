@@ -182,3 +182,38 @@ Options when this is picked up:
 
 Not fixed in the tranche (out of scope; tranche 3's mutation scan
 keeps borrow positions isolated). Recorded for the semantic owner.
+
+## Region-pool receiver pins: unsound on ref-param receiver loops (DEFAULT OFF)
+
+ASM_PLAN_5 tranche 1 shipped `region_pool.ts` (region-scoped callee-pool
+claims + loop-pinned Buffer data-pointer materialization) **default OFF**
+via `set_region_pool_enabled(false)` — the pidigits/fannkuch wins are real
+(measured with the switch forced on) but the invariance proof has an
+unisolated hole:
+
+- **Passes**: BigInt's Knuth-D/D2 loops (div_to/mul_to) — outputs
+  byte-identical, pidigits n=4000 0.55 → 0.53 s, fannkuch-redux 2.12 s.
+- **Corrupts**: layout engine (wrong measured widths), lru (build fails),
+  edigits/knucleotide (wrong output) — all Buffer-heavy non-method code
+  with `ref`-param receivers.
+- **Already fixed during bring-up**: two receivers sharing one pin
+  register (spectral-norm aliased data pointers — one pin per receiver
+  now); foreign root-writes vs the accessor's own receiver may-defs
+  (attribution by statement); path-assign root-defs now refuse
+  unconditionally; entry loads accumulate instead of overwriting;
+  dest-and-source reads counted positionally.
+- **Remaining suspect**: an unmodeled invalidation on `ref`-param
+  receivers — the pinned cell (root.field.data) changing through a path
+  the NIR def facts don't attribute to the loop (e.g. a ref-arg of the
+  PARENT struct reaching a call-free-refined inline that grows the
+  field, or a scope-frame binding whose liveness membership is computed
+  on the renamed view while the emitter binds by source name).
+- **Forensics recipe**: `NOMEN_REGION_OFF=1` / `NOMEN_REGION_NOSEED=1`
+  env bisects (the env checks are removed — re-add temporarily), then
+  diff the per-function `.s` (layout_vstack's diff isolated the
+  add_vstack/add_leaf hoists).
+
+The substrate (plan-side region-free computation, block-membership
+liveness, the bracket + pre-seed mechanics) is sound where it fires on
+BigInt-shaped methods; the hunt for the remaining invalidation is the
+gate for flipping the default.

@@ -39,6 +39,7 @@ import { flag_form_enabled } from "./flag_form.ts";
 import { apply_forward_use, cset_flag_is_write_only, prepare_nir_forwarding } from "./forward.ts";
 import { neon_vectorization_enabled } from "./neon_emit.ts";
 import { plan_vector_for, plan_vector_loop } from "./neon_plan.ts";
+import { region_pool_enter, region_pool_exit } from "./region_pool.ts";
 import { slp_pair_enabled, try_emit_slp_pair } from "./slp_pair.ts";
 import { plan_full_unroll } from "./unroll.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
@@ -136,19 +137,26 @@ function emit_stmt_dispatch(
 			case "if":
 				build_if_else_node(child as IfElseNode, status, nstmt);
 				return 1;
-			case "while":
+			case "while": {
 				// NEON vectorization + full-unroll planning ride exactly this
 				// dispatch point: the plans need the NIR list (init check +
 				// post-loop reads), which only exists under an active cursor.
 				// Null plans leave emission byte-identical to the scalar loop.
-				build_while_loop_node(
-					child as WhileLoopNode,
-					status,
-					nstmt,
-					neon_vectorization_enabled() ? plan_vector_loop(nstmt, index, ctx.stmts, status) : null,
-					plan_full_unroll(nstmt, index, ctx.stmts, status.induction_const),
-				);
+				const neon_plan = neon_vectorization_enabled()
+					? plan_vector_loop(nstmt, index, ctx.stmts, status)
+					: null;
+				const unroll_plan = plan_full_unroll(nstmt, index, ctx.stmts, status.induction_const);
+				// Region-scoped pool claims (ASM_PLAN_5): borrow a pool
+				// register whose function-wide occupants are dead in this
+				// loop and materialize the loop's invariant Buffer receiver
+				// pointers into it (spilling/reloading the displaced
+				// occupants around the body). Skipped when a vectorizer or
+				// unroll plan owns the loop's emission.
+				const lease = region_pool_enter(status, child, !!neon_plan || !!unroll_plan);
+				build_while_loop_node(child as WhileLoopNode, status, nstmt, neon_plan, unroll_plan);
+				region_pool_exit(status, lease);
 				return 1;
+			}
 			case "for":
 				// Range fors (`for i of 0 .. n`) vectorize like count-up
 				// whiles: the builder self-initializes the induction to the

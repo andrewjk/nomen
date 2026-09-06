@@ -584,6 +584,29 @@ export default interface BuildStatus {
 		written: Set<string>;
 	};
 	/**
+	 * aarch64-only (ASM_PLAN_5): region-scoped pool claims. The plan
+	 * publishes, per loop AST node, the pool registers whose function-wide
+	 * occupants are dead throughout the loop's blocks (with the occupants
+	 * the emitter must spill/reload around the body) and the loop's
+	 * loop-invariant Buffer receiver paths. The while-dispatch bracket
+	 * spills the displaced occupants, pre-derives each receiver's data
+	 * pointer into its pin register before the loop header, and pre-seeds
+	 * `buffer_data_cache` (via `region_preseed`, applied after the loop
+	 * builder's snapshot-clear) — so in-loop accessor derivations emit
+	 * nothing and the pointer is materialized once per LOOP. Undefined =
+	 * no region plan for this function.
+	 */
+	nir_region_free?: Map<
+		BaseNode,
+		{
+			pins: { reg: string; displaced: { name: string; key: string; type_name: string }[] }[];
+			receivers: { key: string; node: BaseNode }[];
+		}
+	>;
+	/** Pending region pre-seed for the loop builder to apply after its
+	 *  cache snapshot-clear (node identity checked). */
+	region_preseed?: { node: BaseNode; entries: { key: string; reg: string }[] };
+	/**
 	 * aarch64-only (ASM_PLAN_4 field-pair SLP): name → partner map for the
 	 * adjacent-statement float pairs the loop-promotion planner allocated
 	 * into LANE-PAIRED registers — `a` in dN (lane 0, scalar-visible) and

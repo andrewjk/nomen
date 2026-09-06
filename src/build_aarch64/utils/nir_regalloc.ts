@@ -11,6 +11,7 @@ import { lower_function } from "../../nir/from_ast.ts";
 import type { NirFunction, NirStmt } from "../../nir/nir.ts";
 import { analyze_traffic } from "../../nir/traffic.ts";
 import { version_function } from "../../nir/version.ts";
+import type AccessNode from "../../nodes/AccessNode.ts";
 import type BaseNode from "../../nodes/BaseNode.ts";
 import type Type from "../../nodes/Type.ts";
 import { tree_is_call_free } from "../build_operation_node.ts";
@@ -137,6 +138,58 @@ const MIN_READS = 4;
 const LOOP_INVARIANT_MIN_WEIGHT = 8;
 let callee_pool_extended = true;
 
+/** Kill-switch for region-scoped pool claims + loop receiver pins
+ *  (ASM_PLAN_5, default ON; OFF restores the function-wide-only plan —
+ *  byte-identical). Lives here so the plan and the emitter bracket share
+ *  one toggle without import cycles. */
+let region_pool_on = false;
+
+export function region_pool_enabled(): boolean {
+	return region_pool_on;
+}
+
+export function set_region_pool_enabled(enabled: boolean): void {
+	region_pool_on = enabled;
+}
+
+/** Buffer fast-path accessors whose receiver derivation a region pin
+ *  materializes (the same window-safe family the staging pass trusts). */
+const BUFFER_PIN_ACCESSORS = new Set([
+	"load_int",
+	"load",
+	"load_float",
+	"store_int",
+	"store",
+	"store_float",
+	"store_or_int",
+]);
+
+/** The receiver key a buffer_cache_key pin would take: a plain name or
+ *  exactly one field hop off a name (deeper chains and exotic receivers
+ *  return null — no pin). */
+/** AST value nodes in identifier positions carry the bare name (no
+ *  is_identifier_like flag — that is a NIR-leaf concept); refuse literals
+ *  and keywords so keys always name a variable. */
+const NON_NAME_VALUES = new Set(["null", "true", "false", "this", "self", "super"]);
+
+function plain_or_field_key(receiver: BaseNode): string | null {
+	const name_ok = (v: unknown): v is string =>
+		typeof v === "string" && v.length > 0 && !/^[0-9-]/.test(v) && !NON_NAME_VALUES.has(v);
+	if (receiver.node_type === "value") {
+		const v = (receiver as unknown as { value?: unknown }).value;
+		return name_ok(v) ? v : null;
+	}
+	if (receiver.node_type === "access") {
+		const a = receiver as AccessNode;
+		if (a.target && a.target.node_type === "value" && a.access?.node_type === "access_field") {
+			const v = (a.target as unknown as { value?: unknown }).value;
+			const field = (a.access as unknown as { name?: unknown }).name;
+			if (name_ok(v) && name_ok(field)) return `${v}.${field}`;
+		}
+	}
+	return null;
+}
+
 /** Kill-switch for the tranche-H callee-pool extension (default ON; OFF
  *  restores MAX_X_CALLEE = 4 and the raw-read-only bar — byte-identical). */
 export function nir_callee_pool_extended(): boolean {
@@ -198,6 +251,15 @@ export interface NirRegisterPlan {
 	 *  vN.d[1] (excluded from the candidate set). The caller publishes
 	 *  these on status.slp_pair_hints / slp_pair_vregs. */
 	pairs: { a: string; b: string; vreg: string }[];
+	/** Region-scoped pool claims (ASM_PLAN_5): per loop, pool registers
+	 *  whose occupants are dead inside the loop (with the occupants the
+	 *  emitter must spill/reload around the body) and the loop's
+	 *  loop-invariant Buffer receiver paths to pin. */
+	region_free: {
+		node: BaseNode;
+		pins: { reg: string; displaced: { name: string; key: string; type_name: string }[] }[];
+		receivers: { key: string; node: BaseNode; call: BaseNode }[];
+	}[];
 }
 
 export interface NirRegisterPlanOptions {
@@ -211,6 +273,12 @@ export interface NirRegisterPlanOptions {
 
 interface RangeAnalysis {
 	facts: Map<string, RangeFacts>;
+	/** name → CFG blocks where the name is live or defined (region checks) */
+	block_members: Map<string, Set<number>>;
+	/** Natural loops (header block id + the loop's block set). */
+	loop_list: { header: number; blocks: Set<number> }[];
+	/** Per-block liveness (region membership input). */
+	liveness: { live_in: Set<string>[]; live_out: Set<string>[] };
 	/** Symmetric interference adjacency (def-point rule: a def interferes
 	 *  with everything live after it). */
 	adj: Map<string, Set<string>>;
@@ -324,8 +392,21 @@ export function analyze_ranges(cfg: FunctionCfg, status?: BuildStatus): RangeAna
 	};
 	const reach = reachable_blocks(cfg);
 	const liveness = analyze_liveness(cfg);
+	/** name → CFG blocks where the name is live at the boundary or defined
+	 *  (conservative per-block membership for region-scoped allocation). */
+	const block_members = new Map<string, Set<number>>();
+	const member_of = (name: string, id: number): void => {
+		let s = block_members.get(name);
+		if (!s) {
+			s = new Set();
+			block_members.set(name, s);
+		}
+		s.add(id);
+	};
 	for (const b of cfg.blocks) {
 		if (!reach[b.id]) continue;
+		for (const v of liveness.live_in[b.id]) member_of(v, b.id);
+		for (const v of liveness.live_out[b.id]) member_of(v, b.id);
 		let live = new Set(liveness.live_out[b.id]);
 		const mark_crossing = (names: Iterable<string>): void => {
 			for (const v of names) facts_of(v).crosses_call = true;
@@ -357,6 +438,7 @@ export function analyze_ranges(cfg: FunctionCfg, status?: BuildStatus): RangeAna
 			for (const d of s.defs) {
 				for (const v of live) add_edge(d, v);
 				live.delete(d);
+				member_of(d, b.id);
 			}
 			if (s.barrier) live = new Set(cfg.names);
 		}
@@ -376,7 +458,13 @@ export function analyze_ranges(cfg: FunctionCfg, status?: BuildStatus): RangeAna
 	for (const loop of loops.loops) {
 		for (const v of liveness.live_in[loop.header]) facts_of(v).loop_blocked = true;
 	}
-	return { facts, adj };
+	return {
+		facts,
+		adj,
+		block_members,
+		loop_list: loops.loops.map((l) => ({ header: l.header, blocks: new Set(l.blocks) })),
+		liveness,
+	};
 }
 
 /**
@@ -443,7 +531,8 @@ export function plan_nir_registers(
 	const excluded = (name: string): boolean => !!options?.exclude_params?.has(name);
 
 	const cfg = build_cfg(renamed);
-	const { facts, adj } = analyze_ranges(cfg, options?.status);
+	const analysis = analyze_ranges(cfg, options?.status);
+	const { facts, adj } = analysis;
 
 	// Source name → every key it owns in the renamed view (see
 	// NirRegisterPlan.source_keys). Every declare contributes its key; a
@@ -546,8 +635,10 @@ export function plan_nir_registers(
 			caller_only: false,
 		});
 	}
-	if (candidates.length === 0)
-		return { allocs, callee_saved, adj, pinned, source_keys, sites: site_allocs, pairs: [] };
+	// The region computation (below) runs even with no candidates: a
+	// function whose locals never promote still has borrowable pool
+	// registers for its loops' receiver pins.
+	const no_candidates = candidates.length === 0;
 
 	// Hottest first — same ranking the legacy pass and the benchmarks
 	// were tuned around (raw reads, then loop-weighted, V8 stable sort).
@@ -597,7 +688,7 @@ export function plan_nir_registers(
 	// else in sorted order — the int side's relative order (and therefore
 	// its allocations) is unchanged.
 	const pair_first = slp_pairs_ordered(candidates, slp_partner_of);
-	for (const c of pair_first) {
+	for (const c of no_candidates ? [] : pair_first) {
 		// The lane-1 member of a planned pair gets NO register — it lives
 		// in its partner's vN.d[1] (slot-synced by the emission fuses).
 		if (slp_lane_of?.has(c.name)) continue;
@@ -686,7 +777,191 @@ export function plan_nir_registers(
 			break;
 		}
 	}
-	return { allocs, callee_saved, adj, pinned, source_keys, sites: site_allocs, pairs: slp_pairs };
+	// ------------------------------------------------------------------
+	// Region-scoped pool claims (ASM_PLAN_5): pool registers whose every
+	// function-wide occupant is dead throughout a loop's blocks are FREE
+	// inside that loop. The emitter borrows them around the loop body
+	// (spilling/restoring the displaced occupants through their slots) —
+	// the register then serves as a region-pinned Buffer data pointer, so
+	// the receiver-path derivation runs once per LOOP instead of once per
+	// iteration. Occupant liveness membership is from the same renamed
+	// CFG the assignment used; occupants without a resolvable source name
+	// refuse the register (the emitter's spill needs their slots).
+	const region_free: {
+		node: BaseNode;
+		pins: { reg: string; displaced: { name: string; key: string; type_name: string }[] }[];
+		receivers: { key: string; node: BaseNode; call: BaseNode }[];
+	}[] = [];
+	if (process.env.RP_DBG)
+		console.error(
+			`REGIONBLOCK enabled=${region_pool_enabled()} loops=${analysis.loop_list.length} headers=${cfg.loop_headers.size}`,
+		);
+	if (region_pool_enabled()) {
+		const reg_occupants = new Map<string, string[]>();
+		for (const [name, reg] of allocs) {
+			if (!CALLEE_SAVED_X.includes(reg)) continue;
+			const list = reg_occupants.get(reg);
+			if (list) list.push(name);
+			else reg_occupants.set(reg, [name]);
+		}
+		for (const loop of analysis.loop_list) {
+			const node = cfg.loop_headers.get(loop.header);
+			if (!node) continue;
+			const decl_types = new Map<string, string>();
+			for (const d of traffic.decls) decl_types.set(d.name, d.type_name);
+			const pins: { reg: string; displaced: { name: string; key: string; type_name: string }[] }[] =
+				[];
+			for (const reg of CALLEE_SAVED_X) {
+				if (pins.length >= 2) break;
+				const occupants = reg_occupants.get(reg) ?? [];
+				// Unoccupied registers are trivially borrowable (nothing to
+				// spill); occupied ones need every occupant dead in the loop.
+				let free = true;
+				const displaced: { name: string; key: string; type_name: string }[] = [];
+				for (const key of occupants) {
+					const members = analysis.block_members.get(key);
+					if (members && [...members].some((b) => loop.blocks.has(b))) {
+						free = false;
+						break;
+					}
+					const source = sites.get(key)?.source ?? key;
+					if (source.includes("@")) {
+						free = false;
+						break;
+					}
+					const type_name = decl_types.get(key) ?? "";
+					// The emitter pre-allocates an 8-byte slot for the spill;
+					// anything else (floats ride d-regs; unknown types are
+					// refused) cannot be round-tripped safely.
+					if (!type_name || type_name === "float" || type_name === "double") {
+						free = false;
+						break;
+					}
+					displaced.push({ name: source, key, type_name });
+				}
+				if (free) pins.push({ reg, displaced });
+			}
+			if (pins.length === 0) continue;
+			// Loop receiver collection: Buffer fast-path accessor calls
+			// whose receiver is a plain name or one field hop — the shapes
+			// buffer_cache_key pins. Any real (non-call-free-refined) call
+			// or a write of a receiver ROOT inside the loop refuses the
+			// pins (the receiver cell could be reallocated).
+			const receivers = new Map<string, { node: BaseNode; call: BaseNode }>();
+			let refuse = false;
+			const seen = new Set<unknown>();
+			const collect = (node: unknown): void => {
+				if (!node || typeof node !== "object" || refuse || seen.has(node)) return;
+				seen.add(node);
+				if (Array.isArray(node)) {
+					for (const e of node) collect(e);
+					return;
+				}
+				if (typeof (node as { node_type?: string }).node_type !== "string") return;
+				const n = node as BaseNode;
+				if (n.node_type === "access") {
+					const acc = n as AccessNode;
+					const call = acc.access;
+					if (call && call.node_type === "access_func" && BUFFER_PIN_ACCESSORS.has(call.name)) {
+						const receiver = acc.target;
+						const key =
+							receiver && (receiver.node_type === "value" || receiver.node_type === "access")
+								? plain_or_field_key(receiver)
+								: null;
+						if (key) receivers.set(key, { node: receiver, call: n });
+					}
+				}
+				for (const v of Object.values(n)) collect(v);
+			};
+			/** Receiver roots written inside the loop by statements that are
+			 *  NOT one of the loop's own pinned-accessor calls (whose
+			 *  receiver may-defs are the accessor marshalling, not cell
+			 *  writes). Any foreign write of the root refuses the key. */
+			const roots_refused = new Set<string>();
+			const roots_written = new Set<string>();
+			for (const bId of loop.blocks) {
+				const b = cfg.blocks[bId];
+				for (const s of b.stmts) {
+					// The statement's own pinned-accessor receiver roots.
+					const own_roots = new Set<string>();
+					const scan_own = (n: unknown): void => {
+						if (!n || typeof n !== "object" || roots_refused.has("")) return;
+						if (Array.isArray(n)) {
+							for (const e of n) scan_own(e);
+							return;
+						}
+						if (typeof (n as { node_type?: string }).node_type !== "string") return;
+						const a = n as AccessNode;
+						const call = a.access;
+						if (call && call.node_type === "access_func" && BUFFER_PIN_ACCESSORS.has(call.name)) {
+							const key = plain_or_field_key(a.target);
+							if (key) own_roots.add(key.split(".")[0]);
+						}
+						for (const v of Object.values(n)) scan_own(v);
+					};
+					scan_own(s.node);
+					for (const d of s.defs) {
+						const R = d.split(".")[0];
+						// A root-def is the accessor's own marshalling ONLY in
+						// an eval/declare whose tree holds that accessor. An
+						// ASSIGN defining the root (`root = …` or the path
+						// form `root.field = …`) can rewire the pinned field
+						// itself — refuse every key rooted there.
+						if (s.op === "assign" || !own_roots.has(R)) {
+							for (const key of receivers.keys()) {
+								if (key.split(".")[0] === R) roots_refused.add(key);
+							}
+						} else {
+							roots_written.add(R);
+						}
+					}
+					if (
+						s.has_call &&
+						(!options?.status || !tree_is_call_free(s.node, options.status, new Set()))
+					)
+						refuse = true;
+					collect(s.node);
+				}
+				if (b.term.t === "branch") {
+					if (
+						b.term.has_call &&
+						(!options?.status ||
+							!b.term.cond?.node ||
+							!tree_is_call_free(b.term.cond.node, options.status, new Set()))
+					)
+						refuse = true;
+					if (b.term.cond) collect(b.term.cond.node);
+				}
+			}
+			if (refuse) continue;
+			for (const key of [...receivers.keys()]) {
+				if (roots_refused.has(key)) receivers.delete(key);
+			}
+			if (receivers.size === 0) continue;
+			if (process.env.RP_DBG) {
+				console.error(
+					`REGIONPUSH hdr=${loop.header} start=${(node as unknown as { start?: number }).start} pins=${pins.map((p) => p.reg).join(",")} receivers=${[...receivers.keys()].join(",")}`,
+				);
+			}
+			region_free.push({
+				node,
+				pins,
+				receivers: [...receivers.entries()]
+					.map(([key, info]) => ({ key, node: info.node, call: info.call }))
+					.slice(0, 2),
+			});
+		}
+	}
+	return {
+		allocs,
+		callee_saved,
+		adj,
+		pinned,
+		source_keys,
+		sites: site_allocs,
+		pairs: slp_pairs,
+		region_free,
+	};
 }
 
 /**
@@ -759,6 +1034,14 @@ export function seed_function_allocations(
 		[...plan.allocs.values()].filter((r) => /^x1[2-5]$/.test(r)),
 	);
 	if (status.nir_caller_saved_claimed.size === 0) status.nir_caller_saved_claimed = undefined;
+	// Region-scoped pool claims (ASM_PLAN_5): the while-dispatch bracket
+	// looks up this loop by its AST node — BigInt's Knuth-D loops are
+	// METHODS, planned here, not through build_function_node.
+	status.nir_region_free = new Map(
+		plan.region_free.map((e) => [e.node, { pins: e.pins, receivers: e.receivers }]),
+	);
+	if (status.nir_region_free.size === 0) status.nir_region_free = undefined;
+	status.region_preseed = undefined;
 	for (const param of func.params) {
 		const reg = plan.allocs.get(param.name);
 		if (!reg || !reg.startsWith("x")) continue;

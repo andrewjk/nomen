@@ -112,6 +112,10 @@ export interface FunctionCfg {
 	readonly nested: readonly FunctionCfg[];
 	/** The ROOT function's lowering coverage set (nested lowering shares it). */
 	readonly unknown_kinds: ReadonlySet<string>;
+	/** Header block id → the AST node of the `while`/`for` statement that
+	 *  created it. Region-scoped passes (ASM_PLAN_5) map natural loops back
+	 *  to their source statements through this. */
+	readonly loop_headers: ReadonlyMap<number, BaseNode>;
 }
 
 interface FactWalk {
@@ -407,6 +411,7 @@ class CfgBuilder {
 	private readonly blocks: CfgBlock[] = [];
 	private readonly names: string[] = [];
 	private readonly nested: FunctionCfg[] = [];
+	private readonly loop_headers = new Map<number, BaseNode>();
 	/** Break → loop-exit block ids; continue → update/header block ids. */
 	private readonly break_targets: number[] = [];
 	private readonly continue_targets: number[] = [];
@@ -475,6 +480,7 @@ class CfgBuilder {
 			names: [...new Set(this.names)],
 			nested: this.nested,
 			unknown_kinds: this.coverage,
+			loop_headers: this.loop_headers,
 		};
 	}
 
@@ -697,6 +703,7 @@ class CfgBuilder {
 			}
 			case "while": {
 				const header = this.new_block();
+				this.loop_headers.set(header.id, s.node);
 				const body_b = this.new_block();
 				const exit_b = this.new_block();
 				const cont = s.update ? this.new_block() : header;
@@ -745,6 +752,7 @@ class CfgBuilder {
 					});
 				}
 				const header = this.new_block();
+				this.loop_headers.set(header.id, s.node);
 				const body_b = this.new_block();
 				const update_b = this.new_block();
 				const exit_b = this.new_block();
