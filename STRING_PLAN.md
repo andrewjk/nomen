@@ -1,5 +1,12 @@
 # STRING_PLAN.md — string-handling performance
 
+> COMPLETE (2026-09-06): all four tranches landed. Standing invariants
+> held throughout — full suite green at each landing, kill-switches
+> with byte-identical restoration tests, string bench outputs pinned
+> byte-identical on both backends. Residual findings live in
+> FOLLOWUP.md (plain string assignment aliases; tranche 2's dead-store
+> premise falsified, store is load-bearing).
+
 > Scope: the string-handling path end to end — per-char loops
 > (StringBuilder/Buffer consumers), string temporaries and ownership
 > copies, and the allocation traffic they generate. Method unchanged
@@ -196,7 +203,7 @@ green (285 files); string benches byte-identical on both backends
 by the scan (pure-Nomen forwarding chains); view/mov positions keep
 their copies (outside this tranche).
 
-### Tranche 4 — move-on-last-use string assignment (largest)
+### Tranche 4 — move-on-last-use string assignment — DONE (2026-09-06, re-scoped to declare aliases)
 
 `s = t` where `t` is never read again: skip the strdup, transfer the
 pair, mark `t` moved. Requires the checker's last-use analysis to feed
