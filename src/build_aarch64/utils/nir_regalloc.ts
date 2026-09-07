@@ -305,6 +305,18 @@ export interface NirRegisterPlan {
 			displaced: { name: string; key: string; type_name: string }[];
 			dead: string[];
 		}[];
+		vars: {
+			reg: string;
+			name: string;
+			/** Decl-site key for multi-declared sources (`name@N`): the
+			 *  emitter installs it into `nir_site_allocs` for the bracket
+			 *  and the declare site binds the source name itself. Plain
+			 *  (uniquely-declared) vars bind by name directly. */
+			key?: string;
+			type_name: string;
+			displaced: { name: string; key: string; type_name: string }[];
+			dead: string[];
+		}[];
 		receivers: { key: string; node: BaseNode; call: BaseNode }[];
 	}[];
 }
@@ -899,6 +911,14 @@ export function plan_nir_registers(
 			displaced: { name: string; key: string; type_name: string }[];
 			dead: string[];
 		}[];
+		vars: {
+			reg: string;
+			name: string;
+			key?: string;
+			type_name: string;
+			displaced: { name: string; key: string; type_name: string }[];
+			dead: string[];
+		}[];
 		receivers: { key: string; node: BaseNode; call: BaseNode }[];
 	}[] = [];
 	if (region_pool_enabled()) {
@@ -925,19 +945,18 @@ export function plan_nir_registers(
 			);
 			const decl_types = new Map<string, string>();
 			for (const d of traffic.decls) decl_types.set(d.name, d.type_name);
-			const pins: {
+			// Region-free registers: enumerated ONCE in pool order (callee
+			// first — prologue-paid, call-proof — then the caller-saved
+			// extension pool, zero prologue cost but only sound in loops
+			// with no real call). The first `receiver_count` serve as
+			// receiver pins (the tranche-1..4 behavior — same order, same
+			// choice); the rest host region-scoped source variables.
+			const free_regs: {
 				reg: string;
 				displaced: { name: string; key: string; type_name: string }[];
 				dead: string[];
 			}[] = [];
-			// Callee-saved first (prologue-paid, call-proof), then the
-			// caller-saved extension pool (zero prologue cost, but
-			// caller-saved: only sound in loops with no real call — the
-			// refuse gate below drops those entries anyway — and ext pins
-			// never join plan.callee_saved, so no prologue save is emitted
-			// for them; exclusion rides nir_caller_saved_claimed instead).
 			for (const reg of [...CALLEE_SAVED_X, ...CALLER_SAVED_EXT_X]) {
-				if (pins.length >= 2) break;
 				const occupants = reg_occupants.get(reg) ?? [];
 				// Unoccupied registers are trivially borrowable (nothing to
 				// spill); occupied ones need EVERY occupant dead in the loop
@@ -984,9 +1003,9 @@ export function plan_nir_registers(
 				// Occupied registers need a home slot for the round-trip;
 				// unoccupied ones borrow with nothing to spill.
 				if (occupants.length > 0 && displaced.length === 0) continue;
-				pins.push({ reg, displaced, dead });
+				free_regs.push({ reg, displaced, dead });
 			}
-			if (pins.length === 0) continue;
+			if (free_regs.length === 0) continue;
 			// Loop receiver collection: Buffer fast-path accessor calls
 			// whose receiver is a plain name or one field hop — the shapes
 			// buffer_cache_key pins. Any real (non-call-free-refined) call
@@ -1066,6 +1085,7 @@ export function plan_nir_registers(
 							roots_written.add(R);
 						}
 					}
+					if (s.barrier) refuse = true;
 					if (
 						s.has_call &&
 						(!options?.status || !tree_is_call_free(s.node, options.status, new Set()))
@@ -1088,7 +1108,92 @@ export function plan_nir_registers(
 			for (const key of [...receivers.keys()]) {
 				if (roots_refused.has(key)) receivers.delete(key);
 			}
-			if (receivers.size === 0) continue;
+			// Partition: receiver pins first (pool order preserved), the
+			// remaining free registers host the loop's region-scoped source
+			// variables — loop-contained hot int locals with no
+			// function-wide register (the D2 spill slots). Containment is
+			// block-membership ⊆ the loop's nesting-complete region (the
+			// var is defined inside the loop, dead after it), plus a
+			// live-in refusal at the header (no entry value to load), the
+			// same aliasing/ref/address-taken exclusions the function-wide
+			// walk applies, and a traffic bar (read twice, or hot by loop
+			// weighting — single-use staging consts round-trip their slots
+			// every iteration too).
+			const receiver_count = Math.min(receivers.size, 2);
+			const pins = free_regs.slice(0, receiver_count);
+			const vars: {
+				reg: string;
+				name: string;
+				key?: string;
+				type_name: string;
+				displaced: { name: string; key: string; type_name: string }[];
+				dead: string[];
+			}[] = [];
+			const var_regs = free_regs.slice(receiver_count);
+			if (var_regs.length > 0) {
+				const ranked: {
+					key: string;
+					source: string;
+					reads: number;
+					weight: number;
+					type_name: string;
+				}[] = [];
+				// One binding per source name per loop: the emitter binds by
+				// SOURCE name (the declare-site hook and register_allocations
+				// are name-keyed), so two sibling sites of one name inside
+				// the same loop could never both bind.
+				const claimed_sources = new Set<string>();
+				for (const decl of traffic.decls) {
+					const key = decl.name;
+					const source = sites.get(key)?.source ?? key;
+					if (source.includes("@")) continue;
+					if (claimed_sources.has(source)) continue;
+					if (allocs.has(key)) continue;
+					if (param_names.has(key)) continue;
+					if (excluded(key)) continue;
+					// Forwarding elides these machinery temps' declares.
+					if (key.startsWith("_param_") || key.startsWith("_vn_")) continue;
+					if (traffic.ref_arg_names.has(key)) continue;
+					if (address_taken.has(key)) continue;
+					if (!is_clean_scalar_type({ name: decl.type_name, ...decl.modifiers })) continue;
+					if (ALL_FLOAT_TYPES.includes(decl.type_name)) continue;
+					const members = analysis.block_members.get(key);
+					if (!members || members.size === 0) continue;
+					let contained = true;
+					for (const b of members) {
+						if (!region_blocks.has(b)) {
+							contained = false;
+							break;
+						}
+					}
+					if (!contained) continue;
+					if (analysis.liveness.live_in[loop.header]?.has(key)) continue;
+					const r = traffic.variables.get(key);
+					if (!r || (r.reads < 2 && r.weighted_reads < LOOP_INVARIANT_MIN_WEIGHT)) continue;
+					ranked.push({
+						key,
+						source,
+						reads: r.reads,
+						weight: r.weighted_reads,
+						type_name: decl.type_name,
+					});
+				}
+				ranked.sort((a, b) => b.weight - a.weight || b.reads - a.reads);
+				for (const v of ranked) {
+					if (vars.length >= var_regs.length) break;
+					const home = var_regs[vars.length];
+					claimed_sources.add(v.source);
+					vars.push({
+						reg: home.reg,
+						name: v.source,
+						key: v.key === v.source ? undefined : v.key,
+						type_name: v.type_name,
+						displaced: home.displaced,
+						dead: home.dead,
+					});
+				}
+			}
+			if (pins.length === 0 && vars.length === 0) continue;
 			// Borrowed callee-saved pins MUST ride the prologue/epilogue
 			// save/restore set, or the function destroys the CALLER's live
 			// value in them (the layout receipt: first_child's pin clobbered
@@ -1101,6 +1206,7 @@ export function plan_nir_registers(
 			region_free.push({
 				node,
 				pins,
+				vars,
 				receivers: [...receivers.entries()]
 					.map(([key, info]) => ({ key, node: info.node, call: info.call }))
 					.slice(0, 2),
@@ -1193,7 +1299,7 @@ export function seed_function_allocations(
 	// looks up this loop by its AST node — BigInt's Knuth-D loops are
 	// METHODS, planned here, not through build_function_node.
 	status.nir_region_free = new Map(
-		plan.region_free.map((e) => [e.node, { pins: e.pins, receivers: e.receivers }]),
+		plan.region_free.map((e) => [e.node, { pins: e.pins, vars: e.vars, receivers: e.receivers }]),
 	);
 	if (status.nir_region_free.size === 0) status.nir_region_free = undefined;
 	status.region_preseed = undefined;

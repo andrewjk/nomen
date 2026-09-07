@@ -188,3 +188,101 @@ pub func main = () {
 		true,
 	);
 });
+
+const REGION_VAR_SHAPE = `
+import System
+
+pub func main = () {
+	var buf = Buffer<int>()
+	buf.grow_int(8)
+	var i = 0
+	while i < 4; i += 1 {
+		buf.store_int(i, i)
+	}
+	var int sum = 0
+	var k = 0
+	while k < 4; k += 1 {
+		var int t = 0
+		var j = 0
+		while j < 4; j += 1 {
+			t += j
+			buf.store_int(j, t)
+		}
+		sum += t
+	}
+	Console.write(sum.to_string())
+}
+`;
+
+test("region-scoped source variable binds a loop-contained local to a borrowed register", () => {
+	// `t` accumulates across the INNER loop and is read after it — live
+	// into the inner header (blocking the function-wide allocator's
+	// low-read extension) and loop-contained in the OUTER loop, so the
+	// plan assigns it to one of the outer loop's region-free registers.
+	// The bracket binds it: the inner-loop accumulator's declare writes
+	// the register (`mov xR, x0` after the zero init) instead of its slot.
+	const code = compile(REGION_VAR_SHAPE, true);
+	// The region-var bracket rides the SECOND loop (the nest): the first
+	// loop is the buffer fill.
+	const pre_loop = code.slice(code.indexOf(".end_while_0:"), code.indexOf(".while_1:"));
+	const body = code.slice(code.indexOf(".while_1:"), code.indexOf(".end_while_1:"));
+	// The accumulator's declare is register-bound: `mov x0, #0` followed
+	// by a register copy (the slot form would be `str x0, [x29, #N]`).
+	expect(body).toMatch(/mov x0, #0\nmov x(?:1[2-5]|2[0-8]), x0\n/);
+	// The var needs no promotion entry load (it is defined inside the
+	// loop): every pre-loop promotion load targets a slot the function
+	// already stored (k/sum inits precede their loads). The pre-tranche
+	// shape ALSO loads the accumulator from a slot whose first reference
+	// is the load itself — a garbage read.
+	const main_code = code.slice(code.indexOf("_main:"), code.indexOf(".return_0:"));
+	const garbage_load = (text: string): boolean =>
+		[...text.matchAll(/ldr x(?:1[2-5]|2[0-8]), \[x29, #(\d+)\]\n/g)].some((m) => {
+			const before = text.slice(0, m.index ?? 0);
+			return !new RegExp(`str x\\d+, \\[x29, #${m[1]}\\]`).test(before);
+		});
+	expect(garbage_load(main_code)).toBe(false);
+});
+
+test("kill-switch keeps region vars off (slot-resident shape restored)", () => {
+	const saved = region_pool_enabled();
+	set_region_pool_enabled(false);
+	try {
+		const parsed = parse_raw(REGION_VAR_SHAPE);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(result.errors ?? []).toEqual([]);
+		const body = result.code.slice(
+			result.code.indexOf(".while_1:"),
+			result.code.indexOf(".end_while_1:"),
+		);
+		// Without the pass the same locals ride loop promotion's bracket:
+		// entry loads read their (garbage-then-discarded) slots before the
+		// header — loads the region-var binding eliminates.
+		const pre_loop = result.code.slice(
+			result.code.indexOf(".end_while_0:"),
+			result.code.indexOf(".while_1:"),
+		);
+		// Promotion loads the accumulator's pre-allocated slot BEFORE the
+		// declare ever runs — the slot's first textual reference is the
+		// load itself (a garbage read). The region-var binding is exactly
+		// what eliminates it.
+		const main_code = result.code.slice(
+			result.code.indexOf("_main:"),
+			result.code.indexOf(".return_0:"),
+		);
+		const garbage_load = (text: string): boolean =>
+			[...text.matchAll(/ldr x(?:1[2-5]|2[0-8]), \[x29, #(\d+)\]\n/g)].some((m) => {
+				const before = text.slice(0, m.index ?? 0);
+				return !new RegExp(`str x\\d+, \\[x29, #${m[1]}\\]`).test(before);
+			});
+		expect(garbage_load(main_code)).toBe(true);
+	} finally {
+		set_region_pool_enabled(saved);
+	}
+});
+
+test("behavioral: region-scoped source variables print exact results on both backends", async () => {
+	const { default: build_and_check_output } = await import("./build_and_check_output");
+	// t = 0+1+2+3 = 6 per outer iteration; sum = 4 * 6 = 24.
+	await build_and_check_output(REGION_VAR_SHAPE, "region_pool_vars", "24", true);
+});

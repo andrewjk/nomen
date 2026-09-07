@@ -526,7 +526,10 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 			// Region-scoped pool claims (ASM_PLAN_5): the while-dispatch
 			// bracket looks up this loop by its AST node.
 			status.nir_region_free = new Map(
-				plan.region_free.map((e) => [e.node, { pins: e.pins, receivers: e.receivers }]),
+				plan.region_free.map((e) => [
+					e.node,
+					{ pins: e.pins, vars: e.vars, receivers: e.receivers },
+				]),
 			);
 			if (status.nir_region_free.size === 0) status.nir_region_free = undefined;
 			status.region_preseed = undefined;

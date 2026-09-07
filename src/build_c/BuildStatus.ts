@@ -604,12 +604,36 @@ export default interface BuildStatus {
 				displaced: { name: string; key: string; type_name: string }[];
 				dead: string[];
 			}[];
+			/** Region-scoped source variables (ASM_PLAN_5 tranche 5):
+			 *  loop-contained hot int locals the plan assigns to the loop's
+			 *  remaining free pool registers. The bracket binds each name
+			 *  into `register_allocations` for the body (after the builder's
+			 *  snapshot — the exit restore drops it) and round-trips the
+			 *  displaced occupants exactly like a receiver pin. Site-keyed
+			 *  vars (`key` set) install into `nir_site_allocs` instead and
+			 *  bind at their declare sites. */
+			vars?: {
+				reg: string;
+				name: string;
+				key?: string;
+				type_name: string;
+				displaced: { name: string; key: string; type_name: string }[];
+				dead: string[];
+			}[];
 			receivers: { key: string; node: BaseNode }[];
 		}
 	>;
 	/** Pending region pre-seed for the loop builder to apply after its
-	 *  cache snapshot-clear (node identity checked). */
-	region_preseed?: { node: BaseNode; entries: { key: string; reg: string }[] };
+	 *  cache snapshot-clear (node identity checked). `vars` are the
+	 *  region-scoped source-variable bindings to install after the
+	 *  builder's snapshot: plain names go into `register_allocations`,
+	 *  site-keyed ones into `nir_site_allocs` (bind at their declare
+	 *  sites; the builder restores the table at bracket exit). */
+	region_preseed?: {
+		node: BaseNode;
+		entries: { key: string; reg: string }[];
+		vars?: { name: string; reg: string; key?: string }[];
+	};
 	/**
 	 * aarch64-only (ASM_PLAN_5): OPEN region-pin depth per register (data
 	 * pointers materialized by open while-dispatch brackets). Loop promotion

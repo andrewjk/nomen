@@ -128,6 +128,10 @@ both arms of the byte-identity tests).
 2. **Region-scoped source variables**: loop-contained hot locals (the D2
    spill slots) assigned from the region-free registers by the planner
    itself, with the same bracket bookkeeping.
+   → LANDED (2026-09-07, tranche 5 below) — mechanism sound and tested;
+   pidigits has no profitable surface (every read loop-contained local
+   already holds a function-wide register; the residual slot traffic is
+   expansion-ABI staging / dead staging stores).
 3. **Index-chain strength reduction at the NIR level**: the D4-multiply
    store index (`wd_off + u_len + 1 + mi`) rebuilds per iteration because
    VN's channels don't cover accessor-argument positions (the L forwarding
@@ -242,3 +246,44 @@ way a break-exiting nest reaches its own header, so no dom/reach rule
 separates them — the union stays the sound ceiling. Landing mi/si2 needs
 a different mechanism (spill-aware borrowing of live occupants, or fewer
 live ranges via index-chain strength reduction — plan items 2–3).
+
+### Tranche 5 (2026-09-07): region-scoped source variables
+
+Plan item 2 of "Next tranches": loop-contained hot locals assigned from the
+region-free registers by the planner itself, with the same bracket
+bookkeeping. Landed in `nir_regalloc.ts` + `region_pool.ts` +
+`build_while_loop_node.ts`: the per-loop free-register enumeration now
+collects ALL region-free registers (same pool order, so pin choice is
+unchanged — the first `min(receivers, 2)` still go to receiver pins), and
+the remainder host the loop's CONTAINED locals: block-membership ⊆ the
+loop's nesting-complete region, not live-in at the header (defined inside
+the loop, dead after it — no entry load, no exit store-back), the usual
+aliasing/ref/address-taken/tmp-name exclusions, and a traffic bar (reads ≥
+2 or loop-weighted ≥ 8). Site-keyed locals (sibling-loop consts like
+`shifted`/`val` — declared per loop) are included: the bracket publishes
+their decl keys through a bracket-private `nir_site_allocs` copy and the
+declare sites bind the source names (one binding per source name per
+loop). The emitter borrows each var register exactly like a pin —
+displaced-occupant spill/reload through the first plain occupant's home
+slot, callee/ext claim bookkeeping, `region_pinned` refcount — and the
+loop builder installs the bindings AFTER its `register_allocations`
+snapshot, so the exit restore drops them with the bracket. Loops with raw
+asm (liveness barriers) now refuse their whole region entry (barriers can
+touch anything — protects ext-pool borrows).
+
+Result on pidigits: **zero var firings — and that is the finding**. The
+forensics pass over div_to/mul_to's lowered views shows every genuinely-
+read loop-contained hot local already holds a function-wide register (the
+allocator's interference sharing gave div_to 52 allocs; `q_hat`, `pi`,
+`hv_carry`, `try_count`, `u_val`/`p_val`/`diff` are all `@alloc`), the
+slot-resident staging consts (`shifted@N`) have their reads DELETED by
+VN/forwarding (their per-iteration `str` to the slot is a dead store —
+binding would be a wash), and the remaining slot traffic is inline-
+expansion ABI marshaling (`str x0,[x29,#a]`/`ldr x1,[x29,#a]` around
+div128 args) and preheader-computed VN bases — item 3's territory, not
+var homes. The D2 j-loop itself has no region entry at all (its own live
+ranges span every pool register). Suite green default-ON (291 files /
+2822 tests incl. the new region-var shape + kill-switch + behavioral
+both-backends tests); bench matrix byte-identical across backends;
+fannkuch 0.18 unchanged. The mechanism is sound and fires where
+candidates exist; pidigits simply has none left.

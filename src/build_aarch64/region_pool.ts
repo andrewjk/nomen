@@ -66,7 +66,9 @@ function pin_borrowable(status: BuildStatus, pin: { reg: string; dead: string[] 
 	// brackets would round-trip through one home slot (or no slot), and the
 	// inner exit would restore the outer pin value into the occupant's home
 	// (or lose the outer pin entirely) — the outer resume then reads the
-	// wrong value. Nested loops pin other registers or derive inline.
+	// wrong value. Nested loops pin other registers or derive inline. The
+	// same discipline covers region-scoped source variables (their register
+	// holds the loop-local's live value for the whole bracket).
 	if (status.region_pinned?.get(pin.reg)) return false;
 	// Live pipeline/base homes from an outer loop's hoists are invisible to
 	// the dead set (their names never enter register_allocations) yet live
@@ -120,12 +122,42 @@ function pin_borrowable(status: BuildStatus, pin: { reg: string; dead: string[] 
 }
 
 /**
+ * Resolve every displaced occupant's frame slot for the bracket's
+ * spill/reload round-trip: reuse one already registered, or PRE-ALLOCATE
+ * (the tranche-D-addendum machinery — `preallocated_decl_slots` makes the
+ * later declare reuse the exact slot; without the reuse the spill/reload
+ * stays sound, just frame-wasteful).
+ */
+function resolve_displaced(
+	status: BuildStatus,
+	displaced: { name: string; key: string }[],
+): { name: string; slot: number; key: string }[] {
+	const resolved: { name: string; slot: number; key: string }[] = [];
+	for (const d of displaced) {
+		let slot = status.stack_offsets?.get(d.name);
+		if (slot === undefined) {
+			if (!status.stack_offsets) status.stack_offsets = new Map();
+			slot = allocate_stack_space(status, 8, 8);
+			status.stack_offsets.set(d.name, slot);
+			if (!status.preallocated_decl_slots) status.preallocated_decl_slots = new Map();
+			status.preallocated_decl_slots.set(d.name, 8);
+		}
+		resolved.push({ name: d.name, slot, key: d.key });
+	}
+	return resolved;
+}
+
+/**
  * Borrow a region-free pool register around `node`'s loop: emit the
  * displaced occupants' spills, derive each loop-invariant receiver's data
  * pointer into the register, and publish the cache pre-seed for the loop
- * builder. Returns null when the plan has no entry, the switch is off, a
- * NEON/unroll plan already owns this loop's emission, or no displaced
- * slot resolves.
+ * builder. Region-scoped source variables (plan-assigned loop-contained
+ * locals) borrow the remaining free registers the same way and publish
+ * their `register_allocations` bindings through `region_preseed.vars` —
+ * the loop builder installs them AFTER its snapshot, so its exit restore
+ * drops the bindings with the bracket. Returns null when the plan has no
+ * entry, the switch is off, a NEON/unroll plan already owns this loop's
+ * emission, or no lease resolves.
  */
 export function region_pool_enter(
 	status: BuildStatus,
@@ -134,7 +166,10 @@ export function region_pool_enter(
 ): RegionLease | null {
 	if (!region_pool_enabled() || has_transform_plan) return null;
 	const entry = status.nir_region_free?.get(node);
-	if (!entry || entry.pins.length === 0 || entry.receivers.length === 0) return null;
+	if (!entry) return null;
+	const has_pins = entry.pins.length > 0 && entry.receivers.length > 0;
+	const has_vars = (entry.vars?.length ?? 0) > 0;
+	if (!has_pins && !has_vars) return null;
 
 	// A register bound at EMIT time (loop promotion claims install into
 	// register_allocations as scopes open — the plan's occupant map can't
@@ -150,25 +185,7 @@ export function region_pool_enter(
 	for (let i = 0; i < n; i++) {
 		const pin = entry.pins[i];
 		const receiver = entry.receivers[i];
-		// Every displaced occupant needs a frame slot: reuse one already
-		// registered, or PRE-ALLOCATE (the tranche-D-addendum machinery —
-		// `preallocated_decl_slots` makes the later declare reuse the exact
-		// slot; without the reuse the spill/reload stays sound, just
-		// frame-wasteful).
-		const resolved: { name: string; slot: number; key: string }[] = [];
-		let ok = true;
-		for (const d of pin.displaced) {
-			let slot = status.stack_offsets?.get(d.name);
-			if (slot === undefined) {
-				if (!status.stack_offsets) status.stack_offsets = new Map();
-				slot = allocate_stack_space(status, 8, 8);
-				status.stack_offsets.set(d.name, slot);
-				if (!status.preallocated_decl_slots) status.preallocated_decl_slots = new Map();
-				status.preallocated_decl_slots.set(d.name, 8);
-			}
-			resolved.push({ name: d.name, slot, key: d.key });
-		}
-		if (!ok) continue;
+		const resolved = resolve_displaced(status, pin.displaced);
 		const reg = pin.reg;
 		if (!pin_borrowable(status, pin)) continue;
 		// The register must not already hold a cache entry (function-wide
@@ -212,8 +229,46 @@ export function region_pool_enter(
 		entries.push({ key: receiver.key, reg });
 		leases.push({ reg, displaced: resolved, had_claim });
 	}
+	// Region-scoped source variables: borrow their registers with the same
+	// displaced-occupant round-trip and claim bookkeeping, and publish the
+	// bindings for the loop builder to install after its snapshots (its
+	// exit restores drop them — a register-bound loop local never leaks
+	// past the bracket). Plain names go straight into
+	// `register_allocations`; site-keyed vars install into
+	// `nir_site_allocs` and bind at their declare sites. The var is
+	// defined inside the loop and dead after it, so no entry load and no
+	// exit store-back — only the displaced occupants' spill/reload frames
+	// the borrow.
+	const var_bindings: { name: string; reg: string; key?: string }[] = [];
+	for (const v of entry.vars ?? []) {
+		const resolved = resolve_displaced(status, v.displaced);
+		if (!pin_borrowable(status, v)) continue;
+		if (status.buffer_data_cache) {
+			for (const [k, creg] of [...status.buffer_data_cache]) {
+				if (creg === v.reg) status.buffer_data_cache.delete(k);
+			}
+		}
+		for (const d of resolved) {
+			status.code += `str ${v.reg}, [x29, #${d.slot}]\n`;
+		}
+		let had_claim = false;
+		if (CALLER_SAVED_EXT_X.includes(v.reg)) {
+			if (!status.nir_caller_saved_claimed) status.nir_caller_saved_claimed = new Set();
+			had_claim = status.nir_caller_saved_claimed.has(v.reg);
+			status.nir_caller_saved_claimed.add(v.reg);
+		} else {
+			if (!status.callee_saved_regs_used) status.callee_saved_regs_used = new Set();
+			status.callee_saved_regs_used.add(v.reg);
+		}
+		if (!status.region_pinned) status.region_pinned = new Map();
+		status.region_pinned.set(v.reg, (status.region_pinned.get(v.reg) ?? 0) + 1);
+		var_bindings.push(
+			v.key ? { name: v.name, reg: v.reg, key: v.key } : { name: v.name, reg: v.reg },
+		);
+		leases.push({ reg: v.reg, displaced: resolved, had_claim });
+	}
 	if (leases.length === 0) return null;
-	status.region_preseed = { node, entries };
+	status.region_preseed = { node, entries, vars: var_bindings };
 	return { leases };
 }
 

@@ -67,8 +67,31 @@ export default function build_while_loop_node(
 	// the pre-seeded cache (materialized once per loop, not per
 	// iteration). Node identity — the pre-seed rides exactly one loop.
 	const preseed = status.region_preseed;
+	// Region-scoped source variables (ASM_PLAN_5 tranche 5): site-keyed
+	// vars ride a bracket-private copy of the site table — snapshotted
+	// here, restored at exit, so a region site entry never outlives the
+	// loop.
+	const saved_site_allocs = status.nir_site_allocs;
 	if (preseed && preseed.node === node) {
 		status.buffer_data_cache = new Map(preseed.entries.map((e) => [e.key, e.reg]));
+		// Bind the loop-contained locals into their borrowed registers
+		// AFTER the register_allocations snapshot above — the exit restore
+		// drops the bindings with the bracket, so a register-bound loop
+		// local never leaks past the loop. The bindings also keep loop
+		// promotion away (bound names are skipped, their registers show as
+		// used; site entries join the site_regs avoidance set).
+		if (preseed.vars?.length) {
+			const region_sites = new Map(saved_site_allocs ?? []);
+			for (const v of preseed.vars) {
+				if (v.key) {
+					region_sites.set(v.key, { name: v.name, reg: v.reg });
+				} else {
+					if (!status.register_allocations) status.register_allocations = new Map();
+					status.register_allocations.set(v.name, v.reg);
+				}
+			}
+			if (region_sites.size > 0) status.nir_site_allocs = region_sites;
+		}
 	}
 	// Fixed-array pointer cache (ASM_PLAN_3 tranche A): the induction may
 	// advance between iterations, so no pinned element address may cross a
@@ -256,6 +279,7 @@ export default function build_while_loop_node(
 		status.register_allocations = undefined;
 	}
 	status.preallocated_decl_slots = saved_preallocated;
+	status.nir_site_allocs = saved_site_allocs;
 	status.slp_pair_hints = saved_slp_hints;
 	status.slp_pair_vregs = saved_slp_vregs;
 
