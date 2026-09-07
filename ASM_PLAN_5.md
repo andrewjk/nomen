@@ -136,6 +136,10 @@ both arms of the byte-identity tests).
    store index (`wd_off + u_len + 1 + mi`) rebuilds per iteration because
    VN's channels don't cover accessor-argument positions (the L forwarding
    removes the `_param_N` host VN's alloc channel needs).
+   → LANDED (2026-09-07, tranche 6 below) — the chain-splitting itself was
+   already done (the vn_param_inits merge); this tranche completed the
+   promotion side. pidigits' D4 loops stay register-blocked (the tranche-4
+   ceiling), so the win is mechanism, not measurements.
 4. **mul_to coverage**: its plan produces no region entries (early return
    or receiver shapes) — extend the receiver collection to its accessor
    forms.
@@ -287,3 +291,36 @@ ranges span every pool register). Suite green default-ON (291 files /
 both-backends tests); bench matrix byte-identical across backends;
 fannkuch 0.18 unchanged. The mechanism is sound and fires where
 candidates exist; pidigits simply has none left.
+
+### Tranche 6 (2026-09-07): `_vn` invariant bases ride loop promotion
+
+Plan item 3's completion. The chain-SPLITTING was already in place (the
+vn_param_inits merge): the D4 store index emits `ldr x10, [base_slot]; add
+x10, x10, mi` — invariant hoisted, induction live. What remained was the
+base's own SLOT round-trip (`ldr x10, [x29, #base]` every iteration). Two
+promotion-side gates blocked the base from riding a loop bracket:
+
+- **Visibility**: promotion scanned the RAW AST, whose accessor arguments
+  still show the unsplit chains — the hoisted `_vn_N` bases' reads lived
+  only in the REWRITTEN trees the emitter builds (use-site splices +
+  `vn_param_inits` init replacements). promote_loop_locals now walks the
+  loop's host nodes and counts the replacement trees' reads too.
+- **Eligibility**: `_vn_` temps were excluded wholesale (the pidigits
+  garbage-index receipt: a FORWARDED single-use declare emits no slot
+  store, so an entry load reads garbage). The refinement: promotion
+  allows a `_vn_N` whose declare SURVIVED forwarding (multi-use by
+  construction — the forwarder takes only single uses). `vn.temp_defs`
+  (temp name → declare node) now rides the emit ctx; the gate refuses
+  unknown names and forward-elided declares. `_param_N` stays excluded
+  (its slot can be written inside the loop by hoisted allocations).
+
+Result: mechanism sound, suite green default-ON (290 files / 2820
+tests), bench matrix byte-identical across backends, pidigits n=4000
+0.55-0.58 and fannkuch 0.17 unchanged. **pidigits' D4 loops did NOT
+take it**: every pool register holds a loop-live occupant (mi/vv/
+lo_prod/q_hat/...), and a live-across base interferes with every one —
+the tranche-4 ceiling again; the codegen is instruction-identical modulo
+frame-slot renumbering (spliced-read inflation made a few locals
+eligibility-eligible; their pre-allocated slots shift the layout with no
+code change). The enablement fires where registers exist; the D4 loops
+need pool depth, not eligibility.

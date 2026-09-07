@@ -251,10 +251,6 @@ test("kill-switch keeps region vars off (slot-resident shape restored)", () => {
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64" });
 		expect(result.errors ?? []).toEqual([]);
-		const body = result.code.slice(
-			result.code.indexOf(".while_1:"),
-			result.code.indexOf(".end_while_1:"),
-		);
 		// Without the pass the same locals ride loop promotion's bracket:
 		// entry loads read their (garbage-then-discarded) slots before the
 		// header — loads the region-var binding eliminates.

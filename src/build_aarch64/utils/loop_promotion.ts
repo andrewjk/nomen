@@ -168,6 +168,46 @@ export function promote_loop_locals(
 	if (sources.update) {
 		merge_refs(collect_var_refs(sources.update));
 	}
+	// VN-rewritten positions (ASM_PLAN_5 tranche 6): the raw AST still
+	// shows the unsplit index chains, but the emitter builds the REWRITTEN
+	// trees — use-site splices (direct value positions) and hoisted
+	// `_param` init replacements (the alloc channel). Counting those trees
+	// gives the hoisted `_vn_N` invariant bases their real per-loop reads,
+	// so a base read every iteration can ride this loop's bracket instead
+	// of re-loading its slot (the D4 loops' `ldr x10, [x29, #base]`).
+	const hosts = new Set<BaseNode>();
+	const walk_hosts = (n: BaseNode): void => {
+		if (!n || typeof n !== "object") return;
+		hosts.add(n);
+		const any_n = n as unknown as Record<string, unknown>;
+		for (const key of Object.keys(any_n)) {
+			if (key === "parent" || key === "scope") continue;
+			const v = any_n[key];
+			if (Array.isArray(v)) {
+				for (const item of v) {
+					if (item && typeof item === "object" && "node_type" in (item as object)) {
+						walk_hosts(item as BaseNode);
+					}
+				}
+			} else if (v && typeof v === "object" && "node_type" in (v as object)) {
+				walk_hosts(v as BaseNode);
+			}
+		}
+	};
+	for (const stmt of sources.statements) walk_hosts(stmt);
+	if (sources.condition) walk_hosts(sources.condition);
+	if (sources.update) walk_hosts(sources.update);
+	const vn_ctx = status.nir_emit_ctx;
+	for (const host of hosts) {
+		const use = vn_ctx?.use_sites?.get(host);
+		if (use) {
+			for (const sp of use.splices) merge_refs(collect_var_refs(sp.init));
+		}
+		const inits = status.vn_param_inits?.get(host);
+		if (inits) {
+			for (const tree of inits.values()) merge_refs(collect_var_refs(tree));
+		}
+	}
 
 	const eligible: {
 		name: string;
@@ -240,7 +280,19 @@ export function promote_loop_locals(
 		// while the use reads the register — garbage indices into heap
 		// buffers (the pidigits receipt). They qualified only under the
 		// reads>=1 ext bar (single-use by construction).
-		if (name.startsWith("_param_") || name.startsWith("_vn_")) continue;
+		//
+		// Tranche 6 refinement: a `_vn_N` temp whose declare SURVIVED
+		// forwarding (multi-use by construction — the forwarder takes only
+		// single uses) wrote its slot before this loop and nothing writes a
+		// `_vn_` temp inside any loop, so the entry load reads the hoisted
+		// value and the exit store-back rewrites the same value — the base
+		// rides the bracket register-resident (the D4 receipt: the store
+		// index reloaded its hoisted base's slot every iteration).
+		if (name.startsWith("_param_")) continue;
+		if (name.startsWith("_vn_")) {
+			const def = status.nir_emit_ctx?.vn_temp_defs?.get(name);
+			if (!def || status.nir_emit_ctx?.forward_defs?.has(def)) continue;
+		}
 		// Aliasing-aware exclusions (critical for accumulator eligibility —
 		// a promoted alias/ref breaks write-through semantics):
 		if (status.function_ref_params?.has(name)) continue;

@@ -108,6 +108,11 @@ export interface VnPlan {
 	host_stmts: ReadonlySet<BaseNode>;
 	/** Every `_vn_N` name this pass introduced. */
 	temp_names: ReadonlySet<string>;
+	/** Hoisted temp name → its AST declare node. The loop brackets consult
+	 *  the forward plan against these: a temp whose declare forwarding
+	 *  elided must never be promoted (its slot was never written — the
+	 *  pidigits garbage-index receipt). */
+	temp_defs: ReadonlyMap<string, BaseNode>;
 	/** Restores the shared AST lists (removes the synthetic declares). */
 	undo: () => void;
 }
@@ -170,6 +175,7 @@ interface VnWalk {
 	use_sites: Map<BaseNode, ForwardUse>;
 	host_stmts: Set<BaseNode>;
 	temp_names: Set<string>;
+	temp_defs: Map<string, BaseNode>;
 	temps_used: number;
 	vn_param_inits: Map<BaseNode, Map<string, BaseNode>>;
 	undo_records: { arr: BaseNode[]; nodes: BaseNode[] }[];
@@ -1014,6 +1020,7 @@ function hoist_loop_invariants(
 			start,
 		);
 		const ast_decl = new DeclarationNode(start, "private", "const", temp_name, group.type, sum.ast);
+		walk.temp_defs.set(temp_name, ast_decl);
 		declares.push({
 			kind: "declare",
 			node: ast_decl,
@@ -1120,6 +1127,7 @@ export function value_number_loops(
 			use_sites: new Map(),
 			host_stmts: new Set(),
 			temp_names: new Set(),
+			temp_defs: new Map(),
 			undo: () => {},
 		};
 	}
@@ -1128,6 +1136,7 @@ export function value_number_loops(
 		use_sites: new Map(),
 		host_stmts: new Set(),
 		temp_names: new Set(),
+		temp_defs: new Map(),
 		temps_used: 0,
 		vn_param_inits: new Map(),
 		undo_records: [],
@@ -1147,6 +1156,7 @@ export function value_number_loops(
 		use_sites: walk.use_sites,
 		host_stmts: walk.host_stmts,
 		temp_names: walk.temp_names,
+		temp_defs: walk.temp_defs,
 		undo,
 	};
 }

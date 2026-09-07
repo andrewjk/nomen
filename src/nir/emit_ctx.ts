@@ -37,4 +37,13 @@ export interface NirEmitCtx {
 	 * emitter emits nothing for them (the use site re-emits the init).
 	 */
 	forward_defs?: ReadonlySet<BaseNode>;
+	/**
+	 * Hoisted value-numbering temp name → its AST declare node
+	 * (build_aarch64/value_number.ts). Loop promotion promotes a `_vn_N`
+	 * base into its bracket only when this map has the name AND the
+	 * forward plan did not elide the declare — an elided declare writes
+	 * no slot, so a promotion entry load would read garbage (the pidigits
+	 * receipt that excluded `_vn_` temps wholesale).
+	 */
+	vn_temp_defs?: ReadonlyMap<string, BaseNode>;
 }

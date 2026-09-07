@@ -792,6 +792,7 @@ export function build_block_with_cursor(
 				write_only: old_ctx?.write_only,
 				use_sites: old_ctx?.use_sites,
 				forward_defs: old_ctx?.forward_defs,
+				vn_temp_defs: old_ctx?.vn_temp_defs,
 			}
 		: undefined;
 	// Access-staging pins never cross INTO a nested block build (its
@@ -847,6 +848,7 @@ export function build_body_with_cursor(func: FunctionNode, status: BuildStatus):
 		write_only: prepared.write_only,
 		use_sites,
 		forward_defs: prepared.forward_defs,
+		vn_temp_defs: vn.temp_defs,
 	};
 	// A function-like body is a fresh emission scope: prologue patching and
 	// inline label rewrites shift absolute code positions — pins from the

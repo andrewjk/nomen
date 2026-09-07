@@ -856,6 +856,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 			write_only: prepared.write_only,
 			use_sites,
 			forward_defs: prepared.forward_defs,
+			vn_temp_defs: vn?.temp_defs,
 		};
 	} else {
 		status.nir_emit_ctx = undefined;
