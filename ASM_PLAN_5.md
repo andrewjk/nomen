@@ -85,20 +85,21 @@ occupants round-trip through pre-allocated slots. Full suite green
 refusal, kill-switch, behavioral both backends) and the byte-identity
 harness holding the pass off in both arms.
 
-### Soundness — DEFAULT OFF; layout/BigInt fixed, edigits-class hole open
+### Soundness — RESOLVED, DEFAULT ON (2026-09-07)
 
-The 2026-09-06 forensics session fixed THREE real holes (see
-FOLLOWUP.md "Region-pool receiver pins" for the full list): the pin
-register now rides `plan.callee_saved` (it is callee-saved — without the
-prologue save the function destroyed the CALLER's live value: first_child
-clobbered measure_w's x25 — the layout 800-width receipt), shared
-registers are refused (N sharers have N different values; a single
-loop-exit reload restores one — the edigits limb-temp receipt), and the
-receiver/def attribution is per-statement. Layout + BigInt are correct
-forced-ON. **edigits/knucleotide/lru still corrupt forced-ON** — edigits
-is the smallest repro (171 lines; delta = ONE single-occupant pin site +
-a prologue shuffle; the unsound step is unidentified). Next session
-shrinks edigits. The default flips when that closes.
+The forensics sessions closed four holes (full list in FOLLOWUP.md
+"Region-pool receiver pins — RESOLVED"): the pin-register ABI (pins ride
+`plan.callee_saved` — an unsaved callee-saved pin destroyed the CALLER's
+live value: first_child clobbered measure_w's x25), shared-register
+refusal (N sharers, N values, one reload point), emit-time binding
+refusal (loop promotion's claims install into `register_allocations`
+at scope-open, invisible to the plan-time map — the inner c-loop's
+induction was promoted into the pin register and destroyed), and the
+first-landing attribution/ordering fixes. The last one (edigits'
+`0 :1`) was the emit-time-binding case. Full bench matrix
+byte-identical, suite green default-ON. The pass remains
+non-cursor-dependent in the harness sense (emission-driven, runs in
+both arms of the byte-identity tests).
 
 ## Next tranches
 

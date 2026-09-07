@@ -183,40 +183,39 @@ Options when this is picked up:
 Not fixed in the tranche (out of scope; tranche 3's mutation scan
 keeps borrow positions isolated). Recorded for the semantic owner.
 
-## Region-pool receiver pins: sound on BigInt/layout, still corrupts edigits/knucleotide/lru (DEFAULT OFF)
+## Region-pool receiver pins — RESOLVED (default ON, 2026-09-06/07)
 
-ASM_PLAN_5 tranche 1 shipped `region_pool.ts` (region-scoped callee-pool
-claims + loop-pinned Buffer data-pointer materialization) **default OFF**
-via `set_region_pool_enabled(false)`. Forced-ON state after the 2026-09-06
-forensics session (env bisects `NOMEN_REGION_ON=1`; per-function `.s`
-diffs):
+ASM_PLAN_5 tranche 1 (`region_pool.ts`: region-scoped callee-pool claims +
+loop-pinned Buffer data-pointer materialization) is now **default ON** after
+the soundness hunt closed all four holes. The receipts (each caught by the
+build-both-arms/diff discipline):
 
-- **FIXED**: two receivers sharing one pin register (spectral aliasing —
-  one pin per receiver now); foreign-vs-own root-write attribution;
-  path-assign root-defs refuse; entry loads accumulate; positional
-  dest-and-source reads; **the pin register is now added to
-  `plan.callee_saved`** (it is callee-saved — using it without riding the
-  prologue/epilogue save/restore destroyed the CALLER's live value:
-  first_child's pin clobbered measure_w's x25 — the layout receipt);
-  **shared registers refused** — the allocator puts N non-interfering
-  ranges in one register with N different values, and a single loop-exit
-  reload can only restore one (the edigits receipt: five shared limb
-  temps, four corrupted on resume). Layout + BigInt now correct
-  forced-ON.
-- **STILL CORRUPTS forced-ON**: edigits, knucleotide, lru (wrong
-  output/build). edigits' delta is a 64-line diff: ONE pin site
-  (x24 = [x29+688]+8's data, a single-occupant borrow ✓ passes the new
-  rule) plus a prologue shuffle (x28 left the save set, a value moved
-  x25→x26) — the unsound step is not yet identified. Next session:
-  shrink edigits (171 lines, the smallest repro), dump the BigInt limbs
-  around the pinned loop (temporary library dump function — main-sourced
-  load_int calls can't pass the static constraint verifier), and check
-  the displaced occupant's post-loop resume in that function.
-- **Repro/bisect recipe**: force via `set_region_pool_enabled(true)` or a
-  temporary env in `region_pool_enabled()`; per-function `.s` diffs
-  (`awk -v f="^fn:" '$0 ~ f,/^\.p2align/'`); node-array dumps via a
-  temporary LIBRARY dump function (main-sourced direct loads are
-  checker-refused — library code is verification-exempt).
+1. **Pin register ABI**: the pin is a CALLEE-SAVED register — using it
+   without riding the prologue/epilogue save/restore destroyed the
+   CALLER's live value (first_child's pin clobbered measure_w's x25 —
+   layout's `800x30`). Fix: chosen pins join `plan.callee_saved`, and
+   `region_pool_exit` no longer deletes them from the live claim set.
+2. **Shared registers**: N non-interfering ranges share one register with
+   N DIFFERENT values — a single loop-exit reload restores one (edigits:
+   five shared limb temps, four corrupted). Registers with >1 occupant
+   are refused.
+3. **Emit-time bindings**: loop promotion (tranche D) claims registers at
+   emission and installs them in `register_allocations` as scopes open —
+   invisible to the plan-time occupant map. The inner c-loop's induction
+   `c` was promoted into x24 by the outer loop's promotion and the
+   bracket's digits.data derivation destroyed it (edigits' `0 :1`).
+   Fix: `region_pool_enter` refuses pin registers bound in the live
+   `register_allocations`.
+4. **Ordering/counting** (attribution, path-assign refusal, entry-load
+   accumulation, positional dest-and-source reads) — fixed in the first
+   landing.
+
+Full bench matrix byte-identical across backends; pidigits n=4000
+0.63 → 0.53 s baseline-relative (the whole ASM_PLAN_5 arc: 1.89× →
+**~1.53×** vs C `-O2`); fannkuch-redux −28%; suite green (290 files /
+2816 tests) with `test/region_pool.test.ts` + the harness holding the
+pass in both arms (it is emission-driven, so the corpus harness runs it
+in both — it is not a cursor-dependent transform).
 
 The substrate (plan-side region-free computation, block-membership
 liveness, the bracket + pre-seed mechanics) is sound where it fires on

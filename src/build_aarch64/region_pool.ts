@@ -60,6 +60,14 @@ export function region_pool_enter(
 	const entry = status.nir_region_free?.get(node);
 	if (!entry || entry.pins.length === 0 || entry.receivers.length === 0) return null;
 
+	// A register bound at EMIT time (loop promotion claims install into
+	// register_allocations as scopes open — the plan's occupant map can't
+	// see them) is NOT borrowable: the plan-time disjointness proof covers
+	// only plan-assigned occupants. The edigits receipt: the inner c-loop's
+	// induction `c` was promoted into x24 by the outer loop's promotion,
+	// and the bracket's digits.data derivation destroyed the induction.
+	const bound_regs = new Set<string>();
+	for (const r of status.register_allocations?.values() ?? []) bound_regs.add(r);
 	const n = Math.min(entry.pins.length, entry.receivers.length);
 	const leases: RegionLease["leases"] = [];
 	const entries: { key: string; reg: string }[] = [];
@@ -86,6 +94,7 @@ export function region_pool_enter(
 		}
 		if (!ok) continue;
 		const reg = pin.reg;
+		if (bound_regs.has(reg)) continue;
 		// The register must not already hold a cache entry (function-wide
 		// claims were checked at plan time; emission-time claims are
 		// evicted — the pointer is re-derived on the next miss).
@@ -102,7 +111,7 @@ export function region_pool_enter(
 		emit_buffer_struct_addr(receiver.node, status);
 		status.code += `ldr x9, [x9, #8]\n`;
 		status.code += `mov ${reg}, x9\n`;
-		if (process.env.NOMEN_REGION_NOSEED !== "1") entries.push({ key: receiver.key, reg });
+		entries.push({ key: receiver.key, reg });
 		leases.push({ reg, displaced: resolved });
 	}
 	if (leases.length === 0) return null;
