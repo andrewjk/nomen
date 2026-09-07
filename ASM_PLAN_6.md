@@ -174,11 +174,68 @@ most intricate transform yet. Deferred with the receipt; revisit only
 with a mechanism that frees another register (e.g. scratch-set
 modeling for call-free cycles at the NIR allocator level).
 
+### Tranche 4 (2026-09-08): mi-loop staging movs — dead-move elimination inside validated cycles — LANDED
+
+The mi loop's remaining census fat was the staging movs: the per-statement
+emission stages every operand into a fixed protocol register (`mov x2, x23`
+before a compare, `mov x1, x27` before a multiply) even when the consumer
+reads the SOURCE register directly. The copy coalescer substitutes read
+operands and deletes only the moves it FLAGGED — a move whose consumer never
+read the destination in the first place is never flagged, and the
+function-wide dead-move pass ships default-OFF (the nbody measured-loss).
+Inside the hot loop the leftovers execute per iteration: the D4-multiply
+cycle alone carried five (`mov x2, x23`, `mov x1, x27`, `mov x0, x19`,
+`mov x2, x12`, `mov x11, x9`).
+
+New pass `src/build_aarch64/asm_cycle_dead_moves.ts`, wired into build.ts
+AFTER coalesce_copies: a `mov xD, xS` whose destination is provably dead is
+deleted — but ONLY inside validated cycles (the promote_loop_slots model:
+header label … unconditional back-edge, header provenance from inside, no
+bl/blr/br/svc/ret; fall-through marker labels like `.while_update_N:` ride
+inside, a label any jump targets blocks the cycle). The liveness is EXACT,
+not the two-set taint approximation: a function-level CFG (blocks at labels
+and b/b.cond/cbz/cbnz/tbz/tbnz/ret; fall-through + resolved-target edges,
+numeric `1f`/`1b` forms included; `br` or an unresolvable target aborts the
+pass) with a backward fixpoint. The exactness is the point: the si2 base's
+`mov x14, x0` escapes through the loop exit and KEPTS its move, while the
+guard's compare staging — whose exit path redefines x2 before any read —
+dies. `bl`/`blr` read x0–x8/d0–d7 and define the caller-saved set, so a
+staging mov feeding a downstream call argument survives (the `.while_25`
+`mov x3, x28` receipt). Deletions iterate to a fixpoint (a deleted move's
+source read can kill a chained move). Kill-switch
+`set_cycle_dead_moves_enabled` — default ON.
+
+Two soundness receipts caught landing it:
+
+1. **The w-sibling read** (buffer_uint32_split, suite-caught): the store's
+   value staging `mov x2, x0` fed `str w2, [x23, x24, lsl #2]` — the CONSUMER
+   reads the W-SIBLING of the def, and the exact-name liveness model saw x2
+   dead. Every iteration stored garbage. Fix: a candidate mov's dest is only
+   dead when NEITHER xD NOR wD is live.
+2. **Interior jump-target labels**: the first cut refused ANY interior label,
+   which refused every `.while_update_N:`-shaped cycle (the emitter's
+   fall-through marker). The rule is now: interior labels with no jump
+   predecessors ride inside; a label any jump targets breaks the cycle.
+
+Result: 26 deletions across div_to's cycles; the D4-multiply loop drops from
+25 to 20 instructions/iteration (2 derivation, 4 live staging, 6-instruction
+index chain — now the base load + 2 adds — and the essential compute + carry
+remain). Bench matrix byte-identical across backends (pidigits, edigits,
+fannkuch, lru, spectral-norm, binarytrees, mandelbrot, nsieve, nbody,
+merkletrees, knucleotide); full suite green default-ON (291 files / 2836
+tests) with `test/asm_cycle_dead_moves.test.ts` (mi shape, exit-escape keep,
+chained fixpoint, w-sibling keep, call refusal, numeric labels, kill-switch,
+behavioral both backends). pidigits n=4000 interleaved best-of-7:
+0.52 → **0.50 s** (cumulative 0.64 → 0.50 across the arc; ~1.43× vs C
+`-O2`); fannkuch-redux 2.12 → **2.03 s** (−4%, the same staging leftovers
+pruned in its hot loops).
+
 ## State
 
-Tranches 1–2 landed (default ON, suite green, matrix byte-identical,
-pidigits 0.64 → **0.54** across the ASM_PLAN_5+6 arc). The D4 census
-closes: of the original 25 instructions/iteration, the derivation (2),
-the base slot load (1) and — in si2 — the carry slot round-trips are
-gone; what remains is essential compute, accessor marshaling movs
-(fixed-register raw-body ABI), and the flag-form carry.
+Tranches 1–2 landed and tranche 4 landed (default ON, suite green, matrix
+byte-identical, pidigits 0.64 → **0.50** across the ASM_PLAN_5+6 arc;
+tranche 3 deferred below the noise floor). The D4 census closes: of the
+original 25 instructions/iteration, the derivation (2), the base slot load
+(1), the carry slot round-trips (si2) and the five dead staging movs are
+gone; what remains is essential compute, the accessor marshaling the raw
+bodies genuinely need, and the flag-form carry.

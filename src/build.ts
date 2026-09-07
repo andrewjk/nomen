@@ -1,4 +1,5 @@
 import { coalesce_copies } from "./build_aarch64/asm_coalesce.ts";
+import { eliminate_dead_cycle_moves } from "./build_aarch64/asm_cycle_dead_moves.ts";
 import { promote_loop_slots } from "./build_aarch64/asm_loop_promote.ts";
 import {
 	eliminate_dead_copy_moves,
@@ -304,6 +305,14 @@ export default function build(
 		// carry `if` emits no branch, so accessor pairs share one region
 		// the statement-level pins cannot span).
 		status.code = coalesce_copies(status.code);
+		// Dead staging-move elimination inside validated loop cycles —
+		// prunes `mov xD, xS` whose destination exact-CFG liveness proves
+		// dead (the per-statement emission's protocol staging whose
+		// consumer reads the source register directly; the coalescer only
+		// deletes moves it substituted). Cycle-scoped so the rest of each
+		// function keeps its text (the measured-loss convention of the
+		// function-wide dead-move pass).
+		status.code = eliminate_dead_cycle_moves(status.code);
 		if (options.audit) {
 			// The main-function audit_check + pool shutdown hook is emitted
 			// directly by build_function_node (it knows main's return label).
