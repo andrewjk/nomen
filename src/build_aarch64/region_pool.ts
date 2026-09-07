@@ -100,6 +100,17 @@ function pin_borrowable(status: BuildStatus, pin: { reg: string; dead: string[] 
 	const dead = new Set(pin.dead);
 	for (const [name, reg] of status.register_allocations?.entries() ?? []) {
 		if (reg !== pin.reg || name === undefined) continue;
+		// Fast path: the bound name IS a dead plan occupant of this
+		// register — its value is not needed in or across the loop, and
+		// the bracket's spill/reload round-trips it. Sibling site keys of
+		// the same source live on OTHER registers (any key on this
+		// register would be an occupant, hence in the dead set — a pin is
+		// only offered when every occupant is dead), so no expansion is
+		// needed. Without this, the expansion below vetoes plain occupants
+		// via same-source site keys elsewhere (the D4 receipt: x14 bound
+		// to borrow1/sum/p_ll/p_val, all dead, refused over hi_prod@N on
+		// no register near this loop).
+		if (dead.has(name)) continue;
 		const keys = shared.source_keys.get(name) ?? [name];
 		for (const key of keys) {
 			if (!dead.has(key)) return false;

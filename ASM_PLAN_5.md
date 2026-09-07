@@ -208,8 +208,37 @@ Result: pin set identical to tranche 2 in pidigits (D1×2 + D6×2),
 outputs byte-identical across backends (pidigits, fannkuch, edigits
 checked); fannkuch neutral; pidigits n=4000 0.53 vs 0.52 baseline
 (noise floor). Full suite green default-ON (290 files / 2817 tests).
-No headline gain yet — the D4 loops' entries are offered but refused at
-emission (emit-time promotion holds x14/x15 under names outside the dead
-set). Shelved with measurements (see FOLLOWUP.md): x15 reservation
+D4 status at commit: entries offered but refused at emission
+(emit-time promotion holds x14/x15 under names outside the dead set).
+Shelved with measurements (see FOLLOWUP.md): x15 reservation
 (+0.02, lost the D6 pins), nested-loop pin refusal, collect_var_refs
 coverage, promotion site-sharing.
+
+### Tranche 4 (2026-09-07): dead-set fast path — D4 small-loop pins land
+
+`pin_borrowable` vetoed plain occupants via same-source site keys on
+other registers: the per-pin dead set already IS the register's full
+occupant set, so a bound name found directly in it needs no
+`source_keys` expansion (any same-source key on this register would be
+an occupant, hence in the set — a pin is only offered when every
+occupant is dead). The expansion stays for ambiguous/unknown names, so
+every existing refusal (emit-time promotion claims, the edigits inner-`c`
+case) still refuses. 11 lines in `region_pool.ts`.
+
+Result: 4 more pins in pidigits (x14/x15 on the try_count, pi, cmp_i and
+D5 loops — 8 total with D1×2 + D6×2), outputs byte-identical across
+backends (pidigits, fannkuch, edigits checked); fannkuch 0.17
+(unchanged); pidigits n=4000 neutral vs baseline (the new pins sit on
+small loops — bracket overhead ≈ derivation savings). Full suite green
+default-ON (290 files / 2817 tests).
+
+The two hot D4 loops (mi-multiply, si2-subtract) get NO plan entry and
+cannot get one by region refinement: every pool reg holds a genuinely
+live occupant there (10 live values, 10 regs — the loops' own temps span
+all of x12–x15), and the only dead-check refinement (sibling-aware
+membership) is formally indistinguishable from the lru hole: a later
+sibling reaches an earlier header via the outer back-edge exactly the
+way a break-exiting nest reaches its own header, so no dom/reach rule
+separates them — the union stays the sound ceiling. Landing mi/si2 needs
+a different mechanism (spill-aware borrowing of live occupants, or fewer
+live ranges via index-chain strength reduction — plan items 2–3).
