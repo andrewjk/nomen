@@ -157,3 +157,28 @@ The mi loop's remaining fat is the staging movs (x1/x2/x3 copies the
 coalescer cannot fold across the accessor staging protocol) — asm-level
 dead-move work inside validated cycles, recorded as the next tranche's
 candidate.
+
+### Tranche 3 (2026-09-08): base-folded addressing — scoped, DEFERRED
+
+With the derivation hoisted, base-folding (`x_ptr' = ptr + base*8` at
+entry, accesses index by the bare induction) would kill 2
+instructions/iteration in the si2 loop — the ONLY loop with a spare
+pointer register after the carry and derivation claims. The mi loop
+(carry + base + derivation wanting three registers) cannot fold; the
+D2 j-loop is call-blocked; the small-b loop is division-dominated. A
+2-instruction/iteration win in one loop is below the timing noise
+floor (pidigits has been 0.54 across five consecutive samples), and
+the shape-matching (scaled-add entry with an x9 scratch, in-cycle
+index-substitution restricted to the folded base's accesses) is the
+most intricate transform yet. Deferred with the receipt; revisit only
+with a mechanism that frees another register (e.g. scratch-set
+modeling for call-free cycles at the NIR allocator level).
+
+## State
+
+Tranches 1–2 landed (default ON, suite green, matrix byte-identical,
+pidigits 0.64 → **0.54** across the ASM_PLAN_5+6 arc). The D4 census
+closes: of the original 25 instructions/iteration, the derivation (2),
+the base slot load (1) and — in si2 — the carry slot round-trips are
+gone; what remains is essential compute, accessor marshaling movs
+(fixed-register raw-body ABI), and the flag-form carry.
