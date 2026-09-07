@@ -123,6 +123,8 @@ both arms of the byte-identity tests).
 
 1. **Soundness hunt** (gates the default): shrink the layout/lru corruption
    to a minimal repro; the suspect list is in FOLLOWUP.md.
+   → DONE (2026-09-07, RESOLVED DEFAULT ON above; holes 5–6 below found
+   and closed landing tranche 2).
 2. **Region-scoped source variables**: loop-contained hot locals (the D2
    spill slots) assigned from the region-free registers by the planner
    itself, with the same bracket bookkeeping.
@@ -133,3 +135,56 @@ both arms of the byte-identity tests).
 4. **mul_to coverage**: its plan produces no region entries (early return
    or receiver shapes) — extend the receiver collection to its accessor
    forms.
+
+### Tranche 2 (2026-09-07): per-region reassignment of shared pool registers
+
+Unlocked the tranche-1 mechanism where it had starved: div_to/mul_to
+claim all 6 callee-saved registers function-wide (52 allocs in div_to),
+so no 0/1-occupant register was ever free and zero pins fired in pidigits.
+Three plan-side changes (`nir_regalloc.ts` + `region_pool.ts`):
+
+- **Shared-register borrowing**: every occupant dead-in-loop borrows
+  through the FIRST plain occupant's home slot (single str/ldr
+  round-trip). At most one occupant can need the entry value after the
+  loop (a second live-across occupant would interfere and could never
+  share the register), so the N-slot spill's home-clobbering (the edigits
+  receipt's actual corruption) is gone by construction. Site-keyed
+  occupants no longer veto — they just can't supply the slot.
+- **Dead-set emit check**: the old blanket bound-register refusal nulled
+  every occupied pin (function-wide occupants stay bound in the map
+  whether or not they are live). The plan now records every occupant key
+  per pin; the bracket allows bound names proven dead and still refuses
+  emit-time promotion claims (unknown keys — the edigits inner-`c` case).
+- **Raw-stable marshalling allowance**: BigInt get/set/get_at/set_at/
+  data_ptr on BigInt-typed receivers are indexed access through the
+  current data pointer (verified bodies; call-free ⇒ no ensure/grow ⇒ no
+  rewire), so their may-defs join the own-roots allowance instead of
+  refusing the pin (the D6-unnormalize receipt: `remainder.set(ri, …)`
+  had refused its own loop's `remainder.digits` pin).
+
+Result: D1-shift loops (×2, pin x28) + D6-unnormalize loops (×2, pins
+x23/x24) hoisted — 4 brackets in pidigits, outputs byte-identical across
+backends (pidigits, edigits, fannkuch checked). pidigits n=4000:
+0.53 → **0.52 s** (~1.58× vs C `-O2`). Full suite green default-ON
+(290 files / 2816 tests).
+
+Two soundness holes found landing it (both segfaults, both caught by the
+bench-matrix discipline, both closed same session — full list in
+FOLLOWUP.md):
+
+5. **Share-into-pin** (knucleotide count_seq): loop promotion's
+   interference-sharing could not see the pin and shared the j-loop
+   induction onto the data-pin register (`ldr x0, [x26, x26, lsl #3]`).
+   Fix: `status.region_pinned` (bracket-maintained, nesting-disciplined);
+   `can_share_claimed_register` refuses pinned regs.
+6. **Nesting-incomplete loop bodies** (lru): analyze_loops' latch
+   pred-walk missed nested blocks, so the outer find-loop tested its
+   inner's induction dead and borrowed its register. Fix:
+   `region_loop_blocks` (header-dominates + reaches-header, unioned with
+   the analyzed set) drives every region check.
+
+Remaining no-pin loops: the D2 j-loop (refused — real `bl ___udivti3`
+call, correctly), the D4 mi/si2 loops (no free callee reg — needs the
+x12–x15 ext pool or fewer function-wide claims), mul_to's get_at/set_at
+loops (raw shapes — needs cache-aware raw emission, not just
+collection).

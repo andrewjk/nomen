@@ -599,13 +599,29 @@ export default interface BuildStatus {
 	nir_region_free?: Map<
 		BaseNode,
 		{
-			pins: { reg: string; displaced: { name: string; key: string; type_name: string }[] }[];
+			pins: {
+				reg: string;
+				displaced: { name: string; key: string; type_name: string }[];
+				dead: string[];
+			}[];
 			receivers: { key: string; node: BaseNode }[];
 		}
 	>;
 	/** Pending region pre-seed for the loop builder to apply after its
 	 *  cache snapshot-clear (node identity checked). */
 	region_preseed?: { node: BaseNode; entries: { key: string; reg: string }[] };
+	/**
+	 * aarch64-only (ASM_PLAN_5): OPEN region-pin depth per register (data
+	 * pointers materialized by open while-dispatch brackets). Loop promotion
+	 * must never claim or share a register with nonzero depth — the
+	 * interference adjacency cannot see the pin, so sharing a loop local
+	 * onto one destroys the pin or the local (knucleotide count_seq
+	 * receipt). Reference-counted: nested brackets may borrow the same
+	 * register (stack discipline — inner exit restores the outer pin), so
+	 * the refusal lifts only when the last bracket closes. Maintained by
+	 * region_pool_enter/exit.
+	 */
+	region_pinned?: Map<string, number>;
 	/**
 	 * aarch64-only (ASM_PLAN_4 field-pair SLP): name → partner map for the
 	 * adjacent-statement float pairs the loop-promotion planner allocated

@@ -75,6 +75,14 @@ export interface PromotedVar {
 function can_share_claimed_register(status: BuildStatus, name: string, reg: string): boolean {
 	const shared = status.nir_alloc_shared;
 	if (!shared || !status.register_allocations) return false;
+	// Active region pins (ASM_PLAN_5) never share: the pin holds a loop's
+	// materialized data pointer for the whole bracket, and the interference
+	// adjacency knows nothing about it — sharing the induction (or any loop
+	// local) onto the pin register destroys one of them (the knucleotide
+	// count_seq receipt: the j-loop shared its induction onto the data pin
+	// x26 and loaded `[x26, x26, lsl #3]`). Fresh claims already avoid pins
+	// through callee_saved_regs_used; this closes the sharing path.
+	if (status.region_pinned?.get(reg)) return false;
 	const cand_keys = shared.source_keys.get(name) ?? [name];
 	let occupants = 0;
 	for (const [occupant, occupant_reg] of status.register_allocations) {

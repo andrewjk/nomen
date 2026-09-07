@@ -143,3 +143,48 @@ pub func main = () {
 		true,
 	);
 });
+
+test("behavioral: nested pinned loops keep pin and induction registers apart on both backends", async () => {
+	// The knucleotide count_seq receipt: an outer region pin shared its
+	// register with an inner loop's induction (promotion's sharing path
+	// could not see the pin) and the loop loaded `[x26, x26, lsl #3]` —
+	// segfault. The lru receipt: an outer pin borrowed a register whose
+	// occupant was live in a nested loop the block set missed. Both now
+	// refuse; the nest still pins (3 brackets fire here) and prints exact.
+	const { default: build_and_check_output } = await import("./build_and_check_output");
+	await build_and_check_output(
+		`
+import System
+
+func f = (ref Buffer<int> buf, out int) {
+	var int total = 0
+	var i = 0
+	while i < 8; i += 1 {
+		if i >= 0 && i < buf.cap {
+			total += buf.load_int(i)
+		}
+		var j = 0
+		while j < i; j += 1 {
+			if j >= 0 && j < buf.cap {
+				total += buf.load_int(j)
+			}
+		}
+	}
+	return total
+}
+
+pub func main = () {
+	var Buffer<int> buf = Buffer<int>()
+	buf.grow_int(8)
+	var i = 0
+	while i < 8; i += 1 {
+		buf.store_int(i, i + 1)
+	}
+	Console.write("\\{f(ref buf)}")
+}
+`,
+		"region_pool_nested",
+		"120",
+		true,
+	);
+});

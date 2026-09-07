@@ -44,6 +44,43 @@ export interface RegionLease {
 }
 
 /**
+ * Whether a pin register bound in the live `register_allocations` map may
+ * still borrow: every name currently bound to it must be proven dead
+ * throughout this loop (the plan's per-pin dead-occupant keys, expanded
+ * through the shared source-key table — a bound source name owns every key
+ * it could be). Function-wide occupants are bound function-wide whether or
+ * not they are live here, so a blanket bound check would refuse every
+ * occupied register; emit-time promotion claims (loop inductions installed
+ * as scopes open — invisible to the plan) own keys outside the dead set
+ * and still refuse (the edigits receipt). Without the shared facts, refuse:
+ * avoid-mode.
+ */
+function pin_borrowable(status: BuildStatus, pin: { reg: string; dead: string[] }): boolean {
+	let bound = false;
+	for (const [, reg] of status.register_allocations?.entries() ?? []) {
+		if (reg === pin.reg) {
+			bound = true;
+			break;
+		}
+	}
+	// Nothing bound: nothing to clobber (loop promotion installs its own
+	// claims into this map as scopes open, so emit-time claims are visible
+	// here too).
+	if (!bound) return true;
+	const shared = status.nir_alloc_shared;
+	if (!shared) return false;
+	const dead = new Set(pin.dead);
+	for (const [name, reg] of status.register_allocations?.entries() ?? []) {
+		if (reg !== pin.reg || name === undefined) continue;
+		const keys = shared.source_keys.get(name) ?? [name];
+		for (const key of keys) {
+			if (!dead.has(key)) return false;
+		}
+	}
+	return true;
+}
+
+/**
  * Borrow a region-free pool register around `node`'s loop: emit the
  * displaced occupants' spills, derive each loop-invariant receiver's data
  * pointer into the register, and publish the cache pre-seed for the loop
@@ -66,8 +103,8 @@ export function region_pool_enter(
 	// only plan-assigned occupants. The edigits receipt: the inner c-loop's
 	// induction `c` was promoted into x24 by the outer loop's promotion,
 	// and the bracket's digits.data derivation destroyed the induction.
-	const bound_regs = new Set<string>();
-	for (const r of status.register_allocations?.values() ?? []) bound_regs.add(r);
+	// Function-wide occupants stay bound in the map whether or not they are
+	// live here — the per-pin dead set (not the bare binding) decides those.
 	const n = Math.min(entry.pins.length, entry.receivers.length);
 	const leases: RegionLease["leases"] = [];
 	const entries: { key: string; reg: string }[] = [];
@@ -94,7 +131,7 @@ export function region_pool_enter(
 		}
 		if (!ok) continue;
 		const reg = pin.reg;
-		if (bound_regs.has(reg)) continue;
+		if (!pin_borrowable(status, pin)) continue;
 		// The register must not already hold a cache entry (function-wide
 		// claims were checked at plan time; emission-time claims are
 		// evicted — the pointer is re-derived on the next miss).
@@ -108,6 +145,15 @@ export function region_pool_enter(
 		}
 		if (!status.callee_saved_regs_used) status.callee_saved_regs_used = new Set();
 		status.callee_saved_regs_used.add(reg);
+		// Publish the active pin so loop promotion's sharing path refuses
+		// it: the interference adjacency cannot see the pin, and sharing a
+		// loop local onto it destroys one of them (the knucleotide
+		// count_seq receipt). Reference-counted for nesting (an inner
+		// bracket may borrow the same register — stack discipline restores
+		// the outer pin at its exit — so the refusal lifts only when the
+		// last bracket closes).
+		if (!status.region_pinned) status.region_pinned = new Map();
+		status.region_pinned.set(reg, (status.region_pinned.get(reg) ?? 0) + 1);
 		emit_buffer_struct_addr(receiver.node, status);
 		status.code += `ldr x9, [x9, #8]\n`;
 		status.code += `mov ${reg}, x9\n`;
@@ -136,6 +182,13 @@ export function region_pool_exit(status: BuildStatus, lease: RegionLease | null)
 		for (const d of l.displaced) {
 			status.code += `ldr ${l.reg}, [x29, #${d.slot}]\n`;
 		}
+		// The promotion-sharing refusal lifts when the last bracket holding
+		// the register closes (nesting: an inner bracket borrowing the same
+		// register decrements to the outer's count — the outer pin stays
+		// protected).
+		const depth = (status.region_pinned?.get(l.reg) ?? 1) - 1;
+		if (depth <= 0) status.region_pinned?.delete(l.reg);
+		else status.region_pinned?.set(l.reg, depth);
 	}
 	status.region_preseed = undefined;
 }

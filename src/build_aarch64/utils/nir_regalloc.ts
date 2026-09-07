@@ -5,6 +5,7 @@ import {
 	analyze_loops,
 	analyze_liveness,
 	reachable_blocks,
+	type DominanceResult,
 } from "../../nir/analysis.ts";
 import { build_cfg, type FunctionCfg } from "../../nir/cfg.ts";
 import { lower_function } from "../../nir/from_ast.ts";
@@ -164,6 +165,26 @@ const BUFFER_PIN_ACCESSORS = new Set([
 	"store_or_int",
 ]);
 
+/**
+ * Raw stable accessors (BigInt.get/set/get_at/set_at/data_ptr): indexed
+ * limb access through the CURRENT data pointer. Their raw bodies only read
+ * digits.data and issue indexed loads/stores — they never write the data
+ * field and (being call-free) cannot reach ensure/grow, so they never
+ * rewire the receiver path a region pin materializes. A may-def of the
+ * receiver root by one of these calls is the accessor's own marshalling
+ * (the D6-unnormalize receipt: `remainder.set(ri, …)` refused the
+ * `remainder.digits` pin its own loop's load_int collected), NOT a foreign
+ * write. Consulted ONLY for the own-roots marshalling allowance — these
+ * calls derive nothing pinnable themselves.
+ */
+const RAW_STABLE_ACCESSORS = new Set(["get", "set", "get_at", "set_at", "data_ptr"]);
+
+/** Accessor names whose receiver-root may-defs are the call's own
+ *  marshalling rather than a cell rewrite. */
+function marshalling_accessor(name: string): boolean {
+	return BUFFER_PIN_ACCESSORS.has(name) || RAW_STABLE_ACCESSORS.has(name);
+}
+
 /** The receiver key a buffer_cache_key pin would take: a plain name or
  *  exactly one field hop off a name (deeper chains and exotic receivers
  *  return null — no pin). */
@@ -188,6 +209,22 @@ function plain_or_field_key(receiver: BaseNode): string | null {
 		}
 	}
 	return null;
+}
+
+/**
+ * Whether an accessor receiver is BigInt-typed (the raw stable family's
+ * marshalling allowance applies only there — a `set` on any other type may
+ * rewire). Value nodes carry the checker's attribution; field-hop receivers
+ * resolve through their root. Missing attribution is conservative (false).
+ */
+function receiver_is_bigint(receiver: BaseNode): boolean {
+	const t = (receiver as unknown as { type?: { name?: unknown } }).type;
+	if (t && t.name === "BigInt") return true;
+	if (receiver.node_type === "access") {
+		const target = (receiver as AccessNode).target;
+		if (target && target !== receiver) return receiver_is_bigint(target);
+	}
+	return false;
 }
 
 /** Kill-switch for the tranche-H callee-pool extension (default ON; OFF
@@ -254,10 +291,19 @@ export interface NirRegisterPlan {
 	/** Region-scoped pool claims (ASM_PLAN_5): per loop, pool registers
 	 *  whose occupants are dead inside the loop (with the occupants the
 	 *  emitter must spill/reload around the body) and the loop's
-	 *  loop-invariant Buffer receiver paths to pin. */
+	 *  loop-invariant Buffer receiver paths to pin. `dead` is EVERY
+	 *  occupant key (site keys included) — the emitter's bound-register
+	 *  check allows a pin whose register is bound only to proven-dead
+	 *  names, so function-wide occupants (visible in the live
+	 *  register_allocations map but dead here) borrow while emit-time
+	 *  promotion claims (unknown to the plan) still refuse. */
 	region_free: {
 		node: BaseNode;
-		pins: { reg: string; displaced: { name: string; key: string; type_name: string }[] }[];
+		pins: {
+			reg: string;
+			displaced: { name: string; key: string; type_name: string }[];
+			dead: string[];
+		}[];
 		receivers: { key: string; node: BaseNode; call: BaseNode }[];
 	}[];
 }
@@ -282,6 +328,8 @@ interface RangeAnalysis {
 	/** Symmetric interference adjacency (def-point rule: a def interferes
 	 *  with everything live after it). */
 	adj: Map<string, Set<string>>;
+	/** Dominator sets (region checks: nesting-complete loop bodies). */
+	dominance: DominanceResult;
 }
 
 /** Every assign-target name in the lowered body (any list depth) — the
@@ -344,6 +392,41 @@ function is_clean_scalar_type(t: {
 		!t.is_ref &&
 		!t.is_nullable
 	);
+}
+
+/**
+ * Nesting-complete loop body for region checks (ASM_PLAN_5 soundness hole:
+ * the lru receipt). analyze_loops' latch pred-walk can MISS nested blocks —
+ * the outer find-loop's set excluded its inner sh-loop, so an occupant live
+ * in the nest (sh) tested dead in the outer and the bracket destroyed the
+ * induction. The dominance + reachability characterization (header dominates
+ * b, b reaches header) includes nested regions by construction; unioned with
+ * the analyzed set it is the conservative body every region check must use
+ * (union-only ever refuses more pins, never fewer).
+ */
+function region_loop_blocks(
+	cfg: FunctionCfg,
+	dominance: DominanceResult,
+	header: number,
+	analyzed: Set<number>,
+): Set<number> {
+	const body = new Set<number>(analyzed);
+	// Blocks that can reach the header (backward pred walk, reachable only).
+	const reach_header = new Set<number>([header]);
+	const stack: number[] = [header];
+	while (stack.length > 0) {
+		const b = stack.pop()!;
+		for (const p of cfg.blocks[b].preds) {
+			if (dominance.reachable[p] && !reach_header.has(p)) {
+				reach_header.add(p);
+				stack.push(p);
+			}
+		}
+	}
+	for (const b of reach_header) {
+		if (dominance.dom[b]?.has(header)) body.add(b);
+	}
+	return body;
 }
 
 /**
@@ -464,6 +547,7 @@ export function analyze_ranges(cfg: FunctionCfg, status?: BuildStatus): RangeAna
 		block_members,
 		loop_list: loops.loops.map((l) => ({ header: l.header, blocks: new Set(l.blocks) })),
 		liveness,
+		dominance,
 	};
 }
 
@@ -789,7 +873,11 @@ export function plan_nir_registers(
 	// refuse the register (the emitter's spill needs their slots).
 	const region_free: {
 		node: BaseNode;
-		pins: { reg: string; displaced: { name: string; key: string; type_name: string }[] }[];
+		pins: {
+			reg: string;
+			displaced: { name: string; key: string; type_name: string }[];
+			dead: string[];
+		}[];
 		receivers: { key: string; node: BaseNode; call: BaseNode }[];
 	}[] = [];
 	if (region_pool_enabled()) {
@@ -803,47 +891,67 @@ export function plan_nir_registers(
 		for (const loop of analysis.loop_list) {
 			const node = cfg.loop_headers.get(loop.header);
 			if (!node) continue;
+			// Nesting-complete body (see region_loop_blocks): the analyzed
+			// set can miss nested blocks, and every check below must see
+			// them — a nested-live occupant or a nested foreign write is
+			// otherwise invisible to the outer bracket.
+			const region_blocks = region_loop_blocks(cfg, analysis.dominance, loop.header, loop.blocks);
 			const decl_types = new Map<string, string>();
 			for (const d of traffic.decls) decl_types.set(d.name, d.type_name);
-			const pins: { reg: string; displaced: { name: string; key: string; type_name: string }[] }[] =
-				[];
+			const pins: {
+				reg: string;
+				displaced: { name: string; key: string; type_name: string }[];
+				dead: string[];
+			}[] = [];
 			for (const reg of CALLEE_SAVED_X) {
 				if (pins.length >= 2) break;
 				const occupants = reg_occupants.get(reg) ?? [];
-				// SHARED registers are NOT borrowable: the allocator's
-				// sharing puts N non-interfering ranges in one register with
-				// N DIFFERENT values — a single reload point at the loop
-				// exit can only restore one of them (the edigits receipt:
-				// five shared limb temps, four corrupted on resume). Only
-				// 0/1-occupant registers borrow cleanly.
-				if (occupants.length > 1) continue;
 				// Unoccupied registers are trivially borrowable (nothing to
-				// spill); single-occupant ones need the occupant dead in the
-				// loop.
+				// spill); occupied ones need EVERY occupant dead in the loop
+				// (block-membership disjointness from the same renamed CFG
+				// the assignment used — a boundary-live occupant is a member
+				// of a loop block and refuses the register).
+				//
+				// Shared registers (N non-interfering ranges, N values) borrow
+				// through a SINGLE home slot — the first plain occupant's. At
+				// most one occupant can need the entry value after the loop (a
+				// second live-across occupant would be live at the same
+				// boundary point and interfere with the first, so it cannot
+				// share the register — and any boundary-live occupant is a
+				// member and refuses above). The entry spill therefore saves
+				// exactly the value the exit reload must restore; every other
+				// occupant is dead across the bracket, so leaving their home
+				// slots untouched is coherent. (The edigits receipt's N-slot
+				// spill clobbered every sharer's home with one value; the
+				// single-slot round-trip is its fix.) Site-keyed occupants
+				// (ambiguous identity) can never supply the home slot, but no
+				// longer veto the register — only the displaced occupant's
+				// slot round-trips.
 				let free = true;
 				const displaced: { name: string; key: string; type_name: string }[] = [];
+				const dead: string[] = [];
 				for (const key of occupants) {
 					const members = analysis.block_members.get(key);
-					if (members && [...members].some((b) => loop.blocks.has(b))) {
+					if (members && [...members].some((b) => region_blocks.has(b))) {
 						free = false;
 						break;
 					}
+					dead.push(key);
+					if (displaced.length > 0) continue;
 					const source = sites.get(key)?.source ?? key;
-					if (source.includes("@")) {
-						free = false;
-						break;
-					}
+					if (source.includes("@")) continue;
 					const type_name = decl_types.get(key) ?? "";
 					// The emitter pre-allocates an 8-byte slot for the spill;
 					// anything else (floats ride d-regs; unknown types are
 					// refused) cannot be round-tripped safely.
-					if (!type_name || type_name === "float" || type_name === "double") {
-						free = false;
-						break;
-					}
+					if (!type_name || type_name === "float" || type_name === "double") continue;
 					displaced.push({ name: source, key, type_name });
 				}
-				if (free) pins.push({ reg, displaced });
+				if (!free) continue;
+				// Occupied registers need a home slot for the round-trip;
+				// unoccupied ones borrow with nothing to spill.
+				if (occupants.length > 0 && displaced.length === 0) continue;
+				pins.push({ reg, displaced, dead });
 			}
 			if (pins.length === 0) continue;
 			// Loop receiver collection: Buffer fast-path accessor calls
@@ -883,10 +991,14 @@ export function plan_nir_registers(
 			 *  writes). Any foreign write of the root refuses the key. */
 			const roots_refused = new Set<string>();
 			const roots_written = new Set<string>();
-			for (const bId of loop.blocks) {
+			for (const bId of region_blocks) {
 				const b = cfg.blocks[bId];
+				if (!b) continue;
 				for (const s of b.stmts) {
-					// The statement's own pinned-accessor receiver roots.
+					// The statement's own pinned-accessor receiver roots (plus the
+					// raw stable family — BigInt get/set/get_at/set_at/data_ptr
+					// on a BigInt-typed receiver — whose may-defs are likewise
+					// marshalling, never a rewire).
 					const own_roots = new Set<string>();
 					const scan_own = (n: unknown): void => {
 						if (!n || typeof n !== "object" || roots_refused.has("")) return;
@@ -897,9 +1009,11 @@ export function plan_nir_registers(
 						if (typeof (n as { node_type?: string }).node_type !== "string") return;
 						const a = n as AccessNode;
 						const call = a.access;
-						if (call && call.node_type === "access_func" && BUFFER_PIN_ACCESSORS.has(call.name)) {
-							const key = plain_or_field_key(a.target);
-							if (key) own_roots.add(key.split(".")[0]);
+						if (call && call.node_type === "access_func" && marshalling_accessor(call.name)) {
+							if (BUFFER_PIN_ACCESSORS.has(call.name) || receiver_is_bigint(a.target)) {
+								const key = plain_or_field_key(a.target);
+								if (key) own_roots.add(key.split(".")[0]);
+							}
 						}
 						for (const v of Object.values(n)) scan_own(v);
 					};

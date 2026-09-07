@@ -205,10 +205,26 @@ build-both-arms/diff discipline):
    `c` was promoted into x24 by the outer loop's promotion and the
    bracket's digits.data derivation destroyed it (edigits' `0 :1`).
    Fix: `region_pool_enter` refuses pin registers bound in the live
-   `register_allocations`.
+   `register_allocations` (tranche 2 refines this to the per-pin dead
+   set — function-wide occupants stay bound whether or not they are
+   live, so only unknown keys refuse).
 4. **Ordering/counting** (attribution, path-assign refusal, entry-load
    accumulation, positional dest-and-source reads) — fixed in the first
    landing.
+5. **Share-into-pin** (tranche 2, knucleotide count_seq segfault):
+   promotion's interference-SHARING could not see the pin and shared the
+   j-loop induction onto the data-pin register
+   (`ldr x0, [x26, x26, lsl #3]`). Fresh claims already avoided pins via
+   `callee_saved_regs_used`; only the sharing path was blind. Fix:
+   `status.region_pinned` (bracket-maintained, nesting-disciplined);
+   `can_share_claimed_register` refuses pinned regs.
+6. **Nesting-incomplete loop bodies** (tranche 2, lru segfault):
+   analyze_loops' latch pred-walk missed nested blocks, so the outer
+   find-loop tested its inner sh-loop's induction dead (members disjoint
+   from the incomplete set) and borrowed its register for the whole outer
+   bracket. Fix: `region_loop_blocks` (header-dominates + reaches-header,
+   unioned with the analyzed set) drives every region check — union-only
+   ever refuses more pins.
 
 Full bench matrix byte-identical across backends; pidigits n=4000
 0.63 → 0.53 s baseline-relative (the whole ASM_PLAN_5 arc: 1.89× →
