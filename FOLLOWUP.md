@@ -221,3 +221,13 @@ The substrate (plan-side region-free computation, block-membership
 liveness, the bracket + pre-seed mechanics) is sound where it fires on
 BigInt-shaped methods; the hunt for the remaining invalidation is the
 gate for flipping the default.
+
+- **Session-2 forensics note**: the preheader `_vn = wd_off + u_len + 1`
+  hoist IS firing in div_to's D4 loops (confirmed in the .s preheader);
+  the in-body index chains still read u_len from its slot and rebuild.
+  The VN rewrite reaches the NIR spine, but the accessor's index staging
+  builds from the AST arg tree — whether the recorded eval+argN splice
+  survives to the eval dispatch for THESE statements is the open
+  question. A hand-written digit-extraction mini had its own
+  loop-terminator bug — rebuild the repro from the test harness
+  (check_output's audit path) instead.
