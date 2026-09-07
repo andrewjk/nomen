@@ -43,6 +43,11 @@ export default function emit_allocations(node: BaseNode, status: BuildStatus) {
 	// rewritten tree at the read. These entries win over the L gating
 	// (their soundness gates ran in the pass).
 	const vn_inits = status.vn_param_inits?.get(node);
+	if (process.env.VN_SPLICE_DBG && node.start > 87900 && node.start < 89400) {
+		console.error(
+			`EA node=${node.start} allocs=${allocations.length} vn=${vn_inits ? [...vn_inits.keys()].join(",") : "none"} fwd=[${[...forwarded.keys()].join(",")}]`,
+		);
+	}
 	if (vn_inits) {
 		for (const [name, tree] of vn_inits) forwarded.set(name, tree);
 	}

@@ -568,6 +568,15 @@ export function staged_index_reg(param: BaseNode, status: BuildStatus): string {
 	// now) — the consult is deliberately ABOVE the staging flag check: with
 	// staging off the rewritten tree still builds, straight into x1.
 	const forwarded = forwarded_param_tree(param, status);
+	if (
+		process.env.VN_SPLICE_DBG &&
+		param.node_type === "value" &&
+		(param as ValueNode).value.startsWith("_param_")
+	) {
+		console.error(
+			`STAGED_IDX param=${(param as ValueNode).value} forwarded=${forwarded ? "yes" : "no"}`,
+		);
+	}
 	const effective = forwarded ?? param;
 	if (!access_staging_on) {
 		build_operand(effective, "x1", status);

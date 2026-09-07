@@ -95,7 +95,7 @@ export function set_value_numbering_enabled(enabled: boolean): void {
 const MAX_CHAIN_TERMS = 6;
 /** Hoisted temps per loop / per function. */
 const MAX_TEMPS_PER_LOOP = 4;
-const MAX_TEMPS_PER_FUNCTION = 12;
+const MAX_TEMPS_PER_FUNCTION = 24;
 /** Occurrence-walk budget per loop body. */
 const MAX_OCCURRENCES = 96;
 
@@ -695,7 +695,14 @@ function process_list(
 	ast_list: BaseNode[] | null,
 	walk: VnWalk,
 ): readonly NirStmt[] {
-	if (!ast_list || ast_list.length !== nir_list.length) return nir_list;
+	if (!ast_list || ast_list.length !== nir_list.length) {
+		if (process.env.VN_SPLICE_DBG) {
+			console.error(
+				`LIST SKIP nir=${nir_list.length} ast=${ast_list ? ast_list.length : "null"} first=${nir_list[0]?.node?.start}`,
+			);
+		}
+		return nir_list;
+	}
 	const out: NirStmt[] = [];
 	const ast_insertions: { index: number; nodes: BaseNode[] }[] = [];
 	let changed = false;
@@ -787,6 +794,38 @@ function hoist_loop_invariants(
 	while_stmt: NirStmt & { kind: "while" },
 	walk: VnWalk,
 ): HoistedLoop | null {
+	const cond_leaves: string[] = [];
+	const cond_walk = (e: NirExpr | null): void => {
+		if (!e) return;
+		if (e.kind === "leaf") {
+			if (e.name) cond_leaves.push(e.name);
+			return;
+		}
+		if (e.kind === "binary") {
+			cond_walk(e.left);
+			cond_walk(e.right);
+			return;
+		}
+		if (e.kind === "call") {
+			cond_leaves.push(e.callee);
+			for (const a of e.facts.args) cond_walk(a);
+			return;
+		}
+		if (e.kind === "method_call") {
+			cond_leaves.push(e.name);
+			for (const a of e.facts.args) cond_walk(a);
+			return;
+		}
+		if (e.kind === "path") {
+			cond_leaves.push("<path>");
+			return;
+		}
+		if (e.kind === "wrap") {
+			cond_walk(e.inner);
+			return;
+		}
+	};
+	cond_walk(while_stmt.cond);
 	const writes = new Set<string>();
 	collect_loop_writes(while_stmt.body, writes);
 	if (while_stmt.update) collect_loop_writes([while_stmt.update], writes);
@@ -797,11 +836,22 @@ function hoist_loop_invariants(
 
 	const occurrences: Occurrence[] = [];
 	collect_stmt_occurrences(while_stmt.body, occurrences);
+	if (process.env.VN_SPLICE_DBG) {
+		for (const occ of occurrences) {
+			console.error(
+				`OCC cond=[${cond_leaves.join("+")}] path=[${occ.path.join(".")}] terms=[${occ.terms.map((t) => (t.name ? t.name : "#" + t.imm)).join(" + ")}]`,
+			);
+		}
+	}
 	for (const occ of occurrences) {
 		entries.push({
 			terms: occ.terms,
 			start: occ.root.node.start ?? 0,
 			apply: (replacement) => {
+				if (process.env.VN_SPLICE_DBG)
+					console.error(
+						`APPLY_OCC path=[${occ.path.join(",")}] field=${occ.field} mutate=${walk.mutate}`,
+					);
 				reps_map.set(occ.root, replacement.nir);
 				record_splice(walk, occ, replacement.ast);
 			},
@@ -810,6 +860,13 @@ function hoist_loop_invariants(
 
 	const alloc_occs: AllocOccurrence[] = [];
 	collect_alloc_occurrences(while_stmt.body, alloc_occs);
+	if (process.env.VN_SPLICE_DBG) {
+		for (const occ of alloc_occs) {
+			console.error(
+				`ALLOC_OCC cond=[${cond_leaves.join("+")}] param=${occ.param_name} terms=[${occ.terms.map((t) => (t.name ? t.name : "#" + t.imm)).join(" + ")}]`,
+			);
+		}
+	}
 	for (const occ of alloc_occs) {
 		// The NIR argument leaf this temp occupies must exist (the spine
 		// replacement is what gives the temp its planner-visible reads).
@@ -831,8 +888,14 @@ function hoist_loop_invariants(
 		});
 	}
 
-	if (entries.length === 0) return null;
-	if (walk.temps_used >= MAX_TEMPS_PER_FUNCTION) return null;
+	if (entries.length === 0) {
+		if (process.env.VN_SPLICE_DBG) console.error(`HOIST[${cond_leaves.join("+")}]: no entries`);
+		return null;
+	}
+	if (walk.temps_used >= MAX_TEMPS_PER_FUNCTION) {
+		if (process.env.VN_SPLICE_DBG) console.error(`HOIST[${cond_leaves.join("+")}]: func temp cap`);
+		return null;
+	}
 
 	const reps_map = new Map<NirExpr, NirExpr>();
 	const vn_param_map = new Map<BaseNode, Map<string, BaseNode>>();
@@ -865,13 +928,27 @@ function hoist_loop_invariants(
 			}
 			if (!writes.has(term.name)) inv.push(term);
 		}
-		if (!ok || type_name === null) continue;
+		if (!ok || type_name === null) {
+			if (process.env.VN_SPLICE_DBG && occ.terms.some((t) => t.name === "wd_off")) {
+				console.error(
+					`VNGROUP-SKIP type=${type_name} ok=${ok} terms=[${occ.terms.map((t) => (t.name ? t.name : "#" + t.imm)).join(" + ")}]`,
+				);
+			}
+			continue;
+		}
 		// The temp must compute something: at least one invariant NAME and
 		// a second invariant term. A single-term invariant part is a bare
 		// copy (v + b → copy of b): the temp's read costs what the leaf's
 		// read cost, so the rewrite is pure overhead (and it would disturb
 		// carry-fuse shapes for nothing).
-		if (inv.length < 2) continue;
+		if (inv.length < 2) {
+			if (process.env.VN_SPLICE_DBG && occ.terms.some((t) => t.name === "wd_off")) {
+				console.error(
+					`VNGROUP-SKIP inv<2 inv=[${inv.map((t) => (t.name ?? "") + (t.imm !== null ? "+" + t.imm : "")).join(",")}] terms=[${occ.terms.map((t) => (t.name ? t.name : "#" + t.imm)).join(" + ")}]`,
+				);
+			}
+			continue;
+		}
 		if (!inv.some((t) => t.name !== null)) continue;
 		const inv_names = inv
 			.filter((t) => t.name)
@@ -894,16 +971,28 @@ function hoist_loop_invariants(
 			});
 		}
 	}
-	if (groups.size === 0) return null;
-	if (groups.size > MAX_TEMPS_PER_LOOP) return null;
-	if (walk.temps_used + groups.size > MAX_TEMPS_PER_FUNCTION) return null;
+	if (groups.size === 0) {
+		if (process.env.VN_SPLICE_DBG) console.error(`HOIST[${cond_leaves.join("+")}]: no groups`);
+		return null;
+	}
+	if (groups.size > MAX_TEMPS_PER_LOOP) {
+		if (process.env.VN_SPLICE_DBG) console.error(`HOIST[${cond_leaves.join("+")}]: per-loop cap`);
+		return null;
+	}
+	if (walk.temps_used + groups.size > MAX_TEMPS_PER_FUNCTION) {
+		if (process.env.VN_SPLICE_DBG)
+			console.error(`HOIST[${cond_leaves.join("+")}]: func cap (used=${walk.temps_used})`);
+		return null;
+	}
 
 	if (process.env.NOMEN_VN_DBG) {
 		const parts: string[] = [];
 		for (const [k, g] of groups) {
 			parts.push(`\n  ${k} x${g.occurrences.length}`);
 		}
-		console.error(`[vn] loop@${while_stmt.node.start}: temps=${groups.size}${parts.join("")}`);
+		console.error(
+			`[vn] loop cond=[${cond_leaves.join("+")}] start=${while_stmt.node.start}: temps=${groups.size}${parts.join("")}`,
+		);
 	}
 
 	// One hoisted declare per group: the invariant sub-sum, computed before
@@ -968,7 +1057,15 @@ function hoist_loop_invariants(
 	} else {
 		while_out = while_stmt;
 	}
-	walk.vn_param_inits = vn_param_map;
+	// MERGE, not overwrite: a function's loops each contribute their own
+	// `_param` inits — an assignment would discard every earlier loop's
+	// entries (only the last hoist's rewrites survived at emission, leaving
+	// the earlier loops' index chains rebuilding raw per iteration).
+	for (const [hostNode, inits] of vn_param_map) {
+		const existing = walk.vn_param_inits.get(hostNode);
+		if (existing) for (const [n, t] of inits) existing.set(n, t);
+		else walk.vn_param_inits.set(hostNode, inits);
+	}
 	return { declares, ast_declares, while_stmt: while_out };
 }
 
@@ -992,6 +1089,11 @@ function rewrite_spine_list(
 
 function record_splice(walk: VnWalk, occ: Occurrence, replacement: BaseNode): void {
 	if (!walk.mutate) return;
+	if (process.env.VN_SPLICE_DBG) {
+		console.error(
+			`SPLICE_REC host_start=${occ.host.start} path=[${occ.path.join(",")}] field=${occ.field} init_start=${replacement.start}`,
+		);
+	}
 	walk.host_stmts.add(occ.host);
 	const splice: ForwardSplice = { path: occ.path, init: replacement };
 	const existing = walk.use_sites.get(occ.host);

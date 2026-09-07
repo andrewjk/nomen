@@ -42,8 +42,8 @@ materializes the receiver once per loop.
 Landed 2026-09-06 as `src/build_aarch64/region_pool.ts` +
 region computation in `nir_regalloc.ts` + the while-dispatch bracket in
 `emit_nir.ts` + the pre-seed application in `build_while_loop_node`.
-Kill-switch `set_region_pool_enabled` — **DEFAULT OFF** (see the soundness
-note).
+Kill-switch `set_region_pool_enabled` — **DEFAULT ON** (soundness
+RESOLVED 2026-09-07, see below).
 
 - **Plan side**: `analyze_ranges` also computes per-name CFG block
   membership (live_in/live_out/defs). After the function-wide assignment,
@@ -84,6 +84,24 @@ occupants round-trip through pre-allocated slots. Full suite green
 (default OFF), with `test/region_pool.test.ts` (hoist shape, foreign-write
 refusal, kill-switch, behavioral both backends) and the byte-identity
 harness holding the pass off in both arms.
+
+### Tranche 2 (2026-09-07): the vn_param_inits merge — the D4 index chains land
+
+The forced-ON verification exposed the reason the D4 loops' store-index
+chains still rebuilt raw despite the VN hoists firing: **each loop's
+`vn_param_inits` map overwrote the accumulated function-wide map**
+(`walk.vn_param_inits = vn_param_map` — an assignment). div_to's later
+loops (D4-multiply/D4-subtract) silently lost every earlier loop's
+`_param → _vn` rewrites at emission, so their accessor index staging
+rebuilt the full `wd_off + u_len + 1 + mi` chains per iteration while the
+preheader's `_vn` compute sat dead. Fix: merge the per-hoist map into
+`walk.vn_param_inits` (keys are per-statement AST nodes — no collisions).
+
+Result: the D4-multiply store index emitted as
+`ldr x10, [_vn]; mov x3, x28; add x10, x10, x28` (the hoisted invariant +
+the induction — 3 instructions instead of 5, and the dead preheader
+compute now pays). pidigits n=4000: 0.55 → **0.53 s** on top of the
+tranche-1 state.
 
 ### Soundness — RESOLVED, DEFAULT ON (2026-09-07)
 

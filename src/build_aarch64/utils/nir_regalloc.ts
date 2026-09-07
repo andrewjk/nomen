@@ -142,7 +142,7 @@ let callee_pool_extended = true;
  *  (ASM_PLAN_5, default ON; OFF restores the function-wide-only plan —
  *  byte-identical). Lives here so the plan and the emitter bracket share
  *  one toggle without import cycles. */
-let region_pool_on = false;
+let region_pool_on = true;
 
 export function region_pool_enabled(): boolean {
 	return region_pool_on;

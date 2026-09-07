@@ -91,15 +91,23 @@ pub func main = () {
 	expect(loop).toMatch(/ldr x9, \[x9, #8\]|mov x9, x\d+/);
 });
 
-test("kill-switch restores the output byte-identically", () => {
+test("kill-switch restores the pre-tranche shape", () => {
+	const on = compile(PIN_SHAPE, true);
 	const saved = region_pool_enabled();
 	set_region_pool_enabled(false);
 	try {
-		const code = compile(PIN_SHAPE, true);
+		const parsed = parse_raw(PIN_SHAPE);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(result.errors ?? []).toEqual([]);
+		const off = result.code;
 		// Without the pass the derivation rides inside the loop (the
 		// pre-tranche shape) — the switch is the A/B arm.
-		const loop = code.slice(code.indexOf(".while_0:"), code.indexOf(".end_while_0:"));
+		const loop = off.slice(off.indexOf(".while_0:"), off.indexOf(".end_while_0:"));
 		expect(loop.length).toBeGreaterThan(0);
+		expect(loop).toMatch(/ldr x9, \[x9, #8\]|add x9,/);
+		// The two arms differ (the hoist fires by default ON).
+		expect(off).not.toEqual(on);
 	} finally {
 		set_region_pool_enabled(saved);
 	}

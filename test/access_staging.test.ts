@@ -2,6 +2,7 @@ import { expect, test } from "vite-plus/test";
 
 import build from "../src/build";
 import { set_access_staging_enabled } from "../src/build_aarch64/access_staging";
+import { set_region_pool_enabled } from "../src/build_aarch64/utils/nir_regalloc";
 import { parse_raw } from "./parse_with_imports";
 
 /**
@@ -22,10 +23,19 @@ function compile(source: string): string {
 	const parsed = parse_raw(source);
 	expect(parsed.errors).toEqual([]);
 	// Release build: the NIR planning (promotions/site allocs) the staging
-	// window composes with is optimize-gated, matching bench builds.
-	const result = build(parsed.root, { arch: "aarch64", optimize: true });
-	expect(result.errors ?? []).toEqual([]);
-	return result.code;
+	// window composes with is optimize-gated, matching bench builds. The
+	// region-pool receiver pin (ASM_PLAN_5, default ON) is held OFF here:
+	// it hoists the same derivation above the loop header, which would
+	// move the counted fill out of the sliced body — this file asserts
+	// the staging shape, not the region composition (covered behaviorally).
+	set_region_pool_enabled(false);
+	try {
+		const result = build(parsed.root, { arch: "aarch64", optimize: true });
+		expect(result.errors ?? []).toEqual([]);
+		return result.code;
+	} finally {
+		set_region_pool_enabled(true);
+	}
 }
 
 function first_loop_body(code: string, fn: string): string {

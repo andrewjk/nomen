@@ -481,6 +481,12 @@ export function apply_forward_use(
 	sites: ReadonlyMap<BaseNode, ForwardUse> | undefined,
 	host: BaseNode | undefined,
 ): (() => void) | null {
+	if (process.env.VN_SPLICE_DBG && host && sites?.size) {
+		const u = sites.get(host);
+		console.error(
+			`SPLICE_APPLY host_start=${host.start} found=${!!u} splices=${u?.splices.length ?? 0} paths=${u?.splices.map((s) => s.path.join(",")).join(";")}`,
+		);
+	}
 	if (!host || !sites || sites.size === 0) return null;
 	const use = sites.get(host);
 	if (!use || use.splices.length === 0) return null;

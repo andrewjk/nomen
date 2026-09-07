@@ -867,6 +867,7 @@ test("whole benchmark corpus is byte-identical through NIR emission", () => {
 			set_access_staging_enabled(true);
 			set_value_numbering_enabled(true);
 			set_slp_pair_enabled(true);
+			set_region_pool_enabled(true);
 		}
 	}
 });
