@@ -257,6 +257,22 @@ export function promote_loop_slots(code: string): string {
 			if (dirty_slots.has(off)) continue;
 			candidates.push(off);
 		}
+		// Read-only candidates (ASM_PLAN_6 tranche 1): slots the cycle only
+		// READS — the hoisted invariant index bases (`_vn` temps). The
+		// entry load makes the promotion register the live copy and NO
+		// sync store is needed: the cycle never writes the slot, so memory
+		// stays authoritative for every access outside the cycle. (The one
+		// staleness hazard — an enclosing cycle promoting the same slot as
+		// a write-carry and updating only its register — cannot occur: the
+		// overlap guard skips any cycle containing an already-promoted
+		// inner one, so an outer write-promotion around this cycle never
+		// exists.)
+		const readonly_candidates: string[] = [];
+		for (const off of reads) {
+			if (writes.has(off)) continue;
+			if (dirty_slots.has(off)) continue;
+			readonly_candidates.push(off);
+		}
 
 		// Promotion registers: unused as any operand inside the cycle.
 		const cycle_regs = new Set<string>();
@@ -277,14 +293,23 @@ export function promote_loop_slots(code: string): string {
 			if (!cycle_regs.has(reg)) promo.push(reg);
 		}
 
-		if (candidates.length === 0 || promo.length === 0) continue;
+		// Write-slot carries take the promotion registers first (their
+		// sync stores are the existing behavior); read-only slots get the
+		// remainder (no sync).
+		const renames: { off: string; reg: string; sync: boolean }[] = [];
+		let promo_idx = 0;
+		for (const off of candidates) {
+			if (promo_idx >= promo.length) break;
+			renames.push({ off, reg: promo[promo_idx++], sync: true });
+		}
+		for (const off of readonly_candidates) {
+			if (promo_idx >= promo.length) break;
+			renames.push({ off, reg: promo[promo_idx++], sync: false });
+		}
+		if (renames.length === 0) continue;
 		for (let j = headIdx; j <= end; j++) owned.add(j);
 
 		// Rename inside the cycle. Track per-slot promotions for syncs.
-		const renames: { off: string; reg: string }[] = [];
-		for (let k = 0; k < candidates.length && k < promo.length; k++) {
-			renames.push({ off: candidates[k], reg: promo[k] });
-		}
 		for (let j = headIdx + 1; j < end; j++) {
 			const instr = parsed[j];
 			if (!instr) continue;
@@ -311,9 +336,10 @@ export function promote_loop_slots(code: string): string {
 		// uninitialized).
 		const entry_loads = renames.map((rn) => `ldr ${rn.reg}, [x29, #${rn.off}]`).join("\n");
 		out[headIdx] = `${entry_loads}\n${lines[headIdx]}`;
-		// Sync stores after each exit label.
+		// Sync stores after each exit label — write-slot carries only.
+		const synced = renames.filter((rn) => rn.sync);
 		for (const [, exit_idx] of [...exits.entries()].sort((a, b) => b[1] - a[1])) {
-			const stores = renames.map((rn) => `str ${rn.reg}, [x29, #${rn.off}]`).join("\n");
+			const stores = synced.map((rn) => `str ${rn.reg}, [x29, #${rn.off}]`).join("\n");
 			out[exit_idx] = `${lines[exit_idx]}\n${stores}`;
 		}
 

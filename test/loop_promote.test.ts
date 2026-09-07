@@ -64,7 +64,7 @@ test("carry slot renames into x16 with entry load and exit sync", () => {
 	expect(out).not.toContain("cset x0, hs");
 });
 
-test("read-only slots and escapes are left alone", () => {
+test("cycles without exit targets are left alone", () => {
 	const out = promote([
 		"_f:",
 		".while_0:",
@@ -76,6 +76,40 @@ test("read-only slots and escapes are left alone", () => {
 	]);
 	expect(out).toContain("ldr x3, [x29, #264]");
 	expect(out).not.toContain("x16");
+});
+
+test("read-only slot renames into x17 with an entry load and NO sync", () => {
+	// The ASM_PLAN_6 tranche-1 shape: the hoisted invariant index base
+	// (`_vn` temp) reads its slot every iteration but never writes it —
+	// the entry load makes x17 the live copy and memory stays
+	// authoritative outside (no exit sync needed). The write-slot carry
+	// takes x16 (and its sync) first.
+	const out = promote([
+		"f:",
+		".while_0:",
+		"cmp x28, x23",
+		"b.ge .end_while_0",
+		"ldr x10, [x29, #528]",
+		"add x10, x10, x28",
+		"str x12, [x10]",
+		"ldr x1, [x29, #320]",
+		"adds x12, x13, x1",
+		"cset x0, hs",
+		"add x1, x1, x0",
+		"str x1, [x29, #320]",
+		".while_update_0:",
+		"add x28, x28, #1",
+		"b .while_0",
+		".end_while_0:",
+		"ret",
+	]);
+	// The base renamed to x17: entry load, register reads, no sync.
+	expect(out).toContain("ldr x17, [x29, #528]");
+	expect(out).toContain("mov x10, x17");
+	expect(out).not.toContain("str x17, [x29, #528]");
+	// The carry keeps the write-slot behavior: x16 with an exit sync.
+	expect(out).toContain("ldr x16, [x29, #320]");
+	expect(out).toContain("str x16, [x29, #320]");
 });
 
 test("an address escape disqualifies the slot", () => {

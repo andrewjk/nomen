@@ -48,9 +48,9 @@ One stable scratch register per loop unlocks, in increasing value:
 2. **Base-folded addressing** — with the data pointer stable, fold the
    invariant index base INTO it: `x_ptr' = data_ptr + base*8` computed
    once; the store `str x12, [x_ptr', x28, lsl #3]` then uses the bare
-   induction register. Kills the `_vn` base slot load (`ldr x10,
-   [x29, #base]`) and the index `add` per access — the "fewer live
-   ranges" ASM_PLAN_5 item 3 wanted, without a new variable.
+   induction register. Kills the `_vn` base slot load
+   (`ldr x10, [x29, #base]`) and the index `add` per access — the "fewer
+   live ranges" ASM_PLAN_5 item 3 wanted, without a new variable.
 3. **Region vars / `_vn` bases** — any remaining scratch register hosts
    the loop-contained locals tranche 5 found no room for.
 
@@ -83,3 +83,33 @@ default-ON, the bench matrix byte-identical across backends (pidigits,
 edigits, fannkuch, lru, spectral-norm, binarytrees, mandelbrot,
 nsieve, nbody, merkletrees), and interleaved best-of timing on
 pidigits n=4000 + fannkuch.
+
+### Tranche 1 (2026-09-07): read-only slot promotion — LANDED (pivoted)
+
+The survey found the scratch-pool question already answered by shipped
+code: ASM_PLAN_4 tranche 2's `asm_loop_promote.ts` renames loop-carried
+slot round-trips into x16/x17 on lifted assembly — but only for slots
+WRITTEN in the cycle (the carry shape). The D4 `_vn` index bases are
+READ-ONLY in their cycles, so the extension is small: read-only
+candidates (`reads` ∧ ¬`writes` ∧ ¬dirty) take the promotion registers
+LEFT OVER after the write-slot carries (write-first priority), get the
+entry load, and get **no exit sync** — the cycle never writes the slot,
+so memory stays authoritative for everything outside. The one staleness
+hazard (an enclosing cycle promoting the same slot as a write-carry and
+updating only its register) is closed by the existing overlap guard: a
+cycle containing an already-promoted inner one is skipped entirely.
+
+Result in div_to: the try_count base (x16), the cmp_i loop's TWO bases
+(x16+x17), the D4-multiply base (x17), the D4-subtract prod base (x17),
+and the D5 base (x16) all hoist — the coalescer folds the renames into
+`add x10, x17, x28`, the exact clang shape; per-iteration the base's
+`ldr` disappears from each access. pidigits n=4000: 0.55-0.58 →
+**0.54-0.56** (median 0.54); fannkuch 0.17 unchanged; bench matrix
+byte-identical across backends; full suite green default-ON (290 files
+/ 2823 tests) with the read-only promotion shape + write-priority + the
+re-scoped no-exits test in test/loop_promote.test.ts.
+
+Remaining in this plan: tranche 2's register-starved leftovers (the
+si2 loop's second base `wd_off + j` went unpromoted — two read-only
+slots, one free register after sub_borrow took x16), then base-folded
+addressing.
