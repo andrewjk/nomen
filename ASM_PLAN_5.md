@@ -143,6 +143,8 @@ both arms of the byte-identity tests).
 4. **mul_to coverage**: its plan produces no region entries (early return
    or receiver shapes) — extend the receiver collection to its accessor
    forms.
+   → INVESTIGATED, REFUSED (2026-09-07, tranche 7 below): the extension
+   would be a regression — get_at/set_at never read their receivers.
 
 ### Tranche 2 (2026-09-07): per-region reassignment of shared pool registers
 
@@ -324,3 +326,41 @@ frame-slot renumbering (spliced-read inflation made a few locals
 eligibility-eligible; their pre-allocated slots shift the layout with no
 code change). The enablement fires where registers exist; the D4 loops
 need pool depth, not eligibility.
+
+### Tranche 7 (2026-09-07): mul_to coverage investigated and refused
+
+Plan item 4 asked to extend the region receiver collection to mul_to's
+accessor forms (get_at/set_at/data_ptr). The forensics pass over
+mul_to's lowered view REFUSES the premise, on three receipts:
+
+1. **There is no derivation to pin.** mul_to's loops use the raw-pointer
+   idiom: `digits.data` is hoisted ONCE before each loop (`const uint64
+sp/bp/ap/scratchp = *.data_ptr()`) and the loops index through
+   get_at/set_at, whose raw aarch64 bodies (`ldr x0, [x1, x2, lsl #3]` /
+   `str x3, [x1, x2, lsl #3]`) NEVER READ THE RECEIVER. A region pin
+   materializes `receiver.digits.data` — hoisting a derivation the loop
+   is not performing is a net ADD (preheader work, zero removal).
+2. **The contained locals are all register-resident already.** The
+   per-loop var candidates (ov, lo_prod, hi_prod, result, c1, cur,
+   cur2, c2, carry, i, j) all carry function-wide allocations; the only
+   slot-read local in the hot small-b loop is `bp` — declared BEFORE
+   its loop (notcontained by construction) and pool-blocked for
+   promotion (all 10 pool registers hold genuinely live values — the
+   tranche-4 ceiling again).
+3. **The remaining per-call derivations (`get`/`set`, 15 in div_to) ride
+   FIXED raw asm** (`ldr x0, [x0, #32]`) that consults no cache —
+   exploiting them needs cache-aware raw emission (a raw-body
+   substitution keyed on a pinned receiver), which the tranche-2 notes
+   already flagged as its own project. Recording as the shelved
+   follow-up: BigInt get/set raw bodies could consult
+   `status.buffer_data_cache` (a BigInt pin pre-seeds it with
+   `receiver.digits.data` — the same value data_ptr() returns) and emit
+   `ldr x0, [pin, x1, lsl #3]` when the receiver is pinned. Modest
+   surface (the small-b D2 loop + tail-normalization loops), real
+   soundness surface (raw-body rewriting) — needs its own receipts.
+
+No code change ships for item 4; the accessor-form receiver extension is
+formally a no-op-to-regression for these shapes. This closes the
+"Next tranches" list: item 1 resolved (soundness, default ON), item 2
+landed (tranche 5), item 3 landed (tranche 6), item 4 refused with
+receipts (this section).
