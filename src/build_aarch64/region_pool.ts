@@ -34,13 +34,19 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import { emit_buffer_struct_addr } from "./build_access_node.ts";
-import { region_pool_enabled } from "./utils/nir_regalloc.ts";
+import { CALLER_SAVED_EXT_X, region_pool_enabled } from "./utils/nir_regalloc.ts";
 import { allocate_stack_space } from "./utils/stack_var.ts";
 
 export interface RegionLease {
 	/** One borrowed register per pinned receiver (never shared: two
-	 *  receivers on one register would alias their data pointers). */
-	leases: { reg: string; displaced: { name: string; slot: number; key: string }[] }[];
+	 *  receivers on one register would alias their data pointers).
+	 *  `had_claim` records a pre-existing extension-pool exclusion bit
+	 *  (restored, not cleared, at exit). */
+	leases: {
+		reg: string;
+		displaced: { name: string; slot: number; key: string }[];
+		had_claim: boolean;
+	}[];
 }
 
 /**
@@ -56,6 +62,28 @@ export interface RegionLease {
  * avoid-mode.
  */
 function pin_borrowable(status: BuildStatus, pin: { reg: string; dead: string[] }): boolean {
+	// An open bracket's pin is never re-borrowed by a nested loop: the two
+	// brackets would round-trip through one home slot (or no slot), and the
+	// inner exit would restore the outer pin value into the occupant's home
+	// (or lose the outer pin entirely) — the outer resume then reads the
+	// wrong value. Nested loops pin other registers or derive inline.
+	if (status.region_pinned?.get(pin.reg)) return false;
+	// Live pipeline/base homes from an outer loop's hoists are invisible to
+	// the dead set (their names never enter register_allocations) yet live
+	// across this loop — never borrow under one. Data-cache entries are
+	// evicted below instead (the pointer re-derives on the next miss);
+	// base homes have their own invalidation logic and must not be
+	// disturbed, and neither may fixed-array pins.
+	if (status.buffer_base_cache) {
+		for (const v of status.buffer_base_cache.values()) {
+			if (v.baseReg === pin.reg || v.dataReg === pin.reg) return false;
+		}
+	}
+	if (status.array_ptr_cache) {
+		for (const r of status.array_ptr_cache.values()) {
+			if (r === pin.reg) return false;
+		}
+	}
 	let bound = false;
 	for (const [, reg] of status.register_allocations?.entries() ?? []) {
 		if (reg === pin.reg) {
@@ -143,8 +171,21 @@ export function region_pool_enter(
 		for (const d of resolved) {
 			status.code += `str ${reg}, [x29, #${d.slot}]\n`;
 		}
-		if (!status.callee_saved_regs_used) status.callee_saved_regs_used = new Set();
-		status.callee_saved_regs_used.add(reg);
+		let had_claim = false;
+		if (CALLER_SAVED_EXT_X.includes(reg)) {
+			// Extension-pool pins are caller-saved: no prologue save (the
+			// entry spill + exit reload round-trips the displaced occupant
+			// within the function). Exclusion rides
+			// nir_caller_saved_claimed — the same split the buffer pipeline
+			// uses for its x12–x15 hoists. A pre-existing bit is restored,
+			// not cleared, at exit.
+			if (!status.nir_caller_saved_claimed) status.nir_caller_saved_claimed = new Set();
+			had_claim = status.nir_caller_saved_claimed.has(reg);
+			status.nir_caller_saved_claimed.add(reg);
+		} else {
+			if (!status.callee_saved_regs_used) status.callee_saved_regs_used = new Set();
+			status.callee_saved_regs_used.add(reg);
+		}
 		// Publish the active pin so loop promotion's sharing path refuses
 		// it: the interference adjacency cannot see the pin, and sharing a
 		// loop local onto it destroys one of them (the knucleotide
@@ -158,7 +199,7 @@ export function region_pool_enter(
 		status.code += `ldr x9, [x9, #8]\n`;
 		status.code += `mov ${reg}, x9\n`;
 		entries.push({ key: receiver.key, reg });
-		leases.push({ reg, displaced: resolved });
+		leases.push({ reg, displaced: resolved, had_claim });
 	}
 	if (leases.length === 0) return null;
 	status.region_preseed = { node, entries };
@@ -189,6 +230,13 @@ export function region_pool_exit(status: BuildStatus, lease: RegionLease | null)
 		const depth = (status.region_pinned?.get(l.reg) ?? 1) - 1;
 		if (depth <= 0) status.region_pinned?.delete(l.reg);
 		else status.region_pinned?.set(l.reg, depth);
+		// Extension-pool exclusion is bracket-scoped (unlike callee pins,
+		// which must persist for the prologue patch): the pin is dead, the
+		// displaced occupant restored, so later loops may use the register
+		// again. A pre-existing bit is restored, not cleared.
+		if (depth <= 0 && CALLER_SAVED_EXT_X.includes(l.reg) && !l.had_claim) {
+			status.nir_caller_saved_claimed?.delete(l.reg);
+		}
 	}
 	status.region_preseed = undefined;
 }

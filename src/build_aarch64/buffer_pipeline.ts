@@ -63,6 +63,9 @@ function allocPipelineReg(status: BuildStatus, callFree = false): string | null 
 	const pool = callFree ? [...PIPELINE_REGS, "x12", "x13", "x14", "x15"] : PIPELINE_REGS;
 	for (const r of pool) {
 		if (cachedData.has(r) || cachedBase.has(r) || cachedBaseData.has(r) || claimed.has(r)) continue;
+		// Active region pins are invisible to every plan-time map — never
+		// hoist into one (the pin holds another loop's data pointer).
+		if (status.region_pinned?.get(r)) continue;
 		// For used (promotion), check if it interferes with loop body - for now, be conservative and skip
 		// But for hot loops, we can be more aggressive: if used, check if the promoted var is not live in this loop
 		// For simplicity, allow used for callFree loops as they are short and call-free

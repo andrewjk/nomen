@@ -226,6 +226,34 @@ build-both-arms/diff discipline):
    unioned with the analyzed set) drives every region check — union-only
    ever refuses more pins.
 
+## Tranche-3 shelved pieces (measured, not shipped)
+
+ASM_PLAN_5 tranche 3 landed the ext-borrow machinery + hardenings; these
+were tried in the same session and reverted:
+
+- **x15 reservation**: withholding x15 function-wide whenever any loop
+  holds a pinnable accessor cost +0.02 on pidigits (0.545 vs 0.525
+  medians, 6/6 interleaved pairs slower) and LOST the D6 x23/x24 pins
+  (the pool shift moved x25 live into D6). Without it a D4 loop borrowed
+  x14 (the first ext pin ever fired) but net pins dropped 4→3 and timing
+  still trailed baseline. Verdict: pool-shift cost exceeds pin benefit at
+  this shape; revisit only with a per-function proven trade.
+- **Nested-loop pin refusal**: skipping pins for loops containing nested
+  loops (try_count ≤3 receipt: bracket cost > savings). Pin set unchanged
+  with/without in pidigits — unmeasured benefit, shelved to keep the
+  tranche codegen-neutral.
+- **collect_var_refs coverage** (method-arg params under `access_func`,
+  if/match/switch branch fields, ref/mov address-taken): real dead code
+  (`"access_function_call"` matched nothing; if-branches never walked),
+  but broad promotion effects need their own tranche with isolated
+  timing receipts. The coupled `_param_N`/`_vn_N` promotion exclusion
+  SHIPPED (forwarding elides their declares — garbage-index crash
+  guard; neutral).
+- **Promotion site-sharing**: sharing loop claims onto decl-site regs
+  under the adjacency proof. Reverted to the stage-3 never-touch rule;
+  needs an isolated receipt (the D-arm collision it targets carries an
+  edge and refuses by construction, but no bench proves the gain).
+
 Full bench matrix byte-identical across backends; pidigits n=4000
 0.63 → 0.53 s baseline-relative (the whole ASM_PLAN_5 arc: 1.89× →
 **~1.53×** vs C `-O2`); fannkuch-redux −28%; suite green (290 files /

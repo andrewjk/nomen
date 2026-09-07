@@ -233,6 +233,14 @@ export function promote_loop_locals(
 		if (info.reads < (ext_mode ? 1 : 3) && !is_accumulator) continue;
 		if (info.address_taken) continue;
 		if (redeclared.has(name)) continue;
+		// Machinery-owned single-use temps (`_param_N` call-arg hoists,
+		// `_vn_N` value-numbering temps) never promote: the forwarding pass
+		// re-emits their initializers at the single use site and elides the
+		// declare, so a promotion entry load reads an uninitialized slot
+		// while the use reads the register — garbage indices into heap
+		// buffers (the pidigits receipt). They qualified only under the
+		// reads>=1 ext bar (single-use by construction).
+		if (name.startsWith("_param_") || name.startsWith("_vn_")) continue;
 		// Aliasing-aware exclusions (critical for accumulator eligibility —
 		// a promoted alias/ref breaks write-through semantics):
 		if (status.function_ref_params?.has(name)) continue;
@@ -377,6 +385,12 @@ export function promote_loop_locals(
 	// caller's variable is live across the expansion.
 	if (status.nir_caller_saved_claimed) {
 		for (const r of status.nir_caller_saved_claimed) used_x.add(r);
+	}
+	// Active region pins (ASM_PLAN_5) are invisible to the interference
+	// adjacency, so neither fresh claims (here) nor sharing
+	// (can_share_claimed_register) may touch them.
+	if (status.region_pinned) {
+		for (const r of status.region_pinned.keys()) used_x.add(r);
 	}
 	// Decl-site registers (stage 3) are PRIVATE to their declare sites: the
 	// emitter binds them at the declare (when the name has no live

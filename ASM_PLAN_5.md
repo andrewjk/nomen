@@ -188,3 +188,28 @@ call, correctly), the D4 mi/si2 loops (no free callee reg — needs the
 x12–x15 ext pool or fewer function-wide claims), mul_to's get_at/set_at
 loops (raw shapes — needs cache-aware raw emission, not just
 collection).
+
+### Tranche 3 (2026-09-07): extension-pool borrowing + bracket hardenings
+
+Borrow path for the x12–x15 caller-saved pool (`nir_regalloc.ts` +
+`region_pool.ts` + `loop_promotion.ts` + `buffer_pipeline.ts`): the plan
+offers ext regs after the callee pool (borrow-with-spill like callee);
+ext pins never join `plan.callee_saved` (no prologue save — exclusion
+rides `nir_caller_saved_claimed` with a had-claim restore at exit).
+Bracket hardenings in the same pass: never re-borrow an open pin in a
+nested loop (two brackets, one home slot); refuse under live
+`buffer_base_cache`/`array_ptr_cache` homes (invisible to the dead set);
+loop-promotion fresh claims and pipeline hoists avoid `region_pinned`;
+`_param_N`/`_vn_N` machine temps never promote (forwarding elides their
+declares — the pidigits garbage-index receipt); exit-less nested loops
+fold into `region_loop_blocks`.
+
+Result: pin set identical to tranche 2 in pidigits (D1×2 + D6×2),
+outputs byte-identical across backends (pidigits, fannkuch, edigits
+checked); fannkuch neutral; pidigits n=4000 0.53 vs 0.52 baseline
+(noise floor). Full suite green default-ON (290 files / 2817 tests).
+No headline gain yet — the D4 loops' entries are offered but refused at
+emission (emit-time promotion holds x14/x15 under names outside the dead
+set). Shelved with measurements (see FOLLOWUP.md): x15 reservation
+(+0.02, lost the D6 pins), nested-loop pin refusal, collect_var_refs
+coverage, promotion site-sharing.

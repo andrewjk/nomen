@@ -109,8 +109,9 @@ export function set_nir_site_promotion_enabled(enabled: boolean): void {
 
 const CALLEE_SAVED_X = ["x23", "x24", "x25", "x26", "x27", "x28"];
 /** Caller-saved extension pool: call-free-contained ranges only. x10/x11
- *  stay excluded (write barriers / tree temps), x9 is emitter scratch. */
-const CALLER_SAVED_EXT_X = ["x12", "x13", "x14", "x15"];
+ *  stay excluded (write barriers / tree temps), x9 is emitter scratch.
+ *  Exported for the region bracket (extension-pool pins). */
+export const CALLER_SAVED_EXT_X = ["x12", "x13", "x14", "x15"];
 const D_POOL = ["d8", "d9", "d10", "d11", "d12", "d13", "d14", "d15"];
 const MAX_D_REGS = 4;
 /** Distinct callee-saved int registers this pass may claim. The legacy cap
@@ -322,7 +323,7 @@ interface RangeAnalysis {
 	/** name → CFG blocks where the name is live or defined (region checks) */
 	block_members: Map<string, Set<number>>;
 	/** Natural loops (header block id + the loop's block set). */
-	loop_list: { header: number; blocks: Set<number> }[];
+	loop_list: { header: number; blocks: Set<number>; exits: number[] }[];
 	/** Per-block liveness (region membership input). */
 	liveness: { live_in: Set<string>[]; live_out: Set<string>[] };
 	/** Symmetric interference adjacency (def-point rule: a def interferes
@@ -403,12 +404,21 @@ function is_clean_scalar_type(t: {
  * b, b reaches header) includes nested regions by construction; unioned with
  * the analyzed set it is the conservative body every region check must use
  * (union-only ever refuses more pins, never fewer).
+ *
+ * Exit-less nested loops (`while true` with no break, return-only nests)
+ * never reach the outer header, so a second closure adds the analyzed
+ * blocks of every other header dominated by this one that either reaches it
+ * or has no exits. Headers past the loop (post-loop code) reach neither and
+ * are excluded. `break`/`continue` target the innermost loop, so no nest
+ * escapes outward except through return — return-only bodies with no latch
+ * form no loop entry and remain a documented residual (FOLLOWUP).
  */
 function region_loop_blocks(
 	cfg: FunctionCfg,
 	dominance: DominanceResult,
 	header: number,
 	analyzed: Set<number>,
+	all_loops: { header: number; blocks: Set<number>; exits: number[] }[],
 ): Set<number> {
 	const body = new Set<number>(analyzed);
 	// Blocks that can reach the header (backward pred walk, reachable only).
@@ -425,6 +435,13 @@ function region_loop_blocks(
 	}
 	for (const b of reach_header) {
 		if (dominance.dom[b]?.has(header)) body.add(b);
+	}
+	for (const other of all_loops) {
+		if (other.header === header) continue;
+		if (!dominance.dom[other.header]?.has(header)) continue;
+		if (other.exits.length === 0 || reach_header.has(other.header)) {
+			for (const b of other.blocks) body.add(b);
+		}
 	}
 	return body;
 }
@@ -545,7 +562,11 @@ export function analyze_ranges(cfg: FunctionCfg, status?: BuildStatus): RangeAna
 		facts,
 		adj,
 		block_members,
-		loop_list: loops.loops.map((l) => ({ header: l.header, blocks: new Set(l.blocks) })),
+		loop_list: loops.loops.map((l) => ({
+			header: l.header,
+			blocks: new Set(l.blocks),
+			exits: [...l.exits],
+		})),
 		liveness,
 		dominance,
 	};
@@ -883,7 +904,7 @@ export function plan_nir_registers(
 	if (region_pool_enabled()) {
 		const reg_occupants = new Map<string, string[]>();
 		for (const [name, reg] of allocs) {
-			if (!CALLEE_SAVED_X.includes(reg)) continue;
+			if (!CALLEE_SAVED_X.includes(reg) && !CALLER_SAVED_EXT_X.includes(reg)) continue;
 			const list = reg_occupants.get(reg);
 			if (list) list.push(name);
 			else reg_occupants.set(reg, [name]);
@@ -895,7 +916,13 @@ export function plan_nir_registers(
 			// set can miss nested blocks, and every check below must see
 			// them — a nested-live occupant or a nested foreign write is
 			// otherwise invisible to the outer bracket.
-			const region_blocks = region_loop_blocks(cfg, analysis.dominance, loop.header, loop.blocks);
+			const region_blocks = region_loop_blocks(
+				cfg,
+				analysis.dominance,
+				loop.header,
+				loop.blocks,
+				analysis.loop_list,
+			);
 			const decl_types = new Map<string, string>();
 			for (const d of traffic.decls) decl_types.set(d.name, d.type_name);
 			const pins: {
@@ -903,7 +930,13 @@ export function plan_nir_registers(
 				displaced: { name: string; key: string; type_name: string }[];
 				dead: string[];
 			}[] = [];
-			for (const reg of CALLEE_SAVED_X) {
+			// Callee-saved first (prologue-paid, call-proof), then the
+			// caller-saved extension pool (zero prologue cost, but
+			// caller-saved: only sound in loops with no real call — the
+			// refuse gate below drops those entries anyway — and ext pins
+			// never join plan.callee_saved, so no prologue save is emitted
+			// for them; exclusion rides nir_caller_saved_claimed instead).
+			for (const reg of [...CALLEE_SAVED_X, ...CALLER_SAVED_EXT_X]) {
 				if (pins.length >= 2) break;
 				const occupants = reg_occupants.get(reg) ?? [];
 				// Unoccupied registers are trivially borrowable (nothing to
@@ -1056,12 +1089,15 @@ export function plan_nir_registers(
 				if (roots_refused.has(key)) receivers.delete(key);
 			}
 			if (receivers.size === 0) continue;
-			// The pins are CALLEE-SAVED registers used by this function —
-			// they MUST ride the prologue/epilogue save/restore set, or the
-			// function destroys the CALLER's value in them (the layout
-			// corruption receipt: first_child's pin clobbered measure_w's
-			// live x25 across the call).
-			for (const pin of pins) callee_saved.add(pin.reg);
+			// Borrowed callee-saved pins MUST ride the prologue/epilogue
+			// save/restore set, or the function destroys the CALLER's live
+			// value in them (the layout receipt: first_child's pin clobbered
+			// measure_w's x25). Extension-pool pins are caller-saved: no
+			// prologue save — exclusion rides nir_caller_saved_claimed at
+			// emission instead.
+			for (const pin of pins) {
+				if (CALLEE_SAVED_X.includes(pin.reg)) callee_saved.add(pin.reg);
+			}
 			region_free.push({
 				node,
 				pins,
