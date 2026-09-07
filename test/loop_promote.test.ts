@@ -197,3 +197,109 @@ pub func main = () {
 		true,
 	);
 });
+
+test("derivation pair hoists into a promotion register", () => {
+	// The ASM_PLAN_6 tranche-2 shape: the Buffer receiver derivation
+	// (`add x9, x22, #24 / ldr x9, [x9, #8]`) recomputes digits.data
+	// every iteration. In a call-free cycle the field cannot change
+	// (ensure/grow are calls), so the pair hoists into the leftover
+	// promotion register and every pointer use renames.
+	const out = promote([
+		"f:",
+		".while_0:",
+		"cmp x28, x23",
+		"b.ge .end_while_0",
+		"add x9, x22, #24",
+		"ldr x9, [x9, #8]",
+		"ldr x0, [x9, x28, lsl #3]",
+		"mov x11, x9",
+		"str x12, [x9, x10, lsl #3]",
+		".while_update_0:",
+		"add x28, x28, #1",
+		"b .while_0",
+		".end_while_0:",
+		"ret",
+	]);
+	// The pair is gone from the cycle; the entry recomputes into x16.
+	expect(out.join("\n")).toContain("add x16, x22, #24\nldr x16, [x16, #8]");
+	expect(out.filter((l) => l.includes("add x9, x22")).length).toBe(0);
+	// The pointer uses renamed.
+	expect(out).toContain("ldr x0, [x16, x28, lsl #3]");
+	expect(out).toContain("mov x11, x16");
+	expect(out).toContain("str x12, [x16, x10, lsl #3]");
+});
+
+test("a second definition of the derivation target refuses the hoist", () => {
+	const out = promote([
+		"f:",
+		".while_0:",
+		"cmp x28, x23",
+		"b.ge .end_while_0",
+		"add x9, x22, #24",
+		"ldr x9, [x9, #8]",
+		"mov x9, x20",
+		"ldr x0, [x9, x28, lsl #3]",
+		".while_update_0:",
+		"add x28, x28, #1",
+		"b .while_0",
+		".end_while_0:",
+		"ret",
+	]);
+	// x9 has another definition — the pair is not the sole def.
+	expect(out).toContain("add x9, x22, #24");
+});
+
+test("a write to the source struct field refuses the derivation hoist", () => {
+	const out = promote([
+		"f:",
+		".while_0:",
+		"cmp x28, x23",
+		"b.ge .end_while_0",
+		"add x9, x22, #24",
+		"ldr x9, [x9, #8]",
+		"str x5, [x22, #24]",
+		"ldr x0, [x9, x28, lsl #3]",
+		".while_update_0:",
+		"add x28, x28, #1",
+		"b .while_0",
+		".end_while_0:",
+		"ret",
+	]);
+	// The digits.data field is rewritten in the cycle — the value is not
+	// invariant.
+	expect(out).toContain("add x9, x22, #24");
+});
+
+test("a frame-derived pair (mutable slot) refuses the hoist", () => {
+	// The for-of materialisation reads the CURRENT ELEMENT POINTER from a
+	// frame slot and dereferences it — the slot advances per iteration,
+	// so the pair is not invariant (the arrays.test.ts receipt: summing
+	// `p.y` froze on the first element).
+	const out = promote([
+		"f:",
+		".for_0:",
+		"ldr x0, [x29, #16]",
+		"str x0, [sp, #-16]!",
+		"ldr x0, [x29, #0]",
+		"ldr x0, [x0]",
+		"ldr x1, [sp], #16",
+		"cmp x1, x0",
+		"bge .end_0",
+		"add x16, x29, #24",
+		"ldr x16, [x16, #16]",
+		"ldr x3, [x16, #8]",
+		"add x23, x23, x3",
+		"add x0, x29, #24",
+		"str x3, [x0, #8]",
+		".for_inc_0:",
+		"ldr x0, [x29, #16]",
+		"add x0, x0, #1",
+		"str x0, [x29, #16]",
+		"b .for_0",
+		".end_0:",
+		"ret",
+	]);
+	// The frame-derived pair stays per-iteration.
+	expect(out.filter((l) => l.includes("add x16, x29, #24")).length).toBe(1);
+	expect(out).toContain("ldr x3, [x16, #8]");
+});

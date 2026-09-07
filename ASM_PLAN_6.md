@@ -113,3 +113,47 @@ Remaining in this plan: tranche 2's register-starved leftovers (the
 si2 loop's second base `wd_off + j` went unpromoted — two read-only
 slots, one free register after sub_borrow took x16), then base-folded
 addressing.
+
+### Tranche 2 (2026-09-08): derivation hoist — LANDED
+
+The asm-level `promote_loop_slots` gained a third candidate kind: the
+Buffer receiver derivation. In the emitted text it is a THREE-line
+sequence (`mov x9, x22 / add x9, x9, #24 / ldr x9, [x9, #8]`) — or the
+two-line form without the base copy — and a loop body may hold SEVERAL
+occurrences (one per accessor access). Detection: local shape + a use-
+before-sequence dominance gate; then identical sequences group by
+(xD, xB, imm, imm2), and a group hoists when its members are the
+cycle's ONLY definitions of xD, xB is unwritten outside them, and no
+address escape (`add xK, xB, #imm`) or direct field store exists
+outside them. Priority: write-slot carries > derivations (2-3
+instructions/iteration) > read-only bases (1). Entry recomputes the
+pair into the promotion register; every xD use renames (whole-word
+text substitution); no exit sync (the field is invariant in a
+call-free cycle — ensure/grow are calls).
+
+Two soundness receipts caught during landing (both by the suite):
+
+1. **Frame-derived pairs are NOT derivations**: the for-of
+   materialisation reads the CURRENT ELEMENT POINTER from a frame slot
+   (`add x16, x29, #24 / ldr x16, [x16, #16]`) — the slot advances per
+   iteration (written through an `add x2, x29, #24` address escape the
+   field-store check missed), and hoisting froze sum_y on the first
+   element ('2' vs '6'). Gate: refuse x29/sp-derived pairs outright.
+2. **Address escapes of the base struct** now refuse the group (the
+   same escape idiom, generalized to any base register).
+
+Result: the si2 loop's derivation hoists (x17 = the pointer for the
+whole cycle; −3 instructions/iteration, the second base's slot read
+returns since one register cannot serve both). The mi loop's
+derivation STILL does not fire: its TWO occurrences plus the carry and
+the base demand three registers and x16/x17 are two — the priority
+order (carry > derivation > base) resolves it to the tranche-1
+allocation. pidigits n=4000 steady **0.54** (5/5), fannkuch 0.17,
+bench matrix byte-identical across backends, full suite green
+(292 files / 2827 tests) with the hoist shape + refusal + for-of
+regression tests in test/loop_promote.test.ts.
+
+The mi loop's remaining fat is the staging movs (x1/x2/x3 copies the
+coalescer cannot fold across the accessor staging protocol) — asm-level
+dead-move work inside validated cycles, recorded as the next tranche's
+candidate.

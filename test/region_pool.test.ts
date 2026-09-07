@@ -2,6 +2,10 @@ import { expect, test } from "vite-plus/test";
 
 import build from "../src/build";
 import {
+	loop_slot_promotion_enabled,
+	set_loop_slot_promotion_enabled,
+} from "../src/build_aarch64/asm_loop_promote";
+import {
 	region_pool_enabled,
 	set_region_pool_enabled,
 } from "../src/build_aarch64/utils/nir_regalloc";
@@ -94,7 +98,12 @@ pub func main = () {
 test("kill-switch restores the pre-tranche shape", () => {
 	const on = compile(PIN_SHAPE, true);
 	const saved = region_pool_enabled();
+	const saved_loop_promote = loop_slot_promotion_enabled();
 	set_region_pool_enabled(false);
+	// The asm-level derivation hoist (ASM_PLAN_6) is independent of the
+	// region-pool switch — hold it off too so this arm shows the raw
+	// per-iteration derivation the region pin eliminates.
+	set_loop_slot_promotion_enabled(false);
 	try {
 		const parsed = parse_raw(PIN_SHAPE);
 		expect(parsed.errors).toEqual([]);
@@ -110,6 +119,7 @@ test("kill-switch restores the pre-tranche shape", () => {
 		expect(off).not.toEqual(on);
 	} finally {
 		set_region_pool_enabled(saved);
+		set_loop_slot_promotion_enabled(saved_loop_promote);
 	}
 });
 
@@ -254,10 +264,6 @@ test("kill-switch keeps region vars off (slot-resident shape restored)", () => {
 		// Without the pass the same locals ride loop promotion's bracket:
 		// entry loads read their (garbage-then-discarded) slots before the
 		// header — loads the region-var binding eliminates.
-		const pre_loop = result.code.slice(
-			result.code.indexOf(".end_while_0:"),
-			result.code.indexOf(".while_1:"),
-		);
 		// Promotion loads the accumulator's pre-allocated slot BEFORE the
 		// declare ever runs — the slot's first textual reference is the
 		// load itself (a garbage read). The region-var binding is exactly

@@ -290,6 +290,12 @@ export default function build(
 		// pool exhaustion) into caller-saved scratch registers, syncing at
 		// the entry and the exits, and collapses the flag-form carry
 		// increment to `cinc`.
+		// Loop-carried slot promotion — renames an innermost call-free
+		// loop's read+write frame slots (the carry slots the allocator
+		// cannot hold: live into the header, low raw reads, function-wide
+		// pool exhaustion) into caller-saved scratch registers, syncing at
+		// the entry and the exits, and collapses the flag-form carry
+		// increment to `cinc`.
 		status.code = promote_loop_slots(status.code);
 		// Copy coalescing + derivation memoization — substitutes read
 		// operands through register copies (the x0 staging protocol's

@@ -293,20 +293,179 @@ export function promote_loop_slots(code: string): string {
 			if (!cycle_regs.has(reg)) promo.push(reg);
 		}
 
+		// Derivation candidates (ASM_PLAN_6 tranche 2): the Buffer
+		// data-pointer pair `add xD, xB, #imm / ldr xD, [xD, #imm2]` — the
+		// per-iteration receiver derivation. In a call-free cycle the
+		// digits.data field cannot change (ensure/grow are calls; the
+		// cycle's stores go through the POINTER to heap data, never to the
+		// struct field), so the pair hoists like a read-only slot: entry
+		// recomputes it into the promotion register, the in-cycle
+		// definition disappears, and every later xD use renames. Requires
+		// the pair to be the cycle's ONLY definition of xD, xB unwritten,
+		// and no direct store to the [xB, #imm] field (aliasing guard).
+		type Deriv = {
+			first_idx: number;
+			last_idx: number;
+			xD: string;
+			xB: string;
+			imm: string;
+			imm2: string;
+		};
+		const derivs: Deriv[] = [];
+		for (let j = headIdx + 1; j < end - 1; j++) {
+			// Two-line form: add xD, xB, #imm / ldr xD, [xD, #imm2].
+			// Three-line form: mov xD, xB / add xD, xD, #imm / ldr xD,
+			// [xD, #imm2] — the base register arrives through a staging
+			// copy the hoist makes unnecessary (entry adds from xB
+			// directly).
+			const a = parsed[j];
+			const l = parsed[j + 1];
+			if (!a || !l) continue;
+			if (a.op !== "add" || a.operands.length !== 3) continue;
+			if (l.op !== "ldr" || l.operands.length !== 2) continue;
+			if (a.operands[0].kind !== "reg" || a.operands[2].kind !== "imm") continue;
+			const xD = (a.operands[0] as { name: string }).name;
+			let xB = (a.operands[1] as { name?: string }).name ?? "";
+			let first = j;
+			if (xD === xB) {
+				if (j - 1 <= headIdx) continue;
+				const cp = parsed[j - 1];
+				if (!cp || cp.op !== "mov" || cp.operands.length !== 2) continue;
+				if (cp.operands[0].kind !== "reg" || cp.operands[1].kind !== "reg") continue;
+				if ((cp.operands[0] as { name: string }).name !== xD) continue;
+				xB = (cp.operands[1] as { name: string }).name;
+				if (xB === xD) continue;
+				first = j - 1;
+			}
+			// A frame-derived pair reads THROUGH a stack slot (`[x29+off]`
+			// then dereference) — the slot is a mutable variable the cycle
+			// may advance (the for-of element pointer). Only register-born
+			// struct fields (params/locals in callee-saved registers) are
+			// invariant.
+			if (xB === "x29" || xB === "sp") continue;
+			if (xD !== (l.operands[0] as { name?: string }).name) continue;
+			const lm = l.operands[1];
+			if (
+				lm.kind !== "mem" ||
+				lm.base !== xD ||
+				lm.writeback !== undefined ||
+				lm.offset?.kind !== "imm"
+			)
+				continue;
+			// Local shape gate: a use of xD BEFORE the sequence means xD
+			// carried an earlier value here — refuse. (The cycle may hold
+			// SEVERAL occurrences of the same derivation — one per accessor
+			// access; grouping and the cycle-wide gates happen below.)
+			let dominated = true;
+			for (let k = headIdx + 1; k < first; k++) {
+				const c = parsed[k];
+				if (!c) continue;
+				for (const o of c.operands) {
+					const reads_xD =
+						(o.kind === "reg" && o.name === xD) ||
+						(o.kind === "mem" &&
+							(o.base === xD || (o.offset?.kind === "reg" && o.offset.name === xD)));
+					if (reads_xD) dominated = false;
+				}
+			}
+			if (!dominated) continue;
+			derivs.push({
+				first_idx: first,
+				last_idx: j + 1,
+				xD,
+				xB,
+				imm: String((a.operands[2] as { value: number | bigint }).value),
+				imm2: String(lm.offset.value),
+			});
+		}
+		// Group identical sequences (same xD/xB/imm/imm2 — one derivation
+		// per accessor access). A group hoists when its members are the
+		// cycle's ONLY definitions of xD, xB is unwritten outside them,
+		// and no escape/field-store of the base struct exists outside
+		// them.
+		const deriv_groups: Deriv[][] = [];
+		{
+			const groups = new Map<string, Deriv[]>();
+			for (const d of derivs) {
+				const key = `${d.xD}|${d.xB}|${d.imm}|${d.imm2}`;
+				const g = groups.get(key);
+				if (g) g.push(d);
+				else groups.set(key, [d]);
+			}
+			for (const [, members] of groups) {
+				const { xD, xB, imm } = members[0];
+				const member_lines = new Set<number>();
+				let defs = 0;
+				for (const m of members) {
+					for (let k = m.first_idx; k <= m.last_idx; k++) {
+						member_lines.add(k);
+						const c = parsed[k];
+						if (!c) continue;
+						const dest = c.operands[0];
+						if (dest && dest.kind === "reg" && dest.name === xD) defs++;
+					}
+				}
+				let ok = true;
+				for (let k = headIdx + 1; k < end; k++) {
+					if (member_lines.has(k)) continue;
+					const c = parsed[k];
+					if (!c) continue;
+					const dest = c.operands[0];
+					const dest_reg = dest && dest.kind === "reg" ? dest.name : "";
+					if (dest_reg === xB || dest_reg === xD) {
+						ok = false;
+						break;
+					}
+					if (c.op === "add" || c.op === "adds") {
+						if (
+							c.operands.length === 3 &&
+							c.operands[1].kind === "reg" &&
+							c.operands[1].name === xB &&
+							c.operands[2].kind === "imm"
+						) {
+							// An address escape of the base struct — its fields
+							// are reachable through the derived register; refuse.
+							ok = false;
+							break;
+						}
+					}
+					if (c.op === "str") {
+						for (const o of c.operands) {
+							if (
+								o.kind === "mem" &&
+								o.base === xB &&
+								o.offset?.kind === "imm" &&
+								o.offset.value.toString() === imm
+							) {
+								ok = false;
+							}
+						}
+					}
+				}
+				if (ok) deriv_groups.push(members);
+			}
+		}
+
 		// Write-slot carries take the promotion registers first (their
-		// sync stores are the existing behavior); read-only slots get the
-		// remainder (no sync).
+		// sync stores are the existing behavior); derivations next (2
+		// instructions per iteration); read-only slots get the remainder
+		// (no sync).
 		const renames: { off: string; reg: string; sync: boolean }[] = [];
 		let promo_idx = 0;
 		for (const off of candidates) {
 			if (promo_idx >= promo.length) break;
 			renames.push({ off, reg: promo[promo_idx++], sync: true });
 		}
+		const deriv_renames: { members: Deriv[]; reg: string }[] = [];
+		for (const members of deriv_groups) {
+			if (promo_idx >= promo.length) break;
+			deriv_renames.push({ members, reg: promo[promo_idx++] });
+		}
 		for (const off of readonly_candidates) {
 			if (promo_idx >= promo.length) break;
 			renames.push({ off, reg: promo[promo_idx++], sync: false });
 		}
-		if (renames.length === 0) continue;
+		if (renames.length === 0 && deriv_renames.length === 0) continue;
 		for (let j = headIdx; j <= end; j++) owned.add(j);
 
 		// Rename inside the cycle. Track per-slot promotions for syncs.
@@ -330,12 +489,41 @@ export function promote_loop_slots(code: string): string {
 			parsed[j] = parse_asm_instruction(out[j], j + 1);
 		}
 
+		// Derivation renames: the sequence's lines become empty and every
+		// remaining xD use in the cycle renames to the promotion register.
+		// The rename is a whole-word text substitution on the line (out[]
+		// is authoritative for unrenamed lines); parses are refreshed so
+		// the carry-increment fold below sees the final text.
+		for (const dr of deriv_renames) {
+			const lines_of = new Set<number>();
+			for (const m of dr.members) {
+				for (let k = m.first_idx; k <= m.last_idx; k++) lines_of.add(k);
+			}
+			for (const k of lines_of) {
+				out[k] = "";
+				parsed[k] = null;
+			}
+			const word = new RegExp(`\\b${dr.members[0].xD}\\b`, "g");
+			for (let j = headIdx + 1; j < end; j++) {
+				if (lines_of.has(j)) continue;
+				if (!out[j] || !out[j].includes(dr.members[0].xD)) continue;
+				out[j] = out[j].replace(word, dr.reg);
+				parsed[j] = parse_asm_instruction(out[j], j + 1);
+			}
+		}
+
 		// Entry load before the header label (fall-through only) — all
 		// renames' loads accumulate (a loop overwriting the line would
 		// drop every load but the last, leaving the other registers
-		// uninitialized).
-		const entry_loads = renames.map((rn) => `ldr ${rn.reg}, [x29, #${rn.off}]`).join("\n");
-		out[headIdx] = `${entry_loads}\n${lines[headIdx]}`;
+		// uninitialized). Derivation pairs re-emit their two-instruction
+		// computation.
+		const slot_entry = renames.map((rn) => `ldr ${rn.reg}, [x29, #${rn.off}]`);
+		const deriv_entry = deriv_renames.map(
+			(dr) =>
+				`add ${dr.reg}, ${dr.members[0].xB}, #${dr.members[0].imm}\nldr ${dr.reg}, [${dr.reg}, #${dr.members[0].imm2}]`,
+		);
+		const entry_loads = [...slot_entry, ...deriv_entry].join("\n");
+		if (entry_loads.length > 0) out[headIdx] = `${entry_loads}\n${lines[headIdx]}`;
 		// Sync stores after each exit label — write-slot carries only.
 		const synced = renames.filter((rn) => rn.sync);
 		for (const [, exit_idx] of [...exits.entries()].sort((a, b) => b[1] - a[1])) {
