@@ -296,11 +296,44 @@ mov w2, #74
 strb w2, [x0]       // raw block still expects p in x0 → writes to address 1
 ```
 
-The C backend is unaffected (raw C bodies reference params by name through
-the generated glue). Entry-position raw blocks — the shape all of `core/` and
+The C backend is unaffected (raw C bodies reference params by name through the
+generated glue). Entry-position raw blocks — the shape all of `core/` and
 the existing tests use — are fine. Fix directions: reload the params into
 their ABI registers immediately before each raw statement (the values are
 already in the slots the prologue spills them to), or have
 `asm_validator`/`lift_asm` reject a raw block that is not preceded only by
 prologue code, or document raw blocks as entry-only for aarch64. The same
 clobber class applies to any `if`/`while`/`match` body, not just `switch`.
+
+## `validate_asm` rejects raw-block GNU numeric local labels (pre-existing)
+
+`BigInt.div128`'s `#arch: aarch64` body uses numeric local labels (`1:`,
+`2:` with `b.hs 1f` / `b 2f` branches). Any single-TU aarch64 build that
+compiles `div_to` (bench programs, `test/induction_pin.test.ts` probes)
+reports `asm: branch to undefined label '1f'` / `asm: unparseable
+instruction — 1:` build errors, even though the emitted text assembles and
+runs correctly (clang accepts the labels; the bench harness ignores
+`result.errors`). Other passes already understand the forms
+(`asm_cycle_dead_moves`' CFG resolves numeric `1f`/`1b`; `lift_asm.ts`
+mentions GNU numeric labels) — only the validator's label table does not.
+Fix direction: teach `validate_asm` (and the stack-balance validator) the
+numeric-label definition/reference forms. Found during ASM_PLAN_7 tranche
+2 (the div_to induction census builds `div_to` single-TU); left alone as
+out of scope — the tranche's tests filter the known messages.
+
+## Unmodeled calls: `tree_is_call_free` misses struct operator calls (latent)
+
+Same unmodeled-call class as the tranche-2 hang receipt, on the OTHER
+consumer: `tree_is_call_free` (AST) recurses through `op` nodes without
+noticing `operator_func`, so a loop whose only "calls" are string `+`
+(`bl string_add` + `bl _free`) verifies call-free and emit-time loop
+promotion opens the caller-saved `x12–x15` extension pool inside it.
+Tranche 2 fixed only its own path (induction pins carry a heap-freedom
+proof: no `operator_func` op, no string traffic, no non-scalar in-region
+declare, no foreign heap write) and confirmed no regression, but a hot
+string loop with 10+ hotter loop-carried ints would still place live
+values in call-clobbered registers via promotion on clean HEAD (scratch
+asm shows `x12–x15` traffic in such a loop; no miscompile receipt yet —
+needs a dedicated repro + the shared fix: refuse `operator_func` ops in
+`tree_is_call_free` and flag them in the NIR fact walk's `has_call`, so
+the refuse gate covers every region consumer at once).

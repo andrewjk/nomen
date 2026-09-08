@@ -24,6 +24,13 @@
  * touches (plan-side scan) and no other claimant ever assigns. Nothing to
  * spill, no claim bit, no restore: the pin dies with the bracket.
  *
+ * Induction pins (ASM_PLAN_7 tranche 2): the same scratch borrow for a
+ * loop-carried scalar induction (written in the latch, read everywhere) —
+ * entry load before the header, name bound for the bracket, final value
+ * stored back after the loop. Emit-time loop promotion already covers
+ * these while a pool register is free; the region bracket covers the
+ * pool-exhausted remainder (the pidigits `pi` receipt).
+ *
  * Soundness: the register is in `callee_saved_regs_used` for the whole
  * bracket, so every claimant (loop promotion, staging pins, tree pools,
  * inline expansions) refuses it; occupant liveness disjointness is from
@@ -40,7 +47,12 @@ import type BuildStatus from "../build_c/BuildStatus.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import { emit_buffer_struct_addr } from "./build_access_node.ts";
 import { CALLER_SAVED_EXT_X, NIR_SCRATCH_X, region_pool_enabled } from "./utils/nir_regalloc.ts";
-import { allocate_stack_space, emit_var_load } from "./utils/stack_var.ts";
+import {
+	allocate_stack_space,
+	emit_promoted_load,
+	emit_promoted_store,
+	emit_var_load,
+} from "./utils/stack_var.ts";
 
 export interface RegionLease {
 	/** One borrowed register per pinned receiver (never shared: two
@@ -55,6 +67,15 @@ export interface RegionLease {
 		 *  `reg + base*8` for this pin — released from region_pinned at
 		 *  exit, nothing to restore. */
 		folds: string[];
+	}[];
+	/** Loop-induction pins (ASM_PLAN_7 tranche 2): scratch registers
+	 *  holding a loop-carried scalar for the bracket — entry-loaded
+	 *  before the header, exit-stored after the loop. */
+	inds: {
+		reg: string;
+		name: string;
+		offset: number;
+		type_name: string;
 	}[];
 }
 
@@ -178,7 +199,8 @@ export function region_pool_enter(
 	if (!entry) return null;
 	const has_pins = entry.pins.length > 0 && entry.receivers.length > 0;
 	const has_vars = (entry.vars?.length ?? 0) > 0;
-	if (!has_pins && !has_vars) return null;
+	const has_inds = (entry.inds?.length ?? 0) > 0;
+	if (!has_pins && !has_vars && !has_inds) return null;
 
 	// A register bound at EMIT time (loop promotion claims install into
 	// register_allocations as scopes open — the plan's occupant map can't
@@ -310,9 +332,51 @@ export function region_pool_enter(
 		);
 		leases.push({ reg: v.reg, displaced: resolved, had_claim, folds: [] });
 	}
-	if (leases.length === 0) return null;
-	status.region_preseed = { node, entries, vars: var_bindings };
-	return { leases };
+	// Loop inductions (ASM_PLAN_7 tranche 2): scratch-pinned loop-carried
+	// scalars. The entry load seeds the register with the pre-loop value;
+	// the loop builder binds the name for the bracket (after its snapshot
+	// — the exit restore drops it); the exit store-back publishes the
+	// final value. An enclosing loop's promotion (or the function plan)
+	// already holding the name wins instead: its bracket keeps every
+	// access coherent through its own register, and entry-loading the
+	// stale slot here would corrupt it (the edigits receipt's shape).
+	const ind_bindings: { name: string; reg: string }[] = [];
+	const ind_leases: RegionLease["inds"] = [];
+	// Scratch regs holding live data-cache entries are never borrowed
+	// (the pin block evicts its own; a fallback choice below must steer
+	// around everyone else's).
+	const cached_regs = new Set(status.buffer_data_cache?.values() ?? []);
+	const taken_ind_regs = new Set<string>();
+	for (const ind of entry.inds ?? []) {
+		if (status.register_allocations?.get(ind.name)) continue;
+		const offset = status.stack_offsets?.get(ind.name);
+		if (offset === undefined) continue;
+		// The planned register first, then any free scratch register: the
+		// plan's scan proves this loop's emission never touches ANY of
+		// x4–x8 (see inline_call_scratch_safe), so fallback within the set
+		// is sound — a nested bracket's holds refuse via region_pinned,
+		// and the worst case is a missed pin, never a miscompile. (The
+		// try_count/pi shape: the outer induction keeps x8, the hotter
+		// inner one falls back to x7 — both win.)
+		let chosen: string | null = null;
+		for (const reg of [ind.reg, ...NIR_SCRATCH_X.filter((r) => r !== ind.reg)]) {
+			if (taken_ind_regs.has(reg)) continue;
+			if (cached_regs.has(reg)) continue;
+			if (!pin_borrowable(status, { reg, dead: ind.dead })) continue;
+			chosen = reg;
+			break;
+		}
+		if (!chosen) continue;
+		emit_promoted_load(status, chosen, offset, ind.type_name);
+		if (!status.region_pinned) status.region_pinned = new Map();
+		status.region_pinned.set(chosen, (status.region_pinned.get(chosen) ?? 0) + 1);
+		ind_bindings.push({ name: ind.name, reg: chosen });
+		ind_leases.push({ reg: chosen, name: ind.name, offset, type_name: ind.type_name });
+		taken_ind_regs.add(chosen);
+	}
+	if (leases.length === 0 && ind_leases.length === 0) return null;
+	status.region_preseed = { node, entries, vars: var_bindings, inds: ind_bindings };
+	return { leases, inds: ind_leases };
 }
 
 /**
@@ -355,6 +419,18 @@ export function region_pool_exit(status: BuildStatus, lease: RegionLease | null)
 			if (fd <= 0) status.region_pinned?.delete(fr);
 			else status.region_pinned?.set(fr, fd);
 		}
+	}
+	// Induction store-backs (ASM_PLAN_7 tranche 2): the register still
+	// holds the loop's final value — the builder's own promoted
+	// store-backs above touched only other registers (region_pinned
+	// keeps every claimant off this one), and the binding the body used
+	// was already dropped by the builder's exit restore. Width-aware: a
+	// full-width str into a sub-word slot would clobber its neighbors.
+	for (const ind of lease.inds) {
+		emit_promoted_store(status, ind.reg, ind.offset, ind.type_name);
+		const depth = (status.region_pinned?.get(ind.reg) ?? 1) - 1;
+		if (depth <= 0) status.region_pinned?.delete(ind.reg);
+		else status.region_pinned?.set(ind.reg, depth);
 	}
 	status.region_preseed = undefined;
 }

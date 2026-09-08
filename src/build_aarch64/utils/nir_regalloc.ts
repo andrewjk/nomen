@@ -195,6 +195,39 @@ function marshalling_accessor(name: string): boolean {
 	return BUFFER_PIN_ACCESSORS.has(name) || RAW_STABLE_ACCESSORS.has(name);
 }
 
+/**
+ * A statement's pinned-accessor receiver roots (plus the raw stable
+ * family — BigInt get/set/get_at/set_at/data_ptr on a BigInt-typed
+ * receiver — whose may-defs are likewise marshalling, never a rewire).
+ * A root-def is the accessor's own marshalling ONLY in an eval/declare
+ * whose tree holds that accessor; an ASSIGN defining the root can rewire
+ * the pinned field itself (see the region walk's roots_refused rule).
+ */
+function statement_marshalling_roots(node: unknown): Set<string> {
+	const own_roots = new Set<string>();
+	const seen = new Set<unknown>();
+	const scan_own = (n: unknown): void => {
+		if (!n || typeof n !== "object" || seen.has(n)) return;
+		seen.add(n);
+		if (Array.isArray(n)) {
+			for (const e of n) scan_own(e);
+			return;
+		}
+		if (typeof (n as { node_type?: string }).node_type !== "string") return;
+		const a = n as AccessNode;
+		const call = a.access;
+		if (call && call.node_type === "access_func" && marshalling_accessor(call.name)) {
+			if (BUFFER_PIN_ACCESSORS.has(call.name) || receiver_is_bigint(a.target)) {
+				const key = plain_or_field_key(a.target);
+				if (key) own_roots.add(key.split(".")[0]);
+			}
+		}
+		for (const v of Object.values(n)) scan_own(v);
+	};
+	scan_own(node);
+	return own_roots;
+}
+
 /** The receiver key a buffer_cache_key pin would take: a plain name or
  *  exactly one field hop off a name (deeper chains and exotic receivers
  *  return null — no pin). */
@@ -328,6 +361,17 @@ export interface NirRegisterPlan {
 			key?: string;
 			type_name: string;
 			displaced: { name: string; key: string; type_name: string }[];
+			dead: string[];
+		}[];
+		/** Loop inductions (ASM_PLAN_7 tranche 2): loop-carried scalars the
+		 *  region bracket pins into scratch registers (entry load, exit
+		 *  store-back) — the pool-exhausted remainder emit-time loop
+		 *  promotion cannot reach. Plain uniquely-declared names only; the
+		 *  emitter binds each by name for the bracket. */
+		inds: {
+			reg: string;
+			name: string;
+			type_name: string;
 			dead: string[];
 		}[];
 		receivers: { key: string; node: BaseNode; call: BaseNode }[];
@@ -1180,6 +1224,13 @@ export function plan_nir_registers(
 			displaced: { name: string; key: string; type_name: string }[];
 			dead: string[];
 		}[];
+		/** Loop inductions (ASM_PLAN_7 tranche 2) — see NirRegisterPlan. */
+		inds: {
+			reg: string;
+			name: string;
+			type_name: string;
+			dead: string[];
+		}[];
 		receivers: { key: string; node: BaseNode; call: BaseNode }[];
 	}[] = [];
 	/** Scratch candidates (ASM_PLAN_6): pool-exhausted call-free loops whose
@@ -1192,6 +1243,10 @@ export function plan_nir_registers(
 		receiver_count: number;
 		receiver_folds: Map<string, { base: string; reg: string }[]>;
 		receivers: { key: string; node: BaseNode; call: BaseNode }[];
+		/** Loop inductions (ASM_PLAN_7 tranche 2): scratch registers are
+		 *  assigned at push time (after the receiver pins and fold regs);
+		 *  the resolution below passes them through with the pins. */
+		inds: { reg: string; name: string; type_name: string; dead: string[] }[];
 	}[] = [];
 	if (region_pool_enabled()) {
 		const reg_occupants = new Map<string, string[]>();
@@ -1364,25 +1419,7 @@ export function plan_nir_registers(
 					// raw stable family — BigInt get/set/get_at/set_at/data_ptr
 					// on a BigInt-typed receiver — whose may-defs are likewise
 					// marshalling, never a rewire).
-					const own_roots = new Set<string>();
-					const scan_own = (n: unknown): void => {
-						if (!n || typeof n !== "object" || roots_refused.has("")) return;
-						if (Array.isArray(n)) {
-							for (const e of n) scan_own(e);
-							return;
-						}
-						if (typeof (n as { node_type?: string }).node_type !== "string") return;
-						const a = n as AccessNode;
-						const call = a.access;
-						if (call && call.node_type === "access_func" && marshalling_accessor(call.name)) {
-							if (BUFFER_PIN_ACCESSORS.has(call.name) || receiver_is_bigint(a.target)) {
-								const key = plain_or_field_key(a.target);
-								if (key) own_roots.add(key.split(".")[0]);
-							}
-						}
-						for (const v of Object.values(n)) scan_own(v);
-					};
-					scan_own(s.node);
+					const own_roots = statement_marshalling_roots(s.node);
 					for (const d of s.defs) {
 						loop_writes.add(d);
 						const R = d.split(".")[0];
@@ -1483,7 +1520,248 @@ export function plan_nir_registers(
 				}
 				for (const v of Object.values(w)) scratch_walk(v);
 			};
-			if (receivers.size > 0) {
+			// Loop inductions (ASM_PLAN_7 tranche 2): scalar names WRITTEN
+			// inside the region AND live into the header (loop-carried —
+			// the pre-loop definition dominates, the latch rewrites it),
+			// read in the region, with no function-wide register. Emit-time
+			// loop promotion already registerizes these when a pool
+			// register is free (its accumulator rule admits every
+			// written-and-read loop scalar); the region bracket covers the
+			// pool-exhausted remainder via scratch (entry load, exit
+			// store-back, region_pinned) — the pidigits `pi` receipt (6
+			// slot ops/iteration in the D3 q_hat loop).
+			//
+			// Single plain names only (site-keyed/multi-declared sources
+			// skip — one bracket-wide binding cannot serve sibling scopes),
+			// and cross-boundary life only (some member block outside the
+			// region — the entry value exists): purely body-contained names
+			// stay with the vars path below. The same aliasing/ref/
+			// address-taken/machinery-temp exclusions the function-wide
+			// walk applies, plus the vars' traffic bar.
+			const ind_cands: {
+				key: string;
+				source: string;
+				reads: number;
+				weight: number;
+				type_name: string;
+			}[] = [];
+			{
+				const live_in = analysis.liveness.live_in[loop.header];
+				const seen_sources = new Set<string>();
+				for (const decl of traffic.decls) {
+					const key = decl.name;
+					const site = sites.get(key);
+					const source = site?.source ?? key;
+					if (source !== key) continue;
+					if (source.includes("@")) continue;
+					if (seen_sources.has(source)) continue;
+					if (allocs.has(key)) continue;
+					if (param_names.has(key)) continue;
+					if (excluded(key)) continue;
+					if (key.startsWith("_param_") || key.startsWith("_vn_")) continue;
+					if (traffic.ref_arg_names.has(key)) continue;
+					if (address_taken.has(key)) continue;
+					if (!is_clean_scalar_type({ name: decl.type_name, ...decl.modifiers })) continue;
+					if (ALL_FLOAT_TYPES.includes(decl.type_name)) continue;
+					if (!loop_writes.has(key)) continue;
+					if (!live_in?.has(key)) continue;
+					const members = analysis.block_members.get(key);
+					if (!members || members.size === 0) continue;
+					let contained = true;
+					for (const b of members) {
+						if (!region_blocks.has(b)) {
+							contained = false;
+							break;
+						}
+					}
+					if (contained) continue;
+					const r = traffic.variables.get(key);
+					if (!r || (r.reads < 2 && r.weighted_reads < LOOP_INVARIANT_MIN_WEIGHT)) continue;
+					seen_sources.add(source);
+					ind_cands.push({
+						key,
+						source,
+						reads: r.reads,
+						weight: r.weighted_reads,
+						type_name: decl.type_name,
+					});
+				}
+				ind_cands.sort((a, b) => b.weight - a.weight || b.reads - a.reads);
+			}
+			// Induction soundness (ASM_PLAN_7 tranche 2): scratch registers
+			// die on ANY call (args ride x0–x7), but three call sources are
+			// invisible to the refuse gate and the scratch scan above:
+			//  - struct operator calls (`s + "ab"` → `bl string_add`): an
+			//    `op` node the NIR models as call-free arithmetic;
+			//  - scope-exit destruction: heap-owning locals declared in the
+			//    loop are destroyed per iteration (`bl ..._destroy` + free)
+			//    with no statement modeling it;
+			//  - whole-value assigns to outer heap vars (`s = ...` frees the
+			//    old value; class reassignment destroys) — likewise
+			//    unflagged.
+			// The pin is therefore offered only into heap-free regions: no
+			// operator_func op, no string-typed traffic, no non-scalar
+			// in-region declare, and no foreign write to a non-scalar root
+			// (foreign = non-marshalling, mirroring the receiver walk
+			// above: accessor marshalling may-defs of the receiver path are
+			// the call's own setup, not cell writes). Pool receiver pins
+			// predate this proof and keep their own gates; the induction —
+			// often the ONLY scratch borrower in its loop (the string_concat
+			// hang receipt: the loop's `bl string_add`/`bl _free` clobbered
+			// the pinned induction) — must not be the first to trust an
+			// unproven bracket.
+			let ind_safe = true;
+			{
+				// Renamed-key → scalar type, for traffic touched in the
+				// region (declares first, then params).
+				const decl_type_of = new Map<string, { name?: string } & Record<string, unknown>>();
+				for (const decl of traffic.decls) {
+					if (!decl_type_of.has(decl.name)) {
+						decl_type_of.set(decl.name, { name: decl.type_name, ...decl.modifiers });
+					}
+				}
+				const param_type_of = new Map<string, Type>();
+				for (const param of func.params) param_type_of.set(param.name, param.type);
+				const type_of = (
+					key: string,
+				):
+					| {
+							name?: string;
+							is_array?: boolean;
+							is_view?: boolean;
+							is_ref?: boolean;
+							is_nullable?: boolean;
+					  }
+					| undefined => {
+					const decl = decl_type_of.get(key);
+					if (decl)
+						return {
+							name: decl.name,
+							is_array: decl.is_array as boolean | undefined,
+							is_view: decl.is_view as boolean | undefined,
+							is_ref: decl.is_ref as boolean | undefined,
+							is_nullable: decl.is_nullable as boolean | undefined,
+						};
+					return param_type_of.get(key) ?? undefined;
+				};
+				// Operator calls + non-scalar in-region declares, over the
+				// region's ASTs (parent/scope links skipped — the walk must
+				// stay inside the bracket).
+				const seen_nodes = new Set<unknown>();
+				const walk_region_ast = (n: unknown): void => {
+					if (!ind_safe || !n || typeof n !== "object" || seen_nodes.has(n)) return;
+					seen_nodes.add(n);
+					if (Array.isArray(n)) {
+						for (const e of n) walk_region_ast(e);
+						return;
+					}
+					if (typeof (n as { node_type?: string }).node_type !== "string") return;
+					const w = n as BaseNode & {
+						operator_func?: unknown;
+						type?: Type;
+					};
+					if (w.node_type === "op" && w.operator_func !== undefined && w.operator_func !== null) {
+						ind_safe = false;
+						return;
+					}
+					if (w.node_type === "declare") {
+						const t = w.type;
+						// Machinery temps (`_param_N` hoists, `_vn_N` temps)
+						// carry no declare type here; their initializers are
+						// still walked for operator calls below, their calls
+						// fold into the statement's has_call, and any heap
+						// value they ferry lands in a gated name (assign
+						// target, field, or call arg).
+						const dname = (w as { name?: unknown }).name;
+						if (
+							typeof dname === "string" &&
+							(dname.startsWith("_param_") || dname.startsWith("_vn_"))
+						) {
+							// fall through to the child walk below
+						} else if (!t || !is_clean_scalar_type(t)) {
+							ind_safe = false;
+							return;
+						}
+					}
+					for (const [k, v] of Object.entries(w)) {
+						if (k === "parent" || k === "scope") continue;
+						walk_region_ast(v);
+					}
+				};
+				// Touched keys (reads + defs, renamed space) for the
+				// string-traffic and foreign-write rules below.
+				const region_touch = new Set<string>();
+				for (const bId of region_blocks) {
+					if (!ind_safe) break;
+					const b = cfg.blocks[bId];
+					if (!b) continue;
+					for (const s of b.stmts) {
+						for (const r of s.reads) region_touch.add(r);
+						for (const d of s.defs) region_touch.add(d);
+						walk_region_ast(s.node);
+					}
+					if (b.term.t === "branch" || b.term.t === "return") {
+						for (const r of b.term.reads) region_touch.add(r);
+						if (b.term.t === "branch" && b.term.cond?.node) walk_region_ast(b.term.cond.node);
+						if (b.term.t === "return" && b.term.value?.node) walk_region_ast(b.term.value.node);
+					}
+				}
+				// String-typed traffic (plain keys; dotted reads are field
+				// loads — no calls — and dotted writes are priced below).
+				// Machinery temps (`_param_N` call-arg hoists, `_vn_N`
+				// value-numbering temps) are invisible here: their
+				// initializers ride the statement's `allocations` (walked
+				// for operator calls above) and their calls fold into the
+				// statement's has_call (the refuse gate) — a temp read
+				// itself never calls.
+				if (ind_safe) {
+					for (const key of region_touch) {
+						if (key.includes(".")) continue;
+						if (key.startsWith("_param_") || key.startsWith("_vn_")) continue;
+						if (type_of(key)?.name === "string") {
+							ind_safe = false;
+							break;
+						}
+					}
+				}
+				// Foreign writes: non-marshalling defs. Dotted ones are real
+				// field writes (may destroy/free the old heap field); plain
+				// ones must be known clean scalars (`self` excepted — method
+				// field stores emit no calls and self dies at function
+				// exit, outside every bracket; machinery temps excepted —
+				// see the string rule above).
+				if (ind_safe) {
+					for (const bId of region_blocks) {
+						if (!ind_safe) break;
+						const b = cfg.blocks[bId];
+						if (!b) continue;
+						for (const s of b.stmts) {
+							const roots = statement_marshalling_roots(s.node);
+							for (const d of s.defs) {
+								const root = d.split(".")[0];
+								if (s.op !== "assign" && roots.has(root)) continue;
+								if (d.includes(".")) {
+									ind_safe = false;
+									break;
+								}
+								if (root === "self") continue;
+								if (root.startsWith("_param_") || root.startsWith("_vn_")) continue;
+								const t = type_of(root);
+								if (!t || !is_clean_scalar_type(t)) {
+									ind_safe = false;
+									break;
+								}
+							}
+							if (!ind_safe) break;
+						}
+					}
+				}
+			}
+			// The scratch scan runs when EITHER receivers or (provably
+			// heap-free) induction candidates exist (tranche 2: an
+			// induction-only starved loop earns the same x4–x8 proof its
+			// receiver pins ride).
+			if (receivers.size > 0 || (ind_cands.length > 0 && ind_safe)) {
 				for (const bId of region_blocks) {
 					const b = cfg.blocks[bId];
 					if (!b) continue;
@@ -1558,16 +1836,35 @@ export function plan_nir_registers(
 				}
 			}
 			if (free_regs.length === 0) {
-				if (receivers.size === 0) continue;
+				if (receivers.size === 0 && (ind_cands.length === 0 || !ind_safe)) continue;
 				if (!scratch_ok) continue;
+				// Induction pins take the scratch registers left after the
+				// receiver pins and fold regs (hottest first); the pool
+				// path below assigns its own last-resort scratch inds the
+				// same way (from its fold offset). Unproven brackets
+				// (ind_safe false) take none.
+				const receiver_count = Math.min(receivers.size, 2);
+				const inds: { reg: string; name: string; type_name: string; dead: string[] }[] = [];
+				if (ind_safe) {
+					for (const c of ind_cands) {
+						if (receiver_count + fold_used + inds.length >= NIR_SCRATCH_X.length) break;
+						inds.push({
+							reg: NIR_SCRATCH_X[receiver_count + fold_used + inds.length],
+							name: c.source,
+							type_name: c.type_name,
+							dead: [],
+						});
+					}
+				}
 				scratch_pending.push({
 					node,
 					region_blocks,
-					receiver_count: Math.min(receivers.size, 2),
+					receiver_count,
 					receiver_folds,
 					receivers: [...receivers.entries()]
 						.map(([key, info]) => ({ key, node: info.node, call: info.call }))
 						.slice(0, 2),
+					inds,
 				});
 				continue;
 			}
@@ -1659,7 +1956,31 @@ export function plan_nir_registers(
 					});
 				}
 			}
-			if (pins.length === 0 && vars.length === 0) continue;
+			// Loop inductions (ASM_PLAN_7 tranche 2) on the pool path: the
+			// pool remainder (if any) stays with emit-time loop promotion
+			// — the established mechanism while pool regs are provably
+			// free — and the induction additionally takes a scratch
+			// register. The scratch borrow is never worse than today:
+			// where promotion would have registerized the induction
+			// anyway the traffic just moves from a pool reg to scratch,
+			// and where it could not (outranked, sharing-refused) the
+			// slot traffic disappears. Contention with nested brackets
+			// refuses at emit time (region_pinned) back to today's
+			// codegen. Scratch assignment starts after this entry's fold
+			// regs (pool-path folds already ride scratch[0..fold_used)).
+			const pool_inds: { reg: string; name: string; type_name: string; dead: string[] }[] = [];
+			if (scratch_ok && ind_safe) {
+				for (const c of ind_cands) {
+					if (fold_used + pool_inds.length >= NIR_SCRATCH_X.length) break;
+					pool_inds.push({
+						reg: NIR_SCRATCH_X[fold_used + pool_inds.length],
+						name: c.source,
+						type_name: c.type_name,
+						dead: [],
+					});
+				}
+			}
+			if (pins.length === 0 && vars.length === 0 && pool_inds.length === 0) continue;
 			// Borrowed callee-saved pins MUST ride the prologue/epilogue
 			// save/restore set, or the function destroys the CALLER's live
 			// value in them (the layout receipt: first_child's pin clobbered
@@ -1673,6 +1994,7 @@ export function plan_nir_registers(
 				node,
 				pins,
 				vars,
+				inds: pool_inds,
 				receivers: [...receivers.entries()]
 					.map(([key, info]) => ({ key, node: info.node, call: info.call }))
 					.slice(0, 2),
@@ -1682,11 +2004,15 @@ export function plan_nir_registers(
 		// strictly contains another candidate's DEFERS — the inner loop's
 		// builder snapshot-clears the pre-seeded cache, so an outer pin
 		// would buy the inner loop nothing; the hotter inner loop takes the
-		// register and the outer keeps today's no-entry behavior. Sibling
-		// candidates (disjoint regions) each borrow x8 around their own
-		// non-overlapping brackets — the emit-side `region_pinned` refcount
-		// protects the register while a bracket is open, and nothing
-		// restores a scratch pin (no displaced occupants, no ABI role).
+		// register and the outer keeps today's no-entry behavior. (An outer
+		// induction pin WOULD survive the inner bracket — its binding
+		// restores with the snapshot — but it shares the entry's fate for
+		// one discipline: hotter-inner-wins keeps the static register
+		// assignment collision-free.) Sibling candidates (disjoint regions)
+		// each borrow x8 around their own non-overlapping brackets — the
+		// emit-side `region_pinned` refcount protects the register while a
+		// bracket is open, and nothing restores a scratch pin (no displaced
+		// occupants, no ABI role).
 		for (const sp of scratch_pending) {
 			const contained = scratch_pending.some(
 				(o) =>
@@ -1701,8 +2027,8 @@ export function plan_nir_registers(
 				dead: [],
 				folds: sp.receiver_folds.get(sp.receivers[i]?.key) ?? [],
 			}));
-			if (pins.length === 0) continue;
-			region_free.push({ node: sp.node, pins, vars: [], receivers: sp.receivers });
+			if (pins.length === 0 && sp.inds.length === 0) continue;
+			region_free.push({ node: sp.node, pins, vars: [], inds: sp.inds, receivers: sp.receivers });
 		}
 	}
 	return {
@@ -1791,7 +2117,10 @@ export function seed_function_allocations(
 	// looks up this loop by its AST node — BigInt's Knuth-D loops are
 	// METHODS, planned here, not through build_function_node.
 	status.nir_region_free = new Map(
-		plan.region_free.map((e) => [e.node, { pins: e.pins, vars: e.vars, receivers: e.receivers }]),
+		plan.region_free.map((e) => [
+			e.node,
+			{ pins: e.pins, vars: e.vars, inds: e.inds, receivers: e.receivers },
+		]),
 	);
 	if (status.nir_region_free.size === 0) status.nir_region_free = undefined;
 	status.region_preseed = undefined;

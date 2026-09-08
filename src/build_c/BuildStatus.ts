@@ -625,6 +625,16 @@ export default interface BuildStatus {
 				displaced: { name: string; key: string; type_name: string }[];
 				dead: string[];
 			}[];
+			/** Loop inductions (ASM_PLAN_7 tranche 2): loop-carried scalars
+			 *  the bracket pins into scratch registers — entry load before
+			 *  the header, name bound for the body, final value stored back
+			 *  after the loop. Plain uniquely-declared names only. */
+			inds?: {
+				reg: string;
+				name: string;
+				type_name: string;
+				dead: string[];
+			}[];
 			receivers: { key: string; node: BaseNode }[];
 		}
 	>;
@@ -633,7 +643,10 @@ export default interface BuildStatus {
 	 *  region-scoped source-variable bindings to install after the
 	 *  builder's snapshot: plain names go into `register_allocations`,
 	 *  site-keyed ones into `nir_site_allocs` (bind at their declare
-	 *  sites; the builder restores the table at bracket exit). */
+	 *  sites; the builder restores the table at bracket exit). `inds`
+	 *  are the loop-induction bindings (plain names into
+	 *  `register_allocations`; the exit store-back in region_pool_exit
+	 *  publishes the final value). */
 	region_preseed?: {
 		node: BaseNode;
 		entries: {
@@ -645,6 +658,7 @@ export default interface BuildStatus {
 			folds?: { base: string; reg: string }[];
 		}[];
 		vars?: { name: string; reg: string; key?: string }[];
+		inds?: { name: string; reg: string }[];
 	};
 	/**
 	 * aarch64-only (ASM_PLAN_5): OPEN region-pin depth per register (data

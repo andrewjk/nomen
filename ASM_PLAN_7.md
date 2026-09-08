@@ -214,3 +214,32 @@ Verification discipline unchanged: kill-switch A/B byte-identity (off
 arm), full suite green default-ON, bench matrix byte-identical across
 backends, interleaved best-of timing — and now a per-tranche CYCLE CENSUS
 against the clang disassembly of the same loop (the benchmark here).
+
+### Tranche 2 (2026-09-08): loop-induction pins — LANDED
+
+The plan computes per-loop induction candidates (written in the region +
+live into the header + cross-boundary life + traffic bar, plain
+uniquely-declared non-float scalars only) and assigns leftover scratch
+registers on both the pool path (after pins/folds) and the scratch path;
+the bracket entry-loads, binds, and store-backs with emit-time fallback
+across x4–x8 (a nested bracket holding the planned reg falls back, never
+miscompiles). The D3 `pi` loop goes 21 → 17 instructions/iteration with
+**zero** in-loop slot ops (`cmp x7, x23`, bare-induction
+`ldr x0, [x9, x7, lsl #3]`, latch `add x7, x7, #1`); the dead exit
+store-back is elided by frame-slot forwarding.
+
+One soundness receipt caught landing it: scratch registers die on ANY
+call, but struct operator calls (`s + "ab"` → `bl string_add`) and
+scope-exit destruction are invisible to the refuse gate and scratch scan
+— the first cut hung `string_concat` (suite-caught, both failing tests).
+Induction pins now require a heap-freedom proof (no `operator_func` op,
+no string-typed traffic, no non-scalar in-region declare, no foreign heap
+write); receiver pins keep their pre-existing gates.
+
+Result: full suite green default-ON (298 files / 2906 tests) with
+`test/induction_pin.test.ts` (shape, kill-switch, call/string refusals,
+behavioral both backends); new `test/bench_matrix.test.ts` holds 13 bench
+programs byte-identical across backends; pidigits n=4000 interleaved
+best-of 0.78 → **0.76 s** with byte-identical digits, spectral-norm and
+fannkuch neutral within noise. Remaining gap to clang's 9-instruction loop
+is causes 2–7 (derivation, staging movs, no unroll) — tranches 3–8.

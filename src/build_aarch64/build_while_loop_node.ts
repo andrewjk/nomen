@@ -104,6 +104,18 @@ export default function build_while_loop_node(
 			}
 			if (region_sites.size > 0) status.nir_site_allocs = region_sites;
 		}
+		// Loop inductions (ASM_PLAN_7 tranche 2): plain-name bindings into
+		// the scratch registers the bracket entry-loaded — installed here
+		// (after the snapshot above) so the exit restore drops them with
+		// the bracket, and early enough that loop promotion's used-set
+		// (below) steers around them. The exit store-back runs in
+		// region_pool_exit, after this builder returns.
+		if (preseed.inds?.length) {
+			if (!status.register_allocations) status.register_allocations = new Map();
+			for (const v of preseed.inds) {
+				status.register_allocations.set(v.name, v.reg);
+			}
+		}
 	}
 	// Fixed-array pointer cache (ASM_PLAN_3 tranche A): the induction may
 	// advance between iterations, so no pinned element address may cross a
