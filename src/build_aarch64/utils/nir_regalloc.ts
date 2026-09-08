@@ -1,5 +1,7 @@
 import type BuildStatus from "../../build_c/BuildStatus.ts";
+import type_from_value_node from "../../build_c/utils/type_from_value_node.ts";
 import { ALL_FLOAT_TYPES, SCALAR_TYPES } from "../../built_in_types.ts";
+import { mangled_label } from "../../check/utils/function_overload.ts";
 import {
 	analyze_dominance,
 	analyze_loops,
@@ -14,10 +16,17 @@ import { analyze_traffic } from "../../nir/traffic.ts";
 import { version_function } from "../../nir/version.ts";
 import type AccessNode from "../../nodes/AccessNode.ts";
 import type BaseNode from "../../nodes/BaseNode.ts";
+import type FunctionNode from "../../nodes/FunctionNode.ts";
 import type Type from "../../nodes/Type.ts";
+import type ValueNode from "../../nodes/ValueNode.ts";
+import { parse_raw_directives } from "../../raw_directives.ts";
 import { tree_is_call_free } from "../build_operation_node.ts";
 import { publish_slp_pairs, slp_pair_enabled, slp_pair_hints } from "../slp_pair.ts";
 import { value_number_loops } from "../value_number.ts";
+import {
+	owning_buffer_element_aarch64,
+	owning_buffer_is_string_elem_aarch64,
+} from "./owning_buffer_specialize.ts";
 import { emit_promoted_load } from "./stack_var.ts";
 
 /**
@@ -409,21 +418,35 @@ function is_clean_scalar_type(t: {
 
 /**
  * Nesting-complete loop body for region checks (ASM_PLAN_5 soundness hole:
- * the lru receipt). analyze_loops' latch pred-walk can MISS nested blocks —
- * the outer find-loop's set excluded its inner sh-loop, so an occupant live
- * in the nest (sh) tested dead in the outer and the bracket destroyed the
- * induction. The dominance + reachability characterization (header dominates
- * b, b reaches header) includes nested regions by construction; unioned with
- * the analyzed set it is the conservative body every region check must use
- * (union-only ever refuses more pins, never fewer).
+ * the lru receipt). The bracket's dynamic execution is NOT just the natural
+ * loop: a `break` path escapes the body without reaching the latch, yet its
+ * blocks execute INSIDE the bracket (the lru receipt: the sh-loop sits on
+ * the find-loop's break path — the outer borrow tested the sh-loop's
+ * induction dead and destroyed it mid-bracket). The region set is therefore
+ * the analyzed body PLUS a backward closure from the loop's exits that
+ * stops at the header and admits only header-dominated blocks:
  *
- * Exit-less nested loops (`while true` with no break, return-only nests)
- * never reach the outer header, so a second closure adds the analyzed
- * blocks of every other header dominated by this one that either reaches it
- * or has no exits. Headers past the loop (post-loop code) reach neither and
- * are excluded. `break`/`continue` target the innermost loop, so no nest
- * escapes outward except through return — return-only bodies with no latch
- * form no loop entry and remain a documented residual (FOLLOWUP).
+ * - break-path blocks are dominated by the header and flow to an exit —
+ *   folded (they execute during the bracket);
+ * - the exit blocks themselves stay OUT: they hold the post-loop
+ *   statements (real calls, receiver writes, x4–x8 use are all legal
+ *   there — the pin is dead). Names boundary-live at an exit are refused
+ *   transitively instead — analyze_ranges makes every name live-out of a
+ *   body block a member of that block, and the exit's live-in is the
+ *   union of its preds' live-out;
+ * - post-loop siblings of an ENCLOSING loop are dominated by this header
+ *   but flow away from the exits — never walked (the D4 receipt: the
+ *   previous dominance+reach characterization folded si2/D5 and the
+ *   `ensure` tail into the mi loop's region through the enclosing
+ *   back-edge, and a real call inside a folded sibling refused the mi
+ *   entry although the bracket never executes those blocks);
+ * - exit-less nested loops (`while true` with no break) never reach latch
+ *   or exit — folded explicitly from the loop list (dominated, no exits).
+ *
+ * Both region uses stay sound with the tight body: borrowed occupants
+ * round-trip through their home slot for exactly the bracket, and a
+ * receiver pin's pre-seeded cache dies with the bracket, so foreign writes
+ * outside it cannot corrupt it.
  */
 function region_loop_blocks(
 	cfg: FunctionCfg,
@@ -433,29 +456,126 @@ function region_loop_blocks(
 	all_loops: { header: number; blocks: Set<number>; exits: number[] }[],
 ): Set<number> {
 	const body = new Set<number>(analyzed);
-	// Blocks that can reach the header (backward pred walk, reachable only).
-	const reach_header = new Set<number>([header]);
-	const stack: number[] = [header];
+	// Backward closure from the exits: every header-dominated block that can
+	// reach an exit without re-passing the header executes during the
+	// bracket. Seeded with the exit-side successors of the body (so the
+	// closure covers break paths), but only their PREDS are added: the exit
+	// blocks themselves hold the POST-LOOP statements (real calls, receiver
+	// writes, x4–x8 use — all legal after the bracket; the pin is dead
+	// there), and names boundary-live at an exit are already refused
+	// transitively — analyze_ranges makes every name live-out of a body
+	// block a member of that block, and the exit's live-in is the union of
+	// its preds' live-out.
+	const stack: number[] = [];
+	for (const b of analyzed) {
+		for (const s of cfg.blocks[b].succs) {
+			if (!analyzed.has(s) && dominance.reachable[s]) stack.push(s);
+		}
+	}
 	while (stack.length > 0) {
 		const b = stack.pop()!;
 		for (const p of cfg.blocks[b].preds) {
-			if (dominance.reachable[p] && !reach_header.has(p)) {
-				reach_header.add(p);
-				stack.push(p);
-			}
+			if (!dominance.reachable[p] || body.has(p) || p === header) continue;
+			if (!dominance.dom[p]?.has(header)) continue;
+			body.add(p);
+			stack.push(p);
 		}
 	}
-	for (const b of reach_header) {
-		if (dominance.dom[b]?.has(header)) body.add(b);
-	}
+	// Exit-less nested loops: their blocks reach neither latch nor exit.
 	for (const other of all_loops) {
 		if (other.header === header) continue;
+		if (other.exits.length > 0) continue;
 		if (!dominance.dom[other.header]?.has(header)) continue;
-		if (other.exits.length === 0 || reach_header.has(other.header)) {
-			for (const b of other.blocks) body.add(b);
-		}
+		for (const b of other.blocks) body.add(b);
 	}
 	return body;
+}
+
+/**
+ * Scratch-set pool (ASM_PLAN_6): the caller-saved registers with NO role in
+ * any emission path a call-free loop can exercise. A call-free loop cannot
+ * marshal calls (args ride x0–x7, sret x8 — all call-side), the allocator's
+ * pools are x12–x15/x23–x28, loop promotion takes x16/x17, staging and tree
+ * eval stay in x0–x3/x9–x11, and the raw accessor bodies (Buffer load/store
+ * family, BigInt get/set/get_at/set_at/data_ptr, mul_wide_hi) confine
+ * themselves to x0–x3 — so x4–x8 appear nowhere. Offered x8-first; a loop
+ * proves eligibility with the scratch scan in the region section below
+ * (statement-shape gate + `inline_call_scratch_safe` per accessor call).
+ */
+export const NIR_SCRATCH_X = ["x8", "x7", "x6", "x5", "x4"];
+
+/**
+ * Comment-stripped aarch64 text of a raw-only method body, or null when the
+ * body has any non-raw statement, matched no aarch64 arm (a C/companion
+ * path emits a real call), or matched only a `aarch64_use_c` block.
+ */
+function raw_only_asm(func: FunctionNode, status: BuildStatus): string | null {
+	let asm = "";
+	let saw_arm = false;
+	for (const stmt of func.statements ?? []) {
+		if ((stmt as unknown as { node_type?: string }).node_type !== "raw") return null;
+		const text = (stmt as unknown as { value?: string }).value ?? "";
+		const { should_emit, code, is_c } = parse_raw_directives(text, "aarch64", status.platform);
+		if (!should_emit || !code) continue;
+		if (is_c) return null;
+		asm += (asm ? "\n" : "") + code;
+		saw_arm = true;
+	}
+	if (!saw_arm) return null;
+	return asm
+		.split("\n")
+		.map((l) => l.replace(/\/\/.*$/, ""))
+		.join("\n");
+}
+
+/**
+ * Whether ONE inline accessor call's expansion can never touch x4–x8. The
+ * expansion is either the raw body (spliced verbatim, with the x19→x0
+ * rewrite or an x19/x0-only prologue) or the buffer pipeline's indexed
+ * form (x0–x3 + x9) — both escape the scan only through the raw text.
+ * Refusals: non-raw bodies (arbitrary emission), >4 params (call-site
+ * staging reaches x4+), owning-element/string-element Buffers and
+ * Array_string accessors (their specializations emit x4/x20-pair
+ * sequences), and any body text that mentions a scratch register.
+ */
+function inline_call_scratch_safe(
+	target: BaseNode | undefined,
+	acc: { name?: string; mangled_name?: string },
+	status: BuildStatus | undefined,
+): boolean {
+	if (!status) return false;
+	let type_name = target ? type_from_value_node(target)?.name : undefined;
+	if (
+		!type_name &&
+		target?.node_type === "value" &&
+		(target as ValueNode).value === "self" &&
+		status.current_struct
+	) {
+		type_name = status.current_struct.name;
+	}
+	if (!type_name) return false;
+	const struct = status.structs.find((s) => s.name === type_name);
+	if (!struct) return false;
+	if (
+		owning_buffer_element_aarch64(struct, status) ||
+		owning_buffer_is_string_elem_aarch64(struct)
+	) {
+		return false;
+	}
+	const func = struct.functions.find(
+		(f) =>
+			f.is_inline &&
+			f.name === acc.name &&
+			(acc.mangled_name ? mangled_label(f, struct.name) === acc.mangled_name : true),
+	);
+	if (!func) return false;
+	if (struct.name === "Array_string" && ["at", "set", "first", "at_end"].includes(acc.name ?? "")) {
+		return false;
+	}
+	if (func.params.length > 4) return false;
+	const asm = raw_only_asm(func, status);
+	if (asm === null) return false;
+	return !/\bx[4-8]\b/.test(asm);
 }
 
 /**
@@ -921,6 +1041,16 @@ export function plan_nir_registers(
 		}[];
 		receivers: { key: string; node: BaseNode; call: BaseNode }[];
 	}[] = [];
+	/** Scratch candidates (ASM_PLAN_6): pool-exhausted call-free loops whose
+	 *  scan passed. Resolved to entries after the walk so an outer loop
+	 *  containing another candidate can defer its scratch registers to the
+	 *  inner (hotter) loop. */
+	const scratch_pending: {
+		node: BaseNode;
+		region_blocks: Set<number>;
+		receiver_count: number;
+		receivers: { key: string; node: BaseNode; call: BaseNode }[];
+	}[] = [];
 	if (region_pool_enabled()) {
 		const reg_occupants = new Map<string, string[]>();
 		for (const [name, reg] of allocs) {
@@ -1005,7 +1135,6 @@ export function plan_nir_registers(
 				if (occupants.length > 0 && displaced.length === 0) continue;
 				free_regs.push({ reg, displaced, dead });
 			}
-			if (free_regs.length === 0) continue;
 			// Loop receiver collection: Buffer fast-path accessor calls
 			// whose receiver is a plain name or one field hop — the shapes
 			// buffer_cache_key pins. Any real (non-call-free-refined) call
@@ -1107,6 +1236,86 @@ export function plan_nir_registers(
 			if (refuse) continue;
 			for (const key of [...receivers.keys()]) {
 				if (roots_refused.has(key)) receivers.delete(key);
+			}
+			// Scratch-set modeling (ASM_PLAN_6): a call-free loop whose
+			// standard pools are exhausted (every pool register holds a
+			// genuinely live occupant — the tranche-4 ceiling) can still pin
+			// its receivers, into the scratch registers x4–x8, which this
+			// loop's emission provably never touches. The scan walks the
+			// same nesting-complete region the receiver collection used
+			// (body blocks, condition terminators, update statements — the
+			// update rides the latch block, a header pred). One unsafe
+			// shape refuses the loop; the kill-switch is the shared
+			// region_pool gate.
+			if (free_regs.length === 0) {
+				if (receivers.size === 0) continue;
+				const scratch_seen = new Set<unknown>();
+				let scratch_ok = true;
+				const scratch_walk = (n: unknown): void => {
+					if (!n || typeof n !== "object" || !scratch_ok || scratch_seen.has(n)) return;
+					scratch_seen.add(n);
+					if (Array.isArray(n)) {
+						for (const e of n) scratch_walk(e);
+						return;
+					}
+					if (typeof (n as { node_type?: string }).node_type !== "string") return;
+					const w = n as BaseNode;
+					if (
+						w.node_type === "raw" ||
+						w.node_type === "func_call" ||
+						w.node_type === "spawn" ||
+						w.node_type === "break" ||
+						w.node_type === "continue" ||
+						w.node_type === "return" ||
+						w.node_type === "for" ||
+						w.node_type === "panic" ||
+						w.node_type === "todo" ||
+						w.node_type === "let" ||
+						w.node_type === "async_block"
+					) {
+						// Raw blocks are liveness barriers; func/spawn are
+						// real calls (dead here — the refuse gate — but kept
+						// as defense); break/continue/return emit invisible
+						// cleanup and exit paths the scan cannot see; fors
+						// materialize iterators (and the for-of element copy
+						// arm reads x8); panic/todo/let/async emit calls or
+						// late binding.
+						scratch_ok = false;
+						return;
+					}
+					if (w.node_type === "access") {
+						const acc = (w as AccessNode).access;
+						if (
+							acc &&
+							acc.node_type === "access_func" &&
+							!inline_call_scratch_safe(
+								(w as AccessNode).target,
+								acc as unknown as { name?: string; mangled_name?: string },
+								options?.status,
+							)
+						) {
+							scratch_ok = false;
+							return;
+						}
+					}
+					for (const v of Object.values(w)) scratch_walk(v);
+				};
+				for (const bId of region_blocks) {
+					const b = cfg.blocks[bId];
+					if (!b) continue;
+					for (const s of b.stmts) scratch_walk(s.node);
+					if (b.term.t === "branch" && b.term.cond?.node) scratch_walk(b.term.cond.node);
+				}
+				if (!scratch_ok) continue;
+				scratch_pending.push({
+					node,
+					region_blocks,
+					receiver_count: Math.min(receivers.size, 2),
+					receivers: [...receivers.entries()]
+						.map(([key, info]) => ({ key, node: info.node, call: info.call }))
+						.slice(0, 2),
+				});
+				continue;
 			}
 			// Partition: receiver pins first (pool order preserved), the
 			// remaining free registers host the loop's region-scoped source
@@ -1211,6 +1420,31 @@ export function plan_nir_registers(
 					.map(([key, info]) => ({ key, node: info.node, call: info.call }))
 					.slice(0, 2),
 			});
+		}
+		// Resolve the scratch candidates: an outer candidate whose region
+		// strictly contains another candidate's DEFERS — the inner loop's
+		// builder snapshot-clears the pre-seeded cache, so an outer pin
+		// would buy the inner loop nothing; the hotter inner loop takes the
+		// register and the outer keeps today's no-entry behavior. Sibling
+		// candidates (disjoint regions) each borrow x8 around their own
+		// non-overlapping brackets — the emit-side `region_pinned` refcount
+		// protects the register while a bracket is open, and nothing
+		// restores a scratch pin (no displaced occupants, no ABI role).
+		for (const sp of scratch_pending) {
+			const contained = scratch_pending.some(
+				(o) =>
+					o !== sp &&
+					o.region_blocks.size < sp.region_blocks.size &&
+					[...o.region_blocks].every((b) => sp.region_blocks.has(b)),
+			);
+			if (contained) continue;
+			const pins = NIR_SCRATCH_X.slice(0, sp.receiver_count).map((reg) => ({
+				reg,
+				displaced: [],
+				dead: [],
+			}));
+			if (pins.length === 0) continue;
+			region_free.push({ node: sp.node, pins, vars: [], receivers: sp.receivers });
 		}
 	}
 	return {

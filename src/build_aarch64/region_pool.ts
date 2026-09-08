@@ -19,6 +19,11 @@
  *   derivation emits nothing and the pointer is materialized once per
  *   LOOP, not once per iteration.
  *
+ * Scratch pins (ASM_PLAN_6): a call-free loop whose pools are exhausted
+ * borrows x4–x8 instead — registers this loop's emission provably never
+ * touches (plan-side scan) and no other claimant ever assigns. Nothing to
+ * spill, no claim bit, no restore: the pin dies with the bracket.
+ *
  * Soundness: the register is in `callee_saved_regs_used` for the whole
  * bracket, so every claimant (loop promotion, staging pins, tree pools,
  * inline expansions) refuses it; occupant liveness disjointness is from
@@ -34,7 +39,7 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import { emit_buffer_struct_addr } from "./build_access_node.ts";
-import { CALLER_SAVED_EXT_X, region_pool_enabled } from "./utils/nir_regalloc.ts";
+import { CALLER_SAVED_EXT_X, NIR_SCRATCH_X, region_pool_enabled } from "./utils/nir_regalloc.ts";
 import { allocate_stack_space } from "./utils/stack_var.ts";
 
 export interface RegionLease {
@@ -210,10 +215,18 @@ export function region_pool_enter(
 			if (!status.nir_caller_saved_claimed) status.nir_caller_saved_claimed = new Set();
 			had_claim = status.nir_caller_saved_claimed.has(reg);
 			status.nir_caller_saved_claimed.add(reg);
-		} else {
+		} else if (!NIR_SCRATCH_X.includes(reg)) {
 			if (!status.callee_saved_regs_used) status.callee_saved_regs_used = new Set();
 			status.callee_saved_regs_used.add(reg);
 		}
+		// Scratch pins (ASM_PLAN_6: x4–x8) take NEITHER claim set: they
+		// have no allocator role anywhere (no pool ever assigns them), the
+		// plan's scan proved this loop's emission cannot touch them, and
+		// the pin is dead after the bracket (the pre-seeded cache dies with
+		// the loop builder's snapshot restore) — so there is nothing to
+		// save, spill, or restore. The `region_pinned` refcount below is
+		// the only guard they need (nested brackets and loop promotion must
+		// not touch the register while a pin is open).
 		// Publish the active pin so loop promotion's sharing path refuses
 		// it: the interference adjacency cannot see the pin, and sharing a
 		// loop local onto it destroys one of them (the knucleotide

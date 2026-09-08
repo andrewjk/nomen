@@ -230,12 +230,92 @@ behavioral both backends). pidigits n=4000 interleaved best-of-7:
 `-O2`); fannkuch-redux 2.12 → **2.03 s** (−4%, the same staging leftovers
 pruned in its hot loops).
 
+### Tranche 5 (2026-09-08): scratch-set modeling at the NIR allocator level — LANDED
+
+The revisited tranche-1 idea (deferred when the survey pivoted to asm-level
+slot promotion): the pool model is too coarse for call-free loops. A
+call-free loop cannot marshal calls (args ride x0–x7, sret x8 — all
+call-side), the allocator's pools are x12–x15/x23–x28, loop promotion takes
+x16/x17, staging and tree eval stay in x0–x3/x9–x11, and the raw accessor
+bodies confine themselves to x0–x3 — **x4–x8 appear nowhere**. The planner
+now models them: a call-free loop whose pools are EXHAUSTED (every pool
+register holds a genuinely live occupant — the tranche-4 ceiling) earns
+SCRATCH PINS in `NIR_SCRATCH_X = [x8, x7, x6, x5, x4]` (x8 first), riding
+the existing region-bracket machinery with a dedicated scan.
+
+Plan side (`utils/nir_regalloc.ts`): the scratch branch fires only when
+`free_regs` is empty and receivers were collected; the eligibility scan
+walks the same nesting-complete region the receiver collection uses and
+refuses the loop on the first unsafe shape — raw blocks, func/spawn (dead
+under the call gate, kept as defense), break/continue/return (invisible
+cleanup and exit-path emission the scan cannot see), for (iterator
+materialization; the for-of element-copy arm reads x8), panic/todo/let/
+async_block — and every inline accessor call must resolve to a raw-only
+method whose comment-stripped aarch64 text never mentions x4–x8, with ≤4
+params (call-site staging reaches x4+). Owning-element/string-element
+Buffers and Array_string accessors refuse outright (their specializations
+emit x4/x20-pair sequences over the raw bodies). Nested scratch candidates
+defer: an outer candidate whose region strictly contains another candidate's
+yields the register to the inner (hotter) loop — the inner builder
+snapshot-clears the pre-seeded cache, so an outer pin would buy it nothing.
+Kill-switch shared with `region_pool_enabled`.
+
+Emit side (`region_pool.ts`): scratch pins take NEITHER claim set — no
+`callee_saved_regs_used` (no prologue save: no pool ever assigns x4–x8, and
+the pin is dead after the bracket), no `nir_caller_saved_claimed`;
+`region_pinned` remains the only guard (nested brackets and promotion's
+sharing path must not touch the register while a pin is open). Nothing to
+spill, no exit restore.
+
+Two receipts caught landing it:
+
+1. **The sibling-fold refusal (mi/si2 got no entries at all).**
+   `region_loop_blocks`' exit-less-nest closure folded every dominated loop
+   whose header REACHES this header — but any later sibling inside the same
+   enclosing loop reaches it through the enclosing back-edge, so si2/D5 and
+   the `ensure` tail folded into the mi loop's region and a real call
+   inside a folded sibling refused the mi entry although the bracket never
+   executes those blocks. Fix: region = natural loop ∪ break-path closure
+   ∪ dominated exit-less nests (below).
+2. **The break-path closure (the lru receipt, correctly characterized).**
+   The shipped closure was over-conservative (it folded post-loop siblings
+   too); the naive tightening (natural loop + exit-less nests only)
+   segfaulted lru immediately: the sh-loop sits on the find-loop's BREAK
+   path — blocks that escape the body without reaching the latch, yet
+   execute INSIDE the bracket. The correct set: analyzed body ∪ backward
+   closure from the exits (stopping at the header, header-dominated blocks
+   only) ∪ dominated exit-less nests. The exit blocks themselves stay OUT
+   (they hold post-loop statements — real calls, x4–x8 use; names
+   boundary-live there are already refused transitively via live-out
+   membership of their body preds). The closure change ALSO un-blocked a
+   pool pin for the mi loop (its region shrank past si2/D5's genuinely-live
+   occupants), so the D4-multiply loop now pins through the ordinary pool
+   path.
+
+Result: div_to carries 9 region brackets (D1-si ×2, D3 pi/try_count, cmp_i,
+D4-mi, D4-si2, D5-ai, add_carry) plus the asm-level tranches; the D4-multiply
+loop reads its receiver through pin x15 at **15 instructions/iteration** (25
+at the arc's start), and the D4-subtract loop takes the SCRATCH pin x8 with
+both accesses base-folded through x17. Bench matrix byte-identical across
+backends (pidigits, edigits, fannkuch, lru, spectral-norm, binarytrees,
+mandelbrot, nsieve, nbody, merkletrees, knucleotide); full suite green
+default-ON (292 files / 2841 tests) with `test/scratch_pool.test.ts`
+(exhausted-shape pin, raw-body-touch refusal, kill-switch, behavioral both
+backends, break-path behavioral). pidigits n=4000 interleaved best-of-7:
+neutral within noise (medians 0.52 → 0.51 vs HEAD; the D4 pins remove
+2 instructions/iteration while the widened bracket set adds preheader
+work elsewhere). The tranche's deliverable is the mechanism: the allocator
+now models x4–x8, which is the precondition tranche 3 (base-folded
+addressing) deferred for.
+
 ## State
 
 Tranches 1–2 landed and tranche 4 landed (default ON, suite green, matrix
 byte-identical, pidigits 0.64 → **0.50** across the ASM_PLAN_5+6 arc;
-tranche 3 deferred below the noise floor). The D4 census closes: of the
-original 25 instructions/iteration, the derivation (2), the base slot load
-(1), the carry slot round-trips (si2) and the five dead staging movs are
-gone; what remains is essential compute, the accessor marshaling the raw
-bodies genuinely need, and the flag-form carry.
+tranche 3 deferred below the noise floor). Tranche 5 landed the scratch-set
+model (x4–x8) at the NIR allocator level with the corrected region
+characterization. The D4 census closes: of the original 25
+instructions/iteration, the derivation (2), the base slot load (1), the
+carry slot round-trips (si2) and the five dead staging movs are gone; what
+remains is essential compute, the accessor marshaling the raw bodies
+genuinely need, and the flag-form carry.
