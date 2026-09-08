@@ -243,3 +243,34 @@ programs byte-identical across backends; pidigits n=4000 interleaved
 best-of 0.78 → **0.76 s** with byte-identical digits, spectral-norm and
 fannkuch neutral within noise. Remaining gap to clang's 9-instruction loop
 is causes 2–7 (derivation, staging movs, no unroll) — tranches 3–8.
+
+### Tranche 3 (2026-09-09): scratch-pool receiver hoists — LANDED
+
+The plan now publishes each loop's scratch-scan verdict (`scratch_ok`) on
+its region entry; when `pin_borrowable` refuses a planned pool pin at
+emission time — the plan cannot see open brackets, so the enclosing
+loop's pin on the same register is invisible to it — the bracket draws
+the receiver hoist from NIR_SCRATCH_X under that verdict instead (same
+emit-time-fallback discipline the tranche-2 inductions use, with the
+same soundness spine: no displaced spills, no claim bits, `region_pinned`
+refcount released at exit, fold registers pre-reserved so a fallback
+never collides with a fold preload). Kill-switch:
+`set_scratch_hoist_enabled(false)` — the off arm is byte-identical to the
+pre-tranche build.
+
+The spectral-norm receipt, concretely: `eval_a_times_u`'s j-loop planned
+x27 (the function-wide occupant is dead in the j-loop), but the i-loop's
+open bracket held x27 for `u.data`, so the pin died and the body paid
+`mov x9, x20; ldr x9, [x9, #8]` every iteration. After the fallback the
+derivation rides the preheader (`mov x8, x9`) and the body indexes
+`ldr d0, [x8, x24, lsl #3]` directly — 2 of ~26 in-loop instructions
+gone, and with them the per-iteration receiver re-derivation (cause 9 /
+cause 3's starved shape).
+
+Result: full suite green default-ON (301 files / 2937 tests) with
+`test/scratch_hoist.test.ts` (shape, kill-switch off-arm byte-identity,
+real-call refusal, behavioral both backends); bench matrix
+byte-identical; spectral-norm n=4000 interleaved best-of 1.28 → **1.25 s**
+(n=1500 unchanged at the 0.18 s fdiv-latency floor), pidigits n=4000 and
+fannkuch n=11 neutral. Remaining gap to clang is causes 1–2 (partly
+addressed by tranche 1) and 4–8 — tranches 4–8.

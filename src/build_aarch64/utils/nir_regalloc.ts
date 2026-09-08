@@ -375,6 +375,10 @@ export interface NirRegisterPlan {
 			dead: string[];
 		}[];
 		receivers: { key: string; node: BaseNode; call: BaseNode }[];
+		/** The scratch-set scan verdict for this loop's region (see the
+		 *  region_free type on the plan function): the emitter may draw an
+		 *  emit-time fallback receiver hoist from NIR_SCRATCH_X under it. */
+		scratch_ok: boolean;
 	}[];
 }
 
@@ -1232,6 +1236,13 @@ export function plan_nir_registers(
 			dead: string[];
 		}[];
 		receivers: { key: string; node: BaseNode; call: BaseNode }[];
+		/** The scratch-set scan verdict for this loop's region (statement
+		 *  shapes + per-accessor inline_call_scratch_safe): the loop's
+		 *  emission provably never touches x4–x8. Published so the emitter
+		 *  can draw an emit-time fallback receiver hoist from NIR_SCRATCH_X
+		 *  when a planned pin register is refused (tranche 3). Always true
+		 *  for scratch-path entries (their resolution gates on it). */
+		scratch_ok: boolean;
 	}[] = [];
 	/** Scratch candidates (ASM_PLAN_6): pool-exhausted call-free loops whose
 	 *  scan passed. Resolved to entries after the walk so an outer loop
@@ -1998,6 +2009,7 @@ export function plan_nir_registers(
 				receivers: [...receivers.entries()]
 					.map(([key, info]) => ({ key, node: info.node, call: info.call }))
 					.slice(0, 2),
+				scratch_ok,
 			});
 		}
 		// Resolve the scratch candidates: an outer candidate whose region
@@ -2028,7 +2040,14 @@ export function plan_nir_registers(
 				folds: sp.receiver_folds.get(sp.receivers[i]?.key) ?? [],
 			}));
 			if (pins.length === 0 && sp.inds.length === 0) continue;
-			region_free.push({ node: sp.node, pins, vars: [], inds: sp.inds, receivers: sp.receivers });
+			region_free.push({
+				node: sp.node,
+				pins,
+				vars: [],
+				inds: sp.inds,
+				receivers: sp.receivers,
+				scratch_ok: true,
+			});
 		}
 	}
 	return {
@@ -2119,7 +2138,13 @@ export function seed_function_allocations(
 	status.nir_region_free = new Map(
 		plan.region_free.map((e) => [
 			e.node,
-			{ pins: e.pins, vars: e.vars, inds: e.inds, receivers: e.receivers },
+			{
+				pins: e.pins,
+				vars: e.vars,
+				inds: e.inds,
+				receivers: e.receivers,
+				scratch_ok: e.scratch_ok,
+			},
 		]),
 	);
 	if (status.nir_region_free.size === 0) status.nir_region_free = undefined;

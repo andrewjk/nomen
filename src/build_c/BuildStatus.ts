@@ -644,6 +644,13 @@ export default interface BuildStatus {
 				dead: string[];
 			}[];
 			receivers: { key: string; node: BaseNode }[];
+			/** The plan's scratch-set scan verdict for this loop's region
+			 *  (ASM_PLAN_7 tranche 3): the loop's emission provably never
+			 *  touches x4–x8. When an emitter-side event refuses a planned
+			 *  pin register (an enclosing bracket's hold — invisible to the
+			 *  plan), the bracket may draw the receiver hoist from
+			 *  NIR_SCRATCH_X under this verdict. */
+			scratch_ok?: boolean;
 		}
 	>;
 	/** Pending region pre-seed for the loop builder to apply after its

@@ -69,14 +69,79 @@ export interface RegionLease {
 		folds: string[];
 	}[];
 	/** Loop-induction pins (ASM_PLAN_7 tranche 2): scratch registers
-	 *  holding a loop-carried scalar for the bracket — entry-loaded
-	 *  before the header, exit-stored after the loop. */
+	 *  holding a loop-carried scalar for the bracket — entry load before
+	 *  the header, name bound for the bracket, final value stored back
+	 *  after the loop. */
 	inds: {
 		reg: string;
 		name: string;
 		offset: number;
 		type_name: string;
 	}[];
+}
+
+/** Kill-switch for the scratch-pool receiver hoists (ASM_PLAN_7 tranche 3,
+ *  default ON; OFF restores pool-pin-only bracket behavior — byte-identical
+ *  output). Separate from the shared region-pool switch so the tranche's
+ *  A/B arm isolates exactly the emit-time fallback. */
+let scratch_hoist_on = true;
+
+export function scratch_hoist_enabled(): boolean {
+	return scratch_hoist_on;
+}
+
+export function set_scratch_hoist_enabled(enabled: boolean): void {
+	scratch_hoist_on = enabled;
+}
+
+/**
+ * Pick a scratch register (x8 first) for a refused pin's receiver hoist.
+ * The plan's scan verdict (`entry.scratch_ok`) already proved this loop's
+ * emission never touches x4–x8; the choice here only steers around every
+ * OTHER kind of hold: this entry's own fold registers (preloading a fold
+ * from its pin would destroy a hoisted pointer), open brackets'
+ * `region_pinned` holds, live data-cache/array-pin entries, and — defense
+ * in depth, since no allocator ever assigns x4–x8 — current
+ * `register_allocations` bindings. Returns null when every scratch
+ * register is spoken for (a missed pin, never a miscompile).
+ */
+function choose_scratch_fallback(status: BuildStatus, taken: Set<string>): string | null {
+	const cached = new Set(status.buffer_data_cache?.values() ?? []);
+	for (const reg of NIR_SCRATCH_X) {
+		if (taken.has(reg)) continue;
+		if (status.region_pinned?.get(reg)) continue;
+		if (cached.has(reg)) continue;
+		if (status.buffer_base_cache) {
+			let hit = false;
+			for (const v of status.buffer_base_cache.values()) {
+				if (v.baseReg === reg || v.dataReg === reg) {
+					hit = true;
+					break;
+				}
+			}
+			if (hit) continue;
+		}
+		if (status.array_ptr_cache) {
+			let hit = false;
+			for (const r of status.array_ptr_cache.values()) {
+				if (r === reg) {
+					hit = true;
+					break;
+				}
+			}
+			if (hit) continue;
+		}
+		let bound = false;
+		for (const [, r] of status.register_allocations?.entries() ?? []) {
+			if (r === reg) {
+				bound = true;
+				break;
+			}
+		}
+		if (bound) continue;
+		return reg;
+	}
+	return null;
 }
 
 /**
@@ -212,6 +277,20 @@ export function region_pool_enter(
 	// live here — the per-pin dead set (not the bare binding) decides those.
 	const n = Math.min(entry.pins.length, entry.receivers.length);
 	const leases: RegionLease["leases"] = [];
+	// Scratch registers this entry already plans to hold: every pin's fold
+	// registers. The tranche-3 fallback draws from the same set and must
+	// never collide (preloading a fold from its pin would destroy a
+	// hoisted data pointer). Planned induction registers are NOT seeded —
+	// the ind assignment below skips the fallback's choices instead, and
+	// seeding them would refuse an ind its own planned register. Gated on
+	// the kill-switch so the OFF arm reserves nothing and stays
+	// byte-identical.
+	const taken_scratch = new Set<string>();
+	if (scratch_hoist_enabled()) {
+		for (const p of entry.pins) {
+			for (const f of p.folds ?? []) taken_scratch.add(f.reg);
+		}
+	}
 	const entries: {
 		key: string;
 		reg: string;
@@ -221,21 +300,45 @@ export function region_pool_enter(
 		const pin = entry.pins[i];
 		const receiver = entry.receivers[i];
 		const resolved = resolve_displaced(status, pin.displaced);
-		const reg = pin.reg;
-		if (!pin_borrowable(status, pin)) continue;
-		// The register must not already hold a cache entry (function-wide
-		// claims were checked at plan time; emission-time claims are
-		// evicted — the pointer is re-derived on the next miss).
-		if (status.buffer_data_cache) {
-			for (const [k, v] of [...status.buffer_data_cache]) {
-				if (v === reg) status.buffer_data_cache.delete(k);
+		let reg = pin.reg;
+		// Scratch-fallback pin (ASM_PLAN_7 tranche 3): the planned register
+		// is not borrowable at emission time — most often an ENCLOSING
+		// bracket's pin holds it, a state the plan cannot see (the
+		// spectral-norm receipt: the j-loop's planned x27 rode the i-loop's
+		// u pin, so the j-loop re-derived u.data every iteration). The
+		// scan verdict published with the entry proves this loop's
+		// emission never touches x4–x8 — no real call, no unsafe statement
+		// shape, every inline accessor confined to x0–x3 — so a scratch
+		// register holds the data pointer for the bracket instead: same
+		// derivation, nothing to spill, no claim bits, released with the
+		// bracket.
+		let scratch_fallback = false;
+		if (!pin_borrowable(status, pin)) {
+			const fallback =
+				entry.scratch_ok && scratch_hoist_enabled()
+					? choose_scratch_fallback(status, taken_scratch)
+					: null;
+			if (!fallback) continue;
+			reg = fallback;
+			scratch_fallback = true;
+			taken_scratch.add(fallback);
+		}
+		if (!scratch_fallback) {
+			// The register must not already hold a cache entry
+			// (function-wide claims were checked at plan time;
+			// emission-time claims are evicted — the pointer is re-derived
+			// on the next miss).
+			if (status.buffer_data_cache) {
+				for (const [k, v] of [...status.buffer_data_cache]) {
+					if (v === reg) status.buffer_data_cache.delete(k);
+				}
+			}
+			for (const d of resolved) {
+				status.code += `str ${reg}, [x29, #${d.slot}]\n`;
 			}
 		}
-		for (const d of resolved) {
-			status.code += `str ${reg}, [x29, #${d.slot}]\n`;
-		}
 		let had_claim = false;
-		if (CALLER_SAVED_EXT_X.includes(reg)) {
+		if (!scratch_fallback && CALLER_SAVED_EXT_X.includes(reg)) {
 			// Extension-pool pins are caller-saved: no prologue save (the
 			// entry spill + exit reload round-trips the displaced occupant
 			// within the function). Exclusion rides
@@ -245,7 +348,7 @@ export function region_pool_enter(
 			if (!status.nir_caller_saved_claimed) status.nir_caller_saved_claimed = new Set();
 			had_claim = status.nir_caller_saved_claimed.has(reg);
 			status.nir_caller_saved_claimed.add(reg);
-		} else if (!NIR_SCRATCH_X.includes(reg)) {
+		} else if (!scratch_fallback && !NIR_SCRATCH_X.includes(reg)) {
 			if (!status.callee_saved_regs_used) status.callee_saved_regs_used = new Set();
 			status.callee_saved_regs_used.add(reg);
 		}
@@ -292,7 +395,12 @@ export function region_pool_enter(
 			fold_regs.push(f.reg);
 		}
 		entries.push({ key: receiver.key, reg, folds: pin.folds ?? [] });
-		leases.push({ reg, displaced: resolved, had_claim, folds: fold_regs });
+		leases.push({
+			reg,
+			displaced: scratch_fallback ? [] : resolved,
+			had_claim,
+			folds: fold_regs,
+		});
 	}
 	// Region-scoped source variables: borrow their registers with the same
 	// displaced-occupant round-trip and claim bookkeeping, and publish the
@@ -361,6 +469,7 @@ export function region_pool_enter(
 		let chosen: string | null = null;
 		for (const reg of [ind.reg, ...NIR_SCRATCH_X.filter((r) => r !== ind.reg)]) {
 			if (taken_ind_regs.has(reg)) continue;
+			if (taken_scratch.has(reg)) continue;
 			if (cached_regs.has(reg)) continue;
 			if (!pin_borrowable(status, { reg, dead: ind.dead })) continue;
 			chosen = reg;

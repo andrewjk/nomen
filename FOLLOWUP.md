@@ -304,3 +304,22 @@ already in the slots the prologue spills them to), or have
 `asm_validator`/`lift_asm` reject a raw block that is not preceded only by
 prologue code, or document raw blocks as entry-only for aarch64. The same
 clobber class applies to any `if`/`while`/`match` body, not just `switch`.
+
+## `buffer_pipeline.ts` (ASM_PLAN_3 tranche K) is dead code
+
+Found while landing ASM_PLAN_7 tranche 3: the inline Buffer address
+pipeline never runs. `pipeline_on` initializes `false` and nothing in
+`src/` ever calls `set_buffer_pipeline_enabled(true)` — every
+`tryHoistBufferAddrs` invocation returns at the enable check
+(`NOMEN_PIPE_DBG=1` shows the `tryHoist` line and nothing else). The
+receiver data-pointer hoisting the pipeline was written for is actually
+performed by the region brackets (`region_pool.ts`, ASM_PLAN_5+) and the
+emit-time fallback added in tranche 3. Two consequences for the remaining
+ASM_PLAN_7 tranches:
+
+- Tranche 4 (constant rematerialization) and tranche 5 (stack-staging
+  elision) descriptions reference pipeline-adjacent behavior
+  (`buffer_base_cache` is likewise only ever populated by the dead
+  pipeline) — read those as "the region-bracket equivalents".
+- Either delete `buffer_pipeline.ts` + its BuildStatus fields, or wire
+  the enable switch, before it misleads another tranche.

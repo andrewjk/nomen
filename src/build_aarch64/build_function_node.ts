@@ -528,7 +528,13 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 			status.nir_region_free = new Map(
 				plan.region_free.map((e) => [
 					e.node,
-					{ pins: e.pins, vars: e.vars, inds: e.inds, receivers: e.receivers },
+					{
+						pins: e.pins,
+						vars: e.vars,
+						inds: e.inds,
+						receivers: e.receivers,
+						scratch_ok: e.scratch_ok,
+					},
 				]),
 			);
 			if (status.nir_region_free.size === 0) status.nir_region_free = undefined;
