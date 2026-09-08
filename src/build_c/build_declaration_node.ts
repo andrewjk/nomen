@@ -458,6 +458,18 @@ export default function build_declaration_node(
 			}
 		} else {
 			status.code += `${c_type(node.type.name)} ${safe_name}`;
+			// A no-initializer string local zero-initializes its pair: the
+			// reassign paths free the displaced `.ptr` eagerly, which must see
+			// NULL (a valid no-op free), never stack garbage.
+			if (
+				!node.value &&
+				!is_stack_array &&
+				node.type.name === "string" &&
+				!node.type.is_view &&
+				!node.type.is_array
+			) {
+				status.code += ` = {0, 0}`;
+			}
 		}
 		if (is_stack_array) {
 			status.code += `[`;

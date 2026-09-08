@@ -82,7 +82,7 @@ function clear_last_use_moves(root: BaseNode): number {
 }
 
 interface StampTarget {
-	node: DeclarationNode;
+	node: DeclarationNode | AssignmentNode;
 }
 
 function collect_stamps(root: BaseNode): StampTarget[] {
@@ -103,10 +103,14 @@ function collect_function_stamps(func: FunctionNode): StampTarget[] {
 	const param_names = new Set(func.params.map((p) => p.name));
 	for (const stmt of func.statements) walk_stmt(walk, stmt);
 	if (walk.has_raw) return [];
+	const func_label = func.label_name ?? func.name;
 	const out: StampTarget[] = [];
+	for (const assign of walk.assignments) {
+		if (classify(assign, walk, param_names, func_label)) out.push({ node: assign.node });
+	}
 	for (const decl of walk.declares) {
 		if (!decl.node) continue;
-		if (classify_declare(decl, walk, param_names, func.label_name ?? func.name)) {
+		if (classify_declare(decl, walk, param_names, func_label)) {
 			out.push({ node: decl.node });
 		}
 	}
@@ -286,6 +290,14 @@ function classify(
 	if (param_names.has(source)) return undefined; // params are not movable here
 	const decl = walk.declares.findLast((d) => d.name === source);
 	if (!decl || decl.declaration !== "var") return undefined; // consts are not movable
+	// A re-assignment (write) of the source beyond its own binding declare
+	// refuses the move: the backends' reassign paths free the displaced value,
+	// which would free the already-transferred block (C's moved_string_vars
+	// suppression is not consulted by the eager reassign free). Mirrors
+	// classify_declare's write_count check. (Every declare records one write —
+	// its own binding — so a plain `var t = …` counts exactly once.)
+	const source_write_count = walk.writes.filter((w) => w.name === source).length;
+	if (source_write_count > 1) return undefined;
 	// Owned string on both sides (checked trees carry stamped types).
 	const src_type = source_node.type;
 	if (!src_type || src_type.name !== "string" || src_type.is_view || src_type.is_array) {
@@ -330,9 +342,10 @@ function classify(
 
 /**
  * Declare-site classification: `var u = t` where t is an owned string local
- * never touched (read OR written) after the declare. This is the one shape
- * whose codegen still strdups on both backends (the plain `s = t` assignment
- * already transfers the pair).
+ * never touched (read OR written) after the declare. Together with the
+ * assignment classification above this covers both move-on-last-use shapes:
+ * plain `s = t` reassignment (value semantics would strdup) and the declare
+ * alias (`var u = t`).
  */
 function classify_declare(
 	decl: DeclareRecord,

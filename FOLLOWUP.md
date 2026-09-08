@@ -148,40 +148,83 @@ if it keeps biting.
   callee-saved registers (x19–x28, sp) or stack slots — x0–x18 are
   caller-saved and clobbered by the callee.
 
-## Plain string assignment aliases (value-semantics hole, both backends)
+## Plain string assignment aliases (value-semantics hole, both backends) — FIXED (2026-09-09)
 
 Found while landing STRING_PLAN tranche 4 (2026-09-06): `s = t` between
-two owned strings does NOT strdup on either backend — it pair-copies,
-frees the displaced target value, and leaves the heap block owned by
-the SOURCE (only the source frees at scope exit). The two variables
-alias the same bytes:
+two owned strings did NOT strdup on either backend — it pair-copied,
+freed the displaced target value, and left the heap block owned by
+the SOURCE (only the source freed at scope exit). The two variables
+aliased the same bytes:
 
 - aarch64 probe: `s = t` then a write through `ref s` (raw-body
   mutator, so no compile-time escape hatch involved) — BOTH `s` and
-  `t` print the mutation (`Xaaa`).
+  `t` printed the mutation (`Xaaa`).
 - C backend: `free(s.ptr); s = t;` struct assignment — same alias.
 
-String mutation is only reachable through `ref self` dispatch
-(`String.set`), so the hole needs a `ref` on the assignee after a
-plain var-to-var assign — narrow, but it violates the documented value
-semantics of assignment (MEMORY.md: strings are per-variable owned
-heap buffers; the language rejects plain `b = a` for owning STRUCTS
-for exactly this reason, yet allows it for strings with move
-semantics).
+Probing (2026-09-08, audit-mode harness) then showed the alias was
+observable WITHOUT any mutation or `ref` — the lifetime faces
+dangled on BOTH backends, plain reads included:
 
-Options when this is picked up:
+- **Cross-scope source death (UAF, plain read)**: `var string s`
+  outer, `var string t = 42.to_string()` + `s = t` inside an
+  `if`/loop body, `Console.write(s)` after the block → printed freed
+  memory (`\u0004`, the audit allocator's poison byte). The
+  accumulator idiom (`acc = part` with a loop-local source) was this
+  shape — the exact pattern tranche 4's gate receipt cites.
+- **Assignee escape via return (UAF)**: `s = t; return s` in a
+  heap-returning function → printed freed memory.
+- Same-scope `s = t` + reading both names was benign without
+  mutation.
 
-1. Restore value semantics: strdup on plain string assign (the
-   tranche-4 note's original assumption). Costs a strdup per var-var
-   assign; keeps every current valid program correct.
-2. Embrace move semantics: keep the transfer, mark the source moved
-   (zero its slot / moved set) so post-assign reads are compile
-   errors and the alias becomes unreachable. Aligns with how the
-   backends already treat it, but is a LANGUAGE change (spec the
-   assign-time move) and touches the checker's flow tracking.
+**Resolution (2026-09-09) — option 3: value semantics + move-on-last-use.**
 
-Not fixed in the tranche (out of scope; tranche 3's mutation scan
-keeps borrow positions isolated). Recorded for the semantic owner.
+- Plain `s = t` between owned strings now strdups an owned copy into
+  the assignee (the source keeps and frees its own bytes) in both
+  backends: aarch64 `emit_strdup_string` + `heap_strings.add(target)`
+  in the generic assign path; C `nomen_str_dup(src)` +
+  `heap_strings.add(target)` in the bare-RHS branch (no decl splice).
+  C's auto_free gained the `heap_strings` mark as a positive free
+  term, and no-initializer string locals zero their pair
+  (`= {0, 0}`) so the eager displaced-value free is always a valid
+  no-op.
+- `s = t` whose source is provably never read or written again
+  TRANSFERS the pair instead (no alloc): `stamp_last_use_moves` now
+  stamps assignments too (the assignment classifier in
+  `src/check/utils/last_use.ts` gained the write-after refusal the
+  declare classifier already had — required: the eager reassign free
+  would free a transferred block). aarch64 transfers via
+  `heap_strings.delete(source)` + target add; C via
+  `moved_string_vars.add(source)` + target mark, gated on
+  `string_var_owns_heap` (a literal/borrow-holding/moved source owns
+  nothing and must not have its free suppressed).
+- `scan_force_heap_strings` treats a bare-var string RHS as
+  heap-receiving (the target owns heap from the first such reassign,
+  so its literal initializer must be strdup'd and cleanup-registered)
+  and now walks match branches too.
+- Spec'd semantics unchanged: MEMORY.md already documented strings
+  as per-variable owned heap buffers; the backends now match it.
+  Regression pins: `test/string_assign_value_semantics.test.ts`
+  (cross-scope read, return escape, ref-mutation isolation, no-init
+  target, loop accumulator, transfer/read-after/kill-switch
+  emissions).
+
+**Residuals (narrow, recorded):**
+
+- A borrow-INITIALIZED assignee (`var string b = args.at(0)`, later
+  `b = t`) still takes the old alias path — the C reassign gate
+  excludes `string_borrow_vars` targets, and the borrow-assign path
+  spliced the decl. Cross-scope dangles of a _borrow_ remain
+  possible; fixing it needs borrow-var ownership restart (un-splice +
+  reclassification).
+- Explicit `s = mov t` keeps its pre-existing mov-transfer path —
+  excluded from both the value-copy and the last-use stamp.
+- The C move gate refuses bare-variable-initializer sources
+  (`var u = t; s = u` where the declare strdup'd u) — those sites
+  strdup instead of transferring. Sound; a missed move opportunity
+  only (the aarch64 gate, keyed on `heap_strings`, does catch it).
+
+Recorded as fixed for the semantic owner; the tranche-4/option-1/2/3
+analysis above is kept for context.
 
 ## Tranche-3 shelved pieces (measured, not shipped)
 

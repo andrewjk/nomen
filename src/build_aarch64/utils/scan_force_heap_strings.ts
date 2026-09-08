@@ -35,8 +35,17 @@ function visit(node: BaseNode | undefined, result: Set<string>, structs?: Struct
 	switch (node.node_type) {
 		case "assign": {
 			const a = node as AssignmentNode;
-			if (a.left_value.node_type === "value" && is_fresh_heap_string(a.right_value)) {
-				result.add((a.left_value as ValueNode).value);
+			if (a.left_value.node_type === "value") {
+				if (is_fresh_heap_string(a.right_value)) {
+					result.add((a.left_value as ValueNode).value);
+				} else if (!a.operator && is_owned_string_var_rhs(a.right_value)) {
+					// Plain `s = t` string assignment: value semantics strdups
+					// the source into an OWNED copy (or transfers an owned pair
+					// on last-use), so the target ends up heap-owning either
+					// way. Pre-mark it: the declare site heap-allocates the
+					// literal initializer and registers the scope-exit free.
+					result.add((a.left_value as ValueNode).value);
+				}
 			}
 			visit(a.right_value, result, structs);
 			break;
@@ -79,6 +88,17 @@ function visit(node: BaseNode | undefined, result: Set<string>, structs?: Struct
 			walk(n.else_branch?.statements, result, structs);
 			break;
 		}
+		case "match": {
+			const m = node as unknown as {
+				cases?: { branch?: { statements?: BaseNode[] } }[];
+				else_branch?: { statements?: BaseNode[] };
+			};
+			for (const c of m.cases ?? []) {
+				walk(c.branch?.statements, result, structs);
+			}
+			walk(m.else_branch?.statements, result, structs);
+			break;
+		}
 		default:
 			break;
 	}
@@ -97,4 +117,19 @@ function is_fresh_heap_string(node: BaseNode | undefined): boolean {
 		return (node as AccessNode).access.node_type === "access_func";
 	}
 	return false;
+}
+
+// A bare owned-string VARIABLE right-hand side (`s = t`, no explicit mov):
+// assignment value semantics strdup t into a copy the target owns. A bare
+// identifier only — literals (rodata stores stay raw), explicit moves
+// (`s = mov t`, handled by the mov transfer path), and view-typed sources
+// (non-owning pair stores) are excluded.
+function is_owned_string_var_rhs(node: BaseNode | undefined): boolean {
+	if (!node || node.node_type !== "value") return false;
+	const vn = node as ValueNode;
+	if (typeof vn.value !== "string" || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(vn.value)) return false;
+	if (vn.value === "true" || vn.value === "false" || vn.value === "null") return false;
+	if (vn.is_moved) return false;
+	const type = vn.type;
+	return !!type && type.name === "string" && !type.is_view && !type.is_array;
 }

@@ -279,6 +279,13 @@ LANDED (re-scoped tranche): declare-alias move-on-last-use.
   test/move_on_last_use.test.ts: the transfer, the single-owner free,
   read-after and write-after refusals, and the restoration).
 
+POST-TRANCHE RESOLUTION (2026-09-09): the plain-assignment alias the
+corrected receipt exposed was closed by restoring value semantics
+(`s = t` strdups) + consuming `classify()` for ASSIGNMENT move
+stamps (the transfer this tranche originally scoped). Full writeup
+and residuals in FOLLOWUP.md ("Plain string assignment aliases —
+FIXED"); pins in test/string_assign_value_semantics.test.ts.
+
 ### Standing invariants (every tranche)
 
 1. No regressions across the bench matrix, ±noise (regex-redux is the

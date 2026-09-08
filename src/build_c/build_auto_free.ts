@@ -162,6 +162,11 @@ export function free_scoped_declarations(
 			!is_borrowed_string &&
 			(dec_val_is_string_literal || dec_val_is_heap_string_var);
 		const is_normalized_join_string = !!status.string_join_owned_vars?.has(dec.name);
+		// Assignment value semantics: a plain `s = t` strdup'd (or transferred)
+		// an owned copy into the variable — it owns heap bytes regardless of
+		// what its declaration initializer classified as. Mirrors aarch64's
+		// heap_strings membership.
+		const is_heap_string_assign = !!status.heap_strings?.has(dec.name);
 		const dec_struct = status.structs.find((s) => s.name === dec.type.name);
 		const is_class_var = !!dec_struct?.is_class;
 		// A trait-typed local whose concrete storage is a class holds a
@@ -191,7 +196,8 @@ export function free_scoped_declarations(
 			(!dec.type.is_static ||
 				value_is_heap_string ||
 				was_strdup_string_var ||
-				is_normalized_join_string) &&
+				is_normalized_join_string ||
+				is_heap_string_assign) &&
 			dec.type.name === "string" &&
 			!dec.type.is_array
 		) {

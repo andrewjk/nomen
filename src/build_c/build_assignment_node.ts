@@ -2,6 +2,7 @@ import emit_field_overrides from "../build/emit_field_overrides.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import { is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import { is_string_borrow } from "../build_common/string_return_analysis.ts";
+import { move_on_last_use_enabled } from "../check/utils/last_use.ts";
 import type { NirExpr } from "../nir/nir.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
@@ -525,8 +526,18 @@ export default function build_assignment_node(
 				// RHS is a bare variable (alias). For classes, transfer
 				// ownership: remove the SOURCE from whichever scope frame holds
 				// it so it won't be freed at its scope exit (the LHS now owns
-				// it). For strings, remove the LHS so it won't be freed (string
-				// aliases don't own — the source does via its own copy).
+				// it). For strings this is ASSIGNMENT VALUE SEMANTICS: the LHS
+				// receives an owned copy of the source's bytes (the old alias
+				// lowering left the two variables sharing one heap block — the
+				// source's scope-exit free dangled the LHS, and writes through
+				// either name showed up in the other). The displaced old value
+				// was already freed above; the LHS's declaration stays
+				// registered and `heap_strings` marks it as owning so
+				// auto_free frees the copy at scope exit.
+				// Move-on-last-use: when the checker proved the source is
+				// never read or written again, transfer the pair instead and
+				// suppress the source's auto_free via moved_string_vars —
+				// exactly one owner frees the bytes.
 				if (lhs_is_class) {
 					// `a = b swap Box(0)`: `b`'s current value transfers to `a`,
 					// but `b` is revalidated with a fresh instance (the swap
@@ -536,9 +547,23 @@ export default function build_assignment_node(
 					if (!node.swap) {
 						splice_decl_from_c_scopes(status, (rhs as ValueNode).value);
 					}
-				} else {
-					// String: LHS is now an alias, remove it
-					if (lhs_decl) splice_decl_from_c_scopes(status, lhs_name);
+				} else if (should_value_copy_string_assign(node)) {
+					const src_value = rhs as ValueNode;
+					const src_can_move =
+						(node as AssignmentNode).last_use_move === true &&
+						move_on_last_use_enabled() &&
+						string_var_owns_heap(status, src_value.value);
+					status.code += `${lhs_name} = `;
+					if (src_can_move) {
+						if (!status.moved_string_vars) status.moved_string_vars = new Set();
+						status.moved_string_vars.add(src_value.value);
+						status.code += `${c_function_name(src_value.value)};\n`;
+					} else {
+						status.code += `nomen_str_dup(${c_function_name(src_value.value)});\n`;
+					}
+					if (!status.heap_strings) status.heap_strings = new Set();
+					status.heap_strings.add(lhs_name);
+					return;
 				}
 			}
 			// Fall through: the normal path emits `lhs = rhs`.
@@ -882,4 +907,63 @@ function is_self_method_call(node: AssignmentNode, lhs_name: string): boolean {
 		}
 	}
 	return false;
+}
+
+/**
+ * Whether this plain assignment is a bare owned-string variable RHS
+ * (`s = t`, no explicit mov, no swap): assignment value semantics apply —
+ * the target receives its own copy of the source's bytes. Literals (raw
+ * rodata stores), explicitly moved sources (`s = mov t`, owned by the mov
+ * transfer path), and view-typed sources (non-owning pair stores) are
+ * excluded.
+ */
+function should_value_copy_string_assign(node: AssignmentNode): boolean {
+	const rhs = node.right_value;
+	if (node.swap || node.operator || rhs.node_type !== "value") return false;
+	const vn = rhs as ValueNode;
+	if (typeof vn.value !== "string" || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(vn.value)) return false;
+	if (vn.value === "true" || vn.value === "false" || vn.value === "null") return false;
+	if (vn.is_moved) return false;
+	const type = vn.type;
+	return !!type && type.name === "string" && !type.is_view && !type.is_array;
+}
+
+/**
+ * Whether the named string variable currently OWNS its heap bytes (and would
+ * free them at scope exit). The move-on-last-use transfer may only suppress
+ * the source's free when the source actually owns: a literal-only, borrow-
+ * holding, or already-moved source owns nothing, and suppressing its
+ * (nonexistent) free would hand the target rodata/container memory that the
+ * target's auto_free would then free.
+ */
+function string_var_owns_heap(status: BuildStatus, name: string): boolean {
+	if (status.string_borrow_vars?.has(name)) return false;
+	if (status.moved_string_vars?.has(name)) return false;
+	if (status.heap_strings?.has(name)) return true;
+	const hit = find_decl_in_c_scopes(status, name);
+	const decl = hit ? hit.frame[hit.index] : undefined;
+	if (!decl) return false;
+	const type = decl.type;
+	if (!type || type.name !== "string" || type.is_view || type.is_array) return false;
+	if (is_string_borrow(decl.value)) return false;
+	const value = decl.value;
+	if (!value) return false;
+	// Mirror free_scoped_declarations' ownership classification for the
+	// initializer shapes: a `var` literal or a call/method result was
+	// strdup'd or produced fresh heap at the declare. A bare-variable init
+	// only owns when the declare strdup'd it (`var u = t`), which the value
+	// shape can't distinguish here — refuse (the assign site falls back to
+	// the strdup, which is always sound). Anything else may still point at
+	// static storage.
+	if (value.node_type === "value") {
+		const v = value as ValueNode;
+		return (
+			decl.declaration === "var" &&
+			typeof v.value === "string" &&
+			v.value.length >= 2 &&
+			v.value.startsWith('"') &&
+			v.value.endsWith('"')
+		);
+	}
+	return value.node_type === "access" || value.node_type === "func_call";
 }

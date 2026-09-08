@@ -12,6 +12,13 @@ export default class AssignmentNode extends BaseNode {
 	 * the old instance, which is what makes reassignment inside a loop sound.
 	 */
 	has_live_borrow?: boolean;
+	/**
+	 * Stamped by the last-use pass (stamp_last_use_moves) on a plain `s = t`
+	 * string assignment whose source `t` is provably never read or written
+	 * again: the backends transfer the pair (suppressing t's scope-exit free)
+	 * instead of strdup'ing an owned copy into s.
+	 */
+	last_use_move?: boolean;
 
 	constructor(start: number, left_value: BaseNode, right_value: BaseNode, operator?: string) {
 		super("assign", start);

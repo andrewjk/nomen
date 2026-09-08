@@ -138,11 +138,11 @@ Our 27-instruction body adds four taxes the pidigits list didn't isolate:
    every iteration for the literal `1.0` — vs clang's `fmov d0, #1.0`
    hoisted once. No constant rematerialization pass exists.
 9. **Per-iteration receiver re-derivation** (`mov x9, x20; ldr x9, [x9,#8]`
-   + dead staging = 4 instrs): the buffer pipeline/pin machinery did NOT
-   fire in this function — every pipeline register (x23–x28) was
-   function-wide-claimed, and the pins/pipeline don't draw from the x4–x8
-   scratch pool that tranche 5 opened. A ref-param receiver (`u`) in a
-   top-level generic function is exactly the starved shape.
+   - dead staging = 4 instrs): the buffer pipeline/pin machinery did NOT
+     fire in this function — every pipeline register (x23–x28) was
+     function-wide-claimed, and the pins/pipeline don't draw from the x4–x8
+     scratch pool that tranche 5 opened. A ref-param receiver (`u`) in a
+     top-level generic function is exactly the starved shape.
 
 And one REFINEMENT to the pidigits list: this loop's inductions ARE
 register-resident (x23/x24/x25 — `eval_a_times_u` cleared the read bars),

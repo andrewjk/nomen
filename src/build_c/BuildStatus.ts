@@ -377,6 +377,14 @@ export default interface BuildStatus {
 	induction_const?: Map<string, number>;
 	moved?: Set<string>;
 	heap_returning_functions?: Set<string>;
+	/**
+	 * Strings that currently OWN their heap bytes because a plain `s = t`
+	 * assignment strdup'd (or transferred) an owned copy into them
+	 * (assignment value semantics). auto_free adds this as a positive term to
+	 * the string-free condition, so the target frees its copy at scope exit
+	 * even when its declaration initializer wouldn't classify as owned.
+	 * Mirrors aarch64's `heap_strings` set.
+	 */
 	heap_strings?: Set<string>;
 	/**
 	 * String variables that are reassigned a freshly-allocated (heap) value at

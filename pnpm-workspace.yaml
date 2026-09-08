@@ -2,7 +2,7 @@ packages:
   - cli
   - extension
 allowBuilds:
-  '@vscode/vsce-sign': true
+  "@vscode/vsce-sign": true
   esbuild: true
   keytar: true
 catalog:

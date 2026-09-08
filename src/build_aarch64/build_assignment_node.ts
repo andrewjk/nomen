@@ -2,6 +2,7 @@ import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import { is_float_type } from "../built_in_types.ts";
+import { move_on_last_use_enabled } from "../check/utils/last_use.ts";
 import { is_int_literal, parse_int_literal_bigint } from "../int_literal.ts";
 import type { NirExpr } from "../nir/nir.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
@@ -46,6 +47,7 @@ import {
 	emit_var_store,
 	is_local_ref_var,
 } from "./utils/stack_var.ts";
+import { emit_strdup_string } from "./utils/string_pair.ts";
 import {
 	emit_struct_copy,
 	get_enum_size,
@@ -1336,11 +1338,47 @@ export default function build_assignment_node(
 			} else {
 				status.code += `ldr x0, [sp], #16\n`;
 			}
-			// last_result_is_heap means the RHS produced a fresh heap string, so the
-			// target now owns a heap value. (Don't key off lhs_type_name: inside a
-			// loop body the scoped-declaration table is swapped out, so the type
-			// can't always be resolved here.)
-			if (status.last_result_is_heap) {
+			// Ownership of the new value. last_result_is_heap means the RHS
+			// produced a fresh heap string, so the target now owns a heap
+			// value. (Don't key off lhs_type_name: inside a loop body the
+			// scoped-declaration table is swapped out, so the type can't
+			// always be resolved here.)
+			// A bare owned-string VARIABLE RHS (`s = t`) is value semantics:
+			// strdup the source so the target owns its own bytes — the plain
+			// pair-copy left the two variables aliasing one heap block (the
+			// source's scope-exit free dangled the target, and writes through
+			// either name showed up in the other). Move-on-last-use: when the
+			// checker proved the source is never read or written again,
+			// transfer the pair and the ownership mark instead — the source's
+			// scope-exit free is suppressed by dropping it from heap_strings
+			// (the frame entries are gated on the global set), leaving exactly
+			// one owner.
+			const rhs_value =
+				node.right_value.node_type === "value" ? (node.right_value as ValueNode) : undefined;
+			const rhs_is_string_var =
+				!node.swap &&
+				!!rhs_value &&
+				typeof rhs_value.value === "string" &&
+				/^[A-Za-z_][A-Za-z0-9_]*$/.test(rhs_value.value) &&
+				rhs_value.value !== "true" &&
+				rhs_value.value !== "false" &&
+				rhs_value.value !== "null" &&
+				!rhs_value.is_moved &&
+				size === 16 &&
+				rhs_value.type?.name === "string" &&
+				!rhs_value.type?.is_view;
+			const move_source =
+				rhs_is_string_var && (node as AssignmentNode).last_use_move && move_on_last_use_enabled()
+					? (rhs_value as ValueNode).value
+					: undefined;
+			if (rhs_is_string_var && move_source === undefined) {
+				emit_strdup_string(status);
+			}
+			if (rhs_is_string_var) {
+				if (move_source !== undefined) status.heap_strings?.delete(move_source);
+				if (!status.heap_strings) status.heap_strings = new Set();
+				status.heap_strings.add(name);
+			} else if (status.last_result_is_heap) {
 				if (!status.heap_strings) status.heap_strings = new Set();
 				status.heap_strings.add(name);
 			}
