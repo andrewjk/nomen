@@ -616,7 +616,7 @@ describe("spec: imports", () => {
 		const input = `
 import System
 import System::Controls
-import System::Collections::List
+import System::Controls::Geometry
 `;
 		expect(compile_module(input)).toEqual([]);
 	});

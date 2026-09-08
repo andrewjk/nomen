@@ -1221,8 +1221,12 @@ of a module:
 
 ```
 import System::Controls   // imports the Controls namespace from System
-import System::Collections::List
+import System::Controls::Geometry   // imports a single module file
 ```
+
+An import path must mirror the library's file layout — a namespace directory
+or a module file. A path that names nothing (`import System::Contrls`, note
+the typo) is a compile error: `Unknown import path: System::Contrls`.
 
 Imports must appear at the top level (root scope) — an `import` inside a
 function, struct, or other scope is a compile error.

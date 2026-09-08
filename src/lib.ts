@@ -287,3 +287,27 @@ export function get_library(lib_dir: string): Library {
 	library_cache.set(lib_dir, lib);
 	return lib;
 }
+
+/**
+ * Every valid namespace-path prefix implied by the library's file layout
+ * (`Controls`, `Controls/Geometry`, `Stream/File`, ... and their
+ * `System/`-rooted forms). A type's path (`core/System/Controls/Geometry.nm`)
+ * contributes the chain of directories leading to it plus the module file's
+ * own base name, so both `Controls::Button` (namespace) and
+ * `Controls::Geometry::Size` (module) validate.
+ */
+export function library_path_prefixes(library: Library): Set<string> {
+	const prefixes = new Set<string>();
+	const system_root = path.resolve(library.dir, "System");
+	for (const entry of library.types.values()) {
+		const rel = path.relative(system_root, entry.path);
+		if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) continue;
+		const parts = rel.replace(/\.nm$/, "").split(path.sep);
+		for (let i = 1; i <= parts.length; i++) {
+			const joined = parts.slice(0, i).join("/");
+			prefixes.add(joined);
+			prefixes.add(`System/${joined}`);
+		}
+	}
+	return prefixes;
+}

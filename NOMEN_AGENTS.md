@@ -107,8 +107,15 @@ const y = x + 1     // Error: 'x' is null
 ```nomen
 import System                  // standard library
 import System::Test            // submodule
-import System::Collections::List // specific module
+import System::Controls::Geometry // a single module file
 ```
+
+Import paths must mirror the library's file layout — a typo'd path
+(`import System::Contrls`) is a compile error.
+
+Files in the same folder are one module — they already see each other's
+declarations, so never import a sibling. Only cross-namespace references
+(subfolders, libraries) need an import.
 
 ### No exceptions
 

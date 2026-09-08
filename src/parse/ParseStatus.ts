@@ -1,3 +1,4 @@
+import type { Library } from "../lib.ts";
 import BaseNode from "../nodes/BaseNode.ts";
 import type CompileError from "../types/CompileError.ts";
 import type Token from "../types/Token.ts";
@@ -24,6 +25,11 @@ export default interface ParseStatus {
 	 * recorded for post-parse validation against the library namespace index.
 	 */
 	qualified_paths: { segments: string[]; start: number }[];
+	/**
+	 * The library linked into this compilation, if any. Present so import
+	 * statements can validate their paths against the library's file layout.
+	 */
+	library?: Library;
 	/**
 	 * Errors that have been encountered
 	 */

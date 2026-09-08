@@ -54,8 +54,8 @@ test("uses spaces when use_tabs is false", () => {
 });
 
 test("sorts runs of imports", () => {
-	const source = "import System::Controls\nimport System::Collections::List\n";
-	const expected = "import System::Collections::List\nimport System::Controls\n";
+	const source = "import System::Stream\nimport System::Controls\n";
+	const expected = "import System::Controls\nimport System::Stream\n";
 	expect(format(source)).toBe(expected);
 	// When disabled, the order is preserved.
 	expect(format(source, { sort_imports: false })).toBe(source);
@@ -63,7 +63,9 @@ test("sorts runs of imports", () => {
 
 test("keeps namespace paths tight", () => {
 	expect(format("import System:: Controls\n")).toBe("import System::Controls\n");
-	expect(format("import System :: Controls :: List\n")).toBe("import System::Controls::List\n");
+	expect(format("import System :: Controls :: Geometry\n")).toBe(
+		"import System::Controls::Geometry\n",
+	);
 	expect(format("var Geometry :: Size s = Controls :: Geometry :: Size()\n")).toBe(
 		"var Geometry::Size s = Controls::Geometry::Size()\n",
 	);

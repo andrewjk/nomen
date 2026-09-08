@@ -24,6 +24,50 @@ describe("namespace imports", () => {
 `;
 		expect(parse(input, core).errors).toEqual([]);
 	});
+
+	test("bare module import compiles", () => {
+		const input = `import Map
+`;
+		expect(parse(input, core).errors).toEqual([]);
+	});
+});
+
+describe("import path errors", () => {
+	test("typo'd namespace import is an error", () => {
+		const input = `
+import System::Contrls
+`;
+		expect(parse(input, core).errors).toEqual([
+			test_error(input, "Unknown import path: System::Contrls", 2, 1),
+		]);
+	});
+
+	test("typo'd last segment is an error", () => {
+		const input = `
+import System::Controls::Contrls
+`;
+		expect(parse(input, core).errors).toEqual([
+			test_error(input, "Unknown import path: System::Controls::Contrls", 2, 1),
+		]);
+	});
+
+	test("path with no matching module is an error", () => {
+		const input = `
+import System::Collections::List
+`;
+		expect(parse(input, core).errors).toEqual([
+			test_error(input, "Unknown import path: System::Collections::List", 2, 1),
+		]);
+	});
+
+	test("unknown bare import is an error", () => {
+		const input = `
+import Foo
+`;
+		expect(parse(input, core).errors).toEqual([
+			test_error(input, "Unknown import path: Foo", 2, 1),
+		]);
+	});
 });
 
 describe("qualified references", () => {

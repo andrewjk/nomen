@@ -3,7 +3,7 @@ import path from "node:path";
 import add_error from "./add_error.ts";
 import check from "./check.ts";
 import { attach_doc_comments } from "./doc_comments.ts";
-import type { Library } from "./lib.ts";
+import { library_path_prefixes, type Library } from "./lib.ts";
 import RootNode from "./nodes/RootNode.ts";
 import parse_statement from "./parse/parse_statement.ts";
 import type ParseStatus from "./parse/ParseStatus.ts";
@@ -37,6 +37,7 @@ export default function parse(source: string, library?: Library, file_path?: str
 		// TODO: Should be the base namespace, from module.config, folder structure, file name
 		namespace: "",
 		qualified_paths: [],
+		library,
 		errors: [],
 	};
 
@@ -77,30 +78,6 @@ export default function parse(source: string, library?: Library, file_path?: str
 		errors: format_errors(source, checked.errors),
 		warnings: format_errors(source, checked.warnings),
 	};
-}
-
-/**
- * Every valid namespace-path prefix implied by the library's file layout
- * (`Controls`, `Controls/Geometry`, `Stream/File`, ... and their
- * `System/`-rooted forms). A type's path (`core/System/Controls/Geometry.nm`)
- * contributes the chain of directories leading to it plus the module file's
- * own base name, so both `Controls::Button` (namespace) and
- * `Controls::Geometry::Size` (module) validate.
- */
-function library_path_prefixes(library: Library): Set<string> {
-	const prefixes = new Set<string>();
-	const system_root = path.resolve(library.dir, "System");
-	for (const entry of library.types.values()) {
-		const rel = path.relative(system_root, entry.path);
-		if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) continue;
-		const parts = rel.replace(/\.nm$/, "").split(path.sep);
-		for (let i = 1; i <= parts.length; i++) {
-			const joined = parts.slice(0, i).join("/");
-			prefixes.add(joined);
-			prefixes.add(`System/${joined}`);
-		}
-	}
-	return prefixes;
 }
 
 /**

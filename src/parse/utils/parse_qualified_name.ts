@@ -15,8 +15,7 @@ export interface QualifiedName {
  * bare name (the compilation unit is flat), so callers keep only `base`; the
  * full segment list is recorded on `status.qualified_paths` so `parse` can
  * validate the namespace prefixes against the library index. Import paths
- * pass `record = false` — imports may name files (e.g. `Utils::Widget`) as
- * well as library namespaces, so they are not prefix-validated.
+ * pass `record = false` — they are validated separately in `parse_import`.
  */
 export default function parse_qualified_name(
 	status: ParseStatus,
