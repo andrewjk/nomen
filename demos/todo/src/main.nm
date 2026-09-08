@@ -1,5 +1,5 @@
 import System
-import System/Controls
+import System::Controls
 
 const WIN_W = 400
 const WIN_H = 500

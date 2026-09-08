@@ -1,5 +1,5 @@
 import System
-import System/Controls
+import System::Controls
 
 pub func main = () {
 	const win = Window("My App", 800, 600)

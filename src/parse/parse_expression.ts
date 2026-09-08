@@ -27,6 +27,7 @@ import consume from "./utils/consume.ts";
 import expect from "./utils/expect.ts";
 import expect_close_angle from "./utils/expect_close_angle.ts";
 import get_index from "./utils/get_index.ts";
+import parse_qualified_name from "./utils/parse_qualified_name.ts";
 import peek_current from "./utils/peek_current.ts";
 
 function restructure_op(
@@ -238,7 +239,9 @@ function parse_primary(status: ParseStatus, value: string): BaseNode {
 				return parse_string_interpolation(status);
 			} else {
 				const v = consume(status);
-				return new ValueNode(start, v);
+				// `Controls::Button` — qualified references flatten to the bare name
+				const { base } = parse_qualified_name(status, v, start);
+				return new ValueNode(start, base);
 			}
 		}
 	}

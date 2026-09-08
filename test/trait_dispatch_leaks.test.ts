@@ -77,7 +77,7 @@ Console.write("ok\\n")
 // on — calling Container.measure through the Control vtable).
 test("Container driven through the Control trait is freed (no leak)", async () => {
 	const input = `
-import System/Controls
+import System::Controls
 func height_of = (Control c, out int) {
 	var BoxConstraints bc = BoxConstraints()
 	bc.max_width = 800

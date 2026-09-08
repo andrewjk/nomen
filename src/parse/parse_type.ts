@@ -7,6 +7,7 @@ import consume from "./utils/consume.ts";
 import expect from "./utils/expect.ts";
 import expect_close_angle from "./utils/expect_close_angle.ts";
 import get_index from "./utils/get_index.ts";
+import parse_qualified_name from "./utils/parse_qualified_name.ts";
 import peek_current from "./utils/peek_current.ts";
 
 export default function parse_type(status: ParseStatus): Type {
@@ -40,7 +41,10 @@ export default function parse_type(status: ParseStatus): Type {
 
 	const is_view = accept("view", status);
 	const is_ref = accept("ref", status);
-	const type = new Type(consume(status));
+	const start = get_index(status);
+	// `Controls::Button` — qualified references flatten to the bare name
+	const { base } = parse_qualified_name(status, consume(status), start);
+	const type = new Type(base);
 	if (is_view) type.is_view = true;
 	if (is_ref) type.is_ref = true;
 	if (accept("<", status)) {

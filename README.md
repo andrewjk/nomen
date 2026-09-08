@@ -761,7 +761,7 @@ buttons, checkboxes, and a layout engine + compositor. The example app in
 
 ```nomen
 import System
-import System/Controls
+import System::Controls
 
 pub func main = () {
     var Window win = Window("Nomen", 400, 300)

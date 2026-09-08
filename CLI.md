@@ -122,7 +122,7 @@ A **test function** is any `pub func <name> = (ref Tester t)`; a **benchmark** i
 
 ```nomen
 import System
-import System/Test
+import System::Test
 
 pub func test_add = (ref Tester t) {
 	t.expect(add(1, 1) == 2, "1 + 1 should be 2")

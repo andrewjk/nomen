@@ -37,7 +37,7 @@ functions, distinguished by signature:
 
 ```nomen
 import System
-import System/Test
+import System::Test
 
 // Any `pub func` taking `(ref Tester t)` is a test. The `ref` is required so
 // the tester can record results.
@@ -179,7 +179,7 @@ The generated `main` is:
 
 ```nomen
 import System
-import System/Test
+import System::Test
 
 pub func main = () {
 	var Tester t = Tester()
@@ -249,7 +249,7 @@ The generated `main` only carries `import System`. For that to resolve
 `Tester`, the compiler's `BASE_TYPES` list (in
 [`src/parse.ts`](src/parse.ts)) includes `Tester`, so a plain `import System`
 pulls in `Test.nm`'s source the same way it pulls in `List` or `Console`. Test
-files conventionally also `import System/Test` for editor/source-map purposes;
+files conventionally also `import System::Test` for editor/source-map purposes;
 the dependency walker deduplicates the source either way.
 
 The `System` library itself is located by walking up from the target folder

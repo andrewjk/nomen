@@ -106,8 +106,8 @@ const y = x + 1     // Error: 'x' is null
 
 ```nomen
 import System                  // standard library
-import System/Test             // submodule
-import System/Collections/List // specific module
+import System::Test            // submodule
+import System::Collections::List // specific module
 ```
 
 ### No exceptions
@@ -123,7 +123,7 @@ benchmarks.
 
 ```nomen
 import System
-import System/Test
+import System::Test
 
 func add = (int a, int b, out int) => a + b
 

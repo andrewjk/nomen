@@ -31,7 +31,7 @@ pub func main = (Init init) {
 `;
 
 const TEST_NM = `import System
-import System/Test
+import System::Test
 
 pub func test_add = (ref Tester t) {
 	t.expect(add(2, 2) == 4, "2 + 2 should equal 4")

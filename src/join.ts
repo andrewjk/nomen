@@ -196,10 +196,10 @@ function add_source(
 
 	source = source.replaceAll(/^import(.*)$/gm, (match, name) => {
 		const trimmed = name.trim();
-		// `import System` and `import System/<namespace>` are library imports,
+		// `import System` and `import System::<namespace>` are library imports,
 		// resolved at parse time via resolve_linked_types — not files to inline.
-		if (trimmed === "System" || trimmed.startsWith("System/")) return match;
-		const import_file_path = `./${trimmed}.nm`;
+		if (trimmed === "System" || trimmed.startsWith("System::")) return match;
+		const import_file_path = `./${trimmed.split("::").join("/")}.nm`;
 		if (!inputs.has(import_file_path)) {
 			add_source(folder_path, import_file_path, inputs, lib_path);
 		}

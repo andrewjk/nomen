@@ -183,7 +183,7 @@ export function generate_harness(tests: TestFunction[], benches: BenchFunction[]
 		})
 		.join("\n");
 
-	let main = "\nimport System\nimport System/Test\n\npub func main = () {\n";
+	let main = "\nimport System\nimport System::Test\n\npub func main = () {\n";
 	main += "\tvar Tester t = Tester()\n";
 	for (const test of tests) {
 		main += `\tt.begin_test("${escape_nm_string(test.name)}")\n`;

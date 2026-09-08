@@ -1,6 +1,8 @@
 import { describe, expect, test } from "vite-plus/test";
 
-import { compile_main, compile_module } from "./_helpers.ts";
+import parse from "../../src/parse.ts";
+import test_error from "../test_error.ts";
+import { compile_main, compile_module, core } from "./_helpers.ts";
 
 describe("spec: if/else", () => {
 	test("basic if/else with blocks", () => {
@@ -613,9 +615,31 @@ describe("spec: imports", () => {
 	test("top-level imports", () => {
 		const input = `
 import System
-import System/Controls
-import System/Collections/List
+import System::Controls
+import System::Collections::List
 `;
 		expect(compile_module(input)).toEqual([]);
+	});
+});
+
+describe("spec: qualified references", () => {
+	test("namespace-qualified type and method references", () => {
+		const input = `
+import System
+
+const ok = Text::Regex.test("a+b", "aaab")
+const size = System::Controls::Geometry::Size()
+`;
+		expect(compile_module(input)).toEqual([]);
+	});
+
+	test("unknown namespace prefix is an error", () => {
+		const input = `import System
+
+const size = Control::Geometry::Size()
+`;
+		expect(parse(input, core).errors).toEqual([
+			test_error(input, "Unknown namespace: Control", 3, 14),
+		]);
 	});
 });

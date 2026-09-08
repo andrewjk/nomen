@@ -69,7 +69,7 @@ pub func main = () {
 	// nondeterministic ns field of the done record.
 	test("the Tester harness (begin_test/expect/end_test + destroy) exits cleanly", async () => {
 		const input = `import System
-import System/Test
+import System::Test
 
 pub func main = () {
 	var Tester t = Tester()

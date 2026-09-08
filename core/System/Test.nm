@@ -36,7 +36,7 @@
  *
  * A test function receives the tester by mutable reference:
  *
- *	import System/Test
+ *	import System::Test
  *
  *	pub func test_add = (ref Tester t) {
  *		t.expect(add(1, 1) == 2, "1 + 1 should be 2")

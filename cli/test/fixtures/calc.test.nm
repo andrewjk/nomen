@@ -1,5 +1,5 @@
 import System
-import System/Test
+import System::Test
 
 func add = (int a, int b, out int) => a + b
 func mul = (int a, int b, out int) => a * b

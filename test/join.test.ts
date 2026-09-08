@@ -123,7 +123,7 @@ test("join for a test file inlines the src/ module with main stripped", () => {
 		);
 		fs.writeFileSync(
 			path.join(root, "test", "main.test.nm"),
-			'import System\nimport System/Test\npub func test_add = (ref Tester t) {\n\tt.expect(add(2, 2) == 4, "2+2")\n}\n',
+			'import System\nimport System::Test\npub func test_add = (ref Tester t) {\n\tt.expect(add(2, 2) == 4, "2+2")\n}\n',
 		);
 
 		const input = join(path.join(root, "test", "main.test.nm"), undefined, { for_test: true });

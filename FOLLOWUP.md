@@ -275,3 +275,16 @@ gate for flipping the default.
   question. A hand-written digit-extraction mini had its own
   loop-terminator bug — rebuild the repro from the test harness
   (check_output's audit path) instead.
+
+## `::` namespace separator: import paths are not prefix-validated
+
+Qualified *references* (`Controls::Geometry::Size`) validate their namespace
+prefix against the library's file layout (`validate_qualified_paths` in
+`src/parse.ts`), but *import statements* do not: `import System::Contrls`
+(typo) is accepted and silently imports nothing — the same behavior the old
+`import System/Contrls` had. Closing this needs an error channel out of
+`resolve_linked_types` (it returns a string, not errors) or validation moved
+into `parse_import` with library access on `ParseStatus`. Note the last
+segment also can't be validated by name alone: module files like
+`Geometry.nm` are indexed by declared *type* names (`Size`, `Frame`), not by
+file name — the lookup would need the `module_type_names` path-base matching.

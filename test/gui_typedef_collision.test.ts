@@ -11,7 +11,7 @@ const ARCHS = ["aarch64", "c"] as const;
 // `#import` Cocoa/UIKit, which drags in MacTypes.h. MacTypes defines typedefs
 // like `Size`/`Point`/`Rect` that collide with Nomen's own
 // `typedef struct Size {...} Size;`. This test exercises exactly that
-// combination — `import System/Controls` brings both the objc raw blocks AND
+// combination — `import System::Controls` brings both the objc raw blocks AND
 // Geometry's `Size`/`BoxConstraints` structs into one translation unit — and
 // must build + run on both backends. Without typedef mangling (the `nm_`
 // strategy) the C backend fails to compile.
@@ -30,7 +30,7 @@ describe("GUI typedef collision (Size/BoxConstraints + Cocoa)", () => {
 			"gui_typedef_collision",
 			`
 import System
-import System/Controls
+import System::Controls
 
 pub func main = () {
 	var Size s = Size()
@@ -51,7 +51,7 @@ pub func main = () {
 			"gui_typedef_collision_frame",
 			`
 import System
-import System/Controls
+import System::Controls
 
 pub func main = () {
 	var Frame f = Frame()
@@ -74,7 +74,7 @@ pub func main = () {
 			"gui_typedef_collision_enum",
 			`
 import System
-import System/Controls
+import System::Controls
 
 pub func main = () {
 	var LayoutLength w = LayoutLength.fixed(50)

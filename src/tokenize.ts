@@ -20,6 +20,8 @@ export const COMPOUND_SYMBOLS = [
 	"*=",
 	// Range
 	"..",
+	// Namespace path
+	"::",
 	// Type
 	"->",
 	"=>",

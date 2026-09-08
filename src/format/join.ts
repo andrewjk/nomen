@@ -46,8 +46,8 @@ export const KEYWORDS = new Set([
 // keywords (`if`, `while`, `return`, ...) keep a space: `if (...)`.
 const CALL_KEYWORDS = new Set(["func", "struct", "class", "trait", "enum", "bitset", "cast"]);
 
-const NO_SPACE_BEFORE = new Set([",", ";", ")", "]", ":", "?"]);
-const NO_SPACE_AFTER = new Set(["(", "[", ".", "#", "...", "!", "???", "!!!"]);
+const NO_SPACE_BEFORE = new Set([",", ";", ")", "]", ":", "?", "::"]);
+const NO_SPACE_AFTER = new Set(["(", "[", ".", "#", "...", "!", "???", "!!!", "::"]);
 // `<` and `>` are both generic brackets and comparisons, `>>` is both a
 // nested-generic closer (`List<List<int>>`) and a shift, and `..` is written
 // either `0..3` or `0 .. 3`. Rather than guess, keep whatever was written.
@@ -106,8 +106,6 @@ function needs_space(pieces: Piece[], i: number): boolean {
 	const previous = pieces[i - 1];
 	const current = pieces[i];
 
-	// The `/` of a module path (`import System/Controls`) is not a division.
-	if (pieces[0].text === "import" && (current.text === "/" || previous.text === "/")) return false;
 	if (KEEP_SPACING.has(current.text) || KEEP_SPACING.has(previous.text)) {
 		return current.space_before;
 	}

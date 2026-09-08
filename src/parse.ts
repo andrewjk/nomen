@@ -1,5 +1,6 @@
 import path from "node:path";
 
+import add_error from "./add_error.ts";
 import check from "./check.ts";
 import { attach_doc_comments } from "./doc_comments.ts";
 import type { Library } from "./lib.ts";
@@ -35,10 +36,17 @@ export default function parse(source: string, library?: Library, file_path?: str
 		stack: [root],
 		// TODO: Should be the base namespace, from module.config, folder structure, file name
 		namespace: "",
+		qualified_paths: [],
 		errors: [],
 	};
 
 	parse_statement(status);
+
+	// Qualified references (`Controls::Button`) flatten to bare names during
+	// parsing; validate their namespace prefixes against the library index.
+	if (library && status.qualified_paths.length) {
+		validate_qualified_paths(status, library_path_prefixes(library));
+	}
 
 	// Attach `/** ... **/` doc comments to the declarations they precede, so
 	// downstream tools (doc generation, editor hovers) can reach them.
@@ -69,6 +77,47 @@ export default function parse(source: string, library?: Library, file_path?: str
 		errors: format_errors(source, checked.errors),
 		warnings: format_errors(source, checked.warnings),
 	};
+}
+
+/**
+ * Every valid namespace-path prefix implied by the library's file layout
+ * (`Controls`, `Controls/Geometry`, `Stream/File`, ... and their
+ * `System/`-rooted forms). A type's path (`core/System/Controls/Geometry.nm`)
+ * contributes the chain of directories leading to it plus the module file's
+ * own base name, so both `Controls::Button` (namespace) and
+ * `Controls::Geometry::Size` (module) validate.
+ */
+function library_path_prefixes(library: Library): Set<string> {
+	const prefixes = new Set<string>();
+	const system_root = path.resolve(library.dir, "System");
+	for (const entry of library.types.values()) {
+		const rel = path.relative(system_root, entry.path);
+		if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) continue;
+		const parts = rel.replace(/\.nm$/, "").split(path.sep);
+		for (let i = 1; i <= parts.length; i++) {
+			const joined = parts.slice(0, i).join("/");
+			prefixes.add(joined);
+			prefixes.add(`System/${joined}`);
+		}
+	}
+	return prefixes;
+}
+
+/**
+ * Validate the namespace prefixes of qualified references recorded while
+ * parsing (`Controls::Button`, `System::Text::Regex`). The AST keeps only the
+ * bare final name — the compilation unit resolves names flat — so this is the
+ * only place a mistyped path (`Control::Button`) can be caught: the segments
+ * before the last must name a real namespace/module path of an imported
+ * library. Imports are exempt (they may name files elsewhere).
+ */
+function validate_qualified_paths(status: ParseStatus, prefixes: Set<string>): void {
+	for (const ref of status.qualified_paths) {
+		const prefix = ref.segments.slice(0, -1).join("/");
+		if (!prefixes.has(prefix)) {
+			add_error(status, `Unknown namespace: ${ref.segments[0]}`, ref.start);
+		}
+	}
 }
 
 function mark_library_nodes(root: RootNode, boundary: number): void {
@@ -129,10 +178,10 @@ export function resolve_linked_types(source: string, library: Library, file_path
 	for (let i = 0; i < tokens.length - 1; i++) {
 		if (tokens[i].value === "import" && tokens[i + 1].value === "System") {
 			has_system_import = true;
-			// Check for `import System / <namespace>` (tokens: import, System, /, name)
+			// Check for `import System::<namespace>` (tokens: import, System, ::, name)
 			if (
 				i + 3 < tokens.length &&
-				tokens[i + 2].value === "/" &&
+				tokens[i + 2].value === "::" &&
 				tokens[i + 3].value !== undefined
 			) {
 				namespace_imports.add(tokens[i + 3].value);
@@ -239,13 +288,13 @@ const BASE_TYPES = [
 	"bool",
 ];
 
-// Map a module-path import (e.g. `System/Controls/Geometry`) to the type names
+// Map a module-path import (e.g. `System::Controls::Geometry`) to the type names
 // declared in that module, so the dependency walker can pull the module's source
 // in. The library indexes types by *type name*, not module path, so an imported
 // module whose name doesn't match one of its own types (e.g. `Geometry`, which
 // declares `Size`/`Frame`/…) would otherwise never be pulled in.
 function module_type_names(dep: string, library: Library): string[] | undefined {
-	const base = dep.includes("/") ? dep.split("/").pop()! : dep;
+	const base = dep.includes("::") ? dep.split("::").pop()! : dep;
 	const found: string[] = [];
 	for (const [name, entry] of library.types) {
 		const src_base = entry.path.split("/").pop()!.replace(/\.nm$/, "");

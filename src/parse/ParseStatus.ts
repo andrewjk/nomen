@@ -20,6 +20,11 @@ export default interface ParseStatus {
 	 */
 	namespace: string;
 	/**
+	 * Namespace-qualified paths seen in the source (`System::Controls::Button`),
+	 * recorded for post-parse validation against the library namespace index.
+	 */
+	qualified_paths: { segments: string[]; start: number }[];
+	/**
 	 * Errors that have been encountered
 	 */
 	errors: CompileError[];

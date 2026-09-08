@@ -34,7 +34,7 @@ native leaf (`Window`/`Text`/`Button`/`CheckBox`/`TextBox`) conforms to
 
 ```
 import System
-import System/Controls
+import System::Controls
 
 pub func main = () {
 	var Window win = Window("Nomen Todo", 400, 500)
@@ -617,7 +617,7 @@ cannot be verified headlessly, but the **layout math** can:
      so they can later slot into `Array<Control>` / `ClassBuffer<Control>`.
    - Enabling this surfaced a compiler gap in the import/dependency walker
      (`src/parse.ts:resolve_types_with_deps`): module-path imports whose module name doesn't
-     match one of their own type names (e.g. `import System/Controls/Geometry`, which
+     match one of their own type names (e.g. `import System::Controls::Geometry`, which
      declares `Size`/`Frame`/`…`) were silently dropped, so `Window`/`Text` couldn't see
      `Size`/`BoxConstraints`. Fixed by expanding module-path imports to the module's declared
      types during dependency resolution (the `Control` trait's `Size`/`BoxConstraints`

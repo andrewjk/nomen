@@ -1189,16 +1189,38 @@ func process = (int value, out int) {
 import ModuleName
 ```
 
-Imports can also specify a namespace path using `/` to pull in a sub-namespace
+Imports can also specify a namespace path using `::` to pull in a sub-namespace
 of a module:
 
 ```
-import System/Controls   // imports the Controls namespace from System
-import System/Collections/List
+import System::Controls   // imports the Controls namespace from System
+import System::Collections::List
 ```
 
 Imports must appear at the top level (root scope) — an `import` inside a
 function, struct, or other scope is a compile error.
+
+#### Qualified References
+
+Code can reference a library type, free function, or value through its
+namespace path with `::`. Qualified references resolve to the same flat names
+as their unqualified forms; the path prefix documents (and the compiler
+validates) where the name comes from:
+
+```
+import System
+
+const ok = Text::Regex.test("a+b", "aaab")
+const size = System::Controls::Geometry::Size()
+```
+
+A `::` path always names an entity — a type, a free function, or a value.
+Member and method access stays with `.` (`Text::Regex.test(...)`, not
+`Text::Regex::test(...)`).
+
+Every segment before the last must be a namespace of an imported library (or
+the path must start with `System`); `Control::Button` (note the missing `s`)
+is a compile error: `Unknown namespace: Control`.
 
 ### Method/Function Calls as Expressions
 
