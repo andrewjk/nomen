@@ -36,22 +36,50 @@ The rules below trip up newcomers and LLMs. Follow them.
 
 Nomen infers types from initializers and return values. Don't spell them out
 unless the inference would be wrong or the annotation materially aids a public
-API.
+API. This includes generic instantiations — an initializer like
+`split_lines(text)` already says `List<Line>`.
 
 ```nomen
-const x = 5              // good — inferred int
-const int x = 5          // avoid
-const msg = "hi"         // good
-var items = [1, 2, 3]    // good — int[]
+const x = 5                        // good — inferred int
+const int x = 5                    // avoid
+const lines = split_lines(text)     // good — inferred List<Line>
+const List<Line> lines = split_lines(text)  // avoid
+const msg = "hi"                   // good
+var items = [1, 2, 3]              // good — int[]
 ```
 
 Annotate when you need a wider type (`int64` rather than `int`), when there is
 no initializer, or on a `pub` API where the type is the contract.
 
-### No `else if` — use `switch` or separate `if`s
+### Loop updates go in the header
 
-Nomen forbids `else if` and `else { if { … } }` chains. Use a `switch` for
-related conditions, or pull each condition into its own top-level `if`.
+`for` and `while` take a post-statement after the condition, C-`for` style.
+Don't bury the update as the last statement of the body.
+
+```nomen
+while i < n; i += 1 { ... }   // good — update in the header
+while i < n { ...; i += 1 }   // avoid
+```
+
+Only hoist an update that runs on every iteration — if a `continue` (or early
+`return` that isn't meant to advance) must skip it, keep it in the body.
+
+### No `else if` — use `switch`
+
+Nomen forbids `else if` and `else { if { … } }` chains. Consecutive sibling
+`if`s on mutually exclusive conditions are the same smell (and a `did_x` flag
+set only to gate the next `if` is a giveaway): fold them into a `switch`,
+which evaluates cases in order and runs the first true one.
+
+```nomen
+switch {
+	case moved { ... }
+	case is_ins { ... }
+	else { ... }
+}
+```
+
+Independent conditions that can all fire stay as separate `if`s.
 
 ### Constraints are compile-time assertions
 
@@ -188,6 +216,7 @@ switch x {
 for i of 0 .. 10 { ... }       // exclusive range
 for item of array { ... }
 while cond { ... }
+while cond; update { ... }     // post-statement (e.g. while i < n; i += 1)
 ```
 
 ### Structs and classes
