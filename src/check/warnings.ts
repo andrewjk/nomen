@@ -251,12 +251,28 @@ function children_of(node: BaseNode): BaseNode[] {
 		if (Array.isArray(value)) {
 			for (const item of value) {
 				if (is_node(item)) out.push(item);
+				else collect_wrapper_children(item, out);
 			}
 		} else if (is_node(value)) {
 			out.push(value);
+		} else {
+			collect_wrapper_children(value, out);
 		}
 	}
 	return out;
+}
+
+/**
+ * Case lists (e.g. `SwitchNode.cases`, `MatchNode.cases`) hold plain
+ * `{ condition, branch }` wrapper objects rather than BaseNodes — without this
+ * the entire subtree under each case is invisible to the generic walk.
+ */
+function collect_wrapper_children(value: unknown, out: BaseNode[]): void {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return;
+	for (const key of Object.keys(value)) {
+		const inner = (value as Record<string, unknown>)[key];
+		if (is_node(inner)) out.push(inner);
+	}
 }
 
 function is_node(value: unknown): value is BaseNode {

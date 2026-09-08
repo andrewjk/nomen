@@ -288,3 +288,25 @@ into `parse_import` with library access on `ParseStatus`. Note the last
 segment also can't be validated by name alone: module files like
 `Geometry.nm` are indexed by declared *type* names (`Size`, `Frame`), not by
 file name — the lookup would need the `module_type_names` path-base matching.
+
+## Generic AST walkers skip switch/match case subtrees
+
+`SwitchNode.cases` / `MatchNode.cases` hold plain `{ condition, branch }`
+wrapper objects (no `node_type`), so any walker that recurses via an
+`Object.keys(node)` + `is_node` scan silently skips everything under each case
+(conditions and bodies). Found while fixing the warnings pass
+(`src/check/warnings.ts`): unused-param/unused-function analysis never saw
+switch/match cases, so a parameter read only in `case cond ->` was flagged
+"never used" and a function called only inside a case body was flagged "never
+called". Fixed there by unwrapping one level of plain objects
+(`collect_wrapper_children`).
+
+Nine other walkers use the same pattern and still have the blind spot:
+`src/build.ts`, `src/build_c/build_root_node.ts`,
+`src/build_common/scan_moved_param_consumed.ts`, `src/check/utils/ownership.ts`,
+`src/build_aarch64/neon_plan.ts`, `src/check/utils/string_mutation_scan.ts`,
+`src/check/utils/last_use.ts`, `src/build_aarch64/utils/scan_heap_returns.ts`,
+`src/build_aarch64/utils/scan_inline_candidates.ts`. Their impact varies (some
+may never see switch-heavy code, some may misreport), and a shared child-node
+helper would prevent this class of bug recurring. Audit each, fix, and add
+switch/match-containing fixtures.

@@ -144,6 +144,77 @@ var Counter c = Counter()
 	});
 });
 
+describe("warnings — switch/match cases are visible to the analysis", () => {
+	test("parameter read in a switch case condition does not warn", () => {
+		const input = `
+import System
+func pick = (bool a, out string) =>
+	switch {
+		case a -> "yes"
+		else -> "no"
+	}
+Console.write("\\{pick(true)}")
+`;
+		expect(warning_messages(input)).not.toContain("Parameter 'a' is never used");
+	});
+
+	test("parameter read in a switch case body does not warn", () => {
+		const input = `
+import System
+func pick = (bool a, bool b, out string) {
+	switch {
+		case b {
+			return "b"
+		}
+		else {
+			return "\\{a}"
+		}
+	}
+}
+Console.write("\\{pick(true, false)}")
+`;
+		expect(warning_messages(input)).not.toContain("Parameter 'a' is never used");
+		expect(warning_messages(input)).not.toContain("Parameter 'b' is never used");
+	});
+
+	test("function called inside a switch case body does not warn", () => {
+		const input = `
+import System
+func helper = () {
+	Console.write("hi")
+}
+func main = () {
+	switch {
+		case true {
+			helper()
+		}
+	}
+}
+main()
+`;
+		expect(warning_messages(input)).not.toContain("Function 'helper' is never called");
+	});
+
+	test("function called inside a match case body does not warn", () => {
+		const input = `
+import System
+func helper = () {
+	Console.write("hi")
+}
+func main = () {
+	const x = 1
+	match x {
+		case 1 {
+			helper()
+		}
+	}
+}
+main()
+`;
+		expect(warning_messages(input)).not.toContain("Function 'helper' is never called");
+	});
+});
+
 describe("warnings — var never changed", () => {
 	test("var that is never reassigned warns", () => {
 		const input = `
