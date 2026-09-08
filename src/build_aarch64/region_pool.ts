@@ -40,7 +40,7 @@ import type BuildStatus from "../build_c/BuildStatus.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import { emit_buffer_struct_addr } from "./build_access_node.ts";
 import { CALLER_SAVED_EXT_X, NIR_SCRATCH_X, region_pool_enabled } from "./utils/nir_regalloc.ts";
-import { allocate_stack_space } from "./utils/stack_var.ts";
+import { allocate_stack_space, emit_var_load } from "./utils/stack_var.ts";
 
 export interface RegionLease {
 	/** One borrowed register per pinned receiver (never shared: two
@@ -51,6 +51,10 @@ export interface RegionLease {
 		reg: string;
 		displaced: { name: string; slot: number; key: string }[];
 		had_claim: boolean;
+		/** Base-fold registers (ASM_PLAN_6): scratch regs holding
+		 *  `reg + base*8` for this pin — released from region_pinned at
+		 *  exit, nothing to restore. */
+		folds: string[];
 	}[];
 }
 
@@ -186,7 +190,11 @@ export function region_pool_enter(
 	// live here — the per-pin dead set (not the bare binding) decides those.
 	const n = Math.min(entry.pins.length, entry.receivers.length);
 	const leases: RegionLease["leases"] = [];
-	const entries: { key: string; reg: string }[] = [];
+	const entries: {
+		key: string;
+		reg: string;
+		folds?: { base: string; reg: string }[];
+	}[] = [];
 	for (let i = 0; i < n; i++) {
 		const pin = entry.pins[i];
 		const receiver = entry.receivers[i];
@@ -239,8 +247,30 @@ export function region_pool_enter(
 		emit_buffer_struct_addr(receiver.node, status);
 		status.code += `ldr x9, [x9, #8]\n`;
 		status.code += `mov ${reg}, x9\n`;
-		entries.push({ key: receiver.key, reg });
-		leases.push({ reg, displaced: resolved, had_claim });
+		// Base-folded addressing (ASM_PLAN_6 tranche 3): preload each
+		// plan-assigned fold register with `pin + base*8`. The base is
+		// loop-invariant (plan-proved) and its slot/register was written
+		// before the bracket opens (the VN preheader declares emit as
+		// sibling statements ahead of the loop), so the fold stays valid
+		// for the whole bracket; matching `base + var` accessor indexes
+		// then emit `[fold, var, lsl #3]` with no per-iteration base read
+		// and no add. A fold whose base storage turned out untrustworthy
+		// is simply never consulted — the emit-side lookup re-gates every
+		// match against the live maps.
+		const fold_regs: string[] = [];
+		for (const f of pin.folds ?? []) {
+			if (/^\d+$/.test(f.base)) {
+				// Literal base: the fold is a constant offset.
+				status.code += `add ${f.reg}, ${reg}, #${Number(f.base) * 8}\n`;
+			} else {
+				emit_var_load(status, "x10", f.base, 8);
+				status.code += `add ${f.reg}, ${reg}, x10, lsl #3\n`;
+			}
+			status.region_pinned.set(f.reg, (status.region_pinned.get(f.reg) ?? 0) + 1);
+			fold_regs.push(f.reg);
+		}
+		entries.push({ key: receiver.key, reg, folds: pin.folds ?? [] });
+		leases.push({ reg, displaced: resolved, had_claim, folds: fold_regs });
 	}
 	// Region-scoped source variables: borrow their registers with the same
 	// displaced-occupant round-trip and claim bookkeeping, and publish the
@@ -278,7 +308,7 @@ export function region_pool_enter(
 		var_bindings.push(
 			v.key ? { name: v.name, reg: v.reg, key: v.key } : { name: v.name, reg: v.reg },
 		);
-		leases.push({ reg: v.reg, displaced: resolved, had_claim });
+		leases.push({ reg: v.reg, displaced: resolved, had_claim, folds: [] });
 	}
 	if (leases.length === 0) return null;
 	status.region_preseed = { node, entries, vars: var_bindings };
@@ -315,6 +345,15 @@ export function region_pool_exit(status: BuildStatus, lease: RegionLease | null)
 		// again. A pre-existing bit is restored, not cleared.
 		if (depth <= 0 && CALLER_SAVED_EXT_X.includes(l.reg) && !l.had_claim) {
 			status.nir_caller_saved_claimed?.delete(l.reg);
+		}
+		// Base-fold registers release their region_pinned claim with the
+		// bracket; there is nothing to restore (scratch regs, dead after
+		// the bracket — the fold cache entries die with the loop builder's
+		// snapshot restore).
+		for (const fr of l.folds) {
+			const fd = (status.region_pinned?.get(fr) ?? 1) - 1;
+			if (fd <= 0) status.region_pinned?.delete(fr);
+			else status.region_pinned?.set(fr, fd);
 		}
 	}
 	status.region_preseed = undefined;

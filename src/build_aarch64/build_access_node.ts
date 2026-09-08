@@ -782,6 +782,70 @@ function get_buffer_data_ptr(target: BaseNode, status: BuildStatus): string {
 	return "x9";
 }
 
+/**
+ * Base-folded addressing (ASM_PLAN_6 tranche 3): when the index argument is
+ * `base + var` (both plain names, after param forwarding / VN splicing) and
+ * the region bracket preloaded a fold register for this (receiver, base)
+ * pair, return the fold register plus the var's live register. Every gate
+ * is re-checked here against the LIVE maps — a plan-recorded fold whose
+ * base storage turned out untrustworthy (a forward-elided `_vn` declare
+ * writes no slot, a `_param_` temp, an index-constant unroll copy, a
+ * slot-resident induction) simply never matches, and the access falls back
+ * to the ordinary staged path.
+ */
+function lookup_buffer_fold(
+	target: BaseNode,
+	index_param: BaseNode,
+	status: BuildStatus,
+): { reg: string; var_reg: string } | null {
+	const folds = status.buffer_fold_cache;
+	if (!folds || folds.size === 0) return null;
+	const key = buffer_cache_key(target);
+	if (!key) return null;
+	const effective = forwarded_param_tree(index_param, status) ?? index_param;
+	if (effective.node_type !== "op") return null;
+	const op = effective as OperationNode;
+	if (op.op !== "+" || !op.left_value || !op.right_value) return null;
+	const leaf_name = (n: BaseNode | undefined): string | null => {
+		if (!n || n.node_type !== "value") return null;
+		const v = (n as ValueNode).value;
+		if (typeof v !== "string") return null;
+		// Identifier names and non-negative integer literals (constant
+		// base folds) both participate; the key space cannot collide.
+		return /^[A-Za-z_][A-Za-z0-9_]*$/.test(v) || /^\d+$/.test(v) ? v : null;
+	};
+	const ln = leaf_name(op.left_value);
+	const rn = leaf_name(op.right_value);
+	if (!ln || !rn || ln === rn) return null;
+	for (const [base, ind] of [
+		[ln, rn],
+		[rn, ln],
+	]) {
+		const reg = folds.get(`${key}|${base}`);
+		if (!reg) continue;
+		if (status.induction_const?.has(ind)) return null;
+		if (status.function_param_regs?.has(ind)) return null;
+		const var_reg = status.register_allocations?.get(ind);
+		if (!var_reg || !var_reg.startsWith("x")) return null;
+		// The base needs real storage written before the bracket opened —
+		// unless it is a literal (constant offset, no storage at all).
+		if (/^\d+$/.test(base)) return { reg, var_reg };
+		if (base.startsWith("_param_")) return null;
+		if (base.startsWith("_vn_")) {
+			const def = status.nir_emit_ctx?.vn_temp_defs?.get(base);
+			if (!def || status.nir_emit_ctx?.forward_defs?.has(def)) return null;
+		} else if (
+			!status.register_allocations?.has(base) &&
+			!status.stack_offsets?.has(base) &&
+			!status.function_param_regs?.has(base)
+		) {
+			return null;
+		}
+		return { reg, var_reg };
+	}
+	return null;
+}
+
 // ---------------------------------------------------------------------------
 // Fixed-array element-address pipeline (ASM_PLAN_3 tranche A).
 //
@@ -2068,14 +2132,19 @@ function build_access_method(
 						}
 					}
 				}
-				// Access-staging (ASM_PLAN_3 tranche L): the index resolves
-				// through the pin window — a previously pinned sum is reused in
-				// place, otherwise the (possibly forwarded) chain builds
-				// dest-directed into x1 or a fresh pin. The data pointer takes
-				// the same window (a live pin, the existing cache, or a fresh
-				// derivation copied to a pin).
+				// Base-folded addressing (ASM_PLAN_6 tranche 3): a folded
+				// receiver pin replaces BOTH the index staging and the data
+				// derivation — the access indexes the preloaded fold
+				// register with the bare induction.
+				const folded =
+					!hoisted && !is_float && elem_bytes === 8 && access_func.params.length > 0
+						? lookup_buffer_fold(node.target, access_func.params[0], status)
+						: null;
 				let load_index_reg = "x1";
-				if (!hoisted) {
+				if (folded) {
+					load_index_reg = folded.var_reg;
+					data_reg = folded.reg;
+				} else if (!hoisted) {
 					if (access_func.params.length > 0) {
 						load_index_reg = staged_index_reg(access_func.params[0], status);
 					}
@@ -2208,13 +2277,28 @@ function build_access_method(
 						}
 					}
 				}
+				// Base-folded addressing (ASM_PLAN_6 tranche 3): a folded
+				// receiver pin replaces the index staging and the data
+				// derivation — the value (already staged in x2) stores
+				// straight off the fold register with the bare induction.
+				const store_folded =
+					!storeHoisted &&
+					!is_float &&
+					elem_bytes === 8 &&
+					method === "store_int" &&
+					access_func.params.length > 0
+						? lookup_buffer_fold(node.target, access_func.params[0], status)
+						: null;
 				let store_index_reg = "x1";
-				if (!storeHoisted) {
+				if (store_folded) {
+					store_index_reg = store_folded.var_reg;
+				} else if (!storeHoisted) {
 					store_index_reg = staged_index_reg(access_func.params[0], status);
 				}
 				// Get data pointer (cached, pinned, or freshly loaded)
-				const data_reg =
-					storeHoisted && storeDataReg
+				const data_reg = store_folded
+					? store_folded.reg
+					: storeHoisted && storeDataReg
 						? storeDataReg
 						: staged_data_reg(
 								node.target,

@@ -62,6 +62,11 @@ export default function build_while_loop_node(
 	const saved_slp_vregs = status.slp_pair_vregs;
 	const saved_buffer_cache = status.buffer_data_cache;
 	status.buffer_data_cache = undefined;
+	// Base-fold registers (ASM_PLAN_6): installed from the region pre-seed
+	// alongside the data cache — the snapshot/restore pairs so a fold entry
+	// never outlives the bracket that owns the register.
+	const saved_fold_cache = status.buffer_fold_cache;
+	status.buffer_fold_cache = undefined;
 	// Region-scoped pool claims (ASM_PLAN_5): apply this loop's receiver
 	// pins AFTER the snapshot-clear, so in-loop accessor derivations hit
 	// the pre-seeded cache (materialized once per loop, not per
@@ -74,6 +79,13 @@ export default function build_while_loop_node(
 	const saved_site_allocs = status.nir_site_allocs;
 	if (preseed && preseed.node === node) {
 		status.buffer_data_cache = new Map(preseed.entries.map((e) => [e.key, e.reg]));
+		for (const e of preseed.entries) {
+			if (!e.folds || e.folds.length === 0) continue;
+			if (!status.buffer_fold_cache) status.buffer_fold_cache = new Map();
+			for (const f of e.folds) {
+				status.buffer_fold_cache.set(`${e.key}|${f.base}`, f.reg);
+			}
+		}
 		// Bind the loop-contained locals into their borrowed registers
 		// AFTER the register_allocations snapshot above — the exit restore
 		// drops the bindings with the bracket, so a register-bound loop
@@ -284,6 +296,7 @@ export default function build_while_loop_node(
 	status.slp_pair_vregs = saved_slp_vregs;
 
 	status.buffer_data_cache = saved_buffer_cache;
+	status.buffer_fold_cache = saved_fold_cache;
 	status.array_ptr_cache = saved_array_cache;
 	(
 		status as unknown as {

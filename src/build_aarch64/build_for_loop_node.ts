@@ -72,6 +72,8 @@ export default function build_for_loop_node(
 	const saved_slp_vregs = status.slp_pair_vregs;
 	const saved_buffer_cache = status.buffer_data_cache;
 	status.buffer_data_cache = undefined;
+	const saved_fold_cache = status.buffer_fold_cache;
+	status.buffer_fold_cache = undefined;
 	const saved_array_cache = status.array_ptr_cache;
 	status.array_ptr_cache = undefined;
 
@@ -426,6 +428,7 @@ export default function build_for_loop_node(
 	status.slp_pair_vregs = saved_slp_vregs;
 
 	status.buffer_data_cache = saved_buffer_cache;
+	status.buffer_fold_cache = saved_fold_cache;
 	status.array_ptr_cache = saved_array_cache;
 	status.loop_labels.pop();
 	status.loop_writebacks?.pop();

@@ -11,7 +11,7 @@ import {
 } from "../../nir/analysis.ts";
 import { build_cfg, type FunctionCfg } from "../../nir/cfg.ts";
 import { lower_function } from "../../nir/from_ast.ts";
-import type { NirFunction, NirStmt } from "../../nir/nir.ts";
+import type { NirFunction, NirExpr, NirStmt } from "../../nir/nir.ts";
 import { analyze_traffic } from "../../nir/traffic.ts";
 import { version_function } from "../../nir/version.ts";
 import type AccessNode from "../../nodes/AccessNode.ts";
@@ -313,6 +313,10 @@ export interface NirRegisterPlan {
 			reg: string;
 			displaced: { name: string; key: string; type_name: string }[];
 			dead: string[];
+			/** Base-folded addressing (ASM_PLAN_6): scratch registers holding
+			 *  `pin + base*8` at bracket entry — the accessor staging emits
+			 *  `base + var` indexes straight off these with the bare var. */
+			folds: { base: string; reg: string }[];
 		}[];
 		vars: {
 			reg: string;
@@ -503,6 +507,139 @@ function region_loop_blocks(
  * (statement-shape gate + `inline_call_scratch_safe` per accessor call).
  */
 export const NIR_SCRATCH_X = ["x8", "x7", "x6", "x5", "x4"];
+
+/** Hosted value expression of one NIR statement (null for control kinds). */
+function hosted_nir_expr(s: NirStmt): NirExpr | null {
+	switch (s.kind) {
+		case "declare":
+			return s.decl.init;
+		case "assign":
+			return s.rhs;
+		case "return":
+			return s.value;
+		case "eval":
+			return s.expr;
+		default:
+			return null;
+	}
+}
+
+/** Foldable term text of a NIR leaf: an identifier name, or a non-negative
+ *  integer literal that stays inside the aarch64 add-immediate range once
+ *  scaled (`pin + imm*8`). */
+function nir_leaf_text(leaf: NirExpr): string | null {
+	if (leaf.kind !== "leaf") return null;
+	if (leaf.name) return leaf.name;
+	const v = (leaf.node as unknown as { value?: unknown }).value;
+	return typeof v === "string" && /^\d+$/.test(v) && Number(v) <= 511 ? v : null;
+}
+
+/** The two term texts of a pure `+` chain over an AST tree (the
+ *  checker-hoisted `_param_N` initializers — allocations never lower to
+ *  NIR, so their chains are analyzed on the AST). Null unless the chain
+ *  has exactly two foldable terms. */
+function ast_pair_terms(root: BaseNode): string[] | null {
+	const terms: string[] = [];
+	const walk = (n0: BaseNode): boolean => {
+		let n = n0;
+		while ((n as unknown as { value?: BaseNode }).value && n.node_type === "grouped") {
+			n = (n as unknown as { value: BaseNode }).value;
+		}
+		if (n.node_type === "op") {
+			const op = n as unknown as {
+				op?: string;
+				left_value?: BaseNode;
+				right_value?: BaseNode;
+			};
+			if (op.op !== "+" || !op.left_value || !op.right_value) return false;
+			return walk(op.left_value) && walk(op.right_value);
+		}
+		if (n.node_type !== "value") return false;
+		const v = (n as unknown as { value?: unknown }).value;
+		if (typeof v !== "string") return false;
+		if (/^\d+$/.test(v)) {
+			if (Number(v) > 511) return false;
+			terms.push(v);
+			return true;
+		}
+		if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(v)) return false;
+		if (v === "true" || v === "false" || v === "self") return false;
+		terms.push(v);
+		return true;
+	};
+	if (!walk(root)) return null;
+	return terms.length === 2 ? terms : null;
+}
+
+/** Every method-call expr in the statement tree, keyed by its AST access
+ *  node → the NIR index-argument expr. The plan's NIR view carries the VN
+ *  spine rewrites (`temp + induction`) even under mutate=false, where the
+ *  AST still shows the raw `_param_N` leaf — this is what makes the
+ *  base-fold decomposition plan-visible. */
+function collect_nir_index_args(stmts: readonly NirStmt[], into: Map<unknown, NirExpr>): void {
+	const walk_stmt = (s: NirStmt): void => {
+		const e = hosted_nir_expr(s);
+		if (e) walk_expr(e);
+		switch (s.kind) {
+			case "while":
+				if (s.cond) walk_expr(s.cond);
+				if (s.update) walk_stmt(s.update);
+				walk_stmts(s.body);
+				return;
+			case "for":
+				if (s.list) walk_expr(s.list);
+				if (s.update) walk_stmt(s.update);
+				walk_stmts(s.body);
+				return;
+			case "if":
+				walk_expr(s.cond);
+				walk_stmts(s.then_branch);
+				walk_stmts(s.else_branch);
+				return;
+			case "switch_match":
+				if (s.scrutinee) walk_expr(s.scrutinee);
+				for (const a of s.arms) {
+					if (a.condition) walk_expr(a.condition);
+					walk_stmts(a.branch);
+				}
+				if (s.otherwise) walk_stmts(s.otherwise);
+				return;
+			default:
+				return;
+		}
+	};
+	const walk_stmts = (list: readonly NirStmt[]): void => {
+		for (const s of list) walk_stmt(s);
+	};
+	const walk_expr = (e: NirExpr): void => {
+		switch (e.kind) {
+			case "method_call":
+				into.set(e.node, e.facts.args[0] ?? null);
+				walk_expr(e.receiver);
+				for (const a of e.facts.args) walk_expr(a);
+				return;
+			case "call":
+				for (const a of e.facts.args) walk_expr(a);
+				return;
+			case "binary":
+				walk_expr(e.left);
+				walk_expr(e.right);
+				return;
+			case "wrap":
+				if (e.inner) walk_expr(e.inner);
+				return;
+			case "path":
+				walk_expr(e.receiver);
+				return;
+			case "flow":
+				if (e.scrutinee) walk_expr(e.scrutinee);
+				return;
+			default:
+				return;
+		}
+	};
+	walk_stmts(stmts);
+}
 
 /**
  * Comment-stripped aarch64 text of a raw-only method body, or null when the
@@ -1030,6 +1167,10 @@ export function plan_nir_registers(
 			reg: string;
 			displaced: { name: string; key: string; type_name: string }[];
 			dead: string[];
+			/** Base-folded addressing (ASM_PLAN_6): scratch registers holding
+			 *  `pin + base*8` at bracket entry — the accessor staging emits
+			 *  `base + var` indexes straight off these with the bare var. */
+			folds: { base: string; reg: string }[];
 		}[];
 		vars: {
 			reg: string;
@@ -1049,6 +1190,7 @@ export function plan_nir_registers(
 		node: BaseNode;
 		region_blocks: Set<number>;
 		receiver_count: number;
+		receiver_folds: Map<string, { base: string; reg: string }[]>;
 		receivers: { key: string; node: BaseNode; call: BaseNode }[];
 	}[] = [];
 	if (region_pool_enabled()) {
@@ -1059,6 +1201,12 @@ export function plan_nir_registers(
 			if (list) list.push(name);
 			else reg_occupants.set(reg, [name]);
 		}
+		/** AST access node → the NIR index-argument expr (post VN-splice:
+		 *  the plan's NIR view carries the `temp + induction` rewrite even
+		 *  under mutate=false, where the AST still shows the raw `_param_N`
+		 *  leaf). Built once per function. */
+		const nir_index_args = new Map<unknown, NirExpr>();
+		collect_nir_index_args(renamed.body, nir_index_args);
 		for (const loop of analysis.loop_list) {
 			const node = cfg.loop_headers.get(loop.header);
 			if (!node) continue;
@@ -1143,6 +1291,11 @@ export function plan_nir_registers(
 			const receivers = new Map<string, { node: BaseNode; call: BaseNode }>();
 			let refuse = false;
 			const seen = new Set<unknown>();
+			/** Base-fold candidates (ASM_PLAN_6): the `load_int`/`store_int`
+			 *  calls whose index argument may be `invariant + induction` —
+			 *  resolved against the loop's writes and the NIR-spliced index
+			 *  args after the refuse gate. */
+			const fold_calls: { node: BaseNode; key: string }[] = [];
 			const collect = (node: unknown): void => {
 				if (!node || typeof node !== "object" || refuse || seen.has(node)) return;
 				seen.add(node);
@@ -1151,6 +1304,21 @@ export function plan_nir_registers(
 					return;
 				}
 				if (typeof (node as { node_type?: string }).node_type !== "string") return;
+				// Checker-hoisted `_param_N` allocations — they ride the
+				// ACCESS node that owns the hoisted argument, not the
+				// statement. Their initializers are the plan-side stand-in
+				// for the emitter's forwarding map (populated only during
+				// the body build): a foldable index argument that arrives
+				// as a `_param_N` leaf resolves through its allocation.
+				const allocs_on_node = (node as unknown as { allocations?: BaseNode[] }).allocations;
+				if (Array.isArray(allocs_on_node)) {
+					for (const a of allocs_on_node) {
+						const decl = a as unknown as { name?: unknown; value?: BaseNode };
+						if (typeof decl.name === "string" && /^_param_\d+$/.test(decl.name) && decl.value) {
+							param_allocs.set(decl.name, decl.value);
+						}
+					}
+				}
 				const n = node as BaseNode;
 				if (n.node_type === "access") {
 					const acc = n as AccessNode;
@@ -1161,7 +1329,16 @@ export function plan_nir_registers(
 							receiver && (receiver.node_type === "value" || receiver.node_type === "access")
 								? plain_or_field_key(receiver)
 								: null;
-						if (key) receivers.set(key, { node: receiver, call: n });
+						if (key) {
+							receivers.set(key, { node: receiver, call: n });
+							if (
+								(call.name === "load_int" || call.name === "store_int") &&
+								(call as unknown as { params?: unknown[] }).params &&
+								(call as unknown as { params: unknown[] }).params.length > 0
+							) {
+								fold_calls.push({ node: n, key });
+							}
+						}
 					}
 				}
 				for (const v of Object.values(n)) collect(v);
@@ -1172,6 +1349,13 @@ export function plan_nir_registers(
 			 *  writes). Any foreign write of the root refuses the key. */
 			const roots_refused = new Set<string>();
 			const roots_written = new Set<string>();
+			/** Names defined inside the region — the induction side of a
+			 *  base-fold pair must be one of these, the invariant side must
+			 *  not be. */
+			const loop_writes = new Set<string>();
+			/** `_param_N` name → the allocation's initializer tree (see the
+			 *  collection in the region walk below). */
+			const param_allocs = new Map<string, BaseNode>();
 			for (const bId of region_blocks) {
 				const b = cfg.blocks[bId];
 				if (!b) continue;
@@ -1200,6 +1384,7 @@ export function plan_nir_registers(
 					};
 					scan_own(s.node);
 					for (const d of s.defs) {
+						loop_writes.add(d);
 						const R = d.split(".")[0];
 						// A root-def is the accessor's own marshalling ONLY in
 						// an eval/declare whose tree holds that accessor. An
@@ -1237,80 +1422,149 @@ export function plan_nir_registers(
 			for (const key of [...receivers.keys()]) {
 				if (roots_refused.has(key)) receivers.delete(key);
 			}
-			// Scratch-set modeling (ASM_PLAN_6): a call-free loop whose
-			// standard pools are exhausted (every pool register holds a
-			// genuinely live occupant — the tranche-4 ceiling) can still pin
-			// its receivers, into the scratch registers x4–x8, which this
-			// loop's emission provably never touches. The scan walks the
-			// same nesting-complete region the receiver collection used
-			// (body blocks, condition terminators, update statements — the
-			// update rides the latch block, a header pred). One unsafe
-			// shape refuses the loop; the kill-switch is the shared
-			// region_pool gate.
-			if (free_regs.length === 0) {
-				if (receivers.size === 0) continue;
-				const scratch_seen = new Set<unknown>();
-				let scratch_ok = true;
-				const scratch_walk = (n: unknown): void => {
-					if (!n || typeof n !== "object" || !scratch_ok || scratch_seen.has(n)) return;
-					scratch_seen.add(n);
-					if (Array.isArray(n)) {
-						for (const e of n) scratch_walk(e);
-						return;
-					}
-					if (typeof (n as { node_type?: string }).node_type !== "string") return;
-					const w = n as BaseNode;
+			// Scratch-set modeling (ASM_PLAN_6): a call-free loop's emission
+			// provably avoids the caller-saved scratch registers x4–x8 (no
+			// call marshaling, raw-only accessors confined to x0–x3, no
+			// struct-return paths). The scan walks the same
+			// nesting-complete region the receiver collection used (body
+			// blocks, condition terminators, update statements — the update
+			// rides the latch block, a header pred). One unsafe shape fails
+			// the loop; the kill-switch is the shared region_pool gate. The
+			// verdict gates BOTH scratch uses: pins for pool-exhausted
+			// loops, and base-fold registers on any pin.
+			const scratch_seen = new Set<unknown>();
+			let scratch_ok = true;
+			const scratch_walk = (n: unknown): void => {
+				if (!n || typeof n !== "object" || !scratch_ok || scratch_seen.has(n)) return;
+				scratch_seen.add(n);
+				if (Array.isArray(n)) {
+					for (const e of n) scratch_walk(e);
+					return;
+				}
+				if (typeof (n as { node_type?: string }).node_type !== "string") return;
+				const w = n as BaseNode;
+				if (
+					w.node_type === "raw" ||
+					w.node_type === "func_call" ||
+					w.node_type === "spawn" ||
+					w.node_type === "break" ||
+					w.node_type === "continue" ||
+					w.node_type === "return" ||
+					w.node_type === "for" ||
+					w.node_type === "panic" ||
+					w.node_type === "todo" ||
+					w.node_type === "let" ||
+					w.node_type === "async_block"
+				) {
+					// Raw blocks are liveness barriers; func/spawn are
+					// real calls (dead here — the refuse gate — but kept
+					// as defense); break/continue/return emit invisible
+					// cleanup and exit paths the scan cannot see; fors
+					// materialize iterators (and the for-of element copy
+					// arm reads x8); panic/todo/let/async emit calls or
+					// late binding.
+					scratch_ok = false;
+					return;
+				}
+				if (w.node_type === "access") {
+					const acc = (w as AccessNode).access;
 					if (
-						w.node_type === "raw" ||
-						w.node_type === "func_call" ||
-						w.node_type === "spawn" ||
-						w.node_type === "break" ||
-						w.node_type === "continue" ||
-						w.node_type === "return" ||
-						w.node_type === "for" ||
-						w.node_type === "panic" ||
-						w.node_type === "todo" ||
-						w.node_type === "let" ||
-						w.node_type === "async_block"
+						acc &&
+						acc.node_type === "access_func" &&
+						!inline_call_scratch_safe(
+							(w as AccessNode).target,
+							acc as unknown as { name?: string; mangled_name?: string },
+							options?.status,
+						)
 					) {
-						// Raw blocks are liveness barriers; func/spawn are
-						// real calls (dead here — the refuse gate — but kept
-						// as defense); break/continue/return emit invisible
-						// cleanup and exit paths the scan cannot see; fors
-						// materialize iterators (and the for-of element copy
-						// arm reads x8); panic/todo/let/async emit calls or
-						// late binding.
 						scratch_ok = false;
 						return;
 					}
-					if (w.node_type === "access") {
-						const acc = (w as AccessNode).access;
-						if (
-							acc &&
-							acc.node_type === "access_func" &&
-							!inline_call_scratch_safe(
-								(w as AccessNode).target,
-								acc as unknown as { name?: string; mangled_name?: string },
-								options?.status,
-							)
-						) {
-							scratch_ok = false;
-							return;
-						}
-					}
-					for (const v of Object.values(w)) scratch_walk(v);
-				};
+				}
+				for (const v of Object.values(w)) scratch_walk(v);
+			};
+			if (receivers.size > 0) {
 				for (const bId of region_blocks) {
 					const b = cfg.blocks[bId];
 					if (!b) continue;
 					for (const s of b.stmts) scratch_walk(s.node);
 					if (b.term.t === "branch" && b.term.cond?.node) scratch_walk(b.term.cond.node);
 				}
+			}
+			// Base-folded addressing (ASM_PLAN_6 tranche 3): for each pinned
+			// receiver, group its load_int/store_int calls whose index
+			// argument is `<invariant> + <induction>` (both plain names, in
+			// the NIR-spliced view) by the invariant leaf. Each distinct
+			// base earns one scratch register preloaded with
+			// `data_ptr + base*8` at bracket entry; the accessor staging
+			// then indexes with the bare induction — the per-access base
+			// read + add disappear. Gated on the scratch verdict (the fold
+			// register rides x4–x8 for the whole bracket) and on the
+			// induction being register-assigned.
+			const receiver_count0 = Math.min(receivers.size, 2);
+			const fold_start = free_regs.length === 0 ? receiver_count0 : 0;
+			const receiver_folds = new Map<string, { base: string; reg: string }[]>();
+			let fold_used = 0;
+			if (scratch_ok && fold_start < NIR_SCRATCH_X.length && fold_calls.length > 0) {
+				for (const [key] of [...receivers.entries()].slice(0, 2)) {
+					const folds: { base: string; reg: string }[] = [];
+					const bases = new Set<string>();
+					for (const fc of fold_calls) {
+						if (fold_start + fold_used >= NIR_SCRATCH_X.length) break;
+						if (fc.key !== key) continue;
+						// Two index-argument shapes reach the fold: a NIR
+						// `base + var` binary (the VN-spliced form — the
+						// Knuth-D chains), or a `_param_N` leaf whose
+						// allocation initializer is a 2-term `+` chain (the
+						// un-spliced user-code form — VN deliberately skips
+						// literal-only invariant prefixes).
+						const idx = nir_index_args.get(fc.node);
+						if (!idx) continue;
+						let e: NirExpr = idx;
+						while (e.kind === "wrap") e = e.inner ?? e;
+						let ln: string | null = null;
+						let rn: string | null = null;
+						if (e.kind === "binary" && (e.node as unknown as { op?: string }).op === "+") {
+							ln = nir_leaf_text(e.left);
+							rn = nir_leaf_text(e.right);
+						} else if (e.kind === "leaf" && e.name && /^_param_\d+$/.test(e.name)) {
+							const terms = param_allocs.has(e.name)
+								? ast_pair_terms(param_allocs.get(e.name)!)
+								: null;
+							if (terms) {
+								ln = terms[0];
+								rn = terms[1];
+							}
+						}
+						if (!ln || !rn || ln === rn) continue;
+						const lW = loop_writes.has(ln);
+						const rW = loop_writes.has(rn);
+						if (lW === rW) continue;
+						const ind = lW ? ln : rn;
+						const base = lW ? rn : ln;
+						if (loop_writes.has(base)) continue;
+						if (base.startsWith("_param_")) continue;
+						if (bases.has(base)) continue;
+						// The induction must ride a register at access time —
+						// the folded addressing is `[fold, ind_reg, lsl #3]`.
+						const ind_reg = allocs.get(ind);
+						if (!ind_reg || !ind_reg.startsWith("x")) continue;
+						bases.add(base);
+						const reg = NIR_SCRATCH_X[fold_start + fold_used];
+						fold_used += 1;
+						folds.push({ base, reg });
+					}
+					if (folds.length > 0) receiver_folds.set(key, folds);
+				}
+			}
+			if (free_regs.length === 0) {
+				if (receivers.size === 0) continue;
 				if (!scratch_ok) continue;
 				scratch_pending.push({
 					node,
 					region_blocks,
 					receiver_count: Math.min(receivers.size, 2),
+					receiver_folds,
 					receivers: [...receivers.entries()]
 						.map(([key, info]) => ({ key, node: info.node, call: info.call }))
 						.slice(0, 2),
@@ -1329,7 +1583,10 @@ export function plan_nir_registers(
 			// weighting — single-use staging consts round-trip their slots
 			// every iteration too).
 			const receiver_count = Math.min(receivers.size, 2);
-			const pins = free_regs.slice(0, receiver_count);
+			const pins = free_regs.slice(0, receiver_count).map((p, i) => ({
+				...p,
+				folds: receiver_folds.get([...receivers.keys()][i]) ?? [],
+			}));
 			const vars: {
 				reg: string;
 				name: string;
@@ -1438,10 +1695,11 @@ export function plan_nir_registers(
 					[...o.region_blocks].every((b) => sp.region_blocks.has(b)),
 			);
 			if (contained) continue;
-			const pins = NIR_SCRATCH_X.slice(0, sp.receiver_count).map((reg) => ({
+			const pins = NIR_SCRATCH_X.slice(0, sp.receiver_count).map((reg, i) => ({
 				reg,
 				displaced: [],
 				dead: [],
+				folds: sp.receiver_folds.get(sp.receivers[i]?.key) ?? [],
 			}));
 			if (pins.length === 0) continue;
 			region_free.push({ node: sp.node, pins, vars: [], receivers: sp.receivers });

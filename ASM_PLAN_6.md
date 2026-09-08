@@ -308,14 +308,71 @@ work elsewhere). The tranche's deliverable is the mechanism: the allocator
 now models x4–x8, which is the precondition tranche 3 (base-folded
 addressing) deferred for.
 
+### Tranche 6 (2026-09-08): base-folded addressing — LANDED (completes tranche 3)
+
+The deferred tranche 3, unblocked by tranche 5's scratch pool. The pin's
+data pointer folds an invariant index base at bracket entry
+(`fold = data_ptr + base*8`, one preheader instruction), and every
+`load_int`/`store_int` whose index argument is `base + var` (both plain
+terms) emits the strided access straight off the fold register with the
+BARE induction — the per-access base read + staged index chain disappear.
+
+Plan side (`utils/nir_regalloc.ts`): after the refuse gate, the plan groups
+each pinned receiver's load_int/store_int calls by their invariant index
+term. Two argument shapes reach the fold: a NIR `base + var` binary (the
+VN-spliced form — the Knuth-D chains; VN's spine rewrite is plan-visible
+even under mutate=false) and a `_param_N` leaf whose checker-hoisted
+allocation initializer is a 2-term `+` chain (the un-spliced user-code
+form — VN deliberately skips literal-only invariant prefixes as bare
+copies, so the chain is recovered from the allocation riding the ACCESS
+node; the emitter's forwarding map does not exist at plan time). The
+induction must be function-wide register-assigned (the folded addressing
+is `[fold, ind_reg, lsl #3]`); the invariant side may be a name (slot or
+register) or a literal ≤ 511 (immediate — `pin + imm*8` must fit the
+aarch64 add range). Scratch verdict gates everything: fold registers ride
+x4–x8 for the whole bracket. Nested scratch candidates defer as before
+(the fold regs allocate after the pin regs from NIR_SCRATCH_X).
+
+Emit side: `region_pool_enter` preloads each fold register after the pin
+derivation (`emit_var_load` + `add fold, pin, x10, lsl #3`, or an
+immediate add for literals) and registers it in `region_pinned` (an inner
+scratch bracket must not borrow it); `region_pool_exit` releases the
+claim — nothing to restore. `build_while_loop_node` installs the fold
+entries into a new `buffer_fold_cache` (`receiverKey|base` → reg) with the
+cache pre-seed and snapshots/restores it with `buffer_data_cache`;
+inline/for boundaries clear it (the fold register has no claim there).
+The accessor paths consult `lookup_buffer_fold` before staging an index —
+every gate is re-checked against the LIVE maps (induction not
+index-constant-substituted, not a param reg, register-resident; base
+storage trustworthy: a `_vn` declare that survived forwarding, a real
+slot/register/param home, or a literal) — a plan-recorded fold that
+turned out unsound simply never matches, and the access falls back to
+the ordinary staged path.
+
+Result: both D4 loops fold. The D4-subtract loop drops from 18 to **13
+instructions/iteration** — both loads and the store index with the bare
+induction off fold registers x7/x6 (the `ldr x11, [x29, #base]` slot read,
+the two adds and the dead `mov x3, x28` staging all gone) — and the
+D4-multiply loop from 15 to **12** (the store's `_vn` base folds into x8;
+25 at the arc's start). The user-code literal shape folds identically
+(`add x8, pin, #32` preheader; `ldr x0, [x8, i2, lsl #3]` in-loop).
+Bench matrix byte-identical across backends (pidigits, edigits, fannkuch,
+lru, spectral-norm, binarytrees, mandelbrot, nsieve, nbody, merkletrees,
+knucleotide); full suite green default-ON (292 files / 2843 tests) with
+the base-fold shape + behavioral tests in `test/scratch_pool.test.ts`.
+pidigits n=4000 interleaved best-of-7: 0.50–0.51 → **0.50** flat (7/7
+pairs at-or-better — the D4 loops are ~2 instructions/iteration lighter,
+at the timing noise floor but never worse).
+
 ## State
 
 Tranches 1–2 landed and tranche 4 landed (default ON, suite green, matrix
 byte-identical, pidigits 0.64 → **0.50** across the ASM_PLAN_5+6 arc;
 tranche 3 deferred below the noise floor). Tranche 5 landed the scratch-set
 model (x4–x8) at the NIR allocator level with the corrected region
-characterization. The D4 census closes: of the original 25
-instructions/iteration, the derivation (2), the base slot load (1), the
-carry slot round-trips (si2) and the five dead staging movs are gone; what
-remains is essential compute, the accessor marshaling the raw bodies
-genuinely need, and the flag-form carry.
+characterization; tranche 6 landed base-folded addressing, completing the
+deferred tranche 3. The D4 census closes at **12 instructions/iteration**
+(mi; 25 at the arc's start) and **13** (si2): the derivation, the base slot
+load, the carry slot round-trips, the five dead staging movs AND the
+per-access index chains are gone; what remains is essential compute, the
+accessor marshaling the raw bodies genuinely need, and the flag-form carry.

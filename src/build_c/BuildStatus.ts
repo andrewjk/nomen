@@ -603,6 +603,11 @@ export default interface BuildStatus {
 				reg: string;
 				displaced: { name: string; key: string; type_name: string }[];
 				dead: string[];
+				/** Base-folded addressing (ASM_PLAN_6): scratch registers
+				 *  preloaded with `reg + base*8` at bracket entry; the
+				 *  accessor staging indexes matching `base + var` args with
+				 *  the bare var. */
+				folds?: { base: string; reg: string }[];
 			}[];
 			/** Region-scoped source variables (ASM_PLAN_5 tranche 5):
 			 *  loop-contained hot int locals the plan assigns to the loop's
@@ -631,7 +636,14 @@ export default interface BuildStatus {
 	 *  sites; the builder restores the table at bracket exit). */
 	region_preseed?: {
 		node: BaseNode;
-		entries: { key: string; reg: string }[];
+		entries: {
+			key: string;
+			reg: string;
+			/** Base-fold registers for this pin: installed into
+			 *  `buffer_fold_cache` (`key|base` → reg) with the cache
+			 *  pre-seed. */
+			folds?: { base: string; reg: string }[];
+		}[];
 		vars?: { name: string; reg: string; key?: string }[];
 	};
 	/**
@@ -680,6 +692,19 @@ export default interface BuildStatus {
 	 * AST node; set/cleared by the pass around each body build.
 	 */
 	vn_param_inits?: Map<BaseNode, Map<string, BaseNode>>;
+	/**
+	 * aarch64-only (ASM_PLAN_6 base-fold): `"receiverKey|baseName"` → the
+	 * scratch register holding `data_ptr + base*8` for the bracketed loop's
+	 * pinned receiver. A `load_int`/`store_int` whose index argument is
+	 * `base + var` (both plain names) with a hit here emits the strided
+	 * access straight off the folded register with the bare var — no index
+	 * staging, no base read per iteration. Installed by build_while_loop_node
+	 * from the region pre-seed (plan-assigned scratch registers); snapshotted
+	 * and restored with buffer_data_cache at every loop/branch boundary, and
+	 * cleared at inline/for boundaries (the fold register has no claim
+	 * there).
+	 */
+	buffer_fold_cache?: Map<string, string>;
 	/**
 	 * Set by build_float_operand before building a float-typed child expression.
 	 * When a float binary operation sees this flag at its result point, it skips

@@ -234,3 +234,50 @@ pub func main = () {
 		true,
 	);
 });
+
+/** Base-folded addressing (ASM_PLAN_6 tranche 3): the pinned receiver's
+ *  pointer folds an invariant index base at bracket entry, and matching
+ *  `base + var` accessor arguments index the fold register with the bare
+ *  induction — the per-access base read + add disappear. The literal form
+ *  (`4 + i2`) rides the plan's `_param` allocation resolution: VN
+ *  deliberately skips literal-only invariant prefixes, so the un-spliced
+ *  chain is recovered from the checker-hoisted allocation. */
+const FOLD_SHAPE = `
+import System
+
+pub func main = () {
+	var buf = Buffer<uint64>()
+	buf.alloc_int(16)
+	var i = 0
+	while i < 16; i += 1 {
+		buf.store_int(i, i * 3 + 1)
+	}
+	var int total = 0
+	var i2 = 0
+	while i2 < 8; i2 += 1 {
+		if i2 >= 0 && i2 + 4 < buf.cap {
+			total += buf.load_int(4 + i2)
+		}
+	}
+	Console.write("\\{total}")
+}
+`;
+
+test("base-fold: the pin folds an invariant base and accesses index the bare induction", () => {
+	const code = compile(FOLD_SHAPE, true);
+	const loop_start = code.indexOf(".while_1:");
+	const loop = code.slice(loop_start, code.indexOf(".end_while_1:"));
+	const pre = code.slice(0, loop_start);
+	// The fold register is preloaded once, before the header (base 4 × 8).
+	expect(pre).toMatch(/add x8, x\d+, #32\n/);
+	// The access indexes the fold register with the bare induction —
+	// no staged index chain, no base slot read inside the loop.
+	expect(loop).toMatch(/ldr x0, \[x8, x\d+, lsl #3\]/);
+	expect(loop).not.toMatch(/mov x10, #4/);
+	expect(loop).not.toMatch(/add x10, x10, x\d+/);
+});
+
+test("behavioral: base-folded accesses print exact results on both backends", async () => {
+	const { default: build_and_check_output } = await import("./build_and_check_output");
+	await build_and_check_output(FOLD_SHAPE, "scratch_pool_base_fold", "188", true);
+});
