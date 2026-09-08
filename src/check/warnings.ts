@@ -1,6 +1,7 @@
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AssignmentNode from "../nodes/AssignmentNode.ts";
 import BaseNode from "../nodes/BaseNode.ts";
+import { child_nodes } from "../nodes/child_nodes.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
@@ -219,7 +220,7 @@ function collect_local_declarations(func: FunctionNode, locals: Locals): void {
 		if (node.node_type === "declare") locals.decls.push(node as DeclarationNode);
 		// A nested function's body belongs to that function, not this one.
 		if (node.node_type === "func" && node !== func) return;
-		for (const child of children_of(node)) visit(child);
+		for (const child of child_nodes(node)) visit(child);
 	};
 	for (const stmt of func.statements) visit(stmt);
 }
@@ -232,7 +233,7 @@ function for_each_node(root: BaseNode, visit: (node: BaseNode) => void): void {
 	while (stack.length) {
 		const node = stack.pop()!;
 		visit(node);
-		for (const child of children_of(node)) stack.push(child);
+		for (const child of child_nodes(node)) stack.push(child);
 	}
 }
 
@@ -240,48 +241,6 @@ function for_each_function(root: BaseNode, visit: (func: FunctionNode) => void):
 	for_each_node(root, (node) => {
 		if (node.node_type === "func") visit(node as FunctionNode);
 	});
-}
-
-/** The child nodes of `node`, recursing into arrays and node-valued fields. */
-function children_of(node: BaseNode): BaseNode[] {
-	const out: BaseNode[] = [];
-	for (const key of Object.keys(node)) {
-		if (key === "parent" || key === "scope") continue;
-		const value = (node as unknown as Record<string, unknown>)[key];
-		if (Array.isArray(value)) {
-			for (const item of value) {
-				if (is_node(item)) out.push(item);
-				else collect_wrapper_children(item, out);
-			}
-		} else if (is_node(value)) {
-			out.push(value);
-		} else {
-			collect_wrapper_children(value, out);
-		}
-	}
-	return out;
-}
-
-/**
- * Case lists (e.g. `SwitchNode.cases`, `MatchNode.cases`) hold plain
- * `{ condition, branch }` wrapper objects rather than BaseNodes — without this
- * the entire subtree under each case is invisible to the generic walk.
- */
-function collect_wrapper_children(value: unknown, out: BaseNode[]): void {
-	if (!value || typeof value !== "object" || Array.isArray(value)) return;
-	for (const key of Object.keys(value)) {
-		const inner = (value as Record<string, unknown>)[key];
-		if (is_node(inner)) out.push(inner);
-	}
-}
-
-function is_node(value: unknown): value is BaseNode {
-	return (
-		!!value &&
-		typeof value === "object" &&
-		"node_type" in value &&
-		typeof (value as { node_type: unknown }).node_type === "string"
-	);
 }
 
 function is_discard(name: string): boolean {

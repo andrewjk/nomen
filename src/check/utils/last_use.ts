@@ -1,6 +1,7 @@
 import AccessNode from "../../nodes/AccessNode.ts";
 import type AssignmentNode from "../../nodes/AssignmentNode.ts";
 import BaseNode from "../../nodes/BaseNode.ts";
+import { child_nodes } from "../../nodes/child_nodes.ts";
 import type DeclarationNode from "../../nodes/DeclarationNode.ts";
 import type FunctionNode from "../../nodes/FunctionNode.ts";
 import OperationNode from "../../nodes/OperationNode.ts";
@@ -74,7 +75,7 @@ function clear_last_use_moves(root: BaseNode): number {
 				count++;
 			}
 		}
-		for (const child of children_of(node)) visit(child);
+		for (const child of child_nodes(node)) visit(child);
 	};
 	visit(root);
 	return count;
@@ -90,7 +91,7 @@ function collect_stamps(root: BaseNode): StampTarget[] {
 		if (node.node_type === "func") {
 			out.push(...collect_function_stamps(node as unknown as FunctionNode));
 		}
-		for (const child of children_of(node)) visit_functions(child);
+		for (const child of child_nodes(node)) visit_functions(child);
 	};
 	visit_functions(root);
 	return out;
@@ -236,7 +237,7 @@ export function scan_last_use_string_moves(root: BaseNode): LastUseSite[] {
 		if (node.node_type === "func") {
 			sites.push(...scan_function(node as unknown as FunctionNode));
 		}
-		for (const child of children_of(node)) visit_functions(child);
+		for (const child of child_nodes(node)) visit_functions(child);
 	};
 	visit_functions(root);
 	return sites;
@@ -594,7 +595,7 @@ function walk_expr(walk: Walk, node: BaseNode): void {
 		default: {
 			// cast / let expressions / func literals: walk children generically
 			// so nothing that reads is silently skipped.
-			for (const child of children_of(node)) walk_expr(walk, child);
+			for (const child of child_nodes(node)) walk_expr(walk, child);
 		}
 	}
 }
@@ -606,24 +607,8 @@ function subtree_names(node: BaseNode): string[] {
 			const v = (n as ValueNode).value;
 			if (typeof v === "string" && /^[A-Za-z_][A-Za-z0-9_]*$/.test(v)) names.push(v);
 		}
-		for (const child of children_of(n)) visit(child);
+		for (const child of child_nodes(n)) visit(child);
 	};
 	visit(node);
 	return names;
-}
-
-/** Yields the BaseNode children of `node` (same model as the mutation scan:
- *  `scope` skipped — parent links would escape the unit). */
-function* children_of(node: BaseNode): Generator<BaseNode> {
-	for (const key of Object.keys(node)) {
-		if (key === "scope") continue;
-		const value = (node as unknown as Record<string, unknown>)[key];
-		if (value instanceof BaseNode) {
-			yield value;
-		} else if (Array.isArray(value)) {
-			for (const item of value) {
-				if (item instanceof BaseNode) yield item;
-			}
-		}
-	}
 }

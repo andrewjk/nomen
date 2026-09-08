@@ -289,24 +289,31 @@ segment also can't be validated by name alone: module files like
 `Geometry.nm` are indexed by declared *type* names (`Size`, `Frame`), not by
 file name — the lookup would need the `module_type_names` path-base matching.
 
-## Generic AST walkers skip switch/match case subtrees
+## Raw `#arch: aarch64` blocks assume param registers, which control flow clobbers
 
-`SwitchNode.cases` / `MatchNode.cases` hold plain `{ condition, branch }`
-wrapper objects (no `node_type`), so any walker that recurses via an
-`Object.keys(node)` + `is_node` scan silently skips everything under each case
-(conditions and bodies). Found while fixing the warnings pass
-(`src/check/warnings.ts`): unused-param/unused-function analysis never saw
-switch/match cases, so a parameter read only in `case cond ->` was flagged
-"never used" and a function called only inside a case body was flagged "never
-called". Fixed there by unwrapping one level of plain objects
-(`collect_wrapper_children`).
+Found while writing the switch-case mutation-gate test in
+`test/borrow_to_string_elision.test.ts`: a raw asm block that reads its
+parameters crashes at runtime when it sits after any control flow. The raw
+block ABI hands params in `x0`, `x1`, … at function entry, and the emitter
+splices the block verbatim wherever the statement sits — but by then the
+backend has evaluated other expressions into those registers. Repro
+(`func raw_touch = (string p) { switch { case true { raw } } }`, asm from
+`test/out/aarch64/.../main.s`):
 
-Nine other walkers use the same pattern and still have the blind spot:
-`src/build.ts`, `src/build_c/build_root_node.ts`,
-`src/build_common/scan_moved_param_consumed.ts`, `src/check/utils/ownership.ts`,
-`src/build_aarch64/neon_plan.ts`, `src/check/utils/string_mutation_scan.ts`,
-`src/check/utils/last_use.ts`, `src/build_aarch64/utils/scan_heap_returns.ts`,
-`src/build_aarch64/utils/scan_inline_candidates.ts`. Their impact varies (some
-may never see switch-heavy code, some may misreport), and a shared child-node
-helper would prevent this class of bug recurring. Audit each, fix, and add
-switch/match-containing fixtures.
+```
+str x0, [x29, #0]   // param p spilled to its slot
+mov x0, #1          // switch condition reuses x0
+cmp x0, #0
+beq end_switch_0
+mov w2, #74
+strb w2, [x0]       // raw block still expects p in x0 → writes to address 1
+```
+
+The C backend is unaffected (raw C bodies reference params by name through
+the generated glue). Entry-position raw blocks — the shape all of `core/` and
+the existing tests use — are fine. Fix directions: reload the params into
+their ABI registers immediately before each raw statement (the values are
+already in the slots the prologue spills them to), or have
+`asm_validator`/`lift_asm` reject a raw block that is not preceded only by
+prologue code, or document raw blocks as entry-only for aarch64. The same
+clobber class applies to any `if`/`while`/`match` body, not just `switch`.

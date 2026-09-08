@@ -1,4 +1,5 @@
 import type BaseNode from "../nodes/BaseNode.ts";
+import { child_nodes } from "../nodes/child_nodes.ts";
 import RootNode from "../nodes/RootNode.ts";
 import TraitNode from "../nodes/TraitNode.ts";
 import build_block_node from "./build_block_node.ts";
@@ -10,18 +11,8 @@ function collect_traits(node: BaseNode, acc: TraitNode[] = []): TraitNode[] {
 	if (node.node_type === "trait") {
 		acc.push(node as TraitNode);
 	}
-	for (const key of Object.keys(node)) {
-		if (key === "parent" || key === "scope") continue; // skip back-refs
-		const v = (node as unknown as Record<string, unknown>)[key];
-		if (Array.isArray(v)) {
-			for (const item of v) {
-				if (item && typeof item === "object" && "node_type" in item) {
-					collect_traits(item as BaseNode, acc);
-				}
-			}
-		} else if (v && typeof v === "object" && "node_type" in v) {
-			collect_traits(v as BaseNode, acc);
-		}
+	for (const child of child_nodes(node)) {
+		collect_traits(child, acc);
 	}
 	return acc;
 }

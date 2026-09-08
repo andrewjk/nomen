@@ -230,6 +230,34 @@ var Token b = a
 		expect(parsed.errors).toEqual([]);
 	});
 
+	test("a #destroy that frees inside a switch case is still owning (copy rejected)", () => {
+		// The raw free sits under a switch case — the ownership detector's AST
+		// walk must see through the case list to find it, or a byte-copy of
+		// Filey would double-free.
+		const input = `
+struct Filey {
+	var int handle
+
+	func #destroy = (ref self) {
+		switch {
+			case self.handle != 0 {
+				\`\`\`
+				#arch: c
+				free((void*)self.handle);
+				\`\`\`
+			}
+		}
+	}
+}
+var Filey a = Filey(1)
+var Filey b = a
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors.map((e) => e.message)).toContainEqual(
+			expect.stringContaining("cannot copy 'Filey'"),
+		);
+	});
+
 	test("a copyable #destroy still runs on each independent copy", async () => {
 		// b is an independent copy of a; both are destroyed at scope exit and
 		// each resets its own id. No shared heap, so this is sound (audit clean).

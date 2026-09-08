@@ -38,6 +38,7 @@ import { optimize_asm } from "./build_common/optimize_asm.ts";
 import { scan_borrow_returning_functions } from "./build_common/scan_borrow_returns.ts";
 import { stamp_last_use_moves } from "./check/utils/last_use.ts";
 import BaseNode from "./nodes/BaseNode.ts";
+import { child_nodes } from "./nodes/child_nodes.ts";
 import RawNode from "./nodes/RawNode.ts";
 import type BuildResult from "./types/BuildResult.ts";
 
@@ -578,18 +579,8 @@ function ast_uses_objc(node: BaseNode | undefined | null): boolean {
 	if (node.node_type === "raw" && OBJC_RE.test((node as RawNode).value)) {
 		return true;
 	}
-	for (const key of Object.keys(node)) {
-		if (key === "parent" || key === "scope") continue; // skip back-refs
-		const v = (node as unknown as Record<string, unknown>)[key];
-		if (Array.isArray(v)) {
-			for (const item of v) {
-				if (item && typeof item === "object" && "node_type" in item) {
-					if (ast_uses_objc(item as BaseNode)) return true;
-				}
-			}
-		} else if (v && typeof v === "object" && "node_type" in v) {
-			if (ast_uses_objc(v as BaseNode)) return true;
-		}
+	for (const child of child_nodes(node)) {
+		if (ast_uses_objc(child)) return true;
 	}
 	return false;
 }

@@ -57,6 +57,43 @@ pub func main = () {
 	expect(sites[0]).toMatchObject({ func: "render", target: "acc", source: "next" });
 });
 
+test("detects the staged-rebinding pattern inside a switch case", () => {
+	const sites = scan(`
+import System
+pub func main = () {
+	var t = "a".to_string()
+	var s = "b".to_string()
+	switch {
+		case true {
+			s = t
+		}
+	}
+}
+`);
+	expect(sites).toHaveLength(1);
+	expect(sites[0]).toMatchObject({ target: "s", source: "t" });
+});
+
+test("refuses when a later read sits inside a switch expression", () => {
+	// The read of `t` is a case arm of a switch EXPRESSION — reachable only
+	// through the generic child walk (walk_stmt's explicit case list doesn't
+	// apply to expression position). Missing it would stamp an unsound move.
+	const sites = scan(`
+import System
+pub func main = () {
+	var t = "a".to_string()
+	var s = "b".to_string()
+	s = t
+	var label = switch {
+		case true -> t
+		else -> "z"
+	}
+	Console.write_line(label)
+}
+`);
+	expect(sites).toHaveLength(0);
+});
+
 test("refuses a read after the assignment", () => {
 	const sites = scan(`
 import System

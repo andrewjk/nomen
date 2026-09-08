@@ -99,6 +99,41 @@ pub func main = () {
 	);
 });
 
+test("raw mutator gated when the blocks sit inside a switch case (gate pin, both backends)", () => {
+	// Same gate as the top-level pin above, but the raw blocks are statements
+	// of a switch case: the mutation scan's AST walk must see through the case
+	// list, or the borrow-position to_string elides and the caller's bytes
+	// would be clobbered by the callee.
+	const input = `
+import System
+
+func raw_touch = (string p) {
+	switch {
+		case true {
+			\`\`\`
+			#arch: c
+			p[0] = 'J';
+			\`\`\`
+			\`\`\`
+			#arch: aarch64
+			mov w2, #74
+			strb w2, [x0]
+			\`\`\`
+		}
+	}
+}
+
+pub func main = () {
+	var s = "hello".to_string()
+	raw_touch(s.to_string())
+}
+`;
+	const a64 = build_code(input, "aarch64");
+	expect(count(a64, "bl string_to_string")).toBe(2);
+	const c = build_code(input, "c");
+	expect(c).toContain("string_to_string(s)");
+});
+
 test("transitive scan: read-only forwarding elides, raw-mutating forwarding copies", async () => {
 	await run_program(
 		`

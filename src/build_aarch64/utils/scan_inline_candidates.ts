@@ -1,5 +1,6 @@
 import { SIMPLE_TYPES } from "../../built_in_types.ts";
 import type BaseNode from "../../nodes/BaseNode.ts";
+import { child_nodes } from "../../nodes/child_nodes.ts";
 import FunctionNode from "../../nodes/FunctionNode.ts";
 
 const MAX_STATEMENTS = 15;
@@ -43,18 +44,8 @@ function collect_function_statements(
 			defs.set(func.name, func);
 		}
 	}
-	for (const key of Object.keys(any_node)) {
-		if (key === "parent" || key === "scope") continue;
-		const val = any_node[key];
-		if (Array.isArray(val)) {
-			for (const item of val) {
-				if (item && typeof item === "object" && typeof item.node_type === "string") {
-					collect_function_statements(item as BaseNode, counts, defs);
-				}
-			}
-		} else if (val && typeof val === "object" && typeof val.node_type === "string") {
-			collect_function_statements(val as BaseNode, counts, defs);
-		}
+	for (const child of child_nodes(node)) {
+		collect_function_statements(child, counts, defs);
 	}
 }
 
@@ -117,14 +108,8 @@ function declares_any_name(
 	if (typeof node !== "object") return false;
 	const any_node = node as any;
 	if (any_node.node_type === "declare" && names.has(any_node.name as string)) return true;
-	for (const key of Object.keys(any_node)) {
-		if (key === "parent" || key === "scope") continue;
-		const val = any_node[key];
-		if (val && typeof val === "object" && typeof val.node_type === "string") {
-			if (declares_any_name(val as BaseNode, names)) return true;
-		} else if (Array.isArray(val)) {
-			if (declares_any_name(val as BaseNode[], names)) return true;
-		}
+	for (const child of child_nodes(any_node)) {
+		if (declares_any_name(child as BaseNode, names)) return true;
 	}
 	return false;
 }
@@ -147,18 +132,8 @@ function check_leaf(node: BaseNode | undefined, visited: Set<object>): boolean {
 	if (nt === "access" && (node as any).access?.node_type === "access_func") return false;
 	if (nt === "func") return false;
 
-	for (const key of Object.keys(node)) {
-		if (key === "node_type" || key === "start" || key === "type" || key === "scope") continue;
-		const child = (node as any)[key];
-		if (Array.isArray(child)) {
-			for (const item of child) {
-				if (item && typeof item === "object" && (item as any).node_type) {
-					if (!check_leaf(item as BaseNode, visited)) return false;
-				}
-			}
-		} else if (child && typeof child === "object" && (child as any).node_type) {
-			if (!check_leaf(child as BaseNode, visited)) return false;
-		}
+	for (const child of child_nodes(node)) {
+		if (!check_leaf(child as BaseNode, visited)) return false;
 	}
 
 	return true;

@@ -1,6 +1,7 @@
 import AccessFunctionCallNode from "../../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../../nodes/AccessNode.ts";
 import BaseNode from "../../nodes/BaseNode.ts";
+import { child_nodes } from "../../nodes/child_nodes.ts";
 import type FunctionNode from "../../nodes/FunctionNode.ts";
 import type ParameterNode from "../../nodes/ParameterNode.ts";
 import type Type from "../../nodes/Type.ts";
@@ -202,7 +203,7 @@ function scan_param_reaches(
 function collect_raw_nodes(node: BaseNode): { value: string }[] {
 	if (node.node_type === "raw") return [node as unknown as { value: string }];
 	const out: { value: string }[] = [];
-	for (const child of children_of(node)) {
+	for (const child of child_nodes(node)) {
 		out.push(...collect_raw_nodes(child));
 	}
 	return out;
@@ -265,7 +266,7 @@ function walk_mutation(
 	// semantics strdup into the callee's own slot; the caller's bytes are
 	// untouched. Assignments contribute only through their RHS expression,
 	// which the generic walk below covers.
-	for (const child of children_of(node)) {
+	for (const child of child_nodes(node)) {
 		if (walk_mutation(child, pname, status, visiting)) return true;
 	}
 	return false;
@@ -365,24 +366,6 @@ function method_self_is_ref(access_func: AccessFunctionCallNode, status: CheckSt
 // ---------------------------------------------------------------------------
 // Generic child traversal
 // ---------------------------------------------------------------------------
-
-/** Yields the BaseNode children of `node`. Skips `scope` (parent links would
- *  escape the body and re-walk it) — everything else that is a node or an
- *  array of nodes is fair game. `resolved_function` is non-enumerable by
- *  design, so it never shows up here (no func→func cycles). */
-function* children_of(node: BaseNode): Generator<BaseNode> {
-	for (const key of Object.keys(node)) {
-		if (key === "scope") continue;
-		const value = (node as unknown as Record<string, unknown>)[key];
-		if (value instanceof BaseNode) {
-			yield value;
-		} else if (Array.isArray(value)) {
-			for (const item of value) {
-				if (item instanceof BaseNode) yield item;
-			}
-		}
-	}
-}
 
 // ---------------------------------------------------------------------------
 // Raw-block textual rules

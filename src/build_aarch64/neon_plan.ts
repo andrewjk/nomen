@@ -5,6 +5,7 @@ import type { NirExpr, NirStmt } from "../nir/nir.ts";
 import type AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import type AccessNode from "../nodes/AccessNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
+import { child_nodes } from "../nodes/child_nodes.ts";
 import type DeclarationNode from "../nodes/DeclarationNode.ts";
 import type GroupedNode from "../nodes/GroupedNode.ts";
 import type OperationNode from "../nodes/OperationNode.ts";
@@ -402,18 +403,8 @@ function has_allocations(node: BaseNode | null | undefined): boolean {
 	if (!node || typeof node !== "object") return false;
 	const allocs = (node as unknown as { allocations?: BaseNode[] }).allocations;
 	if (allocs && allocs.length > 0) return true;
-	for (const key of Object.keys(node)) {
-		if (key === "parent" || key === "scope" || key === "allocations") continue;
-		const v = (node as unknown as Record<string, unknown>)[key];
-		if (Array.isArray(v)) {
-			for (const item of v) {
-				if (item && typeof item === "object" && "node_type" in (item as object)) {
-					if (has_allocations(item as BaseNode)) return true;
-				}
-			}
-		} else if (v && typeof v === "object" && "node_type" in (v as object)) {
-			if (has_allocations(v as BaseNode)) return true;
-		}
+	for (const child of child_nodes(node, ["parent", "scope", "allocations"])) {
+		if (has_allocations(child)) return true;
 	}
 	return false;
 }

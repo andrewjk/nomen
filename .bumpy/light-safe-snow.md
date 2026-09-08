@@ -2,4 +2,4 @@
 nomen-lang: patch
 ---
 
-warnings: unwrap switch/match case wrappers so unused-param/unused-function analysis sees case conditions and bodies
+check/build: walk switch/match case subtrees in every generic AST scan via the shared child_nodes helper (warnings, ownership, last_use, string mutation scan, objc/NEON/inline/heap-return scans)

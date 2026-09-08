@@ -1,5 +1,6 @@
 import { mono_type_name } from "../../build_common/mono_name.ts";
 import type BaseNode from "../../nodes/BaseNode.ts";
+import { child_nodes } from "../../nodes/child_nodes.ts";
 import FunctionNode from "../../nodes/FunctionNode.ts";
 import StructNode from "../../nodes/StructNode.ts";
 import Type from "../../nodes/Type.ts";
@@ -50,18 +51,8 @@ function contains_raw(node: BaseNode, visited: WeakSet<BaseNode>): boolean {
 	if (!node || typeof node !== "object" || visited.has(node)) return false;
 	visited.add(node);
 	if (node.node_type === "raw") return true;
-	for (const key of Object.keys(node)) {
-		if (key === "scope" || key === "parent") continue;
-		const val = (node as unknown as Record<string, unknown>)[key];
-		if (val && typeof val === "object" && "node_type" in val) {
-			if (contains_raw(val as BaseNode, visited)) return true;
-		} else if (Array.isArray(val)) {
-			for (const item of val) {
-				if (item && typeof item === "object" && "node_type" in item) {
-					if (contains_raw(item as BaseNode, visited)) return true;
-				}
-			}
-		}
+	for (const child of child_nodes(node)) {
+		if (contains_raw(child, visited)) return true;
 	}
 	return false;
 }
