@@ -1,5 +1,6 @@
 import { coalesce_copies } from "./build_aarch64/asm_coalesce.ts";
 import { eliminate_dead_cycle_moves } from "./build_aarch64/asm_cycle_dead_moves.ts";
+import { convert_loop_invariant_branches } from "./build_aarch64/asm_if_convert.ts";
 import { promote_loop_slots } from "./build_aarch64/asm_loop_promote.ts";
 import {
 	eliminate_dead_copy_moves,
@@ -305,6 +306,18 @@ export default function build(
 		// carry `if` emits no branch, so accessor pairs share one region
 		// the statement-level pins cannot span).
 		status.code = coalesce_copies(status.code);
+		// Loop-invariant branch if-conversion (ASM_PLAN_7 tranche 1) — a
+		// two-arm if-diamond inside a validated cycle whose arms differ by
+		// ONE operand, with the predicate and both operands never defined
+		// in the cycle, merges to a single arm reading a select register
+		// materialized once before the header (`cmp` + `csel` — or a
+		// once-only mov pair for immediate operands). Kills the
+		// per-iteration compare + branch + arm cost (the spectral-norm
+		// `if transpose` receipt: 100% of samples in the j-loop). The
+		// merge also turns the cycle label-clean, so the dead-cycle-move
+		// pass below can price the staging moves the diamond used to
+		// shield.
+		status.code = convert_loop_invariant_branches(status.code);
 		// Dead staging-move elimination inside validated loop cycles —
 		// prunes `mov xD, xS` whose destination exact-CFG liveness proves
 		// dead (the per-statement emission's protocol staging whose
