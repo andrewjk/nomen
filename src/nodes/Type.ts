@@ -28,6 +28,14 @@ export type StorageKind = "stack_array" | "heap_array" | "view";
 export default class Type {
 	name: string;
 	is_static?: boolean;
+	/**
+	 * Character offset of the type name in the parsed source, when this type
+	 * came straight from the parser. Used by editor tooling to point
+	 * hover/go-to-definition at generic arguments (`List<CharChange>`) and
+	 * tuple elements. Checker-synthesized types (substitutions,
+	 * monomorphizations) leave it unset; `clone_type` preserves it.
+	 */
+	start?: number;
 	storage_kind?: StorageKind;
 	is_ref?: boolean;
 	/**

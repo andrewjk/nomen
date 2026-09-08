@@ -60,13 +60,15 @@ import System::Collections::List
 		]);
 	});
 
-	test("unknown bare import is an error", () => {
+	test("non-System imports are left alone", () => {
+		// Bare and project-relative imports (`import Map`,
+		// `import types::CharChange`) name project files resolved by the
+		// module joiner, not the library index, so they are not validated.
 		const input = `
 import Foo
+import types::CharChange
 `;
-		expect(parse(input, core).errors).toEqual([
-			test_error(input, "Unknown import path: Foo", 2, 1),
-		]);
+		expect(parse(input, core).errors).toEqual([]);
 	});
 });
 

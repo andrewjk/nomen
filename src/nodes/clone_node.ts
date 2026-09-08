@@ -48,6 +48,7 @@ export function clone_type(type: Type): Type {
 	// bug where cloning a heap `Array<T>` dropped `is_array_heap`, producing a
 	// `stack_array`).
 	t.storage_kind = type.storage_kind;
+	t.start = type.start;
 	t.is_ref = type.is_ref;
 	t.is_const_ref = type.is_const_ref;
 	t.is_return_type = type.is_return_type;

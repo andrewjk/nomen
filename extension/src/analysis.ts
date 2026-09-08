@@ -719,10 +719,28 @@ class Builder {
 
 	private add_type_ref(type: Type | undefined, start: number | undefined): void {
 		if (!type || start === undefined || start < 0) return;
-		const name = this.word_at(start);
+		// `type_start` sits before `view`/`ref` modifiers, so fall back to the
+		// type name's own offset when the word there doesn't resolve.
+		let at = start;
+		let name = this.word_at(at);
+		let def = name ? this.types.get(name)?.def : undefined;
+		if (!def && type.start !== undefined && type.start !== start) {
+			at = type.start;
+			name = this.word_at(at);
+			def = name ? this.types.get(name)?.def : undefined;
+		}
 		if (!name) return;
-		const def = this.types.get(name)?.def;
-		if (def) this.add_ref(start, name.length, def);
+		if (def) this.add_ref(at, name.length, def);
+		// Generic arguments and tuple elements carry their own source offsets
+		// (recorded by the parser), so hover/go-to-definition works on them
+		// too (`List<CharChange>` points at the `CharChange` declaration).
+		// Checker-synthesized types have no offsets and are skipped.
+		for (const arg of type.type_args || []) {
+			if (arg.start !== undefined) this.add_type_ref(arg, arg.start);
+		}
+		for (const element of type.tuple_types || []) {
+			if (element.start !== undefined) this.add_type_ref(element, element.start);
+		}
 	}
 
 	/**

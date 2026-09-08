@@ -33,16 +33,18 @@ export default function parse_import(status: ParseStatus) {
 }
 
 /**
- * An import path must name something real: the library root (`System`) or a
- * path mirroring the library's file layout — a namespace directory
- * (`System::Controls`), a module file (`System::Controls::Geometry`), or a
- * top-level module (`import Map`, resolved from `Map.nm`). Anything else
+ * A `System`-rooted import path must mirror the library's file layout — a
+ * namespace directory (`System::Controls`), a module file
+ * (`System::Controls::Geometry`), or the root itself. Anything else
  * (`import System::Contrls`) is a typo that would otherwise silently import
- * nothing, so it is a compile error.
+ * nothing, so it is a compile error. Non-`System` imports name project files
+ * (`import combined`, `import types::CharChange`) resolved by the module
+ * joiner, not the library index, so they are left alone.
  */
 function validate_import_path(status: ParseStatus, segments: string[], start: number) {
 	if (segments.some((s) => !s)) return;
-	if (segments.length === 1 && segments[0] === "System") return;
+	if (segments[0] !== "System") return;
+	if (segments.length === 1) return;
 	if (library_path_prefixes(status.library!).has(segments.join("/"))) return;
 	add_error(status, `Unknown import path: ${segments.join("::")}`, start);
 }

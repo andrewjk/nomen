@@ -13,6 +13,7 @@ import peek_current from "./utils/peek_current.ts";
 export default function parse_type(status: ParseStatus): Type {
 	// Tuple type: `[T1, T2, ...]`
 	if (peek_current(status) === "[") {
+		const start = get_index(status);
 		accept("[", status);
 		// Anonymous enum type: `[.ok(int), .error]` — a case list whose
 		// entries start with `.` (a tuple element can never start with `.`).
@@ -31,6 +32,7 @@ export default function parse_type(status: ParseStatus): Type {
 		expect("]", status);
 		// Variadic tuple type: follows `...` prefix handled by caller
 		const type = new Type("tuple");
+		type.start = start;
 		type.tuple_types = tuple_types;
 		// Variadic tuple marker — caller may set is_array via the ... prefix
 		if (accept("?", status)) {
@@ -45,6 +47,7 @@ export default function parse_type(status: ParseStatus): Type {
 	// `Controls::Button` — qualified references flatten to the bare name
 	const { base } = parse_qualified_name(status, consume(status), start);
 	const type = new Type(base);
+	type.start = start;
 	if (is_view) type.is_view = true;
 	if (is_ref) type.is_ref = true;
 	if (accept("<", status)) {

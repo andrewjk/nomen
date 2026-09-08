@@ -46,7 +46,7 @@ export function build_source_map(
 	const segments: SourceSegment[] = [{ start: 0, end: text.length, path: file_path }];
 
 	let user_source = text;
-	for (const sibling of read_siblings(file_path, library)) {
+	for (const sibling of read_siblings(file_path, text, library)) {
 		const start = user_source.length + 1;
 		user_source += "\n" + sibling.text;
 		segments.push({ start, end: start + sibling.text.length, path: sibling.path });
@@ -137,19 +137,54 @@ interface SiblingSource {
 // (files outside the resolved library), the parent folder's `.nm` files are
 // pulled in too — library files resolve their parent folder through the
 // library dependency walker (`resolve_linked_types`) instead, so reading them
-// here would only duplicate declarations parse already inlines.
-function read_siblings(file_path: string, library: Library | undefined): SiblingSource[] {
+// here would only duplicate declarations parse already inlines. Finally, the
+// files named by the document's (and siblings') own project-relative imports
+// (`import types::CharChange`, old-style `import types/CharChange`) are pulled
+// in transitively, mirroring the compiler's module joiner — without this,
+// types from subfolder modules have no definitions for hover/go-to-definition
+// and silently-missing imports produce no diagnostics.
+function read_siblings(
+	file_path: string,
+	doc_text: string,
+	library: Library | undefined,
+): SiblingSource[] {
 	const self_dir = path.dirname(file_path);
 	const self_base = path.basename(file_path);
 	const seen = new Set<string>([file_path]);
 
 	const siblings: SiblingSource[] = [];
-	add_dir(siblings, self_dir, self_base, seen);
+	const pending: { dir: string; text: string }[] = [];
+	const push_file = (dir: string, full: string, text: string) => {
+		if (seen.has(full)) return;
+		seen.add(full);
+		siblings.push({ path: full, text });
+		pending.push({ dir, text });
+	};
+
+	const add_siblings_in = (dir: string, exclude_base: string) => {
+		let names: string[];
+		try {
+			names = fs.readdirSync(dir);
+		} catch {
+			return;
+		}
+		for (const name of names.sort()) {
+			if (!name.endsWith(".nm")) continue;
+			if (name === exclude_base) continue;
+			const full = path.join(dir, name);
+			if (seen.has(full)) continue;
+			const text = read_file(full);
+			if (text === undefined) continue;
+			push_file(dir, full, text);
+		}
+	};
+
+	add_siblings_in(self_dir, self_base);
 
 	const parent_dir = path.dirname(self_dir);
 	const is_library_file = !!library?.dir && is_within(file_path, library.dir);
 	if (parent_dir !== self_dir && !is_library_file) {
-		add_dir(siblings, parent_dir, "", seen);
+		add_siblings_in(parent_dir, "");
 	}
 	// A `*.test.nm` file can reference the program's `pub` declarations: pull
 	// in the `src/` module (with `main` stripped, since the test harness
@@ -158,7 +193,41 @@ function read_siblings(file_path: string, library: Library | undefined): Sibling
 		const src_dir = resolve_src_module(self_dir);
 		if (src_dir) add_src_module(siblings, src_dir, seen);
 	}
+
+	// Follow project-relative imports transitively, starting from the
+	// document's live text (which may be newer than disk). `System` imports
+	// resolve through the library walker instead.
+	pending.push({ dir: self_dir, text: doc_text });
+	while (pending.length > 0) {
+		const current = pending.shift()!;
+		for (const target of project_imports(current.text)) {
+			const full = path.resolve(current.dir, target);
+			if (seen.has(full)) continue;
+			const text = read_file(full);
+			if (text === undefined) continue;
+			push_file(path.dirname(full), full, text);
+		}
+	}
 	return siblings;
+}
+
+/**
+ * Project-relative import targets in `text`, as `./`-rooted file paths.
+ * Mirrors the compiler's module joiner: `import System` / `import System::…`
+ * are library imports (skipped), anything else names a project file where
+ * both `::` and `/` separate path segments (`import types::CharChange` and
+ * the old `import types/CharChange` both mean `./types/CharChange.nm`).
+ */
+function project_imports(text: string): string[] {
+	const targets: string[] = [];
+	const re = /^import(.*)$/gm;
+	let match: RegExpExecArray | null;
+	while ((match = re.exec(text)) !== null) {
+		const trimmed = match[1].trim();
+		if (!trimmed || trimmed === "System" || trimmed.startsWith("System::")) continue;
+		targets.push(`./${trimmed.split("::").join("/")}.nm`);
+	}
+	return targets;
 }
 
 function add_src_module(out: SiblingSource[], src_dir: string, seen: Set<string>): void {
@@ -176,25 +245,6 @@ function add_src_module(out: SiblingSource[], src_dir: string, seen: Set<string>
 		if (text === undefined) continue;
 		seen.add(full);
 		out.push({ path: full, text: strip_main_functions(text) });
-	}
-}
-
-function add_dir(out: SiblingSource[], dir: string, exclude_base: string, seen: Set<string>): void {
-	let names: string[];
-	try {
-		names = fs.readdirSync(dir);
-	} catch {
-		return;
-	}
-	for (const name of names.sort()) {
-		if (!name.endsWith(".nm")) continue;
-		if (name === exclude_base) continue;
-		const full = path.join(dir, name);
-		if (seen.has(full)) continue;
-		const text = read_file(full);
-		if (text === undefined) continue;
-		seen.add(full);
-		out.push({ path: full, text });
 	}
 }
 
