@@ -284,8 +284,12 @@ export function validate_asm(code: string): LiftError[] {
 	const lines = code.split("\n");
 
 	// Pass 1: collect labels + call targets so branch targets and function
-	// entries are known before validation.
+	// entries are known before validation. GNU numeric local labels (`1:`)
+	// are collected separately with their line indices: they may be
+	// REDEFINED, and references are directional (`1f` = nearest below,
+	// `1b` = nearest above), so existence depends on position.
 	const labels = new Set<string>();
+	const numeric_labels = new Map<string, number[]>();
 	const bl_targets = new Set<string>();
 	const stripped: string[] = [];
 	for (let i = 0; i < lines.length; i++) {
@@ -293,6 +297,12 @@ export function validate_asm(code: string): LiftError[] {
 		stripped.push(t);
 		const lm = /^([A-Za-z_.$][\w.$]*):/.exec(t);
 		if (lm) labels.add(lm[1]);
+		const nm = /^(\d+):/.exec(t);
+		if (nm) {
+			const defs = numeric_labels.get(nm[1]);
+			if (defs) defs.push(i);
+			else numeric_labels.set(nm[1], [i]);
+		}
 		const bm = /^\s*bl\s+([A-Za-z_.$][\w.$]*)/.exec(t);
 		if (bm) bl_targets.add(bm[1]);
 	}
@@ -318,13 +328,16 @@ export function validate_asm(code: string): LiftError[] {
 			continue;
 		}
 
-		const lm = /^([A-Za-z_.$][\w.$]*):(.*)$/.exec(t);
+		const lm = /^([A-Za-z_.$][\w.$]*|\d+):(.*)$/.exec(t);
 		if (lm) {
 			const name = lm[1];
 			if (lm[2].trim()) continue; // label + data directive on one line
 			// Any label is a control-flow merge point — incoming flag state is
 			// unknown regardless of whether it starts a new function.
 			flags_known = false;
+			// GNU numeric local labels are always LOCAL: never function
+			// entries, never bl/globl targets — they only reset flag state.
+			if (/^\d+$/.test(name)) continue;
 			// Function entries are non-dot labels reached as call targets,
 			// declared .globl, preceded by a section/alignment marker, or
 			// following the previous function's ret. Local labels (`.L…`,
@@ -395,13 +408,19 @@ export function validate_asm(code: string): LiftError[] {
 		if (sig.setsFlags) flags_known = true;
 		if (op === "bl" || op === "blr") flags_known = false;
 
-		// Branch targets must exist somewhere in the file.
+		// Branch targets must exist somewhere in the file. Numeric local
+		// references resolve DIRECTIONALLY against the (possibly redefined)
+		// numeric label definitions: `1f` needs a `1:` below, `1b` above.
 		if (
 			(op === "b" || op.startsWith("b.") || op === "cbz" || op === "cbnz") &&
 			labelish_count > 0
 		) {
 			const target = (operands.find((o) => o.kind === "label") as { name: string }).name;
-			if (!labels.has(target)) {
+			const num = /^(\d+)([fb])$/.exec(target);
+			const defined = num
+				? (numeric_labels.get(num[1]) ?? []).some((line) => (num[2] === "f" ? line > i : line < i))
+				: labels.has(target);
+			if (!defined) {
 				err(`branch to undefined label '${target}'`);
 			}
 		}
@@ -456,7 +475,12 @@ export function validate_stack_balance(code: string): LiftError[] {
 type SpDelta = number | "unknown";
 
 const BRANCH_OPS = new Set(["b", "cbz", "cbnz", "tbz", "tbnz"]);
-const BRANCH_ALIAS_RE = /^b(eq|ne|lt|le|gt|ge|hs|lo|ls|hi|mi|pl)$/;
+// Conditional branches ride both spellings the emitters and raw blocks use:
+// the dotted form (`b.hs`, the aarch64 canonical) and the ARM32-style alias
+// (`bhs`). Without the dot the balance dataflow never sees the branch — the
+// target block gets no predecessors, stays at bottom, and its ret is
+// silently unchecked.
+const BRANCH_ALIAS_RE = /^b\.?(eq|ne|lt|le|gt|ge|hs|lo|ls|hi|mi|pl)$/;
 const LABEL_RE = /^([A-Za-z_.$][\w.$]*|\d+):(.*)$/;
 const TARGET_RE = /^[A-Za-z_.$][\w.$]*$|^\d+[fb]$/;
 

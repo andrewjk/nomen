@@ -103,6 +103,42 @@ describe("asm lift validation", () => {
 		expect(errors.length).toBe(1);
 		expect(errors[0].message).toContain("conditional 'b.lt'");
 	});
+
+	test("GNU numeric local labels (1:/2:) in raw blocks validate clean", () => {
+		// The BigInt div128 shape: short branches over a push/pop call.
+		const asm = [
+			"_f:",
+			"cmp x1, x3",
+			"b.hs 1f",
+			"mov x0, x2",
+			"str x30, [sp, #-16]!",
+			"bl ___udivti3",
+			"ldr x30, [sp], #16",
+			"b 2f",
+			"1:",
+			"mov x0, #-1",
+			"2:",
+			"ret",
+		].join("\n");
+		expect(validate_asm(asm)).toEqual([]);
+	});
+
+	test("numeric forward reference with no definition below fails", () => {
+		// The only `1:` sits ABOVE the branch — `1f` looks downward only.
+		const errors = validate_asm(["_f:", "1:", "cmp x0, #0", "b.hs 1f", "ret"].join("\n"));
+		expect(errors.length).toBe(1);
+		expect(errors[0].message).toContain("undefined label '1f'");
+	});
+
+	test("numeric backward reference resolves upward; dangling one fails", () => {
+		const ok = validate_asm(["_f:", "1:", "cmp x0, #0", "b.ne 1b", "ret"].join("\n"));
+		expect(ok).toEqual([]);
+		const bad = validate_asm(
+			["_f:", "cmp x0, #0", "b.ne 1b", "1:", "mov x0, #1", "ret"].join("\n"),
+		);
+		expect(bad.length).toBe(1);
+		expect(bad[0].message).toContain("undefined label '1b'");
+	});
 });
 
 describe("asm lift on real builds", () => {
@@ -131,5 +167,25 @@ if f > 1.0 {
 		// Round-trip fidelity: re-emitting the lifted lines is byte-identical.
 		const rejoined = lift.result.lines.map((l) => l.text).join("\n");
 		expect(rejoined).toBe(result.code);
+	});
+
+	test("a BigInt div_to build (raw numeric-label block) lifts clean", () => {
+		// div128's `#arch: aarch64` body uses GNU numeric local labels
+		// (`1:` / `b.hs 1f`) — the validator must resolve them, not reject.
+		const input = `
+var BigInt a = BigInt()
+var BigInt b = BigInt()
+var BigInt q = BigInt()
+var BigInt rem = BigInt()
+a = a.new(100)
+b = b.new(10)
+q.div_to(a, b, ref rem)
+Console.write((q.get(0) as int).to_string())
+Console.write("\\n")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64" });
+		expect(result.errors ?? []).toEqual([]);
 	});
 });

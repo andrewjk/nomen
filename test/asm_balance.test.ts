@@ -110,15 +110,32 @@ f:
 	stp x29, x30, [sp, #-16]!
 	cmp x0, #1
 	b.hs 1f
-	ldr x19, [sp], #16
+	ldp x29, x30, [sp], #16
+	ret
+1:
+	ldp x29, x30, [sp], #16
+	ret
+`),
+	).toEqual([]);
+});
+
+test("numeric local label balance: an imbalanced taken path fails loudly", () => {
+	// The `1:` path double-pops — resolution of `1f` must FEED the dataflow
+	// (an unresolved target would leave the block unreached and silent).
+	const messages = balance(`
+f:
+	stp x29, x30, [sp, #-16]!
+	cmp x0, #1
+	b.hs 1f
 	ldp x29, x30, [sp], #16
 	ret
 1:
 	ldr x19, [sp], #16
 	ldp x29, x30, [sp], #16
 	ret
-`),
-	).toEqual([]);
+`);
+	expect(messages.length).toBe(1);
+	expect(messages[0]).toContain("unbalanced stack: sp offset 16 at ret");
 });
 
 test("mov sp, xN poisons the delta and is never reported", () => {

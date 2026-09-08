@@ -183,49 +183,6 @@ Options when this is picked up:
 Not fixed in the tranche (out of scope; tranche 3's mutation scan
 keeps borrow positions isolated). Recorded for the semantic owner.
 
-## Region-pool receiver pins — RESOLVED (default ON, 2026-09-06/07)
-
-ASM_PLAN_5 tranche 1 (`region_pool.ts`: region-scoped callee-pool claims +
-loop-pinned Buffer data-pointer materialization) is now **default ON** after
-the soundness hunt closed all four holes. The receipts (each caught by the
-build-both-arms/diff discipline):
-
-1. **Pin register ABI**: the pin is a CALLEE-SAVED register — using it
-   without riding the prologue/epilogue save/restore destroyed the
-   CALLER's live value (first_child's pin clobbered measure_w's x25 —
-   layout's `800x30`). Fix: chosen pins join `plan.callee_saved`, and
-   `region_pool_exit` no longer deletes them from the live claim set.
-2. **Shared registers**: N non-interfering ranges share one register with
-   N DIFFERENT values — a single loop-exit reload restores one (edigits:
-   five shared limb temps, four corrupted). Registers with >1 occupant
-   are refused.
-3. **Emit-time bindings**: loop promotion (tranche D) claims registers at
-   emission and installs them in `register_allocations` as scopes open —
-   invisible to the plan-time occupant map. The inner c-loop's induction
-   `c` was promoted into x24 by the outer loop's promotion and the
-   bracket's digits.data derivation destroyed it (edigits' `0 :1`).
-   Fix: `region_pool_enter` refuses pin registers bound in the live
-   `register_allocations` (tranche 2 refines this to the per-pin dead
-   set — function-wide occupants stay bound whether or not they are
-   live, so only unknown keys refuse).
-4. **Ordering/counting** (attribution, path-assign refusal, entry-load
-   accumulation, positional dest-and-source reads) — fixed in the first
-   landing.
-5. **Share-into-pin** (tranche 2, knucleotide count_seq segfault):
-   promotion's interference-SHARING could not see the pin and shared the
-   j-loop induction onto the data-pin register
-   (`ldr x0, [x26, x26, lsl #3]`). Fresh claims already avoided pins via
-   `callee_saved_regs_used`; only the sharing path was blind. Fix:
-   `status.region_pinned` (bracket-maintained, nesting-disciplined);
-   `can_share_claimed_register` refuses pinned regs.
-6. **Nesting-incomplete loop bodies** (tranche 2, lru segfault):
-   analyze_loops' latch pred-walk missed nested blocks, so the outer
-   find-loop tested its inner sh-loop's induction dead (members disjoint
-   from the incomplete set) and borrowed its register for the whole outer
-   bracket. Fix: `region_loop_blocks` (header-dominates + reaches-header,
-   unioned with the analyzed set) drives every region check — union-only
-   ever refuses more pins.
-
 ## Tranche-3 shelved pieces (measured, not shipped)
 
 ASM_PLAN_5 tranche 3 landed the ext-borrow machinery + hardenings; these
@@ -304,19 +261,3 @@ already in the slots the prologue spills them to), or have
 `asm_validator`/`lift_asm` reject a raw block that is not preceded only by
 prologue code, or document raw blocks as entry-only for aarch64. The same
 clobber class applies to any `if`/`while`/`match` body, not just `switch`.
-
-## `validate_asm` rejects raw-block GNU numeric local labels (pre-existing)
-
-`BigInt.div128`'s `#arch: aarch64` body uses numeric local labels (`1:`,
-`2:` with `b.hs 1f` / `b 2f` branches). Any single-TU aarch64 build that
-compiles `div_to` (bench programs, `test/induction_pin.test.ts` probes)
-reports `asm: branch to undefined label '1f'` / `asm: unparseable
-instruction — 1:` build errors, even though the emitted text assembles and
-runs correctly (clang accepts the labels; the bench harness ignores
-`result.errors`). Other passes already understand the forms
-(`asm_cycle_dead_moves`' CFG resolves numeric `1f`/`1b`; `lift_asm.ts`
-mentions GNU numeric labels) — only the validator's label table does not.
-Fix direction: teach `validate_asm` (and the stack-balance validator) the
-numeric-label definition/reference forms. Found during ASM_PLAN_7 tranche
-2 (the div_to induction census builds `div_to` single-TU); left alone as
-out of scope — the tranche's tests filter the known messages.
