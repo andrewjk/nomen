@@ -790,57 +790,57 @@ Adapted from [Programming Language Benchmarks](https://github.com/hanabi1224/Pro
 
 | Benchmark   | Nomen/A | Nomen/C |   Go |  Zig | Rust |  Compare |
 | ----------- | ------: | ------: | ---: | ---: | ---: | -------: |
-| helloworld  |     3ms |     3ms |  3ms |  3ms |  3ms | 1.0-1.0x |
-| knucleotide |    12ms |    12ms | 19ms |  6ms | 10ms | 0.6-2.0x |
-| regex-redux |    56ms |    40ms | 16ms | 18ms |  6ms | 3.1-9.3x |
+| helloworld  |     3ms |     3ms |  4ms |  4ms |  4ms | 0.8-0.8x |
+| knucleotide |     8ms |     5ms | 18ms |  7ms |  8ms | 0.4-1.1x |
+| regex-redux |    24ms |    13ms | 16ms | 18ms |  4ms | 1.3-6.0x |
 
 ### Run times (small)
 
-| Benchmark      | Nomen/A | Nomen/C |    Go |   Zig |  Rust |   Compare |
-| -------------- | ------: | ------: | ----: | ----: | ----: | --------: |
-| pidigits       |   105ms |   232ms |  11ms |  33ms |  20ms |  3.2-9.5x |
-| fannkuch-redux |   232ms |   274ms |  32ms | 201ms | 120ms |  1.2-7.2x |
-| binarytrees    |   163ms |   142ms | 143ms | 125ms | 100ms |  1.1-1.6x |
-| merkletrees    |   192ms |   174ms | 271ms | 125ms | 133ms |  0.7-1.5x |
-| nsieve         |    70ms |    75ms |  FAIL |  40ms |  41ms |  1.7-1.8x |
-| lru            |    10ms |    10ms |   7ms |   5ms |   7ms |  1.4-2.0x |
-| json-serde     |    33ms |    29ms |   4ms |   9ms |  11ms |  3.0-8.2x |
-| nbody          |   133ms |    83ms |  36ms |  20ms |  14ms |  3.7-9.5x |
-| spectral-norm  |    44ms |    55ms |  12ms |  12ms |  10ms |  3.7-4.4x |
-| mandelbrot     |   142ms |   194ms |  97ms |  14ms |  14ms | 1.5-10.1x |
-| edigits        |     4ms |     5ms |   4ms |   4ms |   4ms |  1.0-1.0x |
+| Benchmark      | Nomen/A | Nomen/C |    Go |   Zig |  Rust |  Compare |
+| -------------- | ------: | ------: | ----: | ----: | ----: | -------: |
+| pidigits       |    29ms |    19ms |  11ms |  33ms |  20ms | 0.9-2.6x |
+| fannkuch-redux |   168ms |   108ms |  39ms | 206ms | 127ms | 0.8-4.3x |
+| binarytrees    |   146ms |   124ms | 146ms | 129ms | 103ms | 1.0-1.4x |
+| merkletrees    |   157ms |   141ms | 278ms | 125ms | 136ms | 0.6-1.3x |
+| nsieve         |    44ms |    35ms |  FAIL |  41ms |  43ms | 1.0-1.1x |
+| lru            |     7ms |     4ms |   7ms |   5ms |   6ms | 1.0-1.4x |
+| json-serde     |    16ms |    11ms |   4ms |   7ms |   9ms | 1.8-4.0x |
+| nbody          |    24ms |    24ms |  37ms |  21ms |  15ms | 0.6-1.6x |
+| spectral-norm  |    22ms |    11ms |  12ms |  12ms |   9ms | 1.8-2.4x |
+| mandelbrot     |    54ms |    51ms |  99ms |  15ms |  14ms | 0.5-3.9x |
+| edigits        |     4ms |     3ms |   5ms |   4ms |   3ms | 0.8-1.3x |
 
 ### Run times (large)
 
 | Benchmark      | Nomen/A | Nomen/C |     Go |    Zig |   Rust |   Compare |
 | -------------- | ------: | ------: | -----: | -----: | -----: | --------: |
-| pidigits       |  1908ms |  4005ms |  128ms |  560ms |  303ms | 3.4-14.9x |
-| fannkuch-redux |  2869ms |  3379ms |  346ms | 2398ms | 1437ms |  1.2-8.3x |
-| binarytrees    |  1724ms |  1517ms | 1766ms | 1329ms | 1068ms |  1.0-1.6x |
-| merkletrees    |   901ms |   810ms | 1370ms |  568ms |  618ms |  0.7-1.6x |
-| nsieve         |   280ms |   307ms |   FAIL |  283ms |  277ms |  1.0-1.0x |
-| lru            |    29ms |    28ms |   17ms |    7ms |   13ms |  1.7-4.1x |
-| json-serde     |   152ms |   136ms |    4ms |   27ms |   37ms | 4.1-38.0x |
-| nbody          |  1305ms |   814ms |  329ms |  178ms |  125ms | 4.0-10.4x |
-| spectral-norm  |   371ms |   483ms |   82ms |   82ms |   59ms |  4.5-6.3x |
-| mandelbrot     |   562ms |   774ms |  371ms |   47ms |   47ms | 1.5-12.0x |
-| edigits        |     8ms |    11ms |    3ms |    4ms |    3ms |  2.0-2.7x |
+| pidigits       |   502ms |   336ms |  133ms |  573ms |  313ms |  0.9-3.8x |
+| fannkuch-redux |  2046ms |  1267ms |  390ms | 2476ms | 1485ms |  0.8-5.2x |
+| binarytrees    |  1576ms |  1322ms | 1841ms | 1369ms | 1103ms |  0.9-1.4x |
+| merkletrees    |   732ms |   647ms | 1399ms |  584ms |  644ms |  0.5-1.3x |
+| nsieve         |   168ms |   134ms |   FAIL |  279ms |  303ms |  0.6-0.6x |
+| lru            |    21ms |    10ms |   18ms |    7ms |   13ms |  1.2-3.0x |
+| json-serde     |    64ms |    35ms |    4ms |   23ms |   35ms | 1.8-16.0x |
+| nbody          |   218ms |   206ms |  335ms |  182ms |  128ms |  0.7-1.7x |
+| spectral-norm  |   181ms |    83ms |   84ms |   84ms |   61ms |  2.2-3.0x |
+| mandelbrot     |   205ms |   195ms |  381ms |   50ms |   48ms |  0.5-4.3x |
+| edigits        |     5ms |     5ms |    4ms |    4ms |    4ms |  1.2-1.2x |
 
 ### Compile times
 
 | Benchmark      | Nomen/A | Nomen/C |    Go |    Zig |   Rust |  Compare |
 | -------------- | ------: | ------: | ----: | -----: | -----: | -------: |
-| pidigits       |   614ms |   326ms | 207ms | 5254ms | 2943ms | 0.1-3.0x |
-| helloworld     |   263ms |   266ms |  89ms | 4635ms | 1913ms | 0.1-3.0x |
-| fannkuch-redux |   277ms |   280ms |  47ms | 4691ms | 1934ms | 0.1-5.9x |
-| binarytrees    |   278ms |   274ms |  44ms | 4711ms | 1909ms | 0.1-6.3x |
-| merkletrees    |   328ms |   276ms |  44ms | 4720ms | 1921ms | 0.1-7.5x |
-| nsieve         |   281ms |   278ms |  FAIL | 4614ms | 1910ms | 0.1-0.1x |
-| lru            |   304ms |   292ms |  69ms | 4733ms | 2091ms | 0.1-4.4x |
-| knucleotide    |   307ms |   292ms |  70ms | 5353ms | 2307ms | 0.1-4.4x |
-| json-serde     |   352ms |   311ms |  54ms | 5829ms | 2447ms | 0.1-6.5x |
-| regex-redux    |   333ms |   300ms |  45ms | 5435ms | 6713ms | 0.0-7.4x |
-| nbody          |   381ms |   300ms | 186ms | 4775ms | 2035ms | 0.1-2.0x |
-| spectral-norm  |   283ms |   281ms |  45ms | 4775ms | 2194ms | 0.1-6.3x |
-| mandelbrot     |   274ms |   274ms |  57ms | 4744ms | 2020ms | 0.1-4.8x |
-| edigits        |   387ms |   323ms |  49ms | 5119ms | 2878ms | 0.1-7.9x |
+| pidigits       |  1387ms |   672ms | 189ms | 5641ms | 3079ms | 0.2-7.3x |
+| helloworld     |   418ms |   392ms |  94ms | 4980ms | 2086ms | 0.1-4.4x |
+| fannkuch-redux |   512ms |   426ms |  97ms | 5061ms | 2124ms | 0.1-5.3x |
+| binarytrees    |   512ms |   441ms | 102ms | 5148ms | 2017ms | 0.1-5.0x |
+| merkletrees    |   463ms |   406ms |  94ms | 4958ms | 1992ms | 0.1-4.9x |
+| nsieve         |   458ms |   403ms |  FAIL | 4819ms | 2057ms | 0.1-0.2x |
+| lru            |   610ms |   461ms | 136ms | 5055ms | 2190ms | 0.1-4.5x |
+| knucleotide    |   610ms |   475ms |  90ms | 5521ms | 2444ms | 0.1-6.8x |
+| json-serde     |   719ms |   539ms |  98ms | 6203ms | 2995ms | 0.1-7.3x |
+| regex-redux    |   787ms |   534ms | 167ms | 5693ms | 7159ms | 0.1-4.7x |
+| nbody          |   706ms |   522ms | 170ms | 5093ms | 2198ms | 0.1-4.2x |
+| spectral-norm  |   486ms |   424ms |  94ms | 4983ms | 2364ms | 0.1-5.2x |
+| mandelbrot     |   465ms |   400ms |  98ms | 5165ms | 2139ms | 0.1-4.7x |
+| edigits        |   723ms |   582ms |  96ms | 5339ms | 2551ms | 0.1-7.5x |
