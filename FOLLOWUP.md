@@ -320,20 +320,3 @@ Fix direction: teach `validate_asm` (and the stack-balance validator) the
 numeric-label definition/reference forms. Found during ASM_PLAN_7 tranche
 2 (the div_to induction census builds `div_to` single-TU); left alone as
 out of scope — the tranche's tests filter the known messages.
-
-## Unmodeled calls: `tree_is_call_free` misses struct operator calls (latent)
-
-Same unmodeled-call class as the tranche-2 hang receipt, on the OTHER
-consumer: `tree_is_call_free` (AST) recurses through `op` nodes without
-noticing `operator_func`, so a loop whose only "calls" are string `+`
-(`bl string_add` + `bl _free`) verifies call-free and emit-time loop
-promotion opens the caller-saved `x12–x15` extension pool inside it.
-Tranche 2 fixed only its own path (induction pins carry a heap-freedom
-proof: no `operator_func` op, no string traffic, no non-scalar in-region
-declare, no foreign heap write) and confirmed no regression, but a hot
-string loop with 10+ hotter loop-carried ints would still place live
-values in call-clobbered registers via promotion on clean HEAD (scratch
-asm shows `x12–x15` traffic in such a loop; no miscompile receipt yet —
-needs a dedicated repro + the shared fix: refuse `operator_func` ops in
-`tree_is_call_free` and flag them in the NIR fact walk's `has_call`, so
-the refuse gate covers every region consumer at once).

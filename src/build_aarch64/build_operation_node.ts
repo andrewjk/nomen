@@ -126,6 +126,11 @@ export function tree_is_call_free(
 	const n = node as unknown as Record<string, unknown>;
 	if (n.node_type === "spawn") return false;
 	if (n.node_type === "func_call") return false;
+	// A struct operator op (`s + t` → `bl string_add` + `bl _free`) emits
+	// real calls — an `op` node is NOT call-free just because it lowers
+	// through the operation builder. The deferred ==/!= marker counts too:
+	// it may resolve to a custom `eq`/`ne` call at emit time.
+	if (n.node_type === "op" && (n as { operator_func?: unknown }).operator_func) return false;
 	if (n.node_type === "access") {
 		const acc = (n as { access?: { node_type?: string; name?: string; mangled_name?: string } })
 			.access;

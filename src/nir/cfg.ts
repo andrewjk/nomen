@@ -298,10 +298,21 @@ function walk_expr(e: NirExpr | null | undefined, out: FactWalk): void {
 		case "leaf":
 			if (e.name) out.reads.push(e.name);
 			return;
-		case "binary":
+		case "binary": {
+			// A struct operator op (`s + t` → `bl string_add` + frees) is a
+			// real call, not call-free arithmetic — flag it so liveness
+			// crossing and the region refuse gates see the `bl`. This is
+			// the NIR half of the operator_func refuse gate: the gate
+			// requires BOTH this flag and the AST-side `tree_is_call_free`
+			// verdict, so each alone misses the shape.
+			const op_node = e.node as { operator_func?: unknown };
+			if (op_node.operator_func !== undefined && op_node.operator_func !== null) {
+				out.has_call = true;
+			}
 			walk_expr(e.left, out);
 			walk_expr(e.right, out);
 			return;
+		}
 		case "wrap":
 			walk_expr(e.inner, out);
 			return;
