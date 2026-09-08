@@ -1,0 +1,19 @@
+{
+	"baseBranch": "main",
+	"access": "public",
+	"changelog": "github",
+	"packages": {
+		"nomen-lang": {
+			"buildCommand": "pnpm build"
+		},
+		"nomen": {
+			"buildCommand": "pnpm build",
+			"publishCommand": "vsce publish --allow-package-all-secrets --allow-package-env-file",
+			"skipNpmPublish": true
+		}
+	},
+	// You'll need to manually release these in the NPM web interface
+	"publish": {
+		"npmStaged": true
+	}
+}

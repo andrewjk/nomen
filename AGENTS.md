@@ -45,6 +45,21 @@ The project also has uvu configured:
 - `npm run test:uvu` - Run tests using uvu
 - `npm run test:uvu:cover` - Run tests with coverage using c8
 
+## Releases
+
+Releases are managed with [bumpy](https://github.com/dmno-dev/bumpy/). Two
+packages are released: `nomen-lang` (the CLI, published to npm) and `nomen`
+(the VSCode extension, published to the marketplace).
+
+- Create a bump file as part of any PR that changes a released package:
+  `pnpm exec bumpy add` (non-interactive: `pnpm exec bumpy add --packages "nomen-lang:patch" --message "..."`)
+- Bump levels: `patch` / `minor` / `major`. For changes that touch a released
+  package but shouldn't trigger a release (e.g. dev tooling), create an empty
+  bump file: `pnpm exec bumpy add --empty`.
+- CI posts a release-plan comment on PRs and keeps a "Versioned release" PR up
+  to date; merging that PR publishes both packages and creates git tags +
+  GitHub releases.
+
 ## Code Style Guidelines
 
 ### Formatting

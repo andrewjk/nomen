@@ -5,6 +5,11 @@
 	"keywords": [],
 	"license": "ISC",
 	"author": "",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/andrewjk/nomen",
+		"directory": "cli"
+	},
 	"bin": {
 		"nomen": "dist/index.mjs"
 	},

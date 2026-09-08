@@ -1,7 +1,10 @@
 packages:
-  - bin
+  - cli
+  - extension
 allowBuilds:
+  '@vscode/vsce-sign': true
   esbuild: true
+  keytar: true
 catalog:
   vite: npm:@voidzero-dev/vite-plus-core@0.2.9
   vite-plus: 0.2.9

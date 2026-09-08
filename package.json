@@ -1,10 +1,15 @@
 {
-	"name": "nomen",
+	"name": "nomen-monorepo",
 	"version": "1.0.0",
-	"description": "",
+	"private": true,
+	"description": "The Nomen programming language.",
 	"keywords": [],
 	"license": "ISC",
 	"author": "",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/andrewjk/nomen"
+	},
 	"type": "module",
 	"scripts": {
 		"build": "vp pack",
@@ -12,10 +17,14 @@
 		"test": "vp test",
 		"check": "vp check",
 		"format": "vp check --fix",
-		"prepare": "vp config"
+		"prepare": "vp config",
+		"bump:add": "bumpy add",
+		"bump:version": "pnpm -r build && bumpy version",
+		"bump:publish": "bumpy publish"
 	},
 	"devDependencies": {
 		"@types/node": "^26.1.2",
+		"@varlock/bumpy": "^1.18.1",
 		"typescript": "^7.0.2",
 		"vite": "catalog:",
 		"vite-plus": "catalog:"
