@@ -232,3 +232,97 @@ func f = (int dummy) {
 		expect(parsed.errors).toEqual(expected);
 	});
 });
+
+describe("reserved word names", () => {
+	test("keyword as variable name", () => {
+		const input = `
+var out = 5
+`;
+		const expected = [
+			test_error(input, "'out' is a reserved word and cannot be used as a name", 2, 5),
+		];
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual(expected);
+	});
+
+	test("statement keyword as variable name", () => {
+		const input = `
+var match = 5
+`;
+		const expected = [
+			test_error(input, "'match' is a reserved word and cannot be used as a name", 2, 5),
+		];
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual(expected);
+	});
+
+	test("keyword as typed variable name", () => {
+		const input = `
+var int if = 5
+`;
+		const expected = [
+			test_error(input, "'if' is a reserved word and cannot be used as a name", 2, 9),
+		];
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual(expected);
+	});
+
+	test("keyword as parameter name", () => {
+		const input = `
+func f = (int out) {
+}
+`;
+		const expected = [
+			test_error(input, "'out' is a reserved word and cannot be used as a name", 2, 15),
+		];
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual(expected);
+	});
+
+	test("keyword as for loop variable", () => {
+		const input = `
+for match of [1, 2] {
+}
+`;
+		const expected = [
+			test_error(input, "'match' is a reserved word and cannot be used as a name", 2, 5),
+		];
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual(expected);
+	});
+
+	test("keyword as struct name", () => {
+		const input = `
+struct match {
+}
+`;
+		const expected = [
+			test_error(input, "'match' is a reserved word and cannot be used as a name", 2, 8),
+		];
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual(expected);
+	});
+
+	test("keyword as destructuring name", () => {
+		const input = `
+var [out, x] = pair
+`;
+		const expected = [
+			test_error(input, "'out' is a reserved word and cannot be used as a name", 2, 6),
+		];
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual(expected);
+	});
+
+	test("keyword as function name is allowed", () => {
+		// Method names are reachable only through `.name(...)` access (e.g.
+		// `Regex.match(...)`), which parses unambiguously, so they may be
+		// keywords.
+		const input = `
+func match = () {
+}
+`;
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual([]);
+	});
+});

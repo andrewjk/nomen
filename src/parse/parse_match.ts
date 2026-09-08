@@ -13,6 +13,7 @@ import parse_statement from "./parse_statement.ts";
 import type ParseStatus from "./ParseStatus.ts";
 import accept from "./utils/accept.ts";
 import consume from "./utils/consume.ts";
+import consume_name from "./utils/consume_name.ts";
 import expect from "./utils/expect.ts";
 import get_index from "./utils/get_index.ts";
 import peek_current from "./utils/peek_current.ts";
@@ -82,9 +83,9 @@ function parse_match_case_pattern(status: ParseStatus): { value: BaseNode; param
 	const params: string[] = [];
 	if (accept("(", status)) {
 		if (peek_current(status) !== ")") {
-			params.push(consume(status));
+			params.push(consume_name(status));
 			while (accept(",", status)) {
-				params.push(consume(status));
+				params.push(consume_name(status));
 			}
 		}
 		expect(")", status);

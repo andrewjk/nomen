@@ -12,6 +12,7 @@ import parse_type from "./parse_type.ts";
 import type ParseStatus from "./ParseStatus.ts";
 import accept from "./utils/accept.ts";
 import consume from "./utils/consume.ts";
+import consume_name from "./utils/consume_name.ts";
 import expect from "./utils/expect.ts";
 import expect_close_angle from "./utils/expect_close_angle.ts";
 import get_index from "./utils/get_index.ts";
@@ -31,6 +32,9 @@ export default function parse_function(
 		accept(visibility, status);
 		accept("func", status);
 	}
+	// Function/method names are allowed to be keywords: the name after `func`
+	// is unambiguous, and calls always go through `.name(...)` access (e.g.
+	// `Regex.match(...)`), which parses in its own unambiguous position.
 	let name = name_override || consume(status);
 	if (!name_override && name === "#") {
 		const next = consume(status);
@@ -64,9 +68,9 @@ export default function parse_function(
 	if (is_inline) func.is_inline = true;
 
 	if (accept("<", status)) {
-		func.type_params.push(consume(status));
+		func.type_params.push(consume_name(status));
 		while (accept(",", status)) {
-			func.type_params.push(consume(status));
+			func.type_params.push(consume_name(status));
 		}
 		expect_close_angle(status);
 	}
@@ -283,7 +287,7 @@ function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: 
 			}
 
 			param.name_start = get_index(status);
-			param.name = consume(status);
+			param.name = consume_name(status);
 		} else {
 			const next = peek_current(status);
 			if (next === "=" || next === ")" || next === "," || status.i >= status.tokens.length) {
@@ -291,10 +295,10 @@ function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: 
 				status.errors.length = saved_errors_length;
 				param.type = new Type("");
 				param.type_start = undefined;
-				param.name = consume(status);
+				param.name = consume_name(status);
 			} else {
 				param.name_start = get_index(status);
-				param.name = consume(status);
+				param.name = consume_name(status);
 			}
 		}
 	}

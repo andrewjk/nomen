@@ -395,11 +395,11 @@ Console.write("\\{n}")
 		const input = `
 var Array<string> filler = Array<string>.with("", 1)
 func join = (Array<string> words, out string) {
-  var out = ""
+  var result = ""
   for w of words {
-    out = out + w
+    result = result + w
   }
-  return out
+  return result
 }
 const s = join(Array("a", "b", "c"))
 Console.write("\\{s}")
@@ -505,11 +505,11 @@ Console.write("\\{n}")
 		const input = `
 var Array<string> filler = Array<string>.with("", 1)
 func join = (Array<string> words, out string) {
-  var out = ""
+  var result = ""
   for w of words {
-    out = out + w
+    result = result + w
   }
-  return out
+  return result
 }
 var Array<string> v = ["a", "b", "c"]
 const s = join(v)
@@ -809,11 +809,11 @@ struct Person {
   var int age
 }
 func names = (Array<Person> xs, out string) {
-  var out = ""
+  var result = ""
   for p of xs {
-    out = out + p.name
+    result = result + p.name
   }
-  return out
+  return result
 }
 var Person[] v = [Person("Alice", 30)]
 const s = names(v)
@@ -831,11 +831,11 @@ struct Person {
   var int age
 }
 func names = (Array<Person> xs, out string) {
-  var out = ""
+  var result = ""
   for p of xs {
-    out = out + p.name
+    result = result + p.name
   }
-  return out
+  return result
 }
 const s = names([Person("Alice", 30)])
 `;

@@ -13,6 +13,33 @@ Nomen is a statically-typed, compiled language that compiles to C or AArch64 ass
    /* nested comments supported */ */
 ```
 
+## Reserved Words
+
+The following words are reserved by the language and cannot be used as
+variable, parameter, field, type, or enum case names:
+
+`as` `async` `bitset` `break` `case` `class` `const` `continue` `cp` `else`
+`enum` `extend` `for` `func` `if` `import` `in` `let` `match` `mov` `of` `out`
+`panic` `private` `pub` `raw` `ref` `return` `spawn` `struct` `switch` `swap`
+`todo` `trait` `var` `view` `while`
+
+The literals `true`, `false`, and `null`, and `self`, are reserved as well.
+Using a reserved word as a name is a compile error:
+
+```
+var out = StringBuilder()
+// Error: 'out' is a reserved word and cannot be used as a name
+```
+
+Function and method names are exempt: the name after `func` is unambiguous,
+and calls always go through `.name(...)` access, so library methods may use
+reserved words (e.g. `Text::Regex.match(...)`):
+
+```
+const string m = Regex.match("[0-9]+", "abc123")
+Console.write("\{m}")
+```
+
 ## Types
 
 ### Basic Types

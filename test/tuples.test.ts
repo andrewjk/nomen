@@ -226,8 +226,8 @@ func first_parts = (...[string, int] pairs, out string) {
 	}
 	return result
 }
-const out = first_parts(["count", 1], ["sum", 2])
-Console.write("\\{out}")
+const out_str = first_parts(["count", 1], ["sum", 2])
+Console.write("\\{out_str}")
 `;
 		await build_and_check_output(input, "vtuple_mixed", ">countsum");
 	});

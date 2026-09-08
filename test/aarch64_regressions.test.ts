@@ -243,13 +243,13 @@ while i < 3 {
   x = x * 2
   i = i + 1
 }
-var out = 0
+var result = 0
 if x > 4 {
   var x = 100
   x = x + 1
-  out = x
+  result = x
 }
-Console.write("out=\\{out}")
+Console.write("out=\\{result}")
 `;
 	await build_and_check_output(input, "wholefunc_shadow_excluded", "out=101");
 });

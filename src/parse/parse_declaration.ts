@@ -1,4 +1,5 @@
 import add_error from "../add_error.ts";
+import { RESERVED_WORDS } from "../keywords.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import BaseNode from "../nodes/BaseNode.ts";
@@ -17,6 +18,7 @@ import parse_type from "./parse_type.ts";
 import type ParseStatus from "./ParseStatus.ts";
 import accept from "./utils/accept.ts";
 import consume from "./utils/consume.ts";
+import consume_name from "./utils/consume_name.ts";
 import default_visibility from "./utils/default_visibility.ts";
 import expect from "./utils/expect.ts";
 import get_index from "./utils/get_index.ts";
@@ -65,6 +67,13 @@ export default function parse_declaration(
 			if ((modifier === "view" || modifier === "ref") && decl.type.name) {
 				decl.name = decl.type.name;
 				decl.name_start = saved_i + 1;
+				if (RESERVED_WORDS.has(decl.name)) {
+					add_error(
+						status,
+						`'${decl.name}' is a reserved word and cannot be used as a name`,
+						status.tokens[saved_i + 1]?.i ?? 0,
+					);
+				}
 				const inferred = new Type("");
 				if (modifier === "view") inferred.is_view = true;
 				else inferred.is_ref = true;
@@ -76,11 +85,11 @@ export default function parse_declaration(
 				decl.type = new Type("");
 				decl.type_start = undefined;
 				decl.name_start = get_index(status);
-				decl.name = consume(status);
+				decl.name = consume_name(status);
 			}
 		} else {
 			decl.name_start = get_index(status);
-			decl.name = consume(status);
+			decl.name = consume_name(status);
 		}
 
 		// Parse field/variable constraint: var int x: x > 5
@@ -147,7 +156,7 @@ function parse_function_type_declaration(decl: DeclarationNode, status: ParseSta
 
 		if (expect(")", status)) {
 			decl.name_start = get_index(status);
-			decl.name = consume(status);
+			decl.name = consume_name(status);
 			decl.func_params = params.filter((p) => !p.type.is_return_type);
 			decl.func_return_type = return_type;
 
@@ -212,7 +221,7 @@ function parse_function_type_params(params: ParameterNode[], status: ParseStatus
 	const next = peek_current(status);
 	if (next !== ")" && next !== "," && next !== "out" && status.i < status.tokens.length) {
 		param.name_start = get_index(status);
-		param.name = consume(status);
+		param.name = consume_name(status);
 	}
 	params.push(param);
 
@@ -335,10 +344,10 @@ function parse_anon_function_parameter(func: FunctionNode, status: ParseStatus) 
 		status.errors.length = saved_errors_length;
 		param.type = new Type("");
 		param.type_start = undefined;
-		param.name = consume(status);
+		param.name = consume_name(status);
 	} else {
 		param.name_start = get_index(status);
-		param.name = consume(status);
+		param.name = consume_name(status);
 	}
 
 	// Parameter value
@@ -413,9 +422,15 @@ function parse_destructuring(
 		// `[field = name]` rename form (struct/class destructuring only)
 		if (peek_current(status) === "=") {
 			accept("=", status);
-			name = consume(status);
+			name = consume_name(status);
 			field = first;
 			rename = true;
+		} else if (RESERVED_WORDS.has(first)) {
+			add_error(
+				status,
+				`'${first}' is a reserved word and cannot be used as a name`,
+				status.tokens[status.i - 1]?.i ?? 0,
+			);
 		}
 		bindings.push({ name, field, rename });
 		index++;

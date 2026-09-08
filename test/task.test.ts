@@ -309,19 +309,19 @@ pub func main = () {
 		const input = `
 import System
 
-func producer = (Channel out) {
+func producer = (Channel out_ch) {
 	var int i = 0
 	while i < 5 {
-		out.send(i as uint64)
+		out_ch.send(i as uint64)
 		i = i + 1
 	}
 }
 
-func filter = (Channel in_ch, Channel out) {
+func filter = (Channel in_ch, Channel out_ch) {
 	var int i = 0
 	while i < 5 {
 		var uint64 v = in_ch.receive()
-		out.send(v + v)
+		out_ch.send(v + v)
 		i = i + 1
 	}
 }

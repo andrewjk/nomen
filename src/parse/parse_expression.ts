@@ -24,6 +24,7 @@ import parse_type from "./parse_type.ts";
 import type ParseStatus from "./ParseStatus.ts";
 import accept from "./utils/accept.ts";
 import consume from "./utils/consume.ts";
+import consume_name from "./utils/consume_name.ts";
 import expect from "./utils/expect.ts";
 import expect_close_angle from "./utils/expect_close_angle.ts";
 import get_index from "./utils/get_index.ts";
@@ -128,7 +129,7 @@ function is_anonymous_function(status: ParseStatus): boolean {
 function parse_anon_struct(start: number, status: ParseStatus): AnonStructNode {
 	const fields: { name: string; value: BaseNode }[] = [];
 	while (peek_current(status) !== "]") {
-		const name = consume(status);
+		const name = consume_name(status);
 		expect("=", status);
 		const value = parse_expression(status);
 		fields.push({ name, value });

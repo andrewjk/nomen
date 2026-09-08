@@ -5,6 +5,7 @@ import type ParseStatus from "./ParseStatus.ts";
 import accept from "./utils/accept.ts";
 import add_to_parent from "./utils/add_to_parent.ts";
 import consume from "./utils/consume.ts";
+import consume_name from "./utils/consume_name.ts";
 import expect from "./utils/expect.ts";
 import expect_close_angle from "./utils/expect_close_angle.ts";
 import get_index from "./utils/get_index.ts";
@@ -14,14 +15,14 @@ export default function parse_enum(visibility: "pub" | "private", status: ParseS
 	const start = get_index(status);
 	accept(visibility, status);
 	accept("enum", status);
-	const name = consume(status);
+	const name = consume_name(status);
 	const node = new EnumNode(start, visibility, name);
 
 	// Generic type parameters: `enum Result<T, E> { ... }`
 	if (accept("<", status)) {
-		node.type_params.push(consume(status));
+		node.type_params.push(consume_name(status));
 		while (accept(",", status)) {
-			node.type_params.push(consume(status));
+			node.type_params.push(consume_name(status));
 		}
 		expect_close_angle(status);
 	}
@@ -30,20 +31,20 @@ export default function parse_enum(visibility: "pub" | "private", status: ParseS
 		status.stack.push(node);
 
 		while (accept("case", status)) {
-			const case_name = consume(status);
+			const case_name = consume_name(status);
 			const params: ParameterNode[] = [];
 
 			if (accept("(", status)) {
 				if (peek_current(status) !== ")") {
 					const param_start = get_index(status);
 					const param_type = new Type(consume(status));
-					const param_name = consume(status);
+					const param_name = consume_name(status);
 					params.push(new ParameterNode(param_start, param_name, param_type));
 
 					while (accept(",", status)) {
 						const p_start = get_index(status);
 						const p_type = new Type(consume(status));
-						const p_name = consume(status);
+						const p_name = consume_name(status);
 						params.push(new ParameterNode(p_start, p_name, p_type));
 					}
 				}

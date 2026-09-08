@@ -153,6 +153,10 @@ var int? maybe = null                // nullable
 ref int ptr                          // reference to an int
 ```
 
+Keywords (`out`, `in`, `match`, `if`, `of`, `as`, `swap`, …) are reserved and
+cannot be used as variable, parameter, field, type, or case names. Function
+names are exempt since calls go through `.name(...)` (e.g. `Regex.match`).
+
 ### Functions
 
 ```nomen

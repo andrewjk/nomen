@@ -1,46 +1,10 @@
+import { KEYWORDS } from "../keywords.ts";
 import type { Piece } from "./scan.ts";
 
-/** Words that are never a call target, so `(`, `[` and `.` keep a space after them. */
-export const KEYWORDS = new Set([
-	"pub",
-	"private",
-	"struct",
-	"class",
-	"trait",
-	"enum",
-	"bitset",
-	"extend",
-	"func",
-	"var",
-	"const",
-	"mov",
-	"ref",
-	"cp",
-	"out",
-	"in",
-	"view",
-	"import",
-	"return",
-	"if",
-	"else",
-	"switch",
-	"match",
-	"case",
-	"for",
-	"of",
-	"while",
-	"break",
-	"continue",
-	"spawn",
-	"async",
-	"panic",
-	"todo",
-	"let",
-	"as",
-	"swap",
-	"raw",
-]);
-
+// Words that are never a call target, so `(`, `[` and `.` keep a space after
+// them. Re-exported for existing importers; the parser's reserved-word check
+// uses the canonical set in src/keywords.ts.
+export { KEYWORDS };
 // Keywords that open a call or declaration and so bind tightly to `(` with no
 // space: `func f(...)`, `struct S(...)`, `cast x as int`. Control-flow
 // keywords (`if`, `while`, `return`, ...) keep a space: `if (...)`.

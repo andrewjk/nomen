@@ -8,6 +8,7 @@ import type ParseStatus from "./ParseStatus.ts";
 import accept from "./utils/accept.ts";
 import add_to_parent from "./utils/add_to_parent.ts";
 import consume from "./utils/consume.ts";
+import consume_name from "./utils/consume_name.ts";
 import expect from "./utils/expect.ts";
 import expect_close_angle from "./utils/expect_close_angle.ts";
 import get_index from "./utils/get_index.ts";
@@ -20,15 +21,15 @@ export default function parse_struct(
 	const start = get_index(status);
 	accept(visibility, status);
 	accept(is_class ? "class" : "struct", status);
-	const name = consume(status);
+	const name = consume_name(status);
 	const struct = new StructNode(start, visibility, name);
 	if (is_class) struct.is_class = true;
 
 	if (accept("<", status)) {
-		struct.type_params.push(consume(status));
+		struct.type_params.push(consume_name(status));
 		struct.type_param_bounds.push(parse_optional_type_param_bound(status));
 		while (accept(",", status)) {
-			struct.type_params.push(consume(status));
+			struct.type_params.push(consume_name(status));
 			struct.type_param_bounds.push(parse_optional_type_param_bound(status));
 		}
 		expect_close_angle(status);
