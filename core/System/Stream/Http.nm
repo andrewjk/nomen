@@ -4,7 +4,8 @@
  * Plain `http://` only — no TLS (an `https://` URL cannot be served; use a
  * TLS proxy or wait for a TLS-capable transport). Construct an instance,
  * call `get`/`post` (which block until the full response is received), then
- * read the `status` field for the response's status code. `status` is 0 when
+ * read the `status` field for the response's status code. Fallible calls
+ * return a `Result` whose error side is an `HttpError`; `status` is 0 when
  * DNS resolution or the connection fails.
  *
  * URLs may carry an explicit port (`http://host:8080/path`); the default is
@@ -14,21 +15,47 @@
  * separator line) is returned.
  *
  *	var Http h = Http()
- *	var string body = h.get("http://example.com/")
- *	var int code     = h.status
- *	var string r     = h.post("http://example.com/submit", "hello=world")
+ *	match h.get("http://example.com/") {
+ *		case .ok(body) -> Console.write(body)
+ *		case .error(e) -> Console.write("request failed")
+ *	}
+ *	var int code = h.status
  **/
 pub struct Http {
-	// HTTP status code from the most recent request (e.g. 200). 0 if DNS or
-	// the connection failed.
+	// HTTP status code from the most recent request (e.g. 200). 0 when the
+	// request failed (the `error` side of the get/post Result says why).
 	pub var int status = 0
+
+	// Internal failure code from the most recent request: 0 = success,
+	// 1 = DNS resolution, 2 = socket creation, 3 = connect. Raw #arch bodies
+	// set it, the Result-returning wrappers map it to HttpError.
+	var int error = 0
+
+	// Maps the raw failure code to its HttpError case.
+	func error_of = (int err, out HttpError) {
+		switch {
+			case err == 1 {
+				return HttpError.dns
+			}
+			case err == 2 {
+				return HttpError.socket
+			}
+			case err == 3 {
+				return HttpError.connect
+			}
+			else {
+				return HttpError.other
+			}
+		}
+	}
 
 	// Shared socket round-trip used by get/post. `method` is the request
 	// method string ("GET" / "POST"); a leading 'P' selects POST semantics
-	// (sends `body` and the Content-* headers). Sets self->status and returns
-	// the response body (empty string on failure). The raw body mallocs the
-	// response — `mov out string` transfers ownership to the caller.
-	func exchange = (ref self, string method, string url, string body, mov out string) {
+	// (sends `body` and the Content-* headers). Sets self->status (0 on
+	// failure) and self->error, and returns the response body (empty string
+	// on failure). The raw body mallocs the response — `mov out string`
+	// transfers ownership to the caller.
+	func raw_exchange = (ref self, string method, string url, string body, mov out string) {
 		```
 		#arch: c
 		#scope: file
@@ -73,18 +100,21 @@ pub struct Http {
 		snprintf(portstr, sizeof(portstr), "%d", port);
 		if (getaddrinfo(host, portstr, &hints, &res) != 0) {
 			self->status = 0;
+			self->error = 1;
 			return (nomen_string){ strdup(""), 0 };
 		}
 		int sock = socket(AF_INET, SOCK_STREAM, 0);
 		if (sock < 0) {
 			freeaddrinfo(res);
 			self->status = 0;
+			self->error = 2;
 			return (nomen_string){ strdup(""), 0 };
 		}
 		if (connect(sock, res->ai_addr, res->ai_addrlen) < 0) {
 			freeaddrinfo(res);
 			close(sock);
 			self->status = 0;
+			self->error = 3;
 			return (nomen_string){ strdup(""), 0 };
 		}
 		freeaddrinfo(res);
@@ -123,6 +153,7 @@ pub struct Http {
 			code = atoi(buf + 9);
 		}
 		self->status = code;
+		self->error = 0;
 
 		char *body_start = strstr(buf, "\r\n\r\n");
 		if (body_start) {
@@ -138,6 +169,8 @@ pub struct Http {
 		// Fat-string ABI: x0=self(->x19); method=(x1,x2), url=(x3,x4),
 		// body=(x5,x6) — only the ptr halves are consumed below, plus
 		// body.len (stashed at #200) for Content-Length/send.
+		// Struct layout: self->status at [x19, #8], self->error at
+		// [x19, #16] (1 = dns, 2 = socket, 3 = connect; cleared on success).
 		// macOS arm64 passes variadic args on the caller stack at [sp+0..], so
 		// [sp+0..47] is reserved scratch for snprintf variadic args and the
 		// addrinfo hints live above it. Stack frame (2048 bytes):
@@ -252,7 +285,7 @@ pub struct Http {
 		add x2, sp, #48
 		add x3, sp, #96
 		bl _getaddrinfo
-		cbnz w0, .Lhttp_fail
+		cbnz w0, .Lhttp_dnsfail
 
 		// sock = socket(AF_INET, SOCK_STREAM, 0)
 		mov x0, #2
@@ -263,6 +296,8 @@ pub struct Http {
 		b.ge .Lhttp_sockok
 		ldr x0, [sp, #96]
 		bl _freeaddrinfo
+		mov x9, #2
+		str x9, [x19, #16]
 		b .Lhttp_fail
 		.Lhttp_sockok:
 		str w0, [sp, #104]
@@ -278,6 +313,8 @@ pub struct Http {
 		bl _freeaddrinfo
 		ldr w0, [sp, #104]
 		bl _close
+		mov x9, #3
+		str x9, [x19, #16]
 		b .Lhttp_fail
 		.Lhttp_connected:
 		ldr x0, [sp, #96]
@@ -398,6 +435,8 @@ pub struct Http {
 		strb wzr, [x0, x1]
 		ldr w0, [sp, #104]
 		bl _close
+		// success: clear error before storing the status code
+		str xzr, [x19, #16]
 		// self->status = atoi(buf + 9)
 		ldr x0, [sp, #160]
 		add x0, x0, #9
@@ -424,19 +463,23 @@ pub struct Http {
 		bl _free
 		ldr x0, [sp, #112]
 		add sp, sp, #2048
-		b .return_Http_exchange
+		b .return_Http_raw_exchange
 		.Lhttp_retbuf:
 		ldr x0, [sp, #160]
 		ldr x1, [sp, #96]
 		add sp, sp, #2048
-		b .return_Http_exchange
+		b .return_Http_raw_exchange
+		.Lhttp_dnsfail:
+		mov x9, #1
+		str x9, [x19, #16]
+		b .Lhttp_fail
 		.Lhttp_fail:
 		str xzr, [x19, #8]
 		adr x0, .Lhttp_empty
 		bl _strdup
 		mov x1, #0
 		add sp, sp, #2048
-		b .return_Http_exchange
+		b .return_Http_raw_exchange
 
 		.Lhttp_scheme: .asciz "://"
 		.Lhttp_slash: .asciz "/"
@@ -451,16 +494,25 @@ pub struct Http {
 		return ""
 	}
 
-	// Issue a blocking GET request to `url`. Returns the response body and
-	// sets `self.status` to the response's status code (0 on failure).
-	pub func get = (ref self, string url, out string) {
-		return self.exchange("GET", url, "")
+	// Issue a blocking GET request to `url`. `.ok(body)` with the response
+	// body and `self.status` set to the response's status code, or
+	// `.error(HttpError)` (`status` is 0).
+	pub func get = (ref self, string url, out Result<string, HttpError>) {
+		const string response = self.raw_exchange("GET", url, "")
+		if self.error == 0 {
+			return Result.ok(response)
+		}
+		return Result.error(Http.error_of(self.error))
 	}
 
 	// Issue a blocking POST request to `url` with `body` as the payload.
-	// Returns the response body and sets `self.status` to the response's
-	// status code (0 on failure).
-	pub func post = (ref self, string url, string body, out string) {
-		return self.exchange("POST", url, body)
+	// `.ok(body)` with the response body and `self.status` set to the
+	// response's status code, or `.error(HttpError)` (`status` is 0).
+	pub func post = (ref self, string url, string body, out Result<string, HttpError>) {
+		const string response = self.raw_exchange("POST", url, body)
+		if self.error == 0 {
+			return Result.ok(response)
+		}
+		return Result.error(Http.error_of(self.error))
 	}
 }

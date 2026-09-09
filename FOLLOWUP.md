@@ -17,12 +17,6 @@ it. Agreed design, deferred as its own scope:
 - Enforcement point: checker walk where statement-position calls are checked
   (AccessFunctionCallNode.is_statement already exists as a hook).
 
-## Http API still reports failures softly
-
-core/System/Stream/Http.nm was not converted to the error-enum pattern; it
-should get an `HttpError` + `Result<..., HttpError>` API like File/Directory
-did (465 lines of raw bodies across both backends — its own pass).
-
 ## Enum-with-string-payload ownership edges
 
 The core contract now works end to end on both backends (case construction

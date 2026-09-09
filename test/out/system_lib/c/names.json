@@ -3,6 +3,7 @@
 	"Result_string_DirectoryError",
 	"Result_bool_FileError",
 	"Result_string_FileError",
+	"Result_string_HttpError",
 	"Console",
 	"Mutex",
 	"Channel",
