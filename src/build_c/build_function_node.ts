@@ -42,6 +42,24 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.scoped_declarations = enter_c_scope(status);
 	const old_deferred_frees = status.deferred_frees;
 	status.deferred_frees = [];
+	// Class-alias bookkeeping is per-function: every flag/alias map is keyed
+	// by bare variable NAME, so entries from a previously built function would
+	// be picked up by an unrelated same-named variable in this one — e.g. a
+	// borrow `const Token t = toks.at(i)` in one function makes a later
+	// function's `var Tester t = Tester()` emit its scope-exit destroy guarded
+	// by a `_alias_owns_t` flag that was never declared in main's scope
+	// (undeclared-identifier compile error). Variables cannot be shared across
+	// functions, so none of these maps may outlive one.
+	const old_alias_owns_flags = status.c_alias_owns_flags;
+	status.c_alias_owns_flags = new Map();
+	const old_alias_decl_frames = status.alias_decl_frames;
+	status.alias_decl_frames = new Map();
+	const old_class_alias_vars = status.class_alias_vars;
+	status.class_alias_vars = new Set();
+	const old_class_alias_source_map = status.class_alias_source_map;
+	status.class_alias_source_map = new Map();
+	const old_aliased_class_sources = status.aliased_class_sources;
+	status.aliased_class_sources = new Set();
 	const old_borrow_only = status.c_borrow_only_strings;
 	status.c_borrow_only_strings = scan_borrow_only_strings(node);
 	// Shared with the aarch64 backend: string vars that receive a heap value
@@ -405,6 +423,11 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.deferred_frees = old_deferred_frees;
 	status.c_borrow_only_strings = old_borrow_only;
 	status.force_heap_strings = old_force_heap;
+	status.c_alias_owns_flags = old_alias_owns_flags;
+	status.alias_decl_frames = old_alias_decl_frames;
+	status.class_alias_vars = old_class_alias_vars;
+	status.class_alias_source_map = old_class_alias_source_map;
+	status.aliased_class_sources = old_aliased_class_sources;
 }
 
 function emit_nested_declarations(node: FunctionNode, status: BuildStatus) {
