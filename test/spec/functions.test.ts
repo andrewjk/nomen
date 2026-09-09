@@ -158,16 +158,14 @@ var func (int, int, out int) adder = (a, b, out int) => a + b
 
 	test("extern function declaration", () => {
 		// The SPEC example is library code (externs are library-only); from a
-		// user module the wrapped function is callable as usual. (main takes
-		// an Init param — free library functions resolve from Init-typed
-		// mains; see the parse_with_imports note in test/externs.test.ts.)
+		// user module the wrapped function is callable as usual.
 		const input = `
-pub func main = (Init init) {
+pub func main = () {
     const int n = parse_int("41")
     Console.write("\\{n}")
 }
 `;
-		expect(compile_module(input)).toEqual([]);
+		expect(compile_main(input)).toEqual([]);
 	});
 
 	test("function-typed variable with named types", () => {

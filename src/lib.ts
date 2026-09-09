@@ -12,6 +12,16 @@ export interface Library {
 	name: string;
 	source: string;
 	types: Map<string, LibraryType>;
+	/**
+	 * Top-level `pub func` declarations, indexed by function name. The entry
+	 * points at the declaring file (sharing the type entry's source) so a
+	 * user program that merely CALLS a free library function pulls in that
+	 * file — free functions are otherwise invisible to the token scan in
+	 * `resolve_linked_types`, which only matches type names (a call like
+	 * `parse_int("41")` from a parameterless `main` used to fail with
+	 * "Function not found" unless something else referenced `Init`).
+	 */
+	functions: Map<string, LibraryType>;
 	namespaces: Map<string, Set<string>>;
 	// Absolute path of the directory passed to `build_library` (the package
 	// root that owns `source`). Used to tell whether a given file is itself
@@ -147,7 +157,10 @@ function extract_free_func_names(source: string): string[] {
 	return names;
 }
 
-function build_type_map(files: string[], lib_dir: string): Map<string, LibraryType> {
+function build_type_map(
+	files: string[],
+	lib_dir: string,
+): { types: Map<string, LibraryType>; functions: Map<string, LibraryType> } {
 	// First pass: collect every declared type name. A library is concatenated
 	// into a single compilation unit at build time, so each file can reference
 	// any other library type — and any top-level free function in a sibling
@@ -173,6 +186,7 @@ function build_type_map(files: string[], lib_dir: string): Map<string, LibraryTy
 	}
 
 	const types = new Map<string, LibraryType>();
+	const functions = new Map<string, LibraryType>();
 	for (const f of files) {
 		const source = file_sources.get(f)!;
 		const deps = extract_deps(source);
@@ -191,8 +205,26 @@ function build_type_map(files: string[], lib_dir: string): Map<string, LibraryTy
 		const rel = path.relative(path.resolve(lib_dir, "System"), f);
 		const parts = rel.split(path.sep);
 		const namespace = parts.length > 1 ? parts[0] : undefined;
-		for (const name of extract_type_names(source)) {
+		const type_names = extract_type_names(source);
+		for (const name of type_names) {
 			types.set(name, { name, source, path: f, deps, namespace });
+		}
+		// Index the file's free `pub func`s so user programs can pull the
+		// file in by calling them (see Library.functions). A file with no
+		// types gets a synthetic entry per function; otherwise the entry
+		// shares the first type's (so the file source pushes once).
+		const free_funcs = extract_free_func_names(source);
+		if (type_names.length > 0) {
+			const shared = types.get(type_names[0])!;
+			for (const fname of free_funcs) {
+				if (!functions.has(fname)) functions.set(fname, shared);
+			}
+		} else {
+			for (const fname of free_funcs) {
+				if (!functions.has(fname)) {
+					functions.set(fname, { name: fname, source, path: f, deps, namespace });
+				}
+			}
 		}
 	}
 
@@ -209,7 +241,7 @@ function build_type_map(files: string[], lib_dir: string): Map<string, LibraryTy
 		}
 	}
 
-	return types;
+	return { types, functions };
 }
 
 export function resolve_types(needed: Set<string>, types: Map<string, LibraryType>): string {
@@ -255,7 +287,7 @@ export function build_library(lib_dir: string): Library {
 	all_files.sort((a, b) => get_file_priority(a) - get_file_priority(b));
 
 	const source = all_files.map((f) => fs.readFileSync(f, "utf8")).join("\n");
-	const types = build_type_map(all_files, lib_dir);
+	const { types, functions } = build_type_map(all_files, lib_dir);
 
 	const namespaces = new Map<string, Set<string>>();
 	for (const [name, type] of types) {
@@ -273,6 +305,7 @@ export function build_library(lib_dir: string): Library {
 		name: config.name,
 		source,
 		types,
+		functions,
 		namespaces,
 		dir: path.resolve(lib_dir),
 	};

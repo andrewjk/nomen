@@ -18,7 +18,7 @@ const core = get_library(path.resolve(import.meta.dirname, "../core"));
 describe("extern functions", () => {
 	test("library extern callable from user code (string param, int return)", async () => {
 		const input = `import System
-pub func main = (Init init) {
+pub func main = () {
 	const string digits = "41"
 	Console.write("\\{parse_int(digits) + 1}")
 }

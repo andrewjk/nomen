@@ -200,10 +200,25 @@ export function resolve_linked_types(source: string, library: Library, file_path
 		}
 	}
 
-	// Auto-import any library types referenced in the source
+	// Auto-import any library types referenced in the source, plus any free
+	// library FUNCTION the source calls. Free functions aren't types, so a
+	// bare call like `parse_int("41")` used to resolve only when some other
+	// token happened to reference a type from the same file (e.g. `Init`) —
+	// a parameterless `main` calling nothing but `parse_int` failed with
+	// "Function not found". Skip names the source declares itself (a user
+	// `func`/method shadowing a library function must not pull the library's
+	// declaration in alongside it — that would duplicate the declaration).
+	const user_declared_funcs = new Set<string>();
+	for (let i = 0; i < tokens.length - 1; i++) {
+		if (tokens[i].value === "func" && /^\w+$/.test(tokens[i + 1].value)) {
+			user_declared_funcs.add(tokens[i + 1].value);
+		}
+	}
 	for (const token of tokens) {
 		if (user_defined.has(token.value)) continue;
 		if (library.types.has(token.value) && !BASE_TYPES.includes(token.value)) {
+			needed.add(token.value);
+		} else if (library.functions.has(token.value) && !user_declared_funcs.has(token.value)) {
 			needed.add(token.value);
 		}
 	}
@@ -292,7 +307,7 @@ function resolve_types_with_deps(
 	function resolve(name: string) {
 		if (resolved.has(name)) return;
 		resolved.add(name);
-		const entry = library.types.get(name);
+		const entry = library.types.get(name) ?? library.functions.get(name);
 		if (!entry) {
 			// `name` may be a module-path import rather than a type name. Expand
 			// it to the module's declared types so its source gets pulled in.
