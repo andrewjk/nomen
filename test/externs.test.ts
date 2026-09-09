@@ -51,6 +51,24 @@ Console.write("\\{copy.length}")
 		}
 	});
 
+	test("method externs marshal sole float params (Math.sqrt/log)", async () => {
+		const input = `
+const float r = Math.sqrt(4.0)
+const float l = Math.log(1.0)
+Console.write("\\{r}")
+Console.write("\\n")
+Console.write("\\{l}")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const expected = "2.000000\n0.000000";
+		for (const arch of ["aarch64", "c"] as const) {
+			const result = build(parsed.root, { arch, audit: true });
+			expect(result.errors ?? []).toEqual([]);
+			await check_output(`extern_sqrt_log_${arch}`, result, expected, { arch, audit: true });
+		}
+	});
+
 	test("extern outside the System library is rejected", () => {
 		const input = `import System
 extern func getenv_shim = (string name, out int)

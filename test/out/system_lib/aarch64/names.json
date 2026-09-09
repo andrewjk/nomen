@@ -430,6 +430,8 @@
 	"Map_string_string_rehash",
 	"Map_string_string_init",
 	"Map_string_string_destroy",
+	"extern_strdup",
+	"extern_atoi",
 	"parse_int",
 	"json_skip_ws",
 	"json_parse_string",

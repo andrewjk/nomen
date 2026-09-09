@@ -2,6 +2,41 @@
 
 Skipped or out-of-scope items recorded for later.
 
+## Stale-x0 spill in scalar float-tree emission (aarch64 miscompile)
+
+Found while converting `Math.sqrt` to an extern (reverted — sqrt stays an
+inline raw body): with a REAL `bl` call inside `advance`'s inner loop, the
+scalar float-tree emitter spilled a float declare's home slot from x0
+without establishing x0 first. aarch64 nbody printed `26.726034` for the
+second energy instead of `-0.169088` (C backend unaffected and correct).
+
+The bad shape, in `advance` (`const float d_sq = ...; const float dist =
+Math.sqrt(d_sq)`):
+
+```
+fadd d0, d0, d1      // d0 = d_sq
+str x0, [x29, #32]   // d_sq's home spill — x0 is STALE (holds an x26
+                     // receiver address); the value is only in d0
+fmov x0, d0          // call-arg marshal comes AFTER the spill
+str x0, [x29, #120]
+bl Math_sqrt
+```
+
+Ruled out: the float-forwarding peephole (`optimize_float_forwarding` —
+reproduces with the pass disabled via `set_float_forwarding_enabled(false)`,
+so the stale store comes from the emitter, i.e. the `emit_init_value` →
+`emit_var_store(x0)` declare fallback or the tree's x0-mirroring). Also
+note the inline shape masked this twice over: no `bl` meant no scalarize
+(the loop SLP-vectorized instead), and the splice's own `fmov d0, x0`
+kept x0 populated.
+
+Repro: `Math.sqrt` as `extern` (any real float call in that loop position
+should do it) + `bench/nomen/nbody.nm` on aarch64. Fix direction: audit
+the float-tree x0-mirroring invariant in `build_operation_node.ts`
+(`build_float_tree`) / declare fallback — `str x0` consumers must prove
+the establishing `fmov`, especially across integer `mov x0, …` writes,
+which the float tracking may not treat as clobbers.
+
 ## Must-use enforcement for `Result`-returning IO (design agreed, not built)
 
 All fallible File/Directory operations now return `Result<T, FileError>` /

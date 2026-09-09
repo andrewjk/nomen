@@ -1,5 +1,7 @@
 import emission_label from "../build_common/emission_label.ts";
+import { is_overloaded, mangled_label } from "../check/utils/function_overload.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
+import StructNode from "../nodes/StructNode.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import c_function_name from "./utils/c_function_name.ts";
 import c_type from "./utils/c_type.ts";
@@ -9,6 +11,12 @@ import c_type from "./utils/c_type.ts";
  * emission label that forwards to the C symbol (named by the declared Nomen
  * name). Call sites need no special handling — they emit a normal call to
  * the label.
+ *
+ * Free externs keep the parse-assigned `extern_<name>` label; method
+ * externs take the normal `Struct_method` label (passed via `struct_node`),
+ * so the adapter — not the C symbol — owns the collision-prone bare name
+ * (e.g. an adapter literally named `sqrt` would interpose libc and recurse
+ * into itself).
  *
  * Marshalling rules (first cut, see CORE_RAW.md):
  * - string params stay FAT at the adapter boundary (call sites pass
@@ -23,8 +31,17 @@ import c_type from "./utils/c_type.ts";
  * The C symbol needs no prototype here: the prelude includes
  * stdio/stdlib/string/math, so libc declarations are already visible.
  */
-export default function build_extern(node: FunctionNode, status: BuildStatus) {
-	const label = c_function_name(emission_label(node));
+export default function build_extern(
+	node: FunctionNode,
+	status: BuildStatus,
+	struct_node?: StructNode,
+) {
+	const method_label = struct_node
+		? is_overloaded(struct_node, node.name)
+			? mangled_label(node, struct_node.name)
+			: `${struct_node.name}_${node.name.replace(/#/g, "")}`
+		: undefined;
+	const label = c_function_name(method_label ?? emission_label(node));
 	const symbol = node.name.replace(/#/g, "");
 
 	const param_texts: string[] = [];

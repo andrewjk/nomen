@@ -1076,7 +1076,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		if (func.is_inline) continue;
 		if (check_c_fallback(func, node.name, status)) continue;
 		if (func.is_extern) {
-			build_extern(func, status);
+			build_extern(func, status, node);
 			continue;
 		}
 

@@ -11,6 +11,10 @@ pub struct Math {
 		return result
 	}
 
+	// Square root — stays an inline raw body, deliberately (see
+	// CORE_RAW.md): the single-fsqrt splice is load-bearing on aarch64,
+	// where a real call both scalarizes the loop SLP shapes and exposes a
+	// latent stale-x0 spill in scalar float-tree emission (FOLLOWUP.md).
 	inline func sqrt = (float x, out float) {
 		```
 		#arch: c
@@ -24,18 +28,6 @@ pub struct Math {
 		```
 	}
 
-	pub func log = (float x, out float) {
-		```
-		#arch: c
-		return log(x);
-		```
-		```
-		#arch: aarch64
-		// Param x arrives as raw bits in x0; libc's log takes/returns its
-		// double in d0 (AAPCS), and a float return rides the d0 convention —
-		// so the result stays in d0 with no trailing fmov back to x0.
-		fmov d0, x0
-		bl _log
-		```
-	}
+	// libm natural logarithm — extern.
+	extern func log = (float x, out float)
 }

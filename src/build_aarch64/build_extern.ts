@@ -1,10 +1,17 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import emission_label from "../build_common/emission_label.ts";
+import { is_overloaded, mangled_label } from "../check/utils/function_overload.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
+import StructNode from "../nodes/StructNode.ts";
 
 /**
  * Emit an `extern func` for the aarch64 backend: a fixed-shape adapter that
  * forwards the Nomen call ABI to the C symbol.
+ *
+ * Free externs keep the parse-assigned `extern_<name>` label; method
+ * externs take the normal `Struct_method` label (passed via `struct_node`)
+ * — emitting the adapter under the bare C name would interpose the libc
+ * symbol it wraps. The wrapped symbol itself is always the bare Nomen name.
  *
  * Incoming (Nomen ABI): scalars and floats take one register slot each
  * (floats arrive as raw bits — `fmov d0, xN`); a fat `string` takes a
@@ -19,8 +26,17 @@ import FunctionNode from "../nodes/FunctionNode.ts";
  * sqrt/log shape): float32/64 argument lists would need s/d register
  * assignment per AAPCS64.
  */
-export default function build_extern(node: FunctionNode, status: BuildStatus) {
-	const label = emission_label(node);
+export default function build_extern(
+	node: FunctionNode,
+	status: BuildStatus,
+	struct_node?: StructNode,
+) {
+	const method_label = struct_node
+		? is_overloaded(struct_node, node.name)
+			? mangled_label(node, struct_node.name)
+			: `${struct_node.name}_${node.name.replace(/#/g, "")}`
+		: undefined;
+	const label = method_label ?? emission_label(node);
 	const prefix = status.platform === "windows" ? "" : "_";
 	const symbol = `${prefix}${node.name.replace(/#/g, "")}`;
 

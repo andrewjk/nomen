@@ -71,7 +71,7 @@ inexpressible.
 | `Init.nm`                                                                                                             | parse_int                                                                         | atoi                                                                                                                                                                                                                           |
 | `int.nm`                                                                                                              | parse                                                                             | atoi (whitespace/sign/nondigit semantics; not worth re-deriving in Nomen)                                                                                                                                                      |
 | all numeric types (`int8`–`int64`, `uint8`–`uint64`, `int`, `uint`, `float`, `float32`, `float64`, `ufloat*`, `char`) | to_string                                                                         | snprintf                                                                                                                                                                                                                       |
-| `Math.nm`                                                                                                             | sqrt, log                                                                         | libm (aarch64: `fsqrt` is single-instruction)                                                                                                                                                                                  |
+| `Math.nm`                                                                                                             | sqrt (inline raw fsqrt splice — see below), log (extern)                          | libm (aarch64: `fsqrt` is single-instruction)                                                                                                                                                                                  |
 | `String.nm`                                                                                                           | to_string (strdup), #op_add (malloc + two memcpy), #op_mul (malloc + memcpy loop) | Needs malloc/memcpy; note the asm versions exploit the tracked length while the C versions strlen — replacing the C with length-based Nomen would require raw memcpy access anyway                                             |
 | `String.nm`                                                                                                           | #op_eq                                                                            | C uses libc `strcmp`/asm uses `memcmp` with the length pre-check — both vectorized. A Nomen byte-loop is 1 byte/iter; LLVM's loop-idiom → `bcmp` transform is not guaranteed once the length guard is in front. Keep (see C.5) |
 
@@ -129,10 +129,13 @@ A declaration-only function whose body is a C symbol call:
 extern func atoi = (string s, out int)
 ```
 
-- **Status: implemented.** First conversions: `Init.parse_int` (→ `atoi`)
-  and `String.to_string` (→ `strdup`), exercised end to end on both
-  backends by `test/externs.test.ts` and the spec suite. See
+- **Status: implemented.** First conversions: `Init.parse_int` (→ `atoi`),
+  `String.to_string` (→ `strdup`), and `Math.log` (→ `log`), exercised end
+  to end on both backends by `test/externs.test.ts` and the spec suite. See
   `src/build_c/build_extern.ts` and `src/build_aarch64/build_extern.ts`.
+  Method externs emit the adapter under the normal `Struct_method` label
+  (the symbol stays bare) — landed for `Math.log`, the first method
+  extern; free externs keep the `extern_` prefix as before.
 - **Semantics:** string params marshal to the thin `char*` (`.ptr`); a
   string return is re-wrapped as an owned fat string via `strlen`. Free
   externs emit under an `extern_<name>` label so the adapter can never
@@ -140,10 +143,15 @@ extern func atoi = (string s, out int)
   `struct_method` label. Lockdown is enforced in `check_function_node`
   (library-only, same trust line as core constraints).
 - **Not yet supported:** variadic externs (blocks the `snprintf`
-  to_strings), float32/64 argument lists beyond the sole-param shape
-  (blocks converting `Math.sqrt`/`log` while they are `inline`-spliced —
-  deliberately kept raw for now), and symbol renaming (`extern func open =
-("fopen" ...)`).
+  to_strings), float32/64 argument lists beyond the sole-param shape, and
+  symbol renaming (`extern func open = ("fopen" ...)`).
+- **`Math.sqrt` stays an inline raw body — deliberately, and for
+  correctness, not just speed.** Converting it to an extern was tried and
+  reverted: on aarch64 a real `bl` in `advance`'s inner loop both
+  scalarizes the loop SLP shapes and exposes a latent stale-x0 spill in
+  scalar float-tree emission (silent miscompile — nbody's second energy
+  printed `26.726034`; see FOLLOWUP.md). The single-`fsqrt` splice is
+  load-bearing until that backend bug is fixed.
 - **Retires when fully rolled out:** Console, Time, Mutex, Task,
   Stream/*, the `snprintf` to_strings. This is the larger half of the
   remaining block count, and the low-risk half: both backends already
