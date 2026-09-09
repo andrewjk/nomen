@@ -43,11 +43,13 @@ export default function check_if_else_node(if_else: IfElseNode, status: CheckSta
 	let else_status = clone_status(status);
 
 	if (null_check) {
+		// findLast: the innermost declaration wins (mirrors the read path);
+		// first-match would narrow a same-named outer value instead.
 		if (!null_check.is_null_check) {
-			const if_var = if_status.values.find((v) => v.name === null_check.name);
+			const if_var = if_status.values.findLast((v) => v.name === null_check.name);
 			if (if_var) if_var.is_null = false;
 		} else {
-			const else_var = else_status.values.find((v) => v.name === null_check.name);
+			const else_var = else_status.values.findLast((v) => v.name === null_check.name);
 			if (else_var) else_var.is_null = false;
 		}
 	}
@@ -59,7 +61,7 @@ export default function check_if_else_node(if_else: IfElseNode, status: CheckSta
 		if (cond_op.op === "&&") {
 			const left_check = get_null_check_var(cond_op.left_value);
 			if (left_check && !left_check.is_null_check) {
-				const if_var = if_status.values.find((v) => v.name === left_check.name);
+				const if_var = if_status.values.findLast((v) => v.name === left_check.name);
 				if (if_var) if_var.is_null = false;
 			}
 		}

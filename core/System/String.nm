@@ -10,12 +10,12 @@ pub struct string: Stringable, Hashable, Equatable {
 	pub func hash = (self, out uint) {
 		// djb2 over exactly self.length bytes — matches the byte count of
 		// owned strings and literals (views hash the viewed bytes only).
-		var uint hash_acc = 5381
+		var uint h = 5381
 		var i = 0
 		while i < self.length; i += 1 {
-			hash_acc = hash_acc * 33 + (self.at(i) as uint)
+			h = h * 33 + (self.at(i) as uint)
 		}
-		return hash_acc
+		return h
 	}
 
 	// Returns an OWNED copy of self (`mov out string`). Both backends hand

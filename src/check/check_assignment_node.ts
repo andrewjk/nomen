@@ -65,7 +65,7 @@ export default function check_assignment_node(
 	// If the RHS is a lambda and the LHS is a function-typed variable, infer the
 	// lambda's parameter and return types from the declared function signature.
 	const lhs_value_name = value_from_value_node(assign.left_value);
-	const lhs_value = status.values.find((v) => v.name === lhs_value_name);
+	const lhs_value = status.values.findLast((v) => v.name === lhs_value_name);
 	if (
 		assign.right_value.node_type === "func" &&
 		lhs_value?.func_params &&
@@ -99,7 +99,13 @@ export default function check_assignment_node(
 	// * If this is an access, it's the root target e.g. for `person.address.zip =
 	//   1234` we would check that `person` exists and can be assigned to
 	const left_value_name = value_from_value_node(assign.left_value);
-	const left_value = status.values.find((v) => v.name === left_value_name);
+	// Innermost (last-pushed) declaration wins: core library bodies are checked
+	// through clones of the ambient status, so their locals share the values
+	// array with caller/global values of the same name. First-match resolution
+	// would let an outer same-named const shadow the function's own local
+	// here ("Assignment to const" for code the user never wrote). This mirrors
+	// the read path, which resolves through findLast everywhere.
+	const left_value = status.values.findLast((v) => v.name === left_value_name);
 	if (!left_value) {
 		add_error(status, `Unknown variable: ${left_value_name}`, assign.left_value!.start);
 		return false;

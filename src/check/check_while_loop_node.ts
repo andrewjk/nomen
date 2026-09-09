@@ -26,8 +26,9 @@ export default function check_while_loop_node(while_loop: WhileLoopNode, status:
 	// Narrow null state from condition into loop body (e.g. while thing != null)
 	const null_check = get_null_check_var(while_loop.condition);
 	if (null_check && !null_check.is_null_check) {
-		// condition is thing != null — inside the loop, thing is not null
-		const loop_var = while_status.values.find((v) => v.name === null_check.name);
+		// condition is thing != null — inside the loop, thing is not null.
+		// findLast: the innermost declaration wins (mirrors the read path).
+		const loop_var = while_status.values.findLast((v) => v.name === null_check.name);
 		if (loop_var) loop_var.is_null = false;
 	}
 
