@@ -60,6 +60,22 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.class_alias_source_map = new Map();
 	const old_aliased_class_sources = status.aliased_class_sources;
 	status.aliased_class_sources = new Set();
+	// String-ownership sets are also name-keyed: `string_borrow_vars` recorded
+	// for a borrow-only local in one function (e.g. `const string da =
+	// unit.text`) would suppress the scope-exit free of an unrelated OWNED
+	// `da` in a later function — a leak the --audit runtime surfaces.
+	// Same reasoning as the alias maps: variables cannot be shared across
+	// functions, so none of these may outlive one.
+	const old_string_borrow_vars = status.string_borrow_vars;
+	status.string_borrow_vars = new Set();
+	const old_moved_string_vars = status.moved_string_vars;
+	status.moved_string_vars = new Set();
+	const old_heap_strings = status.heap_strings;
+	status.heap_strings = new Set();
+	const old_owned_string_vars = status.owned_string_vars;
+	status.owned_string_vars = new Set();
+	const old_moved = status.moved;
+	status.moved = new Set();
 	const old_borrow_only = status.c_borrow_only_strings;
 	status.c_borrow_only_strings = scan_borrow_only_strings(node);
 	// Shared with the aarch64 backend: string vars that receive a heap value
@@ -428,6 +444,11 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.class_alias_vars = old_class_alias_vars;
 	status.class_alias_source_map = old_class_alias_source_map;
 	status.aliased_class_sources = old_aliased_class_sources;
+	status.string_borrow_vars = old_string_borrow_vars;
+	status.moved_string_vars = old_moved_string_vars;
+	status.heap_strings = old_heap_strings;
+	status.owned_string_vars = old_owned_string_vars;
+	status.moved = old_moved;
 }
 
 function emit_nested_declarations(node: FunctionNode, status: BuildStatus) {
