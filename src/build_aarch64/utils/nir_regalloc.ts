@@ -1072,10 +1072,18 @@ export function plan_nir_registers(
 	// slot-synced by the emission fuses — and the walk pairs its partner
 	// into (dN, dN+1) with dN+1 blocked (floats never share registers, so
 	// skipping the slot index is the whole block).
+	//
+	// Call-free gate (extern-sqrt nbody receipt — see loop_promotion.ts):
+	// a non-call-free function forces scalar emission somewhere, and a
+	// scalar dN write zeroes the partner lane. Only plan pairs when the
+	// whole function body is call-free.
 	const slp_pairs: { a: string; b: string; vreg: string }[] = [];
 	let slp_partner_of: Map<string, string> | undefined;
 	let slp_lane_of: Map<string, string> | undefined;
-	if (slp_pair_enabled() && options?.status) {
+	const func_call_free =
+		options?.status !== undefined &&
+		func.statements.every((st) => tree_is_call_free(st, options.status!, new Set()));
+	if (slp_pair_enabled() && options?.status && func_call_free) {
 		const float_names = new Set(
 			candidates
 				.filter((c) => ALL_FLOAT_TYPES.includes(c.type_name) && !sites.has(c.name))

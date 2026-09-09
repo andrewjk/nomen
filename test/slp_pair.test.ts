@@ -166,6 +166,19 @@ test("pair-fused binaries still produce correct output on both backends", async 
 	await build_and_check_output(PAIR_PROGRAM, "slp_pair_behavior", "4.750000\n5.750000\n", true);
 });
 
+test("a real call in a nested loop disables pairs (extern-sqrt nbody receipt)", async () => {
+	const { default: build_and_check_output } = await import("./build_and_check_output");
+	// nbody with Math.sqrt swapped for Math.log: log is a real extern
+	// (`bl`), so both of advance's loops go scalar. Pre-fix, the outer
+	// (vx,vy) lane pair still formed while the inner loop emitted scalar
+	// `fsub d10` updates — zeroing vy's high lane mid-flight — and
+	// aarch64 printed `2.630423` for the second energy instead of
+	// `-0.359333` (C correct throughout). Pairs only form in call-free
+	// scopes now, so both backends agree.
+	const source = read_bench_source("nbody").replaceAll("Math.sqrt", "Math.log");
+	await build_and_check_output(source, "slp_pair_nested_call", "-0.402864\n-0.359333\n", true);
+});
+
 test("scalar float field RMW skips the spill and x0 protocol", () => {
 	// The odd axis of a field-RMW group (no pair partner) — rhs builds
 	// into d0, old loads into d1, one fadd, one direct d-store: no

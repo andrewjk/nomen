@@ -388,8 +388,18 @@ export function promote_loop_locals(
 	// claimed by the function-level allocator or wait for a nested
 	// loop's own promotion). Kill switch off → no hints → allocation
 	// identical to the scalar path.
+	//
+	// Call-free gate (extern-sqrt nbody receipt): a scalar write to dN
+	// zeroes vN's high lane, so a pair is only sound when every in-loop
+	// write to its members fuses into a lane-preserving .2d op. The
+	// shape-level write gate cannot guarantee emission fusion — a nested
+	// `bl` (non-call-free loop) forces scalar promotion bars and the
+	// emission declines, leaving scalar dN writes that zero the partner
+	// lane mid-flight (outer (vx,vy) in v10 clobbered by inner scalar
+	// `fsub d10`). Only form pairs in call-free loops, where the emission
+	// can actually fuse.
 	const slp_plan =
-		slp_pair_enabled() && status.function_return_label
+		slp_pair_enabled() && status.function_return_label && options?.call_free === true
 			? slp_pair_hints(sources.statements, status)
 			: undefined;
 	const eligible_names = new Set(eligible.map((e) => e.name));

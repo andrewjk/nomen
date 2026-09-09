@@ -38,7 +38,10 @@ import { get_field_offset } from "./utils/struct_layout.ts";
  * - neither a nor b may be WRITTEN by a non-pair statement inside the
  * loop (a scalar write to dN would zero b's lane mid-flight) — the
  * hint planner enforces this by requiring every in-loop write to sit
- * inside a lane-matched adjacent statement pair;
+ * inside a lane-matched adjacent statement pair, AND pairs only form
+ * in call-free scopes (a `bl` forces scalar promotion bars, so a
+ * shape-matched write gate cannot guarantee the emission will fuse —
+ * the extern-sqrt nbody receipt);
  * - the pair's v-register is reserved against the float-tree temp
  *   allocator (`status.slp_pair_vregs`) and never v0/v1/v2 (fuse
  *   scratch) or v8 (the NEON accumulator);

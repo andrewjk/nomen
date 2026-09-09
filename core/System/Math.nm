@@ -11,10 +11,9 @@ pub struct Math {
 		return result
 	}
 
-	// Square root — stays an inline raw body, deliberately (see
-	// CORE_RAW.md): the single-fsqrt splice is load-bearing on aarch64,
-	// where a real call both scalarizes the loop SLP shapes and exposes a
-	// latent stale-x0 spill in scalar float-tree emission (FOLLOWUP.md).
+	// Square root — stays an inline raw body for speed (see CORE_RAW.md):
+	// the single-fsqrt splice keeps `advance`'s inner loop call-free so it
+	// holds the SLP vector shapes; a real call scalarizes the loop.
 	inline func sqrt = (float x, out float) {
 		```
 		#arch: c

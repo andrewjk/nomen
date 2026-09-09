@@ -145,13 +145,13 @@ extern func atoi = (string s, out int)
 - **Not yet supported:** variadic externs (blocks the `snprintf`
   to_strings), float32/64 argument lists beyond the sole-param shape, and
   symbol renaming (`extern func open = ("fopen" ...)`).
-- **`Math.sqrt` stays an inline raw body — deliberately, and for
-  correctness, not just speed.** Converting it to an extern was tried and
-  reverted: on aarch64 a real `bl` in `advance`'s inner loop both
-  scalarizes the loop SLP shapes and exposes a latent stale-x0 spill in
-  scalar float-tree emission (silent miscompile — nbody's second energy
-  printed `26.726034`; see FOLLOWUP.md). The single-`fsqrt` splice is
-  load-bearing until that backend bug is fixed.
+- **`Math.sqrt` stays an inline raw body for speed.** The single-`fsqrt`
+  splice keeps `advance`'s inner loop call-free so it holds the SLP
+  vector shapes; a real `bl` scalarizes the loop. (Correctness no longer
+  depends on it: field-pair SLP now only forms in call-free scopes, so a
+  scalar loop can no longer zero a live pair lane — see the
+  `slp_pair_nested_call` regression test. An extern `sqrt` is correct,
+  just slower.)
 - **Retires when fully rolled out:** Console, Time, Mutex, Task,
   Stream/*, the `snprintf` to_strings. This is the larger half of the
   remaining block count, and the low-risk half: both backends already
