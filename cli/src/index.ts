@@ -104,7 +104,12 @@ try {
 		const root = args.in ?? process.cwd();
 		const filter = args.filter ? new RegExp(args.filter) : undefined;
 		const arch = args.arch ?? "aarch64";
-		const ok = runTests(root, { arch, filter });
+		const ok = runTests(root, {
+			arch,
+			filter,
+			audit: args.audit,
+			audit_runtime: args.audit_runtime,
+		});
 		process.exit(ok ? 0 : 1);
 	}
 

@@ -259,6 +259,8 @@ export function run_test_file(
 	entry_path: string,
 	lib_path: string | undefined,
 	arch: string,
+	audit = false,
+	audit_runtime?: string,
 ): TestFileResult {
 	const start = performance.now();
 	const source_text = fs.readFileSync(entry_path, "utf8");
@@ -294,7 +296,10 @@ export function run_test_file(
 		return result;
 	}
 
-	const buildResult = build(parsed.root, { arch: arch as "aarch64" | "c", audit: false });
+	const buildResult = build(parsed.root, {
+		arch: arch as "aarch64" | "c",
+		audit,
+	});
 	if (buildResult.errors && buildResult.errors.length) {
 		result.ok = false;
 		result.crashed = buildResult.errors
@@ -306,6 +311,24 @@ export function run_test_file(
 
 	const buildDir = build_dir_for(resolved, true);
 	if (!fs.existsSync(buildDir)) fs.mkdirSync(buildDir, { recursive: true });
+	// With --audit, compile the audit runtime (malloc/free counting) and link
+	// it in; the generated main calls nomen_audit_check() at exit, printing
+	// "LEAK: N allocation(s)" when the balance is nonzero.
+	let audit_obj: string | undefined;
+	if (audit) {
+		const runtime_src = audit_runtime
+			? path.resolve(audit_runtime)
+			: find_audit_runtime(path.dirname(resolved));
+		if (!runtime_src || !fs.existsSync(runtime_src)) {
+			result.ok = false;
+			result.crashed =
+				"Audit enabled but audit_runtime.c was not found. Pass --audit-runtime <path>.";
+			result.ms = performance.now() - start;
+			return result;
+		}
+		audit_obj = path.join(buildDir, "audit_runtime.o");
+		execFileSync("clang", ["-c", runtime_src, "-o", audit_obj]);
+	}
 	const ext = arch === "aarch64" ? ".s" : ".c";
 	const codefile = path.join(buildDir, path.basename(entry_path, ".nm") + ext);
 	const outfile = path.join(buildDir, path.basename(entry_path, ".nm"));
@@ -316,8 +339,10 @@ export function run_test_file(
 
 	// Link the harness binary. The harness uses only Console/Time (printf,
 	// clock_gettime), so no platform frameworks are required.
+	const link_args = ["-o", outfile, codefile];
+	if (audit_obj) link_args.push(audit_obj);
 	try {
-		execFileSync("clang", ["-o", outfile, codefile], {
+		execFileSync("clang", link_args, {
 			encoding: "utf8",
 			stdio: ["ignore", "pipe", "pipe"],
 		});
@@ -427,6 +452,25 @@ export function report_file(result: TestFileResult): void {
 export interface RunTestsOptions {
 	arch?: string;
 	filter?: RegExp;
+	audit?: boolean;
+	audit_runtime?: string;
+}
+
+/**
+ * Locate audit_runtime.c for an audited test build: an explicit path wins,
+ * otherwise walk up from `dir` looking for a `src/audit_runtime.c` (the same
+ * convention the run/build commands use).
+ */
+function find_audit_runtime(dir: string): string | undefined {
+	let cur = dir;
+	for (let i = 0; i < 20; i++) {
+		const candidate = path.join(cur, "src", "audit_runtime.c");
+		if (fs.existsSync(candidate)) return candidate;
+		const parent = path.dirname(cur);
+		if (parent === cur) break;
+		cur = parent;
+	}
+	return undefined;
 }
 
 /** Discover, run, and report every `*.test.nm` under `root`. */
@@ -441,7 +485,7 @@ export function runTests(root: string, options: RunTestsOptions = {}): boolean {
 
 	const results: TestFileResult[] = [];
 	for (const file of files) {
-		const result = run_test_file(file, lib, arch);
+		const result = run_test_file(file, lib, arch, options.audit, options.audit_runtime);
 		report_file(result);
 		results.push(result);
 	}
